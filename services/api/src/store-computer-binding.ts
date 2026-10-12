@@ -8,8 +8,8 @@
 
 import { createHash } from 'node:crypto';
 import type { EventStore } from '../../../packages/persistence/src/event-store';
-import type { BoundStoreGuard, Route } from '../../kernel/src/index';
-import { classifyReferences, judgeBoxRequest, storeReferencesIn, storeStampFor, STORE_COMPUTER_ROLE, RECORD_STORE_PARAM, type StoreReference } from '../../platform/src/store-computer-identity';
+import type { BoundStoreGuard, BoundStoreVerdict, Route } from '../../kernel/src/index';
+import { classifyReferences, isRelayWrite, judgePersonRelay, judgeBoxRequest, storeReferencesIn, storeStampFor, STORE_COMPUTER_ROLE, RECORD_STORE_PARAM, type StoreReference } from '../../platform/src/store-computer-identity';
 import { paymentExceptionsAdapter } from './finance-close-adapters';
 import { storeComputerRefusalsAdapter, storeOfLocationResolver, STREAM, streamName } from './adapters';
 import { makeEvent } from '../../../packages/contracts/src/event';
@@ -50,20 +50,48 @@ export function storeComputerStampsAdapter(input: { readonly store: EventStore }
 export function storeComputerBinding(input: { readonly store: EventStore; readonly now: () => string }): BoundStoreGuard {
   const refusals = storeComputerRefusalsAdapter({ store: input.store });
   const stamps = storeComputerStampsAdapter({ store: input.store });
-  return async (principal, access, request) => {
-    const grants = access.assignmentsOf(principal.userId).filter((g) => g.roleId === STORE_COMPUTER_ROLE);
-    if (grants.length === 0) return { ok: true }; // not a store computer — nothing to judge
-    // The stores its store_computer grants NAME — a tenant-wide grant names none (it never stands for "every store").
-    const grantedStores = [...new Set(grants.flatMap((g) => (g.branchScope === 'all' ? [] : g.branchScope)))];
+  /** Every store the request names, and (OB-54 round 12) the OWN store of a held record the route acts on. */
+  const referencesOf = async (tenantId: string, request: Parameters<BoundStoreGuard>[2]): Promise<StoreReference[]> => {
     const references: StoreReference[] = [...classifyReferences(request.routePath, storeReferencesIn(request))];
-    // OB-54 round 12: a route acting on a record head office already holds — the record's OWN store is judged too.
     const recordParam = RECORD_STORE_PARAM[request.routePath];
     const recordId = recordParam === undefined ? undefined : request.params[recordParam];
     if (recordParam !== undefined && recordId !== undefined && recordId !== '') {
-      const held = (await paymentExceptionsAdapter(input).exceptions(principal.tenantId)).find((e) => e.attemptId === recordId);
-      // A held record that names no store cannot be shown to be this box's: judged as an unplaceable store code.
+      const payments = paymentExceptionsAdapter(input);
+      // Round 13 (verifier P5): head office "holds" an attempt when it has an exception for it OR a late answer for it — a
+      // caller acts only on attempts head office holds for its own store.
+      const held = (await payments.exceptions(tenantId)).find((e) => e.attemptId === recordId)
+        ?? (await payments.lateAnswers(tenantId)).find((a) => a.attemptId === recordId);
+      // A held record that names no store cannot be shown to be this caller's: judged as an unplaceable store code.
       if (held !== undefined) references.push({ field: `record.${recordParam}`, value: held.storeId, names: 'store' });
     }
+    return references;
+  };
+  /**
+   * Round 13 (verifier D1 · PA-01): a PERSON holding a relay permission (a store manager's `till.dayclose.sync`, a
+   * cashier's sync grants) relays only for the branches their grants give them for that permission — the stores the
+   * request names AND the held record's own store. Refused by name; nothing is recorded. Company-wide callers and every
+   * non-relay route are untouched (their handlers apply PA-01 themselves).
+   */
+  const judgePerson = async (principal: Parameters<BoundStoreGuard>[0], access: Parameters<BoundStoreGuard>[1], request: Parameters<BoundStoreGuard>[2]): Promise<BoundStoreVerdict> => {
+    if (!isRelayWrite(request.method, request.routePath)) return { ok: true };
+    const scope = access.branchScopeOf(principal.userId, request.permission);
+    if (scope === 'all') return { ok: true };
+    const references = await referencesOf(principal.tenantId, request);
+    if (references.length === 0) return { ok: true };
+    const verdict = judgePersonRelay({ scope, references, ...(await storeOfLocationResolver(input, principal.tenantId)) });
+    if (verdict.ok) return { ok: true };
+    return {
+      ok: false, code: 'outside_your_branch_scope',
+      why: `This account's authority to relay (${request.permission}) does not reach branch "${verdict.namedStore}" (named at ${verdict.field}). A person relays only for the branches their own role covers.`,
+      nextSafeAction: 'Relay it from that store (its own computer or a person whose role covers that branch). Nothing was recorded.',
+    };
+  };
+  return async (principal, access, request) => {
+    const grants = access.assignmentsOf(principal.userId).filter((g) => g.roleId === STORE_COMPUTER_ROLE);
+    if (grants.length === 0) return judgePerson(principal, access, request); // a person: PA-01 on relay writes only
+    // The stores its store_computer grants NAME — a tenant-wide grant names none (it never stands for "every store").
+    const grantedStores = [...new Set(grants.flatMap((g) => (g.branchScope === 'all' ? [] : g.branchScope)))];
+    const references = await referencesOf(principal.tenantId, request);
     const placing = references.length === 0 ? { storeOf: (s: string) => s, knownStores: new Set<string>() } : await storeOfLocationResolver(input, principal.tenantId);
     const verdict = judgeBoxRequest({ credentialStore: principal.branchId, grantedStores, references, ...placing });
     if (verdict.ok) {

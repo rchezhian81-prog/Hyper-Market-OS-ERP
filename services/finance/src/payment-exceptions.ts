@@ -143,6 +143,33 @@ export interface LatePaymentAnswer {
   readonly flags: readonly string[];
 }
 
+/**
+ * Round 13 (verifier D6 · hard rule #10): a second, DIFFERENT late answer for an attempt that already has one — kept and
+ * shown beside the standing answer, never applied and never silently dropped.
+ */
+export interface LateAnswerConflict {
+  readonly attemptId: string;
+  readonly standing: Omit<LatePaymentAnswer, 'flags'>;
+  readonly offered: Omit<LatePaymentAnswer, 'flags'>;
+  /** Who relayed the offered answer (the store computer's credential, or a person's sign-in). */
+  readonly relayedBy: string;
+  /** The fields on which the two answers differ. */
+  readonly differs: readonly string[];
+  readonly at: string;
+}
+
+/** The facts of a late answer that make it THE answer — the same facts again is a re-send; any difference is a conflict. */
+export const LATE_ANSWER_FACTS = ['storeId', 'laneId', 'billRef', 'kind', 'amountMinor', 'askedAt', 'tradingDay', 'outcome', 'answeredBy', 'approvedBy', 'approvalId', 'answeredAt'] as const;
+const factsOf = (a: LatePaymentAnswer): Omit<LatePaymentAnswer, 'flags'> => {
+  const { flags: _flags, ...facts } = a;
+  void _flags;
+  return facts;
+};
+/** Pure: the fields on which two late answers for one attempt differ ([] — the same answer). */
+export function lateAnswerDifferences(standing: LatePaymentAnswer, offered: LatePaymentAnswer): readonly string[] {
+  return LATE_ANSWER_FACTS.filter((k) => standing[k] !== offered[k]);
+}
+
 export interface PaymentExceptionDeps {
   /** Every payment with no final answer head office holds — one per attempt, raised (OB-69) or carried (OB-55). */
   readonly exceptions: (tenantId: string) => Promise<readonly PaymentException[]>;
@@ -159,7 +186,12 @@ export interface PaymentExceptionDeps {
   readonly recordResolution: (tenantId: string, r: PaymentExceptionResolution) => Promise<boolean | void>;
   readonly recordConflict: (tenantId: string, c: PaymentExceptionConflict) => Promise<void>;
   readonly lateAnswers: (tenantId: string) => Promise<readonly LatePaymentAnswer[]>;
-  readonly recordLateAnswer: (tenantId: string, a: LatePaymentAnswer) => Promise<void>;
+  /** Records the ONE late answer of an attempt (keyed on it). Answers the late answer that STANDS — this one, or an earlier
+   *  or concurrent one this write collapsed onto (`void` on a bare stub: taken as this one). */
+  readonly recordLateAnswer: (tenantId: string, a: LatePaymentAnswer) => Promise<void | LatePaymentAnswer>;
+  /** Round 13 (hard rule #10): second, different late answers — recorded and shown, never applied. */
+  readonly lateAnswerConflicts?: (tenantId: string) => Promise<readonly LateAnswerConflict[]>;
+  readonly recordLateAnswerConflict?: (tenantId: string, c: LateAnswerConflict) => Promise<void>;
   /** The permissions a person holds now (undefined: no grant at all) — to re-check a late answer's approver. */
   readonly permissionsOf?: (tenantId: string, userId: string) => Promise<readonly string[] | undefined>;
   readonly now: () => string;
@@ -169,7 +201,7 @@ export interface PaymentExceptionDeps {
 export const LATE_ANSWER_AUTHORITY = 'pos.return.approve';
 
 /** The list as finance and the owner read it: every exception with its state, and the open amounts by kind and day. */
-export function paymentExceptionList(exceptions: readonly PaymentException[], resolutions: readonly PaymentExceptionResolution[], conflicts: readonly PaymentExceptionConflict[], lateAnswers: readonly LatePaymentAnswer[] = []) {
+export function paymentExceptionList(exceptions: readonly PaymentException[], resolutions: readonly PaymentExceptionResolution[], conflicts: readonly PaymentExceptionConflict[], lateAnswers: readonly LatePaymentAnswer[] = [], lateAnswerConflicts: readonly LateAnswerConflict[] = []) {
   const resolvedBy = new Map<string, PaymentExceptionResolution>();
   for (const r of resolutions) if (!resolvedBy.has(r.attemptId)) resolvedBy.set(r.attemptId, r);
   const rows = exceptions.map((e) => {
@@ -180,6 +212,7 @@ export function paymentExceptionList(exceptions: readonly PaymentException[], re
       resolution: r ?? null,
       conflicts: conflicts.filter((c) => c.attemptId === e.attemptId),
       lateAnswer: lateAnswers.find((a) => a.attemptId === e.attemptId) ?? null,
+      lateAnswerConflicts: lateAnswerConflicts.filter((c) => c.attemptId === e.attemptId),
     };
   }).sort((a, b) => (a.tradingDay === b.tradingDay ? a.attemptId.localeCompare(b.attemptId) : a.tradingDay.localeCompare(b.tradingDay)));
   const open = rows.filter((r) => r.state === 'open');
@@ -189,9 +222,11 @@ export function paymentExceptionList(exceptions: readonly PaymentException[], re
     open: open.length,
     openMinor: { card: sumOf(open, 'card'), upi: sumOf(open, 'upi') },
     owedToCustomersMinor: rows.reduce((n, r) => n + (r.resolution?.owedToCustomerMinor ?? 0), 0),
-    flagged: rows.filter((r) => r.governanceFlags.length > 0 || r.conflicts.length > 0).map((r) => r.attemptId),
+    flagged: rows.filter((r) => r.governanceFlags.length > 0 || r.conflicts.length > 0 || r.lateAnswerConflicts.length > 0).map((r) => r.attemptId),
     // PF-06: every machine answer typed in late on a manager's approval — shown, with any doubt about the approver.
     lateAnswers,
+    // Round 13 (hard rule #10): every second, DIFFERENT late answer — shown beside the one that stands, never applied.
+    lateAnswerConflicts,
   };
 }
 
@@ -257,8 +292,8 @@ export function paymentExceptionRoutes(deps: PaymentExceptionDeps): readonly Rou
       api: 'API-09', method: 'GET', path: '/v1/finance/payment-exceptions',
       permission: 'finance.period.read',
       handler: async (ctx) => {
-        const [e, r, c, la] = await Promise.all([deps.exceptions(ctx.tenantId), deps.resolutions(ctx.tenantId), deps.conflicts(ctx.tenantId), deps.lateAnswers(ctx.tenantId)]);
-        return { status: 200, body: { ...paymentExceptionList(e, r, c, la), asAt: deps.now() } };
+        const [e, r, c, la, lc] = await Promise.all([deps.exceptions(ctx.tenantId), deps.resolutions(ctx.tenantId), deps.conflicts(ctx.tenantId), deps.lateAnswers(ctx.tenantId), deps.lateAnswerConflicts?.(ctx.tenantId) ?? Promise.resolve([])]);
+        return { status: 200, body: { ...paymentExceptionList(e, r, c, la, lc), asAt: deps.now() } };
       },
     },
     {
@@ -337,8 +372,25 @@ export function paymentExceptionRoutes(deps: PaymentExceptionDeps): readonly Rou
             nextSafeAction: 'Nothing was recorded. Raise it with the store.',
           });
         }
+        const offeredFacts: LatePaymentAnswer = {
+          attemptId, storeId: b['storeId'] as string, laneId: b['laneId'] as string, billRef: b['billRef'] as string, kind: b['kind'] as 'card' | 'upi',
+          amountMinor: b['amountMinor'] as number, askedAt: b['askedAt'] as string, tradingDay: b['tradingDay'] as string, outcome: b['outcome'] as 'approved' | 'declined',
+          answeredBy: b['answeredBy'] as string, approvedBy: b['approvedBy'] as string, approvalId: b['approvalId'] as string, answeredAt: b['answeredAt'] as string, flags: [],
+        };
+        /** Round 13 (verifier D6 · hard rule #10): the same answer again is a re-send; a DIFFERENT one is a visible conflict. */
+        const against = async (standing: LatePaymentAnswer) => {
+          const differs = lateAnswerDifferences(standing, offeredFacts);
+          if (differs.length === 0) return { status: 200, body: { attemptId, recorded: true, alreadyRecorded: true, flags: standing.flags } };
+          await deps.recordLateAnswerConflict?.(ctx.tenantId, { attemptId, standing: factsOf(standing), offered: factsOf(offeredFacts), relayedBy: ctx.userId, differs, at: deps.now() });
+          throw apiError(409, {
+            code: 'late_answer_conflicts',
+            whatHappened: `Payment ${attemptId} already has a late answer on record (${standing.outcome}, store ${standing.storeId}, typed by ${standing.answeredBy} at ${standing.answeredAt}); this one differs in ${differs.join(', ')}. The first answer stands and this one is recorded as a conflict on the exception list.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Finance compares the two answers with the store and the provider. Nothing was changed.',
+          });
+        };
         const existing = (await deps.lateAnswers(ctx.tenantId)).find((a) => a.attemptId === attemptId);
-        if (existing !== undefined) return { status: 200, body: { attemptId, recorded: true, alreadyRecorded: true, flags: existing.flags } };
+        if (existing !== undefined) return against(existing);
         const flags: string[] = [];
         if (b['approvedBy'] === b['answeredBy']) flags.push('approved_by_the_person_who_answered');
         else if (deps.permissionsOf !== undefined) {
@@ -351,7 +403,10 @@ export function paymentExceptionRoutes(deps: PaymentExceptionDeps): readonly Rou
           amountMinor: b['amountMinor'] as number, askedAt: b['askedAt'] as string, tradingDay: b['tradingDay'] as string, outcome: b['outcome'] as 'approved' | 'declined',
           answeredBy: b['answeredBy'] as string, approvedBy: b['approvedBy'] as string, approvalId: b['approvalId'] as string, answeredAt: b['answeredAt'] as string, flags,
         };
-        await deps.recordLateAnswer(ctx.tenantId, rec);
+        const standing = await deps.recordLateAnswer(ctx.tenantId, rec);
+        // Two answers that both passed the check above meet on the attempt's key: the one that did not land is judged
+        // against the one that did — the same is a re-send, a different one a visible conflict (never dropped).
+        if (standing !== undefined && standing !== null && lateAnswerDifferences(standing, rec).length > 0) return against(standing);
         return { status: 202, body: { attemptId, recorded: true, flags } };
       },
     },

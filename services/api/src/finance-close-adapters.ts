@@ -8,7 +8,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { makeEvent } from '../../../packages/contracts/src/event';
 import type { EventStore } from '../../../packages/persistence/src/event-store';
 import type { DayCloseRecord, CarriedPaymentIn } from '../../pos/src/day-close';
-import type { PaymentException, PaymentExceptionResolution, PaymentExceptionConflict, PaymentExceptionDeps, LatePaymentAnswer, RaisedNoAnswer } from '../../finance/src/payment-exceptions';
+import type { PaymentException, PaymentExceptionResolution, PaymentExceptionConflict, PaymentExceptionDeps, LatePaymentAnswer, LateAnswerConflict, RaisedNoAnswer } from '../../finance/src/payment-exceptions';
 import { mergeRaisedAndCarried } from '../../finance/src/payment-exceptions';
 import { STREAM, streamName, permissionsHeldBy, productMasterAdapter, periodBooksAdapter, stockLossAdapter, storeOfLocationResolver, averageBuyingCosts, unappliedHeldWriteOffs } from './adapters';
 import { project, ownershipOf, EFFECT_ON_HAND, type Movement } from '../../inventory/src/index';
@@ -85,9 +85,21 @@ export function paymentExceptionsAdapter(input: { readonly store: EventStore; re
       return (await all<LatePaymentAnswer>(input.store, tenantId, paymentExceptionsStream(), 'PaymentLateAnswerRecorded')).filter((a) => (seen.has(a.attemptId) ? false : (seen.add(a.attemptId), true)));
     },
     recordLateAnswer: async (tenantId, a) => {
-      await input.store.append(tenantId, paymentExceptionsStream(), makeEvent({
-        id: `payment-late-answer-${digest(a.attemptId)}`, type: 'PaymentLateAnswerRecorded', occurredAt: a.answeredAt,
+      const res = await input.store.append(tenantId, paymentExceptionsStream(), makeEvent({
+        // Round 13: the id is unique per write, so two answers racing meet on the KEY (one lands, the other collapses and is
+        // judged against it) — never on the ledger's id constraint.
+        id: `payment-late-answer-${digest(a.attemptId)}-${randomUUID()}`, type: 'PaymentLateAnswerRecorded', occurredAt: a.answeredAt,
         idempotencyKey: `payment-late-answer-${tenantId}-${a.attemptId}`, source: 'api/finance', payload: a,
+      }));
+      return res.record.event.payload as LatePaymentAnswer;
+    },
+    lateAnswerConflicts: (tenantId) => all<LateAnswerConflict>(input.store, tenantId, paymentExceptionsStream(), 'PaymentLateAnswerConflict'),
+    recordLateAnswerConflict: async (tenantId, c) => {
+      const d = digest(`${c.attemptId}|${JSON.stringify(c.offered)}`);
+      await input.store.append(tenantId, paymentExceptionsStream(), makeEvent({
+        // One record per distinct offered answer: the same conflicting answer re-sent collapses on its key.
+        id: `payment-late-answer-conflict-${d}-${randomUUID()}`, type: 'PaymentLateAnswerConflict', occurredAt: c.at,
+        idempotencyKey: `payment-late-answer-conflict-${tenantId}-${d}`, source: 'api/finance', payload: c,
       }));
     },
     permissionsOf: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),

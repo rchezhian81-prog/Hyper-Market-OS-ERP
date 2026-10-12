@@ -204,6 +204,42 @@ export const RECORD_STORE_PARAM: Readonly<Record<string, string>> = Object.freez
 
 const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH']);
 
+/**
+ * Round 13 (verifier D1 · PA-01 · OB-54): a RELAY write — a `/synced` route, or a route a store computer's records are
+ * placed or judged by (`STORE_STAMP_FIELD`, `RECORD_STORE_PARAM`). A PERSON who holds the relay permission (a manager or
+ * a cashier signing in at a till) acts here only within their own server-derived branch scope, like any branch write.
+ */
+export function isRelayWrite(method: string, routePath: string): boolean {
+  if (!WRITE_METHODS.has(method)) return false;
+  return routePath.endsWith('/synced') || STORE_STAMP_FIELD[routePath] !== undefined || RECORD_STORE_PARAM[routePath] !== undefined;
+}
+
+/** A person's relay verdict: the first store reference outside their scope, or ok. */
+export type PersonRelayVerdict = { readonly ok: true } | { readonly ok: false; readonly field: string; readonly namedStore: string };
+
+/**
+ * Round 13 (verifier D1 · PA-01): judge a PERSON's relay write against the branches their grants give them for the
+ * route's permission (`scope`, the server's answer — never the request's). Every store the request names (path, query,
+ * body at any depth) AND the store of the record it acts on (`record.<param>`) must be one of them; a location is placed in
+ * its store first. A shelf or bin code that places in no known store is the route's own business (as for a store
+ * computer). A company-wide caller ('all') is not limited.
+ */
+export function judgePersonRelay(input: {
+  readonly scope: readonly string[] | 'all'; readonly references: readonly StoreReference[];
+  readonly storeOf: (locationOrStore: string) => string; readonly knownStores: ReadonlySet<string>;
+}): PersonRelayVerdict {
+  if (input.scope === 'all') return { ok: true };
+  const held = new Set(input.scope);
+  for (const r of input.references) {
+    if (held.has(r.value)) continue;
+    const store = input.storeOf(r.value);
+    if (held.has(store)) continue;
+    if (r.names === 'location' && !input.knownStores.has(store)) continue;
+    return { ok: false, field: r.field, namedStore: store };
+  }
+  return { ok: true };
+}
+
 /** What head office does with a store computer's accepted write. */
 export type StoreStamp =
   | { readonly kind: 'none' }
