@@ -123,6 +123,12 @@ export interface StockPeriodDeps extends Pick<FinanceDeps, 'periodStates' | 'app
   readonly valuation: (tenantId: string, period: string) => Promise<StockValuation>;
   /** Valued count differences, write-offs and shortfalls of the month or earlier that the books do not hold yet. */
   readonly outstandingStockPostings: (tenantId: string, period: string) => Promise<readonly string[]>;
+  /**
+   * The months BEFORE this one in which the shop's own stock moved (YYYY-MM, oldest first). Absent on a bare stub (no order
+   * check). Each needs its own adjustment first: "stock in the books before" is last month's closing stock, so a month
+   * adjusted while an earlier one is not would leave that month's purchases in goods received and the books' stock adrift.
+   */
+  readonly monthsWithStockActivityBefore?: (tenantId: string, period: string) => Promise<readonly string[]>;
 }
 
 const PERIOD = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -173,6 +179,19 @@ export function stockPeriodRoutes(deps: StockPeriodDeps): readonly Route[] {
             wasItSaved: 'not_saved',
             nextSafeAction: `Reopen ${period} with a second person's approval if its stock must be adjusted, then post it. Nothing was posted.`,
           });
+        }
+        // Months post in order (OB-56): an earlier month with stock activity and no adjustment is named, and this one waits.
+        if (deps.monthsWithStockActivityBefore !== undefined) {
+          const adjusted = new Set((await deps.journals(t)).filter((j) => 'stockPeriod' in j).map((j) => j.entryId));
+          const missing = (await deps.monthsWithStockActivityBefore(t, period)).filter((m) => m < period && !adjusted.has(stockPeriodEntryId(m)));
+          if (missing.length > 0) {
+            throw apiError(409, {
+              code: 'earlier_month_not_adjusted',
+              whatHappened: `${missing.join(', ')} had stock movements but no month-end stock adjustment. ${period}'s adjustment starts from the stock the books held at the end of ${missing[missing.length - 1]}, so it cannot be posted before ${missing.length === 1 ? 'that month\'s' : 'theirs'}.`,
+              wasItSaved: 'not_saved',
+              nextSafeAction: `Post the stock adjustment for ${missing[0]} first (reopen it with a second person's approval if it is closed), then the months after it in order. Nothing was posted.`,
+            });
+          }
         }
         const map = await deps.postingMap(t);
         const accounts = stockPeriodAccounts(map);

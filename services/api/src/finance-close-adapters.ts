@@ -219,6 +219,16 @@ export function stockPeriodAdapter(input: { readonly store: EventStore; readonly
     postingMap: pb.postingMap, journals: pb.journals,
     valuation: (tenantId, period) => stockValuationFor(input, tenantId, period),
     outstandingStockPostings: (tenantId, period) => outstandingStockPostingsFor(input, tenantId, period),
+    // The months before this one in which the shop's OWN stock moved — each needs its adjustment first (months in order).
+    monthsWithStockActivityBefore: async (tenantId, period) => {
+      const months = new Set<string>();
+      for (const e of await input.store.readStream(tenantId, STREAM.inventory, { type: 'InventoryMoved' })) {
+        const m = e.event.payload as Movement;
+        const month = m.occurredAt.slice(0, 7);
+        if (month < period && ownershipOf(m) === 'own') months.add(month);
+      }
+      return [...months].sort();
+    },
   };
 }
 
