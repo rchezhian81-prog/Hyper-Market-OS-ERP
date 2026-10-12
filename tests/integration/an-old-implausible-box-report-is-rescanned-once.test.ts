@@ -176,7 +176,7 @@ describe.skipIf(DATABASE_URL === undefined)('verifier r21: the store pack still 
           observedAt: new Date(Date.now() - (80 - i) * 1_000).toISOString(), disk: { freeBytes: 5e9, totalBytes: 1e10, salesLogUsedBytes: 1000 + i, salesLogCapacityBytes: 1e7, reserveBytes: 1e6 },
           queue: { unsent: 0, deadLettered: 0 }, tills: [], receiptNumbersIssued: [{ prefix: P, through: 5 + (i % 3), soldThrough: 0, unsent: { count: 0 } }],
         }, S1);
-        expect(r.status).toBe(200);
+        expect(r.status, `report ${i}: ${JSON.stringify(r.body).slice(0, 600)}`).toBe(200);
       }
       for (let k = 0; k < 2; k += 1) {
         const pack = await send('GET', `/v1/store-packs/${S1}`, OWNER);
