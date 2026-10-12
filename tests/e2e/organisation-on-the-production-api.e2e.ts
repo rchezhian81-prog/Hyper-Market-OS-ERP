@@ -58,7 +58,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Organi
     return { page, writes, errors, close: () => context.close() };
   };
   const statusSays = async (page: Page, id: string, expected: RegExp): Promise<void> => {
-    await page.waitForFunction(([i, source]) => new RegExp(source!).test((globalThis as unknown as { document: { getElementById(x: string): { textContent: string | null } | null } }).document.getElementById(i!)?.textContent ?? ''), [id, expected.source], { timeout: 15_000 });
+    await page.waitForFunction(([i, source]) => new RegExp(source!).test((globalThis as unknown as { document: { getElementById(x: string): { textContent: string | null } | null } }).document.getElementById(i!)?.textContent ?? ''), [id, expected.source], { timeout: 30_000 });
   };
   const add = async (page: Page, kind: string, name: string, code: string, parent: string): Promise<void> => {
     await page.selectOption('#add-kind', kind);

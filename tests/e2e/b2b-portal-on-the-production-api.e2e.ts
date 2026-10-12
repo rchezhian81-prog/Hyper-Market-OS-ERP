@@ -24,7 +24,7 @@ import { startInboxShop, ok, OWNER, type InboxShop } from './lib/ai-inbox-shop';
  * OB-76 "A" (owner, 12 Oct 2026, "Staff invite + 2nd approves"): the two portal logins are now given through the governed
  * path — the owner (who manages business-customer accounts) INVITES each login bound to its account, and the accountant (a
  * DIFFERENT person who also manages them) APPROVES it (`/v1/identity/outside-logins/b2b-accounts/…`); both names stay on
- * the record and on the `RoleGranted`. The generic grant route still refuses `b2b_customer` (`escalates_beyond_the_approver`)
+ * the record and on the `RoleGranted`. The generic grant route still refuses `b2b_customer` (`outside_party_login_holds_only_its_role`, round 14 G5)
  * — the rule is unchanged for every staff role; the outside-party flow is its named, narrow exception. Before, this seed
  * had to lay the logins down as an operator's ledger write because no governed path existed.
  *
@@ -61,7 +61,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the B2B po
         // The portal logins: each a named person with the business-customer role, bound to its own account through the
         // governed path (OB-76) — invited by the owner, approved by a DIFFERENT person who also manages B2B accounts.
         // The generic grant route still refuses it: no approver holds b2b.portal.self, and that rule is unchanged.
-        await expect(cloud.grant(CATERER, 'b2b_customer')).rejects.toThrow(/escalates_beyond_the_approver/);
+        await expect(cloud.grant(CATERER, 'b2b_customer')).rejects.toThrow(/outside_party_login_holds_only_its_role/);
         await cloud.grant(ACCOUNTANT, 'accountant');
         await as('/v1/b2b/accounts/CANTEEN', { creditLimitMinor: 100_000 }, 'acc-can');
         for (const [account, userId, displayName, grants] of [
