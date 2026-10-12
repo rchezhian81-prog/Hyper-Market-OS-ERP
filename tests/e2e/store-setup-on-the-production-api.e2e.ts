@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startInboxShop, OWNER, type InboxShop } from './lib/ai-inbox-shop';
+import { SETUP_CATALOGUE, setupItem } from '../../packages/tenant/src/index';
 
 /**
  * **Store setup (configuration), in a real browser, on the PRODUCTION API over real PostgreSQL (M01-FR-02/03 · EA-10's
@@ -150,4 +151,198 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('store setu
       expect(await field(page).count()).toBe(0);
     } finally { await close(); }
   }, 60_000);
+});
+
+/**
+ * **Every setting the setup screen offers, table-driven: the right control, a save head office keeps after a restart,
+ * and a refusal in the engine's own words (EN and TA).**
+ *
+ * Round 13 found that settings added to the catalogue after the screen was built — the three loyalty settings and the
+ * bulk-publish line — had no number editor: they were shown as TEXT, so whatever the owner typed reached the engine as
+ * a string and every save was refused ("Give a whole number…") — the owner could not set loyalty from the screen at
+ * all. The table below must name EVERY catalogue item (a new setting without a row fails the first test), and the
+ * expected control for a number / on-off / list setting is derived from the setting's own default type, not hand-kept.
+ */
+interface Row {
+  /** What the owner types (a string), ticks (true) or picks (select) on the screen. */
+  readonly enter: string | true;
+  /** What head office must then hold. */
+  readonly stored: unknown;
+  /** For a string-typed setting: the control the screen must offer (numbers, on/off and lists derive theirs). */
+  readonly control?: 'time' | 'text' | 'select';
+  /** A value the engine refuses: what is typed, and the value the engine's rule is asked about (for its words). */
+  readonly bad?: { readonly enter: string; readonly value: unknown };
+}
+const TABLE: Readonly<Record<string, Row>> = {
+  'tax.default_bps': { enter: '1800', stored: 1800, bad: { enter: '10001', value: 10001 } },
+  'trading_day.cutoff': { enter: '22:30', stored: '22:30', control: 'time', bad: { enter: '', value: '' } },
+  'locale.time_zone': { enter: 'Asia/Dubai', stored: 'Asia/Dubai', control: 'text', bad: { enter: 'Mars/Olympus', value: 'Mars/Olympus' } },
+  'receipt.paper_format': { enter: 'thermal-58', stored: 'thermal-58', control: 'select' },
+  'locale.languages': { enter: 'en\nta\nhi', stored: ['en', 'ta', 'hi'], bad: { enter: '', value: [] } },
+  'locale.currency': { enter: 'usd', stored: 'USD', control: 'text', bad: { enter: 'US', value: 'US' } },
+  'production.departments': { enter: 'bakery, café', stored: ['bakery', 'café'] },
+  'picking.zone_order': { enter: 'ambient\nsecure\nchilled\nfrozen', stored: ['ambient', 'secure', 'chilled', 'frozen'] },
+  'delivery.radius_km': { enter: '7.5', stored: 7.5, bad: { enter: '-1', value: -1 } },
+  'pos.age_restricted.minimum_age': { enter: '21', stored: 21, bad: { enter: '121', value: 121 } },
+  'pos.licence_hours.enabled': { enter: true, stored: true },
+  'merchandising.shelf_count_stale_after_minutes': { enter: '90', stored: 90, bad: { enter: '0', value: 0 } },
+  'merchandising.shelf_refill_at_bp': { enter: '2500', stored: 2500, bad: { enter: '10001', value: 10001 } },
+  'catalogue.bulk_publish_threshold': { enter: '200', stored: 200, bad: { enter: '0', value: 0 } },
+  'loyalty.points_per_100_inr': { enter: '2', stored: 2, bad: { enter: '101', value: 101 } },
+  'loyalty.point_value_paise': { enter: '25', stored: 25, bad: { enter: '10001', value: 10001 } },
+  'loyalty.till_spend_cap_paise': { enter: '75000', stored: 75_000, bad: { enter: '10000001', value: 10_000_001 } },
+  'platform.box_disk_warn_hours': { enter: '36', stored: 36, bad: { enter: '0', value: 0 } },
+};
+
+/** The control a setting must be edited with: derived from its default's type for numbers, on/off and lists. */
+function expectedControl(key: string): { tag: string; type?: string } {
+  const item = setupItem(key)!;
+  const d = item.setting.defaultValue;
+  if (typeof d === 'number') return { tag: 'input', type: 'number' };
+  if (typeof d === 'boolean') return { tag: 'input', type: 'checkbox' };
+  if (Array.isArray(d)) return { tag: 'textarea' };
+  const c = TABLE[key]!.control!;
+  return c === 'select' ? { tag: 'select' } : { tag: 'input', type: c };
+}
+
+describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('store setup: every setting is editable with the right control and kept by head office (table-driven)', () => {
+  let browser: Browser;
+  let shop: InboxShop;
+  const items = async (who = OWNER): Promise<Item[]> => ((await shop.cloud().request({ method: 'GET', path: '/v1/platform/setup', userId: who })).body as { items: Item[] }).items;
+
+  beforeAll(async () => {
+    execFileSync('node', ['scripts/build-app.mjs', 'web-erp'], { stdio: 'ignore' });
+    shop = await startInboxShop({
+      databaseUrl: DATABASE_URL!, tenantId: randomUUID(), signingKey: SIGN,
+      page: {
+        path: '/setup', html: 'setup.html', dataGlobal: 'setupData',
+        extraData: async (api) => { const s = await api('/v1/platform/setup') as { items?: unknown }; return Array.isArray(s.items) ? { status: s } : {}; },
+      },
+      seed: async () => undefined,
+    });
+    browser = await chromium.launch({ headless: true, executablePath: CHROMIUM });
+  }, 120_000);
+
+  afterAll(async () => {
+    await browser?.close();
+    await shop?.stop();
+  });
+
+  const open = async () => {
+    const context = await browser.newContext();
+    await shop.signIn(context, OWNER);
+    const page = await context.newPage();
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.goto(`${shop.base}/setup`, { waitUntil: 'load' });
+    await page.locator('[id="f-tax.default_bps"]').waitFor({ timeout: 15_000 });
+    return { page, errors, close: () => context.close() };
+  };
+  const text = (page: Page, id: string) => page.evaluate((i) => (globalThis as unknown as { document: { getElementById(x: string): { textContent: string | null } | null } }).document.getElementById(i)?.textContent ?? '', id);
+  const enter = async (page: Page, key: string, value: string | true) => {
+    const f = page.locator(`[id="f-${key}"]`);
+    if (value === true) await f.check();
+    else if (expectedControl(key).tag === 'select') await f.selectOption(value);
+    else await f.fill(value);
+  };
+
+  it('the table names every setting the setup catalogue offers, and the screen shows each with its right control', async () => {
+    expect(Object.keys(TABLE).sort()).toEqual(SETUP_CATALOGUE.map((i) => i.setting.key).sort());
+    expect((await items()).map((i) => i.key).sort()).toEqual(Object.keys(TABLE).sort());
+    const { page, errors, close } = await open();
+    try {
+      for (const key of Object.keys(TABLE)) {
+        const want = expectedControl(key);
+        const got = await page.locator(`[id="f-${key}"]`).evaluate((n) => ({ tag: n.tagName.toLowerCase(), type: (n as unknown as { type?: string }).type }));
+        expect({ key, tag: got.tag, ...(want.type ? { type: got.type } : {}) }).toEqual({ key, ...want });
+        // A number editor is bounded by the catalogue's declared range — the same numbers the engine's rule checks.
+        const range = setupItem(key)!.range;
+        if (typeof setupItem(key)!.setting.defaultValue === 'number') {
+          const attrs = await page.locator(`[id="f-${key}"]`).evaluate((n) => ({ min: n.getAttribute('min'), max: n.getAttribute('max'), step: n.getAttribute('step') }));
+          expect({ key, ...attrs }).toEqual({ key, min: String(range!.min), max: range!.max === undefined ? null : String(range!.max), step: range!.whole ? '1' : 'any' });
+        }
+      }
+      expect(errors).toEqual([]);
+    } finally { await close(); }
+  }, 90_000);
+
+  it('each value the engine refuses is refused on the field in the engine\'s own words (EN and TA), Save stays off, and nothing reaches head office', async () => {
+    const { page, errors, close } = await open();
+    const puts: string[] = [];
+    page.on('request', (r) => { if (r.method() === 'PUT') puts.push(r.url()); });
+    try {
+      for (const [key, row] of Object.entries(TABLE)) {
+        if (row.bad === undefined) continue;
+        const words = setupItem(key)!.validate!(row.bad.value);
+        expect(words, key).not.toBeNull();
+        await enter(page, key, row.bad.enter);
+        expect(await text(page, `m-${key}`), key).toContain(words!);
+        expect(await page.locator(`[id="s-${key}"]`).isDisabled(), key).toBe(true);
+      }
+      // In Tamil the refusal is introduced in Tamil and still quotes the engine's own words.
+      await page.locator('#lang').click();
+      const key = 'loyalty.points_per_100_inr';
+      await enter(page, key, TABLE[key]!.bad!.enter);
+      const said = await text(page, `m-${key}`);
+      expect(said).toMatch(/[஀-௿]/);
+      expect(said).toContain(setupItem(key)!.validate!(TABLE[key]!.bad!.value)!);
+      expect(puts).toEqual([]);
+      expect(errors).toEqual([]);
+    } finally { await close(); }
+    for (const i of await items()) expect({ key: i.key, version: i.version }).toEqual({ key: i.key, version: 0 });
+  }, 120_000);
+
+  it('the owner changes every setting on the screen; head office holds each new value, versioned, and still after a restart', async () => {
+    const { page, errors, close } = await open();
+    try {
+      // Every setting is tried; any the screen will not save is named with what the field said, all at once.
+      const notSaved: string[] = [];
+      for (const [key, row] of Object.entries(TABLE)) {
+        await enter(page, key, row.enter);
+        if (await page.locator(`[id="s-${key}"]`).isDisabled()) { notSaved.push(`${key}: ${await text(page, `m-${key}`)}`); continue; }
+        await page.locator(`[id="s-${key}"]`).click();
+        await page.waitForFunction((k) => /Saved/.test((globalThis as unknown as { document: { getElementById(i: string): { textContent: string | null } | null } }).document.getElementById(`m-${k}`)?.textContent ?? ''), key, { timeout: 15_000 })
+          .catch(async () => { notSaved.push(`${key}: ${await text(page, `m-${key}`)}`); });
+      }
+      expect(notSaved).toEqual([]);
+      expect(errors).toEqual([]);
+    } finally { await close(); }
+    const want = Object.entries(TABLE).map(([key, row]) => ({ key, value: row.stored, version: 1, isDefault: false })).sort((a, b) => a.key.localeCompare(b.key));
+    const held = async () => (await items()).map((i) => ({ key: i.key, value: i.value, version: i.version, isDefault: i.isDefault })).sort((a, b) => a.key.localeCompare(b.key));
+    expect(await held()).toEqual(want);
+    await shop.restart();
+    expect(await held()).toEqual(want);
+    // And the reopened screen shows the kept values in the editors.
+    const again = await open();
+    try {
+      expect(await again.page.locator('[id="f-loyalty.points_per_100_inr"]').inputValue()).toBe('2');
+      expect(await again.page.locator('[id="f-loyalty.till_spend_cap_paise"]').inputValue()).toBe('75000');
+      expect(await again.page.locator('[id="f-pos.licence_hours.enabled"]').isChecked()).toBe(true);
+      expect(again.errors).toEqual([]);
+    } finally { await again.close(); }
+  }, 180_000);
+
+  it('the setup page\'s own script is kept by the worker: with the network cut it still opens and shows what head office last said (round 13)', async () => {
+    // setup.js registered the worker but was missing from its SHELL, so offline the cached page came back without the
+    // script that draws it — an empty frame of "—". The worker now keeps it, like every other back-office view.
+    const context = await browser.newContext();
+    await shop.signIn(context, OWNER);
+    try {
+      const page = await context.newPage();
+      const failed: string[] = [];
+      page.on('requestfailed', (r) => failed.push(new URL(r.url()).pathname));
+      await page.goto(`${shop.base}/setup`, { waitUntil: 'load' });
+      await page.evaluate('navigator.serviceWorker.ready.then(() => true)');
+      await page.waitForFunction('navigator.serviceWorker.controller !== null', undefined, { timeout: 15_000 });
+      expect(await page.evaluate("caches.match('./setup.js').then((r) => r !== undefined)")).toBe(true);
+      await (await context.newCDPSession(page)).send('Network.clearBrowserCache');
+      await context.setOffline(true);
+      await page.reload({ waitUntil: 'load' });
+      expect(await page.evaluate("fetch(location.href, { method: 'POST', cache: 'no-store', body: 'probe' }).then(() => 'reached', () => 'cut')")).toBe('cut');
+      expect(await page.evaluate("typeof window.shellCachedAt === 'string'")).toBe(true);
+      expect(failed.filter((f) => f.endsWith('.js'))).toEqual([]);
+      expect((await page.textContent('#headline-text'))?.trim()).not.toBe('—');
+      expect(await page.locator('[id="f-loyalty.points_per_100_inr"]').getAttribute('type')).toBe('number');
+    } finally { await context.close(); }
+  }, 90_000);
 });
