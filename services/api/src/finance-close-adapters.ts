@@ -11,7 +11,7 @@ import type { DayCloseRecord, CarriedPaymentIn } from '../../pos/src/day-close';
 import type { PaymentException, PaymentExceptionResolution, PaymentExceptionConflict, PaymentExceptionDeps, LatePaymentAnswer, RaisedNoAnswer } from '../../finance/src/payment-exceptions';
 import { mergeRaisedAndCarried } from '../../finance/src/payment-exceptions';
 import { STREAM, streamName, permissionsHeldBy, periodBooksAdapter, stockLossAdapter, storeOfLocationResolver, averageBuyingCosts, unappliedHeldWriteOffs } from './adapters';
-import { project, ownershipOf, type Movement } from '../../inventory/src/index';
+import { project, ownershipOf, EFFECT_ON_HAND, type Movement } from '../../inventory/src/index';
 import { valueAtCost } from '../../../packages/contracts/src/quantity';
 import { stockAdjustmentSources } from '../../finance/src/period-books';
 import { lossSourceId } from '../../finance/src/stock-losses';
@@ -120,12 +120,49 @@ export async function stockValuationFor(input: { readonly store: EventStore; rea
     held.qty += a.onHandMinor;
     onHand.set(key, held);
   }
+  // OB-68 / OB-70: units a production run made with NO cost (an ingredient had neither an average nor a registered cost)
+  // are never priced at the product's average from OTHER runs or receipts. Stock on hand at the month end is taken to be
+  // the LATEST arrivals (first in, first out): walking a product's arrivals at a store newest first, the units of a
+  // not-valued run that are still on hand are split out, unvalued and named by run — the adjustment waits for them.
+  const inflowsOf = new Map<string, Movement[]>();
+  for (const m of movements) {
+    if (EFFECT_ON_HAND[m.kind] <= 0) continue;
+    const key = `${m.productId}\u001f${storeOf(m.locationId)}`;
+    const xs = inflowsOf.get(key) ?? [];
+    xs.push(m);
+    inflowsOf.set(key, xs);
+  }
+  const notValuedRunUnits = (productId: string, storeId: string, qty: number): { units: number; runs: string[] } => {
+    const out = { units: 0, runs: [] as string[] };
+    let left = qty;
+    const newestFirst = [...(inflowsOf.get(`${productId}\u001f${storeId}`) ?? [])].map((m, i) => ({ m, i }))
+      .sort((a, b) => (a.m.occurredAt === b.m.occurredAt ? b.i - a.i : b.m.occurredAt.localeCompare(a.m.occurredAt)));
+    for (const { m } of newestFirst) {
+      if (left <= 0) break;
+      const take = Math.min(m.quantityMinor, left);
+      left -= take;
+      if (m.kind === 'produced' && m.unitCostMinor === undefined) {
+        out.units += take;
+        const run = /^prod-run:(.+):out$/.exec(m.movementId)?.[1] ?? m.movementId;
+        if (!out.runs.includes(run)) out.runs.push(run);
+      }
+    }
+    return out;
+  };
   const closing: ClosingStockLine[] = [...onHand.values()].filter((x) => x.qty !== 0)
     .sort((a, b) => (a.productId === b.productId ? a.storeId.localeCompare(b.storeId) : a.productId.localeCompare(b.productId)))
-    .map((x) => {
+    .flatMap((x): ClosingStockLine[] => {
       const uom = uomOf.get(x.productId) ?? 'ea';
       const unit = avg.costOf(x.productId, x.storeId);
-      return { productId: x.productId, storeId: x.storeId, onHandMinor: x.qty, uom, unitCostMinor: unit ?? null, valueMinor: unit === undefined ? null : valueAtCost(x.qty, uom, { minor: unit }) };
+      const nv = x.qty > 0 ? notValuedRunUnits(x.productId, x.storeId, x.qty) : { units: 0, runs: [] };
+      const named = nv.runs.length === 0 ? {} : { notValuedRuns: nv.runs };
+      if (unit === undefined) return [{ productId: x.productId, storeId: x.storeId, onHandMinor: x.qty, uom, unitCostMinor: null, valueMinor: null, ...named }];
+      if (nv.units === 0) return [{ productId: x.productId, storeId: x.storeId, onHandMinor: x.qty, uom, unitCostMinor: unit, valueMinor: valueAtCost(x.qty, uom, { minor: unit }) }];
+      const valuedQty = x.qty - nv.units;
+      return [
+        ...(valuedQty > 0 ? [{ productId: x.productId, storeId: x.storeId, onHandMinor: valuedQty, uom, unitCostMinor: unit, valueMinor: valueAtCost(valuedQty, uom, { minor: unit }) }] : []),
+        { productId: x.productId, storeId: x.storeId, onHandMinor: nv.units, uom, unitCostMinor: null, valueMinor: null, notValuedRuns: nv.runs },
+      ];
     });
   // The month's purchases: receipts into own stock at their own cost (no cost: the average), less goods sent back to a
   // supplier at the average. Opening-load receipts and their reversals are not purchases.
