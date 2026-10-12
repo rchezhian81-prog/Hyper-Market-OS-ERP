@@ -200,7 +200,8 @@ describe.skipIf(DATABASE_URL === undefined)('the pack high-water on PostgreSQL',
       };
       await trade(0, 900); await same();
       await trade(900, 1_500); await same(); await same();
-      expect(await snapshots.load(T, STREAM.sales, 'receipt-high-water@1:ReceiptNumberIssued')).toBeDefined();
+      // Verifier r19 HW-1: the fenced snapshot (@2) — advanced only to a position every transaction below which has finished.
+      expect(await snapshots.load(T, STREAM.sales, 'receipt-high-water@2:ReceiptNumberIssued')).toBeDefined();
       await trade(1_500, 1_600); await same();
     } finally {
       await pool.end();

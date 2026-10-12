@@ -14723,10 +14723,19 @@ const numberKey = (n: unknown): (readonly [string, number])[] => {
 const HIGH_WATER_LAG = 256;
 const HIGH_WATER_EVERY = 64;
 const HIGH_WATER_PROJECTION = 'receipt-high-water@1';
+/**
+ * Verifier r19 HW-1: with a store that offers a visibility fence (PostgreSQL, memory), the snapshot advances only to a
+ * position every transaction below which has FINISHED — never by a count of events — so a bill whose transaction drew its
+ * position early and committed after hundreds of others is still read when it lands. A fence that has not settled yet is
+ * kept in the snapshot and used once it has. (`@2`: a new state shape; `@1` snapshots are simply not read.)
+ */
+const HIGH_WATER_FENCED = 'receipt-high-water@2';
+interface FencedHighWater { readonly maxima: Record<string, number>; readonly pending?: { readonly seq: number; readonly token: string } }
 async function receiptHighWater(
   store: EventStore, snapshots: SnapshotStore, tenantId: string, stream: string, type: string,
   keysOf: (payload: unknown) => readonly (readonly [string, number])[],
 ): Promise<ReadonlyMap<string, number>> {
+  if (store.positionFence !== undefined && store.fenceSettled !== undefined) return fencedHighWater(store, snapshots, tenantId, stream, type, keysOf);
   const name = `${HIGH_WATER_PROJECTION}:${type}`;
   const prior = await snapshots.load<Record<string, number>>(tenantId, stream, name);
   const base = prior?.result;
@@ -14743,6 +14752,45 @@ async function receiptHighWater(
     await snapshots.save<Record<string, number>>({
       tenantId, stream, projection: name, takenAt: last.event.occurredAt,
       result: { state: Object.fromEntries(snap), watermarkSeq: last.seq, lastEventAt: last.event.occurredAt, eventCount: (base?.eventCount ?? 0) + settled.length },
+    });
+  }
+  for (const e of tail) fold(out, e.event.payload);
+  return out;
+}
+
+async function fencedHighWater(
+  store: EventStore, snapshots: SnapshotStore, tenantId: string, stream: string, type: string,
+  keysOf: (payload: unknown) => readonly (readonly [string, number])[],
+): Promise<ReadonlyMap<string, number>> {
+  const name = `${HIGH_WATER_FENCED}:${type}`;
+  const base = (await snapshots.load<FencedHighWater>(tenantId, stream, name))?.result;
+  const watermark = base?.watermarkSeq ?? 0;
+  const pending = base?.state.pending;
+  // Both checks BEFORE the tail is read, so the read sees everything a settled fence covers.
+  const pendingSettled = pending !== undefined && await store.fenceSettled!(tenantId, pending.token);
+  const fresh = await store.positionFence!(tenantId, stream);
+  const freshSettled = await store.fenceSettled!(tenantId, fresh.token);
+  const tail = [...await store.readStream(tenantId, stream, { sinceSeq: watermark, type })].sort((a, b) => a.seq - b.seq);
+  const fold = (m: Map<string, number>, payload: unknown): void => {
+    for (const [k, c] of keysOf(payload)) if (c > (m.get(k) ?? 0)) m.set(k, c);
+  };
+  const out = new Map<string, number>(Object.entries(base?.state.maxima ?? {}));
+  const advanceTo = Math.max(watermark, freshSettled ? fresh.seq : pendingSettled ? pending.seq : watermark);
+  const settled = tail.filter((e) => e.seq <= advanceTo);
+  // The fence to wait for next: none when the fresh one has settled; the fresh one once the old one is used; else the old one.
+  const nextPending = freshSettled ? undefined : pendingSettled || pending === undefined ? fresh : pending;
+  const pendingChanged = nextPending?.token !== pending?.token || nextPending?.seq !== pending?.seq;
+  if (settled.length >= HIGH_WATER_EVERY || (pendingChanged && tail.length >= HIGH_WATER_EVERY)) {
+    const snap = new Map<string, number>(Object.entries(base?.state.maxima ?? {}));
+    for (const e of settled) fold(snap, e.event.payload);
+    const last = settled[settled.length - 1];
+    await snapshots.save<FencedHighWater>({
+      tenantId, stream, projection: name, takenAt: last?.event.occurredAt ?? base?.lastEventAt ?? new Date(0).toISOString(),
+      result: {
+        state: { maxima: Object.fromEntries(snap), ...(nextPending === undefined ? {} : { pending: nextPending }) },
+        watermarkSeq: last?.seq ?? watermark, lastEventAt: last?.event.occurredAt ?? base?.lastEventAt ?? null,
+        eventCount: (base?.eventCount ?? 0) + settled.length,
+      },
     });
   }
   for (const e of tail) fold(out, e.event.payload);
