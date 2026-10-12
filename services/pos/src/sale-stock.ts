@@ -6,8 +6,8 @@
 // `tests/integration/sale-reduces-stock.test.ts`.
 //
 // Nothing here can refuse a sale (hard rule #1): a line that cannot become a movement is skipped and the
-// sale still banks; a location that cannot be derived is taken from the lane and SAID SO on the movement
-// (P-08) — the shelf that has gone negative at a lane is then a visible exception, never a silent one.
+// sale still banks; a location that cannot be derived is the lane's own UNPLACED location, SAID SO on the
+// movement (P-08) — a visible exception at no store, never a silent one (round 14: never the lane id itself).
 
 import type { Movement } from '../../inventory/src/index';
 import type { IncomingSale } from './sale-intake';
@@ -15,24 +15,40 @@ import type { IncomingSale } from './sale-intake';
 /** Where the sale's stock leaves from, and how that was decided — stated, never inferred later. */
 export interface SaleStockLocation {
   readonly locationId: string;
-  readonly basis: 'declared_by_lane' | 'store_of_pack' | 'assumed_from_lane';
+  /**
+   * `unplaced` (round 14, verifier G2): nothing placed the sale in a store — the stock is held at the lane's own UNPLACED
+   * location (`unplacedLaneLocation`), which can never be mistaken for a store or a shelf, and the movement SAYS so.
+   */
+  readonly basis: 'declared_by_lane' | 'store_of_lane' | 'store_of_pack' | 'unplaced';
 }
 
 /**
- * The location a sale draws stock from, in order of authority:
- *   1. the lane declared it (`sale.locationId`) — the lane knows where it stands;
- *   2. the store the sale's catalogue pack was published for — the sale was priced from that store;
- *   3. the lane itself — a stated assumption, so a single-site store with neither of the above still
- *      records the movement, and the negative on-hand it produces at the lane is a visible exception.
+ * Round 14 (verifier G2): the holding location of a sale nothing places. Never the lane id itself — a lane id is free
+ * text the till sends, and a lane called "store-2" must not put a sale's stock at store 2.
  */
-export function resolveSaleStockLocation(sale: IncomingSale, packStoreId: string | undefined): SaleStockLocation {
+export function unplacedLaneLocation(laneId: string): string {
+  return `unplaced-lane:${laneId}`;
+}
+
+/**
+ * The location a sale draws stock from, in order of authority — deterministic, never a guess:
+ *   1. the lane declared it (`sale.locationId`) — the lane knows where it stands;
+ *   2. the store head office REGISTERED the lane at (the device registry, `laneStoreId`) — round 14;
+ *   3. the store the sale's catalogue pack was published for — the sale was priced from that store;
+ *   4. otherwise the lane's own UNPLACED location (`unplacedLaneLocation`), SAID SO on the movement — the negative
+ *      on-hand it produces there is a visible exception at no store, never a silent one at a store the lane id names.
+ */
+export function resolveSaleStockLocation(sale: IncomingSale, packStoreId: string | undefined, laneStoreId?: string): SaleStockLocation {
   if (typeof sale.locationId === 'string' && sale.locationId.trim() !== '') {
     return { locationId: sale.locationId, basis: 'declared_by_lane' };
+  }
+  if (typeof laneStoreId === 'string' && laneStoreId.trim() !== '') {
+    return { locationId: laneStoreId, basis: 'store_of_lane' };
   }
   if (typeof packStoreId === 'string' && packStoreId.trim() !== '') {
     return { locationId: packStoreId, basis: 'store_of_pack' };
   }
-  return { locationId: sale.laneId, basis: 'assumed_from_lane' };
+  return { locationId: unplacedLaneLocation(sale.laneId), basis: 'unplaced' };
 }
 
 /**
@@ -56,8 +72,8 @@ export function saleStockMovements(sale: IncomingSale, location: SaleStockLocati
       occurredAt: sale.committedAt,
       enteredBy: sale.cashierId,
       ...(typeof line.batchId === 'string' && line.batchId !== '' ? { batchId: line.batchId } : {}),
-      ...(location.basis === 'assumed_from_lane'
-        ? { reason: `stock location assumed from lane ${sale.laneId}: the sale declared none and its pack names no store` }
+      ...(location.basis === 'unplaced'
+        ? { reason: `stock held at lane ${sale.laneId}'s unplaced location: the sale declared no location, the lane is not registered at a store and its pack names none` }
         : {}),
     });
   });
@@ -144,8 +160,8 @@ export function returnStockMovements(ret: ReturnForStock, location: SaleStockLoc
       occurredAt: ret.processedAt,
       enteredBy: ret.processedBy,
       ...(typeof line.batchId === 'string' && line.batchId !== '' ? { batchId: line.batchId } : {}),
-      ...(location.basis === 'assumed_from_lane'
-        ? { reason: `stock location assumed from the original sale's lane (${location.locationId}): the sale declared none and its pack names no store` }
+      ...(location.basis === 'unplaced'
+        ? { reason: `stock returned to the unplaced location ${location.locationId}: nothing placed the original sale in a store` }
         : {}),
     });
   });

@@ -104,7 +104,7 @@ export function storeReferencesIn(input: {
 /** The binding's verdict on one request from a store computer. */
 export type BoxRequestVerdict =
   | { readonly ok: true }
-  | { readonly ok: false; readonly reason: 'credential_names_no_store' | 'credential_store_not_granted' | 'record_names_another_store' | 'record_names_unknown_store'; readonly why: string; readonly field?: string; readonly namedStore?: string };
+  | { readonly ok: false; readonly reason: 'credential_names_no_store' | 'credential_store_not_granted' | 'record_names_another_store' | 'record_names_unknown_store' | 'record_store_unresolved'; readonly why: string; readonly field?: string; readonly namedStore?: string };
 
 /**
  * Judge one request from a caller holding `store_computer` grants (`grantedStores`: the stores those grants name — a
@@ -192,15 +192,76 @@ export const STORE_STAMP_FIELD: Readonly<Record<string, string>> = Object.freeze
 });
 
 /**
- * OB-54 round 12: routes that act on a record head office ALREADY holds, by its path id — the record's own recorded store
- * is judged like a store the request names (`record.<param>`): a box acts only on its own store's records. Route path →
- * the path parameter naming the record.
+ * Round 14 (verifier G1): EVERY relay route whose id names a record head office may already hold — the path parameter
+ * (or, for a sale, the body field) naming it, and the record FAMILY it belongs to (one family is one record whatever
+ * route acts on it: a day close and its reopen, a sale and the returns on it, a delivery route's stops, settlement and
+ * hand-over). Head office judges the store of the record AS IT HOLDS IT exactly like a store the request names
+ * (`record.<param>`) — for a person against their branch scope, for a store computer against its own store — so a caller
+ * can never act on another store's record by naming its id (`services/api/src/relay-record-store.ts` resolves each family).
+ * `tenantWide`: the record belongs to the whole business (the migration cut-over), never to one store.
  */
-export const RECORD_STORE_PARAM: Readonly<Record<string, string>> = Object.freeze({
-  '/v1/finance/payment-exceptions/:attemptId/no-answer/synced': 'attemptId',
-  '/v1/finance/payment-exceptions/:attemptId/late-answer/synced': 'attemptId',
-  '/v1/finance/payment-exceptions/:attemptId/resolved/synced': 'attemptId',
+export interface RelayRecordKey { readonly family: string; readonly param?: string; readonly bodyKey?: string; readonly tenantWide?: true }
+export const RELAY_RECORD_KEY: Readonly<Record<string, RelayRecordKey>> = Object.freeze({
+  '/v1/sales': { family: 'sale', bodyKey: 'saleId' },
+  '/v1/sales/:saleId/returns/synced': { family: 'sale', param: 'saleId' },
+  '/v1/returns/no-receipt/synced': { family: 'no-receipt-return', bodyKey: 'returnId' },
+  '/v1/pos/day-close/:dayCloseId/synced': { family: 'day-close', param: 'dayCloseId' },
+  '/v1/pos/day-close/:dayCloseId/reopen/synced': { family: 'day-close', param: 'dayCloseId' },
+  '/v1/shifts/:shiftId/close/synced': { family: 'shift', param: 'shiftId' },
+  '/v1/tills/:tillId/cash-movements/synced': { family: 'till', param: 'tillId' },
+  '/v1/approvals/decisions/:id/synced': { family: 'approval', param: 'id' },
+  '/v1/finance/payment-exceptions/:attemptId/no-answer/synced': { family: 'payment-attempt', param: 'attemptId' },
+  '/v1/finance/payment-exceptions/:attemptId/late-answer/synced': { family: 'payment-attempt', param: 'attemptId' },
+  '/v1/finance/payment-exceptions/:attemptId/resolved/synced': { family: 'payment-attempt', param: 'attemptId' },
+  '/v1/hr/workforce/tasks/:taskId/complete/synced': { family: 'task', param: 'taskId' },
+  '/v1/hr/workforce/checklists/:checklistId/synced': { family: 'checklist', param: 'checklistId' },
+  '/v1/delivery/routes/:routeId/stops/:stopId/synced': { family: 'delivery-route', param: 'routeId' },
+  '/v1/delivery/routes/:routeId/settled/synced': { family: 'delivery-route', param: 'routeId' },
+  '/v1/delivery/routes/:routeId/handover/synced': { family: 'delivery-route', param: 'routeId' },
+  '/v1/fulfilment/waves/:waveId/lines/:lineId/synced': { family: 'wave', param: 'waveId' },
+  '/v1/fulfilment/waves/:waveId/packed/synced': { family: 'wave', param: 'waveId' },
+  '/v1/inventory/counts/:countId/synced': { family: 'count', param: 'countId' },
+  '/v1/warehouse/movements/:commandId/synced': { family: 'warehouse-command', param: 'commandId' },
+  '/v1/inventory/receiving-scans/:commandId/synced': { family: 'receiving-scan', param: 'commandId' },
+  '/v1/inventory/goods-receipt/:grnId/synced': { family: 'goods-receipt', param: 'grnId' },
+  '/v1/merchandising/shelf-counts/:countId/synced': { family: 'shelf-count', param: 'countId' },
+  '/v1/inventory/adjustment-requests/:requestId/synced': { family: 'adjustment-request', param: 'requestId' },
+  '/v1/floor/indents/:indentId/synced': { family: 'floor-indent', param: 'indentId' },
+  '/v1/floor/indents/:indentId/issues/:issueId/synced': { family: 'floor-indent', param: 'indentId' },
+  '/v1/floor/indents/:indentId/issues/:issueId/receipt/synced': { family: 'floor-indent', param: 'indentId' },
+  '/v1/purchase/invoices/:invoiceId/synced': { family: 'supplier-invoice', param: 'invoiceId' },
+  '/v1/loss-prevention/activity/:activityId/synced': { family: 'till-activity', param: 'activityId' },
+  '/v1/migration/exceptions/:exceptionId/resolution/synced': { family: 'migration-exception', param: 'exceptionId', tenantWide: true },
+  '/v1/migration/control-totals/:totalId/signature/synced': { family: 'migration-total', param: 'totalId', tenantWide: true },
 });
+
+/**
+ * OB-54 round 12 (kept for its readers): routes that act on a record head office ALREADY holds, by its path id — now every
+ * keyed relay route in `RELAY_RECORD_KEY` (round 14). Route path → the path parameter naming the record.
+ */
+export const RECORD_STORE_PARAM: Readonly<Record<string, string>> = Object.freeze(Object.fromEntries(
+  Object.entries(RELAY_RECORD_KEY).flatMap(([route, k]) => (k.param === undefined ? [] : [[route, k.param] as const])),
+));
+
+/**
+ * Round 14 (verifier G2): the first store or location field that is present but NOT a piece of text (a list, a number, an
+ * object). Head office never reads such a value as "no store" — the request is refused as unreadable (400) instead, so a
+ * `locationId: ["store-2"]` can never slip past the judge and be placed by a fallback. `null` reads as absent.
+ */
+export function malformedStoreField(body: unknown): string | undefined {
+  let found: string | undefined;
+  const walk = (v: unknown, at: string, depth: number): void => {
+    if (found !== undefined || depth > 8 || v === null || typeof v !== 'object') return;
+    if (Array.isArray(v)) { v.forEach((x, i) => walk(x, `${at}[${i}]`, depth + 1)); return; }
+    for (const [k, x] of Object.entries(v as Record<string, unknown>)) {
+      const here = at === '' ? k : `${at}.${k}`;
+      if (BODY_STORE_KEYS.has(k) && x !== null && x !== undefined && typeof x !== 'string') { found = `body.${here}`; return; }
+      walk(x, here, depth + 1);
+    }
+  };
+  walk(body, '', 0);
+  return found;
+}
 
 const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH']);
 

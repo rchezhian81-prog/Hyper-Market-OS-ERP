@@ -84,6 +84,8 @@ export interface BoundStoreVerdict extends ChannelVerdict {
   readonly stampedBody?: unknown;
   /** OB-54 round 10: called once the handler has ACCEPTED the request (status < 400) — head office records its stamp. */
   readonly onAccepted?: () => Promise<void> | void;
+  /** Round 14 (verifier G2): the HTTP status of a refusal — 403 unless the request itself is unreadable (400). */
+  readonly status?: 400 | 403;
 }
 export type BoundStoreGuard = (
   principal: Principal, access: AccessControl,
@@ -508,7 +510,7 @@ export async function handle(opts: KernelOptions, request: HttpRequest): Promise
         method: route.method, routePath: route.path, permission: route.permission, params, query: request.query ?? {}, body: request.body,
       });
       if (!bound.ok) {
-        throw apiError(403, {
+        throw apiError(bound.status ?? 403, {
           code: bound.code ?? 'store_computer_not_bound_to_this_store',
           whatHappened: bound.why ?? 'This store computer\'s sign-in is not bound to the store this request is for.',
           wasItSaved: 'not_saved',

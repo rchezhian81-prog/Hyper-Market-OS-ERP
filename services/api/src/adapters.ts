@@ -2404,12 +2404,34 @@ export function cataloguePreviewAdapter(input: {
  * published before the scope was recorded); the sale — and any return against it — then falls back to the
  * lane (`services/pos/src/sale-stock.ts`).
  */
-async function storeOfPack(store: EventStore, tenantId: string, packVersion: number): Promise<string | undefined> {
+export async function storeOfPack(store: EventStore, tenantId: string, packVersion: number): Promise<string | undefined> {
   const byVersion = await store.findByIdempotencyKey(tenantId, `catalogue-${tenantId}-v${packVersion}`);
   const pack = byVersion === undefined
     ? await latest<SignedPack>(store, tenantId, STREAM.catalogue, 'CataloguePublished')
     : (byVersion.event.payload as SignedPack);
   return pack?.snapshot.scope?.storeId;
+}
+
+/**
+ * Round 14 (verifier G2): the store head office REGISTERED a lane (till) at — a registered `pos_lane` device in the device
+ * registry that is not retired. undefined when the lane is not registered (its id is free text the till sends, never read
+ * as a store).
+ */
+export async function storeOfLane(store: EventStore, tenantId: string, laneId: unknown): Promise<string | undefined> {
+  if (typeof laneId !== 'string' || laneId.trim() === '') return undefined;
+  const fleet = projectFleet(tenantId, await allOf<DeviceRegistryEvent>(store, tenantId, streamName(STREAM.platform, 'devices'), 'DeviceRegistryEvent'));
+  const lane = fleet.find((d) => d.deviceId === laneId && d.kind === 'pos_lane' && d.status !== 'retired');
+  return lane === undefined || lane.branchId.trim() === '' ? undefined : lane.branchId;
+}
+
+/**
+ * Where a sale's stock leaves from — the ONE deterministic rule (`resolveSaleStockLocation`: declared → the lane's
+ * registered store → the pack's store → the lane's unplaced location) shared by banking, the FEFO read, returns,
+ * exchanges and head office's judgement of a relayed sale or return (`services/api/src/relay-record-store.ts`).
+ */
+export async function saleStockLocationOf(store: EventStore, tenantId: string, sale: IncomingSale): Promise<SaleStockLocation> {
+  if (typeof sale.locationId === 'string' && sale.locationId.trim() !== '') return resolveSaleStockLocation(sale, undefined);
+  return resolveSaleStockLocation(sale, await storeOfPack(store, tenantId, sale.packVersion), await storeOfLane(store, tenantId, sale.laneId));
 }
 
 /** The batch a banked SALE appends (M08-FR-01, FND-01): the sale, its receipt-number index and one `sold`
@@ -2576,7 +2598,7 @@ export function posAdapter(input: {
     // OB-35 "A": the batches on hand where this sale's stock leaves from (the same location `bankSale` resolves), earliest
     // expiry first — Batch 2's FEFO read over the one batch projection, called once per sale.
     lotsOnHand: async (tenantId, sale) => {
-      const { locationId } = resolveSaleStockLocation(sale, await storeOfPack(input.store, tenantId, sale.packVersion));
+      const { locationId } = await saleStockLocationOf(input.store, tenantId, sale);
       const batches = await inventoryAdapter({ store: input.store, now: input.now }).batches!(tenantId);
       return (productId) => fefoBatchesAt(batches, locationId, productId);
     },
@@ -2616,8 +2638,7 @@ export function posAdapter(input: {
       // published for, else the lane itself (stated on the movement, never silent) — and appended in the
       // SAME batch as the sale, so on-hand, valuation, COGS and near-expiry all fold the sale from the one
       // ledger. Before this, a banked sale never reduced on-hand (hosted-demo finding H-13).
-      const packStoreId = await storeOfPack(input.store, tenantId, sale.packVersion);
-      const movements = saleStockMovements(sale, resolveSaleStockLocation(sale, packStoreId));
+      const movements = saleStockMovements(sale, await saleStockLocationOf(input.store, tenantId, sale));
       // The sale and its receipt-number index are ONE atomic batch (audit FND-01): a crash between
       // them must never leave a banked sale with no receipt index, nor an index pointing at a sale
       // that did not commit. Both carry their own idempotency key, so a till resending the sale
@@ -3206,7 +3227,7 @@ export function returnsAdapter(input: {
       // return still records, and the desk's own finding says the sale was never seen.
       const original = await input.store.findByIdempotencyKey(tenantId, `sale-${tenantId}-${saleId}`);
       const originalSale = original === undefined ? undefined : (original.event.payload as IncomingSale);
-      const location = originalSale === undefined ? undefined : resolveSaleStockLocation(originalSale, await storeOfPack(input.store, tenantId, originalSale.packVersion));
+      const location = originalSale === undefined ? undefined : await saleStockLocationOf(input.store, tenantId, originalSale);
       const stockMovements = location === undefined ? [] : returnStockMovements(record, location);
       // A desk refund's approval (ADR-0022) is spent in this SAME batch, under the sale's guard: one approval, one refund.
       await input.store.appendBatch(
@@ -3452,9 +3473,9 @@ export function exchangesAdapter(input: {
       // Returned units go back to the location the ORIGINAL sale drew from (the same rule as a plain return);
       // the replacement leaves from the location it declares (the route defaults it to the original's).
       const original = await bankedSale(tenantId, originalSaleId);
-      const returnedAt = original === undefined ? undefined : resolveSaleStockLocation(original, await storeOfPack(input.store, tenantId, original.packVersion));
+      const returnedAt = original === undefined ? undefined : await saleStockLocationOf(input.store, tenantId, original);
       const returnedMovements = returnedAt === undefined ? [] : returnStockMovements(record, returnedAt);
-      const soldMovements = saleStockMovements(replacement, resolveSaleStockLocation(replacement, await storeOfPack(input.store, tenantId, replacement.packVersion)));
+      const soldMovements = saleStockMovements(replacement, await saleStockLocationOf(input.store, tenantId, replacement));
       // Under the bill's refund guard (Wave 2a), with the approval it spends (ADR-0022), in ONE batch.
       await input.store.appendBatch(tenantId, [
         ...returnBatchEvents(tenantId, originalSaleId, record, storeCredit, returnedMovements, returnedAt),
@@ -13681,6 +13702,12 @@ export interface StoreComputerRefusal {
   readonly method: string;
   readonly path: string;
   readonly at: string;
+  /**
+   * Round 14: who was refused — a store computer, or a PERSON relaying outside their branches (`outside_your_branch_scope`,
+   * `relay_names_no_store`, `record_store_unresolved`, `store_field_not_readable`). Absent on refusals kept before round 14
+   * (all store computers').
+   */
+  readonly by?: 'store_computer' | 'person';
 }
 export function storeComputerRefusalsAdapter(input: { readonly store: EventStore }): {
   record: (tenantId: string, r: StoreComputerRefusal) => Promise<void>;

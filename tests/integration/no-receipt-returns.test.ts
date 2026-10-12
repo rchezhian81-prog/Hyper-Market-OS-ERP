@@ -128,8 +128,9 @@ describe('controlled no-receipt returns (M13-FR-01) — real API, real RBAC, app
     const exc = (await exceptions(h, 'u-owner')).body as { count: number; exceptions: { returnId: string; originalSaleId: string | null; noReceipt?: boolean; governanceFlags: string[] }[] };
     expect(exc.count).toBe(1);
     expect(exc.exceptions[0]).toMatchObject({ returnId: 'NR-L1', originalSaleId: null, noReceipt: true, governanceFlags: ['given_without_approval', 'no_receipt_over_cap'] });
-    // Its resold unit re-entered at the lane (assumed, stated on the movement) — the shelf is not silently short.
-    expect((await availability(h, 'P1')).find((r) => r.locationId === 'lane-1')?.onHandMinor).toBe(1);
+    // Its resold unit re-entered at the lane's UNPLACED location (stated on the movement; round 14 never reads the free-text
+    // lane id as a place) — the shelf is not silently short.
+    expect((await availability(h, 'P1')).find((r) => r.locationId === 'unplaced-lane:lane-1')?.onHandMinor).toBe(1);
 
     // Once the owner sets the cap, a clean lane return reconciles with no flags.
     await setCap(h, 'u-owner', 100000, 'cap-1');

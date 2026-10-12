@@ -29,7 +29,7 @@ import type { RefundStatus } from '../../../packages/returns/src/returns';
 import { issueRefundCredit } from '../../../packages/loyalty/src/stored-value';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import type { ReturnRecord, StoreCreditIssue } from './returns';
-import type { SaleStockLocation } from './sale-stock';
+import { unplacedLaneLocation, type SaleStockLocation } from './sale-stock';
 import { approvalIdIn, namedApproverRefusal, takeRefundApproval, type ApprovalUse, type RefundApprovalState } from './refund-approvals';
 import { approvalSealFlags, cashierSealFlags, stampIn } from './store-seal';
 
@@ -446,11 +446,12 @@ export function noReceiptReturnRoutes(deps: NoReceiptReturnsDeps): readonly Rout
           }
         }
 
-        // Where the resold units went back: the lane's declared location, else the lane itself — STATED on the
-        // movement (P-08), the same rule a synced sale follows. Absent both, no movement is guessed.
+        // Where the resold units went back: the lane's declared location, else the lane's own UNPLACED location — STATED
+        // on the movement (P-08), the same rule a synced sale follows (round 14: never the free-text lane id itself, which
+        // could name a store). Absent both, no movement is guessed.
         const location: SaleStockLocation | undefined = s.locationId !== undefined
           ? { locationId: s.locationId, basis: 'declared_by_lane' }
-          : s.laneId !== undefined ? { locationId: s.laneId, basis: 'assumed_from_lane' } : undefined;
+          : s.laneId !== undefined ? { locationId: unplacedLaneLocation(s.laneId), basis: 'unplaced' } : undefined;
 
         const record: ReturnRecord = {
           returnId: s.returnId, number: s.number, originalSaleId: null, noReceipt: true,
