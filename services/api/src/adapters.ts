@@ -178,7 +178,8 @@ import type { SyncedCountsDeps } from '../../inventory/src/counts-synced';
 import type { CountPlan, CountPlanDeps, VarianceCause, PlaceMovement } from '../../inventory/src/count-plans';
 import { heldApplication, heldWriteOffViews, type HeldWriteOff, type HeldWriteOffApplied } from '../../inventory/src/held-write-offs';
 import { budgetKey, openToBuyGuardKey, type OpenToBuyDeps, type PurchaseBudget, type BudgetOverride } from '../../purchase/src/open-to-buy';
-import type { InvoiceIngestionDeps, InvoiceDocumentRecord, ItemMapping } from '../../purchase/src/invoice-ingestion';
+import type { InvoiceIngestionDeps, InvoiceDocumentRecord, ItemMapping, ScanTypedLink } from '../../purchase/src/invoice-ingestion';
+import { withTypedLinks } from '../../purchase/src/invoice-ingestion';
 import { buffersAt, type OnlineBuffer, type OnlineBufferDeps } from '../../inventory/src/online-buffer';
 import type { AdjustmentRequestDeps, AdjustmentRequestRecord } from '../../inventory/src/adjustment-requests';
 import type { ProductReceiptRules } from '../../../packages/receiving/src/index';
@@ -1735,7 +1736,9 @@ export function attendanceStoreAdapter(input: { readonly store: EventStore; read
     now: input.now,
     putAttendance: async (tenantId, record, key) => {
       await input.store.append(tenantId, ROSTER_STREAM, makeEvent({
-        id: `AttendanceSet-${record.employeeId}-${record.date}-${input.now()}`,
+        // The id follows the idempotency key (one event per key): a timestamp alone let two corrections in the same
+        // millisecond share an id under different keys — a clash the ledger refuses (hard rule #10), not a correction.
+        id: `AttendanceSet-${record.employeeId}-${record.date}-${createHash('sha256').update(key).digest('hex').slice(0, 24)}`,
         type: 'AttendanceSet', occurredAt: input.now(), idempotencyKey: key, source: 'api/hr', payload: record,
       }));
     },
@@ -7595,6 +7598,9 @@ export function purchaseAdapter(input: {
     invoice: async (tenantId, invoiceId) => (await liveSupplierInvoices(input.store, tenantId)).find((r) => r.invoiceId === invoiceId),
     invoices: (tenantId) => liveSupplierInvoices(input.store, tenantId),
     invoiceIdUsed: (tenantId, invoiceId) => supplierInvoiceIdUsed(input.store, tenantId, invoiceId),
+    // D03-FR-02 (round 12): the scan a typed capture names, and the append-only link that marks it typed.
+    invoiceDocument: async (tenantId, documentId) => (await foldInvoiceDocuments(input.store, tenantId)).find((d) => d.documentId === documentId),
+    recordScanTyped: (tenantId, link) => recordInvoiceDocumentTyped(input.store, tenantId, link),
     recordInvoice: async (tenantId, record) => {
       await input.store.append(tenantId, SUPPLIER_INVOICES_STREAM, makeEvent({
         id: `invoice-${record.invoiceId}`,
@@ -8245,11 +8251,14 @@ export function supplierPortalAdapter(input: {
         .map((d) => `${d.documentId}:${d.kind}:${d.validUntil}:${d.verifiedBy ?? 'unv'}`)
         .sort()
         .join(',');
+      const partnerKey = `portal-partner-${tenantId}-${partnerId}-${config.grants.join('.')}-${config.requiredDocuments.join('.')}-${docsDigest}-${[...config.logins].sort().join('.')}`;
       await input.store.append(tenantId, forPortalPartner(partnerId), makeEvent({
-        id: `portal-partner-${partnerId}-${config.grants.join('.')}`,
+        // The id follows the key: a changed config (a verification, a new document) is a new event with its own id — it
+        // used to reuse the grants-only id, which the ledger's unique event id refuses (a 500 on PostgreSQL).
+        id: `portal-partner-${partnerId}-${createHash('sha256').update(partnerKey).digest('hex').slice(0, 24)}`,
         type: 'SupplierPartnerConfigured',
         occurredAt: input.now(),
-        idempotencyKey: `portal-partner-${tenantId}-${partnerId}-${config.grants.join('.')}-${config.requiredDocuments.join('.')}-${docsDigest}-${[...config.logins].sort().join('.')}`,
+        idempotencyKey: partnerKey,
         source: 'api/purchase',
         payload: config,
       }));
@@ -13809,12 +13818,28 @@ export function openToBuyAdapter(input: { readonly store: EventStore; readonly n
  * and the supplier-invoice register's own capture (the portal path) as the one way onto the register.
  */
 const INVOICE_DOCUMENTS_STREAM = streamName(STREAM.purchase, 'invoice-documents');
+/** Every bill handed in, latest record per document, with the round-12 "typed as invoice X" links laid over the scans. */
+export async function foldInvoiceDocuments(store: EventStore, tenantId: string): Promise<readonly InvoiceDocumentRecord[]> {
+  const byId = new Map<string, InvoiceDocumentRecord>();
+  for (const d of await allOf<InvoiceDocumentRecord>(store, tenantId, INVOICE_DOCUMENTS_STREAM, 'InvoiceDocumentRecorded')) { byId.delete(d.documentId); byId.set(d.documentId, d); }
+  return withTypedLinks([...byId.values()], await allOf<ScanTypedLink>(store, tenantId, INVOICE_DOCUMENTS_STREAM, 'InvoiceDocumentTyped'));
+}
+
+/**
+ * D03-FR-02 (round 12): "scan D was typed as invoice X" — one append-only event per document (fixed id and key), never a
+ * rewrite of the document. Answers the link that STANDS: a re-send collapses onto it; a capture naming the same scan for
+ * a different invoice gets the first link back and the route refuses it by name.
+ */
+export async function recordInvoiceDocumentTyped(store: EventStore, tenantId: string, link: ScanTypedLink): Promise<ScanTypedLink> {
+  const res = await store.append(tenantId, INVOICE_DOCUMENTS_STREAM, makeEvent({
+    id: `invoice-document-typed-${link.documentId}`, type: 'InvoiceDocumentTyped', occurredAt: link.typedAt,
+    idempotencyKey: `invoice-document-typed-${tenantId}-${link.documentId}`, source: 'api/purchase', payload: link,
+  }));
+  return res.record.event.payload as ScanTypedLink;
+}
+
 export function invoiceIngestionAdapter(input: { readonly store: EventStore; readonly now: () => string }): Omit<InvoiceIngestionDeps, 'recordAudit' | 'extractor'> {
-  const fold = async (tenantId: string): Promise<readonly InvoiceDocumentRecord[]> => {
-    const byId = new Map<string, InvoiceDocumentRecord>();
-    for (const d of await allOf<InvoiceDocumentRecord>(input.store, tenantId, INVOICE_DOCUMENTS_STREAM, 'InvoiceDocumentRecorded')) { byId.delete(d.documentId); byId.set(d.documentId, d); }
-    return [...byId.values()];
-  };
+  const fold = (tenantId: string): Promise<readonly InvoiceDocumentRecord[]> => foldInvoiceDocuments(input.store, tenantId);
   return {
     now: input.now,
     document: async (tenantId, documentId) => (await fold(tenantId)).find((d) => d.documentId === documentId),

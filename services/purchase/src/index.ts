@@ -24,6 +24,7 @@ import {
 import { isCurrencyCode, type Money, type CurrencyCode } from '../../../packages/contracts/src/money';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import type { StoredPurchaseOrder } from './purchase-orders';
+import type { InvoiceDocumentRecord, ScanTypedLink } from './invoice-ingestion';
 
 // The rule itself lives in `packages/purchasing` so the buyer's screen can use the SAME one — a
 // browser cannot import this file, which imports the HTTP kernel. Re-exported so every existing
@@ -512,6 +513,11 @@ export interface PurchaseDeps {
   readonly invoices: (tenantId: string) => Promise<readonly SupplierInvoiceRecord[]> | readonly SupplierInvoiceRecord[];
   /** SF-06-a: true when this invoice id was EVER captured, withdrawn ones included — a withdrawn id is never reused. */
   readonly invoiceIdUsed?: (tenantId: string, invoiceId: string) => Promise<boolean> | boolean;
+  /** D03-FR-02 (round 12): a bill handed in at head office (a scan), as the list reads it — the typed capture links one. */
+  readonly invoiceDocument?: (tenantId: string, documentId: string) => Promise<InvoiceDocumentRecord | undefined> | InvoiceDocumentRecord | undefined;
+  /** Record "this scan was typed as invoice X" — append-only, once per document; answers the link that STANDS (the
+   *  first one recorded), so a second, different link is seen and refused, never silently kept. */
+  readonly recordScanTyped?: (tenantId: string, link: ScanTypedLink) => Promise<ScanTypedLink>;
   /** Record a captured invoice — idempotent on the invoice id, so a retry never doubles what a supplier is owed. */
   readonly recordInvoice: (tenantId: string, record: SupplierInvoiceRecord) => Promise<void> | void;
   /** The purchase order head office holds — what was ordered, at what price, and what was received against it (SP-6). */
@@ -587,6 +593,36 @@ export async function capturePortalInvoice(deps: PurchaseDeps, tenantId: string,
   return { ok: true, record };
 }
 
+const scanAlreadyTyped = (documentId: string, invoiceId: string) => apiError(409, {
+  code: 'scan_already_typed',
+  whatHappened: `Scan ${documentId} was already typed as invoice ${invoiceId}. One scan is one bill.`,
+  wasItSaved: 'not_saved',
+  nextSafeAction: 'Open that invoice instead, or hand the other paper in as its own scan. Nothing was recorded.',
+});
+
+/**
+ * The scan a typed capture names (`documentId`, optional): undefined when none is named; else the document id once it is
+ * known to be a scan of this tenant still waiting to be typed — or already typed as this same invoice (a re-send).
+ */
+async function scanToLink(deps: PurchaseDeps, tenantId: string, raw: unknown, invoiceId: string): Promise<string | undefined> {
+  if (raw === undefined || raw === null) return undefined;
+  const refuse = (status: number, code: string, whatHappened: string) =>
+    apiError(status, { code, whatHappened, wasItSaved: 'not_saved', nextSafeAction: 'Check which scan this paper is. Nothing was recorded.' });
+  if (!isStr(raw)) throw refuse(400, 'not_readable_as_a_supplier_invoice', 'documentId, when given, names the scan this bill was typed from.');
+  const documentId = raw.trim();
+  if (deps.invoiceDocument === undefined || deps.recordScanTyped === undefined) {
+    throw refuse(409, 'scan_link_unavailable', 'Head office cannot link this capture to a scan here, so nothing was recorded rather than the link being lost.');
+  }
+  const doc = await deps.invoiceDocument(tenantId, documentId);
+  if (doc === undefined) throw refuse(404, 'invoice_document_unknown', `No bill ${documentId} has been handed in.`);
+  if (doc.state === 'captured' && doc.invoiceId === invoiceId) return documentId; // a re-send of the same typed capture
+  if (doc.state === 'captured') throw scanAlreadyTyped(documentId, doc.invoiceId ?? '');
+  if (doc.channel !== 'ocr' || (doc.state !== 'awaiting_manual_capture' && doc.state !== 'unreadable')) {
+    throw refuse(409, 'not_a_scan_awaiting_typing', `Bill ${documentId} is ${doc.channel === 'ocr' ? 'a scan' : 'an e-invoice'} that is ${doc.state}: only a scan waiting to be typed can be linked to a typed capture.`);
+  }
+  return documentId;
+}
+
 export function purchaseRoutes(deps: PurchaseDeps): readonly Route[] {
   return [
     {
@@ -615,8 +651,23 @@ export function purchaseRoutes(deps: PurchaseDeps): readonly Route[] {
         }
         const totalMinor = sumOf(read.lines);
         if (totalMinor !== b['declaredTotalMinor']) throw refuseTotal(totalMinor, b['declaredTotalMinor'], false);
+        // D03-FR-02 (round 12): the scan this bill was typed from, when the capture names one. It must be a scan head office
+        // holds for THIS tenant, still waiting to be typed (or already typed as this same invoice — a re-send); anything
+        // else is refused by name before anything is recorded. The link itself is written below, once, append-only.
+        const scanDocumentId = await scanToLink(deps, ctx.tenantId, b['documentId'], invoiceId);
+        const linkScan = async () => {
+          if (scanDocumentId === undefined) return;
+          const standing = await deps.recordScanTyped!(ctx.tenantId, { documentId: scanDocumentId, invoiceId, typedBy: ctx.userId, typedAt: deps.now() });
+          // Two captures naming the same scan at once: the first link stands; the other is refused by name (hard rule #10).
+          if (standing.invoiceId !== invoiceId) throw scanAlreadyTyped(scanDocumentId, standing.invoiceId);
+        };
         const existing = await deps.invoice(ctx.tenantId, invoiceId);
-        if (existing !== undefined) return { status: 200, body: { invoice: existing, alreadyCaptured: true, flags: existing.governanceFlags } };
+        if (existing !== undefined) {
+          // A re-sent capture: the invoice stands; the link is (re)recorded idempotently, so a reply lost between the two
+          // writes still leaves the scan linked.
+          await linkScan();
+          return { status: 200, body: { invoice: existing, alreadyCaptured: true, flags: existing.governanceFlags, ...(scanDocumentId === undefined ? {} : { documentId: scanDocumentId }) } };
+        }
         if (await deps.invoiceIdUsed?.(ctx.tenantId, invoiceId)) throw invoiceIdWithdrawn(invoiceId);
         // The second person who checked the bill (ADR-0024 · §28 · 2b-vi-b-3): an approval someone holding
         // `purchase.invoice.match` GAVE in their own session for exactly this bill (kind `supplier_invoice_check`). A name
@@ -637,16 +688,19 @@ export function purchaseRoutes(deps: PurchaseDeps): readonly Route[] {
           capturedBy: ctx.userId, capturedAt, approvedBy: checkedBy ?? null, approvedAt: checkedBy === undefined ? null : opened!.decision.decidedAt,
           source: 'head-office', governanceFlags: flags,
         };
+        // The scan's link is taken BEFORE the invoice is recorded, so a scan another capture already claimed refuses this one
+        // with nothing kept.
+        await linkScan();
         await opened?.spend();
         await deps.recordInvoice(ctx.tenantId, record);
         await deps.recordAudit?.(ctx.tenantId, {
           actorId: ctx.userId, action: 'invoice.capture', objectType: 'supplier_invoice', objectId: invoiceId,
           at: capturedAt, origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
           before: null,
-          after: { supplierId: record.supplierId, poId: record.poId ?? '', lines: String(record.lines.length), totalMinor: String(totalMinor), approvedBy: record.approvedBy ?? '', flags: flags.join(',') },
+          after: { supplierId: record.supplierId, poId: record.poId ?? '', lines: String(record.lines.length), totalMinor: String(totalMinor), approvedBy: record.approvedBy ?? '', flags: flags.join(','), documentId: scanDocumentId ?? '' },
           correlationId: invoiceId,
         });
-        return { status: 201, body: { invoice: record, alreadyCaptured: false, flags } };
+        return { status: 201, body: { invoice: record, alreadyCaptured: false, flags, ...(scanDocumentId === undefined ? {} : { documentId: scanDocumentId }) } };
       },
     },
     {

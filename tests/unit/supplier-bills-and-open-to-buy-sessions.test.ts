@@ -62,6 +62,11 @@ describe('supplier bills — the screen model (D03-FR-02 · WF-05)', () => {
     expect(typedCaptureBody({ invoiceId: 'i', supplierId: 's', total: '1', lines: [{ productId: 'R', quantity: '1.5', unitPrice: '1', amount: '1' }] })).toEqual({ ok: false, problem: 'not_money', line: 1 });
     // Lines that do not add up to the total are NOT refused here — that is head office's judgement.
     expect(typedCaptureBody({ invoiceId: 'i', supplierId: 's', total: '999', lines: [{ productId: 'R', quantity: '1', unitPrice: '1', amount: '1' }] })).toMatchObject({ ok: true });
+    // The scan it was typed from rides along, so head office links it (round 12 follow-up) — nothing kept in the tab.
+    expect(typedCaptureBody({ invoiceId: 'i', supplierId: 's', total: '1', lines: [{ productId: 'R', quantity: '1', unitPrice: '1', amount: '1' }], documentId: ' bill-abc ' }))
+      .toMatchObject({ ok: true, body: { documentId: 'bill-abc' } });
+    expect(typedCaptureBody({ invoiceId: 'i', supplierId: 's', total: '1', lines: [{ productId: 'R', quantity: '1', unitPrice: '1', amount: '1' }], documentId: '' }))
+      .not.toMatchObject({ body: { documentId: expect.anything() } });
   });
 
   it('the match is shown exceptions first, with head office\'s own sentence and flags', () => {

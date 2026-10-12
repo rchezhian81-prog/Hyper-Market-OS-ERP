@@ -148,7 +148,8 @@ export interface PaymentExceptionDeps {
   readonly exceptions: (tenantId: string) => Promise<readonly PaymentException[]>;
   /** OB-69: the no-answers the store computer relayed the moment it recorded them (one per attempt). */
   readonly raised?: (tenantId: string) => Promise<readonly RaisedNoAnswer[]>;
-  readonly recordRaised?: (tenantId: string, r: RaisedNoAnswer) => Promise<void>;
+  /** Records the raised item; may say the ledger already held it (a concurrent identical re-send collapsed onto it). */
+  readonly recordRaised?: (tenantId: string, r: RaisedNoAnswer) => Promise<void | { readonly deduped: boolean }>;
   readonly resolutions: (tenantId: string) => Promise<readonly PaymentExceptionResolution[]>;
   readonly conflicts: (tenantId: string) => Promise<readonly PaymentExceptionConflict[]>;
   /**
@@ -298,7 +299,10 @@ export function paymentExceptionRoutes(deps: PaymentExceptionDeps): readonly Rou
           askedAt: b['askedAt'] as string, state: 'no_answer', tradingDay: b['tradingDay'] as string, storeId: b['storeId'] as string,
           recordedAt: b['recordedAt'] as string, recordedBy: b['recordedBy'] as string, relayedBy: ctx.userId, raisedAt: deps.now(),
         };
-        await deps.recordRaised(ctx.tenantId, rec);
+        const landed = await deps.recordRaised(ctx.tenantId, rec);
+        // Two identical re-sends that both passed the check above meet in the ledger: one lands, the other collapses
+        // onto it and is told so — never a second item, never a failure (hard rule #10).
+        if (landed !== undefined && landed.deduped) return { status: 200, body: { attemptId, recorded: true, alreadyRecorded: true, stage: 'raised' } };
         return { status: 202, body: { attemptId, recorded: true, alreadyRecorded: false, stage: 'raised' } };
       },
     },
