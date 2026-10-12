@@ -181,8 +181,13 @@ describe.each(backings)('Round 14 — an outside login re-bound reads only its c
       }),
     }]);
     const [x, y] = await Promise.all([call('POST', `${B2B}/invites/e1/approve`, 'u-acct', {}), call('POST', `${B2B}/invites/e2/approve`, 'u-acct', {})]);
-    expect([x.status, y.status].sort(), `${JSON.stringify(x.body)} ${JSON.stringify(y.body)}`).toEqual([200, 409]);
-    expect(codeOf(x.status === 409 ? x : y)).toBe('login_claimed_at_the_same_moment');
+    // Exactly one wins. The loser is refused visibly either way: 409 when the two meet at the guard, or 422 when the
+    // database serialised them and the loser already sees the winner's role on the login. Never two approvals.
+    const statuses = [x.status, y.status].sort();
+    expect(statuses[0], `${JSON.stringify(x.body)} ${JSON.stringify(y.body)}`).toBe(200);
+    const loser = x.status === 200 ? y : x;
+    expect([409, 422]).toContain(loser.status);
+    expect(codeOf(loser)).toBe(loser.status === 409 ? 'login_claimed_at_the_same_moment' : 'login_already_holds_a_role');
     const pairs = ((await call('GET', B2B, 'u-acct')).body as { logins: { userId: string; partyId: string; state: string }[] }).logins.filter((l) => l.userId === 'u-pair');
     expect(pairs.filter((l) => l.state === 'approved')).toHaveLength(1);
     // The login reads exactly the party whose approval won.
