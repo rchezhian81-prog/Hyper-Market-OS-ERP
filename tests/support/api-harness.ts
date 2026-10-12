@@ -20,6 +20,7 @@ import { storeComputerBinding } from '../../services/api/src/store-computer-bind
 import type { OutboundTransport } from '../../services/platform/src/outbound-webhooks';
 import { buildSurface } from '../../services/api/src/main';
 import { tenantAccessResolver, tenantEntitlementResolver, seedGenesisOwner } from '../../services/api/src/access';
+import type { DurableTenantSettings } from '../../packages/tenant/src/index';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from '../../services/api/src/roles';
 import { STREAM } from '../../services/api/src/adapters';
 import { LocalIdp } from './local-idp';
@@ -129,6 +130,8 @@ export function apiHarness(opts: {
   outboundSecrets?: ReadonlyMap<string, string>;
   /** OB-15-c: the identity server's directory (a fake in tests) — people's sign-ins given from /v1/identity/people. */
   identityDirectory?: IdentityDirectory;
+  /** OB-78: the tenant settings store (durable on PostgreSQL, or one shared in-memory store) — so a restart keeps the owner's answers. */
+  settings?: DurableTenantSettings;
 } = {}): ApiHarness {
   const store = opts.personalDataKeys === undefined ? opts.store ?? new InMemoryEventStore()
     : personalDataStore(opts.store ?? new InMemoryEventStore(), opts.personalDataKeys);
@@ -148,6 +151,7 @@ export function apiHarness(opts: {
     ...(opts.outboundTransport === undefined ? {} : { outboundTransport: opts.outboundTransport }),
     ...(opts.outboundSecrets === undefined ? {} : { outboundSecrets: opts.outboundSecrets }),
     ...(opts.identityDirectory === undefined ? {} : { identityDirectory: opts.identityDirectory }),
+    ...(opts.settings === undefined ? {} : { settings: opts.settings }),
   }));
   if (!built.ok) throw new Error(`surface malformed: ${built.refusals.map((r) => r.detail).join('; ')}`);
 

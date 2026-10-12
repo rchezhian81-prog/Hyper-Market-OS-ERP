@@ -1815,7 +1815,7 @@ export function buildSurface(deps: {
       now, alerts: empty([]), recordAlertEvent: () => {}, lastSaleSyncedAt: empty(undefined), catalogueBuiltAt: empty(undefined),
       connectorQueues: empty([]), integrationHealth: empty({}), backups: empty([]), recordBackup: () => {},
       alertRules: empty(undefined), defineAlertRules: () => {},
-    } : observedHealthAdapter({ store, now })),
+    } : { ...observedHealthAdapter({ store, now }), boxDiskWarnHours: (t: string) => settings.value(t, SETTINGS.BOX_DISK_WARN_HOURS) }),
     // Device & app-version control (M33-FR-02/04 / A-10) — evaluate whether a device may trade / must
     // upgrade / was killed / is unregistered (a kill never interrupts a sale), and the fleet-at-a-glance;
     // both refuse a policy that would brick the fleet before deciding. Stateless; the durable registry
@@ -2314,7 +2314,8 @@ export async function startApi(
   // the inbox needs no provider.
   const opsAlertWorker = startOpsAlertWorker({
     tenants: async () => workerTenants,
-    deps: observedHealthAdapter({ store, now }),
+    // OB-78: the worker raises the early disk warning on the same owner's line as the read.
+    deps: { ...observedHealthAdapter({ store, now }), boxDiskWarnHours: (t: string) => new DurableTenantSettings(new SqlConfigVersionStore(pgPoolClient(db))).value(t, SETTINGS.BOX_DISK_WARN_HOURS) },
     ...(transport === undefined ? {} : { transport }),
     intervalMs: providers.opsAlertWorkerIntervalMs ?? 60_000,
     now,
