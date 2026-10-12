@@ -8,7 +8,7 @@ import { apiHarness, type ApiHarness } from '../support/api-harness';
 import type { HttpRequest } from '../../services/kernel/src/index';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
 import { readLog } from '../../edge/store-edge/src/file-log';
-import { PeripheralReports, INDEX_GENERATION_RECORDS, UNCHANGED_CHECKPOINT_MS, peripheralIndexFile } from '../../edge/store-edge/src/peripheral-health';
+import { PeripheralReports, INDEX_GENERATION_RECORDS, UNCHANGED_CHECKPOINT_MS, peripheralIndexFile, type ReportAnswer } from '../../edge/store-edge/src/peripheral-health';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { SqlIdempotencyStore } from '../../services/kernel/src/index';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
@@ -41,6 +41,7 @@ const T0 = Date.parse('2026-10-12T04:00:00.000Z');
 const at = (minutes: number): string => new Date(T0 + minutes * 60_000).toISOString();
 const travel = (minutes: number): void => { vi.setSystemTime(new Date(T0 + minutes * 60_000)); };
 const OK = [{ kind: 'scanner', state: 'ok' }, { kind: 'printer', state: 'ok' }];
+const written = (a: ReportAnswer): boolean | undefined => (a.recorded ? a.written : undefined);
 interface Component { name: string; status: string; detail: string }
 
 async function aHungAdapterReadsStale(h: ApiHarness, tenant: string): Promise<void> {
@@ -161,15 +162,15 @@ describe('the box keeps its device history append-only and starts from its compa
     try {
       const first = await PeripheralReports.open({ dataDir: dir, capacityBytes: 10_485_760, now });
       expect(first.startedFrom).toEqual({ generation: 0, historyRecordsRead: 0, indexRecordsRead: 0 });
-      expect((await first.report({ laneId: 'lane-1', by: 'u-c', body: { devices: OK } })).written).toBe(true);
+      expect(written(await first.report({ laneId: 'lane-1', by: 'u-c', body: { devices: OK } }))).toBe(true);
       clock += 5 * 60_000;
-      expect((await first.report({ laneId: 'lane-1', by: 'u-c', body: { devices: OK } })).written).toBe(false); // unchanged, not due
+      expect(written(await first.report({ laneId: 'lane-1', by: 'u-c', body: { devices: OK } }))).toBe(false); // unchanged, not due
       expect(first.latest()[0]!.reportedAt).toBe(now()); // ...but the latest is fresh in memory
       clock += 1_000;
-      expect((await first.report({ laneId: 'lane-1', by: 'u-c', body: { devices: [{ kind: 'printer', state: 'failed', detail: 'paper out' }] } })).written).toBe(true); // a change
+      expect(written(await first.report({ laneId: 'lane-1', by: 'u-c', body: { devices: [{ kind: 'printer', state: 'failed', detail: 'paper out' }] } }))).toBe(true); // a change
       clock += UNCHANGED_CHECKPOINT_MS;
-      expect((await first.report({ laneId: 'lane-1', by: 'u-c', body: { devices: [{ kind: 'printer', state: 'failed', detail: 'paper out' }] } })).written).toBe(true); // the checkpoint
-      expect((await first.report({ laneId: 'lane-2', by: 'u-d', body: { devices: OK, adapterObservedAt: at(1) } })).written).toBe(true);
+      expect(written(await first.report({ laneId: 'lane-1', by: 'u-c', body: { devices: [{ kind: 'printer', state: 'failed', detail: 'paper out' }] } }))).toBe(true); // the checkpoint
+      expect(written(await first.report({ laneId: 'lane-2', by: 'u-d', body: { devices: OK, adapterObservedAt: at(1) } }))).toBe(true);
       await first.close();
       expect((await readLog(join(dir, 'peripheral-health.log'))).filter((r) => r.ok)).toHaveLength(4);
 
