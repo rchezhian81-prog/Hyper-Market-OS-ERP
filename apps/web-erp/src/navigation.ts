@@ -171,6 +171,9 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // own routes. Head-office pages: the store computer does not serve them (it carries no setup or delegation policy).
   { id: 'organisation', label: 'Organisation', labelTa: 'அமைப்பு', path: '/organisation', requires: 'org.branch.read', group: 'Administration', served: 'unserved' },
   { id: 'delegation', label: 'Delegation', labelTa: 'அதிகாரப் பகிர்வு', path: '/delegation', requires: 'approvals.delegation.read', group: 'Administration', served: 'unserved' },
+  // Round 12 (M35-FR-02/04 · WF-20): incidents with a named owner per follow-up, the post-mortem and the close, and the
+  // recovery-drill register — a head-office page over its own routes (the store computer does not serve it).
+  { id: 'incidents', label: 'Incidents & recovery drills', labelTa: 'சம்பவங்களும் மீட்பு ஒத்திகைகளும்', path: '/incidents', requires: 'platform.health.read', group: 'Administration', served: 'unserved' },
   // Outside access — the admin screen on its "Outside access" tab: support sessions granted and expiring (M02 /
   // M36). Gated on the support-session read (`platform.support.read`).
   { id: 'support-access', label: 'Outside access', labelTa: 'வெளி அணுகல்', path: '/admin/?tab=support', requires: 'platform.support.read', group: 'Administration' },

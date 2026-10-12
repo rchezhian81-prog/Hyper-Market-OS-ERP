@@ -15,7 +15,8 @@ import type { HttpRequest } from '../../services/kernel/src/index';
 import type { ModelTransport, ModelTier, TierPricing } from '../../packages/ai/src/index';
 
 /**
- * **Round 8 in a real browser — the service desk (WF-17 · A05) and the assistant's drafts screen (A09 · A07), on the
+ * **Round 8 in a real browser — the service desk (WF-17 · A05 · M21-FR-03 complaint and compensation, M21-FR-04 SLA,
+ * escalation and resolution) and the assistant's drafts screen (A09 · A07), on the
  * production API surface.** The pages are served from apps/web-erp/web and every `/v1` request goes, under the signed-in
  * person's own token, to the API exactly as `main.ts` composes it (`buildSurface` through the real router — over real
  * PostgreSQL when DATABASE_URL is set), with a deterministic stand-in for a model provider (none is chosen; an external

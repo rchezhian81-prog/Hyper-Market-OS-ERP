@@ -38,6 +38,9 @@ import { httpTransport } from '../../../edge/sync-agent/src/http-transport';
 import { httpPackSource } from '../../../edge/sync-agent/src/pack-source';
 import { pullPack, type PackPullOutcome, type PackPullStatus } from '../../../edge/sync-agent/src/pack-puller';
 import { httpSyncWatermarkReporter, type SyncWatermarkReport } from '../../../edge/sync-agent/src/sync-watermark-report';
+import { httpBoxHealthReporter, type BoxHealthReport } from '../../../edge/sync-agent/src/box-health-report';
+import { statfs } from 'node:fs/promises';
+import { SALE_RESERVE_BYTES } from './durability';
 import { httpStorePackSource, httpHeldVersionsReporter, pullStorePack, type StorePackPullOutcome, type StorePackPullStatus } from '../../../edge/sync-agent/src/store-pack-feed';
 import { readHeldStorePack, writeHeldStorePack, packPayloadOf } from './store-pack-held';
 import type { StorePackEnvelope } from '../../../services/platform/src/store-packs';
@@ -450,6 +453,11 @@ export interface EdgeProcess {
    * they really are. Null without a cloud or without EDGE_STORE_ID. Rides the sync loop after the drains.
    */
   readonly reportSyncWatermarks?: (() => Promise<boolean>) | null;
+  /**
+   * M35-FR-03: tell head office how this box's disk, queue and tills' devices are (D04-FR-05), so its observed health
+   * judges them instead of "unknown". Null without a cloud or without EDGE_STORE_ID. Rides the sync loop after the drains.
+   */
+  readonly reportBoxHealth?: (() => Promise<boolean>) | null;
   /**
    * Run exactly one drain-and-settle of both queues (sales then refunds), returning what moved.
    * Null when no cloud is configured — there is nothing to drain to. The poll loop calls the same
@@ -2253,6 +2261,24 @@ export async function startEdge(
     };
     return reportWatermarks(report);
   };
+  // M35-FR-03: after each pass the box's own health goes to head office too — its disk (can it record the next sale, by
+  // its own rule), its queues' depth and its tills' latest device reports. The store is the credential's (OB-54).
+  const boxHealthReporter = watermarkStoreId === undefined ? null : httpBoxHealthReporter({ baseUrl: cloudUrl, token: cloudToken, storeId: watermarkStoreId, fetch: globalThis.fetch });
+  const reportBoxHealth = boxHealthReporter === null ? null : async (): Promise<boolean> => {
+    const fsInfo = await statfs(settings['EDGE_DATA_DIR']!);
+    const queues = [agent, returnsAgent, completionsAgent, dayCloseAgent, concessionTagsAgent, deviceEventsAgent, tillCashAgent].map((a) => a.health());
+    const report: BoxHealthReport = {
+      observedAt: new Date().toISOString(),
+      disk: {
+        freeBytes: Number(fsInfo.bavail) * Number(fsInfo.bsize), totalBytes: Number(fsInfo.blocks) * Number(fsInfo.bsize),
+        salesLogUsedBytes: await log.usedBytes(), salesLogCapacityBytes: log.capacityBytes, reserveBytes: SALE_RESERVE_BYTES,
+      },
+      queue: { unsent: queues.reduce((n, h) => n + h.unsentCount, 0), deadLettered: queues.reduce((n, h) => n + h.deadLetterCount, 0) },
+      // What the tills' devices last said (kept on this disk); the cashier who sent it stays on the box.
+      tills: (peripheralReports?.latest() ?? []).map((r) => ({ laneId: r.laneId, reportedAt: r.reportedAt, devices: r.devices })),
+    };
+    return boxHealthReporter(report);
+  };
 
   let stopping = false;
   let quietPasses = 0;
@@ -2357,6 +2383,9 @@ export async function startEdge(
     }
     if (reportSyncWatermarks !== null) {
       try { await reportSyncWatermarks(); } catch { /* retried next pass; head office's last report simply ages, and the owner sees it stale */ }
+    }
+    if (reportBoxHealth !== null) {
+      try { await reportBoxHealth(); } catch { /* retried next pass; head office's last report ages into stale by itself */ }
     }
     // The inbound refresh rides the SAME loop, AFTER the drain and just as far from the sale path
     // (hard rule #1). It never throws — an unreachable cloud is a normal answer that keeps the last
@@ -2464,6 +2493,7 @@ export async function startEdge(
     storeSetup: storeSetupStatus,
     reportHeldVersions,
     reportSyncWatermarks,
+    reportBoxHealth,
     syncOnce: () => drainAndSettle(),
     syncStatus,
     stop: async () => {

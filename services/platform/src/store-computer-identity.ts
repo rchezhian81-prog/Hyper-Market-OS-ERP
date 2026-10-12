@@ -187,6 +187,8 @@ export const STORE_STAMP_FIELD: Readonly<Record<string, string>> = Object.freeze
   // OB-54 round 12: the card/UPI no-answer and late-answer relays (OB-69 · PF-06) are placed by their storeId.
   '/v1/finance/payment-exceptions/:attemptId/no-answer/synced': 'storeId',
   '/v1/finance/payment-exceptions/:attemptId/late-answer/synced': 'storeId',
+  // M35-FR-03: the box's own health report (disk, queue, till devices) names no store — it is the credential's.
+  '/v1/store-computers/health-reports': 'storeId',
 });
 
 /**

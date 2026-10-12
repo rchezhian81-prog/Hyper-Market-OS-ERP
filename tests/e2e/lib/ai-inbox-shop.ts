@@ -46,6 +46,8 @@ export async function startInboxShop(input: {
     readonly path: string; readonly html: string; readonly dataGlobal: string;
     /** More of what the store computer injects for this page, read from head office under the viewer's token (e.g. the setup status). */
     readonly extraData?: (api: (path: string) => Promise<unknown>) => Promise<Record<string, unknown>>;
+    /** Round 12: the app's web folder, when the page is not the web ERP's (e.g. `apps/b2b-app/web`). */
+    readonly webDir?: string;
   };
   readonly seed: (cloud: RealCloud) => Promise<void>;
 }): Promise<InboxShop> {
@@ -86,7 +88,7 @@ export async function startInboxShop(input: {
       }
       const file = url.pathname === '/' || url.pathname === input.page.path ? input.page.html : url.pathname.replace(/^\//, '');
       try {
-        let body = (await readFile(join(WEB_DIR, file))).toString('utf8');
+        let body = (await readFile(join(input.page.webDir ?? WEB_DIR, file))).toString('utf8');
         const type = file.endsWith('.html') ? 'text/html' : file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : 'application/octet-stream';
         if (file.endsWith('.html')) {
           // What the store computer tells the screen: who is looking and what they hold — head office's answer.

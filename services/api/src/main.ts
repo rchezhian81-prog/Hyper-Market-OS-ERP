@@ -209,6 +209,8 @@ import { engineCategory } from '../../catalogue/src/categories';
 import { categoryRoutes } from '../../catalogue/src/categories';
 import { storePackRoutes } from '../../platform/src/store-packs';
 import { syncWatermarkRoutes } from '../../platform/src/sync-watermarks';
+import { boxHealthRoutes } from '../../platform/src/box-health';
+import { boxHealthAdapter } from './adapters';
 import { storeComputerBinding, storeComputerRefusalRoutes } from './store-computer-binding';
 import { opsIncidentRoutes } from '../../platform/src/ops-incidents';
 import { opsIncidentsAdapter, outboundWebhooksAdapter } from './adapters';
@@ -1091,6 +1093,11 @@ export function buildSurface(deps: {
     }),
     // OB-54: what a store computer tried to send for another store — head office's visible record of each refusal.
     ...storeComputerRefusalRoutes({ store }),
+    // M35-FR-03: each store computer reports its disk, its queue and its tills' devices (its own store, stamped — OB-54);
+    // head office's observed health judges them, stale when the box has gone quiet.
+    ...boxHealthRoutes(store === undefined ? { now, record: async () => {} } : {
+      now, storeComputerScopeOf: (t, u) => storeComputerScopeHeldBy(store, t, u), ...boxHealthAdapter({ store }),
+    }),
     ...posRoutes(store === undefined ? {
       catalogue: empty(new Map()), currentPackVersion: empty(1),
       saleHoldingReceipt: empty(undefined), isBanked: empty(false),
