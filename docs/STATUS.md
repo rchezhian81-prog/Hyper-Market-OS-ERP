@@ -8,7 +8,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 ## Coordinated programme · Round 22 — verifier r21 closed (13 October 2026)
 
 - **Built and integration-tested (memory + PostgreSQL); no staff UAT:** head office keeps serving when the database ends a stuck transaction (answer 500 `database_ended_transaction`, no crash; idle timeout must be 0 or at least 10 s); bills waiting on a store computer longer than the owner's line (new setting `platform.box_unsent_warn_hours`, default 2, range 1–72, on Store setup) are warned, and a store computer that contradicts itself is shown; bills the store computer gave up on say "needs a person — do NOT re-enter"; a refused bill-number report clears only when banked bills reach the claim or a person with alert rights acknowledges it (`POST /v1/store-computers/bill-number-refusals/acknowledgements`, audited); a bill not banked lists every effect it holds back; the release script refuses to run with more than one API container; the plausible-number snapshot no longer breaks store-pack builds after ~64 store-computer reports.
-- **Proof so far:** 85 PostgreSQL files 691/691; store-setup browser 8/8; full gate result recorded with the PR.
+- **Full gate (13 Oct, PostgreSQL):** 11,480 unit/integration, 35 performance, 353 browser — all passed.
 - **Owner-confirmable (left at defaults):** box queue says "ok" under the 2-hour line; managers and owner may acknowledge a refused report.
 
 ## Coordinated programme · Round 21 — verifier r20 closed (13 October 2026)
