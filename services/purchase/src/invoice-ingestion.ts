@@ -29,7 +29,33 @@ export const LOW_CONFIDENCE = 0.9;
 /** The largest scan accepted (base64 characters) — a bill photo, not an archive (no object store, OB-45). */
 export const MAX_SCAN_BASE64 = 4 * 1024 * 1024;
 
-export type DocumentState = 'draft' | 'awaiting_manual_capture' | 'unreadable' | 'confirmed';
+/** `captured`: a scan a person TYPED on the capture screen — the typed capture named this document (D03-FR-02 round 12). */
+export type DocumentState = 'draft' | 'awaiting_manual_capture' | 'unreadable' | 'confirmed' | 'captured';
+
+/** The states of a scan still waiting for a person to type it — the only ones a typed capture may link. */
+export const SCAN_AWAITING_TYPING: readonly DocumentState[] = ['awaiting_manual_capture', 'unreadable'];
+
+/**
+ * The append-only link "this scan was typed as invoice X" — recorded once per document when a typed capture
+ * (`POST /v1/purchase/invoices/:id/capture`) names it. The document itself is never rewritten: the list reads the
+ * scan's own record with this link laid over it.
+ */
+export interface ScanTypedLink {
+  readonly documentId: string;
+  readonly invoiceId: string;
+  readonly typedBy: string;
+  readonly typedAt: string;
+}
+
+/** Lay the typed-as links over the documents: a linked scan reads as `captured`, with its invoice and who typed it. */
+export function withTypedLinks(docs: readonly InvoiceDocumentRecord[], links: readonly ScanTypedLink[]): InvoiceDocumentRecord[] {
+  const byDoc = new Map<string, ScanTypedLink>();
+  for (const l of links) if (!byDoc.has(l.documentId)) byDoc.set(l.documentId, l); // the first link stands
+  return docs.map((d) => {
+    const l = byDoc.get(d.documentId);
+    return l === undefined || d.state === 'confirmed' ? d : { ...d, state: 'captured', invoiceId: l.invoiceId, typedBy: l.typedBy, typedAt: l.typedAt };
+  });
+}
 
 export interface DraftLine extends ExtractedInvoiceLine {
   /** The product a person mapped this supplier's item code to before, if any — a suggestion only. */
@@ -53,6 +79,9 @@ export interface InvoiceDocumentRecord {
   readonly confirmedBy?: string;
   readonly confirmedAt?: string;
   readonly invoiceId?: string;
+  /** A scan typed on the capture screen: who typed it and when (with `invoiceId`, state `captured`). */
+  readonly typedBy?: string;
+  readonly typedAt?: string;
 }
 
 export interface ItemMapping { readonly supplierId: string; readonly supplierItemCode: string; readonly productId: string; readonly by: string; readonly at: string }
@@ -227,8 +256,9 @@ export function invoiceIngestionRoutes(deps: InvoiceIngestionDeps): readonly Rou
       permission: 'purchase.invoice.capture',
       handler: async (ctx) => {
         const all = [...(await deps.documents(ctx.tenantId))].reverse();
-        const waiting = all.filter((d) => d.state !== 'confirmed');
-        return { status: 200, body: { documents: [...waiting, ...all.filter((d) => d.state === 'confirmed')], waiting: waiting.length, ocrEngine: deps.extractor?.engine ?? null, asAt: deps.now() } };
+        const done = (d: InvoiceDocumentRecord) => d.state === 'confirmed' || d.state === 'captured';
+        const waiting = all.filter((d) => !done(d));
+        return { status: 200, body: { documents: [...waiting, ...all.filter(done)], waiting: waiting.length, ocrEngine: deps.extractor?.engine ?? null, asAt: deps.now() } };
       },
     },
   ];

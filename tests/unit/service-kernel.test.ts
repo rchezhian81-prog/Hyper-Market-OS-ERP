@@ -457,3 +457,18 @@ describe('a write for a tenant nobody provisioned is a 403, not a 500 (migration
     expect(err.nextSafeAction).toContain('provision');
   });
 });
+
+describe('an event-id clash in the ledger is a named 409, not a 500 (hard rule #10)', () => {
+  it('maps EventIdClashError from the store to 409 event_id_clash, known not saved', async () => {
+    const boom: Route = route({
+      method: 'POST', permission: 'pos.sale.create', idempotent: true,
+      handler: () => { const e = new Error('Event id "e1" is already recorded under another key'); e.name = 'EventIdClashError'; throw e; },
+    });
+    const k = kernel([boom]);
+    const res = await handle(k, req({ method: 'POST', headers: { authorization: 'Bearer good', 'idempotency-key': 'k-clash' }, body: {} }));
+    expect(res.status).toBe(409);
+    const err = (res.body as { error: { code: string; wasItSaved: string } }).error;
+    expect(err.code).toBe('event_id_clash');
+    expect(err.wasItSaved).toBe('not_saved');
+  });
+});

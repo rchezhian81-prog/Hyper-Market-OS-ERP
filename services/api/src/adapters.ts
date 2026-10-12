@@ -178,7 +178,8 @@ import type { SyncedCountsDeps } from '../../inventory/src/counts-synced';
 import type { CountPlan, CountPlanDeps, VarianceCause, PlaceMovement } from '../../inventory/src/count-plans';
 import { heldApplication, heldWriteOffViews, type HeldWriteOff, type HeldWriteOffApplied } from '../../inventory/src/held-write-offs';
 import { budgetKey, openToBuyGuardKey, type OpenToBuyDeps, type PurchaseBudget, type BudgetOverride } from '../../purchase/src/open-to-buy';
-import type { InvoiceIngestionDeps, InvoiceDocumentRecord, ItemMapping } from '../../purchase/src/invoice-ingestion';
+import type { InvoiceIngestionDeps, InvoiceDocumentRecord, ItemMapping, ScanTypedLink } from '../../purchase/src/invoice-ingestion';
+import { withTypedLinks } from '../../purchase/src/invoice-ingestion';
 import { buffersAt, type OnlineBuffer, type OnlineBufferDeps } from '../../inventory/src/online-buffer';
 import type { AdjustmentRequestDeps, AdjustmentRequestRecord } from '../../inventory/src/adjustment-requests';
 import type { ProductReceiptRules } from '../../../packages/receiving/src/index';
@@ -1603,6 +1604,16 @@ const GSTR1_SUBMISSION_INDEX = streamName(STREAM.gstreturns, 'submission-index')
 const ROSTER_STREAM = streamName(STREAM.workforce, 'roster');
 
 /**
+ * An event id that follows its idempotency key — one id per key. An id built from a clock instead let two different facts
+ * written in the same millisecond share one id under two keys: the ledger's unique event id refuses the second (a named
+ * clash since round 12; a raw 500 on PostgreSQL before), so the second fact was lost. With the id derived from the key,
+ * the same fact again is the same id and key (a dedup) and a different fact is a different id.
+ */
+function keyedEventId(prefix: string, key: string): string {
+  return `${prefix}-${createHash('sha256').update(key).digest('hex').slice(0, 24)}`;
+}
+
+/**
  * The durable roster store (M25-FR-01 follow-on). The workforce DECISION routes are stateless what-ifs; this
  * makes the roster durable — the staff directory, shifts and assignments each append to one tenant stream and
  * "current" is a latest-per-id fold of the stored facts (hard rule #2), so a restart never loses who is on.
@@ -1610,7 +1621,7 @@ const ROSTER_STREAM = streamName(STREAM.workforce, 'roster');
 export function rosterStoreAdapter(input: { readonly store: EventStore; readonly now: () => string }): RosterStoreDeps {
   const append = async (tenantId: string, type: string, id: string, key: string, payload: object): Promise<void> => {
     await input.store.append(tenantId, ROSTER_STREAM, makeEvent({
-      id: `${type}-${id}-${input.now()}`,
+      id: keyedEventId(`${type}-${id}`, key),
       type,
       occurredAt: input.now(),
       idempotencyKey: key,
@@ -1661,7 +1672,7 @@ export function certStoreAdapter(input: { readonly store: EventStore; readonly n
     now: input.now,
     putCertification: async (tenantId, cert, key) => {
       await input.store.append(tenantId, ROSTER_STREAM, makeEvent({
-        id: `RosterCertificationSet-${cert.certificationId}-${input.now()}`,
+        id: keyedEventId(`RosterCertificationSet-${cert.certificationId}`, key),
         type: 'RosterCertificationSet',
         occurredAt: input.now(),
         idempotencyKey: key,
@@ -1694,13 +1705,13 @@ export function sopStoreAdapter(input: { readonly store: EventStore; readonly no
     now: input.now,
     putSop: async (tenantId, sop, key) => {
       await input.store.append(tenantId, ROSTER_STREAM, makeEvent({
-        id: `SopDefinitionSet-${sop.sopId}-${input.now()}`,
+        id: keyedEventId(`SopDefinitionSet-${sop.sopId}`, key),
         type: 'SopDefinitionSet', occurredAt: input.now(), idempotencyKey: key, source: 'api/hr', payload: sop,
       }));
     },
     putAcknowledgement: async (tenantId, ack, key) => {
       await input.store.append(tenantId, ROSTER_STREAM, makeEvent({
-        id: `SopAcknowledgedSet-${ack.sopId}-${ack.employeeId}-${input.now()}`,
+        id: keyedEventId(`SopAcknowledgedSet-${ack.sopId}-${ack.employeeId}`, key),
         type: 'SopAcknowledgedSet', occurredAt: input.now(), idempotencyKey: key, source: 'api/hr', payload: ack,
       }));
     },
@@ -1736,7 +1747,9 @@ export function attendanceStoreAdapter(input: { readonly store: EventStore; read
     now: input.now,
     putAttendance: async (tenantId, record, key) => {
       await input.store.append(tenantId, ROSTER_STREAM, makeEvent({
-        id: `AttendanceSet-${record.employeeId}-${record.date}-${input.now()}`,
+        // The id follows the idempotency key (one event per key): a timestamp alone let two corrections in the same
+        // millisecond share an id under different keys — a clash the ledger refuses (hard rule #10), not a correction.
+        id: keyedEventId(`AttendanceSet-${record.employeeId}-${record.date}`, key),
         type: 'AttendanceSet', occurredAt: input.now(), idempotencyKey: key, source: 'api/hr', payload: record,
       }));
     },
@@ -1767,7 +1780,7 @@ export function checklistStoreAdapter(input: { readonly store: EventStore; reado
     now: input.now,
     putChecklist: async (tenantId, checklist, key) => {
       await input.store.append(tenantId, ROSTER_STREAM, makeEvent({
-        id: `ChecklistSubmittedSet-${checklist.checklistId}-${input.now()}`,
+        id: keyedEventId(`ChecklistSubmittedSet-${checklist.checklistId}`, key),
         type: 'ChecklistSubmittedSet', occurredAt: input.now(), idempotencyKey: key, source: 'api/hr', payload: checklist,
       }));
     },
@@ -1798,13 +1811,13 @@ export function taskStoreAdapter(input: { readonly store: EventStore; readonly n
     now: input.now,
     putTask: async (tenantId, def, key) => {
       await input.store.append(tenantId, ROSTER_STREAM, makeEvent({
-        id: `DailyTaskSet-${def.taskId}-${input.now()}`,
+        id: keyedEventId(`DailyTaskSet-${def.taskId}`, key),
         type: 'DailyTaskSet', occurredAt: input.now(), idempotencyKey: key, source: 'api/hr', payload: def,
       }));
     },
     completeTask: async (tenantId, completion, key) => {
       await input.store.append(tenantId, ROSTER_STREAM, makeEvent({
-        id: `DailyTaskCompletedSet-${completion.taskId}-${input.now()}`,
+        id: keyedEventId(`DailyTaskCompletedSet-${completion.taskId}`, key),
         type: 'DailyTaskCompletedSet', occurredAt: input.now(), idempotencyKey: key, source: 'api/hr', payload: completion,
       }));
     },
@@ -1847,7 +1860,7 @@ export function payslipStoreAdapter(input: { readonly store: EventStore; readonl
     now: input.now,
     putPayslip: async (tenantId, issued, key) => {
       await input.store.append(tenantId, PAYSLIPS_STREAM, makeEvent({
-        id: `PayslipIssued-${issued.employeeId}-${issued.period}-${input.now()}`,
+        id: keyedEventId(`PayslipIssued-${issued.employeeId}-${issued.period}`, key),
         type: 'PayslipIssued', occurredAt: input.now(), idempotencyKey: key, source: 'api/hr', payload: issued,
       }));
     },
@@ -5302,12 +5315,13 @@ export function lpRulesAdapter(input: {
     },
 
     recordRule: async (tenantId, rule) => {
+      const ruleKey = `lp-rule-${tenantId}-${rule.kind}-${rule.maxCount ?? ''}-${rule.maxTotalValueMinor ?? ''}-${rule.maxSingleValueMinor ?? ''}-${rule.escalateAtMultiple ?? ''}`;
       await input.store.append(tenantId, rulesStream, makeEvent({
-        id: `lp-rule-${rule.kind}-${input.now()}`,
+        id: keyedEventId(`lp-rule-${rule.kind}`, ruleKey),
         type: 'LpRuleSet',
         occurredAt: input.now(),
         // Keyed on the kind AND the limits — re-setting the same thresholds collapses, a re-tune is a new fact.
-        idempotencyKey: `lp-rule-${tenantId}-${rule.kind}-${rule.maxCount ?? ''}-${rule.maxTotalValueMinor ?? ''}-${rule.maxSingleValueMinor ?? ''}-${rule.escalateAtMultiple ?? ''}`,
+        idempotencyKey: ruleKey,
         source: 'api/pos',
         payload: rule,
       }));
@@ -5408,12 +5422,13 @@ export function fraudSignalsAdapter(input: {
       (await latest<FraudThresholds>(input.store, tenantId, thresholdsStream, 'FraudThresholdsSet')) ?? {},
 
     recordThresholds: async (tenantId, thresholds) => {
+      const thresholdsKey = `fraud-thresholds-${tenantId}-${JSON.stringify(thresholds)}`;
       await input.store.append(tenantId, thresholdsStream, makeEvent({
-        id: `fraud-thresholds-${input.now()}`,
+        id: keyedEventId('fraud-thresholds', thresholdsKey),
         type: 'FraudThresholdsSet',
         occurredAt: input.now(),
         // Keyed on the values — re-setting the same thresholds collapses, a re-tune is a new fact.
-        idempotencyKey: `fraud-thresholds-${tenantId}-${JSON.stringify(thresholds)}`,
+        idempotencyKey: thresholdsKey,
         source: 'api/pos',
         payload: thresholds,
       }));
@@ -7596,6 +7611,9 @@ export function purchaseAdapter(input: {
     invoice: async (tenantId, invoiceId) => (await liveSupplierInvoices(input.store, tenantId)).find((r) => r.invoiceId === invoiceId),
     invoices: (tenantId) => liveSupplierInvoices(input.store, tenantId),
     invoiceIdUsed: (tenantId, invoiceId) => supplierInvoiceIdUsed(input.store, tenantId, invoiceId),
+    // D03-FR-02 (round 12): the scan a typed capture names, and the append-only link that marks it typed.
+    invoiceDocument: async (tenantId, documentId) => (await foldInvoiceDocuments(input.store, tenantId)).find((d) => d.documentId === documentId),
+    recordScanTyped: (tenantId, link) => recordInvoiceDocumentTyped(input.store, tenantId, link),
     recordInvoice: async (tenantId, record) => {
       await input.store.append(tenantId, SUPPLIER_INVOICES_STREAM, makeEvent({
         id: `invoice-${record.invoiceId}`,
@@ -7630,28 +7648,30 @@ export function purchaseAdapter(input: {
     },
 
     recordMatch: async (tenantId, invoiceId, r) => {
+      const matchKey = `match-${tenantId}-${invoiceId}-${r.payableMinor}-${r.invoicedMinor}-${r.poId ?? ''}-${r.blocked ? 'blocked' : 'clear'}`;
       await input.store.append(tenantId, STREAM.purchase, makeEvent({
-        id: `match-${invoiceId}-${r.matchedAt}`,
+        id: keyedEventId(`match-${invoiceId}`, matchKey),
         type: 'InvoiceMatched',
         occurredAt: r.matchedAt,
         // Keyed on the *outcome*, not just the invoice. Re-running an unchanged match is the same event and collapses;
         // a match that now pays a different figure — or that is no longer blocked because the tenant's tolerances changed
         // (SP-7b) — is a different fact and must be recorded, or the ledger would show the first answer forever.
-        idempotencyKey: `match-${tenantId}-${invoiceId}-${r.payableMinor}-${r.invoicedMinor}-${r.poId ?? ''}-${r.blocked ? 'blocked' : 'clear'}`,
+        idempotencyKey: matchKey,
         source: 'api/purchase',
         payload: r,
       }));
     },
 
     applyBankChange: async (tenantId, r) => {
+      const bankKey = `bank-${tenantId}-${r.supplierId}-${r.newAccount}-${r.requestedAt}`;
       await input.store.append(tenantId, STREAM.purchase, makeEvent({
-        id: `bank-${r.supplierId}-${r.requestedAt}`,
+        id: keyedEventId(`bank-${r.supplierId}`, bankKey),
         type: 'SupplierBankChanged',
         occurredAt: input.now(),
         // The request's own date is in the key. Without it a supplier who moved to a new account
         // and later moved back would have the return collapse into the original change as a
         // replay — and the ledger would then assert the money still goes to the middle account.
-        idempotencyKey: `bank-${tenantId}-${r.supplierId}-${r.newAccount}-${r.requestedAt}`,
+        idempotencyKey: bankKey,
         source: 'api/purchase',
         payload: r satisfies BankChangeRequest,
       }));
@@ -8246,11 +8266,14 @@ export function supplierPortalAdapter(input: {
         .map((d) => `${d.documentId}:${d.kind}:${d.validUntil}:${d.verifiedBy ?? 'unv'}`)
         .sort()
         .join(',');
+      const partnerKey = `portal-partner-${tenantId}-${partnerId}-${config.grants.join('.')}-${config.requiredDocuments.join('.')}-${docsDigest}-${[...config.logins].sort().join('.')}`;
       await input.store.append(tenantId, forPortalPartner(partnerId), makeEvent({
-        id: `portal-partner-${partnerId}-${config.grants.join('.')}`,
+        // The id follows the key: a changed config (a verification, a new document) is a new event with its own id — it
+        // used to reuse the grants-only id, which the ledger's unique event id refuses (a 500 on PostgreSQL).
+        id: keyedEventId(`portal-partner-${partnerId}`, partnerKey),
         type: 'SupplierPartnerConfigured',
         occurredAt: input.now(),
-        idempotencyKey: `portal-partner-${tenantId}-${partnerId}-${config.grants.join('.')}-${config.requiredDocuments.join('.')}-${docsDigest}-${[...config.logins].sort().join('.')}`,
+        idempotencyKey: partnerKey,
         source: 'api/purchase',
         payload: config,
       }));
@@ -13816,10 +13839,15 @@ export function openToBuyAdapter(input: { readonly store: EventStore; readonly n
     categoryOf: async (tenantId, productId) => (await master.product(tenantId, productId))?.primaryCategoryId ?? null,
     overrides: (tenantId) => allOf<BudgetOverride>(input.store, tenantId, PURCHASE_BUDGETS_STREAM, 'PurchaseBudgetExceeded'),
     recordOverride: async (tenantId, o) => {
+      // One override per order (the order is issued once) — and one per raising amendment (OB-63), each on its OWN key.
+      // An amendment's key lives in its own namespace and carries the order id length-prefixed, so it can never equal an
+      // order's key (an order named "po-1-amended-a1" once shared the key of amendment a1 of po-1 and silently collapsed
+      // onto it) nor another (order, amendment) pair's.
+      const ref = o.amendmentId === undefined ? o.poId : `${o.poId.length}:${o.poId}:${o.amendmentId}`;
+      const base = o.amendmentId === undefined ? 'purchase-budget-exceeded' : 'purchase-amendment-budget-exceeded';
       await input.store.append(tenantId, PURCHASE_BUDGETS_STREAM, makeEvent({
-        id: `purchase-budget-exceeded-${o.poId}${o.amendmentId === undefined ? '' : `-amended-${o.amendmentId}`}`, type: 'PurchaseBudgetExceeded', occurredAt: o.at,
-        // One override per order (the order is issued once) — and one per raising amendment (OB-63), each on its own key.
-        idempotencyKey: `purchase-budget-exceeded-${tenantId}-${o.poId}${o.amendmentId === undefined ? '' : `-amended-${o.amendmentId}`}`, source: 'api/purchase', payload: o,
+        id: `${base}-${ref}`, type: 'PurchaseBudgetExceeded', occurredAt: o.at,
+        idempotencyKey: `${base}-${tenantId}-${ref}`, source: 'api/purchase', payload: o,
       }));
     },
     permissionsOfUser: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),    // WF-03 (round 10): the month's open-to-buy write guard — an approval issues only while it still holds.
@@ -13833,12 +13861,28 @@ export function openToBuyAdapter(input: { readonly store: EventStore; readonly n
  * and the supplier-invoice register's own capture (the portal path) as the one way onto the register.
  */
 const INVOICE_DOCUMENTS_STREAM = streamName(STREAM.purchase, 'invoice-documents');
+/** Every bill handed in, latest record per document, with the round-12 "typed as invoice X" links laid over the scans. */
+export async function foldInvoiceDocuments(store: EventStore, tenantId: string): Promise<readonly InvoiceDocumentRecord[]> {
+  const byId = new Map<string, InvoiceDocumentRecord>();
+  for (const d of await allOf<InvoiceDocumentRecord>(store, tenantId, INVOICE_DOCUMENTS_STREAM, 'InvoiceDocumentRecorded')) { byId.delete(d.documentId); byId.set(d.documentId, d); }
+  return withTypedLinks([...byId.values()], await allOf<ScanTypedLink>(store, tenantId, INVOICE_DOCUMENTS_STREAM, 'InvoiceDocumentTyped'));
+}
+
+/**
+ * D03-FR-02 (round 12): "scan D was typed as invoice X" — one append-only event per document (fixed id and key), never a
+ * rewrite of the document. Answers the link that STANDS: a re-send collapses onto it; a capture naming the same scan for
+ * a different invoice gets the first link back and the route refuses it by name.
+ */
+export async function recordInvoiceDocumentTyped(store: EventStore, tenantId: string, link: ScanTypedLink): Promise<ScanTypedLink> {
+  const res = await store.append(tenantId, INVOICE_DOCUMENTS_STREAM, makeEvent({
+    id: `invoice-document-typed-${link.documentId}`, type: 'InvoiceDocumentTyped', occurredAt: link.typedAt,
+    idempotencyKey: `invoice-document-typed-${tenantId}-${link.documentId}`, source: 'api/purchase', payload: link,
+  }));
+  return res.record.event.payload as ScanTypedLink;
+}
+
 export function invoiceIngestionAdapter(input: { readonly store: EventStore; readonly now: () => string }): Omit<InvoiceIngestionDeps, 'recordAudit' | 'extractor'> {
-  const fold = async (tenantId: string): Promise<readonly InvoiceDocumentRecord[]> => {
-    const byId = new Map<string, InvoiceDocumentRecord>();
-    for (const d of await allOf<InvoiceDocumentRecord>(input.store, tenantId, INVOICE_DOCUMENTS_STREAM, 'InvoiceDocumentRecorded')) { byId.delete(d.documentId); byId.set(d.documentId, d); }
-    return [...byId.values()];
-  };
+  const fold = (tenantId: string): Promise<readonly InvoiceDocumentRecord[]> => foldInvoiceDocuments(input.store, tenantId);
   return {
     now: input.now,
     document: async (tenantId, documentId) => (await fold(tenantId)).find((d) => d.documentId === documentId),

@@ -308,6 +308,10 @@ export function transfersRoutes(deps: TransfersDeps): readonly Route[] {
           for (const line of transfer.lines) lineCostsMinor.push((await deps.unitCostAt(ctx.tenantId, transfer.fromLocationId, line.productId)) ?? null);
           const dispatched: Transfer = { ...result.transfer, lineCostsMinor };
           const posted = dispatchPostings(dispatched, result.movements, ctx.userId);
+          // WF-08 / OB-59: stock leaving a place where an open count froze `transferred_out` for the product is refused by
+          // name, like every other direct head-office movement (the default freeze — adjustments and write-offs — leaves a
+          // dispatch alone). Nothing moves; a relayed record would be kept and shown instead.
+          await assertNotFrozenByCount(deps.countFreeze, ctx.tenantId, posted, 'transfer dispatch');
           await deps.recordDispatched(ctx.tenantId, dispatched, result.movements, posted, expectedVersion);
           return { status: 200, body: { transferId, state: dispatched.state, approvedBy: dispatched.approvedBy, movements: result.movements.length, posted: posted.map((m) => m.movementId), lineCostsMinor, availableChecked: available.map((l) => ({ productId: l.productId, batchId: l.batchId, quantityMinor: l.quantityMinor, state: l.state, recalled: l.recalled === true })) } };
         } catch (e) {
@@ -355,6 +359,9 @@ export function transfersRoutes(deps: TransfersDeps): readonly Route[] {
           const result = receiveTransfer({ transfer, counted, receivedBy: ctx.userId, at: deps.now(), currency: (b.currency as CurrencyCode) ?? 'INR' });
           // SP-5 (F05): what arrived becomes on-hand at the destination on the M08 ledger, at the cost it left with.
           const posted = receivePostings(result.transfer, result.movements, ctx.userId);
+          // WF-08 / OB-59: stock arriving at a place where an open count froze `transferred_in` for the product is refused by
+          // name (nothing received; the transfer stays in transit) — before, it was accepted and only shown as a breach.
+          await assertNotFrozenByCount(deps.countFreeze, ctx.tenantId, posted, 'transfer receipt');
           await deps.recordReceived(ctx.tenantId, result.transfer, result.movements, result.discrepancies, posted);
           return { status: 200, body: { transferId, state: result.transfer.state, received: result.movements.length, posted: posted.map((m) => m.movementId), discrepancies: result.discrepancies } };
         } catch (e) {

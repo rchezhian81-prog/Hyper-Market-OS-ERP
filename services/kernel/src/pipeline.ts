@@ -594,6 +594,14 @@ export async function handle(opts: KernelOptions, request: HttpRequest): Promise
         wasItSaved: 'not_saved',
         nextSafeAction: 'Ask the platform operator to provision the tenant (tenant:bootstrap) or check the identity provider’s tenant claim. Nothing was changed.',
       }), traceId)
+      // The ledger refused an event whose id another event already holds under a different key (hard rule #10):
+      // a named conflict, known not saved — never the "did it save?" doubt of an unexpected failure.
+      : (e as Error | undefined)?.name === 'EventIdClashError' ? asResponse(apiError(409, {
+        code: 'event_id_clash',
+        whatHappened: 'This record carries an identity that a different record already holds, so head office did not keep it.',
+        wasItSaved: 'not_saved',
+        nextSafeAction: 'Nothing was changed. Raise it with support so the two records can be compared.',
+      }), traceId)
       : asResponse(apiError(500, {
       code: 'unhandled',
       whatHappened: 'The request failed in a way this service did not expect.',
