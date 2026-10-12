@@ -1122,7 +1122,7 @@ export function payRunAdapter(input: {
       const at = 'at' in event ? event.at : input.now();
       const actor = 'by' in event ? event.by : 'system';
       await input.store.append(tenantId, streamFor(payRunId), makeEvent({
-        id: `payrun-${payRunId}-${event.kind}-${actor}-${at}`,
+        id: keyedEventId('payrun', `payrun-${tenantId}-${payRunId}-${event.kind}-${actor}-${at}`),
         type: 'PayRunLifecycleRecorded',
         occurredAt: input.now(),
         idempotencyKey: `payrun-${tenantId}-${payRunId}-${event.kind}-${actor}-${at}`,
@@ -1159,7 +1159,7 @@ export function gstr1SubmissionAdapter(input: {
       const at = 'at' in event ? event.at : input.now();
       const actor = 'by' in event ? event.by : 'portal';
       const lifecycle = makeEvent({
-        id: `gstr1sub-${period}-${event.kind}-${actor}-${at}`,
+        id: keyedEventId('gstr1sub', `gstr1sub-${tenantId}-${period}-${event.kind}-${actor}-${at}`),
         type: 'Gstr1SubmissionRecorded',
         occurredAt: input.now(),
         idempotencyKey: `gstr1sub-${tenantId}-${period}-${event.kind}-${actor}-${at}`,
@@ -1590,7 +1590,7 @@ export function drReadinessAdapter(input: { readonly store: EventStore; readonly
     drills: (tenantId) => allOf<DrDrillRecord>(input.store, tenantId, DR_DRILLS_STREAM, 'DrDrillRecorded'),
     recordDrill: async (tenantId, record) => {
       await input.store.append(tenantId, DR_DRILLS_STREAM, makeEvent({
-        id: `dr-drill-${record.drillId}-${record.drilledAt}`,
+        id: keyedEventId('dr-drill', `dr-drill-${tenantId}-${record.drillId}-${record.drilledAt}`),
         type: 'DrDrillRecorded',
         occurredAt: record.drilledAt,
         idempotencyKey: `dr-drill-${tenantId}-${record.drillId}-${record.drilledAt}`,
@@ -5036,7 +5036,7 @@ export function syncedCountsAdapter(input: {
     permissionsOfUser: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),
     recordCountPolicy: async (tenantId, policy) => {
       await input.store.append(tenantId, COUNT_POLICY_STREAM, makeEvent({
-        id: `count-policy-${tenantId}-${policy.setAt}`,
+        id: keyedEventId('count-policy', `count-policy-${tenantId}-${policy.approvalThresholdMinor}`),
         type: 'CountPolicySet',
         occurredAt: policy.setAt,
         // Keyed on the value: re-setting the same threshold collapses, a new value supersedes.
@@ -6790,7 +6790,7 @@ export function goodsReceiptAdapter(input: {
     receiptPolicy: (tenantId) => latest<StoredReceiptPolicy>(input.store, tenantId, RECEIPT_POLICY_STREAM, 'ReceiptPolicySet'),
     recordReceiptPolicy: async (tenantId, policy) => {
       await input.store.append(tenantId, RECEIPT_POLICY_STREAM, makeEvent({
-        id: `receipt-policy-${tenantId}-${policy.setAt}`,
+        id: keyedEventId('receipt-policy', `receipt-policy-${tenantId}-${policy.setAt}-${policy.setBy}`),
         type: 'ReceiptPolicySet',
         occurredAt: policy.setAt,
         idempotencyKey: `receipt-policy-${tenantId}-${policy.setAt}-${policy.setBy}`,
@@ -7348,7 +7348,7 @@ export function purchaseOrdersAdapter(input: {
 
     setSupplierBlocked: async (tenantId, supplierId, blocked, reason, by, at) => {
       await input.store.append(tenantId, SUPPLIER_BLOCK_STREAM, makeEvent({
-        id: `supplier-block-${supplierId}-${blocked}-${at}`,
+        id: keyedEventId('supplier-block', `supplier-block-${tenantId}-${supplierId}-${blocked}-${at}`),
         type: 'SupplierBlockStatusSet',
         occurredAt: at,
         // Keyed on the supplier + the new state + when: setting the same state twice collapses, but a
@@ -7849,7 +7849,7 @@ export function purchaseAdapter(input: {
     matchPolicy: (tenantId) => latest<StoredMatchPolicy>(input.store, tenantId, MATCH_POLICY_STREAM, 'MatchPolicySet'),
     recordMatchPolicy: async (tenantId, policy) => {
       await input.store.append(tenantId, MATCH_POLICY_STREAM, makeEvent({
-        id: `match-policy-${tenantId}-${policy.setAt}`,
+        id: keyedEventId('match-policy', `match-policy-${tenantId}-${policy.setAt}-${policy.setBy}`),
         type: 'MatchPolicySet',
         occurredAt: policy.setAt,
         idempotencyKey: `match-policy-${tenantId}-${policy.setAt}-${policy.setBy}`,
@@ -8897,7 +8897,7 @@ export function customerAdapter(input: {
 
     appendConsent: async (tenantId, r) => {
       await input.store.append(tenantId, forCustomer(r.customerId), makeEvent({
-        id: `consent-${r.customerId}-${r.purpose}-${r.channel}-${r.given ? 'given' : 'withdrawn'}-${r.recordedAt}`,
+        id: keyedEventId('consent', `consent-${tenantId}-${r.customerId}-${r.purpose}-${r.channel}-${r.given ? 'given' : 'withdrawn'}-${r.recordedAt}`),
         type: 'ConsentRecorded',
         occurredAt: r.recordedAt,
         // Time is part of the key: consent given, withdrawn and given again is three facts about
@@ -9211,7 +9211,7 @@ export function compensationFulfilmentAdapter(input: {
     fulfilCompensation: (tenantId, i) => fulfilCompensation(ports, tenantId, i),
     recordFulfilment: async (tenantId, f) => {
       await input.store.append(tenantId, SERVICE_FULFILMENT_STREAM, makeEvent({
-        id: `comp-fulfil-${f.compensationId}-${f.at}`, type: 'CompensationFulfilment', occurredAt: f.at,
+        id: keyedEventId('comp-fulfil', `comp-fulfil-${tenantId}-${f.compensationId}-${f.status}-${f.at}`), type: 'CompensationFulfilment', occurredAt: f.at,
         idempotencyKey: `comp-fulfil-${tenantId}-${f.compensationId}-${f.status}-${f.at}`, source: 'api/customer', payload: f,
       }));
     },
@@ -9866,7 +9866,7 @@ export function ordersAdapter(input: {
     ordersForCustomer: async (tenantId, customerRef) => allOf<PlacedOrder>(input.store, tenantId, forCustomerOrders(customerRef), 'OrderPlaced'),
     recordAccessRefusal: async (tenantId, r: StorefrontAccessRefusal) => {
       await input.store.append(tenantId, forStorefrontRefusals, makeEvent({
-        id: `sf-refused-${r.customerRef}-${r.orderId}-${r.action}-${r.at}`,
+        id: keyedEventId('sf-refused', `sf-refused-${tenantId}-${r.customerRef}-${r.orderId}-${r.action}-${r.at}`),
         type: 'StorefrontAccessRefused',
         occurredAt: r.at,
         idempotencyKey: `sf-refused-${tenantId}-${r.customerRef}-${r.orderId}-${r.action}-${r.at}`,
@@ -9957,7 +9957,7 @@ export function fulfilmentAdapter(input: {
 
     recordDeliveryTransition: async (tenantId, record) => {
       await input.store.append(tenantId, streamName(STREAM.delivery, 'order', record.orderId), makeEvent({
-        id: `dstate-${record.orderId}-${record.event}-${record.at}`,
+        id: keyedEventId('dstate', `dstate-${tenantId}-${record.orderId}-${record.event}-${record.at}`),
         type: 'DeliveryStateChanged',
         occurredAt: record.at,
         idempotencyKey: `dstate-${tenantId}-${record.orderId}-${record.event}-${record.at}`,
@@ -10307,19 +10307,19 @@ export function substitutionTruthAdapter(input: {
     consents: (tenantId, orderId) => allOf<SubstitutionConsent>(input.store, tenantId, forOrderSubs(orderId), 'SubstitutionConsentRecorded'),
     recordConsent: async (tenantId, c) => {
       await input.store.append(tenantId, forOrderSubs(c.orderId), makeEvent({
-        id: `sub-consent-${c.orderId}-${c.lineId}-${c.substituteProductId}-${c.at}`, type: 'SubstitutionConsentRecorded', occurredAt: c.at,
+        id: keyedEventId('sub-consent', `sub-consent-${tenantId}-${c.orderId}-${c.lineId}-${c.substituteProductId}-${c.given}-${c.at}`), type: 'SubstitutionConsentRecorded', occurredAt: c.at,
         idempotencyKey: `sub-consent-${tenantId}-${c.orderId}-${c.lineId}-${c.substituteProductId}-${c.given}-${c.at}`, source: 'api/orders', payload: c,
       }));
     },
     recordOrderRules: async (tenantId, orderId, r) => {
       await input.store.append(tenantId, forOrderSubs(orderId), makeEvent({
-        id: `sub-rules-${orderId}-${r.at}`, type: 'OrderSubstitutionRulesRecorded', occurredAt: r.at,
+        id: keyedEventId('sub-rules', `sub-rules-${tenantId}-${orderId}-${r.at}`), type: 'OrderSubstitutionRulesRecorded', occurredAt: r.at,
         idempotencyKey: `sub-rules-${tenantId}-${orderId}-${r.at}`, source: 'api/orders', payload: r,
       }));
     },
     recordCustomerRules: async (tenantId, customerRef, r) => {
       await input.store.append(tenantId, forCustomerRules(customerRef), makeEvent({
-        id: `cust-sub-rules-${customerRef}-${r.at}`, type: 'CustomerSubstitutionRulesRecorded', occurredAt: r.at,
+        id: keyedEventId('cust-sub-rules', `cust-sub-rules-${tenantId}-${customerRef}-${r.at}`), type: 'CustomerSubstitutionRulesRecorded', occurredAt: r.at,
         idempotencyKey: `cust-sub-rules-${tenantId}-${customerRef}-${r.at}`, source: 'api/orders', payload: r,
       }));
     },
@@ -10565,7 +10565,7 @@ export function pricingAdapter(input: {
         {
           stream: STREAM.pricing,
           event: makeEvent({
-            id: `pricechange-${change.productId}-${change.at}`,
+            id: keyedEventId('pricechange', `pricechange-${tenantId}-${change.productId}-${change.at}`),
             type: 'PriceChangeRecorded',
             occurredAt: change.at,
             idempotencyKey: `pricechange-${tenantId}-${change.productId}-${change.at}`,
@@ -11046,7 +11046,7 @@ export function platformAdapter(input: {
 
     setFlag: async (tenantId, change) => {
       await input.store.append(tenantId, STREAM.platform, makeEvent({
-        id: `flag-${change.key}-${change.changedAt}`,
+        id: keyedEventId('flag', `flag-${tenantId}-${change.key}-${change.changedAt}`),
         type: 'FeatureFlagSet',
         occurredAt: change.changedAt,
         // Time is in the key: turning a flag off and back on again is two facts, and "who turned
@@ -11132,7 +11132,7 @@ export function platformAdapter(input: {
     setEntitlement: async (tenantId, feature, enabled, by) => {
       const at = input.now();
       await input.store.append(tenantId, STREAM.platform, makeEvent({
-        id: `entitlement-${feature}-${at}`,
+        id: keyedEventId('entitlement', `entitlement-${tenantId}-${feature}-${at}`),
         type: 'TenantEntitlementSet',
         occurredAt: at,
         // Time is in the key: turning a feature off and back on are two facts worth keeping.
@@ -11552,13 +11552,13 @@ export function migrationAdapter(input: {
     },
     recordParallelPolicy: async (tenantId, policy) => {
       await input.store.append(tenantId, STREAM.migration, makeEvent({
-        id: `parallel-policy-${policy.cutoverId}-${policy.setAt}`, type: 'ParallelRunPolicySet', occurredAt: policy.setAt,
+        id: keyedEventId('parallel-policy', `parallel-policy-${tenantId}-${policy.cutoverId}-${policy.setAt}`), type: 'ParallelRunPolicySet', occurredAt: policy.setAt,
         idempotencyKey: `parallel-policy-${tenantId}-${policy.cutoverId}-${policy.setAt}`, source: 'api/migration', payload: policy,
       }));
     },
     recordParallelDay: async (tenantId, day) => {
       await input.store.append(tenantId, STREAM.migration, makeEvent({
-        id: `parallel-day-${day.businessDate}-${day.recordedAt}`, type: 'ParallelDayCompared', occurredAt: day.recordedAt,
+        id: keyedEventId('parallel-day', `parallel-day-${tenantId}-${day.businessDate}-${day.recordedAt}`), type: 'ParallelDayCompared', occurredAt: day.recordedAt,
         idempotencyKey: `parallel-day-${tenantId}-${day.businessDate}-${day.recordedAt}`, source: 'api/migration', payload: day,
       }));
     },
@@ -11574,7 +11574,7 @@ export function migrationAdapter(input: {
     rollbackReconciliations: (tenantId) => allOf<RollbackReconciliation>(input.store, tenantId, STREAM.migration, 'RollbackReconciled'),
     recordRollbackReconciliation: async (tenantId, c) => {
       await input.store.append(tenantId, STREAM.migration, makeEvent({
-        id: `rollback-reconciled-${c.cutoverId}-${c.decidedAt}-${c.at}`, type: 'RollbackReconciled', occurredAt: c.at,
+        id: keyedEventId('rollback-reconciled', `rollback-reconciled-${tenantId}-${c.cutoverId}-${c.decidedAt}-${c.at}`), type: 'RollbackReconciled', occurredAt: c.at,
         idempotencyKey: `rollback-reconciled-${tenantId}-${c.cutoverId}-${c.decidedAt}-${c.at}`, source: 'api/migration', payload: c,
       }));
     },
@@ -11618,7 +11618,7 @@ export function migrationAdapter(input: {
       // The decision and its confirmation are two facts with two keys — a confirmation never collapses onto the decision.
       const performed = rollback.state === 'performed';
       await input.store.append(tenantId, STREAM.migration, makeEvent({
-        id: `rollback-${rollback.cutoverId}-${rollback.decidedAt}-${performed ? 'performed' : 'decided'}`,
+        id: keyedEventId('rollback', `rollback-${tenantId}-${rollback.cutoverId}-${rollback.decidedAt}-${performed ? 'performed' : 'decided'}`),
         type: performed ? 'RollbackPerformed' : 'RollbackDecided',
         occurredAt: performed ? rollback.execution!.confirmedAt : rollback.decidedAt,
         idempotencyKey: `rollback-${tenantId}-${rollback.cutoverId}-${rollback.decidedAt}-${performed ? 'performed' : 'decided'}`,
@@ -12085,7 +12085,7 @@ export function aiAdapter(input: {
 
     setKillSwitch: async (tenantId, on, by, at) => {
       await input.store.append(tenantId, STREAM.ai, makeEvent({
-        id: `kill-${at}`,
+        id: keyedEventId('kill', `kill-${tenantId}-${at}-${String(on)}`),
         type: 'AiKillSwitchSet',
         occurredAt: at,
         idempotencyKey: `kill-${tenantId}-${at}-${String(on)}`,
@@ -12110,7 +12110,7 @@ export function aiAdapter(input: {
 
     setBudget: async (tenantId, budget, by, at) => {
       await input.store.append(tenantId, STREAM.ai, makeEvent({
-        id: `ai-budget-${at}`,
+        id: keyedEventId('ai-budget', `ai-budget-${tenantId}-${at}`),
         type: 'AiBudgetSet',
         occurredAt: at,
         // Keyed on the moment it was set — a later cap is the owner changing the limit, latest wins;
@@ -12129,7 +12129,7 @@ export function aiAdapter(input: {
 
     setEnabledAgents: async (tenantId, agents, by, at) => {
       await input.store.append(tenantId, STREAM.ai, makeEvent({
-        id: `ai-enabled-${at}`,
+        id: keyedEventId('ai-enabled', `ai-enabled-${tenantId}-${at}`),
         type: 'AiAgentsEnabled',
         occurredAt: at,
         // The enabled SET as of this moment — latest wins, so enabling is declarative (the new list is
@@ -12299,7 +12299,7 @@ export function aiAdapter(input: {
      */
     recordDataQualityDisposition: async (tenantId, disposition, key) => {
       await input.store.append(tenantId, STREAM.ai, makeEvent({
-        id: `dq-disposition-${disposition.findingId}-${disposition.at}`,
+        id: keyedEventId('dq-disposition', `dq-disposition-${tenantId}-${key}`),
         type: 'AiDataQualityDismissed',
         occurredAt: disposition.at,
         idempotencyKey: `dq-disposition-${tenantId}-${key}`,
@@ -12336,7 +12336,7 @@ export function aiAdapter(input: {
      */
     recordOperationsDisposition: async (tenantId, disposition, key) => {
       await input.store.append(tenantId, STREAM.ai, makeEvent({
-        id: `ops-disposition-${disposition.findingId}-${disposition.at}`,
+        id: keyedEventId('ops-disposition', `ops-disposition-${tenantId}-${key}`),
         type: 'AiOperationsDismissed',
         occurredAt: disposition.at,
         idempotencyKey: `ops-disposition-${tenantId}-${key}`,
@@ -12374,7 +12374,7 @@ export function aiAdapter(input: {
      */
     recordWorkforceDisposition: async (tenantId, disposition, key) => {
       await input.store.append(tenantId, STREAM.ai, makeEvent({
-        id: `wf-disposition-${disposition.findingId}-${disposition.at}`,
+        id: keyedEventId('wf-disposition', `wf-disposition-${tenantId}-${key}`),
         type: 'AiWorkforceDismissed',
         occurredAt: disposition.at,
         idempotencyKey: `wf-disposition-${tenantId}-${key}`,
@@ -12950,7 +12950,7 @@ export function campaignSendAdapter(input: { readonly store: EventStore; readonl
     frequencyPolicy: (tenantId) => latest<CampaignFrequencyPolicy>(input.store, tenantId, CAMPAIGN_FREQUENCY_STREAM, 'CampaignFrequencyPolicySet'),
     recordFrequencyPolicy: async (tenantId, p) => {
       await input.store.append(tenantId, CAMPAIGN_FREQUENCY_STREAM, makeEvent({
-        id: `campaign-frequency-${p.setAt}`, type: 'CampaignFrequencyPolicySet', occurredAt: p.setAt,
+        id: keyedEventId('campaign-frequency', `campaign-frequency-${tenantId}-${p.capPerWindow}-${p.windowDays}-${p.setAt}`), type: 'CampaignFrequencyPolicySet', occurredAt: p.setAt,
         idempotencyKey: `campaign-frequency-${tenantId}-${p.capPerWindow}-${p.windowDays}-${p.setAt}`, source: 'api/customer', payload: p,
       }));
     },
@@ -13295,7 +13295,7 @@ export function b2bOrderingAdapter(input: { readonly store: EventStore; readonly
     runs: (tenantId) => allOf<RecurringRun>(input.store, tenantId, runs, 'B2BRecurringOrderRun'),
     recordRun: async (tenantId, r) => {
       await input.store.append(tenantId, runs, makeEvent({
-        id: `b2b-run-${r.scheduleId}-${r.on}-${r.at}`, type: 'B2BRecurringOrderRun', occurredAt: r.at,
+        id: keyedEventId('b2b-run', r.outcome === 'generated' ? `b2b-run-${tenantId}-${r.scheduleId}-${r.on}-generated` : `b2b-run-${tenantId}-${r.scheduleId}-${r.on}-${r.at}`), type: 'B2BRecurringOrderRun', occurredAt: r.at,
         // A generated day is one fact; an exception is recorded each time the day is tried and fails.
         idempotencyKey: r.outcome === 'generated' ? `b2b-run-${tenantId}-${r.scheduleId}-${r.on}-generated` : `b2b-run-${tenantId}-${r.scheduleId}-${r.on}-${r.at}`,
         source: 'api/finance', payload: r,
@@ -13358,7 +13358,7 @@ export function boxHealthAdapter(input: { readonly store: EventStore }): {
       void _arrived;
       const content = createHash('sha256').update(JSON.stringify(said)).digest('hex').slice(0, 16);
       const res = await input.store.append(tenantId, BOX_HEALTH_STREAM, makeEvent({
-        id: `box-health-${r.storeId}-${r.observedAt}-${content}`, type: 'StoreComputerHealthReported', occurredAt: r.receivedAt,
+        id: keyedEventId('box-health', `box-health-${tenantId}-${r.storeId}-${r.observedAt}-${content}`), type: 'StoreComputerHealthReported', occurredAt: r.receivedAt,
         idempotencyKey: `box-health-${tenantId}-${r.storeId}-${r.observedAt}-${content}`, source: 'api/platform', payload: r,
       }));
       return res.record.event.payload as BoxHealthRecord;
@@ -13376,7 +13376,7 @@ export function syncWatermarksAdapter(input: { readonly store: EventStore }): {
     records: (tenantId) => allOf<SyncWatermarkRecord>(input.store, tenantId, SYNC_WATERMARKS_STREAM, 'StoreSyncWatermarkReported'),
     record: async (tenantId, r) => {
       await input.store.append(tenantId, SYNC_WATERMARKS_STREAM, makeEvent({
-        id: `sync-wm-${r.storeId}-${r.observedAt}`, type: 'StoreSyncWatermarkReported', occurredAt: r.receivedAt,
+        id: keyedEventId('sync-wm', `sync-wm-${tenantId}-${r.storeId}-${r.observedAt}`), type: 'StoreSyncWatermarkReported', occurredAt: r.receivedAt,
         // One report per (store, moment the box made it): a retried POST collapses onto the first.
         idempotencyKey: `sync-wm-${tenantId}-${r.storeId}-${r.observedAt}`, source: 'api/platform', payload: r,
       }));
@@ -13539,7 +13539,7 @@ export function customer360Adapter(input: {
     households: (tenantId) => allOf<HouseholdLink>(input.store, tenantId, householdStream, 'CustomerHouseholdLinked'),
     recordHousehold: async (tenantId, h) => {
       await input.store.append(tenantId, householdStream, makeEvent({
-        id: `cust-hh-${h.customerRef}-${h.at}`, type: 'CustomerHouseholdLinked', occurredAt: h.at,
+        id: keyedEventId('cust-hh', `cust-hh-${tenantId}-${h.customerRef}-${h.householdId}-${h.linked}-${h.at}`), type: 'CustomerHouseholdLinked', occurredAt: h.at,
         idempotencyKey: `cust-hh-${tenantId}-${h.customerRef}-${h.householdId}-${h.linked}-${h.at}`, source: 'api/customer', payload: h,
       }));
     },
@@ -13551,7 +13551,7 @@ export function customer360Adapter(input: {
     },
     recordView: async (tenantId, v) => {
       await input.store.append(tenantId, viewsOf(v.customerRef), makeEvent({
-        id: `cust-view-${v.customerRef}-${v.at}`, type: 'CustomerProfileViewed', occurredAt: v.at,
+        id: keyedEventId('cust-view', `cust-view-${tenantId}-${v.customerRef}-${v.viewedBy}-${v.at}`), type: 'CustomerProfileViewed', occurredAt: v.at,
         idempotencyKey: `cust-view-${tenantId}-${v.customerRef}-${v.viewedBy}-${v.at}`, source: 'api/customer', payload: v,
       }));
     },
@@ -13800,7 +13800,7 @@ export function periodBooksAdapter(input: { readonly store: EventStore; readonly
       const at = input.now();
       const d = createHash('sha256').update(JSON.stringify(classes)).digest('hex').slice(0, 16);
       await input.store.append(tenantId, ACCOUNT_CLASSES_STREAM, makeEvent({
-        id: `account-classes-${d}-${at}`, type: 'AccountClassesDefined', occurredAt: at,
+        id: keyedEventId('account-classes', `account-classes-${tenantId}-${d}-${at}`), type: 'AccountClassesDefined', occurredAt: at,
         idempotencyKey: `account-classes-${tenantId}-${d}-${at}`, source: 'api/finance', payload: { classes, definedBy: by, at },
       }));
     },
