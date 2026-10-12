@@ -123,6 +123,8 @@ export interface ObservedHealthDeps extends Pick<AlertLifecycleDeps, 'alerts' | 
    * office knows (so one that never reported is named, not left out). Absent: the lane-side signals stay not observed.
    */
   readonly storeComputers?: (tenantId: string) => Promise<{ readonly records: readonly BoxHealthRecord[]; readonly knownStores: readonly string[] }>;
+  /** OB-78: the owner's early-warning line for a store computer's disk, in hours of trading left (tenant setting, default 48). */
+  readonly boxDiskWarnHours?: (tenantId: string) => Promise<number> | number;
 }
 
 /** What the store computers last reported about their queues (PA-12, from the EA-01 watermark reports). */
@@ -164,7 +166,10 @@ export async function observeSignals(deps: ObservedHealthDeps, tenantId: string,
     deps.storeComputers === undefined ? Promise.resolve(undefined) : deps.storeComputers(tenantId),
   ]);
   const judgedBoxes = boxReports === undefined || (boxReports.records.length === 0)
-    ? undefined : judgeBoxes({ records: boxReports.records, knownStores: boxReports.knownStores, at, thresholds });
+    ? undefined : judgeBoxes({
+      records: boxReports.records, knownStores: boxReports.knownStores, at, thresholds,
+      ...(deps.boxDiskWarnHours === undefined ? {} : { diskWarnHours: await deps.boxDiskWarnHours(tenantId) }),
+    });
   const writable = judgedBoxes?.localStoreWritable;
   const sortedBackups = [...backups].sort(byAt);
   const good = [...sortedBackups].reverse().find(goodBackup);

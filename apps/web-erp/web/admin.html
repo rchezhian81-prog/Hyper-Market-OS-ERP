@@ -133,6 +133,18 @@
       @media (max-width: 560px) { .row { flex-wrap: wrap; } .row .end { width: 100%; } }
       /* Sign-ins (OB-15-c-2): the form, the one-time password waiting to be handed over, the list. */
       #signins-form[hidden], #handover[hidden] { display: none; }
+      #outside-form[hidden], #outside-handover[hidden] { display: none; }
+      #outside-form .hint { margin: 4px 0 0; color: var(--muted); font-size: 14px; }
+      #outside-form button { margin-top: 14px; padding: 0 22px; }
+      #outside-form select { min-height: 44px; }
+      #outside-grants { border: 0; padding: 0; margin: 10px 0 0; display: flex; flex-wrap: wrap; gap: 6px 18px; }
+      #outside-grants[hidden] { display: none; }
+      #outside-grants label { display: inline-flex; gap: 6px; align-items: center; font-size: 15px; }
+      #outside-handover { background: var(--panel); border-radius: 12px; padding: 14px; border-left: 6px solid var(--good); display: grid; gap: 8px; }
+      #outside-handover .otp { font-family: ui-monospace, 'SFMono-Regular', Menlo, monospace; font-size: 28px; font-weight: 700; letter-spacing: 0.08em; overflow-wrap: anywhere; user-select: all; }
+      #outside-handover p { margin: 0; font-size: 15px; }
+      #outside-list .row .acts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 6px; }
+      #outside-list .row .acts input { min-height: 44px; max-width: 220px; }
       #signins-form .hint { margin: 4px 0 0; color: var(--muted); font-size: 14px; }
       #signins-form button { margin-top: 14px; padding: 0 22px; }
       #handover { background: var(--panel); border-radius: 12px; padding: 14px; border-left: 6px solid var(--good); display: grid; gap: 8px; }
@@ -223,6 +235,48 @@
           <button id="handover-done" class="primary" type="button">I have handed it over</button>
         </div>
         <div id="signins-list"></div>
+
+        <!-- OB-76: logins for outside parties — one person invites, a different person approves; bound to the party's own record. -->
+        <h3 id="outside-title">Logins for customers and suppliers</h3>
+        <p class="lead" id="outside-lead"></p>
+        <div class="source-line">
+          <p class="source" id="outside-source" role="status" aria-live="polite"><span class="icon" id="outside-source-icon" aria-hidden="true"></span><span id="outside-source-text"></span></p>
+        </div>
+        <p class="readonly" id="outside-cannot" hidden></p>
+        <form id="outside-form" hidden novalidate autocomplete="off">
+          <div class="row2">
+            <div>
+              <label for="outside-kind" id="outside-kind-label">Who the login is for</label>
+              <select id="outside-kind" name="kind"></select>
+            </div>
+            <div>
+              <label for="outside-party" id="outside-party-label">Their record</label>
+              <input id="outside-party" name="partyId" type="text" maxlength="64" autocomplete="off" autocapitalize="none" spellcheck="false" />
+            </div>
+          </div>
+          <div class="row2">
+            <div>
+              <label for="outside-display" id="outside-display-label">Full name</label>
+              <input id="outside-display" name="displayName" type="text" maxlength="80" autocomplete="off" spellcheck="false" />
+            </div>
+            <div>
+              <label for="outside-user" id="outside-user-label">Login id</label>
+              <input id="outside-user" name="userId" type="text" maxlength="64" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="outside-user-hint" />
+            </div>
+          </div>
+          <p class="hint" id="outside-user-hint"></p>
+          <fieldset id="outside-grants"><legend id="outside-grants-legend"></legend></fieldset>
+          <button id="outside-invite" class="primary" type="submit">Invite</button>
+        </form>
+        <p class="result" id="outside-result" hidden role="status" aria-live="polite"><span class="icon" id="outside-result-icon" aria-hidden="true"></span><span id="outside-result-text"></span></p>
+        <!-- An outside login's one-time password: in memory and on screen only, until it is handed over. -->
+        <div id="outside-handover" class="handover" hidden role="region" aria-labelledby="outside-handover-label">
+          <p id="outside-handover-label"></p>
+          <p class="otp" id="outside-handover-otp"></p>
+          <p id="outside-handover-words"></p>
+          <button id="outside-handover-done" class="primary" type="button">I have handed it over</button>
+        </div>
+        <div id="outside-list"></div>
       </section>
 
       <section id="view-fleet" hidden>

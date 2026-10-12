@@ -126,6 +126,68 @@ export function latestBoxReports(records: readonly BoxHealthRecord[]): ReadonlyM
   return out;
 }
 
+/**
+ * OB-78 "A" (owner, 12 Oct 2026, in writing, "Warn at hours of trading left") · M35-FR-03 · M35-FR-04 · P-08 — how many
+ * TRADING hours a store computer's disk has left before it would refuse a sale, estimated from its own reports.
+ *
+ * THE METHOD (stated, so a person can check it by hand):
+ *   1. Take this store's reports from the last 7 days up to the latest one, oldest first. If the sales log ever got
+ *      SMALLER between two reports (a new log, a clean-up), only the reports after that are used — older growth says
+ *      nothing about the log the box writes now.
+ *   2. Between each pair of consecutive reports, if the sales log GREW, that gap counts as trading time: its growth and
+ *      its minutes are added up. A gap in which the log did not grow (the shop shut, a quiet hour) is left out, so
+ *      night-time does not dilute the rate — the estimate is in hours of TRADING, never clock hours.
+ *   3. The growth rate is (bytes added) / (trading hours counted).
+ *   4. The room left is the smaller of: the sales-log room above the box's reserve (capacity - log - reserve), and the
+ *      disk's free space above that reserve (free - reserve) — the box's own refusal rule (`boxCanRecordSales`).
+ *   5. Hours of trading left = room left / growth rate, rounded DOWN to one decimal place (never rounded up into comfort).
+ *
+ * TOO LITTLE HISTORY gives "not yet known", never a guess: fewer than 2 growing gaps, or less than 60 minutes of trading
+ * counted, gives `known: false` with the reason; so does a log that has not grown at all in the window.
+ */
+export const DISK_ESTIMATE_LOOKBACK_HOURS = 7 * 24;
+export const DISK_ESTIMATE_MIN_GROWING_GAPS = 2;
+export const DISK_ESTIMATE_MIN_TRADING_MINUTES = 60;
+
+export type TradingHoursEstimate =
+  | { readonly known: true; readonly hoursLeft: number; readonly bytesPerTradingHour: number; readonly roomLeftBytes: number; readonly tradingMinutesCounted: number; readonly growingGaps: number; readonly from: string; readonly to: string }
+  | { readonly known: false; readonly why: string; readonly tradingMinutesCounted: number; readonly growingGaps: number };
+
+export function estimateTradingHoursLeft(storeRecords: readonly BoxHealthRecord[], latest: BoxHealthRecord): TradingHoursEstimate {
+  const since = Date.parse(latest.observedAt) - DISK_ESTIMATE_LOOKBACK_HOURS * 3_600_000;
+  const ordered = [...storeRecords]
+    .filter((r) => r.storeId === latest.storeId && Date.parse(r.observedAt) >= since && Date.parse(r.observedAt) <= Date.parse(latest.observedAt))
+    .sort((a, b) => Date.parse(a.observedAt) - Date.parse(b.observedAt) || Date.parse(a.receivedAt) - Date.parse(b.receivedAt));
+  // Only the run since the log last got smaller (step 1).
+  let start = 0;
+  for (let i = 1; i < ordered.length; i += 1) if (ordered[i]!.disk.salesLogUsedBytes < ordered[i - 1]!.disk.salesLogUsedBytes) start = i;
+  const run = ordered.slice(start);
+  let bytes = 0;
+  let minutes = 0;
+  let gaps = 0;
+  for (let i = 1; i < run.length; i += 1) {
+    const grew = run[i]!.disk.salesLogUsedBytes - run[i - 1]!.disk.salesLogUsedBytes;
+    const gapMinutes = (Date.parse(run[i]!.observedAt) - Date.parse(run[i - 1]!.observedAt)) / 60_000;
+    if (grew > 0 && gapMinutes > 0) { bytes += grew; minutes += gapMinutes; gaps += 1; }
+  }
+  const tradingMinutesCounted = Math.floor(minutes);
+  if (gaps < DISK_ESTIMATE_MIN_GROWING_GAPS || minutes < DISK_ESTIMATE_MIN_TRADING_MINUTES) {
+    return {
+      known: false, tradingMinutesCounted, growingGaps: gaps,
+      why: `hours of trading left: not yet known — the store computer's reports show the sales log growing over ${gaps} gap(s) and ${tradingMinutesCounted} minute(s) of trading; at least ${DISK_ESTIMATE_MIN_GROWING_GAPS} gaps and ${DISK_ESTIMATE_MIN_TRADING_MINUTES} minutes are needed before it can be estimated (never guessed)`,
+    };
+  }
+  const bytesPerTradingHour = bytes / (minutes / 60);
+  const d = latest.disk;
+  const roomLeftBytes = Math.max(0, Math.min(d.salesLogCapacityBytes - d.salesLogUsedBytes - d.reserveBytes, d.freeBytes - d.reserveBytes));
+  // room / (bytes / hours), in whole numbers first so a round answer stays round (9, never 8.9 by a floating hair).
+  const hoursLeft = Math.floor((roomLeftBytes * minutes * 10) / (bytes * 60)) / 10;
+  return { known: true, hoursLeft, bytesPerTradingHour: Math.round(bytesPerTradingHour), roomLeftBytes, tradingMinutesCounted, growingGaps: gaps, from: run[0]!.observedAt, to: latest.observedAt };
+}
+
+/** The owner's default early-warning line (OB-78): warn when fewer than this many hours of trading are left. */
+export const DEFAULT_BOX_DISK_WARN_HOURS = 48;
+
 /** One store computer as head office's health read shows it. */
 export interface BoxHealthView {
   readonly storeId: string;
@@ -138,6 +200,10 @@ export interface BoxHealthView {
   readonly disk: BoxDisk | null;
   readonly queue: { readonly unsent: number; readonly deadLettered: number } | null;
   readonly tills: readonly TillDeviceReport[];
+  /** OB-78: hours of trading the disk has left by the stated method — null when not yet known (or never reported). */
+  readonly tradingHoursLeft: number | null;
+  /** OB-78: how that was worked out, or why it is not yet known, in words. */
+  readonly tradingHoursLeftSays: string | null;
 }
 
 const mb = (bytes: number): string => `${Math.floor(bytes / 1_048_576)} MB`;
@@ -156,7 +222,10 @@ export function judgeBoxes(input: {
   readonly knownStores?: readonly string[];
   readonly at: string;
   readonly thresholds: HealthThresholds;
+  /** OB-78: warn (`degraded`) when fewer than this many hours of trading are left — the owner's tenant setting (default 48). */
+  readonly diskWarnHours?: number;
 }): { readonly boxes: readonly BoxHealthView[]; readonly components: readonly ComponentHealth[]; readonly localStoreWritable: boolean | undefined } {
+  const warnHours = input.diskWarnHours ?? DEFAULT_BOX_DISK_WARN_HOURS;
   const latest = latestBoxReports(input.records);
   const ids = [...new Set([...(input.knownStores ?? []), ...latest.keys()])].sort();
   const boxes: BoxHealthView[] = [];
@@ -167,22 +236,34 @@ export function judgeBoxes(input: {
     const r = latest.get(storeId);
     if (r === undefined) {
       allFreshCan = false;
-      boxes.push({ storeId, state: 'never_reported', lastReportAt: null, ageSeconds: null, stale: true, canRecordSales: null, disk: null, queue: null, tills: [] });
+      boxes.push({ storeId, state: 'never_reported', lastReportAt: null, ageSeconds: null, stale: true, canRecordSales: null, disk: null, queue: null, tills: [], tradingHoursLeft: null, tradingHoursLeftSays: null });
       continue;
     }
     const ageSeconds = Math.max(0, Math.floor((Date.parse(input.at) - Date.parse(r.observedAt)) / 1000));
     const stale = ageSeconds >= input.thresholds.syncLagWarnSeconds;
     const can = boxCanRecordSales(r.disk);
     if (stale) allFreshCan = false; else if (!can) { anyFreshCannot = true; allFreshCan = false; }
-    boxes.push({ storeId, state: 'reported', lastReportAt: r.observedAt, ageSeconds, stale, canRecordSales: can, disk: r.disk, queue: r.queue, tills: r.tills });
+    const estimate = estimateTradingHoursLeft(input.records, r);
+    const estimateSays = estimate.known
+      ? `about ${estimate.hoursLeft} hours of trading left before it would refuse a sale (the sales log grew ${mb(estimate.bytesPerTradingHour)} per trading hour over ${estimate.tradingMinutesCounted} minutes of trading in its reports since ${estimate.from}; ${mb(estimate.roomLeftBytes)} of room left above the reserve)`
+      : estimate.why;
+    const runningOut = can && estimate.known && estimate.hoursLeft < warnHours;
+    boxes.push({ storeId, state: 'reported', lastReportAt: r.observedAt, ageSeconds, stale, canRecordSales: can, disk: r.disk, queue: r.queue, tills: r.tills, tradingHoursLeft: estimate.known ? estimate.hoursLeft : null, tradingHoursLeftSays: estimateSays });
     const staleNote = `STALE — store ${storeId}'s computer last reported ${ago(ageSeconds)} ago (${r.observedAt}); it has not been heard from since, so this is old news, not the state now`;
     const headroom = Math.max(0, r.disk.salesLogCapacityBytes - r.disk.salesLogUsedBytes - r.disk.reserveBytes);
-    const diskEvidence = { freeBytes: r.disk.freeBytes, totalBytes: r.disk.totalBytes, salesLogHeadroomBytes: headroom, reportedAt: r.observedAt, ageSeconds };
-    const diskSays = can
-      ? `store ${storeId}'s computer can record sales: ${mb(r.disk.freeBytes)} free of ${mb(r.disk.totalBytes)}, ${mb(headroom)} of sales-log room left above the reserve`
+    const diskEvidence = {
+      freeBytes: r.disk.freeBytes, totalBytes: r.disk.totalBytes, salesLogHeadroomBytes: headroom, reportedAt: r.observedAt, ageSeconds,
+      tradingHoursLeft: estimate.known ? estimate.hoursLeft : 'not yet known', warnBelowTradingHours: warnHours,
+    };
+    const diskSays = runningOut
+      ? `store ${storeId}'s computer will run out of room for sales soon — ${estimateSays}, below the owner's warning line of ${warnHours} hours. Make room on it (or give it a bigger disk) before the tills have to refuse sales`
+      : can
+      ? `store ${storeId}'s computer can record sales: ${mb(r.disk.freeBytes)} free of ${mb(r.disk.totalBytes)}, ${mb(headroom)} of sales-log room left above the reserve; ${estimateSays}`
       : `store ${storeId}'s computer CANNOT record another sale — its disk is full (${mb(r.disk.freeBytes)} free; sales log ${mb(r.disk.salesLogUsedBytes)} of ${mb(r.disk.salesLogCapacityBytes)} with a ${mb(r.disk.reserveBytes)} reserve). Its tills refuse sales until room is made`;
     components.push({
-      name: `box_disk:${storeId}`, status: stale ? 'unknown' : can ? 'ok' : 'down',
+      // OB-78: a fresh report whose hours of trading left are under the owner's line is `degraded` (the early warning); a
+      // stale report stays `unknown` (old news never raises or clears the warning); a full disk is `down` as before.
+      name: `box_disk:${storeId}`, status: stale ? 'unknown' : !can ? 'down' : runningOut ? 'degraded' : 'ok',
       detail: stale ? `${staleNote}. Then: ${diskSays}` : diskSays, evidence: diskEvidence,
     });
 

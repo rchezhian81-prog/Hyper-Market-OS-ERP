@@ -265,6 +265,10 @@ import {
   createPeopleSession, PERSON_PROVISION_PERMISSION,
   type IssueResult, type PeoplePort, type PeopleRead, type PeopleSession, type PersonRow,
 } from './people-session';
+import {
+  createOutsideLoginsSession, OUTSIDE_KIND_SEGMENT,
+  type OutsideKind, type OutsideLoginRow, type OutsideLoginsPort, type OutsideLoginsSession, type OutsideRead, type OutsideWrite,
+} from './outside-logins-session';
 import { createSetupSession, type SetupSession } from './setup-session';
 import {
   SetupEditController, editorFor, parseDraft, saveResultFromError, type SaveResult,
@@ -4253,6 +4257,82 @@ async function postPerson(input: { readonly signInName: string; readonly display
 /** Head office's people routes, as the Admin screen uses them in the browser. */
 export const HEAD_OFFICE_PEOPLE: PeoplePort = Object.freeze({ read: () => fetchPeople(), issue: postPerson });
 
+// ── OB-76: logins for outside parties (a business customer, an app customer, a supplier) ─────────────────────────
+//
+// Asked in the viewer's OWN session; head office decides. The one-time password it returns is handed to the session
+// model, which holds it in memory until it is handed over — never written to storage, never logged.
+
+const OUTSIDE_PATH = '/v1/identity/outside-logins';
+
+/** One outside login as head office lists it, read defensively: a row without its ids, names or state is dropped. */
+export function outsideLoginRowOf(raw: unknown): OutsideLoginRow | null {
+  if (raw === null || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  const state = r['state'];
+  const role = r['role'];
+  if (!nonBlank(r['inviteId']) || !nonBlank(r['partyId']) || !nonBlank(r['userId']) || !nonBlank(r['displayName']) || !nonBlank(r['invitedBy']) || !nonBlank(r['invitedAt'])
+    || (state !== 'invited' && state !== 'approved' && state !== 'rejected' && state !== 'revoked')
+    || (role !== 'b2b_customer' && role !== 'customer' && role !== 'supplier')) return null;
+  return {
+    inviteId: r['inviteId'], role, partyId: r['partyId'], userId: r['userId'], displayName: r['displayName'], state,
+    invitedBy: r['invitedBy'], invitedAt: r['invitedAt'],
+    ...(nonBlank(r['approvedBy']) ? { approvedBy: r['approvedBy'] } : {}),
+    ...(nonBlank(r['rejectedBy']) ? { rejectedBy: r['rejectedBy'] } : {}),
+    ...(nonBlank(r['revokedBy']) ? { revokedBy: r['revokedBy'] } : {}),
+    ...(Array.isArray(r['grants']) ? { grants: (r['grants'] as unknown[]).filter((g): g is string => typeof g === 'string') } : {}),
+  };
+}
+
+async function outsideCall(method: 'GET' | 'POST', path: string, body?: unknown): Promise<{ ok: true; body: Record<string, unknown> } | { ok: false; refused: { code: string; whatHappened: string } } | { ok: false; lost: true }> {
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return { ok: false, lost: true };
+  try {
+    const key = globalThis.crypto?.randomUUID?.() ?? `outside-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const res = await fetchFn(path, {
+      method, credentials: 'same-origin',
+      headers: { accept: 'application/json', ...(method === 'POST' ? { 'content-type': 'application/json', 'idempotency-key': key } : {}) },
+      ...(method === 'POST' ? { body: JSON.stringify(body ?? {}) } : {}),
+    });
+    if (res.status >= 200 && res.status < 300) return { ok: true, body: (await res.json().catch(() => ({}))) as Record<string, unknown> };
+    return { ok: false, refused: await refusalOf(res) };
+  } catch {
+    return { ok: false, lost: true };
+  }
+}
+
+const outsideWrite = (a: Awaited<ReturnType<typeof outsideCall>>): OutsideWrite => {
+  if (!a.ok) return 'lost' in a ? { result: 'lost_link' } : { result: 'refused', ...a.refused };
+  const login = outsideLoginRowOf((a.body['login'] ?? a.body['invite']) as unknown);
+  const password = a.body['oneTimePassword'];
+  return {
+    result: 'done', ...(login === null ? {} : { login }),
+    // A replay carries a "withheld" sentence in its place — that is not a password.
+    ...(typeof password === 'string' && /^[2-9A-HJ-NP-Z]{4}(-[2-9A-HJ-NP-Z]{4}){3}$/.test(password) ? { oneTimePassword: password } : {}),
+  };
+};
+
+const seg = (k: OutsideKind): string => `${OUTSIDE_PATH}/${OUTSIDE_KIND_SEGMENT[k]}`;
+
+/** Head office's outside-party login routes, as the Admin screen uses them in the browser. */
+export const HEAD_OFFICE_OUTSIDE_LOGINS: OutsideLoginsPort = Object.freeze({
+  list: async (kind: OutsideKind): Promise<OutsideRead> => {
+    const a = await outsideCall('GET', seg(kind));
+    if (!a.ok) return 'lost' in a ? { result: 'lost_link' } : { result: 'refused', ...a.refused };
+    return { result: 'read', logins: (Array.isArray(a.body['logins']) ? a.body['logins'] as unknown[] : []).map(outsideLoginRowOf).filter((x): x is OutsideLoginRow => x !== null) };
+  },
+  invite: async (kind: OutsideKind, partyId: string, inviteId: string, body: { readonly userId?: string; readonly displayName: string; readonly grants?: readonly string[] }) =>
+    outsideWrite(await outsideCall('POST', `${seg(kind)}/${encodeURIComponent(partyId)}/invites/${encodeURIComponent(inviteId)}`, body)),
+  approve: async (kind: OutsideKind, inviteId: string) => outsideWrite(await outsideCall('POST', `${seg(kind)}/invites/${encodeURIComponent(inviteId)}/approve`, {})),
+  revoke: async (kind: OutsideKind, inviteId: string, reason: string) => outsideWrite(await outsideCall('POST', `${seg(kind)}/invites/${encodeURIComponent(inviteId)}/revoke`, { reason })),
+  signIn: async (kind: OutsideKind, inviteId: string, signInName: string) => outsideWrite(await outsideCall('POST', `${seg(kind)}/invites/${encodeURIComponent(inviteId)}/sign-in`, { signInName })),
+});
+
+/** Build the outside-party logins part of "Who can get in", or `null` when the box told the page nothing. */
+export function bootOutsideLogins(data: AdminData | undefined, port?: OutsideLoginsPort): OutsideLoginsSession | null {
+  if (data === undefined) return null;
+  return createOutsideLoginsSession({ userId: data.userId === undefined ? null : data.userId, permissions: data.permissions ?? [] }, port);
+}
+
 /** Build the People part of "Who can get in", or `null` when the box told the page nothing about who is looking. */
 export function bootPeople(data: AdminData | undefined, port?: PeoplePort): PeopleSession | null {
   if (data === undefined) return null;
@@ -4833,6 +4913,7 @@ interface ManagerWindow {
   adminData?: AdminData;
   adminSession?: AdminSession;
   peopleSession?: PeopleSession;
+  outsideLoginsSession?: OutsideLoginsSession;
   setupData?: SetupData;
   setupSession?: SetupSession;
   setupEditing?: SetupEditingApi;
@@ -6266,6 +6347,8 @@ if (browserWindow !== undefined) {
   if (admin !== null) browserWindow.adminSession = admin;
   const peopleSession = bootPeople(browserWindow.adminData, HEAD_OFFICE_PEOPLE);
   if (peopleSession !== null) browserWindow.peopleSession = peopleSession;
+  const outsideLogins = bootOutsideLogins(browserWindow.adminData, HEAD_OFFICE_OUTSIDE_LOGINS);
+  if (outsideLogins !== null) browserWindow.outsideLoginsSession = outsideLogins;
   const setup = bootSetup(browserWindow.setupData);
   if (setup !== null && browserWindow.setupData !== undefined) {
     browserWindow.setupSession = setup;

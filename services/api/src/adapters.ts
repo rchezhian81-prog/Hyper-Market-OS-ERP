@@ -306,6 +306,7 @@ import type { TokenRevocation, TokenRevocationStore } from '../../identity/src/r
 import type { AccessLifecycleDeps, LifecycleChange } from '../../identity/src/access-lifecycle';
 import { foldPeople, type PeopleDeps, type PersonSignInEvent } from '../../identity/src/people';
 import type { IdentityDirectory } from '../../identity/src/identity-directory';
+import { foldOutsideLogins, type OutsidePartyLoginDeps, type OutsideLoginEvent } from '../../identity/src/outside-party-logins';
 import { AccessControl, type Role, type RoleAssignment } from '../../../packages/rbac/src/rbac';
 import type { DependencyProbe, FeatureFlagChange, PlatformDeps, ExportedEvent } from '../../platform/src/index';
 import { inMemorySettings } from '../../platform/src/index';
@@ -13973,4 +13974,93 @@ export async function productVersionsOf(store: EventStore, tenantId: string, pro
   return (await store.readStream(tenantId, PRODUCTS_STREAM, { type: 'ProductPublished' }))
     .map((ev) => ({ eventId: ev.event.id, product: payloadOf<ProductRecord>(ev) }))
     .filter((v) => v.product.productId === productId);
+}
+
+
+const OUTSIDE_LOGIN_EVENTS = new Set(['OutsideLoginInvited', 'OutsideLoginApproved', 'OutsideLoginRejected', 'OutsideLoginRevoked']);
+
+/**
+ * OB-76 (owner, 12 Oct 2026): logins for outside parties — the invite, the second person's approval, a rejection and a
+ * revocation, on the identity ledger beside the grants. An approval is ONE batch with the `RoleGranted` the access
+ * resolver folds (who invited as the requester, who approved as the approver), and a revocation ONE batch with the
+ * `RoleRevoked` that takes it away — so the role and its record never disagree. The party's own binding (the B2B portal's
+ * login binding; the supplier portal partner's logins) is written through those portals' own adapters.
+ */
+export function outsidePartyLoginAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): Pick<OutsidePartyLoginDeps, 'now' | 'invites' | 'recordInvite' | 'recordApproval' | 'recordRejection' | 'recordRevocation' | 'rolesHeldBy' | 'partyExists' | 'bind'> {
+  const read = async (tenantId: string): Promise<OutsideLoginEvent[]> =>
+    (await input.store.readStream(tenantId, STREAM.identity))
+      .filter((e) => OUTSIDE_LOGIN_EVENTS.has(e.event.type))
+      .map((e) => ({ ...payloadOf<Record<string, unknown>>(e), type: e.event.type } as unknown as OutsideLoginEvent));
+  const outsideEvent = (tenantId: string, type: string, id: string, at: string, payload: unknown): BatchEntry => ({
+    stream: STREAM.identity,
+    event: makeEvent({ id: `outside-login-${id}`, type, occurredAt: at, idempotencyKey: `outside-login-${tenantId}-${id}`, source: 'api/identity', payload }),
+  });
+  return {
+    now: input.now,
+    invites: async (tenantId) => foldOutsideLogins(await read(tenantId)),
+    recordInvite: async (tenantId, invite) => {
+      await input.store.appendBatch(tenantId, [outsideEvent(tenantId, 'OutsideLoginInvited', `${invite.inviteId}-invited`, invite.invitedAt, { invite })]);
+    },
+    recordApproval: async (tenantId, invite, approvedBy, at) => {
+      const provenance = { kind: 'outside_party_login', inviteId: invite.inviteId, partyRole: invite.role, partyId: invite.partyId, decision: 'OB-76' };
+      await input.store.appendBatch(tenantId, [
+        outsideEvent(tenantId, 'OutsideLoginApproved', `${invite.inviteId}-approved`, at, { inviteId: invite.inviteId, approvedBy, at }),
+        {
+          stream: STREAM.identity,
+          event: makeEvent({
+            id: `grant-outside-${invite.inviteId}`, type: ROLE_GRANTED, occurredAt: at,
+            idempotencyKey: `grant-${tenantId}-outside-${invite.inviteId}`, source: 'api/identity',
+            // The same shape every other grant records: the assignment RBAC reads, plus who asked and who approved.
+            payload: {
+              userId: invite.userId, roleId: invite.role, branchScope: 'all',
+              request: { grantId: `outside-${invite.inviteId}`, userId: invite.userId, roleId: invite.role, branchScope: 'all', requestedBy: invite.invitedBy, approvedBy, requestedAt: invite.invitedAt, reason: invite.reason ?? `login for ${invite.role} ${invite.partyId}` },
+              provenance,
+            },
+          }),
+        },
+      ]);
+    },
+    recordRejection: async (tenantId, inviteId, rejectedBy, reason, at) => {
+      await input.store.appendBatch(tenantId, [outsideEvent(tenantId, 'OutsideLoginRejected', `${inviteId}-rejected`, at, { inviteId, rejectedBy, reason, at })]);
+    },
+    recordRevocation: async (tenantId, invite, revokedBy, reason, at) => {
+      await input.store.appendBatch(tenantId, [
+        outsideEvent(tenantId, 'OutsideLoginRevoked', `${invite.inviteId}-revoked`, at, { inviteId: invite.inviteId, revokedBy, reason, at }),
+        {
+          stream: STREAM.identity,
+          event: makeEvent({
+            id: `revoke-outside-${invite.inviteId}`, type: ROLE_REVOKED, occurredAt: at,
+            idempotencyKey: `revoke-${tenantId}-outside-${invite.inviteId}`, source: 'api/identity',
+            payload: { userId: invite.userId, roleId: invite.role, branchScope: 'all', provenance: { kind: 'outside_party_login', inviteId: invite.inviteId, revokedBy, reason } },
+          }),
+        },
+      ]);
+    },
+    rolesHeldBy: async (tenantId, userId) => rolesHeldNow(input.store, tenantId, userId, input.now()),
+    partyExists: async (tenantId, role, partyId) => {
+      if (role === 'b2b_customer') return (await b2bCreditAdapter(input).account(tenantId, partyId)) !== undefined;
+      if (role === 'supplier') return (await supplierPortalAdapter(input).partner(tenantId, partyId)) !== undefined;
+      // A customer record is what the shop holds about them: a purchase, a return or a loyalty membership (customer 360).
+      const c = customer360Adapter(input);
+      await c.catchUp(tenantId);
+      if ((await c.purchasesOf(tenantId, partyId)).length > 0 || (await c.returnsOf(tenantId, partyId)).length > 0) return true;
+      const loyalty = await c.loyaltyOf(tenantId, partyId);
+      return loyalty.member !== undefined || loyalty.pointsBalance !== undefined;
+    },
+    bind: async (tenantId, invite, by, at) => {
+      if (invite.role === 'b2b_customer') {
+        await b2bPortalAdapter(input).recordLoginBinding(tenantId, { customerId: invite.partyId, userId: invite.userId, grants: (invite.grants ?? []) as B2BLoginBinding['grants'], boundBy: by, at });
+      } else if (invite.role === 'supplier') {
+        const portal = supplierPortalAdapter(input);
+        const config = await portal.partner(tenantId, invite.partyId);
+        if (config !== undefined && !config.logins.includes(invite.userId)) {
+          await portal.recordPartner(tenantId, invite.partyId, { ...config, logins: [...config.logins, invite.userId] }, at);
+        }
+      }
+      // An app customer's login IS the customer record (the storefront scopes to the signed-in subject): nothing more to bind.
+    },
+  };
 }

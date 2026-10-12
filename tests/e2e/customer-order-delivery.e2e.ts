@@ -9,6 +9,13 @@ import { beginOtpChallenge, verifyOtp, type OtpChallenge } from '../../packages/
 import { createOtpSimulator } from '../support/otp-simulator';
 import { apiHarness, TEST_IDP, type ApiHarness } from '../support/api-harness';
 import { testModePaymentProvider, type TestModePaymentProvider } from '../../packages/orders/src/payment-verification';
+import { randomUUID } from 'node:crypto';
+import { readdirSync, readFileSync } from 'node:fs';
+import { Pool } from 'pg';
+import { SqlIdempotencyStore } from '../../services/kernel/src/index';
+import { pgPoolClient } from '../../packages/persistence/src/pg-client';
+import { SqlEventStore } from '../../packages/persistence/src/event-store';
+import { runMigrations } from '../../packages/persistence/src/migrations';
 
 /**
  * **A real customer, in a real browser, places a real order that the cloud then holds** (M20-FR-03,
@@ -33,7 +40,8 @@ const HAVE_BROWSER = existsSync(CHROMIUM);
 const WEB_DIR = 'apps/customer-app/web';
 const DATA_MARKER = '<!--SCREEN-DATA-->';
 
-const T = 'ab000000-0000-4000-8000-000000000049';
+// `let`: the OB-77 test gives each PostgreSQL run its own shop, so a re-run never meets the last run's records.
+let T = 'ab000000-0000-4000-8000-000000000049';
 const OWNER = 'u-owner';
 const PHONE = '+919000000001';
 const SUBJECT = 'cust-phone-1';
@@ -158,9 +166,9 @@ async function startStore(h: ApiHarness, rec: Recorder): Promise<{ base: string;
 // the test, standing in for the bank, registers the capture — the app's own "authorised" never makes it paid.
 let provider: TestModePaymentProvider;
 const PAY_REF = 'tok_e2e_1';
-async function seededApi(capacityPerSlot = 10): Promise<ApiHarness> {
+async function seededApi(capacityPerSlot = 10, make?: (p: TestModePaymentProvider) => ApiHarness): Promise<ApiHarness> {
   provider = testModePaymentProvider();
-  const h = apiHarness({ paymentVerifier: provider });
+  const h = make === undefined ? apiHarness({ paymentVerifier: provider }) : make(provider);
   await h.seedOwner(T, OWNER);
   await h.enableFeature(T, 'customer_app');
   await h.request({ method: 'POST', path: '/v1/inventory/movements', userId: OWNER, tenantId: T, idempotencyKey: 'mv-1', body: { movementId: 'mv-1', productId: 'MILK', locationId: 'L1', kind: 'received', quantityMinor: 5, uom: 'each', occurredAt: AT, enteredBy: OWNER } });
@@ -405,4 +413,97 @@ describe.skipIf(!HAVE_BROWSER)('a customer orders in a real browser and the clou
       await store.stop();
     }
   }, 60_000);
+
+  it('OB-77: the driver\'s delivery status and its as-of time reach the customer\'s screen — on its way, could not deliver — read back after a head-office restart, in English and Tamil', async () => {
+    // On real PostgreSQL when DATABASE_URL is set (its own shop per run), otherwise the in-memory store; either way the restart
+    // is a second head-office instance over the same records.
+    const url = process.env['DATABASE_URL'];
+    const pool = url === undefined ? undefined : new Pool({ connectionString: url, max: 4, options: '-c app.tenant_id=*' });
+    const savedT = T;
+    if (pool !== undefined) {
+      T = randomUUID();
+      const dir = 'db/migrations';
+      await runMigrations(pgPoolClient(pool), readdirSync(dir).filter((f) => f.endsWith('.sql')).sort().map((name) => ({ name, sql: readFileSync(join(dir, name), 'utf8') })));
+    }
+    let current: ApiHarness | undefined;
+    const make = (p: TestModePaymentProvider): ApiHarness => pool === undefined
+      ? apiHarness({ paymentVerifier: p, ...(current === undefined ? {} : { store: current.store }) })
+      : apiHarness({ store: new SqlEventStore(pgPoolClient(pool)), idempotency: new SqlIdempotencyStore(pgPoolClient(pool)), paymentVerifier: p });
+    current = await seededApi(10, make);
+    await current.enableFeature(T, 'delivery');
+    await current.provisionRole(T, 'u-mgr', 'store_manager');
+    // The packer needs the product's handling class on the product master (never guessed from its name).
+    for (const [path, body] of [
+      ['/v1/catalogue/products/MILK/publish', { product: { sku: 'MILK-1L', name: 'Aavin Milk 1L', baseUom: 'each', primaryCategoryId: 'dairy', taxClass: '0401', lifecycle: 'active', handling: 'ambient' }, categories: [{ categoryId: 'dairy', name: 'Dairy', parentId: null }] }],
+      ['/v1/catalogue/pack', { storeId: 'L1', asOf: new Date().toISOString().slice(0, 10) }],
+    ] as const) expect((await current.request({ method: 'POST', path, userId: OWNER, tenantId: T, idempotencyKey: `ob77-${path}`, body })).status, path).toBeLessThan(300);
+    // The store's reverse proxy always talks to whichever head-office instance is running now.
+    const live = { raw: (i: Parameters<ApiHarness['raw']>[0]) => current!.raw(i), provisionRole: (...a: Parameters<ApiHarness['provisionRole']>) => current!.provisionRole(...a) } as unknown as ApiHarness;
+    const rec: Recorder = { apiCalls: [], grantedCustomerRole: 0 };
+    const store = await startStore(live, rec);
+    const context: BrowserContext = await browser.newContext({ geolocation: NEARBY, permissions: ['geolocation'] });
+    const page = await context.newPage();
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(String(e)));
+    const staff = async (path: string, userId: string, body: unknown) => {
+      const r = await current!.request({ method: 'POST', path, userId, tenantId: T, idempotencyKey: `${path}-${JSON.stringify(body)}`, body });
+      expect(r.status, `${path}: ${JSON.stringify(r.body)}`).toBeLessThan(300);
+    };
+    try {
+      await readyToPay(page, store.base, store.sms);
+      provider.capture(PAY_REF, 60_00 + 40_00);
+      await page.click('#pay');
+      await page.waitForSelector('#view-order:not([hidden])', { timeout: 15_000 });
+      await page.locator('#order-say', { hasText: 'confirmed and will be picked' }).waitFor({ timeout: 15_000 });
+      await page.click('#banner-ok');
+      const orderId = (await ordersOf(current)).at(0)!.orderId;
+      // Asking where it is writes nothing: the only new call is one authenticated GET of the customer's own order.
+      const posts = rec.apiCalls.filter((c) => c.method === 'POST').length;
+      await page.click('#track-order');
+      await page.locator('#delivery-say', { hasText: 'No driver has your order yet' }).waitFor({ timeout: 10_000 });
+      expect(rec.apiCalls.filter((c) => c.method === 'POST')).toHaveLength(posts);
+      expect(rec.apiCalls.at(-1)).toEqual({ method: 'GET', path: `/v1/storefront/orders/${orderId}`, auth: true });
+
+      // The store confirms, packs and dispatches it; the driver sets off.
+      await staff(`/v1/orders/${orderId}/transition`, OWNER, { event: 'confirm' });
+      await staff(`/v1/fulfilment/orders/${orderId}/pack`, 'u-mgr', { lines: [{ productId: 'MILK', pickedMinor: 1 }], crateAssignment: { MILK: 'c1' } });
+      await staff(`/v1/fulfilment/orders/${orderId}/dispatch`, 'u-mgr', { manifestId: `m-${orderId}`, locationId: 'L1', seals: { c1: 's1' } });
+      await staff(`/v1/delivery/orders/${orderId}/transition`, OWNER, { event: 'depart' });
+      await page.click('#track-order');
+      await page.locator('#delivery-say[data-status="out_for_delivery"]', { hasText: 'Your order is on its way.' }).waitFor({ timeout: 10_000 });
+      const steps = async () => ((await current!.request({ method: 'GET', path: `/v1/delivery/orders/${orderId}`, userId: OWNER, tenantId: T })).body as { history: { at: string }[] }).history;
+      expect(await page.getAttribute('#delivery-say', 'data-as-of')).toBe((await steps()).at(-1)!.at);
+      expect(await page.textContent('#delivery-say')).toContain('(as of ');
+
+      // The door: the driver could not deliver. The customer's screen says so, with the time the driver said it.
+      await staff(`/v1/delivery/orders/${orderId}/transition`, OWNER, { event: 'arrive' });
+      await staff(`/v1/delivery/orders/${orderId}/transition`, OWNER, { event: 'fail' });
+      const failedAt = (await steps()).at(-1)!.at;
+
+      // Head office restarts: a second instance over the same records answers the next tap.
+      current = make(provider);
+      await page.click('#track-order');
+      await page.locator('#delivery-say[data-status="failed"]', { hasText: 'The driver could not deliver your order.' }).waitFor({ timeout: 10_000 });
+      expect(await page.getAttribute('#delivery-say', 'data-as-of')).toBe(failedAt);
+      expect(await page.getAttribute('#delivery-say', 'class')).toContain('stop');
+
+      // Tamil follows the one toggle — the driver's status and the button in the reader's language.
+      await page.click('#lang');
+      expect(await page.textContent('#track-order')).toBe('என் ஆர்டர் எங்கே?');
+      expect(await page.textContent('#delivery-say')).toContain('ஓட்டுநரால் உங்கள் ஆர்டரை டெலிவரி செய்ய முடியவில்லை.');
+      await page.click('#lang');
+
+      // No signal: the screen says it could not ask — it never passes the last answer off as current.
+      await context.setOffline(true);
+      await page.click('#track-order');
+      await page.locator('#delivery-say', { hasText: 'Could not reach the shop to ask' }).waitFor({ timeout: 10_000 });
+      await context.setOffline(false);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+      await store.stop();
+      T = savedT;
+      await pool?.end();
+    }
+  }, 90_000);
 });

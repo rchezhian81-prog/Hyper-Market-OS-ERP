@@ -421,6 +421,11 @@ export function floorIndentRoutes(deps: FloorIndentsDeps): readonly Route[] {
           const lineCostsMinor = plan.transfer.lines.map((l) => unitCostsMinor[l.productId] ?? null);
           const transfer: Transfer = { ...dispatched.transfer, lineCostsMinor };
           const posted = dispatchPostings(transfer, dispatched.movements, ctx.userId);
+          // OB-79 "A" (owner, 12 Oct 2026, "Yes, stop it") · WF-08 / OB-59: stock leaving a back store where an open count
+          // EXPLICITLY froze `transferred_out` for the product is refused by name, as on the plain transfer routes. The
+          // owner's default freeze (adjustments & write-offs) leaves an issue alone. Nothing moves; a RELAYED issue
+          // (`/synced`) is a fact that already happened and stays kept-and-shown as a freeze breach instead.
+          await assertNotFrozenByCount(deps.countFreeze, ctx.tenantId, posted, 'floor-indent issue');
           // SP-8c on the direct route too: the bin a line names is lowered in the SAME write; a disagreement is said.
           const picks = await binPicksFor(deps, {
             tenantId: ctx.tenantId, indentId, issueId, lines, movedBy: ctx.userId, at: now,
@@ -467,6 +472,11 @@ export function floorIndentRoutes(deps: FloorIndentsDeps): readonly Route[] {
           // Batch 2: another count of this issue landed between reading the indent and reading its transfer — said as that.
           if (transfer.state === 'received') throw new IndentRefusedError(indentId, 'issue_already_received', `issue ${issueId} was counted in a moment ago by someone else — read the indent; nothing was recorded`);
           const result = receiveTransfer({ transfer, counted: arrivedOf(counted), receivedBy: ctx.userId, at: now, currency: (b['currency'] as CurrencyCode | undefined) ?? 'INR' });
+          // OB-79 "A" (owner, 12 Oct 2026, "Yes, stop it") · WF-08 / OB-59: stock arriving on a counted shelf where an open
+          // count EXPLICITLY froze `transferred_in` for the product is refused by name (nothing received; the issue stays in
+          // transit), as on the plain transfer receipt. Only the arrival kind is asked here: a write-off freeze keeps the
+          // OB-66 hold below (good units received, damaged units' write-off held on the plan) unchanged.
+          await assertNotFrozenByCount(deps.countFreeze, ctx.tenantId, receivePostings(result.transfer, result.movements, ctx.userId), 'floor-indent receipt');
           // SP-8c: damaged units arrived (out of transit) and are written off at the floor in the same write — never on the shelf;
           // OB-71 "A": each such write-off is also its own line on the write-off register (same write), posted once to the books.
           // OB-66 "A": where an open count at the floor froze write-offs of the product, the GOOD units are received at once and
