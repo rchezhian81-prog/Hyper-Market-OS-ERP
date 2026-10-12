@@ -149,6 +149,7 @@ export function posRoutes(deps: PosDeps): readonly Route[] {
           ...(cashierSeal === undefined ? {} : { cashierSeal }),
         } satisfies IntakeContext);
 
+        let notThisBill: Record<string, unknown> | undefined;
         if (!intake.alreadyBanked) {
           await deps.bankSale(ctx.tenantId, sale);
           if (intake.exceptions.length > 0) {
@@ -165,14 +166,12 @@ export function posRoutes(deps: PosDeps): readonly Route[] {
               ownerAction: 'A store computer gave one bill number to two different bills (a computer restored from a backup, or two computers on one till). The customer holds the second bill, which head office has not banked. Find it at the store computer, bank it by hand, and check that till\'s bill-number prefix.',
             }]);
             // Verifier r19 IC-3: the answer says what happened — this bill was NOT banked (a different bill holds the id). Still
-            // 202, so the store computer stops re-sending it; the owner's finding above is where it is worked.
-            return {
-              status: 202,
-              body: {
-                ...intake, alreadyBanked: false, thisBillBanked: false,
-                notBankedBecause: 'a_different_bill_holds_this_sale_id',
-                detail: `sale ${sale.saleId} is already held by a DIFFERENT bill that head office banked first (${first.totalMinor} against this ${sale.totalMinor}); this bill was NOT banked — it is on head office's sales findings as "receipt number reused" for a person to bank by hand`,
-              },
+            // 202, so the store computer stops re-sending it; the owner's finding above is where it is worked. (Loyalty below is
+            // idempotent per sale id: it never earns or spends twice for the id.)
+            notThisBill = {
+              alreadyBanked: false, thisBillBanked: false,
+              notBankedBecause: 'a_different_bill_holds_this_sale_id',
+              detail: `sale ${sale.saleId} is already held by a DIFFERENT bill that head office banked first (${first.totalMinor} against this ${sale.totalMinor}); this bill was NOT banked — it is on head office's sales findings as "receipt number reused" for a person to bank by hand`,
             };
           }
         }
@@ -212,7 +211,7 @@ export function posRoutes(deps: PosDeps): readonly Route[] {
 
         // 202, not 201: the sale is banked and there may be work attached to it. A 4xx here would
         // tell a till that a sale which happened did not.
-        return { status: 202, body: { ...intake, ...(loyalty === undefined ? {} : { loyalty }), ...(spends === undefined ? {} : { spends }) } };
+        return { status: 202, body: { ...intake, ...(loyalty === undefined ? {} : { loyalty }), ...(spends === undefined ? {} : { spends }), ...(notThisBill ?? {}) } };
       },
     },
     {
