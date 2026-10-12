@@ -60,7 +60,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Incide
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('request', (r) => { const u = new URL(r.url()); if (u.pathname.startsWith('/v1/') && r.method() !== 'GET') writes.push(`${r.method()} ${u.pathname}`); });
     await page.goto(`${shop.base}/incidents`, { waitUntil: 'load' });
-    return { page, writes, errors, close: () => context.close() };
+    return { page, writes, errors, close: async () => { await page.waitForLoadState('networkidle').catch(() => {}); await context.close(); } }; // settle in-flight reads before the API restarts
   };
   const says = async (page: Page, id: string, expected: RegExp): Promise<void> => {
     await page.waitForFunction(([i, source]) => new RegExp(source!).test((globalThis as unknown as { document: { getElementById(x: string): { textContent: string | null } | null } }).document.getElementById(i!)?.textContent ?? ''), [id, expected.source], { timeout: 15_000 });
