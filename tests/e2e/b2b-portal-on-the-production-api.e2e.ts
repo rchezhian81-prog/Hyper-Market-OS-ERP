@@ -3,12 +3,7 @@ import { existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { chromium, type Browser } from 'playwright-core';
-import { Pool } from 'pg';
 import { startInboxShop, ok, OWNER, type InboxShop } from './lib/ai-inbox-shop';
-import { SqlEventStore } from '../../packages/persistence/src/event-store';
-import { pgPoolClient } from '../../packages/persistence/src/pg-client';
-import { makeEvent } from '../../packages/contracts/src/event';
-import { STREAM } from '../../services/api/src/adapters';
 
 /**
  * **A business customer reads its own account, in a real browser, on the PRODUCTION API over real PostgreSQL (M22-FR-04 ·
@@ -26,12 +21,12 @@ import { STREAM } from '../../services/api/src/adapters';
  *     only its own invoice, never the caterer's;
  *   • after a RESTART of the API the caterer reads the same; the page reads in Tamil; no page errors.
  *
- * DEFECT this run exposes (reported, not fixed here — no production code in this item): on the production API NOBODY can
- * grant the `b2b_customer` role. The governed grant (asked by one person, approved by another) is refused with
- * `escalates_beyond_the_approver`, because the approver must already hold every permission the role carries and no staff
- * role — the owner's included — holds `b2b.portal.self` (the same holds for the `customer` and `supplier` portal roles).
- * The seed asserts that refusal, then lays the two portal logins down as an operator's ledger write (`RoleGranted`, the
- * way the initial admin set is laid down), so the portal itself can be proven on the real API.
+ * OB-76 "A" (owner, 12 Oct 2026, "Staff invite + 2nd approves"): the two portal logins are now given through the governed
+ * path — the owner (who manages business-customer accounts) INVITES each login bound to its account, and the accountant (a
+ * DIFFERENT person who also manages them) APPROVES it (`/v1/identity/outside-logins/b2b-accounts/…`); both names stay on
+ * the record and on the `RoleGranted`. The generic grant route still refuses `b2b_customer` (`escalates_beyond_the_approver`)
+ * — the rule is unchanged for every staff role; the outside-party flow is its named, narrow exception. Before, this seed
+ * had to lay the logins down as an operator's ledger write because no governed path existed.
  *
  * Needs DATABASE_URL and the pre-installed Chromium; without either it SKIPS.
  */
@@ -39,7 +34,7 @@ import { STREAM } from '../../services/api/src/adapters';
 const CHROMIUM = process.env['PLAYWRIGHT_CHROMIUM_EXECUTABLE'] ?? '/opt/pw-browsers/chromium';
 const DATABASE_URL = process.env['DATABASE_URL'];
 const KEY = ['b2b', 'portal', 'e2e', 'production', 'signing', 'key'].join('-').padEnd(48, '0');
-const CATERER = 'u-caterer'; const CANTEEN = 'u-canteen';
+const CATERER = 'u-caterer'; const CANTEEN = 'u-canteen'; const ACCOUNTANT = 'u-acct-b2b';
 const LINE = { lineId: 'l1', productId: 'p1', description: 'Rice 25kg', qty: 10, unitPriceMinor: 10_000, taxRateBps: 500 };
 const day = (offset: number): string => new Date(Date.now() + offset * 864e5).toISOString().slice(0, 10);
 
@@ -63,22 +58,19 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the B2B po
         await as('/v1/b2b/collections/CATERER/payments/rcpt-c1', { receivedMinor: 30_000 }, 'rcpt-c1');
         await as('/v1/b2b/documents/CATERER/quotations/q-c1', { lines: [LINE] }, 'q-c1');
         await as('/v1/b2b/collections/CANTEEN/invoices/inv-k1', { number: 'INV-K1', issuedOn: day(-20), dueOn: day(5), grossMinor: 999_900 }, 'inv-k1');
-        // The portal logins: each a named person with the business-customer role, bound by staff to its customer.
-        // DEFECT: the governed grant is refused — no approver holds b2b.portal.self (see the header).
+        // The portal logins: each a named person with the business-customer role, bound to its own account through the
+        // governed path (OB-76) — invited by the owner, approved by a DIFFERENT person who also manages B2B accounts.
+        // The generic grant route still refuses it: no approver holds b2b.portal.self, and that rule is unchanged.
         await expect(cloud.grant(CATERER, 'b2b_customer')).rejects.toThrow(/escalates_beyond_the_approver/);
-        const ledger = new Pool({ connectionString: DATABASE_URL!, max: 1, options: '-c app.tenant_id=*' });
-        try {
-          const store = new SqlEventStore(pgPoolClient(ledger));
-          for (const userId of [CATERER, CANTEEN]) {
-            await store.append(cloud.tenantId, STREAM.identity, makeEvent({
-              id: `grant-b2b_customer-${userId}`, type: 'RoleGranted', occurredAt: new Date().toISOString(),
-              idempotencyKey: `grant-${cloud.tenantId}-b2b_customer-${userId}`, source: 'operator/ledger',
-              payload: { userId, roleId: 'b2b_customer', branchScope: 'all', request: { grantId: `b2b_customer-${userId}`, userId, roleId: 'b2b_customer', branchScope: 'all', requestedBy: 'operator', approvedBy: 'operator', requestedAt: new Date().toISOString() }, provenance: { kind: 'operator_ledger_write', laidDownBy: 'tests/e2e (no governed path exists)' } },
-            }));
-          }
-        } finally { await ledger.end(); }
-        await as(`/v1/b2b-portal/customers/CATERER/logins/${CATERER}`, { grants: ['view_statement', 'view_invoices'] }, 'bind-cat');
-        await as(`/v1/b2b-portal/customers/CANTEEN/logins/${CANTEEN}`, { grants: ['view_invoices'] }, 'bind-can');
+        await cloud.grant(ACCOUNTANT, 'accountant');
+        await as('/v1/b2b/accounts/CANTEEN', { creditLimitMinor: 100_000 }, 'acc-can');
+        for (const [account, userId, displayName, grants] of [
+          ['CATERER', CATERER, 'Meena Raman', ['view_statement', 'view_invoices']],
+          ['CANTEEN', CANTEEN, 'Joseph Paul', ['view_invoices']],
+        ] as const) {
+          await as(`/v1/identity/outside-logins/b2b-accounts/${account}/invites/inv-${userId}`, { userId, displayName, grants }, `invite-${userId}`);
+          await ok(cloud.request({ method: 'POST', path: `/v1/identity/outside-logins/b2b-accounts/invites/inv-${userId}/approve`, userId: ACCOUNTANT, idempotencyKey: `approve-${userId}`, body: {} }), `approve ${userId}`);
+        }
       },
     });
     browser = await chromium.launch({ headless: true, executablePath: CHROMIUM });
