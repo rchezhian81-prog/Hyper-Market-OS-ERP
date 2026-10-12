@@ -96,7 +96,8 @@ describe('PA-12 round 10 — a person is never the backup job (real API, in memo
     h = apiHarness();
     await h.seedOwner(tenant, OWNER);
     await h.provisionRole(tenant, ASKER, 'store_manager');
-    call = (method, path, userId, body) => h.request({ method, path, userId, tenantId: tenant, ...(body === undefined ? {} : { body }), ...(method === 'GET' ? {} : { idempotencyKey: `k-${randomUUID()}` }) });
+    // PA-12 r12: the backup job presents its MACHINE credential (no interactive sign-in evidence), as issued out-of-band.
+    call = (method, path, userId, body) => h.request({ method, path, userId, tenantId: tenant, ...(userId === JOB ? { amr: null, authTimeFromNowSeconds: null } : {}), ...(body === undefined ? {} : { body }), ...(method === 'GET' ? {} : { idempotencyKey: `k-${randomUUID()}` }) });
   });
   it('refused at request, at approval, in an emergency and in a joiner change; the person still cannot post a backup', async () => {
     await machineOnly(call);
@@ -116,7 +117,7 @@ describe.skipIf(!DATABASE_URL)('PA-12 round 10 — on real PostgreSQL through th
   let call: Call;
   beforeAll(async () => {
     cloud = await startRealCloud({ databaseUrl: DATABASE_URL!, tenantId: randomUUID(), owner: OWNER, packSigningKey: ['pa12', 'machine', 'key'].join('-').padEnd(48, '0') });
-    call = (method, path, userId, body) => cloud.request({ method, path, userId, ...(body === undefined ? {} : { body }), ...(method === 'GET' ? {} : { idempotencyKey: `k-${randomUUID()}` }) });
+    call = (method, path, userId, body) => cloud.request({ method, path, userId, machine: userId === JOB, ...(body === undefined ? {} : { body }), ...(method === 'GET' ? {} : { idempotencyKey: `k-${randomUUID()}` }) });
   }, 120_000);
   afterAll(async () => { await cloud?.stop(); });
   it('refused at request, at approval, in an emergency and in a joiner change; the person still cannot post a backup', async () => {

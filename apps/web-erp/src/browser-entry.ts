@@ -65,6 +65,11 @@ import {
 } from './merchandising-session';
 import { createUnsellableSession, type UnsellableSession, type UnsellableData } from './unsellable-session';
 import {
+  createFinanceCloseSession, browserFinanceCloseHttp, closeWords, rupees, paiseOf, sayOutcome, flagWords, paymentStateWords, conflictWords,
+  type FinanceCloseSession,
+} from './finance-close-session';
+import { createCompetitorPriceSession, browserCompetitorHttp, competitorWords, gapWords, competitorOutcomeWords, COMPETITOR_SOURCES, type CompetitorPriceSession } from './competitor-price-session';
+import {
   createReportingSession,
   type DayTotal, type ReportableSale, type ReportingPorts, type ReportingSession,
 } from './reporting-session';
@@ -339,6 +344,10 @@ export interface CatalogueData {
   readonly storeId?: string;
   /** Today in the shop's own calendar. The screen never reads a clock of its own. */
   readonly today?: string;
+  /** Now on the box's clock (ISO) — the competitor-price panel dates a sighting with it unless the person says when. */
+  readonly now?: string;
+  /** What the person holds (head office's `GET /v1/identity/me`) — the competitor-price panel offers recording only with `price.change.propose`. */
+  readonly permissions?: readonly string[];
   /** Minimum gross margin in basis points. Per-tenant policy (M05-FR-02). */
   readonly marginFloorBps?: number;
   // No list of approvers (ADR-0024): a below-floor price or a margin-losing offer is approved by a second person in
@@ -1228,6 +1237,11 @@ export interface ViewerIdentity {
  * Keep only who is looking and the permission words from an injected payload; `undefined` (nobody named) when it is
  * absent or malformed. The permissions only shape what a screen OFFERS — the cloud re-checks every act.
  */
+/** Round 12: the Month-end page's words and readings (tested in `finance-close-session.ts`). */
+export const FINANCE_CLOSE_KIT = Object.freeze({ closeWords, rupees, paiseOf, sayOutcome, flagWords, paymentStateWords, conflictWords });
+/** Round 12: the competitor-price panel's words and readings (tested in `competitor-price-session.ts`). */
+export const COMPETITOR_PRICE_KIT = Object.freeze({ competitorWords, gapWords, competitorOutcomeWords, rupees, sources: COMPETITOR_SOURCES });
+
 export function viewerIdentity(raw: unknown): ViewerIdentity | undefined {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
   const r = raw as Record<string, unknown>;
@@ -4621,6 +4635,14 @@ interface ManagerWindow {
   /** Round 10: the Organisation and Delegation pages — thin clients; only who is looking and what they hold. */
   organisationData?: ViewerIdentity;
   delegationData?: ViewerIdentity;
+  /** Round 12 (M23 · WF-18 · D10-FR-03/05): the Month-end page — who is looking, what they hold, and this month. */
+  financeCloseData?: ViewerIdentity & { readonly period?: string };
+  financeCloseSession?: FinanceCloseSession;
+  /** The page's words and readings, from the same tested module (the page holds no rule of its own). */
+  financeCloseKit?: typeof FINANCE_CLOSE_KIT;
+  /** Round 12 (D06-FR-05): the competitor-price panel on the catalogue page, over head office's own routes. */
+  competitorPriceSession?: CompetitorPriceSession;
+  competitorPriceKit?: typeof COMPETITOR_PRICE_KIT;
   substitutionExceptionInboxData?: SubstitutionExceptionInboxData;
   substitutionExceptionInboxSession?: SubExceptionInboxSession;
   /** The shell reads the live exceptions worklist through this and re-presents it — a GET read, never a write. */
@@ -6246,4 +6268,24 @@ if (browserWindow !== undefined) {
   browserWindow.aiDraftsData = viewerIdentity(browserWindow.aiDraftsData);
   browserWindow.organisationData = viewerIdentity(browserWindow.organisationData);
   browserWindow.delegationData = viewerIdentity(browserWindow.delegationData);
+  // Round 12: the Month-end page — identity only plus this month as the box's calendar says; every figure is a live read.
+  const rawClose = browserWindow.financeCloseData as unknown;
+  const closeViewer = viewerIdentity(rawClose);
+  if (closeViewer !== undefined) {
+    const period = (rawClose as { period?: unknown }).period;
+    browserWindow.financeCloseKit = FINANCE_CLOSE_KIT;
+    browserWindow.financeCloseSession = createFinanceCloseSession({ ...closeViewer, ...(typeof period === 'string' ? { period } : {}) }, browserFinanceCloseHttp());
+  }
+  // Round 12: the competitor-price panel reads who is looking from the catalogue's payload (its permissions, its store).
+  // Only where head office told the page who is looking (its permissions): the store computer's catalogue payload names no
+  // permissions and has no head-office route behind it, so there the panel says where competitor prices are kept.
+  const cat = browserWindow.catalogueData;
+  if (cat !== undefined) browserWindow.competitorPriceKit = COMPETITOR_PRICE_KIT;
+  if (cat !== undefined && Array.isArray(cat.permissions)) {
+    browserWindow.competitorPriceSession = createCompetitorPriceSession({
+      ...(cat.userId === undefined ? {} : { userId: cat.userId }), permissions: cat.permissions,
+      ...(cat.storeId === undefined ? {} : { storeId: cat.storeId }), ...(cat.now === undefined ? {} : { now: cat.now }),
+      products: (cat.products ?? []).map((p) => ({ productId: p.productId, name: p.name })),
+    }, browserCompetitorHttp());
+  }
 }

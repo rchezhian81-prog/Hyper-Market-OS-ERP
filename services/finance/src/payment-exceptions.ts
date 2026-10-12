@@ -272,11 +272,13 @@ export function paymentExceptionRoutes(deps: PaymentExceptionDeps): readonly Rou
         const b = isObj(ctx.body) ? ctx.body : {};
         const ok = isStr(attemptId) && (b['attemptId'] === undefined || b['attemptId'] === attemptId) && isStr(b['laneId']) && isStr(b['billRef'])
           && (b['kind'] === 'card' || b['kind'] === 'upi') && isInt(b['amountMinor']) && (b['amountMinor'] as number) > 0
-          && isStr(b['askedAt']) && isStr(b['tradingDay']) && isStr(b['recordedAt']) && isStr(b['recordedBy']);
+          && isStr(b['askedAt']) && isStr(b['tradingDay']) && isStr(b['recordedAt']) && isStr(b['recordedBy'])
+          // OB-54 r12: placed by its store — a store computer's is stamped from its credential; one naming none is not read.
+          && isStr(b['storeId']);
         if (!ok || deps.recordRaised === undefined || deps.raised === undefined) {
           throw apiError(400, {
             code: 'not_readable_as_a_no_answer',
-            whatHappened: 'A relayed no-answer needs the attempt (till, bill, card or UPI, amount, when it was asked, its trading day), when the till recorded the no-answer and who.',
+            whatHappened: 'A relayed no-answer needs the attempt (store, till, bill, card or UPI, amount, when it was asked, its trading day), when the till recorded the no-answer and who.',
             wasItSaved: 'not_saved',
             nextSafeAction: 'Keep it at the store and raise it. Nothing was changed.',
           });
@@ -293,7 +295,7 @@ export function paymentExceptionRoutes(deps: PaymentExceptionDeps): readonly Rou
         if (existing !== undefined) return { status: 200, body: { attemptId, recorded: true, alreadyRecorded: true, stage: existing.stage ?? 'carried' } };
         const rec: RaisedNoAnswer = {
           attemptId, laneId: b['laneId'] as string, billRef: b['billRef'] as string, kind: b['kind'] as 'card' | 'upi', amountMinor: b['amountMinor'] as number,
-          askedAt: b['askedAt'] as string, state: 'no_answer', tradingDay: b['tradingDay'] as string, storeId: isStr(b['storeId']) ? b['storeId'] : '',
+          askedAt: b['askedAt'] as string, state: 'no_answer', tradingDay: b['tradingDay'] as string, storeId: b['storeId'] as string,
           recordedAt: b['recordedAt'] as string, recordedBy: b['recordedBy'] as string, relayedBy: ctx.userId, raisedAt: deps.now(),
         };
         await deps.recordRaised(ctx.tenantId, rec);
@@ -310,11 +312,13 @@ export function paymentExceptionRoutes(deps: PaymentExceptionDeps): readonly Rou
         const b = isObj(ctx.body) ? ctx.body : {};
         const ok = isStr(b['laneId']) && isStr(b['billRef']) && (b['kind'] === 'card' || b['kind'] === 'upi') && isInt(b['amountMinor'])
           && isStr(b['askedAt']) && isStr(b['tradingDay']) && (b['outcome'] === 'approved' || b['outcome'] === 'declined')
-          && isStr(b['answeredBy']) && isStr(b['approvedBy']) && isStr(b['approvalId']) && isStr(b['answeredAt']);
+          && isStr(b['answeredBy']) && isStr(b['approvedBy']) && isStr(b['approvalId']) && isStr(b['answeredAt'])
+          // OB-54 r12: placed by its store (stamped from a store computer's credential).
+          && isStr(b['storeId']);
         if (!ok) {
           throw apiError(400, {
             code: 'not_readable_as_a_late_answer',
-            whatHappened: 'A late answer needs the attempt (till, bill, card or UPI, amount, when asked, trading day), the answer, who typed it, the manager who approved it and the approval.',
+            whatHappened: 'A late answer needs the attempt (store, till, bill, card or UPI, amount, when asked, trading day), the answer, who typed it, the manager who approved it and the approval.',
             wasItSaved: 'not_saved',
             nextSafeAction: 'Keep it at the store and raise it. Nothing was changed.',
           });
@@ -339,7 +343,7 @@ export function paymentExceptionRoutes(deps: PaymentExceptionDeps): readonly Rou
           else if (!held.includes(LATE_ANSWER_AUTHORITY)) flags.push('approver_lacks_authority');
         }
         const rec: LatePaymentAnswer = {
-          attemptId, storeId: isStr(b['storeId']) ? b['storeId'] : '', laneId: b['laneId'] as string, billRef: b['billRef'] as string, kind: b['kind'] as 'card' | 'upi',
+          attemptId, storeId: b['storeId'] as string, laneId: b['laneId'] as string, billRef: b['billRef'] as string, kind: b['kind'] as 'card' | 'upi',
           amountMinor: b['amountMinor'] as number, askedAt: b['askedAt'] as string, tradingDay: b['tradingDay'] as string, outcome: b['outcome'] as 'approved' | 'declined',
           answeredBy: b['answeredBy'] as string, approvedBy: b['approvedBy'] as string, approvalId: b['approvalId'] as string, answeredAt: b['answeredAt'] as string, flags,
         };

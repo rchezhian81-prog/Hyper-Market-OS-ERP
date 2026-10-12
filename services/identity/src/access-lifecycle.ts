@@ -26,7 +26,7 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError, requireActorIsCaller } from '../../kernel/src/index';
 import { storeComputerGrantRefusal } from '../../platform/src/store-computer-identity';
-import { machineIdentitySetRefusal, MACHINE_IDENTITY_REFUSAL_CODE } from './machine-identities';
+import { machineIdentitySetRefusal, machineIdentityGrantRefusal, MACHINE_ONLY_ROLES, MACHINE_IDENTITY_REFUSAL_CODE } from './machine-identities';
 import { actionDetails, approvalNamedIn, type ApprovalPort } from './approval-requests';
 import {
   applyLifecycle, SelfServiceAccessError,
@@ -105,6 +105,8 @@ export interface AccessLifecycleDeps {
   readonly permissionsOf: (tenantId: string, userId: string) => Promise<readonly Permission[]> | readonly Permission[];
   /** Append the change — every grant added and every grant removed — as one batch. */
   readonly recordChange: (tenantId: string, change: LifecycleChange) => Promise<void> | void;
+  /** PA-12 r12: whether this user is a PERSON — given a sign-in at the identity server (/v1/identity/people). */
+  readonly isPerson?: (tenantId: string, userId: string) => Promise<boolean> | boolean;
   /**
    * The token revocation list the authenticator consults (GAP-SEC-05). A change that closes sessions revokes every
    * token the person was issued up to this moment THROUGH it, so the next request with the old token is refused.
@@ -183,7 +185,11 @@ export function accessLifecycleRoutes(deps: AccessLifecycleDeps): readonly Route
         }
         // PA-12 round 10: the access a person holds AFTER a joiner/mover change never mixes a machine-only role with another.
         for (const who of new Set(grants.map((g) => g.userId))) {
-          const mixed = machineIdentitySetRefusal(grants.filter((g) => g.userId === who).map((g) => g.roleId));
+          const set = grants.filter((g) => g.userId === who).map((g) => g.roleId);
+          const machine = set.find((r) => MACHINE_ONLY_ROLES.includes(r));
+          // PA-12 r12: a person (a sign-in at the identity server) never becomes the machine identity.
+          const mixed = machineIdentitySetRefusal(set)
+            ?? (machine !== undefined && ((await deps.isPerson?.(ctx.tenantId, who)) ?? false) ? machineIdentityGrantRefusal(machine, [], true) : undefined);
           if (mixed !== undefined) {
             throw apiError(422, { code: MACHINE_IDENTITY_REFUSAL_CODE, whatHappened: mixed, wasItSaved: 'not_saved', nextSafeAction: 'Give the machine its own sign-in holding only its role. Nobody\'s access changed.' });
           }

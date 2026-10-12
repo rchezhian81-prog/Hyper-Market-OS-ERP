@@ -169,6 +169,7 @@ import { identityRoutes } from '../../identity/src/index';
 import { jwksKeyring } from '../../identity/src/jwks';
 import { directoryLocationOf, keycloakDirectory, type IdentityDirectory } from '../../identity/src/identity-directory';
 import { peopleRoutes } from '../../identity/src/people';
+import { outboundTransportFromEnv } from '../../platform/src/https-outbound-transport';
 import { shopRealmsFrom, type ShopRealm } from '../../identity/src/shop-realms';
 import { revocationAwareAuthenticator, TokenRevocationList } from '../../identity/src/revocation';
 import { sessionChannelsOf } from './session-channels';
@@ -2119,6 +2120,9 @@ export async function startApi(
   // PF-10 r6: a misconfigured provider secret is said at start (the name, never the value) and that provider is refused.
   const reportSecrets = deliveryReportSecretsFromEnv(env);
   for (const p of reportSecrets.problems) err(`delivery reports: ${p}\n`);
+  // D14 / M32 round 12: the partner transport — one handed in, else the HTTPS transport only when the operator configures
+  // it (OUTBOUND_WEBHOOK_TRANSPORT=https). It turns on no partner: each subscription still needs two people and a secret.
+  const outboundTransport = providers.outboundTransport ?? outboundTransportFromEnv(env, (line) => { out(`outbound webhooks: ${line}\n`); });
   const built = buildRouter(buildSurface({
     onBriefDeps: (d) => { briefDeps = d; },
     signingKey: settings['PACK_SIGNING_KEY']!,
@@ -2132,7 +2136,7 @@ export async function startApi(
     // D14 / M32: outbound webhook signing secrets (OUTBOUND_WEBHOOK_SECRET__<NAME> → vault://<NAME>) and the partner
     // transport (a provider handed in at deployment; none is live, so outbound messages wait, visible).
     outboundSecrets: outboundSecretsFromEnv(env),
-    ...(providers.outboundTransport === undefined ? {} : { outboundTransport: providers.outboundTransport }),
+    ...(outboundTransport === undefined ? {} : { outboundTransport }),
     ...(identityDirectory === undefined ? {} : { identityDirectory }),
     ...(settings['IDP_OIDC_TENANT_ID'] === undefined ? {} : { identityDirectoryTenantId: settings['IDP_OIDC_TENANT_ID'] }),
     // Durable, append-only per-tenant settings: setup answers land in config_versions and survive a
@@ -2316,10 +2320,10 @@ export async function startApi(
   // D14 / M32: the outbound webhook sender — the PA-08 worker shape (sequential, never stops quietly, restart-safe) over
   // the outbound pass. Runs only when a partner transport is handed in; with none, messages wait and are listed.
   let outboundWorker: NotificationWorker | undefined;
-  if (providers.outboundTransport === undefined) {
+  if (outboundTransport === undefined) {
     out('outbound webhooks: no partner transport is configured — outbound messages wait, listed in the reconciliation read\n');
   } else {
-    const outboundDeps = outboundWebhooksAdapter({ store, now, transport: providers.outboundTransport, secrets: outboundSecretsFromEnv(env) });
+    const outboundDeps = outboundWebhooksAdapter({ store, now, transport: outboundTransport, secrets: outboundSecretsFromEnv(env) });
     outboundWorker = startNotificationWorker({
       tenants: async () => workerTenants,
       drain: (tenantId) => drainOutboundWebhooks(outboundDeps, tenantId),
@@ -2327,7 +2331,7 @@ export async function startApi(
       now,
       say: (line) => { out(`outbound webhooks: ${line}\n`); },
     });
-    out(`outbound webhooks: the sender runs every ${Math.round((providers.outboundWorkerIntervalMs ?? 30_000) / 1000)} s through ${providers.outboundTransport.name}\n`);
+    out(`outbound webhooks: the sender runs every ${Math.round((providers.outboundWorkerIntervalMs ?? 30_000) / 1000)} s through ${outboundTransport.name}\n`);
   }
 
   return {

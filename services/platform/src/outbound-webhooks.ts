@@ -185,7 +185,7 @@ export async function drainOutboundWebhooks(deps: OutboundWebhookDeps, tenantId:
           const nextAttemptAt = new Date(Date.parse(at) + 60_000 * 2 ** (attempt - 1)).toISOString();
           fact = { change: 'attempt', subscriptionId: sub.subscriptionId, messageId, series: state.series, attempt, status, outcome: 'retry', detail: status === null ? 'no answer' : `${status}`, at, nextAttemptAt };
         } else {
-          fact = { change: 'attempt', subscriptionId: sub.subscriptionId, messageId, series: state.series, attempt, status, outcome: 'dead_lettered', detail: RETRYABLE(status) ? `gave up after ${attempt} attempt(s) (${status ?? 'no answer'})` : `the partner refused it (${status})`, at };
+          fact = { change: 'attempt', subscriptionId: sub.subscriptionId, messageId, series: state.series, attempt, status, outcome: 'dead_lettered', detail: RETRYABLE(status) ? `gave up after ${attempt} attempt(s) (${status ?? 'no answer'})` : status !== null && status >= 300 && status < 400 ? `the partner answered with a redirect (${status}) — a redirect is never followed` : `the partner refused it (${status})`, at };
         }
         await deps.record(tenantId, fact, `attempt-${sub.subscriptionId}-${messageId}-s${state.series}-a${attempt}`);
         outcome.push({ id: messageId, result: fact.outcome === 'delivered' ? 'delivered' : fact.outcome === 'retry' ? 'retry_later' : 'dead_lettered', detail: fact.detail });

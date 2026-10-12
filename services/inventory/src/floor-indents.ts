@@ -31,6 +31,7 @@ import { valueAtUnitCost, normaliseUom } from '../../../packages/contracts/src/q
 import { locationInScope, stockReadScope, type LocationBranches } from './location-scope';
 import { assertNotFrozenByCount, type CountFreezeCheck } from './count-freeze';
 import { holdDamagedUnderCount, withoutHeldUnits, type HeldWriteOff } from './held-write-offs';
+import type { StoredWriteOff } from './write-off';
 import { outsideBranchScope, type RequestContext } from '../../kernel/src/index';
 import { isAdjustmentReason, ADJUSTMENT_REASON_CODES } from '../../../packages/adjustment/src/adjustment';
 import type { AssortmentEntry } from '../../../packages/merchandising/src/index';
@@ -121,8 +122,9 @@ export interface FloorIndentsDeps {
    *  SP-8c: a handheld issue also names the back-store BIN it took from; its bin movement(s) ride the same write. */
   readonly recordIssued: (tenantId: string, indent: FloorIndent, transfer: Transfer, movements: readonly StockMovement[], posted: readonly Movement[], binMovements?: readonly BinMovementRecord[], expectedStockVersion?: number) => Promise<void> | void;
   /** A floor RECEIPT: the indent, the received transfer and its `transferred_in` movements — ONE atomic write. OB-66: with
-   *  the damaged units' write-offs HELD on an open count plan, recorded in the same write. */
-  readonly recordReceipt: (tenantId: string, indent: FloorIndent, transfer: Transfer, movements: readonly StockMovement[], discrepancies: readonly TransferDiscrepancy[], posted: readonly Movement[], expectedIndentVersion?: number, held?: readonly HeldWriteOff[]) => Promise<void> | void;
+   *  the damaged units' write-offs HELD on an open count plan, recorded in the same write. OB-71: with no count holding them,
+   *  each damaged line's write-off on the write-off register (M28), in the same write. */
+  readonly recordReceipt: (tenantId: string, indent: FloorIndent, transfer: Transfer, movements: readonly StockMovement[], discrepancies: readonly TransferDiscrepancy[], posted: readonly Movement[], expectedIndentVersion?: number, held?: readonly HeldWriteOff[], writeOffs?: readonly StoredWriteOff[]) => Promise<void> | void;
   /** A RETURN accepted at the back store: the indent and the return's transfer proposed, dispatched and received in one step, with both legs' movements — ONE atomic write. */
   readonly recordReturnAccepted: (tenantId: string, indent: FloorIndent, transfer: Transfer, dispatchMovements: readonly StockMovement[], receiveMovements: readonly StockMovement[], discrepancies: readonly TransferDiscrepancy[], posted: readonly Movement[]) => Promise<void> | void;
   /** Batch 2: a shortfall RESOLVED — the indent step and the found units' compensating `adjusted` movements, ONE atomic write. */
@@ -465,7 +467,8 @@ export function floorIndentRoutes(deps: FloorIndentsDeps): readonly Route[] {
           // Batch 2: another count of this issue landed between reading the indent and reading its transfer — said as that.
           if (transfer.state === 'received') throw new IndentRefusedError(indentId, 'issue_already_received', `issue ${issueId} was counted in a moment ago by someone else — read the indent; nothing was recorded`);
           const result = receiveTransfer({ transfer, counted: arrivedOf(counted), receivedBy: ctx.userId, at: now, currency: (b['currency'] as CurrencyCode | undefined) ?? 'INR' });
-          // SP-8c: damaged units arrived (out of transit) and are written off at the floor in the same write — never on the shelf.
+          // SP-8c: damaged units arrived (out of transit) and are written off at the floor in the same write — never on the shelf;
+          // OB-71 "A": each such write-off is also its own line on the write-off register (same write), posted once to the books.
           // OB-66 "A": where an open count at the floor froze write-offs of the product, the GOOD units are received at once and
           // the damaged units' write-off is HELD on that count plan (same write), applied once when the count closes.
           const hold = await holdDamagedUnderCount({
@@ -475,14 +478,14 @@ export function floorIndentRoutes(deps: FloorIndentsDeps): readonly Route[] {
           const damaged = hold.damaged;
           const posted = [...withoutHeldUnits(receivePostings(result.transfer, result.movements, ctx.userId), hold.held), ...hold.immediate];
           const next = applyReceipt(indent, issueId, { receivedBy: ctx.userId, at: now, received: goodOf(receivedOf(result.movements, result.transfer), damaged), shortfall: shortfallOf(result.discrepancies), damaged });
-          await deps.recordReceipt(ctx.tenantId, next, result.transfer, result.movements, result.discrepancies, posted, indentVersion, hold.held);
+          await deps.recordReceipt(ctx.tenantId, next, result.transfer, result.movements, result.discrepancies, posted, indentVersion, hold.held, hold.writeOffs);
           await audit(ctx.tenantId, {
             actorId: ctx.userId, action: 'floor_indent.receive', objectType: 'floor_indent', objectId: indentId, at: now, origin: origin(ctx.tenantId, ctx.branchId ?? null),
             before: { state: indent.state, issueId, issuedBy: issue.issuedBy },
-            after: { state: next.state, receivedMinor: String(counted.reduce((s, c) => s + c.quantityMinor, 0)), damagedMinor: String(damaged.reduce((s, d) => s + d.quantityMinor, 0)), shortfalls: String(result.discrepancies.filter((d) => d.differenceMinor < 0).length), posted: posted.map((m) => m.movementId).join(','), heldForCount: hold.held.map((h) => `${h.heldId}@${h.planId}`).join(',') },
+            after: { state: next.state, receivedMinor: String(counted.reduce((s, c) => s + c.quantityMinor, 0)), damagedMinor: String(damaged.reduce((s, d) => s + d.quantityMinor, 0)), shortfalls: String(result.discrepancies.filter((d) => d.differenceMinor < 0).length), posted: posted.map((m) => m.movementId).join(','), heldForCount: hold.held.map((h) => `${h.heldId}@${h.planId}`).join(','), writeOffs: hold.writeOffs.map((w) => w.id).join(',') },
             correlationId: indentId,
           });
-          return { status: 201, body: { indent: presentIndent(next), issue: next.issues.find((i) => i.issueId === issueId), posted: posted.map((m) => m.movementId), discrepancies: result.discrepancies, damaged, heldWriteOffs: hold.held, alreadyReceived: false } };
+          return { status: 201, body: { indent: presentIndent(next), issue: next.issues.find((i) => i.issueId === issueId), posted: posted.map((m) => m.movementId), discrepancies: result.discrepancies, damaged, heldWriteOffs: hold.held, writeOffs: hold.writeOffs, alreadyReceived: false } };
         } catch (e) { return refusedBy(e); }
       },
     },

@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1125,
+  "testFiles": 1133,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -18,11 +18,11 @@
     "PARTIALLY_WIRED": 41
   },
   "totals": {
-    "unit": 82,
+    "unit": 84,
     "integration": 101,
     "realDb": 97,
     "browser": 76,
-    "connected": 20,
+    "connected": 25,
     "device": 0,
     "uat": 0
   },
@@ -119,7 +119,7 @@
       "counts": {
         "unit": 24,
         "integration": 21,
-        "realDb": 8,
+        "realDb": 9,
         "browser": 7,
         "connected": 2,
         "device": 0,
@@ -177,6 +177,7 @@
         ],
         "realDb": [
           "tests/integration/access-lifecycle.test.ts",
+          "tests/integration/approval-delegation.test.ts",
           "tests/integration/authorization-is-enforced.test.ts",
           "tests/integration/branch-scope-every-family.test.ts",
           "tests/integration/branch-scope-is-the-servers.test.ts",
@@ -318,8 +319,8 @@
         "unit": 13,
         "integration": 19,
         "realDb": 5,
-        "browser": 4,
-        "connected": 0,
+        "browser": 5,
+        "connected": 1,
         "device": 0,
         "uat": 0
       },
@@ -370,15 +371,18 @@
         "browser": [
           "tests/e2e/catalogue-price-change-delivery.e2e.ts",
           "tests/e2e/catalogue-promotion-launch-delivery.e2e.ts",
+          "tests/e2e/competitor-prices-on-the-production-api.e2e.ts",
           "tests/e2e/pricing-promotions-menu-links.e2e.ts",
           "tests/e2e/the-served-till-gives-the-launched-offer.e2e.ts"
         ],
-        "connected": [],
+        "connected": [
+          "tests/e2e/competitor-prices-on-the-production-api.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },
       "holds": true,
-      "why": "browser boundary and cloud effect proven in separate runs (no connected browser test yet)"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "M06",
@@ -522,8 +526,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 14,
-        "integration": 38,
-        "realDb": 12,
+        "integration": 39,
+        "realDb": 13,
         "browser": 3,
         "connected": 0,
         "device": 0,
@@ -549,6 +553,7 @@
         "integration": [
           "tests/integration/a-b2b-order-holds-and-moves-ordinary-stock.test.ts",
           "tests/integration/a-damaged-arrival-under-an-open-count-is-received-good-and-written-off-at-the-close.test.ts",
+          "tests/integration/a-damaged-arrival-with-no-count-open-is-its-own-write-off-line.test.ts",
           "tests/integration/a-loss-is-worth-what-the-stock-cost.test.ts",
           "tests/integration/a-transfer-sends-only-what-the-batch-holds.test.ts",
           "tests/integration/adjustment-requests.test.ts",
@@ -589,6 +594,7 @@
         "realDb": [
           "tests/integration/a-b2b-order-holds-and-moves-ordinary-stock.test.ts",
           "tests/integration/a-damaged-arrival-under-an-open-count-is-received-good-and-written-off-at-the-close.test.ts",
+          "tests/integration/a-damaged-arrival-with-no-count-open-is-its-own-write-off-line.test.ts",
           "tests/integration/concurrent-stock-cannot-be-spent-twice.test.ts",
           "tests/integration/floor-indents-handheld-issue.test.ts",
           "tests/integration/inventory-branch-scope.test.ts",
@@ -1547,11 +1553,11 @@
       "id": "M23",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 22,
-        "integration": 28,
-        "realDb": 14,
-        "browser": 4,
-        "connected": 0,
+        "unit": 23,
+        "integration": 29,
+        "realDb": 15,
+        "browser": 5,
+        "connected": 1,
         "device": 0,
         "uat": 0
       },
@@ -1566,6 +1572,7 @@
           "tests/unit/erp-finance-month-approvals.test.ts",
           "tests/unit/erp-finance-session.test.ts",
           "tests/unit/erp-suppliers-session.test.ts",
+          "tests/unit/finance-close-session.test.ts",
           "tests/unit/finance-credit-notes.test.ts",
           "tests/unit/finance-day-book-routes.test.ts",
           "tests/unit/finance-day-book.test.ts",
@@ -1583,6 +1590,7 @@
         "integration": [
           "tests/integration/a-b2b-invoice-and-its-collection-reach-the-books.test.ts",
           "tests/integration/a-damaged-arrival-under-an-open-count-is-received-good-and-written-off-at-the-close.test.ts",
+          "tests/integration/a-damaged-arrival-with-no-count-open-is-its-own-write-off-line.test.ts",
           "tests/integration/b2b-reconcile-ar.test.ts",
           "tests/integration/cod-reconciliation.test.ts",
           "tests/integration/confirmed-lost-stock-is-posted-once.test.ts",
@@ -1613,6 +1621,7 @@
         "realDb": [
           "tests/integration/a-b2b-invoice-and-its-collection-reach-the-books.test.ts",
           "tests/integration/a-damaged-arrival-under-an-open-count-is-received-good-and-written-off-at-the-close.test.ts",
+          "tests/integration/a-damaged-arrival-with-no-count-open-is-its-own-write-off-line.test.ts",
           "tests/integration/b2b-reconcile-ar.test.ts",
           "tests/integration/confirmed-lost-stock-is-posted-once.test.ts",
           "tests/integration/credit-note-reconciliation.test.ts",
@@ -1628,11 +1637,14 @@
         ],
         "browser": [
           "tests/e2e/day-book-post-delivery.e2e.ts",
+          "tests/e2e/finance-close-on-the-production-api.e2e.ts",
           "tests/e2e/finance-month-close-delivery.e2e.ts",
           "tests/e2e/screens-open-offline.e2e.ts",
           "tests/e2e/suppliers-delivery.e2e.ts"
         ],
-        "connected": [],
+        "connected": [
+          "tests/e2e/finance-close-on-the-production-api.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },
@@ -1843,8 +1855,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 5,
-        "integration": 10,
-        "realDb": 4,
+        "integration": 11,
+        "realDb": 5,
         "browser": 2,
         "connected": 0,
         "device": 0,
@@ -1860,6 +1872,7 @@
         ],
         "integration": [
           "tests/integration/a-damaged-arrival-under-an-open-count-is-received-good-and-written-off-at-the-close.test.ts",
+          "tests/integration/a-damaged-arrival-with-no-count-open-is-its-own-write-off-line.test.ts",
           "tests/integration/a-loss-is-worth-what-the-stock-cost.test.ts",
           "tests/integration/a-recall-runs-its-whole-lifecycle-on-postgresql.test.ts",
           "tests/integration/beyond-the-till.test.ts",
@@ -1872,6 +1885,7 @@
         ],
         "realDb": [
           "tests/integration/a-damaged-arrival-under-an-open-count-is-received-good-and-written-off-at-the-close.test.ts",
+          "tests/integration/a-damaged-arrival-with-no-count-open-is-its-own-write-off-line.test.ts",
           "tests/integration/a-recall-runs-its-whole-lifecycle-on-postgresql.test.ts",
           "tests/integration/beyond-the-till.test.ts",
           "tests/integration/physical-to-system.test.ts"
@@ -2068,8 +2082,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 8,
-        "integration": 13,
-        "realDb": 5,
+        "integration": 14,
+        "realDb": 6,
         "browser": 1,
         "connected": 0,
         "device": 0,
@@ -2095,6 +2109,7 @@
           "tests/integration/notifications-send-themselves.test.ts",
           "tests/integration/observed-health.test.ts",
           "tests/integration/outbound-webhooks-are-signed-retried-and-reconciled.test.ts",
+          "tests/integration/outbound-webhooks-go-over-pinned-https.test.ts",
           "tests/integration/outbound-webhooks-refuse-private-destinations.test.ts",
           "tests/integration/the-screens-are-fed.test.ts",
           "tests/integration/the-seams-hold.test.ts",
@@ -2104,6 +2119,7 @@
         "realDb": [
           "tests/integration/notifications-send-themselves.test.ts",
           "tests/integration/outbound-webhooks-are-signed-retried-and-reconciled.test.ts",
+          "tests/integration/outbound-webhooks-go-over-pinned-https.test.ts",
           "tests/integration/outbound-webhooks-refuse-private-destinations.test.ts",
           "tests/integration/the-seams-hold.test.ts",
           "tests/integration/the-sender-rechecks-template-and-recipient.test.ts"
@@ -2251,8 +2267,8 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 4,
-        "integration": 13,
-        "realDb": 6,
+        "integration": 14,
+        "realDb": 7,
         "browser": 0,
         "connected": 0,
         "device": 0,
@@ -2266,6 +2282,7 @@
           "tests/unit/ops-health.test.ts"
         ],
         "integration": [
+          "tests/integration/a-person-is-never-the-backup-job.test.ts",
           "tests/integration/ai-operations-agent.test.ts",
           "tests/integration/ai-operations-worklist.test.ts",
           "tests/integration/alert-lifecycle.test.ts",
@@ -2281,6 +2298,7 @@
           "tests/integration/the-backup-job-reports-its-own-outcome.test.ts"
         ],
         "realDb": [
+          "tests/integration/a-person-is-never-the-backup-job.test.ts",
           "tests/integration/alerts-reach-their-named-owner.test.ts",
           "tests/integration/an-incident-is-recorded-and-closed-by-a-named-person.test.ts",
           "tests/integration/backup-is-one-moment.test.ts",
@@ -2561,8 +2579,8 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 1,
-        "integration": 13,
-        "realDb": 6,
+        "integration": 14,
+        "realDb": 7,
         "browser": 1,
         "connected": 0,
         "device": 0,
@@ -2573,6 +2591,7 @@
           "tests/unit/goods-in.test.ts"
         ],
         "integration": [
+          "tests/integration/a-damaged-arrival-with-no-count-open-is-its-own-write-off-line.test.ts",
           "tests/integration/a-recall-runs-its-whole-lifecycle-on-postgresql.test.ts",
           "tests/integration/a-sale-line-gets-its-fefo-lot.test.ts",
           "tests/integration/a-stock-count-is-planned-frozen-recounted-approved-and-booked.test.ts",
@@ -2588,6 +2607,7 @@
           "tests/integration/warehouse-counts.test.ts"
         ],
         "realDb": [
+          "tests/integration/a-damaged-arrival-with-no-count-open-is-its-own-write-off-line.test.ts",
           "tests/integration/a-recall-runs-its-whole-lifecycle-on-postgresql.test.ts",
           "tests/integration/a-sale-line-gets-its-fefo-lot.test.ts",
           "tests/integration/a-stock-count-is-planned-frozen-recounted-approved-and-booked.test.ts",
@@ -2609,11 +2629,11 @@
       "id": "D06",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 3,
+        "unit": 4,
         "integration": 8,
         "realDb": 1,
-        "browser": 1,
-        "connected": 0,
+        "browser": 3,
+        "connected": 2,
         "device": 0,
         "uat": 0
       },
@@ -2621,6 +2641,7 @@
         "unit": [
           "tests/unit/customer-app.test.ts",
           "tests/unit/erp-catalogue-session.test.ts",
+          "tests/unit/finance-close-session.test.ts",
           "tests/unit/self-checkout.test.ts"
         ],
         "integration": [
@@ -2637,9 +2658,14 @@
           "tests/integration/competitor-prices-are-recorded-and-compared.test.ts"
         ],
         "browser": [
-          "tests/e2e/catalogue-price-change-delivery.e2e.ts"
+          "tests/e2e/catalogue-price-change-delivery.e2e.ts",
+          "tests/e2e/competitor-prices-on-the-production-api.e2e.ts",
+          "tests/e2e/the-served-till-charges-the-markdown.e2e.ts"
         ],
-        "connected": [],
+        "connected": [
+          "tests/e2e/competitor-prices-on-the-production-api.e2e.ts",
+          "tests/e2e/the-served-till-charges-the-markdown.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },
@@ -2787,16 +2813,18 @@
       "id": "D10",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 0,
+        "unit": 1,
         "integration": 10,
         "realDb": 6,
-        "browser": 1,
-        "connected": 0,
+        "browser": 2,
+        "connected": 1,
         "device": 0,
         "uat": 0
       },
       "files": {
-        "unit": [],
+        "unit": [
+          "tests/unit/finance-close-session.test.ts"
+        ],
         "integration": [
           "tests/integration/books-reconcile.test.ts",
           "tests/integration/budgets-and-the-fixed-asset-register.test.ts",
@@ -2818,9 +2846,12 @@
           "tests/integration/the-period-books-reconcile-and-show-profit.test.ts"
         ],
         "browser": [
+          "tests/e2e/finance-close-on-the-production-api.e2e.ts",
           "tests/e2e/finance-month-close-delivery.e2e.ts"
         ],
-        "connected": [],
+        "connected": [
+          "tests/e2e/finance-close-on-the-production-api.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },
@@ -2968,8 +2999,8 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 4,
-        "integration": 8,
-        "realDb": 3,
+        "integration": 9,
+        "realDb": 4,
         "browser": 0,
         "connected": 0,
         "device": 0,
@@ -2987,6 +3018,7 @@
           "tests/integration/delivery-reports-are-the-providers.test.ts",
           "tests/integration/integration-gateway.test.ts",
           "tests/integration/outbound-webhooks-are-signed-retried-and-reconciled.test.ts",
+          "tests/integration/outbound-webhooks-go-over-pinned-https.test.ts",
           "tests/integration/outbound-webhooks-refuse-private-destinations.test.ts",
           "tests/integration/partner-sandbox.test.ts",
           "tests/integration/price-integrity.test.ts",
@@ -2995,6 +3027,7 @@
         "realDb": [
           "tests/integration/delivery-reports-are-the-providers.test.ts",
           "tests/integration/outbound-webhooks-are-signed-retried-and-reconciled.test.ts",
+          "tests/integration/outbound-webhooks-go-over-pinned-https.test.ts",
           "tests/integration/outbound-webhooks-refuse-private-destinations.test.ts"
         ],
         "browser": [],
@@ -4141,17 +4174,20 @@
       "id": "WF-18",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 0,
-        "integration": 10,
-        "realDb": 6,
-        "browser": 2,
-        "connected": 0,
+        "unit": 1,
+        "integration": 11,
+        "realDb": 7,
+        "browser": 3,
+        "connected": 1,
         "device": 0,
         "uat": 0
       },
       "files": {
-        "unit": [],
+        "unit": [
+          "tests/unit/finance-close-session.test.ts"
+        ],
         "integration": [
+          "tests/integration/a-damaged-arrival-with-no-count-open-is-its-own-write-off-line.test.ts",
           "tests/integration/books-reconcile.test.ts",
           "tests/integration/day-book-posts-the-day.test.ts",
           "tests/integration/goods-made-in-the-store-are-valued-at-their-production-run-cost.test.ts",
@@ -4164,6 +4200,7 @@
           "tests/integration/the-period-books-reconcile-and-show-profit.test.ts"
         ],
         "realDb": [
+          "tests/integration/a-damaged-arrival-with-no-count-open-is-its-own-write-off-line.test.ts",
           "tests/integration/books-reconcile.test.ts",
           "tests/integration/goods-made-in-the-store-are-valued-at-their-production-run-cost.test.ts",
           "tests/integration/store-acceptance-journey.test.ts",
@@ -4173,9 +4210,12 @@
         ],
         "browser": [
           "tests/e2e/day-book-post-delivery.e2e.ts",
+          "tests/e2e/finance-close-on-the-production-api.e2e.ts",
           "tests/e2e/finance-month-close-delivery.e2e.ts"
         ],
-        "connected": [],
+        "connected": [
+          "tests/e2e/finance-close-on-the-production-api.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },

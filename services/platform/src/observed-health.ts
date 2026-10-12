@@ -105,7 +105,11 @@ export interface ObservedHealthDeps extends Pick<AlertLifecycleDeps, 'alerts' | 
    * itself? Holding `platform.backup.record` through any other role (owner, store manager, platform admin) does not
    * count: a backup outcome is the job's own measurement, never a person's say-so. Absent: nobody may record (fail closed).
    */
-  readonly isBackupJob?: (tenantId: string, userId: string) => Promise<boolean> | boolean;
+  /**
+   * Whether this caller is the backup job's own machine identity. `evidence` is the SIGNED token's interactive sign-in
+   * evidence (`ctx.reauth`): present means a person signed in, which is never the backup job (PA-12 round 12).
+   */
+  readonly isBackupJob?: (tenantId: string, userId: string, evidence?: { readonly authTime?: number; readonly amr?: readonly string[] }) => Promise<boolean> | boolean;
 }
 
 /** What the store computers last reported about their queues (PA-12, from the EA-01 watermark reports). */
@@ -353,7 +357,7 @@ export function observedHealthRoutes(deps: ObservedHealthDeps): readonly Route[]
         // PA-12 round 7: only the backup job's own machine identity reports a backup — every PERSON is refused, the
         // owner included, so nobody can hand-post a "good, encrypted, off-site" night and silence the missed-backup
         // alarm. (M35-FR-01 names no human path for recording a backup; drills are recorded separately, `backup.drill.record`.)
-        if (deps.isBackupJob === undefined || !(await deps.isBackupJob(ctx.tenantId, ctx.userId))) {
+        if (deps.isBackupJob === undefined || !(await deps.isBackupJob(ctx.tenantId, ctx.userId, ctx.reauth))) {
           throw apiError(403, {
             code: 'not_the_backup_job',
             whatHappened: 'A backup is recorded only by the backup job itself, signed in as its own machine identity — never from a person\'s sign-in, whoever they are. '

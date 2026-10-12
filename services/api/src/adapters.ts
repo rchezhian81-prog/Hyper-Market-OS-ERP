@@ -332,6 +332,7 @@ import type { PricingDeps, PriceChangeRecord } from '../../pricing/src/index';
 import type { PriceListDeps } from '../../pricing/src/price-list';
 import type { PriceEntry } from '../../../packages/price-list/src/price-list';
 import { ROLE_CATALOGUE, STORE_MANAGER_ROLE_ID, STORE_COMPUTER_ROLE_ID, PROVIDER_RELAY_ROLE_ID, BACKUP_JOB_ROLE_ID } from './roles';
+import { isMachineCredential } from '../../identity/src/machine-identities';
 import { metaOf as legacyAttachmentMeta, type LegacyHistoryDeps, type LegacyHistoryDocument, type LegacyAttachment, type LegacyAttachmentMeta } from '../../migration/src/legacy-history';
 
 /** Streams, named once. A typo here is a domain that silently reads an empty history. */
@@ -488,6 +489,14 @@ export function peopleAdapter(input: {
   };
 }
 
+/**
+ * PA-12 round 12: whether a user is a PERSON — anyone given (or asked to be given) a sign-in at the identity server
+ * through /v1/identity/people, including one whose sign-in has since ended. A machine-only role is never theirs.
+ */
+export async function isPersonNow(store: EventStore, tenantId: string, userId: string): Promise<boolean> {
+  return (await store.readStream(tenantId, STREAM.identity)).some((e) => PERSON_SIGN_IN_EVENTS.has(e.event.type) && e.event.type !== 'PersonSignInWithdrawn' && payloadOf<{ userId?: string }>(e).userId === userId);
+}
+
 /** A leaver's sign-in, switched off at the identity server and the end recorded on the ledger (OB-15-c). */
 export function signInEnder(input: { readonly directory: IdentityDirectory; readonly people: ReturnType<typeof peopleAdapter>; readonly tenantId?: string }): {
   readonly end: (tenantId: string, userId: string, endedBy: string, at: string) => Promise<'ended' | 'none' | 'not_connected'>;
@@ -521,6 +530,7 @@ export function accessLifecycleAdapter(input: {
     now: input.now,
     roles: () => input.roleCatalogue,
     currentGrants: async (tenantId, userId) => (await effectiveGrants(input.store, tenantId)).filter((g) => g.userId === userId),
+    isPerson: (tenantId, userId) => isPersonNow(input.store, tenantId, userId),
     permissionsOf: async (tenantId, userId) => {
       const held = (await effectiveGrants(input.store, tenantId)).filter((a) => a.userId === userId);
       return [...new Set(held.flatMap((a) => input.roleCatalogue.find((r) => r.id === a.roleId)?.permissions ?? []))].sort();
@@ -4967,6 +4977,7 @@ export function emergencyAccessAdapter(input: {
     now: input.now,
     // PA-12 round 10: what the user holds now, so an emergency grant never mixes a machine-only role with a person's.
     rolesHeldBy: (tenantId, userId) => rolesHeldNow(input.store, tenantId, userId, input.now()),
+    isPerson: (tenantId, userId) => isPersonNow(input.store, tenantId, userId),
     grants: (tenantId) => foldGrants(tenantId),
     grant: async (tenantId, grantId) => (await foldGrants(tenantId)).find((g) => g.grantId === grantId),
     recordGrant: async (tenantId, grantId, grant, key) => {
@@ -5770,7 +5781,7 @@ export function floorIndentsAdapter(input: {
       ], expectedStockVersion === undefined ? undefined : { guard: { key: stockGuardKey(transfer.fromLocationId), expectedVersion: expectedStockVersion } });
     },
     // A floor RECEIPT: the indent step, the received transfer and the `transferred_in` movements — one atomic batch.
-    recordReceipt: async (tenantId, indent, transfer, movements, discrepancies, posted, expectedIndentVersion, held) => {
+    recordReceipt: async (tenantId, indent, transfer, movements, discrepancies, posted, expectedIndentVersion, held, writeOffs) => {
       const at = input.now();
       const issue = indent.issues.find((i) => i.transferId === transfer.transferId);
       await input.store.appendBatch(tenantId, [
@@ -5780,6 +5791,12 @@ export function floorIndentsAdapter(input: {
         ...movementEntries(tenantId, posted),
         // OB-66: a damaged write-off HELD on an open count plan — in the same write as the receipt, never lost.
         ...(held ?? []).map((h) => heldWriteOffEntry(tenantId, h)),
+        // OB-71: a damaged write-off with NO count holding it — on the write-off register (M28) in the same write, keyed on its
+        // `wasted` posting, so a replayed receipt records it once and the books post it once (stock_write_off).
+        ...(writeOffs ?? []).map((w) => ({
+          stream: streamName(STREAM.inventory, 'write-offs'),
+          event: makeEvent({ id: `write-off-${w.id}`, type: 'WriteOffCommitted', occurredAt: w.at, idempotencyKey: `write-off-${tenantId}-${w.id}`, source: 'api/inventory', payload: w }),
+        })),
       ], expectedIndentVersion === undefined ? undefined : { guard: { key: indentGuardKey(indent.indentId), expectedVersion: expectedIndentVersion } });
     },
     // A RETURN accepted at the back store: the indent step and the return's transfer proposed, dispatched and received in
@@ -7805,6 +7822,10 @@ const openedItemsIn = async (store: EventStore, tenantId: string, loadId: string
 const CUTOVER_GO_STREAM = streamName(STREAM.migration, 'cutover-go');
 const cutoverGosOf = (store: EventStore, tenantId: string): Promise<readonly CutoverGo[]> => allOf<CutoverGo>(store, tenantId, CUTOVER_GO_STREAM, 'CutoverGoRecorded');
 async function recordCutoverGoIn(store: EventStore, tenantId: string, go: CutoverGo): Promise<CutoverGo> {
+  // GT-05 round 12: the shop's FIRST GO stands — whatever key it was kept under (a GO from before the per-tenant key, under
+  // the old per-cutover key, included). Nothing more is appended, and the gate reports exactly the GO the reversal route reads.
+  const standing = (await cutoverGosOf(store, tenantId))[0];
+  if (standing !== undefined) return standing;
   const res = await store.append(tenantId, CUTOVER_GO_STREAM, makeEvent({ id: `cutover-go-${go.cutoverId}-${randomUUID()}`, type: 'CutoverGoRecorded', occurredAt: go.goAt, idempotencyKey: `cutover-go-${tenantId}` /* GT-05 / OB-52: ONE GO per tenant, the real cutover's; a later GO under any id resolves to it */, source: 'api/migration', payload: go }));
   return res.record.event.payload as CutoverGo;
 }
@@ -10163,6 +10184,7 @@ export function identityAdapter(input: {
 
     // PA-12 round 10: the roles a user holds now (grants minus revocations, plus a live emergency grant) — never the request.
     rolesHeldBy: (tenantId, userId) => rolesHeldNow(input.store, tenantId, userId, input.now()),
+    isPerson: (tenantId, userId) => isPersonNow(input.store, tenantId, userId),
     /** Every permission from every role this user holds. Union, deduplicated, sorted. */
     permissionsOf: async (tenantId, userId) => {
       const held = (await assignments(tenantId)).filter((a) => a.userId === userId);
@@ -12271,8 +12293,12 @@ export function observedHealthAdapter(input: { readonly store: EventStore; reado
     // PA-12 round 7: a backup is believed only from a grant of the backup_job role ITSELF — never a person's other roles.
     // PA-12 round 10: …and only from a machine identity that holds NOTHING else — a ledger from before the grant-time
     // rule that gave a person backup_job beside their own roles is not believed.
-    isBackupJob: async (tenantId, userId) => {
-      const held = (await effectiveGrants(input.store, tenantId)).filter((g) => g.userId === userId).map((g) => g.roleId);
+    // PA-12 round 12: …and only from a MACHINE credential (no interactive sign-in evidence), never a person's identity (a
+    // sign-in at the identity server), and with every role held NOW — a live emergency grant of anything else included.
+    isBackupJob: async (tenantId, userId, evidence) => {
+      if (!isMachineCredential(evidence)) return false;
+      if (await isPersonNow(input.store, tenantId, userId)) return false;
+      const held = await rolesHeldNow(input.store, tenantId, userId, input.now());
       return held.includes(BACKUP_JOB_ROLE_ID) && held.every((r) => r === BACKUP_JOB_ROLE_ID);
     },
     backups: (tenantId) => allOf<BackupRecord>(input.store, tenantId, BACKUPS_STREAM, 'BackupTaken'),
