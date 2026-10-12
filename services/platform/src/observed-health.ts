@@ -32,7 +32,13 @@
 //     then `down`, named "MISSED", and the ops-alert worker raises it to its owner with nobody posting anything.
 //
 // What the cloud cannot see it says it cannot see (P-08): the lane's local disk is a lane-side signal
-// and stays `unknown` here — it is never guessed `ok`. A backup counts only when it was recorded as
+// and stays `unknown` here until the store computer itself reports it — it is never guessed `ok`.
+//
+// M35-FR-03 (Batch 1, round 12) — the store computers' own health reaches head office: each box relays its disk (can it
+// still record a sale?), its queue depth and its tills' device reports (D04-FR-05) after each sync pass, store-locked
+// (OB-54, `box-health.ts`). They are judged here as `box_disk:<store>`, `box_queue:<store>` and `till_devices:<store>`
+// components; a report older than the sync-lag warning threshold is shown STALE (`unknown`, with its age), never `ok`.
+// While every reporting box is fresh, `localStoreWritable` is the boxes' own answer; one that cannot record makes it false. A backup counts only when it was recorded as
 // completed, encrypted AND off-site (FR-01); a failed or unprotected backup is on the record but does
 // not move the clock.
 
@@ -44,6 +50,8 @@ import {
 } from '../../../packages/ops/src/index';
 import { readRules, readThresholds } from './operational-health';
 import { raiseKey, type AlertLifecycleDeps, type AlertLifecycleEvent } from './alert-lifecycle';
+import { judgeBoxes, type BoxHealthRecord, type BoxHealthView } from './box-health';
+import type { ComponentHealth } from '../../../packages/ops/src/index';
 
 export interface ConnectorQueueDepth {
   readonly connectorId: string;
@@ -105,7 +113,18 @@ export interface ObservedHealthDeps extends Pick<AlertLifecycleDeps, 'alerts' | 
    * itself? Holding `platform.backup.record` through any other role (owner, store manager, platform admin) does not
    * count: a backup outcome is the job's own measurement, never a person's say-so. Absent: nobody may record (fail closed).
    */
-  readonly isBackupJob?: (tenantId: string, userId: string) => Promise<boolean> | boolean;
+  /**
+   * Whether this caller is the backup job's own machine identity. `evidence` is the SIGNED token's interactive sign-in
+   * evidence (`ctx.reauth`): present means a person signed in, which is never the backup job (PA-12 round 12).
+   */
+  readonly isBackupJob?: (tenantId: string, userId: string, evidence?: { readonly authTime?: number; readonly amr?: readonly string[] }) => Promise<boolean> | boolean;
+  /**
+   * M35-FR-03: the store computers' own health reports (disk, queue, till devices — `box-health.ts`) and the stores head
+   * office knows (so one that never reported is named, not left out). Absent: the lane-side signals stay not observed.
+   */
+  readonly storeComputers?: (tenantId: string) => Promise<{ readonly records: readonly BoxHealthRecord[]; readonly knownStores: readonly string[] }>;
+  /** OB-78: the owner's early-warning line for a store computer's disk, in hours of trading left (tenant setting, default 48). */
+  readonly boxDiskWarnHours?: (tenantId: string) => Promise<number> | number;
 }
 
 /** What the store computers last reported about their queues (PA-12, from the EA-01 watermark reports). */
@@ -127,6 +146,10 @@ export interface ObservedSignals {
   readonly lastBackup: BackupRecord | null;
   /** Signals the cloud cannot observe from here, named rather than guessed. */
   readonly notObserved: readonly string[];
+  /** M35-FR-03: each store computer's latest health report, judged (stale ones said to be stale). */
+  readonly boxes: readonly BoxHealthView[];
+  /** The per-store components those reports give (`box_disk:`, `box_queue:`, `till_devices:`). */
+  readonly boxComponents: readonly ComponentHealth[];
 }
 
 /** A backup that counts (FR-01): completed, encrypted and off-site. */
@@ -135,12 +158,19 @@ export const goodBackup = (b: BackupRecord): boolean => b.ok && b.encrypted && b
 const byAt = (a: { readonly at: string }, b: { readonly at: string }): number => a.at.localeCompare(b.at);
 
 /** Fold the cloud's own ledgers into the health engine's signal shape. Pure over the deps' answers. */
-export async function observeSignals(deps: ObservedHealthDeps, tenantId: string, at: string, backupMaxAgeSeconds: number): Promise<ObservedSignals> {
-  const [lastSale, catalogue, queues, integrations, backups, lanes] = await Promise.all([
+export async function observeSignals(deps: ObservedHealthDeps, tenantId: string, at: string, backupMaxAgeSeconds: number, thresholds: HealthThresholds = DEFAULT_THRESHOLDS): Promise<ObservedSignals> {
+  const [lastSale, catalogue, queues, integrations, backups, lanes, boxReports] = await Promise.all([
     deps.lastSaleSyncedAt(tenantId), deps.catalogueBuiltAt(tenantId), deps.connectorQueues(tenantId),
     deps.integrationHealth(tenantId, at), deps.backups(tenantId),
     deps.storeLanes === undefined ? Promise.resolve(undefined) : deps.storeLanes(tenantId),
+    deps.storeComputers === undefined ? Promise.resolve(undefined) : deps.storeComputers(tenantId),
   ]);
+  const judgedBoxes = boxReports === undefined || (boxReports.records.length === 0)
+    ? undefined : judgeBoxes({
+      records: boxReports.records, knownStores: boxReports.knownStores, at, thresholds,
+      ...(deps.boxDiskWarnHours === undefined ? {} : { diskWarnHours: await deps.boxDiskWarnHours(tenantId) }),
+    });
+  const writable = judgedBoxes?.localStoreWritable;
   const sortedBackups = [...backups].sort(byAt);
   const good = [...sortedBackups].reverse().find(goodBackup);
   const latest = sortedBackups[sortedBackups.length - 1];
@@ -156,6 +186,7 @@ export async function observeSignals(deps: ObservedHealthDeps, tenantId: string,
     deadLetterCount: deadLettered,
     ...(catalogue === undefined ? {} : { catalogueBuiltAt: catalogue }),
     databaseReachable: true,
+    ...(writable === undefined ? {} : { localStoreWritable: writable }),
     integrations,
     ...(good === undefined ? {} : { lastBackupAt: good.at }),
     backupMaxAgeSeconds,
@@ -173,11 +204,16 @@ export async function observeSignals(deps: ObservedHealthDeps, tenantId: string,
       databaseReachable: 'this very read came from the cloud database',
       integrations: 'each enabled adapter judged from its recorded heartbeats',
       lastBackupAt: 'the newest backup recorded as completed, encrypted and off-site; a failed or unprotected backup is kept but does not count',
+      ...(writable === undefined ? {} : { localStoreWritable: 'each store computer\'s own latest report of its disk (can it record the next sale, by its own rule); only fresh reports count' }),
     },
     freshness: { lastSaleAt: lastSyncAt ?? null, ageSeconds },
     queues,
     lastBackup: latest ?? null,
-    notObserved: ['localStoreWritable — a lane-side signal (the store box reports it through its own health check); never guessed ok here'],
+    notObserved: writable !== undefined ? [] : judgedBoxes === undefined
+      ? ['localStoreWritable — a lane-side signal (the store box reports it through its own health check); never guessed ok here']
+      : [`localStoreWritable — not every store computer has a fresh report (${judgedBoxes.boxes.filter((b) => b.stale).map((b) => `${b.storeId}: ${b.state === 'never_reported' ? 'never reported' : `stale, last ${b.lastReportAt}`}`).join('; ')}); never guessed ok here`],
+    boxes: judgedBoxes?.boxes ?? [],
+    boxComponents: judgedBoxes?.components ?? [],
   };
 }
 
@@ -225,13 +261,28 @@ export function withMissedBackup(health: SystemHealth, backups: readonly BackupR
   return { ...health, components, status };
 }
 
+/**
+ * M35-FR-03: the store computers' components join the shop's health; the overall status is the worst of all. A box that
+ * is down or degraded is named in the summary, so the one line a person reads says which store and why.
+ */
+export function withBoxes(health: SystemHealth, boxComponents: readonly ComponentHealth[]): SystemHealth {
+  if (boxComponents.length === 0) return health;
+  const components = [...health.components, ...boxComponents];
+  const status = components.reduce<SystemHealth['status']>((w, c) => ((RANK[c.status] ?? 0) > (RANK[w] ?? 0) ? c.status : w), health.status);
+  const bad = boxComponents.filter((c) => c.status === 'down' || c.status === 'degraded').map((c) => c.detail);
+  const summary = bad.length === 0 ? health.summary
+    : health.summary === 'Everything is up to date' || health.summary.startsWith('Nothing is reporting yet') ? bad.join('; ') : `${health.summary}; ${bad.join('; ')}`;
+  return { ...health, components, status, summary };
+}
+
 /** Judge a shop's observed health with its stored rules (the read and the raise share it). */
 export async function judgeObserved(deps: ObservedHealthDeps, tenantId: string, at: string) {
   const stored = await deps.alertRules(tenantId);
-  const observed = await observeSignals(deps, tenantId, at, stored?.backupMaxAgeSeconds ?? DEFAULT_BACKUP_MAX_AGE_SECONDS);
-  const health: SystemHealth = withMissedBackup(
-    withFailedBackup(checkHealth(observed.signals, at, stored?.thresholds ?? DEFAULT_THRESHOLDS), observed.lastBackup),
-    await deps.backups(tenantId), stored, at);
+  const thresholds = stored?.thresholds ?? DEFAULT_THRESHOLDS;
+  const observed = await observeSignals(deps, tenantId, at, stored?.backupMaxAgeSeconds ?? DEFAULT_BACKUP_MAX_AGE_SECONDS, thresholds);
+  const health: SystemHealth = withBoxes(withMissedBackup(
+    withFailedBackup(checkHealth(observed.signals, at, thresholds), observed.lastBackup),
+    await deps.backups(tenantId), stored, at), observed.boxComponents);
   const alerts: readonly RaisedAlert[] = raiseAlerts(health, stored?.rules ?? []);
   return { stored, observed, health, alerts };
 }
@@ -353,7 +404,7 @@ export function observedHealthRoutes(deps: ObservedHealthDeps): readonly Route[]
         // PA-12 round 7: only the backup job's own machine identity reports a backup — every PERSON is refused, the
         // owner included, so nobody can hand-post a "good, encrypted, off-site" night and silence the missed-backup
         // alarm. (M35-FR-01 names no human path for recording a backup; drills are recorded separately, `backup.drill.record`.)
-        if (deps.isBackupJob === undefined || !(await deps.isBackupJob(ctx.tenantId, ctx.userId))) {
+        if (deps.isBackupJob === undefined || !(await deps.isBackupJob(ctx.tenantId, ctx.userId, ctx.reauth))) {
           throw apiError(403, {
             code: 'not_the_backup_job',
             whatHappened: 'A backup is recorded only by the backup job itself, signed in as its own machine identity — never from a person\'s sign-in, whoever they are. '

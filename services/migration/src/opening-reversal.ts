@@ -112,7 +112,7 @@ export interface ReversalDomainLine {
 }
 
 export interface OpeningReversalDeps {
-  /** Every cutover GO the gate recorded (OB-52) — the first per cutover stands. */
+  /** Every cutover GO the gate recorded (OB-52), in the order recorded — the tenant's FIRST stands (GT-05). */
   readonly gos: (tenantId: string) => Promise<readonly CutoverGo[]> | readonly CutoverGo[];
   /** Round 7: every gift card / credit, invoice and points opening the load itself registered when it created them. */
   readonly openedItems: (tenantId: string, loadId: string) => Promise<OpenedItems>;
@@ -134,15 +134,25 @@ export interface OpeningReversalDeps {
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
 const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
 
-/** Where a cutover's reversal window stands now: no GO recorded, open, or not open (closed — or, on a skewed clock, not yet). */
+/** Where a cutover's reversal window stands now: no GO recorded, open, or not open (closed — or, on a skewed clock, not yet).
+ *  GT-05 / OB-52: the reversal window is SINGLE per tenant — the FIRST GO recorded for the tenant is THE real cutover and
+ *  defines it. A GO under any other cutover id never opens a window (`not_the_cutover`), whenever it was given. */
 export function windowStanding(gos: readonly CutoverGo[], cutoverId: string, nowIso: string):
-  { readonly state: 'no_go' } | { readonly state: 'open' | 'closed'; readonly window: CutoverWindow } {
-  const go = gos.find((g) => g.cutoverId === cutoverId); // the FIRST GO stands; a later one never moves the window
-  if (go === undefined) return { state: 'no_go' };
-  const window = reversalWindowOf(go);
+  { readonly state: 'no_go' } | { readonly state: 'not_the_cutover'; readonly theCutover: CutoverWindow } | { readonly state: 'open' | 'closed'; readonly window: CutoverWindow } {
+  const first = gos[0]; // the FIRST GO for the tenant stands; a later one never moves the window, nor opens another
+  if (first === undefined) return { state: 'no_go' };
+  const window = reversalWindowOf(first);
+  if (first.cutoverId !== cutoverId) return { state: 'not_the_cutover', theCutover: window };
   const now = Date.parse(nowIso);
   return { state: now >= Date.parse(window.opensAt) && now <= Date.parse(window.closesAt) ? 'open' : 'closed', window };
 }
+
+const notTheCutover = (cutoverId: string, w: CutoverWindow) => apiError(409, {
+  code: 'not_the_cutover',
+  whatHappened: `This shop's cutover is ${w.cutoverId}: its GO was given by ${w.goBy} at ${w.opensAt}, and that GO alone defines the one reversal window (${w.opensAt} to ${w.closesAt}, OB-52). Cutover ${cutoverId} is not it, so it has no reversal window — a later GO under another name never opens one.`,
+  wasItSaved: 'not_saved',
+  nextSafeAction: `Ask under cutover ${w.cutoverId} while its window is open; otherwise correct what the load got wrong through each domain's own correcting route with its own approval. Nothing was changed.`,
+});
 
 const noGo = (cutoverId: string) => apiError(422, {
   code: 'no_cutover_go',
@@ -162,6 +172,7 @@ const outsideWindow = (w: CutoverWindow) => apiError(422, {
 function assertWindowOpen(gos: readonly CutoverGo[], cutoverId: string, nowIso: string): void {
   const s = windowStanding(gos, cutoverId, nowIso);
   if (s.state === 'no_go') throw noGo(cutoverId);
+  if (s.state === 'not_the_cutover') throw notTheCutover(cutoverId, s.theCutover);
   if (s.state === 'closed') throw outsideWindow(s.window);
 }
 
@@ -205,6 +216,7 @@ export function openingReversalRoutes(deps: OpeningReversalDeps): readonly Route
         const now = deps.now();
         const s = windowStanding(await deps.gos(ctx.tenantId), cutoverId, now);
         if (s.state === 'no_go') return { status: 200, body: { cutoverId, go: false, window: null, openNow: false, asAt: now } };
+        if (s.state === 'not_the_cutover') return { status: 200, body: { cutoverId, go: false, window: null, openNow: false, theCutover: s.theCutover, asAt: now } };
         return { status: 200, body: { cutoverId, go: true, window: s.window, openNow: s.state === 'open', asAt: now } };
       },
     },

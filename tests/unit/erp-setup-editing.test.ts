@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { editorFor, parseDraft, SetupEditController } from '../../apps/web-erp/src/setup-editing';
+import { SETUP_CATALOGUE } from '../../packages/tenant/src/index';
 
 // The store-setup editing logic: it parses what a person types into the setting's real type, applies
 // the SAME validation the engine and API enforce, and runs each field through a save state machine
@@ -120,5 +121,69 @@ describe('SetupEditController', () => {
     expect(s.status).toBe('failed');
     expect(s.message).toContain('did not answer');
     expect(c.retry('tax.default_bps').status).toBe('idle');
+  });
+});
+
+describe('OB-78 — the owner sets the early disk-warning line on the store-setup screen', () => {
+  it('reads as a whole number of trading hours, refused in the engine\'s words otherwise', () => {
+    expect(editorFor('platform.box_disk_warn_hours').kind).toBe('number');
+    expect(parseDraft('platform.box_disk_warn_hours', '12')).toEqual({ ok: true, value: 12 });
+    expect(parseDraft('platform.box_disk_warn_hours', '0')).toEqual({ ok: false, error: 'Give a whole number of trading hours, from 1 to 720.' });
+    expect(parseDraft('platform.box_disk_warn_hours', '2.5').ok).toBe(false);
+  });
+});
+
+// Round 13: the loyalty settings and the bulk-publish line were missing from a hand-kept editor list, fell through to
+// a text box, reached the engine as strings and could never be saved. The editor now comes from the catalogue itself.
+describe('every setup setting gets its editor from the catalogue (type and declared range), never from a hand-kept list', () => {
+  const numbers = SETUP_CATALOGUE.filter((i) => typeof i.setting.defaultValue === 'number');
+
+  it('every number setting declares its range, and every other setting does not', () => {
+    for (const item of SETUP_CATALOGUE) {
+      expect({ key: item.setting.key, declared: item.range !== undefined })
+        .toEqual({ key: item.setting.key, declared: typeof item.setting.defaultValue === 'number' });
+    }
+    expect(numbers.map((i) => i.setting.key)).toEqual(expect.arrayContaining([
+      'loyalty.points_per_100_inr', 'loyalty.point_value_paise', 'loyalty.till_spend_cap_paise', 'catalogue.bulk_publish_threshold',
+    ]));
+  });
+
+  it.each(SETUP_CATALOGUE.map((i) => [i.setting.key, i] as const))('%s: the editor matches the setting\'s type', (key, item) => {
+    const spec = editorFor(key);
+    const d = item.setting.defaultValue;
+    if (typeof d === 'number') {
+      expect(spec).toMatchObject({ kind: item.range!.whole ? 'number' : 'decimal', min: item.range!.min });
+      expect(spec.max).toBe(item.range!.max);
+      expect(spec.step).toBe(item.range!.whole ? 1 : undefined);
+    } else if (typeof d === 'boolean') expect(spec.kind).toBe('toggle');
+    else if (Array.isArray(d)) expect(spec.kind).toBe('list');
+    else expect(['text', 'time', 'select', 'currency']).toContain(spec.kind);
+  });
+
+  it.each(numbers.map((i) => [i.setting.key, i] as const))('%s: the range the screen shows is exactly the range the engine accepts, and a refusal is the engine\'s own words', (key, item) => {
+    const r = item.range!;
+    const words = item.validate!(r.min - 1);
+    expect(words).not.toBeNull();
+    // Typed text becomes a NUMBER (the fault: it stayed a string and the engine refused every save).
+    expect(parseDraft(key, String(r.min))).toEqual({ ok: true, value: r.min });
+    expect(parseDraft(key, String(r.min - 1))).toEqual({ ok: false, error: words });
+    if (r.max !== undefined) {
+      expect(parseDraft(key, String(r.max))).toEqual({ ok: true, value: r.max });
+      expect(parseDraft(key, String(r.max + 1))).toEqual({ ok: false, error: words });
+    }
+    if (r.whole) expect(parseDraft(key, String(r.min + 0.5))).toEqual({ ok: false, error: words });
+    else expect(parseDraft(key, String(r.min + 0.5))).toEqual({ ok: true, value: r.min + 0.5 });
+    // The default itself is inside the declared range — no setting's default changed meaning.
+    expect(item.validate!(item.setting.defaultValue)).toBeNull();
+  });
+
+  it('the loyalty settings save as numbers through the edit controller', () => {
+    const c = new SetupEditController();
+    c.seed('loyalty.points_per_100_inr', 0);
+    c.edit('loyalty.points_per_100_inr', '2');
+    expect(c.beginSave('loyalty.points_per_100_inr')).toEqual({ ok: true, value: 2, ifVersion: 0 });
+    c.seed('loyalty.till_spend_cap_paise', 3);
+    c.edit('loyalty.till_spend_cap_paise', '75000');
+    expect(c.beginSave('loyalty.till_spend_cap_paise')).toEqual({ ok: true, value: 75_000, ifVersion: 3 });
   });
 });

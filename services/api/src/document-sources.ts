@@ -26,7 +26,7 @@ import type { DocumentsDeps, DocumentSourceType, ResolvedSource, DocumentReprint
 import { branchOfLocationIn } from '../../inventory/src/location-scope';
 import { accountRegisters, foldSupplierAccount } from '../../purchase/src/supplier-account';
 import {
-  STREAM, foldPurchaseOrders, goodsReceiptAdapter, orgStructureAdapter, deviceRegistryAdapter, supplierAccountAdapter,
+  STREAM, foldPurchaseOrders, goodsReceiptAdapter, orgStructureAdapter, storeOfLane, supplierAccountAdapter,
   b2bCollectionsAdapter,
 } from './adapters';
 
@@ -114,7 +114,7 @@ export function documentSourcesAdapter(input: {
         lineTotalMinor: l.lineTotalMinor, taxRateBps: l.taxRateBps!, taxMinor: splitInclusive(l.lineTotalMinor, l.taxRateBps!).tax,
       }));
       const taxMinor = lines.reduce((s, l) => s + (l.taxMinor ?? 0), 0);
-      const place = sale.locationId ?? (await deviceRegistryAdapter({ store, now }).fleet(tenantId)).find((d) => d.deviceId === sale.laneId)?.branchId;
+      const place = sale.locationId ?? await storeOfLane(store, tenantId, sale.laneId);
       return {
         outcome: 'ready', id: sale.saleId, version: versionOf(sale), number: sale.receiptNumber,
         branchId: place === undefined ? null : (await branchOfPlace(tenantId))(place), subjectRef: `sale:${sale.saleId}`,

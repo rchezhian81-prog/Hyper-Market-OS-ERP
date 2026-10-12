@@ -45,7 +45,9 @@ describe('the browser job', () => {
     expect(browser).toMatch(/DATABASE_URL: postgres:\/\/sre@localhost:5432\/sre_core/);
     expect(browser).toMatch(/PLAYWRIGHT_CHROMIUM_EXECUTABLE="\$\(node -e "console\.log\(require\('playwright-core'\)\.chromium\.executablePath\(\)\)"\)"/);
     expect(browser).toMatch(/test -x "\$PLAYWRIGHT_CHROMIUM_EXECUTABLE"/);
-    expect(browser).toMatch(/pnpm run test:e2e --reporter=default --reporter=json --outputFile=\/tmp\/e2e\.json/);
+    // The JSON report is kept (the no-skip floor reads it); the github-actions reporter names failing tests on the check.
+    expect(browser).toMatch(/pnpm run test:e2e --reporter=default (--reporter=github-actions )?--reporter=json --outputFile=\/tmp\/e2e\.json/);
+    expect(browser).toMatch(/set -o pipefail/);
     const floor = /node scripts\/assert-suite-ran\.mjs \/tmp\/e2e\.json --min-files (\d+) --min-tests (\d+)/.exec(browser);
     expect(floor, 'the no-skip floor').not.toBeNull();
     expect(Number(floor![1])).toBeGreaterThanOrEqual(60);

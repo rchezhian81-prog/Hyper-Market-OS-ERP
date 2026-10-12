@@ -75,6 +75,28 @@ const WORDS = {
     notConnected: 'This screen has not been given anything by the store box yet.',
     remove: 'Remove', lineTotal: 'Line total', whatIsWrong: 'What is wrong',
     gapsTitle: 'This screen has not been told everything',
+    budgetTab: 'Budget (open to buy)', budgetLead: 'How much each category may still buy this month. Orders over the budget go to the owner.',
+    month: 'Month', budgetStore: 'Store (leave empty for the whole company)', showMonth: 'Show this month',
+    category: 'Category', budget: 'Budget', committed: 'Committed (issued orders)', waitingCol: 'Waiting for approval', openToBuy: 'Open to buy',
+    afterWaiting: 'Left if the waiting orders are issued', stateCol: 'Where it stands',
+    st_within: 'Within budget', st_over: 'Over budget', st_no_budget: 'No budget set — not limited, said here',
+    forStore: 'this store\'s budget', forCompany: 'company budget', categoriesOver: 'Categories over budget', totalOpen: 'Open to buy (all budgets)',
+    waitingTitle: 'Orders waiting for approval this month', noWaiting: 'No orders are waiting for approval this month.',
+    overridesTitle: 'Orders issued over budget this month', noOverrides: 'No order was issued over budget this month.',
+    raisedBy: 'raised by', overBy: 'Over budget by', escalates: 'This order is over the budget: it goes to the owner. Only the owner can issue an order over budget, with a reason (OB-63).',
+    withinBudget: 'Within budget.', notChecked: 'Raised before budgets were checked.',
+    issueReason: 'Why this order is approved', overReason: 'Why it may go over budget', issueIt: 'Issue this order',
+    issued: 'Issued — head office sent it to the supplier.', issuedOver: 'Issued over budget — head office recorded the reason.',
+    letThrough: 'let through by', because: 'because',
+    setTitle: 'Set a category budget', setLead: 'A new figure for the same category, month and store replaces the old one; the old one stays on record.',
+    budgetAmount: 'Budget for the month (in rupees)', budgetReason: 'Why this figure', setIt: 'Set this budget',
+    budgetSet: 'Budget set — head office kept it.', budgetReplaced: 'Budget set — it replaces the earlier figure, which stays on record.',
+    fillBudget: 'Give the category, the amount and why.', notMoney: 'The amount is not an amount of money.',
+    onlyOwnerSets: 'Setting a budget is the owner\'s — your role can read the budgets but not change them.',
+    historyTitle: 'Budget figures set for this month', noHistory: 'No budget has been set for this month.', setByWord: 'set by', replaced: 'replaced by a later figure',
+    refusedBy: 'Head office refused:', cannotReach: 'Head office cannot be reached — nothing was changed.',
+    readingOtb: 'Reading the budgets from head office…', notSignedIn: 'Nobody is signed in — the budgets cannot be read.',
+    proposedOver: 'Order proposed — over this month\'s budget by',
   },
   ta: {
     buying: 'கொள்முதல்', supplierInvoice: 'சப்ளையர் இன்வாய்ஸ்', checkAgainst: 'ஆர்டருடன் சரிபார்',
@@ -111,6 +133,28 @@ const WORDS = {
     notConnected: 'கடை கணினியிடமிருந்து இந்தத் திரைக்கு இன்னும் எதுவும் வரவில்லை.',
     remove: 'நீக்கு', lineTotal: 'வரி மொத்தம்', whatIsWrong: 'என்ன தவறு',
     gapsTitle: 'இந்தத் திரைக்கு எல்லாத் தகவலும் வரவில்லை',
+    budgetTab: 'பட்ஜெட் (வாங்க மீதம்)', budgetLead: 'இந்த மாதம் ஒவ்வொரு வகையும் இன்னும் எவ்வளவு வாங்கலாம். பட்ஜெட்டை மீறும் ஆர்டர்கள் உரிமையாளரிடம் செல்லும்.',
+    month: 'மாதம்', budgetStore: 'கடை (முழு நிறுவனத்திற்கும் என்றால் காலியாக விடவும்)', showMonth: 'இந்த மாதத்தைக் காட்டு',
+    category: 'வகை', budget: 'பட்ஜெட்', committed: 'உறுதியானது (வழங்கிய ஆர்டர்கள்)', waitingCol: 'ஒப்புதலுக்குக் காத்திருப்பவை', openToBuy: 'வாங்க மீதம்',
+    afterWaiting: 'காத்திருக்கும் ஆர்டர்கள் வழங்கப்பட்டால் மீதம்', stateCol: 'நிலை',
+    st_within: 'பட்ஜெட்டுக்குள்', st_over: 'பட்ஜெட்டை மீறியது', st_no_budget: 'பட்ஜெட் அமைக்கப்படவில்லை — வரம்பு இல்லை, இங்கே சொல்லப்படுகிறது',
+    forStore: 'இந்தக் கடையின் பட்ஜெட்', forCompany: 'நிறுவனப் பட்ஜெட்', categoriesOver: 'பட்ஜெட்டை மீறிய வகைகள்', totalOpen: 'வாங்க மீதம் (எல்லா பட்ஜெட்டும்)',
+    waitingTitle: 'இந்த மாதம் ஒப்புதலுக்குக் காத்திருக்கும் ஆர்டர்கள்', noWaiting: 'இந்த மாதம் எந்த ஆர்டரும் ஒப்புதலுக்குக் காத்திருக்கவில்லை.',
+    overridesTitle: 'இந்த மாதம் பட்ஜெட்டை மீறி வழங்கிய ஆர்டர்கள்', noOverrides: 'இந்த மாதம் எந்த ஆர்டரும் பட்ஜெட்டை மீறி வழங்கப்படவில்லை.',
+    raisedBy: 'தயாரித்தவர்', overBy: 'பட்ஜெட்டை மீறிய தொகை', escalates: 'இந்த ஆர்டர் பட்ஜெட்டை மீறுகிறது: இது உரிமையாளரிடம் செல்லும். பட்ஜெட்டை மீறும் ஆர்டரை உரிமையாளர் மட்டுமே, ஒரு காரணத்துடன், வழங்க முடியும் (OB-63).',
+    withinBudget: 'பட்ஜெட்டுக்குள்.', notChecked: 'பட்ஜெட் சரிபார்ப்புக்கு முன் தயாரிக்கப்பட்டது.',
+    issueReason: 'இந்த ஆர்டருக்கு ஏன் ஒப்புதல்', overReason: 'ஏன் பட்ஜெட்டை மீறலாம்', issueIt: 'இந்த ஆர்டரை வழங்கு',
+    issued: 'வழங்கப்பட்டது — தலைமை அலுவலகம் சப்ளையருக்கு அனுப்பியது.', issuedOver: 'பட்ஜெட்டை மீறி வழங்கப்பட்டது — தலைமை அலுவலகம் காரணத்தைப் பதிவு செய்தது.',
+    letThrough: 'அனுமதித்தவர்', because: 'காரணம்',
+    setTitle: 'ஒரு வகைக்கான பட்ஜெட்டை அமை', setLead: 'அதே வகை, மாதம், கடைக்கு புதிய தொகை பழையதை மாற்றும்; பழையது பதிவில் இருக்கும்.',
+    budgetAmount: 'மாதத்திற்கான பட்ஜெட் (ரூபாயில்)', budgetReason: 'இந்தத் தொகை ஏன்', setIt: 'இந்தப் பட்ஜெட்டை அமை',
+    budgetSet: 'பட்ஜெட் அமைக்கப்பட்டது — தலைமை அலுவலகம் வைத்துக்கொண்டது.', budgetReplaced: 'பட்ஜெட் அமைக்கப்பட்டது — முந்தைய தொகையை மாற்றுகிறது; அது பதிவில் இருக்கும்.',
+    fillBudget: 'வகை, தொகை, காரணம் — மூன்றையும் கொடுக்கவும்.', notMoney: 'தொகை ஒரு பணத் தொகை அல்ல.',
+    onlyOwnerSets: 'பட்ஜெட் அமைப்பது உரிமையாளரின் பணி — உங்கள் பங்கால் பட்ஜெட்டைப் படிக்கலாம், மாற்ற முடியாது.',
+    historyTitle: 'இந்த மாதத்திற்கு அமைத்த பட்ஜெட் தொகைகள்', noHistory: 'இந்த மாதத்திற்கு பட்ஜெட் அமைக்கப்படவில்லை.', setByWord: 'அமைத்தவர்', replaced: 'பின்னர் வந்த தொகையால் மாற்றப்பட்டது',
+    refusedBy: 'தலைமை அலுவலகம் மறுத்தது:', cannotReach: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எதுவும் மாற்றப்படவில்லை.',
+    readingOtb: 'தலைமை அலுவலகத்திலிருந்து பட்ஜெட்டைப் படிக்கிறது…', notSignedIn: 'யாரும் உள்நுழையவில்லை — பட்ஜெட்டைப் படிக்க முடியாது.',
+    proposedOver: 'ஆர்டர் முன்மொழியப்பட்டது — இந்த மாதப் பட்ஜெட்டை மீறிய தொகை',
   },
 };
 let lang = 'en';
@@ -226,7 +270,7 @@ function renderGaps() {
 
 // ── Navigation ──────────────────────────────────────────────────────────────
 
-const VIEWS = ['invoice', 'match', 'po'];
+const VIEWS = ['invoice', 'match', 'po', 'budget'];
 for (const name of VIEWS) {
   el(`tab-${name}`).addEventListener('click', () => {
     for (const other of VIEWS) {
@@ -534,13 +578,148 @@ el('raise-po').addEventListener('click', async () => {
   });
   if (out.proposed) {
     // Only after head office genuinely saved the proposal — never a false "raised" on a dropped link (P-08).
-    tell(t('orderProposed'), `${poId} · ${inr(out.totalMinor)}`, true);
+    // WF-03 · OB-63 (round 12): head office's open-to-buy check rides on the order; over budget, it escalates to the owner.
+    if (out.budget?.overBudget) tell(`${t('proposedOver')} ${inr(out.budget.overByMinor)}`, `${poId} · ${inr(out.totalMinor)} — ${t('escalates')}`);
+    else tell(t('orderProposed'), `${poId} · ${inr(out.totalMinor)}`, true);
     poLines = [];
     renderPoLines();
   } else {
     // A blocked supplier, a lost link, or a box not connected to head office — said plainly, never swallowed.
     tell(t('read'), out.reason);
   }
+});
+
+// ── Open to buy (WF-03 · D02-FR-01 · D03-FR-01 · OB-63, round 12) ──────────────
+//
+// Head office's figures, read live under the signed-in buyer's session (`window.buyingOpenToBuy`, the tested model in
+// apps/web-erp/src/open-to-buy-session.ts). Opening the tab only READS; setting a budget and issuing an order are a
+// person's clicks, and every refusal is head office's own words. Nothing about the budget is decided on this page.
+
+const otb = window.buyingOpenToBuy ?? null;
+let otbLast = null;
+const thisMonth = () => new Date().toISOString().slice(0, 7);
+
+function otbSay(id, answer, good) {
+  const node = el(id);
+  if (answer.ok) { node.className = 'otb-status good'; node.textContent = good; return; }
+  node.className = 'otb-status err';
+  node.textContent = answer.unreachable ? t('cannotReach') : `${t('refusedBy')} ${answer.whatHappened}`;
+}
+
+function textCell(tag, text, cls) { const c = document.createElement(tag); c.textContent = text; if (cls) c.className = cls; return c; }
+
+async function readOtb() {
+  if (otb === null) { el('budget-status').className = 'otb-status err'; el('budget-status').textContent = t('notSignedIn'); return; }
+  el('budget-status').className = 'otb-status';
+  el('budget-status').textContent = t('readingOtb');
+  const answer = await otb.read(el('budget-period').value || thisMonth(), el('budget-store').value);
+  if (!answer.ok) { otbSay('budget-status', answer, ''); return; }
+  otbLast = answer.value;
+  el('budget-status').textContent = '';
+  renderOtb();
+}
+
+function issueControls(o, box) {
+  const reason = document.createElement('input');
+  reason.className = 'issue-reason';
+  reason.setAttribute('aria-label', `${o.poId} — ${t('issueReason')}`);
+  reason.placeholder = t('issueReason');
+  const overReason = document.createElement('input');
+  overReason.className = 'over-reason';
+  overReason.setAttribute('aria-label', `${o.poId} — ${t('overReason')}`);
+  overReason.placeholder = t('overReason');
+  overReason.hidden = o.escalation === null;
+  const go = document.createElement('button');
+  go.type = 'button';
+  go.dataset.act = 'issue';
+  go.textContent = t('issueIt');
+  const status = textCell('p', '', 'otb-status');
+  status.id = `issue-status-${o.poId}`;
+  status.setAttribute('role', 'status');
+  go.addEventListener('click', async () => {
+    const answer = await otb.issue(o.poId, reason.value, overReason.hidden ? undefined : overReason.value);
+    otbSay(status.id, answer, answer.ok ? (answer.value.overBudget ? t('issuedOver') : t('issued')) : '');
+    if (answer.ok) {
+      const kept = status.textContent;
+      await readOtb();
+      el('budget-status').className = 'otb-status good';
+      el('budget-status').textContent = `${o.poId}: ${kept}`;
+    }
+  });
+  for (const node of [reason, overReason]) { const f = document.createElement('div'); f.className = 'field'; f.append(node); box.append(f); }
+  box.append(go, status);
+}
+
+function renderOtb() {
+  el('budget-set').hidden = otb === null || !otb.maySetBudget;
+  el('budget-set-not').textContent = otb !== null && !otb.maySetBudget ? t('onlyOwnerSets') : '';
+  if (otbLast === null) return;
+  const { view, history, waiting } = otbLast;
+  // Summary panels: how many categories are over, and what is left across the budgets head office holds.
+  const over = view.rows.filter((r) => r.state === 'over').length;
+  const open = view.rows.reduce((s, r) => s + (r.openToBuyMinor ?? 0), 0);
+  el('budget-summary').replaceChildren(...[[t('categoriesOver'), String(over)], [t('totalOpen'), inr(open)]].map(([label, value]) => {
+    const box = document.createElement('div');
+    box.append(textCell('span', label, 'label'), textCell('span', value, 'value'));
+    return box;
+  }));
+  const head = document.createElement('tr');
+  for (const [k, cls] of [['category', ''], ['budget', 'amount'], ['committed', 'amount'], ['waitingCol', 'amount'], ['openToBuy', 'amount'], ['afterWaiting', 'amount'], ['stateCol', '']]) head.append(textCell('th', t(k), cls));
+  const money = (m) => (m === null ? '—' : m < 0 ? `−${inr(-m)}` : inr(m));
+  el('otb-table').replaceChildren(head, ...view.rows.map((r) => {
+    const tr = document.createElement('tr');
+    tr.dataset.category = r.categoryId;
+    tr.dataset.state = r.state;
+    if (r.state === 'over') tr.className = 'over';
+    tr.append(
+      textCell('td', r.categoryId + (r.budgetScope === null ? '' : ` (${r.budgetScope === 'store' ? t('forStore') : t('forCompany')})`)),
+      textCell('td', money(r.budgetMinor), 'amount'), textCell('td', money(r.committedMinor), 'amount'), textCell('td', money(r.waitingMinor), 'amount'),
+      textCell('td', money(r.openToBuyMinor), 'amount'), textCell('td', money(r.openAfterWaitingMinor), 'amount'), textCell('td', t(`st_${r.state}`)),
+    );
+    return tr;
+  }));
+
+  // Waiting orders — the ones head office found over budget first, each saying it escalates to the owner (OB-63).
+  el('waiting-orders').replaceChildren(...(waiting.length === 0 ? [textCell('p', t('noWaiting'), 'empty')] : waiting.map((o) => {
+    const box = document.createElement('div');
+    box.className = `escalation${o.escalation ? ' over' : ''}`;
+    box.dataset.po = o.poId;
+    box.append(textCell('div', `${o.poId} · ${o.supplierId} · ${inr(o.totalMinor)} · ${t('raisedBy')} ${o.requisitionedBy}`, 'what'));
+    if (o.escalation) box.append(textCell('div', `${t('overBy')} ${inr(o.escalation.overByMinor)} (${o.escalation.overCategories.map((c) => c.categoryId).join(', ')}). ${t('escalates')}`, 'why'));
+    else box.append(textCell('div', o.checked ? t('withinBudget') : t('notChecked'), 'why'));
+    if (otb.mayIssue) issueControls(o, box);
+    return box;
+  })));
+
+  el('budget-overrides').replaceChildren(...(view.overrides.length === 0 ? [textCell('p', t('noOverrides'), 'empty')] : view.overrides.map((o) => {
+    const row = textCell('div', `${o.poId} · ${t('overBy')} ${inr(o.overByMinor)} · ${t('letThrough')} ${o.approvedBy} · ${t('because')} “${o.reason}”`, 'version');
+    row.dataset.po = o.poId;
+    return row;
+  })));
+
+  el('budget-history').replaceChildren(...(history.length === 0 ? [textCell('p', t('noHistory'), 'empty')] : history.map((v) => {
+    const row = textCell('div', `${v.categoryId}${v.storeId ? ` · ${v.storeId}` : ''} · ${inr(v.amountMinor)} · ${t('setByWord')} ${v.setBy} · “${v.reason}”${v.superseded ? ` — ${t('replaced')}` : ''}`, `version${v.superseded ? ' superseded' : ''}`);
+    row.dataset.category = v.categoryId;
+    row.dataset.superseded = String(v.superseded);
+    return row;
+  })));
+}
+
+el('budget-read').addEventListener('click', () => { void readOtb(); });
+el('tab-budget').addEventListener('click', () => { if (otbLast === null) void readOtb(); });
+el('budget-save').addEventListener('click', async () => {
+  if (otb === null) return;
+  const answer = await otb.setBudget({
+    categoryId: el('budget-category').value, period: el('budget-period').value || thisMonth(), amount: el('budget-amount').value,
+    reason: el('budget-reason').value, storeId: el('budget-store').value,
+  });
+  if (answer.ok === false && 'problem' in answer) {
+    el('budget-set-status').className = 'otb-status err';
+    el('budget-set-status').textContent = answer.problem === 'not_money' ? t('notMoney') : t('fillBudget');
+    return;
+  }
+  otbSay('budget-set-status', answer, answer.ok ? (answer.value.supersedes ? t('budgetReplaced') : t('budgetSet')) : '');
+  if (answer.ok) await readOtb();
 });
 
 // ── Language ────────────────────────────────────────────────────────────────
@@ -577,6 +756,22 @@ function paintChrome() {
   el('add-po-line').textContent = t('addItem');
   el('raise-po').textContent = t('raiseIt');
   el('sample').textContent = t('sampleData');
+  el('tab-budget').textContent = t('budgetTab');
+  el('budget-title').textContent = t('budgetTab');
+  el('budget-lead').textContent = t('budgetLead');
+  el('budget-period-label').textContent = t('month');
+  el('budget-store-label').textContent = t('budgetStore');
+  el('budget-read').textContent = t('showMonth');
+  el('waiting-title').textContent = t('waitingTitle');
+  el('overrides-title').textContent = t('overridesTitle');
+  el('budget-set-title').textContent = t('setTitle');
+  el('budget-set-lead').textContent = t('setLead');
+  el('budget-category-label').textContent = t('category');
+  el('budget-amount-label').textContent = t('budgetAmount');
+  el('budget-reason-label').textContent = t('budgetReason');
+  el('budget-save').textContent = t('setIt');
+  el('history-title').textContent = t('historyTitle');
+  renderOtb();
   renderGaps();
 }
 
@@ -592,6 +787,7 @@ el('lang').addEventListener('click', () => {
 // ── Boot ────────────────────────────────────────────────────────────────────
 
 el('sample').hidden = real !== undefined;
+if (el('budget-period').value === '') el('budget-period').value = thisMonth();
 paintChrome();
 renderPoLines();
 renderSavedInvoices();

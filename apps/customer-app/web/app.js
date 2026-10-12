@@ -163,6 +163,25 @@ Object.assign(WORDS.ta, {
   signedOutAgain: 'உங்கள் உள்நுழைவு முடிந்தது. மீண்டும் உள்நுழையுங்கள் — எதுவும் சேமிக்கப்படவில்லை.', shopBusy: 'கடையால் இப்போது இதைச் சேமிக்க முடியவில்லை. சிறிது நேரத்தில் மீண்டும் முயற்சிக்கவும்.',
   noRoad: 'இந்தச் செயலிக்குக் கடையுடன் இணைப்பு அமைக்கப்படவில்லை, எனவே எதுவும் சேமிக்கப்படவில்லை.', shopRefused: 'கடை இதை ஏற்கவில்லை:',
 });
+// OB-77 (owner, 12 Oct 2026): the driver's delivery status, worded per status code in both languages, with its as-of time.
+Object.assign(WORDS.en, {
+  trackOrder: 'Where is my order?', deliveryAsOf: 'as of', trackOffline: 'Could not reach the shop to ask — there is no signal. Please try again when you are back online.', deliveryStale: 'This was {minutes} minutes ago, so it may have moved on.',
+  deliveryNotYet: 'No driver has your order yet. Your order is {state}.',
+  dlv_assigned: 'A driver has been given your order and will set off soon.', dlv_picked_up: 'The driver has collected your order from the store.',
+  dlv_out_for_delivery: 'Your order is on its way.', dlv_attempted: 'The driver has reached your address.', dlv_delivered: 'Delivered.',
+  dlv_partially_delivered: 'Part of your order was delivered. The shop will contact you about the rest.',
+  dlv_failed: 'The driver could not deliver your order. The shop will contact you to arrange another time.',
+  dlv_returned_to_origin: 'Your order has gone back to the store. The shop will contact you.',
+});
+Object.assign(WORDS.ta, {
+  trackOrder: 'என் ஆர்டர் எங்கே?', deliveryAsOf: 'நேரம்', trackOffline: 'கடையிடம் கேட்க முடியவில்லை — சிக்னல் இல்லை. இணைப்பு வந்ததும் மீண்டும் முயற்சிக்கவும்.', deliveryStale: 'இது {minutes} நிமிடங்களுக்கு முன்பு, எனவே நிலை மாறியிருக்கலாம்.',
+  deliveryNotYet: 'உங்கள் ஆர்டர் இன்னும் ஓட்டுநரிடம் இல்லை. உங்கள் ஆர்டர் நிலை: {state}.',
+  dlv_assigned: 'உங்கள் ஆர்டர் ஒரு ஓட்டுநரிடம் ஒப்படைக்கப்பட்டது; விரைவில் புறப்படுவார்.', dlv_picked_up: 'ஓட்டுநர் கடையிலிருந்து உங்கள் ஆர்டரை எடுத்துக்கொண்டார்.',
+  dlv_out_for_delivery: 'உங்கள் ஆர்டர் வந்துகொண்டிருக்கிறது.', dlv_attempted: 'ஓட்டுநர் உங்கள் முகவரிக்கு வந்துவிட்டார்.', dlv_delivered: 'டெலிவரி செய்யப்பட்டது.',
+  dlv_partially_delivered: 'உங்கள் ஆர்டரின் ஒரு பகுதி டெலிவரி செய்யப்பட்டது. மீதி குறித்து கடை உங்களைத் தொடர்புகொள்ளும்.',
+  dlv_failed: 'ஓட்டுநரால் உங்கள் ஆர்டரை டெலிவரி செய்ய முடியவில்லை. வேறு நேரம் ஏற்பாடு செய்ய கடை உங்களைத் தொடர்புகொள்ளும்.',
+  dlv_returned_to_origin: 'உங்கள் ஆர்டர் கடைக்குத் திரும்பிச் சென்றது. கடை உங்களைத் தொடர்புகொள்ளும்.',
+});
 let lang = 'en';
 const t = (key) => WORDS[lang][key] ?? WORDS.en[key];
 
@@ -668,9 +687,46 @@ el('pay-available').addEventListener('click', () => followUpAnd(() => shop.payFo
 el('cancel-order').addEventListener('click', () => followUpAnd(() => shop.cancelOrder()));
 el('check-payment').addEventListener('click', () => followUpAnd(() => shop.checkPayment()));
 
+/** OB-77: the last tracking the shop gave for my order — repainted in the other language without asking again. */
+let tracked = null;
+function paintTracking() {
+  const say = el('delivery-say');
+  if (tracked === null) { say.hidden = true; return; }
+  say.hidden = false;
+  if (!tracked.ok) {
+    say.textContent = tracked.refusal === 'not_saved_no_connection' ? t('trackOffline') : mineWords(tracked);
+    delete say.dataset.status;
+    say.className = 'say stop';
+    return;
+  }
+  const d = tracked.value.delivery;
+  if (d === null) {
+    say.textContent = t('deliveryNotYet').replace('{state}', tracked.value.state);
+    say.className = 'say';
+    return;
+  }
+  // The driver's status in the reader's language, the time the driver recorded it, and — when it may have moved on — that too.
+  const words = WORDS[lang][`dlv_${d.status}`] ?? WORDS.en[`dlv_${d.status}`] ?? d.tellTheCustomer;
+  const at = new Date(d.asOf).toLocaleString();
+  say.textContent = `${words} (${t('deliveryAsOf')} ${at})${d.stale ? ` ${t('deliveryStale').replace('{minutes}', String(d.asOfMinutesAgo))}` : ''}`;
+  say.dataset.status = d.status;
+  say.dataset.asOf = d.asOf;
+  say.className = 'say' + (d.status === 'failed' || d.status === 'returned_to_origin' || d.stale ? ' stop' : d.status === 'delivered' ? ' done' : '');
+}
+el('track-order').addEventListener('click', async () => {
+  const order = shop.state().order;
+  if (order === undefined || shop.mine?.order === undefined) return;
+  el('track-order').disabled = true;
+  try { tracked = await shop.mine.order(order.orderId); } finally { el('track-order').disabled = false; }
+  paintTracking();
+});
+
 function renderOrder() {
   const line = shop.statusLine();
   const state = shop.state();
+  el('track-order').hidden = state.order === undefined || state.order.state !== 'confirmed' || shop.mine?.order === undefined;
+  el('track-order').textContent = t('trackOrder');
+  paintTracking();
   el('order-say').textContent = line ?? (state.stage === 'waiting_for_signal'
     ? state.tellTheCustomer
     : t('noOrderYet'));

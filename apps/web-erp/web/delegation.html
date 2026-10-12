@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Delegation</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Delegation (M02-FR-03 · §28 · hard rule 4 "no shared logins"). A THIN CLIENT over head office's delegation
+      register: when a manager is away, a SEPARATE person lends that manager's approval authority to a named colleague,
+      time-boxed with a real end date, for named kinds of decision and up to a cap — the honest alternative to sharing a
+      login. The standing delegations are read live (GET /v1/access/delegations) with their state in words, and one can
+      be ended early. Head office's tested engine judges every rule (no self-delegation, no chains, no open end, never
+      more than the lender holds) and the page shows its words. No rule lives here.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(980px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; }
+      h2 { margin: 0; font-size: 17px; }
+      p.lede { margin: 0; color: var(--muted); font-size: 14px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      input, select { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; }
+      fieldset { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin: 0; display: flex; gap: 8px 16px; flex-wrap: wrap; }
+      fieldset label { display: inline-flex; align-items: center; gap: 8px; font-weight: 500; min-height: var(--tap); }
+      fieldset input { min-height: auto; width: 20px; height: 20px; }
+      .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; }
+      button[disabled] { opacity: .5; cursor: not-allowed; }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+      li.lend { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; display: grid; gap: 6px; background: var(--bg); min-width: 0; border-left: 6px solid var(--idle); }
+      li.lend.state-active { border-left-color: var(--ok); } li.lend.state-expiring { border-left-color: var(--degraded); }
+      li.lend .head { display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline; font-weight: 600; overflow-wrap: anywhere; }
+      li.lend .facts { font-size: 14px; color: var(--muted); overflow-wrap: anywhere; margin: 0; }
+      .status { font-size: 14px; min-height: 20px; }
+      .status.good { color: var(--good); } .status.err { color: var(--danger-text); }
+      .nobody { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
+      .muted { color: var(--muted); font-size: 13px; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title">Delegation</h1>
+      <span class="sync">
+        <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+      </span>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section aria-labelledby="list-h">
+        <h2 id="list-h">Authority lent right now</h2>
+        <p class="lede" id="list-lede">Who is approving for whom, for what and until when. A delegation ends on its own on its last day; end one early here.</p>
+        <p class="status" id="list-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="rows" aria-label="Authority lent right now"></ul>
+      </section>
+
+      <section aria-labelledby="lend-h" id="lend-section">
+        <h2 id="lend-h">Lend someone's authority while they are away</h2>
+        <p class="lede" id="lend-lede">Never share a login. The colleague approves as themselves, under this delegation; you — a different person — authorise it.</p>
+        <div class="row">
+          <label for="from"><span id="l-from">Whose authority (the person away)</span><input id="from" autocomplete="off" /></label>
+          <label for="to"><span id="l-to">Lent to</span><input id="to" autocomplete="off" /></label>
+          <label for="from-date"><span id="l-from-date">From</span><input id="from-date" type="date" /></label>
+          <label for="until-date"><span id="l-until-date">Until (last day)</span><input id="until-date" type="date" /></label>
+          <label for="cap"><span id="l-cap">Up to ₹ per decision (optional)</span><input id="cap" inputmode="decimal" autocomplete="off" /></label>
+        </div>
+        <fieldset>
+          <legend id="l-kinds">For these decisions</legend>
+          <label><input type="checkbox" value="refund" name="kind" /><span id="k-refund">Refunds</span></label>
+          <label><input type="checkbox" value="price_change" name="kind" /><span id="k-price_change">Price changes</span></label>
+          <label><input type="checkbox" value="purchase_order" name="kind" /><span id="k-purchase_order">Purchase orders</span></label>
+          <label><input type="checkbox" value="stock_adjustment" name="kind" /><span id="k-stock_adjustment">Stock corrections</span></label>
+          <label><input type="checkbox" value="day_reopen" name="kind" /><span id="k-day_reopen">Reopening a closed day</span></label>
+        </fieldset>
+        <label for="reason"><span id="l-reason">Why</span><input id="reason" autocomplete="off" /></label>
+        <button id="lend" type="button">Lend this authority</button>
+        <p class="status" id="lend-status" role="status" aria-live="polite"></p>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script type="module" src="./delegation.js"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

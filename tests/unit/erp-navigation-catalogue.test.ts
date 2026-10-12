@@ -82,8 +82,10 @@ describe('every screen the store computer serves has a door, and every door open
     // (ADR-0024) is served by the box and is NOT on this list.
     const servedFiles = new Set(BOX_SCREENS.map((s) => APP_SHELL[s].file));
     const unservedPages = readdirSync('apps/web-erp/web').filter((f) => f.endsWith('.html') && !servedFiles.has(f)).sort();
-    expect(unservedPages).toEqual(['company-report.html', 'erasure-console.html', 'payroll-payslip.html', 'payroll.html', 'setup.html']);
-    expect(notBox.filter((i) => i.served === 'unserved').map((i) => i.id).sort()).toEqual(['my-payslip', 'payroll', 'store-setup']);
+    // Round 10: Organisation and Delegation are head-office pages (served in front of head office's API, not by the box).
+    // Round 12: so are Month-end (finance-close), Supplier bills (D03-FR-02 · WF-05), Count plans (WF-08), Transfers (WF-07) and Incidents (M35).
+    expect(unservedPages).toEqual(['company-report.html', 'count-plans.html', 'delegation.html', 'erasure-console.html', 'finance-close.html', 'incidents.html', 'organisation.html', 'payroll-payslip.html', 'payroll.html', 'setup.html', 'supplier-bills.html', 'transfers.html']);
+    expect(notBox.filter((i) => i.served === 'unserved').map((i) => i.id).sort()).toEqual(['count-plans', 'delegation', 'finance-close', 'incidents', 'my-payslip', 'organisation', 'payroll', 'store-setup', 'supplier-bills', 'transfers']);
     // `suppliers` left this list at SP-7d (30 Sep 2026): the Suppliers screen is built and served by the box.
     expect(notBox.filter((i) => i.served === 'unbuilt').map((i) => i.id).sort()).toEqual(['reconciliation', 'settings']);
   });

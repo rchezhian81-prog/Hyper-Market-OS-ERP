@@ -10,9 +10,11 @@
 //     that names no frozen kinds takes the owner's default (OB-59, 11 Oct 2026): adjustments and write-offs only —
 //     deliveries and transfers keep flowing; the planner may still name more (or an empty list to freeze nothing). A till
 //     sale or a till return can never be frozen (hard rule #1 — the till never waits on head office).
-//   • OPEN — the freeze starts. A frozen kind typed on the plain movements route is refused by name; one that lands any
-//     other way (a delivery booked on a device while the line was down, which must never be refused into the void) is a
-//     visible exception on the plan, and the product it touched must be counted again after it (hard rule #10).
+//   • OPEN — the freeze starts. A frozen kind sent by ANY head-office route is refused by name (round 10, `count-freeze.ts`:
+//     the plain movements route, the write-off route, a held returned unit's write-off, an adjustment request's approval,
+//     an ad-hoc count's correction, a transfer's found / arrived-damaged postings); one RELAYED by the store computer (a
+//     decision or receipt made on the floor while the line was down, which must never be refused into the void) is kept,
+//     is a visible exception on the plan, and the product it touched must be counted again after it (hard rule #10).
 //   • BLIND COUNT — the counter sends only what they saw. Head office works out the expected figure AS OF the moment
 //     counted (every movement dated up to then), so a sale that reaches head office late is not mistaken for a loss.
 //     Every variance is HELD for the plan; nothing is applied line by line. A counter's sheet never shows the expected.
@@ -32,6 +34,7 @@ import { InvalidCountError } from '../../../packages/counts/src/counts';
 import { ADJUSTMENT_REASON_CODES, isAdjustmentReason } from '../../../packages/adjustment/src/adjustment';
 import { reconcileBlindCount, decideCount, type CountsDeps, type CountFlag, type StoredReconciliation } from './counts';
 import { assertLocationInScope, stockReadScope } from './location-scope';
+import type { HeldWriteOffView, HeldWriteOffApplied } from './held-write-offs';
 
 /** The movement kinds a plan may freeze. Till sales and till returns are never among them (hard rule #1). */
 export const FREEZABLE_KINDS = Object.freeze([
@@ -94,15 +97,28 @@ export interface CountPlanDeps extends CountsDeps {
   readonly plans: (tenantId: string) => Promise<readonly CountPlan[]> | readonly CountPlan[];
   /** Append the plan's new state (created / opened / approved / cancelled) — a new event each time, never an edit. */
   readonly recordPlan: (tenantId: string, plan: CountPlan, step: 'created' | 'opened' | 'approved' | 'cancelled') => Promise<void> | void;
+  /**
+   * WF-08 (hard rule #10): the plan's ONE terminal decision — approved OR cancelled — appended under a single key, so two
+   * people closing the same plan at once cannot both land. Answers the decision that STANDS (this one when it landed, the
+   * other person's when it lost). Absent on a bare stub: `recordPlan` is used and taken as landed.
+   */
+  readonly closePlan?: (tenantId: string, plan: CountPlan, step: 'approved' | 'cancelled') => Promise<CountPlan> | CountPlan;
   readonly causes: (tenantId: string, planId: string) => Promise<readonly VarianceCause[]> | readonly VarianceCause[];
   readonly recordCause: (tenantId: string, cause: VarianceCause) => Promise<void> | void;
   /** Every count recorded under this plan (the count register's records carrying `planId`), latest state per count. */
   readonly planCounts: (tenantId: string, planId: string) => Promise<readonly StoredReconciliation[]> | readonly StoredReconciliation[];
   /** Every M08 movement at this location for these products — the as-of expected figure and the freeze check read it. */
   readonly movementsAt: (tenantId: string, locationId: string, productIds: readonly string[]) => Promise<readonly PlaceMovement[]> | readonly PlaceMovement[];
+  /** OB-66: the damaged-on-arrival write-offs HELD on this plan, with their state (absent on a bare stub — none). */
+  readonly heldWriteOffs?: (tenantId: string, plan: CountPlan) => Promise<readonly HeldWriteOffView[]> | readonly HeldWriteOffView[];
+  /** OB-66: apply, ONCE each, the held write-offs of a CLOSED plan (approved or cancelled); answers what it applied now. */
+  readonly applyHeldWriteOffs?: (tenantId: string, plan: CountPlan, by: string, at: string) => Promise<readonly HeldWriteOffApplied[]> | readonly HeldWriteOffApplied[];
   /** Who holds which permissions — a relayed count's counter is re-verified (flag, never silent). */
   readonly permissionsOfUser?: (tenantId: string, userId: string) => Promise<readonly string[] | undefined> | readonly string[] | undefined;
 }
+
+/** One count variance an approval posted. */
+interface PostedLine { readonly countId: string; readonly productId: string; readonly varianceMinor: number; readonly valueMinor: number; readonly movementId: string | null; readonly causeCode: string }
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
 const isNonNegInt = (v: unknown): v is number => Number.isInteger(v) && (v as number) >= 0;
@@ -269,9 +285,68 @@ export function countPlanRoutes(deps: CountPlanDeps): readonly Route[] {
   };
   const positionOf = async (tenantId: string, plan: CountPlan) => {
     const [counts, causes, moves] = await Promise.all([deps.planCounts(tenantId, plan.planId), deps.causes(tenantId, plan.planId), deps.movementsAt(tenantId, plan.locationId, plan.productIds)]);
+    const held = deps.heldWriteOffs === undefined ? [] : await deps.heldWriteOffs(tenantId, plan);
     const lines = planPosition(plan, counts, causes, moves);
-    const breaches = freezeBreaches(plan, moves, new Set(counts.map((c) => `count:${c.countId}`)));
-    return { counts, lines, breaches };
+    // The plan's own corrections and its held write-offs applied at its close are not breaches of its freeze.
+    const breaches = freezeBreaches(plan, moves, new Set([...counts.map((c) => `count:${c.countId}`), ...held.flatMap((h) => h.applied?.movementIds ?? [])]));
+    return { counts, lines, breaches, held };
+  };
+  // OB-66: a closed plan's held write-offs are applied once — on the close, and again (a no-op once done) on a re-sent close.
+  const applyHeld = async (ctx: RequestContext, plan: CountPlan) => {
+    const applied = deps.applyHeldWriteOffs === undefined ? [] : await deps.applyHeldWriteOffs(ctx.tenantId, plan, ctx.userId, deps.now());
+    if (applied.length > 0) await audit(ctx, 'count.plan.held_write_offs.apply', plan, { applied: applied.map((a) => a.writeOffId).join(','), outcome: plan.state }, `held damaged write-offs applied at the count's close (OB-66)`);
+    return applied;
+  };
+  /** The plan's terminal decision, under one key (approve and cancel share it) — answers the decision that stands. */
+  const close = async (ctx: RequestContext, plan: CountPlan, step: 'approved' | 'cancelled'): Promise<CountPlan> => {
+    if (deps.closePlan !== undefined) return deps.closePlan(ctx.tenantId, plan, step);
+    await deps.recordPlan(ctx.tenantId, plan, step);
+    return plan;
+  };
+  /**
+   * An approved plan whose posting was cut short (a crash between the decision and the last line) is finished by the next
+   * approval request: every final count still waiting posts, as the approver who decided the plan — never twice.
+   */
+  const finishPosting = async (ctx: RequestContext, plan: CountPlan): Promise<PostedLine[]> => {
+    const [counts, causes] = await Promise.all([deps.planCounts(ctx.tenantId, plan.planId), deps.causes(ctx.tenantId, plan.planId)]);
+    const byId = new Map(counts.map((c) => [c.countId, c] as const));
+    const lines = planPosition(plan, counts, causes, await deps.movementsAt(ctx.tenantId, plan.locationId, plan.productIds));
+    const out: PostedLine[] = [];
+    for (const l of lines) {
+      const c = l.finalCountId === null ? undefined : byId.get(l.finalCountId);
+      if (c === undefined || c.pendingApproval !== true || c.decision !== undefined || c.varianceMinor === 0) continue;
+      const r = await decideCount(deps, {
+        tenantId: ctx.tenantId, countId: c.countId, decidedBy: plan.approvedBy ?? ctx.userId, decision: 'approved',
+        reason: `count plan ${plan.planId}: ${l.cause?.causeCode ?? ''} — ${l.cause?.note ?? ''}; ${plan.approvalReason ?? ''}`, branchId: ctx.branchId ?? null, via: 'direct',
+      });
+      if (r.ok && r.alreadyDecided !== true) out.push({ countId: c.countId, productId: l.productId, varianceMinor: l.varianceMinor, valueMinor: l.valueMinor, movementId: r.record.movementId ?? null, causeCode: l.cause?.causeCode ?? '' });
+    }
+    // Round 13 (verifier A9): a count a recount superseded and the cut-short approval never closed is closed now, as at the
+    // approval — recorded, never posted (hard rule #2) — so the finished plan holds nothing still waiting.
+    const finalIds = new Set(lines.map((l) => l.finalCountId));
+    for (const c of counts) {
+      if (finalIds.has(c.countId) || c.pendingApproval !== true || c.decision !== undefined) continue;
+      const by = counts.find((x) => x.recountOf === c.countId)?.countId ?? 'a recount';
+      await deps.recordDecision(ctx.tenantId, { ...c, adjusted: false, pendingApproval: false, approvedBy: null, decision: 'rejected', decidedAt: plan.approvedAt ?? deps.now(), decisionReason: `superseded by recount ${by} in count plan ${plan.planId}`, movementId: null });
+    }
+    if (out.length > 0) await audit(ctx, 'count.plan.approve.finished', plan, { state: 'approved', posted: String(out.length) }, 'an approval cut short before every line posted was finished by a re-sent approval');
+    return out;
+  };
+  /**
+   * Round 13 (verifier A9 · P-08): what an APPROVED plan still has waiting to post — a final variance not yet posted, or a
+   * superseded count not yet closed — because the approval was cut short between its decision and its postings. Shown on the
+   * plan as `postingIncomplete` (never "approved" looking finished); the next approval re-send finishes it.
+   */
+  const unfinishedOf = (plan: CountPlan, counts: readonly StoredReconciliation[], lines: readonly PlanLine[]): readonly string[] => {
+    if (plan.state !== 'approved') return [];
+    const byId = new Map(counts.map((c) => [c.countId, c] as const));
+    const finalIds = new Set(lines.map((l) => l.finalCountId));
+    const finals = lines.flatMap((l) => {
+      const c = l.finalCountId === null ? undefined : byId.get(l.finalCountId);
+      return c !== undefined && c.pendingApproval === true && c.decision === undefined && c.varianceMinor !== 0 ? [c.countId] : [];
+    });
+    const superseded = counts.filter((c) => !finalIds.has(c.countId) && c.pendingApproval === true && c.decision === undefined).map((c) => c.countId);
+    return [...finals, ...superseded];
   };
   const audit = async (ctx: RequestContext, action: string, plan: CountPlan, after: Record<string, string>, reason: string) => {
     await deps.recordAudit?.(ctx.tenantId, {
@@ -393,7 +468,7 @@ export function countPlanRoutes(deps: CountPlanDeps): readonly Route[] {
         const plan = await load(ctx);
         const b = (ctx.body ?? {}) as Record<string, unknown>;
         if (!isStr(b['reason'])) throw refuse(400, 'not_readable_as_a_count_approval', 'An approval needs a reason — the audit line a person reads later.');
-        if (plan.state === 'approved') return { status: 200, body: { plan, alreadyApproved: true } };
+        if (plan.state === 'approved') return { status: 200, body: { plan, alreadyApproved: true, posted: await finishPosting(ctx, plan), heldWriteOffsApplied: await applyHeld(ctx, plan) } };
         if (plan.state !== 'counting') throw refuse(409, 'count_plan_not_open', `Count plan ${plan.planId} is ${plan.state}; only an open count can be approved.`);
         const { counts, lines } = await positionOf(ctx.tenantId, plan);
         const waiting = lines.filter((l) => l.state === 'not_counted' || l.state === 'recount_required' || l.state === 'cause_required');
@@ -406,8 +481,18 @@ export function countPlanRoutes(deps: CountPlanDeps): readonly Route[] {
         if (own.length > 0) {
           throw refuse(422, 'self_approval', `${ctx.userId} counted ${own.map((l) => l.productId).join(', ')} and cannot approve their own variance (§28).`, 'A different person with approval authority approves. Nothing was posted.');
         }
+        // The plan's terminal decision is claimed FIRST, under the one key approve and cancel share (hard rule #10): a cancel
+        // that lands a moment earlier wins and this approval posts nothing; once approved, no cancel can land.
+        const at = deps.now();
+        const approved: CountPlan = { ...plan, state: 'approved', approvedBy: ctx.userId, approvedAt: at, approvalReason: b['reason'].trim() };
+        const standing = await close(ctx, approved, 'approved');
+        if (standing.state === 'cancelled') throw refuse(409, 'count_plan_already_cancelled', `Count plan ${plan.planId} was cancelled by ${standing.cancelledBy ?? 'someone'} a moment ago; nothing posts from a cancelled count.`, 'Plan a new count if the place still needs one. Nothing was posted.');
+        if (standing.approvedAt !== at || standing.approvedBy !== ctx.userId) {
+          // Another approval of the same plan landed first: it posts; this one is the same decision, told so.
+          return { status: 200, body: { plan: standing, alreadyApproved: true, posted: await finishPosting(ctx, standing), heldWriteOffsApplied: await applyHeld(ctx, standing) } };
+        }
         // Every final variance posts ONE compensating movement through the count register's own decide step.
-        const posted: { countId: string; productId: string; varianceMinor: number; valueMinor: number; movementId: string | null; causeCode: string }[] = [];
+        const posted: PostedLine[] = [];
         for (const l of ready) {
           const out = await decideCount(deps, {
             tenantId: ctx.tenantId, countId: l.finalCountId as string, decidedBy: ctx.userId, decision: 'approved',
@@ -418,18 +503,16 @@ export function countPlanRoutes(deps: CountPlanDeps): readonly Route[] {
         }
         // Every count a recount superseded is closed as superseded — recorded, never posted (hard rule #2).
         const finalIds = new Set(lines.map((l) => l.finalCountId));
-        const at = deps.now();
         for (const c of counts) {
           if (finalIds.has(c.countId) || c.pendingApproval !== true) continue;
           const by = counts.find((x) => x.recountOf === c.countId)?.countId ?? 'a recount';
           await deps.recordDecision(ctx.tenantId, { ...c, adjusted: false, pendingApproval: false, approvedBy: null, decision: 'rejected', decidedAt: at, decisionReason: `superseded by recount ${by} in count plan ${plan.planId}`, movementId: null });
         }
-        const approved: CountPlan = { ...plan, state: 'approved', approvedBy: ctx.userId, approvedAt: at, approvalReason: b['reason'].trim() };
-        await deps.recordPlan(ctx.tenantId, approved, 'approved');
         const lossMinor = posted.filter((p) => p.varianceMinor < 0).reduce((s, p) => s + p.valueMinor, 0);
         const gainMinor = posted.filter((p) => p.varianceMinor > 0).reduce((s, p) => s + p.valueMinor, 0);
         await audit(ctx, 'count.plan.approve', plan, { state: 'approved', posted: String(posted.length), lossMinor: String(lossMinor), gainMinor: String(gainMinor) }, approved.approvalReason ?? '');
-        return { status: 200, body: { plan: approved, posted, lossMinor, gainMinor, alreadyApproved: false } };
+        const heldWriteOffsApplied = await applyHeld(ctx, approved);
+        return { status: 200, body: { plan: approved, posted, lossMinor, gainMinor, heldWriteOffsApplied, alreadyApproved: false } };
       },
     },
     {
@@ -440,12 +523,16 @@ export function countPlanRoutes(deps: CountPlanDeps): readonly Route[] {
         const plan = await load(ctx);
         const b = (ctx.body ?? {}) as Record<string, unknown>;
         if (!isStr(b['reason'])) throw refuse(400, 'not_readable_as_a_cancellation', 'Cancelling a count needs a reason.');
-        if (plan.state === 'cancelled') return { status: 200, body: { plan, alreadyCancelled: true } };
+        if (plan.state === 'cancelled') return { status: 200, body: { plan, alreadyCancelled: true, heldWriteOffsApplied: await applyHeld(ctx, plan) } };
         if (plan.state === 'approved') throw refuse(409, 'count_plan_already_approved', `Count plan ${plan.planId} was approved; its corrections stand (a correction to them is a new count).`);
         const cancelled: CountPlan = { ...plan, state: 'cancelled', cancelledBy: ctx.userId, cancelledAt: deps.now(), cancelReason: b['reason'].trim() };
-        await deps.recordPlan(ctx.tenantId, cancelled, 'cancelled');
+        // One terminal decision per plan (hard rule #10): an approval that landed a moment earlier wins — this cancel is refused.
+        const standing = await close(ctx, cancelled, 'cancelled');
+        if (standing.state === 'approved') throw refuse(409, 'count_plan_already_approved', `Count plan ${plan.planId} was approved by ${standing.approvedBy ?? 'someone'} a moment ago; its corrections stand (a correction to them is a new count).`);
+        if (standing.cancelledAt !== cancelled.cancelledAt || standing.cancelledBy !== ctx.userId) return { status: 200, body: { plan: standing, alreadyCancelled: true, heldWriteOffsApplied: await applyHeld(ctx, standing) } };
         await audit(ctx, 'count.plan.cancel', plan, { state: 'cancelled' }, cancelled.cancelReason ?? '');
-        return { status: 200, body: { plan: cancelled, alreadyCancelled: false } };
+        const heldWriteOffsApplied = await applyHeld(ctx, cancelled);
+        return { status: 200, body: { plan: cancelled, heldWriteOffsApplied, alreadyCancelled: false } };
       },
     },
     {
@@ -454,12 +541,17 @@ export function countPlanRoutes(deps: CountPlanDeps): readonly Route[] {
       permission: 'inventory.count.plan',
       handler: async (ctx) => {
         const plan = await load(ctx);
-        const { lines, breaches } = await positionOf(ctx.tenantId, plan);
+        const { counts, lines, breaches, held } = await positionOf(ctx.tenantId, plan);
         const finals = lines.filter((l) => l.state === 'ready' || l.state === 'cause_required' || l.state === 'recount_required');
+        const waitingToPost = unfinishedOf(plan, counts, lines);
         return {
           status: 200,
           body: {
             plan, lines, freezeBreaches: breaches,
+            // Round 13 (verifier A9 · P-08): approved, but its posting was cut short — named, and finished by re-sending the approval.
+            postingIncomplete: waitingToPost.length > 0, waitingToPost,
+            // OB-66: damaged-on-arrival write-offs this count's freeze HELD — applied once at its close, never lost.
+            heldWriteOffs: held,
             totals: {
               products: lines.length, counted: lines.filter((l) => l.state !== 'not_counted').length,
               recountRequired: lines.filter((l) => l.state === 'recount_required').length, causeRequired: lines.filter((l) => l.state === 'cause_required').length,
@@ -489,7 +581,14 @@ export function countPlanRoutes(deps: CountPlanDeps): readonly Route[] {
         const all = [...(await deps.plans(ctx.tenantId))].reverse();
         const filter = await stockReadScope(ctx, deps.locationBranches);
         const visible = all.filter((p) => filter.covers(p.locationId));
-        return { status: 200, body: { plans: visible, asAt: deps.now() } };
+        // Round 13 (verifier A9 · P-08): an approved plan whose posting was cut short is flagged on the board too.
+        const incomplete = new Set<string>();
+        for (const p of visible) {
+          if (p.state !== 'approved') continue;
+          const [counts, causes, moves] = await Promise.all([deps.planCounts(ctx.tenantId, p.planId), deps.causes(ctx.tenantId, p.planId), deps.movementsAt(ctx.tenantId, p.locationId, p.productIds)]);
+          if (unfinishedOf(p, counts, planPosition(p, counts, causes, moves)).length > 0) incomplete.add(p.planId);
+        }
+        return { status: 200, body: { plans: visible.map((p) => (p.state === 'approved' ? { ...p, postingIncomplete: incomplete.has(p.planId) } : p)), asAt: deps.now() } };
       },
     },
   ];

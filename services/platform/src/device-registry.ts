@@ -75,34 +75,74 @@ export interface DeviceRegistryEvent {
  * device to move), so a stray status/heartbeat cannot conjure a phantom till.
  */
 export function projectFleet(tenantId: string, events: readonly DeviceRegistryEvent[]): readonly Device[] {
+  // Round 16 (OB-80/OB-81, verifier LOW): a TILL (pos_lane) is (store, till) — store-2's "lane-1" is its own device beside
+  // store-1's, never moving or replacing it. Every other kind of device is one per id in the business, as before.
   const byId = new Map<string, Device>();
+  const laneKey = (branchId: string, deviceId: string): string => `lane\u0000${branchId}\u0000${deviceId}`;
+  const keyOfRegistered = (e: DeviceRegistryEvent): string => {
+    const kind = e.deviceKind ?? [...byId.values()].find((d) => d.deviceId === e.deviceId)?.kind;
+    return kind === 'pos_lane' && e.branchId !== undefined ? laneKey(e.branchId, e.deviceId) : e.deviceId;
+  };
+  /** The devices a status / report / enrolment event applies to: its id, at its branch when it names one. */
+  const targets = (e: DeviceRegistryEvent): string[] => [...byId.entries()]
+    .filter(([, d]) => d.deviceId === e.deviceId && (e.branchId === undefined || d.kind !== 'pos_lane' || d.branchId === e.branchId))
+    .map(([k]) => k);
   for (const e of events) {
-    const cur = byId.get(e.deviceId);
-    if (e.kind === 'registered') {
-      byId.set(e.deviceId, {
-        deviceId: e.deviceId, tenantId,
-        branchId: e.branchId ?? cur?.branchId ?? '',
-        kind: e.deviceKind ?? cur?.kind ?? 'pos_lane',
-        label: e.label ?? cur?.label ?? e.deviceId,
-        status: 'registered',
-        lastSeenAt: e.at,
-        ...(e.appVersion !== undefined ? { appVersion: e.appVersion } : cur?.appVersion !== undefined ? { appVersion: cur.appVersion } : {}),
-        ...(cur?.integrityCompromised !== undefined ? { integrityCompromised: cur.integrityCompromised } : {}),
-      });
-    } else if (cur !== undefined && e.kind === 'status' && e.status !== undefined) {
-      byId.set(e.deviceId, { ...cur, status: e.status });
-    } else if (cur !== undefined && e.kind === 'reported') {
-      byId.set(e.deviceId, {
-        ...cur, lastSeenAt: e.at,
-        ...(e.appVersion !== undefined ? { appVersion: e.appVersion } : {}),
-        ...(e.integrityCompromised !== undefined ? { integrityCompromised: e.integrityCompromised } : {}),
-      });
-    } else if (cur !== undefined && e.kind === 'enrolment' && e.codeHash !== undefined && e.expiresAt !== undefined) {
-      // The latest code supersedes any earlier one: a re-issue is how a lost code is invalidated.
-      byId.set(e.deviceId, { ...cur, enrolment: { codeHash: e.codeHash, expiresAt: e.expiresAt, issuedAt: e.at } });
+    if (e.kind !== 'registered') {
+      for (const k of targets(e)) apply(byId, k, byId.get(k), e, tenantId);
+      continue;
     }
+    const key = keyOfRegistered(e);
+    apply(byId, key, byId.get(key), e, tenantId);
   }
-  return [...byId.values()].sort((a, b) => (a.deviceId < b.deviceId ? -1 : a.deviceId > b.deviceId ? 1 : 0));
+  return [...byId.values()].sort((a, b) => (a.deviceId < b.deviceId ? -1 : a.deviceId > b.deviceId ? 1 : a.branchId < b.branchId ? -1 : a.branchId > b.branchId ? 1 : 0));
+}
+
+function apply(byId: Map<string, Device>, key: string, cur: Device | undefined, e: DeviceRegistryEvent, tenantId: string): void {
+  if (e.kind === 'registered') {
+    byId.set(key, {
+      deviceId: e.deviceId, tenantId,
+      branchId: e.branchId ?? cur?.branchId ?? '',
+      kind: e.deviceKind ?? cur?.kind ?? 'pos_lane',
+      label: e.label ?? cur?.label ?? e.deviceId,
+      status: 'registered',
+      lastSeenAt: e.at,
+      ...(e.appVersion !== undefined ? { appVersion: e.appVersion } : cur?.appVersion !== undefined ? { appVersion: cur.appVersion } : {}),
+      ...(cur?.integrityCompromised !== undefined ? { integrityCompromised: cur.integrityCompromised } : {}),
+    });
+  } else if (cur !== undefined && e.kind === 'status' && e.status !== undefined) {
+    byId.set(key, { ...cur, status: e.status });
+  } else if (cur !== undefined && e.kind === 'reported') {
+    byId.set(key, {
+      ...cur, lastSeenAt: e.at,
+      ...(e.appVersion !== undefined ? { appVersion: e.appVersion } : {}),
+      ...(e.integrityCompromised !== undefined ? { integrityCompromised: e.integrityCompromised } : {}),
+    });
+  } else if (cur !== undefined && e.kind === 'enrolment' && e.codeHash !== undefined && e.expiresAt !== undefined) {
+    // The latest code supersedes any earlier one: a re-issue is how a lost code is invalidated.
+    byId.set(key, { ...cur, enrolment: { codeHash: e.codeHash, expiresAt: e.expiresAt, issuedAt: e.at } });
+  }
+}
+
+/**
+ * Round 16: the ONE device a status / report / enrolment call on `deviceId` means — at the branch the call names
+ * (`branchId` in the body or query), else the one with that id the caller's scope covers. Two stores' tills of the same
+ * name and no branch named → refused by name (409), never applied to both. undefined → no such device.
+ */
+function deviceFor(ctx: RequestContext, fleet: readonly Device[], deviceId: string): Device | undefined {
+  const b = (ctx.body ?? {}) as Record<string, unknown>;
+  const named = isStr(b['branchId']) ? b['branchId'] : isStr(ctx.query['branchId']) ? ctx.query['branchId'] : undefined;
+  const same = fleet.filter((d) => d.deviceId === deviceId && (named === undefined || d.branchId === named));
+  if (same.length <= 1) return same[0];
+  const scope = ctx.scope ?? [];
+  const mine = scope === 'all' ? same : same.filter((d) => scope.includes(d.branchId));
+  if (mine.length === 1) return mine[0];
+  throw apiError(409, {
+    code: 'device_at_more_than_one_store',
+    whatHappened: `More than one store has a till called "${deviceId}" (${same.map((d) => d.branchId).join(', ')}), and this request does not say which.`,
+    wasItSaved: 'not_saved',
+    nextSafeAction: 'Send it again naming the store (branchId). Nothing was changed.',
+  });
 }
 
 export interface DeviceRegistryDeps {
@@ -211,7 +251,9 @@ export function deviceRegistryRoutes(deps: DeviceRegistryDeps): readonly Route[]
         const at = deps.now();
         // PA-01-r1: registered only at a branch the caller holds; a device on file at another branch is not moved.
         assertBranchInScope(ctx, b['branchId'] as string);
-        const existing = (await deps.fleet(ctx.tenantId)).find((d) => d.deviceId === deviceId);
+        // Round 16: a till is (store, till) — a till of the same name at ANOTHER store is that store's own, never this one.
+        const existing = (await deps.fleet(ctx.tenantId)).find((d) => d.deviceId === deviceId
+          && !(b['kind'] === 'pos_lane' && d.kind === 'pos_lane' && d.branchId !== b['branchId']));
         if (existing !== undefined) assertBranchInScope(ctx, existing.branchId);
         const event: DeviceRegistryEvent = {
           kind: 'registered', deviceId, branchId: b['branchId'] as string, deviceKind: b['kind'], label: b['label'] as string,
@@ -232,14 +274,14 @@ export function deviceRegistryRoutes(deps: DeviceRegistryDeps): readonly Route[]
         if (deviceId === '' || !isObj(b) || !isSettableStatus(b['status']) || !isStr(b['reason'])) {
           throw apiError(400, { code: 'not_readable_as_a_status_change', whatHappened: 'A status change needs a deviceId in the path and { status (registered|blocked|retired), reason }.', wasItSaved: 'not_saved', nextSafeAction: 'Send the new status and why.' });
         }
-        const knownDevice = (await deps.fleet(ctx.tenantId)).find((d) => d.deviceId === deviceId);
+        const knownDevice = deviceFor(ctx, await deps.fleet(ctx.tenantId), deviceId);
         const known = knownDevice !== undefined;
         if (knownDevice !== undefined) assertBranchInScope(ctx, knownDevice.branchId); // PA-01-r1
         if (!known) {
           throw apiError(404, { code: 'device_not_registered', whatHappened: `No device "${deviceId}" is registered, so its status cannot be changed.`, wasItSaved: 'not_saved', nextSafeAction: 'Register the device first, then change its status.' });
         }
         const at = deps.now();
-        await deps.recordDeviceEvent(ctx.tenantId, { kind: 'status', deviceId, status: b['status'], reason: b['reason'] as string, by: ctx.userId, at }, ctx.idempotencyKey ?? `${deviceId}-status-${at}`);
+        await deps.recordDeviceEvent(ctx.tenantId, { kind: 'status', deviceId, ...(knownDevice.kind === 'pos_lane' ? { branchId: knownDevice.branchId } : {}), status: b['status'], reason: b['reason'] as string, by: ctx.userId, at }, ctx.idempotencyKey ?? `${deviceId}-status-${at}`);
         return { status: 200, body: { deviceId, status: b['status'], at } };
       },
     },
@@ -258,7 +300,7 @@ export function deviceRegistryRoutes(deps: DeviceRegistryDeps): readonly Route[]
         if (deviceId === '' || (minutes !== undefined && !(Number.isInteger(minutes) && (minutes as number) >= 5 && (minutes as number) <= MAX_ENROLMENT_MINUTES))) {
           throw apiError(400, { code: 'not_readable_as_an_enrolment_request', whatHappened: 'Issuing an enrolment code needs a deviceId in the path and, optionally, { validForMinutes } between 5 and 10080.', wasItSaved: 'not_saved', nextSafeAction: 'Send which device, and for how long the code should stay usable.' });
         }
-        const device = (await deps.fleet(ctx.tenantId)).find((d) => d.deviceId === deviceId);
+        const device = deviceFor(ctx, await deps.fleet(ctx.tenantId), deviceId);
         if (device !== undefined) assertBranchInScope(ctx, device.branchId); // PA-01-r1
         if (device === undefined) {
           throw apiError(404, { code: 'device_not_registered', whatHappened: `No device "${deviceId}" is registered, so no enrolment code can be issued for it.`, wasItSaved: 'not_saved', nextSafeAction: 'Register the handheld first, then issue its code.' });
@@ -274,7 +316,7 @@ export function deviceRegistryRoutes(deps: DeviceRegistryDeps): readonly Route[]
         const expiresAt = new Date(Date.parse(at) + validFor * 60_000).toISOString();
         const code = mintEnrolmentCode(deps.randomBytes);
         const codeHash = enrolmentCodeHash(code);
-        await deps.recordDeviceEvent(ctx.tenantId, { kind: 'enrolment', deviceId, codeHash, expiresAt, by: ctx.userId, at }, ctx.idempotencyKey ?? `${deviceId}-enrolment-${at}`);
+        await deps.recordDeviceEvent(ctx.tenantId, { kind: 'enrolment', deviceId, ...(device.kind === 'pos_lane' ? { branchId: device.branchId } : {}), codeHash, expiresAt, by: ctx.userId, at }, ctx.idempotencyKey ?? `${deviceId}-enrolment-${at}`);
         await deps.recordAudit?.(ctx.tenantId, {
           actorId: ctx.userId, action: 'device.enrolment.issue', objectType: 'device', objectId: deviceId,
           at, origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
@@ -298,11 +340,11 @@ export function deviceRegistryRoutes(deps: DeviceRegistryDeps): readonly Route[]
         if (deviceId === '' || (b['appVersion'] !== undefined && !isStr(b['appVersion'])) || (b['integrityCompromised'] !== undefined && !isBool(b['integrityCompromised']))) {
           throw apiError(400, { code: 'not_readable_as_a_device_report', whatHappened: 'A device report needs a deviceId in the path and optional { appVersion, integrityCompromised }.', wasItSaved: 'not_saved', nextSafeAction: 'Send which version the device is running.' });
         }
-        const reporting = (await deps.fleet(ctx.tenantId)).find((d) => d.deviceId === deviceId);
+        const reporting = deviceFor(ctx, await deps.fleet(ctx.tenantId), deviceId);
         if (reporting !== undefined) assertBranchInScope(ctx, reporting.branchId); // PA-01-r1
         const at = deps.now();
         await deps.recordDeviceEvent(ctx.tenantId, {
-          kind: 'reported', deviceId, at,
+          kind: 'reported', deviceId, at, ...(reporting?.kind === 'pos_lane' ? { branchId: reporting.branchId } : {}),
           ...(isStr(b['appVersion']) ? { appVersion: b['appVersion'] } : {}),
           ...(isBool(b['integrityCompromised']) ? { integrityCompromised: b['integrityCompromised'] } : {}),
         }, ctx.idempotencyKey ?? `${deviceId}-report-${at}`);

@@ -1032,6 +1032,10 @@ describe('the buyer’s screen is fed, and fed only what the box actually knows'
     const manager = (await buyingAs(signedIn, 'u-manager'))!;
     expect(manager['buyerId']).toBe('u-manager');
     expect(manager['approvers']).toEqual(['u-buyer']);
+    // WF-03 (round 12): the page is told what the signed-in buyer holds (the box's role register fills the slot), so the
+    // open-to-buy panel offers setting a budget or issuing an order only to whoever may; with nobody signed in, nothing.
+    expect(nobody['permissions']).toEqual([]);
+    expect(Array.isArray(manager['permissions'])).toBe(true);
     expect(buyingGaps(manager as never)).not.toContain('who_is_buying');
     const session = bootBuying(manager as never)!;
     const preview = session.previewInvoice({ text: ['productId,quantity,unitPriceMinor,lineTotalMinor', 'p1,10,9000,90000'].join('\n'), declaredTotalMinor: 90_000 });

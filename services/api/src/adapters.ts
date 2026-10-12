@@ -25,8 +25,10 @@ import { createHash, randomUUID } from 'node:crypto';
 import { makeEvent, type DomainEvent } from '../../../packages/contracts/src/event';
 import type { Money, CurrencyCode } from '../../../packages/contracts/src/money';
 import { money } from '../../../packages/contracts/src/money';
-import type { BatchEntry, EventStore, PersistedEvent } from '../../../packages/persistence/src/event-store';
+import type { BatchEntry, EventStore, PersistedEvent, WriteGuard } from '../../../packages/persistence/src/event-store';
 import { ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
+import { issuedSeriesFor, PrefixWriteRaced, type ReceiptPrefixDeps, type ReceiptPrefixIssue } from '../../platform/src/receipt-prefixes';
+import { stockValueCheckFor } from './finance-close-adapters';
 import {
   foldBilling,
   type BillingEvent, type BillingSnapshot, type BillingRail, type DunningPolicy, type Mandate,
@@ -175,8 +177,10 @@ import type { AssembledGoodsReceiptDeps } from '../../inventory/src/goods-receip
 import type { SyncedWarehouseDeps, ReceivingScanDeps, ReceivingScanRecord } from '../../inventory/src/warehouse-synced';
 import type { SyncedCountsDeps } from '../../inventory/src/counts-synced';
 import type { CountPlan, CountPlanDeps, VarianceCause, PlaceMovement } from '../../inventory/src/count-plans';
-import { budgetKey, type OpenToBuyDeps, type PurchaseBudget, type BudgetOverride } from '../../purchase/src/open-to-buy';
-import type { InvoiceIngestionDeps, InvoiceDocumentRecord, ItemMapping } from '../../purchase/src/invoice-ingestion';
+import { heldApplication, heldWriteOffViews, type HeldWriteOff, type HeldWriteOffApplied } from '../../inventory/src/held-write-offs';
+import { budgetKey, openToBuyGuardKey, type OpenToBuyDeps, type PurchaseBudget, type BudgetOverride } from '../../purchase/src/open-to-buy';
+import type { InvoiceIngestionDeps, InvoiceDocumentRecord, ItemMapping, ScanTypedLink } from '../../purchase/src/invoice-ingestion';
+import { withTypedLinks } from '../../purchase/src/invoice-ingestion';
 import { buffersAt, type OnlineBuffer, type OnlineBufferDeps } from '../../inventory/src/online-buffer';
 import type { AdjustmentRequestDeps, AdjustmentRequestRecord } from '../../inventory/src/adjustment-requests';
 import type { ProductReceiptRules } from '../../../packages/receiving/src/index';
@@ -303,6 +307,7 @@ import type { TokenRevocation, TokenRevocationStore } from '../../identity/src/r
 import type { AccessLifecycleDeps, LifecycleChange } from '../../identity/src/access-lifecycle';
 import { foldPeople, type PeopleDeps, type PersonSignInEvent } from '../../identity/src/people';
 import type { IdentityDirectory } from '../../identity/src/identity-directory';
+import { foldOutsideLogins, OUTSIDE_PARTY_ROLES, type OutsidePartyLoginDeps, type OutsideLoginEvent, type OutsideLoginRecord, type OutsidePartyRole } from '../../identity/src/outside-party-logins';
 import { AccessControl, type Role, type RoleAssignment } from '../../../packages/rbac/src/rbac';
 import type { DependencyProbe, FeatureFlagChange, PlatformDeps, ExportedEvent } from '../../platform/src/index';
 import { inMemorySettings } from '../../platform/src/index';
@@ -314,6 +319,7 @@ import { PersonalDataSealingStore, type PersonalDataPolicy, type SubjectKeyStore
 import { figure, sourceFreshness, syncedThrough } from '../../reporting/src/index';
 import type { ReportingDeps, Figure, SourceFreshness, StoreSyncReport } from '../../reporting/src/index';
 import { latestDomainReports, latestPerStore, type SyncWatermarkRecord } from '../../platform/src/sync-watermarks';
+import type { BoxHealthRecord } from '../../platform/src/box-health';
 import type { BranchScope } from '../../kernel/src/index';
 import { tradingDayIn, tradingDayWindow, type TradingCalendar } from '../../../packages/calendar/src/index';
 import type { ConsolidationDeps } from '../../reporting/src/consolidation-route';
@@ -330,6 +336,7 @@ import type { PricingDeps, PriceChangeRecord } from '../../pricing/src/index';
 import type { PriceListDeps } from '../../pricing/src/price-list';
 import type { PriceEntry } from '../../../packages/price-list/src/price-list';
 import { ROLE_CATALOGUE, STORE_MANAGER_ROLE_ID, STORE_COMPUTER_ROLE_ID, PROVIDER_RELAY_ROLE_ID, BACKUP_JOB_ROLE_ID } from './roles';
+import { isMachineCredential } from '../../identity/src/machine-identities';
 import { metaOf as legacyAttachmentMeta, type LegacyHistoryDeps, type LegacyHistoryDocument, type LegacyAttachment, type LegacyAttachmentMeta } from '../../migration/src/legacy-history';
 
 /** Streams, named once. A typo here is a domain that silently reads an empty history. */
@@ -445,6 +452,18 @@ export async function effectiveGrants(store: EventStore, tenantId: string): Prom
   return [...live.values()].flat();
 }
 
+/**
+ * PA-12 round 10: every role a user holds at `at` — their effective grants plus any emergency grant still live (not
+ * revoked, not expired). Read so a machine-only role is never mixed with a person's (identity/machine-identities.ts).
+ */
+export async function rolesHeldNow(store: EventStore, tenantId: string, userId: string, at: string): Promise<readonly string[]> {
+  const granted = (await effectiveGrants(store, tenantId)).filter((g) => g.userId === userId).map((g) => g.roleId);
+  const emergency = (await allOf<EmergencyGrant>(store, tenantId, EMERGENCY_ACCESS_STREAM, 'EmergencyAccessRecorded'))
+    .reduce((m, g) => m.set(g.grantId, g), new Map<string, EmergencyGrant>());
+  const live = [...emergency.values()].filter((g) => g.userId === userId && (g.revokedAt ?? null) === null && Date.parse(g.expiresAt) > Date.parse(at)).map((g) => g.roleId);
+  return [...new Set([...granted, ...live])];
+}
+
 const PERSON_SIGN_IN_EVENTS = new Set(['PersonSignInRequested', 'PersonSignInIssued', 'PersonSignInEnded', 'PersonSignInWithdrawn']);
 
 /**
@@ -472,6 +491,14 @@ export function peopleAdapter(input: {
     },
     holdsAnyRole: async (tenantId, userId) => (await effectiveGrants(input.store, tenantId)).some((g) => g.userId === userId),
   };
+}
+
+/**
+ * PA-12 round 12: whether a user is a PERSON — anyone given (or asked to be given) a sign-in at the identity server
+ * through /v1/identity/people, including one whose sign-in has since ended. A machine-only role is never theirs.
+ */
+export async function isPersonNow(store: EventStore, tenantId: string, userId: string): Promise<boolean> {
+  return (await store.readStream(tenantId, STREAM.identity)).some((e) => PERSON_SIGN_IN_EVENTS.has(e.event.type) && e.event.type !== 'PersonSignInWithdrawn' && payloadOf<{ userId?: string }>(e).userId === userId);
 }
 
 /** A leaver's sign-in, switched off at the identity server and the end recorded on the ledger (OB-15-c). */
@@ -507,6 +534,8 @@ export function accessLifecycleAdapter(input: {
     now: input.now,
     roles: () => input.roleCatalogue,
     currentGrants: async (tenantId, userId) => (await effectiveGrants(input.store, tenantId)).filter((g) => g.userId === userId),
+    isPerson: (tenantId, userId) => isPersonNow(input.store, tenantId, userId),
+    outsideLoginOf: (tenantId, userId) => outsideLoginOf(input.store, tenantId, userId, input.now()),
     permissionsOf: async (tenantId, userId) => {
       const held = (await effectiveGrants(input.store, tenantId)).filter((a) => a.userId === userId);
       return [...new Set(held.flatMap((a) => input.roleCatalogue.find((r) => r.id === a.roleId)?.permissions ?? []))].sort();
@@ -1093,7 +1122,7 @@ export function payRunAdapter(input: {
       const at = 'at' in event ? event.at : input.now();
       const actor = 'by' in event ? event.by : 'system';
       await input.store.append(tenantId, streamFor(payRunId), makeEvent({
-        id: `payrun-${payRunId}-${event.kind}-${actor}-${at}`,
+        id: keyedEventId('payrun', `payrun-${tenantId}-${payRunId}-${event.kind}-${actor}-${at}`),
         type: 'PayRunLifecycleRecorded',
         occurredAt: input.now(),
         idempotencyKey: `payrun-${tenantId}-${payRunId}-${event.kind}-${actor}-${at}`,
@@ -1130,7 +1159,7 @@ export function gstr1SubmissionAdapter(input: {
       const at = 'at' in event ? event.at : input.now();
       const actor = 'by' in event ? event.by : 'portal';
       const lifecycle = makeEvent({
-        id: `gstr1sub-${period}-${event.kind}-${actor}-${at}`,
+        id: keyedEventId('gstr1sub', `gstr1sub-${tenantId}-${period}-${event.kind}-${actor}-${at}`),
         type: 'Gstr1SubmissionRecorded',
         occurredAt: input.now(),
         idempotencyKey: `gstr1sub-${tenantId}-${period}-${event.kind}-${actor}-${at}`,
@@ -1469,8 +1498,12 @@ const IMPORT_JOBS_STREAM = streamName(STREAM.purchase, 'import-jobs');
 const forRfqQuotes = (requisitionId: string): string => streamName(STREAM.purchase, 'rfq', requisitionId);
 /** Returns hang off the sale they are against, so "what came back on this bill?" reads one stream. */
 const forSaleReturns = (saleId: string): string => streamName(STREAM.sales, 'return', saleId);
-/** Each till's cash chain folds one stream — its balance and custodian read one till, not the shop. */
+/** Each till's cash chain folds one stream — its balance and custodian read one till, not the shop. Before OB-80: by the till alone. */
 const forTillCash = (tillId: string): string => streamName(STREAM.cash, tillId);
+/** OB-80 "A": a till is (store, till) — its chain is that store's till's own stream. */
+const forStoreTillCash = (storeId: string, tillId: string): string => streamName(STREAM.cash, 'at', storeId, tillId);
+/** OB-80: which tills head office has kept cash for at each store (one entry per (store, till), append-only). */
+const forTillsAtStore = (storeId: string): string => streamName(STREAM.cash, 'tills-at', storeId);
 /** Shift closes share one stream (low-volume — a few tills × shifts a day), folded by shift id. */
 const SHIFTS_STREAM = streamName(STREAM.cash, 'shifts');
 /**
@@ -1557,7 +1590,7 @@ export function drReadinessAdapter(input: { readonly store: EventStore; readonly
     drills: (tenantId) => allOf<DrDrillRecord>(input.store, tenantId, DR_DRILLS_STREAM, 'DrDrillRecorded'),
     recordDrill: async (tenantId, record) => {
       await input.store.append(tenantId, DR_DRILLS_STREAM, makeEvent({
-        id: `dr-drill-${record.drillId}-${record.drilledAt}`,
+        id: keyedEventId('dr-drill', `dr-drill-${tenantId}-${record.drillId}-${record.drilledAt}`),
         type: 'DrDrillRecorded',
         occurredAt: record.drilledAt,
         idempotencyKey: `dr-drill-${tenantId}-${record.drillId}-${record.drilledAt}`,
@@ -1578,6 +1611,16 @@ const GSTR1_SUBMISSION_INDEX = streamName(STREAM.gstreturns, 'submission-index')
 const ROSTER_STREAM = streamName(STREAM.workforce, 'roster');
 
 /**
+ * An event id that follows its idempotency key — one id per key. An id built from a clock instead let two different facts
+ * written in the same millisecond share one id under two keys: the ledger's unique event id refuses the second (a named
+ * clash since round 12; a raw 500 on PostgreSQL before), so the second fact was lost. With the id derived from the key,
+ * the same fact again is the same id and key (a dedup) and a different fact is a different id.
+ */
+function keyedEventId(prefix: string, key: string): string {
+  return `${prefix}-${createHash('sha256').update(key).digest('hex').slice(0, 24)}`;
+}
+
+/**
  * The durable roster store (M25-FR-01 follow-on). The workforce DECISION routes are stateless what-ifs; this
  * makes the roster durable — the staff directory, shifts and assignments each append to one tenant stream and
  * "current" is a latest-per-id fold of the stored facts (hard rule #2), so a restart never loses who is on.
@@ -1585,7 +1628,7 @@ const ROSTER_STREAM = streamName(STREAM.workforce, 'roster');
 export function rosterStoreAdapter(input: { readonly store: EventStore; readonly now: () => string }): RosterStoreDeps {
   const append = async (tenantId: string, type: string, id: string, key: string, payload: object): Promise<void> => {
     await input.store.append(tenantId, ROSTER_STREAM, makeEvent({
-      id: `${type}-${id}-${input.now()}`,
+      id: keyedEventId(`${type}-${id}`, key),
       type,
       occurredAt: input.now(),
       idempotencyKey: key,
@@ -1636,7 +1679,7 @@ export function certStoreAdapter(input: { readonly store: EventStore; readonly n
     now: input.now,
     putCertification: async (tenantId, cert, key) => {
       await input.store.append(tenantId, ROSTER_STREAM, makeEvent({
-        id: `RosterCertificationSet-${cert.certificationId}-${input.now()}`,
+        id: keyedEventId(`RosterCertificationSet-${cert.certificationId}`, key),
         type: 'RosterCertificationSet',
         occurredAt: input.now(),
         idempotencyKey: key,
@@ -1669,13 +1712,13 @@ export function sopStoreAdapter(input: { readonly store: EventStore; readonly no
     now: input.now,
     putSop: async (tenantId, sop, key) => {
       await input.store.append(tenantId, ROSTER_STREAM, makeEvent({
-        id: `SopDefinitionSet-${sop.sopId}-${input.now()}`,
+        id: keyedEventId(`SopDefinitionSet-${sop.sopId}`, key),
         type: 'SopDefinitionSet', occurredAt: input.now(), idempotencyKey: key, source: 'api/hr', payload: sop,
       }));
     },
     putAcknowledgement: async (tenantId, ack, key) => {
       await input.store.append(tenantId, ROSTER_STREAM, makeEvent({
-        id: `SopAcknowledgedSet-${ack.sopId}-${ack.employeeId}-${input.now()}`,
+        id: keyedEventId(`SopAcknowledgedSet-${ack.sopId}-${ack.employeeId}`, key),
         type: 'SopAcknowledgedSet', occurredAt: input.now(), idempotencyKey: key, source: 'api/hr', payload: ack,
       }));
     },
@@ -1711,7 +1754,9 @@ export function attendanceStoreAdapter(input: { readonly store: EventStore; read
     now: input.now,
     putAttendance: async (tenantId, record, key) => {
       await input.store.append(tenantId, ROSTER_STREAM, makeEvent({
-        id: `AttendanceSet-${record.employeeId}-${record.date}-${input.now()}`,
+        // The id follows the idempotency key (one event per key): a timestamp alone let two corrections in the same
+        // millisecond share an id under different keys — a clash the ledger refuses (hard rule #10), not a correction.
+        id: keyedEventId(`AttendanceSet-${record.employeeId}-${record.date}`, key),
         type: 'AttendanceSet', occurredAt: input.now(), idempotencyKey: key, source: 'api/hr', payload: record,
       }));
     },
@@ -1742,7 +1787,7 @@ export function checklistStoreAdapter(input: { readonly store: EventStore; reado
     now: input.now,
     putChecklist: async (tenantId, checklist, key) => {
       await input.store.append(tenantId, ROSTER_STREAM, makeEvent({
-        id: `ChecklistSubmittedSet-${checklist.checklistId}-${input.now()}`,
+        id: keyedEventId(`ChecklistSubmittedSet-${checklist.checklistId}`, key),
         type: 'ChecklistSubmittedSet', occurredAt: input.now(), idempotencyKey: key, source: 'api/hr', payload: checklist,
       }));
     },
@@ -1773,13 +1818,13 @@ export function taskStoreAdapter(input: { readonly store: EventStore; readonly n
     now: input.now,
     putTask: async (tenantId, def, key) => {
       await input.store.append(tenantId, ROSTER_STREAM, makeEvent({
-        id: `DailyTaskSet-${def.taskId}-${input.now()}`,
+        id: keyedEventId(`DailyTaskSet-${def.taskId}`, key),
         type: 'DailyTaskSet', occurredAt: input.now(), idempotencyKey: key, source: 'api/hr', payload: def,
       }));
     },
     completeTask: async (tenantId, completion, key) => {
       await input.store.append(tenantId, ROSTER_STREAM, makeEvent({
-        id: `DailyTaskCompletedSet-${completion.taskId}-${input.now()}`,
+        id: keyedEventId(`DailyTaskCompletedSet-${completion.taskId}`, key),
         type: 'DailyTaskCompletedSet', occurredAt: input.now(), idempotencyKey: key, source: 'api/hr', payload: completion,
       }));
     },
@@ -1822,7 +1867,7 @@ export function payslipStoreAdapter(input: { readonly store: EventStore; readonl
     now: input.now,
     putPayslip: async (tenantId, issued, key) => {
       await input.store.append(tenantId, PAYSLIPS_STREAM, makeEvent({
-        id: `PayslipIssued-${issued.employeeId}-${issued.period}-${input.now()}`,
+        id: keyedEventId(`PayslipIssued-${issued.employeeId}-${issued.period}`, key),
         type: 'PayslipIssued', occurredAt: input.now(), idempotencyKey: key, source: 'api/hr', payload: issued,
       }));
     },
@@ -2365,12 +2410,37 @@ export function cataloguePreviewAdapter(input: {
  * published before the scope was recorded); the sale — and any return against it — then falls back to the
  * lane (`services/pos/src/sale-stock.ts`).
  */
-async function storeOfPack(store: EventStore, tenantId: string, packVersion: number): Promise<string | undefined> {
+export async function storeOfPack(store: EventStore, tenantId: string, packVersion: number): Promise<string | undefined> {
   const byVersion = await store.findByIdempotencyKey(tenantId, `catalogue-${tenantId}-v${packVersion}`);
   const pack = byVersion === undefined
     ? await latest<SignedPack>(store, tenantId, STREAM.catalogue, 'CataloguePublished')
     : (byVersion.event.payload as SignedPack);
   return pack?.snapshot.scope?.storeId;
+}
+
+/**
+ * Round 14 (verifier G2): the store head office REGISTERED a lane (till) at — a registered `pos_lane` device in the device
+ * registry that is not retired. undefined when the lane is not registered (its id is free text the till sends, never read
+ * as a store).
+ */
+export async function storeOfLane(store: EventStore, tenantId: string, laneId: unknown): Promise<string | undefined> {
+  if (typeof laneId !== 'string' || laneId.trim() === '') return undefined;
+  const fleet = projectFleet(tenantId, await allOf<DeviceRegistryEvent>(store, tenantId, streamName(STREAM.platform, 'devices'), 'DeviceRegistryEvent'));
+  // Round 16: a till is (store, till) — when more than one store registered a till of this name, the name alone places it
+  // at no store (fail closed; the record's own store, or the caller's, decides).
+  const lanes = fleet.filter((d) => d.deviceId === laneId && d.kind === 'pos_lane' && d.status !== 'retired');
+  const lane = lanes.length === 1 ? lanes[0] : undefined;
+  return lane === undefined || lane.branchId.trim() === '' ? undefined : lane.branchId;
+}
+
+/**
+ * Where a sale's stock leaves from — the ONE deterministic rule (`resolveSaleStockLocation`: declared → the lane's
+ * registered store → the pack's store → the lane's unplaced location) shared by banking, the FEFO read, returns,
+ * exchanges and head office's judgement of a relayed sale or return (`services/api/src/relay-record-store.ts`).
+ */
+export async function saleStockLocationOf(store: EventStore, tenantId: string, sale: IncomingSale): Promise<SaleStockLocation> {
+  if (typeof sale.locationId === 'string' && sale.locationId.trim() !== '') return resolveSaleStockLocation(sale, undefined);
+  return resolveSaleStockLocation(sale, await storeOfPack(store, tenantId, sale.packVersion), await storeOfLane(store, tenantId, sale.laneId));
 }
 
 /** The batch a banked SALE appends (M08-FR-01, FND-01): the sale, its receipt-number index and one `sold`
@@ -2537,7 +2607,7 @@ export function posAdapter(input: {
     // OB-35 "A": the batches on hand where this sale's stock leaves from (the same location `bankSale` resolves), earliest
     // expiry first — Batch 2's FEFO read over the one batch projection, called once per sale.
     lotsOnHand: async (tenantId, sale) => {
-      const { locationId } = resolveSaleStockLocation(sale, await storeOfPack(input.store, tenantId, sale.packVersion));
+      const { locationId } = await saleStockLocationOf(input.store, tenantId, sale);
       const batches = await inventoryAdapter({ store: input.store, now: input.now }).batches!(tenantId);
       return (productId) => fefoBatchesAt(batches, locationId, productId);
     },
@@ -2577,8 +2647,7 @@ export function posAdapter(input: {
       // published for, else the lane itself (stated on the movement, never silent) — and appended in the
       // SAME batch as the sale, so on-hand, valuation, COGS and near-expiry all fold the sale from the one
       // ledger. Before this, a banked sale never reduced on-hand (hosted-demo finding H-13).
-      const packStoreId = await storeOfPack(input.store, tenantId, sale.packVersion);
-      const movements = saleStockMovements(sale, resolveSaleStockLocation(sale, packStoreId));
+      const movements = saleStockMovements(sale, await saleStockLocationOf(input.store, tenantId, sale));
       // The sale and its receipt-number index are ONE atomic batch (audit FND-01): a crash between
       // them must never leave a banked sale with no receipt index, nor an index pointing at a sale
       // that did not commit. Both carry their own idempotency key, so a till resending the sale
@@ -2940,15 +3009,19 @@ export const purchaseOrderGuardKey = (poId: string): string => `purchase-order:$
  * MOVING the order's guard, so a goods receipt judged on the order as it stood before this change is refused rather than
  * doubled. The change itself depends on no figure read here, so a lost race is simply tried again (with a short jitter).
  */
-async function appendMovingOrder(store: EventStore, tenantId: string, poId: string, entries: readonly BatchEntry[]): Promise<void> {
+async function appendMovingOrder(store: EventStore, tenantId: string, poId: string, entries: readonly BatchEntry[],
+  /** OB-63: a guard the move must ALSO hold (the month's open-to-buy) — its loss is never retried here: the caller judged on it. */
+  alsoGuard?: WriteGuard,
+  /** Round 13: the order version the caller JUDGED on — then the move holds exactly that version and is never re-tried. */
+  pinnedVersion?: number): Promise<void> {
   const key = purchaseOrderGuardKey(poId);
   for (let attempt = 0; ; attempt++) {
-    const expectedVersion = await store.guardVersion(tenantId, key);
+    const expectedVersion = pinnedVersion ?? await store.guardVersion(tenantId, key);
     try {
-      await store.appendBatch(tenantId, entries, { guard: { key, expectedVersion } });
+      await store.appendBatch(tenantId, entries, { guard: { key, expectedVersion }, ...(alsoGuard === undefined ? {} : { alsoGuards: [alsoGuard] }) });
       return;
     } catch (err) {
-      if (!(err instanceof ConcurrencyConflictError) || attempt >= 8) throw err;
+      if (!(err instanceof ConcurrencyConflictError) || attempt >= 8 || err.key !== key || pinnedVersion !== undefined) throw err;
       await new Promise<void>((resolve) => setTimeout(resolve, Math.floor(Math.random() * 8 * (attempt + 1))));
     }
   }
@@ -3163,7 +3236,7 @@ export function returnsAdapter(input: {
       // return still records, and the desk's own finding says the sale was never seen.
       const original = await input.store.findByIdempotencyKey(tenantId, `sale-${tenantId}-${saleId}`);
       const originalSale = original === undefined ? undefined : (original.event.payload as IncomingSale);
-      const location = originalSale === undefined ? undefined : resolveSaleStockLocation(originalSale, await storeOfPack(input.store, tenantId, originalSale.packVersion));
+      const location = originalSale === undefined ? undefined : await saleStockLocationOf(input.store, tenantId, originalSale);
       const stockMovements = location === undefined ? [] : returnStockMovements(record, location);
       // A desk refund's approval (ADR-0022) is spent in this SAME batch, under the sale's guard: one approval, one refund.
       await input.store.appendBatch(
@@ -3409,9 +3482,9 @@ export function exchangesAdapter(input: {
       // Returned units go back to the location the ORIGINAL sale drew from (the same rule as a plain return);
       // the replacement leaves from the location it declares (the route defaults it to the original's).
       const original = await bankedSale(tenantId, originalSaleId);
-      const returnedAt = original === undefined ? undefined : resolveSaleStockLocation(original, await storeOfPack(input.store, tenantId, original.packVersion));
+      const returnedAt = original === undefined ? undefined : await saleStockLocationOf(input.store, tenantId, original);
       const returnedMovements = returnedAt === undefined ? [] : returnStockMovements(record, returnedAt);
-      const soldMovements = saleStockMovements(replacement, resolveSaleStockLocation(replacement, await storeOfPack(input.store, tenantId, replacement.packVersion)));
+      const soldMovements = saleStockMovements(replacement, await saleStockLocationOf(input.store, tenantId, replacement));
       // Under the bill's refund guard (Wave 2a), with the approval it spends (ADR-0022), in ONE batch.
       await input.store.appendBatch(tenantId, [
         ...returnBatchEvents(tenantId, originalSaleId, record, storeCredit, returnedMovements, returnedAt),
@@ -3422,24 +3495,144 @@ export function exchangesAdapter(input: {
   };
 }
 
+/**
+ * OB-82 "A" (owner, 12 Oct 2026, "Fix it once, for good"): till cash and shift closes kept by the till's id ALONE (before
+ * OB-80) belong to exactly ONE store, decided ONCE and recorded as an append-only fact — "till X's old records are store S's"
+ * (`LegacyTillPlaced`, one idempotency key per till: the first placement stands for ever, nothing ever re-decides it). Reads
+ * use ONLY that record — never today's store count, never the device register — so a second store arriving, or the till
+ * being registered (at any store) later, never moves, hides or doubles the old float.
+ *
+ * Who writes it:
+ *   • AUTOMATICALLY (`how: 'single_store_rule'`, by "system"), at the FIRST moment head office reads or writes that till's
+ *     cash or shift records while it knows exactly ONE store — in the single-store pilot that is the first look after
+ *     go-live, before any second store can exist. The stores known at that moment are kept on the record as evidence.
+ *   • otherwise by a NAMED head-office person (`POST /v1/tills/:tillId/legacy-placement`, `how: 'head_office'`) — the
+ *     remedy for a till whose old records were first looked at when no store, or more than one, was known. Until then the
+ *     old records are shown as UNPLACED (P-08), never folded into any store's till of the same name, never dropped.
+ * History is never rewritten (hard rule #2): the old records stay on the till's own stream.
+ */
+export interface LegacyTillPlacement {
+  readonly tillId: string;
+  readonly storeId: string;
+  readonly placedBy: string;
+  readonly how: 'single_store_rule' | 'head_office';
+  readonly reason: string;
+  readonly at: string;
+  /** The stores head office knew at the moment it was placed — the evidence for the decision. */
+  readonly storesKnown: readonly string[];
+}
+const LEGACY_TILL_PLACEMENTS = streamName(STREAM.cash, 'legacy-till-placements', 'v1');
+const legacyPlacementKey = (tenantId: string, tillId: string): string => `legacy-till-placed-${tenantId}-${tillId}`;
+
+/** The one-time placement of a till's pre-OB-80 records, if it has been made. */
+export async function legacyTillPlacement(store: EventStore, tenantId: string, tillId: string): Promise<LegacyTillPlacement | undefined> {
+  const held = await store.findByIdempotencyKey(tenantId, legacyPlacementKey(tenantId, tillId));
+  return held === undefined ? undefined : (held.event.payload as LegacyTillPlacement);
+}
+
+/** Every one-time placement made (for a store's list of tills). */
+export async function legacyTillPlacements(store: EventStore, tenantId: string): Promise<readonly LegacyTillPlacement[]> {
+  return allOf<LegacyTillPlacement>(store, tenantId, LEGACY_TILL_PLACEMENTS, 'LegacyTillPlaced');
+}
+
+/** Record the placement — first one wins (one key per till). Returns the placement that STANDS and whether this call made it. */
+export async function placeLegacyTill(store: EventStore, tenantId: string, p: LegacyTillPlacement): Promise<{ readonly placement: LegacyTillPlacement; readonly recorded: boolean }> {
+  const res = await store.append(tenantId, LEGACY_TILL_PLACEMENTS, makeEvent({
+    id: `legacy-till-placed-${p.tillId}`, type: 'LegacyTillPlaced', occurredAt: p.at,
+    idempotencyKey: legacyPlacementKey(tenantId, p.tillId), source: 'api/pos', payload: p,
+  }));
+  return { placement: res.record.event.payload as LegacyTillPlacement, recorded: !res.deduped };
+}
+
+/** Whether a till has anything kept by its id alone: cash on its own stream, or a shift close naming no store. */
+async function hasLegacyTillHistory(store: EventStore, tenantId: string, tillId: string): Promise<boolean> {
+  if ((await store.readStream(tenantId, forTillCash(tillId), { type: 'CashMovement' })).length > 0) return true;
+  return (await allOf<{ tillId: string; storeId?: string }>(store, tenantId, SHIFTS_STREAM, 'TillClosed')).some((c) => c.tillId === tillId && (c.storeId === undefined || c.storeId === ''));
+}
+
+/**
+ * OB-82: the store a till's pre-OB-80 records belong to — the one-time placement; made automatically here, once, when the
+ * till has such records and head office knows exactly one store at this moment. undefined → not placed (shown unplaced).
+ */
+export async function legacyTillStore(input: { readonly store: EventStore; readonly now: () => string }, tenantId: string, tillId: string): Promise<string | undefined> {
+  const placed = await legacyTillPlacement(input.store, tenantId, tillId);
+  if (placed !== undefined) return placed.storeId;
+  if (!(await hasLegacyTillHistory(input.store, tenantId, tillId))) return undefined;
+  const { knownStores } = await storeOfLocationResolver(input, tenantId);
+  if (knownStores.size !== 1) return undefined;
+  const only = [...knownStores][0]!;
+  return (await placeLegacyTill(input.store, tenantId, {
+    tillId, storeId: only, placedBy: 'system', how: 'single_store_rule', at: input.now(), storesKnown: [only],
+    reason: `head office first read or wrote till ${tillId}'s records kept by its id alone while it knew exactly one store (${only})`,
+  })).placement.storeId;
+}
+
+/** OB-80: the tills head office has kept cash for at a store (since OB-80). */
+export async function tillsAtStore(store: EventStore, tenantId: string, storeId: string): Promise<readonly string[]> {
+  return [...new Set([
+    ...(await allOf<{ tillId: string }>(store, tenantId, forTillsAtStore(storeId), 'TillKeptAtStore')).map((t) => t.tillId),
+    // OB-82: a till whose old records were placed at this store, once and for all.
+    ...(await legacyTillPlacements(store, tenantId)).filter((p) => p.storeId === storeId).map((p) => p.tillId),
+  ])];
+}
+
 export function cashAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
 }): CashDeps {
+  const read = async (tenantId: string, stream: string): Promise<TillMovement[]> =>
+    (await allOf<RecordedCashMovement>(input.store, tenantId, stream, 'CashMovement'))
+      .map((m): TillMovement => ({
+        movementId: m.movementId, tillId: m.tillId, kind: m.kind, deltaMinor: m.deltaMinor, custodianId: m.custodianId,
+        ...(m.laneId === undefined ? {} : { laneId: m.laneId }), ...(m.performedBy === undefined ? {} : { performedBy: m.performedBy }),
+        ...(m.relayed === true ? { relayed: true as const } : {}), ...(m.flags === undefined ? {} : { flags: m.flags }),
+      }));
   return {
     now: input.now,
 
-    tillMovements: async (tenantId, tillId) =>
-      (await allOf<RecordedCashMovement>(input.store, tenantId, forTillCash(tillId), 'CashMovement'))
-        .map((m): TillMovement => ({
-          movementId: m.movementId, tillId: m.tillId, kind: m.kind, deltaMinor: m.deltaMinor, custodianId: m.custodianId,
-          ...(m.laneId === undefined ? {} : { laneId: m.laneId }), ...(m.performedBy === undefined ? {} : { performedBy: m.performedBy }),
-          ...(m.relayed === true ? { relayed: true as const } : {}), ...(m.flags === undefined ? {} : { flags: m.flags }),
-        })),
+    // OB-80: a store's till reads its own chain, preceded by what was kept by the till's id alone when the migration rule
+    // places that in the same store (one chain: the custodian and the balance carry over, never double). No store → the
+    // chain kept by the till's id alone, exactly as before OB-80.
+    // OB-82: the old chain joins ONLY the store its one-time placement names, and the two chains are de-duplicated by movement
+    // id — a movement the till re-sent after OB-80 that is already on the old chain counts ONCE.
+    tillMovements: async (tenantId, tillId, storeId) => {
+      if (storeId === undefined) return read(tenantId, forTillCash(tillId));
+      const legacy = (await legacyTillStore(input, tenantId, tillId)) === storeId ? await read(tenantId, forTillCash(tillId)) : [];
+      const seen = new Set(legacy.map((m) => m.movementId));
+      return [...legacy, ...(await read(tenantId, forStoreTillCash(storeId, tillId))).filter((m) => !seen.has(m.movementId))];
+    },
+    legacyTill: async (tenantId, tillId) => {
+      const store = await legacyTillStore(input, tenantId, tillId);
+      const placement = store === undefined ? undefined : await legacyTillPlacement(input.store, tenantId, tillId);
+      return { ...(placement === undefined ? {} : { placement }), movements: await read(tenantId, forTillCash(tillId)) };
+    },
+    placeLegacyTill: async (tenantId, p) => placeLegacyTill(input.store, tenantId, p),
+    legacyStoreOfTill: (tenantId, tillId) => legacyTillStore(input, tenantId, tillId),
+    storeOfTill: (tenantId, tillId) => storeOfLane(input.store, tenantId, tillId),
+    knownStores: async (tenantId) => [...(await storeOfLocationResolver(input, tenantId)).knownStores],
     // SP-4c: the custodian / recorder a relayed movement names is re-verified from their grants, never taken on the box's word.
     permissionsOfUser: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),
 
     recordCashMovement: async (tenantId, tillId, m) => {
+      if (m.storeId !== undefined) {
+        // OB-80: the store's own till — keyed by (store, movement), so another store's movement of the same id is its own
+        // record, never a duplicate of this one; and the till is listed at its store in the same atomic write.
+        const storeId = m.storeId;
+        await input.store.appendBatch(tenantId, [{
+          stream: forStoreTillCash(storeId, tillId),
+          event: makeEvent({
+            id: `cash-${storeId}-${tillId}-${m.movementId}`, type: 'CashMovement', occurredAt: m.at,
+            idempotencyKey: `cash-${tenantId}-${storeId}-${tillId}-${m.movementId}`, source: 'api/pos', payload: m,
+          }),
+        }, {
+          stream: forTillsAtStore(storeId),
+          event: makeEvent({
+            id: `till-kept-at-${storeId}-${tillId}`, type: 'TillKeptAtStore', occurredAt: m.at,
+            idempotencyKey: `till-kept-at-${tenantId}-${storeId}-${tillId}`, source: 'api/pos', payload: { storeId, tillId, firstAt: m.at },
+          }),
+        }]);
+        return;
+      }
       await input.store.append(tenantId, forTillCash(tillId), makeEvent({
         id: `cash-${m.movementId}`,
         type: 'CashMovement',
@@ -3470,6 +3663,11 @@ export function shiftAdapter(input: {
     now: input.now,
     // SP-4c: the cashier a relayed close names is re-verified from their grants, never taken on the box's word.
     permissionsOfUser: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),
+    // OB-80: a close is kept per (store, till) — the till's registered store when the close names none.
+    storeOfTill: (tenantId, tillId) => storeOfLane(input.store, tenantId, tillId),
+    // OB-82: a close kept before OB-80 (no store) belongs to its till's one-time legacy placement.
+    legacyStoreOfTill: (tenantId, tillId) => legacyTillStore(input, tenantId, tillId),
+    knownStores: async (tenantId) => [...(await storeOfLocationResolver(input, tenantId)).knownStores],
 
     closedShift: async (tenantId, shiftId) => (await closes(tenantId)).find((r) => r.shiftId === shiftId),
 
@@ -4694,7 +4892,7 @@ const APPROVAL_DECISIONS_STREAM = streamName(STREAM.identity, 'approval-decision
  * The permissions a user genuinely holds in a tenant — from their grants and the role catalogue, never from a body.
  * `undefined` when they hold no grant at all (an unknown name), which the synced routes record as its own flag (§28).
  */
-async function permissionsHeldBy(store: EventStore, tenantId: string, userId: string): Promise<readonly string[] | undefined> {
+export async function permissionsHeldBy(store: EventStore, tenantId: string, userId: string): Promise<readonly string[] | undefined> {
   const grants = await effectiveGrants(store, tenantId);
   const roleIds = new Set(grants.filter((g) => g.userId === userId).map((g) => g.roleId));
   if (roleIds.size === 0) return undefined;
@@ -4838,7 +5036,7 @@ export function syncedCountsAdapter(input: {
     permissionsOfUser: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),
     recordCountPolicy: async (tenantId, policy) => {
       await input.store.append(tenantId, COUNT_POLICY_STREAM, makeEvent({
-        id: `count-policy-${tenantId}-${policy.setAt}`,
+        id: keyedEventId('count-policy', `count-policy-${tenantId}-${policy.approvalThresholdMinor}`),
         type: 'CountPolicySet',
         occurredAt: policy.setAt,
         // Keyed on the value: re-setting the same threshold collapses, a new value supersedes.
@@ -4891,29 +5089,87 @@ export function adjustmentRequestAdapter(input: {
   };
 }
 
+/**
+ * OB-84 "A" (owner, 12 Oct 2026, "Head office's record decides"): the STORE of an approval's subject, from head office's own
+ * register of that subject — a held count, a correction request, a goods receipt's held excess, a day close. undefined when
+ * head office does not hold the subject, or cannot place it in a store it knows.
+ */
+export async function approvalSubjectStore(input: { readonly store: EventStore; readonly now: () => string }, tenantId: string, subjectType: string, subjectRef: string): Promise<string | undefined> {
+  const r = await storeOfLocationResolver(input, tenantId);
+  const placed = (place: string | null | undefined): string | undefined => {
+    if (typeof place !== 'string' || place.trim() === '') return undefined;
+    const st = r.storeOf(place);
+    return r.knownStores.has(st) ? st : undefined;
+  };
+  switch (subjectType) {
+    case 'stock_count': return placed((await allCountReconciliations(input.store, tenantId)).find((c) => c.countId === subjectRef)?.locationId);
+    case 'stock_adjustment': { const q = await adjustmentRequestAdapter(input).request(tenantId, subjectRef); return q === undefined ? undefined : placed(q.storeId ?? q.locationId); }
+    case 'goods_receipt_excess': return placed((await goodsReceiptAdapter(input).grn(tenantId, subjectRef))?.warehouseId);
+    case 'day_close_reopen': case 'day_reopen': return placed((await dayCloseAdapter(input).dayClose(tenantId, subjectRef))?.storeId);
+    default: return undefined;
+  }
+}
+
+/** Every decision record kept, in record order — including one a store relayed for another store's subject (OB-84). */
+export async function approvalDecisionRecords(store: EventStore, tenantId: string): Promise<readonly ApprovalDecisionRecord[]> {
+  return allOf<ApprovalDecisionRecord>(store, tenantId, APPROVAL_DECISIONS_STREAM, 'ApprovalDecisionRecorded');
+}
+
+/**
+ * OB-84: the store a decision record came FROM — the store it names, else the one store the store computer that relayed it
+ * is granted for (head office's own grants; a decision's body is sealed by the box, so it is never stamped). undefined for
+ * a record relayed by a person and naming no store.
+ */
+export async function decisionStoreResolver(store: EventStore, tenantId: string): Promise<(r: ApprovalDecisionRecord) => string | undefined> {
+  const boxStore = new Map<string, string>();
+  for (const g of await effectiveGrants(store, tenantId)) {
+    if (g.roleId === STORE_COMPUTER_ROLE_ID && g.branchScope !== 'all' && g.branchScope.length === 1) boxStore.set(g.userId, g.branchScope[0]!);
+  }
+  return (r) => (r.storeId !== null && r.storeId !== '' ? r.storeId : boxStore.get(r.relayedBy));
+}
+
 export function approvalDecisionAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
 }): ApprovalDecisionDeps {
-  // Folded latest-per-request by append order. The route refuses a conflicting second decision (422), so in
+  // Folded latest-per-(request, store) by append order. The route refuses a conflicting second decision (422), so in
   // practice there is one record per request; the fold is what keeps a replayed identical record from doubling.
+  // OB-84: a decision another store's computer relayed for a request BEFORE head office held its subject (a pre-claimed id)
+  // is kept, never overwritten — but once head office holds the subject, the decision of the subject's OWN store is THE
+  // decision for that request; the earlier foreign one is listed as an exception for head office (relay-record-store.ts).
   const fold = async (tenantId: string): Promise<Map<string, ApprovalDecisionRecord>> => {
-    const all = await allOf<ApprovalDecisionRecord>(input.store, tenantId, APPROVAL_DECISIONS_STREAM, 'ApprovalDecisionRecorded');
-    const byId = new Map<string, ApprovalDecisionRecord>();
-    for (const r of all) byId.set(r.id, r);
-    return byId;
+    const from = await decisionStoreResolver(input.store, tenantId);
+    const byKey = new Map<string, ApprovalDecisionRecord>();
+    for (const r of await approvalDecisionRecords(input.store, tenantId)) byKey.set(`${r.id}\u0000${from(r) ?? ''}`, r);
+    return byKey;
   };
+  const plainKey = (tenantId: string, id: string): string => `approval-decision-${tenantId}-${id}`;
   return {
     now: input.now,
-    decision: async (tenantId, requestId) => (await fold(tenantId)).get(requestId),
+    decision: async (tenantId, requestId) => {
+      const records = [...(await fold(tenantId)).values()].filter((r) => r.id === requestId);
+      if (records.length === 0) return undefined;
+      const last = records[records.length - 1]!;
+      const subjectStore = await approvalSubjectStore(input, tenantId, last.subjectType, last.subjectRef);
+      if (subjectStore === undefined) return last; // head office cannot place the subject: as before
+      const from = await decisionStoreResolver(input.store, tenantId);
+      const own = records.filter((r) => from(r) === undefined || from(r) === subjectStore);
+      return own[own.length - 1];
+    },
     decisions: async (tenantId) => [...(await fold(tenantId)).values()],
     recordDecision: async (tenantId, record) => {
+      // One decision per request, whichever hop re-sends it (§31.1). OB-84: when the request id is already held by ANOTHER
+      // store's record (a pre-claim the route has judged foreign), this store's own decision is kept beside it under its own
+      // key — nothing overwritten, nothing merged.
+      const held = await input.store.findByIdempotencyKey(tenantId, plainKey(tenantId, record.id));
+      const from = await decisionStoreResolver(input.store, tenantId);
+      const mine = from(record) ?? 'none';
+      const beside = held !== undefined && (from(held.event.payload as ApprovalDecisionRecord) ?? 'none') !== mine;
       await input.store.append(tenantId, APPROVAL_DECISIONS_STREAM, makeEvent({
-        id: `approval-decision-${record.id}`,
+        id: beside ? `approval-decision-${record.id}-at-${mine}` : `approval-decision-${record.id}`,
         type: 'ApprovalDecisionRecorded',
         occurredAt: record.recordedAt,
-        // One decision per request, whichever hop re-sends it (§31.1).
-        idempotencyKey: `approval-decision-${tenantId}-${record.id}`,
+        idempotencyKey: beside ? `${plainKey(tenantId, record.id)}-at-${mine}` : plainKey(tenantId, record.id),
         source: 'api/identity',
         payload: record,
       }));
@@ -4949,6 +5205,10 @@ export function emergencyAccessAdapter(input: {
   };
   return {
     now: input.now,
+    // PA-12 round 10: what the user holds now, so an emergency grant never mixes a machine-only role with a person's.
+    rolesHeldBy: (tenantId, userId) => rolesHeldNow(input.store, tenantId, userId, input.now()),
+    isPerson: (tenantId, userId) => isPersonNow(input.store, tenantId, userId),
+    outsideLoginOf: (tenantId, userId) => outsideLoginOf(input.store, tenantId, userId, input.now()),
     grants: (tenantId) => foldGrants(tenantId),
     grant: async (tenantId, grantId) => (await foldGrants(tenantId)).find((g) => g.grantId === grantId),
     recordGrant: async (tenantId, grantId, grant, key) => {
@@ -5272,12 +5532,13 @@ export function lpRulesAdapter(input: {
     },
 
     recordRule: async (tenantId, rule) => {
+      const ruleKey = `lp-rule-${tenantId}-${rule.kind}-${rule.maxCount ?? ''}-${rule.maxTotalValueMinor ?? ''}-${rule.maxSingleValueMinor ?? ''}-${rule.escalateAtMultiple ?? ''}`;
       await input.store.append(tenantId, rulesStream, makeEvent({
-        id: `lp-rule-${rule.kind}-${input.now()}`,
+        id: keyedEventId(`lp-rule-${rule.kind}`, ruleKey),
         type: 'LpRuleSet',
         occurredAt: input.now(),
         // Keyed on the kind AND the limits — re-setting the same thresholds collapses, a re-tune is a new fact.
-        idempotencyKey: `lp-rule-${tenantId}-${rule.kind}-${rule.maxCount ?? ''}-${rule.maxTotalValueMinor ?? ''}-${rule.maxSingleValueMinor ?? ''}-${rule.escalateAtMultiple ?? ''}`,
+        idempotencyKey: ruleKey,
         source: 'api/pos',
         payload: rule,
       }));
@@ -5378,12 +5639,13 @@ export function fraudSignalsAdapter(input: {
       (await latest<FraudThresholds>(input.store, tenantId, thresholdsStream, 'FraudThresholdsSet')) ?? {},
 
     recordThresholds: async (tenantId, thresholds) => {
+      const thresholdsKey = `fraud-thresholds-${tenantId}-${JSON.stringify(thresholds)}`;
       await input.store.append(tenantId, thresholdsStream, makeEvent({
-        id: `fraud-thresholds-${input.now()}`,
+        id: keyedEventId('fraud-thresholds', thresholdsKey),
         type: 'FraudThresholdsSet',
         occurredAt: input.now(),
         // Keyed on the values — re-setting the same thresholds collapses, a re-tune is a new fact.
-        idempotencyKey: `fraud-thresholds-${tenantId}-${JSON.stringify(thresholds)}`,
+        idempotencyKey: thresholdsKey,
         source: 'api/pos',
         payload: thresholds,
       }));
@@ -5529,6 +5791,8 @@ export function transfersAdapter(input: {
     now: input.now,
 
     transfer: async (tenantId, transferId) => (await foldTransfers(tenantId)).get(transferId),
+    // Round 12 (WF-07 screen): every transfer's latest state, in the order first recorded.
+    transfers: async (tenantId) => [...(await foldTransfers(tenantId)).values()],
 
     // SP-5 (F05): the sending location's own weighted-average unit cost for the product — `not_known` (unvalued) → undefined.
     unitCostAt: async (tenantId, locationId, productId) => {
@@ -5752,7 +6016,7 @@ export function floorIndentsAdapter(input: {
       ], expectedStockVersion === undefined ? undefined : { guard: { key: stockGuardKey(transfer.fromLocationId), expectedVersion: expectedStockVersion } });
     },
     // A floor RECEIPT: the indent step, the received transfer and the `transferred_in` movements — one atomic batch.
-    recordReceipt: async (tenantId, indent, transfer, movements, discrepancies, posted, expectedIndentVersion) => {
+    recordReceipt: async (tenantId, indent, transfer, movements, discrepancies, posted, expectedIndentVersion, held, writeOffs) => {
       const at = input.now();
       const issue = indent.issues.find((i) => i.transferId === transfer.transferId);
       await input.store.appendBatch(tenantId, [
@@ -5760,6 +6024,14 @@ export function floorIndentsAdapter(input: {
         // The transfer's own record carries what it brought IN; a damaged write-off (SP-8c) rides the same batch as a movement only.
         { stream: TRANSFERS_STREAM, event: transferReceivedEvent(tenantId, transfer, movements, discrepancies, posted.filter((m) => m.kind === 'transferred_in'), at) },
         ...movementEntries(tenantId, posted),
+        // OB-66: a damaged write-off HELD on an open count plan — in the same write as the receipt, never lost.
+        ...(held ?? []).map((h) => heldWriteOffEntry(tenantId, h)),
+        // OB-71: a damaged write-off with NO count holding it — on the write-off register (M28) in the same write, keyed on its
+        // `wasted` posting, so a replayed receipt records it once and the books post it once (stock_write_off).
+        ...(writeOffs ?? []).map((w) => ({
+          stream: streamName(STREAM.inventory, 'write-offs'),
+          event: makeEvent({ id: `write-off-${w.id}`, type: 'WriteOffCommitted', occurredAt: w.at, idempotencyKey: `write-off-${tenantId}-${w.id}`, source: 'api/inventory', payload: w }),
+        })),
       ], expectedIndentVersion === undefined ? undefined : { guard: { key: indentGuardKey(indent.indentId), expectedVersion: expectedIndentVersion } });
     },
     // A RETURN accepted at the back store: the indent step and the return's transfer proposed, dispatched and received in
@@ -6066,6 +6338,11 @@ export function productionAdapter(input: {
       return { version, digest, changed: true };
     },
 
+    // OB-68 / OB-39: the ingredient's average buying cost at the store the run's location belongs to, as it stands now.
+    averageCostAt: async (tenantId, locationId, productId) => {
+      const [{ storeOf }, avg] = await Promise.all([storeOfLocationResolver(input, tenantId), averageBuyingCosts(input, tenantId)]);
+      return avg.costOf(productId, storeOf(locationId));
+    },
     ingredientCost: async (tenantId, productId) => {
       const set = await allOf<{ productId: string; cost: Money }>(input.store, tenantId, productionStream, 'ProductionCostSet');
       let latest: Money | undefined;
@@ -6513,7 +6790,7 @@ export function goodsReceiptAdapter(input: {
     receiptPolicy: (tenantId) => latest<StoredReceiptPolicy>(input.store, tenantId, RECEIPT_POLICY_STREAM, 'ReceiptPolicySet'),
     recordReceiptPolicy: async (tenantId, policy) => {
       await input.store.append(tenantId, RECEIPT_POLICY_STREAM, makeEvent({
-        id: `receipt-policy-${tenantId}-${policy.setAt}`,
+        id: keyedEventId('receipt-policy', `receipt-policy-${tenantId}-${policy.setAt}-${policy.setBy}`),
         type: 'ReceiptPolicySet',
         occurredAt: policy.setAt,
         idempotencyKey: `receipt-policy-${tenantId}-${policy.setAt}-${policy.setBy}`,
@@ -7015,8 +7292,8 @@ export function purchaseOrdersAdapter(input: {
       }));
     },
 
-    issue: async (tenantId, poId, approvedBy, issuedAt, reason) => {
-      await input.store.append(tenantId, PURCHASE_ORDERS_STREAM, makeEvent({
+    issue: async (tenantId, poId, approvedBy, issuedAt, reason, _key, budgetGuard) => {
+      const event = makeEvent({
         id: `po-${poId}-issued`,
         type: 'PurchaseOrderIssued',
         occurredAt: issuedAt,
@@ -7024,10 +7301,16 @@ export function purchaseOrdersAdapter(input: {
         idempotencyKey: `po-${tenantId}-${poId}-issued`,
         source: 'api/purchase',
         payload: { poId, approvedBy, issuedAt, reason },
-      }));
+      });
+      // WF-03 (round 10): under the month's open-to-buy guard when a budget governs the order (two approvals: one lands).
+      if (budgetGuard === undefined) await input.store.append(tenantId, PURCHASE_ORDERS_STREAM, event);
+      else await input.store.appendBatch(tenantId, [{ stream: PURCHASE_ORDERS_STREAM, event }], { guard: budgetGuard });
     },
 
-    amend: async (tenantId, poId, amendmentId, lines, reason, by, at) => {
+    orderVersion: (tenantId, poId) => input.store.guardVersion(tenantId, purchaseOrderGuardKey(poId)),
+    amend: async (tenantId, poId, amendmentId, lines, reason, by, at, budgetGuard, orderVersion) => {
+      // OB-63: an amendment that RAISES the order under a budget also spends the month's open-to-buy — under that guard too.
+      // Round 13 (verifier A4): pinned to the order version the route judged on — a change since refuses it, never re-tried.
       await appendMovingOrder(input.store, tenantId, poId, [{ stream: PURCHASE_ORDERS_STREAM, event: makeEvent({
         id: `po-${poId}-amended-${amendmentId}`,
         type: 'PurchaseOrderAmended',
@@ -7036,7 +7319,7 @@ export function purchaseOrdersAdapter(input: {
         idempotencyKey: `po-${tenantId}-${poId}-amended-${amendmentId}`,
         source: 'api/purchase',
         payload: { poId, amendmentId, lines, reason, by, at },
-      }) }]);
+      }) }], budgetGuard, orderVersion);
     },
 
     cancel: async (tenantId, poId, cancellationId, cancelledByProduct, reason, by, at) => {
@@ -7065,7 +7348,7 @@ export function purchaseOrdersAdapter(input: {
 
     setSupplierBlocked: async (tenantId, supplierId, blocked, reason, by, at) => {
       await input.store.append(tenantId, SUPPLIER_BLOCK_STREAM, makeEvent({
-        id: `supplier-block-${supplierId}-${blocked}-${at}`,
+        id: keyedEventId('supplier-block', `supplier-block-${tenantId}-${supplierId}-${blocked}-${at}`),
         type: 'SupplierBlockStatusSet',
         occurredAt: at,
         // Keyed on the supplier + the new state + when: setting the same state twice collapses, but a
@@ -7547,16 +7830,11 @@ export function purchaseAdapter(input: {
     invoice: async (tenantId, invoiceId) => (await liveSupplierInvoices(input.store, tenantId)).find((r) => r.invoiceId === invoiceId),
     invoices: (tenantId) => liveSupplierInvoices(input.store, tenantId),
     invoiceIdUsed: (tenantId, invoiceId) => supplierInvoiceIdUsed(input.store, tenantId, invoiceId),
+    // D03-FR-02 (round 12): the scan a typed capture names, and the append-only link that marks it typed.
+    invoiceDocument: async (tenantId, documentId) => (await foldInvoiceDocuments(input.store, tenantId)).find((d) => d.documentId === documentId),
+    recordScanTyped: (tenantId, link, invoice) => recordInvoiceDocumentTyped(input.store, tenantId, link, invoice === undefined ? undefined : { stream: SUPPLIER_INVOICES_STREAM, event: supplierInvoiceCapturedEvent(tenantId, invoice) }),
     recordInvoice: async (tenantId, record) => {
-      await input.store.append(tenantId, SUPPLIER_INVOICES_STREAM, makeEvent({
-        id: `invoice-${record.invoiceId}`,
-        type: 'SupplierInvoiceCaptured',
-        occurredAt: record.capturedAt,
-        // One invoice, one record: the key carries no timestamp, so a re-sent capture collapses onto the first.
-        idempotencyKey: `invoice-${tenantId}-${record.invoiceId}`,
-        source: 'api/purchase',
-        payload: record,
-      }));
+      await input.store.append(tenantId, SUPPLIER_INVOICES_STREAM, supplierInvoiceCapturedEvent(tenantId, record));
     },
     purchaseOrder: async (tenantId, poId) => (await foldPurchaseOrders(input.store, tenantId)).get(poId),
     permissionsOfUser: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),
@@ -7571,7 +7849,7 @@ export function purchaseAdapter(input: {
     matchPolicy: (tenantId) => latest<StoredMatchPolicy>(input.store, tenantId, MATCH_POLICY_STREAM, 'MatchPolicySet'),
     recordMatchPolicy: async (tenantId, policy) => {
       await input.store.append(tenantId, MATCH_POLICY_STREAM, makeEvent({
-        id: `match-policy-${tenantId}-${policy.setAt}`,
+        id: keyedEventId('match-policy', `match-policy-${tenantId}-${policy.setAt}-${policy.setBy}`),
         type: 'MatchPolicySet',
         occurredAt: policy.setAt,
         idempotencyKey: `match-policy-${tenantId}-${policy.setAt}-${policy.setBy}`,
@@ -7581,28 +7859,30 @@ export function purchaseAdapter(input: {
     },
 
     recordMatch: async (tenantId, invoiceId, r) => {
+      const matchKey = `match-${tenantId}-${invoiceId}-${r.payableMinor}-${r.invoicedMinor}-${r.poId ?? ''}-${r.blocked ? 'blocked' : 'clear'}`;
       await input.store.append(tenantId, STREAM.purchase, makeEvent({
-        id: `match-${invoiceId}-${r.matchedAt}`,
+        id: keyedEventId(`match-${invoiceId}`, matchKey),
         type: 'InvoiceMatched',
         occurredAt: r.matchedAt,
         // Keyed on the *outcome*, not just the invoice. Re-running an unchanged match is the same event and collapses;
         // a match that now pays a different figure — or that is no longer blocked because the tenant's tolerances changed
         // (SP-7b) — is a different fact and must be recorded, or the ledger would show the first answer forever.
-        idempotencyKey: `match-${tenantId}-${invoiceId}-${r.payableMinor}-${r.invoicedMinor}-${r.poId ?? ''}-${r.blocked ? 'blocked' : 'clear'}`,
+        idempotencyKey: matchKey,
         source: 'api/purchase',
         payload: r,
       }));
     },
 
     applyBankChange: async (tenantId, r) => {
+      const bankKey = `bank-${tenantId}-${r.supplierId}-${r.newAccount}-${r.requestedAt}`;
       await input.store.append(tenantId, STREAM.purchase, makeEvent({
-        id: `bank-${r.supplierId}-${r.requestedAt}`,
+        id: keyedEventId(`bank-${r.supplierId}`, bankKey),
         type: 'SupplierBankChanged',
         occurredAt: input.now(),
         // The request's own date is in the key. Without it a supplier who moved to a new account
         // and later moved back would have the return collapse into the original change as a
         // replay — and the ledger would then assert the money still goes to the middle account.
-        idempotencyKey: `bank-${tenantId}-${r.supplierId}-${r.newAccount}-${r.requestedAt}`,
+        idempotencyKey: bankKey,
         source: 'api/purchase',
         payload: r satisfies BankChangeRequest,
       }));
@@ -7639,17 +7919,30 @@ export function b2bPortalAdapter(input: {
   readonly now: () => string;
 }): B2BPortalDeps {
   return {
-    // Latest binding wins: a login moved to another customer re-points, and the old customer's list drops it.
-    customerForUser: async (tenantId, userId) =>
-      latest<B2BLoginBinding>(input.store, tenantId, forB2BPortalLogin(userId), 'B2BLoginBound'),
-    recordLoginBinding: async (tenantId, binding) => {
+    // Round 14 (verifier G4): an OB-76 login reads the party of its approved, unrevoked invite — never a collapsed binding
+    // row; any other login, the latest of its bindings and unbindings (an unbinding ends it). A login moved to another
+    // customer re-points, and the old customer's list drops it.
+    customerForUser: async (tenantId, userId) => {
+      const governed = await governedOutsideBinding(input.store, tenantId, userId, 'b2b_customer');
+      if (governed !== 'ungoverned') {
+        return governed === undefined ? undefined : {
+          customerId: governed.partyId, userId, grants: (governed.grants ?? []) as B2BLoginBinding['grants'],
+          boundBy: governed.approvedBy ?? governed.invitedBy, at: governed.approvedAt ?? governed.invitedAt,
+        };
+      }
+      const rows = await input.store.readStream(tenantId, forB2BPortalLogin(userId));
+      const last = [...rows].reverse().find((e) => e.event.type === 'B2BLoginBound' || e.event.type === 'B2BLoginUnbound');
+      return last === undefined || last.event.type === 'B2BLoginUnbound' ? undefined : payloadOf<B2BLoginBinding>(last);
+    },
+    recordLoginBinding: async (tenantId, binding, ref) => {
       const event = (id: string, key: string) => makeEvent({
         id, type: 'B2BLoginBound', occurredAt: binding.at,
         idempotencyKey: key, source: 'api/finance', payload: binding,
       });
       // Keyed on (user, customer, grants) so re-sending the same binding collapses, while a change of grants
       // or of customer is a new, latest-wins fact.
-      const digest = `${binding.userId}-${binding.customerId}-${[...binding.grants].sort().join('.')}`;
+      // Round 14 (verifier G4): an OB-76 binding carries its invite (`ref`), so re-binding to an earlier customer is fresh.
+      const digest = `${binding.userId}-${binding.customerId}-${[...binding.grants].sort().join('.')}${ref === undefined ? '' : `-${ref}`}`;
       await input.store.append(tenantId, forB2BPortalLogin(binding.userId), event(`b2b-login-${digest}`, `b2b-login-${tenantId}-${digest}`));
       await input.store.append(tenantId, forB2BPortalLogins(binding.customerId), event(`b2b-login-idx-${digest}`, `b2b-login-idx-${tenantId}-${digest}`));
     },
@@ -7657,7 +7950,8 @@ export function b2bPortalAdapter(input: {
     loginsFor: async (tenantId, customerId) => {
       const ever = await allOf<B2BLoginBinding>(input.store, tenantId, forB2BPortalLogins(customerId), 'B2BLoginBound');
       const users = [...new Set(ever.map((b) => b.userId))];
-      const current = await Promise.all(users.map((u) => latest<B2BLoginBinding>(input.store, tenantId, forB2BPortalLogin(u), 'B2BLoginBound')));
+      const portal = b2bPortalAdapter(input);
+      const current = await Promise.all(users.map((u) => portal.customerForUser(tenantId, u)));
       return current.filter((b): b is B2BLoginBinding => b !== undefined && b.customerId === customerId);
     },
     recordAccessRefusal: async (tenantId, r) => {
@@ -7776,7 +8070,11 @@ const openedItemsIn = async (store: EventStore, tenantId: string, loadId: string
 const CUTOVER_GO_STREAM = streamName(STREAM.migration, 'cutover-go');
 const cutoverGosOf = (store: EventStore, tenantId: string): Promise<readonly CutoverGo[]> => allOf<CutoverGo>(store, tenantId, CUTOVER_GO_STREAM, 'CutoverGoRecorded');
 async function recordCutoverGoIn(store: EventStore, tenantId: string, go: CutoverGo): Promise<CutoverGo> {
-  const res = await store.append(tenantId, CUTOVER_GO_STREAM, makeEvent({ id: `cutover-go-${go.cutoverId}-${randomUUID()}`, type: 'CutoverGoRecorded', occurredAt: go.goAt, idempotencyKey: `cutover-go-${tenantId}-${go.cutoverId}`, source: 'api/migration', payload: go }));
+  // GT-05 round 12: the shop's FIRST GO stands — whatever key it was kept under (a GO from before the per-tenant key, under
+  // the old per-cutover key, included). Nothing more is appended, and the gate reports exactly the GO the reversal route reads.
+  const standing = (await cutoverGosOf(store, tenantId))[0];
+  if (standing !== undefined) return standing;
+  const res = await store.append(tenantId, CUTOVER_GO_STREAM, makeEvent({ id: `cutover-go-${go.cutoverId}-${randomUUID()}`, type: 'CutoverGoRecorded', occurredAt: go.goAt, idempotencyKey: `cutover-go-${tenantId}` /* GT-05 / OB-52: ONE GO per tenant, the real cutover's; a later GO under any id resolves to it */, source: 'api/migration', payload: go }));
   return res.record.event.payload as CutoverGo;
 }
 export function openingReversalAdapter(input: { readonly store: EventStore; readonly now: () => string }): OpeningReversalDeps {
@@ -8163,8 +8461,15 @@ export function supplierPortalAdapter(input: {
 
     // Which partner this login is bound to (M24-FR-01) — read from the per-user login index the config
     // write maintains below. Latest binding wins, so a login reassigned to another partner re-points.
-    partnerForUser: async (tenantId, userId) =>
-      (await latest<{ partnerId: string }>(input.store, tenantId, forPortalLogin(userId), 'SupplierLoginBound'))?.partnerId,
+    // Round 14 (verifier G4): an OB-76 login reads the partner of its approved, unrevoked invite; any other login, the
+    // latest of its bindings and unbindings.
+    partnerForUser: async (tenantId, userId) => {
+      const governed = await governedOutsideBinding(input.store, tenantId, userId, 'supplier');
+      if (governed !== 'ungoverned') return governed?.partyId;
+      const rows = await input.store.readStream(tenantId, forPortalLogin(userId));
+      const last = [...rows].reverse().find((e) => e.event.type === 'SupplierLoginBound' || e.event.type === 'SupplierLoginUnbound');
+      return last === undefined || last.event.type === 'SupplierLoginUnbound' ? undefined : payloadOf<{ partnerId: string }>(last).partnerId;
+    },
 
     submissions: async (tenantId, partnerId) =>
       allOf<SubmissionRecord>(input.store, tenantId, forPortalPartner(partnerId), 'SupplierSubmissionReceived'),
@@ -8193,11 +8498,14 @@ export function supplierPortalAdapter(input: {
         .map((d) => `${d.documentId}:${d.kind}:${d.validUntil}:${d.verifiedBy ?? 'unv'}`)
         .sort()
         .join(',');
+      const partnerKey = `portal-partner-${tenantId}-${partnerId}-${config.grants.join('.')}-${config.requiredDocuments.join('.')}-${docsDigest}-${[...config.logins].sort().join('.')}`;
       await input.store.append(tenantId, forPortalPartner(partnerId), makeEvent({
-        id: `portal-partner-${partnerId}-${config.grants.join('.')}`,
+        // The id follows the key: a changed config (a verification, a new document) is a new event with its own id — it
+        // used to reuse the grants-only id, which the ledger's unique event id refuses (a 500 on PostgreSQL).
+        id: keyedEventId(`portal-partner-${partnerId}`, partnerKey),
         type: 'SupplierPartnerConfigured',
         occurredAt: input.now(),
-        idempotencyKey: `portal-partner-${tenantId}-${partnerId}-${config.grants.join('.')}-${config.requiredDocuments.join('.')}-${docsDigest}-${[...config.logins].sort().join('.')}`,
+        idempotencyKey: partnerKey,
         source: 'api/purchase',
         payload: config,
       }));
@@ -8589,7 +8897,7 @@ export function customerAdapter(input: {
 
     appendConsent: async (tenantId, r) => {
       await input.store.append(tenantId, forCustomer(r.customerId), makeEvent({
-        id: `consent-${r.customerId}-${r.purpose}-${r.channel}-${r.given ? 'given' : 'withdrawn'}-${r.recordedAt}`,
+        id: keyedEventId('consent', `consent-${tenantId}-${r.customerId}-${r.purpose}-${r.channel}-${r.given ? 'given' : 'withdrawn'}-${r.recordedAt}`),
         type: 'ConsentRecorded',
         occurredAt: r.recordedAt,
         // Time is part of the key: consent given, withdrawn and given again is three facts about
@@ -8903,7 +9211,7 @@ export function compensationFulfilmentAdapter(input: {
     fulfilCompensation: (tenantId, i) => fulfilCompensation(ports, tenantId, i),
     recordFulfilment: async (tenantId, f) => {
       await input.store.append(tenantId, SERVICE_FULFILMENT_STREAM, makeEvent({
-        id: `comp-fulfil-${f.compensationId}-${f.at}`, type: 'CompensationFulfilment', occurredAt: f.at,
+        id: keyedEventId('comp-fulfil', `comp-fulfil-${tenantId}-${f.compensationId}-${f.status}-${f.at}`), type: 'CompensationFulfilment', occurredAt: f.at,
         idempotencyKey: `comp-fulfil-${tenantId}-${f.compensationId}-${f.status}-${f.at}`, source: 'api/customer', payload: f,
       }));
     },
@@ -9558,7 +9866,7 @@ export function ordersAdapter(input: {
     ordersForCustomer: async (tenantId, customerRef) => allOf<PlacedOrder>(input.store, tenantId, forCustomerOrders(customerRef), 'OrderPlaced'),
     recordAccessRefusal: async (tenantId, r: StorefrontAccessRefusal) => {
       await input.store.append(tenantId, forStorefrontRefusals, makeEvent({
-        id: `sf-refused-${r.customerRef}-${r.orderId}-${r.action}-${r.at}`,
+        id: keyedEventId('sf-refused', `sf-refused-${tenantId}-${r.customerRef}-${r.orderId}-${r.action}-${r.at}`),
         type: 'StorefrontAccessRefused',
         occurredAt: r.at,
         idempotencyKey: `sf-refused-${tenantId}-${r.customerRef}-${r.orderId}-${r.action}-${r.at}`,
@@ -9649,7 +9957,7 @@ export function fulfilmentAdapter(input: {
 
     recordDeliveryTransition: async (tenantId, record) => {
       await input.store.append(tenantId, streamName(STREAM.delivery, 'order', record.orderId), makeEvent({
-        id: `dstate-${record.orderId}-${record.event}-${record.at}`,
+        id: keyedEventId('dstate', `dstate-${tenantId}-${record.orderId}-${record.event}-${record.at}`),
         type: 'DeliveryStateChanged',
         occurredAt: record.at,
         idempotencyKey: `dstate-${tenantId}-${record.orderId}-${record.event}-${record.at}`,
@@ -9873,6 +10181,41 @@ export function driverRunAdapter(input: {
 }
 
 /**
+ * Round 15 (verifier GAP A): which store head office ASSIGNED each wave and route at — one tenant-wide index, written in the
+ * SAME batch as the assignment itself, so the relay judge (`relay-record-store.ts`) reads the store of a head-office wave or
+ * route from head office's own record, never from whichever store computer relays it first. Append-only; one entry per
+ * (wave or route, store). Assignments made before this index existed are found by reading each known store's own stream.
+ */
+export interface AssignmentPlaced { readonly kind: 'wave' | 'route'; readonly id: string; readonly storeId: string; readonly at: string }
+function assignmentPlacedEntry(tenantId: string, kind: 'wave' | 'route', id: string, storeId: string, at: string): { stream: string; event: DomainEvent } {
+  return {
+    stream: streamName(STREAM.delivery, 'assignment-index'),
+    event: makeEvent({
+      id: `assignment-placed-${kind}-${id}-${storeId}`, type: 'AssignmentPlaced', occurredAt: at,
+      idempotencyKey: `assignment-placed-${tenantId}-${kind}-${id}-${storeId}`, source: 'api/fulfilment',
+      payload: { kind, id, storeId, at } satisfies AssignmentPlaced,
+    }),
+  };
+}
+
+/** The stores head office assigned a wave (or route) at: the index, plus — for assignments made before it — each known store's stream. */
+export async function assignedStoresOf(input: { readonly store: EventStore }, tenantId: string, kind: 'wave' | 'route', id: string, knownStores: Iterable<string>): Promise<readonly string[]> {
+  const out = new Set<string>();
+  for (const p of await allOf<AssignmentPlaced>(input.store, tenantId, streamName(STREAM.delivery, 'assignment-index'), 'AssignmentPlaced')) {
+    if (p.kind === kind && p.id === id) out.add(p.storeId);
+  }
+  for (const storeId of knownStores) {
+    if (out.has(storeId)) continue;
+    const stream = streamName(STREAM.delivery, 'assignments', storeId);
+    const held = kind === 'wave'
+      ? (await allOf<WaveAssignment>(input.store, tenantId, stream, 'WaveAssigned')).some((a) => a.waveId === id)
+      : (await allOf<RouteAssignment>(input.store, tenantId, stream, 'RouteAssigned')).some((a) => a.routeId === id);
+    if (held) out.add(storeId);
+  }
+  return [...out];
+}
+
+/**
  * Head office's assignments of waves to pickers and routes to drivers, per store (HA-1 · M19-FR-01/03). One stream per store
  * holds every assignment as an append-only fact (`WaveAssigned` / `RouteAssigned`, keyed on the wave or route and the content
  * digest, so the same assignment posted twice is one record and a changed one is a new record that replaces it). "Done" is
@@ -9891,25 +10234,25 @@ export function assignmentsAdapter(input: {
     permissionsOfUser: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),
     waveAssignments: (tenantId, storeId) => allOf<WaveAssignment>(input.store, tenantId, forStore(storeId), 'WaveAssigned'),
     recordWaveAssignment: async (tenantId, a) => {
-      await input.store.append(tenantId, forStore(a.storeId), makeEvent({
+      await input.store.appendBatch(tenantId, [{ stream: forStore(a.storeId), event: makeEvent({
         id: `wave-assigned-${a.waveId}-${a.digest}`,
         type: 'WaveAssigned',
         occurredAt: a.at,
         idempotencyKey: `wave-assigned-${tenantId}-${a.storeId}-${a.waveId}-${a.digest}`,
         source: 'api/fulfilment',
         payload: a,
-      }));
+      }) }, assignmentPlacedEntry(tenantId, 'wave', a.waveId, a.storeId, a.at)]);
     },
     routeAssignments: (tenantId, storeId) => allOf<RouteAssignment>(input.store, tenantId, forStore(storeId), 'RouteAssigned'),
     recordRouteAssignment: async (tenantId, a) => {
-      await input.store.append(tenantId, forStore(a.storeId), makeEvent({
+      await input.store.appendBatch(tenantId, [{ stream: forStore(a.storeId), event: makeEvent({
         id: `route-assigned-${a.routeId}-${a.digest}`,
         type: 'RouteAssigned',
         occurredAt: a.at,
         idempotencyKey: `route-assigned-${tenantId}-${a.storeId}-${a.routeId}-${a.digest}`,
         source: 'api/fulfilment',
         payload: a,
-      }));
+      }) }, assignmentPlacedEntry(tenantId, 'route', a.routeId, a.storeId, a.at)]);
     },
     wavePacked: async (tenantId, waveId) => (await waves.pack(tenantId, waveId)) !== undefined,
     routeSettled: async (tenantId, routeId) => (await runs.settlement(tenantId, routeId)) !== undefined,
@@ -9964,19 +10307,19 @@ export function substitutionTruthAdapter(input: {
     consents: (tenantId, orderId) => allOf<SubstitutionConsent>(input.store, tenantId, forOrderSubs(orderId), 'SubstitutionConsentRecorded'),
     recordConsent: async (tenantId, c) => {
       await input.store.append(tenantId, forOrderSubs(c.orderId), makeEvent({
-        id: `sub-consent-${c.orderId}-${c.lineId}-${c.substituteProductId}-${c.at}`, type: 'SubstitutionConsentRecorded', occurredAt: c.at,
+        id: keyedEventId('sub-consent', `sub-consent-${tenantId}-${c.orderId}-${c.lineId}-${c.substituteProductId}-${c.given}-${c.at}`), type: 'SubstitutionConsentRecorded', occurredAt: c.at,
         idempotencyKey: `sub-consent-${tenantId}-${c.orderId}-${c.lineId}-${c.substituteProductId}-${c.given}-${c.at}`, source: 'api/orders', payload: c,
       }));
     },
     recordOrderRules: async (tenantId, orderId, r) => {
       await input.store.append(tenantId, forOrderSubs(orderId), makeEvent({
-        id: `sub-rules-${orderId}-${r.at}`, type: 'OrderSubstitutionRulesRecorded', occurredAt: r.at,
+        id: keyedEventId('sub-rules', `sub-rules-${tenantId}-${orderId}-${r.at}`), type: 'OrderSubstitutionRulesRecorded', occurredAt: r.at,
         idempotencyKey: `sub-rules-${tenantId}-${orderId}-${r.at}`, source: 'api/orders', payload: r,
       }));
     },
     recordCustomerRules: async (tenantId, customerRef, r) => {
       await input.store.append(tenantId, forCustomerRules(customerRef), makeEvent({
-        id: `cust-sub-rules-${customerRef}-${r.at}`, type: 'CustomerSubstitutionRulesRecorded', occurredAt: r.at,
+        id: keyedEventId('cust-sub-rules', `cust-sub-rules-${tenantId}-${customerRef}-${r.at}`), type: 'CustomerSubstitutionRulesRecorded', occurredAt: r.at,
         idempotencyKey: `cust-sub-rules-${tenantId}-${customerRef}-${r.at}`, source: 'api/orders', payload: r,
       }));
     },
@@ -10132,6 +10475,10 @@ export function identityAdapter(input: {
     roles: () => input.roleCatalogue,
     allocateNumber: (tenantId, docType) => numberSeries.allocate(tenantId, docType),
 
+    // PA-12 round 10: the roles a user holds now (grants minus revocations, plus a live emergency grant) — never the request.
+    rolesHeldBy: (tenantId, userId) => rolesHeldNow(input.store, tenantId, userId, input.now()),
+    isPerson: (tenantId, userId) => isPersonNow(input.store, tenantId, userId),
+    outsideLoginOf: (tenantId, userId) => outsideLoginOf(input.store, tenantId, userId, input.now()),
     /** Every permission from every role this user holds. Union, deduplicated, sorted. */
     permissionsOf: async (tenantId, userId) => {
       const held = (await assignments(tenantId)).filter((a) => a.userId === userId);
@@ -10218,7 +10565,7 @@ export function pricingAdapter(input: {
         {
           stream: STREAM.pricing,
           event: makeEvent({
-            id: `pricechange-${change.productId}-${change.at}`,
+            id: keyedEventId('pricechange', `pricechange-${tenantId}-${change.productId}-${change.at}`),
             type: 'PriceChangeRecorded',
             occurredAt: change.at,
             idempotencyKey: `pricechange-${tenantId}-${change.productId}-${change.at}`,
@@ -10699,7 +11046,7 @@ export function platformAdapter(input: {
 
     setFlag: async (tenantId, change) => {
       await input.store.append(tenantId, STREAM.platform, makeEvent({
-        id: `flag-${change.key}-${change.changedAt}`,
+        id: keyedEventId('flag', `flag-${tenantId}-${change.key}-${change.changedAt}`),
         type: 'FeatureFlagSet',
         occurredAt: change.changedAt,
         // Time is in the key: turning a flag off and back on again is two facts, and "who turned
@@ -10785,7 +11132,7 @@ export function platformAdapter(input: {
     setEntitlement: async (tenantId, feature, enabled, by) => {
       const at = input.now();
       await input.store.append(tenantId, STREAM.platform, makeEvent({
-        id: `entitlement-${feature}-${at}`,
+        id: keyedEventId('entitlement', `entitlement-${tenantId}-${feature}-${at}`),
         type: 'TenantEntitlementSet',
         occurredAt: at,
         // Time is in the key: turning a feature off and back on are two facts worth keeping.
@@ -11205,13 +11552,13 @@ export function migrationAdapter(input: {
     },
     recordParallelPolicy: async (tenantId, policy) => {
       await input.store.append(tenantId, STREAM.migration, makeEvent({
-        id: `parallel-policy-${policy.cutoverId}-${policy.setAt}`, type: 'ParallelRunPolicySet', occurredAt: policy.setAt,
+        id: keyedEventId('parallel-policy', `parallel-policy-${tenantId}-${policy.cutoverId}-${policy.setAt}`), type: 'ParallelRunPolicySet', occurredAt: policy.setAt,
         idempotencyKey: `parallel-policy-${tenantId}-${policy.cutoverId}-${policy.setAt}`, source: 'api/migration', payload: policy,
       }));
     },
     recordParallelDay: async (tenantId, day) => {
       await input.store.append(tenantId, STREAM.migration, makeEvent({
-        id: `parallel-day-${day.businessDate}-${day.recordedAt}`, type: 'ParallelDayCompared', occurredAt: day.recordedAt,
+        id: keyedEventId('parallel-day', `parallel-day-${tenantId}-${day.businessDate}-${day.recordedAt}`), type: 'ParallelDayCompared', occurredAt: day.recordedAt,
         idempotencyKey: `parallel-day-${tenantId}-${day.businessDate}-${day.recordedAt}`, source: 'api/migration', payload: day,
       }));
     },
@@ -11227,7 +11574,7 @@ export function migrationAdapter(input: {
     rollbackReconciliations: (tenantId) => allOf<RollbackReconciliation>(input.store, tenantId, STREAM.migration, 'RollbackReconciled'),
     recordRollbackReconciliation: async (tenantId, c) => {
       await input.store.append(tenantId, STREAM.migration, makeEvent({
-        id: `rollback-reconciled-${c.cutoverId}-${c.decidedAt}-${c.at}`, type: 'RollbackReconciled', occurredAt: c.at,
+        id: keyedEventId('rollback-reconciled', `rollback-reconciled-${tenantId}-${c.cutoverId}-${c.decidedAt}-${c.at}`), type: 'RollbackReconciled', occurredAt: c.at,
         idempotencyKey: `rollback-reconciled-${tenantId}-${c.cutoverId}-${c.decidedAt}-${c.at}`, source: 'api/migration', payload: c,
       }));
     },
@@ -11271,7 +11618,7 @@ export function migrationAdapter(input: {
       // The decision and its confirmation are two facts with two keys — a confirmation never collapses onto the decision.
       const performed = rollback.state === 'performed';
       await input.store.append(tenantId, STREAM.migration, makeEvent({
-        id: `rollback-${rollback.cutoverId}-${rollback.decidedAt}-${performed ? 'performed' : 'decided'}`,
+        id: keyedEventId('rollback', `rollback-${tenantId}-${rollback.cutoverId}-${rollback.decidedAt}-${performed ? 'performed' : 'decided'}`),
         type: performed ? 'RollbackPerformed' : 'RollbackDecided',
         occurredAt: performed ? rollback.execution!.confirmedAt : rollback.decidedAt,
         idempotencyKey: `rollback-${tenantId}-${rollback.cutoverId}-${rollback.decidedAt}-${performed ? 'performed' : 'decided'}`,
@@ -11738,7 +12085,7 @@ export function aiAdapter(input: {
 
     setKillSwitch: async (tenantId, on, by, at) => {
       await input.store.append(tenantId, STREAM.ai, makeEvent({
-        id: `kill-${at}`,
+        id: keyedEventId('kill', `kill-${tenantId}-${at}-${String(on)}`),
         type: 'AiKillSwitchSet',
         occurredAt: at,
         idempotencyKey: `kill-${tenantId}-${at}-${String(on)}`,
@@ -11763,7 +12110,7 @@ export function aiAdapter(input: {
 
     setBudget: async (tenantId, budget, by, at) => {
       await input.store.append(tenantId, STREAM.ai, makeEvent({
-        id: `ai-budget-${at}`,
+        id: keyedEventId('ai-budget', `ai-budget-${tenantId}-${at}`),
         type: 'AiBudgetSet',
         occurredAt: at,
         // Keyed on the moment it was set — a later cap is the owner changing the limit, latest wins;
@@ -11782,7 +12129,7 @@ export function aiAdapter(input: {
 
     setEnabledAgents: async (tenantId, agents, by, at) => {
       await input.store.append(tenantId, STREAM.ai, makeEvent({
-        id: `ai-enabled-${at}`,
+        id: keyedEventId('ai-enabled', `ai-enabled-${tenantId}-${at}`),
         type: 'AiAgentsEnabled',
         occurredAt: at,
         // The enabled SET as of this moment — latest wins, so enabling is declarative (the new list is
@@ -11952,7 +12299,7 @@ export function aiAdapter(input: {
      */
     recordDataQualityDisposition: async (tenantId, disposition, key) => {
       await input.store.append(tenantId, STREAM.ai, makeEvent({
-        id: `dq-disposition-${disposition.findingId}-${disposition.at}`,
+        id: keyedEventId('dq-disposition', `dq-disposition-${tenantId}-${key}`),
         type: 'AiDataQualityDismissed',
         occurredAt: disposition.at,
         idempotencyKey: `dq-disposition-${tenantId}-${key}`,
@@ -11989,7 +12336,7 @@ export function aiAdapter(input: {
      */
     recordOperationsDisposition: async (tenantId, disposition, key) => {
       await input.store.append(tenantId, STREAM.ai, makeEvent({
-        id: `ops-disposition-${disposition.findingId}-${disposition.at}`,
+        id: keyedEventId('ops-disposition', `ops-disposition-${tenantId}-${key}`),
         type: 'AiOperationsDismissed',
         occurredAt: disposition.at,
         idempotencyKey: `ops-disposition-${tenantId}-${key}`,
@@ -12027,7 +12374,7 @@ export function aiAdapter(input: {
      */
     recordWorkforceDisposition: async (tenantId, disposition, key) => {
       await input.store.append(tenantId, STREAM.ai, makeEvent({
-        id: `wf-disposition-${disposition.findingId}-${disposition.at}`,
+        id: keyedEventId('wf-disposition', `wf-disposition-${tenantId}-${key}`),
         type: 'AiWorkforceDismissed',
         occurredAt: disposition.at,
         idempotencyKey: `wf-disposition-${tenantId}-${key}`,
@@ -12238,7 +12585,16 @@ export function observedHealthAdapter(input: { readonly store: EventStore; reado
       return out;
     },
     // PA-12 round 7: a backup is believed only from a grant of the backup_job role ITSELF — never a person's other roles.
-    isBackupJob: async (tenantId, userId) => (await effectiveGrants(input.store, tenantId)).some((g) => g.userId === userId && g.roleId === BACKUP_JOB_ROLE_ID),
+    // PA-12 round 10: …and only from a machine identity that holds NOTHING else — a ledger from before the grant-time
+    // rule that gave a person backup_job beside their own roles is not believed.
+    // PA-12 round 12: …and only from a MACHINE credential (no interactive sign-in evidence), never a person's identity (a
+    // sign-in at the identity server), and with every role held NOW — a live emergency grant of anything else included.
+    isBackupJob: async (tenantId, userId, evidence) => {
+      if (!isMachineCredential(evidence)) return false;
+      if (await isPersonNow(input.store, tenantId, userId)) return false;
+      const held = await rolesHeldNow(input.store, tenantId, userId, input.now());
+      return held.includes(BACKUP_JOB_ROLE_ID) && held.every((r) => r === BACKUP_JOB_ROLE_ID);
+    },
     backups: (tenantId) => allOf<BackupRecord>(input.store, tenantId, BACKUPS_STREAM, 'BackupTaken'),
     recordBackup: async (tenantId, record) => {
       await input.store.append(tenantId, BACKUPS_STREAM, makeEvent({
@@ -12267,6 +12623,11 @@ export function observedHealthAdapter(input: { readonly store: EventStore; reado
       }
       return { stalestCompleteAt: stalest!.at, stalestStore: stalest!.store, unsent, deadLettered, stores: latestByStore.size };
     },
+    // M35-FR-03: the store computers' own health reports (disk, queue, till devices) and the stores head office knows.
+    storeComputers: async (tenantId) => ({
+      records: await boxHealthAdapter({ store: input.store }).records(tenantId),
+      knownStores: (await orgStructureAdapter({ store: input.store, now: input.now }).nodes(tenantId)).filter((n) => n.kind === 'branch').map((n) => n.nodeId),
+    }),
     alertRules: (tenantId) => latest<StoredAlertRules>(input.store, tenantId, ALERT_RULES_STREAM, 'AlertRulesDefined'),
     defineAlertRules: async (tenantId, rules) => {
       await input.store.append(tenantId, ALERT_RULES_STREAM, makeEvent({
@@ -12589,7 +12950,7 @@ export function campaignSendAdapter(input: { readonly store: EventStore; readonl
     frequencyPolicy: (tenantId) => latest<CampaignFrequencyPolicy>(input.store, tenantId, CAMPAIGN_FREQUENCY_STREAM, 'CampaignFrequencyPolicySet'),
     recordFrequencyPolicy: async (tenantId, p) => {
       await input.store.append(tenantId, CAMPAIGN_FREQUENCY_STREAM, makeEvent({
-        id: `campaign-frequency-${p.setAt}`, type: 'CampaignFrequencyPolicySet', occurredAt: p.setAt,
+        id: keyedEventId('campaign-frequency', `campaign-frequency-${tenantId}-${p.capPerWindow}-${p.windowDays}-${p.setAt}`), type: 'CampaignFrequencyPolicySet', occurredAt: p.setAt,
         idempotencyKey: `campaign-frequency-${tenantId}-${p.capPerWindow}-${p.windowDays}-${p.setAt}`, source: 'api/customer', payload: p,
       }));
     },
@@ -12934,7 +13295,7 @@ export function b2bOrderingAdapter(input: { readonly store: EventStore; readonly
     runs: (tenantId) => allOf<RecurringRun>(input.store, tenantId, runs, 'B2BRecurringOrderRun'),
     recordRun: async (tenantId, r) => {
       await input.store.append(tenantId, runs, makeEvent({
-        id: `b2b-run-${r.scheduleId}-${r.on}-${r.at}`, type: 'B2BRecurringOrderRun', occurredAt: r.at,
+        id: keyedEventId('b2b-run', r.outcome === 'generated' ? `b2b-run-${tenantId}-${r.scheduleId}-${r.on}-generated` : `b2b-run-${tenantId}-${r.scheduleId}-${r.on}-${r.at}`), type: 'B2BRecurringOrderRun', occurredAt: r.at,
         // A generated day is one fact; an exception is recorded each time the day is tried and fails.
         idempotencyKey: r.outcome === 'generated' ? `b2b-run-${tenantId}-${r.scheduleId}-${r.on}-generated` : `b2b-run-${tenantId}-${r.scheduleId}-${r.on}-${r.at}`,
         source: 'api/finance', payload: r,
@@ -12981,6 +13342,30 @@ export function mergeStoreSync(
 }
 
 
+/** M35-FR-03: every health report each store computer made (append-only; the latest per store is read). */
+const BOX_HEALTH_STREAM = streamName(STREAM.org, 'store-computer-health');
+export function boxHealthAdapter(input: { readonly store: EventStore }): {
+  records: (tenantId: string) => Promise<readonly BoxHealthRecord[]>;
+  record: (tenantId: string, r: BoxHealthRecord) => Promise<BoxHealthRecord>;
+} {
+  return {
+    records: (tenantId) => allOf<BoxHealthRecord>(input.store, tenantId, BOX_HEALTH_STREAM, 'StoreComputerHealthReported'),
+    record: async (tenantId, r) => {
+      // Round 13 (verifier B5 low · hard rule #10): keyed on WHAT the box said as well as when — a retried POST of the same
+      // report collapses onto the first, but a DIFFERENT report stamped with the same moment is its own record, never
+      // silently dropped. (When it arrived is not part of what the box said.)
+      const { receivedAt: _arrived, ...said } = r;
+      void _arrived;
+      const content = createHash('sha256').update(JSON.stringify(said)).digest('hex').slice(0, 16);
+      const res = await input.store.append(tenantId, BOX_HEALTH_STREAM, makeEvent({
+        id: keyedEventId('box-health', `box-health-${tenantId}-${r.storeId}-${r.observedAt}-${content}`), type: 'StoreComputerHealthReported', occurredAt: r.receivedAt,
+        idempotencyKey: `box-health-${tenantId}-${r.storeId}-${r.observedAt}-${content}`, source: 'api/platform', payload: r,
+      }));
+      return res.record.event.payload as BoxHealthRecord;
+    },
+  };
+}
+
 /** EA-01: every sync-watermark report each store computer made (append-only; the latest per store is read). */
 const SYNC_WATERMARKS_STREAM = streamName(STREAM.org, 'store-sync-watermarks');
 export function syncWatermarksAdapter(input: { readonly store: EventStore }): {
@@ -12991,7 +13376,7 @@ export function syncWatermarksAdapter(input: { readonly store: EventStore }): {
     records: (tenantId) => allOf<SyncWatermarkRecord>(input.store, tenantId, SYNC_WATERMARKS_STREAM, 'StoreSyncWatermarkReported'),
     record: async (tenantId, r) => {
       await input.store.append(tenantId, SYNC_WATERMARKS_STREAM, makeEvent({
-        id: `sync-wm-${r.storeId}-${r.observedAt}`, type: 'StoreSyncWatermarkReported', occurredAt: r.receivedAt,
+        id: keyedEventId('sync-wm', `sync-wm-${tenantId}-${r.storeId}-${r.observedAt}`), type: 'StoreSyncWatermarkReported', occurredAt: r.receivedAt,
         // One report per (store, moment the box made it): a retried POST collapses onto the first.
         idempotencyKey: `sync-wm-${tenantId}-${r.storeId}-${r.observedAt}`, source: 'api/platform', payload: r,
       }));
@@ -13154,7 +13539,7 @@ export function customer360Adapter(input: {
     households: (tenantId) => allOf<HouseholdLink>(input.store, tenantId, householdStream, 'CustomerHouseholdLinked'),
     recordHousehold: async (tenantId, h) => {
       await input.store.append(tenantId, householdStream, makeEvent({
-        id: `cust-hh-${h.customerRef}-${h.at}`, type: 'CustomerHouseholdLinked', occurredAt: h.at,
+        id: keyedEventId('cust-hh', `cust-hh-${tenantId}-${h.customerRef}-${h.householdId}-${h.linked}-${h.at}`), type: 'CustomerHouseholdLinked', occurredAt: h.at,
         idempotencyKey: `cust-hh-${tenantId}-${h.customerRef}-${h.householdId}-${h.linked}-${h.at}`, source: 'api/customer', payload: h,
       }));
     },
@@ -13166,7 +13551,7 @@ export function customer360Adapter(input: {
     },
     recordView: async (tenantId, v) => {
       await input.store.append(tenantId, viewsOf(v.customerRef), makeEvent({
-        id: `cust-view-${v.customerRef}-${v.at}`, type: 'CustomerProfileViewed', occurredAt: v.at,
+        id: keyedEventId('cust-view', `cust-view-${tenantId}-${v.customerRef}-${v.viewedBy}-${v.at}`), type: 'CustomerProfileViewed', occurredAt: v.at,
         idempotencyKey: `cust-view-${tenantId}-${v.customerRef}-${v.viewedBy}-${v.at}`, source: 'api/customer', payload: v,
       }));
     },
@@ -13231,7 +13616,10 @@ export interface AverageBuyingCost {
   readonly receivedMinor: number;
   readonly receivedValueMinor: number;
 }
-export async function averageBuyingCosts(input: { readonly store: EventStore; readonly now: () => string }, tenantId: string): Promise<{
+export async function averageBuyingCosts(input: { readonly store: EventStore; readonly now: () => string }, tenantId: string, opts?: {
+  /** OB-56: only receipts of this month (YYYY-MM) or earlier — the average as it stood at that month's close. */
+  readonly throughPeriod?: string;
+}): Promise<{
   readonly costOf: (productId: string, storeId: string) => number | undefined;
   readonly rows: readonly AverageBuyingCost[];
 }> {
@@ -13245,7 +13633,11 @@ export async function averageBuyingCosts(input: { readonly store: EventStore; re
   const acc = new Map<string, { productId: string; storeId: string; qty: number; value: number; scale: number }>();
   for (const e of await input.store.readStream(tenantId, STREAM.inventory, { type: 'InventoryMoved' })) {
     const m = payloadOf<Movement>(e);
-    if (m.kind !== 'received' || m.unitCostMinor === undefined || m.quantityMinor <= 0) continue;
+    // OB-68 "A" (owner, 11 Oct 2026): goods MADE in the store come in at their production run's own cost (the ingredients
+    // consumed, at this average when the run was made) — a `produced` movement carrying that cost averages like a receipt.
+    // A run whose ingredients had no cost carries none and stays out: the product is "not valued" by name, never zero.
+    if ((m.kind !== 'received' && m.kind !== 'produced') || m.unitCostMinor === undefined || m.quantityMinor <= 0) continue;
+    if (opts?.throughPeriod !== undefined && m.occurredAt.slice(0, 7) > opts.throughPeriod) continue;
     const storeId = branchOf(m.locationId);
     const key = `${m.productId}\u001f${storeId}`;
     const a = acc.get(key) ?? { productId: m.productId, storeId, qty: 0, value: 0, scale: minorPerUnitOf(m.uom) };
@@ -13408,7 +13800,7 @@ export function periodBooksAdapter(input: { readonly store: EventStore; readonly
       const at = input.now();
       const d = createHash('sha256').update(JSON.stringify(classes)).digest('hex').slice(0, 16);
       await input.store.append(tenantId, ACCOUNT_CLASSES_STREAM, makeEvent({
-        id: `account-classes-${d}-${at}`, type: 'AccountClassesDefined', occurredAt: at,
+        id: keyedEventId('account-classes', `account-classes-${tenantId}-${d}-${at}`), type: 'AccountClassesDefined', occurredAt: at,
         idempotencyKey: `account-classes-${tenantId}-${d}-${at}`, source: 'api/finance', payload: { classes, definedBy: by, at },
       }));
     },
@@ -13472,6 +13864,10 @@ async function bookChecksFor(input: { readonly store: EventStore; readonly now: 
   const stock = stockAdjustmentCheck(period, stockAdjustmentSources(counts, writeOffs), adjJournals);
   if (stock.check !== null) checks.push(stock.check);
   else notChecked.push(`Count differences and write-offs: none applied in ${period}.`);
+  // OB-56: the stock ledger's closing value (average buying cost) against the inventory account in the books.
+  const stockValue = await stockValueCheckFor(input, tenantId, period);
+  if (stockValue.check !== null) checks.push(stockValue.check);
+  else notChecked.push(stockValue.notChecked);
   // Payables.
   const ap = payablesAdapter(input);
   const [accounts, apJournals, map] = await Promise.all([ap.supplierAccounts(tenantId), ap.payablesJournals(tenantId), ap.postingMap(tenantId)]);
@@ -13548,7 +13944,7 @@ export interface StoreComputerRefusal {
   readonly userId: string;
   /** The store the box's credential names (null: none). */
   readonly credentialStore: string | null;
-  /** Why: `credential_names_no_store`, `credential_store_not_granted`, `record_names_another_store`. */
+  /** Why: `credential_names_no_store`, `credential_store_not_granted`, `record_names_another_store`, `record_names_unknown_store`. */
   readonly reason: string;
   /** The store the record named, and where in the record (record_names_another_store only). */
   readonly namedStore?: string;
@@ -13556,6 +13952,12 @@ export interface StoreComputerRefusal {
   readonly method: string;
   readonly path: string;
   readonly at: string;
+  /**
+   * Round 14: who was refused — a store computer, or a PERSON relaying outside their branches (`outside_your_branch_scope`,
+   * `relay_names_no_store`, `record_store_unresolved`, `store_field_not_readable`). Absent on refusals kept before round 14
+   * (all store computers').
+   */
+  readonly by?: 'store_computer' | 'person';
 }
 export function storeComputerRefusalsAdapter(input: { readonly store: EventStore }): {
   record: (tenantId: string, r: StoreComputerRefusal) => Promise<void>;
@@ -13603,6 +14005,15 @@ export function countPlansAdapter(input: { readonly store: EventStore; readonly 
         idempotencyKey: `count-plan-${tenantId}-${plan.planId}-${step}`, source: 'api/inventory', payload: { step, plan },
       }));
     },
+    // WF-08 (hard rule #10): approved OR cancelled — ONE terminal decision per plan, on one key; the loser collapses onto it
+    // and is told what stands. The id is unique per write so a race meets on the key, never on the ledger's id constraint.
+    closePlan: async (tenantId, plan, step) => {
+      const res = await input.store.append(tenantId, COUNT_PLANS_STREAM, makeEvent({
+        id: `count-plan-${plan.planId}-${step}-${randomUUID()}`, type: 'CountPlanRecorded', occurredAt: input.now(),
+        idempotencyKey: `count-plan-${tenantId}-${plan.planId}-closed`, source: 'api/inventory', payload: { step, plan },
+      }));
+      return (res.record.event.payload as { plan: CountPlan }).plan;
+    },
     causes: async (tenantId, planId) =>
       (await allOf<VarianceCause>(input.store, tenantId, COUNT_PLANS_STREAM, 'CountVarianceCaused')).filter((c) => c.planId === planId),
     recordCause: async (tenantId, cause) => {
@@ -13618,6 +14029,11 @@ export function countPlansAdapter(input: { readonly store: EventStore; readonly 
       for (const d of await allOf<StoredReconciliation>(input.store, tenantId, countsStream, 'CountDecided')) if (d.planId === planId) byId.set(d.countId, d);
       return [...byId.values()];
     },
+    heldWriteOffs: async (tenantId, plan) => {
+      const { held, applied } = await heldWriteOffsOf(input.store, tenantId);
+      return heldWriteOffViews(plan.state, held.filter((h) => h.planId === plan.planId), applied);
+    },
+    applyHeldWriteOffs: (tenantId, plan, by, at) => applyHeldWriteOffsFor(input.store, tenantId, plan, by, at),
     movementsAt: async (tenantId, locationId, productIds) => {
       const wanted = new Set(productIds);
       const out: PlaceMovement[] = [];
@@ -13629,6 +14045,56 @@ export function countPlansAdapter(input: { readonly store: EventStore; readonly 
       return out;
     },
   };
+}
+
+/** OB-66: one held damaged write-off on the count-plans stream, keyed on its held id (a re-sent receipt holds it once). */
+function heldWriteOffEntry(tenantId: string, h: HeldWriteOff): { stream: string; event: DomainEvent } {
+  return {
+    stream: COUNT_PLANS_STREAM,
+    event: makeEvent({ id: `count-held-write-off-${h.heldId}`, type: 'CountWriteOffHeld', occurredAt: h.recordedAt, idempotencyKey: `count-held-write-off-${tenantId}-${h.heldId}`, source: 'api/inventory', payload: h }),
+  };
+}
+
+/** OB-66: the held write-offs of a plan and their applications (once each). */
+async function heldWriteOffsOf(store: EventStore, tenantId: string): Promise<{ held: readonly HeldWriteOff[]; applied: readonly HeldWriteOffApplied[] }> {
+  const seen = new Set<string>();
+  const held = (await allOf<HeldWriteOff>(store, tenantId, COUNT_PLANS_STREAM, 'CountWriteOffHeld')).filter((h) => (seen.has(h.heldId) ? false : (seen.add(h.heldId), true)));
+  const done = new Set<string>();
+  const applied = (await allOf<HeldWriteOffApplied>(store, tenantId, COUNT_PLANS_STREAM, 'CountHeldWriteOffApplied')).filter((a) => (done.has(a.heldId) ? false : (done.add(a.heldId), true)));
+  return { held, applied };
+}
+
+/**
+ * OB-66: apply every held write-off of a CLOSED plan not yet applied — per held record ONE atomic batch: the damaged units in
+ * at the floor, the write-off on the register (M28) with its `wasted` movement, and the applied fact. Every entry is keyed on
+ * the held record, so a re-sent approval or a retry after a crash applies nothing twice.
+ */
+export async function applyHeldWriteOffsFor(store: EventStore, tenantId: string, plan: CountPlan, by: string, at: string): Promise<readonly HeldWriteOffApplied[]> {
+  if (plan.state !== 'approved' && plan.state !== 'cancelled') return [];
+  const { held, applied } = await heldWriteOffsOf(store, tenantId);
+  const done = new Set(applied.map((a) => a.heldId));
+  const out: HeldWriteOffApplied[] = [];
+  for (const h of held.filter((x) => x.planId === plan.planId && !done.has(x.heldId))) {
+    const app = heldApplication(h, plan.state, by, at);
+    await store.appendBatch(tenantId, [
+      ...movementEntries(tenantId, [app.inMovement, app.wasted]),
+      {
+        stream: streamName(STREAM.inventory, 'write-offs'),
+        event: makeEvent({ id: `write-off-${app.writeOff.id}`, type: 'WriteOffCommitted', occurredAt: at, idempotencyKey: `write-off-${tenantId}-${app.writeOff.id}`, source: 'api/inventory', payload: app.writeOff }),
+      },
+      { stream: COUNT_PLANS_STREAM, event: makeEvent({ id: `count-held-write-off-applied-${h.heldId}`, type: 'CountHeldWriteOffApplied', occurredAt: at, idempotencyKey: `count-held-write-off-applied-${tenantId}-${h.heldId}`, source: 'api/inventory', payload: app.applied }) },
+    ]);
+    out.push(app.applied);
+  }
+  return out;
+}
+
+/** OB-66: held write-offs not yet applied, recorded in the month or earlier — the month-end stock adjustment waits for them. */
+export async function unappliedHeldWriteOffs(store: EventStore, tenantId: string, period: string): Promise<readonly string[]> {
+  const { held, applied } = await heldWriteOffsOf(store, tenantId);
+  const done = new Set(applied.map((a) => a.heldId));
+  return held.filter((h) => !done.has(h.heldId) && h.recordedAt.slice(0, 7) <= period && h.valueMinor > 0)
+    .map((h) => `held_write_off:${h.heldId} (held for count plan ${h.planId})`);
 }
 
 /**
@@ -13653,13 +14119,19 @@ export function openToBuyAdapter(input: { readonly store: EventStore; readonly n
     categoryOf: async (tenantId, productId) => (await master.product(tenantId, productId))?.primaryCategoryId ?? null,
     overrides: (tenantId) => allOf<BudgetOverride>(input.store, tenantId, PURCHASE_BUDGETS_STREAM, 'PurchaseBudgetExceeded'),
     recordOverride: async (tenantId, o) => {
+      // One override per order (the order is issued once) — and one per raising amendment (OB-63), each on its OWN key.
+      // An amendment's key lives in its own namespace and carries the order id length-prefixed, so it can never equal an
+      // order's key (an order named "po-1-amended-a1" once shared the key of amendment a1 of po-1 and silently collapsed
+      // onto it) nor another (order, amendment) pair's.
+      const ref = o.amendmentId === undefined ? o.poId : `${o.poId.length}:${o.poId}:${o.amendmentId}`;
+      const base = o.amendmentId === undefined ? 'purchase-budget-exceeded' : 'purchase-amendment-budget-exceeded';
       await input.store.append(tenantId, PURCHASE_BUDGETS_STREAM, makeEvent({
-        id: `purchase-budget-exceeded-${o.poId}`, type: 'PurchaseBudgetExceeded', occurredAt: o.at,
-        // One override per order: the order is issued once.
-        idempotencyKey: `purchase-budget-exceeded-${tenantId}-${o.poId}`, source: 'api/purchase', payload: o,
+        id: `${base}-${ref}`, type: 'PurchaseBudgetExceeded', occurredAt: o.at,
+        idempotencyKey: `${base}-${tenantId}-${ref}`, source: 'api/purchase', payload: o,
       }));
     },
-    permissionsOfUser: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),
+    permissionsOfUser: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),    // WF-03 (round 10): the month's open-to-buy write guard — an approval issues only while it still holds.
+    budgetVersion: (tenantId, period) => input.store.guardVersion(tenantId, openToBuyGuardKey(period)),
   };
 }
 
@@ -13669,12 +14141,61 @@ export function openToBuyAdapter(input: { readonly store: EventStore; readonly n
  * and the supplier-invoice register's own capture (the portal path) as the one way onto the register.
  */
 const INVOICE_DOCUMENTS_STREAM = streamName(STREAM.purchase, 'invoice-documents');
+/** Every bill handed in, latest record per document, with the round-12 "typed as invoice X" links laid over the scans. */
+export async function foldInvoiceDocuments(store: EventStore, tenantId: string): Promise<readonly InvoiceDocumentRecord[]> {
+  const byId = new Map<string, InvoiceDocumentRecord>();
+  for (const d of await allOf<InvoiceDocumentRecord>(store, tenantId, INVOICE_DOCUMENTS_STREAM, 'InvoiceDocumentRecorded')) { byId.delete(d.documentId); byId.set(d.documentId, d); }
+  return withTypedLinks([...byId.values()], await allOf<ScanTypedLink>(store, tenantId, INVOICE_DOCUMENTS_STREAM, 'InvoiceDocumentTyped'));
+}
+
+/**
+ * D03-FR-02 (round 12): "scan D was typed as invoice X" — one append-only event per document (fixed id and key), never a
+ * rewrite of the document. Answers the link that STANDS: a re-send collapses onto it; a capture naming the same scan for
+ * a different invoice gets the first link back and the route refuses it by name.
+ */
+/** The one record of a captured supplier invoice — keyed on the invoice id, so a re-sent capture collapses onto the first. */
+export function supplierInvoiceCapturedEvent(tenantId: string, record: SupplierInvoiceRecord): DomainEvent {
+  return makeEvent({
+    id: `invoice-${record.invoiceId}`,
+    type: 'SupplierInvoiceCaptured',
+    occurredAt: record.capturedAt,
+    // One invoice, one record: the key carries no timestamp, so a re-sent capture collapses onto the first.
+    idempotencyKey: `invoice-${tenantId}-${record.invoiceId}`,
+    source: 'api/purchase',
+    payload: record,
+  });
+}
+
+/**
+ * D03-FR-02 · round 13 (verifier B3 · P-08): record "this scan was typed as invoice X" — and, when given, the invoice
+ * itself — in ONE atomic batch, so a scan never reads "captured" for an invoice that was never saved (a crash or a refusal
+ * between two writes used to orphan the link). Guarded on the scan: the standing link is read under the guard and the
+ * batch lands only while the guard still holds, so two captures racing for one scan cannot both write — the loser writes
+ * NOTHING (neither link nor invoice) and is answered with the link that stands. Answers the standing link.
+ */
+export async function recordInvoiceDocumentTyped(store: EventStore, tenantId: string, link: ScanTypedLink, invoice?: BatchEntry): Promise<ScanTypedLink> {
+  const linkKey = `invoice-document-typed-${tenantId}-${link.documentId}`;
+  const guardKey = `invoice-document-typed:${link.documentId}`;
+  for (let attempt = 0; ; attempt += 1) {
+    const version = await store.guardVersion(tenantId, guardKey);
+    const standing = await store.findByIdempotencyKey(tenantId, linkKey);
+    // Another invoice holds this scan: nothing is written (the invoice is not kept without its scan's link).
+    if (standing !== undefined && (standing.event.payload as ScanTypedLink).invoiceId !== link.invoiceId) return standing.event.payload as ScanTypedLink;
+    const entries: BatchEntry[] = [{ stream: INVOICE_DOCUMENTS_STREAM, event: makeEvent({
+      id: `invoice-document-typed-${link.documentId}`, type: 'InvoiceDocumentTyped', occurredAt: link.typedAt,
+      idempotencyKey: linkKey, source: 'api/purchase', payload: link,
+    }) }, ...(invoice === undefined ? [] : [invoice])];
+    try {
+      const [res] = await store.appendBatch(tenantId, entries, { guard: { key: guardKey, expectedVersion: version } });
+      return res!.record.event.payload as ScanTypedLink;
+    } catch (err) {
+      if (!(err instanceof ConcurrencyConflictError) || err.key !== guardKey || attempt >= 4) throw err;
+    }
+  }
+}
+
 export function invoiceIngestionAdapter(input: { readonly store: EventStore; readonly now: () => string }): Omit<InvoiceIngestionDeps, 'recordAudit' | 'extractor'> {
-  const fold = async (tenantId: string): Promise<readonly InvoiceDocumentRecord[]> => {
-    const byId = new Map<string, InvoiceDocumentRecord>();
-    for (const d of await allOf<InvoiceDocumentRecord>(input.store, tenantId, INVOICE_DOCUMENTS_STREAM, 'InvoiceDocumentRecorded')) { byId.delete(d.documentId); byId.set(d.documentId, d); }
-    return [...byId.values()];
-  };
+  const fold = (tenantId: string): Promise<readonly InvoiceDocumentRecord[]> => foldInvoiceDocuments(input.store, tenantId);
   return {
     now: input.now,
     document: async (tenantId, documentId) => (await fold(tenantId)).find((d) => d.documentId === documentId),
@@ -13730,4 +14251,195 @@ export async function productVersionsOf(store: EventStore, tenantId: string, pro
   return (await store.readStream(tenantId, PRODUCTS_STREAM, { type: 'ProductPublished' }))
     .map((ev) => ({ eventId: ev.event.id, product: payloadOf<ProductRecord>(ev) }))
     .filter((v) => v.product.productId === productId);
+}
+
+
+const OUTSIDE_LOGIN_EVENTS = new Set(['OutsideLoginInvited', 'OutsideLoginApproved', 'OutsideLoginRejected', 'OutsideLoginRevoked']);
+
+/** Every OB-76 outside-login invite, with what became of it (folded from the identity ledger). */
+async function outsideLoginRecords(store: EventStore, tenantId: string): Promise<readonly OutsideLoginRecord[]> {
+  return foldOutsideLogins((await store.readStream(tenantId, STREAM.identity))
+    .filter((e) => OUTSIDE_LOGIN_EVENTS.has(e.event.type))
+    .map((e) => ({ ...payloadOf<Record<string, unknown>>(e), type: e.event.type } as unknown as OutsideLoginEvent)));
+}
+
+/**
+ * Round 14 (verifier G4 · hard rule #10): which party an OB-76 outside login is bound to NOW — resolved from the approved
+ * invite's own lifecycle, never from the latest binding row (which a re-binding to an earlier party used to collapse onto).
+ * 'ungoverned': the login has no OB-76 invite of this role (bound some other way — its binding rows decide). undefined:
+ * governed, and no approved, unrevoked invite stands (revoked, rejected, pending) — it reads nobody's rows. Two approved
+ * at once (a ledger from before the per-login guard) is not guessed between: it reads nobody's rows either.
+ */
+export async function governedOutsideBinding(store: EventStore, tenantId: string, userId: string, role: OutsidePartyRole): Promise<OutsideLoginRecord | undefined | 'ungoverned'> {
+  const mine = (await outsideLoginRecords(store, tenantId)).filter((r) => r.userId === userId && r.role === role);
+  if (mine.length === 0) return 'ungoverned';
+  const approved = mine.filter((r) => r.state === 'approved');
+  return approved.length === 1 ? approved[0] : undefined;
+}
+
+/**
+ * Round 14 (verifier G5): the outside-party role this user holds NOW, or has an open (invited or approved) OB-76 invite
+ * for — undefined for anyone else. Read from head office's own ledger, never the request.
+ */
+export async function outsideLoginOf(store: EventStore, tenantId: string, userId: string, at: string): Promise<string | undefined> {
+  const held = (await rolesHeldNow(store, tenantId, userId, at)).find((r) => (OUTSIDE_PARTY_ROLES as readonly string[]).includes(r));
+  if (held !== undefined) return held;
+  return (await outsideLoginRecords(store, tenantId)).find((r) => r.userId === userId && (r.state === 'invited' || r.state === 'approved'))?.role;
+}
+
+/** Round 14 (verifier G6): the per-login write guard an outside-login invite and approval claim the login under. */
+const outsideLoginGuard = (userId: string): string => `outside-login:${userId}`;
+
+/**
+ * OB-76 (owner, 12 Oct 2026): logins for outside parties — the invite, the second person's approval, a rejection and a
+ * revocation, on the identity ledger beside the grants. An approval is ONE batch with the `RoleGranted` the access
+ * resolver folds (who invited as the requester, who approved as the approver), and a revocation ONE batch with the
+ * `RoleRevoked` that takes it away — so the role and its record never disagree. The party's own binding (the B2B portal's
+ * login binding; the supplier portal partner's logins) is written through those portals' own adapters.
+ */
+export function outsidePartyLoginAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): Pick<OutsidePartyLoginDeps, 'now' | 'invites' | 'recordInvite' | 'recordApproval' | 'recordRejection' | 'recordRevocation' | 'rolesHeldBy' | 'partyExists' | 'bind'> {
+  const outsideEvent = (tenantId: string, type: string, id: string, at: string, payload: unknown): BatchEntry => ({
+    stream: STREAM.identity,
+    event: makeEvent({ id: `outside-login-${id}`, type, occurredAt: at, idempotencyKey: `outside-login-${tenantId}-${id}`, source: 'api/identity', payload }),
+  });
+  return {
+    now: input.now,
+    invites: (tenantId) => outsideLoginRecords(input.store, tenantId),
+    // Round 14 (verifier G6): the invite claims the LOGIN under its per-login guard — read before the open-invite check, so
+    // of two invites for one login sent at the same moment exactly one lands; the other reads 'login_taken' (a 409).
+    recordInvite: async (tenantId, invite) => {
+      const version = await input.store.guardVersion(tenantId, outsideLoginGuard(invite.userId));
+      const open = (await outsideLoginRecords(input.store, tenantId)).some((r) => r.userId === invite.userId && r.inviteId !== invite.inviteId && (r.state === 'invited' || r.state === 'approved'));
+      if (open) return 'login_taken';
+      try {
+        await input.store.appendBatch(tenantId, [outsideEvent(tenantId, 'OutsideLoginInvited', `${invite.inviteId}-invited`, invite.invitedAt, { invite })], { guard: { key: outsideLoginGuard(invite.userId), expectedVersion: version } });
+      } catch (err) {
+        if (err instanceof ConcurrencyConflictError) return 'login_taken';
+        throw err;
+      }
+      return undefined;
+    },
+    recordApproval: async (tenantId, invite, approvedBy, at) => {
+      const provenance = { kind: 'outside_party_login', inviteId: invite.inviteId, partyRole: invite.role, partyId: invite.partyId, decision: 'OB-76' };
+      // Round 14 (verifier G6): the approval claims the LOGIN under the same per-login guard: another invite of this login
+      // already approved (or approved at this same moment) means this one binds nothing — 'login_taken', a visible 409.
+      const version = await input.store.guardVersion(tenantId, outsideLoginGuard(invite.userId));
+      if ((await outsideLoginRecords(input.store, tenantId)).some((r) => r.userId === invite.userId && r.inviteId !== invite.inviteId && r.state === 'approved')) return 'login_taken';
+      const guard = { guard: { key: outsideLoginGuard(invite.userId), expectedVersion: version } };
+      try {
+      await input.store.appendBatch(tenantId, [
+        outsideEvent(tenantId, 'OutsideLoginApproved', `${invite.inviteId}-approved`, at, { inviteId: invite.inviteId, approvedBy, at }),
+        {
+          stream: STREAM.identity,
+          event: makeEvent({
+            id: `grant-outside-${invite.inviteId}`, type: ROLE_GRANTED, occurredAt: at,
+            idempotencyKey: `grant-${tenantId}-outside-${invite.inviteId}`, source: 'api/identity',
+            // The same shape every other grant records: the assignment RBAC reads, plus who asked and who approved.
+            payload: {
+              userId: invite.userId, roleId: invite.role, branchScope: 'all',
+              request: { grantId: `outside-${invite.inviteId}`, userId: invite.userId, roleId: invite.role, branchScope: 'all', requestedBy: invite.invitedBy, approvedBy, requestedAt: invite.invitedAt, reason: invite.reason ?? `login for ${invite.role} ${invite.partyId}` },
+              provenance,
+            },
+          }),
+        },
+      ], guard);
+      } catch (err) {
+        if (err instanceof ConcurrencyConflictError) return 'login_taken';
+        throw err;
+      }
+      return undefined;
+    },
+    recordRejection: async (tenantId, inviteId, rejectedBy, reason, at) => {
+      await input.store.appendBatch(tenantId, [outsideEvent(tenantId, 'OutsideLoginRejected', `${inviteId}-rejected`, at, { inviteId, rejectedBy, reason, at })]);
+    },
+    recordRevocation: async (tenantId, invite, revokedBy, reason, at) => {
+      await input.store.appendBatch(tenantId, [
+        outsideEvent(tenantId, 'OutsideLoginRevoked', `${invite.inviteId}-revoked`, at, { inviteId: invite.inviteId, revokedBy, reason, at }),
+        {
+          stream: STREAM.identity,
+          event: makeEvent({
+            id: `revoke-outside-${invite.inviteId}`, type: ROLE_REVOKED, occurredAt: at,
+            idempotencyKey: `revoke-${tenantId}-outside-${invite.inviteId}`, source: 'api/identity',
+            payload: { userId: invite.userId, roleId: invite.role, branchScope: 'all', provenance: { kind: 'outside_party_login', inviteId: invite.inviteId, revokedBy, reason } },
+          }),
+        },
+        // Round 14 (verifier G4): the revocation ENDS the binding — an append-only unbinding where the party's own reads
+        // look, keyed per invite, so the login reads nobody's rows until a new invite is approved and bound.
+        ...(invite.role === 'b2b_customer' ? [{
+          stream: forB2BPortalLogin(invite.userId),
+          event: makeEvent({ id: `b2b-login-unbound-${invite.inviteId}`, type: 'B2BLoginUnbound', occurredAt: at, idempotencyKey: `b2b-login-unbound-${tenantId}-${invite.inviteId}`, source: 'api/identity', payload: { userId: invite.userId, customerId: invite.partyId, inviteId: invite.inviteId, unboundBy: revokedBy, at } }),
+        }] : invite.role === 'supplier' ? [{
+          stream: forPortalLogin(invite.userId),
+          event: makeEvent({ id: `portal-login-unbound-${invite.inviteId}`, type: 'SupplierLoginUnbound', occurredAt: at, idempotencyKey: `portal-login-unbound-${tenantId}-${invite.inviteId}`, source: 'api/identity', payload: { userId: invite.userId, partnerId: invite.partyId, inviteId: invite.inviteId, unboundBy: revokedBy, at } }),
+        }] : []),
+      ]);
+    },
+    rolesHeldBy: async (tenantId, userId) => rolesHeldNow(input.store, tenantId, userId, input.now()),
+    partyExists: async (tenantId, role, partyId) => {
+      if (role === 'b2b_customer') return (await b2bCreditAdapter(input).account(tenantId, partyId)) !== undefined;
+      if (role === 'supplier') return (await supplierPortalAdapter(input).partner(tenantId, partyId)) !== undefined;
+      // A customer record is what the shop holds about them: a purchase, a return or a loyalty membership (customer 360).
+      const c = customer360Adapter(input);
+      await c.catchUp(tenantId);
+      if ((await c.purchasesOf(tenantId, partyId)).length > 0 || (await c.returnsOf(tenantId, partyId)).length > 0) return true;
+      const loyalty = await c.loyaltyOf(tenantId, partyId);
+      return loyalty.member !== undefined || loyalty.pointsBalance !== undefined;
+    },
+    bind: async (tenantId, invite, by, at) => {
+      if (invite.role === 'b2b_customer') {
+        // Round 14 (verifier G4): keyed per INVITE — re-binding to a customer the login was bound to before is a fresh fact.
+        await b2bPortalAdapter(input).recordLoginBinding(tenantId, { customerId: invite.partyId, userId: invite.userId, grants: (invite.grants ?? []) as B2BLoginBinding['grants'], boundBy: by, at }, invite.inviteId);
+      } else if (invite.role === 'supplier') {
+        const portal = supplierPortalAdapter(input);
+        const config = await portal.partner(tenantId, invite.partyId);
+        if (config !== undefined && !config.logins.includes(invite.userId)) {
+          await portal.recordPartner(tenantId, invite.partyId, { ...config, logins: [...config.logins, invite.userId] }, at);
+        }
+        // Round 14 (verifier G4): the binding itself, keyed per INVITE and never skipped — even when the partner's list
+        // already names this login (bound to it before), the re-binding is a fresh, latest fact.
+        await input.store.append(tenantId, forPortalLogin(invite.userId), makeEvent({
+          id: `portal-login-${invite.userId}-${invite.partyId}-${invite.inviteId}`, type: 'SupplierLoginBound', occurredAt: at,
+          idempotencyKey: `portal-login-${tenantId}-${invite.userId}-${invite.partyId}-${invite.inviteId}`, source: 'api/identity',
+          payload: { userId: invite.userId, partnerId: invite.partyId, inviteId: invite.inviteId },
+        }));
+      }
+      // An app customer's login IS the customer record (the storefront scopes to the signed-in subject): nothing more to bind.
+    },
+  };
+}
+
+/**
+ * OB-81 "A": each till's bill-number prefix, as head office issued it — an append-only log of issues, written under one
+ * guard per tenant so two owners can never issue one prefix to two tills at the same moment (services/platform/src/
+ * receipt-prefixes.ts judges; this keeps).
+ */
+const RECEIPT_PREFIX_STREAM = streamName(STREAM.org, 'till-receipt-prefixes');
+const RECEIPT_PREFIX_GUARD = 'till-receipt-prefixes';
+export function receiptPrefixAdapter(input: { readonly store: EventStore; readonly now: () => string }): Pick<ReceiptPrefixDeps, 'issues' | 'guardVersion' | 'recordIssue' | 'registeredTills'> {
+  return {
+    issues: (tenantId) => allOf<ReceiptPrefixIssue>(input.store, tenantId, RECEIPT_PREFIX_STREAM, 'TillReceiptPrefixIssued'),
+    guardVersion: (tenantId) => input.store.guardVersion(tenantId, RECEIPT_PREFIX_GUARD),
+    recordIssue: async (tenantId, issue, expectedVersion) => {
+      try {
+        await input.store.appendBatch(tenantId, [{ stream: RECEIPT_PREFIX_STREAM, event: makeEvent({
+          id: `till-receipt-prefix-${issue.storeId}-${issue.tillId}-v${issue.version}`, type: 'TillReceiptPrefixIssued', occurredAt: issue.setAt,
+          idempotencyKey: `till-receipt-prefix-${tenantId}-${issue.storeId}-${issue.tillId}-v${issue.version}`, source: 'api/platform', payload: issue,
+        }) }], { guard: { key: RECEIPT_PREFIX_GUARD, expectedVersion } });
+      } catch (e) {
+        if (e instanceof ConcurrencyConflictError) throw new PrefixWriteRaced(e.message);
+        throw e;
+      }
+    },
+    registeredTills: async (tenantId) => (await deviceRegistryAdapter(input).fleet(tenantId))
+      .filter((d) => d.kind === 'pos_lane' && d.status !== 'retired' && d.branchId !== '')
+      .map((d) => ({ storeId: d.branchId, tillId: d.deviceId, label: d.label })),
+  };
+}
+
+/** OB-81: the store pack's `receiptSeries` for one store — each till's current issued prefix. */
+export async function issuedReceiptSeries(store: EventStore, tenantId: string, storeId: string): Promise<ReturnType<typeof issuedSeriesFor>> {
+  return issuedSeriesFor(await allOf<ReceiptPrefixIssue>(store, tenantId, RECEIPT_PREFIX_STREAM, 'TillReceiptPrefixIssued'), storeId);
 }

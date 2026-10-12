@@ -69,6 +69,17 @@ export interface WriteGuard {
 
 export interface AppendOptions {
   readonly guard?: WriteGuard;
+  /**
+   * Further guards the SAME batch must hold (each checked and bumped with `guard`, all or none) — for a write that
+   * spends two things at once, e.g. a purchase-order amendment that moves the order AND spends the month's open-to-buy.
+   * Only honoured together with `guard`.
+   */
+  readonly alsoGuards?: readonly WriteGuard[];
+}
+
+/** Every guard a batch must hold: `guard` then `alsoGuards` (none when there is no `guard`). */
+function guardsOf(options?: AppendOptions): readonly WriteGuard[] {
+  return options?.guard === undefined ? [] : [options.guard, ...(options.alsoGuards ?? [])];
 }
 
 /** The named loss of a compare-and-append: the key's version moved between the read and the write. */
@@ -76,6 +87,18 @@ export class ConcurrencyConflictError extends Error {
   constructor(readonly key: string, readonly expectedVersion: number) {
     super(`Concurrent change on "${key}": expected version ${expectedVersion} but it has moved — this write was not applied.`);
     this.name = 'ConcurrencyConflictError';
+  }
+}
+
+/**
+ * The named refusal of an append whose event id is already held by a DIFFERENT event (another idempotency key).
+ * Two writers presenting the same id with the same key are one event and collapse as a dedup; the same id under a
+ * different key is a genuine clash, and it is never silently swallowed (hard rule #10).
+ */
+export class EventIdClashError extends Error {
+  constructor(readonly eventId: string, readonly idempotencyKey: string, readonly storedIdempotencyKey: string) {
+    super(`Event id "${eventId}" is already recorded under another key ("${storedIdempotencyKey}"), so "${idempotencyKey}" was not appended.`);
+    this.name = 'EventIdClashError';
   }
 }
 
@@ -153,6 +176,8 @@ function tenantKey(tenantId: string, idempotencyKey: string): string {
 export class InMemoryEventStore implements EventStore {
   private readonly records: PersistedEvent[] = [];
   private readonly byKey = new Map<string, PersistedEvent>();
+  /** Event ids per tenant — PostgreSQL's UNIQUE (tenant_id, id), modelled so both stores refuse a clash alike. */
+  private readonly byId = new Map<string, PersistedEvent>();
   /**
    * Streams, indexed.
    *
@@ -182,6 +207,7 @@ export class InMemoryEventStore implements EventStore {
     const results: AppendResult[] = [];
     const staged: PersistedEvent[] = [];
     const stagedByKey = new Map<string, PersistedEvent>();
+    const stagedById = new Map<string, PersistedEvent>();
     let nextSeq = this.seq;
     for (const { stream, event } of entries) {
       const key = tenantKey(tenantId, event.idempotencyKey);
@@ -190,10 +216,17 @@ export class InMemoryEventStore implements EventStore {
         results.push({ record: existing, deduped: true });
         continue;
       }
+      // Same id under another key: a genuine clash, refused by name exactly as the SQL store refuses it.
+      const idKey = tenantKey(tenantId, event.id);
+      const holder = this.byId.get(idKey) ?? stagedById.get(idKey);
+      if (holder) {
+        return Promise.reject(new EventIdClashError(event.id, event.idempotencyKey, holder.event.idempotencyKey));
+      }
       nextSeq += 1;
       const record: PersistedEvent = Object.freeze({ seq: nextSeq, tenantId, stream, event });
       staged.push(record);
       stagedByKey.set(key, record);
+      stagedById.set(idKey, record);
       results.push({ record, deduped: false });
     }
     // The guard (Wave 2a): checked and bumped in this same synchronous pass, so the compare and the append are one
@@ -201,15 +234,21 @@ export class InMemoryEventStore implements EventStore {
     // moved. A batch that dedups ENTIRELY is a replay of a command that already landed: it never touches the guard,
     // so a lane retrying a lost reply with the version it first read still gets its idempotent answer.
     if (options?.guard !== undefined && staged.length > 0) {
-      const gkey = tenantKey(tenantId, options.guard.key);
-      const current = this.guards.get(gkey) ?? 0;
-      if (current !== options.guard.expectedVersion) return Promise.reject(new ConcurrencyConflictError(options.guard.key, options.guard.expectedVersion));
-      this.guards.set(gkey, current + 1);
+      const all = guardsOf(options);
+      for (const g of all) {
+        const current = this.guards.get(tenantKey(tenantId, g.key)) ?? 0;
+        if (current !== g.expectedVersion) return Promise.reject(new ConcurrencyConflictError(g.key, g.expectedVersion));
+      }
+      for (const g of all) {
+        const gkey = tenantKey(tenantId, g.key);
+        this.guards.set(gkey, (this.guards.get(gkey) ?? 0) + 1);
+      }
     }
     // Commit — one pass, no interleaving, so either every staged record lands or (on no staging) none.
     for (const record of staged) {
       this.records.push(record);
       this.byKey.set(tenantKey(record.tenantId, record.event.idempotencyKey), record);
+      this.byId.set(tenantKey(record.tenantId, record.event.id), record);
       const skey = tenantKey(record.tenantId, record.stream);
       const inStream = this.byStream.get(skey);
       if (inStream === undefined) this.byStream.set(skey, [record]); else inStream.push(record);
@@ -317,7 +356,7 @@ export class SqlEventStore implements EventStore {
     // on the same connection, so a lost compare rolls every insert back. Without a transaction primitive the
     // guard cannot be honoured, and it fails closed by name rather than appending unguarded (hard rule #10).
     const guard = options?.guard;
-    const run = (client: SqlClient): Promise<AppendResult[]> => this.appendAllWith(client, tenantId, entries, guard);
+    const run = (client: SqlClient): Promise<AppendResult[]> => this.appendAllWith(client, tenantId, entries, guardsOf(options));
     // Row-level security (migration 0012): the statements run on the tenant's scoped view, so the database
     // itself refuses a row for any other tenant — even if a bug here ever bound the wrong id.
     const scoped = scopedTo(this.client, tenantId);
@@ -343,7 +382,7 @@ export class SqlEventStore implements EventStore {
    * own uncommitted inserts; using `this.client` (a different pool connection) would not.
    */
   private async appendAllWith(
-    client: SqlClient, tenantId: string, entries: readonly BatchEntry[], guard?: WriteGuard,
+    client: SqlClient, tenantId: string, entries: readonly BatchEntry[], guards: readonly WriteGuard[],
   ): Promise<AppendResult[]> {
     const results: AppendResult[] = [];
     for (const { stream, event } of entries) {
@@ -352,7 +391,7 @@ export class SqlEventStore implements EventStore {
         inserted = await client.query(
         `INSERT INTO event_ledger (id, tenant_id, stream, type, occurred_at, idempotency_key, source, version, payload)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-         ON CONFLICT (tenant_id, idempotency_key) DO NOTHING
+         ON CONFLICT DO NOTHING
          RETURNING ${COLUMNS}`,
         [
           event.id,
@@ -376,11 +415,26 @@ export class SqlEventStore implements EventStore {
         continue;
       }
       // A conflicting row already exists — read it back on this same client and dedup.
+      //
+      // The INSERT names NO conflict target, so EVERY unique constraint is an arbiter: the idempotency key AND the
+      // event id. Naming only the key (as this did before) let two concurrent appends of the SAME event (same fixed
+      // id, same key — a relay re-send, an amendment re-sent twice at once) race past the key's pre-check and meet
+      // the id's constraint as a raw unique violation: a 500 where a dedup was owed. Now the loser waits for the
+      // winner, inserts nothing, and is resolved here by what is actually stored:
+      //   • a row under this key  → the same event: dedup (the stored row is returned, nothing overwritten);
+      //   • a row under this id with ANOTHER key → a genuine clash, refused by name (never silently kept).
       const existing = await client.query(
         `SELECT ${COLUMNS} FROM event_ledger WHERE tenant_id = $1 AND idempotency_key = $2`,
         [tenantId, event.idempotencyKey],
       );
       if (existing.length === 0) {
+        const byId = await client.query(
+          `SELECT ${COLUMNS} FROM event_ledger WHERE tenant_id = $1 AND id = $2`,
+          [tenantId, event.id],
+        );
+        if (byId.length > 0) {
+          throw new EventIdClashError(event.id, event.idempotencyKey, String(byId[0]!['idempotency_key']));
+        }
         throw new Error(`Append for "${event.idempotencyKey}" conflicted but no row was found.`);
       }
       results.push({ record: rowToPersisted(existing[0]!), deduped: true });
@@ -390,16 +444,19 @@ export class SqlEventStore implements EventStore {
     // then bump it ONLY if it still holds the version the writer read. The UPDATE takes the row lock, so two
     // competing transactions serialise on it; the second re-evaluates the WHERE after the first commits, finds
     // the version moved, updates no row — and this whole transaction rolls back with the conflict named.
-    if (guard !== undefined && results.some((r) => !r.deduped)) {
-      await client.query(
-        'INSERT INTO write_guards (tenant_id, key, version) VALUES ($1, $2, 0) ON CONFLICT (tenant_id, key) DO NOTHING',
-        [tenantId, guard.key],
-      );
-      const bumped = await client.query(
-        'UPDATE write_guards SET version = version + 1, updated_at = now() WHERE tenant_id = $1 AND key = $2 AND version = $3 RETURNING version',
-        [tenantId, guard.key, guard.expectedVersion],
-      );
-      if (bumped.length === 0) throw new ConcurrencyConflictError(guard.key, guard.expectedVersion);
+    // Several guards (`alsoGuards`) are taken in key order, so two batches holding the same pair never deadlock.
+    if (guards.length > 0 && results.some((r) => !r.deduped)) {
+      for (const guard of [...guards].sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))) {
+        await client.query(
+          'INSERT INTO write_guards (tenant_id, key, version) VALUES ($1, $2, 0) ON CONFLICT (tenant_id, key) DO NOTHING',
+          [tenantId, guard.key],
+        );
+        const bumped = await client.query(
+          'UPDATE write_guards SET version = version + 1, updated_at = now() WHERE tenant_id = $1 AND key = $2 AND version = $3 RETURNING version',
+          [tenantId, guard.key, guard.expectedVersion],
+        );
+        if (bumped.length === 0) throw new ConcurrencyConflictError(guard.key, guard.expectedVersion);
+      }
     }
     return results;
   }

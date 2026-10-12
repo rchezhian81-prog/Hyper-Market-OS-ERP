@@ -32,6 +32,7 @@ const WORDS = {
     saved: 'Saved ✓',
     queued: 'Saved here — it will sync when the line is back.',
     failed: 'Could not save:',
+    notAccepted: 'Not accepted:',
     retry: 'Try again',
     conflict: 'Someone changed this since you opened the page.',
     reload: 'Reload',
@@ -63,6 +64,7 @@ const WORDS = {
     saved: 'சேமிக்கப்பட்டது ✓',
     queued: 'இங்கே சேமிக்கப்பட்டது — இணைப்பு வந்தவுடன் ஒத்திசைக்கும்.',
     failed: 'சேமிக்க முடியவில்லை:',
+    notAccepted: 'ஏற்கப்படவில்லை:',
     retry: 'மீண்டும் முயற்சி',
     conflict: 'நீங்கள் பக்கத்தைத் திறந்த பிறகு யாரோ இதை மாற்றியுள்ளனர்.',
     reload: 'மீண்டும் ஏற்று',
@@ -148,6 +150,10 @@ function makeControl(item) {
     control.type = spec.kind === 'number' || spec.kind === 'decimal' ? 'number'
       : spec.kind === 'time' ? 'time' : 'text';
     if (spec.kind === 'decimal') control.step = 'any';
+    // The catalogue's declared range (the same numbers the engine's rule checks) bounds the number editor.
+    if (spec.min !== undefined) control.min = String(spec.min);
+    if (spec.max !== undefined) control.max = String(spec.max);
+    if (spec.step !== undefined) control.step = String(spec.step);
   }
   control.id = `f-${item.key}`;
   control.setAttribute('aria-labelledby', `q-${item.key}`);
@@ -165,7 +171,8 @@ function paintField(key) {
   msg.className = 'fieldmsg';
   retryBtn.hidden = true;
   if (fs.error) {
-    msg.textContent = fs.error;
+    // The engine's own words, introduced in the reader's language.
+    msg.textContent = `${t('notAccepted')} ${fs.error}`;
     msg.classList.add('bad');
   } else if (fs.status === 'saving') {
     msg.textContent = t('saving');
@@ -350,11 +357,135 @@ function render() {
   if (canEdit) for (const group of groups) for (const item of group.items) paintField(item.key);
 }
 
+// ── Till bill-number prefixes (OB-81) ─────────────────────────────────────────────────────────────────────────
+// Every rule is in apps/web-erp/src/receipt-prefix-session.ts (window.receiptPrefixSession); head office judges each issue.
+
+const prefixes = window.receiptPrefixSession || null;
+const pw = (key) => (prefixes ? prefixes.words(lang)[key] : '');
+const rowKey = (r) => `${r.storeId}__${r.tillId}`;
+
+function prefixMessage(msgEl, text, tone) {
+  msgEl.textContent = text;
+  msgEl.className = `fieldmsg${tone ? ` ${tone}` : ''}`;
+}
+
+/** Wire one prefix editor: check as typed (head office's rule), show the numbers it would make, save to head office. */
+function wirePrefix(input, button, msgEl, target) {
+  const paint = () => {
+    const v = input.value;
+    if (v === '') { prefixMessage(msgEl, '', ''); button.disabled = true; return; }
+    const why = prefixes.check(v);
+    if (why) { prefixMessage(msgEl, `${pw('refused')} ${why}`, 'bad'); button.disabled = true; return; }
+    prefixMessage(msgEl, `${pw('numbers')}: ${prefixes.preview(v)}`, '');
+    button.disabled = false;
+  };
+  input.addEventListener('input', paint);
+  button.addEventListener('click', async () => {
+    const { storeId, tillId } = target();
+    if (!storeId || !tillId) return;
+    button.disabled = true;
+    prefixMessage(msgEl, pw('saving'), '');
+    const result = await prefixes.save(storeId, tillId, input.value);
+    if (result.kind === 'saved') {
+      renderPrefixes();
+      const m = el(`pm-${storeId}__${tillId}`);
+      if (m) prefixMessage(m, pw('saved'), 'good');
+      return;
+    }
+    prefixMessage(msgEl, `${result.kind === 'refused' ? pw('refused') : pw('failed')} ${result.words}`, 'bad');
+    button.disabled = false;
+  });
+  paint();
+}
+
+function prefixRow(r) {
+  const row = document.createElement('div');
+  row.className = `row ${r.flagged ? 'flagged' : r.prefix ? 'answered' : 'default'}`;
+  row.id = `pr-${rowKey(r)}`;
+  const what = document.createElement('div');
+  what.className = 'what';
+  const title = document.createElement('strong');
+  title.textContent = `${pw('store')} ${r.storeId} · ${pw('till')} ${r.tillId}`;
+  const now = document.createElement('small');
+  now.id = `pv-${rowKey(r)}`;
+  now.textContent = r.prefix ? `${pw('prefix')}: ${r.prefix} — ${pw('numbers')} ${r.range}` : pw('none');
+  what.append(title, now);
+  if (r.setBy) {
+    const who = document.createElement('small');
+    who.textContent = `${pw('setBy')} ${r.setBy}${r.setAt ? ` · ${new Date(r.setAt).toLocaleString()}` : ''}${r.earlier.length > 0 ? ` · ${pw('earlier')}: ${r.earlier.join(', ')}` : ''}`;
+    what.append(who);
+  }
+  if (r.why) {
+    const why = document.createElement('small');
+    why.textContent = r.why;
+    what.append(why);
+  }
+  if (prefixes.canEdit) {
+    const edit = document.createElement('div');
+    edit.className = 'edit';
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.id = `px-${rowKey(r)}`;
+    input.maxLength = 16;
+    input.autocomplete = 'off';
+    input.setAttribute('aria-label', `${pw('prefix')} ${r.storeId} ${r.tillId}`);
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'primary';
+    button.id = `pb-${rowKey(r)}`;
+    button.textContent = r.prefix ? pw('change') : pw('issue');
+    const msg = document.createElement('small');
+    msg.id = `pm-${rowKey(r)}`;
+    msg.className = 'fieldmsg';
+    msg.setAttribute('role', 'status');
+    msg.setAttribute('aria-live', 'polite');
+    edit.append(input, button, msg);
+    what.append(edit);
+    wirePrefix(input, button, msg, () => ({ storeId: r.storeId, tillId: r.tillId }));
+  } else {
+    const ro = document.createElement('small');
+    ro.className = 'fieldmsg';
+    ro.textContent = pw('readOnly');
+    what.append(ro);
+  }
+  const side = document.createElement('div');
+  side.className = 'side';
+  const tag = document.createElement('span');
+  tag.className = `tag${r.flagged ? ' flag' : ''}`;
+  tag.textContent = r.flagged ? pw('flagged') : r.prefix ? `v${r.version}` : pw('none');
+  side.append(tag);
+  row.append(what, side);
+  return row;
+}
+
+function renderPrefixes() {
+  const box = el('prefixes');
+  if (!prefixes) { box.hidden = true; return; }
+  box.hidden = false;
+  el('prefixes-title').textContent = pw('heading');
+  el('prefixes-lead').textContent = pw('lead');
+  el('prefixes-stores').textContent = prefixes.multiStore() ? pw('manyStores') : pw('oneStore');
+  const rows = prefixes.rows();
+  el('prefixes-rows').replaceChildren(...(rows.length === 0 ? [emptyLine(pw('noTills'))] : rows.map(prefixRow)));
+  const add = el('prefixes-new');
+  add.hidden = !prefixes.canEdit;
+  el('prefixes-new-title').textContent = pw('newTill');
+  el('pn-store').placeholder = pw('store');
+  el('pn-till').placeholder = pw('till');
+  el('pn-prefix').placeholder = 'S2L1-';
+  el('pn-save').textContent = pw('issue');
+}
+
+if (prefixes && prefixes.canEdit) {
+  wirePrefix(el('pn-prefix'), el('pn-save'), el('pn-msg'), () => ({ storeId: el('pn-store').value.trim(), tillId: el('pn-till').value.trim() }));
+}
+
 function paintChrome() {
   el('who').firstChild.textContent = `${t('title')} `;
   el('whoami').textContent = window.setupData?.userId ?? '';
   el('sample').textContent = t('sampleData');
   render();
+  renderPrefixes();
 }
 
 el('lang').addEventListener('click', () => {

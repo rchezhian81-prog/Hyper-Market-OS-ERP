@@ -51,13 +51,13 @@ const receiptEvent = (id: string, over: Record<string, unknown> = {}) => makeEve
   payload: {
     grnId: id, number: `DN-${id}`, poId: 'po-1', lineCount: 1, warehouseId: WH, receivedBy: 'u-mgr', receivedAt: AT,
     lines: [{ productId: 'p1', quantityMinor: 10, uom: 'ea', batchId: null }],
-    storeId: 'store-1', source: 'manager-screen', ...over,
+    storeId: WH, source: 'manager-screen', ...over,
   },
 });
 /** What the manager's screen queues for a blind count — only what the counter saw. */
 const countEvent = (id: string, countedMinor: number) => makeEvent({
   id: `count-${id}`, type: 'StockCounted', occurredAt: AT, idempotencyKey: `count-${id}`, source: 'web-erp/manager',
-  payload: { countId: id, productId: 'p1', locationId: WH, uom: 'ea', countedMinor, reasonCode: 'cycle_count', counterId: 'u-mgr', at: AT, storeId: 'store-1', source: 'manager-screen' },
+  payload: { countId: id, productId: 'p1', locationId: WH, uom: 'ea', countedMinor, reasonCode: 'cycle_count', counterId: 'u-mgr', at: AT, storeId: WH, source: 'manager-screen' },
 });
 
 const postBatch = async (edge: EdgeProcess, items: unknown[], source = 'manager'): Promise<{ status: number; acks: DeviceAck[] }> => {
@@ -192,7 +192,7 @@ describe('the manager\'s delivery and count: device → box (durable) → head o
     expect(pass.dead).toBe(0);
     const grn = await grnAt(c.h, 'g1');
     expect(grn.status).toBe(200);
-    expect((grn.body as { grn: Record<string, unknown> }).grn).toMatchObject({ grnId: 'g1', receivedBy: 'u-mgr', relayedBy: 'u-box', source: 'manager-screen', storeId: 'store-1', availableMinor: 10, governanceFlags: ['default_policy'], poReceipt: { receiptId: 'g1', receivedByProduct: { p1: 10 } } });
+    expect((grn.body as { grn: Record<string, unknown> }).grn).toMatchObject({ grnId: 'g1', receivedBy: 'u-mgr', relayedBy: 'u-box', source: 'manager-screen', storeId: WH, availableMinor: 10, governanceFlags: ['default_policy'], poReceipt: { receiptId: 'g1', receivedByProduct: { p1: 10 } } });
     expect(await onHandAt(c.h, 'p1')).toBe(110);
     // SP-6 (F01): the delivery booked in at the store closed the order at head office in the same pass — 10 ordered, 10 received.
     const po = await c.h.request({ method: 'GET', path: '/v1/purchase/orders/po-1', userId: 'u-owner', tenantId: A });

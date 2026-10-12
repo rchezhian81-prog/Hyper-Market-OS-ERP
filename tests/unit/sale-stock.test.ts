@@ -26,9 +26,16 @@ describe('where a sale draws its stock from (M08-FR-01)', () => {
     expect(resolveSaleStockLocation(sale, 'store-1')).toEqual({ locationId: 'store-1', basis: 'store_of_pack' });
   });
 
-  it('assumes the lane only when nothing else names a location — and says so', () => {
-    expect(resolveSaleStockLocation(sale, undefined)).toEqual({ locationId: 'lane-3', basis: 'assumed_from_lane' });
-    expect(resolveSaleStockLocation({ ...sale, locationId: '   ' }, '')).toEqual({ locationId: 'lane-3', basis: 'assumed_from_lane' });
+  it('round 14: the store the lane is REGISTERED at comes before the pack', () => {
+    expect(resolveSaleStockLocation(sale, 'store-1', 'store-9')).toEqual({ locationId: 'store-9', basis: 'store_of_lane' });
+    expect(resolveSaleStockLocation({ ...sale, locationId: 'shop-floor' }, 'store-1', 'store-9')).toEqual({ locationId: 'shop-floor', basis: 'declared_by_lane' });
+  });
+
+  it('holds the sale at the lane\'s UNPLACED location when nothing places it — never the free-text lane id (round 14, G2)', () => {
+    expect(resolveSaleStockLocation(sale, undefined)).toEqual({ locationId: 'unplaced-lane:lane-3', basis: 'unplaced' });
+    expect(resolveSaleStockLocation({ ...sale, locationId: '   ' }, '')).toEqual({ locationId: 'unplaced-lane:lane-3', basis: 'unplaced' });
+    // a lane CALLED "store-2" never puts the sale's stock at store 2
+    expect(resolveSaleStockLocation({ ...sale, laneId: 'store-2' }, undefined, undefined).locationId).toBe('unplaced-lane:store-2');
   });
 });
 
@@ -47,10 +54,10 @@ describe('the sold movements a banked sale appends', () => {
     expect(b.map((m) => m.movementId)).toEqual(a.map((m) => m.movementId));
   });
 
-  it('states an assumed location on the movement itself (P-08), never silently', () => {
-    const [m] = saleStockMovements(sale, { locationId: 'lane-3', basis: 'assumed_from_lane' });
-    expect(m?.locationId).toBe('lane-3');
-    expect(m?.reason).toContain('assumed from lane lane-3');
+  it('states an unplaced location on the movement itself (P-08), never silently', () => {
+    const [m] = saleStockMovements(sale, { locationId: 'unplaced-lane:lane-3', basis: 'unplaced' });
+    expect(m?.locationId).toBe('unplaced-lane:lane-3');
+    expect(m?.reason).toContain("lane lane-3's unplaced location");
   });
 
   it('skips a line that cannot be a movement without refusing the sale (hard rule #1)', () => {
@@ -87,8 +94,8 @@ describe('the returned movements a recorded return appends (A2)', () => {
     ]);
   });
 
-  it('states an assumed location on the movement (P-08)', () => {
-    const [m] = returnStockMovements(ret, { locationId: 'lane-3', basis: 'assumed_from_lane' });
-    expect(m?.reason).toContain("assumed from the original sale's lane (lane-3)");
+  it('states an unplaced location on the movement (P-08)', () => {
+    const [m] = returnStockMovements(ret, { locationId: 'unplaced-lane:lane-3', basis: 'unplaced' });
+    expect(m?.reason).toContain('unplaced location unplaced-lane:lane-3');
   });
 });

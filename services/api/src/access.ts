@@ -13,6 +13,7 @@
 // not a bypass of the authorization check.
 
 import type { EventStore } from '../../../packages/persistence/src/event-store';
+import { machineIdentitySetRefusal } from '../../identity/src/machine-identities';
 import { AccessControl, type Role, type RoleAssignment } from '../../../packages/rbac/src/rbac';
 import { makeEvent } from '../../../packages/contracts/src/event';
 import { STREAM, effectiveGrants } from './adapters';
@@ -94,6 +95,11 @@ export async function seedInitialAdmins(
   const existing = await store.readStream(tenantId, STREAM.identity, { type: 'RoleGranted' });
   if (existing.length > 0) return { outcome: 'already_bootstrapped', granted: 0 };
   if (admins.length === 0) return { outcome: 'seeded', granted: 0 };
+  // PA-12 round 10: not even at bootstrap is a machine identity (backup_job) laid down beside a person's role.
+  for (const who of new Set(admins.map((a) => a.userId))) {
+    const mixed = machineIdentitySetRefusal(admins.filter((a) => a.userId === who).map((a) => a.roleId));
+    if (mixed !== undefined) throw new Error(`Initial admin set refused for ${who}: ${mixed}`);
+  }
   // The tenant exists from this moment (db/migrations/0013): registered by the operator who laid the admins down.
   await store.registerTenant(tenantId, `operator:${laidDownBy}`);
 

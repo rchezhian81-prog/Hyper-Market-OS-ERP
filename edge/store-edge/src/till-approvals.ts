@@ -36,8 +36,16 @@ export const OVERRIDE_AUTHORITY = 'pos.override.approve';
  * not. A no-sale (the drawer opened with no sale) is against no bill and moves no value; a price override is against
  * the bill, for the amount it takes off the line (audit PF-07).
  */
-export type ApprovalKind = 'refund' | 'no_receipt_return' | 'exchange_refund' | 'no_sale' | 'price_override';
-const KINDS: readonly ApprovalKind[] = ['refund', 'no_receipt_return', 'exchange_refund', 'no_sale', 'price_override'];
+export type ApprovalKind = 'refund' | 'no_receipt_return' | 'exchange_refund' | 'no_sale' | 'price_override'
+  /** OB-55 / PF-06: the machine's answer for a card/UPI attempt of an EARLIER trading day, typed in late — a manager's
+   *  approval for exactly that attempt (`billRef` = the attempt id) and its amount. */
+  | 'late_payment_answer'
+  /** OB-55: a second person's approval to close the day with named card/UPI payments carried forward. Issued and spent
+   *  only by `approveDayCloseException` — never through `grant` (it is not in KINDS). */
+  | 'day_close_exception';
+/** OB-55: who may approve closing the day with pending payments carried forward — the day-close approval authority. */
+export const DAY_CLOSE_EXCEPTION_AUTHORITY = 'till.dayclose.approve';
+const KINDS: readonly ApprovalKind[] = ['refund', 'no_receipt_return', 'exchange_refund', 'no_sale', 'price_override', 'late_payment_answer'];
 /** The overrides (PF-07): approved by `OVERRIDE_AUTHORITY`, spent by the till action they were given for. */
 export const OVERRIDE_KINDS: readonly ApprovalKind[] = ['no_sale', 'price_override'];
 
@@ -227,13 +235,55 @@ export class TillApprovals {
   }
 
   /**
+   * OB-55 "A": a SECOND person approves, with their own staff ID and till PIN on this store computer (offline), closing the
+   * day with the named card/UPI payments carried forward to head office. Issued and spent in one step by the close it is for
+   * (`dayCloseId`), bound to the closer, the attempts it names and their total — one use. The same close asked again
+   * re-uses its own approval (a lost reply), never a second one. Never the closer (§28); the approver must hold
+   * `till.dayclose.approve`. A PIN is never written.
+   */
+  async approveDayCloseException(input: {
+    readonly dayCloseId: string; readonly closerId: string; readonly laneId: string;
+    readonly approverId: string; readonly approverPin: string; readonly reason: string;
+    readonly attemptIds: readonly string[]; readonly valueMinor: number;
+  }): Promise<{ readonly ok: true; readonly approvalId: string; readonly approvedBy: string } | { readonly ok: false; readonly refusedBecause: string; readonly laneMessage: string }> {
+    const approverId = input.approverId.trim();
+    if (approverId === '' || input.approverPin === '' || input.reason.trim() === '' || input.attemptIds.length === 0) {
+      return { ok: false, refusedBecause: 'approval_not_readable', laneMessage: 'The second person must give their staff ID and their own till PIN, with a reason.' };
+    }
+    if (approverId === input.closerId) {
+      return { ok: false, refusedBecause: 'self_approval', laneMessage: 'A second person must approve closing with a payment carried forward — never the person closing the day.' };
+    }
+    const who = await this.deps.operators.verifyPerson({ staffId: approverId, pin: input.approverPin, laneId: input.laneId, authority: DAY_CLOSE_EXCEPTION_AUTHORITY });
+    if (!who.ok) return { ok: false, refusedBecause: who.refusedBecause, laneMessage: who.laneMessage };
+    const billRef = `${input.dayCloseId}|${[...input.attemptIds].sort().join(',')}`;
+    // The same close asked again (a lost reply) re-uses ITS approval: one approval per close, spent by that close.
+    for (const g of this.granted.values()) {
+      if (g.kind === 'day_close_exception' && this.usedBy.get(g.approvalId) === input.dayCloseId) {
+        if (g.billRef === billRef && g.approvedBy === who.userId && g.requestedBy === input.closerId && g.valueMinor === input.valueMinor) {
+          return { ok: true, approvalId: g.approvalId, approvedBy: g.approvedBy };
+        }
+        return { ok: false, refusedBecause: 'approval_already_used', laneMessage: 'This close already has a different approval. Nothing was done — start the close again.' };
+      }
+    }
+    const at = this.deps.now();
+    const approvalId = `apr-${randomBytes(12).toString('hex')}`;
+    await this.record({
+      kind: 'granted', approvalId, subjectKind: 'day_close_exception', billRef, valueMinor: input.valueMinor,
+      requestedBy: input.closerId, approvedBy: who.userId, laneId: input.laneId, reason: input.reason.trim().slice(0, 200),
+      at, expiresAt: at,
+    });
+    await this.record({ kind: 'used', at, approvalId, usedBy: input.dayCloseId });
+    return { ok: true, approvalId, approvedBy: who.userId };
+  }
+
+  /**
    * Spend an approval on a SUPERVISOR OVERRIDE (audit PF-07): a no-sale or a price override, by the till action
    * `activityId`. It must have been issued here, for this kind, bill and amount, to this cashier on this till, not
    * expired, and not spent by a DIFFERENT action — the same action re-sent after a lost reply is the same use. An
    * override always needs one: there is no threshold below which a cashier overrides alone (§28).
    */
   async spendOverride(input: {
-    readonly approvalId: unknown; readonly kind: 'no_sale' | 'price_override'; readonly billRef: string | null; readonly valueMinor: number;
+    readonly approvalId: unknown; readonly kind: 'no_sale' | 'price_override' | 'late_payment_answer'; readonly billRef: string | null; readonly valueMinor: number;
     readonly requestedBy: string; readonly laneId: string; readonly activityId: string;
   }): Promise<ReturnCheck> {
     const say: Record<'approval_required' | 'approval_unknown' | 'approval_expired' | 'approval_already_used' | 'approval_does_not_match', string> = {

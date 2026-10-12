@@ -207,6 +207,14 @@ export interface DeliveryStateRecord {
   readonly at: string;
   /** Present only on a `deliver` step — the proof (photo/OTP/signature) reference, never deleted (#6). */
   readonly proofRef?: string;
+  /**
+   * Round 14 (verifier G7): a step relayed from a driver's phone whose clock ran AHEAD of head office — the time the phone
+   * said (`at` is then clamped to `receivedAt`, head office's own receipt time). Both are kept; a stuck delivery can never
+   * read fresh because a phone's clock was fast.
+   */
+  readonly deviceAt?: string;
+  /** Round 14 (G7): when head office received the relayed step (relayed steps only). */
+  readonly receivedAt?: string;
 }
 
 export interface FulfilmentDeps {

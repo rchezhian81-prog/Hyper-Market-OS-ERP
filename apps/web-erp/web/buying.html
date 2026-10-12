@@ -120,6 +120,23 @@
       .pill.posted { background: var(--ok); color: var(--on-accent); }
       .pill.refused { background: var(--danger-surface); color: var(--on-danger); }
       .pill.retrying { background: var(--warn); color: var(--on-warn); }
+      /* WF-03 (round 12): the open-to-buy panel. */
+      h3 { margin: 12px 0 4px; font-size: 17px; }
+      .otb-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+      .otb-status { font-size: 15px; min-height: 20px; margin: 4px 0; overflow-wrap: anywhere; }
+      .otb-status.good { color: var(--good); } .otb-status.err { color: var(--danger-text); }
+      .otb-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin: 8px 0; }
+      .otb-summary div { background: var(--panel); border-radius: 12px; padding: 10px 14px; }
+      .otb-summary .label { display: block; color: var(--muted); font-size: 13px; }
+      .otb-summary .value { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+      tr.over td { color: var(--danger-text); }
+      .escalation { background: var(--panel); border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; display: grid; gap: 6px; border-left: 6px solid var(--line); }
+      .escalation.over { border-left-color: var(--danger); }
+      .escalation .what { font-weight: 600; overflow-wrap: anywhere; }
+      .escalation .why { font-size: 15px; overflow-wrap: anywhere; }
+      .escalation .field { margin-bottom: 4px; }
+      .version { font-size: 15px; padding: 6px 0; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
+      .version.superseded { color: var(--muted); text-decoration: line-through; }
     </style>
   </head>
   <body>
@@ -146,6 +163,7 @@
       <button id="tab-invoice" type="button" aria-current="page">Supplier invoice</button>
       <button id="tab-match" type="button">Check against the order</button>
       <button id="tab-po" type="button">Raise an order</button>
+      <button id="tab-budget" type="button">Budget (open to buy)</button>
     </nav>
 
     <main>
@@ -241,6 +259,52 @@
         <button id="add-po-line" type="button" class="wide">Add this item</button>
         <div id="po-lines"></div>
         <button id="raise-po" class="primary wide" type="button">Raise the order</button>
+      </section>
+
+      <!--
+        WF-03 · D02-FR-01 · D03-FR-01 (round 12): open-to-buy — each category's budget for the month, what issued orders have
+        committed, what waits for approval, what is left. Head office's figures, read live; the owner sets a budget here; an
+        order over budget escalates to the owner (OB-63) and head office's refusals are shown in its words.
+      -->
+      <section id="view-budget" hidden>
+        <h2 id="budget-title">Budget (open to buy)</h2>
+        <p class="lead" id="budget-lead">How much each category may still buy this month. Orders over the budget go to the owner.</p>
+        <div class="otb-row">
+          <div class="field">
+            <label for="budget-period" id="budget-period-label">Month</label>
+            <input id="budget-period" type="month" />
+          </div>
+          <div class="field">
+            <label for="budget-store" id="budget-store-label">Store (leave empty for the whole company)</label>
+            <input id="budget-store" type="text" autocomplete="off" />
+          </div>
+        </div>
+        <button id="budget-read" class="wide" type="button">Show this month</button>
+        <p class="otb-status" id="budget-status" role="status" aria-live="polite"></p>
+        <div class="otb-summary" id="budget-summary"></div>
+        <table id="otb-table"></table>
+
+        <h3 id="waiting-title">Orders waiting for approval this month</h3>
+        <div id="waiting-orders"></div>
+
+        <h3 id="overrides-title">Orders issued over budget this month</h3>
+        <div id="budget-overrides"></div>
+
+        <div id="budget-set" hidden>
+          <h3 id="budget-set-title">Set a category budget</h3>
+          <p class="lead" id="budget-set-lead">A new figure for the same category, month and store replaces the old one; the old one stays on record.</p>
+          <div class="otb-row">
+            <div class="field"><label for="budget-category" id="budget-category-label">Category</label><input id="budget-category" type="text" autocomplete="off" /></div>
+            <div class="field"><label for="budget-amount" id="budget-amount-label">Budget for the month (in rupees)</label><input id="budget-amount" type="text" inputmode="decimal" autocomplete="off" /></div>
+          </div>
+          <div class="field"><label for="budget-reason" id="budget-reason-label">Why this figure</label><input id="budget-reason" type="text" autocomplete="off" /></div>
+          <button id="budget-save" class="primary wide" type="button">Set this budget</button>
+          <p class="otb-status" id="budget-set-status" role="status" aria-live="polite"></p>
+        </div>
+        <p class="otb-status" id="budget-set-not" role="status"></p>
+
+        <h3 id="history-title">Budget figures set for this month</h3>
+        <div id="budget-history"></div>
       </section>
     </main>
 

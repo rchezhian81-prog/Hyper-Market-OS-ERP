@@ -178,7 +178,9 @@ describe('SqlEventStore', () => {
     // the statement is INSERT … ON CONFLICT DO NOTHING (never DO UPDATE — append-only)
     const sql = client.calls[0]?.sql ?? '';
     expect(sql).toContain('INSERT INTO event_ledger');
-    expect(sql).toContain('ON CONFLICT (tenant_id, idempotency_key) DO NOTHING');
+    // No conflict target: the key AND the event id are both arbiters, so a concurrent identical append waits and
+    // collapses instead of meeting the id's unique constraint as a raw error.
+    expect(sql).toContain('ON CONFLICT DO NOTHING');
     expect(sql).not.toContain('DO UPDATE');
     expect(client.calls[0]?.params?.[1]).toBe('t1'); // tenant_id bound as a parameter
   });

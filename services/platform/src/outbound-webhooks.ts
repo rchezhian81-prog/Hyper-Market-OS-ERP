@@ -21,10 +21,25 @@
 //
 // The pass runs on a timer in the head-office process (the PA-08 worker) only when an outbound transport is configured;
 // with none — today, no partner is live — messages wait, visible in the reconciliation read.
+//
+// Round 10:
+//   • SSRF GUARD (public-destination.ts) — a subscription URL must resolve only to public internet addresses: refused
+//     at subscribe (422 `webhook_destination_not_public`) and checked AGAIN before every send, because DNS can change
+//     after the subscription was approved; a destination that has turned private is not sent to — the message is
+//     dead-lettered, saying why. The vetted address is handed to the transport so it connects to exactly that address.
+//   • MAKER-CHECKER — a partner subscription to business events (a new one, or any change to it) takes a second
+//     person's approval through head office's approvals engine (kind `partner_webhook_subscription`, ADR-0024): the
+//     maker asks for exactly this subscription, another person with setup rights approves it in their own session, and
+//     the approval is spent once. Switching one OFF needs no second person (it only stops sending).
 
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
+import { actionDetails, approvalNamedIn, type ApprovalPort } from '../../identity/src/approval-requests';
+import { judgeDestination, systemResolveHost, type ResolveHost } from './public-destination';
+
+/** Round 10: the approvals-engine kind a partner subscription is made under. */
+export const PARTNER_SUBSCRIPTION_APPROVAL = 'partner_webhook_subscription';
 
 /** The business events a partner may subscribe to (§30.2), each with the ledger stream it is read from. */
 export type PublishableEvents = Readonly<Record<string, string>>;
@@ -42,6 +57,8 @@ export interface OutboundSubscription {
   readonly deliverFrom: string;
   readonly setBy: string;
   readonly setAt: string;
+  /** Round 10: the second person who approved this version (absent on a switch-off, and on versions from before). */
+  readonly approvedBy?: string;
 }
 
 export type OutboundFact =
@@ -52,7 +69,13 @@ export type OutboundFact =
 /** The port the pass sends through (HTTPS in a deployment, a recording fake in tests). */
 export interface OutboundTransport {
   readonly name: string;
-  send(input: { readonly url: string; readonly headers: Readonly<Record<string, string>>; readonly body: string }): Promise<{ readonly status: number | null }>;
+  /**
+   * `address` (round 10): the public address the destination was vetted at just now — a real transport connects to
+   * exactly it (keeping the URL's host for TLS and the Host header), so nothing resolves the name again in between.
+   */
+  send(input: { readonly url: string; readonly headers: Readonly<Record<string, string>>; readonly body: string; readonly address?: string }): Promise<{ readonly status: number | null }>;
+  /** Round 10: how this transport resolves a host name (the SSRF guard judges what it returns). Absent: the system's. */
+  readonly resolve?: ResolveHost;
 }
 
 export interface OutboundWebhookDeps {
@@ -64,8 +87,14 @@ export interface OutboundWebhookDeps {
   /** Resolve a vault reference to its secret at send time; undefined = not available (the message waits, said). */
   readonly secretFor: (ref: string) => string | undefined;
   readonly transport?: OutboundTransport;
+  /** Round 10: head office's maker-checker engine. Absent on a bare stub: then no subscription can be approved. */
+  readonly approvals?: ApprovalPort;
+  /** Round 10: the resolver the SSRF guard uses; absent → the transport's, else the operating system's. */
+  readonly resolveHost?: ResolveHost;
   readonly now: () => string;
 }
+
+const resolverOf = (deps: OutboundWebhookDeps): ResolveHost => deps.resolveHost ?? deps.transport?.resolve ?? systemResolveHost;
 
 export const OUTBOUND_API_VERSION = 'v1';
 const RETRYABLE = (s: number | null): boolean => s === null || s === 408 || s === 429 || s >= 500;
@@ -137,9 +166,17 @@ export async function drainOutboundWebhooks(deps: OutboundWebhookDeps, tenantId:
           'content-type': 'application/json', 'x-sre-webhook-id': messageId, 'x-sre-webhook-timestamp': timestamp,
           'x-sre-webhook-signature': signOutbound(secret, timestamp, body), 'x-sre-api-version': OUTBOUND_API_VERSION,
         };
-        let status: number | null;
-        try { status = (await transport.send({ url: sub.url, headers, body })).status; } catch { status = null; }
         const attempt = state.attempts + 1;
+        // Round 10: the destination is judged AGAIN, now — DNS can have changed since the subscription was approved.
+        const where = await judgeDestination(sub.url, resolverOf(deps));
+        if (!where.ok) {
+          const fact: OutboundFact = { change: 'attempt', subscriptionId: sub.subscriptionId, messageId, series: state.series, attempt, status: null, outcome: 'dead_lettered', detail: `not sent: ${where.why}`, at: deps.now() };
+          await deps.record(tenantId, fact, `attempt-${sub.subscriptionId}-${messageId}-s${state.series}-a${attempt}`);
+          outcome.push({ id: messageId, result: 'dead_lettered', detail: fact.detail });
+          continue;
+        }
+        let status: number | null;
+        try { status = (await transport.send({ url: sub.url, headers, body, address: where.addresses[0]! })).status; } catch { status = null; }
         const at = deps.now();
         let fact: OutboundFact;
         if (status !== null && status >= 200 && status < 300) {
@@ -148,7 +185,7 @@ export async function drainOutboundWebhooks(deps: OutboundWebhookDeps, tenantId:
           const nextAttemptAt = new Date(Date.parse(at) + 60_000 * 2 ** (attempt - 1)).toISOString();
           fact = { change: 'attempt', subscriptionId: sub.subscriptionId, messageId, series: state.series, attempt, status, outcome: 'retry', detail: status === null ? 'no answer' : `${status}`, at, nextAttemptAt };
         } else {
-          fact = { change: 'attempt', subscriptionId: sub.subscriptionId, messageId, series: state.series, attempt, status, outcome: 'dead_lettered', detail: RETRYABLE(status) ? `gave up after ${attempt} attempt(s) (${status ?? 'no answer'})` : `the partner refused it (${status})`, at };
+          fact = { change: 'attempt', subscriptionId: sub.subscriptionId, messageId, series: state.series, attempt, status, outcome: 'dead_lettered', detail: RETRYABLE(status) ? `gave up after ${attempt} attempt(s) (${status ?? 'no answer'})` : status !== null && status >= 300 && status < 400 ? `the partner answered with a redirect (${status}) — a redirect is never followed` : `the partner refused it (${status})`, at };
         }
         await deps.record(tenantId, fact, `attempt-${sub.subscriptionId}-${messageId}-s${state.series}-a${attempt}`);
         outcome.push({ id: messageId, result: fact.outcome === 'delivered' ? 'delivered' : fact.outcome === 'retry' ? 'retry_later' : 'dead_lettered', detail: fact.detail });
@@ -206,11 +243,27 @@ export function outboundWebhookRoutes(deps: OutboundWebhookDeps): readonly Route
         const prior = subscriptions.get(subscriptionId);
         const same = prior !== undefined && prior.active && prior.partnerId === b['partnerId'] && prior.url === b['url'] && prior.signingKeyRef === b['signingKeyRef'] && prior.maxAttempts === maxAttempts && prior.eventTypes.join(',') === types.join(',');
         if (same) return { status: 200, body: { subscription: prior, unchanged: true } };
+        // Round 10 (SSRF): the URL must resolve only to public internet addresses — never head office's own network.
+        const where = await judgeDestination(b['url'] as string, resolverOf(deps));
+        if (!where.ok) {
+          throw apiError(422, { code: 'webhook_destination_not_public', whatHappened: `Head office will not send to ${b['url'] as string}: ${where.why}. A partner's endpoint must be on the public internet.`, wasItSaved: 'not_saved', nextSafeAction: 'Use the partner\'s public https address. Nothing was set up.' });
+        }
         const at = deps.now();
+        const version = (prior?.version ?? 0) + 1;
+        // Round 10 (maker-checker): a second person approves exactly this subscription, in their own session.
+        const opened = await approvalNamedIn(deps.approvals, {
+          tenantId: ctx.tenantId, approvalId: b['approvalId'], typedField: 'approvedBy', typedValue: b['approvedBy'],
+          kind: PARTNER_SUBSCRIPTION_APPROVAL, subjectRef: subscriptionId, details: actionDetails(ctx.body, { subscriptionId }), valueMinor: null,
+          maker: ctx.userId, usedBy: `outbound-webhook:${subscriptionId}:v${version}`, now: at,
+        });
+        if (opened === undefined) {
+          throw apiError(422, { code: 'partner_subscription_needs_approval', whatHappened: 'Sending the shop\'s business events to a partner needs a second person\'s approval, given in their own session for exactly this subscription (§28).', wasItSaved: 'not_saved', nextSafeAction: `Ask for approval (POST /v1/approvals/requests, kind ${PARTNER_SUBSCRIPTION_APPROVAL}, with exactly this subscription); once another person approves it, send it again with the approvalId. Nothing was set up.` });
+        }
         const subscription: OutboundSubscription = {
           subscriptionId, partnerId: b['partnerId'] as string, url: b['url'] as string, eventTypes: types, signingKeyRef: b['signingKeyRef'] as string,
-          maxAttempts, active: true, version: (prior?.version ?? 0) + 1, deliverFrom: prior?.deliverFrom ?? at, setBy: ctx.userId, setAt: at,
+          maxAttempts, active: true, version, deliverFrom: prior?.deliverFrom ?? at, setBy: ctx.userId, setAt: at, approvedBy: opened.decision.decidedBy,
         };
+        await opened.spend();
         await deps.record(ctx.tenantId, { change: 'subscribed', subscription }, `sub-${subscriptionId}-v${subscription.version}`);
         return { status: 201, body: { subscription } };
       },
@@ -222,7 +275,10 @@ export function outboundWebhookRoutes(deps: OutboundWebhookDeps): readonly Route
       handler: async (ctx) => {
         const { sub } = await load(ctx.tenantId, (ctx.params['subscriptionId'] ?? '').trim());
         if (!sub.active) return { status: 200, body: { subscription: sub, alreadyOff: true } };
-        const subscription: OutboundSubscription = { ...sub, active: false, version: sub.version + 1, setBy: ctx.userId, setAt: deps.now() };
+        // A switch-off is nobody's approval: the earlier version's approver is not carried onto it.
+        const was: Partial<OutboundSubscription> & OutboundSubscription = { ...sub };
+        delete (was as { approvedBy?: string }).approvedBy;
+        const subscription: OutboundSubscription = { ...was, active: false, version: sub.version + 1, setBy: ctx.userId, setAt: deps.now() };
         await deps.record(ctx.tenantId, { change: 'subscribed', subscription }, `sub-${sub.subscriptionId}-v${subscription.version}`);
         return { status: 200, body: { subscription } };
       },

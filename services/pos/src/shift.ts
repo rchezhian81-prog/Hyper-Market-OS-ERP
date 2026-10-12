@@ -5,10 +5,11 @@
 // office sees. Since PF-08 (OB-27 "A") head office has no direct close of its own.
 
 import type { Route } from '../../kernel/src/index';
-import { apiError } from '../../kernel/src/index';
+import { apiError, assertRecordBranchInScope, narrowScope } from '../../kernel/src/index';
 import { assessShiftClose, checkDenominationCount, assessOverShortReview, type DenominationCount } from '../../../packages/till/src/index';
 import { personFindings } from './cash';
 import { cashierSealFlags, stampIn, type CashierSealFlag } from './store-seal';
+import { tillStoreOf, type TillStoreDeps } from './till-store';
 
 /** What the cloud found when it re-verified a close the store box relayed (SP-4c · §28 · hard rule #10). */
 export type ShiftGovernanceFlag =
@@ -28,6 +29,12 @@ export type ShiftGovernanceFlag =
 export interface ClosedShiftRecord {
   readonly shiftId: string;
   readonly tillId: string;
+  /**
+   * OB-80 "A" (owner, 12 Oct 2026): the store whose till this is — a till is (store, till). The relaying box's own store
+   * (stamped by head office from its credential), else the store the body names. Absent on a close taken before OB-80
+   * (read as the till's store under the migration rule in `services/api/src/till-identity.ts`).
+   */
+  readonly storeId?: string;
   readonly cashierId: string;
   readonly tradingDay: string;
   readonly expectedMinor: number;
@@ -88,7 +95,7 @@ export interface ShortageInvestigationOutcome {
   readonly detail?: string;
 }
 
-export interface ShiftDeps {
+export interface ShiftDeps extends TillStoreDeps {
   readonly closedShift: (tenantId: string, shiftId: string) => Promise<ClosedShiftRecord | undefined> | ClosedShiftRecord | undefined;
   readonly recordShiftClose: (tenantId: string, record: ClosedShiftRecord) => Promise<void> | void;
   /**
@@ -110,6 +117,12 @@ export interface ShiftDeps {
   readonly permissionsOfUser?: (tenantId: string, userId: string) => Promise<readonly string[] | undefined> | readonly string[] | undefined;
   /** The key head office checks the store computer's seal with (ADR-0023) — on a relayed close. Absent → not checked. */
   readonly tillSealKey?: Buffer;
+}
+
+/** OB-80/OB-82: the store a close belongs to — the store it names, else (kept before OB-80) its till's one-time legacy placement. */
+async function closeStoreOf(deps: ShiftDeps, tenantId: string, r: ClosedShiftRecord): Promise<string | undefined> {
+  if (r.storeId !== undefined && r.storeId !== '') return r.storeId;
+  return deps.legacyStoreOfTill === undefined ? undefined : deps.legacyStoreOfTill(tenantId, r.tillId);
 }
 
 export function shiftRoutes(deps: ShiftDeps): readonly Route[] {
@@ -148,6 +161,8 @@ export function shiftRoutes(deps: ShiftDeps): readonly Route[] {
           });
         }
         const n = (k: typeof RELAYED_NUMS[number]): number => b[k] as number;
+        // OB-80: the till is (store, till) — a box's own store is stamped on the close by head office.
+        const storeId = await tillStoreOf(deps, ctx, tillId, b['storeId']);
 
         const flags: string[] = [
           ...await personFindings(deps, ctx.tenantId, cashierId, 'cashier_unknown', 'cashier_lacks_authority'),
@@ -177,7 +192,7 @@ export function shiftRoutes(deps: ShiftDeps): readonly Route[] {
         }
 
         const record: ClosedShiftRecord = {
-          shiftId, tillId, cashierId, tradingDay,
+          shiftId, tillId, ...(storeId === undefined ? {} : { storeId }), cashierId, tradingDay,
           expectedMinor: recomputed.expectedMinor, countedMinor: n('countedMinor'), varianceMinor: recomputed.varianceMinor,
           currency: typeof b['currency'] === 'string' ? (b['currency'] as string) : 'INR',
           exceptionRaised: recomputed.exceptionRaised, reasonCode: recomputed.reasonCode,
@@ -197,7 +212,7 @@ export function shiftRoutes(deps: ShiftDeps): readonly Route[] {
         return {
           status: 202,
           body: {
-            shiftId, tillId, recorded: true, expectedMinor: recomputed.expectedMinor, varianceMinor: recomputed.varianceMinor,
+            shiftId, tillId, storeId: storeId ?? null, recorded: true, expectedMinor: recomputed.expectedMinor, varianceMinor: recomputed.varianceMinor,
             exceptionRaised: recomputed.exceptionRaised, flags, ...(investigation !== undefined ? { investigation } : {}),
           },
         };
@@ -207,13 +222,22 @@ export function shiftRoutes(deps: ShiftDeps): readonly Route[] {
       api: 'API-05', method: 'GET', path: '/v1/shifts/over-short',
       permission: 'till.shift.read',
       handler: async (ctx) => {
-        const rows = await deps.overShortShifts(ctx.tenantId);
+        // OB-83 "A" (owner, 12 Oct 2026, "Own store's manager only"): a branch-limited person sees ONLY their own stores'
+        // over/shorts — the store of each close is head office's own (its storeId; a close kept before OB-80 by the till's
+        // one-time legacy placement, OB-82). Head office / the owner (company-wide scope) sees every store. A close no store
+        // can be found for is shop-wide: only a company-wide reader sees it. `?storeId=` narrows (refused by name when not held).
+        const asked = typeof ctx.query['storeId'] === 'string' && ctx.query['storeId'].trim() !== '' ? ctx.query['storeId'] : undefined;
+        const scope = narrowScope(ctx, asked === undefined ? undefined : [asked]);
+        const placed = await Promise.all((await deps.overShortShifts(ctx.tenantId)).map(async (r) => ({ r, store: await closeStoreOf(deps, ctx.tenantId, r) })));
+        const rows = placed
+          .filter(({ store }) => (scope === 'all' ? asked === undefined || store === asked : store !== undefined && scope.includes(store)))
+          .map(({ r, store }) => ({ ...r, storeId: store, legacyPlaced: r.storeId === undefined && store !== undefined }));
         const reviews = await deps.overShortReviews(ctx.tenantId);
         const reviewByShift = new Map(reviews.map((r) => [r.shiftId, r] as const));
         const mapped = rows.map((r) => {
           const review = reviewByShift.get(r.shiftId);
           return {
-            shiftId: r.shiftId, tillId: r.tillId, cashierId: r.cashierId, tradingDay: r.tradingDay,
+            shiftId: r.shiftId, tillId: r.tillId, storeId: r.storeId ?? null, ...(r.legacyPlaced ? { legacyPlaced: true } : {}), cashierId: r.cashierId, tradingDay: r.tradingDay,
             varianceMinor: r.varianceMinor, reasonCode: r.reasonCode, denominations: r.denominations ?? null,
             // A relayed close and what the cloud found when it re-verified it (SP-4c), for the cash office (P-08).
             laneId: r.laneId ?? null, relayed: r.relayed === true, flags: r.flags ?? [],
@@ -252,6 +276,10 @@ export function shiftRoutes(deps: ShiftDeps): readonly Route[] {
             nextSafeAction: 'Check the shift id on the over/short list and try again.',
           });
         }
+
+        // OB-83 "A": only a person whose own scope covers the close's store signs it off (head office covers all); a close
+        // with no store is shop-wide, so only a company-wide person may (PA-01 helpers — refused by name, nothing saved).
+        assertRecordBranchInScope(ctx, await closeStoreOf(deps, ctx.tenantId, record));
 
         const existing = (await deps.overShortReviews(ctx.tenantId)).find((r) => r.shiftId === shiftId);
         if (existing !== undefined) {

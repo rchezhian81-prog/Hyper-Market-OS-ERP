@@ -1,5 +1,12 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { Pool } from 'pg';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { SqlEventStore } from '../../packages/persistence/src/event-store';
+import { SqlIdempotencyStore } from '../../services/kernel/src/index';
+import { pgPoolClient } from '../../packages/persistence/src/pg-client';
+import { runMigrations } from '../../packages/persistence/src/migrations';
 
 // DR-drill scoring & backup-retention eligibility, end to end (M35-FR-02, API-11, §32, hard rule #6). The
 // readiness posture around a proven backup: can the shop come back inside the roadmap's RPO/RTO, and which
@@ -133,5 +140,53 @@ describe('DR-drill register: the durable §32 evidence over N quarters (M35-FR-0
     // A cashier holds neither scope → refused on both the write and the read.
     expect((await record(h, 'u-cash', { drillId: 'x', service: 'cloud', dataLossSeconds: 1, recoverySeconds: 1 })).status).toBe(403);
     expect((await register(h, 'u-cash')).status).toBe(403);
+  });
+});
+
+// ── the register on real PostgreSQL (M35-FR-02 · §32 · hard rule #6) ──────────────────────────────────────────────────
+// The register is the evidence that recovery passed N quarters running, so it must survive a restart: drills recorded
+// through one head-office instance are read back — the miss included — by a second instance over the same database; a
+// re-sent record (the same idempotency key) is one drill; the refusals hold.
+const DATABASE_URL = process.env['DATABASE_URL'];
+const PG_TENANT = `d${Date.now().toString(16).slice(-7)}-d8d8-4ddd-8ddd-${'d'.repeat(12)}`;
+
+describe.skipIf(!DATABASE_URL)('DR-drill register on real PostgreSQL (M35-FR-02)', () => {
+  let pool: Pool;
+  beforeAll(async () => {
+    pool = new Pool({ connectionString: DATABASE_URL, max: 4, options: '-c app.tenant_id=*' });
+    const dir = 'db/migrations';
+    await runMigrations(pgPoolClient(pool), readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()
+      .map((name) => ({ name, sql: readFileSync(join(dir, name), 'utf8') })));
+  });
+  afterAll(async () => { await pool.end(); });
+  const harness = (): ApiHarness => { const sql = pgPoolClient(pool); return apiHarness({ store: new SqlEventStore(sql), idempotency: new SqlIdempotencyStore(sql) }); };
+  const on = (h: ApiHarness, method: 'GET' | 'POST', path: string, userId: string, body?: unknown, key?: string) =>
+    h.request({ method, path, userId, tenantId: PG_TENANT, ...(key === undefined ? {} : { idempotencyKey: key }), ...(body === undefined ? {} : { body }) });
+
+  it('a pass and a miss are kept across a restart, a re-sent record is one drill, and the cashier is refused', async () => {
+    const h = harness();
+    await h.seedOwner(PG_TENANT, 'u-owner');
+    await h.provisionRole(PG_TENANT, 'u-cash', 'cashier');
+    expect((await on(h, 'POST', '/v1/platform/dr-drills', 'u-owner', { drillId: 'q4-cloud', service: 'cloud', dataLossSeconds: 60, recoverySeconds: 3_600 }, 'pg-q4-cloud')).status).toBe(201);
+    const miss = await on(h, 'POST', '/v1/platform/dr-drills', 'u-owner', { drillId: 'q4-edge', service: 'store-edge (committed sales)', dataLossSeconds: 0, recoverySeconds: 2_700 }, 'pg-q4-edge');
+    expect(miss.status).toBe(201);
+    expect((miss.body as { recorded: { result: { passed: boolean; detail: string } } }).recorded.result).toMatchObject({ passed: false, detail: 'took 2700s to recover against an RTO of 1800s' });
+    // The same record re-sent (a lost answer, a retried click) is the same drill — not a second one.
+    expect((await on(h, 'POST', '/v1/platform/dr-drills', 'u-owner', { drillId: 'q4-edge', service: 'store-edge (committed sales)', dataLossSeconds: 0, recoverySeconds: 2_700 }, 'pg-q4-edge')).status).toBe(201);
+    // Refused, and nothing recorded: a cashier, and a drill with no id.
+    expect((await on(h, 'POST', '/v1/platform/dr-drills', 'u-cash', { drillId: 'x', service: 'cloud', dataLossSeconds: 1, recoverySeconds: 1 }, 'pg-cash')).status).toBe(403);
+    expect(codeOf(await on(h, 'POST', '/v1/platform/dr-drills', 'u-owner', { service: 'cloud', dataLossSeconds: 1, recoverySeconds: 1 }, 'pg-noid'))).toBe('drill_needs_an_id');
+
+    // A second head-office instance over the same database (a restart) reads the same register.
+    const again = harness();
+    const reg = (await on(again, 'GET', '/v1/platform/dr-drills', 'u-owner')).body as {
+      drills: { drillId: string; drilledBy: string; result: { passed: boolean } }[];
+      posture: { service: string; passed: boolean }[];
+      summary: { recorded: number; passed: number; missed: number; servicesCovered: number };
+    };
+    expect(reg.summary).toEqual({ recorded: 2, passed: 1, missed: 1, servicesCovered: 2 });
+    expect(reg.drills.map((d) => [d.drillId, d.drilledBy, d.result.passed]).sort()).toEqual([['q4-cloud', 'u-owner', true], ['q4-edge', 'u-owner', false]]);
+    expect(reg.posture.find((p) => p.service === 'store-edge (committed sales)')?.passed).toBe(false);
+    expect((await on(again, 'GET', '/v1/platform/dr-drills', 'u-cash')).status).toBe(403);
   });
 });

@@ -26,27 +26,38 @@ export interface EditorOption {
 export interface EditorSpec {
   readonly kind: EditorKind;
   readonly options?: readonly EditorOption[];
+  /** A number editor's bounds and step — the catalogue's declared range, so the spinner and the engine agree. */
+  readonly min?: number;
+  readonly max?: number;
+  /** 1 for a whole-number setting; absent ("any") for a decimal one. */
+  readonly step?: number;
 }
 
-/** Which input each setting uses. Anything unlisted is plain text (still engine-validated on save). */
-const KINDS: Readonly<Record<string, EditorSpec>> = {
-  'tax.default_bps': { kind: 'number' },
+/**
+ * The few settings whose TYPE alone cannot say how to edit them: they are all strings, and the string has a format
+ * (a time, a choice from a list, a currency code). Everything else — every number, every on/off, every list — takes
+ * its editor from the catalogue (its default's type and its declared range), so a setting added to the catalogue is
+ * editable on the screen without anyone remembering this file. Round 13: the three loyalty settings and the
+ * bulk-publish line were missing from a hand-kept list here, fell through to a TEXT box, and could not be saved.
+ */
+const STRING_FORMATS: Readonly<Record<string, EditorSpec>> = {
   'trading_day.cutoff': { kind: 'time' },
-  'locale.time_zone': { kind: 'text' },
   'receipt.paper_format': { kind: 'select', options: PAPER_FORMATS.map((f) => ({ id: f.id, label: f.label })) },
-  'locale.languages': { kind: 'list' },
   'locale.currency': { kind: 'currency' },
-  'production.departments': { kind: 'list' },
-  'picking.zone_order': { kind: 'list' },
-  'delivery.radius_km': { kind: 'decimal' },
-  'pos.age_restricted.minimum_age': { kind: 'number' },
-  'pos.licence_hours.enabled': { kind: 'toggle' },
-  'merchandising.shelf_count_stale_after_minutes': { kind: 'number' },
-  'merchandising.shelf_refill_at_bp': { kind: 'number' },
 };
 
 export function editorFor(key: string): EditorSpec {
-  return KINDS[key] ?? { kind: 'text' };
+  const item = setupItem(key);
+  if (item === undefined) return { kind: 'text' };
+  const declared = item.setting.defaultValue;
+  if (typeof declared === 'number') {
+    const range = item.range;
+    const bounds = { ...(range !== undefined ? { min: range.min } : {}), ...(range?.max !== undefined ? { max: range.max } : {}) };
+    return range?.whole === false ? { kind: 'decimal', ...bounds } : { kind: 'number', ...bounds, ...(range?.whole === true ? { step: 1 } : {}) };
+  }
+  if (typeof declared === 'boolean') return { kind: 'toggle' };
+  if (Array.isArray(declared)) return { kind: 'list' };
+  return STRING_FORMATS[key] ?? { kind: 'text' };
 }
 
 export type ParseResult =

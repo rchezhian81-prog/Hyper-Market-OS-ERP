@@ -31,6 +31,7 @@ import { lossValueOf } from '../../inventory/src/write-off';
 import { DEFAULT_WRITE_OFF_THRESHOLD_MINOR, type LossType } from '../../../packages/waste/src/waste';
 import { actionDetails, approvalNamedIn, type ApprovalPort } from '../../identity/src/approval-requests';
 import { assertLocationInScope, type LocationBranches } from '../../inventory/src/location-scope';
+import { assertNotFrozenByCount, type CountFreezeCheck } from '../../inventory/src/count-freeze';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 
 export const HELD_DECISIONS = ['restock', 'write_off', 'return_to_supplier', 'repair'] as const;
@@ -89,6 +90,8 @@ export interface HeldStockDecisionDeps {
   readonly writeOffThreshold: (tenantId: string) => Promise<number | undefined> | number | undefined;
   readonly approvals?: ApprovalPort;
   readonly locationBranches?: LocationBranches;
+  /** WF-08 / OB-59: which open count plan freezes a write-off here (absent on a bare stub — nothing is frozen). */
+  readonly countFreeze?: CountFreezeCheck;
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
   readonly now: () => string;
 }
@@ -220,6 +223,8 @@ export function heldStockDecisionRoutes(deps: HeldStockDecisionDeps): readonly R
           if (!perms.includes('inventory.movement.append')) {
             refuse(403, 'write_off_needs_stock_authority', 'Writing off stock needs the stock authority, and you do not hold it.', 'Ask a manager. Nothing was recorded.');
           }
+          // WF-08 / OB-59: a write-off at a place where an open count froze write-offs of this product is refused by name.
+          await assertNotFrozenByCount(deps.countFreeze, ctx.tenantId, [{ productId: unit.productId, locationId: locationId!, kind: 'wasted' }], 'write-off of a returned unit');
           const priced = await lossValueOf(deps, ctx.tenantId, unit.productId, locationId!, unit.quantityMinor, unit.uom);
           if (priced.known && b['valueMinor'] !== undefined && b['valueMinor'] !== priced.valueMinor) {
             refuse(422, 'write_off_value_is_the_stock_cost', `This unit is worth ${priced.valueMinor} paise at head office's own cost; the request said ${b['valueMinor'] as number}. A loss is valued from the stock's cost, never typed.`, 'Send it without a value. Nothing was recorded.');

@@ -118,18 +118,19 @@ describe('a banked sale reduces on-hand stock (M08-FR-01, H-13)', () => {
     expect((await soldMovementsOf(h, A, 'S3'))[0]?.reason).toBeUndefined();
   });
 
-  it('with neither, the sale draws from its lane and SAYS SO — and the shelf gone negative is a visible exception, never a refusal', async () => {
+  it('with neither, the sale draws from the UNPLACED location of its lane and SAYS SO — and the shelf gone negative is a visible exception, never a refusal', async () => {
     const h = apiHarness();
     await h.seedOwner(B, 'u-owner');
     // No pack, no declared location, nothing received: the sale still banks (hard rule #1).
     expect((await sell(h, B, 'S4', 'SOAP', 2, 'k-s4', { laneId: 'lane-9' })).status).toBe(202);
 
     const move = (await soldMovementsOf(h, B, 'S4'))[0];
-    expect(move).toMatchObject({ locationId: 'lane-9', kind: 'sold' });
-    expect(move?.reason).toContain('assumed from lane lane-9');
+    // Round 14 (verifier G2): never the free-text lane id itself — a lane called "store-2" must not sell from store 2.
+    expect(move).toMatchObject({ locationId: 'unplaced-lane:lane-9', kind: 'sold' });
+    expect(move?.reason).toContain("lane lane-9's unplaced location");
 
-    expect((await availability(h, B, 'SOAP')).find((r) => r.locationId === 'lane-9')).toMatchObject({ onHandMinor: -2 });
-    expect(await negatives(h, B)).toContainEqual(expect.objectContaining({ productId: 'SOAP', locationId: 'lane-9', onHandMinor: -2 }));
+    expect((await availability(h, B, 'SOAP')).find((r) => r.locationId === 'unplaced-lane:lane-9')).toMatchObject({ onHandMinor: -2 });
+    expect(await negatives(h, B)).toContainEqual(expect.objectContaining({ productId: 'SOAP', locationId: 'unplaced-lane:lane-9', onHandMinor: -2 }));
   });
 
   it('a line that cannot be a movement is skipped and the sale still banks (hard rule #1)', async () => {

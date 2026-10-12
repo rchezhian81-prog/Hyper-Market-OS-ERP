@@ -18,6 +18,7 @@
 
 import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
+import { looksLikeCardNumber } from '../../../packages/ops/src/index';
 import { approverSealFlags, deciderSealFlags } from './store-seal';
 
 /** A store day close as it is recorded on the cloud — the fact the edge relayed, plus its lock. */
@@ -38,6 +39,22 @@ export interface DayCloseRecord {
    * `till.dayclose.read`). Record-and-flag: the day closed at the store either way (hard rule #10). Absent on older records.
    */
   readonly governanceFlags?: readonly string[];
+  /**
+   * OB-55 "A": the card/UPI payments this close carried forward to head office as named finance exceptions — with the
+   * second person who approved it on the store computer, and the unresolved amounts by kind. Absent: nothing was carried.
+   */
+  readonly carriedForward?: CarriedForwardOnClose;
+}
+
+/** OB-55: what a close carried forward, as head office records it on the close. */
+export interface CarriedForwardOnClose {
+  readonly approvedBy: string;
+  readonly approvalId: string;
+  readonly reason: string;
+  readonly attemptIds: readonly string[];
+  readonly unresolvedMinor: { readonly card: number; readonly upi: number };
+  /** What head office found when it re-checked the approver: not the closer, holds the authority, the box's seal on them. */
+  readonly flags: readonly string[];
 }
 
 /**
@@ -74,6 +91,37 @@ export interface DayCloseDeps {
    *  Absent on a bare stub — then nothing is checked and nothing is claimed. */
   readonly tillSealKey?: Buffer;
   readonly now: () => string;
+  /**
+   * OB-55 "A": raise each carried-forward payment as a named finance exception (keyed per payment — idempotent). Absent on
+   * a bare stub: then a close that carries payments is still recorded, with the payments on the close itself.
+   */
+  readonly carryPaymentExceptions?: (tenantId: string, close: DayCloseRecord, payments: readonly CarriedPaymentIn[]) => Promise<void> | void;
+}
+
+/** One carried payment as the store computer relayed it. */
+export interface CarriedPaymentIn {
+  readonly attemptId: string; readonly laneId: string; readonly billRef: string; readonly kind: 'card' | 'upi';
+  readonly amountMinor: number; readonly askedAt: string; readonly state: 'asked' | 'no_answer'; readonly tradingDay: string;
+}
+
+/** OB-55: the carried-forward block as relayed — undefined when absent; `null` when present but unreadable (kept at the store). */
+function readCarried(body: unknown): { readonly approvedBy: string; readonly approvalId: string; readonly reason: string; readonly payments: readonly CarriedPaymentIn[] } | undefined | null {
+  const b = (body !== null && typeof body === 'object' ? body : {}) as Record<string, unknown>;
+  const cf = b['carriedForward'];
+  if (cf === undefined) return undefined;
+  if (cf === null || typeof cf !== 'object') return null;
+  const c = cf as Record<string, unknown>;
+  const s = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
+  if (!s(c['approvedBy']) || !s(c['approvalId']) || !s(c['reason']) || !Array.isArray(c['payments']) || c['payments'].length === 0) return null;
+  const payments: CarriedPaymentIn[] = [];
+  for (const x of c['payments'] as unknown[]) {
+    const p = (x !== null && typeof x === 'object' ? x : {}) as Record<string, unknown>;
+    if (!s(p['attemptId']) || !s(p['laneId']) || !s(p['billRef']) || (p['kind'] !== 'card' && p['kind'] !== 'upi')
+      || typeof p['amountMinor'] !== 'number' || !Number.isSafeInteger(p['amountMinor']) || (p['amountMinor'] as number) <= 0
+      || !s(p['askedAt']) || (p['state'] !== 'asked' && p['state'] !== 'no_answer') || !s(p['tradingDay'])) return null;
+    payments.push({ attemptId: p['attemptId'], laneId: p['laneId'], billRef: p['billRef'], kind: p['kind'], amountMinor: p['amountMinor'] as number, askedAt: p['askedAt'], state: p['state'], tradingDay: p['tradingDay'] });
+  }
+  return { approvedBy: c['approvedBy'], approvalId: c['approvalId'], reason: c['reason'], payments };
 }
 
 /** The close as the sync agent relays it — the fact captured at the edge. */
@@ -134,7 +182,8 @@ export function dayCloseRoutes(deps: DayCloseDeps): readonly Route[] {
         }
 
         const c = readClose(ctx.body);
-        if (c === undefined) {
+        const carried = readCarried(ctx.body);
+        if (c === undefined || carried === null) {
           throw apiError(400, {
             code: 'not_readable_as_a_day_close',
             whatHappened: 'This payload could not be read as a day close — it needs a store, a trading day, who closed it and when.',
@@ -143,6 +192,17 @@ export function dayCloseRoutes(deps: DayCloseDeps): readonly Route[] {
           });
         }
 
+        // Hard rule #3, checked again at head office (defence in depth): a carried payment's reference that looks like a card
+        // number is refused before ANYTHING of this close is kept — the close stays in the store's outbox, visible, and is
+        // raised; head office never stores card data, not even inside a record it would otherwise only flag.
+        if (carried !== undefined && carried.payments.some((p) => [p.attemptId, p.laneId, p.billRef].some(looksLikeCardNumber))) {
+          throw apiError(422, {
+            code: 'provider_ref_not_a_token',
+            whatHappened: 'A payment this day close carried forward has a reference that looks like raw card data rather than a payment reference. Card numbers are never taken (hard rule #3), so nothing of this close was recorded.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Keep the close in the store\'s outbox and raise it — the day is still closed at the store. Nothing was changed here.',
+          });
+        }
         // OB-36 "A": who the store says closed the day is re-checked against THEIR grants — flagged, never refused.
         const flags: string[] = [];
         if (deps.permissionsOfUser !== undefined) {
@@ -150,14 +210,29 @@ export function dayCloseRoutes(deps: DayCloseDeps): readonly Route[] {
           if (held === undefined) flags.push('closer_unknown');
           else if (!held.includes(CLOSE_AUTHORITY)) flags.push('closer_lacks_authority');
         }
+        // OB-55: who approved carrying payments forward is re-checked like a reopen's approver — never the closer, holding
+        // `till.dayclose.approve`, and verified by their own PIN at the store computer (its seal over every word). Flags only.
+        let carriedForward: CarriedForwardOnClose | undefined;
+        if (carried !== undefined) {
+          const cflags: string[] = [];
+          if (carried.approvedBy === c.closedBy) cflags.push('approved_by_the_closer');
+          else if (!(await deps.canApproveDayReopen(ctx.tenantId, carried.approvedBy))) cflags.push('approver_lacks_authority');
+          cflags.push(...approverSealFlags(deps.tillSealKey, { tenantId: ctx.tenantId, kind: 'day_close_exception_approval', recordId: dayCloseId, named: carried.approvedBy, record: ctx.body }));
+          const sum = (k: 'card' | 'upi'): number => carried.payments.filter((p) => p.kind === k).reduce((n, p) => n + p.amountMinor, 0);
+          carriedForward = { approvedBy: carried.approvedBy, approvalId: carried.approvalId, reason: carried.reason, attemptIds: carried.payments.map((p) => p.attemptId), unresolvedMinor: { card: sum('card'), upi: sum('upi') }, flags: cflags };
+        }
         const record: DayCloseRecord = {
           dayCloseId, storeId: c.storeId, tradingDay: c.tradingDay, closedBy: c.closedBy, closedAt: c.closedAt, locked: true,
           ...(flags.length === 0 ? {} : { governanceFlags: flags }),
+          ...(carriedForward === undefined ? {} : { carriedForward }),
         };
+        // The exceptions first (each keyed on its payment), then the close: a crash between the two re-sends the close, which
+        // carries nothing twice.
+        if (carried !== undefined && deps.carryPaymentExceptions !== undefined) await deps.carryPaymentExceptions(ctx.tenantId, record, carried.payments);
         await deps.recordDayClose(ctx.tenantId, record);
         // 202, not 201: the day is closed at the store and this records that it happened. A 4xx here
         // would tell the store a day it locked did not close.
-        return { status: 202, body: { dayCloseId, closed: true, tradingDay: record.tradingDay, closedBy: record.closedBy, locked: true, flags } };
+        return { status: 202, body: { dayCloseId, closed: true, tradingDay: record.tradingDay, closedBy: record.closedBy, locked: true, flags, ...(carriedForward === undefined ? {} : { carriedForward }) } };
       },
     },
     {
@@ -238,6 +313,8 @@ export function dayCloseRoutes(deps: DayCloseDeps): readonly Route[] {
             // OB-36 "A" (round 4 acceptance): what head office found when it re-checked the person the store named as the
             // CLOSER (closer_unknown / closer_lacks_authority) — recorded on the close, and shown here, never dropped.
             closeFlags: c.governanceFlags ?? [],
+            // OB-55: the card/UPI payments this close carried forward to head office, and the amounts left unresolved.
+            carriedForward: c.carriedForward ?? null,
           };
         });
         return {
@@ -249,8 +326,8 @@ export function dayCloseRoutes(deps: DayCloseDeps): readonly Route[] {
             flaggedReopens: rows.filter((r) => r.governanceFlags.length > 0)
               .map((r) => ({ dayCloseId: r.dayCloseId, tradingDay: r.tradingDay, reopenedBy: r.reopenedBy, approvedBy: r.approvedBy, governanceFlags: r.governanceFlags })),
             // The closes a person still needs to look at — a day locked under the name of someone without that authority.
-            flaggedCloses: rows.filter((r) => r.closeFlags.length > 0)
-              .map((r) => ({ dayCloseId: r.dayCloseId, tradingDay: r.tradingDay, closedBy: r.closedBy, closeFlags: r.closeFlags })),
+            flaggedCloses: rows.filter((r) => r.closeFlags.length > 0 || (r.carriedForward?.flags.length ?? 0) > 0)
+              .map((r) => ({ dayCloseId: r.dayCloseId, tradingDay: r.tradingDay, closedBy: r.closedBy, closeFlags: [...r.closeFlags, ...(r.carriedForward?.flags ?? [])] })),
             asAt: deps.now(),
           },
         };

@@ -26,6 +26,8 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError, requireActorIsCaller } from '../../kernel/src/index';
 import { storeComputerGrantRefusal } from '../../platform/src/store-computer-identity';
+import { machineIdentitySetRefusal, machineIdentityGrantRefusal, MACHINE_ONLY_ROLES, MACHINE_IDENTITY_REFUSAL_CODE } from './machine-identities';
+import { outsidePartyGrantRefusal, OUTSIDE_LOGIN_REFUSAL_CODE } from './outside-party-logins';
 import { actionDetails, approvalNamedIn, type ApprovalPort } from './approval-requests';
 import {
   applyLifecycle, SelfServiceAccessError,
@@ -104,6 +106,13 @@ export interface AccessLifecycleDeps {
   readonly permissionsOf: (tenantId: string, userId: string) => Promise<readonly Permission[]> | readonly Permission[];
   /** Append the change — every grant added and every grant removed — as one batch. */
   readonly recordChange: (tenantId: string, change: LifecycleChange) => Promise<void> | void;
+  /** PA-12 r12: whether this user is a PERSON — given a sign-in at the identity server (/v1/identity/people). */
+  readonly isPerson?: (tenantId: string, userId: string) => Promise<boolean> | boolean;
+  /**
+   * Round 14 (verifier G5): the outside-party role (OB-76) this user holds now or has an open invite for — undefined for
+   * anyone else. Nothing is added to an outside party's login, and an outside-party role is never given here.
+   */
+  readonly outsideLoginOf?: (tenantId: string, userId: string) => Promise<string | undefined> | string | undefined;
   /**
    * The token revocation list the authenticator consults (GAP-SEC-05). A change that closes sessions revokes every
    * token the person was issued up to this moment THROUGH it, so the next request with the old token is refused.
@@ -179,6 +188,23 @@ export function accessLifecycleRoutes(deps: AccessLifecycleDeps): readonly Route
           if (unbound !== undefined) {
             throw apiError(422, { code: 'store_computer_grant_must_name_one_store', whatHappened: unbound, wasItSaved: 'not_saved', nextSafeAction: 'Name the box\'s own store only. Nobody\'s access changed.' });
           }
+        }
+        // PA-12 round 10: the access a person holds AFTER a joiner/mover change never mixes a machine-only role with another.
+        for (const who of new Set(grants.map((g) => g.userId))) {
+          const set = grants.filter((g) => g.userId === who).map((g) => g.roleId);
+          const machine = set.find((r) => MACHINE_ONLY_ROLES.includes(r));
+          // PA-12 r12: a person (a sign-in at the identity server) never becomes the machine identity.
+          const mixed = machineIdentitySetRefusal(set)
+            ?? (machine !== undefined && ((await deps.isPerson?.(ctx.tenantId, who)) ?? false) ? machineIdentityGrantRefusal(machine, [], true) : undefined);
+          if (mixed !== undefined) {
+            throw apiError(422, { code: MACHINE_IDENTITY_REFUSAL_CODE, whatHappened: mixed, wasItSaved: 'not_saved', nextSafeAction: 'Give the machine its own sign-in holding only its role. Nobody\'s access changed.' });
+          }
+        }
+        // Round 14 (verifier G5): a joiner/mover change never gives an outside-party role, nor adds a role to an outside
+        // party's login (a leaver's empty target adds nothing).
+        for (const g of grants) {
+          const outside = outsidePartyGrantRefusal(g.roleId, await deps.outsideLoginOf?.(ctx.tenantId, g.userId));
+          if (outside !== undefined) throw apiError(422, { code: OUTSIDE_LOGIN_REFUSAL_CODE, whatHappened: outside, wasItSaved: 'not_saved', nextSafeAction: 'A member of staff gets their own login; an outside party\'s login is changed through the outside-login screen. Nobody\'s access changed.' });
         }
         const requestedBy = ctx.userId;
         const at = deps.now();

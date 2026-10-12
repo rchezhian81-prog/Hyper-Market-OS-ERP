@@ -65,7 +65,8 @@ describe('the cloud records a relayed cash movement and re-verifies it (SP-4c ·
     const h = await seeded();
     const float = await relayMovement(h, A, 'u-box', movement());
     expect(float.status).toBe(202);
-    expect(float.body).toEqual({ movementId: 'cm-1', tillId: 'lane-1', recorded: true, flags: [] });
+    // OB-80: the till is store-1's own lane-1 — the store stamped from the box's credential, said on the answer.
+    expect(float.body).toEqual({ movementId: 'cm-1', tillId: 'lane-1', storeId: 'store-1', recorded: true, flags: [] });
     expect((await relayMovement(h, A, 'u-box', movement({ movementId: 'cm-2', kind: 'pickup', amountMinor: 50_000, deltaMinor: -50_000, at: '2026-09-30T12:00:00.000Z' }))).status).toBe(202);
     // The same movement again, under the same key and under a fresh one: recorded once.
     expect((await relayMovement(h, A, 'u-box', movement())).status).toBe(202);

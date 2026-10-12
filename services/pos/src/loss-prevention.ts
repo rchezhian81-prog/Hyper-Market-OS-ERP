@@ -257,6 +257,8 @@ export interface TillActivity {
   readonly activityId: string;
   readonly kind: 'void' | 'no_sale' | 'price_override';
   readonly laneId: string;
+  /** OB-80: the store whose till it was — the relaying box's own store (stamped by head office). Absent on older records. */
+  readonly storeId?: string;
   readonly cashierId: string;
   /** The bill (a void and an override always; a no-sale only when one was open). */
   readonly billRef?: string;
@@ -358,6 +360,7 @@ function readTillActivity(activityId: string, b: Record<string, unknown>): Omit<
     reason: b['reason'] as string, at: b['at'] as string,
     ...(isIsoDay(b['tradingDay']) ? { tradingDay: b['tradingDay'] } : {}),
     ...(isStr(b['via']) ? { via: b['via'] as string } : {}),
+    ...(isStr(b['storeId']) ? { storeId: b['storeId'] as string } : {}),
   };
   const line = isStr(b['billRef']) && isStr(b['lineId']) && isStr(b['productId']) && typeof b['description'] === 'string'
     ? { billRef: b['billRef'] as string, lineId: b['lineId'] as string, productId: b['productId'] as string, description: b['description'] as string }

@@ -144,67 +144,93 @@ export function peopleRoutes(deps: PeopleDeps): readonly Route[] {
         if (userId === ctx.userId) {
           throw notSaved(422, 'signing_in_yourself', 'Nobody gives themselves a sign-in.', 'Ask another administrator. Nothing was saved.');
         }
-        const directory = directoryFor(ctx.tenantId);
-        if (directory === undefined) {
-          throw notSaved(503, 'identity_server_not_connected', 'This deployment is not connected to the identity server, so no sign-in can be given from here.', 'The administrator sets the provisioner secret on the server (runbook: identity server). Nothing was saved.');
-        }
-
-        const existing = (await deps.people(ctx.tenantId)).find((p) => p.userId === userId || p.username === username);
-        if (existing !== undefined && (existing.userId !== userId || existing.username !== username)) {
-          throw notSaved(409, 'sign_in_name_or_person_already_used', `${existing.userId} already has the sign-in name "${existing.username}".`, 'Choose another sign-in name, or check who this person is. Nothing was saved.');
-        }
-        if (existing?.state === 'issued') {
-          throw notSaved(409, 'person_already_has_a_sign_in', `${userId} already has a sign-in. A second one is never made, and their password is never replaced from here.`, 'If they cannot sign in, the administrator resets it at the identity server. Nothing was saved.');
-        }
-        if (existing?.state === 'ended') {
-          throw notSaved(409, 'sign_in_ended', `${userId}'s sign-in was ended when they left. It is not revived from here.`, 'A returning person joins again through the access lifecycle. Nothing was saved.');
-        }
-        if (await deps.holdsAnyRole(ctx.tenantId, userId)) {
-          throw notSaved(422, 'person_already_holds_authority', `${userId} already holds a role. A sign-in made here is for a new person with no authority yet — otherwise whoever saw the one-time password could act with that person's authority.`, 'The administrator gives an existing role-holder their sign-in at the identity server, in that person\'s presence (runbook). Nothing was saved.');
-        }
-
-        const at = deps.now();
-        const resume = existing?.state === 'requested';
-        if (!resume) {
-          await deps.recordPerson(ctx.tenantId, { type: 'PersonSignInRequested', userId, username, displayName, secondFactor: true, requestedBy: ctx.userId, at });
-        }
-        const password = (deps.generatePassword ?? oneTimePassword)();
-        let outcome;
-        try {
-          outcome = await directory.issue({ username, userId, displayName, secondFactor: true, temporaryPassword: password }, resume);
-        } catch (e) {
-          if (e instanceof DirectoryUnavailableError) {
-            throw apiError(503, {
-              code: 'identity_server_unavailable',
-              whatHappened: `${e.message}. ${userId} is recorded as asked for; no sign-in was finished.`,
-              wasItSaved: 'saved',
-              nextSafeAction: 'Try again when the identity server answers — the same request finishes it.',
-            });
-          }
-          throw e;
-        }
-        if (outcome.result === 'refused') {
-          await deps.recordPerson(ctx.tenantId, { type: 'PersonSignInWithdrawn', userId, reason: outcome.code, at: deps.now() });
-          throw notSaved(409, outcome.code, outcome.detail, 'Choose another sign-in name, or check who this person is. No sign-in was given.');
-        }
-        const issuedAt = deps.now();
-        await deps.recordPerson(ctx.tenantId, { type: 'PersonSignInIssued', userId, issuedBy: ctx.userId, resumed: outcome.resumed, at: issuedAt });
-        await deps.recordAudit?.(ctx.tenantId, {
-          actorId: ctx.userId, action: 'person.sign_in.issue', objectType: 'user', objectId: userId,
-          at: issuedAt, origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
-          before: null,
-          after: { signInName: username, displayName, secondFactor: 'required', resumed: String(outcome.resumed) },
-          correlationId: ctx.idempotencyKey ?? userId,
+        return giveSignIn(deps, directoryFor(ctx.tenantId), ctx, { userId, username, displayName }, {
+          holdsAuthority: (tenantId, id) => deps.holdsAnyRole(tenantId, id),
+          holderRefusal: { code: 'person_already_holds_authority', whatHappened: `${userId} already holds a role. A sign-in made here is for a new person with no authority yet — otherwise whoever saw the one-time password could act with that person's authority.`, nextSafeAction: 'The administrator gives an existing role-holder their sign-in at the identity server, in that person\'s presence (runbook). Nothing was saved.' },
+          auditAction: 'person.sign_in.issue',
         });
-        return {
-          status: 201,
-          body: {
-            userId, signInName: username, displayName, state: 'issued', secondFactor: 'required',
-            oneTimePassword: password,
-            handOver: 'Give this to the person yourself. It works once: at first sign-in they choose their own password and set up the one-time code on their phone. It is not shown again.',
-          },
-        };
       },
     },
   ];
+}
+
+/**
+ * Give ONE named person their sign-in at the identity server — the step `POST /v1/identity/people` runs, shared with the
+ * outside-party logins (OB-76) so there is one way a sign-in is made: the ledger records the attempt before the identity
+ * server is touched and the outcome after; the one-time password is made here, returned once and kept nowhere; a reply
+ * lost on the way is finished by the same request, never a second password. `holdsAuthority` says whether the person
+ * already holds what would make the one-time password dangerous in the asker's hands — refused by name when it does.
+ */
+export async function giveSignIn(
+  deps: Pick<PeopleDeps, 'now' | 'people' | 'recordPerson' | 'generatePassword' | 'recordAudit'>,
+  directory: IdentityDirectory | undefined,
+  ctx: { readonly tenantId: string; readonly userId: string; readonly branchId: string | null; readonly idempotencyKey?: string },
+  person: { readonly userId: string; readonly username: string; readonly displayName: string },
+  rules: {
+    readonly holdsAuthority: (tenantId: string, userId: string) => Promise<boolean> | boolean;
+    readonly holderRefusal: { readonly code: string; readonly whatHappened: string; readonly nextSafeAction: string };
+    readonly auditAction: string;
+    readonly auditAfter?: Readonly<Record<string, string>>;
+  },
+): Promise<{ status: number; body: unknown }> {
+  const { userId, username, displayName } = person;
+  if (directory === undefined) {
+    throw notSaved(503, 'identity_server_not_connected', 'This deployment is not connected to the identity server, so no sign-in can be given from here.', 'The administrator sets the provisioner secret on the server (runbook: identity server). Nothing was saved.');
+  }
+
+  const existing = (await deps.people(ctx.tenantId)).find((p) => p.userId === userId || p.username === username);
+  if (existing !== undefined && (existing.userId !== userId || existing.username !== username)) {
+    throw notSaved(409, 'sign_in_name_or_person_already_used', `${existing.userId} already has the sign-in name "${existing.username}".`, 'Choose another sign-in name, or check who this person is. Nothing was saved.');
+  }
+  if (existing?.state === 'issued') {
+    throw notSaved(409, 'person_already_has_a_sign_in', `${userId} already has a sign-in. A second one is never made, and their password is never replaced from here.`, 'If they cannot sign in, the administrator resets it at the identity server. Nothing was saved.');
+  }
+  if (existing?.state === 'ended') {
+    throw notSaved(409, 'sign_in_ended', `${userId}'s sign-in was ended when they left. It is not revived from here.`, 'A returning person joins again through the access lifecycle. Nothing was saved.');
+  }
+  if (await rules.holdsAuthority(ctx.tenantId, userId)) {
+    throw notSaved(422, rules.holderRefusal.code, rules.holderRefusal.whatHappened, rules.holderRefusal.nextSafeAction);
+  }
+
+  const at = deps.now();
+  const resume = existing?.state === 'requested';
+  if (!resume) {
+    await deps.recordPerson(ctx.tenantId, { type: 'PersonSignInRequested', userId, username, displayName, secondFactor: true, requestedBy: ctx.userId, at });
+  }
+  const password = (deps.generatePassword ?? oneTimePassword)();
+  let outcome;
+  try {
+    outcome = await directory.issue({ username, userId, displayName, secondFactor: true, temporaryPassword: password }, resume);
+  } catch (e) {
+    if (e instanceof DirectoryUnavailableError) {
+      throw apiError(503, {
+        code: 'identity_server_unavailable',
+        whatHappened: `${e.message}. ${userId} is recorded as asked for; no sign-in was finished.`,
+        wasItSaved: 'saved',
+        nextSafeAction: 'Try again when the identity server answers — the same request finishes it.',
+      });
+    }
+    throw e;
+  }
+  if (outcome.result === 'refused') {
+    await deps.recordPerson(ctx.tenantId, { type: 'PersonSignInWithdrawn', userId, reason: outcome.code, at: deps.now() });
+    throw notSaved(409, outcome.code, outcome.detail, 'Choose another sign-in name, or check who this person is. No sign-in was given.');
+  }
+  const issuedAt = deps.now();
+  await deps.recordPerson(ctx.tenantId, { type: 'PersonSignInIssued', userId, issuedBy: ctx.userId, resumed: outcome.resumed, at: issuedAt });
+  await deps.recordAudit?.(ctx.tenantId, {
+    actorId: ctx.userId, action: rules.auditAction, objectType: 'user', objectId: userId,
+    at: issuedAt, origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
+    before: null,
+    after: { signInName: username, displayName, secondFactor: 'required', resumed: String(outcome.resumed), ...(rules.auditAfter ?? {}) },
+    correlationId: ctx.idempotencyKey ?? userId,
+  });
+  return {
+    status: 201,
+    body: {
+      userId, signInName: username, displayName, state: 'issued', secondFactor: 'required',
+      oneTimePassword: password,
+      handOver: 'Give this to the person yourself. It works once: at first sign-in they choose their own password and set up the one-time code on their phone. It is not shown again.',
+    },
+  };
 }

@@ -1,11 +1,20 @@
 // M27-FR-03 through the real authenticated API: the till's docket tags land on the cloud once, a cashier's
 // correction is refused and recorded while a manager's reversal stands, and the tagged lines reach the
 // period charge and the settlement statement without anyone re-keying them.
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { Pool } from 'pg';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
 import { approvedBody } from '../support/approval-request';
+import { SqlEventStore } from '../../packages/persistence/src/event-store';
+import { SqlIdempotencyStore } from '../../services/kernel/src/index';
+import { pgPoolClient } from '../../packages/persistence/src/pg-client';
+import { runMigrations } from '../../packages/persistence/src/migrations';
 
-const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa27';
+// The shop and the head office it runs on: in memory first; the PostgreSQL leg below re-points both.
+let A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa27';
+let headOffice: () => ApiHarness = () => apiHarness();
 const OWNER = 'u-owner'; const MGR = 'u-mgr'; const CASH = 'u-cash'; const ACCT = 'u-acct';
 const CT = '/v1/concession/contracts/ct-gold';
 const WINDOW = 'from=2026-08-01&to=2026-08-31';
@@ -27,7 +36,7 @@ const line = (over: Record<string, unknown> = {}) => ({
 const OPEN_WINDOW = 'from=2026-08-01&to=2099-12-31';
 
 async function cast(entitled = true): Promise<ApiHarness> {
-  const h = apiHarness();
+  const h = headOffice();
   await h.seedOwner(A, OWNER);
   await h.provisionRole(A, MGR, 'store_manager');
   await h.provisionRole(A, CASH, 'cashier');
@@ -50,8 +59,7 @@ const contract = async (h: ApiHarness, over: Record<string, unknown> = {}, key =
 interface Tag { tagId: string; kind: string; netMinor: number; commissionMinor: number; history: { op: string; byRole: string }[]; settlementStatus: string }
 interface Stream { tags: Tag[]; totals: { tags: number; netMinor: number; commissionMinor: number } }
 
-describe('concession docket tags reach settlement (M27-FR-03, API-09)', () => {
-  it('a cashier records the counter\'s lines once; the charge and the settlement read them as the counter\'s sales', async () => {
+async function recordedOnceAndSettled(again: (h: ApiHarness) => ApiHarness): Promise<void> {
     const h = await cast();
     expect((await contract(h)).status).toBe(201);
     const first = await post(h, `${CT}/tags/tag-1`, CASH, 'till-3:sale-1:l1', line());
@@ -72,12 +80,13 @@ describe('concession docket tags reach settlement (M27-FR-03, API-09)', () => {
     expect(charge).toMatchObject({ grossSalesMinor: 210_000, chargeMinor: 31_500 });
     const settle = (await get(h, `${CT}/settlement?${WINDOW}&bankedForThemMinor=210000`, OWNER)).body as { collectedForThemMinor: number; payableToThemMinor: number; reconciles: boolean };
     expect(settle).toMatchObject({ collectedForThemMinor: 210_000, payableToThemMinor: 178_500, reconciles: true });
-    // A cold restart over the same ledger reads the same counter.
-    const h2 = apiHarness({ store: h.store });
+    // A cold restart over the same ledger reads the same counter — and the same settlement.
+    const h2 = again(h);
     expect(((await get(h2, `${CT}/tags`, CASH)).body as Stream).totals.tags).toBe(3);
-  });
+    expect((await get(h2, `${CT}/settlement?${WINDOW}&bankedForThemMinor=210000`, OWNER)).body).toMatchObject({ collectedForThemMinor: 210_000, payableToThemMinor: 178_500, reconciles: true });
+}
 
-  it('a cashier\'s reversal is refused and written on the line; the store manager\'s reversal backs the money out of the settlement', async () => {
+async function reversedByTheManagerOnly(): Promise<void> {
     const h = await cast();
     await contract(h);
     await post(h, `${CT}/tags/tag-1`, CASH, 'k1', line());
@@ -99,6 +108,15 @@ describe('concession docket tags reach settlement (M27-FR-03, API-09)', () => {
     const august = (await get(h, `${CT}/charge?${WINDOW}`, OWNER)).body as { grossSalesMinor: number };
     expect(august.grossSalesMinor).toBe(80_000); // the sale stays in August; the reversal is dated when it was made
     expect(codeOf(await post(h, `${CT}/tags/tag-1/reverse`, MGR, 'rev-mgr-2', { reasonCode: 'AGAIN', newTagId: 'tag-1~rev2' }))).toBe('already_reversed');
+}
+
+describe('concession docket tags reach settlement (M27-FR-03, API-09)', () => {
+  it('a cashier records the counter\'s lines once; the charge and the settlement read them as the counter\'s sales', async () => {
+    await recordedOnceAndSettled((h) => apiHarness({ store: h.store }));
+  });
+
+  it('a cashier\'s reversal is refused and written on the line; the store manager\'s reversal backs the money out of the settlement', async () => {
+    await reversedByTheManagerOnly();
   });
 
   it('a sale the desk recorded by hand is left to that record — the same receipt is never counted twice; the settlement run marks the window', async () => {
@@ -133,5 +151,35 @@ describe('concession docket tags reach settlement (M27-FR-03, API-09)', () => {
     const gated = await post(off, `${CT}/tags/tag-1`, CASH, 'k1', line());
     expect(gated.status).toBe(403);
     expect(codeOf(gated)).toBe('feature_not_entitled');
+  });
+});
+
+// ── M27-FR-03 settlement on real PostgreSQL ──────────────────────────────────────────────────────────────────────────
+// The counter's lines, their once-only capture, the manager-only reversal and the settlement statement, on the durable
+// ledger — and read back the same by a second head-office instance over the same database (a restart).
+const DATABASE_URL = process.env['DATABASE_URL'];
+
+describe.skipIf(!DATABASE_URL)('concession docket tags reach settlement on real PostgreSQL (M27-FR-03)', () => {
+  let pool: Pool;
+  const inMemory = { tenant: A, headOffice };
+  const sqlHarness = (): ApiHarness => { const sql = pgPoolClient(pool); return apiHarness({ store: new SqlEventStore(sql), idempotency: new SqlIdempotencyStore(sql) }); };
+  beforeAll(async () => {
+    pool = new Pool({ connectionString: DATABASE_URL, max: 4, options: '-c app.tenant_id=*' });
+    const dir = 'db/migrations';
+    await runMigrations(pgPoolClient(pool), readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()
+      .map((name) => ({ name, sql: readFileSync(join(dir, name), 'utf8') })));
+    headOffice = sqlHarness;
+  });
+  afterAll(async () => { A = inMemory.tenant; headOffice = inMemory.headOffice; await pool.end(); });
+  const freshTenant = (tag: string): string => `c${Date.now().toString(16).slice(-7)}-${tag}-4ccc-8ccc-${'c'.repeat(12)}`;
+
+  it('captured once, charged and settled from the tagged lines; a second head-office instance reads the same settlement', async () => {
+    A = freshTenant('c271');
+    await recordedOnceAndSettled(() => sqlHarness());
+  });
+
+  it('the cashier\'s reversal is refused and kept on the line; the manager\'s reversal backs the money out — on PostgreSQL', async () => {
+    A = freshTenant('c272');
+    await reversedByTheManagerOnly();
   });
 });

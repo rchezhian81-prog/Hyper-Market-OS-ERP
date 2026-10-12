@@ -41,7 +41,8 @@ interface InTransit { transferId: string; productId: string; locationId: string;
 interface ValRow { productId: string; locationId: string; onHandMinor: number; value: { minor: number }; unitCostMinor: number | 'not_known'; cogs: { minor: number }; transferredOut: { minor: number }; unvaluedMinor: number }
 interface Disc { productId: string; differenceMinor: number; value: { minor: number } }
 
-// The proposer's unit cost values the shortfall EXCEPTION only — the value that moves is head office's own (SP-5).
+// Round 10: a unit cost the proposer sends is IGNORED — the line, the shortfall exception and the confirmed loss are all valued
+// at head office's own cost of the stock at the sending place (SP-5 · tests/integration/a-transfer-is-valued-at-head-offices-own-cost.test.ts).
 const LINE = { productId: 'P1', batchId: null, quantityMinor: 10, uom: 'EA', unitCost: { minor: 5_000, currency: 'INR' } };
 const proposal = (over: Record<string, unknown> = {}) => ({ fromLocationId: 'WH', toLocationId: 'S1', lines: [LINE], ...over });
 /** Head office's own stock at WH — the position the dispatch is checked against (SP-4, F07), costed or not. */
@@ -124,7 +125,8 @@ describe('warehouse transfers: in-transit at destination, separate approver, val
   });
 
   it('receives what arrived and raises a valued shortfall for what did not — on-hand at the destination, the shortfall on the exceptions read (F05)', async () => {
-    const h = await seeded(20);
+    // Round 10: the shortfall is valued at head office's own cost of the warehouse's stock (₹50.00), not the proposer's figure.
+    const h = await seeded(20, 5_000);
     await propose(h, A, 'u-owner', 't1', proposal());
     await dispatch(h, A, 'u-boss', 't1', {});
 

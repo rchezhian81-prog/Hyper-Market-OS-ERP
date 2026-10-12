@@ -31,7 +31,7 @@ interface PositionBody {
 
 const blind = (countId: string, countedMinor: number, over: Record<string, unknown> = {}) => ({
   countId, productId: 'P1', locationId: 'S1', uom: 'EA', countedMinor, reasonCode: 'cycle_count', counterId: 'u-mgr', at: AT,
-  storeId: 'store-1', source: 'manager-screen', ...over,
+  storeId: 'S1', source: 'manager-screen', ...over,
 });
 
 const relay = (h: ApiHarness, body: Record<string, unknown>, key: string, opts: { user?: string; tenant?: string; id?: string } = {}) =>

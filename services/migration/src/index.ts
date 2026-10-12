@@ -410,7 +410,7 @@ export interface MigrationDeps {
   readonly tillSealKey?: Buffer;
   /**
    * OB-52 "A" (owner, 11 Oct 2026): the cutover GO the gate decided with the owner's signed-in GO is KEPT — it opens the
-   * opening-load reversal window, which closes 48 hours later. Append once per cutover; resolve the GO that STANDS (the
+   * opening-load reversal window, which closes 48 hours later. Append ONCE PER TENANT (GT-05); resolve the GO that STANDS (the
    * first one — a later GO never moves the window). Absent on a bare stub: nothing is recorded and nothing is claimed.
    */
   readonly recordCutoverGo?: (tenantId: string, go: CutoverGo) => Promise<CutoverGo> | CutoverGo;
@@ -1070,17 +1070,25 @@ export function migrationRoutes(deps: MigrationDeps): readonly Route[] {
         if (decision.go && ownerGo !== undefined && deps.recordCutoverGo !== undefined) {
           const go: CutoverGo = { cutoverId, goBy: ownerGo, goAt: deps.now() };
           recordedGo = await deps.recordCutoverGo(ctx.tenantId, go);
-          if (recordedGo.goAt === go.goAt && recordedGo.goBy === go.goBy) {
+          if (recordedGo.cutoverId === go.cutoverId && recordedGo.goAt === go.goAt && recordedGo.goBy === go.goBy) {
             await deps.recordAudit?.(ctx.tenantId, { actorId: ctx.userId, action: 'migration.cutover.go', objectType: 'cutover', objectId: cutoverId, at: go.goAt, origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null }, before: {}, after: { goBy: go.goBy, goAt: go.goAt }, correlationId: cutoverId });
+          } else if (recordedGo.cutoverId !== go.cutoverId) {
+            // GT-05 / OB-52: the shop has ONE cutover — the first GO recorded for the tenant. A GO under another id opens
+            // nothing; it is kept on the audit trail (visible, never silent) and the reply names the cutover that stands.
+            await deps.recordAudit?.(ctx.tenantId, { actorId: ctx.userId, action: 'migration.cutover.go_not_recorded', objectType: 'cutover', objectId: cutoverId, at: go.goAt, origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null }, before: {}, after: { goBy: go.goBy, goAt: go.goAt, theCutover: recordedGo.cutoverId, theCutoverGoAt: recordedGo.goAt }, correlationId: cutoverId });
           }
         }
+        const goNotRecorded = recordedGo !== undefined && recordedGo.cutoverId !== cutoverId
+          ? { code: 'cutover_go_already_given', whatHappened: `This shop's cutover GO was already given under cutover ${recordedGo.cutoverId} at ${recordedGo.goAt}. That GO alone defines the reversal window (OB-52); this GO under ${cutoverId} was not recorded and opens nothing.` }
+          : undefined;
         return {
           status: 200,
           body: {
             decision, checks: derived.checks, notKnown: derived.notKnown, detail: derived.detail,
             ignoredFromCaller,
             callerSupplied: edge === undefined ? [] : ['edgeUnsyncedItems'],
-            ...(recordedGo === undefined ? {} : { recordedGo, reversalWindow: reversalWindowOf(recordedGo) }),
+            ...(recordedGo === undefined || goNotRecorded !== undefined ? {} : { recordedGo, reversalWindow: reversalWindowOf(recordedGo) }),
+            ...(goNotRecorded === undefined || recordedGo === undefined ? {} : { goNotRecorded, theCutover: reversalWindowOf(recordedGo) }),
           },
         };
       },

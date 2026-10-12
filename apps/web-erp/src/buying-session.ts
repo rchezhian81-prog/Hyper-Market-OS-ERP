@@ -252,7 +252,11 @@ export interface ProposePurchaseOrderInput {
 
 /** What head office said when asked to propose a PO — the proposed order, or the reason it did not land. */
 export type ProposePurchaseOrderOutcome =
-  | { readonly proposed: true; readonly requisitionedBy: string; readonly totalMinor: number }
+  | {
+    readonly proposed: true; readonly requisitionedBy: string; readonly totalMinor: number;
+    /** WF-03 · OB-63 (round 12): head office's open-to-buy check on the order — over budget, it escalates to the owner. */
+    readonly budget?: { readonly overBudget: boolean; readonly overByMinor: number };
+  }
   | { readonly proposed: false; readonly reason: string };
 
 /**

@@ -39,6 +39,13 @@ export interface PurchaseBudget {
   readonly setBy: string;
   readonly setAt: string;
 }
+/**
+ * WF-03 (round 10): the write guard over one month's open-to-buy. An approval reads its version BEFORE it reads the orders
+ * the budget is judged on, and issues only while it still holds — so two approvals at the same moment can never both
+ * spend the same remaining budget (the loser is a named 409 `concurrent_change`, nothing issued; asked again, it is judged
+ * on what the winner committed).
+ */
+export const openToBuyGuardKey = (period: string): string => `open-to-buy:${period}`;
 export const budgetKey = (b: Pick<PurchaseBudget, 'categoryId' | 'period' | 'storeId'>): string => `${b.categoryId}|${b.period}|${b.storeId ?? '*'}`;
 
 /** How one category stands for one order. */
@@ -68,6 +75,8 @@ export interface BudgetCheck {
 /** A recorded over-budget issue: who let it through, why, and by how much (the escalation's evidence). */
 export interface BudgetOverride {
   readonly poId: string;
+  /** OB-63: set when the over-budget value came from an AMENDMENT that raised an issued order (absent: the order's approval). */
+  readonly amendmentId?: string;
   readonly approvedBy: string;
   readonly reason: string;
   readonly overByMinor: number;
@@ -87,6 +96,8 @@ export interface OpenToBuyDeps {
   /** What the approver holds — the over-budget authority is read from their grants, never from the request. */
   readonly permissionsOfUser: (tenantId: string, userId: string) => Promise<readonly string[] | undefined> | readonly string[] | undefined;
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
+  /** WF-03 (round 10): the version of a month's open-to-buy write guard (`openToBuyGuardKey`). Absent on a bare stub. */
+  readonly budgetVersion?: (tenantId: string, period: string) => Promise<number> | number;
   readonly now: () => string;
 }
 
@@ -94,7 +105,7 @@ const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !==
 const isPeriod = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(v);
 
 /** The value of an order per category (net of cancellations, at its own cost). */
-async function valueByCategory(deps: OpenToBuyDeps, tenantId: string, po: StoredPurchaseOrder): Promise<Map<string, number>> {
+export async function valueByCategory(deps: OpenToBuyDeps, tenantId: string, po: StoredPurchaseOrder): Promise<Map<string, number>> {
   const out = new Map<string, number>();
   const cancelledLeft = new Map(Object.entries(po.cancelledByProduct ?? {}));
   for (const l of po.lines) {
@@ -145,39 +156,58 @@ export async function checkOrderAgainstBudget(deps: OpenToBuyDeps, tenantId: str
 }
 
 /**
- * The approval gate (called by the PO approval route before it issues): within budget → proceed; over → only an approver
- * holding `purchase.budget.exceed`, with an over-budget reason, and the override is recorded. Throws by name otherwise.
+ * The approval gate's judgement (the PO approval route calls it before it issues): within budget → proceed; over → only an
+ * approver holding `purchase.budget.exceed`, with an over-budget reason. Throws by name otherwise. The override is NOT yet
+ * recorded: `recordOverride` records it (and its audit line) — the route calls it only once the order has really issued, so
+ * an approval that loses the open-to-buy race leaves no override behind.
  */
-export async function gateApprovalOnBudget(deps: OpenToBuyDeps, ctx: { readonly tenantId: string; readonly userId: string; readonly branchId?: string | null },
-  po: StoredPurchaseOrder, overBudgetReason: unknown): Promise<BudgetCheck> {
+export async function judgeApprovalOnBudget(deps: OpenToBuyDeps, ctx: { readonly tenantId: string; readonly userId: string; readonly branchId?: string | null },
+  po: StoredPurchaseOrder, overBudgetReason: unknown,
+  /** OB-63: judging an AMENDMENT that raises an issued order's value (the order as it would stand after it). */
+  opts?: { readonly amendmentId?: string }): Promise<{ readonly check: BudgetCheck; readonly recordOverride?: () => Promise<void> }> {
   const check = await checkOrderAgainstBudget(deps, ctx.tenantId, po);
-  if (!check.overBudget) return check;
+  if (!check.overBudget) return { check };
+  const amendmentId = opts?.amendmentId;
+  const what = amendmentId === undefined ? `Purchase order ${po.poId}` : `Amendment ${amendmentId} to purchase order ${po.poId}`;
+  const verb = amendmentId === undefined ? 'issue it' : 'make it';
+  const nothing = amendmentId === undefined ? 'Nothing was issued.' : 'Nothing was changed.';
   const over = check.categories.filter((c) => c.state === 'over').map((c) => `${c.categoryId} by ${-(c.remainingAfterMinor ?? 0)} (budget ${c.budgetMinor}, committed ${c.committedMinor}, this order ${c.thisOrderMinor})`).join('; ');
   if (!((await deps.permissionsOfUser(ctx.tenantId, ctx.userId)) ?? []).includes('purchase.budget.exceed')) {
     throw apiError(409, {
       code: 'over_open_to_buy',
-      whatHappened: `Purchase order ${po.poId} would take ${check.period}'s purchase budget over: ${over}. An order over budget escalates — only a person allowed to exceed the budget can issue it.`,
+      whatHappened: `${what} would take ${check.period}'s purchase budget over: ${over}. An order over budget escalates — only a person allowed to exceed the budget can ${verb}.`,
       wasItSaved: 'not_saved',
-      nextSafeAction: 'Reduce the order, or ask the person who may approve over budget (the owner) to issue it with a reason. Nothing was issued.',
+      nextSafeAction: `Reduce the order, or ask the person who may approve over budget (the owner) to ${verb} with a reason. ${nothing}`,
     });
   }
   if (!isStr(overBudgetReason)) {
     throw apiError(422, {
       code: 'over_budget_reason_required',
-      whatHappened: `Purchase order ${po.poId} is over budget (${over}); issuing it needs an over-budget reason on the record.`,
+      whatHappened: `${what} is over budget (${over}); ${amendmentId === undefined ? 'issuing it' : 'making it'} needs an over-budget reason on the record.`,
       wasItSaved: 'not_saved',
-      nextSafeAction: 'Send { reason, overBudgetReason } and approve again. Nothing was issued.',
+      nextSafeAction: `Send { reason, overBudgetReason } and ${amendmentId === undefined ? 'approve' : 'amend'} again. ${nothing}`,
     });
   }
-  const at = deps.now();
-  await deps.recordOverride(ctx.tenantId, { poId: po.poId, approvedBy: ctx.userId, reason: overBudgetReason.trim(), overByMinor: check.overByMinor, check, at });
-  await deps.recordAudit?.(ctx.tenantId, {
-    actorId: ctx.userId, action: 'purchase.budget.exceed', objectType: 'purchase-order', objectId: po.poId, at,
-    origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null }, before: { overBudget: 'true' },
-    after: { overByMinor: String(check.overByMinor), period: check.period, categories: check.categories.filter((c) => c.state === 'over').map((c) => c.categoryId).join(',') },
-    reason: overBudgetReason.trim(), correlationId: po.poId,
-  });
-  return check;
+  const reason = overBudgetReason.trim();
+  const recordOverride = async (): Promise<void> => {
+    const at = deps.now();
+    await deps.recordOverride(ctx.tenantId, { poId: po.poId, ...(amendmentId === undefined ? {} : { amendmentId }), approvedBy: ctx.userId, reason, overByMinor: check.overByMinor, check, at });
+    await deps.recordAudit?.(ctx.tenantId, {
+      actorId: ctx.userId, action: 'purchase.budget.exceed', objectType: 'purchase-order', objectId: po.poId, at,
+      origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null }, before: { overBudget: 'true' },
+      after: { overByMinor: String(check.overByMinor), period: check.period, categories: check.categories.filter((c) => c.state === 'over').map((c) => c.categoryId).join(','), ...(amendmentId === undefined ? {} : { amendmentId }) },
+      reason, correlationId: po.poId,
+    });
+  };
+  return { check, recordOverride };
+}
+
+/** The gate as one step: judge, and record an override at once (for a caller that issues nothing under the budget guard). */
+export async function gateApprovalOnBudget(deps: OpenToBuyDeps, ctx: { readonly tenantId: string; readonly userId: string; readonly branchId?: string | null },
+  po: StoredPurchaseOrder, overBudgetReason: unknown): Promise<BudgetCheck> {
+  const judged = await judgeApprovalOnBudget(deps, ctx, po, overBudgetReason);
+  await judged.recordOverride?.();
+  return judged.check;
 }
 
 export function openToBuyRoutes(deps: OpenToBuyDeps): readonly Route[] {

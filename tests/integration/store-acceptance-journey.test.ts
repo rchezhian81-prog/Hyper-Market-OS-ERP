@@ -247,6 +247,9 @@ describeOrSkip('FINAL INTEGRATED STORE ACCEPTANCE — supplier to owner report, 
     await ok(call('POST', `/v1/stores/${STORE}/settings`, OWNER, { tradingDayCutoff: '00:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 5_000, cashVarianceToleranceMinor: 5_000, privacySlaDays: 30, warehouseId: BACK }, 'settings'), 'store settings');
     await ok(call('POST', '/v1/inventory/receipt-policy', OWNER, { excessToleranceBp: 0, shortageToleranceBp: 0, nearExpiryDays: 7 }, 'receipt-policy'), 'receipt policy');
     await ok(call('POST', '/v1/catalogue/tax-classes/1006/rates/2017-07-01', OWNER, { rateBps: 500 }, 'tax'), 'tax rate');
+    // WF-01 (product onboarding) on PostgreSQL, the leg that reaches the till: tax class and unit → published product →
+    // the store's price → its barcode → the signed catalogue pack the box takes → sold at the till below. The workflow's
+    // duplicate/GS1 check, approval and app-content steps are proven by their own suites, not here.
     for (const p of [RICE, TOMATO]) {
       await ok(call('POST', `/v1/catalogue/products/${p.productId}/publish`, OWNER, {
         product: { sku: p.sku, name: p.name, baseUom: p.uom, primaryCategoryId: 'grocery', taxClass: '1006', lifecycle: 'active' },
@@ -637,6 +640,13 @@ describeOrSkip('FINAL INTEGRATED STORE ACCEPTANCE — supplier to owner report, 
       statementId: `BANK-${month}`, accountRef: 'current-account-1', fromDate: `${month}-01`, toDate: lastDay, openingMinor: 1_000_000, closingMinor: 1_000_000 + electronic - fees,
       sourceName: 'bank-fixture.csv', csv: `Date,Reference,Narrative,Debit,Credit\n${tradingDay},UTR-1 PB-${tradingDay},ACQUIRER PAYOUT,,${((electronic - fees) / 100).toFixed(2)}`,
     }, 'bank'), 'bank statement');
+    // OB-56: the month-end stock adjustment brings the books' inventory to the stock on hand at average buying cost.
+    // It is refused while the floor shortfall is not in the books (it would be booked twice) — so that posts first.
+    expect(((await call('POST', `/v1/finance/periods/${month}/stock-adjustment`, FINANCE, {}, 'stock-period-early')).body as { error: { code: string } }).error.code).toBe('stock_postings_outstanding');
+    expect((await call('POST', '/v1/finance/stock-losses/post', FINANCE, {}, 'stock-losses')).status).toBeLessThan(300);
+    expect((await call('POST', '/v1/finance/stock-adjustments/post', FINANCE, {}, 'stock-adjustments')).status).toBeLessThan(300);
+    const stockPeriod = await call('POST', `/v1/finance/periods/${month}/stock-adjustment`, FINANCE, {}, 'stock-period');
+    expect(stockPeriod.status, JSON.stringify(stockPeriod.body)).toBe(201);
     const evidence = (await call('GET', `/v1/finance/periods/${month}/independent-evidence`, FINANCE)).body as { agrees: boolean; checks: { name: string; leftMinor: number; rightMinor: number }[] };
     const liability = (await call('GET', '/v1/finance/loyalty-liability', FINANCE)).body as { reconciles: boolean; points: { outstandingPoints: number; heldValueMinor: number; postedMinor: number } };
     expect(evidence.agrees).toBe(true);

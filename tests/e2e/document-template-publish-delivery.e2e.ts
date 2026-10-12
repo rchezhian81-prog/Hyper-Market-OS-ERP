@@ -7,7 +7,8 @@ import { join } from 'node:path';
 import { chromium, type Browser } from 'playwright-core';
 
 /**
- * **A receipt template is drafted, approved by a SECOND person and published, in a real browser (M01-FR-02 · API-01 · §28 — the E2E matrix).**
+ * **A receipt template is drafted, approved by a SECOND person and published, in a real browser (M01-FR-02 · M31-FR-01
+ * versioned templates · M31-FR-04 template approval controls · API-01 · §28 — the E2E matrix).**
  *
  * Every layer — the tested @sre/org template engine, the routes, the session model, the act port — is unit- and
  * integration-tested. The one thing units cannot prove is that a setup person, in an actual browser, typing the

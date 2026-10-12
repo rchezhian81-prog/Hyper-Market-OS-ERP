@@ -25,6 +25,7 @@ import {
 } from './till-session';
 import { createPosView, type PosView } from './view-adapter';
 import { customerDisplayFrame, CUSTOMER_DISPLAY_CHANNEL, type CustomerDisplayFrame } from './customer-display';
+import { createDeviceHeartbeat, type DeviceHeartbeat, type DeviceStatus } from './device-heartbeat';
 import {
   createRefundView, type RefundPolicy, type RefundLineChoice, type RefundScreenOutcome,
 } from './refund-view';
@@ -65,7 +66,7 @@ export interface ReceiptNumberAnswer {
   readonly receiptNumber?: string;
   readonly remaining?: number;
   readonly runningLow?: boolean;
-  readonly source?: 'published' | 'this_box';
+  readonly source?: 'published' | 'this_box' | 'store_default';
   readonly refusedBecause?: string;
   readonly laneMessage?: string;
 }
@@ -212,7 +213,7 @@ export function laneOperator(port: number = DEFAULT_LANE_PORT): TillOperatorPort
 }
 
 /** What a manager's approval at the till is for (ADR-0021): the kind, the bill (not for a no-receipt return) and the amount. */
-export type TillApprovalKind = 'refund' | 'no_receipt_return' | 'exchange_refund' | 'no_sale' | 'price_override';
+export type TillApprovalKind = 'refund' | 'no_receipt_return' | 'exchange_refund' | 'no_sale' | 'price_override' | 'late_payment_answer';
 export interface TillApprovalRequest {
   readonly managerId: string;
   readonly pin: string;
@@ -727,6 +728,11 @@ export function bootPos(config?: {
   paymentsPort?: PaymentAttemptsPort;
   /** The till's void-evidence call to its box (audit PF-07). Overridable for tests; production posts to this till's own edge. */
   tillActivityPost?: (body: Record<string, unknown>) => Promise<Record<string, unknown>>;
+  /**
+   * The device re-send's timer (D04-FR-05 · P-08): `every(ms, fn)` answers a cancel, `soon(fn)` runs off the call stack.
+   * Overridable for tests (a simulated clock); production uses `setInterval` / `setTimeout`.
+   */
+  deviceHeartbeatTimers?: { readonly every?: (ms: number, fn: () => void) => () => void; readonly soon?: (fn: () => void) => void };
   /** The till's loyalty-balance call to its box (PF-09 step 3). Overridable for tests; production posts to this till's own edge. */
   loyaltyWalletPost?: (body: Record<string, unknown>) => Promise<Record<string, unknown>>;
 }): PosView & {
@@ -741,7 +747,17 @@ export function bootPos(config?: {
   /** The BroadcastChannel the display page listens on. */
   readonly customerDisplayChannelName: () => string;
   /** D04-FR-05: send what this till's devices say to the store computer (needs a signed-in cashier). */
-  readonly reportDevices: (devices: readonly { readonly kind: string; readonly state: string; readonly detail?: string }[]) => Promise<{ readonly recorded: boolean; readonly refusedBecause?: string; readonly laneMessage?: string }>;
+  readonly reportDevices: (devices: readonly { readonly kind: string; readonly state: string; readonly detail?: string }[], adapterObservedAt?: string) => Promise<{ readonly recorded: boolean; readonly refusedBecause?: string; readonly laneMessage?: string }>;
+  /** Round 15: the device adapter's own clock (when it last observed the devices), asked at each re-send. */
+  readonly deviceAdapterClock: (clock: (() => unknown) | undefined) => void;
+  /**
+   * D04-FR-05 · P-08: the device adapter says how the devices are now. Kept as the last known and sent to the store
+   * computer at once if anything changed; re-sent every 5 minutes while a cashier is signed in (`device-heartbeat.ts`).
+   * Fire-and-forget: never awaited, never on the sale path, nothing sent while a sale is being written.
+   */
+  readonly devicesSaid: (devices: readonly { readonly kind: string; readonly state: string; readonly detail?: string }[], adapterObservedAt?: string) => void;
+  /** The device re-send itself — for the page and the tests (`running`, `tick`, `lastKnown`). */
+  readonly deviceHeartbeat: DeviceHeartbeat;
   readonly till: ReturnType<typeof createTillSession>;
   /**
    * The next receipt number for this lane, from the store computer (audit PF-04): saved on the box before it is given,
@@ -801,7 +817,8 @@ export function bootPos(config?: {
    */
   readonly startCardPayment: (kind: 'card' | 'upi', amountMinor?: number) => Promise<CardAttemptAnswer>;
   /** What the machine said, recorded on the store computer. On `approved`, pay with `tenderCardOrUpi({ ..., ref: attemptId })`. */
-  readonly answerCardPayment: (attemptId: string, outcome: 'approved' | 'declined' | 'no_answer') => Promise<CardAttemptAnswer>;
+  /** OB-55: an answer for an attempt of an EARLIER trading day needs a manager's approval at this till (`approvalId`). */
+  readonly answerCardPayment: (attemptId: string, outcome: 'approved' | 'declined' | 'no_answer', approvalId?: string) => Promise<CardAttemptAnswer>;
   /** Settle a payment that got no answer against the PROVIDER's record — never by hand. */
   readonly checkCardPayment: (attemptId: string) => Promise<CardAttemptAnswer>;
   /**
@@ -829,6 +846,19 @@ export function bootPos(config?: {
   readonly lane: () => { readonly laneId: string | null; readonly tradingDayCutoff: string; readonly tradingDayAt: (atIsoUtc: string) => string };
 } {
   const outbox = new SyncOutbox();
+  // D04-FR-05 · P-01: how many sale/refund writes to the box are waiting for its answer. The device re-send never starts
+  // while one is (`device-heartbeat.ts`); it goes once the write has answered. Counting only — no network here.
+  let commitsInFlight = 0;
+  const heartbeat: { ref?: DeviceHeartbeat } = {};
+  const whileCommitting = (write: DurableWrite): DurableWrite => async (id, record) => {
+    commitsInFlight += 1;
+    try {
+      return await write(id, record);
+    } finally {
+      commitsInFlight -= 1;
+      if (commitsInFlight === 0) heartbeat.ref?.commitEnded();
+    }
+  };
   // Only what was GIVEN goes in: no lane, cashier or day is ever made up here (F09).
   const identity = {
     ...(config?.laneId === undefined ? {} : { laneId: config.laneId }),
@@ -846,7 +876,7 @@ export function bootPos(config?: {
     },
     new Ledger(new InMemoryLedgerStore()),
     outbox,
-    config?.durable ?? laneDurable(config?.lanePort ?? DEFAULT_LANE_PORT),
+    whileCommitting(config?.durable ?? laneDurable(config?.lanePort ?? DEFAULT_LANE_PORT)),
   );
   // Indexing happens once at boot, so every subsequent scan is O(1) (§32).
   const catalogue = config?.catalogue ? new CatalogueCache(config.catalogue) : undefined;
@@ -869,7 +899,7 @@ export function bootPos(config?: {
     outbox,
     {
       // The refund's durable write goes to this till's own edge, exactly as the sale's does.
-      durableReturn: config?.durableReturn ?? laneDurableReturn(lanePort),
+      durableReturn: whileCommitting(config?.durableReturn ?? laneDurableReturn(lanePort)),
       // And so does every cash movement and the close (SP-4c · F10): the box records, decides and dates them.
       cashMovement: config?.cashMovement ?? laneCashMovement(lanePort),
       shiftClose: config?.shiftClose ?? laneShiftClose(lanePort),
@@ -1087,8 +1117,9 @@ export function bootPos(config?: {
   const receiptTemplate = (): PosReceiptTemplate | null => config?.receiptTemplate ?? null;
 
   // The cashier signs in ONCE for both surfaces — the sale and the till name the same person (SP-4b · F09).
-  const signIn = (cashierId: string): void => { session.signIn(cashierId); till.signIn(cashierId); };
-  const signOut = (): void => { session.signOut(); till.signOut(); };
+  // D04-FR-05 · P-08: the device re-send runs only while somebody is signed in (it is defined further down).
+  const signIn = (cashierId: string): void => { session.signIn(cashierId); till.signIn(cashierId); heartbeat.ref?.start(); };
+  const signOut = (): void => { heartbeat.ref?.stop(); session.signOut(); till.signOut(); };
   const operator = (): string | undefined => session.operator();
 
   // HELD BASKETS (audit PF-05): the basket goes to the store computer's disk; the till clears only once the box has it.
@@ -1229,8 +1260,8 @@ export function bootPos(config?: {
     if (amountMinor <= 0) return { ok: false, refusedBecause: 'nothing_to_pay', laneMessage: 'There is nothing to pay.' };
     return cardAnswer(await payments.ask({ attemptId: `PAY-${newRequestKey().slice(3)}`, billRef: session.billRef(), kind, amountMinor }));
   };
-  const answerCardPayment = async (attemptId: string, outcome: 'approved' | 'declined' | 'no_answer'): Promise<CardAttemptAnswer> =>
-    cardAnswer(await payments.answer({ attemptId, outcome }));
+  const answerCardPayment = async (attemptId: string, outcome: 'approved' | 'declined' | 'no_answer', approvalId?: string): Promise<CardAttemptAnswer> =>
+    cardAnswer(await payments.answer({ attemptId, outcome, ...(approvalId === undefined ? {} : { approvalId }) }));
   const checkCardPayment = async (attemptId: string): Promise<CardAttemptAnswer> => cardAnswer(await payments.recover({ attemptId }));
 
   const abandonAtTill = async (billId: string, reason: string): Promise<HeldAnswer> => {
@@ -1308,11 +1339,16 @@ export function bootPos(config?: {
   // D04-FR-05 · M12-FR-04: what this till's devices say — the scanner, printer, scale, drawer and card machine — sent to
   // the store computer through the signed-in session, for the manager's Today screen. The device adapter that knows is
   // hardware-side (external); this only carries its words. A device failing never stops a sale.
-  const reportDevices = async (devices: readonly { readonly kind: string; readonly state: string; readonly detail?: string }[]): Promise<{ readonly recorded: boolean; readonly refusedBecause?: string; readonly laneMessage?: string }> => {
+  const reportDevices = async (devices: readonly { readonly kind: string; readonly state: string; readonly detail?: string }[], adapterObservedAt?: string): Promise<{ readonly recorded: boolean; readonly refusedBecause?: string; readonly laneMessage?: string }> => {
+    // Kept as the last known, so the 5-minute re-send carries it on (P-08) — even when this send is refused or lost.
+    if (Array.isArray(devices) && devices.length > 0) deviceHeartbeat.remember(devices, adapterObservedAt);
+    return postDevices(devices, deviceHeartbeat.lastObservedAt());
+  };
+  const postDevices = async (devices: readonly DeviceStatus[], adapterObservedAt?: string): Promise<{ readonly recorded: boolean; readonly refusedBecause?: string; readonly laneMessage?: string }> => {
     if (session.operator() === undefined) return { recorded: false, refusedBecause: 'operator_not_signed_in', laneMessage: 'Sign in before the till reports its devices.' };
     try {
       const base = laneBase(config?.lanePort ?? DEFAULT_LANE_PORT);
-      const response = await fetch(`${base}/lane/peripherals`, { method: 'POST', headers: { 'content-type': 'application/json', ...operatorHeaders() }, body: JSON.stringify({ devices }) });
+      const response = await fetch(`${base}/lane/peripherals`, { method: 'POST', headers: { 'content-type': 'application/json', ...operatorHeaders() }, body: JSON.stringify({ devices, ...(adapterObservedAt === undefined ? {} : { adapterObservedAt }) }) });
       const front = FRONT_REFUSED[response.status];
       if (front !== undefined) return { recorded: false, ...front };
       const r = await response.json() as Record<string, unknown>;
@@ -1320,6 +1356,26 @@ export function bootPos(config?: {
     } catch {
       return { recorded: false, refusedBecause: 'lane_unreachable', laneMessage: 'This till cannot reach its store computer; the device report was not sent.' };
     }
+  };
+
+  // D04-FR-05 · P-08: keep the last known device states and re-send them while a cashier is signed in, and at once on a
+  // change — so a healthy, quiet till stays fresh at head office. Fire-and-forget; never on the sale path (hard rule #1).
+  let adapterClock: (() => unknown) | undefined;
+  const deviceAdapterClock = (clock: (() => unknown) | undefined): void => { adapterClock = clock; };
+  const deviceHeartbeat = createDeviceHeartbeat({
+    send: postDevices,
+    adapterObservedAt: () => { try { return adapterClock?.(); } catch { return undefined; } },
+    // DEV-1: only an adapter that offers its own clock (`lastObservedAt`) gives a liveness time; a change-only time is not one.
+    offersLiveness: () => adapterClock !== undefined,
+    signedIn: () => session.operator() !== undefined,
+    committing: () => commitsInFlight > 0,
+    ...(config?.deviceHeartbeatTimers?.every === undefined ? {} : { every: config.deviceHeartbeatTimers.every }),
+    ...(config?.deviceHeartbeatTimers?.soon === undefined ? {} : { soon: config.deviceHeartbeatTimers.soon }),
+  });
+  heartbeat.ref = deviceHeartbeat;
+  if (session.operator() !== undefined) deviceHeartbeat.start();
+  const devicesSaid = (devices: readonly DeviceStatus[], adapterObservedAt?: string): void => {
+    if (Array.isArray(devices) && devices.length > 0) deviceHeartbeat.update(devices, adapterObservedAt);
   };
 
   // D04-FR-05 · M12-FR-01: the customer display's frame, from the till's own basket — no network (see customer-display.ts).
@@ -1336,7 +1392,7 @@ export function bootPos(config?: {
   };
   const customerDisplayChannelName = (): string => CUSTOMER_DISPLAY_CHANNEL;
 
-  return Object.assign(view, { customerDisplay, customerDisplayChannelName, reportDevices, till, nextReceipt, receiptsRemaining, receiptNotice, holdAtTill, heldAtTill, recallAtTill, abandonAtTill, startCardPayment, answerCardPayment, checkCardPayment, voidAtTill, priceChangeValue, priceChangeAtTill, noSaleAtTill, currentBillRef: () => session.billRef(), lookupRefund, noReceiptReturn, receiptTemplate, signIn, signOut, operator, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill, loyaltyWallet });
+  return Object.assign(view, { customerDisplay, customerDisplayChannelName, reportDevices, devicesSaid, deviceAdapterClock, deviceHeartbeat, till, nextReceipt, receiptsRemaining, receiptNotice, holdAtTill, heldAtTill, recallAtTill, abandonAtTill, startCardPayment, answerCardPayment, checkCardPayment, voidAtTill, priceChangeValue, priceChangeAtTill, noSaleAtTill, currentBillRef: () => session.billRef(), lookupRefund, noReceiptReturn, receiptTemplate, signIn, signOut, operator, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill, loyaltyWallet });
 }
 
 // Attach for the view. `app.js` uses `window.posSession` when present and falls back to its

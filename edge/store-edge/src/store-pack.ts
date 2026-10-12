@@ -29,6 +29,8 @@
 
 /** A section of the pack: what the cloud said, or why this box does not know. */
 import type { PackReceiptSeries } from './receipt-numbers';
+/** OB-81: what head office says about the business's stores, for a till's bill numbers. */
+export interface PackReceiptNumbering { readonly storesInBusiness: number }
 import type { SuspensionPolicy } from '../../../packages/suspended-sales/src/suspended-bill';
 import type { MigrationFeed } from '../../sync-agent/src/migration-feed';
 import type { IndentsFeed } from '../../sync-agent/src/indents-feed';
@@ -1178,6 +1180,12 @@ export interface StorePack {
    */
   readonly receiptSeries: Register<readonly PackReceiptSeries[]>;
   /**
+   * OB-81 "A": how many stores head office says the business has. A lane with no published range keeps the box's own
+   * `R-<lane>-` numbering only while this is one; with more, the box numbers under its store-qualified default. Optional
+   * (a pack from before OB-81, or a file, does not carry it: the box then treats the business as one store).
+   */
+  readonly receiptNumbering?: Register<PackReceiptNumbering>;
+  /**
    * How this shop holds baskets at the till (M12-FR-02 · audit PF-05): whether another till may recall a held basket, the
    * price window after which a recalled basket must be re-priced, how many a till may hold. Absent → the tested defaults
    * (only the till that held it; four hours; ten).
@@ -1576,6 +1584,7 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     slaPolicy: section<unknown>('slaPolicy'),
     servicePolicy: section<PackServicePolicy>('servicePolicy'),
     receiptSeries: section<readonly PackReceiptSeries[]>('receiptSeries'),
+    receiptNumbering: section<PackReceiptNumbering>('receiptNumbering'),
     suspensionPolicy: section<SuspensionPolicy>('suspensionPolicy'),
     batches: section<readonly unknown[]>('batches'),
     recalls: section<readonly unknown[]>('recalls'),

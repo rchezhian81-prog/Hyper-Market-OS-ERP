@@ -64,6 +64,13 @@ const WORDS = {
     ok: 'OK', read: 'Please read this', done: 'Closed and signed', reopened: 'Reopened', waitingTitle: 'Waiting for approval',
     nobodyNamed: 'This store box has not been told who is using this screen. Nothing can be closed — a month close carries the name of whoever closed it, and a CA signs after them.',
     sampleData: 'Sample data — this is not your shop.',
+    plan: 'Budget and assets',
+    planLead: "The month's budget beside what the books hold, and the shop's equipment with what it is still worth in the books.",
+    budgetTitle: 'Budget against the books', assetsTitle: 'Fixed assets',
+    budget: 'budget', actual: 'books', version: 'version', setBy: 'set by', noBudget: 'No budget is set for this month.',
+    unbudgeted: 'in the books, not budgeted', noAssets: 'No fixed assets are on the register.',
+    bookValue: 'book value', depreciated: 'depreciated', inUse: 'in use at', disposedState: 'disposed',
+    planOffline: 'This page cannot reach head office, so the budget and the register cannot be shown. Nothing is guessed.',
   },
   ta: {
     title: 'நிதி',
@@ -93,6 +100,13 @@ const WORDS = {
     ok: 'சரி', read: 'இதைப் படிக்கவும்', done: 'மூடிக் கையெழுத்திடப்பட்டது', reopened: 'மீண்டும் திறக்கப்பட்டது', waitingTitle: 'அனுமதிக்காகக் காத்திருக்கிறது',
     nobodyNamed: 'இந்தத் திரையை யார் பயன்படுத்துகிறார்கள் என்று கடைப் பெட்டிக்குத் தெரியவில்லை. எதையும் மூட முடியாது — மாத முடிப்பு அதைச் செய்தவரின் பெயரைச் சுமக்கும்.',
     sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.',
+    plan: 'பட்ஜெட் மற்றும் சொத்துகள்',
+    planLead: 'இந்த மாதப் பட்ஜெட்டும் கணக்குப் புத்தகங்களில் உள்ளதும் அருகருகே; கடையின் உபகரணங்களும் புத்தகங்களில் அவற்றின் இன்றைய மதிப்பும்.',
+    budgetTitle: 'பட்ஜெட் — புத்தகங்களுடன் ஒப்பீடு', assetsTitle: 'நிலைச் சொத்துகள்',
+    budget: 'பட்ஜெட்', actual: 'புத்தகங்கள்', version: 'பதிப்பு', setBy: 'அமைத்தவர்', noBudget: 'இந்த மாதத்திற்கு பட்ஜெட் அமைக்கப்படவில்லை.',
+    unbudgeted: 'புத்தகங்களில் உள்ளது, பட்ஜெட்டில் இல்லை', noAssets: 'பதிவேட்டில் நிலைச் சொத்துகள் இல்லை.',
+    bookValue: 'புத்தக மதிப்பு', depreciated: 'தேய்மானம்', inUse: 'பயன்பாட்டில் —', disposedState: 'விற்கப்பட்டது/அகற்றப்பட்டது',
+    planOffline: 'இந்தப் பக்கத்தால் தலைமை அலுவலகத்தை அடைய முடியவில்லை, எனவே பட்ஜெட்டும் பதிவேடும் காட்டப்படவில்லை. எதுவும் ஊகிக்கப்படவில்லை.',
   },
 };
 let lang = 'en';
@@ -198,11 +212,53 @@ async function busy(id, work) {
 
 // ── Navigation ──────────────────────────────────────────────────────────────
 
-const VIEWS = ['totals', 'queue'];
+const VIEWS = ['totals', 'queue', 'plan'];
 
 function show(name) {
   for (const view of VIEWS) el(`view-${view}`).hidden = view !== name;
   for (const tab of VIEWS) el(`tab-${tab}`).setAttribute('aria-current', tab === name ? 'page' : 'false');
+  if (name === 'plan') void renderPlan();
+}
+
+// ── Budget and assets (OB-57 · D10-FR-05) — a read of head office's own figures; nothing is set on this page ────────
+
+function planRow(title, detail, value) {
+  const row = document.createElement('div');
+  row.className = 'row';
+  const what = document.createElement('div');
+  what.className = 'what';
+  const name = document.createElement('span');
+  name.textContent = title;
+  const sub = document.createElement('small');
+  sub.textContent = detail;
+  what.append(name, sub);
+  const fig = document.createElement('span');
+  fig.className = 'fig';
+  fig.textContent = value;
+  row.append(what, fig);
+  return row;
+}
+
+async function renderPlan() {
+  // The session reads head office (two GETs); this view only draws what comes back. Not known is said, never zero.
+  const plan = typeof session.plan === 'function' ? await session.plan() : undefined;
+  const budget = plan?.budget;
+  const register = plan?.register;
+  if (budget === undefined || register === undefined) {
+    el('budget-list').replaceChildren(emptyLine(t('planOffline')));
+    el('assets-list').replaceChildren();
+    return;
+  }
+  const rows = (budget.rows ?? []).map((r) => planRow(r.account, `${t('budget')} ${inr(r.budgetMinor)} · ${t('actual')} ${inr(r.actualMinor)}`, `${r.varianceMinor >= 0 ? '+' : '−'}${inr(Math.abs(r.varianceMinor))}`));
+  const extra = (budget.unbudgeted ?? []).map((u) => planRow(u.account, t('unbudgeted'), inr(u.actualMinor)));
+  const head = budget.budget === null ? [emptyLine(t('noBudget'))] : [emptyLine(`${t('version')} ${budget.budget.version} · ${t('setBy')} ${budget.budget.setBy}`)];
+  el('budget-list').replaceChildren(...head, ...rows, ...extra);
+  const assets = (register.assets ?? []).map((a) => planRow(
+    `${a.name} (${a.assetId})`,
+    `${a.state === 'disposed' ? t('disposedState') : `${t('inUse')} ${a.storeId}`} · ${t('depreciated')} ${inr(a.depreciationPostedMinor)}`,
+    `${t('bookValue')} ${inr(a.bookValueMinor)}`,
+  ));
+  el('assets-list').replaceChildren(...(assets.length === 0 ? [emptyLine(t('noAssets'))] : assets));
 }
 for (const name of VIEWS) el(`tab-${name}`).addEventListener('click', () => { show(name); });
 
@@ -460,6 +516,11 @@ function paintChrome() {
   el('whoami').textContent = window.financeData?.userId ?? '';
   el('tab-totals').textContent = t('month');
   el('tab-queue').textContent = t('queue');
+  el('tab-plan').textContent = t('plan');
+  el('plan-title').textContent = t('plan');
+  el('plan-lead').textContent = t('planLead');
+  el('budget-title').textContent = t('budgetTitle');
+  el('assets-title').textContent = t('assetsTitle');
   el('totals-title').textContent = `${t('month')} ${window.financeData?.period ?? ''}`;
   el('totals-lead').textContent = t('totalsLead');
   el('blockers-title').textContent = t('blockersTitle');
@@ -487,6 +548,7 @@ function paintChrome() {
 
   renderTotals();
   renderQueue();
+  if (!el('view-plan').hidden) void renderPlan();
 }
 
 el('lang').addEventListener('click', () => {

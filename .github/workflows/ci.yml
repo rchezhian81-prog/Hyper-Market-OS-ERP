@@ -382,7 +382,12 @@ jobs:
           export PLAYWRIGHT_CHROMIUM_EXECUTABLE="$(node -e "console.log(require('playwright-core').chromium.executablePath())")"
           test -x "$PLAYWRIGHT_CHROMIUM_EXECUTABLE" \
             || (echo "::error::no Chromium at $PLAYWRIGHT_CHROMIUM_EXECUTABLE — the browser suites would silently skip" && exit 1)
-          pnpm run test:e2e --reporter=default --reporter=json --outputFile=/tmp/e2e.json
+          set -o pipefail
+          pnpm run test:e2e --reporter=default --reporter=github-actions --reporter=json --outputFile=/tmp/e2e.json 2>&1 | tee /tmp/e2e.log || {
+            # The run's logs cannot be fetched from a build session; name each failing test on the check itself.
+            grep -E 'FAIL|Error|×|Unhandled|EADDRINUSE|Timeout' /tmp/e2e.log | grep -v '✓' | tail -40 | while IFS= read -r line; do echo "::error::${line:0:300}"; done
+            exit 1
+          }
           node scripts/assert-suite-ran.mjs /tmp/e2e.json --min-files 60 --min-tests 200
 
   performance:

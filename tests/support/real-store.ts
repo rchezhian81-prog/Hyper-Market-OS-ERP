@@ -27,6 +27,8 @@ export const CONNECTED_APP_ROLE = 'sre_app_connected';
 export interface RealCloudRequest {
   readonly method: 'GET' | 'POST' | 'PUT' | 'DELETE';
   readonly path: string;
+  /** PA-12 r12: send a MACHINE credential (no interactive sign-in evidence), as the backup job's is issued. */
+  readonly machine?: boolean;
   /** Whose token the request carries. */
   readonly userId: string;
   readonly body?: unknown;
@@ -122,12 +124,18 @@ export async function startRealCloud(input: RealCloudInput): Promise<RealCloud> 
   // OB-54: a store computer granted for ONE store carries that store in its credential, as the administrator issues it
   // (scripts/issue-store-token.mjs --store) — the box's CLOUD_API_TOKEN names its store.
   const boxStores = new Map<string, string>();
-  const token = (userId: string): string => TEST_IDP.issue({ sub: userId, tenantId: input.tenantId, branchId: boxStores.get(userId) });
+  // PA-12 round 12: the backup job's credential is a MACHINE one (scripts/issue-store-token.mjs --no-store) — it carries no
+  // interactive sign-in evidence (auth_time/amr), unlike a person's sign-in at the identity server.
+  const machines = new Set<string>();
+  const token = (userId: string, machine = false): string => TEST_IDP.issue({
+    sub: userId, tenantId: input.tenantId, branchId: boxStores.get(userId),
+    ...(machine || machines.has(userId) ? { authTimeFromNowSeconds: null, amr: null } : {}),
+  });
   const request = async (r: RealCloudRequest): Promise<RealCloudReply> => {
     const response = await fetch(`${baseUrl}${r.path}`, {
       method: r.method,
       headers: {
-        authorization: `Bearer ${token(r.userId)}`,
+        authorization: `Bearer ${token(r.userId, r.machine === true)}`,
         ...(r.body === undefined ? {} : { 'content-type': 'application/json' }),
         ...(r.idempotencyKey === undefined ? {} : { 'idempotency-key': r.idempotencyKey }),
       },
@@ -163,6 +171,7 @@ export async function startRealCloud(input: RealCloudInput): Promise<RealCloud> 
       const reply = await request({ method: 'POST', path: `/v1/identity/grants/${grantId}/approve`, userId: input.owner, idempotencyKey: `${grantId}-approve`, body: {} });
       if (reply.status !== 201) throw new Error(`granting ${roleId} to ${userId} failed: ${reply.status} ${JSON.stringify(reply.body)}`);
       if (roleId === 'store_computer' && branchScope !== 'all' && branchScope.length === 1) boxStores.set(userId, branchScope[0]!);
+      if (roleId === 'backup_job') machines.add(userId);
     },
     stop: () => running.stop(),
   };

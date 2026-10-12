@@ -24,7 +24,7 @@ import { openDeliveriesFor } from '../../purchase/src/purchase-orders';
 import {
   STREAM, ROLE_GRANTED, ROLE_REVOKED, streamName, effectiveGrants, foldPurchaseOrders, orgNodeVersionEntry,
   orgStructureAdapter, inventoryAdapter, deviceRegistryAdapter, cashAdapter, shiftAdapter, heldVersionsAdapter,
-  storeSettingsAdapter, approvalRequestsAdapter,
+  storeSettingsAdapter, approvalRequestsAdapter, legacyTillStore, tillsAtStore,
 } from './adapters';
 
 const STATE_OF: Readonly<Record<OrgNode['status'], BranchState>> = {
@@ -69,23 +69,30 @@ export function branchTransitionsAdapter(input: { readonly store: EventStore; re
         stockMinor += row.value.minor;
       }
 
-      // ── cash and open shifts: the branch's tills (its POS lanes in the fleet register) ───────────────────────────
+      // ── cash and open shifts: the branch's tills — OB-80: a till is (store, till), so this branch's tills are its POS
+      // lanes in the fleet register and every till head office has kept cash for AT this branch; each is read as this
+      // branch's till (another store's till of the same name is never counted here) ──────────────────────────────────
       const fleet = await deviceRegistryAdapter({ store, now }).fleet(tenantId);
       const atBranch = fleet.filter((d) => d.branchId === branchId);
-      const tills = atBranch.filter((d) => d.kind === 'pos_lane').map((d) => d.deviceId);
+      const tills = [...new Set([...atBranch.filter((d) => d.kind === 'pos_lane').map((d) => d.deviceId), ...await tillsAtStore(store, tenantId, branchId)])];
       const cash = cashAdapter({ store, now });
       let cashMinor = 0; let openShifts = 0;
       for (const tillId of tills) {
-        const chain = await cash.tillMovements(tenantId, tillId);
+        const chain = await cash.tillMovements(tenantId, tillId, branchId);
         cashMinor += tillDrawerBalanceMinor(chain, tillId);
         if (custodianOf(chain, tillId) !== null) openShifts += 1;
       }
 
       // ── exceptions: a material over/short at one of the branch's tills that nobody has signed off ────────────────
+      // OB-80: a close is this branch's when it names this branch; one kept before OB-80 (no store) by the migration rule.
       const shifts = shiftAdapter({ store, now });
       const reviewed = new Set((await shifts.overShortReviews(tenantId)).map((r) => r.shiftId));
-      const unresolvedExceptions = (await shifts.overShortShifts(tenantId))
-        .filter((r) => tills.includes(r.tillId) && !reviewed.has(r.shiftId)).length;
+      let unresolvedExceptions = 0;
+      for (const r of await shifts.overShortShifts(tenantId)) {
+        if (reviewed.has(r.shiftId)) continue;
+        const at = r.storeId ?? await legacyTillStore({ store, now }, tenantId, r.tillId);
+        if (at === branchId) unresolvedExceptions += 1;
+      }
 
       // ── open documents: purchase orders still due to deliver here ──────────────────────────────────────────────
       const openDocuments = openDeliveriesFor([...(await foldPurchaseOrders(store, tenantId)).values()], branchId, branchOf).length;

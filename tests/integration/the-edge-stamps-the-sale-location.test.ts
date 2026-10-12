@@ -128,7 +128,7 @@ describe('the edge stamps the sale\'s stock location from its store pack (Stage 
     expect(await onHand(h, STORE)).toBe(20);
   });
 
-  it('a box with NO store pack changes nothing: the cloud still falls back to the lane and SAYS it assumed (P-08)', async () => {
+  it('a box with NO store pack: head office stamps the store its credential names (OB-54 round 10) — never a guess from the lane', async () => {
     const bare = await mkdtemp(join(tmpdir(), 'sre-edge-nolocation-'));
     try {
       const edge = (await startEdge(env(false, bare), () => {}))!;
@@ -140,9 +140,9 @@ describe('the edge stamps the sale\'s stock location from its store pack (Stage 
       }
       const moves = await movementsOf(h, 'S-3');
       expect(moves).toHaveLength(1);
-      expect(moves[0]?.locationId).toBe('lane-1');
-      expect(moves[0]?.reason).toContain('assumed from lane');
-      expect(await onHand(h, STORE)).toBe(20); // the shop's own count untouched by a sale it could not place
+      expect(moves[0]?.locationId).toBe(STORE);             // the credential's store, stamped server-side and listed
+      expect(moves[0]?.reason).toBeUndefined();
+      expect(await onHand(h, STORE)).toBe(19);
     } finally {
       await rm(bare, { recursive: true, force: true });
     }

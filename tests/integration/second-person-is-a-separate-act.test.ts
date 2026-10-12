@@ -132,6 +132,11 @@ describe('a relayed decision by a manager outside the request\'s branch is recor
     await h.seedOwner(A, 'u-owner');
     await h.provisionRole(A, 'u-mgr1', 'store_manager', ['br-1']);
     await h.provisionRole(A, 'u-box', 'store_computer', ['store-1']); // the box's sync credential relays; it decides nothing
+    // OB-54 round 10: a box relays only records it can place in its own store — br-1 and br-2 are places at store-1 here.
+    for (const [id, body] of [
+      ['C-A', { kind: 'company', name: 'Synthetic' }], ['store-1', { kind: 'branch', name: 'Store 1', parentId: 'C-A', companyId: 'C-A' }],
+      ['br-1', { kind: 'department', name: 'Section 1', parentId: 'store-1', companyId: 'C-A' }], ['br-2', { kind: 'department', name: 'Section 2', parentId: 'store-1', companyId: 'C-A' }],
+    ] as const) expect((await h.request({ method: 'POST', path: `/v1/org/nodes/${id}`, userId: 'u-owner', tenantId: A, idempotencyKey: `org-${id}`, body })).status).toBe(201);
     const away = (await relay(h, 'r-away', 'u-mgr1', 'br-2')).body as Relayed;
     expect(away.flags).toContain('decider_outside_branch');
     expect(away.applied).toBe(false);

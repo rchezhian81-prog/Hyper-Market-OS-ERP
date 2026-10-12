@@ -874,4 +874,34 @@ describe.skipIf(!HAVE_BROWSER)('every screen opens with the network cut (SYNC-06
       await context.close();
     }
   });
+
+  it('the warehouse supervisor\'s own view script runs offline — the page is not just a cached frame (round 13)', async () => {
+    // Round 13 found warehouse.js (and setup.js) registering the worker but missing from its SHELL: offline the cached
+    // page came back, its view script did not, and the screen stayed an empty frame of "—" headings.
+    const context = await browser.newContext();
+    try {
+      const page = await context.newPage();
+      const failed: string[] = [];
+      page.on('requestfailed', (r) => failed.push(new URL(r.url()).pathname));
+      await page.goto(`${base}/warehouse-supervisor`, { waitUntil: 'load' });
+      await page.evaluate(() => (globalThis as unknown as BrowserWindow).navigator.serviceWorker.ready.then(() => true));
+      await page.waitForFunction(() => (globalThis as unknown as BrowserWindow).navigator.serviceWorker.controller !== null, { timeout: 15_000 });
+      // The worker kept the page's OWN view script (deterministic: install finishes before `ready`).
+      expect(await page.evaluate("caches.match('./warehouse.js').then((r) => r !== undefined)")).toBe(true);
+      // Empty the browser's own HTTP cache, so what opens offline is only what the service worker kept — as after the
+      // tablet restarts. (Without this the reload can be rescued by the memory cache, and the fault hides.)
+      await (await context.newCDPSession(page)).send('Network.clearBrowserCache');
+      await context.setOffline(true);
+      await page.reload({ waitUntil: 'load' });
+
+      await expectNetworkCut(page);
+      expect(await page.evaluate(() => typeof (globalThis as unknown as BrowserWindow).shellCachedAt === 'string')).toBe(true);
+      // The built bundle is network-FIRST by design (sw.js BUILT): offline its network attempt fails and the worker answers
+      // from its cache — that attempt is expected (seen on CI, where the bundle exists). Every COMMITTED script must load.
+      expect(failed.filter((f) => f.endsWith('.js') && !f.endsWith('/web-erp.bundle.js'))).toEqual([]);
+      expect((await page.textContent('#bins-heading'))?.trim()).not.toBe('—');
+    } finally {
+      await context.close();
+    }
+  });
 });

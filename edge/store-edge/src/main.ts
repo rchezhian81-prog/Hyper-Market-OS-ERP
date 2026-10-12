@@ -38,6 +38,9 @@ import { httpTransport } from '../../../edge/sync-agent/src/http-transport';
 import { httpPackSource } from '../../../edge/sync-agent/src/pack-source';
 import { pullPack, type PackPullOutcome, type PackPullStatus } from '../../../edge/sync-agent/src/pack-puller';
 import { httpSyncWatermarkReporter, type SyncWatermarkReport } from '../../../edge/sync-agent/src/sync-watermark-report';
+import { httpBoxHealthReporter, type BoxHealthReport } from '../../../edge/sync-agent/src/box-health-report';
+import { statfs } from 'node:fs/promises';
+import { SALE_RESERVE_BYTES } from './durability';
 import { httpStorePackSource, httpHeldVersionsReporter, pullStorePack, type StorePackPullOutcome, type StorePackPullStatus } from '../../../edge/sync-agent/src/store-pack-feed';
 import { readHeldStorePack, writeHeldStorePack, packPayloadOf } from './store-pack-held';
 import type { StorePackEnvelope } from '../../../services/platform/src/store-packs';
@@ -97,7 +100,7 @@ import { emptyPack, readPack, withMigrationFeed, withPublishedTemplates, withInd
 import { managerPayload, type ScreenInput } from './screen-data';
 import { hmacSigner } from '../../../services/catalogue/src/index';
 import { makeEvent, type DomainEvent } from '../../../packages/contracts/src/event';
-import { closeDay as decideDayClose, reopenDay as decideReopenDay } from '../../../packages/day-close/src/day-close';
+import { closeDay as decideDayClose, reopenDay as decideReopenDay, carriedForwardOf } from '../../../packages/day-close/src/day-close';
 import { toCloudSale } from './cloud-sale';
 import { toCloudReturn } from './cloud-return';
 import { toCloudConcessionTag } from './cloud-concession-tag';
@@ -134,6 +137,16 @@ const CLOSE_AUTHORITY = 'till.dayclose.read';
 /** Who may approve a reopen — the permission head office re-checks on every synced reopen (§28). */
 const APPROVE_REOPEN_AUTHORITY = 'till.dayclose.approve';
 
+/** OB-55 "A": what the manager screen sends to close the day with pending card/UPI payments carried forward. */
+export interface CarryForwardRequest {
+  /** Every pending payment, by attempt id — the box refuses unless it is exactly the pending set. */
+  readonly attemptIds: readonly string[];
+  /** The SECOND person's staff ID — never the closer — and their own till PIN (to the PIN register only, never written). */
+  readonly approvedBy: string;
+  readonly approverPin: string;
+  readonly reason: string;
+}
+
 /**
  * Mint the cloud event from a day-close log record — used BOTH by the pipeline's restart re-queue and
  * by the run-time enqueue in `closeDay`/`reopenDay`, so both mint the identical event (the cloud routes
@@ -150,6 +163,56 @@ function dayCloseEventFrom(record: string, index: number): DomainEvent | undefin
   try { parsed = JSON.parse(record) as unknown; } catch { return undefined; }
   const p = (parsed !== null && typeof parsed === 'object' ? parsed : {}) as Record<string, unknown>;
   const dayCloseId = typeof p['dayCloseId'] === 'string' && p['dayCloseId'] !== '' ? (p['dayCloseId'] as string) : `record-${index}`;
+
+  // OB-55 / PF-06: a machine answer typed in late for an earlier day's attempt, on a manager's approval — relayed once.
+  const lateAttemptId = p['lateAnswerAttemptId'];
+  if (typeof lateAttemptId === 'string' && lateAttemptId !== '') {
+    return makeEvent({
+      id: `edge-late-payment-answer-${lateAttemptId}`,
+      type: 'LatePaymentAnswerRecorded',
+      occurredAt: typeof p['answeredAt'] === 'string' ? (p['answeredAt'] as string) : new Date().toISOString(),
+      idempotencyKey: `late-payment-answer:${lateAttemptId}`,
+      source: 'edge/box',
+      payload: {
+        attemptId: lateAttemptId, laneId: p['laneId'], billRef: p['billRef'], kind: p['kind'], amountMinor: p['amountMinor'], askedAt: p['askedAt'],
+        tradingDay: p['tradingDay'], outcome: p['outcome'], answeredBy: p['answeredBy'], approvedBy: p['approvedBy'], approvalId: p['approvalId'],
+        answeredAt: p['answeredAt'], storeId: p['storeId'],
+      },
+    });
+  }
+
+  // OB-69 "A": a card/UPI attempt the till recorded as NO ANSWER — relayed to head office the moment it is recorded (queued
+  // here while the line is down, sent on reconnect), once per attempt, keyed on it.
+  const noAnswerAttemptId = p['noAnswerAttemptId'];
+  if (typeof noAnswerAttemptId === 'string' && noAnswerAttemptId !== '') {
+    return makeEvent({
+      id: `edge-payment-no-answer-${noAnswerAttemptId}`,
+      type: 'PaymentNoAnswerRaised',
+      occurredAt: typeof p['recordedAt'] === 'string' ? (p['recordedAt'] as string) : new Date().toISOString(),
+      idempotencyKey: `payment-no-answer:${noAnswerAttemptId}`,
+      source: 'edge/box',
+      payload: {
+        attemptId: noAnswerAttemptId, laneId: p['laneId'], billRef: p['billRef'], kind: p['kind'], amountMinor: p['amountMinor'], askedAt: p['askedAt'],
+        tradingDay: p['tradingDay'], recordedAt: p['recordedAt'], recordedBy: p['recordedBy'], storeId: p['storeId'],
+      },
+    });
+  }
+
+  // OB-55: the provider's later answer on a payment a close carried forward — relayed once per payment, keyed on it.
+  const resolvedAttemptId = p['resolvedAttemptId'];
+  if (typeof resolvedAttemptId === 'string' && resolvedAttemptId !== '') {
+    return makeEvent({
+      id: `edge-carried-payment-resolved-${resolvedAttemptId}`,
+      type: 'CarriedPaymentResolved',
+      occurredAt: typeof p['resolvedAt'] === 'string' ? (p['resolvedAt'] as string) : new Date().toISOString(),
+      idempotencyKey: `carried-payment-resolved:${resolvedAttemptId}`,
+      source: 'edge/box',
+      payload: {
+        attemptId: resolvedAttemptId, dayCloseId: p['dayCloseId'], storeId: p['storeId'], paid: p['paid'], owedToCustomerMinor: p['owedToCustomerMinor'],
+        amountMinor: p['amountMinor'], detail: p['detail'], resolvedAt: p['resolvedAt'],
+      },
+    });
+  }
 
   // A reopen record — the controlled, audited unlock of a locked day (§28). Its payload is the body
   // `POST /v1/pos/day-close/:dayCloseId/reopen/synced` reads (reopenedBy, approvedBy, reason), which the
@@ -188,6 +251,9 @@ function dayCloseEventFrom(record: string, index: number): DomainEvent | undefin
       closedBy: p['closedBy'],
       closedAt: p['closedAt'],
       locked: true,
+      // OB-55: the payments carried forward to head office by name, and the box's seal on the second person who approved.
+      ...(p['carriedForward'] === undefined ? {} : { carriedForward: p['carriedForward'] }),
+      ...(p['approverVerified'] === undefined ? {} : { approverVerified: p['approverVerified'] }),
     },
   });
 }
@@ -319,9 +385,11 @@ export interface EdgeProcess {
       readonly closerPin?: string;
       /** The person this box already verified for the request (their till session or the hosted sign-in). */
       readonly verifiedPerson?: { readonly userId: string; readonly via: string; readonly laneId: string };
+      /** OB-55: close with the named pending card/UPI payments carried forward — a SECOND person's staff ID and own till PIN. */
+      readonly carryForward?: CarryForwardRequest;
     },
   ) => Promise<
-    | { readonly closed: true; readonly tradingDay: string; readonly locked: true }
+    | { readonly closed: true; readonly tradingDay: string; readonly locked: true; readonly carriedForward?: readonly string[]; readonly unresolvedMinor?: { readonly card: number; readonly upi: number } }
     | { readonly closed: false; readonly reason: string }
   >;
   /**
@@ -385,6 +453,11 @@ export interface EdgeProcess {
    * they really are. Null without a cloud or without EDGE_STORE_ID. Rides the sync loop after the drains.
    */
   readonly reportSyncWatermarks?: (() => Promise<boolean>) | null;
+  /**
+   * M35-FR-03: tell head office how this box's disk, queue and tills' devices are (D04-FR-05), so its observed health
+   * judges them instead of "unknown". Null without a cloud or without EDGE_STORE_ID. Rides the sync loop after the drains.
+   */
+  readonly reportBoxHealth?: (() => Promise<boolean>) | null;
   /**
    * Run exactly one drain-and-settle of both queues (sales then refunds), returning what moved.
    * Null when no cloud is configured — there is nothing to drain to. The poll loop calls the same
@@ -798,8 +871,12 @@ export async function startEdge(
   const deviceEventsOutbox = deviceEventsPipeline.outbox;
   const tillCashOutbox = tillCashPipeline.outbox;
   // LIVE unsent across ALL pipelines — the day close's gate, and (PA-04) what this box tells head office it still holds.
+  // OB-55 / PF-06: a payment exception's relay (a late answer, a carried payment's provider answer) rides the day-close
+  // queue AHEAD of the next close event, so it reaches head office first; it is not trading the day still owes the cloud,
+  // and counting it would stop an offline store closing (P-01). It stays visible on the queue and is relayed once.
+  const EXCEPTION_RELAYS = new Set(['LatePaymentAnswerRecorded', 'CarriedPaymentResolved', 'PaymentNoAnswerRaised']);
   const unsentAcrossAllQueues = (): number => outbox.pending().length + returnsOutbox.pending().length
-    + completionsOutbox.pending().length + dayCloseOutbox.pending().length + concessionTagsOutbox.pending().length
+    + completionsOutbox.pending().length + dayCloseOutbox.pending().filter((i) => !EXCEPTION_RELAYS.has(i.event.type)).length + concessionTagsOutbox.pending().length
     + deviceEventsOutbox.pending().length + tillCashOutbox.pending().length;
 
   // Every device-event key this box has EVER taken, rebuilt from the whole durable log — not from the outbox,
@@ -1248,6 +1325,12 @@ export async function startEdge(
   const receiptNumbers = tillOperators === null ? null : await ReceiptNumbers.open({
     dataDir: settings['EDGE_DATA_DIR']!, capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']),
     published: () => (pack.receiptSeries.known ? pack.receiptSeries.value : null),
+    // OB-81 "A": the box's store and how many stores the business has, from the CURRENT pack — so a second store opening
+    // moves an unissued till off `R-<lane>-` onto this box's store-qualified default on the next pull, without a restart.
+    numbering: () => ({
+      storeId: storeIdOfThisBox() ?? headOfficeStoreId ?? null,
+      storesInBusiness: pack.receiptNumbering?.known === true && Number.isSafeInteger(pack.receiptNumbering.value.storesInBusiness) ? pack.receiptNumbering.value.storesInBusiness : null,
+    }),
     committed: [
       ...(await readLog(log.path)).flatMap((r) => {
         if (!r.ok) return [];
@@ -1281,6 +1364,101 @@ export async function startEdge(
       ? 'till sign-in: the person the hosted sign-in names (EDGE_LANE_TRUST_FORWARDED_USER) — only right behind the hosted front.'
       : `till sign-in: staff ID and till PIN, checked on this box (${tillOperators.live().length} session(s) still open).`);
   }
+  // OB-55 "A": a payment the day close CARRIED FORWARD to head office is settled later by the provider's record (the till's
+  // Check payment button) — and that answer is relayed to head office ONCE, on the day-close log (durable first, then
+  // queued; re-minted on a restart), so the finance exception it raised is resolved there. A payment not carried forward
+  // is recovered exactly as before.
+  // OB-69 "A": a no-answer RAISED to head office the moment it was recorded is an open finance item there too — its provider
+  // answer is relayed the same way (once), whether or not a day close has carried it yet.
+  const carriedOnBox = async (): Promise<Map<string, { dayCloseId: string | null; resolved: boolean; carried: boolean }>> => {
+    const out = new Map<string, { dayCloseId: string | null; resolved: boolean; carried: boolean }>();
+    for (const entry of await readLog(dayCloseLog.path)) {
+      if (entry.ok !== true) continue;
+      let p: Record<string, unknown>;
+      try { p = JSON.parse(entry.record) as Record<string, unknown>; } catch { continue; }
+      const raisedId = p['noAnswerAttemptId'];
+      if (typeof raisedId === 'string' && !out.has(raisedId)) out.set(raisedId, { dayCloseId: null, resolved: false, carried: false });
+      const cf = p['carriedForward'] as { payments?: { attemptId?: unknown }[] } | undefined;
+      const dc = p['dayCloseId'];
+      if (cf !== undefined && Array.isArray(cf.payments) && typeof dc === 'string') {
+        for (const x of cf.payments) {
+          if (typeof x.attemptId !== 'string') continue;
+          const c = out.get(x.attemptId);
+          if (c === undefined) out.set(x.attemptId, { dayCloseId: dc, resolved: false, carried: true });
+          else if (!c.carried) { c.dayCloseId = dc; c.carried = true; }
+        }
+      }
+      const r = p['resolvedAttemptId'];
+      if (typeof r === 'string') { const c = out.get(r); if (c !== undefined) c.resolved = true; }
+    }
+    return out;
+  };
+  /**
+   * OB-69 "A" (owner, 11 Oct 2026, "The moment it happens"): the till recorded the machine's NO ANSWER on this attempt —
+   * relay it to head office NOW as an open finance item: durable on the day-close log first, then queued (sent at once when
+   * the line is up, on reconnect when it is not; re-minted on a restart). Once per attempt.
+   */
+  const raiseNoAnswer = async (a: { readonly attemptId: string; readonly laneId: string; readonly billRef: string; readonly kind: string; readonly amountMinor: number; readonly askedAt: string; readonly answeredBy?: string; readonly answeredAt?: string; readonly askedBy: string }): Promise<void> => {
+    if ((await carriedOnBox()).has(a.attemptId)) return;
+    const record = JSON.stringify({
+      noAnswerAttemptId: a.attemptId, attemptId: a.attemptId, laneId: a.laneId, billRef: a.billRef, kind: a.kind, amountMinor: a.amountMinor, askedAt: a.askedAt,
+      tradingDay: tradingDate(wallClockIn(a.askedAt), packCutoff(pack)), recordedAt: a.answeredAt ?? new Date().toISOString(), recordedBy: a.answeredBy ?? a.askedBy, storeId: storeIdOfThisBox(),
+    });
+    await dayCloseLog.append(record);
+    const event = dayCloseEventFrom(record, 0);
+    if (event !== undefined) dayCloseOutbox.enqueue(event);
+  };
+  // A no-answer recorded before this box relayed them (or whose relay write failed) is raised when the box starts.
+  if (payments !== null) {
+    for (const a of payments.pending()) {
+      if (a.state !== 'no_answer') continue;
+      try { await raiseNoAnswer(a); } catch (e) { say(`could not queue the no-answer on ${a.attemptId} for head office: ${e instanceof Error ? e.message : String(e)} — it stays on the till's unresolved list`); }
+    }
+  }
+  const recoverCarrying = async (pa: PaymentAttempts, i: { readonly laneId: string; readonly attemptId: unknown }): ReturnType<PaymentAttempts['recover']> => {
+    const id = typeof i.attemptId === 'string' ? i.attemptId : '';
+    const known = (await carriedOnBox()).get(id);
+    const carried = known?.carried === true ? known : undefined;
+    const out = await pa.recover({ ...i, ...(carried === undefined ? {} : { allowAsked: true }) });
+    if (known !== undefined && !known.resolved && out.ok && (out.attempt.state === 'recovered_paid' || out.attempt.state === 'recovered_not_paid')) {
+      const a = out.attempt;
+      const record = JSON.stringify({
+        resolvedAttemptId: a.attemptId, attemptId: a.attemptId, ...(known.dayCloseId === null ? {} : { dayCloseId: known.dayCloseId }), storeId: storeIdOfThisBox(),
+        paid: a.state === 'recovered_paid', owedToCustomerMinor: a.owedToCustomerMinor ?? 0, amountMinor: a.amountMinor,
+        detail: a.recoveryDetail ?? '', resolvedAt: a.recoveredAt ?? new Date().toISOString(),
+      });
+      await dayCloseLog.append(record);
+      const event = dayCloseEventFrom(record, 0);
+      if (event !== undefined) dayCloseOutbox.enqueue(event);
+    }
+    return out;
+  };
+  // OB-55 / PF-06 (P-04): the machine's answer typed in for a card/UPI attempt of an EARLIER trading day lifts the day-close
+  // hold, so it is not one cashier's act: it needs a manager's one-use approval at this till for exactly that attempt and
+  // amount (spent here), and it is relayed to head office as a person's answer — never mistaken for the provider's. An
+  // answer on the same trading day keeps today's flow.
+  const answerGuarded = async (pa: PaymentAttempts, i: { readonly laneId: string; readonly by: string; readonly attemptId: unknown; readonly outcome: unknown; readonly approvalId?: string }): ReturnType<PaymentAttempts['answer']> => {
+    const a = pa.get(i.attemptId);
+    const rule = packCutoff(pack);
+    const late = a !== undefined && a.state === 'asked' && a.laneId === i.laneId && (i.outcome === 'approved' || i.outcome === 'declined')
+      && tradingDate(wallClockIn(a.askedAt), rule) < tradingDate(wallClockIn(new Date().toISOString()), rule);
+    if (!late || a === undefined) return pa.answer(i);
+    if (tillApprovals === null) return { ok: false, refusedBecause: 'approval_required', laneMessage: 'This payment was asked on an earlier day. Its answer needs a manager\'s approval, and this store computer cannot take one. Nothing was recorded.', attempt: a };
+    const spent = await tillApprovals.spendOverride({ approvalId: i.approvalId, kind: 'late_payment_answer', billRef: a.attemptId, valueMinor: a.amountMinor, requestedBy: i.by, laneId: i.laneId, activityId: `late-answer:${a.attemptId}` });
+    if (!spent.ok) return { ok: false, refusedBecause: spent.refusedBecause, laneMessage: `This payment was asked on an earlier trading day, so the machine's answer needs a manager's approval for it. ${spent.laneMessage}`, attempt: a };
+    const out = await pa.answer(i);
+    if (out.ok && out.attempt.state === i.outcome) {
+      const record = JSON.stringify({
+        lateAnswerAttemptId: a.attemptId, attemptId: a.attemptId, laneId: a.laneId, billRef: a.billRef, kind: a.kind, amountMinor: a.amountMinor,
+        askedAt: a.askedAt, tradingDay: tradingDate(wallClockIn(a.askedAt), rule), outcome: i.outcome, answeredBy: i.by,
+        approvedBy: spent.stamp!.approvedBy, approvalId: spent.stamp!.approvalId, answeredAt: out.attempt.answeredAt ?? new Date().toISOString(), storeId: storeIdOfThisBox(),
+      });
+      await dayCloseLog.append(record);
+      const event = dayCloseEventFrom(record, 0);
+      if (event !== undefined) dayCloseOutbox.enqueue(event);
+    }
+    return out;
+  };
   const lane = lanePort === undefined ? null : await startLaneServer({
     node,
     port: Number(lanePort),
@@ -1301,8 +1479,16 @@ export async function startEdge(
     ...(payments === null ? {} : {
       payments: {
         ask: (i) => payments.ask(i),
-        answer: (i) => payments.answer(i),
-        recover: (i) => payments.recover(i),
+        // OB-69: a NO ANSWER is relayed to head office the moment it is recorded (durable, queued, once). The till's answer
+        // stands either way: a relay that cannot be queued now is raised again when the box starts (never lost).
+        answer: async (i) => {
+          const out = await answerGuarded(payments, i);
+          if (out.ok && out.attempt.state === 'no_answer') {
+            try { await raiseNoAnswer(out.attempt); } catch (e) { say(`could not queue the no-answer on ${out.attempt.attemptId} for head office: ${e instanceof Error ? e.message : String(e)} — raised again at the next start`); }
+          }
+          return out;
+        },
+        recover: (i) => recoverCarrying(payments, i),
         checkTenders: (i) => payments.checkTenders(i),
         status: (laneId) => payments.status(laneId),
       },
@@ -1501,9 +1687,11 @@ export async function startEdge(
       readonly closerPin?: string;
       /** The person this box already verified for the request (their till session or the hosted sign-in). */
       readonly verifiedPerson?: { readonly userId: string; readonly via: string; readonly laneId: string };
+      /** OB-55: close with the named pending card/UPI payments carried forward — a SECOND person's staff ID and own till PIN. */
+      readonly carryForward?: CarryForwardRequest;
     },
   ): Promise<
-    | { readonly closed: true; readonly tradingDay: string; readonly locked: true }
+    | { readonly closed: true; readonly tradingDay: string; readonly locked: true; readonly carriedForward?: readonly string[]; readonly unresolvedMinor?: { readonly card: number; readonly upi: number } }
     | { readonly closed: false; readonly reason: string }
   > => {
     const input = snapshot();
@@ -1547,11 +1735,17 @@ export async function startEdge(
 
     // Gate-check with the tested engine (a throwaway outbox — the durable write + enqueue below is what
     // survives a restart, so we do not use the engine's own enqueue here). A blocker throws; surface it.
+    // OB-55 "A": a pending payment may be CARRIED FORWARD — only with a second person's approval naming each one (the engine
+    // checks the names and that the approver is not the closer; the approver's PIN is checked below, after the closer's).
+    const cf = req.carryForward;
+    const carryInput = cf === undefined || pendingPayments.length === 0 ? undefined
+      : { approvalId: 'to-be-issued', approvedBy: (cf.approvedBy ?? '').trim(), reason: (cf.reason ?? '').trim(), attemptIds: Array.isArray(cf.attemptIds) ? cf.attemptIds.filter((a): a is string => typeof a === 'string') : [] };
     try {
       decideDayClose({
         id: req.dayCloseId, storeId: storeIdHere, tradingDay: dayToClose, closedBy: (req.closedBy ?? '').trim() || (req.verifiedPerson?.userId ?? 'unconfirmed'),
         closedAtLocal: wallClockIn(input.now), closedAt: input.now, tradingDayRule: rule,
         unresolvedExceptions, unsentSyncItems, openShifts, pendingPayments,
+        ...(carryInput === undefined ? {} : { carriedForward: carryInput }),
       }, new SyncOutbox());
     } catch (e) {
       return { closed: false, reason: e instanceof Error ? e.message : String(e) };
@@ -1583,16 +1777,40 @@ export async function startEdge(
     if (closer === undefined) {
       return { closed: false, reason: 'the person closing the day must confirm it is them — their staff ID and till PIN; a typed name closes nothing' };
     }
+    // OB-55 "A": the SECOND person approves on this box, with their own staff ID and till PIN — the one-use approval register
+    // (PF-02) issues it for exactly this close, these payments and their total, and this close spends it. Offline: nothing
+    // here asks head office. Never the closer; they must hold the day-close approval authority. Without it, nothing locks.
+    let carried: ReturnType<typeof carriedForwardOf> | undefined;
+    let approverVerified: ReturnType<typeof sealDecision> | undefined;
+    if (carryInput !== undefined && cf !== undefined) {
+      if (carryInput.approvedBy === closer) return { closed: false, reason: 'a second person must approve closing with a payment carried forward — never the person closing the day' };
+      if (tillApprovals === null) return { closed: false, reason: 'this store computer cannot take a second person\'s approval, so the payment cannot be carried forward — the day stays open' };
+      const valueMinor = pendingPayments.reduce((n, p) => n + p.amountMinor, 0);
+      const approval = await tillApprovals.approveDayCloseException({
+        dayCloseId: req.dayCloseId, closerId: closer, laneId: laneIdOfThisBox() ?? '', approverId: carryInput.approvedBy,
+        approverPin: typeof cf.approverPin === 'string' ? cf.approverPin : '', reason: carryInput.reason, attemptIds: carryInput.attemptIds, valueMinor,
+      });
+      if (!approval.ok) return { closed: false, reason: `the second person's approval was not confirmed: ${approval.laneMessage}` };
+      const block = carriedForwardOf({ ...carryInput, approvalId: approval.approvalId, approvedBy: approval.approvedBy }, pendingPayments);
+      // Each payment carries the trading day it was asked on — the day whose tender figures it leaves unresolved.
+      carried = { ...block, payments: block.payments.map((p) => ({ ...p, tradingDay: tradingDate(wallClockIn(p.askedAt), rule) })) };
+    }
     // Durable-write-then-enqueue, the same order as every other seam: the locked day is on the disk
     // before it is called done, then queued. `dayCloseEventFrom` re-mints the identical event on restart.
-    const record = JSON.stringify({
+    const relayedClose = {
       dayCloseId: req.dayCloseId, storeId: storeIdHere, tradingDay: dayToClose,
       closedBy: closer, closedAt: input.now, locked: true,
-    });
+      ...(carried === undefined ? {} : { carriedForward: carried }),
+    };
+    if (carried !== undefined) {
+      // The box seals the second person it verified by PIN, over every word head office receives (ADR-0023 amended).
+      approverVerified = sealDecision(sealKey, { tenantId, kind: 'day_close_exception_approval', recordId: req.dayCloseId, record: relayedClose, laneId: laneIdOfThisBox() ?? '', userId: carried.approvedBy, via: 'pin' });
+    }
+    const record = JSON.stringify({ ...relayedClose, ...(approverVerified === undefined ? {} : { approverVerified }) });
     await dayCloseLog.append(record);
     const event = dayCloseEventFrom(record, 0);
     if (event !== undefined) dayCloseOutbox.enqueue(event);
-    return { closed: true, tradingDay: dayToClose, locked: true };
+    return { closed: true, tradingDay: dayToClose, locked: true, ...(carried === undefined ? {} : { carriedForward: carried.payments.map((p) => p.attemptId), unresolvedMinor: carried.unresolvedMinor }) };
   };
   // The lane socket, wired above through a relay, can now reach the authoritative close.
   dayCloseRelay.current = closeDay;
@@ -2049,6 +2267,31 @@ export async function startEdge(
     };
     return reportWatermarks(report);
   };
+  // M35-FR-03: after each pass the box's own health goes to head office too — its disk (can it record the next sale, by
+  // its own rule), its queues' depth and its tills' latest device reports. The store is the credential's (OB-54).
+  const boxHealthReporter = watermarkStoreId === undefined ? null : httpBoxHealthReporter({ baseUrl: cloudUrl, token: cloudToken, storeId: watermarkStoreId, fetch: globalThis.fetch });
+  const reportBoxHealth = boxHealthReporter === null ? null : async (): Promise<boolean> => {
+    const fsInfo = await statfs(settings['EDGE_DATA_DIR']!);
+    const queues = [agent, returnsAgent, completionsAgent, dayCloseAgent, concessionTagsAgent, deviceEventsAgent, tillCashAgent].map((a) => a.health());
+    const report: BoxHealthReport = {
+      observedAt: new Date().toISOString(),
+      disk: {
+        freeBytes: Number(fsInfo.bavail) * Number(fsInfo.bsize), totalBytes: Number(fsInfo.blocks) * Number(fsInfo.bsize),
+        salesLogUsedBytes: await log.usedBytes(), salesLogCapacityBytes: log.capacityBytes, reserveBytes: SALE_RESERVE_BYTES,
+      },
+      queue: { unsent: queues.reduce((n, h) => n + h.unsentCount, 0), deadLettered: queues.reduce((n, h) => n + h.deadLetterCount, 0) },
+      // What the tills' devices last said (kept on this disk); the cashier who sent it stays on the box. `attended`: is
+      // anybody signed in at that till now (P-08) — a signed-in till re-sends its devices every 5 minutes, an unattended
+      // one stops, so head office can say whether a stale lane is expected (nobody there) or a till to check.
+      tills: (peripheralReports?.latest() ?? []).map((r) => ({
+        laneId: r.laneId, reportedAt: r.reportedAt, devices: r.devices,
+        // Round 15: the device adapter's own last-observed time, when the till sent it — head office ages the lane by it.
+        ...(r.adapterObservedAt === undefined ? {} : { adapterObservedAt: r.adapterObservedAt }),
+        attended: (tillOperators?.live() ?? []).some((s) => s.laneId === r.laneId),
+      })),
+    };
+    return boxHealthReporter(report);
+  };
 
   let stopping = false;
   let quietPasses = 0;
@@ -2153,6 +2396,9 @@ export async function startEdge(
     }
     if (reportSyncWatermarks !== null) {
       try { await reportSyncWatermarks(); } catch { /* retried next pass; head office's last report simply ages, and the owner sees it stale */ }
+    }
+    if (reportBoxHealth !== null) {
+      try { await reportBoxHealth(); } catch { /* retried next pass; head office's last report ages into stale by itself */ }
     }
     // The inbound refresh rides the SAME loop, AFTER the drain and just as far from the sale path
     // (hard rule #1). It never throws — an unreachable cloud is a normal answer that keeps the last
@@ -2260,6 +2506,7 @@ export async function startEdge(
     storeSetup: storeSetupStatus,
     reportHeldVersions,
     reportSyncWatermarks,
+    reportBoxHealth,
     syncOnce: () => drainAndSettle(),
     syncStatus,
     stop: async () => {

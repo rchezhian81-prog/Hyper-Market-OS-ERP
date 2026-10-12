@@ -215,7 +215,10 @@ async function onlyItsOwnComputerReportsAndCannotBuyFreshness(h: ApiHarness, ten
     const forged = await report('u-box2', 'S2', 'S1', ok, 'wm-forged');
     expect(forged.status).toBe(403);
     expect(codeOf(forged)).toBe('store_computer_record_names_another_store'); // OB-54: refused at the door, and kept
-    expect((await report('u-box1', 'S1', 'NOPE', ok, 'wm-nope')).status).toBe(404);
+    // OB-54 round 10: a store code head office cannot place is refused at the binding (and listed), before the route.
+    const nope = await report('u-box1', 'S1', 'NOPE', ok, 'wm-nope');
+    expect(nope.status).toBe(403);
+    expect(codeOf(nope)).toBe('store_computer_record_names_unknown_store');
     const bad = await report('u-box1', 'S1', 'S1', { observedAt: 'yesterday', domains: [{ domain: 'sales', completeThrough: 'soon', unsent: -1 }] }, 'wm-bad');
     expect(bad.status).toBe(400);
     expect(codeOf(bad)).toBe('not_readable_as_sync_watermarks');

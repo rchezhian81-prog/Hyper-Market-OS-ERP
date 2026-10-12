@@ -96,10 +96,19 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // needs `purchase.order.propose`, which the route enforces.
   { id: 'buying', label: 'Buying', labelTa: 'வாங்குதல்', path: '/buying/', requires: 'purchase.commitment.read', group: 'Purchase' },
   { id: 'suppliers', label: 'Suppliers', labelTa: 'விநியோகஸ்தர்கள்', path: '/suppliers', requires: 'supplier.view', group: 'Purchase' },
+  // Round 12 (D03-FR-02 · WF-05): supplier bills handed in as a GST e-invoice or a scan, confirmed by a person, then checked
+  // against the order — a head-office page over `/v1/purchase/invoice-documents/*` (the box does not serve it). Gated on the
+  // permission those routes check (`purchase.invoice.capture`).
+  { id: 'supplier-bills', label: 'Supplier bills', labelTa: 'சப்ளையர் பில்கள்', path: '/supplier-bills', requires: 'purchase.invoice.capture', group: 'Purchase', served: 'unserved' },
   { id: 'goods-receipt', label: 'Goods receipt review', labelTa: 'சரக்கு வரவு ஆய்வு', path: '/goods-receipt', requires: 'inventory.availability.read', group: 'Receiving' },
 
   { id: 'indents', label: 'Floor indents', labelTa: 'தளக் கோரிக்கைகள்', path: '/indents', requires: 'inventory.indent.read', group: 'Floor' },
   { id: 'counts', label: 'Stock counts', labelTa: 'சரக்கு எண்ணிக்கை', path: '/counts', requires: 'count.view', group: 'Inventory' },
+  // Round 12 (WF-08 · D05-FR-05 · M09-FR-04): plan, freeze, count, recount, cause, approve or cancel a stock count — a thin
+  // client over head office's count-plan routes, gated on the planning permission the plan routes check. Head-office page.
+  { id: 'count-plans', label: 'Count plans', labelTa: 'எண்ணிக்கைத் திட்டங்கள்', path: '/count-plans', requires: 'inventory.count.plan', group: 'Inventory', served: 'unserved' },
+  // Round 12 (WF-07 · M09-FR-03): send and count in transfers, settle a shortfall — gated on the read the register checks.
+  { id: 'transfers', label: 'Transfers', labelTa: 'இடமாற்றங்கள்', path: '/transfers', requires: 'inventory.availability.read', group: 'Inventory', served: 'unserved' },
   { id: 'waste', label: 'Waste & write-off', labelTa: 'வீணானவை மற்றும் தள்ளுபடி', path: '/waste', requires: 'waste.view', group: 'Inventory' },
   // Record a write-off from the shop floor — the WRITE sibling of the read-only /waste review. Gated on the
   // SAME authority the governed write-off route checks (`inventory.movement.append`), so the menu never offers
@@ -130,6 +139,10 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // permission the day-book read route checks (`finance.period.read`), so the menu never offers a screen the server
   // would refuse (M23-FR-01).
   { id: 'day-book', label: 'Day book', labelTa: 'நாள் புத்தகம்', path: '/day-book', requires: 'finance.period.read', group: 'Finance' },
+  // Round 12 (M23 · WF-18 · D10-FR-03/05 · OB-55/56/57/69): the month-end page — payments with no answer, the P&L, the
+  // stock adjustment, the budget and the fixed assets — a thin client over head office's own finance routes. A head-office
+  // page: the store computer does not serve it. Gated on the same read the routes check (`finance.period.read`).
+  { id: 'finance-close', label: 'Month-end', labelTa: 'மாத இறுதி', path: '/finance-close', requires: 'finance.period.read', group: 'Finance', served: 'unserved' },
   { id: 'reconciliation', label: 'Reconciliation', labelTa: 'சரிக்கட்டல்', path: '/reconciliation', requires: 'reconciliation.view', group: 'Finance', served: 'unbuilt' },
   // GST e-invoice / e-way-bill reconciliation — gated on the SAME permission the queue route checks
   // (`finance.einvoice.read`), so the menu can never offer a screen the server would refuse (item 3 inc2).
@@ -154,6 +167,13 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // Checklists — the day's opening, closing and hygiene checks (M25-FR-02). Gated on `workforce.checklist.read`.
   { id: 'checklist', label: 'Checklists', labelTa: 'சரிபார்ப்புப் பட்டியல்கள்', path: '/checklist/', requires: 'workforce.checklist.read', group: 'People' },
   { id: 'users', label: 'Users & roles', labelTa: 'பயனர்களும் பங்குகளும்', path: '/admin/?tab=people', requires: 'identity.role.read', group: 'Administration' },
+  // Round 10 (M01-FR-01 · M02-FR-03): the organisation hierarchy and approval delegation — thin clients over head office's
+  // own routes. Head-office pages: the store computer does not serve them (it carries no setup or delegation policy).
+  { id: 'organisation', label: 'Organisation', labelTa: 'அமைப்பு', path: '/organisation', requires: 'org.branch.read', group: 'Administration', served: 'unserved' },
+  { id: 'delegation', label: 'Delegation', labelTa: 'அதிகாரப் பகிர்வு', path: '/delegation', requires: 'approvals.delegation.read', group: 'Administration', served: 'unserved' },
+  // Round 12 (M35-FR-02/04 · WF-20): incidents with a named owner per follow-up, the post-mortem and the close, and the
+  // recovery-drill register — a head-office page over its own routes (the store computer does not serve it).
+  { id: 'incidents', label: 'Incidents & recovery drills', labelTa: 'சம்பவங்களும் மீட்பு ஒத்திகைகளும்', path: '/incidents', requires: 'platform.health.read', group: 'Administration', served: 'unserved' },
   // Outside access — the admin screen on its "Outside access" tab: support sessions granted and expiring (M02 /
   // M36). Gated on the support-session read (`platform.support.read`).
   { id: 'support-access', label: 'Outside access', labelTa: 'வெளி அணுகல்', path: '/admin/?tab=support', requires: 'platform.support.read', group: 'Administration' },

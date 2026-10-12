@@ -10,7 +10,8 @@ import { ApiError, buildRouter, type Method, type Router } from '../../services/
 import {
   approvalRequestRoutes, type ApprovalDecision, type ApprovalPort, type ApprovalRequestDeps, type ApprovalState,
 } from '../../services/identity/src/approval-requests';
-import { financeRoutes, type ControlTotalCheck, type PeriodState } from '../../services/finance/src/index';
+import { financeRoutes, type ControlTotalCheck, type PeriodState, type JournalEntry } from '../../services/finance/src/index';
+import { budgetAssetRoutes, type BudgetVersion, type FixedAssetFact } from '../../services/finance/src/budgets-assets';
 
 /**
  * **A month is closed and reopened at head office, by two people, from a real browser (M23-FR-04 · QG-07 · ADR-0024 ·
@@ -61,6 +62,15 @@ const REASON = 'supplier credit note for August arrived late';
 const AGREEING: readonly ControlTotalCheck[] = [
   { name: 'Takings', leftMinor: 100_000_00, rightMinor: 100_000_00, leftDerivation: 'sales ledger', rightDerivation: 'bank deposits' },
 ];
+
+/** OB-57: one budget version, one freezer on the register, and its September depreciation in the books. */
+const PLAN_BUDGETS: readonly BudgetVersion[] = [{ period: PERIOD, version: 1, lines: [{ account: 'depreciation_expense', amountMinor: 12_000 }], setBy: 'u-owner', at: NOW, reason: 'first cut' }];
+const PLAN_ASSETS: readonly FixedAssetFact[] = [{ kind: 'added', assetId: 'FRZ-1', name: 'Chest freezer 500L', category: 'freezer', storeId: 'store-2', costMinor: 120_000, salvageMinor: 0, usefulLifeMonths: 12, inServiceDate: '2026-09-01', by: 'u-owner', at: NOW }];
+const PLAN_JOURNALS: readonly (JournalEntry & { fixedAsset: unknown })[] = [{
+  entryId: 'fa-dep:FRZ-1:2026-09', period: PERIOD, documentDate: '2026-09-30', narrative: 'Depreciation of FRZ-1 for 2026-09', postedBy: 'u-accountant',
+  lines: [{ accountCode: 'depreciation_expense', debitMinor: 10_000, creditMinor: 0 }, { accountCode: 'accumulated_depreciation', debitMinor: 0, creditMinor: 10_000 }],
+  fixedAsset: { assetId: 'FRZ-1', kind: 'depreciation', month: PERIOD, storeId: 'store-2', amountMinor: 10_000 },
+}];
 
 interface Recorded { readonly method: string; readonly path: string; readonly body: unknown; readonly headers: Record<string, string | string[] | undefined>; }
 
@@ -127,6 +137,14 @@ function newHeadOffice(opts: { readonly closed?: boolean; readonly financeData?:
       markReopened: (_t, period) => { periods.set(period, 'open'); },
       approvals: port,
       now: () => NOW,
+    }),
+    // OB-57: head office's budget and fixed-asset register, as the real routes read them (in memory here).
+    ...budgetAssetRoutes({
+      periodStates: () => periods, appendJournal: () => {}, now: () => NOW,
+      budgets: async () => PLAN_BUDGETS, recordBudget: async () => true,
+      assetFacts: async () => PLAN_ASSETS, recordAssetFact: async () => {},
+      journals: async () => PLAN_JOURNALS, accountClasses: async () => ({ depreciation_expense: 'expense', accumulated_depreciation: 'asset', sales_revenue: 'income' }),
+      postingMap: () => undefined,
     }),
   ]);
   if (!built.ok || built.router === undefined) throw new Error(`stub head office refused its routes: ${JSON.stringify(built.refusals)}`);
@@ -527,6 +545,32 @@ describe.skipIf(!HAVE_BROWSER)('the month close and reopen at head office, by tw
       expect(said.text).toBe('This is sample data and is not connected to head office. Closing and reopening a month happen at head office, with a second person’s approval — nothing was asked and nothing was changed.');
       expect((await clickFor(page, '#close-month', /not connected to head office/)).title).toBe('Please read this');
       expect(ho.requests.filter((r) => r.method !== 'GET'), 'the sample sent something').toEqual([]);
+      expect(errors).toEqual([]);
+    } finally {
+      await teardown();
+    }
+  });
+
+  it('OB-57: the Budget and assets tab reads head office\'s budget against the books and the fixed-asset register — in English and Tamil', async () => {
+    const ho = newHeadOffice();
+    const { page, errors, teardown } = await openFinance(ho);
+    try {
+      await page.click('#tab-plan');
+      await page.waitForFunction(() => ((globalThis as unknown as BrowserGlobals).document.getElementById('assets-list')?.textContent ?? '').includes('FRZ-1'), undefined, { timeout: 10_000 });
+      const budget = (await page.textContent('#budget-list')) ?? '';
+      expect(budget).toContain('version 1');
+      expect(budget).toContain('depreciation_expense');
+      expect(budget).toContain('budget ₹120.00 · books ₹100.00');
+      expect(budget).toContain('−₹20.00');
+      const assets = (await page.textContent('#assets-list')) ?? '';
+      expect(assets).toContain('Chest freezer 500L (FRZ-1)');
+      expect(assets).toContain('in use at store-2');
+      expect(assets).toContain('book value ₹1,100.00');
+      // The page only reads: no write went to head office.
+      expect(ho.requests.filter((r) => r.method !== 'GET')).toEqual([]);
+      await page.click('#lang');
+      await page.waitForFunction(() => ((globalThis as unknown as BrowserGlobals).document.getElementById('assets-list')?.textContent ?? '').includes('புத்தக மதிப்பு'), undefined, { timeout: 10_000 });
+      expect(await page.textContent('#plan-title')).toBe('பட்ஜெட் மற்றும் சொத்துகள்');
       expect(errors).toEqual([]);
     } finally {
       await teardown();

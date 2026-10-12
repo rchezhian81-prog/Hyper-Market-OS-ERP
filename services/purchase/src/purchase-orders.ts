@@ -21,7 +21,7 @@
 // and cancellation-netting of the open figure is the next increment — the engine already takes both.
 
 import type { Route } from '../../kernel/src/index';
-import { apiError, notFound } from '../../kernel/src/index';
+import { apiError, notFound, concurrentChange } from '../../kernel/src/index';
 import {
   issuePurchaseOrder, computeOpenCommitment, BlockedSupplierError,
   type PurchaseOrderLineInput, type OpenCommitment,
@@ -32,7 +32,8 @@ import { unitCostFromPackCost, UnknownPackLevelError, type PackHierarchy } from 
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import { assertLocationInScope, stockReadScope, locationIsItsOwnBranch, type LocationBranches } from '../../inventory/src/location-scope';
 import { normaliseUom, valueAtCost, minorPerUnitOf } from '../../../packages/contracts/src/quantity';
-import { checkOrderAgainstBudget, gateApprovalOnBudget, type OpenToBuyDeps, type BudgetCheck } from './open-to-buy';
+import { checkOrderAgainstBudget, judgeApprovalOnBudget, openToBuyGuardKey, valueByCategory, type OpenToBuyDeps, type BudgetCheck } from './open-to-buy';
+import { ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
 
 /** A durable purchase order — proposed by a buyer, and (once a second person approves) issued. */
 export interface StoredPurchaseOrder {
@@ -98,11 +99,20 @@ export interface PurchaseOrderDeps {
    */
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
   /** Record the issue decision (the approver + reason). Idempotent on the PO id. */
-  readonly issue: (tenantId: string, poId: string, approvedBy: string, issuedAt: string, reason: string, key: string) => Promise<void> | void;
+  readonly issue: (tenantId: string, poId: string, approvedBy: string, issuedAt: string, reason: string, key: string,
+    /** WF-03 (round 10): issue only while this write guard (the month's open-to-buy) still holds — else `ConcurrencyConflictError`. */
+    budgetGuard?: { readonly key: string; readonly expectedVersion: number }) => Promise<void> | void;
   /** Set a supplier's block state. Append-only; latest wins. */
   readonly setSupplierBlocked: (tenantId: string, supplierId: string, blocked: boolean, reason: string, by: string, at: string, key: string) => Promise<void> | void;
   /** Amend an issued PO's lines (approved). Append-only — the prior lines stay on the ledger (hard rule #2). */
-  readonly amend: (tenantId: string, poId: string, amendmentId: string, lines: readonly PurchaseOrderLineInput[], reason: string, by: string, at: string) => Promise<void> | void;
+  readonly amend: (tenantId: string, poId: string, amendmentId: string, lines: readonly PurchaseOrderLineInput[], reason: string, by: string, at: string,
+    /** OB-63: an amendment that raises the order's value lands only while the month's open-to-buy guard still holds. */
+    budgetGuard?: { readonly key: string; readonly expectedVersion: number },
+    /** Round 13 (verifier A4): the order's own guard version read BEFORE the order — the amendment lands only on the order
+     *  it was judged on; any change since (another amendment, a receipt, a cancellation) refuses it (never re-tried). */
+    orderVersion?: number) => Promise<void> | void;
+  /** Round 13 (verifier A4): the version of the order's own write guard — read before the order an amendment is judged on. */
+  readonly orderVersion?: (tenantId: string, poId: string) => Promise<number> | number;
   /** Record an approved cancellation of quantity per product against a PO. Accumulates. */
   readonly cancel: (tenantId: string, poId: string, cancellationId: string, cancelledByProduct: Readonly<Record<string, number>>, reason: string, by: string, at: string) => Promise<void> | void;
   /** Post received quantity per product against a PO (in the PO's ordering units). Accumulates. */
@@ -463,9 +473,17 @@ export function purchaseOrderRoutes(deps: PurchaseOrderDeps): readonly Route[] {
         }
         await requireApprovedSupplier(deps, ctx.tenantId, po.supplierId);
         const blocked = await deps.supplierBlocked(ctx.tenantId, po.supplierId);
+        // WF-03 (round 10): the month's open-to-buy guard is read BEFORE the orders the budget is judged on, and the order
+        // issues only while it still holds — two approvals at the same moment cannot both spend the same remaining budget.
+        const period = po.at.slice(0, 7);
+        const budgetVersion = blocked || deps.openToBuy?.budgetVersion === undefined ? undefined : await deps.openToBuy.budgetVersion(ctx.tenantId, period);
         // WF-03 (round 8): checked again now — an order over open-to-buy escalates to a person who may exceed the budget.
-        const budgetAtApproval = blocked || deps.openToBuy === undefined ? undefined
-          : await gateApprovalOnBudget(deps.openToBuy, { tenantId: ctx.tenantId, userId: ctx.userId, branchId: ctx.branchId ?? null }, po, b['overBudgetReason']);
+        const judged = blocked || deps.openToBuy === undefined ? undefined
+          : await judgeApprovalOnBudget(deps.openToBuy, { tenantId: ctx.tenantId, userId: ctx.userId, branchId: ctx.branchId ?? null }, po, b['overBudgetReason']);
+        const budgetAtApproval = judged?.check;
+        // Only an order a budget governs takes the guard (an order in categories with no budget spends no open-to-buy).
+        const budgetGuard = budgetVersion === undefined || budgetAtApproval === undefined || budgetAtApproval.categories.every((c) => c.budgetMinor === null)
+          ? undefined : { key: openToBuyGuardKey(period), expectedVersion: budgetVersion };
         try {
           issuePurchaseOrder({
             id: po.poId, number: po.number, supplierId: po.supplierId,
@@ -484,7 +502,14 @@ export function purchaseOrderRoutes(deps: PurchaseOrderDeps): readonly Route[] {
           throw err;
         }
         const issuedAt = deps.now();
-        await deps.issue(ctx.tenantId, poId, ctx.userId, issuedAt, reason, ctx.idempotencyKey ?? poId);
+        try {
+          await deps.issue(ctx.tenantId, poId, ctx.userId, issuedAt, reason, ctx.idempotencyKey ?? poId, budgetGuard);
+        } catch (err) {
+          if (err instanceof ConcurrencyConflictError) throw concurrentChange(`${period}'s purchase budget (another order was issued against it a moment ago)`);
+          throw err;
+        }
+        // Issued: only now is an over-budget override put on the record.
+        await judged?.recordOverride?.();
         const issued: StoredPurchaseOrder = { ...po, status: 'issued', approvedBy: ctx.userId, issuedAt };
         return { status: 200, body: { order: issued, openCommitment: openOf(issued), ...(budgetAtApproval === undefined ? {} : { budgetAtApproval }) } };
       },
@@ -531,6 +556,9 @@ export function purchaseOrderRoutes(deps: PurchaseOrderDeps): readonly Route[] {
             nextSafeAction: 'Send the full amended line set with a reason. Nothing was changed.',
           });
         }
+        // Round 13 (verifier A4): the order's guard is read BEFORE the order, so "does this raise it?" is judged on the order
+        // exactly as it stands when the amendment lands — an amendment decided on an older copy is refused, never re-tried.
+        const orderVersion = deps.orderVersion === undefined ? undefined : await deps.orderVersion(ctx.tenantId, poId);
         const po = await deps.order(ctx.tenantId, poId);
         if (po === undefined) throw notFound(`purchase order ${poId}`);
         if (po.status !== 'issued') throw poNotIssued(poId, 'amended');
@@ -543,12 +571,40 @@ export function purchaseOrderRoutes(deps: PurchaseOrderDeps): readonly Route[] {
             nextSafeAction: 'Price the amended lines in the PO currency and send again.',
           });
         }
-        const lines: PurchaseOrderLineInput[] = (rawLines as RawLine[]).map((l) => ({
-          productId: l.productId, orderedQty: l.orderedQty, unitCost: money(l.unitCost.minor, po.currency),
-        }));
-        await deps.amend(ctx.tenantId, poId, amendmentId, lines, reason, ctx.userId, deps.now());
+        // OB-31: each amended line in the product's own unit, as at ordering (an amended kg line is valued per kg, never per item).
+        const lines: PurchaseOrderLineInput[] = [];
+        for (const l of rawLines as RawLine[]) {
+          const master = deps.productUom === undefined ? undefined : await deps.productUom(ctx.tenantId, l.productId);
+          const uom = master === undefined ? undefined : normaliseUom(master) ?? master;
+          lines.push({ productId: l.productId, orderedQty: l.orderedQty, ...(uom === undefined ? {} : { uom }), unitCost: money(l.unitCost.minor, po.currency) });
+        }
+        // OB-63 · WF-03: an amendment that RAISES the order's value (in any category) is judged against open-to-buy exactly as
+        // an approval is — over budget it escalates to a person allowed to exceed it (the owner) with a reason, recorded — and
+        // lands only while the month's open-to-buy guard (read BEFORE the orders are) still holds. A lowering amendment spends
+        // no budget and is not judged.
+        const period = po.at.slice(0, 7);
+        let judged: Awaited<ReturnType<typeof judgeApprovalOnBudget>> | undefined;
+        let budgetGuard: { key: string; expectedVersion: number } | undefined;
+        if (deps.openToBuy !== undefined) {
+          const budgetVersion = deps.openToBuy.budgetVersion === undefined ? undefined : await deps.openToBuy.budgetVersion(ctx.tenantId, period);
+          const amended: StoredPurchaseOrder = { ...po, lines, totalMinor: lines.reduce((s, l) => s + valueAtCost(l.orderedQty, l.uom ?? 'ea', l.unitCost), 0) };
+          const [before, after] = await Promise.all([valueByCategory(deps.openToBuy, ctx.tenantId, po), valueByCategory(deps.openToBuy, ctx.tenantId, amended)]);
+          if ([...after].some(([c, v]) => v > (before.get(c) ?? 0))) {
+            judged = await judgeApprovalOnBudget(deps.openToBuy, { tenantId: ctx.tenantId, userId: ctx.userId, branchId: ctx.branchId ?? null }, amended, b['overBudgetReason'], { amendmentId });
+            if (budgetVersion !== undefined && !judged.check.categories.every((c) => c.budgetMinor === null)) budgetGuard = { key: openToBuyGuardKey(period), expectedVersion: budgetVersion };
+          }
+        }
+        try {
+          await deps.amend(ctx.tenantId, poId, amendmentId, lines, reason, ctx.userId, deps.now(), budgetGuard, orderVersion);
+        } catch (err) {
+          if (err instanceof ConcurrencyConflictError && budgetGuard !== undefined && err.key === budgetGuard.key) throw concurrentChange(`${period}'s purchase budget (another order was issued or raised against it a moment ago)`);
+          if (err instanceof ConcurrencyConflictError) throw concurrentChange(`purchase order ${poId} (it was amended, received against or cancelled a moment ago — this amendment was judged on the order as it stood before)`);
+          throw err;
+        }
+        // Amended: only now is an over-budget override put on the record.
+        await judged?.recordOverride?.();
         const updated = await deps.order(ctx.tenantId, poId);
-        return { status: 200, body: { order: updated, openCommitment: updated ? openOf(updated) : null } };
+        return { status: 200, body: { order: updated, openCommitment: updated ? openOf(updated) : null, ...(judged === undefined ? {} : { budgetAtAmendment: judged.check }) } };
       },
     },
     {

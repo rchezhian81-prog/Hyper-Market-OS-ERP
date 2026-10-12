@@ -29,13 +29,32 @@ export interface SetupItem {
   readonly required: boolean;
   /** Optional check run before a value is accepted. */
   readonly validate?: SetupValidator;
+  /**
+   * For a NUMBER setting: the bounds its rule accepts, declared once so the engine's check and the setup screen's
+   * number editor read the SAME numbers (the screen derives its editor from the setting's type and this range — a
+   * new number setting needs no hand-kept screen entry). Round 13 found four number settings shown as text and
+   * impossible to save because the screen kept its own per-setting list.
+   */
+  readonly range?: SetupRange;
+}
+
+/** The accepted bounds of a number setting: inclusive `min`/`max` (no `max` = unbounded) and whole numbers only or not. */
+export interface SetupRange {
+  readonly min: number;
+  readonly max?: number;
+  readonly whole: boolean;
 }
 
 // ── Validators (each takes an unknown and narrows) ─────────────────────────────
 
 const isString = (v: unknown): v is string => typeof v === 'string';
-const isIntIn = (v: unknown, lo: number, hi: number): boolean =>
-  typeof v === 'number' && Number.isInteger(v) && v >= lo && v <= hi;
+/** Whether a value is a number inside a declared range (whole-number ranges refuse fractions). */
+const inRange = (v: unknown, r: SetupRange): boolean =>
+  typeof v === 'number' && Number.isFinite(v) && (!r.whole || Number.isInteger(v))
+  && v >= r.min && (r.max === undefined || v <= r.max);
+/** A number setting's rule and range, from ONE declaration: the validator checks exactly the range the screen shows. */
+const numberRule = (range: SetupRange, message: string): { readonly range: SetupRange; readonly validate: SetupValidator } =>
+  ({ range, validate: (v) => (inRange(v, range) ? null : message) });
 const isStringArray = (v: unknown): v is readonly string[] =>
   Array.isArray(v) && v.every((x) => typeof x === 'string');
 
@@ -55,28 +74,20 @@ const validateCurrency: SetupValidator = (v) =>
 const validateLanguages: SetupValidator = (v) =>
   isStringArray(v) && v.length > 0 && v.every((s) => s.trim() !== '')
     ? null : 'Give at least one language code, e.g. en.';
-const validateTaxBps: SetupValidator = (v) =>
-  isIntIn(v, 0, 10_000) ? null : 'Give a GST rate in basis points (0–10000; 1800 = 18%).';
-const validateAge: SetupValidator = (v) =>
-  isIntIn(v, 0, 120) ? null : 'Give an age in whole years.';
-const validateRadius: SetupValidator = (v) =>
-  typeof v === 'number' && Number.isFinite(v) && v >= 0 ? null : 'Give a distance in km (0 turns delivery off).';
-const validateMinutes: SetupValidator = (v) =>
-  isIntIn(v, 1, 100_000) ? null : 'Give a number of minutes (at least 1).';
-const validateBp: SetupValidator = (v) =>
-  isIntIn(v, 0, 10_000) ? null : 'Give a level in basis points (0–10000; 5000 = half).';
+const TAX_BPS = numberRule({ min: 0, max: 10_000, whole: true }, 'Give a GST rate in basis points (0–10000; 1800 = 18%).');
+const AGE = numberRule({ min: 0, max: 120, whole: true }, 'Give an age in whole years.');
+const RADIUS = numberRule({ min: 0, whole: false }, 'Give a distance in km (0 turns delivery off).');
+const MINUTES = numberRule({ min: 1, max: 100_000, whole: true }, 'Give a number of minutes (at least 1).');
+const BP = numberRule({ min: 0, max: 10_000, whole: true }, 'Give a level in basis points (0–10000; 5000 = half).');
 const validateBool: SetupValidator = (v) =>
   typeof v === 'boolean' ? null : 'Choose on or off.';
-const validateProductCount: SetupValidator = (v) =>
-  isIntIn(v, 1, 1_000_000) ? null : 'Give a whole number of products (at least 1).';
-const validateLoyaltyRate: SetupValidator = (v) =>
-  isIntIn(v, 0, 100) ? null : 'Give a whole number of points per ₹100, from 0 (loyalty off) to 100.';
-const validatePointValue: SetupValidator = (v) =>
-  isIntIn(v, 0, 10_000) ? null : 'Give the value of one point in paise, from 0 to 10000 (₹100).';
-const validateTillSpendCap: SetupValidator = (v) =>
-  isIntIn(v, 0, 10_000_000) ? null : 'Give the most one member may spend at the till in a day, in paise, from 0 (off) to 10000000 (₹1,00,000).';
+const PRODUCT_COUNT = numberRule({ min: 1, max: 1_000_000, whole: true }, 'Give a whole number of products (at least 1).');
+const LOYALTY_RATE = numberRule({ min: 0, max: 100, whole: true }, 'Give a whole number of points per ₹100, from 0 (loyalty off) to 100.');
+const POINT_VALUE = numberRule({ min: 0, max: 10_000, whole: true }, 'Give the value of one point in paise, from 0 to 10000 (₹100).');
+const TILL_SPEND_CAP = numberRule({ min: 0, max: 10_000_000, whole: true }, 'Give the most one member may spend at the till in a day, in paise, from 0 (off) to 10000000 (₹1,00,000).');
 const validateStringList: SetupValidator = (v) =>
   isStringArray(v) ? null : 'Give a list of names (an empty list means none).';
+const WARN_HOURS = numberRule({ min: 1, max: 720, whole: true }, 'Give a whole number of trading hours, from 1 to 720.');
 const validatePaperFormat: SetupValidator = (v) =>
   isString(v) && PAPER_FORMATS.some((f) => f.id === v)
     ? null : `Choose a paper size: ${PAPER_FORMATS.map((f) => f.id).join(', ')}.`;
@@ -92,7 +103,7 @@ export const SETUP_CATALOGUE: readonly SetupItem[] = [
     group: 'give_now',
     required: true,
     question: 'What default GST rate applies until a category sets its own? A product cannot go on sale without a tax class.',
-    validate: validateTaxBps,
+    ...TAX_BPS,
   },
   {
     setting: SETTINGS.TRADING_DAY_CUTOFF,
@@ -148,14 +159,14 @@ export const SETUP_CATALOGUE: readonly SetupItem[] = [
     group: 'check_default',
     required: false,
     question: 'How far from the store do you deliver (km)? 0 turns delivery off.',
-    validate: validateRadius,
+    ...RADIUS,
   },
   {
     setting: SETTINGS.AGE_RESTRICTED_MINIMUM_AGE,
     group: 'check_default',
     required: false,
     question: 'What is the minimum age for age-restricted items?',
-    validate: validateAge,
+    ...AGE,
   },
   {
     setting: SETTINGS.LICENCE_HOURS_ENABLED,
@@ -169,35 +180,35 @@ export const SETUP_CATALOGUE: readonly SetupItem[] = [
     group: 'check_default',
     required: false,
     question: 'How long does a shelf count stay worth acting on (minutes)?',
-    validate: validateMinutes,
+    ...MINUTES,
   },
   {
     setting: SETTINGS.SHELF_REFILL_AT_BP,
     group: 'check_default',
     required: false,
     question: 'How empty must a facing be before it is worth a refill trip?',
-    validate: validateBp,
+    ...BP,
   },
   {
     setting: SETTINGS.CATALOGUE_BULK_PUBLISH_THRESHOLD,
     group: 'check_default',
     required: false,
     question: 'How many products may one catalogue publish add, change or remove before it counts as a bulk publish and asks the publisher to sign in again with a second factor?',
-    validate: validateProductCount,
+    ...PRODUCT_COUNT,
   },
   {
     setting: SETTINGS.LOYALTY_POINTS_PER_100_INR,
     group: 'check_default',
     required: false,
     question: 'How many loyalty points does a member earn for every ₹100 spent? (0 keeps loyalty off.)',
-    validate: validateLoyaltyRate,
+    ...LOYALTY_RATE,
   },
   {
     setting: SETTINGS.LOYALTY_POINT_VALUE_PAISE,
     group: 'check_default',
     required: false,
     question: 'What is one loyalty point worth when a customer spends it, in paise?',
-    validate: validatePointValue,
+    ...POINT_VALUE,
   },
   {
     // PF-09 step 3: the double-spend bound on spending at the till (M17-FR-01 / M17-FR-03 offline caps). 0 = off.
@@ -205,7 +216,15 @@ export const SETUP_CATALOGUE: readonly SetupItem[] = [
     group: 'check_default',
     required: false,
     question: 'At most how much may one loyalty member spend at the till in a day — points and store credit together, in paise? (0 keeps spending at the till off.)',
-    validate: validateTillSpendCap,
+    ...TILL_SPEND_CAP,
+  },
+  {
+    // OB-78 "A" (owner, 12 Oct 2026): the early disk warning for each store computer, in hours of trading left.
+    setting: SETTINGS.BOX_DISK_WARN_HOURS,
+    group: 'check_default',
+    required: false,
+    question: 'How many hours of trading before a store computer\'s disk would fill should head office warn you? (48 by default.)',
+    ...WARN_HOURS,
   },
 ];
 

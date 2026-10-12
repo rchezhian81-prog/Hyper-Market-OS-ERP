@@ -78,7 +78,15 @@ export type ChannelGuard = (principal: Principal, permission: string) => Promise
  * is refused when it names no store, a store its grant does not name, or a record at another store. Callers who are
  * not a store computer are never refused by it. `nextSafeAction` is optional plain English for the refusal.
  */
-export interface BoundStoreVerdict extends ChannelVerdict { readonly nextSafeAction?: string }
+export interface BoundStoreVerdict extends ChannelVerdict {
+  readonly nextSafeAction?: string;
+  /** OB-54 round 10: the body the handler reads instead of the request's — the record with the credential's store stamped on. */
+  readonly stampedBody?: unknown;
+  /** OB-54 round 10: called once the handler has ACCEPTED the request (status < 400) — head office records its stamp. */
+  readonly onAccepted?: () => Promise<void> | void;
+  /** Round 14 (verifier G2): the HTTP status of a refusal — 403 unless the request itself is unreadable (400). */
+  readonly status?: 400 | 403;
+}
 export type BoundStoreGuard = (
   principal: Principal, access: AccessControl,
   request: { readonly method: Method; readonly routePath: string; readonly permission: string; readonly params: Readonly<Record<string, string>>; readonly query: Readonly<Record<string, string>>; readonly body: unknown },
@@ -496,12 +504,13 @@ export async function handle(opts: KernelOptions, request: HttpRequest): Promise
 
     // OB-54: a store computer's credential is locked to its own store — it may relay and report only for the store its
     // credential and its grant both name. Checked before the body reaches a handler and before any replay is served.
+    let boundVerdict: BoundStoreVerdict | undefined;
     if (opts.boundStore !== undefined) {
-      const bound = await opts.boundStore(principal, access, {
+      const bound = boundVerdict = await opts.boundStore(principal, access, {
         method: route.method, routePath: route.path, permission: route.permission, params, query: request.query ?? {}, body: request.body,
       });
       if (!bound.ok) {
-        throw apiError(403, {
+        throw apiError(bound.status ?? 403, {
           code: bound.code ?? 'store_computer_not_bound_to_this_store',
           whatHappened: bound.why ?? 'This store computer\'s sign-in is not bound to the store this request is for.',
           wasItSaved: 'not_saved',
@@ -559,13 +568,15 @@ export async function handle(opts: KernelOptions, request: HttpRequest): Promise
       scope: access.branchScopeOf(principal.userId, route.permission),
       params,
       query: request.query ?? {},
-      body: request.body,
+      // OB-54 round 10: a store computer's record that named no store carries the credential's store, stamped by head office.
+      body: boundVerdict?.stampedBody !== undefined ? boundVerdict.stampedBody : request.body,
       ...(write && key !== undefined ? { idempotencyKey: key } : {}),
       traceId,
       ...(reauth === undefined ? {} : { reauth }),
     });
 
     const response = sealed(result.status, result.body, principal.tenantId, traceId, false, route.shownOnce !== undefined);
+    if (response.status < 400 && boundVerdict?.onAccepted !== undefined) await boundVerdict.onAccepted();
 
     // Stored only after the outbound guards passed. Banking a reply that must not be sent would
     // make every replay return it too. A field shown once is never banked at all (hard rule #4).
@@ -584,6 +595,14 @@ export async function handle(opts: KernelOptions, request: HttpRequest): Promise
         whatHappened: 'This sign-in names a tenant that has not been provisioned on this system, so nothing can be recorded for it.',
         wasItSaved: 'not_saved',
         nextSafeAction: 'Ask the platform operator to provision the tenant (tenant:bootstrap) or check the identity provider’s tenant claim. Nothing was changed.',
+      }), traceId)
+      // The ledger refused an event whose id another event already holds under a different key (hard rule #10):
+      // a named conflict, known not saved — never the "did it save?" doubt of an unexpected failure.
+      : (e as Error | undefined)?.name === 'EventIdClashError' ? asResponse(apiError(409, {
+        code: 'event_id_clash',
+        whatHappened: 'This record carries an identity that a different record already holds, so head office did not keep it.',
+        wasItSaved: 'not_saved',
+        nextSafeAction: 'Nothing was changed. Raise it with support so the two records can be compared.',
       }), traceId)
       : asResponse(apiError(500, {
       code: 'unhandled',

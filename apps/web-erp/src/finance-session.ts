@@ -93,6 +93,8 @@ export interface FinancePorts {
   closeAtHeadOffice?(input: { readonly period: string; readonly approvalId: string }): Promise<MonthActionResult>;
   /** Reopen the month at head office (POST /v1/finance/periods/:period/reopen, body `{ reason, approvalId }`). */
   reopenAtHeadOffice?(input: { readonly period: string; readonly reason: string; readonly approvalId: string }): Promise<MonthActionResult>;
+  /** OB-57 (D10-FR-05): head office's budget against the books and its fixed-asset register for the month — two GETs. */
+  readPlan?(period: string): Promise<FinancePlan | undefined>;
 }
 
 export interface FinanceConfig {
@@ -433,6 +435,18 @@ export function presentMonthUse(lang: Lang, action: MonthAction, o: MonthUseOutc
   }
 }
 
+/** OB-57: the month's budget-vs-books and the fixed-asset register, exactly as head office answered (read only). */
+export interface FinancePlan {
+  readonly budget: {
+    readonly budget: { readonly version: number; readonly setBy: string } | null;
+    readonly rows: readonly { readonly account: string; readonly budgetMinor: number; readonly actualMinor: number; readonly varianceMinor: number }[];
+    readonly unbudgeted: readonly { readonly account: string; readonly actualMinor: number }[];
+  };
+  readonly register: {
+    readonly assets: readonly { readonly assetId: string; readonly name: string; readonly storeId: string; readonly state: string; readonly depreciationPostedMinor: number; readonly bookValueMinor: number }[];
+  };
+}
+
 export interface FinanceSession {
   /** The month, both sides of every figure, and what is outstanding. */
   period(): PeriodView;
@@ -460,6 +474,8 @@ export interface FinanceSession {
   reopenWithApproval(reason: string): Promise<MonthUseOutcome>;
   /** Where the caller's own newest requests for this month stand (a GET — read only). */
   yourRequests(lang: Lang): Promise<MonthRequestsView>;
+  /** OB-57: the month's budget against the books and the fixed-asset register — `undefined` when head office cannot be read. */
+  plan(): Promise<FinancePlan | undefined>;
   presentAskOutcome(lang: Lang, action: MonthAction, outcome: MonthAskOutcome): StatusPresentation;
   presentUseOutcome(lang: Lang, action: MonthAction, outcome: MonthUseOutcome): StatusPresentation;
 }
@@ -662,6 +678,8 @@ export function createFinanceSession(config: FinanceConfig, ports: FinancePorts)
       atHeadOffice = { closed: false };
       return { kind: 'done', detail: r.detail, approvedBy: found.decidedBy };
     },
+
+    plan: async () => (ports.readPlan === undefined ? undefined : ports.readPlan(config.period)),
 
     yourRequests: async (lang) => {
       const none = (state: MonthRequestsView['state']): MonthRequestsView => ({ state, close: null, reopen: null, closeAsked: false, reopenReason: null });

@@ -24,6 +24,7 @@ import { valueAtUnitCost } from '../../../packages/contracts/src/quantity';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import { actionDetails, approvalNamedIn, type ApprovalPort } from '../../identity/src/approval-requests';
 import { assertLocationInScope, stockReadScope, type LocationBranches } from './location-scope';
+import { assertNotFrozenByCount, type CountFreezeCheck } from './count-freeze';
 
 const LOSS_TYPES: readonly LossType[] = ['wastage', 'damage', 'expiry', 'donation', 'destruction'];
 
@@ -112,6 +113,8 @@ export interface WriteOffDeps {
   readonly unitCostAt?: (tenantId: string, locationId: string, productId: string) => Promise<number | undefined> | number | undefined;
   /** PA-01-r1: which branch a location belongs to (the org hierarchy); absent → a location is its own branch key. */
   readonly locationBranches?: LocationBranches;
+  /** WF-08 / OB-59: which open count plan freezes a write-off here (absent on a bare stub — nothing is frozen). */
+  readonly countFreeze?: CountFreezeCheck;
   readonly now: () => string;
 }
 
@@ -155,6 +158,8 @@ export function writeOffRoutes(deps: WriteOffDeps): readonly Route[] {
         // store-owned product is unaffected), so it cannot disturb an ordinary loss.
         // PA-01-r1: a loss is written off only at a location inside the caller's branches.
         await assertLocationInScope(ctx, b['locationId'] as string, deps.locationBranches);
+        // WF-08 / OB-59: a write-off at a place where an open count froze write-offs of this product is refused by name.
+        await assertNotFrozenByCount(deps.countFreeze, ctx.tenantId, [{ productId: b['productId'] as string, locationId: b['locationId'] as string, kind: 'wasted' }], 'write-off');
         const others = await deps.ownersOfStockAt(ctx.tenantId, b['productId'] as string, b['locationId'] as string);
         if (others.length > 0) {
           const owner = others[0]!;

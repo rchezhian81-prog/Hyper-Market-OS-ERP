@@ -17,6 +17,7 @@
 // screen is committed locally and queued, and the sync agent drains it. Nothing in this file calls
 // the network in a path a person waits on.
 
+import { createReceiptPrefixSession, type ReceiptPrefixSession, type ReceiptPrefixesRead } from './receipt-prefix-session';
 import { InMemoryLedgerStore, Ledger } from '../../../packages/ledger/src/ledger';
 import { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { openDeviceOutbox, guardedStore } from '../../../packages/sync/src/device-outbox';
@@ -65,6 +66,11 @@ import {
 } from './merchandising-session';
 import { createUnsellableSession, type UnsellableSession, type UnsellableData } from './unsellable-session';
 import {
+  createFinanceCloseSession, browserFinanceCloseHttp, closeWords, rupees, paiseOf, sayOutcome, flagWords, paymentStateWords, conflictWords,
+  type FinanceCloseSession,
+} from './finance-close-session';
+import { createCompetitorPriceSession, browserCompetitorHttp, competitorWords, gapWords, competitorOutcomeWords, COMPETITOR_SOURCES, type CompetitorPriceSession } from './competitor-price-session';
+import {
   createReportingSession,
   type DayTotal, type ReportableSale, type ReportingPorts, type ReportingSession,
 } from './reporting-session';
@@ -81,7 +87,7 @@ import {
 import type { Batch } from '../../../packages/fefo/src/index';
 import {
   createFinanceSession, periodCloseRequestBody, periodReopenRequestBody,
-  type FinancePorts, type FinanceSession, type MonthActionResult,
+  type FinancePorts, type FinanceSession, type MonthActionResult, type FinancePlan,
 } from './finance-session';
 import {
   createGstReconciliationSession, type GstReconciliationPorts, type GstReconciliationSession, type QueueRow as GstQueueRow,
@@ -207,6 +213,8 @@ import {
   type SuppliersPorts, type SuppliersSession, type SuppliersData, type SupplierRowView, type SupplierAttentionReason,
   type SupplierApprovePort, type SupplierProposePort, type ApprovePostResult, type ProposePostResult,
 } from './suppliers-session';
+import { createSupplierBillsSession, browserHeadOfficeCall, type SupplierBillsSession } from './supplier-bills-session';
+import { createOpenToBuySession, type OpenToBuySession } from './open-to-buy-session';
 import {
   createIndentsSession,
   type IndentsPorts, type IndentsSession, type IndentsData, type IndentRowView, type IndentLineView, type IndentIssueView, type IndentProductOption,
@@ -224,6 +232,9 @@ import {
   type ApprovalsPorts, type ApprovalsSession, type ApprovalInboxView, type ApprovalRequestView, type ApprovalStatus,
   type ApprovalAsk, type AskResult, type InboxRead, type DecideResult, type DecisionWord, type Refused,
 } from './approvals-session';
+import { createCountPlansSession, type CountPlansSession } from './count-plans-session';
+import { createTransfersSession, type TransfersSession } from './transfers-session';
+import { headOfficeHttp } from './head-office-http';
 import {
   createWorkforceInboxSession,
   type WorkforceInboxPorts, type WorkforceInboxSession, type WorkforceWorklistData,
@@ -255,6 +266,10 @@ import {
   createPeopleSession, PERSON_PROVISION_PERMISSION,
   type IssueResult, type PeoplePort, type PeopleRead, type PeopleSession, type PersonRow,
 } from './people-session';
+import {
+  createOutsideLoginsSession, OUTSIDE_KIND_SEGMENT,
+  type OutsideKind, type OutsideLoginRow, type OutsideLoginsPort, type OutsideLoginsSession, type OutsideRead, type OutsideWrite,
+} from './outside-logins-session';
 import { createSetupSession, type SetupSession } from './setup-session';
 import {
   SetupEditController, editorFor, parseDraft, saveResultFromError, type SaveResult,
@@ -278,6 +293,7 @@ import type { UserAccount } from '../../../packages/identity/src/account';
 import type { AuditRecord, LegalHold, RetentionPolicy } from '../../../packages/audit/src/index';
 import type { Producer } from '../../../packages/reporting/src/index';
 import { mountDemoBanner } from '../../../packages/ui/src/demo-banner';
+import { createIncidentsSession, wordsFor as incidentsWords, outcomeWords as incidentsOutcomeWords, summarise as incidentsSummary, type IncidentsSession } from './incidents-session';
 
 // The practice-data strip ("TRIAL COPY · PRACTICE DATA"). `PILOT_DEMO_BANNER` is a build-time constant baked in by
 // esbuild (`scripts/build-app.mjs`): '1' in the hosted-demo build, empty in production. `typeof` guards
@@ -330,7 +346,9 @@ export interface BuyingData {
   /** What was received against each purchase order. */
   readonly received?: Readonly<Record<string, readonly { readonly productId: string; readonly qty: number }[]>>;
   /** Invoices already captured, keyed by invoice number. */
-  readonly captured?: Readonly<Record<string, readonly InvoiceLine[]>>;
+  readonly captured?: Readonly<Record<string, readonly InvoiceLine[]>>;  /** WF-03 (round 12): what the signed-in person holds — the box fills it (`asSignedInPerson`); it only shapes what the
+   *  open-to-buy panel OFFERS (set a budget, issue an order); head office re-checks every act. */
+  readonly permissions?: readonly string[];
 }
 
 /** What the product-and-pricing screen was last told. Absent means this box knows nothing of it. */
@@ -339,6 +357,10 @@ export interface CatalogueData {
   readonly storeId?: string;
   /** Today in the shop's own calendar. The screen never reads a clock of its own. */
   readonly today?: string;
+  /** Now on the box's clock (ISO) — the competitor-price panel dates a sighting with it unless the person says when. */
+  readonly now?: string;
+  /** What the person holds (head office's `GET /v1/identity/me`) — the competitor-price panel offers recording only with `price.change.propose`. */
+  readonly permissions?: readonly string[];
   /** Minimum gross margin in basis points. Per-tenant policy (M05-FR-02). */
   readonly marginFloorBps?: number;
   // No list of approvers (ADR-0024): a below-floor price or a margin-losing offer is approved by a second person in
@@ -590,6 +612,7 @@ export interface FinanceData {
 export interface FinanceHeadOfficePorts extends HeadOfficeApprovalPorts {
   readonly closeAtHeadOffice: NonNullable<FinancePorts['closeAtHeadOffice']>;
   readonly reopenAtHeadOffice: NonNullable<FinancePorts['reopenAtHeadOffice']>;
+  readonly readPlan?: NonNullable<FinancePorts['readPlan']>;
 }
 
 export function financePortsFromData(data: FinanceData | undefined, headOffice?: FinanceHeadOfficePorts): FinancePorts {
@@ -608,6 +631,7 @@ export function financePortsFromData(data: FinanceData | undefined, headOffice?:
       approvalInbox: headOffice.approvalInbox,
       closeAtHeadOffice: headOffice.closeAtHeadOffice,
       reopenAtHeadOffice: headOffice.reopenAtHeadOffice,
+      ...(headOffice.readPlan === undefined ? {} : { readPlan: headOffice.readPlan }),
     }),
   };
 }
@@ -1226,6 +1250,11 @@ export interface ViewerIdentity {
  * Keep only who is looking and the permission words from an injected payload; `undefined` (nobody named) when it is
  * absent or malformed. The permissions only shape what a screen OFFERS — the cloud re-checks every act.
  */
+/** Round 12: the Month-end page's words and readings (tested in `finance-close-session.ts`). */
+export const FINANCE_CLOSE_KIT = Object.freeze({ closeWords, rupees, paiseOf, sayOutcome, flagWords, paymentStateWords, conflictWords });
+/** Round 12: the competitor-price panel's words and readings (tested in `competitor-price-session.ts`). */
+export const COMPETITOR_PRICE_KIT = Object.freeze({ competitorWords, gapWords, competitorOutcomeWords, rupees, sources: COMPETITOR_SOURCES });
+
 export function viewerIdentity(raw: unknown): ViewerIdentity | undefined {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
   const r = raw as Record<string, unknown>;
@@ -3431,6 +3460,21 @@ export const FINANCE_HEAD_OFFICE: FinanceHeadOfficePorts = Object.freeze({
     `/v1/finance/periods/${encodeURIComponent(period)}/reopen`, periodReopenRequestBody(reason, approvalId),
     globalThis.crypto?.randomUUID?.() ?? `period-reopen-${period}-${approvalId}`,
   ),
+  // OB-57: two reads in the person's own session; anything but a 2xx is "not known", never an empty budget.
+  readPlan: async (period: string): Promise<FinancePlan | undefined> => {
+    const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+    if (fetchFn === undefined) return undefined;
+    const read = async (path: string): Promise<unknown> => {
+      const res = await fetchFn(path, { headers: { accept: 'application/json' }, credentials: 'same-origin' });
+      return res.status >= 200 && res.status < 300 ? res.json() : undefined;
+    };
+    try {
+      const [budget, register] = await Promise.all([read(`/v1/finance/budgets/${encodeURIComponent(period)}`), read('/v1/finance/fixed-assets')]);
+      return budget === undefined || register === undefined ? undefined : { budget, register } as FinancePlan;
+    } catch {
+      return undefined;
+    }
+  },
 });
 
 /** Record a checker's decision (POST /v1/approvals/requests/:requestId/decide) in the caller's own session. */
@@ -4214,6 +4258,82 @@ async function postPerson(input: { readonly signInName: string; readonly display
 /** Head office's people routes, as the Admin screen uses them in the browser. */
 export const HEAD_OFFICE_PEOPLE: PeoplePort = Object.freeze({ read: () => fetchPeople(), issue: postPerson });
 
+// ── OB-76: logins for outside parties (a business customer, an app customer, a supplier) ─────────────────────────
+//
+// Asked in the viewer's OWN session; head office decides. The one-time password it returns is handed to the session
+// model, which holds it in memory until it is handed over — never written to storage, never logged.
+
+const OUTSIDE_PATH = '/v1/identity/outside-logins';
+
+/** One outside login as head office lists it, read defensively: a row without its ids, names or state is dropped. */
+export function outsideLoginRowOf(raw: unknown): OutsideLoginRow | null {
+  if (raw === null || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  const state = r['state'];
+  const role = r['role'];
+  if (!nonBlank(r['inviteId']) || !nonBlank(r['partyId']) || !nonBlank(r['userId']) || !nonBlank(r['displayName']) || !nonBlank(r['invitedBy']) || !nonBlank(r['invitedAt'])
+    || (state !== 'invited' && state !== 'approved' && state !== 'rejected' && state !== 'revoked')
+    || (role !== 'b2b_customer' && role !== 'customer' && role !== 'supplier')) return null;
+  return {
+    inviteId: r['inviteId'], role, partyId: r['partyId'], userId: r['userId'], displayName: r['displayName'], state,
+    invitedBy: r['invitedBy'], invitedAt: r['invitedAt'],
+    ...(nonBlank(r['approvedBy']) ? { approvedBy: r['approvedBy'] } : {}),
+    ...(nonBlank(r['rejectedBy']) ? { rejectedBy: r['rejectedBy'] } : {}),
+    ...(nonBlank(r['revokedBy']) ? { revokedBy: r['revokedBy'] } : {}),
+    ...(Array.isArray(r['grants']) ? { grants: (r['grants'] as unknown[]).filter((g): g is string => typeof g === 'string') } : {}),
+  };
+}
+
+async function outsideCall(method: 'GET' | 'POST', path: string, body?: unknown): Promise<{ ok: true; body: Record<string, unknown> } | { ok: false; refused: { code: string; whatHappened: string } } | { ok: false; lost: true }> {
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return { ok: false, lost: true };
+  try {
+    const key = globalThis.crypto?.randomUUID?.() ?? `outside-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const res = await fetchFn(path, {
+      method, credentials: 'same-origin',
+      headers: { accept: 'application/json', ...(method === 'POST' ? { 'content-type': 'application/json', 'idempotency-key': key } : {}) },
+      ...(method === 'POST' ? { body: JSON.stringify(body ?? {}) } : {}),
+    });
+    if (res.status >= 200 && res.status < 300) return { ok: true, body: (await res.json().catch(() => ({}))) as Record<string, unknown> };
+    return { ok: false, refused: await refusalOf(res) };
+  } catch {
+    return { ok: false, lost: true };
+  }
+}
+
+const outsideWrite = (a: Awaited<ReturnType<typeof outsideCall>>): OutsideWrite => {
+  if (!a.ok) return 'lost' in a ? { result: 'lost_link' } : { result: 'refused', ...a.refused };
+  const login = outsideLoginRowOf((a.body['login'] ?? a.body['invite']) as unknown);
+  const password = a.body['oneTimePassword'];
+  return {
+    result: 'done', ...(login === null ? {} : { login }),
+    // A replay carries a "withheld" sentence in its place — that is not a password.
+    ...(typeof password === 'string' && /^[2-9A-HJ-NP-Z]{4}(-[2-9A-HJ-NP-Z]{4}){3}$/.test(password) ? { oneTimePassword: password } : {}),
+  };
+};
+
+const seg = (k: OutsideKind): string => `${OUTSIDE_PATH}/${OUTSIDE_KIND_SEGMENT[k]}`;
+
+/** Head office's outside-party login routes, as the Admin screen uses them in the browser. */
+export const HEAD_OFFICE_OUTSIDE_LOGINS: OutsideLoginsPort = Object.freeze({
+  list: async (kind: OutsideKind): Promise<OutsideRead> => {
+    const a = await outsideCall('GET', seg(kind));
+    if (!a.ok) return 'lost' in a ? { result: 'lost_link' } : { result: 'refused', ...a.refused };
+    return { result: 'read', logins: (Array.isArray(a.body['logins']) ? a.body['logins'] as unknown[] : []).map(outsideLoginRowOf).filter((x): x is OutsideLoginRow => x !== null) };
+  },
+  invite: async (kind: OutsideKind, partyId: string, inviteId: string, body: { readonly userId?: string; readonly displayName: string; readonly grants?: readonly string[] }) =>
+    outsideWrite(await outsideCall('POST', `${seg(kind)}/${encodeURIComponent(partyId)}/invites/${encodeURIComponent(inviteId)}`, body)),
+  approve: async (kind: OutsideKind, inviteId: string) => outsideWrite(await outsideCall('POST', `${seg(kind)}/invites/${encodeURIComponent(inviteId)}/approve`, {})),
+  revoke: async (kind: OutsideKind, inviteId: string, reason: string) => outsideWrite(await outsideCall('POST', `${seg(kind)}/invites/${encodeURIComponent(inviteId)}/revoke`, { reason })),
+  signIn: async (kind: OutsideKind, inviteId: string, signInName: string) => outsideWrite(await outsideCall('POST', `${seg(kind)}/invites/${encodeURIComponent(inviteId)}/sign-in`, { signInName })),
+});
+
+/** Build the outside-party logins part of "Who can get in", or `null` when the box told the page nothing. */
+export function bootOutsideLogins(data: AdminData | undefined, port?: OutsideLoginsPort): OutsideLoginsSession | null {
+  if (data === undefined) return null;
+  return createOutsideLoginsSession({ userId: data.userId === undefined ? null : data.userId, permissions: data.permissions ?? [] }, port);
+}
+
 /** Build the People part of "Who can get in", or `null` when the box told the page nothing about who is looking. */
 export function bootPeople(data: AdminData | undefined, port?: PeoplePort): PeopleSession | null {
   if (data === undefined) return null;
@@ -4229,6 +4349,32 @@ export interface SetupData {
   readonly storeId?: string;
   /** The tenant's setup status from GET /v1/platform/setup. Absent → the screen was told nothing. */
   readonly status?: SetupStatus;
+  /** What the viewer holds (head office's `GET /v1/identity/me`) — the prefix panel offers edits only with the setup right. */
+  readonly permissions?: readonly string[];
+  /** OB-81: head office's `GET /v1/receipt-prefixes` for this viewer. Absent → refused or not told: no panel. */
+  readonly receiptPrefixes?: ReceiptPrefixesRead;
+}
+
+/**
+ * OB-81: the till bill-number prefix panel, or `null` when head office gave this viewer no prefix list. Saves go to head
+ * office's own route as the signed-in person; the panel offers editing only to a viewer holding `platform.setup.write`
+ * (head office refuses anyone else regardless).
+ */
+export function bootReceiptPrefixes(data: SetupData | undefined): ReceiptPrefixSession | null {
+  if (data?.receiptPrefixes === undefined || !Array.isArray(data.receiptPrefixes.tills)) return null;
+  return createReceiptPrefixSession({ read: data.receiptPrefixes, canEdit: (data.permissions ?? []).includes('platform.setup.write') }, {
+    post: async (path, body, idempotencyKey) => {
+      const res = await fetch(path, { method: 'POST', headers: { 'content-type': 'application/json', 'idempotency-key': idempotencyKey }, body: JSON.stringify(body) });
+      return { status: res.status, body: await res.json().catch(() => null) as unknown };
+    },
+    reload: async () => {
+      try {
+        const res = await fetch('/v1/receipt-prefixes', { headers: { accept: 'application/json' } });
+        return res.status < 400 ? (await res.json()) as ReceiptPrefixesRead : null;
+      } catch { return null; }
+    },
+    newKey: () => globalThis.crypto?.randomUUID?.() ?? `prefix-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  });
 }
 
 /**
@@ -4601,6 +4747,35 @@ interface ManagerWindow {
   /** Round 8: who is at the service desk / the assistant's drafts screen — identity only (see `viewerIdentity`). */
   serviceDeskData?: ViewerIdentity;
   aiDraftsData?: ViewerIdentity;
+  /** Round 10: the Organisation and Delegation pages — thin clients; only who is looking and what they hold. */
+  organisationData?: ViewerIdentity;
+  delegationData?: ViewerIdentity;
+  /** Round 12 (M23 · WF-18 · D10-FR-03/05): the Month-end page — who is looking, what they hold, and this month. */
+  financeCloseData?: ViewerIdentity & { readonly period?: string };
+  financeCloseSession?: FinanceCloseSession;
+  /** The page's words and readings, from the same tested module (the page holds no rule of its own). */
+  financeCloseKit?: typeof FINANCE_CLOSE_KIT;
+  /** Round 12 (D06-FR-05): the competitor-price panel on the catalogue page, over head office's own routes. */
+  competitorPriceSession?: CompetitorPriceSession;
+  competitorPriceKit?: typeof COMPETITOR_PRICE_KIT;
+  /** Round 12 (D03-FR-02 · WF-05): the Supplier bills page — a head-office page; who is looking, and its session. */
+  supplierBillsData?: ViewerIdentity;
+  supplierBillsSession?: SupplierBillsSession;
+  /** Round 12 (WF-03 · D02-FR-01): the open-to-buy panel on the Buying page, over head office's budget routes. */
+  buyingOpenToBuy?: OpenToBuySession;
+  /** Round 12 (WF-08 · WF-07): the Count plans and Transfers pages — who is looking; every act is head office's. */
+  countPlansData?: ViewerIdentity;
+  countPlansSession?: CountPlansSession;
+  transfersData?: ViewerIdentity;
+  transfersSession?: TransfersSession;
+  /** Round 12 (M35-FR-02/04 · WF-20): the incidents and recovery-drills page — who is looking; head office answers the rest. */
+  incidentsData?: ViewerIdentity;
+  incidents?: {
+    readonly session: IncidentsSession;
+    readonly words: typeof incidentsWords;
+    readonly outcomeWords: typeof incidentsOutcomeWords;
+    readonly summarise: typeof incidentsSummary;
+  };
   substitutionExceptionInboxData?: SubstitutionExceptionInboxData;
   substitutionExceptionInboxSession?: SubExceptionInboxSession;
   /** The shell reads the live exceptions worklist through this and re-presents it — a GET read, never a write. */
@@ -4765,9 +4940,12 @@ interface ManagerWindow {
   adminData?: AdminData;
   adminSession?: AdminSession;
   peopleSession?: PeopleSession;
+  outsideLoginsSession?: OutsideLoginsSession;
   setupData?: SetupData;
   setupSession?: SetupSession;
   setupEditing?: SetupEditingApi;
+  /** OB-81: the till bill-number prefixes on the setup page (head office's `GET /v1/receipt-prefixes`). */
+  receiptPrefixSession?: ReceiptPrefixSession;
   aiData?: AiData;
   aiSession?: AiSession;
   migrationData?: MigrationData;
@@ -4832,7 +5010,7 @@ export function openDayClosePort(
   laneWriteBase: string | undefined,
 ): ManagerPorts['requestDayClose'] {
   if (laneWriteBase === undefined) return undefined;
-  return async ({ dayCloseId, closedBy, closerPin }): Promise<BoxCloseOutcome> => {
+  return async ({ dayCloseId, closedBy, closerPin, carryForward }): Promise<BoxCloseOutcome> => {
     const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
     if (fetchFn === undefined) {
       return { closed: false, reason: 'this screen cannot reach the store computer from here — the day is not closed' };
@@ -4842,7 +5020,7 @@ export function openDayClosePort(
         method: 'POST',
         headers: { 'content-type': 'application/json', accept: 'application/json' },
         // The PIN goes to the store computer's PIN register and nowhere else (round 4 · ADR-0020).
-        body: JSON.stringify({ dayCloseId, closedBy, ...(closerPin === undefined ? {} : { closerPin }) }),
+        body: JSON.stringify({ dayCloseId, closedBy, ...(closerPin === undefined ? {} : { closerPin }), ...(carryForward === undefined ? {} : { carryForward }) }),
       });
       const body = (await res.json().catch(() => ({}))) as { closed?: boolean; tradingDay?: string; reason?: string };
       if (res.status >= 200 && res.status < 300 && body.closed === true && typeof body.tradingDay === 'string') {
@@ -5047,7 +5225,7 @@ export function openProposePurchaseOrderPort(): ProposePurchaseOrderPort {
           body: JSON.stringify({ supplierId, deliverToLocationId, lines }),
         });
         const body = (await res.json().catch(() => ({}))) as {
-          order?: { requisitionedBy?: string; totalMinor?: number };
+          order?: { requisitionedBy?: string; totalMinor?: number; budgetCheck?: { overBudget?: boolean; overByMinor?: number } };
           whatHappened?: string;
           error?: { whatHappened?: string };
         };
@@ -5057,7 +5235,13 @@ export function openProposePurchaseOrderPort(): ProposePurchaseOrderPort {
           typeof body.order.requisitionedBy === 'string' &&
           typeof body.order.totalMinor === 'number'
         ) {
-          return { proposed: true, requisitionedBy: body.order.requisitionedBy, totalMinor: body.order.totalMinor };
+          // WF-03 · OB-63 (round 12): head office's open-to-buy check rides on the order — passed on so the screen can say
+          // an order over budget escalates to the owner (never decided here).
+          const check = body.order.budgetCheck;
+          return {
+            proposed: true, requisitionedBy: body.order.requisitionedBy, totalMinor: body.order.totalMinor,
+            ...(check === undefined ? {} : { budget: { overBudget: check.overBudget === true, overByMinor: typeof check.overByMinor === 'number' ? check.overByMinor : 0 } }),
+          };
         }
         // The kernel's refusal carries its words under `error` (e.g. OB-32's "supplier … is still waiting for finance").
         return { proposed: false, reason: body.error?.whatHappened ?? body.whatHappened ?? 'head office did not raise the order' };
@@ -6192,11 +6376,15 @@ if (browserWindow !== undefined) {
   if (admin !== null) browserWindow.adminSession = admin;
   const peopleSession = bootPeople(browserWindow.adminData, HEAD_OFFICE_PEOPLE);
   if (peopleSession !== null) browserWindow.peopleSession = peopleSession;
+  const outsideLogins = bootOutsideLogins(browserWindow.adminData, HEAD_OFFICE_OUTSIDE_LOGINS);
+  if (outsideLogins !== null) browserWindow.outsideLoginsSession = outsideLogins;
   const setup = bootSetup(browserWindow.setupData);
   if (setup !== null && browserWindow.setupData !== undefined) {
     browserWindow.setupSession = setup;
     browserWindow.setupEditing = makeSetupEditing(browserWindow.setupData);
   }
+  const prefixes = bootReceiptPrefixes(browserWindow.setupData);
+  if (prefixes !== null) browserWindow.receiptPrefixSession = prefixes;
   const ai = bootAi(browserWindow.aiData);
   if (ai !== null) browserWindow.aiSession = ai;
   // The migration screen's DURABLE device queue (2b-vi-c-4): its decisions are handed to the store computer, never left in
@@ -6224,4 +6412,49 @@ if (browserWindow !== undefined) {
   // anything else injected is dropped, and a malformed payload becomes "nobody named" (the page then offers nothing).
   browserWindow.serviceDeskData = viewerIdentity(browserWindow.serviceDeskData);
   browserWindow.aiDraftsData = viewerIdentity(browserWindow.aiDraftsData);
+  browserWindow.organisationData = viewerIdentity(browserWindow.organisationData);
+  browserWindow.delegationData = viewerIdentity(browserWindow.delegationData);
+  // Round 12: the Month-end page — identity only plus this month as the box's calendar says; every figure is a live read.
+  const rawClose = browserWindow.financeCloseData as unknown;
+  const closeViewer = viewerIdentity(rawClose);
+  if (closeViewer !== undefined) {
+    const period = (rawClose as { period?: unknown }).period;
+    browserWindow.financeCloseKit = FINANCE_CLOSE_KIT;
+    browserWindow.financeCloseSession = createFinanceCloseSession({ ...closeViewer, ...(typeof period === 'string' ? { period } : {}) }, browserFinanceCloseHttp());
+  }
+  // Round 12: the competitor-price panel reads who is looking from the catalogue's payload (its permissions, its store).
+  // Only where head office told the page who is looking (its permissions): the store computer's catalogue payload names no
+  // permissions and has no head-office route behind it, so there the panel says where competitor prices are kept.
+  const cat = browserWindow.catalogueData;
+  if (cat !== undefined) browserWindow.competitorPriceKit = COMPETITOR_PRICE_KIT;
+  if (cat !== undefined && Array.isArray(cat.permissions)) {
+    browserWindow.competitorPriceSession = createCompetitorPriceSession({
+      ...(cat.userId === undefined ? {} : { userId: cat.userId }), permissions: cat.permissions,
+      ...(cat.storeId === undefined ? {} : { storeId: cat.storeId }), ...(cat.now === undefined ? {} : { now: cat.now }),
+      products: (cat.products ?? []).map((p) => ({ productId: p.productId, name: p.name })),
+    }, browserCompetitorHttp());
+  }
+  // Round 12 (D03-FR-02 · WF-05): Supplier bills — a thin client over head office's bill-document register. Nobody named →
+  // no session (the page says so and offers nothing).
+  browserWindow.supplierBillsData = viewerIdentity(browserWindow.supplierBillsData);
+  const fetchForHeadOffice = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (browserWindow.supplierBillsData?.userId !== undefined && fetchForHeadOffice !== undefined) {
+    browserWindow.supplierBillsSession = createSupplierBillsSession(browserHeadOfficeCall(fetchForHeadOffice.bind(globalThis)), browserWindow.supplierBillsData);
+  }
+  // Round 12 (WF-03 · D02-FR-01 · OB-63): the open-to-buy panel reads head office live under the signed-in buyer's session.
+  const buyerPermissions = browserWindow.buyingData?.permissions;
+  if (typeof browserWindow.buyingData?.buyerId === 'string' && browserWindow.buyingData.buyerId.trim() !== '' && Array.isArray(buyerPermissions) && fetchForHeadOffice !== undefined) {
+    browserWindow.buyingOpenToBuy = createOpenToBuySession(browserHeadOfficeCall(fetchForHeadOffice.bind(globalThis)), { permissions: buyerPermissions.filter((p): p is string => typeof p === 'string') });
+  }
+  // Round 12 (WF-08 · WF-07): the Count plans and Transfers pages call head office in the signed-in person's own session.
+  // No payload → "nobody named": the page then reads nothing and offers nothing (creating a session does no I/O).
+  browserWindow.countPlansSession = createCountPlansSession(viewerIdentity(browserWindow.countPlansData), headOfficeHttp());
+  browserWindow.transfersSession = createTransfersSession(viewerIdentity(browserWindow.transfersData), headOfficeHttp());
+  // Round 12 (M35-FR-02/04 · WF-20): the incidents and recovery-drills page — its session is the tested model in
+  // incidents-session.ts; it reads and writes head office's own routes in the signed-in person's session, never on open.
+  browserWindow.incidentsData = viewerIdentity(browserWindow.incidentsData);
+  browserWindow.incidents = {
+    session: createIncidentsSession({ viewer: browserWindow.incidentsData }),
+    words: incidentsWords, outcomeWords: incidentsOutcomeWords, summarise: incidentsSummary,
+  };
 }

@@ -8,6 +8,7 @@
 // a given user (auto-minting a token via the local IdP); `raw()` sends an explicit/no token for
 // auth-rejection tests.
 
+import type { IdentityDirectory } from '../../services/identity/src/identity-directory';
 import { InMemoryEventStore, type EventStore } from '../../packages/persistence/src/event-store';
 import { makeEvent } from '../../packages/contracts/src/event';
 import { buildRouter, handle, MemoryIdempotencyStore, type HttpRequest, type HttpResponse, type RequestObservation } from '../../services/kernel/src/index';
@@ -19,6 +20,7 @@ import { storeComputerBinding } from '../../services/api/src/store-computer-bind
 import type { OutboundTransport } from '../../services/platform/src/outbound-webhooks';
 import { buildSurface } from '../../services/api/src/main';
 import { tenantAccessResolver, tenantEntitlementResolver, seedGenesisOwner } from '../../services/api/src/access';
+import type { DurableTenantSettings } from '../../packages/tenant/src/index';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from '../../services/api/src/roles';
 import { STREAM } from '../../services/api/src/adapters';
 import { LocalIdp } from './local-idp';
@@ -126,6 +128,10 @@ export function apiHarness(opts: {
   /** D14 / M32: an outbound webhook transport (a recording one in tests) and signing secrets by vault name. */
   outboundTransport?: OutboundTransport;
   outboundSecrets?: ReadonlyMap<string, string>;
+  /** OB-15-c: the identity server's directory (a fake in tests) — people's sign-ins given from /v1/identity/people. */
+  identityDirectory?: IdentityDirectory;
+  /** OB-78: the tenant settings store (durable on PostgreSQL, or one shared in-memory store) — so a restart keeps the owner's answers. */
+  settings?: DurableTenantSettings;
 } = {}): ApiHarness {
   const store = opts.personalDataKeys === undefined ? opts.store ?? new InMemoryEventStore()
     : personalDataStore(opts.store ?? new InMemoryEventStore(), opts.personalDataKeys);
@@ -144,6 +150,8 @@ export function apiHarness(opts: {
     ...(opts.modelPricing === undefined ? {} : { modelPricing: opts.modelPricing }),
     ...(opts.outboundTransport === undefined ? {} : { outboundTransport: opts.outboundTransport }),
     ...(opts.outboundSecrets === undefined ? {} : { outboundSecrets: opts.outboundSecrets }),
+    ...(opts.identityDirectory === undefined ? {} : { identityDirectory: opts.identityDirectory }),
+    ...(opts.settings === undefined ? {} : { settings: opts.settings }),
   }));
   if (!built.ok) throw new Error(`surface malformed: ${built.refusals.map((r) => r.detail).join('; ')}`);
 
@@ -171,6 +179,7 @@ export function apiHarness(opts: {
   // it (scripts/issue-store-token.mjs --store). A request may still name another branchId explicitly (refusal tests).
   const boxStores = new Map<string, string>();
   const boxStoreOf = (tenantId: string, userId: string): string | undefined => boxStores.get(`${tenantId}\u0000${userId}`);
+  const machines = new Set<string>();
 
   return {
     store,
@@ -178,6 +187,8 @@ export function apiHarness(opts: {
     request: ({ method, path, userId, tenantId, branchId, body, idempotencyKey, query, authTimeFromNowSeconds, amr }) =>
       handle(kernel, { method, path, body, ...(query === undefined ? {} : { query }), headers: headers(TEST_IDP.issue({
         sub: userId, tenantId, branchId: branchId ?? boxStoreOf(tenantId, userId),
+        // PA-12 r12: the backup job's credential is a MACHINE one — no interactive sign-in evidence (auth_time/amr).
+        ...(machines.has(`${tenantId}\u0000${userId}`) ? { authTimeFromNowSeconds: null, amr: null } : {}),
         ...(authTimeFromNowSeconds === undefined ? {} : { authTimeFromNowSeconds }),
         ...(amr === undefined ? {} : { amr }),
       }), idempotencyKey) }),
@@ -187,6 +198,7 @@ export function apiHarness(opts: {
     provisionOwner: (tenantId, userId) => appendGrant(store, tenantId, userId, OWNER_ROLE_ID),
     provisionRole: async (tenantId, userId, roleId, branchScope) => {
       if (roleId === 'store_computer' && branchScope !== undefined && branchScope !== 'all' && branchScope.length === 1) boxStores.set(`${tenantId}\u0000${userId}`, branchScope[0]!);
+      if (roleId === 'backup_job') machines.add(`${tenantId}\u0000${userId}`);
       await appendGrant(store, tenantId, userId, roleId, branchScope);
     },
     enableFeature: (tenantId, feature) => appendEntitlement(store, tenantId, feature, true),

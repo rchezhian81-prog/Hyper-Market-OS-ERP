@@ -40,7 +40,10 @@ export interface TransferLine {
   readonly batchId: string | null;
   readonly quantityMinor: number;
   readonly uom: string;
-  /** Value, so a discrepancy on arrival can be priced (P-03). */
+  /**
+   * Value, so a discrepancy on arrival can be priced (P-03). Round 10: head office's OWN average cost of this product at the
+   * sending location when the transfer was proposed (0 where it holds none) — a cost the proposer sends is ignored.
+   */
   readonly unitCost: Money;
 }
 
@@ -425,7 +428,9 @@ export function receiveTransfer(input: {
         dispatchedMinor: line.quantityMinor,
         receivedMinor: counted,
         differenceMinor: difference,
-        value: { minor: valueAtUnitCost(missing, line.uom, line.unitCost.minor), currency: input.currency }, // OB-31
+        // Round 10: valued at head office's own cost of the stock as it LEFT the source (set at dispatch), else the line's
+        // cost — which head office itself set at proposal from its valuation of the sending location; never the caller's.
+        value: { minor: valueAtUnitCost(missing, line.uom, transfer.lineCostsMinor?.[i] ?? line.unitCost.minor), currency: input.currency }, // OB-31
         detail:
           difference < 0
             ? `${missing} left ${transfer.fromLocationId} and did not arrive — a miscount or a loss, and it needs an owner`

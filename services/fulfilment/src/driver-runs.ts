@@ -362,8 +362,11 @@ export function syncedDriverRunRoutes(deps: SyncedDriverRunDeps): readonly Route
             orderStep = 'disagrees';
           } else {
             orderStep = { event, from, to: r.state };
+            // Round 14 (verifier G7): a step time AHEAD of head office's receipt time (a phone clock running fast) is clamped to
+            // the receipt time — both kept — so the customer's "as of" can never read a stuck delivery as fresh.
+            const ahead = Date.parse(r.at) > Date.parse(now);
             await deps.recordDeliveryTransition(ctx.tenantId, {
-              orderId: r.orderRef, from, to: r.state, event, by: r.driverId, at: r.at,
+              orderId: r.orderRef, from, to: r.state, event, by: r.driverId, at: ahead ? now : r.at, receivedAt: now, ...(ahead ? { deviceAt: r.at } : {}),
               // The proof itself stays on the phone by design (§31 — a route's worth of doorstep photographs on a queue is a
               // privacy problem). What travels is its KIND and where the evidence is held; both are recorded with the step.
               ...(handsOver ? { proofRef: `${r.proofKind}@handheld:${routeId}/${stopId}` } : {}),

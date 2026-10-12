@@ -111,6 +111,184 @@ describe.each(backings)('a purchase order is checked against open-to-buy — on 
     expect((p5.body as { order: { budgetCheck: { categories: Cat[]; overBudget: boolean } } }).order.budgetCheck).toMatchObject({ overBudget: false, categories: [{ categoryId: 'uncategorised', state: 'no_budget', budgetMinor: null }] });
     await ok(approve('po-5'), 'approve po-5');
   });
+
+  it('WF-03 (round 10): two approvals at the same moment cannot together spend more than the budget — one issues, the other is refused by name and is judged again on what the first committed', async () => {
+    const h = harness();
+    const T = randomUUID();
+    await h.seedOwner(T, 'u-owner');
+    await h.provisionRole(T, 'u-buyer', 'store_manager');
+    await h.provisionRole(T, 'u-owner2', 'owner');
+    await approvedSuppliers(h, T, 'sup-1');
+    await deliveryPlaces(h, T, 'store-1');
+    const call = (method: 'GET' | 'POST', path: string, userId: string, body?: unknown, key?: string, query?: Record<string, string>): Promise<Res> =>
+      h.request({ method, path, userId, tenantId: T, ...(body === undefined ? {} : { body }), ...(query === undefined ? {} : { query }), ...(method === 'GET' ? {} : { idempotencyKey: key ?? `${path}-${JSON.stringify(body)}` }) });
+    const ok = async (p: Promise<Res>, what: string): Promise<Res> => { const r = await p; expect(r.status, `${what}: ${JSON.stringify(r.body)}`).toBeLessThan(300); return r; };
+    await ok(call('POST', '/v1/catalogue/tax-classes/1006/rates/2017-07-01', 'u-owner', { rateBps: 500 }, 'tax'), 'tax');
+    await ok(call('POST', '/v1/catalogue/products/RICE/publish', 'u-owner', {
+      product: { sku: 'SKU-RICE', name: 'RICE', baseUom: 'ea', primaryCategoryId: 'grocery', taxClass: '1006', lifecycle: 'active' },
+      categories: [{ categoryId: 'grocery', name: 'Grocery', parentId: null }],
+    }, 'pub-RICE'), 'publish');
+    const month = new Date().toISOString().slice(0, 7);
+    await ok(call('POST', '/v1/purchase/budgets', 'u-owner', { period: month, categoryId: 'grocery', amountMinor: 100_000, reason: 'October grocery plan' }, 'b-g'), 'budget');
+    // Two orders, each within budget alone (60 000 of 100 000) — together over it.
+    for (const id of ['po-a', 'po-b']) {
+      await ok(call('POST', `/v1/purchase/orders/${id}`, 'u-buyer', { supplierId: 'sup-1', deliverToLocationId: 'store-1', lines: [{ productId: 'RICE', orderedQty: 12, unitCost: cost(5_000) }] }, `po-${id}`), id);
+    }
+    // Two owners approve at the same moment — neither names an over-budget reason.
+    const [ra, rb] = await Promise.all([
+      call('POST', '/v1/purchase/orders/po-a/approval', 'u-owner', { reason: 'weekly replenishment' }, 'ap-a'),
+      call('POST', '/v1/purchase/orders/po-b/approval', 'u-owner2', { reason: 'weekly replenishment' }, 'ap-b'),
+    ]);
+    // Exactly one issues. The other is refused by name: when the two truly overlap, the budget guard refuses the second
+    // write (409 concurrent_change); when a busy machine lets one finish first, the second is judged on what it committed
+    // (422 over_budget_reason_required). Never both issued — that is the race this closes.
+    const results = [ra, rb].map((r) => [r.status, codeOf(r) ?? 'issued']).sort();
+    expect(results[0], JSON.stringify([ra.body, rb.body])).toEqual([200, 'issued']);
+    expect([[409, 'concurrent_change'], [422, 'over_budget_reason_required']], JSON.stringify([ra.body, rb.body])).toContainEqual(results[1]);
+    const status = async (id: string) => ((await call('GET', `/v1/purchase/orders/${id}`, 'u-owner')).body as { order: { status: string } }).order.status;
+    const [winner, loser] = ra.status === 200 ? ['po-a', 'po-b'] : ['po-b', 'po-a'];
+    expect([await status(winner), await status(loser)]).toEqual(['issued', 'proposed']);
+    // Committed is what one order spent — never both; no override was recorded for the loser.
+    const otb = (await call('GET', '/v1/purchase/open-to-buy', 'u-owner', undefined, undefined, { period: month })).body as { categories: Cat[]; overrides: unknown[] };
+    expect(otb.categories.find((c) => c.categoryId === 'grocery')).toMatchObject({ committedMinor: 60_000, openToBuyMinor: 40_000, state: 'within' });
+    expect(otb.overrides).toEqual([]);
+    // Asked again, the loser is judged on what the winner committed: now over budget — it escalates by name.
+    const again = await call('POST', `/v1/purchase/orders/${loser}/approval`, loser === 'po-a' ? 'u-owner' : 'u-owner2', { reason: 'weekly replenishment' }, `ap-${loser}-again`);
+    expect([again.status, codeOf(again)]).toEqual([422, 'over_budget_reason_required']);
+    expect(await status(loser)).toBe('proposed');
+  });
+
+  // OB-63 · WF-03: an issued order's AMENDMENT that raises its value goes through the same open-to-buy check and race guard
+  // as an approval; over budget it escalates to the owner with a reason (recorded per amendment); a lowering one is not judged.
+  const amendShop = async () => {
+    const h = harness();
+    const T = randomUUID();
+    await h.seedOwner(T, 'u-owner');
+    await h.provisionRole(T, 'u-buyer', 'store_manager');
+    await h.provisionRole(T, 'u-owner2', 'owner');
+    await approvedSuppliers(h, T, 'sup-1');
+    await deliveryPlaces(h, T, 'store-1');
+    const call = (method: 'GET' | 'POST', path: string, userId: string, body?: unknown, key?: string, query?: Record<string, string>): Promise<Res> =>
+      h.request({ method, path, userId, tenantId: T, ...(body === undefined ? {} : { body }), ...(query === undefined ? {} : { query }), ...(method === 'GET' ? {} : { idempotencyKey: key ?? randomUUID() }) });
+    const ok = async (p: Promise<Res>, what: string): Promise<Res> => { const r = await p; expect(r.status, `${what}: ${JSON.stringify(r.body)}`).toBeLessThan(300); return r; };
+    await ok(call('POST', '/v1/catalogue/tax-classes/1006/rates/2017-07-01', 'u-owner', { rateBps: 500 }, 'tax'), 'tax');
+    for (const [p, cat] of [['RICE', 'grocery'], ['SOAP', 'home']] as const) {
+      await ok(call('POST', `/v1/catalogue/products/${p}/publish`, 'u-owner', {
+        product: { sku: `SKU-${p}`, name: p, baseUom: 'ea', primaryCategoryId: cat, taxClass: '1006', lifecycle: 'active' },
+        categories: [{ categoryId: 'grocery', name: 'Grocery', parentId: null }, { categoryId: 'home', name: 'Home care', parentId: null }],
+      }, `pub-${p}`), `publish ${p}`);
+    }
+    const month = new Date().toISOString().slice(0, 7);
+    const issued = async (poId: string, productId: string, qty: number) => {
+      await ok(call('POST', `/v1/purchase/orders/${poId}`, 'u-buyer', { supplierId: 'sup-1', deliverToLocationId: 'store-1', lines: [{ productId, orderedQty: qty, unitCost: cost(5_000) }] }), poId);
+      await ok(call('POST', `/v1/purchase/orders/${poId}/approval`, 'u-owner', { reason: 'weekly replenishment' }), `approve ${poId}`);
+    };
+    const amend = (poId: string, amendmentId: string, productId: string, qty: number, userId = 'u-owner', extra: Record<string, unknown> = {}, key?: string) =>
+      call('POST', `/v1/purchase/orders/${poId}/amendments`, userId, { amendmentId, reason: 'supplier can fill more', lines: [{ productId, orderedQty: qty, unitCost: cost(5_000) }], ...extra }, key);
+    const otb = async () => (await call('GET', '/v1/purchase/open-to-buy', 'u-owner', undefined, undefined, { period: month })).body as { categories: Cat[]; overrides: { poId: string; amendmentId?: string; approvedBy: string; reason: string; overByMinor: number }[] };
+    const order = async (poId: string) => ((await call('GET', `/v1/purchase/orders/${poId}`, 'u-owner')).body as { order: { lines: { orderedQty: number; uom?: string }[]; amendmentCount: number; totalMinor: number } }).order;
+    return { h, T, call, ok, month, issued, amend, otb, order };
+  };
+
+  it('OB-63: a raising amendment is judged on open-to-buy and escalates to the owner over budget; a lowering one is not judged; replay changes nothing', async () => {
+    const { call, ok, month, issued, amend, otb, order } = await amendShop();
+    await ok(call('POST', '/v1/purchase/budgets', 'u-owner', { period: month, categoryId: 'grocery', amountMinor: 100_000, reason: 'October grocery plan' }), 'budget');
+    await issued('po-a', 'RICE', 12); // 60 000
+    await issued('po-b', 'RICE', 6); // 30 000 — committed 90 000
+    // Raised within budget (+10 000 → committed 100 000): judged, proceeds, the check rides on the answer.
+    const within = await ok(amend('po-a', 'am-1', 'RICE', 14), 'am-1');
+    expect((within.body as { budgetAtAmendment: { overBudget: boolean; categories: Cat[] } }).budgetAtAmendment).toMatchObject({ overBudget: false, categories: [{ categoryId: 'grocery', committedMinor: 30_000, thisOrderMinor: 70_000, remainingAfterMinor: 0 }] });
+    expect((await otb()).categories.find((c) => c.categoryId === 'grocery')).toMatchObject({ committedMinor: 100_000, openToBuyMinor: 0 });
+    // Raised OVER budget with no over-budget reason: escalates by name — nothing changed.
+    const over = await amend('po-a', 'am-2', 'RICE', 16);
+    expect([over.status, codeOf(over)]).toEqual([422, 'over_budget_reason_required']);
+    expect((over.body as { error: { whatHappened: string } }).error.whatHappened).toContain('Amendment am-2 to purchase order po-a is over budget');
+    expect(await order('po-a')).toMatchObject({ amendmentCount: 1, lines: [{ orderedQty: 14 }] });
+    expect((await otb()).overrides).toEqual([]);
+    // The owner, with a reason: amended, the override recorded against THIS amendment.
+    await ok(amend('po-a', 'am-2', 'RICE', 16, 'u-owner', { overBudgetReason: 'Diwali stock-up' }), 'am-2 over budget');
+    // The amended line keeps the product's own unit (OB-31), so it is valued like the ordered one.
+    expect(await order('po-a')).toMatchObject({ amendmentCount: 2, lines: [{ orderedQty: 16, uom: 'ea' }] });
+    let o = await otb();
+    expect(o.categories.find((c) => c.categoryId === 'grocery')).toMatchObject({ committedMinor: 110_000, openToBuyMinor: -10_000, state: 'over' });
+    expect(o.overrides).toEqual([expect.objectContaining({ poId: 'po-a', amendmentId: 'am-2', approvedBy: 'u-owner', reason: 'Diwali stock-up', overByMinor: 10_000 })]);
+    // Re-sent (a lost reply, a fresh key): the same amendment — nothing applied twice, no second override.
+    expect((await amend('po-a', 'am-2', 'RICE', 16, 'u-owner', { overBudgetReason: 'Diwali stock-up' })).status).toBe(200);
+    expect(await order('po-a')).toMatchObject({ amendmentCount: 2 });
+    expect((await otb()).overrides).toHaveLength(1);
+    // A LOWERING amendment spends no budget: not judged, no reason needed, even with the month over budget.
+    const lower = await ok(amend('po-b', 'am-3', 'RICE', 2), 'am-3 lower');
+    expect((lower.body as { budgetAtAmendment?: unknown }).budgetAtAmendment).toBeUndefined();
+    o = await otb();
+    expect(o.categories.find((c) => c.categoryId === 'grocery')).toMatchObject({ committedMinor: 90_000, openToBuyMinor: 10_000, state: 'within' });
+    // Only a person who approves orders may amend one (a store manager may not).
+    expect((await amend('po-b', 'am-4', 'RICE', 3, 'u-buyer')).status).toBe(403);
+  });
+
+  it('OB-63: an order over budget at its approval AND over budget on an amendment records BOTH overrides — each on its own key', async () => {
+    const { call, ok, month, amend, otb } = await amendShop();
+    await ok(call('POST', '/v1/purchase/budgets', 'u-owner', { period: month, categoryId: 'grocery', amountMinor: 100_000, reason: 'October grocery plan' }), 'budget');
+    const overOrder = async (poId: string, qty: number, why: string) => {
+      await ok(call('POST', `/v1/purchase/orders/${poId}`, 'u-buyer', { supplierId: 'sup-1', deliverToLocationId: 'store-1', lines: [{ productId: 'RICE', orderedQty: qty, unitCost: cost(5_000) }] }), poId);
+      await ok(call('POST', `/v1/purchase/orders/${poId}/approval`, 'u-owner', { reason: 'festival order', overBudgetReason: why }), `approve ${poId}`);
+    };
+    // The order itself over budget at approval (120 000 of 100 000) — its override on the order.
+    await overOrder('po-x', 24, 'Diwali stock-up');
+    // Then raised again, over budget, by an amendment — its OWN override, never collapsed onto the order's.
+    await ok(amend('po-x', 'am-x', 'RICE', 26, 'u-owner', { overBudgetReason: 'supplier offered more at the same price' }), 'am-x over budget');
+    let o = (await otb()).overrides;
+    expect(o.map((v) => [v.poId, v.amendmentId ?? null, v.reason, v.overByMinor])).toEqual([
+      ['po-x', null, 'Diwali stock-up', 20_000],
+      ['po-x', 'am-x', 'supplier offered more at the same price', 30_000], // the month's overrun after it
+    ]);
+    // The keys cannot be confused even when an order's id LOOKS like an amendment's: order "po-y-amended-am-z" and
+    // amendment am-z of order po-y each keep their own override.
+    await overOrder('po-y-amended-am-z', 2, 'top-up one');
+    await overOrder('po-y', 2, 'top-up two');
+    await ok(amend('po-y', 'am-z', 'RICE', 3, 'u-owner', { overBudgetReason: 'top-up three' }), 'am-z over budget');
+    o = (await otb()).overrides;
+    expect(o.map((v) => [v.poId, v.amendmentId ?? null, v.reason])).toEqual([
+      ['po-x', null, 'Diwali stock-up'],
+      ['po-x', 'am-x', 'supplier offered more at the same price'],
+      ['po-y-amended-am-z', null, 'top-up one'],
+      ['po-y', null, 'top-up two'],
+      ['po-y', 'am-z', 'top-up three'],
+    ]);
+    // Re-sent under fresh keys: nothing applied twice, no extra override.
+    expect((await amend('po-x', 'am-x', 'RICE', 26, 'u-owner', { overBudgetReason: 'supplier offered more at the same price' })).status).toBe(200);
+    expect((await amend('po-y', 'am-z', 'RICE', 3, 'u-owner', { overBudgetReason: 'top-up three' })).status).toBe(200);
+    expect((await otb()).overrides).toHaveLength(5);
+  });
+
+  it('OB-63 (race): two raising amendments — or an amendment and an approval — at the same moment never together spend more than the budget', async () => {
+    const { call, ok, month, issued, amend, otb, order } = await amendShop();
+    await ok(call('POST', '/v1/purchase/budgets', 'u-owner', { period: month, categoryId: 'grocery', amountMinor: 100_000, reason: 'October grocery plan' }), 'grocery budget');
+    await ok(call('POST', '/v1/purchase/budgets', 'u-owner', { period: month, categoryId: 'home', amountMinor: 100_000, reason: 'October home plan' }), 'home budget');
+    await issued('po-a', 'RICE', 8); // 40 000
+    await issued('po-b', 'RICE', 8); // 40 000 — grocery committed 80 000
+    // Each raise alone is within (+15 000 → 95 000); together they would be 110 000. Neither names an over-budget reason.
+    const [ra, rb] = await Promise.all([amend('po-a', 'am-a', 'RICE', 11, 'u-owner'), amend('po-b', 'am-b', 'RICE', 11, 'u-owner2')]);
+    const results = [ra, rb].map((r) => [r.status, codeOf(r) ?? 'amended']).sort();
+    expect(results[0], JSON.stringify([ra.body, rb.body])).toEqual([200, 'amended']);
+    expect([[409, 'concurrent_change'], [422, 'over_budget_reason_required']], JSON.stringify([ra.body, rb.body])).toContainEqual(results[1]);
+    expect((await otb()).categories.find((c) => c.categoryId === 'grocery')).toMatchObject({ committedMinor: 95_000, openToBuyMinor: 5_000, state: 'within' });
+    expect([(await order('po-a')).amendmentCount + (await order('po-b')).amendmentCount]).toEqual([1]);
+
+    // An amendment and an approval at the same moment (home care): each alone within, together over — one lands.
+    await issued('po-c', 'SOAP', 12); // 60 000
+    await ok(call('POST', '/v1/purchase/orders/po-d', 'u-buyer', { supplierId: 'sup-1', deliverToLocationId: 'store-1', lines: [{ productId: 'SOAP', orderedQty: 6, unitCost: cost(5_000) }] }), 'po-d'); // 30 000 proposed
+    const [rAmend, rApprove] = await Promise.all([
+      amend('po-c', 'am-c', 'SOAP', 16, 'u-owner'), // +20 000 → 80 000
+      call('POST', '/v1/purchase/orders/po-d/approval', 'u-owner2', { reason: 'weekly replenishment' }), // +30 000 → 90 000
+    ]);
+    const both = [rAmend, rApprove].map((r) => [r.status, codeOf(r) ?? 'done']).sort();
+    expect(both[0], JSON.stringify([rAmend.body, rApprove.body])).toEqual([200, 'done']);
+    expect([[409, 'concurrent_change'], [422, 'over_budget_reason_required']], JSON.stringify([rAmend.body, rApprove.body])).toContainEqual(both[1]);
+    const home = (await otb()).categories.find((c) => c.categoryId === 'home')!;
+    expect(home.committedMinor === 80_000 || home.committedMinor === 90_000, JSON.stringify(home)).toBe(true);
+    expect(home.state).toBe('within');
+    expect((await otb()).overrides).toEqual([]);
+  });
 });
 
 describe('the over-budget escalation refuses an approver without the authority to exceed (unit, on the same gate the route runs)', () => {

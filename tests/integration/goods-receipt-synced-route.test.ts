@@ -37,7 +37,7 @@ interface GrnBody {
 const receipt = (over: Record<string, unknown> = {}) => ({
   grnId: 'g1', number: 'DN-1001', poId: 'po-1', lineCount: 1, warehouseId: WH, receivedBy: 'u-mgr', receivedAt: AT,
   lines: [{ productId: 'p1', quantityMinor: 100, uom: 'ea', batchId: null }],
-  storeId: 'store-1', source: 'manager-screen', ...over,
+  storeId: WH, source: 'manager-screen', ...over,
 });
 
 const relay = (h: ApiHarness, body: Record<string, unknown>, key: string, opts: { user?: string; tenant?: string; id?: string } = {}) =>
@@ -109,7 +109,7 @@ describe('a receipt relayed from the store becomes a cloud GRN, with the receive
     // The one honest flag: no tenant receiving policy exists yet (F03 → SP-4), so the default applied and SAID so.
     expect(body.flags).toEqual(['default_policy']);
     expect(body.grn).toMatchObject({
-      grnId: 'g1', poId: 'po-1', receivedBy: 'u-mgr', relayedBy: 'u-box', source: 'manager-screen', storeId: 'store-1', availableMinor: 100,
+      grnId: 'g1', poId: 'po-1', receivedBy: 'u-mgr', relayedBy: 'u-box', source: 'manager-screen', storeId: WH, availableMinor: 100,
     });
     expect(body.grn.captured.discrepancies).toEqual([]);
     expect(body.grn.captured.lines[0]).toMatchObject({ sellableMinor: 100, disposition: 'sellable' });

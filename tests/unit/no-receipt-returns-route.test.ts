@@ -224,9 +224,9 @@ describe('the synced no-receipt return never rejects — record-and-flag (M13-FR
     expect(res.status).toBe(202);
     expect(res.body).toMatchObject({ returnId: 'NR-L1', noReceipt: true, reconciled: true, flags: ['given_without_approval', 'no_receipt_over_cap'] });
     const { record, location } = rec.recorded[0]!;
-    expect(record).toMatchObject({ originalSaleId: null, noReceipt: true, processedBy: 'u-lanecash', governanceFlags: ['given_without_approval', 'no_receipt_over_cap'], locationId: 'lane-1' });
-    // No location named by the lane → assumed from the lane, and SAID SO (P-08).
-    expect(location).toEqual({ locationId: 'lane-1', basis: 'assumed_from_lane' });
+    expect(record).toMatchObject({ originalSaleId: null, noReceipt: true, processedBy: 'u-lanecash', governanceFlags: ['given_without_approval', 'no_receipt_over_cap'], locationId: 'unplaced-lane:lane-1' });
+    // No location named by the lane → the lane's own UNPLACED location (never the free-text lane id), and SAID SO (P-08).
+    expect(location).toEqual({ locationId: 'unplaced-lane:lane-1', basis: 'unplaced' });
     expect(rec.audits[0]?.origin).toMatchObject({ capturedOffline: true });
     expect(rec.audits[0]?.after).toMatchObject({ flagged: 'yes', capMinor: 'not set' });
   });

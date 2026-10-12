@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 978 | 595 | 595 | 89 | 300 |
+| 13 | 1016 | 623 | 623 | 89 | 300 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -44,6 +44,24 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/identity/grants/pending` | `identity.role.read` | core | — |
 | GET | `/v1/identity/me` | `identity.self.read` | core | — |
 | POST | `/v1/identity/number-series/:docType` | `documents.number.allocate` | core | yes |
+| GET | `/v1/identity/outside-logins/b2b-accounts` | `b2b.account.manage` | core | — |
+| POST | `/v1/identity/outside-logins/b2b-accounts/:partyId/invites/:inviteId` | `b2b.account.manage` | core | yes |
+| POST | `/v1/identity/outside-logins/b2b-accounts/invites/:inviteId/approve` | `b2b.account.manage` | core | yes |
+| POST | `/v1/identity/outside-logins/b2b-accounts/invites/:inviteId/reject` | `b2b.account.manage` | core | yes |
+| POST | `/v1/identity/outside-logins/b2b-accounts/invites/:inviteId/revoke` | `b2b.account.manage` | core | yes |
+| POST | `/v1/identity/outside-logins/b2b-accounts/invites/:inviteId/sign-in` | `b2b.account.manage` | core | yes |
+| GET | `/v1/identity/outside-logins/customers` | `customer.identity.manage` | core | — |
+| POST | `/v1/identity/outside-logins/customers/:partyId/invites/:inviteId` | `customer.identity.manage` | core | yes |
+| POST | `/v1/identity/outside-logins/customers/invites/:inviteId/approve` | `customer.identity.manage` | core | yes |
+| POST | `/v1/identity/outside-logins/customers/invites/:inviteId/reject` | `customer.identity.manage` | core | yes |
+| POST | `/v1/identity/outside-logins/customers/invites/:inviteId/revoke` | `customer.identity.manage` | core | yes |
+| POST | `/v1/identity/outside-logins/customers/invites/:inviteId/sign-in` | `customer.identity.manage` | core | yes |
+| GET | `/v1/identity/outside-logins/suppliers` | `supplier.portal.manage` | core | — |
+| POST | `/v1/identity/outside-logins/suppliers/:partyId/invites/:inviteId` | `supplier.portal.manage` | core | yes |
+| POST | `/v1/identity/outside-logins/suppliers/invites/:inviteId/approve` | `supplier.portal.manage` | core | yes |
+| POST | `/v1/identity/outside-logins/suppliers/invites/:inviteId/reject` | `supplier.portal.manage` | core | yes |
+| POST | `/v1/identity/outside-logins/suppliers/invites/:inviteId/revoke` | `supplier.portal.manage` | core | yes |
+| POST | `/v1/identity/outside-logins/suppliers/invites/:inviteId/sign-in` | `supplier.portal.manage` | core | yes |
 | GET | `/v1/identity/people` | `platform.person.read` | core | — |
 | POST | `/v1/identity/people` | `platform.person.provision` | core | yes |
 | GET | `/v1/identity/roles` | `identity.role.read` | core | — |
@@ -61,7 +79,9 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/org/nodes/:nodeId` | `org.branch.read` | core | — |
 | POST | `/v1/org/nodes/:nodeId` | `platform.setup.write` | core | yes |
 | POST | `/v1/org/nodes/:nodeId/activation` | `platform.setup.write` | core | yes |
+| GET | `/v1/receipt-prefixes` | `org.branch.read` | core | — |
 | GET | `/v1/store-computers/refusals` | `platform.health.read` | core | — |
+| GET | `/v1/store-computers/stamps` | `platform.health.read` | core | — |
 | GET | `/v1/store-packs/:storeId` | `store.pack.read` | core | — |
 | GET | `/v1/store-packs/:storeId/held` | `org.branch.read` | core | — |
 | POST | `/v1/store-packs/:storeId/held` | `store.computer.report` | core | yes |
@@ -70,6 +90,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/stores/:storeId/settings` | `org.branch.read` | core | — |
 | POST | `/v1/stores/:storeId/settings` | `platform.setup.write` | core | yes |
 | POST | `/v1/stores/:storeId/sync-watermarks` | `store.computer.report` | core | yes |
+| POST | `/v1/stores/:storeId/tills/:tillId/receipt-prefix` | `platform.setup.write` | core | yes |
 
 ## API-02 — Catalogue (M03–M05)
 
@@ -330,6 +351,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/warehouse/movements/:commandId` | `inventory.movement.append` | core | yes |
 | POST | `/v1/warehouse/movements/:commandId/synced` | `inventory.movement.sync` | core | yes |
 | POST | `/v1/warehouse/put-away/suggest` | `inventory.availability.read` | core | yes |
+| GET | `/v1/warehouse/transfers` | `inventory.availability.read` | core | — |
 | GET | `/v1/warehouse/transfers/:transferId` | `inventory.availability.read` | core | — |
 | POST | `/v1/warehouse/transfers/:transferId` | `inventory.movement.append` | core | yes |
 | POST | `/v1/warehouse/transfers/:transferId/dispatch` | `inventory.movement.append` | core | yes |
@@ -402,6 +424,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/tills/:tillId/cash` | `cash.till.read` | core | — |
 | POST | `/v1/tills/:tillId/cash-movements` | `cash.movement.record` | core | yes |
 | POST | `/v1/tills/:tillId/cash-movements/synced` | `cash.movement.sync` | core | yes |
+| POST | `/v1/tills/:tillId/legacy-placement` | `till.overshort.review` | core | yes |
 
 ## API-06 — Customer / Loyalty (M16–M17, M21)
 
@@ -659,6 +682,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/finance/b2b/postings` | `finance.period.read` | `b2b` | — |
 | GET | `/v1/finance/bank-statements` | `settlement.review.read` | core | — |
 | POST | `/v1/finance/bank-statements` | `settlement.batch.import` | core | yes |
+| GET | `/v1/finance/budgets/:period` | `finance.period.read` | core | — |
+| PUT | `/v1/finance/budgets/:period` | `finance.posting.configure` | core | yes |
 | POST | `/v1/finance/credit-notes` | `finance.creditnote.issue` | core | yes |
 | GET | `/v1/finance/credit-notes/reconciliation` | `finance.creditnote.issue` | core | — |
 | GET | `/v1/finance/day-book/:tradingDay` | `finance.period.read` | core | — |
@@ -686,6 +711,11 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/finance/e-way-bill/register` | `finance.einvoice.read` | core | — |
 | POST | `/v1/finance/e-way-bill/sandbox/generate` | `finance.einvoice.generate` | core | yes |
 | POST | `/v1/finance/e-way-bill/validity` | `finance.einvoice.read` | core | yes |
+| GET | `/v1/finance/fixed-assets` | `finance.period.read` | core | — |
+| POST | `/v1/finance/fixed-assets/:assetId` | `finance.journal.post` | core | yes |
+| POST | `/v1/finance/fixed-assets/:assetId/dispose` | `finance.journal.post` | core | yes |
+| POST | `/v1/finance/fixed-assets/:assetId/transfer` | `finance.journal.post` | core | yes |
+| POST | `/v1/finance/fixed-assets/depreciation/:period` | `finance.journal.post` | core | yes |
 | POST | `/v1/finance/gst-portal/gate` | `finance.einvoice.read` | core | yes |
 | GET | `/v1/finance/gstr1/export` | `finance.gstr.read` | core | — |
 | POST | `/v1/finance/gstr1/from-sales/table-12` | `finance.gstr.read` | core | yes |
@@ -705,12 +735,19 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/finance/outward-supplies/:documentId` | `finance.gstr.generate` | core | yes |
 | GET | `/v1/finance/payables` | `finance.period.read` | core | — |
 | POST | `/v1/finance/payables/post` | `finance.journal.post` | core | yes |
+| GET | `/v1/finance/payment-exceptions` | `finance.period.read` | core | — |
+| POST | `/v1/finance/payment-exceptions/:attemptId/late-answer/synced` | `till.dayclose.sync` | core | yes |
+| POST | `/v1/finance/payment-exceptions/:attemptId/no-answer/synced` | `till.dayclose.sync` | core | yes |
+| POST | `/v1/finance/payment-exceptions/:attemptId/resolve` | `settlement.investigation.manage` | core | yes |
+| POST | `/v1/finance/payment-exceptions/:attemptId/resolved/synced` | `till.dayclose.sync` | core | yes |
 | GET | `/v1/finance/periods` | `finance.period.read` | core | — |
 | POST | `/v1/finance/periods/:period/close` | `finance.period.close` | core | yes |
 | POST | `/v1/finance/periods/:period/control-totals` | `finance.period.read` | core | yes |
 | POST | `/v1/finance/periods/:period/evidence-pack` | `finance.period.read` | core | yes |
 | GET | `/v1/finance/periods/:period/independent-evidence` | `finance.period.read` | core | — |
 | POST | `/v1/finance/periods/:period/reopen` | `finance.period.close` | core | yes |
+| POST | `/v1/finance/periods/:period/stock-adjustment` | `finance.journal.post` | core | yes |
+| GET | `/v1/finance/periods/:period/stock-valuation` | `finance.period.read` | core | — |
 | GET | `/v1/finance/posting-map` | `finance.period.read` | core | — |
 | PUT | `/v1/finance/posting-map` | `finance.posting.configure` | core | yes |
 | POST | `/v1/finance/refunds/day-totals` | `refund.exception.read` | core | yes |
@@ -985,6 +1022,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/platform/support-access/sessions` | `platform.support.read` | core | — |
 | POST | `/v1/platform/support-access/sessions/:sessionId/actions` | `platform.support.request` | core | yes |
 | POST | `/v1/platform/support-access/sessions/:sessionId/end` | `platform.support.grant` | core | yes |
+| POST | `/v1/store-computers/health-reports` | `store.computer.report` | core | yes |
 
 ## API-12 — Migration (MG-01–MG-12)
 
