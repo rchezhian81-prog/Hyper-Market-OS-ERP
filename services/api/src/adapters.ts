@@ -3607,6 +3607,11 @@ export async function legacyTillStore(
   // under it: a store added in between moves the guard, the append is refused by name, and the decision is taken again on
   // the new store set (two stores → not placed, shown unplaced). Never a placement made on a store count already stale.
   for (let attempt = 0; ; attempt += 1) {
+    // A racing read that placed it a moment ago (its batch moved the guard and refused ours): its placement stands.
+    if (attempt > 0) {
+      const raced = await legacyTillPlacement(input.store, tenantId, tillId);
+      if (raced !== undefined) return raced.storeId;
+    }
     const expectedVersion = await input.store.guardVersion(tenantId, ORG_STORES_GUARD);
     const { knownStores } = await storeOfLocationResolver(input, tenantId);
     if (knownStores.size !== 1) return undefined;
@@ -3616,28 +3621,30 @@ export async function legacyTillStore(
       tillId, storeId: only, placedBy: 'system', how: 'single_store_rule', at, storesKnown: [only], triggeredBy,
       reason: `head office first read or wrote till ${tillId}'s records kept by its id alone (${triggeredBy.route}, by ${triggeredBy.by}) while it knew exactly one store (${only})`,
     };
+    // OB-86 "A" · verifier r18 OB86-1: the automatic placement and its M34 audit record (naming what triggered it) are ONE
+    // atomic batch — both land or neither does, so a crash can never leave a placement with no audit entry. The batch holds
+    // the store set's guard AND the audit chain's: a racing placement, a new store or another audited write in between
+    // refuses it by name, and the decision (and the seal) is taken again.
+    const audit = await sealedAuditEntry(input.store, tenantId, {
+      actorId: 'system', action: 'till.legacy.place', objectType: 'till', objectId: tillId, at,
+      origin: { tenantId, branchId: only }, before: null,
+      after: { storeId: only, how: 'single_store_rule', storesKnown: only, triggeredByRoute: triggeredBy.route, triggeredBy: triggeredBy.by },
+      reason: p.reason, correlationId: tillId,
+    });
     let res: AppendResult;
     try {
       [res] = await input.store.appendBatch(tenantId, [{ stream: LEGACY_TILL_PLACEMENTS, event: makeEvent({
         id: `legacy-till-placed-${tillId}`, type: 'LegacyTillPlaced', occurredAt: at,
         idempotencyKey: legacyPlacementKey(tenantId, tillId), source: 'api/pos', payload: p,
-      }) }], { guard: { key: ORG_STORES_GUARD, expectedVersion } }) as [AppendResult];
+      }) }, audit.entry], { guard: { key: ORG_STORES_GUARD, expectedVersion }, alsoGuards: [audit.guard] }) as [AppendResult, AppendResult];
     } catch (e) {
-      if (e instanceof ConcurrencyConflictError && attempt < 16) continue;
+      if (e instanceof ConcurrencyConflictError && attempt < 32) {
+        await new Promise<void>((resolve) => setTimeout(resolve, Math.floor(Math.random() * 8 * (attempt + 1))));
+        continue;
+      }
       throw e;
     }
-    const stands = res.record.event.payload as LegacyTillPlacement;
-    if (!res.deduped) {
-      // OB-86 "A": the automatic placement on the M34 audit trail, naming what triggered it. Written only by the call
-      // whose append LANDED (one key per till), so a re-read or a racing read never writes a second entry.
-      await auditTrailAdapter(input).recordAudit(tenantId, {
-        actorId: 'system', action: 'till.legacy.place', objectType: 'till', objectId: tillId, at,
-        origin: { tenantId, branchId: only }, before: null,
-        after: { storeId: only, how: 'single_store_rule', storesKnown: only, triggeredByRoute: triggeredBy.route, triggeredBy: triggeredBy.by },
-        reason: p.reason, correlationId: tillId,
-      });
-    }
-    return stands.storeId;
+    return (res.record.event.payload as LegacyTillPlacement).storeId;
   }
 }
 
@@ -4678,6 +4685,29 @@ export interface AuditTrailDeps {
 const AUDIT_CHAIN_GUARD = 'audit-chain';
 /** How many lost rounds one audit write tolerates before it is reported as a named concurrency failure. */
 const AUDIT_CHAIN_RETRIES = 32;
+
+/**
+ * Verifier r18 OB86-1: an audit record sealed over the chain's CURRENT tail, as a batch entry — for a write that must land
+ * TOGETHER with its audit record (one atomic batch: both or neither). The caller appends it with the chain's guard (the
+ * version read here) beside its own; a chain that moved in between refuses the batch by name and the caller seals again.
+ */
+async function sealedAuditEntry(store: EventStore, tenantId: string, entry: AuditEntry): Promise<{
+  readonly entry: { readonly stream: string; readonly event: ReturnType<typeof makeEvent> };
+  readonly guard: { readonly key: string; readonly expectedVersion: number };
+}> {
+  const expectedVersion = await store.guardVersion(tenantId, AUDIT_CHAIN_GUARD);
+  const seed = new InMemoryAuditStore();
+  const tail = await store.latestOfType(tenantId, AUDIT_TRAIL_STREAM, 'AuditRecordSealed');
+  if (tail !== undefined) seed.append(payloadOf<AuditRecord>(tail));
+  const sealed = new AuditTrail(seed).record(entry);
+  return {
+    entry: { stream: AUDIT_TRAIL_STREAM, event: makeEvent({
+      id: `audit-${sealed.sequence}-${sealed.hash}`, type: 'AuditRecordSealed', occurredAt: sealed.at,
+      idempotencyKey: `audit-${tenantId}-${sealed.sequence}-${sealed.hash}`, source: 'api/audit', payload: sealed,
+    }) },
+    guard: { key: AUDIT_CHAIN_GUARD, expectedVersion },
+  };
+}
 
 export function auditTrailAdapter(input: { readonly store: EventStore }): AuditTrailDeps {
   const records = (tenantId: string) =>
