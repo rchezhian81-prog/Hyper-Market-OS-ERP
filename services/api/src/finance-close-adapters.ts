@@ -10,7 +10,7 @@ import type { EventStore } from '../../../packages/persistence/src/event-store';
 import type { DayCloseRecord, CarriedPaymentIn } from '../../pos/src/day-close';
 import type { PaymentException, PaymentExceptionResolution, PaymentExceptionConflict, PaymentExceptionDeps, LatePaymentAnswer, RaisedNoAnswer } from '../../finance/src/payment-exceptions';
 import { mergeRaisedAndCarried } from '../../finance/src/payment-exceptions';
-import { STREAM, streamName, permissionsHeldBy, periodBooksAdapter, stockLossAdapter, storeOfLocationResolver, averageBuyingCosts, unappliedHeldWriteOffs } from './adapters';
+import { STREAM, streamName, permissionsHeldBy, productMasterAdapter, periodBooksAdapter, stockLossAdapter, storeOfLocationResolver, averageBuyingCosts, unappliedHeldWriteOffs } from './adapters';
 import { project, ownershipOf, EFFECT_ON_HAND, type Movement } from '../../inventory/src/index';
 import { valueAtCost } from '../../../packages/contracts/src/quantity';
 import { stockAdjustmentSources } from '../../finance/src/period-books';
@@ -105,7 +105,11 @@ export function paymentExceptionsAdapter(input: { readonly store: EventStore; re
 
 /** Every product's on-hand at the month end per store, at the OB-39 average as it stood then; the month's purchases. */
 export async function stockValuationFor(input: { readonly store: EventStore; readonly now: () => string }, tenantId: string, period: string): Promise<StockValuation> {
-  const [{ storeOf }, avg] = await Promise.all([storeOfLocationResolver(input, tenantId), averageBuyingCosts(input, tenantId, { throughPeriod: period })]);
+  const [{ storeOf }, avg, products] = await Promise.all([storeOfLocationResolver(input, tenantId), averageBuyingCosts(input, tenantId, { throughPeriod: period }), productMasterAdapter(input).products(tenantId)]);
+  // A line with no value carries the product's display name (the product master's), so finance reads it without
+  // catalogue access; a product the master does not hold is named by its id alone.
+  const nameOf = new Map(products.map((p) => [p.productId, p.name] as const));
+  const named = (productId: string): { name?: string } => { const n = nameOf.get(productId); return n === undefined || n.trim() === '' ? {} : { name: n }; };
   const movements = (await input.store.readStream(tenantId, STREAM.inventory, { type: 'InventoryMoved' }))
     .map((e) => e.event.payload as Movement)
     // The shop's own stock only (M27-FR-02): concession, consignment and customer property are not its inventory.
@@ -155,13 +159,13 @@ export async function stockValuationFor(input: { readonly store: EventStore; rea
       const uom = uomOf.get(x.productId) ?? 'ea';
       const unit = avg.costOf(x.productId, x.storeId);
       const nv = x.qty > 0 ? notValuedRunUnits(x.productId, x.storeId, x.qty) : { units: 0, runs: [] };
-      const named = nv.runs.length === 0 ? {} : { notValuedRuns: nv.runs };
-      if (unit === undefined) return [{ productId: x.productId, storeId: x.storeId, onHandMinor: x.qty, uom, unitCostMinor: null, valueMinor: null, ...named }];
+      const runsNamed = nv.runs.length === 0 ? {} : { notValuedRuns: nv.runs };
+      if (unit === undefined) return [{ productId: x.productId, ...named(x.productId), storeId: x.storeId, onHandMinor: x.qty, uom, unitCostMinor: null, valueMinor: null, ...runsNamed }];
       if (nv.units === 0) return [{ productId: x.productId, storeId: x.storeId, onHandMinor: x.qty, uom, unitCostMinor: unit, valueMinor: valueAtCost(x.qty, uom, { minor: unit }) }];
       const valuedQty = x.qty - nv.units;
       return [
         ...(valuedQty > 0 ? [{ productId: x.productId, storeId: x.storeId, onHandMinor: valuedQty, uom, unitCostMinor: unit, valueMinor: valueAtCost(valuedQty, uom, { minor: unit }) }] : []),
-        { productId: x.productId, storeId: x.storeId, onHandMinor: nv.units, uom, unitCostMinor: null, valueMinor: null, notValuedRuns: nv.runs },
+        { productId: x.productId, ...named(x.productId), storeId: x.storeId, onHandMinor: nv.units, uom, unitCostMinor: null, valueMinor: null, notValuedRuns: nv.runs },
       ];
     });
   // The month's purchases: receipts into own stock at their own cost (no cost: the average), less goods sent back to a

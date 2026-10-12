@@ -144,6 +144,12 @@ describe.each(backings)('OB-68 — goods made in the store are valued at their p
   it('OB-68 / OB-70: a product with a VALUED run and a NOT-VALUED run — the not-valued run\'s units are listed by run, never priced at the other run\'s average', async () => {
     const { h, T, call, ok, receive } = await bakery(harness);
     await receive('rcv-flour', 'FLOUR', 2_000, 4_000); // 2 kg @ ₹40/kg
+    // The cookie is in the product master, so the month end names it for finance (who need no catalogue access).
+    await ok(call('POST', '/v1/catalogue/tax-classes/1006/rates/2017-07-01', 'u-owner', { rateBps: 500 }), 'tax');
+    await ok(call('POST', '/v1/catalogue/products/COOKIE/publish', 'u-owner', {
+      product: { sku: 'SKU-COOKIE', name: 'Butter cookie', baseUom: 'ea', primaryCategoryId: 'bakery', taxClass: '1006', lifecycle: 'active' },
+      categories: [{ categoryId: 'bakery', name: 'Bakery', parentId: null }],
+    }), 'publish COOKIE');
     await receive('rcv-butter-1', 'BUTTER', 500); // butter received with NO cost — and no registered cost (OB-70 has nothing to fall back to)
     await ok(call('POST', '/v1/production/recipes/cookie', 'u-owner', {
       departmentId: 'bakery', outputProductId: 'COOKIE', outputQuantityMinor: 10, outputUom: 'ea', shelfLifeHours: 72,
@@ -163,16 +169,16 @@ describe.each(backings)('OB-68 — goods made in the store are valued at their p
     await ok(call('PUT', '/v1/finance/posting-map', 'u-owner', DEFAULT_RETAIL_POSTING_MAP), 'map');
 
     // Month end: 20 cookies on hand. The valued run's 10 at ₹12; the not-valued run's 10 are their own line, unvalued, named.
-    type Line = { productId: string; onHandMinor: number; unitCostMinor: number | null; valueMinor: number | null; notValuedRuns?: string[] };
+    type Line = { productId: string; name?: string; onHandMinor: number; unitCostMinor: number | null; valueMinor: number | null; notValuedRuns?: string[] };
     const val = async () => ((await call('GET', `/v1/finance/periods/${PERIOD}/stock-valuation`, 'u-acct')).body as { valuation: { closing: Line[]; unvalued: Line[] } }).valuation;
     let valuation = await val();
     expect(valuation.closing.filter((l) => l.productId === 'COOKIE').map((l) => [l.onHandMinor, l.unitCostMinor, l.valueMinor, l.notValuedRuns ?? null])).toEqual([
       [10, 1_200, 12_000, null], [10, null, null, ['run-nv']],
     ]);
-    expect(valuation.unvalued.map((l) => [l.productId, l.onHandMinor, l.notValuedRuns])).toEqual([['COOKIE', 10, ['run-nv']]]);
+    expect(valuation.unvalued.map((l) => [l.productId, l.name, l.onHandMinor, l.notValuedRuns])).toEqual([['COOKIE', 'Butter cookie', 10, ['run-nv']]]);
     const refused = await call('POST', `/v1/finance/periods/${PERIOD}/stock-adjustment`, 'u-acct', {});
     expect(codeOf(refused)).toBe('stock_not_valued');
-    expect((refused.body as { error: { whatHappened: string } }).error.whatHappened).toContain('COOKIE at S1 (10 ea on hand) — made by production run(s) run-nv, not valued');
+    expect((refused.body as { error: { whatHappened: string } }).error.whatHappened).toContain('Butter cookie [COOKIE] at S1 (10 ea on hand) — made by production run(s) run-nv, not valued');
 
     // 10 cookies sell: stock on hand is the latest arrivals (the valued run's) — the not-valued units have left stock, so
     // nothing is unvalued any more and the month's adjustment posts.

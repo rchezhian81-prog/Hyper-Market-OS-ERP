@@ -53,6 +53,8 @@ export interface ClosingStockLine {
    * their own, unvalued and named, until they are no longer on hand (stock on hand is the latest arrivals).
    */
   readonly notValuedRuns?: readonly string[];
+  /** The product's display name (the product master's), on a line with no value — so finance reads it by name. */
+  readonly name?: string;
 }
 
 /** What head office's stock ledger says about the month — the figures the adjustment is made from. */
@@ -216,7 +218,7 @@ export function stockPeriodRoutes(deps: StockPeriodDeps): readonly Route[] {
         if (valuation.unvalued.length > 0 || valuation.purchases.unvalued.length > 0) {
           throw apiError(409, {
             code: 'stock_not_valued',
-            whatHappened: `Head office holds no buying cost for ${[...valuation.unvalued.map((l) => `${l.productId} at ${l.storeId} (${l.onHandMinor} ${l.uom} on hand)${l.notValuedRuns === undefined ? '' : ` — made by production run(s) ${l.notValuedRuns.join(', ')}, not valued`}`), ...valuation.purchases.unvalued].join('; ')}. Stock is never valued at zero, so the month's closing stock cannot be valued.`,
+            whatHappened: `Head office holds no buying cost for ${[...valuation.unvalued.map((l) => `${l.name === undefined ? l.productId : `${l.name} [${l.productId}]`} at ${l.storeId} (${l.onHandMinor} ${l.uom} on hand)${l.notValuedRuns === undefined ? '' : ` — made by production run(s) ${l.notValuedRuns.join(', ')}, not valued`}`), ...valuation.purchases.unvalued].join('; ')}. Stock is never valued at zero, so the month's closing stock cannot be valued.`,
             wasItSaved: 'not_saved',
             nextSafeAction: `Record the cost (a receipt at its cost), then post again.${valuation.unvalued.some((l) => l.notValuedRuns !== undefined) ? ' Units a production run made with no cost stay listed, by run, while they are on hand — they are never priced at another run\'s or receipt\'s average; record the ingredient\'s registered cost (POST /v1/production/costs/:productId) so later runs are valued.' : ''} Nothing was posted.`,
           });
