@@ -289,6 +289,21 @@ export interface MyShop {
   complain(summary: string, orderRef?: string): Promise<MineOutcome<string>>;
   requestReturn(orderId: string, lines: readonly { readonly productId: string; readonly quantityMinor: number }[], reason: string): Promise<MineOutcome<string>>;
   cases(): Promise<MineOutcome<readonly MyCase[]>>;
+  /**
+   * OB-77 (owner, 12 Oct 2026): where my order is, as the SHOP holds it — the order's state and the driver's delivery status
+   * with its as-of time (`delivery` is null until a driver has recorded a step). Read only; nothing is saved.
+   */
+  order(orderId: string): Promise<MineOutcome<MyOrderTracking>>;
+}
+
+/** OB-77: my order as the shop reads it back — the driver's status is a code the screen words in English or Tamil. */
+export interface MyOrderTracking {
+  readonly orderId: string;
+  readonly state: string;
+  readonly tellTheCustomer: string;
+  readonly delivery: {
+    readonly status: string; readonly asOf: string; readonly asOfMinutesAgo: number; readonly stale: boolean; readonly final: boolean; readonly tellTheCustomer: string;
+  } | null;
 }
 
 /** Why a privacy change did not reach the shop — each one says nothing was saved. */
@@ -521,6 +536,20 @@ export function bootShop(
       cases: async () => {
         const a = await mineCall({ method: 'GET', path: 'cases' });
         return a.ok ? { ok: true, value: (a.body as { cases?: MyCase[] }).cases ?? [] } : a;
+      },
+      order: async (orderId) => {
+        if (token === undefined) return { ok: false, refusal: 'not_signed_in' };
+        if (transport?.readOrder === undefined) return { ok: false, refusal: 'no_road_to_the_shop' };
+        const answer = await transport.readOrder({ orderId, token });
+        if (!answer.reached) return { ok: false, refusal: 'not_saved_no_connection' };
+        if (answer.status === 401) { token = undefined; return { ok: false, refusal: 'signed_out' }; }
+        if (answer.status >= 500) return { ok: false, refusal: 'the_shop_could_not_answer' };
+        if (answer.status !== 200) {
+          const err = (answer.body as { error?: { whatHappened?: unknown } } | undefined)?.error;
+          return { ok: false, refusal: 'the_shop_refused', ...(typeof err?.whatHappened === 'string' ? { shopSaid: err.whatHappened } : {}) };
+        }
+        const b = answer.body as Partial<MyOrderTracking>;
+        return { ok: true, value: { orderId: String(b.orderId ?? orderId), state: String(b.state ?? ''), tellTheCustomer: String(b.tellTheCustomer ?? ''), delivery: b.delivery ?? null } };
       },
     },
   };

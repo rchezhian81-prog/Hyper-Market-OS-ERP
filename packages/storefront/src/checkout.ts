@@ -387,6 +387,64 @@ export function trackOrder(input: {
   };
 }
 
+/** The driver's delivery states (M19 · WF-15), as the customer's own order read reports them (OB-77). */
+export type DeliveryStatus =
+  | 'assigned' | 'picked_up' | 'out_for_delivery' | 'attempted' | 'delivered' | 'partially_delivered' | 'failed' | 'returned_to_origin';
+
+export interface DeliveryTrackingView {
+  /** The driver's latest recorded delivery state — the code the app words in the reader's language. */
+  readonly status: DeliveryStatus;
+  /** When the driver recorded it (ISO) — the as-of time of this status (P-08). */
+  readonly asOf: string;
+  readonly asOfMinutesAgo: number;
+  /** A status that may already have moved on (not final, and older than the staleness window) — said, never hidden. */
+  readonly stale: boolean;
+  /** True once the delivery has ended (delivered, partly delivered, failed, returned to the store). */
+  readonly final: boolean;
+  /** What to tell the customer, in English (the app holds the Tamil words per status). */
+  readonly tellTheCustomer: string;
+}
+
+const FINAL_DELIVERY: ReadonlySet<DeliveryStatus> = new Set(['delivered', 'partially_delivered', 'failed', 'returned_to_origin']);
+
+/**
+ * OB-77 "A" (owner, 12 Oct 2026, "Yes, add it now") — the driver's delivery status and its as-of time, for the customer's
+ * own order read (WF-15 · M20-FR-03 · P-08). The stages `trackOrder` already words (on its way, delivered) are worded and
+ * aged BY `trackOrder`, so its staleness rule (older than 15 minutes → "may have moved on") is the one rule; the driver's
+ * other states (at your door, could not deliver, part-delivered, back at the store, a driver has it) carry their own words
+ * and the same rule. A FINAL state is never "stale" — it cannot move on.
+ */
+export function trackDelivery(input: {
+  readonly orderId: string;
+  readonly status: DeliveryStatus;
+  readonly asOf: string;
+  readonly now: string;
+  readonly staleAfterMinutes?: number;
+}): DeliveryTrackingView {
+  const asOfMinutesAgo = Math.max(0, Math.floor((Date.parse(input.now) - Date.parse(input.asOf)) / 60_000));
+  const final = FINAL_DELIVERY.has(input.status);
+  const staleAfterMinutes = input.staleAfterMinutes ?? 15;
+  const stage: TrackingStage | undefined = input.status === 'out_for_delivery' ? 'out_for_delivery' : input.status === 'delivered' ? 'delivered' : undefined;
+  if (stage !== undefined) {
+    const v = trackOrder({ orderId: input.orderId, stage, asOfMinutesAgo, staleAfterMinutes: final ? Number.POSITIVE_INFINITY : staleAfterMinutes });
+    return { status: input.status, asOf: input.asOf, asOfMinutesAgo, stale: v.stale, final, tellTheCustomer: `${v.detail}.` };
+  }
+  const words: Record<Exclude<DeliveryStatus, 'out_for_delivery' | 'delivered'>, string> = {
+    assigned: 'A driver has been given your order and will set off soon',
+    picked_up: 'The driver has collected your order from the store',
+    attempted: 'The driver has reached your address',
+    partially_delivered: 'Part of your order was delivered. The shop will contact you about the rest',
+    failed: 'The driver could not deliver your order. The shop will contact you to arrange another time',
+    returned_to_origin: 'Your order has gone back to the store. The shop will contact you',
+  };
+  const stale = !final && asOfMinutesAgo > staleAfterMinutes;
+  const said = words[input.status as keyof typeof words];
+  return {
+    status: input.status, asOf: input.asOf, asOfMinutesAgo, stale, final,
+    tellTheCustomer: stale ? `${said} — last updated ${asOfMinutesAgo} minutes ago, so this may have moved on.` : `${said}.`,
+  };
+}
+
 // --- privacy centre and account controls (M20-FR-04) -------------------------------
 
 export type ConsentPurpose = 'marketing' | 'profiling' | 'service';

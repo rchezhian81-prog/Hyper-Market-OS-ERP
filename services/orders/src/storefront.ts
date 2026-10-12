@@ -25,6 +25,7 @@ import { quoteOrder, type PaymentVerifier } from '../../../packages/orders/src/p
 import { transitionOrder } from '../../../packages/orders/src/index';
 import type { PaymentRefundDeps } from './payments';
 import { bindDelivery, readDeliveryRequest, type DeliveryServiceDeps } from './delivery-service';
+import { trackDelivery, type DeliveryStatus } from '../../../packages/storefront/src/checkout';
 
 export interface StorefrontDeps {
   /** Every order this customer placed through the storefront — a fold of the per-customer index. */
@@ -51,6 +52,11 @@ export interface StorefrontDeps {
    * reserved; the app's own view of slots and distance is never taken on its word.
    */
   readonly deliveryService?: DeliveryServiceDeps;
+  /**
+   * OB-77 "A" (owner, 12 Oct 2026): the driver's append-only delivery history for one order (oldest first) — the same
+   * record the dispatcher's `GET /v1/delivery/orders/:id` folds. Absent (a bare composition) → the read carries no delivery.
+   */
+  readonly deliveryHistory?: (tenantId: string, orderId: string) => Promise<readonly { readonly to: string; readonly at: string }[]> | readonly { readonly to: string; readonly at: string }[];
 }
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
@@ -145,10 +151,24 @@ export function storefrontRoutes(deps: OrdersDeps & PaymentRefundDeps & Storefro
     return v;
   };
 
+  /**
+   * OB-77 "A" (owner, 12 Oct 2026, "Yes, add it now") · WF-15 · M20-FR-03 · P-08: where the DRIVER says the delivery is —
+   * the latest step they recorded and when — worded and aged by the tracking engine. `null` until a driver has recorded
+   * a step (the order's own state then says where it is).
+   */
+  const deliveryOf = async (tenantId: string, orderId: string) => {
+    if (deps.deliveryHistory === undefined) return null;
+    const history = await deps.deliveryHistory(tenantId, orderId);
+    const last = history[history.length - 1];
+    if (last === undefined) return null;
+    return trackDelivery({ orderId, status: last.to as DeliveryStatus, asOf: last.at, now: deps.now() });
+  };
   const view = async (tenantId: string, order: PlacedOrder) => {
     const state = await deps.orderState(tenantId, order.orderId);
     const { payment, refunds } = await money(tenantId, order.orderId);
+    const delivery = await deliveryOf(tenantId, order.orderId);
     return {
+      delivery,
       orderId: order.orderId, locationId: order.locationId, lines: order.lines, placedAt: order.placedAt,
       state: state?.state ?? order.state,
       payment,

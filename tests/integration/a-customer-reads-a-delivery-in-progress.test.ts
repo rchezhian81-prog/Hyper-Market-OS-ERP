@@ -20,10 +20,11 @@ import { testModePaymentProvider } from '../../packages/orders/src/payment-verif
  * way), then delivered — read back through a second head-office instance over the same store (a restart). Another
  * customer asking for it is refused.
  *
- * What this exposes, and does NOT paper over (see the last test): the customer's read carries the ORDER's lifecycle only.
- * The delivery lifecycle the driver records (`out_for_delivery` → `attempted` → failed / reattempt) never reaches it: after
- * a failed door attempt the customer still reads "dispatched" — and the read carries no "as of" time, although the
- * tracking engine (`packages/storefront/src/checkout.ts` `trackOrder`) exists to say a stale "on its way" is stale (P-08).
+ * OB-77 "A" (owner, 12 Oct 2026, in writing, "Yes, add it now"): the customer's read ALSO carries where the DRIVER says the
+ * delivery is — `delivery: { status, asOf, asOfMinutesAgo, stale, final, tellTheCustomer }` from the driver's own append-only
+ * record (out_for_delivery → attempted → failed / delivered …), worded and aged by the tracking engine (`trackDelivery`,
+ * which words the stages `trackOrder` knows through `trackOrder`). Before (the DEFECT this file pinned): after a failed door
+ * attempt the customer still read only "dispatched", with no as-of time. A restart reads the same; another customer is refused.
  */
 
 const DATABASE_URL = process.env['DATABASE_URL'];
@@ -107,18 +108,47 @@ describe.each(backings)('WF-15 — the customer reads their delivery in progress
     expect((await s.mine('ORD-T1')).body).toMatchObject({ state: 'delivered', tellTheCustomer: 'Your order is delivered.' });
   });
 
-  it('DEFECT (reported, not fixed here): a failed door attempt never reaches the customer — they still read "dispatched", with no "as of" time', async () => {
+  it('OB-77: the driver\'s steps reach the customer — on its way, at the door, could not deliver — each with its as-of time; a restart reads the same; another customer is refused', async () => {
     const s = await shop();
     await s.onItsWay('ORD-T2');
+    type Tracked = { state: string; tellTheCustomer: string; delivery: { status: string; asOf: string; asOfMinutesAgo: number; stale: boolean; final: boolean; tellTheCustomer: string } | null };
+    const read = async (hh: ApiHarness = s.h) => (await s.mine('ORD-T2', hh)).body as unknown as Tracked;
+    const steps = async () => ((await s.call('GET', '/v1/delivery/orders/ORD-T2', 'u-owner')).body as { history: { to: string; at: string }[] }).history;
+
+    // Departed: the order is "dispatched"; the driver says it is out for delivery, as of the moment they set off.
+    let mine = await read();
+    expect(mine.state).toBe('dispatched');
+    expect(mine.delivery).toMatchObject({ status: 'out_for_delivery', stale: false, final: false, tellTheCustomer: 'Your order is on its way.' });
+    expect(mine.delivery!.asOf).toBe((await steps()).at(-1)!.at);
+
     await s.ok(s.call('POST', '/v1/delivery/orders/ORD-T2/transition', 'u-owner', { event: 'arrive' }), 'arrive');
+    mine = await read();
+    expect(mine.delivery).toMatchObject({ status: 'attempted', final: false, tellTheCustomer: 'The driver has reached your address.' });
+    expect(mine.delivery!.asOf).toBe((await steps()).at(-1)!.at);
+
     await s.ok(s.call('POST', '/v1/delivery/orders/ORD-T2/transition', 'u-owner', { event: 'fail' }), 'fail');
-    // The dispatcher's read knows the stop failed…
+    // The dispatcher's read and the customer's read now agree that the stop failed — with the time the driver said so.
     const desk = await s.call('GET', '/v1/delivery/orders/ORD-T2', 'u-owner');
     expect(desk.body).toMatchObject({ state: 'failed' });
-    // …the customer's read does not: it still says "dispatched", and carries no time the state was last known.
-    const customer = (await s.mine('ORD-T2')).body as unknown as Record<string, unknown>;
-    expect(customer).toMatchObject({ state: 'dispatched', tellTheCustomer: 'Your order is dispatched.' });
-    expect(Object.keys(customer)).not.toContain('delivery');
-    expect(Object.keys(customer)).not.toContain('asOf');
+    mine = await read();
+    expect(mine.state).toBe('dispatched'); // the ORDER's own lifecycle is unchanged; the delivery says what happened at the door
+    expect(mine.delivery).toMatchObject({ status: 'failed', final: true, stale: false, tellTheCustomer: 'The driver could not deliver your order. The shop will contact you to arrange another time.' });
+    const failedAt = (await steps()).at(-1)!.at;
+    expect(mine.delivery!.asOf).toBe(failedAt);
+    expect(Number.isNaN(Date.parse(mine.delivery!.asOf))).toBe(false);
+
+    // A second head-office instance over the same store (a restart) tells the customer the same.
+    expect((await read(harness(s.provider, s.h))).delivery).toMatchObject({ status: 'failed', asOf: failedAt });
+    // Another customer is refused (and the probe recorded), never shown the driver's steps.
+    const other = await s.mine('ORD-T2', s.h, 'cust-2');
+    expect(other.status).toBe(403);
+    expect(JSON.stringify(other.body)).not.toContain('failed');
+
+    // Reattempted and delivered with proof: the customer reads "Delivered", final.
+    await s.ok(s.call('POST', '/v1/delivery/orders/ORD-T2/transition', 'u-owner', { event: 'reattempt' }), 'reattempt');
+    expect((await read()).delivery).toMatchObject({ status: 'out_for_delivery' });
+    await s.ok(s.call('POST', '/v1/delivery/orders/ORD-T2/transition', 'u-owner', { event: 'arrive' }), 'arrive again');
+    await s.ok(s.call('POST', '/v1/delivery/orders/ORD-T2/transition', 'u-owner', { event: 'deliver', proof: PROOF }), 'deliver');
+    expect((await read()).delivery).toMatchObject({ status: 'delivered', final: true, stale: false, tellTheCustomer: 'Delivered.' });
   });
 });

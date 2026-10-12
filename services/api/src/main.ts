@@ -1294,6 +1294,8 @@ export function buildSurface(deps: {
       ...(deps.paymentVerifier === undefined ? {} : { paymentVerifier: deps.paymentVerifier }),
       // FUL-03: a delivery is bound to head office's own delivery service (store location, slots, bookings) at placement.
       ...(store === undefined ? {} : { deliveryService: deliveryServiceAdapter({ store, now, timeZone: (t: string) => settings.value(t, SETTINGS.STORE_TIME_ZONE) }) }),
+      // OB-77: the driver's delivery steps for the customer's own order read — the dispatcher's record, one truth.
+      ...(store === undefined ? {} : { deliveryHistory: (t: string, orderId: string) => fulfilmentAdapter({ store, now }).deliveryState(t, orderId) }),
     }),
     // FUL-03: how the store delivers, as head office holds it — set by the owner/manager, read by staff.
     ...deliveryServiceRoutes(store === undefined

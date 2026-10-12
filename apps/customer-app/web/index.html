@@ -239,6 +239,9 @@
         <button id="cancel-order" class="wide" type="button" hidden>Cancel the order</button>
         <!-- FUL-03: a payment the bank has not confirmed yet — ask the shop to check with the provider again. -->
         <button id="check-payment" class="wide" type="button" hidden>Check my payment</button>
+        <!-- OB-77: where the driver says my delivery is, and as of when — read back from the shop, never guessed. -->
+        <button id="track-order" class="wide" type="button" hidden>Where is my order?</button>
+        <p class="say" id="delivery-say" role="status" aria-live="polite" hidden></p>
 
         <!-- D08-FR-05 · WF-16 · WF-17: a complaint, or a return of something received, goes to the shop's service desk. -->
         <h2 id="help-title">Something wrong?</h2>

@@ -7,6 +7,7 @@ import {
   generateDeliverySlots,
   placeOrder,
   trackOrder,
+  trackDelivery,
   privacyCentre,
   changeConsent,
   CardDataError,
@@ -170,6 +171,26 @@ describe('tracking states its own age (P-08)', () => {
     const view = trackOrder({ orderId: 'O-1', stage: 'picking', asOfMinutesAgo: 55, staleAfterMinutes: 15 });
     expect(view.stale).toBe(true);
     expect(view.detail).toContain('last updated 55 minutes ago');
+  });
+});
+
+describe('OB-77 — the driver\'s delivery status states its own age (P-08)', () => {
+  const NOW = '2026-10-12T12:00:00.000Z';
+  it('words the stages trackOrder knows through trackOrder, fresh', () => {
+    expect(trackDelivery({ orderId: 'O-1', status: 'out_for_delivery', asOf: '2026-10-12T11:55:00.000Z', now: NOW }))
+      .toEqual({ status: 'out_for_delivery', asOf: '2026-10-12T11:55:00.000Z', asOfMinutesAgo: 5, stale: false, final: false, tellTheCustomer: 'Your order is on its way.' });
+  });
+  it('says an old "on its way" or "at your door" may have moved on — never shows it as current', () => {
+    const away = trackDelivery({ orderId: 'O-1', status: 'out_for_delivery', asOf: '2026-10-12T11:00:00.000Z', now: NOW });
+    expect([away.stale, away.asOfMinutesAgo]).toEqual([true, 60]);
+    expect(away.tellTheCustomer).toContain('last updated 60 minutes ago');
+    const door = trackDelivery({ orderId: 'O-1', status: 'attempted', asOf: '2026-10-12T11:30:00.000Z', now: NOW });
+    expect(door).toMatchObject({ stale: true, final: false });
+    expect(door.tellTheCustomer).toBe('The driver has reached your address — last updated 30 minutes ago, so this may have moved on.');
+  });
+  it('a final state (failed, delivered) is never stale — it cannot move on', () => {
+    expect(trackDelivery({ orderId: 'O-1', status: 'failed', asOf: '2026-10-12T08:00:00.000Z', now: NOW })).toMatchObject({ stale: false, final: true, asOfMinutesAgo: 240 });
+    expect(trackDelivery({ orderId: 'O-1', status: 'delivered', asOf: '2026-10-12T08:00:00.000Z', now: NOW })).toMatchObject({ stale: false, final: true, tellTheCustomer: 'Delivered.' });
   });
 });
 
