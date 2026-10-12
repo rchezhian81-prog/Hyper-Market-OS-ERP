@@ -100,6 +100,10 @@ describe.each(backings)('Round 14 — an outside login re-bound reads only its c
     expect(x.status, JSON.stringify(x.body)).toBe(200);
     expect(JSON.stringify(x.body)).toContain('"customerId":"X"');
     expect(JSON.stringify(x.body)).not.toContain('"customerId":"Y"');
+    // One member of staff re-pointing the OB-76 login with the older single-person binding route does not move it: the
+    // login reads the party of its approved invite (two people), never the latest binding row.
+    expect((await call('POST', '/v1/b2b-portal/customers/Y/logins/u-l', 'u-acct', { grants: g })).status).toBe(201);
+    expect(JSON.stringify((await account()).body)).toContain('"customerId":"X"');
     // Y's portal list no longer counts the login; X's does, once.
     const list = (await call('GET', B2B, 'u-acct')).body as { logins: { inviteId: string; partyId: string; state: string; userId: string }[] };
     expect(list.logins.filter((l) => l.userId === 'u-l').map((l) => [l.inviteId, l.partyId, l.state])).toEqual([['i1', 'X', 'revoked'], ['i2', 'Y', 'revoked'], ['i3', 'X', 'approved']]);

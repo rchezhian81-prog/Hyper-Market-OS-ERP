@@ -19,7 +19,8 @@ import type { DirectoryPerson, IdentityDirectory } from '../../services/identity
  * On the real head-office API (in memory and, with DATABASE_URL, on real PostgreSQL), with a FAKE identity server (no real
  * credentials anywhere):
  *
- *   • the generic grant route still refuses all three roles (`escalates_beyond_the_approver`) — the rule is unchanged;
+ *   • the generic grant route still refuses all three roles — since round 14 at the request itself
+ *     (`outside_party_login_holds_only_its_role`);
  *   • a member of staff who MANAGES the party invites a named person's login bound to the party's record; a DIFFERENT person
  *     who also manages it approves; the inviter cannot approve, nor can someone without that party's right (403), nor can
  *     a staff login, a shared name, an unknown party or (for an app customer) a login that is not the customer's record;
@@ -89,11 +90,12 @@ describe.each(backings)('OB-76 — an outside party\'s login is invited by one p
     await ok(call('POST', '/v1/supplier-portal/partners/SUP1', 'u-owner', { grants: ['view_statement', 'view_orders'], documents: [], requiredDocuments: [], logins: [] }), 'supplier partner');
     await ok(call('POST', '/v1/customers/cust-anita/points', 'u-owner', { movementId: 'pm-1', kind: 'earn', points: 10 }), 'customer record');
 
-    // ── The rule is unchanged: the generic grant route still refuses every outside-party role ───────────────────────────
+    // ── The generic grant route still refuses every outside-party role — since round 14 (verifier G5) already when it is
+    //    ASKED for, by name (only the two-person outside-login invite gives these roles); nothing waits for approval ─────
     for (const roleId of ['b2b_customer', 'customer', 'supplier']) {
-      await ok(call('POST', '/v1/identity/grants', 'u-mgr', { grantId: `g-${roleId}`, userId: `u-x-${roleId.replace('_', '-')}`, roleId, branchScope: 'all', reason: 'portal' }), `ask ${roleId}`);
-      const approved = await call('POST', `/v1/identity/grants/g-${roleId}/approve`, 'u-owner', {});
-      expect([approved.status, codeOf(approved)], roleId).toEqual([422, 'escalates_beyond_the_approver']);
+      const asked = await call('POST', '/v1/identity/grants', 'u-mgr', { grantId: `g-${roleId}`, userId: `u-x-${roleId.replace('_', '-')}`, roleId, branchScope: 'all', reason: 'portal' });
+      expect([asked.status, codeOf(asked)], roleId).toEqual([422, 'outside_party_login_holds_only_its_role']);
+      expect((await call('POST', `/v1/identity/grants/g-${roleId}/approve`, 'u-owner', {})).status, roleId).toBe(404);
     }
 
     // ── Business customer: invited by the owner (b2b.account.manage), approved by the accountant (b2b.account.manage) ─────
