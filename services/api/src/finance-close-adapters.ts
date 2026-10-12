@@ -4,7 +4,7 @@
 //   • OB-57: monthly budget versions, and the fixed-asset register's facts (added, transferred, disposed);
 // Reads fold the streams; nothing here edits a record.
 
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { makeEvent } from '../../../packages/contracts/src/event';
 import type { EventStore } from '../../../packages/persistence/src/event-store';
 import type { DayCloseRecord, CarriedPaymentIn } from '../../pos/src/day-close';
@@ -69,11 +69,15 @@ export function paymentExceptionsAdapter(input: { readonly store: EventStore; re
     resolutions: (tenantId) => all<PaymentExceptionResolution>(input.store, tenantId, paymentExceptionsStream(), 'PaymentExceptionResolved'),
     conflicts: (tenantId) => all<PaymentExceptionConflict>(input.store, tenantId, paymentExceptionsStream(), 'PaymentExceptionResolutionConflict'),
     recordResolution: async (tenantId, r) => {
-      await input.store.append(tenantId, paymentExceptionsStream(), makeEvent({
-        id: `payment-exception-resolved-${digest(r.attemptId)}`, type: 'PaymentExceptionResolved', occurredAt: r.resolvedAt,
+      // Says whether THIS resolution landed: a second, concurrent answer collapses on the key and the route judges it.
+      const res = await input.store.append(tenantId, paymentExceptionsStream(), makeEvent({
+        // The id is unique per write: two answers racing must meet on the KEY (one lands, the other collapses and is judged),
+        // never on the ledger's id constraint (PostgreSQL would fail the loser outright instead of collapsing it).
+        id: `payment-exception-resolved-${digest(r.attemptId)}-${randomUUID()}`, type: 'PaymentExceptionResolved', occurredAt: r.resolvedAt,
         // ONE resolution per payment: a second arrival collapses here even if two raced past the route's check.
         idempotencyKey: `payment-exception-resolved-${tenantId}-${r.attemptId}`, source: 'api/finance', payload: r,
       }));
+      return !res.deduped;
     },
     lateAnswers: async (tenantId) => {
       const seen = new Set<string>();
@@ -89,7 +93,8 @@ export function paymentExceptionsAdapter(input: { readonly store: EventStore; re
     recordConflict: async (tenantId, c) => {
       const d = digest(`${c.attemptId}|${JSON.stringify(c.offered)}`);
       await input.store.append(tenantId, paymentExceptionsStream(), makeEvent({
-        id: `payment-exception-conflict-${d}`, type: 'PaymentExceptionResolutionConflict', occurredAt: c.at,
+        // The id is unique per write (a re-sent conflict collapses on its key, never on the id constraint).
+        id: `payment-exception-conflict-${d}-${randomUUID()}`, type: 'PaymentExceptionResolutionConflict', occurredAt: c.at,
         idempotencyKey: `payment-exception-conflict-${tenantId}-${d}`, source: 'api/finance', payload: c,
       }));
     },
