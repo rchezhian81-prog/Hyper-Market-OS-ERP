@@ -201,14 +201,31 @@ export function judgeBoxes(input: {
     if (r.tills.length === 0) {
       components.push({ name: `till_devices:${storeId}`, status: 'unknown', detail: `no till at store ${storeId} has reported its scanner, printer, scale, drawer or card machine yet — not known, never "all fine"` });
     } else {
-      const bad = r.tills.flatMap((t) => t.devices.filter((d) => d.state !== 'ok')
-        .map((d) => `${t.laneId}: ${d.kind.replace('_', ' ')} ${d.state === 'failed' ? 'has failed' : 'is not working properly'}${d.detail === undefined ? '' : ` — ${d.detail}`}`));
+      // Round 13 (verifier B5, probe P3 · P-08): each till is judged by ITS OWN report time, not the box's. The box relays
+      // each till's LAST report; a till that stopped reporting (switched off, cable out) keeps its last "ok" on the box, so
+      // a till report older than the threshold is STALE — that lane is old news, never "ok".
+      const lanes = r.tills.map((t) => {
+        const laneAge = Math.max(0, Math.floor((Date.parse(input.at) - Date.parse(t.reportedAt)) / 1000));
+        const bad = t.devices.filter((d) => d.state !== 'ok')
+          .map((d) => `${t.laneId}: ${d.kind.replace('_', ' ')} ${d.state === 'failed' ? 'has failed' : 'is not working properly'}${d.detail === undefined ? '' : ` — ${d.detail}`}`);
+        return { laneId: t.laneId, reportedAt: t.reportedAt, ageSeconds: laneAge, stale: laneAge >= input.thresholds.syncLagWarnSeconds, bad };
+      });
+      const freshBad = lanes.filter((l) => !l.stale).flatMap((l) => l.bad);
+      const staleLanes = lanes.filter((l) => l.stale);
       const oldest = r.tills.map((t) => t.reportedAt).sort()[0]!;
-      const says = bad.length === 0 ? `every till device at store ${storeId} reported working (oldest till report ${oldest})` : `store ${storeId}: ${bad.join('; ')} — the till still sells; a person should fix it`;
+      const staleSays = staleLanes.length === 0 ? '' : `STALE — ${staleLanes.map((l) => `till ${l.laneId} last reported its devices ${ago(l.ageSeconds)} ago (${l.reportedAt})${l.bad.length === 0 ? '' : `, then saying ${l.bad.join('; ')}`}`).join('; ')}: not heard from since, so its devices are not known now`;
+      const freshSays = freshBad.length > 0 ? `store ${storeId}: ${freshBad.join('; ')} — the till still sells; a person should fix it`
+        : staleLanes.length === lanes.length ? '' : `every till device at store ${storeId} that reported recently said it was working`;
+      const says = [freshSays, staleSays].filter((x) => x !== '').join('. ');
+      // A fresh failure is known now (degraded); a stale lane with nothing failing fresh is unknown — never ok.
+      const tillStatus: HealthStatus = freshBad.length > 0 ? 'degraded' : staleLanes.length > 0 ? 'unknown' : 'ok';
       components.push({
-        name: `till_devices:${storeId}`, status: stale ? 'unknown' : bad.length === 0 ? 'ok' : 'degraded',
+        name: `till_devices:${storeId}`, status: stale ? 'unknown' : tillStatus,
         detail: stale ? `${staleNote}. Then: ${says}` : says,
-        evidence: { notWorking: bad.length, tills: r.tills.length, oldestTillReportAt: oldest, ageSeconds },
+        evidence: {
+          notWorking: freshBad.length, tills: r.tills.length, staleTills: staleLanes.length, oldestTillReportAt: oldest, ageSeconds,
+          staleLanes: staleLanes.map((l) => `${l.laneId}@${l.reportedAt}`).join(','),
+        },
       });
     }
   }

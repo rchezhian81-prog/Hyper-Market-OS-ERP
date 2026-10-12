@@ -210,7 +210,11 @@ async function theBoxHealthReachesHeadOffice(h: ApiHarness, tenant: string, agai
     const back = await s.observed();
     expect(back.observed.boxes.find((b) => b.storeId === 'S1')).toMatchObject({ stale: false, lastReportAt: at(22), queue: { unsent: 0, deadLettered: 0 } });
     expect(s.comp(back, 'box_disk:S1')).toMatchObject({ status: 'ok' });
-    expect(s.comp(back, 'till_devices:S1')).toMatchObject({ status: 'degraded' });
+    // Round 13 (verifier B5 · P-08): the box is fresh, but the till has not re-reported its devices since at(0) — 22 minutes:
+    // that lane is STALE, judged by the till's OWN report time, so the devices are unknown, never ok and never a fresh alarm.
+    expect(s.comp(back, 'till_devices:S1')).toMatchObject({ status: 'unknown' });
+    expect(s.comp(back, 'till_devices:S1')!.detail).toContain(`STALE — till lane-1 last reported its devices 22 min ago (${at(0)}), then saying lane-1: printer has failed — paper out`);
+    expect(back.wouldRaise.some((a) => a.alertId === 's1-till-devices')).toBe(false);
 
     // A box whose disk can no longer take a sale, by its own rule (the log plus the reserve no longer fits): head office
     // says `down`, the shop "cannot trade", and the summary names the store.
@@ -227,6 +231,48 @@ async function theBoxHealthReachesHeadOffice(h: ApiHarness, tenant: string, agai
     expect(s.comp(full, 'local_store')).toMatchObject({ status: 'down' });
     expect(full.health.summary).toContain("store S1's computer CANNOT record another sale");
     expect(full.wouldRaise.map((a) => a.alertId)).toContain('s1-box-disk');
+  } finally {
+    await s.done();
+  }
+}
+
+/**
+ * Round 13 (verifier B5, probe P3 · P-08): each till is judged by ITS OWN report time. The box relays each till's LAST
+ * report, so a fresh box report can carry a till that went quiet long ago: that lane is STALE — unknown, never "ok".
+ */
+async function aQuietTillIsStaleNotOk(h: ApiHarness, tenant: string): Promise<void> {
+  const s = await scene(h, tenant);
+  try {
+    const disk = { freeBytes: 5_000_000, totalBytes: 9_000_000, salesLogUsedBytes: 10, salesLogCapacityBytes: 10_485_760, reserveBytes: 1_048_576 };
+    const report = async (minute: number, tills: unknown[]) => {
+      travel(minute);
+      const r = await h.request({ method: 'POST', path: '/v1/store-computers/health-reports', userId: 'u-box1', tenantId: tenant, branchId: 'S1', idempotencyKey: `bh-${minute}`,
+        body: { observedAt: at(minute), disk, queue: { unsent: 0, deadLettered: 0 }, tills } });
+      expect(r.status, JSON.stringify(r.body)).toBe(200);
+      return s.comp(await s.observed(), 'till_devices:S1')!;
+    };
+    const ok = [{ kind: 'scanner', state: 'ok' }, { kind: 'printer', state: 'ok' }];
+    // Probe P3: a fresh box report carrying a till report from a DAY ago, saying "ok" — stale, unknown.
+    const dayOld = new Date(T0 + 1_440 * 60_000 - 86_400_000).toISOString();
+    const p3 = await report(1_440, [{ laneId: 'lane-1', reportedAt: dayOld, devices: ok }]);
+    expect(p3.status).toBe('unknown');
+    expect(p3.detail).toBe(`STALE — till lane-1 last reported its devices 24h 0m ago (${dayOld}): not heard from since, so its devices are not known now`);
+    expect(p3.evidence).toMatchObject({ staleTills: 1, notWorking: 0, staleLanes: `lane-1@${dayOld}` });
+    // One till fresh and working, another quiet for 16 minutes: still unknown — the quiet one is named.
+    const two = await report(1_460, [{ laneId: 'lane-1', reportedAt: at(1_444), devices: ok }, { laneId: 'lane-2', reportedAt: at(1_459), devices: ok }]);
+    expect(two.status).toBe('unknown');
+    expect(two.detail).toBe(`every till device at store S1 that reported recently said it was working. STALE — till lane-1 last reported its devices 16 min ago (${at(1_444)}): not heard from since, so its devices are not known now`);
+    // A FRESH failure on one till is known now (degraded), with the quiet till still named stale.
+    const bad = await report(1_461, [{ laneId: 'lane-1', reportedAt: at(1_444), devices: ok }, { laneId: 'lane-2', reportedAt: at(1_460), devices: [{ kind: 'printer', state: 'failed', detail: 'paper out' }] }]);
+    expect(bad.status).toBe('degraded');
+    expect(bad.detail).toContain('store S1: lane-2: printer has failed — paper out');
+    expect(bad.detail).toContain('STALE — till lane-1 last reported its devices 17 min ago');
+    // Every till reported within the threshold and working: ok — the only way to read ok.
+    const fresh = await report(1_462, [{ laneId: 'lane-1', reportedAt: at(1_461), devices: ok }, { laneId: 'lane-2', reportedAt: at(1_462), devices: ok }]);
+    expect(fresh).toMatchObject({ status: 'ok', detail: 'every till device at store S1 that reported recently said it was working' });
+    // Just under the threshold is fresh; at the threshold it is stale (the same 15-minute rule as the box's own report).
+    expect((await report(1_476, [{ laneId: 'lane-1', reportedAt: new Date(T0 + 1_476 * 60_000 - 899_000).toISOString(), devices: ok }])).status).toBe('ok');
+    expect((await report(1_477, [{ laneId: 'lane-1', reportedAt: at(1_462), devices: ok }])).status).toBe('unknown');
   } finally {
     await s.done();
   }
@@ -285,6 +331,10 @@ describe('M35-FR-03 — the store computer\'s health reaches head office (in mem
   it('store-locked: stamped with the credential\'s store; another store, a person, a garbled report are refused; a re-send is one', async () => {
     await onlyItsOwnComputerReportsIt(apiHarness(), A.replace(/01$/, '02'));
   }, 60_000);
+
+  it('round 13 (P3): a till that went quiet is STALE by its own report time — never "ok" on a fresh box report', async () => {
+    await aQuietTillIsStaleNotOk(apiHarness(), A.replace(/01$/, '03'));
+  }, 60_000);
 });
 
 // ── on real PostgreSQL ────────────────────────────────────────────────────────────────────────────────────────
@@ -309,5 +359,9 @@ describe.skipIf(!DATABASE_URL)('M35-FR-03 box health on real PostgreSQL', () => 
 
   it('store-locked refusals and one record per re-sent report hold on PostgreSQL', async () => {
     await onlyItsOwnComputerReportsIt(harness(), PG_TENANT.replace(/^b/, 'c'));
+  }, 90_000);
+
+  it('round 13 (P3): a quiet till is STALE by its own report time on PostgreSQL', async () => {
+    await aQuietTillIsStaleNotOk(harness(), PG_TENANT.replace(/^b/, 'd'));
   }, 90_000);
 });
