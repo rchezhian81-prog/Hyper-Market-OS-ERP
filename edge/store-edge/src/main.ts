@@ -2309,6 +2309,9 @@ export async function startEdge(
         ...(r.adapterObservedAt === undefined ? {} : { adapterObservedAt: r.adapterObservedAt }),
         attended: (tillOperators?.live() ?? []).some((s) => s.laneId === r.laneId),
       })),
+      // Verifier r18 item 6: the highest count GIVEN per bill-number prefix (a voided bill keeps its number) — head office
+      // keeps a replaced box above it.
+      ...(receiptNumbers === null ? {} : { receiptNumbersIssued: receiptNumbers.issuedThrough() }),
     };
     return boxHealthReporter(report);
   };

@@ -26,6 +26,8 @@ export interface BoxHealthReport {
     /** Is somebody signed in at that till now (P-08)? An unattended till stops re-sending its devices and goes stale. */
     readonly attended?: boolean;
   }[];
+  /** Verifier r18 item 6: the highest bill-number count this box has GIVEN per prefix, used on a bill or not (a void keeps its number). */
+  readonly receiptNumbersIssued?: readonly { readonly prefix: string; readonly through: number }[];
 }
 
 export const BOX_HEALTH_REPORT_PATH = '/v1/store-computers/health-reports';

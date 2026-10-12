@@ -26,6 +26,7 @@
 // Not yet built here (DF-3-c): the practice warehouse delivery and bins, counts.
 
 import type { EventStore } from '../../../packages/persistence/src/event-store';
+import type { SnapshotStore } from '../../../packages/persistence/src/snapshot';
 import type { StoreSettings, StoreRules } from '../../platform/src/store-packs';
 import { SUPPLIER_INVOICE_SPEC, SUPPLIER_INVOICE_LABEL, PRODUCT_SPEC, PRODUCT_LABEL, templateView, PRODUCT_UPDATE_SPEC, PRODUCT_UPDATE_LABEL } from '../../purchase/src/import-templates';
 import { AccessControl } from '../../../packages/rbac/src/rbac';
@@ -51,6 +52,8 @@ export interface StorePackBuildInput {
   readonly storeName: (tenantId: string, storeId: string) => Promise<string | undefined>;
   /** DF-3-b-1: the store's working rules (limits, windows, checklist). */
   readonly rules?: (tenantId: string, storeId: string) => Promise<StoreRules | undefined>;
+  /** Verifier r18 OB85-2: where the bill-number high-water snapshot lives (production: `projection_snapshot`). Absent → per process. */
+  readonly snapshots?: SnapshotStore;
 }
 
 /**
@@ -299,7 +302,9 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
   // OB-85 · verifier r17: each series also says how far head office has banked under it (`bankedThrough`), and a one-store
   // business says how far each till's own `R-<lane>-` numbering was banked — so a REPLACED box (its disk lost) resumes above
   // what head office holds and never repeats a bill number. Read-only.
-  const banked = await bankedReceiptCounts(store, tenantId);
+  // Verifier r18 OB85-2: incremental (a snapshot per stream position, O(prefixes) plus a short tail) — and item 6: with what
+  // this store's own boxes say they GAVE (a voided bill keeps its number).
+  const banked = await bankedReceiptCounts(store, tenantId, { storeId, ...(input.snapshots === undefined ? {} : { snapshots: input.snapshots }) });
   const issuedSeries = (await issuedReceiptSeries(store, tenantId, storeId)).map((s) => ({ ...s, bankedThrough: banked.get(s.prefix) ?? 0 }));
   if (issuedSeries.length > 0) sections['receiptSeries'] = issuedSeries;
   const storesInBusiness = (await orgStructureAdapter({ store, now }).nodes(tenantId)).filter((n) => n.kind === 'branch').length;

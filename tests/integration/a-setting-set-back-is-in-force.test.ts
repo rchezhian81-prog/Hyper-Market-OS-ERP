@@ -72,21 +72,21 @@ async function throughTheAdapters(h: ApiHarness): Promise<void> {
 
   const fac = facilitiesAdapter(input);
   const sched = (active: boolean) => ({ scheduleId: 'SCH-1', title: 'Chiller service', category: 'hvac', frequency: 'monthly', evidenceRequired: false, verificationRequired: false, active }) as never;
-  await aba([true, false, true], (v) => fac.recordSchedule(T, sched(v)) as Promise<void>, async () => ((await fac.schedules(T)) as { scheduleId: string; active: boolean }[]).find((s) => s.scheduleId === 'SCH-1')?.active, (v) => v);
+  await aba([true, false, true], (v) => fac.recordSchedule(T, sched(v)) as Promise<void>, async () => ((await fac.schedules(T)) as unknown as { scheduleId: string; active: boolean }[]).find((s) => s.scheduleId === 'SCH-1')?.active, (v) => v);
   const facA = facilitiesAssetsAdapter(input);
   const facM = facilitiesMonitoringAdapter(input);
   const asset = (criticality: string) => ({ assetId: 'A-1', name: 'Chiller', criticality, active: true }) as never;
-  await aba(['high', 'low', 'high'], (v) => facA.recordAsset(T, asset(v)) as Promise<void>, async () => ((await facA.assets(T)) as { assetId: string; criticality: string }[]).find((a) => a.assetId === 'A-1')?.criticality, (v) => v);
+  await aba(['high', 'low', 'high'], (v) => facA.recordAsset(T, asset(v)) as Promise<void>, async () => ((await facA.assets(T)) as unknown as { assetId: string; criticality: string }[]).find((a) => a.assetId === 'A-1')?.criticality, (v) => v);
   const range = (maxTenthsC: number) => ({ assetId: 'A-1', range: { minTenthsC: 0, maxTenthsC, graceMinutes: 15 }, onBackup: false }) as never;
-  await aba([50, 80, 50], (v) => facM.recordRange(T, range(v)) as Promise<void>, async () => ((await facM.ranges(T)) as { assetId: string; range: { maxTenthsC: number } }[]).find((r) => r.assetId === 'A-1')?.range.maxTenthsC, (v) => v);
+  await aba([50, 80, 50], (v) => facM.recordRange(T, range(v)) as Promise<void>, async () => ((await facM.ranges(T)) as unknown as { assetId: string; range: { maxTenthsC: number } }[]).find((r) => r.assetId === 'A-1')?.range.maxTenthsC, (v) => v);
 
   const waste = wasteAdapter(input);
   const cov = (d: string) => ({ expected: [{ branchId: 'S1', departmentId: d }], departmentNames: {} }) as never;
-  await aba(['dairy', 'bakery', 'dairy'], (v) => waste.recordCoverage(T, cov(v)) as Promise<void>, async () => ((await waste.coverage(T)) as { expected: { departmentId: string }[] }).expected[0]?.departmentId, (v) => v);
+  await aba(['dairy', 'bakery', 'dairy'], (v) => waste.recordCoverage(T, cov(v)) as Promise<void>, async () => ((await waste.coverage(T)) as unknown as { expected: { departmentId: string }[] }).expected[0]?.departmentId, (v) => v);
 
   const intg = integrationAdapter(input);
   const entry = (model: string) => ({ entryId: 'E-1', vendor: 'Acme', model, versions: ['1'], category: 'printer' }) as never;
-  await aba(['X1', 'X2', 'X1'], (v) => intg.recordMatrixEntry(T, entry(v)) as Promise<void>, async () => ((await intg.matrix(T)) as { entryId: string; model: string }[]).find((e) => e.entryId === 'E-1')?.model, (v) => v);
+  await aba(['X1', 'X2', 'X1'], (v) => intg.recordMatrixEntry(T, entry(v)) as Promise<void>, async () => ((await intg.matrix(T)) as unknown as { entryId: string; model: string }[]).find((e) => e.entryId === 'E-1')?.model, (v) => v);
 
   const wh = webhookAdapter({ ...input, hasher: { hash: (s: string) => s } as never });
   await aba([300, 600, 300], (v) => wh.recordConfig(T, { provider: 'psp', signingKeyRef: 'ref-1', maxAgeSeconds: v } as never) as Promise<void>, async () => ((await wh.config(T, 'psp')) as { maxAgeSeconds?: number } | undefined)?.maxAgeSeconds, (v) => v);
@@ -105,7 +105,7 @@ async function throughTheAdapters(h: ApiHarness): Promise<void> {
 
   const otb = openToBuyAdapter(input);
   const budget = (amountMinor: number) => ({ categoryId: 'GROC', period: '2026-10', amountMinor, reason: 'plan', setBy: 'u-owner', setAt: NOW() }) as never;
-  await aba([900_000, 700_000, 900_000], (v) => otb.recordBudget(T, budget(v)) as Promise<void>, async () => ((await otb.budgets(T)) as { amountMinor: number }[]).at(-1)?.amountMinor, (v) => v);
+  await aba([900_000, 700_000, 900_000], (v) => otb.recordBudget(T, budget(v)) as Promise<void>, async () => ((await otb.budgets(T)) as unknown as { amountMinor: number }[]).at(-1)?.amountMinor, (v) => v);
 }
 
 /** An event written under the OLD (value-only) key, with the OLD clock id, is still the value in force — and deduped onto. */

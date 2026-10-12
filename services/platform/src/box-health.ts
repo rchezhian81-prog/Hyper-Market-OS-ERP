@@ -71,6 +71,12 @@ export interface BoxHealthRecord {
   readonly queue: { readonly unsent: number; readonly deadLettered: number };
   readonly tills: readonly TillDeviceReport[];
   readonly clockAheadCorrected: boolean;
+  /**
+   * Verifier r18 (item 6 · OB-85/87): the highest bill-number count the box has GIVEN under each prefix — used on a bill or
+   * not (a voided or abandoned bill keeps its number). Head office folds it into `bankedThrough`, so a replaced box never
+   * re-gives a number a customer saw on a voided bill. Absent on a box that predates it.
+   */
+  readonly receiptNumbersIssued?: readonly { readonly prefix: string; readonly through: number }[];
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -80,7 +86,7 @@ const earlier = (a: string, b: string): string => (Date.parse(a) <= Date.parse(b
 
 /** Read a box's report (the store is the stamped one, read by the route). `problems` when it is not one. */
 export function readBoxHealthReport(body: unknown, receivedAt: string):
-  { observedAt: string; disk: BoxDisk; queue: { unsent: number; deadLettered: number }; tills: TillDeviceReport[]; clockAheadCorrected: boolean } | { problems: string[] } {
+  { observedAt: string; disk: BoxDisk; queue: { unsent: number; deadLettered: number }; tills: TillDeviceReport[]; clockAheadCorrected: boolean; receiptNumbersIssued?: { prefix: string; through: number }[] } | { problems: string[] } {
   const b = isObj(body) ? body : {};
   const problems: string[] = [];
   if (!isIso(b['observedAt'])) problems.push('observedAt must be an ISO-8601 UTC time');
@@ -120,6 +126,22 @@ export function readBoxHealthReport(body: unknown, receivedAt: string):
       });
     });
   }
+  // Verifier r18 item 6: the box's highest GIVEN count per bill-number prefix (optional). A prefix is at most 10 characters
+  // and a count 1…999 999 (packages/contracts/src/receipt-number.ts) — anything else is refused, never guessed.
+  const rawIssued = b['receiptNumbersIssued'];
+  const receiptNumbersIssued: { prefix: string; through: number }[] = [];
+  if (rawIssued !== undefined) {
+    if (!Array.isArray(rawIssued) || rawIssued.length > 200) problems.push('receiptNumbersIssued must be a list (at most 200) of { prefix, through }');
+    else {
+      rawIssued.forEach((x: unknown, i) => {
+        if (!isObj(x) || typeof x['prefix'] !== 'string' || x['prefix'] === '' || x['prefix'].length > 10 || x['prefix'] !== x['prefix'].trim()
+          || !isCount(x['through']) || (x['through'] as number) < 1 || (x['through'] as number) > 999_999) {
+          problems.push(`receiptNumbersIssued[${i}] needs a prefix (1–10 characters) and a whole count from 1 to 999999`); return;
+        }
+        receiptNumbersIssued.push({ prefix: x['prefix'], through: x['through'] as number });
+      });
+    }
+  }
   if (problems.length > 0) return { problems };
   const observedRaw = b['observedAt'] as string;
   const observedAt = earlier(observedRaw, receivedAt);
@@ -133,6 +155,7 @@ export function readBoxHealthReport(body: unknown, receivedAt: string):
     },
     queue: { unsent: q!['unsent'] as number, deadLettered: q!['deadLettered'] as number },
     tills, clockAheadCorrected: corrected,
+    ...(rawIssued === undefined ? {} : { receiptNumbersIssued }),
   };
 }
 
@@ -384,7 +407,10 @@ export function boxHealthRoutes(deps: BoxHealthDeps): readonly Route[] {
           nextSafeAction: 'Send { observedAt, disk: { freeBytes, totalBytes, salesLogUsedBytes, salesLogCapacityBytes, reserveBytes }, queue: { unsent, deadLettered }, tills: [...] }. Nothing was recorded.',
         });
       }
-      const r: BoxHealthRecord = { storeId, observedAt: read.observedAt, receivedAt, reportedBy: ctx.userId, disk: read.disk, queue: read.queue, tills: read.tills, clockAheadCorrected: read.clockAheadCorrected };
+      const r: BoxHealthRecord = {
+        storeId, observedAt: read.observedAt, receivedAt, reportedBy: ctx.userId, disk: read.disk, queue: read.queue, tills: read.tills, clockAheadCorrected: read.clockAheadCorrected,
+        ...(read.receiptNumbersIssued === undefined ? {} : { receiptNumbersIssued: read.receiptNumbersIssued }),
+      };
       // The reply is what head office KEPT (a re-send answers the first record, never an unsaved copy).
       const kept = (await deps.record(ctx.tenantId, r)) ?? r;
       return { status: 200, body: { recorded: kept, canRecordSales: boxCanRecordSales(kept.disk) } };

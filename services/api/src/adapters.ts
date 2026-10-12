@@ -28,7 +28,7 @@ import { money } from '../../../packages/contracts/src/money';
 import type { AppendResult, BatchEntry, EventStore, PersistedEvent, WriteGuard } from '../../../packages/persistence/src/event-store';
 import { ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
 import { issuedSeriesFor, PrefixWriteRaced, type ReceiptPrefixDeps, type ReceiptPrefixIssue } from '../../platform/src/receipt-prefixes';
-import { splitReceiptNumber } from '../../../packages/contracts/src/receipt-number';
+import { splitReceiptNumber, RECEIPT_COUNTER_MAX } from '../../../packages/contracts/src/receipt-number';
 import { notCanonical } from '../../platform/src/store-computer-identity';
 import { stockValueCheckFor } from './finance-close-adapters';
 import {
@@ -14543,7 +14543,87 @@ export async function issuedReceiptSeries(store: EventStore, tenantId: string, s
  * carries it per series (`bankedThrough`) so a box whose disk was lost resumes above it and never repeats a bill number.
  * Read-only. Every number is |P| + 6 characters, so the prefix is everything before the last six (contracts).
  */
-export async function bankedReceiptCounts(store: EventStore, tenantId: string): Promise<ReadonlyMap<string, number>> {
+export async function bankedReceiptCounts(
+  store: EventStore, tenantId: string, opts?: { readonly snapshots?: SnapshotStore; readonly storeId?: string },
+): Promise<ReadonlyMap<string, number>> {
+  const snapshots = opts?.snapshots ?? processHighWaterSnapshots(store);
+  const out = new Map<string, number>();
+  const raise = (prefix: string, count: number): void => { if (count > (out.get(prefix) ?? 0)) out.set(prefix, count); };
+  for (const [prefix, count] of await receiptHighWater(store, snapshots, tenantId, STREAM.sales, 'ReceiptNumberIssued', (p) => numberKey((p as { receiptNumber?: unknown }).receiptNumber))) raise(prefix, count);
+  for (const [prefix, count] of await receiptHighWater(store, snapshots, tenantId, STREAM.returns, 'ReturnRecorded', (p) => numberKey((p as { number?: unknown }).number))) raise(prefix, count);
+  // Verifier r18 item 6: what the store's OWN boxes say they have given (a voided or abandoned bill keeps its number) — only
+  // for the store the pack is for, so one store's box never moves another store's count.
+  if (opts?.storeId !== undefined) {
+    const reported = await receiptHighWater(store, snapshots, tenantId, BOX_HEALTH_STREAM, 'StoreComputerHealthReported', (p) => {
+      const r = p as { storeId?: unknown; receiptNumbersIssued?: unknown };
+      if (typeof r.storeId !== 'string' || !Array.isArray(r.receiptNumbersIssued)) return [];
+      return (r.receiptNumbersIssued as { prefix?: unknown; through?: unknown }[]).flatMap((x) =>
+        (typeof x.prefix === 'string' && typeof x.through === 'number' && Number.isSafeInteger(x.through) && x.through >= 1 && x.through <= RECEIPT_COUNTER_MAX
+          ? [[`${r.storeId as string}\u0000${x.prefix}`, x.through] as const] : []));
+    });
+    const mine = `${opts.storeId}\u0000`;
+    for (const [key, count] of reported) if (key.startsWith(mine)) raise(key.slice(mine.length), count);
+  }
+  return out;
+}
+
+const numberKey = (n: unknown): (readonly [string, number])[] => {
+  const s = splitReceiptNumber(n);
+  return s === undefined ? [] : [[s.prefix, s.counter]];
+};
+
+/**
+ * Verifier r18 OB85-2 (cost): the highest count per key on one stream's events of one type, kept INCREMENTALLY — a snapshot
+ * of the running maxima at a stream position (the SnapshotStore: `projection_snapshot` on PostgreSQL), and only the tail
+ * behind it read on each call. So a pack build reads O(prefixes) of snapshot plus a short tail, never every sale ever made.
+ *
+ * A maximum is idempotent and order-free, so folding an event twice is harmless; the snapshot is advanced only over events
+ * at least `HIGH_WATER_LAG` positions behind the newest read, so an append whose transaction commits a little after a later
+ * one (PostgreSQL hands out positions before commit) is still in the tail when it lands. Disposable: delete every snapshot
+ * and the next read rebuilds the same answer from the ledger (proved equal to a full scan by test).
+ */
+const HIGH_WATER_LAG = 256;
+const HIGH_WATER_EVERY = 64;
+const HIGH_WATER_PROJECTION = 'receipt-high-water@1';
+async function receiptHighWater(
+  store: EventStore, snapshots: SnapshotStore, tenantId: string, stream: string, type: string,
+  keysOf: (payload: unknown) => readonly (readonly [string, number])[],
+): Promise<ReadonlyMap<string, number>> {
+  const name = `${HIGH_WATER_PROJECTION}:${type}`;
+  const prior = await snapshots.load<Record<string, number>>(tenantId, stream, name);
+  const base = prior?.result;
+  const tail = [...await store.readStream(tenantId, stream, { sinceSeq: base?.watermarkSeq ?? 0, type })].sort((a, b) => a.seq - b.seq);
+  const fold = (m: Map<string, number>, payload: unknown): void => {
+    for (const [k, c] of keysOf(payload)) if (c > (m.get(k) ?? 0)) m.set(k, c);
+  };
+  const out = new Map<string, number>(Object.entries(base?.state ?? {}));
+  if (tail.length >= HIGH_WATER_LAG + HIGH_WATER_EVERY) {
+    const settled = tail.slice(0, tail.length - HIGH_WATER_LAG);
+    const snap = new Map(out);
+    for (const e of settled) fold(snap, e.event.payload);
+    const last = settled[settled.length - 1]!;
+    await snapshots.save<Record<string, number>>({
+      tenantId, stream, projection: name, takenAt: last.event.occurredAt,
+      result: { state: Object.fromEntries(snap), watermarkSeq: last.seq, lastEventAt: last.event.occurredAt, eventCount: (base?.eventCount ?? 0) + settled.length },
+    });
+  }
+  for (const e of tail) fold(out, e.event.payload);
+  return out;
+}
+
+/** A process-local snapshot store per event store, when the composition gives none (still correct: a snapshot is disposable). */
+const HIGH_WATER_SNAPSHOTS = new WeakMap<EventStore, SnapshotStore>();
+function processHighWaterSnapshots(store: EventStore): SnapshotStore {
+  let s = HIGH_WATER_SNAPSHOTS.get(store);
+  if (s === undefined) { s = new InMemorySnapshotStore(); HIGH_WATER_SNAPSHOTS.set(store, s); }
+  return s;
+}
+
+/**
+ * The FULL scan `bankedReceiptCounts` replaced (verifier r18 OB85-2) — kept only as the reference the incremental answer is
+ * proved equal to (tests/performance). Never on a request path.
+ */
+export async function bankedReceiptCountsByFullScan(store: EventStore, tenantId: string): Promise<ReadonlyMap<string, number>> {
   const out = new Map<string, number>();
   const note = (n: unknown): void => {
     const s = splitReceiptNumber(n);

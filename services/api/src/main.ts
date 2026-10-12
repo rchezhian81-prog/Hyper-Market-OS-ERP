@@ -1098,6 +1098,8 @@ export function buildSurface(deps: {
         store, now, signer, rules: (tt, sid) => storeRulesAdapter({ store }).rules(tt, sid),
         settings: (tt, sid) => storeSettingsAdapter({ store }).settings(tt, sid),
         storeName: async (tt, sid) => (await orgStructureAdapter({ store, now }).nodes(tt)).find((n) => n.nodeId === sid)?.name,
+        // Verifier r18 OB85-2: the bill-number high-water resumes from its persisted snapshot (O(prefixes) per pack build).
+        ...(deps.snapshots === undefined ? {} : { snapshots: deps.snapshots }),
       }, t, storeId),
     }),
     // OB-81 "A": head office issues each till its bill-number prefix per (store, till) — unique across the business, ≤ 16

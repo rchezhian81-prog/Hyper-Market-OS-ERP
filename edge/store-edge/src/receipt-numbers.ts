@@ -402,6 +402,19 @@ export class ReceiptNumbers {
     return { log: wlog, ...(fault === undefined ? {} : { fault }), ...(restore === undefined ? {} : { restore }) };
   }
 
+  /**
+   * Verifier r18 item 6: the highest count this box has GIVEN under each prefix — used on a bill or not (a voided or
+   * abandoned bill keeps its number). Reported to head office with the box's health, so a replaced box resumes above it.
+   */
+  issuedThrough(): { readonly prefix: string; readonly through: number }[] {
+    const by = new Map<string, number>();
+    for (const [k, seq] of this.cursor) {
+      const prefix = k.slice(k.lastIndexOf('|') + 1);
+      if (prefix !== '' && Number.isSafeInteger(seq) && seq >= 1) by.set(prefix, Math.max(by.get(prefix) ?? 0, seq));
+    }
+    return [...by].map(([prefix, through]) => ({ prefix, through })).sort((a, b) => a.prefix.localeCompare(b.prefix)).slice(0, 200);
+  }
+
   /** OB-87: whether this box is numbering under a fresh prefix after a (possible) restore, and why. */
   restoreState(): RestoreState {
     return {
