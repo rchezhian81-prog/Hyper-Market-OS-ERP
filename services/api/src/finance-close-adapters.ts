@@ -4,14 +4,14 @@
 //   • OB-57: monthly budget versions, and the fixed-asset register's facts (added, transferred, disposed);
 // Reads fold the streams; nothing here edits a record.
 
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { makeEvent } from '../../../packages/contracts/src/event';
 import type { EventStore } from '../../../packages/persistence/src/event-store';
 import type { DayCloseRecord, CarriedPaymentIn } from '../../pos/src/day-close';
 import type { PaymentException, PaymentExceptionResolution, PaymentExceptionConflict, PaymentExceptionDeps, LatePaymentAnswer, RaisedNoAnswer } from '../../finance/src/payment-exceptions';
 import { mergeRaisedAndCarried } from '../../finance/src/payment-exceptions';
-import { STREAM, streamName, permissionsHeldBy, periodBooksAdapter, stockLossAdapter, storeOfLocationResolver, averageBuyingCosts, unappliedHeldWriteOffs } from './adapters';
-import { project, ownershipOf, type Movement } from '../../inventory/src/index';
+import { STREAM, streamName, permissionsHeldBy, productMasterAdapter, periodBooksAdapter, stockLossAdapter, storeOfLocationResolver, averageBuyingCosts, unappliedHeldWriteOffs } from './adapters';
+import { project, ownershipOf, EFFECT_ON_HAND, type Movement } from '../../inventory/src/index';
 import { valueAtCost } from '../../../packages/contracts/src/quantity';
 import { stockAdjustmentSources } from '../../finance/src/period-books';
 import { lossSourceId } from '../../finance/src/stock-losses';
@@ -69,11 +69,15 @@ export function paymentExceptionsAdapter(input: { readonly store: EventStore; re
     resolutions: (tenantId) => all<PaymentExceptionResolution>(input.store, tenantId, paymentExceptionsStream(), 'PaymentExceptionResolved'),
     conflicts: (tenantId) => all<PaymentExceptionConflict>(input.store, tenantId, paymentExceptionsStream(), 'PaymentExceptionResolutionConflict'),
     recordResolution: async (tenantId, r) => {
-      await input.store.append(tenantId, paymentExceptionsStream(), makeEvent({
-        id: `payment-exception-resolved-${digest(r.attemptId)}`, type: 'PaymentExceptionResolved', occurredAt: r.resolvedAt,
+      // Says whether THIS resolution landed: a second, concurrent answer collapses on the key and the route judges it.
+      const res = await input.store.append(tenantId, paymentExceptionsStream(), makeEvent({
+        // The id is unique per write: two answers racing must meet on the KEY (one lands, the other collapses and is judged),
+        // never on the ledger's id constraint (PostgreSQL would fail the loser outright instead of collapsing it).
+        id: `payment-exception-resolved-${digest(r.attemptId)}-${randomUUID()}`, type: 'PaymentExceptionResolved', occurredAt: r.resolvedAt,
         // ONE resolution per payment: a second arrival collapses here even if two raced past the route's check.
         idempotencyKey: `payment-exception-resolved-${tenantId}-${r.attemptId}`, source: 'api/finance', payload: r,
       }));
+      return !res.deduped;
     },
     lateAnswers: async (tenantId) => {
       const seen = new Set<string>();
@@ -89,7 +93,8 @@ export function paymentExceptionsAdapter(input: { readonly store: EventStore; re
     recordConflict: async (tenantId, c) => {
       const d = digest(`${c.attemptId}|${JSON.stringify(c.offered)}`);
       await input.store.append(tenantId, paymentExceptionsStream(), makeEvent({
-        id: `payment-exception-conflict-${d}`, type: 'PaymentExceptionResolutionConflict', occurredAt: c.at,
+        // The id is unique per write (a re-sent conflict collapses on its key, never on the id constraint).
+        id: `payment-exception-conflict-${d}-${randomUUID()}`, type: 'PaymentExceptionResolutionConflict', occurredAt: c.at,
         idempotencyKey: `payment-exception-conflict-${tenantId}-${d}`, source: 'api/finance', payload: c,
       }));
     },
@@ -100,7 +105,11 @@ export function paymentExceptionsAdapter(input: { readonly store: EventStore; re
 
 /** Every product's on-hand at the month end per store, at the OB-39 average as it stood then; the month's purchases. */
 export async function stockValuationFor(input: { readonly store: EventStore; readonly now: () => string }, tenantId: string, period: string): Promise<StockValuation> {
-  const [{ storeOf }, avg] = await Promise.all([storeOfLocationResolver(input, tenantId), averageBuyingCosts(input, tenantId, { throughPeriod: period })]);
+  const [{ storeOf }, avg, products] = await Promise.all([storeOfLocationResolver(input, tenantId), averageBuyingCosts(input, tenantId, { throughPeriod: period }), productMasterAdapter(input).products(tenantId)]);
+  // A line with no value carries the product's display name (the product master's), so finance reads it without
+  // catalogue access; a product the master does not hold is named by its id alone.
+  const nameOf = new Map(products.map((p) => [p.productId, p.name] as const));
+  const named = (productId: string): { name?: string } => { const n = nameOf.get(productId); return n === undefined || n.trim() === '' ? {} : { name: n }; };
   const movements = (await input.store.readStream(tenantId, STREAM.inventory, { type: 'InventoryMoved' }))
     .map((e) => e.event.payload as Movement)
     // The shop's own stock only (M27-FR-02): concession, consignment and customer property are not its inventory.
@@ -115,12 +124,49 @@ export async function stockValuationFor(input: { readonly store: EventStore; rea
     held.qty += a.onHandMinor;
     onHand.set(key, held);
   }
+  // OB-68 / OB-70: units a production run made with NO cost (an ingredient had neither an average nor a registered cost)
+  // are never priced at the product's average from OTHER runs or receipts. Stock on hand at the month end is taken to be
+  // the LATEST arrivals (first in, first out): walking a product's arrivals at a store newest first, the units of a
+  // not-valued run that are still on hand are split out, unvalued and named by run — the adjustment waits for them.
+  const inflowsOf = new Map<string, Movement[]>();
+  for (const m of movements) {
+    if (EFFECT_ON_HAND[m.kind] <= 0) continue;
+    const key = `${m.productId}\u001f${storeOf(m.locationId)}`;
+    const xs = inflowsOf.get(key) ?? [];
+    xs.push(m);
+    inflowsOf.set(key, xs);
+  }
+  const notValuedRunUnits = (productId: string, storeId: string, qty: number): { units: number; runs: string[] } => {
+    const out = { units: 0, runs: [] as string[] };
+    let left = qty;
+    const newestFirst = [...(inflowsOf.get(`${productId}\u001f${storeId}`) ?? [])].map((m, i) => ({ m, i }))
+      .sort((a, b) => (a.m.occurredAt === b.m.occurredAt ? b.i - a.i : b.m.occurredAt.localeCompare(a.m.occurredAt)));
+    for (const { m } of newestFirst) {
+      if (left <= 0) break;
+      const take = Math.min(m.quantityMinor, left);
+      left -= take;
+      if (m.kind === 'produced' && m.unitCostMinor === undefined) {
+        out.units += take;
+        const run = /^prod-run:(.+):out$/.exec(m.movementId)?.[1] ?? m.movementId;
+        if (!out.runs.includes(run)) out.runs.push(run);
+      }
+    }
+    return out;
+  };
   const closing: ClosingStockLine[] = [...onHand.values()].filter((x) => x.qty !== 0)
     .sort((a, b) => (a.productId === b.productId ? a.storeId.localeCompare(b.storeId) : a.productId.localeCompare(b.productId)))
-    .map((x) => {
+    .flatMap((x): ClosingStockLine[] => {
       const uom = uomOf.get(x.productId) ?? 'ea';
       const unit = avg.costOf(x.productId, x.storeId);
-      return { productId: x.productId, storeId: x.storeId, onHandMinor: x.qty, uom, unitCostMinor: unit ?? null, valueMinor: unit === undefined ? null : valueAtCost(x.qty, uom, { minor: unit }) };
+      const nv = x.qty > 0 ? notValuedRunUnits(x.productId, x.storeId, x.qty) : { units: 0, runs: [] };
+      const runsNamed = nv.runs.length === 0 ? {} : { notValuedRuns: nv.runs };
+      if (unit === undefined) return [{ productId: x.productId, ...named(x.productId), storeId: x.storeId, onHandMinor: x.qty, uom, unitCostMinor: null, valueMinor: null, ...runsNamed }];
+      if (nv.units === 0) return [{ productId: x.productId, storeId: x.storeId, onHandMinor: x.qty, uom, unitCostMinor: unit, valueMinor: valueAtCost(x.qty, uom, { minor: unit }) }];
+      const valuedQty = x.qty - nv.units;
+      return [
+        ...(valuedQty > 0 ? [{ productId: x.productId, storeId: x.storeId, onHandMinor: valuedQty, uom, unitCostMinor: unit, valueMinor: valueAtCost(valuedQty, uom, { minor: unit }) }] : []),
+        { productId: x.productId, ...named(x.productId), storeId: x.storeId, onHandMinor: nv.units, uom, unitCostMinor: null, valueMinor: null, notValuedRuns: nv.runs },
+      ];
     });
   // The month's purchases: receipts into own stock at their own cost (no cost: the average), less goods sent back to a
   // supplier at the average. Opening-load receipts and their reversals are not purchases.
@@ -177,6 +223,16 @@ export function stockPeriodAdapter(input: { readonly store: EventStore; readonly
     postingMap: pb.postingMap, journals: pb.journals,
     valuation: (tenantId, period) => stockValuationFor(input, tenantId, period),
     outstandingStockPostings: (tenantId, period) => outstandingStockPostingsFor(input, tenantId, period),
+    // The months before this one in which the shop's OWN stock moved — each needs its adjustment first (months in order).
+    monthsWithStockActivityBefore: async (tenantId, period) => {
+      const months = new Set<string>();
+      for (const e of await input.store.readStream(tenantId, STREAM.inventory, { type: 'InventoryMoved' })) {
+        const m = e.event.payload as Movement;
+        const month = m.occurredAt.slice(0, 7);
+        if (month < period && ownershipOf(m) === 'own') months.add(month);
+      }
+      return [...months].sort();
+    },
   };
 }
 

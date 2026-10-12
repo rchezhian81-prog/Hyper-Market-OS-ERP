@@ -47,6 +47,14 @@ export interface ClosingStockLine {
   /** OB-39 average buying cost per whole unit; `null` when head office holds none — then the line is unvalued. */
   readonly unitCostMinor: number | null;
   readonly valueMinor: number | null;
+  /**
+   * OB-68 / OB-70: the production runs that made these units with no cost (an ingredient had neither an average nor a
+   * registered cost). Such units are never priced at the product's average from other runs or receipts: they are a line of
+   * their own, unvalued and named, until they are no longer on hand (stock on hand is the latest arrivals).
+   */
+  readonly notValuedRuns?: readonly string[];
+  /** The product's display name (the product master's), on a line with no value — so finance reads it by name. */
+  readonly name?: string;
 }
 
 /** What head office's stock ledger says about the month — the figures the adjustment is made from. */
@@ -117,6 +125,12 @@ export interface StockPeriodDeps extends Pick<FinanceDeps, 'periodStates' | 'app
   readonly valuation: (tenantId: string, period: string) => Promise<StockValuation>;
   /** Valued count differences, write-offs and shortfalls of the month or earlier that the books do not hold yet. */
   readonly outstandingStockPostings: (tenantId: string, period: string) => Promise<readonly string[]>;
+  /**
+   * The months BEFORE this one in which the shop's own stock moved (YYYY-MM, oldest first). Absent on a bare stub (no order
+   * check). Each needs its own adjustment first: "stock in the books before" is last month's closing stock, so a month
+   * adjusted while an earlier one is not would leave that month's purchases in goods received and the books' stock adrift.
+   */
+  readonly monthsWithStockActivityBefore?: (tenantId: string, period: string) => Promise<readonly string[]>;
 }
 
 const PERIOD = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -168,6 +182,19 @@ export function stockPeriodRoutes(deps: StockPeriodDeps): readonly Route[] {
             nextSafeAction: `Reopen ${period} with a second person's approval if its stock must be adjusted, then post it. Nothing was posted.`,
           });
         }
+        // Months post in order (OB-56): an earlier month with stock activity and no adjustment is named, and this one waits.
+        if (deps.monthsWithStockActivityBefore !== undefined) {
+          const adjusted = new Set((await deps.journals(t)).filter((j) => 'stockPeriod' in j).map((j) => j.entryId));
+          const missing = (await deps.monthsWithStockActivityBefore(t, period)).filter((m) => m < period && !adjusted.has(stockPeriodEntryId(m)));
+          if (missing.length > 0) {
+            throw apiError(409, {
+              code: 'earlier_month_not_adjusted',
+              whatHappened: `${missing.join(', ')} had stock movements but no month-end stock adjustment. ${period}'s adjustment starts from the stock the books held at the end of ${missing[missing.length - 1]}, so it cannot be posted before ${missing.length === 1 ? 'that month\'s' : 'theirs'}.`,
+              wasItSaved: 'not_saved',
+              nextSafeAction: `Post the stock adjustment for ${missing[0]} first (reopen it with a second person's approval if it is closed), then the months after it in order. Nothing was posted.`,
+            });
+          }
+        }
         const map = await deps.postingMap(t);
         const accounts = stockPeriodAccounts(map);
         if (map === undefined || accounts === undefined) {
@@ -191,9 +218,9 @@ export function stockPeriodRoutes(deps: StockPeriodDeps): readonly Route[] {
         if (valuation.unvalued.length > 0 || valuation.purchases.unvalued.length > 0) {
           throw apiError(409, {
             code: 'stock_not_valued',
-            whatHappened: `Head office holds no buying cost for ${[...valuation.unvalued.map((l) => `${l.productId} at ${l.storeId} (${l.onHandMinor} ${l.uom} on hand)`), ...valuation.purchases.unvalued].join('; ')}. Stock is never valued at zero, so the month's closing stock cannot be valued.`,
+            whatHappened: `Head office holds no buying cost for ${[...valuation.unvalued.map((l) => `${l.name === undefined ? l.productId : `${l.name} [${l.productId}]`} at ${l.storeId} (${l.onHandMinor} ${l.uom} on hand)${l.notValuedRuns === undefined ? '' : ` — made by production run(s) ${l.notValuedRuns.join(', ')}, not valued`}`), ...valuation.purchases.unvalued].join('; ')}. Stock is never valued at zero, so the month's closing stock cannot be valued.`,
             wasItSaved: 'not_saved',
-            nextSafeAction: 'Record the cost (a receipt at its cost), then post again. Nothing was posted.',
+            nextSafeAction: `Record the cost (a receipt at its cost), then post again.${valuation.unvalued.some((l) => l.notValuedRuns !== undefined) ? ' Units a production run made with no cost stay listed, by run, while they are on hand — they are never priced at another run\'s or receipt\'s average; record the ingredient\'s registered cost (POST /v1/production/costs/:productId) so later runs are valued.' : ''} Nothing was posted.`,
           });
         }
         const figures = stockPeriodFigures(period, valuation, journals, accounts.inventory);

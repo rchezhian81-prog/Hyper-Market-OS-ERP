@@ -161,4 +161,40 @@ describe.each(backings)('OB-56 — the month-end stock adjustment books cost of 
     expect(r.status).toBe(409);
     expect(codeOf(r)).toBe('cost_of_sales_negative');
   }, 60_000);
+
+  it('months post in order: a month is refused while an earlier month with stock movements has no adjustment (named); a month with none is not asked for', async () => {
+    const h = harness();
+    const t = randomUUID();
+    await h.seedOwner(t, 'u-owner');
+    await h.provisionRole(t, 'u-acct', 'accountant');
+    const call = (method: 'POST' | 'PUT', path: string, body: unknown, userId = 'u-owner') => h.request({ method, path, userId, tenantId: t, idempotencyKey: randomUUID(), body });
+    const monthsBack = (k: number): string => { const d = new Date(); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() - k); return d.toISOString().slice(0, 7); };
+    const [twoBack, oneBack] = [monthsBack(2), monthsBack(1)];
+    const receive = async (id: string, month: string) => expect((await call('POST', '/v1/inventory/movements', {
+      movementId: id, productId: 'OIL', locationId: 'store-1', kind: 'received', quantityMinor: 10, uom: 'each', occurredAt: `${month}-10T03:00:00.000Z`, enteredBy: 'u-owner', unitCostMinor: 5_000,
+    })).status).toBeLessThan(300);
+    // Stock moved two months back and this month; NOTHING moved last month.
+    await receive('rcv-old', twoBack);
+    await receive('rcv-now', PERIOD);
+    expect((await call('PUT', '/v1/finance/posting-map', DEFAULT_RETAIL_POSTING_MAP)).status).toBe(200);
+    // This month first: refused by name — the earlier month with stock activity is named; last month (no activity) is not.
+    const early = await call('POST', `/v1/finance/periods/${PERIOD}/stock-adjustment`, {}, 'u-acct');
+    expect(early.status).toBe(409);
+    expect(codeOf(early)).toBe('earlier_month_not_adjusted');
+    const said = (early.body as { error: { whatHappened: string; nextSafeAction: string } }).error;
+    expect(said.whatHappened).toContain(`${twoBack} had stock movements but no month-end stock adjustment`);
+    expect(said.whatHappened).not.toContain(oneBack);
+    expect(said.nextSafeAction).toContain(`Post the stock adjustment for ${twoBack} first`);
+    const journals = async () => (await h.store.readStream(t, 'finance', { type: 'JournalPosted' })).map((e) => (e.event.payload as { entryId: string }).entryId).filter((id) => id.startsWith('stock-period:'));
+    expect(await journals()).toEqual([]);
+    // The earlier month posts; then this month does; a re-send is the same journal.
+    const first = await call('POST', `/v1/finance/periods/${twoBack}/stock-adjustment`, {}, 'u-acct');
+    expect(first.status, JSON.stringify(first.body)).toBe(201);
+    const now = await call('POST', `/v1/finance/periods/${PERIOD}/stock-adjustment`, {}, 'u-acct');
+    expect(now.status, JSON.stringify(now.body)).toBe(201);
+    expect((await call('POST', `/v1/finance/periods/${PERIOD}/stock-adjustment`, {}, 'u-acct')).body).toMatchObject({ alreadyPosted: true });
+    // This month's adjustment started from the earlier month's closing stock (₹500 of oil), not from nothing.
+    expect((now.body as { posted: { stockPeriod: Record<string, number> } }).posted.stockPeriod).toMatchObject({ booksInventoryBeforeMinor: 50_000, purchasesMinor: 50_000, closingValueMinor: 100_000, costOfSalesMinor: 0 });
+    expect((await journals()).sort()).toEqual([`stock-period:${PERIOD}`, `stock-period:${twoBack}`].sort());
+  }, 60_000);
 });

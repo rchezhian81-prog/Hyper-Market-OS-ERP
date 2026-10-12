@@ -151,7 +151,11 @@ export interface PaymentExceptionDeps {
   readonly recordRaised?: (tenantId: string, r: RaisedNoAnswer) => Promise<void>;
   readonly resolutions: (tenantId: string) => Promise<readonly PaymentExceptionResolution[]>;
   readonly conflicts: (tenantId: string) => Promise<readonly PaymentExceptionConflict[]>;
-  readonly recordResolution: (tenantId: string, r: PaymentExceptionResolution) => Promise<void>;
+  /**
+   * Record the ONE resolution of an attempt (keyed on it). Answers whether THIS write landed (`false`: another resolution
+   * was already there — a concurrent or earlier one — and this one collapsed); `void` on a bare stub (taken as landed).
+   */
+  readonly recordResolution: (tenantId: string, r: PaymentExceptionResolution) => Promise<boolean | void>;
   readonly recordConflict: (tenantId: string, c: PaymentExceptionConflict) => Promise<void>;
   readonly lateAnswers: (tenantId: string) => Promise<readonly LatePaymentAnswer[]>;
   readonly recordLateAnswer: (tenantId: string, a: LatePaymentAnswer) => Promise<void>;
@@ -216,8 +220,9 @@ export function paymentExceptionRoutes(deps: PaymentExceptionDeps): readonly Rou
         nextSafeAction: 'Check the payment reference. A store\'s answer that arrives before its day close is kept at the store and sent again.',
       });
     }
-    const standing = (await deps.resolutions(tenantId)).find((x) => x.attemptId === attemptId);
-    if (standing !== undefined) {
+    const standingOf = async (): Promise<PaymentExceptionResolution | undefined> => (await deps.resolutions(tenantId)).find((x) => x.attemptId === attemptId);
+    /** The same answer again is a no-op; a DIFFERENT one is recorded as a visible conflict and refused (hard rule #10). */
+    const against = async (standing: PaymentExceptionResolution) => {
       if (standing.paid === r.paid && standing.owedToCustomerMinor === r.owedToCustomerMinor) {
         return { status: 200, body: { attemptId, resolved: true, alreadyResolved: true, resolution: standing } };
       }
@@ -231,8 +236,17 @@ export function paymentExceptionRoutes(deps: PaymentExceptionDeps): readonly Rou
         wasItSaved: 'not_saved',
         nextSafeAction: 'Finance compares the two provider records and raises it with the provider. Nothing was changed.',
       });
+    };
+    const standing = await standingOf();
+    if (standing !== undefined) return against(standing);
+    // Two answers can pass the check above at the same moment: the resolution is keyed on the attempt, so only one lands.
+    // The route asks whether ITS write landed — the one that did not is judged against the one that did, never dropped.
+    const landed = await deps.recordResolution(tenantId, r);
+    if (landed === false) {
+      const winner = await standingOf();
+      if (winner === undefined) throw new Error(`The resolution of ${attemptId} collapsed on its key but none is on record.`);
+      return against(winner);
     }
-    await deps.recordResolution(tenantId, r);
     return { status: 201, body: { attemptId, resolved: true, resolution: r, exception } };
   };
 
@@ -307,6 +321,16 @@ export function paymentExceptionRoutes(deps: PaymentExceptionDeps): readonly Rou
             whatHappened: 'A late answer needs the attempt (store, till, bill, card or UPI, amount, when asked, trading day), the answer, who typed it, the manager who approved it and the approval.',
             wasItSaved: 'not_saved',
             nextSafeAction: 'Keep it at the store and raise it. Nothing was changed.',
+          });
+        }
+        // Hard rule #3, checked again at head office (defence in depth): the store computer never sends card data, and a
+        // reference that looks like a card number is refused here before anything is kept.
+        if ([attemptId, b['laneId'], b['billRef'], b['approvalId']].some((v) => typeof v === 'string' && looksLikeCardNumber(v))) {
+          throw apiError(422, {
+            code: 'provider_ref_not_a_token',
+            whatHappened: 'A reference on this late answer looked like raw card data rather than a payment reference. Card numbers are never taken (hard rule #3).',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing was recorded. Raise it with the store.',
           });
         }
         const existing = (await deps.lateAnswers(ctx.tenantId)).find((a) => a.attemptId === attemptId);

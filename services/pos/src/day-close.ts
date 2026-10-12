@@ -18,6 +18,7 @@
 
 import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
+import { looksLikeCardNumber } from '../../../packages/ops/src/index';
 import { approverSealFlags, deciderSealFlags } from './store-seal';
 
 /** A store day close as it is recorded on the cloud — the fact the edge relayed, plus its lock. */
@@ -191,6 +192,17 @@ export function dayCloseRoutes(deps: DayCloseDeps): readonly Route[] {
           });
         }
 
+        // Hard rule #3, checked again at head office (defence in depth): a carried payment's reference that looks like a card
+        // number is refused before ANYTHING of this close is kept — the close stays in the store's outbox, visible, and is
+        // raised; head office never stores card data, not even inside a record it would otherwise only flag.
+        if (carried !== undefined && carried.payments.some((p) => [p.attemptId, p.laneId, p.billRef].some(looksLikeCardNumber))) {
+          throw apiError(422, {
+            code: 'provider_ref_not_a_token',
+            whatHappened: 'A payment this day close carried forward has a reference that looks like raw card data rather than a payment reference. Card numbers are never taken (hard rule #3), so nothing of this close was recorded.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Keep the close in the store\'s outbox and raise it — the day is still closed at the store. Nothing was changed here.',
+          });
+        }
         // OB-36 "A": who the store says closed the day is re-checked against THEIR grants — flagged, never refused.
         const flags: string[] = [];
         if (deps.permissionsOfUser !== undefined) {

@@ -18,7 +18,7 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 
 ## Totals
 
-- Evidence test files scanned: 1138. SP-10 sessions: 0 (0 PASS, 0 on real hardware).
+- Evidence test files scanned: 1140. SP-10 sessions: 0 (0 PASS, 0 on real hardware).
 - Requirements with at least one proof of each kind: Unit 87 · Integration (in-process) 101 · Real PostgreSQL 97 · Browser (stub cloud) 77 · Browser (connected) 35 · Device 0 · Staff UAT 0.
 - Labels: E2E_VERIFIED 28 · INTEGRATION_TESTED 24 · PARTIALLY_WIRED 41 · WIRED 11.
 - Labels that do NOT hold: none.
@@ -94,7 +94,7 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 | WF-05 | INTEGRATION_TESTED | 2 | 8 | 3 | 2 | 1 | · | · | ✓ an integration test cites it |
 | WF-06 | E2E_VERIFIED | 4 | 7 | 4 | 3 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
 | WF-07 | INTEGRATION_TESTED | 4 | 7 | 4 | 3 | 1 | · | · | ✓ an integration test cites it |
-| WF-08 | PARTIALLY_WIRED | 2 | 11 | 6 | 1 | 1 | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
+| WF-08 | PARTIALLY_WIRED | 2 | 12 | 7 | 1 | 1 | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | WF-09 | INTEGRATION_TESTED | · | 9 | 1 | 1 | · | · | · | ✓ an integration test cites it |
 | WF-10 | E2E_VERIFIED | 1 | 5 | 3 | 2 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | WF-11 | INTEGRATION_TESTED | · | 9 | 5 | 3 | 1 | · | · | ✓ an integration test cites it |
@@ -194,7 +194,7 @@ _The JSON twin (`evidence-ledger.json`) lists every file and session per item. H
 - **WF-05** — browser: `buying-po-delivery.e2e.ts`, `supplier-bills-on-the-production-api.e2e.ts` · connected: `supplier-bills-on-the-production-api.e2e.ts` · real PostgreSQL: `a-supplier-bill-read-by-e-invoice-or-ocr-reaches-the-match.test.ts`, `purchase-to-payment.test.ts`, `store-acceptance-journey.test.ts`
 - **WF-06** — browser: `indents-delivery.e2e.ts`, `merchandising-count-and-refill.e2e.ts`, `warehouse-handheld-issues-to-floor.e2e.ts` · real PostgreSQL: `floor-indents-handheld-issue.test.ts`, `replenishment.test.ts`, `store-acceptance-journey.test.ts`, `supplier-to-shelf-journey.test.ts`
 - **WF-07** — browser: `indents-delivery.e2e.ts`, `transfers-on-the-production-api.e2e.ts`, `warehouse-supervisor-delivery.e2e.ts` · connected: `transfers-on-the-production-api.e2e.ts` · real PostgreSQL: `confirmed-lost-stock-is-posted-once.test.ts`, `floor-indents-handheld-issue.test.ts`, `store-acceptance-journey.test.ts`, `supplier-to-shelf-journey.test.ts`
-- **WF-08** — browser: `count-plans-on-the-production-api.e2e.ts` · connected: `count-plans-on-the-production-api.e2e.ts` · real PostgreSQL: `a-damaged-arrival-under-an-open-count-is-received-good-and-written-off-at-the-close.test.ts`, `a-planned-count-on-the-phone-reaches-head-office-through-the-box.test.ts`, `a-stock-count-is-planned-frozen-recounted-approved-and-booked.test.ts`, `an-open-count-freezes-every-adjustment-and-write-off-path.test.ts`, `confirmed-lost-stock-is-posted-once.test.ts`, `the-period-books-reconcile-and-show-profit.test.ts`
+- **WF-08** — browser: `count-plans-on-the-production-api.e2e.ts` · connected: `count-plans-on-the-production-api.e2e.ts` · real PostgreSQL: `a-count-plan-is-closed-once-approved-or-cancelled-never-both.test.ts`, `a-damaged-arrival-under-an-open-count-is-received-good-and-written-off-at-the-close.test.ts`, `a-planned-count-on-the-phone-reaches-head-office-through-the-box.test.ts`, `a-stock-count-is-planned-frozen-recounted-approved-and-booked.test.ts`, `an-open-count-freezes-every-adjustment-and-write-off-path.test.ts`, `confirmed-lost-stock-is-posted-once.test.ts`, `the-period-books-reconcile-and-show-profit.test.ts`
 - **WF-09** — browser: `expiry-recall-delivery.e2e.ts` · real PostgreSQL: `a-recall-runs-its-whole-lifecycle-on-postgresql.test.ts`
 - **WF-10** — browser: `the-served-till-takes-a-sale.e2e.ts`, `the-store-trades-a-day.e2e.ts` · connected: `the-store-trades-a-day.e2e.ts` · real PostgreSQL: `store-acceptance-journey.test.ts`, `the-shop-reaches-the-cloud.test.ts`, `the-store-trades-a-day.test.ts`
 - **WF-11** — browser: `held-returns-decided-on-the-production-api.e2e.ts`, `return-governance-delivery.e2e.ts`, `the-served-till-takes-a-refund.e2e.ts` · connected: `held-returns-decided-on-the-production-api.e2e.ts` · real PostgreSQL: `a-held-returned-unit-gets-a-persons-decision.test.ts`, `refund-approval-is-the-approvers-own-act.test.ts`, `returns-guard-the-refund.test.ts`, `store-acceptance-journey.test.ts`, `the-till-exchanges.test.ts`

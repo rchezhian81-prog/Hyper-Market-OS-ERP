@@ -25,7 +25,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { makeEvent, type DomainEvent } from '../../../packages/contracts/src/event';
 import type { Money, CurrencyCode } from '../../../packages/contracts/src/money';
 import { money } from '../../../packages/contracts/src/money';
-import type { BatchEntry, EventStore, PersistedEvent } from '../../../packages/persistence/src/event-store';
+import type { BatchEntry, EventStore, PersistedEvent, WriteGuard } from '../../../packages/persistence/src/event-store';
 import { ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
 import { stockValueCheckFor } from './finance-close-adapters';
 import {
@@ -2964,15 +2964,17 @@ export const purchaseOrderGuardKey = (poId: string): string => `purchase-order:$
  * MOVING the order's guard, so a goods receipt judged on the order as it stood before this change is refused rather than
  * doubled. The change itself depends on no figure read here, so a lost race is simply tried again (with a short jitter).
  */
-async function appendMovingOrder(store: EventStore, tenantId: string, poId: string, entries: readonly BatchEntry[]): Promise<void> {
+async function appendMovingOrder(store: EventStore, tenantId: string, poId: string, entries: readonly BatchEntry[],
+  /** OB-63: a guard the move must ALSO hold (the month's open-to-buy) — its loss is never retried here: the caller judged on it. */
+  alsoGuard?: WriteGuard): Promise<void> {
   const key = purchaseOrderGuardKey(poId);
   for (let attempt = 0; ; attempt++) {
     const expectedVersion = await store.guardVersion(tenantId, key);
     try {
-      await store.appendBatch(tenantId, entries, { guard: { key, expectedVersion } });
+      await store.appendBatch(tenantId, entries, { guard: { key, expectedVersion }, ...(alsoGuard === undefined ? {} : { alsoGuards: [alsoGuard] }) });
       return;
     } catch (err) {
-      if (!(err instanceof ConcurrencyConflictError) || attempt >= 8) throw err;
+      if (!(err instanceof ConcurrencyConflictError) || attempt >= 8 || err.key !== key) throw err;
       await new Promise<void>((resolve) => setTimeout(resolve, Math.floor(Math.random() * 8 * (attempt + 1))));
     }
   }
@@ -7072,7 +7074,8 @@ export function purchaseOrdersAdapter(input: {
       else await input.store.appendBatch(tenantId, [{ stream: PURCHASE_ORDERS_STREAM, event }], { guard: budgetGuard });
     },
 
-    amend: async (tenantId, poId, amendmentId, lines, reason, by, at) => {
+    amend: async (tenantId, poId, amendmentId, lines, reason, by, at, budgetGuard) => {
+      // OB-63: an amendment that RAISES the order under a budget also spends the month's open-to-buy — under that guard too.
       await appendMovingOrder(input.store, tenantId, poId, [{ stream: PURCHASE_ORDERS_STREAM, event: makeEvent({
         id: `po-${poId}-amended-${amendmentId}`,
         type: 'PurchaseOrderAmended',
@@ -7081,7 +7084,7 @@ export function purchaseOrdersAdapter(input: {
         idempotencyKey: `po-${tenantId}-${poId}-amended-${amendmentId}`,
         source: 'api/purchase',
         payload: { poId, amendmentId, lines, reason, by, at },
-      }) }]);
+      }) }], budgetGuard);
     },
 
     cancel: async (tenantId, poId, cancellationId, cancelledByProduct, reason, by, at) => {
@@ -13675,6 +13678,15 @@ export function countPlansAdapter(input: { readonly store: EventStore; readonly 
         idempotencyKey: `count-plan-${tenantId}-${plan.planId}-${step}`, source: 'api/inventory', payload: { step, plan },
       }));
     },
+    // WF-08 (hard rule #10): approved OR cancelled — ONE terminal decision per plan, on one key; the loser collapses onto it
+    // and is told what stands. The id is unique per write so a race meets on the key, never on the ledger's id constraint.
+    closePlan: async (tenantId, plan, step) => {
+      const res = await input.store.append(tenantId, COUNT_PLANS_STREAM, makeEvent({
+        id: `count-plan-${plan.planId}-${step}-${randomUUID()}`, type: 'CountPlanRecorded', occurredAt: input.now(),
+        idempotencyKey: `count-plan-${tenantId}-${plan.planId}-closed`, source: 'api/inventory', payload: { step, plan },
+      }));
+      return (res.record.event.payload as { plan: CountPlan }).plan;
+    },
     causes: async (tenantId, planId) =>
       (await allOf<VarianceCause>(input.store, tenantId, COUNT_PLANS_STREAM, 'CountVarianceCaused')).filter((c) => c.planId === planId),
     recordCause: async (tenantId, cause) => {
@@ -13781,9 +13793,9 @@ export function openToBuyAdapter(input: { readonly store: EventStore; readonly n
     overrides: (tenantId) => allOf<BudgetOverride>(input.store, tenantId, PURCHASE_BUDGETS_STREAM, 'PurchaseBudgetExceeded'),
     recordOverride: async (tenantId, o) => {
       await input.store.append(tenantId, PURCHASE_BUDGETS_STREAM, makeEvent({
-        id: `purchase-budget-exceeded-${o.poId}`, type: 'PurchaseBudgetExceeded', occurredAt: o.at,
-        // One override per order: the order is issued once.
-        idempotencyKey: `purchase-budget-exceeded-${tenantId}-${o.poId}`, source: 'api/purchase', payload: o,
+        id: `purchase-budget-exceeded-${o.poId}${o.amendmentId === undefined ? '' : `-amended-${o.amendmentId}`}`, type: 'PurchaseBudgetExceeded', occurredAt: o.at,
+        // One override per order (the order is issued once) — and one per raising amendment (OB-63), each on its own key.
+        idempotencyKey: `purchase-budget-exceeded-${tenantId}-${o.poId}${o.amendmentId === undefined ? '' : `-amended-${o.amendmentId}`}`, source: 'api/purchase', payload: o,
       }));
     },
     permissionsOfUser: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),    // WF-03 (round 10): the month's open-to-buy write guard — an approval issues only while it still holds.
