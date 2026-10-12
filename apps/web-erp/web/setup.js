@@ -32,6 +32,7 @@ const WORDS = {
     saved: 'Saved ✓',
     queued: 'Saved here — it will sync when the line is back.',
     failed: 'Could not save:',
+    notAccepted: 'Not accepted:',
     retry: 'Try again',
     conflict: 'Someone changed this since you opened the page.',
     reload: 'Reload',
@@ -63,6 +64,7 @@ const WORDS = {
     saved: 'சேமிக்கப்பட்டது ✓',
     queued: 'இங்கே சேமிக்கப்பட்டது — இணைப்பு வந்தவுடன் ஒத்திசைக்கும்.',
     failed: 'சேமிக்க முடியவில்லை:',
+    notAccepted: 'ஏற்கப்படவில்லை:',
     retry: 'மீண்டும் முயற்சி',
     conflict: 'நீங்கள் பக்கத்தைத் திறந்த பிறகு யாரோ இதை மாற்றியுள்ளனர்.',
     reload: 'மீண்டும் ஏற்று',
@@ -148,6 +150,10 @@ function makeControl(item) {
     control.type = spec.kind === 'number' || spec.kind === 'decimal' ? 'number'
       : spec.kind === 'time' ? 'time' : 'text';
     if (spec.kind === 'decimal') control.step = 'any';
+    // The catalogue's declared range (the same numbers the engine's rule checks) bounds the number editor.
+    if (spec.min !== undefined) control.min = String(spec.min);
+    if (spec.max !== undefined) control.max = String(spec.max);
+    if (spec.step !== undefined) control.step = String(spec.step);
   }
   control.id = `f-${item.key}`;
   control.setAttribute('aria-labelledby', `q-${item.key}`);
@@ -165,7 +171,8 @@ function paintField(key) {
   msg.className = 'fieldmsg';
   retryBtn.hidden = true;
   if (fs.error) {
-    msg.textContent = fs.error;
+    // The engine's own words, introduced in the reader's language.
+    msg.textContent = `${t('notAccepted')} ${fs.error}`;
     msg.classList.add('bad');
   } else if (fs.status === 'saving') {
     msg.textContent = t('saving');
