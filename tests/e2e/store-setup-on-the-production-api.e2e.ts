@@ -84,6 +84,29 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('store setu
     expect(await itemOf()).toMatchObject({ value: 1800, version: 1, isDefault: false });
   }, 90_000);
 
+  it('OB-78: the owner moves the early disk-warning line (hours of trading) on the screen; a nonsense value is refused in the engine\'s words; head office holds it after a restart', async () => {
+    const WARN = 'platform.box_disk_warn_hours';
+    const warnOf = async (): Promise<Item> => ((await shop.cloud().request({ method: 'GET', path: '/v1/platform/setup', userId: OWNER })).body as { items: Item[] }).items.find((i) => i.key === WARN)!;
+    expect(await warnOf()).toMatchObject({ value: 48, isDefault: true, version: 0 });
+    const { page, errors, close } = await open(OWNER);
+    const said = (re: RegExp) => page.waitForFunction(([k, src]) => new RegExp(src!).test((globalThis as unknown as { document: { getElementById(i: string): { textContent: string | null } | null } }).document.getElementById(`m-${k}`)?.textContent ?? ''), [WARN, re.source], { timeout: 15_000 });
+    try {
+      await page.locator(`[id="f-${WARN}"]`).waitFor({ timeout: 15_000 });
+      await page.locator(`[id="f-${WARN}"]`).fill('0');
+      // Refused on the field in the engine's own words, and Save stays off — nothing is sent.
+      await said(/Give a whole number of trading hours, from 1 to 720/);
+      expect(await page.locator(`[id="s-${WARN}"]`).isDisabled()).toBe(true);
+      expect(await warnOf()).toMatchObject({ value: 48, version: 0 });
+      await page.locator(`[id="f-${WARN}"]`).fill('24');
+      await page.locator(`[id="s-${WARN}"]`).click();
+      await said(/Saved/);
+      expect(errors).toEqual([]);
+    } finally { await close(); }
+    expect(await warnOf()).toMatchObject({ value: 24, version: 1, isDefault: false });
+    await shop.restart();
+    expect(await warnOf()).toMatchObject({ value: 24, version: 1 });
+  }, 90_000);
+
   it('two pages at the same version: the second save is a conflict the page says, never a silent overwrite; after reload it goes', async () => {
     const a = await open(OWNER);
     const b = await open(OWNER2);
