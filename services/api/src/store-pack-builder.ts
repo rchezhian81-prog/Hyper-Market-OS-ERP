@@ -19,6 +19,8 @@
 //   checklist and the  ← the store's working rules head office holds (POST /v1/stores/:storeId/rules); every screen's
 //   screen policies       viewer is the person who signed in (no person is named here)
 //
+//   receiptSeries /    ← each till's bill-number prefix head office issued (OB-81), and the number of stores in the business
+//   receiptNumbering
 //   buyingPolicy       ← the three-way-match policy head office applies (no buyer is named: the screen runs as the
 //                        signed-in person — PA-06 part 3b)
 // Not yet built here (DF-3-c): the practice warehouse delivery and bins, counts.
@@ -31,6 +33,7 @@ import {
   catalogueAdapter, productMasterAdapter, inventoryAdapter, effectiveGrants, peopleAdapter, warehouseAdapter, orgStructureAdapter, deviceRegistryAdapter,
   foldPurchaseOrders, purchaseAdapter, lpRulesAdapter, allCountReconciliations, adjustmentRequestAdapter, goodsReceiptAdapter,
   planogramStoreAdapter, shelfCountAdapter, assortmentAdapter, spacePerformanceAdapter, displayFundingAdapter, averageBuyingCosts,
+  issuedReceiptSeries,
 } from './adapters';
 import { inForcePlanogram } from '../../inventory/src/planograms';
 import { ROLE_CATALOGUE } from './roles';
@@ -286,6 +289,12 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
       deviceId: d.deviceId, kind: d.kind, status: d.status, label: d.label, branchId: d.branchId,
       ...(d.enrolment === undefined ? {} : { enrolment: { codeHash: d.enrolment.codeHash, expiresAt: d.enrolment.expiresAt } }),
     }));
+
+  // ── OB-81 "A": each till's bill-number prefix head office issued for THIS store (6-digit count, ≤ 16 characters), and how
+  // many stores the business has — a till with none keeps the box's own numbering only while there is one store.
+  const issuedSeries = await issuedReceiptSeries(store, tenantId, storeId);
+  if (issuedSeries.length > 0) sections['receiptSeries'] = issuedSeries;
+  sections['receiptNumbering'] = { storesInBusiness: (await orgStructureAdapter({ store, now }).nodes(tenantId)).filter((n) => n.kind === 'branch').length };
 
   // ── the store's own exception thresholds ───────────────────────────────────────────────────────────────────────
   sections['lossPreventionRules'] = await lpRulesAdapter({ store, now }).rules(tenantId);

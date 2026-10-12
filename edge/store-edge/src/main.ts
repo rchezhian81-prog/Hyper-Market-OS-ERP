@@ -1325,6 +1325,12 @@ export async function startEdge(
   const receiptNumbers = tillOperators === null ? null : await ReceiptNumbers.open({
     dataDir: settings['EDGE_DATA_DIR']!, capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']),
     published: () => (pack.receiptSeries.known ? pack.receiptSeries.value : null),
+    // OB-81 "A": the box's store and how many stores the business has, from the CURRENT pack — so a second store opening
+    // moves an unissued till off `R-<lane>-` onto this box's store-qualified default on the next pull, without a restart.
+    numbering: () => ({
+      storeId: storeIdOfThisBox() ?? headOfficeStoreId ?? null,
+      storesInBusiness: pack.receiptNumbering?.known === true && Number.isSafeInteger(pack.receiptNumbering.value.storesInBusiness) ? pack.receiptNumbering.value.storesInBusiness : null,
+    }),
     committed: [
       ...(await readLog(log.path)).flatMap((r) => {
         if (!r.ok) return [];

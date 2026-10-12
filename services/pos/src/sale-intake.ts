@@ -22,6 +22,7 @@
 // compensating document, never an edit (hard rule #2). There is no function here that changes a
 // sale, and a test reads the module's exports to prove it.
 
+import { isStoreComputerDefaultReceipt } from '../../../packages/contracts/src/receipt-number';
 import { minimumAgeOf, type CatalogueProduct } from '../../../packages/catalogue/src/catalogue';
 
 export interface IncomingSaleLine {
@@ -135,6 +136,8 @@ export type SaleExceptionKind =
   | 'sold_on_a_stale_pack'
   /** Two different sales claiming one receipt number. */
   | 'receipt_number_reused'
+  /** OB-81: numbered under the store computer's own store prefix — head office never issued the till one (multi-store). */
+  | 'receipt_numbered_without_issued_prefix'
   /** A commit time ahead of the server's clock — a lane whose clock is wrong. */
   | 'committed_in_the_future'
   /** Lines do not add up to the sale total. */
@@ -426,6 +429,14 @@ export function acceptSale(sale: IncomingSale, ctx: IntakeContext): IntakeResult
     add('receipt_number_reused', 'material',
       `receipt ${sale.receiptNumber} already belongs to sale ${heldBy}`,
       'Two sales carry one receipt number, so a customer returning goods cannot be matched to the right one. Both sales stand; the numbering needs looking at.');
+  }
+
+  // OB-81 "A": a bill numbered under a store computer's own store prefix (ZZ…) — its till was never issued a prefix by head
+  // office while the business has more than one store. The bill is unique and stands; the owner is told to issue one.
+  if (isStoreComputerDefaultReceipt(sale.receiptNumber)) {
+    add('receipt_numbered_without_issued_prefix', 'material',
+      `receipt ${sale.receiptNumber} from lane ${sale.laneId} was numbered under the store computer's own store prefix — head office has not issued this till its bill-number prefix`,
+      'Issue this till its bill-number prefix (store setup → till bill-number prefixes). Its bills stay unique meanwhile, but the numbers are not the ones head office chose.');
   }
 
   const alreadyBanked = ctx.alreadyBanked;

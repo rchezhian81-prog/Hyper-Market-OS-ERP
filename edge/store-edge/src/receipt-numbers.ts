@@ -16,11 +16,20 @@
 //     a DIFFERENT record — the same record re-sent after a lost reply is the same use. Issued numbers that no record used
 //     stay listed as "issued, not used": a gap is visible evidence, never silent.
 //
+// OB-81 "A" (owner, 12 Oct 2026): bill numbers are unique across STORES. Head office issues each till a short prefix per
+// (store, till), carried in the signed store pack as that lane's `receiptSeries` (6-digit counter, 1…999 999, so every
+// number is at most 16 characters — packages/contracts/src/receipt-number.ts proves the bound and the uniqueness). A lane
+// with none issued keeps this box's own `R-<lane>-` numbering ONLY while head office says the business has one store; once
+// the pack says there is more than one (`receiptNumbering.storesInBusiness`), or `R-<lane>-` would pass 16 characters, the
+// box numbers it under its own store-qualified default (`ZZ……-`, from its store and lane) — still selling offline (P-01),
+// said on every answer (P-08), and flagged at head office on every sale so numbered.
+//
 // The log is append-only (hard rule #2) and folded at start, together with the numbers already on the sales and refunds
 // logs, so a crash between a record's write and its "used" line cannot free that number for someone else.
 
 import type { OpenFileLog } from './file-log';
 import { openFileLog, readLog } from './file-log';
+import { RECEIPT_COUNTER_DIGITS, RECEIPT_COUNTER_MAX, RECEIPT_PREFIX_MAX, storeComputerDefaultPrefix } from '../../../packages/contracts/src/receipt-number';
 
 /** A lane's reserved range, as head office publishes it in the store pack (M01-FR-02). */
 export interface PackReceiptSeries {
@@ -33,12 +42,23 @@ export interface PackReceiptSeries {
   readonly warnAtRemaining?: number;
 }
 
-/** Where a lane's numbers come from: head office's published range, or this box's own sequence while none is published. */
-export type SeriesSource = 'published' | 'this_box';
+/**
+ * Where a lane's numbers come from: head office's published range; this box's own `R-<lane>-` sequence (a single-store
+ * business, none published); or this box's store-qualified default (OB-81: more than one store and none issued).
+ */
+export type SeriesSource = 'published' | 'this_box' | 'store_default';
+
+/** What the current pack says about the business, for a lane with no published range (OB-81). */
+export interface ReceiptNumberingContext {
+  /** This box's store, as head office named it in the pack (or the box's own setting). */
+  readonly storeId: string | null;
+  /** How many stores head office says the business has; null when the pack does not say. */
+  readonly storesInBusiness: number | null;
+}
 
 /** This box's own sequence for a lane with no published range: `R-<lane>-000001` upwards. */
-export const BOX_SERIES_PAD = 6;
-export const BOX_SERIES_END = 999_999;
+export const BOX_SERIES_PAD = RECEIPT_COUNTER_DIGITS;
+export const BOX_SERIES_END = RECEIPT_COUNTER_MAX;
 
 export type IssueRefusal = 'no_lane' | 'request_key_missing' | 'receipt_numbers_used_up' | 'could_not_write_durably';
 export type UseRefusal = 'receipt_number_missing' | 'receipt_number_not_issued' | 'receipt_number_already_used';
@@ -81,14 +101,23 @@ const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !==
 const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
 
 const NOT_PUBLISHED = 'Head office has not set up a receipt-number range for this till yet, so this store computer is numbering its bills itself. Tell the manager.';
+const storeDefaultWords = (prefix: string): string =>
+  `Head office has not issued this till its bill-number prefix, and the business has more than one store, so this store computer numbers its bills under its own store prefix ${prefix} so they never clash with another store's. Tell the manager to issue this till's prefix.`;
 
-/** The series a lane draws from now: the published one, else this box's own. */
-function seriesFor(laneId: string, published: readonly PackReceiptSeries[] | null): PackReceiptSeries & { readonly source: SeriesSource } {
+/** The series a lane draws from now: the published one, else this box's own (store-qualified once there are two stores). */
+function seriesFor(laneId: string, published: readonly PackReceiptSeries[] | null, ctx: ReceiptNumberingContext): PackReceiptSeries & { readonly source: SeriesSource } {
   const p = (published ?? []).find((s) => s.laneId === laneId && isStr(s.prefix) && Number.isSafeInteger(s.rangeStart)
     && Number.isSafeInteger(s.rangeEnd) && s.rangeStart >= 0 && s.rangeEnd >= s.rangeStart);
   if (p !== undefined) return { ...p, padTo: Number.isSafeInteger(p.padTo) && p.padTo > 0 ? p.padTo : 1, source: 'published' };
-  return { laneId, prefix: `R-${laneId}-`, padTo: BOX_SERIES_PAD, rangeStart: 1, rangeEnd: BOX_SERIES_END, source: 'this_box' };
+  const own = `R-${laneId}-`;
+  // OB-81: today's numbering only while the business has ONE store and the number fits GST's 16 characters.
+  if ((ctx.storesInBusiness === null || ctx.storesInBusiness <= 1) && own.length <= RECEIPT_PREFIX_MAX) {
+    return { laneId, prefix: own, padTo: BOX_SERIES_PAD, rangeStart: 1, rangeEnd: BOX_SERIES_END, source: 'this_box' };
+  }
+  return { laneId, prefix: storeComputerDefaultPrefix(ctx.storeId ?? '', laneId), padTo: BOX_SERIES_PAD, rangeStart: 1, rangeEnd: BOX_SERIES_END, source: 'store_default' };
 }
+const sourceWords = (s: PackReceiptSeries & { readonly source: SeriesSource }): string | undefined =>
+  (s.source === 'this_box' ? NOT_PUBLISHED : s.source === 'store_default' ? storeDefaultWords(s.prefix) : undefined);
 const keyOf = (s: PackReceiptSeries): string => `${s.prefix}|${s.rangeStart}|${s.rangeEnd}`;
 const format = (s: PackReceiptSeries, seq: number): string => `${s.prefix}${String(seq).padStart(s.padTo, '0')}`;
 const warnAt = (s: PackReceiptSeries): number =>
@@ -114,6 +143,7 @@ export class ReceiptNumbers {
     private readonly deps: {
       /** The ranges in the CURRENT pack; `null` when the pack carries none. */
       readonly published: () => readonly PackReceiptSeries[] | null;
+      readonly numbering: () => ReceiptNumberingContext;
       readonly now: () => string;
     },
     restored: readonly LogRecord[],
@@ -130,6 +160,8 @@ export class ReceiptNumbers {
     readonly dataDir: string;
     readonly capacityBytes: number;
     readonly published: () => readonly PackReceiptSeries[] | null;
+    /** OB-81: this box's store and how many stores the business has (from the current pack). Absent → one store. */
+    readonly numbering?: () => ReceiptNumberingContext;
     /** The receipt numbers already on this box's sales and refunds logs, with the record each belongs to. */
     readonly committed?: readonly { readonly receiptNumber: string; readonly recordId: string }[];
     readonly now?: () => string;
@@ -145,7 +177,7 @@ export class ReceiptNumbers {
         else unreadable += 1;
       } catch { unreadable += 1; }
     }
-    return new ReceiptNumbers(log, { published: input.published, now: input.now ?? (() => new Date().toISOString()) }, restored, input.committed ?? [], unreadable);
+    return new ReceiptNumbers(log, { published: input.published, numbering: input.numbering ?? (() => ({ storeId: null, storesInBusiness: null })), now: input.now ?? (() => new Date().toISOString()) }, restored, input.committed ?? [], unreadable);
   }
 
   private fold(r: LogRecord): void {
@@ -177,12 +209,12 @@ export class ReceiptNumbers {
     const laneId = input.laneId.trim();
     if (laneId === '') return { issued: false, refusedBecause: 'no_lane', laneMessage: 'This store computer has not been told which till it is. No number was given — tell the manager.' };
     if (!isStr(input.requestKey)) return { issued: false, refusedBecause: 'request_key_missing', laneMessage: 'The till did not say which bill the number is for. No number was given — try again.' };
-    const s = seriesFor(laneId, this.deps.published());
+    const s = seriesFor(laneId, this.deps.published(), this.deps.numbering());
     const answer = (receiptNumber: string): IssueOutcome => {
       const remaining = this.remainingIn(laneId, s);
       const runningLow = remaining <= warnAt(s);
       const words = [
-        ...(s.source === 'this_box' ? [NOT_PUBLISHED] : []),
+        ...(sourceWords(s) === undefined ? [] : [sourceWords(s)!]),
         ...(runningLow ? [`This till has ${remaining} receipt number(s) left in its range. Tell the manager to load a new range.`] : []),
       ];
       return { issued: true, receiptNumber, remaining, runningLow, source: s.source, ...(words.length === 0 ? {} : { laneMessage: words.join(' ') }) };
@@ -193,7 +225,9 @@ export class ReceiptNumbers {
 
     const sk = keyOf(s);
     const last = this.cursor.get(`${laneId}|${sk}`);
-    const seq = last === undefined ? s.rangeStart : last + 1;
+    let seq = last === undefined ? s.rangeStart : last + 1;
+    // Never a number this box already gave (a range head office re-drew over one it had used): skip past it.
+    while (seq <= s.rangeEnd && this.issued.has(format(s, seq))) seq += 1;
     if (seq > s.rangeEnd) {
       return { issued: false, refusedBecause: 'receipt_numbers_used_up', laneMessage: 'This till has used all its receipt numbers. Do not take money — tell the manager to load a new number range.' };
     }
@@ -237,7 +271,7 @@ export class ReceiptNumbers {
 
   /** What this lane has issued, used and left — and every number issued that no record used (a visible gap). */
   status(laneId: string): ReceiptNumberStatus {
-    const s = seriesFor(laneId, this.deps.published());
+    const s = seriesFor(laneId, this.deps.published(), this.deps.numbering());
     const sk = keyOf(s);
     const mine = [...this.issued.values()].filter((i) => i.laneId === laneId && i.seriesKey === sk).sort((a, b) => a.seq - b.seq);
     const remaining = this.remainingIn(laneId, s);
@@ -247,7 +281,7 @@ export class ReceiptNumbers {
       used: mine.filter((i) => this.usedBy.has(i.receiptNumber)).length,
       remaining, runningLow: remaining <= warnAt(s),
       issuedNotUsed: mine.filter((i) => !this.usedBy.has(i.receiptNumber)).map((i) => ({ receiptNumber: i.receiptNumber, issuedTo: i.issuedTo, issuedAt: i.at })),
-      ...(s.source === 'this_box' ? { laneMessage: NOT_PUBLISHED } : {}),
+      ...(sourceWords(s) === undefined ? {} : { laneMessage: sourceWords(s)! }),
     };
   }
 

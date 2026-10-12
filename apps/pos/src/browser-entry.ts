@@ -66,7 +66,7 @@ export interface ReceiptNumberAnswer {
   readonly receiptNumber?: string;
   readonly remaining?: number;
   readonly runningLow?: boolean;
-  readonly source?: 'published' | 'this_box';
+  readonly source?: 'published' | 'this_box' | 'store_default';
   readonly refusedBecause?: string;
   readonly laneMessage?: string;
 }

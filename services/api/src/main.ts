@@ -209,6 +209,8 @@ import { supplierInvoiceTemplate, productTemplate, productUpdateTemplate } from 
 import { engineCategory } from '../../catalogue/src/categories';
 import { categoryRoutes } from '../../catalogue/src/categories';
 import { storePackRoutes } from '../../platform/src/store-packs';
+import { receiptPrefixRoutes } from '../../platform/src/receipt-prefixes';
+import { receiptPrefixAdapter } from './adapters';
 import { syncWatermarkRoutes } from '../../platform/src/sync-watermarks';
 import { boxHealthRoutes } from '../../platform/src/box-health';
 import { boxHealthAdapter } from './adapters';
@@ -1096,6 +1098,16 @@ export function buildSurface(deps: {
         settings: (tt, sid) => storeSettingsAdapter({ store }).settings(tt, sid),
         storeName: async (tt, sid) => (await orgStructureAdapter({ store, now }).nodes(tt)).find((n) => n.nodeId === sid)?.name,
       }, t, storeId),
+    }),
+    // OB-81 "A": head office issues each till its bill-number prefix per (store, till) — unique across the business, ≤ 16
+    // characters with the count, versioned and audited — and the store pack carries it to the till's store computer.
+    ...receiptPrefixRoutes(store === undefined ? {
+      now, stores: async () => new Map(), issues: async () => [], guardVersion: async () => 0, recordIssue: async () => {},
+    } : {
+      now,
+      stores: async (t) => new Map((await orgStructureAdapter({ store, now }).nodes(t)).filter((n) => n.kind === 'branch').map((n) => [n.nodeId, n.name] as const)),
+      ...receiptPrefixAdapter({ store, now }),
+      ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }),
     }),
     // EA-01 (round 4): each store computer reports how far each of its queues has synced (its own store only); the
     // owner's figures take their freshness from it, and the sync page lists every branch × queue, stale when silent.

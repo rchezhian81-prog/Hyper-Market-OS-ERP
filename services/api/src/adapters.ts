@@ -27,6 +27,7 @@ import type { Money, CurrencyCode } from '../../../packages/contracts/src/money'
 import { money } from '../../../packages/contracts/src/money';
 import type { BatchEntry, EventStore, PersistedEvent, WriteGuard } from '../../../packages/persistence/src/event-store';
 import { ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
+import { issuedSeriesFor, PrefixWriteRaced, type ReceiptPrefixDeps, type ReceiptPrefixIssue } from '../../platform/src/receipt-prefixes';
 import { stockValueCheckFor } from './finance-close-adapters';
 import {
   foldBilling,
@@ -14276,4 +14277,37 @@ export function outsidePartyLoginAdapter(input: {
       // An app customer's login IS the customer record (the storefront scopes to the signed-in subject): nothing more to bind.
     },
   };
+}
+
+/**
+ * OB-81 "A": each till's bill-number prefix, as head office issued it — an append-only log of issues, written under one
+ * guard per tenant so two owners can never issue one prefix to two tills at the same moment (services/platform/src/
+ * receipt-prefixes.ts judges; this keeps).
+ */
+const RECEIPT_PREFIX_STREAM = streamName(STREAM.org, 'till-receipt-prefixes');
+const RECEIPT_PREFIX_GUARD = 'till-receipt-prefixes';
+export function receiptPrefixAdapter(input: { readonly store: EventStore; readonly now: () => string }): Pick<ReceiptPrefixDeps, 'issues' | 'guardVersion' | 'recordIssue' | 'registeredTills'> {
+  return {
+    issues: (tenantId) => allOf<ReceiptPrefixIssue>(input.store, tenantId, RECEIPT_PREFIX_STREAM, 'TillReceiptPrefixIssued'),
+    guardVersion: (tenantId) => input.store.guardVersion(tenantId, RECEIPT_PREFIX_GUARD),
+    recordIssue: async (tenantId, issue, expectedVersion) => {
+      try {
+        await input.store.appendBatch(tenantId, [{ stream: RECEIPT_PREFIX_STREAM, event: makeEvent({
+          id: `till-receipt-prefix-${issue.storeId}-${issue.tillId}-v${issue.version}`, type: 'TillReceiptPrefixIssued', occurredAt: issue.setAt,
+          idempotencyKey: `till-receipt-prefix-${tenantId}-${issue.storeId}-${issue.tillId}-v${issue.version}`, source: 'api/platform', payload: issue,
+        }) }], { guard: { key: RECEIPT_PREFIX_GUARD, expectedVersion } });
+      } catch (e) {
+        if (e instanceof ConcurrencyConflictError) throw new PrefixWriteRaced(e.message);
+        throw e;
+      }
+    },
+    registeredTills: async (tenantId) => (await deviceRegistryAdapter(input).fleet(tenantId))
+      .filter((d) => d.kind === 'pos_lane' && d.status !== 'retired' && d.branchId !== '')
+      .map((d) => ({ storeId: d.branchId, tillId: d.deviceId, label: d.label })),
+  };
+}
+
+/** OB-81: the store pack's `receiptSeries` for one store — each till's current issued prefix. */
+export async function issuedReceiptSeries(store: EventStore, tenantId: string, storeId: string): Promise<ReturnType<typeof issuedSeriesFor>> {
+  return issuedSeriesFor(await allOf<ReceiptPrefixIssue>(store, tenantId, RECEIPT_PREFIX_STREAM, 'TillReceiptPrefixIssued'), storeId);
 }
