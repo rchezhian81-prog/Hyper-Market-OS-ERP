@@ -181,6 +181,11 @@ export const CLOUD_API_CONFIG: readonly Spec[] = [
   // from PACK_SIGNING_KEY under its own label (and the API says so at boot). Set it to give personal data its own secret.
   { key: 'PII_KEY_ENCRYPTION_KEY', secret: true, optional: true, minLength: 32 },
   { key: 'PORT', numeric: true, fallback: '8081' },
+  // Verifier r20 HW-2: how long one of the API's own database sessions may sit IDLE inside an open transaction before the
+  // database ends it (PostgreSQL `idle_in_transaction_session_timeout`, set on every pooled connection). A transaction left
+  // open holds back the bill-number high-water's visibility fence; the API's transactions are short, so one minute is
+  // generous. 0 switches it off (never in production).
+  { key: 'DB_IDLE_IN_TRANSACTION_TIMEOUT_MS', numeric: true, fallback: '60000' },
   { key: 'NODE_ENV', oneOf: ['development', 'test', 'production'], fallback: 'production' },
   { key: 'MIGRATION_TARGET_KIND', oneOf: ['rehearsal', 'staging', 'local', 'production'], fallback: 'rehearsal' },
   // Genesis owner (optional). A brand-new tenant has nobody who can grant the first role, so — where

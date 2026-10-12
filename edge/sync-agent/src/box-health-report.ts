@@ -8,6 +8,8 @@
 // Never on the sale path (hard rule #1): it rides the sync loop after the drains, and a failed report is simply retried
 // next pass. The token is configuration, never logged (hard rule #4). No person's name or id rides in it.
 
+import { splitReceiptNumber } from '../../../packages/contracts/src/receipt-number';
+
 export interface BoxHealthReport {
   /** The box's clock when it made the report. */
   readonly observedAt: string;
@@ -33,9 +35,42 @@ export interface BoxHealthReport {
     readonly soldThrough?: number;
     /** Verifier r19: numbers this box cannot vouch for — given after the backup it was restored from — as [from, to] ranges. */
     readonly atRisk?: readonly (readonly [number, number])[];
+    /**
+     * Verifier r20 LOST-1: the bills under this prefix still waiting in this box's own queues (sales and refunds, not yet
+     * sent) — how many, and the lowest and highest count among them. Head office never calls a number "never received"
+     * while the box still holds it. `count: 0` says the box holds none.
+     */
+    readonly unsent?: UnsentBillNumbers;
   }[];
   /** Verifier r19 OB87-1/OB87-2: the box's own check of its bill-number witness, and any held restore. */
   readonly billNumbering?: BillNumberingReport;
+}
+
+/** Verifier r20 LOST-1: bills under one prefix the box still holds unsent — how many, and the lowest and highest count. */
+export interface UnsentBillNumbers { readonly count: number; readonly from?: number; readonly to?: number }
+
+/**
+ * Verifier r20 LOST-1: per bill-number prefix, the bills still waiting in the box's queues — from the queued events' own
+ * receipt number (a sale's `receiptNumber`, a refund's `number`). A queued event with no readable number is not counted.
+ */
+export function unsentBillNumbersOf(payloads: Iterable<unknown>): Map<string, UnsentBillNumbers> {
+  const out = new Map<string, { count: number; from: number; to: number }>();
+  for (const p of payloads) {
+    const x = p !== null && typeof p === 'object' ? p as { receiptNumber?: unknown; number?: unknown } : {};
+    const n = typeof x.receiptNumber === 'string' ? x.receiptNumber : x.number;
+    const split = splitReceiptNumber(n);
+    if (split === undefined || split.counter < 1) continue;
+    const { prefix, counter: count } = split;
+    const cur = out.get(prefix);
+    if (cur === undefined) out.set(prefix, { count: 1, from: count, to: count });
+    else { cur.count += 1; cur.from = Math.min(cur.from, count); cur.to = Math.max(cur.to, count); }
+  }
+  return out;
+}
+
+/** Verifier r20 LOST-1: each reported prefix with the bills under it still unsent (`count: 0` when the box holds none). */
+export function withUnsent<T extends { readonly prefix: string }>(issued: readonly T[], unsent: ReadonlyMap<string, UnsentBillNumbers>): (T & { readonly unsent: UnsentBillNumbers })[] {
+  return issued.map((x) => ({ ...x, unsent: unsent.get(x.prefix) ?? { count: 0 } }));
 }
 
 /** Verifier r19 OB87-1/OB87-2: what the box says about its bill-number witness (no person's data; a short box id only). */

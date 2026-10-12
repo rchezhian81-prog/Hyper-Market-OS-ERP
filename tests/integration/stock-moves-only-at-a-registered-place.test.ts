@@ -104,6 +104,23 @@ async function strandedStockIsListed(h: ApiHarness): Promise<void> {
     expect.objectContaining({ locationId: 'D-DAIRY', onHandMinor: 7, why: 'place_closed' }),
   ]));
   expect(listed.find((r) => r.locationId === 'D-DAIRY')?.says).toMatch(/CLOSED: reopen it/);
+  // Verifier r20 (P-04): read by the reader's scope, like the neighbouring lists — store 2's closed department is store 2's.
+  expect((await call('POST', '/v1/org/nodes/store-2', { kind: 'branch', name: 's2', parentId: 'C1', companyId: 'C1' })).status).toBeLessThan(300);
+  expect((await call('POST', '/v1/org/nodes/D-S2', { kind: 'department', name: 'S2 dairy', parentId: 'store-2' })).status).toBeLessThan(300);
+  expect((await move('mv-s2', 'D-S2', 'received', 3)).status).toBe(202);
+  expect((await call('POST', '/v1/org/nodes/D-S2', { kind: 'department', name: 'S2 dairy', parentId: 'store-2', status: 'closed' })).status).toBeLessThan(300);
+  await h.provisionRole(T, 'u-mgr1', 'store_manager', ['store-1']);
+  await h.provisionRole(T, 'u-mgr2', 'store_manager', ['store-2']);
+  const strandedAs = async (user: string, branchId: string): Promise<string[]> => {
+    const r = await h.request({ method: 'GET', path: '/v1/inventory/exceptions', userId: user, tenantId: T, branchId });
+    expect(r.status).toBe(200);
+    return (r.body as { strandedStock: { locationId: string }[] }).strandedStock.map((x) => x.locationId).sort();
+  };
+  expect(await strandedAs('u-mgr1', 'store-1')).toEqual(['D-DAIRY']);
+  expect(await strandedAs('u-mgr2', 'store-2')).toEqual(['D-S2']);
+  expect((await stranded()).map((x) => x.locationId).sort()).toEqual(['D-DAIRY', 'D-S2', 'old-shelf']);
+  expect((await call('POST', '/v1/org/nodes/D-S2', { kind: 'department', name: 'S2 dairy', parentId: 'store-2', status: 'draft' })).status).toBeLessThan(300);
+  expect((await move('mv-s2-out', 'D-S2', 'transferred_out', 3)).status).toBe(202);
   // The refusals say which it is, and where the stock is listed.
   const closedMove = await move('mv-out-1', 'D-DAIRY', 'transferred_out', 7);
   expect(closedMove.status).toBe(422);

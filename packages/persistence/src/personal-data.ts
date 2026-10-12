@@ -393,6 +393,12 @@ export class PersonalDataSealingStore implements EventStore {
     return r === undefined ? undefined : (await this.open([r]))[0];
   }
 
+  // Verifier r20 (cost): keys are not personal data — passed through when the inner store has the one-read lookup.
+  get existingIdempotencyKeys(): EventStore['existingIdempotencyKeys'] {
+    const inner = this.inner;
+    return inner.existingIdempotencyKeys === undefined ? undefined : (tenantId, keys) => inner.existingIdempotencyKeys!(tenantId, keys);
+  }
+
   async readStream(tenantId: string, stream: string, opts?: ReadOptions): Promise<readonly PersistedEvent[]> {
     return this.open(await this.inner.readStream(tenantId, stream, opts));
   }

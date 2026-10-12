@@ -2104,10 +2104,17 @@ export async function startApi(
   // written for a `Pool` from the start (see its header); this is the wire it was waiting for. `max`
   // bounds concurrent connections for a single-store deployment; the pool reconnects a dropped member
   // transparently, so a brief DB blip no longer takes the process down with it.
-  const db = new Pool({ connectionString: settings['DATABASE_URL']!, max: 10 });
+  // Verifier r20 HW-2: every pooled session is ended by the database if it sits idle inside an open transaction for longer
+  // than DB_IDLE_IN_TRANSACTION_TIMEOUT_MS (default one minute) — a leaked transaction can never hold the bill-number
+  // high-water's fence for hours. Set as a session startup option, so it binds this process's connections only (the
+  // migration runner and operator tools keep their own).
+  const session = databaseSessionOptions(settings['DB_IDLE_IN_TRANSACTION_TIMEOUT_MS']);
+  const idleInTransactionMs = session.idleInTransactionMs;
+  const db = new Pool({ connectionString: settings['DATABASE_URL']!, max: 10, options: session.options });
   // Fail fast at boot if the database is unreachable — the same eager check the single client made,
   // now issued through the pool (which connects lazily otherwise).
   await db.query('SELECT 1');
+  out(`database: a session idle inside an open transaction is ended after ${idleInTransactionMs === 0 ? 'never (switched OFF — set DB_IDLE_IN_TRANSACTION_TIMEOUT_MS)' : `${idleInTransactionMs} ms`} (idle_in_transaction_session_timeout)\n`);
 
   // Row-level security (db/migrations/0012, GAP-DATA-02) binds every role EXCEPT a superuser or one with
   // BYPASSRLS — PostgreSQL steps those around every policy. An API connected as one would run with tenant
@@ -2422,4 +2429,15 @@ export async function main(env: Readonly<Record<string, string | undefined>> = p
   };
   process.on('SIGTERM', () => { shutdown('SIGTERM'); });
   process.on('SIGINT', () => { shutdown('SIGINT'); });
+}
+
+/**
+ * Verifier r20 HW-2: the startup options every one of the API's pooled database sessions carries — the database ends a
+ * session left IDLE inside an open transaction after `DB_IDLE_IN_TRANSACTION_TIMEOUT_MS` (default 60,000 ms = one minute;
+ * 0 switches it off). Exported so a test can prove the same options bind a real session.
+ */
+export function databaseSessionOptions(configured: string | undefined): { readonly idleInTransactionMs: number; readonly options: string } {
+  const n = Number(configured ?? '60000');
+  const idleInTransactionMs = Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 60_000;
+  return { idleInTransactionMs, options: `-c idle_in_transaction_session_timeout=${idleInTransactionMs}` };
 }

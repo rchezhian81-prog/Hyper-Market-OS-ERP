@@ -592,6 +592,9 @@ export function inventoryRoutes(deps: InventoryDeps): readonly Route[] {
         // Verifier r19 (6a/6b · P-08): stock left at a place that is not a registered stock place — booked before the business
         // registered its places, or at a department/warehouse since CLOSED. Movements there are refused (they would make a
         // phantom place), so it is LISTED here for head office with the way out, never left silently unmovable.
+        // Verifier r20: scoped like its neighbours — it is read from `rows`, which hold only the caller's places
+        // (`scope.covers` above), so a store manager sees their own stores' stranded stock and never another store's. A place
+        // that belongs to no branch (never registered) is seen by a reader of every branch (the owner, head office).
         const places = deps.stockPlaces === undefined ? undefined : await deps.stockPlaces(ctx.tenantId);
         const strandedStock = places === undefined || !places.registeredAny ? []
           : rows.filter((r) => r.onHandMinor !== 0 && !places.isKnown(r.locationId)).map((r) => {

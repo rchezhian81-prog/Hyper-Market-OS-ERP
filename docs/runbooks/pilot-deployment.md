@@ -201,6 +201,22 @@ docker compose exec db psql -U sre_admin -d sre_retail_os -c "REASSIGN OWNED BY 
 application role under another name, e.g. `sre_app_rls`, and use that in `DATABASE_URL`.) Type the password into the
 terminal only — never into a file that could be committed.
 
+## A transaction left open on the database (verifier r20 HW-2)
+
+Head office counts each till's bill numbers incrementally, and that count can only move past a point once every database
+transaction that was running at that point has finished — on the WHOLE database server, not just this database. So:
+
+- **The API ends its own stuck sessions.** Every API connection carries `idle_in_transaction_session_timeout` =
+  `DB_IDLE_IN_TRANSACTION_TIMEOUT_MS` (default **60000 ms, one minute**). The API's log says so at start:
+  `database: a session idle inside an open transaction is ended after 60000 ms`. Leave it at the default; never set `0`.
+- **Anything else** (a `psql` window left in `BEGIN`, a prepared transaction, a long migration rehearsal on the same
+  server) is not covered by that setting. If one is held for more than **5 minutes**, the health page shows
+  `bill_number_high_water` — "bill-number high-water is waiting on an open database transaction since …". Bill numbers
+  stay correct; head office only gets slower until it ends. To find it, as the administrator:
+  `SELECT pid, usename, datname, state, xact_start FROM pg_stat_activity WHERE backend_xid IS NOT NULL ORDER BY xact_start;`
+  and `SELECT * FROM pg_prepared_xacts;` — then end it (`COMMIT`/`ROLLBACK` where it was opened, or
+  `SELECT pg_terminate_backend(<pid>);`). The warning clears on the next health read.
+
 ## Backing up the database
 
 Even in a pilot, take a backup before anything you care about. Prefer the tool that also writes the control totals

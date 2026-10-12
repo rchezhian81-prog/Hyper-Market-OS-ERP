@@ -96,6 +96,11 @@ repository settings. Nothing below is typed into this repository.
   `docker compose down -v`. If a release needs a data fix, that is a person's job with the backup runbook.
 - **Manual rollback** (custodian, on the box): `sudo -u deploy /opt/sre/app/infra/deploy/release.sh <sha>`
   with any earlier commit that is on `main`. The same refusals and checks apply.
+- **One `ZZ…` bill after a rollback and roll-forward (expected).** Rolling back to a release before the store computer's
+  bill-number witness (r19/r20) runs the edge without it, and the next roll-forward finds a witness it did not write last;
+  that first start numbers under a brand-new `ZZ…` prefix until head office answers, then returns to the till's own prefix.
+  The same happens once on the very first deploy of the witness release. No bill number is repeated; ring one test bill
+  to see the till's own prefix again.
 
 ## When it goes red
 
