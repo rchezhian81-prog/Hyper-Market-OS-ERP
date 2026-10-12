@@ -140,7 +140,10 @@ describe.skipIf(DATABASE_URL === undefined)('verifier r21 (cost): the rescan hap
       // "Another process": a fresh store over the same database, the same durable snapshots.
       const two = counting(new SqlEventStore(sql));
       expect((await bankedReceiptCounts(two.store, T, { snapshots, storeId: S1 })).get(P)).toBe(35);
-      expect(two.read()).toBeLessThan(700);
+      // The plausible re-scan (1,202 reports) is gone: only its short tail is read. The running maximum beside it is fenced
+      // (verifier r19 HW-1): while ANY transaction elsewhere on the database cluster is still open — another suite on a
+      // shared CI database — it honestly re-reads its own tail, so that fold's reads are not part of what this proves.
+      expect(two.read()).toBeLessThan(one.read() - 900);
       // The same answer as a cold read with no snapshot at all.
       expect((await bankedReceiptCounts(new SqlEventStore(sql), T, { snapshots: new InMemorySnapshotStore(), storeId: S1 })).get(P)).toBe(35);
     } finally {
