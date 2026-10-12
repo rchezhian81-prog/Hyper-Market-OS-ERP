@@ -83,25 +83,51 @@ export async function holdDamagedUnderCount(input: {
   readonly by: string;
   readonly at: string;
   readonly relayed: boolean;
-}): Promise<{ readonly damaged: readonly DamagedLine[]; readonly immediate: readonly Movement[]; readonly held: readonly HeldWriteOff[] }> {
+}): Promise<{ readonly damaged: readonly DamagedLine[]; readonly immediate: readonly Movement[]; readonly held: readonly HeldWriteOff[]; readonly writeOffs: readonly StoredWriteOff[] }> {
   const damaged: DamagedLine[] = [];
   const immediate: Movement[] = [];
   const held: HeldWriteOff[] = [];
+  const writeOffs: StoredWriteOff[] = [];
   for (let i = 0; i < input.damaged.length; i += 1) {
     const d = input.damaged[i]!;
     const m = input.postings[i]!;
-    const planId = input.check === undefined ? undefined : await input.check(input.tenantId, m.locationId, m.productId, m.kind);
-    if (planId === undefined) { damaged.push(d); immediate.push(m); continue; }
-    damaged.push({ ...d, heldForCount: planId });
     const line = input.transfer.lines.findIndex((l) => l.productId === d.productId && l.batchId === d.batchId);
     const unitCostMinor = line >= 0 ? input.transfer.lineCostsMinor?.[line] ?? input.transfer.lines[line]!.unitCost.minor : null;
+    const planId = input.check === undefined ? undefined : await input.check(input.tenantId, m.locationId, m.productId, m.kind);
+    if (planId === undefined) {
+      // OB-71 "A": no count holds it — written off NOW, on the write-off register as its own line (same write as the receipt).
+      const writeOff = arrivedDamagedWriteOff(m, d, unitCostMinor, input.by, input.at);
+      damaged.push(d); immediate.push({ ...m, reason: `${m.reason} — on the write-off register as ${writeOff.id}` }); writeOffs.push(writeOff); continue;
+    }
+    damaged.push({ ...d, heldForCount: planId });
     held.push({
       heldId: m.movementId, planId, productId: d.productId, locationId: m.locationId, batchId: d.batchId, quantityMinor: d.quantityMinor, uom: m.uom,
       valueMinor: d.valueMinor, unitCostMinor, source: { kind: 'floor_indent', indentId: input.indentId, issueId: input.issueId, transferId: input.transfer.transferId },
       recordedBy: input.by, recordedAt: input.at, relayed: input.relayed,
     });
   }
-  return { damaged, immediate, held };
+  return { damaged, immediate, held, writeOffs };
+}
+
+/** OB-71: the register id of a damaged-on-arrival write-off taken at once (no count holding it) — keyed on its `wasted` movement. */
+export const arrivedDamagedWriteOffId = (movementId: string): string => `arrived-${movementId}`;
+
+/**
+ * OB-71 "A" (owner, 12 Oct 2026, in writing, "Own write-off line") — a damaged arrival when NO count holds it is written off
+ * at once AND recorded on the write-off register (M28-FR-01) as its own line, so the books post it ONCE through the one
+ * stock-adjustment path (`stock_write_off` → inventory_write_off) instead of the loss hiding inside month-end cost of goods
+ * sold. Same shape as OB-66's applied held write-off: loss type `damage`, reason `arrived_damaged`, valued at the cost the
+ * stock left the back store with (the transfer line's cost — never a caller's figure). Its stock effect is the receipt's own
+ * `wasted` posting (`<transferId>-damaged-<n>`, same write), so on-hand falls once; the id is keyed on that posting, so a
+ * replayed receipt (direct or relayed) records and posts nothing twice. Pure.
+ */
+export function arrivedDamagedWriteOff(wasted: Movement, d: DamagedLine, unitCostMinor: number | null, by: string, at: string): StoredWriteOff {
+  return {
+    id: arrivedDamagedWriteOffId(wasted.movementId), productId: d.productId, locationId: wasted.locationId, lossType: 'damage', qtyRemoved: d.quantityMinor, uom: wasted.uom,
+    valueMinor: d.valueMinor, currency: 'INR', reasonCode: 'arrived_damaged', requiredApproval: false, evidenceRef: null,
+    raisedBy: by, approvedBy: null, at, valueSource: 'stock_cost', ...(unitCostMinor === null ? {} : { unitCostMinor }),
+    ...(d.batchId === null ? {} : { batchId: d.batchId }),
+  };
 }
 
 /**

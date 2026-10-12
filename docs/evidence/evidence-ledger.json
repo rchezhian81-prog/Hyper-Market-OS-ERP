@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1123,
+  "testFiles": 1124,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -522,8 +522,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 14,
-        "integration": 38,
-        "realDb": 12,
+        "integration": 39,
+        "realDb": 13,
         "browser": 3,
         "connected": 0,
         "device": 0,
@@ -549,6 +549,7 @@
         "integration": [
           "tests/integration/a-b2b-order-holds-and-moves-ordinary-stock.test.ts",
           "tests/integration/a-damaged-arrival-under-an-open-count-is-received-good-and-written-off-at-the-close.test.ts",
+          "tests/integration/a-damaged-arrival-with-no-count-open-is-its-own-write-off-line.test.ts",
           "tests/integration/a-loss-is-worth-what-the-stock-cost.test.ts",
           "tests/integration/a-transfer-sends-only-what-the-batch-holds.test.ts",
           "tests/integration/adjustment-requests.test.ts",
@@ -589,6 +590,7 @@
         "realDb": [
           "tests/integration/a-b2b-order-holds-and-moves-ordinary-stock.test.ts",
           "tests/integration/a-damaged-arrival-under-an-open-count-is-received-good-and-written-off-at-the-close.test.ts",
+          "tests/integration/a-damaged-arrival-with-no-count-open-is-its-own-write-off-line.test.ts",
           "tests/integration/concurrent-stock-cannot-be-spent-twice.test.ts",
           "tests/integration/floor-indents-handheld-issue.test.ts",
           "tests/integration/inventory-branch-scope.test.ts",
@@ -1548,8 +1550,8 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 22,
-        "integration": 28,
-        "realDb": 14,
+        "integration": 29,
+        "realDb": 15,
         "browser": 4,
         "connected": 0,
         "device": 0,
@@ -1583,6 +1585,7 @@
         "integration": [
           "tests/integration/a-b2b-invoice-and-its-collection-reach-the-books.test.ts",
           "tests/integration/a-damaged-arrival-under-an-open-count-is-received-good-and-written-off-at-the-close.test.ts",
+          "tests/integration/a-damaged-arrival-with-no-count-open-is-its-own-write-off-line.test.ts",
           "tests/integration/b2b-reconcile-ar.test.ts",
           "tests/integration/cod-reconciliation.test.ts",
           "tests/integration/confirmed-lost-stock-is-posted-once.test.ts",
@@ -1613,6 +1616,7 @@
         "realDb": [
           "tests/integration/a-b2b-invoice-and-its-collection-reach-the-books.test.ts",
           "tests/integration/a-damaged-arrival-under-an-open-count-is-received-good-and-written-off-at-the-close.test.ts",
+          "tests/integration/a-damaged-arrival-with-no-count-open-is-its-own-write-off-line.test.ts",
           "tests/integration/b2b-reconcile-ar.test.ts",
           "tests/integration/confirmed-lost-stock-is-posted-once.test.ts",
           "tests/integration/credit-note-reconciliation.test.ts",
@@ -1843,8 +1847,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 5,
-        "integration": 10,
-        "realDb": 4,
+        "integration": 11,
+        "realDb": 5,
         "browser": 2,
         "connected": 0,
         "device": 0,
@@ -1860,6 +1864,7 @@
         ],
         "integration": [
           "tests/integration/a-damaged-arrival-under-an-open-count-is-received-good-and-written-off-at-the-close.test.ts",
+          "tests/integration/a-damaged-arrival-with-no-count-open-is-its-own-write-off-line.test.ts",
           "tests/integration/a-loss-is-worth-what-the-stock-cost.test.ts",
           "tests/integration/a-recall-runs-its-whole-lifecycle-on-postgresql.test.ts",
           "tests/integration/beyond-the-till.test.ts",
@@ -1872,6 +1877,7 @@
         ],
         "realDb": [
           "tests/integration/a-damaged-arrival-under-an-open-count-is-received-good-and-written-off-at-the-close.test.ts",
+          "tests/integration/a-damaged-arrival-with-no-count-open-is-its-own-write-off-line.test.ts",
           "tests/integration/a-recall-runs-its-whole-lifecycle-on-postgresql.test.ts",
           "tests/integration/beyond-the-till.test.ts",
           "tests/integration/physical-to-system.test.ts"
@@ -2561,8 +2567,8 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 1,
-        "integration": 13,
-        "realDb": 6,
+        "integration": 14,
+        "realDb": 7,
         "browser": 1,
         "connected": 0,
         "device": 0,
@@ -2573,6 +2579,7 @@
           "tests/unit/goods-in.test.ts"
         ],
         "integration": [
+          "tests/integration/a-damaged-arrival-with-no-count-open-is-its-own-write-off-line.test.ts",
           "tests/integration/a-recall-runs-its-whole-lifecycle-on-postgresql.test.ts",
           "tests/integration/a-sale-line-gets-its-fefo-lot.test.ts",
           "tests/integration/a-stock-count-is-planned-frozen-recounted-approved-and-booked.test.ts",
@@ -2588,6 +2595,7 @@
           "tests/integration/warehouse-counts.test.ts"
         ],
         "realDb": [
+          "tests/integration/a-damaged-arrival-with-no-count-open-is-its-own-write-off-line.test.ts",
           "tests/integration/a-recall-runs-its-whole-lifecycle-on-postgresql.test.ts",
           "tests/integration/a-sale-line-gets-its-fefo-lot.test.ts",
           "tests/integration/a-stock-count-is-planned-frozen-recounted-approved-and-booked.test.ts",
@@ -4140,8 +4148,8 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 0,
-        "integration": 10,
-        "realDb": 6,
+        "integration": 11,
+        "realDb": 7,
         "browser": 2,
         "connected": 0,
         "device": 0,
@@ -4150,6 +4158,7 @@
       "files": {
         "unit": [],
         "integration": [
+          "tests/integration/a-damaged-arrival-with-no-count-open-is-its-own-write-off-line.test.ts",
           "tests/integration/books-reconcile.test.ts",
           "tests/integration/day-book-posts-the-day.test.ts",
           "tests/integration/goods-made-in-the-store-are-valued-at-their-production-run-cost.test.ts",
@@ -4162,6 +4171,7 @@
           "tests/integration/the-period-books-reconcile-and-show-profit.test.ts"
         ],
         "realDb": [
+          "tests/integration/a-damaged-arrival-with-no-count-open-is-its-own-write-off-line.test.ts",
           "tests/integration/books-reconcile.test.ts",
           "tests/integration/goods-made-in-the-store-are-valued-at-their-production-run-cost.test.ts",
           "tests/integration/store-acceptance-journey.test.ts",

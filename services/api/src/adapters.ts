@@ -5768,7 +5768,7 @@ export function floorIndentsAdapter(input: {
       ], expectedStockVersion === undefined ? undefined : { guard: { key: stockGuardKey(transfer.fromLocationId), expectedVersion: expectedStockVersion } });
     },
     // A floor RECEIPT: the indent step, the received transfer and the `transferred_in` movements — one atomic batch.
-    recordReceipt: async (tenantId, indent, transfer, movements, discrepancies, posted, expectedIndentVersion, held) => {
+    recordReceipt: async (tenantId, indent, transfer, movements, discrepancies, posted, expectedIndentVersion, held, writeOffs) => {
       const at = input.now();
       const issue = indent.issues.find((i) => i.transferId === transfer.transferId);
       await input.store.appendBatch(tenantId, [
@@ -5778,6 +5778,12 @@ export function floorIndentsAdapter(input: {
         ...movementEntries(tenantId, posted),
         // OB-66: a damaged write-off HELD on an open count plan — in the same write as the receipt, never lost.
         ...(held ?? []).map((h) => heldWriteOffEntry(tenantId, h)),
+        // OB-71: a damaged write-off with NO count holding it — on the write-off register (M28) in the same write, keyed on its
+        // `wasted` posting, so a replayed receipt records it once and the books post it once (stock_write_off).
+        ...(writeOffs ?? []).map((w) => ({
+          stream: streamName(STREAM.inventory, 'write-offs'),
+          event: makeEvent({ id: `write-off-${w.id}`, type: 'WriteOffCommitted', occurredAt: w.at, idempotencyKey: `write-off-${tenantId}-${w.id}`, source: 'api/inventory', payload: w }),
+        })),
       ], expectedIndentVersion === undefined ? undefined : { guard: { key: indentGuardKey(indent.indentId), expectedVersion: expectedIndentVersion } });
     },
     // A RETURN accepted at the back store: the indent step and the return's transfer proposed, dispatched and received in

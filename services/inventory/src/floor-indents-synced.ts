@@ -19,7 +19,8 @@
 //   • an issue posts the `transferred_out` movements exactly as the direct issue does, and lowers the back-store BIN the
 //     handheld took from in the SAME atomic write (SP-8c) — one event in, one write out, never a second stock posting; a bin
 //     head office disagrees with is FLAGGED, never silently forced;
-//   • a receipt posts `transferred_in` once, writes damaged arrivals off at the floor in the same write (SP-8c), and values a
+//   • a receipt posts `transferred_in` once, writes damaged arrivals off at the floor in the same write (SP-8c) — each its own
+//     line on the write-off register (OB-71), or held on an open count (OB-66) — and values a
 //     shortfall as the same exception the direct receipt raises.
 
 import type { Route } from '../../kernel/src/index';
@@ -241,18 +242,18 @@ export function syncedFloorIndentRoutes(deps: SyncedFloorIndentsDeps): readonly 
           const next = applyReceipt(indent, issueId, {
             receivedBy: b['receivedBy'], at: b['at'], received: goodOf(receivedOf(result.movements, result.transfer), damaged), shortfall: shortfallOf(result.discrepancies), damaged, governanceFlags: flags, relayed,
           });
-          await deps.recordReceipt(ctx.tenantId, next, result.transfer, result.movements, result.discrepancies, posted, indentVersion, hold.held);
+          await deps.recordReceipt(ctx.tenantId, next, result.transfer, result.movements, result.discrepancies, posted, indentVersion, hold.held, hold.writeOffs);
           await audit(ctx.tenantId, {
             actorId: b['receivedBy'], action: 'floor_indent.receive', objectType: 'floor_indent', objectId: indentId, at: b['at'], origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
             before: { state: indent.state, issueId, issuedBy: issue.issuedBy },
             after: {
               state: next.state, receivedMinor: String(counted.reduce((s, c) => s + c.quantityMinor, 0)), damagedMinor: String(damaged.reduce((s, d) => s + d.quantityMinor, 0)),
               shortfalls: String(result.discrepancies.filter((d) => d.differenceMinor < 0).length), posted: posted.map((m) => m.movementId).join(','),
-              relayedBy: ctx.userId, source: relayed.source, storeId: relayed.storeId ?? '', flags: flags.join(','),
+              relayedBy: ctx.userId, source: relayed.source, storeId: relayed.storeId ?? '', flags: flags.join(','), writeOffs: hold.writeOffs.map((w) => w.id).join(','),
             },
             correlationId: indentId,
           });
-          return { status: 202, body: { indentId, issueId, recorded: true, alreadyReceived: false, flags, posted: posted.map((m) => m.movementId), discrepancies: result.discrepancies, damaged, heldWriteOffs: hold.held, indent: presentIndent(next) } };
+          return { status: 202, body: { indentId, issueId, recorded: true, alreadyReceived: false, flags, posted: posted.map((m) => m.movementId), discrepancies: result.discrepancies, damaged, heldWriteOffs: hold.held, writeOffs: hold.writeOffs, indent: presentIndent(next) } };
         } catch (e) { return refusedBy(e); }
       },
     },
