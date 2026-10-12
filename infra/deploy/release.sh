@@ -164,6 +164,17 @@ bring_up() {
   done
   say "bringing the stack up (migrations run first, idempotently)…"
   compose up -d --build || return 1
+  # Verifier r21 (rolling deploy): ONE API version at a time. The per-item setting guard (and every other write guard) is
+  # keyed by the code that writes it; two API versions running side by side would not meet on one guard. `compose up`
+  # replaces the single `api` container stop-first — the old one is stopped before the new one starts — so versions never
+  # overlap. If this stack ever runs more than one `api` container (scaled by hand, `deploy.replicas`), it is refused here
+  # and the release is put back: docs/runbooks/automatic-deployment.md, "One API version at a time".
+  local apis
+  apis=$(compose ps -q api 2>/dev/null | grep -c . || true)
+  if [ "${apis:-0}" -gt 1 ]; then
+    say "REFUSED — $apis API containers are running in this stack; head office must run exactly ONE API at a time (never two versions side by side). Scale it back to one: docker compose up -d --scale api=1."
+    return 1
+  fi
   # A service that SHARES another container's network namespace (the demo relay: `network_mode: service:edge`) is
   # not recreated by compose when that container is — it stays attached to the old, dead network. On 4 Oct 2026
   # the relay answered 502 for every demo store box screen after a release had rebuilt the edge. Recreate such

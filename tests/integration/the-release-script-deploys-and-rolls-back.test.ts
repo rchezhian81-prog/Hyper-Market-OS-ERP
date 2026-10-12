@@ -59,6 +59,7 @@ case " $* " in
     mv "$SRE_TEST_UP_RESULTS.tmp" "$SRE_TEST_UP_RESULTS"
     echo "\${next:-ok}" > "$SRE_TEST_READY" ;;
   *" logs "*) echo "api | (stub log line)" ;;
+  *" ps -q api "*) for i in $(seq 1 "\${SRE_TEST_API_CONTAINERS:-1}"); do echo "api-container-$i"; done ;;
 esac
 exit 0
 `;
@@ -226,6 +227,21 @@ describe('the release script deploys a merged commit and rolls a broken one back
     expect(r.out).toContain('ROLLBACK FAILED');
     expect(head()).toBe(V3); // the previous release is what is checked out, even though it did not answer
     expect(await lastLogLine()).toContain(`result=rollback_failed sha=${V2} previous=${V3}`);
+  }, 30_000);
+
+  it('verifier r21 rolling deploy: a stack running TWO API containers is refused (one API version at a time), and needs a person', async () => {
+    await writeFile(upResults, 'ok\nok\n');
+    const before = head();
+    const r = run([V2, 'octocat', '126'], { SRE_TEST_API_CONTAINERS: '2' });
+    expect(r.code, r.out).toBe(71); // the previous release runs two as well — a person scales it back to one
+    expect(r.out).toContain('REFUSED — 2 API containers are running in this stack; head office must run exactly ONE API at a time');
+    expect((await callLog()).some((l) => l.includes(' ps -q api'))).toBe(true);
+    expect(before).not.toBe(V2);
+    // One container (the normal stack): the same release deploys.
+    await writeFile(upResults, 'ok\n');
+    const ok = run([V2, 'octocat', '127']);
+    expect(ok.code, ok.out).toBe(0);
+    expect(head()).toBe(V2);
   }, 30_000);
 
   // ── WF-20 (ADR-0026): the backup before the release, and the canary bake after it ────────────────────────────────
