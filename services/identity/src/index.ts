@@ -158,6 +158,8 @@ export interface IdentityDeps {
    * with a person's roles. Optional on a bare stub (then the rule cannot be judged and is not claimed).
    */
   readonly rolesHeldBy?: (tenantId: string, userId: string) => Promise<readonly string[]> | readonly string[];
+  /** PA-12 r12: whether this user is a PERSON — given a sign-in at the identity server (/v1/identity/people). */
+  readonly isPerson?: (tenantId: string, userId: string) => Promise<boolean> | boolean;
   /**
    * Seal this privilege change into the tamper-evident domain audit trail (M34-FR-01), attributed to the
    * acting user. Optional — the running system provides it; a bare deps stub may omit it. The actor is
@@ -247,7 +249,7 @@ export function identityRoutes(deps: IdentityDeps): readonly Route[] {
         }
         // PA-12 round 10: a machine identity (backup_job) is never also a person — refused at the REQUEST.
         if (deps.rolesHeldBy !== undefined) {
-          const mixed = machineIdentityGrantRefusal(roleId, await deps.rolesHeldBy(ctx.tenantId, userId));
+          const mixed = machineIdentityGrantRefusal(roleId, await deps.rolesHeldBy(ctx.tenantId, userId), (await deps.isPerson?.(ctx.tenantId, userId)) ?? false);
           if (mixed !== undefined) {
             throw apiError(422, { code: MACHINE_IDENTITY_REFUSAL_CODE, whatHappened: mixed, wasItSaved: 'not_saved', nextSafeAction: 'Give the machine its own sign-in holding only its role, and the person their own. Nothing was requested.' });
           }
@@ -302,7 +304,7 @@ export function identityRoutes(deps: IdentityDeps): readonly Route[] {
         }
         // PA-12 round 10: judged again at APPROVAL — the user may have been granted something else since it was asked.
         if (deps.rolesHeldBy !== undefined) {
-          const mixed = machineIdentityGrantRefusal(pending.roleId, await deps.rolesHeldBy(ctx.tenantId, pending.userId));
+          const mixed = machineIdentityGrantRefusal(pending.roleId, await deps.rolesHeldBy(ctx.tenantId, pending.userId), (await deps.isPerson?.(ctx.tenantId, pending.userId)) ?? false);
           if (mixed !== undefined) {
             throw apiError(422, { code: MACHINE_IDENTITY_REFUSAL_CODE, whatHappened: mixed, wasItSaved: 'not_saved', nextSafeAction: 'Reject this request; give the machine its own sign-in holding only its role. Nobody\'s access changed.' });
           }

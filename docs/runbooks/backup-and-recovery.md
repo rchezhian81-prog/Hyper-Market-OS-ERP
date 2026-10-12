@@ -87,6 +87,10 @@ could report — head office raises the backup as **MISSED** by itself once it i
 1. Ask the owner to approve granting the role **Backup job (machine)** (`backup_job`) to a
    new machine user, for example `svc-backup`, through the normal two-person role grant.
    This role can only report backups — it cannot read or change anything else.
+   The machine user must NOT be a person: head office refuses `backup_job` for anyone given a
+   sign-in under People (even one holding no role), and refuses a backup report that comes from an
+   interactive sign-in (password + one-time code) — only the machine token from step 2 is believed.
+   A live emergency grant of any other role to the machine user also stops its reports being believed.
 2. Issue that user a token the same way the store computer's token is issued:
    `node scripts/issue-store-token.mjs --user svc-backup --tenant <shop id> --no-store` (the backup
    job is not a store computer, so its token names no store; 30 days unless

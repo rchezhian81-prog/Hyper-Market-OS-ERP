@@ -43,6 +43,11 @@ export interface Delegation {
   readonly valueCap?: Money | null;
   /** Optional narrowing of branch scope. Never a widening. */
   readonly branchScope?: readonly string[];
+  /**
+   * Where the LENDER holds each lent subject type's authority, as the server derived it at grant time (round 12): a
+   * subject type is lent only where the lender holds THAT authority — never the union across the lent types.
+   */
+  readonly branchScopeBySubject?: Readonly<Record<string, readonly string[] | 'all'>>;
   readonly reason: string;
   /** Somebody senior signed this off. A self-granted delegation is not a delegation. */
   readonly authorisedBy: string;
@@ -235,10 +240,15 @@ export function effectiveAuthority(input: {
     };
   }
 
+  // Round 12: the delegation's own narrowing AND the lender's authority for THIS subject type — the narrower of the two.
+  const lent: readonly string[] | 'all' = active.branchScope ?? 'all';
+  const forSubject = active.branchScopeBySubject?.[input.subjectType];
+  const branchScope: readonly string[] | 'all' = forSubject === undefined || forSubject === 'all' ? lent
+    : lent === 'all' ? forSubject : lent.filter((b) => forSubject.includes(b));
   return {
     userId: input.userId,
     source: 'delegated',
-    branchScope: active.branchScope ?? 'all',
+    branchScope,
     authorityLimit: active.valueCap ?? null,
     onBehalfOf: active.fromUserId,
     delegationId: active.delegationId,

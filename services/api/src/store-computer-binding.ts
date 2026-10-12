@@ -9,7 +9,8 @@
 import { createHash } from 'node:crypto';
 import type { EventStore } from '../../../packages/persistence/src/event-store';
 import type { BoundStoreGuard, Route } from '../../kernel/src/index';
-import { classifyReferences, judgeBoxRequest, storeReferencesIn, storeStampFor, STORE_COMPUTER_ROLE } from '../../platform/src/store-computer-identity';
+import { classifyReferences, judgeBoxRequest, storeReferencesIn, storeStampFor, STORE_COMPUTER_ROLE, RECORD_STORE_PARAM, type StoreReference } from '../../platform/src/store-computer-identity';
+import { paymentExceptionsAdapter } from './finance-close-adapters';
 import { storeComputerRefusalsAdapter, storeOfLocationResolver, STREAM, streamName } from './adapters';
 import { makeEvent } from '../../../packages/contracts/src/event';
 
@@ -54,7 +55,15 @@ export function storeComputerBinding(input: { readonly store: EventStore; readon
     if (grants.length === 0) return { ok: true }; // not a store computer — nothing to judge
     // The stores its store_computer grants NAME — a tenant-wide grant names none (it never stands for "every store").
     const grantedStores = [...new Set(grants.flatMap((g) => (g.branchScope === 'all' ? [] : g.branchScope)))];
-    const references = classifyReferences(request.routePath, storeReferencesIn(request));
+    const references: StoreReference[] = [...classifyReferences(request.routePath, storeReferencesIn(request))];
+    // OB-54 round 12: a route acting on a record head office already holds — the record's OWN store is judged too.
+    const recordParam = RECORD_STORE_PARAM[request.routePath];
+    const recordId = recordParam === undefined ? undefined : request.params[recordParam];
+    if (recordParam !== undefined && recordId !== undefined && recordId !== '') {
+      const held = (await paymentExceptionsAdapter(input).exceptions(principal.tenantId)).find((e) => e.attemptId === recordId);
+      // A held record that names no store cannot be shown to be this box's: judged as an unplaceable store code.
+      if (held !== undefined) references.push({ field: `record.${recordParam}`, value: held.storeId, names: 'store' });
+    }
     const placing = references.length === 0 ? { storeOf: (s: string) => s, knownStores: new Set<string>() } : await storeOfLocationResolver(input, principal.tenantId);
     const verdict = judgeBoxRequest({ credentialStore: principal.branchId, grantedStores, references, ...placing });
     if (verdict.ok) {

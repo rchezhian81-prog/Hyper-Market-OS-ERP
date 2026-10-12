@@ -96,23 +96,22 @@ export interface DelegationDeps {
 }
 
 /**
- * The branch scope the SERVER gives an approver record (Wave 2b · PA-03 / PA-01): the union of where the person's grants
- * carry the authority of the subject types in question — 'all' as soon as one is company-wide. A body's own idea of its
- * scope is replaced, never trusted; where the server cannot say (no mapping, no dep), the record's own scope stands.
+ * Round 12 (verifier r11 #11): the branch scope the SERVER gives the lender for EACH lent subject type — where their grants
+ * carry THAT subject's authority — never the union across the types (a b1 refund authority lent beside a company-wide
+ * day-close authority stays b1). A subject type with no known authority is refused by name, never taken from the body.
+ * `undefined` per type: the server cannot say (no dep) and the approver record's own scope stands.
  */
-async function serverScope(
+async function serverScopes(
   deps: Pick<DelegationDeps, 'branchScopeOfUser'>, tenantId: string, approver: Approver, subjectTypes: readonly string[],
-): Promise<Approver> {
-  if (deps.branchScopeOfUser === undefined) return approver;
-  const permissions = subjectTypes.map((t) => SUBJECT_AUTHORITY[t]).filter((p): p is string => p !== undefined);
-  if (permissions.length === 0) return approver;
-  const branches = new Set<string>();
-  for (const permission of permissions) {
-    const where = await deps.branchScopeOfUser(tenantId, approver.userId, permission);
-    if (where === 'all') return { ...approver, branchScope: 'all' };
-    for (const b of where ?? []) branches.add(b);
+): Promise<{ readonly unknown: readonly string[]; readonly bySubject: Readonly<Record<string, readonly string[] | 'all'>> | undefined }> {
+  const unknown = subjectTypes.filter((t) => SUBJECT_AUTHORITY[t] === undefined);
+  if (unknown.length > 0 || deps.branchScopeOfUser === undefined) return { unknown, bySubject: undefined };
+  const bySubject: Record<string, readonly string[] | 'all'> = {};
+  for (const t of new Set(subjectTypes)) {
+    const where = await deps.branchScopeOfUser(tenantId, approver.userId, SUBJECT_AUTHORITY[t]!);
+    bySubject[t] = where === 'all' ? 'all' : [...new Set(where ?? [])].sort();
   }
-  return { ...approver, branchScope: [...branches].sort() };
+  return { unknown, bySubject };
 }
 
 export function delegationRoutes(deps: DelegationDeps): readonly Route[] {
@@ -160,7 +159,12 @@ export function delegationRoutes(deps: DelegationDeps): readonly Route[] {
         }
         // The granter record is the LENDER's own (PA-03): it must name the fromUser, and its branch scope is the server's.
         if (granter.userId !== (b['fromUserId'] as string)) throw actorIsTheCaller('granter.userId', granter.userId, `the lender ${b['fromUserId'] as string}`);
-        const grantedBy = await serverScope(deps, ctx.tenantId, granter, subjectTypes);
+        const { unknown, bySubject } = await serverScopes(deps, ctx.tenantId, granter, subjectTypes);
+        if (unknown.length > 0) {
+          throw apiError(422, { code: 'unknown_subject_type', whatHappened: `${unknown.join(', ')} ${unknown.length === 1 ? 'is' : 'are'} not a kind of decision head office knows the authority for, so nobody can say what would be lent.`, wasItSaved: 'not_saved', nextSafeAction: `Lend only kinds of decision head office knows: ${Object.keys(SUBJECT_AUTHORITY).join(', ')}. Nothing was saved.` });
+        }
+        const scopes = bySubject === undefined ? [] : Object.values(bySubject);
+        const shared = scopes.length > 0 && scopes.every((x) => JSON.stringify(x) === JSON.stringify(scopes[0])) ? scopes[0] : undefined;
         const delegation: Delegation = {
           delegationId, fromUserId: b['fromUserId'] as string, toUserId: b['toUserId'] as string,
           fromDate: b['fromDate'] as string, untilDate: b['untilDate'] as string, subjectTypes,
@@ -168,12 +172,26 @@ export function delegationRoutes(deps: DelegationDeps): readonly Route[] {
           ...(cap !== null ? { valueCap: cap } : {}),
           // Round 10 (found by the M02 browser proof): a delegation that names no branches is lent only where the LENDER
           // holds the authority (the server's scope) — never company-wide from a one-branch manager.
-          ...(branchScope !== undefined ? { branchScope } : grantedBy.branchScope !== 'all' ? { branchScope: grantedBy.branchScope } : {}),
+          ...(branchScope !== undefined ? { branchScope } : shared !== undefined && shared !== 'all' ? { branchScope: shared } : {}),
+          // Round 12: and each subject type only where the lender holds THAT type's authority — never the union.
+          ...(bySubject === undefined ? {} : { branchScopeBySubject: bySubject }),
         };
-        const result = grantDelegation({
-          delegation, granter: grantedBy, existing: await deps.delegations(ctx.tenantId), today: deps.now().slice(0, 10),
+        // Judged per subject type against the lender's authority for THAT type: the cap, and a named scope never widened.
+        const existing = await deps.delegations(ctx.tenantId);
+        const today = deps.now().slice(0, 10);
+        const judge = (scope: readonly string[] | 'all') => grantDelegation({
+          delegation, granter: { ...granter, branchScope: scope }, existing, today,
           ...(isInt(b['maximumDays']) ? { maximumDays: b['maximumDays'] as number } : {}),
         });
+        let result = judge(bySubject === undefined ? granter.branchScope : 'all');
+        for (const t of subjectTypes) {
+          if (!result.created || bySubject === undefined) break;
+          const where = bySubject[t]!;
+          if (where !== 'all' && where.length === 0) {
+            throw apiError(422, { code: 'exceeds_granter_authority', whatHappened: `${b['fromUserId'] as string} does not hold the authority for ${t} anywhere, so it cannot be lent — nobody can hand out authority they do not have.`, wasItSaved: 'not_saved', nextSafeAction: 'Lend only what the lender holds. Nothing was saved.' });
+          }
+          result = judge(where);
+        }
         if (!result.created) {
           throw apiError(REFUSAL_STATUS[result.refusal!], { code: result.refusal!, whatHappened: result.detail, wasItSaved: 'not_saved', nextSafeAction: 'Correct the delegation and send it again. Nothing was saved.' });
         }
@@ -238,7 +256,11 @@ export function delegationRoutes(deps: DelegationDeps): readonly Route[] {
         // The decider's own record is the CALLER's (PA-03) — a body cannot lend somebody else's authority to this sign-in —
         // and its branch scope is the server's.
         if (own !== undefined && own.userId !== ctx.userId) throw actorIsTheCaller('own.userId', own.userId, ctx.userId);
-        const ownScoped = own === undefined ? undefined : await serverScope(deps, ctx.tenantId, own, [request.subjectType]);
+        const ownWhere = own === undefined || deps.branchScopeOfUser === undefined || SUBJECT_AUTHORITY[request.subjectType] === undefined ? undefined
+          : await deps.branchScopeOfUser(ctx.tenantId, own.userId, SUBJECT_AUTHORITY[request.subjectType]!);
+        const ownScoped = own === undefined ? undefined
+          : deps.branchScopeOfUser === undefined || SUBJECT_AUTHORITY[request.subjectType] === undefined ? own
+          : { ...own, branchScope: ownWhere === 'all' ? 'all' as const : [...new Set(ownWhere ?? [])].sort() };
         const authority = effectiveAuthority({
           userId: ctx.userId, subjectType: request.subjectType,
           delegations: await deps.delegations(ctx.tenantId),

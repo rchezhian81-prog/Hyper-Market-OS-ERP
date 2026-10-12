@@ -7,7 +7,7 @@
 //
 //   • refused: loopback, private (RFC 1918), carrier-grade NAT, link-local (incl. the 169.254.169.254 metadata
 //     service), unspecified, multicast, broadcast, reserved, documentation/benchmark ranges, IPv6 unique-local,
-//     link-local, site-local, multicast, and IPv4 addresses embedded in IPv6 (mapped, NAT64, 6to4) when the embedded
+//     link-local, site-local, multicast, NAT64 local-use 64:ff9b:1::/48, and IPv4 addresses embedded in IPv6 (mapped, NAT64, 6to4) when the embedded
 //     address is itself not public; host names `localhost`, `*.localhost`, `metadata`, `metadata.google.internal`,
 //     `*.internal`, `*.local`; a URL carrying a user name or password;
 //   • checked when the subscription is made AND again before every send — DNS can change after the subscription was
@@ -78,6 +78,8 @@ function v6Reason(ip: string): string | undefined {
     const r = v4Reason(embedded(g[6]!, g[7]!));
     return r === undefined ? undefined : `IPv4 ${r} inside IPv6`;
   }
+  // Round 12: the NAT64 LOCAL-USE prefix 64:ff9b:1::/48 (RFC 8215) is a site's own translator — never a public address.
+  if (g[0] === 0x64 && g[1] === 0xff9b && g[2] === 1) return 'NAT64 local-use (a site\'s own translator)';
   if (g[0] === 0x64 && g[1] === 0xff9b && g.slice(2, 6).every((x) => x === 0)) {
     const r = v4Reason(embedded(g[6]!, g[7]!));
     return r === undefined ? undefined : `IPv4 ${r} behind NAT64`;

@@ -51,6 +51,8 @@ export interface EmergencyAccessDeps {
   readonly approvals?: ApprovalPort;
   /** PA-12 round 10: the roles the user holds now (ledger) — a machine-only role is never mixed with a person's. */
   readonly rolesHeldBy?: (tenantId: string, userId: string) => Promise<readonly string[]> | readonly string[];
+  /** PA-12 r12: whether this user is a PERSON — given a sign-in at the identity server (/v1/identity/people). */
+  readonly isPerson?: (tenantId: string, userId: string) => Promise<boolean> | boolean;
   readonly now: () => string;
 }
 
@@ -90,7 +92,7 @@ export function emergencyAccessRoutes(deps: EmergencyAccessDeps): readonly Route
         }
         // PA-12 round 10: not even in an emergency is a machine identity (backup_job) also a person.
         if (deps.rolesHeldBy !== undefined) {
-          const mixed = machineIdentityGrantRefusal(b['roleId'] as string, await deps.rolesHeldBy(ctx.tenantId, b['userId'] as string));
+          const mixed = machineIdentityGrantRefusal(b['roleId'] as string, await deps.rolesHeldBy(ctx.tenantId, b['userId'] as string), (await deps.isPerson?.(ctx.tenantId, b['userId'] as string)) ?? false);
           if (mixed !== undefined) throw apiError(422, { code: MACHINE_IDENTITY_REFUSAL_CODE, whatHappened: mixed, wasItSaved: 'not_saved', nextSafeAction: 'Grant the person a person\'s role on their own sign-in. Nobody\'s access changed.' });
         }
         const now = deps.now();
