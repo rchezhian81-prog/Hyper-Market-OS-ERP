@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { chromium, type Browser } from 'playwright-core';
 import { startInboxShop, ok, OWNER, type InboxShop } from './lib/ai-inbox-shop';
+import { setUpPracticeStores } from '../support/real-store';
 
 /**
  * **WF-11 / M13-FR-02 — "Returned goods to decide", in a real browser, on the PRODUCTION API over real PostgreSQL.**
@@ -34,6 +35,8 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('Returned g
       databaseUrl: DATABASE_URL!, tenantId: randomUUID(), signingKey: KEY,
       page: { path: '/held-returns', html: 'held-returns.html', dataGlobal: 'heldReturnsData' },
       seed: async (cloud) => {
+        // Verifier r18 C2-R1: stock moves only at a place head office registered — store-1 is set up first.
+        await setUpPracticeStores(cloud, OWNER, ['store-1']);
         await ok(cloud.request({ method: 'POST', path: '/v1/inventory/movements', userId: OWNER, idempotencyKey: 'rcv-dal',
           body: { movementId: 'rcv-dal', productId: 'DAL', locationId: 'store-1', kind: 'received', quantityMinor: 10, uom: 'each', occurredAt: '2026-10-01T09:00:00.000Z', enteredBy: OWNER, unitCostMinor: 4_000, batchId: 'D-07' } }), 'receive');
         await ok(cloud.request({ method: 'POST', path: '/v1/sales', userId: OWNER, idempotencyKey: 'sale-S1', body: {
