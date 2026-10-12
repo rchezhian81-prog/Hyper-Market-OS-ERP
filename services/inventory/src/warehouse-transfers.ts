@@ -104,6 +104,8 @@ export interface TransfersDeps {
   /** PA-01-r1: which branch a location belongs to (the org hierarchy); absent → a location is its own branch key. */
   readonly locationBranches?: LocationBranches;
   readonly transfer: (tenantId: string, transferId: string) => Promise<Transfer | undefined> | Transfer | undefined;
+  /** Round 12 (WF-07 screen): every transfer on file, in the order first recorded (absent on a bare stub — none listed). */
+  readonly transfers?: (tenantId: string) => Promise<readonly Transfer[]> | readonly Transfer[];
   /**
    * SP-4 (F07): head office's OWN stock at the source for the transfer's lines — the on-hand position per product, the
    * batch's recall and quality-hold state read from their registers. Never the body's word.
@@ -418,6 +420,24 @@ export function transfersRoutes(deps: TransfersDeps): readonly Route[] {
           throw e;
         }
         return { status: 201, body: { transferId, resolution, posted, alreadyResolved: false } };
+      },
+    },
+    {
+      // Round 12 (WF-07 · M09-FR-03): the transfers register the dispatch-and-receipt screen reads — every transfer with
+      // either end in the caller's branches (PA-01-r1), newest first, each with its open receipt shortfall (valued at the
+      // cost it left with) and whether it travels for a floor indent (resolved there). A read: it changes nothing.
+      api: 'API-04', method: 'GET', path: '/v1/warehouse/transfers',
+      permission: 'inventory.availability.read',
+      handler: async (ctx) => {
+        const all = deps.transfers === undefined ? [] : [...(await deps.transfers(ctx.tenantId))].reverse();
+        const rows = [];
+        for (const t of all) {
+          if (!(await locationInScope(ctx, t.fromLocationId, deps.locationBranches)) && !(await locationInScope(ctx, t.toLocationId, deps.locationBranches))) continue;
+          const shortfall = t.state === 'received' && deps.shortfallOf !== undefined ? await deps.shortfallOf(ctx.tenantId, t.transferId) : [];
+          const forIndent = deps.belongsToIndent === undefined ? false : await deps.belongsToIndent(ctx.tenantId, t.transferId);
+          rows.push({ transfer: t, shortfall, shortfallOpen: shortfall.length > 0 && t.shortfallResolution === undefined, forIndent });
+        }
+        return { status: 200, body: { transfers: rows, asAt: deps.now() } };
       },
     },
     {

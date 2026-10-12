@@ -104,6 +104,11 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
 
   { id: 'indents', label: 'Floor indents', labelTa: 'தளக் கோரிக்கைகள்', path: '/indents', requires: 'inventory.indent.read', group: 'Floor' },
   { id: 'counts', label: 'Stock counts', labelTa: 'சரக்கு எண்ணிக்கை', path: '/counts', requires: 'count.view', group: 'Inventory' },
+  // Round 12 (WF-08 · D05-FR-05 · M09-FR-04): plan, freeze, count, recount, cause, approve or cancel a stock count — a thin
+  // client over head office's count-plan routes, gated on the planning permission the plan routes check. Head-office page.
+  { id: 'count-plans', label: 'Count plans', labelTa: 'எண்ணிக்கைத் திட்டங்கள்', path: '/count-plans', requires: 'inventory.count.plan', group: 'Inventory', served: 'unserved' },
+  // Round 12 (WF-07 · M09-FR-03): send and count in transfers, settle a shortfall — gated on the read the register checks.
+  { id: 'transfers', label: 'Transfers', labelTa: 'இடமாற்றங்கள்', path: '/transfers', requires: 'inventory.availability.read', group: 'Inventory', served: 'unserved' },
   { id: 'waste', label: 'Waste & write-off', labelTa: 'வீணானவை மற்றும் தள்ளுபடி', path: '/waste', requires: 'waste.view', group: 'Inventory' },
   // Record a write-off from the shop floor — the WRITE sibling of the read-only /waste review. Gated on the
   // SAME authority the governed write-off route checks (`inventory.movement.append`), so the menu never offers

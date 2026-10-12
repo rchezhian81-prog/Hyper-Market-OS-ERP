@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1134,
+  "testFiles": 1138,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -18,11 +18,11 @@
     "PARTIALLY_WIRED": 41
   },
   "totals": {
-    "unit": 86,
+    "unit": 87,
     "integration": 101,
     "realDb": 97,
-    "browser": 76,
-    "connected": 30,
+    "browser": 77,
+    "connected": 35,
     "device": 0,
     "uat": 0
   },
@@ -531,8 +531,8 @@
         "unit": 14,
         "integration": 39,
         "realDb": 13,
-        "browser": 3,
-        "connected": 0,
+        "browser": 4,
+        "connected": 1,
         "device": 0,
         "uat": 0
       },
@@ -612,24 +612,27 @@
         "browser": [
           "tests/e2e/indents-delivery.e2e.ts",
           "tests/e2e/screens-open-offline.e2e.ts",
-          "tests/e2e/stock-health-delivery.e2e.ts"
+          "tests/e2e/stock-health-delivery.e2e.ts",
+          "tests/e2e/transfers-on-the-production-api.e2e.ts"
         ],
-        "connected": [],
+        "connected": [
+          "tests/e2e/transfers-on-the-production-api.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },
       "holds": true,
-      "why": "browser boundary and cloud effect proven in separate runs (no connected browser test yet)"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "M09",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 12,
+        "unit": 13,
         "integration": 28,
         "realDb": 9,
-        "browser": 6,
-        "connected": 0,
+        "browser": 8,
+        "connected": 2,
         "device": 0,
         "uat": 0
       },
@@ -643,6 +646,7 @@
           "tests/unit/floor-indents-engine.test.ts",
           "tests/unit/inventory-postings.test.ts",
           "tests/unit/replenishment.test.ts",
+          "tests/unit/transfers-session.test.ts",
           "tests/unit/warehouse-handheld-count-and-adjust.test.ts",
           "tests/unit/warehouse-handheld-issues-to-floor.test.ts",
           "tests/unit/warehouse-movements.test.ts",
@@ -690,19 +694,24 @@
           "tests/integration/the-store-buys-what-it-sells.test.ts"
         ],
         "browser": [
+          "tests/e2e/count-plans-on-the-production-api.e2e.ts",
           "tests/e2e/indents-delivery.e2e.ts",
           "tests/e2e/screens-open-offline.e2e.ts",
+          "tests/e2e/transfers-on-the-production-api.e2e.ts",
           "tests/e2e/warehouse-handheld-delivery.e2e.ts",
           "tests/e2e/warehouse-handheld-issues-to-floor.e2e.ts",
           "tests/e2e/warehouse-handheld-syncs-through-the-box.e2e.ts",
           "tests/e2e/warehouse-supervisor-delivery.e2e.ts"
         ],
-        "connected": [],
+        "connected": [
+          "tests/e2e/count-plans-on-the-production-api.e2e.ts",
+          "tests/e2e/transfers-on-the-production-api.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },
       "holds": true,
-      "why": "browser boundary and cloud effect proven in separate runs (no connected browser test yet)"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "M10",
@@ -2592,16 +2601,17 @@
       "id": "D05",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 1,
+        "unit": 2,
         "integration": 14,
         "realDb": 7,
-        "browser": 1,
-        "connected": 0,
+        "browser": 2,
+        "connected": 1,
         "device": 0,
         "uat": 0
       },
       "files": {
         "unit": [
+          "tests/unit/count-plans-session.test.ts",
           "tests/unit/goods-in.test.ts"
         ],
         "integration": [
@@ -2630,9 +2640,12 @@
           "tests/integration/the-app-keeps-an-online-buffer-for-shoppers-in-the-store.test.ts"
         ],
         "browser": [
+          "tests/e2e/count-plans-on-the-production-api.e2e.ts",
           "tests/e2e/expiry-recall-delivery.e2e.ts"
         ],
-        "connected": [],
+        "connected": [
+          "tests/e2e/count-plans-on-the-production-api.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },
@@ -3760,18 +3773,20 @@
       "id": "WF-07",
       "label": "INTEGRATION_TESTED",
       "counts": {
-        "unit": 2,
+        "unit": 4,
         "integration": 7,
         "realDb": 4,
-        "browser": 2,
-        "connected": 0,
+        "browser": 3,
+        "connected": 1,
         "device": 0,
         "uat": 0
       },
       "files": {
         "unit": [
           "tests/unit/erp-indents-session.test.ts",
-          "tests/unit/floor-indents-engine.test.ts"
+          "tests/unit/erp-navigation-catalogue.test.ts",
+          "tests/unit/floor-indents-engine.test.ts",
+          "tests/unit/transfers-session.test.ts"
         ],
         "integration": [
           "tests/integration/a-transfer-sends-only-what-the-batch-holds.test.ts",
@@ -3790,9 +3805,12 @@
         ],
         "browser": [
           "tests/e2e/indents-delivery.e2e.ts",
+          "tests/e2e/transfers-on-the-production-api.e2e.ts",
           "tests/e2e/warehouse-supervisor-delivery.e2e.ts"
         ],
-        "connected": [],
+        "connected": [
+          "tests/e2e/transfers-on-the-production-api.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },
@@ -3803,16 +3821,19 @@
       "id": "WF-08",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 0,
+        "unit": 2,
         "integration": 11,
         "realDb": 6,
-        "browser": 0,
-        "connected": 0,
+        "browser": 1,
+        "connected": 1,
         "device": 0,
         "uat": 0
       },
       "files": {
-        "unit": [],
+        "unit": [
+          "tests/unit/count-plans-session.test.ts",
+          "tests/unit/erp-navigation-catalogue.test.ts"
+        ],
         "integration": [
           "tests/integration/a-damaged-arrival-under-an-open-count-is-received-good-and-written-off-at-the-close.test.ts",
           "tests/integration/a-planned-count-on-the-phone-reaches-head-office-through-the-box.test.ts",
@@ -3834,8 +3855,12 @@
           "tests/integration/confirmed-lost-stock-is-posted-once.test.ts",
           "tests/integration/the-period-books-reconcile-and-show-profit.test.ts"
         ],
-        "browser": [],
-        "connected": [],
+        "browser": [
+          "tests/e2e/count-plans-on-the-production-api.e2e.ts"
+        ],
+        "connected": [
+          "tests/e2e/count-plans-on-the-production-api.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },

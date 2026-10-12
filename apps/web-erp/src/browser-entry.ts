@@ -231,6 +231,9 @@ import {
   type ApprovalsPorts, type ApprovalsSession, type ApprovalInboxView, type ApprovalRequestView, type ApprovalStatus,
   type ApprovalAsk, type AskResult, type InboxRead, type DecideResult, type DecisionWord, type Refused,
 } from './approvals-session';
+import { createCountPlansSession, type CountPlansSession } from './count-plans-session';
+import { createTransfersSession, type TransfersSession } from './transfers-session';
+import { headOfficeHttp } from './head-office-http';
 import {
   createWorkforceInboxSession,
   type WorkforceInboxPorts, type WorkforceInboxSession, type WorkforceWorklistData,
@@ -4652,6 +4655,11 @@ interface ManagerWindow {
   supplierBillsSession?: SupplierBillsSession;
   /** Round 12 (WF-03 · D02-FR-01): the open-to-buy panel on the Buying page, over head office's budget routes. */
   buyingOpenToBuy?: OpenToBuySession;
+  /** Round 12 (WF-08 · WF-07): the Count plans and Transfers pages — who is looking; every act is head office's. */
+  countPlansData?: ViewerIdentity;
+  countPlansSession?: CountPlansSession;
+  transfersData?: ViewerIdentity;
+  transfersSession?: TransfersSession;
   substitutionExceptionInboxData?: SubstitutionExceptionInboxData;
   substitutionExceptionInboxSession?: SubExceptionInboxSession;
   /** The shell reads the live exceptions worklist through this and re-presents it — a GET read, never a write. */
@@ -6315,4 +6323,8 @@ if (browserWindow !== undefined) {
   if (typeof browserWindow.buyingData?.buyerId === 'string' && browserWindow.buyingData.buyerId.trim() !== '' && Array.isArray(buyerPermissions) && fetchForHeadOffice !== undefined) {
     browserWindow.buyingOpenToBuy = createOpenToBuySession(browserHeadOfficeCall(fetchForHeadOffice.bind(globalThis)), { permissions: buyerPermissions.filter((p): p is string => typeof p === 'string') });
   }
+  // Round 12 (WF-08 · WF-07): the Count plans and Transfers pages call head office in the signed-in person's own session.
+  // No payload → "nobody named": the page then reads nothing and offers nothing (creating a session does no I/O).
+  browserWindow.countPlansSession = createCountPlansSession(viewerIdentity(browserWindow.countPlansData), headOfficeHttp());
+  browserWindow.transfersSession = createTransfersSession(viewerIdentity(browserWindow.transfersData), headOfficeHttp());
 }
