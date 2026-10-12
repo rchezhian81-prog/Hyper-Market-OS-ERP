@@ -10,7 +10,7 @@ import { readFile } from 'node:fs/promises';
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
 import { join } from 'node:path';
 import type { BrowserContext } from 'playwright-core';
-import { startRealCloud, type RealCloud } from '../../support/real-store';
+import { startRealCloud, setUpPracticeStores, type RealCloud } from '../../support/real-store';
 import { TEST_IDP } from '../../support/api-harness';
 
 export const OWNER = 'u-owner';
@@ -23,6 +23,8 @@ export interface InboxShop {
   cloud(): RealCloud;
   /** The shell's origin. */
   readonly base: string;
+  /** Grant the br-1 manager now (for a journey started with `deferManagerGrant`, once it has set br-1 up itself). */
+  grantManager(): Promise<void>;
   /** Stop the API and start it again over the same database and shop — a restart. */
   restart(): Promise<void>;
   /** A browser context signed in as `who` (at `branch`). */
@@ -50,11 +52,20 @@ export async function startInboxShop(input: {
     readonly webDir?: string;
   };
   readonly seed: (cloud: RealCloud) => Promise<void>;
+  /** The journey builds the organisation itself (it starts from an empty tree): set no practice store up and grant the
+   *  br-1 manager only when it calls `grantManager()`. */
+  readonly deferManagerGrant?: boolean;
 }): Promise<InboxShop> {
   let cloud = await startRealCloud({ databaseUrl: input.databaseUrl, tenantId: input.tenantId, owner: OWNER, packSigningKey: input.signingKey });
   const gid = `grant-${MGR}`;
-  await ok(cloud.request({ method: 'POST', path: '/v1/identity/grants', userId: 'u-hr', idempotencyKey: `${gid}-ask`, body: { grantId: gid, userId: MGR, roleId: 'store_manager', branchScope: ['br-1'], reason: 'br-1 only' } }), 'ask grant');
-  await ok(cloud.request({ method: 'POST', path: `/v1/identity/grants/${gid}/approve`, userId: OWNER, idempotencyKey: `${gid}-approve`, body: {} }), 'approve grant');
+  const grantManager = async (): Promise<void> => {
+    await ok(cloud.request({ method: 'POST', path: '/v1/identity/grants', userId: 'u-hr', idempotencyKey: `${gid}-ask`, body: { grantId: gid, userId: MGR, roleId: 'store_manager', branchScope: ['br-1'], reason: 'br-1 only' } }), 'ask grant');
+    await ok(cloud.request({ method: 'POST', path: `/v1/identity/grants/${gid}/approve`, userId: OWNER, idempotencyKey: `${gid}-approve`, body: {} }), 'approve grant');
+  };
+  if (input.deferManagerGrant !== true) {
+    await setUpPracticeStores(cloud, OWNER, ['br-1']);
+    await grantManager();
+  }
   await input.seed(cloud);
   await ok(cloud.request({ method: 'PUT', path: '/v1/ai/kill-switch', userId: OWNER, idempotencyKey: 'unkill', body: { on: false } }), 'unkill');
   await ok(cloud.request({ method: 'PUT', path: '/v1/ai/agents/enabled', userId: OWNER, idempotencyKey: 'enable', body: { agents: ['A06', 'A08', 'A10'] } }), 'enable');
@@ -116,6 +127,7 @@ export async function startInboxShop(input: {
   return {
     cloud: () => cloud,
     base,
+    grantManager,
     restart: async () => {
       await cloud.stop();
       cloud = await startRealCloud({ databaseUrl: input.databaseUrl, tenantId: input.tenantId, owner: OWNER, packSigningKey: input.signingKey });

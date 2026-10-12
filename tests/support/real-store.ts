@@ -84,6 +84,19 @@ export interface RealCloudInput {
 /** The second initial admin: the person who may ASK for roles; the owner approves (Wave 2b · PA-03). */
 const REQUESTER = 'u-hr';
 
+/**
+ * Round 18 (verifier r17 C-2 c): head office grants a role only at stores it KNOWS. A browser journey that grants a
+ * branch-scoped role first sets its practice stores up, as the owner does before enrolling a store's people — once
+ * each, under a practice company. Idempotent.
+ */
+export async function setUpPracticeStores(cloud: RealCloud, owner: string, stores: readonly string[]): Promise<void> {
+  await cloud.request({ method: 'POST', path: '/v1/org/nodes/C-PRACTICE', userId: owner, idempotencyKey: 'org-C-PRACTICE', body: { kind: 'company', name: 'Practice company' } });
+  for (const s of stores) {
+    const r = await cloud.request({ method: 'POST', path: `/v1/org/nodes/${s}`, userId: owner, idempotencyKey: `org-practice-${s}`, body: { kind: 'branch', name: `Store ${s}`, parentId: 'C-PRACTICE', companyId: 'C-PRACTICE' } });
+    if (r.status >= 300 && r.status !== 409) throw new Error(`setting up practice store ${s} failed: ${r.status} ${JSON.stringify(r.body)}`);
+  }
+}
+
 export async function startRealCloud(input: RealCloudInput): Promise<RealCloud> {
   const platform = new Pool({ connectionString: input.databaseUrl, max: 2, options: '-c app.tenant_id=*' });
   try {

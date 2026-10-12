@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { chromium, type Browser, type Page } from 'playwright-core';
-import { startRealCloud, type RealCloud } from '../support/real-store';
+import { startRealCloud, setUpPracticeStores, type RealCloud } from '../support/real-store';
 import { startPageShell, type PageShell } from './lib/page-shell';
 import { defaultExportPeriod } from '../../apps/web-erp/src/data-io-session';
 
@@ -40,6 +40,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('attendance
   beforeAll(async () => {
     execFileSync('node', ['scripts/build-app.mjs', 'web-erp'], { stdio: 'ignore' });
     cloud = await startRealCloud({ databaseUrl: DATABASE_URL!, tenantId: randomUUID(), owner: OWNER, packSigningKey: KEY });
+    await setUpPracticeStores(cloud, OWNER, ['S2']);
     // A manager of ONE store (S2): asked for by u-hr, approved by the owner — two acts.
     const gid = `grant-${MGR_S2}`;
     await ok(cloud.request({ method: 'POST', path: '/v1/identity/grants', userId: 'u-hr', idempotencyKey: `${gid}-ask`, body: { grantId: gid, userId: MGR_S2, roleId: 'store_manager', branchScope: ['S2'], reason: 'S2 only' } }), 'ask');

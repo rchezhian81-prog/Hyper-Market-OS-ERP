@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
 import { join } from 'node:path';
 import { chromium, type Browser, type Page } from 'playwright-core';
-import { startRealCloud, type RealCloud } from '../support/real-store';
+import { startRealCloud, setUpPracticeStores, type RealCloud } from '../support/real-store';
 import { TEST_IDP } from '../support/api-harness';
 
 /**
@@ -100,6 +100,7 @@ describe.skipIf(!HAVE_BROWSER || DATABASE_URL === undefined)('company-wide repor
 
   beforeAll(async () => {
     cloud = await startRealCloud({ databaseUrl: DATABASE_URL!, tenantId: randomUUID(), owner: OWNER, packSigningKey: KEY });
+    await setUpPracticeStores(cloud, OWNER, ['br-1', 'br-2', 'br-3']);
     // A manager of ONE branch (br-1): asked for by u-hr, approved by the owner — two acts.
     const gid = `grant-${MGR1}`;
     expect((await cloud.request({ method: 'POST', path: '/v1/identity/grants', userId: 'u-hr', idempotencyKey: `${gid}-ask`, body: { grantId: gid, userId: MGR1, roleId: 'store_manager', branchScope: ['br-1'], reason: 'br-1 only' } })).status).toBe(202);
