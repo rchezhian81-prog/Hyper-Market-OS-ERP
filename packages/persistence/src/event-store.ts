@@ -215,7 +215,7 @@ export class InMemoryEventStore implements EventStore {
     return Promise.resolve({ seq: records.length === 0 ? 0 : records[records.length - 1]!.seq, token: '' });
   }
 
-  fenceSettled(_tenantId: string, _token: string): Promise<boolean> {
+  fenceSettled(): Promise<boolean> {
     return Promise.resolve(true);
   }
 
