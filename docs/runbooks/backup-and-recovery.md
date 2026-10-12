@@ -153,6 +153,32 @@ them off with the reason. (A store computer that reports a bill count far beyond
 holds — more than 10,000 numbers ahead — is not believed: the till keeps selling and the health page
 names the report for a person to check.)
 
+**Three other bill-number lines, and what to do with each (verifier r21):**
+
+- **"needs a person (the store computer gave up sending; do NOT re-enter from paper)"** — the store
+  computer tried to send those bills, gave up after its retries, and still HOLDS them (its "gave up
+  sending" list, also shown on `box_queue:<store>`). They are not lost. **Do not enter the paper
+  bills**: call support, who find out why head office did not take them and release them from the
+  store computer, which then sends them. Entering them from paper as well books the sale twice.
+  Head office never calls these bills "never received".
+- **"bills waiting on the store computer for N hours"** — the store computer says it still has
+  those bills to send, and they have waited longer than the owner's line (store setup, "Warn when
+  bills have waited on a store computer, unsent, for more than (hours)", 2 hours by default). Check
+  the store computer's connection and its "waiting to send" count. If the count is not going down,
+  call support. Do not re-enter the bills from paper until support has checked the store computer.
+- **"the store computer's report contradicts itself"** — its list of bills still to send adds up to
+  more than its whole queue holds. Head office does not believe that list (a faulty or altered
+  store computer could otherwise hide lost bills for ever): bills it has not received are named
+  "never received" after 30 minutes as usual. Call support to check that store computer.
+
+**A refused report stays on the health page until one of two things happens** (the rule): head
+office has itself banked bills up to the refused count (the store computer was right after all), or
+a person with the alert-management right acknowledges that exact refusal with a reason
+(`POST /v1/store-computers/bill-number-refusals/acknowledgements` with the store, prefix, the refused
+count and the reason; who and when are kept). A later, lower report from the same store computer
+never clears it — an honest store computer's count never goes down. A higher refusal after an
+acknowledgement is a new warning.
+
 ## Part 4 — Restoring (the one that matters)
 
 **1. Do not restore over live data.** Make an empty database first:

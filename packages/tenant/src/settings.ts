@@ -189,6 +189,16 @@ export const SETTINGS = {
     label: 'Warn when a store computer would run out of disk within (hours of trading)',
     defaultValue: 48,
   } as TenantSetting<number>,
+  /**
+   * Verifier r21 UNSENT-CEILING (P-08): warn when bills have waited on a store computer, unsent, for longer than this many
+   * hours. A store computer that keeps saying "still sending" can otherwise hide bills head office never received for ever.
+   * Default 2; the owner adjusts it in store setup (versioned, with who changed it and when).
+   */
+  BOX_UNSENT_WARN_HOURS: {
+    key: 'platform.box_unsent_warn_hours',
+    label: 'Warn when bills have waited on a store computer, unsent, for more than (hours)',
+    defaultValue: 2,
+  } as TenantSetting<number>,
   RECEIPT_PAPER_FORMAT: {
     key: 'receipt.paper_format',
     label: 'Receipt paper size',

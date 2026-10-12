@@ -192,6 +192,7 @@ const TABLE: Readonly<Record<string, Row>> = {
   'loyalty.point_value_paise': { enter: '25', stored: 25, bad: { enter: '10001', value: 10001 } },
   'loyalty.till_spend_cap_paise': { enter: '75000', stored: 75_000, bad: { enter: '10000001', value: 10_000_001 } },
   'platform.box_disk_warn_hours': { enter: '36', stored: 36, bad: { enter: '0', value: 0 } },
+  'platform.box_unsent_warn_hours': { enter: '4', stored: 4, bad: { enter: '73', value: 73 } },
 };
 
 /** The control a setting must be edited with: derived from its default's type for numbers, on/off and lists. */

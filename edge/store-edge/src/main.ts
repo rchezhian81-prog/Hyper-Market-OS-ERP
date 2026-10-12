@@ -38,7 +38,7 @@ import { httpTransport } from '../../../edge/sync-agent/src/http-transport';
 import { httpPackSource } from '../../../edge/sync-agent/src/pack-source';
 import { pullPack, type PackPullOutcome, type PackPullStatus } from '../../../edge/sync-agent/src/pack-puller';
 import { httpSyncWatermarkReporter, type SyncWatermarkReport } from '../../../edge/sync-agent/src/sync-watermark-report';
-import { httpBoxHealthReporter, billNumberingReport, unsentBillNumbersOf, withUnsent, type BoxHealthReport } from '../../../edge/sync-agent/src/box-health-report';
+import { httpBoxHealthReporter, billNumberingReport, queuedBillNumbersOf, withUnsent, type BoxHealthReport } from '../../../edge/sync-agent/src/box-health-report';
 import { statfs } from 'node:fs/promises';
 import { SALE_RESERVE_BYTES } from './durability';
 import { httpStorePackSource, httpHeldVersionsReporter, pullStorePack, type StorePackPullOutcome, type StorePackPullStatus } from '../../../edge/sync-agent/src/store-pack-feed';
@@ -2323,7 +2323,11 @@ export async function startEdge(
       // keeps a replaced box above it.
       // Verifier r20 LOST-1: with each prefix, the bills under it still waiting in this box's sales and refund queues — head
       // office never calls a number "never received" while the box still holds it.
-      ...(receiptNumbers === null ? {} : { receiptNumbersIssued: withUnsent(receiptNumbers.issuedThrough(), unsentBillNumbersOf([...outbox.pending(), ...returnsOutbox.pending()].map((i) => i.event.payload))) }),
+      // Verifier r21: with when the oldest of them was made (head office warns past the owner's line), and the bills this box
+      // GAVE UP sending (its dead letters) — on the box, waiting for a person, never "lost".
+      ...(receiptNumbers === null ? {} : { receiptNumbersIssued: withUnsent(receiptNumbers.issuedThrough(),
+        queuedBillNumbersOf([...outbox.pending(), ...returnsOutbox.pending()].map((i) => ({ payload: i.event.payload, occurredAt: i.event.occurredAt }))),
+        queuedBillNumbersOf([...outbox.deadLetters(), ...returnsOutbox.deadLetters()].map((i) => ({ payload: i.event.payload, occurredAt: i.event.occurredAt })))) }),
       // Verifier r19 OB87-1: the box's own check of its bill-number witness (and a held restore) — head office shows it on
       // the store computer's health (`box_bill_numbers:<store>`), so a box with no witness is never a silent ZZ every boot.
       ...(receiptNumbers === null ? {} : { billNumbering: billNumberingReport(await receiptNumbers.witnessHealth()) }),

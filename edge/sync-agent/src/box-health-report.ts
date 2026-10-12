@@ -41,36 +41,63 @@ export interface BoxHealthReport {
      * while the box still holds it. `count: 0` says the box holds none.
      */
     readonly unsent?: UnsentBillNumbers;
+    /**
+     * Verifier r21 DEAD-LETTER-AS-LOST: the bills under this prefix this box GAVE UP sending (its dead letters) — still on
+     * the box, waiting for a person. Head office names them "needs a person", never "never received".
+     */
+    readonly deadLettered?: UnsentBillNumbers;
   }[];
   /** Verifier r19 OB87-1/OB87-2: the box's own check of its bill-number witness, and any held restore. */
   readonly billNumbering?: BillNumberingReport;
 }
 
-/** Verifier r20 LOST-1: bills under one prefix the box still holds unsent — how many, and the lowest and highest count. */
-export interface UnsentBillNumbers { readonly count: number; readonly from?: number; readonly to?: number }
+/**
+ * Verifier r20 LOST-1: bills under one prefix the box still holds unsent — how many, and the lowest and highest count.
+ * Verifier r21 UNSENT-CEILING: and when the OLDEST of them was made (its sale's own time), so head office can say how long
+ * bills have waited on this box.
+ */
+export interface UnsentBillNumbers { readonly count: number; readonly from?: number; readonly to?: number; readonly oldestAt?: string }
 
 /**
  * Verifier r20 LOST-1: per bill-number prefix, the bills still waiting in the box's queues — from the queued events' own
  * receipt number (a sale's `receiptNumber`, a refund's `number`). A queued event with no readable number is not counted.
  */
 export function unsentBillNumbersOf(payloads: Iterable<unknown>): Map<string, UnsentBillNumbers> {
-  const out = new Map<string, { count: number; from: number; to: number }>();
-  for (const p of payloads) {
+  return queuedBillNumbersOf([...payloads].map((payload) => ({ payload })));
+}
+
+/**
+ * Verifier r21: per bill-number prefix, the bills in one of the box's queues (pending, or given up on) — from each queued
+ * event's own receipt number, with the earliest `occurredAt` among them as `oldestAt` (when given).
+ */
+export function queuedBillNumbersOf(events: Iterable<{ readonly payload: unknown; readonly occurredAt?: string }>): Map<string, UnsentBillNumbers> {
+  const out = new Map<string, { count: number; from: number; to: number; oldestAt?: string }>();
+  for (const { payload: p, occurredAt } of events) {
     const x = p !== null && typeof p === 'object' ? p as { receiptNumber?: unknown; number?: unknown } : {};
     const n = typeof x.receiptNumber === 'string' ? x.receiptNumber : x.number;
     const split = splitReceiptNumber(n);
     if (split === undefined || split.counter < 1) continue;
     const { prefix, counter: count } = split;
     const cur = out.get(prefix);
-    if (cur === undefined) out.set(prefix, { count: 1, from: count, to: count });
-    else { cur.count += 1; cur.from = Math.min(cur.from, count); cur.to = Math.max(cur.to, count); }
+    const at = typeof occurredAt === 'string' && !Number.isNaN(Date.parse(occurredAt)) ? new Date(occurredAt).toISOString() : undefined;
+    if (cur === undefined) out.set(prefix, { count: 1, from: count, to: count, ...(at === undefined ? {} : { oldestAt: at }) });
+    else {
+      cur.count += 1; cur.from = Math.min(cur.from, count); cur.to = Math.max(cur.to, count);
+      if (at !== undefined && (cur.oldestAt === undefined || Date.parse(at) < Date.parse(cur.oldestAt))) cur.oldestAt = at;
+    }
   }
   return out;
 }
 
 /** Verifier r20 LOST-1: each reported prefix with the bills under it still unsent (`count: 0` when the box holds none). */
-export function withUnsent<T extends { readonly prefix: string }>(issued: readonly T[], unsent: ReadonlyMap<string, UnsentBillNumbers>): (T & { readonly unsent: UnsentBillNumbers })[] {
-  return issued.map((x) => ({ ...x, unsent: unsent.get(x.prefix) ?? { count: 0 } }));
+export function withUnsent<T extends { readonly prefix: string }>(
+  issued: readonly T[], unsent: ReadonlyMap<string, UnsentBillNumbers>, deadLettered?: ReadonlyMap<string, UnsentBillNumbers>,
+): (T & { readonly unsent: UnsentBillNumbers; readonly deadLettered?: UnsentBillNumbers })[] {
+  return issued.map((x) => ({
+    ...x, unsent: unsent.get(x.prefix) ?? { count: 0 },
+    // Verifier r21: the bills this box gave up sending, per prefix (`count: 0` when none) — when the caller lists them.
+    ...(deadLettered === undefined ? {} : { deadLettered: deadLettered.get(x.prefix) ?? { count: 0 } }),
+  }));
 }
 
 /** Verifier r19 OB87-1/OB87-2: what the box says about its bill-number witness (no person's data; a short box id only). */
