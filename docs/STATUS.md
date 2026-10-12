@@ -5,6 +5,12 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Coordinated programme · Round 21 — verifier r20 closed (13 October 2026)
+
+- **Built and integration-tested (memory + PostgreSQL); no staff UAT:** "bills issued but never received" only for numbers neither banked nor still waiting on the store computer (per-prefix unsent queue, grace from "no longer held"); settings guarded per item (40 different items at once all land; same item two ways still a visible 409; exhausted retries say "busy, try again"); never-received check reads by range (8 lanes ~50 ms, was ~2–3 s); a stalled bill-number fence shown on health after 5 min and API sessions bounded by `idle_in_transaction_session_timeout` = 60 s; refused-report warnings clear once later reports are plausible and all is banked; loyalty earned/spent only on the banked bill (`loyalty_on_a_bill_not_banked` exception otherwise); stranded-stock scope proved; runbooks note the one-time ZZ bills after the witness release and after rollback.
+- **Full gate (13 Oct, PostgreSQL):** 11,460 unit/integration, 35 performance, 353 browser — all passed.
+- **Also merged (#765):** release-script test waits for its lock holder (it had blocked the round-20 demo deploy); round 20 is now on the demo.
+
 ## Coordinated programme · Round 20 — verifier r19 closed (12 October 2026)
 
 - **Built and integration-tested (memory + PostgreSQL); no staff UAT:** the containerised store computer has its own bill-number witness volume (`EDGE_WITNESS_DIR`), with a loud start-up self-check shown on the box and at head office; an impossible box-reported bill count is refused and raised as a warning (window 10,000), never locking a till; two different changes to one setting at once — the second gets a visible "changed at the same moment" (16 families); after a restore, bills issued but never received are named at head office after a 30-minute grace; a late-committing bill can no longer be missed by the incremental high-water (transaction-safe fence); the idempotency-conflict register is branch-scoped and separates harmless re-sends; stranded stock (unregistered or closed places) is listed with the way out.
