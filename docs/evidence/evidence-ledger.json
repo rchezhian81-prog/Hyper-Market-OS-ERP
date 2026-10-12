@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1123,
+  "testFiles": 1126,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -119,7 +119,7 @@
       "counts": {
         "unit": 24,
         "integration": 21,
-        "realDb": 8,
+        "realDb": 9,
         "browser": 7,
         "connected": 2,
         "device": 0,
@@ -177,6 +177,7 @@
         ],
         "realDb": [
           "tests/integration/access-lifecycle.test.ts",
+          "tests/integration/approval-delegation.test.ts",
           "tests/integration/authorization-is-enforced.test.ts",
           "tests/integration/branch-scope-every-family.test.ts",
           "tests/integration/branch-scope-is-the-servers.test.ts",
@@ -2068,8 +2069,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 8,
-        "integration": 13,
-        "realDb": 5,
+        "integration": 14,
+        "realDb": 6,
         "browser": 1,
         "connected": 0,
         "device": 0,
@@ -2095,6 +2096,7 @@
           "tests/integration/notifications-send-themselves.test.ts",
           "tests/integration/observed-health.test.ts",
           "tests/integration/outbound-webhooks-are-signed-retried-and-reconciled.test.ts",
+          "tests/integration/outbound-webhooks-go-over-pinned-https.test.ts",
           "tests/integration/outbound-webhooks-refuse-private-destinations.test.ts",
           "tests/integration/the-screens-are-fed.test.ts",
           "tests/integration/the-seams-hold.test.ts",
@@ -2104,6 +2106,7 @@
         "realDb": [
           "tests/integration/notifications-send-themselves.test.ts",
           "tests/integration/outbound-webhooks-are-signed-retried-and-reconciled.test.ts",
+          "tests/integration/outbound-webhooks-go-over-pinned-https.test.ts",
           "tests/integration/outbound-webhooks-refuse-private-destinations.test.ts",
           "tests/integration/the-seams-hold.test.ts",
           "tests/integration/the-sender-rechecks-template-and-recipient.test.ts"
@@ -2251,8 +2254,8 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 4,
-        "integration": 13,
-        "realDb": 6,
+        "integration": 14,
+        "realDb": 7,
         "browser": 0,
         "connected": 0,
         "device": 0,
@@ -2266,6 +2269,7 @@
           "tests/unit/ops-health.test.ts"
         ],
         "integration": [
+          "tests/integration/a-person-is-never-the-backup-job.test.ts",
           "tests/integration/ai-operations-agent.test.ts",
           "tests/integration/ai-operations-worklist.test.ts",
           "tests/integration/alert-lifecycle.test.ts",
@@ -2281,6 +2285,7 @@
           "tests/integration/the-backup-job-reports-its-own-outcome.test.ts"
         ],
         "realDb": [
+          "tests/integration/a-person-is-never-the-backup-job.test.ts",
           "tests/integration/alerts-reach-their-named-owner.test.ts",
           "tests/integration/an-incident-is-recorded-and-closed-by-a-named-person.test.ts",
           "tests/integration/backup-is-one-moment.test.ts",
@@ -2968,8 +2973,8 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 4,
-        "integration": 8,
-        "realDb": 3,
+        "integration": 9,
+        "realDb": 4,
         "browser": 0,
         "connected": 0,
         "device": 0,
@@ -2987,6 +2992,7 @@
           "tests/integration/delivery-reports-are-the-providers.test.ts",
           "tests/integration/integration-gateway.test.ts",
           "tests/integration/outbound-webhooks-are-signed-retried-and-reconciled.test.ts",
+          "tests/integration/outbound-webhooks-go-over-pinned-https.test.ts",
           "tests/integration/outbound-webhooks-refuse-private-destinations.test.ts",
           "tests/integration/partner-sandbox.test.ts",
           "tests/integration/price-integrity.test.ts",
@@ -2995,6 +3001,7 @@
         "realDb": [
           "tests/integration/delivery-reports-are-the-providers.test.ts",
           "tests/integration/outbound-webhooks-are-signed-retried-and-reconciled.test.ts",
+          "tests/integration/outbound-webhooks-go-over-pinned-https.test.ts",
           "tests/integration/outbound-webhooks-refuse-private-destinations.test.ts"
         ],
         "browser": [],
