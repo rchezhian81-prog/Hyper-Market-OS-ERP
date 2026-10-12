@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1165,
+  "testFiles": 1167,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -2312,8 +2312,8 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 8,
-        "integration": 17,
-        "realDb": 11,
+        "integration": 18,
+        "realDb": 12,
         "browser": 1,
         "connected": 1,
         "device": 0,
@@ -2331,6 +2331,7 @@
           "tests/unit/the-till-re-sends-its-devices.test.ts"
         ],
         "integration": [
+          "tests/integration/a-hung-device-adapter-reads-stale-and-the-box-starts-from-its-index.test.ts",
           "tests/integration/a-person-is-never-the-backup-job.test.ts",
           "tests/integration/a-quiet-healthy-till-stays-fresh-at-head-office.test.ts",
           "tests/integration/a-store-computer-warns-before-its-disk-fills.test.ts",
@@ -2350,6 +2351,7 @@
           "tests/integration/the-box-health-reaches-head-office.test.ts"
         ],
         "realDb": [
+          "tests/integration/a-hung-device-adapter-reads-stale-and-the-box-starts-from-its-index.test.ts",
           "tests/integration/a-person-is-never-the-backup-job.test.ts",
           "tests/integration/a-quiet-healthy-till-stays-fresh-at-head-office.test.ts",
           "tests/integration/a-store-computer-warns-before-its-disk-fills.test.ts",
@@ -2594,8 +2596,8 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 6,
-        "integration": 14,
-        "realDb": 8,
+        "integration": 15,
+        "realDb": 9,
         "browser": 5,
         "connected": 1,
         "device": 0,
@@ -2614,6 +2616,7 @@
           "tests/integration/a-card-no-answer-reaches-finance-the-moment-it-happens.test.ts",
           "tests/integration/a-card-payment-is-recorded-before-the-machine-is-asked.test.ts",
           "tests/integration/a-day-closes-with-a-pending-payment-carried-to-head-office.test.ts",
+          "tests/integration/a-hung-device-adapter-reads-stale-and-the-box-starts-from-its-index.test.ts",
           "tests/integration/a-pending-card-answer-holds-the-day-close.test.ts",
           "tests/integration/a-quiet-healthy-till-stays-fresh-at-head-office.test.ts",
           "tests/integration/no-sale-and-price-override-are-kept-and-judged.test.ts",
@@ -2629,6 +2632,7 @@
         "realDb": [
           "tests/integration/a-card-no-answer-reaches-finance-the-moment-it-happens.test.ts",
           "tests/integration/a-day-closes-with-a-pending-payment-carried-to-head-office.test.ts",
+          "tests/integration/a-hung-device-adapter-reads-stale-and-the-box-starts-from-its-index.test.ts",
           "tests/integration/a-quiet-healthy-till-stays-fresh-at-head-office.test.ts",
           "tests/integration/no-sale-and-price-override-are-kept-and-judged.test.ts",
           "tests/integration/sale-to-shift-close-journey.test.ts",
