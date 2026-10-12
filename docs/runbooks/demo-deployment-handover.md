@@ -288,6 +288,13 @@ curl -sk -o /dev/null -w '%{http_code}\n' "$H/login/"                           
 
 Open `$H/customer/` in a browser: the **DEMO / PILOT — NOT PRODUCTION** banner must be visible.
 
+**One `ZZ…` bill after the witness release (verifier r20, expected once).** The first deploy that brings the store
+computer's bill-number witness volume (`edge-witness`) meets the demo box's existing `edge-data` with a brand-new, empty
+witness, so the first start numbers under a brand-new `ZZ…` prefix until head office answers (seconds online), then goes
+back to the till's own prefix. The same happens once after a rollback to a release before the witness and a roll-forward
+again. Harmless — no bill number is ever repeated. Check: ring one test bill after the deploy; it may start `ZZ` the very
+first time, the next must carry the till's own prefix.
+
 After the DF-1 release (3 Oct 2026, OB-12): sign in at `$H/login/` and you land on the **demo home**, which lists the pages that work on
 this demo and names the store-computer-fed shells as such. Do not judge the demo by `/erp/` — the Store manager shell shows
 "Not known" until a store computer feeds it. Since PA-06 3b (10 Oct 2026) the demo store computer takes its setup from

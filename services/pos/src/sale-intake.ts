@@ -160,7 +160,10 @@ export type SaleExceptionKind =
   | 'sale_names_no_trading_day'
   /** Points or store credit spent at the till that the member's true balance could not cover when the sale arrived —
    *  another channel spent the same value first (PF-09 step 3 · M17-FR-04 · hard rule #10). Valued; a person settles it. */
-  | 'loyalty_value_spent_twice';
+  | 'loyalty_value_spent_twice'
+  /** Verifier r20 IC-3: a bill head office did NOT bank (a different bill already holds its sale id) carried a member, points
+   *  or store credit. Loyalty follows only the banked bill; this one's is raised for a person to settle when it is banked. */
+  | 'loyalty_on_a_bill_not_banked';
 
 /** How fast a person has to act, which is not the same as how large the number is. */
 export type ExceptionSeverity = 'critical' | 'material' | 'informational';

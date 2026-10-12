@@ -287,6 +287,11 @@ remember to tell it.
    the backup and never sent them, `box_bill_numbers:<store>` names them: **"bills issued but never
    received: …"** with the prefix and the numbers. Those sales are lost from head office's books —
    find the paper bills and enter them, or write them off with the reason.
+   **Since r20 this is said only when the till has said it no longer holds those bills to send:**
+   while the till still has bills waiting (its status badge shows a number waiting to send, and
+   head office's `box_queue:<store>` says so), head office raises nothing for them, however long the
+   catch-up takes after an outage. **Never re-enter paper bills while the till still shows bills
+   waiting to send** — wait until it says nothing is waiting, then look again.
 
 ### The witness check at every start (verifier r19)
 
@@ -304,6 +309,19 @@ The till checks its witness folder each time it starts and says what it found:
 - **In the container set-up** (`infra/compose`), the witness is its own volume, `edge-witness`,
   mounted at `/var/lib/sre-edge-witness` with `EDGE_WITNESS_DIR` set — never inside the
   `edge-data` volume. Back up `edge-data` only.
+
+### One `ZZ…` bill after the witness release (expected, once)
+
+The release that brings the witness volume (r19/r20) meets a store computer that already has
+bill-number history but a brand-new, empty witness. On that **first start** the till cannot tell an
+ordinary start from a restore, so it numbers under a brand-new `ZZ…` prefix — **only until head
+office answers** (a few seconds online), then goes back to its own prefix, above the last bill head
+office holds. The same happens **once after a rollback and roll-forward**: a release before the
+witness runs without it (a `ZZ…` prefix on each start, as before), and the next start on the
+witness release finds a witness written by another run of the box and treats it once as a possible
+restore. Both are harmless: no bill number is ever given twice. What to check: ring one test bill
+after the update — it may start `ZZ` the very first time; the next must carry the till's own
+prefix. Head office lists the `ZZ…` bill as "numbered without an issued prefix" — expected here.
 
 ---
 

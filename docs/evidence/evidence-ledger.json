@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1183,
+  "testFiles": 1186,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -1220,7 +1220,7 @@
       "counts": {
         "unit": 8,
         "integration": 15,
-        "realDb": 4,
+        "realDb": 5,
         "browser": 5,
         "connected": 0,
         "device": 0,
@@ -1256,6 +1256,7 @@
         ],
         "realDb": [
           "tests/integration/household-pooling.test.ts",
+          "tests/integration/loyalty-value-is-spent-once.test.ts",
           "tests/integration/sale-to-shift-close-journey.test.ts",
           "tests/integration/stored-value-liability.test.ts",
           "tests/integration/write-guards-on-postgresql.test.ts"
@@ -2766,7 +2767,7 @@
       "counts": {
         "unit": 1,
         "integration": 9,
-        "realDb": 4,
+        "realDb": 5,
         "browser": 1,
         "connected": 0,
         "device": 0,
@@ -2790,6 +2791,7 @@
         "realDb": [
           "tests/integration/a-campaign-goes-through-the-queue-within-the-cap.test.ts",
           "tests/integration/an-erasure-shreds-the-personal-text-in-the-ledger.test.ts",
+          "tests/integration/loyalty-value-is-spent-once.test.ts",
           "tests/integration/the-customer-privacy-centre-saves-on-the-shop.test.ts",
           "tests/integration/the-customer-record-is-built-from-what-they-bought.test.ts"
         ],

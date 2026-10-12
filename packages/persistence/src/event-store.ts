@@ -128,6 +128,11 @@ export interface EventStore {
   /** Find an event by its idempotency key within a tenant (dedupe lookup). */
   findByIdempotencyKey(tenantId: string, idempotencyKey: string): Promise<PersistedEvent | undefined>;
   /**
+   * Verifier r20 (cost): which of these idempotency keys the tenant holds — ONE indexed read (the ledger's unique
+   * (tenant, key) index) instead of one lookup per key. Optional: a store without it is asked key by key.
+   */
+  existingIdempotencyKeys?(tenantId: string, idempotencyKeys: readonly string[]): Promise<ReadonlySet<string>>;
+  /**
    * Events in a tenant's stream, in append order — the projection scan.
    *
    * `sinceSeq` and `type` narrow it **at the store**, not afterwards. That distinction is the
@@ -279,6 +284,10 @@ export class InMemoryEventStore implements EventStore {
 
   findByIdempotencyKey(tenantId: string, idempotencyKey: string): Promise<PersistedEvent | undefined> {
     return Promise.resolve(this.byKey.get(tenantKey(tenantId, idempotencyKey)));
+  }
+
+  existingIdempotencyKeys(tenantId: string, idempotencyKeys: readonly string[]): Promise<ReadonlySet<string>> {
+    return Promise.resolve(new Set(idempotencyKeys.filter((k) => this.byKey.has(tenantKey(tenantId, k)))));
   }
 
   readStream(tenantId: string, stream: string, opts?: ReadOptions): Promise<readonly PersistedEvent[]> {
@@ -517,6 +526,16 @@ export class SqlEventStore implements EventStore {
       [tenantId, idempotencyKey],
     );
     return rows.length > 0 ? rowToPersisted(rows[0]!) : undefined;
+  }
+
+  async existingIdempotencyKeys(tenantId: string, idempotencyKeys: readonly string[]): Promise<ReadonlySet<string>> {
+    if (idempotencyKeys.length === 0) return new Set();
+    // The unique (tenant_id, idempotency_key) index answers the whole list in one statement.
+    const rows = await scopedTo(this.client, tenantId).query<{ idempotency_key: string }>(
+      'SELECT idempotency_key FROM event_ledger WHERE tenant_id = $1 AND idempotency_key = ANY($2::text[])',
+      [tenantId, [...idempotencyKeys]],
+    );
+    return new Set(rows.map((r) => String(r.idempotency_key)));
   }
 
   async readStream(
