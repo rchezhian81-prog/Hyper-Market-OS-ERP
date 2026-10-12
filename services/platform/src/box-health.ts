@@ -235,7 +235,8 @@ export function judgeBoxes(input: {
 export interface BoxHealthDeps {
   readonly now: () => string;
   readonly storeComputerScopeOf?: StoreComputerScopeOf;
-  readonly record: (tenantId: string, r: BoxHealthRecord) => Promise<void>;
+  /** Records the report; answers the record head office KEEPS (the first, when this is a re-send of the same report). */
+  readonly record: (tenantId: string, r: BoxHealthRecord) => Promise<void | BoxHealthRecord>;
 }
 
 export function boxHealthRoutes(deps: BoxHealthDeps): readonly Route[] {
@@ -259,8 +260,9 @@ export function boxHealthRoutes(deps: BoxHealthDeps): readonly Route[] {
         });
       }
       const r: BoxHealthRecord = { storeId, observedAt: read.observedAt, receivedAt, reportedBy: ctx.userId, disk: read.disk, queue: read.queue, tills: read.tills, clockAheadCorrected: read.clockAheadCorrected };
-      await deps.record(ctx.tenantId, r);
-      return { status: 200, body: { recorded: r, canRecordSales: boxCanRecordSales(r.disk) } };
+      // The reply is what head office KEPT (a re-send answers the first record, never an unsaved copy).
+      const kept = (await deps.record(ctx.tenantId, r)) ?? r;
+      return { status: 200, body: { recorded: kept, canRecordSales: boxCanRecordSales(kept.disk) } };
     },
   }];
 }

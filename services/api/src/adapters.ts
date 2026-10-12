@@ -13074,16 +13074,22 @@ export function mergeStoreSync(
 const BOX_HEALTH_STREAM = streamName(STREAM.org, 'store-computer-health');
 export function boxHealthAdapter(input: { readonly store: EventStore }): {
   records: (tenantId: string) => Promise<readonly BoxHealthRecord[]>;
-  record: (tenantId: string, r: BoxHealthRecord) => Promise<void>;
+  record: (tenantId: string, r: BoxHealthRecord) => Promise<BoxHealthRecord>;
 } {
   return {
     records: (tenantId) => allOf<BoxHealthRecord>(input.store, tenantId, BOX_HEALTH_STREAM, 'StoreComputerHealthReported'),
     record: async (tenantId, r) => {
-      await input.store.append(tenantId, BOX_HEALTH_STREAM, makeEvent({
-        id: `box-health-${r.storeId}-${r.observedAt}`, type: 'StoreComputerHealthReported', occurredAt: r.receivedAt,
-        // One report per (store, moment the box made it): a retried POST collapses onto the first.
-        idempotencyKey: `box-health-${tenantId}-${r.storeId}-${r.observedAt}`, source: 'api/platform', payload: r,
+      // Round 13 (verifier B5 low · hard rule #10): keyed on WHAT the box said as well as when — a retried POST of the same
+      // report collapses onto the first, but a DIFFERENT report stamped with the same moment is its own record, never
+      // silently dropped. (When it arrived is not part of what the box said.)
+      const { receivedAt: _arrived, ...said } = r;
+      void _arrived;
+      const content = createHash('sha256').update(JSON.stringify(said)).digest('hex').slice(0, 16);
+      const res = await input.store.append(tenantId, BOX_HEALTH_STREAM, makeEvent({
+        id: `box-health-${r.storeId}-${r.observedAt}-${content}`, type: 'StoreComputerHealthReported', occurredAt: r.receivedAt,
+        idempotencyKey: `box-health-${tenantId}-${r.storeId}-${r.observedAt}-${content}`, source: 'api/platform', payload: r,
       }));
+      return res.record.event.payload as BoxHealthRecord;
     },
   };
 }

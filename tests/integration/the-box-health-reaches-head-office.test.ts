@@ -313,6 +313,18 @@ async function onlyItsOwnComputerReportsIt(h: ApiHarness, tenant: string): Promi
     expect(await count()).toBe(1);
     const ahead = await post('u-box1', 'S1', { ...good, observedAt: at(120) }, 'bh-ahead');
     expect((ahead.body as { recorded: { observedAt: string; clockAheadCorrected: boolean } }).recorded).toMatchObject({ observedAt: at(0), clockAheadCorrected: true });
+    // Round 13 (verifier B5 low · hard rule #10): a DIFFERENT report stamped with the same moment is its own record — never
+    // collapsed silently onto the first — and head office reads the later arrival; the reply is the record kept.
+    expect(await count()).toBe(2);
+    const differing = await post('u-box1', 'S1', { ...good, queue: { unsent: 7, deadLettered: 0 } }, 'bh-differing');
+    expect(differing.status).toBe(200);
+    expect((differing.body as { recorded: { queue: { unsent: number } } }).recorded.queue.unsent).toBe(7);
+    expect(await count()).toBe(3);
+    expect((await s.observed()).observed.boxes.find((b) => b.storeId === 'S1')).toMatchObject({ queue: { unsent: 7, deadLettered: 0 } });
+    // The same report re-sent under a fresh key collapses, and the reply is the record kept.
+    const again = await post('u-box1', 'S1', { ...good, queue: { unsent: 7, deadLettered: 0 } }, 'bh-differing-again');
+    expect((again.body as { recorded: unknown }).recorded).toEqual((differing.body as { recorded: unknown }).recorded);
+    expect(await count()).toBe(3);
     // A reader without the health right cannot read the judged health.
     expect((await h.request({ method: 'GET', path: '/v1/platform/operational-health/observed', userId: 'u-cash-s1', tenantId: tenant, branchId: 'S1' })).status).toBe(403);
   } finally {

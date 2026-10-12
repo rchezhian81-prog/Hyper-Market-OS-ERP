@@ -18,6 +18,8 @@ import { runMigrations } from '../../packages/persistence/src/migrations';
  *     repeated over several plans so both outcomes occur. Exactly one lands; the other is refused by name (409). The plan's
  *     terminal record is ONE event; an approved plan posted its variance once, a cancelled one posted nothing.
  *   • RACE approve vs approve: both answer 200 (one `alreadyApproved`), the variance posts once.
+ *   • round 13 (verifier A9 · P-08): an approval cut short between its claim and its postings is flagged `postingIncomplete`
+ *     (plan and board) and the next re-sent approval finishes it — the variance posts once.
  *   • OB-66 FIRST CANCEL: a damaged arrival held on an open count is applied by the FIRST cancel (not only by a re-send) — the
  *     write-off is on the register once, with outcome `cancelled`; a re-sent cancel applies nothing.
  */
@@ -36,9 +38,11 @@ afterAll(async () => { await pool?.end(); });
  * so the two decisions are made to meet exactly where they race (both read the plan open; one claims; the other's claim
  * arrives second), deterministically, through the real routes and the real store.
  */
-const gate = { step: '' as string, open: Promise.resolve() as Promise<void>, reached: (): void => {} };
+const gate = { step: '' as string, open: Promise.resolve() as Promise<void>, reached: (): void => {}, crashOnType: '' as string };
 function gated(inner: EventStore): EventStore {
   const waitIfGated = async (entries: readonly BatchEntry[]): Promise<void> => {
+    // Round 13: a simulated crash — the next write of this event type dies before it reaches the store.
+    if (gate.crashOnType !== '' && entries.some((e) => e.event.type === gate.crashOnType)) { gate.crashOnType = ''; throw new Error('simulated crash mid-posting'); }
     const hit = entries.some((e) => e.event.idempotencyKey.endsWith('-closed') && (e.event.payload as { step?: string }).step === gate.step);
     if (hit) { gate.reached(); await gate.open; }
   };
@@ -164,6 +168,34 @@ describe.each(backings)('a count plan is closed once — approved or cancelled, 
     expect(await terminalSteps('cpy')).toEqual(['approved']);
     expect((await movementIds()).filter((id) => id === 'count:k-cpy')).toHaveLength(1);
     expect(await onHand('PY')).toBe(18);
+  }, 60_000);
+
+  it('round 13 (A9): an approval cut short after the claim is flagged postingIncomplete and finished by the next re-send — once', async () => {
+    const { call, onHand, movementIds, terminalSteps, countedPlan } = await shop(harness);
+    await countedPlan('cpc', 'PC');
+    const view = async () => (await call('GET', '/v1/inventory/count-plans/cpc', 'u-plan')).body as { plan: { state: string }; postingIncomplete: boolean; waitingToPost: string[] };
+    const board = async () => ((await call('GET', '/v1/inventory/count-plans', 'u-plan')).body as { plans: { planId: string; postingIncomplete?: boolean }[] }).plans.find((p) => p.planId === 'cpc');
+    // The process dies between the plan's terminal claim and its first posting.
+    gate.crashOnType = 'CountDecided';
+    const cut = await call('POST', '/v1/inventory/count-plans/cpc/approve', 'u-appr', { reason: 'aisle done' });
+    expect(cut.status).toBe(500);
+    expect(await terminalSteps('cpc')).toEqual(['approved']);
+    expect((await movementIds()).filter((id) => id === 'count:k-cpc')).toEqual([]);
+    expect(await onHand('PC')).toBe(20);
+    // Visible: approved, but NOT finished — named on the plan and on the board, with what still waits.
+    expect(await view()).toMatchObject({ plan: { state: 'approved' }, postingIncomplete: true, waitingToPost: ['k-cpc'] });
+    expect(await board()).toMatchObject({ postingIncomplete: true });
+    // The next approval re-send finishes it: the variance posts once, as the approver who decided it.
+    const again = await call('POST', '/v1/inventory/count-plans/cpc/approve', 'u-appr', { reason: 'aisle done' });
+    expect(again.status, JSON.stringify(again.body)).toBe(200);
+    expect(again.body).toMatchObject({ alreadyApproved: true, posted: [{ countId: 'k-cpc', productId: 'PC', varianceMinor: -2 }] });
+    expect((await movementIds()).filter((id) => id === 'count:k-cpc')).toHaveLength(1);
+    expect(await onHand('PC')).toBe(18);
+    expect(await view()).toMatchObject({ postingIncomplete: false, waitingToPost: [] });
+    expect(await board()).toMatchObject({ postingIncomplete: false });
+    // Re-sent once more: nothing posts twice.
+    expect((await call('POST', '/v1/inventory/count-plans/cpc/approve', 'u-appr2', { reason: 'again' })).body).toMatchObject({ alreadyApproved: true, posted: [] });
+    expect((await movementIds()).filter((id) => id === 'count:k-cpc')).toHaveLength(1);
   }, 60_000);
 
   it('two approvals at the same moment: one decides, the other is told it stands; the variance posts once', async () => {

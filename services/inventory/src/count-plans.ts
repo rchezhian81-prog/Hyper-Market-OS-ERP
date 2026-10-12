@@ -321,7 +321,32 @@ export function countPlanRoutes(deps: CountPlanDeps): readonly Route[] {
       });
       if (r.ok && r.alreadyDecided !== true) out.push({ countId: c.countId, productId: l.productId, varianceMinor: l.varianceMinor, valueMinor: l.valueMinor, movementId: r.record.movementId ?? null, causeCode: l.cause?.causeCode ?? '' });
     }
+    // Round 13 (verifier A9): a count a recount superseded and the cut-short approval never closed is closed now, as at the
+    // approval — recorded, never posted (hard rule #2) — so the finished plan holds nothing still waiting.
+    const finalIds = new Set(lines.map((l) => l.finalCountId));
+    for (const c of counts) {
+      if (finalIds.has(c.countId) || c.pendingApproval !== true || c.decision !== undefined) continue;
+      const by = counts.find((x) => x.recountOf === c.countId)?.countId ?? 'a recount';
+      await deps.recordDecision(ctx.tenantId, { ...c, adjusted: false, pendingApproval: false, approvedBy: null, decision: 'rejected', decidedAt: plan.approvedAt ?? deps.now(), decisionReason: `superseded by recount ${by} in count plan ${plan.planId}`, movementId: null });
+    }
+    if (out.length > 0) await audit(ctx, 'count.plan.approve.finished', plan, { state: 'approved', posted: String(out.length) }, 'an approval cut short before every line posted was finished by a re-sent approval');
     return out;
+  };
+  /**
+   * Round 13 (verifier A9 · P-08): what an APPROVED plan still has waiting to post — a final variance not yet posted, or a
+   * superseded count not yet closed — because the approval was cut short between its decision and its postings. Shown on the
+   * plan as `postingIncomplete` (never "approved" looking finished); the next approval re-send finishes it.
+   */
+  const unfinishedOf = (plan: CountPlan, counts: readonly StoredReconciliation[], lines: readonly PlanLine[]): readonly string[] => {
+    if (plan.state !== 'approved') return [];
+    const byId = new Map(counts.map((c) => [c.countId, c] as const));
+    const finalIds = new Set(lines.map((l) => l.finalCountId));
+    const finals = lines.flatMap((l) => {
+      const c = l.finalCountId === null ? undefined : byId.get(l.finalCountId);
+      return c !== undefined && c.pendingApproval === true && c.decision === undefined && c.varianceMinor !== 0 ? [c.countId] : [];
+    });
+    const superseded = counts.filter((c) => !finalIds.has(c.countId) && c.pendingApproval === true && c.decision === undefined).map((c) => c.countId);
+    return [...finals, ...superseded];
   };
   const audit = async (ctx: RequestContext, action: string, plan: CountPlan, after: Record<string, string>, reason: string) => {
     await deps.recordAudit?.(ctx.tenantId, {
@@ -516,12 +541,15 @@ export function countPlanRoutes(deps: CountPlanDeps): readonly Route[] {
       permission: 'inventory.count.plan',
       handler: async (ctx) => {
         const plan = await load(ctx);
-        const { lines, breaches, held } = await positionOf(ctx.tenantId, plan);
+        const { counts, lines, breaches, held } = await positionOf(ctx.tenantId, plan);
         const finals = lines.filter((l) => l.state === 'ready' || l.state === 'cause_required' || l.state === 'recount_required');
+        const waitingToPost = unfinishedOf(plan, counts, lines);
         return {
           status: 200,
           body: {
             plan, lines, freezeBreaches: breaches,
+            // Round 13 (verifier A9 · P-08): approved, but its posting was cut short — named, and finished by re-sending the approval.
+            postingIncomplete: waitingToPost.length > 0, waitingToPost,
             // OB-66: damaged-on-arrival write-offs this count's freeze HELD — applied once at its close, never lost.
             heldWriteOffs: held,
             totals: {
@@ -553,7 +581,14 @@ export function countPlanRoutes(deps: CountPlanDeps): readonly Route[] {
         const all = [...(await deps.plans(ctx.tenantId))].reverse();
         const filter = await stockReadScope(ctx, deps.locationBranches);
         const visible = all.filter((p) => filter.covers(p.locationId));
-        return { status: 200, body: { plans: visible, asAt: deps.now() } };
+        // Round 13 (verifier A9 · P-08): an approved plan whose posting was cut short is flagged on the board too.
+        const incomplete = new Set<string>();
+        for (const p of visible) {
+          if (p.state !== 'approved') continue;
+          const [counts, causes, moves] = await Promise.all([deps.planCounts(ctx.tenantId, p.planId), deps.causes(ctx.tenantId, p.planId), deps.movementsAt(ctx.tenantId, p.locationId, p.productIds)]);
+          if (unfinishedOf(p, counts, planPosition(p, counts, causes, moves)).length > 0) incomplete.add(p.planId);
+        }
+        return { status: 200, body: { plans: visible.map((p) => (p.state === 'approved' ? { ...p, postingIncomplete: incomplete.has(p.planId) } : p)), asAt: deps.now() } };
       },
     },
   ];
