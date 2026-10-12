@@ -58,6 +58,9 @@
       .tag { font-size: 13px; background: var(--panel-2); border-radius: 999px; padding: 2px 10px; white-space: nowrap; }
       .empty { color: var(--muted); padding: 20px 4px; }
       .note { color: var(--muted); font-size: 14px; margin: 8px 0 0; }
+      .row[hidden], #prefixes[hidden] { display: none; }
+      .row.flagged { border-left: 6px solid var(--warn); }
+      .tag.flag { background: var(--warn-surface); color: var(--on-warn-surface); }
 
       .edit { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
       .edit input[type="text"], .edit input[type="number"], .edit input[type="time"],
@@ -105,6 +108,25 @@
       </div>
 
       <div id="groups"></div>
+      <!-- OB-81: till bill-number prefixes, issued by head office per (store, till) — drawn by setup.js from window.receiptPrefixSession. -->
+      <section id="prefixes" hidden aria-labelledby="prefixes-title">
+        <h3 id="prefixes-title">Till bill-number prefixes</h3>
+        <p class="lead" id="prefixes-lead"></p>
+        <p class="note" id="prefixes-stores"></p>
+        <div id="prefixes-rows"></div>
+        <div class="row" id="prefixes-new" hidden>
+          <div class="what">
+            <strong id="prefixes-new-title">Another till</strong>
+            <div class="edit">
+              <input type="text" id="pn-store" autocomplete="off" aria-label="Store" />
+              <input type="text" id="pn-till" autocomplete="off" aria-label="Till" />
+              <input type="text" id="pn-prefix" autocomplete="off" maxlength="16" aria-label="Prefix" />
+              <button type="button" class="primary" id="pn-save">Issue prefix</button>
+              <small class="fieldmsg" id="pn-msg" role="status" aria-live="polite"></small>
+            </div>
+          </div>
+        </div>
+      </section>
       <p class="note" id="change-note"></p>
     </main>
 

@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1013 | 621 | 621 | 89 | 300 |
+| 13 | 1015 | 622 | 622 | 89 | 300 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -79,6 +79,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/org/nodes/:nodeId` | `org.branch.read` | core | — |
 | POST | `/v1/org/nodes/:nodeId` | `platform.setup.write` | core | yes |
 | POST | `/v1/org/nodes/:nodeId/activation` | `platform.setup.write` | core | yes |
+| GET | `/v1/receipt-prefixes` | `org.branch.read` | core | — |
 | GET | `/v1/store-computers/refusals` | `platform.health.read` | core | — |
 | GET | `/v1/store-computers/stamps` | `platform.health.read` | core | — |
 | GET | `/v1/store-packs/:storeId` | `store.pack.read` | core | — |
@@ -89,6 +90,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/stores/:storeId/settings` | `org.branch.read` | core | — |
 | POST | `/v1/stores/:storeId/settings` | `platform.setup.write` | core | yes |
 | POST | `/v1/stores/:storeId/sync-watermarks` | `store.computer.report` | core | yes |
+| POST | `/v1/stores/:storeId/tills/:tillId/receipt-prefix` | `platform.setup.write` | core | yes |
 
 ## API-02 — Catalogue (M03–M05)
 

@@ -17,6 +17,7 @@
 // screen is committed locally and queued, and the sync agent drains it. Nothing in this file calls
 // the network in a path a person waits on.
 
+import { createReceiptPrefixSession, type ReceiptPrefixSession, type ReceiptPrefixesRead } from './receipt-prefix-session';
 import { InMemoryLedgerStore, Ledger } from '../../../packages/ledger/src/ledger';
 import { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { openDeviceOutbox, guardedStore } from '../../../packages/sync/src/device-outbox';
@@ -4348,6 +4349,32 @@ export interface SetupData {
   readonly storeId?: string;
   /** The tenant's setup status from GET /v1/platform/setup. Absent → the screen was told nothing. */
   readonly status?: SetupStatus;
+  /** What the viewer holds (head office's `GET /v1/identity/me`) — the prefix panel offers edits only with the setup right. */
+  readonly permissions?: readonly string[];
+  /** OB-81: head office's `GET /v1/receipt-prefixes` for this viewer. Absent → refused or not told: no panel. */
+  readonly receiptPrefixes?: ReceiptPrefixesRead;
+}
+
+/**
+ * OB-81: the till bill-number prefix panel, or `null` when head office gave this viewer no prefix list. Saves go to head
+ * office's own route as the signed-in person; the panel offers editing only to a viewer holding `platform.setup.write`
+ * (head office refuses anyone else regardless).
+ */
+export function bootReceiptPrefixes(data: SetupData | undefined): ReceiptPrefixSession | null {
+  if (data?.receiptPrefixes === undefined || !Array.isArray(data.receiptPrefixes.tills)) return null;
+  return createReceiptPrefixSession({ read: data.receiptPrefixes, canEdit: (data.permissions ?? []).includes('platform.setup.write') }, {
+    post: async (path, body, idempotencyKey) => {
+      const res = await fetch(path, { method: 'POST', headers: { 'content-type': 'application/json', 'idempotency-key': idempotencyKey }, body: JSON.stringify(body) });
+      return { status: res.status, body: await res.json().catch(() => null) as unknown };
+    },
+    reload: async () => {
+      try {
+        const res = await fetch('/v1/receipt-prefixes', { headers: { accept: 'application/json' } });
+        return res.status < 400 ? (await res.json()) as ReceiptPrefixesRead : null;
+      } catch { return null; }
+    },
+    newKey: () => globalThis.crypto?.randomUUID?.() ?? `prefix-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  });
 }
 
 /**
@@ -4917,6 +4944,8 @@ interface ManagerWindow {
   setupData?: SetupData;
   setupSession?: SetupSession;
   setupEditing?: SetupEditingApi;
+  /** OB-81: the till bill-number prefixes on the setup page (head office's `GET /v1/receipt-prefixes`). */
+  receiptPrefixSession?: ReceiptPrefixSession;
   aiData?: AiData;
   aiSession?: AiSession;
   migrationData?: MigrationData;
@@ -6354,6 +6383,8 @@ if (browserWindow !== undefined) {
     browserWindow.setupSession = setup;
     browserWindow.setupEditing = makeSetupEditing(browserWindow.setupData);
   }
+  const prefixes = bootReceiptPrefixes(browserWindow.setupData);
+  if (prefixes !== null) browserWindow.receiptPrefixSession = prefixes;
   const ai = bootAi(browserWindow.aiData);
   if (ai !== null) browserWindow.aiSession = ai;
   // The migration screen's DURABLE device queue (2b-vi-c-4): its decisions are handed to the store computer, never left in
