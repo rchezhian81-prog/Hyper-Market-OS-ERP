@@ -62,6 +62,7 @@ async function headOfficeSetUp(cloud: Cloud): Promise<void> {
   await cloud.grant('u-box-2', 'store_computer', [S2]);
   await cloud.grant('u-cash1', 'cashier', [S1]);
   await cloud.grant('u-cash2', 'cashier', [S2]);
+  await cloud.grant('u-mgr1', 'store_manager', [S1]);
   // Stock on each store's floor, so each sale is seen leaving ITS store.
   for (const s of [S1, S2]) {
     expect((await post('/v1/inventory/movements', { movementId: `rcv-${s}`, productId: 'P1', locationId: s, kind: 'received', quantityMinor: 10, unitCostMinor: 9_000, uom: 'ea', occurredAt: AT, enteredBy: OWNER }, `rcv-${s}`)).status).toBeLessThan(300);
@@ -93,6 +94,11 @@ async function headOfficeIssuesPrefixes(cloud: Cloud): Promise<void> {
   }
   // A cashier holds no setup permission: refused.
   expect((await issue(S1, 'lane-1', 'S1X1-', `pfx-${randomUUID()}`, 'u-cash1')).status).toBe(403);
+  // …nor does the store manager, signed in at their own store (they may READ the prefixes): refused by name of the right.
+  const mgr = await cloud.call('POST', `/v1/stores/${S1}/tills/lane-1/receipt-prefix`, 'u-mgr1', { prefix: 'S1X1-' }, `pfx-${randomUUID()}`, undefined, S1);
+  expect(mgr.status).toBe(403);
+  expect(wordsOf(mgr)).toMatch(/platform\.setup\.write/);
+  expect((await cloud.call('GET', '/v1/receipt-prefixes', 'u-mgr1', undefined, undefined, undefined, S1)).status).toBe(200);
   // An unknown store: refused by name.
   expect((await issue('S9', 'lane-1', 'S9L1-')).status).toBe(404);
 
