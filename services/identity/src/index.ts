@@ -329,6 +329,17 @@ export function identityRoutes(deps: IdentityDeps): readonly Route[] {
             throw apiError(422, { code: MACHINE_IDENTITY_REFUSAL_CODE, whatHappened: mixed, wasItSaved: 'not_saved', nextSafeAction: 'Reject this request; give the machine its own sign-in holding only its role. Nobody\'s access changed.' });
           }
         }
+        // Verifier r18 C2-R2: the SCOPE judged again at APPROVAL — a request made before round 18's checks (or a store closed
+        // since) may name a store head office does not know, or one that is not plain text; approving it would add a ghost
+        // store to the stores OB-82 counts and book a box's records there. Refused by name; nobody's access changes.
+        const unboundNow = storeComputerGrantRefusal(pending.roleId, pending.branchScope);
+        if (unboundNow !== undefined) {
+          throw apiError(422, { code: 'store_computer_grant_must_name_one_store', whatHappened: unboundNow, wasItSaved: 'not_saved', nextSafeAction: 'Reject this request and request the store computer role for the box\'s own store only. Nobody\'s access changed.' });
+        }
+        if (pending.branchScope !== 'all' && deps.registeredStores !== undefined) {
+          const ghost = firstUnknownStore(pending.branchScope, await deps.registeredStores(ctx.tenantId));
+          if (ghost !== undefined) throw apiError(422, { ...unknownStoreWords(ghost, 'This pending request\'s branchScope'), nextSafeAction: 'Reject this request and ask for the role again naming a store head office has registered. Nobody\'s access changed.' });
+        }
         // Round 14 (verifier G5): judged again at APPROVAL — the login may have become an outside party's since it was asked.
         const outside = outsidePartyGrantRefusal(pending.roleId, await deps.outsideLoginOf?.(ctx.tenantId, pending.userId));
         if (outside !== undefined) throw apiError(422, { code: OUTSIDE_LOGIN_REFUSAL_CODE, whatHappened: outside, wasItSaved: 'not_saved', nextSafeAction: 'Reject this request; a member of staff gets their own login. Nobody\'s access changed.' });

@@ -104,7 +104,7 @@ export function storeReferencesIn(input: {
 /** The binding's verdict on one request from a store computer. */
 export type BoxRequestVerdict =
   | { readonly ok: true }
-  | { readonly ok: false; readonly reason: 'credential_names_no_store' | 'credential_store_not_granted' | 'record_names_another_store' | 'record_names_unknown_store' | 'record_store_unresolved'; readonly why: string; readonly field?: string; readonly namedStore?: string };
+  | { readonly ok: false; readonly reason: 'credential_names_no_store' | 'credential_store_not_canonical' | 'credential_store_not_granted' | 'record_names_another_store' | 'record_names_unknown_store' | 'record_store_unresolved'; readonly why: string; readonly field?: string; readonly namedStore?: string };
 
 /**
  * Judge one request from a caller holding `store_computer` grants (`grantedStores`: the stores those grants name — a
@@ -123,6 +123,12 @@ export function judgeBoxRequest(input: {
   const { credentialStore } = input;
   if (credentialStore === null) {
     return { ok: false, reason: 'credential_names_no_store', why: 'This store computer\'s sign-in names no store. Since OB-54 every store computer\'s credential is locked to its own store, so a credential without one is refused.' };
+  }
+  // Verifier r18 (residual C-2): a credential — and so a grant — naming a store that is not canonical text (padding, an
+  // invisible character such as a zero-width space, a non-NFKC form) is refused on EVERY relay, so a grant put on the ledger
+  // before round 18's request check can never book records at a phantom store that only looks like a real one.
+  if (notCanonical(credentialStore)) {
+    return { ok: false, reason: 'credential_store_not_canonical', why: `This store computer's sign-in names a store whose name is not plain text (${JSON.stringify(credentialStore)} — it carries spaces or invisible characters), so it cannot be one of head office's stores. Its records are refused and kept as exceptions until its credential and its store computer role are re-issued for its real store.` };
   }
   if (!input.grantedStores.includes(credentialStore)) {
     return { ok: false, reason: 'credential_store_not_granted', why: `This store computer's sign-in names store ${credentialStore}, but its store computer role is not granted for that store (one store per box, OB-54).` };
