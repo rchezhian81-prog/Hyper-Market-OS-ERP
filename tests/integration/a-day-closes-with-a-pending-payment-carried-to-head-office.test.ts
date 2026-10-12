@@ -288,8 +288,11 @@ describe.each(backings)('OB-55 — a day closes with a pending card/UPI payment 
     expect(l.lateAnswers).toEqual([expect.objectContaining({ attemptId: upi.attemptId, outcome: 'declined', answeredBy: 'u-lanecash', approvedBy: 'u-mgr', tradingDay: DAY_D, storeId: 'store-1', flags: [] })]);
     // The day now closes (the relay is not trading the day owes the cloud), and the same answer re-sent records nothing twice.
     expect(await edge.closeDay({ dayCloseId: 'dc-late', closedBy: 'u-mgr', closerPin: pinOf('u-mgr') })).toMatchObject({ closed: true });
-    const again = await h.request({ method: 'POST', path: `/v1/finance/payment-exceptions/${upi.attemptId!}/late-answer/synced`, userId: 'u-box', tenantId: T, idempotencyKey: `fresh-${randomUUID()}`, body: { ...l.lateAnswers[0], approvalId: 'apr-x', laneId: 'lane-1', billRef: 'b', kind: 'upi', amountMinor: 41_000, askedAt: 'x', answeredAt: 'y' } });
+    const again = await h.request({ method: 'POST', path: `/v1/finance/payment-exceptions/${upi.attemptId!}/late-answer/synced`, userId: 'u-box', tenantId: T, idempotencyKey: `fresh-${randomUUID()}`, body: { ...l.lateAnswers[0] } });
     expect(again.body).toMatchObject({ alreadyRecorded: true });
+    // Round 13 (hard rule #10): a DIFFERENT answer for the same attempt is not "already recorded" — it is a visible conflict.
+    const differing = await h.request({ method: 'POST', path: `/v1/finance/payment-exceptions/${upi.attemptId!}/late-answer/synced`, userId: 'u-box', tenantId: T, idempotencyKey: `fresh-${randomUUID()}`, body: { ...l.lateAnswers[0], approvalId: 'apr-x', billRef: 'b', askedAt: 'x', answeredAt: 'y' } });
+    expect([differing.status, (differing.body as { error?: { code?: string } }).error?.code]).toEqual([409, 'late_answer_conflicts']);
   }, 60_000);
 
   it('finance resolves an exception from the provider\'s record — an incomplete record with nothing in it is NOT a decline', async () => {
