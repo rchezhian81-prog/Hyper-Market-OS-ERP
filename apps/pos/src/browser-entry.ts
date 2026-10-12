@@ -747,13 +747,15 @@ export function bootPos(config?: {
   /** The BroadcastChannel the display page listens on. */
   readonly customerDisplayChannelName: () => string;
   /** D04-FR-05: send what this till's devices say to the store computer (needs a signed-in cashier). */
-  readonly reportDevices: (devices: readonly { readonly kind: string; readonly state: string; readonly detail?: string }[]) => Promise<{ readonly recorded: boolean; readonly refusedBecause?: string; readonly laneMessage?: string }>;
+  readonly reportDevices: (devices: readonly { readonly kind: string; readonly state: string; readonly detail?: string }[], adapterObservedAt?: string) => Promise<{ readonly recorded: boolean; readonly refusedBecause?: string; readonly laneMessage?: string }>;
+  /** Round 15: the device adapter's own clock (when it last observed the devices), asked at each re-send. */
+  readonly deviceAdapterClock: (clock: (() => unknown) | undefined) => void;
   /**
    * D04-FR-05 · P-08: the device adapter says how the devices are now. Kept as the last known and sent to the store
    * computer at once if anything changed; re-sent every 5 minutes while a cashier is signed in (`device-heartbeat.ts`).
    * Fire-and-forget: never awaited, never on the sale path, nothing sent while a sale is being written.
    */
-  readonly devicesSaid: (devices: readonly { readonly kind: string; readonly state: string; readonly detail?: string }[]) => void;
+  readonly devicesSaid: (devices: readonly { readonly kind: string; readonly state: string; readonly detail?: string }[], adapterObservedAt?: string) => void;
   /** The device re-send itself — for the page and the tests (`running`, `tick`, `lastKnown`). */
   readonly deviceHeartbeat: DeviceHeartbeat;
   readonly till: ReturnType<typeof createTillSession>;
@@ -1337,16 +1339,16 @@ export function bootPos(config?: {
   // D04-FR-05 · M12-FR-04: what this till's devices say — the scanner, printer, scale, drawer and card machine — sent to
   // the store computer through the signed-in session, for the manager's Today screen. The device adapter that knows is
   // hardware-side (external); this only carries its words. A device failing never stops a sale.
-  const reportDevices = async (devices: readonly { readonly kind: string; readonly state: string; readonly detail?: string }[]): Promise<{ readonly recorded: boolean; readonly refusedBecause?: string; readonly laneMessage?: string }> => {
+  const reportDevices = async (devices: readonly { readonly kind: string; readonly state: string; readonly detail?: string }[], adapterObservedAt?: string): Promise<{ readonly recorded: boolean; readonly refusedBecause?: string; readonly laneMessage?: string }> => {
     // Kept as the last known, so the 5-minute re-send carries it on (P-08) — even when this send is refused or lost.
-    if (Array.isArray(devices) && devices.length > 0) deviceHeartbeat.remember(devices);
-    return postDevices(devices);
+    if (Array.isArray(devices) && devices.length > 0) deviceHeartbeat.remember(devices, adapterObservedAt);
+    return postDevices(devices, deviceHeartbeat.lastObservedAt());
   };
-  const postDevices = async (devices: readonly DeviceStatus[]): Promise<{ readonly recorded: boolean; readonly refusedBecause?: string; readonly laneMessage?: string }> => {
+  const postDevices = async (devices: readonly DeviceStatus[], adapterObservedAt?: string): Promise<{ readonly recorded: boolean; readonly refusedBecause?: string; readonly laneMessage?: string }> => {
     if (session.operator() === undefined) return { recorded: false, refusedBecause: 'operator_not_signed_in', laneMessage: 'Sign in before the till reports its devices.' };
     try {
       const base = laneBase(config?.lanePort ?? DEFAULT_LANE_PORT);
-      const response = await fetch(`${base}/lane/peripherals`, { method: 'POST', headers: { 'content-type': 'application/json', ...operatorHeaders() }, body: JSON.stringify({ devices }) });
+      const response = await fetch(`${base}/lane/peripherals`, { method: 'POST', headers: { 'content-type': 'application/json', ...operatorHeaders() }, body: JSON.stringify({ devices, ...(adapterObservedAt === undefined ? {} : { adapterObservedAt }) }) });
       const front = FRONT_REFUSED[response.status];
       if (front !== undefined) return { recorded: false, ...front };
       const r = await response.json() as Record<string, unknown>;
@@ -1358,8 +1360,11 @@ export function bootPos(config?: {
 
   // D04-FR-05 · P-08: keep the last known device states and re-send them while a cashier is signed in, and at once on a
   // change — so a healthy, quiet till stays fresh at head office. Fire-and-forget; never on the sale path (hard rule #1).
+  let adapterClock: (() => unknown) | undefined;
+  const deviceAdapterClock = (clock: (() => unknown) | undefined): void => { adapterClock = clock; };
   const deviceHeartbeat = createDeviceHeartbeat({
     send: postDevices,
+    adapterObservedAt: () => { try { return adapterClock?.(); } catch { return undefined; } },
     signedIn: () => session.operator() !== undefined,
     committing: () => commitsInFlight > 0,
     ...(config?.deviceHeartbeatTimers?.every === undefined ? {} : { every: config.deviceHeartbeatTimers.every }),
@@ -1367,8 +1372,8 @@ export function bootPos(config?: {
   });
   heartbeat.ref = deviceHeartbeat;
   if (session.operator() !== undefined) deviceHeartbeat.start();
-  const devicesSaid = (devices: readonly DeviceStatus[]): void => {
-    if (Array.isArray(devices) && devices.length > 0) deviceHeartbeat.update(devices);
+  const devicesSaid = (devices: readonly DeviceStatus[], adapterObservedAt?: string): void => {
+    if (Array.isArray(devices) && devices.length > 0) deviceHeartbeat.update(devices, adapterObservedAt);
   };
 
   // D04-FR-05 · M12-FR-01: the customer display's frame, from the till's own basket — no network (see customer-display.ts).
@@ -1385,7 +1390,7 @@ export function bootPos(config?: {
   };
   const customerDisplayChannelName = (): string => CUSTOMER_DISPLAY_CHANNEL;
 
-  return Object.assign(view, { customerDisplay, customerDisplayChannelName, reportDevices, devicesSaid, deviceHeartbeat, till, nextReceipt, receiptsRemaining, receiptNotice, holdAtTill, heldAtTill, recallAtTill, abandonAtTill, startCardPayment, answerCardPayment, checkCardPayment, voidAtTill, priceChangeValue, priceChangeAtTill, noSaleAtTill, currentBillRef: () => session.billRef(), lookupRefund, noReceiptReturn, receiptTemplate, signIn, signOut, operator, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill, loyaltyWallet });
+  return Object.assign(view, { customerDisplay, customerDisplayChannelName, reportDevices, devicesSaid, deviceAdapterClock, deviceHeartbeat, till, nextReceipt, receiptsRemaining, receiptNotice, holdAtTill, heldAtTill, recallAtTill, abandonAtTill, startCardPayment, answerCardPayment, checkCardPayment, voidAtTill, priceChangeValue, priceChangeAtTill, noSaleAtTill, currentBillRef: () => session.billRef(), lookupRefund, noReceiptReturn, receiptTemplate, signIn, signOut, operator, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill, loyaltyWallet });
 }
 
 // Attach for the view. `app.js` uses `window.posSession` when present and falls back to its

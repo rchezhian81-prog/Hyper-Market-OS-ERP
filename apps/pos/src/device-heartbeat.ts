@@ -15,6 +15,10 @@
 //
 // What it cannot know: the device adapter is hardware-side (external). The till re-sends what the adapter LAST said; a
 // device that dies without the adapter noticing still reads as it last did — that is the adapter's job to report.
+// Round 15 (verifier LOW · P-08): when the adapter says WHEN it last observed the devices (`observedAt`), that time travels
+// with every re-send (`adapterObservedAt`), and head office judges the lane's freshness by it — so an adapter that has hung
+// reads STALE however faithfully the till keeps re-sending its last answer. An adapter that gives no time is judged, as
+// before, by the till's report time.
 
 export interface DeviceStatus {
   readonly kind: string;
@@ -26,8 +30,11 @@ export interface DeviceStatus {
 export const DEVICE_HEARTBEAT_INTERVAL_MS = 5 * 60_000;
 
 export interface DeviceHeartbeatDeps {
-  /** Post the devices to this till's store computer (`/lane/peripherals`). May reject; the heartbeat swallows it. */
-  readonly send: (devices: readonly DeviceStatus[]) => Promise<unknown>;
+  /**
+   * Post the devices to this till's store computer (`/lane/peripherals`), with the adapter's own last-observed time when it
+   * gave one. May reject; the heartbeat swallows it.
+   */
+  readonly send: (devices: readonly DeviceStatus[], adapterObservedAt?: string) => Promise<unknown>;
   /** Is a cashier signed in at this till now? */
   readonly signedIn: () => boolean;
   /** Is a sale or refund being written to the store computer right now? Nothing is sent while it is. */
@@ -37,13 +44,22 @@ export interface DeviceHeartbeatDeps {
   /** Run `fn` soon, off the current call stack. Default: `setTimeout(fn, 0)`. */
   readonly soon?: (fn: () => void) => void;
   readonly intervalMs?: number;
+  /**
+   * Round 15: the device adapter's OWN clock — when it last observed the devices — asked at each re-send, when the adapter
+   * offers one (`window.sreDevices.lastObservedAt()`). Absent, or answering nothing readable → the time it gave with its
+   * last answer, if any.
+   */
+  readonly adapterObservedAt?: () => unknown;
 }
 
 export interface DeviceHeartbeat {
-  /** The adapter says how the devices are now: kept as the last known, and sent at once if anything changed. */
-  readonly update: (devices: readonly DeviceStatus[]) => void;
+  /**
+   * The adapter says how the devices are now (and, when it can, WHEN it observed them): kept as the last known, and sent at
+   * once if anything changed.
+   */
+  readonly update: (devices: readonly DeviceStatus[], observedAt?: string) => void;
   /** Keep these as the last known WITHOUT sending (the caller has just sent them itself). */
-  readonly remember: (devices: readonly DeviceStatus[]) => void;
+  readonly remember: (devices: readonly DeviceStatus[], observedAt?: string) => void;
   /** A cashier signed in: start the cadence. */
   readonly start: () => void;
   /** The cashier signed out (or the till is closing): stop the cadence; nothing more is sent until the next sign-in. */
@@ -54,7 +70,12 @@ export interface DeviceHeartbeat {
   readonly tick: () => Promise<boolean>;
   readonly running: () => boolean;
   readonly lastKnown: () => readonly DeviceStatus[] | undefined;
+  /** When the adapter last said it observed the devices; undefined when it never gave a time. */
+  readonly lastObservedAt: () => string | undefined;
 }
+
+/** An adapter's observation time, when it is a readable instant; anything else is ignored (never invented). */
+const instant = (v: unknown): string | undefined => (typeof v === 'string' && !Number.isNaN(Date.parse(v)) ? new Date(Date.parse(v)).toISOString() : undefined);
 
 const keyOf = (devices: readonly DeviceStatus[] | undefined): string =>
   devices === undefined ? '' : JSON.stringify(devices.map((d) => [d.kind, d.state, d.detail ?? '']));
@@ -74,6 +95,7 @@ export function createDeviceHeartbeat(deps: DeviceHeartbeatDeps): DeviceHeartbea
   const soon = deps.soon ?? defaultSoon;
   const intervalMs = deps.intervalMs ?? DEVICE_HEARTBEAT_INTERVAL_MS;
   let last: readonly DeviceStatus[] | undefined;
+  let observedAt: string | undefined;
   let cancel: (() => void) | undefined;
   let inFlight = false;
   /** A send was due while a sale was being written (or another send was in flight): owed once that ends. */
@@ -85,8 +107,9 @@ export function createDeviceHeartbeat(deps: DeviceHeartbeatDeps): DeviceHeartbea
     owed = false;
     inFlight = true;
     const devices = last;
+    const at = instant(deps.adapterObservedAt?.()) ?? observedAt;
     try {
-      await deps.send(devices);
+      await (at === undefined ? deps.send(devices) : deps.send(devices, at));
     } catch {
       /* the box could not be reached: the next tick tries again; the manager sees the lane go stale, never a cashier error */
     } finally {
@@ -98,12 +121,13 @@ export function createDeviceHeartbeat(deps: DeviceHeartbeatDeps): DeviceHeartbea
   };
 
   return {
-    update: (devices) => {
+    update: (devices, at) => {
       const changed = keyOf(devices) !== keyOf(last);
       last = copy(devices);
+      observedAt = instant(at);
       if (changed) soon(() => { void tick(); });
     },
-    remember: (devices) => { last = copy(devices); },
+    remember: (devices, at) => { last = copy(devices); observedAt = instant(at); },
     start: () => {
       if (cancel !== undefined) return;
       cancel = every(intervalMs, () => { void tick(); });
@@ -119,5 +143,6 @@ export function createDeviceHeartbeat(deps: DeviceHeartbeatDeps): DeviceHeartbea
     tick,
     running: () => cancel !== undefined,
     lastKnown: () => last,
+    lastObservedAt: () => instant(deps.adapterObservedAt?.()) ?? observedAt,
   };
 }

@@ -2279,6 +2279,8 @@ export async function startEdge(
       // one stops, so head office can say whether a stale lane is expected (nobody there) or a till to check.
       tills: (peripheralReports?.latest() ?? []).map((r) => ({
         laneId: r.laneId, reportedAt: r.reportedAt, devices: r.devices,
+        // Round 15: the device adapter's own last-observed time, when the till sent it — head office ages the lane by it.
+        ...(r.adapterObservedAt === undefined ? {} : { adapterObservedAt: r.adapterObservedAt }),
         attended: (tillOperators?.live() ?? []).some((s) => s.laneId === r.laneId),
       })),
     };

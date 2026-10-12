@@ -474,13 +474,16 @@ async function toggleSignIn() {
 // P-08: the session keeps the last answer and re-sends it to the store computer every 5 minutes while a cashier is
 // signed in (so a healthy, quiet till does not read "not known" at head office), and an adapter that can tell us when a
 // device changes (`window.sreDevices.onChange(fn)`) has the change sent at once. Both are fire-and-forget.
+// An adapter that keeps its own clock (`window.sreDevices.lastObservedAt()`, or a time passed with `onChange(fn(devices,
+// observedAt))`) has that time sent too, and head office judges the lane by it — so a hung adapter reads stale.
 let devicesWatched = false;
 function watchDevices() {
   const adapter = window.sreDevices;
   if (devicesWatched || !adapter || typeof adapter.onChange !== 'function' || typeof session.devicesSaid !== 'function') return;
   devicesWatched = true;
+  if (typeof adapter.lastObservedAt === 'function' && typeof session.deviceAdapterClock === 'function') session.deviceAdapterClock(() => adapter.lastObservedAt());
   try {
-    adapter.onChange((devices) => { if (Array.isArray(devices) && devices.length > 0) session.devicesSaid(devices); });
+    adapter.onChange((devices, observedAt) => { if (Array.isArray(devices) && devices.length > 0) session.devicesSaid(devices, observedAt); });
   } catch {
     /* an adapter that cannot be watched still reports at sign-in and on the 5-minute re-send */
   }
@@ -491,7 +494,8 @@ async function reportDevices() {
   if (!adapter || typeof adapter.status !== 'function' || typeof session.reportDevices !== 'function') return;
   try {
     const devices = await adapter.status();
-    if (Array.isArray(devices) && devices.length > 0) await session.reportDevices(devices);
+    const observedAt = typeof adapter.lastObservedAt === 'function' ? adapter.lastObservedAt() : undefined;
+    if (Array.isArray(devices) && devices.length > 0) await session.reportDevices(devices, typeof observedAt === 'string' ? observedAt : undefined);
   } catch {
     /* a device adapter that cannot answer is the manager's to see as "not reported", not the cashier's problem now */
   }

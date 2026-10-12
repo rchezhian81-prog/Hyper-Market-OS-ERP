@@ -51,6 +51,13 @@ export interface TillDeviceReport {
    * when nobody is there, a till to check when somebody is. Absent from a box that does not say.
    */
   readonly attended?: boolean;
+  /**
+   * Round 15 (verifier LOW · P-08): when the till's device ADAPTER says it last observed the devices — its own clock. The
+   * till re-sends the adapter's last answer every few minutes, so `reportedAt` stays fresh even when the adapter has hung;
+   * when the adapter gives its time, head office ages the lane by THAT (never later than `reportedAt`), so a hung adapter
+   * reads stale. Absent → the lane is aged by `reportedAt`, as before.
+   */
+  readonly adapterObservedAt?: string;
 }
 
 /** One report, as head office keeps it. */
@@ -101,9 +108,16 @@ export function readBoxHealthReport(body: unknown, receivedAt: string):
         devices.push({ kind: x['kind'] as string, state: x['state'] as string, ...(detail === undefined ? {} : { detail }) });
       }
       if (t['attended'] !== undefined && typeof t['attended'] !== 'boolean') { problems.push(`tills[${i}].attended must be true or false when given`); return; }
+      if (t['adapterObservedAt'] !== undefined && !isIso(t['adapterObservedAt'])) { problems.push(`tills[${i}].adapterObservedAt must be an ISO-8601 UTC time when given`); return; }
       let reportedAt = t['reportedAt'] as string;
       if (Date.parse(reportedAt) > Date.parse(receivedAt)) { reportedAt = receivedAt; corrected = true; }
-      tills.push({ laneId: (t['laneId'] as string).trim(), reportedAt, devices, ...(typeof t['attended'] === 'boolean' ? { attended: t['attended'] } : {}) });
+      // The adapter cannot have observed the devices after the till reported them: a later time (a clock ahead) is cut back.
+      let adapterObservedAt = t['adapterObservedAt'] as string | undefined;
+      if (adapterObservedAt !== undefined && Date.parse(adapterObservedAt) > Date.parse(reportedAt)) { adapterObservedAt = reportedAt; corrected = true; }
+      tills.push({
+        laneId: (t['laneId'] as string).trim(), reportedAt, devices, ...(typeof t['attended'] === 'boolean' ? { attended: t['attended'] } : {}),
+        ...(adapterObservedAt === undefined ? {} : { adapterObservedAt }),
+      });
     });
   }
   if (problems.length > 0) return { problems };
@@ -302,20 +316,29 @@ export function judgeBoxes(input: {
       // Round 13 (verifier B5, probe P3 · P-08): each till is judged by ITS OWN report time, not the box's. The box relays
       // each till's LAST report; a till that stopped reporting (switched off, cable out) keeps its last "ok" on the box, so
       // a till report older than the threshold is STALE — that lane is old news, never "ok".
+      // Round 15: aged by the device ADAPTER's own observation time when the till sent one (a hung adapter reads stale even
+      // while the till keeps re-sending its last answer), else by the till's report time.
       const lanes = r.tills.map((t) => {
-        const laneAge = Math.max(0, Math.floor((Date.parse(input.at) - Date.parse(t.reportedAt)) / 1000));
+        const judgedAt = t.adapterObservedAt ?? t.reportedAt;
+        const laneAge = Math.max(0, Math.floor((Date.parse(input.at) - Date.parse(judgedAt)) / 1000));
+        const tillAge = Math.max(0, Math.floor((Date.parse(input.at) - Date.parse(t.reportedAt)) / 1000));
         const bad = t.devices.filter((d) => d.state !== 'ok')
           .map((d) => `${t.laneId}: ${d.kind.replace('_', ' ')} ${d.state === 'failed' ? 'has failed' : 'is not working properly'}${d.detail === undefined ? '' : ` — ${d.detail}`}`);
-        return { laneId: t.laneId, reportedAt: t.reportedAt, ageSeconds: laneAge, stale: laneAge >= input.thresholds.syncLagWarnSeconds, bad, attended: t.attended };
+        const stale = laneAge >= input.thresholds.syncLagWarnSeconds;
+        // The till is fresh but its adapter's own observation is old: the adapter has stopped looking — say so.
+        const adapterQuiet = stale && t.adapterObservedAt !== undefined && tillAge < input.thresholds.syncLagWarnSeconds;
+        return { laneId: t.laneId, reportedAt: judgedAt, ageSeconds: laneAge, stale, bad, attended: t.attended, adapterQuiet };
       });
       const freshBad = lanes.filter((l) => !l.stale).flatMap((l) => l.bad);
       const staleLanes = lanes.filter((l) => l.stale);
-      const oldest = r.tills.map((t) => t.reportedAt).sort()[0]!;
+      const oldest = r.tills.map((t) => t.adapterObservedAt ?? t.reportedAt).sort()[0]!;
       // P-08: say WHY a lane may be quiet, from the box's own sessions — never a reason to read it ok.
-      const whyQuiet = (l: (typeof lanes)[number]): string => (l.attended === false
+      const whyQuiet = (l: (typeof lanes)[number]): string => (l.adapterQuiet
+        ? ' — the till is still re-sending, but its device adapter has not observed the devices since then: the adapter may have hung, check that till'
+        : l.attended === false
         ? ' — nobody is signed in at that till, so it has stopped re-sending (expected when it is closed or unattended)'
         : l.attended === true ? ' — a cashier IS signed in there, so it should still be re-sending every few minutes: check that till' : '');
-      const staleSays = staleLanes.length === 0 ? '' : `STALE — ${staleLanes.map((l) => `till ${l.laneId} last reported its devices ${ago(l.ageSeconds)} ago (${l.reportedAt})${l.bad.length === 0 ? '' : `, then saying ${l.bad.join('; ')}`}${whyQuiet(l)}`).join('; ')}: not heard from since, so its devices are not known now`;
+      const staleSays = staleLanes.length === 0 ? '' : `STALE — ${staleLanes.map((l) => `till ${l.laneId} last ${l.adapterQuiet ? 'had its devices observed by its device adapter' : 'reported its devices'} ${ago(l.ageSeconds)} ago (${l.reportedAt})${l.bad.length === 0 ? '' : `, then saying ${l.bad.join('; ')}`}${whyQuiet(l)}`).join('; ')}: not heard from since, so its devices are not known now`;
       const freshSays = freshBad.length > 0 ? `store ${storeId}: ${freshBad.join('; ')} — the till still sells; a person should fix it`
         : staleLanes.length === lanes.length ? '' : `every till device at store ${storeId} that reported recently said it was working`;
       const says = [freshSays, staleSays].filter((x) => x !== '').join('. ');
