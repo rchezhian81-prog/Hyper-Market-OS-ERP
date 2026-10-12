@@ -1645,12 +1645,39 @@ async function appendSetting(store: EventStore, tenantId: string, stream: string
   /** Whether the setting in force already holds this value (the fields the value key names). */
   readonly sameValue: (payload: unknown) => boolean;
 }): Promise<void> {
-  const prior = (await store.readStream(tenantId, stream, { type: s.type })).filter((e) => s.sameSubject?.(e.event.payload) ?? true).at(-1);
-  if (prior !== undefined && s.sameValue(prior.event.payload)) return;
-  const key = prior === undefined ? s.valueKey : `${s.valueKey}-after-${prior.event.id}`;
-  await store.append(tenantId, stream, makeEvent({
-    id: keyedEventId(s.idPrefix, key), type: s.type, occurredAt: s.occurredAt, idempotencyKey: key, source: s.source, payload: s.payload,
-  }));
+  // Verifier r19 SET-1 (hard rule #10): two DIFFERENT values for the same setting at the same moment both answered "saved"
+  // and one was silently lost. Now each setting family (stream + type) writes under one write guard: the writer reads the
+  // guard, then the setting in force, and its append lands only while the guard still holds. A writer that lost the race
+  // re-reads: another subject of the same family moved the guard → it simply tries again; the SAME value landed at the same
+  // moment → one fact, saved; a DIFFERENT value landed → a visible 409 "changed at the same moment", never a silent loss.
+  const guardKey = `setting:${stream}:${s.type}`;
+  const latestOf = async (): Promise<PersistedEvent | undefined> =>
+    (await store.readStream(tenantId, stream, { type: s.type })).filter((e) => s.sameSubject?.(e.event.payload) ?? true).at(-1);
+  for (let attempt = 0; ; attempt += 1) {
+    const expectedVersion = await store.guardVersion(tenantId, guardKey);
+    const prior = await latestOf();
+    if (prior !== undefined && s.sameValue(prior.event.payload)) return;
+    const key = prior === undefined ? s.valueKey : `${s.valueKey}-after-${prior.event.id}`;
+    try {
+      await store.appendBatch(tenantId, [{ stream, event: makeEvent({
+        id: keyedEventId(s.idPrefix, key), type: s.type, occurredAt: s.occurredAt, idempotencyKey: key, source: s.source, payload: s.payload,
+      }) }], { guard: { key: guardKey, expectedVersion } });
+      return;
+    } catch (e) {
+      if (!(e instanceof ConcurrencyConflictError) || e.key !== guardKey) throw e;
+      const now = await latestOf();
+      // Another subject of the same family (another rule kind, another asset) moved the guard: this setting is untouched.
+      if (now?.event.id === prior?.event.id && attempt < 8) continue;
+      // The same value landed at the same moment: the two requests are one fact, and it is in force.
+      if (now !== undefined && s.sameValue(now.event.payload)) return;
+      throw apiError(409, {
+        code: 'setting_changed_at_the_same_moment',
+        whatHappened: 'Somebody else changed this same setting at the same moment, to a different value. Their value is the one head office kept; yours was not saved.',
+        wasItSaved: 'not_saved',
+        nextSafeAction: 'Read the setting again to see the value in force, then set it again if yours is the one wanted. Nothing else was changed.',
+      });
+    }
+  }
 }
 
 /**
