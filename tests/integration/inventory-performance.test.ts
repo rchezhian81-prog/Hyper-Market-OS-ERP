@@ -46,8 +46,9 @@ const seedSale = (h: ApiHarness, tenantId: string, saleId: string, occurredAt: s
   return h.store.append(tenantId, STREAM.sales, makeEvent({
     id: `sale-${saleId}`, type: 'SaleCommitted', occurredAt,
     idempotencyKey: `sale-${tenantId}-${saleId}`, source: 'test/pos',
+    // The till declares where it stands (round 14: a lane id is never read as a place).
     payload: {
-      saleId, receiptNumber: saleId, laneId: 'L1', cashierId: 'u-owner', tradingDay: occurredAt.slice(0, 10),
+      saleId, receiptNumber: saleId, laneId: 'L1', locationId: 'L1', cashierId: 'u-owner', tradingDay: occurredAt.slice(0, 10),
       committedAt: occurredAt, totalMinor, currency: 'INR', packVersion: 1,
       lines: lines.map((l) => ({ ...l, uom: 'each', unitPriceMinor: Math.round(l.lineTotalMinor / l.quantityMinor) })),
       tenders: [{ kind: 'cash', amountMinor: totalMinor }],
