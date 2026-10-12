@@ -237,7 +237,11 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
     const po = orders.find((o) => o.poId === d.poId)!;
     const costOf = new Map(po.lines.map((l) => [l.productId, l.unitCost] as const));
     // One receipt per physical delivery: the next GRN number for this order (an earlier one already on file is done).
-    const grnId = `grn-${d.poId}-${receipts.filter((g) => g.poId === d.poId).length + 1}`;
+    // OB-84: never an id head office already holds a receipt under — one another store's computer booked first (before this
+    // order existed) is skipped, so the store this order delivers to is never handed an id somebody else took.
+    let n = receipts.filter((g) => g.poId === d.poId).length + 1;
+    while (receipts.some((g) => g.grnId === `grn-${d.poId}-${n}`)) n += 1;
+    const grnId = `grn-${d.poId}-${n}`;
     return {
       poId: d.poId, number: d.number, supplierId: d.supplierId, deliverToLocationId: d.deliverToLocationId, grnId,
       ordered: d.lines.filter((l) => l.openQty > 0).map((l) => ({

@@ -474,8 +474,9 @@ async function toggleSignIn() {
 // P-08: the session keeps the last answer and re-sends it to the store computer every 5 minutes while a cashier is
 // signed in (so a healthy, quiet till does not read "not known" at head office), and an adapter that can tell us when a
 // device changes (`window.sreDevices.onChange(fn)`) has the change sent at once. Both are fire-and-forget.
-// An adapter that keeps its own clock (`window.sreDevices.lastObservedAt()`, or a time passed with `onChange(fn(devices,
-// observedAt))`) has that time sent too, and head office judges the lane by it — so a hung adapter reads stale.
+// An adapter that keeps its own clock (`window.sreDevices.lastObservedAt()`) has that time sent with every report, and
+// head office judges the lane by it — so a hung adapter reads stale. A time passed only with a change (`onChange(fn(devices,
+// observedAt))`) travels with that one change only; later re-sends are judged by the till's own time (no false "hung").
 let devicesWatched = false;
 function watchDevices() {
   const adapter = window.sreDevices;

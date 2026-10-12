@@ -19,6 +19,12 @@
 //     next generation is started (older generations stay on the disk). At start the box reads only the newest readable
 //     generation — a bounded file — never the whole history. A box with no index yet folds the history once (the old
 //     way), then starts generation 1.
+//   • Round 16 (verifier LOW — the index still grew with every checkpoint): the index takes a record ONLY when a till's
+//     devices MATERIALLY change (a device's state or its word on why). A "still the same" checkpoint goes to the history
+//     alone. So the index — and therefore the number of generations — grows with real device changes, not with time: a
+//     shop of healthy, quiet tills adds nothing to it, however long it runs. Generations are still never deleted. After a
+//     restart a till's latest is its last CHANGE (its report time is that change's), until the till's next re-send (within
+//     5 minutes) refreshes it; the history keeps every checkpoint.
 //   • the device adapter's own last-observed time (`adapterObservedAt`), when the till sends it, is kept with the report,
 //     so head office judges the lane's freshness by the adapter's clock (a hung adapter reads stale).
 
@@ -160,11 +166,14 @@ export class PeripheralReports {
     }
     const line = JSON.stringify(report);
     await this.history.append(line);
-    await this.index.append(line);
     this.writtenAt.set(report.laneId, Date.parse(report.reportedAt));
     this.latestByLane.set(report.laneId, report);
-    this.indexRecords += 1;
-    if (this.indexRecords >= INDEX_GENERATION_RECORDS) await this.nextGeneration();
+    if (changed) {
+      // Only a material change reaches the index (round 16): a checkpoint is history-only.
+      await this.index.append(line);
+      this.indexRecords += 1;
+      if (this.indexRecords >= INDEX_GENERATION_RECORDS) await this.nextGeneration();
+    }
     return { recorded: true, report, written: true };
   }
 

@@ -256,7 +256,20 @@ export const RECORD_STORE_PARAM: Readonly<Record<string, string>> = Object.freez
  * space — is unreadable too. The judge used to trim " store-1 " to store-1 while the handler booked stock at the phantom
  * place " store-1 "; now one value reaches both, or none does. The empty string still reads as absent (stamped / no store).
  */
-const notCanonical = (x: string): boolean => x !== '' && x !== x.trim();
+// Round 16 (verifier C-1): also any control character or invisible (zero-width / BOM) character anywhere in it — text a
+// person cannot see the difference of is never a second store.
+// eslint-disable-next-line no-control-regex
+const INVISIBLE = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028\u2029\u2060\ufeff]/;
+const notCanonical = (x: string): boolean => x !== '' && (x !== x.trim() || INVISIBLE.test(x));
+/**
+ * Round 16 (verifier C-1): on EVERY write, by anyone (head office included), a PATH parameter that names a store, a branch,
+ * an org node or a location is refused the same way when it is not canonical — one shared edge, never route by route.
+ */
+const WRITE_PATH_STORE_KEYS = ['storeId', 'branchId', 'nodeId', 'locationId', 'warehouseId', 'binId'] as const;
+export function paddedWritePathParam(params: Readonly<Record<string, string>>): string | undefined {
+  for (const k of WRITE_PATH_STORE_KEYS) { const p = params[k]; if (typeof p === 'string' && notCanonical(p)) return `path.${k}`; }
+  return undefined;
+}
 /** Round 15 (verifier GAP C): a store named in the PATH or QUERY with white space around it — the same refusal. */
 export function paddedStoreParam(params: Readonly<Record<string, string>>, query: Readonly<Record<string, string>>): string | undefined {
   for (const k of PARAM_STORE_KEYS) {
@@ -288,6 +301,9 @@ const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH']);
  * placed or judged by (`STORE_STAMP_FIELD`, `RECORD_STORE_PARAM`). A PERSON who holds the relay permission (a manager or
  * a cashier signing in at a till) acts here only within their own server-derived branch scope, like any branch write.
  */
+/** A write: POST, PUT or PATCH. */
+export const isWrite = (method: string): boolean => WRITE_METHODS.has(method);
+
 export function isRelayWrite(method: string, routePath: string): boolean {
   if (!WRITE_METHODS.has(method)) return false;
   return routePath.endsWith('/synced') || STORE_STAMP_FIELD[routePath] !== undefined || RECORD_STORE_PARAM[routePath] !== undefined;

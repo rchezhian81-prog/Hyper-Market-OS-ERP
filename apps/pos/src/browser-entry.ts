@@ -1365,6 +1365,8 @@ export function bootPos(config?: {
   const deviceHeartbeat = createDeviceHeartbeat({
     send: postDevices,
     adapterObservedAt: () => { try { return adapterClock?.(); } catch { return undefined; } },
+    // DEV-1: only an adapter that offers its own clock (`lastObservedAt`) gives a liveness time; a change-only time is not one.
+    offersLiveness: () => adapterClock !== undefined,
     signedIn: () => session.operator() !== undefined,
     committing: () => commitsInFlight > 0,
     ...(config?.deviceHeartbeatTimers?.every === undefined ? {} : { every: config.deviceHeartbeatTimers.every }),

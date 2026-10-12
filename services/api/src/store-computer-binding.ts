@@ -9,7 +9,7 @@
 import { createHash } from 'node:crypto';
 import type { EventStore } from '../../../packages/persistence/src/event-store';
 import type { BoundStoreGuard, BoundStoreVerdict, Route } from '../../kernel/src/index';
-import { classifyReferences, isRelayWrite, judgePersonRelay, judgeBoxRequest, malformedStoreField, paddedStoreParam, storeReferencesIn, storeStampFor, STORE_COMPUTER_ROLE, type BoxRequestVerdict, type StoreReference } from '../../platform/src/store-computer-identity';
+import { classifyReferences, isRelayWrite, isWrite, paddedWritePathParam, judgePersonRelay, judgeBoxRequest, malformedStoreField, paddedStoreParam, storeReferencesIn, storeStampFor, STORE_COMPUTER_ROLE, type BoxRequestVerdict, type StoreReference } from '../../platform/src/store-computer-identity';
 import { relayRecordStore, type RelayCaller, type RelayPlacement } from './relay-record-store';
 import { storeComputerRefusalsAdapter, storeOfLocationResolver, STREAM, streamName } from './adapters';
 import { makeEvent } from '../../../packages/contracts/src/event';
@@ -138,8 +138,13 @@ export function storeComputerBinding(input: { readonly store: EventStore; readon
     // Round 15 (verifier GAP C): a store or location id with spaces around it is not canonical — the judge would read it
     // trimmed while a handler stored it as sent (a phantom " store-1 "). Refused 400 here, at head office's edge, for
     // every store computer request and every person's relay, so the judge and every handler see one value.
-    if (isRelayWrite(request.method, request.routePath) || grants.length > 0) {
-      const bad = malformedStoreField(request.body) ?? paddedStoreParam(request.params, request.query);
+    // Round 16 (verifier C-1): the same edge now covers EVERY write by anyone — head office's company-wide writes too (a
+    // stock movement, a lane registration, a wave or route assignment, a store's settings…) — so " store-1 " can never
+    // become a phantom stock place, a padded lane or a stranded wave. Reads by a person stay as they were (no harm: a read
+    // writes nothing).
+    if (isWrite(request.method) || grants.length > 0) {
+      const bad = malformedStoreField(request.body) ?? paddedStoreParam(request.params, request.query)
+        ?? (isWrite(request.method) ? paddedWritePathParam(request.params) : undefined);
       if (bad !== undefined) {
         await keepRefusal(principal, request, by, 'store_field_not_readable', { field: bad });
         return {
@@ -195,13 +200,22 @@ export function storeComputerBinding(input: { readonly store: EventStore; readon
 }
 
 /** Head office's read of what store computers tried to send for another store (owner, operations). */
-export function storeComputerRefusalRoutes(input: { readonly store: EventStore | undefined }): readonly Route[] {
+export function storeComputerRefusalRoutes(input: { readonly store: EventStore | undefined; readonly now?: () => string }): readonly Route[] {
   const refusals = input.store === undefined ? undefined : storeComputerRefusalsAdapter({ store: input.store });
   const stamps = input.store === undefined ? undefined : storeComputerStampsAdapter({ store: input.store });
+  const records = input.store === undefined ? undefined : relayRecordStore({ store: input.store, now: input.now ?? (() => new Date().toISOString()) });
   return [{
     api: 'API-01', method: 'GET', path: '/v1/store-computers/refusals',
     permission: 'platform.health.read',
-    handler: async (ctx) => ({ status: 200, body: { refusals: refusals === undefined ? [] : await refusals.list(ctx.tenantId) } }),
+    handler: async (ctx) => ({
+      status: 200,
+      body: {
+        refusals: refusals === undefined ? [] : await refusals.list(ctx.tenantId),
+        // OB-84: records a store's relay took first that head office's own record (the order, the subject) places at
+        // another store — for head office to resolve; the rightful store's relays are accepted meanwhile.
+        overruledClaims: records === undefined ? [] : await records.overruledClaims(ctx.tenantId),
+      },
+    }),
   }, {
     // OB-54 round 10: every record head office stamped (or attributed) with a box credential's store because it named none.
     api: 'API-01', method: 'GET', path: '/v1/store-computers/stamps',

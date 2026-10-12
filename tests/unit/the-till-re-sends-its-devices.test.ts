@@ -117,6 +117,48 @@ describe('the device heartbeat (pure)', () => {
   });
 });
 
+describe('DEV-1 (round 16): an adapter time is a liveness signal only when the adapter offers a clock', () => {
+  const send = (sent: (string | null)[]) => async (_d: unknown, at?: string) => { sent.push(at ?? null); };
+  const base = { signedIn: () => true, committing: () => false, every: () => () => {}, soon: () => {} };
+  it('a time given only WITH A CHANGE goes with that change, never with a later re-send (the verifier\'s zz-v16-hb probe)', async () => {
+    const sent: (string | null)[] = [];
+    const hb = createDeviceHeartbeat({ ...base, send: send(sent) });
+    hb.start();
+    hb.update([{ kind: 'printer', state: 'ok' }], '2026-10-07T08:00:00.000Z');
+    await hb.tick(); await hb.tick(); await hb.tick();
+    expect(sent).toEqual(['2026-10-07T08:00:00.000Z', null, null]);
+    // A new change carries its own time once; an unchanged re-said state is no change and carries nothing.
+    hb.update([{ kind: 'printer', state: 'failed' }], '2026-10-07T08:30:00.000Z');
+    await hb.tick();
+    hb.update([{ kind: 'printer', state: 'failed' }], '2026-10-07T08:31:00.000Z');
+    await hb.tick();
+    expect(sent.slice(3)).toEqual(['2026-10-07T08:30:00.000Z', null]);
+    expect(hb.lastObservedAt()).toBe('2026-10-07T08:31:00.000Z'); // evidence of the last answer, not liveness
+  });
+  it('an adapter that offers its own clock has it carried on EVERY send (so a hung one reads stale); one that throws says nothing', async () => {
+    const sent: (string | null)[] = [];
+    let clock: () => unknown = () => '2026-10-07T08:00:00.000Z';
+    const hb = createDeviceHeartbeat({ ...base, send: send(sent), adapterObservedAt: () => clock() });
+    hb.start();
+    hb.update([{ kind: 'printer', state: 'ok' }], '2026-10-07T07:59:00.000Z');
+    await hb.tick(); await hb.tick();
+    clock = () => { throw new Error('adapter gone'); };
+    await hb.tick();
+    expect(sent).toEqual(['2026-10-07T08:00:00.000Z', '2026-10-07T08:00:00.000Z', null]);
+  });
+  it('the till shell offers liveness only while the adapter gave it a clock (offersLiveness)', async () => {
+    const sent: (string | null)[] = [];
+    let offered = false;
+    const hb = createDeviceHeartbeat({ ...base, send: send(sent), adapterObservedAt: () => '2026-10-07T09:00:00.000Z', offersLiveness: () => offered });
+    hb.start();
+    hb.update([{ kind: 'printer', state: 'ok' }], '2026-10-07T08:00:00.000Z');
+    await hb.tick(); await hb.tick();
+    offered = true;
+    await hb.tick();
+    expect(sent).toEqual(['2026-10-07T08:00:00.000Z', null, '2026-10-07T09:00:00.000Z']);
+  });
+});
+
 describe('the till shell re-sends its devices (bootPos, the real wiring)', () => {
   const savedFetch = globalThis.fetch;
   let posts: { url: string; body: unknown }[];

@@ -21,7 +21,7 @@
 
 import type { Route } from '../../kernel/src/index';
 import { normaliseUom } from '../../../packages/contracts/src/quantity';
-import { assertLocationInScope } from './location-scope';
+import { assertLocationInScope, locationIsItsOwnBranch } from './location-scope';
 import { apiError } from '../../kernel/src/index';
 import {
   captureReceipt, availableFromReceipt, heldFromReceipt, IncompleteCaptureError,
@@ -111,6 +111,17 @@ export function syncedGoodsReceiptRoutes(deps: SyncedGoodsReceiptDeps): readonly
         // Never double-count: a GRN already recorded is returned unchanged (a retry after a lost reply, §31.1).
         const existing = await deps.grn(ctx.tenantId, grnId);
         if (existing !== undefined) {
+          // OB-84: the id is held by a receipt booked at ANOTHER store (a claim head office's order has overruled — it is on
+          // head office's exception list). This delivery is never merged into that one, and never answered as received.
+          const storeOf = await (deps.locationBranches ?? locationIsItsOwnBranch)(ctx.tenantId);
+          if (storeOf(existing.warehouseId) !== storeOf(r.warehouseId)) {
+            throw apiError(409, {
+              code: 'receipt_id_held_by_another_store',
+              whatHappened: `Head office already holds a receipt ${grnId} booked at ${existing.warehouseId}, not ${r.warehouseId}. The two are never merged; it is listed for head office to resolve.`,
+              wasItSaved: 'not_saved',
+              nextSafeAction: 'Keep the delivery at the store as a dead letter for a person. Head office resolves the clash and re-issues a receipt number from the store pack.',
+            });
+          }
           return { status: 200, body: { grn: existing, alreadyReceived: true, flags: existing.governanceFlags ?? [] } };
         }
 

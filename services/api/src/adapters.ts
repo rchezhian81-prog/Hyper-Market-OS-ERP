@@ -2426,7 +2426,10 @@ export async function storeOfPack(store: EventStore, tenantId: string, packVersi
 export async function storeOfLane(store: EventStore, tenantId: string, laneId: unknown): Promise<string | undefined> {
   if (typeof laneId !== 'string' || laneId.trim() === '') return undefined;
   const fleet = projectFleet(tenantId, await allOf<DeviceRegistryEvent>(store, tenantId, streamName(STREAM.platform, 'devices'), 'DeviceRegistryEvent'));
-  const lane = fleet.find((d) => d.deviceId === laneId && d.kind === 'pos_lane' && d.status !== 'retired');
+  // Round 16: a till is (store, till) — when more than one store registered a till of this name, the name alone places it
+  // at no store (fail closed; the record's own store, or the caller's, decides).
+  const lanes = fleet.filter((d) => d.deviceId === laneId && d.kind === 'pos_lane' && d.status !== 'retired');
+  const lane = lanes.length === 1 ? lanes[0] : undefined;
   return lane === undefined || lane.branchId.trim() === '' ? undefined : lane.branchId;
 }
 
@@ -3493,25 +3496,84 @@ export function exchangesAdapter(input: {
 }
 
 /**
- * OB-80 "A" — the MIGRATION RULE for till cash and shift closes kept by the till's id alone (before OB-80, or in a business
- * with one store). History is never rewritten: those records stay where they are, and are READ as belonging to one store:
- *   1. the store head office registered the till at (device registry), else
- *   2. the store whose computer first relayed that till's cash (the round-14 placement, `relay-record-owners`), else
- *   3. the business's one store, when it has exactly one (the single-store pilot), else
- *   4. no store — shown by the till's id alone, never folded into a store's till of the same name.
+ * OB-82 "A" (owner, 12 Oct 2026, "Fix it once, for good"): till cash and shift closes kept by the till's id ALONE (before
+ * OB-80) belong to exactly ONE store, decided ONCE and recorded as an append-only fact — "till X's old records are store S's"
+ * (`LegacyTillPlaced`, one idempotency key per till: the first placement stands for ever, nothing ever re-decides it). Reads
+ * use ONLY that record — never today's store count, never the device register — so a second store arriving, or the till
+ * being registered (at any store) later, never moves, hides or doubles the old float.
+ *
+ * Who writes it:
+ *   • AUTOMATICALLY (`how: 'single_store_rule'`, by "system"), at the FIRST moment head office reads or writes that till's
+ *     cash or shift records while it knows exactly ONE store — in the single-store pilot that is the first look after
+ *     go-live, before any second store can exist. The stores known at that moment are kept on the record as evidence.
+ *   • otherwise by a NAMED head-office person (`POST /v1/tills/:tillId/legacy-placement`, `how: 'head_office'`) — the
+ *     remedy for a till whose old records were first looked at when no store, or more than one, was known. Until then the
+ *     old records are shown as UNPLACED (P-08), never folded into any store's till of the same name, never dropped.
+ * History is never rewritten (hard rule #2): the old records stay on the till's own stream.
+ */
+export interface LegacyTillPlacement {
+  readonly tillId: string;
+  readonly storeId: string;
+  readonly placedBy: string;
+  readonly how: 'single_store_rule' | 'head_office';
+  readonly reason: string;
+  readonly at: string;
+  /** The stores head office knew at the moment it was placed — the evidence for the decision. */
+  readonly storesKnown: readonly string[];
+}
+const LEGACY_TILL_PLACEMENTS = streamName(STREAM.cash, 'legacy-till-placements', 'v1');
+const legacyPlacementKey = (tenantId: string, tillId: string): string => `legacy-till-placed-${tenantId}-${tillId}`;
+
+/** The one-time placement of a till's pre-OB-80 records, if it has been made. */
+export async function legacyTillPlacement(store: EventStore, tenantId: string, tillId: string): Promise<LegacyTillPlacement | undefined> {
+  const held = await store.findByIdempotencyKey(tenantId, legacyPlacementKey(tenantId, tillId));
+  return held === undefined ? undefined : (held.event.payload as LegacyTillPlacement);
+}
+
+/** Every one-time placement made (for a store's list of tills). */
+export async function legacyTillPlacements(store: EventStore, tenantId: string): Promise<readonly LegacyTillPlacement[]> {
+  return allOf<LegacyTillPlacement>(store, tenantId, LEGACY_TILL_PLACEMENTS, 'LegacyTillPlaced');
+}
+
+/** Record the placement — first one wins (one key per till). Returns the placement that STANDS and whether this call made it. */
+export async function placeLegacyTill(store: EventStore, tenantId: string, p: LegacyTillPlacement): Promise<{ readonly placement: LegacyTillPlacement; readonly recorded: boolean }> {
+  const res = await store.append(tenantId, LEGACY_TILL_PLACEMENTS, makeEvent({
+    id: `legacy-till-placed-${p.tillId}`, type: 'LegacyTillPlaced', occurredAt: p.at,
+    idempotencyKey: legacyPlacementKey(tenantId, p.tillId), source: 'api/pos', payload: p,
+  }));
+  return { placement: res.record.event.payload as LegacyTillPlacement, recorded: !res.deduped };
+}
+
+/** Whether a till has anything kept by its id alone: cash on its own stream, or a shift close naming no store. */
+async function hasLegacyTillHistory(store: EventStore, tenantId: string, tillId: string): Promise<boolean> {
+  if ((await store.readStream(tenantId, forTillCash(tillId), { type: 'CashMovement' })).length > 0) return true;
+  return (await allOf<{ tillId: string; storeId?: string }>(store, tenantId, SHIFTS_STREAM, 'TillClosed')).some((c) => c.tillId === tillId && (c.storeId === undefined || c.storeId === ''));
+}
+
+/**
+ * OB-82: the store a till's pre-OB-80 records belong to — the one-time placement; made automatically here, once, when the
+ * till has such records and head office knows exactly one store at this moment. undefined → not placed (shown unplaced).
  */
 export async function legacyTillStore(input: { readonly store: EventStore; readonly now: () => string }, tenantId: string, tillId: string): Promise<string | undefined> {
-  const registered = await storeOfLane(input.store, tenantId, tillId);
-  if (registered !== undefined) return registered;
-  const placed = await input.store.findByIdempotencyKey(tenantId, `relay-record-owner-${tenantId}-till-${tillId}`);
-  if (placed !== undefined) return (placed.event.payload as { store: string }).store;
+  const placed = await legacyTillPlacement(input.store, tenantId, tillId);
+  if (placed !== undefined) return placed.storeId;
+  if (!(await hasLegacyTillHistory(input.store, tenantId, tillId))) return undefined;
   const { knownStores } = await storeOfLocationResolver(input, tenantId);
-  return knownStores.size === 1 ? [...knownStores][0] : undefined;
+  if (knownStores.size !== 1) return undefined;
+  const only = [...knownStores][0]!;
+  return (await placeLegacyTill(input.store, tenantId, {
+    tillId, storeId: only, placedBy: 'system', how: 'single_store_rule', at: input.now(), storesKnown: [only],
+    reason: `head office first read or wrote till ${tillId}'s records kept by its id alone while it knew exactly one store (${only})`,
+  })).placement.storeId;
 }
 
 /** OB-80: the tills head office has kept cash for at a store (since OB-80). */
 export async function tillsAtStore(store: EventStore, tenantId: string, storeId: string): Promise<readonly string[]> {
-  return [...new Set((await allOf<{ tillId: string }>(store, tenantId, forTillsAtStore(storeId), 'TillKeptAtStore')).map((t) => t.tillId))];
+  return [...new Set([
+    ...(await allOf<{ tillId: string }>(store, tenantId, forTillsAtStore(storeId), 'TillKeptAtStore')).map((t) => t.tillId),
+    // OB-82: a till whose old records were placed at this store, once and for all.
+    ...(await legacyTillPlacements(store, tenantId)).filter((p) => p.storeId === storeId).map((p) => p.tillId),
+  ])];
 }
 
 export function cashAdapter(input: {
@@ -3531,11 +3593,21 @@ export function cashAdapter(input: {
     // OB-80: a store's till reads its own chain, preceded by what was kept by the till's id alone when the migration rule
     // places that in the same store (one chain: the custodian and the balance carry over, never double). No store → the
     // chain kept by the till's id alone, exactly as before OB-80.
+    // OB-82: the old chain joins ONLY the store its one-time placement names, and the two chains are de-duplicated by movement
+    // id — a movement the till re-sent after OB-80 that is already on the old chain counts ONCE.
     tillMovements: async (tenantId, tillId, storeId) => {
       if (storeId === undefined) return read(tenantId, forTillCash(tillId));
       const legacy = (await legacyTillStore(input, tenantId, tillId)) === storeId ? await read(tenantId, forTillCash(tillId)) : [];
-      return [...legacy, ...await read(tenantId, forStoreTillCash(storeId, tillId))];
+      const seen = new Set(legacy.map((m) => m.movementId));
+      return [...legacy, ...(await read(tenantId, forStoreTillCash(storeId, tillId))).filter((m) => !seen.has(m.movementId))];
     },
+    legacyTill: async (tenantId, tillId) => {
+      const store = await legacyTillStore(input, tenantId, tillId);
+      const placement = store === undefined ? undefined : await legacyTillPlacement(input.store, tenantId, tillId);
+      return { ...(placement === undefined ? {} : { placement }), movements: await read(tenantId, forTillCash(tillId)) };
+    },
+    placeLegacyTill: async (tenantId, p) => placeLegacyTill(input.store, tenantId, p),
+    legacyStoreOfTill: (tenantId, tillId) => legacyTillStore(input, tenantId, tillId),
     storeOfTill: (tenantId, tillId) => storeOfLane(input.store, tenantId, tillId),
     knownStores: async (tenantId) => [...(await storeOfLocationResolver(input, tenantId)).knownStores],
     // SP-4c: the custodian / recorder a relayed movement names is re-verified from their grants, never taken on the box's word.
@@ -3593,6 +3665,8 @@ export function shiftAdapter(input: {
     permissionsOfUser: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),
     // OB-80: a close is kept per (store, till) — the till's registered store when the close names none.
     storeOfTill: (tenantId, tillId) => storeOfLane(input.store, tenantId, tillId),
+    // OB-82: a close kept before OB-80 (no store) belongs to its till's one-time legacy placement.
+    legacyStoreOfTill: (tenantId, tillId) => legacyTillStore(input, tenantId, tillId),
     knownStores: async (tenantId) => [...(await storeOfLocationResolver(input, tenantId)).knownStores],
 
     closedShift: async (tenantId, shiftId) => (await closes(tenantId)).find((r) => r.shiftId === shiftId),
@@ -5015,29 +5089,87 @@ export function adjustmentRequestAdapter(input: {
   };
 }
 
+/**
+ * OB-84 "A" (owner, 12 Oct 2026, "Head office's record decides"): the STORE of an approval's subject, from head office's own
+ * register of that subject — a held count, a correction request, a goods receipt's held excess, a day close. undefined when
+ * head office does not hold the subject, or cannot place it in a store it knows.
+ */
+export async function approvalSubjectStore(input: { readonly store: EventStore; readonly now: () => string }, tenantId: string, subjectType: string, subjectRef: string): Promise<string | undefined> {
+  const r = await storeOfLocationResolver(input, tenantId);
+  const placed = (place: string | null | undefined): string | undefined => {
+    if (typeof place !== 'string' || place.trim() === '') return undefined;
+    const st = r.storeOf(place);
+    return r.knownStores.has(st) ? st : undefined;
+  };
+  switch (subjectType) {
+    case 'stock_count': return placed((await allCountReconciliations(input.store, tenantId)).find((c) => c.countId === subjectRef)?.locationId);
+    case 'stock_adjustment': { const q = await adjustmentRequestAdapter(input).request(tenantId, subjectRef); return q === undefined ? undefined : placed(q.storeId ?? q.locationId); }
+    case 'goods_receipt_excess': return placed((await goodsReceiptAdapter(input).grn(tenantId, subjectRef))?.warehouseId);
+    case 'day_close_reopen': case 'day_reopen': return placed((await dayCloseAdapter(input).dayClose(tenantId, subjectRef))?.storeId);
+    default: return undefined;
+  }
+}
+
+/** Every decision record kept, in record order — including one a store relayed for another store's subject (OB-84). */
+export async function approvalDecisionRecords(store: EventStore, tenantId: string): Promise<readonly ApprovalDecisionRecord[]> {
+  return allOf<ApprovalDecisionRecord>(store, tenantId, APPROVAL_DECISIONS_STREAM, 'ApprovalDecisionRecorded');
+}
+
+/**
+ * OB-84: the store a decision record came FROM — the store it names, else the one store the store computer that relayed it
+ * is granted for (head office's own grants; a decision's body is sealed by the box, so it is never stamped). undefined for
+ * a record relayed by a person and naming no store.
+ */
+export async function decisionStoreResolver(store: EventStore, tenantId: string): Promise<(r: ApprovalDecisionRecord) => string | undefined> {
+  const boxStore = new Map<string, string>();
+  for (const g of await effectiveGrants(store, tenantId)) {
+    if (g.roleId === STORE_COMPUTER_ROLE_ID && g.branchScope !== 'all' && g.branchScope.length === 1) boxStore.set(g.userId, g.branchScope[0]!);
+  }
+  return (r) => (r.storeId !== null && r.storeId !== '' ? r.storeId : boxStore.get(r.relayedBy));
+}
+
 export function approvalDecisionAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
 }): ApprovalDecisionDeps {
-  // Folded latest-per-request by append order. The route refuses a conflicting second decision (422), so in
+  // Folded latest-per-(request, store) by append order. The route refuses a conflicting second decision (422), so in
   // practice there is one record per request; the fold is what keeps a replayed identical record from doubling.
+  // OB-84: a decision another store's computer relayed for a request BEFORE head office held its subject (a pre-claimed id)
+  // is kept, never overwritten — but once head office holds the subject, the decision of the subject's OWN store is THE
+  // decision for that request; the earlier foreign one is listed as an exception for head office (relay-record-store.ts).
   const fold = async (tenantId: string): Promise<Map<string, ApprovalDecisionRecord>> => {
-    const all = await allOf<ApprovalDecisionRecord>(input.store, tenantId, APPROVAL_DECISIONS_STREAM, 'ApprovalDecisionRecorded');
-    const byId = new Map<string, ApprovalDecisionRecord>();
-    for (const r of all) byId.set(r.id, r);
-    return byId;
+    const from = await decisionStoreResolver(input.store, tenantId);
+    const byKey = new Map<string, ApprovalDecisionRecord>();
+    for (const r of await approvalDecisionRecords(input.store, tenantId)) byKey.set(`${r.id}\u0000${from(r) ?? ''}`, r);
+    return byKey;
   };
+  const plainKey = (tenantId: string, id: string): string => `approval-decision-${tenantId}-${id}`;
   return {
     now: input.now,
-    decision: async (tenantId, requestId) => (await fold(tenantId)).get(requestId),
+    decision: async (tenantId, requestId) => {
+      const records = [...(await fold(tenantId)).values()].filter((r) => r.id === requestId);
+      if (records.length === 0) return undefined;
+      const last = records[records.length - 1]!;
+      const subjectStore = await approvalSubjectStore(input, tenantId, last.subjectType, last.subjectRef);
+      if (subjectStore === undefined) return last; // head office cannot place the subject: as before
+      const from = await decisionStoreResolver(input.store, tenantId);
+      const own = records.filter((r) => from(r) === undefined || from(r) === subjectStore);
+      return own[own.length - 1];
+    },
     decisions: async (tenantId) => [...(await fold(tenantId)).values()],
     recordDecision: async (tenantId, record) => {
+      // One decision per request, whichever hop re-sends it (§31.1). OB-84: when the request id is already held by ANOTHER
+      // store's record (a pre-claim the route has judged foreign), this store's own decision is kept beside it under its own
+      // key — nothing overwritten, nothing merged.
+      const held = await input.store.findByIdempotencyKey(tenantId, plainKey(tenantId, record.id));
+      const from = await decisionStoreResolver(input.store, tenantId);
+      const mine = from(record) ?? 'none';
+      const beside = held !== undefined && (from(held.event.payload as ApprovalDecisionRecord) ?? 'none') !== mine;
       await input.store.append(tenantId, APPROVAL_DECISIONS_STREAM, makeEvent({
-        id: `approval-decision-${record.id}`,
+        id: beside ? `approval-decision-${record.id}-at-${mine}` : `approval-decision-${record.id}`,
         type: 'ApprovalDecisionRecorded',
         occurredAt: record.recordedAt,
-        // One decision per request, whichever hop re-sends it (§31.1).
-        idempotencyKey: `approval-decision-${tenantId}-${record.id}`,
+        idempotencyKey: beside ? `${plainKey(tenantId, record.id)}-at-${mine}` : plainKey(tenantId, record.id),
         source: 'api/identity',
         payload: record,
       }));

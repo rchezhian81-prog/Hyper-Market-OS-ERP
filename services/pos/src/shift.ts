@@ -5,7 +5,7 @@
 // office sees. Since PF-08 (OB-27 "A") head office has no direct close of its own.
 
 import type { Route } from '../../kernel/src/index';
-import { apiError } from '../../kernel/src/index';
+import { apiError, assertRecordBranchInScope, narrowScope } from '../../kernel/src/index';
 import { assessShiftClose, checkDenominationCount, assessOverShortReview, type DenominationCount } from '../../../packages/till/src/index';
 import { personFindings } from './cash';
 import { cashierSealFlags, stampIn, type CashierSealFlag } from './store-seal';
@@ -119,6 +119,12 @@ export interface ShiftDeps extends TillStoreDeps {
   readonly tillSealKey?: Buffer;
 }
 
+/** OB-80/OB-82: the store a close belongs to — the store it names, else (kept before OB-80) its till's one-time legacy placement. */
+async function closeStoreOf(deps: ShiftDeps, tenantId: string, r: ClosedShiftRecord): Promise<string | undefined> {
+  if (r.storeId !== undefined && r.storeId !== '') return r.storeId;
+  return deps.legacyStoreOfTill === undefined ? undefined : deps.legacyStoreOfTill(tenantId, r.tillId);
+}
+
 export function shiftRoutes(deps: ShiftDeps): readonly Route[] {
   return [
     // PF-08 · OB-27 "A" (9 Oct 2026): there is NO direct close here. A shift closes at the till, through the store box,
@@ -216,13 +222,22 @@ export function shiftRoutes(deps: ShiftDeps): readonly Route[] {
       api: 'API-05', method: 'GET', path: '/v1/shifts/over-short',
       permission: 'till.shift.read',
       handler: async (ctx) => {
-        const rows = await deps.overShortShifts(ctx.tenantId);
+        // OB-83 "A" (owner, 12 Oct 2026, "Own store's manager only"): a branch-limited person sees ONLY their own stores'
+        // over/shorts — the store of each close is head office's own (its storeId; a close kept before OB-80 by the till's
+        // one-time legacy placement, OB-82). Head office / the owner (company-wide scope) sees every store. A close no store
+        // can be found for is shop-wide: only a company-wide reader sees it. `?storeId=` narrows (refused by name when not held).
+        const asked = typeof ctx.query['storeId'] === 'string' && ctx.query['storeId'].trim() !== '' ? ctx.query['storeId'] : undefined;
+        const scope = narrowScope(ctx, asked === undefined ? undefined : [asked]);
+        const placed = await Promise.all((await deps.overShortShifts(ctx.tenantId)).map(async (r) => ({ r, store: await closeStoreOf(deps, ctx.tenantId, r) })));
+        const rows = placed
+          .filter(({ store }) => (scope === 'all' ? asked === undefined || store === asked : store !== undefined && scope.includes(store)))
+          .map(({ r, store }) => ({ ...r, storeId: store, legacyPlaced: r.storeId === undefined && store !== undefined }));
         const reviews = await deps.overShortReviews(ctx.tenantId);
         const reviewByShift = new Map(reviews.map((r) => [r.shiftId, r] as const));
         const mapped = rows.map((r) => {
           const review = reviewByShift.get(r.shiftId);
           return {
-            shiftId: r.shiftId, tillId: r.tillId, storeId: r.storeId ?? null, cashierId: r.cashierId, tradingDay: r.tradingDay,
+            shiftId: r.shiftId, tillId: r.tillId, storeId: r.storeId ?? null, ...(r.legacyPlaced ? { legacyPlaced: true } : {}), cashierId: r.cashierId, tradingDay: r.tradingDay,
             varianceMinor: r.varianceMinor, reasonCode: r.reasonCode, denominations: r.denominations ?? null,
             // A relayed close and what the cloud found when it re-verified it (SP-4c), for the cash office (P-08).
             laneId: r.laneId ?? null, relayed: r.relayed === true, flags: r.flags ?? [],
@@ -261,6 +276,10 @@ export function shiftRoutes(deps: ShiftDeps): readonly Route[] {
             nextSafeAction: 'Check the shift id on the over/short list and try again.',
           });
         }
+
+        // OB-83 "A": only a person whose own scope covers the close's store signs it off (head office covers all); a close
+        // with no store is shop-wide, so only a company-wide person may (PA-01 helpers — refused by name, nothing saved).
+        assertRecordBranchInScope(ctx, await closeStoreOf(deps, ctx.tenantId, record));
 
         const existing = (await deps.overShortReviews(ctx.tenantId)).find((r) => r.shiftId === shiftId);
         if (existing !== undefined) {

@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { readdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
 import type { HttpRequest } from '../../services/kernel/src/index';
@@ -44,7 +45,7 @@ const OK = [{ kind: 'scanner', state: 'ok' }, { kind: 'printer', state: 'ok' }];
 const written = (a: ReportAnswer): boolean | undefined => (a.recorded ? a.written : undefined);
 interface Component { name: string; status: string; detail: string }
 
-async function aHungAdapterReadsStale(h: ApiHarness, tenant: string): Promise<void> {
+async function aHungAdapterReadsStale(h: ApiHarness, tenant: string, mode: 'hung' | 'change-only' = 'hung'): Promise<void> {
   const savedFetch = globalThis.fetch;
   const token = ['box', 'clock', tenant].join('-').padEnd(48, '0');
   const devicePosts: Promise<unknown>[] = [];
@@ -101,6 +102,28 @@ async function aHungAdapterReadsStale(h: ApiHarness, tenant: string): Promise<vo
       return (res.body as { health: { components: Component[] } }).health.components.find((c) => c.name === 'till_devices:S1')!;
     };
 
+    if (mode === 'change-only') {
+      // Round 16 (verifier DEV-1, probe zz-v16-hb): an adapter with NO clock of its own that gives a time only WITH A CHANGE
+      // (`onChange(fn(devices, observedAt))`). At sign-in it says nothing about time; at minute 1 a scanner recovers (a
+      // change, said with its time). Then it is healthy and quiet for 40 minutes. The change's time is sent with that one
+      // change only — every later re-send is judged by the till's own time, so the lane never reads "the adapter may have hung".
+      await signInTill(pos, 'u-lanecash');
+      expect(await pos.reportDevices([{ kind: 'scanner', state: 'degraded' }, { kind: 'printer', state: 'ok' }])).toEqual({ recorded: true });
+      travel(1);
+      pos.devicesSaid(OK, at(1));
+      await Promise.all(devicePosts.splice(0));
+      for (let m = 2; m <= 40; m += 1) {
+        travel(m);
+        await fireDueTimers();
+        const lane = await till();
+        expect(lane.status, `minute ${m}: ${lane.detail}`).toBe('ok');
+        expect(lane.detail).not.toContain('may have hung');
+      }
+      const times = sentBodies.map((b) => (b as { adapterObservedAt?: string }).adapterObservedAt ?? null);
+      // sign-in (no time), the change at minute 1 (its time), then the 5-minute re-sends (none) — 8 of them to minute 40.
+      expect(times).toEqual([null, at(1), ...Array<null>(8).fill(null)]);
+      return;
+    }
     // The adapter keeps its own clock — and stops observing at minute 0 (hung): it answers minute 0 for ever after.
     pos.deviceAdapterClock(() => at(0));
     await signInTill(pos, 'u-lanecash');
@@ -136,6 +159,9 @@ describe('a hung device adapter reads STALE at head office (in memory)', () => {
   it('the till keeps re-sending, but the adapter\'s own clock stopped at minute 0: ok to 14, STALE at 15, ok once it observes again', async () => {
     await aHungAdapterReadsStale(apiHarness(), A);
   }, 120_000);
+  it('DEV-1: an adapter that gives its time only with a change never makes a healthy, quiet till read "may have hung" (40 minutes)', async () => {
+    await aHungAdapterReadsStale(apiHarness(), 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaab1601', 'change-only');
+  }, 120_000);
 });
 
 const DATABASE_URL = process.env['DATABASE_URL'];
@@ -151,6 +177,10 @@ describe.skipIf(!DATABASE_URL)('a hung device adapter reads STALE at head office
   it('the same, on PostgreSQL', async () => {
     const sql = pgPoolClient(pool);
     await aHungAdapterReadsStale(apiHarness({ store: new SqlEventStore(sql), idempotency: new SqlIdempotencyStore(sql) }), `f${Date.now().toString(16).slice(-7)}-b915-4bbb-8bbb-${'f'.repeat(12)}`);
+  }, 240_000);
+  it('DEV-1, on PostgreSQL: a change-only adapter time never raises the false "may have hung"', async () => {
+    const sql = pgPoolClient(pool);
+    await aHungAdapterReadsStale(apiHarness({ store: new SqlEventStore(sql), idempotency: new SqlIdempotencyStore(sql) }), randomUUID(), 'change-only');
   }, 240_000);
 });
 
@@ -176,7 +206,10 @@ describe('the box keeps its device history append-only and starts from its compa
 
       // A restart reads the newest index generation only — not one history record — and has every till's latest.
       const second = await PeripheralReports.open({ dataDir: dir, capacityBytes: 10_485_760, now });
-      expect(second.startedFrom).toEqual({ generation: 1, historyRecordsRead: 0, indexRecordsRead: 5 });
+      // Round 16: the index took the snapshot and the three MATERIAL changes (lane-1 first, lane-1's printer failing, lane-2
+      // first) — not the checkpoint, which is in the history only. lane-1's latest after the restart is its last change.
+      expect(second.startedFrom).toEqual({ generation: 1, historyRecordsRead: 0, indexRecordsRead: 4 });
+      expect(second.latest()[0]!.reportedAt).toBe(new Date(T0 + 5 * 60_000 + 1_000).toISOString());
       expect(second.latest().map((r) => [r.laneId, r.devices[0]!.state, r.adapterObservedAt ?? null])).toEqual([['lane-1', 'failed', null], ['lane-2', 'ok', at(1)]]);
 
       // Fill generation 1: it rolls over to generation 2 opening with a snapshot; generation 1 stays on the disk.
@@ -194,7 +227,16 @@ describe('the box keeps its device history append-only and starts from its compa
       expect(third.latest().map((r) => r.laneId)).toEqual(['lane-1', 'lane-2', 'lane-3']);
       // The history kept everything written, append-only.
       expect((await readLog(join(dir, 'peripheral-health.log'))).filter((r) => r.ok)).toHaveLength(4 + INDEX_GENERATION_RECORDS);
+      // Round 16 (verifier LOW): a day of "still the same" checkpoints adds to the history, and NOTHING to the index.
+      const indexBefore = (await readLog(join(dir, peripheralIndexFile(2)))).length;
+      for (let i = 0; i < 96; i += 1) {
+        clock += UNCHANGED_CHECKPOINT_MS;
+        expect(written(await third.report({ laneId: 'lane-1', by: 'u-c', body: { devices: [{ kind: 'printer', state: 'failed', detail: 'paper out' }] } }))).toBe(true);
+      }
       await third.close();
+      expect((await readLog(join(dir, peripheralIndexFile(2)))).length).toBe(indexBefore);
+      expect(readdirSync(dir).filter((f) => f.startsWith('peripheral-health-latest-')).sort()).toEqual([peripheralIndexFile(1), peripheralIndexFile(2)]);
+      expect((await readLog(join(dir, 'peripheral-health.log'))).filter((r) => r.ok)).toHaveLength(4 + INDEX_GENERATION_RECORDS + 96);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

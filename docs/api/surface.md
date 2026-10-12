@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1015 | 622 | 622 | 89 | 300 |
+| 13 | 1016 | 623 | 623 | 89 | 300 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -424,6 +424,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/tills/:tillId/cash` | `cash.till.read` | core | — |
 | POST | `/v1/tills/:tillId/cash-movements` | `cash.movement.record` | core | yes |
 | POST | `/v1/tills/:tillId/cash-movements/synced` | `cash.movement.sync` | core | yes |
+| POST | `/v1/tills/:tillId/legacy-placement` | `till.overshort.review` | core | yes |
 
 ## API-06 — Customer / Loyalty (M16–M17, M21)
 

@@ -5,7 +5,7 @@
 // till's own screen can run the identical one; this module is the HTTP skin and the persistence.
 
 import type { Route } from '../../kernel/src/index';
-import { apiError } from '../../kernel/src/index';
+import { apiError, assertRecordBranchInScope } from '../../kernel/src/index';
 import {
   assessCashMovement, custodianOf, tillDrawerBalanceMinor,
   type CashMovementKind, type StoredCashMovement,
@@ -13,6 +13,7 @@ import {
 import { TILL_AUTHORITY } from './sale-intake';
 import { cashierSealFlags, stampIn, type CashierSealFlag } from './store-seal';
 import { tillStoreOf, type TillStoreDeps } from './till-store';
+import type { AuditEntry } from '../../../packages/audit/src/index';
 
 export type { StoredCashMovement } from '../../../packages/cash/src/index';
 
@@ -82,7 +83,34 @@ export interface CashDeps extends TillStoreDeps {
   readonly permissionsOfUser?: (tenantId: string, userId: string) => Promise<readonly string[] | undefined> | readonly string[] | undefined;
   /** The key head office checks the store computer's seal with (ADR-0023) — on a relayed movement. Absent → not checked. */
   readonly tillSealKey?: Buffer;
+  /**
+   * OB-82: the till's records kept by its id ALONE (before OB-80) and their one-time placement, when made. Absent → the
+   * composition keeps no such records.
+   */
+  readonly legacyTill?: (tenantId: string, tillId: string) => Promise<LegacyTillView> | LegacyTillView;
+  /** OB-82: record the one-time placement — the first stands for ever; returns the one that stands and whether this made it. */
+  readonly placeLegacyTill?: (tenantId: string, p: LegacyTillPlacementRecord) => Promise<{ readonly placement: LegacyTillPlacementRecord; readonly recorded: boolean }>;
+  /** Seal a person's placement into the audit trail (M34). Optional on a bare stub. */
+  readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
 }
+
+/** OB-82 "A": the one-time, append-only "till X's pre-OB-80 records are store S's" fact. */
+export interface LegacyTillPlacementRecord {
+  readonly tillId: string;
+  readonly storeId: string;
+  readonly placedBy: string;
+  readonly how: 'single_store_rule' | 'head_office';
+  readonly reason: string;
+  readonly at: string;
+  readonly storesKnown: readonly string[];
+}
+export interface LegacyTillView {
+  readonly placement?: LegacyTillPlacementRecord;
+  readonly movements: readonly TillMovement[];
+}
+
+const sameMovement = (m: TillMovement, kind: string, amountMinor: number, custodianId: string): boolean =>
+  m.kind === kind && Math.abs(m.deltaMinor) === amountMinor && m.custodianId === custodianId;
 
 /**
  * Re-verify a person a relayed record names against their grants: unknown, or known without till authority, is a flag —
@@ -139,7 +167,22 @@ export function cashRoutes(deps: CashDeps): readonly Route[] {
         }
         const storeId = await tillStoreOf(deps, ctx, tillId, (b as Record<string, unknown>)['storeId']);
         const request = { movementId: b.movementId, tillId, kind: b.kind as CashMovementKind, amountMinor: b.amountMinor as number, custodianId: b.custodianId };
-        const assessment = assessCashMovement({ priorMovements: await deps.tillMovements(ctx.tenantId, tillId, storeId), request });
+        const prior = await deps.tillMovements(ctx.tenantId, tillId, storeId);
+        // OB-82: a movement id already on this till's chain (its own, or the old chain placed here) is that movement — the
+        // same one again is answered as recorded; a different movement under the same id is refused by name (one id, one movement).
+        const onFile = prior.find((m) => m.movementId === request.movementId);
+        if (onFile !== undefined) {
+          if (sameMovement(onFile, request.kind, request.amountMinor, request.custodianId)) {
+            return { status: 200, body: { movementId: request.movementId, tillId, storeId: storeId ?? null, kind: request.kind, alreadyRecorded: true, balanceMinor: tillDrawerBalanceMinor(prior, tillId), custodian: custodianOf(prior, tillId) } };
+          }
+          throw apiError(409, {
+            code: 'movement_id_already_used',
+            whatHappened: `Movement ${request.movementId} is already on till ${tillId}'s record as a different movement (${onFile.kind} of ${Math.abs(onFile.deltaMinor)} held by ${onFile.custodianId}).`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing moved. Give the new movement its own id.',
+          });
+        }
+        const assessment = assessCashMovement({ priorMovements: prior, request });
         if (!assessment.ok) {
           throw apiError(422, {
             code: assessment.refusedBecause!,
@@ -190,6 +233,16 @@ export function cashRoutes(deps: CashDeps): readonly Route[] {
         if (already !== undefined) {
           return { status: 200, body: { movementId, tillId, storeId: storeId ?? null, recorded: true, alreadyRecorded: true, flags: already.flags ?? [] } };
         }
+        // OB-82: the very movement already kept on the till's OLD chain (before OB-80) while that chain is not yet placed —
+        // re-sent after a lost reply. It is the same movement: answered as recorded and NOT written again, so it can never
+        // count twice once head office places the old chain (a different movement that merely shares the id is recorded).
+        if (storeId !== undefined && deps.legacyTill !== undefined) {
+          const legacy = await deps.legacyTill(ctx.tenantId, tillId);
+          const old = legacy.placement === undefined ? legacy.movements.find((m) => m.movementId === movementId) : undefined;
+          if (old !== undefined && sameMovement(old, kind, amountMinor as number, custodianId)) {
+            return { status: 200, body: { movementId, tillId, storeId, recorded: true, alreadyRecorded: true, onUnplacedLegacyChain: true, flags: old.flags ?? [] } };
+          }
+        }
 
         const flags: string[] = [
           ...await personFindings(deps, ctx.tenantId, custodianId, 'custodian_unknown', 'custodian_lacks_authority'),
@@ -224,14 +277,85 @@ export function cashRoutes(deps: CashDeps): readonly Route[] {
         // OB-80: which store's till — `?storeId=`, else where it is registered, else the reader's one store.
         const storeId = await tillStoreOf(deps, ctx, tillId, ctx.query['storeId']);
         const movements = await deps.tillMovements(ctx.tenantId, tillId, storeId);
+        // OB-82 · P-08: where the till's old records (kept by its id alone) stand — placed here (counted above), placed at
+        // another store (not this store's), or NOT YET PLACED: then they are shown here, by amount, for head office to place —
+        // never silently ₹0, never folded in.
+        const legacy = storeId === undefined || deps.legacyTill === undefined ? undefined : await deps.legacyTill(ctx.tenantId, tillId);
+        const legacyBody = legacy === undefined || (legacy.placement === undefined && legacy.movements.length === 0) ? {}
+          : legacy.placement !== undefined
+            ? { legacyPlacement: { storeId: legacy.placement.storeId, placedBy: legacy.placement.placedBy, how: legacy.placement.how, at: legacy.placement.at, countedHere: legacy.placement.storeId === storeId } }
+            : {
+              unplacedLegacy: {
+                movements: legacy.movements.length, balanceMinor: tillDrawerBalanceMinor(legacy.movements, tillId), custodian: custodianOf(legacy.movements, tillId),
+                nextSafeAction: `Till ${tillId} has cash kept before OB-80 by its id alone, and head office has not yet placed it at a store. A head-office person places it once (POST /v1/tills/${tillId}/legacy-placement); until then it is counted at no store.`,
+              },
+            };
         return {
           status: 200,
           body: {
-            tillId, storeId: storeId ?? null, custodian: custodianOf(movements, tillId), balanceMinor: tillDrawerBalanceMinor(movements, tillId),
+            tillId, storeId: storeId ?? null, custodian: custodianOf(movements, tillId), balanceMinor: tillDrawerBalanceMinor(movements, tillId), ...legacyBody,
             // Relayed movements the cloud flagged when it re-verified them (SP-4c) — for the cash office to look at (P-08).
             flagged: movements.filter((m) => (m.flags?.length ?? 0) > 0).map((m) => ({ movementId: m.movementId, kind: m.kind, custodianId: m.custodianId, laneId: m.laneId ?? null, flags: m.flags })),
             asAt: deps.now(),
           },
+        };
+      },
+    },
+    {
+      // OB-82 "A" (owner, 12 Oct 2026, "Fix it once, for good"): a NAMED head-office person records, once and for ever, which
+      // store a till's records kept by its id alone (before OB-80) belong to. Append-only, one per till: the first placement
+      // stands — the same store again is answered as already placed; another store is refused by name (409), never moved.
+      // Only a company-wide person (head office / the cash office) may place; the store must be one head office knows.
+      api: 'API-05', method: 'POST', path: '/v1/tills/:tillId/legacy-placement',
+      permission: 'till.overshort.review', idempotent: true,
+      handler: async (ctx) => {
+        const tillId = (ctx.params['tillId'] ?? '').trim();
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const storeId = typeof b['storeId'] === 'string' ? b['storeId'] : '';
+        const reason = typeof b['reason'] === 'string' ? b['reason'].trim() : '';
+        if (tillId === '' || storeId.trim() === '' || reason === '') {
+          throw apiError(400, {
+            code: 'not_readable_as_a_legacy_placement',
+            whatHappened: 'Placing a till\'s old records needs the till in the path and { storeId, reason }.',
+            wasItSaved: 'not_saved', nextSafeAction: 'Name the store the till\'s old cash belongs to, and why. Nothing was recorded.',
+          });
+        }
+        assertRecordBranchInScope(ctx, null); // company-wide only: a decision about which store owns history
+        if (deps.placeLegacyTill === undefined || deps.legacyTill === undefined) {
+          throw apiError(503, { code: 'legacy_placement_unavailable', whatHappened: 'This deployment keeps no till records by the till\'s id alone.', wasItSaved: 'not_saved', nextSafeAction: 'Nothing to place. Nothing was recorded.' });
+        }
+        const known = deps.knownStores === undefined ? [] : [...await deps.knownStores(ctx.tenantId)];
+        if (!known.includes(storeId)) {
+          throw apiError(422, {
+            code: 'store_not_known',
+            whatHappened: `Head office knows no store "${storeId}" (it knows ${known.join(', ') || 'none'}).`,
+            wasItSaved: 'not_saved', nextSafeAction: 'Name a store head office knows. Nothing was recorded.',
+          });
+        }
+        const legacy = await deps.legacyTill(ctx.tenantId, tillId);
+        const at = deps.now();
+        const { placement, recorded } = await deps.placeLegacyTill(ctx.tenantId, {
+          tillId, storeId, placedBy: ctx.userId, how: 'head_office', reason, at, storesKnown: known,
+        });
+        if (placement.storeId !== storeId) {
+          throw apiError(409, {
+            code: 'legacy_till_already_placed',
+            whatHappened: `Till ${tillId}'s old records were placed at ${placement.storeId} by ${placement.placedBy} at ${placement.at} (${placement.how}). That placement stands for ever; it is never re-decided.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'If the old cash really belongs elsewhere, a person corrects it with a compensating cash movement at each store. Nothing was recorded.',
+          });
+        }
+        if (recorded) {
+          await deps.recordAudit?.(ctx.tenantId, {
+            actorId: ctx.userId, action: 'till.legacy.place', objectType: 'till', objectId: tillId, at,
+            origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null }, before: null,
+            after: { storeId, reason, storesKnown: known.join(','), oldMovements: String(legacy.movements.length) },
+            reason, correlationId: tillId,
+          });
+        }
+        return {
+          status: recorded ? 201 : 200,
+          body: { tillId, storeId, placedBy: placement.placedBy, how: placement.how, at: placement.at, ...(recorded ? {} : { alreadyPlaced: true }), oldMovements: legacy.movements.length, balanceMinor: tillDrawerBalanceMinor(legacy.movements, tillId) },
         };
       },
     },

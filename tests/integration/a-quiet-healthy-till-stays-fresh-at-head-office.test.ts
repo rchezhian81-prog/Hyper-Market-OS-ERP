@@ -128,11 +128,12 @@ async function aQuietHealthyTillStaysFresh(h: ApiHarness, tenant: string): Promi
     // One sign-in report plus a re-send every 5 minutes (8). Round 15: the box's disk keeps the history append-only, but an
     // UNCHANGED re-send is written only as a 15-minute "still the same" checkpoint (minutes 0, 15, 30) — the other re-sends
     // refresh the latest in memory (head office still reads them fresh above). The compact latest-per-till index (which the
-    // box reads at start instead of the whole history) opens with its snapshot and follows the same writes.
+    // box reads at start instead of the whole history) opens with its snapshot; round 16: it takes only MATERIAL changes —
+    // the till's first report — never a "still the same" checkpoint, so a quiet till adds nothing to it over 40 minutes.
     expect(devicePostCount).toBe(9);
     const kept = (await readLog(join(dir, 'peripheral-health.log'))).filter((r) => r.ok);
     expect(kept.map((r) => (JSON.parse(r.record) as { reportedAt: string }).reportedAt)).toEqual([at(0), at(15), at(30)]);
-    expect((await readLog(join(dir, 'peripheral-health-latest-1.log'))).filter((r) => r.ok)).toHaveLength(4);
+    expect((await readLog(join(dir, 'peripheral-health-latest-1.log'))).filter((r) => r.ok)).toHaveLength(2);
     expect(JSON.stringify(await observe())).not.toContain('u-lanecash');
 
     // The cashier signs out: the till stops re-sending.

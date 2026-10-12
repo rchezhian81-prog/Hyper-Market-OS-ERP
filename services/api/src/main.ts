@@ -1121,7 +1121,7 @@ export function buildSurface(deps: {
       ...syncWatermarksAdapter({ store }),
     }),
     // OB-54: what a store computer tried to send for another store — head office's visible record of each refusal.
-    ...storeComputerRefusalRoutes({ store }),
+    ...storeComputerRefusalRoutes({ store, now }),
     // M35-FR-03: each store computer reports its disk, its queue and its tills' devices (its own store, stamped — OB-54);
     // head office's observed health judges them, stale when the box has gone quiet.
     ...boxHealthRoutes(store === undefined ? { now, record: async () => {} } : {
@@ -1181,7 +1181,7 @@ export function buildSurface(deps: {
     } : { ...exchangesAdapter({ store, now }), recordAudit: auditTrail?.recordAudit }),
     ...cashRoutes(store === undefined
       ? { tillMovements: empty([]), recordCashMovement: () => {}, now }
-      : { ...cashAdapter({ store, now }), tillSealKey: sealKey }),
+      : { ...cashAdapter({ store, now }), tillSealKey: sealKey, recordAudit: auditTrail?.recordAudit }),
     ...shiftRoutes(store === undefined
       ? { closedShift: empty(undefined), recordShiftClose: () => {}, overShortShifts: empty([]), overShortReviews: empty([]), recordOverShortReview: () => {}, now }
       : { ...shiftAdapter({ store, now }), tillSealKey: sealKey }),

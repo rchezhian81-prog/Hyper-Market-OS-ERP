@@ -47,6 +47,15 @@
 // handler runs (one idempotency key per record: two stores racing meet on the key, the loser is refused by name), so a
 // crash between the claim and the handler leaves the record placed at the store that claimed it — re-sendable by that
 // store only.
+//
+// Round 16 · OB-84 "A" (owner, 12 Oct 2026, "Head office's record decides"): when head office holds the record a relay's id
+// is FOR — the purchase order a `grn-<po>-<n>` receipt is booked against (the order the held receipt names, else the order
+// its id names), or the subject an approval decides (a held count, correction, excess, day close) — THAT record decides
+// the store, over the store a held copy names and over any first claim. So a store computer that took such an id first
+// (a misbehaving box, or an id minted before head office created its order or subject) never locks the rightful store out:
+// the rightful store's relays are judged against head office's record and accepted; the earlier foreign claim is refused
+// from then on and LISTED as an exception for head office to resolve (`overruledClaims`, shown on the store-computer
+// refusal list) — nothing deleted, nothing merged (a different decision is kept beside it, approvalDecisionAdapter).
 
 import type { EventStore } from '../../../packages/persistence/src/event-store';
 import { makeEvent } from '../../../packages/contracts/src/event';
@@ -56,7 +65,7 @@ import type { StockMovement } from '../../../packages/stock/src/position';
 import type { ReceivingScanRecord } from '../../inventory/src/warehouse-synced';
 import { paymentExceptionsAdapter } from './finance-close-adapters';
 import {
-  adjustmentRequestAdapter, allCountReconciliations, approvalDecisionAdapter, assignedStoresOf, checklistStoreAdapter, countPlansAdapter,
+  adjustmentRequestAdapter, allCountReconciliations, approvalDecisionAdapter, approvalDecisionRecords, approvalSubjectStore, decisionStoreResolver, assignedStoresOf, checklistStoreAdapter, countPlansAdapter,
   dayCloseAdapter, floorIndentsAdapter, foldPurchaseOrders, goodsReceiptAdapter, liveSupplierInvoices, lpActivityAdapter, saleStockLocationOf, shiftAdapter,
   storeOfLane, storeOfLocationResolver, storeOfPack, taskStoreAdapter, STREAM, streamName,
 } from './adapters';
@@ -110,6 +119,23 @@ export interface RelayPlacement {
   readonly record?: { readonly family: string; readonly recordId: string; readonly field: string };
 }
 
+/** OB-84: the purchase order a pack-issued goods-receipt id names (`grn-<po>-<n>`, store-pack-builder.ts). */
+export const grnOrderOf = (grnId: string): string | undefined => /^grn-(.+)-\d+$/.exec(grnId)?.[1];
+
+/** OB-84: a record a store's relay took first that head office's own record now places at ANOTHER store. */
+export interface OverruledClaim {
+  readonly family: 'approval' | 'goods-receipt';
+  readonly recordId: string;
+  /** The store whose relay holds the record (its copy names this store). */
+  readonly claimedStore: string;
+  /** The store head office's own record places it at — the store whose relays are accepted. */
+  readonly decidingStore: string;
+  /** Head office's record that decides: e.g. `stock_count CT-F`, `purchase order PO-0003`. */
+  readonly decidedBy: string;
+  readonly relayedBy: string | null;
+  readonly at: string | null;
+}
+
 /** Who is relaying: a store computer (its credential's store) or a person. */
 export interface RelayCaller { readonly kind: 'store_computer' | 'person'; readonly store?: string | null }
 
@@ -133,6 +159,7 @@ const SUBJECT_FAMILY: Readonly<Record<string, string>> = Object.freeze({
 export function relayRecordStore(input: { readonly store: EventStore; readonly now: () => string }): {
   derive: (tenantId: string, request: { readonly routePath: string; readonly params: Readonly<Record<string, string>>; readonly body: unknown }, caller?: RelayCaller) => Promise<RelayPlacement>;
   owners: ReturnType<typeof relayRecordOwnersAdapter>;
+  overruledClaims: (tenantId: string) => Promise<readonly OverruledClaim[]>;
 } {
   const owners = relayRecordOwnersAdapter(input);
 
@@ -285,9 +312,20 @@ export function relayRecordStore(input: { readonly store: EventStore; readonly n
       const plan = await countPlansAdapter(input).plan(tenantId, str(b['planId'])!);
       if (plan !== undefined) references.push(...await placesToRefs('record.planId', present(plan.locationId)));
     }
-    if (k.family === 'goods-receipt' && str(b['poId']) !== undefined) {
-      const po = (await foldPurchaseOrders(input.store, tenantId)).get(str(b['poId'])!);
-      if (po?.deliverToLocationId !== undefined) references.push(...await placesToRefs('record.poId', present(po.deliverToLocationId)));
+    // OB-84: references from HEAD OFFICE's own record the id is for — they decide the store (see the header).
+    const decided: StoreReference[] = [];
+    if (k.family === 'goods-receipt') {
+      const orders = await foldPurchaseOrders(input.store, tenantId);
+      // The body's order is the caller's word: judged beside everything else, never deciding.
+      if (str(b['poId']) !== undefined) {
+        const po = orders.get(str(b['poId'])!);
+        if (po?.deliverToLocationId !== undefined) references.push(...await placesToRefs('record.poId', present(po.deliverToLocationId)));
+      }
+      // Head office's order for THIS receipt: the one the held receipt names, else the one a pack-issued id names.
+      const heldGrn = held.held ? await goodsReceiptAdapter(input).grn(tenantId, recordId) : undefined;
+      const orderOf = str(heldGrn?.poId) ?? grnOrderOf(recordId);
+      const order = orderOf === undefined ? undefined : orders.get(orderOf);
+      if (order?.deliverToLocationId !== undefined) decided.push(...await placesToRefs(heldGrn?.poId ? 'record.order' : 'record.grnId', present(order.deliverToLocationId)));
     }
     if (k.family === 'approval') {
       // The subject the decision will be APPLIED to — named by the request id (`stock_count:<countId>`, as head office's
@@ -303,11 +341,18 @@ export function relayRecordStore(input: { readonly store: EventStore; readonly n
         const subject = await holds(tenantId, fam, ref, knownStores);
         if (!subject.held) continue; // a subject head office does not hold: the apply step refuses it by name
         if (subject.places.length === 0) return { references, unresolved: { field: 'record.subjectRef', why: `Head office holds the ${type} ${ref} this decision is about, but cannot tell which store it belongs to, so it is not applied by relay.` } };
-        references.push(...await placesToRefs('record.subjectRef', subject.places));
+        decided.push(...await placesToRefs('record.subjectRef', subject.places));
         if (!held.held) held = { held: true, places: [] }; // a decision on a subject head office holds is a head-office record
       }
     }
 
+    // OB-84: head office's own record the id is for decides — over the held copy's store and over any first claim.
+    const r0 = decided.length === 0 ? undefined : await resolver();
+    if (r0 !== undefined && decided.some((d) => r0.knownStores.has(r0.storeOf(d.value)))) {
+      references.push(...decided);
+      return { references };
+    }
+    references.push(...decided);
     if (held.held) {
       // Head office's own record first. Only when it names no place it can put in a known store does a placement recorded
       // when a store's relay of it was first accepted count (a store-originated record held without a store field).
@@ -331,5 +376,37 @@ export function relayRecordStore(input: { readonly store: EventStore; readonly n
     if (owner !== undefined) { references.push({ field, value: owner.store, names: 'store' }); return { references }; }
     return { references, record: { family: k.family, recordId, field } };
   };
-  return { derive, owners };
+  /**
+   * OB-84: every record a store's relay took that head office's own record now places at another store — listed for head
+   * office to resolve (derived from the append-only records each time; nothing is deleted, moved or merged).
+   */
+  const overruledClaims = async (tenantId: string): Promise<readonly OverruledClaim[]> => {
+    const r = await storeOfLocationResolver(input, tenantId);
+    const storeOf = (place: string | null | undefined): string | undefined => {
+      if (typeof place !== 'string' || place.trim() === '') return undefined;
+      const st = r.storeOf(place); return r.knownStores.has(st) ? st : place;
+    };
+    const out: OverruledClaim[] = [];
+    const from = await decisionStoreResolver(input.store, tenantId);
+    for (const d of await approvalDecisionRecords(input.store, tenantId)) {
+      const claimed = storeOf(from(d));
+      if (claimed === undefined) continue;
+      const deciding = await approvalSubjectStore(input, tenantId, d.subjectType, d.subjectRef);
+      if (deciding !== undefined && deciding !== claimed) {
+        out.push({ family: 'approval', recordId: d.id, claimedStore: claimed, decidingStore: deciding, decidedBy: `${d.subjectType} ${d.subjectRef}`, relayedBy: d.relayedBy, at: d.recordedAt });
+      }
+    }
+    const orders = await foldPurchaseOrders(input.store, tenantId);
+    for (const g of await goodsReceiptAdapter(input).all(tenantId)) {
+      const poId = str(g.poId) ?? grnOrderOf(g.grnId);
+      const deliverTo = poId === undefined ? undefined : orders.get(poId)?.deliverToLocationId;
+      const deciding = storeOf(deliverTo);
+      const claimed = storeOf(g.warehouseId);
+      if (deciding !== undefined && claimed !== undefined && r.knownStores.has(deciding) && deciding !== claimed) {
+        out.push({ family: 'goods-receipt', recordId: g.grnId, claimedStore: claimed, decidingStore: deciding, decidedBy: `purchase order ${poId!}`, relayedBy: g.relayedBy ?? null, at: g.receivedAt });
+      }
+    }
+    return out;
+  };
+  return { derive, owners, overruledClaims };
 }

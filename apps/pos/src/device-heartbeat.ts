@@ -19,6 +19,15 @@
 // with every re-send (`adapterObservedAt`), and head office judges the lane's freshness by it — so an adapter that has hung
 // reads STALE however faithfully the till keeps re-sending its last answer. An adapter that gives no time is judged, as
 // before, by the till's report time.
+//
+// Round 16 (verifier DEV-1 · P-03) — THE RULE: `adapterObservedAt` is a LIVENESS signal only when the adapter offers a
+// liveness source — a clock it answers on demand (`window.sreDevices.lastObservedAt()`). Then every send carries what that
+// clock says now, and an adapter that hangs reads stale. A time an adapter gives only WITH A CHANGE
+// (`onChange(fn(devices, observedAt))`) is evidence of when that change happened, not that the adapter is still looking:
+// it travels with the one send that carries the change (it is fresh then), and NEVER with a later re-send — the re-sends of
+// an unchanged, healthy till are judged by the till's own report time, so a quiet till never reads "the adapter may have
+// hung". (Known limit, written down: an adapter whose own clock runs AHEAD is clamped to the till's report time at head
+// office, so if it then hangs it does not read stale — box-health.ts.)
 
 export interface DeviceStatus {
   readonly kind: string;
@@ -50,6 +59,11 @@ export interface DeviceHeartbeatDeps {
    * last answer, if any.
    */
   readonly adapterObservedAt?: () => unknown;
+  /**
+   * Round 16: does the adapter offer that liveness clock right now? Default: whether `adapterObservedAt` is given at all.
+   * Without one, a change time is sent with the change only (see the rule above).
+   */
+  readonly offersLiveness?: () => boolean;
 }
 
 export interface DeviceHeartbeat {
@@ -96,6 +110,14 @@ export function createDeviceHeartbeat(deps: DeviceHeartbeatDeps): DeviceHeartbea
   const intervalMs = deps.intervalMs ?? DEVICE_HEARTBEAT_INTERVAL_MS;
   let last: readonly DeviceStatus[] | undefined;
   let observedAt: string | undefined;
+  /** A change time not yet sent: it travels with the one send that carries the change, then never again. */
+  let changeAt: string | undefined;
+  const live = (): boolean => (deps.offersLiveness === undefined ? deps.adapterObservedAt !== undefined : deps.offersLiveness());
+  /** What the adapter's liveness clock says now (readable), or undefined — a clock that throws says nothing. */
+  const clock = (): string | undefined => {
+    if (!live()) return undefined;
+    try { return instant(deps.adapterObservedAt?.()); } catch { return undefined; }
+  };
   let cancel: (() => void) | undefined;
   let inFlight = false;
   /** A send was due while a sale was being written (or another send was in flight): owed once that ends. */
@@ -107,7 +129,9 @@ export function createDeviceHeartbeat(deps: DeviceHeartbeatDeps): DeviceHeartbea
     owed = false;
     inFlight = true;
     const devices = last;
-    const at = instant(deps.adapterObservedAt?.()) ?? observedAt;
+    // DEV-1: the liveness clock when the adapter offers one; otherwise only a change time not yet sent (once).
+    const at = live() ? clock() : changeAt;
+    changeAt = undefined;
     try {
       await (at === undefined ? deps.send(devices) : deps.send(devices, at));
     } catch {
@@ -125,9 +149,10 @@ export function createDeviceHeartbeat(deps: DeviceHeartbeatDeps): DeviceHeartbea
       const changed = keyOf(devices) !== keyOf(last);
       last = copy(devices);
       observedAt = instant(at);
-      if (changed) soon(() => { void tick(); });
+      if (changed) { changeAt = observedAt; soon(() => { void tick(); }); }
     },
-    remember: (devices, at) => { last = copy(devices); observedAt = instant(at); },
+    // The caller has just sent these itself (with whatever time it had): nothing is owed, and a change time is never re-sent.
+    remember: (devices, at) => { last = copy(devices); observedAt = instant(at); changeAt = undefined; },
     start: () => {
       if (cancel !== undefined) return;
       cancel = every(intervalMs, () => { void tick(); });
@@ -143,6 +168,7 @@ export function createDeviceHeartbeat(deps: DeviceHeartbeatDeps): DeviceHeartbea
     tick,
     running: () => cancel !== undefined,
     lastKnown: () => last,
-    lastObservedAt: () => instant(deps.adapterObservedAt?.()) ?? observedAt,
+    // The liveness clock when offered; otherwise the time the adapter gave with what it last said (evidence of that answer only).
+    lastObservedAt: () => (live() ? clock() : observedAt),
   };
 }
