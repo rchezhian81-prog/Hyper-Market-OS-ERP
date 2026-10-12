@@ -141,17 +141,25 @@ export function latestBoxReports(records: readonly BoxHealthRecord[]): ReadonlyM
  *   1. Take this store's reports from the last 7 days up to the latest one, oldest first. If the sales log ever got
  *      SMALLER between two reports (a new log, a clean-up), only the reports after that are used — older growth says
  *      nothing about the log the box writes now.
- *   2. Between each pair of consecutive reports, if the sales log GREW, that gap counts as trading time: its growth and
- *      its minutes are added up. A gap in which the log did not grow (the shop shut, a quiet hour) is left out, so
- *      night-time does not dilute the rate — the estimate is in hours of TRADING, never clock hours.
+ *   2. Between each pair of consecutive reports, if the sales log GREW and the two reports are at most
+ *      DISK_ESTIMATE_MAX_GAP_MINUTES (60) apart, that gap counts as trading time: its growth and its minutes are added up.
+ *      The box reports on every sync pass (well under a minute apart while it runs), so a gap longer than an hour means
+ *      it was off or cut off — the shop shut overnight, a power cut — and how much of that gap was trading cannot be
+ *      told. Round 14 (verifier G8): such a gap is left out WHOLE (its growth and its minutes), never counted as trading
+ *      time just because the log grew at all — counting a 12-hour night that ends with the first quarter-hour of sales
+ *      as 12 hours of trading made the rate look ~4x slower and the hours left look far longer than they were. A gap in
+ *      which the log did not grow (a quiet hour) is left out too, so the rate is never diluted — the estimate is in
+ *      hours of TRADING, never clock hours, and errs towards warning early, never late.
  *   3. The growth rate is (bytes added) / (trading hours counted).
  *   4. The room left is the smaller of: the sales-log room above the box's reserve (capacity - log - reserve), and the
  *      disk's free space above that reserve (free - reserve) — the box's own refusal rule (`boxCanRecordSales`).
  *   5. Hours of trading left = room left / growth rate, rounded DOWN to one decimal place (never rounded up into comfort).
  *
  * TOO LITTLE HISTORY gives "not yet known", never a guess: fewer than 2 growing gaps, or less than 60 minutes of trading
- * counted, gives `known: false` with the reason; so does a log that has not grown at all in the window.
+ * counted, gives `known: false` with the reason; so does a log that has not grown at all in the window. Round 14: the
+ * disk component then reads `unknown` with that reason (P-08) — never a plain "ok" — without raising the warning.
  */
+export const DISK_ESTIMATE_MAX_GAP_MINUTES = 60;
 export const DISK_ESTIMATE_LOOKBACK_HOURS = 7 * 24;
 export const DISK_ESTIMATE_MIN_GROWING_GAPS = 2;
 export const DISK_ESTIMATE_MIN_TRADING_MINUTES = 60;
@@ -175,13 +183,13 @@ export function estimateTradingHoursLeft(storeRecords: readonly BoxHealthRecord[
   for (let i = 1; i < run.length; i += 1) {
     const grew = run[i]!.disk.salesLogUsedBytes - run[i - 1]!.disk.salesLogUsedBytes;
     const gapMinutes = (Date.parse(run[i]!.observedAt) - Date.parse(run[i - 1]!.observedAt)) / 60_000;
-    if (grew > 0 && gapMinutes > 0) { bytes += grew; minutes += gapMinutes; gaps += 1; }
+    if (grew > 0 && gapMinutes > 0 && gapMinutes <= DISK_ESTIMATE_MAX_GAP_MINUTES) { bytes += grew; minutes += gapMinutes; gaps += 1; }
   }
   const tradingMinutesCounted = Math.floor(minutes);
   if (gaps < DISK_ESTIMATE_MIN_GROWING_GAPS || minutes < DISK_ESTIMATE_MIN_TRADING_MINUTES) {
     return {
       known: false, tradingMinutesCounted, growingGaps: gaps,
-      why: `hours of trading left: not yet known — the store computer's reports show the sales log growing over ${gaps} gap(s) and ${tradingMinutesCounted} minute(s) of trading; at least ${DISK_ESTIMATE_MIN_GROWING_GAPS} gaps and ${DISK_ESTIMATE_MIN_TRADING_MINUTES} minutes are needed before it can be estimated (never guessed)`,
+      why: `hours of trading left: not yet known — the store computer's reports show the sales log growing over ${gaps} gap(s) of at most ${DISK_ESTIMATE_MAX_GAP_MINUTES} minutes and ${tradingMinutesCounted} minute(s) of trading; at least ${DISK_ESTIMATE_MIN_GROWING_GAPS} gaps and ${DISK_ESTIMATE_MIN_TRADING_MINUTES} minutes are needed before it can be estimated (never guessed)`,
     };
   }
   const bytesPerTradingHour = bytes / (minutes / 60);
@@ -270,7 +278,9 @@ export function judgeBoxes(input: {
     components.push({
       // OB-78: a fresh report whose hours of trading left are under the owner's line is `degraded` (the early warning); a
       // stale report stays `unknown` (old news never raises or clears the warning); a full disk is `down` as before.
-      name: `box_disk:${storeId}`, status: stale ? 'unknown' : !can ? 'down' : runningOut ? 'degraded' : 'ok',
+      // Round 14 (verifier G8 · P-08): a disk that can record sales but whose hours left are not yet known reads `unknown`
+      // with the reason — not a plain "ok", and not the warning either.
+      name: `box_disk:${storeId}`, status: stale ? 'unknown' : !can ? 'down' : runningOut ? 'degraded' : estimate.known ? 'ok' : 'unknown',
       detail: stale ? `${staleNote}. Then: ${diskSays}` : diskSays, evidence: diskEvidence,
     });
 

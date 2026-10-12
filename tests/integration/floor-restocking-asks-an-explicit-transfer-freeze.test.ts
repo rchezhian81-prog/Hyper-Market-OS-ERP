@@ -26,7 +26,8 @@ import { runMigrations } from '../../packages/persistence/src/migrations';
  *     recorded, no transfer, nothing moved;
  *   • not frozen: a product the plan does not count (P2) goes through; a role without the movement right is refused 403;
  *   • a RELAYED receipt (`…/receipt/synced`, the box's fact) under the same freeze is KEPT (202) and SHOWN on the plan as a
- *     freeze breach — never refused into the void;
+ *     freeze breach — never refused into the void; so is a RELAYED issue (`…/issues/:issueId/synced`) out of the counted
+ *     back store (round 14), and its re-send is the same one issue;
  *   • once the plans are cancelled the refused issue and receipt land — exactly once (a replay collapses);
  *   • the owner's DEFAULT freeze (adjustments & write-offs) leaves issue and receipt alone, and a damaged unit on that receipt
  *     is still HELD on the plan (OB-66, unchanged).
@@ -100,6 +101,7 @@ describe.each(backings)('OB-79 — the direct floor-indent issue and receipt ask
     await askAndApprove('ind-relay', 'P1', 4);
     await ok(issue('ind-relay', 'P1', 4), 'issue ind-relay');
     await askAndApprove('ind-out', 'P1', 6);
+    await askAndApprove('ind-relay-out', 'P1', 3);
 
     await plan('cp-shelf', FLOOR, ['transferred_in']);
     await plan('cp-back', BACK, ['transferred_out']);
@@ -136,6 +138,23 @@ describe.each(backings)('OB-79 — the direct floor-indent issue and receipt ask
     expect(relayed.status, JSON.stringify(relayed.body)).toBe(202);
     expect((await breaches('cp-shelf')).map((b) => b.kind)).toEqual(['transferred_in']);
     expect(await onHand('P1', FLOOR)).toBe((before[0] as number) + 4);
+
+    // ── Round 14 (verifier, OB-79): a RELAYED ISSUE out of the counted back store is likewise kept (202) and SHOWN on the
+    //    back-store plan as a freeze breach — never refused into the void, never silent; a re-send is the same one issue ──
+    const issuedAt = new Date().toISOString();
+    const relayIssue = () => call('POST', '/v1/floor/indents/ind-relay-out/issues/is-1/synced', 'u-box', {
+      indentId: 'ind-relay-out', issueId: 'is-1', lines: [{ productId: 'P1', batchId: null, quantityMinor: 3 }], issuedBy: 'u-back', at: issuedAt, storeId: FLOOR, source: 'handheld',
+    }, { key: 'relay-issue-out' });
+    const backBefore = await onHand('P1', BACK);
+    const relayedIssue = await relayIssue();
+    expect(relayedIssue.status, JSON.stringify(relayedIssue.body).slice(0, 600)).toBe(202);
+    expect((await breaches('cp-back')).map((b) => b.kind)).toEqual(['transferred_out']);
+    expect(await onHand('P1', BACK)).toBe(backBefore - 3);
+    expect((await indent('ind-relay-out')).issues.map((i) => i.state)).toEqual(['in_transit']);
+    const again = await relayIssue();
+    expect(again.status, JSON.stringify(again.body).slice(0, 300)).toBe(202); // the replay answers the first result
+    expect((await breaches('cp-back')).map((b) => b.kind)).toEqual(['transferred_out']);
+    expect(await onHand('P1', BACK)).toBe(backBefore - 3);
 
     // ── The freeze is what refused them: once the plans are cancelled, they land — once ──────────────────────────
     await ok(call('POST', '/v1/inventory/count-plans/cp-shelf/cancel', 'u-plan', { reason: 'aisle reset' }), 'cancel shelf');

@@ -388,8 +388,8 @@ export function trackOrder(input: {
 }
 
 /** The driver's delivery states (M19 · WF-15), as the customer's own order read reports them (OB-77). */
-export type DeliveryStatus =
-  | 'assigned' | 'picked_up' | 'out_for_delivery' | 'attempted' | 'delivered' | 'partially_delivered' | 'failed' | 'returned_to_origin';
+export const DELIVERY_STATUS_VALUES = ['assigned', 'picked_up', 'out_for_delivery', 'attempted', 'delivered', 'partially_delivered', 'failed', 'returned_to_origin'] as const;
+export type DeliveryStatus = (typeof DELIVERY_STATUS_VALUES)[number];
 
 export interface DeliveryTrackingView {
   /** The driver's latest recorded delivery state — the code the app words in the reader's language. */

@@ -23,7 +23,7 @@ import { prepareTillBox, signInAtLane, operatorHeader } from '../support/till-op
  *   • before any box reports, head office names the lane-side signal as not observed;
  *   • a cashier signs in at the till and the till's devices report (printer out of paper); after a sync pass the box
  *     relays its disk free space, its queue depth and that device report — head office's observed health now has
- *     `box_disk:S1` ok (with the free bytes), `till_devices:S1` degraded naming the printer, `box_queue:S1` ok — and the
+ *     `box_disk:S1` unknown while its hours left are not yet known (with the free bytes), `till_devices:S1` degraded naming the printer, `box_queue:S1` ok — and the
  *     owner's alert rule for the till devices raises to its named owner;
  *   • the line goes down: a sale waits on the box's disk, the report cannot go, twenty minutes pass — head office shows
  *     the store computer STALE (its last values, how old), never ok; the line comes back: the queue empties, the box
@@ -154,7 +154,7 @@ async function theBoxHealthReachesHeadOffice(h: ApiHarness, tenant: string, agai
     expect(live.observed.boxes.find((b) => b.storeId === 'S2')).toMatchObject({ state: 'never_reported', stale: true, canRecordSales: null });
     expect(live.observed.notObserved.join(' ')).toMatch(/S2: never reported/);
     // Judged, not unknown:
-    expect(s.comp(live, 'box_disk:S1')).toMatchObject({ status: 'ok' });
+    expect(s.comp(live, 'box_disk:S1')).toMatchObject({ status: 'unknown' }); // round 14 (G8): hours left not yet known on one report — unknown with the reason, never a plain ok;
     expect(s.comp(live, 'box_disk:S1')!.detail).toMatch(/can record sales: \d+ MB free/);
     expect(Number(s.comp(live, 'box_disk:S1')!.evidence!['freeBytes'])).toBe(s1.disk!.freeBytes);
     expect(s.comp(live, 'box_queue:S1')).toMatchObject({ status: 'ok' });
@@ -210,7 +210,7 @@ async function theBoxHealthReachesHeadOffice(h: ApiHarness, tenant: string, agai
     expect(await box.reportBoxHealth!()).toBe(true);
     const back = await s.observed();
     expect(back.observed.boxes.find((b) => b.storeId === 'S1')).toMatchObject({ stale: false, lastReportAt: at(22), queue: { unsent: 0, deadLettered: 0 } });
-    expect(s.comp(back, 'box_disk:S1')).toMatchObject({ status: 'ok' });
+    expect(s.comp(back, 'box_disk:S1')).toMatchObject({ status: 'unknown' });
     // Round 13 (verifier B5 · P-08): the box is fresh, but the till has not re-reported its devices since at(0) — 22 minutes:
     // that lane is STALE, judged by the till's OWN report time, so the devices are unknown, never ok and never a fresh alarm.
     expect(s.comp(back, 'till_devices:S1')).toMatchObject({ status: 'unknown' });

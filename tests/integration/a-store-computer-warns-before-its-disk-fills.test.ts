@@ -21,7 +21,8 @@ import { estimateTradingHoursLeft, type BoxHealthRecord } from '../../services/p
  * owner's setting all durable), the store computer reports its disk after each sync pass (`POST /v1/store-computers/
  * health-reports`, its own credential, store-stamped):
  *
- *   • with too little history head office says the hours of trading left are NOT YET KNOWN (never a guess) and the disk is ok;
+ *   • with too little history head office says the hours of trading left are NOT YET KNOWN (never a guess) and the disk reads
+ *     unknown with that reason (round 14, G8) — not ok, and not the warning;
  *   • from a morning's reports (the sales log growing 2 MB per trading hour, a closed night in between that is NOT counted)
  *     it estimates 15 hours of trading left — under the owner's default line of 48 — so `box_disk:S1` is `degraded`, the
  *     words say how it was worked out, and the owner's existing alert rule raises it to the NAMED owner;
@@ -102,13 +103,13 @@ describe.each(backings)('OB-78 — a store computer warns before its disk fills 
     // ── Too little history: one report, then a single growing gap — NOT YET KNOWN, never a guess, and not a warning ──
     await report(0, 50);
     let o = await observed();
-    expect(disk(o).status).toBe('ok');
+    expect(disk(o).status).toBe('unknown'); // round 14 (G8): not yet known reads unknown with the reason — never a plain ok, never the warning
     expect(o.observed.boxes[0]).toMatchObject({ tradingHoursLeft: null });
     expect(o.observed.boxes[0]!.tradingHoursLeftSays).toMatch(/not yet known/);
     expect(disk(o).evidence).toMatchObject({ tradingHoursLeft: 'not yet known', warnBelowTradingHours: 48 });
     await report(30, 51);
     o = await observed();
-    expect([disk(o).status, o.observed.boxes[0]!.tradingHoursLeft]).toEqual(['ok', null]);
+    expect([disk(o).status, o.observed.boxes[0]!.tradingHoursLeft]).toEqual(['unknown', null]);
     expect(o.wouldRaise).toEqual([]);
 
     // ── Yesterday evening a closed night (no growth for 12 hours) — then the morning's trading: +1 MB per half hour ──

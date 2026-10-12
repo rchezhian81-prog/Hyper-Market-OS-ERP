@@ -25,7 +25,8 @@ import { quoteOrder, type PaymentVerifier } from '../../../packages/orders/src/p
 import { transitionOrder } from '../../../packages/orders/src/index';
 import type { PaymentRefundDeps } from './payments';
 import { bindDelivery, readDeliveryRequest, type DeliveryServiceDeps } from './delivery-service';
-import { trackDelivery, type DeliveryStatus } from '../../../packages/storefront/src/checkout';
+import { trackDelivery, DELIVERY_STATUS_VALUES, type DeliveryStatus } from '../../../packages/storefront/src/checkout';
+const DELIVERY_STATUSES: ReadonlySet<DeliveryStatus> = new Set(DELIVERY_STATUS_VALUES);
 
 export interface StorefrontDeps {
   /** Every order this customer placed through the storefront — a fold of the per-customer index. */
@@ -56,7 +57,7 @@ export interface StorefrontDeps {
    * OB-77 "A" (owner, 12 Oct 2026): the driver's append-only delivery history for one order (oldest first) — the same
    * record the dispatcher's `GET /v1/delivery/orders/:id` folds. Absent (a bare composition) → the read carries no delivery.
    */
-  readonly deliveryHistory?: (tenantId: string, orderId: string) => Promise<readonly { readonly to: string; readonly at: string }[]> | readonly { readonly to: string; readonly at: string }[];
+  readonly deliveryHistory?: (tenantId: string, orderId: string) => Promise<readonly { readonly to: string; readonly at: string; readonly receivedAt?: string }[]> | readonly { readonly to: string; readonly at: string; readonly receivedAt?: string }[];
 }
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
@@ -161,7 +162,12 @@ export function storefrontRoutes(deps: OrdersDeps & PaymentRefundDeps & Storefro
     const history = await deps.deliveryHistory(tenantId, orderId);
     const last = history[history.length - 1];
     if (last === undefined) return null;
-    return trackDelivery({ orderId, status: last.to as DeliveryStatus, asOf: last.at, now: deps.now() });
+    // Round 14 (verifier G7): never later than head office received it (a step kept before the clamp, from a fast phone
+    // clock), and never a state head office has no words for (a status it cannot name is not shown as one).
+    const received = last.receivedAt;
+    const asOf = received !== undefined && Date.parse(received) < Date.parse(last.at) ? received : last.at;
+    if (!DELIVERY_STATUSES.has(last.to as DeliveryStatus)) return null;
+    return trackDelivery({ orderId, status: last.to as DeliveryStatus, asOf, now: deps.now() });
   };
   const view = async (tenantId: string, order: PlacedOrder) => {
     const state = await deps.orderState(tenantId, order.orderId);

@@ -9,6 +9,7 @@ import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { runMigrations } from '../../packages/persistence/src/migrations';
 import { testModePaymentProvider } from '../../packages/orders/src/payment-verification';
+import { trackDelivery } from '../../packages/storefront/src/checkout';
 
 /**
  * **WF-15 (delivery: assign → hand-over → TRACK → proof → settlement) · M19-FR-03 · M20-FR-03 — the customer reads their
@@ -150,5 +151,32 @@ describe.each(backings)('WF-15 — the customer reads their delivery in progress
     await s.ok(s.call('POST', '/v1/delivery/orders/ORD-T2/transition', 'u-owner', { event: 'arrive' }), 'arrive again');
     await s.ok(s.call('POST', '/v1/delivery/orders/ORD-T2/transition', 'u-owner', { event: 'deliver', proof: PROOF }), 'deliver');
     expect((await read()).delivery).toMatchObject({ status: 'delivered', final: true, stale: false, tellTheCustomer: 'Delivered.' });
+  });
+  it('round 14 (verifier G7): a relayed step from a phone whose clock runs FAST is clamped to head office\'s receipt time — both kept — so a stuck delivery never reads fresh', async () => {
+    const s = await shop();
+    await s.h.provisionRole(s.T, 'u-box', 'store_computer', ['L1']);
+    await s.onItsWay('ORD-T3');
+    const phoneSays = new Date(Date.now() + 3 * 3_600_000).toISOString(); // three hours AHEAD of head office
+    const before = Date.now();
+    const relay = () => s.h.request({ method: 'POST', path: '/v1/delivery/routes/R-3/stops/s1/synced', userId: 'u-box', tenantId: s.T, branchId: 'L1', idempotencyKey: 'stop-r3-s1',
+      body: { routeId: 'R-3', stopId: 's1', driverId: 'u-owner', orderRef: 'ORD-T3', state: 'attempted', codExpectedMinor: 0, occurredAt: phoneSays } });
+    const relayed = await relay();
+    expect(relayed.status, JSON.stringify(relayed.body)).toBeLessThan(300);
+    const history = ((await s.call('GET', '/v1/delivery/orders/ORD-T3', 'u-owner')).body as { history: { to: string; at: string; deviceAt?: string; receivedAt?: string }[] }).history;
+    const step = history.at(-1)!;
+    expect(step.to).toBe('attempted');
+    expect(step.deviceAt).toBe(phoneSays); // what the phone said is kept
+    expect(step.at).toBe(step.receivedAt); // the step's time is head office's receipt time
+    expect(Date.parse(step.at)).toBeLessThanOrEqual(Date.now());
+    expect(Date.parse(step.at)).toBeGreaterThanOrEqual(before - 1_000);
+    const mine = (await s.mine('ORD-T3')).body as unknown as { delivery: { status: string; asOf: string; asOfMinutesAgo: number; stale: boolean } };
+    expect(mine.delivery.status).toBe('attempted');
+    expect(mine.delivery.asOf).toBe(step.receivedAt); // never a time in the future
+    expect(Date.parse(mine.delivery.asOf)).toBeLessThan(Date.parse(phoneSays));
+    // ... so 16 minutes after head office received it, the customer reads it as possibly out of date (the 15-minute rule).
+    expect(trackDelivery({ orderId: 'ORD-T3', status: 'attempted', asOf: mine.delivery.asOf, now: new Date(Date.parse(step.at) + 16 * 60_000).toISOString() }).stale).toBe(true);
+    // A re-sent relay is the same one step.
+    expect((await relay()).status).toBeLessThan(300);
+    expect(((await s.call('GET', '/v1/delivery/orders/ORD-T3', 'u-owner')).body as { history: unknown[] }).history).toHaveLength(history.length);
   });
 });
