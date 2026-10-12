@@ -316,6 +316,7 @@ import { PersonalDataSealingStore, type PersonalDataPolicy, type SubjectKeyStore
 import { figure, sourceFreshness, syncedThrough } from '../../reporting/src/index';
 import type { ReportingDeps, Figure, SourceFreshness, StoreSyncReport } from '../../reporting/src/index';
 import { latestDomainReports, latestPerStore, type SyncWatermarkRecord } from '../../platform/src/sync-watermarks';
+import type { BoxHealthRecord } from '../../platform/src/box-health';
 import type { BranchScope } from '../../kernel/src/index';
 import { tradingDayIn, tradingDayWindow, type TradingCalendar } from '../../../packages/calendar/src/index';
 import type { ConsolidationDeps } from '../../reporting/src/consolidation-route';
@@ -12306,6 +12307,11 @@ export function observedHealthAdapter(input: { readonly store: EventStore; reado
       }
       return { stalestCompleteAt: stalest!.at, stalestStore: stalest!.store, unsent, deadLettered, stores: latestByStore.size };
     },
+    // M35-FR-03: the store computers' own health reports (disk, queue, till devices) and the stores head office knows.
+    storeComputers: async (tenantId) => ({
+      records: await boxHealthAdapter({ store: input.store }).records(tenantId),
+      knownStores: (await orgStructureAdapter({ store: input.store, now: input.now }).nodes(tenantId)).filter((n) => n.kind === 'branch').map((n) => n.nodeId),
+    }),
     alertRules: (tenantId) => latest<StoredAlertRules>(input.store, tenantId, ALERT_RULES_STREAM, 'AlertRulesDefined'),
     defineAlertRules: async (tenantId, rules) => {
       await input.store.append(tenantId, ALERT_RULES_STREAM, makeEvent({
@@ -13019,6 +13025,24 @@ export function mergeStoreSync(
   });
 }
 
+
+/** M35-FR-03: every health report each store computer made (append-only; the latest per store is read). */
+const BOX_HEALTH_STREAM = streamName(STREAM.org, 'store-computer-health');
+export function boxHealthAdapter(input: { readonly store: EventStore }): {
+  records: (tenantId: string) => Promise<readonly BoxHealthRecord[]>;
+  record: (tenantId: string, r: BoxHealthRecord) => Promise<void>;
+} {
+  return {
+    records: (tenantId) => allOf<BoxHealthRecord>(input.store, tenantId, BOX_HEALTH_STREAM, 'StoreComputerHealthReported'),
+    record: async (tenantId, r) => {
+      await input.store.append(tenantId, BOX_HEALTH_STREAM, makeEvent({
+        id: `box-health-${r.storeId}-${r.observedAt}`, type: 'StoreComputerHealthReported', occurredAt: r.receivedAt,
+        // One report per (store, moment the box made it): a retried POST collapses onto the first.
+        idempotencyKey: `box-health-${tenantId}-${r.storeId}-${r.observedAt}`, source: 'api/platform', payload: r,
+      }));
+    },
+  };
+}
 
 /** EA-01: every sync-watermark report each store computer made (append-only; the latest per store is read). */
 const SYNC_WATERMARKS_STREAM = streamName(STREAM.org, 'store-sync-watermarks');

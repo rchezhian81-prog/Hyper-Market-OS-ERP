@@ -45,6 +45,8 @@ const PULLS: readonly [Method, string][] = [
   ['POST', '/v1/store-packs/S1/held'],
   // Round 6: the box reports how far each queue has synced (edge/sync-agent/src/sync-watermark-report.ts).
   ['POST', '/v1/stores/S1/sync-watermarks'],
+  // M35-FR-03: the box reports its disk, queue and tills' devices (edge/sync-agent/src/box-health-report.ts).
+  ['POST', '/v1/store-computers/health-reports'],
 ];
 
 describe('the store computer role (OB-36 "A")', () => {

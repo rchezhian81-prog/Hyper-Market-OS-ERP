@@ -184,6 +184,8 @@ export const STORE_STAMP_FIELD: Readonly<Record<string, string>> = Object.freeze
   '/v1/merchandising/shelf-counts/:countId/synced': 'storeId',
   '/v1/warehouse/movements/:commandId/synced': 'command.storeId',
   '/v1/hr/workforce/tasks/:taskId/complete/synced': 'branchId',
+  // M35-FR-03: the box's own health report (disk, queue, till devices) names no store — it is the credential's.
+  '/v1/store-computers/health-reports': 'storeId',
 });
 
 const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH']);

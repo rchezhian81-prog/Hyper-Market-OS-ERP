@@ -48,6 +48,9 @@ export interface CommitOutcome {
   readonly unconfirmed?: true;
 }
 
+/** The space kept in reserve below which no new sale is accepted (the default; the box reports it to head office). */
+export const SALE_RESERVE_BYTES = 1_048_576;
+
 /**
  * Commit a sale locally, or refuse it before the customer pays.
  *
@@ -61,7 +64,7 @@ export async function commitLocally(input: {
   /** Space below which no new sale is accepted. Kept in reserve, per-tenant. */
   readonly reserveBytes?: number;
 }): Promise<CommitOutcome> {
-  const reserve = input.reserveBytes ?? 1_048_576;
+  const reserve = input.reserveBytes ?? SALE_RESERVE_BYTES;
 
   const used = await input.log.usedBytes();
   if (used + input.record.length + reserve > input.log.capacityBytes) {
