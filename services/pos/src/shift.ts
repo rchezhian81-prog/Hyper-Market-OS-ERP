@@ -9,6 +9,7 @@ import { apiError } from '../../kernel/src/index';
 import { assessShiftClose, checkDenominationCount, assessOverShortReview, type DenominationCount } from '../../../packages/till/src/index';
 import { personFindings } from './cash';
 import { cashierSealFlags, stampIn, type CashierSealFlag } from './store-seal';
+import { tillStoreOf, type TillStoreDeps } from './till-store';
 
 /** What the cloud found when it re-verified a close the store box relayed (SP-4c · §28 · hard rule #10). */
 export type ShiftGovernanceFlag =
@@ -28,6 +29,12 @@ export type ShiftGovernanceFlag =
 export interface ClosedShiftRecord {
   readonly shiftId: string;
   readonly tillId: string;
+  /**
+   * OB-80 "A" (owner, 12 Oct 2026): the store whose till this is — a till is (store, till). The relaying box's own store
+   * (stamped by head office from its credential), else the store the body names. Absent on a close taken before OB-80
+   * (read as the till's store under the migration rule in `services/api/src/till-identity.ts`).
+   */
+  readonly storeId?: string;
   readonly cashierId: string;
   readonly tradingDay: string;
   readonly expectedMinor: number;
@@ -88,7 +95,7 @@ export interface ShortageInvestigationOutcome {
   readonly detail?: string;
 }
 
-export interface ShiftDeps {
+export interface ShiftDeps extends TillStoreDeps {
   readonly closedShift: (tenantId: string, shiftId: string) => Promise<ClosedShiftRecord | undefined> | ClosedShiftRecord | undefined;
   readonly recordShiftClose: (tenantId: string, record: ClosedShiftRecord) => Promise<void> | void;
   /**
@@ -148,6 +155,8 @@ export function shiftRoutes(deps: ShiftDeps): readonly Route[] {
           });
         }
         const n = (k: typeof RELAYED_NUMS[number]): number => b[k] as number;
+        // OB-80: the till is (store, till) — a box's own store is stamped on the close by head office.
+        const storeId = await tillStoreOf(deps, ctx, tillId, b['storeId']);
 
         const flags: string[] = [
           ...await personFindings(deps, ctx.tenantId, cashierId, 'cashier_unknown', 'cashier_lacks_authority'),
@@ -177,7 +186,7 @@ export function shiftRoutes(deps: ShiftDeps): readonly Route[] {
         }
 
         const record: ClosedShiftRecord = {
-          shiftId, tillId, cashierId, tradingDay,
+          shiftId, tillId, ...(storeId === undefined ? {} : { storeId }), cashierId, tradingDay,
           expectedMinor: recomputed.expectedMinor, countedMinor: n('countedMinor'), varianceMinor: recomputed.varianceMinor,
           currency: typeof b['currency'] === 'string' ? (b['currency'] as string) : 'INR',
           exceptionRaised: recomputed.exceptionRaised, reasonCode: recomputed.reasonCode,
@@ -197,7 +206,7 @@ export function shiftRoutes(deps: ShiftDeps): readonly Route[] {
         return {
           status: 202,
           body: {
-            shiftId, tillId, recorded: true, expectedMinor: recomputed.expectedMinor, varianceMinor: recomputed.varianceMinor,
+            shiftId, tillId, storeId: storeId ?? null, recorded: true, expectedMinor: recomputed.expectedMinor, varianceMinor: recomputed.varianceMinor,
             exceptionRaised: recomputed.exceptionRaised, flags, ...(investigation !== undefined ? { investigation } : {}),
           },
         };
@@ -213,7 +222,7 @@ export function shiftRoutes(deps: ShiftDeps): readonly Route[] {
         const mapped = rows.map((r) => {
           const review = reviewByShift.get(r.shiftId);
           return {
-            shiftId: r.shiftId, tillId: r.tillId, cashierId: r.cashierId, tradingDay: r.tradingDay,
+            shiftId: r.shiftId, tillId: r.tillId, storeId: r.storeId ?? null, cashierId: r.cashierId, tradingDay: r.tradingDay,
             varianceMinor: r.varianceMinor, reasonCode: r.reasonCode, denominations: r.denominations ?? null,
             // A relayed close and what the cloud found when it re-verified it (SP-4c), for the cash office (P-08).
             laneId: r.laneId ?? null, relayed: r.relayed === true, flags: r.flags ?? [],

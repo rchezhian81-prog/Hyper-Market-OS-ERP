@@ -9,8 +9,8 @@
 import { createHash } from 'node:crypto';
 import type { EventStore } from '../../../packages/persistence/src/event-store';
 import type { BoundStoreGuard, BoundStoreVerdict, Route } from '../../kernel/src/index';
-import { classifyReferences, isRelayWrite, judgePersonRelay, judgeBoxRequest, malformedStoreField, storeReferencesIn, storeStampFor, STORE_COMPUTER_ROLE, type BoxRequestVerdict, type StoreReference } from '../../platform/src/store-computer-identity';
-import { relayRecordStore, type RelayPlacement } from './relay-record-store';
+import { classifyReferences, isRelayWrite, judgePersonRelay, judgeBoxRequest, malformedStoreField, paddedStoreParam, storeReferencesIn, storeStampFor, STORE_COMPUTER_ROLE, type BoxRequestVerdict, type StoreReference } from '../../platform/src/store-computer-identity';
+import { relayRecordStore, type RelayCaller, type RelayPlacement } from './relay-record-store';
 import { storeComputerRefusalsAdapter, storeOfLocationResolver, STREAM, streamName } from './adapters';
 import { makeEvent } from '../../../packages/contracts/src/event';
 
@@ -59,8 +59,8 @@ export function storeComputerBinding(input: { readonly store: EventStore; readon
    * sale's or till record's lane is registered at — so naming another store's record by its id is judged like naming
    * that store.
    */
-  const referencesOf = async (tenantId: string, request: Request): Promise<{ references: StoreReference[]; placement: RelayPlacement }> => {
-    const placement = await records.derive(tenantId, request);
+  const referencesOf = async (tenantId: string, request: Request, caller: RelayCaller): Promise<{ references: StoreReference[]; placement: RelayPlacement }> => {
+    const placement = await records.derive(tenantId, request, caller);
     return { references: [...classifyReferences(request.routePath, storeReferencesIn(request)), ...placement.references], placement };
   };
   /** Keep a refused relay on head office's append-only refusal list (visible, never lost) — persons' as well as boxes'. */
@@ -74,11 +74,17 @@ export function storeComputerBinding(input: { readonly store: EventStore; readon
       method: request.method, path: request.routePath, at: input.now(),
     });
   };
-  /** Once the request is ACCEPTED, record which store its record is at — the store a later relay of it is judged against. */
-  const placeOnAccept = (principal: Principal, placement: RelayPlacement, store: string | undefined): (() => Promise<void>) | undefined => {
+  /**
+   * Round 15 (verifier LOW — placement not atomic): a record head office does not hold yet (it starts at a store) is
+   * CLAIMED for the caller's store BEFORE the handler runs — one idempotency key per record, so two stores relaying the
+   * same new id at the same moment meet on that key and exactly one claim stands. Returns the store whose claim stands
+   * (the caller's, or the earlier claimant's). A crash between the claim and the handler's own write leaves the record
+   * claimed by the store that sent it: only that store's re-send is accepted. undefined when nothing is to be claimed.
+   */
+  const claim = async (principal: Principal, placement: RelayPlacement, store: string | undefined): Promise<string | undefined> => {
     const record = placement.record;
     if (record === undefined || store === undefined || store === '') return undefined;
-    return () => records.owners.place(principal.tenantId, { family: record.family, recordId: record.recordId, store, userId: principal.userId, at: input.now() });
+    return (await records.owners.place(principal.tenantId, { family: record.family, recordId: record.recordId, store, userId: principal.userId, at: input.now() })).store;
   };
   /**
    * Round 13 (verifier D1 · PA-01): a PERSON holding a relay permission (a store manager's `till.dayclose.sync`, a
@@ -92,12 +98,12 @@ export function storeComputerBinding(input: { readonly store: EventStore; readon
   const judgePerson = async (principal: Principal, access: Parameters<BoundStoreGuard>[1], request: Request): Promise<BoundStoreVerdict> => {
     if (!isRelayWrite(request.method, request.routePath)) return { ok: true };
     const scope = access.branchScopeOf(principal.userId, request.permission);
-    const { references, placement } = await referencesOf(principal.tenantId, request);
+    const { references, placement } = await referencesOf(principal.tenantId, request, { kind: 'person' });
     const placing = await storeOfLocationResolver(input, principal.tenantId);
     const placedStore = references.map((r) => placing.storeOf(r.value)).find((st) => placing.knownStores.has(st));
     if (scope === 'all') {
-      const onAccepted = placeOnAccept(principal, placement, placedStore);
-      return onAccepted === undefined ? { ok: true } : { ok: true, onAccepted };
+      await claim(principal, placement, placedStore);
+      return { ok: true };
     }
     if (placement.unresolved !== undefined) {
       await keepRefusal(principal, request, 'person', 'record_store_unresolved', { field: placement.unresolved.field });
@@ -111,11 +117,12 @@ export function storeComputerBinding(input: { readonly store: EventStore; readon
         nextSafeAction: 'Relay it from the store\'s own computer, or name the store (or register the lane at its store). The refusal is kept on head office\'s list; nothing else was recorded.',
       };
     }
-    const verdict = judgePersonRelay({ scope, references, ...placing });
-    if (verdict.ok) {
-      const onAccepted = placeOnAccept(principal, placement, placedStore);
-      return onAccepted === undefined ? { ok: true } : { ok: true, onAccepted };
-    }
+    const judged = judgePersonRelay({ scope, references, ...placing });
+    // A new store-originated record is claimed for its store before the handler; a claim another store won first is judged.
+    const standing = judged.ok ? await claim(principal, placement, placedStore) : undefined;
+    const verdict = standing === undefined || standing === placedStore ? judged
+      : judgePersonRelay({ scope, references: [{ field: placement.record!.field, value: standing, names: 'store' }], ...placing });
+    if (verdict.ok) return { ok: true };
     await keepRefusal(principal, request, 'person', 'outside_your_branch_scope', { namedStore: verdict.namedStore, field: verdict.field });
     return {
       ok: false, code: 'outside_your_branch_scope',
@@ -128,13 +135,16 @@ export function storeComputerBinding(input: { readonly store: EventStore; readon
     const by = grants.length === 0 ? 'person' as const : 'store_computer' as const;
     // Round 14 (verifier G2): a store or location field that is a list, a number or an object is unreadable — refused 400,
     // never read as "no store" and placed by a fallback.
-    if (isRelayWrite(request.method, request.routePath)) {
-      const bad = malformedStoreField(request.body);
+    // Round 15 (verifier GAP C): a store or location id with spaces around it is not canonical — the judge would read it
+    // trimmed while a handler stored it as sent (a phantom " store-1 "). Refused 400 here, at head office's edge, for
+    // every store computer request and every person's relay, so the judge and every handler see one value.
+    if (isRelayWrite(request.method, request.routePath) || grants.length > 0) {
+      const bad = malformedStoreField(request.body) ?? paddedStoreParam(request.params, request.query);
       if (bad !== undefined) {
         await keepRefusal(principal, request, by, 'store_field_not_readable', { field: bad });
         return {
           ok: false, status: 400, code: 'store_field_not_readable',
-          why: `The record's ${bad} is not a piece of text naming one store or location, so head office cannot tell where it belongs. It is never read as "no store".`,
+          why: `The record's ${bad} is not a piece of text naming one store or location exactly (a list, a number, an object, or text with spaces around it), so head office cannot tell where it belongs. It is never read as "no store", and never trimmed into another place.`,
           nextSafeAction: 'Keep the record at the store and send it with that field as one store or location id. The refusal is kept on head office\'s list; nothing else was recorded.',
         };
       }
@@ -142,24 +152,28 @@ export function storeComputerBinding(input: { readonly store: EventStore; readon
     if (grants.length === 0) return judgePerson(principal, access, request); // a person: PA-01 on relay writes only
     // The stores its store_computer grants NAME — a tenant-wide grant names none (it never stands for "every store").
     const grantedStores = [...new Set(grants.flatMap((g) => (g.branchScope === 'all' ? [] : g.branchScope)))];
-    const { references, placement } = await referencesOf(principal.tenantId, request);
+    const { references, placement } = await referencesOf(principal.tenantId, request, { kind: 'store_computer', store: principal.branchId });
     const placing = references.length === 0 ? { storeOf: (st: string) => st, knownStores: new Set<string>() } : await storeOfLocationResolver(input, principal.tenantId);
-    const verdict: BoxRequestVerdict = placement.unresolved !== undefined && principal.branchId !== null && grantedStores.includes(principal.branchId)
+    const judged: BoxRequestVerdict = placement.unresolved !== undefined && principal.branchId !== null && grantedStores.includes(principal.branchId)
       ? { ok: false, reason: 'record_store_unresolved', field: placement.unresolved.field, why: placement.unresolved.why }
       : judgeBoxRequest({ credentialStore: principal.branchId, grantedStores, references, ...placing });
+    // A new store-originated record is claimed for this box's store before the handler; one another store claimed first is refused.
+    const standing = judged.ok ? await claim(principal, placement, principal.branchId!) : undefined;
+    const verdict: BoxRequestVerdict = standing === undefined || standing === principal.branchId ? judged : {
+      ok: false, reason: 'record_names_another_store', field: placement.record!.field, namedStore: standing,
+      why: `Store ${principal.branchId}'s computer sent ${placement.record!.family} ${placement.record!.recordId}, which store ${standing}'s computer sent to head office first (named at ${placement.record!.field}). A store computer relays and reports only for its own store (OB-54), so it was refused and kept as an exception.`,
+    };
     if (verdict.ok) {
       // OB-54 round 10: a record that names no store is STAMPED with the credential's store — server-side, recorded.
       const credentialStore = principal.branchId!; // judged above: the credential names a granted store
-      const place = placeOnAccept(principal, placement, credentialStore);
       const stamp = storeStampFor({ method: request.method, routePath: request.routePath, body: request.body, credentialStore, references });
-      if (stamp.kind === 'none') return place === undefined ? { ok: true } : { ok: true, onAccepted: place };
+      if (stamp.kind === 'none') return { ok: true };
       const stampId = createHash('sha256').update(JSON.stringify([principal.userId, credentialStore, request.method, request.routePath, request.params, request.body ?? null])).digest('hex').slice(0, 32);
       const onAccepted = async (): Promise<void> => {
         await stamps.record(principal.tenantId, {
           stampId, userId: principal.userId, store: credentialStore, field: stamp.kind === 'stamped' ? stamp.field : null,
           method: request.method, path: request.routePath, at: input.now(),
         });
-        if (place !== undefined) await place();
       };
       return stamp.kind === 'stamped' ? { ok: true, stampedBody: stamp.body, onAccepted } : { ok: true, onAccepted };
     }

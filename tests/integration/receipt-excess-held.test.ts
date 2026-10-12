@@ -64,6 +64,11 @@ async function seeded(): Promise<ApiHarness> {
   await h.provisionRole(A, 'u-boss', 'store_manager');     // the second person
   await h.provisionRole(A, 'u-box', 'store_computer', ['store-1']);            // the store box: relays the manager's decisions
   await h.provisionRole(A, 'u-cashier', 'cashier');        // holds no approval authority
+  // Round 15 (GAP A): a relayed decision is judged on the store of its SUBJECT as head office holds it — the receipt's
+  // warehouse wh-1 is store-1's back store, so store-1's computer may relay the manager's decision on it.
+  for (const [id, body] of [['C1', { kind: 'company', name: 'C' }], ['store-1', { kind: 'branch', name: 'Store 1', parentId: 'C1', companyId: 'C1' }], [WH, { kind: 'warehouse', name: 'Back store', parentId: 'store-1', companyId: 'C1' }]] as const) {
+    await h.request({ method: 'POST', path: `/v1/org/nodes/${id}`, userId: 'u-owner', tenantId: A, idempotencyKey: `node-${id}`, body });
+  }
   await h.store.append(A, STREAM.catalogue, makeEvent({
     id: `pack-${A}-1`, type: 'CataloguePublished', occurredAt: AT, idempotencyKey: `catalogue-${A}-v1`, source: 'test/catalogue',
     payload: {

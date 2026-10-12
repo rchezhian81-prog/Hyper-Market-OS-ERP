@@ -189,6 +189,11 @@ export const STORE_STAMP_FIELD: Readonly<Record<string, string>> = Object.freeze
   '/v1/finance/payment-exceptions/:attemptId/late-answer/synced': 'storeId',
   // M35-FR-03: the box's own health report (disk, queue, till devices) names no store — it is the credential's.
   '/v1/store-computers/health-reports': 'storeId',
+  // OB-80 "A" (owner, 12 Oct 2026): head office keeps a till as (store, till) — the till's cash, its shift closes and its
+  // till actions carry the store of the box that relays them, so two stores' "lane-1" never clash and never merge.
+  '/v1/tills/:tillId/cash-movements/synced': 'storeId',
+  '/v1/shifts/:shiftId/close/synced': 'storeId',
+  '/v1/loss-prevention/activity/:activityId/synced': 'storeId',
 });
 
 /**
@@ -247,7 +252,20 @@ export const RECORD_STORE_PARAM: Readonly<Record<string, string>> = Object.freez
  * Round 14 (verifier G2): the first store or location field that is present but NOT a piece of text (a list, a number, an
  * object). Head office never reads such a value as "no store" — the request is refused as unreadable (400) instead, so a
  * `locationId: ["store-2"]` can never slip past the judge and be placed by a fallback. `null` reads as absent.
+ * Round 15 (verifier GAP C): text that is not CANONICAL — spaces (or any white space) around it, or nothing but white
+ * space — is unreadable too. The judge used to trim " store-1 " to store-1 while the handler booked stock at the phantom
+ * place " store-1 "; now one value reaches both, or none does. The empty string still reads as absent (stamped / no store).
  */
+const notCanonical = (x: string): boolean => x !== '' && x !== x.trim();
+/** Round 15 (verifier GAP C): a store named in the PATH or QUERY with white space around it — the same refusal. */
+export function paddedStoreParam(params: Readonly<Record<string, string>>, query: Readonly<Record<string, string>>): string | undefined {
+  for (const k of PARAM_STORE_KEYS) {
+    const p = params[k]; if (typeof p === 'string' && notCanonical(p)) return `path.${k}`;
+    const q = query[k]; if (typeof q === 'string' && notCanonical(q)) return `query.${k}`;
+  }
+  return undefined;
+}
+
 export function malformedStoreField(body: unknown): string | undefined {
   let found: string | undefined;
   const walk = (v: unknown, at: string, depth: number): void => {
@@ -255,7 +273,7 @@ export function malformedStoreField(body: unknown): string | undefined {
     if (Array.isArray(v)) { v.forEach((x, i) => walk(x, `${at}[${i}]`, depth + 1)); return; }
     for (const [k, x] of Object.entries(v as Record<string, unknown>)) {
       const here = at === '' ? k : `${at}.${k}`;
-      if (BODY_STORE_KEYS.has(k) && x !== null && x !== undefined && typeof x !== 'string') { found = `body.${here}`; return; }
+      if (BODY_STORE_KEYS.has(k) && x !== null && x !== undefined && (typeof x !== 'string' || notCanonical(x))) { found = `body.${here}`; return; }
       walk(x, here, depth + 1);
     }
   };

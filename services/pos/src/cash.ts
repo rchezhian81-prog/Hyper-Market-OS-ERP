@@ -12,6 +12,7 @@ import {
 } from '../../../packages/cash/src/index';
 import { TILL_AUTHORITY } from './sale-intake';
 import { cashierSealFlags, stampIn, type CashierSealFlag } from './store-seal';
+import { tillStoreOf, type TillStoreDeps } from './till-store';
 
 export type { StoredCashMovement } from '../../../packages/cash/src/index';
 
@@ -47,6 +48,11 @@ export type CashGovernanceFlag =
 export interface RecordedCashMovement {
   readonly movementId: string;
   readonly tillId: string;
+  /**
+   * OB-80 "A": the store whose till this is — a till is (store, till). Absent only on a movement kept by the till's id
+   * alone: one taken before OB-80, or in a business with one store where nothing can clash (`till-store.ts`).
+   */
+  readonly storeId?: string;
   readonly kind: CashMovementKind;
   readonly deltaMinor: number;
   readonly currency: string;
@@ -60,8 +66,12 @@ export interface RecordedCashMovement {
   readonly flags?: readonly CashGovernanceFlag[];
 }
 
-export interface CashDeps {
-  readonly tillMovements: (tenantId: string, tillId: string) => Promise<readonly TillMovement[]> | readonly TillMovement[];
+export interface CashDeps extends TillStoreDeps {
+  /**
+   * OB-80: one till's chain — the till at `storeId` (with, under the migration rule, what was kept by its id alone before
+   * OB-80 when that belongs to the same store); with no store, the chain kept by the till's id alone.
+   */
+  readonly tillMovements: (tenantId: string, tillId: string, storeId?: string) => Promise<readonly TillMovement[]> | readonly TillMovement[];
   readonly recordCashMovement: (tenantId: string, tillId: string, m: RecordedCashMovement) => Promise<void> | void;
   readonly now: () => string;
   /**
@@ -127,8 +137,9 @@ export function cashRoutes(deps: CashDeps): readonly Route[] {
             nextSafeAction: 'Nothing moved. Name the cashier who holds this till.',
           });
         }
+        const storeId = await tillStoreOf(deps, ctx, tillId, (b as Record<string, unknown>)['storeId']);
         const request = { movementId: b.movementId, tillId, kind: b.kind as CashMovementKind, amountMinor: b.amountMinor as number, custodianId: b.custodianId };
-        const assessment = assessCashMovement({ priorMovements: await deps.tillMovements(ctx.tenantId, tillId), request });
+        const assessment = assessCashMovement({ priorMovements: await deps.tillMovements(ctx.tenantId, tillId, storeId), request });
         if (!assessment.ok) {
           throw apiError(422, {
             code: assessment.refusedBecause!,
@@ -139,11 +150,11 @@ export function cashRoutes(deps: CashDeps): readonly Route[] {
         }
 
         await deps.recordCashMovement(ctx.tenantId, tillId, {
-          movementId: request.movementId, tillId, kind: request.kind, deltaMinor: assessment.deltaMinor,
+          movementId: request.movementId, tillId, ...(storeId === undefined ? {} : { storeId }), kind: request.kind, deltaMinor: assessment.deltaMinor,
           currency: typeof b.currency === 'string' ? b.currency : 'INR', custodianId: request.custodianId,
           tradingDay: b.tradingDay, at: deps.now(), performedBy: ctx.userId,
         });
-        return { status: 201, body: { movementId: request.movementId, tillId, kind: request.kind, balanceMinor: assessment.balanceAfterMinor, custodian: assessment.custodianAfter } };
+        return { status: 201, body: { movementId: request.movementId, tillId, storeId: storeId ?? null, kind: request.kind, balanceMinor: assessment.balanceAfterMinor, custodian: assessment.custodianAfter } };
       },
     },
     {
@@ -172,10 +183,12 @@ export function cashRoutes(deps: CashDeps): readonly Route[] {
             nextSafeAction: 'Nothing was recorded. The box must send the movement as it recorded it.',
           });
         }
-        const prior = await deps.tillMovements(ctx.tenantId, tillId);
+        // OB-80: the till is (store, till) — a box's own store is stamped on the movement by head office.
+        const storeId = await tillStoreOf(deps, ctx, tillId, b['storeId']);
+        const prior = await deps.tillMovements(ctx.tenantId, tillId, storeId);
         const already = prior.find((m) => m.movementId === movementId);
         if (already !== undefined) {
-          return { status: 200, body: { movementId, tillId, recorded: true, alreadyRecorded: true, flags: already.flags ?? [] } };
+          return { status: 200, body: { movementId, tillId, storeId: storeId ?? null, recorded: true, alreadyRecorded: true, flags: already.flags ?? [] } };
         }
 
         const flags: string[] = [
@@ -194,13 +207,13 @@ export function cashRoutes(deps: CashDeps): readonly Route[] {
         const deltaMinor = assessment.ok ? assessment.deltaMinor : DRAWER_SIGN[kind as CashMovementKind] * (amountMinor as number);
 
         await deps.recordCashMovement(ctx.tenantId, tillId, {
-          movementId, tillId, kind: kind as CashMovementKind, deltaMinor,
+          movementId, tillId, ...(storeId === undefined ? {} : { storeId }), kind: kind as CashMovementKind, deltaMinor,
           currency: typeof b['currency'] === 'string' ? (b['currency'] as string) : 'INR',
           custodianId, tradingDay, at, performedBy, relayed: true,
           ...(laneId === undefined ? {} : { laneId }),
           ...(flags.length === 0 ? {} : { flags: flags as CashGovernanceFlag[] }),
         });
-        return { status: 202, body: { movementId, tillId, recorded: true, flags } };
+        return { status: 202, body: { movementId, tillId, storeId: storeId ?? null, recorded: true, flags } };
       },
     },
     {
@@ -208,11 +221,13 @@ export function cashRoutes(deps: CashDeps): readonly Route[] {
       permission: 'cash.till.read',
       handler: async (ctx) => {
         const tillId = ctx.params['tillId'] ?? '';
-        const movements = await deps.tillMovements(ctx.tenantId, tillId);
+        // OB-80: which store's till — `?storeId=`, else where it is registered, else the reader's one store.
+        const storeId = await tillStoreOf(deps, ctx, tillId, ctx.query['storeId']);
+        const movements = await deps.tillMovements(ctx.tenantId, tillId, storeId);
         return {
           status: 200,
           body: {
-            tillId, custodian: custodianOf(movements, tillId), balanceMinor: tillDrawerBalanceMinor(movements, tillId),
+            tillId, storeId: storeId ?? null, custodian: custodianOf(movements, tillId), balanceMinor: tillDrawerBalanceMinor(movements, tillId),
             // Relayed movements the cloud flagged when it re-verified them (SP-4c) — for the cash office to look at (P-08).
             flagged: movements.filter((m) => (m.flags?.length ?? 0) > 0).map((m) => ({ movementId: m.movementId, kind: m.kind, custodianId: m.custodianId, laneId: m.laneId ?? null, flags: m.flags })),
             asAt: deps.now(),

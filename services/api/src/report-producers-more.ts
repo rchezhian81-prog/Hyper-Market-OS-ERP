@@ -380,7 +380,7 @@ export function produceMore(kit: ProducerKit) {
         for (const r of raisedAll) if (r.p.day === day) latestRaised.set(r.p.exceptionId, r.p);
         const raised = [...latestRaised.values()].sort((a, b) => a.exceptionId.localeCompare(b.exceptionId));
         const refunds = returns.map((e) => e.event.payload as { returnId: string; processedBy: string; processedAt: string; refundMinor: number });
-        const actTx = (a: TillActivity): SourceTransaction => ({ transactionId: a.activityId, at: a.at, branchId: a.laneId, staffId: a.cashierId, amountMinor: a.valueMinor, description: `${a.kind} on lane ${a.laneId}${a.billRef === undefined ? '' : `, bill ${a.billRef}`}: ${a.reason}` });
+        const actTx = (a: TillActivity): SourceTransaction => ({ transactionId: a.activityId, at: a.at, branchId: a.storeId ?? a.laneId, staffId: a.cashierId, amountMinor: a.valueMinor, description: `${a.kind} on lane ${a.laneId}${a.billRef === undefined ? '' : `, bill ${a.billRef}`}: ${a.reason}` });
         const of = (k: TillActivity['kind']) => today.filter((a) => a.kind === k);
         return {
           tradingDay: day, sources: [fresh('till actions and rule breaches', 'loss prevention', asAt)],

@@ -1497,8 +1497,12 @@ const IMPORT_JOBS_STREAM = streamName(STREAM.purchase, 'import-jobs');
 const forRfqQuotes = (requisitionId: string): string => streamName(STREAM.purchase, 'rfq', requisitionId);
 /** Returns hang off the sale they are against, so "what came back on this bill?" reads one stream. */
 const forSaleReturns = (saleId: string): string => streamName(STREAM.sales, 'return', saleId);
-/** Each till's cash chain folds one stream — its balance and custodian read one till, not the shop. */
+/** Each till's cash chain folds one stream — its balance and custodian read one till, not the shop. Before OB-80: by the till alone. */
 const forTillCash = (tillId: string): string => streamName(STREAM.cash, tillId);
+/** OB-80 "A": a till is (store, till) — its chain is that store's till's own stream. */
+const forStoreTillCash = (storeId: string, tillId: string): string => streamName(STREAM.cash, 'at', storeId, tillId);
+/** OB-80: which tills head office has kept cash for at each store (one entry per (store, till), append-only). */
+const forTillsAtStore = (storeId: string): string => streamName(STREAM.cash, 'tills-at', storeId);
 /** Shift closes share one stream (low-volume — a few tills × shifts a day), folded by shift id. */
 const SHIFTS_STREAM = streamName(STREAM.cash, 'shifts');
 /**
@@ -3487,24 +3491,75 @@ export function exchangesAdapter(input: {
   };
 }
 
+/**
+ * OB-80 "A" — the MIGRATION RULE for till cash and shift closes kept by the till's id alone (before OB-80, or in a business
+ * with one store). History is never rewritten: those records stay where they are, and are READ as belonging to one store:
+ *   1. the store head office registered the till at (device registry), else
+ *   2. the store whose computer first relayed that till's cash (the round-14 placement, `relay-record-owners`), else
+ *   3. the business's one store, when it has exactly one (the single-store pilot), else
+ *   4. no store — shown by the till's id alone, never folded into a store's till of the same name.
+ */
+export async function legacyTillStore(input: { readonly store: EventStore; readonly now: () => string }, tenantId: string, tillId: string): Promise<string | undefined> {
+  const registered = await storeOfLane(input.store, tenantId, tillId);
+  if (registered !== undefined) return registered;
+  const placed = await input.store.findByIdempotencyKey(tenantId, `relay-record-owner-${tenantId}-till-${tillId}`);
+  if (placed !== undefined) return (placed.event.payload as { store: string }).store;
+  const { knownStores } = await storeOfLocationResolver(input, tenantId);
+  return knownStores.size === 1 ? [...knownStores][0] : undefined;
+}
+
+/** OB-80: the tills head office has kept cash for at a store (since OB-80). */
+export async function tillsAtStore(store: EventStore, tenantId: string, storeId: string): Promise<readonly string[]> {
+  return [...new Set((await allOf<{ tillId: string }>(store, tenantId, forTillsAtStore(storeId), 'TillKeptAtStore')).map((t) => t.tillId))];
+}
+
 export function cashAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
 }): CashDeps {
+  const read = async (tenantId: string, stream: string): Promise<TillMovement[]> =>
+    (await allOf<RecordedCashMovement>(input.store, tenantId, stream, 'CashMovement'))
+      .map((m): TillMovement => ({
+        movementId: m.movementId, tillId: m.tillId, kind: m.kind, deltaMinor: m.deltaMinor, custodianId: m.custodianId,
+        ...(m.laneId === undefined ? {} : { laneId: m.laneId }), ...(m.performedBy === undefined ? {} : { performedBy: m.performedBy }),
+        ...(m.relayed === true ? { relayed: true as const } : {}), ...(m.flags === undefined ? {} : { flags: m.flags }),
+      }));
   return {
     now: input.now,
 
-    tillMovements: async (tenantId, tillId) =>
-      (await allOf<RecordedCashMovement>(input.store, tenantId, forTillCash(tillId), 'CashMovement'))
-        .map((m): TillMovement => ({
-          movementId: m.movementId, tillId: m.tillId, kind: m.kind, deltaMinor: m.deltaMinor, custodianId: m.custodianId,
-          ...(m.laneId === undefined ? {} : { laneId: m.laneId }), ...(m.performedBy === undefined ? {} : { performedBy: m.performedBy }),
-          ...(m.relayed === true ? { relayed: true as const } : {}), ...(m.flags === undefined ? {} : { flags: m.flags }),
-        })),
+    // OB-80: a store's till reads its own chain, preceded by what was kept by the till's id alone when the migration rule
+    // places that in the same store (one chain: the custodian and the balance carry over, never double). No store → the
+    // chain kept by the till's id alone, exactly as before OB-80.
+    tillMovements: async (tenantId, tillId, storeId) => {
+      if (storeId === undefined) return read(tenantId, forTillCash(tillId));
+      const legacy = (await legacyTillStore(input, tenantId, tillId)) === storeId ? await read(tenantId, forTillCash(tillId)) : [];
+      return [...legacy, ...await read(tenantId, forStoreTillCash(storeId, tillId))];
+    },
+    storeOfTill: (tenantId, tillId) => storeOfLane(input.store, tenantId, tillId),
+    knownStores: async (tenantId) => [...(await storeOfLocationResolver(input, tenantId)).knownStores],
     // SP-4c: the custodian / recorder a relayed movement names is re-verified from their grants, never taken on the box's word.
     permissionsOfUser: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),
 
     recordCashMovement: async (tenantId, tillId, m) => {
+      if (m.storeId !== undefined) {
+        // OB-80: the store's own till — keyed by (store, movement), so another store's movement of the same id is its own
+        // record, never a duplicate of this one; and the till is listed at its store in the same atomic write.
+        const storeId = m.storeId;
+        await input.store.appendBatch(tenantId, [{
+          stream: forStoreTillCash(storeId, tillId),
+          event: makeEvent({
+            id: `cash-${storeId}-${tillId}-${m.movementId}`, type: 'CashMovement', occurredAt: m.at,
+            idempotencyKey: `cash-${tenantId}-${storeId}-${tillId}-${m.movementId}`, source: 'api/pos', payload: m,
+          }),
+        }, {
+          stream: forTillsAtStore(storeId),
+          event: makeEvent({
+            id: `till-kept-at-${storeId}-${tillId}`, type: 'TillKeptAtStore', occurredAt: m.at,
+            idempotencyKey: `till-kept-at-${tenantId}-${storeId}-${tillId}`, source: 'api/pos', payload: { storeId, tillId, firstAt: m.at },
+          }),
+        }]);
+        return;
+      }
       await input.store.append(tenantId, forTillCash(tillId), makeEvent({
         id: `cash-${m.movementId}`,
         type: 'CashMovement',
@@ -3535,6 +3590,9 @@ export function shiftAdapter(input: {
     now: input.now,
     // SP-4c: the cashier a relayed close names is re-verified from their grants, never taken on the box's word.
     permissionsOfUser: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),
+    // OB-80: a close is kept per (store, till) — the till's registered store when the close names none.
+    storeOfTill: (tenantId, tillId) => storeOfLane(input.store, tenantId, tillId),
+    knownStores: async (tenantId) => [...(await storeOfLocationResolver(input, tenantId)).knownStores],
 
     closedShift: async (tenantId, shiftId) => (await closes(tenantId)).find((r) => r.shiftId === shiftId),
 
@@ -9990,6 +10048,41 @@ export function driverRunAdapter(input: {
 }
 
 /**
+ * Round 15 (verifier GAP A): which store head office ASSIGNED each wave and route at — one tenant-wide index, written in the
+ * SAME batch as the assignment itself, so the relay judge (`relay-record-store.ts`) reads the store of a head-office wave or
+ * route from head office's own record, never from whichever store computer relays it first. Append-only; one entry per
+ * (wave or route, store). Assignments made before this index existed are found by reading each known store's own stream.
+ */
+export interface AssignmentPlaced { readonly kind: 'wave' | 'route'; readonly id: string; readonly storeId: string; readonly at: string }
+function assignmentPlacedEntry(tenantId: string, kind: 'wave' | 'route', id: string, storeId: string, at: string): { stream: string; event: DomainEvent } {
+  return {
+    stream: streamName(STREAM.delivery, 'assignment-index'),
+    event: makeEvent({
+      id: `assignment-placed-${kind}-${id}-${storeId}`, type: 'AssignmentPlaced', occurredAt: at,
+      idempotencyKey: `assignment-placed-${tenantId}-${kind}-${id}-${storeId}`, source: 'api/fulfilment',
+      payload: { kind, id, storeId, at } satisfies AssignmentPlaced,
+    }),
+  };
+}
+
+/** The stores head office assigned a wave (or route) at: the index, plus — for assignments made before it — each known store's stream. */
+export async function assignedStoresOf(input: { readonly store: EventStore }, tenantId: string, kind: 'wave' | 'route', id: string, knownStores: Iterable<string>): Promise<readonly string[]> {
+  const out = new Set<string>();
+  for (const p of await allOf<AssignmentPlaced>(input.store, tenantId, streamName(STREAM.delivery, 'assignment-index'), 'AssignmentPlaced')) {
+    if (p.kind === kind && p.id === id) out.add(p.storeId);
+  }
+  for (const storeId of knownStores) {
+    if (out.has(storeId)) continue;
+    const stream = streamName(STREAM.delivery, 'assignments', storeId);
+    const held = kind === 'wave'
+      ? (await allOf<WaveAssignment>(input.store, tenantId, stream, 'WaveAssigned')).some((a) => a.waveId === id)
+      : (await allOf<RouteAssignment>(input.store, tenantId, stream, 'RouteAssigned')).some((a) => a.routeId === id);
+    if (held) out.add(storeId);
+  }
+  return [...out];
+}
+
+/**
  * Head office's assignments of waves to pickers and routes to drivers, per store (HA-1 · M19-FR-01/03). One stream per store
  * holds every assignment as an append-only fact (`WaveAssigned` / `RouteAssigned`, keyed on the wave or route and the content
  * digest, so the same assignment posted twice is one record and a changed one is a new record that replaces it). "Done" is
@@ -10008,25 +10101,25 @@ export function assignmentsAdapter(input: {
     permissionsOfUser: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),
     waveAssignments: (tenantId, storeId) => allOf<WaveAssignment>(input.store, tenantId, forStore(storeId), 'WaveAssigned'),
     recordWaveAssignment: async (tenantId, a) => {
-      await input.store.append(tenantId, forStore(a.storeId), makeEvent({
+      await input.store.appendBatch(tenantId, [{ stream: forStore(a.storeId), event: makeEvent({
         id: `wave-assigned-${a.waveId}-${a.digest}`,
         type: 'WaveAssigned',
         occurredAt: a.at,
         idempotencyKey: `wave-assigned-${tenantId}-${a.storeId}-${a.waveId}-${a.digest}`,
         source: 'api/fulfilment',
         payload: a,
-      }));
+      }) }, assignmentPlacedEntry(tenantId, 'wave', a.waveId, a.storeId, a.at)]);
     },
     routeAssignments: (tenantId, storeId) => allOf<RouteAssignment>(input.store, tenantId, forStore(storeId), 'RouteAssigned'),
     recordRouteAssignment: async (tenantId, a) => {
-      await input.store.append(tenantId, forStore(a.storeId), makeEvent({
+      await input.store.appendBatch(tenantId, [{ stream: forStore(a.storeId), event: makeEvent({
         id: `route-assigned-${a.routeId}-${a.digest}`,
         type: 'RouteAssigned',
         occurredAt: a.at,
         idempotencyKey: `route-assigned-${tenantId}-${a.storeId}-${a.routeId}-${a.digest}`,
         source: 'api/fulfilment',
         payload: a,
-      }));
+      }) }, assignmentPlacedEntry(tenantId, 'route', a.routeId, a.storeId, a.at)]);
     },
     wavePacked: async (tenantId, waveId) => (await waves.pack(tenantId, waveId)) !== undefined,
     routeSettled: async (tenantId, routeId) => (await runs.settlement(tenantId, routeId)) !== undefined,

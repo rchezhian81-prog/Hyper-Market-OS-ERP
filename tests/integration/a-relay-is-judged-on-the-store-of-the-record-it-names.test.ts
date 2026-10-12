@@ -130,7 +130,7 @@ describe.each(backings)('Round 14 — a relay is judged on the store of the reco
     expect(after.find((d) => d.dayCloseId === 'dc-2')).toMatchObject({ locked: false, reopenedBy: 'u-m2' });
   }, 60_000);
 
-  it('G1: a record with no store of its own (a pick wave) is held at the store that first sent it; a till at the store it is registered at', async () => {
+  it('G1: a store-originated record head office does not hold (a box-made pick wave) is held at the store that first sent it; OB-80: a till is (store, till)', async () => {
     const h = harness();
     const { call, refusals } = await shop(h);
     expect((await call('POST', '/v1/fulfilment/waves/W-2/lines/l1/synced', 'u-box-b', waveLine('l1'), 'w-b1')).status).toBeLessThan(300);
@@ -142,16 +142,19 @@ describe.each(backings)('Round 14 — a relay is judged on the store of the reco
     const wave = (await call('GET', '/v1/fulfilment/waves/W-2', 'u-owner')).body as { lines: { lineId: string; relayedBy?: string }[] };
     expect(JSON.stringify(wave)).not.toContain('u-box-a');
 
-    // A till registered at store-2: store-1's computer cannot move its cash.
+    // OB-80 (owner, 12 Oct 2026): a till is (store, till). Store-1's computer moving cash on a till it calls "till-s2" moves
+    // STORE-1's till of that name — never store-2's registered till-s2, whose drawer stays untouched; store-2's own float
+    // on its till-s2 is its own record (the same movement id included).
     expect((await call('POST', '/v1/platform/devices/till-s2/register', 'u-owner', { branchId: S2, kind: 'pos_lane', label: 'Lane 1' })).status).toBe(201);
     const cash = await call('POST', '/v1/tills/till-s2/cash-movements/synced', 'u-box-a', movement('cm-1', 'till-s2'), 'cm-a');
-    expect(cash.status, JSON.stringify(cash.body)).toBe(403);
-    expect(codeOf(cash)).toBe('store_computer_record_names_another_store');
-    expect(((await call('GET', '/v1/tills/till-s2/cash', 'u-owner')).body as { balanceMinor: number }).balanceMinor).toBe(0);
+    expect(cash.status, JSON.stringify(cash.body)).toBe(202);
+    expect(cash.body).toMatchObject({ storeId: S1 });
+    expect(((await call('GET', '/v1/tills/till-s2/cash', 'u-owner')).body as { storeId: string; balanceMinor: number })).toMatchObject({ storeId: S2, balanceMinor: 0 });
     expect((await call('POST', '/v1/tills/till-s2/cash-movements/synced', 'u-box-b', movement('cm-1', 'till-s2'), 'cm-b')).status).toBe(202);
+    expect(((await call('GET', '/v1/tills/till-s2/cash', 'u-owner', undefined, undefined, { storeId: S2 })).body as { balanceMinor: number }).balanceMinor).toBe(200_000);
+    expect(((await call('GET', '/v1/tills/till-s2/cash', 'u-owner', undefined, undefined, { storeId: S1 })).body as { balanceMinor: number }).balanceMinor).toBe(200_000);
 
     expect(await refusals()).toContainEqual(expect.objectContaining({ userId: 'u-box-a', field: 'record.waveId', namedStore: S2 }));
-    expect(await refusals()).toContainEqual(expect.objectContaining({ userId: 'u-box-a', field: 'record.tillId', namedStore: S2 }));
   }, 60_000);
 
   it('G2: a sale naming no location is placed by its lane\'s REGISTERED store and judged; never by the free-text lane id; a list or number is refused 400', async () => {
@@ -171,9 +174,11 @@ describe.each(backings)('Round 14 — a relay is judged on the store of the reco
     expect(away.status, JSON.stringify(away.body)).toBe(403);
     expect(codeOf(away)).toBe('outside_your_branch_scope');
     expect(whatOf(away)).toContain('record.laneId');
-    // Store-1's computer relaying a sale from store-2's lane, even naming its own store as the location: refused.
-    const boxAway = await call('POST', '/v1/sales', 'u-box-a', sale('S-away2', { laneId: 'lane-s2', locationId: S1 }));
+    // OB-80: store-1's computer relaying a sale from ITS lane called "lane-s2" sells from store-1 — a lane id names a till
+    // within the box's own store, never another store's registered device; naming store-2 as the location is refused.
+    const boxAway = await call('POST', '/v1/sales', 'u-box-a', sale('S-away2', { laneId: 'lane-s2', locationId: S2 }));
     expect(codeOf(boxAway)).toBe('store_computer_record_names_another_store');
+    expect((await call('POST', '/v1/sales', 'u-box-a', sale('S-own-lane', { laneId: 'lane-s2' }))).status).toBe(202);
 
     // Its own registered lane: accepted, and the stock leaves store-1 (store_of_lane), not a guess.
     const home = await call('POST', '/v1/sales', 'u-cash1', sale('S-home', { laneId: 'lane-s1' }), 'sh');
@@ -181,7 +186,7 @@ describe.each(backings)('Round 14 — a relay is judged on the store of the reco
     expect((await call('POST', '/v1/sales', 'u-cash1', sale('S-home', { laneId: 'lane-s1' }), 'sh')).body).toEqual(home.body);
     const av = ((await call('GET', '/v1/inventory/availability', 'u-owner', undefined, undefined, { productId: 'P3' })).body as { rows?: { locationId: string; onHandMinor: number }[] } | { locationId: string; onHandMinor: number }[]);
     const rows = Array.isArray(av) ? av : (av.rows ?? (av as unknown as { availability: { locationId: string; onHandMinor: number }[] }).availability ?? []);
-    expect(rows.find((r) => r.locationId === S1)?.onHandMinor).toBe(-1);
+    expect(rows.find((r) => r.locationId === S1)?.onHandMinor).toBe(-2); // the box's own-lane sale and this one — both store-1's
     expect(rows.find((r) => r.locationId === S2)).toBeUndefined();
 
     // A company-wide person (the owner) relaying a sale nothing places: banked, held at the lane's UNPLACED location.

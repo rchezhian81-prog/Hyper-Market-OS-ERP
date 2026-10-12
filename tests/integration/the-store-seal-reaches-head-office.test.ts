@@ -114,7 +114,8 @@ describe('the store computer seals who it verified; head office checks the seal'
     // Head office checked every seal, and flags nothing: not the sale, not the refund, not the cash, not the close.
     expect(kindsFor('S-SEAL-1', await openExceptions()).filter((k) => k.startsWith('cashier_'))).toEqual([]);
     expect((await governance()).exceptions.filter((e) => e.returnId === 'RT-SEAL-1')).toEqual([]);
-    const moved = await cashAdapter({ store: h.store, now: () => AT }).tillMovements(A, 'lane-1');
+    // OB-80: head office keeps the till as (store, till) — store-1's own lane-1, the store stamped from its computer's credential.
+    const moved = await cashAdapter({ store: h.store, now: () => AT }).tillMovements(A, 'lane-1', 'store-1');
     expect(moved.find((m) => m.movementId === 'cm-seal-float')).toMatchObject({ performedBy: 'u-meena', relayed: true });
     expect(moved.find((m) => m.movementId === 'cm-seal-float')?.flags ?? []).toEqual([]);
     const closed = await shiftAdapter({ store: h.store, now: () => AT }).closedShift(A, 'sh-seal-1');
