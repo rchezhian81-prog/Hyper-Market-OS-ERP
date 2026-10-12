@@ -7813,6 +7813,10 @@ const openedItemsIn = async (store: EventStore, tenantId: string, loadId: string
 const CUTOVER_GO_STREAM = streamName(STREAM.migration, 'cutover-go');
 const cutoverGosOf = (store: EventStore, tenantId: string): Promise<readonly CutoverGo[]> => allOf<CutoverGo>(store, tenantId, CUTOVER_GO_STREAM, 'CutoverGoRecorded');
 async function recordCutoverGoIn(store: EventStore, tenantId: string, go: CutoverGo): Promise<CutoverGo> {
+  // GT-05 round 12: the shop's FIRST GO stands — whatever key it was kept under (a GO from before the per-tenant key, under
+  // the old per-cutover key, included). Nothing more is appended, and the gate reports exactly the GO the reversal route reads.
+  const standing = (await cutoverGosOf(store, tenantId))[0];
+  if (standing !== undefined) return standing;
   const res = await store.append(tenantId, CUTOVER_GO_STREAM, makeEvent({ id: `cutover-go-${go.cutoverId}-${randomUUID()}`, type: 'CutoverGoRecorded', occurredAt: go.goAt, idempotencyKey: `cutover-go-${tenantId}` /* GT-05 / OB-52: ONE GO per tenant, the real cutover's; a later GO under any id resolves to it */, source: 'api/migration', payload: go }));
   return res.record.event.payload as CutoverGo;
 }
