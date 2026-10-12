@@ -288,6 +288,12 @@ export const negativeStock = (rows: readonly Availability[]): readonly NegativeS
 export interface InventoryDeps {
   readonly appendMovement: (tenantId: string, m: Movement) => Promise<void> | void;
   /**
+   * Verifier r18 C2-R1: whether head office has REGISTERED this stock place (an org node, a set-up store or its back-store
+   * warehouse, a warehouse bin). A movement at any other id is refused 422 `unknown_location` — it would create a phantom
+   * place in availability. Absent → not checked (a bare stub with no registers).
+   */
+  readonly knownLocation?: (tenantId: string, locationId: string) => Promise<boolean> | boolean;
+  /**
    * WF-08 (round 8): the open count plan that FREEZES this kind of movement at this place for this product, if any — the
    * plain movements route refuses a frozen movement by name while the count is open. Optional on a bare stub.
    */
@@ -463,6 +469,17 @@ export function inventoryRoutes(deps: InventoryDeps): readonly Route[] {
         }
         // PA-01-r1: stock moves only at a location inside the caller's branches — refused by name, nothing appended.
         if (typeof m.locationId === 'string') await assertLocationInScope(ctx, m.locationId, deps.locationBranches);
+        // Verifier r18 C2-R1: and only at a place head office has registered — never a phantom place a typed id creates.
+        // A movement already on file (a lost reply re-sent) is the same movement and is not judged again.
+        if (deps.knownLocation !== undefined && typeof m.locationId === 'string' && !(await deps.isKnown(ctx.tenantId, m.movementId))
+          && !(await deps.knownLocation(ctx.tenantId, m.locationId))) {
+          throw apiError(422, {
+            code: 'unknown_location',
+            whatHappened: `"${m.locationId}" is not a stock place head office has registered (a store, warehouse or department in the organisation, a set-up store or its back-store warehouse, or a warehouse bin).`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Check the location id. If it is a new place, register it first (organisation → add the store, warehouse or department), then send the movement again. Nothing was appended.',
+          });
+        }
         // WF-08 (round 8): a movement a count plan has FROZEN at this place for this product is refused while the count is open.
         const freezingPlan = typeof m.locationId === 'string' && typeof m.productId === 'string' && deps.frozenBy !== undefined && !(await deps.isKnown(ctx.tenantId, m.movementId))
           ? await deps.frozenBy(ctx.tenantId, m.locationId, m.productId, m.kind) : undefined;

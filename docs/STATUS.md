@@ -5,6 +5,22 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Coordinated programme · Rounds 17–19 — bill numbers never repeat; ghost stores refused; settings set back stick (12 October 2026)
+
+- **Built and integration-tested (memory + PostgreSQL), browser-verified where a screen changed; no staff UAT:**
+  - OB-85 a store computer with no setup yet numbers under its own store-coded "ZZ" prefix; OB-87 a restored store computer detects the restore (witness log outside its data folder) and numbers under a fresh never-used prefix until head office's setup arrives, then resumes above head office's last banked bill; replaced boxes resume above `bankedThrough`.
+  - Head office keeps every idempotency conflict on a register (`GET /v1/idempotency-conflicts`) and raises `receipt_number_reused` for any repeated bill number.
+  - Prefix issue race is a visible 409; published series validated on the box.
+  - Canonical store ids by Unicode class + NFKC on every store-naming key; unknown stores refused (422) on grants (request and approval), fixed assets, transfers, display contracts and stock movements; non-canonical store-computer credentials never relay.
+  - Settings set back to an earlier value now stick (16 setting families; six that refused every change after the first also fixed) — hard rule #10.
+  - OB-86 old-till-cash placement audited, atomic with its audit entry, guarded against a store being added.
+  - Bill-number high-water is incremental (60,000 bills: 660 ms cold → 8 ms warm).
+  - All clock-stamped event ids follow their idempotency keys.
+- **Full gate (12 Oct, PostgreSQL):** 11,422 unit/integration, 33 performance, 353 browser tests — all passed.
+- **Expect on the demo after this release:** each store computer's first start is treated as a possible restore (the witness log is new), so its first bills before reaching head office start "ZZ" — once.
+- **Owner decisions this period:** OB-85, OB-86, OB-87.
+- **Backups:** copy only the store computer's data folder, never its witness folder (runbook updated).
+
 ## Coordinated programme · Rounds 13–16 — verifier rounds r13–r17 closed in turn; owner decisions OB-76 to OB-86 (12 October 2026)
 
 - **Built and integration-tested (memory + PostgreSQL), browser-verified where a screen changed; no staff UAT:**

@@ -51,6 +51,9 @@ async function shop(harness: () => ApiHarness) {
   const call = (method: 'GET' | 'POST' | 'PUT', path: string, userId: string, body?: unknown) =>
     h.request({ method, path, userId, tenantId: t, ...(method === 'GET' ? {} : { idempotencyKey: `k-${n += 1}-${randomUUID()}` }), ...(body === undefined ? {} : { body }) });
   const ok = async (p: Promise<{ status: number; body: unknown }>, label: string) => { const r = await p; expect(r.status, `${label}: ${JSON.stringify(r.body)}`).toBeLessThan(300); return r; };
+  // Round 18 (verifier r17 C-2 c): an asset is only ever at a store head office knows.
+  await ok(call('POST', '/v1/org/nodes/C1', 'u-owner', { kind: 'company', name: 'SRE Retail' }), 'company');
+  for (const s of ['store-1', 'store-2']) await ok(call('POST', `/v1/org/nodes/${s}`, 'u-owner', { kind: 'branch', name: s, parentId: 'C1', companyId: 'C1' }), `${s} in the org tree`);
   return { h, t, call, ok };
 }
 

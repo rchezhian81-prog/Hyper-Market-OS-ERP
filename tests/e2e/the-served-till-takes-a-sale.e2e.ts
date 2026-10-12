@@ -88,7 +88,7 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and takes 
       // The bill's number comes from this box (audit PF-04): no range is published here, so the box's own sequence.
       return w.posSession!.tenderCash('S-1', await w.posSession!.nextReceipt(), '2026-08-28T10:00:00Z');
     }, pinOf('u-lanecash'));
-    expect(receipt).toBe('R-lane-1-000001');
+    expect(receipt).toMatch(/^ZZ[A-Z2-7]{6}-000001$/); // OB-85: a pack file does not say how many stores — the box's store-coded prefix
 
     // The sale is durably on this box's disk — the commit crossed from the screen's port to the
     // socket's, and the socket accepted it (increment 1) and wrote it before answering.
@@ -202,7 +202,7 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and takes 
       w.posSession!.scan({ productId: 'P1', description: 'Amul Ghee Gold 1L', unitPriceMinor: 64_000, qty: 1 });
       return w.posSession!.tenderCash('S-H1', await w.posSession!.nextReceipt(), '2026-08-28T11:00:00Z');
     });
-    expect(receipt).toBe('R-lane-1-000001');
+    expect(receipt).toMatch(/^ZZ[A-Z2-7]{6}-000001$/); // OB-85: a pack file does not say how many stores — the box's store-coded prefix
     const records = await readLog(edge.log.path);
     expect(records).toHaveLength(1);
     expect(records[0]?.ok === true && JSON.parse(records[0].record)).toMatchObject({ cashierId: 'u-lanecash', operatorVerified: { userId: 'u-lanecash', via: 'verified_sign_in' } });

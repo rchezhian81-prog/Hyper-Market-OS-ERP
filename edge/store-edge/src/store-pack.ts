@@ -30,7 +30,11 @@
 /** A section of the pack: what the cloud said, or why this box does not know. */
 import type { PackReceiptSeries } from './receipt-numbers';
 /** OB-81: what head office says about the business's stores, for a till's bill numbers. */
-export interface PackReceiptNumbering { readonly storesInBusiness: number }
+export interface PackReceiptNumbering {
+  readonly storesInBusiness: number;
+  /** OB-85 · verifier r17: per lane, the highest `R-<lane>-` count head office banked for this store (one-store business only). */
+  readonly boxSeriesBankedThrough?: Readonly<Record<string, number>>;
+}
 import type { SuspensionPolicy } from '../../../packages/suspended-sales/src/suspended-bill';
 import type { MigrationFeed } from '../../sync-agent/src/migration-feed';
 import type { IndentsFeed } from '../../sync-agent/src/indents-feed';

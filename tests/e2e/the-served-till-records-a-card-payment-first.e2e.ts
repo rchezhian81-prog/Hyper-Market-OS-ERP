@@ -102,7 +102,7 @@ describe.skipIf(!HAVE_BROWSER)('the served till records a card payment before th
     await page.click('#tender');
     await pick(page, /^Card/);
     await pick(page, /^Approved$/);
-    expect(await notice(page)).toMatch(/R-lane-1-/);
+    expect(await notice(page)).toMatch(/ZZ[A-Z2-7]{6}-/); // OB-85: the box's store-coded prefix on a pack file
     const sold = (await readLog(edge.log.path)).flatMap((r) => (r.ok ? [JSON.parse(r.record) as { tenders: { kind: string; ref?: string }[] }] : []));
     const approvedAttempt = (await attempts()).filter((a) => a.outcome === 'approved').map((a) => a.attemptId);
     expect(sold).toHaveLength(1);

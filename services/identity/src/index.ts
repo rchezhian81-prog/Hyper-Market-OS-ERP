@@ -17,7 +17,7 @@ import type { Permission, Role, RoleAssignment } from '../../../packages/rbac/sr
 import { formatNumber, type NumberFormat } from '../../../packages/numbering/src/numbering';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import { REVOCATION_REASONS, type TokenRevocation, type RevocationReason } from './revocation';
-import { storeComputerGrantRefusal } from '../../platform/src/store-computer-identity';
+import { firstUnknownStore, storeComputerGrantRefusal, unknownStoreWords } from '../../platform/src/store-computer-identity';
 import { machineIdentityGrantRefusal, MACHINE_IDENTITY_REFUSAL_CODE } from './machine-identities';
 import { outsidePartyGrantRefusal, OUTSIDE_LOGIN_REFUSAL_CODE } from './outside-party-logins';
 
@@ -147,6 +147,11 @@ export function grantRole(input: {
 }
 
 export interface IdentityDeps {
+  /**
+   * Round 18 (verifier r17 C-2 c): the stores head office has registered (org tree branches, stores with settings). When
+   * wired, a grant's branch scope must name only these — never a ghost store (422 `unknown_store`).
+   */
+  readonly registeredStores?: (tenantId: string) => Promise<ReadonlySet<string>>;
   readonly roles: (tenantId: string) => Promise<readonly Role[]> | readonly Role[];
   readonly permissionsOf: (tenantId: string, userId: string) => Promise<readonly Permission[]> | readonly Permission[];
   readonly recordGrant: (tenantId: string, a: RoleAssignment, g: GrantRequest) => Promise<void> | void;
@@ -253,6 +258,12 @@ export function identityRoutes(deps: IdentityDeps): readonly Route[] {
         if (unbound !== undefined) {
           throw apiError(422, { code: 'store_computer_grant_must_name_one_store', whatHappened: unbound, wasItSaved: 'not_saved', nextSafeAction: 'Request the store computer role for this box\'s own store only: branchScope ["<its store>"]. Nothing was requested.' });
         }
+        // Round 18 (verifier r17 C-2 c): a scope names only stores head office knows — a pasted or mistyped store is never
+        // granted (it would book a box's till cash at a ghost store, and count as a store for OB-82).
+        if (scope !== 'all' && deps.registeredStores !== undefined) {
+          const ghost = firstUnknownStore(scope, await deps.registeredStores(ctx.tenantId));
+          if (ghost !== undefined) throw apiError(422, unknownStoreWords(ghost, 'The grant\'s branchScope'));
+        }
         // PA-12 round 10: a machine identity (backup_job) is never also a person — refused at the REQUEST.
         if (deps.rolesHeldBy !== undefined) {
           const mixed = machineIdentityGrantRefusal(roleId, await deps.rolesHeldBy(ctx.tenantId, userId), (await deps.isPerson?.(ctx.tenantId, userId)) ?? false);
@@ -317,6 +328,17 @@ export function identityRoutes(deps: IdentityDeps): readonly Route[] {
           if (mixed !== undefined) {
             throw apiError(422, { code: MACHINE_IDENTITY_REFUSAL_CODE, whatHappened: mixed, wasItSaved: 'not_saved', nextSafeAction: 'Reject this request; give the machine its own sign-in holding only its role. Nobody\'s access changed.' });
           }
+        }
+        // Verifier r18 C2-R2: the SCOPE judged again at APPROVAL — a request made before round 18's checks (or a store closed
+        // since) may name a store head office does not know, or one that is not plain text; approving it would add a ghost
+        // store to the stores OB-82 counts and book a box's records there. Refused by name; nobody's access changes.
+        const unboundNow = storeComputerGrantRefusal(pending.roleId, pending.branchScope);
+        if (unboundNow !== undefined) {
+          throw apiError(422, { code: 'store_computer_grant_must_name_one_store', whatHappened: unboundNow, wasItSaved: 'not_saved', nextSafeAction: 'Reject this request and request the store computer role for the box\'s own store only. Nobody\'s access changed.' });
+        }
+        if (pending.branchScope !== 'all' && deps.registeredStores !== undefined) {
+          const ghost = firstUnknownStore(pending.branchScope, await deps.registeredStores(ctx.tenantId));
+          if (ghost !== undefined) throw apiError(422, { ...unknownStoreWords(ghost, 'This pending request\'s branchScope'), nextSafeAction: 'Reject this request and ask for the role again naming a store head office has registered. Nobody\'s access changed.' });
         }
         // Round 14 (verifier G5): judged again at APPROVAL — the login may have become an outside party's since it was asked.
         const outside = outsidePartyGrantRefusal(pending.roleId, await deps.outsideLoginOf?.(ctx.tenantId, pending.userId));

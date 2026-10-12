@@ -215,6 +215,7 @@ import { syncWatermarkRoutes } from '../../platform/src/sync-watermarks';
 import { boxHealthRoutes } from '../../platform/src/box-health';
 import { boxHealthAdapter } from './adapters';
 import { storeComputerBinding, storeComputerRefusalRoutes } from './store-computer-binding';
+import { idempotencyConflictRoutes, idempotencyConflictsAdapter } from './idempotency-conflicts';
 import { opsIncidentRoutes } from '../../platform/src/ops-incidents';
 import { opsIncidentsAdapter, outboundWebhooksAdapter } from './adapters';
 import { outboundWebhookRoutes, drainOutboundWebhooks, type OutboundTransport } from '../../platform/src/outbound-webhooks';
@@ -294,7 +295,7 @@ import { draftingLegRoutes } from '../../ai/src/drafting-legs';
 import { serviceDeskExtrasAdapter, anomalySummaryAdapter, orderFactsFor, breachAlertAdapter, storefrontSelfAdapter, competitorPriceAdapter } from './round8-adapters';
 import type { ModelTransport, ModelTier, TierPricing } from '../../../packages/ai/src/index';
 import {
-  STREAM, personalDataStore, outsidePartyLoginAdapter, syncWatermarksAdapter, storeSyncView, dayBookAdapter, payablesAdapter, supplierAccountAdapter, supplierMasterAdapter, supplierOpeningsAdapter, accountOpeningsAdapter, openingReversalAdapter, storeStockFactsAdapter, replenishmentFactsAdapter, displayFundingAdapter, concessionTagsAdapter, observedHealthAdapter, catalogueAdapter, productMasterAdapter, categoryRegisterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, refundApprovalsAdapter, approvalRequestsAdapter, noReceiptReturnsAdapter, exchangesAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, floorIndentsAdapter, countsAdapter, writeOffAdapter, productionAdapter, weighedCostingAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, spacePerformanceAdapter, assortmentAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, importQualityAdapter, dataImportAdapter, supplierInvoiceIdUsed, productUomFrom, acceptedAsn, productInUse, storeSettingsAdapter, storeRulesAdapter, heldVersionsAdapter, branchScopeHeldBy, dataExportAdapter, financeAdapter, settlementAdapter, customerAdapter, segmentDataAdapter, marketingDraftInputs, dataRightsAdapter, erasureExecutionAdapter, privacyDomainHoldingsAdapter, serviceCaseAdapter, campaignAdapter, campaignSendAdapter, modelGatewayAdapter, ordersAdapter, fulfilmentAdapter, dispatchAdapter, notificationQueueAdapter, fulfilmentPackingAdapter, orderFulfilmentAdapter, stockLossAdapter, substitutionTruthAdapter, b2bMoneyEffectsAdapter, b2bPostingAdapter, fulfilmentWaveAdapter, assignmentsAdapter, driverRunAdapter, identityAdapter, accessLifecycleAdapter, peopleAdapter, signInEnder, delegationAdapter, approvalDecisionAdapter, syncedGoodsReceiptAdapter, assembledGoodsReceiptAdapter, syncedCountsAdapter, countPlansAdapter, openToBuyAdapter, invoiceIngestionAdapter, onlineBufferAdapter, productVersionsOf, adjustmentRequestAdapter, syncedWarehouseAdapter, receivingScanAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, partnerAdapter, backgroundJobsAdapter, supportAccessAdapter, statusCentreAdapter, licencesAdapter, serviceRequestsAdapter, remoteSessionsAdapter, alertLifecycleAdapter, legalHoldsAdapter, riskRegisterAdapter, drReadinessAdapter, auditTrailAdapter, reportingAdapter, migrationAdapter, legacyHistoryAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, periodBooksAdapter, heldStockDecisionsAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, dayCloseAdapter, lpCasesAdapter, lpRulesAdapter, lpActivityAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bPortalAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, quotationsAdapter, scheduledBriefAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, connectorDeliveryAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, qualityHoldAdapter, saleBlocksAdapter, loyaltyMembersAdapter, loyaltyEffectsAdapter, loyaltyWalletsAdapter, loyaltyLiabilityAdapter, independentEvidenceAdapter, compensationFulfilmentAdapter, nearExpiryAdapter, rosterStoreAdapter, certStoreAdapter, sopStoreAdapter, attendanceStoreAdapter, checklistStoreAdapter, taskStoreAdapter, payslipStoreAdapter, salesHistoryAdapter, billingAdapter, serviceabilityAdapter, consolidationAdapter, planogramStoreAdapter, documentTemplatesAdapter, tokenRevocationAdapter, effectiveGrants, deliveryServiceAdapter, b2bStockAdapter, commissionRuleAdapter, b2bOrderingAdapter, customer360Adapter, b2bTransferNotesAdapter,
+  STREAM, personalDataStore, outsidePartyLoginAdapter, syncWatermarksAdapter, storeSyncView, dayBookAdapter, payablesAdapter, supplierAccountAdapter, supplierMasterAdapter, supplierOpeningsAdapter, accountOpeningsAdapter, openingReversalAdapter, storeStockFactsAdapter, replenishmentFactsAdapter, displayFundingAdapter, concessionTagsAdapter, observedHealthAdapter, catalogueAdapter, productMasterAdapter, categoryRegisterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, refundApprovalsAdapter, approvalRequestsAdapter, noReceiptReturnsAdapter, exchangesAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, floorIndentsAdapter, countsAdapter, writeOffAdapter, productionAdapter, weighedCostingAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, spacePerformanceAdapter, assortmentAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, importQualityAdapter, dataImportAdapter, supplierInvoiceIdUsed, productUomFrom, acceptedAsn, productInUse, storeSettingsAdapter, storeRulesAdapter, heldVersionsAdapter, branchScopeHeldBy, dataExportAdapter, financeAdapter, settlementAdapter, customerAdapter, segmentDataAdapter, marketingDraftInputs, dataRightsAdapter, erasureExecutionAdapter, privacyDomainHoldingsAdapter, serviceCaseAdapter, campaignAdapter, campaignSendAdapter, modelGatewayAdapter, ordersAdapter, fulfilmentAdapter, dispatchAdapter, notificationQueueAdapter, fulfilmentPackingAdapter, orderFulfilmentAdapter, stockLossAdapter, substitutionTruthAdapter, b2bMoneyEffectsAdapter, b2bPostingAdapter, fulfilmentWaveAdapter, assignmentsAdapter, driverRunAdapter, identityAdapter, accessLifecycleAdapter, peopleAdapter, signInEnder, delegationAdapter, approvalDecisionAdapter, syncedGoodsReceiptAdapter, assembledGoodsReceiptAdapter, syncedCountsAdapter, countPlansAdapter, openToBuyAdapter, invoiceIngestionAdapter, onlineBufferAdapter, productVersionsOf, adjustmentRequestAdapter, syncedWarehouseAdapter, receivingScanAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, partnerAdapter, backgroundJobsAdapter, supportAccessAdapter, statusCentreAdapter, licencesAdapter, serviceRequestsAdapter, remoteSessionsAdapter, alertLifecycleAdapter, legalHoldsAdapter, riskRegisterAdapter, drReadinessAdapter, auditTrailAdapter, reportingAdapter, migrationAdapter, legacyHistoryAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, periodBooksAdapter, heldStockDecisionsAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, dayCloseAdapter, lpCasesAdapter, lpRulesAdapter, lpActivityAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bPortalAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, quotationsAdapter, scheduledBriefAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, connectorDeliveryAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, qualityHoldAdapter, saleBlocksAdapter, loyaltyMembersAdapter, loyaltyEffectsAdapter, loyaltyWalletsAdapter, loyaltyLiabilityAdapter, independentEvidenceAdapter, compensationFulfilmentAdapter, nearExpiryAdapter, rosterStoreAdapter, certStoreAdapter, sopStoreAdapter, attendanceStoreAdapter, checklistStoreAdapter, taskStoreAdapter, payslipStoreAdapter, salesHistoryAdapter, billingAdapter, serviceabilityAdapter, consolidationAdapter, planogramStoreAdapter, documentTemplatesAdapter, tokenRevocationAdapter, effectiveGrants, deliveryServiceAdapter, b2bStockAdapter, commissionRuleAdapter, b2bOrderingAdapter, customer360Adapter, b2bTransferNotesAdapter, registeredStores, knownStockPlace,
 } from './adapters';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from './roles';
 // Round 6 (EA-01): only a store computer's own grant lets it report its store's sync and unsent facts.
@@ -636,7 +637,7 @@ export function buildSurface(deps: {
         roles: empty([]), permissionsOf: empty([]), recordGrant: () => {},
         grantRequests: empty([]), recordGrantRequest: () => {}, recordGrantRejection: () => {},
         branches: empty([]), allocateNumber: () => Promise.resolve(1), now,
-      } : { ...identityAdapter({ store, now, roleCatalogue: ROLE_CATALOGUE, numberSeries: deps.numberSeries }), recordAudit: auditTrail?.recordAudit }),
+      } : { ...identityAdapter({ store, now, roleCatalogue: ROLE_CATALOGUE, numberSeries: deps.numberSeries }), recordAudit: auditTrail?.recordAudit, registeredStores: (t: string) => registeredStores({ store, now }, t) }),
       // Token revocation (GAP-SEC-05): the routes record into the SAME list the authenticator reads.
       ...(deps.revocations === undefined ? {} : { revocations: deps.revocations }),
     }),
@@ -814,7 +815,7 @@ export function buildSurface(deps: {
     // OB-57 "A" (Batch 3 r9, D10-FR-05): monthly budgets with actual-vs-budget; the fixed-asset register and its depreciation.
     ...budgetAssetRoutes(store === undefined
       ? { periodStates: () => new Map(), appendJournal: noLedger, now, budgets: none([]), recordBudget: noLedger, assetFacts: none([]), recordAssetFact: noLedger, journals: none([]), accountClasses: none(undefined), postingMap: empty(undefined) }
-      : budgetAssetAdapter({ store, now })),
+      : { ...budgetAssetAdapter({ store, now }), registeredStores: (t: string) => registeredStores({ store, now }, t) }),
     // WF-11 / M13-FR-02 (Batch 3 r8): a person's decision on a returned unit held off the shelf.
     ...(store === undefined ? [] : heldStockDecisionRoutes({ ...heldStockDecisionsAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }), locationBranches: locationBranchesOf(store, now), recordAudit: auditTrail?.recordAudit, countFreeze: countPlanFreeze })),
     // Purchase-order lifecycle (M06-FR-01/02/04) — propose, approve+issue under §28, supplier holds.
@@ -950,6 +951,10 @@ export function buildSurface(deps: {
       ageing: empty({ lots: [], unvaluedMinor: 0 }),
       performance: empty({ from: '', to: '', periodDays: 0, total: { cogs: { minor: 0, currency: 'INR' }, averageInventory: { minor: 0, currency: 'INR' } }, byProduct: [] }), now,
     } : { ...inventoryAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }), locationBranches: locationBranchesOf(store, now),
+      // Verifier r18 C2-R1: once the business has registered its places (an organisation node, a store set-up, a bin),
+      // stock moves only at one of them (422 unknown_location otherwise). A tenant that has registered NO place at all has
+      // nothing to judge against and no store a pack could be built for (its movements stay unjudged, as before).
+      knownLocation: async (t: string, l: string) => { const known = await knownStockPlace({ store, now }, t); return !known.registeredAny || known(l); },
       frozenBy: async (t: string, l: string, p: string, k: string) => (countPlanDeps === undefined ? undefined : (await countPlanFreezing(countPlanDeps, t, l, p, k))?.planId) }),
     // Goods receipt / GRN capture (M07-FR-01/02/03 · D03-FR-02) — the durable cloud receiving record, the tenant's
     // receipt policy and the held-excess decision (F03).
@@ -982,7 +987,7 @@ export function buildSurface(deps: {
     ...spacePerformanceRoutes(store === undefined
       ? { contracts: empty([]), recordContract: () => {}, now }
       // FUL-11: the review's "received" is finance's own display-funding journals, never a typed figure.
-      : { ...spacePerformanceAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }), fundingReceived: displayFundingAdapter({ store, now }).fundingReceived }),
+      : { ...spacePerformanceAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }), fundingReceived: displayFundingAdapter({ store, now }).fundingReceived, registeredStores: (t: string) => registeredStores({ store, now }, t) }),
     // FUL-11 (M04-FR-04 · D02-FR-06 → M23): finance records the supplier's display funding as journals and reconciles each
     // contract — agreed, received, outstanding, and what the ledger holds.
     ...displayFundingRoutes(store === undefined ? {
@@ -1097,6 +1102,8 @@ export function buildSurface(deps: {
         store, now, signer, rules: (tt, sid) => storeRulesAdapter({ store }).rules(tt, sid),
         settings: (tt, sid) => storeSettingsAdapter({ store }).settings(tt, sid),
         storeName: async (tt, sid) => (await orgStructureAdapter({ store, now }).nodes(tt)).find((n) => n.nodeId === sid)?.name,
+        // Verifier r18 OB85-2: the bill-number high-water resumes from its persisted snapshot (O(prefixes) per pack build).
+        ...(deps.snapshots === undefined ? {} : { snapshots: deps.snapshots }),
       }, t, storeId),
     }),
     // OB-81 "A": head office issues each till its bill-number prefix per (store, till) — unique across the business, ≤ 16
@@ -1122,6 +1129,8 @@ export function buildSurface(deps: {
     }),
     // OB-54: what a store computer tried to send for another store — head office's visible record of each refusal.
     ...storeComputerRefusalRoutes({ store, now }),
+    // Hard rule #10 · OB-87: every write refused for reusing a key with different content, kept and listed (P-08).
+    ...idempotencyConflictRoutes({ store, now }),
     // M35-FR-03: each store computer reports its disk, its queue and its tills' devices (its own store, stamped — OB-54);
     // head office's observed health judges them, stale when the box has gone quiet.
     ...boxHealthRoutes(store === undefined ? { now, record: async () => {} } : {
@@ -2258,6 +2267,8 @@ export async function startApi(
     // OB-54: each store computer's credential is locked to its own store — refused (and kept) when it names no store,
     // a store its grant does not name, or a record at another store.
     boundStore: storeComputerBinding({ store, now }),
+    // Hard rule #10 · P-08 (verifier r18): a key reused with different content is refused AND kept as a visible exception.
+    onIdempotencyConflict: idempotencyConflictsAdapter({ store, now }).record,
     // Per-tenant FEATURE ENTITLEMENT (M36-FR-01 · §35). A route that names an optional/paid feature is
     // refused for a tenant whose plan has not enabled it — default-deny, on top of the permission check.
     // Reads the SAME `TenantEntitlementSet` fold the `/v1/platform/entitlements` API writes, so enabling a

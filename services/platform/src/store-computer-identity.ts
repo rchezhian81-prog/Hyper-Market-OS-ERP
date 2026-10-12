@@ -104,7 +104,7 @@ export function storeReferencesIn(input: {
 /** The binding's verdict on one request from a store computer. */
 export type BoxRequestVerdict =
   | { readonly ok: true }
-  | { readonly ok: false; readonly reason: 'credential_names_no_store' | 'credential_store_not_granted' | 'record_names_another_store' | 'record_names_unknown_store' | 'record_store_unresolved'; readonly why: string; readonly field?: string; readonly namedStore?: string };
+  | { readonly ok: false; readonly reason: 'credential_names_no_store' | 'credential_store_not_canonical' | 'credential_store_not_granted' | 'record_names_another_store' | 'record_names_unknown_store' | 'record_store_unresolved'; readonly why: string; readonly field?: string; readonly namedStore?: string };
 
 /**
  * Judge one request from a caller holding `store_computer` grants (`grantedStores`: the stores those grants name — a
@@ -123,6 +123,12 @@ export function judgeBoxRequest(input: {
   const { credentialStore } = input;
   if (credentialStore === null) {
     return { ok: false, reason: 'credential_names_no_store', why: 'This store computer\'s sign-in names no store. Since OB-54 every store computer\'s credential is locked to its own store, so a credential without one is refused.' };
+  }
+  // Verifier r18 (residual C-2): a credential — and so a grant — naming a store that is not canonical text (padding, an
+  // invisible character such as a zero-width space, a non-NFKC form) is refused on EVERY relay, so a grant put on the ledger
+  // before round 18's request check can never book records at a phantom store that only looks like a real one.
+  if (notCanonical(credentialStore)) {
+    return { ok: false, reason: 'credential_store_not_canonical', why: `This store computer's sign-in names a store whose name is not plain text (${JSON.stringify(credentialStore)} — it carries spaces or invisible characters), so it cannot be one of head office's stores. Its records are refused and kept as exceptions until its credential and its store computer role are re-issued for its real store.` };
   }
   if (!input.grantedStores.includes(credentialStore)) {
     return { ok: false, reason: 'credential_store_not_granted', why: `This store computer's sign-in names store ${credentialStore}, but its store computer role is not granted for that store (one store per box, OB-54).` };
@@ -258,9 +264,23 @@ export const RECORD_STORE_PARAM: Readonly<Record<string, string>> = Object.freez
  */
 // Round 16 (verifier C-1): also any control character or invisible (zero-width / BOM) character anywhere in it — text a
 // person cannot see the difference of is never a second store.
-// eslint-disable-next-line no-control-regex
-const INVISIBLE = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028\u2029\u2060\ufeff]/;
-const notCanonical = (x: string): boolean => x !== '' && (x !== x.trim() || INVISIBLE.test(x));
+// Round 18 (verifier r17 C-2 a): by Unicode CLASS, not by a list \u2014 every control (Cc), format (Cf: soft hyphen, invisible
+// operators, zero-width marks, bidi controls), surrogate (Cs), private-use (Co), line/paragraph separator (Zl, Zp),
+// Default_Ignorable_Code_Point (variation selectors, the combining grapheme joiner, fillers\u2026), every space other than the
+// plain space, and the Hangul fillers spelled out (U+115F, U+1160, U+3164, U+FFA0). And text that Unicode compatibility
+// normalisation changes (a full-width letter, a decomposed accent) is a look-alike of another id, never a second store.
+const INVISIBLE = /[\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}\u00a0\u1680\u2000-\u200a\u202f\u205f\u3000\u115f\u1160\u3164\uffa0]/u;
+/** Whether a store, branch or location id is NOT canonical (exported for the routes' and the tests' one shared rule). */
+export const notCanonical = (x: string): boolean => x !== '' && (x !== x.trim() || INVISIBLE.test(x) || x !== x.normalize('NFKC'));
+
+/**
+ * Round 18 (verifier r17 C-2 b): ONE schema-level rule for which body keys name a store, a branch or a location \u2014 not a
+ * list a new route can fall outside of. A key is one when it IS `store|branch|location|warehouse|bin` + `Id|Ids|Scope`, or
+ * ENDS in the capitalised form (`toStoreId`, `fromStoreId`, `homeStoreId`, `locationIds`, `branchScope`, `storeIds`,
+ * `foundAtLocationId`\u2026). Its value must be canonical text, or a list of canonical text (`branchScope` may be "all").
+ */
+const STORE_NAMING_KEY = /^(?:store|branch|location|warehouse|bin)(?:Id|Ids|Scope)$|(?:Store|Branch|Location|Warehouse|Bin)(?:Id|Ids|Scope)$/;
+export const namesAStore = (key: string): boolean => BODY_STORE_KEYS.has(key) || STORE_NAMING_KEY.test(key);
 /**
  * Round 16 (verifier C-1): on EVERY write, by anyone (head office included), a PATH parameter that names a store, a branch,
  * an org node or a location is refused the same way when it is not canonical — one shared edge, never route by route.
@@ -287,6 +307,16 @@ export function malformedStoreField(body: unknown): string | undefined {
     for (const [k, x] of Object.entries(v as Record<string, unknown>)) {
       const here = at === '' ? k : `${at}.${k}`;
       if (BODY_STORE_KEYS.has(k) && x !== null && x !== undefined && (typeof x !== 'string' || notCanonical(x))) { found = `body.${here}`; return; }
+      // Round 18 (verifier r17 C-2 b): every other key that names a store, branch or location — text or a list of text.
+      if (!BODY_STORE_KEYS.has(k) && STORE_NAMING_KEY.test(k) && x !== null && x !== undefined) {
+        if (typeof x === 'string') { if (notCanonical(x)) { found = `body.${here}`; return; } continue; }
+        if (Array.isArray(x)) {
+          const i = x.findIndex((e) => typeof e !== 'string' || notCanonical(e) || e === '');
+          if (i >= 0) { found = `body.${here}[${i}]`; return; }
+          continue;
+        }
+        found = `body.${here}`; return;
+      }
       walk(x, here, depth + 1);
     }
   };
@@ -371,3 +401,21 @@ export function storeStampFor(input: {
   }
   return input.references.length === 0 ? { kind: 'attributed' } : { kind: 'none' };
 }
+
+/**
+ * Round 18 (verifier r17 C-2 c): a write that puts something AT a store — a role's branch scope, a fixed asset or its
+ * transfer, a display contract — names a store head office KNOWS (`known`: its organisation tree, or a store set up with
+ * its settings). The first named store it does not know, or undefined. 'all' is a scope, not a store.
+ */
+export function firstUnknownStore(named: readonly unknown[], known: ReadonlySet<string>): string | undefined {
+  for (const n of named) if (typeof n === 'string' && n !== '' && n !== 'all' && !known.has(n)) return n;
+  return undefined;
+}
+
+/** The plain-English refusal for an unknown store (422 `unknown_store`), shared by every route that checks it. */
+export const unknownStoreWords = (store: string, field: string): { readonly code: 'unknown_store'; readonly whatHappened: string; readonly wasItSaved: 'not_saved'; readonly nextSafeAction: string } => ({
+  code: 'unknown_store',
+  whatHappened: `${field} names store "${store}", which is not a store head office knows (its organisation tree, or a store set up with its settings). Head office never records anything at a store that does not exist.`,
+  wasItSaved: 'not_saved',
+  nextSafeAction: 'Pick the store from the list exactly as it is set up (do not paste it), or set the store up first. Nothing was saved.',
+});

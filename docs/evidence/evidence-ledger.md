@@ -18,7 +18,7 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 
 ## Totals
 
-- Evidence test files scanned: 1172. SP-10 sessions: 0 (0 PASS, 0 on real hardware).
+- Evidence test files scanned: 1180. SP-10 sessions: 0 (0 PASS, 0 on real hardware).
 - Requirements with at least one proof of each kind: Unit 88 · Integration (in-process) 101 · Real PostgreSQL 97 · Browser (stub cloud) 80 · Browser (connected) 45 · Device 0 · Staff UAT 0.
 - Labels: E2E_VERIFIED 41 · INTEGRATION_TESTED 18 · PARTIALLY_WIRED 40 · WIRED 5.
 - Labels that do NOT hold: none.
@@ -60,7 +60,7 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 | M31 | WIRED | 5 | 11 | 5 | 1 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | M32 | E2E_VERIFIED | 8 | 14 | 6 | 1 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
 | M33 | E2E_VERIFIED | 21 | 20 | 4 | 3 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
-| M34 | E2E_VERIFIED | 8 | 11 | 3 | 2 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
+| M34 | E2E_VERIFIED | 8 | 12 | 4 | 2 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
 | M35 | PARTIALLY_WIRED | 8 | 18 | 12 | 1 | 1 | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | M36 | PARTIALLY_WIRED | 12 | 27 | 4 | · | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | D01 | PARTIALLY_WIRED | 2 | 9 | 2 | 1 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
@@ -168,7 +168,7 @@ _The JSON twin (`evidence-ledger.json`) lists every file and session per item. H
 - **M31** — browser: `document-template-publish-delivery.e2e.ts` · real PostgreSQL: `a-campaign-goes-through-the-queue-within-the-cap.test.ts`, `delivery-reports-are-the-providers.test.ts`, `documents-issue-from-their-records.test.ts`, `notifications-send-themselves.test.ts`, `the-sender-rechecks-template-and-recipient.test.ts`
 - **M32** — browser: `integration-health-delivery.e2e.ts` · real PostgreSQL: `notifications-send-themselves.test.ts`, `outbound-webhooks-are-signed-retried-and-reconciled.test.ts`, `outbound-webhooks-go-over-pinned-https.test.ts`, `outbound-webhooks-refuse-private-destinations.test.ts`, `the-seams-hold.test.ts`, `the-sender-rechecks-template-and-recipient.test.ts`
 - **M33** — browser: `admin-support-access-delivery.e2e.ts`, `fleet-change-delivery.e2e.ts`, `screens-open-offline.e2e.ts` · real PostgreSQL: `branch-scope-every-family.test.ts`, `support-and-remote-sessions-bind-the-sign-in.test.ts`, `two-shops-one-system.test.ts`, `tenants-register.test.ts`
-- **M34** — browser: `risk-acceptance-delivery.e2e.ts`, `screens-open-offline.e2e.ts` · real PostgreSQL: `branch-scope-every-family.test.ts`, `concurrent-stock-cannot-be-spent-twice.test.ts`, `physical-to-system.test.ts`
+- **M34** — browser: `risk-acceptance-delivery.e2e.ts`, `screens-open-offline.e2e.ts` · real PostgreSQL: `branch-scope-every-family.test.ts`, `concurrent-stock-cannot-be-spent-twice.test.ts`, `old-till-cash-is-placed-once-and-head-office-records-decide.test.ts`, `physical-to-system.test.ts`
 - **M35** — browser: `incidents-on-the-production-api.e2e.ts` · connected: `incidents-on-the-production-api.e2e.ts` · real PostgreSQL: `a-hung-device-adapter-reads-stale-and-the-box-starts-from-its-index.test.ts`, `a-person-is-never-the-backup-job.test.ts`, `a-quiet-healthy-till-stays-fresh-at-head-office.test.ts`, `a-store-computer-warns-before-its-disk-fills.test.ts`, `alerts-reach-their-named-owner.test.ts`, `an-incident-is-recorded-and-closed-by-a-named-person.test.ts`, `backup-is-one-moment.test.ts`, `dr-readiness.test.ts`, `recovery-rehearsal.test.ts`, `the-backup-job-is-a-machine-only-identity.test.ts`, `the-backup-job-reports-its-own-outcome.test.ts`, `the-box-health-reaches-head-office.test.ts`
 - **D01** — browser: `product-publish-delivery.e2e.ts` · real PostgreSQL: `pack-chain-case-to-base.test.ts`, `product-content-and-synonyms-reach-the-customer-app.test.ts`
 - **D02** — browser: `merchandising-count-and-refill.e2e.ts`, `open-to-buy-on-the-production-api.e2e.ts` · connected: `open-to-buy-on-the-production-api.e2e.ts` · real PostgreSQL: `a-purchase-order-is-checked-against-open-to-buy.test.ts`, `merchandising-reads-head-office-facts.test.ts`

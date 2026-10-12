@@ -38,6 +38,8 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Organi
   beforeAll(async () => {
     execFileSync('node', ['scripts/build-app.mjs', 'web-erp'], { stdio: 'ignore' });
     shop = await startInboxShop({
+      // The owner builds the tree from empty here; the br-1 manager is granted once br-1 exists (round 18: grants name known stores).
+      deferManagerGrant: true,
       databaseUrl: DATABASE_URL!, tenantId: randomUUID(), signingKey: KEY,
       page: { path: '/organisation', html: 'organisation.html', dataGlobal: 'organisationData' },
       seed: async () => {},
@@ -117,6 +119,8 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Organi
   }, 120_000);
 
   it('a store manager reads the same tree and is offered no change; nothing is written', async () => {
+    // br-1 now exists (the first journey built it): the br-1 manager is granted here, asked by HR and approved by the owner.
+    await shop.grantManager();
     const s = await open(MGR);
     try {
       await s.page.locator('#tree li[data-node="br-1"]').waitFor({ timeout: 15_000 });

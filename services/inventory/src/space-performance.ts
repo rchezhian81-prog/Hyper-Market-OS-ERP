@@ -23,6 +23,7 @@
 import type { Route } from '../../kernel/src/index';
 import { actionDetails, approvalNamedIn, type ApprovalPort } from '../../identity/src/approval-requests';
 import { apiError } from '../../kernel/src/index';
+import { firstUnknownStore, unknownStoreWords } from '../../platform/src/store-computer-identity';
 import {
   spacePerformance, reviewDisplayContracts,
   type SpaceArea, type DisplayContract,
@@ -49,6 +50,8 @@ const isArea = (v: unknown): v is RawArea =>
   && (v['locationIds'] === undefined || strArray(v['locationIds']) !== undefined);
 
 export interface SpacePerformanceDeps {
+  /** Round 18 (verifier r17 C-2 c): the stores head office has registered — a display contract is at one of them. */
+  readonly registeredStores?: (tenantId: string) => Promise<ReadonlySet<string>>;
   /** Head office's maker-checker engine (ADR-0024): Finance approved a display contract's funding in their own session.
    *  Optional on a bare stub (then a contract records unapproved); the running system provides it. */
   readonly approvals?: ApprovalPort;
@@ -153,6 +156,12 @@ export function spacePerformanceRoutes(deps: SpacePerformanceDeps): readonly Rou
             wasItSaved: 'not_saved',
             nextSafeAction: 'Send the supplier, the space it buys, the money and the dates.',
           });
+        }
+        // Round 18 (verifier r17 C-2 c): the contract's store is one head office knows (its locationIds are places in it,
+        // checked canonical at head office's edge).
+        if (deps.registeredStores !== undefined) {
+          const ghost = firstUnknownStore([b['storeId']], await deps.registeredStores(ctx.tenantId));
+          if (ghost !== undefined) throw apiError(422, unknownStoreWords(ghost, 'The display contract\'s storeId'));
         }
         // Finance approves the funding terms (D02-FR-06 · ADR-0024 · 2b-vi-c-1 · audit PA-03): an approval someone who may
         // approve suppliers GAVE in their own session for exactly this contract (kind `display_contract`). A typed

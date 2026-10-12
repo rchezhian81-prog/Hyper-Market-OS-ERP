@@ -38,6 +38,12 @@ export interface PosDeps {
    */
   readonly saleHoldingReceipt: (tenantId: string, receiptNumber: string) => Promise<string | undefined> | string | undefined;
   readonly isBanked: (tenantId: string, saleId: string) => Promise<boolean> | boolean;
+  /**
+   * Hard rule #10 · OB-87 (verifier r18 OB85-1): the sale head office already banked under this id — so a sale that arrives
+   * again under the same id with DIFFERENT content (a re-issued bill number) is a visible finding, never an "already
+   * banked" resend. Absent → no comparison (a composition without the ledger).
+   */
+  readonly bankedSale?: (tenantId: string, saleId: string) => Promise<IncomingSale | undefined>;
   /** Append-only. A sale is never updated, so there is no `updateSale` port to call. */
   readonly bankSale: (tenantId: string, sale: IncomingSale) => Promise<void> | void;
   readonly recordExceptions: (tenantId: string, exceptions: readonly SaleException[]) => Promise<void> | void;
@@ -68,6 +74,18 @@ export interface PosDeps {
     readonly kind: string; readonly ref: string; readonly requestedMinor: number; readonly appliedMinor: number;
     readonly shortfallMinor: number; readonly alreadyApplied: boolean; readonly detail: string;
   }[]>;
+}
+
+/**
+ * What makes a bill the SAME bill (hard rule #10): its number, time, total, lines and tenders — not what head office added
+ * on banking (a batch assignment, a store stamped from the credential), so an honest resend always matches.
+ */
+function billFingerprint(s: IncomingSale): string {
+  return JSON.stringify([
+    s.receiptNumber ?? null, s.committedAt, s.totalMinor,
+    s.lines.map((l) => [l.productId, l.quantityMinor, l.unitPriceMinor, l.lineTotalMinor ?? null]),
+    s.tenders.map((t) => [t.kind, t.amountMinor]),
+  ]);
 }
 
 /** Enough of a sale to be a sale. Anything beyond this is a finding, never a refusal. */
@@ -135,6 +153,17 @@ export function posRoutes(deps: PosDeps): readonly Route[] {
           await deps.bankSale(ctx.tenantId, sale);
           if (intake.exceptions.length > 0) {
             await deps.recordExceptions(ctx.tenantId, intake.exceptions);
+          }
+        } else if (deps.bankedSale !== undefined) {
+          // Hard rule #10: "already banked" only when it IS the same bill. A different bill under a banked sale id (a box
+          // that re-issued a number) is kept as a finding — head office keeps the first and says the second was not banked.
+          const first = await deps.bankedSale(ctx.tenantId, sale.saleId);
+          if (first !== undefined && billFingerprint(first) !== billFingerprint(sale)) {
+            await deps.recordExceptions(ctx.tenantId, [{
+              kind: 'receipt_number_reused', severity: 'material', saleId: sale.saleId, differenceMinor: sale.totalMinor - first.totalMinor,
+              detail: `sale ${sale.saleId} (receipt ${sale.receiptNumber}) arrived again as a DIFFERENT bill — ${sale.totalMinor} against the ${first.totalMinor} head office banked under that id: the first stands and this one was NOT banked`,
+              ownerAction: 'A store computer gave one bill number to two different bills (a computer restored from a backup, or two computers on one till). The customer holds the second bill, which head office has not banked. Find it at the store computer, bank it by hand, and check that till\'s bill-number prefix.',
+            }]);
           }
         }
 

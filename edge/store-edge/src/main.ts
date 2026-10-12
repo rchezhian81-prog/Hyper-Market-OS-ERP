@@ -1324,12 +1324,18 @@ export async function startEdge(
   // the sales and refunds logs count as used, so a crash between a record and its "used" line frees nothing.
   const receiptNumbers = tillOperators === null ? null : await ReceiptNumbers.open({
     dataDir: settings['EDGE_DATA_DIR']!, capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']),
+    // OB-87 "A": the witness log lives OUTSIDE the data folder, so a backup of the data folder never carries it and a
+    // restored (older) folder is told apart from an ordinary restart (receipt-numbers.ts header).
+    witnessDir: settings['EDGE_WITNESS_DIR'] ?? `${settings['EDGE_DATA_DIR']!.replace(/[\\/]+$/, '')}-witness`,
     published: () => (pack.receiptSeries.known ? pack.receiptSeries.value : null),
-    // OB-81 "A": the box's store and how many stores the business has, from the CURRENT pack — so a second store opening
-    // moves an unissued till off `R-<lane>-` onto this box's store-qualified default on the next pull, without a restart.
+    // OB-81 "A" · OB-85 "A": the box's store and how many stores the business has, from the CURRENT pack — so a second store
+    // opening moves an unissued till off `R-<lane>-` onto this box's store-coded fallback on the next pull, without a restart;
+    // a pack that does not say (a file, first boot) is never read as one store (edge/store-edge/src/receipt-numbers.ts).
     numbering: () => ({
       storeId: storeIdOfThisBox() ?? headOfficeStoreId ?? null,
       storesInBusiness: pack.receiptNumbering?.known === true && Number.isSafeInteger(pack.receiptNumbering.value.storesInBusiness) ? pack.receiptNumbering.value.storesInBusiness : null,
+      // OB-85 · verifier r17: the R-<lane>- history head office banked for this store (a replaced box resumes above it).
+      boxSeriesBankedThrough: pack.receiptNumbering?.known === true && pack.receiptNumbering.value.boxSeriesBankedThrough !== null && typeof pack.receiptNumbering.value.boxSeriesBankedThrough === 'object' ? pack.receiptNumbering.value.boxSeriesBankedThrough : null,
     }),
     committed: [
       ...(await readLog(log.path)).flatMap((r) => {
@@ -2229,8 +2235,22 @@ export async function startEdge(
     });
     if (outcome.status === 'updated' || (outcome.status !== 'unchanged' && outcome.status !== lastStorePackStatus)) say(outcome.staffMessage);
     lastStorePackStatus = outcome.status;
+    // OB-87 "A": head office ANSWERED with its latest setup (new, re-signed or the very one held) — so the pack now carries
+    // head office's bankedThrough, and a box numbering under a fresh prefix after a restore goes back to the ordinary rule,
+    // above what head office holds. An offline, refused or not-set-up answer keeps the fresh prefix.
+    if (receiptNumbers !== null && (outcome.status === 'updated' || outcome.status === 'renewed' || outcome.status === 'unchanged')) {
+      if (await receiptNumbers.headOfficeConfirmed(`head office's store setup ${outcome.heldVersion ?? '?'} arrived (${outcome.status})`)) {
+        say('this store computer had been restored from a backup and was numbering bills under a brand-new prefix; head office\'s latest setup has arrived, so it now numbers above the last bill head office holds.');
+      }
+    }
     return outcome;
   };
+  // OB-87 "A": a box that found its data restored asks head office for its latest setup at once, not on the first sync pass
+  // (never in the way of a sale — it sells under its fresh prefix meanwhile).
+  if (refreshStorePack !== null && receiptNumbers !== null && receiptNumbers.restoreState().held) {
+    say(`this store computer's data looks restored from a backup (${receiptNumbers.restoreState().because ?? 'possible restore'}); it numbers bills under a brand-new prefix until head office's latest setup arrives.`);
+    void refreshStorePack().catch(() => undefined);
+  }
 
   // DF-3-b-2 (SF-08 hand-over): tell head office which catalogue and which setup this box trades on, whenever that changes.
   const reportHeld = headOfficeStoreId === undefined ? null : httpHeldVersionsReporter({ baseUrl: cloudUrl, token: cloudToken, storeId: headOfficeStoreId, fetch: globalThis.fetch });
@@ -2289,6 +2309,9 @@ export async function startEdge(
         ...(r.adapterObservedAt === undefined ? {} : { adapterObservedAt: r.adapterObservedAt }),
         attended: (tillOperators?.live() ?? []).some((s) => s.laneId === r.laneId),
       })),
+      // Verifier r18 item 6: the highest count GIVEN per bill-number prefix (a voided bill keeps its number) — head office
+      // keeps a replaced box above it.
+      ...(receiptNumbers === null ? {} : { receiptNumbersIssued: receiptNumbers.issuedThrough() }),
     };
     return boxHealthReporter(report);
   };

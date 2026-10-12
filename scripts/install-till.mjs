@@ -128,6 +128,8 @@ export function planTillSettings(input) {
 
   const settings = {
     EDGE_DATA_DIR: join(installDir, 'edge-data'),
+    // OB-87: the bill-number witness, OUTSIDE edge-data so a backup of edge-data never carries it (a restore is then seen).
+    EDGE_WITNESS_DIR: join(installDir, 'edge-witness'),
     EDGE_TENANT_ID: tenantId ?? '',
     EDGE_LANE_ID: laneId ?? '',
     PACK_SIGNING_KEY: signingKey ?? '',
@@ -151,6 +153,9 @@ export function renderTillEnv(settings) {
     '',
     '# Where this till keeps every sale, refund and queue on disk. Back it up (docs/runbooks/backup-and-recovery.md).',
     `EDGE_DATA_DIR=${settings.EDGE_DATA_DIR}`,
+    '# The bill-number witness: OUTSIDE edge-data, never backed up with it, never restored over. If this till\'s edge-data is',
+    '# restored from a backup, the witness shows it and the till numbers under a brand-new prefix until head office answers.',
+    `EDGE_WITNESS_DIR=${settings.EDGE_WITNESS_DIR}`,
     '# Which shop this till belongs to.',
     `EDGE_TENANT_ID=${settings.EDGE_TENANT_ID}`,
     '# Which LANE this till is. Every sale it rings names this lane; the cashier signs in with their staff code.',

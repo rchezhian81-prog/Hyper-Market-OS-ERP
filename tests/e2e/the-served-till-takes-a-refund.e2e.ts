@@ -380,11 +380,13 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
 
     // Yesterday's bill: one ₹640 tin, paid in cash — the bill the customer brings back.
     await signInOnPage(page); // staff ID + till PIN, checked by the box (ADR-0020)
-    await page.evaluate(async () => {
+    const billNo = await page.evaluate(async () => {
       const w = globalThis as unknown as PosWindow;
       w.posSession!.scan({ productId: 'P1', description: 'Amul Ghee Gold 1L', unitPriceMinor: 64_000, qty: 1 });
-      await w.posSession!.tenderCash('S-1', await w.posSession!.nextReceipt(), '2026-08-28T10:00:00Z');
+      const n = await w.posSession!.nextReceipt();
+      await w.posSession!.tenderCash('S-1', n, '2026-08-28T10:00:00Z');
       w.posSession!.newSale(); // the shell clears the bill after every sale; done here because the sale was rung from the test
+      return n;
     });
 
     // ── The cashier's own steps. The replacement is rung FIRST, by barcode, like any sale: the ₹700 premium tin.
@@ -400,7 +402,8 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
 
     // The bill, by its receipt number (scanned off the customer's slip).
     await sheetTitled(page, 'Scan the receipt, or key the bill number');
-    await page.keyboard.type('R-lane-1-000001'); // the bill's number, as this box gave it (audit PF-04)
+    expect(billNo).toMatch(/^ZZ[A-Z2-7]{6}-000001$/); // OB-85: a pack file does not say how many stores — the box's store-coded prefix
+    await page.keyboard.type(billNo); // the bill's number, as this box gave it (audit PF-04)
     await page.keyboard.press('Enter');
 
     // Which item is coming back (one tin, still returnable), how many, why, in what condition.

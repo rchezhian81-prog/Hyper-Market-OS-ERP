@@ -25,9 +25,11 @@ import { createHash, randomUUID } from 'node:crypto';
 import { makeEvent, type DomainEvent } from '../../../packages/contracts/src/event';
 import type { Money, CurrencyCode } from '../../../packages/contracts/src/money';
 import { money } from '../../../packages/contracts/src/money';
-import type { BatchEntry, EventStore, PersistedEvent, WriteGuard } from '../../../packages/persistence/src/event-store';
+import type { AppendResult, BatchEntry, EventStore, PersistedEvent, WriteGuard } from '../../../packages/persistence/src/event-store';
 import { ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
 import { issuedSeriesFor, PrefixWriteRaced, type ReceiptPrefixDeps, type ReceiptPrefixIssue } from '../../platform/src/receipt-prefixes';
+import { splitReceiptNumber, RECEIPT_COUNTER_MAX } from '../../../packages/contracts/src/receipt-number';
+import { notCanonical } from '../../platform/src/store-computer-identity';
 import { stockValueCheckFor } from './finance-close-adapters';
 import {
   foldBilling,
@@ -82,6 +84,7 @@ import type { RefusedDecision } from '../../migration/src/decisions';
 import type { ExceptionResolution, MigrationException } from '../../../packages/migration/src/cleaning';
 import type { ControlTotal, TotalSignature } from '../../../packages/migration/src/reconcile';
 import type { CashDeps, RecordedCashMovement, TillMovement } from '../../pos/src/cash';
+import type { PlacementTrigger } from '../../pos/src/till-store';
 import type { ShiftDeps, ClosedShiftRecord, OverShortReview } from '../../pos/src/shift';
 import type { DayCloseDeps, DayCloseRecord, DayReopenRecord } from '../../pos/src/day-close';
 import type { B2BCreditDeps, B2BAccount, RecordedReceivable } from '../../finance/src/b2b-credit';
@@ -1621,6 +1624,36 @@ function keyedEventId(prefix: string, key: string): string {
 }
 
 /**
+ * Hard rule #10 · verifier r18 RULE10-ABA — a SETTING (a policy, a threshold, a rule, a limit) set back to an earlier
+ * value must be in force. These settings used to be keyed on their VALUE alone, so A → B → A collapsed the second A onto
+ * the first: the owner was told "saved" and B stayed in force. Now a setting's key is its value AND the setting it
+ * supersedes (the latest one in force for the same subject): re-sending the value already in force writes nothing (as
+ * before — a true replay, or a crash-retry of one, dedupes), while a change back to an earlier value is a new, latest fact.
+ * Two writers setting the same value over the same predecessor meet on one key and collapse to one event.
+ */
+async function appendSetting(store: EventStore, tenantId: string, stream: string, s: {
+  readonly type: string;
+  /** The event id's prefix (the id follows the key, so two different settings never clash on one id). */
+  readonly idPrefix: string;
+  /** The value's key, as it was before (tenant + subject + value): kept for the first setting, so old ledgers read the same. */
+  readonly valueKey: string;
+  readonly occurredAt: string;
+  readonly source: string;
+  readonly payload: object;
+  /** Which earlier events on the stream are the SAME setting (e.g. the same rule kind) — absent: every event of the type. */
+  readonly sameSubject?: (payload: unknown) => boolean;
+  /** Whether the setting in force already holds this value (the fields the value key names). */
+  readonly sameValue: (payload: unknown) => boolean;
+}): Promise<void> {
+  const prior = (await store.readStream(tenantId, stream, { type: s.type })).filter((e) => s.sameSubject?.(e.event.payload) ?? true).at(-1);
+  if (prior !== undefined && s.sameValue(prior.event.payload)) return;
+  const key = prior === undefined ? s.valueKey : `${s.valueKey}-after-${prior.event.id}`;
+  await store.append(tenantId, stream, makeEvent({
+    id: keyedEventId(s.idPrefix, key), type: s.type, occurredAt: s.occurredAt, idempotencyKey: key, source: s.source, payload: s.payload,
+  }));
+}
+
+/**
  * The durable roster store (M25-FR-01 follow-on). The workforce DECISION routes are stateless what-ifs; this
  * makes the roster durable — the staff directory, shifts and assignments each append to one tenant stream and
  * "current" is a latest-per-id fold of the stored facts (hard rule #2), so a restart never loses who is on.
@@ -2626,6 +2659,9 @@ export function posAdapter(input: {
      */
     isBanked: async (tenantId, saleId) =>
       (await input.store.findByIdempotencyKey(tenantId, `sale-${tenantId}-${saleId}`)) !== undefined,
+    // Hard rule #10 · OB-87: the bill banked under this id (one indexed hit), so a different bill re-sent under it is a finding.
+    bankedSale: async (tenantId, saleId) =>
+      (await input.store.findByIdempotencyKey(tenantId, `sale-${tenantId}-${saleId}`))?.event.payload as IncomingSale | undefined,
 
     /**
      * Receipt numbers get their own key alongside the sale, written by `bankSale` below.
@@ -3520,8 +3556,12 @@ export interface LegacyTillPlacement {
   readonly at: string;
   /** The stores head office knew at the moment it was placed — the evidence for the decision. */
   readonly storesKnown: readonly string[];
+  /** OB-86 "A": what made head office place it automatically — the route and the person (absent on older records). */
+  readonly triggeredBy?: PlacementTrigger;
 }
 const LEGACY_TILL_PLACEMENTS = streamName(STREAM.cash, 'legacy-till-placements', 'v1');
+/** OB-86 · verifier r17 OB82-1: the store set's write guard — every org-node write and every automatic placement takes it. */
+export const ORG_STORES_GUARD = 'org-stores';
 const legacyPlacementKey = (tenantId: string, tillId: string): string => `legacy-till-placed-${tenantId}-${tillId}`;
 
 /** The one-time placement of a till's pre-OB-80 records, if it has been made. */
@@ -3554,17 +3594,57 @@ async function hasLegacyTillHistory(store: EventStore, tenantId: string, tillId:
  * OB-82: the store a till's pre-OB-80 records belong to — the one-time placement; made automatically here, once, when the
  * till has such records and head office knows exactly one store at this moment. undefined → not placed (shown unplaced).
  */
-export async function legacyTillStore(input: { readonly store: EventStore; readonly now: () => string }, tenantId: string, tillId: string): Promise<string | undefined> {
+export async function legacyTillStore(
+  input: { readonly store: EventStore; readonly now: () => string }, tenantId: string, tillId: string, trigger?: PlacementTrigger,
+): Promise<string | undefined> {
   const placed = await legacyTillPlacement(input.store, tenantId, tillId);
   if (placed !== undefined) return placed.storeId;
   if (!(await hasLegacyTillHistory(input.store, tenantId, tillId))) return undefined;
-  const { knownStores } = await storeOfLocationResolver(input, tenantId);
-  if (knownStores.size !== 1) return undefined;
-  const only = [...knownStores][0]!;
-  return (await placeLegacyTill(input.store, tenantId, {
-    tillId, storeId: only, placedBy: 'system', how: 'single_store_rule', at: input.now(), storesKnown: [only],
-    reason: `head office first read or wrote till ${tillId}'s records kept by its id alone while it knew exactly one store (${only})`,
-  })).placement.storeId;
+  const triggeredBy: PlacementTrigger = trigger ?? { route: 'unnamed head-office read', by: 'system' };
+  // OB-86 "A" · verifier r17 OB82-1 (c): the one-store fact must be STABLE at the moment of the write. The store set's guard
+  // (`ORG_STORES_GUARD`, bumped by every org-node write — the only way a store now comes to exist, since settings need an
+  // org node and a role's scope must name a registered store) is read BEFORE the store set, and the placement is appended
+  // under it: a store added in between moves the guard, the append is refused by name, and the decision is taken again on
+  // the new store set (two stores → not placed, shown unplaced). Never a placement made on a store count already stale.
+  for (let attempt = 0; ; attempt += 1) {
+    const expectedVersion = await input.store.guardVersion(tenantId, ORG_STORES_GUARD);
+    // Read AFTER the guard: a racing read whose placement landed before this point is seen here (its placement stands, no
+    // second audit record); one that lands after it moves the guard and refuses our batch, and the next round sees it.
+    const raced = await legacyTillPlacement(input.store, tenantId, tillId);
+    if (raced !== undefined) return raced.storeId;
+    const { knownStores } = await storeOfLocationResolver(input, tenantId);
+    if (knownStores.size !== 1) return undefined;
+    const only = [...knownStores][0]!;
+    const at = input.now();
+    const p: LegacyTillPlacement = {
+      tillId, storeId: only, placedBy: 'system', how: 'single_store_rule', at, storesKnown: [only], triggeredBy,
+      reason: `head office first read or wrote till ${tillId}'s records kept by its id alone (${triggeredBy.route}, by ${triggeredBy.by}) while it knew exactly one store (${only})`,
+    };
+    // OB-86 "A" · verifier r18 OB86-1: the automatic placement and its M34 audit record (naming what triggered it) are ONE
+    // atomic batch — both land or neither does, so a crash can never leave a placement with no audit entry. The batch holds
+    // the store set's guard AND the audit chain's: a racing placement, a new store or another audited write in between
+    // refuses it by name, and the decision (and the seal) is taken again.
+    const audit = await sealedAuditEntry(input.store, tenantId, {
+      actorId: 'system', action: 'till.legacy.place', objectType: 'till', objectId: tillId, at,
+      origin: { tenantId, branchId: only }, before: null,
+      after: { storeId: only, how: 'single_store_rule', storesKnown: only, triggeredByRoute: triggeredBy.route, triggeredBy: triggeredBy.by },
+      reason: p.reason, correlationId: tillId,
+    });
+    let res: AppendResult;
+    try {
+      [res] = await input.store.appendBatch(tenantId, [{ stream: LEGACY_TILL_PLACEMENTS, event: makeEvent({
+        id: `legacy-till-placed-${tillId}`, type: 'LegacyTillPlaced', occurredAt: at,
+        idempotencyKey: legacyPlacementKey(tenantId, tillId), source: 'api/pos', payload: p,
+      }) }, audit.entry], { guard: { key: ORG_STORES_GUARD, expectedVersion }, alsoGuards: [audit.guard] }) as [AppendResult, AppendResult];
+    } catch (e) {
+      if (e instanceof ConcurrencyConflictError && attempt < 32) {
+        await new Promise<void>((resolve) => setTimeout(resolve, Math.floor(Math.random() * 8 * (attempt + 1))));
+        continue;
+      }
+      throw e;
+    }
+    return (res.record.event.payload as LegacyTillPlacement).storeId;
+  }
 }
 
 /** OB-80: the tills head office has kept cash for at a store (since OB-80). */
@@ -3595,19 +3675,19 @@ export function cashAdapter(input: {
     // chain kept by the till's id alone, exactly as before OB-80.
     // OB-82: the old chain joins ONLY the store its one-time placement names, and the two chains are de-duplicated by movement
     // id — a movement the till re-sent after OB-80 that is already on the old chain counts ONCE.
-    tillMovements: async (tenantId, tillId, storeId) => {
+    tillMovements: async (tenantId, tillId, storeId, trigger) => {
       if (storeId === undefined) return read(tenantId, forTillCash(tillId));
-      const legacy = (await legacyTillStore(input, tenantId, tillId)) === storeId ? await read(tenantId, forTillCash(tillId)) : [];
+      const legacy = (await legacyTillStore(input, tenantId, tillId, trigger)) === storeId ? await read(tenantId, forTillCash(tillId)) : [];
       const seen = new Set(legacy.map((m) => m.movementId));
       return [...legacy, ...(await read(tenantId, forStoreTillCash(storeId, tillId))).filter((m) => !seen.has(m.movementId))];
     },
-    legacyTill: async (tenantId, tillId) => {
-      const store = await legacyTillStore(input, tenantId, tillId);
+    legacyTill: async (tenantId, tillId, trigger) => {
+      const store = await legacyTillStore(input, tenantId, tillId, trigger);
       const placement = store === undefined ? undefined : await legacyTillPlacement(input.store, tenantId, tillId);
-      return { ...(placement === undefined ? {} : { placement }), movements: await read(tenantId, forTillCash(tillId)) };
+      return { ...(placement === undefined ? {} : { placement }), movements: await read(tenantId, forTillCash(tillId)), hasHistory: await hasLegacyTillHistory(input.store, tenantId, tillId) };
     },
     placeLegacyTill: async (tenantId, p) => placeLegacyTill(input.store, tenantId, p),
-    legacyStoreOfTill: (tenantId, tillId) => legacyTillStore(input, tenantId, tillId),
+    legacyStoreOfTill: (tenantId, tillId, trigger) => legacyTillStore(input, tenantId, tillId, trigger),
     storeOfTill: (tenantId, tillId) => storeOfLane(input.store, tenantId, tillId),
     knownStores: async (tenantId) => [...(await storeOfLocationResolver(input, tenantId)).knownStores],
     // SP-4c: the custodian / recorder a relayed movement names is re-verified from their grants, never taken on the box's word.
@@ -3666,7 +3746,7 @@ export function shiftAdapter(input: {
     // OB-80: a close is kept per (store, till) — the till's registered store when the close names none.
     storeOfTill: (tenantId, tillId) => storeOfLane(input.store, tenantId, tillId),
     // OB-82: a close kept before OB-80 (no store) belongs to its till's one-time legacy placement.
-    legacyStoreOfTill: (tenantId, tillId) => legacyTillStore(input, tenantId, tillId),
+    legacyStoreOfTill: (tenantId, tillId, trigger) => legacyTillStore(input, tenantId, tillId, trigger),
     knownStores: async (tenantId) => [...(await storeOfLocationResolver(input, tenantId)).knownStores],
 
     closedShift: async (tenantId, shiftId) => (await closes(tenantId)).find((r) => r.shiftId === shiftId),
@@ -3803,15 +3883,14 @@ export function b2bCreditAdapter(input: {
 
     recordAccount: async (tenantId, customerId, creditLimitMinor, currency, _at, paymentTermsDays) => {
       const terms = paymentTermsDays === undefined ? '' : `-t${paymentTermsDays}`;
-      await input.store.append(tenantId, forB2BCustomer(customerId), makeEvent({
-        id: `b2b-limit-${customerId}-${creditLimitMinor}${terms}`,
-        type: 'B2BCreditLimitSet',
-        occurredAt: input.now(),
-        // Keyed on the values — setting the same limit (and terms) twice collapses, a different one is a new fact.
-        idempotencyKey: `b2b-limit-${tenantId}-${customerId}-${creditLimitMinor}${terms}`,
-        source: 'api/finance',
-        payload: { creditLimitMinor, currency, ...(paymentTermsDays === undefined ? {} : { paymentTermsDays }) } satisfies B2BAccount,
-      }));
+      const payload = { creditLimitMinor, currency, ...(paymentTermsDays === undefined ? {} : { paymentTermsDays }) } satisfies B2BAccount;
+      // Keyed on the values AND the limit they supersede (hard rule #10, verifier r18): the same limit (and terms) in force
+      // collapses; a different one — including back to an earlier one — is a new, latest fact.
+      await appendSetting(input.store, tenantId, forB2BCustomer(customerId), {
+        type: 'B2BCreditLimitSet', idPrefix: `b2b-limit-${customerId}`, valueKey: `b2b-limit-${tenantId}-${customerId}-${creditLimitMinor}${terms}`,
+        occurredAt: input.now(), source: 'api/finance', payload,
+        sameValue: (p) => { const a = p as B2BAccount; return a.creditLimitMinor === creditLimitMinor && a.currency === currency && a.paymentTermsDays === paymentTermsDays; },
+      });
     },
 
     recordReceivable: async (tenantId, customerId, m) => {
@@ -4034,15 +4113,15 @@ export function facilitiesAdapter(input: {
     },
 
     recordSchedule: async (tenantId, schedule) => {
-      await input.store.append(tenantId, STREAM.facilities, makeEvent({
-        id: `fac-sched-${schedule.scheduleId}-${schedule.title}-${schedule.active}`,
-        type: 'FacilitiesScheduleSet',
-        occurredAt: input.now(),
-        // Keyed on the definition — re-setting the same schedule collapses, a change is a new fact.
-        idempotencyKey: `fac-sched-${tenantId}-${schedule.scheduleId}-${schedule.category}-${schedule.frequency}-${schedule.evidenceRequired}-${schedule.verificationRequired}-${schedule.active}`,
-        source: 'api/platform',
-        payload: schedule,
-      }));
+      const v = (s: typeof schedule): string => `${s.category}-${s.frequency}-${s.evidenceRequired}-${s.verificationRequired}-${s.active}`;
+      // Keyed on the definition AND the one it supersedes (hard rule #10, verifier r18): the definition in force collapses;
+      // a change — including back to an earlier definition (re-activating) — is a new, latest fact.
+      await appendSetting(input.store, tenantId, STREAM.facilities, {
+        type: 'FacilitiesScheduleSet', idPrefix: `fac-sched-${schedule.scheduleId}`, valueKey: `fac-sched-${tenantId}-${schedule.scheduleId}-${v(schedule)}`,
+        occurredAt: input.now(), source: 'api/platform', payload: schedule,
+        sameSubject: (p) => (p as typeof schedule).scheduleId === schedule.scheduleId,
+        sameValue: (p) => v(p as typeof schedule) === v(schedule),
+      });
     },
 
     recordTaskDue: async (tenantId, task) => {
@@ -4137,16 +4216,15 @@ export function facilitiesAssetsAdapter(input: {
       allOf<EnergyReading>(input.store, tenantId, STREAM.facilities, 'FacilitiesEnergyReading'),
 
     recordAsset: async (tenantId, asset) => {
-      await input.store.append(tenantId, STREAM.facilities, makeEvent({
-        id: `fac-asset-${asset.assetId}`,
-        type: 'FacilitiesAssetSet',
-        occurredAt: input.now(),
-        // Keyed on the fields that matter — restating the same asset collapses, a change (renewed AMC,
-        // new criticality, retired) is a new fact.
-        idempotencyKey: `fac-asset-${tenantId}-${asset.assetId}-${asset.criticality}-${asset.amcUntil ?? 'none'}-${asset.warrantyUntil ?? 'none'}-${asset.serviceEveryDays ?? 'none'}-${asset.protectsValueMinor ?? 'none'}-${asset.active}`,
-        source: 'api/platform',
-        payload: asset,
-      }));
+      const v = (a: typeof asset): string => `${a.criticality}-${a.amcUntil ?? 'none'}-${a.warrantyUntil ?? 'none'}-${a.serviceEveryDays ?? 'none'}-${a.protectsValueMinor ?? 'none'}-${a.active}`;
+      // Keyed on the fields that matter AND the record it supersedes (hard rule #10, verifier r18): restating the asset in
+      // force collapses; a change (renewed AMC, new criticality, retired — or back again) is a new, latest fact.
+      await appendSetting(input.store, tenantId, STREAM.facilities, {
+        type: 'FacilitiesAssetSet', idPrefix: `fac-asset-${asset.assetId}`, valueKey: `fac-asset-${tenantId}-${asset.assetId}-${v(asset)}`,
+        occurredAt: input.now(), source: 'api/platform', payload: asset,
+        sameSubject: (p) => (p as typeof asset).assetId === asset.assetId,
+        sameValue: (p) => v(p as typeof asset) === v(asset),
+      });
     },
 
     recordService: async (tenantId, service) => {
@@ -4225,15 +4303,15 @@ export function facilitiesMonitoringAdapter(input: {
     },
 
     recordRange: async (tenantId, reg) => {
-      await input.store.append(tenantId, STREAM.facilities, makeEvent({
-        id: `fac-range-${reg.assetId}`,
-        type: 'FacilitiesEquipmentRangeSet',
-        occurredAt: input.now(),
-        // Keyed on the fields that matter so restating collapses and a change is a new fact.
-        idempotencyKey: `fac-range-${tenantId}-${reg.assetId}-${reg.range.minTenthsC}-${reg.range.maxTenthsC}-${reg.range.graceMinutes}-${reg.range.expectEveryMinutes ?? 'def'}-${reg.onBackup}`,
-        source: 'api/platform',
-        payload: reg,
-      }));
+      const v = (r: typeof reg): string => `${r.range.minTenthsC}-${r.range.maxTenthsC}-${r.range.graceMinutes}-${r.range.expectEveryMinutes ?? 'def'}-${r.onBackup}`;
+      // Keyed on the fields that matter AND the range it supersedes (hard rule #10, verifier r18): restating collapses; a
+      // change — including back to an earlier range — is a new, latest fact.
+      await appendSetting(input.store, tenantId, STREAM.facilities, {
+        type: 'FacilitiesEquipmentRangeSet', idPrefix: `fac-range-${reg.assetId}`, valueKey: `fac-range-${tenantId}-${reg.assetId}-${v(reg)}`,
+        occurredAt: input.now(), source: 'api/platform', payload: reg,
+        sameSubject: (p) => (p as typeof reg).assetId === reg.assetId,
+        sameValue: (p) => v(p as typeof reg) === v(reg),
+      });
     },
 
     // PA-07: the reading and the quality holds its breach causes are ONE atomic write.
@@ -4364,15 +4442,14 @@ export function wasteAdapter(input: {
     },
 
     recordCoverage: async (tenantId, coverage) => {
-      await input.store.append(tenantId, STREAM.waste, makeEvent({
-        id: `waste-coverage-${coverage.expected.length}`,
-        type: 'WasteCoverageSet',
-        occurredAt: input.now(),
-        // Keyed on the expected set so re-sending the same expectation collapses, a change is a new fact.
-        idempotencyKey: `waste-coverage-${tenantId}-${coverage.expected.map((e) => `${e.branchId}:${e.departmentId}`).sort().join(',')}`,
-        source: 'api/inventory',
-        payload: coverage,
-      }));
+      const v = (c: typeof coverage): string => c.expected.map((e) => `${e.branchId}:${e.departmentId}`).sort().join(',');
+      // Keyed on the expected set AND the one it supersedes (hard rule #10, verifier r18): re-sending the expectation in
+      // force collapses; a change — including back to an earlier set — is a new, latest fact.
+      await appendSetting(input.store, tenantId, STREAM.waste, {
+        type: 'WasteCoverageSet', idPrefix: 'waste-coverage', valueKey: `waste-coverage-${tenantId}-${v(coverage)}`,
+        occurredAt: input.now(), source: 'api/inventory', payload: coverage,
+        sameValue: (p) => v(p as typeof coverage) === v(coverage),
+      });
     },
   };
 }
@@ -4405,14 +4482,15 @@ export function integrationAdapter(input: {
       allOf<AdapterHeartbeat>(input.store, tenantId, STREAM.integration, 'IntegrationHeartbeat'),
 
     recordMatrixEntry: async (tenantId, entry) => {
-      await input.store.append(tenantId, STREAM.integration, makeEvent({
-        id: `intg-matrix-${entry.entryId}`,
-        type: 'IntegrationMatrixEntrySet',
-        occurredAt: input.now(),
-        idempotencyKey: `intg-matrix-${tenantId}-${entry.entryId}-${entry.vendor}-${entry.model}-${entry.versions.join('.')}-${entry.rbiAuthorised ?? 'na'}`,
-        source: 'api/platform',
-        payload: entry,
-      }));
+      const v = (e: typeof entry): string => `${e.vendor}-${e.model}-${e.versions.join('.')}-${e.rbiAuthorised ?? 'na'}`;
+      // Keyed on the entry AND the one it supersedes (hard rule #10, verifier r18): the entry in force collapses; a change —
+      // including back to an earlier entry — is a new, latest fact (the fixed id used to refuse every change).
+      await appendSetting(input.store, tenantId, STREAM.integration, {
+        type: 'IntegrationMatrixEntrySet', idPrefix: `intg-matrix-${entry.entryId}`, valueKey: `intg-matrix-${tenantId}-${entry.entryId}-${v(entry)}`,
+        occurredAt: input.now(), source: 'api/platform', payload: entry,
+        sameSubject: (p) => (p as typeof entry).entryId === entry.entryId,
+        sameValue: (p) => v(p as typeof entry) === v(entry),
+      });
     },
 
     recordAdapter: async (tenantId, config) => {
@@ -4459,14 +4537,14 @@ export function webhookAdapter(input: {
     },
 
     recordConfig: async (tenantId, config) => {
-      await input.store.append(tenantId, forWebhook(config.provider), makeEvent({
-        id: `wh-config-${config.provider}`,
-        type: 'WebhookConfigured',
-        occurredAt: input.now(),
-        idempotencyKey: `wh-config-${tenantId}-${config.provider}-${config.signingKeyRef}-${config.maxAgeSeconds ?? 'def'}`,
-        source: 'api/platform',
-        payload: config,
-      }));
+      // Hard rule #10 (verifier r18): the values AND the config they supersede — a change (and a change back) is a new,
+      // latest fact; its id follows the key (the fixed id used to refuse every change after the first).
+      const v = (c: typeof config): string => `${c.signingKeyRef}-${c.maxAgeSeconds ?? 'def'}`;
+      await appendSetting(input.store, tenantId, forWebhook(config.provider), {
+        type: 'WebhookConfigured', idPrefix: `wh-config-${config.provider}`, valueKey: `wh-config-${tenantId}-${config.provider}-${v(config)}`,
+        occurredAt: input.now(), source: 'api/platform', payload: config,
+        sameValue: (p) => v(p as typeof config) === v(config),
+      });
     },
 
     recordDelivery: async (tenantId, provider, envelope) => {
@@ -4607,6 +4685,29 @@ const AUDIT_CHAIN_GUARD = 'audit-chain';
 /** How many lost rounds one audit write tolerates before it is reported as a named concurrency failure. */
 const AUDIT_CHAIN_RETRIES = 32;
 
+/**
+ * Verifier r18 OB86-1: an audit record sealed over the chain's CURRENT tail, as a batch entry — for a write that must land
+ * TOGETHER with its audit record (one atomic batch: both or neither). The caller appends it with the chain's guard (the
+ * version read here) beside its own; a chain that moved in between refuses the batch by name and the caller seals again.
+ */
+async function sealedAuditEntry(store: EventStore, tenantId: string, entry: AuditEntry): Promise<{
+  readonly entry: { readonly stream: string; readonly event: ReturnType<typeof makeEvent> };
+  readonly guard: { readonly key: string; readonly expectedVersion: number };
+}> {
+  const expectedVersion = await store.guardVersion(tenantId, AUDIT_CHAIN_GUARD);
+  const seed = new InMemoryAuditStore();
+  const tail = await store.latestOfType(tenantId, AUDIT_TRAIL_STREAM, 'AuditRecordSealed');
+  if (tail !== undefined) seed.append(payloadOf<AuditRecord>(tail));
+  const sealed = new AuditTrail(seed).record(entry);
+  return {
+    entry: { stream: AUDIT_TRAIL_STREAM, event: makeEvent({
+      id: `audit-${sealed.sequence}-${sealed.hash}`, type: 'AuditRecordSealed', occurredAt: sealed.at,
+      idempotencyKey: `audit-${tenantId}-${sealed.sequence}-${sealed.hash}`, source: 'api/audit', payload: sealed,
+    }) },
+    guard: { key: AUDIT_CHAIN_GUARD, expectedVersion },
+  };
+}
+
 export function auditTrailAdapter(input: { readonly store: EventStore }): AuditTrailDeps {
   const records = (tenantId: string) =>
     allOf<AuditRecord>(input.store, tenantId, AUDIT_TRAIL_STREAM, 'AuditRecordSealed');
@@ -4724,7 +4825,18 @@ export function orgStructureAdapter(input: {
       // exactly what is held already → nothing to record; anything else (a rename, a rename BACK, an activation) is a new
       // version of the node, keyed on its version number and its whole content. The latest-wins fold reads it.
       const entry = await orgNodeVersionEntry(input.store, tenantId, node, input.now());
-      if (entry !== undefined) await input.store.append(tenantId, entry.stream, entry.event);
+      // OB-86 · verifier r17 OB82-1 (c): every org-node write moves the store set's guard, so an automatic one-store decision
+      // racing a store being added is refused and re-taken (legacyTillStore). A lost round is read again and re-sent.
+      if (entry !== undefined) {
+        for (let attempt = 0; ; attempt += 1) {
+          try {
+            await input.store.appendBatch(tenantId, [entry], { guard: { key: ORG_STORES_GUARD, expectedVersion: await input.store.guardVersion(tenantId, ORG_STORES_GUARD) } });
+            break;
+          } catch (e) {
+            if (!(e instanceof ConcurrencyConflictError) || attempt >= 16) throw e;
+          }
+        }
+      }
     },
     recordRegistration: async (tenantId, registration) => {
       await input.store.append(tenantId, ORG_REGISTRATIONS_STREAM, makeEvent({
@@ -5035,15 +5147,13 @@ export function syncedCountsAdapter(input: {
     ...countsAdapter(input),
     permissionsOfUser: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),
     recordCountPolicy: async (tenantId, policy) => {
-      await input.store.append(tenantId, COUNT_POLICY_STREAM, makeEvent({
-        id: keyedEventId('count-policy', `count-policy-${tenantId}-${policy.approvalThresholdMinor}`),
-        type: 'CountPolicySet',
-        occurredAt: policy.setAt,
-        // Keyed on the value: re-setting the same threshold collapses, a new value supersedes.
-        idempotencyKey: `count-policy-${tenantId}-${policy.approvalThresholdMinor}`,
-        source: 'api/inventory',
-        payload: policy,
-      }));
+      // Hard rule #10 (verifier r18): the value AND the setting it supersedes — re-setting the threshold in force collapses,
+      // a change (including back to an earlier value) is a new, latest fact.
+      await appendSetting(input.store, tenantId, COUNT_POLICY_STREAM, {
+        type: 'CountPolicySet', idPrefix: 'count-policy', valueKey: `count-policy-${tenantId}-${policy.approvalThresholdMinor}`,
+        occurredAt: policy.setAt, source: 'api/inventory', payload: policy,
+        sameValue: (p) => (p as CountPolicy).approvalThresholdMinor === policy.approvalThresholdMinor,
+      });
     },
   };
 }
@@ -5532,16 +5642,15 @@ export function lpRulesAdapter(input: {
     },
 
     recordRule: async (tenantId, rule) => {
-      const ruleKey = `lp-rule-${tenantId}-${rule.kind}-${rule.maxCount ?? ''}-${rule.maxTotalValueMinor ?? ''}-${rule.maxSingleValueMinor ?? ''}-${rule.escalateAtMultiple ?? ''}`;
-      await input.store.append(tenantId, rulesStream, makeEvent({
-        id: keyedEventId(`lp-rule-${rule.kind}`, ruleKey),
-        type: 'LpRuleSet',
-        occurredAt: input.now(),
-        // Keyed on the kind AND the limits — re-setting the same thresholds collapses, a re-tune is a new fact.
-        idempotencyKey: ruleKey,
-        source: 'api/pos',
-        payload: rule,
-      }));
+      const limits = (r: LpRule): string => `${r.maxCount ?? ''}-${r.maxTotalValueMinor ?? ''}-${r.maxSingleValueMinor ?? ''}-${r.escalateAtMultiple ?? ''}`;
+      // Keyed on the kind, the limits AND the rule it supersedes (hard rule #10, verifier r18): re-setting the limits in force
+      // collapses; a re-tune — including back to earlier limits — is a new, latest fact.
+      await appendSetting(input.store, tenantId, rulesStream, {
+        type: 'LpRuleSet', idPrefix: `lp-rule-${rule.kind}`, valueKey: `lp-rule-${tenantId}-${rule.kind}-${limits(rule)}`,
+        occurredAt: input.now(), source: 'api/pos', payload: rule,
+        sameSubject: (p) => (p as LpRule).kind === rule.kind,
+        sameValue: (p) => limits(p as LpRule) === limits(rule),
+      });
     },
   };
 }
@@ -5639,16 +5748,13 @@ export function fraudSignalsAdapter(input: {
       (await latest<FraudThresholds>(input.store, tenantId, thresholdsStream, 'FraudThresholdsSet')) ?? {},
 
     recordThresholds: async (tenantId, thresholds) => {
-      const thresholdsKey = `fraud-thresholds-${tenantId}-${JSON.stringify(thresholds)}`;
-      await input.store.append(tenantId, thresholdsStream, makeEvent({
-        id: keyedEventId('fraud-thresholds', thresholdsKey),
-        type: 'FraudThresholdsSet',
-        occurredAt: input.now(),
-        // Keyed on the values — re-setting the same thresholds collapses, a re-tune is a new fact.
-        idempotencyKey: thresholdsKey,
-        source: 'api/pos',
-        payload: thresholds,
-      }));
+      // Keyed on the values AND the thresholds they supersede (hard rule #10, verifier r18): re-setting the thresholds in
+      // force collapses; a re-tune — including back to earlier values — is a new, latest fact.
+      await appendSetting(input.store, tenantId, thresholdsStream, {
+        type: 'FraudThresholdsSet', idPrefix: 'fraud-thresholds', valueKey: `fraud-thresholds-${tenantId}-${JSON.stringify(thresholds)}`,
+        occurredAt: input.now(), source: 'api/pos', payload: thresholds,
+        sameValue: (p) => JSON.stringify(p) === JSON.stringify(thresholds),
+      });
     },
 
     /**
@@ -5778,8 +5884,6 @@ export function transfersAdapter(input: {
   const inv = inventoryAdapter({ store: input.store, now: input.now });
   const recalls = recallAdapter({ store: input.store, now: input.now });
   const holds = qualityHoldAdapter({ store: input.store, now: input.now });
-  const org = orgStructureAdapter({ store: input.store, now: input.now });
-  const wh = warehouseAdapter({ store: input.store, now: input.now });
 
   /** SP-5 (F05): the transfer event plus its M08 postings, ONE atomic write; every entry idempotent on its own key. */
   const transferBatch = (tenantId: string, event: DomainEvent, posted: readonly Movement[]): Parameters<EventStore['appendBatch']>[1] => [
@@ -5800,11 +5904,14 @@ export function transfersAdapter(input: {
       return here === undefined || here.unitCostMinor === 'not_known' ? undefined : here.unitCostMinor;
     },
 
-    // SP-5: a place head office has ANY record of — an org node (branch / warehouse / department, not closed), a bin's
-    // store or location, or a location that has ever held stock on the M08 ledger.
+    // SP-5 · verifier r18 C2-R1: once the business has registered its places (`knownStockPlace`), a place it REGISTERED —
+    // never "a location that has ever held stock", which let one stray movement at an unregistered id make that id a
+    // transfer destination. A tenant that has registered no place at all keeps the older reading (a bin's store or location,
+    // or a place that has held stock): there is nothing registered to judge against, and no store a pack could be built for.
     knownLocation: async (tenantId, locationId) => {
-      if ((await org.nodes(tenantId)).some((n) => n.nodeId === locationId && n.status !== 'closed')) return true;
-      if ((await wh.bins(tenantId)).some((b) => b.storeId === locationId || b.locationId === locationId)) return true;
+      const known = await knownStockPlace(input, tenantId);
+      if (known.registeredAny) return known(locationId);
+      if ((await warehouseAdapter(input).bins(tenantId)).some((b) => b.storeId === locationId || b.locationId === locationId)) return true;
       return (await inv.availability(tenantId)).some((r) => r.locationId === locationId);
     },
 
@@ -6351,15 +6458,14 @@ export function productionAdapter(input: {
     },
 
     recordCost: async (tenantId, productId, cost) => {
-      await input.store.append(tenantId, productionStream, makeEvent({
-        id: `prod-cost-${productId}`,
-        type: 'ProductionCostSet',
-        occurredAt: input.now(),
-        // Keyed on the product + the value — re-setting the same cost collapses, a new value supersedes.
-        idempotencyKey: `prod-cost-${tenantId}-${productId}-${cost.minor}-${cost.currency}`,
-        source: 'api/inventory',
-        payload: { productId, cost },
-      }));
+      // Keyed on the product, the value AND the cost it supersedes (hard rule #10, verifier r18): re-setting the cost in
+      // force collapses; a new value — including back to an earlier one — supersedes (the fixed id used to refuse it).
+      await appendSetting(input.store, tenantId, productionStream, {
+        type: 'ProductionCostSet', idPrefix: `prod-cost-${productId}`, valueKey: `prod-cost-${tenantId}-${productId}-${cost.minor}-${cost.currency}`,
+        occurredAt: input.now(), source: 'api/inventory', payload: { productId, cost },
+        sameSubject: (p) => (p as { productId: string }).productId === productId,
+        sameValue: (p) => { const c = (p as { cost: Money }).cost; return c.minor === cost.minor && c.currency === cost.currency; },
+      });
     },
 
     onHand: async (tenantId, productId, locationId) => {
@@ -7859,18 +7965,18 @@ export function purchaseAdapter(input: {
     },
 
     recordMatch: async (tenantId, invoiceId, r) => {
-      const matchKey = `match-${tenantId}-${invoiceId}-${r.payableMinor}-${r.invoicedMinor}-${r.poId ?? ''}-${r.blocked ? 'blocked' : 'clear'}`;
-      await input.store.append(tenantId, STREAM.purchase, makeEvent({
-        id: keyedEventId(`match-${invoiceId}`, matchKey),
-        type: 'InvoiceMatched',
-        occurredAt: r.matchedAt,
-        // Keyed on the *outcome*, not just the invoice. Re-running an unchanged match is the same event and collapses;
-        // a match that now pays a different figure — or that is no longer blocked because the tenant's tolerances changed
-        // (SP-7b) — is a different fact and must be recorded, or the ledger would show the first answer forever.
-        idempotencyKey: matchKey,
-        source: 'api/purchase',
-        payload: r,
-      }));
+      const outcome = (m: { payableMinor: number; invoicedMinor: number; poId?: string | null | undefined; blocked: boolean }): string =>
+        `${m.payableMinor}-${m.invoicedMinor}-${m.poId ?? ''}-${m.blocked ? 'blocked' : 'clear'}`;
+      // Keyed on the *outcome*, not just the invoice, AND the match it supersedes. Re-running an unchanged match collapses;
+      // a match that now pays a different figure — or that is no longer blocked because the tenant's tolerances changed
+      // (SP-7b) — is a different fact and must be recorded, or the ledger would show the first answer forever; and an
+      // outcome that goes BACK to an earlier one (clear → blocked → clear) is in force too (hard rule #10, verifier r18).
+      await appendSetting(input.store, tenantId, STREAM.purchase, {
+        type: 'InvoiceMatched', idPrefix: `match-${invoiceId}`, valueKey: `match-${tenantId}-${invoiceId}-${outcome(r)}`,
+        occurredAt: r.matchedAt, source: 'api/purchase', payload: r,
+        sameSubject: (p) => (p as StoredMatch).invoiceId === invoiceId,
+        sameValue: (p) => outcome(p as StoredMatch) === outcome(r),
+      });
     },
 
     applyBankChange: async (tenantId, r) => {
@@ -8499,16 +8605,15 @@ export function supplierPortalAdapter(input: {
         .sort()
         .join(',');
       const partnerKey = `portal-partner-${tenantId}-${partnerId}-${config.grants.join('.')}-${config.requiredDocuments.join('.')}-${docsDigest}-${[...config.logins].sort().join('.')}`;
-      await input.store.append(tenantId, forPortalPartner(partnerId), makeEvent({
-        // The id follows the key: a changed config (a verification, a new document) is a new event with its own id — it
-        // used to reuse the grants-only id, which the ledger's unique event id refuses (a 500 on PostgreSQL).
-        id: keyedEventId(`portal-partner-${partnerId}`, partnerKey),
-        type: 'SupplierPartnerConfigured',
-        occurredAt: input.now(),
-        idempotencyKey: partnerKey,
-        source: 'api/purchase',
-        payload: config,
-      }));
+      const v = (c: typeof config): string => `${c.grants.join('.')}-${c.requiredDocuments.join('.')}-${c.documents.map((d) => `${d.documentId}:${d.kind}:${d.validUntil}:${d.verifiedBy ?? 'unv'}`).sort().join(',')}-${[...c.logins].sort().join('.')}`;
+      // The id follows the key: a changed config (a verification, a new document) is a new event with its own id — it
+      // used to reuse the grants-only id, which the ledger's unique event id refuses (a 500 on PostgreSQL). And the key
+      // names the config it supersedes, so a change BACK to an earlier config is in force (hard rule #10, verifier r18).
+      await appendSetting(input.store, tenantId, forPortalPartner(partnerId), {
+        type: 'SupplierPartnerConfigured', idPrefix: `portal-partner-${partnerId}`, valueKey: partnerKey,
+        occurredAt: input.now(), source: 'api/purchase', payload: config,
+        sameValue: (p) => v(p as typeof config) === v(config),
+      });
       // Maintain the per-user login index (M24-FR-01) so a supplier-facing read resolves its partner id
       // from the session. One binding event per login, keyed by (user, partner) so a re-config with the
       // same login collapses but a reassignment to another partner is a new, latest-wins fact.
@@ -8567,14 +8672,12 @@ export function supplierPortalAdapter(input: {
     },
 
     recordOpening: async (tenantId, partnerId, openingMinor) => {
-      await input.store.append(tenantId, forPortalPartner(partnerId), makeEvent({
-        id: `portal-opening-${partnerId}-${openingMinor}`,
-        type: 'SupplierStatementOpeningSet',
-        occurredAt: input.now(),
-        idempotencyKey: `portal-opening-${tenantId}-${partnerId}-${openingMinor}`,
-        source: 'api/purchase',
-        payload: { openingMinor },
-      }));
+      // Keyed on the value AND the opening it supersedes (hard rule #10, verifier r18): a change back is in force.
+      await appendSetting(input.store, tenantId, forPortalPartner(partnerId), {
+        type: 'SupplierStatementOpeningSet', idPrefix: `portal-opening-${partnerId}`, valueKey: `portal-opening-${tenantId}-${partnerId}-${openingMinor}`,
+        occurredAt: input.now(), source: 'api/purchase', payload: { openingMinor },
+        sameValue: (p) => (p as { openingMinor: number }).openingMinor === openingMinor,
+      });
     },
 
     // Append-only partner-action audit (hard rule #6). Keyed on the action so a re-synced attempt is one
@@ -8811,15 +8914,14 @@ export function segmentDataAdapter(input: {
     policy: async (tenantId) =>
       latest<SegmentPolicy>(input.store, tenantId, SEGMENT_POLICY_STREAM, 'SegmentPolicySet'),
     recordPolicy: async (tenantId, policy) => {
-      await input.store.append(tenantId, SEGMENT_POLICY_STREAM, makeEvent({
-        id: 'segment-policy',
-        type: 'SegmentPolicySet',
-        occurredAt: input.now(),
-        // Keyed on the values, so re-sending the same policy collapses but any change is a new, latest fact.
-        idempotencyKey: `segment-policy-${tenantId}-${[policy.newBelowOrders, policy.loyalAtOrders, policy.lapsingAfterDays, policy.lapsedAfterDays, policy.minimumHistory].join('.')}`,
-        source: 'api/customer',
-        payload: policy,
-      }));
+      const v = (p: SegmentPolicy): string => [p.newBelowOrders, p.loyalAtOrders, p.lapsingAfterDays, p.lapsedAfterDays, p.minimumHistory].join('.');
+      // Keyed on the values AND the policy they supersede (hard rule #10, verifier r18): re-sending the policy in force
+      // collapses; any change — including back to an earlier policy — is a new, latest fact (the fixed id used to refuse it).
+      await appendSetting(input.store, tenantId, SEGMENT_POLICY_STREAM, {
+        type: 'SegmentPolicySet', idPrefix: 'segment-policy', valueKey: `segment-policy-${tenantId}-${v(policy)}`,
+        occurredAt: input.now(), source: 'api/customer', payload: policy,
+        sameValue: (p) => v(p as SegmentPolicy) === v(policy),
+      });
     },
     // FUL-12: a customer whose marketing profile was erased reads as an anonymous ref — the totals survive for the
     // shop's own figures, the person is no longer linkable (anonymisation as a compensating fact, never a deletion).
@@ -13826,9 +13928,44 @@ export async function storeOfLocationResolver(input: { readonly store: EventStor
     if (typeof s.warehouseId === 'string' && s.warehouseId !== '') backStoreOf.set(s.warehouseId, s.storeId);
   }
   for (const g of await effectiveGrants(input.store, tenantId)) {
-    if (g.roleId === STORE_COMPUTER_ROLE_ID && g.branchScope !== 'all') for (const b of g.branchScope) known.add(b);
+    // Round 18 (verifier r17 C-2): a scope that is not a canonical id (a pasted invisible character, padding) never counts
+    // as a store — so a bad scope can never inflate the stores OB-82's one-store rule counts. New scopes must also name a
+    // REGISTERED store (store-computer-binding.ts KNOWN_STORE_FIELDS), so none can be added now.
+    if (g.roleId === STORE_COMPUTER_ROLE_ID && g.branchScope !== 'all') for (const b of g.branchScope) if (!notCanonical(b)) known.add(b);
   }
   return { storeOf: (locationId) => backStoreOf.get(locationId) ?? placed(locationId), knownStores: known };
+}
+
+/**
+ * Round 18 (verifier r17 C-2 c): the stores head office has REGISTERED — a branch in its organisation tree, or a store set
+ * up with its settings. Never a grant's scope (that is what is being checked) and never a value a record merely names.
+ */
+/**
+ * Verifier r18 C2-R1: the stock places head office has REGISTERED — an org node that is not closed (a branch, warehouse or
+ * department), a store set up with its settings and that store's back-store warehouse, and the location of a warehouse bin
+ * INSIDE one of those. Once a business has registered any place, stock moves only at one of these (the movements route refuses
+ * any other with 422 `unknown_location`), and a transfer is judged against them — never against "a place that once held stock"
+ * (a stray movement could create one) and never against a bin typed for an unregistered store.
+ */
+export async function knownStockPlace(input: { readonly store: EventStore; readonly now: () => string }, tenantId: string): Promise<((locationId: string) => boolean) & { readonly registeredAny: boolean }> {
+  const known = new Set<string>();
+  for (const n of await orgStructureAdapter(input).nodes(tenantId)) if (n.status !== 'closed') known.add(n.nodeId);
+  for (const s of await allOf<StoreSettings>(input.store, tenantId, STORE_SETTINGS_STREAM, 'StoreSettingsSet')) {
+    known.add(s.storeId);
+    if (typeof s.warehouseId === 'string' && s.warehouseId !== '') known.add(s.warehouseId);
+  }
+  // A bin is a place only inside a store or warehouse already registered — a bin typed for an unregistered store id never
+  // makes that id (or the bin's own location) a place.
+  for (const b of await warehouseAdapter(input).bins(tenantId)) {
+    if (typeof b.storeId === 'string' && known.has(b.storeId) && typeof b.locationId === 'string' && b.locationId !== '') known.add(b.locationId);
+  }
+  return Object.assign((locationId: string) => known.has(locationId), { registeredAny: known.size > 0 });
+}
+
+export async function registeredStores(input: { readonly store: EventStore; readonly now: () => string }, tenantId: string): Promise<ReadonlySet<string>> {
+  const known = new Set<string>((await orgStructureAdapter(input).nodes(tenantId)).filter((n) => n.kind === 'branch').map((n) => n.nodeId));
+  for (const s of await allOf<StoreSettings>(input.store, tenantId, STORE_SETTINGS_STREAM, 'StoreSettingsSet')) known.add(s.storeId);
+  return known;
 }
 
 /** WF-20 · M35-FR-04: operational incidents and post-mortems — every fact appended, keyed so a re-send is the same one. */
@@ -14108,12 +14245,16 @@ export function openToBuyAdapter(input: { readonly store: EventStore; readonly n
     now: input.now,
     budgets: (tenantId) => allOf<PurchaseBudget>(input.store, tenantId, PURCHASE_BUDGETS_STREAM, 'PurchaseBudgetSet'),
     recordBudget: async (tenantId, budget) => {
-      const digest = createHash('sha256').update(`${budgetKey(budget)}|${budget.amountMinor}|${budget.reason}|${budget.setBy}`).digest('hex').slice(0, 16);
-      await input.store.append(tenantId, PURCHASE_BUDGETS_STREAM, makeEvent({
-        id: `purchase-budget-${digest}`, type: 'PurchaseBudgetSet', occurredAt: budget.setAt,
-        // The same figure for the same key by the same person collapses; a new figure is a new record (latest wins).
-        idempotencyKey: `purchase-budget-${tenantId}-${digest}`, source: 'api/purchase', payload: budget,
-      }));
+      const v = (b: PurchaseBudget): string => `${budgetKey(b)}|${b.amountMinor}|${b.reason}|${b.setBy}`;
+      const digest = createHash('sha256').update(v(budget)).digest('hex').slice(0, 16);
+      // The same figure for the same key by the same person, while in force, collapses; a new figure — including back to an
+      // earlier one — is a new record over the one it supersedes (hard rule #10, verifier r18; latest wins).
+      await appendSetting(input.store, tenantId, PURCHASE_BUDGETS_STREAM, {
+        type: 'PurchaseBudgetSet', idPrefix: 'purchase-budget', valueKey: `purchase-budget-${tenantId}-${digest}`,
+        occurredAt: budget.setAt, source: 'api/purchase', payload: budget,
+        sameSubject: (p) => budgetKey(p as PurchaseBudget) === budgetKey(budget),
+        sameValue: (p) => v(p as PurchaseBudget) === v(budget),
+      });
     },
     orders: async (tenantId) => [...(await foldPurchaseOrders(input.store, tenantId)).values()],
     categoryOf: async (tenantId, productId) => (await master.product(tenantId, productId))?.primaryCategoryId ?? null,
@@ -14424,10 +14565,14 @@ export function receiptPrefixAdapter(input: { readonly store: EventStore; readon
     guardVersion: (tenantId) => input.store.guardVersion(tenantId, RECEIPT_PREFIX_GUARD),
     recordIssue: async (tenantId, issue, expectedVersion) => {
       try {
-        await input.store.appendBatch(tenantId, [{ stream: RECEIPT_PREFIX_STREAM, event: makeEvent({
+        const [r] = await input.store.appendBatch(tenantId, [{ stream: RECEIPT_PREFIX_STREAM, event: makeEvent({
           id: `till-receipt-prefix-${issue.storeId}-${issue.tillId}-v${issue.version}`, type: 'TillReceiptPrefixIssued', occurredAt: issue.setAt,
           idempotencyKey: `till-receipt-prefix-${tenantId}-${issue.storeId}-${issue.tillId}-v${issue.version}`, source: 'api/platform', payload: issue,
         }) }], { guard: { key: RECEIPT_PREFIX_GUARD, expectedVersion } });
+        // Verifier r17 OB81-2: an all-deduped batch never trips the guard, so two people writing this till's SAME version at
+        // once both "succeed" — only one lands. Say which one did; the route turns a different prefix into a visible 409.
+        if (r !== undefined && r.deduped) return { kept: r.record.event.payload as ReceiptPrefixIssue };
+        return undefined;
       } catch (e) {
         if (e instanceof ConcurrencyConflictError) throw new PrefixWriteRaced(e.message);
         throw e;
@@ -14442,4 +14587,101 @@ export function receiptPrefixAdapter(input: { readonly store: EventStore; readon
 /** OB-81: the store pack's `receiptSeries` for one store — each till's current issued prefix. */
 export async function issuedReceiptSeries(store: EventStore, tenantId: string, storeId: string): Promise<ReturnType<typeof issuedSeriesFor>> {
   return issuedSeriesFor(await allOf<ReceiptPrefixIssue>(store, tenantId, RECEIPT_PREFIX_STREAM, 'TillReceiptPrefixIssued'), storeId);
+}
+
+/**
+ * Verifier r17 (a replaced box) · OB-85: the highest 6-digit count head office holds BANKED under each bill-number prefix —
+ * from the sales' receipt-number index and the returns' numbers (both drawn from a till's one register). The store pack
+ * carries it per series (`bankedThrough`) so a box whose disk was lost resumes above it and never repeats a bill number.
+ * Read-only. Every number is |P| + 6 characters, so the prefix is everything before the last six (contracts).
+ */
+export async function bankedReceiptCounts(
+  store: EventStore, tenantId: string, opts?: { readonly snapshots?: SnapshotStore; readonly storeId?: string },
+): Promise<ReadonlyMap<string, number>> {
+  const snapshots = opts?.snapshots ?? processHighWaterSnapshots(store);
+  const out = new Map<string, number>();
+  const raise = (prefix: string, count: number): void => { if (count > (out.get(prefix) ?? 0)) out.set(prefix, count); };
+  for (const [prefix, count] of await receiptHighWater(store, snapshots, tenantId, STREAM.sales, 'ReceiptNumberIssued', (p) => numberKey((p as { receiptNumber?: unknown }).receiptNumber))) raise(prefix, count);
+  for (const [prefix, count] of await receiptHighWater(store, snapshots, tenantId, STREAM.returns, 'ReturnRecorded', (p) => numberKey((p as { number?: unknown }).number))) raise(prefix, count);
+  // Verifier r18 item 6: what the store's OWN boxes say they have given (a voided or abandoned bill keeps its number) — only
+  // for the store the pack is for, so one store's box never moves another store's count.
+  if (opts?.storeId !== undefined) {
+    const reported = await receiptHighWater(store, snapshots, tenantId, BOX_HEALTH_STREAM, 'StoreComputerHealthReported', (p) => {
+      const r = p as { storeId?: unknown; receiptNumbersIssued?: unknown };
+      if (typeof r.storeId !== 'string' || !Array.isArray(r.receiptNumbersIssued)) return [];
+      return (r.receiptNumbersIssued as { prefix?: unknown; through?: unknown }[]).flatMap((x) =>
+        (typeof x.prefix === 'string' && typeof x.through === 'number' && Number.isSafeInteger(x.through) && x.through >= 1 && x.through <= RECEIPT_COUNTER_MAX
+          ? [[`${r.storeId as string}\u0000${x.prefix}`, x.through] as const] : []));
+    });
+    const mine = `${opts.storeId}\u0000`;
+    for (const [key, count] of reported) if (key.startsWith(mine)) raise(key.slice(mine.length), count);
+  }
+  return out;
+}
+
+const numberKey = (n: unknown): (readonly [string, number])[] => {
+  const s = splitReceiptNumber(n);
+  return s === undefined ? [] : [[s.prefix, s.counter]];
+};
+
+/**
+ * Verifier r18 OB85-2 (cost): the highest count per key on one stream's events of one type, kept INCREMENTALLY — a snapshot
+ * of the running maxima at a stream position (the SnapshotStore: `projection_snapshot` on PostgreSQL), and only the tail
+ * behind it read on each call. So a pack build reads O(prefixes) of snapshot plus a short tail, never every sale ever made.
+ *
+ * A maximum is idempotent and order-free, so folding an event twice is harmless; the snapshot is advanced only over events
+ * at least `HIGH_WATER_LAG` positions behind the newest read, so an append whose transaction commits a little after a later
+ * one (PostgreSQL hands out positions before commit) is still in the tail when it lands. Disposable: delete every snapshot
+ * and the next read rebuilds the same answer from the ledger (proved equal to a full scan by test).
+ */
+const HIGH_WATER_LAG = 256;
+const HIGH_WATER_EVERY = 64;
+const HIGH_WATER_PROJECTION = 'receipt-high-water@1';
+async function receiptHighWater(
+  store: EventStore, snapshots: SnapshotStore, tenantId: string, stream: string, type: string,
+  keysOf: (payload: unknown) => readonly (readonly [string, number])[],
+): Promise<ReadonlyMap<string, number>> {
+  const name = `${HIGH_WATER_PROJECTION}:${type}`;
+  const prior = await snapshots.load<Record<string, number>>(tenantId, stream, name);
+  const base = prior?.result;
+  const tail = [...await store.readStream(tenantId, stream, { sinceSeq: base?.watermarkSeq ?? 0, type })].sort((a, b) => a.seq - b.seq);
+  const fold = (m: Map<string, number>, payload: unknown): void => {
+    for (const [k, c] of keysOf(payload)) if (c > (m.get(k) ?? 0)) m.set(k, c);
+  };
+  const out = new Map<string, number>(Object.entries(base?.state ?? {}));
+  if (tail.length >= HIGH_WATER_LAG + HIGH_WATER_EVERY) {
+    const settled = tail.slice(0, tail.length - HIGH_WATER_LAG);
+    const snap = new Map(out);
+    for (const e of settled) fold(snap, e.event.payload);
+    const last = settled[settled.length - 1]!;
+    await snapshots.save<Record<string, number>>({
+      tenantId, stream, projection: name, takenAt: last.event.occurredAt,
+      result: { state: Object.fromEntries(snap), watermarkSeq: last.seq, lastEventAt: last.event.occurredAt, eventCount: (base?.eventCount ?? 0) + settled.length },
+    });
+  }
+  for (const e of tail) fold(out, e.event.payload);
+  return out;
+}
+
+/** A process-local snapshot store per event store, when the composition gives none (still correct: a snapshot is disposable). */
+const HIGH_WATER_SNAPSHOTS = new WeakMap<EventStore, SnapshotStore>();
+function processHighWaterSnapshots(store: EventStore): SnapshotStore {
+  let s = HIGH_WATER_SNAPSHOTS.get(store);
+  if (s === undefined) { s = new InMemorySnapshotStore(); HIGH_WATER_SNAPSHOTS.set(store, s); }
+  return s;
+}
+
+/**
+ * The FULL scan `bankedReceiptCounts` replaced (verifier r18 OB85-2) — kept only as the reference the incremental answer is
+ * proved equal to (tests/performance). Never on a request path.
+ */
+export async function bankedReceiptCountsByFullScan(store: EventStore, tenantId: string): Promise<ReadonlyMap<string, number>> {
+  const out = new Map<string, number>();
+  const note = (n: unknown): void => {
+    const s = splitReceiptNumber(n);
+    if (s !== undefined && s.counter > (out.get(s.prefix) ?? 0)) out.set(s.prefix, s.counter);
+  };
+  for (const e of await store.readStream(tenantId, STREAM.sales, { type: 'ReceiptNumberIssued' })) note((e.event.payload as { receiptNumber?: unknown }).receiptNumber);
+  for (const e of await store.readStream(tenantId, STREAM.returns, { type: 'ReturnRecorded' })) note((e.event.payload as { number?: unknown }).number);
+  return out;
 }

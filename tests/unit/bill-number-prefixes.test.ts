@@ -93,41 +93,112 @@ describe('OB-81 — the box chooses a lane\'s series by the rule', () => {
     return r;
   };
 
-  it('one store: today\'s R-<lane>- numbering; two stores: the store default, said aloud; then head office\'s prefix', async () => {
-    const state: { published: PackReceiptSeries[] | null; numbering: ReceiptNumberingContext } = { published: null, numbering: { storeId: 'S1', storesInBusiness: 1 } };
+  it('one store WITH its numbering\'s history: R-<lane>- carries on above head office\'s count; two stores: the store-coded fallback; then head office\'s prefix', async () => {
+    // OB-85: R-<lane>- only when head office SAYS one store AND that numbering has history (here: head office banked 41).
+    const state: { published: PackReceiptSeries[] | null; numbering: ReceiptNumberingContext } = { published: null, numbering: { storeId: 'S1', storesInBusiness: 1, boxSeriesBankedThrough: { 'lane-1': 41 } } };
     const { reg, dir } = await open(state);
-    expect(await issue(reg, 'lane-1', 'a')).toMatchObject({ receiptNumber: 'R-lane-1-000001', source: 'this_box' });
+    expect(await issue(reg, 'lane-1', 'a')).toMatchObject({ receiptNumber: 'R-lane-1-000042', source: 'this_box' });
+    // The box's own disk is history too: the next pack need not repeat head office's count.
+    state.numbering = { storeId: 'S1', storesInBusiness: 1 };
+    expect(await issue(reg, 'lane-1', 'a2')).toMatchObject({ receiptNumber: 'R-lane-1-000043', source: 'this_box' });
     state.numbering = { storeId: 'S1', storesInBusiness: 2 };
     const d = await issue(reg, 'lane-1', 'b');
-    expect(d).toMatchObject({ receiptNumber: `${storeComputerDefaultPrefix('S1', 'lane-1')}000001`, source: 'store_default', laneMessage: expect.stringMatching(/more than one store/) });
-    expect(reg.status('lane-1')).toMatchObject({ source: 'store_default', prefix: storeComputerDefaultPrefix('S1', 'lane-1') });
-    state.published = [{ laneId: 'lane-1', prefix: 'S1L1-', padTo: 6, rangeStart: 1, rangeEnd: 999_999 }];
+    const fallback = storeComputerDefaultPrefix('S1', 'lane-1', reg.boxIdentity);
+    expect(d).toMatchObject({ receiptNumber: `${fallback}000001`, source: 'store_default', fallbackBecause: 'more_than_one_store', laneMessage: expect.stringMatching(/more than one store/) });
+    expect(reg.status('lane-1')).toMatchObject({ source: 'store_default', prefix: fallback, fallbackBecause: 'more_than_one_store' });
+    state.published = [{ laneId: 'lane-1', prefix: 'S1L1-', padTo: 6, rangeStart: 1, rangeEnd: 999_999, bankedThrough: 0 }];
     const p = await issue(reg, 'lane-1', 'c');
     expect(p).toMatchObject({ receiptNumber: 'S1L1-000001', source: 'published' });
     expect(p.laneMessage).toBeUndefined();
-    // A restart: the published series carries on from the disk.
+    // A restart: the same box identity, and the published series carries on from the disk.
+    const id = reg.boxIdentity;
     await reg.close();
     const again = await open(state, dir);
+    expect(again.reg.boxIdentity).toBe(id);
     expect(await issue(again.reg, 'lane-1', 'd')).toMatchObject({ receiptNumber: 'S1L1-000002' });
     await again.reg.close();
   });
 
-  it('a pack that does not say how many stores (an old pack, a file) keeps today\'s numbering — unless it would pass 16 characters', async () => {
-    const { reg } = await open({ published: null, numbering: { storeId: null, storesInBusiness: null } });
-    expect(await issue(reg, 'lane-1', 'a')).toMatchObject({ receiptNumber: 'R-lane-1-000001' });
-    // `R-checkout-07-000001` would be 20 characters: the store default instead, within 16.
-    const long = await issue(reg, 'checkout-07', 'b');
-    expect(long.source).toBe('store_default');
-    expect(long.receiptNumber.length).toBeLessThanOrEqual(GST_INVOICE_NUMBER_MAX);
+  // OB-85 "A" (owner, 12 Oct 2026, docs/registers/decisions.md): a pack that does not say how many stores — a pack FILE, a
+  // box's first boot before head office answers, a pack from before OB-81 — NEVER numbers R-<lane>- (verifier r17 OB81-1:
+  // store 2's new box repeated store 1's R-lane-1-000001). It numbers under its own store-coded prefix, said aloud and
+  // flagged at head office. (Before OB-85 this test asserted the opposite: R-lane-1-000001.)
+  it('OB-85: a pack that does not say how many stores never numbers R-<lane>- — the store-coded fallback, within 16 characters', async () => {
+    const { reg } = await open({ published: null, numbering: { storeId: 'S2', storesInBusiness: null } });
+    const n = await issue(reg, 'lane-1', 'a');
+    expect(n.receiptNumber).not.toMatch(/^R-/);
+    expect(n).toMatchObject({ receiptNumber: `${storeComputerDefaultPrefix('S2', 'lane-1', reg.boxIdentity)}000001`, source: 'store_default', fallbackBecause: 'store_count_not_said', laneMessage: expect.stringMatching(/not been told by head office how many stores/) });
+    expect(n.receiptNumber.length).toBeLessThanOrEqual(GST_INVOICE_NUMBER_MAX);
+    expect(isStoreComputerDefaultReceipt(n.receiptNumber)).toBe(true); // so head office flags each such sale
     await reg.close();
+    // One store said, but no R-<lane>- history anywhere (a new or replaced box, nothing banked): the fallback too.
+    const fresh = await open({ published: null, numbering: { storeId: 'S1', storesInBusiness: 1 } });
+    expect(await issue(fresh.reg, 'lane-1', 'a')).toMatchObject({ source: 'store_default', fallbackBecause: 'no_numbering_history' });
+    // `R-checkout-07-000001` would be 20 characters: the fallback instead, within 16.
+    const long = await open({ published: null, numbering: { storeId: 'S1', storesInBusiness: 1, boxSeriesBankedThrough: { 'checkout-07': 5 } } });
+    const l = await issue(long.reg, 'checkout-07', 'b');
+    expect(l).toMatchObject({ source: 'store_default', fallbackBecause: 'own_numbering_too_long' });
+    expect(l.receiptNumber.length).toBeLessThanOrEqual(GST_INVOICE_NUMBER_MAX);
+    await fresh.reg.close(); await long.reg.close();
+  });
+
+  it('OB-85: two boxes that know no store never share a fallback; each keeps its own across a restart', async () => {
+    const none: { published: PackReceiptSeries[] | null; numbering: ReceiptNumberingContext } = { published: null, numbering: { storeId: null, storesInBusiness: null } };
+    const a = await open(none);
+    const b = await open(none);
+    const na = await issue(a.reg, 'checkout-07', 'x');
+    const nb = await issue(b.reg, 'checkout-07', 'x');
+    expect(a.reg.boxIdentity).not.toBe(b.reg.boxIdentity);
+    expect(na.receiptNumber.slice(0, 9)).not.toBe(nb.receiptNumber.slice(0, 9));
+    await a.reg.close();
+    const a2 = await open(none, a.dir);
+    expect(await issue(a2.reg, 'checkout-07', 'y')).toMatchObject({ receiptNumber: `${na.receiptNumber.slice(0, 9)}000002` });
+    await a2.reg.close(); await b.reg.close();
+  });
+
+  it('OB81-3: a published series that breaks the OB-81 rule is ignored, said aloud; the fallback numbers instead', async () => {
+    for (const [bad, words] of [
+      [{ laneId: 'lane-1', prefix: 'R-L1-', padTo: 6, rangeStart: 1, rangeEnd: 9_999, bankedThrough: 0 }, /R-/],
+      [{ laneId: 'lane-1', prefix: 'S1L1-', padTo: 4, rangeStart: 1, rangeEnd: 9_999, bankedThrough: 0 }, /counter is 4 digits/],
+      [{ laneId: 'lane-1', prefix: 'S1L1-', padTo: 6, rangeStart: 1, rangeEnd: 9_999_999, bankedThrough: 0 }, /range/],
+      [{ laneId: 'lane-1', prefix: 's1l1-', padTo: 6, rangeStart: 1, rangeEnd: 999_999, bankedThrough: 0 }, /capital letters/],
+      [{ laneId: 'lane-1', prefix: 'ZZABC-', padTo: 6, rangeStart: 1, rangeEnd: 999_999, bankedThrough: 0 }, /ZZ/],
+      [{ laneId: 'lane-1', prefix: 'S1LANE00001-', padTo: 6, rangeStart: 1, rangeEnd: 999_999, bankedThrough: 0 }, /at most 10/],
+    ] as const) {
+      const { reg } = await open({ published: [bad], numbering: { storeId: 'S1', storesInBusiness: 1 } });
+      const n = await issue(reg, 'lane-1', 'a');
+      expect(n, bad.prefix).toMatchObject({ source: 'store_default', fallbackBecause: 'published_series_breaks_rule' });
+      expect(n.laneMessage).toMatch(/breaks the bill-number rule/);
+      expect(n.laneMessage).toMatch(words);
+      expect(n.receiptNumber.startsWith(bad.prefix)).toBe(false);
+      expect(reg.status('lane-1')).toMatchObject({ source: 'store_default', fallbackBecause: 'published_series_breaks_rule' });
+      await reg.close();
+    }
+  });
+
+  it('a REPLACED box (disk lost) resumes above head office\'s banked count — never repeats; without the count it falls back', async () => {
+    // The old box numbered S1L1-000001…000003 and head office banked them. The replacement's disk is empty.
+    const series = { laneId: 'lane-1', prefix: 'S1L1-', padTo: 6, rangeStart: 1, rangeEnd: 999_999 };
+    // Offline on a setup that does not carry the count (a file): it does not guess — the fresh store-coded fallback.
+    const blind = await open({ published: [series], numbering: { storeId: 'S1', storesInBusiness: 2 } });
+    expect(await issue(blind.reg, 'lane-1', 'a')).toMatchObject({ source: 'store_default', fallbackBecause: 'published_count_not_known', laneMessage: expect.stringMatching(/S1L1-/) });
+    await blind.reg.close();
+    // Head office's setup carries the banked count: the box resumes above it.
+    const told = await open({ published: [{ ...series, bankedThrough: 3 }], numbering: { storeId: 'S1', storesInBusiness: 2 } });
+    expect(await issue(told.reg, 'lane-1', 'a')).toMatchObject({ receiptNumber: 'S1L1-000004', source: 'published' });
+    // …and a later setup without the count still carries on from this box's own disk.
+    await told.reg.close();
+    const later = await open({ published: [series], numbering: { storeId: 'S1', storesInBusiness: 2 } }, told.dir);
+    expect(await issue(later.reg, 'lane-1', 'b')).toMatchObject({ receiptNumber: 'S1L1-000005', source: 'published' });
+    await later.reg.close();
   });
 
   it('a range head office re-drew over numbers this box already gave is never given twice', async () => {
-    const state: { published: PackReceiptSeries[] | null; numbering: ReceiptNumberingContext } = { published: [{ laneId: 'lane-1', prefix: 'S1L1-', padTo: 6, rangeStart: 1, rangeEnd: 999_999 }], numbering: { storeId: 'S1', storesInBusiness: 2 } };
+    const state: { published: PackReceiptSeries[] | null; numbering: ReceiptNumberingContext } = { published: [{ laneId: 'lane-1', prefix: 'S1L1-', padTo: 6, rangeStart: 1, rangeEnd: 999_999, bankedThrough: 0 }], numbering: { storeId: 'S1', storesInBusiness: 2 } };
     const { reg } = await open(state);
     await issue(reg, 'lane-1', 'a');
     await issue(reg, 'lane-1', 'b');
-    state.published = [{ laneId: 'lane-1', prefix: 'S1L1-', padTo: 6, rangeStart: 1, rangeEnd: 500_000 }];
+    state.published = [{ laneId: 'lane-1', prefix: 'S1L1-', padTo: 6, rangeStart: 1, rangeEnd: 500_000, bankedThrough: 0 }];
     expect(await issue(reg, 'lane-1', 'c')).toMatchObject({ receiptNumber: 'S1L1-000003' });
     await reg.close();
   });

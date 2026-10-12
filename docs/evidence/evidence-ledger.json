@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1172,
+  "testFiles": 1180,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -2260,8 +2260,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 8,
-        "integration": 11,
-        "realDb": 3,
+        "integration": 12,
+        "realDb": 4,
         "browser": 2,
         "connected": 0,
         "device": 0,
@@ -2286,6 +2286,7 @@
           "tests/integration/compliance-obligations.test.ts",
           "tests/integration/concurrent-stock-cannot-be-spent-twice.test.ts",
           "tests/integration/legal-holds.test.ts",
+          "tests/integration/old-till-cash-is-placed-once-and-head-office-records-decide.test.ts",
           "tests/integration/physical-to-system.test.ts",
           "tests/integration/risk-followthrough.test.ts",
           "tests/integration/risk-register.test.ts",
@@ -2294,6 +2295,7 @@
         "realDb": [
           "tests/integration/branch-scope-every-family.test.ts",
           "tests/integration/concurrent-stock-cannot-be-spent-twice.test.ts",
+          "tests/integration/old-till-cash-is-placed-once-and-head-office-records-decide.test.ts",
           "tests/integration/physical-to-system.test.ts"
         ],
         "browser": [

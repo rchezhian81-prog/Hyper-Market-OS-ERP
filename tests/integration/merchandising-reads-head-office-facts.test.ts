@@ -126,6 +126,9 @@ describe.each(backings)('FUL-11 merchandising reads head office\'s own facts —
     const t = randomUUID();
     const h = apiHarness(backing());
     const { call } = await setUp(h, t);
+    // Round 18 (verifier r17 C-2 c): a display contract is at a store head office knows.
+    expect((await call('POST', '/v1/org/nodes/C1', OWNER, { kind: 'company', name: 'SRE Retail' })).status).toBe(201);
+    expect((await call('POST', `/v1/org/nodes/${STORE}`, OWNER, { kind: 'branch', name: 'SRE Hyper Market', parentId: 'C1', companyId: 'C1' })).status).toBe(201);
     const contract = { storeId: STORE, supplierId: 'sup-tea', description: 'tea end-cap by the door', fundingAmount: inr(60_000), startsOn: '2026-01-01', endsOn: '2026-12-31', locationIds: ['END-1'] };
     const recorded = await sentWithApproval(h, t, MGR, ACCT, { kind: 'display_contract', subjectRef: 'dc-tea', pathIds: { contractId: 'dc-tea' }, valueMinor: 60_000 },
       contract, (b) => call('POST', '/v1/merchandising/display-contracts/dc-tea', MGR, b));

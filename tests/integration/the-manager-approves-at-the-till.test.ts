@@ -37,7 +37,7 @@ const startBox = async (dir?: string): Promise<EdgeProcess> => {
   const ready = dir !== undefined ? { EDGE_LANE_ID: 'lane-1', EDGE_PACK_FILE: join(d, 'store-pack.json') } : await prepareTillBox({
     dir: d, key: KEY, people: PEOPLE,
     // Every refund needs a manager here (threshold 0), as the shop's default is.
-    pack: { servicePolicy: { returnWindowDays: 30, approvalThresholdMinor: 0, noReceiptCapMinor: 100_000, agentAuthorityMinor: 0, compensationCapMinor: 0 }, receiptSeries: [{ laneId: 'lane-1', prefix: 'R-S-', padTo: 1, rangeStart: 1, rangeEnd: 999 }] },
+    pack: { servicePolicy: { returnWindowDays: 30, approvalThresholdMinor: 0, noReceiptCapMinor: 100_000, agentAuthorityMinor: 0, compensationCapMinor: 0 }, receiptSeries: [{ laneId: 'lane-1', prefix: 'MS-', padTo: 6, rangeStart: 1, rangeEnd: 999, bankedThrough: 0 }] },
   });
   const edge = (await startEdge({
     EDGE_DATA_DIR: d, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY, EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '0', ...ready,
@@ -46,12 +46,12 @@ const startBox = async (dir?: string): Promise<EdgeProcess> => {
   return edge;
 };
 
-/** A till on this box with Meena signed in and one sale of two ₹480 packs on it (bill R-S-1). */
+/** A till on this box with Meena signed in and one sale of two ₹480 packs on it (bill MS-000001). */
 const tillWithABill = async (edge: EdgeProcess) => {
   const till = bootPos({ laneId: 'lane-1', taxPercent: 0, lanePort: edge.lane!.port });
   await signInTill(till, 'u-meena');
   till.scan({ productId: 'P1', description: 'Toor dal 1kg', unitPriceMinor: 48_000, qty: 2 });
-  // The box gives the bill its number (audit PF-04); this box's range starts at R-S-1.
+  // The box gives the bill its number (audit PF-04); this box's range starts at MS-000001.
   await till.tenderCash('S-1', await till.nextReceipt(), new Date().toISOString());
   till.newSale();
   return till;
@@ -67,7 +67,7 @@ describe('the manager approves at the till, with their own PIN, for this one ref
   it('a typed manager name is refused before the disk; the manager\'s PIN gets an approval; the refund carries it, stamped', async () => {
     const edge = await startBox();
     const till = await tillWithABill(edge);
-    const bill = (await till.lookupRefund('R-S-1'))!;
+    const bill = (await till.lookupRefund('MS-000001'))!;
 
     const typed = await bill.submit(refundDraft('RT-1', 10_000, { by: 'u-mgr', reason: 'damaged' }, await till.nextReceipt()));
     expect(typed).toMatchObject({ laneMessage: expect.stringMatching(/needs a manager's approval on this till/) });
@@ -86,7 +86,7 @@ describe('the manager approves at the till, with their own PIN, for this one ref
   it('one approval pays one refund: used again on another refund it is refused; nothing more leaves the drawer', async () => {
     const edge = await startBox();
     const till = await tillWithABill(edge);
-    const bill = (await till.lookupRefund('R-S-1'))!;
+    const bill = (await till.lookupRefund('MS-000001'))!;
     const approval = await managerApprovesOn(till, 'u-mgr', { kind: 'refund', billRef: 'S-1', valueMinor: 10_000 });
     expect(await bill.submit(refundDraft('RT-1', 10_000, approval, await till.nextReceipt()))).toMatchObject({ kind: 'settled' });
     const again = await bill.submit(refundDraft('RT-2', 10_000, approval, await till.nextReceipt()));
@@ -106,7 +106,7 @@ describe('the manager approves at the till, with their own PIN, for this one ref
   it('an approval for one bill or amount does not fit another refund; a forged approval id is unknown', async () => {
     const edge = await startBox();
     const till = await tillWithABill(edge);
-    const bill = (await till.lookupRefund('R-S-1'))!;
+    const bill = (await till.lookupRefund('MS-000001'))!;
     const forFive = await managerApprovesOn(till, 'u-mgr', { kind: 'refund', billRef: 'S-1', valueMinor: 5_000 });
     expect(await bill.submit(refundDraft('RT-1', 10_000, forFive, await till.nextReceipt()))).toMatchObject({ laneMessage: expect.stringMatching(/approved a different refund/) });
     // Straight at the socket, with the cashier's own session: an id this box never issued.
@@ -124,18 +124,18 @@ describe('the manager approves at the till, with their own PIN, for this one ref
     dirs.push(dir);
     await prepareTillBox({
       dir, key: KEY, people: PEOPLE,
-      pack: { servicePolicy: { returnWindowDays: 30, approvalThresholdMinor: 0, noReceiptCapMinor: 100_000, agentAuthorityMinor: 0, compensationCapMinor: 0 }, receiptSeries: [{ laneId: 'lane-1', prefix: 'R-S-', padTo: 1, rangeStart: 1, rangeEnd: 999 }] },
+      pack: { servicePolicy: { returnWindowDays: 30, approvalThresholdMinor: 0, noReceiptCapMinor: 100_000, agentAuthorityMinor: 0, compensationCapMinor: 0 }, receiptSeries: [{ laneId: 'lane-1', prefix: 'MS-', padTo: 6, rangeStart: 1, rangeEnd: 999, bankedThrough: 0 }] },
     });
     const first = await startBox(dir);
     const till = await tillWithABill(first);
     const approvalId = await approvalFromLane(first.lane!.port, till.operatorToken()!, 'u-mgr', { kind: 'refund', billRef: 'S-1', valueMinor: 10_000 });
-    expect(await (await till.lookupRefund('R-S-1'))!.submit(refundDraft('RT-1', 10_000, { by: 'u-mgr', reason: 'damaged', approvalId }, await till.nextReceipt()))).toMatchObject({ kind: 'settled' });
+    expect(await (await till.lookupRefund('MS-000001'))!.submit(refundDraft('RT-1', 10_000, { by: 'u-mgr', reason: 'damaged', approvalId }, await till.nextReceipt()))).toMatchObject({ kind: 'settled' });
     await first.stop();
     stops.splice(0);
     const second = await startBox(dir);
     const again = bootPos({ laneId: 'lane-1', taxPercent: 0, lanePort: second.lane!.port });
     await signInTill(again, 'u-meena');
-    expect(await (await again.lookupRefund('R-S-1'))!.submit(refundDraft('RT-2', 10_000, { by: 'u-mgr', reason: 'damaged', approvalId }, await again.nextReceipt())))
+    expect(await (await again.lookupRefund('MS-000001'))!.submit(refundDraft('RT-2', 10_000, { by: 'u-mgr', reason: 'damaged', approvalId }, await again.nextReceipt())))
       .toMatchObject({ laneMessage: expect.stringMatching(/already used for another refund/) });
     const log = await readFile(join(dir, 'till-approvals.log'), 'utf8');
     expect(log).not.toContain(pinOf('u-mgr'));
