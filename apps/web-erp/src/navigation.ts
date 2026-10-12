@@ -130,6 +130,10 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // permission the day-book read route checks (`finance.period.read`), so the menu never offers a screen the server
   // would refuse (M23-FR-01).
   { id: 'day-book', label: 'Day book', labelTa: 'நாள் புத்தகம்', path: '/day-book', requires: 'finance.period.read', group: 'Finance' },
+  // Round 12 (M23 · WF-18 · D10-FR-03/05 · OB-55/56/57/69): the month-end page — payments with no answer, the P&L, the
+  // stock adjustment, the budget and the fixed assets — a thin client over head office's own finance routes. A head-office
+  // page: the store computer does not serve it. Gated on the same read the routes check (`finance.period.read`).
+  { id: 'finance-close', label: 'Month-end', labelTa: 'மாத இறுதி', path: '/finance-close', requires: 'finance.period.read', group: 'Finance', served: 'unserved' },
   { id: 'reconciliation', label: 'Reconciliation', labelTa: 'சரிக்கட்டல்', path: '/reconciliation', requires: 'reconciliation.view', group: 'Finance', served: 'unbuilt' },
   // GST e-invoice / e-way-bill reconciliation — gated on the SAME permission the queue route checks
   // (`finance.einvoice.read`), so the menu can never offer a screen the server would refuse (item 3 inc2).

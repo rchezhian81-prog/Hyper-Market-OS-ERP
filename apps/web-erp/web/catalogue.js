@@ -379,8 +379,8 @@ function renderGaps() {
 
 // ── Navigation ──────────────────────────────────────────────────────────────
 
-const VIEWS = ['items', 'item', 'price', 'shelf', 'promo'];
-const TABS = ['items', 'price', 'shelf', 'promo'];
+const VIEWS = ['items', 'item', 'price', 'shelf', 'promo', 'rivals'];
+const TABS = ['items', 'price', 'shelf', 'promo', 'rivals'];
 
 function show(name) {
   for (const view of VIEWS) el(`view-${view}`).hidden = view !== name;
@@ -389,7 +389,7 @@ function show(name) {
   }
 }
 for (const name of TABS) {
-  el(`tab-${name}`).addEventListener('click', () => { show(name); });
+  el(`tab-${name}`).addEventListener('click', () => { show(name); if (name === 'rivals') void loadRivals(); });
 }
 el('back-to-items').addEventListener('click', () => { show('items'); renderItems(); });
 
@@ -1032,6 +1032,89 @@ el('launch').addEventListener('click', () => {
   });
 });
 
+// ── Competitor prices (D06-FR-05) ───────────────────────────────────────────
+//
+// A thin panel over head office's own routes, through the tested model (`competitor-price-session.ts`, attached as
+// `window.competitorPriceSession` / `competitorPriceKit`). It records a sighting and shows the comparison head office
+// works out — our effective price at this store beside each competitor's latest sighting. It changes no price.
+
+const rivals = window.competitorPriceSession ?? null;
+const rivalKit = window.competitorPriceKit ?? null;
+const rw = (key, fill) => (rivalKit === null ? key : rivalKit.competitorWords(lang)(key, fill));
+let rivalsRead = null;
+
+function rivalSay(id, text, ok) { el(id).textContent = text; el(id).dataset.ok = ok ? 'yes' : 'no'; }
+
+function renderRivals() {
+  // A sample view (no head office behind it) keeps the page's own words and offers nothing.
+  if (rivalKit === null) { el('rivals-form').hidden = true; return; }
+  el('rivals-title').textContent = rw('h');
+  el('rivals-lead').textContent = rw('lede');
+  el('rivals-note').textContent = rw('changesNoPrice');
+  for (const [id, k] of [['rival-product-label', 'product'], ['rival-competitor-label', 'competitor'], ['rival-price-label', 'price'], ['rival-source-label', 'source'], ['rival-seen-label', 'seenAt'], ['rival-note-label', 'note'], ['rival-record', 'record']]) el(id).textContent = rw(k);
+  const form = el('rivals-form');
+  form.hidden = rivals === null || !rivals.may.record;
+  if (rivals === null) { rivalSay('rivals-status', rw('notConnected'), false); el('rivals-list').replaceChildren(); return; }
+  if (rivals !== null) {
+    const productSelect = el('rival-product');
+    const was = productSelect.value;
+    productSelect.replaceChildren(...rivals.products.map((p) => { const o = document.createElement('option'); o.value = p.productId; o.textContent = `${p.name} (${p.productId})`; return o; }));
+    if ([...productSelect.options].some((o) => o.value === was)) productSelect.value = was;
+    const sourceSelect = el('rival-source');
+    const src = sourceSelect.value;
+    sourceSelect.replaceChildren(...rivalKit.sources.map((s) => { const o = document.createElement('option'); o.value = s; o.textContent = rw(s); return o; }));
+    if (src !== '') sourceSelect.value = src;
+  }
+  const list = el('rivals-list');
+  list.replaceChildren();
+  if (rivals === null) return;
+  if (!rivals.may.read) { rivalSay('rivals-status', rw('cannotRead'), false); return; }
+  if (!rivals.may.record) rivalSay('rivals-status', rw('readOnly'), true);
+  if (rivalsRead === null) return;
+  if (rivalsRead.kind !== 'done') {
+    const said = rivalKit.competitorOutcomeWords(lang, rivalsRead);
+    rivalSay('rivals-status', rivalsRead.kind === 'invalid' ? rw('noStore') : said.text, false);
+    return;
+  }
+  const c = rivalsRead.body;
+  if (c.products.length === 0) { const p = document.createElement('p'); p.className = 'lead'; p.textContent = rw('none'); list.append(p); return; }
+  for (const row of c.products) {
+    const box = document.createElement('div');
+    box.className = 'row';
+    box.dataset.product = row.productId;
+    const what = document.createElement('div');
+    what.className = 'what';
+    const name = document.createElement('strong');
+    name.textContent = `${rivals.nameOf(row.productId)} — ${rw('ours')} ${row.ourPriceMinor === null ? rw('ourNotKnown') : rivalKit.rupees(row.ourPriceMinor)}`;
+    what.append(name);
+    for (const k of row.competitors) {
+      const line = document.createElement('small');
+      line.dataset.competitor = k.competitor;
+      line.textContent = `${k.competitor}: ${rivalKit.rupees(k.priceMinor)} · ${rivalKit.gapWords(lang, k.gapMinor)} · ${rw(k.source)} · ${k.ageDays === 0 ? rw('today') : rw('daysOld', { n: k.ageDays })}${k.note ? ` · ${k.note}` : ''}`;
+      what.append(line);
+    }
+    box.append(what);
+    list.append(box);
+  }
+}
+
+async function loadRivals() {
+  if (rivals === null || !rivals.may.read) { renderRivals(); return; }
+  rivalsRead = await rivals.compare();
+  renderRivals();
+}
+
+el('rival-record').addEventListener('click', () => busy('rival-record', async () => {
+  const out = await rivals.record({
+    productId: el('rival-product').value, competitor: el('rival-competitor').value, price: el('rival-price').value,
+    source: el('rival-source').value, observedAt: el('rival-seen').value, note: el('rival-note').value,
+  });
+  const said = rivalKit.competitorOutcomeWords(lang, out);
+  rivalSay('rival-record-status', said.text, said.ok);
+  if (said.ok) { el('rival-price').value = ''; el('rival-note').value = ''; }
+  await loadRivals();
+}));
+
 // ── Language ────────────────────────────────────────────────────────────────
 
 function paintChrome() {
@@ -1041,6 +1124,7 @@ function paintChrome() {
   el('tab-price').textContent = t('changePrice');
   el('tab-shelf').textContent = t('shelves');
   el('tab-promo').textContent = t('offer');
+  if (rivalKit !== null) el('tab-rivals').textContent = rw('tab');
   el('items-title').textContent = t('items');
   el('items-lead').textContent = t('itemsLead');
   el('item-search-label').textContent = t('findItem');
@@ -1076,6 +1160,7 @@ el('lang').addEventListener('click', () => {
   renderItem();
   if (lastProposal !== null) renderProposal(lastProposal, lastProposal.draft.productId);
   if (lastSimulation !== null) renderSimulation(lastSimulation);
+  renderRivals();
 });
 
 // ── Boot ────────────────────────────────────────────────────────────────────
@@ -1088,6 +1173,8 @@ renderItems();
 // ?tab=price / ?tab=promo (screen-server SCREEN_ALIASES); anything else opens on the item list.
 const wantedTab = new URLSearchParams(window.location.search).get('tab');
 show(TABS.includes(wantedTab) ? wantedTab : 'items');
+renderRivals();
+if (wantedTab === 'rivals') void loadRivals();
 
 // ── The shell's own honesty about where this page came from ─────────────────
 //

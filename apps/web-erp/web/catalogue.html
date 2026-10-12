@@ -160,6 +160,7 @@
       <button id="tab-price" type="button">Change a price</button>
       <button id="tab-shelf" type="button">Shelves</button>
       <button id="tab-promo" type="button">Offer</button>
+      <button id="tab-rivals" type="button">Competitor prices</button>
     </nav>
 
     <main>
@@ -336,6 +337,50 @@
           <button id="ask-launch" class="primary wide" type="button">Ask for approval</button>
         </div>
         <button id="launch" class="primary wide" type="button" hidden>Start this offer</button>
+      </section>
+
+      <!-- D06-FR-05: competitor price capture and comparison — over head office's own routes (/v1/prices/competitor*),
+           through the tested model apps/web-erp/src/competitor-price-session.ts. Recording a price changes NO price. -->
+      <section id="view-rivals" hidden>
+        <h2 id="rivals-title">Competitor prices</h2>
+        <p class="lead" id="rivals-lead">Write down a price you saw at another shop and see it beside ours.</p>
+        <p class="lead" id="rivals-status" role="status" aria-live="polite"></p>
+        <div id="rivals-form">
+          <div class="two">
+            <div class="field">
+              <label for="rival-product" id="rival-product-label">Our item</label>
+              <select id="rival-product"></select>
+            </div>
+            <div class="field">
+              <label for="rival-competitor" id="rival-competitor-label">Which shop</label>
+              <input id="rival-competitor" type="text" autocomplete="off" maxlength="60" />
+            </div>
+          </div>
+          <div class="two">
+            <div class="field">
+              <label for="rival-price" id="rival-price-label">Their price (₹)</label>
+              <input id="rival-price" type="text" inputmode="decimal" autocomplete="off" />
+            </div>
+            <div class="field">
+              <label for="rival-source" id="rival-source-label">Where you saw it</label>
+              <select id="rival-source"></select>
+            </div>
+          </div>
+          <div class="two">
+            <div class="field">
+              <label for="rival-seen" id="rival-seen-label">When you saw it</label>
+              <input id="rival-seen" type="datetime-local" />
+            </div>
+            <div class="field">
+              <label for="rival-note" id="rival-note-label">Pack or offer note (optional)</label>
+              <input id="rival-note" type="text" autocomplete="off" maxlength="200" />
+            </div>
+          </div>
+          <button id="rival-record" class="primary wide" type="button">Record this price</button>
+          <p class="lead" id="rival-record-status" role="status" aria-live="polite"></p>
+        </div>
+        <div id="rivals-list"></div>
+        <p class="lead" id="rivals-note">This comparison changes no price.</p>
       </section>
     </main>
 

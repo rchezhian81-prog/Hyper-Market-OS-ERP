@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Month-end</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Month-end (M23-FR-01/03/04 · WF-18 · D10-FR-03/05 · OB-55/56/57/67/69). A THIN CLIENT over head office's own finance
+      routes, through the tested session model `apps/web-erp/src/finance-close-session.ts` (window.financeCloseSession):
+        • card and UPI payments with no answer — raised by the store or carried by a day close — with the open totals,
+          flags and visible conflicts; settled ONLY with the provider's own record;
+        • the month's profit and loss from the books;
+        • the month-end stock adjustment: the valuation and everything that blocks it, then one post;
+        • the budget (each save a new version) and the fixed-asset register with the monthly depreciation run.
+      Every figure and every refusal is head office's, in its own words. Nothing is written when the page opens.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1040px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; box-sizing: border-box; }
+      p.purpose { margin: 0; color: var(--muted); font-size: 15px; }
+      nav { display: flex; gap: 8px; overflow-x: auto; }
+      nav button { white-space: nowrap; background: var(--line); color: var(--ink); }
+      nav button[aria-current='page'] { background: var(--ink); color: var(--bg); }
+      section.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 18px; } h3 { margin: 8px 0 0; font-size: 16px; }
+      p.lead { margin: 0; color: var(--muted); font-size: 14px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      label.check { display: flex; gap: 8px; align-items: center; font-weight: 400; }
+      label.check input { min-height: auto; width: 22px; height: 22px; }
+      input, select { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
+      .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; align-items: end; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; }
+      button.quiet { background: var(--line); color: var(--ink); }
+      button[disabled] { opacity: .5; cursor: not-allowed; }
+      .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+      .tile { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; display: grid; gap: 2px; }
+      .tile b { font-size: 22px; font-variant-numeric: tabular-nums; }
+      .tile small { color: var(--muted); font-size: 13px; }
+      ul.register { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+      ul.register > li { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; background: var(--bg); display: grid; gap: 6px; min-width: 0; }
+      ul.register > li.open { border-left: 5px solid var(--warn); }
+      ul.register > li.flagged { border-left: 6px solid var(--danger); }
+      li .head { display: flex; flex-wrap: wrap; gap: 10px; align-items: baseline; }
+      li .head .amt { font-weight: 700; font-variant-numeric: tabular-nums; }
+      li .facts { font-size: 14px; color: var(--muted); overflow-wrap: anywhere; margin: 0; }
+      li .conflict, li .flags { font-size: 14px; color: var(--danger-text); margin: 0; overflow-wrap: anywhere; }
+      details > summary { cursor: pointer; font-weight: 600; min-height: 32px; }
+      table { width: 100%; border-collapse: collapse; font-size: 15px; }
+      th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+      td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
+      tr.total td { font-weight: 700; }
+      ul.blockers { margin: 0; padding-left: 20px; display: grid; gap: 4px; color: var(--danger-text); }
+      .note { font-size: 14px; color: var(--muted); margin: 0; }
+      .status { font-size: 14px; min-height: 20px; margin: 0; }
+      .status.good { color: var(--good); } .status.err { color: var(--danger-text); }
+      .nobody { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
+      [hidden] { display: none !important; }
+      .scroll { overflow-x: auto; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title">Month-end</h1>
+      <span class="sync">
+        <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+      </span>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <p class="purpose" id="purpose">Close the month from head office's own books.</p>
+      <div class="row">
+        <label for="period"><span id="l-period">Month</span><input id="period" type="month" /></label>
+      </div>
+      <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      <nav id="tabs" aria-label="Sections">
+        <button id="tab-payments" type="button" aria-current="page">Card and UPI with no answer</button>
+        <button id="tab-pl" type="button">Profit and loss</button>
+        <button id="tab-stock" type="button">Stock adjustment</button>
+        <button id="tab-plan" type="button">Budget and assets</button>
+      </nav>
+
+      <section id="view-payments" class="panel" aria-labelledby="pay-h">
+        <h2 id="pay-h">Card and UPI payments with no answer</h2>
+        <p class="lead" id="pay-lede"></p>
+        <div class="tiles" id="pay-tiles"></div>
+        <p class="status" id="pay-status" role="status" aria-live="polite"></p>
+        <ul class="register rows" id="pay-list" aria-label="Payments"></ul>
+      </section>
+
+      <section id="view-pl" class="panel" hidden aria-labelledby="pl-h">
+        <h2 id="pl-h">Profit and loss</h2>
+        <p class="lead" id="pl-lede"></p>
+        <p class="status" id="pl-status" role="status" aria-live="polite"></p>
+        <div class="tiles" id="pl-tiles"></div>
+        <div class="scroll"><table id="pl-table"></table></div>
+        <ul class="blockers" id="pl-notes"></ul>
+      </section>
+
+      <section id="view-stock" class="panel" hidden aria-labelledby="stock-h">
+        <h2 id="stock-h">Month-end stock adjustment</h2>
+        <p class="lead" id="stock-lede"></p>
+        <p class="status" id="stock-status" role="status" aria-live="polite"></p>
+        <div class="tiles" id="stock-tiles"></div>
+        <h3 id="blockers-h">What stops it posting</h3>
+        <ul class="blockers" id="stock-blockers"></ul>
+        <p class="note" id="stock-posted"></p>
+        <button id="post-adjustment" type="button">Post the month-end adjustment</button>
+        <p class="status" id="post-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section id="view-plan" class="panel" hidden aria-labelledby="budget-h">
+        <h2 id="budget-h">Budget against the books</h2>
+        <p class="lead" id="budget-lede"></p>
+        <p class="status" id="budget-status" role="status" aria-live="polite"></p>
+        <div class="scroll"><table id="budget-table"></table></div>
+        <div id="budget-edit">
+          <div id="budget-lines" class="row"></div>
+          <div class="row">
+            <button id="budget-add-line" type="button" class="quiet">Add a line</button>
+            <label for="budget-reason"><span id="l-budget-reason">Why</span><input id="budget-reason" autocomplete="off" maxlength="300" /></label>
+            <button id="budget-save" type="button">Save as a new version</button>
+          </div>
+          <p class="status" id="budget-save-status" role="status" aria-live="polite"></p>
+        </div>
+
+        <h2 id="assets-h">Fixed assets</h2>
+        <p class="lead" id="assets-lede"></p>
+        <p class="status" id="assets-status" role="status" aria-live="polite"></p>
+        <ul class="register rows" id="assets-list" aria-label="Fixed assets"></ul>
+        <details id="asset-add">
+          <summary id="asset-add-h">Add to the register</summary>
+          <div class="row">
+            <label for="a-id"><span id="l-a-id">Asset code</span><input id="a-id" autocomplete="off" /></label>
+            <label for="a-name"><span id="l-a-name">Name</span><input id="a-name" autocomplete="off" /></label>
+            <label for="a-category"><span id="l-a-category">Kind of asset</span><input id="a-category" autocomplete="off" /></label>
+            <label for="a-store"><span id="l-a-store">Store</span><input id="a-store" autocomplete="off" /></label>
+            <label for="a-cost"><span id="l-a-cost">Cost (₹)</span><input id="a-cost" inputmode="decimal" autocomplete="off" /></label>
+            <label for="a-salvage"><span id="l-a-salvage">Left at the end (₹)</span><input id="a-salvage" inputmode="decimal" autocomplete="off" /></label>
+            <label for="a-life"><span id="l-a-life">Useful life (months)</span><input id="a-life" inputmode="numeric" autocomplete="off" /></label>
+            <label for="a-in"><span id="l-a-in">In service from</span><input id="a-in" type="date" /></label>
+          </div>
+          <button id="asset-add-go" type="button">Add to the register</button>
+          <p class="status" id="asset-add-status" role="status" aria-live="polite"></p>
+        </details>
+
+        <h2 id="run-h">Monthly depreciation</h2>
+        <p class="lead" id="run-lede"></p>
+        <button id="run-depreciation" type="button">Run depreciation for this month</button>
+        <p class="status" id="run-status" role="status" aria-live="polite"></p>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script type="module" src="./finance-close.js"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>
