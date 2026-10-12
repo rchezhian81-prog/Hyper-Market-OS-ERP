@@ -72,7 +72,7 @@ describe.each(backings)('OB-66 — a damaged arrival under an open count: good u
     await ok(call('POST', '/v1/org/nodes/S1', 'u-owner', { kind: 'branch', name: 'Store 1', parentId: 'C1', companyId: 'C1' }), 'store');
     await ok(call('POST', '/v1/org/nodes/S1-BACK', 'u-owner', { kind: 'warehouse', name: 'Store 1 back store', parentId: 'S1', companyId: 'C1' }), 'back store');
     for (const [id, loc, qty] of [['s-floor', 'S1', 20], ['s-back', 'S1-BACK', 10]] as const) {
-      await ok(call('POST', '/v1/inventory/movements', 'u-owner', { movementId: id, productId: 'P2', locationId: loc, kind: 'received', quantityMinor: qty, uom: 'EA', occurredAt: `${TODAY}T01:00:00.000Z`, enteredBy: 'u-owner', unitCostMinor: 1_000 }), id);
+      await ok(call('POST', '/v1/inventory/movements', 'u-owner', { movementId: id, productId: 'P2', locationId: loc, kind: 'received', quantityMinor: qty, uom: 'EA', occurredAt: new Date(Date.now() - 60_000).toISOString(), enteredBy: 'u-owner', unitCostMinor: 1_000 }), id);
     }
     // The back store sends 6 to the floor — in transit when the count opens.
     await ok(call('POST', '/v1/floor/indents/ind-1', 'u-plan', { fromLocationId: 'S1-BACK', toLocationId: 'S1', lines: [{ productId: 'P2', quantityMinor: 6, uom: 'EA' }], reason: 'shelf 4 empty' }), 'indent');
