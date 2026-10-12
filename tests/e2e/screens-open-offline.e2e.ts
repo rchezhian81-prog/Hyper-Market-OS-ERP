@@ -896,7 +896,9 @@ describe.skipIf(!HAVE_BROWSER)('every screen opens with the network cut (SYNC-06
 
       await expectNetworkCut(page);
       expect(await page.evaluate(() => typeof (globalThis as unknown as BrowserWindow).shellCachedAt === 'string')).toBe(true);
-      expect(failed.filter((f) => f.endsWith('.js'))).toEqual([]);
+      // The built bundle is network-FIRST by design (sw.js BUILT): offline its network attempt fails and the worker answers
+      // from its cache — that attempt is expected (seen on CI, where the bundle exists). Every COMMITTED script must load.
+      expect(failed.filter((f) => f.endsWith('.js') && !f.endsWith('/web-erp.bundle.js'))).toEqual([]);
       expect((await page.textContent('#bins-heading'))?.trim()).not.toBe('—');
     } finally {
       await context.close();
