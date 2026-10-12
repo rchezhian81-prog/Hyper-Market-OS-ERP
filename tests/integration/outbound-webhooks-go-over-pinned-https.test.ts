@@ -60,7 +60,14 @@ beforeAll(async () => {
     req.on('end', () => {
       seen.push({ path: req.url ?? '', host: req.headers.host, sni: (req.socket as TLSSocket).servername, body, headers: req.headers });
       if (req.url?.startsWith('/redirect')) { res.writeHead(302, { location: `https://${PARTNER}:${port}/landed` }); res.end(); return; }
-      if (req.url === '/huge') { res.writeHead(200); res.end(Buffer.alloc(4 * 1024 * 1024, 120)); return; }
+      if (req.url === '/huge') {
+        // A reply that never ends: only a reader that stops at its cap gets the status before the total timeout.
+        res.writeHead(200);
+        const more = (): void => { if (!res.destroyed && !res.writableEnded) res.write(Buffer.alloc(64 * 1024, 120), () => setImmediate(more)); };
+        res.on('close', () => { /* the reader hung up */ });
+        more();
+        return;
+      }
       if (req.url === '/slow') { held.push(req.socket); return; } // never answers
       res.writeHead(200, { 'content-type': 'text/plain' }); res.end('ok');
     });
@@ -101,7 +108,7 @@ describe('D14 round 12 — the HTTPS transport itself, against a local TLS serve
     expect(hits('/redirect')).toBe(1);
     expect(hits('/landed')).toBe(0);
 
-    // A huge reply is read only up to the cap — the status is known, the rest dropped, quickly.
+    // An endless reply is read only up to the cap — the status is known, the rest dropped, well inside the total timeout.
     const before = Date.now();
     expect(await t.send({ url: `https://${PARTNER}:${port}/huge`, headers, body, address: LOOP })).toEqual({ status: 200 });
     expect(Date.now() - before).toBeLessThan(800);
