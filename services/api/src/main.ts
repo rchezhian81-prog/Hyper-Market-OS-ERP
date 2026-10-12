@@ -25,7 +25,7 @@ import { SqlSubjectKeyStore, personalDataKek, type SubjectKeyStore } from '../..
 import { SqlSnapshotStore, type SnapshotStore } from '../../../packages/persistence/src/snapshot';
 import { SqlConfigVersionStore } from '../../../packages/persistence/src/config-store';
 import { SqlNumberSeriesStore, type NumberSeriesStore } from '../../../packages/persistence/src/number-series-store';
-import { pgPoolClient } from '../../../packages/persistence/src/pg-client';
+import { pgPoolClient, listenForEndedConnections, isSessionEnded, describeDbError } from '../../../packages/persistence/src/pg-client';
 import { DurableTenantSettings, SETTINGS } from '../../../packages/tenant/src/index';
 import {
   buildRouter, loadConfig, startHttpServer, CLOUD_API_CONFIG, SqlIdempotencyStore, SqlAuditSink,
@@ -1856,7 +1856,10 @@ export function buildSurface(deps: {
       now, alerts: empty([]), recordAlertEvent: () => {}, lastSaleSyncedAt: empty(undefined), catalogueBuiltAt: empty(undefined),
       connectorQueues: empty([]), integrationHealth: empty({}), backups: empty([]), recordBackup: () => {},
       alertRules: empty(undefined), defineAlertRules: () => {},
-    } : { ...observedHealthAdapter({ store, now }), boxDiskWarnHours: (t: string) => settings.value(t, SETTINGS.BOX_DISK_WARN_HOURS) }),
+    } : {
+      ...observedHealthAdapter({ store, now }), boxDiskWarnHours: (t: string) => settings.value(t, SETTINGS.BOX_DISK_WARN_HOURS),
+      boxUnsentWarnHours: (t: string) => settings.value(t, SETTINGS.BOX_UNSENT_WARN_HOURS),
+    }),
     // Device & app-version control (M33-FR-02/04 / A-10) — evaluate whether a device may trade / must
     // upgrade / was killed / is unregistered (a kill never interrupts a sale), and the fleet-at-a-glance;
     // both refuse a policy that would brick the fleet before deciding. Stateless; the durable registry
@@ -2108,9 +2111,19 @@ export async function startApi(
   // than DB_IDLE_IN_TRANSACTION_TIMEOUT_MS (default one minute) — a leaked transaction can never hold the bill-number
   // high-water's fence for hours. Set as a session startup option, so it binds this process's connections only (the
   // migration runner and operator tools keep their own).
+  // Verifier r21 IDLE-CRASH: a limit so short that ordinary work trips it would turn normal load into a stream of failed
+  // requests — refused at boot, by name, like every other configuration fault (EX_CONFIG).
+  const idleProblem = idleInTransactionTimeoutProblem(settings['DB_IDLE_IN_TRANSACTION_TIMEOUT_MS']);
+  if (idleProblem !== undefined) {
+    err(`\n${idleProblem}\n\n`);
+    return undefined;
+  }
   const session = databaseSessionOptions(settings['DB_IDLE_IN_TRANSACTION_TIMEOUT_MS']);
   const idleInTransactionMs = session.idleInTransactionMs;
   const db = new Pool({ connectionString: settings['DATABASE_URL']!, max: 10, options: session.options });
+  // Verifier r21 IDLE-CRASH: the database ending an IDLE pooled connection is said in the log and the process keeps serving
+  // (the pool has already dropped it). A CHECKED-OUT connection is handled per transaction in pg-client.ts.
+  listenForEndedConnections(db, { onConnectionEnded: (detail) => { err(`${detail}\n`); } });
   // Fail fast at boot if the database is unreachable — the same eager check the single client made,
   // now issued through the pool (which connects lazily otherwise).
   await db.query('SELECT 1');
@@ -2365,7 +2378,10 @@ export async function startApi(
   const opsAlertWorker = startOpsAlertWorker({
     tenants: async () => workerTenants,
     // OB-78: the worker raises the early disk warning on the same owner's line as the read.
-    deps: { ...observedHealthAdapter({ store, now }), boxDiskWarnHours: (t: string) => new DurableTenantSettings(new SqlConfigVersionStore(pgPoolClient(db))).value(t, SETTINGS.BOX_DISK_WARN_HOURS) },
+    deps: {
+      ...observedHealthAdapter({ store, now }), boxDiskWarnHours: (t: string) => new DurableTenantSettings(new SqlConfigVersionStore(pgPoolClient(db))).value(t, SETTINGS.BOX_DISK_WARN_HOURS),
+      boxUnsentWarnHours: (t: string) => new DurableTenantSettings(new SqlConfigVersionStore(pgPoolClient(db))).value(t, SETTINGS.BOX_UNSENT_WARN_HOURS),
+    },
     ...(transport === undefined ? {} : { transport }),
     intervalMs: providers.opsAlertWorkerIntervalMs ?? 60_000,
     now,
@@ -2429,6 +2445,52 @@ export async function main(env: Readonly<Record<string, string | undefined>> = p
   };
   process.on('SIGTERM', () => { shutdown('SIGTERM'); });
   process.on('SIGINT', () => { shutdown('SIGINT'); });
+
+  // 6 — The last resort (verifier r21 IDLE-CRASH). Anything that escapes every request's own handling lands here, and the
+  // policy is stated, not implied:
+  //   • a database CONNECTION that died (its session ended) — said loudly, and the API KEEPS SERVING: the pool has already
+  //     discarded that connection, and the database rolled back whatever transaction was on it (all-or-nothing);
+  //   • anything else — said loudly, then the API drains and EXITS (code 70), because its state is no longer known; the
+  //     container's restart policy brings it back, and the tills keep selling meanwhile (hard rule #1).
+  // Never swallowed silently in either case (P-08).
+  const lastResort = (kind: string, e: unknown) => {
+    const verdict = lastResortVerdict(e);
+    process.stderr.write(`\n*** ${kind}: ${describeDbError(e)}\n${e instanceof Error && e.stack !== undefined ? `${e.stack}\n` : ''}`
+      + (verdict === 'keep_serving'
+        ? '*** a database connection ended under the API; it was discarded, nothing on it was saved, and the API keeps serving.\n\n'
+        : '*** the API cannot vouch for its own state after this, so it drains and exits (70); the container restarts it.\n\n'));
+    if (verdict === 'exit') {
+      process.exitCode = 70; // EX_SOFTWARE
+      setTimeout(() => { process.exit(70); }, 10_000).unref();
+      void running.stop().finally(() => { process.exit(70); });
+    }
+  };
+  process.on('uncaughtException', (e) => { lastResort('uncaught exception', e); });
+  process.on('unhandledRejection', (e) => { lastResort('unhandled rejection', e); });
+}
+
+/**
+ * Verifier r21 IDLE-CRASH — what the process does with an error nothing else handled: keep serving when it is only a
+ * database connection whose session ended (the pool replaces it; the database already rolled back its transaction), exit
+ * for anything else (unknown state). Exported so the policy is tested, not just written down.
+ */
+export function lastResortVerdict(e: unknown): 'keep_serving' | 'exit' {
+  return isSessionEnded(e) ? 'keep_serving' : 'exit';
+}
+
+/** The shortest idle-in-transaction limit the API accepts (10 s); 0 means off. Anything between is refused at boot. */
+export const MIN_IDLE_IN_TRANSACTION_TIMEOUT_MS = 10_000;
+
+/**
+ * Verifier r21 IDLE-CRASH: `DB_IDLE_IN_TRANSACTION_TIMEOUT_MS` must be 0 (off) or at least {@link MIN_IDLE_IN_TRANSACTION_TIMEOUT_MS}.
+ * A typo such as "60" (meant as seconds) would end ordinary transactions mid-flight. Returns the refusal, or undefined.
+ */
+export function idleInTransactionTimeoutProblem(configured: string | undefined): string | undefined {
+  if (configured === undefined) return undefined;
+  const n = Number(configured);
+  if (Number.isInteger(n) && (n === 0 || n >= MIN_IDLE_IN_TRANSACTION_TIMEOUT_MS)) return undefined;
+  return `DB_IDLE_IN_TRANSACTION_TIMEOUT_MS is "${configured}" — it must be 0 (off) or a whole number of milliseconds of at least ${MIN_IDLE_IN_TRANSACTION_TIMEOUT_MS} (10 seconds). `
+    + 'It is in MILLISECONDS: one minute is 60000. A shorter limit would end ordinary head-office transactions while they run.';
 }
 
 /**

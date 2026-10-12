@@ -322,7 +322,7 @@ import { PersonalDataSealingStore, type PersonalDataPolicy, type SubjectKeyStore
 import { figure, sourceFreshness, syncedThrough } from '../../reporting/src/index';
 import type { ReportingDeps, Figure, SourceFreshness, StoreSyncReport } from '../../reporting/src/index';
 import { latestDomainReports, latestPerStore, type SyncWatermarkRecord } from '../../platform/src/sync-watermarks';
-import type { BoxHealthRecord, BillNumberFinding } from '../../platform/src/box-health';
+import type { BoxHealthRecord, BillNumberFinding, RefusalAcknowledgement } from '../../platform/src/box-health';
 import { unreceivedCandidates, billNumberFindingsFor, judgeReportedIssued, PLAUSIBLE_ISSUED_AHEAD } from '../../platform/src/box-health';
 import type { BranchScope } from '../../kernel/src/index';
 import { tradingDayIn, tradingDayWindow, type TradingCalendar } from '../../../packages/calendar/src/index';
@@ -13507,9 +13507,12 @@ export function mergeStoreSync(
 
 /** M35-FR-03: every health report each store computer made (append-only; the latest per store is read). */
 const BOX_HEALTH_STREAM = streamName(STREAM.org, 'store-computer-health');
+/** Verifier r21 BOX-2: a person's acknowledgements of refused box reports (append-only). */
+const BOX_REFUSAL_ACK_STREAM = streamName(STREAM.org, 'store-computer-refusal-acknowledgements');
 export function boxHealthAdapter(input: { readonly store: EventStore; readonly snapshots?: SnapshotStore }): {
   records: (tenantId: string) => Promise<readonly BoxHealthRecord[]>;
   record: (tenantId: string, r: BoxHealthRecord) => Promise<BoxHealthRecord>;
+  acknowledge: (tenantId: string, a: RefusalAcknowledgement) => Promise<RefusalAcknowledgement>;
   issuedAndBanked: (tenantId: string) => Promise<{ issuedPrefixes: ReadonlyMap<string, ReadonlySet<string>>; banked: ReadonlyMap<string, number> }>;
 } {
   return {
@@ -13520,6 +13523,14 @@ export function boxHealthAdapter(input: { readonly store: EventStore; readonly s
       banked: await bankedReceiptCounts(input.store, tenantId, input.snapshots === undefined ? undefined : { snapshots: input.snapshots }),
     }),
     records: (tenantId) => allOf<BoxHealthRecord>(input.store, tenantId, BOX_HEALTH_STREAM, 'StoreComputerHealthReported'),
+    // Verifier r21 BOX-2: one acknowledgement per (store, prefix, refused count) — a re-sent one collapses onto the first.
+    acknowledge: async (tenantId, a) => {
+      const key = `box-refusal-ack-${tenantId}-${a.storeId}-${a.prefix}-${a.through}`;
+      const res = await input.store.append(tenantId, BOX_REFUSAL_ACK_STREAM, makeEvent({
+        id: keyedEventId('box-refusal-ack', key), type: 'BoxReportRefusalAcknowledged', occurredAt: a.at, idempotencyKey: key, source: 'api/platform', payload: a,
+      }));
+      return res.record.event.payload as RefusalAcknowledgement;
+    },
     record: async (tenantId, r) => {
       // Round 13 (verifier B5 low · hard rule #10): keyed on WHAT the box said as well as when — a retried POST of the same
       // report collapses onto the first, but a DIFFERENT report stamped with the same moment is its own record, never
@@ -14712,8 +14723,9 @@ export async function billNumberFindingsOf(store: EventStore, tenantId: string, 
     if (missing.length > 0) unreceived.set(c.storeId, [...(unreceived.get(c.storeId) ?? []), { prefix: c.prefix, numbers: missing, since: c.since, capped: c.capped }]);
   }
   const out = new Map<string, readonly BillNumberFinding[]>();
+  const acknowledged = await allOf<RefusalAcknowledgement>(store, tenantId, BOX_REFUSAL_ACK_STREAM, 'BoxReportRefusalAcknowledged');
   for (const storeId of new Set(records.map((r) => r.storeId))) {
-    const f = billNumberFindingsFor({ storeId, records: judged, at, unreceived: unreceived.get(storeId) ?? [], banked });
+    const f = billNumberFindingsFor({ storeId, records: judged, at, unreceived: unreceived.get(storeId) ?? [], banked, acknowledged });
     if (f.length > 0) out.set(storeId, f);
   }
   return out;
@@ -14746,9 +14758,9 @@ export async function bankedReceiptCounts(
       if (typeof r.storeId !== 'string' || !Array.isArray(r.receiptNumbersIssued)) return [];
       return (r.receiptNumbersIssued as { prefix?: unknown; through?: unknown }[]).flatMap((x) =>
         (typeof x.prefix === 'string' && typeof x.through === 'number' && Number.isSafeInteger(x.through) && x.through >= 1 && x.through <= RECEIPT_COUNTER_MAX
-          ? [[`${r.storeId as string}\u0000${x.prefix}`, x.through] as const] : []));
+          ? [[`${r.storeId as string}${BOX_KEY_SEP}${x.prefix}`, x.through] as const] : []));
     });
-    const mine = `${opts.storeId}\u0000`;
+    const mine = `${opts.storeId}${BOX_KEY_SEP}`;
     // Verifier r19 BOX-1: only this store's own prefixes (issued to one of its tills, or its own `R-<lane>-` numbering) —
     // also for a report kept before head office judged reports at arrival.
     const issued = await issuedPrefixStores(store, tenantId);
@@ -14766,18 +14778,86 @@ export async function bankedReceiptCounts(
       if (count <= capOf(prefix)) raise(prefix, count); else implausible = true;
     }
     if (implausible) {
-      for (const e of await store.readStream(tenantId, BOX_HEALTH_STREAM, { type: 'StoreComputerHealthReported' })) {
-        const r = e.event.payload as { storeId?: unknown; receiptNumbersIssued?: unknown };
-        if (r.storeId !== opts.storeId || !Array.isArray(r.receiptNumbersIssued)) continue;
-        for (const x of r.receiptNumbersIssued as { prefix?: unknown; through?: unknown }[]) {
-          if (typeof x.prefix !== 'string' || typeof x.through !== 'number' || !Number.isSafeInteger(x.through) || x.through < 1 || !own(x.prefix)) continue;
-          if (x.through <= capOf(x.prefix)) raise(x.prefix, x.through);
-        }
+      // Verifier r21 (cost): the plausible maximum is kept in a snapshot (`plausibleReportedCounts`), so the whole stream is
+      // read ONCE — later pack builds read only the reports since.
+      for (const [key, count] of await plausibleReportedCounts(store, snapshots, tenantId, capOf)) {
+        const prefix = key.slice(mine.length);
+        if (key.startsWith(mine) && own(prefix)) raise(prefix, count);
       }
     }
   }
   return out;
 }
+
+/**
+ * Verifier r21 (cost) — the highest PLAUSIBLE count each store's box reported per prefix (store␟prefix → count), for the
+ * rare store with an implausible report kept before head office judged reports at arrival. Before, every pack build for that
+ * store re-read the WHOLE box-health stream for as long as that report existed; now the answer is SNAPSHOTTED:
+ *   • per key, the highest count at or below the cap (`plausible`) and the distinct counts above it (`above`, kept because
+ *     the cap — banked + PLAUSIBLE_ISSUED_AHEAD — only ever rises, so a count above it today may be plausible tomorrow;
+ *     each read re-judges them against today's cap);
+ *   • the snapshot advances only over reports at least HIGH_WATER_LAG positions behind the newest read (an append that
+ *     commits late is still in the tail), and only every HIGH_WATER_EVERY reports, as the receipt high-water does.
+ * So the full stream is read once; afterwards a read is the snapshot plus a short tail. (A report missed by a very late
+ * commit would only under-state one pass — the box re-reports its running counts every pass.) Disposable: delete the
+ * snapshot and the next read rebuilds the same answer.
+ */
+const BOX_PLAUSIBLE_PROJECTION = 'box-reported-plausible@1';
+interface BoxPlausibleState { readonly keys: Record<string, { readonly plausible: number; readonly above: readonly number[] }> }
+async function plausibleReportedCounts(
+  store: EventStore, snapshots: SnapshotStore, tenantId: string, capOf: (prefix: string) => number,
+): Promise<ReadonlyMap<string, number>> {
+  const base = (await snapshots.load<BoxPlausibleState>(tenantId, BOX_HEALTH_STREAM, BOX_PLAUSIBLE_PROJECTION))?.result;
+  const tail = [...await store.readStream(tenantId, BOX_HEALTH_STREAM, { sinceSeq: base?.watermarkSeq ?? 0, type: 'StoreComputerHealthReported' })].sort((a, b) => a.seq - b.seq);
+  type Keyed = Map<string, { plausible: number; above: Set<number> }>;
+  const prefixOf = (key: string): string => key.slice(key.indexOf(BOX_KEY_SEP) + 1);
+  const put = (m: Keyed, key: string, count: number): void => {
+    const cur = m.get(key) ?? { plausible: 0, above: new Set<number>() };
+    if (count <= capOf(prefixOf(key))) { if (count > cur.plausible) cur.plausible = count; } else cur.above.add(count);
+    m.set(key, cur);
+  };
+  const fold = (m: Keyed, payload: unknown): void => {
+    const r = payload as { storeId?: unknown; receiptNumbersIssued?: unknown };
+    if (typeof r.storeId !== 'string' || !Array.isArray(r.receiptNumbersIssued)) return;
+    for (const x of r.receiptNumbersIssued as { prefix?: unknown; through?: unknown }[]) {
+      if (typeof x.prefix !== 'string' || typeof x.through !== 'number' || !Number.isSafeInteger(x.through) || x.through < 1 || x.through > RECEIPT_COUNTER_MAX) continue;
+      put(m, `${r.storeId}${BOX_KEY_SEP}${x.prefix}`, x.through);
+    }
+  };
+  // The snapshot's state, re-judged against today's cap (a count above yesterday's cap may be within today's).
+  const fromBase = (): Keyed => {
+    const m: Keyed = new Map();
+    for (const [key, v] of Object.entries(base?.state.keys ?? {})) {
+      m.set(key, { plausible: v.plausible, above: new Set<number>() });
+      for (const a of v.above) put(m, key, a);
+    }
+    return m;
+  };
+  const settled = tail.slice(0, Math.max(0, tail.length - HIGH_WATER_LAG));
+  if (settled.length >= HIGH_WATER_EVERY || (base === undefined && settled.length > 0)) {
+    const snap = fromBase();
+    for (const e of settled) fold(snap, e.event.payload);
+    const last = settled[settled.length - 1]!;
+    await snapshots.save<BoxPlausibleState>({
+      tenantId, stream: BOX_HEALTH_STREAM, projection: BOX_PLAUSIBLE_PROJECTION, takenAt: last.event.occurredAt,
+      result: {
+        state: { keys: Object.fromEntries([...snap].map(([k, v]) => [k, { plausible: v.plausible, above: [...v.above].sort((a, b) => a - b) }])) },
+        watermarkSeq: last.seq, lastEventAt: last.event.occurredAt, eventCount: (base?.eventCount ?? 0) + settled.length,
+      },
+    });
+  }
+  const out = fromBase();
+  for (const e of tail) fold(out, e.event.payload);
+  return new Map([...out].filter(([, v]) => v.plausible > 0).map(([k, v]) => [k, v.plausible]));
+}
+
+/**
+ * The separator in a store-and-prefix key that is SAVED in a snapshot. Verifier r21 (found by the cost proof): it was NUL
+ * (\u0000), which PostgreSQL's jsonb refuses ("unsupported Unicode escape sequence") — so on the production database the
+ * box-health high-water snapshot could never be saved, and once a store's box had sent enough reports every store-pack build
+ * for that store failed. The unit separator (U+001F) is valid in jsonb and in no store id or bill-number prefix.
+ */
+const BOX_KEY_SEP = '\u001f';
 
 const numberKey = (n: unknown): (readonly [string, number])[] => {
   const s = splitReceiptNumber(n);

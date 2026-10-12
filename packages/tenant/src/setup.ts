@@ -88,6 +88,7 @@ const TILL_SPEND_CAP = numberRule({ min: 0, max: 10_000_000, whole: true }, 'Giv
 const validateStringList: SetupValidator = (v) =>
   isStringArray(v) ? null : 'Give a list of names (an empty list means none).';
 const WARN_HOURS = numberRule({ min: 1, max: 720, whole: true }, 'Give a whole number of trading hours, from 1 to 720.');
+const UNSENT_WARN_HOURS = numberRule({ min: 1, max: 72, whole: true }, 'Give a whole number of hours, from 1 to 72.');
 const validatePaperFormat: SetupValidator = (v) =>
   isString(v) && PAPER_FORMATS.some((f) => f.id === v)
     ? null : `Choose a paper size: ${PAPER_FORMATS.map((f) => f.id).join(', ')}.`;
@@ -225,6 +226,14 @@ export const SETUP_CATALOGUE: readonly SetupItem[] = [
     required: false,
     question: 'How many hours of trading before a store computer\'s disk would fill should head office warn you? (48 by default.)',
     ...WARN_HOURS,
+  },
+  {
+    // Verifier r21 UNSENT-CEILING: bills waiting on a store computer, unsent, longer than this are named on the health page.
+    setting: SETTINGS.BOX_UNSENT_WARN_HOURS,
+    group: 'check_default',
+    required: false,
+    question: 'How many hours may bills wait on a store computer, unsent, before head office warns you? (2 by default.)',
+    ...UNSENT_WARN_HOURS,
   },
 ];
 

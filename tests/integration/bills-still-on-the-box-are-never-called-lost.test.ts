@@ -24,9 +24,11 @@ import { PLAUSIBLE_ISSUED_AHEAD, UNRECEIVED_GRACE_MINUTES } from '../../services
  *      head office never received named (the six it banked are found in one indexed read, not one at a time).
  *   2. An older box that gives no per-prefix queue: its whole queue stands in — anything unsent, nothing is named; empty
  *      for the grace, the missing numbers are named.
- *   3. BOX-2: a store computer's implausible report (S1L1- through 999,999) is refused and shown; once a LATER report for
- *      that prefix is accepted and everything it put on a bill is banked, the warning clears (not after 7 days). A later
- *      plausible report with bills NOT yet banked keeps it.
+ *   3. BOX-2 (verifier r21 rule): a store computer's implausible report is refused and shown, and it stays a finding until
+ *      head office's OWN banked count catches up to the refused claim, or a person acknowledges it — a LATER report from
+ *      the box (lower, plausible, everything banked) never clears it (probe zz-v21 C: refused 10,600, then "through 50").
+ *      The acknowledgement needs platform.alert.manage, names the exact refused count, and keeps who, when and why; a
+ *      higher refusal after it is a new finding.
  *   4. BOX-2: a report kept BEFORE head office judged reports at arrival (written straight to the ledger, as an old
  *      release did) is re-judged against the 10,000 cap at read: it never moves the store pack's `bankedThrough` and
  *      raises no "never received" — the till keeps selling from where head office banked.
@@ -172,24 +174,60 @@ async function anOlderBoxsWholeQueueStandsIn(h: ApiHarness): Promise<void> {
   expect(JSON.stringify(bad.body)).toMatch(/unsent must be/);
 }
 
-async function aRefusedReportClearsOnceTheBoxIsFine(h: ApiHarness): Promise<void> {
-  const { call } = await shop(h);
+/** Bank receipt numbers straight onto the sales stream (what the sales intake writes) — thousands at once, for the banked-catches-up case. */
+const bankDirect = async (store: EventStore, T: string, prefix: string, from: number, to: number): Promise<void> => {
+  for (let n = from; n <= to; n += 500) {
+    await store.appendBatch(T, Array.from({ length: Math.min(500, to - n + 1) }, (_, j) => {
+      const rn = `${prefix}${pad(n + j)}`;
+      return { stream: STREAM.sales, event: makeEvent({ id: `receipt-${rn}`, type: 'ReceiptNumberIssued', occurredAt: AT, idempotencyKey: `receipt-${T}-${rn}`, source: 'tests', payload: { receiptNumber: rn, saleId: `S-${rn}` } }) };
+    }));
+  }
+};
+
+async function aRefusedReportStaysUntilBankedOrAcknowledged(h: ApiHarness, store: EventStore): Promise<void> {
+  const { T, call } = await shop(h);
+  await h.provisionRole(T, 'u-cash', 'cashier', [S1]);
   await bank(call, 1, 150);
-  const r = await report(call, [{ prefix: P, through: 999_999, soldThrough: 999_999 }], 0);
+  const r = await report(call, [{ prefix: P, through: 10_600, soldThrough: 10_600 }], 0);
   expect((r.body as { recorded: { receiptNumbersRefused?: { because: string }[] } }).recorded.receiptNumbersRefused).toEqual([expect.objectContaining({ because: 'beyond_plausible_advance' })]);
-  expect((await refusedFindings(call)).map((f) => f.prefix)).toEqual([P]);
-  // A later plausible report, but bills it put on a bill are not all banked yet: the warning stays.
-  await report(call, [{ prefix: P, through: 160, soldThrough: 160, unsent: { count: 10, from: 151, to: 160 } }], 10);
-  expect((await refusedFindings(call)).map((f) => f.prefix)).toEqual([P]);
-  // They arrive and the box reports again: plausible and everything banked — the warning clears (not 7 days later).
+  expect((await refusedFindings(call)).map((f) => f.through)).toEqual([10_600]);
+  // THE PROBE (zz-v21 C): a minute later the box reports a LOWER count — plausible, everything banked. The warning STAYS:
+  // an honest box's count never goes down, so a box's own later word never clears a refusal.
+  await report(call, [{ prefix: P, through: 50, soldThrough: 50, unsent: { count: 0 } }], 0);
+  expect((await refusedFindings(call)).map((f) => f.through)).toEqual([10_600]);
   await bank(call, 151, 160);
   await report(call, [{ prefix: P, through: 160, soldThrough: 160, unsent: { count: 0 } }], 0);
+  expect((await refusedFindings(call)).map((f) => f.through)).toEqual([10_600]);
+  expect((await refusedFindings(call))[0]!.detail).toMatch(/This stays until head office has banked that many, or a person acknowledges it/);
+
+  // A person acknowledges it. Refused: a cashier (no platform.alert.manage); a count that was never refused; no reason.
+  const ack = (user: string, body: unknown) => call('POST', '/v1/store-computers/bill-number-refusals/acknowledgements', user, body);
+  expect((await ack('u-cash', { storeId: S1, prefix: P, through: 10_600, reason: 'checked the box, a restore test' })).status).toBe(403);
+  const wrong = await ack(OWNER, { storeId: S1, prefix: P, through: 10_601, reason: 'checked the box, a restore test' });
+  expect(wrong.status).toBe(404);
+  expect(JSON.stringify(wrong.body)).toMatch(/no_such_refused_report/);
+  expect((await ack(OWNER, { storeId: S1, prefix: P, through: 10_600, reason: 'ok' })).status).toBe(400);
+  expect((await refusedFindings(call)).map((f) => f.through)).toEqual([10_600]); // nothing refused cleared it
+  const done = await ack(OWNER, { storeId: S1, prefix: P, through: 10_600, reason: 'checked the box: a restore rehearsal, no bills lost' });
+  expect(done.status).toBe(201);
+  expect((done.body as { acknowledged: Record<string, unknown> }).acknowledged).toMatchObject({ storeId: S1, prefix: P, through: 10_600, by: OWNER, reason: 'checked the box: a restore rehearsal, no bills lost' });
   expect(await refusedFindings(call)).toEqual([]);
   const c = (await observed(call)).health.components.find((x) => x.name === `box_bill_numbers:${S1}`);
-  expect(c?.detail ?? '').not.toMatch(/999999/);
-  // The refusal itself is kept as evidence (append-only): a new implausible report is a new warning.
+  expect(c?.detail ?? '').not.toMatch(/10600/);
+  // The refusal itself is kept as evidence (append-only): a new, higher implausible report is a new warning.
   await report(call, [{ prefix: P, through: 999_998, soldThrough: 999_998 }], 0);
   expect((await refusedFindings(call)).map((f) => f.through)).toEqual([999_998]);
+
+  // The other way out: head office's OWN banked count catches up to a refused claim (it was true after all).
+  const Q = 'S1L2-';
+  expect((await call('POST', `/v1/stores/${S1}/tills/lane-2/receipt-prefix`, OWNER, { prefix: Q })).status).toBe(201);
+  await bankDirect(store, T, Q, 1, 100);
+  await report(call, [{ prefix: Q, through: 10_150, soldThrough: 10_150 }], 0); // 100 banked + 10,000: refused
+  expect((await refusedFindings(call)).filter((f) => f.prefix === Q).map((f) => f.through)).toEqual([10_150]);
+  await bankDirect(store, T, Q, 101, 10_149);
+  expect((await refusedFindings(call)).filter((f) => f.prefix === Q).map((f) => f.through)).toEqual([10_150]); // one short: stays
+  await bankDirect(store, T, Q, 10_150, 10_150);
+  expect((await refusedFindings(call)).filter((f) => f.prefix === Q)).toEqual([]);
 }
 
 async function aReportKeptBeforeJudgingIsCapped(h: ApiHarness, store: EventStore): Promise<void> {
@@ -220,7 +258,10 @@ async function aReportKeptBeforeJudgingIsCapped(h: ApiHarness, store: EventStore
 describe('verifier r20 LOST-1 / BOX-2: bills still on the box are never called lost (memory)', () => {
   it('a long catch-up after an outage names nothing; only truly missing numbers are named', async () => { await aLongCatchUpRaisesNothing(apiHarness()); }, 180_000);
   it('an older box: its whole queue stands in', async () => { await anOlderBoxsWholeQueueStandsIn(apiHarness()); }, 60_000);
-  it('a refused report clears once later reports are plausible and everything is banked', async () => { await aRefusedReportClearsOnceTheBoxIsFine(apiHarness()); }, 60_000);
+  it('BOX-2: a refused report stays until head office banks that many or a person acknowledges it — never on a later lower report', async () => {
+    const h = apiHarness();
+    await aRefusedReportStaysUntilBankedOrAcknowledged(h, h.store);
+  }, 120_000);
   it('a report kept before judging is re-judged against the cap', async () => {
     const h = apiHarness();
     await aReportKeptBeforeJudgingIsCapped(h, h.store);
@@ -237,6 +278,6 @@ describe.skipIf(DATABASE_URL === undefined)('verifier r20 LOST-1 / BOX-2: bills 
   };
   it('a long catch-up after an outage names nothing; only truly missing numbers are named', async () => { await onPg((h) => aLongCatchUpRaisesNothing(h)); }, 600_000);
   it('an older box: its whole queue stands in', async () => { await onPg((h) => anOlderBoxsWholeQueueStandsIn(h)); }, 120_000);
-  it('a refused report clears once later reports are plausible and everything is banked', async () => { await onPg((h) => aRefusedReportClearsOnceTheBoxIsFine(h)); }, 120_000);
+  it('BOX-2: a refused report stays until head office banks that many or a person acknowledges it — never on a later lower report', async () => { await onPg((h, store) => aRefusedReportStaysUntilBankedOrAcknowledged(h, store)); }, 300_000);
   it('a report kept before judging is re-judged against the cap', async () => { await onPg((h, store) => aReportKeptBeforeJudgingIsCapped(h, store)); }, 120_000);
 });

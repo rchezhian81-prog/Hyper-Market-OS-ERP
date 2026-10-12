@@ -5,6 +5,12 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Coordinated programme · Round 22 — verifier r21 closed (13 October 2026)
+
+- **Built and integration-tested (memory + PostgreSQL); no staff UAT:** head office keeps serving when the database ends a stuck transaction (answer 500 `database_ended_transaction`, no crash; idle timeout must be 0 or at least 10 s); bills waiting on a store computer longer than the owner's line (new setting `platform.box_unsent_warn_hours`, default 2, range 1–72, on Store setup) are warned, and a store computer that contradicts itself is shown; bills the store computer gave up on say "needs a person — do NOT re-enter"; a refused bill-number report clears only when banked bills reach the claim or a person with alert rights acknowledges it (`POST /v1/store-computers/bill-number-refusals/acknowledgements`, audited); a bill not banked lists every effect it holds back; the release script refuses to run with more than one API container; the plausible-number snapshot no longer breaks store-pack builds after ~64 store-computer reports.
+- **Full gate (13 Oct, PostgreSQL):** 11,480 unit/integration, 35 performance, 353 browser — all passed.
+- **Owner-confirmable (left at defaults):** box queue says "ok" under the 2-hour line; managers and owner may acknowledge a refused report.
+
 ## Coordinated programme · Round 21 — verifier r20 closed (13 October 2026)
 
 - **Built and integration-tested (memory + PostgreSQL); no staff UAT:** "bills issued but never received" only for numbers neither banked nor still waiting on the store computer (per-prefix unsent queue, grace from "no longer held"); settings guarded per item (40 different items at once all land; same item two ways still a visible 409; exhausted retries say "busy, try again"); never-received check reads by range (8 lanes ~50 ms, was ~2–3 s); a stalled bill-number fence shown on health after 5 min and API sessions bounded by `idle_in_transaction_session_timeout` = 60 s; refused-report warnings clear once later reports are plausible and all is banked; loyalty earned/spent only on the banked bill (`loyalty_on_a_bill_not_banked` exception otherwise); stranded-stock scope proved; runbooks note the one-time ZZ bills after the witness release and after rollback.

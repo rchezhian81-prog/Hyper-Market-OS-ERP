@@ -158,7 +158,8 @@ async function loyaltyFollowsTheBankedBill(h: ApiHarness): Promise<void> {
   const other = sale('S-IC3', 10_000, [
     { kind: 'loyalty_points', amountMinor: 500, points: 10 },
     { kind: 'store_credit', amountMinor: 2_000 },
-    { kind: 'cash', amountMinor: 7_500 },
+    { kind: 'exchange_credit', amountMinor: 1_000 },
+    { kind: 'cash', amountMinor: 6_500 },
   ]);
   const second = await bank(h, other, 'ic3-second') as unknown as Record<string, unknown>;
   expect(second).toMatchObject({ thisBillBanked: false, notBankedBecause: 'a_different_bill_holds_this_sale_id' });
@@ -170,6 +171,14 @@ async function loyaltyFollowsTheBankedBill(h: ApiHarness): Promise<void> {
   const ex = JSON.stringify((await h.request({ method: 'GET', path: '/v1/sales/exceptions', userId: 'u-owner', tenantId: A })).body);
   expect(ex).toMatch(/loyalty_on_a_bill_not_banked/);
   expect(ex).toMatch(/points worth 500 and store credit worth 2000/);
+  // Verifier r21 IC-3 breadth: the not-banked bill's OTHER effects are itemised too — every payment, what each leaves open,
+  // its stock and its coupons — so the person who banks it by hand settles all of it, not only the loyalty.
+  expect(ex).toMatch(/Not applied at head office — payments: points 500 \(10 points\), store credit 2000, exchange credit 1000, cash 6500/);
+  expect(ex).toMatch(/the cash \(6500\) is in till lane-1's drawer, which will count OVER by it at shift close until this bill is banked/);
+  expect(ex).toMatch(/the exchange credit \(1000\) was given against a return that IS banked, so its exchange clearing stays open by 1000/);
+  expect(ex).toMatch(/stock: P1 × 1 each — not taken out of stock at head office/);
+  expect(ex).toMatch(/coupons: any coupon redeemed for this sale id stays redeemed/);
+  expect(ex).toMatch(/Settle ALL of it when you bank it/);
   expect(ex).not.toMatch(/98400|55555/); // a member code, never the phone number
   // Re-sent (a lost reply, a fresh key): still nothing moves.
   await bank(h, other, 'ic3-second-again');

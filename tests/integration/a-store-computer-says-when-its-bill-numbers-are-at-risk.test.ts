@@ -365,6 +365,71 @@ async function billsStillOnTheBoxAreNotLost(cloud: Cloud): Promise<void> {
   });
 }
 
+/**
+ * Verifier r21 UNSENT-CEILING (b) and DEAD-LETTER-AS-LOST — through a REAL store computer whose sales cannot reach head
+ * office: its report says, per prefix, the bill still to send WITH when it was made (`oldestAt`); past the owner's two-hour
+ * line head office says "bills waiting on the store computer for 2 hours". Once the box gives up (its retry limit), the
+ * report lists the bill as given up on (`deadLettered`), and head office says "needs a person … do NOT re-enter from
+ * paper" — never "never received", however long it waits.
+ */
+async function billsWaitingAndGivenUpThroughTheBox(cloud: Cloud): Promise<void> {
+  expect((await cloud.call('POST', `/v1/stores/${S2}/tills/lane-8/receipt-prefix`, OWNER, { prefix: 'S2L8-' }, `pfx-lane-8-${randomUUID()}`)).status).toBe(201);
+  await withBoxes(cloud, async ({ boot, stop, dir }) => {
+    const viaCloud = globalThis.fetch;
+    type Said = { prefix: string; unsent?: { count: number; from?: number; to?: number; oldestAt?: string }; deadLettered?: { count: number; from?: number; to?: number } };
+    const reports: { queue: { unsent: number; deadLettered: number }; receiptNumbersIssued?: Said[] }[] = [];
+    globalThis.fetch = (async (url: string, init?: RequestInit): Promise<Response> => {
+      const u = String(url);
+      if (/\/v1\/sales$/.test(new URL(u).pathname)) throw new Error('timed out'); // the sales never get through
+      if (u.endsWith('/v1/store-computers/health-reports') && init?.body !== undefined) reports.push(JSON.parse(String(init.body)) as never);
+      return viaCloud(url, init);
+    }) as unknown as typeof globalThis.fetch;
+    const mine = async (kind: string) => ((await observed(cloud)).observed.boxes.find((b) => b.storeId === S2)?.billNumberFindings ?? [])
+      .filter((f) => f.prefix === 'S2L8-' && f.kind === kind);
+    try {
+      // A day-long box credential: this proof runs the clock past the two-hour line.
+      const e = await boot(await dir('r21-waiting'), 'lane-8', { CLOUD_API_TOKEN: TEST_IDP.issue({ sub: 'u-box-2', tenantId: cloud.tenant, branchId: S2, ttlSeconds: 86_400 }) });
+      await e.refreshStorePack!();
+      expect(await sell(e, 'lane-8')).toBe('S2L8-000001');
+      await e.syncOnce!(); // one failed attempt: still waiting
+      expect(await e.reportBoxHealth!()).toBe(true);
+      const first = reports.at(-1)!.receiptNumbersIssued!.find((x) => x.prefix === 'S2L8-')!;
+      expect(first.unsent).toMatchObject({ count: 1, from: 1, to: 1 });
+      expect(first.unsent!.oldestAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+      expect(first.deadLettered).toEqual({ count: 0 });
+      vi.useFakeTimers({ toFake: ['Date'], shouldAdvanceTime: true });
+      try {
+        vi.setSystemTime(Date.now() + 121 * 60_000);
+        expect(await e.reportBoxHealth!()).toBe(true);
+        const w = await mine('bills_waiting_on_box');
+        expect(w.length).toBe(1);
+        expect(w[0]!.detail).toMatch(/^bills waiting on the store computer for 2 hours: store S2's computer has held 1 bill\(s\) under S2L8-/);
+        // The box keeps trying and reaches its retry limit: the bill is GIVEN UP on — on the box, waiting for a person.
+        for (let i = 0; i < 8 && (reports.at(-1)?.queue.deadLettered ?? 0) === 0; i += 1) {
+          vi.setSystemTime(Date.now() + 10 * 60_000);
+          await e.syncOnce!();
+          expect(await e.reportBoxHealth!()).toBe(true);
+        }
+        const given = reports.at(-1)!.receiptNumbersIssued!.find((x) => x.prefix === 'S2L8-')!;
+        expect(given.unsent).toEqual({ count: 0 });
+        expect(given.deadLettered).toMatchObject({ count: 1, from: 1, to: 1 });
+        vi.setSystemTime(Date.now() + (UNRECEIVED_GRACE_MINUTES + 5) * 60_000);
+        expect(await e.reportBoxHealth!()).toBe(true);
+        expect(await mine('issued_never_received')).toEqual([]);
+        expect(await mine('bills_waiting_on_box')).toEqual([]);
+        const d = await mine('bills_dead_lettered_on_box');
+        expect(d.length).toBe(1);
+        expect(d[0]!.detail).toMatch(/^needs a person \(the store computer gave up sending; do NOT re-enter from paper\)/);
+      } finally {
+        vi.useRealTimers();
+      }
+      await stop(e);
+    } finally {
+      globalThis.fetch = viaCloud;
+    }
+  });
+}
+
 function memoryCloud(tenant: string): { cloud: Cloud; ready: Promise<void> } {
   const h = apiHarness();
   const cloud: Cloud = {
@@ -411,6 +476,10 @@ describe('verifier r19: a store computer says when its bill numbers are at risk 
     const { cloud, ready } = memoryCloud(randomUUID()); await ready;
     await billsStillOnTheBoxAreNotLost(cloud);
   }, 120_000);
+  it('r21: bills waiting past the line are said; a bill the box gave up on needs a person, never "lost"', async () => {
+    const { cloud, ready } = memoryCloud(randomUUID()); await ready;
+    await billsWaitingAndGivenUpThroughTheBox(cloud);
+  }, 120_000);
 });
 
 const DATABASE_URL = process.env['DATABASE_URL'];
@@ -445,4 +514,5 @@ describe.skipIf(DATABASE_URL === undefined)('verifier r19: a store computer says
   it('BOX-1: a report never locks a till', async () => { await aReportNeverLocksATill(cloud); }, 240_000);
   it('sales lost by a restore are named', async () => { await salesLostByARestore(cloud); }, 240_000);
   it('r20 LOST-1: bills still on the box are never called lost', async () => { await billsStillOnTheBoxAreNotLost(cloud); }, 240_000);
+  it('r21: bills waiting past the line are said; a bill the box gave up on needs a person', async () => { await billsWaitingAndGivenUpThroughTheBox(cloud); }, 240_000);
 });

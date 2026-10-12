@@ -102,6 +102,23 @@ repository settings. Nothing below is typed into this repository.
   The same happens once on the very first deploy of the witness release. No bill number is repeated; ring one test bill
   to see the till's own prefix again.
 
+## One API version at a time (verifier r21)
+
+Head office runs **exactly one API container**, and never two API versions side by side — not even for a moment during a
+release. Why: a change to a setting (and every other guarded write) is protected from two people saving at the same
+moment by a "guard" whose name the code chooses; round 21 made those names per item. An old and a new version running
+together would use different guard names for the same setting, so two saves at the same moment could both land and the
+later one silently replace the earlier (hard rule #10). So:
+
+- **`release.sh` guarantees it.** `docker compose up -d --build` replaces the single `api` container *stop-first*: the old
+  one stops before the new one starts, so the two never serve at once. Straight after, `release.sh` counts the running
+  `api` containers; if there is more than one (scaled by hand, or `deploy.replicas` added to a compose file) it says
+  `REFUSED — N API containers are running …` and puts the previous release back. If the previous release runs two as
+  well, it ends `ROLLBACK FAILED` — a person scales it back with `docker compose up -d --scale api=1` and deploys again.
+- **Never** scale the `api` service above one, run a second API "for a quick test" against the live database, or do a
+  rolling / blue-green release of the API. A future multi-API design needs an ADR first (guard names stable across versions).
+- To check on the box: `docker compose ps api` shows one line.
+
 ## When it goes red
 
 | The job log says | What it means | What to do |

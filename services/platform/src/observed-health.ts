@@ -131,6 +131,8 @@ export interface ObservedHealthDeps extends Pick<AlertLifecycleDeps, 'alerts' | 
   }>;
   /** OB-78: the owner's early-warning line for a store computer's disk, in hours of trading left (tenant setting, default 48). */
   readonly boxDiskWarnHours?: (tenantId: string) => Promise<number> | number;
+  /** Verifier r21 UNSENT-CEILING: warn when bills have waited on a store computer this many hours (tenant setting, default 2). */
+  readonly boxUnsentWarnHours?: (tenantId: string) => Promise<number> | number;
 }
 
 /** What the store computers last reported about their queues (PA-12, from the EA-01 watermark reports). */
@@ -176,6 +178,7 @@ export async function observeSignals(deps: ObservedHealthDeps, tenantId: string,
       records: boxReports.records, knownStores: boxReports.knownStores, at, thresholds,
       ...(boxReports.billNumberFindings === undefined ? {} : { billNumberFindings: boxReports.billNumberFindings }),
       ...(deps.boxDiskWarnHours === undefined ? {} : { diskWarnHours: await deps.boxDiskWarnHours(tenantId) }),
+      ...(deps.boxUnsentWarnHours === undefined ? {} : { unsentWarnHours: await deps.boxUnsentWarnHours(tenantId) }),
     });
   const writable = judgedBoxes?.localStoreWritable;
   const sortedBackups = [...backups].sort(byAt);

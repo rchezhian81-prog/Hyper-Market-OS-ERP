@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1017 | 623 | 623 | 89 | 300 |
+| 13 | 1018 | 624 | 624 | 89 | 300 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -1023,6 +1023,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/platform/support-access/sessions` | `platform.support.read` | core | — |
 | POST | `/v1/platform/support-access/sessions/:sessionId/actions` | `platform.support.request` | core | yes |
 | POST | `/v1/platform/support-access/sessions/:sessionId/end` | `platform.support.grant` | core | yes |
+| POST | `/v1/store-computers/bill-number-refusals/acknowledgements` | `platform.alert.manage` | core | yes |
 | POST | `/v1/store-computers/health-reports` | `store.computer.report` | core | yes |
 
 ## API-12 — Migration (MG-01–MG-12)
