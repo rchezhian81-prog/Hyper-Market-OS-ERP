@@ -43,6 +43,8 @@ const KINDS: Readonly<Record<string, EditorSpec>> = {
   'pos.licence_hours.enabled': { kind: 'toggle' },
   'merchandising.shelf_count_stale_after_minutes': { kind: 'number' },
   'merchandising.shelf_refill_at_bp': { kind: 'number' },
+  // OB-78: the owner's early disk-warning line, in whole hours of trading.
+  'platform.box_disk_warn_hours': { kind: 'number' },
 };
 
 export function editorFor(key: string): EditorSpec {

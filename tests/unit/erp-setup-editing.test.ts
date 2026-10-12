@@ -122,3 +122,12 @@ describe('SetupEditController', () => {
     expect(c.retry('tax.default_bps').status).toBe('idle');
   });
 });
+
+describe('OB-78 — the owner sets the early disk-warning line on the store-setup screen', () => {
+  it('reads as a whole number of trading hours, refused in the engine\'s words otherwise', () => {
+    expect(editorFor('platform.box_disk_warn_hours').kind).toBe('number');
+    expect(parseDraft('platform.box_disk_warn_hours', '12')).toEqual({ ok: true, value: 12 });
+    expect(parseDraft('platform.box_disk_warn_hours', '0')).toEqual({ ok: false, error: 'Give a whole number of trading hours, from 1 to 720.' });
+    expect(parseDraft('platform.box_disk_warn_hours', '2.5').ok).toBe(false);
+  });
+});

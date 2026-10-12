@@ -77,6 +77,8 @@ const validateTillSpendCap: SetupValidator = (v) =>
   isIntIn(v, 0, 10_000_000) ? null : 'Give the most one member may spend at the till in a day, in paise, from 0 (off) to 10000000 (₹1,00,000).';
 const validateStringList: SetupValidator = (v) =>
   isStringArray(v) ? null : 'Give a list of names (an empty list means none).';
+const validateWarnHours: SetupValidator = (v) =>
+  isIntIn(v, 1, 720) ? null : 'Give a whole number of trading hours, from 1 to 720.';
 const validatePaperFormat: SetupValidator = (v) =>
   isString(v) && PAPER_FORMATS.some((f) => f.id === v)
     ? null : `Choose a paper size: ${PAPER_FORMATS.map((f) => f.id).join(', ')}.`;
@@ -206,6 +208,14 @@ export const SETUP_CATALOGUE: readonly SetupItem[] = [
     required: false,
     question: 'At most how much may one loyalty member spend at the till in a day — points and store credit together, in paise? (0 keeps spending at the till off.)',
     validate: validateTillSpendCap,
+  },
+  {
+    // OB-78 "A" (owner, 12 Oct 2026): the early disk warning for each store computer, in hours of trading left.
+    setting: SETTINGS.BOX_DISK_WARN_HOURS,
+    group: 'check_default',
+    required: false,
+    question: 'How many hours of trading before a store computer\'s disk would fill should head office warn you? (48 by default.)',
+    validate: validateWarnHours,
   },
 ];
 

@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 995 | 606 | 606 | 89 | 300 |
+| 13 | 1013 | 621 | 621 | 89 | 300 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -44,6 +44,24 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/identity/grants/pending` | `identity.role.read` | core | — |
 | GET | `/v1/identity/me` | `identity.self.read` | core | — |
 | POST | `/v1/identity/number-series/:docType` | `documents.number.allocate` | core | yes |
+| GET | `/v1/identity/outside-logins/b2b-accounts` | `b2b.account.manage` | core | — |
+| POST | `/v1/identity/outside-logins/b2b-accounts/:partyId/invites/:inviteId` | `b2b.account.manage` | core | yes |
+| POST | `/v1/identity/outside-logins/b2b-accounts/invites/:inviteId/approve` | `b2b.account.manage` | core | yes |
+| POST | `/v1/identity/outside-logins/b2b-accounts/invites/:inviteId/reject` | `b2b.account.manage` | core | yes |
+| POST | `/v1/identity/outside-logins/b2b-accounts/invites/:inviteId/revoke` | `b2b.account.manage` | core | yes |
+| POST | `/v1/identity/outside-logins/b2b-accounts/invites/:inviteId/sign-in` | `b2b.account.manage` | core | yes |
+| GET | `/v1/identity/outside-logins/customers` | `customer.identity.manage` | core | — |
+| POST | `/v1/identity/outside-logins/customers/:partyId/invites/:inviteId` | `customer.identity.manage` | core | yes |
+| POST | `/v1/identity/outside-logins/customers/invites/:inviteId/approve` | `customer.identity.manage` | core | yes |
+| POST | `/v1/identity/outside-logins/customers/invites/:inviteId/reject` | `customer.identity.manage` | core | yes |
+| POST | `/v1/identity/outside-logins/customers/invites/:inviteId/revoke` | `customer.identity.manage` | core | yes |
+| POST | `/v1/identity/outside-logins/customers/invites/:inviteId/sign-in` | `customer.identity.manage` | core | yes |
+| GET | `/v1/identity/outside-logins/suppliers` | `supplier.portal.manage` | core | — |
+| POST | `/v1/identity/outside-logins/suppliers/:partyId/invites/:inviteId` | `supplier.portal.manage` | core | yes |
+| POST | `/v1/identity/outside-logins/suppliers/invites/:inviteId/approve` | `supplier.portal.manage` | core | yes |
+| POST | `/v1/identity/outside-logins/suppliers/invites/:inviteId/reject` | `supplier.portal.manage` | core | yes |
+| POST | `/v1/identity/outside-logins/suppliers/invites/:inviteId/revoke` | `supplier.portal.manage` | core | yes |
+| POST | `/v1/identity/outside-logins/suppliers/invites/:inviteId/sign-in` | `supplier.portal.manage` | core | yes |
 | GET | `/v1/identity/people` | `platform.person.read` | core | — |
 | POST | `/v1/identity/people` | `platform.person.provision` | core | yes |
 | GET | `/v1/identity/roles` | `identity.role.read` | core | — |

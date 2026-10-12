@@ -443,6 +443,166 @@ el('handover-done').addEventListener('click', () => {
 
 el('signins-check').addEventListener('click', () => { void busy([el('signins-check')], refreshSignIns); });
 
+// ── OB-76: logins for customers and suppliers ───────────────────────────────
+//
+// Every rule is in the tested model (`apps/web-erp/src/outside-logins-session.ts`, attached as
+// `window.outsideLoginsSession`). One person invites; a DIFFERENT person approves — the inviter is never offered
+// Approve on their own invite, and head office refuses it anyway. Nothing is written on load. A one-time password lives
+// only in that model's memory and in the hand-over panel's text until "I have handed it over".
+
+const outside = window.outsideLoginsSession;
+let lastOutside = null;
+const OUTSIDE_GRANTS = ['view_invoices', 'view_statement', 'place_order', 'make_payment'];
+
+function outsideButton(label, onClick) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.textContent = label;
+  b.addEventListener('click', onClick);
+  return b;
+}
+
+function sayOutside(outcome) {
+  lastOutside = (l) => outside.present(l, outcome);
+  paintLine('outside-result', lastOutside(lang));
+  renderOutside();
+}
+
+function renderOutside() {
+  if (outside === undefined) {
+    el('outside-title').textContent = t('people');
+    el('outside-lead').textContent = '';
+    paintLine('outside-source', { tone: 'idle', icon: 'ℹ', label: t('sampleNotConnected'), announcement: t('sampleNotConnected') });
+    el('outside-form').hidden = true;
+    el('outside-cannot').hidden = true;
+    el('outside-list').replaceChildren();
+    return;
+  }
+  const view = outside.view(lang);
+  el('outside-title').textContent = outside.text(lang, 'title');
+  el('outside-lead').textContent = outside.text(lang, 'lead');
+  paintLine('outside-source', view.source);
+  el('outside-cannot').hidden = view.cannot === null;
+  el('outside-cannot').textContent = view.cannot ?? '';
+  el('outside-form').hidden = view.kinds.length === 0;
+  const kindSelect = el('outside-kind');
+  const chosen = kindSelect.value;
+  kindSelect.replaceChildren(...view.kinds.map((k) => {
+    const o = document.createElement('option');
+    o.value = k;
+    o.textContent = outside.text(lang, `kind_${k}`);
+    return o;
+  }));
+  if (view.kinds.includes(chosen)) kindSelect.value = chosen;
+  el('outside-kind-label').textContent = outside.text(lang, 'kindLabel');
+  el('outside-party-label').textContent = outside.text(lang, 'partyLabel');
+  el('outside-display-label').textContent = outside.text(lang, 'nameLabel');
+  el('outside-user-label').textContent = outside.text(lang, 'userLabel');
+  el('outside-user-hint').textContent = outside.text(lang, 'userHint');
+  el('outside-invite').textContent = outside.text(lang, 'inviteBtn');
+  // The business customer's portal grants — only for that kind.
+  const grants = el('outside-grants');
+  const ticked = new Set([...grants.querySelectorAll('input:checked')].map((i) => i.value));
+  grants.hidden = kindSelect.value !== 'b2b_customer';
+  const legend = document.createElement('legend');
+  legend.id = 'outside-grants-legend';
+  legend.textContent = outside.text(lang, 'grantsLabel');
+  grants.replaceChildren(legend, ...OUTSIDE_GRANTS.map((g) => {
+    const label = document.createElement('label');
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.value = g;
+    box.id = `outside-grant-${g}`;
+    box.checked = ticked.has(g);
+    label.append(box, document.createTextNode(outside.text(lang, `grant_${g}`)));
+    return label;
+  }));
+  el('outside-handover-done').textContent = outside.text(lang, 'handedOverBtn');
+  const h = outside.handOver();
+  el('outside-handover').hidden = h === null;
+  el('outside-handover-label').textContent = h === null ? '' : outside.text(lang, 'passwordLabel');
+  el('outside-handover-otp').textContent = h === null ? '' : h.oneTimePassword;
+  el('outside-handover-words').textContent = h === null ? '' : outside.text(lang, 'handOver').replace('{name}', h.displayName);
+  el('outside-list').replaceChildren(...(view.listKnown && view.rows.length === 0
+    ? [emptyLine(outside.text(lang, 'noneYet'))]
+    : view.rows.map((r) => {
+      const row = document.createElement('div');
+      row.className = `row state-${r.state === 'approved' ? 'issued' : r.state === 'invited' ? 'requested' : 'ended'}`;
+      row.dataset.inviteId = r.inviteId;
+      const what = document.createElement('span');
+      what.className = 'what';
+      const name = document.createElement('strong');
+      name.textContent = r.name;
+      const sub = document.createElement('small');
+      sub.className = 'state';
+      // The state in words, and both names — never a coloured edge on its own.
+      sub.textContent = `${r.stateWords} · ${r.detail}`;
+      const acts = document.createElement('span');
+      acts.className = 'acts';
+      if (r.mayApprove) {
+        acts.append(outsideButton(outside.text(lang, 'approveBtn'), (e) => {
+          void busy([e.currentTarget], async () => sayOutside(await outside.approve(r.kind, r.inviteId)));
+        }));
+      }
+      if (r.mayRevoke) {
+        const reason = document.createElement('input');
+        reason.type = 'text';
+        reason.maxLength = 200;
+        reason.className = 'reason';
+        reason.setAttribute('aria-label', outside.text(lang, 'reasonLabel'));
+        reason.placeholder = outside.text(lang, 'reasonLabel');
+        const signInName = document.createElement('input');
+        signInName.type = 'text';
+        signInName.maxLength = 40;
+        signInName.className = 'sign-in-name';
+        signInName.autocapitalize = 'none';
+        signInName.setAttribute('aria-label', outside.text(lang, 'signInLabel'));
+        signInName.placeholder = outside.text(lang, 'signInLabel');
+        acts.append(
+          signInName,
+          outsideButton(outside.text(lang, 'signInBtn'), (e) => {
+            void busy([e.currentTarget], async () => sayOutside(await outside.signIn(r.kind, r.inviteId, signInName.value)));
+          }),
+          reason,
+          outsideButton(outside.text(lang, 'revokeBtn'), (e) => {
+            void busy([e.currentTarget], async () => sayOutside(await outside.revoke(r.kind, r.inviteId, reason.value)));
+          }),
+        );
+      }
+      what.append(name, sub, acts);
+      row.append(what);
+      return row;
+    })));
+}
+
+async function refreshOutside() {
+  if (outside === undefined) return;
+  renderOutside();
+  await outside.refresh();
+  renderOutside();
+}
+
+el('outside-kind').addEventListener('change', () => { renderOutside(); });
+
+el('outside-form').addEventListener('submit', (event) => {
+  event.preventDefault();
+  if (outside === undefined) return;
+  const input = {
+    kind: el('outside-kind').value, partyId: el('outside-party').value, userId: el('outside-user').value, displayName: el('outside-display').value,
+    grants: [...el('outside-grants').querySelectorAll('input:checked')].map((i) => i.value),
+  };
+  void busy([el('outside-invite')], async () => {
+    const outcome = await outside.invite(input);
+    if (outcome.kind === 'done') { el('outside-party').value = ''; el('outside-user').value = ''; el('outside-display').value = ''; }
+    sayOutside(outcome);
+  });
+});
+
+el('outside-handover-done').addEventListener('click', () => {
+  outside?.handedOver();
+  renderOutside();
+});
+
 // ── Tills and devices ───────────────────────────────────────────────────────
 
 function renderFleet() {
@@ -532,6 +692,8 @@ function paintChrome() {
   renderPeople();
   renderSignIns();
   if (lastSignIns !== null) paintLine('signins-result', lastSignIns(lang));
+  renderOutside();
+  if (lastOutside !== null) paintLine('outside-result', lastOutside(lang));
   renderFleet();
   renderRecords();
 }
@@ -553,6 +715,8 @@ show('support');
 void refreshSupport();
 // Who has a sign-in — a GET, read once the page is up. Nothing is written on load.
 void refreshSignIns();
+// OB-76: the outside parties' logins this person may manage — GETs, read once the page is up. Nothing is written on load.
+void refreshOutside();
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {

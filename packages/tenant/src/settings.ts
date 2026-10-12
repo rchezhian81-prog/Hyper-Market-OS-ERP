@@ -178,6 +178,17 @@ export const SETTINGS = {
    * retail default) or 'thermal-112' (4"). A tenant picks the size it bought; the
    * header/footer is its own branding, not a code change (M36-FR-02).
    */
+  /**
+   * OB-78 "A" (owner, 12 Oct 2026, in writing): warn when a store computer's disk would fill within this many hours of
+   * TRADING (M35-FR-03). Head office estimates the hours from the box's own reports (`estimateTradingHoursLeft`); below
+   * this line the store computer's disk is shown `degraded` and the owner's alert rule raises it to its named owner. The
+   * owner adjusts it in store setup (versioned, with who changed it and when).
+   */
+  BOX_DISK_WARN_HOURS: {
+    key: 'platform.box_disk_warn_hours',
+    label: 'Warn when a store computer would run out of disk within (hours of trading)',
+    defaultValue: 48,
+  } as TenantSetting<number>,
   RECEIPT_PAPER_FORMAT: {
     key: 'receipt.paper_format',
     label: 'Receipt paper size',
