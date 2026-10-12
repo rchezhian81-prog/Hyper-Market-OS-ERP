@@ -39,6 +39,7 @@
       .panel.attention { border-left: 6px solid var(--degraded); }
       #tabs { display: flex; gap: 8px; flex-wrap: wrap; }
       table { width: 100%; border-collapse: collapse; }
+      .table-wrap { overflow-x: auto; max-width: 100%; }
       td, th { text-align: left; }
       tr[data-incident] { cursor: pointer; }
       .tag { display: inline-block; padding: 0 8px; border-radius: 999px; border: 1px solid var(--line); font-size: 13px; font-weight: 600; }
@@ -88,20 +89,20 @@
       <section id="view-incidents" aria-labelledby="incidents-h">
         <h3 id="incidents-h">Incidents</h3>
         <p class="lead" id="incidents-lead">Open incidents first, the most serious at the top. Open one to see its timeline, follow-ups and post-mortem.</p>
-        <table aria-labelledby="incidents-h">
+        <div class="table-wrap"><table aria-labelledby="incidents-h">
           <thead><tr><th id="c-incident">Incident</th><th id="c-severity">Severity</th><th id="c-state">State</th><th id="c-opened">Opened</th><th id="c-followups">Follow-ups open</th><th id="c-pm">Post-mortem</th></tr></thead>
           <tbody id="incident-rows"></tbody>
-        </table>
+        </table></div>
         <p class="muted" id="no-incidents" hidden></p>
       </section>
 
       <section id="view-drills" aria-labelledby="drills-h" hidden>
         <h3 id="drills-h">Recovery drills</h3>
         <p class="lead" id="drills-lead">Each drill measured against the recovery targets: how much data may be lost, and how soon the shop must be back.</p>
-        <table aria-labelledby="drills-h">
+        <div class="table-wrap"><table aria-labelledby="drills-h">
           <thead><tr><th id="c-drill">Drill</th><th id="c-service">Service</th><th id="c-result">Result</th><th id="c-when">When</th><th id="c-by">By</th></tr></thead>
           <tbody id="drill-rows"></tbody>
-        </table>
+        </table></div>
         <p class="muted" id="no-drills" hidden></p>
         <div id="drill-form" hidden>
           <h3 id="drill-form-h">Record a drill result</h3>
