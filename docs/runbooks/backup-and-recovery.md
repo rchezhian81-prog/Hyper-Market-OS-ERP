@@ -118,6 +118,41 @@ could report — head office raises the backup as **MISSED** by itself once it i
 - Renew the token before it expires (the API limits how long a token may live); an expired
   token shows up the next night as "NOT REPORTED" and, the night after, as MISSED.
 
+### Part 3b — The store computer's data, and its bill-number witness (OB-87 · verifier r19)
+
+The store computer (store edge) keeps two folders, and they are backed up **differently**:
+
+| Folder | Installed till (`scripts/install-till.mjs`) | Container (`infra/compose`) | Back it up? |
+|---|---|---|---|
+| Data — every sale, refund and queue | `till/edge-data/` (`EDGE_DATA_DIR`) | volume `edge-data` → `/var/lib/sre-edge` | **Yes** |
+| Bill-number witness | `till/edge-witness/` (`EDGE_WITNESS_DIR`) | volume `edge-witness` → `/var/lib/sre-edge-witness` | **Never** |
+
+Every bill number the store computer gives is written in both. If the data is ever restored
+from an older backup, the witness still holds the numbers given after that backup, so the store
+computer sees the restore by itself and numbers under a brand-new `ZZ…` prefix until head office
+answers — no customer's bill number is ever given twice. **Never back up the witness with the
+data, never restore over it, and never point two store computers at one witness folder.**
+
+- **Container:** back up the `edge-data` volume only (for example
+  `docker run --rm -v sre-pilot_edge-data:/d:ro -v "$PWD":/out alpine tar czf /out/edge-data.tgz -C /d .`).
+  Never `docker compose down -v` on a store box: that deletes both volumes.
+- **The store computer checks its witness at every start** and says what it found. If its window or
+  log shows `!!! BILL-NUMBER WITNESS UNAVAILABLE`, the witness folder is missing, not writable, or
+  inside the data folder: the till still sells and never repeats a number, but every restart takes a
+  new `ZZ…` prefix until it is fixed. Head office's health page shows the same on
+  `box_bill_numbers:<store>` ("CANNOT keep its bill-number witness").
+- **If it says the witness folder "also holds the witness of N other store computer(s)"**, two store
+  computers share one witness folder — give each its own (`EDGE_WITNESS_DIR`).
+
+**After a store computer is restored from a backup, check head office's health page an hour
+later.** Bills the store computer gave after that backup and never sent are lost from head office's
+books. The store computer reports them as numbers it cannot vouch for; 30 minutes after it reports,
+if head office still has not received them, `box_bill_numbers:<store>` names them — **"bills issued
+but never received: S2L6-000002 to S2L6-000003"**. Find those paper bills and enter them, or write
+them off with the reason. (A store computer that reports a bill count far beyond what head office
+holds — more than 10,000 numbers ahead — is not believed: the till keeps selling and the health page
+names the report for a person to check.)
+
 ## Part 4 — Restoring (the one that matters)
 
 **1. Do not restore over live data.** Make an empty database first:

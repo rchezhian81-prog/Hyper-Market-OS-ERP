@@ -38,7 +38,7 @@ import { httpTransport } from '../../../edge/sync-agent/src/http-transport';
 import { httpPackSource } from '../../../edge/sync-agent/src/pack-source';
 import { pullPack, type PackPullOutcome, type PackPullStatus } from '../../../edge/sync-agent/src/pack-puller';
 import { httpSyncWatermarkReporter, type SyncWatermarkReport } from '../../../edge/sync-agent/src/sync-watermark-report';
-import { httpBoxHealthReporter, type BoxHealthReport } from '../../../edge/sync-agent/src/box-health-report';
+import { httpBoxHealthReporter, billNumberingReport, type BoxHealthReport } from '../../../edge/sync-agent/src/box-health-report';
 import { statfs } from 'node:fs/promises';
 import { SALE_RESERVE_BYTES } from './durability';
 import { httpStorePackSource, httpHeldVersionsReporter, pullStorePack, type StorePackPullOutcome, type StorePackPullStatus } from '../../../edge/sync-agent/src/store-pack-feed';
@@ -1348,6 +1348,14 @@ export async function startEdge(
       }),
     ],
   });
+  // Verifier r19 OB87-1/OB87-2 — THE WITNESS SELF-CHECK, said out loud at start: a witness folder that cannot be opened (a
+  // read-only root with no witness volume), one inside the data folder, or one shared with another store computer is a
+  // fault the owner must see — the box still never repeats a bill number (every start is then a possible restore), but it
+  // is never a silent new prefix each boot. The same words are on the status read and the health report to head office.
+  if (receiptNumbers !== null) {
+    const wh = await receiptNumbers.witnessHealth();
+    if (wh.witness === 'unavailable' || wh.sharedWith.length > 0 || wh.fault !== undefined) say(`!!! ${wh.says}`);
+  }
   // HELD BASKETS (audit PF-05 · M12-FR-02): parked on this box's disk, recalled once, never deleted. The shop's hold
   // policy is the CURRENT pack's; the store is the pack's own.
   const heldBills = tillOperators === null ? null : await HeldBills.open({
@@ -2022,6 +2030,8 @@ export async function startEdge(
     lastPackStatus,
     lastContactAt,
     now: new Date().toISOString(),
+    // Verifier r19 OB87-1: the bill-number witness check, on the box's own status read (P-08).
+    ...(receiptNumbers === null ? {} : { billNumbering: receiptNumbers.witnessHealthNow() }),
   });
 
   const refreshPack = async (): Promise<PackPullOutcome> => {
@@ -2312,6 +2322,9 @@ export async function startEdge(
       // Verifier r18 item 6: the highest count GIVEN per bill-number prefix (a voided bill keeps its number) — head office
       // keeps a replaced box above it.
       ...(receiptNumbers === null ? {} : { receiptNumbersIssued: receiptNumbers.issuedThrough() }),
+      // Verifier r19 OB87-1: the box's own check of its bill-number witness (and a held restore) — head office shows it on
+      // the store computer's health (`box_bill_numbers:<store>`), so a box with no witness is never a silent ZZ every boot.
+      ...(receiptNumbers === null ? {} : { billNumbering: billNumberingReport(await receiptNumbers.witnessHealth()) }),
     };
     return boxHealthReporter(report);
   };

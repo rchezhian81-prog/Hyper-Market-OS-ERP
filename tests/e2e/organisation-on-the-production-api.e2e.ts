@@ -97,7 +97,12 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Organi
       await s.page.locator('#tree li[data-node="br-1"] button[data-act="activate"]').click();
       await statusSays(s.page, 'tree-status', /^Head office refused: br-1 is not ready to activate/);
       // Rename the store: a new version, kept.
-      await s.page.locator('#tree li[data-node="br-1"] input').fill('Store One (Main Road)');
+      // The refusal above re-reads the tree from head office; let that re-draw settle so the new name is typed into the
+      // input that stays on the page (a re-draw in between put the old name back and the rename sent nothing new).
+      await s.page.waitForLoadState('networkidle');
+      const nameInput = s.page.locator('#tree li[data-node="br-1"] input');
+      await nameInput.fill('Store One (Main Road)');
+      expect(await nameInput.inputValue()).toBe('Store One (Main Road)');
       await s.page.locator('#tree li[data-node="br-1"] button[data-act="rename"]').click();
       await statusSays(s.page, 'tree-status', /^Renamed/);
       await s.page.waitForFunction(() => /Store One \(Main Road\)/.test((globalThis as unknown as { document: { getElementById(x: string): { textContent: string | null } | null } }).document.getElementById('tree')?.textContent ?? ''), undefined, { timeout: 15_000 });

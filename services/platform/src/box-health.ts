@@ -76,17 +76,90 @@ export interface BoxHealthRecord {
    * not (a voided or abandoned bill keeps its number). Head office folds it into `bankedThrough`, so a replaced box never
    * re-gives a number a customer saw on a voided bill. Absent on a box that predates it.
    */
-  readonly receiptNumbersIssued?: readonly { readonly prefix: string; readonly through: number }[];
+  readonly receiptNumbersIssued?: readonly IssuedReport[];
+  /**
+   * Verifier r19 BOX-1: what head office REFUSED to fold into `bankedThrough` from this report, and why — a prefix issued to
+   * another store's till, or a count beyond a plausible advance over what head office banked. Kept as evidence and shown
+   * to the owner as a finding; never folded, so a report alone can never lock a till.
+   */
+  readonly receiptNumbersRefused?: readonly RefusedIssued[];
+  /** Verifier r19 BOX-1: prefixes reported that head office never issued (the box's own store-coded fallback): not folded, no finding. */
+  readonly receiptNumbersNotFolded?: readonly { readonly prefix: string; readonly through: number }[];
+  /** Verifier r19 OB87-1/OB87-2: the box's own check of its bill-number witness, and any held restore. */
+  readonly billNumbering?: BillNumberingState;
+}
+
+/** One prefix the box says it has given numbers under (verifier r18 item 6; r19 adds what it cannot vouch for). */
+export interface IssuedReport {
+  readonly prefix: string;
+  readonly through: number;
+  /** The highest count put on a bill on the box, or that it cannot vouch for (absent on an older box: `through` stands in). */
+  readonly soldThrough?: number;
+  /** Numbers the box cannot vouch for — given after the backup it was restored from — as [from, to] ranges. */
+  readonly atRisk?: readonly (readonly [number, number])[];
+}
+
+/** Verifier r19 BOX-1: a reported count head office would not fold, and why. */
+export interface RefusedIssued {
+  readonly prefix: string;
+  readonly through: number;
+  readonly because: 'prefix_of_another_store' | 'beyond_plausible_advance';
+  /** What head office holds banked (sales and refunds) under the prefix when the report arrived. */
+  readonly bankedThrough: number;
+  /** The most it would accept: banked + PLAUSIBLE_ISSUED_AHEAD (for `beyond_plausible_advance`). */
+  readonly plausibleThrough?: number;
+}
+
+/** Verifier r19 OB87-1/OB87-2: the box's witness check, as head office keeps it. */
+export interface BillNumberingState {
+  readonly witness: 'kept' | 'unavailable' | 'none';
+  readonly fault?: string;
+  readonly restoreHeld: boolean;
+  readonly restoreBecause?: string;
+  readonly restoreSince?: string;
+  readonly sharedWith: readonly { readonly box: string; readonly lastWrittenAt: string }[];
+}
+
+/**
+ * Verifier r19 BOX-1 — THE BOUND (stated, so a person can check it): head office folds a box's reported count under a prefix
+ * only up to what it has banked under that prefix (sales and refunds) PLUS this many numbers. A box reports on every sync
+ * pass; a busy hypermarket lane rings well under 1,500 bills a day, so 10,000 numbers is about a week of one lane's bills
+ * given and not yet banked (offline, voided, abandoned). A count beyond it is refused for the high-water and shown to the
+ * owner as a finding — it never moves `bankedThrough`, so a till can never be locked by a report alone.
+ */
+export const PLAUSIBLE_ISSUED_AHEAD = 10_000;
+/**
+ * Verifier r19 (sales lost by a restore · P-08): numbers a box put on bills (or cannot vouch for after a restore) that head
+ * office has still not received this long after the box first reported them are named as "bills issued but never received".
+ * The box drains its queue before it reports, so 30 minutes is many sync passes.
+ */
+export const UNRECEIVED_GRACE_MINUTES = 30;
+/** At most this many numbers per prefix are checked one by one for "never received" (the rest are said to be unchecked). */
+export const UNRECEIVED_CHECK_CAP = 500;
+
+/** Verifier r19: a bill-number finding on one store computer, for the owner (P-03: only what needs a person). */
+export interface BillNumberFinding {
+  readonly kind: 'issued_never_received' | 'report_refused';
+  readonly prefix: string;
+  /** The numbers concerned, as [from, to] count ranges (issued_never_received), or the refused count (report_refused). */
+  readonly ranges?: readonly (readonly [number, number])[];
+  readonly through?: number;
+  readonly since: string;
+  readonly detail: string;
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
 const isIso = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/.test(v) && !Number.isNaN(Date.parse(v));
 const isCount = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0;
+const isWord = (v: unknown, max: number): v is string => typeof v === 'string' && v.trim() !== '' && v.length <= max;
 const earlier = (a: string, b: string): string => (Date.parse(a) <= Date.parse(b) ? a : b);
 
 /** Read a box's report (the store is the stamped one, read by the route). `problems` when it is not one. */
 export function readBoxHealthReport(body: unknown, receivedAt: string):
-  { observedAt: string; disk: BoxDisk; queue: { unsent: number; deadLettered: number }; tills: TillDeviceReport[]; clockAheadCorrected: boolean; receiptNumbersIssued?: { prefix: string; through: number }[] } | { problems: string[] } {
+  {
+    observedAt: string; disk: BoxDisk; queue: { unsent: number; deadLettered: number }; tills: TillDeviceReport[]; clockAheadCorrected: boolean;
+    receiptNumbersIssued?: IssuedReport[]; billNumbering?: BillNumberingState;
+  } | { problems: string[] } {
   const b = isObj(body) ? body : {};
   const problems: string[] = [];
   if (!isIso(b['observedAt'])) problems.push('observedAt must be an ISO-8601 UTC time');
@@ -129,7 +202,7 @@ export function readBoxHealthReport(body: unknown, receivedAt: string):
   // Verifier r18 item 6: the box's highest GIVEN count per bill-number prefix (optional). A prefix is at most 10 characters
   // and a count 1…999 999 (packages/contracts/src/receipt-number.ts) — anything else is refused, never guessed.
   const rawIssued = b['receiptNumbersIssued'];
-  const receiptNumbersIssued: { prefix: string; through: number }[] = [];
+  const receiptNumbersIssued: IssuedReport[] = [];
   if (rawIssued !== undefined) {
     if (!Array.isArray(rawIssued) || rawIssued.length > 200) problems.push('receiptNumbersIssued must be a list (at most 200) of { prefix, through }');
     else {
@@ -138,8 +211,43 @@ export function readBoxHealthReport(body: unknown, receivedAt: string):
           || !isCount(x['through']) || (x['through'] as number) < 1 || (x['through'] as number) > 999_999) {
           problems.push(`receiptNumbersIssued[${i}] needs a prefix (1–10 characters) and a whole count from 1 to 999999`); return;
         }
-        receiptNumbersIssued.push({ prefix: x['prefix'], through: x['through'] as number });
+        const through = x['through'] as number;
+        // Verifier r19: what the box put on bills or cannot vouch for — optional; never above what it gave.
+        if (x['soldThrough'] !== undefined && (!isCount(x['soldThrough']) || (x['soldThrough'] as number) > through)) {
+          problems.push(`receiptNumbersIssued[${i}].soldThrough must be a whole count from 0 to its through`); return;
+        }
+        const rawRisk = x['atRisk'];
+        if (rawRisk !== undefined && (!Array.isArray(rawRisk) || rawRisk.length > 50 || !rawRisk.every((r: unknown) => Array.isArray(r) && r.length === 2
+          && isCount(r[0]) && isCount(r[1]) && (r[0] as number) >= 1 && (r[0] as number) <= (r[1] as number) && (r[1] as number) <= through))) {
+          problems.push(`receiptNumbersIssued[${i}].atRisk must be at most 50 [from, to] ranges of counts from 1 to its through`); return;
+        }
+        receiptNumbersIssued.push({
+          prefix: x['prefix'], through,
+          ...(x['soldThrough'] === undefined ? {} : { soldThrough: x['soldThrough'] as number }),
+          ...(rawRisk === undefined ? {} : { atRisk: (rawRisk as [number, number][]).map(([a, z]) => [a, z] as const) }),
+        });
       });
+    }
+  }
+  // Verifier r19 OB87-1/OB87-2: the box's witness check (optional — an older box does not say).
+  const rawBn = b['billNumbering'];
+  let billNumbering: BillNumberingState | undefined;
+  if (rawBn !== undefined) {
+    const n = isObj(rawBn) ? rawBn : {};
+    const shared = n['sharedWith'];
+    if (!['kept', 'unavailable', 'none'].includes(n['witness'] as string) || typeof n['restoreHeld'] !== 'boolean'
+      || (n['fault'] !== undefined && !isWord(n['fault'], 400)) || (n['restoreBecause'] !== undefined && !isWord(n['restoreBecause'], 60))
+      || (n['restoreSince'] !== undefined && !isIso(n['restoreSince']))
+      || !Array.isArray(shared) || shared.length > 20 || !shared.every((x: unknown) => isObj(x) && isWord(x['box'], 40) && isIso(x['lastWrittenAt']))) {
+      problems.push('billNumbering needs witness (kept, unavailable or none), restoreHeld (true/false), sharedWith (at most 20 { box, lastWrittenAt }), and optionally fault, restoreBecause, restoreSince');
+    } else {
+      billNumbering = {
+        witness: n['witness'] as BillNumberingState['witness'], restoreHeld: n['restoreHeld'] as boolean,
+        ...(n['fault'] === undefined ? {} : { fault: n['fault'] as string }),
+        ...(n['restoreBecause'] === undefined ? {} : { restoreBecause: n['restoreBecause'] as string }),
+        ...(n['restoreSince'] === undefined ? {} : { restoreSince: n['restoreSince'] as string }),
+        sharedWith: (shared as Record<string, unknown>[]).map((x) => ({ box: x['box'] as string, lastWrittenAt: x['lastWrittenAt'] as string })),
+      };
     }
   }
   if (problems.length > 0) return { problems };
@@ -156,7 +264,133 @@ export function readBoxHealthReport(body: unknown, receivedAt: string):
     queue: { unsent: q!['unsent'] as number, deadLettered: q!['deadLettered'] as number },
     tills, clockAheadCorrected: corrected,
     ...(rawIssued === undefined ? {} : { receiptNumbersIssued }),
+    ...(billNumbering === undefined ? {} : { billNumbering }),
   };
+}
+
+/**
+ * Verifier r19 BOX-1: judge a box's reported counts against what head office issued and banked. Folded (`accepted`) only
+ * for a prefix issued to a till of THIS store (any version), or this store's own `R-<lane>-` numbering, and only up to
+ * banked + PLAUSIBLE_ISSUED_AHEAD. A prefix issued to another store's till, or a count beyond the bound, is `refused` (kept,
+ * shown to the owner); a prefix head office never issued (the box's store-coded `ZZ` fallback) is `notFolded` — head office
+ * keeps no count for it and raises nothing.
+ */
+export function judgeReportedIssued(input: {
+  readonly storeId: string;
+  readonly issued: readonly IssuedReport[];
+  /** Every prefix head office ever issued to a till, with the store it was issued to. */
+  readonly issuedPrefixes: ReadonlyMap<string, ReadonlySet<string>>;
+  /** What head office holds banked under each prefix from sales and refunds (not from any box's report). */
+  readonly banked: ReadonlyMap<string, number>;
+}): { accepted: IssuedReport[]; refused: RefusedIssued[]; notFolded: { prefix: string; through: number }[] } {
+  const accepted: IssuedReport[] = [];
+  const refused: RefusedIssued[] = [];
+  const notFolded: { prefix: string; through: number }[] = [];
+  for (const r of input.issued) {
+    const stores = input.issuedPrefixes.get(r.prefix);
+    const ownBoxSeries = r.prefix.startsWith('R-') && r.prefix.endsWith('-') && r.prefix.length > 3;
+    const banked = input.banked.get(r.prefix) ?? 0;
+    if (stores === undefined && !ownBoxSeries) { notFolded.push({ prefix: r.prefix, through: r.through }); continue; }
+    if (stores !== undefined && !stores.has(input.storeId)) {
+      refused.push({ prefix: r.prefix, through: r.through, because: 'prefix_of_another_store', bankedThrough: banked });
+      continue;
+    }
+    const plausibleThrough = banked + PLAUSIBLE_ISSUED_AHEAD;
+    if (r.through > plausibleThrough) {
+      refused.push({ prefix: r.prefix, through: r.through, because: 'beyond_plausible_advance', bankedThrough: banked, plausibleThrough });
+      continue;
+    }
+    accepted.push(r);
+  }
+  return { accepted, refused, notFolded };
+}
+
+/**
+ * Verifier r19 (sales lost by a restore · P-08): the numbers each store's box put on bills, or cannot vouch for, that head
+ * office should hold by now — from reports at least UNRECEIVED_GRACE_MINUTES old: every count above what head office has
+ * banked up to the reported `soldThrough` (`through` from an older box), and every `atRisk` number. Per store and prefix, at
+ * most UNRECEIVED_CHECK_CAP numbers (the newest), with the time of the first report that named them. The caller checks each
+ * against the ledger and keeps the ones never received.
+ */
+export function unreceivedCandidates(input: {
+  readonly records: readonly BoxHealthRecord[];
+  readonly at: string;
+  readonly banked: ReadonlyMap<string, number>;
+}): { storeId: string; prefix: string; numbers: number[]; since: string; capped: boolean }[] {
+  const cutoff = Date.parse(input.at) - UNRECEIVED_GRACE_MINUTES * 60_000;
+  const by = new Map<string, { storeId: string; prefix: string; numbers: Map<number, string> }>();
+  const ordered = [...input.records].filter((r) => Date.parse(r.receivedAt) <= cutoff).sort((a, b) => Date.parse(a.receivedAt) - Date.parse(b.receivedAt));
+  for (const r of ordered) {
+    for (const x of r.receiptNumbersIssued ?? []) {
+      const key = `${r.storeId}\u0000${x.prefix}`;
+      const cur = by.get(key) ?? { storeId: r.storeId, prefix: x.prefix, numbers: new Map<number, string>() };
+      const banked = input.banked.get(x.prefix) ?? 0;
+      const sold = x.soldThrough ?? x.through;
+      for (let n = Math.max(banked + 1, sold - UNRECEIVED_CHECK_CAP + 1); n <= sold; n += 1) if (!cur.numbers.has(n)) cur.numbers.set(n, r.receivedAt);
+      for (const [from, to] of x.atRisk ?? []) {
+        for (let n = Math.max(from, to - UNRECEIVED_CHECK_CAP + 1); n <= to; n += 1) if (!cur.numbers.has(n)) cur.numbers.set(n, r.receivedAt);
+      }
+      by.set(key, cur);
+    }
+  }
+  return [...by.values()].filter((v) => v.numbers.size > 0).map((v) => {
+    const all = [...v.numbers.keys()].sort((a, b) => a - b);
+    const numbers = all.slice(-UNRECEIVED_CHECK_CAP);
+    const since = numbers.map((n) => v.numbers.get(n)!).sort()[0]!;
+    return { storeId: v.storeId, prefix: v.prefix, numbers, since, capped: all.length > numbers.length };
+  });
+}
+
+/** [from, to] ranges of sorted counts. */
+export function countRanges(numbers: readonly number[]): [number, number][] {
+  const out: [number, number][] = [];
+  for (const n of [...new Set(numbers)].sort((a, b) => a - b)) {
+    const last = out[out.length - 1];
+    if (last !== undefined && n === last[1] + 1) last[1] = n; else out.push([n, n]);
+  }
+  return out;
+}
+
+const pad6 = (n: number): string => String(n).padStart(6, '0');
+const rangeWords = (prefix: string, ranges: readonly (readonly [number, number])[]): string =>
+  ranges.map(([a, z]) => (a === z ? `${prefix}${pad6(a)}` : `${prefix}${pad6(a)} to ${prefix}${pad6(z)}`)).join(', ');
+
+/** Verifier r19: the owner's words for a store's bill-number findings (refused reports, never-received bills). */
+export function billNumberFindingsFor(input: {
+  readonly storeId: string;
+  readonly records: readonly BoxHealthRecord[];
+  readonly at: string;
+  /** The never-received numbers, after the ledger check (from `unreceivedCandidates`). */
+  readonly unreceived: readonly { readonly prefix: string; readonly numbers: readonly number[]; readonly since: string; readonly capped: boolean }[];
+}): BillNumberFinding[] {
+  const out: BillNumberFinding[] = [];
+  for (const u of input.unreceived) {
+    if (u.numbers.length === 0) continue;
+    const ranges = countRanges(u.numbers);
+    out.push({
+      kind: 'issued_never_received', prefix: u.prefix, ranges, since: u.since,
+      detail: `bills issued but never received: store ${input.storeId}'s computer gave ${rangeWords(u.prefix, ranges)} (on a bill, or after the backup it was restored from) and head office has not received ${u.numbers.length === 1 ? 'it' : 'them'} ${UNRECEIVED_GRACE_MINUTES} minutes or more after the store computer first reported ${u.numbers.length === 1 ? 'it' : 'them'} (${u.since})${u.capped ? `; only the newest ${UNRECEIVED_CHECK_CAP} were checked` : ''}. If the store computer was restored from a backup, these sales are lost from head office's books: find the paper bills and enter them, or write them off with the reason`,
+    });
+  }
+  // A refused report (BOX-1): the latest per prefix in the last 7 days.
+  const since = Date.parse(input.at) - 7 * 24 * 3_600_000;
+  const refused = new Map<string, { r: RefusedIssued; at: string; by: string }>();
+  for (const rec of input.records) {
+    if (rec.storeId !== input.storeId || Date.parse(rec.receivedAt) < since) continue;
+    for (const r of rec.receiptNumbersRefused ?? []) {
+      const cur = refused.get(r.prefix);
+      if (cur === undefined || Date.parse(rec.receivedAt) >= Date.parse(cur.at)) refused.set(r.prefix, { r, at: rec.receivedAt, by: rec.reportedBy });
+    }
+  }
+  for (const { r, at, by } of [...refused.values()].sort((a, b) => a.r.prefix.localeCompare(b.r.prefix))) {
+    out.push({
+      kind: 'report_refused', prefix: r.prefix, through: r.through, since: at,
+      detail: r.because === 'prefix_of_another_store'
+        ? `store ${input.storeId}'s computer (${by}) reported giving bill numbers under ${r.prefix} through ${r.through}, but head office issued ${r.prefix} to a till of ANOTHER store — not counted, so no till is affected; check that store computer`
+        : `store ${input.storeId}'s computer (${by}) reported giving bill numbers under ${r.prefix} through ${r.through}, far beyond the ${r.bankedThrough} head office holds banked (at most ${r.plausibleThrough ?? r.bankedThrough + PLAUSIBLE_ISSUED_AHEAD} is believed, ${PLAUSIBLE_ISSUED_AHEAD} ahead) — not counted, so the till keeps selling; check that store computer's bill numbers`,
+    });
+  }
+  return out;
 }
 
 /** The latest report per store (by the box's own time, then by arrival). */
@@ -256,6 +490,10 @@ export interface BoxHealthView {
   readonly tradingHoursLeft: number | null;
   /** OB-78: how that was worked out, or why it is not yet known, in words. */
   readonly tradingHoursLeftSays: string | null;
+  /** Verifier r19 OB87-1: the box's latest witness check (null when never reported or an older box). */
+  readonly billNumbering?: BillNumberingState | null;
+  /** Verifier r19: bills issued but never received, and reports head office refused to count. */
+  readonly billNumberFindings?: readonly BillNumberFinding[];
 }
 
 const mb = (bytes: number): string => `${Math.floor(bytes / 1_048_576)} MB`;
@@ -276,6 +514,8 @@ export function judgeBoxes(input: {
   readonly thresholds: HealthThresholds;
   /** OB-78: warn (`degraded`) when fewer than this many hours of trading are left — the owner's tenant setting (default 48). */
   readonly diskWarnHours?: number;
+  /** Verifier r19: each store's bill-number findings (`billNumberFindingsFor`), judged by the caller with the ledger. */
+  readonly billNumberFindings?: ReadonlyMap<string, readonly BillNumberFinding[]>;
 }): { readonly boxes: readonly BoxHealthView[]; readonly components: readonly ComponentHealth[]; readonly localStoreWritable: boolean | undefined } {
   const warnHours = input.diskWarnHours ?? DEFAULT_BOX_DISK_WARN_HOURS;
   const latest = latestBoxReports(input.records);
@@ -300,8 +540,38 @@ export function judgeBoxes(input: {
       ? `about ${estimate.hoursLeft} hours of trading left before it would refuse a sale (the sales log grew ${mb(estimate.bytesPerTradingHour)} per trading hour over ${estimate.tradingMinutesCounted} minutes of trading in its reports since ${estimate.from}; ${mb(estimate.roomLeftBytes)} of room left above the reserve)`
       : estimate.why;
     const runningOut = can && estimate.known && estimate.hoursLeft < warnHours;
-    boxes.push({ storeId, state: 'reported', lastReportAt: r.observedAt, ageSeconds, stale, canRecordSales: can, disk: r.disk, queue: r.queue, tills: r.tills, tradingHoursLeft: estimate.known ? estimate.hoursLeft : null, tradingHoursLeftSays: estimateSays });
     const staleNote = `STALE — store ${storeId}'s computer last reported ${ago(ageSeconds)} ago (${r.observedAt}); it has not been heard from since, so this is old news, not the state now`;
+    const findings = input.billNumberFindings?.get(storeId) ?? [];
+    boxes.push({
+      storeId, state: 'reported', lastReportAt: r.observedAt, ageSeconds, stale, canRecordSales: can, disk: r.disk, queue: r.queue, tills: r.tills,
+      tradingHoursLeft: estimate.known ? estimate.hoursLeft : null, tradingHoursLeftSays: estimateSays,
+      billNumbering: r.billNumbering ?? null, billNumberFindings: findings,
+    });
+    // Verifier r19 OB87-1 / BOX-1 / lost sales: the store computer's bill numbering, as the owner must see it (P-08, P-03).
+    // `degraded` when the witness is unavailable (every start a possible restore, a new prefix each boot), when it shares a
+    // witness folder, when bills were issued and never received, or when a report was refused; a held restore is said too.
+    if (r.billNumbering !== undefined || findings.length > 0) {
+      const bn = r.billNumbering;
+      const parts: string[] = [];
+      if (bn?.witness === 'unavailable') parts.push(`store ${storeId}'s computer CANNOT keep its bill-number witness (${bn.fault ?? 'the witness folder could not be opened'}), so it treats every restart as a possible restore and numbers under a brand-new prefix until head office answers — no bill number is ever repeated, but fix its witness folder (EDGE_WITNESS_DIR)`);
+      if (bn !== undefined && bn.sharedWith.length > 0) parts.push(`store ${storeId}'s computer shares its witness folder with ${bn.sharedWith.length} other store computer(s) (${bn.sharedWith.map((x) => `${x.box}, last written ${x.lastWrittenAt}`).join('; ')}) — give each its own`);
+      if (bn?.restoreHeld === true) parts.push(`store ${storeId}'s computer is numbering under a brand-new prefix since ${bn.restoreSince ?? '?'} because it may have been restored from a backup (${bn.restoreBecause ?? 'possible restore'}), until head office's setup reaches it`);
+      for (const f of findings) parts.push(f.detail);
+      const bad = bn?.witness === 'unavailable' || (bn?.sharedWith.length ?? 0) > 0 || findings.length > 0;
+      const bnSays = parts.length > 0 ? parts.join('. ') : `store ${storeId}'s computer keeps its bill-number witness; nothing to look at`;
+      components.push({
+        name: `box_bill_numbers:${storeId}`,
+        // A stale report never clears a finding: findings stand on head office's own ledger; the witness state is old news.
+        status: bad ? 'degraded' : stale ? 'unknown' : bn?.restoreHeld === true ? 'degraded' : 'ok',
+        detail: stale && findings.length === 0 ? `${staleNote}. Then: ${bnSays}` : bnSays,
+        evidence: {
+          witness: bn?.witness ?? 'not said', restoreHeld: String(bn?.restoreHeld ?? false), sharedWitnessFolder: bn?.sharedWith.length ?? 0,
+          neverReceived: findings.filter((f) => f.kind === 'issued_never_received').map((f) => `${f.prefix}:${(f.ranges ?? []).map(([a, z]) => `${a}-${z}`).join('/')}`).join(','),
+          reportsRefused: findings.filter((f) => f.kind === 'report_refused').map((f) => `${f.prefix}@${f.through ?? ''}`).join(','),
+          reportedAt: r.observedAt, ageSeconds,
+        },
+      });
+    }
     const headroom = Math.max(0, r.disk.salesLogCapacityBytes - r.disk.salesLogUsedBytes - r.disk.reserveBytes);
     const diskEvidence = {
       freeBytes: r.disk.freeBytes, totalBytes: r.disk.totalBytes, salesLogHeadroomBytes: headroom, reportedAt: r.observedAt, ageSeconds,
@@ -385,6 +655,11 @@ export interface BoxHealthDeps {
   readonly storeComputerScopeOf?: StoreComputerScopeOf;
   /** Records the report; answers the record head office KEEPS (the first, when this is a re-send of the same report). */
   readonly record: (tenantId: string, r: BoxHealthRecord) => Promise<void | BoxHealthRecord>;
+  /**
+   * Verifier r19 BOX-1: what head office issued and banked, to judge the box's reported counts (`judgeReportedIssued`).
+   * Absent: nothing reported is folded (fail closed — a count is never believed blindly).
+   */
+  readonly issuedAndBanked?: (tenantId: string) => Promise<{ readonly issuedPrefixes: ReadonlyMap<string, ReadonlySet<string>>; readonly banked: ReadonlyMap<string, number> }>;
 }
 
 export function boxHealthRoutes(deps: BoxHealthDeps): readonly Route[] {
@@ -407,9 +682,18 @@ export function boxHealthRoutes(deps: BoxHealthDeps): readonly Route[] {
           nextSafeAction: 'Send { observedAt, disk: { freeBytes, totalBytes, salesLogUsedBytes, salesLogCapacityBytes, reserveBytes }, queue: { unsent, deadLettered }, tills: [...] }. Nothing was recorded.',
         });
       }
+      // Verifier r19 BOX-1: only counts under this store's own prefixes, and only a plausible advance, are folded; the rest
+      // are kept on the record (refused → a finding for the owner), never folded — a report alone never locks a till.
+      const judged = read.receiptNumbersIssued === undefined ? undefined
+        : deps.issuedAndBanked === undefined
+          ? { accepted: [] as IssuedReport[], refused: [] as RefusedIssued[], notFolded: read.receiptNumbersIssued.map((x) => ({ prefix: x.prefix, through: x.through })) }
+          : judgeReportedIssued({ storeId, issued: read.receiptNumbersIssued, ...(await deps.issuedAndBanked(ctx.tenantId)) });
       const r: BoxHealthRecord = {
         storeId, observedAt: read.observedAt, receivedAt, reportedBy: ctx.userId, disk: read.disk, queue: read.queue, tills: read.tills, clockAheadCorrected: read.clockAheadCorrected,
-        ...(read.receiptNumbersIssued === undefined ? {} : { receiptNumbersIssued: read.receiptNumbersIssued }),
+        ...(judged === undefined ? {} : { receiptNumbersIssued: judged.accepted }),
+        ...(judged === undefined || judged.refused.length === 0 ? {} : { receiptNumbersRefused: judged.refused }),
+        ...(judged === undefined || judged.notFolded.length === 0 ? {} : { receiptNumbersNotFolded: judged.notFolded }),
+        ...(read.billNumbering === undefined ? {} : { billNumbering: read.billNumbering }),
       };
       // The reply is what head office KEPT (a re-send answers the first record, never an unsaved copy).
       const kept = (await deps.record(ctx.tenantId, r)) ?? r;

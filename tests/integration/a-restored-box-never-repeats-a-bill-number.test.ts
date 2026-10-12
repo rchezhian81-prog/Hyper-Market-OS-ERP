@@ -228,6 +228,30 @@ async function headOfficeSeesARepeatedNumber(cloud: Cloud): Promise<void> {
   expect((await list()).filter((c) => c.idempotencyKey === key)).toHaveLength(1);
   // A cashier may not read the register (platform.health.read): refused.
   expect((await cloud.call('GET', '/v1/idempotency-conflicts', 'u-cash2')).status).toBe(403);
+  // Verifier r19 IC-2: that conflict is a different BILL — material, kind receipt_number_reused.
+  const kinds = async (): Promise<{ idempotencyKey: string; kind?: string; severity?: string }[]> =>
+    ((await cloud.call('GET', '/v1/idempotency-conflicts', OWNER)).body as { conflicts: { idempotencyKey: string; kind?: string; severity?: string }[] }).conflicts;
+  expect((await kinds()).find((c) => c.idempotencyKey === key)).toMatchObject({ kind: 'receipt_number_reused', severity: 'material' });
+  // The SAME bill re-sent under its key with only another detail changed (a box upgrade adding a field): still refused by the
+  // kernel (the key holds other content), kept on the register as INFORMATIONAL, and no "receipt number reused" finding.
+  const tagB = randomUUID().slice(0, 6).toUpperCase();
+  const receiptB = `S2B${tagB}-000004`.slice(0, 16);
+  const keyB = `sale-key-${tagB}`;
+  expect((await cloud.call('POST', '/v1/sales', 'u-box-2', saleBody(`S-${receiptB}`, receiptB, 4_000), keyB)).status).toBe(202);
+  expect((await cloud.call('POST', '/v1/sales', 'u-box-2', { ...saleBody(`S-${receiptB}`, receiptB, 4_000), boxSoftware: 'r19' }, keyB)).status).toBe(409);
+  expect((await kinds()).find((c) => c.idempotencyKey === keyB)).toMatchObject({ kind: 'resent_with_other_details', severity: 'informational' });
+  expect((await findings(cloud)).filter((f) => f.saleId === `S-${receiptB}` && f.kind === 'receipt_number_reused')).toEqual([]);
+  // Verifier r19 IC-1 (P-04): a STORE-1 manager does not read store 2's conflicts; store 2's manager and the owner do.
+  await cloud.grant('u-mgr1', 'store_manager', ['S1']);
+  await cloud.grant('u-mgr2', 'store_manager', [S2]);
+  const asMgr = async (user: string): Promise<{ conflicts: { idempotencyKey: string }[]; scope: unknown }> =>
+    (await cloud.call('GET', '/v1/idempotency-conflicts', user)).body as { conflicts: { idempotencyKey: string }[]; scope: unknown };
+  const m1 = await asMgr('u-mgr1');
+  expect(m1.scope).toEqual(['S1']);
+  expect(m1.conflicts.filter((c) => c.idempotencyKey === key || c.idempotencyKey === keyB)).toEqual([]);
+  const m2 = await asMgr('u-mgr2');
+  expect(m2.conflicts.map((c) => c.idempotencyKey)).toEqual(expect.arrayContaining([key, keyB]));
+  expect((await asMgr(OWNER)).scope).toBe('all');
 
   // A different bill under a banked sale id with a NEW key: 202 "already banked" — and the finding, never silence.
   const tag2 = randomUUID().slice(0, 6).toUpperCase();
@@ -235,7 +259,9 @@ async function headOfficeSeesARepeatedNumber(cloud: Cloud): Promise<void> {
   expect((await cloud.call('POST', '/v1/sales', 'u-box-2', saleBody(`S-${receipt2}`, receipt2, 5_000), `k1-${tag2}`)).status).toBe(202);
   const second = await cloud.call('POST', '/v1/sales', 'u-box-2', saleBody(`S-${receipt2}`, receipt2, 6_000), `k2-${tag2}`);
   expect(second.status).toBe(202);
-  expect((second.body as { alreadyBanked: boolean }).alreadyBanked).toBe(true);
+  // Verifier r19 IC-3: the answer says THIS bill was not banked (a different bill holds the id) — never "already banked".
+  expect(second.body).toMatchObject({ alreadyBanked: false, thisBillBanked: false, notBankedBecause: 'a_different_bill_holds_this_sale_id' });
+  expect((second.body as { detail: string }).detail).toMatch(/this bill was NOT banked/);
   expect((await findings(cloud)).filter((f) => f.saleId === `S-${receipt2}` && f.kind === 'receipt_number_reused')).toHaveLength(1);
 }
 
@@ -244,7 +270,7 @@ function memoryCloud(tenant: string): { cloud: Cloud; ready: Promise<void> } {
   const cloud: Cloud = {
     tenant, url: 'https://cloud.example.test',
     call: (method, path, user, body, key) => h.raw({
-      method, path, token: TEST_IDP.issue({ sub: user, tenantId: tenant, ...(user === 'u-box-2' ? { branchId: S2 } : {}) }),
+      method, path, token: TEST_IDP.issue({ sub: user, tenantId: tenant, ...(user === 'u-box-2' || user === 'u-mgr2' ? { branchId: S2 } : user === 'u-mgr1' ? { branchId: 'S1' } : {}) }),
       ...(body === undefined ? {} : { body }), ...(key === undefined ? {} : { idempotencyKey: key }),
     }),
     grant: (user, role, scope) => h.provisionRole(tenant, user, role, scope),
@@ -295,7 +321,7 @@ describe.skipIf(DATABASE_URL === undefined)('OB-87: a restored store computer ne
     };
     cloud = {
       tenant: real.tenantId, url: real.baseUrl,
-      call: (method, path, user, body, key) => send(method, path, TEST_IDP.issue({ sub: user, tenantId: real.tenantId, ...(user === 'u-box-2' ? { branchId: S2 } : {}) }), body, key),
+      call: (method, path, user, body, key) => send(method, path, TEST_IDP.issue({ sub: user, tenantId: real.tenantId, ...(user === 'u-box-2' || user === 'u-mgr2' ? { branchId: S2 } : user === 'u-mgr1' ? { branchId: 'S1' } : {}) }), body, key),
       grant: (user, role, scope) => real.grant(user, role, undefined, scope),
       fetchFor: (saved, isCut) => (async (url: string, init?: RequestInit): Promise<Response> => {
         if (String(url).startsWith(real.baseUrl) && isCut()) throw new Error('network down');

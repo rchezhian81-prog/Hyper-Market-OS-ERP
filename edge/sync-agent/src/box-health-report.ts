@@ -27,7 +27,34 @@ export interface BoxHealthReport {
     readonly attended?: boolean;
   }[];
   /** Verifier r18 item 6: the highest bill-number count this box has GIVEN per prefix, used on a bill or not (a void keeps its number). */
-  readonly receiptNumbersIssued?: readonly { readonly prefix: string; readonly through: number }[];
+  readonly receiptNumbersIssued?: readonly {
+    readonly prefix: string; readonly through: number;
+    /** Verifier r19: the highest count put on a bill on this box, or that it cannot vouch for (from its witness after a restore). */
+    readonly soldThrough?: number;
+    /** Verifier r19: numbers this box cannot vouch for — given after the backup it was restored from — as [from, to] ranges. */
+    readonly atRisk?: readonly (readonly [number, number])[];
+  }[];
+  /** Verifier r19 OB87-1/OB87-2: the box's own check of its bill-number witness, and any held restore. */
+  readonly billNumbering?: BillNumberingReport;
+}
+
+/** Verifier r19 OB87-1/OB87-2: what the box says about its bill-number witness (no person's data; a short box id only). */
+export interface BillNumberingReport {
+  readonly witness: 'kept' | 'unavailable' | 'none';
+  readonly fault?: string;
+  readonly restoreHeld: boolean;
+  readonly restoreBecause?: string;
+  readonly restoreSince?: string;
+  readonly sharedWith: readonly { readonly box: string; readonly lastWrittenAt: string }[];
+}
+
+/** The report's part from the box's witness check (`ReceiptNumbers.witnessHealth()`), its sentence left on the box. */
+export function billNumberingReport(h: BillNumberingReport & { readonly says?: string }): BillNumberingReport {
+  return {
+    witness: h.witness, ...(h.fault === undefined ? {} : { fault: h.fault.slice(0, 400) }), restoreHeld: h.restoreHeld,
+    ...(h.restoreBecause === undefined ? {} : { restoreBecause: h.restoreBecause }), ...(h.restoreSince === undefined ? {} : { restoreSince: h.restoreSince }),
+    sharedWith: h.sharedWith.slice(0, 20).map((x) => ({ box: x.box, lastWrittenAt: x.lastWrittenAt })),
+  };
 }
 
 export const BOX_HEALTH_REPORT_PATH = '/v1/store-computers/health-reports';

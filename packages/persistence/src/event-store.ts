@@ -161,6 +161,16 @@ export interface EventStore {
    * store with no register (memory, the edge) treats this as a no-op: the FK is a cloud-database guarantee.
    */
   registerTenant(tenantId: string, registeredBy: string): Promise<void>;
+  /**
+   * Verifier r19 HW-1 — a VISIBILITY FENCE for an incremental read (optional; a store without it is read with a lag
+   * instead). `positionFence` answers the newest position visible in a stream now, and a token; once
+   * `fenceSettled(token)` is true, every event at or below that position is visible to every later read — even one whose
+   * transaction drew its position early and committed late (PostgreSQL hands out positions before commit). A projection
+   * may then snapshot up to that position and never miss a late commit. The in-memory store appends synchronously, so its
+   * fence is always settled.
+   */
+  positionFence?(tenantId: string, stream: string): Promise<{ readonly seq: number; readonly token: string }>;
+  fenceSettled?(tenantId: string, token: string): Promise<boolean>;
 }
 
 function tenantKey(tenantId: string, idempotencyKey: string): string {
@@ -197,6 +207,16 @@ export class InMemoryEventStore implements EventStore {
 
   guardVersion(tenantId: string, key: string): Promise<number> {
     return Promise.resolve(this.guards.get(tenantKey(tenantId, key)) ?? 0);
+  }
+
+  /** Verifier r19 HW-1: appends here are synchronous, so the newest position in a stream is already settled. */
+  positionFence(tenantId: string, stream: string): Promise<{ readonly seq: number; readonly token: string }> {
+    const records = this.byStream.get(tenantKey(tenantId, stream)) ?? [];
+    return Promise.resolve({ seq: records.length === 0 ? 0 : records[records.length - 1]!.seq, token: '' });
+  }
+
+  fenceSettled(): Promise<boolean> {
+    return Promise.resolve(true);
   }
 
   appendBatch(tenantId: string, entries: readonly BatchEntry[], options?: AppendOptions): Promise<readonly AppendResult[]> {
@@ -368,6 +388,29 @@ export class SqlEventStore implements EventStore {
       : run(scoped);
   }
 
+  /**
+   * Verifier r19 HW-1 — the newest position visible in the stream and the transaction horizon of the SAME snapshot (one
+   * statement). Every insert takes its transaction id before its position (above), so an event at or below that position
+   * that this snapshot cannot see belongs to a transaction that was already running — one with an id below the horizon.
+   */
+  async positionFence(tenantId: string, stream: string): Promise<{ readonly seq: number; readonly token: string }> {
+    const rows = await scopedTo(this.client, tenantId).query<{ seq: number | string | null; horizon: string }>(
+      `SELECT (SELECT max(seq) FROM event_ledger WHERE tenant_id = $1 AND stream = $2) AS seq,
+              pg_snapshot_xmax(pg_current_snapshot())::text AS horizon`,
+      [tenantId, stream],
+    );
+    return { seq: Number(rows[0]?.seq ?? 0), token: String(rows[0]!.horizon) };
+  }
+
+  /** Verifier r19 HW-1: settled once no transaction below the fence's horizon is still running (committed or rolled back). */
+  async fenceSettled(tenantId: string, token: string): Promise<boolean> {
+    if (!/^\d+$/.test(token)) return false;
+    const rows = await scopedTo(this.client, tenantId).query<{ settled: boolean }>(
+      'SELECT pg_snapshot_xmin(pg_current_snapshot()) >= $1::xid8 AS settled', [token],
+    );
+    return rows[0]?.settled === true;
+  }
+
   async guardVersion(tenantId: string, key: string): Promise<number> {
     const rows = await scopedTo(this.client, tenantId).query<{ version: number | string }>(
       'SELECT version FROM write_guards WHERE tenant_id = $1 AND key = $2',
@@ -389,8 +432,12 @@ export class SqlEventStore implements EventStore {
       let inserted;
       try {
         inserted = await client.query(
+        // Verifier r19 HW-1: the one-time filter takes this transaction's id BEFORE the row's position is drawn (the
+        // identity default is evaluated in the projection, after the filter), so a position is never older than the
+        // transaction holding it — what makes `positionFence` exact.
         `INSERT INTO event_ledger (id, tenant_id, stream, type, occurred_at, idempotency_key, source, version, payload)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         SELECT $1::text, $2::uuid, $3::text, $4::text, $5::timestamptz, $6::text, $7::text, $8::int, $9::jsonb
+         WHERE pg_current_xact_id() IS NOT NULL
          ON CONFLICT DO NOTHING
          RETURNING ${COLUMNS}`,
         [

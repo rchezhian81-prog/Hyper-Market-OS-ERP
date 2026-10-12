@@ -80,7 +80,7 @@ export interface PosDeps {
  * What makes a bill the SAME bill (hard rule #10): its number, time, total, lines and tenders — not what head office added
  * on banking (a batch assignment, a store stamped from the credential), so an honest resend always matches.
  */
-function billFingerprint(s: IncomingSale): string {
+export function billFingerprint(s: IncomingSale): string {
   return JSON.stringify([
     s.receiptNumber ?? null, s.committedAt, s.totalMinor,
     s.lines.map((l) => [l.productId, l.quantityMinor, l.unitPriceMinor, l.lineTotalMinor ?? null]),
@@ -149,6 +149,7 @@ export function posRoutes(deps: PosDeps): readonly Route[] {
           ...(cashierSeal === undefined ? {} : { cashierSeal }),
         } satisfies IntakeContext);
 
+        let notThisBill: Record<string, unknown> | undefined;
         if (!intake.alreadyBanked) {
           await deps.bankSale(ctx.tenantId, sale);
           if (intake.exceptions.length > 0) {
@@ -164,6 +165,14 @@ export function posRoutes(deps: PosDeps): readonly Route[] {
               detail: `sale ${sale.saleId} (receipt ${sale.receiptNumber}) arrived again as a DIFFERENT bill — ${sale.totalMinor} against the ${first.totalMinor} head office banked under that id: the first stands and this one was NOT banked`,
               ownerAction: 'A store computer gave one bill number to two different bills (a computer restored from a backup, or two computers on one till). The customer holds the second bill, which head office has not banked. Find it at the store computer, bank it by hand, and check that till\'s bill-number prefix.',
             }]);
+            // Verifier r19 IC-3: the answer says what happened — this bill was NOT banked (a different bill holds the id). Still
+            // 202, so the store computer stops re-sending it; the owner's finding above is where it is worked. (Loyalty below is
+            // idempotent per sale id: it never earns or spends twice for the id.)
+            notThisBill = {
+              alreadyBanked: false, thisBillBanked: false,
+              notBankedBecause: 'a_different_bill_holds_this_sale_id',
+              detail: `sale ${sale.saleId} is already held by a DIFFERENT bill that head office banked first (${first.totalMinor} against this ${sale.totalMinor}); this bill was NOT banked — it is on head office's sales findings as "receipt number reused" for a person to bank by hand`,
+            };
           }
         }
 
@@ -202,7 +211,7 @@ export function posRoutes(deps: PosDeps): readonly Route[] {
 
         // 202, not 201: the sale is banked and there may be work attached to it. A 4xx here would
         // tell a till that a sale which happened did not.
-        return { status: 202, body: { ...intake, ...(loyalty === undefined ? {} : { loyalty }), ...(spends === undefined ? {} : { spends }) } };
+        return { status: 202, body: { ...intake, ...(loyalty === undefined ? {} : { loyalty }), ...(spends === undefined ? {} : { spends }), ...(notThisBill ?? {}) } };
       },
     },
     {

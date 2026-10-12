@@ -54,6 +54,11 @@ export interface LaneSyncStatus {
   readonly now: string;
   /** One sentence a cashier or manager can act on (P-08). The screens translate the STATE; this is for logs. */
   readonly staffMessage: string;
+  /** Verifier r19 OB87-1: the box's own check of its bill-number witness (absent on a box with no till). */
+  readonly billNumbering?: {
+    readonly witness: 'kept' | 'unavailable' | 'none'; readonly fault?: string; readonly restoreHeld: boolean; readonly restoreBecause?: string;
+    readonly restoreSince?: string; readonly sharedWith: readonly { readonly box: string; readonly lastWrittenAt: string }[]; readonly says: string;
+  };
 }
 
 const latest = (times: readonly (string | null)[]): string | null => {
@@ -76,6 +81,8 @@ export function laneSyncStatus(input: {
   /** The box's own record of the last time head office answered a pull, if it keeps one. */
   readonly lastContactAt: string | null;
   readonly now: string;
+  /** Verifier r19 OB87-1: the bill-number witness check — an unavailable witness leads the sentence (P-08). */
+  readonly billNumbering?: LaneSyncStatus['billNumbering'];
 }): LaneSyncStatus {
   const unsent = input.queues.reduce((n, q) => n + q.unsentCount, 0);
   const deadLettered = input.queues.reduce((n, q) => n + q.deadLetterCount, 0);
@@ -97,5 +104,9 @@ export function laneSyncStatus(input: {
             : `Head office could not be reached. ${held(unsent, ' and will go when the line is back')}${lastContactAt === null ? ' It has never been reached from this box.' : ` Last contact ${lastContactAt}.`}`
   );
 
-  return { cloud, unsent, deadLettered, lastSentAt, lastContactAt, now: input.now, staffMessage };
+  const witnessWarning = input.billNumbering !== undefined && input.billNumbering.witness === 'unavailable' ? `${input.billNumbering.says} ` : '';
+  return {
+    cloud, unsent, deadLettered, lastSentAt, lastContactAt, now: input.now, staffMessage: witnessWarning + staffMessage,
+    ...(input.billNumbering === undefined ? {} : { billNumbering: input.billNumbering }),
+  };
 }

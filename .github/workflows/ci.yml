@@ -320,6 +320,21 @@ jobs:
           test "$code" = "200" || fail "the box's own loopback check (standup:check follows the redirect to the sign-in) must still answer 200 (got $code)"
           echo "hosted-demo overlay: staff screens, the demo store box and /v1-with-cookie reachable only through the demo sign-in gate"
 
+      - name: The store edge keeps its bill-number witness on its own volume (OB-87 · verifier r19 OB87-1)
+        # The edge's root is read-only: without its own witness volume every restart looked like a possible restore (a new
+        # "ZZ" bill prefix each boot). The overlay's edge runs a till lane, so it opens its witness at start: the folder it
+        # names must be writable, hold this box's witness file, sit outside the data folder, and the boot log must not say
+        # the witness is unavailable.
+        run: |
+          cd infra/compose
+          P="docker compose -f docker-compose.yml -f docker-compose.pilot.yml"
+          fail() { echo "::error::$1"; $P logs --no-color edge | tail -60; exit 1; }
+          $P exec -T edge sh -c 'test -n "$EDGE_WITNESS_DIR" && test -w "$EDGE_WITNESS_DIR" && case "$EDGE_WITNESS_DIR/" in "$EDGE_DATA_DIR"/*) exit 1;; esac' \
+            || fail "the edge's witness folder (EDGE_WITNESS_DIR) is missing, not writable, or inside its data folder"
+          $P exec -T edge sh -c 'ls "$EDGE_WITNESS_DIR" | grep -q "^receipt-numbers\.witness\."' || fail "the edge opened no witness file in its witness folder"
+          if $P logs --no-color edge | grep -q 'WITNESS UNAVAILABLE'; then fail "the edge says its bill-number witness is unavailable"; fi
+          echo "store edge: bill-number witness kept on its own volume"
+
       - name: It drains rather than being killed
         run: |
           cd infra/compose

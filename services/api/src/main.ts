@@ -955,6 +955,9 @@ export function buildSurface(deps: {
       // stock moves only at one of them (422 unknown_location otherwise). A tenant that has registered NO place at all has
       // nothing to judge against and no store a pack could be built for (its movements stay unjudged, as before).
       knownLocation: async (t: string, l: string) => { const known = await knownStockPlace({ store, now }, t); return !known.registeredAny || known(l); },
+      // Verifier r19 (6a/6b): stock left at a place that is not (or no longer) a registered stock place is LISTED for head
+      // office (GET /v1/inventory/exceptions → strandedStock) and named in the refusal — never a silent block.
+      stockPlaces: async (t: string) => { const known = await knownStockPlace({ store, now }, t); return { registeredAny: known.registeredAny, isKnown: (l: string) => known(l), closed: known.closed }; },
       frozenBy: async (t: string, l: string, p: string, k: string) => (countPlanDeps === undefined ? undefined : (await countPlanFreezing(countPlanDeps, t, l, p, k))?.planId) }),
     // Goods receipt / GRN capture (M07-FR-01/02/03 · D03-FR-02) — the durable cloud receiving record, the tenant's
     // receipt policy and the held-excess decision (F03).
@@ -1134,7 +1137,7 @@ export function buildSurface(deps: {
     // M35-FR-03: each store computer reports its disk, its queue and its tills' devices (its own store, stamped — OB-54);
     // head office's observed health judges them, stale when the box has gone quiet.
     ...boxHealthRoutes(store === undefined ? { now, record: async () => {} } : {
-      now, storeComputerScopeOf: (t, u) => storeComputerScopeHeldBy(store, t, u), ...boxHealthAdapter({ store }),
+      now, storeComputerScopeOf: (t, u) => storeComputerScopeHeldBy(store, t, u), ...boxHealthAdapter({ store, ...(deps.snapshots === undefined ? {} : { snapshots: deps.snapshots }) }),
     }),
     ...posRoutes(store === undefined ? {
       catalogue: empty(new Map()), currentPackVersion: empty(1),

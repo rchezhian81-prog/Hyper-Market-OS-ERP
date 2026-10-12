@@ -283,6 +283,27 @@ remember to tell it.
    new computer whose old one had unsent bills), head office lists it as a **receipt number reused**
    finding and on the idempotency-conflicts register (`GET /v1/idempotency-conflicts`) — it is
    never silently dropped.
+6. About an hour after the restore, open head office's health page. If the till gave bills after
+   the backup and never sent them, `box_bill_numbers:<store>` names them: **"bills issued but never
+   received: …"** with the prefix and the numbers. Those sales are lost from head office's books —
+   find the paper bills and enter them, or write them off with the reason.
+
+### The witness check at every start (verifier r19)
+
+The till checks its witness folder each time it starts and says what it found:
+
+- Nothing said — the witness is kept. This is normal.
+- `!!! BILL-NUMBER WITNESS UNAVAILABLE: …` — the witness folder could not be opened, or it is
+  **inside** `edge-data/`. The till still sells and never repeats a bill number, but every restart
+  will start a new `ZZ…` prefix until it is fixed. Make sure `till/edge-witness/` exists, is
+  writable by the account that runs the till, and is **beside** `edge-data/`, not inside it
+  (`EDGE_WITNESS_DIR` in the start script). Head office's health page shows the same warning.
+- `… also holds the witness of 1 other store computer(s) …` — two tills point at the same witness
+  folder. Give each till its own `edge-witness/` folder. (Each till keeps its own file there, so
+  this no longer looks like a restore on every start — but one folder per till is the rule.)
+- **In the container set-up** (`infra/compose`), the witness is its own volume, `edge-witness`,
+  mounted at `/var/lib/sre-edge-witness` with `EDGE_WITNESS_DIR` set — never inside the
+  `edge-data` volume. Back up `edge-data` only.
 
 ---
 

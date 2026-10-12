@@ -407,4 +407,15 @@ export class PersonalDataSealingStore implements EventStore {
   }
 
   registerTenant(tenantId: string, registeredBy: string): Promise<void> { return this.inner.registerTenant(tenantId, registeredBy); }
+
+  // Verifier r19 HW-1: the visibility fence is the inner store's (positions are not personal data) — passed through when it has one.
+  get positionFence(): EventStore['positionFence'] {
+    const inner = this.inner;
+    return inner.positionFence === undefined ? undefined : (tenantId, stream) => inner.positionFence!(tenantId, stream);
+  }
+
+  get fenceSettled(): EventStore['fenceSettled'] {
+    const inner = this.inner;
+    return inner.fenceSettled === undefined ? undefined : (tenantId, token) => inner.fenceSettled!(tenantId, token);
+  }
 }

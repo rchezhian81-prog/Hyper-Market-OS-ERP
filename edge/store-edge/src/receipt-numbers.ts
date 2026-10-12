@@ -68,10 +68,23 @@
 //   Limit (said, not hidden): a restore onto a NEW computer whose dead predecessor gave numbers it never synced cannot know
 //   those numbers — head office never saw them. Head office's finding for any repeated number (sale-intake and the
 //   idempotency-conflict register) makes such a clash visible, never silent.
+//
+// Verifier r19 (OB87-1, OB87-2) — THE WITNESS SELF-CHECK. At start the box checks its witness folder and SAYS what it found
+// (`witnessHealth()`: on the status read, on the box's health report to head office, and in its start-up log):
+//   • `kept` — the witness folder could be opened and written, outside the data folder;
+//   • `unavailable` — it could not be opened (a read-only root with no witness volume, a permissions fault), or it lies
+//     INSIDE the data folder (a backup of the data folder would carry it, which defeats it). A box with numbering history
+//     then treats every start as a possible restore and takes a fresh prefix — fail-safe, never a repeated number — and
+//     says so loudly on every read until the folder is fixed: it is never a silent new prefix each boot.
+//   • each box keeps its OWN witness file in the folder, named by its disk's identity (the first line of this log, which a
+//     restore of the same disk keeps), so two boxes pointed at one witness folder no longer read each other's witness as a
+//     restore on every start (OB87-2); the other boxes' files in the folder are listed (`sharedWith`) so a shared folder is
+//     visible and can be fixed. A witness written before r19 (one shared file name) is adopted once when it watched this
+//     disk.
 
 import { randomUUID } from 'node:crypto';
-import { stat } from 'node:fs/promises';
-import { join } from 'node:path';
+import { readdir, stat } from 'node:fs/promises';
+import { join, relative, resolve, isAbsolute } from 'node:path';
 import type { OpenFileLog } from './file-log';
 import { openFileLog, readLog } from './file-log';
 import { RECEIPT_COUNTER_DIGITS, RECEIPT_COUNTER_MAX, RECEIPT_PREFIX_MAX, readPublishedSeries, storeComputerDefaultPrefix } from '../../../packages/contracts/src/receipt-number';
@@ -166,6 +179,25 @@ export interface RestoreState {
   readonly witnessFault?: string;
 }
 
+/**
+ * Verifier r19 OB87-1/OB87-2: the box's own check of its bill-number witness — said on the status read, in the start-up log
+ * and on the health report head office judges (`box_bill_numbers:<store>`).
+ */
+export interface WitnessHealth {
+  /** `kept`: opened and written outside the data folder. `unavailable`: it could not be, so every start is a possible restore. `none`: no witness is kept (a unit test). */
+  readonly witness: 'kept' | 'unavailable' | 'none';
+  /** Why it is unavailable, or the last fault writing it — in words. */
+  readonly fault?: string;
+  /** Whether the box numbers under a fresh prefix after a (possible) restore right now, why and since when. */
+  readonly restoreHeld: boolean;
+  readonly restoreBecause?: RestoreSign;
+  readonly restoreSince?: string;
+  /** Other store computers' witness files in the same folder (a shared folder — OB87-2): a short id and when each was last written. */
+  readonly sharedWith: readonly { readonly box: string; readonly lastWrittenAt: string }[];
+  /** One sentence for the log and the screens (P-08). */
+  readonly says: string;
+}
+
 interface Issued {
   readonly laneId: string; readonly seriesKey: string; readonly seq: number; readonly receiptNumber: string;
   readonly requestKey: string; readonly issuedTo: string; readonly at: string;
@@ -190,8 +222,17 @@ type WitnessRecord =
   | { readonly kind: 'box'; readonly boxIdentity: string; readonly at: string }
   | { readonly kind: 'issued'; readonly boxIdentity: string; readonly laneId: string; readonly seriesKey: string; readonly seq: number; readonly receiptNumber: string; readonly at: string };
 
-/** The witness log's file name, in the witness folder (OB-87). */
+/** The witness log's file name before r19 (one per folder) — read once, to adopt a witness that watched this disk (OB-87). */
 export const WITNESS_FILE = 'receipt-numbers.witness.log';
+/** Verifier r19 OB87-2: each box's OWN witness file in the folder, named by its disk's identity (kept across a restore). */
+export const witnessFileFor = (diskIdentity: string): string => `receipt-numbers.witness.${diskIdentity}.log`;
+const WITNESS_FILE_PATTERN = /^receipt-numbers\.witness\.(.+)\.log$/;
+const LEGACY_NEIGHBOUR = 'a store computer from before r19';
+/** Whether `inner` is `outer` itself or lies inside it. */
+const isInside = (inner: string, outer: string): boolean => {
+  const rel = relative(resolve(outer), resolve(inner));
+  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
+};
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
 const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -258,6 +299,11 @@ export class ReceiptNumbers {
   private readonly witness: OpenFileLog | null;
   /** The last fault opening or writing the witness, said on the status read (P-08). */
   private witnessFault: string | undefined;
+  /** Verifier r19: whether a witness is kept at all (a unit test of the numbering alone keeps none). */
+  private readonly witnessKept: boolean;
+  /** Verifier r19 OB87-2: the witness folder and this box's own file in it — to list other boxes' files beside it. */
+  private readonly witnessWhere: { readonly dir: string; readonly own: string; readonly legacyAdopted: boolean } | undefined;
+  private witnessNeighbours: { readonly box: string; readonly lastWrittenAt: string }[] = [];
 
   private constructor(
     private readonly log: OpenFileLog,
@@ -273,12 +319,18 @@ export class ReceiptNumbers {
     committed: readonly { readonly receiptNumber: string; readonly recordId: string }[],
     unreadable: number,
     hold?: { readonly because: RestoreSign; readonly at: string },
-    witness?: { readonly log: OpenFileLog | null; readonly fault?: string },
+    witness?: {
+      readonly log: OpenFileLog | null; readonly fault?: string; readonly dir?: string; readonly own?: string; readonly legacyAdopted?: boolean;
+      readonly neighbours?: { box: string; lastWrittenAt: string }[];
+    },
   ) {
     this.unreadableRecords = unreadable;
     this.restoreHold = hold;
     this.witness = witness?.log ?? null;
     this.witnessFault = witness?.fault;
+    this.witnessKept = witness !== undefined;
+    this.witnessWhere = witness?.dir === undefined || witness.own === undefined ? undefined : { dir: witness.dir, own: witness.own, legacyAdopted: witness.legacyAdopted === true };
+    this.witnessNeighbours = witness?.neighbours ?? [];
     for (const r of restored) this.fold(r);
     // Numbers already on the sales and refunds logs are used, whether or not their "used" line made it to this log.
     for (const c of committed) if (isStr(c.receiptNumber) && !this.usedBy.has(c.receiptNumber)) this.usedBy.set(c.receiptNumber, c.recordId);
@@ -303,6 +355,10 @@ export class ReceiptNumbers {
     const now = input.now ?? (() => new Date().toISOString());
     const restored: LogRecord[] = [];
     let identity: string | undefined;
+    /** The disk's identity — the FIRST box line, which a restore of the same disk keeps (names its witness file). */
+    let diskIdentity: string | undefined;
+    /** Every identity this disk has had (its box line and each restore line) — to adopt a pre-r19 witness that watched it. */
+    const lineage = new Set<string>();
     let hold: { because: RestoreSign; at: string } | undefined;
     let unreadable = 0;
     for (const v of await readLog(log.path)) {
@@ -310,9 +366,10 @@ export class ReceiptNumbers {
       try {
         const r = JSON.parse(v.record) as unknown;
         // The FIRST box line is the disk's identity; a later restore line replaces it (OB-87 — the latest restore wins).
-        if (isObj(r) && r['kind'] === 'box' && isStr(r['boxIdentity'])) { identity ??= r['boxIdentity']; continue; }
+        if (isObj(r) && r['kind'] === 'box' && isStr(r['boxIdentity'])) { identity ??= r['boxIdentity']; diskIdentity ??= r['boxIdentity']; lineage.add(r['boxIdentity']); continue; }
         if (isObj(r) && r['kind'] === 'restore' && isStr(r['boxIdentity'])) {
           identity = r['boxIdentity'];
+          lineage.add(r['boxIdentity']);
           hold = { because: (isStr(r['because']) ? r['because'] : 'witness_missing') as RestoreSign, at: isStr(r['at']) ? r['at'] : '' };
           continue;
         }
@@ -326,11 +383,16 @@ export class ReceiptNumbers {
       // Made once, on this box's own disk, before any number is given under it. A box whose disk is lost (a replacement)
       // makes a new one — so its fallback prefix is fresh and never continues another box's count.
       identity = randomUUID();
+      diskIdentity = identity;
+      lineage.add(identity);
       const rec: BoxRecord = { kind: 'box', boxIdentity: identity, at: now() };
       await log.append(JSON.stringify(rec));
     }
     const witness = input.witnessDir === undefined || input.witnessDir === null ? undefined
-      : await ReceiptNumbers.judgeWitness({ log, witnessDir: input.witnessDir, capacityBytes: input.capacityBytes, restored, identity, freshDisk, now });
+      : await ReceiptNumbers.judgeWitness({
+        log, witnessDir: input.witnessDir, dataDir: input.dataDir, capacityBytes: input.capacityBytes, restored, identity,
+        diskIdentity: diskIdentity ?? identity, lineage, freshDisk, now,
+      });
     if (witness?.restore !== undefined) { identity = witness.restore.identity; hold = { because: witness.restore.because, at: witness.restore.at }; }
     return new ReceiptNumbers(log, { published: input.published, numbering: input.numbering ?? (() => ({ storeId: null, storesInBusiness: null })), now }, identity, restored, input.committed ?? [], unreadable, hold, witness);
   }
@@ -341,30 +403,64 @@ export class ReceiptNumbers {
    * line gives the box a brand-new identity. The witness is (re)told the identity it now watches.
    */
   private static async judgeWitness(input: {
-    readonly log: OpenFileLog; readonly witnessDir: string; readonly capacityBytes: number; readonly restored: LogRecord[];
-    readonly identity: string; readonly freshDisk: boolean; readonly now: () => string;
-  }): Promise<{ log: OpenFileLog | null; fault?: string; restore?: { identity: string; because: RestoreSign; at: string } }> {
-    const witnessPath = join(input.witnessDir, WITNESS_FILE);
+    readonly log: OpenFileLog; readonly witnessDir: string; readonly dataDir: string; readonly capacityBytes: number; readonly restored: LogRecord[];
+    readonly identity: string; readonly diskIdentity: string; readonly lineage: ReadonlySet<string>; readonly freshDisk: boolean; readonly now: () => string;
+  }): Promise<{
+    log: OpenFileLog | null; fault?: string; dir: string; own: string; legacyAdopted: boolean; neighbours: { box: string; lastWrittenAt: string }[];
+    restore?: { identity: string; because: RestoreSign; at: string };
+  }> {
+    const own = witnessFileFor(input.diskIdentity);
+    const witnessPath = join(input.witnessDir, own);
     let existed: boolean;
     try { await stat(witnessPath); existed = true; } catch { existed = false; }
     const issuedSeen: Extract<WitnessRecord, { kind: 'issued' }>[] = [];
     let watched: string | undefined;
     let wlog: OpenFileLog | null = null;
     let fault: string | undefined;
-    try {
-      for (const v of await readLog(witnessPath)) {
+    // Read one witness file: its box lines (the latest is the identity it watches) and its issued numbers; answers the lines.
+    const readWitness = async (path: string): Promise<string[]> => {
+      const lines: string[] = [];
+      for (const v of await readLog(path)) {
         if (!v.ok) continue;
         try {
           const r = JSON.parse(v.record) as unknown;
-          if (isObj(r) && r['kind'] === 'box' && isStr(r['boxIdentity'])) { watched = r['boxIdentity']; continue; }
+          if (isObj(r) && r['kind'] === 'box' && isStr(r['boxIdentity'])) { watched = r['boxIdentity']; lines.push(v.record); continue; }
           if (isObj(r) && r['kind'] === 'issued' && isStr(r['receiptNumber']) && isStr(r['laneId']) && isStr(r['seriesKey']) && typeof r['seq'] === 'number') {
             issuedSeen.push(r as unknown as Extract<WitnessRecord, { kind: 'issued' }>);
+            lines.push(v.record);
           }
         } catch { /* an unreadable witness line is skipped: the data folder's log is the record */ }
       }
-      wlog = await openFileLog({ dataDir: input.witnessDir, capacityBytes: input.capacityBytes, fileName: WITNESS_FILE });
-    } catch (e) {
-      fault = `the witness log outside the data folder could not be opened (${e instanceof Error ? e.message : String(e)})`;
+      return lines;
+    };
+    let adoptLegacy: string[] = [];
+    // Verifier r19 OB87-1 — the self-check: a witness folder INSIDE the data folder would be backed up and restored WITH the
+    // data, which defeats it. It is refused as unavailable (every start a possible restore — fail-safe), and said loudly.
+    if (isInside(input.witnessDir, input.dataDir)) {
+      fault = `the witness folder ${input.witnessDir} is INSIDE the data folder ${input.dataDir}, so a backup of the data folder would carry it and a restore could not be seen — give EDGE_WITNESS_DIR a folder (or volume) of its own, outside the data folder`;
+    } else {
+      try {
+        if (existed) await readWitness(witnessPath);
+        else {
+          // A witness written before r19 (one file per folder): adopted once, only when it watched THIS disk.
+          const legacy = join(input.witnessDir, WITNESS_FILE);
+          let legacyExists = false;
+          try { await stat(legacy); legacyExists = true; } catch { legacyExists = false; }
+          if (legacyExists && (await readLog(legacy)).some((v) => {
+            if (!v.ok) return false;
+            try { const r = JSON.parse(v.record) as unknown; return isObj(r) && r['kind'] === 'box' && isStr(r['boxIdentity']) && input.lineage.has(r['boxIdentity']); } catch { return false; }
+          })) {
+            adoptLegacy = await readWitness(legacy);
+            existed = true;
+          }
+        }
+        wlog = await openFileLog({ dataDir: input.witnessDir, capacityBytes: input.capacityBytes, fileName: own });
+        for (const line of adoptLegacy) await wlog.append(line);
+      } catch (e) {
+        fault = wlog === null
+          ? `the witness log outside the data folder could not be opened (${e instanceof Error ? e.message : String(e)})`
+          : `the witness log could not be written (${e instanceof Error ? e.message : String(e)})`;
+      }
     }
     const inLog = new Set(input.restored.filter((r) => r.kind === 'issued').map((r) => r.receiptNumber));
     const ahead = [...new Map(issuedSeen.filter((w) => !inLog.has(w.receiptNumber)).map((w) => [w.receiptNumber, w])).values()];
@@ -399,20 +495,96 @@ export class ReceiptNumbers {
         fault = `the witness log could not be written (${e instanceof Error ? e.message : String(e)})`;
       }
     }
-    return { log: wlog, ...(fault === undefined ? {} : { fault }), ...(restore === undefined ? {} : { restore }) };
+    const legacyAdopted = adoptLegacy.length > 0;
+    const neighbours = wlog === null ? [] : await ReceiptNumbers.neighboursIn(input.witnessDir, own, legacyAdopted);
+    return { log: wlog, dir: input.witnessDir, own, legacyAdopted, neighbours, ...(fault === undefined ? {} : { fault }), ...(restore === undefined ? {} : { restore }) };
+  }
+
+  /** Verifier r19 OB87-2: the OTHER boxes' witness files in this witness folder (a shared folder), each with when it was last written. */
+  private static async neighboursIn(dir: string, own: string, legacyAdopted: boolean): Promise<{ box: string; lastWrittenAt: string }[]> {
+    try {
+      const out: { box: string; lastWrittenAt: string }[] = [];
+      for (const name of await readdir(dir)) {
+        if (name === own || (name === WITNESS_FILE && legacyAdopted)) continue;
+        const m = WITNESS_FILE_PATTERN.exec(name);
+        if (m === null && name !== WITNESS_FILE) continue;
+        try {
+          const st = await stat(join(dir, name));
+          out.push({ box: m === null ? LEGACY_NEIGHBOUR : m[1]!.slice(0, 8), lastWrittenAt: st.mtime.toISOString() });
+        } catch { /* gone meanwhile */ }
+      }
+      return out.sort((a, b) => a.box.localeCompare(b.box));
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Verifier r19 OB87-1/OB87-2: the box's own check of its witness, in words — said on the status read, in the start-up log
+   * and on the health report to head office. The other boxes' files beside it are re-listed on each call (one folder read).
+   */
+  async witnessHealth(): Promise<WitnessHealth> {
+    if (this.witnessWhere !== undefined && this.witness !== null) {
+      this.witnessNeighbours = await ReceiptNumbers.neighboursIn(this.witnessWhere.dir, this.witnessWhere.own, this.witnessWhere.legacyAdopted);
+    }
+    return this.witnessHealthNow();
+  }
+
+  /** The same, from what is known now (no folder read). */
+  witnessHealthNow(): WitnessHealth {
+    const witness: WitnessHealth['witness'] = !this.witnessKept ? 'none' : this.witness === null ? 'unavailable' : 'kept';
+    const hold = this.restoreHold;
+    const shared = this.witnessNeighbours;
+    const says = [
+      witness === 'unavailable'
+        ? `BILL-NUMBER WITNESS UNAVAILABLE: ${this.witnessFault ?? 'the witness folder could not be opened'}. Until it is fixed this store computer cannot tell a restart from a restore of its data, so every start with bill-number history numbers under a brand-new prefix (never a repeated bill number). Fix the witness folder (EDGE_WITNESS_DIR — its own writable folder or volume, outside the data folder).`
+        : witness === 'kept' && this.witnessFault !== undefined ? `The bill-number witness could not be written last time (${this.witnessFault}).`
+        : witness === 'kept' ? 'The bill-number witness outside the data folder is kept.' : 'No bill-number witness is kept on this store computer.',
+      ...(hold === undefined ? [] : [`It is numbering bills under a brand-new prefix since ${hold.at}, because ${RESTORE_SIGN_WORDS[hold.because]}, until head office's latest setup arrives.`]),
+      ...(shared.length === 0 ? [] : [`Its witness folder also holds the witness of ${shared.length} other store computer(s) (${shared.map((x) => `${x.box}, last written ${x.lastWrittenAt}`).join('; ')}) — if two store computers share one witness folder, give each its own.`]),
+    ].join(' ');
+    return {
+      witness, ...(this.witnessFault === undefined ? {} : { fault: this.witnessFault }),
+      restoreHeld: hold !== undefined, ...(hold === undefined ? {} : { restoreBecause: hold.because, restoreSince: hold.at }),
+      sharedWith: shared, says,
+    };
   }
 
   /**
    * Verifier r18 item 6: the highest count this box has GIVEN under each prefix — used on a bill or not (a voided or
    * abandoned bill keeps its number). Reported to head office with the box's health, so a replaced box resumes above it.
    */
-  issuedThrough(): { readonly prefix: string; readonly through: number }[] {
+  issuedThrough(): { readonly prefix: string; readonly through: number; readonly soldThrough: number; readonly atRisk?: readonly (readonly [number, number])[] }[] {
     const by = new Map<string, number>();
     for (const [k, seq] of this.cursor) {
       const prefix = k.slice(k.lastIndexOf('|') + 1);
       if (prefix !== '' && Number.isSafeInteger(seq) && seq >= 1) by.set(prefix, Math.max(by.get(prefix) ?? 0, seq));
     }
-    return [...by].map(([prefix, through]) => ({ prefix, through })).sort((a, b) => a.prefix.localeCompare(b.prefix)).slice(0, 200);
+    // Verifier r19 (sales lost by a restore · P-08): per prefix, the highest count this box put on a bill or cannot vouch for,
+    // and the numbers it cannot vouch for — the ones its witness held after a restore (given after the backup; whether they
+    // were sold is lost with the data). Head office checks each against what it banked and names the ones it never received.
+    // A number issued and never used on this box (a void, an abandoned bill) is neither: it never raises "never received".
+    const sold = new Map<string, number>();
+    const risky = new Map<string, number[]>();
+    for (const i of this.issued.values()) {
+      const prefix = i.seriesKey.split('|')[0] ?? '';
+      if (prefix === '' || !Number.isSafeInteger(i.seq) || i.seq < 1) continue;
+      const absorbed = i.requestKey.startsWith('witnessed:');
+      if (absorbed) risky.set(prefix, [...(risky.get(prefix) ?? []), i.seq]);
+      if (absorbed || this.usedBy.has(i.receiptNumber)) sold.set(prefix, Math.max(sold.get(prefix) ?? 0, i.seq));
+    }
+    const ranges = (seqs: number[]): [number, number][] => {
+      const out: [number, number][] = [];
+      for (const n of [...new Set(seqs)].sort((a, b) => a - b)) {
+        const last = out[out.length - 1];
+        if (last !== undefined && n === last[1] + 1) last[1] = n; else out.push([n, n]);
+      }
+      return out.slice(-50);
+    };
+    return [...by].map(([prefix, through]) => ({
+      prefix, through, soldThrough: Math.min(through, sold.get(prefix) ?? 0),
+      ...(risky.has(prefix) ? { atRisk: ranges(risky.get(prefix)!) } : {}),
+    })).sort((a, b) => a.prefix.localeCompare(b.prefix)).slice(0, 200);
   }
 
   /** OB-87: whether this box is numbering under a fresh prefix after a (possible) restore, and why. */

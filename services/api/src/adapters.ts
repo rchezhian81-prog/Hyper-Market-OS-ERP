@@ -28,7 +28,7 @@ import { money } from '../../../packages/contracts/src/money';
 import type { AppendResult, BatchEntry, EventStore, PersistedEvent, WriteGuard } from '../../../packages/persistence/src/event-store';
 import { ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
 import { issuedSeriesFor, PrefixWriteRaced, type ReceiptPrefixDeps, type ReceiptPrefixIssue } from '../../platform/src/receipt-prefixes';
-import { splitReceiptNumber, RECEIPT_COUNTER_MAX } from '../../../packages/contracts/src/receipt-number';
+import { splitReceiptNumber, RECEIPT_COUNTER_MAX, RECEIPT_COUNTER_DIGITS } from '../../../packages/contracts/src/receipt-number';
 import { notCanonical } from '../../platform/src/store-computer-identity';
 import { stockValueCheckFor } from './finance-close-adapters';
 import {
@@ -322,7 +322,8 @@ import { PersonalDataSealingStore, type PersonalDataPolicy, type SubjectKeyStore
 import { figure, sourceFreshness, syncedThrough } from '../../reporting/src/index';
 import type { ReportingDeps, Figure, SourceFreshness, StoreSyncReport } from '../../reporting/src/index';
 import { latestDomainReports, latestPerStore, type SyncWatermarkRecord } from '../../platform/src/sync-watermarks';
-import type { BoxHealthRecord } from '../../platform/src/box-health';
+import type { BoxHealthRecord, BillNumberFinding } from '../../platform/src/box-health';
+import { unreceivedCandidates, billNumberFindingsFor } from '../../platform/src/box-health';
 import type { BranchScope } from '../../kernel/src/index';
 import { tradingDayIn, tradingDayWindow, type TradingCalendar } from '../../../packages/calendar/src/index';
 import type { ConsolidationDeps } from '../../reporting/src/consolidation-route';
@@ -1645,12 +1646,39 @@ async function appendSetting(store: EventStore, tenantId: string, stream: string
   /** Whether the setting in force already holds this value (the fields the value key names). */
   readonly sameValue: (payload: unknown) => boolean;
 }): Promise<void> {
-  const prior = (await store.readStream(tenantId, stream, { type: s.type })).filter((e) => s.sameSubject?.(e.event.payload) ?? true).at(-1);
-  if (prior !== undefined && s.sameValue(prior.event.payload)) return;
-  const key = prior === undefined ? s.valueKey : `${s.valueKey}-after-${prior.event.id}`;
-  await store.append(tenantId, stream, makeEvent({
-    id: keyedEventId(s.idPrefix, key), type: s.type, occurredAt: s.occurredAt, idempotencyKey: key, source: s.source, payload: s.payload,
-  }));
+  // Verifier r19 SET-1 (hard rule #10): two DIFFERENT values for the same setting at the same moment both answered "saved"
+  // and one was silently lost. Now each setting family (stream + type) writes under one write guard: the writer reads the
+  // guard, then the setting in force, and its append lands only while the guard still holds. A writer that lost the race
+  // re-reads: another subject of the same family moved the guard → it simply tries again; the SAME value landed at the same
+  // moment → one fact, saved; a DIFFERENT value landed → a visible 409 "changed at the same moment", never a silent loss.
+  const guardKey = `setting:${stream}:${s.type}`;
+  const latestOf = async (): Promise<PersistedEvent | undefined> =>
+    (await store.readStream(tenantId, stream, { type: s.type })).filter((e) => s.sameSubject?.(e.event.payload) ?? true).at(-1);
+  for (let attempt = 0; ; attempt += 1) {
+    const expectedVersion = await store.guardVersion(tenantId, guardKey);
+    const prior = await latestOf();
+    if (prior !== undefined && s.sameValue(prior.event.payload)) return;
+    const key = prior === undefined ? s.valueKey : `${s.valueKey}-after-${prior.event.id}`;
+    try {
+      await store.appendBatch(tenantId, [{ stream, event: makeEvent({
+        id: keyedEventId(s.idPrefix, key), type: s.type, occurredAt: s.occurredAt, idempotencyKey: key, source: s.source, payload: s.payload,
+      }) }], { guard: { key: guardKey, expectedVersion } });
+      return;
+    } catch (e) {
+      if (!(e instanceof ConcurrencyConflictError) || e.key !== guardKey) throw e;
+      const now = await latestOf();
+      // Another subject of the same family (another rule kind, another asset) moved the guard: this setting is untouched.
+      if (now?.event.id === prior?.event.id && attempt < 8) continue;
+      // The same value landed at the same moment: the two requests are one fact, and it is in force.
+      if (now !== undefined && s.sameValue(now.event.payload)) return;
+      throw apiError(409, {
+        code: 'setting_changed_at_the_same_moment',
+        whatHappened: 'Somebody else changed this same setting at the same moment, to a different value. Their value is the one head office kept; yours was not saved.',
+        wasItSaved: 'not_saved',
+        nextSafeAction: 'Read the setting again to see the value in force, then set it again if yours is the one wanted. Nothing else was changed.',
+      });
+    }
+  }
 }
 
 /**
@@ -12726,10 +12754,15 @@ export function observedHealthAdapter(input: { readonly store: EventStore; reado
       return { stalestCompleteAt: stalest!.at, stalestStore: stalest!.store, unsent, deadLettered, stores: latestByStore.size };
     },
     // M35-FR-03: the store computers' own health reports (disk, queue, till devices) and the stores head office knows.
-    storeComputers: async (tenantId) => ({
-      records: await boxHealthAdapter({ store: input.store }).records(tenantId),
-      knownStores: (await orgStructureAdapter({ store: input.store, now: input.now }).nodes(tenantId)).filter((n) => n.kind === 'branch').map((n) => n.nodeId),
-    }),
+    storeComputers: async (tenantId) => {
+      const records = await boxHealthAdapter({ store: input.store }).records(tenantId);
+      return {
+        records,
+        knownStores: (await orgStructureAdapter({ store: input.store, now: input.now }).nodes(tenantId)).filter((n) => n.kind === 'branch').map((n) => n.nodeId),
+        // Verifier r19: bills issued and never received (sales lost by a restore), and box reports head office refused.
+        billNumberFindings: await billNumberFindingsOf(input.store, tenantId, records, input.now()),
+      };
+    },
     alertRules: (tenantId) => latest<StoredAlertRules>(input.store, tenantId, ALERT_RULES_STREAM, 'AlertRulesDefined'),
     defineAlertRules: async (tenantId, rules) => {
       await input.store.append(tenantId, ALERT_RULES_STREAM, makeEvent({
@@ -13446,11 +13479,18 @@ export function mergeStoreSync(
 
 /** M35-FR-03: every health report each store computer made (append-only; the latest per store is read). */
 const BOX_HEALTH_STREAM = streamName(STREAM.org, 'store-computer-health');
-export function boxHealthAdapter(input: { readonly store: EventStore }): {
+export function boxHealthAdapter(input: { readonly store: EventStore; readonly snapshots?: SnapshotStore }): {
   records: (tenantId: string) => Promise<readonly BoxHealthRecord[]>;
   record: (tenantId: string, r: BoxHealthRecord) => Promise<BoxHealthRecord>;
+  issuedAndBanked: (tenantId: string) => Promise<{ issuedPrefixes: ReadonlyMap<string, ReadonlySet<string>>; banked: ReadonlyMap<string, number> }>;
 } {
   return {
+    // Verifier r19 BOX-1: what head office issued (each prefix → the stores it was issued to) and banked from sales and
+    // refunds — never from any box's report — to judge what a box reports before it is folded.
+    issuedAndBanked: async (tenantId) => ({
+      issuedPrefixes: await issuedPrefixStores(input.store, tenantId),
+      banked: await bankedReceiptCounts(input.store, tenantId, input.snapshots === undefined ? undefined : { snapshots: input.snapshots }),
+    }),
     records: (tenantId) => allOf<BoxHealthRecord>(input.store, tenantId, BOX_HEALTH_STREAM, 'StoreComputerHealthReported'),
     record: async (tenantId, r) => {
       // Round 13 (verifier B5 low · hard rule #10): keyed on WHAT the box said as well as when — a retried POST of the same
@@ -13947,9 +13987,11 @@ export async function storeOfLocationResolver(input: { readonly store: EventStor
  * any other with 422 `unknown_location`), and a transfer is judged against them — never against "a place that once held stock"
  * (a stray movement could create one) and never against a bin typed for an unregistered store.
  */
-export async function knownStockPlace(input: { readonly store: EventStore; readonly now: () => string }, tenantId: string): Promise<((locationId: string) => boolean) & { readonly registeredAny: boolean }> {
+export async function knownStockPlace(input: { readonly store: EventStore; readonly now: () => string }, tenantId: string): Promise<((locationId: string) => boolean) & { readonly registeredAny: boolean; readonly closed: ReadonlySet<string> }> {
   const known = new Set<string>();
-  for (const n of await orgStructureAdapter(input).nodes(tenantId)) if (n.status !== 'closed') known.add(n.nodeId);
+  // Verifier r19 (6b): a CLOSED organisation node is not a stock place — kept apart so its leftover stock is named as such.
+  const closed = new Set<string>();
+  for (const n of await orgStructureAdapter(input).nodes(tenantId)) if (n.status !== 'closed') known.add(n.nodeId); else closed.add(n.nodeId);
   for (const s of await allOf<StoreSettings>(input.store, tenantId, STORE_SETTINGS_STREAM, 'StoreSettingsSet')) {
     known.add(s.storeId);
     if (typeof s.warehouseId === 'string' && s.warehouseId !== '') known.add(s.warehouseId);
@@ -13959,7 +14001,8 @@ export async function knownStockPlace(input: { readonly store: EventStore; reado
   for (const b of await warehouseAdapter(input).bins(tenantId)) {
     if (typeof b.storeId === 'string' && known.has(b.storeId) && typeof b.locationId === 'string' && b.locationId !== '') known.add(b.locationId);
   }
-  return Object.assign((locationId: string) => known.has(locationId), { registeredAny: known.size > 0 });
+  for (const k of known) closed.delete(k);
+  return Object.assign((locationId: string) => known.has(locationId), { registeredAny: known.size > 0, closed });
 }
 
 export async function registeredStores(input: { readonly store: EventStore; readonly now: () => string }, tenantId: string): Promise<ReadonlySet<string>> {
@@ -14584,6 +14627,48 @@ export function receiptPrefixAdapter(input: { readonly store: EventStore; readon
   };
 }
 
+/** Verifier r19 BOX-1: every prefix head office ever issued to a till (any version), with the stores it was issued to. */
+export async function issuedPrefixStores(store: EventStore, tenantId: string): Promise<ReadonlyMap<string, ReadonlySet<string>>> {
+  const out = new Map<string, Set<string>>();
+  for (const i of await allOf<ReceiptPrefixIssue>(store, tenantId, RECEIPT_PREFIX_STREAM, 'TillReceiptPrefixIssued')) {
+    if (typeof i.prefix !== 'string' || typeof i.storeId !== 'string') continue;
+    const set = out.get(i.prefix) ?? new Set<string>();
+    set.add(i.storeId);
+    out.set(i.prefix, set);
+  }
+  return out;
+}
+
+/**
+ * Verifier r19 (sales lost by a restore · P-08) and BOX-1: each store's bill-number findings for the owner. The candidates
+ * (numbers a box put on a bill, or cannot vouch for after a restore, reported at least the grace period ago and above what
+ * head office banked, or in its at-risk list) are checked ONE BY ONE against the ledger — a sale's receipt-number index
+ * (`receipt-<tenant>-<number>`) or a refund's number — so a number banked out of order is never reported as lost.
+ */
+export async function billNumberFindingsOf(store: EventStore, tenantId: string, records: readonly BoxHealthRecord[], at: string): Promise<ReadonlyMap<string, readonly BillNumberFinding[]>> {
+  const banked = await bankedReceiptCounts(store, tenantId);
+  const candidates = unreceivedCandidates({ records, at, banked });
+  let refundNumbers: Set<string> | undefined;
+  const unreceived = new Map<string, { prefix: string; numbers: number[]; since: string; capped: boolean }[]>();
+  for (const c of candidates) {
+    const missing: number[] = [];
+    for (const n of c.numbers) {
+      const number = `${c.prefix}${String(n).padStart(RECEIPT_COUNTER_DIGITS, '0')}`;
+      if (await store.findByIdempotencyKey(tenantId, `receipt-${tenantId}-${number}`) !== undefined) continue;
+      refundNumbers ??= new Set((await store.readStream(tenantId, STREAM.returns, { type: 'ReturnRecorded' })).map((e) => String((e.event.payload as { number?: unknown }).number ?? '')));
+      if (refundNumbers.has(number)) continue;
+      missing.push(n);
+    }
+    if (missing.length > 0) unreceived.set(c.storeId, [...(unreceived.get(c.storeId) ?? []), { prefix: c.prefix, numbers: missing, since: c.since, capped: c.capped }]);
+  }
+  const out = new Map<string, readonly BillNumberFinding[]>();
+  for (const storeId of new Set(records.map((r) => r.storeId))) {
+    const f = billNumberFindingsFor({ storeId, records, at, unreceived: unreceived.get(storeId) ?? [] });
+    if (f.length > 0) out.set(storeId, f);
+  }
+  return out;
+}
+
 /** OB-81: the store pack's `receiptSeries` for one store — each till's current issued prefix. */
 export async function issuedReceiptSeries(store: EventStore, tenantId: string, storeId: string): Promise<ReturnType<typeof issuedSeriesFor>> {
   return issuedSeriesFor(await allOf<ReceiptPrefixIssue>(store, tenantId, RECEIPT_PREFIX_STREAM, 'TillReceiptPrefixIssued'), storeId);
@@ -14614,7 +14699,11 @@ export async function bankedReceiptCounts(
           ? [[`${r.storeId as string}\u0000${x.prefix}`, x.through] as const] : []));
     });
     const mine = `${opts.storeId}\u0000`;
-    for (const [key, count] of reported) if (key.startsWith(mine)) raise(key.slice(mine.length), count);
+    // Verifier r19 BOX-1: only this store's own prefixes (issued to one of its tills, or its own `R-<lane>-` numbering) —
+    // also for a report kept before head office judged reports at arrival.
+    const issued = await issuedPrefixStores(store, tenantId);
+    const own = (prefix: string): boolean => (issued.get(prefix)?.has(opts.storeId!) ?? false) || (prefix.startsWith('R-') && prefix.endsWith('-') && !issued.has(prefix));
+    for (const [key, count] of reported) if (key.startsWith(mine) && own(key.slice(mine.length))) raise(key.slice(mine.length), count);
   }
   return out;
 }
@@ -14637,10 +14726,19 @@ const numberKey = (n: unknown): (readonly [string, number])[] => {
 const HIGH_WATER_LAG = 256;
 const HIGH_WATER_EVERY = 64;
 const HIGH_WATER_PROJECTION = 'receipt-high-water@1';
+/**
+ * Verifier r19 HW-1: with a store that offers a visibility fence (PostgreSQL, memory), the snapshot advances only to a
+ * position every transaction below which has FINISHED — never by a count of events — so a bill whose transaction drew its
+ * position early and committed after hundreds of others is still read when it lands. A fence that has not settled yet is
+ * kept in the snapshot and used once it has. (`@2`: a new state shape; `@1` snapshots are simply not read.)
+ */
+const HIGH_WATER_FENCED = 'receipt-high-water@2';
+interface FencedHighWater { readonly maxima: Record<string, number>; readonly pending?: { readonly seq: number; readonly token: string } }
 async function receiptHighWater(
   store: EventStore, snapshots: SnapshotStore, tenantId: string, stream: string, type: string,
   keysOf: (payload: unknown) => readonly (readonly [string, number])[],
 ): Promise<ReadonlyMap<string, number>> {
+  if (store.positionFence !== undefined && store.fenceSettled !== undefined) return fencedHighWater(store, snapshots, tenantId, stream, type, keysOf);
   const name = `${HIGH_WATER_PROJECTION}:${type}`;
   const prior = await snapshots.load<Record<string, number>>(tenantId, stream, name);
   const base = prior?.result;
@@ -14657,6 +14755,45 @@ async function receiptHighWater(
     await snapshots.save<Record<string, number>>({
       tenantId, stream, projection: name, takenAt: last.event.occurredAt,
       result: { state: Object.fromEntries(snap), watermarkSeq: last.seq, lastEventAt: last.event.occurredAt, eventCount: (base?.eventCount ?? 0) + settled.length },
+    });
+  }
+  for (const e of tail) fold(out, e.event.payload);
+  return out;
+}
+
+async function fencedHighWater(
+  store: EventStore, snapshots: SnapshotStore, tenantId: string, stream: string, type: string,
+  keysOf: (payload: unknown) => readonly (readonly [string, number])[],
+): Promise<ReadonlyMap<string, number>> {
+  const name = `${HIGH_WATER_FENCED}:${type}`;
+  const base = (await snapshots.load<FencedHighWater>(tenantId, stream, name))?.result;
+  const watermark = base?.watermarkSeq ?? 0;
+  const pending = base?.state.pending;
+  // Both checks BEFORE the tail is read, so the read sees everything a settled fence covers.
+  const pendingSettled = pending !== undefined && await store.fenceSettled!(tenantId, pending.token);
+  const fresh = await store.positionFence!(tenantId, stream);
+  const freshSettled = await store.fenceSettled!(tenantId, fresh.token);
+  const tail = [...await store.readStream(tenantId, stream, { sinceSeq: watermark, type })].sort((a, b) => a.seq - b.seq);
+  const fold = (m: Map<string, number>, payload: unknown): void => {
+    for (const [k, c] of keysOf(payload)) if (c > (m.get(k) ?? 0)) m.set(k, c);
+  };
+  const out = new Map<string, number>(Object.entries(base?.state.maxima ?? {}));
+  const advanceTo = Math.max(watermark, freshSettled ? fresh.seq : pendingSettled ? pending.seq : watermark);
+  const settled = tail.filter((e) => e.seq <= advanceTo);
+  // The fence to wait for next: none when the fresh one has settled; the fresh one once the old one is used; else the old one.
+  const nextPending = freshSettled ? undefined : pendingSettled || pending === undefined ? fresh : pending;
+  const pendingChanged = nextPending?.token !== pending?.token || nextPending?.seq !== pending?.seq;
+  if (settled.length >= HIGH_WATER_EVERY || (pendingChanged && tail.length >= HIGH_WATER_EVERY)) {
+    const snap = new Map<string, number>(Object.entries(base?.state.maxima ?? {}));
+    for (const e of settled) fold(snap, e.event.payload);
+    const last = settled[settled.length - 1];
+    await snapshots.save<FencedHighWater>({
+      tenantId, stream, projection: name, takenAt: last?.event.occurredAt ?? base?.lastEventAt ?? new Date(0).toISOString(),
+      result: {
+        state: { maxima: Object.fromEntries(snap), ...(nextPending === undefined ? {} : { pending: nextPending }) },
+        watermarkSeq: last?.seq ?? watermark, lastEventAt: last?.event.occurredAt ?? base?.lastEventAt ?? null,
+        eventCount: (base?.eventCount ?? 0) + settled.length,
+      },
     });
   }
   for (const e of tail) fold(out, e.event.payload);

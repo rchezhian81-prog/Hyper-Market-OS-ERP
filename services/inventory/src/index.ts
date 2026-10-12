@@ -294,6 +294,11 @@ export interface InventoryDeps {
    */
   readonly knownLocation?: (tenantId: string, locationId: string) => Promise<boolean> | boolean;
   /**
+   * Verifier r19 (6a/6b · P-08): the registered stock places, and which org nodes are CLOSED — so stock left at a place that
+   * is not (or no longer) a stock place is listed (`strandedStock` on the exceptions read) and the refusal says which it is.
+   */
+  readonly stockPlaces?: (tenantId: string) => Promise<{ readonly registeredAny: boolean; readonly isKnown: (locationId: string) => boolean; readonly closed: ReadonlySet<string> }>;
+  /**
    * WF-08 (round 8): the open count plan that FREEZES this kind of movement at this place for this product, if any — the
    * plain movements route refuses a frozen movement by name while the count is open. Optional on a bare stub.
    */
@@ -473,11 +478,17 @@ export function inventoryRoutes(deps: InventoryDeps): readonly Route[] {
         // A movement already on file (a lost reply re-sent) is the same movement and is not judged again.
         if (deps.knownLocation !== undefined && typeof m.locationId === 'string' && !(await deps.isKnown(ctx.tenantId, m.movementId))
           && !(await deps.knownLocation(ctx.tenantId, m.locationId))) {
+          // Verifier r19 (6b): a CLOSED place is said to be closed (not "not registered"), with the way to move its stock out.
+          const isClosed = deps.stockPlaces !== undefined && (await deps.stockPlaces(ctx.tenantId)).closed.has(m.locationId);
           throw apiError(422, {
             code: 'unknown_location',
-            whatHappened: `"${m.locationId}" is not a stock place head office has registered (a store, warehouse or department in the organisation, a set-up store or its back-store warehouse, or a warehouse bin).`,
+            whatHappened: isClosed
+              ? `"${m.locationId}" is a CLOSED place in the organisation, so it is no longer a stock place and stock cannot be booked there.`
+              : `"${m.locationId}" is not a stock place head office has registered (a store, warehouse or department in the organisation, a set-up store or its back-store warehouse, or a warehouse bin).`,
             wasItSaved: 'not_saved',
-            nextSafeAction: 'Check the location id. If it is a new place, register it first (organisation → add the store, warehouse or department), then send the movement again. Nothing was appended.',
+            nextSafeAction: isClosed
+              ? 'Any stock still at it is listed on the stock exceptions (strandedStock). To move it out, reopen the place in the organisation, move or write the stock off, then close it again. Nothing was appended.'
+              : 'Check the location id. If it is a new place, register it first (organisation → add the store, warehouse or department), then send the movement again. Stock booked at this id before places were registered is listed on the stock exceptions (strandedStock); registering the id makes it movable. Nothing was appended.',
           });
         }
         // WF-08 (round 8): a movement a count plan has FROZEN at this place for this product is refused while the count is open.
@@ -578,7 +589,21 @@ export function inventoryRoutes(deps: InventoryDeps): readonly Route[] {
         // PA-01-r1: a shortfall is the caller's when either end of the transfer is in their branches.
         const transferShortfalls = (deps.transferShortfalls === undefined ? [] : await deps.transferShortfalls(ctx.tenantId))
           .filter((t) => scope.covers(t.locationId) || scope.covers(t.fromLocationId));
-        return { status: 200, body: { negative: negativeStock(rows), transferShortfalls, scope: scope.scope, asAt: deps.now() } };
+        // Verifier r19 (6a/6b · P-08): stock left at a place that is not a registered stock place — booked before the business
+        // registered its places, or at a department/warehouse since CLOSED. Movements there are refused (they would make a
+        // phantom place), so it is LISTED here for head office with the way out, never left silently unmovable.
+        const places = deps.stockPlaces === undefined ? undefined : await deps.stockPlaces(ctx.tenantId);
+        const strandedStock = places === undefined || !places.registeredAny ? []
+          : rows.filter((r) => r.onHandMinor !== 0 && !places.isKnown(r.locationId)).map((r) => {
+            const closed = places.closed.has(r.locationId);
+            return {
+              productId: r.productId, locationId: r.locationId, onHandMinor: r.onHandMinor, why: closed ? 'place_closed' as const : 'place_not_registered' as const,
+              says: closed
+                ? `${r.onHandMinor} of ${r.productId} is still at ${r.locationId}, which is CLOSED: reopen it in the organisation, move or write the stock off, then close it again`
+                : `${r.onHandMinor} of ${r.productId} is at ${r.locationId}, which is not a registered stock place (booked before the places were registered): register ${r.locationId} in the organisation, then move or write the stock off`,
+            };
+          });
+        return { status: 200, body: { negative: negativeStock(rows), transferShortfalls, strandedStock, scope: scope.scope, asAt: deps.now() } };
       },
     },
     {

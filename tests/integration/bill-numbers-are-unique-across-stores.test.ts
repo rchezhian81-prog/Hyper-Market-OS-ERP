@@ -199,7 +199,10 @@ async function twoStoresTrade(cloud: Cloud): Promise<void> {
       totalMinor: 12_000, currency: 'INR', packVersion: 0, lines: [{ productId: 'P1', quantityMinor: 1, uom: 'ea', unitPriceMinor: 12_000, lineTotalMinor: 12_000 }], tenders: [{ kind: 'cash', amountMinor: 12_000 }],
     }, `replay-${randomUUID()}`, undefined, S2);
     expect(replay.status).toBe(202);
-    expect(replay.body).toMatchObject({ alreadyBanked: true });
+    // This hand-built re-send carries the test's clock, not the till's — so by the bill's own fingerprint (number, time,
+    // total, lines, tenders) it is NOT the same bill. Verifier r19 IC-3: the answer says so (it used to say "already banked"),
+    // and still never makes a second sale: the one banked under the id stands.
+    expect(replay.body).toMatchObject({ alreadyBanked: false, thisBillBanked: false, notBankedBecause: 'a_different_bill_holds_this_sale_id' });
     expect(((await cloud.call('GET', '/v1/inventory/availability', OWNER, undefined, undefined, { productId: 'P1' })).body as { rows: { locationId: string; onHandMinor: number }[] }).rows.find((r) => r.locationId === S2)?.onHandMinor).toBe(9);
 
     // A CHANGED prefix: version 2, a new series on the next pull; the old prefix stays this till's — refused elsewhere.
