@@ -8,6 +8,7 @@ import { SqlIdempotencyStore } from '../../services/kernel/src/index';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore, InMemoryEventStore, type EventStore } from '../../packages/persistence/src/event-store';
 import { runMigrations } from '../../packages/persistence/src/migrations';
+import { makeEvent } from '../../packages/contracts/src/event';
 
 /**
  * **D03-FR-02 (round 12 follow-up) — a scan typed on the capture screen is linked to the invoice it became.**
@@ -27,7 +28,11 @@ import { runMigrations } from '../../packages/persistence/src/migrations';
  *     event is in the ledger;
  *   • a race: two captures of different invoices naming the same scan at once — one stands, the other is refused by name and
  *     its invoice is not kept (hard rule #10);
- *   • a typed scan cannot then be "confirmed" as a read draft; a capture naming no scan behaves exactly as before.
+ *   • a typed scan cannot then be "confirmed" as a read draft; a capture naming no scan behaves exactly as before;
+ *   • round 13 (verifier B3, probe P1 · P-08): the link and the invoice are ONE atomic write. A crash as the invoice is
+ *     written, and a failure INSIDE the write (the invoice's id already held — the batch is rolled back in the store's own
+ *     transaction), each leave NO "captured" without an invoice: the scan still waits, nothing is on the register, and
+ *     the same scan typed again (the same number after a crash, a corrected number after a clash) links and captures.
  */
 
 const DATABASE_URL = process.env['DATABASE_URL'];
@@ -159,5 +164,62 @@ describe.each(backings)('a typed scan is linked to the invoice it became — on 
       expect((await docs()).documents.find((d) => d.documentId === scanId)).toMatchObject({ state: 'captured', invoiceId: winnerId });
     }
     expect(await linkEvents()).toHaveLength(4);
+  }, 60_000);
+
+  it('round 13 (P1): a failure as the invoice is written leaves the scan waiting — never "captured" as an invoice that does not exist', async () => {
+    const { store, opts } = make();
+    // A simulated crash: the first write carrying the invoice dies before it reaches the store.
+    let crash = true;
+    const crashing = new Proxy(store, {
+      get(t, p, r) {
+        if (p === 'append' || p === 'appendBatch') {
+          return async (tenantId: string, ...rest: unknown[]) => {
+            const events = p === 'append' ? [rest[1] as { type: string }] : (rest[0] as { event: { type: string } }[]).map((e) => e.event);
+            if (crash && events.some((e) => e.type === 'SupplierInvoiceCaptured')) { crash = false; throw new Error('simulated crash as the invoice is written'); }
+            return (t[p] as (...a: unknown[]) => unknown).call(t, tenantId, ...rest);
+          };
+        }
+        const v = Reflect.get(t, p, r); return typeof v === 'function' ? v.bind(t) : v;
+      },
+    }) as EventStore;
+    const h = apiHarness({ ...opts, store: crashing });
+    const T = randomUUID();
+    await h.seedOwner(T, 'u-owner');
+    await h.provisionRole(T, 'u-buyer', 'store_manager');
+    const call = (method: 'GET' | 'POST', path: string, userId: string, body?: unknown, key?: string): Promise<Res> =>
+      h.request({ method, path, userId, tenantId: T, ...(body === undefined ? {} : { body }), ...(method === 'GET' ? {} : { idempotencyKey: key ?? `k-${randomUUID()}` }) });
+    const docs = async () => (await call('GET', '/v1/purchase/invoice-documents', 'u-owner')).body as { documents: Doc[]; waiting: number };
+    const onRegister = async (invoiceId: string) => (await call('GET', `/v1/purchase/invoices/${invoiceId}`, 'u-owner')).status === 200;
+    const linkEvents = async () => (await store.exportTenant(T)).filter((r) => r.event.type === 'InvoiceDocumentTyped');
+
+    // ── 1. A crash as the invoice is written.
+    expect((await call('POST', '/v1/purchase/invoice-documents/scan-1', 'u-buyer', scanBody('crash'))).status).toBe(201);
+    const crashed = await call('POST', '/v1/purchase/invoices/inv-1/capture', 'u-buyer', typed('scan-1'), 'cap-crash');
+    expect(crashed.status).toBe(500);
+    expect((await docs()).documents.find((d) => d.documentId === 'scan-1')).toMatchObject({ state: 'awaiting_manual_capture' });
+    expect((await docs()).waiting).toBe(1);
+    expect(await onRegister('inv-1')).toBe(false);
+    expect(await linkEvents()).toHaveLength(0);
+    // The same capture sent again (a fresh key after the failure) links and captures, once.
+    const again = await call('POST', '/v1/purchase/invoices/inv-1/capture', 'u-buyer', typed('scan-1'));
+    expect(again.status, JSON.stringify(again.body)).toBe(201);
+    expect((await docs()).documents.find((d) => d.documentId === 'scan-1')).toMatchObject({ state: 'captured', invoiceId: 'inv-1' });
+    expect(await onRegister('inv-1')).toBe(true);
+
+    // ── 2. A failure INSIDE the write: the invoice's id is already held by another record, so the store refuses the
+    //       invoice after the link was staged — the whole batch is rolled back (on PostgreSQL, in its own transaction).
+    expect((await call('POST', '/v1/purchase/invoice-documents/scan-2', 'u-buyer', scanBody('clash'))).status).toBe(201);
+    await store.append(T, 'test-clash', makeEvent({ id: 'invoice-inv-2', type: 'UnrelatedRecord', occurredAt: '2026-10-07T00:00:00.000Z', idempotencyKey: `unrelated-${T}`, source: 'test', payload: {} }));
+    const clashed = await call('POST', '/v1/purchase/invoices/inv-2/capture', 'u-buyer', typed('scan-2'));
+    expect(clashed.status, JSON.stringify(clashed.body)).toBeGreaterThanOrEqual(400);
+    expect((await docs()).documents.find((d) => d.documentId === 'scan-2')).toMatchObject({ state: 'awaiting_manual_capture' });
+    expect(await onRegister('inv-2')).toBe(false);
+    expect((await linkEvents()).map((r) => (r.event.payload as { documentId: string }).documentId)).toEqual(['scan-1']);
+    // Typed again under a corrected invoice number: the scan is not held by a phantom link, so it links and captures.
+    const corrected = await call('POST', '/v1/purchase/invoices/inv-2b/capture', 'u-buyer', typed('scan-2'));
+    expect(corrected.status, JSON.stringify(corrected.body)).toBe(201);
+    expect((await docs()).documents.find((d) => d.documentId === 'scan-2')).toMatchObject({ state: 'captured', invoiceId: 'inv-2b' });
+    expect(await onRegister('inv-2b')).toBe(true);
+    expect((await docs()).waiting).toBe(0);
   }, 60_000);
 });

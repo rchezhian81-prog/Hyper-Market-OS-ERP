@@ -516,8 +516,10 @@ export interface PurchaseDeps {
   /** D03-FR-02 (round 12): a bill handed in at head office (a scan), as the list reads it — the typed capture links one. */
   readonly invoiceDocument?: (tenantId: string, documentId: string) => Promise<InvoiceDocumentRecord | undefined> | InvoiceDocumentRecord | undefined;
   /** Record "this scan was typed as invoice X" — append-only, once per document; answers the link that STANDS (the
-   *  first one recorded), so a second, different link is seen and refused, never silently kept. */
-  readonly recordScanTyped?: (tenantId: string, link: ScanTypedLink) => Promise<ScanTypedLink>;
+   *  first one recorded), so a second, different link is seen and refused, never silently kept. Round 13 (verifier B3):
+   *  when `invoice` is given, the link and the invoice are ONE atomic write — both land or neither does, and a scan another
+   *  invoice already holds writes neither. */
+  readonly recordScanTyped?: (tenantId: string, link: ScanTypedLink, invoice?: SupplierInvoiceRecord) => Promise<ScanTypedLink>;
   /** Record a captured invoice — idempotent on the invoice id, so a retry never doubles what a supplier is owed. */
   readonly recordInvoice: (tenantId: string, record: SupplierInvoiceRecord) => Promise<void> | void;
   /** The purchase order head office holds — what was ordered, at what price, and what was received against it (SP-6). */
@@ -655,9 +657,9 @@ export function purchaseRoutes(deps: PurchaseDeps): readonly Route[] {
         // holds for THIS tenant, still waiting to be typed (or already typed as this same invoice — a re-send); anything
         // else is refused by name before anything is recorded. The link itself is written below, once, append-only.
         const scanDocumentId = await scanToLink(deps, ctx.tenantId, b['documentId'], invoiceId);
-        const linkScan = async () => {
+        const linkScan = async (invoice?: SupplierInvoiceRecord) => {
           if (scanDocumentId === undefined) return;
-          const standing = await deps.recordScanTyped!(ctx.tenantId, { documentId: scanDocumentId, invoiceId, typedBy: ctx.userId, typedAt: deps.now() });
+          const standing = await deps.recordScanTyped!(ctx.tenantId, { documentId: scanDocumentId, invoiceId, typedBy: ctx.userId, typedAt: deps.now() }, invoice);
           // Two captures naming the same scan at once: the first link stands; the other is refused by name (hard rule #10).
           if (standing.invoiceId !== invoiceId) throw scanAlreadyTyped(scanDocumentId, standing.invoiceId);
         };
@@ -688,11 +690,12 @@ export function purchaseRoutes(deps: PurchaseDeps): readonly Route[] {
           capturedBy: ctx.userId, capturedAt, approvedBy: checkedBy ?? null, approvedAt: checkedBy === undefined ? null : opened!.decision.decidedAt,
           source: 'head-office', governanceFlags: flags,
         };
-        // The scan's link is taken BEFORE the invoice is recorded, so a scan another capture already claimed refuses this one
-        // with nothing kept.
-        await linkScan();
+        // Round 13 (verifier B3 · P-08): the scan's link and the invoice are ONE atomic write — a crash or refusal can no
+        // longer leave the scan "captured" as an invoice that was never saved. The approval is spent first (a refused spend
+        // writes nothing); a scan another capture claimed meanwhile writes neither link nor invoice and is refused by name.
         await opened?.spend();
-        await deps.recordInvoice(ctx.tenantId, record);
+        if (scanDocumentId === undefined) await deps.recordInvoice(ctx.tenantId, record);
+        else await linkScan(record);
         await deps.recordAudit?.(ctx.tenantId, {
           actorId: ctx.userId, action: 'invoice.capture', objectType: 'supplier_invoice', objectId: invoiceId,
           at: capturedAt, origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },

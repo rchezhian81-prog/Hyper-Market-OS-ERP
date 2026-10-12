@@ -107,7 +107,12 @@ export interface PurchaseOrderDeps {
   /** Amend an issued PO's lines (approved). Append-only — the prior lines stay on the ledger (hard rule #2). */
   readonly amend: (tenantId: string, poId: string, amendmentId: string, lines: readonly PurchaseOrderLineInput[], reason: string, by: string, at: string,
     /** OB-63: an amendment that raises the order's value lands only while the month's open-to-buy guard still holds. */
-    budgetGuard?: { readonly key: string; readonly expectedVersion: number }) => Promise<void> | void;
+    budgetGuard?: { readonly key: string; readonly expectedVersion: number },
+    /** Round 13 (verifier A4): the order's own guard version read BEFORE the order — the amendment lands only on the order
+     *  it was judged on; any change since (another amendment, a receipt, a cancellation) refuses it (never re-tried). */
+    orderVersion?: number) => Promise<void> | void;
+  /** Round 13 (verifier A4): the version of the order's own write guard — read before the order an amendment is judged on. */
+  readonly orderVersion?: (tenantId: string, poId: string) => Promise<number> | number;
   /** Record an approved cancellation of quantity per product against a PO. Accumulates. */
   readonly cancel: (tenantId: string, poId: string, cancellationId: string, cancelledByProduct: Readonly<Record<string, number>>, reason: string, by: string, at: string) => Promise<void> | void;
   /** Post received quantity per product against a PO (in the PO's ordering units). Accumulates. */
@@ -551,6 +556,9 @@ export function purchaseOrderRoutes(deps: PurchaseOrderDeps): readonly Route[] {
             nextSafeAction: 'Send the full amended line set with a reason. Nothing was changed.',
           });
         }
+        // Round 13 (verifier A4): the order's guard is read BEFORE the order, so "does this raise it?" is judged on the order
+        // exactly as it stands when the amendment lands — an amendment decided on an older copy is refused, never re-tried.
+        const orderVersion = deps.orderVersion === undefined ? undefined : await deps.orderVersion(ctx.tenantId, poId);
         const po = await deps.order(ctx.tenantId, poId);
         if (po === undefined) throw notFound(`purchase order ${poId}`);
         if (po.status !== 'issued') throw poNotIssued(poId, 'amended');
@@ -587,9 +595,10 @@ export function purchaseOrderRoutes(deps: PurchaseOrderDeps): readonly Route[] {
           }
         }
         try {
-          await deps.amend(ctx.tenantId, poId, amendmentId, lines, reason, ctx.userId, deps.now(), budgetGuard);
+          await deps.amend(ctx.tenantId, poId, amendmentId, lines, reason, ctx.userId, deps.now(), budgetGuard, orderVersion);
         } catch (err) {
-          if (err instanceof ConcurrencyConflictError) throw concurrentChange(`${period}'s purchase budget (another order was issued or raised against it a moment ago)`);
+          if (err instanceof ConcurrencyConflictError && budgetGuard !== undefined && err.key === budgetGuard.key) throw concurrentChange(`${period}'s purchase budget (another order was issued or raised against it a moment ago)`);
+          if (err instanceof ConcurrencyConflictError) throw concurrentChange(`purchase order ${poId} (it was amended, received against or cancelled a moment ago — this amendment was judged on the order as it stood before)`);
           throw err;
         }
         // Amended: only now is an over-budget override put on the record.

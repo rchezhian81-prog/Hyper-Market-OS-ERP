@@ -2980,15 +2980,17 @@ export const purchaseOrderGuardKey = (poId: string): string => `purchase-order:$
  */
 async function appendMovingOrder(store: EventStore, tenantId: string, poId: string, entries: readonly BatchEntry[],
   /** OB-63: a guard the move must ALSO hold (the month's open-to-buy) — its loss is never retried here: the caller judged on it. */
-  alsoGuard?: WriteGuard): Promise<void> {
+  alsoGuard?: WriteGuard,
+  /** Round 13: the order version the caller JUDGED on — then the move holds exactly that version and is never re-tried. */
+  pinnedVersion?: number): Promise<void> {
   const key = purchaseOrderGuardKey(poId);
   for (let attempt = 0; ; attempt++) {
-    const expectedVersion = await store.guardVersion(tenantId, key);
+    const expectedVersion = pinnedVersion ?? await store.guardVersion(tenantId, key);
     try {
       await store.appendBatch(tenantId, entries, { guard: { key, expectedVersion }, ...(alsoGuard === undefined ? {} : { alsoGuards: [alsoGuard] }) });
       return;
     } catch (err) {
-      if (!(err instanceof ConcurrencyConflictError) || attempt >= 8 || err.key !== key) throw err;
+      if (!(err instanceof ConcurrencyConflictError) || attempt >= 8 || err.key !== key || pinnedVersion !== undefined) throw err;
       await new Promise<void>((resolve) => setTimeout(resolve, Math.floor(Math.random() * 8 * (attempt + 1))));
     }
   }
@@ -7090,8 +7092,10 @@ export function purchaseOrdersAdapter(input: {
       else await input.store.appendBatch(tenantId, [{ stream: PURCHASE_ORDERS_STREAM, event }], { guard: budgetGuard });
     },
 
-    amend: async (tenantId, poId, amendmentId, lines, reason, by, at, budgetGuard) => {
+    orderVersion: (tenantId, poId) => input.store.guardVersion(tenantId, purchaseOrderGuardKey(poId)),
+    amend: async (tenantId, poId, amendmentId, lines, reason, by, at, budgetGuard, orderVersion) => {
       // OB-63: an amendment that RAISES the order under a budget also spends the month's open-to-buy — under that guard too.
+      // Round 13 (verifier A4): pinned to the order version the route judged on — a change since refuses it, never re-tried.
       await appendMovingOrder(input.store, tenantId, poId, [{ stream: PURCHASE_ORDERS_STREAM, event: makeEvent({
         id: `po-${poId}-amended-${amendmentId}`,
         type: 'PurchaseOrderAmended',
@@ -7100,7 +7104,7 @@ export function purchaseOrdersAdapter(input: {
         idempotencyKey: `po-${tenantId}-${poId}-amended-${amendmentId}`,
         source: 'api/purchase',
         payload: { poId, amendmentId, lines, reason, by, at },
-      }) }], budgetGuard);
+      }) }], budgetGuard, orderVersion);
     },
 
     cancel: async (tenantId, poId, cancellationId, cancelledByProduct, reason, by, at) => {
@@ -7613,17 +7617,9 @@ export function purchaseAdapter(input: {
     invoiceIdUsed: (tenantId, invoiceId) => supplierInvoiceIdUsed(input.store, tenantId, invoiceId),
     // D03-FR-02 (round 12): the scan a typed capture names, and the append-only link that marks it typed.
     invoiceDocument: async (tenantId, documentId) => (await foldInvoiceDocuments(input.store, tenantId)).find((d) => d.documentId === documentId),
-    recordScanTyped: (tenantId, link) => recordInvoiceDocumentTyped(input.store, tenantId, link),
+    recordScanTyped: (tenantId, link, invoice) => recordInvoiceDocumentTyped(input.store, tenantId, link, invoice === undefined ? undefined : { stream: SUPPLIER_INVOICES_STREAM, event: supplierInvoiceCapturedEvent(tenantId, invoice) }),
     recordInvoice: async (tenantId, record) => {
-      await input.store.append(tenantId, SUPPLIER_INVOICES_STREAM, makeEvent({
-        id: `invoice-${record.invoiceId}`,
-        type: 'SupplierInvoiceCaptured',
-        occurredAt: record.capturedAt,
-        // One invoice, one record: the key carries no timestamp, so a re-sent capture collapses onto the first.
-        idempotencyKey: `invoice-${tenantId}-${record.invoiceId}`,
-        source: 'api/purchase',
-        payload: record,
-      }));
+      await input.store.append(tenantId, SUPPLIER_INVOICES_STREAM, supplierInvoiceCapturedEvent(tenantId, record));
     },
     purchaseOrder: async (tenantId, poId) => (await foldPurchaseOrders(input.store, tenantId)).get(poId),
     permissionsOfUser: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),
@@ -13873,12 +13869,45 @@ export async function foldInvoiceDocuments(store: EventStore, tenantId: string):
  * rewrite of the document. Answers the link that STANDS: a re-send collapses onto it; a capture naming the same scan for
  * a different invoice gets the first link back and the route refuses it by name.
  */
-export async function recordInvoiceDocumentTyped(store: EventStore, tenantId: string, link: ScanTypedLink): Promise<ScanTypedLink> {
-  const res = await store.append(tenantId, INVOICE_DOCUMENTS_STREAM, makeEvent({
-    id: `invoice-document-typed-${link.documentId}`, type: 'InvoiceDocumentTyped', occurredAt: link.typedAt,
-    idempotencyKey: `invoice-document-typed-${tenantId}-${link.documentId}`, source: 'api/purchase', payload: link,
-  }));
-  return res.record.event.payload as ScanTypedLink;
+/** The one record of a captured supplier invoice — keyed on the invoice id, so a re-sent capture collapses onto the first. */
+export function supplierInvoiceCapturedEvent(tenantId: string, record: SupplierInvoiceRecord): DomainEvent {
+  return makeEvent({
+    id: `invoice-${record.invoiceId}`,
+    type: 'SupplierInvoiceCaptured',
+    occurredAt: record.capturedAt,
+    // One invoice, one record: the key carries no timestamp, so a re-sent capture collapses onto the first.
+    idempotencyKey: `invoice-${tenantId}-${record.invoiceId}`,
+    source: 'api/purchase',
+    payload: record,
+  });
+}
+
+/**
+ * D03-FR-02 · round 13 (verifier B3 · P-08): record "this scan was typed as invoice X" — and, when given, the invoice
+ * itself — in ONE atomic batch, so a scan never reads "captured" for an invoice that was never saved (a crash or a refusal
+ * between two writes used to orphan the link). Guarded on the scan: the standing link is read under the guard and the
+ * batch lands only while the guard still holds, so two captures racing for one scan cannot both write — the loser writes
+ * NOTHING (neither link nor invoice) and is answered with the link that stands. Answers the standing link.
+ */
+export async function recordInvoiceDocumentTyped(store: EventStore, tenantId: string, link: ScanTypedLink, invoice?: BatchEntry): Promise<ScanTypedLink> {
+  const linkKey = `invoice-document-typed-${tenantId}-${link.documentId}`;
+  const guardKey = `invoice-document-typed:${link.documentId}`;
+  for (let attempt = 0; ; attempt += 1) {
+    const version = await store.guardVersion(tenantId, guardKey);
+    const standing = await store.findByIdempotencyKey(tenantId, linkKey);
+    // Another invoice holds this scan: nothing is written (the invoice is not kept without its scan's link).
+    if (standing !== undefined && (standing.event.payload as ScanTypedLink).invoiceId !== link.invoiceId) return standing.event.payload as ScanTypedLink;
+    const entries: BatchEntry[] = [{ stream: INVOICE_DOCUMENTS_STREAM, event: makeEvent({
+      id: `invoice-document-typed-${link.documentId}`, type: 'InvoiceDocumentTyped', occurredAt: link.typedAt,
+      idempotencyKey: linkKey, source: 'api/purchase', payload: link,
+    }) }, ...(invoice === undefined ? [] : [invoice])];
+    try {
+      const [res] = await store.appendBatch(tenantId, entries, { guard: { key: guardKey, expectedVersion: version } });
+      return res!.record.event.payload as ScanTypedLink;
+    } catch (err) {
+      if (!(err instanceof ConcurrencyConflictError) || err.key !== guardKey || attempt >= 4) throw err;
+    }
+  }
 }
 
 export function invoiceIngestionAdapter(input: { readonly store: EventStore; readonly now: () => string }): Omit<InvoiceIngestionDeps, 'recordAudit' | 'extractor'> {
