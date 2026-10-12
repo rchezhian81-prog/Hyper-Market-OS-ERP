@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 
 /**
  * **The offline shells, and the fault of having written them and never switched them on.**
@@ -280,5 +280,26 @@ describe('a bare screen path is redirected, not served broken', () => {
 
   it('keeps the query string, so a screen opened with one does not lose it', () => {
     expect(SERVER).toMatch(/query === undefined \? '' : `\?\$\{query\}`/);
+  });
+});
+
+describe('a back-office view that registers the worker is one the worker keeps', () => {
+  // Round 13: setup.js and warehouse.js registered ./sw.js but were missing from its SHELL, so offline the cached page
+  // came back without the script that draws it — an empty frame. Pages that deliberately stay online-only (payroll,
+  // the payslip, the company report, the erasure console) do not register the worker at all, and are not required here.
+  const dir = 'apps/web-erp/web';
+  const shell = /const SHELL = \[([^\]]*)\]/.exec(workerFor('web-erp'))![1]!;
+  const views = readdirSync(dir).filter((f) => f.endsWith('.js') && f !== 'sw.js');
+  const registering = views.filter((f) => /navigator\.serviceWorker\.register\('\.\/sw\.js'\)/.test(code(read(`${dir}/${f}`))));
+
+  it('every web-erp view that registers ./sw.js is in its SHELL', () => {
+    expect(registering.length).toBeGreaterThan(40);
+    expect(registering.filter((f) => !shell.includes(`'./${f}'`))).toEqual([]);
+  });
+
+  it('the online-only pages stay unregistered, so they are never cached', () => {
+    for (const f of ['payroll.js', 'payroll-payslip.js', 'company-report.js', 'erasure-console.js']) {
+      expect(registering, `${f} now registers the worker — decide whether it may be cached offline`).not.toContain(f);
+    }
   });
 });
