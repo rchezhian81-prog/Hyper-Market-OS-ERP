@@ -1325,11 +1325,14 @@ export async function startEdge(
   const receiptNumbers = tillOperators === null ? null : await ReceiptNumbers.open({
     dataDir: settings['EDGE_DATA_DIR']!, capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']),
     published: () => (pack.receiptSeries.known ? pack.receiptSeries.value : null),
-    // OB-81 "A": the box's store and how many stores the business has, from the CURRENT pack — so a second store opening
-    // moves an unissued till off `R-<lane>-` onto this box's store-qualified default on the next pull, without a restart.
+    // OB-81 "A" · OB-85 "A": the box's store and how many stores the business has, from the CURRENT pack — so a second store
+    // opening moves an unissued till off `R-<lane>-` onto this box's store-coded fallback on the next pull, without a restart;
+    // a pack that does not say (a file, first boot) is never read as one store (edge/store-edge/src/receipt-numbers.ts).
     numbering: () => ({
       storeId: storeIdOfThisBox() ?? headOfficeStoreId ?? null,
       storesInBusiness: pack.receiptNumbering?.known === true && Number.isSafeInteger(pack.receiptNumbering.value.storesInBusiness) ? pack.receiptNumbering.value.storesInBusiness : null,
+      // OB-85 · verifier r17: the R-<lane>- history head office banked for this store (a replaced box resumes above it).
+      boxSeriesBankedThrough: pack.receiptNumbering?.known === true && pack.receiptNumbering.value.boxSeriesBankedThrough !== null && typeof pack.receiptNumbering.value.boxSeriesBankedThrough === 'object' ? pack.receiptNumbering.value.boxSeriesBankedThrough : null,
     }),
     committed: [
       ...(await readLog(log.path)).flatMap((r) => {

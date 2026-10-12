@@ -186,7 +186,7 @@ describe.skipIf(!HAVE_BROWSER || !DATABASE_URL)('the store trades a day in a rea
       w.posSession!.newSale();
       return r;
     }, [soldAt]);
-    expect(receipt).toBe('R-lane-1-000001');
+    expect(receipt).toMatch(/^ZZ[A-Z2-7]{6}-000001$/); // OB-85: a pack file does not say how many stores — the box's store-coded prefix
     expect(edge.outbox.unsentCount()).toBe(1);
     expect((await call('GET', '/v1/sales/S-1', OWNER)).status).toBe(404);
 
@@ -196,9 +196,9 @@ describe.skipIf(!HAVE_BROWSER || !DATABASE_URL)('the store trades a day in a rea
 
     // The refund through the shell's own refund surface: the bill from this box, a manager's approval, cash back.
     // The manager approves at the till with their own PIN, for this bill and this amount (ADR-0021).
-    const refunded = await page.evaluate(async ([manager, managerPin]) => {
+    const refunded = await page.evaluate(async ([manager, managerPin, billNo]) => {
       const w = globalThis as unknown as PosWindow;
-      const bill = await w.posSession!.lookupRefund('R-lane-1-000001');
+      const bill = await w.posSession!.lookupRefund(billNo!);
       if (bill === null) return { kind: 'not_found' } as RefundOutcome;
       const approved = await w.posSession!.approveAtTill({ managerId: manager!, pin: managerPin!, kind: 'refund', billRef: 'S-1', valueMinor: 48_000, reason: 'checked the goods' });
       if (!approved.approved) return { kind: 'approval_refused', laneMessage: approved.laneMessage } as unknown as RefundOutcome;
@@ -207,7 +207,7 @@ describe.skipIf(!HAVE_BROWSER || !DATABASE_URL)('the store trades a day in a rea
         lines: [{ productId: 'p-rice', uom: 'ea', quantityMinor: 1, disposition: 'resell' }],
         refundMinor: 48_000, refundTender: 'cash', approval: { by: manager!, reason: 'checked the goods', approvalId: approved.approvalId },
       });
-    }, [MANAGER, pinOf(MANAGER)]);
+    }, [MANAGER, pinOf(MANAGER), receipt]);
     expect(refunded).toMatchObject({ kind: 'settled', refundMinor: PRICE });
     expect(await edge.syncOnce!()).toMatchObject({ dead: 0, remaining: 0 });
     expect(await onHandAt(STORE)).toBe(10);

@@ -74,8 +74,12 @@ export interface ReceiptPrefixDeps {
   readonly issues: (tenantId: string) => Promise<readonly ReceiptPrefixIssue[]>;
   /** The write guard's current version: read it BEFORE `issues`, pass it to `recordIssue`. */
   readonly guardVersion: (tenantId: string) => Promise<number>;
-  /** Append one issue, refused with `PrefixWriteRaced` when the guard moved. */
-  readonly recordIssue: (tenantId: string, issue: ReceiptPrefixIssue, expectedVersion: number) => Promise<void>;
+  /**
+   * Append one issue, refused with `PrefixWriteRaced` when the guard moved. When the write did NOT land because the same
+   * version was already written by someone else at the same moment (the append deduped — verifier r17 OB81-2), it answers
+   * `{ kept }`: the issue head office actually holds. Nothing else answers anything (void = it landed).
+   */
+  readonly recordIssue: (tenantId: string, issue: ReceiptPrefixIssue, expectedVersion: number) => Promise<void | { readonly kept: ReceiptPrefixIssue }>;
   /** The tills head office registered (device registry `pos_lane`, not retired): which store each is at. */
   readonly registeredTills?: (tenantId: string) => Promise<readonly { readonly storeId: string; readonly tillId: string; readonly label?: string }[]>;
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
@@ -154,11 +158,25 @@ export function receiptPrefixRoutes(deps: ReceiptPrefixDeps): readonly Route[] {
             storeId, tillId, prefix, version: (current?.version ?? 0) + 1, setBy: ctx.userId, setAt: deps.now(),
             ...(typeof b['reason'] === 'string' && b['reason'].trim() !== '' ? { reason: b['reason'].trim() } : {}),
           };
+          let written: void | { readonly kept: ReceiptPrefixIssue };
           try {
-            await deps.recordIssue(ctx.tenantId, issue, guard);
+            written = await deps.recordIssue(ctx.tenantId, issue, guard);
           } catch (e) {
             if (e instanceof PrefixWriteRaced && attempt < RETRIES) continue;
             throw e;
+          }
+          // Verifier r17 OB81-2 (hard rule #10, P-08): someone else wrote this till's SAME version at the same moment, so this
+          // write did not land. Never a silent last-write-wins, never an audit entry for an issue that did not happen: the
+          // same prefix is the same outcome (200, unchanged); a different one is a visible conflict naming the kept prefix.
+          if (written !== undefined && written !== null && typeof written === 'object' && 'kept' in written) {
+            const kept = written.kept;
+            if (kept.prefix === prefix) return { status: 200, body: { prefix: foldTillPrefixes([...mine, kept])[0], unchanged: true } };
+            throw apiError(409, {
+              code: 'receipt_prefix_changed_at_the_same_moment',
+              whatHappened: `At the same moment, ${kept.setBy} set till ${tillId}'s prefix to ${kept.prefix}. That is the prefix head office kept; ${prefix} was not saved.`,
+              wasItSaved: 'not_saved',
+              nextSafeAction: `Re-open the till's prefix: it is ${kept.prefix}. If it should be ${prefix}, agree with ${kept.setBy} and send it again. Nothing was saved.`,
+            });
           }
           await deps.recordAudit?.(ctx.tenantId, {
             actorId: ctx.userId, action: 'receipt.prefix.issue', objectType: 'till', objectId: `${storeId}/${tillId}`,
@@ -189,7 +207,7 @@ export function receiptPrefixRoutes(deps: ReceiptPrefixDeps): readonly Route[] {
             flagged: multiStore,
             why: multiStore
               ? `Till ${r.tillId} at ${stores.get(r.storeId) ?? r.storeId} has no bill-number prefix and the business has more than one store: its store computer numbers its bills under its own store prefix (ZZ…) until one is issued.`
-              : 'No prefix issued yet. With one store the till keeps its store computer\'s own numbering (R-<till>-); issue one before a second store opens.',
+              : 'No prefix issued yet. With one store a till that already numbers R-<till>- carries on; a new or replaced till numbers under its store computer\'s own store prefix (ZZ…), and each such bill is flagged (OB-85). Issue one before a second store opens.',
           }));
         return {
           status: 200,

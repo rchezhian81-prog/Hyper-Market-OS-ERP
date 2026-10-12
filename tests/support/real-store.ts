@@ -163,10 +163,24 @@ export async function startRealCloud(input: RealCloudInput): Promise<RealCloud> 
       // Two acts (Wave 2b · PA-03): the requester asks under their own sign-in, the owner approves under theirs.
       // Round 7: a grant may NAME its stores — a store computer reports only for the stores its grant names (EA-01).
       const grantId = `grant-${userId}-${roleId}${branchScope === 'all' ? '' : `-at-${[...branchScope].join('-')}`}`;
-      const asked = await request({
+      const ask = () => request({
         method: 'POST', path: '/v1/identity/grants', userId: requestedBy, idempotencyKey: `${grantId}-ask`,
         body: { grantId, userId, roleId, branchScope, reason: 'the practice cast' },
       });
+      let asked = await ask();
+      // Round 18 (verifier r17 C-2 c): head office grants a role only at stores it KNOWS. A cast whose scenario never set up
+      // its stores gets them set up here first, as the owner does before enrolling a store's people and box — once each,
+      // under a practice company — and the request is asked again (a refused request recorded nothing).
+      if (asked.status === 422 && (asked.body as { error?: { code?: string } } | null)?.error?.code === 'unknown_store' && branchScope !== 'all') {
+        await request({ method: 'POST', path: '/v1/org/nodes/C-PRACTICE', userId: input.owner, idempotencyKey: 'org-C-PRACTICE', body: { kind: 'company', name: 'Practice company' } });
+        for (const s of branchScope) {
+          await request({ method: 'POST', path: `/v1/org/nodes/${s}`, userId: input.owner, idempotencyKey: `org-practice-${s}`, body: { kind: 'branch', name: `Store ${s}`, parentId: 'C-PRACTICE', companyId: 'C-PRACTICE' } });
+        }
+        asked = await request({
+          method: 'POST', path: '/v1/identity/grants', userId: requestedBy, idempotencyKey: `${grantId}-ask-again`,
+          body: { grantId, userId, roleId, branchScope, reason: 'the practice cast' },
+        });
+      }
       if (asked.status !== 202) throw new Error(`requesting ${roleId} for ${userId} failed: ${asked.status} ${JSON.stringify(asked.body)}`);
       const reply = await request({ method: 'POST', path: `/v1/identity/grants/${grantId}/approve`, userId: input.owner, idempotencyKey: `${grantId}-approve`, body: {} });
       if (reply.status !== 201) throw new Error(`granting ${roleId} to ${userId} failed: ${reply.status} ${JSON.stringify(reply.body)}`);

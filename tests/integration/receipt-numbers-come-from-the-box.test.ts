@@ -27,7 +27,8 @@ afterEach(async () => {
   for (const d of dirs.splice(0)) await rm(d, { recursive: true, force: true });
 });
 
-const SERIES = { laneId: 'lane-1', prefix: 'R-L1-', padTo: 4, rangeStart: 1, rangeEnd: 5, warnAtRemaining: 2 };
+// A series that obeys the OB-81 rule (6 digits, a prefix head office may issue) and says how far head office banked (r17).
+const SERIES = { laneId: 'lane-1', prefix: 'L1-', padTo: 6, rangeStart: 1, rangeEnd: 5, warnAtRemaining: 2, bankedThrough: 0 };
 
 const startBox = async (opts: { dir?: string; series?: unknown } = {}): Promise<{ edge: EdgeProcess; dir: string }> => {
   const dir = opts.dir ?? await mkdtemp(join(tmpdir(), 'sre-receipt-numbers-'));
@@ -63,14 +64,14 @@ describe('PF-04 — a reload, a second tab and a restart never repeat a receipt 
     await ring(first, a);
     const b = await first.nextReceipt();
     await ring(first, b);
-    expect([a, b]).toEqual(['R-L1-0001', 'R-L1-0002']);
+    expect([a, b]).toEqual(['L1-000001', 'L1-000002']);
 
     // The page is reloaded: a fresh till, nothing remembered in the browser.
     const reloaded = await till(edge);
     const c = await reloaded.nextReceipt();
-    expect(c).toBe('R-L1-0003');
+    expect(c).toBe('L1-000003');
     await ring(reloaded, c);
-    expect((await sales(edge)).map((s) => s.number)).toEqual(['R-L1-0001', 'R-L1-0002', 'R-L1-0003']);
+    expect((await sales(edge)).map((s) => s.number)).toEqual(['L1-000001', 'L1-000002', 'L1-000003']);
   });
 
   it('two tabs asking at the same moment get two different numbers', async () => {
@@ -79,7 +80,7 @@ describe('PF-04 — a reload, a second tab and a restart never repeat a receipt 
     const tabB = bootPos({ laneId: 'lane-1', taxPercent: 0, lanePort: edge.lane!.port });
     const both = await Promise.all([tabA.nextReceipt(), tabB.nextReceipt(), tabA.nextReceipt()]);
     expect(new Set(both).size).toBe(3);
-    expect([...both].sort()).toEqual(['R-L1-0001', 'R-L1-0002', 'R-L1-0003']);
+    expect([...both].sort()).toEqual(['L1-000001', 'L1-000002', 'L1-000003']);
   });
 
   it('the box restarts: it carries on from its disk', async () => {
@@ -91,7 +92,7 @@ describe('PF-04 — a reload, a second tab and a restart never repeat a receipt 
     stops.splice(0);
     const again = await startBox({ dir });
     const t2 = await till(again.edge);
-    expect(await t2.nextReceipt()).toBe('R-L1-0003');
+    expect(await t2.nextReceipt()).toBe('L1-000003');
   });
 
   it('a reply lost on the way back, re-asked with the same request key, gets the same number — not a second one', async () => {
@@ -102,9 +103,9 @@ describe('PF-04 — a reload, a second tab and a restart never repeat a receipt 
     })).json() as Promise<{ receiptNumber?: string }>;
     const once = await ask('rq-lost-reply');
     const twice = await ask('rq-lost-reply');
-    expect(once.receiptNumber).toBe('R-L1-0001');
-    expect(twice.receiptNumber).toBe('R-L1-0001');
-    expect((await ask('rq-next')).receiptNumber).toBe('R-L1-0002');
+    expect(once.receiptNumber).toBe('L1-000001');
+    expect(twice.receiptNumber).toBe('L1-000001');
+    expect((await ask('rq-next')).receiptNumber).toBe('L1-000002');
   });
 
   it('nobody signed in: no number is given', async () => {
@@ -124,17 +125,30 @@ describe('PF-04 — a spent range or a box that cannot save stops the till; noth
     await t.nextReceipt(); // 0003 — 2 left: running low
     expect(t.receiptNotice()).toMatch(/2 receipt number\(s\) left/);
     await t.nextReceipt();
-    expect(await t.nextReceipt()).toBe('R-L1-0005');
+    expect(await t.nextReceipt()).toBe('L1-000005');
     await expect(t.nextReceipt()).rejects.toMatchObject({ refusedBecause: 'receipt_numbers_used_up', laneMessage: expect.stringMatching(/Do not take money/) });
   });
 
-  it('no range published for this till: the box numbers its bills itself and says so on every answer and on its account', async () => {
-    const { edge } = await startBox({ series: null });
+  it('no range published for this till, on a pack file that does not say how many stores: the box numbers under its own store-coded prefix (OB-85, never R-<lane>-) and says so on every answer and on its account', async () => {
+    const { edge, dir } = await startBox({ series: null });
     const t = await till(edge);
     const n = await t.nextReceipt();
-    expect(n).toBe('R-lane-1-000001');
-    expect(t.receiptNotice()).toMatch(/Head office has not set up a receipt-number range/);
-    expect(await status(edge)).toMatchObject({ source: 'this_box', laneMessage: expect.stringMatching(/not set up/) });
+    expect(n).toMatch(/^ZZ[A-Z2-7]{6}-000001$/);
+    expect(t.receiptNotice()).toMatch(/own store prefix/);
+    expect(await status(edge)).toMatchObject({ source: 'store_default', prefix: n.slice(0, 9), fallbackBecause: 'store_count_not_said', laneMessage: expect.stringMatching(/how many stores/) });
+    // A restart keeps the same prefix (the box's identity is on its disk) and carries the count on.
+    await edge.stop(); stops.splice(0);
+    const again = await startBox({ dir });
+    expect(await (await till(again.edge)).nextReceipt()).toBe(`${n.slice(0, 9)}000002`);
+  });
+
+  it('OB81-3: a published series that breaks the bill-number rule is ignored, said on the answer and the account — never numbered under', async () => {
+    const { edge } = await startBox({ series: { laneId: 'lane-1', prefix: 'R-L1-', padTo: 4, rangeStart: 1, rangeEnd: 9_999, bankedThrough: 0 } });
+    const t = await till(edge);
+    const n = await t.nextReceipt();
+    expect(n).toMatch(/^ZZ[A-Z2-7]{6}-000001$/);
+    expect(t.receiptNotice()).toMatch(/breaks the bill-number rule/);
+    expect(await status(edge)).toMatchObject({ source: 'store_default', fallbackBecause: 'published_series_breaks_rule' });
   });
 });
 
@@ -163,7 +177,7 @@ describe('PF-04 — a bill carries only a number this box gave this till, once',
     const unused = await t.nextReceipt();
     await ring(t, await t.nextReceipt());
     expect(await status(edge)).toMatchObject({
-      source: 'published', prefix: 'R-L1-', issued: 3, used: 2, remaining: 2,
+      source: 'published', prefix: 'L1-', issued: 3, used: 2, remaining: 2,
       issuedNotUsed: [{ receiptNumber: unused, issuedTo: 'u-lanecash', issuedAt: expect.any(String) }],
     });
   });

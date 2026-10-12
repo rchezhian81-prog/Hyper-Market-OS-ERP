@@ -76,6 +76,9 @@ describeOrSkip('head-office reports reconcile to their source records — real A
     await cloud.grant(MANAGER, 'store_manager');
     // A manager of ONE branch (S2) — asked for by u-hr, approved by the owner (two acts, PA-03).
     const gid = `grant-${S2_MANAGER}`;
+    // Round 18 (verifier r17 C-2 c): a role's scope names a store head office knows — S2 is set up in the org tree first.
+    await ok(call('POST', '/v1/org/nodes/C-REP', OWNER, { kind: 'company', name: 'Synthetic Retail' }, 'org-c'), 201);
+    await ok(call('POST', '/v1/org/nodes/S2', OWNER, { kind: 'branch', name: 'Store S2', parentId: 'C-REP', companyId: 'C-REP' }, 'org-s2'), 201);
     await ok(call('POST', '/v1/identity/grants', 'u-hr', { grantId: gid, userId: S2_MANAGER, roleId: 'store_manager', branchScope: ['S2'], reason: 'S2 only' }, `${gid}-ask`), 202);
     await ok(call('POST', `/v1/identity/grants/${gid}/approve`, OWNER, {}, `${gid}-approve`), 201);
 

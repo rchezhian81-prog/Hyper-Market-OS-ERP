@@ -59,8 +59,8 @@ beforeAll(async () => {
       servicePolicy: { returnWindowDays: 30, approvalThresholdMinor: 0, noReceiptCapMinor: 100_000, agentAuthorityMinor: 0, compensationCapMinor: 0 },
       policies: { storeId: 'store-1', branchId: 'store-1', branchName: 'Main', tradingDayCutoff: '02:00', staleAfterSeconds: 300, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 10_000, cashVarianceToleranceMinor: 10_000, privacySlaDays: 30, warehouseId: 'wh-1' },
       lossPreventionRules: [],
-      // This till's receipt numbers, as head office would publish them (audit PF-04): its first bill is R-SEAL-1.
-      receiptSeries: [{ laneId: 'lane-1', prefix: 'R-SEAL-', padTo: 1, rangeStart: 1, rangeEnd: 999 }],
+      // This till's receipt numbers, as head office would publish them (audit PF-04): its first bill is SEAL-000001.
+      receiptSeries: [{ laneId: 'lane-1', prefix: 'SEAL-', padTo: 6, rangeStart: 1, rangeEnd: 999, bankedThrough: 0 }],
     },
   });
   edge = (await startEdge({
@@ -94,10 +94,10 @@ describe('the store computer seals who it verified; head office checks the seal'
     expect(await till.till.moveCash({ kind: 'float_issue', amountMinor: 200_000, at: AT, movementId: 'cm-seal-float' })).toMatchObject({ committed: true });
     till.scan({ productId: 'P1', description: 'Toor dal 1kg', unitPriceMinor: 48_000, qty: 2 });
     const receipt = await till.nextReceipt();
-    expect(receipt).toBe('R-SEAL-1');
+    expect(receipt).toBe('SEAL-000001');
     await till.tenderCash('S-SEAL-1', receipt, AT);
     till.newSale();
-    const bill = (await till.lookupRefund('R-SEAL-1'))!;
+    const bill = (await till.lookupRefund('SEAL-000001'))!;
     const approval = await managerApprovesOn(till, 'u-mgr', { kind: 'refund', billRef: 'S-SEAL-1', valueMinor: 48_000 });
     expect(await bill.submit({
       returnId: 'RT-SEAL-1', number: await till.nextReceipt(), reasonCode: 'damaged', refundMinor: 48_000, refundTender: 'cash',

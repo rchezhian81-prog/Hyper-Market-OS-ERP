@@ -62,13 +62,13 @@ describe.skipIf(!HAVE_BROWSER)('the served till never repeats a receipt number (
     return page;
   };
 
-  it('a bill, a reload, a bill, a second tab, a bill: R-L1-0001, 0002, 0003 — each on the box\'s disk once', async () => {
+  it('a bill, a reload, a bill, a second tab, a bill: L1-000001, 000002, 000003 — each on the box\'s disk once', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'sre-served-till-numbers-'));
     dirs.push(dir);
     const edge: EdgeProcess = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY,
       EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '8090', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps',
-      ...await prepareTillBox({ dir, key: KEY, pack: { receiptSeries: [{ laneId: 'lane-1', prefix: 'R-L1-', padTo: 4, rangeStart: 1, rangeEnd: 9999 }] } }),
+      ...await prepareTillBox({ dir, key: KEY, pack: { receiptSeries: [{ laneId: 'lane-1', prefix: 'L1-', padTo: 6, rangeStart: 1, rangeEnd: 9999, bankedThrough: 0 }] } }),
     }, () => {}))!;
     stops.push(() => edge.stop());
     const context = await browser.newContext();
@@ -76,20 +76,20 @@ describe.skipIf(!HAVE_BROWSER)('the served till never repeats a receipt number (
 
     const page = await open(edge.screens!.port, context);
     await signInOnPage(page);
-    expect(await ring(page, 'S-1')).toBe('R-L1-0001');
+    expect(await ring(page, 'S-1')).toBe('L1-000001');
 
     // The cashier reloads the till: the browser forgets everything it counted. The box does not.
     await page.reload({ waitUntil: 'load' });
     await page.waitForFunction(() => (globalThis as unknown as PosWindow).posSession !== undefined, undefined, { timeout: 15_000 });
     if (await page.evaluate(() => (globalThis as unknown as PosWindow).posSession!.operator()) === undefined) await signInOnPage(page);
-    expect(await ring(page, 'S-2')).toBe('R-L1-0002');
+    expect(await ring(page, 'S-2')).toBe('L1-000002');
 
     // A second tab on the same till (a new tab is a new page session: the cashier signs in there too).
     const second = await open(edge.screens!.port, context);
     await signInOnPage(second);
-    expect(await ring(second, 'S-3')).toBe('R-L1-0003');
+    expect(await ring(second, 'S-3')).toBe('L1-000003');
 
     const numbers = (await readLog(edge.log.path)).flatMap((r) => (r.ok ? [(JSON.parse(r.record) as { number: string }).number] : []));
-    expect(numbers).toEqual(['R-L1-0001', 'R-L1-0002', 'R-L1-0003']);
+    expect(numbers).toEqual(['L1-000001', 'L1-000002', 'L1-000003']);
   });
 });

@@ -40,6 +40,10 @@ async function seeded(): Promise<ApiHarness> {
   await h.seedOwner(A, 'u-owner');
   await h.provisionRole(A, 'u-mgr', 'store_manager'); // space.read + display.manage
   await h.provisionRole(A, 'u-cash', 'cashier');       // neither
+  // Round 18 (verifier r17 C-2 c): a display contract is at a store head office knows.
+  for (const [id, body] of [['C1', { kind: 'company', name: 'SRE Retail' }], ['s1', { kind: 'branch', name: 'Store One', parentId: 'C1', companyId: 'C1' }]] as const) {
+    expect((await h.request({ method: 'POST', path: `/v1/org/nodes/${id}`, userId: 'u-owner', tenantId: A, idempotencyKey: `org-${id}-${Math.random()}`, body })).status).toBeLessThan(300);
+  }
   return h;
 }
 

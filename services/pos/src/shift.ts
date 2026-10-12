@@ -9,7 +9,7 @@ import { apiError, assertRecordBranchInScope, narrowScope } from '../../kernel/s
 import { assessShiftClose, checkDenominationCount, assessOverShortReview, type DenominationCount } from '../../../packages/till/src/index';
 import { personFindings } from './cash';
 import { cashierSealFlags, stampIn, type CashierSealFlag } from './store-seal';
-import { tillStoreOf, type TillStoreDeps } from './till-store';
+import { tillStoreOf, type PlacementTrigger, type TillStoreDeps } from './till-store';
 
 /** What the cloud found when it re-verified a close the store box relayed (SP-4c · §28 · hard rule #10). */
 export type ShiftGovernanceFlag =
@@ -120,9 +120,9 @@ export interface ShiftDeps extends TillStoreDeps {
 }
 
 /** OB-80/OB-82: the store a close belongs to — the store it names, else (kept before OB-80) its till's one-time legacy placement. */
-async function closeStoreOf(deps: ShiftDeps, tenantId: string, r: ClosedShiftRecord): Promise<string | undefined> {
+async function closeStoreOf(deps: ShiftDeps, tenantId: string, r: ClosedShiftRecord, trigger?: PlacementTrigger): Promise<string | undefined> {
   if (r.storeId !== undefined && r.storeId !== '') return r.storeId;
-  return deps.legacyStoreOfTill === undefined ? undefined : deps.legacyStoreOfTill(tenantId, r.tillId);
+  return deps.legacyStoreOfTill === undefined ? undefined : deps.legacyStoreOfTill(tenantId, r.tillId, trigger);
 }
 
 export function shiftRoutes(deps: ShiftDeps): readonly Route[] {
@@ -228,7 +228,7 @@ export function shiftRoutes(deps: ShiftDeps): readonly Route[] {
         // can be found for is shop-wide: only a company-wide reader sees it. `?storeId=` narrows (refused by name when not held).
         const asked = typeof ctx.query['storeId'] === 'string' && ctx.query['storeId'].trim() !== '' ? ctx.query['storeId'] : undefined;
         const scope = narrowScope(ctx, asked === undefined ? undefined : [asked]);
-        const placed = await Promise.all((await deps.overShortShifts(ctx.tenantId)).map(async (r) => ({ r, store: await closeStoreOf(deps, ctx.tenantId, r) })));
+        const placed = await Promise.all((await deps.overShortShifts(ctx.tenantId)).map(async (r) => ({ r, store: await closeStoreOf(deps, ctx.tenantId, r, { route: 'GET /v1/shifts/over-short', by: ctx.userId }) })));
         const rows = placed
           .filter(({ store }) => (scope === 'all' ? asked === undefined || store === asked : store !== undefined && scope.includes(store)))
           .map(({ r, store }) => ({ ...r, storeId: store, legacyPlaced: r.storeId === undefined && store !== undefined }));
@@ -279,7 +279,7 @@ export function shiftRoutes(deps: ShiftDeps): readonly Route[] {
 
         // OB-83 "A": only a person whose own scope covers the close's store signs it off (head office covers all); a close
         // with no store is shop-wide, so only a company-wide person may (PA-01 helpers — refused by name, nothing saved).
-        assertRecordBranchInScope(ctx, await closeStoreOf(deps, ctx.tenantId, record));
+        assertRecordBranchInScope(ctx, await closeStoreOf(deps, ctx.tenantId, record, { route: 'POST /v1/shifts/:shiftId/over-short/review', by: ctx.userId }));
 
         const existing = (await deps.overShortReviews(ctx.tenantId)).find((r) => r.shiftId === shiftId);
         if (existing !== undefined) {

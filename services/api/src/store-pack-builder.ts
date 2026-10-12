@@ -33,7 +33,7 @@ import {
   catalogueAdapter, productMasterAdapter, inventoryAdapter, effectiveGrants, peopleAdapter, warehouseAdapter, orgStructureAdapter, deviceRegistryAdapter,
   foldPurchaseOrders, purchaseAdapter, lpRulesAdapter, allCountReconciliations, adjustmentRequestAdapter, goodsReceiptAdapter,
   planogramStoreAdapter, shelfCountAdapter, assortmentAdapter, spacePerformanceAdapter, displayFundingAdapter, averageBuyingCosts,
-  issuedReceiptSeries,
+  issuedReceiptSeries, bankedReceiptCounts,
 } from './adapters';
 import { inForcePlanogram } from '../../inventory/src/planograms';
 import { ROLE_CATALOGUE } from './roles';
@@ -296,9 +296,21 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
 
   // ── OB-81 "A": each till's bill-number prefix head office issued for THIS store (6-digit count, ≤ 16 characters), and how
   // many stores the business has — a till with none keeps the box's own numbering only while there is one store.
-  const issuedSeries = await issuedReceiptSeries(store, tenantId, storeId);
+  // OB-85 · verifier r17: each series also says how far head office has banked under it (`bankedThrough`), and a one-store
+  // business says how far each till's own `R-<lane>-` numbering was banked — so a REPLACED box (its disk lost) resumes above
+  // what head office holds and never repeats a bill number. Read-only.
+  const banked = await bankedReceiptCounts(store, tenantId);
+  const issuedSeries = (await issuedReceiptSeries(store, tenantId, storeId)).map((s) => ({ ...s, bankedThrough: banked.get(s.prefix) ?? 0 }));
   if (issuedSeries.length > 0) sections['receiptSeries'] = issuedSeries;
-  sections['receiptNumbering'] = { storesInBusiness: (await orgStructureAdapter({ store, now }).nodes(tenantId)).filter((n) => n.kind === 'branch').length };
+  const storesInBusiness = (await orgStructureAdapter({ store, now }).nodes(tenantId)).filter((n) => n.kind === 'branch').length;
+  const boxSeriesBankedThrough: Record<string, number> = {};
+  if (storesInBusiness === 1) {
+    for (const [prefix, count] of banked) {
+      const lane = /^R-(.+)-$/.exec(prefix)?.[1];
+      if (lane !== undefined) boxSeriesBankedThrough[lane] = count;
+    }
+  }
+  sections['receiptNumbering'] = { storesInBusiness, ...(Object.keys(boxSeriesBankedThrough).length === 0 ? {} : { boxSeriesBankedThrough }) };
 
   // ── the store's own exception thresholds ───────────────────────────────────────────────────────────────────────
   sections['lossPreventionRules'] = await lpRulesAdapter({ store, now }).rules(tenantId);
