@@ -46,7 +46,6 @@ if (DATABASE_URL !== undefined) backings.push({ name: 'real PostgreSQL', harness
 type Res = { status: number; body: unknown };
 const codeOf = (r: Res): string | undefined => (r.body as { error?: { code?: string } }).error?.code;
 const PERIOD = new Date().toISOString().slice(0, 7);
-const TODAY = new Date().toISOString().slice(0, 10);
 const HELD = 'ind-1:is-1-damaged-1';
 
 describe.each(backings)('OB-66 — a damaged arrival under an open count: good units received, the write-off held and applied once — on $name', ({ harness }) => {
