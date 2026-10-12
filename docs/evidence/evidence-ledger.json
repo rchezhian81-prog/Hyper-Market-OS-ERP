@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1160,
+  "testFiles": 1162,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -2311,9 +2311,9 @@
       "id": "M35",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 7,
-        "integration": 16,
-        "realDb": 10,
+        "unit": 8,
+        "integration": 17,
+        "realDb": 11,
         "browser": 1,
         "connected": 1,
         "device": 0,
@@ -2327,10 +2327,12 @@
           "tests/unit/observed-health-routes.test.ts",
           "tests/unit/ops-backup.test.ts",
           "tests/unit/ops-health.test.ts",
-          "tests/unit/the-store-computer-role-covers-what-the-box-sends.test.ts"
+          "tests/unit/the-store-computer-role-covers-what-the-box-sends.test.ts",
+          "tests/unit/the-till-re-sends-its-devices.test.ts"
         ],
         "integration": [
           "tests/integration/a-person-is-never-the-backup-job.test.ts",
+          "tests/integration/a-quiet-healthy-till-stays-fresh-at-head-office.test.ts",
           "tests/integration/a-store-computer-warns-before-its-disk-fills.test.ts",
           "tests/integration/ai-operations-agent.test.ts",
           "tests/integration/ai-operations-worklist.test.ts",
@@ -2349,6 +2351,7 @@
         ],
         "realDb": [
           "tests/integration/a-person-is-never-the-backup-job.test.ts",
+          "tests/integration/a-quiet-healthy-till-stays-fresh-at-head-office.test.ts",
           "tests/integration/a-store-computer-warns-before-its-disk-fills.test.ts",
           "tests/integration/alerts-reach-their-named-owner.test.ts",
           "tests/integration/an-incident-is-recorded-and-closed-by-a-named-person.test.ts",
@@ -2590,9 +2593,9 @@
       "id": "D04",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 5,
-        "integration": 13,
-        "realDb": 7,
+        "unit": 6,
+        "integration": 14,
+        "realDb": 8,
         "browser": 5,
         "connected": 1,
         "device": 0,
@@ -2604,13 +2607,15 @@
           "tests/unit/day-close.test.ts",
           "tests/unit/evidence-ledger.test.ts",
           "tests/unit/pending-recovery.test.ts",
-          "tests/unit/self-checkout.test.ts"
+          "tests/unit/self-checkout.test.ts",
+          "tests/unit/the-till-re-sends-its-devices.test.ts"
         ],
         "integration": [
           "tests/integration/a-card-no-answer-reaches-finance-the-moment-it-happens.test.ts",
           "tests/integration/a-card-payment-is-recorded-before-the-machine-is-asked.test.ts",
           "tests/integration/a-day-closes-with-a-pending-payment-carried-to-head-office.test.ts",
           "tests/integration/a-pending-card-answer-holds-the-day-close.test.ts",
+          "tests/integration/a-quiet-healthy-till-stays-fresh-at-head-office.test.ts",
           "tests/integration/no-sale-and-price-override-are-kept-and-judged.test.ts",
           "tests/integration/pending-tender-recovery.test.ts",
           "tests/integration/sale-to-shift-close-journey.test.ts",
@@ -2624,6 +2629,7 @@
         "realDb": [
           "tests/integration/a-card-no-answer-reaches-finance-the-moment-it-happens.test.ts",
           "tests/integration/a-day-closes-with-a-pending-payment-carried-to-head-office.test.ts",
+          "tests/integration/a-quiet-healthy-till-stays-fresh-at-head-office.test.ts",
           "tests/integration/no-sale-and-price-override-are-kept-and-judged.test.ts",
           "tests/integration/sale-to-shift-close-journey.test.ts",
           "tests/integration/store-acceptance-journey.test.ts",

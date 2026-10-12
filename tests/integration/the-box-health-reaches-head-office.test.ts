@@ -147,7 +147,8 @@ async function theBoxHealthReachesHeadOffice(h: ApiHarness, tenant: string, agai
     expect(s1.disk!.freeBytes).toBeGreaterThan(0);
     expect(s1.disk!.totalBytes).toBeGreaterThanOrEqual(s1.disk!.freeBytes);
     // The cashier's id stays on the box; only the lane and its devices travel.
-    expect(s1.tills).toEqual([{ laneId: 'lane-1', reportedAt: at(0), devices: [{ kind: 'scanner', state: 'ok' }, { kind: 'printer', state: 'failed', detail: 'paper out' }] }]);
+    // `attended` (P-08): somebody is signed in at that till now, by the box's own sessions — so a quiet lane is one to check.
+    expect(s1.tills).toEqual([{ laneId: 'lane-1', reportedAt: at(0), devices: [{ kind: 'scanner', state: 'ok' }, { kind: 'printer', state: 'failed', detail: 'paper out' }], attended: true }]);
     expect(JSON.stringify(s1)).not.toContain('u-lanecash');
     // The second store, known to head office, has never reported: listed, never left out, never "fine".
     expect(live.observed.boxes.find((b) => b.storeId === 'S2')).toMatchObject({ state: 'never_reported', stale: true, canRecordSales: null });
@@ -273,6 +274,16 @@ async function aQuietTillIsStaleNotOk(h: ApiHarness, tenant: string): Promise<vo
     // Just under the threshold is fresh; at the threshold it is stale (the same 15-minute rule as the box's own report).
     expect((await report(1_476, [{ laneId: 'lane-1', reportedAt: new Date(T0 + 1_476 * 60_000 - 899_000).toISOString(), devices: ok }])).status).toBe('ok');
     expect((await report(1_477, [{ laneId: 'lane-1', reportedAt: at(1_462), devices: ok }])).status).toBe('unknown');
+    // P-08: the box says whether anybody is signed in at a quiet till. Signed in and quiet: still unknown, and a till to
+    // check (a signed-in till re-sends every 5 minutes); `attended` that is not true/false is refused.
+    const checkIt = await report(1_478, [{ laneId: 'lane-1', reportedAt: at(1_462), devices: ok, attended: true }]);
+    expect(checkIt.status).toBe('unknown');
+    expect(checkIt.detail).toBe(`STALE — till lane-1 last reported its devices 16 min ago (${at(1_462)}) — a cashier IS signed in there, so it should still be re-sending every few minutes: check that till: not heard from since, so its devices are not known now`);
+    travel(1_479);
+    const garbled = await h.request({ method: 'POST', path: '/v1/store-computers/health-reports', userId: 'u-box1', tenantId: tenant, branchId: 'S1', idempotencyKey: 'bh-attended-garbled',
+      body: { observedAt: at(1_479), disk, queue: { unsent: 0, deadLettered: 0 }, tills: [{ laneId: 'lane-1', reportedAt: at(1_479), devices: ok, attended: 'yes' }] } });
+    expect(garbled.status).toBe(400);
+    expect(JSON.stringify(garbled.body)).toContain('tills[0].attended must be true or false when given');
   } finally {
     await s.done();
   }

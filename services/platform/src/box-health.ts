@@ -45,6 +45,12 @@ export interface TillDeviceReport {
   readonly laneId: string;
   readonly reportedAt: string;
   readonly devices: readonly { readonly kind: string; readonly state: string; readonly detail?: string }[];
+  /**
+   * P-08: is somebody signed in at that till now, by the store computer's own sessions? A signed-in till re-sends its
+   * devices every 5 minutes (apps/pos/src/device-heartbeat.ts); an unattended one stops, so its lane goes stale — expected
+   * when nobody is there, a till to check when somebody is. Absent from a box that does not say.
+   */
+  readonly attended?: boolean;
 }
 
 /** One report, as head office keeps it. */
@@ -94,9 +100,10 @@ export function readBoxHealthReport(body: unknown, receivedAt: string):
         const detail = typeof x['detail'] === 'string' && x['detail'].trim() !== '' ? x['detail'].trim().slice(0, 120) : undefined;
         devices.push({ kind: x['kind'] as string, state: x['state'] as string, ...(detail === undefined ? {} : { detail }) });
       }
+      if (t['attended'] !== undefined && typeof t['attended'] !== 'boolean') { problems.push(`tills[${i}].attended must be true or false when given`); return; }
       let reportedAt = t['reportedAt'] as string;
       if (Date.parse(reportedAt) > Date.parse(receivedAt)) { reportedAt = receivedAt; corrected = true; }
-      tills.push({ laneId: (t['laneId'] as string).trim(), reportedAt, devices });
+      tills.push({ laneId: (t['laneId'] as string).trim(), reportedAt, devices, ...(typeof t['attended'] === 'boolean' ? { attended: t['attended'] } : {}) });
     });
   }
   if (problems.length > 0) return { problems };
@@ -289,12 +296,16 @@ export function judgeBoxes(input: {
         const laneAge = Math.max(0, Math.floor((Date.parse(input.at) - Date.parse(t.reportedAt)) / 1000));
         const bad = t.devices.filter((d) => d.state !== 'ok')
           .map((d) => `${t.laneId}: ${d.kind.replace('_', ' ')} ${d.state === 'failed' ? 'has failed' : 'is not working properly'}${d.detail === undefined ? '' : ` — ${d.detail}`}`);
-        return { laneId: t.laneId, reportedAt: t.reportedAt, ageSeconds: laneAge, stale: laneAge >= input.thresholds.syncLagWarnSeconds, bad };
+        return { laneId: t.laneId, reportedAt: t.reportedAt, ageSeconds: laneAge, stale: laneAge >= input.thresholds.syncLagWarnSeconds, bad, attended: t.attended };
       });
       const freshBad = lanes.filter((l) => !l.stale).flatMap((l) => l.bad);
       const staleLanes = lanes.filter((l) => l.stale);
       const oldest = r.tills.map((t) => t.reportedAt).sort()[0]!;
-      const staleSays = staleLanes.length === 0 ? '' : `STALE — ${staleLanes.map((l) => `till ${l.laneId} last reported its devices ${ago(l.ageSeconds)} ago (${l.reportedAt})${l.bad.length === 0 ? '' : `, then saying ${l.bad.join('; ')}`}`).join('; ')}: not heard from since, so its devices are not known now`;
+      // P-08: say WHY a lane may be quiet, from the box's own sessions — never a reason to read it ok.
+      const whyQuiet = (l: (typeof lanes)[number]): string => (l.attended === false
+        ? ' — nobody is signed in at that till, so it has stopped re-sending (expected when it is closed or unattended)'
+        : l.attended === true ? ' — a cashier IS signed in there, so it should still be re-sending every few minutes: check that till' : '');
+      const staleSays = staleLanes.length === 0 ? '' : `STALE — ${staleLanes.map((l) => `till ${l.laneId} last reported its devices ${ago(l.ageSeconds)} ago (${l.reportedAt})${l.bad.length === 0 ? '' : `, then saying ${l.bad.join('; ')}`}${whyQuiet(l)}`).join('; ')}: not heard from since, so its devices are not known now`;
       const freshSays = freshBad.length > 0 ? `store ${storeId}: ${freshBad.join('; ')} — the till still sells; a person should fix it`
         : staleLanes.length === lanes.length ? '' : `every till device at store ${storeId} that reported recently said it was working`;
       const says = [freshSays, staleSays].filter((x) => x !== '').join('. ');
