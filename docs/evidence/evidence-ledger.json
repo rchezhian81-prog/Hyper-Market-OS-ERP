@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1123,
+  "testFiles": 1125,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -3745,8 +3745,8 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 0,
-        "integration": 11,
-        "realDb": 6,
+        "integration": 12,
+        "realDb": 7,
         "browser": 0,
         "connected": 0,
         "device": 0,
@@ -3755,6 +3755,7 @@
       "files": {
         "unit": [],
         "integration": [
+          "tests/integration/a-count-plan-is-closed-once-approved-or-cancelled-never-both.test.ts",
           "tests/integration/a-damaged-arrival-under-an-open-count-is-received-good-and-written-off-at-the-close.test.ts",
           "tests/integration/a-planned-count-on-the-phone-reaches-head-office-through-the-box.test.ts",
           "tests/integration/a-stock-count-is-planned-frozen-recounted-approved-and-booked.test.ts",
@@ -3768,6 +3769,7 @@
           "tests/integration/warehouse-counts.test.ts"
         ],
         "realDb": [
+          "tests/integration/a-count-plan-is-closed-once-approved-or-cancelled-never-both.test.ts",
           "tests/integration/a-damaged-arrival-under-an-open-count-is-received-good-and-written-off-at-the-close.test.ts",
           "tests/integration/a-planned-count-on-the-phone-reaches-head-office-through-the-box.test.ts",
           "tests/integration/a-stock-count-is-planned-frozen-recounted-approved-and-booked.test.ts",

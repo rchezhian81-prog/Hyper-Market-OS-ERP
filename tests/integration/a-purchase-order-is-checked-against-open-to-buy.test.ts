@@ -186,7 +186,7 @@ describe.each(backings)('a purchase order is checked against open-to-buy — on 
     const amend = (poId: string, amendmentId: string, productId: string, qty: number, userId = 'u-owner', extra: Record<string, unknown> = {}, key?: string) =>
       call('POST', `/v1/purchase/orders/${poId}/amendments`, userId, { amendmentId, reason: 'supplier can fill more', lines: [{ productId, orderedQty: qty, unitCost: cost(5_000) }], ...extra }, key);
     const otb = async () => (await call('GET', '/v1/purchase/open-to-buy', 'u-owner', undefined, undefined, { period: month })).body as { categories: Cat[]; overrides: { poId: string; amendmentId?: string; approvedBy: string; reason: string; overByMinor: number }[] };
-    const order = async (poId: string) => ((await call('GET', `/v1/purchase/orders/${poId}`, 'u-owner')).body as { order: { lines: { orderedQty: number }[]; amendmentCount: number; totalMinor: number } }).order;
+    const order = async (poId: string) => ((await call('GET', `/v1/purchase/orders/${poId}`, 'u-owner')).body as { order: { lines: { orderedQty: number; uom?: string }[]; amendmentCount: number; totalMinor: number } }).order;
     return { h, T, call, ok, month, issued, amend, otb, order };
   };
 
@@ -207,7 +207,8 @@ describe.each(backings)('a purchase order is checked against open-to-buy — on 
     expect((await otb()).overrides).toEqual([]);
     // The owner, with a reason: amended, the override recorded against THIS amendment.
     await ok(amend('po-a', 'am-2', 'RICE', 16, 'u-owner', { overBudgetReason: 'Diwali stock-up' }), 'am-2 over budget');
-    expect(await order('po-a')).toMatchObject({ amendmentCount: 2, lines: [{ orderedQty: 16 }] });
+    // The amended line keeps the product's own unit (OB-31), so it is valued like the ordered one.
+    expect(await order('po-a')).toMatchObject({ amendmentCount: 2, lines: [{ orderedQty: 16, uom: 'ea' }] });
     let o = await otb();
     expect(o.categories.find((c) => c.categoryId === 'grocery')).toMatchObject({ committedMinor: 110_000, openToBuyMinor: -10_000, state: 'over' });
     expect(o.overrides).toEqual([expect.objectContaining({ poId: 'po-a', amendmentId: 'am-2', approvedBy: 'u-owner', reason: 'Diwali stock-up', overByMinor: 10_000 })]);
