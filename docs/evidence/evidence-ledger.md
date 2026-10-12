@@ -20,17 +20,17 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 
 - Evidence test files scanned: 1152. SP-10 sessions: 0 (0 PASS, 0 on real hardware).
 - Requirements with at least one proof of each kind: Unit 88 · Integration (in-process) 101 · Real PostgreSQL 97 · Browser (stub cloud) 80 · Browser (connected) 42 · Device 0 · Staff UAT 0.
-- Labels: E2E_VERIFIED 28 · INTEGRATION_TESTED 24 · PARTIALLY_WIRED 41 · WIRED 11.
+- Labels: E2E_VERIFIED 41 · INTEGRATION_TESTED 18 · PARTIALLY_WIRED 40 · WIRED 5.
 - Labels that do NOT hold: none.
 
 ## The ledger
 
 | ID | Label | Unit | Integration (in-process) | Real PostgreSQL | Browser (stub cloud) | Browser (connected) | Device | Staff UAT | Label holds |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
-| M01 | WIRED | 20 | 19 | 9 | 5 | 3 | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
-| M02 | INTEGRATION_TESTED | 24 | 21 | 9 | 7 | 2 | · | · | ✓ an integration test cites it |
+| M01 | E2E_VERIFIED | 20 | 19 | 9 | 5 | 3 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
+| M02 | E2E_VERIFIED | 24 | 21 | 9 | 7 | 2 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | M03 | INTEGRATION_TESTED | 16 | 15 | 1 | 3 | 1 | · | · | ✓ an integration test cites it |
-| M04 | WIRED | 7 | 8 | 1 | 1 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
+| M04 | E2E_VERIFIED | 7 | 8 | 1 | 1 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
 | M05 | E2E_VERIFIED | 13 | 19 | 5 | 5 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | M06 | E2E_VERIFIED | 11 | 18 | 8 | 4 | 2 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | M07 | E2E_VERIFIED | 9 | 25 | 6 | 4 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
@@ -39,7 +39,7 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 | M10 | E2E_VERIFIED | 20 | 22 | 4 | 3 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
 | M11 | INTEGRATION_TESTED | 4 | 6 | 2 | 1 | · | · | · | ✓ an integration test cites it |
 | M12 | E2E_VERIFIED | 17 | 24 | 5 | 13 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
-| M13 | INTEGRATION_TESTED | 24 | 24 | 7 | 4 | 1 | · | · | ✓ an integration test cites it |
+| M13 | E2E_VERIFIED | 24 | 24 | 7 | 4 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | M14 | E2E_VERIFIED | 17 | 17 | 5 | 5 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
 | M15 | E2E_VERIFIED | 14 | 14 | 2 | 6 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
 | M16 | WIRED | 8 | 15 | 6 | 1 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
@@ -55,8 +55,8 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 | M26 | E2E_VERIFIED | 2 | 10 | 3 | 2 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | M27 | WIRED | 6 | 7 | 2 | 2 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | M28 | E2E_VERIFIED | 5 | 11 | 5 | 2 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
-| M29 | WIRED | 13 | 13 | 6 | 2 | 1 | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
-| M30 | INTEGRATION_TESTED | 11 | 11 | 5 | 5 | 3 | · | · | ✓ an integration test cites it |
+| M29 | E2E_VERIFIED | 13 | 13 | 6 | 2 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
+| M30 | E2E_VERIFIED | 11 | 11 | 5 | 5 | 3 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | M31 | WIRED | 5 | 11 | 5 | 1 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | M32 | E2E_VERIFIED | 8 | 14 | 6 | 1 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
 | M33 | E2E_VERIFIED | 21 | 20 | 4 | 3 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
@@ -81,11 +81,11 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 | A02 | PARTIALLY_WIRED | 6 | 6 | 2 | · | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | A03 | WIRED | 5 | 7 | 3 | · | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | A04 | PARTIALLY_WIRED | 7 | 5 | 3 | 1 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
-| A05 | WIRED | 2 | 5 | 3 | 1 | 1 | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
+| A05 | E2E_VERIFIED | 2 | 5 | 3 | 1 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | A06 | E2E_VERIFIED | 6 | 5 | 3 | 3 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
-| A07 | WIRED | 5 | 4 | 3 | 1 | 1 | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
+| A07 | E2E_VERIFIED | 5 | 4 | 3 | 1 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | A08 | E2E_VERIFIED | 6 | 8 | 4 | 4 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
-| A09 | WIRED | 3 | 4 | 3 | 1 | 1 | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
+| A09 | E2E_VERIFIED | 3 | 4 | 3 | 1 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | A10 | E2E_VERIFIED | 9 | 7 | 3 | 3 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | WF-01 | PARTIALLY_WIRED | · | 9 | 2 | 2 | 1 | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | WF-02 | INTEGRATION_TESTED | · | 8 | 3 | 3 | 1 | · | · | ✓ an integration test cites it |
@@ -95,15 +95,15 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 | WF-06 | E2E_VERIFIED | 4 | 7 | 4 | 3 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
 | WF-07 | INTEGRATION_TESTED | 4 | 7 | 4 | 3 | 1 | · | · | ✓ an integration test cites it |
 | WF-08 | PARTIALLY_WIRED | 2 | 13 | 8 | 1 | 1 | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
-| WF-09 | INTEGRATION_TESTED | · | 9 | 1 | 1 | · | · | · | ✓ an integration test cites it |
+| WF-09 | E2E_VERIFIED | · | 9 | 1 | 1 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
 | WF-10 | E2E_VERIFIED | 1 | 5 | 3 | 2 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
-| WF-11 | INTEGRATION_TESTED | · | 9 | 5 | 3 | 1 | · | · | ✓ an integration test cites it |
-| WF-12 | INTEGRATION_TESTED | · | 10 | 5 | 3 | · | · | · | ✓ an integration test cites it |
+| WF-11 | E2E_VERIFIED | · | 9 | 5 | 3 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
+| WF-12 | E2E_VERIFIED | · | 10 | 5 | 3 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
 | WF-13 | E2E_VERIFIED | · | 6 | 1 | 1 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
 | WF-14 | E2E_VERIFIED | · | 5 | 3 | 2 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
 | WF-15 | INTEGRATION_TESTED | · | 7 | 3 | 2 | · | · | · | ✓ an integration test cites it |
 | WF-16 | PARTIALLY_WIRED | · | 5 | 2 | · | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
-| WF-17 | PARTIALLY_WIRED | · | 8 | 2 | 1 | 1 | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
+| WF-17 | E2E_VERIFIED | · | 8 | 2 | 1 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | WF-18 | PARTIALLY_WIRED | 1 | 11 | 7 | 3 | 1 | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | WF-19 | INTEGRATION_TESTED | 1 | 13 | 8 | 1 | · | · | · | ✓ an integration test cites it |
 | WF-20 | PARTIALLY_WIRED | 1 | 9 | 6 | 2 | 1 | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |

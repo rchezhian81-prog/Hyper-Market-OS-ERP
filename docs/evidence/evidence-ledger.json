@@ -12,10 +12,10 @@
     "onDevice": 0
   },
   "labels": {
-    "WIRED": 11,
-    "INTEGRATION_TESTED": 24,
-    "E2E_VERIFIED": 28,
-    "PARTIALLY_WIRED": 41
+    "E2E_VERIFIED": 41,
+    "INTEGRATION_TESTED": 18,
+    "WIRED": 5,
+    "PARTIALLY_WIRED": 40
   },
   "totals": {
     "unit": 88,
@@ -30,7 +30,7 @@
   "items": [
     {
       "id": "M01",
-      "label": "WIRED",
+      "label": "E2E_VERIFIED",
       "counts": {
         "unit": 20,
         "integration": 19,
@@ -111,11 +111,11 @@
         "uat": []
       },
       "holds": true,
-      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "M02",
-      "label": "INTEGRATION_TESTED",
+      "label": "E2E_VERIFIED",
       "counts": {
         "unit": 24,
         "integration": 21,
@@ -203,7 +203,7 @@
         "uat": []
       },
       "holds": true,
-      "why": "an integration test cites it"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "M03",
@@ -272,7 +272,7 @@
     },
     {
       "id": "M04",
-      "label": "WIRED",
+      "label": "E2E_VERIFIED",
       "counts": {
         "unit": 7,
         "integration": 8,
@@ -313,7 +313,7 @@
         "uat": []
       },
       "holds": true,
-      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+      "why": "browser boundary and cloud effect proven in separate runs (no connected browser test yet)"
     },
     {
       "id": "M05",
@@ -929,7 +929,7 @@
     },
     {
       "id": "M13",
-      "label": "INTEGRATION_TESTED",
+      "label": "E2E_VERIFIED",
       "counts": {
         "unit": 24,
         "integration": 24,
@@ -1014,7 +1014,7 @@
         "uat": []
       },
       "holds": true,
-      "why": "an integration test cites it"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "M14",
@@ -1934,7 +1934,7 @@
     },
     {
       "id": "M29",
-      "label": "WIRED",
+      "label": "E2E_VERIFIED",
       "counts": {
         "unit": 13,
         "integration": 13,
@@ -1994,11 +1994,11 @@
         "uat": []
       },
       "holds": true,
-      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "M30",
-      "label": "INTEGRATION_TESTED",
+      "label": "E2E_VERIFIED",
       "counts": {
         "unit": 11,
         "integration": 11,
@@ -2058,7 +2058,7 @@
         "uat": []
       },
       "holds": true,
-      "why": "an integration test cites it"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "M31",
@@ -3278,7 +3278,7 @@
     },
     {
       "id": "A05",
-      "label": "WIRED",
+      "label": "E2E_VERIFIED",
       "counts": {
         "unit": 2,
         "integration": 5,
@@ -3315,7 +3315,7 @@
         "uat": []
       },
       "holds": true,
-      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "A06",
@@ -3366,7 +3366,7 @@
     },
     {
       "id": "A07",
-      "label": "WIRED",
+      "label": "E2E_VERIFIED",
       "counts": {
         "unit": 5,
         "integration": 4,
@@ -3405,7 +3405,7 @@
         "uat": []
       },
       "holds": true,
-      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "A08",
@@ -3461,7 +3461,7 @@
     },
     {
       "id": "A09",
-      "label": "WIRED",
+      "label": "E2E_VERIFIED",
       "counts": {
         "unit": 3,
         "integration": 4,
@@ -3498,7 +3498,7 @@
         "uat": []
       },
       "holds": true,
-      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "A10",
@@ -3918,7 +3918,7 @@
     },
     {
       "id": "WF-09",
-      "label": "INTEGRATION_TESTED",
+      "label": "E2E_VERIFIED",
       "counts": {
         "unit": 0,
         "integration": 9,
@@ -3952,7 +3952,7 @@
         "uat": []
       },
       "holds": true,
-      "why": "an integration test cites it"
+      "why": "browser boundary and cloud effect proven in separate runs (no connected browser test yet)"
     },
     {
       "id": "WF-10",
@@ -3997,7 +3997,7 @@
     },
     {
       "id": "WF-11",
-      "label": "INTEGRATION_TESTED",
+      "label": "E2E_VERIFIED",
       "counts": {
         "unit": 0,
         "integration": 9,
@@ -4039,11 +4039,11 @@
         "uat": []
       },
       "holds": true,
-      "why": "an integration test cites it"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "WF-12",
-      "label": "INTEGRATION_TESTED",
+      "label": "E2E_VERIFIED",
       "counts": {
         "unit": 0,
         "integration": 10,
@@ -4084,7 +4084,7 @@
         "uat": []
       },
       "holds": true,
-      "why": "an integration test cites it"
+      "why": "browser boundary and cloud effect proven in separate runs (no connected browser test yet)"
     },
     {
       "id": "WF-13",
@@ -4232,7 +4232,7 @@
     },
     {
       "id": "WF-17",
-      "label": "PARTIALLY_WIRED",
+      "label": "E2E_VERIFIED",
       "counts": {
         "unit": 0,
         "integration": 8,
@@ -4268,7 +4268,7 @@
         "uat": []
       },
       "holds": true,
-      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "WF-18",

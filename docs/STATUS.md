@@ -5,6 +5,181 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Coordinated programme · Rounds 9–13 — owner decisions OB-55 to OB-79 built or deferred; the pilot's missing screens built; two independent checks (11–12 October 2026)
+
+Branch `claude/new-session-lw91i4` at `c2ce28e4`, compared with `main` at `d14a8b2f` (PR #761). Not yet merged to main.
+Words used below, precisely: **implemented** = the code exists; **integration-tested** = automated tests drive the
+real routes, on the in-memory store and on real PostgreSQL ("PG"); **browser-verified** = an automated Chromium test
+drives the page against the production API over PostgreSQL ("connected"); **staff UAT** = a named member of staff
+ran it in the store — **none has run** (SP-10: 0 sessions).
+
+- **Round 9 (Batch 3, finance close):**
+  - OB-55: the box closes the day with a pending card/UPI payment only on a second person's PIN, carrying each
+    payment by name to head office as a finance exception; a late machine answer for an earlier day needs a manager.
+    Integration-tested (PG); the manager screen's carry-forward in a browser test (no PostgreSQL).
+  - OB-56: the month-end stock adjustment books cost of goods sold once; the P&L shows gross margin; the close
+    reconciles stock value. Integration-tested (PG), and in both store journeys.
+  - OB-57: monthly budgets (versioned) with actual-vs-budget; fixed-asset register with depreciation through the
+    posting map (OB-67: a full month from the in-service month). Integration-tested (PG).
+- **Round 10, Batch 1 (security and platform):**
+  - OB-54: a record a store computer relays without naming a store is stamped with its credential's store; an
+    unplaceable store code is refused and listed.
+  - backup_job is a machine-only identity (never granted beside a person's role).
+  - The message engine, not the provider, decides when a message is dead-lettered.
+  - Outbound partner webhooks refuse private destinations at subscribe and at send; a second person approves a
+    subscription (OB-72).
+  - Organisation and Delegation pages: browser-verified (connected).
+- **Round 10, Batch 2 (purchase and inventory):**
+  - GT-05: one reversal window per shop — the first recorded cutover GO defines it.
+  - OB-59: an open count freezes every head-office adjustment and write-off path.
+  - Two approvals at the same moment cannot together pass open-to-buy.
+  - A transfer is valued at head office's own cost; a typed cost is ignored and said so.
+- **Round 11:** OB-66 (a damaged arrival under an open count: good units in at once, the write-off held to the count's
+  close); OB-68 (goods made in the store valued at the production run's cost); OB-69 (a card/UPI no-answer reaches
+  finance the moment the till records it). Integration-tested (PG).
+- **Round 12, fixes for the round-11 verifier** (all re-checked HOLDS by the round-13 verifier):
+  - payment-exception relays locked to the store computer's own store;
+  - two racing payment answers recorded as a conflict, never lost;
+  - card-like references refused on every relay;
+  - a person can never be the backup job;
+  - delegation scope worked out per subject type;
+  - HTTPS webhook transport pinned to the vetted address, with no redirects, timeouts and a reply cap;
+  - the legacy cutover GO reported, never doubled;
+  - month-end adjustments post in month order;
+  - not-valued production runs listed by name (OB-70, OB-75);
+  - raising PO amendments go through open-to-buy (OB-63);
+  - a count plan is closed once (approved or cancelled);
+  - OB-71: a damaged arrival with no count open is its own write-off line.
+- **Round 12, screens** (each browser-verified, connected):
+  - Month-end page: card and UPI with no answer, P&L, stock adjustment, budget, fixed assets.
+  - Competitor-price panel on Catalogue.
+  - An approved markdown is the price the served till charges (real store computer, Chromium).
+  - Count plans page and Transfers page.
+  - Supplier bills page and the open-to-buy panel on Buying.
+  - Incidents and recovery-drills page.
+- **Round 12, Batches 1/4:**
+  - Store computer disk, queue and till devices reach head office's health view: store-locked, shown stale when
+    quiet. Integration-tested (PG).
+  - Evidence-only proofs (no production code):
+    - WF-02 supplier onboarding on PG, plus the Suppliers page (connected);
+    - product publish (M03), connected;
+    - B2B portal (M22), connected;
+    - concession settlement, PG leg;
+    - the customer reading a delivery in progress (WF-15);
+    - DR-drill register, PG leg.
+  - Two real gaps were exposed and pinned by tests rather than hidden. They became OB-76 and OB-77.
+- **Round 13 fixes:**
+  - Two identical writes at the same instant now collapse into one, instead of a raw error on PostgreSQL.
+  - Event ids now follow their idempotency keys.
+  - A typed bill is linked to its scan.
+  - Plain transfers ask the count freeze at both ends.
+  - An amendment's over-budget approval is kept apart from the order's own.
+- **Independent verifier, round 11 (12 Oct):**
+  - 8 items held and 7 had gaps. 22 of 25 deliberate breakages were caught by a test.
+  - Serious findings: one store's computer could mark another store's card payment paid; two racing answers lost one
+    silently; PO amendments skipped the budget; lent authority could spread to every branch; a person could be set
+    up as the backup job.
+  - All of these were fixed in round 12.
+- **Independent verifier, round 13 (12 Oct):**
+  - Test runs: 465 tests in memory passed; 306 of 306 integration tests passed on PostgreSQL; the Transfers browser
+    test passed 4 of 4.
+  - 32 of 32 deliberate breakages were caught. All twelve round-11 items now HOLD.
+  - New findings, **being fixed now** (round 13):
+    1. **HIGH** — a store manager signed in as himself can resolve or raise another store's card/UPI payment
+       exception. The store lock covered store computers only.
+    2. A typed scan can be left "captured" against a bill that was never saved, if the save fails just after the
+       link is written.
+    3. A till that died yesterday still reads "all devices working" at head office. Only the store computer's report
+       time is judged, not each till's own.
+    4. An amendment judged against an older copy of the order can restore a quantity whose budget another order has
+       since spent (found by reading the code; no test proves it yet).
+    5. A second, different late answer for the same payment is dropped as "already recorded".
+    6. A count plan whose approval is cut short reads "approved" with its variances unposted, and nothing flags it.
+  - Low findings, recorded and not yet scheduled:
+    - some clock-built event ids remain;
+    - delegations made before round 12 keep their wider scope until they expire;
+    - the "machine credential" check rests on missing sign-in evidence;
+    - two different box-health reports at the same instant collapse into one;
+    - the transfer list shows line costs to store managers;
+    - six older ERP pages are missing from the offline cache list.
+  - The verifier also flagged that STATUS and traceability had not been updated, and that OB-76 to OB-79 had no target
+    release. This entry and this commit do that.
+- **Owner decisions OB-55 to OB-79 (11–12 Oct, in writing; full text in `docs/registers/decisions.md`):**
+  - Built:
+    - OB-55, close with exception;
+    - OB-56, month-end adjustment;
+    - OB-57, budgets and assets;
+    - OB-59, freeze adjustments and write-offs;
+    - OB-61, item holder then duty manager;
+    - OB-63, owner only over budget;
+    - OB-64, nine built-in root causes;
+    - OB-66, receive good, hold damaged;
+    - OB-67, full month from in-service;
+    - OB-68, production run's cost;
+    - OB-69, the moment it happens;
+    - OB-70, registered cost fallback;
+    - OB-71, own write-off line;
+    - OB-72, any second admin;
+    - OB-75, listed until sold or written off.
+  - Approved deferrals (not built now; routes and tests kept):
+    - OB-58: WF-16 and D07-FR-04 → R4; D09-FR-01/06 → R5; D04-FR-06 → R8.
+    - OB-60: images → R4.
+    - OB-62: voice search off.
+    - OB-65: D11-FR-04/06, D03-FR-04 and D02-FR-04 → R6; D02-FR-02 → R8.
+    - **OB-73:** mobile POS / queue-busting → **R5**. Fixed tills only for the pilot.
+    - **OB-74:** four screens → **R4/R7**. These are the M16 customer merge/segments page (R4), M20-FR-04 ratings
+      (R4), the D01-FR-06 content editor (R4) and the A03 transfer-drafts screen (R7).
+  - **Accepted, being built in round 13, target: this pilot release R2:**
+    - **OB-76:** a staff member invites an outside party's login (business customer, app customer, supplier) and a
+      second person approves. No governed path exists today; the B2B portal test proves the refusal.
+    - **OB-77:** the driver's delivery status and its "as of" time on the customer's own order read.
+    - **OB-78:** warn when a store computer's disk would fill within 48 trading hours. The owner can change the 48.
+    - **OB-79:** floor restocking at a shelf being counted is refused while that count explicitly freezes
+      transfers. The default freeze is unchanged.
+- **Records (this commit):**
+  - Matrix Table A: **72 of 74 verified**. GT-05 is now verified (round-11 verifier). 0 pending software, 1 approved
+    deferral, 1 staff/device acceptance.
+  - Matrix Table B (104 items):
+    - 1 verified complete;
+    - **15 pending software**: M14, M20, M22, M23, M24, M35, D02, D03, D05, WF-03, WF-05, WF-08, WF-12, WF-15 and
+      WF-18. Each one is held by a round-13 finding or by OB-76 to OB-79;
+    - 9 approved deferral;
+    - 41 external dependency;
+    - 38 staff/device acceptance.
+  - Ledger (`docs/completion-status.json`): 13 labels moved to E2E_VERIFIED under the evidence rule. These are M01,
+    M02, M04, M13, M29, M30, A05, A07, A09, WF-09, WF-11, WF-12 and WF-17. Product completion is now 64.8%.
+  - M19 meets the evidence rule but was held at PARTIALLY_WIRED. Raising it needs a one-line registration in a
+    guardrail test, which this records-only pass does not change.
+  - Evidence ledger regenerated; guardrails pass (95 files, 1343 tests).
+- **Needs an owner or administrator action:**
+  - Administrator: protect `main` and make the CI checks required, including the `identity` (real Keycloak) job.
+    These are steps in GitHub settings that no code change can make.
+  - Owner: book the first SP-10 staff sessions. These are cashier, manager day close, receiving, a count on the
+    phone, and month-end with the accountant.
+  - Owner: the accountant (CA) confirms the posting map.
+  - Owner: choose the outside providers when ready: card/UPI acquirer, SMS/WhatsApp (R4), OCR engine, e-invoice
+    (IRP) feed, an off-site backup target with named custodians, and a spare store machine for the recovery drill.
+  - Owner: OB-49 legal confirmation before any real customer data is erased.
+- **Next:**
+  - Fix the six round-13 findings and build OB-76 to OB-79. Each needs a test.
+  - Have the verifier re-check them.
+  - Update this file, then open the pull request.
+- **Not claimed:** staff UAT; any live provider; real data; a deployed store.
+
+**For the owner, in plain words.** Since the last merge, the remaining pilot screens were built and checked by
+automatic browser tests. They are month-end, stock counts, transfers, supplier bills, the purchase budget, competitor
+prices and incidents. Most of your decisions are now built. Mobile tills are moved to R5 and four later screens to
+R4/R7, as you agreed. An independent checker found one serious hole: a store manager could mark another store's card
+payment as paid. That hole and five smaller ones are being fixed now, together with your four newest decisions
+(OB-76 to OB-79). Nothing has been tried by your staff in the store yet.
+**What to check, and how:**
+- When the fix lands, sign in as the Store-1 manager, open Month-end, and confirm that Store 2's card payments
+  cannot be marked paid.
+- On the Count plans page, start a count that ticks "transfers" for one shelf. Then confirm the floor-indent screen
+  refuses restocking that shelf until the count closes (OB-79).
+- Switch one till's scanner off overnight. Next morning, the head-office health view should say that till's report
+  is old, not "working".
+
 ## Coordinated programme · Rounds 7 and 8 — security follow-ups closed; the pilot-release (R2) gaps built; 27 owner decisions recorded (11 October 2026)
 
 - **Round 7:**
