@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1124,
+  "testFiles": 1127,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -18,11 +18,11 @@
     "PARTIALLY_WIRED": 41
   },
   "totals": {
-    "unit": 82,
+    "unit": 84,
     "integration": 101,
     "realDb": 97,
     "browser": 76,
-    "connected": 20,
+    "connected": 25,
     "device": 0,
     "uat": 0
   },
@@ -387,8 +387,8 @@
         "unit": 11,
         "integration": 17,
         "realDb": 7,
-        "browser": 2,
-        "connected": 0,
+        "browser": 3,
+        "connected": 1,
         "device": 0,
         "uat": 0
       },
@@ -436,14 +436,17 @@
         ],
         "browser": [
           "tests/e2e/buying-po-delivery.e2e.ts",
+          "tests/e2e/open-to-buy-on-the-production-api.e2e.ts",
           "tests/e2e/suppliers-delivery.e2e.ts"
         ],
-        "connected": [],
+        "connected": [
+          "tests/e2e/open-to-buy-on-the-production-api.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },
       "holds": true,
-      "why": "browser boundary and cloud effect proven in separate runs (no connected browser test yet)"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "M07",
@@ -2418,11 +2421,11 @@
       "id": "D02",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 3,
+        "unit": 4,
         "integration": 8,
         "realDb": 2,
-        "browser": 1,
-        "connected": 0,
+        "browser": 2,
+        "connected": 1,
         "device": 0,
         "uat": 0
       },
@@ -2430,7 +2433,8 @@
         "unit": [
           "tests/unit/approval-requests.test.ts",
           "tests/unit/erp-merchandising-session.test.ts",
-          "tests/unit/merchandising-space.test.ts"
+          "tests/unit/merchandising-space.test.ts",
+          "tests/unit/supplier-bills-and-open-to-buy-sessions.test.ts"
         ],
         "integration": [
           "tests/integration/a-purchase-order-is-checked-against-open-to-buy.test.ts",
@@ -2447,9 +2451,12 @@
           "tests/integration/merchandising-reads-head-office-facts.test.ts"
         ],
         "browser": [
-          "tests/e2e/merchandising-count-and-refill.e2e.ts"
+          "tests/e2e/merchandising-count-and-refill.e2e.ts",
+          "tests/e2e/open-to-buy-on-the-production-api.e2e.ts"
         ],
-        "connected": [],
+        "connected": [
+          "tests/e2e/open-to-buy-on-the-production-api.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },
@@ -2460,18 +2467,20 @@
       "id": "D03",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 2,
+        "unit": 4,
         "integration": 12,
         "realDb": 5,
-        "browser": 1,
-        "connected": 0,
+        "browser": 3,
+        "connected": 2,
         "device": 0,
         "uat": 0
       },
       "files": {
         "unit": [
           "tests/unit/erp-buying-session.test.ts",
-          "tests/unit/goods-in.test.ts"
+          "tests/unit/erp-navigation-catalogue.test.ts",
+          "tests/unit/goods-in.test.ts",
+          "tests/unit/supplier-bills-and-open-to-buy-sessions.test.ts"
         ],
         "integration": [
           "tests/integration/a-purchase-order-is-checked-against-open-to-buy.test.ts",
@@ -2495,9 +2504,14 @@
           "tests/integration/supplier-to-shelf-journey.test.ts"
         ],
         "browser": [
-          "tests/e2e/buying-po-delivery.e2e.ts"
+          "tests/e2e/buying-po-delivery.e2e.ts",
+          "tests/e2e/open-to-buy-on-the-production-api.e2e.ts",
+          "tests/e2e/supplier-bills-on-the-production-api.e2e.ts"
         ],
-        "connected": [],
+        "connected": [
+          "tests/e2e/open-to-buy-on-the-production-api.e2e.ts",
+          "tests/e2e/supplier-bills-on-the-production-api.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },
@@ -3544,16 +3558,18 @@
       "id": "WF-03",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 0,
-        "integration": 9,
+        "unit": 1,
+        "integration": 10,
         "realDb": 4,
-        "browser": 1,
-        "connected": 0,
+        "browser": 2,
+        "connected": 1,
         "device": 0,
         "uat": 0
       },
       "files": {
-        "unit": [],
+        "unit": [
+          "tests/unit/supplier-bills-and-open-to-buy-sessions.test.ts"
+        ],
         "integration": [
           "tests/integration/a-purchase-order-is-checked-against-open-to-buy.test.ts",
           "tests/integration/ai-owner-and-purchase-agents.test.ts",
@@ -3563,7 +3579,8 @@
           "tests/integration/replenishment.test.ts",
           "tests/integration/rfq.test.ts",
           "tests/integration/store-acceptance-journey.test.ts",
-          "tests/integration/supplier-to-shelf-journey.test.ts"
+          "tests/integration/supplier-to-shelf-journey.test.ts",
+          "tests/integration/the-screens-are-fed.test.ts"
         ],
         "realDb": [
           "tests/integration/a-purchase-order-is-checked-against-open-to-buy.test.ts",
@@ -3572,9 +3589,12 @@
           "tests/integration/supplier-to-shelf-journey.test.ts"
         ],
         "browser": [
-          "tests/e2e/buying-po-delivery.e2e.ts"
+          "tests/e2e/buying-po-delivery.e2e.ts",
+          "tests/e2e/open-to-buy-on-the-production-api.e2e.ts"
         ],
-        "connected": [],
+        "connected": [
+          "tests/e2e/open-to-buy-on-the-production-api.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },
@@ -3624,16 +3644,19 @@
       "id": "WF-05",
       "label": "INTEGRATION_TESTED",
       "counts": {
-        "unit": 0,
+        "unit": 2,
         "integration": 8,
         "realDb": 3,
-        "browser": 1,
-        "connected": 0,
+        "browser": 2,
+        "connected": 1,
         "device": 0,
         "uat": 0
       },
       "files": {
-        "unit": [],
+        "unit": [
+          "tests/unit/erp-navigation-catalogue.test.ts",
+          "tests/unit/supplier-bills-and-open-to-buy-sessions.test.ts"
+        ],
         "integration": [
           "tests/integration/a-supplier-bill-read-by-e-invoice-or-ocr-reaches-the-match.test.ts",
           "tests/integration/an-imported-invoice-file-is-a-real-invoice.test.ts",
@@ -3650,9 +3673,12 @@
           "tests/integration/store-acceptance-journey.test.ts"
         ],
         "browser": [
-          "tests/e2e/buying-po-delivery.e2e.ts"
+          "tests/e2e/buying-po-delivery.e2e.ts",
+          "tests/e2e/supplier-bills-on-the-production-api.e2e.ts"
         ],
-        "connected": [],
+        "connected": [
+          "tests/e2e/supplier-bills-on-the-production-api.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },

@@ -207,6 +207,8 @@ import {
   type SuppliersPorts, type SuppliersSession, type SuppliersData, type SupplierRowView, type SupplierAttentionReason,
   type SupplierApprovePort, type SupplierProposePort, type ApprovePostResult, type ProposePostResult,
 } from './suppliers-session';
+import { createSupplierBillsSession, browserHeadOfficeCall, type SupplierBillsSession } from './supplier-bills-session';
+import { createOpenToBuySession, type OpenToBuySession } from './open-to-buy-session';
 import {
   createIndentsSession,
   type IndentsPorts, type IndentsSession, type IndentsData, type IndentRowView, type IndentLineView, type IndentIssueView, type IndentProductOption,
@@ -330,7 +332,9 @@ export interface BuyingData {
   /** What was received against each purchase order. */
   readonly received?: Readonly<Record<string, readonly { readonly productId: string; readonly qty: number }[]>>;
   /** Invoices already captured, keyed by invoice number. */
-  readonly captured?: Readonly<Record<string, readonly InvoiceLine[]>>;
+  readonly captured?: Readonly<Record<string, readonly InvoiceLine[]>>;  /** WF-03 (round 12): what the signed-in person holds — the box fills it (`asSignedInPerson`); it only shapes what the
+   *  open-to-buy panel OFFERS (set a budget, issue an order); head office re-checks every act. */
+  readonly permissions?: readonly string[];
 }
 
 /** What the product-and-pricing screen was last told. Absent means this box knows nothing of it. */
@@ -4621,6 +4625,11 @@ interface ManagerWindow {
   /** Round 10: the Organisation and Delegation pages — thin clients; only who is looking and what they hold. */
   organisationData?: ViewerIdentity;
   delegationData?: ViewerIdentity;
+  /** Round 12 (D03-FR-02 · WF-05): the Supplier bills page — a head-office page; who is looking, and its session. */
+  supplierBillsData?: ViewerIdentity;
+  supplierBillsSession?: SupplierBillsSession;
+  /** Round 12 (WF-03 · D02-FR-01): the open-to-buy panel on the Buying page, over head office's budget routes. */
+  buyingOpenToBuy?: OpenToBuySession;
   substitutionExceptionInboxData?: SubstitutionExceptionInboxData;
   substitutionExceptionInboxSession?: SubExceptionInboxSession;
   /** The shell reads the live exceptions worklist through this and re-presents it — a GET read, never a write. */
@@ -5067,7 +5076,7 @@ export function openProposePurchaseOrderPort(): ProposePurchaseOrderPort {
           body: JSON.stringify({ supplierId, deliverToLocationId, lines }),
         });
         const body = (await res.json().catch(() => ({}))) as {
-          order?: { requisitionedBy?: string; totalMinor?: number };
+          order?: { requisitionedBy?: string; totalMinor?: number; budgetCheck?: { overBudget?: boolean; overByMinor?: number } };
           whatHappened?: string;
           error?: { whatHappened?: string };
         };
@@ -5077,7 +5086,13 @@ export function openProposePurchaseOrderPort(): ProposePurchaseOrderPort {
           typeof body.order.requisitionedBy === 'string' &&
           typeof body.order.totalMinor === 'number'
         ) {
-          return { proposed: true, requisitionedBy: body.order.requisitionedBy, totalMinor: body.order.totalMinor };
+          // WF-03 · OB-63 (round 12): head office's open-to-buy check rides on the order — passed on so the screen can say
+          // an order over budget escalates to the owner (never decided here).
+          const check = body.order.budgetCheck;
+          return {
+            proposed: true, requisitionedBy: body.order.requisitionedBy, totalMinor: body.order.totalMinor,
+            ...(check === undefined ? {} : { budget: { overBudget: check.overBudget === true, overByMinor: typeof check.overByMinor === 'number' ? check.overByMinor : 0 } }),
+          };
         }
         // The kernel's refusal carries its words under `error` (e.g. OB-32's "supplier … is still waiting for finance").
         return { proposed: false, reason: body.error?.whatHappened ?? body.whatHappened ?? 'head office did not raise the order' };
@@ -6246,4 +6261,16 @@ if (browserWindow !== undefined) {
   browserWindow.aiDraftsData = viewerIdentity(browserWindow.aiDraftsData);
   browserWindow.organisationData = viewerIdentity(browserWindow.organisationData);
   browserWindow.delegationData = viewerIdentity(browserWindow.delegationData);
+  // Round 12 (D03-FR-02 · WF-05): Supplier bills — a thin client over head office's bill-document register. Nobody named →
+  // no session (the page says so and offers nothing).
+  browserWindow.supplierBillsData = viewerIdentity(browserWindow.supplierBillsData);
+  const fetchForHeadOffice = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (browserWindow.supplierBillsData?.userId !== undefined && fetchForHeadOffice !== undefined) {
+    browserWindow.supplierBillsSession = createSupplierBillsSession(browserHeadOfficeCall(fetchForHeadOffice.bind(globalThis)), browserWindow.supplierBillsData);
+  }
+  // Round 12 (WF-03 · D02-FR-01 · OB-63): the open-to-buy panel reads head office live under the signed-in buyer's session.
+  const buyerPermissions = browserWindow.buyingData?.permissions;
+  if (typeof browserWindow.buyingData?.buyerId === 'string' && browserWindow.buyingData.buyerId.trim() !== '' && Array.isArray(buyerPermissions) && fetchForHeadOffice !== undefined) {
+    browserWindow.buyingOpenToBuy = createOpenToBuySession(browserHeadOfficeCall(fetchForHeadOffice.bind(globalThis)), { permissions: buyerPermissions.filter((p): p is string => typeof p === 'string') });
+  }
 }

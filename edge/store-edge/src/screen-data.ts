@@ -1151,6 +1151,9 @@ export function buyingPayload(input: ScreenInput): Record<string, unknown> | nul
     // screen server re-addresses it to the signed-in person (`asSignedInPerson`), and with nobody signed in the screen
     // says so and saves nothing.
     buyerId: null,
+    // WF-03 (round 12): what the signed-in person holds — filled by `asSignedInPerson` from this box's role register, so the
+    // open-to-buy panel offers setting a budget or issuing an order only to whoever may (head office re-checks every act).
+    permissions: [],
     // SP-7a: the store this screen serves, so the buyer's durable invoice queue is keyed per store like the manager's.
     ...(input.pack.policies.known ? { storeId: input.pack.policies.value.storeId } : {}),
     // The buyer is removed from this list on the box, by `asSignedInPerson`, rather than trusted to leave themselves
