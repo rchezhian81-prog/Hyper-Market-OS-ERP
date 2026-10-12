@@ -28,6 +28,7 @@ import { money } from '../../../packages/contracts/src/money';
 import type { BatchEntry, EventStore, PersistedEvent, WriteGuard } from '../../../packages/persistence/src/event-store';
 import { ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
 import { issuedSeriesFor, PrefixWriteRaced, type ReceiptPrefixDeps, type ReceiptPrefixIssue } from '../../platform/src/receipt-prefixes';
+import { splitReceiptNumber } from '../../../packages/contracts/src/receipt-number';
 import { stockValueCheckFor } from './finance-close-adapters';
 import {
   foldBilling,
@@ -14424,10 +14425,14 @@ export function receiptPrefixAdapter(input: { readonly store: EventStore; readon
     guardVersion: (tenantId) => input.store.guardVersion(tenantId, RECEIPT_PREFIX_GUARD),
     recordIssue: async (tenantId, issue, expectedVersion) => {
       try {
-        await input.store.appendBatch(tenantId, [{ stream: RECEIPT_PREFIX_STREAM, event: makeEvent({
+        const [r] = await input.store.appendBatch(tenantId, [{ stream: RECEIPT_PREFIX_STREAM, event: makeEvent({
           id: `till-receipt-prefix-${issue.storeId}-${issue.tillId}-v${issue.version}`, type: 'TillReceiptPrefixIssued', occurredAt: issue.setAt,
           idempotencyKey: `till-receipt-prefix-${tenantId}-${issue.storeId}-${issue.tillId}-v${issue.version}`, source: 'api/platform', payload: issue,
         }) }], { guard: { key: RECEIPT_PREFIX_GUARD, expectedVersion } });
+        // Verifier r17 OB81-2: an all-deduped batch never trips the guard, so two people writing this till's SAME version at
+        // once both "succeed" — only one lands. Say which one did; the route turns a different prefix into a visible 409.
+        if (r !== undefined && r.deduped) return { kept: r.record.event.payload as ReceiptPrefixIssue };
+        return undefined;
       } catch (e) {
         if (e instanceof ConcurrencyConflictError) throw new PrefixWriteRaced(e.message);
         throw e;
@@ -14442,4 +14447,21 @@ export function receiptPrefixAdapter(input: { readonly store: EventStore; readon
 /** OB-81: the store pack's `receiptSeries` for one store — each till's current issued prefix. */
 export async function issuedReceiptSeries(store: EventStore, tenantId: string, storeId: string): Promise<ReturnType<typeof issuedSeriesFor>> {
   return issuedSeriesFor(await allOf<ReceiptPrefixIssue>(store, tenantId, RECEIPT_PREFIX_STREAM, 'TillReceiptPrefixIssued'), storeId);
+}
+
+/**
+ * Verifier r17 (a replaced box) · OB-85: the highest 6-digit count head office holds BANKED under each bill-number prefix —
+ * from the sales' receipt-number index and the returns' numbers (both drawn from a till's one register). The store pack
+ * carries it per series (`bankedThrough`) so a box whose disk was lost resumes above it and never repeats a bill number.
+ * Read-only. Every number is |P| + 6 characters, so the prefix is everything before the last six (contracts).
+ */
+export async function bankedReceiptCounts(store: EventStore, tenantId: string): Promise<ReadonlyMap<string, number>> {
+  const out = new Map<string, number>();
+  const note = (n: unknown): void => {
+    const s = splitReceiptNumber(n);
+    if (s !== undefined && s.counter > (out.get(s.prefix) ?? 0)) out.set(s.prefix, s.counter);
+  };
+  for (const e of await store.readStream(tenantId, STREAM.sales, { type: 'ReceiptNumberIssued' })) note((e.event.payload as { receiptNumber?: unknown }).receiptNumber);
+  for (const e of await store.readStream(tenantId, STREAM.returns, { type: 'ReturnRecorded' })) note((e.event.payload as { number?: unknown }).number);
+  return out;
 }

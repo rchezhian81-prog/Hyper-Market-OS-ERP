@@ -64,10 +64,18 @@ function fnv1a(text: string): number {
   return h >>> 0;
 }
 
-/** The store computer's own store-qualified prefix for a till with no issued one (9 characters: `ZZ` + 6 + `-`). */
-export function storeComputerDefaultPrefix(storeId: string, laneId: string): string {
-  const a = fnv1a(`${storeId}\u0000${laneId}`);
-  const b = fnv1a(`${laneId}\u0000${storeId}\u0000sre`);
+/**
+ * The store computer's own store-coded prefix for a till with no usable issued one (9 characters: `ZZ` + 6 + `-`).
+ *
+ * OB-85 "A" (owner, 12 Oct 2026): worked out from the box's OWN store code, the till, and — when given — the box's own
+ * identity (`boxIdentity`, made once on the box's disk, edge/store-edge/src/receipt-numbers.ts). With the identity, two
+ * boxes never share a fallback even when neither knows its store, and a REPLACED box (its disk lost) starts a fresh
+ * prefix rather than re-using its predecessor's count. Deterministic: the same box after a restart keeps the same prefix.
+ */
+export function storeComputerDefaultPrefix(storeId: string, laneId: string, boxIdentity?: string): string {
+  const who = boxIdentity === undefined || boxIdentity === '' ? '' : `\u0000${boxIdentity}`;
+  const a = fnv1a(`${storeId}\u0000${laneId}${who}`);
+  const b = fnv1a(`${laneId}\u0000${storeId}\u0000sre${who}`);
   // 30 bits: 15 from each spread, as six base-32 letters/digits.
   let bits = ((a & 0x7fff) * 0x8000) + (b & 0x7fff);
   let out = '';
@@ -78,4 +86,37 @@ export function storeComputerDefaultPrefix(storeId: string, laneId: string): str
 /** Whether a bill number was made under a store computer's fallback prefix (a till head office never issued one). */
 export function isStoreComputerDefaultReceipt(receiptNumber: unknown): boolean {
   return typeof receiptNumber === 'string' && /^ZZ[A-Z2-7]{6}-\d{6}$/.test(receiptNumber);
+}
+
+/** A published series line (the store pack's `receiptSeries`), as the box receives it. */
+export interface PublishedSeriesLine {
+  readonly prefix: unknown;
+  readonly padTo: unknown;
+  readonly rangeStart: unknown;
+  readonly rangeEnd: unknown;
+}
+
+/**
+ * Verifier r17 OB81-3: whether a published series obeys the OB-81 rule — the same rule head office applies when it issues a
+ * prefix. A prefix head office may issue (≤ 10 characters, GST's characters, not a reserved start), a 6-digit counter, and
+ * a range inside 1 … 999 999 — so every number it gives is at most 16 characters and cannot collide with any other till's.
+ */
+export function readPublishedSeries(s: PublishedSeriesLine): { readonly ok: true } | { readonly ok: false; readonly words: string } {
+  const p = readReceiptPrefix(s.prefix);
+  if (!p.ok) return { ok: false, words: `its prefix ${JSON.stringify(s.prefix)} is not one head office may issue (${p.words})` };
+  if (s.padTo !== RECEIPT_COUNTER_DIGITS) return { ok: false, words: `its counter is ${JSON.stringify(s.padTo)} digits, not ${RECEIPT_COUNTER_DIGITS}` };
+  const a = s.rangeStart; const b = s.rangeEnd;
+  if (typeof a !== 'number' || typeof b !== 'number' || !Number.isSafeInteger(a) || !Number.isSafeInteger(b) || a < 1 || b > RECEIPT_COUNTER_MAX || a > b) {
+    return { ok: false, words: `its range ${JSON.stringify(a)}…${JSON.stringify(b)} is not inside 1…${RECEIPT_COUNTER_MAX}` };
+  }
+  return { ok: true };
+}
+
+/**
+ * A bill number split into the prefix it was made under and its 6-digit counter (every number is |P| + 6 characters, so
+ * the prefix is everything before the last six); undefined when it does not end in six digits.
+ */
+export function splitReceiptNumber(receiptNumber: unknown): { readonly prefix: string; readonly counter: number } | undefined {
+  if (typeof receiptNumber !== 'string' || receiptNumber.length <= RECEIPT_COUNTER_DIGITS || !/\d{6}$/.test(receiptNumber)) return undefined;
+  return { prefix: receiptNumber.slice(0, -RECEIPT_COUNTER_DIGITS), counter: Number(receiptNumber.slice(-RECEIPT_COUNTER_DIGITS)) };
 }

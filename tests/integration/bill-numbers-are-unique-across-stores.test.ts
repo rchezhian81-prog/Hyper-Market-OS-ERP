@@ -219,8 +219,9 @@ async function twoStoresTrade(cloud: Cloud): Promise<void> {
     cut = true;
     const t3 = till(lane2.edge, 'u-cash2', 'lane-2');
     const d = await ring(t3);
-    const fallback = storeComputerDefaultPrefix(S2, 'lane-2');
-    expect(d.number).toBe(`${fallback}000001`);
+    // OB-85: the store-coded fallback, worked out from S2, lane-2 and this box's own identity (never another box's).
+    expect(d.number).toMatch(/^ZZ[A-Z2-7]{6}-000001$/);
+    expect(d.number).not.toBe(`${storeComputerDefaultPrefix(S2, 'lane-2')}000001`);
     expect(d.number.length).toBeLessThanOrEqual(GST_INVOICE_NUMBER_MAX);
     expect(t3.receiptNotice()).toMatch(/has not issued this till its bill-number prefix/);
     cut = false;
@@ -269,17 +270,23 @@ describe('OB-81 — bill numbers unique across stores (real API in memory, real 
   it('two stores\' lane-1 tills sell offline with distinct numbers and sale ids; restart keeps the count; sync banks each at its own store', async () => { await twoStoresTrade(cloud); }, 60_000);
 });
 
-describe('OB-81 — a single-store business keeps today\'s numbering; a second store moves an unissued till off it', () => {
-  it('one store: R-lane-1-000001; the owner opens a second store: the next pull numbers under the store default, past bills untouched', async () => {
+describe('OB-81 · OB-85 — a single-store business keeps its numbering where it has history; a second store moves an unissued till off it', () => {
+  it('one store with R-lane-1- history: the box resumes above head office\'s banked count; a REPLACED box resumes above it too; a second store: the store-coded fallback', async () => {
     const tenant = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa1b81';
     const h = apiHarness();
     await h.seedOwner(tenant, OWNER);
-    const call = (method: HttpRequest['method'], path: string, body?: unknown) => h.raw({ method, path, token: TEST_IDP.issue({ sub: OWNER, tenantId: tenant }), ...(body === undefined ? {} : { body, idempotencyKey: `k-${randomUUID()}` }) });
+    const call = (method: HttpRequest['method'], path: string, body?: unknown, user = OWNER, branchId?: string) => h.raw({ method, path, token: TEST_IDP.issue({ sub: user, tenantId: tenant, ...(branchId === undefined ? {} : { branchId }) }), ...(body === undefined ? {} : { body, idempotencyKey: `k-${randomUUID()}` }) });
     expect((await call('POST', '/v1/org/nodes/C1', { kind: 'company', name: 'SRE Retail' })).status).toBe(201);
     expect((await call('POST', `/v1/org/nodes/${S1}`, { kind: 'branch', name: 'Store One', parentId: 'C1', companyId: 'C1' })).status).toBe(201);
     expect((await call('POST', `/v1/stores/${S1}/settings`, SETTINGS)).status).toBe(201);
     await h.provisionRole(tenant, 'u-box-1', 'store_computer', [S1]);
     await h.provisionRole(tenant, 'u-cash1', 'cashier', [S1]);
+    // The pilot's history: head office already holds store 1's bill R-lane-1-000041 (its box numbered R-<lane>- for months).
+    const old = await call('POST', '/v1/sales', {
+      saleId: 'S-R-lane-1-000041', receiptNumber: 'R-lane-1-000041', laneId: 'lane-1', locationId: S1, cashierId: 'u-cash1', tradingDay: AT.slice(0, 10), committedAt: AT,
+      totalMinor: 12_000, currency: 'INR', packVersion: 0, lines: [{ productId: 'P1', quantityMinor: 1, uom: 'ea', unitPriceMinor: 12_000, lineTotalMinor: 12_000 }], tenders: [{ kind: 'cash', amountMinor: 12_000 }],
+    }, 'u-box-1', S1);
+    expect(old.status, JSON.stringify(old.body)).toBe(202);
     const saved = globalThis.fetch;
     globalThis.fetch = (async (url: string, init: RequestInit = {}): Promise<Response> => {
       if (String(url).startsWith('http://127.0.0.1:')) return saved(url, init);
@@ -287,25 +294,51 @@ describe('OB-81 — a single-store business keeps today\'s numbering; a second s
       const res = await h.raw({ method: (init.method ?? 'GET') as HttpRequest['method'], path: new URL(url).pathname, token: hdr['authorization']?.replace(/^Bearer /, ''), idempotencyKey: hdr['idempotency-key'], body: init.body === undefined ? undefined : JSON.parse(String(init.body)) as unknown });
       return new Response(JSON.stringify(res.body), { status: res.status });
     }) as unknown as typeof globalThis.fetch;
-    const dir = await mkdtemp(join(tmpdir(), 'sre-ob81-single-'));
-    await issueTillPins(dir, TEST_PACK_KEY, ['u-cash1']);
-    const edge = (await startEdge({
-      EDGE_DATA_DIR: dir, EDGE_TENANT_ID: tenant, PACK_SIGNING_KEY: TEST_PACK_KEY, EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '0', EDGE_LANE_ID: 'lane-1',
-      CLOUD_API_URL: 'https://cloud.example.test', CLOUD_API_TOKEN: TEST_IDP.issue({ sub: 'u-box-1', tenantId: tenant, branchId: S1 }), EDGE_STORE_PACK_SOURCE: 'head-office', EDGE_STORE_ID: S1,
-    }, () => {}))!;
+    const dirs: string[] = [];
+    const boot = async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'sre-ob81-single-'));
+      dirs.push(dir);
+      await issueTillPins(dir, TEST_PACK_KEY, ['u-cash1']);
+      return (await startEdge({
+        EDGE_DATA_DIR: dir, EDGE_TENANT_ID: tenant, PACK_SIGNING_KEY: TEST_PACK_KEY, EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '0', EDGE_LANE_ID: 'lane-1',
+        CLOUD_API_URL: 'https://cloud.example.test', CLOUD_API_TOKEN: TEST_IDP.issue({ sub: 'u-box-1', tenantId: tenant, branchId: S1 }), EDGE_STORE_PACK_SOURCE: 'head-office', EDGE_STORE_ID: S1,
+      }, () => {}))!;
+    };
+    const sell = async (t: ReturnType<typeof bootPos>): Promise<string> => {
+      const n = await t.nextReceipt();
+      t.scan({ productId: 'P1', description: 'Toor dal 1kg', unitPriceMinor: 12_000, qty: 1 });
+      await t.tenderCash(`S-${n}`, n, new Date().toISOString());
+      t.newSale();
+      return n;
+    };
+    let edge = await boot();
     try {
       await edge.refreshStorePack!();
-      const t = bootPos({ laneId: 'lane-1', taxPercent: 0, lanePort: edge.lane!.port });
+      let t = bootPos({ laneId: 'lane-1', taxPercent: 0, lanePort: edge.lane!.port });
       await signInTill(t, 'u-cash1');
-      expect(await t.nextReceipt()).toBe('R-lane-1-000001');
-      expect(await t.nextReceipt()).toBe('R-lane-1-000002');
+      // Head office says ONE store and that R-lane-1- was banked through 41: the box carries the numbering on, above it.
+      expect(await sell(t)).toBe('R-lane-1-000042');
+      expect(await sell(t)).toBe('R-lane-1-000043');
+      expect(await edge.syncOnce!()).toMatchObject({ sent: 2, dead: 0 });
+      // THE REPLACED BOX (its disk lost): a new box for the same till, first pull — it resumes above head office's 43.
+      await edge.stop();
+      edge = await boot();
+      await edge.refreshStorePack!();
+      t = bootPos({ laneId: 'lane-1', taxPercent: 0, lanePort: edge.lane!.port });
+      await signInTill(t, 'u-cash1');
+      expect(await sell(t)).toBe('R-lane-1-000044');
+      expect(await edge.syncOnce!()).toMatchObject({ sent: 1, dead: 0 });
+      // No bill number was given twice: no "receipt reused" finding at head office.
+      const findings = ((await call('GET', '/v1/sales/exceptions')).body as { material: { kind: string }[] }).material;
+      expect(findings.filter((f) => f.kind === 'receipt_number_reused')).toEqual([]);
       // The registered-till list says the till has none — not flagged while there is one store.
       expect((await call('POST', '/v1/platform/devices/lane-1/register', { branchId: S1, kind: 'pos_lane', label: 'Lane 1' })).status).toBe(201);
       expect(((await call('GET', '/v1/receipt-prefixes')).body as { needsPrefix: unknown[] }).needsPrefix).toEqual([expect.objectContaining({ storeId: S1, tillId: 'lane-1', flagged: false })]);
-      // A second store opens.
+      // A second store opens: the next pull moves the till onto its box's store-coded fallback.
       expect((await call('POST', `/v1/org/nodes/${S2}`, { kind: 'branch', name: 'Store Two', parentId: 'C1', companyId: 'C1' })).status).toBe(201);
       await edge.refreshStorePack!();
-      expect(await t.nextReceipt()).toBe(`${storeComputerDefaultPrefix(S1, 'lane-1')}000001`);
+      expect(await t.nextReceipt()).toMatch(/^ZZ[A-Z2-7]{6}-000001$/);
+      expect(t.receiptNotice()).toMatch(/more than one store/);
       expect(((await call('GET', '/v1/receipt-prefixes')).body as { needsPrefix: unknown[] }).needsPrefix).toEqual([expect.objectContaining({ storeId: S1, tillId: 'lane-1', flagged: true })]);
       // Head office issues the prefix: the next pull numbers under it.
       expect((await call('POST', `/v1/stores/${S1}/tills/lane-1/receipt-prefix`, { prefix: 'S1L1-' })).status).toBe(201);
@@ -314,11 +347,10 @@ describe('OB-81 — a single-store business keeps today\'s numbering; a second s
     } finally {
       await edge.stop();
       globalThis.fetch = saved;
-      await rm(dir, { recursive: true, force: true });
+      for (const d of dirs) await rm(d, { recursive: true, force: true });
     }
   }, 60_000);
 });
-
 // ── On real PostgreSQL, through the production API assembly over HTTP ───────────────────────────────────────────────
 const DATABASE_URL = process.env['DATABASE_URL'];
 describe.skipIf(DATABASE_URL === undefined)('OB-81 — on real PostgreSQL: two stores, two real boxes, two tills', () => {
