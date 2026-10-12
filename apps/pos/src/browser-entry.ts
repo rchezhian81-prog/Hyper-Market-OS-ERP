@@ -847,14 +847,14 @@ export function bootPos(config?: {
   // D04-FR-05 · P-01: how many sale/refund writes to the box are waiting for its answer. The device re-send never starts
   // while one is (`device-heartbeat.ts`); it goes once the write has answered. Counting only — no network here.
   let commitsInFlight = 0;
-  let heartbeatRef: DeviceHeartbeat | undefined;
+  const heartbeat: { ref?: DeviceHeartbeat } = {};
   const whileCommitting = (write: DurableWrite): DurableWrite => async (id, record) => {
     commitsInFlight += 1;
     try {
       return await write(id, record);
     } finally {
       commitsInFlight -= 1;
-      if (commitsInFlight === 0) heartbeatRef?.commitEnded();
+      if (commitsInFlight === 0) heartbeat.ref?.commitEnded();
     }
   };
   // Only what was GIVEN goes in: no lane, cashier or day is ever made up here (F09).
@@ -1116,8 +1116,8 @@ export function bootPos(config?: {
 
   // The cashier signs in ONCE for both surfaces — the sale and the till name the same person (SP-4b · F09).
   // D04-FR-05 · P-08: the device re-send runs only while somebody is signed in (it is defined further down).
-  const signIn = (cashierId: string): void => { session.signIn(cashierId); till.signIn(cashierId); heartbeatRef?.start(); };
-  const signOut = (): void => { heartbeatRef?.stop(); session.signOut(); till.signOut(); };
+  const signIn = (cashierId: string): void => { session.signIn(cashierId); till.signIn(cashierId); heartbeat.ref?.start(); };
+  const signOut = (): void => { heartbeat.ref?.stop(); session.signOut(); till.signOut(); };
   const operator = (): string | undefined => session.operator();
 
   // HELD BASKETS (audit PF-05): the basket goes to the store computer's disk; the till clears only once the box has it.
@@ -1365,7 +1365,7 @@ export function bootPos(config?: {
     ...(config?.deviceHeartbeatTimers?.every === undefined ? {} : { every: config.deviceHeartbeatTimers.every }),
     ...(config?.deviceHeartbeatTimers?.soon === undefined ? {} : { soon: config.deviceHeartbeatTimers.soon }),
   });
-  heartbeatRef = deviceHeartbeat;
+  heartbeat.ref = deviceHeartbeat;
   if (session.operator() !== undefined) deviceHeartbeat.start();
   const devicesSaid = (devices: readonly DeviceStatus[]): void => {
     if (Array.isArray(devices) && devices.length > 0) deviceHeartbeat.update(devices);

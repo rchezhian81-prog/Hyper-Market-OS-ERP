@@ -166,7 +166,7 @@ describe('the till shell re-sends its devices (bootPos, the real wiring)', () =>
 
   it('never during a sale\'s write: a tick that falls while the box is writing the sale waits; the sale never waits on it', async () => {
     let answer: (o: CommitOutcome) => void = () => {};
-    const durable = vi.fn((_id: string, _record: string) => new Promise<CommitOutcome>((r) => { answer = r; }));
+    const durable = vi.fn(() => new Promise<CommitOutcome>((r) => { answer = r; }));
     const pos = bootPos({ laneId: 'lane-1', tradingDay: '2026-10-12', lanePort: 8090, durable });
     pos.signIn('u-meena');
     pos.devicesSaid(OK);
