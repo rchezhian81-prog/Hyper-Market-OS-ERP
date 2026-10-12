@@ -82,9 +82,9 @@ describe('every screen the store computer serves has a door, and every door open
     // (ADR-0024) is served by the box and is NOT on this list.
     const servedFiles = new Set(BOX_SCREENS.map((s) => APP_SHELL[s].file));
     const unservedPages = readdirSync('apps/web-erp/web').filter((f) => f.endsWith('.html') && !servedFiles.has(f)).sort();
-    // Round 10: Organisation and Delegation are head-office pages (served in front of head office's API, not by the box).
-    expect(unservedPages).toEqual(['company-report.html', 'delegation.html', 'erasure-console.html', 'organisation.html', 'payroll-payslip.html', 'payroll.html', 'setup.html']);
-    expect(notBox.filter((i) => i.served === 'unserved').map((i) => i.id).sort()).toEqual(['delegation', 'my-payslip', 'organisation', 'payroll', 'store-setup']);
+    // Round 10: Organisation and Delegation are head-office pages (served in front of head office's API, not by the box); round 12: Incidents too.
+    expect(unservedPages).toEqual(['company-report.html', 'delegation.html', 'erasure-console.html', 'incidents.html', 'organisation.html', 'payroll-payslip.html', 'payroll.html', 'setup.html']);
+    expect(notBox.filter((i) => i.served === 'unserved').map((i) => i.id).sort()).toEqual(['delegation', 'incidents', 'my-payslip', 'organisation', 'payroll', 'store-setup']);
     // `suppliers` left this list at SP-7d (30 Sep 2026): the Suppliers screen is built and served by the box.
     expect(notBox.filter((i) => i.served === 'unbuilt').map((i) => i.id).sort()).toEqual(['reconciliation', 'settings']);
   });

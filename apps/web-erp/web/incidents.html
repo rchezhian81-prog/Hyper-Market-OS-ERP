@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Incidents and recovery drills</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Incidents and recovery drills (M35-FR-02/04 · WF-20 · §32). A THIN CLIENT over head office's incident register
+      (/v1/platform/incidents*) and recovery-drill register (/v1/platform/dr-drills). A person records an incident, names
+      the owner of each follow-up and its date, writes the post-mortem and closes it in their own name; and records each
+      recovery drill's measured result against the §32 targets — a miss stays on the register. Every rule is head
+      office's (no close without a post-mortem, an owner who works here, nothing changes once closed); the page shows its
+      words. Its session is the tested model in apps/web-erp/src/incidents-session.ts. Nothing is written on open.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; }
+      h3 { margin: 0; font-size: 16px; }
+      p.lede { margin: 0; color: var(--muted); font-size: 14px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      input, select, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; }
+      textarea { min-height: 72px; resize: vertical; }
+      .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; }
+      button.quiet { background: var(--line); color: var(--ink); }
+      button[disabled] { opacity: .5; cursor: not-allowed; }
+      .head-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; justify-content: space-between; }
+      .panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+      .panel { border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--bg); display: grid; gap: 2px; min-width: 0; }
+      .panel .k { color: var(--muted); font-size: 14px; }
+      .panel .v { font-size: 22px; font-weight: 700; overflow-wrap: anywhere; }
+      .panel .v.small { font-size: 15px; font-weight: 600; }
+      .panel.attention { border-left: 6px solid var(--degraded); }
+      #tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+      table { width: 100%; border-collapse: collapse; }
+      td, th { text-align: left; }
+      tr[data-incident] { cursor: pointer; }
+      .tag { display: inline-block; padding: 0 8px; border-radius: 999px; border: 1px solid var(--line); font-size: 13px; font-weight: 600; }
+      .tag.sev1, .tag.missed { border-color: var(--danger-text); color: var(--danger-text); }
+      .tag.passed { border-color: var(--good); color: var(--good); }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+      ul.rows li { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; background: var(--bg); display: grid; gap: 4px; overflow-wrap: anywhere; }
+      .status { font-size: 14px; min-height: 20px; }
+      .status.good { color: var(--good); } .status.err { color: var(--danger-text); }
+      .nobody { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
+      .muted { color: var(--muted); font-size: 13px; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title">Incidents and recovery drills</h1>
+      <span class="sync">
+        <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+      </span>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section aria-labelledby="page-h">
+        <div class="head-row">
+          <div>
+            <h2 id="page-h">Incidents and recovery drills</h2>
+            <p class="lead" id="lead">When something goes wrong, record it here with a named owner for each follow-up, write down what happened and what will change, and close it in your own name.</p>
+          </div>
+          <button id="open-new" type="button">Record an incident</button>
+        </div>
+        <div class="panels" role="status" aria-live="polite">
+          <div class="panel" id="p-open"><span class="k" id="k-open">Open incidents</span><span class="v" id="v-open">—</span></div>
+          <div class="panel" id="p-actions"><span class="k" id="k-actions">Follow-ups still to do</span><span class="v" id="v-actions">—</span></div>
+          <div class="panel" id="p-drills"><span class="k" id="k-drills">Recovery drills</span><span class="v small" id="v-drills">—</span></div>
+          <div class="panel" id="p-posture"><span class="k" id="k-posture">Ready to recover?</span><span class="v small" id="v-posture">—</span></div>
+        </div>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <nav id="tabs" aria-label="Sections">
+        <button id="tab-incidents" type="button" aria-current="page">Incidents</button>
+        <button id="tab-drills" type="button">Recovery drills</button>
+      </nav>
+
+      <section id="view-incidents" aria-labelledby="incidents-h">
+        <h3 id="incidents-h">Incidents</h3>
+        <p class="lead" id="incidents-lead">Open incidents first, the most serious at the top. Open one to see its timeline, follow-ups and post-mortem.</p>
+        <table aria-labelledby="incidents-h">
+          <thead><tr><th id="c-incident">Incident</th><th id="c-severity">Severity</th><th id="c-state">State</th><th id="c-opened">Opened</th><th id="c-followups">Follow-ups open</th><th id="c-pm">Post-mortem</th></tr></thead>
+          <tbody id="incident-rows"></tbody>
+        </table>
+        <p class="muted" id="no-incidents" hidden></p>
+      </section>
+
+      <section id="view-drills" aria-labelledby="drills-h" hidden>
+        <h3 id="drills-h">Recovery drills</h3>
+        <p class="lead" id="drills-lead">Each drill measured against the recovery targets: how much data may be lost, and how soon the shop must be back.</p>
+        <table aria-labelledby="drills-h">
+          <thead><tr><th id="c-drill">Drill</th><th id="c-service">Service</th><th id="c-result">Result</th><th id="c-when">When</th><th id="c-by">By</th></tr></thead>
+          <tbody id="drill-rows"></tbody>
+        </table>
+        <p class="muted" id="no-drills" hidden></p>
+        <div id="drill-form" hidden>
+          <h3 id="drill-form-h">Record a drill result</h3>
+          <div class="row">
+            <label for="d-id"><span id="l-d-id">Drill name</span><input id="d-id" autocomplete="off" /></label>
+            <label for="d-service"><span id="l-d-service">What was recovered</span><select id="d-service"></select></label>
+            <label for="d-loss"><span id="l-d-loss">Data lost (seconds)</span><input id="d-loss" inputmode="numeric" autocomplete="off" /></label>
+            <label for="d-back"><span id="l-d-back">Time until back (minutes)</span><input id="d-back" inputmode="numeric" autocomplete="off" /></label>
+          </div>
+          <button id="d-save" type="button">Record the drill</button>
+          <p class="status" id="drill-status" role="status" aria-live="polite"></p>
+        </div>
+      </section>
+    </main>
+
+    <!-- New incident: the page's one primary action, in a drawer. -->
+    <div class="sheet" id="new-sheet" hidden role="dialog" aria-modal="true" aria-labelledby="new-h">
+      <div class="sheet-inner">
+        <h2 id="new-h">Record an incident</h2>
+        <label for="n-title"><span id="l-n-title">What went wrong (short)</span><input id="n-title" autocomplete="off" /></label>
+        <label for="n-severity"><span id="l-n-severity">How serious</span>
+          <select id="n-severity"><option value="sev1" id="o-sev1">Severe</option><option value="sev2" id="o-sev2" selected>Serious</option><option value="sev3" id="o-sev3">Minor</option></select>
+        </label>
+        <label for="n-summary"><span id="l-n-summary">What is known so far</span><textarea id="n-summary"></textarea></label>
+        <div class="head-row"><button id="n-save" type="button">Record it</button><button id="n-cancel" class="quiet" type="button">Close</button></div>
+        <p class="status" id="new-status" role="status" aria-live="polite"></p>
+      </div>
+    </div>
+
+    <!-- One incident: the record drawer. -->
+    <div class="sheet" id="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="r-title">
+      <div class="sheet-inner" id="record">
+        <div class="head-row"><h2 id="r-title"></h2><button id="r-close" class="quiet" type="button">Close</button></div>
+        <p class="muted" id="r-meta"></p>
+        <p id="r-summary"></p>
+        <p class="status" id="record-status" role="status" aria-live="polite"></p>
+
+        <h3 id="r-timeline-h">What happened, when</h3>
+        <ul class="rows" id="r-timeline"></ul>
+        <div class="row" id="r-timeline-form">
+          <label for="t-when"><span id="l-t-when">When it happened</span><input id="t-when" type="datetime-local" /></label>
+          <label for="t-note"><span id="l-t-note">What happened</span><input id="t-note" autocomplete="off" /></label>
+          <button id="t-add" type="button">Add to the timeline</button>
+        </div>
+
+        <h3 id="r-actions-h">Follow-ups</h3>
+        <ul class="rows" id="r-actions"></ul>
+        <div class="row" id="r-action-form">
+          <label for="a-desc"><span id="l-a-desc">What will be done</span><input id="a-desc" autocomplete="off" /></label>
+          <label for="a-owner"><span id="l-a-owner">Who owns it</span><input id="a-owner" autocomplete="off" /></label>
+          <label for="a-due"><span id="l-a-due">Done by</span><input id="a-due" type="date" /></label>
+          <button id="a-add" type="button">Add this follow-up</button>
+        </div>
+
+        <h3 id="r-pm-h">Post-mortem</h3>
+        <div id="r-pm"></div>
+        <div id="r-pm-form" class="row">
+          <label for="pm-cause"><span id="l-pm-cause">Cause</span><textarea id="pm-cause"></textarea></label>
+          <label for="pm-impact"><span id="l-pm-impact">Impact</span><textarea id="pm-impact"></textarea></label>
+          <label for="pm-change"><span id="l-pm-change">What will change</span><textarea id="pm-change"></textarea></label>
+          <label for="pm-well"><span id="l-pm-well">What went well (optional)</span><textarea id="pm-well"></textarea></label>
+          <button id="pm-save" type="button">Save the post-mortem</button>
+        </div>
+
+        <div id="r-close-form" class="row">
+          <label for="c-note"><span id="l-c-note">Why it is over</span><input id="c-note" autocomplete="off" /></label>
+          <button id="c-close" type="button">Close the incident</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script type="module" src="./incidents.js"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

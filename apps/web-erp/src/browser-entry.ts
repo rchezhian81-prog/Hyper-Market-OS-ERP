@@ -278,6 +278,7 @@ import type { UserAccount } from '../../../packages/identity/src/account';
 import type { AuditRecord, LegalHold, RetentionPolicy } from '../../../packages/audit/src/index';
 import type { Producer } from '../../../packages/reporting/src/index';
 import { mountDemoBanner } from '../../../packages/ui/src/demo-banner';
+import { createIncidentsSession, wordsFor as incidentsWords, outcomeWords as incidentsOutcomeWords, summarise as incidentsSummary, type IncidentsSession } from './incidents-session';
 
 // The practice-data strip ("TRIAL COPY · PRACTICE DATA"). `PILOT_DEMO_BANNER` is a build-time constant baked in by
 // esbuild (`scripts/build-app.mjs`): '1' in the hosted-demo build, empty in production. `typeof` guards
@@ -4621,6 +4622,14 @@ interface ManagerWindow {
   /** Round 10: the Organisation and Delegation pages — thin clients; only who is looking and what they hold. */
   organisationData?: ViewerIdentity;
   delegationData?: ViewerIdentity;
+  /** Round 12 (M35-FR-02/04 · WF-20): the incidents and recovery-drills page — who is looking; head office answers the rest. */
+  incidentsData?: ViewerIdentity;
+  incidents?: {
+    readonly session: IncidentsSession;
+    readonly words: typeof incidentsWords;
+    readonly outcomeWords: typeof incidentsOutcomeWords;
+    readonly summarise: typeof incidentsSummary;
+  };
   substitutionExceptionInboxData?: SubstitutionExceptionInboxData;
   substitutionExceptionInboxSession?: SubExceptionInboxSession;
   /** The shell reads the live exceptions worklist through this and re-presents it — a GET read, never a write. */
@@ -6246,4 +6255,11 @@ if (browserWindow !== undefined) {
   browserWindow.aiDraftsData = viewerIdentity(browserWindow.aiDraftsData);
   browserWindow.organisationData = viewerIdentity(browserWindow.organisationData);
   browserWindow.delegationData = viewerIdentity(browserWindow.delegationData);
+  // Round 12 (M35-FR-02/04 · WF-20): the incidents and recovery-drills page — its session is the tested model in
+  // incidents-session.ts; it reads and writes head office's own routes in the signed-in person's session, never on open.
+  browserWindow.incidentsData = viewerIdentity(browserWindow.incidentsData);
+  browserWindow.incidents = {
+    session: createIncidentsSession({ viewer: browserWindow.incidentsData }),
+    words: incidentsWords, outcomeWords: incidentsOutcomeWords, summarise: incidentsSummary,
+  };
 }

@@ -133,7 +133,7 @@ describe('every page gives the chrome what it needs', () => {
     // Five since 2b-vi-b: the Products & prices page lost its approver-picking sheet — a second person now approves
     // a loss-making price on their own Approvals page (ADR-0024), so that page has no sheet at all. Four since
     // 2b-vi-c-4: the buyer's page lost its "who checked this bill?" sheet — the check is a second person's own act at
-    // head office.
-    expect(sheets).toBe(4);
+    // head office. Five again since round 12: the Incidents and recovery-drills page opens an incident as a record drawer.
+    expect(sheets).toBe(5);
   });
 });
