@@ -258,6 +258,12 @@ export const STORE_EDGE_CONFIG: readonly Spec[] = [
    */
   { key: 'EDGE_TILL_CREDENTIALS_FILE', optional: true },
   /**
+   * OB-87 "A": the folder OUTSIDE the data directory where the box keeps its bill-number witness log, so a data folder
+   * restored from a backup is told apart from a restart. Absent → the folder `<EDGE_DATA_DIR>-witness` beside it. Never
+   * inside the data directory, and never part of a backup of it.
+   */
+  { key: 'EDGE_WITNESS_DIR', optional: true },
+  /**
    * The pack the cloud last sent: products and costs, approvals, today's checklist, the assigned
    * wave and route, slots, and the store's own thresholds.
    *

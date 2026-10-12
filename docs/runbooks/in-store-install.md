@@ -257,6 +257,33 @@ screen is served to a device that has not enrolled.
 Even in a pilot, take a backup before anything you care about — `till/edge-data/` is the till's
 disk; see `backup-and-recovery.md`.
 
+**Back up `till/edge-data/` only — never `till/edge-witness/`.** The witness folder sits beside the
+data folder on purpose (owner decision OB-87 "A"). Every bill number the till gives is written in
+both places. If `edge-data/` is ever restored from an older backup, the witness still holds the
+numbers given after that backup, and the till sees the difference by itself — nobody has to
+remember to tell it.
+
+### Restoring a till from a backup
+
+1. Stop the till. Copy the backup over `till/edge-data/`. **Leave `till/edge-witness/` as it is**
+   (on a new computer there is none — that is fine).
+2. Start the till. It compares its data with the witness and, if the data is older than the
+   numbers it gave (or there is no witness for it), it says so in its window:
+   `this store computer's data looks restored from a backup … it numbers bills under a brand-new
+   prefix until head office's latest setup arrives.`
+3. **Keep selling.** Until head office answers, bills print under a brand-new temporary prefix
+   that starts `ZZ` and has never been used — so no customer's bill number is ever given twice,
+   even with no internet. Numbers the till gave after the backup are kept as "issued, not used"
+   on its status read, never given again.
+4. As soon as the till reaches head office, it takes head office's latest setup and goes back to
+   its own prefix, **above** the last bill head office holds. Ring one test bill and check the
+   printed number starts with the till's own prefix and is higher than the last bill you know of.
+5. At head office, the `ZZ…` bills show as "numbered without an issued prefix" findings — expected
+   after a restore. If any bill number did reach head office twice (for example, a restore onto a
+   new computer whose old one had unsent bills), head office lists it as a **receipt number reused**
+   finding and on the idempotency-conflicts register (`GET /v1/idempotency-conflicts`) — it is
+   never silently dropped.
+
 ---
 
 ## What this does NOT yet include

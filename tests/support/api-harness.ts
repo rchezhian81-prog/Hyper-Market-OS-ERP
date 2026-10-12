@@ -17,6 +17,7 @@ import { tokenRevocationAdapter, personalDataStore } from '../../services/api/sr
 import type { SubjectKeyStore } from '../../packages/persistence/src/personal-data';
 import { sessionChannelsOf } from '../../services/api/src/session-channels';
 import { storeComputerBinding } from '../../services/api/src/store-computer-binding';
+import { idempotencyConflictsAdapter } from '../../services/api/src/idempotency-conflicts';
 import type { OutboundTransport } from '../../services/platform/src/outbound-webhooks';
 import { buildSurface } from '../../services/api/src/main';
 import { tenantAccessResolver, tenantEntitlementResolver, seedGenesisOwner } from '../../services/api/src/access';
@@ -163,6 +164,8 @@ export function apiHarness(opts: {
     channels: sessionChannelsOf({ store, revocations, now: opts.now ?? (() => new Date().toISOString()) }),
     // OB-54: each store computer's credential locked to its own store, composed exactly as main.ts does it.
     boundStore: storeComputerBinding({ store, now: opts.now ?? (() => new Date().toISOString()) }),
+    // Hard rule #10 · P-08: a key reused with different content is kept as a visible exception, as main.ts composes it.
+    onIdempotencyConflict: idempotencyConflictsAdapter({ store, now: opts.now ?? (() => new Date().toISOString()) }).record,
     entitlements: tenantEntitlementResolver(store),
     idempotency,
     ...(opts.observe === undefined ? {} : { observe: opts.observe }),

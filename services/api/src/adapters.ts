@@ -2629,6 +2629,9 @@ export function posAdapter(input: {
      */
     isBanked: async (tenantId, saleId) =>
       (await input.store.findByIdempotencyKey(tenantId, `sale-${tenantId}-${saleId}`)) !== undefined,
+    // Hard rule #10 · OB-87: the bill banked under this id (one indexed hit), so a different bill re-sent under it is a finding.
+    bankedSale: async (tenantId, saleId) =>
+      (await input.store.findByIdempotencyKey(tenantId, `sale-${tenantId}-${saleId}`))?.event.payload as IncomingSale | undefined,
 
     /**
      * Receipt numbers get their own key alongside the sale, written by `bankSale` below.

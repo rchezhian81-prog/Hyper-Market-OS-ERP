@@ -215,6 +215,7 @@ import { syncWatermarkRoutes } from '../../platform/src/sync-watermarks';
 import { boxHealthRoutes } from '../../platform/src/box-health';
 import { boxHealthAdapter } from './adapters';
 import { storeComputerBinding, storeComputerRefusalRoutes } from './store-computer-binding';
+import { idempotencyConflictRoutes, idempotencyConflictsAdapter } from './idempotency-conflicts';
 import { opsIncidentRoutes } from '../../platform/src/ops-incidents';
 import { opsIncidentsAdapter, outboundWebhooksAdapter } from './adapters';
 import { outboundWebhookRoutes, drainOutboundWebhooks, type OutboundTransport } from '../../platform/src/outbound-webhooks';
@@ -1122,6 +1123,8 @@ export function buildSurface(deps: {
     }),
     // OB-54: what a store computer tried to send for another store — head office's visible record of each refusal.
     ...storeComputerRefusalRoutes({ store, now }),
+    // Hard rule #10 · OB-87: every write refused for reusing a key with different content, kept and listed (P-08).
+    ...idempotencyConflictRoutes({ store, now }),
     // M35-FR-03: each store computer reports its disk, its queue and its tills' devices (its own store, stamped — OB-54);
     // head office's observed health judges them, stale when the box has gone quiet.
     ...boxHealthRoutes(store === undefined ? { now, record: async () => {} } : {
@@ -2258,6 +2261,8 @@ export async function startApi(
     // OB-54: each store computer's credential is locked to its own store — refused (and kept) when it names no store,
     // a store its grant does not name, or a record at another store.
     boundStore: storeComputerBinding({ store, now }),
+    // Hard rule #10 · P-08 (verifier r18): a key reused with different content is refused AND kept as a visible exception.
+    onIdempotencyConflict: idempotencyConflictsAdapter({ store, now }).record,
     // Per-tenant FEATURE ENTITLEMENT (M36-FR-01 · §35). A route that names an optional/paid feature is
     // refused for a tenant whose plan has not enabled it — default-deny, on top of the permission check.
     // Reads the SAME `TenantEntitlementSet` fold the `/v1/platform/entitlements` API writes, so enabling a

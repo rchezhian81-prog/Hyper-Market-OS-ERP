@@ -335,6 +335,28 @@ export interface KernelOptions {
   readonly channels?: ChannelGuard;
   /** OB-54: the store-computer binding (see `BoundStoreGuard`). Absent → not checked (a test that has no box). */
   readonly boundStore?: BoundStoreGuard;
+  /**
+   * Hard rule #10 · P-08 (verifier r18 OB85-1): a write that reuses an Idempotency-Key for DIFFERENT content is refused
+   * (409 `idempotency_key_reused`) AND kept here as a visible exception at head office — never only a refusal the sender
+   * dead-letters. Awaited before the refusal is answered: if it cannot be kept, the request fails (5xx) and the sender
+   * retries, so the conflict is never lost. Absent → only refused (a kernel test with no ledger).
+   */
+  readonly onIdempotencyConflict?: (conflict: IdempotencyConflict) => Promise<void>;
+}
+
+/** What the kernel hands `onIdempotencyConflict`: who sent which different content under a used key, on which route. */
+export interface IdempotencyConflict {
+  readonly tenantId: string;
+  readonly userId: string;
+  readonly branchId?: string;
+  readonly method: Method;
+  readonly routePath: string;
+  readonly path: string;
+  readonly idempotencyKey: string;
+  /** The hash of the request already answered under the key, and of this different one. */
+  readonly storedRequestHash: string;
+  readonly requestHash: string;
+  readonly body: unknown;
 }
 
 /** In-memory idempotency, tenant-scoped. Real deployments swap the port for PostgreSQL. */
@@ -547,7 +569,17 @@ export async function handle(opts: KernelOptions, request: HttpRequest): Promise
         // A replay of the same request returns the first answer. A DIFFERENT request under the
         // same key is refused — answering it with the stored result would report success for
         // something that never ran.
-        if (seen.requestHash !== requestHash) throw idempotencyKeyReused();
+        if (seen.requestHash !== requestHash) {
+          if (opts.onIdempotencyConflict !== undefined) {
+            await opts.onIdempotencyConflict({
+              tenantId: principal.tenantId, userId: principal.userId,
+              ...(principal.branchId === undefined || principal.branchId === null ? {} : { branchId: principal.branchId }),
+              method: route.method, routePath: route.path, path: request.path, idempotencyKey: key,
+              storedRequestHash: seen.requestHash, requestHash, body: request.body,
+            });
+          }
+          throw idempotencyKeyReused();
+        }
         const replay = sealed(seen.status, seen.body, principal.tenantId, traceId, true, route.shownOnce !== undefined);
         await writeAudit(replay.status);
         return finish(replay);

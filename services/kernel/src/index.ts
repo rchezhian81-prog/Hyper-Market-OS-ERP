@@ -31,7 +31,7 @@ export {
   handle, scanOutbound, looksLikeACardNumber, hashRequest, stableStringify,
   MemoryIdempotencyStore,
   type Principal, type HttpRequest, type HttpResponse, type Authenticator,
-  type StoredResult, type IdempotencyStore, type AuditSink, type KernelOptions,
+  type StoredResult, type IdempotencyStore, type AuditSink, type KernelOptions, type IdempotencyConflict,
   type OutboundFinding, type RequestObservation,
   type AccessResolver, type EntitlementResolver,
   type SessionChannel, type ChannelVerdict, type ChannelGuard,
