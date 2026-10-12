@@ -13801,10 +13801,15 @@ export function openToBuyAdapter(input: { readonly store: EventStore; readonly n
     categoryOf: async (tenantId, productId) => (await master.product(tenantId, productId))?.primaryCategoryId ?? null,
     overrides: (tenantId) => allOf<BudgetOverride>(input.store, tenantId, PURCHASE_BUDGETS_STREAM, 'PurchaseBudgetExceeded'),
     recordOverride: async (tenantId, o) => {
+      // One override per order (the order is issued once) — and one per raising amendment (OB-63), each on its OWN key.
+      // An amendment's key lives in its own namespace and carries the order id length-prefixed, so it can never equal an
+      // order's key (an order named "po-1-amended-a1" once shared the key of amendment a1 of po-1 and silently collapsed
+      // onto it) nor another (order, amendment) pair's.
+      const ref = o.amendmentId === undefined ? o.poId : `${o.poId.length}:${o.poId}:${o.amendmentId}`;
+      const base = o.amendmentId === undefined ? 'purchase-budget-exceeded' : 'purchase-amendment-budget-exceeded';
       await input.store.append(tenantId, PURCHASE_BUDGETS_STREAM, makeEvent({
-        id: `purchase-budget-exceeded-${o.poId}${o.amendmentId === undefined ? '' : `-amended-${o.amendmentId}`}`, type: 'PurchaseBudgetExceeded', occurredAt: o.at,
-        // One override per order (the order is issued once) — and one per raising amendment (OB-63), each on its own key.
-        idempotencyKey: `purchase-budget-exceeded-${tenantId}-${o.poId}${o.amendmentId === undefined ? '' : `-amended-${o.amendmentId}`}`, source: 'api/purchase', payload: o,
+        id: `${base}-${ref}`, type: 'PurchaseBudgetExceeded', occurredAt: o.at,
+        idempotencyKey: `${base}-${tenantId}-${ref}`, source: 'api/purchase', payload: o,
       }));
     },
     permissionsOfUser: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),    // WF-03 (round 10): the month's open-to-buy write guard — an approval issues only while it still holds.

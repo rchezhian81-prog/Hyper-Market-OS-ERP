@@ -225,6 +225,41 @@ describe.each(backings)('a purchase order is checked against open-to-buy — on 
     expect((await amend('po-b', 'am-4', 'RICE', 3, 'u-buyer')).status).toBe(403);
   });
 
+  it('OB-63: an order over budget at its approval AND over budget on an amendment records BOTH overrides — each on its own key', async () => {
+    const { call, ok, month, amend, otb } = await amendShop();
+    await ok(call('POST', '/v1/purchase/budgets', 'u-owner', { period: month, categoryId: 'grocery', amountMinor: 100_000, reason: 'October grocery plan' }), 'budget');
+    const overOrder = async (poId: string, qty: number, why: string) => {
+      await ok(call('POST', `/v1/purchase/orders/${poId}`, 'u-buyer', { supplierId: 'sup-1', deliverToLocationId: 'store-1', lines: [{ productId: 'RICE', orderedQty: qty, unitCost: cost(5_000) }] }), poId);
+      await ok(call('POST', `/v1/purchase/orders/${poId}/approval`, 'u-owner', { reason: 'festival order', overBudgetReason: why }), `approve ${poId}`);
+    };
+    // The order itself over budget at approval (120 000 of 100 000) — its override on the order.
+    await overOrder('po-x', 24, 'Diwali stock-up');
+    // Then raised again, over budget, by an amendment — its OWN override, never collapsed onto the order's.
+    await ok(amend('po-x', 'am-x', 'RICE', 26, 'u-owner', { overBudgetReason: 'supplier offered more at the same price' }), 'am-x over budget');
+    let o = (await otb()).overrides;
+    expect(o.map((v) => [v.poId, v.amendmentId ?? null, v.reason, v.overByMinor])).toEqual([
+      ['po-x', null, 'Diwali stock-up', 20_000],
+      ['po-x', 'am-x', 'supplier offered more at the same price', 30_000], // the month's overrun after it
+    ]);
+    // The keys cannot be confused even when an order's id LOOKS like an amendment's: order "po-y-amended-am-z" and
+    // amendment am-z of order po-y each keep their own override.
+    await overOrder('po-y-amended-am-z', 2, 'top-up one');
+    await overOrder('po-y', 2, 'top-up two');
+    await ok(amend('po-y', 'am-z', 'RICE', 3, 'u-owner', { overBudgetReason: 'top-up three' }), 'am-z over budget');
+    o = (await otb()).overrides;
+    expect(o.map((v) => [v.poId, v.amendmentId ?? null, v.reason])).toEqual([
+      ['po-x', null, 'Diwali stock-up'],
+      ['po-x', 'am-x', 'supplier offered more at the same price'],
+      ['po-y-amended-am-z', null, 'top-up one'],
+      ['po-y', null, 'top-up two'],
+      ['po-y', 'am-z', 'top-up three'],
+    ]);
+    // Re-sent under fresh keys: nothing applied twice, no extra override.
+    expect((await amend('po-x', 'am-x', 'RICE', 26, 'u-owner', { overBudgetReason: 'supplier offered more at the same price' })).status).toBe(200);
+    expect((await amend('po-y', 'am-z', 'RICE', 3, 'u-owner', { overBudgetReason: 'top-up three' })).status).toBe(200);
+    expect((await otb()).overrides).toHaveLength(5);
+  });
+
   it('OB-63 (race): two raising amendments — or an amendment and an approval — at the same moment never together spend more than the budget', async () => {
     const { call, ok, month, issued, amend, otb, order } = await amendShop();
     await ok(call('POST', '/v1/purchase/budgets', 'u-owner', { period: month, categoryId: 'grocery', amountMinor: 100_000, reason: 'October grocery plan' }), 'grocery budget');
