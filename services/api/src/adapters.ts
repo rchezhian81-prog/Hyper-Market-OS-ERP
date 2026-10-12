@@ -1624,6 +1624,36 @@ function keyedEventId(prefix: string, key: string): string {
 }
 
 /**
+ * Hard rule #10 · verifier r18 RULE10-ABA — a SETTING (a policy, a threshold, a rule, a limit) set back to an earlier
+ * value must be in force. These settings used to be keyed on their VALUE alone, so A → B → A collapsed the second A onto
+ * the first: the owner was told "saved" and B stayed in force. Now a setting's key is its value AND the setting it
+ * supersedes (the latest one in force for the same subject): re-sending the value already in force writes nothing (as
+ * before — a true replay, or a crash-retry of one, dedupes), while a change back to an earlier value is a new, latest fact.
+ * Two writers setting the same value over the same predecessor meet on one key and collapse to one event.
+ */
+async function appendSetting(store: EventStore, tenantId: string, stream: string, s: {
+  readonly type: string;
+  /** The event id's prefix (the id follows the key, so two different settings never clash on one id). */
+  readonly idPrefix: string;
+  /** The value's key, as it was before (tenant + subject + value): kept for the first setting, so old ledgers read the same. */
+  readonly valueKey: string;
+  readonly occurredAt: string;
+  readonly source: string;
+  readonly payload: object;
+  /** Which earlier events on the stream are the SAME setting (e.g. the same rule kind) — absent: every event of the type. */
+  readonly sameSubject?: (payload: unknown) => boolean;
+  /** Whether the setting in force already holds this value (the fields the value key names). */
+  readonly sameValue: (payload: unknown) => boolean;
+}): Promise<void> {
+  const prior = (await store.readStream(tenantId, stream, { type: s.type })).filter((e) => s.sameSubject?.(e.event.payload) ?? true).at(-1);
+  if (prior !== undefined && s.sameValue(prior.event.payload)) return;
+  const key = prior === undefined ? s.valueKey : `${s.valueKey}-after-${prior.event.id}`;
+  await store.append(tenantId, stream, makeEvent({
+    id: keyedEventId(s.idPrefix, key), type: s.type, occurredAt: s.occurredAt, idempotencyKey: key, source: s.source, payload: s.payload,
+  }));
+}
+
+/**
  * The durable roster store (M25-FR-01 follow-on). The workforce DECISION routes are stateless what-ifs; this
  * makes the roster durable — the staff directory, shifts and assignments each append to one tenant stream and
  * "current" is a latest-per-id fold of the stored facts (hard rule #2), so a restart never loses who is on.
@@ -3847,15 +3877,14 @@ export function b2bCreditAdapter(input: {
 
     recordAccount: async (tenantId, customerId, creditLimitMinor, currency, _at, paymentTermsDays) => {
       const terms = paymentTermsDays === undefined ? '' : `-t${paymentTermsDays}`;
-      await input.store.append(tenantId, forB2BCustomer(customerId), makeEvent({
-        id: `b2b-limit-${customerId}-${creditLimitMinor}${terms}`,
-        type: 'B2BCreditLimitSet',
-        occurredAt: input.now(),
-        // Keyed on the values — setting the same limit (and terms) twice collapses, a different one is a new fact.
-        idempotencyKey: `b2b-limit-${tenantId}-${customerId}-${creditLimitMinor}${terms}`,
-        source: 'api/finance',
-        payload: { creditLimitMinor, currency, ...(paymentTermsDays === undefined ? {} : { paymentTermsDays }) } satisfies B2BAccount,
-      }));
+      const payload = { creditLimitMinor, currency, ...(paymentTermsDays === undefined ? {} : { paymentTermsDays }) } satisfies B2BAccount;
+      // Keyed on the values AND the limit they supersede (hard rule #10, verifier r18): the same limit (and terms) in force
+      // collapses; a different one — including back to an earlier one — is a new, latest fact.
+      await appendSetting(input.store, tenantId, forB2BCustomer(customerId), {
+        type: 'B2BCreditLimitSet', idPrefix: `b2b-limit-${customerId}`, valueKey: `b2b-limit-${tenantId}-${customerId}-${creditLimitMinor}${terms}`,
+        occurredAt: input.now(), source: 'api/finance', payload,
+        sameValue: (p) => { const a = p as B2BAccount; return a.creditLimitMinor === creditLimitMinor && a.currency === currency && a.paymentTermsDays === paymentTermsDays; },
+      });
     },
 
     recordReceivable: async (tenantId, customerId, m) => {
@@ -4078,15 +4107,15 @@ export function facilitiesAdapter(input: {
     },
 
     recordSchedule: async (tenantId, schedule) => {
-      await input.store.append(tenantId, STREAM.facilities, makeEvent({
-        id: `fac-sched-${schedule.scheduleId}-${schedule.title}-${schedule.active}`,
-        type: 'FacilitiesScheduleSet',
-        occurredAt: input.now(),
-        // Keyed on the definition — re-setting the same schedule collapses, a change is a new fact.
-        idempotencyKey: `fac-sched-${tenantId}-${schedule.scheduleId}-${schedule.category}-${schedule.frequency}-${schedule.evidenceRequired}-${schedule.verificationRequired}-${schedule.active}`,
-        source: 'api/platform',
-        payload: schedule,
-      }));
+      const v = (s: typeof schedule): string => `${s.category}-${s.frequency}-${s.evidenceRequired}-${s.verificationRequired}-${s.active}`;
+      // Keyed on the definition AND the one it supersedes (hard rule #10, verifier r18): the definition in force collapses;
+      // a change — including back to an earlier definition (re-activating) — is a new, latest fact.
+      await appendSetting(input.store, tenantId, STREAM.facilities, {
+        type: 'FacilitiesScheduleSet', idPrefix: `fac-sched-${schedule.scheduleId}`, valueKey: `fac-sched-${tenantId}-${schedule.scheduleId}-${v(schedule)}`,
+        occurredAt: input.now(), source: 'api/platform', payload: schedule,
+        sameSubject: (p) => (p as typeof schedule).scheduleId === schedule.scheduleId,
+        sameValue: (p) => v(p as typeof schedule) === v(schedule),
+      });
     },
 
     recordTaskDue: async (tenantId, task) => {
@@ -4181,16 +4210,15 @@ export function facilitiesAssetsAdapter(input: {
       allOf<EnergyReading>(input.store, tenantId, STREAM.facilities, 'FacilitiesEnergyReading'),
 
     recordAsset: async (tenantId, asset) => {
-      await input.store.append(tenantId, STREAM.facilities, makeEvent({
-        id: `fac-asset-${asset.assetId}`,
-        type: 'FacilitiesAssetSet',
-        occurredAt: input.now(),
-        // Keyed on the fields that matter — restating the same asset collapses, a change (renewed AMC,
-        // new criticality, retired) is a new fact.
-        idempotencyKey: `fac-asset-${tenantId}-${asset.assetId}-${asset.criticality}-${asset.amcUntil ?? 'none'}-${asset.warrantyUntil ?? 'none'}-${asset.serviceEveryDays ?? 'none'}-${asset.protectsValueMinor ?? 'none'}-${asset.active}`,
-        source: 'api/platform',
-        payload: asset,
-      }));
+      const v = (a: typeof asset): string => `${a.criticality}-${a.amcUntil ?? 'none'}-${a.warrantyUntil ?? 'none'}-${a.serviceEveryDays ?? 'none'}-${a.protectsValueMinor ?? 'none'}-${a.active}`;
+      // Keyed on the fields that matter AND the record it supersedes (hard rule #10, verifier r18): restating the asset in
+      // force collapses; a change (renewed AMC, new criticality, retired — or back again) is a new, latest fact.
+      await appendSetting(input.store, tenantId, STREAM.facilities, {
+        type: 'FacilitiesAssetSet', idPrefix: `fac-asset-${asset.assetId}`, valueKey: `fac-asset-${tenantId}-${asset.assetId}-${v(asset)}`,
+        occurredAt: input.now(), source: 'api/platform', payload: asset,
+        sameSubject: (p) => (p as typeof asset).assetId === asset.assetId,
+        sameValue: (p) => v(p as typeof asset) === v(asset),
+      });
     },
 
     recordService: async (tenantId, service) => {
@@ -4269,15 +4297,15 @@ export function facilitiesMonitoringAdapter(input: {
     },
 
     recordRange: async (tenantId, reg) => {
-      await input.store.append(tenantId, STREAM.facilities, makeEvent({
-        id: `fac-range-${reg.assetId}`,
-        type: 'FacilitiesEquipmentRangeSet',
-        occurredAt: input.now(),
-        // Keyed on the fields that matter so restating collapses and a change is a new fact.
-        idempotencyKey: `fac-range-${tenantId}-${reg.assetId}-${reg.range.minTenthsC}-${reg.range.maxTenthsC}-${reg.range.graceMinutes}-${reg.range.expectEveryMinutes ?? 'def'}-${reg.onBackup}`,
-        source: 'api/platform',
-        payload: reg,
-      }));
+      const v = (r: typeof reg): string => `${r.range.minTenthsC}-${r.range.maxTenthsC}-${r.range.graceMinutes}-${r.range.expectEveryMinutes ?? 'def'}-${r.onBackup}`;
+      // Keyed on the fields that matter AND the range it supersedes (hard rule #10, verifier r18): restating collapses; a
+      // change — including back to an earlier range — is a new, latest fact.
+      await appendSetting(input.store, tenantId, STREAM.facilities, {
+        type: 'FacilitiesEquipmentRangeSet', idPrefix: `fac-range-${reg.assetId}`, valueKey: `fac-range-${tenantId}-${reg.assetId}-${v(reg)}`,
+        occurredAt: input.now(), source: 'api/platform', payload: reg,
+        sameSubject: (p) => (p as typeof reg).assetId === reg.assetId,
+        sameValue: (p) => v(p as typeof reg) === v(reg),
+      });
     },
 
     // PA-07: the reading and the quality holds its breach causes are ONE atomic write.
@@ -4408,15 +4436,14 @@ export function wasteAdapter(input: {
     },
 
     recordCoverage: async (tenantId, coverage) => {
-      await input.store.append(tenantId, STREAM.waste, makeEvent({
-        id: `waste-coverage-${coverage.expected.length}`,
-        type: 'WasteCoverageSet',
-        occurredAt: input.now(),
-        // Keyed on the expected set so re-sending the same expectation collapses, a change is a new fact.
-        idempotencyKey: `waste-coverage-${tenantId}-${coverage.expected.map((e) => `${e.branchId}:${e.departmentId}`).sort().join(',')}`,
-        source: 'api/inventory',
-        payload: coverage,
-      }));
+      const v = (c: typeof coverage): string => c.expected.map((e) => `${e.branchId}:${e.departmentId}`).sort().join(',');
+      // Keyed on the expected set AND the one it supersedes (hard rule #10, verifier r18): re-sending the expectation in
+      // force collapses; a change — including back to an earlier set — is a new, latest fact.
+      await appendSetting(input.store, tenantId, STREAM.waste, {
+        type: 'WasteCoverageSet', idPrefix: 'waste-coverage', valueKey: `waste-coverage-${tenantId}-${v(coverage)}`,
+        occurredAt: input.now(), source: 'api/inventory', payload: coverage,
+        sameValue: (p) => v(p as typeof coverage) === v(coverage),
+      });
     },
   };
 }
@@ -4449,14 +4476,15 @@ export function integrationAdapter(input: {
       allOf<AdapterHeartbeat>(input.store, tenantId, STREAM.integration, 'IntegrationHeartbeat'),
 
     recordMatrixEntry: async (tenantId, entry) => {
-      await input.store.append(tenantId, STREAM.integration, makeEvent({
-        id: `intg-matrix-${entry.entryId}`,
-        type: 'IntegrationMatrixEntrySet',
-        occurredAt: input.now(),
-        idempotencyKey: `intg-matrix-${tenantId}-${entry.entryId}-${entry.vendor}-${entry.model}-${entry.versions.join('.')}-${entry.rbiAuthorised ?? 'na'}`,
-        source: 'api/platform',
-        payload: entry,
-      }));
+      const v = (e: typeof entry): string => `${e.vendor}-${e.model}-${e.versions.join('.')}-${e.rbiAuthorised ?? 'na'}`;
+      // Keyed on the entry AND the one it supersedes (hard rule #10, verifier r18): the entry in force collapses; a change —
+      // including back to an earlier entry — is a new, latest fact (the fixed id used to refuse every change).
+      await appendSetting(input.store, tenantId, STREAM.integration, {
+        type: 'IntegrationMatrixEntrySet', idPrefix: `intg-matrix-${entry.entryId}`, valueKey: `intg-matrix-${tenantId}-${entry.entryId}-${v(entry)}`,
+        occurredAt: input.now(), source: 'api/platform', payload: entry,
+        sameSubject: (p) => (p as typeof entry).entryId === entry.entryId,
+        sameValue: (p) => v(p as typeof entry) === v(entry),
+      });
     },
 
     recordAdapter: async (tenantId, config) => {
@@ -4503,14 +4531,14 @@ export function webhookAdapter(input: {
     },
 
     recordConfig: async (tenantId, config) => {
-      await input.store.append(tenantId, forWebhook(config.provider), makeEvent({
-        id: `wh-config-${config.provider}`,
-        type: 'WebhookConfigured',
-        occurredAt: input.now(),
-        idempotencyKey: `wh-config-${tenantId}-${config.provider}-${config.signingKeyRef}-${config.maxAgeSeconds ?? 'def'}`,
-        source: 'api/platform',
-        payload: config,
-      }));
+      // Hard rule #10 (verifier r18): the values AND the config they supersede — a change (and a change back) is a new,
+      // latest fact; its id follows the key (the fixed id used to refuse every change after the first).
+      const v = (c: typeof config): string => `${c.signingKeyRef}-${c.maxAgeSeconds ?? 'def'}`;
+      await appendSetting(input.store, tenantId, forWebhook(config.provider), {
+        type: 'WebhookConfigured', idPrefix: `wh-config-${config.provider}`, valueKey: `wh-config-${tenantId}-${config.provider}-${v(config)}`,
+        occurredAt: input.now(), source: 'api/platform', payload: config,
+        sameValue: (p) => v(p as typeof config) === v(config),
+      });
     },
 
     recordDelivery: async (tenantId, provider, envelope) => {
@@ -5090,15 +5118,13 @@ export function syncedCountsAdapter(input: {
     ...countsAdapter(input),
     permissionsOfUser: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),
     recordCountPolicy: async (tenantId, policy) => {
-      await input.store.append(tenantId, COUNT_POLICY_STREAM, makeEvent({
-        id: keyedEventId('count-policy', `count-policy-${tenantId}-${policy.approvalThresholdMinor}`),
-        type: 'CountPolicySet',
-        occurredAt: policy.setAt,
-        // Keyed on the value: re-setting the same threshold collapses, a new value supersedes.
-        idempotencyKey: `count-policy-${tenantId}-${policy.approvalThresholdMinor}`,
-        source: 'api/inventory',
-        payload: policy,
-      }));
+      // Hard rule #10 (verifier r18): the value AND the setting it supersedes — re-setting the threshold in force collapses,
+      // a change (including back to an earlier value) is a new, latest fact.
+      await appendSetting(input.store, tenantId, COUNT_POLICY_STREAM, {
+        type: 'CountPolicySet', idPrefix: 'count-policy', valueKey: `count-policy-${tenantId}-${policy.approvalThresholdMinor}`,
+        occurredAt: policy.setAt, source: 'api/inventory', payload: policy,
+        sameValue: (p) => (p as CountPolicy).approvalThresholdMinor === policy.approvalThresholdMinor,
+      });
     },
   };
 }
@@ -5587,16 +5613,15 @@ export function lpRulesAdapter(input: {
     },
 
     recordRule: async (tenantId, rule) => {
-      const ruleKey = `lp-rule-${tenantId}-${rule.kind}-${rule.maxCount ?? ''}-${rule.maxTotalValueMinor ?? ''}-${rule.maxSingleValueMinor ?? ''}-${rule.escalateAtMultiple ?? ''}`;
-      await input.store.append(tenantId, rulesStream, makeEvent({
-        id: keyedEventId(`lp-rule-${rule.kind}`, ruleKey),
-        type: 'LpRuleSet',
-        occurredAt: input.now(),
-        // Keyed on the kind AND the limits — re-setting the same thresholds collapses, a re-tune is a new fact.
-        idempotencyKey: ruleKey,
-        source: 'api/pos',
-        payload: rule,
-      }));
+      const limits = (r: LpRule): string => `${r.maxCount ?? ''}-${r.maxTotalValueMinor ?? ''}-${r.maxSingleValueMinor ?? ''}-${r.escalateAtMultiple ?? ''}`;
+      // Keyed on the kind, the limits AND the rule it supersedes (hard rule #10, verifier r18): re-setting the limits in force
+      // collapses; a re-tune — including back to earlier limits — is a new, latest fact.
+      await appendSetting(input.store, tenantId, rulesStream, {
+        type: 'LpRuleSet', idPrefix: `lp-rule-${rule.kind}`, valueKey: `lp-rule-${tenantId}-${rule.kind}-${limits(rule)}`,
+        occurredAt: input.now(), source: 'api/pos', payload: rule,
+        sameSubject: (p) => (p as LpRule).kind === rule.kind,
+        sameValue: (p) => limits(p as LpRule) === limits(rule),
+      });
     },
   };
 }
@@ -5694,16 +5719,13 @@ export function fraudSignalsAdapter(input: {
       (await latest<FraudThresholds>(input.store, tenantId, thresholdsStream, 'FraudThresholdsSet')) ?? {},
 
     recordThresholds: async (tenantId, thresholds) => {
-      const thresholdsKey = `fraud-thresholds-${tenantId}-${JSON.stringify(thresholds)}`;
-      await input.store.append(tenantId, thresholdsStream, makeEvent({
-        id: keyedEventId('fraud-thresholds', thresholdsKey),
-        type: 'FraudThresholdsSet',
-        occurredAt: input.now(),
-        // Keyed on the values — re-setting the same thresholds collapses, a re-tune is a new fact.
-        idempotencyKey: thresholdsKey,
-        source: 'api/pos',
-        payload: thresholds,
-      }));
+      // Keyed on the values AND the thresholds they supersede (hard rule #10, verifier r18): re-setting the thresholds in
+      // force collapses; a re-tune — including back to earlier values — is a new, latest fact.
+      await appendSetting(input.store, tenantId, thresholdsStream, {
+        type: 'FraudThresholdsSet', idPrefix: 'fraud-thresholds', valueKey: `fraud-thresholds-${tenantId}-${JSON.stringify(thresholds)}`,
+        occurredAt: input.now(), source: 'api/pos', payload: thresholds,
+        sameValue: (p) => JSON.stringify(p) === JSON.stringify(thresholds),
+      });
     },
 
     /**
@@ -6406,15 +6428,14 @@ export function productionAdapter(input: {
     },
 
     recordCost: async (tenantId, productId, cost) => {
-      await input.store.append(tenantId, productionStream, makeEvent({
-        id: `prod-cost-${productId}`,
-        type: 'ProductionCostSet',
-        occurredAt: input.now(),
-        // Keyed on the product + the value — re-setting the same cost collapses, a new value supersedes.
-        idempotencyKey: `prod-cost-${tenantId}-${productId}-${cost.minor}-${cost.currency}`,
-        source: 'api/inventory',
-        payload: { productId, cost },
-      }));
+      // Keyed on the product, the value AND the cost it supersedes (hard rule #10, verifier r18): re-setting the cost in
+      // force collapses; a new value — including back to an earlier one — supersedes (the fixed id used to refuse it).
+      await appendSetting(input.store, tenantId, productionStream, {
+        type: 'ProductionCostSet', idPrefix: `prod-cost-${productId}`, valueKey: `prod-cost-${tenantId}-${productId}-${cost.minor}-${cost.currency}`,
+        occurredAt: input.now(), source: 'api/inventory', payload: { productId, cost },
+        sameSubject: (p) => (p as { productId: string }).productId === productId,
+        sameValue: (p) => { const c = (p as { cost: Money }).cost; return c.minor === cost.minor && c.currency === cost.currency; },
+      });
     },
 
     onHand: async (tenantId, productId, locationId) => {
@@ -7914,18 +7935,18 @@ export function purchaseAdapter(input: {
     },
 
     recordMatch: async (tenantId, invoiceId, r) => {
-      const matchKey = `match-${tenantId}-${invoiceId}-${r.payableMinor}-${r.invoicedMinor}-${r.poId ?? ''}-${r.blocked ? 'blocked' : 'clear'}`;
-      await input.store.append(tenantId, STREAM.purchase, makeEvent({
-        id: keyedEventId(`match-${invoiceId}`, matchKey),
-        type: 'InvoiceMatched',
-        occurredAt: r.matchedAt,
-        // Keyed on the *outcome*, not just the invoice. Re-running an unchanged match is the same event and collapses;
-        // a match that now pays a different figure — or that is no longer blocked because the tenant's tolerances changed
-        // (SP-7b) — is a different fact and must be recorded, or the ledger would show the first answer forever.
-        idempotencyKey: matchKey,
-        source: 'api/purchase',
-        payload: r,
-      }));
+      const outcome = (m: { payableMinor: number; invoicedMinor: number; poId?: string | null | undefined; blocked: boolean }): string =>
+        `${m.payableMinor}-${m.invoicedMinor}-${m.poId ?? ''}-${m.blocked ? 'blocked' : 'clear'}`;
+      // Keyed on the *outcome*, not just the invoice, AND the match it supersedes. Re-running an unchanged match collapses;
+      // a match that now pays a different figure — or that is no longer blocked because the tenant's tolerances changed
+      // (SP-7b) — is a different fact and must be recorded, or the ledger would show the first answer forever; and an
+      // outcome that goes BACK to an earlier one (clear → blocked → clear) is in force too (hard rule #10, verifier r18).
+      await appendSetting(input.store, tenantId, STREAM.purchase, {
+        type: 'InvoiceMatched', idPrefix: `match-${invoiceId}`, valueKey: `match-${tenantId}-${invoiceId}-${outcome(r)}`,
+        occurredAt: r.matchedAt, source: 'api/purchase', payload: r,
+        sameSubject: (p) => (p as StoredMatch).invoiceId === invoiceId,
+        sameValue: (p) => outcome(p as StoredMatch) === outcome(r),
+      });
     },
 
     applyBankChange: async (tenantId, r) => {
@@ -8554,16 +8575,15 @@ export function supplierPortalAdapter(input: {
         .sort()
         .join(',');
       const partnerKey = `portal-partner-${tenantId}-${partnerId}-${config.grants.join('.')}-${config.requiredDocuments.join('.')}-${docsDigest}-${[...config.logins].sort().join('.')}`;
-      await input.store.append(tenantId, forPortalPartner(partnerId), makeEvent({
-        // The id follows the key: a changed config (a verification, a new document) is a new event with its own id — it
-        // used to reuse the grants-only id, which the ledger's unique event id refuses (a 500 on PostgreSQL).
-        id: keyedEventId(`portal-partner-${partnerId}`, partnerKey),
-        type: 'SupplierPartnerConfigured',
-        occurredAt: input.now(),
-        idempotencyKey: partnerKey,
-        source: 'api/purchase',
-        payload: config,
-      }));
+      const v = (c: typeof config): string => `${c.grants.join('.')}-${c.requiredDocuments.join('.')}-${c.documents.map((d) => `${d.documentId}:${d.kind}:${d.validUntil}:${d.verifiedBy ?? 'unv'}`).sort().join(',')}-${[...c.logins].sort().join('.')}`;
+      // The id follows the key: a changed config (a verification, a new document) is a new event with its own id — it
+      // used to reuse the grants-only id, which the ledger's unique event id refuses (a 500 on PostgreSQL). And the key
+      // names the config it supersedes, so a change BACK to an earlier config is in force (hard rule #10, verifier r18).
+      await appendSetting(input.store, tenantId, forPortalPartner(partnerId), {
+        type: 'SupplierPartnerConfigured', idPrefix: `portal-partner-${partnerId}`, valueKey: partnerKey,
+        occurredAt: input.now(), source: 'api/purchase', payload: config,
+        sameValue: (p) => v(p as typeof config) === v(config),
+      });
       // Maintain the per-user login index (M24-FR-01) so a supplier-facing read resolves its partner id
       // from the session. One binding event per login, keyed by (user, partner) so a re-config with the
       // same login collapses but a reassignment to another partner is a new, latest-wins fact.
@@ -8622,14 +8642,12 @@ export function supplierPortalAdapter(input: {
     },
 
     recordOpening: async (tenantId, partnerId, openingMinor) => {
-      await input.store.append(tenantId, forPortalPartner(partnerId), makeEvent({
-        id: `portal-opening-${partnerId}-${openingMinor}`,
-        type: 'SupplierStatementOpeningSet',
-        occurredAt: input.now(),
-        idempotencyKey: `portal-opening-${tenantId}-${partnerId}-${openingMinor}`,
-        source: 'api/purchase',
-        payload: { openingMinor },
-      }));
+      // Keyed on the value AND the opening it supersedes (hard rule #10, verifier r18): a change back is in force.
+      await appendSetting(input.store, tenantId, forPortalPartner(partnerId), {
+        type: 'SupplierStatementOpeningSet', idPrefix: `portal-opening-${partnerId}`, valueKey: `portal-opening-${tenantId}-${partnerId}-${openingMinor}`,
+        occurredAt: input.now(), source: 'api/purchase', payload: { openingMinor },
+        sameValue: (p) => (p as { openingMinor: number }).openingMinor === openingMinor,
+      });
     },
 
     // Append-only partner-action audit (hard rule #6). Keyed on the action so a re-synced attempt is one
@@ -8866,15 +8884,14 @@ export function segmentDataAdapter(input: {
     policy: async (tenantId) =>
       latest<SegmentPolicy>(input.store, tenantId, SEGMENT_POLICY_STREAM, 'SegmentPolicySet'),
     recordPolicy: async (tenantId, policy) => {
-      await input.store.append(tenantId, SEGMENT_POLICY_STREAM, makeEvent({
-        id: 'segment-policy',
-        type: 'SegmentPolicySet',
-        occurredAt: input.now(),
-        // Keyed on the values, so re-sending the same policy collapses but any change is a new, latest fact.
-        idempotencyKey: `segment-policy-${tenantId}-${[policy.newBelowOrders, policy.loyalAtOrders, policy.lapsingAfterDays, policy.lapsedAfterDays, policy.minimumHistory].join('.')}`,
-        source: 'api/customer',
-        payload: policy,
-      }));
+      const v = (p: SegmentPolicy): string => [p.newBelowOrders, p.loyalAtOrders, p.lapsingAfterDays, p.lapsedAfterDays, p.minimumHistory].join('.');
+      // Keyed on the values AND the policy they supersede (hard rule #10, verifier r18): re-sending the policy in force
+      // collapses; any change — including back to an earlier policy — is a new, latest fact (the fixed id used to refuse it).
+      await appendSetting(input.store, tenantId, SEGMENT_POLICY_STREAM, {
+        type: 'SegmentPolicySet', idPrefix: 'segment-policy', valueKey: `segment-policy-${tenantId}-${v(policy)}`,
+        occurredAt: input.now(), source: 'api/customer', payload: policy,
+        sameValue: (p) => v(p as SegmentPolicy) === v(policy),
+      });
     },
     // FUL-12: a customer whose marketing profile was erased reads as an anonymous ref — the totals survive for the
     // shop's own figures, the person is no longer linkable (anonymisation as a compensating fact, never a deletion).
@@ -14176,12 +14193,16 @@ export function openToBuyAdapter(input: { readonly store: EventStore; readonly n
     now: input.now,
     budgets: (tenantId) => allOf<PurchaseBudget>(input.store, tenantId, PURCHASE_BUDGETS_STREAM, 'PurchaseBudgetSet'),
     recordBudget: async (tenantId, budget) => {
-      const digest = createHash('sha256').update(`${budgetKey(budget)}|${budget.amountMinor}|${budget.reason}|${budget.setBy}`).digest('hex').slice(0, 16);
-      await input.store.append(tenantId, PURCHASE_BUDGETS_STREAM, makeEvent({
-        id: `purchase-budget-${digest}`, type: 'PurchaseBudgetSet', occurredAt: budget.setAt,
-        // The same figure for the same key by the same person collapses; a new figure is a new record (latest wins).
-        idempotencyKey: `purchase-budget-${tenantId}-${digest}`, source: 'api/purchase', payload: budget,
-      }));
+      const v = (b: PurchaseBudget): string => `${budgetKey(b)}|${b.amountMinor}|${b.reason}|${b.setBy}`;
+      const digest = createHash('sha256').update(v(budget)).digest('hex').slice(0, 16);
+      // The same figure for the same key by the same person, while in force, collapses; a new figure — including back to an
+      // earlier one — is a new record over the one it supersedes (hard rule #10, verifier r18; latest wins).
+      await appendSetting(input.store, tenantId, PURCHASE_BUDGETS_STREAM, {
+        type: 'PurchaseBudgetSet', idPrefix: 'purchase-budget', valueKey: `purchase-budget-${tenantId}-${digest}`,
+        occurredAt: budget.setAt, source: 'api/purchase', payload: budget,
+        sameSubject: (p) => budgetKey(p as PurchaseBudget) === budgetKey(budget),
+        sameValue: (p) => v(p as PurchaseBudget) === v(budget),
+      });
     },
     orders: async (tenantId) => [...(await foldPurchaseOrders(input.store, tenantId)).values()],
     categoryOf: async (tenantId, productId) => (await master.product(tenantId, productId))?.primaryCategoryId ?? null,
