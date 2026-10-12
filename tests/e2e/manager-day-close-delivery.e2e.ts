@@ -59,6 +59,10 @@ interface BrowserGlobals {
   readonly document: { getElementById(id: string): { readonly textContent: string | null; readonly hidden: boolean } | null };
 }
 
+// OB-69: the day-close log also holds the box's immediate no-answer relays; only a record naming `closedBy` is a day close.
+const closeRecordsOf = (records: Awaited<ReturnType<typeof readLog>>): { ok: true; record: string }[] =>
+  records.flatMap((r) => (r.ok && r.record.includes('"closedBy"') ? [{ ok: true as const, record: r.record }] : []));
+
 describe.skipIf(!HAVE_BROWSER)('the store manager closes the day and it reaches the store computer (M14-FR-04)', () => {
   let browser: Browser;
   const dirs: string[] = [];
@@ -133,7 +137,7 @@ describe.skipIf(!HAVE_BROWSER)('the store manager closes the day and it reaches 
     );
     expect((await page.textContent('#banner-text'))?.toLowerCase()).toMatch(/not confirmed/);
     expect(await page.inputValue('#close-pin')).toBe(''); // the PIN never stays on the screen
-    expect(await readLog(edge.dayCloseLog.path)).toEqual([]);
+    expect(closeRecordsOf(await readLog(edge.dayCloseLog.path))).toEqual([]);
     // The manager keys their OWN PIN: this posts to the box, cross-port, and the box verifies them.
     await page.click('#check-close');
     await page.waitForSelector('#do-close:not([hidden])', { timeout: 10_000 });
@@ -208,7 +212,7 @@ describe.skipIf(!HAVE_BROWSER)('the store manager closes the day and it reaches 
     expect(list).toMatch(/Do not run the card again/);
     // Nothing to tap: the close is not offered while a payment is unresolved.
     expect(await page.locator('#do-close').getAttribute('hidden')).not.toBeNull();
-    expect(await readLog(edge.dayCloseLog.path)).toEqual([]);
+    expect(closeRecordsOf(await readLog(edge.dayCloseLog.path))).toEqual([]);
   });
 
   it('OB-55: only a payment is open — the day closes with it sent to head office, on the manager\'s PIN and a SECOND person\'s', async () => {
@@ -238,7 +242,7 @@ describe.skipIf(!HAVE_BROWSER)('the store manager closes the day and it reaches 
     );
     expect(await page.inputValue('#close-pin')).toBe('');
     expect(await page.inputValue('#carry-pin')).toBe('');
-    expect(await readLog(edge.dayCloseLog.path)).toEqual([]);
+    expect(closeRecordsOf(await readLog(edge.dayCloseLog.path))).toEqual([]);
 
     // The owner keys their own PIN beside the manager's: the day locks on the box with the payment carried by name.
     await page.fill('#close-pin', pinOf('u-mgr'));
@@ -251,7 +255,7 @@ describe.skipIf(!HAVE_BROWSER)('the store manager closes the day and it reaches 
     );
     expect((await page.textContent('#banner-text')) ?? '').toContain('head office');
     expect(await page.locator('#carry-row').getAttribute('hidden')).not.toBeNull();
-    const records = (await readLog(edge.dayCloseLog.path)).filter((r) => r.ok === true).map((r) => JSON.parse(r.record) as { closedBy: string; carriedForward: { approvedBy: string; reason: string; payments: { attemptId: string }[] } });
+    const records = closeRecordsOf(await readLog(edge.dayCloseLog.path)).map((r) => JSON.parse(r.record) as { closedBy: string; carriedForward: { approvedBy: string; reason: string; payments: { attemptId: string }[] } });
     expect(records).toHaveLength(1);
     expect(records[0]).toMatchObject({ closedBy: 'u-mgr', carriedForward: { approvedBy: 'u-owner', reason: 'provider_not_answering', payments: [{ attemptId: 'PAY-e2e-carry' }] } });
     expect(JSON.stringify(records)).not.toContain(pinOf('u-owner'));
