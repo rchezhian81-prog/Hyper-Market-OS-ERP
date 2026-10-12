@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Supplier bills</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Supplier bills (D03-FR-02 · WF-05 · round 12). A THIN CLIENT over head office's bill-document register
+      (/v1/purchase/invoice-documents/*): a buyer hands in a supplier's GST e-invoice (the JSON file) or a scan of the paper;
+      head office reads the e-invoice into a draft, finds the supplier by GSTIN and lists what it could not read; a person
+      maps every line to a product (and types the figures of any line head office was unsure of) and confirms it onto the
+      supplier-invoice register; then it is checked against the order — the three-way match — and every exception is shown.
+      No OCR engine is connected (an outside party): a scan waits for a person to type it, here, through head office's own
+      typed capture. Every rule and every refusal is head office's; the page shows its words. The session model is
+      apps/web-erp/src/supplier-bills-session.ts.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; }
+      h3 { margin: 4px 0 0; font-size: 15px; }
+      p.lede { margin: 0; color: var(--muted); font-size: 14px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      input, select { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; }
+      input[type='checkbox'] { min-height: 0; width: 22px; height: 22px; }
+      label.inline { display: flex; gap: 8px; align-items: center; font-weight: 500; }
+      .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--line); color: var(--ink); cursor: pointer; padding: 0 16px; }
+      button.primary { background: var(--accent); color: var(--accent-ink); }
+      button[disabled] { opacity: .5; cursor: not-allowed; }
+      .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+      .summary div { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+      .summary .label { display: block; color: var(--muted); font-size: 13px; }
+      .summary .value { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+      ul.register { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+      li.bill { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; display: grid; gap: 4px; background: var(--bg); min-width: 0; }
+      li.bill .head { display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline; justify-content: space-between; }
+      li.bill .what { font-weight: 700; overflow-wrap: anywhere; }
+      li.bill .facts { font-size: 14px; color: var(--muted); overflow-wrap: anywhere; }
+      .pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 13px; font-weight: 600; background: var(--line); color: var(--ink); }
+      .pill.waiting { background: var(--warn); color: var(--on-warn); }
+      .pill.done { background: var(--ok); color: var(--on-accent); }
+      .pill.blocked { background: var(--danger-surface); color: var(--on-danger); }
+      .table-wrap { overflow-x: auto; }
+      table { width: 100%; border-collapse: collapse; font-size: 14px; }
+      th { text-align: left; color: var(--muted); font-size: 13px; font-weight: 500; padding: 6px; }
+      td { padding: 6px; border-top: 1px solid var(--line); font-variant-numeric: tabular-nums; vertical-align: top; }
+      td input { width: 100%; min-width: 90px; }
+      td.amount, th.amount { text-align: right; }
+      tr.blocked td { color: var(--danger-text); }
+      .problems { margin: 0; padding-left: 20px; font-size: 14px; color: var(--warn); }
+      .status { font-size: 14px; min-height: 20px; overflow-wrap: anywhere; }
+      .status.good { color: var(--good); } .status.err { color: var(--danger-text); }
+      .verdict { border-left: 6px solid var(--line); background: var(--bg); border-radius: 12px; padding: 10px 14px; display: grid; gap: 4px; }
+      .verdict.ready { border-left-color: var(--good); } .verdict.problem { border-left-color: var(--danger); }
+      .nobody { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
+      .muted { color: var(--muted); font-size: 13px; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title">Supplier bills</h1>
+      <span class="sync">
+        <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+      </span>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <p class="lede" id="purpose">Hand in a supplier's bill, check what head office read off it, confirm it line by line, then check it against the order.</p>
+
+      <section aria-labelledby="hand-h" id="hand-section">
+        <h2 id="hand-h">Hand in a bill</h2>
+        <p class="lede" id="hand-lede">The supplier's GST e-invoice file (.json), or a photo or PDF of the paper bill. Nothing goes on the register until a person confirms it.</p>
+        <div class="row">
+          <label for="bill-file"><span id="l-bill-file">The bill file</span><input id="bill-file" type="file" accept=".json,application/json,image/png,image/jpeg,image/webp,application/pdf" /></label>
+          <label for="hand-supplier"><span id="l-hand-supplier">Supplier code (if the bill has no GSTIN)</span><input id="hand-supplier" autocomplete="off" /></label>
+          <label for="hand-po"><span id="l-hand-po">Purchase order number (if you have it)</span><input id="hand-po" autocomplete="off" /></label>
+        </div>
+        <button id="hand-in" class="primary" type="button">Hand in this bill</button>
+        <p class="status" id="hand-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section aria-labelledby="register-h">
+        <h2 id="register-h">Bills handed in</h2>
+        <div class="summary">
+          <div><span class="label" id="l-waiting">Waiting for a person</span><span class="value" id="waiting">—</span></div>
+          <div><span class="label" id="l-engine">Reading scans</span><span class="value" id="engine">—</span></div>
+        </div>
+        <p class="status" id="register-status" role="status" aria-live="polite"></p>
+        <ul class="register" id="register" aria-label="Bills handed in"></ul>
+      </section>
+
+      <section aria-labelledby="drawer-h" id="drawer" hidden>
+        <h2 id="drawer-h">Bill</h2>
+        <p class="facts" id="drawer-facts"></p>
+        <ul class="problems" id="drawer-problems"></ul>
+
+        <div id="confirm-part" hidden>
+          <h3 id="confirm-h">Map each line to a product, then confirm</h3>
+          <p class="lede" id="confirm-lede">Head office suggests a product only where a person mapped this supplier's item code before. A line head office was unsure of needs its quantity, price and amount typed from the paper.</p>
+          <div class="table-wrap"><table id="draft-lines"></table></div>
+          <div class="row">
+            <label for="confirm-invoice"><span id="l-confirm-invoice">Invoice number on our register</span><input id="confirm-invoice" autocomplete="off" /></label>
+            <label for="confirm-supplier"><span id="l-confirm-supplier">Supplier code</span><input id="confirm-supplier" autocomplete="off" /></label>
+            <label for="confirm-po"><span id="l-confirm-po">Purchase order number</span><input id="confirm-po" autocomplete="off" /></label>
+          </div>
+          <label class="inline" for="confirm-accept"><input id="confirm-accept" type="checkbox" /><span id="l-confirm-accept">The lines differ from the bill's printed total and I will say why on the match</span></label>
+          <button id="confirm" class="primary" type="button">Confirm this bill</button>
+          <p class="status" id="confirm-status" role="status" aria-live="polite"></p>
+        </div>
+
+        <div id="type-part" hidden>
+          <h3 id="type-h">Type this bill from the paper</h3>
+          <p class="lede" id="type-lede">No reading engine is connected, so head office could not read this scan. Type the bill as the paper says it; head office checks every line multiplies and the lines add up to the total.</p>
+          <div class="row">
+            <label for="type-invoice"><span id="l-type-invoice">Invoice number on our register</span><input id="type-invoice" autocomplete="off" /></label>
+            <label for="type-supplier"><span id="l-type-supplier">Supplier code</span><input id="type-supplier" autocomplete="off" /></label>
+            <label for="type-po"><span id="l-type-po">Purchase order number</span><input id="type-po" autocomplete="off" /></label>
+            <label for="type-total"><span id="l-type-total">Total printed on the bill (₹)</span><input id="type-total" inputmode="decimal" autocomplete="off" /></label>
+          </div>
+          <div class="table-wrap"><table id="type-lines"></table></div>
+          <button id="type-add-line" type="button">Add a line</button>
+          <button id="type-save" class="primary" type="button">Save this bill</button>
+          <p class="status" id="type-status" role="status" aria-live="polite"></p>
+        </div>
+
+        <div id="match-part" hidden>
+          <h3 id="match-h">Check against the order</h3>
+          <p class="lede" id="match-lede">Head office compares what was ordered, what arrived and what this bill claims. Where they disagree it holds the difference back.</p>
+          <p class="facts" id="match-invoice"></p>
+          <button id="run-match" class="primary" type="button">Check this bill against the order</button>
+          <p class="status" id="match-status" role="status" aria-live="polite"></p>
+          <div class="verdict" id="match-verdict" hidden></div>
+          <div class="table-wrap"><table id="match-lines"></table></div>
+        </div>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script type="module" src="./supplier-bills.js"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

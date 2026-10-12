@@ -96,6 +96,10 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // needs `purchase.order.propose`, which the route enforces.
   { id: 'buying', label: 'Buying', labelTa: 'வாங்குதல்', path: '/buying/', requires: 'purchase.commitment.read', group: 'Purchase' },
   { id: 'suppliers', label: 'Suppliers', labelTa: 'விநியோகஸ்தர்கள்', path: '/suppliers', requires: 'supplier.view', group: 'Purchase' },
+  // Round 12 (D03-FR-02 · WF-05): supplier bills handed in as a GST e-invoice or a scan, confirmed by a person, then checked
+  // against the order — a head-office page over `/v1/purchase/invoice-documents/*` (the box does not serve it). Gated on the
+  // permission those routes check (`purchase.invoice.capture`).
+  { id: 'supplier-bills', label: 'Supplier bills', labelTa: 'சப்ளையர் பில்கள்', path: '/supplier-bills', requires: 'purchase.invoice.capture', group: 'Purchase', served: 'unserved' },
   { id: 'goods-receipt', label: 'Goods receipt review', labelTa: 'சரக்கு வரவு ஆய்வு', path: '/goods-receipt', requires: 'inventory.availability.read', group: 'Receiving' },
 
   { id: 'indents', label: 'Floor indents', labelTa: 'தளக் கோரிக்கைகள்', path: '/indents', requires: 'inventory.indent.read', group: 'Floor' },

@@ -22,8 +22,8 @@ const styleOf = (html: string): string => html.slice(html.indexOf('<style>'), ht
 const code = (source: string): string => source.replace(/\/\*[\s\S]*?\*\//g, '').split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
 
 describe('every page carries the one chrome', () => {
-  it('finds the fifty-six pages (round 8: Returned goods to decide, Customer cases, Assistant drafts; round 10: Organisation, Delegation; round 12: Month-end)', () => {
-    expect(PAGES.length).toBe(56);
+  it('finds the fifty-seven pages (round 8: Returned goods to decide, Customer cases, Assistant drafts; round 10: Organisation, Delegation; round 12: Month-end, Supplier bills)', () => {
+    expect(PAGES.length).toBe(57);
   });
 
   it('loads sre-chrome.js AFTER its own script, so the page\'s words come first and the chrome finishes the frame', () => {
