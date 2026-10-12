@@ -28,7 +28,7 @@ const WORDS = {
     line: 'Line', itemCode: 'Their item code', description: 'What the bill says', qty: 'Quantity', price: 'Price each (₹)', amount: 'Amount (₹)', tax: 'GST (₹)',
     product: 'Our product code', cgst: 'CGST (₹)', sgst: 'SGST (₹)', typeFigures: 'type from the paper', remove: 'Remove',
     eInvoice: 'GST e-invoice', scan: 'Scan', st_draft: 'Read — waiting for a person to confirm', st_awaiting_manual_capture: 'Scan — waiting for a person to type it',
-    st_unreadable: 'Nothing could be read — waiting for a person to type it', st_confirmed: 'Confirmed onto the register',
+    st_unreadable: 'Nothing could be read — waiting for a person to type it', st_confirmed: 'Confirmed onto the register', st_captured: 'Typed onto the register',
     supplier: 'supplier', noSupplier: 'supplier not found', invoiceNo: 'bill no.', dated: 'dated', total: 'printed total', handedBy: 'handed in by',
     linesWord: 'lines', onRegisterAs: 'on the register as', irn: 'IRN', unverifiedIrp: 'The e-invoice\'s IRP signature is not verified here (that needs the government portal).',
     handed: 'Handed in — head office read it. Open it below to confirm.', handedScan: 'Handed in — no reading engine is connected, so it waits for a person to type it.',
@@ -44,7 +44,7 @@ const WORDS = {
     reading: 'Reading the bills from head office…', empty: 'No bills handed in yet.',
     mayNotCapture: 'Your role cannot hand in or confirm supplier bills.', mayNotMatch: 'Checking a bill against the order needs the bill-checking right — another person does it.',
     nobody: 'Nobody is signed in on this screen — you can read nothing and change nothing.',
-    typedHere: 'Typed on this screen as', scanStays: 'Head office keeps this scan listed as waiting: no route links a typed bill back to its scan yet.',
+    typedAs: 'Typed onto the register as', typedBy: 'typed by',
   },
   ta: {
     title: 'சப்ளையர் பில்கள்',
@@ -65,7 +65,7 @@ const WORDS = {
     line: 'வரி', itemCode: 'அவர்களின் பொருள் குறியீடு', description: 'பில்லில் உள்ளது', qty: 'அளவு', price: 'ஒன்றின் விலை (₹)', amount: 'தொகை (₹)', tax: 'ஜிஎஸ்டி (₹)',
     product: 'நமது பொருள் குறியீடு', cgst: 'CGST (₹)', sgst: 'SGST (₹)', typeFigures: 'தாளிலிருந்து தட்டச்சு செய்', remove: 'நீக்கு',
     eInvoice: 'ஜிஎஸ்டி இ-இன்வாய்ஸ்', scan: 'ஸ்கேன்', st_draft: 'படிக்கப்பட்டது — ஒருவர் உறுதிசெய்யக் காத்திருக்கிறது', st_awaiting_manual_capture: 'ஸ்கேன் — ஒருவர் தட்டச்சு செய்யக் காத்திருக்கிறது',
-    st_unreadable: 'எதையும் படிக்க முடியவில்லை — ஒருவர் தட்டச்சு செய்யக் காத்திருக்கிறது', st_confirmed: 'பதிவேட்டில் உறுதிசெய்யப்பட்டது',
+    st_unreadable: 'எதையும் படிக்க முடியவில்லை — ஒருவர் தட்டச்சு செய்யக் காத்திருக்கிறது', st_confirmed: 'பதிவேட்டில் உறுதிசெய்யப்பட்டது', st_captured: 'தட்டச்சு செய்து பதிவேட்டில் சேர்க்கப்பட்டது',
     supplier: 'சப்ளையர்', noSupplier: 'சப்ளையர் கிடைக்கவில்லை', invoiceNo: 'பில் எண்', dated: 'தேதி', total: 'அச்சிட்ட மொத்தம்', handedBy: 'கொடுத்தவர்',
     linesWord: 'வரிகள்', onRegisterAs: 'பதிவேட்டில்', irn: 'IRN', unverifiedIrp: 'இ-இன்வாய்ஸின் IRP கையொப்பம் இங்கே சரிபார்க்கப்படவில்லை (அதற்கு அரசு போர்ட்டல் தேவை).',
     handed: 'கொடுக்கப்பட்டது — தலைமை அலுவலகம் படித்தது. உறுதிசெய்ய கீழே திறக்கவும்.', handedScan: 'கொடுக்கப்பட்டது — படிக்கும் இயந்திரம் இல்லாததால் ஒருவர் தட்டச்சு செய்யக் காத்திருக்கிறது.',
@@ -81,7 +81,7 @@ const WORDS = {
     reading: 'தலைமை அலுவலகத்திலிருந்து பில்களைப் படிக்கிறது…', empty: 'இன்னும் பில்கள் கொடுக்கப்படவில்லை.',
     mayNotCapture: 'உங்கள் பங்கால் சப்ளையர் பில்களைக் கொடுக்கவோ உறுதிசெய்யவோ முடியாது.', mayNotMatch: 'பில்லை ஆர்டருடன் சரிபார்க்க பில் சரிபார்ப்பு உரிமை தேவை — வேறு ஒருவர் செய்வார்.',
     nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை — எதையும் படிக்கவோ மாற்றவோ முடியாது.',
-    typedHere: 'இந்தத் திரையில் தட்டச்சு செய்யப்பட்ட எண்', scanStays: 'தலைமை அலுவலகம் இந்த ஸ்கேனைக் காத்திருப்பதாகவே காட்டும்: தட்டச்சு செய்த பில்லை அதன் ஸ்கேனுடன் இணைக்கும் வழி இன்னும் இல்லை.',
+    typedAs: 'தட்டச்சு செய்து பதிவேட்டில் சேர்த்த எண்', typedBy: 'தட்டச்சு செய்தவர்',
   },
 };
 let lang = 'en';
@@ -90,8 +90,6 @@ const inr = (minor) => (minor === null || minor === undefined ? '—' : '₹' + 
 
 let register = null;
 let openDoc = null;
-/** Bills typed on this screen for a scan head office could not read: documentId → invoiceId (this tab only, said). */
-const typedFor = new Map();
 let typeRows = [];
 
 function say(el, answer, good) {
@@ -131,7 +129,8 @@ function factsOf(d) {
   if (x?.invoiceDate) parts.push(`${t('dated')} ${x.invoiceDate}`);
   if (x?.statedTotalMinor !== null && x?.statedTotalMinor !== undefined) parts.push(`${t('total')} ${inr(x.statedTotalMinor)}`);
   if (d.lines.length > 0) parts.push(`${d.lines.length} ${t('linesWord')}`);
-  if (d.invoiceId) parts.push(`${t('onRegisterAs')} ${d.invoiceId}`);
+  if (d.invoiceId) parts.push(`${d.state === 'captured' ? t('typedAs') : t('onRegisterAs')} ${d.invoiceId}`);
+  if (d.typedBy) parts.push(`${t('typedBy')} ${d.typedBy}`);
   parts.push(`${t('handedBy')} ${d.receivedBy}`);
   return parts.filter((p) => p !== '').join(' · ');
 }
@@ -151,7 +150,7 @@ function renderRegister() {
     what.className = 'what';
     what.textContent = d.extracted?.supplierInvoiceNo ?? d.documentId;
     const pill = document.createElement('span');
-    pill.className = `pill ${d.state === 'confirmed' ? 'done' : 'waiting'}`;
+    pill.className = `pill ${d.state === 'confirmed' || d.state === 'captured' ? 'done' : 'waiting'}`;
     pill.textContent = t(`st_${d.state}`);
     const open = document.createElement('button');
     open.type = 'button';
@@ -206,8 +205,8 @@ function renderDrawer() {
 
   const canCapture = session !== null && session.mayCapture;
   $('confirm-part').hidden = !(d.state === 'draft' && canCapture);
-  $('type-part').hidden = !((d.state === 'awaiting_manual_capture' || d.state === 'unreadable') && canCapture && !typedFor.has(d.documentId));
-  const invoiceId = d.invoiceId ?? typedFor.get(d.documentId) ?? null;
+  $('type-part').hidden = !((d.state === 'awaiting_manual_capture' || d.state === 'unreadable') && canCapture);
+  const invoiceId = d.invoiceId ?? null;
   $('match-part').hidden = invoiceId === null;
 
   if (!$('confirm-part').hidden) renderDraft(d);
@@ -305,10 +304,11 @@ $('type-save').addEventListener('click', async () => {
   const lines = typeRows.filter((r) => Object.values(r).some((v) => String(v ?? '').trim() !== '')).map((r) => ({
     productId: r.productId ?? '', quantity: r.quantity ?? '', unitPrice: r.unitPrice ?? '', amount: r.amount ?? '', cgst: r.cgst ?? '', sgst: r.sgst ?? '',
   }));
-  const answer = await session.type({ invoiceId: $('type-invoice').value, supplierId: $('type-supplier').value, poId: $('type-po').value, total: $('type-total').value, lines });
+  // The capture names this scan, so head office records it as typed — the list then reads it as captured (no tab memory).
+  const answer = await session.type({ invoiceId: $('type-invoice').value, supplierId: $('type-supplier').value, poId: $('type-po').value, total: $('type-total').value, lines, documentId: d.documentId });
   if (answer.ok === false && 'problem' in answer) { sayLocal($('type-status'), answer.problem === 'not_money' ? `${t('notMoney')} ${answer.line ?? ''}` : t('needTyped')); return; }
   say($('type-status'), answer, answer.ok ? `${t('typed')} ${answer.value.invoiceId}.` : '');
-  if (answer.ok) { typedFor.set(d.documentId, answer.value.invoiceId); renderDrawer(); }
+  if (answer.ok) await refresh();
 });
 
 // ── The three-way match ────────────────────────────────────────────────────
@@ -321,7 +321,7 @@ async function renderMatchPart(d, invoiceId) {
     $('match-lines').replaceChildren();
   }
   $('match-part').dataset.invoice = invoiceId;
-  $('match-invoice').textContent = `${typedFor.has(d.documentId) ? t('typedHere') : t('onRegisterAs')} ${invoiceId}${typedFor.has(d.documentId) ? ` — ${t('scanStays')}` : ''}`;
+  $('match-invoice').textContent = `${d.state === 'captured' ? t('typedAs') : t('onRegisterAs')} ${invoiceId}`;
   $('run-match').hidden = !(session !== null && session.mayMatch);
   if (!session.mayMatch) { $('match-status').className = 'status'; $('match-status').textContent = t('mayNotMatch'); }
   const latest = await session.latestMatch(invoiceId);

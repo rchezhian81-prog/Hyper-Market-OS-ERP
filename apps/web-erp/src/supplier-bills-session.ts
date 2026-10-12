@@ -12,7 +12,9 @@
 //   • CONFIRM a read draft: every line mapped to a product by a person; a line head office marked `needsFigures` carries
 //     the quantity, price and amount the person typed from the paper (rupees → paise exactly, from the decimal text).
 //   • TYPE a scan head office could not read (no OCR engine is connected — an outside party, said): the typed capture
-//     route (`/v1/purchase/invoices/:id/capture`), the manual-entry path head office already has.
+//     route (`/v1/purchase/invoices/:id/capture`), the manual-entry path head office already has. The capture names the
+//     scan (`documentId`), so head office itself records "typed as invoice X" on it and lists the scan as `captured` —
+//     nothing about it is remembered only on this screen (round 12 follow-up).
 //   • CHECK it against the order: the three-way match head office runs over what IT holds (`/match`), its exceptions
 //     shown line by line.
 //
@@ -32,7 +34,7 @@ export type Answer<T> =
   | { readonly ok: false; readonly unreachable: true }
   | { readonly ok: false; readonly unreachable: false; readonly status: number; readonly code: string; readonly whatHappened: string; readonly nextSafeAction: string };
 
-export type BillState = 'draft' | 'awaiting_manual_capture' | 'unreadable' | 'confirmed';
+export type BillState = 'draft' | 'awaiting_manual_capture' | 'unreadable' | 'confirmed' | 'captured';
 
 export interface BillLine {
   readonly lineNo: number;
@@ -69,6 +71,9 @@ export interface BillDocument {
   readonly confirmedBy?: string;
   readonly confirmedAt?: string;
   readonly invoiceId?: string;
+  /** A scan typed on the capture screen (state `captured`): who typed it and when — head office's record. */
+  readonly typedBy?: string;
+  readonly typedAt?: string;
 }
 
 export interface BillRegister {
@@ -189,7 +194,7 @@ export type TypedCapture =
  * checked here (an invoice number, a supplier, a total, figures that are money) — whether the lines multiply and add up to
  * the total is head office's judgement, refused in its words.
  */
-export function typedCaptureBody(input: { readonly invoiceId: string; readonly supplierId: string; readonly poId?: string; readonly total: string; readonly lines: readonly TypedLine[] }): TypedCapture {
+export function typedCaptureBody(input: { readonly invoiceId: string; readonly supplierId: string; readonly poId?: string; readonly total: string; readonly lines: readonly TypedLine[]; readonly documentId?: string }): TypedCapture {
   const declaredTotalMinor = rupeesToPaise(input.total);
   if (input.invoiceId.trim() === '' || input.supplierId.trim() === '' || input.total.trim() === '' || input.lines.length === 0) return { ok: false, problem: 'needs_invoice_supplier_total' };
   if (declaredTotalMinor === undefined) return { ok: false, problem: 'not_money' };
@@ -205,7 +210,11 @@ export function typedCaptureBody(input: { readonly invoiceId: string; readonly s
   }
   return {
     ok: true, invoiceId: input.invoiceId.trim(),
-    body: { supplierId: input.supplierId.trim(), ...(input.poId !== undefined && input.poId.trim() !== '' ? { poId: input.poId.trim() } : {}), declaredTotalMinor, lines },
+    body: {
+      supplierId: input.supplierId.trim(), ...(input.poId !== undefined && input.poId.trim() !== '' ? { poId: input.poId.trim() } : {}), declaredTotalMinor, lines,
+      // The scan this bill was typed from: head office links it (and refuses by name a scan that is not waiting to be typed).
+      ...(input.documentId !== undefined && input.documentId.trim() !== '' ? { documentId: input.documentId.trim() } : {}),
+    },
   };
 }
 
@@ -231,7 +240,7 @@ const rank = (s: MatchLineView['status']): number => (s === 'blocked' ? 0 : s ==
 
 /** What still needs a person on a document, so the register can say it (control by exception, P-03). */
 export function whatItNeeds(doc: BillDocument): 'map_and_confirm' | 'type_it' | 'nothing' {
-  if (doc.state === 'confirmed') return 'nothing';
+  if (doc.state === 'confirmed' || doc.state === 'captured') return 'nothing';
   return doc.state === 'draft' ? 'map_and_confirm' : 'type_it';
 }
 

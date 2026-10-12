@@ -21,8 +21,11 @@ import type { RealCloud } from '../support/real-store';
  *   • confirming with a line left unmapped is refused in head office's words; with every line mapped the bill goes onto the
  *     register; then the three-way match runs and its EXCEPTION is shown (the delivery was one short);
  *   • a SCAN (no OCR engine is connected — an outside party) waits for a person; it is typed from the paper on the page
- *     through head office's typed capture — a total that does not add up is refused in its words, the right one is kept;
- *   • after a RESTART of the API the register, the confirmed bill and its match read back from head office;
+ *     through head office's typed capture, which NAMES the scan — a total that does not add up is refused in its words, the
+ *     right one is kept, and head office itself then lists the scan as captured (typed as that invoice); a second capture
+ *     naming the same scan for another invoice is refused by name and nothing of it is kept;
+ *   • after a RESTART of the API the register, the confirmed bill and its match, and the scan read as captured with its
+ *     invoice, all read back from head office;
  *   • an accountant (bill-checking right, no capture right) is offered nothing and nothing is written; Tamil labels; no page
  *     errors.
  *
@@ -172,7 +175,10 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Suppli
       await s.page.fill('#type-total', '500');
       await s.page.click('#type-save');
       await says(s.page, 'type-status', /^Saved — the bill is on head office's register as sup-k-INV-77\./);
-      await says(s.page, 'match-invoice', /Typed on this screen as sup-k-INV-77 — Head office keeps this scan listed as waiting/);
+      // Head office linked the scan: the list reads it as captured, typed as this invoice — no memory of this tab's.
+      await s.page.locator('#register li[data-state="captured"]').waitFor({ timeout: 15_000 });
+      await says(s.page, 'match-invoice', /^Typed onto the register as sup-k-INV-77$/);
+      expect(await s.page.locator('#type-part').isHidden(), 'a typed scan is not offered for typing again').toBe(true);
       expect(await s.page.textContent('#match-status'), 'the last bill\'s check is not left on the screen').toBe('');
       await s.page.click('#run-match');
       await s.page.locator('#match-verdict[data-invoice="sup-k-INV-77"]').waitFor({ timeout: 15_000 });
@@ -182,11 +188,23 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Suppli
       expect(s.writes.filter((w) => w.startsWith('POST /v1/purchase/invoice-documents/') && !w.endsWith('/confirm'))).toHaveLength(4);
     } finally { await s.close(); }
 
+    // ── The same scan named by a capture of ANOTHER invoice: refused by name, nothing of it kept ────────────────────
+    const scanId = (await docsAtHeadOffice()).find((d) => d.channel === 'ocr')!.documentId;
+    const twice = await shop.cloud().request({
+      method: 'POST', path: '/v1/purchase/invoices/sup-k-INV-78/capture', userId: OWNER, idempotencyKey: 'typed-twice',
+      body: { supplierId: 'sup-k', declaredTotalMinor: 50_000, lines: [{ productId: 'RICE', quantity: 10, unitPriceMinor: 5_000, lineTotalMinor: 50_000 }], documentId: scanId },
+    });
+    expect(twice.status).toBe(409);
+    expect((twice.body as { error: { code: string; whatHappened: string } }).error).toMatchObject({ code: 'scan_already_typed', whatHappened: `Scan ${scanId} was already typed as invoice sup-k-INV-77. One scan is one bill.` });
+    expect((await shop.cloud().request({ method: 'GET', path: '/v1/purchase/invoices/sup-k-INV-78', userId: OWNER })).status).toBe(404);
+
     // ── Head office's own records — after a RESTART of the API ───────────────────────────────────────────────────
     await shop.restart();
     const docs = await docsAtHeadOffice();
-    expect(docs.map((d) => [d.channel, d.state, d.supplierId])).toEqual([['ocr', 'awaiting_manual_capture', null], ['e_invoice', 'confirmed', 'sup-k']]);
+    expect(docs.map((d) => [d.channel, d.state, d.supplierId])).toEqual([['ocr', 'captured', null], ['e_invoice', 'confirmed', 'sup-k']]);
+    expect(docs[0]).toMatchObject({ documentId: scanId, invoiceId: 'sup-k-INV-77', typedBy: MGR });
     expect(docs[1]?.invoiceId).toBe('sup-k-KA-101');
+    expect(((await shop.cloud().request({ method: 'GET', path: '/v1/purchase/invoice-documents', userId: OWNER })).body as { waiting: number }).waiting).toBe(0);
     const kept = (await shop.cloud().request({ method: 'GET', path: '/v1/purchase/invoices/sup-k-KA-101', userId: OWNER })).body as { invoice: { totalMinor: number; capturedBy: string; poId: string }; match: { blocked: boolean; matchedBy: string } };
     expect(kept.invoice).toMatchObject({ totalMinor: 94_500, capturedBy: MGR, poId: 'po-1' });
     expect(kept.match).toMatchObject({ blocked: true, matchedBy: MGR });
@@ -198,6 +216,11 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Suppli
       await says(s.page, 'match-invoice', /on the register as sup-k-KA-101/);
       await s.page.locator('#match-verdict[data-blocked="true"]').waitFor({ timeout: 15_000 });
       expect(await s.page.locator('#match-lines tr[data-product="DAL"]').getAttribute('data-status')).toBe('blocked');
+      // The typed scan, after the restart: captured, as its invoice — read from head office, not remembered by a tab.
+      await s.page.locator('#register li[data-state="captured"] button[data-act="open"]').click();
+      await says(s.page, 'match-invoice', /^Typed onto the register as sup-k-INV-77$/);
+      expect(await s.page.locator('#drawer-facts').innerText()).toMatch(/typed by /);
+      expect(await s.page.locator('#type-part').isHidden()).toBe(true);
       expect(s.writes, 'reading back writes nothing').toEqual([]);
       expect(s.errors).toEqual([]);
     } finally { await s.close(); }

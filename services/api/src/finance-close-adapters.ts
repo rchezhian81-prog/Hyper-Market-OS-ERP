@@ -60,11 +60,12 @@ export function paymentExceptionsAdapter(input: { readonly store: EventStore; re
     },
     raised: (tenantId) => all<RaisedNoAnswer>(input.store, tenantId, paymentExceptionsStream(), 'PaymentNoAnswerRaised'),
     recordRaised: async (tenantId, r) => {
-      await input.store.append(tenantId, paymentExceptionsStream(), makeEvent({
+      const res = await input.store.append(tenantId, paymentExceptionsStream(), makeEvent({
         id: `payment-no-answer-${digest(r.attemptId)}`, type: 'PaymentNoAnswerRaised', occurredAt: r.raisedAt,
         // ONE raised item per attempt: a re-sent relay collapses here even if two raced past the route's check.
         idempotencyKey: `payment-no-answer-raised-${tenantId}-${r.attemptId}`, source: 'api/finance', payload: r,
       }));
+      return { deduped: res.deduped };
     },
     resolutions: (tenantId) => all<PaymentExceptionResolution>(input.store, tenantId, paymentExceptionsStream(), 'PaymentExceptionResolved'),
     conflicts: (tenantId) => all<PaymentExceptionConflict>(input.store, tenantId, paymentExceptionsStream(), 'PaymentExceptionResolutionConflict'),

@@ -90,6 +90,18 @@ export class ConcurrencyConflictError extends Error {
   }
 }
 
+/**
+ * The named refusal of an append whose event id is already held by a DIFFERENT event (another idempotency key).
+ * Two writers presenting the same id with the same key are one event and collapse as a dedup; the same id under a
+ * different key is a genuine clash, and it is never silently swallowed (hard rule #10).
+ */
+export class EventIdClashError extends Error {
+  constructor(readonly eventId: string, readonly idempotencyKey: string, readonly storedIdempotencyKey: string) {
+    super(`Event id "${eventId}" is already recorded under another key ("${storedIdempotencyKey}"), so "${idempotencyKey}" was not appended.`);
+    this.name = 'EventIdClashError';
+  }
+}
+
 /** The durable, append-only, tenant-scoped event store. */
 export interface EventStore {
   /** Append an event to a tenant's logical stream; idempotent on its idempotency key. */
@@ -164,6 +176,8 @@ function tenantKey(tenantId: string, idempotencyKey: string): string {
 export class InMemoryEventStore implements EventStore {
   private readonly records: PersistedEvent[] = [];
   private readonly byKey = new Map<string, PersistedEvent>();
+  /** Event ids per tenant — PostgreSQL's UNIQUE (tenant_id, id), modelled so both stores refuse a clash alike. */
+  private readonly byId = new Map<string, PersistedEvent>();
   /**
    * Streams, indexed.
    *
@@ -193,6 +207,7 @@ export class InMemoryEventStore implements EventStore {
     const results: AppendResult[] = [];
     const staged: PersistedEvent[] = [];
     const stagedByKey = new Map<string, PersistedEvent>();
+    const stagedById = new Map<string, PersistedEvent>();
     let nextSeq = this.seq;
     for (const { stream, event } of entries) {
       const key = tenantKey(tenantId, event.idempotencyKey);
@@ -201,10 +216,17 @@ export class InMemoryEventStore implements EventStore {
         results.push({ record: existing, deduped: true });
         continue;
       }
+      // Same id under another key: a genuine clash, refused by name exactly as the SQL store refuses it.
+      const idKey = tenantKey(tenantId, event.id);
+      const holder = this.byId.get(idKey) ?? stagedById.get(idKey);
+      if (holder) {
+        return Promise.reject(new EventIdClashError(event.id, event.idempotencyKey, holder.event.idempotencyKey));
+      }
       nextSeq += 1;
       const record: PersistedEvent = Object.freeze({ seq: nextSeq, tenantId, stream, event });
       staged.push(record);
       stagedByKey.set(key, record);
+      stagedById.set(idKey, record);
       results.push({ record, deduped: false });
     }
     // The guard (Wave 2a): checked and bumped in this same synchronous pass, so the compare and the append are one
@@ -226,6 +248,7 @@ export class InMemoryEventStore implements EventStore {
     for (const record of staged) {
       this.records.push(record);
       this.byKey.set(tenantKey(record.tenantId, record.event.idempotencyKey), record);
+      this.byId.set(tenantKey(record.tenantId, record.event.id), record);
       const skey = tenantKey(record.tenantId, record.stream);
       const inStream = this.byStream.get(skey);
       if (inStream === undefined) this.byStream.set(skey, [record]); else inStream.push(record);
@@ -368,7 +391,7 @@ export class SqlEventStore implements EventStore {
         inserted = await client.query(
         `INSERT INTO event_ledger (id, tenant_id, stream, type, occurred_at, idempotency_key, source, version, payload)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-         ON CONFLICT (tenant_id, idempotency_key) DO NOTHING
+         ON CONFLICT DO NOTHING
          RETURNING ${COLUMNS}`,
         [
           event.id,
@@ -392,11 +415,26 @@ export class SqlEventStore implements EventStore {
         continue;
       }
       // A conflicting row already exists — read it back on this same client and dedup.
+      //
+      // The INSERT names NO conflict target, so EVERY unique constraint is an arbiter: the idempotency key AND the
+      // event id. Naming only the key (as this did before) let two concurrent appends of the SAME event (same fixed
+      // id, same key — a relay re-send, an amendment re-sent twice at once) race past the key's pre-check and meet
+      // the id's constraint as a raw unique violation: a 500 where a dedup was owed. Now the loser waits for the
+      // winner, inserts nothing, and is resolved here by what is actually stored:
+      //   • a row under this key  → the same event: dedup (the stored row is returned, nothing overwritten);
+      //   • a row under this id with ANOTHER key → a genuine clash, refused by name (never silently kept).
       const existing = await client.query(
         `SELECT ${COLUMNS} FROM event_ledger WHERE tenant_id = $1 AND idempotency_key = $2`,
         [tenantId, event.idempotencyKey],
       );
       if (existing.length === 0) {
+        const byId = await client.query(
+          `SELECT ${COLUMNS} FROM event_ledger WHERE tenant_id = $1 AND id = $2`,
+          [tenantId, event.id],
+        );
+        if (byId.length > 0) {
+          throw new EventIdClashError(event.id, event.idempotencyKey, String(byId[0]!['idempotency_key']));
+        }
         throw new Error(`Append for "${event.idempotencyKey}" conflicted but no row was found.`);
       }
       results.push({ record: rowToPersisted(existing[0]!), deduped: true });
