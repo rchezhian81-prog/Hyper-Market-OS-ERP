@@ -28,11 +28,11 @@ const codeOf = (r: Reply): string | undefined => (r.body as { error?: { code?: s
 
 // The characters the r17 probes got through, and their Unicode classes' neighbours.
 const GHOSTS: readonly [string, string][] = [
-  ['soft hyphen U+00AD', `${S1}­`], ['combining grapheme joiner U+034F', `${S1}͏`], ['function application U+2061', `${S1}⁡`],
-  ['variation selector-16 U+FE0F', `${S1}️`], ['Hangul filler U+3164', `${S1}ㅤ`], ['half-width Hangul filler U+FFA0', `${S1}ﾠ`],
-  ['Hangul choseong filler U+115F', `${S1}ᅟ`], ['Hangul jungseong filler U+1160', `${S1}ᅠ`], ['zero-width space U+200B', `${S1}​`],
-  ['Mongolian vowel separator U+180E', `${S1}᠎`], ['variation selector-17 U+E0100', `${S1}\u{e0100}`], ['right-to-left mark U+200F', `${S1}‏`],
-  ['no-break space inside', 'store 1'], ['ideographic space', `${S1}　`], ['full-width s', 'ｓtore-1'], ['tag character U+E0041', `${S1}\u{e0041}`],
+  ['soft hyphen U+00AD', `${S1}\u00ad`], ['combining grapheme joiner U+034F', `${S1}\u034f`], ['function application U+2061', `${S1}\u2061`],
+  ['variation selector-16 U+FE0F', `${S1}\ufe0f`], ['Hangul filler U+3164', `${S1}\u3164`], ['half-width Hangul filler U+FFA0', `${S1}\uffa0`],
+  ['Hangul choseong filler U+115F', `${S1}\u115f`], ['Hangul jungseong filler U+1160', `${S1}\u1160`], ['zero-width space U+200B', `${S1}\u200b`],
+  ['Mongolian vowel separator U+180E', `${S1}\u180e`], ['variation selector-17 U+E0100', `${S1}\u{e0100}`], ['right-to-left mark U+200F', `${S1}\u200f`],
+  ['no-break space inside', 'store\u00a01'], ['ideographic space', `${S1}\u3000`], ['full-width s', '\uff53tore-1'], ['tag character U+E0041', `${S1}\u{e0041}`],
   ['padding', ` ${S1} `],
 ];
 
@@ -58,20 +58,20 @@ async function invisibleCharactersNeverMakeAStore(call: Call): Promise<void> {
 async function everyStoreNamingKeyIsChecked(call: Call): Promise<void> {
   const asset = (id: string, storeId: string) => call('POST', `/v1/finance/fixed-assets/${id}`, { name: 'Chest freezer', category: 'freezer', storeId, costMinor: 120_000, salvageMinor: 0, usefulLifeMonths: 12, inServiceDate: '2026-07-15' });
   // (b) asset storeId / transfer toStoreId: an invisible character is unreadable (400), never trimmed into a place.
-  expect(codeOf(await asset('FA-G1', `${S1}­`))).toBe('store_field_not_readable');
+  expect(codeOf(await asset('FA-G1', `${S1}\u00ad`))).toBe('store_field_not_readable');
   expect((await asset('FA-1', S1)).status).toBe(201);
-  expect(codeOf(await call('POST', '/v1/finance/fixed-assets/FA-1/transfer', { toStoreId: `${S2}​`, on: '2026-08-01', reason: 'moved' }))).toBe('store_field_not_readable');
+  expect(codeOf(await call('POST', '/v1/finance/fixed-assets/FA-1/transfer', { toStoreId: `${S2}\u200b`, on: '2026-08-01', reason: 'moved' }))).toBe('store_field_not_readable');
   // display contract locationIds[] and a nested key, at any depth.
   const contract = (locationIds: unknown[], storeId = S1) => ({ storeId, supplierId: 'sup-1', description: 'end-cap', fundingAmount: { minor: 50_000, currency: 'INR' }, startsOn: '2026-01-01', endsOn: '2026-12-31', locationIds });
-  for (const bad of [[` ${S1} `], ['END-1​'], ['END-1', 'END­2'], [7]]) {
+  for (const bad of [[` ${S1} `], ['END-1\u200b'], ['END-1', 'END\u00ad2'], [7]]) {
     const r = await call('POST', '/v1/merchandising/display-contracts/dc-g', contract(bad));
     expect(r.status, JSON.stringify(bad)).toBe(400);
     expect(codeOf(r)).toBe('store_field_not_readable');
   }
-  const nested = await call('POST', '/v1/inventory/movements', { movementId: 'mv-nested', productId: 'P-GHOST', locationId: S1, kind: 'received', quantityMinor: 1, unitCostMinor: 100, uom: 'ea', occurredAt: new Date().toISOString(), enteredBy: OWNER, extra: { lines: [{ homeStoreId: `${S2}⁠` }] } });
+  const nested = await call('POST', '/v1/inventory/movements', { movementId: 'mv-nested', productId: 'P-GHOST', locationId: S1, kind: 'received', quantityMinor: 1, unitCostMinor: 100, uom: 'ea', occurredAt: new Date().toISOString(), enteredBy: OWNER, extra: { lines: [{ homeStoreId: `${S2}\u2060` }] } });
   expect(codeOf(nested)).toBe('store_field_not_readable');
   // (b) a role's branchScope[]: an invisible character or padding is unreadable.
-  for (const scope of [[` ${S1} `], [`${S1}​`], [`${S1}­`], [`${S1}ㅤ`]]) {
+  for (const scope of [[` ${S1} `], [`${S1}\u200b`], [`${S1}\u00ad`], [`${S1}\u3164`]]) {
     const r = await call('POST', '/v1/identity/grants', { grantId: `g-${randomUUID()}`, userId: 'u-box-g', roleId: 'store_computer', branchScope: scope, reason: 'pasted' });
     expect(r.status, JSON.stringify(scope)).toBe(400);
     expect(codeOf(r)).toBe('store_field_not_readable');
@@ -129,7 +129,7 @@ describe('verifier r17 C-2 — a ghost store is never recorded (real API, in mem
   it('(c) a role scope, an asset, its transfer and a display contract name only stores head office knows — else 422 unknown_store', async () => { await onlyKnownStores(call); });
   it('(c) a bad scope already on the ledger (from before this rule) never counts as a store — OB-82\'s store count cannot be inflated', async () => {
     const before = (await storeOfLocationResolver({ store: h.store, now: () => new Date().toISOString() }, tenant)).knownStores;
-    await h.provisionRole(tenant, 'u-box-legacy', 'store_computer', [`${S1}​`]); // laid on the ledger directly
+    await h.provisionRole(tenant, 'u-box-legacy', 'store_computer', [`${S1}\u200b`]); // laid on the ledger directly
     const after = (await storeOfLocationResolver({ store: h.store, now: () => new Date().toISOString() }, tenant)).knownStores;
     expect([...after].sort()).toEqual([...before].sort());
     expect([...after].some((s) => notCanonical(s))).toBe(false);
