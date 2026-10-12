@@ -23,6 +23,8 @@ import { prepareTillBox, signInTill } from '../support/till-operator';
 
 const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaf07';
 const KEY = TEST_PACK_KEY;
+// The box here keeps the test machine's clock (UTC), so the shop is set to UTC below — as the other journeys do —
+// and head office's trading day agrees with the box's at every hour (it read the wrong day after IST midnight).
 const TODAY = new Date().toISOString().slice(0, 10);
 
 describe('PF-07 — a void reaches head office and the rules run on it', () => {
@@ -39,6 +41,7 @@ describe('PF-07 — a void reaches head office and the rules run on it', () => {
     await h.provisionRole(A, 'u-box', 'store_computer', ['store-1']); // the store box's sync identity
     await h.provisionRole(A, 'u-lanecash', 'cashier');
     await h.provisionRole(A, 'u-manager', 'store_manager');
+    expect((await h.request({ method: 'PUT', path: '/v1/platform/setup/locale.time_zone', userId: 'u-owner', tenantId: A, idempotencyKey: 'tz', body: { value: 'UTC' } })).status).toBe(200);
     globalThis.fetch = (async (url: string, init: RequestInit): Promise<Response> => {
       if (String(url).startsWith('http://127.0.0.1:')) return savedFetch(url, init);
       const hdr = (init.headers ?? {}) as Record<string, string>;
