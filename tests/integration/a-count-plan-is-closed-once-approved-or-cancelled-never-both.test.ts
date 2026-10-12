@@ -7,7 +7,7 @@ import { apiHarness, type ApiHarness } from '../support/api-harness';
 import { STREAM, streamName } from '../../services/api/src/adapters';
 import { SqlIdempotencyStore } from '../../services/kernel/src/index';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
-import { SqlEventStore } from '../../packages/persistence/src/event-store';
+import { SqlEventStore, InMemoryEventStore, type EventStore, type BatchEntry } from '../../packages/persistence/src/event-store';
 import { runMigrations } from '../../packages/persistence/src/migrations';
 
 /**
@@ -31,8 +31,28 @@ beforeAll(async () => {
   await runMigrations(pgPoolClient(pool), readdirSync(dir).filter((f) => f.endsWith('.sql')).sort().map((name) => ({ name, sql: readFileSync(join(dir, name), 'utf8') })));
 });
 afterAll(async () => { await pool?.end(); });
-const backings: { name: string; harness: () => ApiHarness }[] = [{ name: 'the in-memory event store', harness: () => apiHarness() }];
-if (DATABASE_URL !== undefined) backings.push({ name: 'real PostgreSQL', harness: () => { const sql = pgPoolClient(pool!); return apiHarness({ store: new SqlEventStore(sql), idempotency: new SqlIdempotencyStore(sql) }); } });
+/**
+ * A real store with a GATE: a plan's terminal append (approve or cancel) for the named step waits until the test opens it —
+ * so the two decisions are made to meet exactly where they race (both read the plan open; one claims; the other's claim
+ * arrives second), deterministically, through the real routes and the real store.
+ */
+const gate = { step: '' as string, open: Promise.resolve() as Promise<void>, reached: (): void => {} };
+function gated(inner: EventStore): EventStore {
+  const waitIfGated = async (entries: readonly BatchEntry[]): Promise<void> => {
+    const hit = entries.some((e) => e.event.idempotencyKey.endsWith('-closed') && (e.event.payload as { step?: string }).step === gate.step);
+    if (hit) { gate.reached(); await gate.open; }
+  };
+  return new Proxy(inner, {
+    get(target, prop, receiver) {
+      if (prop === 'append') return async (t: string, stream: string, event: BatchEntry['event']) => { await waitIfGated([{ stream, event }]); return target.append(t, stream, event); };
+      if (prop === 'appendBatch') return async (t: string, entries: readonly BatchEntry[], o?: Parameters<EventStore['appendBatch']>[2]) => { await waitIfGated(entries); return target.appendBatch(t, entries, o); };
+      const v = Reflect.get(target, prop, receiver) as unknown;
+      return typeof v === 'function' ? (v as (...a: unknown[]) => unknown).bind(target) : v;
+    },
+  });
+}
+const backings: { name: string; harness: () => ApiHarness }[] = [{ name: 'the in-memory event store', harness: () => apiHarness({ store: gated(new InMemoryEventStore()) }) }];
+if (DATABASE_URL !== undefined) backings.push({ name: 'real PostgreSQL', harness: () => { const sql = pgPoolClient(pool!); return apiHarness({ store: gated(new SqlEventStore(sql)), idempotency: new SqlIdempotencyStore(sql) }); } });
 
 type Res = { status: number; body: unknown };
 const codeOf = (r: Res): string | undefined => (r.body as { error?: { code?: string } }).error?.code;
@@ -105,6 +125,46 @@ describe.each(backings)('a count plan is closed once — approved or cancelled, 
     // Over six races the plans did not all fall the same way only by accident of order — but either way never both.
     expect([...outcomes].sort()).toEqual(["approved", "cancelled"]);
   }, 120_000);
+
+  it('made to meet at the claim: the decision that claims first stands, the other is refused by name — both ways round', async () => {
+    const { call, onHand, movementIds, terminalSteps, countedPlan, planState } = await shop(harness);
+    const meet = async (heldStep: 'approved' | 'cancelled', held: () => Promise<Res>, other: () => Promise<Res>): Promise<[Res, Res]> => {
+      let release = (): void => {};
+      let reached = (): void => {};
+      const atClaim = new Promise<void>((r) => { reached = r; });
+      gate.step = heldStep;
+      gate.open = new Promise<void>((r) => { release = r; });
+      gate.reached = reached;
+      const first = held(); // reads the plan OPEN, then waits at its claim
+      await atClaim;
+      const second = await other(); // reads the plan OPEN too, claims, lands
+      release();
+      gate.step = '';
+      return [await first, second];
+    };
+    // The approval is held at its claim while a cancel lands: the approval is refused and posts NOTHING.
+    await countedPlan('cpx', 'PX');
+    const [approve, cancel] = await meet('approved',
+      () => call('POST', '/v1/inventory/count-plans/cpx/approve', 'u-appr', { reason: 'aisle done' }),
+      () => call('POST', '/v1/inventory/count-plans/cpx/cancel', 'u-plan', { reason: 'wrong aisle' }));
+    expect(cancel.status, JSON.stringify(cancel.body)).toBe(200);
+    expect([approve.status, codeOf(approve)], JSON.stringify(approve.body)).toEqual([409, 'count_plan_already_cancelled']);
+    expect(await planState('cpx')).toBe('cancelled');
+    expect(await terminalSteps('cpx')).toEqual(['cancelled']);
+    expect((await movementIds()).filter((id) => id === 'count:k-cpx')).toEqual([]);
+    expect(await onHand('PX')).toBe(20);
+    // The cancel is held at its claim while an approval lands: the cancel is refused; the approval's variance stands.
+    await countedPlan('cpy', 'PY');
+    const [cancel2, approve2] = await meet('cancelled',
+      () => call('POST', '/v1/inventory/count-plans/cpy/cancel', 'u-plan', { reason: 'wrong aisle' }),
+      () => call('POST', '/v1/inventory/count-plans/cpy/approve', 'u-appr', { reason: 'aisle done' }));
+    expect(approve2.status, JSON.stringify(approve2.body)).toBe(200);
+    expect([cancel2.status, codeOf(cancel2)], JSON.stringify(cancel2.body)).toEqual([409, 'count_plan_already_approved']);
+    expect(await planState('cpy')).toBe('approved');
+    expect(await terminalSteps('cpy')).toEqual(['approved']);
+    expect((await movementIds()).filter((id) => id === 'count:k-cpy')).toHaveLength(1);
+    expect(await onHand('PY')).toBe(18);
+  }, 60_000);
 
   it('two approvals at the same moment: one decides, the other is told it stands; the variance posts once', async () => {
     const { call, onHand, movementIds, terminalSteps, countedPlan } = await shop(harness);
