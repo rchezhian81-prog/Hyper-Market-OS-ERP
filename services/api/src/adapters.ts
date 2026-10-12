@@ -5885,8 +5885,6 @@ export function transfersAdapter(input: {
   const inv = inventoryAdapter({ store: input.store, now: input.now });
   const recalls = recallAdapter({ store: input.store, now: input.now });
   const holds = qualityHoldAdapter({ store: input.store, now: input.now });
-  const org = orgStructureAdapter({ store: input.store, now: input.now });
-  const wh = warehouseAdapter({ store: input.store, now: input.now });
 
   /** SP-5 (F05): the transfer event plus its M08 postings, ONE atomic write; every entry idempotent on its own key. */
   const transferBatch = (tenantId: string, event: DomainEvent, posted: readonly Movement[]): Parameters<EventStore['appendBatch']>[1] => [
@@ -5907,11 +5905,14 @@ export function transfersAdapter(input: {
       return here === undefined || here.unitCostMinor === 'not_known' ? undefined : here.unitCostMinor;
     },
 
-    // SP-5: a place head office has ANY record of — an org node (branch / warehouse / department, not closed), a bin's
-    // store or location, or a location that has ever held stock on the M08 ledger.
+    // SP-5 · verifier r18 C2-R1: once the business has registered its places (`knownStockPlace`), a place it REGISTERED —
+    // never "a location that has ever held stock", which let one stray movement at an unregistered id make that id a
+    // transfer destination. A tenant that has registered no place at all keeps the older reading (a bin's store or location,
+    // or a place that has held stock): there is nothing registered to judge against, and no store a pack could be built for.
     knownLocation: async (tenantId, locationId) => {
-      if ((await org.nodes(tenantId)).some((n) => n.nodeId === locationId && n.status !== 'closed')) return true;
-      if ((await wh.bins(tenantId)).some((b) => b.storeId === locationId || b.locationId === locationId)) return true;
+      const known = await knownStockPlace(input, tenantId);
+      if (known.registeredAny) return known(locationId);
+      if ((await warehouseAdapter(input).bins(tenantId)).some((b) => b.storeId === locationId || b.locationId === locationId)) return true;
       return (await inv.availability(tenantId)).some((r) => r.locationId === locationId);
     },
 
@@ -13940,6 +13941,28 @@ export async function storeOfLocationResolver(input: { readonly store: EventStor
  * Round 18 (verifier r17 C-2 c): the stores head office has REGISTERED — a branch in its organisation tree, or a store set
  * up with its settings. Never a grant's scope (that is what is being checked) and never a value a record merely names.
  */
+/**
+ * Verifier r18 C2-R1: the stock places head office has REGISTERED — an org node that is not closed (a branch, warehouse or
+ * department), a store set up with its settings and that store's back-store warehouse, and the location of a warehouse bin
+ * INSIDE one of those. Once a business has registered any place, stock moves only at one of these (the movements route refuses
+ * any other with 422 `unknown_location`), and a transfer is judged against them — never against "a place that once held stock"
+ * (a stray movement could create one) and never against a bin typed for an unregistered store.
+ */
+export async function knownStockPlace(input: { readonly store: EventStore; readonly now: () => string }, tenantId: string): Promise<((locationId: string) => boolean) & { readonly registeredAny: boolean }> {
+  const known = new Set<string>();
+  for (const n of await orgStructureAdapter(input).nodes(tenantId)) if (n.status !== 'closed') known.add(n.nodeId);
+  for (const s of await allOf<StoreSettings>(input.store, tenantId, STORE_SETTINGS_STREAM, 'StoreSettingsSet')) {
+    known.add(s.storeId);
+    if (typeof s.warehouseId === 'string' && s.warehouseId !== '') known.add(s.warehouseId);
+  }
+  // A bin is a place only inside a store or warehouse already registered — a bin typed for an unregistered store id never
+  // makes that id (or the bin's own location) a place.
+  for (const b of await warehouseAdapter(input).bins(tenantId)) {
+    if (typeof b.storeId === 'string' && known.has(b.storeId) && typeof b.locationId === 'string' && b.locationId !== '') known.add(b.locationId);
+  }
+  return Object.assign((locationId: string) => known.has(locationId), { registeredAny: known.size > 0 });
+}
+
 export async function registeredStores(input: { readonly store: EventStore; readonly now: () => string }, tenantId: string): Promise<ReadonlySet<string>> {
   const known = new Set<string>((await orgStructureAdapter(input).nodes(tenantId)).filter((n) => n.kind === 'branch').map((n) => n.nodeId));
   for (const s of await allOf<StoreSettings>(input.store, tenantId, STORE_SETTINGS_STREAM, 'StoreSettingsSet')) known.add(s.storeId);

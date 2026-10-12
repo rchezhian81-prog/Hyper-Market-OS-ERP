@@ -233,7 +233,7 @@ describe('warehouse transfers: in-transit at destination, separate approver, val
     expect(v.rows.find((r) => r.locationId === 'S1')).toMatchObject({ onHandMinor: 10, unvaluedMinor: 10, unitCostMinor: 'not_known', value: { minor: 0, currency: 'INR' } });
   });
 
-  it('both ends must be places head office knows — an org node, a bin\'s location or a location that has held stock; a mistyped destination is refused by name (SP-5)', async () => {
+  it('both ends must be places head office knows — an org node or a bin\'s location (a place that only held stock counts only before any place is registered); a mistyped destination is refused by name (SP-5 · r18 C2-R1)', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
     await h.provisionRole(A, 'u-boss', 'store_manager');
@@ -245,11 +245,25 @@ describe('warehouse transfers: in-transit at destination, separate approver, val
     expect(whatHappened(unknown)).toMatch(/toLocationId "S1"/);
     expect((await readTransfer(h, A, 'u-owner', 't0')).status).toBe(404);
     expect(codeOf(await propose(h, A, 'u-owner', 't0b', proposal({ fromLocationId: 'WHX' })))).toBe('unknown_location');
-    // A bin registered for S1 makes it a place; so would an org node or stock there.
-    expect((await h.request({ method: 'POST', path: '/v1/warehouse/bins/S1-A1', userId: 'u-owner', tenantId: A, idempotencyKey: 'bin-s1', body: { storeId: 'S1', capacityMinor: 100, pickable: true } })).status).toBe(201);
+    // S1 registered in the organisation: it is a place. And once the business registers places, a place that has merely
+    // HELD stock is no longer one — WH must be registered too (a stray movement can never make an id a transfer end).
+    const node = (id: string, body: Record<string, unknown>) => h.request({ method: 'POST', path: `/v1/org/nodes/${id}`, userId: 'u-owner', tenantId: A, idempotencyKey: `org-${id}`, body });
+    expect((await node('C1', { kind: 'company', name: 'SRE Retail' })).status).toBe(201);
+    expect((await node('S1', { kind: 'branch', name: 'Store 1', parentId: 'C1', companyId: 'C1' })).status).toBe(201);
+    const whOnlyHeldStock = await propose(h, A, 'u-owner', 't1', proposal());
+    expect(whOnlyHeldStock.status).toBe(422);
+    expect(codeOf(whOnlyHeldStock)).toBe('unknown_location');
+    expect(whatHappened(whOnlyHeldStock)).toMatch(/fromLocationId "WH"/);
+    expect((await node('WH', { kind: 'warehouse', name: 'Central warehouse', parentId: 'C1', companyId: 'C1' })).status).toBe(201);
     expect((await propose(h, A, 'u-owner', 't1', proposal())).status).toBe(201);
+    // Verifier r18 C2-R1: a bin typed for a store head office never registered does NOT make that store a place.
+    expect((await h.request({ method: 'POST', path: '/v1/warehouse/bins/S9-A1', userId: 'u-owner', tenantId: A, idempotencyKey: 'bin-s9', body: { storeId: 'S9', locationId: 'S9-A1', capacityMinor: 100, pickable: true } })).status).toBe(201);
+    expect(codeOf(await propose(h, A, 'u-owner', 't1c', proposal({ toLocationId: 'S9' })))).toBe('unknown_location');
+    expect(codeOf(await propose(h, A, 'u-owner', 't1d', proposal({ toLocationId: 'S9-A1' })))).toBe('unknown_location');
+    // A bin's own location inside a REGISTERED store is a place too.
+    expect((await h.request({ method: 'POST', path: '/v1/warehouse/bins/S1-B1', userId: 'u-owner', tenantId: A, idempotencyKey: 'bin-s1-b1', body: { storeId: 'S1', locationId: 'S1-BACKROOM', capacityMinor: 100, pickable: true } })).status).toBe(201);
+    expect((await propose(h, A, 'u-owner', 't1b', proposal({ toLocationId: 'S1-BACKROOM' }))).status).toBe(201);
     // A location known through the org structure alone (no stock, no bin) is a place too.
-    await places(h);
     expect((await h.request({ method: 'POST', path: '/v1/org/nodes/S2', userId: 'u-owner', tenantId: A, idempotencyKey: 'org-S2', body: { kind: 'branch', name: 'Store 2', parentId: 'C1', companyId: 'C1' } })).status).toBe(201);
     expect((await propose(h, A, 'u-owner', 't2', proposal({ toLocationId: 'S2' }))).status).toBe(201);
   });
