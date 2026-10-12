@@ -88,6 +88,31 @@ export function billFingerprint(s: IncomingSale): string {
   ]);
 }
 
+const TENDER_WORDS: Readonly<Record<string, string>> = {
+  cash: 'cash', card: 'card', upi: 'UPI', store_credit: 'store credit', split: 'split', exchange_credit: 'exchange credit', loyalty_points: 'points',
+};
+
+/**
+ * Verifier r21 IC-3 breadth: everything a NOT-banked bill carried that head office therefore did not apply — every payment
+ * (with what it leaves open: the cash in that till's drawer counts over at shift close; an exchange credit leaves the
+ * return's clearing open), every line's stock (not taken out at head office), and coupons (a coupon is redeemed centrally
+ * before payment, so one redeemed for this sale id stays redeemed). Itemised so the person who banks it by hand settles
+ * all of it, not only the loyalty.
+ */
+export function notBankedBillEffects(s: IncomingSale): string {
+  const tenders = s.tenders.map((t) => `${TENDER_WORDS[t.kind] ?? t.kind} ${t.amountMinor}${t.kind === 'loyalty_points' && t.points !== undefined ? ` (${t.points} points)` : ''}`);
+  const cash = s.tenders.filter((t) => t.kind === 'cash').reduce((n, t) => n + t.amountMinor, 0);
+  const exchange = s.tenders.filter((t) => t.kind === 'exchange_credit').reduce((n, t) => n + t.amountMinor, 0);
+  const lines = s.lines.map((l) => `${l.productId} × ${l.quantityMinor} ${l.uom}${l.batchId === undefined ? '' : ` (batch ${l.batchId})`}`);
+  return [
+    `Not applied at head office — payments: ${tenders.length === 0 ? 'none' : tenders.join(', ')}`,
+    cash > 0 ? `the cash (${cash}) is in till ${s.laneId}'s drawer, which will count OVER by it at shift close until this bill is banked` : '',
+    exchange > 0 ? `the exchange credit (${exchange}) was given against a return that IS banked, so its exchange clearing stays open by ${exchange} until this bill is banked` : '',
+    `stock: ${lines.length === 0 ? 'no lines' : `${lines.join(', ')} — not taken out of stock at head office`}`,
+    'coupons: any coupon redeemed for this sale id stays redeemed',
+  ].filter((x) => x !== '').join('; ');
+}
+
 /** Enough of a sale to be a sale. Anything beyond this is a finding, never a refusal. */
 function readSale(body: unknown): IncomingSale | undefined {
   if (body === null || typeof body !== 'object') return undefined;
@@ -165,8 +190,9 @@ export function posRoutes(deps: PosDeps): readonly Route[] {
           if (first !== undefined && billFingerprint(first) !== billFingerprint(sale)) {
             await deps.recordExceptions(ctx.tenantId, [{
               kind: 'receipt_number_reused', severity: 'material', saleId: sale.saleId, differenceMinor: sale.totalMinor - first.totalMinor,
-              detail: `sale ${sale.saleId} (receipt ${sale.receiptNumber}) arrived again as a DIFFERENT bill — ${sale.totalMinor} against the ${first.totalMinor} head office banked under that id: the first stands and this one was NOT banked`,
-              ownerAction: 'A store computer gave one bill number to two different bills (a computer restored from a backup, or two computers on one till). The customer holds the second bill, which head office has not banked. Find it at the store computer, bank it by hand, and check that till\'s bill-number prefix.',
+              detail: `sale ${sale.saleId} (receipt ${sale.receiptNumber}) arrived again as a DIFFERENT bill — ${sale.totalMinor} against the ${first.totalMinor} head office banked under that id: the first stands and this one was NOT banked. ${notBankedBillEffects(sale)}`,
+              ownerAction: 'A store computer gave one bill number to two different bills (a computer restored from a backup, or two computers on one till). The customer holds the second bill, which head office has not banked. Find it at the store computer, bank it by hand, and check that till\'s bill-number prefix. '
+                + 'Settle ALL of it when you bank it: every payment listed (cash in that till\'s drawer, card and UPI, an exchange credit, points or store credit), its stock, and any coupon redeemed for this sale.',
             }]);
             // Verifier r19 IC-3: the answer says what happened — this bill was NOT banked (a different bill holds the id). Still
             // 202, so the store computer stops re-sending it; the owner's finding above is where it is worked. Loyalty below
