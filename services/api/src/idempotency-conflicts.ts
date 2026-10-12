@@ -13,7 +13,9 @@ import { createHash } from 'node:crypto';
 import type { EventStore } from '../../../packages/persistence/src/event-store';
 import { makeEvent } from '../../../packages/contracts/src/event';
 import type { IdempotencyConflict, Route } from '../../kernel/src/index';
-import type { SaleException } from '../../pos/src/index';
+import type { SaleException, IncomingSale } from '../../pos/src/index';
+import { billFingerprint } from '../../pos/src/index';
+import { branchInScope, scopeOf } from '../../kernel/src/scope';
 import { posAdapter, STREAM, streamName } from './adapters';
 
 /** One conflicting request as head office keeps it. The body is not kept (it may hold personal data) — its hash is. */
@@ -32,6 +34,14 @@ export interface IdempotencyConflictRecord {
   readonly receiptNumber?: string;
   readonly at: string;
   readonly detail: string;
+  /**
+   * Verifier r19 IC-2: what kind of conflict — `receipt_number_reused` (material) when a re-sent SALE carries a different
+   * BILL (number, time, total, lines or tenders differ from the one banked); `resent_with_other_details` (informational)
+   * when the bill is the same and only other details differ (a store computer upgrade adding a field); `key_reused`
+   * (material) for any other write. Absent on a record kept before r19.
+   */
+  readonly kind?: 'receipt_number_reused' | 'resent_with_other_details' | 'key_reused';
+  readonly severity?: 'material' | 'informational';
 }
 
 const STREAM_NAME = streamName(STREAM.platform, 'idempotency-conflicts');
@@ -50,7 +60,17 @@ export function idempotencyConflictsAdapter(input: { readonly store: EventStore;
       const saleId = isSale ? str(body['saleId']) : undefined;
       const receiptNumber = isSale ? str(body['receiptNumber']) : undefined;
       const at = input.now();
-      const detail = saleId !== undefined
+      // Verifier r19 IC-2: is it a different BILL, or the same bill with other details changed? Judged on the route's own
+      // fingerprint (number, time, total, lines, tenders) against the bill head office banked under the sale id.
+      let sameBill = false;
+      if (saleId !== undefined && pos.bankedSale !== undefined) {
+        const first = await pos.bankedSale(c.tenantId, saleId);
+        try { sameBill = first !== undefined && billFingerprint(first) === billFingerprint(body as unknown as IncomingSale); } catch { sameBill = false; }
+      }
+      const kind: NonNullable<IdempotencyConflictRecord['kind']> = saleId === undefined ? 'key_reused' : sameBill ? 'resent_with_other_details' : 'receipt_number_reused';
+      const detail = kind === 'resent_with_other_details'
+        ? `sale ${saleId!}${receiptNumber === undefined ? '' : ` (bill ${receiptNumber})`} was re-sent under the key head office banked it with; the BILL is the same (number, time, total, lines, tenders) and only other details differ — head office kept the first, nothing is missing`
+        : saleId !== undefined
         ? `sale ${saleId}${receiptNumber === undefined ? '' : ` (bill ${receiptNumber})`} arrived again with DIFFERENT content under the key head office already banked it with — this bill was not banked`
         : `${c.method} ${c.path} arrived again with DIFFERENT content under an idempotency key already used — it was refused and nothing was saved`;
       const rec: IdempotencyConflictRecord = {
@@ -58,13 +78,13 @@ export function idempotencyConflictsAdapter(input: { readonly store: EventStore;
         method: c.method, routePath: c.routePath, path: c.path, idempotencyKey: c.idempotencyKey,
         storedRequestHash: c.storedRequestHash, requestHash: c.requestHash,
         ...(saleId === undefined ? {} : { saleId }), ...(receiptNumber === undefined ? {} : { receiptNumber }),
-        at, detail,
+        at, detail, kind, severity: kind === 'resent_with_other_details' ? 'informational' : 'material',
       };
       await input.store.append(c.tenantId, STREAM_NAME, makeEvent({
         id: `idem-conflict-${conflictId}`, type: 'IdempotencyConflictRecorded', occurredAt: at,
         idempotencyKey: `idem-conflict-${c.tenantId}-${conflictId}`, source: 'api/platform', payload: rec,
       }));
-      if (saleId !== undefined) {
+      if (saleId !== undefined && kind === 'receipt_number_reused') {
         const finding: SaleException = {
           kind: 'receipt_number_reused', severity: 'material', saleId,
           ...(typeof body['totalMinor'] === 'number' ? { differenceMinor: body['totalMinor'] } : {}),
@@ -85,6 +105,13 @@ export function idempotencyConflictRoutes(input: { readonly store: EventStore | 
   return [{
     api: 'API-01', method: 'GET', path: '/v1/idempotency-conflicts',
     permission: 'platform.health.read',
-    handler: async (ctx) => ({ status: 200, body: { conflicts: conflicts === undefined ? [] : await conflicts.list(ctx.tenantId) } }),
+    // Verifier r19 IC-1 (P-04): a reader whose authority is store-scoped sees only conflicts from the stores it holds; one
+    // that names no store (or none placeable) is read only by a tenant-wide reader (owner, operations). Said in the answer.
+    handler: async (ctx) => {
+      const all = conflicts === undefined ? [] : await conflicts.list(ctx.tenantId);
+      const scope = scopeOf(ctx);
+      const mine = scope === 'all' ? all : all.filter((r) => r.branchId !== undefined && branchInScope(ctx, r.branchId));
+      return { status: 200, body: { conflicts: mine, scope: scope === 'all' ? 'all' : [...scope] } };
+    },
   }];
 }
