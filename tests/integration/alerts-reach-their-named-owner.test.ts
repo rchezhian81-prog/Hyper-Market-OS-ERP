@@ -68,7 +68,8 @@ describeOrSkip('PA-12 — alerts reach their named owner and escalate — real A
     await cloud.grant(BACKUP_JOB, 'backup_job');
 
     const call = (method: 'GET' | 'POST' | 'PUT', path: string, userId: string, body?: unknown) =>
-      cloud.request({ method, path, userId, ...(body === undefined ? {} : { body }), ...(method === 'GET' ? {} : { idempotencyKey: `k-${Math.random()}` }) });
+      // PA-12 r12: the backup job presents its MACHINE credential (no interactive sign-in evidence), across restarts too.
+      cloud.request({ method, path, userId, machine: userId === BACKUP_JOB, ...(body === undefined ? {} : { body }), ...(method === 'GET' ? {} : { idempotencyKey: `k-${Math.random()}` }) });
     const passes = async (n = 2): Promise<void> => {
       const target = cloud.opsAlertWorker!.total() + n;
       for (let i = 0; i < 400 && cloud.opsAlertWorker!.total() < target; i += 1) await sleep(10);
