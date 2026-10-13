@@ -5,12 +5,19 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Coordinated programme · Round 28 — owner decisions OB-103 and OB-104 (13 October 2026)
+
+- **Built, integration-tested (memory + PostgreSQL) and browser-tested; no staff UAT:** the "said unused, but head office has the bill" line can be acknowledged by the owner or head-office business staff (all stores, not IT) with a reason on the Store computers page; each acknowledgement kept; it holds only while exactly the same numbers are found, and any change brings it back (strict reading, the same as the not-checked line — a looser "only a new number" rule was offered by the builder and left as is) (OB-103). Health reads and the alert worker no longer read every store-computer report: one saved result (`box-health-history@1`) carries everything older and only reports after its position are read; equal to the full reading on 300 seeded histories (3,386 reads) and at the store on memory and PostgreSQL; a month of an altered store computer's reports: later health reads 54–97 ms reading 10–14 rows; the first read after deploy builds the saved result once (about 30 s for that month) (OB-104).
+- **Remaining, recorded:** three rare person acts (refused-report and not-checked acknowledgements, "store computer replaced") still read every report once per act.
+- **Mutations:** 24 run, 23 caught, 1 judged equivalent.
+- **Full gate (13 Oct, PostgreSQL):** 11,617 unit/integration, 45 performance, 355 browser — all passed.
+
 ## Coordinated programme · Round 27 — verifier r26 closed; owner decisions OB-100 to OB-102 (13 October 2026)
 
 - **Built, integration-tested (memory + PostgreSQL) and browser-tested; no staff UAT:** bill numbers a store computer reports as taken but never used are shown per till per day (store calendar) on operational health and on the Store computers page ("Taken but never used", English/Tamil, information only); head office raises `unused_number_received` when it holds a sale or return under such a number (OB-100). Two store computers in one store: the refusal names both machines neutrally and says which one head office uses and why; store health (disk, queue, tills, numbering, hours left) comes only from the computer bound to the store's tills, so a second machine cannot hide a full disk (OB-101). The never-received check keeps a saved running result (`never-received-fold@1`, disposable, equal to a full fold on 300 seeded histories): a week of an altered store computer's reports folds in about 0.13 s after the first read (OB-102). Missing tests for the replaced-act time rule and the bindings store-scope filter added (NEW-5).
 - **Mutations:** 21 new, 20 killed (one not runnable); the one survivor got a test and is now killed.
 - **Full gate (13 Oct, PostgreSQL):** 11,607 unit/integration, 44 performance, 355 browser — all passed.
-- **Next (round 28, building):** OB-103 acknowledging the "said unused, but head office has the bill" line; OB-104 health reads stop reading the whole box-report history.
+- **On the demo:** merged as PR #772 and deployed (demo and canary succeeded); a count-plan race test given a real head start for the approval (timing only).
 
 ## Coordinated programme · Round 26 — owner decisions OB-97 to OB-99: replacing a store computer; the Store computers page (13 October 2026)
 

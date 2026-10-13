@@ -20,6 +20,8 @@ import { STREAM } from '../../services/api/src/adapters';
  *
  *   • the owner sees the bill-number bindings and the findings that need a person, and acknowledges the "not checked" line
  *     with a reason — nothing else is written, and head office keeps it in his name;
+ *   • round 28 · OB-103: on a 360 px phone, the owner acknowledges the "said unused, but head office has the bill" line with a
+ *     reason — head office keeps it in his name, and the line leaves the page;
  *   • head office business staff (all stores) open the till's row, ask the owner's approval for "store computer replaced";
  *   • the owner approves it on his own Approvals page;
  *   • head office staff send the move — the binding now names the new store computer (replaced act), and the new computer's
@@ -63,12 +65,18 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Store 
           payload: { userId: IT, roleId: 'platform_admin', branchScope: 'all', request: { grantId: `platform_admin-${IT}`, userId: IT, roleId: 'platform_admin', branchScope: 'all', requestedBy: 'operator', approvedBy: 'operator', requestedAt: at } },
         }));
         await ok(cloud.request({ method: 'POST', path: '/v1/stores/br-1/tills/lane-1/receipt-prefix', userId: OWNER, idempotencyKey: `pfx-${TENANT}`, body: { prefix: P } }), 'issue prefix');
+        // Round 28 · OB-103: head office holds a sale under B1L1-001250, made three hours ago (its receipt-number index).
+        await new SqlEventStore(pgPoolClient(platform)).append(TENANT, STREAM.sales, makeEvent({
+          id: `receipt-${P}001250`, type: 'ReceiptNumberIssued', occurredAt: new Date(Date.now() - 3 * 3_600_000).toISOString(), idempotencyKey: `receipt-${TENANT}-${P}001250`, source: 'test/ob-103',
+          payload: { receiptNumber: `${P}001250`, saleId: `S-${P}001250` },
+        }));
         const report = (box: string, issued: unknown) => ok(cloud.request({ method: 'POST', path: '/v1/store-computers/health-reports', userId: box, idempotencyKey: `rep-${randomUUID()}`, body: {
           observedAt: new Date().toISOString(), disk: { freeBytes: 5e9, totalBytes: 1e10, salesLogUsedBytes: 1000, salesLogCapacityBytes: 1e7, reserveBytes: 1e6 },
           queue: { unsent: 0, deadLettered: 0 }, tills: [], receiptNumbersIssued: issued,
         } }), `report from ${box}`);
         // The old box, restored from an old backup: more numbers it cannot vouch for than head office checks per report.
-        // Round 27 · OB-100: and two numbers it took and never used (an abandoned bill, a declined card).
+        // Round 27 · OB-100: and two numbers it took and never used (an abandoned bill, a declined card) — round 28: one of
+        // them, 1250, is a sale head office holds ("said unused, but head office has the bill").
         await report(BOX, [{ prefix: P, through: 1_300, soldThrough: 1_300, atRisk: [[101, 700], [1_001, 1_300]], unused: [[1_250, 1_251]], unsent: { count: 0 } }]);
         // The replacement switched on before head office knew: its report is refused by name.
         await report(NEW_BOX, [{ prefix: P, through: 1_300, soldThrough: 1_300, unsent: { count: 0 } }]);
@@ -99,7 +107,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Store 
     let s = await open(OWNER);
     try {
       await s.page.locator(`#binding-rows tr[data-prefix="${P}"][data-computer="${BOX}"][data-via="first_report"]`).waitFor({ timeout: 15_000 });
-      await says(s.page, 'v-needs', /^2$/);
+      await says(s.page, 'v-needs', /^3$/);
       expect(await s.page.locator('#open-replace').isVisible()).toBe(true);
       // Round 27 · OB-100: the numbers taken and never used — per store, till and day, count and numbers; information only.
       const unusedRow = s.page.locator(`#unused-rows tr[data-store="br-1"][data-prefix="${P}"][data-count="2"]`);
@@ -121,12 +129,36 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Store 
       await line.locator('button[data-act="acknowledge"]').click();
       await says(s.page, 'page-status', /^Acknowledged in your name/);
       await s.page.locator('#finding-rows li[data-kind="at_risk_not_checked"]').waitFor({ state: 'detached', timeout: 15_000 });
-      await says(s.page, 'v-needs', /^1$/);
+      await says(s.page, 'v-needs', /^2$/);
       expect(s.writes).toEqual(['POST /v1/store-computers/at-risk-not-checked/acknowledgements']);
       expect(s.errors).toEqual([]);
     } finally { await s.close(); }
     const kept = await platform.query("SELECT payload->>'by' AS by, payload->>'reason' AS reason FROM event_ledger WHERE tenant_id = $1 AND type = 'BoxAtRiskNotCheckedAcknowledged'", [TENANT]);
     expect(kept.rows).toEqual([{ by: OWNER, reason: 'Support compared the restore record with head office' }]);
+
+    // ── Round 28 · OB-103: the owner, on a 360 px phone, acknowledges "said unused, but head office has the bill" ──
+    s = await open(OWNER, { width: 360 });
+    try {
+      await s.page.click('#tab-findings');
+      const held = s.page.locator('#finding-rows li[data-kind="unused_number_received"]');
+      await held.waitFor({ timeout: 15_000 });
+      expect(await held.innerText()).toMatch(/Said unused, but head office has the bill — br-1 · B1L1-/);
+      expect(await held.innerText()).toMatch(/gave B1L1-001250 and never put it on a bill, but head office holds a sale under that number/);
+      const sideways = await s.page.evaluate(() => { const d = (globalThis as unknown as { document: { documentElement: { scrollWidth: number; clientWidth: number } } }).document.documentElement; return d.scrollWidth - d.clientWidth; });
+      expect(sideways, 'the findings fit 360 px').toBeLessThanOrEqual(0);
+      await held.locator('input[data-role="ack-reason"]').fill('Support checked the store computer: its unused list was wrong');
+      await held.locator('button[data-act="acknowledge"]').click();
+      await says(s.page, 'page-status', /^Acknowledged in your name/);
+      await s.page.locator('#finding-rows li[data-kind="unused_number_received"]').waitFor({ state: 'detached', timeout: 15_000 });
+      await says(s.page, 'v-needs', /^1$/);
+      expect(s.writes).toEqual(['POST /v1/store-computers/unused-numbers-received/acknowledgements']);
+      // In Tamil, the line's label and the acknowledge words.
+      await s.page.click('#lang');
+      expect(await s.page.locator('#findings-lead').innerText()).toMatch(/பயன்படாதது என்று சொன்ன எண்கள்/);
+      expect(s.errors).toEqual([]);
+    } finally { await s.close(); }
+    const keptUnused = await platform.query("SELECT payload->>'by' AS by, payload->>'reason' AS reason, payload->'numbers' AS numbers FROM event_ledger WHERE tenant_id = $1 AND type = 'BoxUnusedReceivedAcknowledged'", [TENANT]);
+    expect(keptUnused.rows).toEqual([{ by: OWNER, reason: 'Support checked the store computer: its unused list was wrong', numbers: [[1_250, 1_250]] }]);
 
     // ── Head office staff (all stores), on a 360 px phone: open the till's row, ask the owner's approval ──
     s = await open(HO, { width: 360 });
