@@ -207,8 +207,10 @@ count still open and names the others.
   received them, and later the store computer claims them again. A store computer keeps a bill until
   head office takes it and never takes back one it has let go, so head office no longer waits on that
   later word: 30 minutes after the "no longer held" report the bills are named "never received". The
-  store computer is faulty or altered (sending "nothing waiting" just before each "still waiting" was
-  a way to hide lost bills). Call support to check it; do NOT re-enter the bills from paper until a
+  warning says "the store computer or head office lost track of these bills" and blames neither
+  (owner decision OB-92): usually the store computer is faulty or altered (sending "nothing waiting"
+  just before each "still waiting" was a way to hide lost bills), rarely head office lost a sale it
+  had accepted. Call support to check both; do NOT re-enter the bills from paper until a
   person has looked at its "waiting to send" and "gave up sending" lists.
 - **"bills waiting on the store computer for N hours … head office first saw … said to be waiting at
   <time>"** — the hours count from the first time head office saw any of those bills waiting, in any

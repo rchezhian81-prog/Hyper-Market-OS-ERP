@@ -140,7 +140,8 @@ async function anEmptyQueueBeforeEachClaimHidesNothing(h: ApiHarness): Promise<v
   const contra = await findings(call, 'report_contradicts_earlier_report');
   expect(contra.map((f) => [f.prefix, f.ranges, near(f.since, t0)])).toEqual([[P, [[101, 600]], true]]);
   expect(contra[0]!.detail).toMatch(/^store S1's computer contradicts its own earlier report: at .* it said it no longer held S1L1-000101 to S1L1-000600 \(head office has not received them\), and its latest report .* lists them as still on it/);
-  expect(contra[0]!.detail).toMatch(/Check that store computer \(its software may be faulty or altered\) and call support/);
+  expect(contra[0]!.detail).toMatch(/The store computer or head office lost track of these bills — call support/);
+  expect(contra[0]!.detail).not.toMatch(/faulty or altered/); // OB-92: no blame placed
   // And the waiting clock is the NUMBERS' — from head office's first sight of them waiting, 168 hours ago.
   const waiting = await findings(call, 'bills_waiting_on_box');
   expect(waiting.map((f) => [f.ranges, near(f.since, t0 + 3_000)])).toEqual([[[[101, 600]], true]]); // the first FULL report
