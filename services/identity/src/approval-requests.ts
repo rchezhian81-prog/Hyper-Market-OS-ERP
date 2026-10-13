@@ -173,6 +173,12 @@ export const APPROVAL_KINDS: Readonly<Record<string, ApprovalKind>> = Object.fre
     kind: 'branch_transition', label: 'Open, close for now, or close a branch for good',
     makerPermission: 'branch.transition.execute', checkerPermission: 'branch.transition.approve', validForMinutes: 24 * 60,
   },
+  // Round 26 · OB-97 "B" (owner, 13 Oct 2026): a head office business person (all stores, never IT) moves a till's bill-number
+  // prefix to a replacement store computer; the OWNER approves (`store.computer.replace.approve` — the owner's alone).
+  store_computer_replaced: {
+    kind: 'store_computer_replaced', label: 'Move a till\'s bill numbers to a replacement store computer',
+    makerPermission: 'store.computer.replace', checkerPermission: 'store.computer.replace.approve', validForMinutes: 24 * 60,
+  },
 });
 
 /** A maker's request, as recorded. */

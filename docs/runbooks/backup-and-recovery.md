@@ -232,9 +232,10 @@ count still open and names the others.
     acknowledge the line with a reason (the same acknowledgement as for any refused report; the IT
     administrator cannot). Head office banking the bills does not clear it.
   - **A store computer restored from its own backup keeps its own sign-in, so it is never refused.**
-  - **Replacing a store computer with a NEW sign-in:** issue the till a new bill-number prefix first
-    (`POST /v1/stores/<store>/tills/<till>/receipt-prefix`); the new box numbers under the new prefix. Until then
-    the new box's reports of the old prefix are refused and shown.
+  - **Replacing a store computer with a NEW sign-in:** either issue the till a new bill-number prefix
+    first (`POST /v1/stores/<store>/tills/<till>/receipt-prefix`), or — since round 26 — do the
+    owner-approved **"store computer replaced"** act below, which moves the till's prefix to the new
+    store computer. Until one of these is done the new box's reports of the old prefix are refused and shown.
 - **Numbers taken and never used (OB-94).** When a sale cannot be saved after its bill number was
   taken, the till takes a new number for the next try. The store computer now tells head office which
   numbers it took and never used, and head office never names them "never received" — nobody goes
@@ -251,6 +252,39 @@ count still open and names the others.
   emergency grant, a joiner/mover change and the first-time set-up of a shop. Anyone who already holds
   both is named on the health page (**"separation of duties (owner decision OB-95): … holds the
   IT/platform role … AND business role(s) …"**) until one side is removed.
+
+**Round 26 (owner decisions OB-97 and OB-98, 13 Oct 2026):**
+
+- **"Store computer replaced" (OB-97).** When a store computer dies and its replacement is given its
+  OWN sign-in (a store computer role for that one store, approved by the owner as usual), head office
+  moves the till's bill-number prefix to the new store computer in three steps, by two people:
+  1. **Head office business staff** (a person whose business role covers ALL stores — never one store's
+     manager, never the IT/platform administrator) look up the current owner of the prefix
+     (`GET /v1/store-computers/prefix-bindings`) and ask the owner's approval on the approvals screen
+     (`POST /v1/approvals/requests`, kind **`store_computer_replaced`**, subject `<store>/<prefix>`,
+     details exactly `{ storeId, prefix, fromComputer, toComputer, reason }`).
+  2. **The owner** approves it on his own approvals screen, in his own session (he cannot approve a
+     request he made himself — `self_approval`).
+  3. The same head office person sends the act: `POST /v1/store-computers/replacements` with the same
+     details and the `approvalId`. One approval moves one prefix once.
+  From that moment the new store computer's reports are used for that prefix, the old one's are refused
+  by name (**"refused — a second store computer: <old> … belongs to the store computer <new>"**), and
+  the "bills issued but never received" check resumes on the new store computer. The new computer's
+  refused reports from before the act are answered by it. Head office refuses, by name and on the audit
+  trail: a sign-in that is not a store computer of that store (`not_a_store_computer_of_this_store`),
+  a prefix head office never issued to that store (`prefix_not_issued_to_this_store`), a prefix no store
+  computer has reported yet (`prefix_not_bound_yet` — nothing to move), a prefix no longer bound to the
+  named old computer (`prefix_bound_to_another_computer`), no approval (`owner_approval_needed`), an
+  approval for anything else (`approval_does_not_match`), one store's manager
+  (`replacement_needs_all_stores_authority`). Every act is kept (append-only) with who asked, who
+  approved, when and why. **Afterwards, revoke the old store computer's sign-in.**
+- **Acknowledging "not checked" (OB-98).** After support has compared the restore record, the owner or
+  head office business staff (all stores, never IT) may acknowledge the **"not checked: …"** line with a
+  reason: `POST /v1/store-computers/at-risk-not-checked/acknowledgements` with `{ storeId, prefix, count,
+  reason }` (the count exactly as the line shows it — a stale count is refused, `not_checked_set_changed`).
+  Each acknowledgement is kept (who, why, when). It holds while the store computer keeps reporting the
+  same set of not-checked numbers; if the set changes — even back to an earlier one — the line returns and
+  needs a new acknowledgement. One store's manager and the IT administrator are refused by name.
 
 ## Part 4 — Restoring (the one that matters)
 

@@ -50,7 +50,7 @@ import {
 } from '../../../packages/ops/src/index';
 import { readRules, readThresholds } from './operational-health';
 import { raiseKey, type AlertLifecycleDeps, type AlertLifecycleEvent } from './alert-lifecycle';
-import { judgeBoxes, type BoxHealthRecord, type BoxHealthView, type BillNumberFinding } from './box-health';
+import { judgeBoxes, type BoxHealthRecord, type BoxHealthView, type BillNumberFinding, type StoreComputerReplacement } from './box-health';
 import type { ComponentHealth } from '../../../packages/ops/src/index';
 
 export interface ConnectorQueueDepth {
@@ -128,6 +128,8 @@ export interface ObservedHealthDeps extends Pick<AlertLifecycleDeps, 'alerts' | 
     readonly billNumberFindings?: ReadonlyMap<string, readonly BillNumberFinding[]>;
     /** Verifier r20 HW-2: the bill-number high-water's visibility fence, when it is waiting on an open transaction. */
     readonly billNumberHighWater?: { readonly since: string; readonly waitingSeconds: number; readonly streams: readonly string[] } | null;
+    /** Round 26 · OB-97: owner-approved "store computer replaced" acts (a prefix's binding follows them). */
+    readonly replacements?: readonly StoreComputerReplacement[];
   }>;
   /** OB-78: the owner's early-warning line for a store computer's disk, in hours of trading left (tenant setting, default 48). */
   readonly boxDiskWarnHours?: (tenantId: string) => Promise<number> | number;
@@ -193,6 +195,7 @@ export async function observeSignals(deps: ObservedHealthDeps, tenantId: string,
     ? undefined : judgeBoxes({
       records: boxReports.records, knownStores: boxReports.knownStores, at, thresholds,
       ...(boxReports.billNumberFindings === undefined ? {} : { billNumberFindings: boxReports.billNumberFindings }),
+      ...(boxReports.replacements === undefined ? {} : { replacements: boxReports.replacements }),
       ...(deps.boxDiskWarnHours === undefined ? {} : { diskWarnHours: await deps.boxDiskWarnHours(tenantId) }),
       ...(deps.boxUnsentWarnHours === undefined ? {} : { unsentWarnHours: await deps.boxUnsentWarnHours(tenantId) }),
     });

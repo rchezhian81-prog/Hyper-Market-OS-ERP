@@ -21,7 +21,10 @@
 // at the door and kept as a refusal. Append-only: every report is kept; the latest per store is read.
 
 import type { Route } from '../../kernel/src/index';
-import { apiError, scopeOf } from '../../kernel/src/index';
+import { apiError, concurrentChange, scopeOf } from '../../kernel/src/index';
+import type { RequestContext } from '../../kernel/src/index';
+import { ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
+import { approvalNamedIn, actionDetails, type ApprovalPort } from '../../identity/src/approval-requests';
 import type { ComponentHealth, HealthStatus, HealthThresholds } from '../../../packages/ops/src/index';
 import { STORE_COMPUTER_REPORT, assertStoreComputerOf, type StoreComputerScopeOf } from './store-computer-identity';
 
@@ -526,11 +529,13 @@ export function billsWaitingOnTheBox(input: {
   readonly storeId: string;
   readonly at: string;
   readonly warnHours?: number;
+  /** Round 26 · OB-97: owner-approved "store computer replaced" acts (the binding follows them). */
+  readonly replacements?: readonly StoreComputerReplacement[];
 }): BillNumberFinding[] {
   const warnHours = input.warnHours ?? DEFAULT_BOX_UNSENT_WARN_HOURS;
   const atMs = Date.parse(input.at);
-  // OB-94: only the bound store computer's word about a prefix counts (`bindPrefixesToComputers`).
-  const mine = bindPrefixesToComputers(input.records.filter((r) => r.storeId === input.storeId && Date.parse(r.receivedAt) <= atMs))
+  // OB-94: only the bound store computer's word about a prefix counts (`bindPrefixesToComputers`); OB-97: as replaced.
+  const mine = bindPrefixesToComputers(input.records.filter((r) => r.storeId === input.storeId && Date.parse(r.receivedAt) <= atMs), atOrBefore(input.replacements, atMs))
     .sort((a, b) => Date.parse(a.receivedAt) - Date.parse(b.receivedAt)).map(believedRecord);
   const latest = new Map<string, { r: BoxHealthRecord; x: IssuedReport }>();
   // r23 NEW-1: every span head office has been told is waiting, per prefix, in the order it was told.
@@ -839,27 +844,88 @@ function layRuns(kept: readonly CountRun[], fresh: readonly CountRun[], ms: numb
  * evidence, never believed: its word about that prefix moves to `receiptNumbersRefused` (`prefix_of_another_store_computer`,
  * naming the bound store computer), so it can neither hold a lost bill back nor say a waiting bill is gone. A box restored
  * from a backup (OB-87) keeps its own sign-in, so it is never refused. A prefix is never issued twice (receipt-prefixes.ts),
- * so a binding never moves by itself; a replacement box under a NEW sign-in numbers under a new prefix issued to its till.
+ * so a binding never moves by itself — except (round 26 · OB-97 "B") by an owner-approved "store computer replaced" act
+ * (`StoreComputerReplacement`): from the act's moment on, the prefix is bound to the NEW store computer's sign-in — its
+ * reports are used and the old one's are refused by name. Acts are applied in time order before the reports that came after
+ * them; the latest one for a (store, prefix) decides. A report that came BEFORE the act keeps the verdict it had.
  */
-export function bindPrefixesToComputers(records: readonly BoxHealthRecord[]): BoxHealthRecord[] {
+export function bindPrefixesToComputers(records: readonly BoxHealthRecord[], replacements: readonly StoreComputerReplacement[] = []): BoxHealthRecord[] {
+  return foldBindings(records, replacements).out;
+}
+
+/**
+ * Round 26 · OB-97 "B": an owner-approved act moving one (store, bill-number prefix) from the store computer it was bound to
+ * (`from`, a sign-in) to its replacement (`to`). Kept append-only; never edited, never removed.
+ */
+export interface StoreComputerReplacement {
+  readonly replacementId: string;
+  readonly storeId: string;
+  readonly prefix: string;
+  /** The store computer (sign-in) the prefix was bound to when the act was done. */
+  readonly from: string;
+  /** The replacement store computer (sign-in) — a store computer of `storeId`. */
+  readonly to: string;
+  readonly reason: string;
+  /** The head office business person who did the act (the maker). */
+  readonly requestedBy: string;
+  /** The owner, who approved it on the maker-checker engine (never the maker). */
+  readonly approvedBy: string;
+  readonly approvalId: string;
+  readonly at: string;
+}
+
+/** Round 26 · OB-97: who a (store, prefix) is bound to now, and how it came to be. */
+export interface PrefixBinding {
+  readonly storeId: string;
+  readonly prefix: string;
+  readonly computer: string;
+  readonly since: string;
+  /** `first_report`: the store computer whose report named it first (OB-94); `replacement`: an approved act (OB-97). */
+  readonly via: 'first_report' | 'replacement';
+  readonly replacementId?: string;
+}
+
+const bindingKey = (storeId: string, prefix: string): string => `${storeId}\u0000${prefix}`;
+/** The acts done by `atMs` (a read "as at" a moment never applies a later act). */
+const atOrBefore = (replacements: readonly StoreComputerReplacement[] | undefined, atMs: number): readonly StoreComputerReplacement[] =>
+  (replacements ?? []).filter((m) => Date.parse(m.at) <= atMs);
+
+function foldBindings(records: readonly BoxHealthRecord[], replacements: readonly StoreComputerReplacement[], untilMs = Infinity): { out: BoxHealthRecord[]; bound: Map<string, PrefixBinding> } {
   const ordered = records.map((r, i) => ({ r, i, ms: Date.parse(r.receivedAt) })).sort((a, b) => a.ms - b.ms || a.i - b.i);
-  const bound = new Map<string, string>();
+  const acts = replacements.map((m, i) => ({ m, i, ms: Date.parse(m.at) })).filter((a) => a.ms <= untilMs).sort((a, b) => a.ms - b.ms || a.i - b.i);
+  const bound = new Map<string, PrefixBinding>();
   const out: BoxHealthRecord[] = new Array(records.length);
-  for (const { r, i } of ordered) {
+  let k = 0;
+  const actUntil = (ms: number): void => {
+    for (; k < acts.length && acts[k]!.ms <= ms; k += 1) {
+      const m = acts[k]!.m;
+      bound.set(bindingKey(m.storeId, m.prefix), { storeId: m.storeId, prefix: m.prefix, computer: m.to, since: m.at, via: 'replacement', replacementId: m.replacementId });
+    }
+  };
+  for (const { r, i, ms } of ordered) {
+    actUntil(ms);
     const issued = r.receiptNumbersIssued;
     if (issued === undefined || issued.length === 0) { out[i] = r; continue; }
     const kept: IssuedReport[] = [];
     const refused: RefusedIssued[] = [];
     for (const x of issued) {
-      const key = `${r.storeId}\u0000${x.prefix}`;
-      const owner = bound.get(key);
-      if (owner === undefined) bound.set(key, r.reportedBy);
+      const key = bindingKey(r.storeId, x.prefix);
+      const owner = bound.get(key)?.computer;
+      if (owner === undefined) bound.set(key, { storeId: r.storeId, prefix: x.prefix, computer: r.reportedBy, since: r.receivedAt, via: 'first_report' });
       if (owner === undefined || owner === r.reportedBy) kept.push(x);
       else refused.push({ prefix: x.prefix, through: x.through, because: 'prefix_of_another_store_computer', bankedThrough: 0, boundTo: owner });
     }
     out[i] = refused.length === 0 ? r : { ...r, receiptNumbersIssued: kept, receiptNumbersRefused: [...(r.receiptNumbersRefused ?? []), ...refused] };
   }
-  return out;
+  actUntil(untilMs);
+  return { out, bound };
+}
+
+/** Round 26 · OB-97: every (store, prefix) binding as it stands at `at` (reports received and acts done by then). */
+export function prefixBindings(records: readonly BoxHealthRecord[], replacements: readonly StoreComputerReplacement[], at?: string): PrefixBinding[] {
+  const untilMs = at === undefined ? Infinity : Date.parse(at);
+  const { bound } = foldBindings(records.filter((r) => Date.parse(r.receivedAt) <= untilMs), replacements, untilMs);
+  return [...bound.values()].sort((a, b) => a.storeId.localeCompare(b.storeId) || a.prefix.localeCompare(b.prefix));
 }
 
 /**
@@ -895,6 +961,8 @@ export function unreceivedCandidates(input: {
   readonly warnHours?: number;
   /** OB-90: the owner's claim slack (store setup); absent, the default 5 / 5%. */
   readonly slack?: ClaimSlack;
+  /** Round 26 · OB-97: owner-approved "store computer replaced" acts — lost-bill checks follow the prefix to the new computer. */
+  readonly replacements?: readonly StoreComputerReplacement[];
 }): UnreceivedCandidate[] {
   const slack = input.slack ?? DEFAULT_CLAIM_SLACK;
   const atMs = Date.parse(input.at);
@@ -920,7 +988,7 @@ export function unreceivedCandidates(input: {
   const by = new Map<string, PerPrefix>();
   // OB-96: five forward-only walkers, made once per fold and reset per report (no closure or copy per report).
   const walkSeg = new Walker(); const walkS = new Walker(); const walkN = new Walker(); const walkHeld = new Walker(); const walkMay = new Walker();
-  const ordered = bindPrefixesToComputers(input.records.filter((r) => Date.parse(r.receivedAt) <= atMs))
+  const ordered = bindPrefixesToComputers(input.records.filter((r) => Date.parse(r.receivedAt) <= atMs), atOrBefore(input.replacements, atMs))
     .map((r) => ({ r, ms: Date.parse(r.receivedAt) })).sort((a, b) => a.ms - b.ms);
   for (const { r: raw, ms } of ordered) {
     const r = believedRecord(raw);
@@ -1125,10 +1193,16 @@ export function billNumberFindingsFor(input: {
   readonly banked?: ReadonlyMap<string, number>;
   /** Verifier r21 BOX-2 / r22 D2: refusals acknowledged by a person with all-stores authority (`POST …/bill-number-refusals/acknowledgements`). */
   readonly acknowledged?: readonly RefusalAcknowledgement[];
+  /** Round 26 · OB-97: owner-approved "store computer replaced" acts (the binding follows them). */
+  readonly replacements?: readonly StoreComputerReplacement[];
+  /** Round 26 · OB-98: acknowledgements of an `at_risk_not_checked` finding (`POST …/at-risk-not-checked/acknowledgements`). */
+  readonly atRiskAcknowledged?: readonly AtRiskAcknowledgement[];
 }): BillNumberFinding[] {
   const out: BillNumberFinding[] = [];
+  const atMs = Date.parse(input.at);
+  const replacements = atOrBefore(input.replacements, atMs);
   // OB-94: a second store computer's word about a bound prefix is refused (and said below), never read as the box's.
-  const mine = bindPrefixesToComputers(input.records.filter((r) => r.storeId === input.storeId && Date.parse(r.receivedAt) <= Date.parse(input.at)))
+  const mine = bindPrefixesToComputers(input.records.filter((r) => r.storeId === input.storeId && Date.parse(r.receivedAt) <= atMs), replacements)
     .sort((a, b) => Date.parse(a.receivedAt) - Date.parse(b.receivedAt));
   const latestRecord = mine[mine.length - 1];
   const latestOf = (prefix: string): IssuedReport | undefined => {
@@ -1182,14 +1256,15 @@ export function billNumberFindingsFor(input: {
     });
   }
   // Round 25 · OB-96: numbers the latest report cannot vouch for, beyond the newest UNRECEIVED_CHECK_CAP head office checks
-  // one by one per report — never dropped in silence.
+  // one by one per report — never dropped in silence. Round 26 · OB-98: unless acknowledged (`atRiskAcknowledgementStands`).
   for (const [prefix, { x, r }] of [...lastByPrefix].sort((a, b) => a[0].localeCompare(b[0]))) {
     const { ranges: checked, unchecked } = atRiskExamined(x.atRisk);
     if (unchecked === 0) continue;
+    if (atRiskAcknowledgementStands(input.storeId, prefix, mine, input.atRiskAcknowledged ?? [])) continue;
     const below = checked[0]![0];
     out.push({
-      kind: 'at_risk_not_checked', prefix, count: unchecked, since: r.receivedAt,
-      detail: `not checked: store ${input.storeId}'s computer says it cannot vouch for ${unchecked + checked.reduce((n, [a, z]) => n + z - a + 1, 0)} bill number(s) under ${prefix} (given after the backup it was restored from); head office checks the newest ${UNRECEIVED_CHECK_CAP} of them one by one on each report, so ${unchecked} older one(s), below ${prefix}${pad6(below)}, were NOT checked. Ask support to compare that store computer's restore record with head office's bills; any of them head office does not hold may be a sale lost by the restore. Do NOT re-enter bills from paper until support has checked`,
+      kind: 'at_risk_not_checked', prefix, count: unchecked, ranges: atRiskNotChecked(x.atRisk), since: r.receivedAt,
+      detail: `not checked: store ${input.storeId}'s computer says it cannot vouch for ${unchecked + checked.reduce((n, [a, z]) => n + z - a + 1, 0)} bill number(s) under ${prefix} (given after the backup it was restored from); head office checks the newest ${UNRECEIVED_CHECK_CAP} of them one by one on each report, so ${unchecked} older one(s), below ${prefix}${pad6(below)}, were NOT checked. Ask support to compare that store computer's restore record with head office's bills; any of them head office does not hold may be a sale lost by the restore. Do NOT re-enter bills from paper until support has checked. ${NOT_CHECKED_STAYS_WORDS}`,
     });
   }
   // Verifier r21 UNSENT-CEILING (a): the latest report's per-prefix lists do not fit its own queue — said, and not believed.
@@ -1201,8 +1276,74 @@ export function billNumberFindingsFor(input: {
       detail: `store ${input.storeId}'s computer's report contradicts itself — ${contradiction}. Head office does not believe its list of bills still to send: any bill it has not received is named as never received after ${UNRECEIVED_GRACE_MINUTES} minutes. Check that store computer (its software may be faulty or altered)`,
     });
   }
-  out.push(...refusedReportFindings(input.storeId, mine, input.banked, input.acknowledged ?? []));
+  out.push(...refusedReportFindings(input.storeId, mine, input.banked, input.acknowledged ?? [], replacements));
   return out;
+}
+
+/** Round 26 · OB-98: what the owner reads about how a not-checked line stops being a warning (the health page's words). */
+export const NOT_CHECKED_STAYS_WORDS = 'This stays until the owner or head office staff (all-stores authority — a store\'s own manager cannot, and neither can the IT/platform administrator) acknowledge it with a reason, after support has compared the restore record. The acknowledgement holds while the store computer keeps reporting this same set of not-checked numbers; a different set needs a new acknowledgement';
+
+/**
+ * Round 26 · OB-98: the at-risk numbers ONE report names that head office does NOT check one by one — every count in its
+ * at-risk ranges below the newest UNRECEIVED_CHECK_CAP (`atRiskExamined`), as [from, to] ranges in rising order.
+ */
+export function atRiskNotChecked(atRisk: readonly (readonly [number, number])[] | undefined): [number, number][] {
+  const { ranges: checked, unchecked } = atRiskExamined(atRisk);
+  if (unchecked === 0) return [];
+  const lowestChecked = checked.length === 0 ? Infinity : checked[0]![0];
+  const out: [number, number][] = [];
+  for (const [a, z] of joinRuns(atRisk ?? [])) {
+    if (a >= lowestChecked) break;
+    out.push([a, Math.min(z, lowestChecked - 1)]);
+  }
+  return out;
+}
+
+const runsKey = (ranges: readonly (readonly [number, number])[]): string => ranges.map(([a, z]) => `${a}-${z}`).join(',');
+
+/** Round 26 · OB-98: a person's acknowledgement of an `at_risk_not_checked` finding (kept append-only; each one: who, when, why). */
+export interface AtRiskAcknowledgement {
+  readonly storeId: string;
+  readonly prefix: string;
+  /** The not-checked numbers acknowledged, exactly — a different set (larger, smaller, moved) is a new finding. */
+  readonly notChecked: readonly (readonly [number, number])[];
+  /** How many numbers that is (as the health page showed it). */
+  readonly count: number;
+  readonly reason: string;
+  readonly by: string;
+  readonly at: string;
+  /** Only an all-stores acknowledgement (owner / head office business staff, never IT — OB-91) is honoured. */
+  readonly authority?: 'all_stores';
+}
+
+/**
+ * Round 26 · OB-98 — THE RULE (stated, so a person can check it by hand; the same shape as a refused report's, OB-88). The
+ * not-checked line for a (store, prefix) is silenced ONLY by an acknowledgement given with ALL-STORES business authority
+ * that still stands at the latest report naming the prefix:
+ *   • it was given while the store computer's latest report (before it) named exactly that set of not-checked numbers, and
+ *   • every report naming the prefix since then named that same set.
+ * Once a report names a DIFFERENT set (an empty one included), the acknowledgement ends for good — that set coming back
+ * later needs a new acknowledgement. Each acknowledgement is kept on its own. `mine`: the store's reports as bound (OB-94/97).
+ */
+export function atRiskAcknowledgementStands(storeId: string, prefix: string, mine: readonly BoxHealthRecord[], acknowledged: readonly AtRiskAcknowledgement[]): boolean {
+  const acks = acknowledged.filter((a) => a.storeId === storeId && a.prefix === prefix && a.authority === 'all_stores')
+    .map((a) => ({ ms: Date.parse(a.at), key: runsKey(a.notChecked) })).sort((a, b) => a.ms - b.ms);
+  if (acks.length === 0) return false;
+  let standing: string | undefined;
+  let last: string | undefined;
+  let k = 0;
+  for (const r of [...mine].sort((a, b) => Date.parse(a.receivedAt) - Date.parse(b.receivedAt))) {
+    if (r.storeId !== storeId) continue;
+    const x = (r.receiptNumbersIssued ?? []).find((y) => y.prefix === prefix);
+    if (x === undefined) continue;
+    const ms = Date.parse(r.receivedAt);
+    for (; k < acks.length && acks[k]!.ms < ms; k += 1) if (last !== undefined && last !== '' && last === acks[k]!.key) standing = last;
+    const key = runsKey(atRiskNotChecked(x.atRisk));
+    if (standing !== undefined && key !== standing) standing = undefined;
+    last = key;
+  }
+  for (; k < acks.length; k += 1) if (last !== undefined && last !== '' && last === acks[k]!.key) standing = last;
+  return standing !== undefined && standing === last;
 }
 
 /**
@@ -1223,6 +1364,7 @@ export function billNumberFindingsFor(input: {
  */
 function refusedReportFindings(
   storeId: string, mine: readonly BoxHealthRecord[], banked: ReadonlyMap<string, number> | undefined, acknowledged: readonly RefusalAcknowledgement[],
+  replacements: readonly StoreComputerReplacement[] = [],
 ): BillNumberFinding[] {
   interface Said { readonly at: string; readonly through: number; readonly refused?: RefusedIssued; readonly by: string }
   const timeline = new Map<string, Said[]>();
@@ -1254,7 +1396,11 @@ function refusedReportFindings(
       if (r === undefined) continue;
       // OB-94: a second store computer's report is never "made true" by head office's banking — only a person clears it.
       const resolved = (r.because !== 'prefix_of_another_store_computer' && banked !== undefined && (banked.get(prefix) ?? 0) >= r.through)
-        || Date.parse(x.at) <= (seenUpTo.get(r.through) ?? -Infinity) || standing === r.through;
+        || Date.parse(x.at) <= (seenUpTo.get(r.through) ?? -Infinity) || standing === r.through
+        // Round 26 · OB-97: the replacement store computer's reports from BEFORE the owner approved moving the prefix to it
+        // are answered by that act (the owner looked at exactly this machine) — never the old computer's, never later ones.
+        || (r.because === 'prefix_of_another_store_computer'
+          && replacements.some((m) => m.storeId === storeId && m.prefix === prefix && m.to === x.by && Date.parse(m.at) >= Date.parse(x.at)));
       if (resolved) continue;
       const cur = open.get(r.through);
       open.set(r.through, { first: cur?.first ?? x.at, latest: x });
@@ -1419,6 +1565,8 @@ export function judgeBoxes(input: {
   readonly billNumberFindings?: ReadonlyMap<string, readonly BillNumberFinding[]>;
   /** Verifier r21 UNSENT-CEILING: warn when bills have waited on a store computer this many hours (tenant setting, default 2). */
   readonly unsentWarnHours?: number;
+  /** Round 26 · OB-97: owner-approved "store computer replaced" acts (the binding follows them). */
+  readonly replacements?: readonly StoreComputerReplacement[];
 }): { readonly boxes: readonly BoxHealthView[]; readonly components: readonly ComponentHealth[]; readonly localStoreWritable: boolean | undefined } {
   const warnHours = input.diskWarnHours ?? DEFAULT_BOX_DISK_WARN_HOURS;
   const latest = latestBoxReports(input.records);
@@ -1445,7 +1593,10 @@ export function judgeBoxes(input: {
     const runningOut = can && estimate.known && estimate.hoursLeft < warnHours;
     const staleNote = `STALE — store ${storeId}'s computer last reported ${ago(ageSeconds)} ago (${r.observedAt}); it has not been heard from since, so this is old news, not the state now`;
     // Verifier r21 UNSENT-CEILING (b): bills held on the box past the owner's line are a finding of their own.
-    const waiting = billsWaitingOnTheBox({ records: input.records, storeId, at: input.at, ...(input.unsentWarnHours === undefined ? {} : { warnHours: input.unsentWarnHours }) });
+    const waiting = billsWaitingOnTheBox({
+      records: input.records, storeId, at: input.at, ...(input.unsentWarnHours === undefined ? {} : { warnHours: input.unsentWarnHours }),
+      ...(input.replacements === undefined ? {} : { replacements: input.replacements }),
+    });
     const findings = [...(input.billNumberFindings?.get(storeId) ?? []), ...waiting];
     boxes.push({
       storeId, state: 'reported', lastReportAt: r.observedAt, ageSeconds, stale, canRecordSales: can, disk: r.disk, queue: r.queue, tills: r.tills,
@@ -1587,6 +1738,21 @@ export interface BoxHealthDeps {
    * Absent: nothing can be acknowledged here (fail closed).
    */
   readonly alertAuthorityOf?: (tenantId: string, userId: string) => Promise<readonly AlertAuthorityGrant[]>;
+  /** Round 26 · OB-97: every owner-approved "store computer replaced" act (append-only). Absent: no act has been done. */
+  readonly replacements?: (tenantId: string) => Promise<readonly StoreComputerReplacement[]>;
+  /** Round 26 · OB-97: the version of a (store, prefix) binding's guard, read before the binding is judged. */
+  readonly bindingVersion?: (tenantId: string, storeId: string, prefix: string) => Promise<number>;
+  /** Round 26 · OB-97: keeps one act under that guard (throws ConcurrencyConflictError when it moved). Absent: nothing can be replaced here. */
+  readonly recordReplacement?: (tenantId: string, m: StoreComputerReplacement, expectedVersion: number) => Promise<StoreComputerReplacement>;
+  /** Round 26 · OB-97: the maker-checker engine (the owner's approval of the act). Absent: no act can be approved (fail closed). */
+  readonly approvals?: ApprovalPort;
+  /**
+   * Round 26 · OB-97: each grant through which this person holds `store.computer.replace` (the same shape as
+   * `alertAuthorityOf`). Absent: nobody may do the act (fail closed).
+   */
+  readonly replacementAuthorityOf?: (tenantId: string, userId: string) => Promise<readonly AlertAuthorityGrant[]>;
+  /** Round 26 · OB-98: keeps one acknowledgement of a not-checked line (each its own record; a re-sent request answers the first). */
+  readonly acknowledgeNotChecked?: (tenantId: string, a: AtRiskAcknowledgement, requestKey: string) => Promise<AtRiskAcknowledgement>;
 }
 
 /** Verifier r23 NEW-3 · OB-91: one grant through which a person may manage alerts (see `BoxHealthDeps.alertAuthorityOf`). */
@@ -1598,6 +1764,47 @@ export interface AlertAuthorityGrant {
 }
 
 export const REFUSAL_ACKNOWLEDGEMENTS_PATH = '/v1/store-computers/bill-number-refusals/acknowledgements';
+/** Round 26 · OB-97: the head office act "this store computer was replaced" for one till's bill-number prefix. */
+export const STORE_COMPUTER_REPLACEMENTS_PATH = '/v1/store-computers/replacements';
+/** Round 26 · OB-97: every (store, prefix) binding as it stands, and every act that moved one. */
+export const PREFIX_BINDINGS_PATH = '/v1/store-computers/prefix-bindings';
+/** Round 26 · OB-98: acknowledging an "at-risk numbers not checked" line. */
+export const NOT_CHECKED_ACKNOWLEDGEMENTS_PATH = '/v1/store-computers/at-risk-not-checked/acknowledgements';
+/** Round 26 · OB-97: the approval kind on the maker-checker engine (services/identity/src/approval-requests.ts). */
+export const STORE_COMPUTER_REPLACED_KIND = 'store_computer_replaced';
+/** Round 26 · OB-97: the permission of the act itself (the maker's); the owner's approval is `store.computer.replace.approve`. */
+export const STORE_COMPUTER_REPLACE = 'store.computer.replace';
+
+/**
+ * OB-88 / OB-91 (and round 26 · OB-97 / OB-98): the caller acts with ALL-STORES authority through a BUSINESS role — the owner,
+ * or head office staff given all stores — never only some stores, never the platform/IT administration function. Refused
+ * by name otherwise (403, on the audit trail like every request); `words` says what was not done.
+ */
+async function assertAllStoresBusiness(
+  ctx: RequestContext, grantsOf: ((tenantId: string, userId: string) => Promise<readonly AlertAuthorityGrant[]>) | undefined,
+  codes: { readonly scope: string; readonly it: string }, words: { readonly act: string; readonly notDone: string; readonly ask: string },
+): Promise<void> {
+  if (scopeOf(ctx) !== 'all') {
+    throw apiError(403, {
+      code: codes.scope,
+      whatHappened: `Only the owner or head office staff — a person whose authority covers ALL stores — may ${words.act}. This account's authority covers only some stores, so ${words.notDone}.`,
+      wasItSaved: 'not_saved', nextSafeAction: `${words.ask} Nothing was recorded.`,
+    });
+  }
+  const grants = grantsOf === undefined ? [] : await grantsOf(ctx.tenantId, ctx.userId);
+  if (!grants.some((g) => g.allStores && !g.platformAdministration)) {
+    const it = grants.some((g) => g.platformAdministration);
+    throw apiError(403, it ? {
+      code: codes.it,
+      whatHappened: `The platform (IT) administrator looks after the store computers, so may never ${words.act} (owner decisions OB-91 / OB-95) — whatever stores the account covers. So ${words.notDone}.`,
+      wasItSaved: 'not_saved', nextSafeAction: `${words.ask} Nothing was recorded.`,
+    } : {
+      code: codes.scope,
+      whatHappened: `Only the owner or head office staff — a person whose business authority covers ALL stores — may ${words.act}. This account holds no such authority, so ${words.notDone}.`,
+      wasItSaved: 'not_saved', nextSafeAction: `${words.ask} Nothing was recorded.`,
+    });
+  }
+}
 
 export function boxHealthRoutes(deps: BoxHealthDeps): readonly Route[] {
   return [{
@@ -1693,7 +1900,7 @@ export function boxHealthRoutes(deps: BoxHealthDeps): readonly Route[] {
         throw apiError(503, { code: 'acknowledgements_not_kept_here', whatHappened: 'This head office keeps no store computer reports, so there is nothing to acknowledge.', wasItSaved: 'not_saved', nextSafeAction: 'Use the head office that keeps the store computers\' reports. Nothing was recorded.' });
       }
       // OB-94: a second store computer's report of a bound prefix is refused at read (`bindPrefixesToComputers`) — found here too.
-      const refusedAt = bindPrefixesToComputers(await deps.records(ctx.tenantId)).filter((rec) => rec.storeId === storeId)
+      const refusedAt = bindPrefixesToComputers(await deps.records(ctx.tenantId), deps.replacements === undefined ? [] : await deps.replacements(ctx.tenantId)).filter((rec) => rec.storeId === storeId)
         .flatMap((rec) => (rec.receiptNumbersRefused ?? []).filter((x) => x.prefix === prefix && x.through === through).map(() => rec.receivedAt));
       if (refusedAt.length === 0) {
         throw apiError(404, {
@@ -1706,6 +1913,188 @@ export function boxHealthRoutes(deps: BoxHealthDeps): readonly Route[] {
       // The pipeline guarantees a write carries its Idempotency-Key; without one (a handler called outside it) the moment stands in.
       const at = deps.now();
       const kept = await deps.acknowledge(ctx.tenantId, { storeId, prefix, through, reason, by: ctx.userId, at, authority: 'all_stores' }, ctx.idempotencyKey ?? `${ctx.userId}@${at}`);
+      return { status: 201, body: { acknowledged: kept } };
+    },
+  }, {
+    // Round 26 · OB-97 "B" (owner, 13 Oct 2026, in writing, "Owner-approved 'replaced' act"): a store computer was replaced
+    // and the new one has its OWN sign-in. Head office moves the till's bill-number prefix from the old store computer to the
+    // new one — so the new one's reports are used, the old one's are refused by name, and lost-bill checks resume for that
+    // prefix on the new computer. The MAKER is a head office business person with all-stores authority (never the IT/platform
+    // administrator — OB-91/OB-95); the CHECKER is the owner, as a separate act in his own session on the maker-checker
+    // engine (kind `store_computer_replaced`; the engine refuses self-approval by name). Append-only; one act per approval.
+    // Refused by name (each on the audit trail): a prefix not issued to that store; a sign-in that is not a store computer
+    // of that store; a prefix no store computer has reported yet; a prefix not bound to the named old computer any more;
+    // a move to the computer it is already bound to; no owner approval, or an approval for anything else.
+    api: 'API-11', method: 'POST', path: STORE_COMPUTER_REPLACEMENTS_PATH,
+    permission: STORE_COMPUTER_REPLACE, idempotent: true,
+    handler: async (ctx) => {
+      await assertAllStoresBusiness(ctx, deps.replacementAuthorityOf,
+        { scope: 'replacement_needs_all_stores_authority', it: 'replacement_refused_to_platform_administrator' },
+        { act: 'move a till\'s bill numbers to a replacement store computer', notDone: 'nothing was moved', ask: 'Ask head office business staff (all stores) to do it, with the owner\'s approval.' });
+      const b = isObj(ctx.body) ? ctx.body : {};
+      const storeId = b['storeId'];
+      const prefix = b['prefix'];
+      const fromComputer = b['fromComputer'];
+      const toComputer = b['toComputer'];
+      const reason = typeof b['reason'] === 'string' ? b['reason'].trim() : '';
+      if (!isWord(storeId, 60) || !isWord(prefix, 10) || !isWord(fromComputer, 120) || !isWord(toComputer, 120) || reason.length < 5 || reason.length > 300) {
+        throw apiError(400, {
+          code: 'not_readable_as_store_computer_replacement',
+          whatHappened: 'A "store computer replaced" act needs the store, the till\'s bill-number prefix, the old store computer\'s sign-in (fromComputer), the new one\'s (toComputer), a reason of 5 to 300 characters, and the owner\'s approval (approvalId).',
+          wasItSaved: 'not_saved',
+          nextSafeAction: 'Send { storeId, prefix, fromComputer, toComputer, reason, approvalId } — ask the owner\'s approval for exactly those first. Nothing was moved.',
+        });
+      }
+      if (deps.records === undefined || deps.recordReplacement === undefined || deps.bindingVersion === undefined || deps.issuedAndBanked === undefined || deps.storeComputerScopeOf === undefined) {
+        throw apiError(503, { code: 'replacements_not_kept_here', whatHappened: 'This head office keeps no store computer reports, so no bill-number prefix can be moved here.', wasItSaved: 'not_saved', nextSafeAction: 'Use the head office that keeps the store computers\' reports. Nothing was moved.' });
+      }
+      // The prefix must be one head office issued to a till of THIS store (receipt-prefixes.ts) — never another store's.
+      const { issuedPrefixes } = await deps.issuedAndBanked(ctx.tenantId);
+      if (!(issuedPrefixes.get(prefix)?.has(storeId) ?? false)) {
+        throw apiError(422, {
+          code: 'prefix_not_issued_to_this_store',
+          whatHappened: `Head office never issued the bill-number prefix ${prefix} to a till of store ${storeId}, so it cannot be moved to a store computer there.`,
+          wasItSaved: 'not_saved', nextSafeAction: 'Copy the prefix exactly as the till prefix page shows it for that store. Nothing was moved.',
+        });
+      }
+      // The new sign-in must be a store computer OF THIS STORE (its `store_computer` grant names this store — OB-54).
+      const scope = await deps.storeComputerScopeOf(ctx.tenantId, toComputer);
+      if (scope === undefined || scope === 'all' || !scope.includes(storeId)) {
+        throw apiError(422, {
+          code: 'not_a_store_computer_of_this_store',
+          whatHappened: `${toComputer} is not a store computer of store ${storeId} (it holds no store computer role naming that store), so ${prefix} cannot be moved to it.`,
+          wasItSaved: 'not_saved', nextSafeAction: 'Give the new store computer its own sign-in for this store first (store computer role, this one store, approved by the owner), then do this. Nothing was moved.',
+        });
+      }
+      // The guard first, then the binding it protects — two acts racing on one prefix cannot both land.
+      const version = await deps.bindingVersion(ctx.tenantId, storeId, prefix);
+      const at = deps.now();
+      const replacements = deps.replacements === undefined ? [] : await deps.replacements(ctx.tenantId);
+      const current = prefixBindings(await deps.records(ctx.tenantId), replacements, at).find((x) => x.storeId === storeId && x.prefix === prefix);
+      if (current === undefined) {
+        throw apiError(422, {
+          code: 'prefix_not_bound_yet',
+          whatHappened: `No store computer has reported bill numbers under ${prefix} at store ${storeId} yet, so there is nothing to move: the first store computer that reports it is bound to it.`,
+          wasItSaved: 'not_saved', nextSafeAction: 'Nothing was moved, and nothing needs to be.',
+        });
+      }
+      if (current.computer === toComputer) {
+        throw apiError(409, {
+          code: 'already_bound_to_that_computer',
+          whatHappened: `${prefix} at store ${storeId} is already bound to ${toComputer} (since ${current.since}).`,
+          wasItSaved: 'not_saved', nextSafeAction: 'Nothing was moved, and nothing needs to be.',
+        });
+      }
+      if (current.computer !== fromComputer) {
+        throw apiError(409, {
+          code: 'prefix_bound_to_another_computer',
+          whatHappened: `${prefix} at store ${storeId} is bound to ${current.computer} (since ${current.since}), not to ${fromComputer} — the binding is not what this act (and its approval) says it moves.`,
+          wasItSaved: 'not_saved', nextSafeAction: 'Check the store computers on the bindings list, and ask the owner\'s approval for the move as it really is. Nothing was moved.',
+        });
+      }
+      // The owner's approval, on the maker-checker engine: exactly this act, asked by this person, approved by someone else.
+      const approval = await approvalNamedIn(deps.approvals, {
+        tenantId: ctx.tenantId, approvalId: b['approvalId'], typedField: 'approvedBy', typedValue: b['approvedBy'],
+        kind: STORE_COMPUTER_REPLACED_KIND, subjectRef: `${storeId}/${prefix}`, details: actionDetails(b), valueMinor: null,
+        maker: ctx.userId, usedBy: `store-computer-replaced:${storeId}:${prefix}:${at}`, now: at,
+      });
+      if (approval === undefined) {
+        throw apiError(422, {
+          code: 'owner_approval_needed',
+          whatHappened: `Moving ${prefix} at store ${storeId} from ${fromComputer} to ${toComputer} needs the owner's approval (owner decision OB-97), and none was named.`,
+          wasItSaved: 'not_saved',
+          nextSafeAction: `Ask for approval (POST /v1/approvals/requests, kind ${STORE_COMPUTER_REPLACED_KIND}, subjectRef "${storeId}/${prefix}", details exactly { storeId, prefix, fromComputer, toComputer, reason }); once the owner approves it, send its approvalId. Nothing was moved.`,
+        });
+      }
+      if (approval.decision.decidedBy === ctx.userId) {
+        throw apiError(422, { code: 'self_approval', whatHappened: `${ctx.userId} cannot approve their own act (§28).`, wasItSaved: 'not_saved', nextSafeAction: 'The owner must approve it in his own session. Nothing was moved.' });
+      }
+      await approval.spend();
+      const act: StoreComputerReplacement = {
+        replacementId: `scr-${(b['approvalId'] as string).trim()}`, storeId, prefix, from: current.computer, to: toComputer, reason,
+        requestedBy: ctx.userId, approvedBy: approval.decision.decidedBy, approvalId: (b['approvalId'] as string).trim(), at,
+      };
+      let kept: StoreComputerReplacement;
+      try {
+        kept = await deps.recordReplacement(ctx.tenantId, act, version);
+      } catch (err) {
+        if (err instanceof ConcurrencyConflictError) throw concurrentChange(`the bill-number prefix ${prefix} at store ${storeId}`);
+        throw err;
+      }
+      return { status: 201, body: { replacement: kept, binding: { storeId, prefix, computer: kept.to, since: kept.at, via: 'replacement', replacementId: kept.replacementId } } };
+    },
+  }, {
+    // Round 26 · OB-97: every (store, prefix) binding as it stands now — which store computer's reports head office uses for
+    // each till's bill numbers — and every "store computer replaced" act, with who asked and who approved.
+    api: 'API-11', method: 'GET', path: PREFIX_BINDINGS_PATH,
+    permission: 'platform.health.read',
+    handler: async (ctx) => {
+      const at = deps.now();
+      const records = deps.records === undefined ? [] : await deps.records(ctx.tenantId);
+      const replacements = deps.replacements === undefined ? [] : await deps.replacements(ctx.tenantId);
+      const inScope = (storeId: string): boolean => { const sc = scopeOf(ctx); return sc === 'all' || sc.includes(storeId); };
+      return {
+        status: 200,
+        body: {
+          bindings: prefixBindings(records, replacements, at).filter((x) => inScope(x.storeId)),
+          replacements: [...replacements].filter((m) => inScope(m.storeId)).sort((a, z) => Date.parse(a.at) - Date.parse(z.at)),
+          asAt: at,
+        },
+      };
+    },
+  }, {
+    // Round 26 · OB-98 "B" (owner, 13 Oct 2026, in writing, "You/HO acknowledge it"): the owner or head office business staff
+    // (all stores, never IT — the same authority as a refused report's acknowledgement, OB-88/OB-91) acknowledge the "at-risk
+    // numbers not checked" line, with a reason. Who, when and why are kept (each acknowledgement its own record); it holds
+    // until the store computer reports a DIFFERENT set of not-checked numbers for that prefix (`atRiskAcknowledgementStands`).
+    api: 'API-11', method: 'POST', path: NOT_CHECKED_ACKNOWLEDGEMENTS_PATH,
+    permission: 'platform.alert.manage', idempotent: true,
+    handler: async (ctx) => {
+      await assertAllStoresBusiness(ctx, deps.alertAuthorityOf,
+        { scope: 'acknowledgement_needs_all_stores_authority', it: 'acknowledgement_refused_to_platform_administrator' },
+        { act: 'acknowledge that a store computer\'s older at-risk bill numbers were not checked', notDone: 'nothing was acknowledged and the warning stays', ask: 'Ask the owner or head office to acknowledge it, with the reason, once support has compared the restore record.' });
+      const b = isObj(ctx.body) ? ctx.body : {};
+      const storeId = b['storeId'];
+      const prefix = b['prefix'];
+      const count = b['count'];
+      const reason = typeof b['reason'] === 'string' ? b['reason'].trim() : '';
+      if (!isWord(storeId, 60) || !isWord(prefix, 10) || !isCount(count) || count < 1 || reason.length < 5 || reason.length > 300) {
+        throw apiError(400, {
+          code: 'not_readable_as_acknowledgement',
+          whatHappened: 'An acknowledgement of a not-checked line needs the store, the bill-number prefix, how many numbers were not checked (count) and a reason of 5 to 300 characters.',
+          wasItSaved: 'not_saved',
+          nextSafeAction: 'Send { storeId, prefix, count, reason } as shown on the health page. Nothing was recorded.',
+        });
+      }
+      if (deps.records === undefined || deps.acknowledgeNotChecked === undefined) {
+        throw apiError(503, { code: 'acknowledgements_not_kept_here', whatHappened: 'This head office keeps no store computer reports, so there is nothing to acknowledge.', wasItSaved: 'not_saved', nextSafeAction: 'Use the head office that keeps the store computers\' reports. Nothing was recorded.' });
+      }
+      const at = deps.now();
+      const atMs = Date.parse(at);
+      // The store computer's latest word about the prefix, as bound (OB-94 / OB-97) — what the health page shows.
+      const replacements = deps.replacements === undefined ? [] : await deps.replacements(ctx.tenantId);
+      let latest: IssuedReport | undefined;
+      for (const rec of bindPrefixesToComputers((await deps.records(ctx.tenantId)).filter((r) => r.storeId === storeId && Date.parse(r.receivedAt) <= atMs), atOrBefore(replacements, atMs))
+        .sort((a, z) => Date.parse(a.receivedAt) - Date.parse(z.receivedAt))) {
+        latest = (rec.receiptNumbersIssued ?? []).find((x) => x.prefix === prefix) ?? latest;
+      }
+      const notChecked = atRiskNotChecked(latest?.atRisk);
+      const now = notChecked.reduce((n, [a, z]) => n + z - a + 1, 0);
+      if (now === 0) {
+        throw apiError(404, {
+          code: 'no_such_not_checked_finding',
+          whatHappened: `Store ${storeId}'s computer's latest report under ${prefix} names no at-risk numbers left unchecked, so there is nothing to acknowledge.`,
+          wasItSaved: 'not_saved', nextSafeAction: 'Copy the store and prefix exactly as the health page shows the not-checked line. Nothing was recorded.',
+        });
+      }
+      if (now !== count) {
+        throw apiError(409, {
+          code: 'not_checked_set_changed',
+          whatHappened: `Store ${storeId}'s computer's latest report under ${prefix} now leaves ${now} at-risk number(s) unchecked, not the ${count} acknowledged — the line changed since it was read.`,
+          wasItSaved: 'not_saved', nextSafeAction: 'Reload the health page, look at the line as it is now, and acknowledge that. Nothing was recorded.',
+        });
+      }
+      const kept = await deps.acknowledgeNotChecked(ctx.tenantId, { storeId, prefix, notChecked, count, reason, by: ctx.userId, at, authority: 'all_stores' }, ctx.idempotencyKey ?? `${ctx.userId}@${at}`);
       return { status: 201, body: { acknowledged: kept } };
     },
   }];
