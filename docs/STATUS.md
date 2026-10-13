@@ -5,12 +5,18 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Coordinated programme · Round 26 — owner decisions OB-97 to OB-99: replacing a store computer; the Store computers page (13 October 2026)
+
+- **Built, integration-tested (memory + PostgreSQL) and browser-tested (Chromium, production API); no staff UAT:** a "store computer replaced" act moves a till's bill-number prefix to a new store computer — asked by head-office business staff covering all stores, approved by the owner alone through the approvals engine (self-approval refused), append-only and guarded per prefix; after it the new computer's reports are believed, the old one's are refused by name, and lost-bill checks resume (OB-97). The "not checked" line after a restore from an old backup can be acknowledged by the owner or head-office business staff with a reason; it holds while the same numbers are reported and returns when they change (OB-98). New head-office page "Store computers" under Administration: bill-number bindings, "Needs a person" with acknowledge-with-reason, and the replacement request → owner approval → "Move the bill numbers now"; English and Tamil; fits 360 px; single-store managers and IT see it read-only and the server refuses them (OB-99).
+- **Mutations:** 15 caught; one survivor equivalent (two checks refuse the same people with the same code; removing both is caught).
+- **Full gate (13 Oct, PostgreSQL):** 11,579 unit/integration, 42 performance, 355 browser — all passed.
+
 ## Coordinated programme · Round 25 — verifier r24 closed; owner decisions OB-93 to OB-96 (13 October 2026)
 
 - **Built and integration-tested (memory + PostgreSQL); no staff UAT:** an honest store computer no longer raises a false "lost track" alarm on a half-working line — head office takes "gone" only from a report that does not contradict itself, and the store computer reads its queue counts and lists in one step (OB-93). Each bill-number prefix is bound to the store computer that first reported it; another computer's report of it is kept but refused and named (OB-94 a). The store computer reports numbers it took but never used, and head office never names those as never received (OB-94 b). Nobody may hold both the IT/platform role and a business role — refused by name at grant, approval, emergency grant, joiner/mover and initial set-up; existing combinations shown on operational health (OB-95). A tampered store computer cannot slow head office: at most 500 at-risk numbers examined per report and prefix, the excess shown as "not checked"; the attack shape takes about 0.25 s per day, was about 90–100 s (OB-96).
 - **Mutations:** 24 run, 22 killed, 2 equivalent. Fast and plain-reference rules agree on 300 seeded histories.
 - **Full gate (13 Oct, PostgreSQL):** 11,553 unit/integration, 42 performance, 353 browser — all passed.
-- **Next (round 26, building):** OB-97 owner-approved "store computer replaced" act; OB-98 acknowledging the "not checked" line. Until then: do not replace a store computer under a new sign-in.
+- **On the demo:** merged as PR #770 and deployed (demo and canary succeeded).
 
 ## Coordinated programme · Round 24 — verifier r23 closed; owner decisions OB-91 and OB-92 (13 October 2026)
 
