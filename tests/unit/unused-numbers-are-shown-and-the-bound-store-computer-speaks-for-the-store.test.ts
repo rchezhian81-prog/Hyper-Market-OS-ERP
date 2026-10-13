@@ -18,7 +18,7 @@ import { DEFAULT_THRESHOLDS } from '../../packages/ops/src/index';
  * OB-101 (verifier r26 NEW-2, NEW-3, probes B1/B2): the refusal of a second store computer names both machines neutrally and
  * says which one head office uses and why; a store's disk, queue, tills and numbering come only from the store computer that
  * holds its tills' prefixes — a refused one's healthy report never hides the bound one's full disk; the refused one is shown
- * apart. And (NEW-5, M4) an owner-approved act answers only the refusals from BEFORE it (probe R2).
+ * apart. And (NEW-5, the act-time mutant) an owner-approved act answers only the refusals from BEFORE it (probe R2).
  */
 
 const t0 = Date.parse('2026-03-01T08:00:00.000Z');
@@ -144,6 +144,18 @@ describe('OB-101: two store computers — neutral words, and the bound one speak
     expect(h.judged.localStoreWritable).toBe(false);
   });
 
+  it('the hours of trading left come from the bound computer\'s own reports — a second one\'s smaller log never resets them', () => {
+    const records: BoxHealthRecord[] = [];
+    for (let k = 0; k <= 12; k += 1) {
+      records.push(rec(k * 10, { through: 110 + k, unsent: { count: 0 } }, 0, 'u-box-a', { salesLogUsedBytes: 1_000_000 + k * 100_000, salesLogCapacityBytes: 1e9, freeBytes: 5e9 }));
+      records.push(rec(k * 10 + 5, { through: 5, unsent: { count: 0 } }, 0, 'u-box-b', { salesLogUsedBytes: 10 }));
+    }
+    const h = read(records, 125, 200);
+    expect(h.box.computer).toBe('u-box-a');
+    expect(h.box.tradingHoursLeft).not.toBeNull();
+    expect(h.box.tradingHoursLeftSays).toMatch(/^about [\d.]+ hours of trading left/);
+  });
+
   it('before any prefix is bound, the latest report stands (as before)', () => {
     const plain = (min: number, by: string, free: number): BoxHealthRecord => ({ ...rec(min, { through: 1 }, 0, by, { freeBytes: free }), receiptNumbersIssued: undefined } as unknown as BoxHealthRecord);
     const h = read([plain(0, 'u-box-a', 0), plain(1, 'u-box-b', 5e9)], 2, 0);
@@ -160,7 +172,7 @@ describe('OB-101: two store computers — neutral words, and the bound one speak
     expect(h.comp('box_disk')!.detail).toMatch(/^the store computer that holds store S1's tills' bill numbers \(u-box-new\) has not reported/);
   });
 
-  it('R2 (NEW-5 · M4): act A→B, then B→A — B\'s report after the second act is a refusal, not answered by the first act', () => {
+  it('R2 (NEW-5 · act time): act A→B, then B→A — B\'s report after the second act is a refusal, not answered by the first act', () => {
     const records = [rec(0, { through: 110, unsent: { count: 0 } }, 0, 'u-box-a'), rec(12, { through: 120, unsent: { count: 0 } }, 0, 'u-box-b'),
       rec(25, { through: 125, unsent: { count: 0 } }, 0, 'u-box-b'), rec(26, { through: 120, unsent: { count: 0 } }, 0, 'u-box-a')];
     const replacements = [act(10, 'u-box-a', 'u-box-b', 'scr-1'), act(20, 'u-box-b', 'u-box-a', 'scr-2')];

@@ -21,7 +21,7 @@ import { UNRECEIVED_GRACE_MINUTES, FOLD_SNAPSHOT_EVERY, type BoxHealthRecord } f
  *      it was made is a finding by name (`unused_number_received`).
  *   2. OB-101 (verifier r26 NEW-3, probe B2): a second store computer's healthy report never hides the full disk of the one
  *      that holds the store's tills' prefixes; the second one is shown apart.
- *   3. NEW-5 (mutant M23): one store's manager reads only that store's bindings; the owner reads every store's.
+ *   3. NEW-5 (the bindings store-scope mutant): one store's manager reads only that store's bindings; the owner reads every store's.
  *   4. OB-102: the never-received fold's saved running result is kept in the snapshot store (PostgreSQL's projection_snapshot
  *      in production), a later read resumes from it, and deleting it changes no answer.
  */
@@ -138,7 +138,7 @@ async function aSecondComputerNeverHidesTheBoundOnesFullDisk(h: ApiHarness): Pro
   expect(refused[0]!.detail).toMatch(/^two store computers report bill numbers under S1L1- for store S1: u-box and u-box-2\. Head office uses u-box's reports for S1L1- because it was the first to report S1L1-/);
 }
 
-// ── 3. NEW-5 (M23): bindings by store scope ───────────────────────────────────────────────────────────────────────────
+// ── 3. NEW-5 (bindings scope): bindings by store scope ───────────────────────────────────────────────────────────────────────────
 async function aStoresManagerReadsOnlyItsOwnBindings(h: ApiHarness): Promise<void> {
   const { call } = await shop(h);
   await report(call, [{ prefix: P, through: 3, soldThrough: 3, unsent: { count: 0 } }]);
@@ -189,7 +189,7 @@ async function theSavedResultIsKeptResumedAndDisposable(store: EventStore, snaps
 describe('round 27 · OB-100 / OB-101 / OB-102 (memory)', () => {
   it('OB-100 (U1/U4): unused numbers are shown per till and day; a held one said unused afterwards is a finding', async () => { await unusedNumbersAreShownAndAHeldOneIsAFinding(apiHarness()); }, 180_000);
   it('OB-101 (B2): a second store computer never hides the bound one\'s full disk; its refusal is neutral', async () => { await aSecondComputerNeverHidesTheBoundOnesFullDisk(apiHarness()); }, 180_000);
-  it('NEW-5 (M23): one store\'s manager reads only that store\'s bindings', async () => { await aStoresManagerReadsOnlyItsOwnBindings(apiHarness()); }, 180_000);
+  it('NEW-5 (bindings scope): one store\'s manager reads only that store\'s bindings', async () => { await aStoresManagerReadsOnlyItsOwnBindings(apiHarness()); }, 180_000);
   it('OB-102: the saved running result is kept, resumed, and disposable', async () => {
     const snapshots = new InMemorySnapshotStore();
     await theSavedResultIsKeptResumedAndDisposable(new InMemoryEventStore(), snapshots, async (T) => {
@@ -208,7 +208,7 @@ describe.skipIf(DATABASE_URL === undefined)('round 27 · OB-100 / OB-101 / OB-10
   };
   it('OB-100 (U1/U4): unused numbers are shown per till and day; a held one said unused afterwards is a finding', async () => { await onPg(unusedNumbersAreShownAndAHeldOneIsAFinding); }, 300_000);
   it('OB-101 (B2): a second store computer never hides the bound one\'s full disk; its refusal is neutral', async () => { await onPg(aSecondComputerNeverHidesTheBoundOnesFullDisk); }, 300_000);
-  it('NEW-5 (M23): one store\'s manager reads only that store\'s bindings', async () => { await onPg(aStoresManagerReadsOnlyItsOwnBindings); }, 300_000);
+  it('NEW-5 (bindings scope): one store\'s manager reads only that store\'s bindings', async () => { await onPg(aStoresManagerReadsOnlyItsOwnBindings); }, 300_000);
   it('OB-102: the saved running result is kept in projection_snapshot, resumed, and disposable', async () => {
     const pool = new Pool({ connectionString: DATABASE_URL, max: 8, options: '-c app.tenant_id=*' });
     const sql = pgPoolClient(pool);

@@ -226,7 +226,8 @@ count still open and names the others.
 - **One store computer per till's bill numbers (OB-94).** The first store computer (its own sign-in)
   that reports a till's bill-number prefix owns it. If a second store computer — a stand-by box, or a
   box set up by mistake with the same till — reports that prefix, the health page says
-  **"refused — a second store computer: … belongs to the store computer …"**, names both, and head office
+  **"two store computers report bill numbers under <prefix> for store <store>: <A> and <B>. Head office
+  uses <A>'s reports … because …"** (round 27 wording, OB-101: both named, neither blamed), and head office
   ignores the second one's word (it can neither hide a lost bill nor make a waiting one look lost).
   - Switch the stand-by box off, or give it its own till; then the owner or head-office staff
     acknowledge the line with a reason (the same acknowledgement as for any refused report; the IT
@@ -268,7 +269,8 @@ count still open and names the others.
   3. The same head office person sends the act: `POST /v1/store-computers/replacements` with the same
      details and the `approvalId`. One approval moves one prefix once.
   From that moment the new store computer's reports are used for that prefix, the old one's are refused
-  by name (**"refused — a second store computer: <old> … belongs to the store computer <new>"**), and
+  by name (**"two store computers report … : <new> and <old>. Head office uses <new>'s reports … because the
+  owner approved moving <prefix> to it …"**), and
   the "bills issued but never received" check resumes on the new store computer. The new computer's
   refused reports from before the act are answered by it. Head office refuses, by name and on the audit
   trail: a sign-in that is not a store computer of that store (`not_a_store_computer_of_this_store`),
@@ -290,6 +292,34 @@ count still open and names the others.
   Each acknowledgement is kept (who, why, when). It holds while the store computer keeps reporting the
   same set of not-checked numbers; if the set changes — even back to an earlier one — the line returns and
   needs a new acknowledgement. One store's manager and the IT administrator are refused by name.
+
+**Round 27 (owner decisions OB-100 to OB-102, 13 Oct 2026):**
+
+- **"taken but never used (information — nothing to look for)" (OB-100).** The health page and the Store
+  computers page ("Taken but never used") show, per store, till and day, the bill numbers each store
+  computer says it took and never put on a bill — a bill abandoned at the till, a card declined after the
+  number was taken. Nobody looks for paper bills for these. If one till shows many on one day, ask the
+  store why (a till left half-way through many bills, or a store computer that is faulty).
+- **"does not fit: … said … that it gave <number> and never put it on a bill, but head office holds a
+  sale (or return) under that number, made before that" (OB-100).** Head office has the bill, so nothing
+  is missing and nobody looks for paper — but that store computer's list of unused numbers cannot be relied
+  on. Call support to check the store computer (its software or its data). The line stays while the bill
+  and the store computer's word both stand; how it is cleared is an owner decision still to be made.
+- **Two store computers in one store (OB-101).** The refusal line now names both machines, says which one
+  head office uses for the till and why (it reported the till's numbers first, or the owner approved moving
+  them to it), and that bills sold on the OTHER one are not checked for loss until a person checks both.
+  Check both machines: if the other one is now the till's real store computer, do the "store computer
+  replaced" act; if it is a stand-by or a copy, switch it off or give its till a new prefix. The store's
+  disk, queue, tills and "hours of trading left" are read ONLY from the store computer that holds the tills'
+  numbers — a second machine's report never hides a full disk; the second machine is listed apart
+  ("another store computer … also reports for this store but holds none of its tills' bill numbers").
+- **Head office's check no longer re-reads every report (OB-102).** It keeps a saved running result of the
+  never-received check (PostgreSQL table `projection_snapshot`, projection `never-received-fold@1`) and reads
+  only the store computers' reports from about the last half hour onto it. It is disposable: if anything
+  looks wrong, support may delete that one row
+  (`DELETE FROM projection_snapshot WHERE projection = 'never-received-fold@1' AND tenant_id = '<tenant>'`);
+  the next health read rebuilds it from every report (slower once — up to about 30 s for a week of an
+  altered store computer's reports — then fast again). Never delete the reports themselves.
 
 ## Part 4 — Restoring (the one that matters)
 

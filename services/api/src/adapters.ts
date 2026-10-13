@@ -14781,6 +14781,8 @@ export async function billNumberFindingsOf(
  * snapshot store (disposable: delete it and the next read folds every report again, to the same answer).
  */
 const NEVER_RECEIVED_PROJECTION = 'never-received-fold@1';
+/** Round 27 · OB-100: at most this many held bills per prefix have their own time read for the "said unused" check (the newest). */
+export const UNUSED_HELD_TIMED_MAX = 50;
 
 /**
  * Round 27: everything head office reads from its store computers' reports at once — the bill-number findings (r19…r26),
@@ -14868,7 +14870,8 @@ export async function storeComputerReading(
   // Round 27 · OB-100 (verifier r26 NEW-1, probes U1/U4): a number a store computer said it never used that head office
   // HOLDS a bill for — checked against the ledger: the newest UNRECEIVED_CHECK_CAP such numbers at or below banked per
   // prefix (above banked, head office holds no bill by definition), in ONE indexed read per prefix; the bill's own time is
-  // read only for the ones held (`unusedButReceived`: said unused after the bill was made).
+  // read only for the ones held (`unusedButReceived`: said unused after the bill was made) — at most UNUSED_HELD_TIMED_MAX of
+  // them per prefix (the newest), so an altered store computer calling 500 banked numbers unused costs a bounded read.
   const unusedReceived = new Map<string, UnusedReceived[]>();
   for (const [storeId, list] of read.unused) {
     for (const u of list) {
@@ -14881,9 +14884,12 @@ export async function storeComputerReading(
       if (numbers.length === 0) continue;
       const held = await heldKeys(numbers.map((n) => `receipt-${tenantId}-${numberOf(u.prefix, n)}`));
       const at = new Map<number, { as: 'sale' | 'return'; at: string }>();
+      let timed = 0;
       for (const n of numbers) {
+        if (timed >= UNUSED_HELD_TIMED_MAX) break;
         const key = `receipt-${tenantId}-${numberOf(u.prefix, n)}`;
         if (held.has(key)) {
+          timed += 1;
           const e = await store.findByIdempotencyKey(tenantId, key);
           if (e !== undefined) at.set(n, { as: 'sale', at: e.event.occurredAt });
           continue;
