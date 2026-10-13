@@ -50,7 +50,7 @@ import {
 } from '../../../packages/ops/src/index';
 import { readRules, readThresholds } from './operational-health';
 import { raiseKey, type AlertLifecycleDeps, type AlertLifecycleEvent } from './alert-lifecycle';
-import { judgeBoxes, type BoxHealthRecord, type BoxHealthView, type BillNumberFinding, type StoreComputerReplacement, type PrefixBinding, type UnusedNumbers } from './box-health';
+import { judgeBoxes, type BoxHealthRecord, type BoxHealthView, type BillNumberFinding, type StoreComputerReplacement, type PrefixBinding, type UnusedNumbers, type BoxReportsView } from './box-health';
 import type { ComponentHealth } from '../../../packages/ops/src/index';
 
 export interface ConnectorQueueDepth {
@@ -122,8 +122,13 @@ export interface ObservedHealthDeps extends Pick<AlertLifecycleDeps, 'alerts' | 
    * M35-FR-03: the store computers' own health reports (disk, queue, till devices — `box-health.ts`) and the stores head
    * office knows (so one that never reported is named, not left out). Absent: the lane-side signals stay not observed.
    */
-  readonly storeComputers?: (tenantId: string) => Promise<{
+  readonly storeComputers?: (tenantId: string, at?: string) => Promise<{
     readonly records: readonly BoxHealthRecord[]; readonly knownStores: readonly string[];
+    /**
+     * Round 28 · OB-104: the reports as the box history's saved running result keeps them — when given, `records` is not read
+     * (it may be empty) and the stores are judged from this (`judgeBoxes` `view`), to the same answers.
+     */
+    readonly view?: BoxReportsView;
     /** Verifier r19: bills issued but never received, and box reports refused — per store, judged with the ledger. */
     readonly billNumberFindings?: ReadonlyMap<string, readonly BillNumberFinding[]>;
     /** Verifier r20 HW-2: the bill-number high-water's visibility fence, when it is waiting on an open transaction. */
@@ -192,12 +197,13 @@ export async function observeSignals(deps: ObservedHealthDeps, tenantId: string,
     deps.lastSaleSyncedAt(tenantId), deps.catalogueBuiltAt(tenantId), deps.connectorQueues(tenantId),
     deps.integrationHealth(tenantId, at), deps.backups(tenantId),
     deps.storeLanes === undefined ? Promise.resolve(undefined) : deps.storeLanes(tenantId),
-    deps.storeComputers === undefined ? Promise.resolve(undefined) : deps.storeComputers(tenantId),
+    deps.storeComputers === undefined ? Promise.resolve(undefined) : deps.storeComputers(tenantId, at),
     deps.separationOfDuties === undefined ? Promise.resolve([]) : deps.separationOfDuties(tenantId),
   ]);
-  const judgedBoxes = boxReports === undefined || (boxReports.records.length === 0)
+  const judgedBoxes = boxReports === undefined || !(boxReports.view?.any ?? boxReports.records.length > 0)
     ? undefined : judgeBoxes({
       records: boxReports.records, knownStores: boxReports.knownStores, at, thresholds,
+      ...(boxReports.view === undefined ? {} : { view: boxReports.view }),
       ...(boxReports.billNumberFindings === undefined ? {} : { billNumberFindings: boxReports.billNumberFindings }),
       ...(boxReports.replacements === undefined ? {} : { replacements: boxReports.replacements }),
       ...(boxReports.bindings === undefined ? {} : { bindings: boxReports.bindings }),
