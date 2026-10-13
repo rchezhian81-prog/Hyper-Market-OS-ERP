@@ -12,8 +12,11 @@
 //
 // Round 27 · OB-100 "A": the numbers each store computer took and never used are shown too — per store, till prefix and day
 // (count and numbers), as information, never as something to look for — and a sale head office holds under a number the
-// store computer kept calling unused is a finding that needs a person (support checks the store computer; it is not
-// acknowledged here — how it is cleared is an owner decision still to be made).
+// store computer kept calling unused is a finding that needs a person (support checks the store computer).
+// Round 28 · OB-103 "A" (owner, 13 Oct 2026, in writing, "You/HO acknowledge"): that line is acknowledged here too, by the
+// owner or head office staff (all stores, never IT), with a reason, once support has checked the store computer. Head office
+// keeps who, why and when; the acknowledgement holds while it finds the same set of numbers — a new number shows the line
+// again (`POST /v1/store-computers/unused-numbers-received/acknowledgements`, by its count, as the page showed it).
 //
 // Every rule is head office's: what this person may do comes from head office's own answer (`you` on the bindings read —
 // the same rule the acts use), never from the page; each act is re-checked there and a refusal is shown in its own words.
@@ -69,6 +72,7 @@ export const BINDINGS_PATH = '/v1/store-computers/prefix-bindings';
 export const REPLACE_PATH = '/v1/store-computers/replacements';
 export const REFUSAL_ACK_PATH = '/v1/store-computers/bill-number-refusals/acknowledgements';
 export const NOT_CHECKED_ACK_PATH = '/v1/store-computers/at-risk-not-checked/acknowledgements';
+export const UNUSED_RECEIVED_ACK_PATH = '/v1/store-computers/unused-numbers-received/acknowledgements';
 
 export const STORE_COMPUTERS_COPY = {
   en: {
@@ -78,7 +82,7 @@ export const STORE_COMPUTERS_COPY = {
     sumBindings: 'Tills with a store computer', sumReplaced: 'Moved by a replaced act', sumNeeds: 'Needs a person', sumWaiting: 'Your requests waiting',
     tabBindings: 'Bill numbers', tabFindings: 'Needs a person', tabRequests: 'Replacements',
     bindingsLead: 'Each till\'s bill-number prefix and the one store computer head office takes its word from.',
-    findingsLead: 'Store computer reports head office refused, and older numbers it did not check. Each stays until a person acknowledges it with a reason.',
+    findingsLead: 'Store computer reports head office refused, older numbers it did not check, and numbers a store computer called unused after head office received the bill. Each stays until a person acknowledges it with a reason.',
     requestsLead: 'Your "store computer replaced" requests, and every act already done. Once the owner approves a request, send the move.',
     colStore: 'Store', colPrefix: 'Till prefix', colComputer: 'Store computer (sign-in)', colVia: 'How', colSince: 'Since',
     viaFirst: 'first to report it', viaReplaced: 'replaced store computer (owner approved)',
@@ -106,7 +110,7 @@ export const STORE_COMPUTERS_COPY = {
     sumBindings: 'கடை கணினி உள்ள கவுண்டர்கள்', sumReplaced: 'மாற்றுச் செயலால் நகர்த்தப்பட்டவை', sumNeeds: 'ஒருவர் தேவை', sumWaiting: 'காத்திருக்கும் உங்கள் கோரிக்கைகள்',
     tabBindings: 'பில் எண்கள்', tabFindings: 'ஒருவர் தேவை', tabRequests: 'மாற்றங்கள்',
     bindingsLead: 'ஒவ்வொரு கவுண்டரின் பில் எண் முன்னொட்டும், தலைமை அலுவலகம் நம்பும் ஒரே கடை கணினியும்.',
-    findingsLead: 'தலைமை அலுவலகம் மறுத்த கடை கணினி அறிக்கைகள், சரிபார்க்காத பழைய எண்கள். காரணத்துடன் ஒருவர் ஒப்புக்கொள்ளும் வரை ஒவ்வொன்றும் இருக்கும்.',
+    findingsLead: 'தலைமை அலுவலகம் மறுத்த கடை கணினி அறிக்கைகள், சரிபார்க்காத பழைய எண்கள், தலைமை அலுவலகம் பில்லைப் பெற்ற பிறகும் கடை கணினி பயன்படாதது என்று சொன்ன எண்கள். காரணத்துடன் ஒருவர் ஒப்புக்கொள்ளும் வரை ஒவ்வொன்றும் இருக்கும்.',
     requestsLead: 'உங்கள் "கடை கணினி மாற்றப்பட்டது" கோரிக்கைகளும் ஏற்கனவே செய்த செயல்களும். உரிமையாளர் அனுமதித்ததும் நகர்வை அனுப்புங்கள்.',
     colStore: 'கடை', colPrefix: 'கவுண்டர் முன்னொட்டு', colComputer: 'கடை கணினி (உள்நுழைவு)', colVia: 'எப்படி', colSince: 'முதல்',
     viaFirst: 'முதலில் அறிவித்தது', viaReplaced: 'மாற்றப்பட்ட கடை கணினி (உரிமையாளர் அனுமதி)',
@@ -158,8 +162,8 @@ export function requestWords(lang: Lang, r: ReplacementRequest): string {
 /** A finding's short label. */
 export const findingKindWords = (lang: Lang, f: Finding): string =>
   wordsFor(lang, f.kind === 'report_refused' ? 'kindRefused' : f.kind === 'unused_number_received' ? 'kindUnusedReceived' : 'kindNotChecked');
-/** Round 27 · OB-100: a finding a person acknowledges HERE (a refused report, a not-checked line) — not "said unused, but held". */
-export const acknowledgeable = (f: Finding): boolean => f.kind === 'report_refused' || f.kind === 'at_risk_not_checked';
+/** A finding a person acknowledges HERE: a refused report, a not-checked line, and (round 28 · OB-103) "said unused, but held". */
+export const acknowledgeable = (f: Finding): boolean => f.kind === 'report_refused' || f.kind === 'at_risk_not_checked' || f.kind === 'unused_number_received';
 /** Round 27 · OB-100: an unused row's numbers as the till prints them (prefix + six digits), ranges joined. */
 export function unusedNumbersWords(lang: Lang, row: UnusedRow): string {
   const pad = (n: number): string => String(n).padStart(6, '0');
@@ -191,7 +195,7 @@ export interface StoreComputersSession {
   ask(form: { readonly storeId: string; readonly prefix: string; readonly fromComputer: string; readonly toComputer: string; readonly reason: string }): Promise<Outcome<{ readonly requestId: string }>>;
   /** Step 3: send the move with the owner's approval. */
   send(request: ReplacementRequest): Promise<Outcome<{ readonly replacement: Replacement }>>;
-  /** Acknowledge a refused report or a not-checked line, with a reason. */
+  /** Acknowledge a refused report, a not-checked line or a "said unused, but held" line, with a reason. */
   acknowledge(finding: Finding, reason: string): Promise<Outcome<unknown>>;
 }
 
@@ -284,7 +288,7 @@ export function createStoreComputersSession(input: {
       if (!reasonOk(reason)) return { result: 'invalid', why: 'shortReason' };
       return f.kind === 'report_refused'
         ? call('POST', REFUSAL_ACK_PATH, { storeId: f.storeId, prefix: f.prefix, through: f.through, reason: reason.trim() })
-        : call('POST', NOT_CHECKED_ACK_PATH, { storeId: f.storeId, prefix: f.prefix, count: f.count, reason: reason.trim() });
+        : call('POST', f.kind === 'unused_number_received' ? UNUSED_RECEIVED_ACK_PATH : NOT_CHECKED_ACK_PATH, { storeId: f.storeId, prefix: f.prefix, count: f.count, reason: reason.trim() });
     },
   };
 }

@@ -325,7 +325,9 @@ import { latestDomainReports, latestPerStore, type SyncWatermarkRecord } from '.
 import type { BoxHealthRecord, BillNumberFinding, RefusalAcknowledgement, StoreComputerReplacement, AtRiskAcknowledgement } from '../../platform/src/box-health';
 import {
   readNeverReceived, billNumberFindingsFor, judgeReportedIssued, weighSparseClaim, unusedButReceived, PLAUSIBLE_ISSUED_AHEAD, FOLD_SETTLE_MINUTES, UNRECEIVED_CHECK_CAP,
+  readBoxHistory,
   type UnreceivedNumbers, type ClaimSlack, type JudgedAway, type NeverReceivedSnapshot, type PrefixBinding, type UnusedNumbers, type UnusedReceived,
+  type UnreceivedCandidate, type UnusedReceivedAcknowledgement, type BoxHistorySnapshot, type BoxHistoryEntry, type BoxHistoryJudge, type BoxReportsView,
 } from '../../platform/src/box-health';
 import type { BranchScope } from '../../kernel/src/index';
 import { tradingDayIn, tradingDayWindow, type TradingCalendar } from '../../../packages/calendar/src/index';
@@ -12801,18 +12803,18 @@ export function observedHealthAdapter(input: {
       return { stalestCompleteAt: stalest!.at, stalestStore: stalest!.store, unsent, deadLettered, stores: latestByStore.size };
     },
     // M35-FR-03: the store computers' own health reports (disk, queue, till devices) and the stores head office knows.
-    storeComputers: async (tenantId) => {
-      const records = await boxHealthAdapter({ store: input.store }).records(tenantId);
+    storeComputers: async (tenantId, at) => {
       // Verifier r19: bills issued and never received (sales lost by a restore), and box reports head office refused.
       // Round 27 · OB-102: from the saved running result; OB-100: with the unused numbers; OB-101: with the bindings.
-      const reading = await storeComputerReading(input.store, tenantId, records, input.now(), {
+      // Round 28 · OB-104: ONLY the reports after the box history's saved running result are read — never every report.
+      const reading = await storeComputerHistory(input.store, tenantId, at ?? input.now(), {
         ...(input.boxUnsentWarnHours === undefined ? {} : { unsentWarnHours: await input.boxUnsentWarnHours(tenantId) }),
         ...(input.boxClaimSlack === undefined ? {} : { claimSlack: await input.boxClaimSlack(tenantId) }),
         ...(input.storeTimeZone === undefined ? {} : { timeZone: await input.storeTimeZone(tenantId) }),
         ...(input.snapshots === undefined ? {} : { snapshots: input.snapshots }),
       });
       return {
-        records,
+        records: [], view: reading.view,
         knownStores: (await orgStructureAdapter({ store: input.store, now: input.now }).nodes(tenantId)).filter((n) => n.kind === 'branch').map((n) => n.nodeId),
         billNumberFindings: reading.findings, bindings: reading.bindings, unusedNumbers: reading.unused,
         // Round 26 · OB-97: the owner-approved "store computer replaced" acts — the same binding the findings were judged on.
@@ -13554,10 +13556,23 @@ const BOX_REFUSAL_ACK_STREAM = streamName(STREAM.org, 'store-computer-refusal-ac
 const BOX_REPLACEMENT_STREAM = streamName(STREAM.org, 'store-computer-replacements');
 /** Round 26 · OB-98: acknowledgements of an "at-risk numbers not checked" finding (append-only). */
 const BOX_AT_RISK_ACK_STREAM = streamName(STREAM.org, 'store-computer-not-checked-acknowledgements');
+/** Round 28 · OB-103: acknowledgements of a "said unused, but head office has the bill" finding (append-only). */
+const BOX_UNUSED_ACK_STREAM = streamName(STREAM.org, 'store-computer-unused-received-acknowledgements');
 /** Round 26 · OB-97: the guard one (store, prefix)'s binding moves under — two acts racing on it cannot both land. */
 const bindingGuardKey = (storeId: string, prefix: string): string => `store-computer-binding:${storeId}:${prefix}`;
-export function boxHealthAdapter(input: { readonly store: EventStore; readonly snapshots?: SnapshotStore }): {
+export function boxHealthAdapter(input: {
+  readonly store: EventStore; readonly snapshots?: SnapshotStore;
+  /**
+   * Round 28 · OB-103/104: the owner's settings the health read uses (the same saved running result is shared, and is set
+   * aside when read with other settings — so give the same ones the health read gets).
+   */
+  readonly settings?: StoreComputerReadingSettings;
+  readonly now?: () => string;
+}): {
   records: (tenantId: string) => Promise<readonly BoxHealthRecord[]>;
+  acknowledgeUnusedReceived: (tenantId: string, a: UnusedReceivedAcknowledgement, requestKey: string) => Promise<UnusedReceivedAcknowledgement>;
+  unusedReceivedNow: (tenantId: string, storeId: string, prefix: string) => Promise<readonly (readonly [number, number])[]>;
+  bindingsAt: (tenantId: string, at: string) => Promise<readonly PrefixBinding[]>;
   record: (tenantId: string, r: BoxHealthRecord) => Promise<BoxHealthRecord>;
   acknowledge: (tenantId: string, a: RefusalAcknowledgement, requestKey: string) => Promise<RefusalAcknowledgement>;
   issuedAndBanked: (tenantId: string) => Promise<{ issuedPrefixes: ReadonlyMap<string, ReadonlySet<string>>; banked: ReadonlyMap<string, number> }>;
@@ -13566,7 +13581,27 @@ export function boxHealthAdapter(input: { readonly store: EventStore; readonly s
   recordReplacement: (tenantId: string, m: StoreComputerReplacement, expectedVersion: number) => Promise<StoreComputerReplacement>;
   acknowledgeNotChecked: (tenantId: string, a: AtRiskAcknowledgement, requestKey: string) => Promise<AtRiskAcknowledgement>;
 } {
+  const reading = async (tenantId: string, at: string) => storeComputerHistory(input.store, tenantId, at, {
+    ...(input.settings === undefined ? {} : await readingSettings(input.settings, tenantId)),
+    ...(input.snapshots === undefined ? {} : { snapshots: input.snapshots }),
+  });
   return {
+    // Round 28 · OB-103: EACH acknowledgement is its own record (who, why, when); only a re-sent request answers the first.
+    acknowledgeUnusedReceived: async (tenantId, a, requestKey) => {
+      const request = createHash('sha256').update(requestKey).digest('hex').slice(0, 32);
+      const key = `box-unused-received-ack-${tenantId}-${a.storeId}-${a.prefix}-${request}`;
+      const res = await input.store.append(tenantId, BOX_UNUSED_ACK_STREAM, makeEvent({
+        id: keyedEventId('box-unused-received-ack', key), type: 'BoxUnusedReceivedAcknowledged', occurredAt: a.at, idempotencyKey: key, source: 'api/platform', payload: a,
+      }));
+      return res.record.event.payload as UnusedReceivedAcknowledgement;
+    },
+    // Round 28 · OB-103: the line as the health read finds it now (before any acknowledgement silences it), from the same reading.
+    unusedReceivedNow: async (tenantId, storeId, prefix) => {
+      const r = await reading(tenantId, (input.now ?? (() => new Date().toISOString()))());
+      return [...(r.unusedReceived.get(storeId) ?? [])].filter((u) => u.prefix === prefix).map((u) => [u.number, u.number] as const);
+    },
+    // Round 28 · OB-104: the bindings on the reports as kept (`prefixBindings`), from the saved running result.
+    bindingsAt: async (tenantId, at) => (await reading(tenantId, at)).rawBindings,
     replacements: (tenantId) => allOf<StoreComputerReplacement>(input.store, tenantId, BOX_REPLACEMENT_STREAM, 'StoreComputerReplaced'),
     bindingVersion: (tenantId, storeId, prefix) => input.store.guardVersion(tenantId, bindingGuardKey(storeId, prefix)),
     // Round 26 · OB-97: one act per approval (its key names the approval), under the (store, prefix) guard read before the
@@ -14825,6 +14860,145 @@ export async function storeComputerReading(
       result: { state: read.snapshot, watermarkSeq: 0, lastEventAt: read.snapshot.settledAt, eventCount: read.snapshot.settledCount },
     });
   }
+  const acknowledged = await allOf<RefusalAcknowledgement>(store, tenantId, BOX_REFUSAL_ACK_STREAM, 'BoxReportRefusalAcknowledged');
+  const atRiskAcknowledged = await allOf<AtRiskAcknowledgement>(store, tenantId, BOX_AT_RISK_ACK_STREAM, 'BoxAtRiskNotCheckedAcknowledged');
+  const unusedAcknowledged = await allOf<UnusedReceivedAcknowledgement>(store, tenantId, BOX_UNUSED_ACK_STREAM, 'BoxUnusedReceivedAcknowledged');
+  const finished = await finishStoreComputerReading(store, tenantId, at, read, banked, claimSlack, new Set(records.map((r) => r.storeId)), (storeId, unreceived, unusedReceived) => billNumberFindingsFor({
+    storeId, records: judged, at, unreceived, banked, acknowledged, replacements, atRiskAcknowledged, unusedAcknowledged,
+    ...(unusedReceived === undefined ? {} : { unusedReceived }),
+  }));
+  return { ...finished, bindings: read.bindings, resumed: read.resumed };
+}
+
+/** Round 28: the owner's settings a store-computer reading uses (each read per tenant). */
+export interface StoreComputerReadingSettings {
+  readonly unsentWarnHours?: (tenantId: string) => Promise<number> | number;
+  readonly claimSlack?: (tenantId: string) => Promise<ClaimSlack> | ClaimSlack;
+  readonly timeZone?: (tenantId: string) => Promise<string> | string;
+}
+async function readingSettings(s: StoreComputerReadingSettings, tenantId: string): Promise<{ unsentWarnHours?: number; claimSlack?: ClaimSlack; timeZone?: string }> {
+  return {
+    ...(s.unsentWarnHours === undefined ? {} : { unsentWarnHours: await s.unsentWarnHours(tenantId) }),
+    ...(s.claimSlack === undefined ? {} : { claimSlack: await s.claimSlack(tenantId) }),
+    ...(s.timeZone === undefined ? {} : { timeZone: await s.timeZone(tenantId) }),
+  };
+}
+
+/**
+ * Round 28 · OB-104 "A": the box history's saved running result (`readBoxHistory`) — one per tenant, in the snapshot store
+ * (disposable: delete it and the next read folds every report again, to the same answer).
+ */
+const BOX_HISTORY_PROJECTION = 'box-health-history@1';
+/** Round 28 · OB-104: the newest visibility fence each tenant's box history saw, per snapshot store (one that settles later is used then). */
+const BOX_HISTORY_FENCES = new WeakMap<SnapshotStore, Map<string, { readonly seq: number; readonly token: string }>>();
+
+/** Round 28 · OB-104: what a windowed reading answers (the full reading's answers, and what the health read's judge needs). */
+export interface StoreComputerHistoryReading {
+  readonly findings: ReadonlyMap<string, readonly BillNumberFinding[]>;
+  readonly unused: ReadonlyMap<string, readonly UnusedNumbers[]>;
+  readonly unusedReceived: ReadonlyMap<string, readonly UnusedReceived[]>;
+  readonly bindings: readonly PrefixBinding[];
+  readonly rawBindings: readonly PrefixBinding[];
+  readonly view: BoxReportsView;
+  readonly resumed: boolean;
+  /** Why a saved result was set aside on this read (it then folded every report), if it was. */
+  readonly setAside?: string;
+  /** How many box-health reports this read took from the store (the window — or every one when nothing was saved). */
+  readonly reportsRead: number;
+}
+
+/**
+ * Round 28 · OB-104 "A" (owner, 13 Oct 2026, in writing, "Before the pilot"): the store-computer reading a health read and the
+ * alert worker take — the same answers as `storeComputerReading` over every report (proved by test), from the box history's
+ * saved running result and ONLY the reports at the store's positions after it (`readStream` with `sinceSeq`: an index range
+ * scan on PostgreSQL, a binary search in memory). When the saved result no longer stands it is set aside and every report is
+ * read, once, to make a new one.
+ */
+export async function storeComputerHistory(
+  store: EventStore, tenantId: string, at: string,
+  opts: { readonly unsentWarnHours?: number; readonly claimSlack?: ClaimSlack; readonly timeZone?: string; readonly snapshots?: SnapshotStore } = {},
+): Promise<StoreComputerHistoryReading> {
+  const { unsentWarnHours, claimSlack } = opts;
+  const banked = await bankedReceiptCounts(store, tenantId);
+  const issuedPrefixes = await issuedPrefixStores(store, tenantId);
+  const replacements = await allOf<StoreComputerReplacement>(store, tenantId, BOX_REPLACEMENT_STREAM, 'StoreComputerReplaced');
+  const acknowledged = await allOf<RefusalAcknowledgement>(store, tenantId, BOX_REFUSAL_ACK_STREAM, 'BoxReportRefusalAcknowledged');
+  const atRiskAcknowledged = await allOf<AtRiskAcknowledgement>(store, tenantId, BOX_AT_RISK_ACK_STREAM, 'BoxAtRiskNotCheckedAcknowledged');
+  const unusedAcknowledged = await allOf<UnusedReceivedAcknowledgement>(store, tenantId, BOX_UNUSED_ACK_STREAM, 'BoxUnusedReceivedAcknowledged');
+  const snapshots = opts.snapshots ?? processHighWaterSnapshots(store);
+  // The visibility fence, checked BEFORE the reports are read: every report at or below a settled fence is in the read.
+  let settledThrough: number | undefined;
+  if (store.positionFence !== undefined && store.fenceSettled !== undefined) {
+    const fences = BOX_HISTORY_FENCES.get(snapshots) ?? new Map<string, { seq: number; token: string }>();
+    BOX_HISTORY_FENCES.set(snapshots, fences);
+    const pending = fences.get(tenantId);
+    const fresh = await store.positionFence(tenantId, BOX_HEALTH_STREAM);
+    if (await store.fenceSettled(tenantId, fresh.token)) { settledThrough = fresh.seq; fences.delete(tenantId); }
+    else if (pending !== undefined && await store.fenceSettled(tenantId, pending.token)) { settledThrough = pending.seq; fences.set(tenantId, fresh); }
+    else if (pending === undefined) fences.set(tenantId, fresh);
+  }
+  // Verifier r19 BOX-1 / r20 BOX-2: every report is re-judged at read (`judgeReportedIssued`), as `storeComputerReading` does.
+  const judge: BoxHistoryJudge = {
+    owns: (storeId, prefix) => {
+      const stores = issuedPrefixes.get(prefix);
+      return stores === undefined ? prefix.startsWith('R-') && prefix.endsWith('-') && prefix.length > 3 : stores.has(storeId);
+    },
+    plausible: (prefix, through) => through <= (banked.get(prefix) ?? 0) + PLAUSIBLE_ISSUED_AHEAD,
+  };
+  const entriesOf = (events: readonly PersistedEvent[]): BoxHistoryEntry[] => events.map((e) => {
+    const raw = e.event.payload as BoxHealthRecord;
+    if (raw.receiptNumbersIssued === undefined) return { raw, judged: raw, seq: e.seq };
+    const accepted = judgeReportedIssued({ storeId: raw.storeId, issued: raw.receiptNumbersIssued, issuedPrefixes, banked }).accepted;
+    return { raw, judged: accepted.length === raw.receiptNumbersIssued.length ? raw : { ...raw, receiptNumbersIssued: accepted }, seq: e.seq };
+  });
+  const saved = (await snapshots.load<BoxHistorySnapshot>(tenantId, BOX_HEALTH_STREAM, BOX_HISTORY_PROJECTION))?.result.state;
+  const common = {
+    at, banked, replacements, refusalAcks: acknowledged, atRiskAcks: atRiskAcknowledged, judge,
+    settleBefore: new Date(Date.parse(at) - FOLD_SETTLE_MINUTES * 60_000).toISOString(),
+    ...(settledThrough === undefined ? {} : { settledThrough }),
+    ...(unsentWarnHours === undefined ? {} : { warnHours: unsentWarnHours }), ...(claimSlack === undefined ? {} : { slack: claimSlack }),
+    ...(opts.timeZone === undefined ? {} : { timeZone: opts.timeZone }),
+  };
+  // The window: only the reports above the saved result's position — or every report, when nothing is saved yet.
+  let events = await store.readStream(tenantId, BOX_HEALTH_STREAM, { type: 'StoreComputerHealthReported', ...(saved === undefined ? {} : { sinceSeq: saved.seq }) });
+  let reportsRead = events.length;
+  let read = readBoxHistory({ entries: entriesOf(events), ...(saved === undefined ? {} : { snapshot: saved }), ...common });
+  let setAside: string | undefined;
+  if ('setAside' in read) {
+    setAside = read.setAside;
+    events = await store.readStream(tenantId, BOX_HEALTH_STREAM, { type: 'StoreComputerHealthReported' });
+    reportsRead += events.length;
+    read = readBoxHistory({ entries: entriesOf(events), ...common });
+    if ('setAside' in read) throw new Error(`the box history cannot be read from nothing (${read.setAside})`);
+  }
+  const done = read;
+  if (done.snapshot !== undefined) {
+    await snapshots.save<BoxHistorySnapshot>({
+      tenantId, stream: BOX_HEALTH_STREAM, projection: BOX_HISTORY_PROJECTION, takenAt: done.snapshot.never.settledAt,
+      result: { state: done.snapshot, watermarkSeq: done.snapshot.seq, lastEventAt: done.snapshot.never.settledAt, eventCount: done.snapshot.ord },
+    });
+  }
+  const finished = await finishStoreComputerReading(store, tenantId, at, done, banked, claimSlack, done.storeIds, (storeId, unreceived, unusedReceived) => billNumberFindingsFor({
+    storeId, records: [], at, unreceived, banked, unusedAcknowledged, facts: done.facts(storeId),
+    ...(unusedReceived === undefined ? {} : { unusedReceived }),
+  }));
+  return {
+    ...finished, bindings: done.bindings, rawBindings: done.rawBindings, view: done.view, resumed: done.resumed, reportsRead,
+    ...(setAside === undefined ? {} : { setAside }),
+  };
+}
+
+/**
+ * Round 27/28: the part of a store-computer reading after the folds — every never-received candidate checked against the ledger
+ * (r19…r26), and every number a store computer said it never used checked for a bill head office holds (OB-100) — then each
+ * store's findings in the owner's words (`findingsFor`: from the reports, or from the saved running result's facts).
+ */
+async function finishStoreComputerReading(
+  store: EventStore, tenantId: string, at: string,
+  read: { readonly candidates: readonly UnreceivedCandidate[]; readonly unused: ReadonlyMap<string, readonly UnusedNumbers[]> },
+  banked: ReadonlyMap<string, number>, claimSlack: ClaimSlack | undefined, storeIds: ReadonlySet<string> | readonly string[],
+  findingsFor: (storeId: string, unreceived: readonly UnreceivedNumbers[], unusedReceived: readonly UnusedReceived[] | undefined) => BillNumberFinding[],
+): Promise<{ findings: ReadonlyMap<string, readonly BillNumberFinding[]>; unused: ReadonlyMap<string, readonly UnusedNumbers[]>; unusedReceived: ReadonlyMap<string, readonly UnusedReceived[]> }> {
   const candidates = read.candidates;
   let refundNumbers: Map<string, string> | undefined;
   const refunds = async (): Promise<Map<string, string>> => {
@@ -14902,16 +15076,11 @@ export async function storeComputerReading(
     }
   }
   const out = new Map<string, readonly BillNumberFinding[]>();
-  const acknowledged = await allOf<RefusalAcknowledgement>(store, tenantId, BOX_REFUSAL_ACK_STREAM, 'BoxReportRefusalAcknowledged');
-  const atRiskAcknowledged = await allOf<AtRiskAcknowledgement>(store, tenantId, BOX_AT_RISK_ACK_STREAM, 'BoxAtRiskNotCheckedAcknowledged');
-  for (const storeId of new Set(records.map((r) => r.storeId))) {
-    const f = billNumberFindingsFor({
-      storeId, records: judged, at, unreceived: unreceived.get(storeId) ?? [], banked, acknowledged, replacements, atRiskAcknowledged,
-      ...(unusedReceived.has(storeId) ? { unusedReceived: unusedReceived.get(storeId)! } : {}),
-    });
+  for (const storeId of storeIds) {
+    const f = findingsFor(storeId, unreceived.get(storeId) ?? [], unusedReceived.get(storeId));
     if (f.length > 0) out.set(storeId, f);
   }
-  return { findings: out, unused: read.unused, bindings: read.bindings, resumed: read.resumed };
+  return { findings: out, unused: read.unused, unusedReceived };
 }
 
 /** OB-81: the store pack's `receiptSeries` for one store — each till's current issued prefix. */

@@ -4,8 +4,8 @@ import {
   type Board, type Finding, type ReplacementRequest,
 } from '../../apps/web-erp/src/store-computers-session';
 import { APPROVAL_KINDS } from '../../services/identity/src/approval-requests';
-import { STORE_COMPUTER_REPLACED_KIND, STORE_COMPUTER_REPLACEMENTS_PATH, PREFIX_BINDINGS_PATH, NOT_CHECKED_ACKNOWLEDGEMENTS_PATH, REFUSAL_ACKNOWLEDGEMENTS_PATH } from '../../services/platform/src/box-health';
-import { BINDINGS_PATH, REPLACE_PATH, REFUSAL_ACK_PATH, NOT_CHECKED_ACK_PATH, KIND } from '../../apps/web-erp/src/store-computers-session';
+import { STORE_COMPUTER_REPLACED_KIND, STORE_COMPUTER_REPLACEMENTS_PATH, PREFIX_BINDINGS_PATH, NOT_CHECKED_ACKNOWLEDGEMENTS_PATH, REFUSAL_ACKNOWLEDGEMENTS_PATH, UNUSED_RECEIVED_ACKNOWLEDGEMENTS_PATH } from '../../services/platform/src/box-health';
+import { BINDINGS_PATH, REPLACE_PATH, REFUSAL_ACK_PATH, NOT_CHECKED_ACK_PATH, UNUSED_RECEIVED_ACK_PATH, KIND } from '../../apps/web-erp/src/store-computers-session';
 
 /**
  * **Round 26 · OB-99 "A" — the Store computers page's session (DOM-free).** It reads head office's bindings, its observed
@@ -57,7 +57,7 @@ describe('the store computers session', () => {
     expect(ho.sent.every((x) => x.key === undefined)).toBe(true);
   });
 
-  it('round 27 · OB-100: numbers taken and never used are read per store, till and day; "said unused, but held" needs a person and is not acknowledged here', async () => {
+  it('round 27 · OB-100: numbers taken and never used are read per store, till and day; round 28 · OB-103: "said unused, but held" is acknowledged by its count, with the reason', async () => {
     const ho = fakeHeadOffice((s) => ({
       status: 200,
       body: s.path === BINDINGS_PATH ? { bindings: [], replacements: [], you: { mayReplace: true, mayAcknowledge: true } }
@@ -78,10 +78,16 @@ describe('the store computers session', () => {
     expect(unusedNumbersWords('ta', b.unused[0]!)).toBe('S1L1-000120 மேலும் 3');
     const held = b.findings.find((f) => f.kind === 'unused_number_received')!;
     expect(findingKindWords('en', held)).toBe('Said unused, but head office has the bill');
-    expect(acknowledgeable(held)).toBe(false);
+    expect(acknowledgeable(held)).toBe(true);
     const before = ho.sent.length;
-    expect(await s.acknowledge(held, 'checked with support today')).toEqual({ result: 'invalid', why: 'notAcknowledgeable' });
-    expect(ho.sent.length).toBe(before); // nothing sent
+    expect(await s.acknowledge(held, 'no')).toEqual({ result: 'invalid', why: 'shortReason' });
+    expect(ho.sent.length).toBe(before); // nothing sent for a short reason
+    await s.acknowledge(held, ' support checked the store computer ');
+    expect(ho.sent.slice(before).map((x) => [x.method, x.path, x.body])).toEqual([
+      ['POST', UNUSED_RECEIVED_ACK_PATH, { storeId: 'S1', prefix: 'S1L1-', count: 1, reason: 'support checked the store computer' }],
+    ]);
+    // A kind this page does not know is never sent anywhere.
+    expect(await s.acknowledge({ ...held, kind: 'issued_never_received' as never }, 'support checked it')).toEqual({ result: 'invalid', why: 'notAcknowledgeable' });
   });
 
   it('what a person may do is head office\'s answer: no `you`, or a refusal of the read, offers nothing', async () => {
@@ -162,7 +168,7 @@ describe('the store computers session', () => {
     const en = Object.keys(STORE_COMPUTERS_COPY.en).sort();
     expect(Object.keys(STORE_COMPUTERS_COPY.ta).sort()).toEqual(en);
     for (const k of en) if (k !== 'lang') expect(STORE_COMPUTERS_COPY.ta[k as keyof typeof STORE_COMPUTERS_COPY.ta], k).toMatch(/[஀-௿]/);
-    expect([BINDINGS_PATH, REPLACE_PATH, REFUSAL_ACK_PATH, NOT_CHECKED_ACK_PATH, KIND]).toEqual([PREFIX_BINDINGS_PATH, STORE_COMPUTER_REPLACEMENTS_PATH, REFUSAL_ACKNOWLEDGEMENTS_PATH, NOT_CHECKED_ACKNOWLEDGEMENTS_PATH, STORE_COMPUTER_REPLACED_KIND]);
+    expect([BINDINGS_PATH, REPLACE_PATH, REFUSAL_ACK_PATH, NOT_CHECKED_ACK_PATH, UNUSED_RECEIVED_ACK_PATH, KIND]).toEqual([PREFIX_BINDINGS_PATH, STORE_COMPUTER_REPLACEMENTS_PATH, REFUSAL_ACKNOWLEDGEMENTS_PATH, NOT_CHECKED_ACKNOWLEDGEMENTS_PATH, UNUSED_RECEIVED_ACKNOWLEDGEMENTS_PATH, STORE_COMPUTER_REPLACED_KIND]);
     expect(APPROVAL_KINDS[KIND]).toBeDefined();
   });
 });

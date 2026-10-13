@@ -303,8 +303,8 @@ count still open and names the others.
 - **"does not fit: … said … that it gave <number> and never put it on a bill, but head office holds a
   sale (or return) under that number, made before that" (OB-100).** Head office has the bill, so nothing
   is missing and nobody looks for paper — but that store computer's list of unused numbers cannot be relied
-  on. Call support to check the store computer (its software or its data). The line stays while the bill
-  and the store computer's word both stand; how it is cleared is an owner decision still to be made.
+  on. Call support to check the store computer (its software or its data). The line stays until the owner or
+  head office staff acknowledge it with a reason (round 28, OB-103 — below).
 - **Two store computers in one store (OB-101).** The refusal line now names both machines, says which one
   head office uses for the till and why (it reported the till's numbers first, or the owner approved moving
   them to it), and that bills sold on the OTHER one are not checked for loss until a person checks both.
@@ -320,6 +320,30 @@ count still open and names the others.
   (`DELETE FROM projection_snapshot WHERE projection = 'never-received-fold@1' AND tenant_id = '<tenant>'`);
   the next health read rebuilds it from every report (slower once — up to about 30 s for a week of an
   altered store computer's reports — then fast again). Never delete the reports themselves.
+
+**Round 28 (owner decisions OB-103 and OB-104, 13 Oct 2026):**
+
+- **Acknowledging "said unused, but head office has the bill" (OB-103).** Once support has checked the
+  store computer, the owner or a head office person who covers ALL stores opens Store computers → "Needs a
+  person", writes why in the box under that line (at least 5 characters) and presses "Acknowledge with this
+  reason". Head office keeps who, why, when and exactly which numbers. A store's own manager and the IT
+  administrator are refused by name (and the refusal is on the audit trail). The acknowledgement holds while
+  head office finds the SAME numbers; if the store computer later calls ANOTHER held bill's number unused,
+  the line comes back naming all of them and needs a new acknowledgement. If the page says "the line
+  changed since it was read", reload it and acknowledge what it shows now.
+- **Head office reads only the recent store-computer reports (OB-104).** Every health read and every alert
+  pass now keeps ONE saved running result of everything it works out from the store computers' reports
+  (PostgreSQL table `projection_snapshot`, projection `box-health-history@1`) and reads only the reports
+  after it — usually a few minutes' worth, under a second even after a month of an altered store computer.
+  The answers are the same as reading every report (proved by test). It is set aside and rebuilt from every
+  report by itself when something it was made from changed (a setting, a report that arrived late, an
+  acknowledgement or act dated before it). It is disposable: if anything looks wrong, support may delete
+  that one row
+  (`DELETE FROM projection_snapshot WHERE projection = 'box-health-history@1' AND tenant_id = '<tenant>'`);
+  the next health read rebuilds it from every report — slower ONCE (about 30 s for a month of an altered
+  store computer's reports, every minute), then fast again. The first health read after this version is
+  installed is that slow read. Never delete the reports themselves. (`never-received-fold@1` is no longer
+  used by the health read; it may be left as it is.)
 
 ## Part 4 — Restoring (the one that matters)
 
