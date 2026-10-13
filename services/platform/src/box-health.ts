@@ -21,7 +21,7 @@
 // at the door and kept as a refusal. Append-only: every report is kept; the latest per store is read.
 
 import type { Route } from '../../kernel/src/index';
-import { apiError } from '../../kernel/src/index';
+import { apiError, scopeOf } from '../../kernel/src/index';
 import type { ComponentHealth, HealthStatus, HealthThresholds } from '../../../packages/ops/src/index';
 import { STORE_COMPUTER_REPORT, assertStoreComputerOf, type StoreComputerScopeOf } from './store-computer-identity';
 
@@ -363,17 +363,46 @@ export function judgeReportedIssued(input: {
 /**
  * Verifier r20 LOST-1: does this report say count `n` under this prefix is still waiting in the box's own queues? By the
  * prefix's `unsent` range when the box gives one (a count inside [from, to] is waiting — never assumed sent); from an older
- * box that gives none, its WHOLE queue stands in: anything unsent means the number may still be on its way.
+ * box that gives none, its WHOLE queue stands in (`wholeQueueStandsIn`): anything unsent means the number may still be on
+ * its way — but only up to the owner's line (verifier r22 D3 · OB-89, see `unreceivedCandidates`).
+ *
+ * Verifier r22 D5 — THE SPARSE-RANGE RULE (stated, so a person can check it by hand): a box's claim to hold `count` bills
+ * can account for at most `count + slack` numbers, where slack = max(SPARSE_SLACK_MIN, ⌈SPARSE_SLACK_SHARE × count⌉) — 5,
+ * or 5% of the count, whichever is more: room for numbers given and voided (or abandoned) while the bills around them were
+ * still queued, which keep their numbers but are never sent.
+ *   • A range whose span (to - from + 1) is within count + slack is believed whole: every number in it is on the box.
+ *   • A WIDER range says the box holds `count` of the numbers in its span, not which — so it covers none of them here.
+ *     Head office checks the span against what it banked (`weighSparseClaim`, after the ledger check): when the numbers it
+ *     has not received in the span are no more than count + slack, the box's word accounts for them and nothing is named;
+ *     when there are MORE, at least the difference cannot be on the box, so all of them are named, saying that up to
+ *     `count` of them may be on it (do NOT re-enter until a person has checked the store computer).
+ * An honest box with one old and one new dead letter ({2, 101, 600}, the bills between them received) is therefore never
+ * called lost, while a claim of 2 bills over 500 missing numbers no longer hides 498 of them for as long as it is repeated.
  */
-export function stillOnTheBox(r: Pick<BoxHealthRecord, 'queue'>, x: Pick<IssuedReport, 'unsent' | 'deadLettered'>, n: number): boolean {
+export function stillOnTheBox(r: Pick<BoxHealthRecord, 'queue'>, x: Pick<IssuedReport, 'unsent' | 'deadLettered'>, n: number, wholeQueueStandsIn: boolean = r.queue.unsent > 0): boolean {
   // Verifier r21 DEAD-LETTER-AS-LOST: a bill the box gave up sending is ON the box (waiting for a person), never lost.
-  if (covers(x.deadLettered, n)) return true;
-  if (x.unsent !== undefined) return covers(x.unsent, n);
-  return r.queue.unsent > 0;
+  if (coversEvery(x.deadLettered, n)) return true;
+  if (x.unsent !== undefined) return coversEvery(x.unsent, n);
+  return wholeQueueStandsIn;
 }
 
-const covers = (q: QueuedBillNumbers | undefined, n: number): boolean =>
-  q !== undefined && q.count > 0 && q.from !== undefined && q.to !== undefined && n >= q.from && n <= q.to;
+/** A range that names at least one bill. */
+const names = (q: QueuedBillNumbers | undefined): q is QueuedBillNumbers & { from: number; to: number } =>
+  q !== undefined && q.count > 0 && q.from !== undefined && q.to !== undefined;
+/** Verifier r22 D5: the slack a claim of `count` bills is allowed (voided numbers among them) — see THE SPARSE-RANGE RULE. */
+export const SPARSE_SLACK_MIN = 5;
+export const SPARSE_SLACK_SHARE = 0.05;
+export const sparseSlack = (count: number): number => Math.max(SPARSE_SLACK_MIN, Math.ceil(count * SPARSE_SLACK_SHARE));
+/** Verifier r22 D5: a range believed WHOLE — its span is within its count plus the slack. */
+export const believedWhole = (q: QueuedBillNumbers | undefined): boolean => names(q) && q.to - q.from + 1 <= q.count + sparseSlack(q.count);
+/** Count `n` lies in a range believed whole (a wider, sparse range vouches for no particular number). */
+const coversEvery = (q: QueuedBillNumbers | undefined, n: number): boolean => names(q) && believedWhole(q) && n >= q.from && n <= q.to;
+
+/** Verifier r22 D5: the SPARSE ranges of one prefix's report — how many bills they say the box holds, and over which spans. */
+export function sparseHolding(x: Pick<IssuedReport, 'unsent' | 'deadLettered'>): { count: number; spans: [number, number][] } | undefined {
+  const sparse = [x.unsent, x.deadLettered].filter((q): q is QueuedBillNumbers & { from: number; to: number } => names(q) && !believedWhole(q));
+  return sparse.length === 0 ? undefined : { count: sparse.reduce((a, q) => a + q.count, 0), spans: sparse.map((q) => [q.from, q.to]) };
+}
 
 /**
  * Verifier r21 UNSENT-CEILING (a): does a report's per-prefix list fit the box's OWN queue? The bills still to send under all
@@ -410,12 +439,18 @@ export const DEFAULT_BOX_UNSENT_WARN_HOURS = 2;
 
 /**
  * Verifier r21 UNSENT-CEILING (b) — bills waiting on a store computer past the owner's line. For each prefix whose LATEST
- * believed report says bills are still to send, the OLDEST of them (its `from` count) has been waiting since the earlier of:
- *   • head office's own observation — the first report, in an unbroken run of reports naming the prefix up to the latest,
- *     that said that number was still to send (a box cannot shorten this by what it claims);
+ * believed report says bills are still to send, they have been waiting since the earlier of:
+ *   • head office's own observation — verifier r22 D4 · OB-89: the first report, in an unbroken run of reports naming the
+ *     prefix up to the latest, from which SOME number of the latest list has been said to be waiting in every report
+ *     (the run's lists, intersected, are never empty). The age belongs to the NUMBERS head office saw waiting, not to the
+ *     box's `from`: a box that lowers `from` by one each report (100, 99, 98 … to 600) keeps 101–600 inside every list, so
+ *     the clock runs from the first of those reports and the box cannot restart it;
  *   • the box's own word — when that oldest bill was made (`oldestAt`), when it gives one.
+ * Verifier r22 D3 · OB-89: a report that does NOT say which bills it holds (an older or altered box: no per-prefix
+ * `unsent`) while its whole queue holds something is aged the same way — from head office's first sight of an unbroken
+ * run of such reports — so dropping the field never hides bills past the line.
  * Past `warnHours` it is a finding: "bills waiting on the store computer for N hours". A box drains its queue before it
- * reports, so an honest box's oldest waiting bill changes pass by pass; one that stays put for hours is stuck (or claimed).
+ * reports, so an honest box's waiting bills change pass by pass; numbers that stay put for hours are stuck (or claimed).
  */
 export function billsWaitingOnTheBox(input: {
   readonly records: readonly BoxHealthRecord[];
@@ -432,13 +467,32 @@ export function billsWaitingOnTheBox(input: {
   const out: BillNumberFinding[] = [];
   for (const [prefix, { r: last, x }] of [...latest].sort((a, b) => a[0].localeCompare(b[0]))) {
     const u = x.unsent;
-    if (u === undefined || u.count === 0 || u.from === undefined || u.to === undefined) continue;
-    const oldest = u.from;
+    if (u === undefined) {
+      // r22 D3: the box does not say which bills — its whole queue stands in, but only until the owner's line.
+      if (last.queue.unsent === 0) continue;
+      const since = wholeQueueRunSince(mine, prefix, last.receivedAt);
+      const hours = (atMs - Date.parse(since)) / 3_600_000;
+      if (hours < warnHours) continue;
+      out.push({
+        kind: 'bills_waiting_on_box', prefix, count: last.queue.unsent, since,
+        detail: `bills may be waiting on the store computer for ${Math.floor(hours)} hours: store ${input.storeId}'s computer has said since ${since} that its queue holds item(s) still to send (${last.queue.unsent} now), and it does not say which bills under ${prefix} they are (an older or altered store computer) — longer than the ${warnHours}-hour line. Head office no longer takes that as a reason to hold back: any bill under ${prefix} it has not received is checked as never received. Check that store computer's connection and its "waiting to send" count, and call support. Do NOT re-enter bills from paper until support has checked the store computer`,
+      });
+      continue;
+    }
+    if (u.count === 0 || u.from === undefined || u.to === undefined) continue;
+    // r22 D4: walk back while the lists, intersected, still share a number — the age of the numbers, not of `from`.
+    let lo = u.from;
+    let hi = u.to;
     let observedSince = last.receivedAt;
     for (let i = mine.length - 1; i >= 0; i -= 1) {
       const y = (mine[i]!.receiptNumbersIssued ?? []).find((z) => z.prefix === prefix);
       if (y === undefined) continue;
-      if (!covers(y.unsent, oldest)) break;
+      const yu = y.unsent;
+      if (yu === undefined || yu.count === 0 || yu.from === undefined || yu.to === undefined) break;
+      const nlo = Math.max(lo, yu.from);
+      const nhi = Math.min(hi, yu.to);
+      if (nlo > nhi) break;
+      lo = nlo; hi = nhi;
       observedSince = mine[i]!.receivedAt;
     }
     const since = u.oldestAt !== undefined && Date.parse(u.oldestAt) < Date.parse(observedSince) ? u.oldestAt : observedSince;
@@ -446,10 +500,40 @@ export function billsWaitingOnTheBox(input: {
     if (hours < warnHours) continue;
     out.push({
       kind: 'bills_waiting_on_box', prefix, ranges: [[u.from, u.to]], count: u.count, since,
-      detail: `bills waiting on the store computer for ${Math.floor(hours)} hours: store ${input.storeId}'s computer has held ${u.count} bill(s) under ${prefix} (between ${rangeWords(prefix, [[u.from, u.to]])}) unsent since ${since} — longer than the ${warnHours}-hour line. Head office has not received them. Check that store computer's connection and its "waiting to send" count; if the count is not going down, call support. Do NOT re-enter these bills from paper until support has checked the store computer`,
+      detail: `bills waiting on the store computer for ${Math.floor(hours)} hours: store ${input.storeId}'s computer has held ${u.count} bill(s) under ${prefix} (between ${rangeWords(prefix, [[u.from, u.to]])}) unsent since ${since}; head office has seen ${rangeWords(prefix, [[lo, hi]])} said to be waiting in every report since then — longer than the ${warnHours}-hour line. Head office has not received them. Check that store computer's connection and its "waiting to send" count; if the count is not going down, call support. Do NOT re-enter these bills from paper until support has checked the store computer`,
     });
   }
   return out;
+}
+
+/**
+ * Verifier r22 D3: when head office first saw the unbroken run, up to `until`, of reports naming `prefix` WITHOUT a per-prefix
+ * `unsent` list while the box's whole queue held something — head office's own observation, never the box's word.
+ */
+export function wholeQueueRunSince(ordered: readonly BoxHealthRecord[], prefix: string, until: string): string {
+  let since = until;
+  for (let i = ordered.length - 1; i >= 0; i -= 1) {
+    const r = ordered[i]!;
+    if (Date.parse(r.receivedAt) > Date.parse(until)) continue;
+    const y = (r.receiptNumbersIssued ?? []).find((z) => z.prefix === prefix);
+    if (y === undefined) continue;
+    if (y.unsent !== undefined || r.queue.unsent === 0) break;
+    since = r.receivedAt;
+  }
+  return since;
+}
+
+/** Verifier r22 D3/D5: one prefix's never-received candidates, and what the box's latest report still claims about them. */
+export interface UnreceivedCandidate {
+  readonly storeId: string;
+  readonly prefix: string;
+  readonly numbers: number[];
+  readonly since: string;
+  readonly capped: boolean;
+  /** r22 D5: the latest report's SPARSE ranges — it says it holds `count` bills somewhere in these spans, not which. */
+  readonly sparse?: { readonly count: number; readonly spans: readonly (readonly [number, number])[] };
+  /** r22 D3: the latest report gives no per-prefix list; its whole queue held `items` since `since` — past the owner's line. */
+  readonly wholeQueue?: { readonly items: number; readonly since: string };
 }
 
 /**
@@ -460,6 +544,10 @@ export function billsWaitingOnTheBox(input: {
  *     (`stillOnTheBox`); the grace (UNRECEIVED_GRACE_MINUTES) runs from the FIRST such report, never from when the number
  *     was first reported sold — so a long catch-up after an outage, with the bills still queued, raises nothing;
  *   • the box's LATEST report naming the prefix does not say it holds it again.
+ * Verifier r22 D3 · OB-89: a report with NO per-prefix list (an older or altered box) lets its whole queue stand in only
+ * until the owner's line (`warnHours`, platform.box_unsent_warn_hours, default 2) counted from head office's FIRST sight of
+ * an unbroken run of such reports; from then on its numbers are candidates like any other (the grace runs from the line).
+ * Verifier r22 D5: a SPARSE range covers no particular number (see `stillOnTheBox`); the caller weighs it against the ledger.
  * Per store and prefix, at most UNRECEIVED_CHECK_CAP numbers (the newest), with the time of the first report that said the
  * box no longer held them. The caller checks the ones at or below banked against the ledger; those above it are unbanked
  * by definition (banked is the highest count head office holds).
@@ -468,20 +556,34 @@ export function unreceivedCandidates(input: {
   readonly records: readonly BoxHealthRecord[];
   readonly at: string;
   readonly banked: ReadonlyMap<string, number>;
-}): { storeId: string; prefix: string; numbers: number[]; since: string; capped: boolean }[] {
+  readonly warnHours?: number;
+}): UnreceivedCandidate[] {
   const atMs = Date.parse(input.at);
   const cutoff = atMs - UNRECEIVED_GRACE_MINUTES * 60_000;
-  const by = new Map<string, { storeId: string; prefix: string; numbers: Map<number, string>; latest: { r: BoxHealthRecord; x: IssuedReport } }>();
+  const lineMs = (input.warnHours ?? DEFAULT_BOX_UNSENT_WARN_HOURS) * 3_600_000;
+  const by = new Map<string, {
+    storeId: string; prefix: string; numbers: Map<number, string>; latest: { r: BoxHealthRecord; x: IssuedReport }; wholeQueueSince: string | undefined;
+  }>();
   const ordered = [...input.records].filter((r) => Date.parse(r.receivedAt) <= atMs).sort((a, b) => Date.parse(a.receivedAt) - Date.parse(b.receivedAt))
     .map(believedRecord);
   for (const r of ordered) {
     for (const x of r.receiptNumbersIssued ?? []) {
       const key = `${r.storeId}\u0000${x.prefix}`;
-      const cur = by.get(key) ?? { storeId: r.storeId, prefix: x.prefix, numbers: new Map<number, string>(), latest: { r, x } };
+      const cur = by.get(key) ?? { storeId: r.storeId, prefix: x.prefix, numbers: new Map<number, string>(), latest: { r, x }, wholeQueueSince: undefined };
       cur.latest = { r, x };
+      // r22 D3: head office's own first sight of the unbroken run of reports that say no list but hold something.
+      const wholeQueue = x.unsent === undefined && r.queue.unsent > 0;
+      cur.wholeQueueSince = wholeQueue ? (cur.wholeQueueSince ?? r.receivedAt) : undefined;
+      const lineAt = cur.wholeQueueSince === undefined ? undefined : Date.parse(cur.wholeQueueSince) + lineMs;
+      // Not on the box by its list: noted from this report — or, while its whole queue stands in, from the owner's line.
+      const notedAt = lineAt === undefined || Date.parse(r.receivedAt) >= lineAt ? r.receivedAt : new Date(lineAt).toISOString();
       const banked = input.banked.get(x.prefix) ?? 0;
       const sold = x.soldThrough ?? x.through;
-      const note = (n: number): void => { if (!cur.numbers.has(n) && !stillOnTheBox(r, x, n)) cur.numbers.set(n, r.receivedAt); };
+      const note = (n: number): void => {
+        if (stillOnTheBox(r, x, n, false)) return;
+        const prev = cur.numbers.get(n);
+        if (prev === undefined || Date.parse(notedAt) < Date.parse(prev)) cur.numbers.set(n, notedAt);
+      };
       for (let n = Math.max(banked + 1, sold - UNRECEIVED_CHECK_CAP + 1); n <= sold; n += 1) note(n);
       for (const [from, to] of x.atRisk ?? []) {
         for (let n = Math.max(from, to - UNRECEIVED_CHECK_CAP + 1); n <= to; n += 1) note(n);
@@ -489,17 +591,39 @@ export function unreceivedCandidates(input: {
       by.set(key, cur);
     }
   }
-  const out: { storeId: string; prefix: string; numbers: number[]; since: string; capped: boolean }[] = [];
+  const out: UnreceivedCandidate[] = [];
   for (const v of by.values()) {
+    const { r, x } = v.latest;
+    const standsIn = v.wholeQueueSince !== undefined && atMs < Date.parse(v.wholeQueueSince) + lineMs;
     const all = [...v.numbers]
-      .filter(([n, since]) => Date.parse(since) <= cutoff && !stillOnTheBox(v.latest.r, v.latest.x, n))
+      .filter(([n, since]) => Date.parse(since) <= cutoff && !stillOnTheBox(r, x, n, standsIn))
       .map(([n]) => n).sort((a, b) => a - b);
     if (all.length === 0) continue;
     const numbers = all.slice(-UNRECEIVED_CHECK_CAP);
     const since = numbers.map((n) => v.numbers.get(n)!).sort()[0]!;
-    out.push({ storeId: v.storeId, prefix: v.prefix, numbers, since, capped: all.length > numbers.length });
+    const sparse = sparseHolding(x);
+    out.push({
+      storeId: v.storeId, prefix: v.prefix, numbers, since, capped: all.length > numbers.length,
+      ...(sparse === undefined ? {} : { sparse }),
+      ...(v.wholeQueueSince === undefined ? {} : { wholeQueue: { items: r.queue.unsent, since: v.wholeQueueSince } }),
+    });
   }
   return out;
+}
+
+/**
+ * Verifier r22 D5 — THE SPARSE-RANGE RULE, applied after the ledger check: the numbers head office has NOT received inside
+ * the latest report's sparse spans are all accounted for by the box's word when there are no more of them than the bills it
+ * says it holds there plus the slack (count + max(5, 5%)) — none is named; when there are more, all of them are named
+ * (which ones are on the box cannot be told). Returns the numbers still to name, and whether the sparse claim was outnumbered.
+ */
+export function weighSparseClaim(missing: readonly number[], sparse: UnreceivedCandidate['sparse']): { numbers: number[]; outnumbered: boolean } {
+  if (sparse === undefined) return { numbers: [...missing], outnumbered: false };
+  const inSpan = (n: number): boolean => sparse.spans.some(([a, z]) => n >= a && n <= z);
+  const within = missing.filter(inSpan);
+  if (within.length === 0) return { numbers: [...missing], outnumbered: false };
+  if (within.length <= sparse.count + sparseSlack(sparse.count)) return { numbers: missing.filter((n) => !inSpan(n)), outnumbered: false };
+  return { numbers: [...missing], outnumbered: true };
 }
 
 /** [from, to] ranges of sorted counts. */
@@ -516,20 +640,31 @@ const pad6 = (n: number): string => String(n).padStart(6, '0');
 const rangeWords = (prefix: string, ranges: readonly (readonly [number, number])[]): string =>
   ranges.map(([a, z]) => (a === z ? `${prefix}${pad6(a)}` : `${prefix}${pad6(a)} to ${prefix}${pad6(z)}`)).join(', ');
 
+/** Verifier r22 D3/D5: never-received numbers for one prefix, after the ledger check, with what the box still claims. */
+export interface UnreceivedNumbers {
+  readonly prefix: string;
+  readonly numbers: readonly number[];
+  readonly since: string;
+  readonly capped: boolean;
+  /** r22 D5: the latest report's sparse claim was OUTNUMBERED by the numbers head office has not received in its spans. */
+  readonly sparse?: { readonly count: number; readonly spans: readonly (readonly [number, number])[] };
+  /** r22 D3: the latest report gives no per-prefix list, and its whole queue has held something since `since` (past the line). */
+  readonly wholeQueue?: { readonly items: number; readonly since: string };
+}
+
 /** Verifier r19: the owner's words for a store's bill-number findings (refused reports, never-received bills). */
 export function billNumberFindingsFor(input: {
   readonly storeId: string;
   readonly records: readonly BoxHealthRecord[];
   readonly at: string;
   /** The never-received numbers, after the ledger check (from `unreceivedCandidates`). */
-  readonly unreceived: readonly { readonly prefix: string; readonly numbers: readonly number[]; readonly since: string; readonly capped: boolean }[];
+  readonly unreceived: readonly UnreceivedNumbers[];
   /**
    * Verifier r20 BOX-2: what head office holds banked per prefix (sales and refunds). With it, a refused report stops being
-   * a finding once a LATER report from the store is accepted for that prefix (plausible) and everything it put on a bill
-   * is banked. Absent: a refusal stays a finding for 7 days, as before.
+   * a finding once head office's own banked count has caught up to the refused claim.
    */
   readonly banked?: ReadonlyMap<string, number>;
-  /** Verifier r21 BOX-2: refusals a person acknowledged (`POST …/bill-number-refusals/acknowledgements`). */
+  /** Verifier r21 BOX-2 / r22 D2: refusals acknowledged by a person with all-stores authority (`POST …/bill-number-refusals/acknowledgements`). */
   readonly acknowledged?: readonly RefusalAcknowledgement[];
 }): BillNumberFinding[] {
   const out: BillNumberFinding[] = [];
@@ -544,13 +679,21 @@ export function billNumberFindingsFor(input: {
   for (const u of input.unreceived) {
     if (u.numbers.length === 0) continue;
     const ranges = countRanges(u.numbers);
+    const them = u.numbers.length === 1 ? 'it' : 'them';
     // Verifier r21 DEAD-LETTER-AS-LOST: an OLDER box that does not list the bills it gave up on, but says it holds some — they
     // may be these. Never "enter the paper bills" while that is possible: a person checks the store computer first.
     const maybeGivenUp = latestRecord !== undefined && latestRecord.queue.deadLettered > 0 && latestOf(u.prefix)?.deadLettered === undefined;
+    // Verifier r22 D3/D5: the box's word was not taken (no list past the owner's line, or a sparse list outnumbered) —
+    // these numbers MAY still be on it, so the advice is to check it, never to enter paper bills.
+    const notTaken = u.sparse !== undefined || u.wholeQueue !== undefined;
     out.push({
       kind: 'issued_never_received', prefix: u.prefix, ranges, since: u.since,
-      detail: `bills issued but never received: store ${input.storeId}'s computer gave ${rangeWords(u.prefix, ranges)} (on a bill, or after the backup it was restored from) and head office has not received ${u.numbers.length === 1 ? 'it' : 'them'} ${UNRECEIVED_GRACE_MINUTES} minutes or more after the store computer said it no longer held ${u.numbers.length === 1 ? 'it' : 'them'} to send (${u.since})${u.capped ? `; only the newest ${UNRECEIVED_CHECK_CAP} were checked` : ''}. `
-        + (maybeGivenUp
+      detail: `bills issued but never received: store ${input.storeId}'s computer gave ${rangeWords(u.prefix, ranges)} (on a bill, or after the backup it was restored from) and head office has not received ${them} ${UNRECEIVED_GRACE_MINUTES} minutes or more after ${notTaken ? `it stopped taking the store computer's word that it still held ${them}` : `the store computer said it no longer held ${them} to send`} (${u.since})${u.capped ? `; only the newest ${UNRECEIVED_CHECK_CAP} were checked` : ''}. `
+        + (u.sparse !== undefined
+          ? `The store computer says it still holds ${u.sparse.count} bill(s) somewhere between ${rangeWords(u.prefix, u.sparse.spans)} (to send, or given up on) — fewer than the ${u.numbers.length} head office has not received there, so at least ${u.numbers.length - u.sparse.count} of them are not on it, and which ones cannot be told. Do NOT re-enter any of them from paper until a person has checked the store computer's "waiting to send" and "gave up sending" lists`
+          : u.wholeQueue !== undefined
+          ? `The store computer still says its queue holds ${u.wholeQueue.items} item(s) to send, as it has since ${u.wholeQueue.since}, but not which bills — past the owner's line head office no longer waits on that. These may be among them: do NOT re-enter them from paper until a person has checked the store computer's "waiting to send" count`
+          : maybeGivenUp
           ? `The store computer also says it holds ${latestRecord.queue.deadLettered} item(s) it gave up sending, and does not say which bills they are — these may be among them: do NOT re-enter them from paper until a person has checked the store computer's "gave up sending" list`
           : 'If the store computer was restored from a backup, these sales are lost from head office\'s books: find the paper bills and enter them, or write them off with the reason'),
     });
@@ -576,43 +719,94 @@ export function billNumberFindingsFor(input: {
       detail: `store ${input.storeId}'s computer's report contradicts itself — ${contradiction}. Head office does not believe its list of bills still to send: any bill it has not received is named as never received after ${UNRECEIVED_GRACE_MINUTES} minutes. Check that store computer (its software may be faulty or altered)`,
     });
   }
-  // A refused report (BOX-1): the latest per prefix (kept until it is resolved — never aged away).
-  const refused = new Map<string, { r: RefusedIssued; at: string; by: string }>();
+  out.push(...refusedReportFindings(input.storeId, mine, input.banked, input.acknowledged ?? []));
+  return out;
+}
+
+/**
+ * Verifier r21 BOX-2 / r22 D2 · OB-88 — THE RULE (stated, so a person can check it by hand). Every refused report is its own
+ * claim (store, prefix, count). It stops being a finding ONLY when:
+ *   (1) head office's own banked count under the prefix (sales and refunds, never a box's word) has caught up to its count —
+ *       the claim turned out true; or
+ *   (2) a person with ALL-STORES authority (the owner or head office staff — never one store's manager) acknowledged THAT
+ *       count for that store and prefix, and the acknowledgement still stands for this report:
+ *         • the report came no later than the acknowledgement (the person saw it), or
+ *         • the box was reporting that same count when it was acknowledged, and every report naming the prefix since then,
+ *           up to this one, said that same count — the box repeating itself on every sync pass never brings it back.
+ *       Once the box reports a DIFFERENT count for the prefix, the acknowledgement ends: any later refused report — a new
+ *       count, or the acknowledged one again — needs a new acknowledgement. Each acknowledgement is kept on its own.
+ * A later report from the box — lower, plausible, anything — never clears a refusal, and every unresolved claim stays in
+ * view: per prefix the HIGHEST unresolved count is the finding, naming the others (a lower refused report never hides a
+ * higher earlier one, r22 D2 c).
+ */
+function refusedReportFindings(
+  storeId: string, mine: readonly BoxHealthRecord[], banked: ReadonlyMap<string, number> | undefined, acknowledged: readonly RefusalAcknowledgement[],
+): BillNumberFinding[] {
+  interface Said { readonly at: string; readonly through: number; readonly refused?: RefusedIssued; readonly by: string }
+  const timeline = new Map<string, Said[]>();
   for (const rec of mine) {
-    for (const r of rec.receiptNumbersRefused ?? []) {
-      const cur = refused.get(r.prefix);
-      if (cur === undefined || Date.parse(rec.receivedAt) >= Date.parse(cur.at)) refused.set(r.prefix, { r, at: rec.receivedAt, by: rec.reportedBy });
-    }
+    const said = new Map<string, Said>();
+    for (const x of rec.receiptNumbersIssued ?? []) said.set(x.prefix, { at: rec.receivedAt, through: x.through, by: rec.reportedBy });
+    for (const x of rec.receiptNumbersNotFolded ?? []) said.set(x.prefix, { at: rec.receivedAt, through: x.through, by: rec.reportedBy });
+    for (const r of rec.receiptNumbersRefused ?? []) said.set(r.prefix, { at: rec.receivedAt, through: r.through, refused: r, by: rec.reportedBy });
+    for (const [prefix, x] of said) timeline.set(prefix, [...(timeline.get(prefix) ?? []), x]);
   }
-  // Verifier r21 BOX-2 — THE RULE (stated): a refused report stops being a finding ONLY when
-  //   (1) head office's own banked count under the prefix (sales and refunds, never a box's word) has caught up to the
-  //       refused claim — the claim turned out true; or
-  //   (2) a person acknowledged THAT refusal (its store, prefix and a count at least the refused one), after it was made.
-  // A later report from the box — lower, plausible, anything — never clears it: an honest box's count never goes down, so a
-  // lower one is itself something to look at, not a reason to stop looking.
-  const resolved = (r: RefusedIssued, refusedAt: string): boolean =>
-    (input.banked !== undefined && (input.banked.get(r.prefix) ?? 0) >= r.through)
-    || (input.acknowledged ?? []).some((a) => a.storeId === input.storeId && a.prefix === r.prefix && a.through >= r.through && Date.parse(a.at) >= Date.parse(refusedAt));
-  for (const { r, at, by } of [...refused.values()].filter((x) => !resolved(x.r, x.at)).sort((a, b) => a.r.prefix.localeCompare(b.r.prefix))) {
+  const out: BillNumberFinding[] = [];
+  for (const [prefix, said] of [...timeline].sort((a, b) => a[0].localeCompare(b[0]))) {
+    if (!said.some((x) => x.refused !== undefined)) continue;
+    // Only an acknowledgement given with all-stores authority counts (one kept before r22 D2 carries none, and is not honoured).
+    const acks = acknowledged.filter((a) => a.storeId === storeId && a.prefix === prefix && a.authority === 'all_stores')
+      .sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+    const seenUpTo = new Map<number, number>(); // count → the latest acknowledgement time (covers every report of it until then)
+    for (const a of acks) seenUpTo.set(a.through, Math.max(seenUpTo.get(a.through) ?? 0, Date.parse(a.at)));
+    // One pass in time order: an acknowledgement given while the box was reporting its count STANDS until a different count.
+    let standing: number | undefined;
+    let last: Said | undefined;
+    let k = 0;
+    const open = new Map<number, { first: string; latest: Said }>();
+    for (const x of said) {
+      for (; k < acks.length && Date.parse(acks[k]!.at) < Date.parse(x.at); k += 1) if (last?.through === acks[k]!.through) standing = acks[k]!.through;
+      if (standing !== undefined && x.through !== standing) standing = undefined;
+      last = x;
+      const r = x.refused;
+      if (r === undefined) continue;
+      const resolved = (banked !== undefined && (banked.get(prefix) ?? 0) >= r.through)
+        || Date.parse(x.at) <= (seenUpTo.get(r.through) ?? -Infinity) || standing === r.through;
+      if (resolved) continue;
+      const cur = open.get(r.through);
+      open.set(r.through, { first: cur?.first ?? x.at, latest: x });
+    }
+    if (open.size === 0) continue;
+    const counts = [...open.keys()].sort((a, b) => b - a);
+    const top = open.get(counts[0]!)!;
+    const r = top.latest.refused!;
+    const others = counts.slice(1);
     out.push({
-      kind: 'report_refused', prefix: r.prefix, through: r.through, since: at,
-      detail: r.because === 'prefix_of_another_store'
-        ? `store ${input.storeId}'s computer (${by}) reported giving bill numbers under ${r.prefix} through ${r.through}, but head office issued ${r.prefix} to a till of ANOTHER store — not counted, so no till is affected; check that store computer`
-        : `store ${input.storeId}'s computer (${by}) reported giving bill numbers under ${r.prefix} through ${r.through}, far beyond the ${r.bankedThrough} head office holds banked (at most ${r.plausibleThrough ?? r.bankedThrough + PLAUSIBLE_ISSUED_AHEAD} is believed, ${PLAUSIBLE_ISSUED_AHEAD} ahead) — not counted, so the till keeps selling; check that store computer's bill numbers. This stays until head office has banked that many, or a person acknowledges it`,
+      kind: 'report_refused', prefix, through: r.through, since: top.first,
+      detail: (r.because === 'prefix_of_another_store'
+        ? `store ${storeId}'s computer (${top.latest.by}) reported giving bill numbers under ${prefix} through ${r.through}, but head office issued ${prefix} to a till of ANOTHER store — not counted, so no till is affected; check that store computer`
+        : `store ${storeId}'s computer (${top.latest.by}) reported giving bill numbers under ${prefix} through ${r.through}, far beyond the ${r.bankedThrough} head office holds banked (at most ${r.plausibleThrough ?? r.bankedThrough + PLAUSIBLE_ISSUED_AHEAD} is believed, ${PLAUSIBLE_ISSUED_AHEAD} ahead) — not counted, so the till keeps selling; check that store computer's bill numbers`)
+        + (others.length === 0 ? '' : `. It also reported ${others.length === 1 ? 'another count' : 'other counts'} head office refused under ${prefix}, still to be looked at: ${others.slice(0, 5).join(', ')}${others.length > 5 ? ` and ${others.length - 5} more` : ''}`)
+        + `. ${REFUSAL_STAYS_WORDS}`,
     });
   }
   return out;
 }
 
-/** Verifier r21 BOX-2: a person's acknowledgement of a refused report (kept append-only; who, when and why). */
+/** Verifier r22 D2 · OB-88: what the owner reads about how a refused report stops being a warning (the health page's words). */
+export const REFUSAL_STAYS_WORDS = 'This stays until head office has banked that many, or the owner or head office staff (all-stores authority — a store\'s own manager cannot) acknowledge this count with a reason. The acknowledgement holds while the store computer keeps reporting this same count; a different count needs a new acknowledgement';
+
+/** Verifier r21 BOX-2 / r22 D2: a person's acknowledgement of a refused report (kept append-only; each one: who, when, why). */
 export interface RefusalAcknowledgement {
   readonly storeId: string;
   readonly prefix: string;
-  /** The refused count acknowledged (a later, higher refusal is a new finding). */
+  /** The refused count acknowledged — exactly (a different count, higher or lower, is a new finding). */
   readonly through: number;
   readonly reason: string;
   readonly by: string;
   readonly at: string;
+  /** r22 D2 · OB-88: the authority it was given with — only an all-stores acknowledgement (owner / head office) is honoured. */
+  readonly authority?: 'all_stores';
 }
 
 /** The latest report per store (by the box's own time, then by arrival). */
@@ -897,7 +1091,11 @@ export interface BoxHealthDeps {
   readonly issuedAndBanked?: (tenantId: string) => Promise<{ readonly issuedPrefixes: ReadonlyMap<string, ReadonlySet<string>>; readonly banked: ReadonlyMap<string, number> }>;
   /** Verifier r21 BOX-2: every report kept (to find the refusal a person acknowledges) and the acknowledgements. */
   readonly records?: (tenantId: string) => Promise<readonly BoxHealthRecord[]>;
-  readonly acknowledge?: (tenantId: string, a: RefusalAcknowledgement) => Promise<RefusalAcknowledgement>;
+  /**
+   * Keeps one acknowledgement. r22 D2: each is its own record — `requestKey` (the request's Idempotency-Key) tells a re-sent
+   * request (answered with the first) from a person acknowledging again (kept separately, with its own who, why and when).
+   */
+  readonly acknowledge?: (tenantId: string, a: RefusalAcknowledgement, requestKey: string) => Promise<RefusalAcknowledgement>;
 }
 
 export const REFUSAL_ACKNOWLEDGEMENTS_PATH = '/v1/store-computers/bill-number-refusals/acknowledgements';
@@ -946,9 +1144,20 @@ export function boxHealthRoutes(deps: BoxHealthDeps): readonly Route[] {
   }, {
     // Verifier r21 BOX-2: a person acknowledges a refused report — the only way, besides head office banking that many, for
     // the warning to stop. Who, when and why are kept (append-only, and on the audit trail like every request).
+    // Verifier r22 D2 · OB-88 (owner, 13 Oct 2026, "Owner/head office only"): only a person whose authority covers ALL
+    // stores may acknowledge. A store-scoped manager — of this store or another — is refused by name (the refusal is on the
+    // audit trail like every request): a suspicious bill count is a fraud signal, never cleared from inside one store.
     api: 'API-11', method: 'POST', path: REFUSAL_ACKNOWLEDGEMENTS_PATH,
     permission: 'platform.alert.manage', idempotent: true,
     handler: async (ctx) => {
+      if (scopeOf(ctx) !== 'all') {
+        throw apiError(403, {
+          code: 'acknowledgement_needs_all_stores_authority',
+          whatHappened: 'Only the owner or head office staff — a person whose authority covers ALL stores — may acknowledge a store computer\'s refused bill-number report. This account\'s authority covers only some stores, so nothing was acknowledged and the warning stays.',
+          wasItSaved: 'not_saved',
+          nextSafeAction: 'Ask the owner or head office to look at the store computer and acknowledge it, with the reason. Nothing was recorded.',
+        });
+      }
       const b = isObj(ctx.body) ? ctx.body : {};
       const storeId = b['storeId'];
       const prefix = b['prefix'];
@@ -975,7 +1184,9 @@ export function boxHealthRoutes(deps: BoxHealthDeps): readonly Route[] {
           nextSafeAction: 'Copy the store, prefix and count exactly as the health page shows the refused report. Nothing was recorded.',
         });
       }
-      const kept = await deps.acknowledge(ctx.tenantId, { storeId, prefix, through, reason, by: ctx.userId, at: deps.now() });
+      // The pipeline guarantees a write carries its Idempotency-Key; without one (a handler called outside it) the moment stands in.
+      const at = deps.now();
+      const kept = await deps.acknowledge(ctx.tenantId, { storeId, prefix, through, reason, by: ctx.userId, at, authority: 'all_stores' }, ctx.idempotencyKey ?? `${ctx.userId}@${at}`);
       return { status: 201, body: { acknowledged: kept } };
     },
   }];

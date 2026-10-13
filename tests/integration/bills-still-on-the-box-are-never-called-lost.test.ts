@@ -27,8 +27,8 @@ import { PLAUSIBLE_ISSUED_AHEAD, UNRECEIVED_GRACE_MINUTES } from '../../services
  *   3. BOX-2 (verifier r21 rule): a store computer's implausible report is refused and shown, and it stays a finding until
  *      head office's OWN banked count catches up to the refused claim, or a person acknowledges it — a LATER report from
  *      the box (lower, plausible, everything banked) never clears it (probe zz-v21 C: refused 10,600, then "through 50").
- *      The acknowledgement needs platform.alert.manage, names the exact refused count, and keeps who, when and why; a
- *      higher refusal after it is a new finding.
+ *      The acknowledgement needs platform.alert.manage with ALL-STORES authority (r22 D2 · OB-88), names the exact refused
+ *      count, and keeps who, when and why; a higher refusal after it is a new finding.
  *   4. BOX-2: a report kept BEFORE head office judged reports at arrival (written straight to the ledger, as an old
  *      release did) is re-judged against the 10,000 cap at read: it never moves the store pack's `bankedThrough` and
  *      raises no "never received" — the till keeps selling from where head office banked.
@@ -198,7 +198,7 @@ async function aRefusedReportStaysUntilBankedOrAcknowledged(h: ApiHarness, store
   await bank(call, 151, 160);
   await report(call, [{ prefix: P, through: 160, soldThrough: 160, unsent: { count: 0 } }], 0);
   expect((await refusedFindings(call)).map((f) => f.through)).toEqual([10_600]);
-  expect((await refusedFindings(call))[0]!.detail).toMatch(/This stays until head office has banked that many, or a person acknowledges it/);
+  expect((await refusedFindings(call))[0]!.detail).toMatch(/This stays until head office has banked that many, or the owner or head office staff \(all-stores authority — a store's own manager cannot\) acknowledge this count/);
 
   // A person acknowledges it. Refused: a cashier (no platform.alert.manage); a count that was never refused; no reason.
   const ack = (user: string, body: unknown) => call('POST', '/v1/store-computers/bill-number-refusals/acknowledgements', user, body);
@@ -210,7 +210,7 @@ async function aRefusedReportStaysUntilBankedOrAcknowledged(h: ApiHarness, store
   expect((await refusedFindings(call)).map((f) => f.through)).toEqual([10_600]); // nothing refused cleared it
   const done = await ack(OWNER, { storeId: S1, prefix: P, through: 10_600, reason: 'checked the box: a restore rehearsal, no bills lost' });
   expect(done.status).toBe(201);
-  expect((done.body as { acknowledged: Record<string, unknown> }).acknowledged).toMatchObject({ storeId: S1, prefix: P, through: 10_600, by: OWNER, reason: 'checked the box: a restore rehearsal, no bills lost' });
+  expect((done.body as { acknowledged: Record<string, unknown> }).acknowledged).toMatchObject({ storeId: S1, prefix: P, through: 10_600, by: OWNER, reason: 'checked the box: a restore rehearsal, no bills lost', authority: 'all_stores' });
   expect(await refusedFindings(call)).toEqual([]);
   const c = (await observed(call)).health.components.find((x) => x.name === `box_bill_numbers:${S1}`);
   expect(c?.detail ?? '').not.toMatch(/10600/);

@@ -14,6 +14,7 @@
 // impossible; this adapter just unwraps the `.rows` from each result.
 
 import type { SqlClient, SqlRow } from './sql-client';
+import { currentWriteWitness, isReadOnlyStatement } from './write-witness';
 
 /** The shape of a node-postgres query result (only `rows` is used). */
 export interface PgQueryResult {
@@ -99,6 +100,17 @@ export function isSessionEnded(err: unknown): boolean {
 }
 
 /**
+ * Verifier r22 D7: was this error raised BY the database driver (node-postgres) — not merely worded like one? True for our own
+ * {@link DatabaseSessionEndedError}, and for an error whose stack shows it was made inside `pg`, `pg-pool` or `pg-protocol`
+ * (the deployment loads them from node_modules: scripts/build-service.mjs keeps npm packages external). A socket error from
+ * anything else ("ECONNRESET" from an HTTP client, "EPIPE" from a log pipe) is not the database's, whatever its message says.
+ */
+export function fromDatabaseDriver(err: unknown): boolean {
+  if (err instanceof DatabaseSessionEndedError) return true;
+  return err instanceof Error && /[\\/]node_modules[\\/]pg(?:-pool|-protocol)?[\\/]/.test(err.stack ?? '');
+}
+
+/**
  * Check a connection out for one transaction, LISTENING for its `'error'` the whole time it is checked out (verifier r21
  * IDLE-CRASH), and hand it back WITH the error when its session ended, so the pool DISCARDS it rather than lending a dead
  * socket to the next request. `run` gets the connection and a probe saying whether the server already ended the session.
@@ -128,27 +140,39 @@ async function pinned<T>(pool: PgPool, run: (conn: PgPoolClient, ended: () => un
  * when its session ends. A COMMIT that itself failed on a dying socket keeps its raw error: whether it landed is unknown.
  */
 async function inTransaction<T>(
-  pool: PgPool, setup: readonly (readonly [string, readonly unknown[]])[], fn: (conn: PgPoolClient) => Promise<T>,
+  pool: PgPool, setup: readonly (readonly [string, readonly unknown[]])[], fn: (conn: PgQueryable) => Promise<T>,
 ): Promise<T> {
-  return pinned(pool, async (conn, ended) => {
-    let commitSent = false;
-    try {
-      await conn.query('BEGIN');
-      for (const [sql, params] of setup) await conn.query(sql, [...params]);
-      const out = await fn(conn);
-      const before = ended();
-      if (before !== undefined) throw new DatabaseSessionEndedError(before);
-      commitSent = true;
-      await conn.query('COMMIT');
-      return out;
-    } catch (err) {
-      const sessionEnded = ended() !== undefined || isSessionEnded(err);
-      // Best-effort rollback on a live connection; a dead one has already been rolled back by the server.
-      if (!sessionEnded) { try { await conn.query('ROLLBACK'); } catch { /* connection unusable — released by `pinned` */ } }
-      if (sessionEnded && !commitSent && !(err instanceof DatabaseSessionEndedError)) throw new DatabaseSessionEndedError(ended() ?? err);
-      throw err;
-    }
-  });
+  // Verifier r22 D1: the request this runs for learns whether it WROTE and committed, and that it is still open.
+  const witness = currentWriteWitness();
+  if (witness !== undefined) witness.open += 1;
+  try {
+    return await pinned(pool, async (conn, ended) => {
+      let commitSent = false;
+      let wrote = false;
+      const watched: PgQueryable = { query: (text, values) => { if (!isReadOnlyStatement(text)) wrote = true; return conn.query(text, values); } };
+      try {
+        await conn.query('BEGIN');
+        for (const [sql, params] of setup) await conn.query(sql, [...params]);
+        const out = await fn(watched);
+        const before = ended();
+        if (before !== undefined) throw new DatabaseSessionEndedError(before);
+        commitSent = true;
+        await conn.query('COMMIT');
+        if (wrote && witness !== undefined) witness.committedWrites += 1;
+        return out;
+      } catch (err) {
+        const sessionEnded = ended() !== undefined || isSessionEnded(err);
+        // Best-effort rollback on a live connection; a dead one has already been rolled back by the server.
+        if (!sessionEnded) { try { await conn.query('ROLLBACK'); } catch { /* connection unusable — released by `pinned` */ } }
+        if (sessionEnded && !commitSent && !(err instanceof DatabaseSessionEndedError)) throw new DatabaseSessionEndedError(ended() ?? err);
+        // A COMMIT that failed may still have landed: a write in it is counted as committed (the request is "unknown").
+        if (commitSent && wrote && witness !== undefined) witness.committedWrites += 1;
+        throw err;
+      }
+    });
+  } finally {
+    if (witness !== undefined) witness.open -= 1;
+  }
 }
 
 const unwrap = async <R extends SqlRow>(
@@ -156,6 +180,21 @@ const unwrap = async <R extends SqlRow>(
 ): Promise<readonly R[]> => {
   const result = await q.query(sql, params ? [...params] : undefined);
   return result.rows as R[];
+};
+
+/**
+ * A statement run straight on the pool (autocommit, no transaction of ours): verifier r22 D1 — a write that may have run is
+ * noted on the request's witness as committed (an autocommit statement commits as it ends; one that failed may have, too).
+ */
+const autocommit = async <R extends SqlRow>(pool: PgQueryable, sql: string, params?: readonly unknown[]): Promise<readonly R[]> => {
+  const witness = currentWriteWitness();
+  const writes = !isReadOnlyStatement(sql);
+  if (witness !== undefined) witness.open += 1;
+  try {
+    return await unwrap<R>(pool, sql, params);
+  } finally {
+    if (witness !== undefined) { witness.open -= 1; if (writes) witness.committedWrites += 1; }
+  }
 };
 
 /**
@@ -167,7 +206,7 @@ const unwrap = async <R extends SqlRow>(
  * closed). The application composes `pgPoolClient`, which scopes every statement per transaction.
  */
 export function pgClient(pool: PgQueryable): SqlClient {
-  return { query: (sql, params) => unwrap(pool, sql, params) };
+  return { query: (sql, params) => autocommit(pool, sql, params) };
 }
 
 /**
@@ -179,7 +218,7 @@ export function pgClient(pool: PgQueryable): SqlClient {
 export function pgPoolClient(pool: PgPool, options: PgPoolOptions = {}): SqlClient {
   listenForEndedConnections(pool, options);
   return {
-    query: (sql, params) => unwrap(pool, sql, params),
+    query: (sql, params) => autocommit(pool, sql, params),
     // Row-level security (migration 0012): every statement through the returned view runs inside a pinned
     // transaction that first sets `app.tenant_id` for THAT transaction only (`set_config(..., true)`), so a
     // pooled connection carries no scope from one request into the next.
@@ -217,7 +256,7 @@ const SET_TENANT_SCOPE = "SELECT set_config('app.tenant_id', $1, true)";
  * connection is released in every path, so a scope never leaks to the next borrower.
  */
 function tenantScopedPool(pool: PgPool, tenantScope: string): SqlClient {
-  const inScope = <T>(fn: (conn: PgPoolClient) => Promise<T>): Promise<T> =>
+  const inScope = <T>(fn: (conn: PgQueryable) => Promise<T>): Promise<T> =>
     inTransaction(pool, [[SET_TENANT_SCOPE, [tenantScope]]], fn);
   return {
     query: (sql, params) => inScope((conn) => unwrap(conn, sql, params)),

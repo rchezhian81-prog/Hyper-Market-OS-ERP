@@ -171,13 +171,29 @@ names the report for a person to check.)
   store computer could otherwise hide lost bills for ever): bills it has not received are named
   "never received" after 30 minutes as usual. Call support to check that store computer.
 
-**A refused report stays on the health page until one of two things happens** (the rule): head
+**A refused report stays on the health page until one of two things happens** (the rule, OB-88): head
 office has itself banked bills up to the refused count (the store computer was right after all), or
-a person with the alert-management right acknowledges that exact refusal with a reason
-(`POST /v1/store-computers/bill-number-refusals/acknowledgements` with the store, prefix, the refused
-count and the reason; who and when are kept). A later, lower report from the same store computer
-never clears it — an honest store computer's count never goes down. A higher refusal after an
-acknowledgement is a new warning.
+**the owner or head office staff** — a person whose authority covers ALL stores — acknowledges that
+exact count with a reason (`POST /v1/store-computers/bill-number-refusals/acknowledgements` with the
+store, prefix, the refused count and the reason). A store's own manager is refused
+(`acknowledgement_needs_all_stores_authority`, kept on the audit trail). Each acknowledgement is kept
+on its own — who, why and when — and acknowledging again is allowed and kept too. The acknowledgement
+holds while the store computer keeps reporting that same count on every pass; once it reports a
+DIFFERENT count, that count (and the old one, if it comes back) needs a new acknowledgement. A later,
+lower report never clears a refusal and never hides a higher one — the health page shows the highest
+count still open and names the others.
+
+**Two more lines (verifier r22, OB-89):**
+
+- **"bills may be waiting on the store computer for N hours … it does not say which bills"** — an
+  older (or altered) store computer that only says "my queue holds something". Head office believes
+  that for the owner's line (2 hours by default) and no longer: past it, any bill head office has not
+  received under that prefix is named "never received" 30 minutes later, saying it may still be on
+  the store computer. Do NOT re-enter those bills from paper; call support to check the store computer.
+- **"never received … the store computer says it still holds 2 bill(s) somewhere between …"** — the
+  store computer claims a few bills spread over a wide range of numbers. Such a claim can account for
+  at most its own count plus 5 (or 5%) numbers; head office names every number it lacks in that range
+  when there are more. Some may be on the store computer: check it before entering anything from paper.
 
 ## Part 4 — Restoring (the one that matters)
 

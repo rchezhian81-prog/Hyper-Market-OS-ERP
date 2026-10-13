@@ -25,7 +25,7 @@ import { SqlSubjectKeyStore, personalDataKek, type SubjectKeyStore } from '../..
 import { SqlSnapshotStore, type SnapshotStore } from '../../../packages/persistence/src/snapshot';
 import { SqlConfigVersionStore } from '../../../packages/persistence/src/config-store';
 import { SqlNumberSeriesStore, type NumberSeriesStore } from '../../../packages/persistence/src/number-series-store';
-import { pgPoolClient, listenForEndedConnections, isSessionEnded, describeDbError } from '../../../packages/persistence/src/pg-client';
+import { pgPoolClient, listenForEndedConnections, isSessionEnded, fromDatabaseDriver, describeDbError } from '../../../packages/persistence/src/pg-client';
 import { DurableTenantSettings, SETTINGS } from '../../../packages/tenant/src/index';
 import {
   buildRouter, loadConfig, startHttpServer, CLOUD_API_CONFIG, SqlIdempotencyStore, SqlAuditSink,
@@ -1857,7 +1857,7 @@ export function buildSurface(deps: {
       connectorQueues: empty([]), integrationHealth: empty({}), backups: empty([]), recordBackup: () => {},
       alertRules: empty(undefined), defineAlertRules: () => {},
     } : {
-      ...observedHealthAdapter({ store, now }), boxDiskWarnHours: (t: string) => settings.value(t, SETTINGS.BOX_DISK_WARN_HOURS),
+      ...observedHealthAdapter({ store, now, boxUnsentWarnHours: (t: string) => settings.value(t, SETTINGS.BOX_UNSENT_WARN_HOURS) }), boxDiskWarnHours: (t: string) => settings.value(t, SETTINGS.BOX_DISK_WARN_HOURS),
       boxUnsentWarnHours: (t: string) => settings.value(t, SETTINGS.BOX_UNSENT_WARN_HOURS),
     }),
     // Device & app-version control (M33-FR-02/04 / A-10) — evaluate whether a device may trade / must
@@ -2379,7 +2379,7 @@ export async function startApi(
     tenants: async () => workerTenants,
     // OB-78: the worker raises the early disk warning on the same owner's line as the read.
     deps: {
-      ...observedHealthAdapter({ store, now }), boxDiskWarnHours: (t: string) => new DurableTenantSettings(new SqlConfigVersionStore(pgPoolClient(db))).value(t, SETTINGS.BOX_DISK_WARN_HOURS),
+      ...observedHealthAdapter({ store, now, boxUnsentWarnHours: (t: string) => new DurableTenantSettings(new SqlConfigVersionStore(pgPoolClient(db))).value(t, SETTINGS.BOX_UNSENT_WARN_HOURS) }), boxDiskWarnHours: (t: string) => new DurableTenantSettings(new SqlConfigVersionStore(pgPoolClient(db))).value(t, SETTINGS.BOX_DISK_WARN_HOURS),
       boxUnsentWarnHours: (t: string) => new DurableTenantSettings(new SqlConfigVersionStore(pgPoolClient(db))).value(t, SETTINGS.BOX_UNSENT_WARN_HOURS),
     },
     ...(transport === undefined ? {} : { transport }),
@@ -2473,9 +2473,11 @@ export async function main(env: Readonly<Record<string, string | undefined>> = p
  * Verifier r21 IDLE-CRASH — what the process does with an error nothing else handled: keep serving when it is only a
  * database connection whose session ended (the pool replaces it; the database already rolled back its transaction), exit
  * for anything else (unknown state). Exported so the policy is tested, not just written down.
+ * Verifier r22 D7: "a database connection" means an error the DATABASE DRIVER raised (`fromDatabaseDriver`), with a
+ * session-ended code or wording — never any error whose message merely contains ECONNRESET, EPIPE or "Connection terminated".
  */
 export function lastResortVerdict(e: unknown): 'keep_serving' | 'exit' {
-  return isSessionEnded(e) ? 'keep_serving' : 'exit';
+  return fromDatabaseDriver(e) && isSessionEnded(e) ? 'keep_serving' : 'exit';
 }
 
 /** The shortest idle-in-transaction limit the API accepts (10 s); 0 means off. Anything between is refused at boot. */

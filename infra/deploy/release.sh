@@ -148,6 +148,22 @@ cd "$SRE_APP_DIR"
 # there. CI=true tells it to proceed without a prompt; it also quietens the shell builds' progress output.
 export CI=true
 
+# How many `api` containers this stack runs — refused when it is more than one, or when compose cannot say (a failed
+# `compose ps` is never read as "none running").
+api_count_ok() {
+  local listed apis
+  if ! listed=$(compose ps -q api); then
+    say "REFUSED — could not count the API containers in this stack (docker compose ps failed), so it cannot be shown that only ONE API version runs. Nothing more was changed; check docker on this box."
+    return 1
+  fi
+  apis=$(printf '%s\n' "$listed" | grep -c . || true)
+  if [ "${apis:-0}" -gt 1 ]; then
+    say "REFUSED — $apis API containers are running in this stack; head office must run exactly ONE API at a time (never two versions side by side). Scale it back to one: docker compose up -d --scale api=1."
+    return 1
+  fi
+  return 0
+}
+
 bring_up() {
   say "installing dependencies…"
   pnpm install --frozen-lockfile || return 1
@@ -162,19 +178,19 @@ bring_up() {
     say "building the $tool bundle…"
     node scripts/build-service.mjs "$tool" || return 1
   done
-  say "bringing the stack up (migrations run first, idempotently)…"
-  compose up -d --build || return 1
   # Verifier r21 (rolling deploy): ONE API version at a time. The per-item setting guard (and every other write guard) is
   # keyed by the code that writes it; two API versions running side by side would not meet on one guard. `compose up`
   # replaces the single `api` container stop-first — the old one is stopped before the new one starts — so versions never
-  # overlap. If this stack ever runs more than one `api` container (scaled by hand, `deploy.replicas`), it is refused here
-  # and the release is put back: docs/runbooks/automatic-deployment.md, "One API version at a time".
-  local apis
-  apis=$(compose ps -q api 2>/dev/null | grep -c . || true)
-  if [ "${apis:-0}" -gt 1 ]; then
-    say "REFUSED — $apis API containers are running in this stack; head office must run exactly ONE API at a time (never two versions side by side). Scale it back to one: docker compose up -d --scale api=1."
-    return 1
-  fi
+  # overlap. If this stack ever runs more than one `api` container (scaled by hand, `deploy.replicas`), it is refused and
+  # the release is put back: docs/runbooks/automatic-deployment.md, "One API version at a time".
+  # Verifier r22 (low): counted BEFORE `compose up` as well — a stack already running two is refused before anything is
+  # rebuilt, so the new version never starts beside them (compose recreates scaled containers one at a time, so after `up`
+  # the overlap would already have happened). The only overlap window left is a stack scaled up by `up` itself (replicas
+  # set in the compose file), caught by the count after it. And a count that cannot be read is a refusal, never "0".
+  api_count_ok || return 1
+  say "bringing the stack up (migrations run first, idempotently)…"
+  compose up -d --build || return 1
+  api_count_ok || return 1
   # A service that SHARES another container's network namespace (the demo relay: `network_mode: service:edge`) is
   # not recreated by compose when that container is — it stays attached to the old, dead network. On 4 Oct 2026
   # the relay answered 502 for every demo store box screen after a release had rebuilt the edge. Recreate such

@@ -323,7 +323,7 @@ import { figure, sourceFreshness, syncedThrough } from '../../reporting/src/inde
 import type { ReportingDeps, Figure, SourceFreshness, StoreSyncReport } from '../../reporting/src/index';
 import { latestDomainReports, latestPerStore, type SyncWatermarkRecord } from '../../platform/src/sync-watermarks';
 import type { BoxHealthRecord, BillNumberFinding, RefusalAcknowledgement } from '../../platform/src/box-health';
-import { unreceivedCandidates, billNumberFindingsFor, judgeReportedIssued, PLAUSIBLE_ISSUED_AHEAD } from '../../platform/src/box-health';
+import { unreceivedCandidates, billNumberFindingsFor, judgeReportedIssued, weighSparseClaim, PLAUSIBLE_ISSUED_AHEAD, type UnreceivedNumbers } from '../../platform/src/box-health';
 import type { BranchScope } from '../../kernel/src/index';
 import { tradingDayIn, tradingDayWindow, type TradingCalendar } from '../../../packages/calendar/src/index';
 import type { ConsolidationDeps } from '../../reporting/src/consolidation-route';
@@ -12704,7 +12704,11 @@ export function concessionTagsAdapter(input: { readonly store: EventStore; reado
 // on the platform stream (the alerts through the same lifecycle adapter the manual raise uses).
 const BACKUPS_STREAM = streamName(STREAM.platform, 'backups');
 const ALERT_RULES_STREAM = streamName(STREAM.platform, 'alert-rules');
-export function observedHealthAdapter(input: { readonly store: EventStore; readonly now: () => string }): ObservedHealthDeps {
+export function observedHealthAdapter(input: {
+  readonly store: EventStore; readonly now: () => string;
+  /** Verifier r22 D3: the owner's unsent line (platform.box_unsent_warn_hours) — absent, its default (2 hours). */
+  readonly boxUnsentWarnHours?: (tenantId: string) => Promise<number>;
+}): ObservedHealthDeps {
   const lifecycle = alertLifecycleAdapter(input);
   return {
     now: input.now,
@@ -12785,7 +12789,8 @@ export function observedHealthAdapter(input: { readonly store: EventStore; reado
         records,
         knownStores: (await orgStructureAdapter({ store: input.store, now: input.now }).nodes(tenantId)).filter((n) => n.kind === 'branch').map((n) => n.nodeId),
         // Verifier r19: bills issued and never received (sales lost by a restore), and box reports head office refused.
-        billNumberFindings: await billNumberFindingsOf(input.store, tenantId, records, input.now()),
+        billNumberFindings: await billNumberFindingsOf(input.store, tenantId, records, input.now(),
+          input.boxUnsentWarnHours === undefined ? undefined : await input.boxUnsentWarnHours(tenantId)),
         // Verifier r20 HW-2: whether the bill-number high-water is waiting on an open database transaction (read after the
         // findings, whose count just ran the fold).
         billNumberHighWater: (await highWaterFenceWait(input.store, tenantId)) ?? null,
@@ -13512,7 +13517,7 @@ const BOX_REFUSAL_ACK_STREAM = streamName(STREAM.org, 'store-computer-refusal-ac
 export function boxHealthAdapter(input: { readonly store: EventStore; readonly snapshots?: SnapshotStore }): {
   records: (tenantId: string) => Promise<readonly BoxHealthRecord[]>;
   record: (tenantId: string, r: BoxHealthRecord) => Promise<BoxHealthRecord>;
-  acknowledge: (tenantId: string, a: RefusalAcknowledgement) => Promise<RefusalAcknowledgement>;
+  acknowledge: (tenantId: string, a: RefusalAcknowledgement, requestKey: string) => Promise<RefusalAcknowledgement>;
   issuedAndBanked: (tenantId: string) => Promise<{ issuedPrefixes: ReadonlyMap<string, ReadonlySet<string>>; banked: ReadonlyMap<string, number> }>;
 } {
   return {
@@ -13523,9 +13528,12 @@ export function boxHealthAdapter(input: { readonly store: EventStore; readonly s
       banked: await bankedReceiptCounts(input.store, tenantId, input.snapshots === undefined ? undefined : { snapshots: input.snapshots }),
     }),
     records: (tenantId) => allOf<BoxHealthRecord>(input.store, tenantId, BOX_HEALTH_STREAM, 'StoreComputerHealthReported'),
-    // Verifier r21 BOX-2: one acknowledgement per (store, prefix, refused count) — a re-sent one collapses onto the first.
-    acknowledge: async (tenantId, a) => {
-      const key = `box-refusal-ack-${tenantId}-${a.storeId}-${a.prefix}-${a.through}`;
+    // Verifier r22 D2 · OB-88: EACH acknowledgement is its own record (who, why, when) — a person acknowledging the same count
+    // again is kept beside the first, never collapsed onto it. Only a re-sent REQUEST (the same Idempotency-Key) answers the
+    // first record.
+    acknowledge: async (tenantId, a, requestKey) => {
+      const request = createHash('sha256').update(requestKey).digest('hex').slice(0, 32);
+      const key = `box-refusal-ack-${tenantId}-${a.storeId}-${a.prefix}-${a.through}-${request}`;
       const res = await input.store.append(tenantId, BOX_REFUSAL_ACK_STREAM, makeEvent({
         id: keyedEventId('box-refusal-ack', key), type: 'BoxReportRefusalAcknowledged', occurredAt: a.at, idempotencyKey: key, source: 'api/platform', payload: a,
       }));
@@ -14693,14 +14701,17 @@ export async function issuedPrefixStores(store: EventStore, tenantId: string): P
  * PLAUSIBLE_ISSUED_AHEAD above banked) — a report kept before r19 judged them at arrival can raise nothing implausible; a
  * report accepted at arrival always passes again (banked only grows, prefixes are never un-issued).
  */
-export async function billNumberFindingsOf(store: EventStore, tenantId: string, records: readonly BoxHealthRecord[], at: string): Promise<ReadonlyMap<string, readonly BillNumberFinding[]>> {
+export async function billNumberFindingsOf(
+  store: EventStore, tenantId: string, records: readonly BoxHealthRecord[], at: string, unsentWarnHours?: number,
+): Promise<ReadonlyMap<string, readonly BillNumberFinding[]>> {
   const banked = await bankedReceiptCounts(store, tenantId);
   const issuedPrefixes = await issuedPrefixStores(store, tenantId);
   const judged = records.map((r) => (r.receiptNumbersIssued === undefined ? r
     : { ...r, receiptNumbersIssued: judgeReportedIssued({ storeId: r.storeId, issued: r.receiptNumbersIssued, issuedPrefixes, banked }).accepted }));
-  const candidates = unreceivedCandidates({ records: judged, at, banked });
+  // Verifier r22 D3 · OB-89: a report with no per-prefix list lets its whole queue stand in only up to the owner's line.
+  const candidates = unreceivedCandidates({ records: judged, at, banked, ...(unsentWarnHours === undefined ? {} : { warnHours: unsentWarnHours }) });
   let refundNumbers: Set<string> | undefined;
-  const unreceived = new Map<string, { prefix: string; numbers: number[]; since: string; capped: boolean }[]>();
+  const unreceived = new Map<string, UnreceivedNumbers[]>();
   const numberOf = (prefix: string, n: number): string => `${prefix}${String(n).padStart(RECEIPT_COUNTER_DIGITS, '0')}`;
   for (const c of candidates) {
     const top = banked.get(c.prefix) ?? 0;
@@ -14720,7 +14731,16 @@ export async function billNumberFindingsOf(store: EventStore, tenantId: string, 
       }
     }
     missing.sort((a, b) => a - b);
-    if (missing.length > 0) unreceived.set(c.storeId, [...(unreceived.get(c.storeId) ?? []), { prefix: c.prefix, numbers: missing, since: c.since, capped: c.capped }]);
+    // Verifier r22 D5: a sparse claim accounts for the numbers head office lacks in its spans only when they are no more
+    // than the bills it says it holds there; outnumbered, every one is named (and said to be possibly on the box).
+    const weighed = weighSparseClaim(missing, c.sparse);
+    if (weighed.numbers.length > 0) {
+      unreceived.set(c.storeId, [...(unreceived.get(c.storeId) ?? []), {
+        prefix: c.prefix, numbers: weighed.numbers, since: c.since, capped: c.capped,
+        ...(weighed.outnumbered && c.sparse !== undefined ? { sparse: c.sparse } : {}),
+        ...(c.wholeQueue === undefined ? {} : { wholeQueue: c.wholeQueue }),
+      }]);
+    }
   }
   const out = new Map<string, readonly BillNumberFinding[]>();
   const acknowledged = await allOf<RefusalAcknowledgement>(store, tenantId, BOX_REFUSAL_ACK_STREAM, 'BoxReportRefusalAcknowledged');
