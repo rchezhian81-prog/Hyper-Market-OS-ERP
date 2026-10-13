@@ -80,3 +80,55 @@ describe('verifier r23 NEW-2: the never-received fold over 10 tills × a day of 
     expect(waiting.ms, `took ${waiting.ms.toFixed(0)} ms`).toBeLessThan(LIMIT_MS);
   });
 });
+
+/**
+ * **Round 25 · OB-96 "A" (verifier r24 NEW-3) — an altered store computer cannot slow head office down.**
+ *
+ * The verifier's attack: 10 prefixes, each report naming 50 at-risk ranges of 500 numbers (the most a report may carry),
+ * every 15 seconds for a day, the box's queue flag flipping every pass so no report repeats the last. Round 24 kept ONE
+ * settled run per prefix and looked again at up to 25,000 numbers per prefix per report: about 2 s per half hour of
+ * reports, 90–100 s for a day, on every health read and every alert pass. Now the at-risk numbers checked per report are
+ * the newest 500 across ALL its ranges (the rest said to the owner as `at_risk_not_checked`), and the fold keeps a SET of
+ * settled runs per prefix. Bound: the same 1.5 s as every other shape here. Two more shapes spread the 500 checked numbers
+ * over 50 small ranges (so the cap leaves 50 ranges), the second alternating two such sets every pass.
+ */
+describe('round 25 · OB-96: the never-received fold stays under 1.5 s whatever a store computer sends', () => {
+  const tampered = (atRisk: (i: number) => [number, number][]): BoxHealthRecord[] => Array.from({ length: REPORTS }, (_, i) => {
+    const at = new Date(t0 + i * EVERY_MS).toISOString();
+    return {
+      storeId: S1, observedAt: at, receivedAt: at, reportedBy: 'u-box', clockAheadCorrected: false, tills: [],
+      disk: { freeBytes: 5e9, totalBytes: 1e10, salesLogUsedBytes: 1, salesLogCapacityBytes: 1e7, reserveBytes: 1 },
+      queue: { unsent: i % 2, deadLettered: 0 },
+      receiptNumbersIssued: Array.from({ length: TILLS }, (_, k) => ({ prefix: `S1L${k}-`, through: 60_000, soldThrough: 60_000, unsent: { count: 0 }, atRisk: atRisk(i) })),
+    } as BoxHealthRecord;
+  });
+
+  it('the verifier shape: 10 prefixes x 50 ranges of 500, 15-second reports, a day, the queue flag flipping', () => {
+    const ranges = Array.from({ length: 50 }, (_, j) => [j * 1000 + 1, j * 1000 + 500] as [number, number]);
+    const records = tampered(() => ranges);
+    const { value, ms } = timed(() => unreceivedCandidates({ records, at, banked }));
+    console.log(`[OB-96] 10 x 50 ranges of 500, a day: ${ms.toFixed(0)} ms`);
+    // Still named: the newest 500 per prefix (the check cap), all of them never received.
+    expect(value.map((c) => [c.numbers.length, c.numbers[0], c.numbers.at(-1), c.capped])).toEqual(Array.from({ length: TILLS }, () => [500, 59_501, 60_000, true]));
+    expect(ms, `took ${ms.toFixed(0)} ms`).toBeLessThan(LIMIT_MS);
+  });
+
+  it('500 at-risk numbers spread over 50 ranges of 10, the queue flag flipping', () => {
+    const ranges = Array.from({ length: 50 }, (_, j) => [j * 1000 + 1, j * 1000 + 10] as [number, number]);
+    const records = tampered(() => ranges);
+    const { value, ms } = timed(() => unreceivedCandidates({ records, at, banked }));
+    console.log(`[OB-96] 10 x 50 ranges of 10, a day: ${ms.toFixed(0)} ms`);
+    expect(value).toHaveLength(TILLS);
+    expect(ms, `took ${ms.toFixed(0)} ms`).toBeLessThan(LIMIT_MS);
+  });
+
+  it('two different sets of 50 small ranges, alternating every pass', () => {
+    const a = Array.from({ length: 50 }, (_, j) => [j * 1000 + 1, j * 1000 + 10] as [number, number]);
+    const b = Array.from({ length: 50 }, (_, j) => [j * 1000 + 501, j * 1000 + 510] as [number, number]);
+    const records = tampered((i) => (i % 2 === 0 ? a : b));
+    const { value, ms } = timed(() => unreceivedCandidates({ records, at, banked }));
+    console.log(`[OB-96] 10 x two alternating sets of 50 ranges, a day: ${ms.toFixed(0)} ms`);
+    expect(value).toHaveLength(TILLS);
+    expect(ms, `took ${ms.toFixed(0)} ms`).toBeLessThan(LIMIT_MS);
+  });
+});

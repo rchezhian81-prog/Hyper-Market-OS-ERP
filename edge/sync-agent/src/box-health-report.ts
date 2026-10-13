@@ -46,6 +46,12 @@ export interface BoxHealthReport {
      * the box, waiting for a person. Head office names them "needs a person", never "never received".
      */
     readonly deadLettered?: UnsentBillNumbers;
+    /**
+     * Round 25 · OB-94 "A": counts this box GAVE under the prefix and never put on a bill (a sale that could not be saved
+     * after its number was taken), as [from, to] ranges — the newest, at most 50 ranges and 500 numbers, none above
+     * `soldThrough`. Head office never names them "never received".
+     */
+    readonly unused?: readonly (readonly [number, number])[];
   }[];
   /** Verifier r19 OB87-1/OB87-2: the box's own check of its bill-number witness, and any held restore. */
   readonly billNumbering?: BillNumberingReport;
@@ -98,6 +104,47 @@ export function withUnsent<T extends { readonly prefix: string }>(
     // Verifier r21: the bills this box gave up sending, per prefix (`count: 0` when none) — when the caller lists them.
     ...(deadLettered === undefined ? {} : { deadLettered: deadLettered.get(x.prefix) ?? { count: 0 } }),
   }));
+}
+
+/** One prefix as the box's bill-number register gives it (`ReceiptNumbers.issuedThrough()`), before its queues are added. */
+export type IssuedPrefix = Omit<NonNullable<BoxHealthReport['receiptNumbersIssued']>[number], 'unsent' | 'deadLettered'>;
+
+/**
+ * Round 25 · OB-93 "A" (verifier r24 NEW-1) — what the box's health report is made from. Everything that has to WAIT (the
+ * filesystem, the sales log's size, the witness folder) is awaited FIRST; then the queues' counts and the per-prefix lists
+ * of bills still to send are read in ONE synchronous step — nothing can run in between (Node runs one thing at a time), so
+ * a sale committed while the report was being made is either in both the count and the list, or in neither. Before round
+ * 25 the counts were read, then the sales log's size was awaited, then the lists were read: a sale landing in that gap made
+ * an honest report contradict its own queue, and head office raised a false "lost track" alarm.
+ */
+export interface BoxHealthSources {
+  readonly disk: () => Promise<BoxHealthReport['disk']>;
+  readonly billNumbering?: () => Promise<BillNumberingReport & { readonly says?: string }>;
+  /** Each queue's own count — read in the one synchronous step. */
+  readonly queues: () => readonly { readonly unsentCount: number; readonly deadLetterCount: number }[];
+  readonly tills: () => BoxHealthReport['tills'];
+  /** The bill-number register's prefixes, and the queued and given-up events whose numbers are listed per prefix. */
+  readonly issued?: () => readonly IssuedPrefix[];
+  readonly pending?: () => Iterable<{ readonly payload: unknown; readonly occurredAt?: string }>;
+  readonly deadLetters?: () => Iterable<{ readonly payload: unknown; readonly occurredAt?: string }>;
+  readonly now: () => string;
+}
+
+/** Round 25 · OB-93: make the box's health report — every await first, then counts and lists in one synchronous step. */
+export async function boxHealthReportOf(s: BoxHealthSources): Promise<BoxHealthReport> {
+  const disk = await s.disk();
+  const billNumbering = s.billNumbering === undefined ? undefined : billNumberingReport(await s.billNumbering());
+  // ── ONE synchronous step from here to the return: no await, so no sale can be committed between the counts and the lists.
+  const queues = s.queues();
+  const issued = s.issued === undefined ? undefined
+    : withUnsent(s.issued(), queuedBillNumbersOf(s.pending?.() ?? []), queuedBillNumbersOf(s.deadLetters?.() ?? []));
+  return {
+    observedAt: s.now(), disk,
+    queue: { unsent: queues.reduce((n, h) => n + h.unsentCount, 0), deadLettered: queues.reduce((n, h) => n + h.deadLetterCount, 0) },
+    tills: s.tills(),
+    ...(issued === undefined ? {} : { receiptNumbersIssued: issued }),
+    ...(billNumbering === undefined ? {} : { billNumbering }),
+  };
 }
 
 /** Verifier r19 OB87-1/OB87-2: what the box says about its bill-number witness (no person's data; a short box id only). */

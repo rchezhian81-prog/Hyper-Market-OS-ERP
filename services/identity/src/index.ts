@@ -20,6 +20,7 @@ import { REVOCATION_REASONS, type TokenRevocation, type RevocationReason } from 
 import { firstUnknownStore, storeComputerGrantRefusal, unknownStoreWords } from '../../platform/src/store-computer-identity';
 import { machineIdentityGrantRefusal, MACHINE_IDENTITY_REFUSAL_CODE } from './machine-identities';
 import { outsidePartyGrantRefusal, OUTSIDE_LOGIN_REFUSAL_CODE } from './outside-party-logins';
+import { dutiesGrantRefusal, SEPARATION_OF_DUTIES_REFUSAL_CODE } from './separation-of-duties';
 
 /**
  * Document number formats per type (M01-FR-02) — configuration, not tenant data: what an invoice
@@ -266,9 +267,15 @@ export function identityRoutes(deps: IdentityDeps): readonly Route[] {
         }
         // PA-12 round 10: a machine identity (backup_job) is never also a person — refused at the REQUEST.
         if (deps.rolesHeldBy !== undefined) {
-          const mixed = machineIdentityGrantRefusal(roleId, await deps.rolesHeldBy(ctx.tenantId, userId), (await deps.isPerson?.(ctx.tenantId, userId)) ?? false);
+          const held = await deps.rolesHeldBy(ctx.tenantId, userId);
+          const mixed = machineIdentityGrantRefusal(roleId, held, (await deps.isPerson?.(ctx.tenantId, userId)) ?? false);
           if (mixed !== undefined) {
             throw apiError(422, { code: MACHINE_IDENTITY_REFUSAL_CODE, whatHappened: mixed, wasItSaved: 'not_saved', nextSafeAction: 'Give the machine its own sign-in holding only its role, and the person their own. Nothing was requested.' });
+          }
+          // OB-95 (owner, 13 Oct 2026): never the IT/platform role and a business role on one person — refused at the REQUEST.
+          const both = dutiesGrantRefusal(roleId, held, roles);
+          if (both !== undefined) {
+            throw apiError(422, { code: SEPARATION_OF_DUTIES_REFUSAL_CODE, whatHappened: both, wasItSaved: 'not_saved', nextSafeAction: 'Give the IT work and the business work to two different people, each with their own sign-in. Nothing was requested.' });
           }
         }
         // Round 14 (verifier G5): nothing is added to an outside party's login, and an outside-party role is never given here.
@@ -324,9 +331,15 @@ export function identityRoutes(deps: IdentityDeps): readonly Route[] {
         }
         // PA-12 round 10: judged again at APPROVAL — the user may have been granted something else since it was asked.
         if (deps.rolesHeldBy !== undefined) {
-          const mixed = machineIdentityGrantRefusal(pending.roleId, await deps.rolesHeldBy(ctx.tenantId, pending.userId), (await deps.isPerson?.(ctx.tenantId, pending.userId)) ?? false);
+          const held = await deps.rolesHeldBy(ctx.tenantId, pending.userId);
+          const mixed = machineIdentityGrantRefusal(pending.roleId, held, (await deps.isPerson?.(ctx.tenantId, pending.userId)) ?? false);
           if (mixed !== undefined) {
             throw apiError(422, { code: MACHINE_IDENTITY_REFUSAL_CODE, whatHappened: mixed, wasItSaved: 'not_saved', nextSafeAction: 'Reject this request; give the machine its own sign-in holding only its role. Nobody\'s access changed.' });
+          }
+          // OB-95: judged again at APPROVAL — the IT role and a business role, in either order, never meet on one person.
+          const both = dutiesGrantRefusal(pending.roleId, held, await deps.roles(ctx.tenantId));
+          if (both !== undefined) {
+            throw apiError(422, { code: SEPARATION_OF_DUTIES_REFUSAL_CODE, whatHappened: both, wasItSaved: 'not_saved', nextSafeAction: 'Reject this request; give the IT work and the business work to two different people. Nobody\'s access changed.' });
           }
         }
         // Verifier r18 C2-R2: the SCOPE judged again at APPROVAL — a request made before round 18's checks (or a store closed

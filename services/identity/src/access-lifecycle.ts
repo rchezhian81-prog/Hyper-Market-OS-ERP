@@ -28,6 +28,7 @@ import { apiError, requireActorIsCaller } from '../../kernel/src/index';
 import { storeComputerGrantRefusal } from '../../platform/src/store-computer-identity';
 import { machineIdentitySetRefusal, machineIdentityGrantRefusal, MACHINE_ONLY_ROLES, MACHINE_IDENTITY_REFUSAL_CODE } from './machine-identities';
 import { outsidePartyGrantRefusal, OUTSIDE_LOGIN_REFUSAL_CODE } from './outside-party-logins';
+import { dutiesSetRefusal, SEPARATION_OF_DUTIES_REFUSAL_CODE } from './separation-of-duties';
 import { actionDetails, approvalNamedIn, type ApprovalPort } from './approval-requests';
 import {
   applyLifecycle, SelfServiceAccessError,
@@ -114,6 +115,11 @@ export interface AccessLifecycleDeps {
    */
   readonly outsideLoginOf?: (tenantId: string, userId: string) => Promise<string | undefined> | string | undefined;
   /**
+   * OB-95: the roles this user holds through an emergency grant still live (not revoked, not expired) — a joiner/mover
+   * change never puts the IT/platform role beside a business role, counting those too. Absent: only the ledger counts.
+   */
+  readonly emergencyRolesOf?: (tenantId: string, userId: string) => Promise<readonly string[]> | readonly string[];
+  /**
    * The token revocation list the authenticator consults (GAP-SEC-05). A change that closes sessions revokes every
    * token the person was issued up to this moment THROUGH it, so the next request with the old token is refused.
    * Optional on a bare stub; a deployment without it refuses to apply a session-closing change (503, nothing saved).
@@ -198,6 +204,19 @@ export function accessLifecycleRoutes(deps: AccessLifecycleDeps): readonly Route
             ?? (machine !== undefined && ((await deps.isPerson?.(ctx.tenantId, who)) ?? false) ? machineIdentityGrantRefusal(machine, [], true) : undefined);
           if (mixed !== undefined) {
             throw apiError(422, { code: MACHINE_IDENTITY_REFUSAL_CODE, whatHappened: mixed, wasItSaved: 'not_saved', nextSafeAction: 'Give the machine its own sign-in holding only its role. Nobody\'s access changed.' });
+          }
+        }
+        // OB-95 (owner, 13 Oct 2026): a joiner/mover change REPLACES what the person holds with its target, so the target
+        // (with any live emergency grant) never puts the IT/platform role beside a business role — refused before anybody is
+        // asked to approve it; a joiner or a mover is never the way round the grant route's rule.
+        if (grants.length > 0) {
+          const catalogue = await deps.roles(ctx.tenantId);
+          for (const who of new Set(grants.map((g) => g.userId))) {
+            const after = [...grants.filter((g) => g.userId === who).map((g) => g.roleId), ...((await deps.emergencyRolesOf?.(ctx.tenantId, who)) ?? [])];
+            const both = dutiesSetRefusal(after, catalogue);
+            if (both !== undefined) {
+              throw apiError(422, { code: SEPARATION_OF_DUTIES_REFUSAL_CODE, whatHappened: both, wasItSaved: 'not_saved', nextSafeAction: 'Change the request so this person holds either the IT role or business roles, not both. Nobody\'s access changed.' });
+            }
           }
         }
         // Round 14 (verifier G5): a joiner/mover change never gives an outside-party role, nor adds a role to an outside

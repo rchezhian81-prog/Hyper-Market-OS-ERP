@@ -133,6 +133,21 @@ export interface ObservedHealthDeps extends Pick<AlertLifecycleDeps, 'alerts' | 
   readonly boxDiskWarnHours?: (tenantId: string) => Promise<number> | number;
   /** Verifier r21 UNSENT-CEILING: warn when bills have waited on a store computer this many hours (tenant setting, default 2). */
   readonly boxUnsentWarnHours?: (tenantId: string) => Promise<number> | number;
+  /**
+   * OB-95 (owner, 13 Oct 2026): the people who hold BOTH the IT/platform role and a business role — granted before the rule
+   * refused it. Each is named on the health (`access_separation_of_duties`, degraded) until the mix is ended.
+   */
+  readonly separationOfDuties?: (tenantId: string) => Promise<readonly { readonly userId: string; readonly itRoles: readonly string[]; readonly businessRoles: readonly string[] }[]>;
+}
+
+/** OB-95: one component naming each person who holds both the IT/platform role and a business role (none: no component). */
+export function separationOfDutiesComponent(people: readonly { readonly userId: string; readonly itRoles: readonly string[]; readonly businessRoles: readonly string[] }[]): ComponentHealth[] {
+  if (people.length === 0) return [];
+  return [{
+    name: 'access_separation_of_duties', status: 'degraded',
+    detail: `separation of duties (owner decision OB-95): ${people.map((p) => `${p.userId} holds the IT/platform role (${p.itRoles.join(', ')}) AND business role(s) (${p.businessRoles.join(', ')})`).join('; ')} — given before head office refused it. Head office now refuses any grant that would do this; end the mix by removing one side (a joiner/mover change, or a leaver and a new sign-in for the other work), so the person who looks after the computers never also runs the shop`,
+    evidence: { people: people.map((p) => p.userId).join(','), count: people.length },
+  }];
 }
 
 /** What the store computers last reported about their queues (PA-12, from the EA-01 watermark reports). */
@@ -167,11 +182,12 @@ const byAt = (a: { readonly at: string }, b: { readonly at: string }): number =>
 
 /** Fold the cloud's own ledgers into the health engine's signal shape. Pure over the deps' answers. */
 export async function observeSignals(deps: ObservedHealthDeps, tenantId: string, at: string, backupMaxAgeSeconds: number, thresholds: HealthThresholds = DEFAULT_THRESHOLDS): Promise<ObservedSignals> {
-  const [lastSale, catalogue, queues, integrations, backups, lanes, boxReports] = await Promise.all([
+  const [lastSale, catalogue, queues, integrations, backups, lanes, boxReports, bothDuties] = await Promise.all([
     deps.lastSaleSyncedAt(tenantId), deps.catalogueBuiltAt(tenantId), deps.connectorQueues(tenantId),
     deps.integrationHealth(tenantId, at), deps.backups(tenantId),
     deps.storeLanes === undefined ? Promise.resolve(undefined) : deps.storeLanes(tenantId),
     deps.storeComputers === undefined ? Promise.resolve(undefined) : deps.storeComputers(tenantId),
+    deps.separationOfDuties === undefined ? Promise.resolve([]) : deps.separationOfDuties(tenantId),
   ]);
   const judgedBoxes = boxReports === undefined || (boxReports.records.length === 0)
     ? undefined : judgeBoxes({
@@ -223,7 +239,7 @@ export async function observeSignals(deps: ObservedHealthDeps, tenantId: string,
       ? ['localStoreWritable — a lane-side signal (the store box reports it through its own health check); never guessed ok here']
       : [`localStoreWritable — not every store computer has a fresh report (${judgedBoxes.boxes.filter((b) => b.stale).map((b) => `${b.storeId}: ${b.state === 'never_reported' ? 'never reported' : `stale, last ${b.lastReportAt}`}`).join('; ')}); never guessed ok here`],
     boxes: judgedBoxes?.boxes ?? [],
-    boxComponents: [...judgedBoxes?.components ?? [], ...highWaterComponent(boxReports?.billNumberHighWater ?? null)],
+    boxComponents: [...judgedBoxes?.components ?? [], ...highWaterComponent(boxReports?.billNumberHighWater ?? null), ...separationOfDutiesComponent(bothDuties)],
   };
 }
 

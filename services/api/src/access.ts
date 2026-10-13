@@ -14,9 +14,11 @@
 
 import type { EventStore } from '../../../packages/persistence/src/event-store';
 import { machineIdentitySetRefusal } from '../../identity/src/machine-identities';
+import { dutiesSetRefusal } from '../../identity/src/separation-of-duties';
 import { AccessControl, type Role, type RoleAssignment } from '../../../packages/rbac/src/rbac';
 import { makeEvent } from '../../../packages/contracts/src/event';
 import { STREAM, effectiveGrants } from './adapters';
+import { ROLE_CATALOGUE } from './roles';
 
 /**
  * A per-tenant access resolver for the kernel. Reads the tenant's `RoleGranted` events, takes away every
@@ -99,6 +101,9 @@ export async function seedInitialAdmins(
   for (const who of new Set(admins.map((a) => a.userId))) {
     const mixed = machineIdentitySetRefusal(admins.filter((a) => a.userId === who).map((a) => a.roleId));
     if (mixed !== undefined) throw new Error(`Initial admin set refused for ${who}: ${mixed}`);
+    // OB-95 (owner, 13 Oct 2026): nor is one person laid down with the IT/platform role and a business role.
+    const both = dutiesSetRefusal(admins.filter((a) => a.userId === who).map((a) => a.roleId), ROLE_CATALOGUE);
+    if (both !== undefined) throw new Error(`Initial admin set refused for ${who}: ${both}`);
   }
   // The tenant exists from this moment (db/migrations/0013): registered by the operator who laid the admins down.
   await store.registerTenant(tenantId, `operator:${laidDownBy}`);
