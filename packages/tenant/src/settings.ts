@@ -199,6 +199,22 @@ export const SETTINGS = {
     label: 'Warn when bills have waited on a store computer, unsent, for more than (hours)',
     defaultValue: 2,
   } as TenantSetting<number>,
+  /**
+   * OB-90 "C" (owner, 13 Oct 2026, in writing) · verifier r22 D5: a store computer's claim "I still hold N bills between X
+   * and Y" may span at most N + max(this many, BOX_CLAIM_SLACK_PERCENT % of N) numbers before head office stops believing it
+   * covers the whole range (room for voided numbers among queued bills). Default 5; the owner may tighten it (0–100).
+   */
+  BOX_CLAIM_SLACK_NUMBERS: {
+    key: 'platform.box_claim_slack_numbers',
+    label: 'A store computer\'s "I still hold N bills between X and Y" may span at most this many extra numbers (at least)',
+    defaultValue: 5,
+  } as TenantSetting<number>,
+  /** OB-90: …or this percentage of N, rounded up, when that is more. Default 5; 0–50. */
+  BOX_CLAIM_SLACK_PERCENT: {
+    key: 'platform.box_claim_slack_percent',
+    label: 'A store computer\'s "I still hold N bills between X and Y" may span this percentage of N in extra numbers, when that is more',
+    defaultValue: 5,
+  } as TenantSetting<number>,
   RECEIPT_PAPER_FORMAT: {
     key: 'receipt.paper_format',
     label: 'Receipt paper size',

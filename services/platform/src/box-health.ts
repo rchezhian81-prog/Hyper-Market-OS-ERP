@@ -367,9 +367,11 @@ export function judgeReportedIssued(input: {
  * its way — but only up to the owner's line (verifier r22 D3 · OB-89, see `unreceivedCandidates`).
  *
  * Verifier r22 D5 — THE SPARSE-RANGE RULE (stated, so a person can check it by hand): a box's claim to hold `count` bills
- * can account for at most `count + slack` numbers, where slack = max(SPARSE_SLACK_MIN, ⌈SPARSE_SLACK_SHARE × count⌉) — 5,
- * or 5% of the count, whichever is more: room for numbers given and voided (or abandoned) while the bills around them were
- * still queued, which keep their numbers but are never sent.
+ * can account for at most `count + slack` numbers, where slack = max(N, ⌈P% × count⌉) — OB-90 "C" (owner, 13 Oct 2026, in
+ * writing): N and P are the owner's store-setup settings platform.box_claim_slack_numbers (default 5, 0–100) and
+ * platform.box_claim_slack_percent (default 5, 0–50), so by default 5, or 5% of the count, whichever is more: room for
+ * numbers given and voided (or abandoned) while the bills around them were still queued, which keep their numbers but are
+ * never sent. The owner may tighten it (0 and 0: a claim accounts for exactly its own count).
  *   • A range whose span (to - from + 1) is within count + slack is believed whole: every number in it is on the box.
  *   • A WIDER range says the box holds `count` of the numbers in its span, not which — so it covers none of them here.
  *     Head office checks the span against what it banked (`weighSparseClaim`, after the ledger check): when the numbers it
@@ -379,10 +381,13 @@ export function judgeReportedIssued(input: {
  * An honest box with one old and one new dead letter ({2, 101, 600}, the bills between them received) is therefore never
  * called lost, while a claim of 2 bills over 500 missing numbers no longer hides 498 of them for as long as it is repeated.
  */
-export function stillOnTheBox(r: Pick<BoxHealthRecord, 'queue'>, x: Pick<IssuedReport, 'unsent' | 'deadLettered'>, n: number, wholeQueueStandsIn: boolean = r.queue.unsent > 0): boolean {
+export function stillOnTheBox(
+  r: Pick<BoxHealthRecord, 'queue'>, x: Pick<IssuedReport, 'unsent' | 'deadLettered'>, n: number,
+  wholeQueueStandsIn: boolean = r.queue.unsent > 0, slack: ClaimSlack = DEFAULT_CLAIM_SLACK,
+): boolean {
   // Verifier r21 DEAD-LETTER-AS-LOST: a bill the box gave up sending is ON the box (waiting for a person), never lost.
-  if (coversEvery(x.deadLettered, n)) return true;
-  if (x.unsent !== undefined) return coversEvery(x.unsent, n);
+  if (coversEvery(x.deadLettered, n, slack)) return true;
+  if (x.unsent !== undefined) return coversEvery(x.unsent, n, slack);
   return wholeQueueStandsIn;
 }
 
@@ -390,17 +395,26 @@ export function stillOnTheBox(r: Pick<BoxHealthRecord, 'queue'>, x: Pick<IssuedR
 const names = (q: QueuedBillNumbers | undefined): q is QueuedBillNumbers & { from: number; to: number } =>
   q !== undefined && q.count > 0 && q.from !== undefined && q.to !== undefined;
 /** Verifier r22 D5: the slack a claim of `count` bills is allowed (voided numbers among them) — see THE SPARSE-RANGE RULE. */
-export const SPARSE_SLACK_MIN = 5;
-export const SPARSE_SLACK_SHARE = 0.05;
-export const sparseSlack = (count: number): number => Math.max(SPARSE_SLACK_MIN, Math.ceil(count * SPARSE_SLACK_SHARE));
+export interface ClaimSlack {
+  /** At least this many extra numbers (platform.box_claim_slack_numbers, 0–100). */
+  readonly numbers: number;
+  /** Or this percentage of the claimed count, rounded up, when more (platform.box_claim_slack_percent, 0–50). */
+  readonly percent: number;
+}
+/** OB-90: the default — 5 numbers or 5%, whichever is more (the rule as built in round 23, decision A's values). */
+export const DEFAULT_CLAIM_SLACK: ClaimSlack = { numbers: 5, percent: 5 };
+/** max(numbers, ⌈percent% × count⌉), in whole-number arithmetic (no floating-point rounding). */
+export const sparseSlack = (count: number, slack: ClaimSlack = DEFAULT_CLAIM_SLACK): number =>
+  Math.max(slack.numbers, Math.floor((count * slack.percent + 99) / 100));
 /** Verifier r22 D5: a range believed WHOLE — its span is within its count plus the slack. */
-export const believedWhole = (q: QueuedBillNumbers | undefined): boolean => names(q) && q.to - q.from + 1 <= q.count + sparseSlack(q.count);
+export const believedWhole = (q: QueuedBillNumbers | undefined, slack: ClaimSlack = DEFAULT_CLAIM_SLACK): boolean =>
+  names(q) && q.to - q.from + 1 <= q.count + sparseSlack(q.count, slack);
 /** Count `n` lies in a range believed whole (a wider, sparse range vouches for no particular number). */
-const coversEvery = (q: QueuedBillNumbers | undefined, n: number): boolean => names(q) && believedWhole(q) && n >= q.from && n <= q.to;
+const coversEvery = (q: QueuedBillNumbers | undefined, n: number, slack: ClaimSlack): boolean => names(q) && believedWhole(q, slack) && n >= q.from && n <= q.to;
 
 /** Verifier r22 D5: the SPARSE ranges of one prefix's report — how many bills they say the box holds, and over which spans. */
-export function sparseHolding(x: Pick<IssuedReport, 'unsent' | 'deadLettered'>): { count: number; spans: [number, number][] } | undefined {
-  const sparse = [x.unsent, x.deadLettered].filter((q): q is QueuedBillNumbers & { from: number; to: number } => names(q) && !believedWhole(q));
+export function sparseHolding(x: Pick<IssuedReport, 'unsent' | 'deadLettered'>, slack: ClaimSlack = DEFAULT_CLAIM_SLACK): { count: number; spans: [number, number][] } | undefined {
+  const sparse = [x.unsent, x.deadLettered].filter((q): q is QueuedBillNumbers & { from: number; to: number } => names(q) && !believedWhole(q, slack));
   return sparse.length === 0 ? undefined : { count: sparse.reduce((a, q) => a + q.count, 0), spans: sparse.map((q) => [q.from, q.to]) };
 }
 
@@ -557,7 +571,10 @@ export function unreceivedCandidates(input: {
   readonly at: string;
   readonly banked: ReadonlyMap<string, number>;
   readonly warnHours?: number;
+  /** OB-90: the owner's claim slack (store setup); absent, the default 5 / 5%. */
+  readonly slack?: ClaimSlack;
 }): UnreceivedCandidate[] {
+  const slack = input.slack ?? DEFAULT_CLAIM_SLACK;
   const atMs = Date.parse(input.at);
   const cutoff = atMs - UNRECEIVED_GRACE_MINUTES * 60_000;
   const lineMs = (input.warnHours ?? DEFAULT_BOX_UNSENT_WARN_HOURS) * 3_600_000;
@@ -580,7 +597,7 @@ export function unreceivedCandidates(input: {
       const banked = input.banked.get(x.prefix) ?? 0;
       const sold = x.soldThrough ?? x.through;
       const note = (n: number): void => {
-        if (stillOnTheBox(r, x, n, false)) return;
+        if (stillOnTheBox(r, x, n, false, slack)) return;
         const prev = cur.numbers.get(n);
         if (prev === undefined || Date.parse(notedAt) < Date.parse(prev)) cur.numbers.set(n, notedAt);
       };
@@ -596,12 +613,12 @@ export function unreceivedCandidates(input: {
     const { r, x } = v.latest;
     const standsIn = v.wholeQueueSince !== undefined && atMs < Date.parse(v.wholeQueueSince) + lineMs;
     const all = [...v.numbers]
-      .filter(([n, since]) => Date.parse(since) <= cutoff && !stillOnTheBox(r, x, n, standsIn))
+      .filter(([n, since]) => Date.parse(since) <= cutoff && !stillOnTheBox(r, x, n, standsIn, slack))
       .map(([n]) => n).sort((a, b) => a - b);
     if (all.length === 0) continue;
     const numbers = all.slice(-UNRECEIVED_CHECK_CAP);
     const since = numbers.map((n) => v.numbers.get(n)!).sort()[0]!;
-    const sparse = sparseHolding(x);
+    const sparse = sparseHolding(x, slack);
     out.push({
       storeId: v.storeId, prefix: v.prefix, numbers, since, capped: all.length > numbers.length,
       ...(sparse === undefined ? {} : { sparse }),
@@ -614,15 +631,15 @@ export function unreceivedCandidates(input: {
 /**
  * Verifier r22 D5 — THE SPARSE-RANGE RULE, applied after the ledger check: the numbers head office has NOT received inside
  * the latest report's sparse spans are all accounted for by the box's word when there are no more of them than the bills it
- * says it holds there plus the slack (count + max(5, 5%)) — none is named; when there are more, all of them are named
+ * says it holds there plus the owner's slack (count + max(N, P%), OB-90; 5 / 5% by default) — none is named; when there are more, all of them are named
  * (which ones are on the box cannot be told). Returns the numbers still to name, and whether the sparse claim was outnumbered.
  */
-export function weighSparseClaim(missing: readonly number[], sparse: UnreceivedCandidate['sparse']): { numbers: number[]; outnumbered: boolean } {
+export function weighSparseClaim(missing: readonly number[], sparse: UnreceivedCandidate['sparse'], slack: ClaimSlack = DEFAULT_CLAIM_SLACK): { numbers: number[]; outnumbered: boolean } {
   if (sparse === undefined) return { numbers: [...missing], outnumbered: false };
   const inSpan = (n: number): boolean => sparse.spans.some(([a, z]) => n >= a && n <= z);
   const within = missing.filter(inSpan);
   if (within.length === 0) return { numbers: [...missing], outnumbered: false };
-  if (within.length <= sparse.count + sparseSlack(sparse.count)) return { numbers: missing.filter((n) => !inSpan(n)), outnumbered: false };
+  if (within.length <= sparse.count + sparseSlack(sparse.count, slack)) return { numbers: missing.filter((n) => !inSpan(n)), outnumbered: false };
   return { numbers: [...missing], outnumbered: true };
 }
 

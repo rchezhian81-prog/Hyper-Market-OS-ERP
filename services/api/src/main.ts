@@ -1857,7 +1857,11 @@ export function buildSurface(deps: {
       connectorQueues: empty([]), integrationHealth: empty({}), backups: empty([]), recordBackup: () => {},
       alertRules: empty(undefined), defineAlertRules: () => {},
     } : {
-      ...observedHealthAdapter({ store, now, boxUnsentWarnHours: (t: string) => settings.value(t, SETTINGS.BOX_UNSENT_WARN_HOURS) }), boxDiskWarnHours: (t: string) => settings.value(t, SETTINGS.BOX_DISK_WARN_HOURS),
+      ...observedHealthAdapter({
+        store, now, boxUnsentWarnHours: (t: string) => settings.value(t, SETTINGS.BOX_UNSENT_WARN_HOURS),
+        // OB-90: the owner's claim slack, from store setup.
+        boxClaimSlack: async (t: string) => ({ numbers: await settings.value(t, SETTINGS.BOX_CLAIM_SLACK_NUMBERS), percent: await settings.value(t, SETTINGS.BOX_CLAIM_SLACK_PERCENT) }),
+      }), boxDiskWarnHours: (t: string) => settings.value(t, SETTINGS.BOX_DISK_WARN_HOURS),
       boxUnsentWarnHours: (t: string) => settings.value(t, SETTINGS.BOX_UNSENT_WARN_HOURS),
     }),
     // Device & app-version control (M33-FR-02/04 / A-10) — evaluate whether a device may trade / must
@@ -2379,7 +2383,14 @@ export async function startApi(
     tenants: async () => workerTenants,
     // OB-78: the worker raises the early disk warning on the same owner's line as the read.
     deps: {
-      ...observedHealthAdapter({ store, now, boxUnsentWarnHours: (t: string) => new DurableTenantSettings(new SqlConfigVersionStore(pgPoolClient(db))).value(t, SETTINGS.BOX_UNSENT_WARN_HOURS) }), boxDiskWarnHours: (t: string) => new DurableTenantSettings(new SqlConfigVersionStore(pgPoolClient(db))).value(t, SETTINGS.BOX_DISK_WARN_HOURS),
+      ...observedHealthAdapter({
+        store, now, boxUnsentWarnHours: (t: string) => new DurableTenantSettings(new SqlConfigVersionStore(pgPoolClient(db))).value(t, SETTINGS.BOX_UNSENT_WARN_HOURS),
+        // OB-90: the owner's claim slack, from store setup.
+        boxClaimSlack: async (t: string) => {
+          const durable = new DurableTenantSettings(new SqlConfigVersionStore(pgPoolClient(db)));
+          return { numbers: await durable.value(t, SETTINGS.BOX_CLAIM_SLACK_NUMBERS), percent: await durable.value(t, SETTINGS.BOX_CLAIM_SLACK_PERCENT) };
+        },
+      }), boxDiskWarnHours: (t: string) => new DurableTenantSettings(new SqlConfigVersionStore(pgPoolClient(db))).value(t, SETTINGS.BOX_DISK_WARN_HOURS),
       boxUnsentWarnHours: (t: string) => new DurableTenantSettings(new SqlConfigVersionStore(pgPoolClient(db))).value(t, SETTINGS.BOX_UNSENT_WARN_HOURS),
     },
     ...(transport === undefined ? {} : { transport }),

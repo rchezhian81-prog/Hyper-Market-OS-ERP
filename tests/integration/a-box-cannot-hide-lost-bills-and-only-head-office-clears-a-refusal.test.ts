@@ -28,6 +28,9 @@ import {
  *      shields the whole span: after the grace the numbers head office lacks are named (it says it holds 2 of them, which
  *      ones cannot be told). An honest box is never called lost: two old dead letters with everything between them banked,
  *      or a queue with a few voided numbers inside it (within count + max(5, 5%)), names nothing.
+ *   3b. OB-90 "C": that slack is the owner's store-setup setting (platform.box_claim_slack_numbers, default 5, 0–100;
+ *      platform.box_claim_slack_percent, default 5, 0–50): defaults as built; set to 0 / 0 the same honest-with-voids claim
+ *      is named; set back, it sticks (versioned, who changed it) and the claim is believed again; out of range is refused.
  *   4. D2 · OB-88 (probe zz-v22 E): a store manager — of ANOTHER store, or of this very store — is refused by name (403
  *      acknowledgement_needs_all_stores_authority) and the warning stays. The owner's acknowledgement holds while the box
  *      repeats the same count on every pass; acknowledging again is kept as its own record (its own who, why, when); a
@@ -231,6 +234,57 @@ async function anHonestBoxWithGapsIsNeverCalledLost(h: ApiHarness): Promise<void
   expect((await findings(call, 'issued_never_received')).filter((f) => f.prefix === Q)).toEqual([]);
 }
 
+// ── 3b. OB-90 "C": the claim slack is the owner's store-setup setting ──────────────────────────────────────────────
+async function theClaimSlackIsTheOwnersSetting(h: ApiHarness): Promise<void> {
+  const { call } = await shop(h);
+  const { travel } = clock();
+  const N = 'platform.box_claim_slack_numbers';
+  const PCT = 'platform.box_claim_slack_percent';
+  const item = async (key: string) => ((await call('GET', '/v1/platform/setup', OWNER)).body as { items: { key: string; value: unknown; changedBy?: string; version: number }[] }).items.find((i) => i.key === key);
+  // The defaults reproduce the rule as built: 5 numbers, or 5%.
+  expect((await item(N))?.value).toBe(5);
+  expect((await item(PCT))?.value).toBe(5);
+  // A catch-up whose queue holds 95 bills over 100 numbers (5 voided): believed whole by default — nothing named.
+  const VOIDS = [{ prefix: P, through: 100, soldThrough: 100, unsent: { count: 95, from: 1, to: 100 } }];
+  for (const m of [0, 20, UNRECEIVED_GRACE_MINUTES + 5]) { travel(m); await report(call, VOIDS, { unsent: 95, deadLettered: 0 }); }
+  expect(await neverReceived(call)).toEqual([]);
+
+  // Validated and the owner's alone: a cashier is refused; out of range or not whole is refused in the engine's words.
+  expect((await call('PUT', `/v1/platform/setup/${N}`, 'u-cash', { value: 0 })).status).toBe(403);
+  for (const [key, value] of [[N, 101], [N, -1], [N, 2.5], [PCT, 51], [PCT, -1]] as const) {
+    const bad = await call('PUT', `/v1/platform/setup/${key}`, OWNER, { value });
+    expect(bad.status, `${key}=${value}`).toBe(422);
+  }
+  expect(JSON.stringify((await call('PUT', `/v1/platform/setup/${N}`, OWNER, { value: 101 })).body)).toMatch(/Give a whole number of bill numbers, from 0 to 100/);
+  expect(JSON.stringify((await call('PUT', `/v1/platform/setup/${PCT}`, OWNER, { value: 51 })).body)).toMatch(/Give a whole percentage, from 0 to 50/);
+  expect((await item(N))?.value).toBe(5); // nothing refused changed it
+
+  // The owner tightens it to 0 and 0: the same claim no longer covers its 5 extra numbers — all 100 are checked and named.
+  expect((await call('PUT', `/v1/platform/setup/${N}`, OWNER, { value: 0 })).status).toBe(200);
+  expect((await call('PUT', `/v1/platform/setup/${PCT}`, OWNER, { value: 0 })).status).toBe(200);
+  expect(await item(N)).toMatchObject({ value: 0, changedBy: OWNER, version: 1 });
+  expect(await neverReceived(call)).toEqual([[1, 100]]);
+  const named = (await findings(call, 'issued_never_received'))[0]!;
+  expect(named.detail).toMatch(/The store computer says it still holds 95 bill\(s\) somewhere between S1L1-000001 to S1L1-000100/);
+  expect(named.detail).toMatch(/Do NOT re-enter any of them from paper/);
+
+  // Set back: it sticks (a new version, who and when kept) and the rule follows it again.
+  expect((await call('PUT', `/v1/platform/setup/${N}`, OWNER, { value: 5 })).status).toBe(200);
+  expect((await call('PUT', `/v1/platform/setup/${PCT}`, OWNER, { value: 5 })).status).toBe(200);
+  expect(await item(N)).toMatchObject({ value: 5, changedBy: OWNER, version: 2 });
+  expect(await item(PCT)).toMatchObject({ value: 5, changedBy: OWNER, version: 2 });
+  travel(UNRECEIVED_GRACE_MINUTES + 40);
+  await report(call, VOIDS, { unsent: 95, deadLettered: 0 });
+  expect(await neverReceived(call)).toEqual([]);
+  expect((await item(N))?.value).toBe(5);
+  // The percentage alone counts too: 0 numbers but 6% of 95 (⌈5.7⌉ = 6) still covers the 5 voided numbers.
+  expect((await call('PUT', `/v1/platform/setup/${N}`, OWNER, { value: 0 })).status).toBe(200);
+  expect((await call('PUT', `/v1/platform/setup/${PCT}`, OWNER, { value: 6 })).status).toBe(200);
+  expect(await neverReceived(call)).toEqual([]);
+  expect((await call('PUT', `/v1/platform/setup/${PCT}`, OWNER, { value: 4 })).status).toBe(200); // ⌈3.8⌉ = 4 < 5
+  expect(await neverReceived(call)).toEqual([[1, 100]]);
+}
+
 // ── 4. D2 · OB-88: only the owner or head office acknowledges, and it sticks while the count stays ──────────────────
 async function onlyHeadOfficeAcknowledgesAndItSticks(h: ApiHarness): Promise<void> {
   const { T, call } = await shop(h);
@@ -308,6 +362,7 @@ describe('verifier r22 D2–D5 · OB-88 / OB-89 (memory)', () => {
   it('D5: a sparse list no longer shields the whole span', async () => { await aSparseListNoLongerShieldsTheSpan(apiHarness()); }, 120_000);
   it('D5: an honest box with gaps (old dead letters, voided numbers) is never called lost', async () => { await anHonestBoxWithGapsIsNeverCalledLost(apiHarness()); }, 120_000);
   it('D2: only the owner or head office acknowledges, and it holds until the count changes', async () => { await onlyHeadOfficeAcknowledgesAndItSticks(apiHarness()); }, 120_000);
+  it('OB-90: the claim slack is the owner\'s store-setup setting (default 5 / 5%)', async () => { await theClaimSlackIsTheOwnersSetting(apiHarness()); }, 120_000);
 });
 
 describe('verifier r22 D2/D5: the rules themselves', () => {
@@ -337,9 +392,14 @@ describe('verifier r22 D2/D5: the rules themselves', () => {
     expect(open([rec('2026-10-13T10:00:00.000Z', 20_000), rec('2026-10-13T10:01:00.000Z', 30_000), rec('2026-10-13T10:20:00.000Z', 20_000)],
       [ackOf('2026-10-13T10:05:00.000Z', 20_000, 'all_stores'), ackOf('2026-10-13T10:06:00.000Z', 30_000, 'all_stores')])).toEqual([20_000]);
   });
-  it('a sparse claim accounts for at most count + max(5, 5%) missing numbers in its span', () => {
+  it('a sparse claim accounts for at most count + max(5, 5%) missing numbers in its span (the default), or the owner\'s slack', () => {
     expect(sparseSlack(2)).toBe(5);
     expect(sparseSlack(1_000)).toBe(50);
+    expect(sparseSlack(140)).toBe(7); // whole-number arithmetic: 5% of 140 is exactly 7
+    expect(sparseSlack(141)).toBe(8);
+    expect(sparseSlack(95, { numbers: 0, percent: 0 })).toBe(0);
+    expect(sparseSlack(95, { numbers: 2, percent: 10 })).toBe(10);
+    expect(weighSparseClaim([101, 600, 700], { count: 2, spans: [[101, 700]] }, { numbers: 0, percent: 0 })).toEqual({ numbers: [101, 600, 700], outnumbered: true });
     const sparse = { count: 2, spans: [[101, 600]] as [number, number][] };
     expect(weighSparseClaim([101, 600], sparse)).toEqual({ numbers: [], outnumbered: false });
     expect(weighSparseClaim([101, 300, 301, 302, 303, 304, 600], sparse)).toEqual({ numbers: [], outnumbered: false }); // 7 = 2 + 5
@@ -361,6 +421,7 @@ describe.skipIf(DATABASE_URL === undefined)('verifier r22 D2–D5 · OB-88 / OB-
   it('D5: a sparse list no longer shields the whole span', async () => { await onPg(aSparseListNoLongerShieldsTheSpan); }, 300_000);
   it('D5: an honest box with gaps (old dead letters, voided numbers) is never called lost', async () => { await onPg(anHonestBoxWithGapsIsNeverCalledLost); }, 300_000);
   it('D2: only the owner or head office acknowledges, and it holds until the count changes', async () => { await onPg(onlyHeadOfficeAcknowledgesAndItSticks); }, 300_000);
+  it('OB-90: the claim slack is the owner\'s store-setup setting (default 5 / 5%)', async () => { await onPg(theClaimSlackIsTheOwnersSetting); }, 300_000);
 });
 
 describe.skipIf(DATABASE_URL === undefined)('verifier r22 D2 · OB-88: a store manager\'s refused acknowledgement is on the audit trail (served API, PostgreSQL)', () => {
@@ -383,5 +444,37 @@ describe.skipIf(DATABASE_URL === undefined)('verifier r22 D2 · OB-88: a store m
     expect(audit.rows).toEqual([{ status: 403, permission: 'platform.alert.manage' }]);
     const kept = await platform.query("SELECT count(*)::int AS n FROM event_ledger WHERE tenant_id = $1 AND type = 'BoxReportRefusalAcknowledged'", [TENANT]);
     expect(kept.rows[0].n).toBe(0);
+  }, 120_000);
+
+  it('OB-90 on the served API: the claim slack is read from the owner\'s durable store setup', async () => {
+    const B = 'A2';
+    const Q = 'A2L1-';
+    await real.grant('u-box-a2', 'store_computer', undefined, [B]);
+    expect((await real.request({ method: 'POST', path: `/v1/stores/${B}/tills/lane-1/receipt-prefix`, userId: OWNER, idempotencyKey: `pfx-${randomUUID()}`, body: { prefix: Q } })).status).toBe(201);
+    const { travel } = clock();
+    const VOIDS = [{ prefix: Q, through: 100, soldThrough: 100, unsent: { count: 95, from: 1, to: 100 } }];
+    const send = async (): Promise<void> => {
+      const r = await real.request({ method: 'POST', path: '/v1/store-computers/health-reports', userId: 'u-box-a2', idempotencyKey: `rep-${randomUUID()}`, body: {
+        observedAt: new Date().toISOString(), disk: { freeBytes: 5e9, totalBytes: 1e10, salesLogUsedBytes: 1000, salesLogCapacityBytes: 1e7, reserveBytes: 1e6 },
+        queue: { unsent: 95, deadLettered: 0 }, tills: [], receiptNumbersIssued: VOIDS,
+      } });
+      expect(r.status, JSON.stringify(r.body)).toBe(200);
+    };
+    const named = async (): Promise<[number, number][]> => {
+      const r = await real.request({ method: 'GET', path: '/v1/platform/operational-health/observed', userId: OWNER });
+      expect(r.status).toBe(200);
+      return ((r.body as Observed).observed.boxes.find((b) => b.storeId === B)?.billNumberFindings ?? [])
+        .filter((f) => f.kind === 'issued_never_received').flatMap((f) => f.ranges ?? []);
+    };
+    const set = async (key: string, value: number): Promise<void> => {
+      expect((await real.request({ method: 'PUT', path: `/v1/platform/setup/${key}`, userId: OWNER, idempotencyKey: `set-${randomUUID()}`, body: { value } })).status).toBe(200);
+    };
+    for (const m of [0, UNRECEIVED_GRACE_MINUTES + 5]) { travel(m); await send(); }
+    expect(await named()).toEqual([]); // default 5 / 5%: the 5 voided numbers are within the claim
+    await set('platform.box_claim_slack_numbers', 0);
+    await set('platform.box_claim_slack_percent', 0);
+    expect(await named()).toEqual([[1, 100]]); // the owner's 0 / 0, read from the durable settings
+    await set('platform.box_claim_slack_numbers', 5);
+    expect(await named()).toEqual([]);
   }, 120_000);
 });

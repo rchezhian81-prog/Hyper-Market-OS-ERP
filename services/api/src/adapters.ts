@@ -323,7 +323,7 @@ import { figure, sourceFreshness, syncedThrough } from '../../reporting/src/inde
 import type { ReportingDeps, Figure, SourceFreshness, StoreSyncReport } from '../../reporting/src/index';
 import { latestDomainReports, latestPerStore, type SyncWatermarkRecord } from '../../platform/src/sync-watermarks';
 import type { BoxHealthRecord, BillNumberFinding, RefusalAcknowledgement } from '../../platform/src/box-health';
-import { unreceivedCandidates, billNumberFindingsFor, judgeReportedIssued, weighSparseClaim, PLAUSIBLE_ISSUED_AHEAD, type UnreceivedNumbers } from '../../platform/src/box-health';
+import { unreceivedCandidates, billNumberFindingsFor, judgeReportedIssued, weighSparseClaim, PLAUSIBLE_ISSUED_AHEAD, type UnreceivedNumbers, type ClaimSlack } from '../../platform/src/box-health';
 import type { BranchScope } from '../../kernel/src/index';
 import { tradingDayIn, tradingDayWindow, type TradingCalendar } from '../../../packages/calendar/src/index';
 import type { ConsolidationDeps } from '../../reporting/src/consolidation-route';
@@ -12708,6 +12708,8 @@ export function observedHealthAdapter(input: {
   readonly store: EventStore; readonly now: () => string;
   /** Verifier r22 D3: the owner's unsent line (platform.box_unsent_warn_hours) — absent, its default (2 hours). */
   readonly boxUnsentWarnHours?: (tenantId: string) => Promise<number>;
+  /** OB-90: the owner's claim slack (platform.box_claim_slack_numbers / _percent) — absent, its default (5 / 5%). */
+  readonly boxClaimSlack?: (tenantId: string) => Promise<ClaimSlack>;
 }): ObservedHealthDeps {
   const lifecycle = alertLifecycleAdapter(input);
   return {
@@ -12790,7 +12792,8 @@ export function observedHealthAdapter(input: {
         knownStores: (await orgStructureAdapter({ store: input.store, now: input.now }).nodes(tenantId)).filter((n) => n.kind === 'branch').map((n) => n.nodeId),
         // Verifier r19: bills issued and never received (sales lost by a restore), and box reports head office refused.
         billNumberFindings: await billNumberFindingsOf(input.store, tenantId, records, input.now(),
-          input.boxUnsentWarnHours === undefined ? undefined : await input.boxUnsentWarnHours(tenantId)),
+          input.boxUnsentWarnHours === undefined ? undefined : await input.boxUnsentWarnHours(tenantId),
+          input.boxClaimSlack === undefined ? undefined : await input.boxClaimSlack(tenantId)),
         // Verifier r20 HW-2: whether the bill-number high-water is waiting on an open database transaction (read after the
         // findings, whose count just ran the fold).
         billNumberHighWater: (await highWaterFenceWait(input.store, tenantId)) ?? null,
@@ -14702,14 +14705,17 @@ export async function issuedPrefixStores(store: EventStore, tenantId: string): P
  * report accepted at arrival always passes again (banked only grows, prefixes are never un-issued).
  */
 export async function billNumberFindingsOf(
-  store: EventStore, tenantId: string, records: readonly BoxHealthRecord[], at: string, unsentWarnHours?: number,
+  store: EventStore, tenantId: string, records: readonly BoxHealthRecord[], at: string, unsentWarnHours?: number, claimSlack?: ClaimSlack,
 ): Promise<ReadonlyMap<string, readonly BillNumberFinding[]>> {
   const banked = await bankedReceiptCounts(store, tenantId);
   const issuedPrefixes = await issuedPrefixStores(store, tenantId);
   const judged = records.map((r) => (r.receiptNumbersIssued === undefined ? r
     : { ...r, receiptNumbersIssued: judgeReportedIssued({ storeId: r.storeId, issued: r.receiptNumbersIssued, issuedPrefixes, banked }).accepted }));
   // Verifier r22 D3 · OB-89: a report with no per-prefix list lets its whole queue stand in only up to the owner's line.
-  const candidates = unreceivedCandidates({ records: judged, at, banked, ...(unsentWarnHours === undefined ? {} : { warnHours: unsentWarnHours }) });
+  // OB-90: the owner's claim slack (store setup) decides how far a sparse list is believed.
+  const candidates = unreceivedCandidates({
+    records: judged, at, banked, ...(unsentWarnHours === undefined ? {} : { warnHours: unsentWarnHours }), ...(claimSlack === undefined ? {} : { slack: claimSlack }),
+  });
   let refundNumbers: Set<string> | undefined;
   const unreceived = new Map<string, UnreceivedNumbers[]>();
   const numberOf = (prefix: string, n: number): string => `${prefix}${String(n).padStart(RECEIPT_COUNTER_DIGITS, '0')}`;
@@ -14733,7 +14739,7 @@ export async function billNumberFindingsOf(
     missing.sort((a, b) => a - b);
     // Verifier r22 D5: a sparse claim accounts for the numbers head office lacks in its spans only when they are no more
     // than the bills it says it holds there; outnumbered, every one is named (and said to be possibly on the box).
-    const weighed = weighSparseClaim(missing, c.sparse);
+    const weighed = weighSparseClaim(missing, c.sparse, claimSlack);
     if (weighed.numbers.length > 0) {
       unreceived.set(c.storeId, [...(unreceived.get(c.storeId) ?? []), {
         prefix: c.prefix, numbers: weighed.numbers, since: c.since, capped: c.capped,

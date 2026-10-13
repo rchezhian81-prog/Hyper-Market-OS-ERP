@@ -192,7 +192,7 @@ count still open and names the others.
   the store computer. Do NOT re-enter those bills from paper; call support to check the store computer.
 - **"never received … the store computer says it still holds 2 bill(s) somewhere between …"** — the
   store computer claims a few bills spread over a wide range of numbers. Such a claim can account for
-  at most its own count plus 5 (or 5%) numbers; head office names every number it lacks in that range
+  at most its own count plus a margin for voided bills — 5 numbers or 5%, whichever is more, by default (OB-90: Store setup, "extra bill numbers" 0–100 and "percentage" 0–50; 0 and 0 is strictest); head office names every number it lacks in that range
   when there are more. Some may be on the store computer: check it before entering anything from paper.
 
 ## Part 4 — Restoring (the one that matters)
