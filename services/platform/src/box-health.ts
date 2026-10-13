@@ -1735,9 +1735,9 @@ export interface BoxHistorySnapshot {
   readonly acksPrint: string;
   /**
    * Each (store, prefix) a folded report named: whether it was this store's own when judged, and the highest count believed
-   * (it must still be believed); and the counts judged too far ahead (they must still be).
+   * (it must still be believed); and per prefix the LOWEST count judged too far ahead (it, and so every higher one, must still be).
    */
-  readonly verdicts: { readonly own: readonly (readonly [string, string, boolean, number])[]; readonly ahead: readonly (readonly [string, string, string, number])[] };
+  readonly verdicts: { readonly own: readonly (readonly [string, string, boolean, number])[]; readonly ahead: readonly (readonly [string, number])[] };
   readonly rawBound: readonly PrefixBinding[];
   readonly stores: readonly unknown[];
 }
@@ -1776,7 +1776,8 @@ class BoxHistoryFold {
   readonly stores = new Map<string, StoreHist>();
   ord = 0;
   readonly own = new Map<string, [string, string, boolean, number]>();
-  readonly ahead: (readonly [string, string, string, number])[] = [];
+  /** Per prefix, the lowest count judged too far ahead (a count is believed up to a bound, so a lower one is believed first). */
+  readonly ahead = new Map<string, number>();
   readonly foldedSeqs: number[] = [];
 
   constructor(nr: NeverReceivedFold, readonly ctx: HistoryContext) {
@@ -1834,7 +1835,7 @@ class BoxHistoryFold {
         if (v === undefined) { v = [e.raw.storeId, x.prefix, owns, 0]; this.own.set(key, v); }
         if (!owns) continue;
         if (judge.plausible(x.prefix, x.through)) v[3] = Math.max(v[3], x.through);
-        else this.ahead.push([e.raw.receivedAt, e.raw.storeId, x.prefix, x.through]);
+        else this.ahead.set(x.prefix, Math.min(this.ahead.get(x.prefix) ?? Infinity, x.through));
       }
     }
     // The never-received fold (round 27) on the reports as judged — it applies the acts up to this report first.
@@ -2120,7 +2121,7 @@ export function readBoxHistory(input: {
       : actsThen.length !== n.actsApplied.length || actsThen.some((id, k) => id !== n.actsApplied[k]) ? 'acts'
       : acksPrintUpTo({ refusalAcks: refusals, ...(input.atRiskAcks === undefined ? {} : { atRiskAcks: input.atRiskAcks }), replacements: replacementsAt }, settledMs) !== s.acksPrint ? 'acknowledgements'
       : input.judge !== undefined && (s.verdicts.own.some(([storeId, prefix, owns, top]) => input.judge!.owns(storeId, prefix) !== owns || (top > 0 && !input.judge!.plausible(prefix, top)))
-        || s.verdicts.ahead.some(([, , prefix, through]) => input.judge!.plausible(prefix, through))) ? 'verdicts'
+        || s.verdicts.ahead.some(([prefix, through]) => input.judge!.plausible(prefix, through))) ? 'verdicts'
       : n.keys.some((k) => (input.banked.get(k.prefix) ?? 0) < k.aboveFrom) ? 'banked'
       : undefined;
     if (why !== undefined) return { setAside: why };
@@ -2129,7 +2130,7 @@ export function readBoxHistory(input: {
     for (const b of s.rawBound) fold.rawBound.set(bindingKey(b.storeId, b.prefix), b);
     fold.decodeStores(s.stores);
     for (const [storeId, prefix, owns, top] of s.verdicts.own) fold.own.set(bindingKey(storeId, prefix), [storeId, prefix, owns, top]);
-    fold.ahead.push(...s.verdicts.ahead);
+    for (const [prefix, through] of s.verdicts.ahead) fold.ahead.set(prefix, through);
     entries = entries.filter((e) => !folded.has(e.seq));
   }
   const resumed = fold !== undefined;
