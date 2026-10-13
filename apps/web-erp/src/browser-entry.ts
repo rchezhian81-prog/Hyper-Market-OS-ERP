@@ -294,6 +294,10 @@ import type { AuditRecord, LegalHold, RetentionPolicy } from '../../../packages/
 import type { Producer } from '../../../packages/reporting/src/index';
 import { mountDemoBanner } from '../../../packages/ui/src/demo-banner';
 import { createIncidentsSession, wordsFor as incidentsWords, outcomeWords as incidentsOutcomeWords, summarise as incidentsSummary, type IncidentsSession } from './incidents-session';
+import {
+  createStoreComputersSession, wordsFor as storeComputersWords, outcomeWords as storeComputersOutcomeWords, summarise as storeComputersSummary,
+  requestWords as storeComputersRequestWords, findingKindWords as storeComputersFindingWords, type StoreComputersSession,
+} from './store-computers-session';
 
 // The practice-data strip ("TRIAL COPY · PRACTICE DATA"). `PILOT_DEMO_BANNER` is a build-time constant baked in by
 // esbuild (`scripts/build-app.mjs`): '1' in the hosted-demo build, empty in production. `typeof` guards
@@ -4776,6 +4780,16 @@ interface ManagerWindow {
     readonly outcomeWords: typeof incidentsOutcomeWords;
     readonly summarise: typeof incidentsSummary;
   };
+  /** Round 26 (OB-99 · OB-97 · OB-98): the Store computers page — who is looking; head office says what they may do. */
+  storeComputersData?: ViewerIdentity;
+  storeComputers?: {
+    readonly session: StoreComputersSession;
+    readonly words: typeof storeComputersWords;
+    readonly outcomeWords: typeof storeComputersOutcomeWords;
+    readonly summarise: typeof storeComputersSummary;
+    readonly requestWords: typeof storeComputersRequestWords;
+    readonly findingWords: typeof storeComputersFindingWords;
+  };
   substitutionExceptionInboxData?: SubstitutionExceptionInboxData;
   substitutionExceptionInboxSession?: SubExceptionInboxSession;
   /** The shell reads the live exceptions worklist through this and re-presents it — a GET read, never a write. */
@@ -6456,5 +6470,13 @@ if (browserWindow !== undefined) {
   browserWindow.incidents = {
     session: createIncidentsSession({ viewer: browserWindow.incidentsData }),
     words: incidentsWords, outcomeWords: incidentsOutcomeWords, summarise: incidentsSummary,
+  };
+  // Round 26 (OB-99 · OB-97 · OB-98): the Store computers page — its session is the tested model in
+  // store-computers-session.ts; what the person may do is head office's own answer, and nothing is written on open.
+  browserWindow.storeComputersData = viewerIdentity(browserWindow.storeComputersData);
+  browserWindow.storeComputers = {
+    session: createStoreComputersSession({ viewer: browserWindow.storeComputersData }),
+    words: storeComputersWords, outcomeWords: storeComputersOutcomeWords, summarise: storeComputersSummary,
+    requestWords: storeComputersRequestWords, findingWords: storeComputersFindingWords,
   };
 }

@@ -167,6 +167,12 @@ async function theReplacedActMovesThePrefix(h: ApiHarness): Promise<void> {
   // Nothing moved by any refusal.
   const still = await call('GET', BINDINGS, OWNER);
   expect((still.body as { bindings: { computer: string; via: string }[] }).bindings.map((b) => [b.computer, b.via])).toEqual([['u-box', 'first_report']]);
+  // OB-99: the Store computers page offers only what head office would accept — its own answer, by the acts' own rule.
+  for (const [who, branch, mayReplace, mayAcknowledge] of [[OWNER, undefined, true, true], ['u-ho', undefined, true, true], ['u-mgr1', S1, false, false], ['u-it', undefined, false, false]] as const) {
+    const r = await call('GET', BINDINGS, who, undefined, branch);
+    expect(r.status, who).toBe(200);
+    expect((r.body as { you: unknown }).you, who).toEqual({ mayReplace, mayAcknowledge });
+  }
 
   // ── The act ──
   travel(2);

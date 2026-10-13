@@ -278,6 +278,11 @@ count still open and names the others.
   approval for anything else (`approval_does_not_match`), one store's manager
   (`replacement_needs_all_stores_authority`). Every act is kept (append-only) with who asked, who
   approved, when and why. **Afterwards, revoke the old store computer's sign-in.**
+  **On screen (OB-99):** the head office web ERP's **Store computers** page (Administration) does all of this:
+  tap the till's row on "Bill numbers", fill in the new store computer and why, "Ask the owner's approval"; the
+  owner approves on his Approvals page; then "Move the bill numbers now" on the "Replacements" tab. The "Needs a
+  person" tab has "Acknowledge with this reason" for refused reports and the not-checked line. One store's manager
+  and the IT administrator see the page read-only.
 - **Acknowledging "not checked" (OB-98).** After support has compared the restore record, the owner or
   head office business staff (all stores, never IT) may acknowledge the **"not checked: …"** line with a
   reason: `POST /v1/store-computers/at-risk-not-checked/acknowledgements` with `{ storeId, prefix, count,

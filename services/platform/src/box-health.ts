@@ -2033,11 +2033,16 @@ export function boxHealthRoutes(deps: BoxHealthDeps): readonly Route[] {
       const records = deps.records === undefined ? [] : await deps.records(ctx.tenantId);
       const replacements = deps.replacements === undefined ? [] : await deps.replacements(ctx.tenantId);
       const inScope = (storeId: string): boolean => { const sc = scopeOf(ctx); return sc === 'all' || sc.includes(storeId); };
+      // Round 26 · OB-99: what THIS person may do here, judged by the same rule the acts use (all stores, a business role,
+      // never IT) — so the Store computers page offers only what head office would accept. Head office re-checks every act.
+      const allStoresBusiness = async (grantsOf: BoxHealthDeps['alertAuthorityOf']): Promise<boolean> =>
+        scopeOf(ctx) === 'all' && (grantsOf === undefined ? [] : await grantsOf(ctx.tenantId, ctx.userId)).some((g) => g.allStores && !g.platformAdministration);
       return {
         status: 200,
         body: {
           bindings: prefixBindings(records, replacements, at).filter((x) => inScope(x.storeId)),
           replacements: [...replacements].filter((m) => inScope(m.storeId)).sort((a, z) => Date.parse(a.at) - Date.parse(z.at)),
+          you: { mayReplace: await allStoresBusiness(deps.replacementAuthorityOf), mayAcknowledge: await allStoresBusiness(deps.alertAuthorityOf) },
           asAt: at,
         },
       };

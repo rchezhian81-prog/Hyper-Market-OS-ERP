@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Store computers</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Store computers (round 26 · OB-99 "A" · OB-97 · OB-98 · M35-FR-03). A THIN CLIENT over head office's routes: which store
+      computer each till's bill-number prefix belongs to (/v1/store-computers/prefix-bindings), the findings only a person
+      clears (a refused report, numbers not checked — from head office's observed health), and the owner-approved "store
+      computer replaced" act (ask on the approvals engine → the owner approves on his Approvals page → send the move).
+      What the person may do is head office's own answer (`you` on the bindings read): only the owner and head office
+      business staff with all stores act here; one store's manager and the IT administrator read only. Every rule is head
+      office's; the page shows its words. Its session is the tested model in apps/web-erp/src/store-computers-session.ts.
+      Nothing is written on open.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; box-sizing: border-box; min-width: 0; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; }
+      h3 { margin: 0; font-size: 16px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; min-width: 0; }
+      input, select, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; max-width: 100%; box-sizing: border-box; }
+      .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr)); gap: 10px; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; max-width: 100%; }
+      button.quiet { background: var(--line); color: var(--ink); }
+      button[disabled] { opacity: .5; cursor: not-allowed; }
+      .head-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; justify-content: space-between; min-width: 0; }
+      .panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr)); gap: 10px; }
+      .panel { border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--bg); display: grid; gap: 2px; min-width: 0; }
+      .panel .k { color: var(--muted); font-size: 14px; }
+      .panel .v { font-size: 22px; font-weight: 700; overflow-wrap: anywhere; }
+      .panel.attention { border-left: 6px solid var(--degraded); }
+      #tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+      table { width: 100%; border-collapse: collapse; }
+      .table-wrap { overflow-x: auto; max-width: 100%; }
+      td, th { text-align: left; overflow-wrap: anywhere; }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+      ul.rows li { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; background: var(--bg); display: grid; gap: 6px; overflow-wrap: anywhere; min-width: 0; }
+      .tag { display: inline-block; padding: 0 8px; border-radius: 999px; border: 1px solid var(--line); font-size: 14px; font-weight: 600; }
+      .status { font-size: 14px; min-height: 20px; overflow-wrap: anywhere; }
+      .status.good { color: var(--good); } .status.err { color: var(--danger-text); }
+      .nobody { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
+      .muted { color: var(--muted); font-size: 14px; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title">Store computers</h1>
+      <span class="sync">
+        <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+      </span>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section aria-labelledby="page-h">
+        <div class="head-row">
+          <div>
+            <h2 id="page-h">Store computers</h2>
+            <p class="lead" id="lead">Which store computer each till's bill numbers belong to, what needs a person, and moving a till to a replacement store computer with the owner's approval.</p>
+          </div>
+          <button id="open-replace" type="button" hidden>Record a replaced store computer</button>
+        </div>
+        <div class="panels" role="status" aria-live="polite">
+          <div class="panel" id="p-bindings"><span class="k" id="k-bindings">Tills with a store computer</span><span class="v" id="v-bindings">—</span></div>
+          <div class="panel" id="p-replaced"><span class="k" id="k-replaced">Moved by a replaced act</span><span class="v" id="v-replaced">—</span></div>
+          <div class="panel" id="p-needs"><span class="k" id="k-needs">Needs a person</span><span class="v" id="v-needs">—</span></div>
+          <div class="panel" id="p-waiting"><span class="k" id="k-waiting">Your requests waiting</span><span class="v" id="v-waiting">—</span></div>
+        </div>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <nav id="tabs" aria-label="Sections">
+        <button id="tab-bindings" type="button" aria-current="page">Bill numbers</button>
+        <button id="tab-findings" type="button">Needs a person</button>
+        <button id="tab-requests" type="button">Replacements</button>
+      </nav>
+
+      <section id="view-bindings" aria-labelledby="bindings-h">
+        <h3 id="bindings-h">Bill numbers</h3>
+        <p class="lead" id="bindings-lead">Each till's bill-number prefix and the one store computer head office takes its word from.</p>
+        <div class="table-wrap"><table aria-labelledby="bindings-h">
+          <thead><tr><th id="c-store">Store</th><th id="c-prefix">Till prefix</th><th id="c-computer">Store computer (sign-in)</th><th id="c-via">How</th><th id="c-since">Since</th></tr></thead>
+          <tbody id="binding-rows"></tbody>
+        </table></div>
+        <p class="muted" id="no-bindings" hidden></p>
+      </section>
+
+      <section id="view-findings" aria-labelledby="findings-h" hidden>
+        <h3 id="findings-h">Needs a person</h3>
+        <p class="lead" id="findings-lead">Store computer reports head office refused, and older numbers it did not check.</p>
+        <ul class="rows" id="finding-rows" aria-labelledby="findings-h"></ul>
+        <p class="muted" id="no-findings" hidden></p>
+      </section>
+
+      <section id="view-requests" aria-labelledby="requests-h" hidden>
+        <h3 id="requests-h">Replacements</h3>
+        <p class="lead" id="requests-lead">Your "store computer replaced" requests, and every act already done.</p>
+        <ul class="rows" id="request-rows" aria-labelledby="requests-h"></ul>
+        <ul class="rows" id="act-rows"></ul>
+        <p class="muted" id="no-requests" hidden></p>
+      </section>
+    </main>
+
+    <!-- A replaced store computer: the page's one primary action, in a drawer. -->
+    <div class="sheet" id="replace-sheet" hidden role="dialog" aria-modal="true" aria-labelledby="replace-h">
+      <div class="sheet-inner">
+        <h2 id="replace-h">Record a replaced store computer</h2>
+        <label for="f-store"><span id="l-f-store">Store</span><input id="f-store" autocomplete="off" /></label>
+        <label for="f-prefix"><span id="l-f-prefix">Till bill-number prefix</span><input id="f-prefix" autocomplete="off" /></label>
+        <label for="f-from"><span id="l-f-from">Old store computer (its sign-in)</span><input id="f-from" autocomplete="off" /></label>
+        <label for="f-to"><span id="l-f-to">New store computer (its sign-in)</span><input id="f-to" autocomplete="off" /></label>
+        <label for="f-reason"><span id="l-f-reason">Why</span><input id="f-reason" autocomplete="off" /></label>
+        <div class="head-row"><button id="f-ask" type="button">Ask the owner's approval</button><button id="f-cancel" class="quiet" type="button">Close</button></div>
+        <p class="status" id="replace-status" role="status" aria-live="polite"></p>
+      </div>
+    </div>
+
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script type="module" src="./store-computers.js"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>
