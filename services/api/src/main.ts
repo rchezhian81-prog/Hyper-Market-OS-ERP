@@ -1876,6 +1876,9 @@ export function buildSurface(deps: {
         store, now, boxUnsentWarnHours: (t: string) => settings.value(t, SETTINGS.BOX_UNSENT_WARN_HOURS),
         // OB-90: the owner's claim slack, from store setup.
         boxClaimSlack: async (t: string) => ({ numbers: await settings.value(t, SETTINGS.BOX_CLAIM_SLACK_NUMBERS), percent: await settings.value(t, SETTINGS.BOX_CLAIM_SLACK_PERCENT) }),
+        // Round 27 · OB-100: unused numbers by the store's own calendar day; OB-102: the never-received fold's saved running result.
+        storeTimeZone: (t: string) => settings.value(t, SETTINGS.STORE_TIME_ZONE),
+        ...(deps.snapshots === undefined ? {} : { snapshots: deps.snapshots }),
       }), boxDiskWarnHours: (t: string) => settings.value(t, SETTINGS.BOX_DISK_WARN_HOURS),
       boxUnsentWarnHours: (t: string) => settings.value(t, SETTINGS.BOX_UNSENT_WARN_HOURS),
     }),
@@ -2405,6 +2408,9 @@ export async function startApi(
           const durable = new DurableTenantSettings(new SqlConfigVersionStore(pgPoolClient(db)));
           return { numbers: await durable.value(t, SETTINGS.BOX_CLAIM_SLACK_NUMBERS), percent: await durable.value(t, SETTINGS.BOX_CLAIM_SLACK_PERCENT) };
         },
+        // Round 27 · OB-100 / OB-102: the store's calendar, and the same durable saved running result the reads use.
+        storeTimeZone: (t: string) => new DurableTenantSettings(new SqlConfigVersionStore(pgPoolClient(db))).value(t, SETTINGS.STORE_TIME_ZONE),
+        snapshots: new SqlSnapshotStore(pgPoolClient(db)),
       }), boxDiskWarnHours: (t: string) => new DurableTenantSettings(new SqlConfigVersionStore(pgPoolClient(db))).value(t, SETTINGS.BOX_DISK_WARN_HOURS),
       boxUnsentWarnHours: (t: string) => new DurableTenantSettings(new SqlConfigVersionStore(pgPoolClient(db))).value(t, SETTINGS.BOX_UNSENT_WARN_HOURS),
     },

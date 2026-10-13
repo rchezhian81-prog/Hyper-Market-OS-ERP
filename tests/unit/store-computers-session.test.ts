@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  createStoreComputersSession, STORE_COMPUTERS_COPY, wordsFor, outcomeWords, summarise, requestWords, orderedBindings, findingKindWords,
+  createStoreComputersSession, STORE_COMPUTERS_COPY, wordsFor, outcomeWords, summarise, requestWords, orderedBindings, findingKindWords, unusedNumbersWords, acknowledgeable,
   type Board, type Finding, type ReplacementRequest,
 } from '../../apps/web-erp/src/store-computers-session';
 import { APPROVAL_KINDS } from '../../services/identity/src/approval-requests';
@@ -55,6 +55,33 @@ describe('the store computers session', () => {
     expect(b.you).toEqual({ mayReplace: true, mayAcknowledge: true });
     expect(ho.sent.map((x) => `${x.method} ${x.path}`)).toEqual([`GET ${BINDINGS_PATH}`, 'GET /v1/platform/operational-health/observed', 'GET /v1/approvals/requests']);
     expect(ho.sent.every((x) => x.key === undefined)).toBe(true);
+  });
+
+  it('round 27 · OB-100: numbers taken and never used are read per store, till and day; "said unused, but held" needs a person and is not acknowledged here', async () => {
+    const ho = fakeHeadOffice((s) => ({
+      status: 200,
+      body: s.path === BINDINGS_PATH ? { bindings: [], replacements: [], you: { mayReplace: true, mayAcknowledge: true } }
+        : s.path === '/v1/platform/operational-health/observed'
+        ? { observed: { boxes: [
+          { storeId: 'S1', billNumberFindings: [{ kind: 'unused_number_received', prefix: 'S1L1-', ranges: [[105, 105]], count: 1, since: 'x', detail: 'does not fit' }],
+            unusedNumbers: [{ prefix: 'S1L1-', day: '2026-10-12', count: 2, ranges: [[105, 105], [110, 110]], moreRanges: 0 }, { prefix: 'S1L1-', day: '2026-10-13', count: 1, ranges: [[120, 120]], moreRanges: 3 }] },
+          { storeId: 'S2', unusedNumbers: [{ prefix: 'S2L1-', day: '2026-10-13', count: 5, ranges: [[1, 5]], moreRanges: 0 }, { prefix: 7, day: 'bad' }] },
+        ] } }
+        : { mine: [] },
+    }));
+    const s = createStoreComputersSession({ viewer: HO, fetch: ho.fetch, ...keys });
+    const b = ((await s.load()) as { value: Board }).value;
+    expect(b.unused.map((u) => [u.day, u.storeId, u.prefix, u.count])).toEqual([['2026-10-13', 'S1', 'S1L1-', 1], ['2026-10-13', 'S2', 'S2L1-', 5], ['2026-10-12', 'S1', 'S1L1-', 2]]);
+    expect(summarise(b).unused).toBe(8);
+    expect(unusedNumbersWords('en', b.unused[2]!)).toBe('S1L1-000105, S1L1-000110');
+    expect(unusedNumbersWords('en', b.unused[0]!)).toBe('S1L1-000120 and 3 more');
+    expect(unusedNumbersWords('ta', b.unused[0]!)).toBe('S1L1-000120 மேலும் 3');
+    const held = b.findings.find((f) => f.kind === 'unused_number_received')!;
+    expect(findingKindWords('en', held)).toBe('Said unused, but head office has the bill');
+    expect(acknowledgeable(held)).toBe(false);
+    const before = ho.sent.length;
+    expect(await s.acknowledge(held, 'checked with support today')).toEqual({ result: 'invalid', why: 'notAcknowledgeable' });
+    expect(ho.sent.length).toBe(before); // nothing sent
   });
 
   it('what a person may do is head office\'s answer: no `you`, or a refusal of the read, offers nothing', async () => {
@@ -122,12 +149,13 @@ describe('the store computers session', () => {
     expect(requestWords('ta', { ...REQ, status: 'used' })).toBe(STORE_COMPUTERS_COPY.ta.stUsed);
     expect(findingKindWords('en', { storeId: 'S1', kind: 'at_risk_not_checked', prefix: 'P', since: 'x', detail: 'd' })).toBe('Numbers not checked');
     expect(wordsFor('en', 'sent', { prefix: 'S1L1-', to: 'u-box-new' })).toBe('Moved — head office now takes S1L1-\'s bill numbers from u-box-new.');
-    expect(summarise(null)).toEqual({ bindings: null, replaced: null, needs: null, waiting: null });
+    expect(summarise(null)).toEqual({ bindings: null, replaced: null, needs: null, waiting: null, unused: null });
     expect(summarise({
       bindings: orderedBindings([{ storeId: 'S1', prefix: 'A', computer: 'x', since: 's', via: 'replacement' }, { storeId: 'S1', prefix: 'B', computer: 'y', since: 's', via: 'first_report' }]),
+      unused: [{ storeId: 'S1', prefix: 'A', day: '2026-10-13', count: 3, ranges: [[1, 3]], moreRanges: 0 }],
       replacements: [], findings: [{ storeId: 'S1', kind: 'report_refused', prefix: 'A', since: 's', detail: 'd' }],
       requests: [REQ, { ...REQ, status: 'waiting' }, { ...REQ, status: 'used' }], you: { mayReplace: true, mayAcknowledge: true },
-    })).toEqual({ bindings: 2, replaced: 1, needs: 1, waiting: 2 });
+    })).toEqual({ bindings: 2, replaced: 1, needs: 1, waiting: 2, unused: 3 });
   });
 
   it('every English word has a Tamil twin in Tamil script; the page\'s paths and kind are head office\'s own', () => {

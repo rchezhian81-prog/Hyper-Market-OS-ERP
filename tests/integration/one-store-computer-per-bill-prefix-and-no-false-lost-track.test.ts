@@ -64,12 +64,13 @@ async function shop(h: ApiHarness): Promise<{ T: string; call: Call }> {
   expect((await call('POST', `/v1/stores/${S1}/tills/lane-1/receipt-prefix`, OWNER, { prefix: P })).status).toBe(201);
   return { T, call };
 }
-const bank = async (call: Call, numbers: readonly number[]): Promise<void> => {
+// Round 27 · OB-100: a bill's own time (when the till made it) — `at` for a bill completed later than the shop's first bills.
+const bank = async (call: Call, numbers: readonly number[], at = AT): Promise<void> => {
   for (let i = 0; i < numbers.length; i += 16) {
     await Promise.all(numbers.slice(i, i + 16).map(async (n) => {
       const receipt = `${P}${pad(n)}`;
       const r = await call('POST', '/v1/sales', 'u-box', {
-        saleId: `S-${receipt}`, receiptNumber: receipt, laneId: 'lane-1', locationId: S1, cashierId: 'u-cash', tradingDay: AT.slice(0, 10), committedAt: AT,
+        saleId: `S-${receipt}`, receiptNumber: receipt, laneId: 'lane-1', locationId: S1, cashierId: 'u-cash', tradingDay: at.slice(0, 10), committedAt: at,
         totalMinor: 1_000, currency: 'INR', packVersion: 0, lines: [{ productId: 'P1', quantityMinor: 1, uom: 'ea', unitPriceMinor: 1_000, lineTotalMinor: 1_000 }],
         tenders: [{ kind: 'cash', amountMinor: 1_000 }],
       }, S1);
@@ -143,7 +144,10 @@ async function aSecondStoreComputerIsRefusedByName(h: ApiHarness): Promise<void>
   // The refusal is a finding, by name: both store computers are named.
   const refused = await findings(call, 'report_refused');
   expect(refused.map((f) => [f.prefix, f.through])).toEqual([[P, 110]]);
-  expect(refused[0]!.detail).toMatch(/^refused — a second store computer: u-box-2 reported bill numbers under S1L1- \(through 110\) for store S1, but S1L1- belongs to the store computer u-box, which reported it first\. One store computer per bill-number prefix \(owner decision OB-94\)/);
+  // Round 27 · OB-101: neutral — both named, which one head office uses and why; neither called the wrong machine.
+  expect(refused[0]!.detail).toMatch(/^two store computers report bill numbers under S1L1- for store S1: u-box and u-box-2\. Head office uses u-box's reports for S1L1- because it was the first to report S1L1-, at \S+; it keeps u-box-2's report \(through 110\) as evidence and does not use it\. One store computer per bill-number prefix \(owner decision OB-94\)/);
+  expect(refused[0]!.detail).toMatch(/Check both machines/);
+  expect(refused[0]!.detail).not.toMatch(/Check which machine/);
   expect((await comp(call, 'box_bill_numbers'))?.status).toBe('degraded');
   // Banking everything never clears it (it is not a count that "turned out true") — only a person does.
   await bank(call, range(101, 110));
@@ -178,7 +182,8 @@ async function aNumberNeverUsedIsNeverNamed(h: ApiHarness): Promise<void> {
   travel(47); await report(call, waiting(105, 110), { unsent: 6, deadLettered: 0 });
   travel(47 + UNRECEIVED_GRACE_MINUTES + 1);
   expect(await findings(call)).toEqual([]);
-  await bank(call, range(105, 110));
+  // Completed at minute 47 (after the store computer last said 105 was never used): no contradiction (OB-100).
+  await bank(call, range(105, 110), new Date().toISOString());
   travel(80); await report(call, [{ prefix: P, through: 110, soldThrough: 110, unsent: { count: 0 } }], { unsent: 0, deadLettered: 0 });
   travel(80 + UNRECEIVED_GRACE_MINUTES + 1);
   expect(await findings(call)).toEqual([]);

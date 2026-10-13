@@ -68,7 +68,8 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Store 
           queue: { unsent: 0, deadLettered: 0 }, tills: [], receiptNumbersIssued: issued,
         } }), `report from ${box}`);
         // The old box, restored from an old backup: more numbers it cannot vouch for than head office checks per report.
-        await report(BOX, [{ prefix: P, through: 1_300, soldThrough: 1_300, atRisk: [[101, 700], [1_001, 1_300]], unsent: { count: 0 } }]);
+        // Round 27 · OB-100: and two numbers it took and never used (an abandoned bill, a declined card).
+        await report(BOX, [{ prefix: P, through: 1_300, soldThrough: 1_300, atRisk: [[101, 700], [1_001, 1_300]], unused: [[1_250, 1_251]], unsent: { count: 0 } }]);
         // The replacement switched on before head office knew: its report is refused by name.
         await report(NEW_BOX, [{ prefix: P, through: 1_300, soldThrough: 1_300, unsent: { count: 0 } }]);
       },
@@ -100,6 +101,13 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Store 
       await s.page.locator(`#binding-rows tr[data-prefix="${P}"][data-computer="${BOX}"][data-via="first_report"]`).waitFor({ timeout: 15_000 });
       await says(s.page, 'v-needs', /^2$/);
       expect(await s.page.locator('#open-replace').isVisible()).toBe(true);
+      // Round 27 · OB-100: the numbers taken and never used — per store, till and day, count and numbers; information only.
+      const unusedRow = s.page.locator(`#unused-rows tr[data-store="br-1"][data-prefix="${P}"][data-count="2"]`);
+      await unusedRow.waitFor({ timeout: 15_000 });
+      expect(await unusedRow.innerText()).toMatch(/B1L1-001250–B1L1-001251/);
+      expect(await unusedRow.getAttribute('data-day')).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      await says(s.page, 'v-unused', /^2$/);
+      expect(await unusedRow.locator('button').count(), 'no action on an unused number').toBe(0);
       expect(s.writes, 'nothing is written on open').toEqual([]);
       await s.page.click('#tab-findings');
       const line = s.page.locator('#finding-rows li[data-kind="at_risk_not_checked"]');
@@ -178,6 +186,8 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Store 
       await s.page.click('#lang');
       expect(await s.page.locator('#title').innerText()).toBe('கடை கணினிகள்');
       expect(await s.page.locator('#open-replace').innerText()).toBe('மாற்றப்பட்ட கடை கணினியைப் பதிவு செய்');
+      expect(await s.page.locator('#unused-h').innerText()).toBe('எடுத்தும் பயன்படுத்தாதவை');
+      expect(await s.page.locator('#k-unused').innerText()).toBe('எடுத்தும் பயன்படுத்தாதவை');
       expect(s.errors).toEqual([]);
     } finally { await s.close(); }
     // Head office's own record, not the page.

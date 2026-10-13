@@ -10,6 +10,11 @@
 //   3. the same person SENDS the act with that approval (`POST /v1/store-computers/replacements`).
 // The owner or head office staff acknowledge a refused report or a not-checked line with a reason.
 //
+// Round 27 · OB-100 "A": the numbers each store computer took and never used are shown too — per store, till prefix and day
+// (count and numbers), as information, never as something to look for — and a sale head office holds under a number the
+// store computer kept calling unused is a finding that needs a person (support checks the store computer; it is not
+// acknowledged here — how it is cleared is an owner decision still to be made).
+//
 // Every rule is head office's: what this person may do comes from head office's own answer (`you` on the bindings read —
 // the same rule the acts use), never from the page; each act is re-checked there and a refusal is shown in its own words.
 // The session refuses only the cheap things before a POST (a blank field, a short reason) and never writes on open. The
@@ -26,7 +31,7 @@ export interface Replacement {
 }
 /** A store computer's finding a person must clear (from head office's observed health). */
 export interface Finding {
-  readonly storeId: string; readonly kind: 'report_refused' | 'at_risk_not_checked'; readonly prefix: string;
+  readonly storeId: string; readonly kind: 'report_refused' | 'at_risk_not_checked' | 'unused_number_received'; readonly prefix: string;
   readonly through?: number; readonly count?: number; readonly ranges?: readonly (readonly [number, number])[]; readonly since: string; readonly detail: string;
 }
 /** One of this person's "store computer replaced" requests on the approvals engine. */
@@ -35,8 +40,15 @@ export interface ReplacementRequest {
   readonly details: { readonly storeId: string; readonly prefix: string; readonly fromComputer: string; readonly toComputer: string; readonly reason: string };
   readonly requestedAt: string; readonly decidedBy?: string; readonly decisionReason?: string;
 }
+/** Round 27 · OB-100: one till's numbers taken and never used on one day (the store's calendar), from head office's observed health. */
+export interface UnusedRow {
+  readonly storeId: string; readonly prefix: string; readonly day: string; readonly count: number;
+  readonly ranges: readonly (readonly [number, number])[]; readonly moreRanges: number;
+}
 export interface Board {
   readonly bindings: readonly Binding[];
+  /** Round 27 · OB-100: numbers taken and never used, newest day first. */
+  readonly unused: readonly UnusedRow[];
   readonly replacements: readonly Replacement[];
   readonly findings: readonly Finding[];
   readonly requests: readonly ReplacementRequest[];
@@ -71,7 +83,10 @@ export const STORE_COMPUTERS_COPY = {
     colStore: 'Store', colPrefix: 'Till prefix', colComputer: 'Store computer (sign-in)', colVia: 'How', colSince: 'Since',
     viaFirst: 'first to report it', viaReplaced: 'replaced store computer (owner approved)',
     noBindings: 'No store computer has reported bill numbers yet.', noFindings: 'Nothing needs a person.', noRequests: 'No replacement asked for or done yet.',
-    kindRefused: 'Report refused', kindNotChecked: 'Numbers not checked',
+    kindRefused: 'Report refused', kindNotChecked: 'Numbers not checked', kindUnusedReceived: 'Said unused, but head office has the bill',
+    unusedH: 'Taken but never used', unusedLead: 'Bill numbers each store computer says it took and never put on a bill — an abandoned bill, a card declined after the number was taken. Information only: nothing to look for. If one day shows many, ask the store why.',
+    colDay: 'Day', colCount: 'How many', colNumbers: 'Numbers', noUnused: 'No store computer has said it took a number and never used it.', moreRanges: 'and {n} more',
+    notAcknowledgeable: 'This one is not acknowledged here — support checks the store computer. Nothing was sent.', sumUnused: 'Taken but never used',
     ackReason: 'Why it can be acknowledged', acknowledge: 'Acknowledge with this reason', acknowledged: 'Acknowledged in your name.',
     fStore: 'Store', fPrefix: 'Till bill-number prefix', fFrom: 'Old store computer (its sign-in)', fTo: 'New store computer (its sign-in)', fReason: 'Why',
     ask: 'Ask the owner\'s approval', cancel: 'Close', asked: 'Asked — the owner approves it on his Approvals page. Then send the move here.',
@@ -96,7 +111,10 @@ export const STORE_COMPUTERS_COPY = {
     colStore: 'கடை', colPrefix: 'கவுண்டர் முன்னொட்டு', colComputer: 'கடை கணினி (உள்நுழைவு)', colVia: 'எப்படி', colSince: 'முதல்',
     viaFirst: 'முதலில் அறிவித்தது', viaReplaced: 'மாற்றப்பட்ட கடை கணினி (உரிமையாளர் அனுமதி)',
     noBindings: 'எந்தக் கடை கணினியும் இன்னும் பில் எண்களை அறிவிக்கவில்லை.', noFindings: 'எதற்கும் ஒருவர் தேவையில்லை.', noRequests: 'இன்னும் மாற்றம் கேட்கப்படவில்லை, செய்யப்படவில்லை.',
-    kindRefused: 'அறிக்கை மறுக்கப்பட்டது', kindNotChecked: 'சரிபார்க்காத எண்கள்',
+    kindRefused: 'அறிக்கை மறுக்கப்பட்டது', kindNotChecked: 'சரிபார்க்காத எண்கள்', kindUnusedReceived: 'பயன்படாதது எனச் சொன்னது, ஆனால் பில் தலைமை அலுவலகத்தில் உள்ளது',
+    unusedH: 'எடுத்தும் பயன்படுத்தாதவை', unusedLead: 'ஒவ்வொரு கடை கணினியும் எடுத்து எந்தப் பில்லிலும் போடாததாகச் சொல்லும் பில் எண்கள் — கைவிடப்பட்ட பில், எண் எடுத்த பின் மறுக்கப்பட்ட அட்டை. தகவலுக்கு மட்டும்: தேட எதுவும் இல்லை. ஒரு நாளில் அதிகம் இருந்தால், கடையிடம் காரணம் கேளுங்கள்.',
+    colDay: 'நாள்', colCount: 'எத்தனை', colNumbers: 'எண்கள்', noUnused: 'எந்தக் கடை கணினியும் எண்ணை எடுத்துப் பயன்படுத்தவில்லை என்று சொல்லவில்லை.', moreRanges: 'மேலும் {n}',
+    notAcknowledgeable: 'இதை இங்கே ஒப்புக்கொள்ள முடியாது — உதவிக் குழு கடை கணினியைச் சரிபார்க்கும். எதுவும் அனுப்பப்படவில்லை.', sumUnused: 'எடுத்தும் பயன்படுத்தாதவை',
     ackReason: 'ஒப்புக்கொள்ளக் காரணம்', acknowledge: 'இந்தக் காரணத்துடன் ஒப்புக்கொள்', acknowledged: 'உங்கள் பெயரில் ஒப்புக்கொள்ளப்பட்டது.',
     fStore: 'கடை', fPrefix: 'கவுண்டர் பில் எண் முன்னொட்டு', fFrom: 'பழைய கடை கணினி (உள்நுழைவு)', fTo: 'புதிய கடை கணினி (உள்நுழைவு)', fReason: 'ஏன்',
     ask: 'உரிமையாளர் அனுமதி கேள்', cancel: 'மூடு', asked: 'கேட்கப்பட்டது — உரிமையாளர் தன் அனுமதிகள் பக்கத்தில் அனுமதிப்பார். பிறகு இங்கே நகர்வை அனுப்புங்கள்.',
@@ -138,16 +156,26 @@ export function requestWords(lang: Lang, r: ReplacementRequest): string {
 }
 
 /** A finding's short label. */
-export const findingKindWords = (lang: Lang, f: Finding): string => wordsFor(lang, f.kind === 'report_refused' ? 'kindRefused' : 'kindNotChecked');
+export const findingKindWords = (lang: Lang, f: Finding): string =>
+  wordsFor(lang, f.kind === 'report_refused' ? 'kindRefused' : f.kind === 'unused_number_received' ? 'kindUnusedReceived' : 'kindNotChecked');
+/** Round 27 · OB-100: a finding a person acknowledges HERE (a refused report, a not-checked line) — not "said unused, but held". */
+export const acknowledgeable = (f: Finding): boolean => f.kind === 'report_refused' || f.kind === 'at_risk_not_checked';
+/** Round 27 · OB-100: an unused row's numbers as the till prints them (prefix + six digits), ranges joined. */
+export function unusedNumbersWords(lang: Lang, row: UnusedRow): string {
+  const pad = (n: number): string => String(n).padStart(6, '0');
+  const list = row.ranges.map(([a, z]) => (a === z ? `${row.prefix}${pad(a)}` : `${row.prefix}${pad(a)}–${row.prefix}${pad(z)}`)).join(', ');
+  return row.moreRanges > 0 ? `${list} ${wordsFor(lang, 'moreRanges', { n: row.moreRanges })}` : list;
+}
 
-/** The four figures at the top of the page. */
-export function summarise(board: Board | null): { readonly bindings: number | null; readonly replaced: number | null; readonly needs: number | null; readonly waiting: number | null } {
-  if (board === null) return { bindings: null, replaced: null, needs: null, waiting: null };
+/** The figures at the top of the page (round 27: and how many numbers were taken and never used in the days shown). */
+export function summarise(board: Board | null): { readonly bindings: number | null; readonly replaced: number | null; readonly needs: number | null; readonly waiting: number | null; readonly unused: number | null } {
+  if (board === null) return { bindings: null, replaced: null, needs: null, waiting: null, unused: null };
   return {
     bindings: board.bindings.length,
     replaced: board.bindings.filter((b) => b.via === 'replacement').length,
     needs: board.findings.length,
     waiting: board.requests.filter((r) => r.status === 'waiting' || r.status === 'approved').length,
+    unused: board.unused.reduce((n, u) => n + u.count, 0),
   };
 }
 
@@ -168,7 +196,8 @@ export interface StoreComputersSession {
 }
 
 const blank = (s: string | undefined): boolean => s === undefined || s.trim() === '';
-const isFindingKind = (k: unknown): k is Finding['kind'] => k === 'report_refused' || k === 'at_risk_not_checked';
+const isFindingKind = (k: unknown): k is Finding['kind'] => k === 'report_refused' || k === 'at_risk_not_checked' || k === 'unused_number_received';
+const isWholeCount = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0;
 
 export function createStoreComputersSession(input: {
   readonly viewer: ViewerIdentity | undefined;
@@ -209,9 +238,15 @@ export function createStoreComputersSession(input: {
       const bound = await call<{ bindings: Binding[]; replacements: Replacement[]; you?: Board['you'] }>('GET', BINDINGS_PATH);
       if (bound.result !== 'ok') return bound;
       // The findings a person must clear, from head office's observed health (a failed read shows none, and says so by its status).
-      const observed = await call<{ observed?: { boxes?: { storeId: string; billNumberFindings?: Omit<Finding, 'storeId'>[] }[] } }>('GET', '/v1/platform/operational-health/observed');
-      const findings: Finding[] = observed.result !== 'ok' ? [] : (observed.value.observed?.boxes ?? []).flatMap((b) =>
+      const observed = await call<{ observed?: { boxes?: { storeId: string; billNumberFindings?: Omit<Finding, 'storeId'>[]; unusedNumbers?: Omit<UnusedRow, 'storeId'>[] }[] } }>('GET', '/v1/platform/operational-health/observed');
+      const boxes = observed.result !== 'ok' ? [] : observed.value.observed?.boxes ?? [];
+      const findings: Finding[] = boxes.flatMap((b) =>
         (b.billNumberFindings ?? []).filter((f) => isFindingKind(f.kind)).map((f) => ({ ...f, storeId: b.storeId })));
+      // Round 27 · OB-100: the numbers taken and never used, as head office says them (newest day first).
+      const unused: UnusedRow[] = boxes.flatMap((b) => (b.unusedNumbers ?? [])
+        .filter((u) => typeof u.prefix === 'string' && typeof u.day === 'string' && isWholeCount(u.count) && Array.isArray(u.ranges))
+        .map((u) => ({ storeId: b.storeId, prefix: u.prefix, day: u.day, count: u.count, ranges: u.ranges, moreRanges: isWholeCount(u.moreRanges) ? u.moreRanges : 0 })))
+        .sort((a, b) => b.day.localeCompare(a.day) || a.storeId.localeCompare(b.storeId) || a.prefix.localeCompare(b.prefix));
       // This person's own requests on the approvals engine (only the store computer kind).
       const inbox = await call<{ mine?: (ReplacementRequest & { kind: string })[] }>('GET', '/v1/approvals/requests');
       const requests: ReplacementRequest[] = inbox.result !== 'ok' ? [] : (inbox.value.mine ?? []).filter((r) => r.kind === KIND)
@@ -219,7 +254,7 @@ export function createStoreComputersSession(input: {
       return {
         result: 'ok',
         value: {
-          bindings: orderedBindings(bound.value.bindings ?? []), replacements: bound.value.replacements ?? [], findings, requests,
+          bindings: orderedBindings(bound.value.bindings ?? []), unused, replacements: bound.value.replacements ?? [], findings, requests,
           you: { mayReplace: bound.value.you?.mayReplace === true, mayAcknowledge: bound.value.you?.mayAcknowledge === true },
         },
       };
@@ -244,6 +279,7 @@ export function createStoreComputersSession(input: {
     },
     acknowledge: async (f, reason) => {
       if (!named) return nobody;
+      if (!acknowledgeable(f)) return { result: 'invalid', why: 'notAcknowledgeable' };
       if (blank(reason)) return { result: 'invalid', why: 'needAll' };
       if (!reasonOk(reason)) return { result: 'invalid', why: 'shortReason' };
       return f.kind === 'report_refused'

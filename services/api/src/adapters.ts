@@ -323,7 +323,10 @@ import { figure, sourceFreshness, syncedThrough } from '../../reporting/src/inde
 import type { ReportingDeps, Figure, SourceFreshness, StoreSyncReport } from '../../reporting/src/index';
 import { latestDomainReports, latestPerStore, type SyncWatermarkRecord } from '../../platform/src/sync-watermarks';
 import type { BoxHealthRecord, BillNumberFinding, RefusalAcknowledgement, StoreComputerReplacement, AtRiskAcknowledgement } from '../../platform/src/box-health';
-import { unreceivedCandidates, billNumberFindingsFor, judgeReportedIssued, weighSparseClaim, PLAUSIBLE_ISSUED_AHEAD, type UnreceivedNumbers, type ClaimSlack } from '../../platform/src/box-health';
+import {
+  readNeverReceived, billNumberFindingsFor, judgeReportedIssued, weighSparseClaim, unusedButReceived, PLAUSIBLE_ISSUED_AHEAD, FOLD_SETTLE_MINUTES, UNRECEIVED_CHECK_CAP,
+  type UnreceivedNumbers, type ClaimSlack, type JudgedAway, type NeverReceivedSnapshot, type PrefixBinding, type UnusedNumbers, type UnusedReceived,
+} from '../../platform/src/box-health';
 import type { BranchScope } from '../../kernel/src/index';
 import { tradingDayIn, tradingDayWindow, type TradingCalendar } from '../../../packages/calendar/src/index';
 import type { ConsolidationDeps } from '../../reporting/src/consolidation-route';
@@ -12719,6 +12722,10 @@ export function observedHealthAdapter(input: {
   readonly boxUnsentWarnHours?: (tenantId: string) => Promise<number>;
   /** OB-90: the owner's claim slack (platform.box_claim_slack_numbers / _percent) — absent, its default (5 / 5%). */
   readonly boxClaimSlack?: (tenantId: string) => Promise<ClaimSlack>;
+  /** Round 27 · OB-100: the store's time zone (locale.time_zone) — the calendar days unused numbers are shown by. */
+  readonly storeTimeZone?: (tenantId: string) => Promise<string>;
+  /** Round 27 · OB-102: where the never-received fold's saved running result lives (PostgreSQL in production). */
+  readonly snapshots?: SnapshotStore;
 }): ObservedHealthDeps {
   const lifecycle = alertLifecycleAdapter(input);
   return {
@@ -12796,13 +12803,18 @@ export function observedHealthAdapter(input: {
     // M35-FR-03: the store computers' own health reports (disk, queue, till devices) and the stores head office knows.
     storeComputers: async (tenantId) => {
       const records = await boxHealthAdapter({ store: input.store }).records(tenantId);
+      // Verifier r19: bills issued and never received (sales lost by a restore), and box reports head office refused.
+      // Round 27 · OB-102: from the saved running result; OB-100: with the unused numbers; OB-101: with the bindings.
+      const reading = await storeComputerReading(input.store, tenantId, records, input.now(), {
+        ...(input.boxUnsentWarnHours === undefined ? {} : { unsentWarnHours: await input.boxUnsentWarnHours(tenantId) }),
+        ...(input.boxClaimSlack === undefined ? {} : { claimSlack: await input.boxClaimSlack(tenantId) }),
+        ...(input.storeTimeZone === undefined ? {} : { timeZone: await input.storeTimeZone(tenantId) }),
+        ...(input.snapshots === undefined ? {} : { snapshots: input.snapshots }),
+      });
       return {
         records,
         knownStores: (await orgStructureAdapter({ store: input.store, now: input.now }).nodes(tenantId)).filter((n) => n.kind === 'branch').map((n) => n.nodeId),
-        // Verifier r19: bills issued and never received (sales lost by a restore), and box reports head office refused.
-        billNumberFindings: await billNumberFindingsOf(input.store, tenantId, records, input.now(),
-          input.boxUnsentWarnHours === undefined ? undefined : await input.boxUnsentWarnHours(tenantId),
-          input.boxClaimSlack === undefined ? undefined : await input.boxClaimSlack(tenantId)),
+        billNumberFindings: reading.findings, bindings: reading.bindings, unusedNumbers: reading.unused,
         // Round 26 · OB-97: the owner-approved "store computer replaced" acts — the same binding the findings were judged on.
         replacements: await boxHealthAdapter({ store: input.store }).replacements(tenantId),
         // Verifier r20 HW-2: whether the bill-number high-water is waiting on an open database transaction (read after the
@@ -14759,34 +14771,79 @@ export async function issuedPrefixStores(store: EventStore, tenantId: string): P
 export async function billNumberFindingsOf(
   store: EventStore, tenantId: string, records: readonly BoxHealthRecord[], at: string, unsentWarnHours?: number, claimSlack?: ClaimSlack,
 ): Promise<ReadonlyMap<string, readonly BillNumberFinding[]>> {
+  return (await storeComputerReading(store, tenantId, records, at, {
+    ...(unsentWarnHours === undefined ? {} : { unsentWarnHours }), ...(claimSlack === undefined ? {} : { claimSlack }),
+  })).findings;
+}
+
+/**
+ * Round 27 · OB-102 "A": the never-received fold's saved running result (`readNeverReceived`) — one per tenant, kept in the
+ * snapshot store (disposable: delete it and the next read folds every report again, to the same answer).
+ */
+const NEVER_RECEIVED_PROJECTION = 'never-received-fold@1';
+
+/**
+ * Round 27: everything head office reads from its store computers' reports at once — the bill-number findings (r19…r26),
+ * the numbers each store computer said it never used (OB-100), and the (store, prefix) bindings (OB-101) — from the
+ * never-received fold resumed from its saved running result (OB-102).
+ */
+export async function storeComputerReading(
+  store: EventStore, tenantId: string, records: readonly BoxHealthRecord[], at: string,
+  opts: { readonly unsentWarnHours?: number; readonly claimSlack?: ClaimSlack; readonly timeZone?: string; readonly snapshots?: SnapshotStore } = {},
+): Promise<{ findings: ReadonlyMap<string, readonly BillNumberFinding[]>; unused: ReadonlyMap<string, readonly UnusedNumbers[]>; bindings: readonly PrefixBinding[]; resumed: boolean }> {
+  const { unsentWarnHours, claimSlack } = opts;
   const banked = await bankedReceiptCounts(store, tenantId);
   const issuedPrefixes = await issuedPrefixStores(store, tenantId);
-  const judged = records.map((r) => (r.receiptNumbersIssued === undefined ? r
-    : { ...r, receiptNumbersIssued: judgeReportedIssued({ storeId: r.storeId, issued: r.receiptNumbersIssued, issuedPrefixes, banked }).accepted }));
+  // Verifier r20 BOX-2: every kept report is re-judged at read; round 27 · OB-102: what judging drops is fingerprinted, so a
+  // saved running result made before a report was judged differently is set aside.
+  const judgedAway: JudgedAway[] = [];
+  const judged = records.map((r) => {
+    if (r.receiptNumbersIssued === undefined) return r;
+    const accepted = judgeReportedIssued({ storeId: r.storeId, issued: r.receiptNumbersIssued, issuedPrefixes, banked }).accepted;
+    if (accepted.length === r.receiptNumbersIssued.length) return r;
+    for (const x of r.receiptNumbersIssued) if (!accepted.includes(x)) judgedAway.push({ receivedAt: r.receivedAt, storeId: r.storeId, prefix: x.prefix, through: x.through });
+    return { ...r, receiptNumbersIssued: accepted };
+  });
   // Verifier r22 D3 · OB-89: a report with no per-prefix list lets its whole queue stand in only up to the owner's line.
   // OB-90: the owner's claim slack (store setup) decides how far a sparse list is believed.
   // Round 26 · OB-97: a prefix's binding follows the owner-approved "store computer replaced" acts.
   const replacements = await allOf<StoreComputerReplacement>(store, tenantId, BOX_REPLACEMENT_STREAM, 'StoreComputerReplaced');
-  const candidates = unreceivedCandidates({
-    records: judged, at, banked, replacements, ...(unsentWarnHours === undefined ? {} : { warnHours: unsentWarnHours }), ...(claimSlack === undefined ? {} : { slack: claimSlack }),
+  // Round 27 · OB-102: resume from the saved running result; save a new one over the reports settled FOLD_SETTLE_MINUTES ago.
+  const snapshots = opts.snapshots ?? processHighWaterSnapshots(store);
+  const saved = (await snapshots.load<NeverReceivedSnapshot>(tenantId, BOX_HEALTH_STREAM, NEVER_RECEIVED_PROJECTION))?.result.state;
+  const read = readNeverReceived({
+    records: judged, at, banked, replacements, judgedAway, settleBefore: new Date(Date.parse(at) - FOLD_SETTLE_MINUTES * 60_000).toISOString(),
+    ...(saved === undefined ? {} : { snapshot: saved }),
+    ...(unsentWarnHours === undefined ? {} : { warnHours: unsentWarnHours }), ...(claimSlack === undefined ? {} : { slack: claimSlack }),
+    ...(opts.timeZone === undefined ? {} : { timeZone: opts.timeZone }),
   });
-  let refundNumbers: Set<string> | undefined;
+  if (read.snapshot !== undefined) {
+    await snapshots.save<NeverReceivedSnapshot>({
+      tenantId, stream: BOX_HEALTH_STREAM, projection: NEVER_RECEIVED_PROJECTION, takenAt: read.snapshot.settledAt,
+      result: { state: read.snapshot, watermarkSeq: 0, lastEventAt: read.snapshot.settledAt, eventCount: read.snapshot.settledCount },
+    });
+  }
+  const candidates = read.candidates;
+  let refundNumbers: Map<string, string> | undefined;
+  const refunds = async (): Promise<Map<string, string>> => {
+    refundNumbers ??= new Map((await store.readStream(tenantId, STREAM.returns, { type: 'ReturnRecorded' })).map((e) => [String((e.event.payload as { number?: unknown }).number ?? ''), e.event.occurredAt] as const));
+    return refundNumbers;
+  };
   const unreceived = new Map<string, UnreceivedNumbers[]>();
   const numberOf = (prefix: string, n: number): string => `${prefix}${String(n).padStart(RECEIPT_COUNTER_DIGITS, '0')}`;
+  const heldKeys = async (keys: readonly string[]): Promise<ReadonlySet<string>> => (store.existingIdempotencyKeys !== undefined
+    ? store.existingIdempotencyKeys(tenantId, keys)
+    : new Set((await Promise.all(keys.map(async (k) => ((await store.findByIdempotencyKey(tenantId, k)) === undefined ? undefined : k)))).filter((k): k is string => k !== undefined)));
   for (const c of candidates) {
     const top = banked.get(c.prefix) ?? 0;
     const toCheck = c.numbers.filter((n) => n <= top);
     const missing = c.numbers.filter((n) => n > top);
     if (toCheck.length > 0) {
-      const keys = toCheck.map((n) => `receipt-${tenantId}-${numberOf(c.prefix, n)}`);
-      const held = store.existingIdempotencyKeys !== undefined
-        ? await store.existingIdempotencyKeys(tenantId, keys)
-        : new Set((await Promise.all(keys.map(async (k) => ((await store.findByIdempotencyKey(tenantId, k)) === undefined ? undefined : k)))).filter((k): k is string => k !== undefined));
+      const held = await heldKeys(toCheck.map((n) => `receipt-${tenantId}-${numberOf(c.prefix, n)}`));
       for (const n of toCheck) {
         const number = numberOf(c.prefix, n);
         if (held.has(`receipt-${tenantId}-${number}`)) continue;
-        refundNumbers ??= new Set((await store.readStream(tenantId, STREAM.returns, { type: 'ReturnRecorded' })).map((e) => String((e.event.payload as { number?: unknown }).number ?? '')));
-        if (refundNumbers.has(number)) continue;
+        if ((await refunds()).has(number)) continue;
         missing.push(n);
       }
     }
@@ -14808,14 +14865,47 @@ export async function billNumberFindingsOf(
       }]);
     }
   }
+  // Round 27 · OB-100 (verifier r26 NEW-1, probes U1/U4): a number a store computer said it never used that head office
+  // HOLDS a bill for — checked against the ledger: the newest UNRECEIVED_CHECK_CAP such numbers at or below banked per
+  // prefix (above banked, head office holds no bill by definition), in ONE indexed read per prefix; the bill's own time is
+  // read only for the ones held (`unusedButReceived`: said unused after the bill was made).
+  const unusedReceived = new Map<string, UnusedReceived[]>();
+  for (const [storeId, list] of read.unused) {
+    for (const u of list) {
+      const top = banked.get(u.prefix) ?? 0;
+      const numbers: number[] = [];
+      for (let i = u.runs.length - 1; i >= 0 && numbers.length < UNRECEIVED_CHECK_CAP; i -= 1) {
+        const run = u.runs[i]!;
+        for (let n = Math.min(run.to, top); n >= run.from && numbers.length < UNRECEIVED_CHECK_CAP; n -= 1) numbers.push(n);
+      }
+      if (numbers.length === 0) continue;
+      const held = await heldKeys(numbers.map((n) => `receipt-${tenantId}-${numberOf(u.prefix, n)}`));
+      const at = new Map<number, { as: 'sale' | 'return'; at: string }>();
+      for (const n of numbers) {
+        const key = `receipt-${tenantId}-${numberOf(u.prefix, n)}`;
+        if (held.has(key)) {
+          const e = await store.findByIdempotencyKey(tenantId, key);
+          if (e !== undefined) at.set(n, { as: 'sale', at: e.event.occurredAt });
+          continue;
+        }
+        const back = (await refunds()).get(numberOf(u.prefix, n));
+        if (back !== undefined) at.set(n, { as: 'return', at: back });
+      }
+      const found = unusedButReceived(u.prefix, u, at);
+      if (found.length > 0) unusedReceived.set(storeId, [...(unusedReceived.get(storeId) ?? []), ...found]);
+    }
+  }
   const out = new Map<string, readonly BillNumberFinding[]>();
   const acknowledged = await allOf<RefusalAcknowledgement>(store, tenantId, BOX_REFUSAL_ACK_STREAM, 'BoxReportRefusalAcknowledged');
   const atRiskAcknowledged = await allOf<AtRiskAcknowledgement>(store, tenantId, BOX_AT_RISK_ACK_STREAM, 'BoxAtRiskNotCheckedAcknowledged');
   for (const storeId of new Set(records.map((r) => r.storeId))) {
-    const f = billNumberFindingsFor({ storeId, records: judged, at, unreceived: unreceived.get(storeId) ?? [], banked, acknowledged, replacements, atRiskAcknowledged });
+    const f = billNumberFindingsFor({
+      storeId, records: judged, at, unreceived: unreceived.get(storeId) ?? [], banked, acknowledged, replacements, atRiskAcknowledged,
+      ...(unusedReceived.has(storeId) ? { unusedReceived: unusedReceived.get(storeId)! } : {}),
+    });
     if (f.length > 0) out.set(storeId, f);
   }
-  return out;
+  return { findings: out, unused: read.unused, bindings: read.bindings, resumed: read.resumed };
 }
 
 /** OB-81: the store pack's `receiptSeries` for one store — each till's current issued prefix. */
