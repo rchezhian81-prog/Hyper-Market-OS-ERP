@@ -297,6 +297,7 @@ import { createIncidentsSession, wordsFor as incidentsWords, outcomeWords as inc
 import {
   createStoreComputersSession, wordsFor as storeComputersWords, outcomeWords as storeComputersOutcomeWords, summarise as storeComputersSummary,
   requestWords as storeComputersRequestWords, findingKindWords as storeComputersFindingWords, type StoreComputersSession,
+  unusedNumbersWords as storeComputersUnusedWords, acknowledgeable as storeComputersAcknowledgeable,
 } from './store-computers-session';
 
 // The practice-data strip ("TRIAL COPY · PRACTICE DATA"). `PILOT_DEMO_BANNER` is a build-time constant baked in by
@@ -4789,6 +4790,8 @@ interface ManagerWindow {
     readonly summarise: typeof storeComputersSummary;
     readonly requestWords: typeof storeComputersRequestWords;
     readonly findingWords: typeof storeComputersFindingWords;
+    readonly unusedWords: typeof storeComputersUnusedWords;
+    readonly acknowledgeable: typeof storeComputersAcknowledgeable;
   };
   substitutionExceptionInboxData?: SubstitutionExceptionInboxData;
   substitutionExceptionInboxSession?: SubExceptionInboxSession;
@@ -6478,5 +6481,6 @@ if (browserWindow !== undefined) {
     session: createStoreComputersSession({ viewer: browserWindow.storeComputersData }),
     words: storeComputersWords, outcomeWords: storeComputersOutcomeWords, summarise: storeComputersSummary,
     requestWords: storeComputersRequestWords, findingWords: storeComputersFindingWords,
+    unusedWords: storeComputersUnusedWords, acknowledgeable: storeComputersAcknowledgeable,
   };
 }

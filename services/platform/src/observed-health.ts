@@ -50,7 +50,7 @@ import {
 } from '../../../packages/ops/src/index';
 import { readRules, readThresholds } from './operational-health';
 import { raiseKey, type AlertLifecycleDeps, type AlertLifecycleEvent } from './alert-lifecycle';
-import { judgeBoxes, type BoxHealthRecord, type BoxHealthView, type BillNumberFinding, type StoreComputerReplacement } from './box-health';
+import { judgeBoxes, type BoxHealthRecord, type BoxHealthView, type BillNumberFinding, type StoreComputerReplacement, type PrefixBinding, type UnusedNumbers } from './box-health';
 import type { ComponentHealth } from '../../../packages/ops/src/index';
 
 export interface ConnectorQueueDepth {
@@ -130,6 +130,10 @@ export interface ObservedHealthDeps extends Pick<AlertLifecycleDeps, 'alerts' | 
     readonly billNumberHighWater?: { readonly since: string; readonly waitingSeconds: number; readonly streams: readonly string[] } | null;
     /** Round 26 · OB-97: owner-approved "store computer replaced" acts (a prefix's binding follows them). */
     readonly replacements?: readonly StoreComputerReplacement[];
+    /** Round 27 · OB-101: the (store, prefix) bindings as the findings were judged on (the store's health comes from the bound computer). */
+    readonly bindings?: readonly PrefixBinding[];
+    /** Round 27 · OB-100: the numbers each store's computer said it gave and never used (from the same saved running result). */
+    readonly unusedNumbers?: ReadonlyMap<string, readonly UnusedNumbers[]>;
   }>;
   /** OB-78: the owner's early-warning line for a store computer's disk, in hours of trading left (tenant setting, default 48). */
   readonly boxDiskWarnHours?: (tenantId: string) => Promise<number> | number;
@@ -196,6 +200,8 @@ export async function observeSignals(deps: ObservedHealthDeps, tenantId: string,
       records: boxReports.records, knownStores: boxReports.knownStores, at, thresholds,
       ...(boxReports.billNumberFindings === undefined ? {} : { billNumberFindings: boxReports.billNumberFindings }),
       ...(boxReports.replacements === undefined ? {} : { replacements: boxReports.replacements }),
+      ...(boxReports.bindings === undefined ? {} : { bindings: boxReports.bindings }),
+      ...(boxReports.unusedNumbers === undefined ? {} : { unusedNumbers: boxReports.unusedNumbers }),
       ...(deps.boxDiskWarnHours === undefined ? {} : { diskWarnHours: await deps.boxDiskWarnHours(tenantId) }),
       ...(deps.boxUnsentWarnHours === undefined ? {} : { unsentWarnHours: await deps.boxUnsentWarnHours(tenantId) }),
     });

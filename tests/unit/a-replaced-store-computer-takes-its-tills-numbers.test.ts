@@ -67,13 +67,13 @@ describe('OB-97 · the binding follows an owner-approved "store computer replace
     const at = iso(10);
     const before = billNumberFindingsFor({ storeId: S, records, at, unreceived: [] }).filter((f) => f.kind === 'report_refused');
     expect(before).toHaveLength(1);
-    expect(before[0]!.detail).toMatch(/^refused — a second store computer: u-new reported bill numbers under S1L1- \(through 12\) for store S1, but S1L1- belongs to the store computer u-old/);
+    expect(before[0]!.detail).toMatch(/^two store computers report bill numbers under S1L1- for store S1: u-old and u-new\. Head office uses u-old's reports for S1L1- because it was the first to report S1L1-, at \S+; it keeps u-new's report \(through 12\)/);
     const after = billNumberFindingsFor({ storeId: S, records, at, unreceived: [], replacements: [act(2, 'u-old', 'u-new')] }).filter((f) => f.kind === 'report_refused');
     expect(after).toHaveLength(1);
-    expect(after[0]!.detail).toMatch(/^refused — a second store computer: u-old reported bill numbers under S1L1- \(through 12\) for store S1, but S1L1- belongs to the store computer u-new/);
+    expect(after[0]!.detail).toMatch(/^two store computers report bill numbers under S1L1- for store S1: u-new and u-old\. Head office uses u-new's reports for S1L1- because the owner approved moving S1L1- to it at \S+ \(act \S+\); it keeps u-old's report \(through 12\)/);
     // Read as at a moment before the act, nothing of it applies.
     const asAtBefore = billNumberFindingsFor({ storeId: S, records, at: iso(1.5), unreceived: [], replacements: [act(2, 'u-old', 'u-new')] }).filter((f) => f.kind === 'report_refused');
-    expect(asAtBefore.map((f) => /^refused — a second store computer: u-new reported/.test(f.detail))).toEqual([true]);
+    expect(asAtBefore.map((f) => /^two store computers report bill numbers under S1L1- for store S1: u-old and u-new\./.test(f.detail))).toEqual([true]);
   });
 
   it('lost-bill checks resume on the new computer: its "nothing waiting" is used only after the act', () => {

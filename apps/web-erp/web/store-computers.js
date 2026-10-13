@@ -25,7 +25,7 @@ function say(el, out, good) {
 
 function paintSummary() {
   const s = api.summarise(board);
-  for (const [k, v] of [['bindings', s.bindings], ['replaced', s.replaced], ['needs', s.needs], ['waiting', s.waiting]]) $(`v-${k}`).textContent = v === null ? '—' : String(v);
+  for (const [k, v] of [['bindings', s.bindings], ['replaced', s.replaced], ['needs', s.needs], ['waiting', s.waiting], ['unused', s.unused]]) $(`v-${k}`).textContent = v === null ? '—' : String(v);
   $('p-needs').classList.toggle('attention', (s.needs ?? 0) > 0);
 }
 
@@ -53,6 +53,21 @@ function paintBindings() {
   }
 }
 
+// Round 27 · OB-100: numbers taken and never used, per store, till and day — information only (no action here).
+function paintUnused() {
+  const body = $('unused-rows');
+  body.replaceChildren();
+  const rows = board?.unused ?? [];
+  $('no-unused').hidden = board === null || rows.length > 0;
+  $('no-unused').textContent = t('noUnused');
+  for (const u of rows) {
+    const tr = document.createElement('tr');
+    tr.dataset.store = u.storeId; tr.dataset.prefix = u.prefix; tr.dataset.day = u.day; tr.dataset.count = String(u.count);
+    tr.append(cell(u.storeId), cell(u.prefix), cell(u.day), cell(String(u.count)), cell(api.unusedWords(lang, u)));
+    body.append(tr);
+  }
+}
+
 function paintFindings() {
   const list = $('finding-rows');
   list.replaceChildren();
@@ -67,7 +82,7 @@ function paintFindings() {
     const detail = document.createElement('span');
     detail.textContent = f.detail;
     li.append(head, detail);
-    if (you().mayAcknowledge) {
+    if (you().mayAcknowledge && api.acknowledgeable(f)) {
       const reason = document.createElement('input');
       reason.placeholder = t('ackReason'); reason.setAttribute('aria-label', t('ackReason')); reason.dataset.role = 'ack-reason';
       const status = document.createElement('p'); status.className = 'status'; status.setAttribute('role', 'status');
@@ -118,7 +133,8 @@ function paintRequests() {
 function paintWords() {
   document.title = `SRE ${t('title')}`;
   const pairs = [['title', 'title'], ['page-h', 'title'], ['lead', 'lead'], ['open-replace', 'replace'],
-    ['k-bindings', 'sumBindings'], ['k-replaced', 'sumReplaced'], ['k-needs', 'sumNeeds'], ['k-waiting', 'sumWaiting'],
+    ['k-bindings', 'sumBindings'], ['k-replaced', 'sumReplaced'], ['k-needs', 'sumNeeds'], ['k-waiting', 'sumWaiting'], ['k-unused', 'sumUnused'],
+    ['unused-h', 'unusedH'], ['unused-lead', 'unusedLead'], ['c-u-store', 'colStore'], ['c-u-prefix', 'colPrefix'], ['c-u-day', 'colDay'], ['c-u-count', 'colCount'], ['c-u-numbers', 'colNumbers'],
     ['tab-bindings', 'tabBindings'], ['tab-findings', 'tabFindings'], ['tab-requests', 'tabRequests'],
     ['bindings-h', 'tabBindings'], ['bindings-lead', 'bindingsLead'], ['findings-h', 'tabFindings'], ['findings-lead', 'findingsLead'], ['requests-h', 'tabRequests'], ['requests-lead', 'requestsLead'],
     ['c-store', 'colStore'], ['c-prefix', 'colPrefix'], ['c-computer', 'colComputer'], ['c-via', 'colVia'], ['c-since', 'colSince'],
@@ -134,7 +150,7 @@ function paintWords() {
   else if (board !== null && !you().mayReplace && !you().mayAcknowledge) { status.className = 'status'; status.textContent = t('notYours'); }
 }
 
-function paintAll() { paintWords(); paintSummary(); paintBindings(); paintFindings(); paintRequests(); }
+function paintAll() { paintWords(); paintSummary(); paintBindings(); paintUnused(); paintFindings(); paintRequests(); }
 
 function showTab(which) {
   tab = which;

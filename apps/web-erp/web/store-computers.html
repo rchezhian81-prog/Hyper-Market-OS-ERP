@@ -73,6 +73,7 @@
           <div class="panel" id="p-replaced"><span class="k" id="k-replaced">Moved by a replaced act</span><span class="v" id="v-replaced">—</span></div>
           <div class="panel" id="p-needs"><span class="k" id="k-needs">Needs a person</span><span class="v" id="v-needs">—</span></div>
           <div class="panel" id="p-waiting"><span class="k" id="k-waiting">Your requests waiting</span><span class="v" id="v-waiting">—</span></div>
+          <div class="panel" id="p-unused"><span class="k" id="k-unused">Taken but never used</span><span class="v" id="v-unused">—</span></div>
         </div>
         <p class="status" id="page-status" role="status" aria-live="polite"></p>
       </section>
@@ -91,6 +92,14 @@
           <tbody id="binding-rows"></tbody>
         </table></div>
         <p class="muted" id="no-bindings" hidden></p>
+        <!-- Round 27 · OB-100 "A": numbers each store computer took and never used, per till and day — information, nothing to look for. -->
+        <h3 id="unused-h">Taken but never used</h3>
+        <p class="lead" id="unused-lead">Bill numbers each store computer says it took and never put on a bill.</p>
+        <div class="table-wrap"><table aria-labelledby="unused-h">
+          <thead><tr><th id="c-u-store">Store</th><th id="c-u-prefix">Till prefix</th><th id="c-u-day">Day</th><th id="c-u-count">How many</th><th id="c-u-numbers">Numbers</th></tr></thead>
+          <tbody id="unused-rows"></tbody>
+        </table></div>
+        <p class="muted" id="no-unused" hidden></p>
       </section>
 
       <section id="view-findings" aria-labelledby="findings-h" hidden>

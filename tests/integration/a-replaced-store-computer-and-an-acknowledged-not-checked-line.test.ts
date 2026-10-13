@@ -126,7 +126,7 @@ async function theReplacedActMovesThePrefix(h: ApiHarness): Promise<void> {
   travel(0); await report(call, 'u-box', sold(100));
   // The new box is switched on with the till's prefix before head office knows: refused by name (round 25).
   travel(1); await report(call, 'u-box-new', sold(100));
-  expect((await findings(call, 'report_refused')).map((f) => f.detail.match(/^refused — a second store computer: (\S+)/)?.[1])).toEqual(['u-box-new']);
+  expect((await findings(call, 'report_refused')).map((f) => f.detail.match(/^two store computers report bill numbers under \S+ for store S1: (\S+) and (\S+)\./)?.slice(1))).toEqual([['u-box', 'u-box-new']]);
 
   // ── Refused by name: who may do it ──
   const no = async (user: string, body: unknown, status: number, code: string, branchId?: string): Promise<void> => {
@@ -202,7 +202,8 @@ async function theReplacedActMovesThePrefix(h: ApiHarness): Promise<void> {
   travel(4); await report(call, 'u-box', sold(100)); // the old box comes back on (someone switched it on)
   const refusedNow = await findings(call, 'report_refused');
   expect(refusedNow).toHaveLength(1);
-  expect(refusedNow[0]!.detail).toMatch(/^refused — a second store computer: u-box reported bill numbers under S1L1- \(through 100\) for store S1, but S1L1- belongs to the store computer u-box-new/);
+  // Round 27 · OB-101: which one head office uses, and why — the owner-approved act.
+  expect(refusedNow[0]!.detail).toMatch(/^two store computers report bill numbers under S1L1- for store S1: u-box-new and u-box\. Head office uses u-box-new's reports for S1L1- because the owner approved moving S1L1- to it at \S+ \(act scr-[^)]+\); it keeps u-box's report \(through 100\) as evidence/);
   // Lost-bill checks resume on the new computer: past the grace, 101–110 are named never received.
   travel(4 + UNRECEIVED_GRACE_MINUTES + 1);
   expect((await findings(call, 'issued_never_received')).map((f) => f.ranges)).toEqual([[[101, 110]]]);

@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   unreceivedCandidates, believedRecord, stillOnTheBox, saysItMayHold, sparseHolding, DEFAULT_CLAIM_SLACK, DEFAULT_BOX_UNSENT_WARN_HOURS,
   UNRECEIVED_GRACE_MINUTES, UNRECEIVED_CHECK_CAP, bindPrefixesToComputers, atRiskExamined,
-  type BoxHealthRecord, type ClaimSlack, type IssuedReport, type UnreceivedCandidate,
+  readNeverReceived, FOLD_SNAPSHOT_EVERY,
+  type BoxHealthRecord, type ClaimSlack, type IssuedReport, type UnreceivedCandidate, type StoreComputerReplacement, type NeverReceivedSnapshot,
 } from '../../services/platform/src/box-health';
 
 /**
@@ -270,5 +271,100 @@ describe('round 25 · OB-93 / OB-94 by hand', () => {
     ];
     const named = read(records, 32);
     expect(named.map((c) => [c.numbers.length, c.reclaimed?.saidGoneAt])).toEqual([[10, new Date(t0 + 60_000).toISOString()]]);
+  });
+});
+
+/**
+ * **Round 27 · OB-102 "A" (verifier r26 NEW-4) — the saved running result plus the reports after it IS the fold of everything.**
+ *
+ * Head office now saves the never-received fold's state over the reports received up to a moment, and a later read folds
+ * only the reports after it. On the same 300 seeded histories: a result is saved at a random report's moment while head
+ * office's banked counts were LOWER (they only rise), sometimes with "store computer replaced" acts before and after it, and
+ * kept as JSON (as PostgreSQL keeps it); every later read from it — at the history's moment and at the grace after every
+ * report — gives exactly the fold of everything (and its plain reading), the unused numbers and the bindings included. A
+ * saved result that no longer stands (a report that arrived late, a lower banked count, an act dated before its last
+ * report, other settings) is set aside, and the answer is still the fold of everything.
+ */
+describe('round 27 · OB-102: a saved running result plus the reports after it gives exactly the fold of everything', () => {
+  const actsFor = (rnd: () => number, records: readonly BoxHealthRecord[]): StoreComputerReplacement[] => {
+    if (rnd() < 0.6) return [];
+    const times = records.map((r) => Date.parse(r.receivedAt)).sort((a, b) => a - b);
+    const at = (): string => new Date(times[Math.floor(rnd() * times.length)]! + Math.floor(rnd() * 3) * 7_000 - 7_000).toISOString();
+    const acts: StoreComputerReplacement[] = [{ replacementId: 'scr-1', storeId: 'S1', prefix: 'A-', from: 'u-box', to: 'u-box-2', reason: 'swap', requestedBy: 'hq', approvedBy: 'owner', approvalId: '1', at: at() }];
+    if (rnd() < 0.5) acts.push({ ...acts[0]!, replacementId: 'scr-2', from: 'u-box-2', to: 'u-box', approvalId: '2', at: at() });
+    return acts;
+  };
+
+  it('300 seeded histories, saved at a random moment with lower banked counts, read after every report', () => {
+    let resumed = 0;
+    let named = 0;
+    for (let seed = 1; seed <= 300; seed += 1) {
+      const h = history(seed);
+      const rnd = rng(seed * 7919);
+      const replacements = actsFor(rnd, h.records);
+      const times = [...new Set(h.records.map((r) => Date.parse(r.receivedAt)))].sort((a, b) => a - b);
+      const settle = times[Math.floor(rnd() * times.length)]!;
+      const lower = new Map([...h.banked].map(([p, b]) => [p, Math.max(0, b - Math.floor(rnd() * 6))]));
+      const first = readNeverReceived({ records: h.records, at: new Date(settle + 60_000).toISOString(), banked: lower, slack: h.slack, replacements, settleBefore: new Date(settle).toISOString() });
+      expect(first.snapshot, `seed ${seed}: a first read saves a result`).toBeDefined();
+      const snapshot = JSON.parse(JSON.stringify(first.snapshot)) as NeverReceivedSnapshot;
+      const moments = [h.at, ...h.records.map((r) => new Date(Date.parse(r.receivedAt) + UNRECEIVED_GRACE_MINUTES * 60_000).toISOString())]
+        .filter((at) => Date.parse(at) >= settle);
+      for (const at of moments) {
+        const input = { records: h.records, at, banked: h.banked, slack: h.slack, replacements };
+        const from = readNeverReceived({ ...input, snapshot });
+        const all = readNeverReceived(input);
+        expect(from.candidates, `seed ${seed}, at ${at}`).toEqual(all.candidates);
+        expect(from.unused, `seed ${seed}, at ${at} (unused)`).toEqual(all.unused);
+        expect(from.bindings, `seed ${seed}, at ${at} (bindings)`).toEqual(all.bindings);
+        if (replacements.length === 0) expect(from.candidates).toEqual(plainReading(input));
+        if (from.resumed) resumed += 1;
+        named += from.candidates.length;
+      }
+    }
+    // Not vacuous: the saved result was used (most reads) and the reads name bills.
+    expect(resumed).toBeGreaterThan(2_000);
+    expect(named).toBeGreaterThan(200);
+  }, 120_000);
+
+  it('a saved result that no longer stands is set aside — and the answer is still the fold of everything', () => {
+    const h = history(42);
+    const times = [...new Set(h.records.map((r) => Date.parse(r.receivedAt)))].sort((a, b) => a - b);
+    const settle = times[Math.floor(times.length / 2)]!;
+    const first = readNeverReceived({ records: h.records, at: h.at, banked: h.banked, slack: h.slack, settleBefore: new Date(settle).toISOString() });
+    const snapshot = first.snapshot!;
+    const base = { records: h.records, at: h.at, banked: h.banked, slack: h.slack };
+    expect(readNeverReceived({ ...base, snapshot }).resumed).toBe(true);
+    // A report that arrived late (received before the saved moment, kept after the result was saved).
+    const late = { ...h.records[0]!, receivedAt: new Date(settle - 1).toISOString(), observedAt: new Date(settle - 1).toISOString() };
+    const withLate = { ...base, records: [...h.records, late] };
+    expect(readNeverReceived({ ...withLate, snapshot }).resumed).toBe(false);
+    expect(readNeverReceived({ ...withLate, snapshot }).candidates).toEqual(unreceivedCandidates(withLate));
+    // A banked count LOWER than the one it used (never happens on the ledger; refused all the same).
+    const lower = new Map([...h.banked].map(([p, b]) => [p, b - 1]));
+    if ([...h.banked.values()].some((b) => b > 0)) expect(readNeverReceived({ ...base, banked: lower, snapshot }).resumed).toBe(false);
+    // An act dated at or before its last report that it never applied.
+    const act: StoreComputerReplacement = { replacementId: 'scr-x', storeId: 'S1', prefix: 'A-', from: 'u-box', to: 'u-box-2', reason: 'swap', requestedBy: 'hq', approvedBy: 'owner', approvalId: 'x', at: new Date(times[0]!).toISOString() };
+    expect(readNeverReceived({ ...base, replacements: [act], snapshot }).resumed).toBe(false);
+    expect(readNeverReceived({ ...base, replacements: [act], snapshot }).candidates).toEqual(unreceivedCandidates({ ...base, replacements: [act] }));
+    // Other settings: the owner's unsent line, the claim slack, the store's time zone.
+    expect(readNeverReceived({ ...base, warnHours: 7, snapshot }).resumed).toBe(false);
+    expect(readNeverReceived({ ...base, slack: { numbers: 99, percent: 1 }, snapshot }).resumed).toBe(false);
+    expect(readNeverReceived({ ...base, timeZone: 'UTC', snapshot }).resumed).toBe(false);
+    // A report judged differently at read (a prefix dropped that was not dropped when it was saved).
+    expect(readNeverReceived({ ...base, judgedAway: [{ receivedAt: new Date(times[0]!).toISOString(), storeId: 'S1', prefix: 'A-', through: 1 }], snapshot }).resumed).toBe(false);
+    // Read "as at" a moment before it was saved.
+    expect(readNeverReceived({ ...base, at: new Date(settle - 1).toISOString(), snapshot }).resumed).toBe(false);
+  });
+
+  it('a new result is saved only every FOLD_SNAPSHOT_EVERY settled reports once one exists', () => {
+    const h = history(7);
+    const times = [...new Set(h.records.map((r) => Date.parse(r.receivedAt)))].sort((a, b) => a - b);
+    const first = readNeverReceived({ records: h.records, at: h.at, banked: h.banked, slack: h.slack, settleBefore: new Date(times[0]!).toISOString() });
+    expect(first.snapshot?.settledCount).toBeGreaterThan(0);
+    // Fewer than FOLD_SNAPSHOT_EVERY reports settled since: no new result (the old one keeps serving).
+    const next = readNeverReceived({ records: h.records, at: h.at, banked: h.banked, slack: h.slack, snapshot: first.snapshot!, settleBefore: h.at });
+    expect(next.resumed).toBe(true);
+    expect(next.snapshot === undefined).toBe(h.records.length - first.snapshot!.settledCount < FOLD_SNAPSHOT_EVERY);
   });
 });
