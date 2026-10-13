@@ -223,6 +223,13 @@ type WitnessRecord =
   | { readonly kind: 'issued'; readonly boxIdentity: string; readonly laneId: string; readonly seriesKey: string; readonly seq: number; readonly receiptNumber: string; readonly at: string };
 
 /** The witness log's file name before r19 (one per folder) — read once, to adopt a witness that watched this disk (OB-87). */
+/**
+ * Round 25 · OB-94: the most numbers-given-and-never-used, and ranges of them, one health report carries per prefix — head
+ * office's own bounds (services/platform/src/box-health.ts UNRECEIVED_CHECK_CAP and UNUSED_RANGES_MAX; a test holds them equal).
+ */
+export const UNUSED_NUMBERS_MAX = 500;
+export const UNUSED_RANGES_MAX = 50;
+
 export const WITNESS_FILE = 'receipt-numbers.witness.log';
 /** Verifier r19 OB87-2: each box's OWN witness file in the folder, named by its disk's identity (kept across a restore). */
 export const witnessFileFor = (diskIdentity: string): string => `receipt-numbers.witness.${diskIdentity}.log`;
@@ -554,7 +561,10 @@ export class ReceiptNumbers {
    * Verifier r18 item 6: the highest count this box has GIVEN under each prefix — used on a bill or not (a voided or
    * abandoned bill keeps its number). Reported to head office with the box's health, so a replaced box resumes above it.
    */
-  issuedThrough(): { readonly prefix: string; readonly through: number; readonly soldThrough: number; readonly atRisk?: readonly (readonly [number, number])[] }[] {
+  issuedThrough(): {
+    readonly prefix: string; readonly through: number; readonly soldThrough: number; readonly atRisk?: readonly (readonly [number, number])[];
+    readonly unused?: readonly (readonly [number, number])[];
+  }[] {
     const by = new Map<string, number>();
     for (const [k, seq] of this.cursor) {
       const prefix = k.slice(k.lastIndexOf('|') + 1);
@@ -566,12 +576,16 @@ export class ReceiptNumbers {
     // A number issued and never used on this box (a void, an abandoned bill) is neither: it never raises "never received".
     const sold = new Map<string, number>();
     const risky = new Map<string, number[]>();
+    // Round 25 · OB-94 "A": numbers given and never put on a bill (the sale could not be saved after its number was taken) —
+    // said to head office, so it never names them "never received" nor sends anyone looking for a paper bill that never was.
+    const unusedSeqs = new Map<string, number[]>();
     for (const i of this.issued.values()) {
       const prefix = i.seriesKey.split('|')[0] ?? '';
       if (prefix === '' || !Number.isSafeInteger(i.seq) || i.seq < 1) continue;
       const absorbed = i.requestKey.startsWith('witnessed:');
       if (absorbed) risky.set(prefix, [...(risky.get(prefix) ?? []), i.seq]);
       if (absorbed || this.usedBy.has(i.receiptNumber)) sold.set(prefix, Math.max(sold.get(prefix) ?? 0, i.seq));
+      else { const list = unusedSeqs.get(prefix); if (list === undefined) unusedSeqs.set(prefix, [i.seq]); else list.push(i.seq); }
     }
     const ranges = (seqs: number[]): [number, number][] => {
       const out: [number, number][] = [];
@@ -581,10 +595,21 @@ export class ReceiptNumbers {
       }
       return out.slice(-50);
     };
-    return [...by].map(([prefix, through]) => ({
-      prefix, through, soldThrough: Math.min(through, sold.get(prefix) ?? 0),
-      ...(risky.has(prefix) ? { atRisk: ranges(risky.get(prefix)!) } : {}),
-    })).sort((a, b) => a.prefix.localeCompare(b.prefix)).slice(0, 200);
+    // Only the ones head office could ever look for: at or below what was put on a bill, the newest UNUSED_NUMBERS_MAX of
+    // them, in at most UNUSED_RANGES_MAX ranges (head office's own bounds — it refuses a report beyond them).
+    const unusedOf = (prefix: string, soldThrough: number): [number, number][] => {
+      const seqs = [...new Set((unusedSeqs.get(prefix) ?? []).filter((n) => n <= soldThrough))].sort((a, b) => a - b).slice(-UNUSED_NUMBERS_MAX);
+      return ranges(seqs).slice(-UNUSED_RANGES_MAX);
+    };
+    return [...by].map(([prefix, through]) => {
+      const soldThrough = Math.min(through, sold.get(prefix) ?? 0);
+      const unused = unusedOf(prefix, soldThrough);
+      return {
+        prefix, through, soldThrough,
+        ...(risky.has(prefix) ? { atRisk: ranges(risky.get(prefix)!) } : {}),
+        ...(unused.length === 0 ? {} : { unused }),
+      };
+    }).sort((a, b) => a.prefix.localeCompare(b.prefix)).slice(0, 200);
   }
 
   /** OB-87: whether this box is numbering under a fresh prefix after a (possible) restore, and why. */

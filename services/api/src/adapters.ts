@@ -340,6 +340,7 @@ import type { PricingDeps, PriceChangeRecord } from '../../pricing/src/index';
 import type { PriceListDeps } from '../../pricing/src/price-list';
 import type { PriceEntry } from '../../../packages/price-list/src/price-list';
 import { ROLE_CATALOGUE, STORE_MANAGER_ROLE_ID, STORE_COMPUTER_ROLE_ID, PROVIDER_RELAY_ROLE_ID, BACKUP_JOB_ROLE_ID } from './roles';
+import { combinedDuties } from '../../identity/src/separation-of-duties';
 import { isMachineCredential } from '../../identity/src/machine-identities';
 import { metaOf as legacyAttachmentMeta, type LegacyHistoryDeps, type LegacyHistoryDocument, type LegacyAttachment, type LegacyAttachmentMeta } from '../../migration/src/legacy-history';
 
@@ -462,10 +463,14 @@ export async function effectiveGrants(store: EventStore, tenantId: string): Prom
  */
 export async function rolesHeldNow(store: EventStore, tenantId: string, userId: string, at: string): Promise<readonly string[]> {
   const granted = (await effectiveGrants(store, tenantId)).filter((g) => g.userId === userId).map((g) => g.roleId);
+  return [...new Set([...granted, ...await liveEmergencyRoles(store, tenantId, userId, at)])];
+}
+
+/** OB-95 (and PA-12): the roles a user holds at `at` through an emergency grant still live (not revoked, not expired). */
+export async function liveEmergencyRoles(store: EventStore, tenantId: string, userId: string, at: string): Promise<readonly string[]> {
   const emergency = (await allOf<EmergencyGrant>(store, tenantId, EMERGENCY_ACCESS_STREAM, 'EmergencyAccessRecorded'))
     .reduce((m, g) => m.set(g.grantId, g), new Map<string, EmergencyGrant>());
-  const live = [...emergency.values()].filter((g) => g.userId === userId && (g.revokedAt ?? null) === null && Date.parse(g.expiresAt) > Date.parse(at)).map((g) => g.roleId);
-  return [...new Set([...granted, ...live])];
+  return [...emergency.values()].filter((g) => g.userId === userId && (g.revokedAt ?? null) === null && Date.parse(g.expiresAt) > Date.parse(at)).map((g) => g.roleId);
 }
 
 const PERSON_SIGN_IN_EVENTS = new Set(['PersonSignInRequested', 'PersonSignInIssued', 'PersonSignInEnded', 'PersonSignInWithdrawn']);
@@ -538,6 +543,8 @@ export function accessLifecycleAdapter(input: {
     now: input.now,
     roles: () => input.roleCatalogue,
     currentGrants: async (tenantId, userId) => (await effectiveGrants(input.store, tenantId)).filter((g) => g.userId === userId),
+    // OB-95: a live emergency grant counts as held when a joiner/mover change is judged.
+    emergencyRolesOf: (tenantId, userId) => liveEmergencyRoles(input.store, tenantId, userId, input.now()),
     isPerson: (tenantId, userId) => isPersonNow(input.store, tenantId, userId),
     outsideLoginOf: (tenantId, userId) => outsideLoginOf(input.store, tenantId, userId, input.now()),
     permissionsOf: async (tenantId, userId) => {
@@ -5367,6 +5374,8 @@ export function emergencyAccessAdapter(input: {
     now: input.now,
     // PA-12 round 10: what the user holds now, so an emergency grant never mixes a machine-only role with a person's.
     rolesHeldBy: (tenantId, userId) => rolesHeldNow(input.store, tenantId, userId, input.now()),
+    // OB-95: the catalogue, so an emergency grant never puts the IT/platform role beside a business role.
+    roles: () => ROLE_CATALOGUE,
     isPerson: (tenantId, userId) => isPersonNow(input.store, tenantId, userId),
     outsideLoginOf: (tenantId, userId) => outsideLoginOf(input.store, tenantId, userId, input.now()),
     grants: (tenantId) => foldGrants(tenantId),
@@ -12798,6 +12807,16 @@ export function observedHealthAdapter(input: {
         // findings, whose count just ran the fold).
         billNumberHighWater: (await highWaterFenceWait(input.store, tenantId)) ?? null,
       };
+    },
+    // OB-95: the people who hold both the IT/platform role and a business role (granted before the rule), with any live
+    // emergency grant — listed for the owner, never silently kept.
+    separationOfDuties: async (tenantId) => {
+      const now = input.now();
+      const grants = [...await effectiveGrants(input.store, tenantId)];
+      const emergency = (await allOf<EmergencyGrant>(input.store, tenantId, EMERGENCY_ACCESS_STREAM, 'EmergencyAccessRecorded'))
+        .reduce((m, g) => m.set(g.grantId, g), new Map<string, EmergencyGrant>());
+      for (const g of emergency.values()) if ((g.revokedAt ?? null) === null && Date.parse(g.expiresAt) > Date.parse(now)) grants.push({ userId: g.userId, roleId: g.roleId, branchScope: g.branchScope });
+      return combinedDuties(grants, ROLE_CATALOGUE);
     },
     alertRules: (tenantId) => latest<StoredAlertRules>(input.store, tenantId, ALERT_RULES_STREAM, 'AlertRulesDefined'),
     defineAlertRules: async (tenantId, rules) => {

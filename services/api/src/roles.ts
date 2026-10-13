@@ -10,6 +10,7 @@
 // place the product's authority model is written down.
 
 import type { Role } from '../../../packages/rbac/src/rbac';
+import { PLATFORM_ADMIN_ROLE_ID } from '../../identity/src/separation-of-duties';
 
 /**
  * Which role carries the owner's authority.
@@ -45,21 +46,11 @@ export const PROVIDER_RELAY_ROLE_ID = 'message_provider_relay';
 export const BACKUP_JOB_ROLE_ID = 'backup_job';
 
 /**
- * §28 / M33-FR-01 / SEC-11: the platform-administration (IT) function, held apart from running the shop. Named as a
- * constant because OB-91 (owner, 13 Oct 2026) turns on it: the IT administrator may never clear a store computer's
- * suspicious bill-number report, whatever their scope.
+ * §28 / M33-FR-01 / SEC-11: the platform-administration (IT) function, held apart from running the shop, and the rule that
+ * says which roles are it (OB-91). Written once, in services/identity/src/separation-of-duties.ts — the grant routes judge
+ * OB-95 (no person holds both the IT role and a business role) with it, and the acknowledgement route OB-91.
  */
-export const PLATFORM_ADMIN_ROLE_ID = 'platform_admin';
-
-/**
- * OB-91: is this role the platform/IT administration function — the platform administrator itself, or any role whose
- * whole grant is platform administration (every permission in the `platform.*` namespace, besides reading oneself)? Such a
- * role runs the computers, never the shop, so it never clears a fraud signal about what a computer did.
- */
-export function isPlatformAdministrationRole(role: Role): boolean {
-  return role.id === PLATFORM_ADMIN_ROLE_ID
-    || (role.permissions.length > 0 && role.permissions.every((p) => p.startsWith('platform.') || p === 'identity.self.read'));
-}
+export { PLATFORM_ADMIN_ROLE_ID, isPlatformAdministrationRole } from '../../identity/src/separation-of-duties';
 
 export const ROLE_CATALOGUE: readonly Role[] = [
   {

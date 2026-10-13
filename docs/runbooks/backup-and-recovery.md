@@ -216,6 +216,42 @@ count still open and names the others.
   <time>"** — the hours count from the first time head office saw any of those bills waiting, in any
   report. A "nothing waiting" report in between does not restart the clock.
 
+**Round 25 (owner decisions OB-93 to OB-96, 13 Oct 2026):**
+
+- **No false "lost track" alarm (OB-93).** A store computer's report that does not add up (its list of
+  bills waiting is longer than its own queue) is never read as the store computer letting those bills
+  go. The store computer itself now counts its queue and lists its bills in one step, so an honest one
+  never sends such a report. If you still see "the store computer's report contradicts itself", the
+  store computer is faulty or out of date — call support.
+- **One store computer per till's bill numbers (OB-94).** The first store computer (its own sign-in)
+  that reports a till's bill-number prefix owns it. If a second store computer — a stand-by box, or a
+  box set up by mistake with the same till — reports that prefix, the health page says
+  **"refused — a second store computer: … belongs to the store computer …"**, names both, and head office
+  ignores the second one's word (it can neither hide a lost bill nor make a waiting one look lost).
+  - Switch the stand-by box off, or give it its own till; then the owner or head-office staff
+    acknowledge the line with a reason (the same acknowledgement as for any refused report; the IT
+    administrator cannot). Head office banking the bills does not clear it.
+  - **A store computer restored from its own backup keeps its own sign-in, so it is never refused.**
+  - **Replacing a store computer with a NEW sign-in:** issue the till a new bill-number prefix first
+    (`POST /v1/stores/<store>/tills/<till>/receipt-prefix`); the new box numbers under the new prefix. Until then
+    the new box's reports of the old prefix are refused and shown.
+- **Numbers taken and never used (OB-94).** When a sale cannot be saved after its bill number was
+  taken, the till takes a new number for the next try. The store computer now tells head office which
+  numbers it took and never used, and head office never names them "never received" — nobody goes
+  looking for a paper bill that never existed. An older store computer that does not say this behaves
+  as before: such a number can be named during an outage; check the till's "issued, not used" list
+  (the lane's receipt-number account) before entering anything from paper.
+- **"not checked: … cannot vouch for N bill number(s) … older one(s) … were NOT checked" (OB-96).**
+  Head office checks at most the newest 500 numbers a store computer cannot vouch for on each report,
+  so that no store computer — honest or altered — can slow head office down. Any older ones are named
+  here instead of being skipped in silence. Ask support to compare that store computer's restore
+  record with head office's bills; any head office does not hold may be a sale lost by the restore.
+- **Separation of duties (OB-95).** Head office refuses to give one person both the IT/platform
+  administrator role and any business role (owner, manager, cashier …), in either order, also in an
+  emergency grant, a joiner/mover change and the first-time set-up of a shop. Anyone who already holds
+  both is named on the health page (**"separation of duties (owner decision OB-95): … holds the
+  IT/platform role … AND business role(s) …"**) until one side is removed.
+
 ## Part 4 — Restoring (the one that matters)
 
 **1. Do not restore over live data.** Make an empty database first:

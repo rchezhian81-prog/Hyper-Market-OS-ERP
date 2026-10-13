@@ -38,7 +38,7 @@ import { httpTransport } from '../../../edge/sync-agent/src/http-transport';
 import { httpPackSource } from '../../../edge/sync-agent/src/pack-source';
 import { pullPack, type PackPullOutcome, type PackPullStatus } from '../../../edge/sync-agent/src/pack-puller';
 import { httpSyncWatermarkReporter, type SyncWatermarkReport } from '../../../edge/sync-agent/src/sync-watermark-report';
-import { httpBoxHealthReporter, billNumberingReport, queuedBillNumbersOf, withUnsent, type BoxHealthReport } from '../../../edge/sync-agent/src/box-health-report';
+import { httpBoxHealthReporter, boxHealthReportOf, type BoxHealthReport } from '../../../edge/sync-agent/src/box-health-report';
 import { statfs } from 'node:fs/promises';
 import { SALE_RESERVE_BYTES } from './durability';
 import { httpStorePackSource, httpHeldVersionsReporter, pullStorePack, type StorePackPullOutcome, type StorePackPullStatus } from '../../../edge/sync-agent/src/store-pack-feed';
@@ -2301,37 +2301,41 @@ export async function startEdge(
   // its own rule), its queues' depth and its tills' latest device reports. The store is the credential's (OB-54).
   const boxHealthReporter = watermarkStoreId === undefined ? null : httpBoxHealthReporter({ baseUrl: cloudUrl, token: cloudToken, storeId: watermarkStoreId, fetch: globalThis.fetch });
   const reportBoxHealth = boxHealthReporter === null ? null : async (): Promise<boolean> => {
-    const fsInfo = await statfs(settings['EDGE_DATA_DIR']!);
-    const queues = [agent, returnsAgent, completionsAgent, dayCloseAgent, concessionTagsAgent, deviceEventsAgent, tillCashAgent].map((a) => a.health());
-    const report: BoxHealthReport = {
-      observedAt: new Date().toISOString(),
-      disk: {
-        freeBytes: Number(fsInfo.bavail) * Number(fsInfo.bsize), totalBytes: Number(fsInfo.blocks) * Number(fsInfo.bsize),
-        salesLogUsedBytes: await log.usedBytes(), salesLogCapacityBytes: log.capacityBytes, reserveBytes: SALE_RESERVE_BYTES,
+    // Round 25 · OB-93 (verifier r24 NEW-1): every await first (the filesystem, the sales log's size, the witness folder),
+    // then the queues' counts and the per-prefix lists in ONE synchronous step (`boxHealthReportOf`) — a sale committed while
+    // the report is made is in both or neither, so an honest report never contradicts its own queue.
+    const report: BoxHealthReport = await boxHealthReportOf({
+      now: () => new Date().toISOString(),
+      disk: async () => {
+        const fsInfo = await statfs(settings['EDGE_DATA_DIR']!);
+        return {
+          freeBytes: Number(fsInfo.bavail) * Number(fsInfo.bsize), totalBytes: Number(fsInfo.blocks) * Number(fsInfo.bsize),
+          salesLogUsedBytes: await log.usedBytes(), salesLogCapacityBytes: log.capacityBytes, reserveBytes: SALE_RESERVE_BYTES,
+        };
       },
-      queue: { unsent: queues.reduce((n, h) => n + h.unsentCount, 0), deadLettered: queues.reduce((n, h) => n + h.deadLetterCount, 0) },
+      queues: () => [agent, returnsAgent, completionsAgent, dayCloseAgent, concessionTagsAgent, deviceEventsAgent, tillCashAgent].map((a) => a.health()),
       // What the tills' devices last said (kept on this disk); the cashier who sent it stays on the box. `attended`: is
       // anybody signed in at that till now (P-08) — a signed-in till re-sends its devices every 5 minutes, an unattended
       // one stops, so head office can say whether a stale lane is expected (nobody there) or a till to check.
-      tills: (peripheralReports?.latest() ?? []).map((r) => ({
+      tills: () => (peripheralReports?.latest() ?? []).map((r) => ({
         laneId: r.laneId, reportedAt: r.reportedAt, devices: r.devices,
         // Round 15: the device adapter's own last-observed time, when the till sent it — head office ages the lane by it.
         ...(r.adapterObservedAt === undefined ? {} : { adapterObservedAt: r.adapterObservedAt }),
         attended: (tillOperators?.live() ?? []).some((s) => s.laneId === r.laneId),
       })),
       // Verifier r18 item 6: the highest count GIVEN per bill-number prefix (a voided bill keeps its number) — head office
-      // keeps a replaced box above it.
-      // Verifier r20 LOST-1: with each prefix, the bills under it still waiting in this box's sales and refund queues — head
-      // office never calls a number "never received" while the box still holds it.
-      // Verifier r21: with when the oldest of them was made (head office warns past the owner's line), and the bills this box
-      // GAVE UP sending (its dead letters) — on the box, waiting for a person, never "lost".
-      ...(receiptNumbers === null ? {} : { receiptNumbersIssued: withUnsent(receiptNumbers.issuedThrough(),
-        queuedBillNumbersOf([...outbox.pending(), ...returnsOutbox.pending()].map((i) => ({ payload: i.event.payload, occurredAt: i.event.occurredAt }))),
-        queuedBillNumbersOf([...outbox.deadLetters(), ...returnsOutbox.deadLetters()].map((i) => ({ payload: i.event.payload, occurredAt: i.event.occurredAt })))) }),
-      // Verifier r19 OB87-1: the box's own check of its bill-number witness (and a held restore) — head office shows it on
-      // the store computer's health (`box_bill_numbers:<store>`), so a box with no witness is never a silent ZZ every boot.
-      ...(receiptNumbers === null ? {} : { billNumbering: billNumberingReport(await receiptNumbers.witnessHealth()) }),
-    };
+      // keeps a replaced box above it. r20 LOST-1: with each prefix, the bills under it still waiting in this box's sales and
+      // refund queues; r21: with when the oldest of them was made, and the bills this box GAVE UP sending (its dead letters).
+      // Round 25 · OB-94: and the numbers it gave and never put on a bill (`unused`) — never "never received".
+      ...(receiptNumbers === null ? {} : {
+        issued: () => receiptNumbers.issuedThrough(),
+        pending: () => [...outbox.pending(), ...returnsOutbox.pending()].map((i) => ({ payload: i.event.payload, occurredAt: i.event.occurredAt })),
+        deadLetters: () => [...outbox.deadLetters(), ...returnsOutbox.deadLetters()].map((i) => ({ payload: i.event.payload, occurredAt: i.event.occurredAt })),
+        // Verifier r19 OB87-1: the box's own check of its bill-number witness (and a held restore) — head office shows it on
+        // the store computer's health (`box_bill_numbers:<store>`), so a box with no witness is never a silent ZZ every boot.
+        billNumbering: () => receiptNumbers.witnessHealth(),
+      }),
+    });
     return boxHealthReporter(report);
   };
 

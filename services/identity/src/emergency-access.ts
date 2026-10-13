@@ -25,6 +25,8 @@ import { apiError, notFound, requireActorIsCaller } from '../../kernel/src/index
 import { storeComputerGrantRefusal } from '../../platform/src/store-computer-identity';
 import { machineIdentityGrantRefusal, MACHINE_IDENTITY_REFUSAL_CODE } from './machine-identities';
 import { outsidePartyGrantRefusal, OUTSIDE_LOGIN_REFUSAL_CODE } from './outside-party-logins';
+import { dutiesGrantRefusal, SEPARATION_OF_DUTIES_REFUSAL_CODE } from './separation-of-duties';
+import type { Role } from '../../../packages/rbac/src/rbac';
 import { actionDetails, approvalNamedIn, type ApprovalPort } from './approval-requests';
 import {
   grantEmergencyAccess, revokeEmergencyAccess, emergencyAccessReview, EmergencyAccessError,
@@ -52,6 +54,8 @@ export interface EmergencyAccessDeps {
   readonly approvals?: ApprovalPort;
   /** PA-12 round 10: the roles the user holds now (ledger) — a machine-only role is never mixed with a person's. */
   readonly rolesHeldBy?: (tenantId: string, userId: string) => Promise<readonly string[]> | readonly string[];
+  /** OB-95: the role catalogue — to tell the IT/platform role from a business role. Absent on a bare stub (not judged). */
+  readonly roles?: (tenantId: string) => Promise<readonly Role[]> | readonly Role[];
   /** PA-12 r12: whether this user is a PERSON — given a sign-in at the identity server (/v1/identity/people). */
   readonly isPerson?: (tenantId: string, userId: string) => Promise<boolean> | boolean;
   /**
@@ -98,8 +102,12 @@ export function emergencyAccessRoutes(deps: EmergencyAccessDeps): readonly Route
         }
         // PA-12 round 10: not even in an emergency is a machine identity (backup_job) also a person.
         if (deps.rolesHeldBy !== undefined) {
-          const mixed = machineIdentityGrantRefusal(b['roleId'] as string, await deps.rolesHeldBy(ctx.tenantId, b['userId'] as string), (await deps.isPerson?.(ctx.tenantId, b['userId'] as string)) ?? false);
+          const held = await deps.rolesHeldBy(ctx.tenantId, b['userId'] as string);
+          const mixed = machineIdentityGrantRefusal(b['roleId'] as string, held, (await deps.isPerson?.(ctx.tenantId, b['userId'] as string)) ?? false);
           if (mixed !== undefined) throw apiError(422, { code: MACHINE_IDENTITY_REFUSAL_CODE, whatHappened: mixed, wasItSaved: 'not_saved', nextSafeAction: 'Grant the person a person\'s role on their own sign-in. Nobody\'s access changed.' });
+          // OB-95: not even in an emergency does one person hold the IT/platform role and a business role.
+          const both = deps.roles === undefined ? undefined : dutiesGrantRefusal(b['roleId'] as string, held, await deps.roles(ctx.tenantId));
+          if (both !== undefined) throw apiError(422, { code: SEPARATION_OF_DUTIES_REFUSAL_CODE, whatHappened: both, wasItSaved: 'not_saved', nextSafeAction: 'Give the emergency access to a person who holds no role on the other side, on their own sign-in. Nobody\'s access changed.' });
         }
         // Round 14 (verifier G5): not even in an emergency is anything added to an outside party's login.
         const outside = outsidePartyGrantRefusal(b['roleId'] as string, await deps.outsideLoginOf?.(ctx.tenantId, b['userId'] as string));

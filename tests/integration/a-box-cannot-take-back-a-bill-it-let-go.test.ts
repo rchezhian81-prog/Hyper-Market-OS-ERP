@@ -133,7 +133,7 @@ async function anEmptyQueueBeforeEachClaimHidesNothing(h: ApiHarness): Promise<v
   expect(await neverReceived(call)).toEqual([[101, 600]]);
   const named = (await findings(call, 'issued_never_received'))[0]!;
   expect(near(named.since, t0)).toBe(true); // from the FIRST "nothing waiting", never restarted
-  expect(named.detail).toMatch(/The store computer said at .* that it no longer held S1L1-000101 to S1L1-000600, and its latest report says they are in its list of bills still to send or given up on again/);
+  expect(named.detail).toMatch(/The store computer said at .* that it no longer held S1L1-000101 to S1L1-000600, and its latest report says they are in its list of bills still to send, given up on, or given and never used again/);
   expect(named.detail).toMatch(/Do NOT re-enter any of them from paper until a person has checked/);
   expect(named.detail).not.toMatch(/find the paper bills and enter them/);
   // The contradiction is said by name.

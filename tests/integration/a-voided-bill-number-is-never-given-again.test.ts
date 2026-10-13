@@ -61,7 +61,13 @@ async function aVoidedNumberIsNeverGivenAgain(cloud: Cloud): Promise<void> {
   const dirs: string[] = [];
   const edges: EdgeProcess[] = [];
   const saved = globalThis.fetch;
-  globalThis.fetch = cloud.fetchFor(saved);
+  // Round 25 · OB-94: every health report the box sends is kept here too, to read what it said.
+  const sent: { receiptNumbersIssued?: unknown }[] = [];
+  const toCloud = cloud.fetchFor(saved);
+  globalThis.fetch = (async (url: string, init?: RequestInit) => {
+    if (String(url).endsWith('/v1/store-computers/health-reports')) sent.push(JSON.parse(String(init?.body)) as { receiptNumbersIssued?: unknown });
+    return toCloud(url, init);
+  }) as typeof globalThis.fetch;
   const boot = async (): Promise<EdgeProcess> => {
     const dir = await mkdtemp(join(tmpdir(), 'sre-void-'));
     dirs.push(dir, `${dir}-witness`);
@@ -91,13 +97,23 @@ async function aVoidedNumberIsNeverGivenAgain(cloud: Cloud): Promise<void> {
     // The box's health report carries what it GAVE: head office's count for the prefix moves to 2.
     expect(await box.reportBoxHealth!()).toBe(true);
     expect(await bankedThrough(cloud, 'S2L7-')).toBe(2);
+    // Round 25 · OB-94 (verifier r24 NEW-2): the till's next bill is sold (S2L7-000003). The box now says S2L7-000002 was
+    // given and never put on a bill (`unused`), so head office never names it "never received" nor has anyone look for a
+    // paper bill that never was — and head office accepts the report (a malformed one is refused, below).
+    const third = await t2.nextReceipt();
+    t2.scan({ productId: 'P1', description: 'Toor dal 1kg', unitPriceMinor: 7_000, qty: 1 });
+    await t2.tenderCash(`S-${third}`, third, new Date().toISOString());
+    expect(third).toBe('S2L7-000003');
+    expect(await box.reportBoxHealth!()).toBe(true);
+    expect(sent.at(-1)?.receiptNumbersIssued).toEqual([expect.objectContaining({ prefix: 'S2L7-', through: 3, soldThrough: 3, unused: [[2, 2]] })]);
+    expect(await bankedThrough(cloud, 'S2L7-')).toBe(3);
     // Another store's box saying it gave S2L7- up to 50 does not move store 2's count (kept under its own store).
     const foreign = await cloud.call('POST', '/v1/store-computers/health-reports', 'u-box-1', {
       observedAt: new Date().toISOString(), disk: { freeBytes: 1, totalBytes: 2, salesLogUsedBytes: 0, salesLogCapacityBytes: 1, reserveBytes: 0 },
       queue: { unsent: 0, deadLettered: 0 }, tills: [], receiptNumbersIssued: [{ prefix: 'S2L7-', through: 50 }],
     }, `hr-${randomUUID()}`, S1);
     expect(foreign.status).toBe(200);
-    expect(await bankedThrough(cloud, 'S2L7-')).toBe(2);
+    expect(await bankedThrough(cloud, 'S2L7-')).toBe(3);
     // A malformed claim is refused by name, nothing kept.
     const bad = await cloud.call('POST', '/v1/store-computers/health-reports', 'u-box-2', {
       observedAt: new Date().toISOString(), disk: { freeBytes: 1, totalBytes: 2, salesLogUsedBytes: 0, salesLogCapacityBytes: 1, reserveBytes: 0 },
@@ -105,13 +121,13 @@ async function aVoidedNumberIsNeverGivenAgain(cloud: Cloud): Promise<void> {
     }, `hr-${randomUUID()}`, S2);
     expect(bad.status).toBe(400);
 
-    // The box is REPLACED (a fresh disk): online, it resumes above the voided number — never re-giving S2L7-000002.
+    // The box is REPLACED (a fresh disk): online, it resumes above the voided number — never re-giving S2L7-000002 or 000003.
     await box.stop(); edges.splice(edges.indexOf(box), 1);
     const replacement = await boot();
     expect(await replacement.refreshStorePack!()).toMatchObject({ status: 'updated' });
     const t3 = bootPos({ laneId: 'lane-7', taxPercent: 0, lanePort: replacement.lane!.port });
     await signInTill(t3, 'u-cash2');
-    expect(await t3.nextReceipt()).toBe('S2L7-000003');
+    expect(await t3.nextReceipt()).toBe('S2L7-000004');
   } finally {
     for (const e of edges.splice(0)) await e.stop();
     globalThis.fetch = saved;
