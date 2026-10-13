@@ -95,6 +95,9 @@ const observed = async (call: Call): Promise<Observed> => {
 const neverReceived = async (call: Call): Promise<[number, number][]> =>
   ((await observed(call)).observed.boxes.find((b) => b.storeId === S1)?.billNumberFindings ?? [])
     .filter((f) => f.kind === 'issued_never_received' && f.prefix === P).flatMap((f) => f.ranges ?? []);
+const contradictions = async (call: Call): Promise<[number, number][]> =>
+  ((await observed(call)).observed.boxes.find((b) => b.storeId === S1)?.billNumberFindings ?? [])
+    .filter((f) => f.kind === 'report_contradicts_earlier_report' && f.prefix === P).flatMap((f) => f.ranges ?? []);
 const refusedFindings = async (call: Call): Promise<Finding[]> =>
   ((await observed(call)).observed.boxes.find((b) => b.storeId === S1)?.billNumberFindings ?? []).filter((f) => f.kind === 'report_refused');
 
@@ -133,11 +136,15 @@ async function aLongCatchUpRaisesNothing(h: ApiHarness): Promise<void> {
   expect(named?.detail).toMatch(/S1L1-002001 to S1L1-002010/);
   expect(named?.detail).toMatch(/said it no longer held them to send/);
   expect(named?.detail).not.toMatch(/S1L1-002011/);
-  // The box restarts and re-queues them from its sales log: its LATEST report holds them again — not named while it does.
+  // Verifier r23 NEW-1 · OB-89: the box then claims them AGAIN. An honest box cannot — it keeps a bill until head office
+  // takes it, and 2001–2010 are below every bill still in its queue (its cursor is past them; a restart re-queues only
+  // what is past its cursor). Its later word no longer holds them back: they stay named, and the contradiction is said.
   await report(call, [{ prefix: P, through: 2_450, soldThrough: 2_450, unsent: { count: 450, from: 2_001, to: 2_450 } }], 450);
-  expect(await neverReceived(call)).toEqual([]);
+  expect(await neverReceived(call)).toEqual([[2_001, 2_010]]);
+  expect(await contradictions(call)).toEqual([[2_001, 2_010]]);
   await report(call, [{ prefix: P, through: 2_450, soldThrough: 2_450, unsent: { count: 440, from: 2_011, to: 2_450 } }], 440);
   expect(await neverReceived(call)).toEqual([[2_001, 2_010]]);
+  expect(await contradictions(call)).toEqual([]);
 
   // The rest arrive. Then the box is restored from a backup and cannot vouch for 1995–2010 (its witness says they were
   // given after the backup): head office checks those against what it banked — at or below its highest banked count, in
@@ -198,7 +205,7 @@ async function aRefusedReportStaysUntilBankedOrAcknowledged(h: ApiHarness, store
   await bank(call, 151, 160);
   await report(call, [{ prefix: P, through: 160, soldThrough: 160, unsent: { count: 0 } }], 0);
   expect((await refusedFindings(call)).map((f) => f.through)).toEqual([10_600]);
-  expect((await refusedFindings(call))[0]!.detail).toMatch(/This stays until head office has banked that many, or the owner or head office staff \(all-stores authority — a store's own manager cannot\) acknowledge this count/);
+  expect((await refusedFindings(call))[0]!.detail).toMatch(/This stays until head office has banked that many, or the owner or head office staff \(all-stores authority — a store's own manager cannot, and neither can the IT\/platform administrator\) acknowledge this count/);
 
   // A person acknowledges it. Refused: a cashier (no platform.alert.manage); a count that was never refused; no reason.
   const ack = (user: string, body: unknown) => call('POST', '/v1/store-computers/bill-number-refusals/acknowledgements', user, body);

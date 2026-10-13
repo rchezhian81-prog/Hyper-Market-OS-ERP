@@ -32,6 +32,10 @@ export const currentWriteWitness = (): WriteWitness | undefined => current.getSt
  * A statement that cannot change anything: a SELECT (or SHOW) naming no data-changing word. Anything else counts as a write —
  * the safe direction: a read mistaken for a write only turns "not saved" into "check first", never the other way round.
  * (No function in the schema writes when SELECTed: db/migrations define only trigger guards and the tenant-scope reader.)
+ * Verifier r23 (LOW): `SELECT … INTO` (creates a table), `pg_notify(…)` (sends a notification other sessions act on), the
+ * large-object functions (`lo_unlink`, `lo_import`, `lo_create`, `lo_put` …) and `dblink_exec` change things from inside a
+ * SELECT — each counts as a write too.
  */
 export const isReadOnlyStatement = (sql: string): boolean =>
-  /^\s*(SELECT|SHOW)\b/i.test(sql) && !/\b(INSERT|UPDATE|DELETE|MERGE|TRUNCATE|CREATE|DROP|ALTER|COPY|nextval|setval)\b/i.test(sql);
+  /^\s*(SELECT|SHOW)\b/i.test(sql)
+  && !/\b(INSERT|UPDATE|DELETE|MERGE|TRUNCATE|CREATE|DROP|ALTER|COPY|INTO|nextval|setval|pg_notify|lo_\w+|dblink_exec)\b/i.test(sql);

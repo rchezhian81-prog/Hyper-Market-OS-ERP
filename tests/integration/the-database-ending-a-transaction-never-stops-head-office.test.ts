@@ -83,6 +83,19 @@ describe('the idle-in-transaction limit has a floor, and the last resort is a st
     expect(isReadOnlyStatement("SELECT nextval('s')")).toBe(false);
     expect(isReadOnlyStatement('UPDATE write_guards SET version = version + 1')).toBe(false);
   });
+
+  it('verifier r23 (LOW): a SELECT that changes something — INTO, pg_notify, large objects, dblink_exec — counts as a write', () => {
+    expect(isReadOnlyStatement('SELECT * INTO copied FROM event_ledger')).toBe(false);
+    expect(isReadOnlyStatement('select id into temp t from event_ledger')).toBe(false);
+    expect(isReadOnlyStatement("SELECT pg_notify('sales', 'x')")).toBe(false);
+    expect(isReadOnlyStatement('SELECT lo_unlink(16404)')).toBe(false);
+    expect(isReadOnlyStatement("SELECT lo_import('/tmp/x')")).toBe(false);
+    expect(isReadOnlyStatement('SELECT lo_create(0)')).toBe(false);
+    expect(isReadOnlyStatement("SELECT dblink_exec('db', 'DELETE FROM t')")).toBe(false);
+    // Plain reads stay reads (a name merely containing the letters is not the word).
+    expect(isReadOnlyStatement('SELECT hello_world, intolerance FROM t')).toBe(true);
+    expect(isReadOnlyStatement("SELECT pg_advisory_xact_lock(hashtext($1))")).toBe(true);
+  });
 });
 
 describe.skipIf(DATABASE_URL === undefined)('verifier r21 IDLE-CRASH: the database ending a transaction never stops head office (PostgreSQL)', () => {
