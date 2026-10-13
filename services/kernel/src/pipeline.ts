@@ -26,6 +26,7 @@ import {
 import { isWrite, type Method, type Router } from './router';
 import { evaluateStepUp } from './step-up';
 import type { RateLimiter, AuthThrottle } from './rate-limit';
+import { newWriteWitness, witnessing } from '../../../packages/persistence/src/write-witness';
 
 export interface Principal {
   readonly tenantId: string;
@@ -396,6 +397,9 @@ export async function handle(opts: KernelOptions, request: HttpRequest): Promise
   const startedAt = Date.now();
   const traceId = request.headers['x-correlation-id'] ?? request.headers['x-request-id'] ?? opts.newTraceId();
   let matchedRoute: string | undefined;
+  // Verifier r22 D1: what this request has committed, and how far it got — read when a database session ends under it.
+  const witness = newWriteWitness();
+  let handlerReturned = false;
 
   // Captured as the request proceeds so the audit can be written on the way OUT, whichever way it
   // goes. Auditing only the successes was the first version of this function, and it left no
@@ -592,7 +596,7 @@ export async function handle(opts: KernelOptions, request: HttpRequest): Promise
       ...(principal.authTime === undefined ? {} : { authTime: principal.authTime }),
       ...(principal.amr === undefined ? {} : { amr: principal.amr }),
     };
-    const result = await route.handler({
+    const result = await witnessing(witness, async () => route.handler({
       tenantId: principal.tenantId,
       userId: principal.userId,
       branchId: principal.branchId,
@@ -605,7 +609,8 @@ export async function handle(opts: KernelOptions, request: HttpRequest): Promise
       ...(write && key !== undefined ? { idempotencyKey: key } : {}),
       traceId,
       ...(reauth === undefined ? {} : { reauth }),
-    });
+    }));
+    handlerReturned = true;
 
     const response = sealed(result.status, result.body, principal.tenantId, traceId, false, route.shownOnce !== undefined);
     if (response.status < 400 && boundVerdict?.onAccepted !== undefined) await boundVerdict.onAccepted();
@@ -637,14 +642,24 @@ export async function handle(opts: KernelOptions, request: HttpRequest): Promise
         nextSafeAction: 'Nothing was changed. Raise it with support so the two records can be compared.',
       }), traceId)
       // Verifier r21 IDLE-CRASH: the database ended the session this request's transaction ran on before its COMMIT was
-      // sent (packages/persistence/src/pg-client.ts). PostgreSQL rolled it back whole — a visible failure that is known
-      // not saved, never a process crash and never the "did it save?" doubt.
-      : (e as Error | undefined)?.name === 'DatabaseSessionEndedError' ? asResponse(apiError(500, {
-        code: 'database_ended_transaction',
-        whatHappened: 'The database ended this transaction before it finished (its connection was closed), so nothing in it was saved.',
-        wasItSaved: 'not_saved',
-        nextSafeAction: 'Send it again under the same Idempotency-Key. If it keeps happening, tell support: head office is still running.',
-      }), traceId)
+      // sent (packages/persistence/src/pg-client.ts). PostgreSQL rolled THAT transaction back whole — a visible failure,
+      // never a process crash.
+      // Verifier r22 D1 (P-08): "nothing was saved" is said ONLY when it is true of the whole request — the session ended
+      // inside the handler's own work, before any transaction of this request that wrote had committed, with none still
+      // open. Ended later (the idempotency row, after the handler's writes committed) or after an earlier write committed,
+      // part of it may be saved: `unknown`, and the person is told to check before entering it again.
+      : (e as Error | undefined)?.name === 'DatabaseSessionEndedError' ? asResponse(apiError(500,
+        !handlerReturned && witness.committedWrites === 0 && witness.open === 0 ? {
+          code: 'database_ended_transaction',
+          whatHappened: 'The database ended this transaction before it finished (its connection was closed), so nothing in it was saved.',
+          wasItSaved: 'not_saved',
+          nextSafeAction: 'Send it again under the same Idempotency-Key. If it keeps happening, tell support: head office is still running.',
+        } : {
+          code: 'database_ended_transaction',
+          whatHappened: 'The database closed its connection part-way through this request, after some of it had already been saved, so whether all of it was saved is not known.',
+          wasItSaved: 'unknown',
+          nextSafeAction: 'Check before re-entering it: look for the record first. A till or store computer may send it again under the same Idempotency-Key (it is never kept twice); a person at a screen must not enter it again under a new one until they have checked. If it keeps happening, tell support: head office is still running.',
+        }), traceId)
       : asResponse(apiError(500, {
       code: 'unhandled',
       whatHappened: 'The request failed in a way this service did not expect.',

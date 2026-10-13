@@ -111,8 +111,11 @@ together would use different guard names for the same setting, so two saves at t
 later one silently replace the earlier (hard rule #10). So:
 
 - **`release.sh` guarantees it.** `docker compose up -d --build` replaces the single `api` container *stop-first*: the old
-  one stops before the new one starts, so the two never serve at once. Straight after, `release.sh` counts the running
-  `api` containers; if there is more than one (scaled by hand, or `deploy.replicas` added to a compose file) it says
+  one stops before the new one starts, so the two never serve at once. `release.sh` counts the running `api` containers
+  BEFORE `compose up` (round 23: a stack already running two is refused before anything is rebuilt, so the new version
+  never starts beside them) and again straight after (the only window left: a compose file that itself scales the API
+  above one). If `docker compose ps` cannot answer, that is `REFUSED — could not count the API containers …`, never read
+  as "none running". If there is more than one (scaled by hand, or `deploy.replicas` added to a compose file) it says
   `REFUSED — N API containers are running …` and puts the previous release back. If the previous release runs two as
   well, it ends `ROLLBACK FAILED` — a person scales it back with `docker compose up -d --scale api=1` and deploys again.
 - **Never** scale the `api` service above one, run a second API "for a quick test" against the live database, or do a

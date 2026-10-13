@@ -89,6 +89,8 @@ const validateStringList: SetupValidator = (v) =>
   isStringArray(v) ? null : 'Give a list of names (an empty list means none).';
 const WARN_HOURS = numberRule({ min: 1, max: 720, whole: true }, 'Give a whole number of trading hours, from 1 to 720.');
 const UNSENT_WARN_HOURS = numberRule({ min: 1, max: 72, whole: true }, 'Give a whole number of hours, from 1 to 72.');
+const CLAIM_SLACK_NUMBERS = numberRule({ min: 0, max: 100, whole: true }, 'Give a whole number of bill numbers, from 0 to 100.');
+const CLAIM_SLACK_PERCENT = numberRule({ min: 0, max: 50, whole: true }, 'Give a whole percentage, from 0 to 50.');
 const validatePaperFormat: SetupValidator = (v) =>
   isString(v) && PAPER_FORMATS.some((f) => f.id === v)
     ? null : `Choose a paper size: ${PAPER_FORMATS.map((f) => f.id).join(', ')}.`;
@@ -234,6 +236,21 @@ export const SETUP_CATALOGUE: readonly SetupItem[] = [
     required: false,
     question: 'How many hours may bills wait on a store computer, unsent, before head office warns you? (2 by default.)',
     ...UNSENT_WARN_HOURS,
+  },
+  {
+    // OB-90 "C" (owner, 13 Oct 2026): how far a store computer's "I still hold N bills between X and Y" is believed.
+    setting: SETTINGS.BOX_CLAIM_SLACK_NUMBERS,
+    group: 'check_default',
+    required: false,
+    question: 'When a store computer says "I still hold N bills between X and Y", how many extra bill numbers (voided bills) may that range cover at least before head office checks every number in it? (5 by default; 0 is strictest.)',
+    ...CLAIM_SLACK_NUMBERS,
+  },
+  {
+    setting: SETTINGS.BOX_CLAIM_SLACK_PERCENT,
+    group: 'check_default',
+    required: false,
+    question: '…or what percentage of N, when that is more? (5 by default; 0 is strictest.)',
+    ...CLAIM_SLACK_PERCENT,
   },
 ];
 

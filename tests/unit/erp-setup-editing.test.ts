@@ -187,3 +187,14 @@ describe('every setup setting gets its editor from the catalogue (type and decla
     expect(c.beginSave('loyalty.till_spend_cap_paise')).toEqual({ ok: true, value: 75_000, ifVersion: 3 });
   });
 });
+
+describe('OB-90 — the owner sets how far a store computer\'s "I still hold N bills between X and Y" is believed, on the store-setup screen', () => {
+  it('reads as whole numbers in range — 0 to 100 extra numbers, 0 to 50 percent — refused in the engine\'s words otherwise', () => {
+    expect(editorFor('platform.box_claim_slack_numbers').kind).toBe('number');
+    expect(editorFor('platform.box_claim_slack_percent').kind).toBe('number');
+    expect(parseDraft('platform.box_claim_slack_numbers', '0')).toEqual({ ok: true, value: 0 });
+    expect(parseDraft('platform.box_claim_slack_numbers', '101')).toEqual({ ok: false, error: 'Give a whole number of bill numbers, from 0 to 100.' });
+    expect(parseDraft('platform.box_claim_slack_percent', '51')).toEqual({ ok: false, error: 'Give a whole percentage, from 0 to 50.' });
+    expect(parseDraft('platform.box_claim_slack_percent', '2.5').ok).toBe(false);
+  });
+});

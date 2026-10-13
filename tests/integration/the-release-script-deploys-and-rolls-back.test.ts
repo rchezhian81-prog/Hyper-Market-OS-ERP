@@ -59,7 +59,8 @@ case " $* " in
     mv "$SRE_TEST_UP_RESULTS.tmp" "$SRE_TEST_UP_RESULTS"
     echo "\${next:-ok}" > "$SRE_TEST_READY" ;;
   *" logs "*) echo "api | (stub log line)" ;;
-  *" ps -q api "*) for i in $(seq 1 "\${SRE_TEST_API_CONTAINERS:-1}"); do echo "api-container-$i"; done ;;
+  *" ps -q api "*) [ -n "\${SRE_TEST_PS_FAILS:-}" ] && { echo "Cannot connect to the Docker daemon" >&2; exit 1; }
+    for i in $(seq 1 "\${SRE_TEST_API_CONTAINERS:-1}"); do echo "api-container-$i"; done ;;
 esac
 exit 0
 `;
@@ -242,6 +243,28 @@ describe('the release script deploys a merged commit and rolls a broken one back
     const ok = run([V2, 'octocat', '127']);
     expect(ok.code, ok.out).toBe(0);
     expect(head()).toBe(V2);
+  }, 30_000);
+
+  it('verifier r22 (low): two API containers are refused BEFORE the stack is rebuilt; a count compose cannot give is refused, never read as 0', async () => {
+    await writeFile(upResults, 'ok\nok\n');
+    await writeFile(calls, '');
+    const two = run([V3, 'octocat', '128'], { SRE_TEST_API_CONTAINERS: '2' });
+    expect(two.code, two.out).toBe(71);
+    const log = await callLog();
+    const firstPs = log.findIndex((l) => l.includes(' ps -q api'));
+    const firstUp = log.findIndex((l) => l.includes(' up -d --build'));
+    expect(firstPs).toBeGreaterThanOrEqual(0);
+    expect(firstUp === -1 || firstPs < firstUp).toBe(true); // counted before anything was brought up
+    expect(log.some((l) => l.includes(' up -d --build'))).toBe(false); // and so never brought up beside the two
+    await writeFile(upResults, 'ok\nok\n');
+    const blind = run([V3, 'octocat', '129'], { SRE_TEST_PS_FAILS: '1' });
+    expect(blind.code, blind.out).not.toBe(0);
+    expect(blind.out).toContain('REFUSED — could not count the API containers in this stack (docker compose ps failed)');
+    // The normal stack (one API, compose answers): deploys.
+    await writeFile(upResults, 'ok\n');
+    const ok = run([V3, 'octocat', '130']);
+    expect(ok.code, ok.out).toBe(0);
+    expect(head()).toBe(V3);
   }, 30_000);
 
   // ── WF-20 (ADR-0026): the backup before the release, and the canary bake after it ────────────────────────────────

@@ -31,6 +31,8 @@ export interface RealCloudRequest {
   readonly machine?: boolean;
   /** Whose token the request carries. */
   readonly userId: string;
+  /** The store the person signed in at (their token's branch claim) — for a person whose grant names stores. */
+  readonly branchId?: string;
   readonly body?: unknown;
   readonly idempotencyKey?: string;
 }
@@ -140,15 +142,15 @@ export async function startRealCloud(input: RealCloudInput): Promise<RealCloud> 
   // PA-12 round 12: the backup job's credential is a MACHINE one (scripts/issue-store-token.mjs --no-store) — it carries no
   // interactive sign-in evidence (auth_time/amr), unlike a person's sign-in at the identity server.
   const machines = new Set<string>();
-  const token = (userId: string, machine = false): string => TEST_IDP.issue({
-    sub: userId, tenantId: input.tenantId, branchId: boxStores.get(userId),
+  const token = (userId: string, machine = false, branchId?: string): string => TEST_IDP.issue({
+    sub: userId, tenantId: input.tenantId, branchId: branchId ?? boxStores.get(userId),
     ...(machine || machines.has(userId) ? { authTimeFromNowSeconds: null, amr: null } : {}),
   });
   const request = async (r: RealCloudRequest): Promise<RealCloudReply> => {
     const response = await fetch(`${baseUrl}${r.path}`, {
       method: r.method,
       headers: {
-        authorization: `Bearer ${token(r.userId, r.machine === true)}`,
+        authorization: `Bearer ${token(r.userId, r.machine === true, r.branchId)}`,
         ...(r.body === undefined ? {} : { 'content-type': 'application/json' }),
         ...(r.idempotencyKey === undefined ? {} : { 'idempotency-key': r.idempotencyKey }),
       },
