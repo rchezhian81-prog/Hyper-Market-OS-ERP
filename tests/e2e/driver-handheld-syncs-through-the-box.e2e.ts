@@ -128,6 +128,9 @@ describe.skipIf(!HAVE_BROWSER)('the driver\'s phone enrols on the box\'s device 
   it('no credential → the enrolment page, carrying the driver shell as where to go back to; the right code → the driver shell with the route', async () => {
     const { base } = await box();
     const page = await enrolled(base);
+    // The route is drawn after the box's answer arrives; wait for it rather than reading the placeholder (a slow CI machine
+    // once read "——" here).
+    await page.waitForFunction(() => ((globalThis as unknown as PhoneWindow).document.querySelector('#route')?.textContent ?? '').includes('R-1'), undefined, { timeout: 15_000 });
     expect(await page.textContent('#route')).toContain('R-1');
     expect(await page.evaluate(() => (globalThis as unknown as PhoneWindow).deviceId)).toBe('hh-03');
     expect(await page.textContent('#queue-text')).toBe('nothing sent yet');
