@@ -135,6 +135,7 @@ describe('every page gives the chrome what it needs', () => {
     // 2b-vi-c-4: the buyer's page lost its "who checked this bill?" sheet — the check is a second person's own act at
     // head office.
     // Seven since round 12: Count plans and Transfers open a plan or a transfer, and Incidents opens an incident, as a record drawer.
-    expect(sheets).toBe(7);
+    // Eight since round 26: Store computers records a replaced store computer in a drawer.
+    expect(sheets).toBe(8);
   });
 });

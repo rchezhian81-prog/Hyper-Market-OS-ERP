@@ -1145,6 +1145,14 @@ export function buildSurface(deps: {
         return role === undefined || !role.permissions.includes('platform.alert.manage') ? []
           : [{ roleId: g.roleId, allStores: g.branchScope === 'all', platformAdministration: isPlatformAdministrationRole(role) }];
       }),
+      // Round 26 · OB-97: who may do the "store computer replaced" act (all stores, a business role — never IT), and the
+      // maker-checker engine the owner approves it on.
+      replacementAuthorityOf: async (t, u) => (await effectiveGrants(store, t)).filter((g) => g.userId === u).flatMap((g) => {
+        const role = ROLE_CATALOGUE.find((r) => r.id === g.roleId);
+        return role === undefined || !role.permissions.includes('store.computer.replace') ? []
+          : [{ roleId: g.roleId, allStores: g.branchScope === 'all', platformAdministration: isPlatformAdministrationRole(role) }];
+      }),
+      approvals: approvalRequestsAdapter({ store, now }),
     }),
     ...posRoutes(store === undefined ? {
       catalogue: empty(new Map()), currentPackVersion: empty(1),
