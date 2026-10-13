@@ -106,6 +106,7 @@ export type CopyKey =
   | 'kindSupplierInvoiceCheck' | 'kindSupplierPayment'
   | 'kindDisplayContract' | 'kindRebateScheme' | 'kindPurchaseContract'
   | 'kindEmergencyAccess' | 'kindAccessChange' | 'kindSubstitutionAboveCap' | 'kindBranchTransition' | 'kindPartnerWebhookSubscription'
+  | 'kindStoreComputerReplaced' | 'detailPrefix' | 'detailFromComputer' | 'detailToComputer'
   | 'detailJobId' | 'detailContentFingerprint'
   | 'detailProductId' | 'detailPriceMinor' | 'detailMrpMinor' | 'detailCostMinor' | 'detailCurrency' | 'detailMarginFloorBps'
   | 'detailPromotionId' | 'detailDescription' | 'detailNormalPrice' | 'detailPromoPrice' | 'detailUnitCost'
@@ -151,6 +152,8 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     kindSubstitutionAboveCap: 'Charge a dearer substitute above the original price',
     kindBranchTransition: 'Open, close for now, or close a branch for good',
     kindPartnerWebhookSubscription: 'Send the shop\'s business events to a partner',
+    kindStoreComputerReplaced: 'Move a till\'s bill numbers to a replacement store computer',
+    detailPrefix: 'Till bill-number prefix', detailFromComputer: 'Old store computer (sign-in)', detailToComputer: 'New store computer (sign-in)',
     detailJobId: 'Load name', detailContentFingerprint: 'File check code',
     detailProductId: 'Item', detailPriceMinor: 'New price', detailMrpMinor: 'MRP', detailCostMinor: 'What it costs us', detailCurrency: 'Currency',
     detailMarginFloorBps: 'Minimum margin', detailPromotionId: 'Offer', detailDescription: 'Offer description', detailNormalPrice: 'Normal price',
@@ -212,6 +215,8 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     kindSubstitutionAboveCap: 'விலை கூடிய மாற்றுப் பொருளுக்கு அசல் விலைக்கு மேல் கட்டணம் வசூலித்தல்',
     kindBranchTransition: 'கிளையைத் திறத்தல், தற்காலிகமாக மூடுதல் அல்லது நிரந்தரமாக மூடுதல்',
     kindPartnerWebhookSubscription: 'கடையின் வணிக நிகழ்வுகளை ஒரு கூட்டாளருக்கு அனுப்புதல்',
+    kindStoreComputerReplaced: 'கவுண்டரின் பில் எண்களை மாற்றுக் கடை கணினிக்கு நகர்த்துதல்',
+    detailPrefix: 'கவுண்டர் பில் எண் முன்னொட்டு', detailFromComputer: 'பழைய கடை கணினி (உள்நுழைவு)', detailToComputer: 'புதிய கடை கணினி (உள்நுழைவு)',
     detailJobId: 'ஏற்றத்தின் பெயர்', detailContentFingerprint: 'கோப்புச் சரிபார்ப்புக் குறியீடு',
     detailProductId: 'பொருள்', detailPriceMinor: 'புதிய விலை', detailMrpMinor: 'அதிகபட்ச சில்லறை விலை (MRP)', detailCostMinor: 'நமக்கு ஆகும் அடக்க விலை', detailCurrency: 'நாணயம்',
     detailMarginFloorBps: 'குறைந்தபட்ச லாப வரம்பு', detailPromotionId: 'சலுகை', detailDescription: 'சலுகை விவரம்', detailNormalPrice: 'வழக்கமான விலை',
@@ -283,6 +288,7 @@ const KIND_COPY: Readonly<Record<string, CopyKey>> = {
   substitution_above_cap: 'kindSubstitutionAboveCap',
   branch_transition: 'kindBranchTransition',
   partner_webhook_subscription: 'kindPartnerWebhookSubscription',
+  store_computer_replaced: 'kindStoreComputerReplaced',
 };
 /** Detail keys this screen can name in both languages; any other key is spelt out from its own name. */
 const DETAIL_COPY: Readonly<Record<string, CopyKey>> = {
@@ -304,6 +310,7 @@ const DETAIL_COPY: Readonly<Record<string, CopyKey>> = {
   userId: 'detailUserId', roleId: 'detailRoleId', branchScope: 'detailBranchScope', minutes: 'detailMinutes',
   maxMinutes: 'detailMaxMinutes', grantId: 'detailGrantId', event: 'detailEvent', grants: 'detailGrants',
   ownedOpenItems: 'detailOwnedOpenItems', requestId: 'detailRequestId',
+  prefix: 'detailPrefix', fromComputer: 'detailFromComputer', toComputer: 'detailToComputer',
 };
 
 // ── small, deterministic formatters ───────────────────────────────────────────────────────────────────────────

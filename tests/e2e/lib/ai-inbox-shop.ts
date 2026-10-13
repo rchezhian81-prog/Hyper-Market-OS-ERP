@@ -51,6 +51,8 @@ export async function startInboxShop(input: {
     /** Round 12: the app's web folder, when the page is not the web ERP's (e.g. `apps/b2b-app/web`). */
     readonly webDir?: string;
   };
+  /** Round 26: more web-erp pages the journey opens in the same shell (e.g. the owner's Approvals page), each with its own global. */
+  readonly alsoPages?: readonly { readonly path: string; readonly html: string; readonly dataGlobal: string }[];
   readonly seed: (cloud: RealCloud) => Promise<void>;
   /** The journey builds the organisation itself (it starts from an empty tree): set no practice store up and grant the
    *  br-1 manager only when it calls `grantManager()`. */
@@ -97,7 +99,9 @@ export async function startInboxShop(input: {
         res.end(Buffer.from(await upstream.arrayBuffer()));
         return;
       }
-      const file = url.pathname === '/' || url.pathname === input.page.path ? input.page.html : url.pathname.replace(/^\//, '');
+      const also = (input.alsoPages ?? []).find((x) => x.path === url.pathname);
+      const file = url.pathname === '/' || url.pathname === input.page.path ? input.page.html : also !== undefined ? also.html : url.pathname.replace(/^\//, '');
+      const dataGlobal = also?.dataGlobal ?? input.page.dataGlobal;
       try {
         let body = (await readFile(join(input.page.webDir ?? WEB_DIR, file))).toString('utf8');
         const type = file.endsWith('.html') ? 'text/html' : file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : 'application/octet-stream';
@@ -107,7 +111,7 @@ export async function startInboxShop(input: {
           const who = (await me.json()) as { userId: string; permissions: string[] };
           const extra = input.page.extraData === undefined ? {} : await input.page.extraData(async (p) => (await fetch(`${cloud.baseUrl}${p}`, { headers: { authorization: `Bearer ${token}` } })).json() as unknown);
           const data = { userId: who.userId, permissions: who.permissions, ...extra };
-          body = body.replace('<!--SCREEN-DATA-->', `<script>window.${input.page.dataGlobal} = ${JSON.stringify(data).replace(/</g, '\\u003c')};</script>`);
+          body = body.replace('<!--SCREEN-DATA-->', `<script>window.${dataGlobal} = ${JSON.stringify(data).replace(/</g, '\\u003c')};</script>`);
         }
         res.writeHead(200, { 'content-type': `${type}; charset=utf-8`, 'cache-control': 'no-store' });
         res.end(body);

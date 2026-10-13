@@ -172,6 +172,9 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'notification.send.check', 'notification.budget.set', // PA-08: the messaging budget is the owner's (M31 open item)
       'backup.verify.read', 'backup.drill.record', 'platform.backup.record',
       'branch.transition.evaluate', 'branch.transition.execute', 'branch.transition.approve',
+      // Round 26 · OB-97: move a till's bill numbers to a replacement store computer (as head office), and APPROVE that act
+      // (the owner's alone; the engine never lets the maker approve their own).
+      'store.computer.replace', 'store.computer.replace.approve',
       'document.template.manage', 'document.template.read', 'document.issue', 'document.retention.dispose',
       'pos.suspend.write', 'pos.suspend.read',
       'pos.quotation.write', 'pos.quotation.read',
@@ -267,6 +270,9 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'notification.send.check',
       'backup.verify.read', 'backup.drill.record', 'platform.backup.record',
       'branch.transition.evaluate', 'branch.transition.execute',
+      // Round 26 · OB-97: head office staff (given ALL stores — the route refuses a one-store grant) do the "store computer
+      // replaced" act; the owner approves it. Never the IT/platform role (absent there, OB-91/OB-95).
+      'store.computer.replace',
       'document.template.manage', 'document.template.read', 'document.issue', 'document.retention.dispose',
       'pos.suspend.write', 'pos.suspend.read',
       'pos.quotation.write', 'pos.quotation.read',

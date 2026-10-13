@@ -174,6 +174,9 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // Round 12 (M35-FR-02/04 · WF-20): incidents with a named owner per follow-up, the post-mortem and the close, and the
   // recovery-drill register — a head-office page over its own routes (the store computer does not serve it).
   { id: 'incidents', label: 'Incidents & recovery drills', labelTa: 'சம்பவங்களும் மீட்பு ஒத்திகைகளும்', path: '/incidents', requires: 'platform.health.read', group: 'Administration', served: 'unserved' },
+  // Round 26 (OB-99 · OB-97 · OB-98): which store computer each till's bill numbers belong to, what needs a person, and the
+  // owner-approved "store computer replaced" act — a head-office page over its own routes (the store computer does not serve it).
+  { id: 'store-computers', label: 'Store computers', labelTa: 'கடை கணினிகள்', path: '/store-computers', requires: 'platform.health.read', group: 'Administration', served: 'unserved' },
   // Outside access — the admin screen on its "Outside access" tab: support sessions granted and expiring (M02 /
   // M36). Gated on the support-session read (`platform.support.read`).
   { id: 'support-access', label: 'Outside access', labelTa: 'வெளி அணுகல்', path: '/admin/?tab=support', requires: 'platform.support.read', group: 'Administration' },

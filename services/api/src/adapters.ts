@@ -322,7 +322,7 @@ import { PersonalDataSealingStore, type PersonalDataPolicy, type SubjectKeyStore
 import { figure, sourceFreshness, syncedThrough } from '../../reporting/src/index';
 import type { ReportingDeps, Figure, SourceFreshness, StoreSyncReport } from '../../reporting/src/index';
 import { latestDomainReports, latestPerStore, type SyncWatermarkRecord } from '../../platform/src/sync-watermarks';
-import type { BoxHealthRecord, BillNumberFinding, RefusalAcknowledgement } from '../../platform/src/box-health';
+import type { BoxHealthRecord, BillNumberFinding, RefusalAcknowledgement, StoreComputerReplacement, AtRiskAcknowledgement } from '../../platform/src/box-health';
 import { unreceivedCandidates, billNumberFindingsFor, judgeReportedIssued, weighSparseClaim, PLAUSIBLE_ISSUED_AHEAD, type UnreceivedNumbers, type ClaimSlack } from '../../platform/src/box-health';
 import type { BranchScope } from '../../kernel/src/index';
 import { tradingDayIn, tradingDayWindow, type TradingCalendar } from '../../../packages/calendar/src/index';
@@ -12803,6 +12803,8 @@ export function observedHealthAdapter(input: {
         billNumberFindings: await billNumberFindingsOf(input.store, tenantId, records, input.now(),
           input.boxUnsentWarnHours === undefined ? undefined : await input.boxUnsentWarnHours(tenantId),
           input.boxClaimSlack === undefined ? undefined : await input.boxClaimSlack(tenantId)),
+        // Round 26 · OB-97: the owner-approved "store computer replaced" acts — the same binding the findings were judged on.
+        replacements: await boxHealthAdapter({ store: input.store }).replacements(tenantId),
         // Verifier r20 HW-2: whether the bill-number high-water is waiting on an open database transaction (read after the
         // findings, whose count just ran the fold).
         billNumberHighWater: (await highWaterFenceWait(input.store, tenantId)) ?? null,
@@ -13536,13 +13538,44 @@ export function mergeStoreSync(
 const BOX_HEALTH_STREAM = streamName(STREAM.org, 'store-computer-health');
 /** Verifier r21 BOX-2: a person's acknowledgements of refused box reports (append-only). */
 const BOX_REFUSAL_ACK_STREAM = streamName(STREAM.org, 'store-computer-refusal-acknowledgements');
+/** Round 26 · OB-97: owner-approved "store computer replaced" acts (append-only). */
+const BOX_REPLACEMENT_STREAM = streamName(STREAM.org, 'store-computer-replacements');
+/** Round 26 · OB-98: acknowledgements of an "at-risk numbers not checked" finding (append-only). */
+const BOX_AT_RISK_ACK_STREAM = streamName(STREAM.org, 'store-computer-not-checked-acknowledgements');
+/** Round 26 · OB-97: the guard one (store, prefix)'s binding moves under — two acts racing on it cannot both land. */
+const bindingGuardKey = (storeId: string, prefix: string): string => `store-computer-binding:${storeId}:${prefix}`;
 export function boxHealthAdapter(input: { readonly store: EventStore; readonly snapshots?: SnapshotStore }): {
   records: (tenantId: string) => Promise<readonly BoxHealthRecord[]>;
   record: (tenantId: string, r: BoxHealthRecord) => Promise<BoxHealthRecord>;
   acknowledge: (tenantId: string, a: RefusalAcknowledgement, requestKey: string) => Promise<RefusalAcknowledgement>;
   issuedAndBanked: (tenantId: string) => Promise<{ issuedPrefixes: ReadonlyMap<string, ReadonlySet<string>>; banked: ReadonlyMap<string, number> }>;
+  replacements: (tenantId: string) => Promise<readonly StoreComputerReplacement[]>;
+  bindingVersion: (tenantId: string, storeId: string, prefix: string) => Promise<number>;
+  recordReplacement: (tenantId: string, m: StoreComputerReplacement, expectedVersion: number) => Promise<StoreComputerReplacement>;
+  acknowledgeNotChecked: (tenantId: string, a: AtRiskAcknowledgement, requestKey: string) => Promise<AtRiskAcknowledgement>;
 } {
   return {
+    replacements: (tenantId) => allOf<StoreComputerReplacement>(input.store, tenantId, BOX_REPLACEMENT_STREAM, 'StoreComputerReplaced'),
+    bindingVersion: (tenantId, storeId, prefix) => input.store.guardVersion(tenantId, bindingGuardKey(storeId, prefix)),
+    // Round 26 · OB-97: one act per approval (its key names the approval), under the (store, prefix) guard read before the
+    // binding was judged — a second act racing on the same prefix is refused by name (ConcurrencyConflictError), never lost.
+    recordReplacement: async (tenantId, m, expectedVersion) => {
+      const key = `store-computer-replaced-${tenantId}-${m.approvalId}`;
+      const [res] = await input.store.appendBatch(tenantId, [{
+        stream: BOX_REPLACEMENT_STREAM,
+        event: makeEvent({ id: keyedEventId('store-computer-replaced', key), type: 'StoreComputerReplaced', occurredAt: m.at, idempotencyKey: key, source: 'api/platform', payload: m }),
+      }], { guard: { key: bindingGuardKey(m.storeId, m.prefix), expectedVersion } });
+      return res!.record.event.payload as StoreComputerReplacement;
+    },
+    // Round 26 · OB-98: EACH acknowledgement is its own record (who, why, when); only a re-sent request answers the first.
+    acknowledgeNotChecked: async (tenantId, a, requestKey) => {
+      const request = createHash('sha256').update(requestKey).digest('hex').slice(0, 32);
+      const key = `box-not-checked-ack-${tenantId}-${a.storeId}-${a.prefix}-${request}`;
+      const res = await input.store.append(tenantId, BOX_AT_RISK_ACK_STREAM, makeEvent({
+        id: keyedEventId('box-not-checked-ack', key), type: 'BoxAtRiskNotCheckedAcknowledged', occurredAt: a.at, idempotencyKey: key, source: 'api/platform', payload: a,
+      }));
+      return res.record.event.payload as AtRiskAcknowledgement;
+    },
     // Verifier r19 BOX-1: what head office issued (each prefix → the stores it was issued to) and banked from sales and
     // refunds — never from any box's report — to judge what a box reports before it is folded.
     issuedAndBanked: async (tenantId) => ({
@@ -14732,8 +14765,10 @@ export async function billNumberFindingsOf(
     : { ...r, receiptNumbersIssued: judgeReportedIssued({ storeId: r.storeId, issued: r.receiptNumbersIssued, issuedPrefixes, banked }).accepted }));
   // Verifier r22 D3 · OB-89: a report with no per-prefix list lets its whole queue stand in only up to the owner's line.
   // OB-90: the owner's claim slack (store setup) decides how far a sparse list is believed.
+  // Round 26 · OB-97: a prefix's binding follows the owner-approved "store computer replaced" acts.
+  const replacements = await allOf<StoreComputerReplacement>(store, tenantId, BOX_REPLACEMENT_STREAM, 'StoreComputerReplaced');
   const candidates = unreceivedCandidates({
-    records: judged, at, banked, ...(unsentWarnHours === undefined ? {} : { warnHours: unsentWarnHours }), ...(claimSlack === undefined ? {} : { slack: claimSlack }),
+    records: judged, at, banked, replacements, ...(unsentWarnHours === undefined ? {} : { warnHours: unsentWarnHours }), ...(claimSlack === undefined ? {} : { slack: claimSlack }),
   });
   let refundNumbers: Set<string> | undefined;
   const unreceived = new Map<string, UnreceivedNumbers[]>();
@@ -14775,8 +14810,9 @@ export async function billNumberFindingsOf(
   }
   const out = new Map<string, readonly BillNumberFinding[]>();
   const acknowledged = await allOf<RefusalAcknowledgement>(store, tenantId, BOX_REFUSAL_ACK_STREAM, 'BoxReportRefusalAcknowledged');
+  const atRiskAcknowledged = await allOf<AtRiskAcknowledgement>(store, tenantId, BOX_AT_RISK_ACK_STREAM, 'BoxAtRiskNotCheckedAcknowledged');
   for (const storeId of new Set(records.map((r) => r.storeId))) {
-    const f = billNumberFindingsFor({ storeId, records: judged, at, unreceived: unreceived.get(storeId) ?? [], banked, acknowledged });
+    const f = billNumberFindingsFor({ storeId, records: judged, at, unreceived: unreceived.get(storeId) ?? [], banked, acknowledged, replacements, atRiskAcknowledged });
     if (f.length > 0) out.set(storeId, f);
   }
   return out;
