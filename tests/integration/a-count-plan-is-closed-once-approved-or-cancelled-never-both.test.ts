@@ -100,7 +100,9 @@ describe.each(backings)('a count plan is closed once — approved or cancelled, 
       await countedPlan(planId, productId);
       // One of the two is sent a little later each time (cancel first by 20 ms … approval first by 20 ms) so they meet at
       // every stage — before the approval claims the plan, while it posts, after — and both outcomes really occur.
-      const lead = [-20, -8, -2, 0, 4, 20][i - 1]!; // < 0: the cancel goes first; > 0: the approval goes first
+      // The last two give the approval a long head start (an approval does more work than a cancel; on a slow CI machine a
+      // 20 ms lead was not enough for it ever to land first, so the "both outcomes occur" line below failed by timing alone).
+      const lead = [-20, -8, -2, 0, 4, 20][i - 1]! + (i >= 5 ? 400 : 0); // < 0: the cancel goes first; > 0: the approval goes first
       const later = <T>(ms: number, f: () => Promise<T>): Promise<T> => new Promise<void>((r) => { setTimeout(r, Math.max(0, ms)); }).then(f);
       const [approve, cancel] = await Promise.all([
         later(-lead, () => call('POST', `/v1/inventory/count-plans/${planId}/approve`, 'u-appr', { reason: 'aisle done' })),
