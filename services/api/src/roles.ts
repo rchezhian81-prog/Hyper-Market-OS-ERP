@@ -44,6 +44,23 @@ export const PROVIDER_RELAY_ROLE_ID = 'message_provider_relay';
 /** PA-12 round 7: the backup job's own machine identity — the only caller whose backup report is believed. */
 export const BACKUP_JOB_ROLE_ID = 'backup_job';
 
+/**
+ * §28 / M33-FR-01 / SEC-11: the platform-administration (IT) function, held apart from running the shop. Named as a
+ * constant because OB-91 (owner, 13 Oct 2026) turns on it: the IT administrator may never clear a store computer's
+ * suspicious bill-number report, whatever their scope.
+ */
+export const PLATFORM_ADMIN_ROLE_ID = 'platform_admin';
+
+/**
+ * OB-91: is this role the platform/IT administration function — the platform administrator itself, or any role whose
+ * whole grant is platform administration (every permission in the `platform.*` namespace, besides reading oneself)? Such a
+ * role runs the computers, never the shop, so it never clears a fraud signal about what a computer did.
+ */
+export function isPlatformAdministrationRole(role: Role): boolean {
+  return role.id === PLATFORM_ADMIN_ROLE_ID
+    || (role.permissions.length > 0 && role.permissions.every((p) => p.startsWith('platform.') || p === 'identity.self.read'));
+}
+
 export const ROLE_CATALOGUE: readonly Role[] = [
   {
     id: OWNER_ROLE_ID,
@@ -342,7 +359,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
     ],
   },
   {
-    id: 'platform_admin',
+    id: PLATFORM_ADMIN_ROLE_ID,
     name: 'Platform administrator',
     // §28 / M33-FR-01 / SEC-11 — the platform-administration function, held *apart* from running
     // the shop. This role runs the platform: settings and feature flags, devices/terminals and app

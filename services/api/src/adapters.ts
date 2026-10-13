@@ -14739,12 +14739,18 @@ export async function billNumberFindingsOf(
     missing.sort((a, b) => a - b);
     // Verifier r22 D5: a sparse claim accounts for the numbers head office lacks in its spans only when they are no more
     // than the bills it says it holds there; outnumbered, every one is named (and said to be possibly on the box).
-    const weighed = weighSparseClaim(missing, c.sparse, claimSlack);
-    if (weighed.numbers.length > 0) {
+    // Verifier r23 NEW-1 · OB-89: a number the box said it no longer held, and claims again, is never accounted for by its
+    // (sparse) claim — it is named whatever the claim says.
+    const reclaimed = new Set(c.reclaimed?.numbers ?? []);
+    const weighed = weighSparseClaim(missing.filter((n) => !reclaimed.has(n)), c.sparse, claimSlack);
+    const back = missing.filter((n) => reclaimed.has(n));
+    const numbers = back.length === 0 ? weighed.numbers : [...weighed.numbers, ...back].sort((a, b) => a - b);
+    if (numbers.length > 0) {
       unreceived.set(c.storeId, [...(unreceived.get(c.storeId) ?? []), {
-        prefix: c.prefix, numbers: weighed.numbers, since: c.since, capped: c.capped,
+        prefix: c.prefix, numbers, since: c.since, capped: c.capped,
         ...(weighed.outnumbered && c.sparse !== undefined ? { sparse: c.sparse } : {}),
         ...(c.wholeQueue === undefined ? {} : { wholeQueue: c.wholeQueue }),
+        ...(back.length === 0 || c.reclaimed === undefined ? {} : { reclaimed: { numbers: back, saidGoneAt: c.reclaimed.saidGoneAt, byList: c.reclaimed.byList } }),
       }]);
     }
   }

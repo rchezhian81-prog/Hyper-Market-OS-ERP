@@ -176,7 +176,11 @@ office has itself banked bills up to the refused count (the store computer was r
 **the owner or head office staff** — a person whose authority covers ALL stores — acknowledges that
 exact count with a reason (`POST /v1/store-computers/bill-number-refusals/acknowledgements` with the
 store, prefix, the refused count and the reason). A store's own manager is refused
-(`acknowledgement_needs_all_stores_authority`, kept on the audit trail). Each acknowledgement is kept
+(`acknowledgement_needs_all_stores_authority`, kept on the audit trail). **The IT / platform
+administrator is refused too, whatever stores the account covers** (OB-91, owner, 13 Oct 2026:
+`acknowledgement_refused_to_platform_administrator`, kept on the audit trail) — the person who looks
+after the store computers never clears a warning about what a store computer did; a head-office
+business person given all stores (or the owner) does it. Each acknowledgement is kept
 on its own — who, why and when — and acknowledging again is allowed and kept too. The acknowledgement
 holds while the store computer keeps reporting that same count on every pass; once it reports a
 DIFFERENT count, that count (and the old one, if it comes back) needs a new acknowledgement. A later,
@@ -194,6 +198,21 @@ count still open and names the others.
   store computer claims a few bills spread over a wide range of numbers. Such a claim can account for
   at most its own count plus a margin for voided bills — 5 numbers or 5%, whichever is more, by default (OB-90: Store setup, "extra bill numbers" 0–100 and "percentage" 0–50; 0 and 0 is strictest); head office names every number it lacks in that range
   when there are more. Some may be on the store computer: check it before entering anything from paper.
+
+**Two more (verifier r23, OB-89):**
+
+- **"… the store computer said at <time> that it no longer held … and its latest report says they are
+  … again"** and **"store S's computer contradicts its own earlier report"** — the store computer said
+  some bills were no longer on it (its queue empty, or its list not reaching them), head office never
+  received them, and later the store computer claims them again. A store computer keeps a bill until
+  head office takes it and never takes back one it has let go, so head office no longer waits on that
+  later word: 30 minutes after the "no longer held" report the bills are named "never received". The
+  store computer is faulty or altered (sending "nothing waiting" just before each "still waiting" was
+  a way to hide lost bills). Call support to check it; do NOT re-enter the bills from paper until a
+  person has looked at its "waiting to send" and "gave up sending" lists.
+- **"bills waiting on the store computer for N hours … head office first saw … said to be waiting at
+  <time>"** — the hours count from the first time head office saw any of those bills waiting, in any
+  report. A "nothing waiting" report in between does not restart the clock.
 
 ## Part 4 — Restoring (the one that matters)
 

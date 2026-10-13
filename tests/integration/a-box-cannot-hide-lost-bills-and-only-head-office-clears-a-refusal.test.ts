@@ -166,7 +166,8 @@ async function loweringFromNeverRestartsTheClock(h: ApiHarness): Promise<void> {
   expect(w.map((f) => [f.prefix, f.ranges])).toEqual([[P, [[98, 600]]]]);
   expect(w[0]!.since).toBe(new Date(t0).toISOString()); // from the FIRST report: lowering `from` restarted nothing
   expect(w[0]!.detail).toMatch(/for 3 hours/);
-  expect(w[0]!.detail).toMatch(/head office has seen S1L1-000101 to S1L1-000600 said to be waiting in every report since then/);
+  // r23 NEW-1: the clock is the numbers' — head office first saw 101–600 waiting in the first report, and they still are.
+  expect(w[0]!.detail).toMatch(/head office first saw S1L1-000101 to S1L1-000600 said to be waiting at .*, and they are still said to be waiting/);
   expect((await comp(call, 'box_queue'))?.status).toBe('degraded');
 }
 
@@ -299,7 +300,7 @@ async function onlyHeadOfficeAcknowledgesAndItSticks(h: ApiHarness): Promise<voi
   await claim(10_600);
   expect(await refused()).toEqual([10_600]);
   const words = (await findings(call, 'report_refused'))[0]!.detail;
-  expect(words).toMatch(/This stays until head office has banked that many, or the owner or head office staff \(all-stores authority — a store's own manager cannot\) acknowledge this count with a reason/);
+  expect(words).toMatch(/This stays until head office has banked that many, or the owner or head office staff \(all-stores authority — a store's own manager cannot, and neither can the IT\/platform administrator\) acknowledge this count with a reason/);
   expect(words).toMatch(/The acknowledgement holds while the store computer keeps reporting this same count; a different count needs a new acknowledgement/);
 
   // A store manager is refused BY NAME — another store's (probe E), and this store's own. The warning stays.
