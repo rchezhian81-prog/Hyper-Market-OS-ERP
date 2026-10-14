@@ -157,8 +157,11 @@ async function builtInTheBackground(c: Ctx): Promise<void> {
   const { store, full } = countingFullReads(c.store);
   // Two reads at once: ONE build (one full read of the reports), both say "being prepared", since the same moment.
   // The routes that need it answer 503 in words while it builds (never a guess, nothing recorded) — asked at the same time.
+  // The build is held open (between its steps) until the test lets it go, so "meanwhile" is certain, never a race.
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
   const [a, b, route] = await Promise.all([
-    storeComputerHistory(store, c.T, at, { snapshots: c.snapshots, timeZone: 'UTC', waitMs: 0 }),
+    storeComputerHistory(store, c.T, at, { snapshots: c.snapshots, timeZone: 'UTC', waitMs: 0, buildPause: () => gate }),
     storeComputerHistory(store, c.T, at, { snapshots: c.snapshots, timeZone: 'UTC', waitMs: 0 }),
     boxHealthAdapter({ store, snapshots: c.snapshots, settings: { timeZone: () => 'UTC' }, waitMs: 0 }).bindingsAt(c.T, at).then(() => 'answered', (e: unknown) => e),
   ]);
@@ -166,6 +169,9 @@ async function builtInTheBackground(c: Ctx): Promise<void> {
   expect(b.preparing).toEqual(a.preparing);
   expect([...a.findings.keys(), ...a.unused.keys(), ...a.bindings]).toEqual([]);
   expect(route).toBeInstanceOf(BoxHistoryPreparing);
+  // Still being prepared while it is held; then it is let go.
+  expect((await storeComputerHistory(store, c.T, at, { snapshots: c.snapshots, timeZone: 'UTC', waitMs: 20 })).preparing).toEqual(a.preparing);
+  release();
   await boxHistoryBuilding(c.snapshots, c.T);
   expect(full()).toBe(1);
   const ready = await storeComputerHistory(store, c.T, at, { snapshots: c.snapshots, timeZone: 'UTC', waitMs: 0 });

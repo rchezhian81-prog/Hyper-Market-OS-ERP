@@ -390,12 +390,14 @@ describe.skipIf(DATABASE_URL === undefined)('round 28 · OB-104: the store-compu
       const at = iso(Math.max(...h.records.map((r) => Date.parse(r.receivedAt))) + 3_600_000);
       const snaps = new SqlSnapshotStore(sql);
       // The first read folds every report and saves the result — once the visibility fence has settled (on a busy database
-      // cluster that can be the next pass: a transaction open anywhere holds it back, and nothing is saved past it).
-      for (let k = 0; k < 10; k += 1) {
-        const r = await storeComputerHistory(base, T, at, { snapshots: snaps });
-        if (r.resumed) break;
+      // cluster that can be a later pass: a transaction open anywhere holds it back; round 29 · OB-106: meanwhile the result is
+      // kept in memory, and saved — as its JSON text — once a fence settles).
+      const savedRow = () => pool.query("SELECT jsonb_array_length(((data->'result'->'state'->>'text')::jsonb)->'folded') AS above FROM projection_snapshot WHERE tenant_id = $1 AND projection = 'box-health-history@1'", [T]);
+      for (let k = 0; k < 40 && (await savedRow()).rows.length === 0; k += 1) {
+        await storeComputerHistory(base, T, at, { snapshots: snaps });
+        await new Promise((resolve) => { setTimeout(resolve, 100); });
       }
-      const saved = await pool.query("SELECT jsonb_array_length(data->'result'->'state'->'folded') AS above FROM projection_snapshot WHERE tenant_id = $1 AND projection = 'box-health-history@1'", [T]);
+      const saved = await savedRow();
       expect(saved.rows).toHaveLength(1);
       const { store, rows, positioned } = counting(base);
       const next = await storeComputerHistory(store, T, at, { snapshots: snaps });

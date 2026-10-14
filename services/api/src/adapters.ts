@@ -15000,6 +15000,8 @@ export async function storeComputerHistory(
     readonly unsentWarnHours?: number; readonly claimSlack?: ClaimSlack; readonly timeZone?: string; readonly snapshots?: SnapshotStore;
     /** How long to wait for a background build before answering "being prepared" (default BOX_HISTORY_BUILD_WAIT_MS). */
     readonly waitMs?: number;
+    /** The pause between a build's steps (default: one turn of the event loop) — tests hold a build open with it. */
+    readonly buildPause?: () => Promise<void>;
   } = {},
 ): Promise<StoreComputerHistoryReading> {
   const { unsentWarnHours, claimSlack } = opts;
@@ -15065,9 +15067,9 @@ export async function storeComputerHistory(
     tb.held = undefined;
   };
   // A full read of every report (inline for a small store, or the background build): returns the reading.
-  const fullRead = async (when: string, events: readonly PersistedEvent[] | undefined, settledThrough: number | undefined) => {
+  const fullRead = async (when: string, events: readonly PersistedEvent[] | undefined, settledThrough: number | undefined, pause?: () => Promise<void>) => {
     const all = events ?? await store.readStream(tenantId, BOX_HEALTH_STREAM, { type: 'StoreComputerHealthReported' });
-    const read = await readBoxHistoryInSteps({ entries: await entriesOf(all), ...common(when), settledThrough: settledThrough ?? 0 });
+    const read = await readBoxHistoryInSteps({ entries: await entriesOf(all), ...common(when), settledThrough: settledThrough ?? 0 }, pause === undefined ? {} : { pause });
     if ('setAside' in read) throw new Error(`the box history cannot be read from nothing (${read.setAside})`);
     if (read.snapshot !== undefined) await keep(read.snapshot, settledThrough !== undefined);
     return { read, reportsRead: all.length };
@@ -15122,6 +15124,9 @@ export async function storeComputerHistory(
       });
       if (!('setAside' in read)) {
         if (read.snapshot !== undefined) await keep(read.snapshot, settledThrough !== undefined);
+        // A result held back from saving is saved as it is once a fence has settled (its position and the reports it folded
+        // above it were safe when it was made) — not only when enough new reports come to make a newer one.
+        else if (tb.held === candidate && settledThrough !== undefined) await keep(candidate, true);
         return finish(read, reportsRead, setAside, candidate.sizeBytes);
       }
       why = read.setAside;
@@ -15140,7 +15145,7 @@ export async function storeComputerHistory(
         try {
           const all = await events;
           if (all.length <= BOX_HISTORY_INLINE_MAX) return; // small: each waiting read folds it itself
-          await fullRead(at, all, settledThrough);
+          await fullRead(at, all, settledThrough, opts.buildPause);
           tb.failed = undefined;
         } catch (e) {
           tb.failed = { at: new Date().toISOString(), error: e instanceof Error ? e.message : String(e) };
