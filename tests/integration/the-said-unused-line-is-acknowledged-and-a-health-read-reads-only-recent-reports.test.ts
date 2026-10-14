@@ -393,7 +393,13 @@ describe.skipIf(DATABASE_URL === undefined)('round 28 · OB-104: the store-compu
       // cluster that can be a later pass: a transaction open anywhere holds it back; round 29 · OB-106: meanwhile the result is
       // kept in memory, and saved — as its JSON text — once a fence settles).
       const savedRow = () => pool.query("SELECT jsonb_array_length(((data->'result'->'state'->>'text')::jsonb)->'folded') AS above FROM projection_snapshot WHERE tenant_id = $1 AND projection = 'box-health-history@1'", [T]);
-      for (let k = 0; k < 40 && (await savedRow()).rows.length === 0; k += 1) {
+      // On a busy cluster the first save may stop low (a fence held by other files' writes); read again until it is saved
+      // past most of the history — bounded, and asserted below.
+      const savedFarEnough = async (): Promise<boolean> => {
+        const r = await savedRow();
+        return r.rows.length === 1 && Number((r.rows[0] as { above: string }).above) < h.records.length / 2;
+      };
+      for (let k = 0; k < 300 && !(await savedFarEnough()); k += 1) {
         await storeComputerHistory(base, T, at, { snapshots: snaps });
         await new Promise((resolve) => { setTimeout(resolve, 100); });
       }
