@@ -423,6 +423,35 @@ count still open and names the others.
   after the last one. The store's own tills' prefixes are never capped. If you see that line, call support
   the same day: that store computer is faulty or has been altered; support may block its sign-in.
 
+**Round 31 (owner decisions OB-113 and OB-114, 14 Oct 2026):**
+
+- **The 20-a-day count above is the STORE's day (OB-113).** It now runs midnight to midnight in the shop's
+  own time zone (Store setup, `locale.time_zone`; Asia/Kolkata unless changed) — no longer 05:30 to 05:30 as
+  in round 30. If the time zone setting is ever changed, the saved store-computer history is set aside once
+  and rebuilt with every day counted in the new zone (slower once, nothing lost). The first health read after
+  installing round 31 is also such a rebuild (the saved history's version went up).
+- **You are told when the store computer checks stay unavailable (OB-114).** Every shop has a built-in alert
+  rule, `built-in:store-computer-checks-stuck`, addressed to whoever holds the **owner** role at the time (it is
+  never a name written into the program). When the checks stay **"being prepared"** or head office **cannot seal
+  the saved history** (`box_history_seal`) for more than 60 minutes without a break, the health page shows
+  `store_computer_checks_stuck` as **down** ("the store computer checks have not been ready for N minutes …
+  Call support today") and the alert worker raises it to the owner — in his alert inbox, and as a message to
+  his phone once a message provider is set — like any other alert, even while it skips the store computers'
+  other checks. Before the hour the same line is shown as ok ("not ready yet … for N minutes so far"). When
+  the checks are ready again the alert is marked cleared (kept on the board). It asks to be acknowledged
+  within 60 minutes; nobody is above the owner, so it does not escalate to anyone else.
+  - **To see it:** `GET /v1/platform/alert-rules` lists `builtIn` with its state: `on`, `edited` (your own
+    version is in force), `off`, or `no_owner` (nobody holds the owner role — then it is NOT in force).
+  - **To change it** (another person, another acknowledgement time, someone to escalate to): put a rule with
+    alertId `built-in:store-computer-checks-stuck` and component `store_computer_checks_stuck` in your rules
+    (`PUT /v1/platform/alert-rules`, the whole set as always). **To turn it off:** send `builtInOff:
+    ["built-in:store-computer-checks-stuck"]` with your rules (an empty `rules: []` is allowed then). It stays
+    off until a later rules version names the list again; `builtInOff: []` turns it back on. Each change is a
+    new rules version recording who made it and when. An alert already open when it is turned off stays open
+    until acknowledged (as for any rule removed).
+  - **What to do when it arrives:** open Operational health; if `box_history_build` says the build failed, or
+    `box_history_seal` is shown, call support the same day. The tills keep selling; nothing is lost.
+
 ## Part 4 — Restoring (the one that matters)
 
 **1. Do not restore over live data.** Make an empty database first:

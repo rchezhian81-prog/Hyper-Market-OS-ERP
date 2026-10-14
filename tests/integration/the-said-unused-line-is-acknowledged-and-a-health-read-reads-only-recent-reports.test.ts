@@ -402,7 +402,9 @@ describe.skipIf(DATABASE_URL === undefined)('round 28 · OB-104: the store-compu
         const r = await savedRow();
         return r.rows.length === 1 && Number((r.rows[0] as { above: string }).above) < h.records.length / 2;
       };
-      for (let k = 0; k < 300 && !(await savedFarEnough()); k += 1) {
+      // Round 31: bounded by time (2 minutes), not by 300 tries — under the performance suite's load 30 s was not always enough.
+      const deadline = Date.now() + 120_000;
+      while (Date.now() < deadline && !(await savedFarEnough())) {
         await storeComputerHistory(base, T, at, { sealKey: TEST_BOX_HISTORY_KEY, snapshots: snaps });
         await new Promise((resolve) => { setTimeout(resolve, 100); });
       }

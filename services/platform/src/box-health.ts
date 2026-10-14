@@ -1750,7 +1750,7 @@ export interface BoxReportsView {
 export interface BoxHistoryEntry { readonly raw: BoxHealthRecord; readonly judged: BoxHealthRecord; readonly seq: number }
 
 /** The history's working state version (bump it when its shape or a rule changes: an older one is simply set aside). */
-const BOX_HISTORY_VERSION = 3; // round 29: the waiting clock's and the unused runs' memory, refused groups banked away, a seal; round 30: waiting ranges, a keyed seal, refused prefixes capped
+const BOX_HISTORY_VERSION = 4; // round 29: the waiting clock's and the unused runs' memory, refused groups banked away, a seal; round 30: waiting ranges, a keyed seal, refused prefixes capped; round 31: the cap's day is the store's own day (OB-113)
 
 /** `latestBoxReports` kept exactly: at the latest box time seen, per way of writing it, the first position and the latest arrival. */
 interface WinGroup { firstSeq: number; r: BoxHealthRecord; recvMs: number; seq: number }
@@ -1888,7 +1888,21 @@ export interface BoxHistoryState {
   readonly lastBuildFailed: { readonly at: string; readonly error: string } | null;
   /** Round 30 · OB-111: head office was given no seal key — nothing saved is trusted or saved (every read folds every report). */
   readonly noSealKey?: true;
+  /**
+   * Round 31 · OB-114: since when (by the reads' own time) the store computer checks have been NOT READY without a break —
+   * "being prepared" (`box_history` unknown) or the saved history cannot be sealed (`box_history_seal`). Absent when ready.
+   */
+  readonly notReadySince?: string;
 }
+/**
+ * Round 31 · OB-114 "A" (owner, 14 Oct 2026, in writing, "Built-in alert to you") — THE RULE (stated). When the store computer
+ * checks stay not ready — "being prepared" (`box_history` unknown) or the saved history cannot be sealed (`box_history_seal`)
+ * — for MORE than STORE_COMPUTER_CHECKS_STUCK_MINUTES (60) minutes without a break, the component `store_computer_checks_stuck`
+ * is `down`; before that it is `ok` (shown, with how long so far). It is absent when the checks are ready. The built-in alert
+ * rule `BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID` (observed-health.ts) raises it to the shop's owner.
+ */
+export const STORE_COMPUTER_CHECKS_STUCK_MINUTES = 60;
+export const STORE_COMPUTER_CHECKS_STUCK_COMPONENT = 'store_computer_checks_stuck';
 /** Round 29 · OB-105: above this, the saved history's size is an alarm on the health read (an honest busy store stays under 2 MB). */
 export const BOX_HISTORY_SIZE_WARN_BYTES = 4 * 1_048_576;
 /** Round 29 · OB-106 (verifier r28 NEW-8): saving held back by an open database transaction this long is shown. */
@@ -1900,7 +1914,7 @@ export const BOX_HISTORY_SAVE_HELD_WARN_SECONDS = 300;
  * for BOX_HISTORY_SAVE_HELD_WARN_SECONDS, or the last build failed; `unknown` while it is being prepared (the store computer
  * checks are then not available — said, never silent).
  */
-export function boxHistoryComponents(input: { readonly preparing?: { readonly since: string; readonly why: string }; readonly history?: BoxHistoryState }): ComponentHealth[] {
+export function boxHistoryComponents(input: { readonly preparing?: { readonly since: string; readonly why: string }; readonly history?: BoxHistoryState; readonly at?: string }): ComponentHealth[] {
   const out: ComponentHealth[] = [];
   const h = input.history;
   if (input.preparing !== undefined) {
@@ -1939,6 +1953,19 @@ export function boxHistoryComponents(input: { readonly preparing?: { readonly si
       name: 'box_history_build', status: 'degraded',
       detail: `building the store computers' saved history failed at ${h.lastBuildFailed.at} (${h.lastBuildFailed.error}); the next health check tries again. If this stays, call support`,
       evidence: { failedAt: h.lastBuildFailed.at, error: h.lastBuildFailed.error },
+    });
+  }
+  // Round 31 · OB-114: not ready for more than an hour is `down` (raised to the owner by the built-in rule); before, `ok`.
+  if (h?.notReadySince !== undefined && input.at !== undefined) {
+    const minutes = Math.max(0, Math.floor((Date.parse(input.at) - Date.parse(h.notReadySince)) / 60_000));
+    const stuck = Date.parse(input.at) - Date.parse(h.notReadySince) > STORE_COMPUTER_CHECKS_STUCK_MINUTES * 60_000;
+    const what = input.preparing !== undefined ? 'being prepared' : 'running without the seal key, so the saved history cannot be sealed';
+    out.push({
+      name: STORE_COMPUTER_CHECKS_STUCK_COMPONENT, status: stuck ? 'down' : 'ok',
+      detail: stuck
+        ? `the store computer checks have not been ready for ${minutes} minutes (since ${h.notReadySince}; now ${what}) — more than the ${STORE_COMPUTER_CHECKS_STUCK_MINUTES}-minute line. Head office cannot check the store computers' disks, queues, tills and bill numbers meanwhile (the tills keep selling and nothing is lost). Call support today`
+        : `the store computer checks are not ready yet (${what}, for ${minutes} minutes so far); the owner is told if this lasts more than ${STORE_COMPUTER_CHECKS_STUCK_MINUTES} minutes`,
+      evidence: { notReadySince: h.notReadySince, minutes, alertAfterMinutes: STORE_COMPUTER_CHECKS_STUCK_MINUTES, why: input.preparing !== undefined ? 'being_prepared' : 'no_seal_key' },
     });
   }
   return out;
@@ -2118,7 +2145,7 @@ class BoxHistoryFold {
 
   private store(storeId: string): StoreHist {
     let st = this.stores.get(storeId);
-    if (st === undefined) { st = { latest: undefined, prefixes: new Map(), waits: new Map(), computers: new Map(), cap: new RefusedCap() }; this.stores.set(storeId, st); }
+    if (st === undefined) { st = { latest: undefined, prefixes: new Map(), waits: new Map(), computers: new Map(), cap: new RefusedCap(this.nr.timeZone) }; this.stores.set(storeId, st); }
     return st;
   }
   private prefix(st: StoreHist, prefix: string): PrefixHist {
@@ -2365,7 +2392,7 @@ class BoxHistoryFold {
     for (const raw of list as Enc[]) {
       const [storeId, latest, prefixes, waits, computers, cap] = raw;
       const st = this.store(storeId);
-      st.cap = RefusedCap.decode(cap);
+      st.cap = RefusedCap.decode(cap, this.nr.timeZone);
       st.latest = latest ?? undefined;
       for (const p of prefixes as [string, IssuedReport | null, { x: IssuedReport; receivedAt: string } | null, [string | null, string | null, number | null], [number | null, number | null, number | null], [number, string | null, unknown[], unknown[]][]][]) {
         const [prefix, firstX, believed, ar, rf, groups] = p;
@@ -2637,6 +2664,8 @@ export function billNumberFindingsFor(input: {
    * Without it they are worked out from `records` (`storeBillFacts`), as before.
    */
   readonly facts?: StoreBillFacts;
+  /** Round 31 · OB-113: the store's time zone (`locale.time_zone`) — the day the refused-prefix cap counts in (default Asia/Kolkata). */
+  readonly timeZone?: string;
 }): BillNumberFinding[] {
   const out: BillNumberFinding[] = [];
   const facts = input.facts ?? storeBillFacts(input);
@@ -2766,6 +2795,8 @@ export function storeBillFacts(input: {
   readonly storeId: string; readonly records: readonly BoxHealthRecord[]; readonly at: string; readonly banked?: ReadonlyMap<string, number>;
   readonly acknowledged?: readonly RefusalAcknowledgement[]; readonly replacements?: readonly StoreComputerReplacement[];
   readonly atRiskAcknowledged?: readonly AtRiskAcknowledgement[];
+  /** Round 31 · OB-113: the store's time zone — the day the refused-prefix cap counts in (default Asia/Kolkata). */
+  readonly timeZone?: string;
 }): StoreBillFacts {
   const atMs = Date.parse(input.at);
   const replacements = atOrBefore(input.replacements, atMs);
@@ -2784,7 +2815,7 @@ export function storeBillFacts(input: {
     lastByPrefix: [...lastByPrefix].sort((a, b) => a[0].localeCompare(b[0])),
     atRiskStands: (prefix) => atRiskAcknowledgementStands(input.storeId, prefix, mine, input.atRiskAcknowledged ?? []),
     ...(() => {
-      const r = refusedOpenFromRecords(input.storeId, mine, input.banked, input.acknowledged ?? [], replacements, atMs);
+      const r = refusedOpenFromRecords(input.storeId, mine, input.banked, input.acknowledged ?? [], replacements, atMs, input.timeZone ?? DEFAULT_STORE_TIME_ZONE);
       return { refusedOpen: r.open, refusedNotKept: r.notKept };
     })(),
   };
@@ -3005,7 +3036,7 @@ export function atRiskAcknowledgementStands(storeId: string, prefix: string, min
  */
 function refusedOpenFromRecords(
   storeId: string, mine: readonly BoxHealthRecord[], banked: ReadonlyMap<string, number> | undefined, acknowledged: readonly RefusalAcknowledgement[],
-  replacements: readonly StoreComputerReplacement[] = [], shownAt?: number,
+  replacements: readonly StoreComputerReplacement[] = [], shownAt?: number, timeZone: string = DEFAULT_STORE_TIME_ZONE,
 ): { open: RefusedOpen; notKept: RefusedNotKept[] } {
   interface Said { readonly at: string; readonly through: number; readonly refused?: RefusedIssued; readonly by: string }
   // Round 27 (cost): the latest act moving each (prefix, to) of this store — an act answers the refusals from before it.
@@ -3016,8 +3047,9 @@ function refusedOpenFromRecords(
     latestActTo.set(key, Math.max(latestActTo.get(key) ?? -Infinity, Date.parse(m.at)));
   }
   const timeline = new Map<string, Said[]>();
-  // Round 30 · OB-112: at most REFUSED_NEW_PER_DAY_MAX new words a day per store computer about prefixes not the store's.
-  const cap = new RefusedCap();
+  // Round 30 · OB-112: at most REFUSED_NEW_PER_DAY_MAX new words a day per store computer about prefixes not the store's;
+  // round 31 · OB-113: the day is the store's own (midnight to midnight in its time zone).
+  const cap = new RefusedCap(timeZone);
   for (const rec of mine) {
     const ms = Date.parse(rec.receivedAt);
     for (const [prefix, w] of timelineWords(rec)) {
@@ -3066,14 +3098,17 @@ function refusedOpenFromRecords(
  * PREFIXES THAT ARE NOT THE STORE'S ARE CAPPED (stated, so a person can check it). A report may name up to 200 prefixes; a
  * prefix that is not this store's — one head office gave another store's till (`prefix_of_another_store`), or one head office
  * never gave any till (kept as "not folded") — is kept so the owner can see it, but a faulty or altered store computer could
- * name new ones on every report and make head office's memory grow without end. So, per store computer and per day (UTC, by
- * head office's receipt; 05:30 to 05:30 in India), head office keeps at most REFUSED_NEW_PER_DAY_MAX (20) NEW such words — a
+ * name new ones on every report and make head office's memory grow without end. So, per store computer and per day (round 31
+ * · OB-113 "A", owner, 14 Oct 2026, in writing, "Store's own day": the STORE's day — midnight to midnight in the shop's
+ * `locale.time_zone` setting, Asia/Kolkata by default — by head office's receipt of the report; in round 30 it was the UTC
+ * day, 05:30 to 05:30 in India), head office keeps at most REFUSED_NEW_PER_DAY_MAX (20) NEW such words — a
  * prefix it has no word about yet, or a refused count under it it has not kept yet. Words about prefixes and counts already
  * kept are always kept, and the store's OWN prefixes (a count too far ahead, a second store computer) are never capped. The
  * rest are NOT kept: they are counted, per store computer, and said in ONE line ("N more … not kept", `report_refused_not_kept`)
  * for REFUSED_NOT_KEPT_SHOWN_DAYS (7) days after the last one. The plain reading (`refusedOpenFromRecords`) and the saved
  * running result use this same rule, so they agree exactly; the saved result then grows by at most 20 such words a day per
- * store computer, whatever it sends.
+ * store computer, whatever it sends. Changing the time zone setting sets the saved result aside ("settings"); it is rebuilt
+ * from the reports with every day counted in the new time zone, as for any other setting it was made with.
  */
 export const REFUSED_NEW_PER_DAY_MAX = 20;
 export const REFUSED_NOT_KEPT_SHOWN_DAYS = 7;
@@ -3082,18 +3117,23 @@ export interface RefusedNotKept { readonly computer: string; readonly count: num
 /** One word of the refused-report timeline: its count, whether it is about a prefix NOT the store's, and its refusal if refused. */
 interface TimelineWord { readonly through: number; readonly notOwn: boolean; readonly refused?: RefusedIssued }
 class RefusedCap {
-  /** Per store computer: the UTC day of its latest new word kept, and how many new words were kept that day. */
+  /**
+   * Per store computer: the store's day of its latest new word kept (the store's calendar date in its own time zone, as days
+   * since 1970-01-01 — OB-113), and how many new words were kept that day.
+   */
   days = new Map<string, [number, number]>();
   /** The refused counts kept under prefixes that are not the store's (prefix NUL count; saved as [prefix, count]). */
   counts = new Set<string>();
   notKept = new Map<string, { count: number; first: string; last: string }>();
+  private readonly dayOf: (ms: number) => string;
+  constructor(readonly timeZone: string = DEFAULT_STORE_TIME_ZONE) { this.dayOf = dayIn(timeZone); }
 
   /** Is this word kept? `known`: head office already keeps a word about the prefix. */
   admit(known: boolean, prefix: string, x: TimelineWord, by: string, at: string, ms: number): boolean {
     if (!x.notOwn) return true;
     const key = `${prefix}\u0000${x.through}`;
     if (known && (x.refused === undefined || this.counts.has(key))) return true;
-    const day = Math.floor(ms / 86_400_000);
+    const day = storeDayNumber(this.dayOf(ms));
     let d = this.days.get(by);
     if (d === undefined || d[0] !== day) { d = [day, 0]; this.days.set(by, d); }
     if (d[1] >= REFUSED_NEW_PER_DAY_MAX) {
@@ -3116,8 +3156,8 @@ class RefusedCap {
     const counts = [...this.counts].map((k) => { const i = k.lastIndexOf('\u0000'); return [k.slice(0, i), Number(k.slice(i + 1))]; });
     return [[...this.days].map(([c, [day, n]]) => [c, day, n]), counts, [...this.notKept].map(([c, n]) => [c, n.count, n.first, n.last])];
   }
-  static decode(e: unknown): RefusedCap {
-    const c = new RefusedCap();
+  static decode(e: unknown, timeZone: string): RefusedCap {
+    const c = new RefusedCap(timeZone);
     const [days, counts, notKept] = e as [[string, number, number][], [string, number][], [string, number, string, string][]];
     for (const [k, day, n] of days) c.days.set(k, [day, n]);
     for (const [prefix, through] of counts) c.counts.add(`${prefix}\u0000${through}`);
@@ -3125,6 +3165,9 @@ class RefusedCap {
     return c;
   }
 }
+
+/** Round 31 · OB-113: a store calendar date (YYYY-MM-DD) as a whole number of days since 1970-01-01. */
+const storeDayNumber = (date: string): number => Math.round(Date.parse(`${date}T00:00:00.000Z`) / 86_400_000);
 
 /** The words of one report for the refused-report timeline: one per prefix, the refused one last (as both readings take them). */
 function timelineWords(rec: Pick<BoxHealthRecord, 'receiptNumbersIssued' | 'receiptNumbersNotFolded' | 'receiptNumbersRefused'>): Map<string, TimelineWord> {

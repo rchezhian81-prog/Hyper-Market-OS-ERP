@@ -345,7 +345,7 @@ import type { AgentId, Budget, Proposal, EvidenceItem as AiEvidenceItem, AiDeps,
 import type { PricingDeps, PriceChangeRecord } from '../../pricing/src/index';
 import type { PriceListDeps } from '../../pricing/src/price-list';
 import type { PriceEntry } from '../../../packages/price-list/src/price-list';
-import { ROLE_CATALOGUE, STORE_MANAGER_ROLE_ID, STORE_COMPUTER_ROLE_ID, PROVIDER_RELAY_ROLE_ID, BACKUP_JOB_ROLE_ID } from './roles';
+import { ROLE_CATALOGUE, STORE_MANAGER_ROLE_ID, STORE_COMPUTER_ROLE_ID, PROVIDER_RELAY_ROLE_ID, BACKUP_JOB_ROLE_ID, OWNER_ROLE_ID } from './roles';
 import { combinedDuties } from '../../identity/src/separation-of-duties';
 import { isMachineCredential } from '../../identity/src/machine-identities';
 import { metaOf as legacyAttachmentMeta, type LegacyHistoryDeps, type LegacyHistoryDocument, type LegacyAttachment, type LegacyAttachmentMeta } from '../../migration/src/legacy-history';
@@ -12849,6 +12849,11 @@ export function observedHealthAdapter(input: {
       return combinedDuties(grants, ROLE_CATALOGUE);
     },
     alertRules: (tenantId) => latest<StoredAlertRules>(input.store, tenantId, ALERT_RULES_STREAM, 'AlertRulesDefined'),
+    // Round 31 · OB-114: the built-in rules go to whoever holds the owner role now (read from the grants, never written in code).
+    shopOwner: async (tenantId) => {
+      const owners = [...new Set((await effectiveGrants(input.store, tenantId)).filter((g) => g.roleId === OWNER_ROLE_ID).map((g) => g.userId))].sort();
+      return owners[0] === undefined ? undefined : { userId: owners[0], name: `the owner (${owners[0]})` };
+    },
     defineAlertRules: async (tenantId, rules) => {
       await input.store.append(tenantId, ALERT_RULES_STREAM, makeEvent({
         id: `alert-rules-v${rules.version}`,
@@ -14891,6 +14896,8 @@ export async function storeComputerReading(
   const finished = await finishStoreComputerReading(store, tenantId, at, read, banked, claimSlack, new Set(records.map((r) => r.storeId)), (storeId, unreceived, unusedReceived, unusedCapped) => billNumberFindingsFor({
     storeId, records: judged, at, unreceived, banked, acknowledged, replacements, atRiskAcknowledged, unusedAcknowledged,
     ...(unusedReceived === undefined ? {} : { unusedReceived }), ...(unusedCapped === undefined ? {} : { unusedCapped }),
+    // Round 31 · OB-113: the refused-prefix cap counts the store's own day (the same time zone the saved result is made with).
+    ...(opts.timeZone === undefined ? {} : { timeZone: opts.timeZone }),
   }));
   return { ...finished, bindings: read.bindings, resumed: read.resumed };
 }
@@ -14954,6 +14961,8 @@ interface BoxHistoryTenant {
   traced?: string;
   /** The last build that failed, said on the health read until one succeeds. */
   failed?: { readonly at: string; readonly error: string };
+  /** Round 31 · OB-114: since when (the reads' own time) the checks have been not ready without a break — being prepared, or no seal key. */
+  notReadySince?: string;
 }
 const BOX_HISTORY_TENANTS = new WeakMap<SnapshotStore, Map<string, BoxHistoryTenant>>();
 function boxHistoryTenant(snapshots: SnapshotStore, tenantId: string): BoxHistoryTenant {
@@ -15086,14 +15095,19 @@ export async function storeComputerHistory(
     if (read.snapshot !== undefined) await keep(read.snapshot, settledThrough !== undefined);
     return { read, reportsRead: all.length };
   };
-  const state = (sizeBytes: number | null): BoxHistoryState => ({
-    sizeBytes, ...(opts.sealKey === undefined ? { noSealKey: true } : {}),
-    saveHeld: tb.saveHeldSince === undefined ? null : { since: tb.saveHeldSince, waitingSeconds: Math.max(0, Math.floor((Date.now() - Date.parse(tb.saveHeldSince)) / 1000)) },
-    lastBuildFailed: tb.failed ?? null,
-  });
+  // Round 31 · OB-114: each answer says whether the checks are ready; not ready since the first read that found them so.
+  const state = (sizeBytes: number | null, notReady: boolean): BoxHistoryState => {
+    if (notReady) tb.notReadySince ??= at; else tb.notReadySince = undefined;
+    return {
+      sizeBytes, ...(opts.sealKey === undefined ? { noSealKey: true } : {}),
+      saveHeld: tb.saveHeldSince === undefined ? null : { since: tb.saveHeldSince, waitingSeconds: Math.max(0, Math.floor((Date.now() - Date.parse(tb.saveHeldSince)) / 1000)) },
+      lastBuildFailed: tb.failed ?? null,
+      ...(tb.notReadySince === undefined ? {} : { notReadySince: tb.notReadySince }),
+    };
+  };
   const preparing = (b: NonNullable<BoxHistoryTenant['build']>, sizeBytes: number | null): StoreComputerHistoryReading => ({
     findings: new Map(), unused: new Map(), unusedReceived: new Map(), unusedCapped: new Map(), bindings: [], rawBindings: [], view: EMPTY_BOX_VIEW,
-    resumed: false, reportsRead: 0, preparing: { since: b.since, why: b.why }, history: state(sizeBytes),
+    resumed: false, reportsRead: 0, preparing: { since: b.since, why: b.why }, history: state(sizeBytes, true),
   });
   const finish = async (done: BoxHistoryReading, reportsRead: number, setAside: string | undefined, sizeBytes: number | null): Promise<StoreComputerHistoryReading> => {
     const finished = await finishStoreComputerReading(store, tenantId, at, done, banked, claimSlack, done.storeIds, (storeId, unreceived, unusedReceived, unusedCapped) => billNumberFindingsFor({
@@ -15102,7 +15116,7 @@ export async function storeComputerHistory(
     }));
     return {
       ...finished, bindings: done.bindings, rawBindings: done.rawBindings, view: done.view, resumed: done.resumed, reportsRead,
-      ...(setAside === undefined ? {} : { setAside }), history: state(done.snapshot?.sizeBytes ?? sizeBytes),
+      ...(setAside === undefined ? {} : { setAside }), history: state(done.snapshot?.sizeBytes ?? sizeBytes, opts.sealKey === undefined),
     };
   };
 
