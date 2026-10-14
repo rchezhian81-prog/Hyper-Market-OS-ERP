@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { takeHeldTransactionTurn } from '../support/held-transaction-turn';
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
@@ -229,6 +230,10 @@ describe('round 29 · OB-106 (memory)', () => {
 });
 
 describe.skipIf(DATABASE_URL === undefined)('round 29 · OB-106 (PostgreSQL)', () => {
+  // These tests hold a database transaction open on purpose; they take turns with every other such test (see the helper).
+  let endTurn: (() => Promise<void>) | undefined;
+  beforeAll(async () => { endTurn = await takeHeldTransactionTurn(DATABASE_URL!); }, 1_800_000);
+  afterAll(async () => { await endTurn?.(); });
   it('a damaged saved result — every shape (the projection_snapshot row written over), and one altered and re-sealed — is set aside and rebuilt; the answers are the full reading\'s', async () => { await onPg(damagedIsSetAside); }, 600_000);
   it('a big store with nothing saved is built in the background once; meanwhile "being prepared"; then the full reading\'s answers', async () => { await onPg(builtInTheBackground); }, 600_000);
 

@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { takeHeldTransactionTurn } from '../support/held-transaction-turn';
 import { randomUUID } from 'node:crypto';
 import { Pool, type PoolClient } from 'pg';
 import { startRealCloud, CONNECTED_APP_ROLE, type RealCloud } from '../support/real-store';
@@ -99,6 +100,10 @@ describe('the idle-in-transaction limit has a floor, and the last resort is a st
 });
 
 describe.skipIf(DATABASE_URL === undefined)('verifier r21 IDLE-CRASH: the database ending a transaction never stops head office (PostgreSQL)', () => {
+  // These tests hold a database transaction open on purpose; they take turns with every other such test (see the helper).
+  let endTurn: (() => Promise<void>) | undefined;
+  beforeAll(async () => { endTurn = await takeHeldTransactionTurn(DATABASE_URL!); }, 1_800_000);
+  afterAll(async () => { await endTurn?.(); });
   let real: RealCloud;
   let platform: Pool;
   const TENANT = randomUUID();
