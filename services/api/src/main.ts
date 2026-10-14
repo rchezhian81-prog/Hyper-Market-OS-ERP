@@ -375,6 +375,12 @@ const HOLD_MINUTES = 60;
  */
 export function buildSurface(deps: {
   readonly signingKey: string;
+  /**
+   * Round 32 · OB-116: head office's own BOX_HISTORY_SEAL_KEY — the secret the store computers' saved history is sealed
+   * under (never a store computer's PACK_SIGNING_KEY). Absent, or equal to the pack signing key: no key at all — nothing saved
+   * is trusted and nothing is saved, and the health read says so (`box_history_seal`, then the owner's built-in alert).
+   */
+  readonly boxHistorySealSecret?: string;
   readonly migrationTargetKind: TargetKind;
   /**
    * The notification delivery transport (PA-08). NEVER set by `startApi`: no real provider is certified yet (the SMS
@@ -450,9 +456,11 @@ export function buildSurface(deps: {
   // PF-09-a: the member code key the store computer shares (both derive it from the pack signing key).
   const loyaltyKey = loyaltyMemberKey(deps.signingKey);
   const whHasher = webhookHasher(deps.signingKey);
-  // Round 30 · OB-111: the key the store computers' saved history is sealed with — derived from the pack signing key under
-  // its own label, held in memory only (never in the database, the repository or a log).
-  const boxHistoryKey = boxHistorySealKey(deps.signingKey);
+  // Round 30 · OB-111: the key the store computers' saved history is sealed with, held in memory only (never in the database,
+  // the repository or a log). Round 32 · OB-116: derived from head office's OWN secret (BOX_HISTORY_SEAL_KEY), never from the
+  // pack signing key every store computer holds — a secret equal to it is not used at all (no key: trust nothing, said).
+  const boxHistoryKey = deps.boxHistorySealSecret === undefined || deps.boxHistorySealSecret === deps.signingKey
+    ? undefined : boxHistorySealKey(deps.boxHistorySealSecret);
   const empty = <T>(v: T) => () => v;
   // Round 9 (Batch 3): the finance-close routes run on the ledger; with none (the documented surface only) reads are
   // empty and every write refuses — never a silent no-op that looks recorded.
@@ -1142,7 +1150,7 @@ export function buildSurface(deps: {
     ...boxHealthRoutes(store === undefined ? { now, record: async () => {} } : {
       now, storeComputerScopeOf: (t, u) => storeComputerScopeHeldBy(store, t, u),
       ...boxHealthAdapter({
-        store, now, ...(deps.snapshots === undefined ? {} : { snapshots: deps.snapshots }), boxHistorySealKey: boxHistoryKey,
+        store, now, ...(deps.snapshots === undefined ? {} : { snapshots: deps.snapshots }), ...(boxHistoryKey === undefined ? {} : { boxHistorySealKey: boxHistoryKey }),
         // Round 28 · OB-103/104: the same owner's settings the health read uses (they share one saved running result).
         settings: {
           unsentWarnHours: (t: string) => settings.value(t, SETTINGS.BOX_UNSENT_WARN_HOURS),
@@ -1885,7 +1893,7 @@ export function buildSurface(deps: {
       alertRules: empty(undefined), defineAlertRules: () => {},
     } : {
       ...observedHealthAdapter({
-        store, now, boxHistorySealKey: boxHistoryKey, boxUnsentWarnHours: (t: string) => settings.value(t, SETTINGS.BOX_UNSENT_WARN_HOURS),
+        store, now, ...(boxHistoryKey === undefined ? {} : { boxHistorySealKey: boxHistoryKey }), boxUnsentWarnHours: (t: string) => settings.value(t, SETTINGS.BOX_UNSENT_WARN_HOURS),
         // OB-90: the owner's claim slack, from store setup.
         boxClaimSlack: async (t: string) => ({ numbers: await settings.value(t, SETTINGS.BOX_CLAIM_SLACK_NUMBERS), percent: await settings.value(t, SETTINGS.BOX_CLAIM_SLACK_PERCENT) }),
         // Round 27 · OB-100: unused numbers by the store's own calendar day; OB-102: the never-received fold's saved running result.
@@ -2093,6 +2101,16 @@ export async function startApi(
     return undefined;
   }
   const settings = config.value!;
+  // Round 32 · OB-116: the saved-history seal secret is head office's ALONE — refused at start, by name (never the value), if it
+  // is the same as a secret something else holds: PACK_SIGNING_KEY is on every store computer, and the personal-data and
+  // sign-in keys have their own jobs. The same "a bad secret does not start" rule as the rest of the configuration.
+  const sealClash = (['PACK_SIGNING_KEY', 'PII_KEY_ENCRYPTION_KEY', 'IDP_SIGNING_KEY'] as const).filter((k) => settings[k] !== undefined && settings[k] === settings['BOX_HISTORY_SEAL_KEY']);
+  if (sealClash.length > 0) {
+    err(`\nthis service will not start: BOX_HISTORY_SEAL_KEY is the same as ${sealClash.join(' and ')}. It must be head office's own secret — `
+      + 'every store computer holds PACK_SIGNING_KEY, so a seal made from it could be forged from a store computer\'s settings. '
+      + 'Generate a new one (openssl rand -base64 48) and set it for the API only, never on a store computer (owner decision OB-116).\n\n');
+    return undefined;
+  }
 
   // The self-hosted identity server's public keys (OB-15 · ADR-0019): both settings or neither — half a configuration is
   // refused rather than half-believed. Fetched once now; a server not yet up leaves its tokens refused until a key is held
@@ -2227,9 +2245,15 @@ export async function startApi(
   // D14 / M32 round 12: the partner transport — one handed in, else the HTTPS transport only when the operator configures
   // it (OUTBOUND_WEBHOOK_TRANSPORT=https). It turns on no partner: each subscription still needs two people and a secret.
   const outboundTransport = providers.outboundTransport ?? outboundTransportFromEnv(env, (line) => { out(`outbound webhooks: ${line}\n`); });
+  // Durable projection snapshots (CORE-03) — ONE store for this process. Round 32 (verifier r31): the saved store-computer
+  // history keeps its single-flight background build and its "not ready since" clock per snapshot store, so the routes and
+  // the alert worker share this one: one build per shop per process (never two at once), one clock.
+  const snapshots = new SqlSnapshotStore(pgPoolClient(db));
   const built = buildRouter(buildSurface({
     onBriefDeps: (d) => { briefDeps = d; },
     signingKey: settings['PACK_SIGNING_KEY']!,
+    // Round 32 · OB-116: head office's own seal secret for the store computers' saved history (required at start).
+    boxHistorySealSecret: settings['BOX_HISTORY_SEAL_KEY']!,
     migrationTargetKind: settings['MIGRATION_TARGET_KIND'] as TargetKind,
     store,
     personalDataKeys,
@@ -2249,7 +2273,7 @@ export async function startApi(
     numberSeries: new SqlNumberSeriesStore(pgPoolClient(db)),
     // Durable projection snapshots (CORE-03): bounded reads resume from the last persisted fold
     // across a restart, rather than re-folding the whole ledger on a cold start.
-    snapshots: new SqlSnapshotStore(pgPoolClient(db)),
+    snapshots,
     probes: async () => [{
       name: 'postgres',
       criticality: 'shop_cannot_trade_without_it',
@@ -2422,9 +2446,11 @@ export async function startApi(
         },
         // Round 27 · OB-100 / OB-102: the store's calendar, and the same durable saved running result the reads use.
         storeTimeZone: (t: string) => new DurableTenantSettings(new SqlConfigVersionStore(pgPoolClient(db))).value(t, SETTINGS.STORE_TIME_ZONE),
-        snapshots: new SqlSnapshotStore(pgPoolClient(db)),
-        // Round 30 · OB-111: the same keyed seal the reads use (from PACK_SIGNING_KEY, required at start).
-        boxHistorySealKey: boxHistorySealKey(settings['PACK_SIGNING_KEY']!),
+        // Round 32 (verifier r31): the SAME snapshot store the routes use — one background build per shop in this process,
+        // and one "not ready since" clock (the health page and this alert agree).
+        snapshots,
+        // Round 30 · OB-111 / round 32 · OB-116: the same keyed seal the reads use (from BOX_HISTORY_SEAL_KEY, required at start).
+        boxHistorySealKey: boxHistorySealKey(settings['BOX_HISTORY_SEAL_KEY']!),
       }), boxDiskWarnHours: (t: string) => new DurableTenantSettings(new SqlConfigVersionStore(pgPoolClient(db))).value(t, SETTINGS.BOX_DISK_WARN_HOURS),
       boxUnsentWarnHours: (t: string) => new DurableTenantSettings(new SqlConfigVersionStore(pgPoolClient(db))).value(t, SETTINGS.BOX_UNSENT_WARN_HOURS),
     },

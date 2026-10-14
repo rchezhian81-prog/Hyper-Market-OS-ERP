@@ -183,7 +183,7 @@ describe.skipIf(!READY).sequential('a real Keycloak: head office gives a named p
     const pilot = TEST_IDP.policy();
     const said: string[] = [];
     api = await startApi({
-      DATABASE_URL: asRole(DATABASE_URL!, 'sre_app_provisioning_proof'), PACK_SIGNING_KEY: ['proof', 'pack', 'key'].join('-').padEnd(48, '0'),
+      DATABASE_URL: asRole(DATABASE_URL!, 'sre_app_provisioning_proof'), PACK_SIGNING_KEY: ['proof', 'pack', 'key'].join('-').padEnd(48, '0'), BOX_HISTORY_SEAL_KEY: ['proof', 'seal', 'key'].join('-').padEnd(48, '1'),
       IDP_SIGNING_KEY: pilot.secret, IDP_ISSUER: pilot.issuer, IDP_AUDIENCE: 'sre-retail-os-api',
       IDP_OIDC_ISSUER: ISSUER, IDP_OIDC_JWKS_URL: `${ISSUER}/protocol/openid-connect/certs`,
       IDP_PROVISIONER_SECRET: provisionerSecret,

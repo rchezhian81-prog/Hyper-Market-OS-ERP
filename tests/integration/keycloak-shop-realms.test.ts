@@ -88,7 +88,7 @@ describe.skipIf(!READY).sequential('a second shop\'s own realm, made by head off
     const pilot = TEST_IDP.policy();
     let said = '';
     const started = await startApi({
-      DATABASE_URL: asRole(DATABASE_URL!, 'sre_app_shop_realms_proof'), PACK_SIGNING_KEY: ['proof', 'pack', 'key'].join('-').padEnd(48, '0'),
+      DATABASE_URL: asRole(DATABASE_URL!, 'sre_app_shop_realms_proof'), PACK_SIGNING_KEY: ['proof', 'pack', 'key'].join('-').padEnd(48, '0'), BOX_HISTORY_SEAL_KEY: ['proof', 'seal', 'key'].join('-').padEnd(48, '1'),
       IDP_SIGNING_KEY: pilot.secret, IDP_ISSUER: pilot.issuer, IDP_AUDIENCE: 'sre-retail-os-api',
       IDP_OIDC_ISSUER: `${BASE}/realms/sre-store`, IDP_OIDC_JWKS_URL: `${BASE}/realms/sre-store/protocol/openid-connect/certs`,
       PORT: '0', NODE_ENV: 'test', MIGRATION_TARGET_KIND: 'rehearsal', ...env,

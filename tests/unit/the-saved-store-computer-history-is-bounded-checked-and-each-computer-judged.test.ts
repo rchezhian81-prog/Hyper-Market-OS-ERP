@@ -4,10 +4,14 @@ import {
   boxHistoryToStore, boxHistoryFromStore,
   boxHistoryComponents, WAIT_FORGET_HOURS, UNUSED_FORGET_DAYS, UNUSED_CONTRADICTION_MARGIN_MINUTES, BOX_HISTORY_SIZE_WARN_BYTES, BOX_HISTORY_SAVE_HELD_WARN_SECONDS,
   UNUSED_HELD_TIMED_MAX, UNRECEIVED_CHECK_CAP,
-  waitingFacts, boxHistorySealKey, WAIT_RANGES_MAX, REFUSED_NEW_PER_DAY_MAX, REFUSED_NOT_KEPT_SHOWN_DAYS, BOX_HISTORY_STORED_FORMAT,
+  waitingFacts, boxHistorySealKey, WAIT_RANGES_MAX, REFUSED_NEW_PER_DAY_MAX, REFUSED_NOT_KEPT_SHOWN_DAYS, BOX_HISTORY_STORED_FORMAT, BOX_HISTORY_SEAL_LABEL,
   type BoxHealthRecord, type IssuedReport, type BoxHistorySnapshot, type RefusedIssued,
 } from '../../services/platform/src/box-health';
-import { createHash } from 'node:crypto';
+import { createHash, createHmac, randomBytes } from 'node:crypto';
+import { tillSealKey } from '../../packages/identity/src/till-seal';
+import { tillPinKey } from '../../packages/identity/src/till-pin';
+import { loyaltyMemberKey } from '../../packages/loyalty/src/earn-rule';
+import { personalDataKek } from '../../packages/persistence/src/personal-data';
 import { DEFAULT_THRESHOLDS } from '../../packages/ops/src/index';
 import { TEST_BOX_HISTORY_KEY as K, OTHER_BOX_HISTORY_KEY, rng } from '../support/box-history';
 
@@ -129,7 +133,7 @@ describe('round 29 · OB-106: a saved result is checked before it is used (the v
     expect('setAside' in readBoxHistory({ sealKey: K, entries: [], snapshot: back, at: iso(201), banked: new Map([['A-', 100]]) })).toBe(false);
     // A JSON TREE with its keys reordered is not what was sealed (that is why it is never kept as one), and not the saved form.
     expect(boxHistoryUnreadable(reorder(snap), K)).toBe('its seal does not match its content (damaged, altered, or sealed with another key)');
-    expect(boxHistoryUnreadable(boxHistoryFromStore(snap), K)).toBe('it is not in the saved form (box-history-text@2)');
+    expect(boxHistoryUnreadable(boxHistoryFromStore(snap), K)).toBe('it is not in the saved form (box-history-text@3)');
     expect(sealBoxHistory(snap, K).check).toBe(snap.check);
   });
 
@@ -373,11 +377,11 @@ describe('round 30 · OB-110: the waiting clock is ranges with their first sight
     expect(g).toHaveLength(1);
     expect((Date.parse(g[0]!.since) - t0) / 60_000).toBeLessThanOrEqual(newest);
     expect(newest - (Date.parse(g[0]!.since) - t0) / 60_000).toBeLessThanOrEqual(5);
-    // The saved result keeps at most WAIT_RANGES_MAX ranges for the prefix (6 numbers each, after 2 header numbers).
+    // The saved result keeps at most WAIT_RANGES_MAX ranges for the prefix (7 numbers each since round 32, after 2 header numbers).
     const got = readBoxHistory({ sealKey: K, entries: entries(records), at: iso(at), banked: new Map([['A-', through]]), settleBefore: iso(at - 1), settledThrough: records.length });
     if ('setAside' in got) throw new Error(got.setAside);
     const clock = ((got.snapshot!.stores as unknown[][])[0]![3] as unknown[][])[0]![2] as unknown[];
-    expect((clock.length - 2) / 6).toBeLessThanOrEqual(WAIT_RANGES_MAX);
+    expect((clock.length - 2) / 7).toBeLessThanOrEqual(WAIT_RANGES_MAX);
     expect(billsWaitingOnTheBox({ records: [], storeId: 'S1', at: iso(at), facts: got.view.waiting('S1') })).toEqual(f);
   });
 });
@@ -419,14 +423,50 @@ describe('round 30 · OB-111: the saved result\'s seal is keyed (the verifier\'s
     // The seal is an HMAC under the key, not a digest anyone can work out.
     const { check, sizeBytes: _z, ...rest } = snap; void _z;
     expect(check).not.toBe(createHash('sha256').update(JSON.stringify(rest)).digest('hex'));
-    expect(BOX_HISTORY_STORED_FORMAT).toBe('box-history-text@2');
+    expect(BOX_HISTORY_STORED_FORMAT).toBe('box-history-text@3');
   });
 
-  it('the key is derived from the full pack signing key only (a short one is refused), and differs per pack signing key', () => {
-    expect(() => boxHistorySealKey('too-short')).toThrow(/full pack signing key/);
-    const a = boxHistorySealKey('a'.repeat(40));
-    expect(a.equals(boxHistorySealKey('a'.repeat(40)))).toBe(true);
-    expect(a.equals(boxHistorySealKey('b'.repeat(40)))).toBe(false);
+  it('round 32 · OB-116: the key is derived from head office\'s own BOX_HISTORY_SEAL_KEY only (a short one is refused), and differs per secret', () => {
+    expect(() => boxHistorySealKey('too-short')).toThrow(/needs the full BOX_HISTORY_SEAL_KEY \(at least 32 characters\)/);
+    const s = randomBytes(32).toString('hex');
+    const a = boxHistorySealKey(s);
+    expect(a.equals(boxHistorySealKey(s))).toBe(true);
+    expect(a.equals(boxHistorySealKey(randomBytes(32).toString('hex')))).toBe(false);
+  });
+
+  it('round 32 · OB-116 (verifier r31 mutant 14): the seal key has its OWN label — never equal to the till seal, till PIN, member code or personal-data key of the same secret', () => {
+    // Even if one secret were (wrongly) given to both, the keys made from it never coincide.
+    const s = randomBytes(32).toString('hex');
+    const mine = boxHistorySealKey(s);
+    for (const [name, other] of [['till seal', tillSealKey(s)], ['till PIN', tillPinKey(s)], ['member code', loyaltyMemberKey(s)], ['personal data', personalDataKek({ packSigningKey: s })]] as const) {
+      expect(mine.equals(other), name).toBe(false);
+    }
+    expect(BOX_HISTORY_SEAL_LABEL).toBe('sre/box-history-seal@2');
+    expect(mine.equals(createHmac('sha256', s).update(BOX_HISTORY_SEAL_LABEL, 'utf8').digest())).toBe(true);
+  });
+
+  it('round 32 · OB-116: a result sealed with a key a STORE COMPUTER can work out (from PACK_SIGNING_KEY, as round 30 did) is set aside', () => {
+    // The store computer holds PACK_SIGNING_KEY; an attacker with its settings file makes every key it can from it and re-seals
+    // an altered result (unused runs cleared). Head office's key is made from BOX_HISTORY_SEAL_KEY, which no store computer holds.
+    const pack = randomBytes(32).toString('hex');
+    const fromPack = [
+      createHmac('sha256', pack).update('sre/box-history-seal@1', 'utf8').digest(), // round 30's derivation
+      boxHistorySealKey(pack), tillSealKey(pack), tillPinKey(pack), loyaltyMemberKey(pack), personalDataKek({ packSigningKey: pack }), Buffer.from(pack, 'utf8'),
+    ];
+    for (const k of fromPack) {
+      const forged = sealBoxHistory(altered() as never, k);
+      expect(boxHistoryUnreadable(forged, K)).toBe('its seal does not match its content (damaged, altered, or sealed with another key)');
+      expect(readBoxHistory({ sealKey: K, entries: [], snapshot: forged, at: iso(201), banked: new Map([['A-', 110]]), timeZone: 'UTC' }))
+        .toEqual({ setAside: 'unreadable: its seal does not match its content (damaged, altered, or sealed with another key)' });
+    }
+  });
+
+  it('round 32 · OB-116: a round-30 saved row (form @2, sealed under the old key) is set aside once, by its form, and rebuilt', () => {
+    const old = { format: 'box-history-text@2', text: JSON.stringify(snap) };
+    expect(boxHistoryUnreadable(boxHistoryFromStore(old), K)).toBe('it is not in the saved form (box-history-text@3)');
+    const rebuilt = readBoxHistory({ sealKey: K, entries: entries(records), at: iso(200), banked: new Map([['A-', 110]]), settleBefore: iso(190), settledThrough: 100, timeZone: 'UTC' });
+    if ('setAside' in rebuilt) throw new Error(rebuilt.setAside);
+    expect(boxHistoryUnreadable(boxHistoryFromStore(boxHistoryToStore(rebuilt.snapshot!)), K)).toBeUndefined();
   });
 
   it('a head office started without the key says so on the health read (degraded), never silently', () => {
@@ -460,7 +500,7 @@ describe('round 30 · OB-112: refused words about prefixes not the store\'s are 
     expect(findingsAt(records, at)).toEqual(f.filter((x) => x.kind === 'report_refused' || x.kind === 'report_refused_not_kept'));
   });
 
-  it('words about prefixes already kept, and the store\'s OWN prefixes, are never capped; a new day keeps 20 new ones again; the line goes after 7 quiet days', () => {
+  it('words about prefixes already kept are never capped, and the store\'s OWN prefixes not by this rule (OB-117 caps them per till); a new day keeps 20 new ones again; the line goes after 7 quiet days', () => {
     const own = (min: number): BoxHealthRecord => rec30(min, { through: 100 }, {
       receiptNumbersRefused: [{ prefix: 'A-', through: 900_000 + min, because: 'beyond_plausible_advance', bankedThrough: 100, plausibleThrough: 10_100 }, refused('Z0x0-', 5)],
     } as Partial<BoxHealthRecord>);

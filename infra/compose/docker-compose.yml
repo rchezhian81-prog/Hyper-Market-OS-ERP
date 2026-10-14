@@ -102,6 +102,10 @@ services:
       # Signs the catalogue packs the lanes trade on. Generate with:
       #   openssl rand -base64 48
       PACK_SIGNING_KEY: ${PACK_SIGNING_KEY}
+      # Round 32 · OB-116: head office's OWN secret for the seal on the store computers' saved history. Given to the API
+      # ONLY — never to the edge (a store computer) below. Required: the API does not start without it, or with one equal to
+      # PACK_SIGNING_KEY. Generate with:  openssl rand -base64 48
+      BOX_HISTORY_SEAL_KEY: ${BOX_HISTORY_SEAL_KEY}
       # Whose tokens to believe. The API verifies; it never issues and never
       # stores a credential (hard rule #4). Missing any of these three and it
       # does not start.

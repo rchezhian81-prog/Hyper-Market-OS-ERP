@@ -127,7 +127,12 @@ describe('OB-101: two store computers — neutral words, and the bound one speak
     for (let k = 1; k <= 30; k += 1) records.push(rec(k, { through: 100 + k * 2, unsent: { count: 0 } }, 0, 'u-box-a'));
     const refused = read(records, 31, 100).findings.filter((f) => f.kind === 'report_refused');
     expect(refused).toHaveLength(1);
-    expect(refused[0]!.detail).toMatch(/^two store computers report bill numbers under A- for store S1: u-box-b and u-box-a\. Head office uses u-box-b's reports for A- because it was the first to report A-, at 2026-03-01T08:00:00\.000Z; it keeps u-box-a's report \(through 160\) as evidence and does not use it\./);
+    expect(refused[0]!.detail).toMatch(/^two store computers report bill numbers under A- for store S1: u-box-b and u-box-a\. Head office uses u-box-b's reports for A- because it was the first to report A-, at 2026-03-01T08:00:00\.000Z; it keeps u-box-a's report \(through 140\) as evidence and does not use it\./);
+    // Round 32 · OB-117: u-box-a said 30 NEW counts under A- that day; 20 are kept (the highest kept, 140, is the finding), the
+    // other 10 are counted in one line naming the highest (160).
+    const notKept = read(records, 31, 100).findings.filter((f) => f.kind === 'report_refused_not_kept');
+    expect(notKept.map((f) => [f.prefix, f.count])).toEqual([['A-', 10]]);
+    expect(notKept[0]!.detail).toMatch(/computer u-box-a .* the highest of them was A-000160\./);
     // The never-received risk is named on the bound computer's side; both machines are to be checked, neither blamed.
     expect(refused[0]!.detail).toMatch(/head office checks A-'s bills for loss only on u-box-b's word — bills sold on u-box-a, if that is the till's real store computer, are not checked\. Check both machines/);
     expect(refused[0]!.detail).not.toMatch(/Check which machine|must not run/);

@@ -6,7 +6,7 @@ import { boxHistorySealKey } from '../../services/platform/src/box-health';
 
 /**
  * Round 30 · OB-111: the key the tests seal the store computers' saved history with — made at run time from random bytes, so
- * no key sits in the repository (a real head office derives its own from PACK_SIGNING_KEY). `OTHER_BOX_HISTORY_KEY` is a
+ * no key sits in the repository (a real head office derives its own from BOX_HISTORY_SEAL_KEY — round 32, OB-116). `OTHER_BOX_HISTORY_KEY` is a
  * second one: a result sealed with it must be set aside.
  */
 export const TEST_BOX_HISTORY_KEY = boxHistorySealKey(randomBytes(32).toString('hex'));

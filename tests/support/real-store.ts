@@ -8,6 +8,7 @@
 // issuer are handed to the API as its configuration exactly as a deployment's identity provider would be.
 
 import { readdirSync, readFileSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 import { Pool } from 'pg';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
@@ -73,6 +74,8 @@ export interface RealCloudInput {
   readonly tenantId: string;
   readonly owner: string;
   readonly packSigningKey: string;
+  /** Round 32 · OB-116: head office's own BOX_HISTORY_SEAL_KEY (default: made at run time from random bytes). */
+  readonly boxHistorySealKey?: string;
   /** PA-08: outbound providers handed to `startApi` exactly as a deployment would (tests: the recording adapter). */
   readonly providers?: ApiProviders;
   /** Further configuration handed to `startApi` as a deployment's environment would (e.g. BRIEF_WORKER_TENANT_IDS). */
@@ -121,6 +124,8 @@ export async function startRealCloud(input: RealCloudInput): Promise<RealCloud> 
   const running: RunningApi | undefined = await startApi({
     DATABASE_URL: asRole(input.databaseUrl, CONNECTED_APP_ROLE),
     PACK_SIGNING_KEY: input.packSigningKey,
+    // Round 32 · OB-116: head office's own seal secret — given, or made at run time (never in the repository, never the pack key).
+    BOX_HISTORY_SEAL_KEY: input.boxHistorySealKey ?? randomBytes(32).toString('hex'),
     IDP_SIGNING_KEY: policy.secret,
     IDP_ISSUER: policy.issuer,
     IDP_AUDIENCE: policy.audience,

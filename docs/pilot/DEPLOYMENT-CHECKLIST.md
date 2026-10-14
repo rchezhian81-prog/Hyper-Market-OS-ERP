@@ -19,7 +19,7 @@ production.** Each ☐ must be ticked with evidence before the store-floor pilot
 
 - [ ] **Separate** pilot Postgres 16 (own instance/DB), storage, and secrets — not shared with any real/prod data.
 - [ ] Pilot `.env` created from `infra/compose/.env.example`; every `REPLACE_WITH_…` replaced; **no secret committed**.
-- [ ] `PACK_SIGNING_KEY`, `IDP_SIGNING_KEY`, DB password generated fresh for the pilot.
+- [ ] `PACK_SIGNING_KEY`, `BOX_HISTORY_SEAL_KEY` (a different value, API only — OB-116), `IDP_SIGNING_KEY`, DB password generated fresh for the pilot.
 - [ ] `MIGRATION_TARGET_KIND=rehearsal`; `NODE_ENV=production`; local/**test IdP** configured.
 - [ ] **HTTPS** terminating (nginx/`infra/compose/nginx.conf`); secure + httpOnly session cookies.
 - [ ] Pilot-only users provisioned (genesis owner via `BOOTSTRAP_OWNER_*`); RBAC + tenant isolation confirmed.

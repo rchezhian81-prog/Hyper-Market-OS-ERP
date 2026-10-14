@@ -345,7 +345,7 @@ import type { AgentId, Budget, Proposal, EvidenceItem as AiEvidenceItem, AiDeps,
 import type { PricingDeps, PriceChangeRecord } from '../../pricing/src/index';
 import type { PriceListDeps } from '../../pricing/src/price-list';
 import type { PriceEntry } from '../../../packages/price-list/src/price-list';
-import { ROLE_CATALOGUE, STORE_MANAGER_ROLE_ID, STORE_COMPUTER_ROLE_ID, PROVIDER_RELAY_ROLE_ID, BACKUP_JOB_ROLE_ID, OWNER_ROLE_ID } from './roles';
+import { ROLE_CATALOGUE, STORE_MANAGER_ROLE_ID, STORE_COMPUTER_ROLE_ID, PROVIDER_RELAY_ROLE_ID, BACKUP_JOB_ROLE_ID, OWNER_ROLE_ID, isPlatformAdministrationRole } from './roles';
 import { combinedDuties } from '../../identity/src/separation-of-duties';
 import { isMachineCredential } from '../../identity/src/machine-identities';
 import { metaOf as legacyAttachmentMeta, type LegacyHistoryDeps, type LegacyHistoryDocument, type LegacyAttachment, type LegacyAttachmentMeta } from '../../migration/src/legacy-history';
@@ -12854,6 +12854,15 @@ export function observedHealthAdapter(input: {
       const owners = [...new Set((await effectiveGrants(input.store, tenantId)).filter((g) => g.roleId === OWNER_ROLE_ID).map((g) => g.userId))].sort();
       return owners[0] === undefined ? undefined : { userId: owners[0], name: `the owner (${owners[0]})` };
     },
+    // Round 32 · OB-115: who may change a BUILT-IN rule — only a person who holds the owner role; whether this person holds
+    // the IT/platform administration function is said too (refused by name, as OB-91).
+    builtInRuleAuthorityOf: async (tenantId, userId) => {
+      const mine = (await effectiveGrants(input.store, tenantId)).filter((g) => g.userId === userId);
+      return {
+        owner: mine.some((g) => g.roleId === OWNER_ROLE_ID),
+        platformAdministration: mine.some((g) => { const role = ROLE_CATALOGUE.find((r) => r.id === g.roleId); return role !== undefined && isPlatformAdministrationRole(role); }),
+      };
+    },
     defineAlertRules: async (tenantId, rules) => {
       await input.store.append(tenantId, ALERT_RULES_STREAM, makeEvent({
         id: `alert-rules-v${rules.version}`,
@@ -15018,7 +15027,7 @@ export async function storeComputerHistory(
     /** The pause between a build's steps (default: one turn of the event loop) — tests hold a build open with it. */
     readonly buildPause?: () => Promise<void>;
     /**
-     * Round 30 · OB-111: head office's key for the saved history's seal (`boxHistorySealKey`, from PACK_SIGNING_KEY). Absent:
+     * Round 30 · OB-111: head office's key for the saved history's seal (`boxHistorySealKey`, from head office's own BOX_HISTORY_SEAL_KEY — OB-116). Absent:
      * nothing saved is trusted and nothing is saved — every read folds every report, and the health read says so.
      */
     readonly sealKey?: BoxHistorySealKey;

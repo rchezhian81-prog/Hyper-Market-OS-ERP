@@ -18,9 +18,16 @@ describe('standup-check — settings', () => {
   it('flags every still-unfilled required setting, and passes a fully filled file', () => {
     const filled = {
       POSTGRES_PASSWORD: 'abc', DATABASE_URL: 'postgres://localhost:5432/store', PACK_SIGNING_KEY: 'k'.repeat(40),
-      IDP_SIGNING_KEY: 's'.repeat(40), IDP_ISSUER: 'https://idp', EDGE_TENANT_ID: 't-sre',
+      BOX_HISTORY_SEAL_KEY: 'h'.repeat(40), IDP_SIGNING_KEY: 's'.repeat(40), IDP_ISSUER: 'https://idp', EDGE_TENANT_ID: 't-sre',
     };
     expect(findUnsetSettings(filled)).toEqual([]);
+    // Round 32 · OB-116: head office's own seal secret is required, and never the pack key a store computer holds.
+    const { BOX_HISTORY_SEAL_KEY: _seal, ...noSeal } = filled; void _seal;
+    expect(findUnsetSettings(noSeal).map((f: { key: string }) => f.key)).toEqual(['BOX_HISTORY_SEAL_KEY']);
+    expect(findUnsetSettings({ ...filled, BOX_HISTORY_SEAL_KEY: `${PLACEHOLDER}_A_GENERATED_VALUE` }).map((f: { key: string }) => f.key)).toEqual(['BOX_HISTORY_SEAL_KEY']);
+    expect(findUnsetSettings({ ...filled, BOX_HISTORY_SEAL_KEY: filled.PACK_SIGNING_KEY })).toEqual([
+      expect.objectContaining({ key: 'BOX_HISTORY_SEAL_KEY', why: expect.stringMatching(/same as PACK_SIGNING_KEY/) }),
+    ]);
 
     const half = { ...filled, PACK_SIGNING_KEY: `${PLACEHOLDER}_A_GENERATED_VALUE`, DATABASE_URL: '' };
     const keys = findUnsetSettings(half).map((f: { key: string }) => f.key);

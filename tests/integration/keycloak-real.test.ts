@@ -174,7 +174,7 @@ describe.skipIf(!READY)('a real Keycloak, with the repository realm, signs a per
     const platform = new Pool({ connectionString: DATABASE_URL });
     try { await ensureAppRole(platform, 'sre_app_keycloak_proof'); } finally { await platform.end(); }
     const api = await startApi({
-      DATABASE_URL: asRole(DATABASE_URL!, 'sre_app_keycloak_proof'), PACK_SIGNING_KEY: ['proof', 'pack', 'key'].join('-').padEnd(48, '0'),
+      DATABASE_URL: asRole(DATABASE_URL!, 'sre_app_keycloak_proof'), PACK_SIGNING_KEY: ['proof', 'pack', 'key'].join('-').padEnd(48, '0'), BOX_HISTORY_SEAL_KEY: ['proof', 'seal', 'key'].join('-').padEnd(48, '1'),
       IDP_SIGNING_KEY: pilot.secret, IDP_ISSUER: pilot.issuer, IDP_AUDIENCE: 'sre-retail-os-api',
       IDP_OIDC_ISSUER: ISSUER, IDP_OIDC_JWKS_URL: `${ISSUER}/protocol/openid-connect/certs`,
       PORT: '0', NODE_ENV: 'test', MIGRATION_TARGET_KIND: 'rehearsal',

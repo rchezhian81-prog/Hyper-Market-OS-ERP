@@ -94,6 +94,12 @@ export interface StoredAlertRules {
    * version names the list again (an empty list turns them all back on). Absent: every built-in rule is on.
    */
   readonly builtInOff?: readonly string[];
+  /**
+   * Round 32 · OB-115: who last CHANGED a built-in rule (turned it off or on, edited or un-edited it) and when — carried across
+   * versions until the next such change, so GET alert-rules shows it whoever saved the rules last. Absent: never changed.
+   */
+  readonly builtInChangedBy?: string;
+  readonly builtInChangedAt?: string;
   readonly definedBy: string;
   readonly definedAt: string;
 }
@@ -111,6 +117,15 @@ export interface StoredAlertRules {
  */
 export const BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID = 'built-in:store-computer-checks-stuck';
 export const BUILT_IN_ALERT_RULE_IDS: readonly string[] = [BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID];
+/**
+ * Round 32 · OB-115: the component each built-in rule watches — an edited built-in rule must keep it (an edit naming another
+ * component, a misspelt one, could never fire for its purpose while still looking "edited, to the owner").
+ */
+export const BUILT_IN_RULE_COMPONENTS: Readonly<Record<string, string>> = { [BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID]: STORE_COMPUTER_CHECKS_STUCK_COMPONENT };
+/** Round 32 · OB-115: the alert id prefix of the notice the owner gets for every change to a built-in rule. */
+export const BUILT_IN_RULE_CHANGED_NOTICE = 'notice:built-in-alert-rule-changed';
+/** How soon the owner is asked to acknowledge that notice (a day: it is a "for your information", not an emergency). */
+export const BUILT_IN_RULE_CHANGED_NOTICE_ACK_MINUTES = 24 * 60;
 /** How soon the owner is asked to acknowledge the built-in alert (he can change it by editing the rule). */
 export const BUILT_IN_STORE_COMPUTER_CHECKS_ACK_MINUTES = 60;
 
@@ -124,6 +139,9 @@ export interface BuiltInRuleState {
   /** The rule in force for it (`on` / `edited`). */
   readonly rule?: AlertRule;
   readonly description: string;
+  /** Round 32 · OB-115: who last changed a built-in rule, and when (absent: never changed — as it came). */
+  readonly lastChangedBy?: string;
+  readonly lastChangedAt?: string;
 }
 
 function builtInRules(owner: ShopOwner | undefined): readonly { readonly alertId: string; readonly rule?: AlertRule; readonly description: string }[] {
@@ -137,18 +155,61 @@ function builtInRules(owner: ShopOwner | undefined): readonly { readonly alertId
   }];
 }
 
+/**
+ * Round 32 · OB-115 "A" (owner, 14 Oct 2026, in writing, "Only you"; verifier r31 NEW-1) — ONLY THE OWNER CHANGES A BUILT-IN
+ * RULE (stated). A save of the alert rules (PUT /v1/platform/alert-rules) that would turn a built-in rule off or back on, edit
+ * it, change the owner's edit of it (another person, another acknowledgement time, another escalation) or remove that edit is
+ * REFUSED by name (403, on the audit trail like every request) unless the person saving holds the owner role — the IT/platform
+ * administrator in particular (`built_in_alert_rule_refused_to_platform_administrator`, as OB-91), and any other person
+ * (`built_in_alert_rule_owner_only`). Anyone with alert rights may still save the shop's OTHER rules, as long as each built-in
+ * rule is sent exactly as it stands (GET shows it) and builtInOff is left out (or named unchanged). Every change the owner makes
+ * to a built-in rule is also SENT TO THE OWNER as a notice (his alert board, his inbox and, with a message provider, his phone),
+ * saying who changed what and when. An edited built-in rule must keep its own component, fire at a status it reaches, and name
+ * no branch (`built_in_alert_rule_cannot_fire`).
+ *
+ * builtInOff CARRIES INTO LATER VERSIONS (the rule chosen, stated): a version that leaves builtInOff out keeps the list as it
+ * was — that is not a change, so anyone with alert rights may save other rules meanwhile — but it is never kept unseen: GET
+ * alert-rules shows each built-in rule's state with who last changed it and when (`lastChangedBy`, `lastChangedAt`, carried
+ * across versions whoever saves later), and EVERY save's reply states each built-in rule's state after the save (`builtIn`)
+ * and, when one is still off, says so in words (`builtInStillOff`). Only the owner turns it back on (builtInOff: []).
+ *
+ * Returns what a save changes about the built-in rules, in words (empty: nothing).
+ */
+export function builtInRuleChanges(current: StoredAlertRules | undefined, rules: readonly AlertRule[], offAfter: readonly string[] | undefined): string[] {
+  const out: string[] = [];
+  const offBefore = new Set(current?.builtInOff ?? []);
+  const offNow = new Set(offAfter ?? []);
+  const key = (r: AlertRule): string => JSON.stringify([r.alertId, r.component, r.firesAt, r.ownerUserId, r.ownerName, r.ackWithinMinutes, r.escalatesToUserId ?? null, r.branchId ?? null]);
+  const words = (r: AlertRule): string => `to ${r.ownerName} (${r.ownerUserId}), at ${r.firesAt}, answered within ${r.ackWithinMinutes} minutes${r.escalatesToUserId === undefined ? '' : `, escalating to ${r.escalatesToUserId}`}`;
+  for (const id of BUILT_IN_ALERT_RULE_IDS) {
+    if (!offBefore.has(id) && offNow.has(id)) out.push(`turned ${id} OFF`);
+    if (offBefore.has(id) && !offNow.has(id)) out.push(`turned ${id} back on`);
+    const before = current?.rules.filter((r) => r.alertId === id).map(key).join('|') ?? '';
+    const after = rules.filter((r) => r.alertId === id);
+    if (before === after.map(key).join('|')) continue;
+    const was = current?.rules.find((r) => r.alertId === id);
+    out.push(after.length === 0 ? `removed the owner's edit of ${id} (it goes back to the built-in rule, to the owner)`
+      : was === undefined ? `edited ${id}: it would go ${words(after[0]!)}`
+      : `changed the edit of ${id}: from ${words(was)} to ${words(after[0]!)}`);
+  }
+  return out;
+}
+
 /** Round 31 · OB-114: the rules in force — the owner's own, and every built-in rule he has not turned off or replaced. */
 export function rulesInForce(stored: StoredAlertRules | undefined, owner: ShopOwner | undefined): { readonly rules: readonly AlertRule[]; readonly builtIn: readonly BuiltInRuleState[] } {
   const own = stored?.rules ?? [];
   const off = new Set(stored?.builtInOff ?? []);
   const rules: AlertRule[] = [...own];
   const builtIn: BuiltInRuleState[] = [];
+  // Round 32 · OB-115: who last changed the built-in rules, shown with each (whoever saved the rules last).
+  const changed = stored?.builtInChangedBy === undefined || stored.builtInChangedAt === undefined ? {}
+    : { lastChangedBy: stored.builtInChangedBy, lastChangedAt: stored.builtInChangedAt };
   for (const b of builtInRules(owner)) {
     const edited = own.find((r) => r.alertId === b.alertId);
-    if (off.has(b.alertId)) builtIn.push({ alertId: b.alertId, state: 'off', description: b.description });
-    else if (edited !== undefined) builtIn.push({ alertId: b.alertId, state: 'edited', rule: edited, description: b.description });
-    else if (b.rule === undefined) builtIn.push({ alertId: b.alertId, state: 'no_owner', description: `${b.description} — NOT in force: nobody holds the owner role` });
-    else { rules.push(b.rule); builtIn.push({ alertId: b.alertId, state: 'on', rule: b.rule, description: b.description }); }
+    if (off.has(b.alertId)) builtIn.push({ alertId: b.alertId, state: 'off', description: `${b.description} — TURNED OFF${stored?.builtInChangedBy === undefined ? '' : ` (last changed by ${stored.builtInChangedBy} at ${stored.builtInChangedAt})`}`, ...changed });
+    else if (edited !== undefined) builtIn.push({ alertId: b.alertId, state: 'edited', rule: edited, description: b.description, ...changed });
+    else if (b.rule === undefined) builtIn.push({ alertId: b.alertId, state: 'no_owner', description: `${b.description} — NOT in force: nobody holds the owner role`, ...changed });
+    else { rules.push(b.rule); builtIn.push({ alertId: b.alertId, state: 'on', rule: b.rule, description: b.description, ...changed }); }
   }
   // An owner's version of a built-in rule he also turned off is not in force either.
   return { rules: rules.filter((r) => !off.has(r.alertId)), builtIn };
@@ -225,6 +286,11 @@ export interface ObservedHealthDeps extends Pick<AlertLifecycleDeps, 'alerts' | 
   readonly separationOfDuties?: (tenantId: string) => Promise<readonly { readonly userId: string; readonly itRoles: readonly string[]; readonly businessRoles: readonly string[] }[]>;
   /** Round 31 · OB-114: who holds the owner role now (the built-in rules' addressee). Absent or nobody: the built-in rules are not in force (said). */
   readonly shopOwner?: (tenantId: string) => Promise<ShopOwner | undefined> | ShopOwner | undefined;
+  /**
+   * Round 32 · OB-115: may this person change a BUILT-IN rule — do they hold the owner role — and do they hold the IT/platform
+   * administration function (said by name when refused, as OB-91). Absent: nobody may change a built-in rule (fail closed).
+   */
+  readonly builtInRuleAuthorityOf?: (tenantId: string, userId: string) => Promise<{ readonly owner: boolean; readonly platformAdministration: boolean }>;
 }
 
 /** OB-95: one component naming each person who holds both the IT/platform role and a business role (none: no component). */
@@ -531,18 +597,85 @@ export function observedHealthRoutes(deps: ObservedHealthDeps): readonly Route[]
             nextSafeAction: 'Correct the rules and send the whole set again. The rules in force are unchanged.',
           });
         }
+        // Round 32 · OB-115: an edited built-in rule must still be able to fire for its purpose — its own component, at a
+        // status that component reaches when the checks are stuck, shop-wide.
+        for (const r of rules) {
+          const component = BUILT_IN_RULE_COMPONENTS[r.alertId];
+          if (component === undefined) continue;
+          if (r.component !== component || r.firesAt === 'ok' || r.branchId !== undefined) {
+            throw apiError(400, {
+              code: 'built_in_alert_rule_cannot_fire',
+              whatHappened: `The built-in rule ${r.alertId} watches "${component}" (shop-wide) and fires when it is down. An edit must keep that component, fire at "down", "degraded" or "unknown" (never "ok", which fires when all is well), and name no branch — this one ${r.component !== component ? `names "${r.component}", which can never tell the owner the store computer checks are stuck` : r.firesAt === 'ok' ? 'fires at "ok"' : `names branch ${r.branchId}`}.`,
+              wasItSaved: 'not_saved',
+              nextSafeAction: `Keep component "${component}" in the edited rule (change only who gets it, how soon they answer, and who it escalates to), or turn the rule off by name in builtInOff. The rules in force are unchanged.`,
+            });
+          }
+        }
         const current = await deps.alertRules(ctx.tenantId);
         const definedAt = deps.now();
+        // OB-114: a built-in rule turned off stays off until a version names the list again (round 32: said in every reply).
+        const offAfter = builtInOff ?? current?.builtInOff;
+        // Round 32 · OB-115: what this save changes about the BUILT-IN rules — turned off / on, or edited / un-edited.
+        const builtInChanges = builtInRuleChanges(current, rules, offAfter);
+        if (builtInChanges.length > 0) {
+          const who = deps.builtInRuleAuthorityOf === undefined ? { owner: false, platformAdministration: false } : await deps.builtInRuleAuthorityOf(ctx.tenantId, ctx.userId);
+          if (!who.owner) {
+            throw apiError(403, who.platformAdministration ? {
+              code: 'built_in_alert_rule_refused_to_platform_administrator',
+              whatHappened: `Only the shop's owner may turn off, edit or re-point a built-in alert rule (owner decision OB-115) — it exists to reach HIM. The platform (IT) administrator looks after the computers the rule watches, so may never change it (as OB-91 / OB-95), whatever stores the account covers. This save would have ${builtInChanges.join('; ')}.`,
+              wasItSaved: 'not_saved',
+              nextSafeAction: 'Save your rules with every built-in rule exactly as GET /v1/platform/alert-rules shows it (and builtInOff left out), or ask the owner to make this change himself. Nothing was changed.',
+            } : {
+              code: 'built_in_alert_rule_owner_only',
+              whatHappened: `Only the shop's owner may turn off, edit or re-point a built-in alert rule (owner decision OB-115) — it exists to reach him. This account does not hold the owner role. This save would have ${builtInChanges.join('; ')}.`,
+              wasItSaved: 'not_saved',
+              nextSafeAction: 'Save your rules with every built-in rule exactly as GET /v1/platform/alert-rules shows it (and builtInOff left out), or ask the owner to make this change himself. Nothing was changed.',
+            });
+          }
+        }
         const stored: StoredAlertRules = {
           version: (current?.version ?? 0) + 1, rules, thresholds, backupMaxAgeSeconds: maxAge as number,
           // PA-12 r6: the clock a never-reporting backup is judged MISSED by starts with the FIRST rules, and stays.
           backupsExpectedSince: current === undefined ? definedAt : (current.backupsExpectedSince ?? current.definedAt),
-          // OB-114: a built-in rule turned off stays off until a version names the list again.
-          ...((builtInOff ?? current?.builtInOff) === undefined ? {} : { builtInOff: builtInOff ?? current!.builtInOff! }),
+          ...(offAfter === undefined ? {} : { builtInOff: offAfter }),
+          // Round 32 · OB-115: who last changed a built-in rule, carried until the next such change.
+          ...(builtInChanges.length > 0 ? { builtInChangedBy: ctx.userId, builtInChangedAt: definedAt }
+            : current?.builtInChangedBy === undefined || current.builtInChangedAt === undefined ? {}
+            : { builtInChangedBy: current.builtInChangedBy, builtInChangedAt: current.builtInChangedAt }),
           definedBy: ctx.userId, definedAt,
         };
         await deps.defineAlertRules(ctx.tenantId, stored);
-        return { status: 200, body: { version: stored.version, rules: rules.length, components: [...new Set(rules.map((r) => r.component))], ...(stored.builtInOff === undefined ? {} : { builtInOff: stored.builtInOff }) } };
+        const owner = deps.shopOwner === undefined ? undefined : await deps.shopOwner(ctx.tenantId);
+        const { builtIn } = rulesInForce(stored, owner);
+        // Round 32 · OB-115: every change to a built-in rule is also sent to the owner — a notice on his alert board, which the
+        // ops-alert worker delivers to his inbox (and phone, when a message provider is set) on its next pass. Kept, never deleted.
+        let noticeTo: string | undefined;
+        if (builtInChanges.length > 0 && owner !== undefined) {
+          const alertId = `${BUILT_IN_RULE_CHANGED_NOTICE}:v${stored.version}`;
+          const alert: RaisedAlert = {
+            alertId, component: 'alert_rules_built_in', status: 'degraded', ownerUserId: owner.userId, ownerName: owner.name,
+            detail: `a built-in alert rule was changed by ${ctx.userId} at ${definedAt} (rules version ${stored.version}): ${builtInChanges.join('; ')}. Now: ${builtIn.map((b) => `${b.alertId} is ${b.state}${b.rule === undefined ? '' : `, to ${b.rule.ownerName}`}`).join('; ')}. If you did not make this change, check GET /v1/platform/alert-rules and ask who did (owner decision OB-115)`,
+            raisedAt: definedAt,
+            ackDueBy: new Date(Date.parse(definedAt) + BUILT_IN_RULE_CHANGED_NOTICE_ACK_MINUTES * 60_000).toISOString().replace(/\.\d{3}Z$/, 'Z'),
+          };
+          await deps.recordAlertEvent(ctx.tenantId, { alertId, change: 'raised', by: ctx.userId, at: definedAt, alert }, `raise-${alertId}`);
+          noticeTo = owner.userId;
+        }
+        // The reply says, every time, the state of each built-in rule after this save — so a rule left OFF by an earlier
+        // version is never kept off unseen by whoever saves next (round 32 · OB-115).
+        const stillOff = builtIn.filter((b) => b.state === 'off').map((b) => b.alertId);
+        return {
+          status: 200,
+          body: {
+            version: stored.version, rules: rules.length, components: [...new Set(rules.map((r) => r.component))],
+            ...(stored.builtInOff === undefined ? {} : { builtInOff: stored.builtInOff }),
+            builtIn, builtInChanged: builtInChanges,
+            ...(noticeTo === undefined ? {} : { ownerNotified: noticeTo }),
+            ...(stillOff.length === 0 || builtInChanges.length > 0 ? {} : {
+              builtInStillOff: `${stillOff.join(', ')} ${stillOff.length === 1 ? 'is' : 'are'} still TURNED OFF (by ${stored.builtInChangedBy ?? 'an earlier version'}${stored.builtInChangedAt === undefined ? '' : ` at ${stored.builtInChangedAt}`}) — only the owner can turn ${stillOff.length === 1 ? 'it' : 'them'} back on (builtInOff: [])`,
+            }),
+          },
+        };
       },
     },
     {

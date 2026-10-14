@@ -65,6 +65,8 @@ export function findUnsetSettings(env) {
     ['POSTGRES_PASSWORD', 'the database has no password set'],
     ['DATABASE_URL', 'nothing can reach the database'],
     ['PACK_SIGNING_KEY', 'the price list every till trades on would be unsigned'],
+    // Round 32 · OB-116: head office's own seal secret — the API refuses to start without it.
+    ['BOX_HISTORY_SEAL_KEY', 'head office would refuse to start: it is head office\'s own secret for the store computers\' saved history (never put it on a store computer)'],
     ['IDP_SIGNING_KEY', 'the system could not tell a real login from a forged one'],
     ['IDP_ISSUER', 'the system does not know whose logins to trust'],
     ['EDGE_TENANT_ID', 'the store box does not know which shop it belongs to'],
@@ -75,6 +77,11 @@ export function findUnsetSettings(env) {
     if (value === undefined || value === '' || value.includes(PLACEHOLDER)) {
       findings.push({ key, why });
     }
+  }
+  // Round 32 · OB-116: the seal secret must be head office's own — never the pack key every store computer holds.
+  const seal = env['BOX_HISTORY_SEAL_KEY'];
+  if (seal !== undefined && seal !== '' && !seal.includes(PLACEHOLDER) && seal === env['PACK_SIGNING_KEY']) {
+    findings.push({ key: 'BOX_HISTORY_SEAL_KEY', why: 'it is the same as PACK_SIGNING_KEY, which every store computer holds — head office would refuse to start; generate a different one' });
   }
   return findings;
 }
@@ -224,6 +231,15 @@ async function main() {
     } else {
       results.push({ name: 'Settings', ok: true, advisory: true, detail: `no cloud settings on this PC (${envFile}) — the till's own settings are at ${tillEnvFile}; the books run elsewhere or not yet` });
     }
+  }
+
+  // Round 32 · OB-116: `--settings-only` — the release's pre-flight (infra/deploy/release.sh): only whether every required
+  // setting is filled in (names only, never a value), before anything is rebuilt or restarted.
+  if (process.argv.includes('--settings-only')) {
+    const settings = results.filter((r) => r.name === 'Settings');
+    console.log(renderReport(settings));
+    process.exitCode = settings.every((r) => r.ok) ? 0 : 1;
+    return;
   }
 
   if (tillEnv !== undefined) {

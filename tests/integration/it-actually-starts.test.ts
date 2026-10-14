@@ -39,6 +39,7 @@ const fakeDatabaseUrl = ['postgres', '://', 'u', ':', 'p', '@', 'localhost:5432/
 const goodEnv = {
   DATABASE_URL: fakeDatabaseUrl,
   PACK_SIGNING_KEY: KEY,
+  BOX_HISTORY_SEAL_KEY: ['deployment', 'test', 'seal', 'key'].join('-').padEnd(48, '1'),
   IDP_SIGNING_KEY: KEY,
   IDP_ISSUER: 'https://idp.example.test/',
   IDP_AUDIENCE: 'sre-retail-os-api',
@@ -53,7 +54,7 @@ describe('the service refuses to start on a bad configuration', () => {
     const r = loadConfig(CLOUD_API_CONFIG, {});
     expect(r.ok).toBe(false);
     expect(r.problems.map((p) => p.key).sort()).toEqual([
-      'DATABASE_URL', 'IDP_AUDIENCE', 'IDP_ISSUER', 'IDP_SIGNING_KEY', 'PACK_SIGNING_KEY',
+      'BOX_HISTORY_SEAL_KEY', 'DATABASE_URL', 'IDP_AUDIENCE', 'IDP_ISSUER', 'IDP_SIGNING_KEY', 'PACK_SIGNING_KEY',
     ]);
     // The identity provider's three are REQUIRED, not optional. Absent, `authenticate` would have
     // to fall back to something, and every fallback there is a way in. A deployment with no

@@ -65,9 +65,10 @@ cp .env.pilot.example .env.pilot
 # Generate fresh secrets and fill them into .env.pilot (do NOT paste these anywhere else):
 openssl rand -hex 24     # -> POSTGRES_PASSWORD
 openssl rand -base64 48  # -> PACK_SIGNING_KEY
+openssl rand -base64 48  # -> BOX_HISTORY_SEAL_KEY  (a DIFFERENT value — head office only, never on a store computer; OB-116)
 openssl rand -base64 48  # -> IDP_SIGNING_KEY   (the pilot/test IdP signing key)
 # Set in .env.pilot: POSTGRES_PASSWORD, DATABASE_URL (compose the postgres URL from the parts),
-#   PACK_SIGNING_KEY, IDP_SIGNING_KEY, IDP_ISSUER (your pilot test-IdP URL), IDP_AUDIENCE=sre-retail-os-api,
+#   PACK_SIGNING_KEY, BOX_HISTORY_SEAL_KEY, IDP_SIGNING_KEY, IDP_ISSUER (your pilot test-IdP URL), IDP_AUDIENCE=sre-retail-os-api,
 #   EDGE_TENANT_ID=pilot-demo, and BOOTSTRAP_OWNER_* for the genesis owner (OA-6).
 # Confirm the safe posture is pinned (already in the template): NODE_ENV=production, MIGRATION_TARGET_KIND=rehearsal.
 ```

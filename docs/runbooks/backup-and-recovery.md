@@ -406,7 +406,7 @@ count still open and names the others.
   till with a bill stuck for 30 days builds in under 1 s and saves 0.62 MB (was 59 s and 2.07 MB); ten tills
   each with a stuck bill for a week build in under 1 s with no pause of the process over 60 ms (was 38 s with
   2.1 s pauses); an honest busy store saves 0.66 MB at 7, 30 and 90 days.
-- **The saved history is sealed with a secret key (OB-111).** Head office seals it with a key it derives, under
+- **The saved history is sealed with a secret key (OB-111; the key's source changed in round 32 — OB-116 below).** Head office seals it with a key it derives, under
   its own label, from **PACK_SIGNING_KEY** (no new secret to set; the key is held in memory only — never in
   the database, the repository or a log). Someone who changes the saved row with the database password cannot
   make a matching seal: the row is set aside and rebuilt from the reports (which cannot be changed). If you
@@ -420,7 +420,7 @@ count still open and names the others.
   bill-number prefixes that are not that store's (a prefix of another store's till, or one no till was ever
   given — or a new count under one). The rest are counted, never kept, and said in ONE line on the store's bill
   numbers: "N more refused bill-number prefix(es) not kept: store S's computer <name> …", shown for 7 days
-  after the last one. The store's own tills' prefixes are never capped. If you see that line, call support
+  after the last one. The store's own tills' prefixes are not capped by this rule (round 32 caps them per till — OB-117 below). If you see that line, call support
   the same day: that store computer is faulty or has been altered; support may block its sign-in.
 
 **Round 31 (owner decisions OB-113 and OB-114, 14 Oct 2026):**
@@ -442,7 +442,7 @@ count still open and names the others.
   within 60 minutes; nobody is above the owner, so it does not escalate to anyone else.
   - **To see it:** `GET /v1/platform/alert-rules` lists `builtIn` with its state: `on`, `edited` (your own
     version is in force), `off`, or `no_owner` (nobody holds the owner role — then it is NOT in force).
-  - **To change it** (another person, another acknowledgement time, someone to escalate to): put a rule with
+  - **To change it** (round 32: the OWNER only — OB-115 below) (another person, another acknowledgement time, someone to escalate to): put a rule with
     alertId `built-in:store-computer-checks-stuck` and component `store_computer_checks_stuck` in your rules
     (`PUT /v1/platform/alert-rules`, the whole set as always). **To turn it off:** send `builtInOff:
     ["built-in:store-computer-checks-stuck"]` with your rules (an empty `rules: []` is allowed then). It stays
@@ -451,6 +451,46 @@ count still open and names the others.
     until acknowledged (as for any rule removed).
   - **What to do when it arrives:** open Operational health; if `box_history_build` says the build failed, or
     `box_history_seal` is shown, call support the same day. The tills keep selling; nothing is lost.
+
+**Round 32 (owner decisions OB-115 to OB-117, 14 Oct 2026) — these replace parts of rounds 30 and 31 above:**
+
+- **Only the owner may turn off, edit or re-point the built-in alert (OB-115).** A save of the alert rules
+  (`PUT /v1/platform/alert-rules`) that would turn `built-in:store-computer-checks-stuck` off or back on, edit it, change
+  the owner's edit of it, or remove that edit is REFUSED unless the person saving holds the **owner** role:
+  - the IT/platform administrator gets `403 built_in_alert_rule_refused_to_platform_administrator` (as OB-91);
+  - anyone else (a store manager, head office staff) gets `403 built_in_alert_rule_owner_only`;
+  - each refusal is on the audit trail (who, when, 403) like every request; nothing is changed.
+  Others with alert rights may still save the shop's OTHER rules, as long as they send each built-in rule exactly as
+  `GET /v1/platform/alert-rules` shows it and leave `builtInOff` out. An edit must keep component
+  `store_computer_checks_stuck`, fire at `down` (or `degraded` / `unknown`, never `ok`) and name no branch — otherwise
+  `400 built_in_alert_rule_cannot_fire`, even for the owner.
+  - **Every change the owner makes is sent to him:** a notice `notice:built-in-alert-rule-changed:v<version>` lands on
+    his alert board and in his inbox at once ("a built-in alert rule was changed by … at …: turned … OFF. Now: …"), and
+    to his phone on the alert worker's next pass when a message provider is set. He acknowledges it like any alert; it
+    is kept. If you get one you did not cause, check `GET /v1/platform/alert-rules` and ask who did.
+  - **"Off" carries into later versions, but is never hidden:** a later save that leaves `builtInOff` out keeps it as it
+    was (that is not a change). `GET /v1/platform/alert-rules` shows each built-in rule's state with `lastChangedBy` and
+    `lastChangedAt` (whoever saved the rules last), and every save's reply lists the built-in rules' states and, when one
+    is still off, says so in words (`builtInStillOff`). Only the owner turns it back on (`builtInOff: []`).
+- **The saved history's seal now uses head office's OWN secret (OB-116).** Round 30 derived the seal key from
+  PACK_SIGNING_KEY — which every store computer also holds, so someone with a store computer's settings file and the
+  database password could have forged it. From round 32 the key comes from **`BOX_HISTORY_SEAL_KEY`**, a separate secret
+  given to the **API only** (at least 32 characters; never to a store computer, a till or the edge container). The API
+  refuses to start without it, with the placeholder, too short, or equal to PACK_SIGNING_KEY (or the personal-data or
+  sign-in key), naming the setting and never its value. The saved form moved to `box-history-text@3`, so the first
+  health read after installing round 32 sets round 30/31's saved history aside once and rebuilds it ("being prepared"
+  for a short while on a big store; nothing lost). Changing `BOX_HISTORY_SEAL_KEY` later does the same. Setting it on a
+  box: `docs/runbooks/automatic-deployment.md`, "Settings a release needs".
+- **A store computer repeating impossible counts for its OWN tills is capped too (OB-117).** Per store computer, per
+  till prefix and per store day (the same day as OB-113), head office keeps at most 20 NEW refused counts (a count too
+  far ahead of what head office received, or a second store computer naming a till bound to another). The rest are
+  counted, never kept, and said in ONE line per store computer and till: "N more refused bill count(s) under <prefix>
+  not kept: store S's computer <name> … the highest of them was <prefix><number>", shown for 7 days after the last one.
+  The counts that were kept are still listed as before (the highest one first). A second store computer naming a till's
+  prefix uses up only its own 20, never the real store computer's. Measured (the verifier's probe F1: 10 tills, a new
+  impossible count every 15 s for 200 minutes): the saved history is 72 KB, of which the flood adds 46 KB (round 31:
+  2.82 MB, about 20 MB a day). If you see that line, call support the same day; ask them to block that store computer's
+  sign-in if it goes on.
 
 ## Part 4 — Restoring (the one that matters)
 

@@ -8,6 +8,7 @@
 // a given user (auto-minting a token via the local IdP); `raw()` sends an explicit/no token for
 // auth-rejection tests.
 
+import { randomBytes } from 'node:crypto';
 import type { IdentityDirectory } from '../../services/identity/src/identity-directory';
 import { InMemoryEventStore, type EventStore } from '../../packages/persistence/src/event-store';
 import { makeEvent } from '../../packages/contracts/src/event';
@@ -42,6 +43,11 @@ const PACK_KEY = ['sre', 'local', 'test', 'pack', 'signing', 'key'].join('-').pa
 /** The pack signing key this harness's surface runs with — a store computer under test that talks to this harness uses
  *  the same one, as a real store and its head office do (packs verify, and the box's seal checks, ADR-0023). */
 export const TEST_PACK_KEY = PACK_KEY;
+/**
+ * Round 32 · OB-116: head office's OWN seal secret for the store computers' saved history (BOX_HISTORY_SEAL_KEY) — made at
+ * run time from random bytes (no key sits in the repository), and never the pack key a store computer holds.
+ */
+export const TEST_BOX_HISTORY_SEAL_SECRET = randomBytes(32).toString('hex');
 
 /** The shared local IdP for tests — its policy verifies against the harness's authenticator. */
 export const TEST_IDP = new LocalIdp({
@@ -133,6 +139,8 @@ export function apiHarness(opts: {
   identityDirectory?: IdentityDirectory;
   /** OB-78: the tenant settings store (durable on PostgreSQL, or one shared in-memory store) — so a restart keeps the owner's answers. */
   settings?: DurableTenantSettings;
+  /** Round 32 · OB-116: the seal secret this head office runs with (default: the run-time TEST_BOX_HISTORY_SEAL_SECRET). */
+  boxHistorySealSecret?: string;
 } = {}): ApiHarness {
   const store = opts.personalDataKeys === undefined ? opts.store ?? new InMemoryEventStore()
     : personalDataStore(opts.store ?? new InMemoryEventStore(), opts.personalDataKeys);
@@ -141,7 +149,7 @@ export function apiHarness(opts: {
   // routes (which record) and the authenticator (which refuses) — exactly as `main.ts` composes it.
   const revocations = new TokenRevocationList(tokenRevocationAdapter({ store }));
   const built = buildRouter(buildSurface({
-    signingKey: PACK_KEY, migrationTargetKind: opts.migrationTargetKind ?? 'rehearsal', store, revocations,
+    signingKey: PACK_KEY, boxHistorySealSecret: opts.boxHistorySealSecret ?? TEST_BOX_HISTORY_SEAL_SECRET, migrationTargetKind: opts.migrationTargetKind ?? 'rehearsal', store, revocations,
     ...(opts.personalDataKeys === undefined ? {} : { personalDataKeys: opts.personalDataKeys }),
     ...(opts.paymentVerifier === undefined ? {} : { paymentVerifier: opts.paymentVerifier }),
     ...(opts.invoiceExtractor === undefined ? {} : { invoiceExtractor: opts.invoiceExtractor }),
