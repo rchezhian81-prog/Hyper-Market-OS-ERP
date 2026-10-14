@@ -6,7 +6,7 @@ import { InMemorySnapshotStore } from '../../packages/persistence/src/snapshot';
 import { makeEvent } from '../../packages/contracts/src/event';
 import { STREAM, streamName, storeComputerHistory, boxHistoryBuilding } from '../../services/api/src/adapters';
 import { readBoxHistory, FOLD_SETTLE_MINUTES, type BoxHealthRecord, type BoxHistorySnapshot, type BoxHistoryJudge } from '../../services/platform/src/box-health';
-import { honestStore } from '../support/box-history';
+import { honestStore, TEST_BOX_HISTORY_KEY } from '../support/box-history';
 
 /**
  * **Round 29 · owner decisions OB-105 and OB-106 "A" (14 Oct 2026, in writing) — the saved store-computer history stays small for
@@ -61,7 +61,7 @@ describe('round 29 · OB-105/106: the saved store-computer history stays small, 
         const window = entries.slice(0, k).filter((e) => snapshot === undefined || e.seq > snapshot.seq);
         for (const e of entries.slice(0, k)) if (Date.parse(e.raw.receivedAt) <= last - 120_000) for (const x of e.raw.receiptNumbersIssued ?? []) banked.set(x.prefix, x.through);
         const s = performance.now();
-        const got = readBoxHistory({ entries: window, ...(snapshot === undefined ? {} : { snapshot }), at, banked, judge, timeZone: 'UTC', settleBefore: iso(Date.parse(at) - FOLD_SETTLE_MINUTES * 60_000), settledThrough: seq - DAY + k });
+        const got = readBoxHistory({ sealKey: TEST_BOX_HISTORY_KEY, entries: window, ...(snapshot === undefined ? {} : { snapshot }), at, banked, judge, timeZone: 'UTC', settleBefore: iso(Date.parse(at) - FOLD_SETTLE_MINUTES * 60_000), settledThrough: seq - DAY + k });
         const readMs = performance.now() - s;
         if ('setAside' in got) throw new Error(`set aside on day ${d}: ${got.setAside}`);
         // The saved result goes through JSON, as it does on PostgreSQL (kept as its text).
@@ -102,7 +102,7 @@ describe('round 29 · OB-105/106: the saved store-computer history stays small, 
     try {
       const at = iso(Date.parse(records[records.length - 1]!.receivedAt) + 60_000);
       const started = performance.now();
-      const first = await storeComputerHistory(store, T, at, { snapshots, timeZone: 'UTC', waitMs: 0 });
+      const first = await storeComputerHistory(store, T, at, { sealKey: TEST_BOX_HISTORY_KEY, snapshots, timeZone: 'UTC', waitMs: 0 });
       expect(first.preparing).toBeDefined();
       const building = boxHistoryBuilding(snapshots, T)!;
       const ready: number[] = [];
@@ -116,7 +116,7 @@ describe('round 29 · OB-105/106: the saved store-computer history stays small, 
         await new Promise((resolve) => { setTimeout(resolve, 50); });
       }
       const buildMs = performance.now() - started;
-      const after = await storeComputerHistory(store, T, at, { snapshots, timeZone: 'UTC', waitMs: 0 });
+      const after = await storeComputerHistory(store, T, at, { sealKey: TEST_BOX_HISTORY_KEY, snapshots, timeZone: 'UTC', waitMs: 0 });
       expect(after.preparing).toBeUndefined();
       console.log(`[OB-106] background build of ${records.length} reports: ${buildMs.toFixed(0)} ms; longest event-loop pause ${worst.toFixed(0)} ms; ${ready.length} readiness answers during it, slowest ${Math.max(...ready).toFixed(0)} ms; saved ${(after.history.sizeBytes! / 1024).toFixed(0)} KB`);
       expect(ready.length).toBeGreaterThan(2);

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { takeHeldTransactionTurn } from '../support/held-transaction-turn';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import { Pool } from 'pg';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore, InMemoryEventStore, type EventStore, type ReadOptions } from '../../packages/persistence/src/event-store';
@@ -16,7 +16,7 @@ import {
   type BoxHealthRecord, type BoxHistorySnapshot,
 } from '../../services/platform/src/box-health';
 import { DEFAULT_THRESHOLDS } from '../../packages/ops/src/index';
-import { history, honestStore, iso } from '../support/box-history';
+import { history, honestStore, iso, TEST_BOX_HISTORY_KEY, OTHER_BOX_HISTORY_KEY } from '../support/box-history';
 
 /**
  * **Round 29 · owner decision OB-106 "A" (14 Oct 2026, in writing, "Both before pilot"; verifier r28 NEW-2, NEW-7, NEW-8) — the
@@ -84,11 +84,11 @@ async function seeded(c: Ctx): Promise<{ at: string; saved: BoxHistorySnapshot }
   all = all.map((r, i) => ({ ...r, receivedAt: iso(t0 + i * 15_000), observedAt: iso(t0 + i * 15_000) }));
   await put(c.store, c.T, all);
   const at = iso(t0 + all.length * 15_000 + 30 * 60_000);
-  const first = await storeComputerHistory(c.store, c.T, at, { snapshots: c.snapshots, timeZone: 'UTC' });
+  const first = await storeComputerHistory(c.store, c.T, at, { sealKey: TEST_BOX_HISTORY_KEY, snapshots: c.snapshots, timeZone: 'UTC' });
   expect(first.preparing).toBeUndefined();
   await savedNow(c, at);
   const stored = (await c.snapshots.load<unknown>(c.T, BOX, 'box-health-history@1'))?.result.state;
-  expect(stored).toMatchObject({ format: 'box-history-text@1' }); // kept as its JSON text, so jsonb never reorders what is sealed
+  expect(stored).toMatchObject({ format: 'box-history-text@2' }); // kept as its JSON text, so jsonb never reorders what is sealed
   return { at, saved: boxHistoryFromStore(stored) as BoxHistorySnapshot };
 }
 /**
@@ -98,10 +98,10 @@ async function seeded(c: Ctx): Promise<{ at: string; saved: BoxHistorySnapshot }
  */
 async function savedNow(c: Ctx, at: string): Promise<void> {
   const deadline = Date.now() + 30_000;
-  let r = await storeComputerHistory(c.store, c.T, at, { snapshots: c.snapshots, timeZone: 'UTC' });
+  let r = await storeComputerHistory(c.store, c.T, at, { sealKey: TEST_BOX_HISTORY_KEY, snapshots: c.snapshots, timeZone: 'UTC' });
   while ((r.history.saveHeld !== null || (await c.snapshots.load<unknown>(c.T, BOX, 'box-health-history@1')) === undefined) && Date.now() < deadline) {
     await new Promise((resolve) => { setTimeout(resolve, 200); });
-    r = await storeComputerHistory(c.store, c.T, at, { snapshots: c.snapshots, timeZone: 'UTC' });
+    r = await storeComputerHistory(c.store, c.T, at, { sealKey: TEST_BOX_HISTORY_KEY, snapshots: c.snapshots, timeZone: 'UTC' });
   }
   expect(r.history.saveHeld, 'the fence settles and the result is saved').toBeNull();
 }
@@ -119,19 +119,28 @@ async function damagedIsSetAside(c: Ctx): Promise<void> {
   // not the saved form at all (a JSON tree, an empty object).
   const { check: _c0, sizeBytes: _s0, ...plainSaved } = saved;
   void _c0; void _s0;
-  const resealed = (x: object): unknown => boxHistoryToStore(sealBoxHistory(x as never));
+  const resealed = (x: object): unknown => boxHistoryToStore(sealBoxHistory(x as never, TEST_BOX_HISTORY_KEY));
   const shapes: [string, unknown][] = [
     ['never missing', boxHistoryToStore({ ...saved, never: undefined } as never)],
     ['stores garbage', resealed({ ...plainSaved, stores: [['S1', null, 'x', 'y', 'z']] })],
     ['keys garbage', resealed({ ...plainSaved, never: { ...saved.never, keys: [{}] } })],
-    ['text not JSON', { format: 'box-history-text@1', text: '{"version":2,' }],
+    ['text not JSON', { format: 'box-history-text@2', text: '{"version":2,' }],
     ['a JSON tree, not the saved form', saved],
     ['empty object', {}],
+    // Round 30 · OB-111 (verifier r29 NEW-3, probe P2): ALTERED — its unused runs cleared — and re-sealed WITHOUT head office's
+    // key: with the plain SHA-256 of round 29, or under another key; and a round-29 row as it was kept.
+    ['re-sealed with a plain SHA-256', (() => {
+      const cleared = { ...plainSaved, never: { ...saved.never, keys: saved.never.keys.map((k) => ({ ...k, unused: [], unusedList: null })) } };
+      const text = JSON.stringify(cleared);
+      return { format: 'box-history-text@2', text: JSON.stringify({ ...cleared, check: createHash('sha256').update(text).digest('hex'), sizeBytes: Buffer.byteLength(text) }) };
+    })()],
+    ['sealed with another key', boxHistoryToStore(sealBoxHistory(plainSaved as never, OTHER_BOX_HISTORY_KEY))],
+    ['a round-29 row (box-history-text@1)', { format: 'box-history-text@1', text: JSON.stringify(saved) }],
   ];
   for (const [name, state] of shapes) {
     await savedNow(c, at);
     await overwrite(c, state);
-    const got = await storeComputerHistory(c.store, c.T, at, { snapshots: c.snapshots, timeZone: 'UTC' });
+    const got = await storeComputerHistory(c.store, c.T, at, { sealKey: TEST_BOX_HISTORY_KEY, snapshots: c.snapshots, timeZone: 'UTC' });
     expect(got.setAside, name).toMatch(/^unreadable: /);
     await sameAsFull(c.store, c.T, at, got);
   }
@@ -140,16 +149,24 @@ async function damagedIsSetAside(c: Ctx): Promise<void> {
   const fresh = boxHistoryFromStore((await c.snapshots.load<unknown>(c.T, BOX, 'box-health-history@1'))!.result.state) as BoxHistorySnapshot;
   const { check: _c, sizeBytes: _s, ...rest } = fresh;
   void _c; void _s;
-  const evil = sealBoxHistory({ ...rest, rawBound: rest.rawBound.map((b) => ({ ...b, computer: 'u-evil' })), never: { ...rest.never, bound: rest.never.bound.map((b) => ({ ...b, computer: 'u-evil' })) } });
+  const evil = sealBoxHistory({ ...rest, rawBound: rest.rawBound.map((b) => ({ ...b, computer: 'u-evil' })), never: { ...rest.never, bound: rest.never.bound.map((b) => ({ ...b, computer: 'u-evil' })) } }, TEST_BOX_HISTORY_KEY);
   await overwrite(c, boxHistoryToStore(evil));
-  const got = await storeComputerHistory(c.store, c.T, at, { snapshots: c.snapshots, timeZone: 'UTC' });
+  const got = await storeComputerHistory(c.store, c.T, at, { sealKey: TEST_BOX_HISTORY_KEY, snapshots: c.snapshots, timeZone: 'UTC' });
   expect(got.setAside).toMatch(/^unreadable: its binding of .+ to u-evil names no report from that store computer/);
   expect(got.bindings.some((b) => b.computer === 'u-evil')).toBe(false);
   await sameAsFull(c.store, c.T, at, got);
   // And a result the next read made is used again (resumed, nothing set aside).
-  const next = await storeComputerHistory(c.store, c.T, iso(Date.parse(at) + 60_000), { snapshots: c.snapshots, timeZone: 'UTC' });
+  const next = await storeComputerHistory(c.store, c.T, iso(Date.parse(at) + 60_000), { sealKey: TEST_BOX_HISTORY_KEY, snapshots: c.snapshots, timeZone: 'UTC' });
   expect(next.setAside).toBeUndefined();
   expect(next.resumed).toBe(true);
+  // Round 30 · OB-111: a head office given NO key trusts nothing saved (set aside, said on the health read) and saves nothing.
+  await savedNow(c, at);
+  const before = JSON.stringify((await c.snapshots.load<unknown>(c.T, BOX, 'box-health-history@1'))!.result.state);
+  const unkeyed = await storeComputerHistory(c.store, c.T, iso(Date.parse(at) + 120_000), { snapshots: c.snapshots, timeZone: 'UTC' });
+  expect(unkeyed.setAside).toBe('unreadable: head office was given no seal key, so no saved result is trusted');
+  expect(unkeyed.history.noSealKey).toBe(true);
+  await sameAsFull(c.store, c.T, iso(Date.parse(at) + 120_000), unkeyed);
+  expect(JSON.stringify((await c.snapshots.load<unknown>(c.T, BOX, 'box-health-history@1'))!.result.state)).toBe(before);
 }
 
 function countingFullReads(inner: EventStore): { store: EventStore; full: () => number } {
@@ -181,24 +198,24 @@ async function builtInTheBackground(c: Ctx): Promise<void> {
   // that build — not held — finished before the "still being prepared" read below: the round-29 gate failure.)
   let release: () => void = () => undefined;
   const gate = new Promise<void>((resolve) => { release = resolve; });
-  const a = await storeComputerHistory(store, c.T, at, { snapshots: c.snapshots, timeZone: 'UTC', waitMs: 0, buildPause: () => gate });
+  const a = await storeComputerHistory(store, c.T, at, { sealKey: TEST_BOX_HISTORY_KEY, snapshots: c.snapshots, timeZone: 'UTC', waitMs: 0, buildPause: () => gate });
   expect(boxHistoryBuilding(c.snapshots, c.T)).toBeDefined();
   // A second read and a route that needs the reading, at the same time, JOIN that one build (single-flight): the second read
   // says the same "being prepared"; the route answers 503 in words (never a guess, nothing recorded).
   const [b, route] = await Promise.all([
-    storeComputerHistory(store, c.T, at, { snapshots: c.snapshots, timeZone: 'UTC', waitMs: 0 }),
-    boxHealthAdapter({ store, snapshots: c.snapshots, settings: { timeZone: () => 'UTC' }, waitMs: 0 }).bindingsAt(c.T, at).then(() => 'answered', (e: unknown) => e),
+    storeComputerHistory(store, c.T, at, { sealKey: TEST_BOX_HISTORY_KEY, snapshots: c.snapshots, timeZone: 'UTC', waitMs: 0 }),
+    boxHealthAdapter({ store, snapshots: c.snapshots, boxHistorySealKey: TEST_BOX_HISTORY_KEY, settings: { timeZone: () => 'UTC' }, waitMs: 0 }).bindingsAt(c.T, at).then(() => 'answered', (e: unknown) => e),
   ]);
   expect(a.preparing?.why).toMatch(/nothing is saved yet/);
   expect(b.preparing).toEqual(a.preparing);
   expect([...a.findings.keys(), ...a.unused.keys(), ...a.bindings]).toEqual([]);
   expect(route).toBeInstanceOf(BoxHistoryPreparing);
   // Still being prepared while it is held; then it is let go.
-  expect((await storeComputerHistory(store, c.T, at, { snapshots: c.snapshots, timeZone: 'UTC', waitMs: 20 })).preparing).toEqual(a.preparing);
+  expect((await storeComputerHistory(store, c.T, at, { sealKey: TEST_BOX_HISTORY_KEY, snapshots: c.snapshots, timeZone: 'UTC', waitMs: 20 })).preparing).toEqual(a.preparing);
   release();
   await boxHistoryBuilding(c.snapshots, c.T);
   expect(full()).toBe(1);
-  const ready = await storeComputerHistory(store, c.T, at, { snapshots: c.snapshots, timeZone: 'UTC', waitMs: 0 });
+  const ready = await storeComputerHistory(store, c.T, at, { sealKey: TEST_BOX_HISTORY_KEY, snapshots: c.snapshots, timeZone: 'UTC', waitMs: 0 });
   expect(ready.preparing).toBeUndefined();
   expect(ready.resumed).toBe(true);
   expect(full()).toBe(1);
@@ -217,7 +234,7 @@ describe('round 29 · OB-106 (memory)', () => {
     const records = honestStore((BOX_HISTORY_INLINE_MAX + 760) / 5_760).map(plain);
     await put(store, T, records);
     const now = (): string => iso(Date.parse(records[records.length - 1]!.receivedAt) + 60_000);
-    const deps = observedHealthAdapter({ store, now, snapshots, storeTimeZone: async () => 'UTC', boxHistoryWaitMs: 0 });
+    const deps = observedHealthAdapter({ store, now, snapshots, boxHistorySealKey: TEST_BOX_HISTORY_KEY, storeTimeZone: async () => 'UTC', boxHistoryWaitMs: 0 });
     // An alert rule on the store's disk, and that alert open (raised earlier, before an upgrade).
     await deps.defineAlertRules(T, { version: 1, rules: [{ alertId: 'disk-s1', component: 'box_disk:S1', firesAt: 'degraded', ownerUserId: 'u-owner', ownerName: 'Owner', ackWithinMinutes: 30 }], thresholds: DEFAULT_THRESHOLDS, backupMaxAgeSeconds: 86_400, definedBy: 'u-owner', definedAt: now() });
     await deps.recordAlertEvent(T, { alertId: 'disk-s1', change: 'raised', by: 'u-owner', at: now(), alert: { alertId: 'disk-s1', component: 'box_disk:S1', status: 'down', detail: 'full', ownerUserId: 'u-owner', ownerName: 'Owner', ackDueBy: now() } as never }, 'raise-disk-s1');
@@ -286,7 +303,7 @@ describe.skipIf(DATABASE_URL === undefined)('round 29 · OB-106 (PostgreSQL)', (
         await put(store, T, all.slice(half), half);
         const lastMs = t0 + (all.length - 1) * 15_000;
         for (let k = 0; k < 4; k += 1) {
-          const r = await storeComputerHistory(store, T, iso(lastMs + (20 + k) * 60_000), { snapshots, timeZone: 'UTC' });
+          const r = await storeComputerHistory(store, T, iso(lastMs + (20 + k) * 60_000), { sealKey: TEST_BOX_HISTORY_KEY, snapshots, timeZone: 'UTC' });
           outcomes.push(`open#${k}: resumed=${String(r.resumed)} aside=${r.setAside ?? '-'} read=${r.reportsRead}`);
           // Nothing may be SAVED below the open write; saving held back is said (shown on the health read past 5 minutes).
           expect(r.history.saveHeld).not.toBeNull();
@@ -299,11 +316,11 @@ describe.skipIf(DATABASE_URL === undefined)('round 29 · OB-106 (PostgreSQL)', (
         const at = iso(t0 + (all.length - 1) * 15_000 + (40 + k * 15) * 60_000);
         // Other writers' short transactions on a busy database can hold the fence back for a moment: read again (at the same
         // moment) until it settles — it MUST settle within 30 s now the held transaction has committed.
-        let got = await storeComputerHistory(store, T, at, { snapshots, timeZone: 'UTC' });
+        let got = await storeComputerHistory(store, T, at, { sealKey: TEST_BOX_HISTORY_KEY, snapshots, timeZone: 'UTC' });
         const deadline = Date.now() + 30_000;
         while (got.history.saveHeld !== null && Date.now() < deadline) {
           await new Promise((resolve) => { setTimeout(resolve, 200); });
-          got = await storeComputerHistory(store, T, at, { snapshots, timeZone: 'UTC' });
+          got = await storeComputerHistory(store, T, at, { sealKey: TEST_BOX_HISTORY_KEY, snapshots, timeZone: 'UTC' });
         }
         outcomes.push(`after#${k}: resumed=${String(got.resumed)} aside=${got.setAside ?? '-'} read=${got.reportsRead}`);
         await sameAsFull(store, T, at, got);

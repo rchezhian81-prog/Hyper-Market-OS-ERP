@@ -212,7 +212,7 @@ import { storePackRoutes } from '../../platform/src/store-packs';
 import { receiptPrefixRoutes } from '../../platform/src/receipt-prefixes';
 import { receiptPrefixAdapter } from './adapters';
 import { syncWatermarkRoutes } from '../../platform/src/sync-watermarks';
-import { boxHealthRoutes } from '../../platform/src/box-health';
+import { boxHealthRoutes, boxHistorySealKey } from '../../platform/src/box-health';
 import { boxHealthAdapter } from './adapters';
 import { storeComputerBinding, storeComputerRefusalRoutes } from './store-computer-binding';
 import { idempotencyConflictRoutes, idempotencyConflictsAdapter } from './idempotency-conflicts';
@@ -450,6 +450,9 @@ export function buildSurface(deps: {
   // PF-09-a: the member code key the store computer shares (both derive it from the pack signing key).
   const loyaltyKey = loyaltyMemberKey(deps.signingKey);
   const whHasher = webhookHasher(deps.signingKey);
+  // Round 30 · OB-111: the key the store computers' saved history is sealed with — derived from the pack signing key under
+  // its own label, held in memory only (never in the database, the repository or a log).
+  const boxHistoryKey = boxHistorySealKey(deps.signingKey);
   const empty = <T>(v: T) => () => v;
   // Round 9 (Batch 3): the finance-close routes run on the ledger; with none (the documented surface only) reads are
   // empty and every write refuses — never a silent no-op that looks recorded.
@@ -1139,7 +1142,7 @@ export function buildSurface(deps: {
     ...boxHealthRoutes(store === undefined ? { now, record: async () => {} } : {
       now, storeComputerScopeOf: (t, u) => storeComputerScopeHeldBy(store, t, u),
       ...boxHealthAdapter({
-        store, now, ...(deps.snapshots === undefined ? {} : { snapshots: deps.snapshots }),
+        store, now, ...(deps.snapshots === undefined ? {} : { snapshots: deps.snapshots }), boxHistorySealKey: boxHistoryKey,
         // Round 28 · OB-103/104: the same owner's settings the health read uses (they share one saved running result).
         settings: {
           unsentWarnHours: (t: string) => settings.value(t, SETTINGS.BOX_UNSENT_WARN_HOURS),
@@ -1882,7 +1885,7 @@ export function buildSurface(deps: {
       alertRules: empty(undefined), defineAlertRules: () => {},
     } : {
       ...observedHealthAdapter({
-        store, now, boxUnsentWarnHours: (t: string) => settings.value(t, SETTINGS.BOX_UNSENT_WARN_HOURS),
+        store, now, boxHistorySealKey: boxHistoryKey, boxUnsentWarnHours: (t: string) => settings.value(t, SETTINGS.BOX_UNSENT_WARN_HOURS),
         // OB-90: the owner's claim slack, from store setup.
         boxClaimSlack: async (t: string) => ({ numbers: await settings.value(t, SETTINGS.BOX_CLAIM_SLACK_NUMBERS), percent: await settings.value(t, SETTINGS.BOX_CLAIM_SLACK_PERCENT) }),
         // Round 27 · OB-100: unused numbers by the store's own calendar day; OB-102: the never-received fold's saved running result.
@@ -2420,6 +2423,8 @@ export async function startApi(
         // Round 27 · OB-100 / OB-102: the store's calendar, and the same durable saved running result the reads use.
         storeTimeZone: (t: string) => new DurableTenantSettings(new SqlConfigVersionStore(pgPoolClient(db))).value(t, SETTINGS.STORE_TIME_ZONE),
         snapshots: new SqlSnapshotStore(pgPoolClient(db)),
+        // Round 30 · OB-111: the same keyed seal the reads use (from PACK_SIGNING_KEY, required at start).
+        boxHistorySealKey: boxHistorySealKey(settings['PACK_SIGNING_KEY']!),
       }), boxDiskWarnHours: (t: string) => new DurableTenantSettings(new SqlConfigVersionStore(pgPoolClient(db))).value(t, SETTINGS.BOX_DISK_WARN_HOURS),
       boxUnsentWarnHours: (t: string) => new DurableTenantSettings(new SqlConfigVersionStore(pgPoolClient(db))).value(t, SETTINGS.BOX_UNSENT_WARN_HOURS),
     },

@@ -360,7 +360,7 @@ count still open and names the others.
   month, growing for ever). The health page shows its size as the `box_history` line ("… is N KB"); above
   4 MB the line turns to a warning — call support to find which store computer is making it grow.
 - **A damaged or altered saved history is never trusted and never stops the health page (OB-106).** Every
-  read checks its shape and its seal (a SHA-256 of its content) and that every till-to-store-computer
+  read checks its shape and its seal (round 30: a KEYED seal, see below) and that every till-to-store-computer
   binding in it can be traced to the report or the owner-approved act it came from. Anything that fails is
   set aside and rebuilt by itself — support no longer has to delete the row (deleting it is still safe).
 - **Building it never freezes head office (OB-106).** For a store with more than 5,000 reports the first
@@ -390,6 +390,38 @@ count still open and names the others.
 - **Acknowledging a line now sends exactly the numbers the page showed (verifier r28 NEW-5).** If the line
   has changed since the page was read — even with the same count — head office refuses ("the line changed
   since it was read"); reload and acknowledge what it shows now.
+
+**Round 30 (owner decisions OB-109 to OB-112, 14 Oct 2026):**
+
+- **A bill stuck through a long internet outage keeps its true age (OB-109).** Head office forgets a "waiting
+  to send" bill number only after 24 HOURS OF REPORTS that leave it out — hours in which the store computer
+  reported and did not list it. Hours with no report at all (internet down, store shut) never count. So after
+  an outage of a day or more, a bill that was stuck all along still shows "waiting since <the first time head
+  office saw it>", and its alert is not cleared on reconnect. After any outage longer than a day, open the
+  Store computers page and compare "bills waiting" with the store computer's own "waiting to send" screen.
+- **A stuck bill no longer makes head office slow (OB-110).** The waiting clock keeps, per till, the numbers
+  ever listed as at most 128 ranges, each with the first time head office saw it. When it would keep more, the
+  two neighbouring ranges seen closest together are joined and keep the EARLIER time — so a bill can look a
+  little older than it is (a warning a little early), never younger (never late, never hidden). Measured: one
+  till with a bill stuck for 30 days builds in under 1 s and saves 0.62 MB (was 59 s and 2.07 MB); ten tills
+  each with a stuck bill for a week build in under 1 s with no pause of the process over 60 ms (was 38 s with
+  2.1 s pauses); an honest busy store saves 0.66 MB at 7, 30 and 90 days.
+- **The saved history is sealed with a secret key (OB-111).** Head office seals it with a key it derives, under
+  its own label, from **PACK_SIGNING_KEY** (no new secret to set; the key is held in memory only — never in
+  the database, the repository or a log). Someone who changes the saved row with the database password cannot
+  make a matching seal: the row is set aside and rebuilt from the reports (which cannot be changed). If you
+  ever CHANGE PACK_SIGNING_KEY, the saved history is set aside once and rebuilt — slower once, nothing lost.
+  The first health read after installing round 30 is such a rebuild (round 29's rows used a plain seal). A
+  head office started without the key would say so on the health page (`box_history_seal`, degraded) and trust
+  nothing saved; that cannot happen in a real deployment, because the API does not start without
+  PACK_SIGNING_KEY.
+- **A store computer naming made-up till numbers cannot fill head office's memory (OB-112).** Per store
+  computer and per day (UTC — 05:30 to 05:30 in India), head office keeps at most 20 NEW refused words about
+  bill-number prefixes that are not that store's (a prefix of another store's till, or one no till was ever
+  given — or a new count under one). The rest are counted, never kept, and said in ONE line on the store's bill
+  numbers: "N more refused bill-number prefix(es) not kept: store S's computer <name> …", shown for 7 days
+  after the last one. The store's own tills' prefixes are never capped. If you see that line, call support
+  the same day: that store computer is faulty or has been altered; support may block its sign-in.
 
 ## Part 4 — Restoring (the one that matters)
 

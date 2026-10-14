@@ -39,7 +39,12 @@ Open `.env` in a text editor and do **three** things:
    URL invalid and nothing would connect); on Windows, any long string of letters and numbers.
 2. Replace the `PACK_SIGNING_KEY` placeholder the same way, with a **different** value —
    `openssl rand -base64 48`. This is the key that signs the price list every till trades from;
-   it is what stops a lane accepting a price file that did not come from you.
+   it is what stops a lane accepting a price file that did not come from you. Head office also
+   derives other keys from it, each under its own label and held in memory only: the seal on what
+   the store computer verified at the till, the seal on the store computers' saved history (round
+   30), and — unless `PII_KEY_ENCRYPTION_KEY` is set — the key customers' personal data is sealed
+   under. Changing it later sets the store computers' saved history aside once (it is rebuilt from
+   the reports, nothing lost).
 3. Fill in `DATABASE_URL` on one line, joining the values you just set — the postgres scheme,
    then `://`, your user, `:`, your password, then `@db:5432/` and the database name. The file
    itself spells out the shape. Because the password sits inside this URL, keep it URL-safe

@@ -424,7 +424,7 @@ jobs:
       - name: Performance suites — required, never skip
         run: |
           pnpm run test:perf --reporter=default --reporter=json --outputFile=/tmp/perf.json
-          node scripts/assert-suite-ran.mjs /tmp/perf.json --min-files 9 --min-tests 44
+          node scripts/assert-suite-ran.mjs /tmp/perf.json --min-files 10 --min-tests 47
 
   identity:
     name: Identity server suites (real Keycloak)

@@ -326,7 +326,7 @@ import type { BoxHealthRecord, BillNumberFinding, RefusalAcknowledgement, StoreC
 import {
   readNeverReceived, billNumberFindingsFor, judgeReportedIssued, weighSparseClaim, unusedButReceived, PLAUSIBLE_ISSUED_AHEAD, FOLD_SETTLE_MINUTES, UNRECEIVED_CHECK_CAP,
   readBoxHistoryInSteps, boxHistoryUnreadable, boxHistoryToStore, boxHistoryFromStore, BOX_HISTORY_STEP, UNUSED_HELD_TIMED_MAX, BoxHistoryPreparing,
-  type UnusedCheckCapped, type BoxHistoryReading, type BoxHistoryState,
+  type UnusedCheckCapped, type BoxHistoryReading, type BoxHistoryState, type BoxHistorySealKey,
   type UnreceivedNumbers, type ClaimSlack, type JudgedAway, type NeverReceivedSnapshot, type PrefixBinding, type UnusedNumbers, type UnusedReceived,
   type UnreceivedCandidate, type UnusedReceivedAcknowledgement, type BoxHistorySnapshot, type BoxHistoryEntry, type BoxHistoryJudge, type BoxReportsView,
 } from '../../platform/src/box-health';
@@ -12736,6 +12736,8 @@ export function observedHealthAdapter(input: {
   readonly snapshots?: SnapshotStore;
   /** Round 29 · OB-106: how long a health read waits for the store computers' history being built (default BOX_HISTORY_BUILD_WAIT_MS). */
   readonly boxHistoryWaitMs?: number;
+  /** Round 30 · OB-111: the key the saved history is sealed with (`boxHistorySealKey`); absent, nothing saved is trusted (said on the health read). */
+  readonly boxHistorySealKey?: BoxHistorySealKey;
 }): ObservedHealthDeps {
   const lifecycle = alertLifecycleAdapter(input);
   return {
@@ -12821,6 +12823,7 @@ export function observedHealthAdapter(input: {
         ...(input.storeTimeZone === undefined ? {} : { timeZone: await input.storeTimeZone(tenantId) }),
         ...(input.snapshots === undefined ? {} : { snapshots: input.snapshots }),
         ...(input.boxHistoryWaitMs === undefined ? {} : { waitMs: input.boxHistoryWaitMs }),
+        ...(input.boxHistorySealKey === undefined ? {} : { sealKey: input.boxHistorySealKey }),
       });
       return {
         records: [], view: reading.view,
@@ -13581,6 +13584,8 @@ export function boxHealthAdapter(input: {
   readonly now?: () => string;
   /** Round 29 · OB-106: how long a route waits for the store computers' history being built before answering 503 "being prepared". */
   readonly waitMs?: number;
+  /** Round 30 · OB-111: the key the saved history is sealed with (`boxHistorySealKey`). */
+  readonly boxHistorySealKey?: BoxHistorySealKey;
 }): {
   records: (tenantId: string) => Promise<readonly BoxHealthRecord[]>;
   acknowledgeUnusedReceived: (tenantId: string, a: UnusedReceivedAcknowledgement, requestKey: string) => Promise<UnusedReceivedAcknowledgement>;
@@ -13599,6 +13604,7 @@ export function boxHealthAdapter(input: {
       ...(input.settings === undefined ? {} : await readingSettings(input.settings, tenantId)),
       ...(input.snapshots === undefined ? {} : { snapshots: input.snapshots }),
       ...(input.waitMs === undefined ? {} : { waitMs: input.waitMs }),
+      ...(input.boxHistorySealKey === undefined ? {} : { sealKey: input.boxHistorySealKey }),
     });
     // Round 29 · OB-106: not ready yet — the routes answer 503 "being prepared" (nothing is guessed, nothing recorded).
     if (r.preparing !== undefined) throw new BoxHistoryPreparing(r.preparing.since, r.preparing.why);
@@ -15002,6 +15008,11 @@ export async function storeComputerHistory(
     readonly waitMs?: number;
     /** The pause between a build's steps (default: one turn of the event loop) — tests hold a build open with it. */
     readonly buildPause?: () => Promise<void>;
+    /**
+     * Round 30 · OB-111: head office's key for the saved history's seal (`boxHistorySealKey`, from PACK_SIGNING_KEY). Absent:
+     * nothing saved is trusted and nothing is saved — every read folds every report, and the health read says so.
+     */
+    readonly sealKey?: BoxHistorySealKey;
   } = {},
 ): Promise<StoreComputerHistoryReading> {
   const { unsentWarnHours, claimSlack } = opts;
@@ -15034,6 +15045,7 @@ export async function storeComputerHistory(
     }
     return out;
   };
+  const sealed = opts.sealKey === undefined ? {} : { sealKey: opts.sealKey };
   const common = (when: string) => ({
     at: when, banked, replacements, refusalAcks: acknowledged, atRiskAcks: atRiskAcknowledged, judge,
     settleBefore: new Date(Date.parse(when) - FOLD_SETTLE_MINUTES * 60_000).toISOString(),
@@ -15069,13 +15081,13 @@ export async function storeComputerHistory(
   // A full read of every report (inline for a small store, or the background build): returns the reading.
   const fullRead = async (when: string, events: readonly PersistedEvent[] | undefined, settledThrough: number | undefined, pause?: () => Promise<void>) => {
     const all = events ?? await store.readStream(tenantId, BOX_HEALTH_STREAM, { type: 'StoreComputerHealthReported' });
-    const read = await readBoxHistoryInSteps({ entries: await entriesOf(all), ...common(when), settledThrough: settledThrough ?? 0 }, pause === undefined ? {} : { pause });
+    const read = await readBoxHistoryInSteps({ entries: await entriesOf(all), ...common(when), settledThrough: settledThrough ?? 0, ...sealed }, pause === undefined ? {} : { pause });
     if ('setAside' in read) throw new Error(`the box history cannot be read from nothing (${read.setAside})`);
     if (read.snapshot !== undefined) await keep(read.snapshot, settledThrough !== undefined);
     return { read, reportsRead: all.length };
   };
   const state = (sizeBytes: number | null): BoxHistoryState => ({
-    sizeBytes,
+    sizeBytes, ...(opts.sealKey === undefined ? { noSealKey: true } : {}),
     saveHeld: tb.saveHeldSince === undefined ? null : { since: tb.saveHeldSince, waitingSeconds: Math.max(0, Math.floor((Date.now() - Date.parse(tb.saveHeldSince)) / 1000)) },
     lastBuildFailed: tb.failed ?? null,
   });
@@ -15105,7 +15117,7 @@ export async function storeComputerHistory(
     const candidate = (tb.held ?? (stored === undefined ? undefined : boxHistoryFromStore(stored))) as BoxHistorySnapshot | undefined;
     let why = candidate === undefined ? 'nothing is saved yet (the first read, or the saved history was removed)' : undefined;
     if (candidate !== undefined) {
-      const unreadable = boxHistoryUnreadable(candidate);
+      const unreadable = boxHistoryUnreadable(candidate, opts.sealKey);
       why = unreadable === undefined ? undefined : `unreadable: ${unreadable}`;
       if (why === undefined && tb.traced !== candidate.check) {
         why = await bindingsTraced(store, tenantId, candidate, replacements);
@@ -15118,7 +15130,7 @@ export async function storeComputerHistory(
       reportsRead += events.length;
       const folded = new Set(candidate.folded);
       const read = await readBoxHistoryInSteps({
-        entries: await entriesOf(events, (seq) => folded.has(seq)), snapshot: candidate, sealChecked: candidate.check, ...common(at),
+        entries: await entriesOf(events, (seq) => folded.has(seq)), snapshot: candidate, sealChecked: candidate.check, ...common(at), ...sealed,
         // Never below the result's own position (a fence that has not settled gives no new one).
         ...(settledThrough === undefined ? (tb.held === candidate ? { settledThrough: candidate.seq } : {}) : { settledThrough }),
       });
