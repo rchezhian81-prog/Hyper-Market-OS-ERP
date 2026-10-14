@@ -310,9 +310,13 @@ count still open and names the others.
   them to it), and that bills sold on the OTHER one are not checked for loss until a person checks both.
   Check both machines: if the other one is now the till's real store computer, do the "store computer
   replaced" act; if it is a stand-by or a copy, switch it off or give its till a new prefix. The store's
-  disk, queue, tills and "hours of trading left" are read ONLY from the store computer that holds the tills'
-  numbers — a second machine's report never hides a full disk; the second machine is listed apart
-  ("another store computer … also reports for this store but holds none of its tills' bill numbers").
+  disk, queue, tills and "hours of trading left" are read ONLY from the store computer(s) that hold the
+  tills' numbers; a machine that holds none is listed apart ("another store computer … also reports for this
+  store but holds none of its tills' bill numbers"). **Corrected in round 29 (verifier r28 NEW-3, OB-107):**
+  the round-27 claim that "a second machine's report never hides a full disk" was NOT true when the second
+  machine held even ONE till's prefix (say it reported a new till first) — it could then speak for the whole
+  store. Since round 29 EACH store computer that holds any of the store's tills is judged on its own and the
+  WORSE decides (see Round 29 below).
 - **Head office's check no longer re-reads every report (OB-102).** It keeps a saved running result of the
   never-received check (PostgreSQL table `projection_snapshot`, projection `never-received-fold@1`) and reads
   only the store computers' reports from about the last half hour onto it. It is disposable: if anything
@@ -344,6 +348,48 @@ count still open and names the others.
   store computer's reports, every minute), then fast again. The first health read after this version is
   installed is that slow read. Never delete the reports themselves. (`never-received-fold@1` is no longer
   used by the health read; it may be left as it is.)
+
+**Round 29 (owner decisions OB-105 to OB-108, 14 Oct 2026):**
+
+- **The saved store-computer history stays small (OB-105).** It now forgets only what can no longer change
+  an answer under its stated rules: a bill number nobody has listed as "waiting to send" for 24 hours (if it
+  is listed again, its waiting clock starts again; a stuck bill is listed in every report, so its clock never
+  restarts), "taken but never used" numbers not said again for 30 days, a refused count head office has
+  since banked, and the disk's growth points older than the 7 days the estimate reads. An honest busy store
+  (10 tills, ~1,900 bills a till a day) stays under 2 MB after 30 and after 90 days (it was ~23 MB after a
+  month, growing for ever). The health page shows its size as the `box_history` line ("… is N KB"); above
+  4 MB the line turns to a warning — call support to find which store computer is making it grow.
+- **A damaged or altered saved history is never trusted and never stops the health page (OB-106).** Every
+  read checks its shape and its seal (a SHA-256 of its content) and that every till-to-store-computer
+  binding in it can be traced to the report or the owner-approved act it came from. Anything that fails is
+  set aside and rebuilt by itself — support no longer has to delete the row (deleting it is still safe).
+- **Building it never freezes head office (OB-106).** For a store with more than 5,000 reports the first
+  read after an upgrade (or after a set-aside) builds it in the background, a little at a time, once per
+  shop. Meanwhile the health page says **"being prepared — store computer checks not yet available"**
+  (`box_history: unknown`) and does not judge any store computer (not known, never "all fine"); the
+  Store computers page and its buttons answer "being prepared … try again in a few minutes"; the alert
+  worker writes "store computer checks are being prepared … skipped them and kept their open alerts" in its
+  log and clears none of their alerts. The tills keep selling throughout; readiness (`/ready`) keeps
+  answering. If "being prepared" lasts more than an hour, or `box_history_build` says the build failed, call
+  support.
+- **"saved history has not been saved since … an open database transaction holds it back"
+  (`box_history_saving`).** Head office keeps the history in memory and stays correct, but each check gets
+  slower. Ask the database administrator to find and end the session "idle in transaction" or the prepared
+  transaction (`pg_stat_activity`, `pg_prepared_xacts`).
+- **More than one store computer holding a store's tills (OB-107).** The disk and queue lines then say
+  "store S has 2 store computers holding its tills' bill numbers — <A> (<prefixes>) and <B> (<prefixes>);
+  head office judges each on its own and the worse decides: …". A full disk on EITHER makes the store
+  "cannot record sales". Normally a store has one store computer: if two appear, check which is real.
+- **"said unused, but head office has the bill" uses the store computer's own clock (OB-108).** The store
+  computer now writes on each bill when IT took it from the till (`storeComputerTakenAt`), and head office
+  compares that with the store computer's own report times — a till whose clock is slow no longer causes
+  this line. A bill from a store computer not yet updated is still judged on the till's clock, and the line
+  says so ("the bill's time is the TILL's own clock … check the till's clock first"). The time a number was
+  last said unused is now kept to the minute (it was the hour), and the line says when not every number
+  could be looked at (beyond the newest 500, or the newest 50 bills).
+- **Acknowledging a line now sends exactly the numbers the page showed (verifier r28 NEW-5).** If the line
+  has changed since the page was read — even with the same count — head office refuses ("the line changed
+  since it was read"); reload and acknowledge what it shows now.
 
 ## Part 4 — Restoring (the one that matters)
 

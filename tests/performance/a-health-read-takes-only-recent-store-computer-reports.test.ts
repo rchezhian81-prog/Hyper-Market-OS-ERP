@@ -117,7 +117,9 @@ describe('round 28 · OB-104: a health read takes only the store-computer report
     await append(base, 0, MONTH, rnd, lists);
     const { store, rows, reset } = counted(base);
     const snaps = new JsonSnapshotStore();
-    const opts = { snapshots: snaps, timeZone: 'UTC' };
+    // Round 29 · OB-106: a month is far above BOX_HISTORY_INLINE_MAX, so its first build runs in the background (in steps);
+    // the first read here waits for it (a health read would answer "being prepared" meanwhile).
+    const opts = { snapshots: snaps, timeZone: 'UTC', waitMs: Infinity };
     const health = async (at: string) => {
       const reading = await storeComputerHistory(store, T, at, opts);
       const boxes = judgeBoxes({ records: [], view: reading.view, at, thresholds: DEFAULT_THRESHOLDS, billNumberFindings: reading.findings, bindings: reading.bindings, unusedNumbers: reading.unused });
@@ -127,8 +129,9 @@ describe('round 28 · OB-104: a health read takes only the store-computer report
     let lastMs = t0 + (MONTH - 1) * EVERY_MS;
     const first = await timedAsync(() => health(new Date(lastMs + EVERY_MS).toISOString()));
     const firstRows = rows();
-    expect(first.value.reading.resumed).toBe(false);
-    expect(firstRows).toBe(MONTH);
+    expect(first.value.reading.preparing).toBeUndefined();
+    expect(firstRows).toBeGreaterThanOrEqual(MONTH); // the build's one full read, then the read's own window
+    expect(firstRows).toBeLessThanOrEqual(MONTH + 2 * 64);
     const savedBytes = [...snaps.texts.values()].reduce((n, t) => n + t.length, 0);
     // The next reads, a minute apart, each after the store computer's next report — the alert worker's steady state.
     const times: number[] = [];
@@ -151,7 +154,7 @@ describe('round 28 · OB-104: a health read takes only the store-computer report
     expect((box.billNumberFindings ?? []).filter((f) => f.kind === 'at_risk_not_checked')).toHaveLength(TILLS);
     expect(box.unusedNumbers?.length).toBeGreaterThan(0);
     expect(box.tradingHoursLeft).not.toBeNull();
-    expect(last.reading.findings).toEqual((await storeComputerHistory(base, T, new Date(lastMs + EVERY_MS).toISOString(), { snapshots: new JsonSnapshotStore(), timeZone: 'UTC' })).findings);
+    expect(last.reading.findings).toEqual((await storeComputerHistory(base, T, new Date(lastMs + EVERY_MS).toISOString(), { snapshots: new JsonSnapshotStore(), timeZone: 'UTC', waitMs: Infinity })).findings);
     for (const t of times.slice(1)) expect(t, `a read took ${t.toFixed(0)} ms`).toBeLessThan(1_000);
     for (const n of read) expect(n).toBeLessThanOrEqual(128);
   }, 900_000);

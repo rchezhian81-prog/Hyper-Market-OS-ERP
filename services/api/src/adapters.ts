@@ -325,7 +325,7 @@ import { latestDomainReports, latestPerStore, type SyncWatermarkRecord } from '.
 import type { BoxHealthRecord, BillNumberFinding, RefusalAcknowledgement, StoreComputerReplacement, AtRiskAcknowledgement } from '../../platform/src/box-health';
 import {
   readNeverReceived, billNumberFindingsFor, judgeReportedIssued, weighSparseClaim, unusedButReceived, PLAUSIBLE_ISSUED_AHEAD, FOLD_SETTLE_MINUTES, UNRECEIVED_CHECK_CAP,
-  readBoxHistoryInSteps, boxHistoryUnreadable, BOX_HISTORY_STEP, UNUSED_HELD_TIMED_MAX, BoxHistoryPreparing,
+  readBoxHistoryInSteps, boxHistoryUnreadable, boxHistoryToStore, boxHistoryFromStore, BOX_HISTORY_STEP, UNUSED_HELD_TIMED_MAX, BoxHistoryPreparing,
   type UnusedCheckCapped, type BoxHistoryReading, type BoxHistoryState,
   type UnreceivedNumbers, type ClaimSlack, type JudgedAway, type NeverReceivedSnapshot, type PrefixBinding, type UnusedNumbers, type UnusedReceived,
   type UnreceivedCandidate, type UnusedReceivedAcknowledgement, type BoxHistorySnapshot, type BoxHistoryEntry, type BoxHistoryJudge, type BoxReportsView,
@@ -12734,6 +12734,8 @@ export function observedHealthAdapter(input: {
   readonly storeTimeZone?: (tenantId: string) => Promise<string>;
   /** Round 27 · OB-102: where the never-received fold's saved running result lives (PostgreSQL in production). */
   readonly snapshots?: SnapshotStore;
+  /** Round 29 · OB-106: how long a health read waits for the store computers' history being built (default BOX_HISTORY_BUILD_WAIT_MS). */
+  readonly boxHistoryWaitMs?: number;
 }): ObservedHealthDeps {
   const lifecycle = alertLifecycleAdapter(input);
   return {
@@ -12818,6 +12820,7 @@ export function observedHealthAdapter(input: {
         ...(input.boxClaimSlack === undefined ? {} : { claimSlack: await input.boxClaimSlack(tenantId) }),
         ...(input.storeTimeZone === undefined ? {} : { timeZone: await input.storeTimeZone(tenantId) }),
         ...(input.snapshots === undefined ? {} : { snapshots: input.snapshots }),
+        ...(input.boxHistoryWaitMs === undefined ? {} : { waitMs: input.boxHistoryWaitMs }),
       });
       return {
         records: [], view: reading.view,
@@ -13576,6 +13579,8 @@ export function boxHealthAdapter(input: {
    */
   readonly settings?: StoreComputerReadingSettings;
   readonly now?: () => string;
+  /** Round 29 · OB-106: how long a route waits for the store computers' history being built before answering 503 "being prepared". */
+  readonly waitMs?: number;
 }): {
   records: (tenantId: string) => Promise<readonly BoxHealthRecord[]>;
   acknowledgeUnusedReceived: (tenantId: string, a: UnusedReceivedAcknowledgement, requestKey: string) => Promise<UnusedReceivedAcknowledgement>;
@@ -13593,6 +13598,7 @@ export function boxHealthAdapter(input: {
     const r = await storeComputerHistory(input.store, tenantId, at, {
       ...(input.settings === undefined ? {} : await readingSettings(input.settings, tenantId)),
       ...(input.snapshots === undefined ? {} : { snapshots: input.snapshots }),
+      ...(input.waitMs === undefined ? {} : { waitMs: input.waitMs }),
     });
     // Round 29 · OB-106: not ready yet — the routes answer 503 "being prepared" (nothing is guessed, nothing recorded).
     if (r.preparing !== undefined) throw new BoxHistoryPreparing(r.preparing.since, r.preparing.why);
@@ -14927,7 +14933,13 @@ export const BOX_HISTORY_BUILD_WAIT_MS = 1_000;
 
 /** Round 29 · OB-106: per snapshot store and tenant, the build in progress, a result held back from saving, and the last checks. */
 interface BoxHistoryTenant {
-  build?: { readonly promise: Promise<void>; readonly since: string; readonly why: string };
+  build?: {
+    readonly promise: Promise<void>; readonly since: string; readonly why: string;
+    /** Every report, read once for the build (a small store's waiting reads fold these themselves). */
+    readonly events: Promise<readonly PersistedEvent[]>;
+    /** The fence checked BEFORE those reports were read — the only one any fold of them may use. */
+    readonly settledThrough: number | undefined;
+  };
   /** A result that could not be saved yet (the fence held back by an open transaction) — used like a saved one. */
   held?: BoxHistorySnapshot;
   /** Since when saving has been held back by an unsettled fence (this process's clock). */
@@ -15045,9 +15057,10 @@ export async function storeComputerHistory(
   const keep = async (snapshot: BoxHistorySnapshot, settled: boolean): Promise<void> => {
     tb.traced = snapshot.check; // made here from the reports, so its bindings are traced by construction
     if (!settled) { tb.held = snapshot; return; }
-    await snapshots.save<BoxHistorySnapshot>({
+    // Kept as its JSON text (jsonb keeps a string exactly; the seal is over the text as written).
+    await snapshots.save<{ readonly format: string; readonly text: string }>({
       tenantId, stream: BOX_HEALTH_STREAM, projection: BOX_HISTORY_PROJECTION, takenAt: snapshot.never.settledAt,
-      result: { state: snapshot, watermarkSeq: snapshot.seq, lastEventAt: snapshot.never.settledAt, eventCount: snapshot.ord },
+      result: { state: boxHistoryToStore(snapshot), watermarkSeq: snapshot.seq, lastEventAt: snapshot.never.settledAt, eventCount: snapshot.ord },
     });
     tb.held = undefined;
   };
@@ -15081,12 +15094,13 @@ export async function storeComputerHistory(
 
   let setAside: string | undefined;
   let reportsRead = 0;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    if (tb.build !== undefined) break;
+  for (let attempt = 0; attempt < 2 && tb.build === undefined; attempt += 1) {
     const settledThrough = await fenceNow();
-    const loaded = (await snapshots.load<BoxHistorySnapshot>(tenantId, BOX_HEALTH_STREAM, BOX_HISTORY_PROJECTION))?.result.state;
-    // The newer of a result held back from saving and the saved one (a held one is always made after the saved one).
-    const candidate = tb.held ?? loaded;
+    const stored = (await snapshots.load<unknown>(tenantId, BOX_HEALTH_STREAM, BOX_HISTORY_PROJECTION))?.result.state;
+    if (tb.build !== undefined) break; // another read started a build meanwhile: join it
+    // The newer of a result held back from saving and the saved one (a held one is always made after the saved one). Nothing
+    // in it is used before `boxHistoryUnreadable` has checked its shape and its seal.
+    const candidate = (tb.held ?? (stored === undefined ? undefined : boxHistoryFromStore(stored))) as BoxHistorySnapshot | undefined;
     let why = candidate === undefined ? 'nothing is saved yet (the first read, or the saved history was removed)' : undefined;
     if (candidate !== undefined) {
       const unreadable = boxHistoryUnreadable(candidate);
@@ -15112,35 +15126,44 @@ export async function storeComputerHistory(
       }
       why = read.setAside;
     }
-    // Set aside (or nothing saved): a held result is dropped too; the next one is built from every report.
+    if (tb.build !== undefined) break;
+    // Set aside (or nothing saved): a held result is dropped too; a new one is made from every report — read ONCE, by one
+    // read at a time (single-flight): the reports are read, then a small store is folded here and now, a big one in the
+    // background. Every fold of those reports uses the fence checked BEFORE they were read.
     setAside = candidate === undefined ? undefined : why;
     if (tb.held === candidate) tb.held = undefined;
-    const events = await store.readStream(tenantId, BOX_HEALTH_STREAM, { type: 'StoreComputerHealthReported' });
-    reportsRead += events.length;
-    if (events.length <= BOX_HISTORY_INLINE_MAX) {
-      // A small store: read whole, here and now (in steps), as before.
-      const full = await fullRead(at, events, settledThrough);
-      return finish(full.read, reportsRead, setAside, null);
-    }
-    // A big store: built in the background, once (single-flight per shop); this read waits a little, then says so.
     const since = new Date().toISOString();
-    const reason = why ?? 'nothing usable is saved';
-    const promise = (async () => {
-      try {
-        await fullRead(new Date().toISOString(), events, settledThrough);
-        tb.failed = undefined;
-      } catch (e) {
-        tb.failed = { at: new Date().toISOString(), error: e instanceof Error ? e.message : String(e) };
-      } finally {
-        tb.build = undefined;
-      }
-    })();
-    tb.build = { promise, since, why: reason };
+    const events = store.readStream(tenantId, BOX_HEALTH_STREAM, { type: 'StoreComputerHealthReported' });
+    const build = {
+      since, why: why ?? 'nothing usable is saved', events, settledThrough,
+      promise: (async (): Promise<void> => {
+        try {
+          const all = await events;
+          if (all.length <= BOX_HISTORY_INLINE_MAX) return; // small: each waiting read folds it itself
+          await fullRead(at, all, settledThrough);
+          tb.failed = undefined;
+        } catch (e) {
+          tb.failed = { at: new Date().toISOString(), error: e instanceof Error ? e.message : String(e) };
+        } finally {
+          if (tb.build?.events === events) tb.build = undefined;
+        }
+      })(),
+    };
+    tb.build = build;
     break;
   }
   const b = tb.build;
   if (b === undefined) throw new Error('the box history could not be read');
-  const waited = await Promise.race([b.promise.then(() => true), new Promise<boolean>((resolve) => { setTimeout(() => resolve(false), opts.waitMs ?? BOX_HISTORY_BUILD_WAIT_MS).unref?.(); })]);
+  const all = await b.events.catch(() => undefined);
+  if (all !== undefined && all.length <= BOX_HISTORY_INLINE_MAX) {
+    // A small store: read whole, here and now (in steps), as before — with the fence checked before the reports were read.
+    reportsRead += all.length;
+    const full = await fullRead(at, all, b.settledThrough);
+    return finish(full.read, reportsRead, setAside, null);
+  }
+  const waitMs = opts.waitMs ?? BOX_HISTORY_BUILD_WAIT_MS;
+  const waited = !Number.isFinite(waitMs) ? await b.promise.then(() => true)
+    : await Promise.race([b.promise.then(() => true), new Promise<boolean>((resolve) => { setTimeout(() => resolve(false), Math.max(0, waitMs)).unref?.(); })]);
   if (waited && tb.build === undefined && tb.failed === undefined) return storeComputerHistory(store, tenantId, at, { ...opts, waitMs: 0 });
   return preparing(tb.build ?? b, null);
 }

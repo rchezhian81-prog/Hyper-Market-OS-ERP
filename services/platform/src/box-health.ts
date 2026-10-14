@@ -1869,29 +1869,10 @@ export interface BoxHistorySnapshot {
    * banked is answered for good — banked only rises); a read with a LOWER banked count sets the result aside ('banked').
    */
   readonly rfBanked: readonly (readonly [string, number])[];
-  /** Round 29 · OB-106: the seal — a SHA-256 over the canonical JSON of everything above (any change sets the result aside). */
+  /** Round 29 · OB-106: the seal — a SHA-256 over the JSON of everything above, as written (any change sets the result aside). */
   readonly check: string;
-  /** Round 29 · OB-105: the size of that canonical JSON, in bytes (shown on the health read; an alarm above a line). */
+  /** Round 29 · OB-105: the size of that JSON, in bytes (shown on the health read; an alarm above a line). */
   readonly sizeBytes: number;
-}
-
-/** The canonical JSON of plain data (object keys sorted), so a copy kept as PostgreSQL jsonb (keys reordered) seals the same. */
-function canonicalJson(v: unknown): string {
-  if (v === null || typeof v !== 'object') return JSON.stringify(v) ?? 'null';
-  if (Array.isArray(v)) {
-    let out = '[';
-    for (let i = 0; i < v.length; i += 1) { if (i > 0) out += ','; out += v[i] === undefined ? 'null' : canonicalJson(v[i]); }
-    return `${out}]`;
-  }
-  const o = v as Record<string, unknown>;
-  let out = '{';
-  let first = true;
-  for (const k of Object.keys(o).sort()) {
-    if (o[k] === undefined) continue;
-    out += `${first ? '' : ','}${JSON.stringify(k)}:${canonicalJson(o[k])}`;
-    first = false;
-  }
-  return `${out}}`;
 }
 
 /** Round 29 · OB-105/106: what the health read shows about the saved history itself (its size, saving held back, a failed build). */
@@ -1948,10 +1929,27 @@ export function boxHistoryComponents(input: { readonly preparing?: { readonly si
   return out;
 }
 
-/** Round 29 · OB-105/106: seal a saved running result (its SHA-256 and its size, over the canonical JSON of the rest). */
+/** Round 29 · OB-105/106: seal a saved running result (its SHA-256 and its size, over the JSON of the rest as written). */
 export function sealBoxHistory(s: Omit<BoxHistorySnapshot, 'check' | 'sizeBytes'>): BoxHistorySnapshot {
-  const text = canonicalJson(s);
-  return { ...s, check: createHash('sha256').update(text).digest('hex'), sizeBytes: Buffer.byteLength(text) };
+  const { check: _c, sizeBytes: _z, ...rest } = s as BoxHistorySnapshot;
+  void _c; void _z;
+  const text = JSON.stringify(rest);
+  return { ...rest, check: createHash('sha256').update(text).digest('hex'), sizeBytes: Buffer.byteLength(text) };
+}
+
+/**
+ * Round 29 · OB-106: how a saved result is KEPT — as its JSON text inside the snapshot row (`{ format, text }`), never as a
+ * JSON tree: PostgreSQL's jsonb keeps a string exactly but reorders an object's keys, and the seal is over the text as written.
+ * Reading it back costs one SHA-256 and one JSON.parse (a few milliseconds for a megabyte); anything else kept there is
+ * unreadable.
+ */
+export const BOX_HISTORY_STORED_FORMAT = 'box-history-text@1';
+export function boxHistoryToStore(s: BoxHistorySnapshot): { readonly format: string; readonly text: string } {
+  return { format: BOX_HISTORY_STORED_FORMAT, text: JSON.stringify(s) };
+}
+export function boxHistoryFromStore(stored: unknown): unknown {
+  if (!isObj(stored) || stored['format'] !== BOX_HISTORY_STORED_FORMAT || typeof stored['text'] !== 'string') return { notStored: 'it is not in the saved form (box-history-text@1)' };
+  try { return JSON.parse(stored['text']) as unknown; } catch { return { notStored: 'its text is not JSON' }; }
 }
 
 /**
@@ -1963,10 +1961,11 @@ export function sealBoxHistory(s: Omit<BoxHistorySnapshot, 'check' | 'sizeBytes'
  */
 export function boxHistoryUnreadable(s: unknown): string | undefined {
   try {
+    if (isObj(s) && typeof s['notStored'] === 'string') return s['notStored'];
     const why = shapeOfBoxHistory(s);
     if (why !== undefined) return why;
     const { check, sizeBytes, ...rest } = s as BoxHistorySnapshot;
-    const text = canonicalJson(rest);
+    const text = JSON.stringify(rest);
     if (createHash('sha256').update(text).digest('hex') !== check) return 'its seal does not match its content (damaged or altered)';
     if (Buffer.byteLength(text) !== sizeBytes) return 'its size does not match its content';
     return undefined;
@@ -3634,7 +3633,7 @@ async function preparedOr503<T>(read: () => Promise<T>): Promise<T> {
       code: 'store_computer_checks_being_prepared',
       whatHappened: `Head office is preparing the store computers' saved history (since ${e.since}: ${e.why}) — the store computer checks are not available yet. It is built in the background; nothing is lost and the tills keep selling.`,
       wasItSaved: 'not_saved', nextSafeAction: 'Try again in a few minutes (the health page says when it is ready). Nothing was recorded.',
-    });
+    }, 60);
   }
 }
 

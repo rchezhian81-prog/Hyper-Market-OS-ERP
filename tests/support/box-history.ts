@@ -116,6 +116,66 @@ export function history(seed: number): Seeded {
   return { records, refusalAcks, atRiskAcks, acts, commitsLate };
 }
 
+/**
+ * Round 29 · OB-105: a LONG history — several seeded histories laid end to end in one shop, each starting up to 40 days after
+ * the last one ended (months of reports), so the waiting clock's 24-hour memory and the unused runs' 30-day memory are both
+ * crossed again and again. Times move by whole seconds, so a box time written without milliseconds stays so.
+ */
+export function longHistory(seed: number, chunks = 8): Seeded {
+  const records: (BoxHealthRecord & { seq: number })[] = [];
+  const refusalAcks: RefusalAcknowledgement[] = [];
+  const atRiskAcks: AtRiskAcknowledgement[] = [];
+  const acts: StoreComputerReplacement[] = [];
+  const commitsLate = new Map<number, number>();
+  const rnd = rng(seed * 104_729);
+  let end = T0;
+  for (let c = 0; c < chunks; c += 1) {
+    const h = history(seed * 1_000 + c + 1);
+    const shift = Math.ceil((end - T0) / 1_000) * 1_000 + (c === 0 ? 0 : 1_000 * Math.floor(1 + rnd() * 40 * 86_400));
+    const move = (t: string): string => { const ms = Date.parse(t) + shift; return t.includes('.') ? iso(ms) : iso(ms).replace('.000Z', 'Z'); };
+    const base = records.length;
+    for (const r of h.records) {
+      records.push({
+        ...r, seq: r.seq + base, observedAt: move(r.observedAt), receivedAt: move(r.receivedAt),
+        tills: r.tills.map((t) => ({ ...t, reportedAt: move(t.reportedAt) })),
+      });
+    }
+    for (const [seq, late] of h.commitsLate) commitsLate.set(seq + base, late);
+    for (const a of h.refusalAcks) refusalAcks.push({ ...a, at: move(a.at) });
+    for (const a of h.atRiskAcks) atRiskAcks.push({ ...a, at: move(a.at) });
+    for (const m of h.acts) acts.push({ ...m, replacementId: `${m.replacementId}-c${c}`, approvalId: `${m.approvalId}-c${c}`, at: move(m.at) });
+    end = Math.max(...records.map((r) => Date.parse(r.receivedAt)), ...acts.map((m) => Date.parse(m.at)), ...refusalAcks.map((a) => Date.parse(a.at)), ...atRiskAcks.map((a) => Date.parse(a.at)));
+  }
+  return { records, refusalAcks, atRiskAcks, acts, commitsLate };
+}
+
+/**
+ * Round 29 · OB-105 (the verifier's size probe, r28 zz-v28-size): an HONEST busy store — 10 tills, a report every 15 s, each
+ * till selling about 1,900 bills a day, each new bill seen "waiting to send" in one report before it goes — for `days` days.
+ */
+export const HONEST_T0 = Date.parse('2026-03-01T00:00:00.000Z');
+export function honestStore(days: number): (BoxHealthRecord & { seq: number })[] {
+  const out: (BoxHealthRecord & { seq: number })[] = [];
+  const n = Math.round(days * 5_760);
+  const sold = Array.from({ length: 10 }, () => 100);
+  for (let i = 0; i < n; i += 1) {
+    const at = iso(HONEST_T0 + i * 15_000);
+    let unsentTotal = 0;
+    const issued = sold.map((s, k) => {
+      const grow = (i * 7 + k) % 3 === 0 ? 1 : 0;
+      sold[k] = s + grow;
+      unsentTotal += grow;
+      return { prefix: `S1L${k}-`, through: sold[k]!, soldThrough: sold[k]!, unsent: grow === 1 ? { count: 1, from: sold[k]!, to: sold[k]! } : { count: 0 } } as IssuedReport;
+    });
+    out.push({
+      storeId: 'S1', observedAt: at, receivedAt: at, reportedBy: 'u-box', clockAheadCorrected: false, tills: [],
+      disk: { freeBytes: 5e9, totalBytes: 1e10, salesLogUsedBytes: 1000 + i, salesLogCapacityBytes: 1e9, reserveBytes: 1e6 },
+      queue: { unsent: unsentTotal, deadLettered: 0 }, receiptNumbersIssued: issued, seq: i + 1,
+    } as BoxHealthRecord & { seq: number });
+  }
+  return out;
+}
+
 /** Judged at read, as head office does (`judgeReportedIssued`'s two questions) — the verdicts can change between reads. */
 export function judged(r: BoxHealthRecord, judge: BoxHistoryJudge): BoxHealthRecord {
   const issued = r.receiptNumbersIssued;
