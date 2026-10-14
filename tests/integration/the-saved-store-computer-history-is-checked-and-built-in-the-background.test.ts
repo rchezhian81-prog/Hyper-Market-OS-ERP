@@ -86,10 +86,26 @@ async function seeded(c: Ctx): Promise<{ at: string; saved: BoxHistorySnapshot }
   const at = iso(t0 + all.length * 15_000 + 30 * 60_000);
   const first = await storeComputerHistory(c.store, c.T, at, { snapshots: c.snapshots, timeZone: 'UTC' });
   expect(first.preparing).toBeUndefined();
+  await savedNow(c, at);
   const stored = (await c.snapshots.load<unknown>(c.T, BOX, 'box-health-history@1'))?.result.state;
   expect(stored).toMatchObject({ format: 'box-history-text@1' }); // kept as its JSON text, so jsonb never reorders what is sealed
   return { at, saved: boxHistoryFromStore(stored) as BoxHistorySnapshot };
 }
+/**
+ * On a busy database other writers' short transactions can hold the visibility fence back for a moment; meanwhile the result
+ * is kept in memory, not saved (OB-106). Read again at the same moment until it IS saved (it must be, within 30 s), so the
+ * row a test then damages is the one the next read takes — never a result held in memory.
+ */
+async function savedNow(c: Ctx, at: string): Promise<void> {
+  const deadline = Date.now() + 30_000;
+  let r = await storeComputerHistory(c.store, c.T, at, { snapshots: c.snapshots, timeZone: 'UTC' });
+  while ((r.history.saveHeld !== null || (await c.snapshots.load<unknown>(c.T, BOX, 'box-health-history@1')) === undefined) && Date.now() < deadline) {
+    await new Promise((resolve) => { setTimeout(resolve, 200); });
+    r = await storeComputerHistory(c.store, c.T, at, { snapshots: c.snapshots, timeZone: 'UTC' });
+  }
+  expect(r.history.saveHeld, 'the fence settles and the result is saved').toBeNull();
+}
+
 /** Write a saved result's state straight into the store (as damage or an attacker with database access would). */
 async function overwrite(c: Ctx, state: unknown): Promise<void> {
   const cur = (await c.snapshots.load<unknown>(c.T, BOX, 'box-health-history@1'))!;
@@ -113,12 +129,14 @@ async function damagedIsSetAside(c: Ctx): Promise<void> {
     ['empty object', {}],
   ];
   for (const [name, state] of shapes) {
+    await savedNow(c, at);
     await overwrite(c, state);
     const got = await storeComputerHistory(c.store, c.T, at, { snapshots: c.snapshots, timeZone: 'UTC' });
     expect(got.setAside, name).toMatch(/^unreadable: /);
     await sameAsFull(c.store, c.T, at, got);
   }
   // Altered AND re-sealed: the bindings moved to "u-evil" — the seal matches, but no report from u-evil names those prefixes.
+  await savedNow(c, at); // the rebuilt result is saved (not only held in memory) before it is read back and altered
   const fresh = boxHistoryFromStore((await c.snapshots.load<unknown>(c.T, BOX, 'box-health-history@1'))!.result.state) as BoxHistorySnapshot;
   const { check: _c, sizeBytes: _s, ...rest } = fresh;
   void _c; void _s;
@@ -157,12 +175,17 @@ async function builtInTheBackground(c: Ctx): Promise<void> {
   const at = iso(Date.parse(records[records.length - 1]!.receivedAt) + 60_000);
   const { store, full } = countingFullReads(c.store);
   // Two reads at once: ONE build (one full read of the reports), both say "being prepared", since the same moment.
-  // The routes that need it answer 503 in words while it builds (never a guess, nothing recorded) — asked at the same time.
-  // The build is held open (between its steps) until the test lets it go, so "meanwhile" is certain, never a race.
+  // The build is held open (between its steps) until the test lets it go, so "meanwhile" is certain, never a race. The
+  // pause belongs to the read that STARTS the build, so that read goes first, alone: it starts the build and answers
+  // "being prepared". (When three reads raced to start it, a busy database could let an unheld read start it first, and
+  // that build — not held — finished before the "still being prepared" read below: the round-29 gate failure.)
   let release: () => void = () => undefined;
   const gate = new Promise<void>((resolve) => { release = resolve; });
-  const [a, b, route] = await Promise.all([
-    storeComputerHistory(store, c.T, at, { snapshots: c.snapshots, timeZone: 'UTC', waitMs: 0, buildPause: () => gate }),
+  const a = await storeComputerHistory(store, c.T, at, { snapshots: c.snapshots, timeZone: 'UTC', waitMs: 0, buildPause: () => gate });
+  expect(boxHistoryBuilding(c.snapshots, c.T)).toBeDefined();
+  // A second read and a route that needs the reading, at the same time, JOIN that one build (single-flight): the second read
+  // says the same "being prepared"; the route answers 503 in words (never a guess, nothing recorded).
+  const [b, route] = await Promise.all([
     storeComputerHistory(store, c.T, at, { snapshots: c.snapshots, timeZone: 'UTC', waitMs: 0 }),
     boxHealthAdapter({ store, snapshots: c.snapshots, settings: { timeZone: () => 'UTC' }, waitMs: 0 }).bindingsAt(c.T, at).then(() => 'answered', (e: unknown) => e),
   ]);
@@ -274,7 +297,14 @@ describe.skipIf(DATABASE_URL === undefined)('round 29 · OB-106 (PostgreSQL)', (
       } finally { held.release(); }
       for (let k = 0; k < 3; k += 1) {
         const at = iso(t0 + (all.length - 1) * 15_000 + (40 + k * 15) * 60_000);
-        const got = await storeComputerHistory(store, T, at, { snapshots, timeZone: 'UTC' });
+        // Other writers' short transactions on a busy database can hold the fence back for a moment: read again (at the same
+        // moment) until it settles — it MUST settle within 30 s now the held transaction has committed.
+        let got = await storeComputerHistory(store, T, at, { snapshots, timeZone: 'UTC' });
+        const deadline = Date.now() + 30_000;
+        while (got.history.saveHeld !== null && Date.now() < deadline) {
+          await new Promise((resolve) => { setTimeout(resolve, 200); });
+          got = await storeComputerHistory(store, T, at, { snapshots, timeZone: 'UTC' });
+        }
         outcomes.push(`after#${k}: resumed=${String(got.resumed)} aside=${got.setAside ?? '-'} read=${got.reportsRead}`);
         await sameAsFull(store, T, at, got);
         const records = await boxHealthAdapter({ store }).records(T);
