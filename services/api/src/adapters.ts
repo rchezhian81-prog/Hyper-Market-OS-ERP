@@ -325,7 +325,8 @@ import { latestDomainReports, latestPerStore, type SyncWatermarkRecord } from '.
 import type { BoxHealthRecord, BillNumberFinding, RefusalAcknowledgement, StoreComputerReplacement, AtRiskAcknowledgement } from '../../platform/src/box-health';
 import {
   readNeverReceived, billNumberFindingsFor, judgeReportedIssued, weighSparseClaim, unusedButReceived, PLAUSIBLE_ISSUED_AHEAD, FOLD_SETTLE_MINUTES, UNRECEIVED_CHECK_CAP,
-  readBoxHistory,
+  readBoxHistoryInSteps, boxHistoryUnreadable, boxHistoryToStore, boxHistoryFromStore, BOX_HISTORY_STEP, UNUSED_HELD_TIMED_MAX, BoxHistoryPreparing,
+  type UnusedCheckCapped, type BoxHistoryReading, type BoxHistoryState,
   type UnreceivedNumbers, type ClaimSlack, type JudgedAway, type NeverReceivedSnapshot, type PrefixBinding, type UnusedNumbers, type UnusedReceived,
   type UnreceivedCandidate, type UnusedReceivedAcknowledgement, type BoxHistorySnapshot, type BoxHistoryEntry, type BoxHistoryJudge, type BoxReportsView,
 } from '../../platform/src/box-health';
@@ -2537,7 +2538,12 @@ export async function saleStockLocationOf(store: EventStore, tenantId: string, s
 /** The batch a banked SALE appends (M08-FR-01, FND-01): the sale, its receipt-number index and one `sold`
  *  movement per line — shared by `posAdapter.bankSale` and the exchange's atomic commit, so both bank a sale
  *  identically. Each entry carries its own idempotency key; a resent sale dedups the whole set. */
-function saleBatchEvents(tenantId: string, sale: IncomingSale, movements: readonly Movement[]): Parameters<EventStore['appendBatch']>[1] {
+function saleBatchEvents(tenantId: string, sale: IncomingSale, movements: readonly Movement[], bankedAt?: string): Parameters<EventStore['appendBatch']>[1] {
+  // Round 29 · OB-108: the store computer's own time for the bill (when it took it from the till), kept on the receipt-number
+  // index for the "said unused" check — only a well-formed one, and never later than head office received the bill (a store
+  // computer cannot have taken a bill after head office had it: a time ahead is cut back to head office's).
+  const boxAt = storeComputerTimeOf(sale.storeComputerTakenAt);
+  const takenAt = boxAt === undefined ? undefined : bankedAt !== undefined && Date.parse(boxAt) > Date.parse(bankedAt) ? bankedAt : boxAt;
   return [
     {
       stream: STREAM.sales,
@@ -2567,7 +2573,7 @@ function saleBatchEvents(tenantId: string, sale: IncomingSale, movements: readon
         occurredAt: sale.committedAt,
         idempotencyKey: `receipt-${tenantId}-${sale.receiptNumber}`,
         source: 'api/pos',
-        payload: { receiptNumber: sale.receiptNumber, saleId: sale.saleId },
+        payload: { receiptNumber: sale.receiptNumber, saleId: sale.saleId, ...(takenAt === undefined ? {} : { storeComputerTakenAt: takenAt }) },
       }),
     },
     // One outbound `sold` movement per line, in the SAME format the inventory adapter uses
@@ -2746,7 +2752,7 @@ export function posAdapter(input: {
       // them must never leave a banked sale with no receipt index, nor an index pointing at a sale
       // that did not commit. Both carry their own idempotency key, so a till resending the sale
       // dedups the whole batch.
-      await input.store.appendBatch(tenantId, saleBatchEvents(tenantId, sale, movements));
+      await input.store.appendBatch(tenantId, saleBatchEvents(tenantId, sale, movements, input.now()));
     },
 
     recordExceptions: async (tenantId, exceptions) => {
@@ -12728,6 +12734,8 @@ export function observedHealthAdapter(input: {
   readonly storeTimeZone?: (tenantId: string) => Promise<string>;
   /** Round 27 · OB-102: where the never-received fold's saved running result lives (PostgreSQL in production). */
   readonly snapshots?: SnapshotStore;
+  /** Round 29 · OB-106: how long a health read waits for the store computers' history being built (default BOX_HISTORY_BUILD_WAIT_MS). */
+  readonly boxHistoryWaitMs?: number;
 }): ObservedHealthDeps {
   const lifecycle = alertLifecycleAdapter(input);
   return {
@@ -12812,11 +12820,14 @@ export function observedHealthAdapter(input: {
         ...(input.boxClaimSlack === undefined ? {} : { claimSlack: await input.boxClaimSlack(tenantId) }),
         ...(input.storeTimeZone === undefined ? {} : { timeZone: await input.storeTimeZone(tenantId) }),
         ...(input.snapshots === undefined ? {} : { snapshots: input.snapshots }),
+        ...(input.boxHistoryWaitMs === undefined ? {} : { waitMs: input.boxHistoryWaitMs }),
       });
       return {
         records: [], view: reading.view,
         knownStores: (await orgStructureAdapter({ store: input.store, now: input.now }).nodes(tenantId)).filter((n) => n.kind === 'branch').map((n) => n.nodeId),
-        billNumberFindings: reading.findings, bindings: reading.bindings, unusedNumbers: reading.unused,
+        billNumberFindings: reading.findings, bindings: reading.bindings, unusedNumbers: reading.unused, unusedCapped: reading.unusedCapped,
+        // Round 29 · OB-105/106: the saved history itself — being prepared, its size, saving held back by an open transaction.
+        ...(reading.preparing === undefined ? {} : { preparing: reading.preparing }), history: reading.history,
         // Round 26 · OB-97: the owner-approved "store computer replaced" acts — the same binding the findings were judged on.
         replacements: await boxHealthAdapter({ store: input.store }).replacements(tenantId),
         // Verifier r20 HW-2: whether the bill-number high-water is waiting on an open database transaction (read after the
@@ -13568,6 +13579,8 @@ export function boxHealthAdapter(input: {
    */
   readonly settings?: StoreComputerReadingSettings;
   readonly now?: () => string;
+  /** Round 29 · OB-106: how long a route waits for the store computers' history being built before answering 503 "being prepared". */
+  readonly waitMs?: number;
 }): {
   records: (tenantId: string) => Promise<readonly BoxHealthRecord[]>;
   acknowledgeUnusedReceived: (tenantId: string, a: UnusedReceivedAcknowledgement, requestKey: string) => Promise<UnusedReceivedAcknowledgement>;
@@ -13581,10 +13594,16 @@ export function boxHealthAdapter(input: {
   recordReplacement: (tenantId: string, m: StoreComputerReplacement, expectedVersion: number) => Promise<StoreComputerReplacement>;
   acknowledgeNotChecked: (tenantId: string, a: AtRiskAcknowledgement, requestKey: string) => Promise<AtRiskAcknowledgement>;
 } {
-  const reading = async (tenantId: string, at: string) => storeComputerHistory(input.store, tenantId, at, {
-    ...(input.settings === undefined ? {} : await readingSettings(input.settings, tenantId)),
-    ...(input.snapshots === undefined ? {} : { snapshots: input.snapshots }),
-  });
+  const reading = async (tenantId: string, at: string) => {
+    const r = await storeComputerHistory(input.store, tenantId, at, {
+      ...(input.settings === undefined ? {} : await readingSettings(input.settings, tenantId)),
+      ...(input.snapshots === undefined ? {} : { snapshots: input.snapshots }),
+      ...(input.waitMs === undefined ? {} : { waitMs: input.waitMs }),
+    });
+    // Round 29 · OB-106: not ready yet — the routes answer 503 "being prepared" (nothing is guessed, nothing recorded).
+    if (r.preparing !== undefined) throw new BoxHistoryPreparing(r.preparing.since, r.preparing.why);
+    return r;
+  };
   return {
     // Round 28 · OB-103: EACH acknowledgement is its own record (who, why, when); only a re-sent request answers the first.
     acknowledgeUnusedReceived: async (tenantId, a, requestKey) => {
@@ -14817,7 +14836,7 @@ export async function billNumberFindingsOf(
  */
 const NEVER_RECEIVED_PROJECTION = 'never-received-fold@1';
 /** Round 27 · OB-100: at most this many held bills per prefix have their own time read for the "said unused" check (the newest). */
-export const UNUSED_HELD_TIMED_MAX = 50;
+export { UNUSED_HELD_TIMED_MAX };
 
 /**
  * Round 27: everything head office reads from its store computers' reports at once — the bill-number findings (r19…r26),
@@ -14863,9 +14882,9 @@ export async function storeComputerReading(
   const acknowledged = await allOf<RefusalAcknowledgement>(store, tenantId, BOX_REFUSAL_ACK_STREAM, 'BoxReportRefusalAcknowledged');
   const atRiskAcknowledged = await allOf<AtRiskAcknowledgement>(store, tenantId, BOX_AT_RISK_ACK_STREAM, 'BoxAtRiskNotCheckedAcknowledged');
   const unusedAcknowledged = await allOf<UnusedReceivedAcknowledgement>(store, tenantId, BOX_UNUSED_ACK_STREAM, 'BoxUnusedReceivedAcknowledged');
-  const finished = await finishStoreComputerReading(store, tenantId, at, read, banked, claimSlack, new Set(records.map((r) => r.storeId)), (storeId, unreceived, unusedReceived) => billNumberFindingsFor({
+  const finished = await finishStoreComputerReading(store, tenantId, at, read, banked, claimSlack, new Set(records.map((r) => r.storeId)), (storeId, unreceived, unusedReceived, unusedCapped) => billNumberFindingsFor({
     storeId, records: judged, at, unreceived, banked, acknowledged, replacements, atRiskAcknowledged, unusedAcknowledged,
-    ...(unusedReceived === undefined ? {} : { unusedReceived }),
+    ...(unusedReceived === undefined ? {} : { unusedReceived }), ...(unusedCapped === undefined ? {} : { unusedCapped }),
   }));
   return { ...finished, bindings: read.bindings, resumed: read.resumed };
 }
@@ -14892,11 +14911,60 @@ const BOX_HISTORY_PROJECTION = 'box-health-history@1';
 /** Round 28 · OB-104: the newest visibility fence each tenant's box history saw, per snapshot store (one that settles later is used then). */
 const BOX_HISTORY_FENCES = new WeakMap<SnapshotStore, Map<string, { readonly seq: number; readonly token: string }>>();
 
+/**
+ * Round 29 · OB-106 "A" (owner, 14 Oct 2026, in writing, "Both before pilot"; verifier r28 NEW-2, NEW-8) — BUILDING THE
+ * SAVED HISTORY (stated, so a person can check it):
+ *   • a read that finds a saved result checks it first (`boxHistoryUnreadable`: every field's shape, and its seal) and that
+ *     every (store, prefix) binding in it can be traced to the act or the report it came from (`bindingsTraced`); a result
+ *     that fails is SET ASIDE — never thrown, never trusted;
+ *   • with nothing usable saved, a store with at most BOX_HISTORY_INLINE_MAX reports is read whole there and then (a few
+ *     milliseconds, in steps); a bigger one is BUILT IN THE BACKGROUND — one build per shop at a time (a second read joins
+ *     the first's), folded in steps with a pause between them (`readBoxHistoryInSteps`), so requests, the readiness check
+ *     and the store computers' uploads are answered in between. A read waits for it at most `waitMs`; until it is ready
+ *     the health read says "being prepared — store computer checks not yet available" (P-08: visible, never silent), the
+ *     routes that need it answer 503 with the same words, and the alert worker skips them with a note;
+ *   • a result made while an open database transaction holds the visibility fence back cannot be saved (a report written in
+ *     that transaction could still land below it) — it is kept in this process's memory meanwhile, used like a saved one,
+ *     and the health read says how long saving has been held back.
+ */
+export const BOX_HISTORY_INLINE_MAX = 5_000;
+/** Round 29 · OB-106: how long a health read waits for a build in progress before it answers "being prepared". */
+export const BOX_HISTORY_BUILD_WAIT_MS = 1_000;
+
+/** Round 29 · OB-106: per snapshot store and tenant, the build in progress, a result held back from saving, and the last checks. */
+interface BoxHistoryTenant {
+  build?: {
+    readonly promise: Promise<void>; readonly since: string; readonly why: string;
+    /** Every report, read once for the build (a small store's waiting reads fold these themselves). */
+    readonly events: Promise<readonly PersistedEvent[]>;
+    /** The fence checked BEFORE those reports were read — the only one any fold of them may use. */
+    readonly settledThrough: number | undefined;
+  };
+  /** A result that could not be saved yet (the fence held back by an open transaction) — used like a saved one. */
+  held?: BoxHistorySnapshot;
+  /** Since when saving has been held back by an unsettled fence (this process's clock). */
+  saveHeldSince?: string;
+  /** The seal of the last result whose bindings were traced (traced once per result, not on every read). */
+  traced?: string;
+  /** The last build that failed, said on the health read until one succeeds. */
+  failed?: { readonly at: string; readonly error: string };
+}
+const BOX_HISTORY_TENANTS = new WeakMap<SnapshotStore, Map<string, BoxHistoryTenant>>();
+function boxHistoryTenant(snapshots: SnapshotStore, tenantId: string): BoxHistoryTenant {
+  let m = BOX_HISTORY_TENANTS.get(snapshots);
+  if (m === undefined) { m = new Map(); BOX_HISTORY_TENANTS.set(snapshots, m); }
+  let t = m.get(tenantId);
+  if (t === undefined) { t = {}; m.set(tenantId, t); }
+  return t;
+}
+
 /** Round 28 · OB-104: what a windowed reading answers (the full reading's answers, and what the health read's judge needs). */
 export interface StoreComputerHistoryReading {
   readonly findings: ReadonlyMap<string, readonly BillNumberFinding[]>;
   readonly unused: ReadonlyMap<string, readonly UnusedNumbers[]>;
   readonly unusedReceived: ReadonlyMap<string, readonly UnusedReceived[]>;
+  /** Round 29 · NEW-6: per store, what the "said unused, but head office has the bill" check did not look at. */
+  readonly unusedCapped: ReadonlyMap<string, readonly UnusedCheckCapped[]>;
   readonly bindings: readonly PrefixBinding[];
   readonly rawBindings: readonly PrefixBinding[];
   readonly view: BoxReportsView;
@@ -14905,38 +14973,46 @@ export interface StoreComputerHistoryReading {
   readonly setAside?: string;
   /** How many box-health reports this read took from the store (the window — or every one when nothing was saved). */
   readonly reportsRead: number;
+  /** Round 29 · OB-106: the saved history is being built in the background — nothing above is known yet. */
+  readonly preparing?: { readonly since: string; readonly why: string };
+  /** Round 29 · OB-105/106: the saved history's size, and how long saving has been held back by an open transaction. */
+  readonly history: BoxHistoryState;
 }
+
+const EMPTY_BOX_VIEW: BoxReportsView = {
+  any: false, storeIds: [], latestOf: () => undefined, othersOf: () => [], latestEach: () => [],
+  estimate: () => ({ known: false, why: 'not yet known', tradingMinutesCounted: 0, growingGaps: 0 }), waiting: () => [],
+};
+
+/** Hand the event loop back for a moment (between steps of a long fold). */
+const breathe = (): Promise<void> => new Promise<void>((resolve) => { setImmediate(resolve); });
 
 /**
  * Round 28 · OB-104 "A" (owner, 13 Oct 2026, in writing, "Before the pilot"): the store-computer reading a health read and the
  * alert worker take — the same answers as `storeComputerReading` over every report (proved by test), from the box history's
  * saved running result and ONLY the reports at the store's positions after it (`readStream` with `sinceSeq`: an index range
- * scan on PostgreSQL, a binary search in memory). When the saved result no longer stands it is set aside and every report is
- * read, once, to make a new one.
+ * scan on PostgreSQL, a binary search in memory). Round 29 · OB-106: when nothing usable is saved, see BUILDING THE SAVED
+ * HISTORY above (a big store's history is built in the background and the reading says "being prepared" meanwhile).
  */
 export async function storeComputerHistory(
   store: EventStore, tenantId: string, at: string,
-  opts: { readonly unsentWarnHours?: number; readonly claimSlack?: ClaimSlack; readonly timeZone?: string; readonly snapshots?: SnapshotStore } = {},
+  opts: {
+    readonly unsentWarnHours?: number; readonly claimSlack?: ClaimSlack; readonly timeZone?: string; readonly snapshots?: SnapshotStore;
+    /** How long to wait for a background build before answering "being prepared" (default BOX_HISTORY_BUILD_WAIT_MS). */
+    readonly waitMs?: number;
+    /** The pause between a build's steps (default: one turn of the event loop) — tests hold a build open with it. */
+    readonly buildPause?: () => Promise<void>;
+  } = {},
 ): Promise<StoreComputerHistoryReading> {
   const { unsentWarnHours, claimSlack } = opts;
+  const snapshots = opts.snapshots ?? processHighWaterSnapshots(store);
+  const tb = boxHistoryTenant(snapshots, tenantId);
   const banked = await bankedReceiptCounts(store, tenantId);
   const issuedPrefixes = await issuedPrefixStores(store, tenantId);
   const replacements = await allOf<StoreComputerReplacement>(store, tenantId, BOX_REPLACEMENT_STREAM, 'StoreComputerReplaced');
   const acknowledged = await allOf<RefusalAcknowledgement>(store, tenantId, BOX_REFUSAL_ACK_STREAM, 'BoxReportRefusalAcknowledged');
   const atRiskAcknowledged = await allOf<AtRiskAcknowledgement>(store, tenantId, BOX_AT_RISK_ACK_STREAM, 'BoxAtRiskNotCheckedAcknowledged');
   const unusedAcknowledged = await allOf<UnusedReceivedAcknowledgement>(store, tenantId, BOX_UNUSED_ACK_STREAM, 'BoxUnusedReceivedAcknowledged');
-  const snapshots = opts.snapshots ?? processHighWaterSnapshots(store);
-  // The visibility fence, checked BEFORE the reports are read: every report at or below a settled fence is in the read.
-  let settledThrough: number | undefined;
-  if (store.positionFence !== undefined && store.fenceSettled !== undefined) {
-    const fences = BOX_HISTORY_FENCES.get(snapshots) ?? new Map<string, { seq: number; token: string }>();
-    BOX_HISTORY_FENCES.set(snapshots, fences);
-    const pending = fences.get(tenantId);
-    const fresh = await store.positionFence(tenantId, BOX_HEALTH_STREAM);
-    if (await store.fenceSettled(tenantId, fresh.token)) { settledThrough = fresh.seq; fences.delete(tenantId); }
-    else if (pending !== undefined && await store.fenceSettled(tenantId, pending.token)) { settledThrough = pending.seq; fences.set(tenantId, fresh); }
-    else if (pending === undefined) fences.set(tenantId, fresh);
-  }
   // Verifier r19 BOX-1 / r20 BOX-2: every report is re-judged at read (`judgeReportedIssued`), as `storeComputerReading` does.
   const judge: BoxHistoryJudge = {
     owns: (storeId, prefix) => {
@@ -14945,47 +15021,194 @@ export async function storeComputerHistory(
     },
     plausible: (prefix, through) => through <= (banked.get(prefix) ?? 0) + PLAUSIBLE_ISSUED_AHEAD,
   };
-  const entriesOf = (events: readonly PersistedEvent[]): BoxHistoryEntry[] => events.map((e) => {
-    const raw = e.event.payload as BoxHealthRecord;
-    if (raw.receiptNumbersIssued === undefined) return { raw, judged: raw, seq: e.seq };
-    const accepted = judgeReportedIssued({ storeId: raw.storeId, issued: raw.receiptNumbersIssued, issuedPrefixes, banked }).accepted;
-    return { raw, judged: accepted.length === raw.receiptNumbersIssued.length ? raw : { ...raw, receiptNumbersIssued: accepted }, seq: e.seq };
-  });
-  const saved = (await snapshots.load<BoxHistorySnapshot>(tenantId, BOX_HEALTH_STREAM, BOX_HISTORY_PROJECTION))?.result.state;
-  const common = {
-    at, banked, replacements, refusalAcks: acknowledged, atRiskAcks: atRiskAcknowledged, judge,
-    settleBefore: new Date(Date.parse(at) - FOLD_SETTLE_MINUTES * 60_000).toISOString(),
-    ...(settledThrough === undefined ? {} : { settledThrough }),
+  // Each report as kept and as judged — judged only when it will be folded (one a saved result already folded is not).
+  const entriesOf = async (events: readonly PersistedEvent[], skip?: (seq: number) => boolean): Promise<BoxHistoryEntry[]> => {
+    const out: BoxHistoryEntry[] = new Array(events.length);
+    for (let i = 0; i < events.length; i += 1) {
+      const e = events[i]!;
+      const raw = e.event.payload as BoxHealthRecord;
+      if (raw.receiptNumbersIssued === undefined || skip?.(e.seq) === true) { out[i] = { raw, judged: raw, seq: e.seq }; continue; }
+      const accepted = judgeReportedIssued({ storeId: raw.storeId, issued: raw.receiptNumbersIssued, issuedPrefixes, banked }).accepted;
+      out[i] = { raw, judged: accepted.length === raw.receiptNumbersIssued.length ? raw : { ...raw, receiptNumbersIssued: accepted }, seq: e.seq };
+      if ((i + 1) % BOX_HISTORY_STEP === 0) await breathe();
+    }
+    return out;
+  };
+  const common = (when: string) => ({
+    at: when, banked, replacements, refusalAcks: acknowledged, atRiskAcks: atRiskAcknowledged, judge,
+    settleBefore: new Date(Date.parse(when) - FOLD_SETTLE_MINUTES * 60_000).toISOString(),
     ...(unsentWarnHours === undefined ? {} : { warnHours: unsentWarnHours }), ...(claimSlack === undefined ? {} : { slack: claimSlack }),
     ...(opts.timeZone === undefined ? {} : { timeZone: opts.timeZone }),
+  });
+  // The visibility fence, checked BEFORE the reports are read: every report at or below a settled fence is in the read.
+  const fenceNow = async (): Promise<number | undefined> => {
+    if (store.positionFence === undefined || store.fenceSettled === undefined) return undefined;
+    const fences = BOX_HISTORY_FENCES.get(snapshots) ?? new Map<string, { seq: number; token: string }>();
+    BOX_HISTORY_FENCES.set(snapshots, fences);
+    const pending = fences.get(tenantId);
+    const fresh = await store.positionFence(tenantId, BOX_HEALTH_STREAM);
+    let settled: number | undefined;
+    if (await store.fenceSettled(tenantId, fresh.token)) { settled = fresh.seq; fences.delete(tenantId); }
+    else if (pending !== undefined && await store.fenceSettled(tenantId, pending.token)) { settled = pending.seq; fences.set(tenantId, fresh); }
+    else if (pending === undefined) fences.set(tenantId, fresh);
+    // NEW-8: how long saving has been held back by an open transaction (shown on the health read past a line).
+    if (settled === undefined) tb.saveHeldSince ??= new Date().toISOString(); else tb.saveHeldSince = undefined;
+    return settled;
   };
-  // The window: only the reports above the saved result's position — or every report, when nothing is saved yet.
-  let events = await store.readStream(tenantId, BOX_HEALTH_STREAM, { type: 'StoreComputerHealthReported', ...(saved === undefined ? {} : { sinceSeq: saved.seq }) });
-  let reportsRead = events.length;
-  let read = readBoxHistory({ entries: entriesOf(events), ...(saved === undefined ? {} : { snapshot: saved }), ...common });
-  let setAside: string | undefined;
-  if ('setAside' in read) {
-    setAside = read.setAside;
-    events = await store.readStream(tenantId, BOX_HEALTH_STREAM, { type: 'StoreComputerHealthReported' });
-    reportsRead += events.length;
-    read = readBoxHistory({ entries: entriesOf(events), ...common });
-    if ('setAside' in read) throw new Error(`the box history cannot be read from nothing (${read.setAside})`);
-  }
-  const done = read;
-  if (done.snapshot !== undefined) {
-    await snapshots.save<BoxHistorySnapshot>({
-      tenantId, stream: BOX_HEALTH_STREAM, projection: BOX_HISTORY_PROJECTION, takenAt: done.snapshot.never.settledAt,
-      result: { state: done.snapshot, watermarkSeq: done.snapshot.seq, lastEventAt: done.snapshot.never.settledAt, eventCount: done.snapshot.ord },
+  // Keep a new result: saved when its fence settled; else held in this process's memory until one does.
+  const keep = async (snapshot: BoxHistorySnapshot, settled: boolean): Promise<void> => {
+    tb.traced = snapshot.check; // made here from the reports, so its bindings are traced by construction
+    if (!settled) { tb.held = snapshot; return; }
+    // Kept as its JSON text (jsonb keeps a string exactly; the seal is over the text as written).
+    await snapshots.save<{ readonly format: string; readonly text: string }>({
+      tenantId, stream: BOX_HEALTH_STREAM, projection: BOX_HISTORY_PROJECTION, takenAt: snapshot.never.settledAt,
+      result: { state: boxHistoryToStore(snapshot), watermarkSeq: snapshot.seq, lastEventAt: snapshot.never.settledAt, eventCount: snapshot.ord },
     });
-  }
-  const finished = await finishStoreComputerReading(store, tenantId, at, done, banked, claimSlack, done.storeIds, (storeId, unreceived, unusedReceived) => billNumberFindingsFor({
-    storeId, records: [], at, unreceived, banked, unusedAcknowledged, facts: done.facts(storeId),
-    ...(unusedReceived === undefined ? {} : { unusedReceived }),
-  }));
-  return {
-    ...finished, bindings: done.bindings, rawBindings: done.rawBindings, view: done.view, resumed: done.resumed, reportsRead,
-    ...(setAside === undefined ? {} : { setAside }),
+    tb.held = undefined;
   };
+  // A full read of every report (inline for a small store, or the background build): returns the reading.
+  const fullRead = async (when: string, events: readonly PersistedEvent[] | undefined, settledThrough: number | undefined, pause?: () => Promise<void>) => {
+    const all = events ?? await store.readStream(tenantId, BOX_HEALTH_STREAM, { type: 'StoreComputerHealthReported' });
+    const read = await readBoxHistoryInSteps({ entries: await entriesOf(all), ...common(when), settledThrough: settledThrough ?? 0 }, pause === undefined ? {} : { pause });
+    if ('setAside' in read) throw new Error(`the box history cannot be read from nothing (${read.setAside})`);
+    if (read.snapshot !== undefined) await keep(read.snapshot, settledThrough !== undefined);
+    return { read, reportsRead: all.length };
+  };
+  const state = (sizeBytes: number | null): BoxHistoryState => ({
+    sizeBytes,
+    saveHeld: tb.saveHeldSince === undefined ? null : { since: tb.saveHeldSince, waitingSeconds: Math.max(0, Math.floor((Date.now() - Date.parse(tb.saveHeldSince)) / 1000)) },
+    lastBuildFailed: tb.failed ?? null,
+  });
+  const preparing = (b: NonNullable<BoxHistoryTenant['build']>, sizeBytes: number | null): StoreComputerHistoryReading => ({
+    findings: new Map(), unused: new Map(), unusedReceived: new Map(), unusedCapped: new Map(), bindings: [], rawBindings: [], view: EMPTY_BOX_VIEW,
+    resumed: false, reportsRead: 0, preparing: { since: b.since, why: b.why }, history: state(sizeBytes),
+  });
+  const finish = async (done: BoxHistoryReading, reportsRead: number, setAside: string | undefined, sizeBytes: number | null): Promise<StoreComputerHistoryReading> => {
+    const finished = await finishStoreComputerReading(store, tenantId, at, done, banked, claimSlack, done.storeIds, (storeId, unreceived, unusedReceived, unusedCapped) => billNumberFindingsFor({
+      storeId, records: [], at, unreceived, banked, unusedAcknowledged, facts: done.facts(storeId),
+      ...(unusedReceived === undefined ? {} : { unusedReceived }), ...(unusedCapped === undefined ? {} : { unusedCapped }),
+    }));
+    return {
+      ...finished, bindings: done.bindings, rawBindings: done.rawBindings, view: done.view, resumed: done.resumed, reportsRead,
+      ...(setAside === undefined ? {} : { setAside }), history: state(done.snapshot?.sizeBytes ?? sizeBytes),
+    };
+  };
+
+  let setAside: string | undefined;
+  let reportsRead = 0;
+  for (let attempt = 0; attempt < 2 && tb.build === undefined; attempt += 1) {
+    const settledThrough = await fenceNow();
+    const stored = (await snapshots.load<unknown>(tenantId, BOX_HEALTH_STREAM, BOX_HISTORY_PROJECTION))?.result.state;
+    if (tb.build !== undefined) break; // another read started a build meanwhile: join it
+    // The newer of a result held back from saving and the saved one (a held one is always made after the saved one). Nothing
+    // in it is used before `boxHistoryUnreadable` has checked its shape and its seal.
+    const candidate = (tb.held ?? (stored === undefined ? undefined : boxHistoryFromStore(stored))) as BoxHistorySnapshot | undefined;
+    let why = candidate === undefined ? 'nothing is saved yet (the first read, or the saved history was removed)' : undefined;
+    if (candidate !== undefined) {
+      const unreadable = boxHistoryUnreadable(candidate);
+      why = unreadable === undefined ? undefined : `unreadable: ${unreadable}`;
+      if (why === undefined && tb.traced !== candidate.check) {
+        why = await bindingsTraced(store, tenantId, candidate, replacements);
+        if (why === undefined) tb.traced = candidate.check;
+      }
+    }
+    if (candidate !== undefined && why === undefined) {
+      // The window: only the reports above the saved result's position.
+      const events = await store.readStream(tenantId, BOX_HEALTH_STREAM, { type: 'StoreComputerHealthReported', sinceSeq: candidate.seq });
+      reportsRead += events.length;
+      const folded = new Set(candidate.folded);
+      const read = await readBoxHistoryInSteps({
+        entries: await entriesOf(events, (seq) => folded.has(seq)), snapshot: candidate, sealChecked: candidate.check, ...common(at),
+        // Never below the result's own position (a fence that has not settled gives no new one).
+        ...(settledThrough === undefined ? (tb.held === candidate ? { settledThrough: candidate.seq } : {}) : { settledThrough }),
+      });
+      if (!('setAside' in read)) {
+        if (read.snapshot !== undefined) await keep(read.snapshot, settledThrough !== undefined);
+        // A result held back from saving is saved as it is once a fence has settled (its position and the reports it folded
+        // above it were safe when it was made) — not only when enough new reports come to make a newer one.
+        else if (tb.held === candidate && settledThrough !== undefined) await keep(candidate, true);
+        return finish(read, reportsRead, setAside, candidate.sizeBytes);
+      }
+      why = read.setAside;
+    }
+    if (tb.build !== undefined) break;
+    // Set aside (or nothing saved): a held result is dropped too; a new one is made from every report — read ONCE, by one
+    // read at a time (single-flight): the reports are read, then a small store is folded here and now, a big one in the
+    // background. Every fold of those reports uses the fence checked BEFORE they were read.
+    setAside = candidate === undefined ? undefined : why;
+    if (tb.held === candidate) tb.held = undefined;
+    const since = new Date().toISOString();
+    const events = store.readStream(tenantId, BOX_HEALTH_STREAM, { type: 'StoreComputerHealthReported' });
+    const build = {
+      since, why: why ?? 'nothing usable is saved', events, settledThrough,
+      promise: (async (): Promise<void> => {
+        try {
+          const all = await events;
+          if (all.length <= BOX_HISTORY_INLINE_MAX) return; // small: each waiting read folds it itself
+          await fullRead(at, all, settledThrough, opts.buildPause);
+          tb.failed = undefined;
+        } catch (e) {
+          tb.failed = { at: new Date().toISOString(), error: e instanceof Error ? e.message : String(e) };
+        } finally {
+          if (tb.build?.events === events) tb.build = undefined;
+        }
+      })(),
+    };
+    tb.build = build;
+    break;
+  }
+  const b = tb.build;
+  if (b === undefined) throw new Error('the box history could not be read');
+  const all = await b.events.catch(() => undefined);
+  if (all !== undefined && all.length <= BOX_HISTORY_INLINE_MAX) {
+    // A small store: read whole, here and now (in steps), as before — with the fence checked before the reports were read.
+    reportsRead += all.length;
+    const full = await fullRead(at, all, b.settledThrough);
+    return finish(full.read, reportsRead, setAside, null);
+  }
+  const waitMs = opts.waitMs ?? BOX_HISTORY_BUILD_WAIT_MS;
+  const waited = !Number.isFinite(waitMs) ? await b.promise.then(() => true)
+    : await Promise.race([b.promise.then(() => true), new Promise<boolean>((resolve) => { setTimeout(() => resolve(false), Math.max(0, waitMs)).unref?.(); })]);
+  if (waited && tb.build === undefined && tb.failed === undefined) return storeComputerHistory(store, tenantId, at, { ...opts, waitMs: 0 });
+  return preparing(tb.build ?? b, null);
+}
+
+/**
+ * Round 29 · OB-106 (verifier r28 NEW-2, probe C1 "u-evil"): every (store, prefix) binding a saved result carries must be
+ * traceable to what it came from — an owner-approved act (the same id, store, prefix, computer and time) or a report from
+ * THAT store computer naming THAT prefix at the binding's time (one indexed read of the reports at that moment). A binding
+ * that cannot be traced sets the result aside. Answers why, or undefined when every binding is traced.
+ */
+async function bindingsTraced(store: EventStore, tenantId: string, s: BoxHistorySnapshot, replacements: readonly StoreComputerReplacement[]): Promise<string | undefined> {
+  const seen = new Set<string>();
+  for (const b of [...s.never.bound, ...s.rawBound]) {
+    const key = `${b.storeId}\u0000${b.prefix}\u0000${b.computer}\u0000${b.since}\u0000${b.via}\u0000${b.replacementId ?? ''}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (b.via === 'replacement') {
+      const m = replacements.find((x) => x.replacementId === b.replacementId);
+      if (m === undefined || m.storeId !== b.storeId || m.prefix !== b.prefix || m.to !== b.computer || Date.parse(m.at) !== Date.parse(b.since)) {
+        return `unreadable: its binding of ${b.prefix} (store ${b.storeId}) to ${b.computer} names no such "store computer replaced" act`;
+      }
+      continue;
+    }
+    const ms = Date.parse(b.since);
+    const there = await store.readStream(tenantId, BOX_HEALTH_STREAM, { type: 'StoreComputerHealthReported', from: new Date(ms - 1_000).toISOString(), to: new Date(ms + 1_000).toISOString() });
+    const named = there.some((e) => {
+      const r = e.event.payload as BoxHealthRecord;
+      return r.storeId === b.storeId && r.reportedBy === b.computer && Date.parse(r.receivedAt) === ms && (r.receiptNumbersIssued ?? []).some((x) => x.prefix === b.prefix);
+    });
+    if (!named) return `unreadable: its binding of ${b.prefix} (store ${b.storeId}) to ${b.computer} names no report from that store computer at ${b.since}`;
+  }
+  return undefined;
+}
+
+/**
+ * Round 29 · OB-106: the store computers' saved history for the health read — never on the request path's critical work for
+ * long (see BUILDING THE SAVED HISTORY). Exported for the tests: a build in progress for this tenant, to wait for.
+ */
+export function boxHistoryBuilding(snapshots: SnapshotStore, tenantId: string): Promise<void> | undefined {
+  return BOX_HISTORY_TENANTS.get(snapshots)?.get(tenantId)?.build?.promise;
 }
 
 /**
@@ -14997,13 +15220,18 @@ async function finishStoreComputerReading(
   store: EventStore, tenantId: string, at: string,
   read: { readonly candidates: readonly UnreceivedCandidate[]; readonly unused: ReadonlyMap<string, readonly UnusedNumbers[]> },
   banked: ReadonlyMap<string, number>, claimSlack: ClaimSlack | undefined, storeIds: ReadonlySet<string> | readonly string[],
-  findingsFor: (storeId: string, unreceived: readonly UnreceivedNumbers[], unusedReceived: readonly UnusedReceived[] | undefined) => BillNumberFinding[],
-): Promise<{ findings: ReadonlyMap<string, readonly BillNumberFinding[]>; unused: ReadonlyMap<string, readonly UnusedNumbers[]>; unusedReceived: ReadonlyMap<string, readonly UnusedReceived[]> }> {
+  findingsFor: (storeId: string, unreceived: readonly UnreceivedNumbers[], unusedReceived: readonly UnusedReceived[] | undefined, unusedCapped: readonly UnusedCheckCapped[] | undefined) => BillNumberFinding[],
+): Promise<{ findings: ReadonlyMap<string, readonly BillNumberFinding[]>; unused: ReadonlyMap<string, readonly UnusedNumbers[]>; unusedReceived: ReadonlyMap<string, readonly UnusedReceived[]>; unusedCapped: ReadonlyMap<string, readonly UnusedCheckCapped[]> }> {
   const candidates = read.candidates;
-  let refundNumbers: Map<string, string> | undefined;
-  const refunds = async (): Promise<Map<string, string>> => {
-    refundNumbers ??= new Map((await store.readStream(tenantId, STREAM.returns, { type: 'ReturnRecorded' })).map((e) => [String((e.event.payload as { number?: unknown }).number ?? ''), e.event.occurredAt] as const));
-    return refundNumbers;
+  // Round 29 · OB-108: a return's time is the store computer's (when it took the refund), when it stamped one; else the till's.
+  let refundTimes: Map<string, { at: string; clock: 'store_computer' | 'till' }> | undefined;
+  const refunds = async (): Promise<Map<string, { at: string; clock: 'store_computer' | 'till' }>> => {
+    refundTimes ??= new Map((await store.readStream(tenantId, STREAM.returns, { type: 'ReturnRecorded' })).map((e) => {
+      const p = e.event.payload as { number?: unknown; storeComputerTakenAt?: unknown };
+      const boxAt = storeComputerTimeOf(p.storeComputerTakenAt);
+      return [String(p.number ?? ''), boxAt === undefined ? { at: e.event.occurredAt, clock: 'till' as const } : { at: boxAt, clock: 'store_computer' as const }] as const;
+    }));
+    return refundTimes;
   };
   const unreceived = new Map<string, UnreceivedNumbers[]>();
   const numberOf = (prefix: string, n: number): string => `${prefix}${String(n).padStart(RECEIPT_COUNTER_DIGITS, '0')}`;
@@ -15047,40 +15275,58 @@ async function finishStoreComputerReading(
   // read only for the ones held (`unusedButReceived`: said unused after the bill was made) — at most UNUSED_HELD_TIMED_MAX of
   // them per prefix (the newest), so an altered store computer calling 500 banked numbers unused costs a bounded read.
   const unusedReceived = new Map<string, UnusedReceived[]>();
+  const unusedCapped = new Map<string, UnusedCheckCapped[]>();
   for (const [storeId, list] of read.unused) {
     for (const u of list) {
       const top = banked.get(u.prefix) ?? 0;
       const numbers: number[] = [];
+      let atOrBelow = 0;
+      for (const run of u.runs) if (run.from <= top) atOrBelow += Math.min(run.to, top) - run.from + 1;
       for (let i = u.runs.length - 1; i >= 0 && numbers.length < UNRECEIVED_CHECK_CAP; i -= 1) {
         const run = u.runs[i]!;
         for (let n = Math.min(run.to, top); n >= run.from && numbers.length < UNRECEIVED_CHECK_CAP; n -= 1) numbers.push(n);
       }
       if (numbers.length === 0) continue;
       const held = await heldKeys(numbers.map((n) => `receipt-${tenantId}-${numberOf(u.prefix, n)}`));
-      const at = new Map<number, { as: 'sale' | 'return'; at: string }>();
+      const at = new Map<number, { as: 'sale' | 'return'; at: string; clock: 'store_computer' | 'till' }>();
       let timed = 0;
+      let notTimed = 0;
       for (const n of numbers) {
-        if (timed >= UNUSED_HELD_TIMED_MAX) break;
         const key = `receipt-${tenantId}-${numberOf(u.prefix, n)}`;
         if (held.has(key)) {
+          // Verifier r28 NEW-6 (a): beyond the newest UNUSED_HELD_TIMED_MAX held, counted (and said), never silently left.
+          if (timed >= UNUSED_HELD_TIMED_MAX) { notTimed += 1; continue; }
           timed += 1;
           const e = await store.findByIdempotencyKey(tenantId, key);
-          if (e !== undefined) at.set(n, { as: 'sale', at: e.event.occurredAt });
+          // Round 29 · OB-108: the store computer's own time for the bill (it took it from the till) — else the till's.
+          const boxAt = storeComputerTimeOf((e?.event.payload as { storeComputerTakenAt?: unknown } | undefined)?.storeComputerTakenAt);
+          if (e !== undefined) at.set(n, boxAt === undefined ? { as: 'sale', at: e.event.occurredAt, clock: 'till' } : { as: 'sale', at: boxAt, clock: 'store_computer' });
           continue;
         }
+        if (timed >= UNUSED_HELD_TIMED_MAX) continue;
         const back = (await refunds()).get(numberOf(u.prefix, n));
-        if (back !== undefined) at.set(n, { as: 'return', at: back });
+        if (back !== undefined) at.set(n, { as: 'return', at: back.at, clock: back.clock });
       }
+      const notChecked = Math.max(0, atOrBelow - numbers.length);
+      if (notChecked > 0 || notTimed > 0) unusedCapped.set(storeId, [...(unusedCapped.get(storeId) ?? []), { prefix: u.prefix, notChecked, notTimed }]);
       const found = unusedButReceived(u.prefix, u, at);
       if (found.length > 0) unusedReceived.set(storeId, [...(unusedReceived.get(storeId) ?? []), ...found]);
     }
   }
   const out = new Map<string, readonly BillNumberFinding[]>();
   for (const storeId of storeIds) {
-    const f = findingsFor(storeId, unreceived.get(storeId) ?? [], unusedReceived.get(storeId));
+    const f = findingsFor(storeId, unreceived.get(storeId) ?? [], unusedReceived.get(storeId), unusedCapped.get(storeId));
     if (f.length > 0) out.set(storeId, f);
   }
-  return { findings: out, unused: read.unused, unusedReceived };
+  return { findings: out, unused: read.unused, unusedReceived, unusedCapped };
+}
+
+/**
+ * Round 29 · OB-108: the store computer's own time for a bill, as head office keeps it — only a well-formed time is used (a
+ * missing or unreadable one leaves the till's time, said so on the line).
+ */
+function storeComputerTimeOf(v: unknown): string | undefined {
+  return typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/.test(v) && !Number.isNaN(Date.parse(v)) ? v : undefined;
 }
 
 /** OB-81: the store pack's `receiptSeries` for one store — each till's current issued prefix. */

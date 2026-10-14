@@ -5,7 +5,7 @@ import {
   type RefusalAcknowledgement, type AtRiskAcknowledgement, type UnreceivedCandidate, type UnreceivedNumbers,
 } from '../../services/platform/src/box-health';
 import { DEFAULT_THRESHOLDS } from '../../packages/ops/src/index';
-import { history, judged, rng, iso, type Seeded } from '../support/box-history';
+import { history, longHistory, honestStore, judged, rng, iso, type Seeded } from '../support/box-history';
 
 /**
  * **Round 28 · OB-104 "A" (owner, 13 Oct 2026, in writing, "Before the pilot") — a health read that reads only the reports
@@ -51,17 +51,18 @@ function fullReading(h: Seeded, visible: readonly (BoxHealthRecord & { seq: numb
   return { candidates: nr.candidates, unused: nr.unused, bindings: nr.bindings, rawBindings: prefixBindings(raw, h.acts, at), findings, boxes };
 }
 
-describe('round 28 · OB-104: the windowed health read is the full reading', () => {
-  it('300 seeded histories, read again and again from the saved result, every answer field for field (set-aside cases included)', () => {
-    const asides = new Map<string, number>();
-    let resumedReads = 0;
-    let reads = 0;
-    let windowed = 0;
-    let everything = 0;
-    const findingKinds = new Set<string>();
-    let standing = 0; let hoursKnown = 0; let moved = 0; let others = 0; let fenceHeld = 0; let later = 0;
-    for (let seed = 1; seed <= 300; seed += 1) {
-      const h = history(seed);
+interface Tally {
+  asides: Map<string, number>; resumedReads: number; reads: number; windowed: number; everything: number; findingKinds: Set<string>;
+  standing: number; hoursKnown: number; moved: number; others: number; fenceHeld: number; later: number; several: number; biggest: number;
+}
+const tally = (): Tally => ({ asides: new Map(), resumedReads: 0, reads: 0, windowed: 0, everything: 0, findingKinds: new Set(), standing: 0, hoursKnown: 0, moved: 0, others: 0, fenceHeld: 0, later: 0, several: 0, biggest: 0 });
+
+/** One seeded history read again and again as head office would (each read resuming from the last one's saved result), every answer checked. */
+function readAgainAndAgain(h: Seeded, seed: number, t: Tally, step = 8): void {
+  const { asides, findingKinds } = t;
+  let { resumedReads, reads, windowed, everything, standing, hoursKnown, moved, others, fenceHeld, later } = t;
+  {
+    {
       const rnd = rng(seed * 7919);
       let snapshot: BoxHistorySnapshot | undefined;
       let visibleSeq = 0;
@@ -70,7 +71,7 @@ describe('round 28 · OB-104: the windowed health read is the full reading', () 
       let ownsB2 = true; // whether B- counts as store S2's own prefix (a verdict that can change between reads)
       let ahead = 1_000_000; // how far ahead of banked a count is believed
       while (visibleSeq < h.records.length) {
-        visibleSeq = Math.min(h.records.length, visibleSeq + 1 + Math.floor(rnd() * 8));
+        visibleSeq = Math.min(h.records.length, visibleSeq + 1 + Math.floor(rnd() * step));
         // A report whose write commits late is not visible yet while fewer than its delay of later ones are (PostgreSQL).
         const hidden = (seq: number): boolean => visibleSeq < h.records.length && seq + (h.commitsLate.get(seq) ?? 0) > visibleSeq;
         const visible = h.records.slice(0, visibleSeq).filter((r) => !hidden(r.seq));
@@ -138,10 +139,24 @@ describe('round 28 · OB-104: the windowed health read is the full reading', () 
         others += boxes.boxes.filter((b) => (b.otherComputers ?? []).length > 0).length > 0 ? 1 : 0;
         if (got.snapshot !== undefined && got.snapshot.folded.length > 0) fenceHeld += 1;
         if (visible.some((r) => Date.parse(r.receivedAt) > atMs)) later += 1;
+        t.several += boxes.boxes.filter((b) => (b.boundComputers ?? []).length > 1).length > 0 ? 1 : 0;
         // The saved result is plain data (it is kept as JSON on PostgreSQL): the next read resumes from its JSON copy.
-        if (got.snapshot !== undefined) snapshot = JSON.parse(JSON.stringify(got.snapshot)) as BoxHistorySnapshot;
+        if (got.snapshot !== undefined) {
+          const text = JSON.stringify(got.snapshot);
+          t.biggest = Math.max(t.biggest, text.length);
+          snapshot = JSON.parse(text) as BoxHistorySnapshot;
+        }
       }
     }
+  }
+  Object.assign(t, { resumedReads, reads, windowed, everything, standing, hoursKnown, moved, others, fenceHeld, later });
+}
+
+describe('round 28 · OB-104: the windowed health read is the full reading', () => {
+  it('300 seeded histories, read again and again from the saved result, every answer field for field (set-aside cases included)', () => {
+    const t = tally();
+    for (let seed = 1; seed <= 300; seed += 1) readAgainAndAgain(history(seed), seed, t);
+    const { asides, resumedReads, reads, windowed, everything, findingKinds, standing, hoursKnown, moved, others, fenceHeld, later } = t;
     console.log(`[OB-104] not-checked acknowledgements standing ${standing}, hours left known ${hoursKnown}, reads with a moved prefix ${moved}, with a second store computer ${others}, saves held below a busy fence or a late report ${fenceHeld}, reads with a report stamped after them ${later}`);
     expect(Math.min(standing, hoursKnown, moved, others, fenceHeld, later)).toBeGreaterThan(0);
     console.log(`[OB-104] ${reads} reads: ${resumedReads} resumed from the saved result (${windowed} reports folded in their windows), set aside: ${JSON.stringify(Object.fromEntries(asides))} (${everything} reports re-folded); finding kinds seen: ${[...findingKinds].sort().join(', ')}`);
@@ -151,5 +166,49 @@ describe('round 28 · OB-104: the windowed health read is the full reading', () 
     for (const kind of ['issued_never_received', 'report_refused', 'bills_waiting_on_box', 'bills_dead_lettered_on_box', 'at_risk_not_checked', 'report_contradicts_its_queue']) {
       expect(findingKinds.has(kind), kind).toBe(true);
     }
+    // Round 29 · OB-107: stores where more than one store computer holds tills came up (each judged, the worse deciding).
+    expect(t.several).toBeGreaterThan(0);
   }, 600_000);
+
+  it('round 29 · OB-105: 40 LONG histories (months of reports, gaps of up to 40 days — the waiting clock\'s day and the unused runs\' month both crossed), every answer field for field', () => {
+    const t = tally();
+    for (let seed = 1; seed <= 40; seed += 1) readAgainAndAgain(longHistory(seed, 8), 10_000 + seed, t, 24);
+    console.log(`[OB-105 long] ${t.reads} reads: ${t.resumedReads} resumed, set aside ${JSON.stringify(Object.fromEntries(t.asides))}; biggest saved result ${(t.biggest / 1024).toFixed(1)} KB; several store computers holding tills on ${t.several} read(s)`);
+    expect(t.resumedReads).toBeGreaterThan(t.reads / 3);
+    for (const kind of ['issued_never_received', 'bills_waiting_on_box', 'report_refused']) expect(t.findingKinds.has(kind), kind).toBe(true);
+  }, 900_000);
+
+  it('round 29 · OB-105: the verifier\'s honest busy store (10 tills, a report every 15 s, 1,900 bills a till a day) read in windows for 2 days is the full reading at each check', () => {
+    const records = honestStore(2);
+    let snapshot: BoxHistorySnapshot | undefined;
+    const settings: Settings = { timeZone: 'UTC' };
+    const judge: BoxHistoryJudge = { owns: () => true, plausible: () => true };
+    const checks = new Set([1_920, 5_760, 11_520]);
+    let checked = 0;
+    for (let seen = 640; seen <= records.length; seen += 640) {
+      const last = Date.parse(records[seen - 1]!.receivedAt);
+      const at = iso(last + 60_000);
+      // Head office has banked everything sold up to 2 minutes before the read (the honest store keeps up).
+      const banked = new Map<string, number>();
+      for (const r of records.slice(0, seen)) if (Date.parse(r.receivedAt) <= last - 120_000) for (const x of r.receiptNumbersIssued ?? []) banked.set(x.prefix, x.through);
+      const visible = records.slice(0, seen);
+      const window = snapshot === undefined ? visible : visible.filter((r) => r.seq > snapshot!.seq);
+      const got = readBoxHistory({
+        entries: window.map(({ seq, ...r }) => ({ raw: r as BoxHealthRecord, judged: r as BoxHealthRecord, seq })), ...(snapshot === undefined ? {} : { snapshot }),
+        at, banked, judge, ...settings, settleBefore: iso(Date.parse(at) - FOLD_SETTLE_MINUTES * 60_000), settledThrough: seen,
+      });
+      if ('setAside' in got) throw new Error(`set aside: ${got.setAside}`);
+      if (got.snapshot !== undefined) snapshot = JSON.parse(JSON.stringify(got.snapshot)) as BoxHistorySnapshot;
+      if (!checks.has(seen)) continue;
+      const full = fullReading({ records: visible, refusalAcks: [], atRiskAcks: [], acts: [], commitsLate: new Map() }, visible, at, banked, judge, settings, { refusal: [], atRisk: [] });
+      expect(got.candidates).toEqual(full.candidates);
+      expect(got.bindings).toEqual(full.bindings);
+      const findings = new Map(got.storeIds.map((s) => [s, billNumberFindingsFor({ storeId: s, records: [], at, unreceived: unreceivedOf(got.candidates, s), banked, facts: got.facts(s) })] as const));
+      expect(findings).toEqual(full.findings);
+      expect(judgeBoxes({ records: [], view: got.view, at, thresholds: DEFAULT_THRESHOLDS, billNumberFindings: findings, bindings: got.bindings, unusedNumbers: got.unused })).toEqual(full.boxes);
+      checked += 1;
+    }
+    expect(checked).toBe(3);
+    expect(snapshot!.sizeBytes).toBeLessThan(2 * 1_048_576);
+  }, 900_000);
 });

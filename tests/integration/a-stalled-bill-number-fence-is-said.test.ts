@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+import { takeHeldTransactionTurn } from '../support/held-transaction-turn';
 import { randomUUID } from 'node:crypto';
 import { Pool, type PoolClient } from 'pg';
 import { startRealCloud, type RealCloud } from '../support/real-store';
@@ -36,6 +37,10 @@ interface Component { name: string; status: string; detail: string; evidence?: R
 interface Observed { health: { summary: string; components: Component[] } }
 
 describe.skipIf(DATABASE_URL === undefined)('verifier r20 HW-2: a stalled bill-number fence is said, and bounded (PostgreSQL, production API)', () => {
+  // These tests hold a database transaction open on purpose; they take turns with every other such test (see the helper).
+  let endTurn: (() => Promise<void>) | undefined;
+  beforeAll(async () => { endTurn = await takeHeldTransactionTurn(DATABASE_URL!); }, 1_800_000);
+  afterAll(async () => { await endTurn?.(); });
   let real: RealCloud;
   let other: Pool;
   beforeAll(async () => {

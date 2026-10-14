@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { takeHeldTransactionTurn } from '../support/held-transaction-turn';
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
@@ -28,6 +29,10 @@ const ev = (T: string, rn: string) => ({
 });
 
 describe.skipIf(DATABASE_URL === undefined)('HW-1: a late-committing bill is never lost from the high-water (PostgreSQL)', () => {
+  // These tests hold a database transaction open on purpose; they take turns with every other such test (see the helper).
+  let endTurn: (() => Promise<void>) | undefined;
+  beforeAll(async () => { endTurn = await takeHeldTransactionTurn(DATABASE_URL!); }, 1_800_000);
+  afterAll(async () => { await endTurn?.(); });
   it('the probe: an open transaction holds an early position while 400 bills commit; three builds; then it lands', async () => {
     const pool = new Pool({ connectionString: DATABASE_URL, max: 8, options: '-c app.tenant_id=*' });
     const sql = pgPoolClient(pool);

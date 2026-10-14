@@ -51,7 +51,7 @@ describe('OB-100: numbers taken and never used are shown, per till and day, neut
     const records = Array.from({ length: 41 }, (_, k) => rec(k, { through: 110, unsent: { count: 0 }, unused: [[110, 110]] }, 0));
     const h = read(records, 41, 109);
     expect(h.kinds).toEqual([]); // OB-94 kept: no "find the paper bill"
-    expect(h.box.unusedNumbers).toEqual([{ prefix: 'A-', day: '2026-03-01', count: 1, ranges: [[110, 110]], moreRanges: 0, lastSaidAt: '2026-03-01T08:00:00.000Z' }]);
+    expect(h.box.unusedNumbers).toEqual([{ prefix: 'A-', day: '2026-03-01', count: 1, ranges: [[110, 110]], moreRanges: 0, lastSaidAt: '2026-03-01T08:40:00.000Z' }]); // round 29 · NEW-6: to the minute
     const c = h.comp('box_unused_numbers')!;
     expect(c.status).toBe('ok');
     expect(c.detail).toMatch(/^taken but never used \(information — nothing to look for\): store S1's computer says these bill numbers were given and never put on a bill — till A- on 2026-03-01: 1 number\(s\), A-000110\./);
@@ -114,10 +114,10 @@ describe('OB-100: head office holds a bill under a number the store computer sai
     expect(unusedButReceived('A-', unused, new Map([[105, { as: 'return' as const, at: iso(10) }]])).map((u) => u.heldAs)).toEqual(['return']);
     expect(unusedButReceived('A-', unused, new Map([[106, { as: 'sale' as const, at: iso(0) }]]))).toEqual([]);
   });
-  it('the fold keeps the latest hour each number was said — rounded down, never later than it was said', () => {
+  it('the fold keeps the latest MINUTE each number was said (round 29 · NEW-6; it was the hour) — rounded down, never later than it was said', () => {
     const records = [rec(0, { through: 110, unsent: { count: 0 }, unused: [[105, 105]] }, 0), rec(95, { through: 110, unsent: { count: 0 }, unused: [[105, 105]] }, 0), rec(97, { through: 110, unsent: { count: 0 } }, 0)];
     const u = readNeverReceived({ records, at: iso(100), banked: new Map([['A-', 110]]) }).unused.get('S1')!;
-    expect(u).toEqual([{ prefix: 'A-', runs: [{ from: 105, to: 105, day: '2026-03-01', lastSaidAt: '2026-03-01T09:00:00.000Z' }] }]);
+    expect(u).toEqual([{ prefix: 'A-', runs: [{ from: 105, to: 105, day: '2026-03-01', lastSaidAt: '2026-03-01T09:35:00.000Z' }] }]);
   });
 });
 

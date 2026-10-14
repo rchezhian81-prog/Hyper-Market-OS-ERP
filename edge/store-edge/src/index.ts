@@ -23,7 +23,7 @@ import { toCloudSale } from './cloud-sale';
 import { toCloudConcessionTag } from './cloud-concession-tag';
 import { toCloudReturn } from './cloud-return';
 import { toCloudChecklist, toCloudTaskCompletion } from './cloud-completion';
-import { canonicalHash, type IdempotencyGuard } from './idempotency';
+import { canonicalHash, stampTakenAt, type IdempotencyGuard } from './idempotency';
 import type { ReturnEntitlement, EntitlementLine } from './entitlement';
 import type { SaleLookupResult } from './receipt-lookup';
 
@@ -183,8 +183,12 @@ export function createEdgeNode(input: {
       // The durable write, then the queue — after the write, never before. Queueing first would send
       // a sale the lane went on to refuse; the customer would have walked away without paying for it.
       const commitAndQueue = async (): Promise<CommitOutcome> => {
+        // Round 29 · OB-108: the store computer's own time for the bill — when it took it from the till — written on the
+        // record it keeps (so a restart re-sends it too) and so on what it sends. Not part of the sale's identity (the
+        // idempotency hash leaves it out), and never a reason to refuse a sale.
+        const kept = stampTakenAt(record, new Date().toISOString());
         const outcome = await commitLocally({
-          saleId, record, log: input.log,
+          saleId, record: kept, log: input.log,
           ...(input.reserveBytes === undefined ? {} : { reserveBytes: input.reserveBytes }),
         });
         if (outcome.committed && input.outbox !== undefined) {
@@ -199,7 +203,7 @@ export function createEdgeNode(input: {
             // Translated to the cloud's sale contract before it leaves — the disk record speaks
             // `id`/`total`, `/v1/sales` speaks `saleId`/`totalMinor`/`packVersion`. The pack this edge
             // holds is the one the lane priced this sale from, so it stamps the version (see cloud-sale.ts).
-            payload: toCloudSale(JSON.parse(record) as unknown, held?.snapshot.version ?? 0, input.storeId?.(), input.laneId?.()),
+            payload: toCloudSale(JSON.parse(kept) as unknown, held?.snapshot.version ?? 0, input.storeId?.(), input.laneId?.()),
           }));
         }
         // Teach the refund-entitlement guard what this sale sold, so a refund taken later in the SAME

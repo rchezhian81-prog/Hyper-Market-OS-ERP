@@ -84,7 +84,8 @@ describe('the store computers session', () => {
     expect(ho.sent.length).toBe(before); // nothing sent for a short reason
     await s.acknowledge(held, ' support checked the store computer ');
     expect(ho.sent.slice(before).map((x) => [x.method, x.path, x.body])).toEqual([
-      ['POST', UNUSED_RECEIVED_ACK_PATH, { storeId: 'S1', prefix: 'S1L1-', count: 1, reason: 'support checked the store computer' }],
+      // Round 29 · verifier r28 NEW-5: the EXACT numbers the page showed travel with the count.
+      ['POST', UNUSED_RECEIVED_ACK_PATH, { storeId: 'S1', prefix: 'S1L1-', numbers: [[105, 105]], count: 1, reason: 'support checked the store computer' }],
     ]);
     // A kind this page does not know is never sent anywhere.
     expect(await s.acknowledge({ ...held, kind: 'issued_never_received' as never }, 'support checked it')).toEqual({ result: 'invalid', why: 'notAcknowledgeable' });
@@ -116,16 +117,16 @@ describe('the store computers session', () => {
     ]);
   });
 
-  it('acknowledges a refused report by its count and a not-checked line by its count, each with the reason', async () => {
+  it('acknowledges a refused report by its count and a not-checked line by the numbers it showed (round 29 · NEW-5), each with the reason', async () => {
     const ho = fakeHeadOffice(() => ({ status: 201, body: {} }));
     const s = createStoreComputersSession({ viewer: HO, fetch: ho.fetch, ...keys });
     const refused: Finding = { storeId: 'S1', kind: 'report_refused', prefix: 'S1L1-', through: 110, since: 'x', detail: 'd' };
-    const notChecked: Finding = { storeId: 'S1', kind: 'at_risk_not_checked', prefix: 'S1L1-', count: 400, since: 'x', detail: 'd' };
+    const notChecked: Finding = { storeId: 'S1', kind: 'at_risk_not_checked', prefix: 'S1L1-', count: 400, ranges: [[101, 500]], since: 'x', detail: 'd' };
     await s.acknowledge(refused, ' stand-by box switched off ');
     await s.acknowledge(notChecked, 'support compared the restore record');
     expect(ho.sent.map((x) => [x.path, x.body])).toEqual([
       [REFUSAL_ACK_PATH, { storeId: 'S1', prefix: 'S1L1-', through: 110, reason: 'stand-by box switched off' }],
-      [NOT_CHECKED_ACK_PATH, { storeId: 'S1', prefix: 'S1L1-', count: 400, reason: 'support compared the restore record' }],
+      [NOT_CHECKED_ACK_PATH, { storeId: 'S1', prefix: 'S1L1-', numbers: [[101, 500]], count: 400, reason: 'support compared the restore record' }],
     ]);
   });
 

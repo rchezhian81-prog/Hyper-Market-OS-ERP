@@ -20,6 +20,7 @@
 // (`STORE_STAMP_FIELD`), and only that store's own computer may report it. A report that names another store is refused
 // at the door and kept as a refusal. Append-only: every report is kept; the latest per store is read.
 
+import { createHash } from 'node:crypto';
 import type { Route } from '../../kernel/src/index';
 import { apiError, concurrentChange, scopeOf } from '../../kernel/src/index';
 import type { RequestContext } from '../../kernel/src/index';
@@ -599,6 +600,109 @@ export interface WaitingFacts {
   readonly wholeQueueSince: () => string;
 }
 
+/**
+ * Round 29 · OB-105 "A" (owner, 14 Oct 2026, in writing, "Trim + alarm before pilot"; verifier r28 NEW-1) — THE WAITING
+ * CLOCK'S MEMORY (stated, so a person can check it). The clock (r23 NEW-1 · OB-89) ages each bill NUMBER from head office's
+ * first sight of it in any list of bills "waiting to send" — a report in between that does not list it restarts nothing, so
+ * a store computer cannot reset the clock by hiding a stuck bill for one report. Before this round every span it had ever
+ * been told was kept for ever: an honest busy store (each bill waiting in one report, then sent) added one span per bill,
+ * about 19,000 a day, and the saved result grew without end. THE RULE: a span that no report has said is waiting (no list
+ * naming any of its numbers) for WAIT_FORGET_HOURS (24 hours, by head office's receipt of the reports) is FORGOTTEN — if a
+ * list names its numbers again later, their clock starts again from then. It is checked once per hour of reports per till
+ * prefix (each span is forgotten at the first report naming the prefix in a later hour), so it is the same in every
+ * reading. A bill that stays stuck is listed in every report, so its span is never forgotten and its clock never restarts;
+ * only a number every report has left out for a whole day can start again — and hiding a stuck bill for a day hides
+ * nothing the finding would not already have said in that day (it fires at the owner's line, 2 hours by default). The
+ * plain reading (`waitingFacts`) and the saved running result (`readBoxHistory`) use this same clock, so they still agree
+ * exactly (tests/unit/the-box-history-is-its-full-reading).
+ */
+export const WAIT_FORGET_HOURS = 24;
+const WAIT_SWEEP_MS = 3_600_000;
+interface WaitSpan { readonly at: string; readonly atMs: number; readonly from: number; readonly to: number; lastMs: number }
+class WaitClock {
+  /** The spans that each reached a number no kept span had, in the order head office was told (first sight first). */
+  spans: WaitSpan[] = [];
+  /** The same spans by their first number (to find the ones a list reaches without looking at all of them). */
+  private byFrom: WaitSpan[] = [];
+  /** Every number a kept span reaches (joined runs). */
+  private union: [number, number][] = [];
+  private maxLen = 0;
+  sweptHour = -Infinity;
+
+  /** A report naming the prefix arrived at `ms`: once per hour of reports, forget the spans nobody has listed for a day. */
+  tick(ms: number): void {
+    const hour = Math.floor(ms / WAIT_SWEEP_MS);
+    if (!(hour > this.sweptHour)) return;
+    this.sweptHour = hour;
+    const floor = ms - WAIT_FORGET_HOURS * 3_600_000;
+    if (!this.spans.some((s) => s.lastMs < floor)) return;
+    this.rebuild(this.spans.filter((s) => s.lastMs >= floor));
+  }
+
+  /** A list said [from, to] is waiting, at `ms`: every kept span it reaches was said again; a new number makes a new span. */
+  told(at: string, ms: number, from: number, to: number): void {
+    // The kept spans that can reach [from, to] start at most `maxLen` below `from` (binary search on their first number).
+    let lo = 0; let hi = this.byFrom.length;
+    while (lo < hi) { const mid = (lo + hi) >> 1; if (this.byFrom[mid]!.from <= to) lo = mid + 1; else hi = mid; }
+    for (let i = lo - 1; i >= 0; i -= 1) {
+      const s = this.byFrom[i]!;
+      if (s.from < from - this.maxLen) break;
+      if (s.to >= from && s.lastMs < ms) s.lastMs = ms;
+    }
+    if (coveredBy(this.union, from, to)) return;
+    const s: WaitSpan = { at, atMs: ms, from, to, lastMs: ms };
+    this.spans.push(s);
+    this.insert(s);
+  }
+
+  /** r23 NEW-1: the FIRST kept span (in the order head office was told) that reaches [from, to]. */
+  first(from: number, to: number): { readonly at: string; readonly from: number; readonly to: number } | undefined {
+    const s = this.spans.find((e) => e.from <= to && e.to >= from);
+    return s === undefined ? undefined : { at: s.at, from: s.from, to: s.to };
+  }
+
+  private insert(s: WaitSpan): void {
+    let lo = 0; let hi = this.byFrom.length;
+    while (lo < hi) { const mid = (lo + hi) >> 1; if (this.byFrom[mid]!.from <= s.from) lo = mid + 1; else hi = mid; }
+    this.byFrom.splice(lo, 0, s);
+    addRun(this.union, s.from, s.to);
+    this.maxLen = Math.max(this.maxLen, s.to - s.from);
+  }
+
+  rebuild(spans: WaitSpan[]): void {
+    this.spans = spans;
+    this.byFrom = [...spans].sort((a, b) => a.from - b.from);
+    this.union = [];
+    this.maxLen = 0;
+    for (const s of spans) { addRun(this.union, s.from, s.to); this.maxLen = Math.max(this.maxLen, s.to - s.from); }
+  }
+
+  /** Plain data (delta-coded, one flat list): [Δ first sight, its time as written or 0, Δ from, to − from, last − first sight]. */
+  encode(): unknown[] {
+    const out: unknown[] = [fin(this.sweptHour)];
+    let pa = 0; let pf = 0;
+    for (const s of this.spans) {
+      out.push(s.atMs - pa, s.at === new Date(s.atMs).toISOString() ? 0 : s.at, s.from - pf, s.to - s.from, s.lastMs - s.atMs);
+      pa = s.atMs; pf = s.from;
+    }
+    return out;
+  }
+  static decode(e: readonly unknown[]): WaitClock {
+    const c = new WaitClock();
+    c.sweptHour = (e[0] as number | null) ?? -Infinity;
+    const spans: WaitSpan[] = [];
+    let pa = 0; let pf = 0;
+    for (let i = 1; i + 4 < e.length; i += 5) {
+      const atMs = pa + (e[i] as number);
+      const from = pf + (e[i + 2] as number);
+      spans.push({ at: e[i + 1] === 0 ? new Date(atMs).toISOString() : e[i + 1] as string, atMs, from, to: from + (e[i + 3] as number), lastMs: atMs + (e[i + 4] as number) });
+      pa = atMs; pf = from;
+    }
+    c.rebuild(spans);
+    return c;
+  }
+}
+
 /** Round 28 · OB-104: one store's `WaitingFacts` per prefix (in order), read from its reports (the plain reading). */
 export function waitingFacts(input: {
   readonly records: readonly BoxHealthRecord[]; readonly storeId: string; readonly at: string; readonly replacements?: readonly StoreComputerReplacement[];
@@ -607,22 +711,22 @@ export function waitingFacts(input: {
   // OB-94: only the bound store computer's word about a prefix counts (`bindPrefixesToComputers`); OB-97: as replaced.
   const mine = bindInOrder(input.records.filter((r) => r.storeId === input.storeId && Date.parse(r.receivedAt) <= atMs), atOrBefore(input.replacements, atMs)).map(believedRecord);
   const latest = new Map<string, { r: BoxHealthRecord; x: IssuedReport }>();
-  // r23 NEW-1: every span head office has been told is waiting, per prefix, in the order it was told.
-  const waitingSpans = new Map<string, { at: string; from: number; to: number }[]>();
+  // r23 NEW-1 · OB-105: every span head office has been told is waiting, per prefix, in the order it was told (`WaitClock`).
+  const clocks = new Map<string, WaitClock>();
   for (const r of mine) {
+    const ms = Date.parse(r.receivedAt);
     for (const x of r.receiptNumbersIssued ?? []) {
       latest.set(x.prefix, { r, x });
+      let c = clocks.get(x.prefix);
+      if (c === undefined) { c = new WaitClock(); clocks.set(x.prefix, c); }
+      c.tick(ms);
       const w = x.unsent;
-      if (names(w)) {
-        const spans = waitingSpans.get(x.prefix);
-        if (spans === undefined) waitingSpans.set(x.prefix, [{ at: r.receivedAt, from: w.from, to: w.to }]);
-        else spans.push({ at: r.receivedAt, from: w.from, to: w.to });
-      }
+      if (names(w)) c.told(r.receivedAt, ms, w.from, w.to);
     }
   }
   return [...latest].sort((a, b) => a[0].localeCompare(b[0])).map(([prefix, { r: last, x }]) => ({
     prefix, lastReceivedAt: last.receivedAt, lastQueueUnsent: last.queue.unsent, x,
-    firstWaiting: (from, to) => (waitingSpans.get(prefix) ?? []).find((e) => e.from <= to && e.to >= from),
+    firstWaiting: (from, to) => clocks.get(prefix)?.first(from, to),
     wholeQueueSince: () => wholeQueueRunSince(mine, prefix, last.receivedAt),
   }));
 }
@@ -1058,6 +1162,8 @@ interface FoldKey {
   risk: Track;
   /** Round 27 · OB-100: every count the box said it gave and never used; the latest list, and the hour it was last laid. */
   unused: UnusedRun[]; unusedList: readonly (readonly [number, number])[] | undefined; unusedListMs: number;
+  /** Round 29 · OB-105: the hour of reports the unused runs were last swept for ones said too long ago (`noteUnused`). */
+  unusedSwept: number;
 }
 
 /**
@@ -1078,7 +1184,7 @@ interface FoldKey {
  */
 export const FOLD_SETTLE_MINUTES = 10;
 export const FOLD_SNAPSHOT_EVERY = 64;
-const FOLD_SNAPSHOT_VERSION = 2;
+const FOLD_SNAPSHOT_VERSION = 3; // round 29: minute steps for unused numbers, their memory (OB-105)
 
 /** A prefix head office dropped from a report when it judged it at read (`judgeReportedIssued`). */
 export interface JudgedAway { readonly receivedAt: string; readonly storeId: string; readonly prefix: string; readonly through: number }
@@ -1105,6 +1211,7 @@ interface EncodedKey {
   readonly said: { readonly queue: BoxHealthRecord['queue']; readonly x: IssuedReport; readonly contradicted: boolean } | null; readonly saidNoted: number | null;
   readonly above: EncodedTrack; readonly aboveFrom: number; readonly risk: EncodedTrack;
   readonly unused: readonly (readonly [number, number, string, number])[]; readonly unusedList: readonly (readonly [number, number])[] | null; readonly unusedListMs: number | null;
+  readonly unusedSwept: number | null;
 }
 
 const fin = (v: number): number | null => (Number.isFinite(v) ? v : null);
@@ -1185,7 +1292,7 @@ class NeverReceivedFold {
       if (cur === undefined) {
         cur = {
           storeId: r.storeId, prefix: x.prefix, latest: { queue: r.queue, x }, wholeQueueSince: undefined, wholeQueueSinceMs: NaN, said: undefined, saidNoted: Infinity,
-          above: newTrack(), aboveFrom: bankedOf(x.prefix), risk: newTrack(), unused: [], unusedList: undefined, unusedListMs: -Infinity,
+          above: newTrack(), aboveFrom: bankedOf(x.prefix), risk: newTrack(), unused: [], unusedList: undefined, unusedListMs: -Infinity, unusedSwept: -Infinity,
         };
         this.keys.set(key, cur);
       }
@@ -1312,16 +1419,29 @@ class NeverReceivedFold {
   /**
    * Round 27 · OB-100: lay one report's "given and never used" list over what this prefix's store computer said before.
    * A count first said on a day belongs to that day (the store's own calendar, by head office's receipt of the report);
-   * every count keeps the latest HOUR it was said (UNUSED_SAID_HOUR: the store computer's report time, rounded DOWN to the
-   * hour — never later than it was said). A list repeated word for word within the same hour changes nothing.
+   * every count keeps the latest MINUTE it was said (round 29 · verifier r28 NEW-6: UNUSED_SAID_STEP, the store computer's
+   * report time rounded DOWN to the minute — never later than it was said; it was the hour before). A list repeated word
+   * for word within the same minute changes nothing.
+   * Round 29 · OB-105 — THE UNUSED RUNS' MEMORY (stated): a run the store computer last said was unused more than
+   * UNUSED_FORGET_DAYS (30) days before its latest report under the prefix is FORGOTTEN — checked once per hour of reports.
+   * It is then no longer shown (the page shows the newest 7 days that have any) and no longer checked against head office's
+   * bills; if the store computer says it again, it is a new run of that day. An honest store computer says a number is
+   * unused only until a bill takes it (or for good, for a bill abandoned at the till), so a month is far beyond any
+   * honest case of a bill reaching head office after its number was said unused.
    */
   private noteUnused(cur: FoldKey, list: readonly (readonly [number, number])[] | undefined, observedMs: number, ms: number): void {
     const said = list ?? NO_RUNS;
-    const hour = Math.floor(observedMs / UNUSED_SAID_HOUR) * UNUSED_SAID_HOUR;
-    if (sameRanges(cur.unusedList ?? NO_RUNS, said) && (said.length === 0 || hour <= cur.unusedListMs)) return;
-    if (said.length > 0) cur.unused = layUnused(cur.unused, said, this.day(ms), hour);
+    const step = Math.floor(observedMs / UNUSED_SAID_STEP) * UNUSED_SAID_STEP;
+    const hour = Math.floor(ms / 3_600_000);
+    if (hour > cur.unusedSwept) {
+      cur.unusedSwept = hour;
+      const floor = step - UNUSED_FORGET_DAYS * 86_400_000;
+      if (cur.unused.some((u) => u.lastMs < floor)) cur.unused = cur.unused.filter((u) => u.lastMs >= floor);
+    }
+    if (sameRanges(cur.unusedList ?? NO_RUNS, said) && (said.length === 0 || step <= cur.unusedListMs)) return;
+    if (said.length > 0) cur.unused = layUnused(cur.unused, said, this.day(ms), step);
     cur.unusedList = said.length === 0 ? undefined : said;
-    cur.unusedListMs = said.length === 0 ? -Infinity : Math.max(hour, cur.unusedListMs);
+    cur.unusedListMs = said.length === 0 ? -Infinity : Math.max(step, cur.unusedListMs);
   }
 
   /** The answer at `atMs`, with head office's banked counts now (never lower than the fold used). */
@@ -1393,6 +1513,7 @@ class NeverReceivedFold {
         // The counts at or below the banked count the fold used are never read from the "above" track again (banked only rises).
         above: encodeTrack(v.above, v.aboveFrom), aboveFrom: v.aboveFrom, risk: encodeTrack(v.risk, -Infinity),
         unused: v.unused.map((u) => [u.lo, u.hi, u.day, u.lastMs] as const), unusedList: v.unusedList ?? null, unusedListMs: fin(v.unusedListMs),
+        unusedSwept: fin(v.unusedSwept),
       })),
     };
   }
@@ -1408,14 +1529,17 @@ class NeverReceivedFold {
         said: k.said === null ? undefined : { r: { queue: k.said.queue }, x: k.said.x, contradicted: k.said.contradicted }, saidNoted: k.saidNoted ?? Infinity,
         above: decodeTrack(k.above), aboveFrom: k.aboveFrom, risk: decodeTrack(k.risk),
         unused: k.unused.map(([lo, hi, day, lastMs]) => ({ lo, hi, day, lastMs })), unusedList: k.unusedList ?? undefined, unusedListMs: k.unusedListMs ?? -Infinity,
+        unusedSwept: k.unusedSwept ?? -Infinity,
       });
     }
     return f;
   }
 }
 
-/** Round 27 · OB-100: the latest time a number was said unused is kept to the hour, rounded down (see `noteUnused`). */
-const UNUSED_SAID_HOUR = 3_600_000;
+/** Round 29 · verifier r28 NEW-6: the latest time a number was said unused is kept to the MINUTE, rounded down (see `noteUnused`). */
+export const UNUSED_SAID_STEP = 60_000;
+/** Round 29 · OB-105: a run of unused numbers not said again for this many days is forgotten (see `noteUnused`). */
+export const UNUSED_FORGET_DAYS = 30;
 
 /** Two lists of [from, to] ranges say the same. */
 function sameRanges(m: readonly (readonly [number, number])[], n: readonly (readonly [number, number])[]): boolean {
@@ -1589,6 +1713,8 @@ export interface BoxReportsView {
   latestOf(storeId: string, bound: (computer: string) => boolean): BoxHealthRecord | undefined;
   /** For each store computer NOT bound, its latest report received by `at`. */
   othersOf(storeId: string, bound: (computer: string) => boolean): BoxHealthRecord[];
+  /** Round 29 · OB-107: for EACH bound store computer, its own latest report (as `latestOf` picks one), by computer. */
+  latestEach(storeId: string, bound: (computer: string) => boolean): BoxHealthRecord[];
   /** The hours of trading left, from that store computer's own reports (`estimateTradingHoursLeft`). */
   estimate(latest: BoxHealthRecord): TradingHoursEstimate;
   /** The waiting clock's facts for the store (`waitingFacts`). */
@@ -1599,7 +1725,7 @@ export interface BoxReportsView {
 export interface BoxHistoryEntry { readonly raw: BoxHealthRecord; readonly judged: BoxHealthRecord; readonly seq: number }
 
 /** The history's working state version (bump it when its shape or a rule changes: an older one is simply set aside). */
-const BOX_HISTORY_VERSION = 1;
+const BOX_HISTORY_VERSION = 2; // round 29: the waiting clock's and the unused runs' memory, refused groups banked away, a seal
 
 /** `latestBoxReports` kept exactly: at the latest box time seen, per way of writing it, the first position and the latest arrival. */
 interface WinGroup { firstSeq: number; r: BoxHealthRecord; recvMs: number; seq: number }
@@ -1662,10 +1788,8 @@ interface PrefixHist {
 }
 interface WaitHist {
   last: { x: IssuedReport; receivedAt: string; queueUnsent: number } | undefined;
-  /** The waiting spans that each added a number no earlier span had, in the order head office was told. */
-  spans: { at: string; from: number; to: number }[];
-  /** Every number any span reached (joined runs). */
-  union: [number, number][];
+  /** Round 29 · OB-105: the waiting spans kept (`WaitClock`: each added a number no kept span had; forgotten after a day unsaid). */
+  clock: WaitClock;
   /** The start of the unbroken run of reports naming no list while the queue held something (`wholeQueueRunSince`). */
   wq: string | undefined;
 }
@@ -1740,6 +1864,165 @@ export interface BoxHistorySnapshot {
   readonly verdicts: { readonly own: readonly (readonly [string, string, boolean, number])[]; readonly ahead: readonly (readonly [string, number])[] };
   readonly rawBound: readonly PrefixBinding[];
   readonly stores: readonly unknown[];
+  /**
+   * Round 29 · OB-105: per prefix, the banked count refused-report groups were dropped at (a group whose count head office has
+   * banked is answered for good — banked only rises); a read with a LOWER banked count sets the result aside ('banked').
+   */
+  readonly rfBanked: readonly (readonly [string, number])[];
+  /** Round 29 · OB-106: the seal — a SHA-256 over the JSON of everything above, as written (any change sets the result aside). */
+  readonly check: string;
+  /** Round 29 · OB-105: the size of that JSON, in bytes (shown on the health read; an alarm above a line). */
+  readonly sizeBytes: number;
+}
+
+/** Round 29 · OB-105/106: what the health read shows about the saved history itself (its size, saving held back, a failed build). */
+export interface BoxHistoryState {
+  readonly sizeBytes: number | null;
+  readonly saveHeld: { readonly since: string; readonly waitingSeconds: number } | null;
+  readonly lastBuildFailed: { readonly at: string; readonly error: string } | null;
+}
+/** Round 29 · OB-105: above this, the saved history's size is an alarm on the health read (an honest busy store stays under 2 MB). */
+export const BOX_HISTORY_SIZE_WARN_BYTES = 4 * 1_048_576;
+/** Round 29 · OB-106 (verifier r28 NEW-8): saving held back by an open database transaction this long is shown. */
+export const BOX_HISTORY_SAVE_HELD_WARN_SECONDS = 300;
+
+/**
+ * Round 29 · OB-105/106 (P-08): the store computers' saved history on the health read — always shown with its size (`ok`), an
+ * alarm (`degraded`) above BOX_HISTORY_SIZE_WARN_BYTES; `degraded` when saving has been held back by an open transaction
+ * for BOX_HISTORY_SAVE_HELD_WARN_SECONDS, or the last build failed; `unknown` while it is being prepared (the store computer
+ * checks are then not available — said, never silent).
+ */
+export function boxHistoryComponents(input: { readonly preparing?: { readonly since: string; readonly why: string }; readonly history?: BoxHistoryState }): ComponentHealth[] {
+  const out: ComponentHealth[] = [];
+  const h = input.history;
+  if (input.preparing !== undefined) {
+    out.push({
+      name: 'box_history', status: 'unknown',
+      detail: `being prepared — store computer checks not yet available: head office is building the store computers' saved history (since ${input.preparing.since}, because ${input.preparing.why}). Until it is ready, the store computers' disks, queues, tills and bill numbers are NOT judged here — not known, never "all fine". It is built in the background; the tills keep selling and nothing is lost. If this lasts more than an hour, call support`,
+      evidence: { preparingSince: input.preparing.since, why: input.preparing.why },
+    });
+  } else if (h !== undefined && h.sizeBytes !== null) {
+    const kb = Math.ceil(h.sizeBytes / 1024);
+    const over = h.sizeBytes > BOX_HISTORY_SIZE_WARN_BYTES;
+    out.push({
+      name: 'box_history', status: over ? 'degraded' : 'ok',
+      detail: over
+        ? `the store computers' saved history is ${kb} KB — above the ${BOX_HISTORY_SIZE_WARN_BYTES / 1_048_576} MB line (an honest busy store stays well under 2 MB). Something is making it grow — a store computer sending many refused counts or long lists, say. Head office still answers correctly, but each health check gets slower: call support to find which store computer`
+        : `the store computers' saved history is ${kb} KB (the alarm is above ${BOX_HISTORY_SIZE_WARN_BYTES / 1_048_576} MB)`,
+      evidence: { sizeBytes: h.sizeBytes, warnAboveBytes: BOX_HISTORY_SIZE_WARN_BYTES },
+    });
+  }
+  if (h?.saveHeld !== null && h?.saveHeld !== undefined && h.saveHeld.waitingSeconds >= BOX_HISTORY_SAVE_HELD_WARN_SECONDS) {
+    out.push({
+      name: 'box_history_saving', status: 'degraded',
+      detail: `the store computers' saved history has not been saved since ${h.saveHeld.since} (${Math.floor(h.saveHeld.waitingSeconds / 60)} min): an open database transaction holds it back, so head office keeps it in memory and each health check re-reads every store-computer report since it — still correct, but slower. Ask the database administrator to find it — a session "idle in transaction" or a prepared transaction anywhere on the database server (pg_stat_activity, pg_prepared_xacts) — and end it`,
+      evidence: { heldSince: h.saveHeld.since, waitingSeconds: h.saveHeld.waitingSeconds, warnAfterSeconds: BOX_HISTORY_SAVE_HELD_WARN_SECONDS },
+    });
+  }
+  if (h?.lastBuildFailed !== null && h?.lastBuildFailed !== undefined) {
+    out.push({
+      name: 'box_history_build', status: 'degraded',
+      detail: `building the store computers' saved history failed at ${h.lastBuildFailed.at} (${h.lastBuildFailed.error}); the next health check tries again. If this stays, call support`,
+      evidence: { failedAt: h.lastBuildFailed.at, error: h.lastBuildFailed.error },
+    });
+  }
+  return out;
+}
+
+/** Round 29 · OB-105/106: seal a saved running result (its SHA-256 and its size, over the JSON of the rest as written). */
+export function sealBoxHistory(s: Omit<BoxHistorySnapshot, 'check' | 'sizeBytes'>): BoxHistorySnapshot {
+  const { check: _c, sizeBytes: _z, ...rest } = s as BoxHistorySnapshot;
+  void _c; void _z;
+  const text = JSON.stringify(rest);
+  return { ...rest, check: createHash('sha256').update(text).digest('hex'), sizeBytes: Buffer.byteLength(text) };
+}
+
+/**
+ * Round 29 · OB-106: how a saved result is KEPT — as its JSON text inside the snapshot row (`{ format, text }`), never as a
+ * JSON tree: PostgreSQL's jsonb keeps a string exactly but reorders an object's keys, and the seal is over the text as written.
+ * Reading it back costs one SHA-256 and one JSON.parse (a few milliseconds for a megabyte); anything else kept there is
+ * unreadable.
+ */
+export const BOX_HISTORY_STORED_FORMAT = 'box-history-text@1';
+export function boxHistoryToStore(s: BoxHistorySnapshot): { readonly format: string; readonly text: string } {
+  return { format: BOX_HISTORY_STORED_FORMAT, text: JSON.stringify(s) };
+}
+export function boxHistoryFromStore(stored: unknown): unknown {
+  if (!isObj(stored) || stored['format'] !== BOX_HISTORY_STORED_FORMAT || typeof stored['text'] !== 'string') return { notStored: 'it is not in the saved form (box-history-text@1)' };
+  try { return JSON.parse(stored['text']) as unknown; } catch { return { notStored: 'its text is not JSON' }; }
+}
+
+/**
+ * Round 29 · OB-106 "A" (owner, 14 Oct 2026, in writing, "Both before pilot"; verifier r28 NEW-2, probe C1) — A SAVED RESULT IS
+ * CHECKED BEFORE IT IS USED (stated). Every field is checked for its shape (a missing part, a wrong type, garbage), then its
+ * seal is worked out again and compared: a result that cannot be read, or whose content does not match its seal (damaged,
+ * or altered — a binding moved to another computer, say), is SET ASIDE ('unreadable: …') and built again from the reports,
+ * never thrown and never trusted. Answers why, or undefined when it may be used.
+ */
+export function boxHistoryUnreadable(s: unknown): string | undefined {
+  try {
+    if (isObj(s) && typeof s['notStored'] === 'string') return s['notStored'];
+    const why = shapeOfBoxHistory(s);
+    if (why !== undefined) return why;
+    const { check, sizeBytes, ...rest } = s as BoxHistorySnapshot;
+    const text = JSON.stringify(rest);
+    if (createHash('sha256').update(text).digest('hex') !== check) return 'its seal does not match its content (damaged or altered)';
+    if (Buffer.byteLength(text) !== sizeBytes) return 'its size does not match its content';
+    return undefined;
+  } catch (e) {
+    return `it could not be read (${e instanceof Error ? e.message : String(e)})`;
+  }
+}
+
+type Check = (v: unknown) => boolean;
+const vNum: Check = (v) => typeof v === 'number' && Number.isFinite(v);
+const vInt: Check = (v) => typeof v === 'number' && Number.isSafeInteger(v);
+const vStr: Check = (v) => typeof v === 'string';
+const vBool: Check = (v) => typeof v === 'boolean';
+const vTime: Check = (v) => typeof v === 'string' && !Number.isNaN(Date.parse(v));
+const vNull = (c: Check): Check => (v) => v === null || c(v);
+const vArr = (c: Check): Check => (v) => Array.isArray(v) && v.every(c);
+const vTuple = (...cs: Check[]): Check => (v) => Array.isArray(v) && v.length === cs.length && cs.every((c, i) => c(v[i]));
+const vObj = (fields: Readonly<Record<string, Check>>): Check => (v) => isObj(v) && Object.entries(fields).every(([k, c]) => c(v[k]));
+const vRanges = vArr(vTuple(vInt, vInt));
+const vQueue = vObj({ unsent: vNum, deadLettered: vNum });
+const vIssued: Check = (v) => isObj(v) && vStr(v['prefix']) && vInt(v['through']);
+const vRecord: Check = (v) => isObj(v) && vStr(v['storeId']) && vStr(v['reportedBy']) && vTime(v['observedAt']) && vTime(v['receivedAt'])
+  && vObj({ freeBytes: vNum, totalBytes: vNum, salesLogUsedBytes: vNum, salesLogCapacityBytes: vNum, reserveBytes: vNum })(v['disk'])
+  && vQueue(v['queue']) && Array.isArray(v['tills']);
+const vBinding = vObj({ storeId: vStr, prefix: vStr, computer: vStr, since: vTime, via: (v) => v === 'first_report' || v === 'replacement' });
+const vTrack = vObj({ n: vArr(vTuple(vInt, vNum, vStr, vNull(vNum))), s: vArr(vTuple(vInt, vInt, vNull(vNum))), o: vArr(vTuple(vInt, vInt, vNull(vNum))) });
+const vKey = vObj({
+  storeId: vStr, prefix: vStr, latest: vObj({ queue: vQueue, x: vIssued }), wqs: vNull(vStr), wqsMs: vNull(vNum),
+  said: vNull(vObj({ queue: vQueue, x: vIssued, contradicted: vBool })), saidNoted: vNull(vNum), above: vTrack, aboveFrom: vInt, risk: vTrack,
+  unused: vArr(vTuple(vInt, vInt, vStr, vNum)), unusedList: vNull(vRanges), unusedListMs: vNull(vNum), unusedSwept: vNull(vNum),
+});
+const vNever = vObj({
+  version: vInt, settledAt: vTime, settledCount: vInt, lineMs: vNum, slack: vObj({ numbers: vNum, percent: vNum }), timeZone: vStr, judgedAway: vStr,
+  lastMs: vNull(vNum), actsApplied: vArr(vStr), bound: vArr(vBinding), keys: vArr(vKey),
+});
+const vRf = vTuple(vStr, vNum, vInt, vInt, isObj, vStr);
+const vClock: Check = (v) => {
+  if (!Array.isArray(v) || (v.length - 1) % 5 !== 0 || !vNull(vNum)(v[0])) return false;
+  for (let i = 1; i < v.length; i += 5) if (!(vNum(v[i]) && (v[i + 1] === 0 || vTime(v[i + 1])) && vInt(v[i + 2]) && vInt(v[i + 3]) && vNum(v[i + 4]))) return false;
+  return true;
+};
+const vStore = vTuple(
+  vStr, vNull(vRecord),
+  vArr(vTuple(vStr, vNull(vIssued), vNull(vObj({ x: vIssued, receivedAt: vTime })), vTuple(vNull(vStr), vNull(vStr), vNull(vNum)), vTuple(vNull(vInt), vNull(vInt), vNull(vNum)), vArr(vTuple(vInt, vNull(vStr), vRf, vRf)))),
+  vArr(vTuple(vStr, vNull(vObj({ x: vIssued, receivedAt: vTime, queueUnsent: vNum })), vClock, vNull(vStr))),
+  vArr(vTuple(vStr, vNull(vNum), vArr(vTuple(vStr, vInt, vRecord, vNum, vInt)), vArr(vTuple(vNum, vNum, vInt, vNum, (v) => v === 0 || vTime(v))))),
+);
+function shapeOfBoxHistory(s: unknown): string | undefined {
+  if (!isObj(s)) return 'it is not a saved result';
+  if (s['version'] !== BOX_HISTORY_VERSION) return `it is of another version (${String(s['version'])})`;
+  const parts: readonly [string, Check][] = [
+    ['never', vNever], ['seq', vInt], ['folded', vArr(vInt)], ['ord', vInt], ['acksPrint', vStr],
+    ['verdicts', vObj({ own: vArr(vTuple(vStr, vStr, vBool, vInt)), ahead: vArr(vTuple(vStr, vInt)) })],
+    ['rawBound', vArr(vBinding)], ['stores', vArr(vStore)], ['rfBanked', vArr(vTuple(vStr, vInt))], ['check', vStr], ['sizeBytes', vInt],
+  ];
+  for (const [name, c] of parts) if (!c(s[name])) return `its part "${name}" is missing or not readable`;
+  return undefined;
 }
 
 /** The fingerprint of the acknowledgements and acts at or before a moment (any change sets a saved result aside). */
@@ -1890,10 +2173,11 @@ class BoxHistoryFold {
     for (const x of w.receiptNumbersIssued ?? []) {
       if (!named.has(x.prefix)) named.set(x.prefix, x);
       let wh = st.waits.get(x.prefix);
-      if (wh === undefined) { wh = { last: undefined, spans: [], union: [], wq: undefined }; st.waits.set(x.prefix, wh); }
+      if (wh === undefined) { wh = { last: undefined, clock: new WaitClock(), wq: undefined }; st.waits.set(x.prefix, wh); }
       wh.last = { x, receivedAt: w.receivedAt, queueUnsent: w.queue.unsent };
+      wh.clock.tick(ms);
       const u = x.unsent;
-      if (names(u) && !coveredBy(wh.union, u.from, u.to)) { wh.spans.push({ at: w.receivedAt, from: u.from, to: u.to }); addRun(wh.union, u.from, u.to); }
+      if (names(u)) wh.clock.told(w.receivedAt, ms, u.from, u.to);
     }
     for (const [prefix, y] of named) {
       const wh = st.waits.get(prefix)!;
@@ -1960,7 +2244,7 @@ class BoxHistoryFold {
     if (st === undefined) return [];
     return [...st.waits].filter(([, wh]) => wh.last !== undefined).sort((a, b) => a[0].localeCompare(b[0])).map(([prefix, wh]) => ({
       prefix, lastReceivedAt: wh.last!.receivedAt, lastQueueUnsent: wh.last!.queueUnsent, x: wh.last!.x,
-      firstWaiting: (from: number, to: number) => wh.spans.find((e) => e.from <= to && e.to >= from),
+      firstWaiting: (from: number, to: number) => wh.clock.first(from, to),
       wholeQueueSince: () => wh.wq ?? wh.last!.receivedAt,
     }));
   }
@@ -1973,6 +2257,8 @@ class BoxHistoryFold {
       latestOf: (storeId, bound) => winPick([...(this.stores.get(storeId)?.computers ?? new Map<string, CompHist>())].filter(([c]) => bound(c)).map(([, c]) => c.all)),
       othersOf: (storeId, bound) => [...(this.stores.get(storeId)?.computers ?? new Map<string, CompHist>())].filter(([c]) => !bound(c))
         .flatMap(([, c]) => { const r = winPick([c.atOrBefore]); return r === undefined ? [] : [r]; }),
+      latestEach: (storeId, bound) => [...(this.stores.get(storeId)?.computers ?? new Map<string, CompHist>())].filter(([c]) => bound(c))
+        .sort((a, b) => a[0].localeCompare(b[0])).flatMap(([, c]) => { const r = winPick([c.all]); return r === undefined ? [] : [r]; }),
       estimate: (latest) => {
         const c = this.stores.get(latest.storeId)?.computers.get(latest.reportedBy);
         const until = Date.parse(latest.observedAt);
@@ -1985,7 +2271,7 @@ class BoxHistoryFold {
   }
 
   /** Plain data for the saved result (the reports folded so far all arrived by `settledMs`). */
-  encode(settledMs: number, refusals: readonly RefusalAcknowledgement[], replacements: readonly StoreComputerReplacement[]): unknown[] {
+  encode(settledMs: number, refusals: readonly RefusalAcknowledgement[], replacements: readonly StoreComputerReplacement[], banked: ReadonlyMap<string, number>, rfBanked: Map<string, number>): unknown[] {
     const out: unknown[] = [];
     const settledActs = replacements.filter((m) => Date.parse(m.at) <= settledMs);
     const settledRefusals = refusals.filter((a) => Date.parse(a.at) <= settledMs);
@@ -1998,6 +2284,10 @@ class BoxHistoryFold {
         for (const a of settledRefusals) if (a.storeId === storeId && a.prefix === prefix && a.authority === 'all_stores') seen.set(a.through, Math.max(seen.get(a.through) ?? 0, Date.parse(a.at)));
         const groups: unknown[] = [];
         for (const g of ph.rf.groups.values()) {
+          // Round 29 · OB-105: a count head office has banked answers its refused reports for good (banked only rises, and a
+          // read with a lower banked count sets the result aside) — the group is dropped (`refusedOf` would pass over it).
+          const top = banked.get(prefix) ?? 0;
+          if (g.by === undefined && top >= g.through) { rfBanked.set(prefix, Math.max(rfBanked.get(prefix) ?? 0, top)); continue; }
           // Only what the acknowledgements and acts up to the saved moment leave open (banking is judged at each read).
           const t = Math.max(seen.get(g.through) ?? -Infinity, g.by === undefined ? -Infinity : (actTo.get(`${prefix}\u0000${g.by}`) ?? -Infinity));
           let first: RfEntry | undefined;
@@ -2009,7 +2299,7 @@ class BoxHistoryFold {
         }
         prefixes.push([prefix, ph.firstX ?? null, ph.believed ?? null, [ph.ar.standing ?? null, ph.ar.last ?? null, fin(ph.ar.lastMs)], [ph.rf.standing ?? null, ph.rf.last ?? null, fin(ph.rf.lastMs)], groups]);
       }
-      const waits = [...st.waits].map(([prefix, wh]) => [prefix, wh.last ?? null, wh.spans.map((e) => [e.at, e.from, e.to]), wh.wq ?? null]);
+      const waits = [...st.waits].map(([prefix, wh]) => [prefix, wh.last ?? null, wh.clock.encode(), wh.wq ?? null]);
       const computers = [...st.computers].map(([computer, c]) => {
         this.prune(c);
         // Delta-coded disk points (each column a run of small numbers); a box time is kept as written only when it differs.
@@ -2039,11 +2329,9 @@ class BoxHistoryFold {
           ph.rf.groups.set(`${through}\u0000${by ?? ''}\u0000${by === null ? 'p' : 'a'}`, { through, by: by ?? undefined, saved: { first: decRf(first), latest: decRf(latestRf) }, live: [] });
         }
       }
-      for (const w of waits as [string, WaitHist['last'] | null, [string, number, number][], string | null][]) {
-        const [prefix, last, spans, wq] = w;
-        const union: [number, number][] = [];
-        for (const [, from, to] of spans) addRun(union, from, to);
-        st.waits.set(prefix, { last: last ?? undefined, spans: spans.map(([at, from, to]) => ({ at, from, to })), union, wq: wq ?? undefined });
+      for (const w of waits as [string, WaitHist['last'] | null, unknown[], string | null][]) {
+        const [prefix, last, clock, wq] = w;
+        st.waits.set(prefix, { last: last ?? undefined, clock: WaitClock.decode(clock), wq: wq ?? undefined });
       }
       for (const c of computers as [string, number | null, [string, number, BoxHealthRecord, number, number][], [number, number, number, number, string | 0][]][]) {
         const [computer, ms, groups, d] = c;
@@ -2077,7 +2365,27 @@ export interface BoxHistoryJudge {
  * result to save comes back when `settleBefore` and `settledThrough` (a settled visibility fence) are given and enough has
  * settled since.
  */
-export function readBoxHistory(input: {
+export function readBoxHistory(input: BoxHistoryInput): BoxHistoryReading | { readonly setAside: string } {
+  const steps = boxHistorySteps(input, Infinity);
+  for (;;) { const n = steps.next(); if (n.done === true) return n.value; }
+}
+
+/**
+ * Round 29 · OB-106 (verifier r28 NEW-8): the same reading, folded in steps of `every` reports with a pause between them
+ * (`setImmediate` by default) — so a long fold never holds the process for long: requests, the readiness check and
+ * the store computers' own uploads are answered in between. The answer is the same as `readBoxHistory`'s.
+ */
+export async function readBoxHistoryInSteps(
+  input: BoxHistoryInput, opts: { readonly every?: number; readonly pause?: () => Promise<void> } = {},
+): Promise<BoxHistoryReading | { readonly setAside: string }> {
+  const pause = opts.pause ?? (() => new Promise<void>((resolve) => { setImmediate(resolve); }));
+  const steps = boxHistorySteps(input, opts.every ?? BOX_HISTORY_STEP);
+  for (;;) { const n = steps.next(); if (n.done === true) return n.value; await pause(); }
+}
+/** Round 29 · OB-106: how many reports are folded between two pauses (a few milliseconds of work). */
+export const BOX_HISTORY_STEP = 1_000;
+
+export interface BoxHistoryInput {
   /** The reports above the saved result's position (any order; ones at or below it are ignored) — or every report. */
   readonly entries: readonly BoxHistoryEntry[];
   readonly snapshot?: BoxHistorySnapshot;
@@ -2093,7 +2401,11 @@ export function readBoxHistory(input: {
   readonly settleBefore?: string;
   /** Every report at or below this store position is visible to this read (a settled visibility fence). Needed to save. */
   readonly settledThrough?: number;
-}): BoxHistoryReading | { readonly setAside: string } {
+  /** Round 29 · OB-106: the caller already checked this saved result (`boxHistoryUnreadable`) — its seal, so it is not checked twice. */
+  readonly sealChecked?: string;
+}
+
+function* boxHistorySteps(input: BoxHistoryInput, every: number): Generator<void, BoxHistoryReading | { readonly setAside: string }, void> {
   const atMs = Date.parse(input.at);
   const lineMs = (input.warnHours ?? DEFAULT_BOX_UNSENT_WARN_HOURS) * 3_600_000;
   const slack = input.slack ?? DEFAULT_CLAIM_SLACK;
@@ -2106,7 +2418,11 @@ export function readBoxHistory(input: {
   let fold: BoxHistoryFold | undefined;
   let entries = input.entries;
   let settledMs = -Infinity;
+  const rfBanked = new Map<string, number>();
   if (s !== undefined) {
+    // Round 29 · OB-106: a damaged or altered saved result is set aside, never thrown, never trusted.
+    const unreadable = input.sealChecked !== undefined && input.sealChecked === s.check ? undefined : boxHistoryUnreadable(s);
+    if (unreadable !== undefined) return { setAside: `unreadable: ${unreadable}` };
     const n = s.never;
     settledMs = Date.parse(n.settledAt);
     const folded = new Set(s.folded);
@@ -2122,15 +2438,20 @@ export function readBoxHistory(input: {
       : acksPrintUpTo({ refusalAcks: refusals, ...(input.atRiskAcks === undefined ? {} : { atRiskAcks: input.atRiskAcks }), replacements: replacementsAt }, settledMs) !== s.acksPrint ? 'acknowledgements'
       : input.judge !== undefined && (s.verdicts.own.some(([storeId, prefix, owns, top]) => input.judge!.owns(storeId, prefix) !== owns || (top > 0 && !input.judge!.plausible(prefix, top)))
         || s.verdicts.ahead.some(([prefix, through]) => input.judge!.plausible(prefix, through))) ? 'verdicts'
-      : n.keys.some((k) => (input.banked.get(k.prefix) ?? 0) < k.aboveFrom) ? 'banked'
+      : n.keys.some((k) => (input.banked.get(k.prefix) ?? 0) < k.aboveFrom) || s.rfBanked.some(([prefix, b]) => (input.banked.get(prefix) ?? 0) < b) ? 'banked'
       : undefined;
     if (why !== undefined) return { setAside: why };
-    fold = new BoxHistoryFold(NeverReceivedFold.decode(n), ctx);
-    fold.ord = s.ord;
-    for (const b of s.rawBound) fold.rawBound.set(bindingKey(b.storeId, b.prefix), b);
-    fold.decodeStores(s.stores);
-    for (const [storeId, prefix, owns, top] of s.verdicts.own) fold.own.set(bindingKey(storeId, prefix), [storeId, prefix, owns, top]);
-    for (const [prefix, through] of s.verdicts.ahead) fold.ahead.set(prefix, through);
+    try {
+      fold = new BoxHistoryFold(NeverReceivedFold.decode(n), ctx);
+      fold.ord = s.ord;
+      for (const b of s.rawBound) fold.rawBound.set(bindingKey(b.storeId, b.prefix), b);
+      fold.decodeStores(s.stores);
+      for (const [storeId, prefix, owns, top] of s.verdicts.own) fold.own.set(bindingKey(storeId, prefix), [storeId, prefix, owns, top]);
+      for (const [prefix, through] of s.verdicts.ahead) fold.ahead.set(prefix, through);
+    } catch (e) {
+      return { setAside: `unreadable: it could not be read (${e instanceof Error ? e.message : String(e)})` };
+    }
+    for (const [prefix, b] of s.rfBanked) rfBanked.set(prefix, b);
     entries = entries.filter((e) => !folded.has(e.seq));
   }
   const resumed = fold !== undefined;
@@ -2143,7 +2464,10 @@ export function readBoxHistory(input: {
   let k = 0;
   if (input.settleBefore !== undefined && input.settledThrough !== undefined) {
     const settleMs = Math.min(atMs, Date.parse(input.settleBefore));
-    for (; k < now.length && now[k]!.ms <= settleMs; k += 1) fold.feed(now[k]!.e, now[k]!.ms, acts, bankedOf, input.judge, true);
+    for (; k < now.length && now[k]!.ms <= settleMs; k += 1) {
+      fold.feed(now[k]!.e, now[k]!.ms, acts, bankedOf, input.judge, true);
+      if ((k + 1) % every === 0) yield;
+    }
     if (k > 0 && (!resumed || k >= FOLD_SNAPSHOT_EVERY)) {
       // The new position: below every report not folded, never beyond what the fence shows visible, never below the old one.
       let unfolded = Infinity;
@@ -2152,18 +2476,23 @@ export function readBoxHistory(input: {
       const seq = Math.max(s?.seq ?? 0, Math.min(input.settledThrough, unfolded - 1));
       const folded = [...new Set([...(s?.folded ?? []), ...fold.foldedSeqs])].filter((q) => q > seq).sort((a, b) => a - b);
       const settledAt = new Date(settleMs).toISOString();
-      snapshot = {
+      const stores = fold.encode(settleMs, refusals, replacementsAt, input.banked, rfBanked);
+      snapshot = sealBoxHistory({
         version: BOX_HISTORY_VERSION,
         never: fold.nr.encode({ settledAt, settledCount: 0, judgedAway: '' }),
         seq, folded, ord: fold.ord,
         acksPrint: acksPrintUpTo({ refusalAcks: refusals, ...(input.atRiskAcks === undefined ? {} : { atRiskAcks: input.atRiskAcks }), replacements: replacementsAt }, settleMs),
         verdicts: { own: [...fold.own.values()].map((v) => [...v] as const), ahead: [...fold.ahead] },
         rawBound: [...fold.rawBound.values()],
-        stores: fold.encode(settleMs, refusals, replacementsAt),
-      };
+        stores,
+        rfBanked: [...rfBanked].sort((a, b) => a[0].localeCompare(b[0])),
+      });
     }
   }
-  for (; k < now.length; k += 1) fold.feed(now[k]!.e, now[k]!.ms, acts, bankedOf, input.judge, false);
+  for (; k < now.length; k += 1) {
+    fold.feed(now[k]!.e, now[k]!.ms, acts, bankedOf, input.judge, false);
+    if ((k + 1) % every === 0) yield;
+  }
   for (const t of later) fold.feedLater(t.e.raw, t.ms, t.e.seq);
   const candidates = fold.nr.finish(atMs, input.banked);
   // The bindings as they stand at `at`: every act done by then applies, whether or not a report came after it.
@@ -2246,6 +2575,8 @@ export function billNumberFindingsFor(input: {
   readonly unusedReceived?: readonly UnusedReceived[];
   /** Round 28 · OB-103: acknowledgements of an `unused_number_received` finding (`POST …/unused-numbers-received/acknowledgements`). */
   readonly unusedAcknowledged?: readonly UnusedReceivedAcknowledgement[];
+  /** Round 29 · verifier r28 NEW-6: per prefix, what that check did not look at (said on the line). */
+  readonly unusedCapped?: readonly UnusedCheckCapped[];
   /**
    * Round 28 · OB-104: the store's facts from the saved running result (`readBoxHistory`) — when given, `records` is not read.
    * Without it they are worked out from `records` (`storeBillFacts`), as before.
@@ -2333,9 +2664,14 @@ export function billNumberFindingsFor(input: {
     const sales = sorted.filter((u) => u.heldAs === 'sale').length;
     const said = sorted.map((u) => u.lastSaidUnusedAt).sort().at(-1)!;
     const one = sorted.length === 1;
+    // Round 29 · OB-108: whose clock the bill's time is (the store computer's, or — an older store computer — the till's).
+    const tillClock = sorted.filter((u) => u.clock === 'till').length;
+    const clockWords = tillClock === 0
+      ? !sorted.every((u) => u.clock === 'store_computer') ? '' : ' (both times by the store computer\'s own clock: when it said so, and when it took the bill from the till)'
+      : ` (${tillClock === sorted.length ? '' : `for ${tillClock} of them, `}the bill's time is the TILL's own clock — this store computer did not stamp when it took the bill, so a till clock that is slow can make an honest number look like this: check the till's clock first)`;
     out.push({
       kind: 'unused_number_received', prefix, ranges, count: sorted.length, since: first.heldAt,
-      detail: `does not fit: store ${input.storeId}'s computer said (last at ${said}) that it gave ${rangeWords(prefix, ranges)} and never put ${one ? 'it' : 'them'} on a bill, but head office holds ${sales === sorted.length ? (one ? 'a sale' : 'sales') : sales === 0 ? (one ? 'a return' : 'returns') : 'sales and returns'} under ${one ? 'that number' : 'those numbers'}, made before that (the first at ${first.heldAt}, ${prefix}${pad6(first.number)}). A number put on a bill is never "unused" afterwards. Nothing is missing — head office has ${one ? 'the bill' : 'the bills'}, so do NOT look for paper bills — but the store computer's list of unused numbers under ${prefix} cannot be relied on: call support to check that store computer (the store computer or head office lost track; no blame is placed, as owner decision OB-92). ${UNUSED_RECEIVED_STAYS_WORDS}`,
+      detail: `does not fit: store ${input.storeId}'s computer said (last at ${said}) that it gave ${rangeWords(prefix, ranges)} and never put ${one ? 'it' : 'them'} on a bill, but head office holds ${sales === sorted.length ? (one ? 'a sale' : 'sales') : sales === 0 ? (one ? 'a return' : 'returns') : 'sales and returns'} under ${one ? 'that number' : 'those numbers'}, made before that (the first at ${first.heldAt}, ${prefix}${pad6(first.number)})${clockWords}. A number put on a bill is never "unused" afterwards. Nothing is missing — head office has ${one ? 'the bill' : 'the bills'}, so do NOT look for paper bills — but the store computer's list of unused numbers under ${prefix} cannot be relied on: call support to check that store computer (the store computer or head office lost track; no blame is placed, as owner decision OB-92).${cappedWords(input.unusedCapped?.find((c) => c.prefix === prefix))} ${UNUSED_RECEIVED_STAYS_WORDS}`,
     });
   }
   out.push(...refusedFindingsFrom(input.storeId, facts.refusedOpen));
@@ -2427,27 +2763,53 @@ export function unusedReceivedAcknowledgementStands(
 /**
  * Round 27 · OB-100 — THE RULE (stated, so a person can check it by hand): a number a store computer said it gave and never
  * put on a bill is a contradiction when head office HOLDS a sale (its receipt-number index) or a return under it, AND the
- * store computer said "never used" more than UNUSED_CONTRADICTION_MARGIN_MINUTES after that bill was made (its report's hour,
- * rounded DOWN — so an "unused" said in the same hour as the bill is never held against the store computer). An
- * honest store computer lists a number as unused only until a bill takes it (a held bill completed later — verifier r26
- * P5-new): the bill is made after the last "unused", so it never fits this rule. The margin allows for the till's and the
- * store computer's clocks differing a little.
+ * store computer said "never used" more than UNUSED_CONTRADICTION_MARGIN_MINUTES after that bill was made (its report's
+ * minute, rounded DOWN — round 29 · NEW-6; it was the hour). An honest store computer lists a number as unused only until a
+ * bill takes it (a held bill completed later — verifier r26 P5-new): the bill is made after the last "unused", so it never
+ * fits this rule.
+ * Round 29 · OB-108 "A" (owner, 14 Oct 2026, in writing, "Use store computer time"; verifier r28 NEW-4, probe U5): "when the
+ * bill was made" is the STORE COMPUTER's own time for it — the moment it took the bill from the till and wrote it to its
+ * disk (`storeComputerTakenAt`, stamped by the store computer and carried with the bill to head office) — the same clock its
+ * reports are written by. A till whose clock is slow can no longer make an honest number look "said unused after its
+ * bill". A bill from an older store computer that does not stamp it is judged on the till's time, as before, and the line
+ * says so (`clock: 'till'`). The margin allows for the minute rounding and the report's round trip.
  */
 export const UNUSED_CONTRADICTION_MARGIN_MINUTES = 15;
-export interface UnusedReceived { readonly prefix: string; readonly number: number; readonly heldAs: 'sale' | 'return'; readonly heldAt: string; readonly lastSaidUnusedAt: string }
-export function unusedButReceived(prefix: string, unused: UnusedNumbers | undefined, held: ReadonlyMap<number, { readonly as: 'sale' | 'return'; readonly at: string }>): UnusedReceived[] {
+export interface UnusedReceived {
+  readonly prefix: string; readonly number: number; readonly heldAs: 'sale' | 'return'; readonly heldAt: string; readonly lastSaidUnusedAt: string;
+  /** Round 29 · OB-108: whose clock `heldAt` is — the store computer's (it took the bill), or the till's (an older store computer). */
+  readonly clock?: 'store_computer' | 'till';
+}
+export function unusedButReceived(
+  prefix: string, unused: UnusedNumbers | undefined,
+  held: ReadonlyMap<number, { readonly as: 'sale' | 'return'; readonly at: string; readonly clock?: 'store_computer' | 'till' }>,
+): UnusedReceived[] {
   const out: UnusedReceived[] = [];
   if (held.size === 0) return out;
   for (const run of unused?.runs ?? []) {
     for (const [n, h] of held) {
       if (n < run.from || n > run.to) continue;
       if (Date.parse(run.lastSaidAt) > Date.parse(h.at) + UNUSED_CONTRADICTION_MARGIN_MINUTES * 60_000) {
-        out.push({ prefix, number: n, heldAs: h.as, heldAt: h.at, lastSaidUnusedAt: run.lastSaidAt });
+        out.push({ prefix, number: n, heldAs: h.as, heldAt: h.at, lastSaidUnusedAt: run.lastSaidAt, ...(h.clock === undefined ? {} : { clock: h.clock }) });
       }
     }
   }
   return out.sort((a, b) => a.number - b.number);
 }
+
+/**
+ * Round 29 · verifier r28 NEW-6 (a): per prefix, how much of a store computer's "unused" list the check above did NOT look at —
+ * numbers at or below banked beyond the newest UNRECEIVED_CHECK_CAP, and numbers head office holds beyond the newest
+ * UNUSED_HELD_TIMED_MAX whose bill time was read. Said on the line (and on the "taken but never used" information), never
+ * dropped in silence.
+ */
+export interface UnusedCheckCapped { readonly prefix: string; readonly notChecked: number; readonly notTimed: number }
+export const UNUSED_HELD_TIMED_MAX = 50;
+const cappedWords = (c: UnusedCheckCapped | undefined): string => (c === undefined || (c.notChecked === 0 && c.notTimed === 0) ? ''
+  : ` Not every number was looked at: ${[
+    c.notChecked > 0 ? `${c.notChecked} older number(s) said unused, beyond the newest ${UNRECEIVED_CHECK_CAP}, were not checked against head office's bills` : '',
+    c.notTimed > 0 ? `${c.notTimed} more number(s) head office holds a bill for, beyond the newest ${UNUSED_HELD_TIMED_MAX}, did not have their bill's time read` : '',
+  ].filter((x) => x !== '').join('; ')} — so there may be more than this line names.`);
 
 /** Round 27 · OB-100: one prefix's unused numbers, as the store's people read them — per day, how many and which. */
 export interface UnusedNumbersDay {
@@ -2809,9 +3171,19 @@ export interface BoxHealthView {
    */
   readonly computer?: string | null;
   readonly otherComputers?: readonly { readonly computer: string; readonly lastReportAt: string; readonly stale: boolean; readonly canRecordSales: boolean; readonly bindsNoTill: true }[];
+  /**
+   * Round 29 · OB-107: when MORE than one store computer holds this store's tills' prefixes — each of them, judged on its own
+   * (which prefixes it holds, its last report, its room for sales, its queue). The store's disk and queue are the worse.
+   */
+  readonly boundComputers?: readonly {
+    readonly computer: string; readonly prefixes: readonly string[]; readonly lastReportAt: string; readonly stale: boolean;
+    readonly canRecordSales: boolean; readonly tradingHoursLeft: number | null; readonly queue: { readonly unsent: number; readonly deadLettered: number };
+  }[];
 }
 
 const mb = (bytes: number): string => `${Math.floor(bytes / 1_048_576)} MB`;
+/** How bad a status is (the worse of two decides — OB-107). */
+const RANK_OF: Readonly<Record<string, number>> = { ok: 0, unknown: 1, degraded: 2, down: 3 };
 const ago = (s: number): string => (s < 3_600 ? `${Math.floor(s / 60)} min` : `${Math.floor(s / 3_600)}h ${Math.floor((s % 3_600) / 60)}m`);
 
 /** The box's own rule (commitLocally): the next sale fits only when the log plus the reserve fits, and the disk has the reserve free. */
@@ -2841,6 +3213,8 @@ export function judgeBoxes(input: {
   readonly unusedNumbers?: ReadonlyMap<string, readonly UnusedNumbers[]>;
   /** The store's own time zone (its calendar days), for unused numbers worked out here. */
   readonly timeZone?: string;
+  /** Round 29 · verifier r28 NEW-6: per store, what the "said unused, but head office has the bill" check did not look at. */
+  readonly unusedCapped?: ReadonlyMap<string, readonly UnusedCheckCapped[]>;
   /**
    * Round 28 · OB-104: the reports as the saved running result keeps them (`readBoxHistory(...).view`) — when given, `records`
    * is not read (give `bindings` and `unusedNumbers` from the same reading). The answers are the same (proved by test).
@@ -2879,6 +3253,24 @@ export function judgeBoxes(input: {
       if (per.length > 0) others.set(storeId, new Map(per.map((o) => [o.reportedBy, o] as const)));
     }
   }
+  // Round 29 · OB-107 "A" (owner, 14 Oct 2026, in writing, "Judge each, worst wins"; verifier r28 NEW-3, probe B3): EACH store
+  // computer holding any of the store's tills' prefixes is judged on its own — its own latest report, disk, queue and room
+  // for sales — and the WORSE decides the store, each computer named. A second computer that holds one prefix (a new till's,
+  // say) can no longer speak for the whole store and hide the other's full disk.
+  const eachOf = (storeId: string): BoxHealthRecord[] => {
+    // Before any prefix is bound, the latest report stands for the store, as before (no computer holds its tills yet).
+    if (!boundTo.has(storeId)) return [];
+    if (view !== undefined) return view.latestEach(storeId, (computer) => isBound({ storeId, reportedBy: computer }));
+    const per = new Map<string, BoxHealthRecord[]>();
+    // One pass, each report pushed onto its computer's list (never a copy of the list per report — that was quadratic).
+    for (const x of input.records) {
+      if (x.storeId !== storeId || !isBound(x)) continue;
+      const list = per.get(x.reportedBy);
+      if (list === undefined) per.set(x.reportedBy, [x]); else list.push(x);
+    }
+    return [...per].sort((a, b) => a[0].localeCompare(b[0])).flatMap(([, list]) => { const h = latestBoxReports(list).get(storeId); return h === undefined ? [] : [h]; });
+  };
+  const prefixesOf = (storeId: string, computer: string): string[] => bindings.filter((b) => b.storeId === storeId && b.computer === computer).map((b) => b.prefix).sort();
   const ids = [...new Set([...(input.knownStores ?? []), ...latest.keys(), ...others.keys()])].sort();
   const boxes: BoxHealthView[] = [];
   const components: ComponentHealth[] = [];
@@ -2909,13 +3301,19 @@ export function judgeBoxes(input: {
     const ageSeconds = Math.max(0, Math.floor((Date.parse(input.at) - Date.parse(r.observedAt)) / 1000));
     const stale = ageSeconds >= input.thresholds.syncLagWarnSeconds;
     const can = boxCanRecordSales(r.disk);
-    if (stale) allFreshCan = false; else if (!can) { anyFreshCannot = true; allFreshCan = false; }
+    // OB-107: every store computer holding the store's tills, judged on its own (one, as before: just `r`).
+    const heads = eachOf(storeId);
+    const several = heads.length > 1;
+    for (const h of several ? heads : [r]) {
+      const hStale = Math.max(0, Math.floor((Date.parse(input.at) - Date.parse(h.observedAt)) / 1000)) >= input.thresholds.syncLagWarnSeconds;
+      if (hStale) allFreshCan = false; else if (!boxCanRecordSales(h.disk)) { anyFreshCannot = true; allFreshCan = false; }
+    }
     // OB-101: the disk's growth from THIS store computer's own reports only.
-    const estimate = view === undefined ? estimateTradingHoursLeft(input.records.filter((x) => x.reportedBy === r.reportedBy), r) : view.estimate(r);
+    const estimateOf = (h: BoxHealthRecord): TradingHoursEstimate => (view === undefined ? estimateTradingHoursLeft(input.records.filter((x) => x.reportedBy === h.reportedBy), h) : view.estimate(h));
+    const estimate = estimateOf(r);
     const estimateSays = estimate.known
       ? `about ${estimate.hoursLeft} hours of trading left before it would refuse a sale (the sales log grew ${mb(estimate.bytesPerTradingHour)} per trading hour over ${estimate.tradingMinutesCounted} minutes of trading in its reports since ${estimate.from}; ${mb(estimate.roomLeftBytes)} of room left above the reserve)`
       : estimate.why;
-    const runningOut = can && estimate.known && estimate.hoursLeft < warnHours;
     const staleNote = `STALE — store ${storeId}'s computer last reported ${ago(ageSeconds)} ago (${r.observedAt}); it has not been heard from since, so this is old news, not the state now`;
     // Verifier r21 UNSENT-CEILING (b): bills held on the box past the owner's line are a finding of their own.
     const waiting = billsWaitingOnTheBox({
@@ -2929,13 +3327,24 @@ export function judgeBoxes(input: {
       tradingHoursLeft: estimate.known ? estimate.hoursLeft : null, tradingHoursLeftSays: estimateSays,
       billNumbering: r.billNumbering ?? null, billNumberFindings: findings, computer: r.reportedBy,
       ...(otherComputers.length === 0 ? {} : { otherComputers }), ...(unusedDays.length === 0 ? {} : { unusedNumbers: unusedDays }),
+      ...(several ? {
+        canRecordSales: heads.every((h) => boxCanRecordSales(h.disk)),
+        boundComputers: heads.map((h) => {
+          const e = estimateOf(h);
+          return {
+            computer: h.reportedBy, prefixes: prefixesOf(storeId, h.reportedBy), lastReportAt: h.observedAt,
+            stale: Math.max(0, Math.floor((Date.parse(input.at) - Date.parse(h.observedAt)) / 1000)) >= input.thresholds.syncLagWarnSeconds,
+            canRecordSales: boxCanRecordSales(h.disk), tradingHoursLeft: e.known ? e.hoursLeft : null, queue: h.queue,
+          };
+        }),
+      } : {}),
     });
     // Round 27 · OB-100 "A" (verifier r26 NEW-1): numbers the store computer took and never used — SHOWN, per till and day,
     // neutrally: information (an abandoned bill, a card declined after the number was taken), nothing to look for (OB-94).
     if (unusedDays.length > 0) {
       components.push({
         name: `box_unused_numbers:${storeId}`, status: 'ok',
-        detail: `taken but never used (information — nothing to look for): store ${storeId}'s computer says these bill numbers were given and never put on a bill — ${unusedDays.map((d) => `till ${d.prefix} on ${d.day}: ${d.count} number(s), ${rangeWords(d.prefix, d.ranges)}${d.moreRanges > 0 ? ` and ${d.moreRanges} more range(s)` : ''}`).join('; ')}. A bill abandoned at the till or a card declined after the number was taken keeps its number; if one day shows many, ask the store why`,
+        detail: `taken but never used (information — nothing to look for): store ${storeId}'s computer says these bill numbers were given and never put on a bill — ${unusedDays.map((d) => `till ${d.prefix} on ${d.day}: ${d.count} number(s), ${rangeWords(d.prefix, d.ranges)}${d.moreRanges > 0 ? ` and ${d.moreRanges} more range(s)` : ''}`).join('; ')}. A bill abandoned at the till or a card declined after the number was taken keeps its number; if one day shows many, ask the store why${(input.unusedCapped?.get(storeId) ?? []).map((c) => (cappedWords(c) === '' ? '' : `. Under ${c.prefix}:${cappedWords(c).replace(/\.$/, '')}`)).join('')}`,
         evidence: { days: unusedDays.length, numbers: unusedDays.reduce((n, d) => n + d.count, 0), byTillAndDay: unusedDays.map((d) => `${d.prefix}@${d.day}:${d.count}`).join(',') },
       });
     }
@@ -2964,45 +3373,92 @@ export function judgeBoxes(input: {
         },
       });
     }
-    const headroom = Math.max(0, r.disk.salesLogCapacityBytes - r.disk.salesLogUsedBytes - r.disk.reserveBytes);
-    const diskEvidence = {
-      freeBytes: r.disk.freeBytes, totalBytes: r.disk.totalBytes, salesLogHeadroomBytes: headroom, reportedAt: r.observedAt, ageSeconds,
-      tradingHoursLeft: estimate.known ? estimate.hoursLeft : 'not yet known', warnBelowTradingHours: warnHours,
+    // One store computer's disk and queue, judged on its own report (OB-107: each bound computer; one, as before: `r`).
+    const diskOf = (h: BoxHealthRecord): { status: HealthStatus; says: string; evidence: Record<string, string | number> } => {
+      const hAge = Math.max(0, Math.floor((Date.parse(input.at) - Date.parse(h.observedAt)) / 1000));
+      const hStale = hAge >= input.thresholds.syncLagWarnSeconds;
+      const hCan = boxCanRecordSales(h.disk);
+      const e = h === r ? estimate : estimateOf(h);
+      const eSays = h === r ? estimateSays : e.known
+        ? `about ${e.hoursLeft} hours of trading left before it would refuse a sale (the sales log grew ${mb(e.bytesPerTradingHour)} per trading hour over ${e.tradingMinutesCounted} minutes of trading in its reports since ${e.from}; ${mb(e.roomLeftBytes)} of room left above the reserve)`
+        : e.why;
+      const hRunningOut = hCan && e.known && e.hoursLeft < warnHours;
+      const hStaleNote = `STALE — store ${storeId}'s computer last reported ${ago(hAge)} ago (${h.observedAt}); it has not been heard from since, so this is old news, not the state now`;
+      const headroom = Math.max(0, h.disk.salesLogCapacityBytes - h.disk.salesLogUsedBytes - h.disk.reserveBytes);
+      const diskSays = hRunningOut
+        ? `store ${storeId}'s computer will run out of room for sales soon — ${eSays}, below the owner's warning line of ${warnHours} hours. Make room on it (or give it a bigger disk) before the tills have to refuse sales`
+        : hCan
+        ? `store ${storeId}'s computer can record sales: ${mb(h.disk.freeBytes)} free of ${mb(h.disk.totalBytes)}, ${mb(headroom)} of sales-log room left above the reserve; ${eSays}`
+        : `store ${storeId}'s computer CANNOT record another sale — its disk is full (${mb(h.disk.freeBytes)} free; sales log ${mb(h.disk.salesLogUsedBytes)} of ${mb(h.disk.salesLogCapacityBytes)} with a ${mb(h.disk.reserveBytes)} reserve). Its tills refuse sales until room is made`;
+      return {
+        // OB-78: a fresh report whose hours of trading left are under the owner's line is `degraded` (the early warning); a
+        // stale report stays `unknown` (old news never raises or clears the warning); a full disk is `down` as before.
+        // Round 14 (verifier G8 · P-08): a disk that can record sales but whose hours left are not yet known reads `unknown`
+        // with the reason — not a plain "ok", and not the warning either.
+        status: hStale ? 'unknown' : !hCan ? 'down' : hRunningOut ? 'degraded' : e.known ? 'ok' : 'unknown',
+        says: hStale ? `${hStaleNote}. Then: ${diskSays}` : diskSays,
+        evidence: {
+          freeBytes: h.disk.freeBytes, totalBytes: h.disk.totalBytes, salesLogHeadroomBytes: headroom, reportedAt: h.observedAt, ageSeconds: hAge,
+          tradingHoursLeft: e.known ? e.hoursLeft : 'not yet known', warnBelowTradingHours: warnHours,
+        },
+      };
     };
-    const diskSays = runningOut
-      ? `store ${storeId}'s computer will run out of room for sales soon — ${estimateSays}, below the owner's warning line of ${warnHours} hours. Make room on it (or give it a bigger disk) before the tills have to refuse sales`
-      : can
-      ? `store ${storeId}'s computer can record sales: ${mb(r.disk.freeBytes)} free of ${mb(r.disk.totalBytes)}, ${mb(headroom)} of sales-log room left above the reserve; ${estimateSays}`
-      : `store ${storeId}'s computer CANNOT record another sale — its disk is full (${mb(r.disk.freeBytes)} free; sales log ${mb(r.disk.salesLogUsedBytes)} of ${mb(r.disk.salesLogCapacityBytes)} with a ${mb(r.disk.reserveBytes)} reserve). Its tills refuse sales until room is made`;
-    components.push({
-      // OB-78: a fresh report whose hours of trading left are under the owner's line is `degraded` (the early warning); a
-      // stale report stays `unknown` (old news never raises or clears the warning); a full disk is `down` as before.
-      // Round 14 (verifier G8 · P-08): a disk that can record sales but whose hours left are not yet known reads `unknown`
-      // with the reason — not a plain "ok", and not the warning either.
-      name: `box_disk:${storeId}`, status: stale ? 'unknown' : !can ? 'down' : runningOut ? 'degraded' : estimate.known ? 'ok' : 'unknown',
-      detail: `${stale ? `${staleNote}. Then: ${diskSays}` : diskSays}${othersSay}`, evidence: { ...diskEvidence, computer: r.reportedBy, otherComputers: otherComputers.map((o) => o.computer).join(',') },
-    });
-
-    const q = r.queue;
-    // Verifier r21 UNSENT-CEILING: the box's per-prefix lists count too — a report whose lists say bills are waiting never
-    // reads "has sent everything", and one that contradicts its own queue, or holds bills past the owner's line, is a warning.
-    const issued = r.receiptNumbersIssued ?? [];
-    const billsWaiting = issued.reduce((n, x) => n + (x.unsent?.count ?? 0), 0);
-    const billsGivenUp = issued.reduce((n, x) => n + (x.deadLettered?.count ?? 0), 0);
-    const contradiction = r.queueContradiction ?? (r.receiptNumbersIssued === undefined ? undefined : queueContradiction(q, r.receiptNumbersIssued));
-    const qStatus: HealthStatus = q.deadLettered >= input.thresholds.deadLetterCritical && q.deadLettered > 0 ? 'down'
-      : q.unsent >= input.thresholds.queueDepthCritical ? 'down'
-        : q.unsent >= input.thresholds.queueDepthWarn || q.deadLettered > 0 || waiting.length > 0 || contradiction !== undefined ? 'degraded' : 'ok';
-    const waitingSays = waiting.map((f) => f.detail).join('. ');
-    const qSays = contradiction !== undefined
-      ? `store ${storeId}'s computer's report contradicts itself — ${contradiction}; head office does not believe its list of bills still to send`
-      : q.unsent === 0 && q.deadLettered === 0 && billsWaiting === 0 && billsGivenUp === 0 ? `store ${storeId}'s computer has sent everything`
-        : `store ${storeId}'s computer holds ${q.unsent} item(s) still to send${billsWaiting > 0 ? ` (${billsWaiting} of them bills)` : ''}${q.deadLettered > 0 ? ` and ${q.deadLettered} item(s) it gave up sending, waiting for a person (do NOT re-enter those bills from paper)` : ''}${waitingSays === '' ? '' : `. ${waitingSays}`}`;
-    components.push({
-      name: `box_queue:${storeId}`, status: stale ? (waiting.length > 0 || contradiction !== undefined ? 'degraded' : 'unknown') : qStatus,
-      detail: stale ? `${staleNote}. Then: ${qSays}` : qSays,
-      evidence: { unsent: q.unsent, deadLettered: q.deadLettered, billsWaiting, billsGivenUp, waitingPastLine: waiting.length, contradicts: contradiction ?? '', reportedAt: r.observedAt, ageSeconds },
-    });
+    const queueOf = (h: BoxHealthRecord, pastLine: readonly BillNumberFinding[]): { status: HealthStatus; says: string; evidence: Record<string, string | number> } => {
+      const hAge = Math.max(0, Math.floor((Date.parse(input.at) - Date.parse(h.observedAt)) / 1000));
+      const hStale = hAge >= input.thresholds.syncLagWarnSeconds;
+      const hStaleNote = `STALE — store ${storeId}'s computer last reported ${ago(hAge)} ago (${h.observedAt}); it has not been heard from since, so this is old news, not the state now`;
+      const q = h.queue;
+      // Verifier r21 UNSENT-CEILING: the box's per-prefix lists count too — a report whose lists say bills are waiting never
+      // reads "has sent everything", and one that contradicts its own queue, or holds bills past the owner's line, is a warning.
+      const issued = h.receiptNumbersIssued ?? [];
+      const billsWaiting = issued.reduce((n, x) => n + (x.unsent?.count ?? 0), 0);
+      const billsGivenUp = issued.reduce((n, x) => n + (x.deadLettered?.count ?? 0), 0);
+      const contradiction = h.queueContradiction ?? (h.receiptNumbersIssued === undefined ? undefined : queueContradiction(q, h.receiptNumbersIssued));
+      const qStatus: HealthStatus = q.deadLettered >= input.thresholds.deadLetterCritical && q.deadLettered > 0 ? 'down'
+        : q.unsent >= input.thresholds.queueDepthCritical ? 'down'
+          : q.unsent >= input.thresholds.queueDepthWarn || q.deadLettered > 0 || pastLine.length > 0 || contradiction !== undefined ? 'degraded' : 'ok';
+      const waitingSays = pastLine.map((f) => f.detail).join('. ');
+      const qSays = contradiction !== undefined
+        ? `store ${storeId}'s computer's report contradicts itself — ${contradiction}; head office does not believe its list of bills still to send`
+        : q.unsent === 0 && q.deadLettered === 0 && billsWaiting === 0 && billsGivenUp === 0 ? `store ${storeId}'s computer has sent everything`
+          : `store ${storeId}'s computer holds ${q.unsent} item(s) still to send${billsWaiting > 0 ? ` (${billsWaiting} of them bills)` : ''}${q.deadLettered > 0 ? ` and ${q.deadLettered} item(s) it gave up sending, waiting for a person (do NOT re-enter those bills from paper)` : ''}${waitingSays === '' ? '' : `. ${waitingSays}`}`;
+      return {
+        status: hStale ? (pastLine.length > 0 || contradiction !== undefined ? 'degraded' : 'unknown') : qStatus,
+        says: hStale ? `${hStaleNote}. Then: ${qSays}` : qSays,
+        evidence: { unsent: q.unsent, deadLettered: q.deadLettered, billsWaiting, billsGivenUp, waitingPastLine: pastLine.length, contradicts: contradiction ?? '', reportedAt: h.observedAt, ageSeconds: hAge },
+      };
+    };
+    if (!several) {
+      const d = diskOf(r);
+      components.push({
+        name: `box_disk:${storeId}`, status: d.status,
+        detail: `${d.says}${othersSay}`, evidence: { ...d.evidence, computer: r.reportedBy, otherComputers: otherComputers.map((o) => o.computer).join(',') },
+      });
+      const qv = queueOf(r, waiting);
+      components.push({ name: `box_queue:${storeId}`, status: qv.status, detail: qv.says, evidence: qv.evidence });
+    } else {
+      // OB-107: each store computer holding the store's tills on its own; the WORSE decides, every one named.
+      const holding = heads.map((h) => `${h.reportedBy} (${prefixesOf(storeId, h.reportedBy).join(', ')})`).join(' and ');
+      const ds = heads.map((h) => ({ h, ...diskOf(h) }));
+      const worstD = ds.reduce((a, b) => ((RANK_OF[b.status] ?? 0) > (RANK_OF[a.status] ?? 0) ? b : a));
+      components.push({
+        name: `box_disk:${storeId}`, status: worstD.status,
+        detail: `store ${storeId} has ${heads.length} store computers holding its tills' bill numbers — ${holding}; head office judges each on its own and the worse decides: ${ds.map((d) => `${d.h.reportedBy}: ${d.says}`).join(' | ')}${othersSay}`,
+        evidence: {
+          ...worstD.evidence, computer: worstD.h.reportedBy, computers: heads.map((h) => h.reportedBy).join(','),
+          statuses: ds.map((d) => `${d.h.reportedBy}:${d.status}`).join(','), otherComputers: otherComputers.map((o) => o.computer).join(','),
+        },
+      });
+      const qs = heads.map((h) => ({ h, ...queueOf(h, []) }));
+      const pastLine = waiting.map((f) => f.detail).join('. ');
+      const worstQ = qs.reduce((a, b) => ((RANK_OF[b.status] ?? 0) > (RANK_OF[a.status] ?? 0) ? b : a));
+      const qStatus: HealthStatus = waiting.length > 0 && (RANK_OF[worstQ.status] ?? 0) < (RANK_OF['degraded'] ?? 0) ? 'degraded' : worstQ.status;
+      components.push({
+        name: `box_queue:${storeId}`, status: qStatus,
+        detail: `store ${storeId} has ${heads.length} store computers holding its tills' bill numbers — ${holding}; each judged on its own, the worse decides: ${qs.map((q) => `${q.h.reportedBy}: ${q.says}`).join(' | ')}${pastLine === '' ? '' : `. ${pastLine}`}`,
+        evidence: { ...worstQ.evidence, waitingPastLine: waiting.length, computer: worstQ.h.reportedBy, computers: heads.map((h) => h.reportedBy).join(','), statuses: qs.map((q) => `${q.h.reportedBy}:${q.status}`).join(',') },
+      });
+    }
 
     if (r.tills.length === 0) {
       components.push({ name: `till_devices:${storeId}`, status: 'unknown', detail: `no till at store ${storeId} has reported its scanner, printer, scale, drawer or card machine yet — not known, never "all fine"` });
@@ -3148,6 +3604,41 @@ async function assertAllStoresBusiness(
       whatHappened: `Only the owner or head office staff — a person whose business authority covers ALL stores — may ${words.act}. This account holds no such authority, so ${words.notDone}.`,
       wasItSaved: 'not_saved', nextSafeAction: `${words.ask} Nothing was recorded.`,
     });
+  }
+}
+
+/** Round 29 · verifier r28 NEW-5: an acknowledgement names the numbers the person saw — at most this many [from, to] ranges. */
+export const SEEN_RANGES_MAX = 500;
+/** The [from, to] ranges an acknowledgement names (whole numbers, from ≤ to, at most SEEN_RANGES_MAX) — undefined when not readable. */
+function readSeenRanges(v: unknown): [number, number][] | undefined {
+  if (!Array.isArray(v) || v.length === 0 || v.length > SEEN_RANGES_MAX) return undefined;
+  const out: [number, number][] = [];
+  for (const r of v) {
+    if (!Array.isArray(r) || r.length !== 2 || !isCount(r[0]) || !isCount(r[1]) || r[0] > r[1] || r[0] < 1) return undefined;
+    out.push([r[0], r[1]]);
+  }
+  return out.sort((a, b) => a[0] - b[0]);
+}
+const rangeCount = (ranges: readonly (readonly [number, number])[]): number => joinRuns(ranges).reduce((n, [a, z]) => n + z - a + 1, 0);
+
+/**
+ * Round 29 · OB-106: the store computers' saved history is being built (the first read after an upgrade, or after a damaged
+ * result was set aside) — the reading is not available YET. Thrown by the adapter's readings for the routes that need them.
+ */
+export class BoxHistoryPreparing extends Error {
+  constructor(readonly since: string, readonly why: string) {
+    super(`the store computers' history is being prepared (since ${since}: ${why})`);
+    this.name = 'BoxHistoryPreparing';
+  }
+}
+async function preparedOr503<T>(read: () => Promise<T>): Promise<T> {
+  try { return await read(); } catch (e) {
+    if (!(e instanceof BoxHistoryPreparing)) throw e;
+    throw apiError(503, {
+      code: 'store_computer_checks_being_prepared',
+      whatHappened: `Head office is preparing the store computers' saved history (since ${e.since}: ${e.why}) — the store computer checks are not available yet. It is built in the background; nothing is lost and the tills keep selling.`,
+      wasItSaved: 'not_saved', nextSafeAction: 'Try again in a few minutes (the health page says when it is ready). Nothing was recorded.',
+    }, 60);
   }
 }
 
@@ -3377,7 +3868,7 @@ export function boxHealthRoutes(deps: BoxHealthDeps): readonly Route[] {
       const at = deps.now();
       const replacements = deps.replacements === undefined ? [] : await deps.replacements(ctx.tenantId);
       // Round 28 · OB-104: from the saved running result (the reports after it only) when head office keeps one.
-      const bindings = deps.bindingsAt !== undefined ? await deps.bindingsAt(ctx.tenantId, at)
+      const bindings = deps.bindingsAt !== undefined ? await preparedOr503(() => deps.bindingsAt!(ctx.tenantId, at))
         : prefixBindings(deps.records === undefined ? [] : await deps.records(ctx.tenantId), replacements, at);
       const inScope = (storeId: string): boolean => { const sc = scopeOf(ctx); return sc === 'all' || sc.includes(storeId); };
       // Round 26 · OB-99: what THIS person may do here, judged by the same rule the acts use (all stores, a business role,
@@ -3409,13 +3900,14 @@ export function boxHealthRoutes(deps: BoxHealthDeps): readonly Route[] {
       const storeId = b['storeId'];
       const prefix = b['prefix'];
       const count = b['count'];
+      const seen = readSeenRanges(b['numbers']);
       const reason = typeof b['reason'] === 'string' ? b['reason'].trim() : '';
-      if (!isWord(storeId, 60) || !isWord(prefix, 10) || !isCount(count) || count < 1 || reason.length < 5 || reason.length > 300) {
+      if (!isWord(storeId, 60) || !isWord(prefix, 10) || seen === undefined || (count !== undefined && (!isCount(count) || count !== rangeCount(seen))) || reason.length < 5 || reason.length > 300) {
         throw apiError(400, {
           code: 'not_readable_as_acknowledgement',
-          whatHappened: 'An acknowledgement of a not-checked line needs the store, the bill-number prefix, how many numbers were not checked (count) and a reason of 5 to 300 characters.',
+          whatHappened: `An acknowledgement of a not-checked line needs the store, the bill-number prefix, the numbers not checked exactly as the health page showed them (numbers: [[from, to], …], at most ${SEEN_RANGES_MAX} ranges; a count, if sent, must match them) and a reason of 5 to 300 characters.`,
           wasItSaved: 'not_saved',
-          nextSafeAction: 'Send { storeId, prefix, count, reason } as shown on the health page. Nothing was recorded.',
+          nextSafeAction: 'Send { storeId, prefix, numbers, reason } as shown on the health page. Nothing was recorded.',
         });
       }
       if (deps.records === undefined || deps.acknowledgeNotChecked === undefined) {
@@ -3438,14 +3930,15 @@ export function boxHealthRoutes(deps: BoxHealthDeps): readonly Route[] {
           wasItSaved: 'not_saved', nextSafeAction: 'Copy the store and prefix exactly as the health page shows the not-checked line. Nothing was recorded.',
         });
       }
-      if (now !== count) {
+      // Round 29 · verifier r28 NEW-5: the EXACT numbers the person saw — not only how many — or nothing is recorded.
+      if (runsKey(joinRuns(seen)) !== runsKey(joinRuns(notChecked))) {
         throw apiError(409, {
           code: 'not_checked_set_changed',
-          whatHappened: `Store ${storeId}'s computer's latest report under ${prefix} now leaves ${now} at-risk number(s) unchecked, not the ${count} acknowledged — the line changed since it was read.`,
+          whatHappened: `Store ${storeId}'s computer's latest report under ${prefix} now leaves ${now} at-risk number(s) unchecked (${rangeWords(prefix, joinRuns(notChecked))}), not the ${rangeCount(seen)} acknowledged (${rangeWords(prefix, joinRuns(seen))}) — the line changed since it was read.`,
           wasItSaved: 'not_saved', nextSafeAction: 'Reload the health page, look at the line as it is now, and acknowledge that. Nothing was recorded.',
         });
       }
-      const kept = await deps.acknowledgeNotChecked(ctx.tenantId, { storeId, prefix, notChecked, count, reason, by: ctx.userId, at, authority: 'all_stores' }, ctx.idempotencyKey ?? `${ctx.userId}@${at}`);
+      const kept = await deps.acknowledgeNotChecked(ctx.tenantId, { storeId, prefix, notChecked, count: now, reason, by: ctx.userId, at, authority: 'all_stores' }, ctx.idempotencyKey ?? `${ctx.userId}@${at}`);
       return { status: 201, body: { acknowledged: kept } };
     },
   }, {
@@ -3466,13 +3959,14 @@ export function boxHealthRoutes(deps: BoxHealthDeps): readonly Route[] {
       const storeId = b['storeId'];
       const prefix = b['prefix'];
       const count = b['count'];
+      const seen = readSeenRanges(b['numbers']);
       const reason = typeof b['reason'] === 'string' ? b['reason'].trim() : '';
-      if (!isWord(storeId, 60) || !isWord(prefix, 10) || !isCount(count) || count < 1 || reason.length < 5 || reason.length > 300) {
+      if (!isWord(storeId, 60) || !isWord(prefix, 10) || seen === undefined || (count !== undefined && (!isCount(count) || count !== rangeCount(seen))) || reason.length < 5 || reason.length > 300) {
         throw apiError(400, {
           code: 'not_readable_as_acknowledgement',
-          whatHappened: 'An acknowledgement of a "said unused, but head office has the bill" line needs the store, the bill-number prefix, how many numbers the line names (count) and a reason of 5 to 300 characters.',
+          whatHappened: `An acknowledgement of a "said unused, but head office has the bill" line needs the store, the bill-number prefix, the numbers exactly as the line showed them (numbers: [[from, to], …], at most ${SEEN_RANGES_MAX} ranges; a count, if sent, must match them) and a reason of 5 to 300 characters.`,
           wasItSaved: 'not_saved',
-          nextSafeAction: 'Send { storeId, prefix, count, reason } as shown on the Store computers page. Nothing was recorded.',
+          nextSafeAction: 'Send { storeId, prefix, numbers, reason } as shown on the Store computers page. Nothing was recorded.',
         });
       }
       if (deps.unusedReceivedNow === undefined || deps.acknowledgeUnusedReceived === undefined) {
@@ -3480,7 +3974,7 @@ export function boxHealthRoutes(deps: BoxHealthDeps): readonly Route[] {
       }
       const at = deps.now();
       // The line as head office finds it now — what the health page shows (before any acknowledgement silences it).
-      const numbers = joinRuns(await deps.unusedReceivedNow(ctx.tenantId, storeId, prefix));
+      const numbers = joinRuns(await preparedOr503(() => deps.unusedReceivedNow!(ctx.tenantId, storeId, prefix)));
       const now = numbers.reduce((n, [a, z]) => n + z - a + 1, 0);
       if (now === 0) {
         throw apiError(404, {
@@ -3489,14 +3983,15 @@ export function boxHealthRoutes(deps: BoxHealthDeps): readonly Route[] {
           wasItSaved: 'not_saved', nextSafeAction: 'Copy the store and prefix exactly as the Store computers page shows the line. Nothing was recorded.',
         });
       }
-      if (now !== count) {
+      // Round 29 · verifier r28 NEW-5: the EXACT numbers the person saw — not only how many — or nothing is recorded.
+      if (runsKey(joinRuns(seen)) !== runsKey(numbers)) {
         throw apiError(409, {
           code: 'unused_received_set_changed',
-          whatHappened: `Under ${prefix}, head office now finds ${now} number(s) store ${storeId}'s computer called unused after head office received the bill, not the ${count} acknowledged — the line changed since it was read.`,
+          whatHappened: `Under ${prefix}, head office now finds ${now} number(s) store ${storeId}'s computer called unused after head office received the bill (${rangeWords(prefix, numbers)}), not the ${rangeCount(seen)} acknowledged (${rangeWords(prefix, joinRuns(seen))}) — the line changed since it was read.`,
           wasItSaved: 'not_saved', nextSafeAction: 'Reload the Store computers page, look at the line as it is now, and acknowledge that. Nothing was recorded.',
         });
       }
-      const kept = await deps.acknowledgeUnusedReceived(ctx.tenantId, { storeId, prefix, numbers, count, reason, by: ctx.userId, at, authority: 'all_stores' }, ctx.idempotencyKey ?? `${ctx.userId}@${at}`);
+      const kept = await deps.acknowledgeUnusedReceived(ctx.tenantId, { storeId, prefix, numbers, count: now, reason, by: ctx.userId, at, authority: 'all_stores' }, ctx.idempotencyKey ?? `${ctx.userId}@${at}`);
       return { status: 201, body: { acknowledged: kept } };
     },
   }];
