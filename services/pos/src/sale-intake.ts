@@ -109,6 +109,13 @@ export interface IncomingSale {
    */
   readonly operatorVerified?: { readonly userId?: unknown; readonly via?: unknown; readonly laneId?: unknown; readonly seal?: unknown };
   /**
+   * Round 29 · OB-108: when the STORE COMPUTER took this bill from the till and wrote it to its disk — by the store computer's
+   * own clock (the clock its health reports are written by). Untrusted as it arrives: head office keeps it on the bill's
+   * receipt-number index only when it is a well-formed time, never later than head office received the bill. Not part of
+   * what makes a bill the same bill (`billFingerprint`): an older store computer sends none.
+   */
+  readonly storeComputerTakenAt?: string;
+  /**
    * The loyalty member the cashier named (PF-09 · OB-28 "1"): the member CODE the store computer made from the mobile
    * number keyed at the till — never the number itself (P-04). Optional: a walk-in buys with no personal data (M16-FR-01).
    */

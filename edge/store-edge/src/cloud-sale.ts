@@ -89,8 +89,12 @@ export function toCloudSale(record: unknown, packVersion: number, storeId?: stri
     ...(isObject(r['operatorVerified']) ? { operatorVerified: r['operatorVerified'] as IncomingSale['operatorVerified'] } : {}),
     // The loyalty member CODE the box made from the number the cashier keyed (PF-09 step 2) — never a phone number.
     ...(isMemberRef(r['customerRef']) ? { customerRef: r['customerRef'] } : {}),
+    // Round 29 · OB-108: when the store computer took the bill from the till, by its own clock (stamped as it wrote it).
+    ...(isTime(r['storeComputerTakenAt']) ? { storeComputerTakenAt: r['storeComputerTakenAt'] } : {}),
   };
 }
+
+const isTime = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/.test(v) && !Number.isNaN(Date.parse(v));
 
 const isMemberRef = (v: unknown): v is string => typeof v === 'string' && /^m-[0-9a-f]{24}$/.test(v);
 

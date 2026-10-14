@@ -43,7 +43,31 @@ export function canonicalHash(record: string): string {
   } catch {
     parsed = record; // a non-JSON record still gets a stable identity from its bytes
   }
+  // Round 29 · OB-108: the store computer's own "taken at" stamp is the box's, not the till's — a till re-sending the SAME
+  // sale must hash the same as the record on the disk that carries the stamp (the guard is rebuilt from the disk at boot).
+  if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed) && STORE_COMPUTER_TAKEN_AT in parsed) {
+    const { [STORE_COMPUTER_TAKEN_AT]: _stamp, ...rest } = parsed as Record<string, unknown>;
+    void _stamp;
+    parsed = rest;
+  }
   return createHash('sha256').update(JSON.stringify(canonicalize(parsed))).digest('hex');
+}
+
+/**
+ * Round 29 · OB-108 "A" (owner, 14 Oct 2026, in writing, "Use store computer time"; verifier r28 NEW-4): the field in which the
+ * store computer writes, on the sale record it keeps and sends, WHEN IT took the bill from the till — by its own clock, the
+ * clock its health reports are written by. Head office compares "said unused" times with this, never with the till's clock.
+ */
+export const STORE_COMPUTER_TAKEN_AT = 'storeComputerTakenAt';
+/** Stamp a record (JSON text) with the store computer's time; a record that is not a JSON object is left as it is. */
+export function stampTakenAt(record: string, at: string): string {
+  try {
+    const parsed = JSON.parse(record) as unknown;
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return record;
+    return JSON.stringify({ ...(parsed as Record<string, unknown>), [STORE_COMPUTER_TAKEN_AT]: at });
+  } catch {
+    return record;
+  }
 }
 
 export type IdempotencyVerdict =

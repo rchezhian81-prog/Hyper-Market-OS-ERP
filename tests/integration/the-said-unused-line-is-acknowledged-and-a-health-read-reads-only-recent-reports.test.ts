@@ -111,7 +111,8 @@ async function theSaidUnusedLineIsAcknowledged(h: ApiHarness): Promise<void> {
   const line = async (): Promise<[number | undefined, [number, number][] | undefined][]> => (await findings(call, 'unused_number_received')).map((f) => [f.count, f.ranges]);
   expect(await line()).toEqual([[1, [[105, 105]]]]);
   expect((await findings(call, 'unused_number_received'))[0]!.detail).toContain(UNUSED_RECEIVED_STAYS_WORDS);
-  const ackBody = { storeId: S1, prefix: P, count: 1, reason: 'support checked the store computer; its unused list was faulty' };
+  // Round 29 · verifier r28 NEW-5: the acknowledgement names the EXACT numbers the page showed (and, optionally, how many).
+  const ackBody = { storeId: S1, prefix: P, numbers: [[105, 105]], count: 1, reason: 'support checked the store computer; its unused list was faulty' };
   // Refused by name: one store's manager, the IT administrator, a cashier; a changed count; no such line; no reason.
   const no = async (user: string, body: unknown, status: number, code: string, branchId?: string): Promise<void> => {
     const r = await call('POST', UNUSED_ACK, user, body, branchId);
@@ -121,7 +122,11 @@ async function theSaidUnusedLineIsAcknowledged(h: ApiHarness): Promise<void> {
   await no('u-mgr1', ackBody, 403, 'acknowledgement_needs_all_stores_authority', S1);
   await no('u-it', ackBody, 403, 'acknowledgement_refused_to_platform_administrator');
   await no('u-cash', ackBody, 403, 'forbidden', S1);
-  await no('u-ho', { ...ackBody, count: 2 }, 409, 'unused_received_set_changed');
+  await no('u-ho', { ...ackBody, numbers: [[105, 106]], count: 2 }, 409, 'unused_received_set_changed');
+  // NEW-5: one number the person never saw, with the same count, is refused; a count alone, or one that does not match, is not readable.
+  await no('u-ho', { ...ackBody, numbers: [[106, 106]] }, 409, 'unused_received_set_changed');
+  await no('u-ho', { storeId: S1, prefix: P, count: 1, reason: ackBody.reason }, 400, 'not_readable_as_acknowledgement');
+  await no('u-ho', { ...ackBody, count: 2 }, 400, 'not_readable_as_acknowledgement');
   await no('u-ho', { ...ackBody, prefix: P2 }, 404, 'no_such_unused_received_finding');
   await no('u-ho', { ...ackBody, storeId: S2 }, 404, 'no_such_unused_received_finding');
   await no('u-ho', { ...ackBody, reason: 'ok' }, 400, 'not_readable_as_acknowledgement');
@@ -148,7 +153,9 @@ async function theSaidUnusedLineIsAcknowledged(h: ApiHarness): Promise<void> {
   travel(200); await report(call, [[105, 105], [107, 107]]);
   expect(await line()).toEqual([[2, [[105, 105], [107, 107]]]]);
   await no('u-ho', ackBody, 409, 'unused_received_set_changed');
-  expect((await call('POST', UNUSED_ACK, 'u-ho', { ...ackBody, count: 2, reason: 'support checked 107 too' })).status).toBe(201);
+  // NEW-5 (the verifier's race): the same COUNT with a set that differs — 105 and 106 — is refused; the set shown is kept.
+  await no('u-ho', { ...ackBody, numbers: [[105, 106]], count: 2 }, 409, 'unused_received_set_changed');
+  expect((await call('POST', UNUSED_ACK, 'u-ho', { ...ackBody, numbers: [[105, 105], [107, 107]], count: 2, reason: 'support checked 107 too' })).status).toBe(201);
   expect(await line()).toEqual([]);
 }
 
@@ -214,10 +221,11 @@ describe.skipIf(DATABASE_URL === undefined)('round 28 · OB-103: refusals and th
     const observed = await cloud.request({ method: 'GET', path: '/v1/platform/operational-health/observed', userId: OWNER });
     const line = ((observed.body as Observed).observed.boxes.find((b) => b.storeId === B)?.billNumberFindings ?? []).filter((f) => f.kind === 'unused_number_received');
     expect(line.map((f) => [f.prefix, f.ranges, f.count])).toEqual([[Q, [[105, 105]], 1]]);
-    const body = { storeId: B, prefix: Q, count: 1, reason: 'support checked the store computer' };
+    const body = { storeId: B, prefix: Q, numbers: [[105, 105]], count: 1, reason: 'support checked the store computer' };
     await onTheTrail('u-mgr-b1', body, 403, 'acknowledgement_needs_all_stores_authority', B);
     await onTheTrail('u-it', body, 403, 'acknowledgement_refused_to_platform_administrator');
-    await onTheTrail('u-ho', { ...body, count: 3 }, 409, 'unused_received_set_changed');
+    await onTheTrail('u-ho', { ...body, numbers: [[104, 106]], count: 3 }, 409, 'unused_received_set_changed');
+    await onTheTrail('u-ho', { ...body, numbers: [[106, 106]] }, 409, 'unused_received_set_changed');
     await onTheTrail('u-ho', { ...body, prefix: 'ZZ1-' }, 404, 'no_such_unused_received_finding');
     const none = await platform.query("SELECT count(*)::int AS n FROM event_ledger WHERE tenant_id = $1 AND type = 'BoxUnusedReceivedAcknowledged'", [TENANT]);
     expect(none.rows[0].n).toBe(0);

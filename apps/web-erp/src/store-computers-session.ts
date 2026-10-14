@@ -16,7 +16,8 @@
 // Round 28 · OB-103 "A" (owner, 13 Oct 2026, in writing, "You/HO acknowledge"): that line is acknowledged here too, by the
 // owner or head office staff (all stores, never IT), with a reason, once support has checked the store computer. Head office
 // keeps who, why and when; the acknowledgement holds while it finds the same set of numbers — a new number shows the line
-// again (`POST /v1/store-computers/unused-numbers-received/acknowledgements`, by its count, as the page showed it).
+// again (`POST /v1/store-computers/unused-numbers-received/acknowledgements`). Round 29 · verifier r28 NEW-5: an acknowledgement
+// sends the EXACT numbers the page showed (not only how many); head office refuses it (409) if the line has changed since.
 //
 // Every rule is head office's: what this person may do comes from head office's own answer (`you` on the bindings read —
 // the same rule the acts use), never from the page; each act is re-checked there and a refusal is shown in its own words.
@@ -288,7 +289,7 @@ export function createStoreComputersSession(input: {
       if (!reasonOk(reason)) return { result: 'invalid', why: 'shortReason' };
       return f.kind === 'report_refused'
         ? call('POST', REFUSAL_ACK_PATH, { storeId: f.storeId, prefix: f.prefix, through: f.through, reason: reason.trim() })
-        : call('POST', f.kind === 'unused_number_received' ? UNUSED_RECEIVED_ACK_PATH : NOT_CHECKED_ACK_PATH, { storeId: f.storeId, prefix: f.prefix, count: f.count, reason: reason.trim() });
+        : call('POST', f.kind === 'unused_number_received' ? UNUSED_RECEIVED_ACK_PATH : NOT_CHECKED_ACK_PATH, { storeId: f.storeId, prefix: f.prefix, numbers: f.ranges ?? [], count: f.count, reason: reason.trim() });
     },
   };
 }

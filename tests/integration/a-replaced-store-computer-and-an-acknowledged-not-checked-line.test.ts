@@ -226,7 +226,8 @@ async function theNotCheckedLineIsAcknowledged(h: ApiHarness): Promise<void> {
   travel(0); await report(call, 'u-box', SET_A);
   const line = async (): Promise<[number | undefined, [number, number][] | undefined][]> => (await findings(call, 'at_risk_not_checked')).map((f) => [f.count, f.ranges]);
   expect(await line()).toEqual([[400, [[101, 500]]]]);
-  const ackBody = { storeId: S1, prefix: P, count: 400, reason: 'support compared the restore record with head office' };
+  // Round 29 · verifier r28 NEW-5: the acknowledgement names the EXACT numbers the page showed (and, optionally, how many).
+  const ackBody = { storeId: S1, prefix: P, numbers: [[101, 500]], count: 400, reason: 'support compared the restore record with head office' };
   // Refused by name: one store's manager, the IT administrator, a cashier; a stale count; nothing to acknowledge; no reason.
   const no = async (user: string, body: unknown, status: number, code: string, branchId?: string): Promise<void> => {
     const r = await call('POST', NOT_CHECKED_ACK, user, body, branchId);
@@ -236,7 +237,11 @@ async function theNotCheckedLineIsAcknowledged(h: ApiHarness): Promise<void> {
   await no('u-mgr1', ackBody, 403, 'acknowledgement_needs_all_stores_authority', S1);
   await no('u-it', ackBody, 403, 'acknowledgement_refused_to_platform_administrator');
   await no('u-cash', ackBody, 403, 'forbidden', S1);
-  await no('u-ho', { ...ackBody, count: 450 }, 409, 'not_checked_set_changed');
+  await no('u-ho', { ...ackBody, numbers: [[51, 500]], count: 450 }, 409, 'not_checked_set_changed');
+  // NEW-5: the SAME count but other numbers (a set the person never saw) is refused too — and a count alone is not enough.
+  await no('u-ho', { ...ackBody, numbers: [[102, 501]] }, 409, 'not_checked_set_changed');
+  await no('u-ho', { storeId: S1, prefix: P, count: 400, reason: ackBody.reason }, 400, 'not_readable_as_acknowledgement');
+  await no('u-ho', { ...ackBody, count: 399 }, 400, 'not_readable_as_acknowledgement');
   await no('u-ho', { ...ackBody, prefix: P2 }, 404, 'no_such_not_checked_finding');
   await no('u-ho', { ...ackBody, reason: 'ok' }, 400, 'not_readable_as_acknowledgement');
   expect(await line()).toEqual([[400, [[101, 500]]]]);
@@ -351,10 +356,11 @@ describe.skipIf(DATABASE_URL === undefined)('round 26 · OB-97 / OB-98: refusals
   }, 120_000);
 
   it('OB-98: a refused acknowledgement of the not-checked line is on the audit trail, and nothing was kept', async () => {
-    const body = { storeId: B, prefix: Q, count: 400, reason: 'support compared the restore record' };
+    const body = { storeId: B, prefix: Q, numbers: [[101, 500]], count: 400, reason: 'support compared the restore record' };
     await refusedOnTheTrail('u-mgr-b1', NOT_CHECKED_ACK, body, 403, 'acknowledgement_needs_all_stores_authority', 'platform.alert.manage', B);
     await refusedOnTheTrail('u-it', NOT_CHECKED_ACK, body, 403, 'acknowledgement_refused_to_platform_administrator', 'platform.alert.manage');
-    await refusedOnTheTrail('u-ho', NOT_CHECKED_ACK, { ...body, count: 7 }, 409, 'not_checked_set_changed', 'platform.alert.manage');
+    await refusedOnTheTrail('u-ho', NOT_CHECKED_ACK, { ...body, numbers: [[101, 107]], count: 7 }, 409, 'not_checked_set_changed', 'platform.alert.manage');
+    await refusedOnTheTrail('u-ho', NOT_CHECKED_ACK, { ...body, numbers: [[102, 501]] }, 409, 'not_checked_set_changed', 'platform.alert.manage');
     const kept = await platform.query("SELECT count(*)::int AS n FROM event_ledger WHERE tenant_id = $1 AND type = 'BoxAtRiskNotCheckedAcknowledged'", [TENANT]);
     expect(kept.rows[0].n).toBe(0);
     // And the owner's acknowledgement is kept.

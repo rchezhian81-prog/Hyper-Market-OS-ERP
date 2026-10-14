@@ -32,6 +32,8 @@ export interface OpsAlertPass {
   readonly escalated: number;
   readonly delivered: number;
   readonly failed: readonly { readonly tenantId: string; readonly error: string }[];
+  /** Round 29 · OB-106: shops whose store computer checks were being prepared — skipped this pass (their alerts kept), said. */
+  readonly skipped: readonly { readonly tenantId: string; readonly why: string }[];
 }
 
 export interface OpsAlertWorker {
@@ -104,6 +106,7 @@ export function startOpsAlertWorker(input: {
   const pass = async (): Promise<OpsAlertPass> => {
     const at = input.now();
     const failed: { tenantId: string; error: string }[] = [];
+    const skipped: { tenantId: string; why: string }[] = [];
     let raised = 0; let cleared = 0; let escalated = 0; let delivered = 0;
     let tenants: readonly string[] = [];
     try { tenants = await input.tenants(); } catch (e) { failed.push({ tenantId: '*', error: e instanceof Error ? e.message : String(e) }); }
@@ -111,6 +114,9 @@ export function startOpsAlertWorker(input: {
       try {
         const r = await raiseObservedAlerts(input.deps, tenantId, OPS_ALERT_WORKER, at, { clear: true });
         if (r !== undefined) { raised += r.newlyOpened; cleared += r.cleared; }
+        // Round 29 · OB-106 (P-08): the store computer checks are being prepared — not frozen, not silent: said, and skipped.
+        const preparing = r?.observed.storeComputersPreparing ?? null;
+        if (preparing !== null) skipped.push({ tenantId, why: `the store computer checks are being prepared (since ${preparing.since}: ${preparing.why}); this pass skipped them and kept their open alerts as they were` });
         escalated += (await escalateDueAlerts(input.deps, tenantId, OPS_ALERT_WORKER, at)).length;
         delivered += await deliverAlerts(input.deps, tenantId, OPS_ALERT_WORKER, at, input.transport, input.say);
         if (input.alsoEachPass !== undefined) {
@@ -121,12 +127,13 @@ export function startOpsAlertWorker(input: {
         failed.push({ tenantId, error: e instanceof Error ? e.message : String(e) });
       }
     }
-    const done: OpsAlertPass = { at, tenants: tenants.length, raised, cleared, escalated, delivered, failed };
+    const done: OpsAlertPass = { at, tenants: tenants.length, raised, cleared, escalated, delivered, failed, skipped };
     passes.push(done);
     total += 1;
     if (passes.length > 50) passes.shift();
     if (raised + cleared + escalated + delivered > 0) input.say(`alerts: ${raised} raised, ${escalated} escalated, ${delivered} delivered, ${cleared} cleared`);
     for (const f of failed) input.say(`alerts: the alert pass failed for shop ${f.tenantId}: ${f.error}. The next pass tries again.`);
+    for (const k of skipped) input.say(`alerts: shop ${k.tenantId}: ${k.why}. The next pass tries again.`);
     return done;
   };
 

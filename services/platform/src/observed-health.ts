@@ -50,7 +50,11 @@ import {
 } from '../../../packages/ops/src/index';
 import { readRules, readThresholds } from './operational-health';
 import { raiseKey, type AlertLifecycleDeps, type AlertLifecycleEvent } from './alert-lifecycle';
-import { judgeBoxes, type BoxHealthRecord, type BoxHealthView, type BillNumberFinding, type StoreComputerReplacement, type PrefixBinding, type UnusedNumbers, type BoxReportsView } from './box-health';
+import {
+  judgeBoxes, boxHistoryComponents,
+  type BoxHealthRecord, type BoxHealthView, type BillNumberFinding, type StoreComputerReplacement, type PrefixBinding, type UnusedNumbers, type BoxReportsView,
+  type BoxHistoryState, type UnusedCheckCapped,
+} from './box-health';
 import type { ComponentHealth } from '../../../packages/ops/src/index';
 
 export interface ConnectorQueueDepth {
@@ -139,6 +143,15 @@ export interface ObservedHealthDeps extends Pick<AlertLifecycleDeps, 'alerts' | 
     readonly bindings?: readonly PrefixBinding[];
     /** Round 27 · OB-100: the numbers each store's computer said it gave and never used (from the same saved running result). */
     readonly unusedNumbers?: ReadonlyMap<string, readonly UnusedNumbers[]>;
+    /** Round 29 · NEW-6: per store, what the "said unused, but head office has the bill" check did not look at. */
+    readonly unusedCapped?: ReadonlyMap<string, readonly UnusedCheckCapped[]>;
+    /**
+     * Round 29 · OB-106: the store computers' saved history is being built in the background — nothing about the store
+     * computers is judged until it is ready (said as `box_history: unknown`, and in `notObserved`; never read as healthy).
+     */
+    readonly preparing?: { readonly since: string; readonly why: string };
+    /** Round 29 · OB-105/106: the saved history itself — its size, saving held back by an open transaction, a failed build. */
+    readonly history?: BoxHistoryState;
   }>;
   /** OB-78: the owner's early-warning line for a store computer's disk, in hours of trading left (tenant setting, default 48). */
   readonly boxDiskWarnHours?: (tenantId: string) => Promise<number> | number;
@@ -184,6 +197,8 @@ export interface ObservedSignals {
   readonly boxes: readonly BoxHealthView[];
   /** The per-store components those reports give (`box_disk:`, `box_queue:`, `till_devices:`). */
   readonly boxComponents: readonly ComponentHealth[];
+  /** Round 29 · OB-106: the store computer checks are being prepared (not judged yet) — since when and why; null when ready. */
+  readonly storeComputersPreparing: { readonly since: string; readonly why: string } | null;
 }
 
 /** A backup that counts (FR-01): completed, encrypted and off-site. */
@@ -200,7 +215,7 @@ export async function observeSignals(deps: ObservedHealthDeps, tenantId: string,
     deps.storeComputers === undefined ? Promise.resolve(undefined) : deps.storeComputers(tenantId, at),
     deps.separationOfDuties === undefined ? Promise.resolve([]) : deps.separationOfDuties(tenantId),
   ]);
-  const judgedBoxes = boxReports === undefined || !(boxReports.view?.any ?? boxReports.records.length > 0)
+  const judgedBoxes = boxReports === undefined || boxReports.preparing !== undefined || !(boxReports.view?.any ?? boxReports.records.length > 0)
     ? undefined : judgeBoxes({
       records: boxReports.records, knownStores: boxReports.knownStores, at, thresholds,
       ...(boxReports.view === undefined ? {} : { view: boxReports.view }),
@@ -208,6 +223,7 @@ export async function observeSignals(deps: ObservedHealthDeps, tenantId: string,
       ...(boxReports.replacements === undefined ? {} : { replacements: boxReports.replacements }),
       ...(boxReports.bindings === undefined ? {} : { bindings: boxReports.bindings }),
       ...(boxReports.unusedNumbers === undefined ? {} : { unusedNumbers: boxReports.unusedNumbers }),
+      ...(boxReports.unusedCapped === undefined ? {} : { unusedCapped: boxReports.unusedCapped }),
       ...(deps.boxDiskWarnHours === undefined ? {} : { diskWarnHours: await deps.boxDiskWarnHours(tenantId) }),
       ...(deps.boxUnsentWarnHours === undefined ? {} : { unsentWarnHours: await deps.boxUnsentWarnHours(tenantId) }),
     });
@@ -250,11 +266,18 @@ export async function observeSignals(deps: ObservedHealthDeps, tenantId: string,
     freshness: { lastSaleAt: lastSyncAt ?? null, ageSeconds },
     queues,
     lastBackup: latest ?? null,
-    notObserved: writable !== undefined ? [] : judgedBoxes === undefined
+    notObserved: writable !== undefined ? [] : boxReports?.preparing !== undefined
+      ? [`localStoreWritable — being prepared: the store computers' saved history is being built (since ${boxReports.preparing.since}), so no store computer is judged yet; never guessed ok here`]
+      : judgedBoxes === undefined
       ? ['localStoreWritable — a lane-side signal (the store box reports it through its own health check); never guessed ok here']
       : [`localStoreWritable — not every store computer has a fresh report (${judgedBoxes.boxes.filter((b) => b.stale).map((b) => `${b.storeId}: ${b.state === 'never_reported' ? 'never reported' : `stale, last ${b.lastReportAt}`}`).join('; ')}); never guessed ok here`],
     boxes: judgedBoxes?.boxes ?? [],
-    boxComponents: [...judgedBoxes?.components ?? [], ...highWaterComponent(boxReports?.billNumberHighWater ?? null), ...separationOfDutiesComponent(bothDuties)],
+    boxComponents: [
+      ...judgedBoxes?.components ?? [], ...highWaterComponent(boxReports?.billNumberHighWater ?? null),
+      ...(boxReports === undefined ? [] : boxHistoryComponents({ ...(boxReports.preparing === undefined ? {} : { preparing: boxReports.preparing }), ...(boxReports.history === undefined ? {} : { history: boxReports.history }) })),
+      ...separationOfDutiesComponent(bothDuties),
+    ],
+    storeComputersPreparing: boxReports?.preparing ?? null,
   };
 }
 
@@ -368,17 +391,25 @@ export async function raiseObservedAlerts(deps: ObservedHealthDeps, tenantId: st
     if (!known.has(alert.alertId) || live?.state === 'cleared') newlyOpened += 1;
   }
   let cleared = 0;
+  let keptWhilePreparing = 0;
   if (opts.clear === true) {
     const firing = new Set(judged.alerts.map((a) => a.alertId));
     const ruled = new Set(judged.stored.rules.map((r) => r.alertId));
+    const preparing = judged.observed.storeComputersPreparing;
     for (const a of before) {
       if (a.state === 'cleared' || firing.has(a.alert.alertId) || !ruled.has(a.alert.alertId)) continue;
+      // Round 29 · OB-106: while the store computer checks are being prepared nothing about them is known — an alert on a
+      // store computer stays as it is (never cleared on no news); the worker says it skipped them.
+      if (preparing !== null && STORE_COMPUTER_COMPONENT.test(a.alert.component)) { keptWhilePreparing += 1; continue; }
       await deps.recordAlertEvent(tenantId, { alertId: a.alert.alertId, change: 'cleared', by, at, detail: `${a.alert.component} is no longer at ${a.alert.status} or worse` }, `clear-${a.alert.alertId}-o${a.occurrence}`);
       cleared += 1;
     }
   }
-  return { ...judged, stored: judged.stored, newlyOpened, cleared };
+  return { ...judged, stored: judged.stored, newlyOpened, cleared, keptWhilePreparing };
 }
+
+/** Round 29 · OB-106: the components the store computers' reports give (kept, never cleared, while their checks are being prepared). */
+const STORE_COMPUTER_COMPONENT = /^(box_|till_devices:|bill_number_high_water)/;
 
 export function observedHealthRoutes(deps: ObservedHealthDeps): readonly Route[] {
   const judge = (tenantId: string, at: string) => judgeObserved(deps, tenantId, at);
