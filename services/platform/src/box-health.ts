@@ -3262,7 +3262,12 @@ export function judgeBoxes(input: {
     if (!boundTo.has(storeId)) return [];
     if (view !== undefined) return view.latestEach(storeId, (computer) => isBound({ storeId, reportedBy: computer }));
     const per = new Map<string, BoxHealthRecord[]>();
-    for (const x of input.records) if (x.storeId === storeId && isBound(x)) per.set(x.reportedBy, [...(per.get(x.reportedBy) ?? []), x]);
+    // One pass, each report pushed onto its computer's list (never a copy of the list per report — that was quadratic).
+    for (const x of input.records) {
+      if (x.storeId !== storeId || !isBound(x)) continue;
+      const list = per.get(x.reportedBy);
+      if (list === undefined) per.set(x.reportedBy, [x]); else list.push(x);
+    }
     return [...per].sort((a, b) => a[0].localeCompare(b[0])).flatMap(([, list]) => { const h = latestBoxReports(list).get(storeId); return h === undefined ? [] : [h]; });
   };
   const prefixesOf = (storeId: string, computer: string): string[] => bindings.filter((b) => b.storeId === storeId && b.computer === computer).map((b) => b.prefix).sort();
