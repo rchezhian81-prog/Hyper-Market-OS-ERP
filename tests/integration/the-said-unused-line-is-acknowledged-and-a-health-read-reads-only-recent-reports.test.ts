@@ -11,7 +11,7 @@ import { makeEvent } from '../../packages/contracts/src/event';
 import { STREAM, streamName, storeComputerReading, storeComputerHistory, boxHealthAdapter } from '../../services/api/src/adapters';
 import { judgeBoxes, UNRECEIVED_GRACE_MINUTES, UNUSED_RECEIVED_STAYS_WORDS, type BoxHealthRecord } from '../../services/platform/src/box-health';
 import { DEFAULT_THRESHOLDS } from '../../packages/ops/src/index';
-import { history, rng, iso } from '../support/box-history';
+import { history, rng, iso, TEST_BOX_HISTORY_KEY } from '../support/box-history';
 
 /**
  * **Round 28 · owner decisions OB-103 "A" and OB-104 "A" (13 Oct 2026, in writing) — through head office's production routes
@@ -221,6 +221,9 @@ describe.skipIf(DATABASE_URL === undefined)('round 28 · OB-103: refusals and th
     const observed = await cloud.request({ method: 'GET', path: '/v1/platform/operational-health/observed', userId: OWNER });
     const line = ((observed.body as Observed).observed.boxes.find((b) => b.storeId === B)?.billNumberFindings ?? []).filter((f) => f.kind === 'unused_number_received');
     expect(line.map((f) => [f.prefix, f.ranges, f.count])).toEqual([[Q, [[105, 105]], 1]]);
+    // Round 30 · OB-111: the real API seals the saved history with its key (from PACK_SIGNING_KEY) — never "no seal key".
+    const components = (observed.body as { health: { components: { name: string; status: string }[] } }).health.components;
+    expect(components.find((c) => c.name === 'box_history_seal')).toBeUndefined();
     const body = { storeId: B, prefix: Q, numbers: [[105, 105]], count: 1, reason: 'support checked the store computer' };
     await onTheTrail('u-mgr-b1', body, 403, 'acknowledgement_needs_all_stores_authority', B);
     await onTheTrail('u-it', body, 403, 'acknowledgement_refused_to_platform_administrator');
@@ -320,7 +323,7 @@ async function windowedIsFull(base: EventStore, snaps: () => SnapshotStore, seed
       fullRows += records.length;
       // The windowed reading (the health read and the alert worker now).
       reset();
-      const got = await storeComputerHistory(store, T, at, { ...opts, snapshots: windowed });
+      const got = await storeComputerHistory(store, T, at, { sealKey: TEST_BOX_HISTORY_KEY, ...opts, snapshots: windowed });
       windowRows += rows();
       expect(got.reportsRead).toBe(rows());
       if (got.resumed) resumed += 1;
@@ -359,12 +362,12 @@ describe('round 28 · OB-104: the store-computer reading takes only the reports 
     }
     const at = iso(Math.max(...h.records.map((r) => Date.parse(r.receivedAt))) + 3_600_000);
     const snaps = new InMemorySnapshotStore();
-    const first = await storeComputerHistory(store, T, at, { snapshots: snaps });
-    const second = await storeComputerHistory(store, T, at, { snapshots: snaps });
+    const first = await storeComputerHistory(store, T, at, { sealKey: TEST_BOX_HISTORY_KEY, snapshots: snaps });
+    const second = await storeComputerHistory(store, T, at, { sealKey: TEST_BOX_HISTORY_KEY, snapshots: snaps });
     expect(first.reportsRead).toBe(h.records.length);
     expect(second.resumed).toBe(true);
     expect(second.reportsRead).toBe(0); // nothing after the saved result: nothing read
-    const rebuilt = await storeComputerHistory(store, T, at, { snapshots: new InMemorySnapshotStore() });
+    const rebuilt = await storeComputerHistory(store, T, at, { sealKey: TEST_BOX_HISTORY_KEY, snapshots: new InMemorySnapshotStore() });
     for (const r of [second, rebuilt]) { expect(r.findings).toEqual(first.findings); expect(r.unused).toEqual(first.unused); expect(r.bindings).toEqual(first.bindings); }
   });
 });
@@ -399,14 +402,16 @@ describe.skipIf(DATABASE_URL === undefined)('round 28 · OB-104: the store-compu
         const r = await savedRow();
         return r.rows.length === 1 && Number((r.rows[0] as { above: string }).above) < h.records.length / 2;
       };
-      for (let k = 0; k < 300 && !(await savedFarEnough()); k += 1) {
-        await storeComputerHistory(base, T, at, { snapshots: snaps });
+      // Round 31: bounded by time (2 minutes), not by 300 tries — under the performance suite's load 30 s was not always enough.
+      const deadline = Date.now() + 120_000;
+      while (Date.now() < deadline && !(await savedFarEnough())) {
+        await storeComputerHistory(base, T, at, { sealKey: TEST_BOX_HISTORY_KEY, snapshots: snaps });
         await new Promise((resolve) => { setTimeout(resolve, 100); });
       }
       const saved = await savedRow();
       expect(saved.rows).toHaveLength(1);
       const { store, rows, positioned } = counting(base);
-      const next = await storeComputerHistory(store, T, at, { snapshots: snaps });
+      const next = await storeComputerHistory(store, T, at, { sealKey: TEST_BOX_HISTORY_KEY, snapshots: snaps });
       expect(next.resumed).toBe(true);
       // One read, asked from the saved position; it returns only the reports above it (none, or those the fence held back).
       expect([rows(), positioned()]).toEqual([Number(saved.rows[0].above), 1]);

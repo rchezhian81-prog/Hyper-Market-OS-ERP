@@ -1,6 +1,16 @@
 import type {
   BoxHealthRecord, IssuedReport, RefusedIssued, RefusalAcknowledgement, AtRiskAcknowledgement, StoreComputerReplacement, BoxHistoryJudge,
 } from '../../services/platform/src/box-health';
+import { randomBytes } from 'node:crypto';
+import { boxHistorySealKey } from '../../services/platform/src/box-health';
+
+/**
+ * Round 30 · OB-111: the key the tests seal the store computers' saved history with — made at run time from random bytes, so
+ * no key sits in the repository (a real head office derives its own from PACK_SIGNING_KEY). `OTHER_BOX_HISTORY_KEY` is a
+ * second one: a result sealed with it must be set aside.
+ */
+export const TEST_BOX_HISTORY_KEY = boxHistorySealKey(randomBytes(32).toString('hex'));
+export const OTHER_BOX_HISTORY_KEY = boxHistorySealKey(randomBytes(32).toString('hex'));
 
 // Round 28 · OB-104: seeded random store-computer histories, shared by the windowed-read proofs (unit, memory and PostgreSQL).
 // Each report carries its store position (`seq`); `commitsLate` marks one whose write is slow to become visible (PostgreSQL

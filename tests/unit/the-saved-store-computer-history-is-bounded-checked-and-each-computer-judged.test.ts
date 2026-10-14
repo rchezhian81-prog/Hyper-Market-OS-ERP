@@ -4,9 +4,12 @@ import {
   boxHistoryToStore, boxHistoryFromStore,
   boxHistoryComponents, WAIT_FORGET_HOURS, UNUSED_FORGET_DAYS, UNUSED_CONTRADICTION_MARGIN_MINUTES, BOX_HISTORY_SIZE_WARN_BYTES, BOX_HISTORY_SAVE_HELD_WARN_SECONDS,
   UNUSED_HELD_TIMED_MAX, UNRECEIVED_CHECK_CAP,
-  type BoxHealthRecord, type IssuedReport, type BoxHistorySnapshot,
+  waitingFacts, boxHistorySealKey, WAIT_RANGES_MAX, REFUSED_NEW_PER_DAY_MAX, REFUSED_NOT_KEPT_SHOWN_DAYS, BOX_HISTORY_STORED_FORMAT,
+  type BoxHealthRecord, type IssuedReport, type BoxHistorySnapshot, type RefusedIssued,
 } from '../../services/platform/src/box-health';
+import { createHash } from 'node:crypto';
 import { DEFAULT_THRESHOLDS } from '../../packages/ops/src/index';
+import { TEST_BOX_HISTORY_KEY as K, OTHER_BOX_HISTORY_KEY, rng } from '../support/box-history';
 
 /**
  * **Round 29 — owner decisions OB-105, OB-106, OB-107, OB-108 "A" (14 Oct 2026, in writing) and verifier r28 NEW-6, as rules.**
@@ -72,20 +75,20 @@ describe('round 29 · OB-105: what the saved result remembers, and for how long'
       receiptNumbersRefused: [{ prefix: 'C-', through: 20_000, because: 'beyond_plausible_advance', bankedThrough: 0, plausibleThrough: 10_000 }],
     } as BoxHealthRecord));
     const banked = new Map([['A-', 100], ['C-', 30_000]]);
-    const first = readBoxHistory({ entries: entries(records), at: iso(200), banked, settleBefore: iso(190), settledThrough: 80, timeZone: 'UTC' });
+    const first = readBoxHistory({ sealKey: K, entries: entries(records), at: iso(200), banked, settleBefore: iso(190), settledThrough: 80, timeZone: 'UTC' });
     if ('setAside' in first) throw new Error(first.setAside);
     const snap = JSON.parse(JSON.stringify(first.snapshot)) as BoxHistorySnapshot;
     expect(snap.rfBanked).toEqual([['C-', 30_000]]);
     const prefixes = (snap.stores as unknown[][])[0]![2] as unknown[][];
     expect(prefixes.find((p) => p[0] === 'C-')![5]).toEqual([]); // its refused group is gone (answered for good)
-    expect(readBoxHistory({ entries: [], snapshot: snap, at: iso(201), banked, timeZone: 'UTC' })).not.toHaveProperty('setAside');
-    expect(readBoxHistory({ entries: [], snapshot: snap, at: iso(201), banked: new Map([['A-', 100], ['C-', 0]]), timeZone: 'UTC' })).toEqual({ setAside: 'banked' });
+    expect(readBoxHistory({ sealKey: K, entries: [], snapshot: snap, at: iso(201), banked, timeZone: 'UTC' })).not.toHaveProperty('setAside');
+    expect(readBoxHistory({ sealKey: K, entries: [], snapshot: snap, at: iso(201), banked: new Map([['A-', 100], ['C-', 0]]), timeZone: 'UTC' })).toEqual({ setAside: 'banked' });
   });
 });
 
 describe('round 29 · OB-106: a saved result is checked before it is used (the verifier\'s probe C1)', () => {
   const records = Array.from({ length: 100 }, (_, m) => rec(m, 'A-', { through: 100 }));
-  const made = readBoxHistory({ entries: entries(records), at: iso(200), banked: new Map([['A-', 100]]), settleBefore: iso(190), settledThrough: 100 });
+  const made = readBoxHistory({ sealKey: K, entries: entries(records), at: iso(200), banked: new Map([['A-', 100]]), settleBefore: iso(190), settledThrough: 100 });
   if ('setAside' in made) throw new Error(made.setAside);
   const snap = JSON.parse(JSON.stringify(made.snapshot)) as BoxHistorySnapshot;
 
@@ -101,7 +104,7 @@ describe('round 29 · OB-106: a saved result is checked before it is used (the v
     ];
     for (const [name, s] of cases) {
       let got: unknown;
-      expect(() => { got = readBoxHistory({ entries: [], snapshot: s as BoxHistorySnapshot, at: iso(201), banked: new Map([['A-', 100]]) }); }, name).not.toThrow();
+      expect(() => { got = readBoxHistory({ sealKey: K, entries: [], snapshot: s as BoxHistorySnapshot, at: iso(201), banked: new Map([['A-', 100]]) }); }, name).not.toThrow();
       expect((got as { setAside?: string }).setAside, name).toMatch(/^unreadable: /);
     }
   });
@@ -110,9 +113,9 @@ describe('round 29 · OB-106: a saved result is checked before it is used (the v
     const altered = JSON.parse(JSON.stringify(snap)) as { rawBound: { computer: string }[]; never: { bound: { computer: string }[] } };
     for (const b of altered.never.bound) b.computer = 'u-evil';
     for (const b of altered.rawBound) b.computer = 'u-evil';
-    expect(boxHistoryUnreadable(altered)).toBe('its seal does not match its content (damaged or altered)');
-    expect(readBoxHistory({ entries: [], snapshot: altered as unknown as BoxHistorySnapshot, at: iso(201), banked: new Map([['A-', 100]]) }))
-      .toEqual({ setAside: 'unreadable: its seal does not match its content (damaged or altered)' });
+    expect(boxHistoryUnreadable(altered, K)).toBe('its seal does not match its content (damaged, altered, or sealed with another key)');
+    expect(readBoxHistory({ sealKey: K, entries: [], snapshot: altered as unknown as BoxHistorySnapshot, at: iso(201), banked: new Map([['A-', 100]]) }))
+      .toEqual({ setAside: 'unreadable: its seal does not match its content (damaged, altered, or sealed with another key)' });
   });
 
   it('it is KEPT as its JSON text, so PostgreSQL\'s jsonb (which reorders an object\'s keys) never changes what is sealed', () => {
@@ -121,19 +124,19 @@ describe('round 29 · OB-106: a saved result is checked before it is used (the v
     // As a jsonb row would hand it back: the text inside is a string, kept exactly — readable, the same seal.
     const row = reorder(JSON.parse(JSON.stringify(boxHistoryToStore(snap))));
     const back = boxHistoryFromStore(row) as BoxHistorySnapshot;
-    expect(boxHistoryUnreadable(back)).toBeUndefined();
+    expect(boxHistoryUnreadable(back, K)).toBeUndefined();
     expect(back.check).toBe(snap.check);
-    expect('setAside' in readBoxHistory({ entries: [], snapshot: back, at: iso(201), banked: new Map([['A-', 100]]) })).toBe(false);
+    expect('setAside' in readBoxHistory({ sealKey: K, entries: [], snapshot: back, at: iso(201), banked: new Map([['A-', 100]]) })).toBe(false);
     // A JSON TREE with its keys reordered is not what was sealed (that is why it is never kept as one), and not the saved form.
-    expect(boxHistoryUnreadable(reorder(snap))).toBe('its seal does not match its content (damaged or altered)');
-    expect(boxHistoryUnreadable(boxHistoryFromStore(snap))).toBe('it is not in the saved form (box-history-text@1)');
-    expect(sealBoxHistory(snap).check).toBe(snap.check);
+    expect(boxHistoryUnreadable(reorder(snap), K)).toBe('its seal does not match its content (damaged, altered, or sealed with another key)');
+    expect(boxHistoryUnreadable(boxHistoryFromStore(snap), K)).toBe('it is not in the saved form (box-history-text@2)');
+    expect(sealBoxHistory(snap, K).check).toBe(snap.check);
   });
 
   it('a damaged shape that was even RE-SEALED is still set aside, by the shape check (every field is checked, not only the seal)', () => {
     for (const bad of [{ stores: [['S1', null, 'x', 'y', 'z']] }, { never: { ...snap.never, keys: [{}] } }, { folded: ['x'] }, { verdicts: { own: [[1]], ahead: [] } }]) {
-      const resealed = sealBoxHistory({ ...snap, ...bad } as never);
-      expect(boxHistoryUnreadable(resealed), JSON.stringify(bad)).toMatch(/^its part ".+" is missing or not readable$/);
+      const resealed = sealBoxHistory({ ...snap, ...bad } as never, K);
+      expect(boxHistoryUnreadable(resealed, K), JSON.stringify(bad)).toMatch(/^its part ".+" is missing or not readable$/);
     }
   });
 
@@ -177,7 +180,7 @@ describe('round 29 · OB-107: each store computer holding the store\'s tills is 
 
   it('the saved running result says exactly the same (judgeBoxes from its view)', () => {
     const banked = new Map([['A-', 100], ['B-', 5]]);
-    const got = readBoxHistory({ entries: entries(records), at, banked, settleBefore: iso(50), settledThrough: records.length });
+    const got = readBoxHistory({ sealKey: K, entries: entries(records), at, banked, settleBefore: iso(50), settledThrough: records.length });
     if ('setAside' in got) throw new Error(got.setAside);
     const full = judgeBoxes({ records, at, thresholds: DEFAULT_THRESHOLDS, bindings: got.bindings, unusedNumbers: got.unused });
     expect(judgeBoxes({ records: [], view: got.view, at, thresholds: DEFAULT_THRESHOLDS, bindings: got.bindings, unusedNumbers: got.unused })).toEqual(full);
@@ -230,5 +233,272 @@ describe('round 29 · verifier r28 NEW-6: the said time to the minute; the limit
     const r = readNeverReceived({ records, at: iso(1), banked: new Map([['A-', 110]]) });
     const j = judgeBoxes({ records, at: iso(1), thresholds: DEFAULT_THRESHOLDS, bindings: r.bindings, unusedNumbers: r.unused, unusedCapped: new Map([['S1', [{ prefix: 'A-', notChecked: 3, notTimed: 0 }]]]) });
     expect(j.components.find((c) => c.name === 'box_unused_numbers:S1')!.detail).toMatch(/Under A-: Not every number was looked at: 3 older number\(s\) said unused/);
+  });
+});
+
+/**
+ * **Round 30 — owner decisions OB-109, OB-110, OB-111, OB-112 "A" (14 Oct 2026, in writing; verifier r29 NEW-1…NEW-4), as rules.**
+ *
+ *   OB-109: the waiting clock forgets a number only after WAIT_FORGET_HOURS REPORT-hours that leave it out — never across
+ *     silence. The verifier's probe P1 (a bill stuck from 08:00, no reports at all from 10 h to 35 h) keeps 08:00.
+ *   OB-110: the clock keeps the numbers ever listed as ranges with their first sight, at most WAIT_RANGES_MAX per prefix; a
+ *     joined range keeps the EARLIER sight, so a bill can only ever look older, never younger (checked against a brute-force
+ *     first sight per number); an honest stuck bill with trade going on stays small and close to the truth.
+ *   OB-111: the saved result's seal is keyed: the verifier's probe P2 (unused runs cleared and re-sealed with plain SHA-256)
+ *     is set aside, so is one sealed with another key; without a key nothing saved is trusted and nothing is saved.
+ *   OB-112: at most REFUSED_NEW_PER_DAY_MAX new words a day per store computer about prefixes that are not the store's; the
+ *     rest are counted in one line. The verifier's probe P4 (200 bogus prefixes per report) keeps the saved result small,
+ *     and the saved result says exactly what the plain reading says.
+ */
+
+const rec30 = (min: number, x: Partial<IssuedReport> & { through: number }, extra: Partial<BoxHealthRecord> = {}): BoxHealthRecord => ({
+  storeId: 'S1', observedAt: iso(min), receivedAt: iso(min), reportedBy: 'u-box-a', clockAheadCorrected: false, tills: [], disk: DISK,
+  queue: { unsent: x.unsent?.count ?? 0, deadLettered: 0 },
+  receiptNumbersIssued: [{ prefix: 'A-', soldThrough: x.through, unsent: { count: 0 }, ...x } as IssuedReport],
+  ...extra,
+} as BoxHealthRecord);
+const sinceOf = (records: BoxHealthRecord[], atMin: number) => billsWaitingOnTheBox({ records, storeId: 'S1', at: iso(atMin) }).map((f) => [f.kind, f.since]);
+
+describe('round 30 · OB-109: silence never counts as "not listed" (the verifier\'s probe P1)', () => {
+  const stuck = (m: number) => rec30(m, { through: 105, unsent: { count: 1, from: 105, to: 105 } });
+  const quiet = (m: number) => rec30(m, { through: 105, unsent: { count: 0 } });
+
+  it('P1: a bill stuck from 08:00, no reports at all from 10 h to 35 h — still "since 08:00" after the outage, never cleared', () => {
+    const records: BoxHealthRecord[] = [];
+    for (let m = 0; m <= 10 * 60; m += 15) records.push(stuck(m));
+    expect(sinceOf(records, 10 * 60 + 1)).toEqual([['bills_waiting_on_box', iso(0)]]);
+    for (let m = 35 * 60; m <= 36 * 60; m += 15) records.push(stuck(m));
+    // First reports after reconnecting: the finding is still there, with its true age (before round 30: none, then "since 19:00").
+    expect(sinceOf(records.slice(0, records.length - 4), 35 * 60 + 1)).toEqual([['bills_waiting_on_box', iso(0)]]);
+    expect(sinceOf(records, 36 * 60 + 1)).toEqual([['bills_waiting_on_box', iso(0)]]);
+    expect(sinceOf([...records, stuck(38 * 60)], 38 * 60 + 1)).toEqual([['bills_waiting_on_box', iso(0)]]);
+    // The saved running result says the same, read in windows across the outage.
+    let snapshot: BoxHistorySnapshot | undefined;
+    const all = [...records, stuck(38 * 60)];
+    for (const cut of [20, 41, all.length]) {
+      const at = iso(Math.round((Date.parse(all[cut - 1]!.receivedAt) - t0) / 60_000) + 1);
+      const window = entries(all.slice(0, cut)).filter((e) => snapshot === undefined || e.seq > snapshot.seq);
+      const got = readBoxHistory({ sealKey: K, entries: window, ...(snapshot === undefined ? {} : { snapshot }), at, banked: new Map([['A-', 104]]), settleBefore: at, settledThrough: cut });
+      if ('setAside' in got) throw new Error(got.setAside);
+      if (got.snapshot !== undefined) snapshot = JSON.parse(JSON.stringify(got.snapshot)) as BoxHistorySnapshot;
+      expect(billsWaitingOnTheBox({ records: [], storeId: 'S1', at, facts: got.view.waiting('S1') }).map((f) => f.since)).toEqual([iso(0)]);
+    }
+  });
+
+  it(`only REPORT-hours that leave a number out count: ${WAIT_FORGET_HOURS} of them forget it, however long the silence between`, () => {
+    // Listed at 0; left out by reports in hours 1–12; NO reports for 28 hours; left out again in hours 41–50 (22 report-hours).
+    const base = [stuck(0), ...Array.from({ length: 12 }, (_, h) => quiet(60 * (h + 1))), ...Array.from({ length: 10 }, (_, h) => quiet(60 * (41 + h)))];
+    expect(sinceOf([...base, stuck(51 * 60)], 51 * 60 + 1)).toEqual([['bills_waiting_on_box', iso(0)]]);
+    // Two more report-hours leaving it out (24): forgotten — listed again, its clock starts then.
+    const more = [...base, quiet(51 * 60), quiet(52 * 60), stuck(53 * 60)];
+    expect(sinceOf(more, 53 * 60 + 1)).toEqual([]);
+    expect(sinceOf([...more, stuck(56 * 60)], 56 * 60 + 1)).toEqual([['bills_waiting_on_box', iso(53 * 60)]]);
+  });
+
+  it(`the ${WAIT_FORGET_HOURS} report-hours must be IN A ROW: a list naming the number again starts the count again`, () => {
+    // Listed at 0, left out in hours 1–20, listed at 21, left out in hours 22–40: never 24 in a row — still since 0.
+    const records = [stuck(0), ...Array.from({ length: 20 }, (_, h) => quiet(60 * (h + 1))), stuck(21 * 60), ...Array.from({ length: 19 }, (_, h) => quiet(60 * (22 + h))), stuck(41 * 60)];
+    expect(sinceOf(records, 41 * 60 + 1)).toEqual([['bills_waiting_on_box', iso(0)]]);
+  });
+
+  it('a report that does not say WHICH bills are waiting (an older store computer) is not a report-hour that leaves a number out', () => {
+    const noList = (m: number): BoxHealthRecord => rec30(m, { through: 105, unsent: undefined } as never);
+    const records = [stuck(0), ...Array.from({ length: 30 }, (_, h) => noList(60 * (h + 1))), stuck(31 * 60)];
+    expect(sinceOf(records, 31 * 60 + 1)).toEqual([['bills_waiting_on_box', iso(0)]]);
+  });
+});
+
+describe('round 30 · OB-110: the waiting clock is ranges with their first sight, bounded, and only ever errs OLDER', () => {
+  it('against a brute-force first sight per number (random lists): never younger; exact while the ranges fit', () => {
+    let exactSeeds = 0;
+    for (let seed = 1; seed <= 60; seed += 1) {
+      const rnd = rng(seed);
+      const records: BoxHealthRecord[] = [];
+      const firstSeen = new Map<number, number>();
+      let top = 20;
+      // Under 24 report-hours, so nothing is forgotten and the brute force needs no memory rule. Odd seeds: a busy till (far
+      // more numbers than WAIT_RANGES_MAX, so ranges are joined); even seeds: a quiet one (they all fit, so it is exact).
+      const busy = seed % 2 === 1;
+      for (let m = 0; m < 20 * 60; m += busy ? 3 : 15) {
+        top += busy || rnd() < 0.15 ? Math.floor(rnd() * 3) : 0;
+        const from = Math.max(1, top - Math.floor(rnd() * (busy && rnd() < 0.1 ? 400 : 6)));
+        const to = Math.min(top, from + Math.floor(rnd() * 5));
+        records.push(rec30(m, { through: top, unsent: { count: 1, from, to } }));
+        for (let n = from; n <= to; n += 1) if (!firstSeen.has(n)) firstSeen.set(n, m);
+      }
+      const facts = waitingFacts({ records, storeId: 'S1', at: iso(20 * 60) })[0]!;
+      let exact = true;
+      for (let q = 0; q < 200; q += 1) {
+        const from = 1 + Math.floor(rnd() * top);
+        const to = Math.min(top, from + Math.floor(rnd() * 30));
+        let brute = Infinity;
+        for (let n = from; n <= to; n += 1) brute = Math.min(brute, firstSeen.get(n) ?? Infinity);
+        const got = facts.firstWaiting(from, to);
+        if (brute === Infinity) { expect(got === undefined || Date.parse(got.at) <= Date.parse(iso(20 * 60))).toBe(true); continue; }
+        expect(got, `seed ${seed} [${from}, ${to}]`).toBeDefined();
+        expect(Date.parse(got!.at), `seed ${seed} [${from}, ${to}]: never younger than the truth`).toBeLessThanOrEqual(t0 + brute * 60_000);
+        if (Date.parse(got!.at) !== t0 + brute * 60_000) exact = false;
+      }
+      // Few distinct first sights → no join needed → exact.
+      if (firstSeen.size <= WAIT_RANGES_MAX) { exactSeeds += 1; expect(exact, `seed ${seed}`).toBe(true); }
+    }
+    expect(exactSeeds).toBeGreaterThanOrEqual(25);
+  });
+
+  it('an honest stuck bill for 7 days while trade goes on (lists [S, newest]): the clock stays within its cap, and the next oldest bill is aged close to the truth', () => {
+    const records: BoxHealthRecord[] = [];
+    const firstSeen = new Map<number, number>();
+    const S = 50;
+    let S2: number | undefined;
+    let through = 100;
+    const EVERY = 2; // a report every 2 minutes, a bill every report
+    for (let m = 0; m <= 7 * 24 * 60; m += EVERY) {
+      through += 1;
+      if (S2 === undefined && m >= 3 * 24 * 60) S2 = through; // a second bill gets stuck on day 3
+      const from = m < 7 * 24 * 60 ? S : (S2 ?? through);
+      records.push(rec30(m, { through, unsent: { count: S2 === undefined ? 2 : 3, from, to: through } }));
+      for (let n = from; n <= through; n += 1) if (!firstSeen.has(n)) firstSeen.set(n, m);
+    }
+    const at = 7 * 24 * 60 + 1;
+    const f = billsWaitingOnTheBox({ records, storeId: 'S1', at: iso(at) });
+    // S released at the end: the oldest is now S2 — aged from no LATER than its true first sight, and within 10% of its age.
+    const truth = firstSeen.get(S2!)!;
+    const since = (Date.parse(f[0]!.since) - t0) / 60_000;
+    expect(since).toBeLessThanOrEqual(truth);
+    expect(truth - since).toBeLessThanOrEqual(0.1 * (at - truth));
+    // Then S2 is sent too: the newest bills (sold minutes ago) are aged within a few minutes of the truth, never younger.
+    const next = [...records, rec30(at + 1, { through: through + 1, unsent: { count: 2, from: through, to: through + 1 } })];
+    const g = billsWaitingOnTheBox({ records: next, storeId: 'S1', at: iso(at + 2 + 120) });
+    const newest = firstSeen.get(through)!;
+    expect(g).toHaveLength(1);
+    expect((Date.parse(g[0]!.since) - t0) / 60_000).toBeLessThanOrEqual(newest);
+    expect(newest - (Date.parse(g[0]!.since) - t0) / 60_000).toBeLessThanOrEqual(5);
+    // The saved result keeps at most WAIT_RANGES_MAX ranges for the prefix (6 numbers each, after 2 header numbers).
+    const got = readBoxHistory({ sealKey: K, entries: entries(records), at: iso(at), banked: new Map([['A-', through]]), settleBefore: iso(at - 1), settledThrough: records.length });
+    if ('setAside' in got) throw new Error(got.setAside);
+    const clock = ((got.snapshot!.stores as unknown[][])[0]![3] as unknown[][])[0]![2] as unknown[];
+    expect((clock.length - 2) / 6).toBeLessThanOrEqual(WAIT_RANGES_MAX);
+    expect(billsWaitingOnTheBox({ records: [], storeId: 'S1', at: iso(at), facts: got.view.waiting('S1') })).toEqual(f);
+  });
+});
+
+describe('round 30 · OB-111: the saved result\'s seal is keyed (the verifier\'s probe P2)', () => {
+  const records: BoxHealthRecord[] = [];
+  for (let m = 0; m < 100; m += 1) records.push(rec30(m, { through: 110, unused: [[105, 106]] } as never));
+  const made = readBoxHistory({ sealKey: K, entries: entries(records), at: iso(200), banked: new Map([['A-', 110]]), settleBefore: iso(190), settledThrough: 100, timeZone: 'UTC' });
+  if ('setAside' in made) throw new Error(made.setAside);
+  const snap = JSON.parse(JSON.stringify(made.snapshot)) as BoxHistorySnapshot;
+  const altered = (): Record<string, unknown> => {
+    const s = JSON.parse(JSON.stringify(snap)) as Record<string, unknown> & { never: { keys: { unused: unknown[]; unusedList: unknown }[] } };
+    for (const k of s.never.keys) { k.unused = []; k.unusedList = null; }
+    delete s['check']; delete s['sizeBytes'];
+    return s;
+  };
+
+  it('P2: unused runs cleared and re-sealed with plain SHA-256 (the round-29 seal) — set aside, the unused run still shown on a rebuild', () => {
+    const honest = readBoxHistory({ sealKey: K, entries: [], snapshot: snap, at: iso(201), banked: new Map([['A-', 110]]), timeZone: 'UTC' });
+    if ('setAside' in honest) throw new Error(honest.setAside);
+    expect([...honest.unused.get('S1') ?? []].flatMap((u) => u.runs.map((r) => [r.from, r.to]))).toEqual([[105, 106]]);
+    const a = altered();
+    const text = JSON.stringify(a);
+    const plain = { ...a, check: createHash('sha256').update(text).digest('hex'), sizeBytes: Buffer.byteLength(text) };
+    expect(boxHistoryUnreadable(JSON.parse(JSON.stringify(plain)), K)).toBe('its seal does not match its content (damaged, altered, or sealed with another key)');
+    expect(readBoxHistory({ sealKey: K, entries: [], snapshot: plain as unknown as BoxHistorySnapshot, at: iso(201), banked: new Map([['A-', 110]]), timeZone: 'UTC' }))
+      .toEqual({ setAside: 'unreadable: its seal does not match its content (damaged, altered, or sealed with another key)' });
+  });
+
+  it('sealed with ANOTHER key: set aside; with the same key: used; with no key: nothing saved is trusted and nothing is saved', () => {
+    const other = sealBoxHistory(altered() as never, OTHER_BOX_HISTORY_KEY);
+    expect(boxHistoryUnreadable(other, K)).toMatch(/sealed with another key/);
+    expect(boxHistoryUnreadable(other, OTHER_BOX_HISTORY_KEY)).toBeUndefined();
+    expect(boxHistoryUnreadable(snap, undefined)).toBe('head office was given no seal key, so no saved result is trusted');
+    expect(readBoxHistory({ entries: [], snapshot: snap, at: iso(201), banked: new Map([['A-', 110]]), timeZone: 'UTC' }))
+      .toEqual({ setAside: 'unreadable: head office was given no seal key, so no saved result is trusted' });
+    const unkeyed = readBoxHistory({ entries: entries(records), at: iso(200), banked: new Map([['A-', 110]]), settleBefore: iso(190), settledThrough: 100, timeZone: 'UTC' });
+    expect('snapshot' in unkeyed && unkeyed.snapshot !== undefined).toBe(false);
+    // The seal is an HMAC under the key, not a digest anyone can work out.
+    const { check, sizeBytes: _z, ...rest } = snap; void _z;
+    expect(check).not.toBe(createHash('sha256').update(JSON.stringify(rest)).digest('hex'));
+    expect(BOX_HISTORY_STORED_FORMAT).toBe('box-history-text@2');
+  });
+
+  it('the key is derived from the full pack signing key only (a short one is refused), and differs per pack signing key', () => {
+    expect(() => boxHistorySealKey('too-short')).toThrow(/full pack signing key/);
+    const a = boxHistorySealKey('a'.repeat(40));
+    expect(a.equals(boxHistorySealKey('a'.repeat(40)))).toBe(true);
+    expect(a.equals(boxHistorySealKey('b'.repeat(40)))).toBe(false);
+  });
+
+  it('a head office started without the key says so on the health read (degraded), never silently', () => {
+    const c = boxHistoryComponents({ history: { sizeBytes: null, saveHeld: null, lastBuildFailed: null, noSealKey: true } });
+    expect(c).toEqual([expect.objectContaining({ name: 'box_history_seal', status: 'degraded' })]);
+    expect(boxHistoryComponents({ history: { sizeBytes: null, saveHeld: null, lastBuildFailed: null } })).toEqual([]);
+  });
+});
+
+describe('round 30 · OB-112: refused words about prefixes not the store\'s are capped per store computer per day (the verifier\'s probe P4)', () => {
+  const refused = (prefix: string, through: number): RefusedIssued => ({ prefix, through, because: 'prefix_of_another_store', bankedThrough: 0 });
+  const flood = (i: number, min: number, n = 200): BoxHealthRecord => rec30(min, { through: 100 }, {
+    receiptNumbersRefused: Array.from({ length: n }, (_, k) => refused(`Z${i}x${k}-`, 5)),
+  } as Partial<BoxHealthRecord>);
+  const findingsAt = (records: BoxHealthRecord[], at: string) => billNumberFindingsFor({ storeId: 'S1', records, at, unreceived: [], banked: new Map([['A-', 100]]) })
+    .filter((f) => f.kind === 'report_refused' || f.kind === 'report_refused_not_kept');
+
+  it('P4: 200 new bogus prefixes per report for 200 minutes — the saved result stays small; one line counts the rest', () => {
+    const records = Array.from({ length: 800 }, (_, i) => flood(i, i / 4));
+    const at = iso(230);
+    const got = readBoxHistory({ sealKey: K, entries: entries(records), at, banked: new Map([['A-', 100]]), settleBefore: iso(220), settledThrough: 800 });
+    if ('setAside' in got) throw new Error(got.setAside);
+    // Before round 30: 55.69 MB (and PostgreSQL's jsonb limit in about 15 hours).
+    expect(got.snapshot!.sizeBytes).toBeLessThan(100 * 1024);
+    const f = billNumberFindingsFor({ storeId: 'S1', records: [], at, unreceived: [], facts: got.facts('S1') });
+    expect(f.filter((x) => x.kind === 'report_refused')).toHaveLength(REFUSED_NEW_PER_DAY_MAX);
+    const line = f.filter((x) => x.kind === 'report_refused_not_kept');
+    expect(line).toEqual([expect.objectContaining({ count: 800 * 200 - REFUSED_NEW_PER_DAY_MAX, since: iso(0) })]);
+    expect(line[0]!.detail).toMatch(/159980 more refused bill-number prefix\(es\) not kept: store S1's computer u-box-a/);
+    // The plain reading says exactly the same.
+    expect(findingsAt(records, at)).toEqual(f.filter((x) => x.kind === 'report_refused' || x.kind === 'report_refused_not_kept'));
+  });
+
+  it('words about prefixes already kept, and the store\'s OWN prefixes, are never capped; a new day keeps 20 new ones again; the line goes after 7 quiet days', () => {
+    const own = (min: number): BoxHealthRecord => rec30(min, { through: 100 }, {
+      receiptNumbersRefused: [{ prefix: 'A-', through: 900_000 + min, because: 'beyond_plausible_advance', bankedThrough: 100, plausibleThrough: 10_100 }, refused('Z0x0-', 5)],
+    } as Partial<BoxHealthRecord>);
+    const day = 24 * 60;
+    const records = [flood(0, 0, 30), own(1), own(2), flood(1, day + 1, 30)];
+    const f = findingsAt(records, iso(day + 2));
+    // A- (own, never capped) + 20 kept on day 1 + 20 kept on day 2.
+    expect(f.filter((x) => x.kind === 'report_refused').map((x) => x.prefix)).toContain('A-');
+    expect(f.filter((x) => x.kind === 'report_refused')).toHaveLength(1 + 2 * REFUSED_NEW_PER_DAY_MAX);
+    expect(f.find((x) => x.kind === 'report_refused_not_kept')).toMatchObject({ count: 20 });
+    expect(findingsAt(records, iso(day + 1 + REFUSED_NOT_KEPT_SHOWN_DAYS * day + 1)).some((x) => x.kind === 'report_refused_not_kept')).toBe(false);
+  });
+
+  it('the saved result read in windows over three days of flooding says exactly what the plain reading says, at every read', () => {
+    const rnd = rng(30);
+    const records: BoxHealthRecord[] = [];
+    for (let i = 0; i < 3 * 24 * 6; i += 1) {
+      const min = i * 10;
+      const names = Array.from({ length: 1 + Math.floor(rnd() * 8) }, () => refused(`P${Math.floor(rnd() * 90)}-`, 1 + Math.floor(rnd() * 4)));
+      const unique = [...new Map(names.map((r) => [r.prefix, r])).values()];
+      records.push({
+        ...rec30(min, { through: 100 }), reportedBy: rnd() < 0.5 ? 'u-box-a' : 'u-box-b',
+        receiptNumbersRefused: unique,
+        receiptNumbersNotFolded: rnd() < 0.3 ? [{ prefix: `N${Math.floor(rnd() * 40)}-`, through: 3 }] : [],
+      } as BoxHealthRecord);
+    }
+    let snapshot: BoxHistorySnapshot | undefined;
+    let notKept = 0;
+    for (let cut = 30; cut <= records.length; cut += 37) {
+      const at = new Date(Date.parse(records[cut - 1]!.receivedAt) + 60_000).toISOString();
+      const window = entries(records.slice(0, cut)).filter((e) => snapshot === undefined || e.seq > snapshot.seq);
+      const got = readBoxHistory({ sealKey: K, entries: window, ...(snapshot === undefined ? {} : { snapshot }), at, banked: new Map([['A-', 100]]), settleBefore: at, settledThrough: cut });
+      if ('setAside' in got) throw new Error(got.setAside);
+      if (got.snapshot !== undefined) snapshot = JSON.parse(JSON.stringify(got.snapshot)) as BoxHistorySnapshot;
+      const windowed = billNumberFindingsFor({ storeId: 'S1', records: [], at, unreceived: [], facts: got.facts('S1') }).filter((f) => f.kind === 'report_refused' || f.kind === 'report_refused_not_kept');
+      expect(windowed).toEqual(findingsAt(records.slice(0, cut), at));
+      notKept = Math.max(notKept, windowed.filter((f) => f.kind === 'report_refused_not_kept').length);
+    }
+    expect(notKept).toBeGreaterThan(0); // the cap was reached in this history, and both readings agreed on it
   });
 });

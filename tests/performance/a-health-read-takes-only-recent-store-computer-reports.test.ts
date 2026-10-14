@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { InMemoryEventStore, type EventStore, type ReadOptions } from '../../packages/persistence/src/event-store';
 import type { Snapshot, SnapshotStore } from '../../packages/persistence/src/snapshot';
 import { makeEvent } from '../../packages/contracts/src/event';
+import { TEST_BOX_HISTORY_KEY } from '../support/box-history';
 import { STREAM, streamName, storeComputerHistory } from '../../services/api/src/adapters';
 import { judgeBoxes, type BoxHealthRecord } from '../../services/platform/src/box-health';
 import { DEFAULT_THRESHOLDS } from '../../packages/ops/src/index';
@@ -119,7 +120,7 @@ describe('round 28 · OB-104: a health read takes only the store-computer report
     const snaps = new JsonSnapshotStore();
     // Round 29 · OB-106: a month is far above BOX_HISTORY_INLINE_MAX, so its first build runs in the background (in steps);
     // the first read here waits for it (a health read would answer "being prepared" meanwhile).
-    const opts = { snapshots: snaps, timeZone: 'UTC', waitMs: Infinity };
+    const opts = { sealKey: TEST_BOX_HISTORY_KEY, snapshots: snaps, timeZone: 'UTC', waitMs: Infinity };
     const health = async (at: string) => {
       const reading = await storeComputerHistory(store, T, at, opts);
       const boxes = judgeBoxes({ records: [], view: reading.view, at, thresholds: DEFAULT_THRESHOLDS, billNumberFindings: reading.findings, bindings: reading.bindings, unusedNumbers: reading.unused });
@@ -154,7 +155,7 @@ describe('round 28 · OB-104: a health read takes only the store-computer report
     expect((box.billNumberFindings ?? []).filter((f) => f.kind === 'at_risk_not_checked')).toHaveLength(TILLS);
     expect(box.unusedNumbers?.length).toBeGreaterThan(0);
     expect(box.tradingHoursLeft).not.toBeNull();
-    expect(last.reading.findings).toEqual((await storeComputerHistory(base, T, new Date(lastMs + EVERY_MS).toISOString(), { snapshots: new JsonSnapshotStore(), timeZone: 'UTC', waitMs: Infinity })).findings);
+    expect(last.reading.findings).toEqual((await storeComputerHistory(base, T, new Date(lastMs + EVERY_MS).toISOString(), { sealKey: TEST_BOX_HISTORY_KEY, snapshots: new JsonSnapshotStore(), timeZone: 'UTC', waitMs: Infinity })).findings);
     for (const t of times.slice(1)) expect(t, `a read took ${t.toFixed(0)} ms`).toBeLessThan(1_000);
     for (const n of read) expect(n).toBeLessThanOrEqual(128);
   }, 900_000);

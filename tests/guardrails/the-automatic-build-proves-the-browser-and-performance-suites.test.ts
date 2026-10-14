@@ -69,7 +69,7 @@ describe('the browser job', () => {
 describe('the performance job', () => {
   it('is required, never skips, with the same no-skip floor', () => {
     expect(performance).toMatch(/name: Performance suites — required, never skip/);
-    expect(performance).toMatch(/pnpm run test:perf --reporter=default --reporter=json --outputFile=\/tmp\/perf\.json/);
+    expect(performance).toMatch(/pnpm run test:perf --reporter=default (--reporter=github-actions )?--reporter=json --outputFile=\/tmp\/perf\.json/);
     const floor = /node scripts\/assert-suite-ran\.mjs \/tmp\/perf\.json --min-files (\d+) --min-tests (\d+)/.exec(performance);
     expect(floor).not.toBeNull();
     const files = readdirSync('tests/performance').filter((f) => f.endsWith('.test.ts')).length;

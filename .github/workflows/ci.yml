@@ -423,8 +423,13 @@ jobs:
 
       - name: Performance suites — required, never skip
         run: |
-          pnpm run test:perf --reporter=default --reporter=json --outputFile=/tmp/perf.json
-          node scripts/assert-suite-ran.mjs /tmp/perf.json --min-files 9 --min-tests 44
+          set -o pipefail
+          pnpm run test:perf --reporter=default --reporter=github-actions --reporter=json --outputFile=/tmp/perf.json 2>&1 | tee /tmp/perf.log || {
+            # The run's logs cannot be fetched from a build session; name each failing test and its measurement on the check.
+            grep -E 'FAIL|Error|×|expected|took' /tmp/perf.log | grep -v '✓' | tail -40 | while IFS= read -r line; do echo "::error::${line:0:300}"; done
+            exit 1
+          }
+          node scripts/assert-suite-ran.mjs /tmp/perf.json --min-files 10 --min-tests 47
 
   identity:
     name: Identity server suites (real Keycloak)

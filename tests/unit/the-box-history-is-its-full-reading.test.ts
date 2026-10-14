@@ -5,7 +5,7 @@ import {
   type RefusalAcknowledgement, type AtRiskAcknowledgement, type UnreceivedCandidate, type UnreceivedNumbers,
 } from '../../services/platform/src/box-health';
 import { DEFAULT_THRESHOLDS } from '../../packages/ops/src/index';
-import { history, longHistory, honestStore, judged, rng, iso, type Seeded } from '../support/box-history';
+import { history, longHistory, honestStore, judged, rng, iso, TEST_BOX_HISTORY_KEY, type Seeded } from '../support/box-history';
 
 /**
  * **Round 28 · OB-104 "A" (owner, 13 Oct 2026, in writing, "Before the pilot") — a health read that reads only the reports
@@ -107,10 +107,10 @@ function readAgainAndAgain(h: Seeded, seed: number, t: Tally, step = 8): void {
           settleBefore: iso(atMs - FOLD_SETTLE_MINUTES * 60_000), settledThrough,
         };
         const window = snapshot === undefined ? visible : visible.filter((r) => r.seq > snapshot!.seq);
-        let got = readBoxHistory({ entries: entriesOf(window), ...(snapshot === undefined ? {} : { snapshot }), ...common });
+        let got = readBoxHistory({ sealKey: TEST_BOX_HISTORY_KEY, entries: entriesOf(window), ...(snapshot === undefined ? {} : { snapshot }), ...common });
         if ('setAside' in got) {
           asides.set(got.setAside, (asides.get(got.setAside) ?? 0) + 1);
-          got = readBoxHistory({ entries: entriesOf(visible), ...common });
+          got = readBoxHistory({ sealKey: TEST_BOX_HISTORY_KEY, entries: entriesOf(visible), ...common });
           if ('setAside' in got) throw new Error('cannot set aside a read from nothing');
           everything += visible.length;
         } else {
@@ -194,6 +194,7 @@ describe('round 28 · OB-104: the windowed health read is the full reading', () 
       const visible = records.slice(0, seen);
       const window = snapshot === undefined ? visible : visible.filter((r) => r.seq > snapshot!.seq);
       const got = readBoxHistory({
+        sealKey: TEST_BOX_HISTORY_KEY,
         entries: window.map(({ seq, ...r }) => ({ raw: r as BoxHealthRecord, judged: r as BoxHealthRecord, seq })), ...(snapshot === undefined ? {} : { snapshot }),
         at, banked, judge, ...settings, settleBefore: iso(Date.parse(at) - FOLD_SETTLE_MINUTES * 60_000), settledThrough: seen,
       });

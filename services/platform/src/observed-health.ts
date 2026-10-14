@@ -51,7 +51,7 @@ import {
 import { readRules, readThresholds } from './operational-health';
 import { raiseKey, type AlertLifecycleDeps, type AlertLifecycleEvent } from './alert-lifecycle';
 import {
-  judgeBoxes, boxHistoryComponents,
+  judgeBoxes, boxHistoryComponents, STORE_COMPUTER_CHECKS_STUCK_COMPONENT, STORE_COMPUTER_CHECKS_STUCK_MINUTES,
   type BoxHealthRecord, type BoxHealthView, type BillNumberFinding, type StoreComputerReplacement, type PrefixBinding, type UnusedNumbers, type BoxReportsView,
   type BoxHistoryState, type UnusedCheckCapped,
 } from './box-health';
@@ -89,8 +89,69 @@ export interface StoredAlertRules {
   /** PA-12 r6: when backups first became expected (the first rules version) — kept across versions, so redefining the
    *  rules never resets the clock a never-reporting backup is judged MISSED by. Absent on rules stored before r6. */
   readonly backupsExpectedSince?: string;
+  /**
+   * Round 31 · OB-114: the BUILT-IN rules (`BUILT_IN_ALERT_RULE_IDS`) the owner turned off — kept across versions until a
+   * version names the list again (an empty list turns them all back on). Absent: every built-in rule is on.
+   */
+  readonly builtInOff?: readonly string[];
   readonly definedBy: string;
   readonly definedAt: string;
+}
+
+/**
+ * Round 31 · OB-114 "A" (owner, 14 Oct 2026, in writing, "Built-in alert to you") — THE BUILT-IN RULE (stated). Every shop
+ * has one alert rule it did not have to write: when the store computer checks stay not ready ("being prepared", or the saved
+ * history cannot be sealed) for more than an hour (`store_computer_checks_stuck` down), the alert goes to the shop's OWNER —
+ * the person who holds the owner role at the moment of the check (never a name written in the code); with nobody holding
+ * it, the rule cannot be in force and GET alert-rules says so. It is in force with or without rules of the owner's own, and
+ * the ops-alert worker raises, delivers (inbox, and phone when a message provider is set) and clears it like any other.
+ * The owner EDITS it by putting a rule with the same alertId in his rules (his version is then the one in force: another
+ * person, another acknowledgement time, someone to escalate to), and TURNS IT OFF by naming it in `builtInOff` — both through
+ * PUT /v1/platform/alert-rules, so each change is a new rules version with who changed it and when (kept, never deleted).
+ */
+export const BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID = 'built-in:store-computer-checks-stuck';
+export const BUILT_IN_ALERT_RULE_IDS: readonly string[] = [BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID];
+/** How soon the owner is asked to acknowledge the built-in alert (he can change it by editing the rule). */
+export const BUILT_IN_STORE_COMPUTER_CHECKS_ACK_MINUTES = 60;
+
+/** The shop's owner, as the built-in rules address him (resolved when the rules are read). */
+export interface ShopOwner { readonly userId: string; readonly name: string }
+
+/** Round 31 · OB-114: each built-in rule and whether it is in force (`on`), replaced by the owner's own version (`edited`), turned off, or waiting for an owner. */
+export interface BuiltInRuleState {
+  readonly alertId: string;
+  readonly state: 'on' | 'edited' | 'off' | 'no_owner';
+  /** The rule in force for it (`on` / `edited`). */
+  readonly rule?: AlertRule;
+  readonly description: string;
+}
+
+function builtInRules(owner: ShopOwner | undefined): readonly { readonly alertId: string; readonly rule?: AlertRule; readonly description: string }[] {
+  return [{
+    alertId: BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID,
+    description: `tells the owner when the store computer checks stay "being prepared" (or the saved history cannot be sealed) for more than ${STORE_COMPUTER_CHECKS_STUCK_MINUTES} minutes (owner decision OB-114)`,
+    ...(owner === undefined ? {} : { rule: {
+      alertId: BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID, component: STORE_COMPUTER_CHECKS_STUCK_COMPONENT, firesAt: 'down' as const,
+      ownerUserId: owner.userId, ownerName: owner.name, ackWithinMinutes: BUILT_IN_STORE_COMPUTER_CHECKS_ACK_MINUTES,
+    } }),
+  }];
+}
+
+/** Round 31 · OB-114: the rules in force — the owner's own, and every built-in rule he has not turned off or replaced. */
+export function rulesInForce(stored: StoredAlertRules | undefined, owner: ShopOwner | undefined): { readonly rules: readonly AlertRule[]; readonly builtIn: readonly BuiltInRuleState[] } {
+  const own = stored?.rules ?? [];
+  const off = new Set(stored?.builtInOff ?? []);
+  const rules: AlertRule[] = [...own];
+  const builtIn: BuiltInRuleState[] = [];
+  for (const b of builtInRules(owner)) {
+    const edited = own.find((r) => r.alertId === b.alertId);
+    if (off.has(b.alertId)) builtIn.push({ alertId: b.alertId, state: 'off', description: b.description });
+    else if (edited !== undefined) builtIn.push({ alertId: b.alertId, state: 'edited', rule: edited, description: b.description });
+    else if (b.rule === undefined) builtIn.push({ alertId: b.alertId, state: 'no_owner', description: `${b.description} — NOT in force: nobody holds the owner role` });
+    else { rules.push(b.rule); builtIn.push({ alertId: b.alertId, state: 'on', rule: b.rule, description: b.description }); }
+  }
+  // An owner's version of a built-in rule he also turned off is not in force either.
+  return { rules: rules.filter((r) => !off.has(r.alertId)), builtIn };
 }
 
 export const DEFAULT_BACKUP_MAX_AGE_SECONDS = 86_400;
@@ -162,6 +223,8 @@ export interface ObservedHealthDeps extends Pick<AlertLifecycleDeps, 'alerts' | 
    * refused it. Each is named on the health (`access_separation_of_duties`, degraded) until the mix is ended.
    */
   readonly separationOfDuties?: (tenantId: string) => Promise<readonly { readonly userId: string; readonly itRoles: readonly string[]; readonly businessRoles: readonly string[] }[]>;
+  /** Round 31 · OB-114: who holds the owner role now (the built-in rules' addressee). Absent or nobody: the built-in rules are not in force (said). */
+  readonly shopOwner?: (tenantId: string) => Promise<ShopOwner | undefined> | ShopOwner | undefined;
 }
 
 /** OB-95: one component naming each person who holds both the IT/platform role and a business role (none: no component). */
@@ -274,7 +337,7 @@ export async function observeSignals(deps: ObservedHealthDeps, tenantId: string,
     boxes: judgedBoxes?.boxes ?? [],
     boxComponents: [
       ...judgedBoxes?.components ?? [], ...highWaterComponent(boxReports?.billNumberHighWater ?? null),
-      ...(boxReports === undefined ? [] : boxHistoryComponents({ ...(boxReports.preparing === undefined ? {} : { preparing: boxReports.preparing }), ...(boxReports.history === undefined ? {} : { history: boxReports.history }) })),
+      ...(boxReports === undefined ? [] : boxHistoryComponents({ at, ...(boxReports.preparing === undefined ? {} : { preparing: boxReports.preparing }), ...(boxReports.history === undefined ? {} : { history: boxReports.history }) })),
       ...separationOfDutiesComponent(bothDuties),
     ],
     storeComputersPreparing: boxReports?.preparing ?? null,
@@ -365,23 +428,26 @@ export async function judgeObserved(deps: ObservedHealthDeps, tenantId: string, 
   const health: SystemHealth = withBoxes(withMissedBackup(
     withFailedBackup(checkHealth(observed.signals, at, thresholds), observed.lastBackup),
     await deps.backups(tenantId), stored, at), observed.boxComponents);
-  const alerts: readonly RaisedAlert[] = raiseAlerts(health, stored?.rules ?? []);
-  return { stored, observed, health, alerts };
+  // Round 31 · OB-114: the owner's rules and the built-in ones in force (addressed to whoever holds the owner role now).
+  const { rules, builtIn } = rulesInForce(stored, deps.shopOwner === undefined ? undefined : await deps.shopOwner(tenantId));
+  const alerts: readonly RaisedAlert[] = raiseAlerts(health, rules);
+  return { stored, rules, builtIn, observed, health, alerts };
 }
 
 /**
  * Raise the shop's observed alerts into the durable lifecycle store (each to its named owner), and — when `clear` —
  * mark cleared every open alert whose condition is no longer observed (kept, never deleted; a recurrence is a new
- * occurrence). Returns undefined when the shop has no alert rules (nothing can be owned, so nothing is raised).
+ * occurrence). Returns undefined when the shop has no alert rules in force — none of the owner's and no built-in one (nothing
+ * can be owned, so nothing is raised). Round 31 · OB-114: the built-in rules are in force without rules of the owner's own.
  */
 export async function raiseObservedAlerts(deps: ObservedHealthDeps, tenantId: string, by: string, at: string, opts: { readonly clear?: boolean } = {}) {
   const judged = await judgeObserved(deps, tenantId, at);
-  if (judged.stored === undefined) return undefined;
+  if (judged.stored === undefined && judged.rules.length === 0) return undefined;
   const before = await deps.alerts(tenantId);
   const known = new Set(before.map((a) => a.alert.alertId));
   let newlyOpened = 0;
   for (const alert of judged.alerts) {
-    const rule = judged.stored.rules.find((r) => r.alertId === alert.alertId);
+    const rule = judged.rules.find((r) => r.alertId === alert.alertId);
     const event: AlertLifecycleEvent = {
       alertId: alert.alertId, change: 'raised', by, at, alert,
       ...(rule?.escalatesToUserId !== undefined ? { escalatesToUserId: rule.escalatesToUserId } : {}),
@@ -394,18 +460,21 @@ export async function raiseObservedAlerts(deps: ObservedHealthDeps, tenantId: st
   let keptWhilePreparing = 0;
   if (opts.clear === true) {
     const firing = new Set(judged.alerts.map((a) => a.alertId));
-    const ruled = new Set(judged.stored.rules.map((r) => r.alertId));
+    // A rule no longer in force (a built-in one turned off, say) leaves its open alert as it is — as before for a removed rule.
+    const ruled = new Set(judged.rules.map((r) => r.alertId));
     const preparing = judged.observed.storeComputersPreparing;
     for (const a of before) {
       if (a.state === 'cleared' || firing.has(a.alert.alertId) || !ruled.has(a.alert.alertId)) continue;
       // Round 29 · OB-106: while the store computer checks are being prepared nothing about them is known — an alert on a
-      // store computer stays as it is (never cleared on no news); the worker says it skipped them.
+      // store computer stays as it is (never cleared on no news); the worker says it skipped them. Round 31 · OB-114: the
+      // "checks not ready" alert (`store_computer_checks_stuck`) is NOT one of them — it is about the preparing itself,
+      // judged on every pass (raised while preparing, cleared when ready).
       if (preparing !== null && STORE_COMPUTER_COMPONENT.test(a.alert.component)) { keptWhilePreparing += 1; continue; }
       await deps.recordAlertEvent(tenantId, { alertId: a.alert.alertId, change: 'cleared', by, at, detail: `${a.alert.component} is no longer at ${a.alert.status} or worse` }, `clear-${a.alert.alertId}-o${a.occurrence}`);
       cleared += 1;
     }
   }
-  return { ...judged, stored: judged.stored, newlyOpened, cleared, keptWhilePreparing };
+  return { ...judged, newlyOpened, cleared, keptWhilePreparing };
 }
 
 /** Round 29 · OB-106: the components the store computers' reports give (kept, never cleared, while their checks are being prepared). */
@@ -418,14 +487,19 @@ export function observedHealthRoutes(deps: ObservedHealthDeps): readonly Route[]
     {
       api: 'API-11', method: 'GET', path: '/v1/platform/alert-rules',
       permission: 'platform.health.read',
-      handler: async (ctx) => ({
-        status: 200,
-        body: {
-          rules: (await deps.alertRules(ctx.tenantId)) ?? null,
-          defaults: { thresholds: DEFAULT_THRESHOLDS, backupMaxAgeSeconds: DEFAULT_BACKUP_MAX_AGE_SECONDS },
-          asAt: deps.now(),
-        },
-      }),
+      handler: async (ctx) => {
+        const stored = await deps.alertRules(ctx.tenantId);
+        return {
+          status: 200,
+          body: {
+            rules: stored ?? null,
+            // Round 31 · OB-114: the built-in rules — in force, replaced by the owner's version, turned off, or waiting for an owner.
+            builtIn: rulesInForce(stored, deps.shopOwner === undefined ? undefined : await deps.shopOwner(ctx.tenantId)).builtIn,
+            defaults: { thresholds: DEFAULT_THRESHOLDS, backupMaxAgeSeconds: DEFAULT_BACKUP_MAX_AGE_SECONDS },
+            asAt: deps.now(),
+          },
+        };
+      },
     },
     {
       api: 'API-11', method: 'PUT', path: '/v1/platform/alert-rules',
@@ -435,7 +509,20 @@ export function observedHealthRoutes(deps: ObservedHealthDeps): readonly Route[]
         const rules = Array.isArray(b['rules']) ? readRules(b['rules']) : undefined;
         const thresholds = readThresholds(b['thresholds']);
         const maxAge = b['backupMaxAgeSeconds'] === undefined ? DEFAULT_BACKUP_MAX_AGE_SECONDS : b['backupMaxAgeSeconds'];
-        if (rules === undefined || rules.length === 0 || thresholds === undefined || !Number.isInteger(maxAge) || (maxAge as number) <= 0) {
+        // Round 31 · OB-114: the built-in rules to turn off (each must be one); absent = as the rules in force had it.
+        const offRaw = b['builtInOff'];
+        const builtInOff = offRaw === undefined ? undefined
+          : Array.isArray(offRaw) && offRaw.every((x) => typeof x === 'string' && BUILT_IN_ALERT_RULE_IDS.includes(x)) ? [...new Set(offRaw as string[])].sort() : null;
+        if (builtInOff === null) {
+          throw apiError(400, {
+            code: 'alert_rules_not_readable',
+            whatHappened: `builtInOff must be a list of built-in rule ids (${BUILT_IN_ALERT_RULE_IDS.join(', ')}) — the built-in rules that are turned off.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Correct the list and send the whole set again. The rules in force are unchanged.',
+          });
+        }
+        // Only turning a built-in rule off may come with no rules of the owner's own.
+        if (rules === undefined || (rules.length === 0 && (builtInOff === undefined || builtInOff.length === 0)) || thresholds === undefined || !Number.isInteger(maxAge) || (maxAge as number) <= 0) {
           throw apiError(400, {
             code: 'alert_rules_not_readable',
             whatHappened: 'Alert rules need a non-empty rules[] (alertId, component, firesAt, ownerUserId, ownerName, ackWithinMinutes, optional escalatesToUserId), '
@@ -450,10 +537,12 @@ export function observedHealthRoutes(deps: ObservedHealthDeps): readonly Route[]
           version: (current?.version ?? 0) + 1, rules, thresholds, backupMaxAgeSeconds: maxAge as number,
           // PA-12 r6: the clock a never-reporting backup is judged MISSED by starts with the FIRST rules, and stays.
           backupsExpectedSince: current === undefined ? definedAt : (current.backupsExpectedSince ?? current.definedAt),
+          // OB-114: a built-in rule turned off stays off until a version names the list again.
+          ...((builtInOff ?? current?.builtInOff) === undefined ? {} : { builtInOff: builtInOff ?? current!.builtInOff! }),
           definedBy: ctx.userId, definedAt,
         };
         await deps.defineAlertRules(ctx.tenantId, stored);
-        return { status: 200, body: { version: stored.version, rules: rules.length, components: [...new Set(rules.map((r) => r.component))] } };
+        return { status: 200, body: { version: stored.version, rules: rules.length, components: [...new Set(rules.map((r) => r.component))], ...(stored.builtInOff === undefined ? {} : { builtInOff: stored.builtInOff }) } };
       },
     },
     {
@@ -473,8 +562,9 @@ export function observedHealthRoutes(deps: ObservedHealthDeps): readonly Route[]
       permission: 'platform.alert.manage', idempotent: true,
       handler: async (ctx) => {
         const at = deps.now();
-        const done = await raiseObservedAlerts(deps, ctx.tenantId, ctx.userId, at);
-        if (done === undefined) {
+        // Round 31 · OB-114: a person's raise needs rules of the owner's own (the built-in ones are raised by the alert worker).
+        const done = (await deps.alertRules(ctx.tenantId)) === undefined ? undefined : await raiseObservedAlerts(deps, ctx.tenantId, ctx.userId, at);
+        if (done === undefined || done.stored === undefined) {
           throw apiError(409, {
             code: 'alert_rules_not_defined',
             whatHappened: 'No alert rules are defined for this shop, so nothing can be raised — an alert without a named owner is noise nobody answers (§32).',
