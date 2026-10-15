@@ -24,3 +24,19 @@ Nothing here contains a secret value. Never paste the value into chat, email, a 
 
 Full detail: `docs/runbooks/demo-deployment-handover.md` (settings table) and `docs/runbooks/automatic-deployment.md`
 ("Settings a release needs").
+
+## If the release is still refused (exit 78) — check with the NEW checker
+
+The box's own `scripts/standup-check.mjs` is the previous release's copy until a release succeeds, and that copy does
+not know `BOX_HISTORY_SEAL_KEY` — so running it proves nothing. Check with the new one, without changing the box:
+
+1. Which settings file does the release read? (names only)
+   `grep -E '^(SRE_APP_DIR|SRE_ENV_FILE)=' /opt/sre/deploy.conf`
+   (no line = the defaults `/opt/sre/app` and `.env.pilot`). The file is `<SRE_APP_DIR>/infra/compose/<SRE_ENV_FILE>`.
+2. Get the new checker into a temporary file (this changes nothing the box runs):
+   `git -C /opt/sre/app fetch -q origin main && git -C /opt/sre/app show origin/main:scripts/standup-check.mjs > /tmp/standup-check-new.mjs`
+3. Run it against that settings file (it prints setting NAMES only, never a value):
+   `STANDUP_ENV_FILE=<the file from step 1> node /tmp/standup-check-new.mjs --settings-only`
+   It must report Settings as OK. If it names `BOX_HISTORY_SEAL_KEY`, read the reason it gives (missing, placeholder
+   left in, or the same as `PACK_SIGNING_KEY`) and fix that line in THAT file, with the no-echo command above.
+4. Delete the temporary file: `rm /tmp/standup-check-new.mjs`. Tell the owner "the new checker passes".
