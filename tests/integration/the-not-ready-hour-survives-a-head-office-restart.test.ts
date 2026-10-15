@@ -5,7 +5,7 @@ import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore, InMemoryEventStore, type EventStore } from '../../packages/persistence/src/event-store';
 import { SqlSnapshotStore, InMemorySnapshotStore, type SnapshotStore } from '../../packages/persistence/src/snapshot';
 import { makeEvent } from '../../packages/contracts/src/event';
-import { STREAM, streamName, storeComputerHistory, storeComputerChecksReadinessHistory, observedHealthAdapter, boxHistoryBuilding, BOX_HISTORY_INLINE_MAX } from '../../services/api/src/adapters';
+import { STREAM, streamName, storeComputerHistory, storeComputerChecksReadinessHistory, observedHealthAdapter, boxHistoryBuilding, boxHistoryLeaseKept, BOX_HISTORY_INLINE_MAX } from '../../services/api/src/adapters';
 import { seedGenesisOwner } from '../../services/api/src/access';
 import { OWNER_ROLE_ID } from '../../services/api/src/roles';
 import { raiseObservedAlerts, BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID } from '../../services/platform/src/observed-health';
@@ -22,7 +22,10 @@ import { honestStore, iso, TEST_BOX_HISTORY_KEY } from '../support/box-history';
  *     and fresh memory, the same database) and is still preparing at 1:01 — the checks are said not ready SINCE 0:00, the
  *     component is down and the built-in alert is raised at 1:01, not at 2:01 (before round 34 B started the hour again);
  *   • every change is ONE append-only record (`StoreComputerChecksReadiness`): not ready from 0:00, ready again, not ready
- *     again from a new moment — reads that find no change write nothing; nothing is ever overwritten (hard rule #2);
+ *     again from a new moment; nothing is ever overwritten (hard rule #2). Round 35 · OB-129 "A": while not ready, head
+ *     office also notes that it is still running, at most every 5 minutes (one more record, carrying the running time so far)
+ *     — a read within 5 minutes of the last note writes nothing. A quick restart (here 6 minutes) counts as running; a long
+ *     outage does not (tests/integration/the-not-ready-hour-counts-only-head-office-running-time.test.ts);
  *   • two head-office processes finding the same change at the same moment land ONE record (the write guard), never two.
  */
 
@@ -62,10 +65,15 @@ async function theHourSurvivesARestart(store: EventStore, freshSnapshots: () => 
     const first = await a.read(at(0));
     expect(first.preparing).toBeDefined();
     expect(first.history.notReadySince).toBe(at(0));
-    expect((await a.read(at(30))).history.notReadySince).toBe(at(0));
-    expect(await storeComputerChecksReadinessHistory(store, T)).toEqual([{ state: 'not_ready', since: at(0), why: 'being_prepared' }]);
+    expect(await storeComputerChecksReadinessHistory(store, T)).toEqual([{ state: 'not_ready', since: at(0), why: 'being_prepared', seenAt: at(0), runningMs: 0, offMs: 0 }]);
+    // A's alert worker reads as it runs (here every 5 minutes until 0:55); a read within 5 minutes of the last note writes nothing.
+    expect((await a.read(at(3))).history.notReadyCountedMs).toBe(3 * 60_000);
+    expect(await storeComputerChecksReadinessHistory(store, T)).toHaveLength(1);
+    for (let m = 5; m <= 55; m += 5) expect((await a.read(at(m))).history).toMatchObject({ notReadySince: at(0), notReadyCountedMs: m * 60_000, headOfficeOffMs: 0 });
+    expect(await storeComputerChecksReadinessHistory(store, T)).toHaveLength(12);
 
-    // Head office restarts: process B (fresh memory, same database), still preparing at 1:01 — the hour is NOT restarted.
+    // Head office restarts: process B (fresh memory, same database), still preparing at 1:01 — the hour is NOT restarted
+    // (a 6-minute restart counts as running: OB-129 "A" leaves out only an outage of more than 15 minutes).
     const b = process();
     const late = await b.read(at(61));
     expect(late.preparing).toBeDefined();
@@ -77,27 +85,38 @@ async function theHourSurvivesARestart(store: EventStore, freshSnapshots: () => 
     const deps = observedHealthAdapter({ store, now: () => at(61), snapshots: b.snapshots, boxHistorySealKey: TEST_BOX_HISTORY_KEY, storeTimeZone: async () => 'UTC', boxHistoryWaitMs: 0 });
     const raised = await raiseObservedAlerts(deps, T, OPS_ALERT_WORKER, at(61), { clear: true });
     expect(raised?.alerts.find((x) => x.alertId === BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID)).toMatchObject({ ownerUserId: OWNER, status: 'down' });
-    // Reads that find no change wrote nothing more.
-    expect(await storeComputerChecksReadinessHistory(store, T)).toHaveLength(1);
+    // B noted it once at 1:01 (6 minutes after A's last note); the alert worker's read at 1:01 wrote nothing more. Every
+    // record is kept as written (append-only): the first is still the one written at 0:00.
+    const kept = await storeComputerChecksReadinessHistory(store, T);
+    expect(kept).toHaveLength(13);
+    expect(kept[0]).toEqual({ state: 'not_ready', since: at(0), why: 'being_prepared', seenAt: at(0), runningMs: 0, offMs: 0 });
+    expect(kept[12]).toEqual({ state: 'not_ready', since: at(0), why: 'being_prepared', seenAt: at(61), runningMs: 61 * 60_000, offMs: 0 });
 
     // Ready: B's build is let go and finishes; the next read records "ready" once.
     for (const g of gates) g();
     await boxHistoryBuilding(b.snapshots, T);
     await boxHistoryBuilding(a.snapshots, T);
+    // Round 35 · NEW-4: on PostgreSQL the builder (A, which took the lease at 0:00) keeps its lease until its result is SAVED —
+    // a busy database can hold saving back for a moment; meanwhile B says "another head-office process is building it now".
+    await boxHistoryLeaseKept(a.snapshots, T);
+    await boxHistoryLeaseKept(b.snapshots, T);
     const ready = await b.read(at(70));
     expect(ready.preparing).toBeUndefined();
     expect(ready.history.notReadySince).toBeUndefined();
     expect((await a.read(at(71))).history.notReadySince).toBeUndefined();
-    expect((await storeComputerChecksReadinessHistory(store, T)).map((x) => x.state)).toEqual(['not_ready', 'ready']);
+    expect((await storeComputerChecksReadinessHistory(store, T)).map((x) => x.state).filter((x, i, all) => i === 0 || x !== all[i - 1])).toEqual(['not_ready', 'ready']);
+    expect((await storeComputerChecksReadinessHistory(store, T)).filter((x) => x.state === 'ready')).toEqual([{ state: 'ready', since: at(70) }]);
 
     // Not ready again (a process started without the seal key trusts nothing saved, so this big store is prepared again) —
     // a NEW hour, from its own first moment, kept as a third record.
     const nk = freshSnapshots();
     const noKey = (when: string) => storeComputerHistory(store, T, when, { snapshots: nk, timeZone: 'UTC', waitMs: 0 });
     expect((await noKey(at(200))).history.notReadySince).toBe(at(200));
-    expect((await noKey(at(230))).history.notReadySince).toBe(at(200));
-    expect(await storeComputerChecksReadinessHistory(store, T)).toEqual([
-      { state: 'not_ready', since: at(0), why: 'being_prepared' }, { state: 'ready', since: at(70) }, { state: 'not_ready', since: at(200), why: 'being_prepared' },
+    // Nothing read it for 30 minutes (head office off, or not reading): not counted, said as off time (OB-129 "A").
+    expect((await noKey(at(230))).history).toMatchObject({ notReadySince: at(200), notReadyCountedMs: 0, headOfficeOffMs: 30 * 60_000 });
+    const all = await storeComputerChecksReadinessHistory(store, T);
+    expect(all.map((x) => [x.state, x.since, x.why]).filter((x, i, l) => i === 0 || JSON.stringify(x) !== JSON.stringify(l[i - 1]))).toEqual([
+      ['not_ready', at(0), 'being_prepared'], ['ready', at(70), undefined], ['not_ready', at(200), 'being_prepared'],
     ]);
     await boxHistoryBuilding(nk, T);
   } finally { for (const g of gates) g(); }
@@ -152,7 +171,7 @@ describe.skipIf(DATABASE_URL === undefined)('round 34 · M35-FR-04 · OB-124 (3)
       const reads = await Promise.all(stores.flatMap((s, i) => [0, 1].map((k) =>
         storeComputerHistory(s, T, iso(start + i * 2 + k), { snapshots: new SqlSnapshotStore(pgPoolClient(pool())), timeZone: 'UTC', waitMs: 0 }))));
       const kept = await storeComputerChecksReadinessHistory(stores[0]!, T);
-      expect(kept).toHaveLength(1);
+      expect(kept, JSON.stringify(kept)).toHaveLength(1);
       for (const r of reads) expect(r.history.notReadySince).toBe(kept[0]!.since);
     } finally { await Promise.all(pools.map((p) => p.end())); }
   }, 120_000);

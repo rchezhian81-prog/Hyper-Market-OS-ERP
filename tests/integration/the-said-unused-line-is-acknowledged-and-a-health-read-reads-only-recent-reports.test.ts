@@ -353,6 +353,30 @@ describe('round 28 · OB-104: the store-computer reading takes only the reports 
     expect(out.windowRows).toBeLessThan(out.fullRows); // short histories: the economy is shown at scale in tests/performance
   }, 300_000);
 
+  // Round 35 (the load flake of the PostgreSQL run below, found): on a busy database the visibility fence often has not
+  // settled, so a result is HELD in memory (not saved) and the saved one is older. When the held one was then set aside, the
+  // next read checked the OLDER saved one's bindings — reading reports that its count (`reportsRead`) left out — and the
+  // background build could mistake that older saved result for one "just saved by another process". The busy database is
+  // made here on purpose (the fence settles on a seeded coin), so the PostgreSQL run's load is no longer needed to see it.
+  it('round 35: the same on a busy database (the fence settles only now and then): every answer is the full reading\'s; every report read is counted', async () => {
+    const coin = rng(4_242);
+    const base = new InMemoryEventStore();
+    const busy = new Proxy(base, {
+      get: (target, prop, receiver) => {
+        if (prop === 'fenceSettled') return async () => coin() < 0.4;
+        const v = Reflect.get(target, prop, receiver) as unknown;
+        return typeof v === 'function' ? (v as (...a: unknown[]) => unknown).bind(target) : v;
+      },
+    }) as EventStore;
+    // A snapshot store with a build lease (always granted, as PostgreSQL grants it to the only process) — the path the
+    // PostgreSQL run takes and plain memory does not.
+    const leased = (): SnapshotStore => Object.assign(new InMemorySnapshotStore(), { buildLease: async () => Object.assign(async () => undefined, { lost: () => false }) });
+    const out = await windowedIsFull(busy, leased, Array.from({ length: 30 }, (_, k) => 3_000 + k));
+    console.log(`[OB-104 memory, busy fence] ${out.reads} reads, ${out.resumed} resumed, set aside ${JSON.stringify(out.asides)}; box-health rows read ${out.windowRows} (the full reading read ${out.fullRows})`);
+    expect(out.resumed).toBeGreaterThan(out.reads / 4);
+    expect(out.windowRows).toBeLessThan(out.fullRows);
+  }, 300_000);
+
   it('a deleted saved result changes no answer: the next read rebuilds it from every report, once', async () => {
     const store = new InMemoryEventStore();
     const T = randomUUID();

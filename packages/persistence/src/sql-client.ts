@@ -49,8 +49,10 @@ export interface SqlClient {
    * advisory lock that must be taken and released on the same database session, for as long as `fn` runs, without holding a
    * transaction open (which would hold back the visibility fence and vacuum). The connection goes back to the pool when `fn`
    * settles. OPTIONAL: a client without it cannot hold a cluster-wide lock (the caller falls back to its own process guard).
+   * Round 35 (verifier r34 NEW-3): `ended()` says when the server ended the session under `fn`; the connection is discarded
+   * when `fn` settles, never handed back with what the session held.
    */
-  session?<T>(fn: (conn: SqlClient) => Promise<T>): Promise<T>;
+  session?<T>(fn: (conn: SqlClient, ended: () => unknown) => Promise<T>): Promise<T>;
 }
 
 /** The operator tools' whole-database scope for row-level security. The API never sets it. */

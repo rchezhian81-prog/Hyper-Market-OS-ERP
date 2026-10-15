@@ -1909,6 +1909,23 @@ export interface BoxHistoryState {
    * "being prepared" (`box_history` unknown) or the saved history cannot be sealed (`box_history_seal`). Absent when ready.
    */
   readonly notReadySince?: string;
+  /**
+   * Round 35 · OB-129 "A" (owner, 15 Oct 2026, in writing, "Count only running time"): of the time since `notReadySince`, how
+   * long head office was RUNNING — what counts towards the hour — and how long it was switched OFF (not counted; said
+   * separately). Absent (a caller of round 34): the whole time since `notReadySince` counts.
+   */
+  readonly notReadyCountedMs?: number;
+  readonly headOfficeOffMs?: number;
+  /** Round 35 · OB-129: the reason changed during this not-ready time (from what, noted when) — the hour went on. */
+  readonly notReadyReasonChanged?: { readonly from: 'being_prepared' | 'no_seal_key'; readonly at: string };
+}
+/** Round 35 · OB-129: a length of time in the owner's words ("9 hours 20 minutes", "45 minutes"). */
+export function durationInWords(ms: number): string {
+  const minutes = Math.floor(ms / 60_000);
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (h === 0) return `${m} minute${m === 1 ? '' : 's'}`;
+  return `${h} hour${h === 1 ? '' : 's'}${m === 0 ? '' : ` ${m} minute${m === 1 ? '' : 's'}`}`;
 }
 /**
  * Round 31 · OB-114 "A" (owner, 14 Oct 2026, in writing, "Built-in alert to you") — THE RULE (stated). When the store computer
@@ -1972,16 +1989,24 @@ export function boxHistoryComponents(input: { readonly preparing?: { readonly si
     });
   }
   // Round 31 · OB-114: not ready for more than an hour is `down` (raised to the owner by the built-in rule); before, `ok`.
+  // Round 35 · OB-129 "A": only the time head office was RUNNING counts; the time it was off is said, not counted.
   if (h?.notReadySince !== undefined && input.at !== undefined) {
-    const minutes = Math.max(0, Math.floor((Date.parse(input.at) - Date.parse(h.notReadySince)) / 60_000));
-    const stuck = Date.parse(input.at) - Date.parse(h.notReadySince) > STORE_COMPUTER_CHECKS_STUCK_MINUTES * 60_000;
+    const countedMs = h.notReadyCountedMs ?? Math.max(0, Date.parse(input.at) - Date.parse(h.notReadySince));
+    const offMs = h.headOfficeOffMs ?? 0;
+    const minutes = Math.floor(countedMs / 60_000);
+    const stuck = countedMs > STORE_COMPUTER_CHECKS_STUCK_MINUTES * 60_000;
     const what = input.preparing !== undefined ? 'being prepared' : 'running without the seal key, so the saved history cannot be sealed';
+    const off = offMs < 60_000 ? '' : `; head office was off for ${durationInWords(offMs)} in that time — not counted`;
+    const after = h.notReadyReasonChanged === undefined ? '' : `; until ${h.notReadyReasonChanged.at} the reason was ${h.notReadyReasonChanged.from === 'no_seal_key' ? 'that head office had no seal key' : 'that they were being prepared'} — the time is counted from the start, whatever the reason`;
     out.push({
       name: STORE_COMPUTER_CHECKS_STUCK_COMPONENT, status: stuck ? 'down' : 'ok',
       detail: stuck
-        ? `the store computer checks have not been ready for ${minutes} minutes (since ${h.notReadySince}; now ${what}) — more than the ${STORE_COMPUTER_CHECKS_STUCK_MINUTES}-minute line. Head office cannot check the store computers' disks, queues, tills and bill numbers meanwhile (the tills keep selling and nothing is lost). Call support today`
-        : `the store computer checks are not ready yet (${what}, for ${minutes} minutes so far); the owner is told if this lasts more than ${STORE_COMPUTER_CHECKS_STUCK_MINUTES} minutes`,
-      evidence: { notReadySince: h.notReadySince, minutes, alertAfterMinutes: STORE_COMPUTER_CHECKS_STUCK_MINUTES, why: input.preparing !== undefined ? 'being_prepared' : 'no_seal_key' },
+        ? `the store computer checks have not been ready for ${minutes} minutes of head office running (since ${h.notReadySince}; now ${what}${off}${after}) — more than the ${STORE_COMPUTER_CHECKS_STUCK_MINUTES}-minute line. Head office cannot check the store computers' disks, queues, tills and bill numbers meanwhile (the tills keep selling and nothing is lost). Call support today`
+        : `the store computer checks are not ready yet (${what}, for ${minutes} minutes of head office running so far${off}${after}); the owner is told if this lasts more than ${STORE_COMPUTER_CHECKS_STUCK_MINUTES} minutes of head office running`,
+      evidence: {
+        notReadySince: h.notReadySince, minutes, alertAfterMinutes: STORE_COMPUTER_CHECKS_STUCK_MINUTES, why: input.preparing !== undefined ? 'being_prepared' : 'no_seal_key',
+        headOfficeOffMinutes: Math.floor(offMs / 60_000), ...(h.notReadyReasonChanged === undefined ? {} : { reasonWas: h.notReadyReasonChanged.from, reasonChangedAt: h.notReadyReasonChanged.at }),
+      },
     });
   }
   return out;
@@ -2616,12 +2641,17 @@ function* boxHistorySteps(input: BoxHistoryInput, every: number): Generator<void
       fold.feed(now[k]!.e, now[k]!.ms, acts, bankedOf, input.judge, true);
       if ((k + 1) % every === 0) yield;
     }
-    if (k > 0 && (!resumed || k >= FOLD_SNAPSHOT_EVERY)) {
-      // The new position: below every report not folded, never beyond what the fence shows visible, never below the old one.
-      let unfolded = Infinity;
-      for (let j = k; j < now.length; j += 1) unfolded = Math.min(unfolded, now[j]!.e.seq);
-      for (const t of later) unfolded = Math.min(unfolded, t.e.seq);
-      const seq = Math.max(s?.seq ?? 0, Math.min(input.settledThrough, unfolded - 1));
+    // The new position: below every report not folded, never beyond what the fence shows visible, never below the old one.
+    let unfolded = Infinity;
+    for (let j = k; j < now.length; j += 1) unfolded = Math.min(unfolded, now[j]!.e.seq);
+    for (const t of later) unfolded = Math.min(unfolded, t.e.seq);
+    const seq = Math.max(s?.seq ?? 0, Math.min(input.settledThrough, unfolded - 1));
+    // Round 35 · verifier r34 NEW-4: a saved result made while the visibility fence was held back (an open transaction) sits
+    // at a low position with every report above it listed as folded — so every later read re-reads them all (skipping each).
+    // Once a fence has settled its position is MOVED UP (the same fold, nothing re-folded), even with no new report to fold:
+    // every report between the old and the new position is either folded already or folded now (`k`), by construction.
+    const compact = s !== undefined && s.folded.length >= FOLD_SNAPSHOT_EVERY && seq > s.seq && settleMs >= settledMs;
+    if ((k > 0 && (!resumed || k >= FOLD_SNAPSHOT_EVERY)) || compact) {
       const folded = [...new Set([...(s?.folded ?? []), ...fold.foldedSeqs])].filter((q) => q > seq).sort((a, b) => a - b);
       const settledAt = new Date(settleMs).toISOString();
       const stores = fold.encode(settleMs, refusals, replacementsAt, input.banked, rfBanked);

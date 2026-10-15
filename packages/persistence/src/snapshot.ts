@@ -44,11 +44,52 @@ export interface SnapshotStore {
    * undefined when another process holds it now (never waits). OPTIONAL: a store without it (memory) relies on the calling
    * process's own single-flight guard, which is the whole story there.
    */
-  buildLease?(tenantId: string, name: string): Promise<(() => Promise<void>) | undefined>;
+  buildLease?(tenantId: string, name: string): Promise<BuildLeaseAnswer>;
 }
 
 /** Round 34 · OB-124 (5): the advisory-lock class of the projection build leases (two-key form; its own key space). */
 export const PROJECTION_BUILD_LEASE_CLASS = 340_124;
+
+/**
+ * Round 35 · verifier r34 NEW-4: a build lease while it is held — call it to let go. `lost()` turns true when the database
+ * session holding it ended under it (an idle-session timeout, a network cut, an administrator): the lock went with that
+ * session, so another process may take it — the build stops at its next step rather than build alongside it.
+ */
+export interface BuildLeaseHeld { (): Promise<void>; readonly lost: () => boolean }
+/**
+ * Round 35 · verifier r34 NEW-2: this process already holds as many build leases as it may (`maxConcurrentLeases`) — the
+ * build waits for its turn (said, never waited on), so builds can never use up head office's connections.
+ */
+export const BUILD_LEASES_BUSY_HERE = 'busy_here' as const;
+/** Held; undefined — another process holds it now; or this process is at its limit of builds at once. */
+export type BuildLeaseAnswer = BuildLeaseHeld | undefined | typeof BUILD_LEASES_BUSY_HERE;
+
+/** Round 35 · NEW-2/NEW-3: a database session of its own for one build lease (`pgDedicatedSession`), ended when `fn` settles. */
+export type LeaseSession = <T>(fn: (conn: Pick<SqlClient, 'query'>, ended: () => unknown) => Promise<T>) => Promise<T>;
+
+export interface SqlSnapshotStoreOptions {
+  /**
+   * Round 35 · verifier r34 NEW-2: where a build lease's session comes from — a connection of its OWN, outside the pool that
+   * serves requests (`pgDedicatedSession`), opened for the lease and closed after it (its lock can never go back into a pool).
+   * Absent: a connection from the client's pool (`client.session`), discarded afterwards — then at most
+   * `maxConcurrentLeases` (default 1) are ever held, so builds never hold the request pool's connections.
+   */
+  readonly leaseSession?: LeaseSession;
+  /** How many build leases this process may hold at once (default 4 with `leaseSession`, else 1). The next waits its turn. */
+  readonly maxConcurrentLeases?: number;
+  /** Round 35 · NEW-3: said when letting go of a lease failed (by name; the session is ended so the lock goes with it). */
+  readonly onLeaseProblem?: (detail: string) => void;
+}
+
+/** Round 35 · verifier r34 NEW-3: letting go of a build lease failed — the session holding it is ended, never reused. */
+export class BuildLeaseUnlockError extends Error {
+  override readonly name = 'BuildLeaseUnlockError';
+}
+const describeError = (e: unknown): string => {
+  if (!(e instanceof Error)) return String(e);
+  const code = (e as { code?: unknown }).code;
+  return typeof code === 'string' ? `${code}: ${e.message}` : e.message;
+};
 
 /**
  * In-memory snapshot store (edge / test). The durable SQL store that persists the state as JSON is
@@ -82,33 +123,67 @@ export class InMemorySnapshotStore implements SnapshotStore {
  * one constraint this store adds over the in-memory one. `save` UPSERTs (the newest fold wins).
  */
 export class SqlSnapshotStore implements SnapshotStore {
-  constructor(private readonly client: Pick<SqlClient, 'query' | 'forTenant' | 'session'>) {}
+  /** Round 35 · NEW-2: the build leases this store holds now (each one session). */
+  private leasesHeld = 0;
+
+  constructor(private readonly client: Pick<SqlClient, 'query' | 'forTenant' | 'session'>, private readonly opts: SqlSnapshotStoreOptions = {}) {}
+
+  /** Round 35 · NEW-2: how many build leases this store holds right now (for the tests and support). */
+  get buildLeasesHeld(): number { return this.leasesHeld; }
 
   /**
-   * Round 34 · OB-124 (5): a PostgreSQL session-level advisory lock (`pg_try_advisory_lock`, never waiting) on its own pinned
+   * Round 34 · OB-124 (5): a PostgreSQL session-level advisory lock (`pg_try_advisory_lock`, never waiting) on its own
    * connection, outside any transaction, held until the release function is called — or until that connection ends (a
    * crashed process lets go by itself; a lock never outlives its holder, so no lease row can be left stuck). Keyed on the
-   * tenant and the projection (`hashtext`; two keys sharing a hash only take turns). A client with no pinned sessions holds
-   * no lock: the lease is then granted at once and the process's own guard is all there is (said in the type).
+   * tenant and the projection (`hashtext`; two keys sharing a hash only take turns). A client with no sessions holds no lock:
+   * the lease is then granted at once and the process's own guard is all there is (said in the type).
+   *
+   * Round 35 (verifier r34): NEW-2 — the session is a connection of its own (`leaseSession`), never one the requests need, and
+   * no more than `maxConcurrentLeases` are held at once (`BUILD_LEASES_BUSY_HERE` beyond that, never a wait); NEW-3 — the
+   * session is ENDED after the lease (a pooled one is discarded, never handed back), so a lock whose unlock failed can never
+   * go back into a pool still held; the failure is said by name (`onLeaseProblem`) and never swallowed; NEW-4 — the answer's
+   * `lost()` says when the session ended under the lease.
    */
-  buildLease(tenantId: string, name: string): Promise<(() => Promise<void>) | undefined> {
-    const session = this.client.session;
-    if (session === undefined) return Promise.resolve(async () => undefined);
+  buildLease(tenantId: string, name: string): Promise<BuildLeaseAnswer> {
+    const session: LeaseSession | undefined = this.opts.leaseSession
+      ?? (this.client.session === undefined ? undefined : (this.client.session.bind(this.client) as LeaseSession));
+    if (session === undefined) return Promise.resolve(Object.assign(async () => undefined, { lost: () => false }));
+    const max = this.opts.maxConcurrentLeases ?? (this.opts.leaseSession === undefined ? 1 : 4);
+    if (this.leasesHeld >= max) return Promise.resolve(BUILD_LEASES_BUSY_HERE);
+    this.leasesHeld += 1;
+    let freed = false;
+    const free = (): void => { if (!freed) { freed = true; this.leasesHeld -= 1; } };
+    const say = this.opts.onLeaseProblem ?? ((detail: string) => { process.stderr.write(`${detail}\n`); });
     const key = `${tenantId}:${name}`;
     return new Promise((resolve, reject) => {
       let answered = false;
+      let over = false;
       let letGo: () => void = () => undefined;
       const released = new Promise<void>((r) => { letGo = r; });
-      const run = session.bind(this.client) as <T>(fn: (conn: SqlClient) => Promise<T>) => Promise<T>;
-      const held: Promise<void> = run<void>(async (conn) => {
+      const held: Promise<void> = session<void>(async (conn, ended) => {
         const rows = await conn.query<{ got: boolean }>('SELECT pg_try_advisory_lock($1::int, hashtext($2)) AS got', [PROJECTION_BUILD_LEASE_CLASS, key]);
-        if (rows[0]?.got !== true) { answered = true; resolve(undefined); return; }
+        if (rows[0]?.got !== true) { free(); answered = true; resolve(undefined); return; }
         answered = true;
-        resolve(async () => { letGo(); await held.catch(() => undefined); });
+        resolve(Object.assign(async () => { letGo(); await held.catch(() => undefined); }, { lost: () => over || ended() !== undefined }));
         await released;
-        await conn.query('SELECT pg_advisory_unlock($1::int, hashtext($2))', [PROJECTION_BUILD_LEASE_CLASS, key]);
+        if (ended() !== undefined) return; // the session already ended: the lock went with it
+        let unlocked: boolean;
+        try {
+          unlocked = (await conn.query<{ ok: boolean }>('SELECT pg_advisory_unlock($1::int, hashtext($2)) AS ok', [PROJECTION_BUILD_LEASE_CLASS, key]))[0]?.ok === true;
+        } catch (e) {
+          say(`projection build lease ${key}: letting go failed (${describeError(e)}) — its database session is ended so the lock goes with it (BuildLeaseUnlockError)`);
+          throw new BuildLeaseUnlockError(`letting go of the build lease ${key} failed: ${describeError(e)}`);
+        }
+        if (!unlocked) {
+          say(`projection build lease ${key}: the database said it was not held when letting go — its database session is ended (BuildLeaseUnlockError)`);
+          throw new BuildLeaseUnlockError(`the build lease ${key} was not held when letting go`);
+        }
+      }).finally(() => { over = true; free(); });
+      held.catch((e: unknown) => {
+        if (!answered) { reject(e); return; }
+        // Said by name (above) for an unlock; any other failure after the lease was granted is said here — never swallowed.
+        if (!(e instanceof BuildLeaseUnlockError)) say(`projection build lease ${key}: its database session failed (${describeError(e)}); the session is ended so the lock goes with it`);
       });
-      held.catch((e: unknown) => { if (!answered) reject(e); });
     });
   }
 

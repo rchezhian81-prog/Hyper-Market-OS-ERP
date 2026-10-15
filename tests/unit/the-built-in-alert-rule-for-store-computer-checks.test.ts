@@ -35,10 +35,10 @@ describe('round 31 · OB-114: the "checks not ready" component', () => {
 
   it(`ok up to ${STORE_COMPUTER_CHECKS_STUCK_MINUTES} minutes (saying how long so far), down past it — to the second`, () => {
     expect(at(0)).toMatchObject({ status: 'ok' });
-    expect(at(59)!.detail).toMatch(/not ready yet \(being prepared, for 59 minutes so far\); the owner is told if this lasts more than 60 minutes/);
+    expect(at(59)!.detail).toMatch(/not ready yet \(being prepared, for 59 minutes of head office running so far\); the owner is told if this lasts more than 60 minutes of head office running/);
     expect(at(STORE_COMPUTER_CHECKS_STUCK_MINUTES)).toMatchObject({ status: 'ok' });
     expect(at(STORE_COMPUTER_CHECKS_STUCK_MINUTES, 1)).toMatchObject({ status: 'down', evidence: { why: 'being_prepared', notReadySince: SINCE } });
-    expect(at(61)!.detail).toMatch(/have not been ready for 61 minutes \(since 2026-10-14T08:00:00.000Z; now being prepared\)/);
+    expect(at(61)!.detail).toMatch(/have not been ready for 61 minutes of head office running \(since 2026-10-14T08:00:00.000Z; now being prepared\)/);
     expect(at(61, 0, false)!.detail).toMatch(/now running without the seal key, so the saved history cannot be sealed/);
     expect(at(61, 0, false)!.evidence).toMatchObject({ why: 'no_seal_key' });
   });
