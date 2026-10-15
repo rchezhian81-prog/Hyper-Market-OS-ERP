@@ -8,6 +8,7 @@ import { apiError, notFound } from '../../kernel/src/index';
 import type { CatalogueProduct } from '../../../packages/catalogue/src/catalogue';
 import { checkOperatorStamp } from '../../../packages/identity/src/till-seal';
 import { assignSaleLots, type LotOnHand } from './sale-lots';
+import { storeComputerTimeFrom, type StoreComputerScopeOfCaller } from './returns';
 import {
   acceptSale, summariseIntake,
   type IncomingSale, type IntakeContext, type IntakeResult, type SaleException,
@@ -21,6 +22,8 @@ export {
 } from './sale-intake';
 
 export interface PosDeps {
+  /** Round 35 · NEW-6: whether a caller is a store computer (only its own time on a synced sale is kept). */
+  readonly storeComputerScopeOf?: StoreComputerScopeOfCaller;
   /**
    * OB-35 "A": the batches on hand where this sale's stock is drawn from, earliest expiry first per product (Batch 2's
    * `fefoBatchesAt` over the batch projection). Absent → no assignment is made (the finding fires as before).
@@ -131,8 +134,8 @@ export function posRoutes(deps: PosDeps): readonly Route[] {
       api: 'API-05', method: 'POST', path: '/v1/sales',
       permission: 'pos.sale.sync', idempotent: true,
       handler: async (ctx) => {
-        const arrived = readSale(ctx.body);
-        if (arrived === undefined) {
+        const sent = readSale(ctx.body);
+        if (sent === undefined) {
           // The one refusal in this service, and it is not a judgement about the sale — it is that
           // what arrived cannot be read as one, so there is nothing to bank.
           throw apiError(400, {
@@ -142,6 +145,17 @@ export function posRoutes(deps: PosDeps): readonly Route[] {
             nextSafeAction: 'Do not discard it at the lane. Keep it in the outbox and raise it — a sale that cannot be sent is still a sale that happened.',
           });
         }
+        // Round 35 · NEW-6: the store computer's time for the bill is kept only from the store computer's own sign-in; from
+        // anybody else it is dropped and the bill notes that it was offered and ignored (head office writes the note — one
+        // sent in the body is never kept).
+        const { storeComputerTakenAt: offered, storeComputerTakenAtIgnored: _claimed, ...rest } = sent;
+        void _claimed;
+        const time = await storeComputerTimeFrom(deps.storeComputerScopeOf, ctx.tenantId, ctx.userId, offered, deps.now());
+        const arrived: IncomingSale = {
+          ...rest,
+          ...(time.ignored === undefined && offered !== undefined ? { storeComputerTakenAt: offered } : {}),
+          ...(time.ignored === undefined ? {} : { storeComputerTakenAtIgnored: time.ignored }),
+        };
 
         // OB-35 "A": a batch-tracked line the till sent with no batch is assigned the earliest-expiry batch on hand at the
         // store, recorded on the sale and marked as an assignment. Only on first banking — a resend keeps what was banked.
@@ -253,7 +267,7 @@ export function posRoutes(deps: PosDeps): readonly Route[] {
 
         // 202, not 201: the sale is banked and there may be work attached to it. A 4xx here would
         // tell a till that a sale which happened did not.
-        return { status: 202, body: { ...intake, ...(loyalty === undefined ? {} : { loyalty }), ...(spends === undefined ? {} : { spends }), ...(notThisBill ?? {}) } };
+        return { status: 202, body: { ...intake, ...(loyalty === undefined ? {} : { loyalty }), ...(spends === undefined ? {} : { spends }), ...(notThisBill ?? {}), ...(time.ignored === undefined ? {} : { storeComputerTakenAtIgnored: time.ignored }) } };
       },
     },
     {

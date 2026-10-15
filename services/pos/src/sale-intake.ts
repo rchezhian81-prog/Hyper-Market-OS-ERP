@@ -116,6 +116,11 @@ export interface IncomingSale {
    */
   readonly storeComputerTakenAt?: string;
   /**
+   * Round 35 · verifier r34 NEW-6: a store-computer time that was sent but NOT kept, because the sale did not come from the
+   * store computer's own sign-in (written by head office, never trusted from the body: a sent one is replaced).
+   */
+  readonly storeComputerTakenAtIgnored?: { readonly offered: string; readonly by: string; readonly why: string };
+  /**
    * The loyalty member the cashier named (PF-09 · OB-28 "1"): the member CODE the store computer made from the mobile
    * number keyed at the till — never the number itself (P-04). Optional: a walk-in buys with no personal data (M16-FR-01).
    */

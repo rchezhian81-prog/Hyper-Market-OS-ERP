@@ -28,7 +28,7 @@ import { noReceiptGovernanceFindings, type ReturnRequestLine, type RefundGoverna
 import type { RefundStatus } from '../../../packages/returns/src/returns';
 import { issueRefundCredit } from '../../../packages/loyalty/src/stored-value';
 import type { AuditEntry } from '../../../packages/audit/src/index';
-import { storeComputerTakenAtOf, type ReturnRecord, type StoreCreditIssue } from './returns';
+import { storeComputerTimeFrom, type ReturnRecord, type StoreCreditIssue, type StoreComputerScopeOfCaller } from './returns';
 import { unplacedLaneLocation, type SaleStockLocation } from './sale-stock';
 import { approvalIdIn, namedApproverRefusal, takeRefundApproval, type ApprovalUse, type RefundApprovalState } from './refund-approvals';
 import { approvalSealFlags, cashierSealFlags, stampIn } from './store-seal';
@@ -38,6 +38,8 @@ const DISPOSITIONS: ReadonlySet<string> = new Set(['resell', 'quarantine', 'dama
 const SETTLED_AT_DESK: ReadonlySet<string> = new Set(['cash', 'store_credit']);
 
 export interface NoReceiptReturnsDeps {
+  /** Round 35 · NEW-6: whether a caller is a store computer (only its own time on a synced refund is kept). */
+  readonly storeComputerScopeOf?: StoreComputerScopeOfCaller;
   /** The tenant's no-receipt cap in minor units (M13-FR-01) — `undefined` means the owner has not set one, so
    *  the no-receipt path is UNAVAILABLE (fail-safe). Sourced SERVER-SIDE: the caller cannot declare a cap. */
   readonly noReceiptCap: (tenantId: string) => Promise<number | undefined> | number | undefined;
@@ -454,11 +456,13 @@ export function noReceiptReturnRoutes(deps: NoReceiptReturnsDeps): readonly Rout
           : s.laneId !== undefined ? { locationId: unplacedLaneLocation(s.laneId), basis: 'unplaced' } : undefined;
 
         // Round 34 · OB-108 / OB-124 (1): the store computer's own time for the refund (it took it from the till), when sent.
-        const takenAt = storeComputerTakenAtOf((ctx.body as Record<string, unknown> | undefined)?.['storeComputerTakenAt'], deps.now());
+        // Round 35 · NEW-6: kept only from the store computer's own sign-in; from anybody else it is noted as ignored.
+        const { takenAt, ignored: takenAtIgnored } = await storeComputerTimeFrom(deps.storeComputerScopeOf, ctx.tenantId, ctx.userId, (ctx.body as Record<string, unknown> | undefined)?.['storeComputerTakenAt'], deps.now());
         const record: ReturnRecord = {
           returnId: s.returnId, number: s.number, originalSaleId: null, noReceipt: true,
           processedBy: s.processedBy, processedAt, reasonCode: s.reasonCode,
           ...(takenAt === undefined ? {} : { storeComputerTakenAt: takenAt }),
+          ...(takenAtIgnored === undefined ? {} : { storeComputerTakenAtIgnored: takenAtIgnored }),
           refundMinor: s.refundMinor, refundTender: s.refundTender, refundStatus: s.refundStatus, lines: s.lines,
           ...(flags.length > 0 ? { governanceFlags: flags } : {}),
           ...(s.approvedBy === undefined ? {} : { approvedBy: s.approvedBy }),
@@ -476,7 +480,7 @@ export function noReceiptReturnRoutes(deps: NoReceiptReturnsDeps): readonly Rout
           },
           correlationId: s.returnId,
         });
-        return { status: 202, body: { returnId: s.returnId, noReceipt: true, reconciled: true, flags } };
+        return { status: 202, body: { returnId: s.returnId, noReceipt: true, reconciled: true, flags, ...(takenAtIgnored === undefined ? {} : { storeComputerTakenAtIgnored: takenAtIgnored }) } };
       },
     },
     {

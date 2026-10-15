@@ -2689,6 +2689,8 @@ export function posAdapter(input: {
 }): PosDeps {
   return {
     now: input.now,
+    // Round 35 · NEW-6: only the store computer's own sign-in may say when it took a bill.
+    storeComputerScopeOf: (tenantId, userId) => storeComputerScopeHeldBy(input.store, tenantId, userId),
 
     // SP-4b · F09: the cashier a till names is re-verified from their grants — the same register every relayed identity
     // is checked against — so a sale under an unknown or unauthorised name is a finding the manager sees.
@@ -3274,6 +3276,8 @@ export function returnsAdapter(input: {
 
   return {
     now: input.now,
+    // Round 35 · NEW-6: only the store computer's own sign-in may say when it took a refund.
+    storeComputerScopeOf: (tenantId, userId) => storeComputerScopeHeldBy(input.store, tenantId, userId),
 
     // The original bill, mapped from the SaleCommitted event to the shape the register reads. Found
     // in one index hit on the sale's own key — the same key `bankSale` wrote and `isBanked` reads —
@@ -3442,6 +3446,7 @@ export function noReceiptReturnsAdapter(input: {
   const shared = returnsAdapter(input);
   return {
     now: input.now,
+    ...(shared.storeComputerScopeOf === undefined ? {} : { storeComputerScopeOf: shared.storeComputerScopeOf }),
     canApproveRefund: shared.canApproveRefund,
     storeCreditCap: shared.storeCreditCap,
 
