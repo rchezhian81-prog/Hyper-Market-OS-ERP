@@ -13629,6 +13629,7 @@ export function boxHealthAdapter(input: {
   bindingVersion: (tenantId: string, storeId: string, prefix: string) => Promise<number>;
   recordReplacement: (tenantId: string, m: StoreComputerReplacement, expectedVersion: number) => Promise<StoreComputerReplacement>;
   acknowledgeNotChecked: (tenantId: string, a: AtRiskAcknowledgement, requestKey: string) => Promise<AtRiskAcknowledgement>;
+  recordsBetween: (tenantId: string, from: string, to: string) => Promise<readonly BoxHealthRecord[]>;
   lanePrefixRegistrations: (tenantId: string) => Promise<readonly LanePrefixRegistration[]>;
   registerLanePrefixes: (tenantId: string, r: LanePrefixRegistration, key: string) => Promise<LanePrefixRegistration>;
   countRefusedAtDoor: (tenantId: string, r: { readonly computer: string; readonly storeId: string; readonly at: string; readonly prefixes: readonly string[] }) => Promise<void>;
