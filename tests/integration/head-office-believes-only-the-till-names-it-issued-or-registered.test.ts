@@ -4,7 +4,7 @@ import { Pool } from 'pg';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore, type EventStore } from '../../packages/persistence/src/event-store';
 import { makeEvent } from '../../packages/contracts/src/event';
-import { STREAM, streamName } from '../../services/api/src/adapters';
+import { STREAM, streamName, bankedReceiptCounts } from '../../services/api/src/adapters';
 import { LANE_PREFIXES_PER_COMPUTER_MAX, DOOR_REFUSAL_EXAMPLES_MAX } from '../../services/platform/src/box-health';
 import { apiHarness, TEST_PACK_KEY } from '../support/api-harness';
 import { startRealCloud, type RealCloud } from '../support/real-store';
@@ -153,6 +153,10 @@ async function floodKeptBefore(send: Send, store: EventStore, T: string): Promis
   for (let i = 0; i < FLOOD; i += 50) {
     await store.appendBatch(T, Array.from({ length: 50 }, (_, j) => keptBefore(T, `${BAD}-legacy`, S1, [['R-L1-', 5], ...invented(i + j)], 180 - (i + j) / 4, i + j)));
   }
+  // The store pack's counts (a replaced box resumes above them) believe the registered lane, never an invented name.
+  const counts = await bankedReceiptCounts(store, T, { storeId: S1 });
+  expect(counts.get('R-L1-')).toBeGreaterThanOrEqual(5);
+  expect([...counts.keys()].filter((p) => p.startsWith('R-') && p !== 'R-L1-' && p !== 'R-L2-')).toEqual([]);
   let size: number | undefined;
   for (let k = 0; k < 240 && size === undefined; k += 1) {
     const h = (await send(OWNER, 'GET', '/v1/platform/operational-health/observed')).body as { health: { components: { name: string; status: string; evidence?: { sizeBytes?: number | null } }[] } };

@@ -7,7 +7,8 @@ import { makeEvent } from '../../packages/contracts/src/event';
 import { recordingTransport } from '../../packages/notifications/src/index';
 import { STREAM, observedHealthAdapter, alertLifecycleAdapter } from '../../services/api/src/adapters';
 import { deliverAlerts, OPS_ALERT_WORKER } from '../../services/platform/src/ops-alert-worker';
-import { raiseObservedAlerts, BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID as ID, BUILT_IN_RULE_CHANGED_NOTICE, type ObservedHealthDeps } from '../../services/platform/src/observed-health';
+import { raiseObservedAlerts, observedHealthRoutes, BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID as ID, BUILT_IN_RULE_CHANGED_NOTICE, type ObservedHealthDeps } from '../../services/platform/src/observed-health';
+import { InMemoryEventStore } from '../../packages/persistence/src/event-store';
 import { raiseKey, type LiveAlert } from '../../services/platform/src/alert-lifecycle';
 import { apiHarness, TEST_PACK_KEY } from '../support/api-harness';
 import { startRealCloud, type RealCloud } from '../support/real-store';
@@ -140,6 +141,26 @@ describe('round 33 · OB-119: built-in alerts are raised only by head office and
     };
     await story(send, h.store, T);
   }, 120_000);
+});
+
+describe('round 33 · OB-119: a person\'s observed raise never raises a built-in alert (only the worker does)', () => {
+  it('with the checks stuck past the hour, POST …/observed/raise by head office raises the shop\'s own rules only, and says so', async () => {
+    const store = new InMemoryEventStore();
+    const T = randomUUID();
+    const now = () => new Date().toISOString();
+    const at = now();
+    await store.append(T, STREAM.identity, makeEvent({
+      id: `grant-owner-${T}`, type: 'RoleGranted', occurredAt: at, idempotencyKey: `grant-${T}-owner-${OWNER}`, source: 'test/r33a',
+      payload: { userId: OWNER, roleId: 'owner', branchScope: 'all', request: { grantId: `owner-${OWNER}`, userId: OWNER, roleId: 'owner', branchScope: 'all', requestedBy: 'operator', approvedBy: 'operator', requestedAt: at } },
+    }));
+    const deps = stuckWorkerDeps(store, now);
+    await deps.defineAlertRules(T, { version: 1, rules: [{ alertId: 'ho-backup', component: 'backup', firesAt: 'down', ownerUserId: HO, ownerName: 'HO', ackWithinMinutes: 60 }], thresholds: {} as never, backupMaxAgeSeconds: 86_400, definedBy: OWNER, definedAt: at });
+    const route = observedHealthRoutes(deps).find((r) => r.method === 'POST' && r.path === '/v1/platform/operational-health/observed/raise')!;
+    const res = await route.handler({ tenantId: T, userId: HO, branchId: null, scope: 'all', params: {}, query: {}, body: {}, idempotencyKey: 'k', traceId: 't' });
+    expect((res.body as { alerts: { alertId: string }[] }).alerts.map((a) => a.alertId)).not.toContain(ID);
+    expect((res.body as { builtInLeftToWorker?: string }).builtInLeftToWorker).toMatch(/1 built-in alert\(s\) firing now are raised only by head office's alert worker, to the owner \(owner decision OB-119\)/);
+    expect((await alertLifecycleAdapter({ store, now }).alerts(T)).find((a) => a.alert.alertId === ID)).toBeUndefined();
+  });
 });
 
 describe.skipIf(DATABASE_URL === undefined)('round 33 · OB-119: the same on the served API (PostgreSQL, audit_log read back)', () => {
