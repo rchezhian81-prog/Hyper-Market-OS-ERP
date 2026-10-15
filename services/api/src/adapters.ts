@@ -329,6 +329,7 @@ import {
   type UnusedCheckCapped, type BoxHistoryReading, type BoxHistoryState, type BoxHistorySealKey,
   type UnreceivedNumbers, type ClaimSlack, type JudgedAway, type NeverReceivedSnapshot, type PrefixBinding, type UnusedNumbers, type UnusedReceived,
   type UnreceivedCandidate, type UnusedReceivedAcknowledgement, type BoxHistorySnapshot, type BoxHistoryEntry, type BoxHistoryJudge, type BoxReportsView,
+  registeredByStore, DOOR_REFUSAL_EXAMPLES_MAX, type LanePrefixRegistration, type DoorRefusalLine,
 } from '../../platform/src/box-health';
 import type { BranchScope } from '../../kernel/src/index';
 import { tradingDayIn, tradingDayWindow, type TradingCalendar } from '../../../packages/calendar/src/index';
@@ -7804,12 +7805,26 @@ const ALERTS_STREAM = streamName(STREAM.platform, 'alerts');
  * escalation is kept as evidence (P-08, hard rule #6). The routes run the tested `@sre/ops` engines
  * (`raiseAlerts` / `escalateUnacknowledged`) over the fold; this only stores the facts.
  */
+/**
+ * Round 32 · OB-115 / round 33 · OB-119: does this person hold the owner role, and the IT/platform administration function —
+ * who may change a built-in alert rule, and who may acknowledge a built-in alert (read from the grants, never written in code).
+ */
+async function builtInAuthorityOf(store: EventStore, tenantId: string, userId: string): Promise<{ owner: boolean; platformAdministration: boolean }> {
+  const mine = (await effectiveGrants(store, tenantId)).filter((g) => g.userId === userId);
+  return {
+    owner: mine.some((g) => g.roleId === OWNER_ROLE_ID),
+    platformAdministration: mine.some((g) => { const role = ROLE_CATALOGUE.find((r) => r.id === g.roleId); return role !== undefined && isPlatformAdministrationRole(role); }),
+  };
+}
+
 export function alertLifecycleAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
 }): AlertLifecycleDeps {
   return {
     now: input.now,
+    // Round 33 · OB-119: only the owner acknowledges a built-in alert (the IT administrator is refused by name).
+    builtInAlertAuthorityOf: (tenantId, userId) => builtInAuthorityOf(input.store, tenantId, userId),
     alerts: async (tenantId) =>
       projectAlerts(await allOf<AlertLifecycleEvent>(input.store, tenantId, ALERTS_STREAM, 'AlertLifecycle')),
     recordAlertEvent: async (tenantId, event, key) => {
@@ -12724,6 +12739,8 @@ export function concessionTagsAdapter(input: { readonly store: EventStore; reado
 // on the platform stream (the alerts through the same lifecycle adapter the manual raise uses).
 const BACKUPS_STREAM = streamName(STREAM.platform, 'backups');
 const ALERT_RULES_STREAM = streamName(STREAM.platform, 'alert-rules');
+/** Round 33 · OB-120: the write guard every alert-rules save is conditional on (one per tenant). */
+const ALERT_RULES_GUARD = 'alert-rules';
 export function observedHealthAdapter(input: {
   readonly store: EventStore; readonly now: () => string;
   /** Verifier r22 D3: the owner's unsent line (platform.box_unsent_warn_hours) — absent, its default (2 hours). */
@@ -12836,6 +12853,8 @@ export function observedHealthAdapter(input: {
         // Verifier r20 HW-2: whether the bill-number high-water is waiting on an open database transaction (read after the
         // findings, whose count just ran the fold).
         billNumberHighWater: (await highWaterFenceWait(input.store, tenantId)) ?? null,
+        // Round 33 · OB-121: the reports refused at the door, one bounded line per store computer per day.
+        refusedAtDoor: await refusedAtDoorLines(input.store, tenantId),
       };
     },
     // OB-95: the people who hold both the IT/platform role and a business role (granted before the rule), with any live
@@ -12856,22 +12875,20 @@ export function observedHealthAdapter(input: {
     },
     // Round 32 · OB-115: who may change a BUILT-IN rule — only a person who holds the owner role; whether this person holds
     // the IT/platform administration function is said too (refused by name, as OB-91).
-    builtInRuleAuthorityOf: async (tenantId, userId) => {
-      const mine = (await effectiveGrants(input.store, tenantId)).filter((g) => g.userId === userId);
-      return {
-        owner: mine.some((g) => g.roleId === OWNER_ROLE_ID),
-        platformAdministration: mine.some((g) => { const role = ROLE_CATALOGUE.find((r) => r.id === g.roleId); return role !== undefined && isPlatformAdministrationRole(role); }),
-      };
-    },
-    defineAlertRules: async (tenantId, rules) => {
-      await input.store.append(tenantId, ALERT_RULES_STREAM, makeEvent({
-        id: `alert-rules-v${rules.version}`,
-        type: 'AlertRulesDefined',
-        occurredAt: rules.definedAt,
-        idempotencyKey: `alert-rules-${tenantId}-v${rules.version}`,
-        source: 'api/platform',
-        payload: rules,
-      }));
+    builtInRuleAuthorityOf: (tenantId, userId) => builtInAuthorityOf(input.store, tenantId, userId),
+    // Round 33 · OB-120: the rules' write guard — read before the rules in force, passed back on the save.
+    alertRulesGuardVersion: (tenantId) => input.store.guardVersion(tenantId, ALERT_RULES_GUARD),
+    defineAlertRules: async (tenantId, rules, opts) => {
+      // Round 33 · OB-120 (verifier r32 NEW-3): each SAVE is its own event (keyed on the version AND the request that made it),
+      // so two saves of the same version never dedup onto each other; the guard makes the append conditional — the second of
+      // two saves based on one version is refused by name (ConcurrencyConflictError → 409), never silently answered "saved".
+      // A re-send of the same request (same key) is the same save and collapses onto it.
+      const save = createHash('sha256').update(opts?.saveKey ?? randomUUID()).digest('hex').slice(0, 16);
+      const key = `alert-rules-${tenantId}-v${rules.version}-${save}`;
+      await input.store.appendBatch(tenantId, [{
+        stream: ALERT_RULES_STREAM,
+        event: makeEvent({ id: keyedEventId('alert-rules', key), type: 'AlertRulesDefined', occurredAt: rules.definedAt, idempotencyKey: key, source: 'api/platform', payload: rules }),
+      }], opts?.expectedGuardVersion === undefined ? undefined : { guard: { key: ALERT_RULES_GUARD, expectedVersion: opts.expectedGuardVersion } });
     },
   };
 }
@@ -13612,6 +13629,11 @@ export function boxHealthAdapter(input: {
   bindingVersion: (tenantId: string, storeId: string, prefix: string) => Promise<number>;
   recordReplacement: (tenantId: string, m: StoreComputerReplacement, expectedVersion: number) => Promise<StoreComputerReplacement>;
   acknowledgeNotChecked: (tenantId: string, a: AtRiskAcknowledgement, requestKey: string) => Promise<AtRiskAcknowledgement>;
+  lanePrefixRegistrations: (tenantId: string) => Promise<readonly LanePrefixRegistration[]>;
+  registerLanePrefixes: (tenantId: string, r: LanePrefixRegistration, key: string) => Promise<LanePrefixRegistration>;
+  countRefusedAtDoor: (tenantId: string, r: { readonly computer: string; readonly storeId: string; readonly at: string; readonly prefixes: readonly string[] }) => Promise<void>;
+  refusedAtDoorLines: (tenantId: string) => Promise<readonly DoorRefusalLine[]>;
+  registeredTills: (tenantId: string) => Promise<readonly { readonly storeId: string; readonly tillId: string }[]>;
 } {
   const reading = async (tenantId: string, at: string) => {
     const r = await storeComputerHistory(input.store, tenantId, at, {
@@ -13625,6 +13647,18 @@ export function boxHealthAdapter(input: {
     return r;
   };
   return {
+    // Round 33 · OB-121: the store computers' registered lane prefixes, and the reports refused at the door.
+    lanePrefixRegistrations: (tenantId) => lanePrefixRegistrationsOf(input.store, tenantId),
+    registerLanePrefixes: async (tenantId, r, key) => {
+      const k = `lane-prefixes-${tenantId}-${createHash('sha256').update(key).digest('hex').slice(0, 32)}`;
+      const res = await input.store.append(tenantId, LANE_PREFIX_STREAM, makeEvent({
+        id: keyedEventId('lane-prefixes', k), type: 'StoreComputerLanePrefixesRegistered', occurredAt: r.at, idempotencyKey: k, source: 'api/platform', payload: r,
+      }));
+      return res.record.event.payload as LanePrefixRegistration;
+    },
+    countRefusedAtDoor: (tenantId, r) => countRefusedAtDoor(input.store, tenantId, r),
+    refusedAtDoorLines: (tenantId) => refusedAtDoorLines(input.store, tenantId),
+    registeredTills: receiptPrefixAdapter({ store: input.store, now: input.now ?? (() => new Date().toISOString()) }).registeredTills!,
     // Round 28 · OB-103: EACH acknowledgement is its own record (who, why, when); only a re-sent request answers the first.
     acknowledgeUnusedReceived: async (tenantId, a, requestKey) => {
       const request = createHash('sha256').update(requestKey).digest('hex').slice(0, 32);
@@ -14816,6 +14850,69 @@ export function receiptPrefixAdapter(input: { readonly store: EventStore; readon
   };
 }
 
+/** Round 33 · OB-121: every registration of a store computer's own lane prefixes (append-only). */
+const LANE_PREFIX_STREAM = streamName(STREAM.org, 'store-computer-lane-prefixes');
+/** Round 33 · OB-121: the reports refused at the door, one bounded line per store computer per day. */
+const DOOR_REFUSED_STREAM = streamName(STREAM.org, 'store-computer-prefixes-refused-at-door');
+
+export async function lanePrefixRegistrationsOf(store: EventStore, tenantId: string): Promise<readonly LanePrefixRegistration[]> {
+  return allOf<LanePrefixRegistration>(store, tenantId, LANE_PREFIX_STREAM, 'StoreComputerLanePrefixesRegistered');
+}
+const registeredOf = (registered: ReadonlyMap<string, ReadonlySet<string>>, storeId: string): { registered?: ReadonlySet<string> } => {
+  const r = registered.get(storeId);
+  return r === undefined ? {} : { registered: r };
+};
+
+/**
+ * Round 33 · OB-121: the count of reports refused at the door — exact in this process (per tenant, store computer and UTC day),
+ * and KEPT only at 1, 2, 4, 8 … reports (one small record each, at most ~20 a computer a day whatever it sends), so a restart
+ * resumes from the last kept mark ("at least"). The prefixes themselves are never kept, only up to DOOR_REFUSAL_EXAMPLES_MAX
+ * examples of 10 characters on a line.
+ */
+const DOOR_COUNTS = new WeakMap<EventStore, Map<string, DoorRefusalLine>>();
+function doorCounts(store: EventStore): Map<string, DoorRefusalLine> {
+  let m = DOOR_COUNTS.get(store);
+  if (m === undefined) { m = new Map(); DOOR_COUNTS.set(store, m); }
+  return m;
+}
+async function countRefusedAtDoor(store: EventStore, tenantId: string, r: { readonly computer: string; readonly storeId: string; readonly at: string; readonly prefixes: readonly string[] }): Promise<void> {
+  const day = r.at.slice(0, 10);
+  const k = `${tenantId}\u0000${r.computer}\u0000${r.storeId}\u0000${day}`;
+  const counts = doorCounts(store);
+  let line = counts.get(k);
+  if (line === undefined) {
+    // After a restart, resume from the last kept mark.
+    line = (await refusedAtDoorLines(store, tenantId, false)).find((l) => l.computer === r.computer && l.storeId === r.storeId && l.day === day)
+      ?? { computer: r.computer, storeId: r.storeId, day, count: 0, examples: [], first: r.at, last: r.at };
+  }
+  const examples = [...line.examples];
+  for (const p of r.prefixes) if (examples.length < DOOR_REFUSAL_EXAMPLES_MAX && !examples.includes(p.slice(0, 10))) examples.push(p.slice(0, 10));
+  const next: DoorRefusalLine = { ...line, count: line.count + 1, examples, last: r.at > line.last ? r.at : line.last };
+  counts.set(k, next);
+  // Old days fall out of the process's memory (they stay as kept marks).
+  if (counts.size > 4_096) for (const key of counts.keys()) { if (!key.endsWith(day)) counts.delete(key); }
+  if ((next.count & (next.count - 1)) === 0) {
+    const key = `door-refused-${tenantId}-${createHash('sha256').update(`${r.computer}\u0000${r.storeId}`).digest('hex').slice(0, 24)}-${day}-${next.count}`;
+    await store.append(tenantId, DOOR_REFUSED_STREAM, makeEvent({
+      id: keyedEventId('door-refused', key), type: 'StoreComputerPrefixesRefusedAtDoor', occurredAt: r.at, idempotencyKey: key, source: 'api/platform', payload: next,
+    }));
+  }
+}
+async function refusedAtDoorLines(store: EventStore, tenantId: string, withMemory = true): Promise<readonly DoorRefusalLine[]> {
+  const out = new Map<string, DoorRefusalLine>();
+  const keep = (l: DoorRefusalLine): void => {
+    const k = `${l.computer}\u0000${l.storeId}\u0000${l.day}`;
+    const had = out.get(k);
+    if (had === undefined || l.count > had.count) out.set(k, l);
+  };
+  for (const l of await allOf<DoorRefusalLine>(store, tenantId, DOOR_REFUSED_STREAM, 'StoreComputerPrefixesRefusedAtDoor')) keep(l);
+  if (withMemory) {
+    const mine = `${tenantId}\u0000`;
+    for (const [k, l] of doorCounts(store)) if (k.startsWith(mine)) keep(l);
+  }
+  return [...out.values()].sort((a, b) => a.storeId.localeCompare(b.storeId) || a.computer.localeCompare(b.computer) || a.day.localeCompare(b.day));
+}
+
 /** Verifier r19 BOX-1: every prefix head office ever issued to a till (any version), with the stores it was issued to. */
 export async function issuedPrefixStores(store: EventStore, tenantId: string): Promise<ReadonlyMap<string, ReadonlySet<string>>> {
   const out = new Map<string, Set<string>>();
@@ -14870,12 +14967,14 @@ export async function storeComputerReading(
   const { unsentWarnHours, claimSlack } = opts;
   const banked = await bankedReceiptCounts(store, tenantId);
   const issuedPrefixes = await issuedPrefixStores(store, tenantId);
+  // Round 33 · OB-121: a store's own lane prefixes are the ones registered for its store computers.
+  const registered = registeredByStore(await lanePrefixRegistrationsOf(store, tenantId));
   // Verifier r20 BOX-2: every kept report is re-judged at read; round 27 · OB-102: what judging drops is fingerprinted, so a
   // saved running result made before a report was judged differently is set aside.
   const judgedAway: JudgedAway[] = [];
   const judged = records.map((r) => {
     if (r.receiptNumbersIssued === undefined) return r;
-    const accepted = judgeReportedIssued({ storeId: r.storeId, issued: r.receiptNumbersIssued, issuedPrefixes, banked }).accepted;
+    const accepted = judgeReportedIssued({ storeId: r.storeId, issued: r.receiptNumbersIssued, issuedPrefixes, banked, ...registeredOf(registered, r.storeId) }).accepted;
     if (accepted.length === r.receiptNumbersIssued.length) return r;
     for (const x of r.receiptNumbersIssued) if (!accepted.includes(x)) judgedAway.push({ receivedAt: r.receivedAt, storeId: r.storeId, prefix: x.prefix, through: x.through });
     return { ...r, receiptNumbersIssued: accepted };
@@ -15043,10 +15142,12 @@ export async function storeComputerHistory(
   const atRiskAcknowledged = await allOf<AtRiskAcknowledgement>(store, tenantId, BOX_AT_RISK_ACK_STREAM, 'BoxAtRiskNotCheckedAcknowledged');
   const unusedAcknowledged = await allOf<UnusedReceivedAcknowledgement>(store, tenantId, BOX_UNUSED_ACK_STREAM, 'BoxUnusedReceivedAcknowledged');
   // Verifier r19 BOX-1 / r20 BOX-2: every report is re-judged at read (`judgeReportedIssued`), as `storeComputerReading` does.
+  // Round 33 · OB-121: a store's own lane prefixes are the ones REGISTERED for its store computers — never "looks like R-…-".
+  const registered = registeredByStore(await lanePrefixRegistrationsOf(store, tenantId));
   const judge: BoxHistoryJudge = {
     owns: (storeId, prefix) => {
       const stores = issuedPrefixes.get(prefix);
-      return stores === undefined ? prefix.startsWith('R-') && prefix.endsWith('-') && prefix.length > 3 : stores.has(storeId);
+      return stores === undefined ? registered.get(storeId)?.has(prefix) ?? false : stores.has(storeId);
     },
     plausible: (prefix, through) => through <= (banked.get(prefix) ?? 0) + PLAUSIBLE_ISSUED_AHEAD,
   };
@@ -15057,7 +15158,7 @@ export async function storeComputerHistory(
       const e = events[i]!;
       const raw = e.event.payload as BoxHealthRecord;
       if (raw.receiptNumbersIssued === undefined || skip?.(e.seq) === true) { out[i] = { raw, judged: raw, seq: e.seq }; continue; }
-      const accepted = judgeReportedIssued({ storeId: raw.storeId, issued: raw.receiptNumbersIssued, issuedPrefixes, banked }).accepted;
+      const accepted = judgeReportedIssued({ storeId: raw.storeId, issued: raw.receiptNumbersIssued, issuedPrefixes, banked, ...registeredOf(registered, raw.storeId) }).accepted;
       out[i] = { raw, judged: accepted.length === raw.receiptNumbersIssued.length ? raw : { ...raw, receiptNumbersIssued: accepted }, seq: e.seq };
       if ((i + 1) % BOX_HISTORY_STEP === 0) await breathe();
     }
@@ -15394,10 +15495,11 @@ export async function bankedReceiptCounts(
           ? [[`${r.storeId as string}${BOX_KEY_SEP}${x.prefix}`, x.through] as const] : []));
     });
     const mine = `${opts.storeId}${BOX_KEY_SEP}`;
-    // Verifier r19 BOX-1: only this store's own prefixes (issued to one of its tills, or its own `R-<lane>-` numbering) —
-    // also for a report kept before head office judged reports at arrival.
+    // Verifier r19 BOX-1: only this store's own prefixes (issued to one of its tills, or — round 33 · OB-121 — one of its store
+    // computers' REGISTERED lane prefixes) — also for a report kept before head office judged reports at arrival.
     const issued = await issuedPrefixStores(store, tenantId);
-    const own = (prefix: string): boolean => (issued.get(prefix)?.has(opts.storeId!) ?? false) || (prefix.startsWith('R-') && prefix.endsWith('-') && !issued.has(prefix));
+    const registeredHere = registeredByStore(await lanePrefixRegistrationsOf(store, tenantId)).get(opts.storeId) ?? new Set<string>();
+    const own = (prefix: string): boolean => (issued.get(prefix)?.has(opts.storeId!) ?? false) || (registeredHere.has(prefix) && !issued.has(prefix));
     // Verifier r20 BOX-2: and only up to PLAUSIBLE_ISSUED_AHEAD above what sales and refunds bank — the same bound head
     // office judges a report by at arrival, so a report kept before that judging can never lock a till either.
     // The running maximum is exact while it is plausible; when it is not (an implausible report kept before judging), the

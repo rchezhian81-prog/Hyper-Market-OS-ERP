@@ -49,9 +49,10 @@ import {
   type HealthSignals, type HealthThresholds, type AlertRule, type SystemHealth, type RaisedAlert,
 } from '../../../packages/ops/src/index';
 import { readRules, readThresholds } from './operational-health';
-import { raiseKey, type AlertLifecycleDeps, type AlertLifecycleEvent } from './alert-lifecycle';
+import { raiseKey, isReservedAlertId, reservedAlertIdRefusal, type AlertLifecycleDeps, type AlertLifecycleEvent } from './alert-lifecycle';
+import { ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
 import {
-  judgeBoxes, boxHistoryComponents, STORE_COMPUTER_CHECKS_STUCK_COMPONENT, STORE_COMPUTER_CHECKS_STUCK_MINUTES,
+  judgeBoxes, boxHistoryComponents, doorRefusalComponents, STORE_COMPUTER_CHECKS_STUCK_COMPONENT, STORE_COMPUTER_CHECKS_STUCK_MINUTES, type DoorRefusalLine,
   type BoxHealthRecord, type BoxHealthView, type BillNumberFinding, type StoreComputerReplacement, type PrefixBinding, type UnusedNumbers, type BoxReportsView,
   type BoxHistoryState, type UnusedCheckCapped,
 } from './box-health';
@@ -228,7 +229,14 @@ export interface ObservedHealthDeps extends Pick<AlertLifecycleDeps, 'alerts' | 
   readonly backups: (tenantId: string) => Promise<readonly BackupRecord[]> | readonly BackupRecord[];
   readonly recordBackup: (tenantId: string, record: BackupRecord) => Promise<void> | void;
   readonly alertRules: (tenantId: string) => Promise<StoredAlertRules | undefined> | StoredAlertRules | undefined;
-  readonly defineAlertRules: (tenantId: string, rules: StoredAlertRules) => Promise<void> | void;
+  /**
+   * Append one rules version. Round 33 · OB-120: with `expectedGuardVersion` (read by `alertRulesGuardVersion` BEFORE the rules
+   * in force were read) the append is CONDITIONAL — refused by name (`ConcurrencyConflictError`) when another save landed in
+   * between, never silently deduped onto it. `saveKey` names this save (a re-send of the same request is the same save).
+   */
+  readonly defineAlertRules: (tenantId: string, rules: StoredAlertRules, opts?: { readonly expectedGuardVersion?: number; readonly saveKey?: string }) => Promise<void> | void;
+  /** Round 33 · OB-120: the alert rules' write-guard version (0 before any guarded save). Absent: saves are not guarded. */
+  readonly alertRulesGuardVersion?: (tenantId: string) => Promise<number>;
   /**
    * PA-12: the store computers' own sync reports (EA-01) — the stalest store's last complete sync and what their queues
    * still hold or had refused. Absent, or no store has reported: the newest sale stands in, said so.
@@ -259,6 +267,8 @@ export interface ObservedHealthDeps extends Pick<AlertLifecycleDeps, 'alerts' | 
     readonly billNumberFindings?: ReadonlyMap<string, readonly BillNumberFinding[]>;
     /** Verifier r20 HW-2: the bill-number high-water's visibility fence, when it is waiting on an open transaction. */
     readonly billNumberHighWater?: { readonly since: string; readonly waitingSeconds: number; readonly streams: readonly string[] } | null;
+    /** Round 33 · OB-121: the reports refused at the door (prefixes never issued nor registered), one line per computer per day. */
+    readonly refusedAtDoor?: readonly DoorRefusalLine[];
     /** Round 26 · OB-97: owner-approved "store computer replaced" acts (a prefix's binding follows them). */
     readonly replacements?: readonly StoreComputerReplacement[];
     /** Round 27 · OB-101: the (store, prefix) bindings as the findings were judged on (the store's health comes from the bound computer). */
@@ -403,6 +413,8 @@ export async function observeSignals(deps: ObservedHealthDeps, tenantId: string,
     boxes: judgedBoxes?.boxes ?? [],
     boxComponents: [
       ...judgedBoxes?.components ?? [], ...highWaterComponent(boxReports?.billNumberHighWater ?? null),
+      // Round 33 · OB-121: a store computer naming bill-number prefixes head office never issued or registered — said, never kept.
+      ...doorRefusalComponents(boxReports?.refusedAtDoor ?? [], at),
       ...(boxReports === undefined ? [] : boxHistoryComponents({ at, ...(boxReports.preparing === undefined ? {} : { preparing: boxReports.preparing }), ...(boxReports.history === undefined ? {} : { history: boxReports.history }) })),
       ...separationOfDutiesComponent(bothDuties),
     ],
@@ -506,21 +518,29 @@ export async function judgeObserved(deps: ObservedHealthDeps, tenantId: string, 
  * occurrence). Returns undefined when the shop has no alert rules in force — none of the owner's and no built-in one (nothing
  * can be owned, so nothing is raised). Round 31 · OB-114: the built-in rules are in force without rules of the owner's own.
  */
-export async function raiseObservedAlerts(deps: ObservedHealthDeps, tenantId: string, by: string, at: string, opts: { readonly clear?: boolean } = {}) {
+export async function raiseObservedAlerts(deps: ObservedHealthDeps, tenantId: string, by: string, at: string, opts: { readonly clear?: boolean; readonly builtIn?: boolean } = {}) {
   const judged = await judgeObserved(deps, tenantId, at);
   if (judged.stored === undefined && judged.rules.length === 0) return undefined;
   const before = await deps.alerts(tenantId);
   const known = new Set(before.map((a) => a.alert.alertId));
   let newlyOpened = 0;
+  // Round 33 · OB-119: only the ops-alert worker raises a built-in rule's alert (`builtIn`, the default for it); a person's
+  // raise leaves them to the worker, and says so.
+  const builtIn = opts.builtIn ?? true;
+  let builtInLeftToWorker = 0;
   for (const alert of judged.alerts) {
+    const reserved = isReservedAlertId(alert.alertId);
+    if (reserved && !builtIn) { builtInLeftToWorker += 1; continue; }
     const rule = judged.rules.find((r) => r.alertId === alert.alertId);
     const event: AlertLifecycleEvent = {
       alertId: alert.alertId, change: 'raised', by, at, alert,
       ...(rule?.escalatesToUserId !== undefined ? { escalatesToUserId: rule.escalatesToUserId } : {}),
+      // Round 33 · OB-119: the built-in rule's own raise — never collapsed into an alert someone else planted under its id.
+      ...(reserved ? { origin: 'built-in-rule' as const } : {}),
     };
     const live = before.find((a) => a.alert.alertId === alert.alertId);
-    await deps.recordAlertEvent(tenantId, event, raiseKey(alert.alertId, live));
-    if (!known.has(alert.alertId) || live?.state === 'cleared') newlyOpened += 1;
+    await deps.recordAlertEvent(tenantId, event, raiseKey(alert.alertId, live, reserved));
+    if (!known.has(alert.alertId) || live?.state === 'cleared' || (reserved && live?.foreign === true)) newlyOpened += 1;
   }
   let cleared = 0;
   let keptWhilePreparing = 0;
@@ -540,11 +560,24 @@ export async function raiseObservedAlerts(deps: ObservedHealthDeps, tenantId: st
       cleared += 1;
     }
   }
-  return { ...judged, newlyOpened, cleared, keptWhilePreparing };
+  return { ...judged, newlyOpened, cleared, keptWhilePreparing, builtInLeftToWorker };
 }
 
 /** Round 29 · OB-106: the components the store computers' reports give (kept, never cleared, while their checks are being prepared). */
 const STORE_COMPUTER_COMPONENT = /^(box_|till_devices:|bill_number_high_water)/;
+
+/**
+ * Round 33 · OB-120 "A" (owner, 15 Oct 2026, in writing, "Refuse the second save"; verifier r32 NEW-3): a save of the alert
+ * rules based on a version that is no longer the one in force is refused by name — 409, nothing saved, nothing lost.
+ */
+function rulesChangedSinceRead(basedOnVersion: number, current: StoredAlertRules | undefined) {
+  return apiError(409, {
+    code: 'alert_rules_changed_since_you_looked',
+    whatHappened: `Someone else just changed these rules — look again and resend. This save was based on version ${basedOnVersion}, but the rules in force are now version ${current?.version ?? 0}${current === undefined ? '' : `, saved by ${current.definedBy} at ${current.definedAt}`}. Saving yours on top would silently undo their change (owner decision OB-120), so it was refused.`,
+    wasItSaved: 'not_saved',
+    nextSafeAction: `Read the rules again (GET /v1/platform/alert-rules), make your change on what they show now, and resend with basedOnVersion ${current?.version ?? 0}. Nothing of yours was saved.`,
+  });
+}
 
 export function observedHealthRoutes(deps: ObservedHealthDeps): readonly Route[] {
   const judge = (tenantId: string, at: string) => judgeObserved(deps, tenantId, at);
@@ -597,6 +630,28 @@ export function observedHealthRoutes(deps: ObservedHealthDeps): readonly Route[]
             nextSafeAction: 'Correct the rules and send the whole set again. The rules in force are unchanged.',
           });
         }
+        // Round 33 · OB-119: a rule under a reserved id must BE a built-in rule (the owner's edit of it, judged below) — no
+        // hand-made rule may name an id under "built-in:" or "notice:".
+        const reservedIds = [...new Set(rules.map((r) => r.alertId).filter((id) => isReservedAlertId(id) && !BUILT_IN_ALERT_RULE_IDS.includes(id)))];
+        if (reservedIds.length > 0) throw reservedAlertIdRefusal(reservedIds);
+        // Round 33 · OB-120: the save names the rules version it was based on (GET shows it: rules.version, 0 when none yet).
+        const basedOnVersion = b['basedOnVersion'];
+        if (basedOnVersion === undefined) {
+          throw apiError(428, {
+            code: 'alert_rules_save_needs_based_on_version',
+            whatHappened: 'A save of the alert rules must say which version of the rules it was based on (basedOnVersion — rules.version from GET /v1/platform/alert-rules, 0 when no rules are saved yet), so a change someone else made in between is never silently overwritten or lost (owner decision OB-120).',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Read the rules (GET /v1/platform/alert-rules), make your change on what it shows, and send it with basedOnVersion set to the version you read. The rules in force are unchanged.',
+          });
+        }
+        if (typeof basedOnVersion !== 'number' || !Number.isSafeInteger(basedOnVersion) || basedOnVersion < 0) {
+          throw apiError(400, {
+            code: 'alert_rules_not_readable',
+            whatHappened: 'basedOnVersion must be a whole number of 0 or more — the rules version you read (0 when no rules are saved yet).',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Correct basedOnVersion and send the whole set again. The rules in force are unchanged.',
+          });
+        }
         // Round 32 · OB-115: an edited built-in rule must still be able to fire for its purpose — its own component, at a
         // status that component reaches when the checks are stuck, shop-wide.
         for (const r of rules) {
@@ -611,7 +666,10 @@ export function observedHealthRoutes(deps: ObservedHealthDeps): readonly Route[]
             });
           }
         }
+        // Round 33 · OB-120: the guard's version is read BEFORE the rules in force, so a save landing in between is caught.
+        const guardAt = deps.alertRulesGuardVersion === undefined ? undefined : await deps.alertRulesGuardVersion(ctx.tenantId);
         const current = await deps.alertRules(ctx.tenantId);
+        if ((current?.version ?? 0) !== basedOnVersion) throw rulesChangedSinceRead(basedOnVersion, current);
         const definedAt = deps.now();
         // OB-114: a built-in rule turned off stays off until a version names the list again (round 32: said in every reply).
         const offAfter = builtInOff ?? current?.builtInOff;
@@ -644,7 +702,16 @@ export function observedHealthRoutes(deps: ObservedHealthDeps): readonly Route[]
             : { builtInChangedBy: current.builtInChangedBy, builtInChangedAt: current.builtInChangedAt }),
           definedBy: ctx.userId, definedAt,
         };
-        await deps.defineAlertRules(ctx.tenantId, stored);
+        try {
+          await deps.defineAlertRules(ctx.tenantId, stored, {
+            ...(guardAt === undefined ? {} : { expectedGuardVersion: guardAt }),
+            ...(ctx.idempotencyKey === undefined ? {} : { saveKey: ctx.idempotencyKey }),
+          });
+        } catch (e) {
+          // Round 33 · OB-120: another save landed between this one's read and its write — refused by name, never dropped.
+          if (e instanceof ConcurrencyConflictError) throw rulesChangedSinceRead(basedOnVersion, await deps.alertRules(ctx.tenantId));
+          throw e;
+        }
         const owner = deps.shopOwner === undefined ? undefined : await deps.shopOwner(ctx.tenantId);
         const { builtIn } = rulesInForce(stored, owner);
         // Round 32 · OB-115: every change to a built-in rule is also sent to the owner — a notice on his alert board, which the
@@ -658,7 +725,9 @@ export function observedHealthRoutes(deps: ObservedHealthDeps): readonly Route[]
             raisedAt: definedAt,
             ackDueBy: new Date(Date.parse(definedAt) + BUILT_IN_RULE_CHANGED_NOTICE_ACK_MINUTES * 60_000).toISOString().replace(/\.\d{3}Z$/, 'Z'),
           };
-          await deps.recordAlertEvent(ctx.tenantId, { alertId, change: 'raised', by: ctx.userId, at: definedAt, alert }, `raise-${alertId}`);
+          // Round 33 · OB-119: head office's own notice — never collapsed into an alert someone else planted under its id.
+          const live = (await deps.alerts(ctx.tenantId)).find((a) => a.alert.alertId === alertId);
+          await deps.recordAlertEvent(ctx.tenantId, { alertId, change: 'raised', by: ctx.userId, at: definedAt, alert, origin: 'built-in-rule' }, raiseKey(alertId, live, true));
           noticeTo = owner.userId;
         }
         // The reply says, every time, the state of each built-in rule after this save — so a rule left OFF by an earlier
@@ -696,7 +765,8 @@ export function observedHealthRoutes(deps: ObservedHealthDeps): readonly Route[]
       handler: async (ctx) => {
         const at = deps.now();
         // Round 31 · OB-114: a person's raise needs rules of the owner's own (the built-in ones are raised by the alert worker).
-        const done = (await deps.alertRules(ctx.tenantId)) === undefined ? undefined : await raiseObservedAlerts(deps, ctx.tenantId, ctx.userId, at);
+        // Round 33 · OB-119: and it never raises a built-in rule's alert — only the worker does (said in the reply).
+        const done = (await deps.alertRules(ctx.tenantId)) === undefined ? undefined : await raiseObservedAlerts(deps, ctx.tenantId, ctx.userId, at, { builtIn: false });
         if (done === undefined || done.stored === undefined) {
           throw apiError(409, {
             code: 'alert_rules_not_defined',
@@ -705,8 +775,15 @@ export function observedHealthRoutes(deps: ObservedHealthDeps): readonly Route[]
             nextSafeAction: 'Define the rules first (PUT /v1/platform/alert-rules: who owns which component, at what status, how soon they must acknowledge). Nothing was raised.',
           });
         }
-        const { stored, observed, health, alerts, newlyOpened } = done;
-        return { status: 200, body: { raised: alerts.length, newlyOpened, alerts, health, observed, rulesVersion: stored.version, at } };
+        const { stored, observed, health, newlyOpened, builtInLeftToWorker } = done;
+        const alerts = done.alerts.filter((a) => !isReservedAlertId(a.alertId));
+        return {
+          status: 200,
+          body: {
+            raised: alerts.length, newlyOpened, alerts, health, observed, rulesVersion: stored.version, at,
+            ...(builtInLeftToWorker === 0 ? {} : { builtInLeftToWorker: `${builtInLeftToWorker} built-in alert(s) firing now are raised only by head office's alert worker, to the owner (owner decision OB-119) — not by this request` }),
+          },
+        };
       },
     },
     {

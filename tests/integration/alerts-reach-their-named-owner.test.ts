@@ -35,6 +35,7 @@ const at = (minutes: number): string => new Date(T0 + minutes * 60_000).toISOStr
 const travel = (minutes: number): void => { vi.setSystemTime(new Date(T0 + minutes * 60_000)); };
 
 const RULES = {
+  basedOnVersion: 0, // round 33 · OB-120: the first save
   rules: [
     { alertId: 'backup', component: 'backup', firesAt: 'degraded', ownerUserId: PRIYA, ownerName: 'Priya (store manager)', ackWithinMinutes: 15, escalatesToUserId: OWNER },
     { alertId: 'store-sync-refused', component: 'dead_letter', firesAt: 'degraded', ownerUserId: PRIYA, ownerName: 'Priya (store manager)', ackWithinMinutes: 15, escalatesToUserId: OWNER },

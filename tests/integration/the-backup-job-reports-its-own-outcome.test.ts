@@ -34,7 +34,9 @@ const OWNER = 'u-owner';
 const PRIYA = 'u-hr';
 const JOB = 'u-backup-job';
 const SCRIPT = resolve('infra/pilot/backup/encrypted-backup.sh');
-const RULES = (maxAge?: number) => ({
+// Round 33 · OB-120: every save names the rules version it was based on (0: none yet).
+const RULES = (maxAge?: number, basedOnVersion = 0) => ({
+  basedOnVersion,
   rules: [{ alertId: 'backup', component: 'backup', firesAt: 'degraded', ownerUserId: PRIYA, ownerName: 'Priya (store manager)', ackWithinMinutes: 15, escalatesToUserId: OWNER }],
   ...(maxAge === undefined ? {} : { backupMaxAgeSeconds: maxAge }),
 });
@@ -213,7 +215,7 @@ describe.skipIf(!DATABASE_URL)('PA-12 r6 — the backup job reports its own outc
     expect(missed[0]!.alert.detail).toMatch(/^MISSED — no good backup has reported since backups became expected \(2026-10-12T20:00:00\.000Z\); one was due by 2026-10-12T21:00:00\.000Z/);
     // Redefining the rules does not reset the clock (it is carried from the first version).
     travel(62);
-    expect((await call('PUT', '/v1/platform/alert-rules', OWNER, RULES(3600))).status).toBe(200);
+    expect((await call('PUT', '/v1/platform/alert-rules', OWNER, RULES(3600, 1))).status).toBe(200);
     expect((await backupComponent(cloud)).status).toBe('down');
 
     // The job reports a good backup: the alert clears (kept). An hour later with no further report: MISSED again, new.
