@@ -2359,6 +2359,7 @@ class BoxHistoryFold {
     return {
       latestRecord: st?.latest,
       deadLetteredUnsaid: (prefix) => st?.prefixes.get(prefix)?.firstX?.deadLettered === undefined,
+      latestNamed: (prefix) => st?.prefixes.get(prefix)?.firstX,
       lastByPrefix: prefixes.flatMap(([prefix, ph]) => (ph.believed === undefined ? [] : [[prefix, ph.believed] as const])),
       atRiskStands: (prefix) => {
         const ph = st?.prefixes.get(prefix);
@@ -2853,6 +2854,11 @@ export interface StoreBillFacts {
   readonly latestRecord: BoxHealthRecord | undefined;
   /** The latest bound report naming the prefix says nothing of bills given up on (`deadLettered` absent) — or none names it. */
   readonly deadLetteredUnsaid: (prefix: string) => boolean;
+  /**
+   * Round 34 · OB-104 / OB-124 (4): the latest bound report's (first) word naming the prefix — what the not-checked line is
+   * read from — or undefined when none names it.
+   */
+  readonly latestNamed: (prefix: string) => IssuedReport | undefined;
   /** Per prefix (in order), the latest BELIEVED word about it and when that report came. */
   readonly lastByPrefix: readonly (readonly [string, { readonly x: IssuedReport; readonly receivedAt: string }])[];
   /** An acknowledgement of the prefix's not-checked line stands (`atRiskAcknowledgementStands`). */
@@ -2885,6 +2891,7 @@ export function storeBillFacts(input: {
   return {
     latestRecord: mine[mine.length - 1],
     deadLetteredUnsaid: (prefix) => latestOf(prefix)?.deadLettered === undefined,
+    latestNamed: latestOf,
     lastByPrefix: [...lastByPrefix].sort((a, b) => a[0].localeCompare(b[0])),
     atRiskStands: (prefix) => atRiskAcknowledgementStands(input.storeId, prefix, mine, input.atRiskAcknowledged ?? []),
     ...(() => {
@@ -2944,6 +2951,10 @@ export function unusedReceivedAcknowledgementStands(
  * reports are written by. A till whose clock is slow can no longer make an honest number look "said unused after its
  * bill". A bill from an older store computer that does not stamp it is judged on the till's time, as before, and the line
  * says so (`clock: 'till'`). The margin allows for the minute rounding and the report's round trip.
+ * Round 34 · OB-124 (1): a RETURN is judged the same way — the store computer stamps when it took the refund from the till
+ * (`storeComputerTakenAt` on the refund it keeps and sends; head office keeps it on the return, never later than it received
+ * it), so a slow till clock no longer makes an honest number look "said unused after its return" either. A return from an
+ * older store computer that does not stamp it is judged on the till's time, and the line says so.
  */
 export const UNUSED_CONTRADICTION_MARGIN_MINUTES = 15;
 export interface UnusedReceived {
@@ -3921,6 +3932,17 @@ export interface BoxHealthDeps {
   readonly acknowledgeUnusedReceived?: (tenantId: string, a: UnusedReceivedAcknowledgement, requestKey: string) => Promise<UnusedReceivedAcknowledgement>;
   /** Round 28 · OB-104: the bindings as they stand at `at`, from the saved running result (the page's read) — else worked out from every report. */
   readonly bindingsAt?: (tenantId: string, at: string) => Promise<readonly PrefixBinding[]>;
+  /**
+   * Round 34 · OB-104 / OB-124 (4): whether head office holds a refused report from the store's (bound) computer under the
+   * prefix at that count — an OPEN one, as the health page shows it, or one a person already acknowledged — from the saved
+   * running result and the reports after it only (never every report). Absent: worked out from every report (`records`).
+   */
+  readonly refusedReportHeld?: (tenantId: string, storeId: string, prefix: string, through: number, at: string) => Promise<boolean>;
+  /**
+   * Round 34 · OB-104 / OB-124 (4): the latest bound report's word naming the prefix at `at` (what the not-checked line is read
+   * from), from the saved running result and the reports after it only. Absent: worked out from every report (`records`).
+   */
+  readonly latestNamedAt?: (tenantId: string, storeId: string, prefix: string, at: string) => Promise<IssuedReport | undefined>;
   /** Round 33 · OB-121: every registration of a store computer's own lane prefixes. Absent: none (no `R-…-` is accepted). */
   readonly lanePrefixRegistrations?: (tenantId: string) => Promise<readonly LanePrefixRegistration[]>;
   /** Round 33 · OB-121: keep one registration (append-only; the same `key` again answers the first). Absent: none can be made. */
@@ -4306,22 +4328,25 @@ export function boxHealthRoutes(deps: BoxHealthDeps): readonly Route[] {
           nextSafeAction: 'Send { storeId, prefix, through, reason } as shown on the health page. Nothing was recorded.',
         });
       }
-      if (deps.records === undefined || deps.acknowledge === undefined) {
+      if ((deps.records === undefined && deps.refusedReportHeld === undefined) || deps.acknowledge === undefined) {
         throw apiError(503, { code: 'acknowledgements_not_kept_here', whatHappened: 'This head office keeps no store computer reports, so there is nothing to acknowledge.', wasItSaved: 'not_saved', nextSafeAction: 'Use the head office that keeps the store computers\' reports. Nothing was recorded.' });
       }
+      // The pipeline guarantees a write carries its Idempotency-Key; without one (a handler called outside it) the moment stands in.
+      const at = deps.now();
+      // Round 34 · OB-104 / OB-124 (4): from the saved running result and the reports after it only — never every report.
       // OB-94: a second store computer's report of a bound prefix is refused at read (`bindPrefixesToComputers`) — found here too.
-      const refusedAt = bindPrefixesToComputers(await deps.records(ctx.tenantId), deps.replacements === undefined ? [] : await deps.replacements(ctx.tenantId)).filter((rec) => rec.storeId === storeId)
-        .flatMap((rec) => (rec.receiptNumbersRefused ?? []).filter((x) => x.prefix === prefix && x.through === through).map(() => rec.receivedAt));
-      if (refusedAt.length === 0) {
+      const held = deps.refusedReportHeld !== undefined
+        ? await preparedOr503(() => deps.refusedReportHeld!(ctx.tenantId, storeId, prefix, through, at))
+        : bindPrefixesToComputers(await deps.records!(ctx.tenantId), deps.replacements === undefined ? [] : await deps.replacements(ctx.tenantId)).filter((rec) => rec.storeId === storeId)
+          .some((rec) => (rec.receiptNumbersRefused ?? []).some((x) => x.prefix === prefix && x.through === through));
+      if (!held) {
         throw apiError(404, {
           code: 'no_such_refused_report',
-          whatHappened: `Head office holds no refused report from store ${storeId}'s computer under ${prefix} through ${through}.`,
+          whatHappened: `Head office holds no refused report from store ${storeId}'s computer under ${prefix} through ${through} that is still open on the health page (or was acknowledged before). A refused count head office has since banked, or that a "store computer replaced" act answered, is answered for good and needs no acknowledgement.`,
           wasItSaved: 'not_saved',
           nextSafeAction: 'Copy the store, prefix and count exactly as the health page shows the refused report. Nothing was recorded.',
         });
       }
-      // The pipeline guarantees a write carries its Idempotency-Key; without one (a handler called outside it) the moment stands in.
-      const at = deps.now();
       const kept = await deps.acknowledge(ctx.tenantId, { storeId, prefix, through, reason, by: ctx.userId, at, authority: 'all_stores' }, ctx.idempotencyKey ?? `${ctx.userId}@${at}`);
       return { status: 201, body: { acknowledged: kept } };
     },
@@ -4355,7 +4380,7 @@ export function boxHealthRoutes(deps: BoxHealthDeps): readonly Route[] {
           nextSafeAction: 'Send { storeId, prefix, fromComputer, toComputer, reason, approvalId } — ask the owner\'s approval for exactly those first. Nothing was moved.',
         });
       }
-      if (deps.records === undefined || deps.recordReplacement === undefined || deps.bindingVersion === undefined || deps.issuedAndBanked === undefined || deps.storeComputerScopeOf === undefined) {
+      if ((deps.records === undefined && deps.bindingsAt === undefined) || deps.recordReplacement === undefined || deps.bindingVersion === undefined || deps.issuedAndBanked === undefined || deps.storeComputerScopeOf === undefined) {
         throw apiError(503, { code: 'replacements_not_kept_here', whatHappened: 'This head office keeps no store computer reports, so no bill-number prefix can be moved here.', wasItSaved: 'not_saved', nextSafeAction: 'Use the head office that keeps the store computers\' reports. Nothing was moved.' });
       }
       // The prefix must be one head office issued to a till of THIS store (receipt-prefixes.ts) — never another store's.
@@ -4380,7 +4405,10 @@ export function boxHealthRoutes(deps: BoxHealthDeps): readonly Route[] {
       const version = await deps.bindingVersion(ctx.tenantId, storeId, prefix);
       const at = deps.now();
       const replacements = deps.replacements === undefined ? [] : await deps.replacements(ctx.tenantId);
-      const current = prefixBindings(await deps.records(ctx.tenantId), replacements, at).find((x) => x.storeId === storeId && x.prefix === prefix);
+      // Round 34 · OB-104 / OB-124 (4): the binding from the saved running result and the reports after it only (the same
+      // answer the Store computers page shows) — never every report.
+      const bound = deps.bindingsAt !== undefined ? await preparedOr503(() => deps.bindingsAt!(ctx.tenantId, at)) : prefixBindings(await deps.records!(ctx.tenantId), replacements, at);
+      const current = bound.find((x) => x.storeId === storeId && x.prefix === prefix);
       if (current === undefined) {
         throw apiError(422, {
           code: 'prefix_not_bound_yet',
@@ -4484,16 +4512,20 @@ export function boxHealthRoutes(deps: BoxHealthDeps): readonly Route[] {
           nextSafeAction: 'Send { storeId, prefix, numbers, reason } as shown on the health page. Nothing was recorded.',
         });
       }
-      if (deps.records === undefined || deps.acknowledgeNotChecked === undefined) {
+      if ((deps.records === undefined && deps.latestNamedAt === undefined) || deps.acknowledgeNotChecked === undefined) {
         throw apiError(503, { code: 'acknowledgements_not_kept_here', whatHappened: 'This head office keeps no store computer reports, so there is nothing to acknowledge.', wasItSaved: 'not_saved', nextSafeAction: 'Use the head office that keeps the store computers\' reports. Nothing was recorded.' });
       }
       const at = deps.now();
       const atMs = Date.parse(at);
-      // The store computer's latest word about the prefix, as bound (OB-94 / OB-97) — what the health page shows.
-      const replacements = deps.replacements === undefined ? [] : await deps.replacements(ctx.tenantId);
+      // The store computer's latest word about the prefix, as bound (OB-94 / OB-97) — what the health page shows. Round 34 ·
+      // OB-104 / OB-124 (4): from the saved running result and the reports after it only — never every report.
       let latest: IssuedReport | undefined;
-      for (const rec of bindInOrder((await deps.records(ctx.tenantId)).filter((r) => r.storeId === storeId && Date.parse(r.receivedAt) <= atMs), atOrBefore(replacements, atMs))) {
-        latest = (rec.receiptNumbersIssued ?? []).find((x) => x.prefix === prefix) ?? latest;
+      if (deps.latestNamedAt !== undefined) latest = await preparedOr503(() => deps.latestNamedAt!(ctx.tenantId, storeId, prefix, at));
+      else {
+        const replacements = deps.replacements === undefined ? [] : await deps.replacements(ctx.tenantId);
+        for (const rec of bindInOrder((await deps.records!(ctx.tenantId)).filter((r) => r.storeId === storeId && Date.parse(r.receivedAt) <= atMs), atOrBefore(replacements, atMs))) {
+          latest = (rec.receiptNumbersIssued ?? []).find((x) => x.prefix === prefix) ?? latest;
+        }
       }
       const notChecked = atRiskNotChecked(latest?.atRisk);
       const now = notChecked.reduce((n, [a, z]) => n + z - a + 1, 0);

@@ -504,6 +504,32 @@ count still open and names the others.
   2.82 MB, about 20 MB a day). If you see that line, call support the same day; ask them to block that store computer's
   sign-in if it goes on.
 
+**Round 34 (owner decision OB-124 "A", 15 Oct 2026 — the five store-computer leftovers, built before the pilot):**
+
+- **Refunds too are judged on the store computer's own clock (OB-108).** The store computer now writes on each refund
+  when IT took it from the till (`storeComputerTakenAt`), and head office keeps that on the return — so a till whose
+  clock is slow no longer makes an honest refund number look "said unused, but head office has the bill". A refund
+  from a store computer not yet updated is still judged on the till's clock, and the line says so.
+- **The built-in alert goes to EVERY owner (OB-114).** If two people hold the owner role, both get
+  `built-in:store-computer-checks-stuck` (and the notice when a built-in rule is changed) in their inbox and, with a
+  message provider, on their phone. Either of them may tick it as seen. Nobody else gets it or may tick it.
+  `GET /v1/platform/alert-rules` shows the rule with `alsoToUserIds` naming the other owner(s). An alert already open
+  when an owner is added keeps the owners it was raised to; its next occurrence goes to the new list.
+- **The "not ready since" hour survives a head-office restart (OB-114).** Each time the store computer checks become
+  not ready (or ready again) head office writes one record (never changed afterwards). After a restart the hour
+  carries on from when it really started, so the owner is told on time. Support can list the records
+  (`StoreComputerChecksReadiness` on the `store-computer-checks-readiness` stream).
+- **The three rare buttons no longer read every store-computer report (OB-104).** Acknowledging a refused report,
+  acknowledging a not-checked line and "store computer replaced" read the saved history and the latest reports only.
+  While the saved history is "being prepared" they answer "being prepared … try again in a few minutes". A refused
+  count that head office has since banked (or that a "store computer replaced" act answered) is no longer on the
+  health page and can no longer be acknowledged — the refusal says so.
+- **Only one head-office process builds the saved history at a time (OB-106).** The build now holds a database lock
+  (a PostgreSQL advisory lock on its own connection; it goes away by itself if that process stops). Another
+  head-office process that needs it meanwhile says "being prepared — another head-office process is building it now"
+  and then uses the finished result. **The release still refuses more than one API container** (`release.sh`):
+  lifting that is an owner decision (STATUS round 34), not something to change on the box.
+
 ## Part 4 — Restoring (the one that matters)
 
 **1. Do not restore over live data.** Make an empty database first:

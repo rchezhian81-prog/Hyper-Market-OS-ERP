@@ -105,6 +105,22 @@ export interface ReturnRecord {
   /** The customer the refund belongs to — required for a store-credit refund (the credit is issued to
    *  them), carried on the record for reporting. Absent for cash/card refunds. */
   readonly customerRef?: string;
+  /**
+   * Round 34 · OB-108 / OB-124 (1): when the STORE COMPUTER took this refund from the till (its own clock), as it sent it —
+   * only a well-formed time, and never later than head office received it (a time ahead is cut back to head office's).
+   * Absent on a desk refund and from an older store computer. The "said unused, but head office has the bill" check
+   * compares with it, as it does for a sale; absent, the till's time stands in and the line says so.
+   */
+  readonly storeComputerTakenAt?: string;
+}
+
+/**
+ * Round 34 · OB-108 / OB-124 (1): the store computer's own time for a synced refund — only a well-formed one, and never later
+ * than head office received it (a store computer cannot have taken a refund after head office had it). Undefined: none sent.
+ */
+export function storeComputerTakenAtOf(v: unknown, receivedAt: string): string | undefined {
+  if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/.test(v) || Number.isNaN(Date.parse(v))) return undefined;
+  return Date.parse(v) > Date.parse(receivedAt) ? receivedAt : v;
 }
 
 export interface ReturnsDeps {
@@ -813,9 +829,12 @@ export function returnsRoutes(deps: ReturnsDeps): readonly Route[] {
           }
         }
 
+        // Round 34 · OB-108 / OB-124 (1): the store computer's own time for the refund (it took it from the till), when sent.
+        const takenAt = storeComputerTakenAtOf((ctx.body as Record<string, unknown> | undefined)?.['storeComputerTakenAt'], deps.now());
         const record: ReturnRecord = {
           returnId: s.returnId, number: s.number, originalSaleId: saleId,
           processedBy: s.processedBy, processedAt,
+          ...(takenAt === undefined ? {} : { storeComputerTakenAt: takenAt }),
           reasonCode: s.reasonCode, refundMinor: s.refundMinor, refundTender: s.refundTender,
           refundStatus: s.refundStatus, lines: lots.lines,
           ...(flags.length > 0 ? { governanceFlags: flags } : {}),

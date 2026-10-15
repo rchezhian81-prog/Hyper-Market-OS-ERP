@@ -132,6 +132,22 @@ export const BUILT_IN_STORE_COMPUTER_CHECKS_ACK_MINUTES = 60;
 
 /** The shop's owner, as the built-in rules address him (resolved when the rules are read). */
 export interface ShopOwner { readonly userId: string; readonly name: string }
+/**
+ * Round 34 · OB-114 / OB-124 (2) (owner, 15 Oct 2026, in writing, "Build all five before pilot") — EVERY OWNER (stated). A shop
+ * may have more than one person holding the owner role. A built-in rule then reaches EVERY one of them: the rule names the
+ * first (by user id) as its owner and the others in `alsoToUserIds`, and the ops-alert worker delivers it to each (inbox,
+ * and phone with a message provider) — each owner's inbox shows it, and any one of them may acknowledge it (the owner role
+ * is what OB-119 asks for). Nobody who does not hold the owner role is ever added: it stays owner-only. The owners are read
+ * when the rules are read; an alert already open keeps the owners it was raised to (its next occurrence takes the new list).
+ */
+export type ShopOwners = ShopOwner | readonly ShopOwner[] | undefined;
+const ownersOf = (o: ShopOwners): readonly ShopOwner[] => (o === undefined ? [] : Array.isArray(o) ? (o as readonly ShopOwner[]) : [o as ShopOwner]);
+/** Round 34 · OB-124 (2): the owners as the built-in rules address them — sorted by user id, each once. */
+export function shopOwnersSorted(o: ShopOwners): readonly ShopOwner[] {
+  const seen = new Map<string, ShopOwner>();
+  for (const x of ownersOf(o)) if (!seen.has(x.userId)) seen.set(x.userId, x);
+  return [...seen.values()].sort((a, b) => (a.userId < b.userId ? -1 : a.userId > b.userId ? 1 : 0));
+}
 
 /** Round 31 · OB-114: each built-in rule and whether it is in force (`on`), replaced by the owner's own version (`edited`), turned off, or waiting for an owner. */
 export interface BuiltInRuleState {
@@ -145,13 +161,18 @@ export interface BuiltInRuleState {
   readonly lastChangedAt?: string;
 }
 
-function builtInRules(owner: ShopOwner | undefined): readonly { readonly alertId: string; readonly rule?: AlertRule; readonly description: string }[] {
+function builtInRules(owners: ShopOwners): readonly { readonly alertId: string; readonly rule?: AlertRule; readonly description: string }[] {
+  const all = shopOwnersSorted(owners);
+  const owner = all[0];
+  const others = all.slice(1).map((o) => o.userId);
   return [{
     alertId: BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID,
-    description: `tells the owner when the store computer checks stay "being prepared" (or the saved history cannot be sealed) for more than ${STORE_COMPUTER_CHECKS_STUCK_MINUTES} minutes (owner decision OB-114)`,
+    description: `tells the owner${all.length > 1 ? `s (all ${all.length}: ${all.map((o) => o.userId).join(', ')})` : ''} when the store computer checks stay "being prepared" (or the saved history cannot be sealed) for more than ${STORE_COMPUTER_CHECKS_STUCK_MINUTES} minutes (owner decisions OB-114, OB-124)`,
     ...(owner === undefined ? {} : { rule: {
       alertId: BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID, component: STORE_COMPUTER_CHECKS_STUCK_COMPONENT, firesAt: 'down' as const,
       ownerUserId: owner.userId, ownerName: owner.name, ackWithinMinutes: BUILT_IN_STORE_COMPUTER_CHECKS_ACK_MINUTES,
+      // Round 34 · OB-124 (2): every other person who holds the owner role gets it too.
+      ...(others.length === 0 ? {} : { alsoToUserIds: others }),
     } }),
   }];
 }
@@ -197,7 +218,7 @@ export function builtInRuleChanges(current: StoredAlertRules | undefined, rules:
 }
 
 /** Round 31 · OB-114: the rules in force — the owner's own, and every built-in rule he has not turned off or replaced. */
-export function rulesInForce(stored: StoredAlertRules | undefined, owner: ShopOwner | undefined): { readonly rules: readonly AlertRule[]; readonly builtIn: readonly BuiltInRuleState[] } {
+export function rulesInForce(stored: StoredAlertRules | undefined, owner: ShopOwners): { readonly rules: readonly AlertRule[]; readonly builtIn: readonly BuiltInRuleState[] } {
   const own = stored?.rules ?? [];
   const off = new Set(stored?.builtInOff ?? []);
   const rules: AlertRule[] = [...own];
@@ -296,6 +317,11 @@ export interface ObservedHealthDeps extends Pick<AlertLifecycleDeps, 'alerts' | 
   readonly separationOfDuties?: (tenantId: string) => Promise<readonly { readonly userId: string; readonly itRoles: readonly string[]; readonly businessRoles: readonly string[] }[]>;
   /** Round 31 · OB-114: who holds the owner role now (the built-in rules' addressee). Absent or nobody: the built-in rules are not in force (said). */
   readonly shopOwner?: (tenantId: string) => Promise<ShopOwner | undefined> | ShopOwner | undefined;
+  /**
+   * Round 34 · OB-124 (2): EVERY person who holds the owner role now — the built-in rules reach each of them. When given it is
+   * used instead of `shopOwner`. Empty: the built-in rules are not in force (said).
+   */
+  readonly shopOwners?: (tenantId: string) => Promise<readonly ShopOwner[]> | readonly ShopOwner[];
   /**
    * Round 32 · OB-115: may this person change a BUILT-IN rule — do they hold the owner role — and do they hold the IT/platform
    * administration function (said by name when refused, as OB-91). Absent: nobody may change a built-in rule (fail closed).
@@ -498,6 +524,12 @@ export function withBoxes(health: SystemHealth, boxComponents: readonly Componen
   return { ...health, components, status, summary };
 }
 
+/** Round 34 · OB-124 (2): every person who holds the owner role now (`shopOwners`, else the one `shopOwner` names). */
+async function ownersNow(deps: Pick<ObservedHealthDeps, 'shopOwner' | 'shopOwners'>, tenantId: string): Promise<readonly ShopOwner[]> {
+  if (deps.shopOwners !== undefined) return shopOwnersSorted(await deps.shopOwners(tenantId));
+  return shopOwnersSorted(deps.shopOwner === undefined ? undefined : await deps.shopOwner(tenantId));
+}
+
 /** Judge a shop's observed health with its stored rules (the read and the raise share it). */
 export async function judgeObserved(deps: ObservedHealthDeps, tenantId: string, at: string) {
   const stored = await deps.alertRules(tenantId);
@@ -507,7 +539,7 @@ export async function judgeObserved(deps: ObservedHealthDeps, tenantId: string, 
     withFailedBackup(checkHealth(observed.signals, at, thresholds), observed.lastBackup),
     await deps.backups(tenantId), stored, at), observed.boxComponents);
   // Round 31 · OB-114: the owner's rules and the built-in ones in force (addressed to whoever holds the owner role now).
-  const { rules, builtIn } = rulesInForce(stored, deps.shopOwner === undefined ? undefined : await deps.shopOwner(tenantId));
+  const { rules, builtIn } = rulesInForce(stored, await ownersNow(deps, tenantId));
   const alerts: readonly RaisedAlert[] = raiseAlerts(health, rules);
   return { stored, rules, builtIn, observed, health, alerts };
 }
@@ -593,7 +625,7 @@ export function observedHealthRoutes(deps: ObservedHealthDeps): readonly Route[]
           body: {
             rules: stored ?? null,
             // Round 31 · OB-114: the built-in rules — in force, replaced by the owner's version, turned off, or waiting for an owner.
-            builtIn: rulesInForce(stored, deps.shopOwner === undefined ? undefined : await deps.shopOwner(ctx.tenantId)).builtIn,
+            builtIn: rulesInForce(stored, await ownersNow(deps, ctx.tenantId)).builtIn,
             defaults: { thresholds: DEFAULT_THRESHOLDS, backupMaxAgeSeconds: DEFAULT_BACKUP_MAX_AGE_SECONDS },
             asAt: deps.now(),
           },
@@ -712,8 +744,9 @@ export function observedHealthRoutes(deps: ObservedHealthDeps): readonly Route[]
           if (e instanceof ConcurrencyConflictError) throw rulesChangedSinceRead(basedOnVersion, await deps.alertRules(ctx.tenantId));
           throw e;
         }
-        const owner = deps.shopOwner === undefined ? undefined : await deps.shopOwner(ctx.tenantId);
-        const { builtIn } = rulesInForce(stored, owner);
+        const owners = shopOwnersSorted(await ownersNow(deps, ctx.tenantId));
+        const owner = owners[0];
+        const { builtIn } = rulesInForce(stored, owners);
         // Round 32 · OB-115: every change to a built-in rule is also sent to the owner — a notice on his alert board, which the
         // ops-alert worker delivers to his inbox (and phone, when a message provider is set) on its next pass. Kept, never deleted.
         let noticeTo: string | undefined;
@@ -721,6 +754,8 @@ export function observedHealthRoutes(deps: ObservedHealthDeps): readonly Route[]
           const alertId = `${BUILT_IN_RULE_CHANGED_NOTICE}:v${stored.version}`;
           const alert: RaisedAlert = {
             alertId, component: 'alert_rules_built_in', status: 'degraded', ownerUserId: owner.userId, ownerName: owner.name,
+            // Round 34 · OB-124 (2): every owner is told of a change to a built-in rule, as every owner gets the rule's alert.
+            ...(owners.length > 1 ? { alsoToUserIds: owners.slice(1).map((o) => o.userId) } : {}),
             detail: `a built-in alert rule was changed by ${ctx.userId} at ${definedAt} (rules version ${stored.version}): ${builtInChanges.join('; ')}. Now: ${builtIn.map((b) => `${b.alertId} is ${b.state}${b.rule === undefined ? '' : `, to ${b.rule.ownerName}`}`).join('; ')}. If you did not make this change, check GET /v1/platform/alert-rules and ask who did (owner decision OB-115)`,
             raisedAt: definedAt,
             ackDueBy: new Date(Date.parse(definedAt) + BUILT_IN_RULE_CHANGED_NOTICE_ACK_MINUTES * 60_000).toISOString().replace(/\.\d{3}Z$/, 'Z'),
@@ -728,7 +763,7 @@ export function observedHealthRoutes(deps: ObservedHealthDeps): readonly Route[]
           // Round 33 · OB-119: head office's own notice — never collapsed into an alert someone else planted under its id.
           const live = (await deps.alerts(ctx.tenantId)).find((a) => a.alert.alertId === alertId);
           await deps.recordAlertEvent(ctx.tenantId, { alertId, change: 'raised', by: ctx.userId, at: definedAt, alert, origin: 'built-in-rule' }, raiseKey(alertId, live, true));
-          noticeTo = owner.userId;
+          noticeTo = owners.map((o) => o.userId).join(', ');
         }
         // The reply says, every time, the state of each built-in rule after this save — so a rule left OFF by an earlier
         // version is never kept off unseen by whoever saves next (round 32 · OB-115).

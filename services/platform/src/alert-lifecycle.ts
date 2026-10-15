@@ -323,8 +323,10 @@ export function alertLifecycleRoutes(deps: AlertLifecycleDeps): readonly Route[]
       permission: 'platform.health.read',
       handler: async (ctx) => {
         const me = ctx.userId;
+        // Round 34 · OB-124 (2): an alert also delivered to this person (a built-in rule's other owners) is theirs to answer too.
+        const owns = (a: LiveAlert): boolean => a.alert.ownerUserId === me || (a.alert.alsoToUserIds ?? []).includes(me);
         const mine = (await deps.alerts(ctx.tenantId)).filter((a) =>
-          (a.state === 'open' && a.alert.ownerUserId === me) || (a.state === 'escalated' && (a.escalatedTo === me || a.alert.ownerUserId === me)));
+          (a.state === 'open' && owns(a)) || (a.state === 'escalated' && (a.escalatedTo === me || owns(a))));
         const ordered = [...mine].sort((a, b) =>
           (SEVERITY[a.alert.status] ?? 9) - (SEVERITY[b.alert.status] ?? 9) || a.alert.ackDueBy.localeCompare(b.alert.ackDueBy));
         return {
