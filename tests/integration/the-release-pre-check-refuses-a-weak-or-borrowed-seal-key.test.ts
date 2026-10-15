@@ -4,6 +4,7 @@ import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
+// @ts-expect-error — plain .mjs script module, imported for its pure helpers (no types file needed).
 import { findUnsetSettings, SEAL_KEY_MIN_LENGTH } from '../../scripts/standup-check.mjs';
 
 /**
