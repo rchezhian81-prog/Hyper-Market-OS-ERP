@@ -43,8 +43,10 @@ Open `.env` in a text editor and do **four** things:
    derives other keys from it, each under its own label and held in memory only: the seal on what
    the store computer verified at the till and — unless `PII_KEY_ENCRYPTION_KEY` is set — the key
    customers' personal data is sealed under. **Every store computer holds this key too.**
-3. Replace the `BOX_HISTORY_SEAL_KEY` placeholder with a **third, different** value —
-   `openssl rand -base64 48` (round 32, owner decision OB-116). It is head office's OWN secret for
+3. Replace the `BOX_HISTORY_SEAL_KEY` placeholder with a **third, different** value — made with
+   `openssl rand -base64 48` and written straight into the file, never printed on the screen (round 33: delete the
+   placeholder line, then `printf 'BOX_HISTORY_SEAL_KEY=%s\n' "$(openssl rand -base64 48 | tr -d '\n')" >> .env`)
+   (round 32, owner decision OB-116). It is head office's OWN secret for
    the seal on the store computers' saved history, and it goes to the **API only**: never copy it
    to a store computer, a till or its settings file (the store computer's code never reads it). The
    API refuses to start without it, with the placeholder, with fewer than 32 characters, or with a
