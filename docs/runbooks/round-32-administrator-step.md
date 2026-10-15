@@ -56,3 +56,21 @@ unreadable to the deploy user — then the release sees "no settings file" and r
    `sudo chown deploy:deploy <the file> && sudo chmod 600 <the file>`
 4. The pipeline run also states the reason in words, in the step "Deploy this exact commit over SSH" (setting names
    only): the owner or administrator can open it on GitHub → Actions → the latest "CI" run on main → that step.
+
+## The one-command helper (use this if the release is still refused)
+
+`infra/deploy/set-box-history-seal-key.sh` does the whole step correctly and never shows the value: it reads
+`/opt/sre/deploy.conf` exactly as the release does to find the settings file, removes any old/empty/placeholder/`export`
+`BOX_HISTORY_SEAL_KEY` line, makes sure the file ends with a newline, appends one fresh value from `openssl rand`, keeps
+the file's owner and permissions, and checks the result by name only (one line, 32+ characters, not equal to the other
+keys). It stops without changing anything if the name is glued inside another line.
+
+On the box (the helper is not on the box's checkout until a release succeeds, so take it from main without changing
+anything the box runs):
+
+    git -C /opt/sre/app fetch -q origin main
+    git -C /opt/sre/app show origin/main:infra/deploy/set-box-history-seal-key.sh > /tmp/set-seal-key.sh
+    sudo bash /tmp/set-seal-key.sh
+    rm /tmp/set-seal-key.sh
+
+It must end with `CHECK PASSED`. Then tell the owner "the seal key helper passed".
