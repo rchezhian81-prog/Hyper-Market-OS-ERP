@@ -106,6 +106,15 @@ async function onlyOneInstanceBuilds(n: number): Promise<void> {
     // Let it finish: it saves; every other instance then uses ITS result (resumed, a few rows) and builds nothing.
     release();
     await boxHistoryBuilding(builder.snapshots, T);
+    // On a busy database the builder may hold its result in memory until the visibility fence settles (a transaction open
+    // anywhere holds it back — round 29); its next reads save it. Until it is SAVED the others cannot use it, so wait (bounded).
+    const saved = async (): Promise<boolean> => (await builder.pool.query('SELECT 1 FROM projection_snapshot WHERE tenant_id = $1 AND projection = $2', [T, 'box-health-history@1'])).rows.length === 1;
+    const until = Date.now() + 120_000;
+    while (!(await saved())) {
+      if (Date.now() > until) throw new Error('the builder never saved its result');
+      await read(builder);
+      await new Promise((resolve) => { setTimeout(resolve, 100); });
+    }
     for (const x of others) {
       const before = x.count.rows();
       const after = await read(x);
