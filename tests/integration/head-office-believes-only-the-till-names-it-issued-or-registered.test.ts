@@ -156,7 +156,7 @@ async function floodKeptBefore(send: Send, store: EventStore, T: string): Promis
   // The store pack's counts (a replaced box resumes above them) believe the registered lane, never an invented name.
   const counts = await bankedReceiptCounts(store, T, { storeId: S1 });
   expect(counts.get('R-L1-')).toBeGreaterThanOrEqual(5);
-  expect([...counts.keys()].filter((p) => p.startsWith('R-') && p !== 'R-L1-' && p !== 'R-L2-')).toEqual([]);
+  expect([...counts.keys()].filter((p) => p.startsWith('R-') && !['R-L1-', 'R-L2-', 'R-M1-'].includes(p))).toEqual([]); // R-M1-: a real sale banked at S2
   let size: number | undefined;
   for (let k = 0; k < 240 && size === undefined; k += 1) {
     const h = (await send(OWNER, 'GET', '/v1/platform/operational-health/observed')).body as { health: { components: { name: string; status: string; evidence?: { sizeBytes?: number | null } }[] } };
