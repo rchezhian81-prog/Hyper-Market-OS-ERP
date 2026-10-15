@@ -31,7 +31,8 @@ const DATABASE_URL = process.env['DATABASE_URL'];
 const OWNER = 'u-owner-r33a';
 const IT = 'u-it-r33a';
 const HO = 'u-ho-r33a';
-const SINCE = '2026-10-15T06:00:00.000Z';
+// Two hours before the test runs (the checks stuck past the 60-minute line, whatever the clock says).
+const SINCE = new Date(Date.now() - 2 * 3_600_000).toISOString();
 
 type Send = (userId: string, method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown) => Promise<{ status: number; body: unknown; key: string }>;
 const err = (r: { body: unknown }): string | undefined => (r.body as { error?: { code?: string } } | null)?.error?.code;
