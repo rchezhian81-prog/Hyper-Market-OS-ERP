@@ -3841,11 +3841,31 @@ export function judgeBoxes(input: {
  * time it reports after the rule) when nothing was ever registered for it. Without the registry (a head office keeping none):
  * none — nothing invented is ever accepted.
  */
+/**
+ * Round 33 · OB-121: the time windows the one-time migration looks back through for this computer's own kept reports — the
+ * NEWEST window holding one of them is read (a store computer reports every pass and names every prefix it has given in each
+ * report, so its latest reports carry every lane it numbers). Never the whole history: on a long-running head office the
+ * box-health stream is large, and this runs on a store computer's report.
+ */
+export const MIGRATION_LOOKBACK_HOURS: readonly number[] = [1, 6, 24, 7 * 24, 30 * 24];
+async function recentReportsOf(deps: BoxHealthDeps, tenantId: string, computer: string, storeId: string, at: string): Promise<readonly BoxHealthRecord[]> {
+  if (deps.recordsBetween === undefined) return deps.records === undefined ? [] : deps.records(tenantId);
+  const atMs = Date.parse(at);
+  let to = at;
+  for (const hours of MIGRATION_LOOKBACK_HOURS) {
+    const from = new Date(atMs - hours * 3_600_000).toISOString();
+    const mine = (await deps.recordsBetween(tenantId, from, to)).filter((r) => r.reportedBy === computer && r.storeId === storeId);
+    if (mine.length > 0) return mine;
+    to = from;
+  }
+  return [];
+}
+
 async function registeredAtTheDoor(deps: BoxHealthDeps, tenantId: string, computer: string, storeId: string, at: string, banked: ReadonlyMap<string, number> | undefined): Promise<ReadonlySet<string>> {
   if (deps.lanePrefixRegistrations === undefined) return new Set();
   let regs = await deps.lanePrefixRegistrations(tenantId);
-  if (!regs.some((r) => r.computer === computer && r.storeId === storeId) && deps.registerLanePrefixes !== undefined && deps.records !== undefined && banked !== undefined) {
-    const prefixes = seenBeforeRegistration(await deps.records(tenantId), computer, storeId, banked);
+  if (!regs.some((r) => r.computer === computer && r.storeId === storeId) && deps.registerLanePrefixes !== undefined && (deps.recordsBetween !== undefined || deps.records !== undefined) && banked !== undefined) {
+    const prefixes = seenBeforeRegistration(await recentReportsOf(deps, tenantId, computer, storeId, at), computer, storeId, banked);
     await deps.registerLanePrefixes(tenantId, { computer, storeId, prefixes, by: 'head-office', at, via: 'seen_before_registration', reason: 'round 33 (OB-121): the lanes this store computer already reported, with real bills banked, before lane prefixes were registered' }, `seen-before-registration-${computer}-${storeId}`);
     regs = await deps.lanePrefixRegistrations(tenantId);
   }
@@ -3864,6 +3884,8 @@ export interface BoxHealthDeps {
   readonly issuedAndBanked?: (tenantId: string) => Promise<{ readonly issuedPrefixes: ReadonlyMap<string, ReadonlySet<string>>; readonly banked: ReadonlyMap<string, number> }>;
   /** Verifier r21 BOX-2: every report kept (to find the refusal a person acknowledges) and the acknowledgements. */
   readonly records?: (tenantId: string) => Promise<readonly BoxHealthRecord[]>;
+  /** Round 33 · OB-121: the reports head office kept that ARRIVED in [from, to) — an index range read (the migration's look-back). */
+  readonly recordsBetween?: (tenantId: string, from: string, to: string) => Promise<readonly BoxHealthRecord[]>;
   /**
    * Keeps one acknowledgement. r22 D2: each is its own record — `requestKey` (the request's Idempotency-Key) tells a re-sent
    * request (answered with the first) from a person acknowledging again (kept separately, with its own who, why and when).

@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   readBoxHistory, billNumberFindingsFor, judgeReportedIssued, registeredByStore, registeredForComputer, seenBeforeRegistration, doorRefusalComponents,
-  lanePrefixOf, PLAUSIBLE_ISSUED_AHEAD, LANE_PREFIXES_PER_COMPUTER_MAX,
-  type BoxHealthRecord, type BoxHistoryJudge, type IssuedReport, type LanePrefixRegistration,
+  lanePrefixOf, PLAUSIBLE_ISSUED_AHEAD, LANE_PREFIXES_PER_COMPUTER_MAX, boxHealthRoutes, BOX_HEALTH_PATH, MIGRATION_LOOKBACK_HOURS,
+  type BoxHealthRecord, type BoxHealthDeps, type BoxHistoryJudge, type IssuedReport, type LanePrefixRegistration,
 } from '../../services/platform/src/box-health';
 import { TEST_BOX_HISTORY_KEY } from '../support/box-history';
 
@@ -156,5 +156,50 @@ describe('round 33 · OB-121: only issued or registered bill-number prefixes are
     expect(c[0]!.detail).toMatch(/computer u-bad sent 1500 report\(s\) on 2026-03-03 naming bill-number prefixes head office never issued .* refused at the door and not kept \(owner decision OB-121\)/);
     expect(c[0]!.detail).toMatch(/ZZ… is a store computer's own fallback numbering/);
     expect(doorRefusalComponents([], at)).toEqual([]);
+  });
+});
+
+describe('round 33 · OB-121: the one-time migration never reads the whole history (only the newest window with the computer\'s own reports)', () => {
+  const NOW = '2026-10-15T10:00:00.000Z';
+  const kept = (by: string, hoursAgo: number, prefixes: string[]): BoxHealthRecord => ({
+    storeId: 'S1', reportedBy: by, receivedAt: new Date(Date.parse(NOW) - hoursAgo * 3_600_000).toISOString(),
+    receiptNumbersIssued: prefixes.map((prefix) => ({ prefix, through: 3 })),
+  } as unknown as BoxHealthRecord);
+  async function firstReport(history: BoxHealthRecord[]) {
+    const windows: [number, number][] = [];
+    const regs: LanePrefixRegistration[] = [];
+    const deps: BoxHealthDeps = {
+      now: () => NOW,
+      storeComputerScopeOf: async () => ['S1'],
+      record: async (_t, r) => r,
+      issuedAndBanked: async () => ({ issuedPrefixes: new Map(), banked: new Map([['R-L1-', 9], ['R-L2-', 4]]) }),
+      records: async () => { throw new Error('the whole history was read'); },
+      recordsBetween: async (_t, from, to) => {
+        windows.push([(Date.parse(NOW) - Date.parse(from)) / 3_600_000, (Date.parse(NOW) - Date.parse(to)) / 3_600_000]);
+        return history.filter((r) => r.receivedAt >= from && r.receivedAt < to);
+      },
+      lanePrefixRegistrations: async () => regs,
+      registerLanePrefixes: async (_t, r) => { regs.push(r); return r; },
+      countRefusedAtDoor: async () => undefined,
+    };
+    const route = boxHealthRoutes(deps).find((r) => r.method === 'POST' && r.path === BOX_HEALTH_PATH)!;
+    const ctx = { tenantId: 'T', userId: 'u-box', branchId: 'S1', scope: ['S1'], params: {}, query: {}, traceId: 't', idempotencyKey: 'k',
+      body: { storeId: 'S1', observedAt: NOW, disk: { freeBytes: 5e9, totalBytes: 1e10, salesLogUsedBytes: 1, salesLogCapacityBytes: 1e7, reserveBytes: 1 }, queue: { unsent: 0, deadLettered: 0 }, tills: [], receiptNumbersIssued: [{ prefix: 'R-L1-', through: 4 }] } };
+    const res = await route.handler(ctx as never);
+    return { windows, regs, res };
+  }
+  it('a computer that reported an hour ago: only the last hour is read; its lane with bills is registered once', async () => {
+    const { windows, regs, res } = await firstReport([kept('u-box', 0.5, ['R-L1-']), kept('u-other', 0.2, ['R-L2-']), kept('u-box', 500, ['R-L2-'])]);
+    expect(windows).toEqual([[1, 0]]);
+    expect(regs).toMatchObject([{ computer: 'u-box', prefixes: ['R-L1-'], via: 'seen_before_registration', by: 'head-office' }]);
+    expect((res.body as { recorded: { receiptNumbersIssued: { prefix: string }[] } }).recorded.receiptNumbersIssued.map((x) => x.prefix)).toEqual(['R-L1-']);
+  });
+  it('a computer silent for ten days: the windows step back until its newest reports; past 30 days nothing is registered', async () => {
+    const ten = await firstReport([kept('u-box', 240, ['R-L1-', 'R-L2-'])]);
+    expect(ten.windows).toEqual([[1, 0], [6, 1], [24, 6], [168, 24], [720, 168]]);
+    expect(ten.regs[0]!.prefixes).toEqual(['R-L1-', 'R-L2-']);
+    const old = await firstReport([kept('u-box', 1_000, ['R-L1-'])]);
+    expect(old.regs[0]!.prefixes).toEqual([]);
+    expect(MIGRATION_LOOKBACK_HOURS.at(-1)).toBe(720);
   });
 });

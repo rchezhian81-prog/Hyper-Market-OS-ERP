@@ -13700,6 +13700,9 @@ export function boxHealthAdapter(input: {
       banked: await bankedReceiptCounts(input.store, tenantId, input.snapshots === undefined ? undefined : { snapshots: input.snapshots }),
     }),
     records: (tenantId) => allOf<BoxHealthRecord>(input.store, tenantId, BOX_HEALTH_STREAM, 'StoreComputerHealthReported'),
+    // Round 33 · OB-121: a time window of the kept reports (served by the (tenant, type, occurred_at) index on PostgreSQL).
+    recordsBetween: async (tenantId, from, to) => (await input.store.readStream(tenantId, BOX_HEALTH_STREAM, { type: 'StoreComputerHealthReported', from, to }))
+      .map((e) => e.event.payload as BoxHealthRecord),
     // Verifier r22 D2 · OB-88: EACH acknowledgement is its own record (who, why, when) — a person acknowledging the same count
     // again is kept beside the first, never collapsed onto it. Only a re-sent REQUEST (the same Idempotency-Key) answers the
     // first record.
