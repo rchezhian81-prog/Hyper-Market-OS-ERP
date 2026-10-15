@@ -40,3 +40,19 @@ not know `BOX_HISTORY_SEAL_KEY` — so running it proves nothing. Check with the
    It must report Settings as OK. If it names `BOX_HISTORY_SEAL_KEY`, read the reason it gives (missing, placeholder
    left in, or the same as `PACK_SIGNING_KEY`) and fix that line in THAT file, with the no-echo command above.
 4. Delete the temporary file: `rm /tmp/standup-check-new.mjs`. Tell the owner "the new checker passes".
+
+## Still refused although the new checker passes — check it AS THE DEPLOY USER
+
+The release runs as the deploy user (the one the pipeline's SSH key logs in as, normally `deploy`), not as you. If the
+settings file was edited as root (for example with `sudo sed -i` or a `sudo` editor), it can now be owned by root and
+unreadable to the deploy user — then the release sees "no settings file" and refuses (exit 78), while your own check passes.
+
+1. Who owns the file, and can the deploy user read it? (names and permissions only)
+   `ls -l <SRE_APP_DIR>/infra/compose/<SRE_ENV_FILE>`
+   It should be owned by the deploy user (as it was before), readable by it, and by nobody else (`-rw-------`).
+2. Run the new checker as the deploy user:
+   `sudo -u deploy env STANDUP_ENV_FILE=<the file> node /tmp/standup-check-new.mjs --settings-only`
+3. If it fails as the deploy user only, give the file back to the deploy user, keeping it private:
+   `sudo chown deploy:deploy <the file> && sudo chmod 600 <the file>`
+4. The pipeline run also states the reason in words, in the step "Deploy this exact commit over SSH" (setting names
+   only): the owner or administrator can open it on GitHub → Actions → the latest "CI" run on main → that step.
