@@ -60,6 +60,9 @@ export function parseEnv(text) {
  * complete. This mirrors the reasons the API itself refuses to start, so the check fails on the
  * same things the deployment would, only sooner and in words.
  */
+/** Round 33: the API's own minimum for BOX_HISTORY_SEAL_KEY (services/kernel/src/config.ts, `minLength: 32`). */
+export const SEAL_KEY_MIN_LENGTH = 32;
+
 export function findUnsetSettings(env) {
   const required = [
     ['POSTGRES_PASSWORD', 'the database has no password set'],
@@ -79,9 +82,18 @@ export function findUnsetSettings(env) {
     }
   }
   // Round 32 · OB-116: the seal secret must be head office's own — never the pack key every store computer holds.
+  // Round 33 (verifier r32 note 2a): and the API's other start-up refusals of it — at least SEAL_KEY_MIN_LENGTH characters,
+  // and not the same as the personal-data or sign-in key — so a release is refused HERE, before anything is rebuilt, never by
+  // an API that will not come up. Only the setting's NAME and the rule are said, never a value or its length.
   const seal = env['BOX_HISTORY_SEAL_KEY'];
-  if (seal !== undefined && seal !== '' && !seal.includes(PLACEHOLDER) && seal === env['PACK_SIGNING_KEY']) {
-    findings.push({ key: 'BOX_HISTORY_SEAL_KEY', why: 'it is the same as PACK_SIGNING_KEY, which every store computer holds — head office would refuse to start; generate a different one' });
+  if (seal !== undefined && seal !== '' && !seal.includes(PLACEHOLDER)) {
+    if (seal.length < SEAL_KEY_MIN_LENGTH) {
+      findings.push({ key: 'BOX_HISTORY_SEAL_KEY', why: `it is shorter than ${SEAL_KEY_MIN_LENGTH} characters — head office would refuse to start; generate a new one` });
+    }
+    const clash = ['PACK_SIGNING_KEY', 'PII_KEY_ENCRYPTION_KEY', 'IDP_SIGNING_KEY'].filter((k) => env[k] !== undefined && env[k] !== '' && env[k] === seal);
+    if (clash.length > 0) {
+      findings.push({ key: 'BOX_HISTORY_SEAL_KEY', why: `it is the same as ${clash.join(' and ')}${clash.includes('PACK_SIGNING_KEY') ? ', which every store computer holds' : ''} — head office would refuse to start; it must be head office's own secret: generate a different one` });
+    }
   }
   return findings;
 }
@@ -236,7 +248,11 @@ async function main() {
   // Round 32 · OB-116: `--settings-only` — the release's pre-flight (infra/deploy/release.sh): only whether every required
   // setting is filled in (names only, never a value), before anything is rebuilt or restarted.
   if (process.argv.includes('--settings-only')) {
-    const settings = results.filter((r) => r.name === 'Settings');
+    // Round 33 (verifier r32 note 2b): a release is head office's — a box with only a till's settings file is NOT ready for it.
+    // The missing head-office settings file is named (its path, never a value).
+    const settings = results.filter((r) => r.name === 'Settings').map((r) => (r.advisory === true
+      ? { name: 'Settings', ok: false, detail: `no head-office settings file at ${envFile} — this box has only a till's settings file (${tillEnvFile}), and a release needs the head-office one`, fix: 'Point the release at the head-office settings file (SRE_ENV_FILE in deploy.conf), or create it from infra/compose/.env.example and fill it in (docs/runbooks/automatic-deployment.md).' }
+      : r));
     console.log(renderReport(settings));
     process.exitCode = settings.every((r) => r.ok) ? 0 : 1;
     return;

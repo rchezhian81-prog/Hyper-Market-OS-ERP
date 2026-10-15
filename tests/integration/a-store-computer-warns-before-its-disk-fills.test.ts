@@ -79,7 +79,7 @@ describe.each(backings)('OB-78 — a store computer warns before its disk fills 
       expect((await call(h, 'POST', `/v1/org/nodes/${id}`, 'u-owner', body)).status).toBe(201);
     }
     // The owner's existing alert rule names who owns the store computer's disk — firing from `degraded` (§32).
-    expect((await call(h, 'PUT', '/v1/platform/alert-rules', 'u-owner', { rules: [
+    expect((await call(h, 'PUT', '/v1/platform/alert-rules', 'u-owner', { basedOnVersion: 0, rules: [
       { alertId: 's1-box-disk', component: 'box_disk:S1', firesAt: 'degraded', ownerUserId: 'u-owner', ownerName: 'Owner', ackWithinMinutes: 60, escalatesToUserId: 'u-owner' },
     ] })).status).toBe(200);
 

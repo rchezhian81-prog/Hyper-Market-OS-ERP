@@ -124,7 +124,7 @@ async function theBoxHealthReachesHeadOffice(h: ApiHarness, tenant: string, agai
     expect(before.health.components.some((c) => c.name.startsWith('box_disk:'))).toBe(false);
 
     // The owner names who owns the till devices and the store computer's disk (§32: every alert has a named owner).
-    expect((await s.owner('PUT', '/v1/platform/alert-rules', { rules: [
+    expect((await s.owner('PUT', '/v1/platform/alert-rules', { basedOnVersion: 0, rules: [
       { alertId: 's1-till-devices', component: 'till_devices:S1', firesAt: 'degraded', ownerUserId: 'u-mgr', ownerName: 'Store manager', ackWithinMinutes: 15, escalatesToUserId: OWNER },
       { alertId: 's1-box-disk', component: 'box_disk:S1', firesAt: 'down', ownerUserId: 'u-mgr', ownerName: 'Store manager', ackWithinMinutes: 15, escalatesToUserId: OWNER },
     ] })).status).toBe(200);

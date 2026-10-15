@@ -5,6 +5,14 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Coordinated programme · Round 33 — verifier r32 closed; owner decisions OB-119 to OB-122 (15 October 2026) — waits behind round 32
+
+- **Built and integration-tested (memory + PostgreSQL); no staff UAT:** built-in alert names (`built-in:`, `notice:`) are reserved — nobody may raise one by hand (403 `built_in_alert_id_reserved`, audited) and only the owner may acknowledge one; a planted alert can no longer swallow the worker's real raise (OB-119). Alert-rule saves carry `basedOnVersion`; a stale save is refused 409 ("someone else just changed these rules — look again and resend"), a save without it 428; the append is guarded (two saves at once: exactly one kept) (OB-120). Head office believes only bill-number prefixes it issued or lane prefixes registered for that store computer (`POST /v1/store-computers/lane-prefixes`, named person, audited); anything else is refused at the door and counted in one line; existing boxes' lanes with real banked sales are registered once automatically; the verifier's 47 MB flood now keeps a few KB (OB-121). Release pre-check also refuses a weak or borrowed seal key; the runbooks write the key without showing it.
+- **Mutations:** 22 run, 22 killed.
+- **Full gate (15 Oct, PostgreSQL):** 11,726 unit/integration, 50 performance, 355 browser — all passed.
+- **Release order (OB-122):** after round 32 is released (OB-118); round 33 needs no new administrator step.
+- **Notes:** after deploy the owner may receive the current built-in alert once more; a till with no issued prefix (ZZ fallback) shows a refused-prefixes line until it is issued one.
+
 ## Coordinated programme · Round 32 — verifier r31 closed; owner decisions OB-115 to OB-118 (14 October 2026) — HELD for one administrator step
 
 - **Built and integration-tested (memory + PostgreSQL); no staff UAT:** only the shop owner may turn off or redirect a built-in alert rule — the IT administrator and anyone else are refused by name (403, audited); every change is sent to the owner; an edit that could never fire is refused; a rule left off is shown on every save (OB-115). The saved store-computer history is sealed with a new head-office-only secret `BOX_HISTORY_SEAL_KEY` (required at start, ≥ 32 characters, refused if equal to another key; store computers never hold it — guardrail); old seals are set aside once; one snapshot store and builder per API process (OB-116). New impossible counts on a store's own till prefixes are capped at 20 per store computer per prefix per store day, the rest counted in one line (verifier flood 2.82 MB → 72 KB) (OB-117). The till scan speed test measures interleaved repeats and keeps the best median (a linear-lookup mutation still fails it). `release.sh` refuses a release whose settings lack a required secret (exit 78) before rebuilding anything.

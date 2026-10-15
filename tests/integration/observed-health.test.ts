@@ -18,6 +18,7 @@ const codeOf = (res: { body: unknown }): string | undefined => (res.body as { er
 const minutesAgo = (m: number): string => new Date(Date.now() - m * 60_000).toISOString();
 
 const RULES = {
+  basedOnVersion: 0, // round 33 · OB-120: the first save
   rules: [
     { alertId: 'sync-lag', component: 'sync', firesAt: 'degraded', ownerUserId: OWNER, ownerName: 'The owner', ackWithinMinutes: 30, escalatesToUserId: MGR },
     { alertId: 'dead-letters', component: 'dead_letter', firesAt: 'down', ownerUserId: MGR, ownerName: 'Store manager', ackWithinMinutes: 60 },

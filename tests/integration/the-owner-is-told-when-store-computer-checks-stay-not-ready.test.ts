@@ -193,7 +193,7 @@ async function theOwnerTurnsItOffAndEditsIt(c: Ctx): Promise<void> {
   // An empty set that turns nothing off is refused as before (every rule set needs an owner's rule or a built-in turned off).
   await expect(route(routes, 'PUT', '/v1/platform/alert-rules').handler(ctx(c.T, OWNER, { rules: [] }))).rejects.toMatchObject({ status: 400 });
   // The owner turns it off: a new rules version, saying who and when.
-  const off = await route(routes, 'PUT', '/v1/platform/alert-rules').handler(ctx(c.T, OWNER, { rules: [], builtInOff: [BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID] }));
+  const off = await route(routes, 'PUT', '/v1/platform/alert-rules').handler(ctx(c.T, OWNER, { basedOnVersion: 0, rules: [], builtInOff: [BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID] }));
   expect(off.body).toMatchObject({ version: 1, builtInOff: [BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID] });
   const v1 = await rulesNow();
   expect(v1.rules).toMatchObject({ version: 1, definedBy: OWNER, builtInOff: [BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID] });
@@ -209,9 +209,9 @@ async function theOwnerTurnsItOffAndEditsIt(c: Ctx): Promise<void> {
     // He edits it instead — his manager to answer it within 15 minutes; a later version that does not name builtInOff keeps
     // it off, so he names the list (empty) to turn it back on, with his own version of the rule.
     const edited = { alertId: BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID, component: STORE_COMPUTER_CHECKS_STUCK_COMPONENT, firesAt: 'down', ownerUserId: MANAGER, ownerName: 'Store manager', ackWithinMinutes: 15 };
-    await route(routes, 'PUT', '/v1/platform/alert-rules').handler(ctx(c.T, OWNER, { rules: [edited] }));
+    await route(routes, 'PUT', '/v1/platform/alert-rules').handler(ctx(c.T, OWNER, { basedOnVersion: 1, rules: [edited] }));
     expect((await rulesNow()).builtIn).toEqual([expect.objectContaining({ state: 'off' })]);
-    await route(routes, 'PUT', '/v1/platform/alert-rules').handler(ctx(c.T, OWNER, { rules: [edited], builtInOff: [] }));
+    await route(routes, 'PUT', '/v1/platform/alert-rules').handler(ctx(c.T, OWNER, { basedOnVersion: 2, rules: [edited], builtInOff: [] }));
     const v3 = await rulesNow();
     expect(v3.rules).toMatchObject({ version: 3, definedBy: OWNER, builtInOff: [] });
     expect(v3.builtIn).toEqual([expect.objectContaining({ state: 'edited', rule: expect.objectContaining({ ownerUserId: MANAGER }) })]);

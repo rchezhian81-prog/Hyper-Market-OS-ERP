@@ -22,7 +22,7 @@
 
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { Route } from '../../kernel/src/index';
-import { apiError, concurrentChange, scopeOf } from '../../kernel/src/index';
+import { apiError, assertBranchInScope, concurrentChange, scopeOf } from '../../kernel/src/index';
 import type { RequestContext } from '../../kernel/src/index';
 import { ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
 import { approvalNamedIn, actionDetails, type ApprovalPort } from '../../identity/src/approval-requests';
@@ -386,10 +386,11 @@ export function readBoxHealthReport(body: unknown, receivedAt: string):
 
 /**
  * Verifier r19 BOX-1: judge a box's reported counts against what head office issued and banked. Folded (`accepted`) only
- * for a prefix issued to a till of THIS store (any version), or this store's own `R-<lane>-` numbering, and only up to
- * banked + PLAUSIBLE_ISSUED_AHEAD. A prefix issued to another store's till, or a count beyond the bound, is `refused` (kept,
- * shown to the owner); a prefix head office never issued (the box's store-coded `ZZ` fallback) is `notFolded` — head office
- * keeps no count for it and raises nothing.
+ * for a prefix issued to a till of THIS store (any version), or one of the store computer's own lane prefixes REGISTERED at
+ * head office (`registered` — round 33 · OB-121), and only up to banked + PLAUSIBLE_ISSUED_AHEAD. A prefix issued to another
+ * store's till, or a count beyond the bound, is `refused` (kept, shown to the owner); any other prefix — never issued and
+ * never registered (an invented `R-…-`, the box's store-coded `ZZ` fallback) — is `notFolded`: at the door it is refused and
+ * never stored (OB-121, `BOX_HEALTH_PATH`); in a report kept before round 33 it is simply not folded.
  */
 export function judgeReportedIssued(input: {
   readonly storeId: string;
@@ -398,13 +399,19 @@ export function judgeReportedIssued(input: {
   readonly issuedPrefixes: ReadonlyMap<string, ReadonlySet<string>>;
   /** What head office holds banked under each prefix from sales and refunds (not from any box's report). */
   readonly banked: ReadonlyMap<string, number>;
+  /**
+   * Round 33 · OB-121: the store computer's own lane prefixes (`R-<lane>-`) registered at head office — for THIS computer at
+   * the door, for any computer of this store at read. Absent: none (no `R-…-` prefix is ever assumed to be the store's own).
+   */
+  readonly registered?: ReadonlySet<string>;
 }): { accepted: IssuedReport[]; refused: RefusedIssued[]; notFolded: { prefix: string; through: number }[] } {
   const accepted: IssuedReport[] = [];
   const refused: RefusedIssued[] = [];
   const notFolded: { prefix: string; through: number }[] = [];
   for (const r of input.issued) {
     const stores = input.issuedPrefixes.get(r.prefix);
-    const ownBoxSeries = r.prefix.startsWith('R-') && r.prefix.endsWith('-') && r.prefix.length > 3;
+    // Round 33 · OB-121 (verifier r32 NEW-4, NEW-5): no "looks like R-<lane>-" shortcut — only a REGISTERED lane prefix.
+    const ownBoxSeries = input.registered?.has(r.prefix) ?? false;
     const banked = input.banked.get(r.prefix) ?? 0;
     if (stores === undefined && !ownBoxSeries) { notFolded.push({ prefix: r.prefix, through: r.through }); continue; }
     if (stores !== undefined && !stores.has(input.storeId)) {
@@ -1759,7 +1766,7 @@ export interface BoxReportsView {
 export interface BoxHistoryEntry { readonly raw: BoxHealthRecord; readonly judged: BoxHealthRecord; readonly seq: number }
 
 /** The history's working state version (bump it when its shape or a rule changes: an older one is simply set aside). */
-const BOX_HISTORY_VERSION = 5; // round 29: the waiting clock's and the unused runs' memory, refused groups banked away, a seal; round 30: waiting ranges, a keyed seal, refused prefixes capped; round 31: the cap's day is the store's own day (OB-113); round 32: own-prefix refused counts capped (OB-117), head office's own seal key (OB-116)
+const BOX_HISTORY_VERSION = 6; // round 33: no "looks like R-<lane>-" shortcut — only registered lanes (OB-121), and the registrations fingerprinted; round 29: the waiting clock's and the unused runs' memory, refused groups banked away, a seal; round 30: waiting ranges, a keyed seal, refused prefixes capped; round 31: the cap's day is the store's own day (OB-113); round 32: own-prefix refused counts capped (OB-117), head office's own seal key (OB-116)
 
 /** `latestBoxReports` kept exactly: at the latest box time seen, per way of writing it, the first position and the latest arrival. */
 interface WinGroup { firstSeq: number; r: BoxHealthRecord; recvMs: number; seq: number }
@@ -2130,12 +2137,34 @@ function shapeOfBoxHistory(s: unknown): string | undefined {
 }
 
 /** The fingerprint of the acknowledgements and acts at or before a moment (any change sets a saved result aside). */
-function acksPrintUpTo(input: { readonly refusalAcks?: readonly RefusalAcknowledgement[]; readonly atRiskAcks?: readonly AtRiskAcknowledgement[]; readonly unusedAcks?: readonly unknown[]; readonly replacements?: readonly StoreComputerReplacement[] }, ms: number): string {
+function acksPrintUpTo(input: { readonly refusalAcks?: readonly RefusalAcknowledgement[]; readonly atRiskAcks?: readonly AtRiskAcknowledgement[]; readonly unusedAcks?: readonly unknown[]; readonly replacements?: readonly StoreComputerReplacement[]; readonly lanes?: readonly LanePrefixRegistration[] }, ms: number): string {
   const lines: string[] = [];
   for (const a of input.refusalAcks ?? []) if (Date.parse(a.at) <= ms) lines.push(`r|${a.storeId}|${a.prefix}|${a.through}|${a.at}|${a.authority ?? ''}`);
   for (const a of input.atRiskAcks ?? []) if (Date.parse(a.at) <= ms) lines.push(`n|${a.storeId}|${a.prefix}|${runsKey(a.notChecked)}|${a.at}|${a.authority ?? ''}`);
   for (const m of input.replacements ?? []) if (Date.parse(m.at) <= ms) lines.push(`m|${m.replacementId}|${m.storeId}|${m.prefix}|${m.to}|${m.at}`);
-  return fingerprint(lines.sort().join('\n'));
+  return fingerprint(lines.sort().join('\n')) + lanesPrint(input.lanes);
+}
+/**
+ * Round 33 · OB-121: the registered lane prefixes a saved result was made under (EVERY registration, whenever made: a kept
+ * report is read as today's door would keep it, `keptAsTheDoorWould`) — any change sets the result aside ('lanes').
+ */
+function lanesPrint(lanes: readonly LanePrefixRegistration[] | undefined): string {
+  const pairs = [...new Set((lanes ?? []).flatMap((r) => r.prefixes.map((p) => `${r.storeId}|${p}`)))].sort();
+  return pairs.length === 0 ? '' : `|l:${fingerprint(pairs.join('\n'))}`;
+}
+const lanesPart = (print: string): string => { const i = print.indexOf('|l:'); return i < 0 ? '' : print.slice(i); };
+
+/**
+ * Round 33 · OB-121 — a report kept BEFORE the rule, read as today's door would have kept it: an `R-…-` prefix that is not a
+ * lane registered for its store is dropped from what the store computer is believed to have given (head office never issues
+ * `R-…`, so such a prefix was believed only by the round-32 "looks like R-<lane>-" shortcut). So a flood of invented till
+ * names already on the ledger never grows the saved history either; nothing on the ledger is changed (hard rule #2).
+ */
+export function keptAsTheDoorWould(raw: BoxHealthRecord, judge: BoxHistoryJudge): BoxHealthRecord {
+  const xs = raw.receiptNumbersIssued;
+  if (xs === undefined) return raw;
+  const kept = xs.filter((x) => !x.prefix.startsWith('R-') || judge.owns(raw.storeId, x.prefix));
+  return kept.length === xs.length ? raw : { ...raw, receiptNumbersIssued: kept };
 }
 
 /** The whole reading a health read takes from the box history (the never-received fold's, and everything else's). */
@@ -2505,6 +2534,8 @@ export interface BoxHistoryInput {
   readonly refusalAcks?: readonly RefusalAcknowledgement[];
   readonly atRiskAcks?: readonly AtRiskAcknowledgement[];
   readonly judge?: BoxHistoryJudge;
+  /** Round 33 · OB-121: every lane-prefix registration the judge was made with (a change sets a saved result aside). */
+  readonly lanes?: readonly LanePrefixRegistration[];
   readonly settleBefore?: string;
   /** Every report at or below this store position is visible to this read (a settled visibility fence). Needed to save. */
   readonly settledThrough?: number;
@@ -2528,7 +2559,9 @@ function* boxHistorySteps(input: BoxHistoryInput, every: number): Generator<void
   const ctx = historyContext(refusals, input.atRiskAcks ?? []);
   const s = input.snapshot;
   let fold: BoxHistoryFold | undefined;
-  let entries = input.entries;
+  // Round 33 · OB-121: every report as today's door would keep it (an unregistered `R-…-` is not believed, kept or not).
+  const judge = input.judge;
+  let entries = judge === undefined ? input.entries : input.entries.map((e) => { const raw = keptAsTheDoorWould(e.raw, judge); return raw === e.raw ? e : { ...e, raw }; });
   let settledMs = -Infinity;
   const rfBanked = new Map<string, number>();
   if (s !== undefined) {
@@ -2547,7 +2580,8 @@ function* boxHistorySteps(input: BoxHistoryInput, every: number): Generator<void
       : !(settledMs <= atMs) ? 'moment'
       : late.length !== folded.size || late.some((e) => !folded.has(e.seq)) ? 'late_report'
       : actsThen.length !== n.actsApplied.length || actsThen.some((id, k) => id !== n.actsApplied[k]) ? 'acts'
-      : acksPrintUpTo({ refusalAcks: refusals, ...(input.atRiskAcks === undefined ? {} : { atRiskAcks: input.atRiskAcks }), replacements: replacementsAt }, settledMs) !== s.acksPrint ? 'acknowledgements'
+      : lanesPart(s.acksPrint) !== lanesPrint(input.lanes) ? 'lanes'
+      : acksPrintUpTo({ refusalAcks: refusals, ...(input.atRiskAcks === undefined ? {} : { atRiskAcks: input.atRiskAcks }), replacements: replacementsAt, ...(input.lanes === undefined ? {} : { lanes: input.lanes }) }, settledMs) !== s.acksPrint ? 'acknowledgements'
       : input.judge !== undefined && (s.verdicts.own.some(([storeId, prefix, owns, top]) => input.judge!.owns(storeId, prefix) !== owns || (top > 0 && !input.judge!.plausible(prefix, top)))
         || s.verdicts.ahead.some(([prefix, through]) => input.judge!.plausible(prefix, through))) ? 'verdicts'
       : n.keys.some((k) => (input.banked.get(k.prefix) ?? 0) < k.aboveFrom) || s.rfBanked.some(([prefix, b]) => (input.banked.get(prefix) ?? 0) < b) ? 'banked'
@@ -2594,7 +2628,7 @@ function* boxHistorySteps(input: BoxHistoryInput, every: number): Generator<void
         version: BOX_HISTORY_VERSION,
         never: fold.nr.encode({ settledAt, settledCount: 0, judgedAway: '' }),
         seq, folded, ord: fold.ord,
-        acksPrint: acksPrintUpTo({ refusalAcks: refusals, ...(input.atRiskAcks === undefined ? {} : { atRiskAcks: input.atRiskAcks }), replacements: replacementsAt }, settleMs),
+        acksPrint: acksPrintUpTo({ refusalAcks: refusals, ...(input.atRiskAcks === undefined ? {} : { atRiskAcks: input.atRiskAcks }), replacements: replacementsAt, ...(input.lanes === undefined ? {} : { lanes: input.lanes }) }, settleMs),
         verdicts: { own: [...fold.own.values()].map((v) => [...v] as const), ahead: [...fold.ahead] },
         rawBound: [...fold.rawBound.values()],
         stores,
@@ -3802,6 +3836,42 @@ export function judgeBoxes(input: {
   return { boxes, components, localStoreWritable: anyFreshCannot ? false : allFreshCan ? true : undefined };
 }
 
+/**
+ * Round 33 · OB-121: the lane prefixes registered for this store computer, running THE MIGRATION (once per computer, the first
+ * time it reports after the rule) when nothing was ever registered for it. Without the registry (a head office keeping none):
+ * none — nothing invented is ever accepted.
+ */
+/**
+ * Round 33 · OB-121: the time windows the one-time migration looks back through for this computer's own kept reports — the
+ * NEWEST window holding one of them is read (a store computer reports every pass and names every prefix it has given in each
+ * report, so its latest reports carry every lane it numbers). Never the whole history: on a long-running head office the
+ * box-health stream is large, and this runs on a store computer's report.
+ */
+export const MIGRATION_LOOKBACK_HOURS: readonly number[] = [1, 6, 24, 7 * 24, 30 * 24];
+async function recentReportsOf(deps: BoxHealthDeps, tenantId: string, computer: string, storeId: string, at: string): Promise<readonly BoxHealthRecord[]> {
+  if (deps.recordsBetween === undefined) return deps.records === undefined ? [] : deps.records(tenantId);
+  const atMs = Date.parse(at);
+  let to = at;
+  for (const hours of MIGRATION_LOOKBACK_HOURS) {
+    const from = new Date(atMs - hours * 3_600_000).toISOString();
+    const mine = (await deps.recordsBetween(tenantId, from, to)).filter((r) => r.reportedBy === computer && r.storeId === storeId);
+    if (mine.length > 0) return mine;
+    to = from;
+  }
+  return [];
+}
+
+async function registeredAtTheDoor(deps: BoxHealthDeps, tenantId: string, computer: string, storeId: string, at: string, banked: ReadonlyMap<string, number> | undefined): Promise<ReadonlySet<string>> {
+  if (deps.lanePrefixRegistrations === undefined) return new Set();
+  let regs = await deps.lanePrefixRegistrations(tenantId);
+  if (!regs.some((r) => r.computer === computer && r.storeId === storeId) && deps.registerLanePrefixes !== undefined && (deps.recordsBetween !== undefined || deps.records !== undefined) && banked !== undefined) {
+    const prefixes = seenBeforeRegistration(await recentReportsOf(deps, tenantId, computer, storeId, at), computer, storeId, banked);
+    await deps.registerLanePrefixes(tenantId, { computer, storeId, prefixes, by: 'head-office', at, via: 'seen_before_registration', reason: 'round 33 (OB-121): the lanes this store computer already reported, with real bills banked, before lane prefixes were registered' }, `seen-before-registration-${computer}-${storeId}`);
+    regs = await deps.lanePrefixRegistrations(tenantId);
+  }
+  return registeredForComputer(regs, computer, storeId);
+}
+
 export interface BoxHealthDeps {
   readonly now: () => string;
   readonly storeComputerScopeOf?: StoreComputerScopeOf;
@@ -3814,6 +3884,8 @@ export interface BoxHealthDeps {
   readonly issuedAndBanked?: (tenantId: string) => Promise<{ readonly issuedPrefixes: ReadonlyMap<string, ReadonlySet<string>>; readonly banked: ReadonlyMap<string, number> }>;
   /** Verifier r21 BOX-2: every report kept (to find the refusal a person acknowledges) and the acknowledgements. */
   readonly records?: (tenantId: string) => Promise<readonly BoxHealthRecord[]>;
+  /** Round 33 · OB-121: the reports head office kept that ARRIVED in [from, to) — an index range read (the migration's look-back). */
+  readonly recordsBetween?: (tenantId: string, from: string, to: string) => Promise<readonly BoxHealthRecord[]>;
   /**
    * Keeps one acknowledgement. r22 D2: each is its own record — `requestKey` (the request's Idempotency-Key) tells a re-sent
    * request (answered with the first) from a person acknowledging again (kept separately, with its own who, why and when).
@@ -3849,6 +3921,16 @@ export interface BoxHealthDeps {
   readonly acknowledgeUnusedReceived?: (tenantId: string, a: UnusedReceivedAcknowledgement, requestKey: string) => Promise<UnusedReceivedAcknowledgement>;
   /** Round 28 · OB-104: the bindings as they stand at `at`, from the saved running result (the page's read) — else worked out from every report. */
   readonly bindingsAt?: (tenantId: string, at: string) => Promise<readonly PrefixBinding[]>;
+  /** Round 33 · OB-121: every registration of a store computer's own lane prefixes. Absent: none (no `R-…-` is accepted). */
+  readonly lanePrefixRegistrations?: (tenantId: string) => Promise<readonly LanePrefixRegistration[]>;
+  /** Round 33 · OB-121: keep one registration (append-only; the same `key` again answers the first). Absent: none can be made. */
+  readonly registerLanePrefixes?: (tenantId: string, r: LanePrefixRegistration, key: string) => Promise<LanePrefixRegistration>;
+  /** Round 33 · OB-121: count one report refused at the door (one bounded line per computer per day). */
+  readonly countRefusedAtDoor?: (tenantId: string, r: { readonly computer: string; readonly storeId: string; readonly at: string; readonly prefixes: readonly string[] }) => Promise<void>;
+  /** Round 33 · OB-121: the refused-at-the-door lines. */
+  readonly refusedAtDoorLines?: (tenantId: string) => Promise<readonly DoorRefusalLine[]>;
+  /** Round 33 · OB-121: the tills head office registered at each store (a lane registered for a computer must be one, when known). */
+  readonly registeredTills?: (tenantId: string) => Promise<readonly { readonly storeId: string; readonly tillId: string }[]>;
 }
 
 /** Verifier r23 NEW-3 · OB-91: one grant through which a person may manage alerts (see `BoxHealthDeps.alertAuthorityOf`). */
@@ -3860,6 +3942,116 @@ export interface AlertAuthorityGrant {
 }
 
 export const REFUSAL_ACKNOWLEDGEMENTS_PATH = '/v1/store-computers/bill-number-refusals/acknowledgements';
+
+// ── Round 33 · owner decision OB-121 "A" (15 Oct 2026, in writing, "Only known tills, pre-pilot"; verifier r32 NEW-4, NEW-5) ──
+//
+// THE RULE: head office accepts a bill-number prefix in a store computer's health report ONLY when head office ISSUED it (a
+// till's receipt prefix — `receipt-prefixes.ts`), or it is one of THAT store computer's own lane prefixes (`R-<lane>-`)
+// REGISTERED at head office for it. Registration is an append-only act at install (POST LANE_PREFIXES_PATH, by a named person
+// with `platform.setup.write`, at most LANE_PREFIXES_PER_COMPUTER_MAX per computer, each `R-<lane>-` within the GST length).
+// Any other prefix is REFUSED AT THE DOOR: it is never stored (not in the report kept, not in the saved history), and it is
+// COUNTED in one bounded line per store computer per day (`DoorRefusalLine`: how many reports, a few example prefixes, first
+// and last time) on the health page (`box_prefixes_refused:<store>`, degraded) — so an invented till name can no longer grow
+// head office's memory, and is never silent.
+//
+// MIGRATION (stated): a store computer that already reported `R-<lane>-` prefixes before this rule keeps working. The FIRST
+// time it reports after the upgrade, head office registers ONCE, by itself (`via: 'seen_before_registration'`), every
+// `R-<lane>-` prefix that (a) the SAME computer reported in a report head office kept before the rule, where it was accepted,
+// and (b) head office holds BANKED sales or refunds under (real bills, not a box's word), at most the cap. Safety: it runs
+// once per computer (an empty registration marks it done, so later reports never add to it); it reads only reports kept
+// before the rule (from then on unregistered prefixes are never kept); and an invented prefix with no real bill under it is
+// never registered. Anything else needs a person's registration.
+
+/** Round 33 · OB-121: register a store computer's own lane prefixes at install (POST), and list them with the refused lines (GET). */
+export const LANE_PREFIXES_PATH = '/v1/store-computers/lane-prefixes';
+/** Round 33 · OB-121: at most this many lane prefixes are registered for one store computer. */
+export const LANE_PREFIXES_PER_COMPUTER_MAX = 32;
+/** Round 33 · OB-121: at most this many example prefixes are kept on a refused-at-the-door line (each at most 10 characters). */
+export const DOOR_REFUSAL_EXAMPLES_MAX = 3;
+/** Round 33 · OB-121: a refused-at-the-door line is shown for this many days after its last report. */
+export const DOOR_REFUSAL_SHOWN_DAYS = 2;
+const LANE_ID = /^[A-Za-z0-9._-]{1,40}$/;
+
+/** Round 33 · OB-121: one registration of a store computer's own lane prefixes (append-only; a computer's are the union). */
+export interface LanePrefixRegistration {
+  /** The store computer's sign-in (its machine identity). */
+  readonly computer: string;
+  readonly storeId: string;
+  /** Its own lane prefixes, `R-<lane>-` (empty: the one-time migration found none to register). */
+  readonly prefixes: readonly string[];
+  /** Who registered them — a named person, or `head-office` for the one-time migration. */
+  readonly by: string;
+  readonly at: string;
+  readonly via: 'install' | 'seen_before_registration';
+  readonly reason?: string;
+}
+
+/** Round 33 · OB-121: one store computer's reports refused at the door on one day (bounded: a count and a few examples). */
+export interface DoorRefusalLine {
+  readonly computer: string;
+  readonly storeId: string;
+  /** The day (YYYY-MM-DD, UTC) the reports arrived. */
+  readonly day: string;
+  /** How many reports that day named a prefix head office never issued or registered (at least this many after a restart). */
+  readonly count: number;
+  readonly examples: readonly string[];
+  readonly first: string;
+  readonly last: string;
+}
+
+/** Round 33 · OB-121: a lane's own prefix, as the store computer numbers it (edge/store-edge/src/receipt-numbers.ts). */
+export const lanePrefixOf = (lane: string): string => `R-${lane}-`;
+
+/** Round 33 · OB-121: the lane prefixes registered for one store computer at its store. */
+export function registeredForComputer(regs: readonly LanePrefixRegistration[], computer: string, storeId: string): ReadonlySet<string> {
+  const out = new Set<string>();
+  for (const r of regs) if (r.computer === computer && r.storeId === storeId) for (const p of r.prefixes) out.add(p);
+  return out;
+}
+
+/** Round 33 · OB-121: the lane prefixes registered for any store computer of each store (how a kept report is judged at read). */
+export function registeredByStore(regs: readonly LanePrefixRegistration[]): ReadonlyMap<string, ReadonlySet<string>> {
+  const out = new Map<string, Set<string>>();
+  for (const r of regs) {
+    const set = out.get(r.storeId) ?? new Set<string>();
+    for (const p of r.prefixes) set.add(p);
+    out.set(r.storeId, set);
+  }
+  return out;
+}
+
+/**
+ * Round 33 · OB-121 — THE MIGRATION RULE (see above): the `R-<lane>-` prefixes this computer reported, ACCEPTED, in reports head
+ * office kept before the rule, under which head office holds banked bills — sorted, at most the cap. Pure.
+ */
+export function seenBeforeRegistration(records: readonly BoxHealthRecord[], computer: string, storeId: string, banked: ReadonlyMap<string, number>): string[] {
+  const seen = new Set<string>();
+  for (const r of records) {
+    if (r.reportedBy !== computer || r.storeId !== storeId) continue;
+    for (const x of r.receiptNumbersIssued ?? []) {
+      const lane = /^R-(.+)-$/.exec(x.prefix)?.[1];
+      if (lane !== undefined && LANE_ID.test(lane) && x.prefix.length <= 10 && (banked.get(x.prefix) ?? 0) > 0) seen.add(x.prefix);
+    }
+  }
+  return [...seen].sort().slice(0, LANE_PREFIXES_PER_COMPUTER_MAX);
+}
+
+/** Round 33 · OB-121: the health page's words — one component per store, one line per store computer per day. */
+export function doorRefusalComponents(lines: readonly DoorRefusalLine[], at: string): ComponentHealth[] {
+  const floor = Date.parse(at) - DOOR_REFUSAL_SHOWN_DAYS * 86_400_000;
+  const shown = lines.filter((l) => Date.parse(l.last) >= floor);
+  const byStore = new Map<string, DoorRefusalLine[]>();
+  for (const l of shown) byStore.set(l.storeId, [...(byStore.get(l.storeId) ?? []), l]);
+  return [...byStore].sort(([a], [b]) => a.localeCompare(b)).map(([storeId, ls]) => ({
+    name: `box_prefixes_refused:${storeId}`, status: 'degraded' as const,
+    detail: ls.sort((a, b) => a.computer.localeCompare(b.computer) || a.day.localeCompare(b.day)).map((l) =>
+      `store ${storeId}'s computer ${l.computer} sent ${l.count} report(s) on ${l.day} naming bill-number prefixes head office never issued to this store's tills or registered for this computer (e.g. ${l.examples.join(', ')}; first ${l.first}, last ${l.last}) — refused at the door and not kept (owner decision OB-121)`).join('; ')
+      + '. If these are this store computer\'s own tills, have the IT administrator register its lanes (POST /v1/store-computers/lane-prefixes — docs/runbooks/in-store-install.md, "Register the store computer\'s own lanes"); if not, check that store computer'
+      // A store-coded ZZ… prefix is an honest box's fallback for a till with no prefix issued — the fix is to issue one.
+      + (ls.some((l) => l.examples.some((p) => p.startsWith('ZZ'))) ? '. ZZ… is a store computer\'s own fallback numbering for a till head office has not issued a prefix to (each such bill is also flagged) — issue that till its prefix (Receipt prefixes)' : ''),
+    evidence: { computers: [...new Set(ls.map((l) => l.computer))].join(','), reports: ls.reduce((n, l) => n + l.count, 0) },
+  }));
+}
 /** Round 26 · OB-97: the head office act "this store computer was replaced" for one till's bill-number prefix. */
 export const STORE_COMPUTER_REPLACEMENTS_PATH = '/v1/store-computers/replacements';
 /** Round 26 · OB-97: every (store, prefix) binding as it stands, and every act that moved one. */
@@ -3959,10 +4151,18 @@ export function boxHealthRoutes(deps: BoxHealthDeps): readonly Route[] {
       }
       // Verifier r19 BOX-1: only counts under this store's own prefixes, and only a plausible advance, are folded; the rest
       // are kept on the record (refused → a finding for the owner), never folded — a report alone never locks a till.
+      // Round 33 · OB-121: "own" means issued by head office to this store's tills, or registered for THIS store computer.
+      const issuedAndBanked = read.receiptNumbersIssued === undefined || deps.issuedAndBanked === undefined ? undefined : await deps.issuedAndBanked(ctx.tenantId);
+      const registered = read.receiptNumbersIssued === undefined ? new Set<string>() : await registeredAtTheDoor(deps, ctx.tenantId, ctx.userId, storeId, receivedAt, issuedAndBanked?.banked);
       const judged = read.receiptNumbersIssued === undefined ? undefined
-        : deps.issuedAndBanked === undefined
+        : issuedAndBanked === undefined
           ? { accepted: [] as IssuedReport[], refused: [] as RefusedIssued[], notFolded: read.receiptNumbersIssued.map((x) => ({ prefix: x.prefix, through: x.through })) }
-          : judgeReportedIssued({ storeId, issued: read.receiptNumbersIssued, ...(await deps.issuedAndBanked(ctx.tenantId)) });
+          : judgeReportedIssued({ storeId, issued: read.receiptNumbersIssued, ...issuedAndBanked, registered });
+      // Round 33 · OB-121: a prefix never issued and never registered for this computer is REFUSED AT THE DOOR — never stored,
+      // counted in one bounded line per store computer per day (the rest of the report is kept as before).
+      if (judged !== undefined && judged.notFolded.length > 0 && deps.countRefusedAtDoor !== undefined) {
+        await deps.countRefusedAtDoor(ctx.tenantId, { computer: ctx.userId, storeId, at: receivedAt, prefixes: judged.notFolded.map((x) => x.prefix) });
+      }
       // Verifier r21 UNSENT-CEILING (a): per-prefix lists that do not fit the box's own queue are kept as evidence and SAID —
       // never believed (`believedRecord`).
       const contradiction = read.receiptNumbersIssued === undefined ? undefined : queueContradiction(read.queue, read.receiptNumbersIssued);
@@ -3971,12 +4171,91 @@ export function boxHealthRoutes(deps: BoxHealthDeps): readonly Route[] {
         ...(contradiction === undefined ? {} : { queueContradiction: contradiction }),
         ...(judged === undefined ? {} : { receiptNumbersIssued: judged.accepted }),
         ...(judged === undefined || judged.refused.length === 0 ? {} : { receiptNumbersRefused: judged.refused }),
-        ...(judged === undefined || judged.notFolded.length === 0 ? {} : { receiptNumbersNotFolded: judged.notFolded }),
         ...(read.billNumbering === undefined ? {} : { billNumbering: read.billNumbering }),
       };
       // The reply is what head office KEPT (a re-send answers the first record, never an unsaved copy).
       const kept = (await deps.record(ctx.tenantId, r)) ?? r;
-      return { status: 200, body: { recorded: kept, canRecordSales: boxCanRecordSales(kept.disk) } };
+      return {
+        status: 200,
+        body: {
+          recorded: kept, canRecordSales: boxCanRecordSales(kept.disk),
+          ...(judged === undefined || judged.notFolded.length === 0 ? {} : {
+            refusedAtTheDoor: {
+              prefixes: judged.notFolded.slice(0, DOOR_REFUSAL_EXAMPLES_MAX).map((x) => x.prefix), count: judged.notFolded.length,
+              why: 'head office never issued these bill-number prefixes to this store\'s tills and they are not registered for this store computer (owner decision OB-121) — not kept; counted on head office\'s health page',
+            },
+          }),
+        },
+      };
+    },
+  }, {
+    // Round 33 · OB-121: register a store computer's OWN lane prefixes (`R-<lane>-`) at install — a named person's act,
+    // append-only, on the audit trail. Body: { computer, storeId, lanes: [...], reason? }. Refused by name: a sign-in that is not
+    // a store computer of that store; a lane that is not a till head office registered at that store (when the till register is
+    // known); a prefix too long for a GST bill number; more than LANE_PREFIXES_PER_COMPUTER_MAX for one computer.
+    api: 'API-11', method: 'POST', path: LANE_PREFIXES_PATH,
+    permission: 'platform.setup.write', idempotent: true,
+    handler: async (ctx) => {
+      const b = isObj(ctx.body) ? ctx.body : {};
+      const computer = b['computer'];
+      const storeId = b['storeId'];
+      const lanes = b['lanes'];
+      const reason = typeof b['reason'] === 'string' ? b['reason'].trim().slice(0, 300) : undefined;
+      if (!isWord(computer, 120) || !isWord(storeId, 60) || !Array.isArray(lanes) || lanes.length === 0 || !lanes.every((l) => typeof l === 'string' && LANE_ID.test(l))) {
+        throw apiError(400, {
+          code: 'not_readable_as_lane_prefixes',
+          whatHappened: 'A registration needs the store computer\'s sign-in (computer), its store (storeId) and the lanes it numbers bills for (lanes: ["L1", …], each 1 to 40 letters, digits, dots, dashes or underscores).',
+          wasItSaved: 'not_saved',
+          nextSafeAction: 'Send { computer, storeId, lanes, reason? } as shown on the install sheet. Nothing was recorded.',
+        });
+      }
+      assertBranchInScope(ctx, storeId);
+      if (deps.lanePrefixRegistrations === undefined || deps.registerLanePrefixes === undefined || deps.storeComputerScopeOf === undefined) {
+        throw apiError(503, { code: 'lane_prefixes_not_kept_here', whatHappened: 'This head office keeps no store computer registrations.', wasItSaved: 'not_saved', nextSafeAction: 'Use the head office that keeps the store computers\' reports. Nothing was recorded.' });
+      }
+      const scope = await deps.storeComputerScopeOf(ctx.tenantId, computer);
+      if (scope === undefined || scope === 'all' || !scope.includes(storeId)) {
+        throw apiError(409, {
+          code: 'not_a_store_computer_of_that_store',
+          whatHappened: `${computer} is not a store computer of store ${storeId} (it holds no store computer role naming that store), so no lane prefixes can be registered for it.`,
+          wasItSaved: 'not_saved',
+          nextSafeAction: 'Grant the store computer its role for that one store first (the install runbook), then register its lanes. Nothing was recorded.',
+        });
+      }
+      const prefixes = [...new Set((lanes as string[]).map(lanePrefixOf))].sort();
+      const tooLong = prefixes.filter((p) => p.length > 10);
+      if (tooLong.length > 0) {
+        throw apiError(400, { code: 'lane_prefix_too_long', whatHappened: `${tooLong.join(', ')} would be longer than 10 characters, so its bill numbers would not fit a GST invoice number.`, wasItSaved: 'not_saved', nextSafeAction: 'Give the till a shorter lane id, or issue it a head office prefix instead. Nothing was recorded.' });
+      }
+      if (deps.registeredTills !== undefined) {
+        const tills = new Set((await deps.registeredTills(ctx.tenantId)).filter((t) => t.storeId === storeId).map((t) => t.tillId));
+        const unknown = (lanes as string[]).filter((l) => !tills.has(l));
+        if (tills.size > 0 && unknown.length > 0) {
+          throw apiError(409, { code: 'lane_not_a_registered_till', whatHappened: `Head office has no till ${unknown.join(', ')} registered at store ${storeId}.`, wasItSaved: 'not_saved', nextSafeAction: 'Register the till at that store first (the device register), then register its lane here. Nothing was recorded.' });
+        }
+      }
+      const before = registeredForComputer(await deps.lanePrefixRegistrations(ctx.tenantId), computer, storeId);
+      const after = new Set([...before, ...prefixes]);
+      if (after.size > LANE_PREFIXES_PER_COMPUTER_MAX) {
+        throw apiError(409, { code: 'too_many_lane_prefixes', whatHappened: `A store computer may have at most ${LANE_PREFIXES_PER_COMPUTER_MAX} lane prefixes registered; ${computer} would have ${after.size}.`, wasItSaved: 'not_saved', nextSafeAction: 'Give the extra tills head office prefixes instead (Receipt prefixes). Nothing was recorded.' });
+      }
+      const at = deps.now();
+      const kept = await deps.registerLanePrefixes(ctx.tenantId, { computer, storeId, prefixes, by: ctx.userId, at, via: 'install', ...(reason === undefined || reason === '' ? {} : { reason }) }, `install-${ctx.idempotencyKey ?? `${ctx.userId}@${at}`}`);
+      return { status: 201, body: { registered: kept, nowRegistered: [...after].sort() } };
+    },
+  }, {
+    // Round 33 · OB-121: every store computer's registered lane prefixes (with who registered them, when, and how), and the
+    // reports refused at the door, one line per store computer per day.
+    api: 'API-11', method: 'GET', path: LANE_PREFIXES_PATH,
+    permission: 'platform.health.read',
+    handler: async (ctx) => {
+      const regs = deps.lanePrefixRegistrations === undefined ? [] : await deps.lanePrefixRegistrations(ctx.tenantId);
+      const lines = deps.refusedAtDoorLines === undefined ? [] : await deps.refusedAtDoorLines(ctx.tenantId);
+      const computers = [...new Set(regs.map((r) => `${r.computer}\u0000${r.storeId}`))].sort().map((k) => {
+        const [computer, storeId] = k.split('\u0000') as [string, string];
+        return { computer, storeId, prefixes: [...registeredForComputer(regs, computer, storeId)].sort(), registrations: regs.filter((r) => r.computer === computer && r.storeId === storeId) };
+      });
+      return { status: 200, body: { computers, refusedAtTheDoor: lines, asAt: deps.now() } };
     },
   }, {
     // Verifier r21 BOX-2: a person acknowledges a refused report — the only way, besides head office banking that many, for

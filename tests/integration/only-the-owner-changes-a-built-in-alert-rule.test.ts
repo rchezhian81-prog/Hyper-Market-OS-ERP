@@ -123,7 +123,10 @@ describe('round 32 · OB-115: only the owner changes a built-in alert rule (memo
     await h.provisionRole(T, HO, 'store_manager', 'all');
     const send: Send = async (userId, method, body) => {
       const key = `k-${randomUUID()}`;
-      const r = await h.request({ method, path: PATH, userId, tenantId: T, ...(body === undefined ? {} : { body }), ...(method === 'GET' ? {} : { idempotencyKey: key }) });
+      // Round 33 · OB-120: each save is based on the version just read.
+      const version = method === 'PUT' ? ((await h.request({ method: 'GET', path: PATH, userId: OWNER, tenantId: T })).body as Rules).rules?.version ?? 0 : 0;
+      const sent = method === 'PUT' ? { ...(body as object), basedOnVersion: version } : body;
+      const r = await h.request({ method, path: PATH, userId, tenantId: T, ...(sent === undefined ? {} : { body: sent }), ...(method === 'GET' ? {} : { idempotencyKey: key }) });
       return { status: r.status, body: r.body, key };
     };
     const inbox = async () => ((await h.request({ method: 'GET', path: '/v1/platform/alerts/inbox', userId: OWNER, tenantId: T })).body as { alerts: { alert: { alertId: string; detail: string } }[] }).alerts.map((a) => a.alert);
@@ -155,7 +158,10 @@ describe.skipIf(DATABASE_URL === undefined)('round 32 · OB-115: only the owner 
       await cloud.grant(HO, 'store_manager');
       const send: Send = async (userId, method, body) => {
         const key = `k-${randomUUID()}`;
-        const r = await cloud.request({ method, path: PATH, userId, ...(body === undefined ? {} : { body }), ...(method === 'GET' ? {} : { idempotencyKey: key }) });
+        // Round 33 · OB-120: each save is based on the version just read.
+        const version = method === 'PUT' ? ((await cloud.request({ method: 'GET', path: PATH, userId: OWNER })).body as Rules).rules?.version ?? 0 : 0;
+        const sent = method === 'PUT' ? { ...(body as object), basedOnVersion: version } : body;
+        const r = await cloud.request({ method, path: PATH, userId, ...(sent === undefined ? {} : { body: sent }), ...(method === 'GET' ? {} : { idempotencyKey: key }) });
         return { status: r.status, body: r.body, key };
       };
       const inbox = async () => ((await cloud.request({ method: 'GET', path: '/v1/platform/alerts/inbox', userId: OWNER })).body as { alerts: { alert: { alertId: string; detail: string } }[] }).alerts.map((a) => a.alert);

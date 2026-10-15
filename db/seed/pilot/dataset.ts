@@ -205,6 +205,12 @@ export const PILOT_FOUNDATION: PilotFoundation = {
 export const PILOT_DEMO_BRANCH = BRANCH_ID;
 export const PILOT_DEMO_WAREHOUSE = WAREHOUSE_ID;
 export const PILOT_DEMO_COMPANY = COMPANY_ID;
+/**
+ * Round 33 · OB-121: the demo store computer's own lanes — the lane its till numbers bills for (`EDGE_LANE_ID` in
+ * infra/compose/docker-compose.pilot.yml). Registered at head office when the seed binds the box to the demo store, so its
+ * own `R-<lane>-` bill numbers are believed; any other `R-…-` it named would be refused at the door.
+ */
+export const PILOT_DEMO_BOX_LANES: readonly string[] = ['lane-1'];
 
 // ── Slice 4b: catalogue + tax/HSN + prices ────────────────────────────────────
 // A small, realistic mini-catalogue: a non-regulated household category and a

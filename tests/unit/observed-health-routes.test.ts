@@ -49,7 +49,12 @@ const RAISE = `${OBSERVED}/raise`;
 const BACKUP = '/v1/platform/backups/:backupId/taken';
 const RULE: AlertRule = { alertId: 'sync-lag', component: 'sync', firesAt: 'degraded', ownerUserId: 'u-owner', ownerName: 'The owner', ackWithinMinutes: 30, escalatesToUserId: 'u-mgr' };
 const DEAD: AlertRule = { alertId: 'dead-letters', component: 'dead_letter', firesAt: 'down', ownerUserId: 'u-ops', ownerName: 'Ops', ackWithinMinutes: 60 };
-const putRules = (routes: readonly Route[], body: unknown, userId = 'u-ops') => routeFor(routes, 'PUT', RULES_PATH).handler(ctx({ userId, body }));
+// Round 33 · OB-120: a save names the version it was based on — read here first unless the test sends its own.
+const putRules = async (routes: readonly Route[], body: unknown, userId = 'u-ops') => {
+  const current = ((await routeFor(routes, 'GET', RULES_PATH).handler(ctx())).body as { rules: { version: number } | null }).rules?.version ?? 0;
+  const withVersion = body !== null && typeof body === 'object' && !('basedOnVersion' in body) ? { ...body, basedOnVersion: current } : body;
+  return routeFor(routes, 'PUT', RULES_PATH).handler(ctx({ userId, body: withVersion }));
+};
 
 interface Thrown { status: number; body: { code: string; whatHappened: string } }
 const thrown = async (fn: () => unknown): Promise<Thrown> => {

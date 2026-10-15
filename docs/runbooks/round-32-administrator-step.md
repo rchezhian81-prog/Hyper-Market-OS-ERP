@@ -6,9 +6,16 @@ Nothing here contains a secret value. Never paste the value into chat, email, a 
 ## On the demo server (as the deploy administrator)
 
 1. Open the stack's settings file: `/opt/sre/app/infra/compose/.env.pilot`.
-2. Add one line named `BOX_HISTORY_SEAL_KEY=` followed by a NEW random value made on the server itself:
-   `openssl rand -base64 48`
-   - It must NOT be the same value as `PACK_SIGNING_KEY` (head office refuses to start if they are equal).
+2. Add one line named `BOX_HISTORY_SEAL_KEY=` with a NEW random value made on the server itself — written straight into
+   the file, so the value is never shown on the screen or kept in the terminal's scrollback (round 33, verifier r32 note 2c).
+   First make sure it is not there already (`grep -c '^BOX_HISTORY_SEAL_KEY=' /opt/sre/app/infra/compose/.env.pilot`
+   prints `0`; if it prints `1`, stop — it is set), and that the file ends with a new line (`tail -c1 …/.env.pilot | od -c`
+   shows `\n`; if not, run `echo >> /opt/sre/app/infra/compose/.env.pilot` first). Then:
+   `printf 'BOX_HISTORY_SEAL_KEY=%s\n' "$(openssl rand -base64 48 | tr -d '\n')" >> /opt/sre/app/infra/compose/.env.pilot`
+   Do NOT run `openssl rand` on its own: that prints the value.
+   - It must NOT be the same value as `PACK_SIGNING_KEY`, `PII_KEY_ENCRYPTION_KEY` or `IDP_SIGNING_KEY`, and must be at least
+     32 characters (the command above makes 64). From round 33 the release's pre-check refuses each of these by NAME
+     (exit 78) before anything is rebuilt — it never prints the value.
    - It is for head office only: never copy it to a store computer, a till or a phone.
 3. Check it by NAME only (prints `1`, never the value):
    `grep -c '^BOX_HISTORY_SEAL_KEY=' /opt/sre/app/infra/compose/.env.pilot`
