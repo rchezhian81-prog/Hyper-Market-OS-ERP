@@ -13650,10 +13650,7 @@ export function boxHealthAdapter(input: {
     // Round 33 · OB-121: the store computers' registered lane prefixes, and the reports refused at the door.
     lanePrefixRegistrations: (tenantId) => lanePrefixRegistrationsOf(input.store, tenantId),
     registerLanePrefixes: async (tenantId, r, key) => {
-      const k = `lane-prefixes-${tenantId}-${createHash('sha256').update(key).digest('hex').slice(0, 32)}`;
-      const res = await input.store.append(tenantId, LANE_PREFIX_STREAM, makeEvent({
-        id: keyedEventId('lane-prefixes', k), type: 'StoreComputerLanePrefixesRegistered', occurredAt: r.at, idempotencyKey: k, source: 'api/platform', payload: r,
-      }));
+      const res = await input.store.append(tenantId, LANE_PREFIX_STREAM, lanePrefixRegistrationEvent(tenantId, r, key, 'api/platform'));
       return res.record.event.payload as LanePrefixRegistration;
     },
     countRefusedAtDoor: (tenantId, r) => countRefusedAtDoor(input.store, tenantId, r),
@@ -14854,6 +14851,16 @@ export function receiptPrefixAdapter(input: { readonly store: EventStore; readon
 const LANE_PREFIX_STREAM = streamName(STREAM.org, 'store-computer-lane-prefixes');
 /** Round 33 · OB-121: the reports refused at the door, one bounded line per store computer per day. */
 const DOOR_REFUSED_STREAM = streamName(STREAM.org, 'store-computer-prefixes-refused-at-door');
+
+/**
+ * Round 33 · OB-121: the one fact of a lane-prefix registration (append-only; the same `key` again is the same registration) —
+ * made by the route, by a named person, or by the demo seed's binding of its store computer (`db/seed/pilot/hosted.ts`).
+ */
+export function lanePrefixRegistrationEvent(tenantId: string, r: LanePrefixRegistration, key: string, source: string) {
+  const k = `lane-prefixes-${tenantId}-${createHash('sha256').update(key).digest('hex').slice(0, 32)}`;
+  return makeEvent({ id: keyedEventId('lane-prefixes', k), type: 'StoreComputerLanePrefixesRegistered', occurredAt: r.at, idempotencyKey: k, source, payload: r });
+}
+export { LANE_PREFIX_STREAM };
 
 export async function lanePrefixRegistrationsOf(store: EventStore, tenantId: string): Promise<readonly LanePrefixRegistration[]> {
   return allOf<LanePrefixRegistration>(store, tenantId, LANE_PREFIX_STREAM, 'StoreComputerLanePrefixesRegistered');

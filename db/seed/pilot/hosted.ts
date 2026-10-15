@@ -18,10 +18,10 @@ import { makeEvent } from '../../../packages/contracts/src/event';
 import type { EventStore } from '../../../packages/persistence/src/event-store';
 import { seedGenesisOwner } from '../../../services/api/src/access';
 import { OWNER_ROLE_ID } from '../../../services/api/src/roles';
-import { STREAM, ROLE_REVOKED } from '../../../services/api/src/adapters';
+import { STREAM, ROLE_REVOKED, LANE_PREFIX_STREAM, lanePrefixRegistrationEvent } from '../../../services/api/src/adapters';
 import { LocalIdp } from '../../../tests/support/local-idp';
 import type { SeedClient, SeedResponse } from './apply';
-import { PILOT_DEMO_TENANT, PILOT_MACHINE_USERS, PILOT_DEMO_BRANCH } from './dataset';
+import { PILOT_DEMO_TENANT, PILOT_MACHINE_USERS, PILOT_DEMO_BRANCH, PILOT_DEMO_BOX_LANES } from './dataset';
 
 type FetchLike = (url: string, init: {
   method: string;
@@ -182,6 +182,12 @@ export function hostedSeedClient(config: HostedSeedConfig): SeedClient {
             request: { grantId: `${roleId}-${userId}@${PILOT_DEMO_BRANCH}`, userId, roleId, branchScope: scope, ...provenance(at) },
           },
         }));
+        // Round 33 · OB-121: the binding act also registers the box's own lane prefixes (`R-<lane>-`) at head office — once
+        // (a stable key: a re-run registers nothing new), append-only, named to the operator who ran the seed.
+        await config.store.append(tenantId, LANE_PREFIX_STREAM, lanePrefixRegistrationEvent(tenantId, {
+          computer: userId, storeId: PILOT_DEMO_BRANCH, prefixes: PILOT_DEMO_BOX_LANES.map((l) => `R-${l}-`), by: `pilot-seed:${config.operator}`, at, via: 'install',
+          reason: 'the demo store computer bound to the demo store by the pilot seed (owner decision OB-121)',
+        }, `pilot-seed-binding-${userId}@${PILOT_DEMO_BRANCH}`, 'pilot/seed'));
       }
       // OB-36 "A": the demo store computer now holds its own `store_computer` role. A ledger seeded before that still
       // grants it the CASHIER role (a person's role) — taken away here, once, as a revocation on the ledger (hard rule
