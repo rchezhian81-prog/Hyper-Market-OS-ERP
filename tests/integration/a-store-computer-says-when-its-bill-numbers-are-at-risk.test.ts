@@ -244,9 +244,13 @@ async function aReportNeverLocksATill(cloud: Cloud): Promise<void> {
   // A store-1 box reporting store 2's prefix: refused too, never folded anywhere.
   const other = await report(cloud, 'u-box-1', S1, [{ prefix: 'S2L4-', through: 50 }]);
   expect((other.body as { recorded: { receiptNumbersRefused?: { because: string }[] } }).recorded.receiptNumbersRefused).toEqual([expect.objectContaining({ because: 'prefix_of_another_store' })]);
-  // A store-coded fallback prefix: not folded, no finding.
+  // A store-coded fallback prefix: not folded, no finding. Round 33 · OB-121: never issued nor registered, so refused at the
+  // door — not kept on the record at all, and counted on the health page instead.
   const zz = await report(cloud, 'u-box-2', S2, [{ prefix: 'ZZABCDEF-', through: 3 }]);
-  expect((zz.body as { recorded: { receiptNumbersNotFolded?: unknown[] } }).recorded.receiptNumbersNotFolded).toEqual([{ prefix: 'ZZABCDEF-', through: 3 }]);
+  expect((zz.body as { recorded: { receiptNumbersNotFolded?: unknown[]; receiptNumbersIssued?: unknown[] } }).recorded).toMatchObject({ receiptNumbersIssued: [] });
+  expect((zz.body as { recorded: { receiptNumbersNotFolded?: unknown[] } }).recorded.receiptNumbersNotFolded).toBeUndefined();
+  expect((zz.body as { refusedAtTheDoor?: unknown }).refusedAtTheDoor).toMatchObject({ prefixes: ['ZZABCDEF-'], count: 1 });
+  expect(component(await observed(cloud), `box_prefixes_refused:${S2}`)?.detail).toMatch(/computer u-box-2 sent \d+ report\(s\) on .* naming bill-number prefixes head office never issued .* refused at the door and not kept/);
 
   // The till keeps selling — from 000001, never "used all its receipt numbers".
   await withBoxes(cloud, async ({ boot, stop, dir }) => {

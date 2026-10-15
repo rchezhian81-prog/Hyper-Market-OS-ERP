@@ -10,7 +10,7 @@ import { tokenAuthenticator } from '../../services/identity/src/index';
 import { buildSurface } from '../../services/api/src/main';
 import { tenantAccessResolver, tenantEntitlementResolver } from '../../services/api/src/access';
 import { ROLE_CATALOGUE } from '../../services/api/src/roles';
-import { STREAM, effectiveGrants } from '../../services/api/src/adapters';
+import { STREAM, effectiveGrants, LANE_PREFIX_STREAM } from '../../services/api/src/adapters';
 import { hostedSeedClient, hostedSeedRefusals, publishPilotPack } from '../../db/seed/pilot/hosted';
 import { packPayloadOf } from '../../edge/store-edge/src/store-pack-held';
 import type { StorePackEnvelope } from '../../services/platform/src/store-packs';
@@ -90,6 +90,12 @@ describe('hosted pilot seed — over a real socket', () => {
       expect(req.approvedBy).toBe('pilot-seed:test-operator');
     }
     expect(grants.filter((g) => g.event.source === 'system/genesis')).toHaveLength(1);
+    // Round 33 · OB-121: binding the demo box to its store also registered its own lane prefix at head office — ONCE over two
+    // runs, named to the operator — and the head-office route lists it.
+    const lanes = await store.readStream(PILOT_DEMO_TENANT, LANE_PREFIX_STREAM, { type: 'StoreComputerLanePrefixesRegistered' });
+    expect(lanes.map((e) => e.event.payload)).toEqual([expect.objectContaining({ computer: 'pilot-store-edge', storeId: PILOT_DEMO_BRANCH, prefixes: ['R-lane-1-'], by: 'pilot-seed:test-operator', via: 'install' })]);
+    const listed = await client.request({ method: 'GET', path: '/v1/store-computers/lane-prefixes', userId: OWNER, tenantId: PILOT_DEMO_TENANT });
+    expect((listed.body as { computers: unknown[] }).computers).toEqual([expect.objectContaining({ computer: 'pilot-store-edge', storeId: PILOT_DEMO_BRANCH, prefixes: ['R-lane-1-'] })]);
     // OB-42: the owner's marketing cap is in force for the demo shop — set through the owner's route, once, by the seed.
     const cap = await client.request({ method: 'GET', path: '/v1/service/campaigns/frequency-policy', userId: OWNER, tenantId: PILOT_DEMO_TENANT });
     expect((cap.body as { policy: Record<string, unknown> }).policy).toMatchObject({ capPerWindow: 2, windowDays: 7, setBy: OWNER });

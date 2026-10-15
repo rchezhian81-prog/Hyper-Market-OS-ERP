@@ -133,11 +133,16 @@ restarted.
 **Round 32 (owner decision OB-116) adds one: `BOX_HISTORY_SEAL_KEY`** — head office's own secret for the seal on the store
 computers' saved history. The administrator adds it to the box's settings file ONCE, before the round-32 merge deploys:
 
-1. On the box, generate a value with `openssl rand -base64 48` (a **new** value — never the `PACK_SIGNING_KEY` value; the
-   API refuses to start if they are equal).
-2. Add one line `BOX_HISTORY_SEAL_KEY=<that value>` to `/opt/sre/app/infra/compose/.env.pilot` with a text editor on the
-   box (the file stays mode 600, owned as before). Never paste it into a chat, an issue, the repository, a store
-   computer's or a till's settings file.
+1. On the box, make a **new** value and write it straight into the settings file — never shown on the screen or kept in the
+   terminal's scrollback (round 33, verifier r32 note 2c). Check it is not there yet (`grep -c '^BOX_HISTORY_SEAL_KEY='
+   /opt/sre/app/infra/compose/.env.pilot` prints `0`) and that the file ends with a new line, then:
+   `printf 'BOX_HISTORY_SEAL_KEY=%s\n' "$(openssl rand -base64 48 | tr -d '\n')" >> /opt/sre/app/infra/compose/.env.pilot`
+   (the file stays mode 600, owned as before). Do not run `openssl rand` on its own — it prints the value. Never paste the
+   value into a chat, an issue, the repository, a store computer's or a till's settings file.
+2. The pre-check refuses, by name and without printing anything of the value: a missing line, the placeholder, a value
+   shorter than 32 characters, or one equal to `PACK_SIGNING_KEY`, `PII_KEY_ENCRYPTION_KEY` or `IDP_SIGNING_KEY` (the API
+   refuses all of these at start; round 33 checks them here first, before anything is rebuilt). A box that has only a till's
+   settings file and no head-office one is refused too, naming the missing file.
 3. Nothing else: the next release picks it up. The first health read afterwards rebuilds the saved store-computer history
    once (its seal changed) — the store computer checks may say "being prepared" for a little while; nothing is lost.
 

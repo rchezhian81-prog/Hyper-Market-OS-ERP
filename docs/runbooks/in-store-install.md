@@ -194,6 +194,35 @@ the books whenever there is a line, and keeps selling when there is not.
 > same job that provider's admin console does at go-live. Choosing the production identity provider
 > is a later decision (ADR OA-4); when it lands, tokens come from it and this script is retired.
 
+### Step 5b — Register the store computer's own lanes (round 33, owner decision OB-121)
+
+From round 33 head office believes a bill-number prefix in a store computer's health report only when head office
+**issued** it to one of that store's tills (Receipt prefixes), or it is one of **that store computer's own lane prefixes**
+(`R-<lane>-`, the numbering a one-store shop's till used before prefixes were issued) **registered at head office**. Anything
+else the store computer names is refused at the door — never kept — and counted on the Health page
+(`box_prefixes_refused:<store>`, one line per store computer per day).
+
+- **A till with a head-office prefix** (the normal case, and every till of a business with more than one store): nothing to do.
+- **A till that numbers `R-<lane>-`** (one store, a till that already had its own numbering): once, when the store
+  computer is installed and granted its `store_computer` role for its store, the IT administrator (or the owner) registers
+  its lanes — a named person's act, append-only, on the audit trail:
+
+  ```
+  POST /v1/store-computers/lane-prefixes
+  { "computer": "<the store computer's sign-in>", "storeId": "<its store>", "lanes": ["lane-1"], "reason": "installed <date>" }
+  ```
+
+  It is refused by name when the sign-in is not a store computer of that store, a lane would make a prefix longer than 10
+  characters, a lane is not a till registered at that store (when the store's tills are registered), or the computer would
+  have more than 32. `GET /v1/store-computers/lane-prefixes` lists every registration (who, when, how) and the refused lines.
+- **Existing store computers** that already reported `R-<lane>-` before round 33 keep working without this step: on their
+  first report after the upgrade head office registers, once, by itself (`via: seen_before_registration`), the lanes that
+  SAME computer reported in reports head office kept before the rule AND under which head office holds real bills (sales or
+  refunds). An invented lane with no bill is never registered; at most 32. The demo seed registers the demo box's
+  `lane-1` when it binds the box to the demo store.
+- A `ZZ…` prefix is a store computer's own fallback for a till with no prefix issued: it is refused at the door too. The fix
+  is to issue that till its prefix (Receipt prefixes), not to register anything.
+
 ---
 
 ## Step 6 — Enrolling a handheld (the warehouse phone or scanner) — SP-3a

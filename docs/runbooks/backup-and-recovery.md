@@ -472,6 +472,18 @@ count still open and names the others.
     was (that is not a change). `GET /v1/platform/alert-rules` shows each built-in rule's state with `lastChangedBy` and
     `lastChangedAt` (whoever saved the rules last), and every save's reply lists the built-in rules' states and, when one
     is still off, says so in words (`builtInStillOff`). Only the owner turns it back on (`builtInOff: []`).
+- **Round 33 · the built-in alert is head office's, and only the owner ticks it (OB-119).** Nobody raises an alert under a
+  `built-in:` or `notice:` name by hand — `POST /v1/platform/alerts/raise` and a hand-made alert rule under one are refused
+  by name (`403 built_in_alert_id_reserved`), even for the owner; only head office's alert worker raises it. An alert planted
+  under that name before round 33 never swallows the real one: the worker's raise opens a new occurrence to the owner. Only
+  the owner may acknowledge (tick as seen) it or his notices: the IT administrator is refused by name
+  (`…_refused_to_platform_administrator`), everyone else too (`…_owner_only`), and the alert stays in his inbox.
+- **Round 33 · a save of the alert rules says which version it was based on (OB-120).** Send `basedOnVersion` in the body
+  of `PUT /v1/platform/alert-rules` — the `rules.version` that `GET /v1/platform/alert-rules` showed you (0 when no rules are
+  saved yet). Without it the save is refused (`428 alert_rules_save_needs_based_on_version`); if someone else saved in
+  between, it is refused by name (`409 alert_rules_changed_since_you_looked` — "someone else just changed these rules —
+  look again and resend") and nothing of yours is saved. Read the rules again, make your change on what they show, resend.
+  Two saves at the same moment: exactly one is kept, the other is told so — never two "saved" answers.
 - **The saved history's seal now uses head office's OWN secret (OB-116).** Round 30 derived the seal key from
   PACK_SIGNING_KEY — which every store computer also holds, so someone with a store computer's settings file and the
   database password could have forged it. From round 32 the key comes from **`BOX_HISTORY_SEAL_KEY`**, a separate secret

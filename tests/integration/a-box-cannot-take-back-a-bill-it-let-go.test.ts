@@ -370,6 +370,7 @@ describe.skipIf(DATABASE_URL === undefined)('OB-91 / OB-90 on the served API (Po
     expect((await real.request({ method: 'POST', path: `/v1/stores/${B}/tills/lane-1/receipt-prefix`, userId: OWNER, idempotencyKey: `pfx-${randomUUID()}`, body: { prefix: Q } })).status).toBe(201);
     // The owner names who owns the store computer's bill numbers (himself), and nothing else.
     expect((await real.request({ method: 'PUT', path: '/v1/platform/alert-rules', userId: OWNER, idempotencyKey: `rules-${randomUUID()}`, body: {
+      basedOnVersion: 0,
       rules: [{ alertId: 'bill-numbers-a3', component: `box_bill_numbers:${B}`, firesAt: 'degraded', ownerUserId: OWNER, ownerName: 'The owner', ackWithinMinutes: 60, escalatesToUserId: OWNER }],
     } })).status).toBe(200);
     const t0 = Date.now();

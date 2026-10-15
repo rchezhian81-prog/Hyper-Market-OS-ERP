@@ -26,6 +26,17 @@
 //     history); if it comes back it is a NEW occurrence — a fresh deadline, unacknowledged, delivered again — so an
 //     alert acknowledged last week cannot swallow this week's failed backup.
 //
+//   • RESERVED NAMES (round 33 · owner decision OB-119 "A", 15 Oct 2026, in writing, "Reserve name, only you tick"; verifier
+//     r32 NEW-1, NEW-2) — every alert id under `built-in:` (the built-in rules) and `notice:` (the notices the owner gets when
+//     a built-in rule changes) is head office's own. Nobody raises one by hand: POST …/alerts/raise refuses a rule naming
+//     one, by name (403 `built_in_alert_id_reserved`, on the audit trail); only the ops-alert worker raises a built-in alert
+//     (and the alert-rules save raises its notice), each raise marked `origin: 'built-in-rule'`. Only the shop's OWNER may
+//     acknowledge (tick as seen) one: the IT/platform administrator is refused by name
+//     (`built_in_alert_acknowledge_refused_to_platform_administrator`, as OB-91), everyone else too
+//     (`built_in_alert_acknowledge_owner_only`). An open alert under a reserved id that was NOT raised by the rule (one
+//     planted before this rule) is FOREIGN: the rule's own raise never collapses into it — it opens a new occurrence, to
+//     the owner, delivered again — and a foreign re-raise never re-points the rule's own alert.
+//
 // Writes gated `platform.alert.manage`; the board reads `platform.health.read`. No business transaction is
 // posted here (§28); no AI acknowledges or escalates anything (hard rule #5). Nothing here deletes an alert (#6).
 
@@ -54,6 +65,18 @@ export interface AlertLifecycleEvent {
   readonly notifiedTo?: string;
   readonly via?: string;
   readonly stage?: 'raised' | 'escalated';
+  /**
+   * Round 33 · OB-119: `raised` only — set when head office's own rule raised it (the ops-alert worker's built-in rule, or
+   * the owner's notice of a built-in rule change). A raise under a reserved id without it is foreign (see the header).
+   */
+  readonly origin?: 'built-in-rule';
+}
+
+/** Round 33 · OB-119: the alert-id namespaces only head office's own rules raise under (built-in rules and their notices). */
+export const RESERVED_ALERT_ID_PREFIXES: readonly string[] = ['built-in:', 'notice:'];
+/** Round 33 · OB-119: is this alert id one only head office's own rules may raise (and only the owner may acknowledge)? */
+export function isReservedAlertId(alertId: string): boolean {
+  return RESERVED_ALERT_ID_PREFIXES.some((p) => alertId.startsWith(p));
 }
 
 export type AlertState = 'open' | 'acknowledged' | 'escalated' | 'cleared';
@@ -82,10 +105,15 @@ export interface LiveAlert {
   readonly clearedAt?: string;
   /** How many times this alert has opened (1 = first). */
   readonly occurrence: number;
+  /**
+   * Round 33 · OB-119: this occurrence is under a reserved id but was NOT raised by head office's own rule (planted before the
+   * name was reserved). The rule's own raise opens a new occurrence over it rather than collapsing into it.
+   */
+  readonly foreign?: true;
 }
 
 interface MutableAlert {
-  alert: RaisedAlert; escalatesToUserId?: string;
+  alert: RaisedAlert; escalatesToUserId?: string; foreign?: true;
   acknowledgedBy?: string; acknowledgedAt?: string;
   escalatedTo?: string; escalatedAt?: string; escalationDetail?: string;
   deliveries: AlertDelivery[]; clearedAt?: string; occurrence: number;
@@ -103,13 +131,20 @@ export function projectAlerts(events: readonly AlertLifecycleEvent[]): readonly 
     if (e.change === 'raised') {
       if (e.alert === undefined) continue;
       const existing = byId.get(e.alertId);
-      if (existing === undefined || existing.clearedAt !== undefined) {
+      // Round 33 · OB-119: under a reserved id, a raise not made by head office's own rule is foreign.
+      const foreign = isReservedAlertId(e.alertId) && e.origin !== 'built-in-rule';
+      if (existing === undefined || existing.clearedAt !== undefined || (existing.foreign === true && !foreign)) {
         // First raise, or the condition came BACK after it cleared: a new occurrence — fresh deadline, nobody has
-        // acknowledged it yet, and it is delivered again. The earlier occurrence stays on the ledger.
+        // acknowledged it yet, and it is delivered again. The earlier occurrence stays on the ledger. Round 33 · OB-119: the
+        // rule's own raise over a FOREIGN occurrence is a new occurrence too (to the rule's addressee, delivered again).
         byId.set(e.alertId, {
           alert: e.alert, deliveries: [], occurrence: (existing?.occurrence ?? 0) + 1,
           ...(e.escalatesToUserId !== undefined ? { escalatesToUserId: e.escalatesToUserId } : {}),
+          ...(foreign ? { foreign: true as const } : {}),
         });
+      } else if (foreign && existing.foreign !== true) {
+        // Round 33 · OB-119: a foreign re-raise never re-points the rule's own open alert.
+        continue;
       } else {
         // Ongoing condition: keep the first deadline and any acknowledgement; refresh only the escalation target.
         existing.escalatesToUserId = e.escalatesToUserId;
@@ -136,6 +171,7 @@ export function projectAlerts(events: readonly AlertLifecycleEvent[]): readonly 
     // Acknowledged wins over escalated: once a named person has taken it, it is theirs and stops asking (PA-12).
     state: a.clearedAt !== undefined ? 'cleared' as const : a.acknowledgedAt !== undefined ? 'acknowledged' as const : a.escalatedAt !== undefined ? 'escalated' as const : 'open' as const,
     deliveries: a.deliveries, occurrence: a.occurrence,
+    ...(a.foreign === true ? { foreign: true as const } : {}),
     ...(a.clearedAt !== undefined ? { clearedAt: a.clearedAt } : {}),
     ...(a.escalatesToUserId !== undefined ? { escalatesToUserId: a.escalatesToUserId } : {}),
     ...(a.acknowledgedBy !== undefined ? { acknowledgedBy: a.acknowledgedBy } : {}),
@@ -152,6 +188,21 @@ export interface AlertLifecycleDeps {
   /** Append one alert fact. Idempotent on the key. */
   readonly recordAlertEvent: (tenantId: string, event: AlertLifecycleEvent, key: string) => Promise<void> | void;
   readonly now: () => string;
+  /**
+   * Round 33 · OB-119: may this person acknowledge an alert under a reserved id — do they hold the owner role — and do they
+   * hold the IT/platform administration function (said by name when refused, as OB-91). Absent: nobody may (fail closed).
+   */
+  readonly builtInAlertAuthorityOf?: (tenantId: string, userId: string) => Promise<{ readonly owner: boolean; readonly platformAdministration: boolean }>;
+}
+
+/** Round 33 · OB-119: the refusal of a hand-raised alert (or a hand-made rule) under a reserved id (403, on the audit trail). */
+export function reservedAlertIdRefusal(alertIds: readonly string[]) {
+  return apiError(403, {
+    code: 'built_in_alert_id_reserved',
+    whatHappened: `The alert id${alertIds.length === 1 ? '' : 's'} ${alertIds.join(', ')} ${alertIds.length === 1 ? 'is' : 'are'} reserved for head office's own built-in rules and the owner's notices (owner decision OB-119): ids starting ${RESERVED_ALERT_ID_PREFIXES.map((p) => `"${p}"`).join(' or ')} are raised only by head office's alert worker, to the shop's owner — never by hand, by anyone.`,
+    wasItSaved: 'not_saved',
+    nextSafeAction: 'Give your own rule an id of your own (not starting "built-in:" or "notice:"). Nothing was raised or saved.',
+  });
 }
 
 // SEVERITY order for the board: worse first, then the soonest deadline. `unknown` sits above `ok`.
@@ -177,6 +228,9 @@ export function alertLifecycleRoutes(deps: AlertLifecycleDeps): readonly Route[]
             nextSafeAction: 'Send the evidence the edge reports, with the alert rules that own each component.',
           });
         }
+        // Round 33 · OB-119: a reserved id (a built-in rule's, or an owner's notice's) is never raised by hand.
+        const reserved = [...new Set(rules.map((r) => r.alertId).filter(isReservedAlertId))];
+        if (reserved.length > 0) throw reservedAlertIdRefusal(reserved);
         const at = deps.now();
         const alerts = raiseAlerts(checkHealth(signals, at, thresholds), rules);
         const known = new Set((await deps.alerts(ctx.tenantId)).map((a) => a.alert.alertId));
@@ -208,6 +262,23 @@ export function alertLifecycleRoutes(deps: AlertLifecycleDeps): readonly Route[]
             wasItSaved: 'not_saved',
             nextSafeAction: 'Check the id against GET /v1/platform/alerts.',
           });
+        }
+        // Round 33 · OB-119: only the shop's owner ticks a built-in alert (or an owner's notice) as seen.
+        if (isReservedAlertId(alertId)) {
+          const who = deps.builtInAlertAuthorityOf === undefined ? { owner: false, platformAdministration: false } : await deps.builtInAlertAuthorityOf(ctx.tenantId, ctx.userId);
+          if (!who.owner) {
+            throw apiError(403, who.platformAdministration ? {
+              code: 'built_in_alert_acknowledge_refused_to_platform_administrator',
+              whatHappened: `Only the shop's owner may acknowledge (tick as seen) ${alertId} (owner decision OB-119) — a built-in alert exists to reach HIM, and an acknowledged alert stops escalating and leaves his inbox. The platform (IT) administrator looks after the computers it watches, so may never acknowledge it (as OB-91), whatever stores the account covers. Nothing was acknowledged; the alert stays open.`,
+              wasItSaved: 'not_saved',
+              nextSafeAction: 'Tell the owner about it; he acknowledges it himself. Nothing was recorded except this refusal.',
+            } : {
+              code: 'built_in_alert_acknowledge_owner_only',
+              whatHappened: `Only the shop's owner may acknowledge (tick as seen) ${alertId} (owner decision OB-119) — a built-in alert exists to reach him. This account does not hold the owner role. Nothing was acknowledged; the alert stays open.`,
+              wasItSaved: 'not_saved',
+              nextSafeAction: 'Tell the owner about it; he acknowledges it himself. Nothing was recorded except this refusal.',
+            });
+          }
         }
         const at = deps.now();
         // Key on the alertId and occurrence (no time): a re-acknowledge of the same alert collapses to one.
@@ -269,9 +340,12 @@ export function alertLifecycleRoutes(deps: AlertLifecycleDeps): readonly Route[]
   ];
 }
 
-/** The idempotency key of a raise: the alert and its occurrence (a new occurrence after it cleared gets its own). */
-export function raiseKey(alertId: string, live: LiveAlert | undefined): string {
-  const occurrence = live === undefined ? 1 : live.state === 'cleared' ? live.occurrence + 1 : live.occurrence;
+/**
+ * The idempotency key of a raise: the alert and its occurrence (a new occurrence after it cleared gets its own). Round 33 ·
+ * OB-119: head office's own rule raising over a FOREIGN occurrence (`ownRule`) gets its own too — never a dropped duplicate.
+ */
+export function raiseKey(alertId: string, live: LiveAlert | undefined, ownRule = false): string {
+  const occurrence = live === undefined ? 1 : live.state === 'cleared' || (ownRule && live.foreign === true) ? live.occurrence + 1 : live.occurrence;
   return occurrence > 1 ? `raise-${alertId}-o${occurrence}` : `raise-${alertId}`;
 }
 
