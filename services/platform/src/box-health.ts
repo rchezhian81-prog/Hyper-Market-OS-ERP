@@ -4024,7 +4024,7 @@ export function doorRefusalComponents(lines: readonly DoorRefusalLine[], at: str
     name: `box_prefixes_refused:${storeId}`, status: 'degraded' as const,
     detail: ls.sort((a, b) => a.computer.localeCompare(b.computer) || a.day.localeCompare(b.day)).map((l) =>
       `store ${storeId}'s computer ${l.computer} sent ${l.count} report(s) on ${l.day} naming bill-number prefixes head office never issued to this store's tills or registered for this computer (e.g. ${l.examples.join(', ')}; first ${l.first}, last ${l.last}) — refused at the door and not kept (owner decision OB-121)`).join('; ')
-      + '. If these are this store computer\'s own tills, register its lanes (Store computers → lane prefixes, at install); if not, check that store computer'
+      + '. If these are this store computer\'s own tills, have the IT administrator register its lanes (POST /v1/store-computers/lane-prefixes — docs/runbooks/in-store-install.md, "Register the store computer's own lanes"); if not, check that store computer'
       // A store-coded ZZ… prefix is an honest box's fallback for a till with no prefix issued — the fix is to issue one.
       + (ls.some((l) => l.examples.some((p) => p.startsWith('ZZ'))) ? '. ZZ… is a store computer\'s own fallback numbering for a till head office has not issued a prefix to (each such bill is also flagged) — issue that till its prefix (Receipt prefixes)' : ''),
     evidence: { computers: [...new Set(ls.map((l) => l.computer))].join(','), reports: ls.reduce((n, l) => n + l.count, 0) },
