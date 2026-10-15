@@ -42,7 +42,7 @@ software, row by row:
 20. **SF-08 / M10 / WF-09** batch-precise recall block at the till (capture the batch at the scan; the whole-product
     block is built) — **R3** (OB-25).
 21. **M36 / PA-13 / D12-FR-06 / D14 SDK** commercialisation: billing, metering, tenant closure, connector SDK — **R8** (OA-12).
-22. **D08** voice search — off for the pilot (OB-62); typing and barcode search work. Target: no target recorded — owner
+22. **D08** voice search — off for the pilot (OB-62); typing and barcode search work. Target: **R4** (OB-125).
     decision needed.
 
 Not listed: rows whose software is built and only an outside party (payment, SMS/WhatsApp, model, courier, Tally/GST,
