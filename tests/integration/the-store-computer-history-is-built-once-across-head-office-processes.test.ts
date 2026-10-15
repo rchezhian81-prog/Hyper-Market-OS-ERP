@@ -8,6 +8,7 @@ import { makeEvent } from '../../packages/contracts/src/event';
 import { STREAM, streamName, storeComputerHistory, boxHistoryBuilding, boxHistoryLeaseKept, BOX_HISTORY_INLINE_MAX } from '../../services/api/src/adapters';
 import type { BoxHealthRecord } from '../../services/platform/src/box-health';
 import { honestStore, TEST_BOX_HISTORY_KEY, iso } from '../support/box-history';
+import { takeHeldTransactionTurn } from '../support/held-transaction-turn';
 
 /**
  * **Round 34 · M35-FR-03 · owner decision OB-124 (5) "A" (15 Oct 2026, in writing, "Build all five before pilot"), finishing
@@ -210,8 +211,11 @@ describe.skipIf(DATABASE_URL === undefined)('round 34 · M35-FR-03 · OB-124 (5)
     await onlyOneInstanceBuilds(4, { holdFence: false });
   }, 300_000);
   it('M35-FR-03 OB-124 OB-106 NEW-4: saving held back by an open transaction — the builder keeps the lease until it is saved; the other three never build again', async () => {
-    await onlyOneInstanceBuilds(4, { holdFence: true });
-  }, 300_000);
+    // It holds a transaction open on purpose, so it takes its turn with the other tests that do (tests/support): a full
+    // parallel run never has two of them stall each other's visibility fence.
+    const endTurn = await takeHeldTransactionTurn(DATABASE_URL!);
+    try { await onlyOneInstanceBuilds(4, { holdFence: true }); } finally { await endTurn(); }
+  }, 1_800_000);
   it('M35-FR-03 OB-124 OB-106 NEW-4: the builder\'s lease session is ended mid-build — it stops at its next step and says so; never two builders at once', async () => {
     const [a, b] = [instance(), instance()];
     let openA: () => void = () => undefined;
@@ -267,31 +271,36 @@ describe.skipIf(DATABASE_URL === undefined)('round 34 · M35-FR-03 · OB-124 (5)
       const A = new SqlSnapshotStore(pgPoolClient(a));
       const B = new SqlSnapshotStore(pgPoolClient(b));
       const T = randomUUID();
-      const held = await A.buildLease(T, 'box-health-history@1') as BuildLeaseHeld | undefined;
+      // Every step is bounded and named, so a step that never answers says which one it was (never a bare test timeout).
+      const step = <X>(label: string, p: Promise<X>): Promise<X> => Promise.race([p, new Promise<X>((_, reject) => { setTimeout(() => reject(new Error(`step never answered: ${label}`)), 30_000).unref?.(); })]);
+      const lease = (S: SqlSnapshotStore, t: string, label: string) => step(label, S.buildLease(t, 'box-health-history@1')) as Promise<BuildLeaseHeld | undefined>;
+      const held = await lease(A, T, 'A takes the lease');
       expect(held).toBeDefined();
-      expect(await B.buildLease(T, 'box-health-history@1')).toBeUndefined();
+      expect(await lease(B, T, 'B is refused it')).toBeUndefined();
       // Another shop, or another projection, is not held up.
-      const other = await B.buildLease(randomUUID(), 'box-health-history@1') as BuildLeaseHeld | undefined;
+      const other = await lease(B, randomUUID(), 'B takes another shop\'s lease');
       expect(other).toBeDefined();
-      await other!();
-      await held!();
-      const next = await B.buildLease(T, 'box-health-history@1') as BuildLeaseHeld | undefined;
+      await step('B lets go of the other shop\'s', other!());
+      await step('A lets go', held!());
+      const next = await lease(B, T, 'B takes the lease');
       expect(next).toBeDefined();
       expect(next!.lost()).toBe(false);
       // B's process dies while it holds the lease: its database session is ended (as a crash, or an administrator would),
       // and the lock goes with it.
-      const holder = await leaseHolders(a, T);
+      const holder = await step('find the holder', leaseHolders(a, T));
       expect(holder).toHaveLength(1);
-      await a.query('SELECT pg_terminate_backend($1)', [holder[0]]);
+      await step('end the holder\'s session', a.query('SELECT pg_terminate_backend($1)', [holder[0]]));
       let again: BuildLeaseHeld | undefined;
       const deadline = Date.now() + 30_000;
-      while ((again = await A.buildLease(T, 'box-health-history@1') as BuildLeaseHeld | undefined) === undefined) {
+      while ((again = await lease(A, T, 'A tries again')) === undefined) {
         if (Date.now() > deadline) throw new Error('the lock outlived its holder');
         await sleep(50);
       }
-      expect(next!.lost()).toBe(true); // round 35 · NEW-4: the holder can tell
-      await again();
-      await next!(); // B's own release after its session ended: thrown nowhere
+      // Round 35 · NEW-4: the holder can tell (the server's word that it ended the session may come a moment after the lock went).
+      const told = Date.now() + 30_000;
+      while (!next!.lost()) { if (Date.now() > told) throw new Error('B never learned its lease session ended'); await sleep(20); }
+      await step('A lets go again', again());
+      await step('B lets go after its session ended', next!()); // thrown nowhere
       // Round 35 · NEW-3: a pooled lease session is never handed back — nothing of it is left in either pool.
       expect([a.totalCount - a.idleCount, b.totalCount - b.idleCount]).toEqual([0, 0]);
     } finally {

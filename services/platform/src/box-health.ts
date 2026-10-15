@@ -2650,7 +2650,9 @@ function* boxHistorySteps(input: BoxHistoryInput, every: number): Generator<void
     // at a low position with every report above it listed as folded — so every later read re-reads them all (skipping each).
     // Once a fence has settled its position is MOVED UP (the same fold, nothing re-folded), even with no new report to fold:
     // every report between the old and the new position is either folded already or folded now (`k`), by construction.
-    const compact = s !== undefined && s.folded.length >= FOLD_SNAPSHOT_EVERY && seq > s.seq && settleMs >= settledMs;
+    // Worth a new save when it lets go of many of those (FOLD_SNAPSHOT_EVERY), or of all of them — once per held result.
+    const dropped = s === undefined ? 0 : s.folded.filter((q) => q <= seq).length;
+    const compact = s !== undefined && seq > s.seq && settleMs >= settledMs && dropped > 0 && (dropped >= FOLD_SNAPSHOT_EVERY || dropped === s.folded.length);
     if ((k > 0 && (!resumed || k >= FOLD_SNAPSHOT_EVERY)) || compact) {
       const folded = [...new Set([...(s?.folded ?? []), ...fold.foldedSeqs])].filter((q) => q > seq).sort((a, b) => a - b);
       const settledAt = new Date(settleMs).toISOString();
