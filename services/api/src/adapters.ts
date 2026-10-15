@@ -15143,7 +15143,8 @@ export async function storeComputerHistory(
   const unusedAcknowledged = await allOf<UnusedReceivedAcknowledgement>(store, tenantId, BOX_UNUSED_ACK_STREAM, 'BoxUnusedReceivedAcknowledged');
   // Verifier r19 BOX-1 / r20 BOX-2: every report is re-judged at read (`judgeReportedIssued`), as `storeComputerReading` does.
   // Round 33 · OB-121: a store's own lane prefixes are the ones REGISTERED for its store computers — never "looks like R-…-".
-  const registered = registeredByStore(await lanePrefixRegistrationsOf(store, tenantId));
+  const lanes = await lanePrefixRegistrationsOf(store, tenantId);
+  const registered = registeredByStore(lanes);
   const judge: BoxHistoryJudge = {
     owns: (storeId, prefix) => {
       const stores = issuedPrefixes.get(prefix);
@@ -15166,7 +15167,7 @@ export async function storeComputerHistory(
   };
   const sealed = opts.sealKey === undefined ? {} : { sealKey: opts.sealKey };
   const common = (when: string) => ({
-    at: when, banked, replacements, refusalAcks: acknowledged, atRiskAcks: atRiskAcknowledged, judge,
+    at: when, banked, replacements, refusalAcks: acknowledged, atRiskAcks: atRiskAcknowledged, judge, lanes,
     settleBefore: new Date(Date.parse(when) - FOLD_SETTLE_MINUTES * 60_000).toISOString(),
     ...(unsentWarnHours === undefined ? {} : { warnHours: unsentWarnHours }), ...(claimSlack === undefined ? {} : { slack: claimSlack }),
     ...(opts.timeZone === undefined ? {} : { timeZone: opts.timeZone }),

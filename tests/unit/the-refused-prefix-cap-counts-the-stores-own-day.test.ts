@@ -127,7 +127,7 @@ describe('round 31 · OB-113: the refused-prefix cap counts the store\'s own day
     const records = [report(istAt(5, 20), names('a', 25)), report(istAt(5, 40), names('b', 25))];
     const at = isoMs(istAt(6, 0));
     const made = saved(records, at).snapshot!;
-    expect(made.version).toBe(5); // round 32 (OB-116/117) moved it on from round 31's 4
+    expect(made.version).toBe(6); // round 32 (OB-116/117) moved it on from round 31's 4; round 33 (OB-121) to 6
     const round30 = sealBoxHistory({ ...made, version: 3 } as never, K);
     expect(saved(records, at, undefined, round30).setAside).toMatch(/version/);
   });

@@ -1766,7 +1766,7 @@ export interface BoxReportsView {
 export interface BoxHistoryEntry { readonly raw: BoxHealthRecord; readonly judged: BoxHealthRecord; readonly seq: number }
 
 /** The history's working state version (bump it when its shape or a rule changes: an older one is simply set aside). */
-const BOX_HISTORY_VERSION = 5; // round 29: the waiting clock's and the unused runs' memory, refused groups banked away, a seal; round 30: waiting ranges, a keyed seal, refused prefixes capped; round 31: the cap's day is the store's own day (OB-113); round 32: own-prefix refused counts capped (OB-117), head office's own seal key (OB-116)
+const BOX_HISTORY_VERSION = 6; // round 33: no "looks like R-<lane>-" shortcut — only registered lanes (OB-121), and the registrations fingerprinted; round 29: the waiting clock's and the unused runs' memory, refused groups banked away, a seal; round 30: waiting ranges, a keyed seal, refused prefixes capped; round 31: the cap's day is the store's own day (OB-113); round 32: own-prefix refused counts capped (OB-117), head office's own seal key (OB-116)
 
 /** `latestBoxReports` kept exactly: at the latest box time seen, per way of writing it, the first position and the latest arrival. */
 interface WinGroup { firstSeq: number; r: BoxHealthRecord; recvMs: number; seq: number }
@@ -2137,12 +2137,34 @@ function shapeOfBoxHistory(s: unknown): string | undefined {
 }
 
 /** The fingerprint of the acknowledgements and acts at or before a moment (any change sets a saved result aside). */
-function acksPrintUpTo(input: { readonly refusalAcks?: readonly RefusalAcknowledgement[]; readonly atRiskAcks?: readonly AtRiskAcknowledgement[]; readonly unusedAcks?: readonly unknown[]; readonly replacements?: readonly StoreComputerReplacement[] }, ms: number): string {
+function acksPrintUpTo(input: { readonly refusalAcks?: readonly RefusalAcknowledgement[]; readonly atRiskAcks?: readonly AtRiskAcknowledgement[]; readonly unusedAcks?: readonly unknown[]; readonly replacements?: readonly StoreComputerReplacement[]; readonly lanes?: readonly LanePrefixRegistration[] }, ms: number): string {
   const lines: string[] = [];
   for (const a of input.refusalAcks ?? []) if (Date.parse(a.at) <= ms) lines.push(`r|${a.storeId}|${a.prefix}|${a.through}|${a.at}|${a.authority ?? ''}`);
   for (const a of input.atRiskAcks ?? []) if (Date.parse(a.at) <= ms) lines.push(`n|${a.storeId}|${a.prefix}|${runsKey(a.notChecked)}|${a.at}|${a.authority ?? ''}`);
   for (const m of input.replacements ?? []) if (Date.parse(m.at) <= ms) lines.push(`m|${m.replacementId}|${m.storeId}|${m.prefix}|${m.to}|${m.at}`);
-  return fingerprint(lines.sort().join('\n'));
+  return fingerprint(lines.sort().join('\n')) + lanesPrint(input.lanes);
+}
+/**
+ * Round 33 · OB-121: the registered lane prefixes a saved result was made under (EVERY registration, whenever made: a kept
+ * report is read as today's door would keep it, `keptAsTheDoorWould`) — any change sets the result aside ('lanes').
+ */
+function lanesPrint(lanes: readonly LanePrefixRegistration[] | undefined): string {
+  const pairs = [...new Set((lanes ?? []).flatMap((r) => r.prefixes.map((p) => `${r.storeId}|${p}`)))].sort();
+  return pairs.length === 0 ? '' : `|l:${fingerprint(pairs.join('\n'))}`;
+}
+const lanesPart = (print: string): string => { const i = print.indexOf('|l:'); return i < 0 ? '' : print.slice(i); };
+
+/**
+ * Round 33 · OB-121 — a report kept BEFORE the rule, read as today's door would have kept it: an `R-…-` prefix that is not a
+ * lane registered for its store is dropped from what the store computer is believed to have given (head office never issues
+ * `R-…`, so such a prefix was believed only by the round-32 "looks like R-<lane>-" shortcut). So a flood of invented till
+ * names already on the ledger never grows the saved history either; nothing on the ledger is changed (hard rule #2).
+ */
+export function keptAsTheDoorWould(raw: BoxHealthRecord, judge: BoxHistoryJudge): BoxHealthRecord {
+  const xs = raw.receiptNumbersIssued;
+  if (xs === undefined) return raw;
+  const kept = xs.filter((x) => !x.prefix.startsWith('R-') || judge.owns(raw.storeId, x.prefix));
+  return kept.length === xs.length ? raw : { ...raw, receiptNumbersIssued: kept };
 }
 
 /** The whole reading a health read takes from the box history (the never-received fold's, and everything else's). */
@@ -2512,6 +2534,8 @@ export interface BoxHistoryInput {
   readonly refusalAcks?: readonly RefusalAcknowledgement[];
   readonly atRiskAcks?: readonly AtRiskAcknowledgement[];
   readonly judge?: BoxHistoryJudge;
+  /** Round 33 · OB-121: every lane-prefix registration the judge was made with (a change sets a saved result aside). */
+  readonly lanes?: readonly LanePrefixRegistration[];
   readonly settleBefore?: string;
   /** Every report at or below this store position is visible to this read (a settled visibility fence). Needed to save. */
   readonly settledThrough?: number;
@@ -2535,7 +2559,9 @@ function* boxHistorySteps(input: BoxHistoryInput, every: number): Generator<void
   const ctx = historyContext(refusals, input.atRiskAcks ?? []);
   const s = input.snapshot;
   let fold: BoxHistoryFold | undefined;
-  let entries = input.entries;
+  // Round 33 · OB-121: every report as today's door would keep it (an unregistered `R-…-` is not believed, kept or not).
+  const judge = input.judge;
+  let entries = judge === undefined ? input.entries : input.entries.map((e) => { const raw = keptAsTheDoorWould(e.raw, judge); return raw === e.raw ? e : { ...e, raw }; });
   let settledMs = -Infinity;
   const rfBanked = new Map<string, number>();
   if (s !== undefined) {
@@ -2554,7 +2580,8 @@ function* boxHistorySteps(input: BoxHistoryInput, every: number): Generator<void
       : !(settledMs <= atMs) ? 'moment'
       : late.length !== folded.size || late.some((e) => !folded.has(e.seq)) ? 'late_report'
       : actsThen.length !== n.actsApplied.length || actsThen.some((id, k) => id !== n.actsApplied[k]) ? 'acts'
-      : acksPrintUpTo({ refusalAcks: refusals, ...(input.atRiskAcks === undefined ? {} : { atRiskAcks: input.atRiskAcks }), replacements: replacementsAt }, settledMs) !== s.acksPrint ? 'acknowledgements'
+      : lanesPart(s.acksPrint) !== lanesPrint(input.lanes) ? 'lanes'
+      : acksPrintUpTo({ refusalAcks: refusals, ...(input.atRiskAcks === undefined ? {} : { atRiskAcks: input.atRiskAcks }), replacements: replacementsAt, ...(input.lanes === undefined ? {} : { lanes: input.lanes }) }, settledMs) !== s.acksPrint ? 'acknowledgements'
       : input.judge !== undefined && (s.verdicts.own.some(([storeId, prefix, owns, top]) => input.judge!.owns(storeId, prefix) !== owns || (top > 0 && !input.judge!.plausible(prefix, top)))
         || s.verdicts.ahead.some(([prefix, through]) => input.judge!.plausible(prefix, through))) ? 'verdicts'
       : n.keys.some((k) => (input.banked.get(k.prefix) ?? 0) < k.aboveFrom) || s.rfBanked.some(([prefix, b]) => (input.banked.get(prefix) ?? 0) < b) ? 'banked'
@@ -2601,7 +2628,7 @@ function* boxHistorySteps(input: BoxHistoryInput, every: number): Generator<void
         version: BOX_HISTORY_VERSION,
         never: fold.nr.encode({ settledAt, settledCount: 0, judgedAway: '' }),
         seq, folded, ord: fold.ord,
-        acksPrint: acksPrintUpTo({ refusalAcks: refusals, ...(input.atRiskAcks === undefined ? {} : { atRiskAcks: input.atRiskAcks }), replacements: replacementsAt }, settleMs),
+        acksPrint: acksPrintUpTo({ refusalAcks: refusals, ...(input.atRiskAcks === undefined ? {} : { atRiskAcks: input.atRiskAcks }), replacements: replacementsAt, ...(input.lanes === undefined ? {} : { lanes: input.lanes }) }, settleMs),
         verdicts: { own: [...fold.own.values()].map((v) => [...v] as const), ahead: [...fold.ahead] },
         rawBound: [...fold.rawBound.values()],
         stores,
@@ -3997,7 +4024,9 @@ export function doorRefusalComponents(lines: readonly DoorRefusalLine[], at: str
     name: `box_prefixes_refused:${storeId}`, status: 'degraded' as const,
     detail: ls.sort((a, b) => a.computer.localeCompare(b.computer) || a.day.localeCompare(b.day)).map((l) =>
       `store ${storeId}'s computer ${l.computer} sent ${l.count} report(s) on ${l.day} naming bill-number prefixes head office never issued to this store's tills or registered for this computer (e.g. ${l.examples.join(', ')}; first ${l.first}, last ${l.last}) — refused at the door and not kept (owner decision OB-121)`).join('; ')
-      + '. If these are this store computer\'s own tills, register its lanes (Store computers → lane prefixes, at install); if not, check that store computer',
+      + '. If these are this store computer\'s own tills, register its lanes (Store computers → lane prefixes, at install); if not, check that store computer'
+      // A store-coded ZZ… prefix is an honest box's fallback for a till with no prefix issued — the fix is to issue one.
+      + (ls.some((l) => l.examples.some((p) => p.startsWith('ZZ'))) ? '. ZZ… is a store computer\'s own fallback numbering for a till head office has not issued a prefix to (each such bill is also flagged) — issue that till its prefix (Receipt prefixes)' : ''),
     evidence: { computers: [...new Set(ls.map((l) => l.computer))].join(','), reports: ls.reduce((n, l) => n + l.count, 0) },
   }));
 }
