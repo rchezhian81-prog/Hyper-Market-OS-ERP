@@ -38,7 +38,17 @@ export interface Snapshot<S> {
 export interface SnapshotStore {
   load<S>(tenantId: string, stream: string, projection: string): Promise<Snapshot<S> | undefined>;
   save<S>(snapshot: Snapshot<S>): Promise<void>;
+  /**
+   * Round 34 · OB-124 (5): take the CLUSTER-WIDE lease to build one tenant's projection (`name`) — so two head-office
+   * processes on one database never build it at the same time. Answers a release function while this caller holds it, or
+   * undefined when another process holds it now (never waits). OPTIONAL: a store without it (memory) relies on the calling
+   * process's own single-flight guard, which is the whole story there.
+   */
+  buildLease?(tenantId: string, name: string): Promise<(() => Promise<void>) | undefined>;
 }
+
+/** Round 34 · OB-124 (5): the advisory-lock class of the projection build leases (two-key form; its own key space). */
+export const PROJECTION_BUILD_LEASE_CLASS = 340_124;
 
 /**
  * In-memory snapshot store (edge / test). The durable SQL store that persists the state as JSON is
@@ -72,7 +82,35 @@ export class InMemorySnapshotStore implements SnapshotStore {
  * one constraint this store adds over the in-memory one. `save` UPSERTs (the newest fold wins).
  */
 export class SqlSnapshotStore implements SnapshotStore {
-  constructor(private readonly client: Pick<SqlClient, 'query' | 'forTenant'>) {}
+  constructor(private readonly client: Pick<SqlClient, 'query' | 'forTenant' | 'session'>) {}
+
+  /**
+   * Round 34 · OB-124 (5): a PostgreSQL session-level advisory lock (`pg_try_advisory_lock`, never waiting) on its own pinned
+   * connection, outside any transaction, held until the release function is called — or until that connection ends (a
+   * crashed process lets go by itself; a lock never outlives its holder, so no lease row can be left stuck). Keyed on the
+   * tenant and the projection (`hashtext`; two keys sharing a hash only take turns). A client with no pinned sessions holds
+   * no lock: the lease is then granted at once and the process's own guard is all there is (said in the type).
+   */
+  buildLease(tenantId: string, name: string): Promise<(() => Promise<void>) | undefined> {
+    const session = this.client.session;
+    if (session === undefined) return Promise.resolve(async () => undefined);
+    const key = `${tenantId}:${name}`;
+    return new Promise((resolve, reject) => {
+      let answered = false;
+      let letGo: () => void = () => undefined;
+      const released = new Promise<void>((r) => { letGo = r; });
+      const run = session.bind(this.client) as <T>(fn: (conn: SqlClient) => Promise<T>) => Promise<T>;
+      const held: Promise<void> = run<void>(async (conn) => {
+        const rows = await conn.query<{ got: boolean }>('SELECT pg_try_advisory_lock($1::int, hashtext($2)) AS got', [PROJECTION_BUILD_LEASE_CLASS, key]);
+        if (rows[0]?.got !== true) { answered = true; resolve(undefined); return; }
+        answered = true;
+        resolve(async () => { letGo(); await held.catch(() => undefined); });
+        await released;
+        await conn.query('SELECT pg_advisory_unlock($1::int, hashtext($2))', [PROJECTION_BUILD_LEASE_CLASS, key]);
+      });
+      held.catch((e: unknown) => { if (!answered) reject(e); });
+    });
+  }
 
   async load<S>(tenantId: string, stream: string, projection: string): Promise<Snapshot<S> | undefined> {
     const rows = await scopedTo(this.client, tenantId).query<{ data: Snapshot<S> }>(

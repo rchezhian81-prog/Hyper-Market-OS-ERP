@@ -296,6 +296,11 @@ export interface AlertRule {
    * alert it raises belongs to the whole shop.
    */
   readonly branchId?: string;
+  /**
+   * Round 34 · OB-114 / OB-124 (2): further people the alert is ALSO delivered to, beside its owner — set only by head
+   * office's own built-in rules (every person who holds the shop's owner role), never read from a hand-made rule.
+   */
+  readonly alsoToUserIds?: readonly string[];
 }
 
 export interface RaisedAlert {
@@ -309,6 +314,8 @@ export interface RaisedAlert {
   readonly ackDueBy: string;
   /** EA-09: the branch the alert's rule watches; absent = a shop-wide alert. */
   readonly branchId?: string;
+  /** Round 34 · OB-124 (2): further people it is also delivered to (a built-in rule's other owners). Absent: its owner only. */
+  readonly alsoToUserIds?: readonly string[];
 }
 
 /** Turn a health check into owned, actionable alerts. */
@@ -333,6 +340,7 @@ export function raiseAlerts(
         .toISOString()
         .replace(/\.\d{3}Z$/, 'Z'),
       ...(rule.branchId === undefined ? {} : { branchId: rule.branchId }),
+      ...(rule.alsoToUserIds === undefined || rule.alsoToUserIds.length === 0 ? {} : { alsoToUserIds: [...rule.alsoToUserIds] }),
     });
   }
   return alerts.sort((a, b) => SEVERITY[a.status] - SEVERITY[b.status]);

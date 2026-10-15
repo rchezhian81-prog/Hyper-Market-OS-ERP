@@ -28,7 +28,7 @@ import { noReceiptGovernanceFindings, type ReturnRequestLine, type RefundGoverna
 import type { RefundStatus } from '../../../packages/returns/src/returns';
 import { issueRefundCredit } from '../../../packages/loyalty/src/stored-value';
 import type { AuditEntry } from '../../../packages/audit/src/index';
-import type { ReturnRecord, StoreCreditIssue } from './returns';
+import { storeComputerTakenAtOf, type ReturnRecord, type StoreCreditIssue } from './returns';
 import { unplacedLaneLocation, type SaleStockLocation } from './sale-stock';
 import { approvalIdIn, namedApproverRefusal, takeRefundApproval, type ApprovalUse, type RefundApprovalState } from './refund-approvals';
 import { approvalSealFlags, cashierSealFlags, stampIn } from './store-seal';
@@ -453,9 +453,12 @@ export function noReceiptReturnRoutes(deps: NoReceiptReturnsDeps): readonly Rout
           ? { locationId: s.locationId, basis: 'declared_by_lane' }
           : s.laneId !== undefined ? { locationId: unplacedLaneLocation(s.laneId), basis: 'unplaced' } : undefined;
 
+        // Round 34 · OB-108 / OB-124 (1): the store computer's own time for the refund (it took it from the till), when sent.
+        const takenAt = storeComputerTakenAtOf((ctx.body as Record<string, unknown> | undefined)?.['storeComputerTakenAt'], deps.now());
         const record: ReturnRecord = {
           returnId: s.returnId, number: s.number, originalSaleId: null, noReceipt: true,
           processedBy: s.processedBy, processedAt, reasonCode: s.reasonCode,
+          ...(takenAt === undefined ? {} : { storeComputerTakenAt: takenAt }),
           refundMinor: s.refundMinor, refundTender: s.refundTender, refundStatus: s.refundStatus, lines: s.lines,
           ...(flags.length > 0 ? { governanceFlags: flags } : {}),
           ...(s.approvedBy === undefined ? {} : { approvedBy: s.approvedBy }),

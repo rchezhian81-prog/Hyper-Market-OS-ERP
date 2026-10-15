@@ -291,8 +291,12 @@ export function createEdgeNode(input: {
       // The durable write, then the queue — after the write, never before, the same ordering as the
       // sale and for the same reason: queueing first would send a refund the lane went on to refuse.
       const commitAndQueue = async (): Promise<CommitOutcome> => {
+        // Round 34 · OB-108 / OB-124 (1): the store computer's own time for the refund — when it took it from the till —
+        // written on the record it keeps (so a restart re-sends it too) and so on what it sends, exactly as for a sale. Not
+        // part of the refund's identity (the idempotency hash leaves it out), and never a reason to refuse a refund.
+        const kept = stampTakenAt(record, new Date().toISOString());
         const outcome = await commitLocally({
-          saleId: returnId, record, log: returnsLog,
+          saleId: returnId, record: kept, log: returnsLog,
           ...(input.reserveBytes === undefined ? {} : { reserveBytes: input.reserveBytes }),
         });
         if (outcome.committed && input.returnsOutbox !== undefined) {
@@ -307,7 +311,7 @@ export function createEdgeNode(input: {
             // Translated to the cloud's synced-return contract before it leaves. `returnAcceptedRoute`
             // reads `originalSaleId` to address the bill; the cloud re-verifies the §28 approver. Stamped with
             // the store this box belongs to, so a resold no-receipt unit re-enters THIS shop's stock (F17).
-            payload: toCloudReturn(JSON.parse(record) as unknown, input.storeId?.()),
+            payload: toCloudReturn(JSON.parse(kept) as unknown, input.storeId?.()),
           }));
         }
         return outcome;

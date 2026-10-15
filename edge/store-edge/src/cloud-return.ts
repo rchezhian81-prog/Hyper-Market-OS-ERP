@@ -68,6 +68,12 @@ export interface CloudReturn {
   /** The manager's approval the box issued and spent, sealed (ADR-0023) — carried exactly as written. */
   readonly approvalVerified?: Readonly<Record<string, unknown>>;
   readonly lines: readonly CloudReturnLine[];
+  /**
+   * Round 34 · OB-108 / OB-124 (1): when the STORE COMPUTER took this refund from the till and wrote it to its disk — by the
+   * store computer's own clock (the clock its health reports are written by). Carried only when well formed; head office
+   * compares "said unused" times with it, never with the till's clock.
+   */
+  readonly storeComputerTakenAt?: string;
 }
 
 export interface CloudExchangeSettlement {
@@ -157,8 +163,12 @@ export function toCloudReturn(record: unknown, storeId?: string): CloudReturn {
     ...(isObject(r['operatorVerified']) ? { operatorVerified: r['operatorVerified'] as Record<string, unknown> } : {}),
     ...(isObject(r['approvalVerified']) ? { approvalVerified: r['approvalVerified'] as Record<string, unknown> } : {}),
     lines,
+    // Round 34 · OB-108 / OB-124 (1): when the store computer took the refund from the till, by its own clock (stamped as it wrote it).
+    ...(isTime(r['storeComputerTakenAt']) ? { storeComputerTakenAt: r['storeComputerTakenAt'] } : {}),
   };
 }
+
+const isTime = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/.test(v) && !Number.isNaN(Date.parse(v));
 
 const isObject = (v: unknown): boolean => v !== null && typeof v === 'object' && !Array.isArray(v);
 

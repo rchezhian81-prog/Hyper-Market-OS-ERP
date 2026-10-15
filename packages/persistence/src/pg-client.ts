@@ -227,6 +227,9 @@ export function pgPoolClient(pool: PgPool, options: PgPoolOptions = {}): SqlClie
     // SqlClient.transaction contract). BEGIN → run → COMMIT, and any throw rolls the whole thing back before it propagates.
     transaction: <T>(fn: (tx: SqlClient) => Promise<T>): Promise<T> =>
       inTransaction(pool, [], (conn) => fn({ query: (sql, params) => unwrap(conn, sql, params) })),
+    // Round 34 · OB-124 (5): one pinned connection, no transaction — a session-level advisory lock lives exactly as long as `fn`.
+    session: <T>(fn: (conn: SqlClient) => Promise<T>): Promise<T> =>
+      pinned(pool, (conn) => fn({ query: (sql, params) => unwrap(conn, sql, params) })),
   };
 }
 

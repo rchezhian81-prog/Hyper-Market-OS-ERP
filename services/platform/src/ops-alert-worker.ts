@@ -45,10 +45,12 @@ export interface OpsAlertWorker {
 
 /** Who must hear about an alert now, and at which stage. */
 function recipientsOf(a: LiveAlert): readonly { readonly to: string; readonly stage: 'raised' | 'escalated' }[] {
-  if (a.state === 'open') return [{ to: a.alert.ownerUserId, stage: 'raised' }];
+  // Round 34 · OB-114 / OB-124 (2): a built-in rule's alert goes to EVERY owner — its owner and each other one named on it.
+  const owners = [a.alert.ownerUserId, ...(a.alert.alsoToUserIds ?? []).filter((u) => u !== a.alert.ownerUserId)].map((to) => ({ to, stage: 'raised' as const }));
+  if (a.state === 'open') return owners;
   if (a.state === 'escalated') {
     return [
-      { to: a.alert.ownerUserId, stage: 'raised' },
+      ...owners,
       ...(a.escalatedTo !== undefined && a.escalatedTo !== '' ? [{ to: a.escalatedTo, stage: 'escalated' as const }] : []),
     ];
   }
