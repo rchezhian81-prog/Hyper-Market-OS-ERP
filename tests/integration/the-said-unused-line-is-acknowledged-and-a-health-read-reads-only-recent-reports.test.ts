@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach, beforeAll, afterAll } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
+import { takeHeldTransactionTurn } from '../support/held-transaction-turn';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
 import { startRealCloud, type RealCloud } from '../support/real-store';
 import { SqlIdempotencyStore } from '../../services/kernel/src/index';
@@ -373,6 +374,11 @@ describe('round 28 · OB-104: the store-computer reading takes only the reports 
 });
 
 describe.skipIf(DATABASE_URL === undefined)('round 28 · OB-104: the store-computer reading takes only the reports after its saved result (PostgreSQL)', () => {
+  // This test waits for the database's visibility fence to settle, which no transaction held open anywhere allows; it takes
+  // turns with the tests that hold one open on purpose (see the helper), so a full parallel run cannot starve it.
+  let endTurn: (() => Promise<void>) | undefined;
+  beforeAll(async () => { endTurn = await takeHeldTransactionTurn(DATABASE_URL!); }, 1_800_000);
+  afterAll(async () => { await endTurn?.(); });
   it('seeded histories on the production store and projection_snapshot: every answer is the full reading\'s; the window is read from a position', async () => {
     const pool = new Pool({ connectionString: DATABASE_URL, max: 8, options: '-c app.tenant_id=*' });
     const sql = pgPoolClient(pool);

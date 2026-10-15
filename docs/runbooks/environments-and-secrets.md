@@ -50,6 +50,7 @@ development, including my own test fixtures.
 | Secret | Used by | Where it lives | Owner | Rotation |
 | --- | --- | --- | --- | --- |
 | `DATABASE_URL` | migrations, services | Environment variable, injected by the platform. Locally: a git-ignored `.env` | Platform admin | On staff change or suspicion; immediately on leak |
+| `BOX_HISTORY_SEAL_KEY` (round 32, owner decision OB-116; at least 32 characters) | the head-office API only — the seal on the store computers' saved history. **Never given to a store computer or a till** (they hold `PACK_SIGNING_KEY`, so a seal made from that could be forged from a store computer's settings). The API refuses to start without it, with the placeholder, too short, or equal to `PACK_SIGNING_KEY` / the personal-data key / the sign-in key | API environment only (`infra/compose/.env` / `.env.pilot` on the box, mode 600). Never in the repository, an image or a log | Platform admin | On suspicion, and when a head-office administrator leaves; changing it sets the saved history aside once (rebuilt, nothing lost) |
 | Backup encryption key | `scripts/backup.mjs` | Managed key store. **Never beside the backups** — a key stored with the data it protects protects nothing | Security admin | Annually; old keys retained to read old backups |
 | Off-site storage credentials | backup replication | Platform secret store | Platform admin | Annually |
 | Payment provider keys | tender, refunds | Provider vault; **card data itself never reaches us** (hard rule #3) | Owner + platform admin | Per provider policy |

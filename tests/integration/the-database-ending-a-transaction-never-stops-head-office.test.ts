@@ -49,7 +49,7 @@ describe('the idle-in-transaction limit has a floor, and the last resort is a st
     }
     const said: string[] = [];
     const running = await startApi({
-      DATABASE_URL: ['postgres://nobody', '127.0.0.1:1/never'].join('@'), PACK_SIGNING_KEY: 'k'.repeat(48), IDP_SIGNING_KEY: 'i'.repeat(48),
+      DATABASE_URL: ['postgres://nobody', '127.0.0.1:1/never'].join('@'), PACK_SIGNING_KEY: 'k'.repeat(48), BOX_HISTORY_SEAL_KEY: 's'.repeat(48), IDP_SIGNING_KEY: 'i'.repeat(48),
       IDP_ISSUER: 'https://issuer.test', IDP_AUDIENCE: 'sre', PORT: '0', NODE_ENV: 'test', DB_IDLE_IN_TRANSACTION_TIMEOUT_MS: '60',
     }, (t) => { said.push(t); }, (t) => { said.push(t); });
     expect(running).toBeUndefined(); // main() turns this into exit code 78 (EX_CONFIG), before any database is touched

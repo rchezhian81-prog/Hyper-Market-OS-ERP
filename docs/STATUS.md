@@ -5,11 +5,20 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Coordinated programme · Round 32 — verifier r31 closed; owner decisions OB-115 to OB-118 (14 October 2026) — HELD for one administrator step
+
+- **Built and integration-tested (memory + PostgreSQL); no staff UAT:** only the shop owner may turn off or redirect a built-in alert rule — the IT administrator and anyone else are refused by name (403, audited); every change is sent to the owner; an edit that could never fire is refused; a rule left off is shown on every save (OB-115). The saved store-computer history is sealed with a new head-office-only secret `BOX_HISTORY_SEAL_KEY` (required at start, ≥ 32 characters, refused if equal to another key; store computers never hold it — guardrail); old seals are set aside once; one snapshot store and builder per API process (OB-116). New impossible counts on a store's own till prefixes are capped at 20 per store computer per prefix per store day, the rest counted in one line (verifier flood 2.82 MB → 72 KB) (OB-117). The till scan speed test measures interleaved repeats and keeps the best median (a linear-lookup mutation still fails it). `release.sh` refuses a release whose settings lack a required secret (exit 78) before rebuilding anything.
+- **Mutations:** 34 run, 34 killed.
+- **Full gate (14 Oct, PostgreSQL):** 11,704 unit/integration, 50 performance, 355 browser — all passed.
+- **Held (OB-118):** not merged until the owner confirms the IT administrator has set `BOX_HISTORY_SEAL_KEY` on the demo server — instruction sheet `docs/runbooks/round-32-administrator-step.md` (names only).
+- **Open (recorded):** with two owners only the alphabetically first is addressed; the "not ready since" hour is kept in memory (restart restarts it).
+
 ## Coordinated programme · Rounds 30–31 — verifier r29 closed; owner decisions OB-109 to OB-114 (14 October 2026)
 
 - **Built and integration-tested (memory + PostgreSQL); no staff UAT:** a stuck bill keeps its true age through an outage — silence never counts as "not listed"; a number is forgotten only after 24 report-hours in a row that leave it out (OB-109). The waiting clock keeps at most 128 ranges per till with earliest-first merging (never younger): a week with a stuck bill on every till builds in 0.94 s (was 38 s), longest pause 57 ms, 0.67 MB; an honest busy store 0.66 MB at 7/30/90 days (OB-110). The saved history is sealed with an HMAC keyed from the runtime signing key (never in the database); plain or wrong-key seals are set aside and rebuilt; a missing key trusts nothing and says so (OB-111). At most 20 new unknown refused prefixes per store computer per store day are kept, the rest counted in one line (a flood: 55.7 MB → 0.06 MB) (OB-112, OB-113 store's own day). A built-in alert to the shop's owner when store-computer checks stay "being prepared" or unsealable for over an hour; editable or turned off through the alert rules, every change versioned (OB-114; acknowledge-within 60 minutes by default; the hour restarts if head office restarts).
 - **Mutations:** 32 run, 32 killed.
 - **Full gate (14 Oct, PostgreSQL):** 11,684 unit/integration, 50 performance, 355 browser — all passed.
+- **On the demo:** merged as PR #775 and deployed (demo and canary succeeded). The CI performance job now names each failing test on the check. One older till speed test (`tests/performance/pos-hot-path.test.ts`, "does NOT grow with the catalogue") failed twice in a local full performance run and passed alone 3/3 and in CI on re-run — recorded as a load-sensitive test to harden.
 
 ## Coordinated programme · Round 29 — verifier r28 closed; owner decisions OB-105 to OB-108 (14 October 2026)
 

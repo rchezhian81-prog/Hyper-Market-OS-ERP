@@ -131,18 +131,40 @@ export function measureComplexity(input: {
   readonly setup: (n: number) => unknown;
   readonly operation: (fixture: unknown, iteration: number) => void;
   readonly runsPerSize?: number;
+  /**
+   * Round 32 (verifier r31: the scan-speed test failed on a busy machine, never on the code): measure every size this many
+   * times, INTERLEAVED (500, 5,000, 50,000, then again…), and keep each size's BEST median. Heap or JIT churn and CPU taken
+   * by other work only ever make a run slower, so the best of several is the operation's own cost — the same noise can no
+   * longer land on one size and read as growth. A real linear scan is slower at every repeat, so it still shows (~136×).
+   * Default 1: measured once, in size order, as before.
+   */
+  readonly repeats?: number;
+  /**
+   * Round 32: the growth at or below which the verdict is `flat` (default max(4, sizeRatio^0.3)). A caller whose operation is
+   * O(1) but memory-bound may set it inside the measured 5–50 gap below (never above 20: a linear scan grows ~136×).
+   */
+  readonly flatCeiling?: number;
 }): ComplexityResult {
   const runs = input.runsPerSize ?? 2_000;
-  const points: ComplexityPoint[] = input.sizes.map((n) => {
-    const fixture = input.setup(n);
-    const sample = measure({
-      label: `${input.label}@${n}`, runs,
-      operation: (i) => input.operation(fixture, i),
+  const repeats = Math.max(1, input.repeats ?? 1);
+  // Measured once (the default), each fixture is built just before its size is measured and let go after, as before; repeated,
+  // every fixture is kept for the interleaved passes.
+  const kept: unknown[] = [];
+  const fixtureOf = (k: number): unknown => (repeats === 1 ? input.setup(input.sizes[k]!) : (kept[k] ??= input.setup(input.sizes[k]!)));
+  const best = input.sizes.map(() => Infinity);
+  for (let r = 0; r < repeats; r += 1) {
+    input.sizes.forEach((n, k) => {
+      const fixture = fixtureOf(k);
+      const sample = measure({
+        label: `${input.label}@${n}`, runs,
+        operation: (i) => input.operation(fixture, i),
+      });
+      // The MEDIAN, not the mean: one GC pause during a run should not be read as a complexity
+      // class. Complexity is a property of the typical operation, not of the unluckiest one.
+      best[k] = Math.min(best[k]!, sample.p50Ms);
     });
-    // The MEDIAN, not the mean: one GC pause during a run should not be read as a complexity
-    // class. Complexity is a property of the typical operation, not of the unluckiest one.
-    return { n, perOperationMs: sample.p50Ms };
-  });
+  }
+  const points: ComplexityPoint[] = input.sizes.map((n, k) => ({ n, perOperationMs: best[k]! }));
 
   const first = points[0]!;
   const last = points[points.length - 1]!;
@@ -172,7 +194,8 @@ export function measureComplexity(input: {
   // allocation-heavy linear work (building maps, rehashing) legitimately carries a super-linear
   // constant, while quadratic over 10× data costs 100× and over 100× data costs 10,000×. The
   // band has to catch quadratic without flagging a rehash.
-  const flatCeiling = Math.max(4, sizeRatio ** 0.3);
+  if (input.flatCeiling !== undefined && !(input.flatCeiling > 0 && input.flatCeiling <= 20)) throw new RangeError('a flat ceiling above 20 would let a linear scan read as flat');
+  const flatCeiling = input.flatCeiling ?? Math.max(4, sizeRatio ** 0.3);
   const verdict: ComplexityResult['verdict'] =
     growthFactor <= flatCeiling ? 'flat'
       : growthFactor <= sizeRatio ** 0.7 ? 'sublinear'

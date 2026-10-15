@@ -181,6 +181,8 @@ jobs:
             || (echo "::error::the refusal did not name the missing setting" && exit 1)
           echo "$OUT" | grep -q "PACK_SIGNING_KEY is not set" \
             || (echo "::error::the refusal named one problem, not all of them" && exit 1)
+          echo "$OUT" | grep -q "BOX_HISTORY_SEAL_KEY is not set" \
+            || (echo "::error::the API started without head office's own seal secret (OB-116)" && exit 1)
           # No identity provider configured means nobody can log in — which is the correct
           # failure. A deployment that starts without one starts letting everybody in.
           echo "$OUT" | grep -q "IDP_SIGNING_KEY is not set" \
@@ -211,6 +213,8 @@ jobs:
           {
             echo "POSTGRES_PASSWORD=$(openssl rand -hex 24)"
             echo "PACK_SIGNING_KEY=$(openssl rand -base64 48)"
+            # OB-116: head office's own seal secret (the API only; generated here, never committed, never the pack key).
+            echo "BOX_HISTORY_SEAL_KEY=$(openssl rand -base64 48)"
             echo "IDP_SIGNING_KEY=$(openssl rand -base64 48)"
             echo "IDP_ISSUER=https://idp.ci.invalid/"
             # The edge refuses the placeholder tenant id from .env.example (by design); give it a real one so

@@ -28,7 +28,8 @@
 # Exit codes (BSD sysexits, so a pipeline can tell them apart):
 #   0 deployed · 64 usage · 65 refused (not on main) · 69 refused (the pre-release backup failed) ·
 #   70 rolled back to the previous release (it did not come up, or failed its canary bake) ·
-#   71 rollback failed too · 75 another deployment is running · 78 the box is not set up for this.
+#   71 rollback failed too · 75 another deployment is running · 78 the box is not set up for this (round 32: or its
+#   settings file lacks a setting this release requires — refused before anything is rebuilt, the box untouched).
 #
 # WF-20 (ADR-0026): before anything changes, the box's pre-release backup runs (SRE_PREDEPLOY_BACKUP_CMD); after the
 # release is up and GREEN, a canary box WATCHES it for SRE_BAKE_SECONDS (READY throughout, no growth in server errors)
@@ -286,6 +287,17 @@ bake() {
   done
   say "canary bake: $SHA stayed READY for ${SRE_BAKE_SECONDS}s with server errors at $now."
 }
+
+# Round 32 · OB-116: a release whose settings file lacks a setting THIS release requires (from round 32, BOX_HISTORY_SEAL_KEY,
+# head office's own seal secret) is refused here, by name, before anything is rebuilt or restarted — never found out by an API
+# that will not come up. The check prints setting NAMES only, never a value. The box stays on the previous release, untouched.
+say "checking the settings file has every setting this release needs…"
+if ! STANDUP_ENV_FILE="$SRE_APP_DIR/infra/compose/$SRE_ENV_FILE" node scripts/standup-check.mjs --settings-only; then
+  git checkout --quiet --detach "$PREVIOUS"
+  record settings_missing
+  echo "REFUSED — the settings file ($SRE_ENV_FILE) is missing a setting $SHA needs (named above), so it was not deployed. Nothing was rebuilt or restarted; the box is still on $PREVIOUS. Add the setting on this box (docs/runbooks/automatic-deployment.md, \"Settings a release needs\"), then deploy again." >&2
+  exit 78
+fi
 
 if bring_up && verify && bake; then
   record deployed

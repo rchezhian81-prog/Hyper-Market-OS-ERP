@@ -18,7 +18,8 @@ to boot / optional. **Set for pilot**: the safe pilot value or "generate".
 | Variable | Secret? | Req? | Min len | Allowed / default | Purpose | Set for pilot |
 |---|---|---|---|---|---|---|
 | `DATABASE_URL` | 🔒 | required | 20 | — | Postgres connection string the API + migrations use | generate (pilot DB only) |
-| `PACK_SIGNING_KEY` | 🔒 | required | 32 | — | signs catalogue packs every till trades on | `openssl rand -base64 48` |
+| `PACK_SIGNING_KEY` | 🔒 | required | 32 | — | signs catalogue packs every till trades on (every store computer holds it too) | `openssl rand -base64 48` |
+| `BOX_HISTORY_SEAL_KEY` | 🔒 | required | 32 | — | head office's OWN seal on the store computers' saved history (OB-116) — API only, never on a store computer or till; must differ from `PACK_SIGNING_KEY` (refused at start otherwise) | `openssl rand -base64 48` (a different value) |
 | `IDP_SIGNING_KEY` | 🔒 | required | 32 | — | shared secret whose tokens the API believes (HS256) — **pilot uses the local/test IdP key**; a real production IdP is deferred (OA-4 / EX-03) | test-IdP key (pilot) |
 | `IDP_ISSUER` | — | required | — | — | the `iss` claim a token must carry | pilot/test issuer URL |
 | `IDP_AUDIENCE` | — | required | — | `sre-retail-os-api` | the `aud` claim a token must contain | as template |
@@ -68,6 +69,6 @@ bare-IP client with no server name is given), `SRE_AUTH_ROUTE` (`auth-not-deploy
 ## Rules
 
 - **Never** commit a `.env`; never paste a secret into an issue, PR, screenshot, log or this repo.
-- Rotate `PACK_SIGNING_KEY` / `IDP_SIGNING_KEY` / DB password if a pilot machine is retired.
+- Rotate `PACK_SIGNING_KEY` / `BOX_HISTORY_SEAL_KEY` / `IDP_SIGNING_KEY` / DB password if a pilot machine is retired.
 - The pilot uses the **test/local IdP** and **`MIGRATION_TARGET_KIND=rehearsal`**; both must change (with a
   real IdP and a deliberate cutover) only at production go-live, which is an owner GO gate.

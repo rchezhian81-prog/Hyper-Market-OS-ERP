@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { takeHeldTransactionTurn } from '../support/held-transaction-turn';
-import { randomUUID, createHash } from 'node:crypto';
+import { randomUUID, createHash, createHmac } from 'node:crypto';
+import { TEST_PACK_KEY } from '../support/api-harness';
 import { Pool } from 'pg';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore, InMemoryEventStore, type EventStore, type ReadOptions } from '../../packages/persistence/src/event-store';
@@ -12,7 +13,7 @@ import {
 import { judgeObserved } from '../../services/platform/src/observed-health';
 import { startOpsAlertWorker } from '../../services/platform/src/ops-alert-worker';
 import {
-  judgeBoxes, sealBoxHistory, boxHealthRoutes, boxHistoryToStore, boxHistoryFromStore, BoxHistoryPreparing, PREFIX_BINDINGS_PATH,
+  judgeBoxes, sealBoxHistory, boxHealthRoutes, boxHistoryToStore, boxHistoryFromStore, BoxHistoryPreparing, PREFIX_BINDINGS_PATH, boxHistorySealKey,
   type BoxHealthRecord, type BoxHistorySnapshot,
 } from '../../services/platform/src/box-health';
 import { DEFAULT_THRESHOLDS } from '../../packages/ops/src/index';
@@ -88,7 +89,7 @@ async function seeded(c: Ctx): Promise<{ at: string; saved: BoxHistorySnapshot }
   expect(first.preparing).toBeUndefined();
   await savedNow(c, at);
   const stored = (await c.snapshots.load<unknown>(c.T, BOX, 'box-health-history@1'))?.result.state;
-  expect(stored).toMatchObject({ format: 'box-history-text@2' }); // kept as its JSON text, so jsonb never reorders what is sealed
+  expect(stored).toMatchObject({ format: 'box-history-text@3' }); // kept as its JSON text, so jsonb never reorders what is sealed
   return { at, saved: boxHistoryFromStore(stored) as BoxHistorySnapshot };
 }
 /**
@@ -124,7 +125,7 @@ async function damagedIsSetAside(c: Ctx): Promise<void> {
     ['never missing', boxHistoryToStore({ ...saved, never: undefined } as never)],
     ['stores garbage', resealed({ ...plainSaved, stores: [['S1', null, 'x', 'y', 'z']] })],
     ['keys garbage', resealed({ ...plainSaved, never: { ...saved.never, keys: [{}] } })],
-    ['text not JSON', { format: 'box-history-text@2', text: '{"version":2,' }],
+    ['text not JSON', { format: 'box-history-text@3', text: '{"version":2,' }],
     ['a JSON tree, not the saved form', saved],
     ['empty object', {}],
     // Round 30 · OB-111 (verifier r29 NEW-3, probe P2): ALTERED — its unused runs cleared — and re-sealed WITHOUT head office's
@@ -132,10 +133,17 @@ async function damagedIsSetAside(c: Ctx): Promise<void> {
     ['re-sealed with a plain SHA-256', (() => {
       const cleared = { ...plainSaved, never: { ...saved.never, keys: saved.never.keys.map((k) => ({ ...k, unused: [], unusedList: null })) } };
       const text = JSON.stringify(cleared);
-      return { format: 'box-history-text@2', text: JSON.stringify({ ...cleared, check: createHash('sha256').update(text).digest('hex'), sizeBytes: Buffer.byteLength(text) }) };
+      return { format: 'box-history-text@3', text: JSON.stringify({ ...cleared, check: createHash('sha256').update(text).digest('hex'), sizeBytes: Buffer.byteLength(text) }) };
     })()],
     ['sealed with another key', boxHistoryToStore(sealBoxHistory(plainSaved as never, OTHER_BOX_HISTORY_KEY))],
     ['a round-29 row (box-history-text@1)', { format: 'box-history-text@1', text: JSON.stringify(saved) }],
+    // Round 32 · OB-116 (verifier r31 NEW-2): ALTERED (unused runs cleared) and re-sealed with every key a STORE COMPUTER's
+    // settings give away — from its PACK_SIGNING_KEY under round 30's label, or under this round's — and a round-30 row (@2).
+    ...[createHmac('sha256', TEST_PACK_KEY).update('sre/box-history-seal@1', 'utf8').digest(), boxHistorySealKey(TEST_PACK_KEY)].map((k, i): [string, unknown] => [
+      `re-sealed with a key made from the store computer's PACK_SIGNING_KEY (${i === 0 ? 'round 30' : 'round 32'} label)`,
+      boxHistoryToStore(sealBoxHistory({ ...plainSaved, never: { ...saved.never, keys: saved.never.keys.map((kk) => ({ ...kk, unused: [], unusedList: null })) } } as never, k)),
+    ]),
+    ['a round-30 row (box-history-text@2, sealed under the store-computer-derived key)', { format: 'box-history-text@2', text: JSON.stringify(saved) }],
   ];
   for (const [name, state] of shapes) {
     await savedNow(c, at);
@@ -159,6 +167,20 @@ async function damagedIsSetAside(c: Ctx): Promise<void> {
   const next = await storeComputerHistory(c.store, c.T, iso(Date.parse(at) + 60_000), { sealKey: TEST_BOX_HISTORY_KEY, snapshots: c.snapshots, timeZone: 'UTC' });
   expect(next.setAside).toBeUndefined();
   expect(next.resumed).toBe(true);
+  // Round 32 · OB-116: head office's BOX_HISTORY_SEAL_KEY ROTATED — the saved result is set aside ONCE (sealed with another
+  // key), rebuilt from the reports to the same answers, and the new key's result is used from then on.
+  await savedNow(c, at);
+  const rotated = await storeComputerHistory(c.store, c.T, iso(Date.parse(at) + 90_000), { sealKey: OTHER_BOX_HISTORY_KEY, snapshots: c.snapshots, timeZone: 'UTC' });
+  expect(rotated.setAside).toBe('unreadable: its seal does not match its content (damaged, altered, or sealed with another key)');
+  await sameAsFull(c.store, c.T, iso(Date.parse(at) + 90_000), rotated);
+  const deadline = Date.now() + 30_000;
+  let after = await storeComputerHistory(c.store, c.T, iso(Date.parse(at) + 100_000), { sealKey: OTHER_BOX_HISTORY_KEY, snapshots: c.snapshots, timeZone: 'UTC' });
+  while (after.setAside !== undefined && Date.now() < deadline) {
+    // (on a busy database the rebuilt result may wait for the fence before it is saved; meanwhile it is held, then saved)
+    await new Promise((resolve) => { setTimeout(resolve, 200); });
+    after = await storeComputerHistory(c.store, c.T, iso(Date.parse(at) + 100_000), { sealKey: OTHER_BOX_HISTORY_KEY, snapshots: c.snapshots, timeZone: 'UTC' });
+  }
+  expect(after.setAside).toBeUndefined();
   // Round 30 · OB-111: a head office given NO key trusts nothing saved (set aside, said on the health read) and saves nothing.
   await savedNow(c, at);
   const before = JSON.stringify((await c.snapshots.load<unknown>(c.T, BOX, 'box-health-history@1'))!.result.state);

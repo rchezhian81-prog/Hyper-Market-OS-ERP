@@ -39,6 +39,13 @@ const TOOL_STUB = `import { appendFileSync } from 'node:fs';
 appendFileSync(process.env.SRE_TEST_CALLS, \`build-service \${process.argv.slice(2).join(' ')}\\n\`);
 `;
 const STANDUP_STUB = `import { appendFileSync, readFileSync } from 'node:fs';
+if (process.argv.includes('--settings-only')) {
+  // Round 32 · OB-116: the release's pre-flight — only whether the settings file has every setting the release needs.
+  appendFileSync(process.env.SRE_TEST_CALLS, \`standup-check --settings-only env=\${process.env.STANDUP_ENV_FILE}\\n\`);
+  let settings = ''; try { settings = readFileSync(process.env.SRE_TEST_SETTINGS, 'utf8').trim(); } catch { /* none: complete */ }
+  console.log(settings === 'missing' ? 'RED — Settings: still unfilled: BOX_HISTORY_SEAL_KEY' : 'GREEN — 1 of 1 checks passed.');
+  process.exit(settings === 'missing' ? 1 : 0);
+}
 appendFileSync(process.env.SRE_TEST_CALLS, \`standup-check env=\${process.env.STANDUP_ENV_FILE}\\n\`);
 let ready = ''; try { ready = readFileSync(process.env.SRE_TEST_READY, 'utf8').trim(); } catch { /* not there yet */ }
 console.log(ready === 'ok' ? 'GREEN — 5 of 5 checks passed.' : 'RED — 1 of 5 check(s) not ready.');
@@ -141,11 +148,11 @@ describe('the release script deploys a merged commit and rolls a broken one back
       SRE_BUILD_SHELLS: 'pos owner-app', SRE_BUILD_ENV: 'PILOT_DEMO_BANNER=1',
       SRE_API_URL: 'http://127.0.0.1:9', SRE_READY_TIMEOUT: '3', SRE_READY_POLL: '1',
       SRE_RELEASE_LOG: releaseLog, SRE_DEPLOY_LOCK: lock,
-      SRE_TEST_CALLS: calls, SRE_TEST_UP_RESULTS: upResults, SRE_TEST_READY: ready, SRE_TEST_METRICS: join(sandbox, 'metrics'),
+      SRE_TEST_CALLS: calls, SRE_TEST_UP_RESULTS: upResults, SRE_TEST_READY: ready, SRE_TEST_METRICS: join(sandbox, 'metrics'), SRE_TEST_SETTINGS: join(sandbox, 'settings'),
     };
   });
   afterAll(async () => { await rm(sandbox, { recursive: true, force: true }); });
-  beforeEach(async () => { await writeFile(calls, ''); await writeFile(upResults, ''); await writeFile(ready, 'down\n'); await writeFile(join(sandbox, 'metrics'), '0\n'); });
+  beforeEach(async () => { await writeFile(calls, ''); await writeFile(upResults, ''); await writeFile(ready, 'down\n'); await writeFile(join(sandbox, 'metrics'), '0\n'); await writeFile(join(sandbox, 'settings'), 'complete\n'); });
 
   it('refuses garbage (64) and a commit that is not on origin/main (65) — and touches nothing', async () => {
     expect(run(['not-a-sha']).code).toBe(64);
@@ -155,6 +162,22 @@ describe('the release script deploys a merged commit and rolls a broken one back
     expect(head()).toBe(V1);
     expect((await callLog()).some((l) => l.startsWith('docker') || l.startsWith('pnpm'))).toBe(false);
   });
+
+  it('round 32 · OB-116: a settings file missing a setting the release needs (BOX_HISTORY_SEAL_KEY) is REFUSED (78) by name before anything is rebuilt — the box untouched', async () => {
+    await writeFile(join(sandbox, 'settings'), 'missing\n');
+    await writeFile(upResults, 'ok\n');
+    const r = run([V2, 'octocat', '122']);
+    expect(r.code, r.out).toBe(78);
+    expect(r.out).toContain('BOX_HISTORY_SEAL_KEY');
+    expect(r.out).toContain(`REFUSED — the settings file (.env.test) is missing a setting ${V2} needs`);
+    expect(r.out).toContain(`Nothing was rebuilt or restarted; the box is still on ${V1}`);
+    expect(head()).toBe(V1);
+    const log = await callLog();
+    expect(log).toContain(`standup-check --settings-only env=${join(app, 'infra/compose/.env.test')}`);
+    expect(log.some((l) => l.startsWith('docker') || l.startsWith('pnpm') || l.startsWith('build-'))).toBe(false);
+    expect(await lastLogLine()).toContain(`result=settings_missing sha=${V2} previous=${V1} by=octocat run=122`);
+    expect(r.out).not.toContain(SENTINEL);
+  }, 30_000);
 
   it('deploys a merged commit: dependencies, every shell with the banner flag, compose up, READY, stand-up check — and one log line', async () => {
     await writeFile(upResults, 'ok\n');

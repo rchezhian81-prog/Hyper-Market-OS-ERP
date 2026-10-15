@@ -158,6 +158,7 @@ Edit `infra/compose/.env.pilot` (the template at `main`, `infra/compose/.env.pil
 | `SRE_AUTH_ROUTE=` / `SRE_AUTH_UPSTREAM=` | leave the defaults (`auth-not-deployed`, `auth:8082`) | both |
 | `HTTPS_PORT=` / `HTTP_PORT=` | **A:** `443` / `80` · **B:** `127.0.0.1:8443` / `127.0.0.1:8088` (loopback only — nothing new reaches the internet) | — |
 | `EDGE_TENANT_ID=` | **leave it** — the demo tenant's fixed UUID the stand-up set; the store token and the smoke test read it | both |
+| `BOX_HISTORY_SEAL_KEY=` | **round 32 (OB-116), required:** a NEW value from `openssl rand -base64 48`, typed on the box only — never the `PACK_SIGNING_KEY` value (the API refuses to start if equal), never copied to a store computer or a till. From round 32 a release whose `.env.pilot` lacks it is REFUSED by name before anything is rebuilt (exit 78), the box staying on its release. Check it is there by NAME only: `grep -c '^BOX_HISTORY_SEAL_KEY=' .env.pilot` prints `1` | both |
 
 Then the front, by configuration:
 

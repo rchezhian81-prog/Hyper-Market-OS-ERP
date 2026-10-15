@@ -180,6 +180,11 @@ export const CLOUD_API_CONFIG: readonly Spec[] = [
   // FUL-12 · ADR-0025: the key-encryption key the per-customer data keys are wrapped under. Optional — absent, it is derived
   // from PACK_SIGNING_KEY under its own label (and the API says so at boot). Set it to give personal data its own secret.
   { key: 'PII_KEY_ENCRYPTION_KEY', secret: true, optional: true, minLength: 32 },
+  // Round 32 · OB-116 (owner, 14 Oct 2026, "New head-office secret"): the secret the store computers' saved history is sealed
+  // under — head office's ALONE. Never given to a store computer (it holds PACK_SIGNING_KEY, so the seal can no longer be
+  // worked out from a store computer's settings). Required, like PACK_SIGNING_KEY: the API does not start without it, and
+  // refuses one equal to PACK_SIGNING_KEY, PII_KEY_ENCRYPTION_KEY or IDP_SIGNING_KEY (services/api/src/main.ts).
+  { key: 'BOX_HISTORY_SEAL_KEY', secret: true, minLength: 32 },
   { key: 'PORT', numeric: true, fallback: '8081' },
   // Verifier r20 HW-2: how long one of the API's own database sessions may sit IDLE inside an open transaction before the
   // database ends it (PostgreSQL `idle_in_transaction_session_timeout`, set on every pooled connection). A transaction left

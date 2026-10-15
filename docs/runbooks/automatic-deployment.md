@@ -122,10 +122,30 @@ later one silently replace the earlier (hard rule #10). So:
   rolling / blue-green release of the API. A future multi-API design needs an ADR first (guard names stable across versions).
 - To check on the box: `docker compose ps api` shows one line.
 
+## Settings a release needs
+
+Before anything is rebuilt, `release.sh` runs `node scripts/standup-check.mjs --settings-only` against the box's
+settings file (`/opt/sre/app/infra/compose/.env.pilot` by default). It prints setting **names** only, never a value. If a
+setting the new release requires is missing or still the placeholder, the release is **REFUSED (exit 78,
+`result=settings_missing` in the release log)** and the box stays on the release it was on — nothing rebuilt, nothing
+restarted.
+
+**Round 32 (owner decision OB-116) adds one: `BOX_HISTORY_SEAL_KEY`** — head office's own secret for the seal on the store
+computers' saved history. The administrator adds it to the box's settings file ONCE, before the round-32 merge deploys:
+
+1. On the box, generate a value with `openssl rand -base64 48` (a **new** value — never the `PACK_SIGNING_KEY` value; the
+   API refuses to start if they are equal).
+2. Add one line `BOX_HISTORY_SEAL_KEY=<that value>` to `/opt/sre/app/infra/compose/.env.pilot` with a text editor on the
+   box (the file stays mode 600, owned as before). Never paste it into a chat, an issue, the repository, a store
+   computer's or a till's settings file.
+3. Nothing else: the next release picks it up. The first health read afterwards rebuilds the saved store-computer history
+   once (its seal changed) — the store computer checks may say "being prepared" for a little while; nothing is lost.
+
 ## When it goes red
 
 | The job log says | What it means | What to do |
 |---|---|---|
+| `REFUSED — the settings file (…) is missing a setting … needs` (exit 78, `result=settings_missing`) | the release requires a setting the box's settings file does not have (the name is printed above the line); nothing was rebuilt or restarted | add it as in "Settings a release needs" above, then re-run the job |
 | `REFUSED — commit … is not on origin/main` | somebody pointed the pipeline at a commit that did not go through a pull request | nothing was changed; find out how |
 | `ROLLED BACK` (exit 70) | the new release did not come up; the box is on the previous one and GREEN | read the container log lines in the job; fix forward, merge again |
 | `ROLLBACK FAILED` (exit 71) | neither release answered | a person on the box now: `docker compose … ps`, `… logs api migrate`, `pnpm run standup:check`; if the database is the problem, the backup runbook |

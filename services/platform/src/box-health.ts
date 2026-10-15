@@ -203,6 +203,8 @@ export interface BillNumberFinding {
    * said, AFTER that bill was made, it gave and never used (its list of unused numbers does not fit head office's books).
    * Round 30 · OB-112: `report_refused_not_kept` — a store computer named more new prefixes that are not its store's (or new
    * counts under them) in a day than head office keeps (`REFUSED_NEW_PER_DAY_MAX`): the rest are counted and said, not kept.
+   * Round 32 · OB-117: with a `prefix`, the same for NEW refused counts under one of the store's own till prefixes
+   * (`REFUSED_OWN_NEW_PER_DAY_MAX` a day per store computer per till).
    */
   readonly kind: 'issued_never_received' | 'report_refused' | 'bills_waiting_on_box' | 'bills_dead_lettered_on_box' | 'report_contradicts_its_queue'
     | 'report_contradicts_earlier_report' | 'at_risk_not_checked' | 'unused_number_received' | 'report_refused_not_kept';
@@ -578,9 +580,14 @@ export function billsWaitingOnTheBox(input: {
     const since = u.oldestAt !== undefined && Date.parse(u.oldestAt) < Date.parse(observedSince) ? u.oldestAt : observedSince;
     const hours = (atMs - Date.parse(since)) / 3_600_000;
     if (hours < warnHours) continue;
+    // Round 32 (verifier r31, cosmetic): a JOINED range (OB-110) can cover numbers no list ever named, so it is not named as
+    // "first seen" — the words say the clock runs from the earliest sight of the numbers kept together with these.
+    const firstWords = first.joined === true
+      ? `head office's clock for them runs from ${observedSince}, the first time a waiting list reached these numbers or the ones it keeps together with them (keeping them together keeps the earliest time, so this can only be a little early, never late)`
+      : `head office first saw ${rangeWords(prefix, [[lo, hi]])} said to be waiting at ${observedSince}`;
     out.push({
       kind: 'bills_waiting_on_box', prefix, ranges: [[u.from, u.to]], count: u.count, since,
-      detail: `bills waiting on the store computer for ${Math.floor(hours)} hours: store ${input.storeId}'s computer has held ${u.count} bill(s) under ${prefix} (between ${rangeWords(prefix, [[u.from, u.to]])}) unsent since ${since}; head office first saw ${rangeWords(prefix, [[lo, hi]])} said to be waiting at ${observedSince}, and they are still said to be waiting — longer than the ${warnHours}-hour line. Head office has not received them. Check that store computer's connection and its "waiting to send" count; if the count is not going down, call support. Do NOT re-enter these bills from paper until support has checked the store computer`,
+      detail: `bills waiting on the store computer for ${Math.floor(hours)} hours: store ${input.storeId}'s computer has held ${u.count} bill(s) under ${prefix} (between ${rangeWords(prefix, [[u.from, u.to]])}) unsent since ${since}; ${firstWords}, and they are still said to be waiting — longer than the ${warnHours}-hour line. Head office has not received them. Check that store computer's connection and its "waiting to send" count; if the count is not going down, call support. Do NOT re-enter these bills from paper until support has checked the store computer`,
     });
   }
   return out;
@@ -597,7 +604,7 @@ export interface WaitingFacts {
   readonly lastQueueUnsent: number;
   readonly x: IssuedReport;
   /** r23 NEW-1: the FIRST span head office was told was waiting (in the order it was told) that reaches [from, to]. */
-  readonly firstWaiting: (from: number, to: number) => { readonly at: string; readonly from: number; readonly to: number } | undefined;
+  readonly firstWaiting: (from: number, to: number) => { readonly at: string; readonly from: number; readonly to: number; readonly joined?: boolean } | undefined;
   /** r22 D3: when head office first saw the unbroken run, up to the latest report, of reports naming no list (`wholeQueueRunSince`). */
   readonly wholeQueueSince: () => string;
 }
@@ -631,8 +638,10 @@ export const WAIT_FORGET_HOURS = 24;
 /** Round 30 · OB-110: the most waiting ranges kept per till prefix (past it, the closest neighbours are joined, the earlier sight kept). */
 export const WAIT_RANGES_MAX = 128;
 const WAIT_SWEEP_MS = 3_600_000;
-interface WaitRange { from: number; to: number; at: string; atMs: number; lastMs: number; quiet: number }
-class WaitClock {
+/** `joined`: round 32 — two neighbouring ranges were joined into it (OB-110), so it may cover numbers no list ever named. */
+interface WaitRange { from: number; to: number; at: string; atMs: number; lastMs: number; quiet: number; joined: boolean }
+/** Exported for tests only (round 32: the joined range's quiet count is tested directly). */
+export class WaitClock {
   /** The numbers ever listed (and not forgotten), as disjoint ranges in number order, each with its first sight. */
   ranges: WaitRange[] = [];
   /** The latest report-hour seen (`hour` of a report naming the prefix), and whether a report in it gave its list. */
@@ -670,11 +679,11 @@ class WaitClock {
       const r = rs[j]!;
       if (r.lastMs < ms) r.lastMs = ms;
       r.quiet = 0;
-      if (r.from > cursor) out.push({ from: cursor, to: r.from - 1, at, atMs: ms, lastMs: ms, quiet: 0 });
+      if (r.from > cursor) out.push({ from: cursor, to: r.from - 1, at, atMs: ms, lastMs: ms, quiet: 0, joined: false });
       out.push(r);
       cursor = Math.max(cursor, r.to + 1);
     }
-    if (cursor <= to) out.push({ from: cursor, to, at, atMs: ms, lastMs: ms, quiet: 0 });
+    if (cursor <= to) out.push({ from: cursor, to, at, atMs: ms, lastMs: ms, quiet: 0, joined: false });
     if (out.length !== j - lo) rs.splice(lo, j - lo, ...out);
     while (rs.length > WAIT_RANGES_MAX) this.join(ms);
   }
@@ -690,25 +699,25 @@ class WaitClock {
     }
     const a = rs[best]!; const b = rs[best + 1]!;
     const first = b.atMs < a.atMs ? b : a;
-    rs.splice(best, 2, { from: a.from, to: b.to, at: first.at, atMs: first.atMs, lastMs: Math.max(a.lastMs, b.lastMs), quiet: Math.min(a.quiet, b.quiet) });
+    rs.splice(best, 2, { from: a.from, to: b.to, at: first.at, atMs: first.atMs, lastMs: Math.max(a.lastMs, b.lastMs), quiet: Math.min(a.quiet, b.quiet), joined: true });
   }
 
   /** r23 NEW-1: the kept range reaching [from, to] that head office saw FIRST (the earliest first sight; the lowest on a tie). */
-  first(from: number, to: number): { readonly at: string; readonly from: number; readonly to: number } | undefined {
+  first(from: number, to: number): { readonly at: string; readonly from: number; readonly to: number; readonly joined: boolean } | undefined {
     const rs = this.ranges;
     let lo = 0; let hi = rs.length;
     while (lo < hi) { const mid = (lo + hi) >> 1; if (rs[mid]!.to < from) lo = mid + 1; else hi = mid; }
     let found: WaitRange | undefined;
     for (let j = lo; j < rs.length && rs[j]!.from <= to; j += 1) if (found === undefined || rs[j]!.atMs < found.atMs) found = rs[j];
-    return found === undefined ? undefined : { at: found.at, from: found.from, to: found.to };
+    return found === undefined ? undefined : { at: found.at, from: found.from, to: found.to, joined: found.joined };
   }
 
-  /** Plain data (delta-coded, one flat list): [hour, heard, then per range: Δ from, to − from, first sight, its time as written or 0, last − first sight, quiet]. */
+  /** Plain data (delta-coded, one flat list): [hour, heard, then per range: Δ from, to − from, first sight, its time as written or 0, last − first sight, quiet, joined (1) or not (0)]. */
   encode(): unknown[] {
     const out: unknown[] = [fin(this.sweptHour), this.heard ? 1 : 0];
     let pf = 0;
     for (const r of this.ranges) {
-      out.push(r.from - pf, r.to - r.from, r.atMs, r.at === new Date(r.atMs).toISOString() ? 0 : r.at, r.lastMs - r.atMs, r.quiet);
+      out.push(r.from - pf, r.to - r.from, r.atMs, r.at === new Date(r.atMs).toISOString() ? 0 : r.at, r.lastMs - r.atMs, r.quiet, r.joined ? 1 : 0);
       pf = r.from;
     }
     return out;
@@ -718,10 +727,10 @@ class WaitClock {
     c.sweptHour = (e[0] as number | null) ?? -Infinity;
     c.heard = e[1] === 1;
     let pf = 0;
-    for (let i = 2; i + 5 < e.length; i += 6) {
+    for (let i = 2; i + 6 < e.length; i += 7) {
       const from = pf + (e[i] as number);
       const atMs = e[i + 2] as number;
-      c.ranges.push({ from, to: from + (e[i + 1] as number), atMs, at: e[i + 3] === 0 ? new Date(atMs).toISOString() : e[i + 3] as string, lastMs: atMs + (e[i + 4] as number), quiet: e[i + 5] as number });
+      c.ranges.push({ from, to: from + (e[i + 1] as number), atMs, at: e[i + 3] === 0 ? new Date(atMs).toISOString() : e[i + 3] as string, lastMs: atMs + (e[i + 4] as number), quiet: e[i + 5] as number, joined: e[i + 6] === 1 });
       pf = from;
     }
     return c;
@@ -1750,7 +1759,7 @@ export interface BoxReportsView {
 export interface BoxHistoryEntry { readonly raw: BoxHealthRecord; readonly judged: BoxHealthRecord; readonly seq: number }
 
 /** The history's working state version (bump it when its shape or a rule changes: an older one is simply set aside). */
-const BOX_HISTORY_VERSION = 4; // round 29: the waiting clock's and the unused runs' memory, refused groups banked away, a seal; round 30: waiting ranges, a keyed seal, refused prefixes capped; round 31: the cap's day is the store's own day (OB-113)
+const BOX_HISTORY_VERSION = 5; // round 29: the waiting clock's and the unused runs' memory, refused groups banked away, a seal; round 30: waiting ranges, a keyed seal, refused prefixes capped; round 31: the cap's day is the store's own day (OB-113); round 32: own-prefix refused counts capped (OB-117), head office's own seal key (OB-116)
 
 /** `latestBoxReports` kept exactly: at the latest box time seen, per way of writing it, the first position and the latest arrival. */
 interface WinGroup { firstSeq: number; r: BoxHealthRecord; recvMs: number; seq: number }
@@ -1944,7 +1953,7 @@ export function boxHistoryComponents(input: { readonly preparing?: { readonly si
   if (h?.noSealKey === true) {
     out.push({
       name: 'box_history_seal', status: 'degraded',
-      detail: 'head office was started without the key that seals the store computers\' saved history, so it trusts no saved history and saves none: every health check re-reads every store-computer report (correct, but slow, and a big store stays "being prepared"). This should never happen in a real deployment (the key comes from PACK_SIGNING_KEY, which the API needs to start) — call support',
+      detail: 'head office was started without the key that seals the store computers\' saved history, so it trusts no saved history and saves none: every health check re-reads every store-computer report (correct, but slow, and a big store stays "being prepared"). This should never happen in a real deployment (the key comes from BOX_HISTORY_SEAL_KEY, head office\'s own secret, which the API needs to start) — call support',
       evidence: { sealKey: 'missing' },
     });
   }
@@ -1973,19 +1982,31 @@ export function boxHistoryComponents(input: { readonly preparing?: { readonly si
 
 /**
  * Round 30 · OB-111 "A" (owner, 14 Oct 2026, in writing, "Keyed seal before pilot"; verifier r29 NEW-3, probe P2) — THE SEAL
- * IS KEYED (stated). A saved result is sealed with an HMAC-SHA-256 under a key head office holds in its own memory only: the
- * key is derived, under its own label, from the PACK_SIGNING_KEY secret the API is given at start (the same way the till seal
- * and the personal-data key are), so it is never in the database, the repository, an image or a log, and the API does not
- * start without it (PACK_SIGNING_KEY is required, at least 32 characters). Someone who can change the database row (with the
+ * IS KEYED (stated). A saved result is sealed with an HMAC-SHA-256 under a key head office holds in its own memory only, so it
+ * is never in the database, the repository, an image or a log. Someone who can change the database row (with the
  * application's database password, say) cannot make a seal that matches: a result sealed with another key, with the plain
  * SHA-256 of round 29, or with none is SET ASIDE and built again from the reports (append-only, so the reports themselves
- * cannot be changed). Changing PACK_SIGNING_KEY sets the saved result aside once; it is rebuilt from the reports, nothing lost.
+ * cannot be changed).
+ *
+ * Round 32 · OB-116 "A" (owner, 14 Oct 2026, in writing, "New head-office secret"; verifier r31 NEW-2) — THE KEY IS HEAD
+ * OFFICE'S ALONE (stated). In round 30 the key was derived from PACK_SIGNING_KEY, which every store computer also holds (it
+ * checks the price packs with it), so anyone with one store computer's settings file could work the key out. It is now
+ * derived, under its own label, from a SEPARATE secret, BOX_HISTORY_SEAL_KEY, that only head office's API is given at start
+ * (at least 32 characters). It is never given to a store computer, and the store computer's code never reads it
+ * (tests/guardrails). The API refuses to start without it, with the placeholder, with a shorter one, or with one equal to
+ * PACK_SIGNING_KEY, the personal-data key or the sign-in key: the same "a missing or placeholder secret does not start" rule
+ * PACK_SIGNING_KEY has (services/kernel/src/config.ts). The saved form moved to `box-history-text@3` (label `@2`), so every
+ * result sealed under round 30's key is set aside ONCE and rebuilt from the reports, nothing lost. Changing
+ * BOX_HISTORY_SEAL_KEY later does the same: set aside once, rebuilt.
  */
 export type BoxHistorySealKey = Buffer;
-const BOX_HISTORY_SEAL_LABEL = 'sre/box-history-seal@1';
-export function boxHistorySealKey(packSigningKey: string): BoxHistorySealKey {
-  if (packSigningKey.length < 32) throw new RangeError('the store computers\' saved history seal key needs the full pack signing key');
-  return createHmac('sha256', packSigningKey).update(BOX_HISTORY_SEAL_LABEL, 'utf8').digest();
+/** The label the seal key is derived under (its own: never the till seal's, the till PIN's, the member code's or the personal-data key's). */
+export const BOX_HISTORY_SEAL_LABEL = 'sre/box-history-seal@2';
+/** OB-116: the name of head office's own secret the seal key is derived from (never held by a store computer). */
+export const BOX_HISTORY_SEAL_SECRET_NAME = 'BOX_HISTORY_SEAL_KEY';
+export function boxHistorySealKey(headOfficeSecret: string): BoxHistorySealKey {
+  if (headOfficeSecret.length < 32) throw new RangeError(`the store computers' saved history seal key needs the full ${BOX_HISTORY_SEAL_SECRET_NAME} (at least 32 characters)`);
+  return createHmac('sha256', headOfficeSecret).update(BOX_HISTORY_SEAL_LABEL, 'utf8').digest();
 }
 const sealOf = (key: BoxHistorySealKey, text: string): string => createHmac('sha256', key).update(text, 'utf8').digest('hex');
 
@@ -2002,9 +2023,11 @@ export function sealBoxHistory(s: Omit<BoxHistorySnapshot, 'check' | 'sizeBytes'
  * JSON tree: PostgreSQL's jsonb keeps a string exactly but reorders an object's keys, and the seal is over the text as written.
  * Reading it back costs one HMAC and one JSON.parse (a few milliseconds: round 30 keeps the result well under 1 MB for an
  * honest store and bounded for a flooding one); anything else kept there is unreadable. Round 30 · OB-111: `@2` is keyed; a
- * `@1` row (round 29's plain seal) is not in the saved form, so it is set aside and rebuilt once.
+ * `@1` row (round 29's plain seal) is not in the saved form, so it is set aside and rebuilt once. Round 32 · OB-116: `@3` is
+ * sealed under head office's own BOX_HISTORY_SEAL_KEY; a `@2` row (sealed under a key a store computer's settings gave away)
+ * is set aside and rebuilt once the same way ("unreadable: it is not in the saved form").
  */
-export const BOX_HISTORY_STORED_FORMAT = 'box-history-text@2';
+export const BOX_HISTORY_STORED_FORMAT = 'box-history-text@3';
 export function boxHistoryToStore(s: BoxHistorySnapshot): { readonly format: string; readonly text: string } {
   return { format: BOX_HISTORY_STORED_FORMAT, text: JSON.stringify(s) };
 }
@@ -2067,13 +2090,15 @@ const vNever = vObj({
   lastMs: vNull(vNum), actsApplied: vArr(vStr), bound: vArr(vBinding), keys: vArr(vKey),
 });
 const vRf = vTuple(vStr, vNum, vInt, vInt, isObj, vStr);
+/** Round 32: the fields each waiting range is saved with (Δ from, to − from, first sight, its time as written, last − first, quiet, joined). */
+const WAIT_RANGE_FIELDS = 7;
 const vClock: Check = (v) => {
-  if (!Array.isArray(v) || v.length < 2 || (v.length - 2) % 6 !== 0 || !vNull(vNum)(v[0]) || (v[1] !== 0 && v[1] !== 1)) return false;
+  if (!Array.isArray(v) || v.length < 2 || (v.length - 2) % WAIT_RANGE_FIELDS !== 0 || !vNull(vNum)(v[0]) || (v[1] !== 0 && v[1] !== 1)) return false;
   // Round 30 · OB-110: at most WAIT_RANGES_MAX ranges, in number order, each a real range.
-  if ((v.length - 2) / 6 > WAIT_RANGES_MAX) return false;
+  if ((v.length - 2) / WAIT_RANGE_FIELDS > WAIT_RANGES_MAX) return false;
   let from = 0; let prevTo = -Infinity;
-  for (let i = 2; i < v.length; i += 6) {
-    if (!(vInt(v[i]) && vInt(v[i + 1]) && (v[i + 1] as number) >= 0 && vNum(v[i + 2]) && (v[i + 3] === 0 || vTime(v[i + 3])) && vNum(v[i + 4]) && vInt(v[i + 5]) && (v[i + 5] as number) >= 0)) return false;
+  for (let i = 2; i < v.length; i += WAIT_RANGE_FIELDS) {
+    if (!(vInt(v[i]) && vInt(v[i + 1]) && (v[i + 1] as number) >= 0 && vNum(v[i + 2]) && (v[i + 3] === 0 || vTime(v[i + 3])) && vNum(v[i + 4]) && vInt(v[i + 5]) && (v[i + 5] as number) >= 0 && (v[i + 6] === 0 || v[i + 6] === 1))) return false;
     from += v[i] as number;
     if (from <= prevTo) return false;
     prevTo = from + (v[i + 1] as number);
@@ -2082,11 +2107,15 @@ const vClock: Check = (v) => {
 };
 const vStore = vTuple(
   vStr, vNull(vRecord),
-  vArr(vTuple(vStr, vNull(vIssued), vNull(vObj({ x: vIssued, receivedAt: vTime })), vTuple(vNull(vStr), vNull(vStr), vNull(vNum)), vTuple(vNull(vInt), vNull(vInt), vNull(vNum)), vArr(vTuple(vInt, vNull(vStr), vRf, vRf)))),
+  vArr(vTuple(vStr, vNull(vIssued), vNull(vObj({ x: vIssued, receivedAt: vTime })), vTuple(vNull(vStr), vNull(vStr), vNull(vNum)), vTuple(vNull(vInt), vNull(vInt), vNull(vNum)), vArr(vTuple(vInt, vNull(vStr), vRf, vNull(vRf))))),
   vArr(vTuple(vStr, vNull(vObj({ x: vIssued, receivedAt: vTime, queueUnsent: vNum })), vClock, vNull(vStr))),
   vArr(vTuple(vStr, vNull(vNum), vArr(vTuple(vStr, vInt, vRecord, vNum, vInt)), vArr(vTuple(vNum, vNum, vInt, vNum, (v) => v === 0 || vTime(v))))),
   // Round 30 · OB-112: the refused-word cap — per computer its day and count kept, the counts kept, and what was not kept.
-  vTuple(vArr(vTuple(vStr, vInt, vInt)), vArr(vTuple(vStr, vInt)), vArr(vTuple(vStr, vInt, vTime, vTime))),
+  // Round 32 · OB-117: and per (store computer, own prefix) its day and count kept, the own refused counts kept, and what was not.
+  vTuple(
+    vArr(vTuple(vStr, vInt, vInt)), vArr(vTuple(vStr, vInt)), vArr(vTuple(vStr, vInt, vTime, vTime)),
+    vArr(vTuple(vStr, vStr, vInt, vInt)), vArr(vTuple(vStr, vInt)), vArr(vTuple(vStr, vStr, vInt, vTime, vTime, vInt)),
+  ),
 );
 function shapeOfBoxHistory(s: unknown): string | undefined {
   if (!isObj(s)) return 'it is not a saved result';
@@ -2221,10 +2250,12 @@ class BoxHistoryFold {
     const believed = believedRecord(b);
     for (const x of believed.receiptNumbersIssued ?? []) this.prefix(st, x.prefix).believed = { x, receivedAt: b.receivedAt };
     // The refused-report timeline (`refusedOpenFromRecords`): one word per prefix per report, the refused one last — and,
-    // round 30 · OB-112, at most REFUSED_NEW_PER_DAY_MAX new words a day per store computer about prefixes not the store's.
+    // round 30 · OB-112, at most REFUSED_NEW_PER_DAY_MAX new words a day per store computer about prefixes not the store's;
+    // round 32 · OB-117, at most REFUSED_OWN_NEW_PER_DAY_MAX new refused counts a day per store computer per own till prefix.
     for (const [prefix, x] of timelineWords(b)) {
       const known = (st.prefixes.get(prefix)?.rf.lastMs ?? -Infinity) > -Infinity;
-      if (!st.cap.admit(known, prefix, x, b.reportedBy, b.receivedAt, ms)) continue;
+      const kept = st.cap.admit(known, prefix, x, b.reportedBy, b.receivedAt, ms);
+      if (kept === 'drop') continue;
       const rf = this.prefix(st, prefix).rf;
       const acks = this.ctx.refusalAcks(b.storeId, prefix);
       let k = rf.k ?? countBefore(acks, rf.lastMs);
@@ -2233,7 +2264,7 @@ class BoxHistoryFold {
       if (rf.standing !== undefined && x.through !== rf.standing) rf.standing = undefined;
       rf.last = x.through;
       rf.lastMs = ms;
-      const r = x.refused;
+      const r = kept === 'word_only' ? undefined : x.refused;
       if (r === undefined || rf.standing === r.through) continue;
       const by = r.because === 'prefix_of_another_store_computer' ? b.reportedBy : undefined;
       const gk = `${r.through}\u0000${by ?? ''}\u0000${by === undefined ? 'p' : 'a'}`;
@@ -2370,7 +2401,7 @@ class BoxHistoryFold {
           if (g.saved !== undefined && g.saved.first.ms > t) { first = g.saved.first; latest = g.saved.latest; }
           for (const x of g.live) if (x.ms > t) { first ??= x; latest = x; }
           if (first === undefined || latest === undefined) continue;
-          groups.push([g.through, g.by ?? null, encRf(first), encRf(latest)]);
+          groups.push([g.through, g.by ?? null, encRf(first), latest === first ? null : encRf(latest)]); // round 32: a count said once is kept once
         }
         prefixes.push([prefix, ph.firstX ?? null, ph.believed ?? null, [ph.ar.standing ?? null, ph.ar.last ?? null, fin(ph.ar.lastMs)], [ph.rf.standing ?? null, ph.rf.last ?? null, fin(ph.rf.lastMs)], groups]);
       }
@@ -2394,7 +2425,7 @@ class BoxHistoryFold {
       const st = this.store(storeId);
       st.cap = RefusedCap.decode(cap, this.nr.timeZone);
       st.latest = latest ?? undefined;
-      for (const p of prefixes as [string, IssuedReport | null, { x: IssuedReport; receivedAt: string } | null, [string | null, string | null, number | null], [number | null, number | null, number | null], [number, string | null, unknown[], unknown[]][]][]) {
+      for (const p of prefixes as [string, IssuedReport | null, { x: IssuedReport; receivedAt: string } | null, [string | null, string | null, number | null], [number | null, number | null, number | null], [number, string | null, unknown[], unknown[] | null][]][]) {
         const [prefix, firstX, believed, ar, rf, groups] = p;
         const ph = this.prefix(st, prefix);
         ph.firstX = firstX ?? undefined;
@@ -2402,7 +2433,7 @@ class BoxHistoryFold {
         ph.ar = { standing: ar[0] ?? undefined, last: ar[1] ?? undefined, lastMs: ar[2] ?? -Infinity, k: undefined };
         ph.rf = { standing: rf[0] ?? undefined, last: rf[1] ?? undefined, lastMs: rf[2] ?? -Infinity, k: undefined, groups: new Map() };
         for (const [through, by, first, latestRf] of groups) {
-          ph.rf.groups.set(`${through}\u0000${by ?? ''}\u0000${by === null ? 'p' : 'a'}`, { through, by: by ?? undefined, saved: { first: decRf(first), latest: decRf(latestRf) }, live: [] });
+          ph.rf.groups.set(`${through}\u0000${by ?? ''}\u0000${by === null ? 'p' : 'a'}`, { through, by: by ?? undefined, saved: (() => { const f = decRf(first); return { first: f, latest: latestRf === null ? f : decRf(latestRf) }; })(), live: [] });
         }
       }
       for (const w of waits as [string, WaitHist['last'] | null, unknown[], string | null][]) {
@@ -2761,6 +2792,14 @@ export function billNumberFindingsFor(input: {
   out.push(...refusedFindingsFrom(input.storeId, facts.refusedOpen));
   // Round 30 · OB-112: the refused words about prefixes not the store's that were counted, not kept — one line per store computer.
   for (const n of facts.refusedNotKept) {
+    // Round 32 · OB-117: the refused counts under one of the store's OWN till prefixes that were counted, not kept.
+    if (n.prefix !== undefined) {
+      out.push({
+        kind: 'report_refused_not_kept', prefix: n.prefix, count: n.count, since: n.first,
+        detail: `${n.count} more refused bill count(s) under ${n.prefix} not kept: store ${input.storeId}'s computer ${n.computer} reported more NEW bill counts under ${n.prefix} that head office refused (a count too far ahead of what head office has received, or a till that belongs to another store computer) than head office keeps — at most ${REFUSED_OWN_NEW_PER_DAY_MAX} new ones a day per store computer per till — between ${n.first} and ${n.last}; the highest of them was ${n.prefix}${pad6(n.highest ?? 0)}. The ones above that are counted here, never kept, so they are not listed one by one (the refused counts that were kept are listed above). A store computer that keeps reporting impossible counts for its own till is faulty or has been altered: call support the same day, and ask them to block that store computer's sign-in if it goes on. This line stays for ${REFUSED_NOT_KEPT_SHOWN_DAYS} days after the last one`,
+      });
+      continue;
+    }
     out.push({
       kind: 'report_refused_not_kept', prefix: '', count: n.count, since: n.first,
       detail: `${n.count} more refused bill-number prefix(es) not kept: store ${input.storeId}'s computer ${n.computer} named more new bill-number prefixes that are not this store's (or new counts under them) than head office keeps — at most ${REFUSED_NEW_PER_DAY_MAX} new ones a day per store computer — between ${n.first} and ${n.last}. The ones above that are counted here, never kept, so they are not listed one by one. A store computer that names many prefixes that are not its store's is faulty or has been altered: call support the same day, and ask them to block that store computer's sign-in if it goes on. This line stays for ${REFUSED_NOT_KEPT_SHOWN_DAYS} days after the last one`,
@@ -3048,14 +3087,16 @@ function refusedOpenFromRecords(
   }
   const timeline = new Map<string, Said[]>();
   // Round 30 · OB-112: at most REFUSED_NEW_PER_DAY_MAX new words a day per store computer about prefixes not the store's;
-  // round 31 · OB-113: the day is the store's own (midnight to midnight in its time zone).
+  // round 31 · OB-113: the day is the store's own (midnight to midnight in its time zone); round 32 · OB-117: at most
+  // REFUSED_OWN_NEW_PER_DAY_MAX new refused counts a day per store computer per own till prefix (the rest: the word only).
   const cap = new RefusedCap(timeZone);
   for (const rec of mine) {
     const ms = Date.parse(rec.receivedAt);
     for (const [prefix, w] of timelineWords(rec)) {
       const list = timeline.get(prefix);
-      if (!cap.admit(list !== undefined, prefix, w, rec.reportedBy, rec.receivedAt, ms)) continue;
-      const x: Said = { at: rec.receivedAt, through: w.through, by: rec.reportedBy, ...(w.refused === undefined ? {} : { refused: w.refused }) };
+      const kept = cap.admit(list !== undefined, prefix, w, rec.reportedBy, rec.receivedAt, ms);
+      if (kept === 'drop') continue;
+      const x: Said = { at: rec.receivedAt, through: w.through, by: rec.reportedBy, ...(w.refused === undefined || kept === 'word_only' ? {} : { refused: w.refused }) };
       if (list === undefined) timeline.set(prefix, [x]); else list.push(x);
     }
   }
@@ -3103,7 +3144,8 @@ function refusedOpenFromRecords(
  * `locale.time_zone` setting, Asia/Kolkata by default — by head office's receipt of the report; in round 30 it was the UTC
  * day, 05:30 to 05:30 in India), head office keeps at most REFUSED_NEW_PER_DAY_MAX (20) NEW such words — a
  * prefix it has no word about yet, or a refused count under it it has not kept yet. Words about prefixes and counts already
- * kept are always kept, and the store's OWN prefixes (a count too far ahead, a second store computer) are never capped. The
+ * kept are always kept, and the store's OWN prefixes (a count too far ahead, a second store computer) are not capped by THIS
+ * rule (round 32 · OB-117 caps their new refused counts separately, per store computer per till prefix — below). The
  * rest are NOT kept: they are counted, per store computer, and said in ONE line ("N more … not kept", `report_refused_not_kept`)
  * for REFUSED_NOT_KEPT_SHOWN_DAYS (7) days after the last one. The plain reading (`refusedOpenFromRecords`) and the saved
  * running result use this same rule, so they agree exactly; the saved result then grows by at most 20 such words a day per
@@ -3112,10 +3154,35 @@ function refusedOpenFromRecords(
  */
 export const REFUSED_NEW_PER_DAY_MAX = 20;
 export const REFUSED_NOT_KEPT_SHOWN_DAYS = 7;
-/** Round 30 · OB-112: one store computer's words not kept (how many, the first and the last report they came in). */
-export interface RefusedNotKept { readonly computer: string; readonly count: number; readonly first: string; readonly last: string }
+/**
+ * Round 32 · OB-117 "A" (owner, 14 Oct 2026, in writing, "Cap per till per day"; verifier r31 NEW-3, probe F1) — NEW REFUSED
+ * COUNTS UNDER THE STORE'S OWN PREFIXES ARE CAPPED TOO (stated, so a person can check it). A refused count under one of the
+ * store's own till prefixes (a count too far ahead of what head office banked, `beyond_plausible_advance`; or a second store
+ * computer naming a till bound to another, `prefix_of_another_store_computer`) is kept open until head office banks that many
+ * or a person acknowledges it — so a faulty or altered store computer naming a NEW impossible count for its own tills on
+ * every report made head office's memory grow by about 20 MB a day (probe F1). Now, per store computer, per own till prefix
+ * and per store day (the same day as OB-113: midnight to midnight in the shop's time zone, by head office's receipt), head
+ * office keeps at most REFUSED_OWN_NEW_PER_DAY_MAX (20) NEW refused counts — a count under that prefix it has not kept yet.
+ * A count already kept is always kept again (its latest word moves), and words that are not refusals are never capped. The
+ * rest are NOT kept as refused counts: the report's word still moves the prefix's latest count (so an acknowledgement still
+ * ends when the store computer says a different count), but the refusal is only COUNTED, per store computer and prefix, and
+ * said in ONE line ("N more refused counts under P not kept", `report_refused_not_kept`, naming the highest such count) for
+ * REFUSED_NOT_KEPT_SHOWN_DAYS (7) days after the last one. The plain reading (`refusedOpenFromRecords`) and the saved
+ * running result use this same rule, so they agree exactly; the saved result grows by at most 20 such counts a day per store
+ * computer per till prefix, whatever it sends. Per store computer (not per prefix alone), so a second store computer naming a
+ * till's prefix can never use up the bound computer's own 20.
+ */
+export const REFUSED_OWN_NEW_PER_DAY_MAX = 20;
+/**
+ * Round 30 · OB-112: one store computer's words not kept (how many, the first and the last report they came in). Round 32 ·
+ * OB-117: with `prefix`, the refused counts under that store's OWN till prefix not kept, and the highest of them.
+ */
+export interface RefusedNotKept { readonly computer: string; readonly count: number; readonly first: string; readonly last: string; readonly prefix?: string; readonly highest?: number }
 /** One word of the refused-report timeline: its count, whether it is about a prefix NOT the store's, and its refusal if refused. */
 interface TimelineWord { readonly through: number; readonly notOwn: boolean; readonly refused?: RefusedIssued }
+/** What the cap does with one word: kept as it came, kept WITHOUT its refusal (OB-117, an own prefix), or not kept at all (OB-112). */
+type CapVerdict = 'keep' | 'word_only' | 'drop';
+interface NotKeptCount { count: number; first: string; last: string; highest: number }
 class RefusedCap {
   /**
    * Per store computer: the store's day of its latest new word kept (the store's calendar date in its own time zone, as days
@@ -3125,43 +3192,81 @@ class RefusedCap {
   /** The refused counts kept under prefixes that are not the store's (prefix NUL count; saved as [prefix, count]). */
   counts = new Set<string>();
   notKept = new Map<string, { count: number; first: string; last: string }>();
+  /** Round 32 · OB-117: per (store computer NUL own prefix), the store's day of its latest new refused count kept, and how many that day. */
+  ownDays = new Map<string, [number, number]>();
+  /** Round 32 · OB-117: the refused counts kept under the store's own prefixes (prefix NUL count). */
+  ownCounts = new Set<string>();
+  /** Round 32 · OB-117: per (store computer NUL own prefix), the refused counts not kept. */
+  ownNotKept = new Map<string, NotKeptCount>();
   private readonly dayOf: (ms: number) => string;
   constructor(readonly timeZone: string = DEFAULT_STORE_TIME_ZONE) { this.dayOf = dayIn(timeZone); }
 
-  /** Is this word kept? `known`: head office already keeps a word about the prefix. */
-  admit(known: boolean, prefix: string, x: TimelineWord, by: string, at: string, ms: number): boolean {
-    if (!x.notOwn) return true;
+  /** What is kept of this word. `known`: head office already keeps a word about the prefix. */
+  admit(known: boolean, prefix: string, x: TimelineWord, by: string, at: string, ms: number): CapVerdict {
     const key = `${prefix}\u0000${x.through}`;
-    if (known && (x.refused === undefined || this.counts.has(key))) return true;
+    if (!x.notOwn) {
+      // OB-117: the store's own prefix — a refused count head office does not keep yet uses one of the day's 20.
+      if (x.refused === undefined || this.ownCounts.has(key)) return 'keep';
+      const k = `${by}\u0000${prefix}`;
+      const day = storeDayNumber(this.dayOf(ms));
+      let d = this.ownDays.get(k);
+      if (d === undefined || d[0] !== day) { d = [day, 0]; this.ownDays.set(k, d); }
+      if (d[1] >= REFUSED_OWN_NEW_PER_DAY_MAX) {
+        const n = this.ownNotKept.get(k);
+        if (n === undefined) this.ownNotKept.set(k, { count: 1, first: at, last: at, highest: x.through });
+        else { n.count += 1; n.last = at; n.highest = Math.max(n.highest, x.through); }
+        return 'word_only';
+      }
+      d[1] += 1;
+      this.ownCounts.add(key);
+      return 'keep';
+    }
+    if (known && (x.refused === undefined || this.counts.has(key))) return 'keep';
     const day = storeDayNumber(this.dayOf(ms));
     let d = this.days.get(by);
     if (d === undefined || d[0] !== day) { d = [day, 0]; this.days.set(by, d); }
     if (d[1] >= REFUSED_NEW_PER_DAY_MAX) {
       const n = this.notKept.get(by);
       if (n === undefined) this.notKept.set(by, { count: 1, first: at, last: at }); else { n.count += 1; n.last = at; }
-      return false;
+      return 'drop';
     }
     d[1] += 1;
     if (x.refused !== undefined) this.counts.add(key);
-    return true;
+    return 'keep';
   }
 
-  /** What is not kept, per store computer (in order), shown for REFUSED_NOT_KEPT_SHOWN_DAYS after its last. */
+  /** What is not kept, per store computer (and, OB-117, per own prefix), in order, shown for REFUSED_NOT_KEPT_SHOWN_DAYS after its last. */
   shown(atMs: number): RefusedNotKept[] {
-    return [...this.notKept].filter(([, n]) => atMs - Date.parse(n.last) <= REFUSED_NOT_KEPT_SHOWN_DAYS * 86_400_000)
-      .sort((a, b) => a[0].localeCompare(b[0])).map(([computer, n]) => ({ computer, ...n }));
+    const recent = (n: { readonly last: string }): boolean => atMs - Date.parse(n.last) <= REFUSED_NOT_KEPT_SHOWN_DAYS * 86_400_000;
+    const notOwn = [...this.notKept].filter(([, n]) => recent(n)).map(([computer, n]): RefusedNotKept => ({ computer, ...n }));
+    const own = [...this.ownNotKept].filter(([, n]) => recent(n)).map(([k, n]): RefusedNotKept => {
+      const i = k.indexOf('\u0000');
+      return { computer: k.slice(0, i), prefix: k.slice(i + 1), ...n };
+    });
+    return [...notOwn, ...own].sort((a, b) => a.computer.localeCompare(b.computer) || (a.prefix ?? '').localeCompare(b.prefix ?? ''));
   }
 
   encode(): unknown[] {
-    const counts = [...this.counts].map((k) => { const i = k.lastIndexOf('\u0000'); return [k.slice(0, i), Number(k.slice(i + 1))]; });
-    return [[...this.days].map(([c, [day, n]]) => [c, day, n]), counts, [...this.notKept].map(([c, n]) => [c, n.count, n.first, n.last])];
+    const pairs = (set: ReadonlySet<string>): [string, number][] => [...set].map((k) => { const i = k.lastIndexOf('\u0000'); return [k.slice(0, i), Number(k.slice(i + 1))]; });
+    const split = (k: string): [string, string] => { const i = k.indexOf('\u0000'); return [k.slice(0, i), k.slice(i + 1)]; };
+    return [
+      [...this.days].map(([c, [day, n]]) => [c, day, n]), pairs(this.counts), [...this.notKept].map(([c, n]) => [c, n.count, n.first, n.last]),
+      [...this.ownDays].map(([k, [day, n]]) => [...split(k), day, n]), pairs(this.ownCounts),
+      [...this.ownNotKept].map(([k, n]) => [...split(k), n.count, n.first, n.last, n.highest]),
+    ];
   }
   static decode(e: unknown, timeZone: string): RefusedCap {
     const c = new RefusedCap(timeZone);
-    const [days, counts, notKept] = e as [[string, number, number][], [string, number][], [string, number, string, string][]];
+    const [days, counts, notKept, ownDays, ownCounts, ownNotKept] = e as [
+      [string, number, number][], [string, number][], [string, number, string, string][],
+      [string, string, number, number][], [string, number][], [string, string, number, string, string, number][],
+    ];
     for (const [k, day, n] of days) c.days.set(k, [day, n]);
     for (const [prefix, through] of counts) c.counts.add(`${prefix}\u0000${through}`);
     for (const [k, count, first, last] of notKept) c.notKept.set(k, { count, first, last });
+    for (const [by, prefix, day, n] of ownDays) c.ownDays.set(`${by}\u0000${prefix}`, [day, n]);
+    for (const [prefix, through] of ownCounts) c.ownCounts.add(`${prefix}\u0000${through}`);
+    for (const [by, prefix, count, first, last, highest] of ownNotKept) c.ownNotKept.set(`${by}\u0000${prefix}`, { count, first, last, highest });
     return c;
   }
 }
