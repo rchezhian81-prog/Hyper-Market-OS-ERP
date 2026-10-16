@@ -63,6 +63,34 @@ export function parseEnv(text) {
 /** Round 33: the API's own minimum for BOX_HISTORY_SEAL_KEY (services/kernel/src/config.ts, `minLength: 32`). */
 export const SEAL_KEY_MIN_LENGTH = 32;
 
+/**
+ * Round 38 (OB-123): the words for HOW a required setting is unfilled — absent, empty, or still the placeholder — and,
+ * when it is absent from the parsed settings but its NAME is in the file, how the line is malformed (an `export ` in
+ * front, a glued line, a byte-order mark). Names and line shapes only — never a value or its length.
+ */
+export function stateWords(finding, text) {
+  if (finding.state === 'empty') return ' — the line is there but has no value after the =';
+  if (finding.state === 'placeholder') return ' — the line still holds the placeholder';
+  if (finding.state !== 'absent') return '';
+  const lines = String(text ?? '').split(/\r?\n/);
+  const named = lines.filter((l) => l.includes(finding.key));
+  if (named.length === 0) return ' — there is no line for it in this file at all (is this the file the setting was added to?)';
+  const shapes = named.map((l) => {
+    const t = l.replace(/^\uFEFF/, '').trim();
+    if (t.startsWith('#')) return 'commented out with #';
+    if (/^export\s/.test(t)) return 'has "export " in front (write it as NAME=value)';
+    if (!t.startsWith(finding.key)) return 'is glued to the end of another line';
+    if (!t.slice(finding.key.length).trimStart().startsWith('=')) return 'has no = straight after the name';
+    return 'is not read as NAME=value';
+  });
+  return ` — its name is in the file, but the line ${[...new Set(shapes)].join('; ')}`;
+}
+
+/** The account reading the settings (a release runs as the deploy user, a helper often as root) — a name, never a secret. */
+function whoReads() {
+  try { const u = process.env['USER'] ?? process.env['LOGNAME']; const id = typeof process.getuid === 'function' ? process.getuid() : undefined; return u !== undefined || id !== undefined ? ` (as ${u ?? 'uid'}${id === undefined ? '' : ` ${id}`})` : ''; } catch { return ''; }
+}
+
 export function findUnsetSettings(env) {
   const required = [
     ['POSTGRES_PASSWORD', 'the database has no password set'],
@@ -77,9 +105,10 @@ export function findUnsetSettings(env) {
   const findings = [];
   for (const [key, why] of required) {
     const value = env[key];
-    if (value === undefined || value === '' || value.includes(PLACEHOLDER)) {
-      findings.push({ key, why });
-    }
+    // Round 38 (OB-123 deploy log): say WHICH way it is unfilled, so a refused release names the cause, never a value.
+    if (value === undefined) findings.push({ key, why, state: 'absent' });
+    else if (value === '') findings.push({ key, why, state: 'empty' });
+    else if (value.includes(PLACEHOLDER)) findings.push({ key, why, state: 'placeholder' });
   }
   // Round 32 · OB-116: the seal secret must be head office's own — never the pack key every store computer holds.
   // Round 33 (verifier r32 note 2a): and the API's other start-up refusals of it — at least SEAL_KEY_MIN_LENGTH characters,
@@ -225,14 +254,15 @@ async function main() {
   // 1 — Settings filled in.
   let env = {};
   try {
-    env = parseEnv(await readFile(envFile, 'utf8'));
+    const text = await readFile(envFile, 'utf8');
+    env = parseEnv(text);
     const unset = findUnsetSettings(env);
     results.push(unset.length === 0
       ? { name: 'Settings', ok: true, detail: 'every required setting has a real value' }
       : {
           name: 'Settings', ok: false,
-          detail: `still unfilled: ${unset.map((u) => `${u.key} (${u.why})`).join('; ')}`,
-          fix: 'Open infra/compose/.env and replace each placeholder with a real value (see infra/compose/.env.example).',
+          detail: `still unfilled: ${unset.map((u) => `${u.key} (${u.why})${stateWords(u, text)}`).join('; ')}\n        read: ${envFile}${whoReads()} — ${Object.keys(env).length} setting(s) in it`,
+          fix: `Open ${envFile} (the file named on the "read:" line — the one this check and the release read) and give each setting above a real value on its own NAME=value line (see infra/compose/.env.example). For BOX_HISTORY_SEAL_KEY, run infra/deploy/set-box-history-seal-key.sh on this box.`,
         });
   } catch {
     if (tillEnv === undefined) {

@@ -5,6 +5,13 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Coordinated programme · Round 38 — the demo update's refusal names its cause (16 October 2026) — gated, PR pending
+
+- **What happened:** the demo update for PR #785 (11ce09cd) was refused again with exit 78: "still unfilled: BOX_HISTORY_SEAL_KEY", read from `.env.pilot`. Before this round, the refusal could not say whether the line was missing, empty, the placeholder, or malformed, nor which account had read which file. IT's helper had passed when run as root with `sudo`.
+- **Built (unit-tested; synthetic):** the release pre-check now says HOW each required setting is unfilled (absent / empty / placeholder, or a named malformed line: commented out, `export ` in front, glued, no `=`). It also names the file it read, the account it read it as, and how many settings the file holds. It never shows a value or its length. The Fix line names that same file and the seal-key helper. Proof: `tests/unit/standup-check.test.ts` (round 38 block).
+- **Next (OB-123):** the next refused update's log names the cause. The runbook `docs/runbooks/round-32-administrator-step.md` ("Round 38") tells IT what to compare. This is still an administrator step on the box; the build session cannot reach the box.
+- **What to check in the store:** nothing in the store. On GitHub, open the next "Deploy the merged release to the demo box" job, step "Deploy this exact commit over SSH", and read the `still unfilled:` and `read:` lines (or the success).
+
 ## Coordinated programme · Round 37 — verifier r36 closed; CI kept-lease failure fixed (16 October 2026) — merged in PR #785 (11ce09cd) with round 36
 
 - **Built and integration-tested (memory + PostgreSQL); no staff UAT.** Each finding was reproduced first with the verifier's probes (re-run on this branch), then fixed:
