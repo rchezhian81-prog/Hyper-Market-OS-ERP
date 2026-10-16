@@ -87,7 +87,7 @@ export function integrationRoutes(deps: IntegrationDeps): readonly Route[] {
           || retains === undefined
           || (b['queueOnOutage'] !== undefined && typeof b['queueOnOutage'] !== 'boolean')
           || (b['dataRegion'] !== undefined && !isStr(b['dataRegion']))) {
-          throw apiError(400, { code: 'not_readable_as_an_adapter', whatHappened: 'An adapter needs a category, a vendor, a vault credentialRef, an environment (sandbox/production) and an enabled flag; retains (payments) and queueOnOutage are optional.', wasItSaved: 'not_saved', nextSafeAction: 'Send the adapter fields. Nothing was registered.' });
+          throw apiError(400, { code: 'not_readable_as_an_adapter', whatHappened: 'An adapter needs a category, a vendor, a vault credentialRef, an environment (sandbox/production) and an enabled flag; retains (payments) and queueOnOutage are optional; a payment adapter also needs dataRegion (IN or IN-<state>).', wasItSaved: 'not_saved', nextSafeAction: 'Send the adapter fields. Nothing was registered.' });
         }
         const environment = b['environment'] as 'sandbox' | 'production';
         const config: AdapterConfig = {
@@ -104,7 +104,7 @@ export function integrationRoutes(deps: IntegrationDeps): readonly Route[] {
             code: result.outcome,
             whatHappened: result.detail,
             wasItSaved: 'not_saved',
-            nextSafeAction: 'The adapter was not registered. A payment adapter may keep only a provider token and its like, its provider must be RBI-authorised, and every credential is a vault:// reference.',
+            nextSafeAction: 'The adapter was not registered. A payment adapter may keep only a provider token and its like, must declare where it keeps payment data (dataRegion IN or IN-<state>, India only), its provider must be RBI-authorised, and every credential is a vault:// reference.',
           });
         }
         await deps.recordAdapter(ctx.tenantId, config);

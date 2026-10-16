@@ -38,6 +38,17 @@ describe('every personal-data field is sealed, masked, never kept, or held by th
     expect(r.compliant).toBe(false);
     expect(r.findings[0]?.detail).toContain('waiting on the owner\'s decision');
   });
+
+  it('OB-153: business data by a recorded owner decision passes; without a decision id (OB-<n>) it is a finding', () => {
+    const ok = assessPiiSafeguards({ declarations: [d({ field: 'phone', whose: 'supplier_contact', protection: 'business_data_by_owner_decision', evidence: 'OB-153 "A"', ownerDecision: 'OB-153' })], sealingPolicy: POLICY, maskers: [] });
+    expect(ok).toMatchObject({ compliant: true, findings: [] });
+    expect(ok.byProtection.business_data_by_owner_decision).toBe(1);
+    for (const ownerDecision of [undefined, '', 'the owner said so', 'OB-', 'ob-153']) {
+      const r = assessPiiSafeguards({ declarations: [d({ field: 'phone', whose: 'supplier_contact', protection: 'business_data_by_owner_decision', evidence: 'x', ...(ownerDecision === undefined ? {} : { ownerDecision }) })], sealingPolicy: POLICY, maskers: [] });
+      expect(r.findings.map((f) => f.flag), String(ownerDecision)).toEqual(['business_data_without_a_decision']);
+      expect(r.compliant).toBe(false);
+    }
+  });
 });
 
 describe('security logs are kept at least one year (C7)', () => {

@@ -473,7 +473,7 @@ describe.skipIf(!DATABASE_URL)('Stage 19 — the seams hold (real PostgreSQL)', 
     const good: AdapterConfig = {
       adapterId: `adp-${RUN}-pay`, tenantId: TENANT, category: 'payment', vendor: 'Razorpay',
       environment: 'production', credentialRef: 'vault://payments/live#v5',
-      retains: ['provider_token', 'last4'], enabled: true, queueOnOutage: true,
+      retains: ['provider_token', 'last4'], dataRegion: 'IN', enabled: true, queueOnOutage: true,
     };
     expect(registerAdapter({ config: good, matrix: MATRIX, environment: 'production' }).registered).toBe(true);
 

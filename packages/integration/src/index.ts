@@ -16,3 +16,4 @@ export * from './api-gateway';
 export * from './connector';
 export * from './secrets';
 export * from './adapters';
+export * from './india-regions';

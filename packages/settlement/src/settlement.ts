@@ -192,8 +192,16 @@ export interface SettlementReview {
   /** C13: till refunds the provider's file debited for the same sale and amount. */
   readonly matchedRefundCount: number;
   readonly exceptions: readonly SettlementException[];
-  /** Money that is simply not due yet — reported so the shop can see its cash pipeline. */
+  /**
+   * Money still to arrive, NET: captures not yet paid in, less refunds the till gave that the provider has not yet
+   * debited (C13, verifier NEW-4). A 1,000 capture and a 400 refund both pending is 600, not 1,400. It can be below
+   * zero when more refunds than captures are pending: then that much more is still to leave the shop.
+   */
   readonly awaitingValueMinor: number;
+  /** The two parts of `awaitingValueMinor`, shown separately: captures still to be paid in (money coming in)… */
+  readonly awaitingCapturesMinor: number;
+  /** …and till refunds the provider has still to debit (money going out). */
+  readonly awaitingRefundsMinor: number;
   /** Money that is genuinely late or wrong. This is the number that matters. */
   readonly atRiskValueMinor: number;
   readonly detail: string;
@@ -225,9 +233,14 @@ export function reviewSettlement(input: SettlementReviewInput): SettlementReview
   exceptions.push(...reversals.exceptions);
 
   const matchedValueMinor = result.matched.reduce((s, m) => s + m.amountMinor, 0);
-  const awaitingValueMinor = exceptions
-    .filter((e) => e.finding === 'awaiting_settlement' || e.finding === 'refund_awaiting_settlement')
-    .reduce((s, e) => s + e.valueMinor, 0);
+  // C13 (verifier NEW-4): a pending capture is money coming IN and a pending refund is money going OUT, so the cash
+  // pipeline nets them, and each part is reported on its own as well.
+  const awaitingCapturesMinor = exceptions.filter((e) => e.finding === 'awaiting_settlement').reduce((s, e) => s + e.valueMinor, 0);
+  const awaitingRefundsMinor = exceptions.filter((e) => e.finding === 'refund_awaiting_settlement').reduce((s, e) => s + e.valueMinor, 0);
+  const awaitingValueMinor = awaitingCapturesMinor - awaitingRefundsMinor;
+  const awaitingWords = awaitingRefundsMinor === 0
+    ? `${awaitingValueMinor} not due yet`
+    : `${awaitingValueMinor} net not due yet (${awaitingCapturesMinor} still to come in, ${awaitingRefundsMinor} in refunds still to go out)`;
   const atRiskValueMinor = exceptions
     .filter((e) => e.needsInvestigation)
     .reduce((s, e) => s + Math.abs(e.valueMinor), 0);
@@ -255,11 +268,13 @@ export function reviewSettlement(input: SettlementReviewInput): SettlementReview
     matchedRefundCount: reversals.matchedRefunds,
     exceptions,
     awaitingValueMinor,
+    awaitingCapturesMinor,
+    awaitingRefundsMinor,
     atRiskValueMinor,
     detail:
       (atRiskValueMinor === 0
-        ? `${result.matched.length} settled and matched; ${awaitingValueMinor} not due yet; nothing at risk`
-        : `${atRiskValueMinor} at risk across ${exceptions.filter((e) => e.needsInvestigation).length} exception(s); ${awaitingValueMinor} simply not due yet`) + refundsNote,
+        ? `${result.matched.length} settled and matched; ${awaitingWords}; nothing at risk`
+        : `${atRiskValueMinor} at risk across ${exceptions.filter((e) => e.needsInvestigation).length} exception(s); ${awaitingWords}`) + refundsNote,
   };
 }
 

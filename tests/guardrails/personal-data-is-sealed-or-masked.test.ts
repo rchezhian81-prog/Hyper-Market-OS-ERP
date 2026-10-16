@@ -48,14 +48,37 @@ describe('guardrail: every personal-data field is declared with its protection (
     expect(PII_FIELD_INVENTORY.filter((d) => !live.has(`${d.file}:${d.field}`)).map((d) => `${d.file}:${d.field}`)).toEqual([]);
     const maskers = [...Object.keys(payrollMask), ...Object.keys(opsLogging)].filter((k) => k.startsWith('mask'));
     const r = assessPiiSafeguards({ declarations: PII_FIELD_INVENTORY, sealingPolicy: SEALED_FIELDS, maskers });
-    expect(r.findings.filter((f) => f.flag !== 'unprotected')).toEqual([]);
+    expect(r.findings).toEqual([]);
+    expect(r.compliant).toBe(true);
   });
 
-  it('an unprotected field never passes silently: each names the owner decision it waits on, and the list does not grow', () => {
-    const open = PII_FIELD_INVENTORY.filter((d) => d.protection === 'unprotected');
-    expect(open.every((d) => (d.awaitingDecision ?? '').length > 10)).toBe(true);
-    expect(open.every((d) => d.whose === 'supplier_contact')).toBe(true);
-    expect(open).toHaveLength(6);
+  it('no field is unprotected: the supplier contact details are business data by OB-153 "A", and nothing else rides on it', () => {
+    expect(PII_FIELD_INVENTORY.filter((d) => d.protection === 'unprotected').map((d) => `${d.file}:${d.field}`)).toEqual([]);
+    const business = PII_FIELD_INVENTORY.filter((d) => d.protection === 'business_data_by_owner_decision');
+    // OB-153 is about supplier contacts only: a customer's, staff member's or user's details can never be declared away by it.
+    expect(business.filter((d) => d.whose !== 'supplier_contact' || d.ownerDecision !== 'OB-153').map((d) => `${d.file}:${d.field}`)).toEqual([]);
+    expect(business).toHaveLength(6);
+  });
+
+  it('every owner decision an inventory row cites is in the decisions register, ACCEPTED, and about this', () => {
+    const register = readFileSync('docs/registers/decisions.md', 'utf8');
+    const cited = [...new Set(PII_FIELD_INVENTORY.map((d) => d.ownerDecision).filter((x): x is string => x !== undefined))];
+    expect(cited).toEqual(['OB-153']);
+    for (const id of cited) {
+      const row = register.split(/\r?\n/).find((l) => l.startsWith(`| ${id} |`));
+      expect(row, `${id} is not in docs/registers/decisions.md`).toBeDefined();
+      expect(row!).toMatch(/ACCEPTED/);
+      expect(row!).toMatch(/supplier/i);
+      expect(row!).toMatch(/[Bb]usiness data/);
+    }
+  });
+
+  it('the tripwire fires on business data that names no decision', () => {
+    const r = assessPiiSafeguards({
+      declarations: [{ file: 'services/x.ts', field: 'phone', whose: 'supplier_contact', protection: 'business_data_by_owner_decision', evidence: 'said so' }],
+      sealingPolicy: SEALED_FIELDS, maskers: [],
+    });
+    expect(r.findings.map((f) => f.flag)).toEqual(['business_data_without_a_decision']);
   });
 
   it('the tripwire fires on a known-bad sample', () => {

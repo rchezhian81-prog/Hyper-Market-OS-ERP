@@ -14,17 +14,18 @@
 // The same check is used by the payment-adapter registry (`packages/integration/src/adapters.ts`): a payment provider
 // that declares it processes the shop's payment data outside India is refused registration.
 
+import { isIndiaRegion } from '../../../packages/integration/src/india-regions';
+
 /** The settings that say where payment data is kept. Read at boot by `CLOUD_API_CONFIG`. */
 export const PAYMENT_DATA_REGION_KEY = 'PAYMENT_DATA_REGION';
 export const PAYMENT_BACKUP_REGION_KEY = 'PAYMENT_BACKUP_REGION';
 
-/** India, or an Indian state, in ISO 3166 form. */
-const INDIA = /^IN(-[A-Z]{2})?$/;
-
-/** True when the region is India (`IN`) or a state of India (`IN-XX`). Case-insensitive; surrounding spaces ignored. */
-export function isIndiaRegion(region: string): boolean {
-  return INDIA.test(region.trim().toUpperCase());
-}
+/**
+ * True when the region is India (`IN`) or a REAL Indian state or union territory (`IN-TN`, `IN-MH`, …) — checked against
+ * the ISO 3166-2:IN list, so "IN-ZZ" is refused (verifier lane-2 L5 · OB-162). Case-insensitive; surrounding spaces
+ * ignored. One list for the boot check and the payment-adapter registry.
+ */
+export { isIndiaRegion };
 
 /**
  * Why a region is refused for payment data, or `undefined` when it is India. The words are the boot error, so they say
@@ -33,7 +34,7 @@ export function isIndiaRegion(region: string): boolean {
 export function indiaRegionProblem(key: string, region: string): string | undefined {
   if (isIndiaRegion(region)) return undefined;
   return `${key} is "${region.trim()}", which is not India. The shop's payment data must stay in an India region (C12 · ADR-0002): `
-    + 'set it to IN, or IN-<state> (for example IN-MH or IN-TN). Nothing starts while payment data would be kept elsewhere';
+    + 'set it to IN, or IN-<state> with a real Indian state or union-territory code (for example IN-MH or IN-TN). Nothing starts while payment data would be kept elsewhere';
 }
 
 export interface ResidencyFinding {

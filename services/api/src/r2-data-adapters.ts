@@ -113,15 +113,15 @@ export const PII_FIELD_INVENTORY: readonly PiiFieldDeclaration[] = Object.freeze
   { file: 'packages/identity/src/access-binding.ts', field: 'phoneNumber', whose: 'user', protection: 'held_by_identity_server', evidence: 'a claim read from the signed token for one request' },
   // The shop's own details
   { file: 'packages/receipt/src/presets.ts', field: 'phone', whose: 'shop', protection: 'not_personal', evidence: 'the shop\'s own number, printed on its bill' },
-  // Suppliers' contact details — kept in the supplier master as typed. Whether a supplier's contact is personal data (a
-  // sole proprietor's own mobile is) is an owner decision; until it is made they are declared UNPROTECTED, and the C7
-  // check reports them as such rather than passing quietly.
-  { file: 'services/purchase/src/supplier-master.ts', field: 'phone', whose: 'supplier_contact', protection: 'unprotected', evidence: 'the supplier master keeps it as typed', awaitingDecision: 'the owner\'s decision on supplier contact details (C7)' },
-  { file: 'services/purchase/src/supplier-master.ts', field: 'email', whose: 'supplier_contact', protection: 'unprotected', evidence: 'the supplier master keeps it as typed', awaitingDecision: 'the owner\'s decision on supplier contact details (C7)' },
-  { file: 'services/purchase/src/supplier-master.ts', field: 'address', whose: 'supplier_contact', protection: 'unprotected', evidence: 'the supplier master keeps it as typed', awaitingDecision: 'the owner\'s decision on supplier contact details (C7)' },
-  { file: 'services/purchase/src/data-export.ts', field: 'phone', whose: 'supplier_contact', protection: 'unprotected', evidence: 'the owner\'s export of the supplier master (P-06) carries it as kept', awaitingDecision: 'the owner\'s decision on supplier contact details (C7)' },
-  { file: 'services/purchase/src/data-export.ts', field: 'email', whose: 'supplier_contact', protection: 'unprotected', evidence: 'the owner\'s export of the supplier master (P-06) carries it as kept', awaitingDecision: 'the owner\'s decision on supplier contact details (C7)' },
-  { file: 'services/purchase/src/data-export.ts', field: 'address', whose: 'supplier_contact', protection: 'unprotected', evidence: 'the owner\'s export of the supplier master (P-06) carries it as kept', awaitingDecision: 'the owner\'s decision on supplier contact details (C7)' },
+  // Suppliers' contact details — kept in the supplier master as typed. The owner decided (OB-153 "A", 16 Oct 2026, in
+  // writing) that a supplier's phone, email and address in the supplier master are BUSINESS data, not personal data; the
+  // C7 check passes them by that decision, and the guardrail holds the citation to the decisions register.
+  { file: 'services/purchase/src/supplier-master.ts', field: 'phone', whose: 'supplier_contact', protection: 'business_data_by_owner_decision', evidence: 'the supplier master keeps the business\'s contact as typed — business data by the owner\'s decision OB-153 "A"', ownerDecision: 'OB-153' },
+  { file: 'services/purchase/src/supplier-master.ts', field: 'email', whose: 'supplier_contact', protection: 'business_data_by_owner_decision', evidence: 'the supplier master keeps the business\'s contact as typed — business data by the owner\'s decision OB-153 "A"', ownerDecision: 'OB-153' },
+  { file: 'services/purchase/src/supplier-master.ts', field: 'address', whose: 'supplier_contact', protection: 'business_data_by_owner_decision', evidence: 'the supplier master keeps the business\'s contact as typed — business data by the owner\'s decision OB-153 "A"', ownerDecision: 'OB-153' },
+  { file: 'services/purchase/src/data-export.ts', field: 'phone', whose: 'supplier_contact', protection: 'business_data_by_owner_decision', evidence: 'the owner\'s export of the supplier master (P-06) carries it as kept — business data by the owner\'s decision OB-153 "A"', ownerDecision: 'OB-153' },
+  { file: 'services/purchase/src/data-export.ts', field: 'email', whose: 'supplier_contact', protection: 'business_data_by_owner_decision', evidence: 'the owner\'s export of the supplier master (P-06) carries it as kept — business data by the owner\'s decision OB-153 "A"', ownerDecision: 'OB-153' },
+  { file: 'services/purchase/src/data-export.ts', field: 'address', whose: 'supplier_contact', protection: 'business_data_by_owner_decision', evidence: 'the owner\'s export of the supplier master (P-06) carries it as kept — business data by the owner\'s decision OB-153 "A"', ownerDecision: 'OB-153' },
 ]);
 
 // ── C13 · the till's card/UPI refunds, for the T+1 settlement review ──────────────────────────────────────────────
@@ -132,6 +132,11 @@ const ELECTRONIC = new Set(['card', 'upi']);
  * The refunds the till gave back to a card or UPI tender in `[fromIso, toIso)`, each by the reference of the capture it
  * reverses (the original bill's tender of the same kind). A refund whose bill or tender reference cannot be found is
  * still returned — keyed `bill:<saleId>` — so it surfaces as an unmatched refund for a person, never vanishes (P-08).
+ *
+ * An EXCHANGE (refund tender `exchange`) moves no money for the part applied to the replacement; but when the shop owed
+ * the customer the difference and paid it back to a card or UPI (`exchange.balance` 'refund', `balanceTender` card/upi),
+ * that balance IS a till refund the provider will debit (C13, verifier NEW-5). It is read here for `balanceMinor`, keyed
+ * to the original bill's tender of that kind exactly like a plain refund, so it matches the provider's refund line.
  */
 export function settlementRefundsAdapter(input: { readonly store: EventStore }) {
   return {
@@ -139,16 +144,23 @@ export function settlementRefundsAdapter(input: { readonly store: EventStore }) 
       const returns = await input.store.readStream(tenantId, STREAM.returns, { type: 'ReturnRecorded', from: fromIso, to: toIso });
       const out: PosRefund[] = [];
       for (const e of returns) {
-        const r = e.event.payload as { readonly returnId: string; readonly originalSaleId: string | null; readonly refundMinor: number; readonly refundTender: string; readonly processedAt: string };
-        if (!ELECTRONIC.has(r.refundTender) || !(r.refundMinor > 0)) continue;
+        const r = e.event.payload as {
+          readonly returnId: string; readonly originalSaleId: string | null; readonly refundMinor: number; readonly refundTender: string; readonly processedAt: string;
+          readonly exchange?: { readonly balance?: string; readonly balanceMinor?: number; readonly balanceTender?: string };
+        };
+        // What went back to a card or UPI, and on which tender kind: the refund itself, or an exchange's refunded balance.
+        const x = r.refundTender === 'exchange' ? r.exchange : undefined;
+        const tenderKind = x === undefined ? r.refundTender : x.balance === 'refund' && typeof x.balanceTender === 'string' ? x.balanceTender : '';
+        const amountMinor = x === undefined ? r.refundMinor : x.balanceMinor;
+        if (!ELECTRONIC.has(tenderKind) || typeof amountMinor !== 'number' || !(amountMinor > 0)) continue;
         let originalRef = r.originalSaleId === null ? `bill:none:${r.returnId}` : `bill:${r.originalSaleId}`;
         if (r.originalSaleId !== null) {
           const held = await input.store.findByIdempotencyKey(tenantId, `sale-${tenantId}-${r.originalSaleId}`);
           const tenders = (held?.event.payload as { readonly tenders?: readonly { readonly kind: string; readonly ref?: string }[] } | undefined)?.tenders ?? [];
-          const ref = tenders.find((t) => t.kind === r.refundTender && typeof t.ref === 'string' && t.ref.trim() !== '')?.ref;
+          const ref = tenders.find((t) => t.kind === tenderKind && typeof t.ref === 'string' && t.ref.trim() !== '')?.ref;
           if (ref !== undefined) originalRef = ref;
         }
-        out.push({ id: r.returnId, originalRef, amountMinor: r.refundMinor, refundedOn: r.processedAt.slice(0, 10) });
+        out.push({ id: r.returnId, originalRef, amountMinor, refundedOn: r.processedAt.slice(0, 10) });
       }
       return out;
     },

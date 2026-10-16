@@ -28,6 +28,12 @@ export type PiiProtection =
   | 'held_by_identity_server'
   /** Not a person's data at all (the shop's own phone number on its receipt). */
   | 'not_personal'
+  /**
+   * Business data by a recorded owner decision (e.g. OB-153: a supplier's phone, email and address in the supplier
+   * master are the business's contact details). Valid only with `ownerDecision` naming that decision — without it, a
+   * finding. The guardrail holds the decision to the register (`docs/registers/decisions.md`).
+   */
+  | 'business_data_by_owner_decision'
   /** No protection. Always a finding. */
   | 'unprotected';
 
@@ -45,12 +51,17 @@ export interface PiiFieldDeclaration {
   readonly evidence: string;
   /** For `unprotected` only: the open owner decision it waits on — an unprotected field is never silent. */
   readonly awaitingDecision?: string;
+  /** For `business_data_by_owner_decision` only: the decision's register id (`OB-<n>`) that made it business data. */
+  readonly ownerDecision?: string;
 }
 
 /** The sealing policy as the check reads it: event type → the fields its rules seal. */
 export type SealedFieldsByEvent = Readonly<Record<string, readonly { readonly fields: readonly string[] }[]>>;
 
-export type PiiSafeguardFlag = 'unprotected' | 'claimed_sealed_but_not_sealed' | 'masked_without_a_masker';
+export type PiiSafeguardFlag = 'unprotected' | 'claimed_sealed_but_not_sealed' | 'masked_without_a_masker' | 'business_data_without_a_decision';
+
+/** An owner-decision register id, as `docs/registers/decisions.md` numbers them. */
+const OWNER_DECISION_ID = /^OB-\d+$/;
 
 export interface PiiSafeguardFinding {
   readonly flag: PiiSafeguardFlag;
@@ -78,7 +89,8 @@ export function assessPiiSafeguards(input: {
 }): PiiSafeguardReport {
   const findings: PiiSafeguardFinding[] = [];
   const by: Record<PiiProtection, number> = {
-    sealed_per_subject: 0, masked_on_read: 0, not_kept: 0, held_by_identity_server: 0, not_personal: 0, unprotected: 0,
+    sealed_per_subject: 0, masked_on_read: 0, not_kept: 0, held_by_identity_server: 0, not_personal: 0,
+    business_data_by_owner_decision: 0, unprotected: 0,
   };
   for (const d of input.declarations) {
     by[d.protection] += 1;
@@ -95,6 +107,11 @@ export function assessPiiSafeguards(input: {
           detail: `${d.field} in ${d.file} is declared sealed under ${d.evidence}, but the sealing policy does not seal it there — the claim is false`,
         });
       }
+    } else if (d.protection === 'business_data_by_owner_decision' && !OWNER_DECISION_ID.test(d.ownerDecision ?? '')) {
+      findings.push({
+        flag: 'business_data_without_a_decision', file: d.file, field: d.field,
+        detail: `${d.field} in ${d.file} (${d.whose}) is declared business data, but names no owner decision (OB-<n>) that made it so — without one it is personal data kept unprotected`,
+      });
     } else if (d.protection === 'masked_on_read' && !input.maskers.includes(d.evidence)) {
       findings.push({
         flag: 'masked_without_a_masker', file: d.file, field: d.field,
@@ -109,7 +126,7 @@ export function assessPiiSafeguards(input: {
     byProtection: by,
     findings,
     detail: compliant
-      ? `${input.declarations.length} personal-data field(s) declared; every one is sealed, masked, never kept, or held by the identity server`
+      ? `${input.declarations.length} personal-data field(s) declared; every one is sealed, masked, never kept, held by the identity server, not personal, or business data by a recorded owner decision${by.business_data_by_owner_decision === 0 ? '' : ` (${by.business_data_by_owner_decision})`}`
       : `${findings.length} personal-data field(s) are not protected as declared`,
   };
 }

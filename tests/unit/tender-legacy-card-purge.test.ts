@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { checkLegacyCardPurge, type LegacyRecord } from '../../packages/tender/src/legacy-card-purge';
+import { checkLegacyCardPurge, containsGroupedCardNumber, type LegacyRecord } from '../../packages/tender/src/legacy-card-purge';
 import { generateLegacyDataset } from '../../packages/migration/src/synthetic';
 
 // C10 (v2.1 addendum · MG-04 · hard rule #3): the legacy-card-purge check. A legacy extract passes only when it holds no
@@ -81,5 +81,98 @@ describe('the legacy-card-purge check (C10)', () => {
     const r = checkLegacyCardPurge(records);
     expect(r.findings).toEqual([]);
     expect(r.passed).toBe(true);
+  });
+});
+
+// L4 (verifier lane 2): card numbers written with separators other than a space or a dash. Synthetic test numbers only.
+describe('the legacy-card-purge check finds a card number with ANY separator, and stays quiet on dates and phones (C10, L4)', () => {
+  const TEST_MC = ['5555', '5555', '5555', '4444'].join('');
+  const TEST_VISA19 = ['4111', '1111', '1111', '1111', '003'].join('');
+  const group = (digits: string, sizes: readonly number[], sep: string): string => {
+    const out: string[] = []; let at = 0;
+    for (const n of sizes) { out.push(digits.slice(at, at + n)); at += n; }
+    return out.join(sep);
+  };
+  const SEPARATORS = ['.', '/', '_', '\\', '|', ':', '·', '  ', ' . ', ' / ', '+', '~', '*', '=', '-', ' '];
+
+  it('the verifier\'s three cases now FAIL the check', () => {
+    for (const v of ['4111.1111.1111.1111', '4111/1111/1111/1111', '4111_1111_1111_1111']) {
+      const r = checkLegacyCardPurge([rec('1', { remarks: v })]);
+      expect(r.passed, v).toBe(false);
+      expect(r.findings.map((f) => f.kind)).toEqual(['card_number_value']);
+      expect(JSON.stringify(r)).not.toContain(v);
+    }
+  });
+
+  it('finds Visa, Mastercard, a 19-digit card and Amex in their printed groups with every separator, inside text too', () => {
+    for (const sep of SEPARATORS) {
+      for (const [digits, sizes] of [[TEST_VISA, [4, 4, 4, 4]], [TEST_MC, [4, 4, 4, 4]], [TEST_VISA19, [4, 4, 4, 4, 3]], [TEST_AMEX, [4, 6, 5]]] as const) {
+        const v = group(digits, sizes, sep);
+        expect(containsGroupedCardNumber(`paid by card ${v} at counter 2`), JSON.stringify(v)).toBe(true);
+        expect(checkLegacyCardPurge([rec('x', { remarks: `ref:${v}` })]).passed, JSON.stringify(v)).toBe(false);
+      }
+    }
+  });
+
+  it('finds a grouped number followed by its expiry or preceded by other text in the same run', () => {
+    expect(containsGroupedCardNumber(`${group(TEST_VISA, [4, 4, 4, 4], '.')}/12-29`)).toBe(true);
+    expect(containsGroupedCardNumber(`B-1001/${group(TEST_VISA, [4, 4, 4, 4], '/')}`)).toBe(true);
+    expect(containsGroupedCardNumber(`2026.${group(TEST_VISA, [4, 4, 4, 4], '.')}`)).toBe(true);
+  });
+
+  it('does not read a non-card grouping, a mixed separator or a failed Luhn as a card', () => {
+    expect(containsGroupedCardNumber(group(TEST_VISA, [2, 6, 4, 4], '.'))).toBe(false); // not a printed card grouping
+    expect(containsGroupedCardNumber('4111.1111/1111_1111')).toBe(false); // separators differ
+    expect(containsGroupedCardNumber('4111.1111.1111.1112')).toBe(false); // fails Luhn
+    expect(containsGroupedCardNumber('4111,1111,1111,1111')).toBe(false); // a list of four numbers, not a card
+  });
+
+  it('PASSES dates in every common format and separator, over ten years (no false positive)', () => {
+    const p2 = (n: number) => String(n).padStart(2, '0');
+    let samples = 0;
+    for (let t = Date.parse('2020-01-01T00:00:00Z'); t < Date.parse('2030-01-01T00:00:00Z'); t += 86_400_000 * 3 + 3_601_000) {
+      const d = new Date(t);
+      const [Y, M, D, h, m, s] = [d.getUTCFullYear(), p2(d.getUTCMonth() + 1), p2(d.getUTCDate()), p2(d.getUTCHours()), p2(d.getUTCMinutes()), p2(d.getUTCSeconds())];
+      for (const sep of SEPARATORS) {
+        const forms = [
+          [D, M, Y].join(sep), [Y, M, D].join(sep), [M, D, Y].join(sep), `${[D, M, Y].join(sep)} ${h}:${m}:${s}`,
+          `${[Y, M, D].join(sep)}${sep}${h}${sep}${m}${sep}${s}`, `${[D, M, String(Y).slice(2)].join(sep)}`,
+          `${[D, M, Y].join(sep)} to ${[D, M, Y + 1].join(sep)}`,
+        ];
+        for (const f of forms) {
+          samples += 1;
+          expect(containsGroupedCardNumber(f), f).toBe(false);
+          expect(checkLegacyCardPurge([rec('d', { billDate: f, remarks: `delivered ${f}` })]).passed, f).toBe(true);
+        }
+      }
+    }
+    expect(samples).toBeGreaterThan(10_000);
+  });
+
+  it('PASSES Indian mobile and landline numbers in every common format and separator (no false positive)', () => {
+    let seed = 7;
+    const next = () => { seed = (seed * 1_103_515_245 + 12_345) % 2_147_483_648; return seed; };
+    let samples = 0;
+    for (let i = 0; i < 400; i += 1) {
+      const mobile = `${6 + (next() % 4)}${String(next() % 1_000_000_000).padStart(9, '0')}`;
+      const std = `0${String(40 + (next() % 60))}`;
+      const local = String(next() % 100_000_000).padStart(8, '0');
+      for (const sep of SEPARATORS) {
+        const forms = [
+          mobile, `+91${sep}${mobile}`, `91${sep}${mobile}`, `0${mobile}`,
+          [mobile.slice(0, 5), mobile.slice(5)].join(sep), `+91${sep}${[mobile.slice(0, 5), mobile.slice(5)].join(sep)}`,
+          [mobile.slice(0, 3), mobile.slice(3, 6), mobile.slice(6)].join(sep), `+91${sep}${[mobile.slice(0, 3), mobile.slice(3, 6), mobile.slice(6)].join(sep)}`,
+          [mobile.slice(0, 4), mobile.slice(4, 7), mobile.slice(7)].join(sep),
+          [std, local.slice(0, 4), local.slice(4)].join(sep), `+91${sep}${std.slice(1)}${sep}${local}`, [std, local].join(sep),
+          `${mobile.slice(0, 5)}${sep}${mobile.slice(5)} / ${[std, local].join(sep)}`,
+        ];
+        for (const f of forms) {
+          samples += 1;
+          expect(containsGroupedCardNumber(f), f).toBe(false);
+          expect(checkLegacyCardPurge([rec('p', { phone: f, remarks: `call ${f}` })]).passed, f).toBe(true);
+        }
+      }
+    }
+    expect(samples).toBeGreaterThan(50_000);
   });
 });
