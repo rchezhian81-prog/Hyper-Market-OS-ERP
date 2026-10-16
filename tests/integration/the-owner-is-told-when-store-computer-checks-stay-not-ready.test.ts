@@ -188,6 +188,12 @@ async function cannotBeSealedForMoreThanAnHour(c: Ctx): Promise<void> {
 
 async function theOwnerTurnsItOffAndEditsIt(c: Ctx): Promise<void> {
   const t = await seedSmall(c);
+  // Round 36 · verifier r35 NEW-1: the person a redirect names receives it only while they hold a role that may see alerts.
+  const grantedAt = '2026-03-01T00:00:00.000Z';
+  await c.store.append(c.T, STREAM.identity, makeEvent({
+    id: `grant-store_manager-${MANAGER}`, type: 'RoleGranted', occurredAt: grantedAt, idempotencyKey: `grant-store_manager-${MANAGER}-${randomUUID()}`, source: 'test/r36',
+    payload: { userId: MANAGER, roleId: 'store_manager', branchScope: 'all', request: { grantId: `store_manager-${MANAGER}`, userId: MANAGER, roleId: 'store_manager', branchScope: 'all', requestedBy: 'test', approvedBy: 'test', requestedAt: grantedAt } },
+  }));
   const deps = smallStore(c, t, () => false);
   const routes = observedHealthRoutes(deps);
   const rulesNow = async (): Promise<{ rules: StoredAlertRules | null; builtIn: BuiltInRuleState[] }> =>

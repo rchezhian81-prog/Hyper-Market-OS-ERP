@@ -301,6 +301,13 @@ export interface AlertRule {
    * office's own built-in rules (every person who holds the shop's owner role), never read from a hand-made rule.
    */
   readonly alsoToUserIds?: readonly string[];
+  /**
+   * Round 36 · verifier r35 NEW-1 (OB-115 / OB-130): set ONLY by head office, on the SAVED form of the owner's edit of a
+   * built-in rule that REDIRECTS it to one named person (somebody who did not hold the owner role when the owner saved it).
+   * Never read from a request body (`readRules` keeps only the fields it names). A saved built-in edit WITHOUT it — every edit
+   * saved before round 36 among them — goes to every owner.
+   */
+  readonly builtInRedirect?: true;
 }
 
 export interface RaisedAlert {
