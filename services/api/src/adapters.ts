@@ -15528,12 +15528,15 @@ export async function storeComputerHistory(
   const keep = async (snapshot: BoxHistorySnapshot, settled: boolean): Promise<void> => {
     tb.traced = snapshot.check; // made here from the reports, so its bindings are traced by construction
     if (!settled) { tb.held = snapshot; return; }
+    // Round 37 (coordinator, CI on PR #785): what is held when this save starts — a read that holds a NEWER result while the
+    // save is under way must not have it dropped unsaved (it stays held, and the kept lease saves it next).
+    const heldBefore = tb.held;
     // Kept as its JSON text (jsonb keeps a string exactly; the seal is over the text as written).
     await snapshots.save<{ readonly format: string; readonly text: string }>({
       tenantId, stream: BOX_HEALTH_STREAM, projection: BOX_HISTORY_PROJECTION, takenAt: snapshot.never.settledAt,
       result: { state: boxHistoryToStore(snapshot), watermarkSeq: snapshot.seq, lastEventAt: snapshot.never.settledAt, eventCount: snapshot.ord },
     });
-    tb.held = undefined;
+    if (tb.held === heldBefore) tb.held = undefined;
   };
   // A full read of every report (inline for a small store, or the background build): returns the reading.
   const fullRead = async (when: string, events: readonly PersistedEvent[] | undefined, settledThrough: number | undefined, pause?: () => Promise<void>) => {

@@ -67,6 +67,65 @@ function aBigStore() {
   return { all, first, later, at1: iso(Date.parse(first.at(-1)!.receivedAt) + 60_000), at2: iso(Date.parse(all.at(-1)!.receivedAt) + 15 * 60_000) };
 }
 
+/** Round 37: a memory snapshot store whose saves wait at a gate (a slow database), counted, with the saved results kept. */
+class GatedSnapshots extends LeasingSnapshots {
+  gate: Promise<void> | undefined;
+  waiting = false;
+  savedCounts: number[] = [];
+  override async save<S>(s: Snapshot<S>): Promise<void> {
+    if (this.gate !== undefined) { this.waiting = true; await this.gate; }
+    this.savedCounts.push((s.result as { eventCount: number }).eventCount);
+    return super.save<S>(s);
+  }
+}
+
+describe('round 37 · M35-FR-03 · OB-106 · coordinator (CI on PR #785): a newer result held while a save is under way is never dropped (memory)', () => {
+  it('M35-FR-03 OB-106 NEW-2: the kept lease saves, a read holds a NEWER result meanwhile — it stays held and is saved next', async () => {
+    const store = new HeldFenceStore();
+    const snaps = new GatedSnapshots();
+    const T = randomUUID();
+    const all = honestStore((BOX_HISTORY_INLINE_MAX + 760 + 300) / 5_760).map(plain);
+    const first = all.slice(0, BOX_HISTORY_INLINE_MAX + 760);
+    const later = all.slice(first.length, first.length + 200);
+    const more = all.slice(first.length + 200);
+    let at = iso(Date.parse(first.at(-1)!.receivedAt) + 60_000);
+    const read = () => storeComputerHistory(store, T, at, { sealKey: TEST_BOX_HISTORY_KEY, snapshots: snaps, timeZone: 'UTC', waitMs: 0, saveRetryMs: 50 });
+    await put(store, T, first);
+    await read();
+    await boxHistoryBuilding(snaps, T);
+    await put(store, T, later, first.length);
+    // (Read a minute after the 200: the reports that come after them are never "late" for the result the keeper saves.)
+    at = iso(Date.parse(later.at(-1)!.receivedAt) + 60_000);
+    await read(); // holds a newer result (first + 200)
+    // The fence settles: the kept lease starts saving — and the database is slow.
+    let open: () => void = () => undefined;
+    snaps.gate = new Promise<void>((r) => { open = r; });
+    store.hold = false;
+    for (let i = 0; i < 500 && !snaps.waiting; i += 1) await sleep(20);
+    expect(snaps.waiting).toBe(true); // the kept lease's save is under way
+    // While that save waits, the fence is held again and a read folds 100 more reports onto the held result (newer still).
+    store.hold = true;
+    await put(store, T, more, first.length + later.length);
+    at = iso(Date.parse(all.at(-1)!.receivedAt) + 15 * 60_000);
+    const r = await read();
+    expect(r.preparing).toBeUndefined(); // folded onto the held result, not set aside
+    expect(r.resumed).toBe(true);
+    expect(r.history.saveHeld).not.toBeNull();
+    open();
+    snaps.gate = undefined;
+    await sleep(300);
+    expect(snaps.savedCounts).toHaveLength(1); // the save that was under way: the older result
+    // Round 36: the save's end dropped the newer result (held: nothing; lease let go) — it was never saved.
+    expect(snaps.holders).toBe(1); // still kept: there is a newer result to save
+    store.hold = false;
+    await boxHistoryLeaseKept(snaps, T);
+    expect(snaps.holders).toBe(0);
+    // The NEWEST result (it folded the 100 more) is the one saved last.
+    expect(snaps.savedCounts).toHaveLength(2);
+    expect(snaps.savedCounts[1]).toBeGreaterThan(snaps.savedCounts[0]!);
+  }, 120_000);
+});
+
 describe('round 36 · M35-FR-03 · OB-106 · verifier r35 NEW-2: the kept lease is held until the NEWEST held result is saved (memory)', () => {
   it('M35-FR-03 OB-106 NEW-2: 200 new reports folded onto the held result — the lease stays held, unsaved, until the fence settles; then saved and let go', async () => {
     const store = new HeldFenceStore();
@@ -212,10 +271,18 @@ describe.skipIf(DATABASE_URL === undefined)('round 36 · M35-FR-03 · OB-106 · 
       // A saves by itself and lets go; B then reads only the reports after the saved position — never builds.
       await boxHistoryLeaseKept(a.snapshots, T);
       expect([await savedRow(a.pool, T), await leaseHolders(a.pool, T), a.snapshots.buildLeasesKept]).toEqual([true, 0, 0]);
+      // Round 37 (coordinator, CI on PR #785): the saved result is the NEWEST one — checked on the saved row itself: it folded
+      // EVERY report, the 200 late ones included (round 36 counted B's reads, which also depends on the saved POSITION: on a
+      // busy database another transaction can keep the newest fence from settling while an older one has, so the result is
+      // saved at that older, proven-visible position with the 200 listed as folded — correct, and B then reads past them).
+      const row = (await a.pool.query<{ n: string; seq: string }>("SELECT data->'result'->>'eventCount' AS n, data->'result'->>'watermarkSeq' AS seq FROM projection_snapshot WHERE tenant_id = $1 AND projection = $2", [T, 'box-health-history@1'])).rows[0]!;
+      const newest = Number((await a.pool.query<{ s: string }>('SELECT max(seq) AS s FROM event_ledger WHERE tenant_id = $1 AND stream = $2', [T, BOX])).rows[0]!.s);
+      expect(Number(row.n)).toBe(first.length + later.length); // the newest result: every report folded
+      expect(Number(row.seq)).toBeLessThanOrEqual(newest);
       const fromB = await read(b, at2);
       expect(fromB.preparing).toBeUndefined();
-      expect(fromB.resumed).toBe(true);
-      expect(fromB.reportsRead).toBeLessThan(later.length); // the saved result is the NEWEST one (past the 200)
+      expect(fromB.resumed).toBe(true); // B used A's saved result — it never built
+      if (Number(row.seq) === newest) expect(fromB.reportsRead).toBeLessThan(later.length); // saved at the newest position: nothing old re-read
       expect([...a.problems, ...b.problems]).toEqual([]);
     } finally {
       if (blocker !== undefined) await blocker.end().catch(() => undefined);
