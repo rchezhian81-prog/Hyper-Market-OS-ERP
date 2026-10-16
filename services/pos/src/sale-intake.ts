@@ -24,8 +24,9 @@
 
 import { isStoreComputerDefaultReceipt } from '../../../packages/contracts/src/receipt-number';
 import { minimumAgeOf, type CatalogueProduct } from '../../../packages/catalogue/src/catalogue';
-import { productRuleRefusals, isWeighedUom } from '../../../packages/restricted-sales/src/till-gate';
+import { productRuleRefusals, lineIsWeighed, isWeighedUom } from '../../../packages/restricted-sales/src/till-gate';
 import { weighingScaleVerification, InvalidScaleVerification } from '../../../packages/facilities/src/weighing-verification';
+import { withoutCardData, cardDataRemovalWords, type CardTokenReference } from '../../../packages/tender/src/card-token';
 
 export interface IncomingSaleLine {
   readonly productId: string;
@@ -89,10 +90,17 @@ export interface IncomingSaleLine {
 export interface IncomingTender {
   readonly kind: string;
   readonly amountMinor: number;
-  /** A provider token or reference. Never a card number (hard rule #3). */
+  /** A provider token or reference. Never a card number (hard rule #3): one shaped like it is removed before banking. */
   readonly ref?: string;
   /** On a `loyalty_points` tender: the whole points the store computer took for this amount (PF-09 step 3). */
   readonly points?: number;
+  /** C10: on a card tender, the ONLY card facts kept — the network-token reference, the last four digits, the network. */
+  readonly card?: CardTokenReference;
+  /**
+   * NEW-3 (C10): the store computer REMOVED card data the till sent with this tender, before its disk — field names only,
+   * never the values. Written by the store computer (one a till sends is dropped there); head office raises it, critical.
+   */
+  readonly cardDataRemoved?: { readonly fields?: readonly string[] };
 }
 
 export interface IncomingSale {
@@ -156,10 +164,17 @@ export type SaleExceptionKind =
   | 'age_restricted_sold_without_check'
   /** B19: a banned single-use plastic, a carry bag below 120 µm, or a carry bag given free was sold. **Critical**: unlawful. */
   | 'unlawful_plastic_sold'
-  /** B14: a tobacco line below one whole pack (a loose cigarette) was sold. **Critical**: COTPA s.7. */
+  /** B14: a tobacco line below one whole pack, or not a whole number of packs (OB-160), was sold — loose cigarettes.
+   *  **Critical**: COTPA s.7. */
   | 'tobacco_sold_below_pack'
-  /** B6: a weighed line came with no scale evidence, or its scale's Legal Metrology stamp had lapsed when it sold. */
+  /** B6: a weighed line came with no scale evidence, or its scale's Legal Metrology stamp had lapsed when it sold. Judged
+   *  against head office's OWN scale register where it is wired (L3), not only the till's claim. */
   | 'weighed_on_unverified_scale'
+  /** NEW-2 (B6): a line's unit is not the product's unit in head office's catalogue (a weighed product sent as "L" or "ea"). */
+  | 'unit_differs_from_catalogue'
+  /** NEW-3 (C10 · hard rule #3): a tender arrived carrying card data a tender may not keep (a card number, a security
+   *  code, an expiry, any field beyond token / last four / network). **Critical**. It was removed before banking. */
+  | 'card_data_in_tender'
   /** B5: a weighed line was charged more than weighed quantity × the price per kg (rounded against the customer). */
   | 'weighed_line_charged_above_weight_times_price'
   /** The tenders do not add up to the total. Somebody's day will not balance. */
@@ -261,6 +276,12 @@ export interface IntakeContext {
    * own desk) — then no finding is raised.
    */
   readonly cashierSeal?: 'verified' | 'missing' | 'does_not_match';
+  /**
+   * L3 (B6): head office's OWN scale register for the lane this sale came from — the scales it says weigh for that lane and
+   * the last day each stamp is valid. A weighed line is judged against THIS, on the sale's trading day, not against what
+   * the till claimed. Absent when the composition has no register (then the till's evidence is judged, as before).
+   */
+  readonly laneScalesOnRegister?: readonly { readonly assetId: string; readonly reverificationDueOn: string }[];
 }
 
 const text = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
@@ -301,6 +322,26 @@ export function acceptSale(sale: IncomingSale, ctx: IntakeContext): IntakeResult
       `the lines add to ${lineSum} against a total of ${sale.totalMinor}`,
       'The receipt the customer holds does not add up. Keep it for the day-end review.',
       { differenceMinor: lineSum - sale.totalMinor });
+  }
+
+  // ── Card data on a tender (C10 · hard rule #3 · NEW-3). A tender keeps a token reference, the last four digits and the ──
+  // ── network — nothing else. What arrived beyond that is REMOVED before banking (`withoutCardData`, by the route) and ──
+  // ── raised here, critical, by field NAME: the value is never repeated. The sale stands — it happened. ──────────────────
+  const cardData = withoutCardData(sale.tenders);
+  if (cardData.removed.length > 0) {
+    add('card_data_in_tender', 'critical',
+      `a tender arrived with card data a tender may not keep — ${cardDataRemovalWords(cardData.removed)}; it was removed and not banked`,
+      'ACT NOW: something sent a card number, security code or expiry with this sale. Nothing card-like was kept. Find which till, card machine link or program sent it and stop it — card data must never leave the card machine.');
+  }
+  const removedAtStore = sale.tenders.flatMap((t, i) => {
+    const fields = t !== null && typeof t === 'object' && t.cardDataRemoved !== undefined && Array.isArray(t.cardDataRemoved.fields)
+      ? t.cardDataRemoved.fields.filter((f): f is string => typeof f === 'string') : undefined;
+    return fields === undefined ? [] : [`tender ${i + 1} (${typeof t.kind === 'string' ? t.kind : ''}): ${fields.length === 0 ? 'card data' : fields.join(', ')}`];
+  });
+  if (removedAtStore.length > 0) {
+    add('card_data_in_tender', 'critical',
+      `the store computer removed card data the till sent, before its disk — ${removedAtStore.join('; ')}`,
+      'ACT NOW: a till or a card machine link sent card data with this sale. The store computer kept nothing card-like. Find which program on that till sent it and stop it — card data must never leave the card machine.');
   }
 
   // ── Who rang it, on which lane, on which day (SP-4b · F09). The money is real either way; a sale that ──────
@@ -409,9 +450,12 @@ export function acceptSale(sale: IncomingSale, ctx: IntakeContext): IntakeResult
     // ── The till's legal gates, re-checked against head office's OWN catalogue (B14 · B19). The till and its store ──────
     // ── computer refuse these before the money; this is the backstop for an old till, or a product whose flags changed ──
     // ── after the lane's pack was built. The sale stands (the goods are gone, hard rule #1), so each is CRITICAL. ─────────
+    // NEW-1 (B19): judged as CHARGED — a bag that a promotion took to zero is a free bag.
     const legal = productRuleRefusals({
       productId: line.productId, description: product.sku, quantityMinor: line.quantityMinor, uom: line.uom,
-      unitPriceMinor: line.unitPriceMinor, ...(product.regulatedFlags === undefined ? {} : { regulatedFlags: product.regulatedFlags }),
+      unitPriceMinor: line.unitPriceMinor,
+      ...(typeof line.lineTotalMinor === 'number' && Number.isFinite(line.lineTotalMinor) ? { chargedMinor: line.lineTotalMinor } : {}),
+      ...(product.regulatedFlags === undefined ? {} : { regulatedFlags: product.regulatedFlags }),
     });
     for (const r of legal) {
       if (r.reason === 'banned_single_use_plastic' || r.reason === 'carry_bag_below_min_thickness' || r.reason === 'carry_bag_not_priced') {
@@ -419,7 +463,7 @@ export function acceptSale(sale: IncomingSale, ctx: IntakeContext): IntakeResult
           `${product.sku}: ${r.detail}`,
           'ACT NOW: an item the plastic rules forbid was sold. Take the item off sale, find why the till did not stop it (an old till, or a pack that predates the rule), and keep the receipt for the record.',
           { productId: line.productId });
-      } else if (r.reason === 'tobacco_below_pack') {
+      } else if (r.reason === 'tobacco_below_pack' || r.reason === 'tobacco_not_whole_packs') {
         add('tobacco_sold_below_pack', 'critical',
           `${product.sku}: ${r.detail}`,
           'ACT NOW: loose cigarettes were sold, which the law forbids. Ask the cashier on that bill, and find why the till did not stop it.',
@@ -427,11 +471,24 @@ export function acceptSale(sale: IncomingSale, ctx: IntakeContext): IntakeResult
       }
     }
 
-    // ── B6 · B5 — a WEIGHED line: its scale's stamp, and its amount against weight × price. ───────────────────────────
-    if (isWeighedUom(line.uom)) {
+    // ── NEW-2 (B6): the unit is head office's catalogue's, not the line's word for it. ─────────────────────────────────
+    if (typeof product.baseUom === 'string' && product.baseUom !== '' && line.uom !== product.baseUom) {
+      add('unit_differs_from_catalogue', 'material',
+        `${product.sku} was sold in "${String(line.uom)}" and head office's catalogue sells it in "${product.baseUom}"`,
+        isWeighedUom(product.baseUom)
+          ? 'This product is sold by weight. Check the till that sent it: a weighed item sent in another unit skips the scale check and is priced on the wrong unit.'
+          : 'Check which till sent it and whether its catalogue is current — the quantity and the price may be read on the wrong unit.',
+        { productId: line.productId });
+    }
+
+    // ── B6 · B5 — a WEIGHED line (by head office's catalogue OR the line's unit): its scale's stamp, and its amount ─────
+    // ── against weight × price. ────────────────────────────────────────────────────────────────────────────────────────
+    if (lineIsWeighed({ uom: line.uom, ...(typeof product.baseUom === 'string' ? { catalogueUom: product.baseUom } : {}) })) {
       const evidence = line.scaleCheck;
-      const scales = Array.isArray(evidence?.scales) ? evidence.scales : [];
-      const day = typeof evidence?.checkedOn === 'string' ? evidence.checkedOn : sale.tradingDay;
+      // L3: head office's OWN register for this lane, on the sale's trading day, when it is wired; else the till's claim.
+      const onRegister = ctx.laneScalesOnRegister;
+      const scales = onRegister !== undefined ? onRegister : Array.isArray(evidence?.scales) ? evidence.scales : [];
+      const day = onRegister !== undefined ? sale.tradingDay : typeof evidence?.checkedOn === 'string' ? evidence.checkedOn : sale.tradingDay;
       const lapsed = scales.filter((s) => {
         try { return weighingScaleVerification({ reverificationDueOn: String(s.reverificationDueOn ?? '') }, day).tradingBlocked; } catch (err) {
           if (err instanceof InvalidScaleVerification) return true; // an unreadable stamp date is no proof of a current one
@@ -440,8 +497,12 @@ export function acceptSale(sale: IncomingSale, ctx: IntakeContext): IntakeResult
       });
       if (scales.length === 0) {
         add('weighed_on_unverified_scale', 'material',
-          `${product.sku} was sold by weight with no record of a verified scale`,
-          'Head office cannot show this weight came from a scale with a current Legal Metrology stamp. Check which till sent it (an old till sends no scale record) and that its scale is on the register.',
+          onRegister !== undefined
+            ? `${product.sku} was sold by weight on lane ${sale.laneId}, and head office's scale register has no scale for that lane`
+            : `${product.sku} was sold by weight with no record of a verified scale`,
+          onRegister !== undefined
+            ? 'Head office cannot show this weight came from a scale with a current Legal Metrology stamp: put the scale on that lane on the register (Scales page), with its stamp date and certificate.'
+            : 'Head office cannot show this weight came from a scale with a current Legal Metrology stamp. Check which till sent it (an old till sends no scale record) and that its scale is on the register.',
           { productId: line.productId });
       } else if (lapsed.length > 0) {
         add('weighed_on_unverified_scale', 'critical',
@@ -449,8 +510,10 @@ export function acceptSale(sale: IncomingSale, ctx: IntakeContext): IntakeResult
           'ACT NOW: goods were sold by weight on a scale whose Legal Metrology stamp had run out. Stop weighing on it, book the re-verification, and find why the till did not stop the sale.',
           { productId: line.productId });
       }
-      // The amount the customer may be charged at most: weighed net quantity × the price per unit, rounded DOWN (B5).
-      const per = line.uom === 'kg' ? 1000 : 1;
+      // The amount the customer may be charged at most: weighed net quantity × the price per unit, rounded DOWN (B5). The
+      // unit is the catalogue's when it says the product is weighed (NEW-2), else the line's.
+      const unit = typeof product.baseUom === 'string' && isWeighedUom(product.baseUom) ? product.baseUom : line.uom;
+      const per = unit === 'kg' ? 1000 : 1;
       const most = Math.floor((line.unitPriceMinor * line.quantityMinor) / per);
       if (Number.isSafeInteger(most) && line.lineTotalMinor > most) {
         add('weighed_line_charged_above_weight_times_price', 'material',

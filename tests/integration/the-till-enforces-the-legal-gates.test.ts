@@ -51,7 +51,7 @@ if (DATABASE_URL !== undefined) backings.push({ name: 'real PostgreSQL', harness
 const day = (offset: number): string => new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
 const NOW = new Date().toISOString();
 const SETTINGS = { tradingDayCutoff: '02:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 5_000, cashVarianceToleranceMinor: 5_000, privacySlaDays: 30, warehouseId: null };
-const SCALE = { storeId: 'S1', laneIds: ['lane-1'], approvalNo: 'LM/TN/APP/0042', capacityGrams: 30_000, lastStampedOn: day(-300) };
+const SCALE = { storeId: 'S1', laneIds: ['lane-1'], approvalNo: 'LM/TN/APP/0042', capacityGrams: 30_000, lastStampedOn: day(-300), certificateRef: 'LM/VC/2026/0042' };
 
 const SNAPSHOT = (tenantId: string): CatalogueSnapshot => ({
   tenantId, version: 1, builtAt: NOW,
@@ -113,7 +113,7 @@ describe.each(backings)('R2 lane 1 — the till enforces the legal gates — on 
     expect(pull.status).toBe(200);
     const env = pull.body as StorePackEnvelope;
     expect(verifyStorePack(hmacSigner(TEST_PACK_KEY), env, { tenantId: T, storeId: 'S1', heldVersion: null, now: NOW })).toEqual({ accepted: true });
-    expect(env.sections['weighingScales']).toEqual([{ assetId: 'SCALE-1', laneIds: ['lane-1'], approvalNo: SCALE.approvalNo, capacityGrams: 30_000, lastStampedOn: SCALE.lastStampedOn, reverificationDueOn: day(100), version: 1 }]);
+    expect(env.sections['weighingScales']).toEqual([{ assetId: 'SCALE-1', laneIds: ['lane-1'], approvalNo: SCALE.approvalNo, capacityGrams: 30_000, lastStampedOn: SCALE.lastStampedOn, reverificationDueOn: day(100), version: 1, certificateRef: SCALE.certificateRef }]);
     const tampered = { ...env, sections: { ...env.sections, weighingScales: [{ ...(env.sections['weighingScales'] as Record<string, unknown>[])[0], reverificationDueOn: '2099-12-31' }] } };
     expect(verifyStorePack(hmacSigner(TEST_PACK_KEY), tampered, { tenantId: T, storeId: 'S1', heldVersion: null, now: NOW }).accepted).toBe(false);
 

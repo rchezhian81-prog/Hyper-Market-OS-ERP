@@ -9,6 +9,7 @@ import type { CatalogueProduct } from '../../../packages/catalogue/src/catalogue
 import { checkOperatorStamp } from '../../../packages/identity/src/till-seal';
 import { assignSaleLots, type LotOnHand } from './sale-lots';
 import { storeComputerTimeFrom, type StoreComputerScopeOfCaller } from './returns';
+import { withoutCardData } from '../../../packages/tender/src/card-token';
 import {
   acceptSale, summariseIntake,
   type IncomingSale, type IntakeContext, type IntakeResult, type SaleException,
@@ -73,6 +74,11 @@ export interface PosDeps {
    * once per sale and kind, never refused, never below zero. A part the true balance could not cover comes back as a
    * shortfall, which this route raises as a visible exception (hard rule #10). Absent → no spending here.
    */
+  /**
+   * L3 (B6): the scales head office's OWN register says weigh for this sale's lane (in the sale's store), with the last day
+   * each stamp is valid — what a weighed line is judged against. Absent → the till's own scale evidence is judged.
+   */
+  readonly scalesOnRegisterFor?: (tenantId: string, sale: IncomingSale) => Promise<readonly { readonly assetId: string; readonly reverificationDueOn: string }[] | undefined>;
   readonly loyaltySpendOnSale?: (tenantId: string, sale: IncomingSale) => Promise<readonly {
     readonly kind: string; readonly ref: string; readonly requestedMinor: number; readonly appliedMinor: number;
     readonly shortfallMinor: number; readonly alreadyApplied: boolean; readonly detail: string;
@@ -178,8 +184,10 @@ export function posRoutes(deps: PosDeps): readonly Route[] {
         const cashierSeal = deps.tillSealKey === undefined || cashierId === '' ? undefined : checkOperatorStamp(deps.tillSealKey, {
           fact: 'sale', tenantId: ctx.tenantId, recordId: sale.saleId, amountMinor: sale.totalMinor, named: cashierId, stamp: sale.operatorVerified,
         });
+        const laneScalesOnRegister = deps.scalesOnRegisterFor === undefined ? undefined : await deps.scalesOnRegisterFor(ctx.tenantId, sale);
         const intake = acceptSale(sale, {
           catalogue,
+          ...(laneScalesOnRegister === undefined ? {} : { laneScalesOnRegister }),
           currentPackVersion: await deps.currentPackVersion(ctx.tenantId),
           saleHoldingThisReceipt: await deps.saleHoldingReceipt(ctx.tenantId, sale.receiptNumber),
           alreadyBanked,
@@ -188,12 +196,18 @@ export function posRoutes(deps: PosDeps): readonly Route[] {
           ...(cashierSeal === undefined ? {} : { cashierSeal }),
         } satisfies IntakeContext);
 
+        // NEW-3 (C10 · hard rule #3): what is KEPT never holds card data. The intake above judged the sale as it arrived
+        // (and raised what it found, by field name); from here on — the event store, loyalty, the findings — only the
+        // tenders with the forbidden fields removed travel. The sale itself stands: it happened.
+        const cleaned = withoutCardData(sale.tenders);
+        const kept: IncomingSale = cleaned.removed.length === 0 ? sale : { ...sale, tenders: cleaned.tenders as IncomingSale['tenders'] };
+
         let notThisBill: Record<string, unknown> | undefined;
         // Verifier r20 IC-3: the bill loyalty follows — the one head office BANKED under this sale id. A different bill that
         // arrives under a banked id earns and spends nothing; its loyalty is raised for a person instead (below).
-        let loyaltyBill: IncomingSale = sale;
+        let loyaltyBill: IncomingSale = kept;
         if (!intake.alreadyBanked) {
-          await deps.bankSale(ctx.tenantId, sale);
+          await deps.bankSale(ctx.tenantId, kept);
           if (intake.exceptions.length > 0) {
             await deps.recordExceptions(ctx.tenantId, intake.exceptions);
           }
@@ -204,7 +218,7 @@ export function posRoutes(deps: PosDeps): readonly Route[] {
           if (first !== undefined && billFingerprint(first) !== billFingerprint(sale)) {
             await deps.recordExceptions(ctx.tenantId, [{
               kind: 'receipt_number_reused', severity: 'material', saleId: sale.saleId, differenceMinor: sale.totalMinor - first.totalMinor,
-              detail: `sale ${sale.saleId} (receipt ${sale.receiptNumber}) arrived again as a DIFFERENT bill — ${sale.totalMinor} against the ${first.totalMinor} head office banked under that id: the first stands and this one was NOT banked. ${notBankedBillEffects(sale)}`,
+              detail: `sale ${sale.saleId} (receipt ${sale.receiptNumber}) arrived again as a DIFFERENT bill — ${sale.totalMinor} against the ${first.totalMinor} head office banked under that id: the first stands and this one was NOT banked. ${notBankedBillEffects(kept)}`,
               ownerAction: 'A store computer gave one bill number to two different bills (a computer restored from a backup, or two computers on one till). The customer holds the second bill, which head office has not banked. Find it at the store computer, bank it by hand, and check that till\'s bill-number prefix. '
                 + 'Settle ALL of it when you bank it: every payment listed (cash in that till\'s drawer, card and UPI, an exchange credit, points or store credit), its stock, and any coupon redeemed for this sale.',
             }]);
@@ -214,7 +228,7 @@ export function posRoutes(deps: PosDeps): readonly Route[] {
             loyaltyBill = first;
             // What the not-banked bill carried for loyalty (a member, points or store credit spent): raised, never applied —
             // a person who banks it by hand settles it (the same member code and tender amounts, never a phone number).
-            const spentOnIt = sale.tenders.filter((t) => t.kind === 'loyalty_points' || t.kind === 'store_credit');
+            const spentOnIt = kept.tenders.filter((t) => t.kind === 'loyalty_points' || t.kind === 'store_credit');
             const member = typeof sale.customerRef === 'string' && sale.customerRef.trim() !== '' ? sale.customerRef : undefined;
             if (member !== undefined || spentOnIt.length > 0) {
               await deps.recordExceptions(ctx.tenantId, [{

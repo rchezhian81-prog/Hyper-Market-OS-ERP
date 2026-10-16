@@ -126,6 +126,12 @@ export interface CatalogueSnapshot {
    * rest of the pack (`canonicalise`). The lane evaluates each against its own clock offline (§31). Absent = none.
    */
   readonly promotions?: readonly Promotion[];
+  /**
+   * NEW-2 (B6): the pack's signature covers every product's base unit and the embedded-barcode rules
+   * (`services/catalogue/src/pack.ts` `canonicalise`). Set by `publishPack` on every pack it signs; absent on a pack signed
+   * before, which verifies exactly as it always did.
+   */
+  readonly unitsSigned?: true;
 }
 
 export interface ScanResult {

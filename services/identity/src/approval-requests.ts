@@ -175,6 +175,13 @@ export const APPROVAL_KINDS: Readonly<Record<string, ApprovalKind>> = Object.fre
   },
   // Round 26 · OB-97 "B" (owner, 13 Oct 2026): a head office business person (all stores, never IT) moves a till's bill-number
   // prefix to a replacement store computer; the OWNER approves (`store.computer.replace.approve` — the owner's alone).
+  // L2 (B6 integrity): an existing weighing scale's Legal Metrology stamp dates decide whether its lanes may weigh. The
+  // checker is ANOTHER person already authorised to manage facilities assets (the owner checks the store manager, and the
+  // other way round) — a dedicated approval authority would be new role policy, which is the owner's to set.
+  scale_stamp_change: {
+    kind: 'scale_stamp_change', label: 'Change a weighing scale\'s stamp date',
+    makerPermission: 'facilities.asset.manage', checkerPermission: 'facilities.asset.manage', validForMinutes: 24 * 60,
+  },
   store_computer_replaced: {
     kind: 'store_computer_replaced', label: 'Move a till\'s bill numbers to a replacement store computer',
     makerPermission: 'store.computer.replace', checkerPermission: 'store.computer.replace.approve', validForMinutes: 24 * 60,

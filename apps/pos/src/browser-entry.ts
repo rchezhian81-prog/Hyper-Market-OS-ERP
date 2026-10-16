@@ -18,7 +18,7 @@ import { CatalogueCache, type CatalogueSnapshot } from '../../../packages/catalo
 import { money } from '../../../packages/contracts/src/money';
 import type { TenderKind } from '../../../packages/contracts/src/enums';
 import type { DecidedRequest } from '../../../packages/approvals/src/approvals';
-import { PosSession, taxRateFromPercent, NoOperatorError, TillRuleRefusedError } from './session';
+import { PosSession, taxRateFromPercent, NoOperatorError, TillRuleRefusedError, type RefusedOffer } from './session';
 import type { LaneScales } from '../../../packages/restricted-sales/src/till-gate';
 import {
   createTillSession, TILL_CASH_WORDS_FOR_THE_LANE,
@@ -852,6 +852,8 @@ export function bootPos(config?: {
   readonly operator: () => string | undefined;
   /** Which lane this till is (null = the box never said) and the trading day a moment falls on, per the shop's cut-off. */
   readonly lane: () => { readonly laneId: string | null; readonly tradingDayCutoff: string; readonly tradingDayAt: (atIsoUtc: string) => string };
+  /** NEW-1 (B19): offers in the pack this till refused to apply because they target a carry bag — for the lane to say. */
+  readonly refusedOffers: () => readonly RefusedOffer[];
 } {
   const outbox = new SyncOutbox();
   // The lane's catalogue, once indexed below — the session reads each product's pack flags from it (B14 · B19).
@@ -887,6 +889,8 @@ export function bootPos(config?: {
       ...(config?.laneScales === undefined ? {} : { laneScales: config.laneScales }),
       // B14 · B19: the commit's second gate reads each product's flags from the lane's own signed catalogue.
       regulatedFlagsOf: (productId: string) => catalogueRef.cache?.findByProductId(productId)?.regulatedFlags,
+      // B6 · NEW-2: whether a line is weighed comes from the lane's own signed catalogue, not only the line's unit.
+      baseUomOf: (productId: string) => catalogueRef.cache?.findByProductId(productId)?.baseUom,
     },
     new Ledger(new InMemoryLedgerStore()),
     outbox,
@@ -1409,7 +1413,7 @@ export function bootPos(config?: {
   };
   const customerDisplayChannelName = (): string => CUSTOMER_DISPLAY_CHANNEL;
 
-  return Object.assign(view, { customerDisplay, customerDisplayChannelName, reportDevices, devicesSaid, deviceAdapterClock, deviceHeartbeat, till, nextReceipt, receiptsRemaining, receiptNotice, holdAtTill, heldAtTill, recallAtTill, abandonAtTill, startCardPayment, answerCardPayment, checkCardPayment, voidAtTill, priceChangeValue, priceChangeAtTill, noSaleAtTill, currentBillRef: () => session.billRef(), lookupRefund, noReceiptReturn, receiptTemplate, signIn, signOut, operator, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill, loyaltyWallet });
+  return Object.assign(view, { customerDisplay, customerDisplayChannelName, reportDevices, devicesSaid, deviceAdapterClock, deviceHeartbeat, till, nextReceipt, receiptsRemaining, receiptNotice, holdAtTill, heldAtTill, recallAtTill, abandonAtTill, startCardPayment, answerCardPayment, checkCardPayment, voidAtTill, priceChangeValue, priceChangeAtTill, noSaleAtTill, currentBillRef: () => session.billRef(), lookupRefund, noReceiptReturn, receiptTemplate, signIn, signOut, operator, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill, loyaltyWallet, refusedOffers: () => session.refusedOffers() });
 }
 
 // Attach for the view. `app.js` uses `window.posSession` when present and falls back to its

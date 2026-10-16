@@ -4,10 +4,13 @@
 //
 //   • B19 — a banned single-use-plastic SKU cannot be sold; a plastic carry bag thinner than 120 µm (or with no
 //     recorded thickness) cannot be sold; a carry bag is its own line at a price, never free.
-//   • B14 — a tobacco line below one whole pack is refused (no loose single stick). The age-18 half of B14 is the
-//     till's age gate: a tobacco product always needs at least 18 (`minimumAgeOf`).
+//   • B14 — a tobacco line below one whole pack is refused (no loose single stick), and so is one that is not a whole
+//     number of packs (OB-160 "A": whole packs only). The age-18 half of B14 is the till's age gate: a tobacco product
+//     always needs at least 18 (`minimumAgeOf`).
 //   • B6  — weight is accepted only from a scale whose Legal Metrology verification is current. A weighed line on a
-//     lane whose scale stamp has lapsed — or a lane with no verified scale on record — is refused.
+//     lane whose scale stamp has lapsed — or a lane with no verified scale on record — is refused. Whether a line is
+//     WEIGHED is decided from the judging side's OWN catalogue (`catalogueUom`), never only from the unit written on the
+//     line (NEW-2): a weighed product sent as "L" or "ea" is still weighed.
 //
 // Every input comes from the signed packs the lane already holds (the product's `regulatedFlags` in the catalogue
 // pack; this lane's scales in the store pack), so the gate needs no network (hard rule #1). There is NO override: each
@@ -93,6 +96,7 @@ export type TillRefusalReason =
   | 'carry_bag_below_min_thickness'
   | 'carry_bag_not_priced'
   | 'tobacco_below_pack'
+  | 'tobacco_not_whole_packs'
   | 'tobacco_pack_size_unknown'
   | 'weighed_without_verified_scale'
   | 'weighed_on_lapsed_scale';
@@ -112,7 +116,22 @@ export interface TillGateLine {
   readonly quantityMinor: number;
   readonly uom: string;
   readonly unitPriceMinor: number;
+  /**
+   * NEW-1 (B19): what the line actually CHARGES after any promotion attributed to it. Known at the till's commit, at the
+   * store computer and at head office (`lineTotalMinor`); absent at a scan, where only the unit price is known.
+   */
+  readonly chargedMinor?: number;
+  /**
+   * NEW-2 (B6): the product's base unit in the JUDGING side's own catalogue. A line is weighed when this OR the line's
+   * own unit is a weight — so a weighed product cannot skip the scale gate by being sent in another unit.
+   */
+  readonly catalogueUom?: string;
   readonly regulatedFlags?: Readonly<Record<string, unknown>>;
+}
+
+/** Whether a line is sold by WEIGHT (B6): its own unit, or its product's unit in the judging side's catalogue. */
+export function lineIsWeighed(line: Pick<TillGateLine, 'uom' | 'catalogueUom'>): boolean {
+  return isWeighedUom(line.uom) || (line.catalogueUom !== undefined && isWeighedUom(line.catalogueUom));
 }
 
 export interface TillGateContext {
@@ -130,7 +149,7 @@ const qtyWords = (minor: number, uom: string): string => (uom === 'ea' ? `${mino
 export function tillLineRefusals(line: TillGateLine, ctx: TillGateContext): readonly TillRefusal[] {
   const name = typeof line.description === 'string' && line.description.trim() !== '' ? line.description : line.productId;
   // ── B6 · weight only from a scale whose verification is current ────────────────────────────────────────────────
-  return [...productRuleRefusals(line), ...(isWeighedUom(line.uom) ? scaleRefusals(line.productId, name, ctx) : [])];
+  return [...productRuleRefusals(line), ...(lineIsWeighed(line) ? scaleRefusals(line.productId, name, ctx) : [])];
 }
 
 /** The product's own rules (B14 · B19) — what the line is, not where it is weighed. Head office's intake re-asks these. */
@@ -144,6 +163,7 @@ export function productRuleRefusals(line: TillGateLine): readonly TillRefusal[] 
     const verdict = checkSingleUsePlastic({
       lines: [{
         lineId: line.productId, productId: line.productId, unitPriceMinor: line.unitPriceMinor,
+        ...(typeof line.chargedMinor === 'number' && Number.isFinite(line.chargedMinor) ? { chargedMinor: line.chargedMinor } : {}),
         ...(flags.carryBag === true ? { isCarryBag: true } : {}),
         ...(flags.plasticMaterial === undefined ? {} : { material: flags.plasticMaterial }),
         ...(flags.plasticThicknessMicrons === undefined ? {} : { plasticThicknessMicrons: flags.plasticThicknessMicrons }),
@@ -162,7 +182,9 @@ export function productRuleRefusals(line: TillGateLine): readonly TillRefusal[] 
             : `${name} is a ${flags.plasticThicknessMicrons}-micron plastic carry bag, thinner than the ${MIN_CARRY_BAG_MICRONS}-micron minimum. It cannot be sold — offer a ${MIN_CARRY_BAG_MICRONS}-micron, cloth or paper bag.` });
       } else {
         out.push({ reason: b.reason, productId: line.productId, detail: b.detail,
-          laneMessage: `${name} is a carry bag. A bag is sold as its own line at its price — it cannot be given free.` });
+          laneMessage: line.unitPriceMinor > 0
+            ? `${name} is a carry bag and an offer has taken its price to nothing. A bag is sold as its own line at its price — it cannot be given free, even by an offer. Tell the manager.`
+            : `${name} is a carry bag. A bag is sold as its own line at its price — it cannot be given free.` });
       }
     }
   }
@@ -175,7 +197,7 @@ export function productRuleRefusals(line: TillGateLine): readonly TillRefusal[] 
         laneMessage: `${name} is tobacco and its pack size is not on record, so this till cannot tell a whole pack from loose cigarettes. It cannot be sold until head office records the pack size.` });
     } else {
       const verdict = checkRestrictedSale({
-        lines: [{ lineId: line.productId, productId: line.productId, quantityMinor: line.quantityMinor, uom: line.uom, ageRestricted: true, restrictionKind: 'tobacco', minSaleQuantityMinor: flags.packMinimumMinor }],
+        lines: [{ lineId: line.productId, productId: line.productId, quantityMinor: line.quantityMinor, uom: line.uom, ageRestricted: true, restrictionKind: 'tobacco', minSaleQuantityMinor: flags.packMinimumMinor, wholePacksOnly: true }],
         // The age half is the till's own age gate; this asks only the pack rule.
         ageVerification: { verified: true },
         minimumAge: TOBACCO_MINIMUM_AGE,
@@ -183,6 +205,13 @@ export function productRuleRefusals(line: TillGateLine): readonly TillRefusal[] 
       for (const b of verdict.blocks.filter((x) => x.reason === 'below_pack_minimum')) {
         out.push({ reason: 'tobacco_below_pack', productId: line.productId, detail: b.detail,
           laneMessage: `${name} is tobacco and is sold only in whole packs (at least ${qtyWords(flags.packMinimumMinor, line.uom)}). Loose cigarettes cannot be sold — this line is ${qtyWords(line.quantityMinor, line.uom)}.` });
+      }
+      // OB-160 "A": whole packs only — 15 sticks from packs of 10 is one pack and five loose cigarettes.
+      for (const b of verdict.blocks.filter((x) => x.reason === 'not_whole_packs')) {
+        const pack = flags.packMinimumMinor;
+        const down = Math.floor(line.quantityMinor / pack) * pack;
+        out.push({ reason: 'tobacco_not_whole_packs', productId: line.productId, detail: b.detail,
+          laneMessage: `${name} is tobacco and is sold only in whole packs of ${qtyWords(pack, line.uom)}. This line is ${qtyWords(line.quantityMinor, line.uom)}, which is not a whole number of packs — make it ${qtyWords(down, line.uom)} or ${qtyWords(down + pack, line.uom)}.` });
       }
     }
   }

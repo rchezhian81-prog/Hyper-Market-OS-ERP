@@ -75,6 +75,7 @@ import type { AttemptAnswer, TenderCheck, Attempt } from './payment-attempts';
 import type { ReportAnswer } from './peripheral-health';
 import { refundRoomOutsidePoints } from '../../../packages/loyalty/src/wallet';
 import { returnedValueAtOriginalPrices } from '../../../packages/returns/src/exchange';
+import { withoutCardData, type TenderCardDataRemoval } from '../../../packages/tender/src/card-token';
 
 /** The one address this may listen on. Named so the test can assert on it. */
 export const LANE_HOST = '127.0.0.1';
@@ -1374,6 +1375,19 @@ export function startLaneServer(input: {
           parsed = { ...rest, ...(memberRef === undefined ? {} : { customerRef: memberRef }) };
           if (keyed !== undefined && memberRef === undefined) delete (parsed as Record<string, unknown>)['customerRef'];
         }
+        // CARD DATA (C10 · hard rule #3 · NEW-3): a tender keeps a token reference, the last four digits and the network —
+        // nothing else ever reaches this disk. The sale has happened (the card machine said yes, the customer is at the
+        // counter), so refusing it would lose a real sale; instead the forbidden part is REMOVED here, before the seal and
+        // before the disk, and the tender is marked with the field NAMES removed (never the values) for head office to raise
+        // as critical. A mark the till sent itself is dropped first — only this box writes one. Deterministic, so a re-sent
+        // sale is the same record.
+        let cardDataRemoved: readonly TenderCardDataRemoval[] = [];
+        if (!isTag && parsed !== null && typeof parsed === 'object') {
+          const cleaned = cleanTenders(parsed as Record<string, unknown>, isReturn);
+          parsed = cleaned.record;
+          cardDataRemoved = cleaned.removed;
+        }
+
         // A bill partly paid with POINTS (PF-09 step 3 · OB-34 "A"): its refund in money or credit is capped at the MONEY
         // SHARE of the goods coming back — the points share goes back to the member as points, at head office. Refunding
         // more would turn points into rupees. Checked before the disk, in the cashier's words.
@@ -1515,7 +1529,7 @@ export function startLaneServer(input: {
                 if (numberUse?.ok === true) await numberUse.record();
                 if (tenderUse?.ok === true) await tenderUse.record();
               }
-              send(res, 200, loyaltyNote === undefined ? outcome : { ...outcome, loyalty: loyaltyNote }, cors);
+              send(res, 200, withCardNote(loyaltyNote === undefined ? outcome : { ...outcome, loyalty: loyaltyNote }, cardDataRemoved), cors);
             });
           } catch (e) {
             send(res, 200, refusal(noun, e instanceof Error ? e.message : String(e)), cors);
@@ -1537,7 +1551,7 @@ export function startLaneServer(input: {
           // 200 on a refusal too: the *request* was understood, and the answer is in the body. A
           // 5xx here would make a refused sale look like a broken lane, and the cashier needs to
           // know which it is — one means use another lane, the other means try again.
-          send(res, 200, loyaltyNote === undefined ? outcome : { ...outcome, loyalty: loyaltyNote }, cors);
+          send(res, 200, withCardNote(loyaltyNote === undefined ? outcome : { ...outcome, loyalty: loyaltyNote }, cardDataRemoved), cors);
         } catch (e) {
           send(res, 200, refusal(noun, e instanceof Error ? e.message : String(e)), cors);
         }
@@ -1558,4 +1572,52 @@ export function startLaneServer(input: {
       });
     });
   });
+}
+
+/** Drop a tender's till-sent removal mark (only the store computer writes one), then remove card data and mark what went. */
+function cleanTenderList(list: unknown): { readonly list: unknown; readonly removed: readonly TenderCardDataRemoval[] } {
+  if (!Array.isArray(list)) return { list, removed: [] };
+  const unmarked = list.map((t) => {
+    if (t === null || typeof t !== 'object' || Array.isArray(t) || !('cardDataRemoved' in t)) return t;
+    const { cardDataRemoved: _tillSent, ...rest } = t as Record<string, unknown>;
+    void _tillSent;
+    return rest;
+  });
+  const { tenders, removed } = withoutCardData(unmarked);
+  if (removed.length === 0) return { list: unmarked, removed };
+  const marked = tenders.map((t, i) => {
+    const r = removed.find((x) => x.tender === i);
+    return r === undefined || t === null || typeof t !== 'object' ? t : { ...(t as Record<string, unknown>), cardDataRemoved: { fields: r.fields } };
+  });
+  return { list: marked, removed };
+}
+
+/**
+ * NEW-3 (C10 · hard rule #3): a sale's or refund's tenders as this box may keep them — and the exchange top-up tenders a
+ * refund carries. Pure: the same record always gives the same answer.
+ */
+export function cleanTenders(record: Record<string, unknown>, isReturn: boolean): { readonly record: Record<string, unknown>; readonly removed: readonly TenderCardDataRemoval[] } {
+  let out = record;
+  let removed: readonly TenderCardDataRemoval[] = [];
+  if (Array.isArray(record['tenders'])) {
+    const t = cleanTenderList(record['tenders']);
+    out = { ...out, tenders: t.list };
+    removed = t.removed;
+  }
+  const exchange = record['exchange'];
+  if (isReturn && exchange !== null && typeof exchange === 'object' && !Array.isArray(exchange) && Array.isArray((exchange as Record<string, unknown>)['topUpTenders'])) {
+    const t = cleanTenderList((exchange as Record<string, unknown>)['topUpTenders']);
+    out = { ...out, exchange: { ...(exchange as Record<string, unknown>), topUpTenders: t.list } };
+    removed = [...removed, ...t.removed];
+  }
+  return { record: out, removed };
+}
+
+/** The lane's answer, with what was removed (by name) when anything was — so the screen can tell the manager. */
+function withCardNote<T extends object>(answer: T, removed: readonly TenderCardDataRemoval[]): T | (T & { readonly cardDataRemoved: readonly TenderCardDataRemoval[]; readonly cardDataNotice: string }) {
+  if (removed.length === 0) return answer;
+  return {
+    ...answer, cardDataRemoved: removed,
+    cardDataNotice: 'Card details beyond the card token, the last four digits and the card network were sent with this payment. They were NOT kept. Tell the manager.',
+  };
 }

@@ -25,6 +25,11 @@ export interface RestrictedLine {
   readonly restrictionKind?: RestrictionKind;
   /** The smallest quantity that may be sold (one pack), in minor units. Below it is a loose single stick. */
   readonly minSaleQuantityMinor?: number;
+  /**
+   * OB-160 "A" (owner, 16 Oct 2026): tobacco sells in WHOLE packs only — a quantity must be a whole multiple of the pack
+   * size (`minSaleQuantityMinor`). 15 sticks from packs of 10 is a pack and five loose cigarettes.
+   */
+  readonly wholePacksOnly?: boolean;
 }
 
 export interface AgeVerification {
@@ -35,7 +40,7 @@ export interface AgeVerification {
   readonly method?: string;
 }
 
-export type RestrictedBlockReason = 'age_not_verified' | 'underage' | 'below_pack_minimum';
+export type RestrictedBlockReason = 'age_not_verified' | 'underage' | 'below_pack_minimum' | 'not_whole_packs';
 
 export interface RestrictedBlock {
   readonly lineId: string;
@@ -76,6 +81,9 @@ export function checkRestrictedSale(input: {
 
     if (line.restrictionKind === 'tobacco' && line.minSaleQuantityMinor !== undefined && line.quantityMinor < line.minSaleQuantityMinor) {
       blocks.push({ lineId: line.lineId, productId: line.productId, reason: 'below_pack_minimum', detail: `${line.productId}: a below-pack quantity is a loose single cigarette — prohibited by COTPA s.7; sell whole packs only` });
+    } else if (line.restrictionKind === 'tobacco' && line.wholePacksOnly === true && line.minSaleQuantityMinor !== undefined
+      && line.minSaleQuantityMinor > 0 && line.quantityMinor % line.minSaleQuantityMinor !== 0) {
+      blocks.push({ lineId: line.lineId, productId: line.productId, reason: 'not_whole_packs', detail: `${line.productId}: ${line.quantityMinor} is not a whole number of packs of ${line.minSaleQuantityMinor} — the part pack is loose cigarettes (COTPA s.7 · OB-160); sell whole packs only` });
     }
   }
 

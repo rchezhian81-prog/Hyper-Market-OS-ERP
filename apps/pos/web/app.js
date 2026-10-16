@@ -38,6 +38,7 @@ const descOf = (productId) => (session.productName && session.productName(produc
 const WORDS = {
   en: {
     staleShell: 'No connection to the store computer. Billing still works. This price list is what this lane was last given, at',
+    offersRefused: 'Offers this till does not apply, because they would give a carry bag free (a bag is always sold at its price). Tell the manager:',
     scanToBegin: 'Scan an item to begin.', qty: 'Qty', void: 'Void', tender: 'Tender',
     // The age question (M12-FR-04 · Wave 2b PF-03): asked BEFORE the item joins the bill, answered in the signed-in
     // cashier's name. {item} and {age} are filled in from the product the till just scanned.
@@ -174,6 +175,7 @@ const WORDS = {
   },
   ta: {
     staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. பில் போடுவது வேலை செய்யும். இந்த விலைப் பட்டியல் இந்த லேனுக்குக் கடைசியாகக் கொடுக்கப்பட்டது:',
+    offersRefused: 'கேரி பையை இலவசமாக்கும் சலுகைகளை இந்த டில் பயன்படுத்தாது (பை எப்போதும் அதன் விலைக்கே விற்கப்படும்). மேலாளரிடம் சொல்லுங்கள்:',
     scanToBegin: 'தொடங்க ஒரு பொருளை ஸ்கேன் செய்யவும்.', qty: 'எண்ணிக்கை', void: 'நீக்கு',
     ageQuestion: '{item} வயது வரம்புள்ள பொருள். வாடிக்கையாளரின் அடையாள அட்டையைச் சரிபார்க்கவும். வாடிக்கையாளருக்கு {age} வயது அல்லது அதற்கு மேல் ஆகிறதா?',
     ageYes: 'ஆம் — அடையாளம் சரிபார்க்கப்பட்டது, {age} அல்லது அதற்கு மேல்', ageNo: 'இல்லை — விற்க வேண்டாம்',
@@ -1848,6 +1850,18 @@ function paintStale() {
 }
 paintStale();
 el('lang').addEventListener('click', paintStale);
+
+// NEW-1 (B19 · P-08): an offer in the pack that would give a carry bag away is refused by the till, and the lane says so.
+function paintRefusedOffers() {
+  const strip = el('offers-refused');
+  const refused = session && typeof session.refusedOffers === 'function' ? session.refusedOffers() : [];
+  if (!strip) return;
+  strip.hidden = refused.length === 0;
+  if (refused.length === 0) return;
+  strip.textContent = `${t('offersRefused')} ${refused.map((o) => o.offerId).join(', ')}`;
+}
+paintRefusedOffers();
+el('lang').addEventListener('click', paintRefusedOffers);
 
 // The shell existed and nothing ever registered it, so nothing was ever cached and every one of
 // these screens fell back to its sample data the moment the box was unreachable.

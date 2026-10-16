@@ -64,6 +64,8 @@ export function laneScalesFor(pack: StorePack, laneId: string | undefined): Lane
 /** What the box knows about a product it may judge a sale line by. */
 export interface GateProduct {
   readonly name: string;
+  /** NEW-2 (B6): the product's base unit in THIS box's catalogue — whether its line is weighed is decided from it. */
+  readonly baseUom?: string;
   readonly regulatedFlags?: Readonly<Record<string, unknown>>;
 }
 
@@ -89,8 +91,13 @@ export function checkTillRules(
     const quantityMinor = typeof l['quantityMinor'] === 'number' ? l['quantityMinor'] : 0;
     const unitPriceMinor = typeof l['unitPriceMinor'] === 'number' ? l['unitPriceMinor'] : 0;
     const uom = text(l['uom']) ?? 'ea';
+    // NEW-1 (B19): the line as CHARGED, after the promotion the till attributed to it — a free bag is refused here too.
+    const chargedMinor = typeof l['lineTotalMinor'] === 'number' && Number.isFinite(l['lineTotalMinor']) ? l['lineTotalMinor'] : undefined;
     const refusals = tillLineRefusals({
       productId, description: product?.name ?? productId, quantityMinor, uom, unitPriceMinor,
+      ...(chargedMinor === undefined ? {} : { chargedMinor }),
+      // NEW-2 (B6): weighed or not is THIS box's catalogue's answer, whatever unit the record wrote (or left out).
+      ...(product?.baseUom === undefined ? {} : { catalogueUom: product.baseUom }),
       ...(product?.regulatedFlags === undefined ? {} : { regulatedFlags: product.regulatedFlags }),
     }, { scales: ctx.scales, today: ctx.today });
     const first = refusals[0];

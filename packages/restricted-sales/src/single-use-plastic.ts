@@ -26,6 +26,11 @@ export interface PlasticLine {
   readonly productId: string;
   /** The line's unit price in minor units (paisa). A carry bag must be priced above zero. */
   readonly unitPriceMinor: number;
+  /**
+   * The line as CHARGED, after any promotion attributed to it (minor units). A carry bag must cost the customer something:
+   * a priced bag that a promotion takes to zero is a free bag (NEW-1 · B19). Absent = only the unit price is known.
+   */
+  readonly chargedMinor?: number;
   /** From the product master: this SKU is a carry bag. */
   readonly isCarryBag?: boolean;
   /** The bag/item material. Only `plastic` is subject to the minimum-thickness rule. */
@@ -83,9 +88,12 @@ export function checkSingleUsePlastic(input: {
       }
     }
 
-    // Every carry bag, whatever the material, must be billed as its own priced line — never free.
+    // Every carry bag, whatever the material, must be billed as its own priced line — never free. Free is judged on what the
+    // customer is CHARGED: a priced bag a promotion takes to zero is as free as a bag at zero price.
     if (!(line.unitPriceMinor > 0)) {
       blocks.push({ lineId: line.lineId, productId: line.productId, reason: 'carry_bag_not_priced', detail: `${line.productId} is a carry bag — it must be billed as a separate priced line, not given free` });
+    } else if (line.chargedMinor !== undefined && !(line.chargedMinor > 0)) {
+      blocks.push({ lineId: line.lineId, productId: line.productId, reason: 'carry_bag_not_priced', detail: `${line.productId} is a carry bag charged ${line.chargedMinor} after a promotion — a bag must cost the customer its price, never be given free` });
     }
   }
 

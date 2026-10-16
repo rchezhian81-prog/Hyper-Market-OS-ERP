@@ -111,9 +111,22 @@ export function canonicalise(snapshot: CatalogueSnapshot): string {
     .filter((p) => hasTillRuleFlags(p.regulatedFlags))
     .sort((a, b) => (a.productId < b.productId ? -1 : 1))
     .map((p) => [p.productId, stableJson(p.regulatedFlags)].join(FIELD));
+  // NEW-2 (B6): whether a product is WEIGHED is its base unit, and a weight is read off a barcode by the pack's
+  // embedded-barcode rules — so both ride under the signature, or a pack edited from "kg" to "L" would still verify and
+  // the till would sell by weight on a lapsed scale. Only when the pack SAYS it signs them (`unitsSigned`, itself part of
+  // the signed text): every pack `publishPack` signs from now on carries it, and a pack signed before — which a box may
+  // still hold — has no such section and verifies to exactly the bytes it always did. Stripping the marker from a new
+  // pack changes the signed text, so the signature fails (the same technique as `--regulated`).
+  const units = snapshot.unitsSigned === true
+    ? ['--units', ...[...snapshot.products]
+      .sort((a, b) => (a.productId < b.productId ? -1 : 1))
+      .map((p) => [p.productId, p.baseUom].join(FIELD)),
+    '--embedded', ...(snapshot.embeddedRules ?? []).map((r) => stableJson(r))]
+    : [];
   return [snapshot.tenantId, snapshot.version, snapshot.builtAt, ...products, '--', ...barcodes,
     ...(promotions.length === 0 ? [] : ['--promotions', ...promotions]),
-    ...(regulated.length === 0 ? [] : ['--regulated', ...regulated])]
+    ...(regulated.length === 0 ? [] : ['--regulated', ...regulated]),
+    ...units]
     .join(RECORD);
 }
 
@@ -134,6 +147,7 @@ function stableJson(v: unknown): string {
  * something.
  */
 export function publishPack(input: {
+  /** NEW-2: the pack signs its units and barcode rules whatever the builder said (`unitsSigned` is set here). */
   readonly snapshot: CatalogueSnapshot;
   readonly previous?: SignedPack;
   readonly approvals: readonly PriceApproval[];
@@ -147,7 +161,9 @@ export function publishPack(input: {
    */
   readonly unacknowledgedShrinkLimitBps?: number;
 }): PublishResult {
-  const { snapshot, previous } = input;
+  const { previous } = input;
+  // NEW-2 (B6): every pack published from here signs its products' units and its embedded-barcode rules.
+  const snapshot: CatalogueSnapshot = { ...input.snapshot, unitsSigned: true };
 
   if (snapshot.products.length === 0) {
     return {

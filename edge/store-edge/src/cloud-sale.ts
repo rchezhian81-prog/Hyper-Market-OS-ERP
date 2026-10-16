@@ -29,6 +29,7 @@
 // for the cloud to raise as an exception (P-08), never guessed.
 
 import type { IncomingSale, IncomingSaleLine, IncomingTender } from '../../../services/pos/src/index';
+import { readCardTokenReference } from '../../../packages/tender/src/card-token';
 
 type Rec = Record<string, unknown>;
 
@@ -42,11 +43,19 @@ function toCloudTender(t: unknown): IncomingTender {
   const ref = str(r['ref']);
   // The whole points a `loyalty_points` tender spent — stamped by the store computer before the disk (PF-09 step 3).
   const points = typeof r['points'] === 'number' && Number.isSafeInteger(r['points']) && r['points'] > 0 ? r['points'] : undefined;
+  // C10: the card facts a tender keeps travel only when they read cleanly (token, last four, network — nothing else).
+  const card = r['card'] === undefined ? undefined : readCardTokenReference(r['card']);
+  // NEW-3: what the store computer removed before its disk (field names only), for head office to raise.
+  const removedMark = r['cardDataRemoved'];
+  const removedFields = removedMark !== null && typeof removedMark === 'object' && Array.isArray((removedMark as Rec)['fields'])
+    ? ((removedMark as Rec)['fields'] as unknown[]).filter((f): f is string => typeof f === 'string') : undefined;
   return {
     kind: str(r['kind']) ?? '',
     ...(amountMinor === undefined ? {} : { amountMinor }),
     ...(ref === undefined ? {} : { ref }),
     ...(points === undefined ? {} : { points }),
+    ...(card?.ok === true ? { card: card.value } : {}),
+    ...(removedFields === undefined ? {} : { cardDataRemoved: { fields: removedFields } }),
   } as IncomingTender;
 }
 

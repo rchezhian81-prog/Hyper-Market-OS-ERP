@@ -247,7 +247,7 @@ describeOrSkip('FINAL INTEGRATED STORE ACCEPTANCE — supplier to owner report, 
     await ok(call('POST', `/v1/stores/${STORE}/settings`, OWNER, { tradingDayCutoff: '00:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 5_000, cashVarianceToleranceMinor: 5_000, privacySlaDays: 30, warehouseId: BACK }, 'settings'), 'store settings');
     // B6: the lane's weighing scale on head office's register, with a current Legal Metrology stamp (synthetic) — the
     // store pack carries it, and the till and the store computer accept weight from it.
-    await ok(call('POST', '/v1/facilities/scales/SCALE-1', OWNER, { storeId: STORE, laneIds: [LANE], approvalNo: 'LM/TEST/1', capacityGrams: 30_000, lastStampedOn: '2026-01-01', reverificationDueOn: '2099-12-31' }, 'scale-1'), 'weighing scale');
+    await ok(call('POST', '/v1/facilities/scales/SCALE-1', OWNER, { storeId: STORE, laneIds: [LANE], approvalNo: 'LM/TEST/1', capacityGrams: 30_000, lastStampedOn: '2026-01-01', reverificationDueOn: '2099-12-31', certificateRef: 'LM/VC/TEST/1' }, 'scale-1'), 'weighing scale');
     await ok(call('POST', '/v1/inventory/receipt-policy', OWNER, { excessToleranceBp: 0, shortageToleranceBp: 0, nearExpiryDays: 7 }, 'receipt-policy'), 'receipt policy');
     await ok(call('POST', '/v1/catalogue/tax-classes/1006/rates/2017-07-01', OWNER, { rateBps: 500 }, 'tax'), 'tax rate');
     // WF-01 (product onboarding) on PostgreSQL, the leg that reaches the till: tax class and unit → published product →
