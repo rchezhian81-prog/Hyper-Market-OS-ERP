@@ -81,3 +81,21 @@ anything the box runs):
     rm /tmp/set-seal-key.sh
 
 It must end with `CHECK PASSED`. Then tell the owner "the seal key helper passed".
+
+## Round 38: the refusal now says why (16 Oct 2026)
+
+On 16 Oct the demo update was refused again with "still unfilled: BOX_HISTORY_SEAL_KEY" (the release from PR #785). Every
+release that includes round 38 makes the refusal more specific. It never shows a value.
+
+1. **How** the setting is unfilled:
+   - there is no line for it in this file at all;
+   - the line has no value after the `=`;
+   - the line still holds the placeholder;
+   - or its name is in the file but the line is malformed: commented out, `export ` in front, glued to another line, or no `=` straight after the name.
+2. **Which file** was read, **as which account** (user name and number), and how many settings it holds.
+
+**What to do after the next refused update:**
+1. Open the GitHub log and find the step "Deploy this exact commit over SSH".
+2. Read the `still unfilled:` line and the `read:` line under it.
+3. Compare with what you checked yourself. If the `read:` line names a different file or a different account than the one you checked, add the setting to the file it names, as that account or with `sudo`. Use `infra/deploy/set-box-history-seal-key.sh` and keep the file's owner and permissions.
+4. Never paste the value anywhere.

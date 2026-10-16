@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 // @ts-expect-error — plain .mjs script module, imported for its pure helpers (no types file needed).
-import { parseEnv, findUnsetSettings, interpretProbe, interpretSync, rollup, renderReport, PLACEHOLDER, tillProbes, interpretLaneSocket, interpretTillScreen } from '../../scripts/standup-check.mjs';
+import { parseEnv, findUnsetSettings, interpretProbe, interpretSync, rollup, renderReport, PLACEHOLDER, tillProbes, interpretLaneSocket, interpretTillScreen, stateWords } from '../../scripts/standup-check.mjs';
 
 /**
  * The stand-up readiness check is what a non-programmer pilot lead runs to get a plain-English
@@ -117,4 +117,30 @@ describe('standup-check — the installed one-PC till (Stage D, KL-08)', () => {
     expect(r.fix).toMatch(/start-till/);
     expect(r.fix).toMatch(/EDGE_SCREEN_PORT/);
   });
+});
+
+// Round 38 · OB-123: the demo release kept being refused with "still unfilled: BOX_HISTORY_SEAL_KEY" while a person on the
+// box saw a good line. The refusal now says HOW it is unfilled, and the file and account it read — names only, never a value.
+describe('round 38 · OB-123: a refused setting says how it is unfilled', () => {
+  const NAME = 'BOX_HISTORY_SEAL_KEY';
+  const seal = (text: string) => {
+    const f = findUnsetSettings(parseEnv(text)).find((x: { key: string }) => x.key === NAME);
+    return f === undefined ? undefined : stateWords(f, text);
+  };
+  it('absent from the file at all', () => { expect(seal('A=1\n')).toMatch(/no line for it in this file at all/); });
+  it('empty, and still the placeholder', () => {
+    expect(seal(`${NAME}=\n`)).toMatch(/has no value after the =/);
+    expect(seal(`${NAME}=REPLACE_WITH_a_secret\n`)).toMatch(/still holds the placeholder/);
+  });
+  it('named in the file but malformed: export, glued, commented out, or no = straight after the name', () => {
+    expect(seal(`export ${NAME}=${'k'.repeat(40)}\n`)).toMatch(/"export " in front/);
+    expect(seal(`OTHER=1${NAME}=${'k'.repeat(40)}\n`)).toMatch(/glued to the end of another line/);
+    expect(seal(`# ${NAME}=${'k'.repeat(40)}\n`)).toMatch(/commented out/);
+    expect(seal(`${NAME} : ${'k'.repeat(40)}\n`)).toMatch(/no = straight after the name/);
+  });
+  it('never says a value', () => {
+    const secret = `s3cr3t-${'z'.repeat(40)}`;
+    for (const t of [`export ${NAME}=${secret}\n`, `X=1${NAME}=${secret}\n`]) expect(seal(t)).not.toContain(secret);
+  });
+  it('a good line is not refused', () => { expect(seal(`${NAME}=${'k'.repeat(48)}\n`)).toBeUndefined(); });
 });
