@@ -32,6 +32,7 @@
 
 import {
   reconcile,
+  assertReferenceIsNotACardNumber,
   type PosTender,
   type SettlementLine,
   type ReconException,
@@ -57,7 +58,8 @@ export type BatchRefusal =
   | 'lines_do_not_sum_to_gross'
   | 'gross_minus_fees_is_not_net'
   | 'empty_batch'
-  | 'duplicate_batch';
+  | 'duplicate_batch'
+  | 'reversal_without_an_original';
 
 export interface BatchImportResult {
   readonly batchId: string;
@@ -77,7 +79,9 @@ export function importSettlementBatch(
   batch: SettlementBatch,
   alreadyImportedBatchIds: readonly string[] = [],
 ): BatchImportResult {
-  const lineTotalMinor = batch.lines.reduce((sum, l) => sum + l.amountMinor, 0);
+  // C13: a refund or chargeback line is money the provider took BACK, so it counts against the gross. A file of captures
+  // only (no line typed) adds up exactly as it always did.
+  const lineTotalMinor = batch.lines.reduce((sum, l) => sum + (l.type === 'refund' || l.type === 'chargeback' ? -l.amountMinor : l.amountMinor), 0);
   const base = { batchId: batch.batchId, lineTotalMinor };
 
   if (alreadyImportedBatchIds.includes(batch.batchId)) {
@@ -90,6 +94,17 @@ export function importSettlementBatch(
   }
   if (batch.lines.length === 0) {
     return { ...base, accepted: false, outcome: 'empty_batch', detail: 'the batch has no lines' };
+  }
+  const reversal = batch.lines.find((l) => (l.type === 'refund' || l.type === 'chargeback') && (l.originalRef === undefined || l.originalRef.trim() === ''));
+  if (reversal !== undefined || batch.lines.some((l) => l.amountMinor < 0)) {
+    return {
+      ...base,
+      accepted: false,
+      outcome: 'reversal_without_an_original',
+      detail: reversal !== undefined
+        ? `line ${reversal.id} is a ${reversal.type} with no original reference — nobody could say which sale it reverses, so the file cannot be reconciled`
+        : 'a line carries a negative amount — amounts are magnitudes, and a refund or chargeback says so by its type',
+    };
   }
   if (lineTotalMinor !== batch.declaredGrossMinor) {
     return {
@@ -124,7 +139,17 @@ export type SettlementFinding =
   | 'short_settled'
   | 'over_settled'
   | 'unknown_credit'
-  | 'ambiguous_reference';
+  | 'ambiguous_reference'
+  /** C13: the provider took money back because a cardholder disputed a payment. Always a problem. */
+  | 'chargeback'
+  /** C13: the till refunded a customer and the provider has not debited it yet — not yet late. Information only. */
+  | 'refund_awaiting_settlement'
+  /** C13: the till refunded a customer, the provider's cycle has passed, and no refund is on its file. */
+  | 'refund_overdue'
+  /** C13: the provider debited a refund the till never gave. */
+  | 'refund_without_a_till_record'
+  /** C13: the provider's refund and the till's refund for the same sale differ. */
+  | 'refund_amount_mismatch';
 
 export interface SettlementException {
   readonly finding: SettlementFinding;
@@ -139,9 +164,22 @@ export interface SettlementException {
   readonly needsInvestigation: boolean;
 }
 
+/** C13: a refund the till gave to a card/UPI tender — the capture it reverses, by that capture's reference. */
+export interface PosRefund {
+  readonly id: string;
+  /** The reference of the card/UPI tender being refunded (never a card number). */
+  readonly originalRef: string;
+  readonly amountMinor: number;
+  /** YYYY-MM-DD the till gave the refund. */
+  readonly refundedOn: string;
+}
+
 export interface SettlementReviewInput {
   readonly tenders: readonly (PosTender & { readonly capturedOn: string })[];
+  /** Every provider-file line: captures (untyped), refunds and chargebacks. */
   readonly credits: readonly SettlementLine[];
+  /** C13: refunds the till gave to card/UPI tenders. Absent = none read (said in the review's detail). */
+  readonly refunds?: readonly PosRefund[];
   /** The provider's contracted settlement cycle in days (per-tenant, e.g. T+2). */
   readonly settlementCycleDays: number;
   /** Today, as YYYY-MM-DD. */
@@ -151,6 +189,8 @@ export interface SettlementReviewInput {
 export interface SettlementReview {
   readonly matchedCount: number;
   readonly matchedValueMinor: number;
+  /** C13: till refunds the provider's file debited for the same sale and amount. */
+  readonly matchedRefundCount: number;
   readonly exceptions: readonly SettlementException[];
   /** Money that is simply not due yet — reported so the shop can see its cash pipeline. */
   readonly awaitingValueMinor: number;
@@ -169,20 +209,24 @@ function daysBetween(from: string, to: string): number {
  * not: decide which unmatched lines are **late** and which are merely **not due yet**.
  */
 export function reviewSettlement(input: SettlementReviewInput): SettlementReview {
-  const result = reconcile(input.tenders, input.credits);
+  // Captures go to the M23-FR-03 matcher; refunds and chargebacks reverse a capture and are matched on their own (C13).
+  const captures = input.credits.filter((c) => c.type === undefined || c.type === 'capture');
+  const result = reconcile(input.tenders, captures);
   const tenderById = new Map(input.tenders.map((t) => [t.id, t]));
   const tenderByRef = new Map(input.tenders.map((t) => [t.ref, t]));
-  const creditById = new Map(input.credits.map((c) => [c.id, c]));
+  const creditById = new Map(captures.map((c) => [c.id, c]));
 
   const exceptions: SettlementException[] = [];
 
   for (const e of result.exceptions) {
     exceptions.push(classify(e, tenderById, tenderByRef, creditById, input));
   }
+  const reversals = reviewReversals(input, tenderByRef);
+  exceptions.push(...reversals.exceptions);
 
   const matchedValueMinor = result.matched.reduce((s, m) => s + m.amountMinor, 0);
   const awaitingValueMinor = exceptions
-    .filter((e) => e.finding === 'awaiting_settlement')
+    .filter((e) => e.finding === 'awaiting_settlement' || e.finding === 'refund_awaiting_settlement')
     .reduce((s, e) => s + e.valueMinor, 0);
   const atRiskValueMinor = exceptions
     .filter((e) => e.needsInvestigation)
@@ -195,21 +239,99 @@ export function reviewSettlement(input: SettlementReviewInput): SettlementReview
     ambiguous_reference: 2,
     over_settled: 3,
     unknown_credit: 4,
-    awaiting_settlement: 5,
+    awaiting_settlement: 9,
+    chargeback: 0,
+    refund_without_a_till_record: 1,
+    refund_overdue: 1,
+    refund_amount_mismatch: 2,
+    refund_awaiting_settlement: 9,
   };
   exceptions.sort((a, b) => rank[a.finding] - rank[b.finding] || b.valueMinor - a.valueMinor || a.ref.localeCompare(b.ref));
 
+  const refundsNote = input.refunds === undefined ? '; till refunds were not read' : reversals.matchedRefunds > 0 ? `; ${reversals.matchedRefunds} refund(s) matched` : '';
   return {
     matchedCount: result.matched.length,
     matchedValueMinor,
+    matchedRefundCount: reversals.matchedRefunds,
     exceptions,
     awaitingValueMinor,
     atRiskValueMinor,
     detail:
-      atRiskValueMinor === 0
+      (atRiskValueMinor === 0
         ? `${result.matched.length} settled and matched; ${awaitingValueMinor} not due yet; nothing at risk`
-        : `${atRiskValueMinor} at risk across ${exceptions.filter((e) => e.needsInvestigation).length} exception(s); ${awaitingValueMinor} simply not due yet`,
+        : `${atRiskValueMinor} at risk across ${exceptions.filter((e) => e.needsInvestigation).length} exception(s); ${awaitingValueMinor} simply not due yet`) + refundsNote,
   };
+}
+
+/**
+ * C13: the provider file's refunds and chargebacks, against the till's refunds. Matched on the ORIGINAL capture's
+ * reference and the amount — never a card number (every reference is checked). For each original reference, equal
+ * amounts pair first; what is left over on both sides pairs as a mismatch; what is left on one side alone is a till
+ * refund the provider has not debited (late or not yet) or a provider refund the till never gave. Every chargeback is
+ * an exception for a person: the provider has already taken the money back.
+ */
+function reviewReversals(
+  input: SettlementReviewInput,
+  tenderByRef: Map<string, PosTender & { capturedOn: string }>,
+): { readonly exceptions: readonly SettlementException[]; readonly matchedRefunds: number } {
+  const exceptions: SettlementException[] = [];
+  const lines = input.credits.filter((c) => c.type === 'refund' || c.type === 'chargeback');
+  for (const l of lines) { assertReferenceIsNotACardNumber(l.ref); if (l.originalRef !== undefined) assertReferenceIsNotACardNumber(l.originalRef); }
+  for (const r of input.refunds ?? []) assertReferenceIsNotACardNumber(r.originalRef);
+
+  for (const cb of lines.filter((l) => l.type === 'chargeback').sort((a, b) => a.id.localeCompare(b.id))) {
+    const original = cb.originalRef === undefined ? undefined : tenderByRef.get(cb.originalRef);
+    exceptions.push({
+      finding: 'chargeback',
+      ref: cb.originalRef ?? cb.ref,
+      settlementId: cb.id,
+      ...(original === undefined ? {} : { tenderId: original.id }),
+      valueMinor: cb.amountMinor,
+      needsInvestigation: true,
+      detail: original === undefined
+        ? `the provider took back ${cb.amountMinor} as a chargeback against ${cb.originalRef ?? 'an unnamed payment'}, which matches no till sale in this review — find the sale and decide whether to dispute it`
+        : `the provider took back ${cb.amountMinor} as a chargeback against the sale paid under ${cb.originalRef} (taken ${original.capturedOn}) — gather the bill and the evidence, and decide with the provider whether to dispute it`,
+    });
+  }
+
+  let matchedRefunds = 0;
+  const providerRefunds = lines.filter((l) => l.type === 'refund');
+  const refs = new Set<string>([...providerRefunds.map((l) => l.originalRef ?? l.ref), ...(input.refunds ?? []).map((r) => r.originalRef)]);
+  for (const ref of [...refs].sort()) {
+    const fromFile = providerRefunds.filter((l) => (l.originalRef ?? l.ref) === ref).sort((a, b) => a.amountMinor - b.amountMinor || a.id.localeCompare(b.id));
+    const fromTill = (input.refunds ?? []).filter((r) => r.originalRef === ref).sort((a, b) => a.amountMinor - b.amountMinor || a.id.localeCompare(b.id));
+    const leftFile = [...fromFile];
+    const leftTill: PosRefund[] = [];
+    for (const t of fromTill) {
+      const i = leftFile.findIndex((l) => l.amountMinor === t.amountMinor);
+      if (i >= 0) { leftFile.splice(i, 1); matchedRefunds += 1; } else leftTill.push(t);
+    }
+    while (leftFile.length > 0 && leftTill.length > 0) {
+      const l = leftFile.shift()!;
+      const t = leftTill.shift()!;
+      exceptions.push({
+        finding: 'refund_amount_mismatch', ref, settlementId: l.id, valueMinor: Math.abs(l.amountMinor - t.amountMinor), needsInvestigation: true,
+        detail: `the till refunded ${t.amountMinor} against ${ref} and the provider debited ${l.amountMinor} — ${l.amountMinor > t.amountMinor ? 'the provider took more than the customer was given' : 'the customer may have received less than the till promised'}`,
+      });
+    }
+    for (const l of leftFile) {
+      exceptions.push({
+        finding: 'refund_without_a_till_record', ref, settlementId: l.id, valueMinor: l.amountMinor, needsInvestigation: true,
+        detail: `the provider debited a refund of ${l.amountMinor} against ${ref} that no till refund accounts for — money left the shop that nobody here gave back`,
+      });
+    }
+    for (const t of leftTill) {
+      const ageDays = daysBetween(t.refundedOn, input.asOf);
+      const late = ageDays > input.settlementCycleDays;
+      exceptions.push({
+        finding: late ? 'refund_overdue' : 'refund_awaiting_settlement', ref, valueMinor: t.amountMinor, ageDays, needsInvestigation: late,
+        detail: late
+          ? `the till refunded ${t.amountMinor} against ${ref} ${ageDays} days ago and the provider's file still shows no refund (T+${input.settlementCycleDays}) — the customer may not have their money; chase the provider`
+          : `the till refunded ${t.amountMinor} against ${ref} ${ageDays} day(s) ago; the provider settles at T+${input.settlementCycleDays}, so its refund is not due yet`,
+      });
+    }
+  }
+  return { exceptions, matchedRefunds };
 }
 
 function classify(

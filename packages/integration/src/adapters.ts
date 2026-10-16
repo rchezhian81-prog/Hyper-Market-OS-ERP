@@ -146,6 +146,12 @@ export interface AdapterConfig {
    * next year.
    */
   readonly retains?: readonly string[];
+  /**
+   * Payments only (C12 · ADR-0002): where this provider keeps and processes the shop's payment data, as ISO 3166 —
+   * `IN` or `IN-<state>`. A payment adapter declaring anywhere else is refused registration. Absent = not declared
+   * (the registration says so in its words; requiring it is an owner decision, not assumed here).
+   */
+  readonly dataRegion?: string;
   readonly enabled: boolean;
   /** Queue traffic during an outage rather than failing the caller (hard rule #1). */
   readonly queueOnOutage?: boolean;
@@ -157,7 +163,8 @@ export type AdapterRegistrationOutcome =
   | 'provider_not_authorised'
   | 'credential_inline'
   | 'not_certified'
-  | 'sandbox_credential_in_production';
+  | 'sandbox_credential_in_production'
+  | 'payment_data_outside_india';
 
 export interface AdapterRegistration {
   readonly adapterId: string;
@@ -179,6 +186,9 @@ export const PERMITTED_PAYMENT_RETENTION: readonly string[] = [
   'issuing_bank',
   'network_name',
 ];
+
+/** India or an Indian state, ISO 3166 (`IN`, `IN-MH`) — the same rule the API's boot check applies (C12). */
+const PAYMENT_DATA_REGION = /^IN(-[A-Z]{2})?$/;
 
 /** A credential that is a literal rather than a vault pointer (hard rule #4). */
 function looksInline(ref: string): boolean {
@@ -232,6 +242,14 @@ export function registerAdapter(input: {
         detail: `this adapter declares it retains ${notPermitted.join(', ')}, which is not on the permitted list — refused outright, with no override anywhere (hard rule #3). A payment adapter may keep only ${PERMITTED_PAYMENT_RETENTION.join(', ')}`,
       };
     }
+    if (c.dataRegion !== undefined && !PAYMENT_DATA_REGION.test(c.dataRegion.trim().toUpperCase())) {
+      return {
+        ...base,
+        registered: false,
+        outcome: 'payment_data_outside_india',
+        detail: `${c.vendor} declares it keeps the shop's payment data in "${c.dataRegion.trim()}", which is not India — payment data stays in an India region (C12 · ADR-0002); refused`,
+      };
+    }
     const entry = input.matrix.find(
       (e) => e.category === 'payment' && e.vendor.toLowerCase() === c.vendor.toLowerCase(),
     );
@@ -261,7 +279,7 @@ export function registerAdapter(input: {
     ...base,
     registered: true,
     outcome: 'registered',
-    detail: `${c.vendor} ${c.category.replace(/_/g, ' ')} adapter registered in ${input.environment}${c.queueOnOutage === true ? ', queueing during an outage rather than failing the caller' : ''}`,
+    detail: `${c.vendor} ${c.category.replace(/_/g, ' ')} adapter registered in ${input.environment}${c.queueOnOutage === true ? ', queueing during an outage rather than failing the caller' : ''}${c.category !== 'payment' ? '' : c.dataRegion === undefined ? '; where it keeps payment data is not declared' : `; payment data kept in ${c.dataRegion.trim().toUpperCase()}`}`,
   };
 }
 

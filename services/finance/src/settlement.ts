@@ -23,13 +23,13 @@ import {
   importSettlementBatch, reviewSettlement,
   openInvestigation, resolveInvestigation, ageInvestigations,
   type SettlementBatch, type SettlementException, type SettlementFinding,
-  type Investigation, type InvestigationOutcome,
+  type Investigation, type InvestigationOutcome, type PosRefund,
 } from '../../../packages/settlement/src/settlement';
 import type { PosTender, SettlementLine } from '../../../packages/reconciliation/src/reconciliation';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 
 export type { SettlementBatch } from '../../../packages/settlement/src/settlement';
-export type { Investigation } from '../../../packages/settlement/src/settlement';
+export type { Investigation, PosRefund } from '../../../packages/settlement/src/settlement';
 export type { PosTender, SettlementLine } from '../../../packages/reconciliation/src/reconciliation';
 
 const OUTCOMES: readonly InvestigationOutcome[] = ['provider_error_recovered', 'provider_fee_not_an_exception', 'till_error', 'timing_only', 'written_off', 'fraud_suspected'];
@@ -46,6 +46,12 @@ export interface SettlementRoutesDeps {
   readonly credits: (tenantId: string) => Promise<readonly SettlementLine[]> | readonly SettlementLine[];
   /** Electronic tenders captured in `[fromIso, toIso)`, for the review's ageing window. */
   readonly electronicTenders: (tenantId: string, fromIso: string, toIso: string) => Promise<readonly CapturedTender[]> | readonly CapturedTender[];
+  /**
+   * C13: refunds the till gave to card/UPI tenders in `[fromIso, toIso)`, each by the reference of the capture it reverses
+   * — matched to the refund lines of the provider's uploaded file. Optional: absent, the review says till refunds were not
+   * read (never that there were none).
+   */
+  readonly electronicRefunds?: (tenantId: string, fromIso: string, toIso: string) => Promise<readonly PosRefund[]> | readonly PosRefund[];
   /** Every investigation, folded from its lifecycle events (bounded — exceptions are low-volume). */
   readonly investigations: (tenantId: string) => Promise<readonly Investigation[]> | readonly Investigation[];
   readonly recordInvestigationOpened: (tenantId: string, inv: Investigation) => Promise<void> | void;
@@ -90,7 +96,10 @@ function readBatch(body: unknown): SettlementBatch | undefined {
     && isDate(b.settlementDate)
     && Array.isArray(b.lines)
     && ints.every((n) => Number.isInteger(n))
-    && b.lines.every((l) => typeof l.id === 'string' && typeof l.ref === 'string' && Number.isInteger(l.amountMinor));
+    && b.lines.every((l) => typeof l.id === 'string' && typeof l.ref === 'string' && Number.isInteger(l.amountMinor)
+      // C13: a line may say it is a capture, a refund or a chargeback, and name the capture it reverses.
+      && (l.type === undefined || l.type === 'capture' || l.type === 'refund' || l.type === 'chargeback')
+      && (l.originalRef === undefined || typeof l.originalRef === 'string'));
   return ok ? (b as SettlementBatch) : undefined;
 }
 
@@ -104,7 +113,7 @@ export function settlementRoutes(deps: SettlementRoutesDeps): readonly Route[] {
         if (batch === undefined) {
           throw apiError(400, {
             code: 'not_readable_as_a_batch',
-            whatHappened: 'This payload could not be read as a settlement batch — it needs a batch id, provider, currency, settlement date, lines (id/ref/amount) and whole gross/fees/net figures.',
+            whatHappened: 'This payload could not be read as a settlement batch — it needs a batch id, provider, currency, settlement date, lines (id/ref/amount, and optionally type capture/refund/chargeback with the originalRef it reverses) and whole gross/fees/net figures.',
             wasItSaved: 'not_saved',
             nextSafeAction: 'Fix the file and send it again. Nothing was imported.',
           });
@@ -161,7 +170,9 @@ export function settlementRoutes(deps: SettlementRoutesDeps): readonly Route[] {
         const from = shiftDays(asOf, -windowDays);
         const tenders = await deps.electronicTenders(ctx.tenantId, `${from}T00:00:00.000Z`, `${shiftDays(asOf, 1)}T00:00:00.000Z`);
         const credits = await deps.credits(ctx.tenantId);
-        const review = reviewSettlement({ tenders, credits, settlementCycleDays: cycleDays, asOf });
+        const refunds = deps.electronicRefunds === undefined ? undefined
+          : await deps.electronicRefunds(ctx.tenantId, `${from}T00:00:00.000Z`, `${shiftDays(asOf, 1)}T00:00:00.000Z`);
+        const review = reviewSettlement({ tenders, credits, ...(refunds === undefined ? {} : { refunds }), settlementCycleDays: cycleDays, asOf });
 
         // The window is part of the answer, not a hidden assumption: an unmatched tender older than
         // `from` is out of scope here, not settled, and belongs to an open investigation.

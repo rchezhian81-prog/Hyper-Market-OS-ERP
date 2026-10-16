@@ -85,7 +85,8 @@ export function integrationRoutes(deps: IntegrationDeps): readonly Route[] {
         if (!CATEGORIES.includes(b['category'] as AdapterCategory) || !isStr(b['vendor']) || !isStr(b['credentialRef'])
           || !(ENVIRONMENTS as readonly string[]).includes(b['environment'] as string) || typeof b['enabled'] !== 'boolean'
           || retains === undefined
-          || (b['queueOnOutage'] !== undefined && typeof b['queueOnOutage'] !== 'boolean')) {
+          || (b['queueOnOutage'] !== undefined && typeof b['queueOnOutage'] !== 'boolean')
+          || (b['dataRegion'] !== undefined && !isStr(b['dataRegion']))) {
           throw apiError(400, { code: 'not_readable_as_an_adapter', whatHappened: 'An adapter needs a category, a vendor, a vault credentialRef, an environment (sandbox/production) and an enabled flag; retains (payments) and queueOnOutage are optional.', wasItSaved: 'not_saved', nextSafeAction: 'Send the adapter fields. Nothing was registered.' });
         }
         const environment = b['environment'] as 'sandbox' | 'production';
@@ -94,6 +95,8 @@ export function integrationRoutes(deps: IntegrationDeps): readonly Route[] {
           environment, credentialRef: b['credentialRef'] as string, enabled: b['enabled'] as boolean,
           ...(retains.length > 0 ? { retains } : {}),
           ...(typeof b['queueOnOutage'] === 'boolean' ? { queueOnOutage: b['queueOnOutage'] } : {}),
+          // C12: where a payment provider keeps the shop's payment data (India only — `registerAdapter` refuses elsewhere).
+          ...(isStr(b['dataRegion']) ? { dataRegion: b['dataRegion'] } : {}),
         };
         const result = registerAdapter({ config, matrix: await deps.matrix(ctx.tenantId), environment });
         if (!result.registered) {

@@ -126,6 +126,9 @@ services:
       NODE_ENV: production
       # Never 'production' unless the migration really is running against live data.
       MIGRATION_TARGET_KIND: ${MIGRATION_TARGET_KIND:-rehearsal}
+      # C12 · ADR-0002: payment data stays in India (IN, or IN-<state>). Any other value and the API does not start.
+      PAYMENT_DATA_REGION: ${PAYMENT_DATA_REGION:-IN}
+      PAYMENT_BACKUP_REGION: ${PAYMENT_BACKUP_REGION:-}
     ports:
       - '127.0.0.1:${API_PORT:-8081}:8081'
     read_only: true

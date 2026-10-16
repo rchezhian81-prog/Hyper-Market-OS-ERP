@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { loadCodeEntries, scan, sample, type Rule } from './lib/scan.js';
+import { readCardTokenReference, CARD_TENDER_PERMITTED_FIELDS } from '../../packages/tender/src/card-token';
+import { checkLegacyCardPurge, type LegacyRecord } from '../../packages/tender/src/legacy-card-purge';
+import { generateLegacyDataset } from '../../packages/migration/src/synthetic';
+import { PERMITTED_PAYMENT_RETENTION } from '../../packages/integration/src/adapters';
 
 // Hard rule #3 (CLAUDE.md) / roadmap §35: never store a card number, CVV or
 // expiry date. Provider tokens only. This guardrail trips if the codebase ever
@@ -30,6 +34,14 @@ const ALLOWLIST: readonly { readonly file: string; readonly reason: string }[] =
     reason:
       'the log-redaction denylist — these names appear so their values are removed, never stored',
   },
+  {
+    // C10 (v2.1): argued for here, as the note above asks. To refuse a legacy extract whose columns ARE the card number,
+    // the security code or the card expiry, the check has to know those column headers by name. It is the code that keeps
+    // card data OUT of a migration — it holds no value, and the third test below holds it to that like the redactor.
+    file: 'packages/tender/src/legacy-card-purge.ts',
+    reason:
+      'the legacy-card-purge check (C10) — it names card-data column headers so a legacy extract carrying them is refused before the load',
+  },
 ];
 
 describe('guardrail: no raw card data (hard rule #3)', () => {
@@ -40,8 +52,8 @@ describe('guardrail: no raw card data (hard rule #3)', () => {
   });
 
   it('the exemption list stays tiny and every entry is justified', () => {
-    // Growth here is the thing to notice. One entry today; a second must be argued for.
-    expect(ALLOWLIST).toHaveLength(1);
+    // Growth here is the thing to notice. Two entries today (the second argued for above, C10); a third must be argued for.
+    expect(ALLOWLIST).toHaveLength(2);
     expect(ALLOWLIST.every((a) => a.reason.length > 30)).toBe(true);
   });
 
@@ -79,5 +91,40 @@ describe('guardrail: no raw card data (hard rule #3)', () => {
     );
     const findings = scan([bad], RULES);
     expect(findings.length).toBeGreaterThanOrEqual(3);
+  });
+});
+
+// C10 (v2.1 addendum · M12): the tender surface stores ONLY a network-token reference plus the last four digits and the
+// network — never the card number, the security code or the expiry — and a legacy-card-purge check passes.
+describe('guardrail: a card tender keeps only the token reference, the last four and the network (C10)', () => {
+  it('the permitted card fields are exactly three, and none of them is card data', () => {
+    expect([...CARD_TENDER_PERMITTED_FIELDS]).toEqual(['tokenRef', 'last4', 'network']);
+    // The payment adapters' retention allowlist agrees: a token, the last four and the network — never more of the card.
+    for (const f of ['provider_token', 'last4', 'network_name']) expect(PERMITTED_PAYMENT_RETENTION).toContain(f);
+  });
+
+  it('never keeps a full number, a security code or an expiry, whatever the field is called', () => {
+    const pan = ['5555', '5555', '5555', '4444'].join('');
+    for (const extra of [{ number: pan }, { securityCode: '123' }, { validThru: '12/29' }, { first6: '555555' }, { track: 'x' }]) {
+      const r = readCardTokenReference({ tokenRef: 'ntok_1', last4: '4444', network: 'mastercard', ...extra });
+      expect(r.ok, JSON.stringify(Object.keys(extra))).toBe(false);
+    }
+    expect(readCardTokenReference({ tokenRef: `ntok_${pan}`, last4: '4444', network: 'mastercard' }).ok).toBe(false);
+  });
+
+  it('the legacy-card-purge check passes on the legacy data this repository rehearses with', () => {
+    const ds = generateLegacyDataset();
+    const records: LegacyRecord[] = (['products', 'stock', 'customers', 'suppliers', 'documents', 'lines'] as const)
+      .flatMap((k) => (ds[k] as readonly object[]).map((row, i) => ({ source: `synthetic.${k}`, rowRef: String(i), fields: row as Record<string, unknown> })));
+    const r = checkLegacyCardPurge(records);
+    expect(r.findings).toEqual([]);
+    expect(r.passed).toBe(true);
+  });
+
+  it('the purge check\'s tripwire fires on a known-bad legacy row', () => {
+    const pan = ['4111', '1111', '1111', '1111'].join('');
+    const r = checkLegacyCardPurge([{ source: 'bad', rowRef: '1', fields: { remarks: pan, cvc: '000' } }]);
+    expect(r.passed).toBe(false);
+    expect(r.findings.length).toBe(2);
   });
 });

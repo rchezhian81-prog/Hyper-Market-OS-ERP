@@ -7,6 +7,7 @@
 
 import { add, subtract, zero, compare, type Money } from '../../contracts/src/money';
 import type { TenderKind, TenderStatus } from '../../contracts/src/enums';
+import type { CardTokenReference } from './card-token';
 
 export interface Tender {
   readonly kind: TenderKind;
@@ -17,6 +18,11 @@ export interface Tender {
    * the machine was asked (audit PF-06). Never card data (hard rule #3).
    */
   readonly ref?: string;
+  /**
+   * C10: on a card tender, the ONLY card facts kept — the network-token reference, the last four digits and the network.
+   * Read through `readCardTokenReference`, which refuses any other field and any value shaped like a card number.
+   */
+  readonly card?: CardTokenReference;
 }
 
 /** Statuses that count as actually paid. 'pending'/'uncertain'/'declined' do not. */
