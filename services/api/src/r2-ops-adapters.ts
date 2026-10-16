@@ -11,12 +11,16 @@
 import { createHash } from 'node:crypto';
 import { makeEvent } from '../../../packages/contracts/src/event';
 import { ConcurrencyConflictError, type EventStore } from '../../../packages/persistence/src/event-store';
-import { STREAM, streamName, writeOffAdapter, wasteAdapter, productMasterAdapter } from './adapters';
+import { STREAM, streamName, writeOffAdapter, wasteAdapter, productMasterAdapter, priceListAdapter, saleStockLocationOf } from './adapters';
 import type { WasteAnalyticsDeps } from '../../inventory/src/waste-analytics';
 import type { LocationBranches } from '../../inventory/src/location-scope';
 import { SlotAlreadyRecordedError, type FoodSafetyDeps } from '../../platform/src/food-safety';
 import type { FoodSafetyCheck, FoodSafetyCheckRecord } from '../../../packages/facilities/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
+import type { PriceIntegrityAgeingDeps } from '../../pricing/src/price-integrity-ageing';
+import type { PriceObservation, ChargedLine } from '../../../packages/self-checkout/src/index';
+import type { IncomingSale } from '../../pos/src/sale-intake';
+import { locationIsItsOwnBranch } from '../../inventory/src/location-scope';
 
 const digest = (key: string): string => createHash('sha256').update(key).digest('hex').slice(0, 16);
 const all = async <T>(store: EventStore, tenantId: string, stream: string, type: string): Promise<T[]> =>
@@ -82,5 +86,46 @@ export function foodSafetyAdapter(input: {
       }
     },
     ...(input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit }),
+  };
+}
+
+// ── D-7 price integrity: observations beside the price of record and the till's charges ────────────────────────
+
+const PRICE_OBSERVATIONS = streamName(STREAM.pricing, 'integrity-observations');
+
+export function priceIntegrityAgeingAdapter(input: { readonly store: EventStore; readonly now: () => string; readonly locationBranches?: LocationBranches }): PriceIntegrityAgeingDeps {
+  const observations = (tenantId: string) => all<PriceObservation>(input.store, tenantId, PRICE_OBSERVATIONS, 'PriceObservationRecorded');
+  return {
+    now: input.now,
+    observations: async (tenantId, branchId) => (await observations(tenantId)).filter((o) => o.branchId === branchId),
+    observation: async (tenantId, observationId) => (await observations(tenantId)).find((o) => o.observationId === observationId),
+    recordObservation: async (tenantId, obs) => {
+      await input.store.append(tenantId, PRICE_OBSERVATIONS, makeEvent({
+        id: `price-observation-${obs.observationId}`, type: 'PriceObservationRecorded', occurredAt: obs.observedAt,
+        idempotencyKey: `price-observation-${tenantId}-${obs.observationId}`, source: 'api/pricing', payload: obs,
+      }));
+    },
+    priceEntries: async (tenantId, productIds) => {
+      const list = priceListAdapter(input);
+      return (await Promise.all(productIds.map((p) => list.entries(tenantId, p)))).flat();
+    },
+    // The till's charges are READ from the banked sale records — the till itself is never asked or changed. A sale's store
+    // is where its stock left from (the one rule banking uses), placed in its branch by the org structure.
+    chargedAt: async (tenantId, branchId, fromIso, toIso) => {
+      const branchOf = await (input.locationBranches ?? locationIsItsOwnBranch)(tenantId);
+      const out: ChargedLine[] = [];
+      for (const e of await input.store.readStream(tenantId, STREAM.sales, { type: 'SaleCommitted', from: fromIso, to: toIso })) {
+        const sale = e.event.payload as IncomingSale;
+        const { locationId } = await saleStockLocationOf(input.store, tenantId, sale);
+        if (branchOf(locationId) !== branchId) continue;
+        for (const line of sale.lines ?? []) {
+          out.push({
+            saleId: sale.saleId, productId: line.productId, unitPriceMinor: line.unitPriceMinor, committedAt: sale.committedAt,
+            approvedOverride: line.priceOverride !== undefined && typeof line.priceOverride.approvedBy === 'string' && line.priceOverride.approvedBy !== '',
+          });
+        }
+      }
+      return out;
+    },
   };
 }

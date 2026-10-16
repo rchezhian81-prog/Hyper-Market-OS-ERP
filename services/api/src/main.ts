@@ -293,7 +293,8 @@ import { aiRoutes } from '../../ai/src/index';
 import { modelGatewayRoutes, governedEvidence } from '../../ai/src/model-gateway';
 import { draftingLegRoutes } from '../../ai/src/drafting-legs';
 import { serviceDeskExtrasAdapter, anomalySummaryAdapter, orderFactsFor, breachAlertAdapter, storefrontSelfAdapter, competitorPriceAdapter } from './round8-adapters';
-import { wasteAnalyticsAdapter, foodSafetyAdapter } from './r2-ops-adapters';
+import { wasteAnalyticsAdapter, foodSafetyAdapter, priceIntegrityAgeingAdapter } from './r2-ops-adapters';
+import { priceIntegrityAgeingRoutes } from '../../pricing/src/price-integrity-ageing';
 import { foodSafetyRoutes } from '../../platform/src/food-safety';
 import { wasteAnalyticsRoutes } from '../../inventory/src/waste-analytics';
 import type { ModelTransport, ModelTier, TierPricing } from '../../../packages/ai/src/index';
@@ -1742,6 +1743,8 @@ export function buildSurface(deps: {
     // Price integrity across shelf/POS/app/ESL (D06/D14, ratified R2 B25) — stateless audit; the till is
     // the reference and a shelf underpricing it is ranked first as a legal exposure.
     ...priceIntegrityRoutes(),
+    // D-7 (R2): the automated price-integrity audit — price of record vs shelf / app / till as an ageing report (r2-ops-adapters).
+    ...priceIntegrityAgeingRoutes(store === undefined ? { observations: empty([]), observation: empty(undefined), recordObservation: () => {}, priceEntries: empty([]), chargedAt: empty([]), now } : priceIntegrityAgeingAdapter({ store, now, locationBranches: locationBranchesOf(store, now) })),
     // Cold-chain assessment (M10-FR-02) — stateless verdict on a perishable batch; no second temperature
     // store (facilities-monitoring owns that truth, P-02), so no deps/stub.
     ...coldChainRoutes(),

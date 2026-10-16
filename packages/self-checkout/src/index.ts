@@ -14,3 +14,5 @@
 
 export * from './self-checkout';
 export * from './price-integrity';
+// D-7 (R2): the automated price-integrity audit — price of record vs shelf / app / till, as an ageing exception report.
+export * from './price-integrity-ageing';
