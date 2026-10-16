@@ -15139,6 +15139,8 @@ interface BoxHistoryTenant {
   notReady?: ChecksNotReady;
   /** Round 36 · NEW-7: the newest read's moment for this shop, and this process's clock then (a kept lease's fold moves on from it). */
   clock?: { readonly at: string; readonly ms: number };
+  /** Round 37 · verifier r36 NEW-3: when this process last wrote a readiness note for this shop (its own clock). */
+  readinessNoter?: ReadinessNoter;
 }
 const BOX_HISTORY_TENANTS = new WeakMap<SnapshotStore, Map<string, BoxHistoryTenant>>();
 
@@ -15184,6 +15186,13 @@ export interface StoreComputerChecksReadiness {
    * note — counted as running, as round 34 did, never booked as "head office was off".
    */
   readonly beforeNotesMs?: number;
+  /**
+   * Round 37 · verifier r36 NEW-2: the last note this one can TRUST to count from if a later read finds the notes after it
+   * stamped ahead — the note just before the newest gap booked as "head office was off" (a clock that jumped ahead looks
+   * exactly like that when it happens), carried unchanged on every note until the next such gap. Absent: the start of the
+   * not-ready time (`since`).
+   */
+  readonly trusted?: { readonly seenAt: string; readonly runningMs: number; readonly offMs: number };
 }
 /**
  * Round 35 · OB-129 "A" (owner, 15 Oct 2026, in writing, "Count only running time"; verifier r34 NEW-5) — THE HOUR COUNTS ONLY
@@ -15221,6 +15230,29 @@ export const HEAD_OFFICE_OFF_AFTER_MS = 15 * 60_000;
  *     never as "head office was off", which nobody could know.
  */
 export const READINESS_CLOCK_TOLERANCE_MS = 60_000;
+/**
+ * Round 37 · verifier r36 NEW-2 / NEW-3 (stated):
+ *
+ *   • A RUN OF NOTES FROM A CLOCK AHEAD IS SET ASIDE AS A WHOLE. Round 36 went back ONE note (`basis`); when the clock had stayed
+ *     ahead for several notes, that note was ahead too and its totals already held the jump booked as "off". Now a read that
+ *     finds the newest note stamped ahead counts from the note it can trust (`trusted`: the note before the newest "off" gap —
+ *     the gap the jump made — or the start of the not-ready time), over the real time since that note by its own clock: the
+ *     running time the set-aside notes counted between them (each a few minutes apart on the same wrong clock) is counted as
+ *     running, never more than the real time; what is left (the minutes the wrong stamps hid when the clock jumped and when
+ *     it stepped back, and any real outage) is running when it is at most HEAD_OFFICE_OFF_AFTER_MS, else "off" — as any gap.
+ *     Nothing is rewritten (append-only); a new note is made from this read's own time (no freeze). When even the trusted note
+ *     is stamped ahead (a clock ahead from the very start), it falls back to round 36's rule and the page says so as before.
+ *   • ONE NOTE PER PROCESS PER 5 MINUTES. A process writes a "still not ready" note at most once per READINESS_SEEN_EVERY_MS
+ *     of ITS OWN clock (`ReadinessNoter`, kept in the process's memory), whatever the newest note's stamp says — so two
+ *     head-office processes whose clocks disagree write at most two notes per 5 minutes between them, never one per read
+ *     (round 36: up to 2 a minute). A clock that steps back lets the process note at once. A process restart forgets it.
+ *   • LIMITATION, stated (OB-126 keeps ONE head-office process for the pilot): with two processes whose clocks differ by more
+ *     than a minute, each reads the other's notes through its own clock — the one behind sees notes "ahead" (set aside, said
+ *     on its page), the one ahead sees a gap as long as the difference (said as "head office was off" on ITS page when that is
+ *     more than 15 minutes) and the count can be off by about the difference. It does not grow, but it is not exact. The cure
+ *     is the same as for any clock problem: keep every head-office server on NTP; the page says when notes are set aside.
+ */
+export interface ReadinessNoter { at?: string }
 /** Round 35 · OB-129: the checks' not-ready time as the reads see it now. */
 export interface ChecksNotReady {
   readonly since: string;
@@ -15241,40 +15273,54 @@ export async function storeComputerChecksReadinessHistory(store: EventStore, ten
  * Undefined: ready. A change that keeps losing the race (another process recording one each time) is answered from what was
  * last read, never thrown. Round 35 · OB-129 "A": with how long of it head office was running, and how long off (see above).
  */
-export async function checksNotReadySince(store: EventStore, tenantId: string, notReady: false | 'being_prepared' | 'no_seal_key', at: string): Promise<ChecksNotReady | undefined> {
+export async function checksNotReadySince(store: EventStore, tenantId: string, notReady: false | 'being_prepared' | 'no_seal_key', at: string, noter?: ReadinessNoter): Promise<ChecksNotReady | undefined> {
   const atMs = Date.parse(at);
   const read = async (): Promise<StoreComputerChecksReadiness | undefined> =>
     (await store.latestOfType(tenantId, BOX_CHECKS_READINESS_STREAM, BOX_CHECKS_READINESS_TYPE))?.event.payload as StoreComputerChecksReadiness | undefined;
   // The not-ready time as it stands at this read, from the newest record of it.
   // Round 36 · NEW-3: a newest note stamped ahead of this read's clock is set aside (counted from the note before it);
   // NEW-4: a round-34 record (no running notes) counts as running up to the first note.
-  const counted = (last: StoreComputerChecksReadiness): { readonly now: ChecksNotReady; readonly gapMs: number; readonly basis: NonNullable<StoreComputerChecksReadiness['basis']>; readonly setAside: boolean } => {
-    let from: { seenAt?: string; runningMs: number; offMs: number } = { ...(last.seenAt === undefined ? {} : { seenAt: last.seenAt }), runningMs: last.runningMs ?? 0, offMs: last.offMs ?? 0 };
-    let clockAhead = last.clockAhead;
-    let setAside = false;
-    if (last.seenAt !== undefined && Date.parse(last.seenAt) > atMs + READINESS_CLOCK_TOLERANCE_MS) {
-      setAside = true;
-      clockAhead = { stamped: last.seenAt, noticedAt: at };
-      const b = last.basis;
-      from = b !== undefined && Date.parse(b.seenAt) <= atMs + READINESS_CLOCK_TOLERANCE_MS ? { seenAt: b.seenAt, runningMs: b.runningMs, offMs: b.offMs }
-        : { seenAt: at, runningMs: b?.runningMs ?? from.runningMs, offMs: b?.offMs ?? from.offMs };
+  type Point = NonNullable<StoreComputerChecksReadiness['trusted']>;
+  const ahead = (iso: string): boolean => Date.parse(iso) > atMs + READINESS_CLOCK_TOLERANCE_MS;
+  const counted = (last: StoreComputerChecksReadiness): { readonly now: ChecksNotReady; readonly gapMs: number; readonly basis: Point; readonly trusted?: Point; readonly setAside: boolean } => {
+    const extras = (clockAhead: StoreComputerChecksReadiness['clockAhead'], beforeNotesMs: number) => ({
+      ...(last.reasonChanged === undefined ? {} : { reasonChanged: last.reasonChanged }),
+      ...(clockAhead === undefined ? {} : { clockAhead }),
+      ...(beforeNotesMs === 0 ? {} : { beforeNotesMs }),
+    });
+    if (last.seenAt !== undefined && ahead(last.seenAt)) {
+      // Round 37 · NEW-2: the newest note is stamped ahead — set aside with every note since the one it can trust.
+      const clockAhead = { stamped: last.seenAt, noticedAt: at };
+      const anchor: Point = last.trusted ?? last.basis ?? { seenAt: last.since, runningMs: 0, offMs: 0 };
+      if (!ahead(anchor.seenAt)) {
+        const elapsedMs = Math.max(0, atMs - Date.parse(anchor.seenAt));
+        const ranMs = Math.min(Math.max(0, (last.runningMs ?? 0) - anchor.runningMs), elapsedMs);
+        const restMs = elapsedMs - ranMs;
+        const restOff = restMs > HEAD_OFFICE_OFF_AFTER_MS;
+        return {
+          gapMs: 0, setAside: true, basis: anchor, trusted: anchor,
+          now: { since: last.since, runningMs: anchor.runningMs + ranMs + (restOff ? 0 : restMs), offMs: anchor.offMs + (restOff ? restMs : 0), ...extras(clockAhead, last.beforeNotesMs ?? 0) },
+        };
+      }
+      // Even the trusted note is stamped ahead: count nothing for this read, go on from it (round 36's rule; said).
+      const from: Point = { seenAt: at, runningMs: anchor.runningMs, offMs: anchor.offMs };
+      return { gapMs: 0, setAside: true, basis: from, trusted: from, now: { since: last.since, runningMs: from.runningMs, offMs: from.offMs, ...extras(clockAhead, last.beforeNotesMs ?? 0) } };
     }
-    const legacy = from.seenAt === undefined; // round 34: no running notes yet
-    const fromMs = Date.parse(from.seenAt ?? last.since);
+    const legacy = last.seenAt === undefined; // round 34: no running notes yet
+    const from: Point = { seenAt: last.seenAt ?? last.since, runningMs: last.runningMs ?? 0, offMs: last.offMs ?? 0 };
+    const fromMs = Date.parse(from.seenAt);
     const gapMs = Math.max(0, atMs - Math.min(fromMs, atMs));
     const off = !legacy && gapMs > HEAD_OFFICE_OFF_AFTER_MS;
     const beforeNotesMs = (last.beforeNotesMs ?? 0) + (legacy ? gapMs : 0);
+    // Round 37 · NEW-2: a gap booked as off may be a clock jumping ahead — the note before it is the one to trust from now on.
+    const trusted = off ? from : last.trusted;
     return {
-      gapMs, setAside,
-      basis: { seenAt: from.seenAt ?? last.since, runningMs: from.runningMs, offMs: from.offMs },
-      now: {
-        since: last.since, runningMs: from.runningMs + (off ? 0 : gapMs), offMs: from.offMs + (off ? gapMs : 0),
-        ...(last.reasonChanged === undefined ? {} : { reasonChanged: last.reasonChanged }),
-        ...(clockAhead === undefined ? {} : { clockAhead }),
-        ...(beforeNotesMs === 0 ? {} : { beforeNotesMs }),
-      },
+      gapMs, setAside: false, basis: from, ...(trusted === undefined ? {} : { trusted }),
+      now: { since: last.since, runningMs: from.runningMs + (off ? 0 : gapMs), offMs: from.offMs + (off ? gapMs : 0), ...extras(last.clockAhead, beforeNotesMs) },
     };
   };
+  // Round 37 · NEW-3: this process noted at most once per READINESS_SEEN_EVERY_MS of its own clock (a step back: at once).
+  const mayNote = (): boolean => noter?.at === undefined || atMs < Date.parse(noter.at) || atMs - Date.parse(noter.at) >= READINESS_SEEN_EVERY_MS;
   let last: StoreComputerChecksReadiness | undefined;
   for (let attempt = 0; attempt < 5; attempt += 1) {
     last = await read();
@@ -15293,8 +15339,11 @@ export async function checksNotReadySince(store: EventStore, tenantId: string, n
       const now: ChecksNotReady = { ...c.now, ...(changed === undefined ? {} : { reasonChanged: changed }) };
       // Round 36 · NEW-3 / NEW-4: a note set aside, or a round-34 record, is noted at once (counting goes on from this read).
       if (c.gapMs < READINESS_SEEN_EVERY_MS && c.gapMs <= HEAD_OFFICE_OFF_AFTER_MS && !c.setAside && last!.seenAt !== undefined) return now;
+      // Round 37 · NEW-3: never more than one note per process per 5 minutes of its own clock (the answer is the same).
+      if (last!.seenAt !== undefined && !mayNote()) return now;
       next = {
         state: 'not_ready', since: last!.since, why: notReady, seenAt: at, runningMs: now.runningMs, offMs: now.offMs, basis: c.basis,
+        ...(c.trusted === undefined ? {} : { trusted: c.trusted }),
         ...(changed === undefined ? {} : { reasonChanged: changed }),
         ...(now.clockAhead === undefined ? {} : { clockAhead: now.clockAhead }), ...(now.beforeNotesMs === undefined ? {} : { beforeNotesMs: now.beforeNotesMs }),
       };
@@ -15315,6 +15364,7 @@ export async function checksNotReadySince(store: EventStore, tenantId: string, n
         event: makeEvent({ id: keyedEventId('box-checks-readiness', key), type: BOX_CHECKS_READINESS_TYPE, occurredAt: at, idempotencyKey: key, source: 'api/platform', payload: next }),
       }], { guard: { key: BOX_CHECKS_READINESS_GUARD, expectedVersion: version } });
       if (res!.deduped) continue; // another process recorded this change first: read what it kept
+      if (noter !== undefined && next.state === 'not_ready') noter.at = at;
       return answer;
     } catch (e) {
       if (e instanceof ConcurrencyConflictError) continue;
@@ -15330,6 +15380,22 @@ function boxHistoryTenant(snapshots: SnapshotStore, tenantId: string): BoxHistor
   let t = m.get(tenantId);
   if (t === undefined) { t = {}; m.set(tenantId, t); }
   return t;
+}
+
+/** Round 36 · NEW-7: a kept lease's fold moment — the newest read's moment, moved on by this process's clock since. */
+export function foldMoment(c: { readonly at: string; readonly ms: number }, nowMs: number): string {
+  return new Date(Date.parse(c.at) + Math.max(0, nowMs - c.ms)).toISOString();
+}
+/**
+ * Round 36 · NEW-7: the newest read's moment for a shop, kept for the kept lease's folds — it moves FORWARD only (a read that
+ * started a moment earlier and finished later never moves it back). Round 37 · verifier r36 NEW-5: except when a read's moment
+ * is more than READINESS_CLOCK_TOLERANCE_MS BEHIND that moment moved on — head office's clock stepped back after running ahead —
+ * when it starts again from that read: the kept lease never folds at a moment ahead of the reads (which would settle reports a
+ * fresh read leaves unsettled, so the next read set the saved result aside: extra work).
+ */
+export function nextFoldClock(prev: { readonly at: string; readonly ms: number } | undefined, at: string, nowMs: number): { readonly at: string; readonly ms: number } {
+  if (prev === undefined || Date.parse(at) >= Date.parse(prev.at)) return { at, ms: nowMs };
+  return Date.parse(at) < Date.parse(foldMoment(prev, nowMs)) - READINESS_CLOCK_TOLERANCE_MS ? { at, ms: nowMs } : prev;
 }
 
 /** Round 28 · OB-104: what a windowed reading answers (the full reading's answers, and what the health read's judge needs). */
@@ -15420,11 +15486,8 @@ export async function storeComputerHistory(
   const { banked, replacements, unusedAcknowledged } = inputs;
   // Round 36 · NEW-7: the newest read's moment for this shop, moved on by the time this process has run since — the moment of
   // a fold the kept lease makes later (never before the moment of a result a newer read held: NEW-2).
-  if (tb.clock === undefined || Date.parse(at) >= Date.parse(tb.clock.at)) tb.clock = { at, ms: Date.now() };
-  const later = (): string => {
-    const c = tb.clock ?? { at, ms: Date.now() };
-    return new Date(Date.parse(c.at) + Math.max(0, Date.now() - c.ms)).toISOString();
-  };
+  tb.clock = nextFoldClock(tb.clock, at, Date.now());
+  const later = (): string => foldMoment(tb.clock ?? { at, ms: Date.now() }, Date.now());
   // Each report as kept and as judged — judged only when it will be folded (one a saved result already folded is not).
   const entriesOf = async (events: readonly PersistedEvent[], skip?: (seq: number) => boolean, inp: FoldInputs = inputs): Promise<BoxHistoryEntry[]> => {
     const { issuedPrefixes, banked, registered } = inp;
@@ -15523,7 +15586,9 @@ export async function storeComputerHistory(
   // Round 31 · OB-114: each answer says whether the checks are ready; not ready since the first read that found them so.
   // Round 34 · OB-124 (3): that moment is KEPT (append-only, guarded) — a restart or a second process keeps the same hour.
   const state = async (sizeBytes: number | null, notReady: false | 'being_prepared' | 'no_seal_key'): Promise<BoxHistoryState> => {
-    tb.notReady = await checksNotReadySince(store, tenantId, notReady, at);
+    // Round 37 · NEW-3: this process's own note-taking (at most one note per 5 minutes of its own clock).
+    tb.readinessNoter ??= {};
+    tb.notReady = await checksNotReadySince(store, tenantId, notReady, at, tb.readinessNoter);
     tb.notReadySince = tb.notReady?.since;
     return {
       sizeBytes, ...(opts.sealKey === undefined ? { noSealKey: true } : {}),

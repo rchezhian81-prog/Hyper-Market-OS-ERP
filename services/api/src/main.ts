@@ -25,7 +25,7 @@ import { SqlSubjectKeyStore, personalDataKek, type SubjectKeyStore } from '../..
 import { SqlSnapshotStore, type SnapshotStore } from '../../../packages/persistence/src/snapshot';
 import { SqlConfigVersionStore } from '../../../packages/persistence/src/config-store';
 import { SqlNumberSeriesStore, type NumberSeriesStore } from '../../../packages/persistence/src/number-series-store';
-import { pgPoolClient, pgDedicatedSession, listenForEndedConnections, isSessionEnded, fromDatabaseDriver, describeDbError } from '../../../packages/persistence/src/pg-client';
+import { pgPoolClient, pgDedicatedSession, pgEndBackendVia, listenForEndedConnections, isSessionEnded, fromDatabaseDriver, describeDbError } from '../../../packages/persistence/src/pg-client';
 import { DurableTenantSettings, SETTINGS } from '../../../packages/tenant/src/index';
 import {
   buildRouter, loadConfig, startHttpServer, CLOUD_API_CONFIG, SqlIdempotencyStore, SqlAuditSink,
@@ -2256,10 +2256,16 @@ export async function startApi(
   const snapshots = new SqlSnapshotStore(pgPoolClient(db), {
     // Round 36 · verifier r35 NEW-6: TCP keepalive on, and every lease query (and the close) bounded — a half-open connection
     // is destroyed after LEASE_QUERY_TIMEOUT_MS (the lease then reads as lost and is let go), never left hanging.
+    // Round 37 · verifier r36 NEW-4: closing the socket here does not end the session on the server while the network is
+    // half-open — its advisory lock stayed held (about 2 hours, the server's default keepalive). Now (1) the server keeps its
+    // own keepalive on the lease connection (`leaseSessionOptions`: the server notices a dead client within about a minute,
+    // also during a query), and (2) when this side cuts or loses a lease connection, the session's backend is ENDED from one
+    // of the pool's connections (`pg_terminate_backend`, exact pid and start time; the same login role may end its own
+    // sessions), so the lock is freed at once; a refusal is said here by name (`DedicatedSessionEndRefusedError`).
     leaseSession: pgDedicatedSession(() => new Client({
-      connectionString: settings['DATABASE_URL']!, options: session.options, connectionTimeoutMillis: DB_CONNECT_TIMEOUT_MS,
+      connectionString: settings['DATABASE_URL']!, options: leaseSessionOptions(session.options), connectionTimeoutMillis: DB_CONNECT_TIMEOUT_MS,
       keepAlive: true, keepAliveInitialDelayMillis: LEASE_KEEPALIVE_DELAY_MS,
-    }), { queryTimeoutMs: LEASE_QUERY_TIMEOUT_MS }),
+    }), { queryTimeoutMs: LEASE_QUERY_TIMEOUT_MS, endBackend: pgEndBackendVia(db), onProblem: (detail) => { err(`${detail}\n`); } }),
     maxConcurrentLeases: BOX_HISTORY_BUILDS_AT_ONCE,
     onLeaseProblem: (detail) => { err(`${detail}\n`); },
   });
@@ -2601,6 +2607,17 @@ export const DB_CONNECT_TIMEOUT_MS = 15_000;
 export const LEASE_QUERY_TIMEOUT_MS = 30_000;
 /** Round 36 · NEW-6: TCP keepalive on a build lease's connection starts after this much idle time. */
 export const LEASE_KEEPALIVE_DELAY_MS = 10_000;
+/**
+ * Round 37 · verifier r36 NEW-4: the SERVER's side of a build lease's connection — TCP keepalive after 30 s idle, then every
+ * 10 s, given up after 3 unanswered (the server ends the session, and frees its lock, within about a minute of the client
+ * going silent, instead of the system's 2 hours 11 minutes), and a check every 10 s during a running query that the client
+ * is still there. All are settings any role may set for its own session (PostgreSQL 14+).
+ */
+export const LEASE_SERVER_KEEPALIVE = { idleSeconds: 30, intervalSeconds: 10, count: 3, clientCheckMs: 10_000 } as const;
+export function leaseSessionOptions(base: string): string {
+  const k = LEASE_SERVER_KEEPALIVE;
+  return `${base} -c tcp_keepalives_idle=${k.idleSeconds} -c tcp_keepalives_interval=${k.intervalSeconds} -c tcp_keepalives_count=${k.count} -c client_connection_check_interval=${k.clientCheckMs}`.trim();
+}
 /**
  * Round 35 · verifier r34 NEW-2: how many shops' store-computer histories one head-office process builds at once (each holds
  * one connection of its own for its build lease). The next waits its turn and its health read says so.

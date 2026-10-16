@@ -128,8 +128,10 @@ async function noRedirectToAnExOwner(store: EventStore): Promise<void> {
   expect((b.rule as { builtInRedirect?: true }).builtInRedirect).toBeUndefined();
   expect(b.description).toContain(`redirects it to Manager (${MANAGER}) only, but ${MANAGER} no longer holds any role that may see alerts, so it goes to the owners instead until the owner changes the edit`);
   expect(await deliveredTo(deps, life, T)).toEqual([B]);
-  // The saved edit itself is unchanged (append-only; the owner decides what to do with it).
-  expect((await get()).rules!.rules[0]).toMatchObject({ ownerUserId: MANAGER, builtInRedirect: true });
+  // The saved edit itself is unchanged (append-only; the owner decides what to do with it). Round 37 (verifier r36 NEW-1):
+  // GET shows it as it is read — to every owner, never naming the manager, who no longer may see alerts.
+  expect((await deps.alertRules(T))!.rules[0]).toMatchObject({ ownerUserId: MANAGER, builtInRedirect: true });
+  expect((await get()).rules!.rules[0]).toMatchObject({ ownerUserId: 'role:owner', ownerName: 'every owner' });
   // Given the role back, the redirect is in force again.
   await store.append(T, STREAM.identity, { ...role(MANAGER, STORE_MANAGER_ROLE_ID), id: `regrant-${MANAGER}` });
   expect((await get()).builtIn[0]!.rule).toMatchObject({ ownerUserId: MANAGER });
