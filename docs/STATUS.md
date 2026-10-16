@@ -5,9 +5,6 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
-<<<<<<< HEAD
-## Coordinated programme · Round 38 — the demo update's refusal names its cause (16 October 2026) — merged in PR #786 (7f102a6a)
-=======
 ## Coordinated programme · Round 39 — verifier r37's five low notes closed (16 October 2026) — gated, PR pending
 
 - **Built and tested (memory + PostgreSQL); no staff UAT.** Each note was reproduced first (the verifier's probe re-run on this branch: L1 "still pending after 5 s", L2 "out of range" under SQL, DMY / IST; L4 shown failing on round-37 code by the new test), then fixed:
@@ -23,8 +20,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - **Not done:** evidence ledger and API surface not regenerated (coordinator). Browser checks (`test:e2e`, Playwright) not re-run — no page changed. A real non-Linux PostgreSQL server was not available: L3 is proven by simulation (unit) and a real refusal of the same code at connect.
 - **Next:** coordinator: evidence ledger and API surface; verifier round on round 39; then merge per OB-122 / OB-123.
 
-## Coordinated programme · Round 38 — the demo update's refusal names its cause (16 October 2026) — gated, PR pending
->>>>>>> worktree-agent-a2998d5f9ad744162
+## Coordinated programme · Round 38 — the demo update's refusal names its cause (16 October 2026) — merged in PR #786 (7f102a6a)
 
 - **What happened:** the demo update for PR #785 (11ce09cd) was refused again with exit 78: "still unfilled: BOX_HISTORY_SEAL_KEY", read from `.env.pilot`. Before this round, the refusal could not say whether the line was missing, empty, the placeholder, or malformed, nor which account had read which file. IT's helper had passed when run as root with `sudo`.
 - **Built (unit-tested; synthetic):** the release pre-check now says HOW each required setting is unfilled (absent / empty / placeholder, or a named malformed line: commented out, `export ` in front, glued, no `=`). It also names the file it read, the account it read it as, and how many settings the file holds. It never shows a value or its length. The Fix line names that same file and the seal-key helper. Proof: `tests/unit/standup-check.test.ts` (round 38 block).
