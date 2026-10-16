@@ -44,6 +44,8 @@ export const STORE_COMPUTER_ROLE_ID = 'store_computer';
 export const PROVIDER_RELAY_ROLE_ID = 'message_provider_relay';
 /** PA-12 round 7: the backup job's own machine identity — the only caller whose backup report is believed. */
 export const BACKUP_JOB_ROLE_ID = 'backup_job';
+/** R2 C20: the POSH Act Internal Committee — the only role that may read the confidential complaints register. */
+export const INTERNAL_COMMITTEE_ROLE_ID = 'internal_committee';
 
 /**
  * §28 / M33-FR-01 / SEC-11: the platform-administration (IT) function, held apart from running the shop, and the rule that
@@ -197,6 +199,10 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'migration.exception.record', 'migration.exception.resolve', 'migration.controltotal.record', 'migration.decision.sync',
       'migration.screen.read',
       'ai.agent.run', 'ai.proposal.read', 'ai.suggestion.dismiss', 'ai.budget.read', 'ai.budget.set', 'ai.agent.enable', 'ai.killswitch.set',
+      // R2 C18: the owner sets the working-time limits (with the Act's provision and who confirmed each) and reads the
+      // statutory registers. R2 C20: the owner reads the Internal Committee's annual report (counts only) and its
+      // 31 January status, and records it filed — but holds NO permission to read the complaints themselves.
+      'hr.compliance.read', 'hr.compliance.configure', 'hr.register.read', 'posh.report.read', 'posh.report.file',
     ],
   },
   {
@@ -287,6 +293,19 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'migration.cleaning.read', 'migration.reconciliation.read',
       'migration.exception.record', 'migration.exception.resolve', 'migration.controltotal.record', 'migration.decision.sync',
       'migration.screen.read',
+      // R2 C18: the manager reads the working-time limits and the statutory registers for their branches.
+      'hr.compliance.read', 'hr.register.read',
+    ],
+  },
+  {
+    id: INTERNAL_COMMITTEE_ROLE_ID,
+    name: 'Internal Committee member',
+    // R2 C20 — the POSH Act Internal Committee. The ONLY role that may record or read a complaint: not the owner, not a
+    // manager, not IT. Every read and write it makes is sealed into the audit trail. It also generates the annual report
+    // (counts only) the owner files with the District Officer. A member usually holds another role too (their job).
+    permissions: [
+      'identity.self.read',
+      'posh.complaint.record', 'posh.complaint.read', 'posh.report.generate', 'posh.report.read',
     ],
   },
   {
