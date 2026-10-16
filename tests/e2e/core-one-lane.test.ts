@@ -164,11 +164,15 @@ describe('the core, on one lane, end to end', () => {
     // It re-queues exactly what it sent before — the record off its own disk, the box's seal on the cashier included.
     const sentBefore = (await bankedSales(h)).find((s) => s.saleId === 'S-1');
     expect(sentBefore).toMatchObject({ saleId: 'S-1', cashierId: 'cashier', operatorVerified: { userId: 'cashier' } });
+    // What the edge itself sent (its own outbox record) — not the cloud's banked copy, which since round 35 carries head
+    // office's own note when a non-store-computer sign-in offered the store computer's time (NEW-6).
+    const sent = edge.outbox.all().find((i) => i.state === 'acknowledged' && (i.event.payload as { saleId?: string }).saleId === 'S-1');
+    expect(sent).toBeDefined();
     const forgetful = new SyncOutbox();
     forgetful.enqueue({
       id: 'edge-sale-S-1', type: 'SaleCommitted', occurredAt: COMMITTED_AT, version: 1,
-      idempotencyKey: `edge-${TENANT}-S-1`, source: 'edge/lane',
-      payload: sentBefore,
+      idempotencyKey: sent!.key, source: 'edge/lane',
+      payload: sent!.event.payload,
     });
     const agent = new SyncAgent(forgetful, httpTransport({
       baseUrl: 'https://cloud.example.test', token: 'edge-token', fetch: cloudFetch(h),
