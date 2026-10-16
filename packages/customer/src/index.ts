@@ -30,6 +30,10 @@
 //     the processors/sub-processors we SHARED a customer's data with to erase their copy too, provider-
 //     neutrally: one notice per processor holding an affected category, enqueued on the existing durable
 //     connector queue (retry + read-never-deleted dead letter), never a new queue.
+//   • `processor-register.ts` (C6 / DPDP s.8(2)) — the data-processor contract register: every vendor
+//     processing personal data has an entry with a contract reference; processing without one is flagged.
+//   • `pii-safeguards.ts` (C7 / DPDP s.8(5)) — every personal-data field is sealed, masked, never kept or
+//     held by the identity server; security logs are kept at least one year.
 //
 // Pure and deterministic. Grows one reviewed, tested unit at a time.
 
@@ -44,3 +48,5 @@ export * from './child-data-guard';
 export * from './breach-notification';
 export * from './consent-notice';
 export * from './retention-clock';
+export * from './processor-register';
+export * from './pii-safeguards';
