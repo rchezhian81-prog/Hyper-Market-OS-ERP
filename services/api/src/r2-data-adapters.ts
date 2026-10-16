@@ -113,15 +113,15 @@ export const PII_FIELD_INVENTORY: readonly PiiFieldDeclaration[] = Object.freeze
   { file: 'packages/identity/src/access-binding.ts', field: 'phoneNumber', whose: 'user', protection: 'held_by_identity_server', evidence: 'a claim read from the signed token for one request' },
   // The shop's own details
   { file: 'packages/receipt/src/presets.ts', field: 'phone', whose: 'shop', protection: 'not_personal', evidence: 'the shop\'s own number, printed on its bill' },
-  // Suppliers' contact details — kept in the supplier master as typed. Whether a supplier's contact is personal data (a
-  // sole proprietor's own mobile is) is an owner decision; until it is made they are declared UNPROTECTED, and the C7
-  // check reports them as such rather than passing quietly.
-  { file: 'services/purchase/src/supplier-master.ts', field: 'phone', whose: 'supplier_contact', protection: 'unprotected', evidence: 'the supplier master keeps it as typed', awaitingDecision: 'the owner\'s decision on supplier contact details (C7)' },
-  { file: 'services/purchase/src/supplier-master.ts', field: 'email', whose: 'supplier_contact', protection: 'unprotected', evidence: 'the supplier master keeps it as typed', awaitingDecision: 'the owner\'s decision on supplier contact details (C7)' },
-  { file: 'services/purchase/src/supplier-master.ts', field: 'address', whose: 'supplier_contact', protection: 'unprotected', evidence: 'the supplier master keeps it as typed', awaitingDecision: 'the owner\'s decision on supplier contact details (C7)' },
-  { file: 'services/purchase/src/data-export.ts', field: 'phone', whose: 'supplier_contact', protection: 'unprotected', evidence: 'the owner\'s export of the supplier master (P-06) carries it as kept', awaitingDecision: 'the owner\'s decision on supplier contact details (C7)' },
-  { file: 'services/purchase/src/data-export.ts', field: 'email', whose: 'supplier_contact', protection: 'unprotected', evidence: 'the owner\'s export of the supplier master (P-06) carries it as kept', awaitingDecision: 'the owner\'s decision on supplier contact details (C7)' },
-  { file: 'services/purchase/src/data-export.ts', field: 'address', whose: 'supplier_contact', protection: 'unprotected', evidence: 'the owner\'s export of the supplier master (P-06) carries it as kept', awaitingDecision: 'the owner\'s decision on supplier contact details (C7)' },
+  // Suppliers' contact details — kept in the supplier master as typed. The owner decided (OB-153 "A", 16 Oct 2026, in
+  // writing) that a supplier's phone, email and address in the supplier master are BUSINESS data, not personal data; the
+  // C7 check passes them by that decision, and the guardrail holds the citation to the decisions register.
+  { file: 'services/purchase/src/supplier-master.ts', field: 'phone', whose: 'supplier_contact', protection: 'business_data_by_owner_decision', evidence: 'the supplier master keeps the business\'s contact as typed — business data by the owner\'s decision OB-153 "A"', ownerDecision: 'OB-153' },
+  { file: 'services/purchase/src/supplier-master.ts', field: 'email', whose: 'supplier_contact', protection: 'business_data_by_owner_decision', evidence: 'the supplier master keeps the business\'s contact as typed — business data by the owner\'s decision OB-153 "A"', ownerDecision: 'OB-153' },
+  { file: 'services/purchase/src/supplier-master.ts', field: 'address', whose: 'supplier_contact', protection: 'business_data_by_owner_decision', evidence: 'the supplier master keeps the business\'s contact as typed — business data by the owner\'s decision OB-153 "A"', ownerDecision: 'OB-153' },
+  { file: 'services/purchase/src/data-export.ts', field: 'phone', whose: 'supplier_contact', protection: 'business_data_by_owner_decision', evidence: 'the owner\'s export of the supplier master (P-06) carries it as kept — business data by the owner\'s decision OB-153 "A"', ownerDecision: 'OB-153' },
+  { file: 'services/purchase/src/data-export.ts', field: 'email', whose: 'supplier_contact', protection: 'business_data_by_owner_decision', evidence: 'the owner\'s export of the supplier master (P-06) carries it as kept — business data by the owner\'s decision OB-153 "A"', ownerDecision: 'OB-153' },
+  { file: 'services/purchase/src/data-export.ts', field: 'address', whose: 'supplier_contact', protection: 'business_data_by_owner_decision', evidence: 'the owner\'s export of the supplier master (P-06) carries it as kept — business data by the owner\'s decision OB-153 "A"', ownerDecision: 'OB-153' },
 ]);
 
 // ── C13 · the till's card/UPI refunds, for the T+1 settlement review ──────────────────────────────────────────────
