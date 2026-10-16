@@ -29,6 +29,7 @@ import { storeComputerGrantRefusal } from '../../platform/src/store-computer-ide
 import { machineIdentitySetRefusal, machineIdentityGrantRefusal, MACHINE_ONLY_ROLES, MACHINE_IDENTITY_REFUSAL_CODE } from './machine-identities';
 import { outsidePartyGrantRefusal, OUTSIDE_LOGIN_REFUSAL_CODE } from './outside-party-logins';
 import { dutiesSetRefusal, SEPARATION_OF_DUTIES_REFUSAL_CODE } from './separation-of-duties';
+import { ownerAndCommitteeRefusal, OWNER_ON_COMMITTEE_REFUSAL_CODE } from './committee-membership';
 import { actionDetails, approvalNamedIn, type ApprovalPort } from './approval-requests';
 import {
   applyLifecycle, SelfServiceAccessError,
@@ -217,6 +218,9 @@ export function accessLifecycleRoutes(deps: AccessLifecycleDeps): readonly Route
             if (both !== undefined) {
               throw apiError(422, { code: SEPARATION_OF_DUTIES_REFUSAL_CODE, whatHappened: both, wasItSaved: 'not_saved', nextSafeAction: 'Change the request so this person holds either the IT role or business roles, not both. Nobody\'s access changed.' });
             }
+            // OB-165: a joiner/mover change never puts the owner role and the Internal Committee role on one person.
+            const owner = ownerAndCommitteeRefusal(after);
+            if (owner !== undefined) throw apiError(422, { code: OWNER_ON_COMMITTEE_REFUSAL_CODE, whatHappened: owner, wasItSaved: 'not_saved', nextSafeAction: 'Change the request. Nobody\'s access changed.' });
           }
         }
         // Round 14 (verifier G5): a joiner/mover change never gives an outside-party role, nor adds a role to an outside

@@ -6,11 +6,17 @@
 //     `internal_committee` role holds — not the owner, not a store manager, not the platform administrator;
 //   • EVERY read of the register (the list, one complaint, the access log) and every write is sealed into the
 //     tamper-evident audit trail BEFORE the answer is returned — if the audit cannot be written, nothing is shown;
-//   • records are append-only: a complaint is received once (a second receipt under the same id is refused, never
-//     overwritten), what happens to it is a new step, and there is no route that edits or removes anything.
+//   • records are append-only: a complaint is received once, what happens to it is a new step, and there is no route
+//     that edits or removes anything;
+//   • the complaint id and every step id are made HERE — opaque, from the tenant and the request's idempotency key —
+//     never chosen by the caller, so no id can carry a name into the audit trail or a URL (verifier lanes34 NEW-4);
+//   • the content (summary, who complained, who it is about, a step's note) is sealed under the complaint's own data
+//     key by the personal-data sealing layer (ADR-0025, `posh_records`), so the event ledger and every backup hold only
+//     ciphertext; and the two POSTs answer with ids and status only, so no content is banked as an idempotent reply
+//     (NEW-5). The general audit trail never shows the register's entries (NEW-4, services/finance/src/audit-trail-store.ts).
 //
-//   • `POST /v1/hr/posh/complaints/:complaintId`                 — receive a complaint. posh.complaint.record.
-//   • `POST /v1/hr/posh/complaints/:complaintId/steps/:stepId`   — inquiry started / disposed. posh.complaint.record.
+//   • `POST /v1/hr/posh/complaints`                              — receive a complaint. posh.complaint.record.
+//   • `POST /v1/hr/posh/complaints/:complaintId/steps`           — inquiry started / disposed. posh.complaint.record.
 //   • `GET  /v1/hr/posh/complaints`                              — the register. posh.complaint.read. Audited.
 //   • `GET  /v1/hr/posh/complaints/:complaintId`                 — one complaint and its steps. Audited.
 //   • `GET  /v1/hr/posh/access-log`                              — who read or wrote the register, when. Audited.
@@ -23,6 +29,7 @@
 //   • `GET  /v1/hr/posh/annual-report-status?asOf=`              — the 31 January exceptions (due / overdue) the
 //     owner sees. posh.report.read.
 
+import { createHash } from 'node:crypto';
 import type { Route, RequestContext } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/audit-trail';
@@ -63,6 +70,21 @@ const seal = (deps: PoshRegisterDeps, ctx: RequestContext, action: string, objec
     origin: { tenantId: ctx.tenantId, branchId: null }, before: null, after, correlationId: ctx.traceId,
   });
 
+/**
+ * An opaque id made by the server: a digest of the tenant, the kind of record and the request's idempotency key. A retry
+ * of the same request (same key) lands on the same id, so a lost reply never receives a complaint twice; the caller can
+ * neither choose it nor put a name in it.
+ */
+export const poshRecordId = (prefix: 'PC' | 'PS', tenantId: string, scope: string, idempotencyKey: string): string =>
+  `${prefix}-${createHash('sha256').update(`posh|${prefix}|${tenantId}|${scope}|${idempotencyKey}`, 'utf8').digest('hex').slice(0, 20).toUpperCase()}`;
+
+const keyOf = (ctx: RequestContext): string => {
+  if (ctx.idempotencyKey === undefined || ctx.idempotencyKey.trim() === '') {
+    throw apiError(400, { code: 'idempotency_key_needed', whatHappened: 'Recording in the register needs an Idempotency-Key.', wasItSaved: 'not_saved', nextSafeAction: 'Send the request with an Idempotency-Key header.' });
+  }
+  return ctx.idempotencyKey;
+};
+
 const yearParam = (ctx: RequestContext): number => {
   const raw = ctx.params['year'] ?? '';
   const year = Number(raw);
@@ -75,14 +97,22 @@ const yearParam = (ctx: RequestContext): number => {
 export function poshRegisterRoutes(deps: PoshRegisterDeps): readonly Route[] {
   return [
     {
-      // Body: { receivedOn, complainantRef, respondentRef, summary }.
-      api: 'API-11', method: 'POST', path: '/v1/hr/posh/complaints/:complaintId',
+      // Body: { receivedOn, complainantRef, respondentRef, summary }. The id is made here and returned; the reply carries
+      // the id and the status only — never the content (it would be kept as the idempotent reply).
+      api: 'API-11', method: 'POST', path: '/v1/hr/posh/complaints',
       permission: 'posh.complaint.record', idempotent: true,
       handler: async (ctx) => {
-        const complaintId = (ctx.params['complaintId'] ?? '').trim();
         const b = (ctx.body ?? {}) as Record<string, unknown>;
-        if (complaintId === '' || !isDate(b['receivedOn']) || !isStr(b['complainantRef']) || !isStr(b['respondentRef']) || !isStr(b['summary'])) {
-          throw apiError(400, { code: 'not_readable_as_a_complaint', whatHappened: 'A complaint needs a complaintId in the path and { receivedOn (YYYY-MM-DD), complainantRef, respondentRef, summary } in the body.', wasItSaved: 'not_saved', nextSafeAction: 'Send the complaint as the committee received it.' });
+        if (b['complaintId'] !== undefined) {
+          throw apiError(400, { code: 'complaint_id_is_made_by_the_register', whatHappened: 'A complaint id is made by the register itself, so it can never carry a name. A body that names one is refused.', wasItSaved: 'not_saved', nextSafeAction: 'Send the complaint without complaintId; the reply gives the id.' });
+        }
+        if (!isDate(b['receivedOn']) || !isStr(b['complainantRef']) || !isStr(b['respondentRef']) || !isStr(b['summary'])) {
+          throw apiError(400, { code: 'not_readable_as_a_complaint', whatHappened: 'A complaint needs { receivedOn (YYYY-MM-DD), complainantRef, respondentRef, summary } in the body.', wasItSaved: 'not_saved', nextSafeAction: 'Send the complaint as the committee received it.' });
+        }
+        const complaintId = poshRecordId('PC', ctx.tenantId, 'complaint', keyOf(ctx));
+        // A retry whose first reply was lost: the complaint is already in, and is not received (or sealed) twice.
+        if ((await deps.complaints(ctx.tenantId)).some((c) => c.complaintId === complaintId)) {
+          return { status: 201, body: { complaintId, status: 'received' } };
         }
         const complaint: PoshComplaint = {
           complaintId, receivedOn: b['receivedOn'], complainantRef: b['complainantRef'].trim(), respondentRef: b['respondentRef'].trim(),
@@ -90,25 +120,27 @@ export function poshRegisterRoutes(deps: PoshRegisterDeps): readonly Route[] {
         };
         // Sealed first: a write the audit trail did not see does not happen.
         await seal(deps, ctx, 'posh.complaint.receive', complaintId);
-        if (!(await deps.recordComplaint(ctx.tenantId, complaint))) {
-          throw apiError(409, { code: 'complaint_already_received', whatHappened: `Complaint ${complaintId} is already in the register; a complaint is never overwritten.`, wasItSaved: 'not_saved', nextSafeAction: 'Record what happened next as a step, or receive a new complaint under a new id.' });
-        }
-        return { status: 201, body: { complaint: poshComplaintView(complaint, []) } };
+        await deps.recordComplaint(ctx.tenantId, complaint);
+        return { status: 201, body: { complaintId, status: 'received' } };
       },
     },
     {
-      // Body: { kind: 'inquiry_started' | 'disposed', on, outcome? (when disposed), note? }.
-      api: 'API-11', method: 'POST', path: '/v1/hr/posh/complaints/:complaintId/steps/:stepId',
+      // Body: { kind: 'inquiry_started' | 'disposed', on, outcome? (when disposed), note? }. The step id is made here; the
+      // reply carries ids and status only.
+      api: 'API-11', method: 'POST', path: '/v1/hr/posh/complaints/:complaintId/steps',
       permission: 'posh.complaint.record', idempotent: true,
       handler: async (ctx) => {
         const complaintId = (ctx.params['complaintId'] ?? '').trim();
-        const stepId = (ctx.params['stepId'] ?? '').trim();
         const b = (ctx.body ?? {}) as Record<string, unknown>;
         const complaint = (await deps.complaints(ctx.tenantId)).find((c) => c.complaintId === complaintId);
-        if (complaint === undefined || stepId === '') {
-          throw apiError(404, { code: 'no_such_complaint', whatHappened: `There is no complaint ${complaintId} in the register.`, wasItSaved: 'not_saved', nextSafeAction: 'Check the complaint id.' });
+        if (complaint === undefined) {
+          throw apiError(404, { code: 'no_such_complaint', whatHappened: 'There is no complaint with that id in the register.', wasItSaved: 'not_saved', nextSafeAction: 'Check the complaint id.' });
         }
+        const stepId = poshRecordId('PS', ctx.tenantId, complaintId, keyOf(ctx));
         const steps = await deps.steps(ctx.tenantId);
+        if (steps.some((x) => x.complaintId === complaintId && x.stepId === stepId)) {
+          return { status: 201, body: { complaintId, stepId, status: poshComplaintView(complaint, steps).status } };
+        }
         const view = poshComplaintView(complaint, steps);
         const kind = b['kind'] as PoshStepKind;
         const outcome = typeof b['outcome'] === 'string' && (POSH_OUTCOMES as readonly string[]).includes(b['outcome']) ? b['outcome'] as PoshOutcome : undefined;
@@ -122,10 +154,8 @@ export function poshRegisterRoutes(deps: PoshRegisterDeps): readonly Route[] {
           ...(isStr(b['note']) ? { note: b['note'].trim() } : {}), recordedBy: ctx.userId, recordedAt: deps.now(),
         };
         await seal(deps, ctx, `posh.complaint.${kind}`, complaintId, { stepId });
-        if (!(await deps.recordStep(ctx.tenantId, step))) {
-          throw apiError(409, { code: 'step_already_recorded', whatHappened: `Step ${stepId} is already recorded; a step is never overwritten.`, wasItSaved: 'not_saved', nextSafeAction: 'Record the next step under a new id.' });
-        }
-        return { status: 201, body: { complaint: poshComplaintView(complaint, [...steps, step]) } };
+        await deps.recordStep(ctx.tenantId, step);
+        return { status: 201, body: { complaintId, stepId, status: poshComplaintView(complaint, [...steps, step]).status } };
       },
     },
     {

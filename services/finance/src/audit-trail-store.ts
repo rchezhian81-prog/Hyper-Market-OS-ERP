@@ -13,6 +13,12 @@
 // Pure reads. There is no route here — nor anywhere — to edit or drop a record: the trail is written only
 // by the domain action that produced it, with the actor taken from the authenticated session, never from
 // a client (M34-FR-01, hard rule #6). Gated `audit.retention.read`.
+//
+// The Internal Committee's register (C20, object type `posh_register`) is NOT part of these general reads (verifier
+// lanes34 NEW-4; OB-157 "committee only"): who on the committee received, read or disposed of which complaint, and when,
+// is itself confidential. Search and the evidence packs leave those entries out, and reconstructing one is refused by
+// name; the committee reads them through its own access log (GET /v1/hr/posh/access-log). VERIFY still checks every
+// record's seal — the chain is one, and a gap would be a break — but it returns no record's content.
 
 import type { Route } from '../../kernel/src/index';
 import { apiError, narrowScope, scopeNotHeld, assertBranchInScope } from '../../kernel/src/index';
@@ -20,6 +26,13 @@ import {
   AuditTrail, InMemoryAuditStore,
   type AuditRecord, type AuditQuery, type AuditObjectType,
 } from '../../../packages/audit/src/index';
+
+/** Object types kept out of the general audit-trail reads: only their own restricted routes show them. */
+export const COMMITTEE_ONLY_AUDIT_OBJECTS: ReadonlySet<string> = new Set(['posh_register']);
+
+/** The records a general audit-trail reader may see — everything but the committee-only object types. */
+export const generalAuditRecords = (records: readonly AuditRecord[]): readonly AuditRecord[] =>
+  records.filter((r) => !COMMITTEE_ONLY_AUDIT_OBJECTS.has(r.objectType));
 
 export interface StoredAuditTrailDeps {
   /** The whole sealed domain trail for a tenant, in the order it happened. */
@@ -55,7 +68,7 @@ export function storedAuditTrailRoutes(deps: StoredAuditTrailDeps): readonly Rou
         // asked; another branch refused by name). A record with no branch is head office's — company-wide readers only.
         const asked = ctx.query['branchId'];
         const scope = narrowScope(ctx, isStr(asked) ? [asked] : undefined);
-        const records = (await deps.records(ctx.tenantId)).filter((r) => scope === 'all' || (r.origin.branchId !== null && scope.includes(r.origin.branchId)));
+        const records = generalAuditRecords(await deps.records(ctx.tenantId)).filter((r) => scope === 'all' || (r.origin.branchId !== null && scope.includes(r.origin.branchId)));
         const matches = trailOf(records).search(queryFrom(ctx.query));
         return { status: 200, body: { matches, total: matches.length } };
       },
@@ -83,6 +96,14 @@ export function storedAuditTrailRoutes(deps: StoredAuditTrailDeps): readonly Rou
             whatHappened: 'Reconstructing needs ?objectType= and ?objectId= to rebuild the object from the stored trail.',
             wasItSaved: 'not_saved',
             nextSafeAction: 'Name the object to reconstruct from the evidence.',
+          });
+        }
+        if (COMMITTEE_ONLY_AUDIT_OBJECTS.has(ctx.query['objectType'])) {
+          throw apiError(403, {
+            code: 'committee_records_are_not_in_the_general_trail',
+            whatHappened: 'The Internal Committee register\'s audit entries are confidential to the committee and are not rebuilt from the general audit trail.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'The committee reads them through its own access log. Nothing was shown.',
           });
         }
         const records = await deps.records(ctx.tenantId);

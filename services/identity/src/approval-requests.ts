@@ -179,6 +179,12 @@ export const APPROVAL_KINDS: Readonly<Record<string, ApprovalKind>> = Object.fre
     kind: 'store_computer_replaced', label: 'Move a till\'s bill numbers to a replacement store computer',
     makerPermission: 'store.computer.replace', checkerPermission: 'store.computer.replace.approve', validForMinutes: 24 * 60,
   },
+  // R2 C20 · OB-165 "A" (owner, 16 Oct 2026): the OWNER adds or removes an Internal Committee member (that role only); a
+  // second person who takes part in access changes (`identity.role.request` — a store manager today) confirms it.
+  posh_committee_change: {
+    kind: 'posh_committee_change', label: 'Add or remove an Internal Committee member',
+    makerPermission: 'posh.committee.manage', checkerPermission: 'identity.role.request', validForMinutes: 24 * 60,
+  },
 });
 
 /** A maker's request, as recorded. */

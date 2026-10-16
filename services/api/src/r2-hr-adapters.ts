@@ -8,15 +8,19 @@
 
 import { createHash } from 'node:crypto';
 import { makeEvent } from '../../../packages/contracts/src/event';
-import type { EventStore } from '../../../packages/persistence/src/event-store';
+import type { EventStore, BatchEntry } from '../../../packages/persistence/src/event-store';
 import {
-  UNSET_WORKING_TIME_SETTINGS, WORKING_TIME_LIMIT_KEYS,
+  UNSET_WORKING_TIME_SETTINGS, WORKING_TIME_LIMIT_KEYS, LEAVE_TYPE_KEYS,
+  type LeaveTypeKey, type LeaveTypeSetting,
   type WorkingTimeSettings, type WorkingTimeLimitKey, type LimitSetting, type LeaveRecord, type AttendanceFact,
   type PoshComplaint, type PoshStep, type PoshAnnualReport, type PoshReportFiling,
 } from '../../../packages/workforce/src/index';
-import type { HrComplianceDeps, WorkingTimeSettingChange, RosterPublication } from '../../finance/src/hr-compliance';
+import { staffRosterVisibility, type HrComplianceDeps, type WorkingTimeSettingChange, type RosterPublication, type StaffRosterVisibility } from '../../finance/src/hr-compliance';
+import type { StoredRoster } from '../../finance/src/roster-store';
 import { POSH_AUDIT_OBJECT, type PoshRegisterDeps } from '../../finance/src/posh-register';
-import { STREAM, streamName, rosterStoreAdapter, auditTrailAdapter } from './adapters';
+import { STREAM, streamName, rosterStoreAdapter, auditTrailAdapter, effectiveGrants, rolesHeldNow, isPersonNow, outsideLoginOf, ROLE_GRANTED, ROLE_REVOKED } from './adapters';
+import { ROLE_CATALOGUE } from './roles';
+import { COMMITTEE_ROLE_ID, type CommitteeMembershipDeps, type CommitteeChange } from '../../identity/src/committee-membership';
 
 /** The C18 pack's own stream (settings, publications, leave). */
 const HR_COMPLIANCE = streamName(STREAM.workforce, 'hr-compliance');
@@ -38,12 +42,14 @@ export function foldWorkingTimeSettings(changes: readonly WorkingTimeSettingChan
   const limits: Record<WorkingTimeLimitKey, LimitSetting> = { ...UNSET_WORKING_TIME_SETTINGS.limits };
   let publicHolidays = UNSET_WORKING_TIME_SETTINGS.publicHolidays;
   let utcOffsetMinutes = UNSET_WORKING_TIME_SETTINGS.utcOffsetMinutes;
+  const leaveTypes: Record<LeaveTypeKey, LeaveTypeSetting> = { ...UNSET_WORKING_TIME_SETTINGS.leaveTypes };
   for (const c of changes) {
     if (c.target === 'publicHolidays') publicHolidays = c.publicHolidays;
     else if (c.target === 'utcOffsetMinutes') utcOffsetMinutes = c.utcOffsetMinutes;
+    else if (c.target === 'leaveType') { if ((LEAVE_TYPE_KEYS as readonly string[]).includes(c.leaveType)) leaveTypes[c.leaveType] = c.setting; }
     else if ((WORKING_TIME_LIMIT_KEYS as readonly string[]).includes(c.target)) limits[c.target] = c.limit;
   }
-  return { limits, publicHolidays, utcOffsetMinutes };
+  return { limits, publicHolidays, utcOffsetMinutes, leaveTypes };
 }
 
 export function hrComplianceAdapter(input: { readonly store: EventStore; readonly now: () => string }): HrComplianceDeps {
@@ -74,6 +80,16 @@ export function hrComplianceAdapter(input: { readonly store: EventStore; readonl
   };
 }
 
+/**
+ * OB-166 "A": what staff may see of the roster — only the shifts of a branch's week that is published NOW. Read by
+ * GET /v1/hr/workforce/my-roster (and shown beside the manager's roster), over the same settings and publications the
+ * publish route writes.
+ */
+export function staffRosterVisibilityAdapter(input: { readonly store: EventStore; readonly now: () => string }): (tenantId: string, roster: StoredRoster) => Promise<StaffRosterVisibility> {
+  const hr = hrComplianceAdapter(input);
+  return async (tenantId, roster) => staffRosterVisibility(await hr.settings(tenantId), roster, await hr.publications(tenantId));
+}
+
 export function poshRegisterAdapter(input: { readonly store: EventStore; readonly now: () => string }): PoshRegisterDeps {
   const { store, now } = input;
   const auditTrail = auditTrailAdapter({ store });
@@ -94,5 +110,40 @@ export function poshRegisterAdapter(input: { readonly store: EventStore; readonl
     accessLog: async (tenantId) => (await auditTrail.records(tenantId))
       .filter((r) => r.objectType === POSH_AUDIT_OBJECT)
       .map((r) => ({ actorId: r.actorId, action: r.action, objectId: r.objectId, at: r.at })),
+  };
+}
+
+/**
+ * OB-165 "A": Internal Committee membership on the identity ledger every reader of authority folds — an addition is a
+ * `RoleGranted` of `internal_committee` (all branches), a removal a `RoleRevoked` per committee grant the person holds,
+ * in ONE batch, idempotent on the change id. Who asked (the owner) and who confirmed ride on each event.
+ */
+export function committeeMembershipAdapter(input: { readonly store: EventStore; readonly now: () => string }): Omit<CommitteeMembershipDeps, 'recordAudit' | 'approvals'> {
+  const { store, now } = input;
+  return {
+    now,
+    rolesHeldBy: (tenantId, userId) => rolesHeldNow(store, tenantId, userId, now()),
+    committeeGrantsOf: async (tenantId, userId) => (await effectiveGrants(store, tenantId))
+      .filter((g) => g.userId === userId && g.roleId === COMMITTEE_ROLE_ID).map((g) => ({ branchScope: g.branchScope })),
+    roles: () => ROLE_CATALOGUE,
+    isPerson: (tenantId, userId) => isPersonNow(store, tenantId, userId),
+    outsideLoginOf: (tenantId, userId) => outsideLoginOf(store, tenantId, userId, now()),
+    recordChange: async (tenantId, c: CommitteeChange) => {
+      const provenance = { kind: 'internal_committee_change', changeId: c.changeId, action: c.action, requestedBy: c.requestedBy, approvedBy: c.approvedBy, reason: c.reason };
+      const entries: BatchEntry[] = c.action === 'add'
+        ? [{ stream: STREAM.identity, event: makeEvent({
+          id: `grant-committee-${c.changeId}`, type: ROLE_GRANTED, occurredAt: c.at, idempotencyKey: `grant-${tenantId}-committee-${c.changeId}`, source: 'api/identity',
+          payload: {
+            userId: c.userId, roleId: COMMITTEE_ROLE_ID, branchScope: 'all',
+            request: { grantId: `committee-${c.changeId}`, userId: c.userId, roleId: COMMITTEE_ROLE_ID, branchScope: 'all', requestedBy: c.requestedBy, approvedBy: c.approvedBy, requestedAt: c.at },
+            provenance,
+          },
+        }) }]
+        : c.revokes.map((g, i) => ({ stream: STREAM.identity, event: makeEvent({
+          id: `revoke-committee-${c.changeId}-${i}`, type: ROLE_REVOKED, occurredAt: c.at, idempotencyKey: `revoke-${tenantId}-committee-${c.changeId}-${i}`, source: 'api/identity',
+          payload: { userId: c.userId, roleId: COMMITTEE_ROLE_ID, branchScope: g.branchScope, provenance },
+        }) }));
+      if (entries.length > 0) await store.appendBatch(tenantId, entries);
+    },
   };
 }

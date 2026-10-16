@@ -26,6 +26,7 @@ import { storeComputerGrantRefusal } from '../../platform/src/store-computer-ide
 import { machineIdentityGrantRefusal, MACHINE_IDENTITY_REFUSAL_CODE } from './machine-identities';
 import { outsidePartyGrantRefusal, OUTSIDE_LOGIN_REFUSAL_CODE } from './outside-party-logins';
 import { dutiesGrantRefusal, SEPARATION_OF_DUTIES_REFUSAL_CODE } from './separation-of-duties';
+import { ownerAndCommitteeRefusal, OWNER_ON_COMMITTEE_REFUSAL_CODE } from './committee-membership';
 import type { Role } from '../../../packages/rbac/src/rbac';
 import { actionDetails, approvalNamedIn, type ApprovalPort } from './approval-requests';
 import {
@@ -108,6 +109,9 @@ export function emergencyAccessRoutes(deps: EmergencyAccessDeps): readonly Route
           // OB-95: not even in an emergency does one person hold the IT/platform role and a business role.
           const both = deps.roles === undefined ? undefined : dutiesGrantRefusal(b['roleId'] as string, held, await deps.roles(ctx.tenantId));
           if (both !== undefined) throw apiError(422, { code: SEPARATION_OF_DUTIES_REFUSAL_CODE, whatHappened: both, wasItSaved: 'not_saved', nextSafeAction: 'Give the emergency access to a person who holds no role on the other side, on their own sign-in. Nobody\'s access changed.' });
+          // OB-165: not even in an emergency does the owner hold the Internal Committee role (nor a member the owner role).
+          const owner = ownerAndCommitteeRefusal([b['roleId'] as string, ...held]);
+          if (owner !== undefined) throw apiError(422, { code: OWNER_ON_COMMITTEE_REFUSAL_CODE, whatHappened: owner, wasItSaved: 'not_saved', nextSafeAction: 'Nobody\'s access changed.' });
         }
         // Round 14 (verifier G5): not even in an emergency is anything added to an outside party's login.
         const outside = outsidePartyGrantRefusal(b['roleId'] as string, await deps.outsideLoginOf?.(ctx.tenantId, b['userId'] as string));

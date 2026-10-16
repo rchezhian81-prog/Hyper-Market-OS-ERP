@@ -294,7 +294,8 @@ import { aiRoutes } from '../../ai/src/index';
 import { modelGatewayRoutes, governedEvidence } from '../../ai/src/model-gateway';
 import { draftingLegRoutes } from '../../ai/src/drafting-legs';
 import { serviceDeskExtrasAdapter, anomalySummaryAdapter, orderFactsFor, breachAlertAdapter, storefrontSelfAdapter, competitorPriceAdapter } from './round8-adapters';
-import { hrComplianceAdapter, poshRegisterAdapter } from './r2-hr-adapters';
+import { hrComplianceAdapter, poshRegisterAdapter, staffRosterVisibilityAdapter, committeeMembershipAdapter } from './r2-hr-adapters';
+import { committeeMembershipRoutes } from '../../identity/src/committee-membership';
 import { hrComplianceRoutes } from '../../finance/src/hr-compliance';
 import { poshRegisterRoutes } from '../../finance/src/posh-register';
 import { processorRegisterAdapter, settlementRefundsAdapter } from './r2-data-adapters';
@@ -678,6 +679,9 @@ export function buildSurface(deps: {
     ...emergencyAccessRoutes(store === undefined
       ? { grant: empty(undefined), grants: empty([]), recordGrant: () => {}, now }
       : { ...emergencyAccessAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }) }),
+    // R2 C20 · OB-165 "A": the owner adds or removes an Internal Committee member (that role only), a second person
+    // confirms through the maker-checker engine, the change is audited, and the owner never holds the role.
+    ...(store === undefined ? [] : committeeMembershipRoutes({ ...committeeMembershipAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, approvals: approvalRequestsAdapter({ store, now }) })),
     // Joiner/mover/leaver access lifecycle (M02-FR-04 · Wave 2b PA-02) — a durable COMMAND now: it reads what the
     // person holds from the ledger, appends the grants and revocations, and cuts the live session through the same
     // revocation list the authenticator consults, so a leaver's access ends on the next request.
@@ -1701,7 +1705,8 @@ export function buildSurface(deps: {
     // missing from STORED facts (the stateful counterpart to the POST what-if above). Writes manage-gated.
     ...rosterStoreRoutes(store === undefined ? {
       putEmployee: () => {}, putShift: () => {}, putAssignment: () => {}, roster: () => ({ employees: [], shifts: [], assignments: [] }), now,
-    } : rosterStoreAdapter({ store, now })),
+      staffVisibility: () => Promise.resolve({ visible: new Map() }),
+    } : { ...rosterStoreAdapter({ store, now }), staffVisibility: staffRosterVisibilityAdapter({ store, now }) }),
     // HR/Workforce DURABLE certification store (M25-FR-03 follow-on) — certificates persisted alongside the
     // roster (same tenant stream), so GET …/task-gate reads a stored employee + their certificate on file and
     // runs the tested canPerformTask (the stateful counterpart to the POST what-if). Writes manage-gated.
