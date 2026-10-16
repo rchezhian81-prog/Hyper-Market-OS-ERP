@@ -123,14 +123,14 @@ describe.skipIf(DATABASE_URL === undefined)('round 37 · M35-FR-03 · OB-106 · 
     // The function itself, directly: refused by name.
     const admin = new Client({ connectionString: DATABASE_URL }); await admin.connect();
     try {
-      const me = (await admin.query<{ pid: number; started: string }>('SELECT pid, backend_start::text AS started FROM pg_stat_activity WHERE pid = pg_backend_pid()')).rows[0]!;
+      const me = (await admin.query<{ pid: number; started: string }>('SELECT pid, extract(epoch from backend_start)::text AS started FROM pg_stat_activity WHERE pid = pg_backend_pid()')).rows[0]!;
       await expect(pgEndBackendVia(app)({ pid: me.pid, startedAt: me.started })).rejects.toBeInstanceOf(DedicatedSessionEndRefusedError);
       expect(await alive(me.pid)).toBe(true);
       // A process id with another start time (reused) is never ended: "already gone".
       const own = await app.connect();
       try {
         const o = (await own.query<{ pid: number }>('SELECT pg_backend_pid() AS pid')).rows[0]!;
-        expect(await pgEndBackendVia(app)({ pid: o.pid, startedAt: '2000-01-01 00:00:00+00' })).toBe('already_gone');
+        expect(await pgEndBackendVia(app)({ pid: o.pid, startedAt: '946684800' })).toBe('already_gone'); // 2000-01-01 (round 39: seconds since 1970)
         expect(await alive(o.pid)).toBe(true);
       } finally { own.release(); }
     } finally { await admin.end(); }
