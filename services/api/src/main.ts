@@ -118,6 +118,7 @@ import { facilitiesRoutes } from '../../platform/src/facilities';
 import { facilitiesAssetsRoutes } from '../../platform/src/facilities-assets';
 import { facilitiesMonitoringRoutes } from '../../platform/src/facilities-monitoring';
 import { weighingVerificationRoutes } from '../../platform/src/facilities-metrology';
+import { r2TillRoutes } from './r2-till-adapters';
 import { complianceRoutes } from '../../compliance/src/index';
 import { riskRegisterRoutes } from '../../compliance/src/risk';
 import { inventoryRoutes } from '../../inventory/src/index';
@@ -1596,6 +1597,8 @@ export function buildSurface(deps: {
     } : facilitiesMonitoringAdapter({ store, now })),
     // Verified-scale gate (B6, Legal Metrology) — stateless, folds no ledger, so no deps/stub.
     ...weighingVerificationRoutes(),
+    // R2 lane 1 (B6): the weighing-scale register the store pack carries to the lanes.
+    ...r2TillRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
     // Owner alerts inbox (M29-FR-03) — control by exception; stateless grouping of the period's exceptions.
     ...ownerAlertsRoutes(),
     // Owner drill-through + KPI comparison (M29-FR-02) — "show me the transactions behind this figure",

@@ -24,6 +24,7 @@ import { mrpOn, type ProductRecord, type BarcodeAssignment } from '../../../pack
 import type { PriceEntry } from '../../../packages/price-list/src/price-list';
 import type { Promotion } from '../../../packages/promotions/src/promotions';
 import { resolveGstRate, InvalidRateSchedule, type GstRatePeriod } from '../../../packages/finance/src/rate';
+import { TOBACCO_MINIMUM_AGE } from '../../../packages/restricted-sales/src/till-gate';
 
 export interface CataloguePreviewDeps {
   readonly products: (tenantId: string) => Promise<readonly ProductRecord[]> | readonly ProductRecord[];
@@ -58,8 +59,20 @@ const statusOf = (lifecycle: ProductRecord['lifecycle']): ProductStatus =>
  * per-product flags — they are not invented here.
  */
 export function regulatedFlagsFor(r: Pick<ProductRecord, 'safety'>): Readonly<Record<string, unknown>> | undefined {
-  const age = r.safety?.minimumAge;
-  return typeof age === 'number' && Number.isInteger(age) && age > 0 ? { minimumAge: age } : undefined;
+  const s = r.safety;
+  const age = s?.minimumAge;
+  const posInt = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v > 0;
+  // B14 · B19 (roadmap v2.1): the till's legal gates read these from the signed pack (`till-gate.ts`). A tobacco product
+  // always carries an age of at least 18; only well-formed values travel (the publish route refuses the rest).
+  const flags: Record<string, unknown> = {
+    ...(s?.tobacco === true ? { tobacco: true, minimumAge: Math.max(TOBACCO_MINIMUM_AGE, posInt(age) ? age : 0) } : posInt(age) ? { minimumAge: age } : {}),
+    ...(s?.tobacco === true && posInt(s.packMinimumMinor) ? { packMinimumMinor: s.packMinimumMinor } : {}),
+    ...(s?.carryBag === true ? { carryBag: true } : {}),
+    ...(typeof s?.plasticMaterial === 'string' && s.plasticMaterial.trim() !== '' ? { plasticMaterial: s.plasticMaterial } : {}),
+    ...(posInt(s?.plasticThicknessMicrons) ? { plasticThicknessMicrons: s.plasticThicknessMicrons } : {}),
+    ...(s?.bannedSingleUsePlastic === true ? { bannedSingleUsePlastic: true } : {}),
+  };
+  return Object.keys(flags).length === 0 ? undefined : flags;
 }
 
 export function toMaster(r: ProductRecord, asOf: string): MasterProduct {

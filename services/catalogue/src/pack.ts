@@ -35,6 +35,7 @@
 // a stopped till — and never silently, either (P-08).
 
 import type { CatalogueProduct, CatalogueSnapshot } from '../../../packages/catalogue/src/catalogue';
+import { hasTillRuleFlags } from '../../../packages/restricted-sales/src/till-gate';
 
 /** Signing is a port. The core stays pure and testable; deployment supplies the real key. */
 export interface PackSigner {
@@ -102,8 +103,17 @@ export function canonicalise(snapshot: CatalogueSnapshot): string {
   const promotions = [...(snapshot.promotions ?? [])]
     .sort((a, b) => (a.id < b.id ? -1 : 1))
     .map((p) => stableJson(p));
+  // B14 · B19 (roadmap v2.1): a product's `regulatedFlags` ride under the signature whenever they carry anything the till's
+  // legal gate reads (tobacco pack size, carry bag, plastic thickness, banned single-use plastic) — so a pack edited after
+  // signing to un-ban a plastic or shrink a pack size fails to verify. Only then, so a pack without such a product signs
+  // to exactly the bytes it always did and a box's held pack still verifies after the upgrade.
+  const regulated = [...snapshot.products]
+    .filter((p) => hasTillRuleFlags(p.regulatedFlags))
+    .sort((a, b) => (a.productId < b.productId ? -1 : 1))
+    .map((p) => [p.productId, stableJson(p.regulatedFlags)].join(FIELD));
   return [snapshot.tenantId, snapshot.version, snapshot.builtAt, ...products, '--', ...barcodes,
-    ...(promotions.length === 0 ? [] : ['--promotions', ...promotions])]
+    ...(promotions.length === 0 ? [] : ['--promotions', ...promotions]),
+    ...(regulated.length === 0 ? [] : ['--regulated', ...regulated])]
     .join(RECORD);
 }
 

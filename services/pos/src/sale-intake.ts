@@ -24,6 +24,8 @@
 
 import { isStoreComputerDefaultReceipt } from '../../../packages/contracts/src/receipt-number';
 import { minimumAgeOf, type CatalogueProduct } from '../../../packages/catalogue/src/catalogue';
+import { productRuleRefusals, isWeighedUom } from '../../../packages/restricted-sales/src/till-gate';
+import { weighingScaleVerification, InvalidScaleVerification } from '../../../packages/facilities/src/weighing-verification';
 
 export interface IncomingSaleLine {
   readonly productId: string;
@@ -72,6 +74,16 @@ export interface IncomingSaleLine {
     readonly approvedBy?: string;
     readonly activityId?: string;
   };
+  /**
+   * B6: the scales the lane took weight from for a WEIGHED line, and the last day each stamp was valid, as the till's gate
+   * checked them (`till-gate.ts` `scaleEvidence`). A record, never a control here — the till and its store computer refuse
+   * the line; head office flags a weighed line without it, or with a stamp that had lapsed.
+   */
+  readonly scaleCheck?: { readonly checkedOn?: string; readonly scales?: readonly { readonly assetId?: string; readonly reverificationDueOn?: string }[] };
+  /** B14: the pack size a tobacco line was judged against at the till. A record. */
+  readonly packCheck?: { readonly packMinimumMinor?: number };
+  /** B19: a carry-bag line's material and thickness as the till judged them. A record. */
+  readonly carryBag?: { readonly material?: string; readonly thicknessMicrons?: number };
 }
 
 export interface IncomingTender {
@@ -142,6 +154,14 @@ export type SaleExceptionKind =
   | 'sold_expired_batch'
   /** An age-restricted product was sold with no confirmed age check covering it (PF-03). **Critical**: possibly a minor. */
   | 'age_restricted_sold_without_check'
+  /** B19: a banned single-use plastic, a carry bag below 120 µm, or a carry bag given free was sold. **Critical**: unlawful. */
+  | 'unlawful_plastic_sold'
+  /** B14: a tobacco line below one whole pack (a loose cigarette) was sold. **Critical**: COTPA s.7. */
+  | 'tobacco_sold_below_pack'
+  /** B6: a weighed line came with no scale evidence, or its scale's Legal Metrology stamp had lapsed when it sold. */
+  | 'weighed_on_unverified_scale'
+  /** B5: a weighed line was charged more than weighed quantity × the price per kg (rounded against the customer). */
+  | 'weighed_line_charged_above_weight_times_price'
   /** The tenders do not add up to the total. Somebody's day will not balance. */
   | 'tender_does_not_sum_to_total'
   /** Priced from a pack far behind the current one. */
@@ -383,6 +403,60 @@ export function acceptSale(sale: IncomingSale, ctx: IntakeContext): IntakeResult
               : `${product.sku} is restricted to ${requiredAge}+ but the customer was only confirmed ${confirmedAge}+`,
           'ACT NOW: an age-restricted item may have been sold to someone under age. Ask the cashier on that bill what was checked, and find why the till did not stop the sale (an old till, or a pack that predates the restriction).',
           { productId: line.productId });
+      }
+    }
+
+    // ── The till's legal gates, re-checked against head office's OWN catalogue (B14 · B19). The till and its store ──────
+    // ── computer refuse these before the money; this is the backstop for an old till, or a product whose flags changed ──
+    // ── after the lane's pack was built. The sale stands (the goods are gone, hard rule #1), so each is CRITICAL. ─────────
+    const legal = productRuleRefusals({
+      productId: line.productId, description: product.sku, quantityMinor: line.quantityMinor, uom: line.uom,
+      unitPriceMinor: line.unitPriceMinor, ...(product.regulatedFlags === undefined ? {} : { regulatedFlags: product.regulatedFlags }),
+    });
+    for (const r of legal) {
+      if (r.reason === 'banned_single_use_plastic' || r.reason === 'carry_bag_below_min_thickness' || r.reason === 'carry_bag_not_priced') {
+        add('unlawful_plastic_sold', 'critical',
+          `${product.sku}: ${r.detail}`,
+          'ACT NOW: an item the plastic rules forbid was sold. Take the item off sale, find why the till did not stop it (an old till, or a pack that predates the rule), and keep the receipt for the record.',
+          { productId: line.productId });
+      } else if (r.reason === 'tobacco_below_pack') {
+        add('tobacco_sold_below_pack', 'critical',
+          `${product.sku}: ${r.detail}`,
+          'ACT NOW: loose cigarettes were sold, which the law forbids. Ask the cashier on that bill, and find why the till did not stop it.',
+          { productId: line.productId });
+      }
+    }
+
+    // ── B6 · B5 — a WEIGHED line: its scale's stamp, and its amount against weight × price. ───────────────────────────
+    if (isWeighedUom(line.uom)) {
+      const evidence = line.scaleCheck;
+      const scales = Array.isArray(evidence?.scales) ? evidence.scales : [];
+      const day = typeof evidence?.checkedOn === 'string' ? evidence.checkedOn : sale.tradingDay;
+      const lapsed = scales.filter((s) => {
+        try { return weighingScaleVerification({ reverificationDueOn: String(s.reverificationDueOn ?? '') }, day).tradingBlocked; } catch (err) {
+          if (err instanceof InvalidScaleVerification) return true; // an unreadable stamp date is no proof of a current one
+          throw err;
+        }
+      });
+      if (scales.length === 0) {
+        add('weighed_on_unverified_scale', 'material',
+          `${product.sku} was sold by weight with no record of a verified scale`,
+          'Head office cannot show this weight came from a scale with a current Legal Metrology stamp. Check which till sent it (an old till sends no scale record) and that its scale is on the register.',
+          { productId: line.productId });
+      } else if (lapsed.length > 0) {
+        add('weighed_on_unverified_scale', 'critical',
+          `${product.sku} was weighed on ${lapsed.map((s) => `${String(s.assetId)} (stamp valid to ${String(s.reverificationDueOn)})`).join(', ')} on ${day} — the verification had lapsed`,
+          'ACT NOW: goods were sold by weight on a scale whose Legal Metrology stamp had run out. Stop weighing on it, book the re-verification, and find why the till did not stop the sale.',
+          { productId: line.productId });
+      }
+      // The amount the customer may be charged at most: weighed net quantity × the price per unit, rounded DOWN (B5).
+      const per = line.uom === 'kg' ? 1000 : 1;
+      const most = Math.floor((line.unitPriceMinor * line.quantityMinor) / per);
+      if (Number.isSafeInteger(most) && line.lineTotalMinor > most) {
+        add('weighed_line_charged_above_weight_times_price', 'material',
+          `${product.sku}: ${line.quantityMinor} ${line.uom === 'kg' ? 'g' : line.uom} at ${line.unitPriceMinor} per ${line.uom} is at most ${most}, and the line charged ${line.lineTotalMinor}`,
+          'The customer was charged more than the weight times the displayed price. Refund the difference if they ask, and find which till rounds against the customer.',
+          { productId: line.productId, differenceMinor: line.lineTotalMinor - most });
       }
     }
 

@@ -18,7 +18,8 @@ import { CatalogueCache, type CatalogueSnapshot } from '../../../packages/catalo
 import { money } from '../../../packages/contracts/src/money';
 import type { TenderKind } from '../../../packages/contracts/src/enums';
 import type { DecidedRequest } from '../../../packages/approvals/src/approvals';
-import { PosSession, taxRateFromPercent, NoOperatorError } from './session';
+import { PosSession, taxRateFromPercent, NoOperatorError, TillRuleRefusedError } from './session';
+import type { LaneScales } from '../../../packages/restricted-sales/src/till-gate';
 import {
   createTillSession, TILL_CASH_WORDS_FOR_THE_LANE,
   type CashMovementWrite, type ShiftCloseWrite, type TillCashRead, type CashMovementOutcome, type ShiftCloseOutcome, type TillCashStatus,
@@ -114,6 +115,11 @@ export interface PosLane {
   readonly tradingDayCutoffKnown: boolean;
   readonly tradingDay: string;
   readonly storeId: string | null;
+  /**
+   * B6: the weighing scales this lane takes weight from, from the store pack — `known: false` (with why) when the box was
+   * never told. Absent on a page from an older box: the till then sells nothing by weight (no stamp can be shown current).
+   */
+  readonly scales?: LaneScales;
 }
 
 /** The browser global this bundle attaches to (typed without needing the DOM lib). */
@@ -692,6 +698,8 @@ export function bootPos(config?: {
   tradingDay?: string;
   /** Where this shop's trading day ends, "HH:MM" local (M01-FR-02). Absent = midnight. */
   tradingDayCutoff?: string;
+  /** B6: the weighing scales this lane takes weight from (store pack, via the box). Absent = never told → no weighed sale. */
+  laneScales?: LaneScales;
   taxPercent?: number;
   /** The lane's cached catalogue snapshot; without it, barcode scanning is off. */
   catalogue?: CatalogueSnapshot;
@@ -846,6 +854,8 @@ export function bootPos(config?: {
   readonly lane: () => { readonly laneId: string | null; readonly tradingDayCutoff: string; readonly tradingDayAt: (atIsoUtc: string) => string };
 } {
   const outbox = new SyncOutbox();
+  // The lane's catalogue, once indexed below — the session reads each product's pack flags from it (B14 · B19).
+  const catalogueRef: { cache?: CatalogueCache } = {};
   // D04-FR-05 · P-01: how many sale/refund writes to the box are waiting for its answer. The device re-send never starts
   // while one is (`device-heartbeat.ts`); it goes once the write has answered. Counting only — no network here.
   let commitsInFlight = 0;
@@ -873,6 +883,10 @@ export function bootPos(config?: {
       defaultTaxRate: taxRateFromPercent(config?.taxPercent ?? 18),
       // SF-01: offers are judged against this lane's own clock — no network, no fixed date.
       clock: () => new Date().toISOString(),
+      // B6: weight only from a scale whose stamp is current — this lane's scales, as the box's store pack names them.
+      ...(config?.laneScales === undefined ? {} : { laneScales: config.laneScales }),
+      // B14 · B19: the commit's second gate reads each product's flags from the lane's own signed catalogue.
+      regulatedFlagsOf: (productId: string) => catalogueRef.cache?.findByProductId(productId)?.regulatedFlags,
     },
     new Ledger(new InMemoryLedgerStore()),
     outbox,
@@ -880,6 +894,7 @@ export function bootPos(config?: {
   );
   // Indexing happens once at boot, so every subsequent scan is O(1) (§32).
   const catalogue = config?.catalogue ? new CatalogueCache(config.catalogue) : undefined;
+  catalogueRef.cache = catalogue;
   // SF-01: the switched-on offers the signed pack carried — applied at checkout from the lane's own copy (P-01).
   session.loadPromotions(config?.catalogue?.promotions ?? []);
   const view = createPosView(session, 'INR', catalogue);
@@ -1209,7 +1224,9 @@ export function bootPos(config?: {
   });
   /** What lowering a line to `toUnitMinor` takes off it — the amount the manager approves. */
   const priceChangeValue = (lineId: string, toUnitMinor: number): { readonly ok: true; readonly reductionMinor: number; readonly fromUnitMinor: number } | { readonly ok: false; readonly laneMessage: string } => {
-    try { return { ok: true, ...session.overrideValue(lineId, toUnitMinor) }; } catch {
+    try { return { ok: true, ...session.overrideValue(lineId, toUnitMinor) }; } catch (e) {
+      // B19: a carry bag cannot be made free — said in the gate's own words.
+      if (e instanceof TillRuleRefusedError) return { ok: false, laneMessage: e.laneMessage };
       return { ok: false, laneMessage: 'A price can only be lowered here, on a line that is on the bill.' };
     }
   };
@@ -1407,6 +1424,8 @@ if (browserWindow !== undefined) {
     catalogue: browserWindow.posCatalogue,
     ...(lane?.laneId === undefined || lane.laneId === null || lane.laneId === '' ? {} : { laneId: lane.laneId }),
     ...(lane === undefined ? {} : { tradingDayCutoff: lane.tradingDayCutoff }),
+    // B6: this lane's scales as the box's store pack names them; a page without them sells nothing by weight.
+    ...(lane?.scales === undefined ? {} : { laneScales: lane.scales }),
     ...(browserWindow.posReceiptTemplate === undefined ? {} : { receiptTemplate: browserWindow.posReceiptTemplate }),
     // The refund policy the box was given (SP-9b-i): without it the till offers no return without a receipt.
     ...(browserWindow.posRefundPolicy === undefined ? {} : { refundPolicy: browserWindow.posRefundPolicy }),
