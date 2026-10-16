@@ -15,6 +15,7 @@
 import type { EventStore } from '../../../packages/persistence/src/event-store';
 import { machineIdentitySetRefusal } from '../../identity/src/machine-identities';
 import { dutiesSetRefusal } from '../../identity/src/separation-of-duties';
+import { ownerAndCommitteeRefusal } from '../../identity/src/committee-membership';
 import { AccessControl, type Role, type RoleAssignment } from '../../../packages/rbac/src/rbac';
 import { makeEvent } from '../../../packages/contracts/src/event';
 import { STREAM, effectiveGrants } from './adapters';
@@ -104,6 +105,9 @@ export async function seedInitialAdmins(
     // OB-95 (owner, 13 Oct 2026): nor is one person laid down with the IT/platform role and a business role.
     const both = dutiesSetRefusal(admins.filter((a) => a.userId === who).map((a) => a.roleId), ROLE_CATALOGUE);
     if (both !== undefined) throw new Error(`Initial admin set refused for ${who}: ${both}`);
+    // OB-165 (owner, 16 Oct 2026): nor is the owner laid down on the Internal Committee.
+    const owner = ownerAndCommitteeRefusal(admins.filter((a) => a.userId === who).map((a) => a.roleId));
+    if (owner !== undefined) throw new Error(`Initial admin set refused for ${who}: ${owner}`);
   }
   // The tenant exists from this moment (db/migrations/0013): registered by the operator who laid the admins down.
   await store.registerTenant(tenantId, `operator:${laidDownBy}`);

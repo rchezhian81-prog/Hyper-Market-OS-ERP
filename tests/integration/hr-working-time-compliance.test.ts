@@ -69,7 +69,7 @@ const backings: { name: string; harness: () => ApiHarness }[] = [{ name: 'the in
 if (DATABASE_URL !== undefined) backings.push({ name: 'real PostgreSQL', harness: () => { const sql = pgPoolClient(pool!); return apiHarness({ store: new SqlEventStore(sql), idempotency: new SqlIdempotencyStore(sql) }); } });
 
 describe.each(backings)('C18 — working-time limits enforced at publish, registers produced — on $name', ({ harness }) => {
-  it('refuses to publish while a limit is pending; only the owner sets one; every limit change is audited', async () => {
+  it('publishes while limits are pending, naming each limit not checked (OB-155); only the owner sets one; every limit change is audited', async () => {
     const h = harness();
     const t = randomUUID();
     const s = await shop(h, t);
@@ -81,11 +81,18 @@ describe.each(backings)('C18 — working-time limits enforced at publish, regist
     expect(settings.status).toBe(200);
     expect((settings.body as { pending: string[] }).pending).toHaveLength(7);
 
-    const refused = await s.publish('P0');
-    expect(refused.status).toBe(409);
-    expect(codeOf(refused)).toBe('working_time_limits_pending');
-    expect((refused.body as { error: { whatHappened: string } }).error.whatHappened).toContain('Daily hours cap');
-    expect(((await s.call('GET', '/v1/hr/compliance/roster-publications', 'u-mgr')).body as { count: number }).count).toBe(0);
+    // OB-155 "A": publishing is ALLOWED while limits are pending; the publication names exactly which were not checked.
+    const unchecked = await s.publish('P0');
+    expect(unchecked.status).toBe(201);
+    const ub = unchecked.body as { publication: { limitsNotChecked: { key: string }[] }; notChecked: { key: string }[]; words: string };
+    expect(ub.notChecked.map((n) => n.key)).toEqual(['weeklyHolidayMinDays', 'maxDailyWorkMinutes', 'maxWeeklyWorkMinutes', 'maxSpreadOverMinutes', 'maxContinuousWorkMinutes', 'minRestIntervalMinutes']);
+    expect(ub.publication.limitsNotChecked.map((n) => n.key)).toEqual(ub.notChecked.map((n) => n.key));
+    expect(ub.words).toContain('NOT checked');
+    expect(ub.words).toContain('Daily hours cap');
+    const listed = (await s.call('GET', '/v1/hr/compliance/roster-publications', 'u-mgr')).body as { count: number; weeks: { state: string; limitsNotChecked: unknown[] }[] };
+    expect(listed.count).toBe(1);
+    expect(listed.weeks).toEqual([expect.objectContaining({ state: 'published', weekStart: WEEK[0] })]);
+    expect(listed.weeks[0]!.limitsNotChecked).toHaveLength(6);
 
     // A manager may not set a legal limit; a cashier may not even read them.
     expect((await s.call('POST', '/v1/hr/compliance/working-time/settings/maxDailyWorkMinutes', 'u-mgr', { value: 600, source: 'x', confirmation: 'y' }, 'm1')).status).toBe(403);
@@ -134,6 +141,7 @@ describe.each(backings)('C18 — working-time limits enforced at publish, regist
     expect(words).toContain('Person E2 is rostered 10h on 2026-10-21 — more than the daily cap of 9h');
     expect((refused.body as { breaches: unknown[] }).breaches).toHaveLength(4);
     expect(((await s.call('GET', '/v1/hr/compliance/roster-publications', 'u-mgr')).body as { count: number }).count).toBe(0);
+    expect((refused.body as { notChecked: unknown[] }).notChecked).toEqual([]);
 
     // Fix: E1 gets Sunday off (the shifts are moved to the next week); E2's day becomes two halves with a rest.
     await s.shift('M6', '2026-10-26', '09:00', '13:00');

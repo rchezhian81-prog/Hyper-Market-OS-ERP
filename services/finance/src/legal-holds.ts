@@ -25,6 +25,7 @@
 
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
+import { generalAuditRecords } from './audit-trail-store';
 import {
   planRetention, liftHold, buildEvidencePack, AuditTrail, InMemoryAuditStore,
   retentionPoliciesOrDefault,
@@ -258,7 +259,8 @@ export function legalHoldsRoutes(deps: LegalHoldsDeps): readonly Route[] {
             nextSafeAction: 'Send the date to assess against. Add policies[] only to override the default schedule. A plan reads; it deletes nothing.',
           });
         }
-        const records = (await deps.producedRecords?.(ctx.tenantId)) ?? [];
+        // NEW-4: the Internal Committee's entries are not planned or listed here (they are never disposed of either).
+        const records = generalAuditRecords((await deps.producedRecords?.(ctx.tenantId)) ?? []);
         const holds = await deps.holds(ctx.tenantId);
         const plan = planRetention(records, policies, holds, b['asOf'] as string);
         return { status: 200, body: { ...plan, source: 'produced-trail', recordsAssessed: records.length } };
@@ -281,10 +283,11 @@ export function legalHoldsRoutes(deps: LegalHoldsDeps): readonly Route[] {
             nextSafeAction: 'Send the period to export. The pack is named to you and carries the trail\'s seal.',
           });
         }
-        const records = (await deps.producedRecords?.(ctx.tenantId)) ?? [];
+        const all = (await deps.producedRecords?.(ctx.tenantId)) ?? [];
+        // NEW-4: the pack leaves the Internal Committee's entries out; the chain is still verified whole.
         const pack = buildEvidencePack({
-          records, from: b['from'] as string, until: b['until'] as string,
-          exportedBy: ctx.userId, exportedAt: deps.now(), sourceIntact: chainIntact(records),
+          records: generalAuditRecords(all), from: b['from'] as string, until: b['until'] as string,
+          exportedBy: ctx.userId, exportedAt: deps.now(), sourceIntact: chainIntact(all),
         });
         return { status: 200, body: pack };
       },

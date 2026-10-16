@@ -30,6 +30,15 @@ import {
   type ShiftRequirement, type ShiftAssignment, type Employee,
 } from '../../../packages/workforce/src/workforce';
 
+/** The published week a shift staff can see belongs to, and the limits not checked when it was published. */
+export interface PublishedWeekRef {
+  readonly branchId: string;
+  readonly weekStart: string;
+  readonly weekEnd: string;
+  readonly publicationId: string;
+  readonly limitsNotChecked: readonly { readonly key: string; readonly label: string; readonly missing: string }[];
+}
+
 /** The whole stored roster for a tenant (optionally one branch), the shape `rosterGaps` reads. */
 export interface StoredRoster {
   readonly employees: readonly Employee[];
@@ -46,6 +55,14 @@ export interface RosterStoreDeps {
   readonly putAssignment: (tenantId: string, assignment: ShiftAssignment, key: string) => Promise<void> | void;
   /** Fold the stored roster, optionally narrowed to one branch. */
   readonly roster: (tenantId: string, branchId?: string) => Promise<StoredRoster> | StoredRoster;
+  /**
+   * OB-166 "A": which shifts staff may see — those of a branch's week that is PUBLISHED now (checked against the working-
+   * time limits, and not edited since) — and those weeks, each naming the limits that were not checked (OB-155).
+   */
+  readonly staffVisibility: (tenantId: string, roster: StoredRoster) => Promise<{
+    /** Each visible shift, with the published week it belongs to. */
+    readonly visible: ReadonlyMap<string, PublishedWeekRef>;
+  }>;
   readonly now: () => string;
 }
 
@@ -205,23 +222,35 @@ export function rosterStoreRoutes(deps: RosterStoreDeps): readonly Route[] {
       // (`ctx.userId`) and nobody else, so a member of staff sees their own week and not the whole grid. Gated on
       // the narrow, widely-held `payroll.ess.self` (the same self-service permission the payslip ESS view uses),
       // NOT the manager `workforce.roster.read`. Read-only; a person the roster does not know reads as `known:false`.
+      // OB-166 "A": ONLY shifts of a week that is published now — a week not yet published, or edited after publishing,
+      // is held back until it is checked and published again (`notYetPublished` says how many shifts are waiting).
       api: 'API-11', method: 'GET', path: '/v1/hr/workforce/my-roster',
       permission: 'payroll.ess.self',
       handler: async (ctx) => {
         const r = await deps.roster(ctx.tenantId);
         const me = r.employees.find((e) => e.employeeId === ctx.userId);
         const byShift = new Map(r.shifts.map((s) => [s.shiftId, s]));
-        const shifts = r.assignments
-          .filter((a) => a.employeeId === ctx.userId)
+        const visibility = await deps.staffVisibility(ctx.tenantId, r);
+        const assigned = r.assignments.filter((a) => a.employeeId === ctx.userId && byShift.has(a.shiftId));
+        const shifts = assigned
+          .filter((a) => visibility.visible.has(a.shiftId))
           .map((a) => {
             const shift = byShift.get(a.shiftId);
             return shift === undefined ? undefined : { shiftId: shift.shiftId, role: a.role, branchId: shift.branchId, startsAt: shift.startsAt, endsAt: shift.endsAt };
           })
           .filter((s): s is { shiftId: string; role: string; branchId: string; startsAt: string; endsAt: string } => s !== undefined)
           .sort((a, b) => a.startsAt.localeCompare(b.startsAt) || a.shiftId.localeCompare(b.shiftId));
+        const weekRefs = new Map<string, PublishedWeekRef>();
+        for (const s of shifts) { const w = visibility.visible.get(s.shiftId)!; weekRefs.set(`${w.branchId}|${w.weekStart}`, w); }
+        // OB-155: each published week says which working-time limits were not checked when it was published.
+        const weeks = [...weekRefs.values()].sort((a, b) => a.weekStart.localeCompare(b.weekStart) || a.branchId.localeCompare(b.branchId))
+          .map((w) => ({ branchId: w.branchId, weekStart: w.weekStart, weekEnd: w.weekEnd, limitsNotChecked: w.limitsNotChecked.map((l) => l.label) }));
         return {
           status: 200,
-          body: { employeeId: ctx.userId, known: me !== undefined, active: me?.active ?? false, shifts, count: shifts.length },
+          body: {
+            employeeId: ctx.userId, known: me !== undefined, active: me?.active ?? false, shifts, count: shifts.length,
+            notYetPublished: assigned.length - shifts.length, weeks,
+          },
         };
       },
     },

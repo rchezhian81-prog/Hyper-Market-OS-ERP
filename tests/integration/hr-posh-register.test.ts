@@ -17,7 +17,9 @@ import { PLATFORM_ADMIN_ROLE_ID } from '../../services/api/src/roles';
  *     an accountant and the platform administrator are each refused (403) on every complaint route;
  *   • every read (the list, one complaint, a missing one, the access log, the report) and every write is sealed into the
  *     tamper-evident audit trail, naming only the act and the record id — never a name or the summary;
- *   • append-only: a second receipt under an id is refused, a step after disposal is refused, nothing can be edited;
+ *   • append-only: a retry lands on the same record, a step after disposal is refused, nothing can be edited;
+ *   • the complaint and step ids are made by the register (opaque) — a body naming one is refused (verifier NEW-4);
+ *   • the POST replies carry ids and status only — never the content (NEW-5);
  *   • the annual report is counts only; the owner reads it, sees the 31 January exception (due, then overdue) and records
  *     it filed, after which the exception is gone.
  * In-memory and, with DATABASE_URL, real PostgreSQL. Synthetic data only.
@@ -37,10 +39,12 @@ async function cast(h: ApiHarness, t: string) {
   await h.provisionRole(t, 'u-cash', 'cashier');
   await h.provisionRole(t, 'u-acct', 'accountant');
   await h.provisionRole(t, 'u-it', PLATFORM_ADMIN_ROLE_ID);
-  const receive = (id: string, receivedOn: string, userId = 'u-ic', key = `rc-${id}`) =>
-    call('POST', `/v1/hr/posh/complaints/${id}`, userId, { receivedOn, complainantRef: `EMP-C-${id}`, respondentRef: `EMP-R-${id}`, summary: SECRET_SUMMARY }, key);
-  const stepOf = (id: string, stepId: string, body: Body, userId = 'u-ic') => call('POST', `/v1/hr/posh/complaints/${id}/steps/${stepId}`, userId, body, `st-${id}-${stepId}`);
-  return { call, receive, stepOf };
+  /** Receive a complaint labelled `label` (the label is the test's own; the register makes the id). */
+  const receive = (label: string, receivedOn: string, userId = 'u-ic', key = `rc-${label}`) =>
+    call('POST', '/v1/hr/posh/complaints', userId, { receivedOn, complainantRef: `EMP-C-${label}`, respondentRef: `EMP-R-${label}`, summary: SECRET_SUMMARY }, key);
+  const idOf = (r: { body: unknown }): string => (r.body as { complaintId: string }).complaintId;
+  const stepOf = (id: string, stepKey: string, body: Body, userId = 'u-ic') => call('POST', `/v1/hr/posh/complaints/${id}/steps`, userId, body, `st-${id}-${stepKey}`);
+  return { call, receive, idOf, stepOf };
 }
 
 const DATABASE_URL = process.env['DATABASE_URL'];
@@ -60,12 +64,14 @@ describe.each(backings)('C20 — the confidential Internal Committee register �
     const h = harness();
     const t = randomUUID();
     const s = await cast(h, t);
-    expect((await s.receive('P1', '2026-03-01')).status).toBe(201);
+    const r1 = await s.receive('P1', '2026-03-01');
+    expect(r1.status).toBe(201);
+    const P1 = s.idOf(r1);
     for (const outsider of ['u-owner', 'u-mgr', 'u-cash', 'u-acct', 'u-it']) {
       expect((await s.receive(`X-${outsider}`, '2026-03-01', outsider, `rc-x-${outsider}`)).status, `${outsider} receive`).toBe(403);
-      expect((await s.stepOf('P1', `s-${outsider}`, { kind: 'inquiry_started', on: '2026-03-02' }, outsider)).status, `${outsider} step`).toBe(403);
+      expect((await s.stepOf(P1, `s-${outsider}`, { kind: 'inquiry_started', on: '2026-03-02' }, outsider)).status, `${outsider} step`).toBe(403);
       expect((await s.call('GET', '/v1/hr/posh/complaints', outsider)).status, `${outsider} list`).toBe(403);
-      expect((await s.call('GET', '/v1/hr/posh/complaints/P1', outsider)).status, `${outsider} read`).toBe(403);
+      expect((await s.call('GET', `/v1/hr/posh/complaints/${P1}`, outsider)).status, `${outsider} read`).toBe(403);
       expect((await s.call('GET', '/v1/hr/posh/access-log', outsider)).status, `${outsider} access log`).toBe(403);
       expect((await s.call('POST', '/v1/hr/posh/annual-reports/2026', outsider, {}, `gen-${outsider}`)).status, `${outsider} generate`).toBe(403);
     }
@@ -82,19 +88,26 @@ describe.each(backings)('C20 — the confidential Internal Committee register �
     const h = harness();
     const t = randomUUID();
     const s = await cast(h, t);
-    expect((await s.receive('P1', '2026-03-01')).status).toBe(201);
-    // A second receipt under the same id — even by another member, with another key — is refused, never overwritten.
-    const again = await s.receive('P1', '2026-04-01', 'u-ic2', 'rc-P1-other');
-    expect(again.status).toBe(409);
-    expect(codeOf(again)).toBe('complaint_already_received');
+    const first = await s.receive('P1', '2026-03-01');
+    expect(first.status).toBe(201);
+    // The register makes the id — opaque, no name in it — and the reply carries the id and status only (NEW-4, NEW-5).
+    expect(first.body).toEqual({ complaintId: expect.stringMatching(/^PC-[0-9A-F]{20}$/), status: 'received' });
+    const P1 = s.idOf(first);
+    // A retry of the same request lands on the same complaint; nothing is received twice.
+    const retry = await s.receive('P1', '2026-03-01');
+    expect(s.idOf(retry)).toBe(P1);
+    // A caller cannot choose the id.
+    expect(codeOf(await s.call('POST', '/v1/hr/posh/complaints', 'u-ic', { complaintId: 'Priya-v-Ravi', receivedOn: '2026-03-01', complainantRef: 'a', respondentRef: 'b', summary: 'c' }, 'rc-named'))).toBe('complaint_id_is_made_by_the_register');
 
-    expect((await s.stepOf('P1', 's1', { kind: 'inquiry_started', on: '2026-03-05' })).status).toBe(201);
-    expect(codeOf(await s.stepOf('P1', 's0', { kind: 'disposed', on: '2026-02-01', outcome: 'upheld' }))).toBe('before_receipt');
-    expect(codeOf(await s.stepOf('P1', 's2', { kind: 'disposed', on: '2026-05-01' }))).toBe('outcome_needed');
-    expect((await s.stepOf('P1', 's3', { kind: 'disposed', on: '2026-05-01', outcome: 'upheld' })).status).toBe(201);
-    expect(codeOf(await s.stepOf('P1', 's4', { kind: 'inquiry_started', on: '2026-05-02' }))).toBe('already_disposed');
+    const started = await s.stepOf(P1, 's1', { kind: 'inquiry_started', on: '2026-03-05' });
+    expect(started.status).toBe(201);
+    expect(started.body).toEqual({ complaintId: P1, stepId: expect.stringMatching(/^PS-[0-9A-F]{20}$/), status: 'under_inquiry' });
+    expect(codeOf(await s.stepOf(P1, 's0', { kind: 'disposed', on: '2026-02-01', outcome: 'upheld' }))).toBe('before_receipt');
+    expect(codeOf(await s.stepOf(P1, 's2', { kind: 'disposed', on: '2026-05-01' }))).toBe('outcome_needed');
+    expect((await s.stepOf(P1, 's3', { kind: 'disposed', on: '2026-05-01', outcome: 'upheld', note: 'synthetic committee note' })).status).toBe(201);
+    expect(codeOf(await s.stepOf(P1, 's4', { kind: 'inquiry_started', on: '2026-05-02' }))).toBe('already_disposed');
 
-    const one = await s.call('GET', '/v1/hr/posh/complaints/P1', 'u-ic2');
+    const one = await s.call('GET', `/v1/hr/posh/complaints/${P1}`, 'u-ic2');
     expect(one.status).toBe(200);
     expect((one.body as { complaint: Body }).complaint).toMatchObject({ status: 'disposed', outcome: 'upheld', summary: SECRET_SUMMARY, receivedOn: '2026-03-01' });
     expect((await s.call('GET', '/v1/hr/posh/complaints/NOPE', 'u-ic2')).status).toBe(404);
@@ -104,12 +117,13 @@ describe.each(backings)('C20 — the confidential Internal Committee register �
     const trail = (await auditTrailAdapter({ store: h.store }).records(t)).filter((r) => r.objectType === 'posh_register');
     const acts = trail.map((r) => `${r.actorId}:${r.action}:${r.objectId}`);
     expect(acts).toEqual(expect.arrayContaining([
-      'u-ic:posh.complaint.receive:P1', 'u-ic:posh.complaint.inquiry_started:P1', 'u-ic:posh.complaint.disposed:P1',
-      'u-ic2:posh.complaint.read:P1', 'u-ic2:posh.complaint.read:NOPE', 'u-ic:posh.register.read:register',
+      `u-ic:posh.complaint.receive:${P1}`, `u-ic:posh.complaint.inquiry_started:${P1}`, `u-ic:posh.complaint.disposed:${P1}`,
+      `u-ic2:posh.complaint.read:${P1}`, 'u-ic2:posh.complaint.read:NOPE', 'u-ic:posh.register.read:register',
     ]));
+    expect(trail.filter((r) => r.action === 'posh.complaint.receive')).toHaveLength(1);
     // The audit trail never carries the confidential content.
     const text = JSON.stringify(trail);
-    for (const secret of [SECRET_SUMMARY, 'EMP-C-P1', 'EMP-R-P1']) expect(text).not.toContain(secret);
+    for (const secret of [SECRET_SUMMARY, 'EMP-C-P1', 'EMP-R-P1', 'synthetic committee note']) expect(text).not.toContain(secret);
 
     // The access log is itself a read of the register, and is sealed too.
     const log = await s.call('GET', '/v1/hr/posh/access-log', 'u-ic');
@@ -125,9 +139,9 @@ describe.each(backings)('C20 — the confidential Internal Committee register �
     const h = harness();
     const t = randomUUID();
     const s = await cast(h, t);
-    await s.receive('A', '2026-02-01');
+    const A = s.idOf(await s.receive('A', '2026-02-01'));
     await s.receive('B', '2026-11-20');
-    await s.stepOf('A', 'd', { kind: 'disposed', on: '2026-04-01', outcome: 'conciliation' });
+    await s.stepOf(A, 'd', { kind: 'disposed', on: '2026-04-01', outcome: 'conciliation' });
 
     // Before generation: due, not generated.
     const due = await s.call('GET', '/v1/hr/posh/annual-report-status', 'u-owner', undefined, undefined, { asOf: '2027-01-10' });

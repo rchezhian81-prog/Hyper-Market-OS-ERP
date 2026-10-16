@@ -96,11 +96,12 @@ describe('C18 roster check — every breach named in words', () => {
     expect(c.breaches.find((b) => b.rule === 'maxWeeklyWorkMinutes')).toMatchObject({ observed: 56 * 60, limit: 48 * 60 });
   });
 
-  it('counts a person\'s shifts at another branch toward their limits; ignores leavers and other weeks', () => {
+  it('counts a person\'s shifts at another branch toward their limits; checks a person marked inactive; ignores other weeks', () => {
     const shifts = [shift('A', WEEK[0]!, '08:00', '13:00'), shift('B', WEEK[0]!, '14:00', '19:00', 'b2'), shift('X', '2026-10-26', '08:00', '20:00')];
     const assignments = [on('A', 'E1'), on('B', 'E1'), on('X', 'E1'), on('A', 'GONE')];
     const c = checkWorkingTime({ settings: inForce(), branchId: 'b1', weekStart: WEEK[0]!, shifts, assignments, employees: [emp('E1'), emp('GONE', 'b1', false)] });
-    expect(c.employeesChecked).toBe(1);
+    // Verifier lanes34 NEW-3 (c): a person marked inactive who still holds shifts is checked — deactivating hides nothing.
+    expect(c.employeesChecked).toBe(2);
     expect(c.breaches.map((b) => b.rule)).toEqual(['maxDailyWorkMinutes']);
   });
 

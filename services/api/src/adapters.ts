@@ -1718,7 +1718,7 @@ async function appendSetting(store: EventStore, tenantId: string, stream: string
  * makes the roster durable — the staff directory, shifts and assignments each append to one tenant stream and
  * "current" is a latest-per-id fold of the stored facts (hard rule #2), so a restart never loses who is on.
  */
-export function rosterStoreAdapter(input: { readonly store: EventStore; readonly now: () => string }): RosterStoreDeps {
+export function rosterStoreAdapter(input: { readonly store: EventStore; readonly now: () => string }): Omit<RosterStoreDeps, 'staffVisibility'> {
   const append = async (tenantId: string, type: string, id: string, key: string, payload: object): Promise<void> => {
     await input.store.append(tenantId, ROSTER_STREAM, makeEvent({
       id: keyedEventId(`${type}-${id}`, key),
@@ -14075,6 +14075,13 @@ const orderCustomer = async (ctx: { readonly tenantId: string; readonly store: E
   return typeof ref === 'string' && ref !== '' ? ref : undefined;
 };
 const nonEmpty = (v: unknown): string | undefined => (typeof v === 'string' && v !== '' ? v : undefined);
+/** C20: the key category of the Internal Committee's register — retained with the register, never erased by a customer request. */
+export const POSH_SEALED_CATEGORY = 'posh_records';
+/** C20: a complaint's content is sealed under the complaint's own key (its id is opaque, made by the register). */
+const poshSubject = (complaintId: unknown): string | undefined => {
+  const id = nonEmpty(complaintId);
+  return id === undefined ? undefined : `posh-complaint:${id}`;
+};
 /** The person a loss-prevention case is about — from the case as it was opened. */
 const lpCaseSubject = async (ctx: { readonly tenantId: string; readonly store: EventStore }, caseId: unknown): Promise<string | undefined> => {
   const opened = (await ctx.store.readStream(ctx.tenantId, STREAM.lossPrevention, { type: 'LpCaseOpened' }))
@@ -14109,11 +14116,17 @@ export const PERSONAL_DATA_POLICY: PersonalDataPolicy = {
   ],
   LpEvidenceAdded: [{ category: 'lp_records', at: ['item'], fields: ['description'], subject: (_h, p, ctx) => lpCaseSubject(ctx, p['caseId']) }],
   LpCaseClosed: [{ category: 'lp_records', fields: ['outcomeNote'], subject: (h, _p, ctx) => lpCaseSubject(ctx, h['caseId']) }],
+  // R2 C20 (verifier lanes34 NEW-5): an Internal Committee complaint — the summary, who complained and who it is about —
+  // and a step's note, sealed under the COMPLAINT's own key in a category of their own. No customer erasure locates it
+  // (its subject is a complaint, not a customer), so the key is retained with the register; the event ledger, the
+  // backups and a whole-tenant export hold only ciphertext (`POSH_SEALED_CATEGORY` stays sealed on export).
+  PoshComplaintReceived: [{ category: POSH_SEALED_CATEGORY, fields: ['summary', 'complainantRef', 'respondentRef'], subject: (h) => poshSubject(h['complaintId']) }],
+  PoshComplaintStepRecorded: [{ category: POSH_SEALED_CATEGORY, fields: ['note'], subject: (h) => poshSubject(h['complaintId']) }],
 };
 
 /** The event store every domain writes through, with personal fields sealed under their subject's key (ADR-0025). */
 export function personalDataStore(store: EventStore, keys: SubjectKeyStore): EventStore {
-  return new PersonalDataSealingStore(store, keys, PERSONAL_DATA_POLICY);
+  return new PersonalDataSealingStore(store, keys, PERSONAL_DATA_POLICY, { sealedOnExport: [POSH_SEALED_CATEGORY] });
 }
 
 /**

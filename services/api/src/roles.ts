@@ -205,6 +205,9 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // statutory registers. R2 C20: the owner reads the Internal Committee's annual report (counts only) and its
       // 31 January status, and records it filed — but holds NO permission to read the complaints themselves.
       'hr.compliance.read', 'hr.compliance.configure', 'hr.register.read', 'posh.report.read', 'posh.report.file',
+      // R2 C20 · OB-165 "A": the owner adds or removes an Internal Committee member — that role only, confirmed by a second
+      // person, audited — and can never hold the role himself (services/identity/src/committee-membership.ts).
+      'posh.committee.manage',
     ],
   },
   {
