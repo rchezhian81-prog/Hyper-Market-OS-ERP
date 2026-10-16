@@ -11,7 +11,7 @@
 import { createHash } from 'node:crypto';
 import { makeEvent } from '../../../packages/contracts/src/event';
 import { ConcurrencyConflictError, type EventStore } from '../../../packages/persistence/src/event-store';
-import { STREAM, streamName, writeOffAdapter, wasteAdapter, productMasterAdapter, priceListAdapter, saleStockLocationOf } from './adapters';
+import { STREAM, streamName, writeOffAdapter, wasteAdapter, productMasterAdapter, priceListAdapter, saleStockLocationOf, sopStoreAdapter, permissionsHeldBy } from './adapters';
 import type { WasteAnalyticsDeps } from '../../inventory/src/waste-analytics';
 import type { LocationBranches } from '../../inventory/src/location-scope';
 import { SlotAlreadyRecordedError, type FoodSafetyDeps } from '../../platform/src/food-safety';
@@ -21,6 +21,8 @@ import type { PriceIntegrityAgeingDeps } from '../../pricing/src/price-integrity
 import type { PriceObservation, ChargedLine } from '../../../packages/self-checkout/src/index';
 import type { IncomingSale } from '../../pos/src/sale-intake';
 import { locationIsItsOwnBranch } from '../../inventory/src/location-scope';
+import type { AssignedTaskDeps } from '../../finance/src/assigned-tasks';
+import type { AssignedTask, AssignedTaskCompletion } from '../../../packages/workforce/src/assigned-tasks';
 
 const digest = (key: string): string => createHash('sha256').update(key).digest('hex').slice(0, 16);
 const all = async <T>(store: EventStore, tenantId: string, stream: string, type: string): Promise<T[]> =>
@@ -127,5 +129,47 @@ export function priceIntegrityAgeingAdapter(input: { readonly store: EventStore;
       }
       return out;
     },
+  };
+}
+
+// ── D-8 assigned store tasks ───────────────────────────────────────────────────────────────────────────────────
+
+const ASSIGNED_TASKS = streamName(STREAM.facilities, 'assigned-tasks');
+
+export function assignedTaskAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+  readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
+}): AssignedTaskDeps {
+  const completions = (tenantId: string) => all<AssignedTaskCompletion>(input.store, tenantId, ASSIGNED_TASKS, 'StoreTaskCompleted');
+  return {
+    now: input.now,
+    // Each assignment is a version; the latest of each task is the one in force (every version is kept).
+    tasks: async (tenantId) => {
+      const byId = new Map<string, AssignedTask>();
+      for (const t of await all<AssignedTask>(input.store, tenantId, ASSIGNED_TASKS, 'StoreTaskAssigned')) byId.set(t.taskId, t);
+      return [...byId.values()];
+    },
+    completions,
+    recordTask: async (tenantId, task) => {
+      const d = digest(`${task.taskId}|${task.assignedAt}|${JSON.stringify(task)}`);
+      await input.store.append(tenantId, ASSIGNED_TASKS, makeEvent({
+        id: `store-task-${task.taskId}-${d}`, type: 'StoreTaskAssigned', occurredAt: task.assignedAt,
+        idempotencyKey: `store-task-${tenantId}-${task.taskId}-${d}`, source: 'api/workforce', payload: task,
+      }));
+    },
+    // One completion per task: keyed on the task, so a second completion can never be appended beside the first.
+    recordCompletion: async (tenantId, c) => {
+      await input.store.append(tenantId, ASSIGNED_TASKS, makeEvent({
+        id: `store-task-done-${c.taskId}`, type: 'StoreTaskCompleted', occurredAt: c.doneAt,
+        idempotencyKey: `store-task-done-${tenantId}-${c.taskId}`, source: 'api/workforce', payload: c,
+      }));
+    },
+    sop: async (tenantId, sopId) => {
+      const found = (await sopStoreAdapter(input).sops(tenantId)).find((s) => s.sopId === sopId);
+      return found === undefined ? undefined : { title: found.title, version: found.version };
+    },
+    permissionsOfUser: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),
+    ...(input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit }),
   };
 }

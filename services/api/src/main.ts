@@ -293,7 +293,8 @@ import { aiRoutes } from '../../ai/src/index';
 import { modelGatewayRoutes, governedEvidence } from '../../ai/src/model-gateway';
 import { draftingLegRoutes } from '../../ai/src/drafting-legs';
 import { serviceDeskExtrasAdapter, anomalySummaryAdapter, orderFactsFor, breachAlertAdapter, storefrontSelfAdapter, competitorPriceAdapter } from './round8-adapters';
-import { wasteAnalyticsAdapter, foodSafetyAdapter, priceIntegrityAgeingAdapter } from './r2-ops-adapters';
+import { wasteAnalyticsAdapter, foodSafetyAdapter, priceIntegrityAgeingAdapter, assignedTaskAdapter } from './r2-ops-adapters';
+import { assignedTaskRoutes } from '../../finance/src/assigned-tasks';
 import { priceIntegrityAgeingRoutes } from '../../pricing/src/price-integrity-ageing';
 import { foodSafetyRoutes } from '../../platform/src/food-safety';
 import { wasteAnalyticsRoutes } from '../../inventory/src/waste-analytics';
@@ -1718,6 +1719,8 @@ export function buildSurface(deps: {
     ...taskStoreRoutes(store === undefined ? {
       putTask: () => {}, completeTask: () => {}, tasks: () => [], now,
     } : taskStoreAdapter({ store, now })),
+    // D-8 (R2): tasks assigned to a named person — SOP checklist, deadline, evidence, only the assignee completes (r2-ops-adapters).
+    ...assignedTaskRoutes(store === undefined ? { tasks: empty([]), completions: empty([]), recordTask: () => {}, recordCompletion: () => {}, sop: empty(undefined), permissionsOfUser: empty(undefined), now } : assignedTaskAdapter({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) })),
     // Payroll pay-run DURABLE lifecycle store (WP3 inc9) — append draft→submit→approve→lock→reverse to the
     // append-only ledger (one stream per run) so a run survives a restart; maker ≠ checker enforced at the
     // write boundary. Confidential — owner-gated. The stateless /pay-run/evaluate route stays for previews.
