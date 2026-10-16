@@ -132,7 +132,7 @@ describe.each(backings)('an open count freezes every adjustment and write-off pa
 
     // ── HEAD-OFFICE paths: each refused by name, nothing written ─────────────────────────────────────────────────
     // 1. The write-off route.
-    await frozen(call('POST', '/v1/inventory/write-off/wo-1', 'u-mgr', { productId: 'P1', locationId: 'S1', qty: 1, uom: 'EA', lossType: 'damage', reasonCode: 'crushed' }), 'write-off');
+    await frozen(call('POST', '/v1/inventory/write-off/wo-1', 'u-mgr', { productId: 'P1', locationId: 'S1', qty: 1, uom: 'EA', lossType: 'damage', reasonCode: 'damage' }), 'write-off');
     expect(((await call('GET', '/v1/inventory/write-offs', 'u-owner')).body as { writeOffs: { id: string }[] }).writeOffs.map((w) => w.id)).toEqual([]);
     // 2. A held returned unit's write-off decision — the unit stays held. (Its restock — a `returned`, not frozen — goes through.)
     await frozen(call('POST', `/v1/returns/held-stock/${damagedUnit.heldId}/decisions/d-wo`, 'u-mgr', { decision: 'write_off', reasonCode: 'torn', evidenceRef: 'photo-1' }), 'held write-off');
@@ -167,7 +167,7 @@ describe.each(backings)('an open count freezes every adjustment and write-off pa
     expect((await call('GET', '/v1/inventory/count-plans/cp1', 'u-plan')).body).toMatchObject({ freezeBreaches: [], heldWriteOffs: [{ heldId: 'ind-1:is-1-damaged-1', state: 'awaiting_close' }] });
 
     // Controls: a product NOT counted at the same place is written off; the till's restock (not a frozen kind) goes through.
-    await ok(call('POST', '/v1/inventory/write-off/wo-p3', 'u-mgr', { productId: 'P3', locationId: 'S1', qty: 1, uom: 'EA', lossType: 'damage', reasonCode: 'crushed' }), 'write-off of an uncounted product');
+    await ok(call('POST', '/v1/inventory/write-off/wo-p3', 'u-mgr', { productId: 'P3', locationId: 'S1', qty: 1, uom: 'EA', lossType: 'damage', reasonCode: 'damage' }), 'write-off of an uncounted product');
     await ok(call('POST', `/v1/returns/held-stock/${quarantinedUnit.heldId}/decisions/d-rs`, 'u-owner', { decision: 'restock', reasonCode: 'qc_passed' }), 'restock');
 
     // ── BOX-RELAYED records: kept, and raised on the plan as freeze exceptions that need a recount ─────────────────
@@ -199,7 +199,7 @@ describe.each(backings)('an open count freezes every adjustment and write-off pa
     expect((cancelled.body as { heldWriteOffsApplied: { writeOffId: string; outcome: string }[] }).heldWriteOffsApplied.map((a) => [a.writeOffId, a.outcome])).toEqual([['held-ind-1:is-1-damaged-1', 'cancelled'], ['held-ind-2:is-3-damaged-1', 'cancelled']]);
     expect(await onHand('P2')).toBe(p2BeforeClose);
     expect(((await call('GET', '/v1/inventory/write-offs', 'u-owner')).body as { writeOffs: { id: string }[] }).writeOffs.map((w) => w.id)).toEqual(expect.arrayContaining(['held-ind-1:is-1-damaged-1', 'held-ind-2:is-3-damaged-1']));
-    await ok(call('POST', '/v1/inventory/write-off/wo-1', 'u-mgr', { productId: 'P1', locationId: 'S1', qty: 1, uom: 'EA', lossType: 'damage', reasonCode: 'crushed' }), 'write-off after the count');
+    await ok(call('POST', '/v1/inventory/write-off/wo-1', 'u-mgr', { productId: 'P1', locationId: 'S1', qty: 1, uom: 'EA', lossType: 'damage', reasonCode: 'damage' }), 'write-off after the count');
     expect(await movementIds()).toContain('writeoff-wo-1');
   }, 180_000);
 });

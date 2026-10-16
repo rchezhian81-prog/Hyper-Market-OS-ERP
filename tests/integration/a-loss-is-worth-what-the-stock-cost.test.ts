@@ -32,7 +32,7 @@ async function cast(): Promise<{ h: ApiHarness; post: (id: string, body: Record<
     onHand: async (productId) => ((await h.request({ method: 'GET', path: '/v1/inventory/availability', userId: 'u-owner', tenantId: A, query: { productId } })).body as { rows: { onHandMinor: number }[] }).rows.reduce((s, r) => s + r.onHandMinor, 0),
   };
 }
-const loss = (over: Record<string, unknown> = {}) => ({ productId: 'OIL-5L', locationId: 'store-1', qty: 100, uom: 'ea', lossType: 'damage', reasonCode: 'leaking', ...over });
+const loss = (over: Record<string, unknown> = {}) => ({ productId: 'OIL-5L', locationId: 'store-1', qty: 100, uom: 'ea', lossType: 'damage', reasonCode: 'damage', ...over });
 
 describe('SF-05 — a loss is valued from the stock\'s own cost', () => {
   it('THE AUDIT\'S CASE: 100 units at ₹50 written off "worth 0" is refused by name — nothing leaves the shelf', async () => {

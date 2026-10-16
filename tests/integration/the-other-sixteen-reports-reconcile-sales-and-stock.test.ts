@@ -208,8 +208,8 @@ describe.each(backings)('D13 — the other sales and stock reports reconcile to 
     expect(val(await report('shrinkage', undefined, 'u-mgr-s2', 'S2'), 'Counts that changed the books')).toBe(0);
 
     // Write-offs: two small losses at the stock's own cost.
-    await ok(call('POST', '/v1/inventory/write-off/WO-1', 'u-mgr', { productId: 'P-MILK', locationId: 'S1', qty: 2, uom: 'ea', lossType: 'damage', reasonCode: 'leaking' }), 201);
-    await ok(call('POST', '/v1/inventory/write-off/WO-2', 'u-mgr', { productId: 'P-YOG', locationId: 'S1', qty: 1, uom: 'ea', lossType: 'expiry', reasonCode: 'past date' }), 201);
+    await ok(call('POST', '/v1/inventory/write-off/WO-1', 'u-mgr', { productId: 'P-MILK', locationId: 'S1', qty: 2, uom: 'ea', lossType: 'damage', reasonCode: 'damage' }), 201);
+    await ok(call('POST', '/v1/inventory/write-off/WO-2', 'u-mgr', { productId: 'P-YOG', locationId: 'S1', qty: 1, uom: 'ea', lossType: 'expiry', reasonCode: 'expiry' }), 201);
     const waste = await report('waste');
     const listed = (await ok(call('GET', '/v1/inventory/write-offs', 'u-owner'), 200)).body as { totalLossMinor: number };
     expect(val(waste, 'Thrown away, at cost')).toBe(2 * 3_000 + 2_000);

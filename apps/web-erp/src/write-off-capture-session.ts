@@ -31,6 +31,7 @@
 import { translator, presentScreenState, type BilingualCopy, type Lang } from '../../../packages/ui/src/index';
 import { presentStatus, type StatusPresentation } from '../../../packages/a11y/src/signals';
 import type { LossType } from '../../../packages/waste/src/waste';
+import { WASTE_REASON_CODES, WASTE_REASON_WORDS, isWasteReason, type WasteReason } from '../../../packages/waste/src/reasons';
 import {
   presentRequestStatus, shopTime,
   type ApprovalAsk, type ApprovalRequestView, type ApprovalStatus, type AskResult, type InboxRead, type LostLink, type Refused,
@@ -65,7 +66,8 @@ export interface WriteOffDraft {
   readonly lossType: LossType;
   /** The loss's value in paise, ≥ 0 — what finance carries. Materiality is judged on this. */
   readonly valueMinor: number;
-  /** A finer reason; defaults to the loss type (which is itself the chosen categorisation). */
+  /** D-5: WHY the stock is lost — a code CHOSEN from the closed waste reason list (`WASTE_REASON_CODES`), never typed
+   *  and never defaulted. A draft without one is incomplete: a bare (reasonless) waste event is not sent. */
   readonly reasonCode?: string;
   /** A photo/witness reference — REQUIRED for a material loss (the server also enforces it). */
   readonly evidenceRef?: string;
@@ -95,12 +97,12 @@ const isPosInt = (v: unknown): v is number => Number.isInteger(v) && (v as numbe
 const isNonNegInt = (v: unknown): v is number => Number.isInteger(v) && (v as number) >= 0;
 
 /** The ONE place a draft becomes the body — for the loss sent with no approval, the loss sent naming one, and the
- *  details an approval is asked for. Trimmed; the reason code defaults to the loss type. */
+ *  details an approval is asked for. Trimmed. D-5: the reason is the operator's choice from the closed list — it is never
+ *  defaulted (from the loss type or anything else); a draft without one is refused before any POST. */
 export function writeOffBodyOf(d: WriteOffDraft): WriteOffBody {
   return {
     productId: d.productId.trim(), locationId: d.locationId.trim(), qty: d.qty, uom: d.uom.trim(), lossType: d.lossType,
-    // The loss type IS the chosen reason categorisation; a finer reasonCode overrides it when supplied.
-    reasonCode: isNonEmpty(d.reasonCode) ? d.reasonCode.trim() : d.lossType,
+    reasonCode: isNonEmpty(d.reasonCode) ? d.reasonCode.trim() : '',
     valueMinor: d.valueMinor,
     ...(isNonEmpty(d.evidenceRef) ? { evidenceRef: d.evidenceRef.trim() } : {}),
   };
@@ -197,6 +199,8 @@ export const WRITE_OFF_REFUSAL_CODES = Object.freeze([
   'write_off_already_recorded',
   // SF-05 — head office values a loss from the stock's own cost: a different figure, or none where it holds no cost.
   'write_off_value_is_the_stock_cost', 'write_off_cost_unknown',
+  // D-5 — a bare (reasonless) waste event, or a reason off the closed list.
+  'waste_reason_required', 'waste_reason_not_in_taxonomy',
 ] as const);
 export type WriteOffRefusalCode = (typeof WRITE_OFF_REFUSAL_CODES)[number];
 
@@ -232,7 +236,7 @@ export interface LossRequestsView {
 export type CopyKey =
   | 'title' | 'lead' | 'langName'
   | 'lossWastage' | 'lossDamage' | 'lossExpiry' | 'lossDonation' | 'lossDestruction'
-  | 'productLabel' | 'locationLabel' | 'qtyLabel' | 'uomLabel' | 'valueLabel' | 'lossTypeLabel' | 'evidenceLabel'
+  | 'productLabel' | 'locationLabel' | 'qtyLabel' | 'uomLabel' | 'valueLabel' | 'lossTypeLabel' | 'reasonLabel' | 'evidenceLabel'
   | 'recordBtn'
   | 'materialHint' | 'immaterialHint' | 'thresholdLabel'
   | 'approvalLead' | 'whyLabel' | 'askBtn' | 'summaryLoss'
@@ -242,7 +246,7 @@ export type CopyKey =
   | 'notPermitted' | 'incomplete' | 'needsEvidence' | 'notConnected'
   | 'notAsked' | 'waiting' | 'rejected' | 'rejectedNoName' | 'expired' | 'used' | 'changed'
   | 'checkerMayNot' | 'namedNotApproved' | 'refused' | 'refusedNoWords' | 'lostLink'
-  | 'hoNeedsApproval' | 'hoNeedsEvidence' | 'hoInvalid' | 'hoNotOwned' | 'hoAlready' | 'hoValueIsStockCost' | 'hoCostUnknown'
+  | 'hoNeedsApproval' | 'hoNeedsEvidence' | 'hoInvalid' | 'hoNotOwned' | 'hoAlready' | 'hoValueIsStockCost' | 'hoCostUnknown' | 'hoReason'
   | 'valueFromStock' | 'valueCostUnknown' | 'valueLostLink' | 'valueRefused'
   | 'yourLossesTitle' | 'yourLossesLead' | 'carryOnBtn' | 'carriedOn' | 'whyWord'
   | 'scrReady' | 'stateNotPermitted' | 'nobodyNamed';
@@ -254,7 +258,7 @@ export const WRITE_OFF_CAPTURE_COPY: BilingualCopy<CopyKey> = {
     lead: 'Record stock that is leaving as a loss — wastage, damage, expiry, a donation or a destruction. It reduces the shelf figure and values the loss. A big loss (at or above the store limit) needs a photo or witness, and a different person who handles stock must approve it on their Approvals page — you cannot approve your own loss.',
     lossWastage: 'Wastage', lossDamage: 'Damage', lossExpiry: 'Expired', lossDonation: 'Donation', lossDestruction: 'Destruction',
     productLabel: 'Which item', locationLabel: 'Where in the store', qtyLabel: 'How many', uomLabel: 'Unit',
-    valueLabel: 'What it is worth (₹)', lossTypeLabel: 'What kind of loss', evidenceLabel: 'Photo or witness (for a big loss)',
+    valueLabel: 'What it is worth (₹)', lossTypeLabel: 'What kind of loss', reasonLabel: 'Why it is lost', evidenceLabel: 'Photo or witness (for a big loss)',
     recordBtn: 'Record the loss',
     materialHint: 'This is a big loss — it needs a photo or witness, and a second person who handles stock must approve it.',
     immaterialHint: 'This loss is small enough to record on your own.',
@@ -264,7 +268,7 @@ export const WRITE_OFF_CAPTURE_COPY: BilingualCopy<CopyKey> = {
     askBtn: 'Ask for approval',
     summaryLoss: 'Write off {qty} × {product} — {loss}, {value}',
     asked: 'Asked. Waiting for a second person who handles stock (not you) to approve it on their Approvals page. Nothing is recorded yet.',
-    askIncomplete: 'Nothing was asked — fill in the item, where it is, how many (a whole number), what it is worth and the kind of loss.',
+    askIncomplete: 'Nothing was asked — fill in the item, where it is, how many (a whole number), what it is worth, the kind of loss and why it is lost.',
     askNotMaterial: 'No approval is needed — this loss is small enough to record on your own. Press “Record the loss”.',
     askNeedsEvidence: 'Nothing was asked — a big loss needs a photo or witness first. Add it, then ask.',
     askNeedsWhy: 'Write why this is a loss, in a sentence — the person approving reads it. Nothing was asked.',
@@ -275,7 +279,7 @@ export const WRITE_OFF_CAPTURE_COPY: BilingualCopy<CopyKey> = {
     recorded: 'Loss recorded. The shelf figure has come down.',
     recordedApproved: 'Loss recorded. {who} approved it, and that approval has now been used. The shelf figure has come down.',
     notPermitted: '{not} — you do not have permission to record a loss.',
-    incomplete: '{not} — fill in the item, where it is, how many (a whole number), what it is worth and the kind of loss.',
+    incomplete: '{not} — fill in the item, where it is, how many (a whole number), what it is worth, the kind of loss and why it is lost.',
     needsEvidence: '{not} — this is a big loss: add a photo or witness first.',
     notConnected: '{not} — a big loss needs a second person’s approval at head office, and this screen is not connected to head office. A name typed on a page is not an approval, so nothing was recorded.',
     notAsked: '{not} — nobody has been asked to approve this loss yet. Write why and press “Ask for approval” first.',
@@ -295,6 +299,7 @@ export const WRITE_OFF_CAPTURE_COPY: BilingualCopy<CopyKey> = {
     hoNotOwned: '{not} — some of this item at that place belongs to someone else (a concession or consignment supplier, or a customer). Store staff cannot write off stock the store does not own; its owner records that loss.',
     hoAlready: 'This loss was already recorded. Nothing was recorded again.',
     hoValueIsStockCost: '{not} — the value is not head office\'s figure for this stock. Re-enter the product, place and quantity so the screen shows head office\'s value, then record again.',
+    hoReason: '{not} — head office records a loss only with a reason from its list. Choose why it is lost and record again.',
     hoCostUnknown: '{not} — head office holds no cost for this stock. Type the value you believe it has — a photo or witness and a second person\'s approval will be needed.',
     valueFromStock: 'Head office\'s value: {qty} × {unit} = {value}.',
     valueCostUnknown: 'Head office holds no cost for this stock. Type the value you believe it has — this loss needs a photo or witness and a second person\'s approval, whatever its value.',
@@ -314,7 +319,7 @@ export const WRITE_OFF_CAPTURE_COPY: BilingualCopy<CopyKey> = {
     lead: 'இழப்பாக வெளியேறும் பொருளைப் பதிவு செய்யவும் — கழிவு, சேதம், காலாவதி, நன்கொடை அல்லது அழிப்பு. இது அலமாரி எண்ணிக்கையைக் குறைத்து இழப்பை மதிப்பிடும். பெரிய இழப்புக்கு (கடை வரம்பிற்குச் சமமாக அல்லது அதற்கு மேல்) புகைப்படம் அல்லது சாட்சி தேவை; மேலும் சரக்கைக் கையாளும் வேறு ஒருவர் அதைத் தனது அனுமதிகள் பக்கத்தில் அனுமதிக்க வேண்டும் — உங்கள் சொந்த இழப்பை நீங்கள் அனுமதிக்க முடியாது.',
     lossWastage: 'கழிவு', lossDamage: 'சேதம்', lossExpiry: 'காலாவதி', lossDonation: 'நன்கொடை', lossDestruction: 'அழிப்பு',
     productLabel: 'எந்தப் பொருள்', locationLabel: 'கடையில் எங்கே', qtyLabel: 'எத்தனை', uomLabel: 'அலகு',
-    valueLabel: 'மதிப்பு (₹)', lossTypeLabel: 'எந்த வகை இழப்பு', evidenceLabel: 'புகைப்படம் அல்லது சாட்சி (பெரிய இழப்புக்கு)',
+    valueLabel: 'மதிப்பு (₹)', lossTypeLabel: 'எந்த வகை இழப்பு', reasonLabel: 'ஏன் இழப்பு', evidenceLabel: 'புகைப்படம் அல்லது சாட்சி (பெரிய இழப்புக்கு)',
     recordBtn: 'இழப்பைப் பதிவு செய்',
     materialHint: 'இது ஒரு பெரிய இழப்பு — புகைப்படம் அல்லது சாட்சி தேவை; சரக்கைக் கையாளும் இரண்டாம் நபர் அதை அனுமதிக்க வேண்டும்.',
     immaterialHint: 'இந்த இழப்பு நீங்களே பதிவு செய்யும் அளவுக்குச் சிறியது.',
@@ -324,7 +329,7 @@ export const WRITE_OFF_CAPTURE_COPY: BilingualCopy<CopyKey> = {
     askBtn: 'அனுமதி கேள்',
     summaryLoss: '{qty} × {product} இழப்பாகக் கழித்தல் — {loss}, {value}',
     asked: 'கேட்கப்பட்டது. சரக்கைக் கையாளும் இரண்டாம் நபர் (நீங்கள் அல்ல) தனது அனுமதிகள் பக்கத்தில் அனுமதிக்கக் காத்திருக்கிறது. இன்னும் எதுவும் பதிவு செய்யப்படவில்லை.',
-    askIncomplete: 'எதுவும் கேட்கப்படவில்லை — பொருள், அது எங்கே உள்ளது, எத்தனை (முழு எண்), அதன் மதிப்பு, இழப்பின் வகை ஆகியவற்றை நிரப்பவும்.',
+    askIncomplete: 'எதுவும் கேட்கப்படவில்லை — பொருள், அது எங்கே உள்ளது, எத்தனை (முழு எண்), அதன் மதிப்பு, இழப்பின் வகை, ஏன் இழப்பு ஆகியவற்றை நிரப்பவும்.',
     askNotMaterial: 'அனுமதி தேவையில்லை — இந்த இழப்பு நீங்களே பதிவு செய்யும் அளவுக்குச் சிறியது. “இழப்பைப் பதிவு செய்” அழுத்தவும்.',
     askNeedsEvidence: 'எதுவும் கேட்கப்படவில்லை — பெரிய இழப்புக்கு முதலில் புகைப்படம் அல்லது சாட்சி தேவை. அதைச் சேர்த்து, பிறகு கேளுங்கள்.',
     askNeedsWhy: 'இது ஏன் இழப்பு என்று ஒரு வாக்கியத்தில் எழுதுங்கள் — அனுமதிப்பவர் அதைப் படிப்பார். எதுவும் கேட்கப்படவில்லை.',
@@ -335,7 +340,7 @@ export const WRITE_OFF_CAPTURE_COPY: BilingualCopy<CopyKey> = {
     recorded: 'இழப்பு பதிவு செய்யப்பட்டது. அலமாரி எண்ணிக்கை குறைந்தது.',
     recordedApproved: 'இழப்பு பதிவு செய்யப்பட்டது. {who} அனுமதித்தார்; அந்த அனுமதி இப்போது பயன்படுத்தப்பட்டுவிட்டது. அலமாரி எண்ணிக்கை குறைந்தது.',
     notPermitted: '{not} — இழப்பைப் பதிவு செய்ய உங்களுக்கு அனுமதி இல்லை.',
-    incomplete: '{not} — பொருள், அது எங்கே உள்ளது, எத்தனை (முழு எண்), அதன் மதிப்பு, இழப்பின் வகை ஆகியவற்றை நிரப்பவும்.',
+    incomplete: '{not} — பொருள், அது எங்கே உள்ளது, எத்தனை (முழு எண்), அதன் மதிப்பு, இழப்பின் வகை, ஏன் இழப்பு ஆகியவற்றை நிரப்பவும்.',
     needsEvidence: '{not} — இது ஒரு பெரிய இழப்பு: முதலில் புகைப்படம் அல்லது சாட்சியைச் சேர்க்கவும்.',
     notConnected: '{not} — பெரிய இழப்புக்குத் தலைமை அலுவலகத்தில் இரண்டாம் நபரின் அனுமதி தேவை, இந்தத் திரை தலைமை அலுவலகத்துடன் இணைக்கப்படவில்லை. பக்கத்தில் தட்டச்சு செய்த பெயர் அனுமதி ஆகாது, எனவே எதுவும் பதிவு செய்யப்படவில்லை.',
     notAsked: '{not} — இந்த இழப்புக்கு இன்னும் யாரிடமும் அனுமதி கேட்கப்படவில்லை. ஏன் என்று எழுதி, முதலில் “அனுமதி கேள்” அழுத்தவும்.',
@@ -355,6 +360,7 @@ export const WRITE_OFF_CAPTURE_COPY: BilingualCopy<CopyKey> = {
     hoNotOwned: '{not} — அந்த இடத்தில் உள்ள இந்தப் பொருளில் சில வேறொருவருக்குச் சொந்தமானவை (கூட்டாளர் கவுண்டர், சரக்கு-விற்பனை விநியோகஸ்தர் அல்லது வாடிக்கையாளர்). கடைக்குச் சொந்தமில்லாத சரக்கைக் கடை ஊழியர்கள் இழப்பாகக் கழிக்க முடியாது; அதன் உரிமையாளரே அந்த இழப்பைப் பதிவு செய்வார்.',
     hoAlready: 'இந்த இழப்பு ஏற்கனவே பதிவு செய்யப்பட்டது. மீண்டும் எதுவும் பதிவு செய்யப்படவில்லை.',
     hoValueIsStockCost: '{not} — இந்த மதிப்பு இந்தச் சரக்குக்கான தலைமை அலுவலகத்தின் தொகை அல்ல. பொருள், இடம், அளவை மீண்டும் உள்ளிட்டு தலைமை அலுவலகத்தின் மதிப்பைக் காட்டச் செய்து மீண்டும் பதிவு செய்யவும்.',
+    hoReason: '{not} — தலைமை அலுவலகம் அதன் பட்டியலில் உள்ள காரணத்துடன் மட்டுமே இழப்பைப் பதிவு செய்யும். ஏன் இழப்பு என்பதைத் தேர்ந்தெடுத்து மீண்டும் பதிவு செய்யவும்.',
     hoCostUnknown: '{not} — இந்தச் சரக்குக்குத் தலைமை அலுவலகத்திடம் விலை இல்லை. நீங்கள் கருதும் மதிப்பை உள்ளிடவும் — புகைப்படம் அல்லது சாட்சியும் இரண்டாம் நபரின் அனுமதியும் தேவைப்படும்.',
     valueFromStock: 'தலைமை அலுவலகத்தின் மதிப்பு: {qty} × {unit} = {value}.',
     valueCostUnknown: 'இந்தச் சரக்குக்குத் தலைமை அலுவலகத்திடம் விலை இல்லை. நீங்கள் கருதும் மதிப்பை உள்ளிடவும் — மதிப்பு எதுவாக இருந்தாலும் இந்த இழப்புக்குப் புகைப்படம் அல்லது சாட்சியும் இரண்டாம் நபரின் அனுமதியும் தேவை.',
@@ -387,6 +393,8 @@ const REFUSAL_COPY: Readonly<Record<WriteOffRefusalCode, CopyKey>> = Object.free
   write_off_already_recorded: 'hoAlready',
   write_off_value_is_the_stock_cost: 'hoValueIsStockCost',
   write_off_cost_unknown: 'hoCostUnknown',
+  waste_reason_required: 'hoReason',
+  waste_reason_not_in_taxonomy: 'hoReason',
 });
 
 const fill = (template: string, values: Readonly<Record<string, string>>): string =>
@@ -482,6 +490,17 @@ export function draftOfDetails(writeOffId: string, details: Readonly<Record<stri
 
 // ── the presented shapes the view renders ────────────────────────────────────────────────────────────────
 
+/** One reason choice (D-5) — a code from the closed waste reason list, picked, never typed. */
+export interface WasteReasonChoice {
+  readonly reasonCode: WasteReason;
+  readonly label: string;
+}
+
+/** The reason chips in the list's own order, in the screen's language. */
+export function reasonChoices(lang: Lang): readonly WasteReasonChoice[] {
+  return WASTE_REASON_CODES.map((r) => ({ reasonCode: r, label: WASTE_REASON_WORDS[r][lang] }));
+}
+
 /** One loss-type choice for the chips — a value the operator picks, never typed. */
 export interface LossTypeChoice {
   readonly lossType: LossType;
@@ -492,6 +511,8 @@ export interface WriteOffCaptureView {
   readonly screenState: StatusPresentation;
   /** The loss-type chips, in the tested engine's order. */
   readonly lossTypes: readonly LossTypeChoice[];
+  /** D-5: the reason chips — the closed waste reason list. */
+  readonly reasons: readonly WasteReasonChoice[];
   /** The material-loss threshold, formatted for the "big loss" hint. */
   readonly thresholdMinor: number;
   readonly thresholdText: string;
@@ -535,7 +556,9 @@ export interface WriteOffCaptureSession {
 function isWellFormed(d: WriteOffDraft): boolean {
   return isNonEmpty(d.writeOffId) && isNonEmpty(d.productId) && isNonEmpty(d.locationId)
     && isNonEmpty(d.uom) && isPosInt(d.qty) && isNonNegInt(d.valueMinor)
-    && LOSS_TYPES.includes(d.lossType);
+    && LOSS_TYPES.includes(d.lossType)
+    // D-5: a reason chosen from the closed list — a bare (reasonless) loss is incomplete and is never sent.
+    && isWasteReason(d.reasonCode);
 }
 
 /** How many of the raiser's own requests "Losses you asked approval for" shows — the newest. */
@@ -582,13 +605,14 @@ export function createWriteOffCaptureSession(config: WriteOffCaptureConfig, port
       if (!mayCapture) {
         return {
           screenState: presentScreenState({ state: 'error', label: t('stateNotPermitted') }),
-          lossTypes: [], thresholdMinor: config.materialThresholdMinor, thresholdText: formatRupees(config.materialThresholdMinor),
+          lossTypes: [], reasons: [], thresholdMinor: config.materialThresholdMinor, thresholdText: formatRupees(config.materialThresholdMinor),
           nobodyNamed, mayCapture,
         };
       }
       return {
         screenState: presentScreenState({ state: 'ready', label: t('scrReady') }),
         lossTypes: LOSS_TYPES.map((lt) => ({ lossType: lt, label: t(LOSS_LABEL[lt]) })),
+        reasons: reasonChoices(lang),
         thresholdMinor: config.materialThresholdMinor,
         thresholdText: formatRupees(config.materialThresholdMinor),
         nobodyNamed,

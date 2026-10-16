@@ -11,6 +11,7 @@ import { APPROVAL_REFUSAL_CODES } from '../../apps/web-erp/src/catalogue-session
 import { bootWriteOffCapture, writeOffCapturePortsFromData, HEAD_OFFICE_APPROVALS } from '../../apps/web-erp/src/browser-entry';
 import { actionDetails, fingerprintOf, takeApproval, APPROVAL_KINDS, type ApprovalState } from '../../services/identity/src/approval-requests';
 import { bilingualGaps } from '../../packages/ui/src/index';
+import { WASTE_REASON_CODES } from '../../packages/waste/src/reasons';
 
 /**
  * **A big loss is recorded by two people — the raiser and a second person who handles stock (M28-FR-01 · ADR-0024 ·
@@ -38,7 +39,7 @@ const ID = 'WO-1';
 
 const draft = (over: Partial<WriteOffDraft> = {}): WriteOffDraft => ({
   writeOffId: ID, productId: 'Toor dal 1kg', locationId: 'aisle-3', qty: 12, uom: 'ea',
-  lossType: 'damage', valueMinor: 100_00, ...over,
+  lossType: 'damage', reasonCode: 'damage', valueMinor: 100_00, ...over,
 });
 /** A big loss, with its photo — ready to ask about. */
 const big = (over: Partial<WriteOffDraft> = {}): WriteOffDraft => draft({ valueMinor: 1_140_00, evidenceRef: 'photo-17', ...over });
@@ -105,6 +106,35 @@ describe('write-off capture: bilingual + the view', () => {
     expect(s.view('ta').lossTypes.find((c) => c.lossType === 'damage')?.label).toBe('சேதம்');
   });
 
+  it('D-5: offers WHY it is lost as chips from the closed waste reason list, in English and Tamil — never a text box', () => {
+    const { s } = office();
+    expect(s.view('en').reasons.map((r) => r.reasonCode)).toEqual([...WASTE_REASON_CODES]);
+    expect(s.view('en').reasons.map((r) => r.label)).toEqual(['Past its date', 'Damaged', 'Missing (shrinkage)', 'Lost in preparation', 'Customer return, not saleable', 'Recalled']);
+    expect(s.view('ta').reasons.find((r) => r.reasonCode === 'expiry')?.label).toBe('காலாவதியானது');
+    expect(office({ mayCapture: false }).s.view('en').reasons).toEqual([]);
+  });
+
+  it('D-5: a bare (reasonless) loss, or one with a reason off the list, is refused on the page and nothing is sent or asked', async () => {
+    const o = office();
+    expect(await o.s.record(draft({ reasonCode: undefined }))).toEqual({ kind: 'incomplete' });
+    expect(await o.s.record(draft({ reasonCode: '  ' }))).toEqual({ kind: 'incomplete' });
+    expect(await o.s.record(draft({ reasonCode: 'leaking' }))).toEqual({ kind: 'incomplete' });
+    expect(await o.s.askApproval('en', big({ reasonCode: undefined }), WHY)).toEqual({ kind: 'incomplete' });
+    expect(o.posted).toEqual([]);
+    expect(o.asks).toEqual([]);
+    expect(presentWriteOffRecord('en', { kind: 'incomplete' }).label).toContain('why it is lost');
+    // Head office's own refusal of a bare or off-list reason is said in plain words, never as success.
+    for (const code of ['waste_reason_required', 'waste_reason_not_in_taxonomy']) {
+      const outcome = writeOffOutcomeOfRefusal(code, 'x');
+      expect(outcome).toEqual({ kind: 'head_office_refused', code, whatHappened: 'x' });
+      expect(presentWriteOffRecord('en', outcome).label).toBe('Not recorded — head office records a loss only with a reason from its list. Choose why it is lost and record again.');
+      expect(presentWriteOffRecord('en', outcome).tone).toBe('error');
+    }
+    // With a reason chosen it is sent, carrying exactly that code.
+    expect(await o.s.record(draft({ lossType: 'wastage', reasonCode: 'preparation' }))).toEqual({ kind: 'recorded', approvedBy: null });
+    expect(o.posted[0]!.body).toMatchObject({ lossType: 'wastage', reasonCode: 'preparation' });
+  });
+
   it('shows the material-loss threshold, and surfaces when nobody is named', () => {
     const { s } = office({ userId: null });
     const v = s.view('en');
@@ -161,10 +191,11 @@ describe('what a stock_write_off approval is FOR — the same rule as head offic
     expect(sent).not.toHaveProperty('writeOffId');
   });
 
-  it('a small loss carries no evidence key at all; a finer reason code overrides the loss type', () => {
+  it('a small loss carries no evidence key at all; the reason is the operator\'s choice and is never defaulted (D-5)', () => {
     expect(writeOffRequestBody(writeOffBodyOf(draft()))).not.toHaveProperty('evidenceRef');
-    expect(writeOffBodyOf(draft({ lossType: 'expiry' })).reasonCode).toBe('expiry');
-    expect(writeOffBodyOf(draft({ reasonCode: '  past use-by  ' })).reasonCode).toBe('past use-by');
+    // D-5: no longer defaulted from the loss type — a draft with no reason sends none (and the session refuses it first).
+    expect(writeOffBodyOf(draft({ lossType: 'expiry', reasonCode: undefined })).reasonCode).toBe('');
+    expect(writeOffBodyOf(draft({ reasonCode: '  expiry  ' })).reasonCode).toBe('expiry');
     expect(writeOffBodyOf(draft({ productId: '  P1 ', evidenceRef: '  ' }))).toEqual({
       productId: 'P1', locationId: 'aisle-3', qty: 12, uom: 'ea', lossType: 'damage', reasonCode: 'damage', valueMinor: 100_00,
     });
@@ -320,9 +351,9 @@ describe('Record the loss — a small loss as before; a big one only with the ra
   it('a big loss is refused locally — nothing sent — without permission, incomplete, without evidence, or not connected', async () => {
     const cases: [ReturnType<typeof office>, WriteOffDraft, WriteOffRecordOutcome['kind'], string][] = [
       [office({ mayCapture: false }), big(), 'not_permitted', 'Not recorded — you do not have permission to record a loss.'],
-      [office(), big({ uom: '' }), 'incomplete', 'Not recorded — fill in the item, where it is, how many (a whole number), what it is worth and the kind of loss.'],
-      [office(), big({ lossType: 'theft' as unknown as WriteOffDraft['lossType'] }), 'incomplete', 'Not recorded — fill in the item, where it is, how many (a whole number), what it is worth and the kind of loss.'],
-      [office(), big({ valueMinor: -1 }), 'incomplete', 'Not recorded — fill in the item, where it is, how many (a whole number), what it is worth and the kind of loss.'],
+      [office(), big({ uom: '' }), 'incomplete', 'Not recorded — fill in the item, where it is, how many (a whole number), what it is worth, the kind of loss and why it is lost.'],
+      [office(), big({ lossType: 'theft' as unknown as WriteOffDraft['lossType'] }), 'incomplete', 'Not recorded — fill in the item, where it is, how many (a whole number), what it is worth, the kind of loss and why it is lost.'],
+      [office(), big({ valueMinor: -1 }), 'incomplete', 'Not recorded — fill in the item, where it is, how many (a whole number), what it is worth, the kind of loss and why it is lost.'],
       [office(), big({ evidenceRef: undefined }), 'needs_evidence', 'Not recorded — this is a big loss: add a photo or witness first.'],
     ];
     for (const [o, d, kind, words] of cases) {
@@ -369,6 +400,8 @@ describe('head office’s refusals of the record — every one in plain words, E
       write_off_already_recorded: 'This loss was already recorded. Nothing was recorded again.',
       write_off_value_is_the_stock_cost: 'Not recorded — the value is not head office\'s figure for this stock. Re-enter the product, place and quantity so the screen shows head office\'s value, then record again.',
       write_off_cost_unknown: 'Not recorded — head office holds no cost for this stock. Type the value you believe it has — a photo or witness and a second person\'s approval will be needed.',
+      waste_reason_required: 'Not recorded — head office records a loss only with a reason from its list. Choose why it is lost and record again.',
+      waste_reason_not_in_taxonomy: 'Not recorded — head office records a loss only with a reason from its list. Choose why it is lost and record again.',
       approval_unknown: 'Not recorded — nobody has been asked to approve this loss yet. Write why and press “Ask for approval” first.',
       approval_does_not_match: 'Not recorded — this is not exactly the loss that was approved (something changed after you asked). Ask for approval again for exactly this.',
       approval_still_waiting: 'Not recorded — still waiting for a second person who handles stock (not you) to approve it on their Approvals page.',

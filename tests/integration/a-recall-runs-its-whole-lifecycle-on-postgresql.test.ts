@@ -131,7 +131,7 @@ describe.each(backings)('a recall runs its whole lifecycle — on $name (WF-09)'
     // ── DISPOSE: the 15 left are written off at their cost — a loss, once ──────────────────────────────────────────────
     // A loss this size needs evidence and a second person (the tenant's threshold): the store manager raises it, the owner
     // approves it in their own session; the batch named, so the batch's own stock falls to nothing.
-    const loss = { productId: 'p-paneer', locationId: STORE, qty: 15, uom: 'EA', lossType: 'destruction', reasonCode: 'recall SN-2030-17', evidenceRef: 'DESTRUCTION-CERT-17', batchId: 'B-0412' };
+    const loss = { productId: 'p-paneer', locationId: STORE, qty: 15, uom: 'EA', lossType: 'destruction', reasonCode: 'recall', evidenceRef: 'DESTRUCTION-CERT-17', batchId: 'B-0412' };
     const body = await approvedBody(h, T, 'u-qc', 'u-owner', 'stock_write_off', 'wo-recall', loss, { writeOffId: 'wo-recall' }, 90_000);
     const wo = await h.request({ method: 'POST', path: '/v1/inventory/write-off/wo-recall', userId: 'u-qc', tenantId: T, idempotencyKey: 'wo-recall', body });
     expect(wo.status, JSON.stringify(wo.body)).toBe(201);

@@ -30,7 +30,7 @@ const session = (over: Partial<WriteOffCapturePorts> = {}) =>
 
 const draft = (over: Partial<WriteOffDraft> = {}): WriteOffDraft => ({
   writeOffId: 'wo-1', productId: 'RICE-5', locationId: 'AISLE-3', qty: 4, uom: 'ea',
-  lossType: 'damage', valueMinor: 10_000, ...over,
+  lossType: 'damage', reasonCode: 'damage', valueMinor: 10_000, ...over,
 });
 
 const RAW = readFileSync('apps/web-erp/web/write-off-capture.js', 'utf8');
@@ -102,6 +102,9 @@ describe('an unpermitted user is offered no capture action, and the model refuse
     expect((await session().record(draft({ productId: '   ' }))).kind).toBe('incomplete');
     expect((await session().record(draft({ qty: 0 }))).kind).toBe('incomplete');
     expect((await session().record(draft({ lossType: 'not-a-loss' as unknown as WriteOffDraft['lossType'] }))).kind).toBe('incomplete');
+    // D-5: a bare (reasonless) loss, or a reason off the closed list, is incomplete — never sent.
+    expect((await session().record(draft({ reasonCode: undefined }))).kind).toBe('incomplete');
+    expect((await session().record(draft({ reasonCode: 'leaking' }))).kind).toBe('incomplete');
   });
 
   it('a MATERIAL loss is never sent on a typed name: no evidence, not connected, or not approved — nothing leaves', async () => {
