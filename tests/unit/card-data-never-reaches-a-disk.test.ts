@@ -2,7 +2,8 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { withoutCardData, containsCardNumber, cardDataRemovalWords, TENDER_FIELDS } from '../../packages/tender/src/card-token';
+import { containsCardNumber } from '../../packages/tender/src/card-token';
+import { withoutCardData, cardDataRemovalWords, holdsCardNumber, TENDER_FIELDS } from '../../packages/tender/src/tender-card-data';
 import { checkLegacyCardPurge } from '../../packages/tender/src/legacy-card-purge';
 import { startLaneServer, cleanTenders, type LaneServer } from '../../edge/store-edge/src/lane-server';
 import { createEdgeNode } from '../../edge/store-edge/src/index';
@@ -72,6 +73,65 @@ describe('the rule: a tender keeps a token, the last four and the network — no
 
   it('the allowlist is closed and short', () => {
     expect([...TENDER_FIELDS]).toEqual(['kind', 'amount', 'amountMinor', 'status', 'ref', 'points', 'card', 'cardDataRemoved']);
+  });
+});
+
+// Coordinator note (F2's `containsGroupedCardNumber`): card numbers grouped with dots, slashes or underscores, and one
+// followed by its expiry in the same run, are found on the SALE path too — by the store computer and by head office.
+const GROUPED = [
+  PAN.replace(/(\d{4})(?=\d)/g, '$1.'), PAN.replace(/(\d{4})(?=\d)/g, '$1/'), PAN.replace(/(\d{4})(?=\d)/g, '$1_'),
+  `${PAN.replace(/(\d{4})(?=\d)/g, '$1.')}/12-29`, `paid ${AMEX.slice(0, 4)}.${AMEX.slice(4, 10)}.${AMEX.slice(10)} ok`,
+];
+const digitsOf = (v: string): string => v.replace(/\D/g, '');
+
+describe('grouped card numbers on the sale path (dotted, slashed, underscored, with an expiry)', () => {
+  it('both detectors are read: a number followed by its expiry is found though the plain run is not a card', () => {
+    const withExpiry = `${PAN.replace(/(\d{4})(?=\d)/g, '$1.')}/12-29`;
+    expect(containsCardNumber(withExpiry)).toBe(false);
+    expect(holdsCardNumber(withExpiry)).toBe(true);
+    for (const v of ['2026-10-16', '9876543210', '8901030865278', 'UTR2026101100042']) expect(holdsCardNumber(v), v).toBe(false);
+  });
+
+  it('the store computer keeps each sale with the grouped number removed — its disk never holds the digits', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'sre-f1-grouped-'));
+    const log = await openFileLog({ dataDir: dir, capacityBytes: 50_000_000 });
+    const outbox = new SyncOutbox();
+    const node = createEdgeNode({ tenantId: 't-f1', log, signer: hmacSigner(['f1', 'edge', 'key'].join('-').padEnd(40, '0')), outbox });
+    const server = await startLaneServer({ node, port: 0 });
+    try {
+      for (const [i, v] of GROUPED.entries()) {
+        const res = await fetch(`http://127.0.0.1:${server.port}/lane/sales`, { method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://localhost:8080' }, body: JSON.stringify({
+          id: `S-G${i}`, number: `R-G${i}`, laneId: 'lane-1', cashierId: 'u', committedAt: new Date().toISOString(), total: 100,
+          lines: [{ productId: 'P', quantityMinor: 1, uom: 'ea', unitPriceMinor: 100, lineTotalMinor: 100 }],
+          tenders: [{ kind: 'upi', amount: { minor: 100 }, ref: v }],
+        }) });
+        expect((await res.json() as { committed: boolean }).committed, v).toBe(true);
+      }
+      const kept = await readFile(join(dir, 'sales.log'), 'utf8');
+      for (const v of GROUPED) {
+        expect(kept, v).not.toContain(v);
+        expect(kept.replace(/\D/g, ''), v).not.toContain(digitsOf(v).slice(0, 15));
+      }
+      expect(kept.match(/"cardDataRemoved":\{"fields":\["ref"\]\}/g)).toHaveLength(GROUPED.length);
+      for (const p of outbox.pending()) expect(holdsCardNumber(JSON.stringify(p))).toBe(false);
+    } finally { await server.stop(); await log.close(); await rm(dir, { recursive: true, force: true }); }
+  });
+
+  it('head office raises each one critical and banks the sale without it', async () => {
+    for (const v of GROUPED) {
+      const banked: IncomingSale[] = [];
+      const route = posRoutes({
+        catalogue: () => new Map(), currentPackVersion: () => 1, saleHoldingReceipt: () => undefined, isBanked: () => false,
+        bankSale: (_t, s) => { banked.push(s); }, recordExceptions: () => {}, openExceptions: () => [], now: () => '2026-10-16T05:01:00Z',
+      }).find((r) => r.path === '/v1/sales')!;
+      const out = await route.handler({ tenantId: 't', userId: 'u-box', params: {}, query: {}, body: {
+        saleId: 'S-G', receiptNumber: 'R-G', laneId: 'lane-1', cashierId: 'u', tradingDay: '2026-10-16', committedAt: '2026-10-16T05:00:00Z',
+        totalMinor: 100, currency: 'INR', packVersion: 1, lines: [], tenders: [{ kind: 'upi', amountMinor: 100, ref: v }],
+      } } as never);
+      expect((out.body as { exceptions: { kind: string; severity: string }[] }).exceptions.filter((e) => e.kind === 'card_data_in_tender').map((e) => e.severity), v).toEqual(['critical']);
+      expect(banked[0]!.tenders, v).toEqual([{ kind: 'upi', amountMinor: 100 }]);
+      expect(JSON.stringify(out.body), v).not.toContain(v);
+    }
   });
 });
 

@@ -9,7 +9,7 @@ import type { CatalogueProduct } from '../../../packages/catalogue/src/catalogue
 import { checkOperatorStamp } from '../../../packages/identity/src/till-seal';
 import { assignSaleLots, type LotOnHand } from './sale-lots';
 import { storeComputerTimeFrom, type StoreComputerScopeOfCaller } from './returns';
-import { withoutCardData } from '../../../packages/tender/src/card-token';
+import { withoutCardData } from '../../../packages/tender/src/tender-card-data';
 import {
   acceptSale, summariseIntake,
   type IncomingSale, type IntakeContext, type IntakeResult, type SaleException,

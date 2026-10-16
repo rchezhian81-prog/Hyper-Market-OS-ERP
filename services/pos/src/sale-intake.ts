@@ -26,7 +26,8 @@ import { isStoreComputerDefaultReceipt } from '../../../packages/contracts/src/r
 import { minimumAgeOf, type CatalogueProduct } from '../../../packages/catalogue/src/catalogue';
 import { productRuleRefusals, lineIsWeighed, isWeighedUom } from '../../../packages/restricted-sales/src/till-gate';
 import { weighingScaleVerification, InvalidScaleVerification } from '../../../packages/facilities/src/weighing-verification';
-import { withoutCardData, cardDataRemovalWords, type CardTokenReference } from '../../../packages/tender/src/card-token';
+import type { CardTokenReference } from '../../../packages/tender/src/card-token';
+import { withoutCardData, cardDataRemovalWords } from '../../../packages/tender/src/tender-card-data';
 
 export interface IncomingSaleLine {
   readonly productId: string;

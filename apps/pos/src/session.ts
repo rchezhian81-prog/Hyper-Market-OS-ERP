@@ -21,7 +21,7 @@ import type { CommitOutcome } from '../../../edge/store-edge/src/durability';
 import { makeTradingDayRule, tradingDateOf } from '../../../packages/calendar/src/index';
 import type { SuspendedLine, SuspendedAgeAnswer } from '../../../packages/suspended-sales/src/suspended-bill';
 import { normaliseMobile } from '../../../packages/loyalty/src/mobile';
-import { withoutCardData } from '../../../packages/tender/src/card-token';
+import { withoutCardData } from '../../../packages/tender/src/tender-card-data';
 import {
   tillLineRefusals, tillRuleFlagsOf, scaleEvidence, lineIsWeighed, TillRuleRefusedError, TOBACCO_MINIMUM_AGE,
   type LaneScales, type TillGateContext,

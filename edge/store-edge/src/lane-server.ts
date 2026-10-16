@@ -75,7 +75,7 @@ import type { AttemptAnswer, TenderCheck, Attempt } from './payment-attempts';
 import type { ReportAnswer } from './peripheral-health';
 import { refundRoomOutsidePoints } from '../../../packages/loyalty/src/wallet';
 import { returnedValueAtOriginalPrices } from '../../../packages/returns/src/exchange';
-import { withoutCardData, type TenderCardDataRemoval } from '../../../packages/tender/src/card-token';
+import { withoutCardData, type TenderCardDataRemoval } from '../../../packages/tender/src/tender-card-data';
 
 /** The one address this may listen on. Named so the test can assert on it. */
 export const LANE_HOST = '127.0.0.1';
