@@ -64,17 +64,27 @@ describe.each(backings)('C12 — a payment provider outside India is not registe
       h.request({ method, path, userId: 'u-owner', tenantId: T, ...(body === undefined ? {} : { body }), ...(method === 'GET' ? {} : { idempotencyKey: `${path}-${randomUUID()}` }) });
     const matrix = await call('POST', '/v1/integration/matrix/pay-m1', { category: 'payment', vendor: 'ExamplePay', model: 'gateway', versions: ['1'], certifiedOn: '2026-01-01', rbiAuthorised: true });
     expect(matrix.status, JSON.stringify(matrix.body)).toBe(201);
-    const pay = (id: string, dataRegion: string) => call('POST', `/v1/integration/adapters/${id}`, {
+    const pay = (id: string, dataRegion: string | undefined) => call('POST', `/v1/integration/adapters/${id}`, {
       category: 'payment', vendor: 'ExamplePay', credentialRef: `vault://${id}`, environment: 'sandbox', enabled: true,
-      retains: ['provider_token', 'last4', 'network_name'], dataRegion,
+      retains: ['provider_token', 'last4', 'network_name'], ...(dataRegion === undefined ? {} : { dataRegion }),
     });
     const abroad = await pay('pay-sg', 'SG');
     expect(abroad.status).toBe(422);
     expect((abroad.body as { error: { code: string } }).error.code).toBe('payment_data_outside_india');
+    // L5: "IN-ZZ" is not a state or union territory of India.
+    const fake = await pay('pay-zz', 'IN-ZZ');
+    expect(fake.status).toBe(422);
+    expect((fake.body as { error: { code: string } }).error.code).toBe('payment_data_outside_india');
+    // OB-162 "A": a payment adapter that does not say where it keeps payment data is refused.
+    const silent = await pay('pay-none', undefined);
+    expect(silent.status).toBe(422);
+    expect((silent.body as { error: { code: string; whatHappened: string } }).error).toMatchObject({ code: 'payment_data_region_not_declared' });
+    expect((silent.body as { error: { whatHappened: string } }).error.whatHappened).toContain('only India is accepted');
     const home = await pay('pay-in', 'IN-MH');
     expect(home.status, JSON.stringify(home.body)).toBe(201);
 
     const listed = await call('GET', '/v1/integration/health');
-    expect(JSON.stringify(listed.body)).not.toContain('pay-sg');
+    for (const refused of ['pay-sg', 'pay-zz', 'pay-none']) expect(JSON.stringify(listed.body)).not.toContain(refused);
+    expect(JSON.stringify(listed.body)).toContain('pay-in');
   });
 });

@@ -70,7 +70,7 @@ describe('an uncertified device is BLOCKED, and the refusal names an alternative
 const config = (over: Partial<AdapterConfig>): AdapterConfig => ({
   adapterId: 'adp-razorpay', tenantId: 't-sre', category: 'payment', vendor: 'Razorpay',
   environment: 'production', credentialRef: 'vault://payments/live#v4',
-  retains: ['provider_token', 'last4'], enabled: true, queueOnOutage: true, ...over,
+  retains: ['provider_token', 'last4'], dataRegion: 'IN-TN', enabled: true, queueOnOutage: true, ...over,
 });
 
 describe('a payment adapter stores a TOKEN or it is refused (hard rule #3)', () => {
