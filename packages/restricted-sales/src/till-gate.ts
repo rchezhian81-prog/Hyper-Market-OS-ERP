@@ -128,7 +128,7 @@ const qtyWords = (minor: number, uom: string): string => (uom === 'ea' ? `${mino
  * Every reason this line may not be sold, in the order a cashier should hear them — the empty list when it may. Pure.
  */
 export function tillLineRefusals(line: TillGateLine, ctx: TillGateContext): readonly TillRefusal[] {
-  const name = line.description.trim() === '' ? line.productId : line.description;
+  const name = typeof line.description === 'string' && line.description.trim() !== '' ? line.description : line.productId;
   // ── B6 · weight only from a scale whose verification is current ────────────────────────────────────────────────
   return [...productRuleRefusals(line), ...(isWeighedUom(line.uom) ? scaleRefusals(line.productId, name, ctx) : [])];
 }
@@ -137,7 +137,7 @@ export function tillLineRefusals(line: TillGateLine, ctx: TillGateContext): read
 export function productRuleRefusals(line: TillGateLine): readonly TillRefusal[] {
   const flags = tillRuleFlagsOf(line.regulatedFlags);
   const out: TillRefusal[] = [];
-  const name = line.description.trim() === '' ? line.productId : line.description;
+  const name = typeof line.description === 'string' && line.description.trim() !== '' ? line.description : line.productId;
 
   // ── B19 · single-use plastic and carry bags (the tested engine decides) ────────────────────────────────────────
   if (flags.bannedSingleUsePlastic === true || flags.carryBag === true) {

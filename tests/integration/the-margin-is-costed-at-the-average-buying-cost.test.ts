@@ -87,6 +87,9 @@ describeOrSkip('OB-39 — the margin is costed at the average buying cost (real 
     await ok(call('POST', `/v1/org/nodes/${STORE}`, OWNER, { kind: 'branch', name: 'SRE Hyper Market', parentId: COMPANY, companyId: COMPANY }, 'org-s'), 'store');
     await ok(call('POST', `/v1/org/nodes/${BACK}`, OWNER, { kind: 'warehouse', name: 'Back store', parentId: STORE, companyId: COMPANY }, 'org-b'), 'back store');
     await ok(call('POST', `/v1/stores/${STORE}/settings`, OWNER, { tradingDayCutoff: '00:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 5_000, cashVarianceToleranceMinor: 5_000, privacySlaDays: 30, warehouseId: BACK }, 'settings'), 'store settings');
+    // B6: the lane's weighing scale on head office's register, with a current Legal Metrology stamp (synthetic) — the
+    // store pack carries it, and the till and the store computer accept weight from it.
+    await ok(call('POST', '/v1/facilities/scales/SCALE-1', OWNER, { storeId: STORE, laneIds: [LANE], approvalNo: 'LM/TEST/1', capacityGrams: 30_000, lastStampedOn: '2026-01-01', reverificationDueOn: '2099-12-31' }, 'scale-1'), 'weighing scale');
     await ok(call('POST', '/v1/catalogue/tax-classes/1006/rates/2017-07-01', OWNER, { rateBps: 500 }, 'tax'), 'tax rate');
     for (const p of [RICE, TOMATO, SALT]) {
       await ok(call('POST', `/v1/catalogue/products/${p.productId}/publish`, OWNER, {
@@ -135,7 +138,7 @@ describeOrSkip('OB-39 — the margin is costed at the average buying cost (real 
     // ── Two bills on the till through the box: rice + 1.2 kg tomato (costed); a salt (no cost).
     const html = await (await fetch(`http://127.0.0.1:${edge.screens!.port}/pos/`)).text();
     const catalogue = JSON.parse(/<script>window\.posCatalogue = ([\s\S]*?);<\/script>/.exec(html)![1]!) as CatalogueSnapshot;
-    const till = bootPos({ laneId: LANE, catalogue, lanePort: edge.lane!.port, tradingDayCutoff: '00:00' });
+    const till = bootPos({ laneId: LANE, catalogue, lanePort: edge.lane!.port, tradingDayCutoff: '00:00', laneScales: { known: true, scales: [{ assetId: 'SCALE-1', reverificationDueOn: '2099-12-31' }] } });
     await signInTill(till, CASHIER);
     const T0 = Date.now();
     const tradingDay = tradingDateOf(new Date(T0).toISOString(), makeTradingDayRule('00:00'));

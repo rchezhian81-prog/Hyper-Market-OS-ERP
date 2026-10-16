@@ -245,6 +245,9 @@ describeOrSkip('FINAL INTEGRATED STORE ACCEPTANCE — supplier to owner report, 
     await ok(call('POST', `/v1/org/nodes/${STORE}`, OWNER, { kind: 'branch', name: 'SRE Hyper Market', parentId: COMPANY, companyId: COMPANY }, 'org-s'), 'store');
     await ok(call('POST', `/v1/org/nodes/${BACK}`, OWNER, { kind: 'warehouse', name: 'Back store', parentId: STORE, companyId: COMPANY }, 'org-b'), 'back store');
     await ok(call('POST', `/v1/stores/${STORE}/settings`, OWNER, { tradingDayCutoff: '00:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 5_000, cashVarianceToleranceMinor: 5_000, privacySlaDays: 30, warehouseId: BACK }, 'settings'), 'store settings');
+    // B6: the lane's weighing scale on head office's register, with a current Legal Metrology stamp (synthetic) — the
+    // store pack carries it, and the till and the store computer accept weight from it.
+    await ok(call('POST', '/v1/facilities/scales/SCALE-1', OWNER, { storeId: STORE, laneIds: [LANE], approvalNo: 'LM/TEST/1', capacityGrams: 30_000, lastStampedOn: '2026-01-01', reverificationDueOn: '2099-12-31' }, 'scale-1'), 'weighing scale');
     await ok(call('POST', '/v1/inventory/receipt-policy', OWNER, { excessToleranceBp: 0, shortageToleranceBp: 0, nearExpiryDays: 7 }, 'receipt-policy'), 'receipt policy');
     await ok(call('POST', '/v1/catalogue/tax-classes/1006/rates/2017-07-01', OWNER, { rateBps: 500 }, 'tax'), 'tax rate');
     // WF-01 (product onboarding) on PostgreSQL, the leg that reaches the till: tax class and unit → published product →
@@ -451,7 +454,7 @@ describeOrSkip('FINAL INTEGRATED STORE ACCEPTANCE — supplier to owner report, 
 
     // ═══ 8. Sales at the till: box first, scan, split tender, a loyalty member — the second bill with NO network ════════════
     const served = await servedCatalogue(edge);
-    let till = bootPos({ laneId: LANE, catalogue: served, lanePort: edge.lane!.port, tradingDayCutoff: '00:00' });
+    let till = bootPos({ laneId: LANE, catalogue: served, lanePort: edge.lane!.port, tradingDayCutoff: '00:00', laneScales: { known: true, scales: [{ assetId: 'SCALE-1', reverificationDueOn: '2099-12-31' }] } });
     await signInTill(till, CASHIER);
     const T0 = Date.now();
     const at = (minutes: number): string => new Date(T0 + minutes * 60_000).toISOString();
@@ -505,7 +508,7 @@ describeOrSkip('FINAL INTEGRATED STORE ACCEPTANCE — supplier to owner report, 
     edge = await restartBox(edge);
     expect(edge.outbox.unsentCount()).toBe(2);
     expect(edge.storeSetup()).toMatchObject({ source: 'head-office' });
-    till = bootPos({ laneId: LANE, catalogue: served, lanePort: edge.lane!.port, tradingDayCutoff: '00:00' });
+    till = bootPos({ laneId: LANE, catalogue: served, lanePort: edge.lane!.port, tradingDayCutoff: '00:00', laneScales: { known: true, scales: [{ assetId: 'SCALE-1', reverificationDueOn: '2099-12-31' }] } });
     await signInTill(till, CASHIER);
 
     // ── RECONNECT, with a RECOVERY: head office books S-2 but the reply is lost on the way back; the retry settles it once.

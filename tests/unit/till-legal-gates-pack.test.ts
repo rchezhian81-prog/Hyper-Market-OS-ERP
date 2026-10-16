@@ -115,4 +115,10 @@ describe('sale intake re-checks a weighed line\'s arithmetic (B5)', () => {
     expect(acceptSale(sale(33_30), ctx).exceptions).toMatchObject([{ kind: 'weighed_line_charged_above_weight_times_price', differenceMinor: 1 }]);
     expect(acceptSale(sale(30_00), ctx).exceptions.map((e) => e.kind)).not.toContain('weighed_line_charged_above_weight_times_price');
   });
+  it('a catalogue product with no SKU never stops the sale being banked (the gate names it by id)', () => {
+    const bare = { ...ctx, catalogue: new Map([['P', { productId: 'P', name: 'Banana', baseUom: 'kg', unitPriceMinor: 99_99, taxBps: 0, status: 'active', regulatedFlags: { bannedSingleUsePlastic: true } } as never]]) };
+    const r = acceptSale(sale(33_29), bare);
+    expect(r.banked).toBe(true);
+    expect(r.exceptions.map((e) => e.kind)).toContain('unlawful_plastic_sold');
+  });
 });
