@@ -559,6 +559,36 @@ count still open and names the others.
   record notes `storeComputerTakenAtIgnored` (what was sent, by whom) and the "said unused" check uses the till's clock.
   Nothing to configure; the store computer's own sign-in is unchanged.
 
+**Round 36 (verifier r35 findings closed, 16 Oct 2026):**
+
+- **An old edit of the built-in alert never turns into a redirect (NEW-1).** An edit of the built-in "store computer checks
+  stuck" rule saved before round 36 goes to every owner, whoever it names; the Alert rules page says "this edit was saved
+  before round 36 naming … — it is read as going to every owner". From round 36 a redirect to one person (OB-115) is saved
+  with a marker (`builtInRedirect` on the saved rule — support can see it in GET /v1/platform/alert-rules). If that person
+  later loses every role that can see alerts (left the shop, roles revoked), they no longer get it: the rule goes to every
+  owner and the page says so by name ("… no longer holds any role that may see alerts, so it goes to the owners instead
+  until the owner changes the edit"). The owner then saves the edit again (to another person, or back to the owners).
+- **A wrong clock cannot freeze the "not ready" hour (NEW-3).** Each running note keeps what it counted from (`basis`). If
+  the newest note is stamped more than a minute AHEAD of head office's clock (a second head-office process with a wrong
+  clock, or a clock that jumped and stepped back), it is set aside, counting goes on from the note before it, and the health
+  page says "a running note stamped … (ahead of head office's clock) was set aside … — a head-office clock is wrong, call
+  support". Support: check the server clocks (NTP) of every head-office process. Two processes whose clocks are more than a
+  minute apart keep correcting each other's notes (more notes, the hour still right) — the pilot runs one (OB-126).
+- **The upgrade from round 34 does not book time as "off" (NEW-4).** A "not ready" record written before round 35 has no
+  running notes: the time from it to the first new note is counted as running (as round 34 counted it), and the page says
+  "N minutes of it is from before head office noted its running time (an earlier version) — counted as running".
+- **The kept build lock is held until the newest result is saved (NEW-2), and never blocks other shops (NEW-5).** A lock
+  kept while saving is held back is counted apart from the builds (at most 4 kept and 4 building per head-office process, so
+  at most 8 build connections); a small shop never waits behind a kept one. If the kept room is full the lock is let go —
+  another process may then build that shop again (extra work only; the answers stay right).
+- **A build lock's connection never hangs (NEW-6).** The lock's own connection has TCP keepalive, and every lock query
+  and its close may take at most 30 seconds; past that the connection is cut, the build says its lock was lost, and the
+  log names `DedicatedSessionTimeoutError` (with `BuildLeaseUnlockError` if it was letting go). The database frees the lock
+  when it sees the connection gone. Nothing to do unless it repeats (then check the network between head office and the
+  database).
+- **Late reports are judged on today's figures (NEW-7).** When the kept lock saves the history, it first re-reads the bill
+  counts, registered tills and acts, so a report that arrived late is judged exactly as a fresh read would judge it.
+
 ## Part 4 — Restoring (the one that matters)
 
 **1. Do not restore over live data.** Make an empty database first:
