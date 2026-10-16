@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1233,
+  "testFiles": 1238,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -2314,16 +2314,17 @@
       "id": "M35",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 10,
-        "integration": 27,
-        "realDb": 21,
-        "browser": 2,
+        "unit": 11,
+        "integration": 30,
+        "realDb": 24,
+        "browser": 3,
         "connected": 2,
         "device": 0,
         "uat": 0
       },
       "files": {
         "unit": [
+          "tests/unit/a-build-lease-on-a-silent-connection-is-let-go-in-bounded-time.test.ts",
           "tests/unit/a-build-lease-that-cannot-be-let-go-never-returns-to-the-pool.test.ts",
           "tests/unit/alert-lifecycle.test.ts",
           "tests/unit/erp-navigation-catalogue.test.ts",
@@ -2336,6 +2337,7 @@
           "tests/unit/the-till-re-sends-its-devices.test.ts"
         ],
         "integration": [
+          "tests/integration/a-clock-ahead-or-a-round-34-record-never-books-running-time-as-off.test.ts",
           "tests/integration/a-hung-device-adapter-reads-stale-and-the-box-starts-from-its-index.test.ts",
           "tests/integration/a-person-is-never-the-backup-job.test.ts",
           "tests/integration/a-quiet-healthy-till-stays-fresh-at-head-office.test.ts",
@@ -2346,6 +2348,7 @@
           "tests/integration/alert-lifecycle.test.ts",
           "tests/integration/alerts-reach-their-named-owner.test.ts",
           "tests/integration/an-incident-is-recorded-and-closed-by-a-named-person.test.ts",
+          "tests/integration/an-old-edit-of-the-built-in-alert-never-turns-into-a-redirect-to-an-ex-owner.test.ts",
           "tests/integration/an-owner-edit-of-the-built-in-alert-still-reaches-every-owner.test.ts",
           "tests/integration/backup-is-one-moment.test.ts",
           "tests/integration/backup-verification.test.ts",
@@ -2359,12 +2362,14 @@
           "tests/integration/the-backup-job-reports-its-own-outcome.test.ts",
           "tests/integration/the-box-health-reaches-head-office.test.ts",
           "tests/integration/the-built-in-alert-reaches-every-owner.test.ts",
+          "tests/integration/the-kept-build-lease-is-held-until-the-newest-result-is-saved.test.ts",
           "tests/integration/the-not-ready-hour-counts-only-head-office-running-time.test.ts",
           "tests/integration/the-not-ready-hour-survives-a-head-office-restart.test.ts",
           "tests/integration/the-rare-store-computer-acts-read-only-recent-reports.test.ts",
           "tests/integration/the-store-computer-history-is-built-once-across-head-office-processes.test.ts"
         ],
         "realDb": [
+          "tests/integration/a-clock-ahead-or-a-round-34-record-never-books-running-time-as-off.test.ts",
           "tests/integration/a-hung-device-adapter-reads-stale-and-the-box-starts-from-its-index.test.ts",
           "tests/integration/a-person-is-never-the-backup-job.test.ts",
           "tests/integration/a-quiet-healthy-till-stays-fresh-at-head-office.test.ts",
@@ -2372,6 +2377,7 @@
           "tests/integration/a-store-computer-warns-before-its-disk-fills.test.ts",
           "tests/integration/alerts-reach-their-named-owner.test.ts",
           "tests/integration/an-incident-is-recorded-and-closed-by-a-named-person.test.ts",
+          "tests/integration/an-old-edit-of-the-built-in-alert-never-turns-into-a-redirect-to-an-ex-owner.test.ts",
           "tests/integration/an-owner-edit-of-the-built-in-alert-still-reaches-every-owner.test.ts",
           "tests/integration/backup-is-one-moment.test.ts",
           "tests/integration/dr-readiness.test.ts",
@@ -2382,12 +2388,14 @@
           "tests/integration/the-backup-job-reports-its-own-outcome.test.ts",
           "tests/integration/the-box-health-reaches-head-office.test.ts",
           "tests/integration/the-built-in-alert-reaches-every-owner.test.ts",
+          "tests/integration/the-kept-build-lease-is-held-until-the-newest-result-is-saved.test.ts",
           "tests/integration/the-not-ready-hour-counts-only-head-office-running-time.test.ts",
           "tests/integration/the-not-ready-hour-survives-a-head-office-restart.test.ts",
           "tests/integration/the-rare-store-computer-acts-read-only-recent-reports.test.ts",
           "tests/integration/the-store-computer-history-is-built-once-across-head-office-processes.test.ts"
         ],
         "browser": [
+          "tests/e2e/a-sale-sent-by-the-store-computer-keeps-its-time.test.ts",
           "tests/e2e/incidents-on-the-production-api.e2e.ts",
           "tests/e2e/store-computers-on-the-production-api.e2e.ts"
         ],
