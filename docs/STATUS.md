@@ -21,7 +21,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - **Not done:** evidence ledger and API surface not regenerated (coordinator). Browser checks (`test:e2e`, Playwright) not re-run — no page changed.
 - **Next:** coordinator: evidence ledger and API surface; verifier round on round 37; then merge per OB-122 / OB-123.
 
-## Coordinated programme · Round 36 — verifier r35 closed; owner decisions OB-132/OB-133 (16 October 2026) — gated, PR pending
+## Coordinated programme · Round 36 — verifier r35 closed; owner decisions OB-132/OB-133 (16 October 2026) — in PR #785 together with round 37
 
 - **Built and integration-tested (memory + PostgreSQL); no staff UAT.** Each finding was reproduced first (the verifier's probes, re-run on this branch), then fixed:
   - **NEW-1 (OB-124 (2), OB-115 / OB-130 "A"):** an edit of the built-in "store computer checks stuck" alert saved before round 36 (rounds 31-34 saved the editing owner's own name in it) now always goes to every owner. Before, if that owner later stopped being an owner, round 35 read the old edit as a "redirect" to him: the ex-owner kept getting the alert and the real owner got nothing. From now on a true redirect to one person (OB-115) is SAVED with a marker that only head office sets; only that is a redirect. The Alert rules page says when an old edit is "read as going to every owner". **A redirect's person who no longer holds any role that may see alerts** (left the shop, roles revoked) does not get it: the alert goes to every owner instead, and the page says so by name, until the owner changes the edit (decision (a) below).
