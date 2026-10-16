@@ -20,6 +20,8 @@ const WORDS = {
     record: 'Record decision', recorded: 'Recorded', refused: 'Not recorded', unreachable: 'Head office could not be reached. Nothing was recorded — try again.',
     cannotRead: 'The list could not be read from head office. Nothing here is current.', needReason: 'Give a reason first.',
     valueLabel: 'Loss value', approvedByLabel: 'approved by',
+    wasteReasonLabel: 'Why it is lost', noteLabel: 'Note (your own words)', needWasteReason: 'Choose why it is lost from the list first.',
+    expiry: 'Past its date', damage: 'Damaged', shrinkage: 'Missing (shrinkage)', preparation: 'Lost in preparation', customer_return: 'Customer return, not saleable', recall: 'Recalled',
   },
   ta: {
     title: 'முடிவு தேவைப்படும் திரும்பிய பொருட்கள்', langName: 'English',
@@ -33,11 +35,15 @@ const WORDS = {
     record: 'முடிவைப் பதிவு செய்', recorded: 'பதிவு செய்யப்பட்டது', refused: 'பதிவு செய்யப்படவில்லை', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை. எதுவும் பதிவு செய்யப்படவில்லை — மீண்டும் முயலவும்.',
     cannotRead: 'தலைமை அலுவலகத்திலிருந்து பட்டியலைப் படிக்க முடியவில்லை. இங்குள்ளவை தற்போதையவை அல்ல.', needReason: 'முதலில் காரணம் கொடுங்கள்.',
     valueLabel: 'இழப்பு மதிப்பு', approvedByLabel: 'ஒப்புதல் அளித்தவர்',
+    wasteReasonLabel: 'ஏன் இழப்பு', noteLabel: 'குறிப்பு (உங்கள் சொற்களில்)', needWasteReason: 'முதலில் பட்டியலிலிருந்து இழப்புக் காரணத்தைத் தேர்ந்தெடுக்கவும்.',
+    expiry: 'காலாவதியானது', damage: 'சேதமடைந்தது', shrinkage: 'காணாமல் போனது', preparation: 'தயாரிப்பில் வீணானது', customer_return: 'வாடிக்கையாளர் திருப்பியது, விற்க முடியாது', recall: 'திரும்பப் பெறப்பட்டது',
   },
 };
 const t = (key) => WORDS[lang]?.[key] ?? WORDS.en[key] ?? key;
 const STATE_WORD = { held: 'held', at_repair: 'atRepair', restocked: 'restocked', written_off: 'writtenOff', returned_to_supplier: 'returnedToSupplier' };
 const DECISION_WORD = { restock: 'restock', write_off: 'writeOff', return_to_supplier: 'toSupplier', repair: 'repair' };
+// NEW-7 (D-5 · OB-159): a write-off's reason is one of the closed six — chosen, never typed; the typed words become the note.
+const WASTE_REASONS = ['expiry', 'damage', 'shrinkage', 'preparation', 'customer_return', 'recall'];
 const rupees = (minor) => `₹${(minor / 100).toFixed(2)}`;
 
 let items = [];
@@ -60,6 +66,9 @@ function decisionForm(item) {
     const o = document.createElement('option'); o.value = d; o.textContent = t(DECISION_WORD[d]); select.append(o);
   }
   const reason = document.createElement('input'); reason.className = 'reason'; reason.name = 'reasonCode'; reason.autocomplete = 'off';
+  const wasteReason = document.createElement('select'); wasteReason.className = 'waste-reason'; wasteReason.name = 'wasteReason';
+  const none = document.createElement('option'); none.value = ''; none.textContent = '—'; wasteReason.append(none);
+  for (const r of WASTE_REASONS) { const o = document.createElement('option'); o.value = r; o.textContent = t(r); wasteReason.append(o); }
   const supplier = document.createElement('input'); supplier.className = 'supplier'; supplier.name = 'supplierId'; supplier.autocomplete = 'off';
   const supplierRef = document.createElement('input'); supplierRef.className = 'supplier-ref'; supplierRef.name = 'supplierRef'; supplierRef.autocomplete = 'off';
   const evidence = document.createElement('input'); evidence.className = 'evidence'; evidence.name = 'evidenceRef'; evidence.autocomplete = 'off';
@@ -68,7 +77,11 @@ function decisionForm(item) {
   const supplierRefField = field('supplierRefLabel', supplierRef);
   const evidenceField = field('evidenceLabel', evidence);
   const approvalField = field('approvalLabel', approval);
+  const wasteReasonField = field('wasteReasonLabel', wasteReason);
+  const reasonField = field('reasonLabel', reason);
   const sync = () => {
+    wasteReasonField.hidden = select.value !== 'write_off';
+    reasonField.querySelector('span').textContent = t(select.value === 'write_off' ? 'noteLabel' : 'reasonLabel');
     supplierField.hidden = select.value !== 'return_to_supplier';
     supplierRefField.hidden = select.value !== 'return_to_supplier';
     evidenceField.hidden = select.value !== 'write_off';
@@ -76,11 +89,11 @@ function decisionForm(item) {
   };
   select.addEventListener('change', sync);
   const button = document.createElement('button'); button.type = 'submit'; button.className = 'act record'; button.textContent = t('record');
-  form.append(field('decisionLabel', select), field('reasonLabel', reason), supplierField, supplierRefField, evidenceField, approvalField, button);
+  form.append(field('decisionLabel', select), wasteReasonField, reasonField, supplierField, supplierRefField, evidenceField, approvalField, button);
   sync();
   form.addEventListener('submit', (event) => {
     event.preventDefault();
-    void send(item, { decision: select.value, reasonCode: reason.value.trim(), supplierId: supplier.value.trim(), supplierRef: supplierRef.value.trim(), evidenceRef: evidence.value.trim(), approvalId: approval.value.trim() }, button);
+    void send(item, { decision: select.value, wasteReason: wasteReason.value, reasonCode: reason.value.trim(), supplierId: supplier.value.trim(), supplierRef: supplierRef.value.trim(), evidenceRef: evidence.value.trim(), approvalId: approval.value.trim() }, button);
   });
   return form;
 }
@@ -106,7 +119,8 @@ function rowNode(item, open) {
   fact(`${t('sinceLabel')}: ${new Date(item.heldAt).toLocaleString()}`);
   for (const d of item.decisions) {
     const extra = d.valueMinor === undefined ? '' : ` · ${t('valueLabel')} ${rupees(d.valueMinor)}${d.approvedBy ? ` · ${t('approvedByLabel')} ${d.approvedBy}` : ''}`;
-    fact(`${t(DECISION_WORD[d.decision])} ${t('byLabel')} ${d.decidedBy} (${d.reasonCode})${extra}`);
+    const why = d.decision === 'write_off' && WASTE_REASONS.includes(d.reasonCode) ? t(d.reasonCode) : d.reasonCode;
+    fact(`${t(DECISION_WORD[d.decision])} ${t('byLabel')} ${d.decidedBy} (${why}${d.note ? ` — ${d.note}` : ''})${extra}`);
   }
   li.append(head, facts);
   if (open) li.append(decisionForm(item));
@@ -151,10 +165,13 @@ async function refresh() {
 }
 
 async function send(item, values, button) {
-  if (values.reasonCode === '') { tell(false, t('needReason')); return; }
+  if (values.decision === 'write_off' && values.wasteReason === '') { tell(false, t('needWasteReason')); return; }
+  if (values.decision !== 'write_off' && values.reasonCode === '') { tell(false, t('needReason')); return; }
   const decisionId = pendingIds.get(item.heldId) ?? `hd-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   pendingIds.set(item.heldId, decisionId);
-  const body = { decision: values.decision, reasonCode: values.reasonCode };
+  const body = values.decision === 'write_off'
+    ? { decision: values.decision, reasonCode: values.wasteReason, ...(values.reasonCode === '' ? {} : { note: values.reasonCode }) }
+    : { decision: values.decision, reasonCode: values.reasonCode };
   if (values.decision === 'return_to_supplier') { body.supplierId = values.supplierId; if (values.supplierRef) body.supplierRef = values.supplierRef; }
   if (values.decision === 'write_off') { if (values.evidenceRef) body.evidenceRef = values.evidenceRef; if (values.approvalId) body.approvalId = values.approvalId; }
   button.disabled = true;

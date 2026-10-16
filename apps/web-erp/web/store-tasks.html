@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Store tasks</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Store tasks (D-8 · OB-154 · OB-158). A THIN CLIENT over head office's assigned-task register: the manager's board
+      (GET /v1/hr/workforce/assigned-tasks), worst first - a critical task past its deadline is escalated to whoever
+      assigned it, and a re-assigned task keeps the deadline it missed - and assign a task to a named person with a
+      deadline (POST /v1/hr/workforce/assigned-tasks/:taskId). Only the assignee completes a task, on their own "My tasks"
+      page (OB-158). Its session is the tested model in apps/web-erp/src/store-ops-session.ts. Nothing is written on
+      open. No prompt/confirm/alert; nothing on a timer.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      input, select, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; }
+      button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
+      .panel { border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--bg); display: grid; gap: 2px; }
+      .panel .k { color: var(--muted); font-size: 14px; } .panel .v { font-size: 22px; font-weight: 700; }
+      .panel.attention { border-left: 6px solid var(--degraded); }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+      li.row { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 8px; border-left: 6px solid var(--idle); overflow-wrap: anywhere; }
+      li.row.tone-ok { border-left-color: var(--ok); } li.row.tone-degraded { border-left-color: var(--degraded); } li.row.tone-error { border-left-color: var(--danger-text); }
+      .row .head { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; align-items: baseline; }
+      .row .state { font-weight: 600; font-size: 14px; display: inline-flex; gap: 6px; align-items: center; }
+      .row .facts { font-size: 14px; color: var(--muted); }
+      .row form { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); align-items: end; }
+      .status { font-size: 14px; min-height: 20px; margin: 0; } .status.good { color: var(--good); } .status.err { color: var(--danger-text); }
+      .nobody { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
+      .muted { color: var(--muted); font-size: 14px; }
+      table { width: 100%; border-collapse: collapse; }
+      .table-wrap { overflow-x: auto; max-width: 100%; }
+      td, th { text-align: left; }
+      .form-row { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); align-items: end; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Store tasks</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section aria-labelledby="page-h">
+        <h2 id="page-h">Store tasks</h2>
+        <p class="lead" id="lead"></p>
+        <div class="panels" role="status" aria-live="polite">
+          <div class="panel" id="p-escalated"><span class="k" id="k-escalated">Escalated</span><span class="v" id="v-escalated">—</span></div>
+          <div class="panel" id="p-overdue"><span class="k" id="k-overdue">Overdue</span><span class="v" id="v-overdue">—</span></div>
+          <div class="panel" id="p-pending"><span class="k" id="k-pending">To do</span><span class="v" id="v-pending">—</span></div>
+          <div class="panel" id="p-donelate"><span class="k" id="k-donelate">Done late</span><span class="v" id="v-donelate">—</span></div>
+        </div>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+      <section aria-labelledby="assign-h" id="assign-section" hidden>
+        <h3 id="assign-h">Assign a task</h3>
+        <form class="form-row" id="assign">
+          <label for="a-title"><span id="l-a-title">What to do</span><input id="a-title" autocomplete="off" /></label>
+          <label for="a-person"><span id="l-a-person">Who does it</span><input id="a-person" autocomplete="off" /></label>
+          <label for="a-branch"><span id="l-a-branch">Store</span><input id="a-branch" autocomplete="off" /></label>
+          <label for="a-due"><span id="l-a-due">Deadline</span><input id="a-due" type="datetime-local" /></label>
+          <label for="a-critical"><span id="l-a-critical">Critical</span><input id="a-critical" type="checkbox" /></label>
+          <label for="a-evidence"><span id="l-a-evidence">Needs evidence</span><input id="a-evidence" type="checkbox" /></label>
+          <label for="a-steps"><span id="l-a-steps">Steps</span><textarea id="a-steps"></textarea></label>
+          <button id="a-save" type="submit">Assign it</button>
+        </form>
+        <p class="status" id="assign-status" role="status" aria-live="polite"></p>
+      </section>
+      <section aria-labelledby="board-h">
+        <h3 id="board-h">Every task</h3>
+        <ul class="rows" id="rows" aria-label="Every assigned task, worst first"></ul>
+        <p class="muted" id="none" hidden></p>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./store-tasks.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

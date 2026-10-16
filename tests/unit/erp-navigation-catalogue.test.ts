@@ -85,8 +85,8 @@ describe('every screen the store computer serves has a door, and every door open
     // Round 10: Organisation and Delegation are head-office pages (served in front of head office's API, not by the box).
     // Round 26: so is Store computers (OB-99).
     // Round 12: so are Month-end (finance-close), Supplier bills (D03-FR-02 · WF-05), Count plans (WF-08), Transfers (WF-07) and Incidents (M35).
-    expect(unservedPages).toEqual(['company-report.html', 'count-plans.html', 'delegation.html', 'erasure-console.html', 'finance-close.html', 'incidents.html', 'organisation.html', 'payroll-payslip.html', 'payroll.html', 'setup.html', 'store-computers.html', 'supplier-bills.html', 'transfers.html']);
-    expect(notBox.filter((i) => i.served === 'unserved').map((i) => i.id).sort()).toEqual(['count-plans', 'delegation', 'finance-close', 'incidents', 'my-payslip', 'organisation', 'payroll', 'store-computers', 'store-setup', 'supplier-bills', 'transfers']);
+    expect(unservedPages).toEqual(['company-report.html', 'count-plans.html', 'delegation.html', 'erasure-console.html', 'finance-close.html', 'food-safety.html', 'incidents.html', 'my-tasks.html', 'organisation.html', 'payroll-payslip.html', 'payroll.html', 'price-integrity.html', 'setup.html', 'store-computers.html', 'store-tasks.html', 'supplier-bills.html', 'transfers.html', 'waste-analytics.html']);
+    expect(notBox.filter((i) => i.served === 'unserved').map((i) => i.id).sort()).toEqual(['count-plans', 'delegation', 'finance-close', 'food-safety', 'incidents', 'my-payslip', 'my-tasks', 'organisation', 'payroll', 'price-integrity', 'store-computers', 'store-setup', 'store-tasks', 'supplier-bills', 'transfers', 'waste-analytics']);
     // `suppliers` left this list at SP-7d (30 Sep 2026): the Suppliers screen is built and served by the box.
     expect(notBox.filter((i) => i.served === 'unbuilt').map((i) => i.id).sort()).toEqual(['reconciliation', 'settings']);
   });

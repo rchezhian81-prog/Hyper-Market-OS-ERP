@@ -22,8 +22,8 @@ const styleOf = (html: string): string => html.slice(html.indexOf('<style>'), ht
 const code = (source: string): string => source.replace(/\/\*[\s\S]*?\*\//g, '').split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
 
 describe('every page carries the one chrome', () => {
-  it('finds the sixty pages (round 8: Returned goods to decide, Customer cases, Assistant drafts; round 10: Organisation, Delegation; round 12: Month-end, Supplier bills, Count plans, Transfers, Incidents and recovery drills; round 26: Store computers)', () => {
-    expect(PAGES.length).toBe(61);
+  it('finds the sixty pages (round 8: Returned goods to decide, Customer cases, Assistant drafts; round 10: Organisation, Delegation; round 12: Month-end, Supplier bills, Count plans, Transfers, Incidents and recovery drills; round 26: Store computers; OB-154: Food-safety checks, Price mismatches, Store tasks, My tasks, Waste analytics)', () => {
+    expect(PAGES.length).toBe(66);
   });
 
   it('loads sre-chrome.js AFTER its own script, so the page\'s words come first and the chrome finishes the frame', () => {
@@ -214,6 +214,12 @@ describe('every word on every page has a Tamil twin (design system §1 rule 6 ·
     'transfers.js': 'apps/web-erp/src/transfers-session.ts',
     'incidents.js': 'apps/web-erp/src/incidents-session.ts',
     'store-computers.js': 'apps/web-erp/src/store-computers-session.ts',
+    // OB-154: the store-operations pages share one tested session model.
+    'food-safety.js': 'apps/web-erp/src/store-ops-session.ts',
+    'price-integrity.js': 'apps/web-erp/src/store-ops-session.ts',
+    'store-tasks.js': 'apps/web-erp/src/store-ops-session.ts',
+    'my-tasks.js': 'apps/web-erp/src/store-ops-session.ts',
+    'waste-analytics.js': 'apps/web-erp/src/store-ops-session.ts',
   };
   // No page is English-only any more: the erasure console and the company report joined the toggle in slice 5c.
   for (const script of SCRIPTS) {
