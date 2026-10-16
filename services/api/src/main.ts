@@ -299,6 +299,11 @@ import { poshRegisterRoutes } from '../../finance/src/posh-register';
 import { processorRegisterAdapter, settlementRefundsAdapter } from './r2-data-adapters';
 import { processorRegisterRoutes } from '../../customer/src/processor-register';
 import { legacyCardPurgeRoutes } from '../../migration/src/legacy-card-purge';
+import { wasteAnalyticsAdapter, foodSafetyAdapter, priceIntegrityAgeingAdapter, assignedTaskAdapter } from './r2-ops-adapters';
+import { assignedTaskRoutes } from '../../finance/src/assigned-tasks';
+import { priceIntegrityAgeingRoutes } from '../../pricing/src/price-integrity-ageing';
+import { foodSafetyRoutes } from '../../platform/src/food-safety';
+import { wasteAnalyticsRoutes } from '../../inventory/src/waste-analytics';
 import type { ModelTransport, ModelTier, TierPricing } from '../../../packages/ai/src/index';
 import {
   STREAM, personalDataStore, outsidePartyLoginAdapter, syncWatermarksAdapter, storeSyncView, dayBookAdapter, payablesAdapter, supplierAccountAdapter, supplierMasterAdapter, supplierOpeningsAdapter, accountOpeningsAdapter, openingReversalAdapter, storeStockFactsAdapter, replenishmentFactsAdapter, displayFundingAdapter, concessionTagsAdapter, observedHealthAdapter, catalogueAdapter, productMasterAdapter, categoryRegisterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, refundApprovalsAdapter, approvalRequestsAdapter, noReceiptReturnsAdapter, exchangesAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, floorIndentsAdapter, countsAdapter, writeOffAdapter, productionAdapter, weighedCostingAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, spacePerformanceAdapter, assortmentAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, importQualityAdapter, dataImportAdapter, supplierInvoiceIdUsed, productUomFrom, acceptedAsn, productInUse, storeSettingsAdapter, storeRulesAdapter, heldVersionsAdapter, branchScopeHeldBy, dataExportAdapter, financeAdapter, settlementAdapter, customerAdapter, segmentDataAdapter, marketingDraftInputs, dataRightsAdapter, erasureExecutionAdapter, privacyDomainHoldingsAdapter, serviceCaseAdapter, campaignAdapter, campaignSendAdapter, modelGatewayAdapter, ordersAdapter, fulfilmentAdapter, dispatchAdapter, notificationQueueAdapter, fulfilmentPackingAdapter, orderFulfilmentAdapter, stockLossAdapter, substitutionTruthAdapter, b2bMoneyEffectsAdapter, b2bPostingAdapter, fulfilmentWaveAdapter, assignmentsAdapter, driverRunAdapter, identityAdapter, accessLifecycleAdapter, peopleAdapter, signInEnder, delegationAdapter, approvalDecisionAdapter, syncedGoodsReceiptAdapter, assembledGoodsReceiptAdapter, syncedCountsAdapter, countPlansAdapter, openToBuyAdapter, invoiceIngestionAdapter, onlineBufferAdapter, productVersionsOf, adjustmentRequestAdapter, syncedWarehouseAdapter, receivingScanAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, partnerAdapter, backgroundJobsAdapter, supportAccessAdapter, statusCentreAdapter, licencesAdapter, serviceRequestsAdapter, remoteSessionsAdapter, alertLifecycleAdapter, legalHoldsAdapter, riskRegisterAdapter, drReadinessAdapter, auditTrailAdapter, reportingAdapter, migrationAdapter, legacyHistoryAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, periodBooksAdapter, heldStockDecisionsAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, dayCloseAdapter, lpCasesAdapter, lpRulesAdapter, lpActivityAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bPortalAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, quotationsAdapter, scheduledBriefAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, connectorDeliveryAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, qualityHoldAdapter, saleBlocksAdapter, loyaltyMembersAdapter, loyaltyEffectsAdapter, loyaltyWalletsAdapter, loyaltyLiabilityAdapter, independentEvidenceAdapter, compensationFulfilmentAdapter, nearExpiryAdapter, rosterStoreAdapter, certStoreAdapter, sopStoreAdapter, attendanceStoreAdapter, checklistStoreAdapter, taskStoreAdapter, payslipStoreAdapter, salesHistoryAdapter, billingAdapter, serviceabilityAdapter, consolidationAdapter, planogramStoreAdapter, documentTemplatesAdapter, tokenRevocationAdapter, effectiveGrants, deliveryServiceAdapter, b2bStockAdapter, commissionRuleAdapter, b2bOrderingAdapter, customer360Adapter, b2bTransferNotesAdapter, registeredStores, knownStockPlace,
@@ -1081,6 +1086,8 @@ export function buildSurface(deps: {
     ...wasteRoutes(store === undefined ? {
       records: empty([]), coverage: empty({ expected: [], departmentNames: {} }), recordWaste: () => {}, recordCoverage: () => {}, now,
     } : wasteAdapter({ store, now })),
+    // D-5 (R2): waste analytics by SKU / department / reason over write-offs and waste records (r2-ops-adapters).
+    ...wasteAnalyticsRoutes(store === undefined ? { writeOffs: empty([]), wasteRecords: empty([]), departmentOf: empty(new Map()), now } : wasteAnalyticsAdapter({ store, now, locationBranches: locationBranchesOf(store, now) })),
     ...integrationRoutes(store === undefined ? {
       matrix: empty([]), adapters: empty([]), heartbeats: empty([]),
       recordMatrixEntry: () => {}, recordAdapter: () => {}, recordHeartbeat: () => {}, now,
@@ -1577,6 +1584,8 @@ export function buildSurface(deps: {
       schedules: empty([]), tasks: empty([]), recordSchedule: () => {}, recordTaskDue: () => {}, recordTaskCompleted: () => {}, recordTaskVerified: () => {},
       incidents: empty([]), recordIncident: () => {}, now,
     } : facilitiesAdapter({ store, now })),
+    // D-6 (R2): scheduled food-safety / HACCP checks — corrective action on a failure, sealed into the audit chain (r2-ops-adapters).
+    ...foodSafetyRoutes(store === undefined ? { checks: empty([]), records: empty([]), recordCheck: () => {}, recordRecord: () => {}, now } : foodSafetyAdapter({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) })),
     ...facilitiesAssetsRoutes(store === undefined ? {
       assets: empty([]), services: empty([]), downtime: empty([]), energyReadings: empty([]),
       recordAsset: () => {}, recordService: () => {}, recordDowntime: () => {}, recordEnergy: () => {}, now,
@@ -1726,6 +1735,8 @@ export function buildSurface(deps: {
     ...taskStoreRoutes(store === undefined ? {
       putTask: () => {}, completeTask: () => {}, tasks: () => [], now,
     } : taskStoreAdapter({ store, now })),
+    // D-8 (R2): tasks assigned to a named person — SOP checklist, deadline, evidence, only the assignee completes (r2-ops-adapters).
+    ...assignedTaskRoutes(store === undefined ? { tasks: empty([]), completions: empty([]), recordTask: () => {}, recordCompletion: () => {}, sop: empty(undefined), permissionsOfUser: empty(undefined), now } : assignedTaskAdapter({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) })),
     // Payroll pay-run DURABLE lifecycle store (WP3 inc9) — append draft→submit→approve→lock→reverse to the
     // append-only ledger (one stream per run) so a run survives a restart; maker ≠ checker enforced at the
     // write boundary. Confidential — owner-gated. The stateless /pay-run/evaluate route stays for previews.
@@ -1751,6 +1762,8 @@ export function buildSurface(deps: {
     // Price integrity across shelf/POS/app/ESL (D06/D14, ratified R2 B25) — stateless audit; the till is
     // the reference and a shelf underpricing it is ranked first as a legal exposure.
     ...priceIntegrityRoutes(),
+    // D-7 (R2): the automated price-integrity audit — price of record vs shelf / app / till as an ageing report (r2-ops-adapters).
+    ...priceIntegrityAgeingRoutes(store === undefined ? { observations: empty([]), observation: empty(undefined), recordObservation: () => {}, priceEntries: empty([]), chargedAt: empty([]), now } : priceIntegrityAgeingAdapter({ store, now, locationBranches: locationBranchesOf(store, now) })),
     // Cold-chain assessment (M10-FR-02) — stateless verdict on a perishable batch; no second temperature
     // store (facilities-monitoring owns that truth, P-02), so no deps/stub.
     ...coldChainRoutes(),

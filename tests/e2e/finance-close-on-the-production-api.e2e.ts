@@ -97,7 +97,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Month-
         const counted = await req('POST', '/v1/inventory/counts/C1', OWNER, { productId: 'p-oil', locationId: 'store-1', uom: 'each', countedMinor: 8, reasonCode: 'cycle_count' });
         if (counted.status >= 300) throw new Error(`count: ${counted.status} ${JSON.stringify(counted.body)}`);
         if ((counted.body as { pendingApproval?: boolean }).pendingApproval) await ok(req('POST', '/v1/inventory/counts/C1/decide', SM, { decision: 'approved', reason: 'recounted' }), 'decide');
-        await ok(req('POST', '/v1/inventory/write-off/W1', SM, { productId: 'p-oil', locationId: 'store-1', qty: 1, uom: 'each', lossType: 'damage', reasonCode: 'leaking' }), 'write-off');
+        await ok(req('POST', '/v1/inventory/write-off/W1', SM, { productId: 'p-oil', locationId: 'store-1', qty: 1, uom: 'each', lossType: 'damage', reasonCode: 'damage' }), 'write-off');
         await ok(req('PUT', '/v1/finance/posting-map', OWNER, DEFAULT_RETAIL_POSTING_MAP), 'map');
         await ok(req('POST', `/v1/finance/day-book/${TODAY}/post`, OWNER), 'day book');
         const suggested = ((await req('GET', '/v1/finance/account-classes', OWNER)).body as { suggested: Record<string, string> }).suggested;

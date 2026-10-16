@@ -13,3 +13,5 @@ export * from './assets';
 export * from './monitoring';
 export * from './schedules';
 export * from './weighing-verification';
+// D-6 (R2): scheduled food-safety / HACCP checks with corrective action; a missed check surfaces by arithmetic.
+export * from './food-safety';

@@ -80,7 +80,7 @@ async function shop(h: ApiHarness, t: string) {
   // OB-56: rice gets a cost AFTER the count (so C3 stays unvalued, as counted), and the month-end stock can be valued.
   await move('rcv-rice-2', 'RICE', 1, 1_000);
   // A small write-off at head office's own cost (₹50), on the manager's own.
-  await ok(call('POST', '/v1/inventory/write-off/W1', 'u-mgr', { productId: 'OIL', locationId: 'store-1', qty: 1, uom: 'each', lossType: 'damage', reasonCode: 'leaking' }), 'write-off');
+  await ok(call('POST', '/v1/inventory/write-off/W1', 'u-mgr', { productId: 'OIL', locationId: 'store-1', qty: 1, uom: 'each', lossType: 'damage', reasonCode: 'damage' }), 'write-off');
   // A supplier's opening bill, signed by finance — on the purchase register, not yet in the books.
   await ok(call('POST', '/v1/purchase/suppliers/sup-1/opening-balances/OB-1', 'u-owner', { billNumber: 'BILL-1', billDate: TODAY, amountMinor: 30_000, openingDate: TODAY, loadId: 'L1' }), 'opening');
   await ok(call('POST', '/v1/purchase/opening-balances/sign-off/L1', 'u-acct', { expectedTotalMinor: 30_000, expectedCount: 1 }), 'opening sign-off');

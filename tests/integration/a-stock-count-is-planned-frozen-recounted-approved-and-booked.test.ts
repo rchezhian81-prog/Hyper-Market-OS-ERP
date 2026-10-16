@@ -131,7 +131,7 @@ describe.each(backings)('a stock count is planned, frozen, counted blind, recoun
     await ok(call('POST', '/v1/inventory/movements', 'u-owner', { movementId: 'late-sale', productId: 'P1', locationId: 'S1', kind: 'sold', quantityMinor: 2, uom: 'EA', occurredAt: '2026-08-02T10:00:00.000Z', enteredBy: 'u-till' }, 'late-sale'), 'late sale');
     expect(await line('P1')).toMatchObject({ state: 'recount_required', recountBecause: ['expected_changed'] });
     // ── Round 10 (OB-59): a write-off typed at head office is refused by name — nothing moves ─────────────────────────
-    expect(codeOf(await call('POST', '/v1/inventory/write-off/wo-p3', 'u-owner', { productId: 'P3', locationId: 'S1', qty: 1, uom: 'EA', lossType: 'damage', reasonCode: 'crushed' }, 'wo-p3'))).toBe('frozen_by_a_stock_count');
+    expect(codeOf(await call('POST', '/v1/inventory/write-off/wo-p3', 'u-owner', { productId: 'P3', locationId: 'S1', qty: 1, uom: 'EA', lossType: 'damage', reasonCode: 'damage' }, 'wo-p3'))).toBe('frozen_by_a_stock_count');
     expect(await onHand('P3')).toBe(20);
     // ── A frozen kind landing by a RELAYED path (the manager's store-screen approval of a handheld's request) is KEPT, is a
     //    visible exception, and P3 must be counted again ─────────────────────────────────────────────────────────────

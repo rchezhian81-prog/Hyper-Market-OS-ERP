@@ -5,7 +5,8 @@
 // outcome. Asking and recording are HUMAN acts in the raiser's own name that run ONLY on an explicit click, never on
 // load. A big loss is never recorded on a typed name: the raiser asks, a SECOND person who handles stock approves it
 // on their own Approvals page, and "Record the loss" sends it naming that approval — the session says why not
-// otherwise, and sends nothing. The loss type is a CHOSEN chip, never free text (M15). No prompt/confirm/alert; no
+// otherwise, and sends nothing. The loss type is a CHOSEN chip, never free text (M15), and so is WHY it is lost — a chip
+// from the closed waste reason list (D-5); a loss with no reason chosen is never sent. No prompt/confirm/alert; no
 // fetch/XHR here — the audited POSTs live in the injected ports (browser-entry). No AI records a loss (hard rule #5).
 
 const el = (id) => document.getElementById(id);
@@ -19,7 +20,7 @@ const CHROME = {
     title: 'Record a loss', langName: 'தமிழ்',
     lead: 'Sample form. Connect the store computer to record a real loss.',
     productLabel: 'Which item', locationLabel: 'Where in the store', qtyLabel: 'How many', uomLabel: 'Unit',
-    valueLabel: 'What it is worth (₹)', lossTypeLabel: 'What kind of loss',
+    valueLabel: 'What it is worth (₹)', lossTypeLabel: 'What kind of loss', reasonLabel: 'Why it is lost',
     evidenceLabel: 'Photo or witness (for a big loss)',
     recordBtn: 'Record the loss',
     lossWastage: 'Wastage', lossDamage: 'Damage', lossExpiry: 'Expired', lossDonation: 'Donation', lossDestruction: 'Destruction',
@@ -40,7 +41,7 @@ const CHROME = {
     title: 'இழப்பைப் பதிவு செய்', langName: 'English',
     lead: 'மாதிரி படிவம். உண்மையான இழப்பைப் பதிவு செய்ய கடை கணினியை இணைக்கவும்.',
     productLabel: 'எந்தப் பொருள்', locationLabel: 'கடையில் எங்கே', qtyLabel: 'எத்தனை', uomLabel: 'அலகு',
-    valueLabel: 'மதிப்பு (₹)', lossTypeLabel: 'எந்த வகை இழப்பு',
+    valueLabel: 'மதிப்பு (₹)', lossTypeLabel: 'எந்த வகை இழப்பு', reasonLabel: 'ஏன் இழப்பு',
     evidenceLabel: 'புகைப்படம் அல்லது சாட்சி (பெரிய இழப்புக்கு)',
     recordBtn: 'இழப்பைப் பதிவு செய்',
     lossWastage: 'கழிவு', lossDamage: 'சேதம்', lossExpiry: 'காலாவதி', lossDonation: 'நன்கொடை', lossDestruction: 'அழிப்பு',
@@ -61,6 +62,11 @@ const CHROME = {
 
 const LOSS_LABEL = { wastage: 'lossWastage', damage: 'lossDamage', expiry: 'lossExpiry', donation: 'lossDonation', destruction: 'lossDestruction' };
 const SAMPLE_LOSS_TYPES = ['wastage', 'damage', 'expiry', 'donation', 'destruction'];
+// D-5: the closed waste reason list (the sample's stand-in; the bundled session hands over its own, in the same order).
+const SAMPLE_REASONS = {
+  en: [['expiry', 'Past its date'], ['damage', 'Damaged'], ['shrinkage', 'Missing (shrinkage)'], ['preparation', 'Lost in preparation'], ['customer_return', 'Customer return, not saleable'], ['recall', 'Recalled']],
+  ta: [['expiry', 'காலாவதியானது'], ['damage', 'சேதமடைந்தது'], ['shrinkage', 'காணாமல் போனது'], ['preparation', 'தயாரிப்பில் வீணானது'], ['customer_return', 'வாடிக்கையாளர் திருப்பியது, விற்க முடியாது'], ['recall', 'திரும்பப் பெறப்பட்டது']],
+};
 const SAMPLE_THRESHOLD_MINOR = 50000; // ₹500 — a clearly-marked sample line, never presented as the shop's
 
 const rupees = (minor) => `₹${Math.floor(Math.abs(minor) / 100).toLocaleString('en-IN')}.${String(Math.abs(minor) % 100).padStart(2, '0')}`;
@@ -77,6 +83,7 @@ function sampleSession() {
     view: (l) => ({
       screenState: { tone: 'ok', icon: '✓', label: '', announcement: '', needsAttention: false },
       lossTypes: SAMPLE_LOSS_TYPES.map((lt) => ({ lossType: lt, label: CHROME[l][LOSS_LABEL[lt]] })),
+      reasons: SAMPLE_REASONS[l].map(([reasonCode, label]) => ({ reasonCode, label })),
       thresholdMinor: SAMPLE_THRESHOLD_MINOR, thresholdText: rupees(SAMPLE_THRESHOLD_MINOR),
       nobodyNamed: false, mayCapture: true,
     }),
@@ -101,8 +108,8 @@ const t = (key) => { const said = session.text(lang, key); return said === key ?
 const newId = () => (self.crypto?.randomUUID?.() ?? `wo-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 let writeOffId = newId();
 let selectedLossType = null;
-/** A finer reason a request was asked with (carried on from "Losses you asked approval for"); dropped on a new chip. */
-let carriedReasonCode;
+/** D-5: WHY the stock is lost — a chip from the closed waste reason list, never typed and never defaulted. */
+let selectedReason = null;
 /** Write-offs asked about on this visit — so "Record the loss" becomes the next step even before the list is re-read. */
 const askedHere = new Set();
 
@@ -124,7 +131,7 @@ function draftNow() {
     lossType: selectedLossType,
     valueMinor: valueMinor(),
     evidenceRef: el('wo-evidence').value,
-    ...(carriedReasonCode === undefined ? {} : { reasonCode: carriedReasonCode }),
+    ...(selectedReason === null ? {} : { reasonCode: selectedReason }),
   };
 }
 
@@ -138,7 +145,24 @@ function paintLossTypes(view) {
     const chosen = c.lossType === selectedLossType;
     b.setAttribute('aria-pressed', chosen ? 'true' : 'false');
     if (chosen) b.classList.add('chosen');
-    b.addEventListener('click', () => { selectedLossType = c.lossType; carriedReasonCode = undefined; paint(); });
+    b.addEventListener('click', () => { selectedLossType = c.lossType; paint(); });
+    return b;
+  }));
+}
+
+/** D-5: the reason chips — the closed waste reason list, one chosen. A loss with none chosen is not sent. */
+function paintReasons(view) {
+  const box = el('reasons');
+  box.replaceChildren(...(view.reasons ?? []).map((c) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'chip';
+    b.textContent = c.label;
+    b.dataset.reason = c.reasonCode;
+    const chosen = c.reasonCode === selectedReason;
+    b.setAttribute('aria-pressed', chosen ? 'true' : 'false');
+    if (chosen) b.classList.add('chosen');
+    b.addEventListener('click', () => { selectedReason = c.reasonCode; paint(); });
     return b;
   }));
 }
@@ -211,6 +235,7 @@ function paint() {
     el('uom-label').textContent = t('uomLabel');
     el('value-label').textContent = t('valueLabel');
     el('loss-type-label').textContent = t('lossTypeLabel');
+    el('reason-label').textContent = t('reasonLabel');
     el('evidence-label').textContent = t('evidenceLabel');
     el('approval-lead').textContent = t('approvalLead');
     el('why-label').textContent = t('whyLabel');
@@ -220,6 +245,7 @@ function paint() {
     el('your-losses-title').textContent = t('yourLossesTitle');
     el('your-losses-lead').textContent = t('yourLossesLead');
     paintLossTypes(view);
+    paintReasons(view);
     paintMaterialHint();
   }
   paintLosses();
@@ -278,7 +304,7 @@ function carryOn(draft) {
   el('wo-value').value = (draft.valueMinor / 100).toFixed(2);
   el('wo-evidence').value = draft.evidenceRef ?? '';
   selectedLossType = draft.lossType;
-  carriedReasonCode = draft.reasonCode === draft.lossType ? undefined : draft.reasonCode;
+  selectedReason = (session.view(lang).reasons ?? []).some((r) => r.reasonCode === draft.reasonCode) ? draft.reasonCode : null;
   paint();
   // SF-05: head office values it again — the same figure unless the stock's cost has moved since it was asked about.
   void lookUpValue();
@@ -364,7 +390,7 @@ el('record').addEventListener('click', () => {
       lastValue = null;
       paintValueHint();
       selectedLossType = null;
-      carriedReasonCode = undefined;
+      selectedReason = null;
       writeOffId = newId();
       paint();
       await refreshLosses();

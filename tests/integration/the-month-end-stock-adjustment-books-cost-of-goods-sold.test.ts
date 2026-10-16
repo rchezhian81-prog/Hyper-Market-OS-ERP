@@ -73,7 +73,7 @@ describe.each(backings)('OB-56 — the month-end stock adjustment books cost of 
     }), 'sale');
     const r = await ok(call('POST', '/v1/inventory/counts/C1', 'u-owner', { productId: 'OIL', locationId: 'store-1', uom: 'each', countedMinor: 8, reasonCode: 'cycle_count' }), 'count');
     if ((r.body as { pendingApproval: boolean }).pendingApproval) await ok(call('POST', '/v1/inventory/counts/C1/decide', 'u-mgr', { decision: 'approved', reason: 'recounted' }), 'decide');
-    await ok(call('POST', '/v1/inventory/write-off/W1', 'u-mgr', { productId: 'OIL', locationId: 'store-1', qty: 1, uom: 'each', lossType: 'damage', reasonCode: 'leaking' }), 'write-off');
+    await ok(call('POST', '/v1/inventory/write-off/W1', 'u-mgr', { productId: 'OIL', locationId: 'store-1', qty: 1, uom: 'each', lossType: 'damage', reasonCode: 'damage' }), 'write-off');
     const adjust = () => call('POST', `/v1/finance/periods/${PERIOD}/stock-adjustment`, 'u-owner', {});
     const evidence = async () => (await call('GET', `/v1/finance/periods/${PERIOD}/independent-evidence`, 'u-acct')).body as Evidence;
     const stockCheck = (e: Evidence) => e.checks.find((c) => c.name === `Stock value at the close of ${PERIOD}`);

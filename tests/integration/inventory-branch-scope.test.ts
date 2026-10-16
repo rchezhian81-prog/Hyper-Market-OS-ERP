@@ -140,7 +140,7 @@ describe('every stock family keeps to the caller\'s branches (PA-01-r1 sweep)', 
 
   it('write-offs, counts, receipts, indents and near-expiry: br-2 is refused by name or left out', async () => {
     const h = await twoBranches(apiHarness(), A);
-    const loss = { productId: 'P1', locationId: 'br-2', qty: 1, uom: 'each', lossType: 'damage', reasonCode: 'broken' };
+    const loss = { productId: 'P1', locationId: 'br-2', qty: 1, uom: 'each', lossType: 'damage', reasonCode: 'damage' };
     expect(codeOf(await post(h, MGR1, '/v1/inventory/write-off/W1', loss, 'w1'))).toBe('outside_your_branch_scope');
     expect(codeOf(await get(h, MGR1, '/v1/inventory/write-off-value', { productId: 'P1', locationId: 'br-2', qty: '1' }))).toBe('outside_your_branch_scope');
     expect(codeOf(await get(h, MGR1, '/v1/inventory/write-offs', { branchId: 'br-2' }))).toBe('scope_not_held');

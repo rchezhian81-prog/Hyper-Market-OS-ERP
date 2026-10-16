@@ -11,6 +11,7 @@ import type { Money } from '../../contracts/src/money';
 import type { DecidedRequest } from '../../approvals/src/approvals';
 import type { Ledger } from '../../ledger/src/ledger';
 import type { SyncOutbox } from '../../sync/src/outbox';
+import { isWasteReason, UnknownWasteReasonError } from './reasons';
 
 export type LossType = 'wastage' | 'damage' | 'expiry' | 'donation' | 'destruction';
 
@@ -22,6 +23,7 @@ export interface WriteOffInput {
   readonly qty: number;
   readonly uom: string;
   readonly lossType: LossType;
+  /** D-5: a code from the closed waste reason list (`WASTE_REASON_CODES`) — never free text. */
   readonly reasonCode: string;
   /** Financial impact of the loss (magnitude used for the threshold; feeds M23). */
   readonly value: Money;
@@ -97,6 +99,10 @@ export function commitWriteOff(
 ): WrittenOff {
   if (input.reasonCode.trim() === '') {
     throw new MissingReasonError(input.id);
+  }
+  // D-5: the reason is a code from the closed list; anything else is refused by name, never stored as a new reason.
+  if (!isWasteReason(input.reasonCode)) {
+    throw new UnknownWasteReasonError(input.id, input.reasonCode);
   }
   if (!Number.isSafeInteger(input.qty) || input.qty <= 0) {
     throw new InvalidWriteOffError(input.id);

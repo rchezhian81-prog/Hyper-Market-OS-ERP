@@ -14,6 +14,7 @@ import {
   DEFAULT_WRITE_OFF_THRESHOLD_MINOR, readWriteOffThreshold,
   type LossType, type WrittenOff,
 } from '../../../packages/waste/src/waste';
+import { checkWasteReason, WASTE_REASON_CODES, UnknownWasteReasonError } from '../../../packages/waste/src/reasons';
 import { checkStockAccess, type OwnershipStatus } from '../../../packages/concession/src/index';
 import { ApprovalRequiredError } from '../../../packages/adjustment/src/adjustment';
 import { Ledger, InMemoryLedgerStore } from '../../../packages/ledger/src/ledger';
@@ -128,6 +129,22 @@ export function writeOffRoutes(deps: WriteOffDeps): readonly Route[] {
       handler: async (ctx) => {
         const writeOffId = ctx.params['writeOffId'] ?? '';
         const b = (ctx.body ?? {}) as Record<string, unknown>;
+        // D-5: a waste event is captured against the CLOSED reason list. A bare (reasonless) one is refused, and so is a
+        // reason that is not on the list — nothing is written either way, and the list is named so the screen can offer it.
+        const reason = checkWasteReason(b['reasonCode']);
+        if (!reason.ok) {
+          throw apiError(400, reason.why === 'bare' ? {
+            code: 'waste_reason_required',
+            whatHappened: `A write-off with no reason is a bare waste event and is refused (D-5). Choose why the stock is lost: ${WASTE_REASON_CODES.join(' / ')}.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send the write-off again with a reasonCode from the list. Nothing was recorded.',
+          } : {
+            code: 'waste_reason_not_in_taxonomy',
+            whatHappened: `"${String(b['reasonCode'])}" is not on the waste reason list (${WASTE_REASON_CODES.join(' / ')}). A new reason is never made up on the shop floor (D-5).`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Choose the reason from the list and send it again. Nothing was recorded.',
+          });
+        }
         if (!isStr(b['productId']) || !isStr(b['locationId']) || !isPosInt(b['qty']) || !isStr(b['uom'])
           || !LOSS_TYPES.includes(b['lossType'] as LossType) || !isStr(b['reasonCode'])
           || (b['valueMinor'] !== undefined && !isNonNegInt(b['valueMinor']))
@@ -137,7 +154,7 @@ export function writeOffRoutes(deps: WriteOffDeps): readonly Route[] {
           || (b['batchId'] !== undefined && b['batchId'] !== null && !isStr(b['batchId']))) {
           throw apiError(400, {
             code: 'not_readable_as_a_write_off',
-            whatHappened: 'A write-off needs a productId, locationId, whole qty > 0, uom, a lossType (wastage/damage/expiry/donation/destruction) and a reasonCode. Its value is head office\'s (quantity × the stock\'s own cost); a valueMinor, when sent, must be that figure. The material-loss threshold is the tenant\'s policy, not sent by the caller.',
+            whatHappened: 'A write-off needs a productId, locationId, whole qty > 0, uom, a lossType (wastage/damage/expiry/donation/destruction) and a reasonCode from the waste reason list. Its value is head office\'s (quantity × the stock\'s own cost); a valueMinor, when sent, must be that figure. The material-loss threshold is the tenant\'s policy, not sent by the caller.',
             wasItSaved: 'not_saved',
             nextSafeAction: 'Send the write-off fields. Nothing was recorded.',
           });
@@ -243,7 +260,7 @@ export function writeOffRoutes(deps: WriteOffDeps): readonly Route[] {
           if (e instanceof MissingEvidenceError) {
             throw apiError(422, { code: 'write_off_needs_evidence', whatHappened: e.message, wasItSaved: 'not_saved', nextSafeAction: 'Capture a photo or witness reference for the material loss and re-send. Nothing was recorded.' });
           }
-          if (e instanceof MissingReasonError || e instanceof InvalidWriteOffError) {
+          if (e instanceof MissingReasonError || e instanceof InvalidWriteOffError || e instanceof UnknownWasteReasonError) {
             throw apiError(400, { code: 'invalid_write_off', whatHappened: e.message, wasItSaved: 'not_saved', nextSafeAction: 'Correct the write-off and re-send. Nothing was recorded.' });
           }
           throw e;

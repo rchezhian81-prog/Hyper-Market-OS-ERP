@@ -12,6 +12,7 @@ import { apiError, assertBranchInScope } from '../../kernel/src/index';
 import {
   buildSustainabilityReport, compareWaste,
   type WasteRecord, type WasteSource, type CoverageInput,
+  checkWasteReason, WASTE_REASON_CODES,
 } from '../../../packages/waste/src/index';
 
 export type { WasteRecord } from '../../../packages/waste/src/index';
@@ -48,6 +49,19 @@ export function wasteRoutes(deps: WasteDeps): readonly Route[] {
       handler: async (ctx) => {
         const wasteId = ctx.params['wasteId'] ?? '';
         const b = (ctx.body ?? {}) as Record<string, unknown>;
+        // D-5: the record's `source` IS its reason, from the same closed list a write-off uses. A bare one (no source) is
+        // refused by name; one off the list is refused by name. Nothing is recorded either way.
+        const reason = checkWasteReason(b['source']);
+        if (!reason.ok) {
+          throw apiError(400, {
+            code: reason.why === 'bare' ? 'waste_reason_required' : 'waste_reason_not_in_taxonomy',
+            whatHappened: reason.why === 'bare'
+              ? `A waste record with no reason (source) is a bare waste event and is refused (D-5). Choose one of: ${WASTE_REASON_CODES.join(' / ')}.`
+              : `"${String(b['source'])}" is not on the waste reason list (${WASTE_REASON_CODES.join(' / ')}) (D-5).`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send the record with a source from the list. Nothing was recorded.',
+          });
+        }
         if (!isStr(b['branchId']) || !isStr(b['departmentId']) || !isStr(b['productId'])
           || !SOURCES.includes(b['source'] as WasteSource) || !isDateTime(b['at'])
           || !isNonNegInt(b['valueMinor']) || !DISPOSALS.includes(b['disposal'] as WasteRecord['disposal'])

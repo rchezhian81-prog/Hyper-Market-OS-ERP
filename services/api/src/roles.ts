@@ -184,6 +184,8 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'finance.gstr.generate', 'finance.gstr.read', 'finance.gstr.approve', 'finance.gstr.submit',
       'payroll.statutory.read', 'payroll.ess.self',
       'workforce.roster.read', 'workforce.roster.manage', 'workforce.task.read', 'workforce.checklist.read', 'workforce.completion.sync', 'workforce.incentive.read', 'workforce.sop.read',
+      // D-8 (R2): complete the store tasks assigned to me, in my own sign-in.
+      'workforce.task.complete.own',
       'migration.discovery.read', 'migration.preservation.seal', 'migration.preservation.verify',
       'migration.mapping.read', 'migration.mapping.approve', 'migration.cleaning.read',
       'migration.trial.run', 'migration.reconciliation.read',
@@ -262,6 +264,8 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'fulfilment.wave.assign', 'fulfilment.assignment.read',
       'finance.period.read', 'reporting.dashboard.read', 'reporting.report.read',
       'scrap.review.read', 'waste.view', 'count.view', 'shelf.count.record', 'shelf.count.read', 'planogram.compliance.read', 'planogram.publish', 'merchandising.space.read', 'merchandising.display.manage', 'merchandising.range.manage', 'merchandising.range.read', 'approvals.delegation.grant', 'approvals.delegation.read', 'workforce.roster.read', 'workforce.roster.manage', 'workforce.task.read', 'workforce.checklist.read', 'workforce.completion.sync', 'workforce.incentive.read', 'workforce.sop.read',
+      // D-8 (R2): complete the store tasks assigned to me, in my own sign-in.
+      'workforce.task.complete.own',
       'platform.health.read', 'platform.alert.manage', 'platform.device.manage',
       'facilities.schedule.manage', 'facilities.task.record', 'facilities.overdue.read',
       'facilities.asset.manage', 'facilities.asset.read', 'facilities.reading.record', 'facilities.incident.record',
@@ -372,6 +376,8 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // the customer got less than they ordered). Which queues a role staffs is decided in
       // services/orders/src/exception-ownership.ts; this only opens the door, and never to reassign or sweep.
       'order.exception.work',
+      // D-8 (R2): floor staff complete the store tasks assigned to THEM, in their own sign-in (only the assignee may).
+      'workforce.task.complete.own',
     ],
   },
   {

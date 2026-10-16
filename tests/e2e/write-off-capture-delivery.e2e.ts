@@ -270,13 +270,15 @@ describe.skipIf(!HAVE_BROWSER)('a stock loss is recorded at head office — a bi
   };
   /** Fill the loss: the item, where, how many, the chosen loss-type chip, and (optionally) the photo. The VALUE is head
    *  office's (SF-05) — typed only where head office holds no cost, or on the sample page with no head office behind it. */
-  const fillLoss = async (page: Page, over: { product?: string; location?: string; qty?: string; rupees?: string; loss?: string; evidence?: string; sample?: boolean } = {}) => {
+  const fillLoss = async (page: Page, over: { product?: string; location?: string; qty?: string; rupees?: string; loss?: string; reason?: string | null; evidence?: string; sample?: boolean } = {}) => {
     await page.fill('#wo-product', over.product ?? 'Toor dal 1kg');
     await page.fill('#wo-location', over.location ?? 'aisle-3');
     if (over.sample === true) await page.fill('#wo-qty', over.qty ?? '12');
     else await settleValue(page, over.qty ?? '12');
     if (over.rupees !== undefined) await page.fill('#wo-value', over.rupees);
     await page.locator('#loss-types button.chip', { hasText: over.loss ?? 'Damage' }).click();
+    // D-5: WHY it is lost — a chip from the closed waste reason list (null: the operator chose none).
+    if (over.reason !== null) await page.locator('#reasons button.chip', { hasText: over.reason ?? 'Damaged' }).click();
     if (over.evidence !== undefined) await page.fill('#wo-evidence', over.evidence);
   };
 
@@ -319,6 +321,32 @@ describe.skipIf(!HAVE_BROWSER)('a stock loss is recorded at head office — a bi
       expect(posts(ho, ASK), 'a small loss asks nobody').toHaveLength(0);
       expect(ho.writeOffs.get(urlId)).toMatchObject({ raisedBy: OWNER, approvedBy: null, requiredApproval: false, valueMinor: 9_500, valueSource: 'stock_cost' });
       expect(await page.inputValue('#wo-product'), 'the form clears for the next loss').toBe('');
+      expect(errors).toEqual([]);
+    } finally {
+      await teardown();
+    }
+  });
+
+  it('D-5: the reason is a chip from the closed waste reason list — a loss with none chosen is not sent; the chosen code is what head office records', async () => {
+    const ho = newHeadOffice();
+    const { page, errors, teardown } = await openPage(ho);
+    try {
+      // The six reasons, in the list's order — and nothing to type a reason into.
+      expect(await page.locator('#reasons button.chip').allTextContents()).toEqual(['Past its date', 'Damaged', 'Missing (shrinkage)', 'Lost in preparation', 'Customer return, not saleable', 'Recalled']);
+      await fillLoss(page, { qty: '1', loss: 'Wastage', reason: null });
+      const bare = await clickFor(page, '#record', /^Not recorded/);
+      expect(bare.text).toContain('why it is lost');
+      expect(posts(ho, WRITE_OFF), 'a bare (reasonless) loss is never sent').toHaveLength(0);
+      await page.locator('#reasons button.chip', { hasText: 'Past its date' }).click();
+      expect(await page.getAttribute('#reasons button.chip.chosen', 'aria-pressed')).toBe('true');
+      await clickFor(page, '#record', /^Loss recorded/);
+      const sent = posts(ho, WRITE_OFF);
+      expect(sent).toHaveLength(1);
+      expect(sent[0]!.body).toMatchObject({ lossType: 'wastage', reasonCode: 'expiry' });
+      expect(ho.writeOffs.get(sent[0]!.path.slice(WRITE_OFF.length))).toMatchObject({ lossType: 'wastage', reasonCode: 'expiry' });
+      // Tamil: the same six reasons, in Tamil words.
+      await page.click('#lang');
+      expect(await page.locator('#reasons button.chip').first().textContent()).toBe('காலாவதியானது');
       expect(errors).toEqual([]);
     } finally {
       await teardown();

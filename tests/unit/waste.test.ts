@@ -4,6 +4,7 @@ import {
   MissingReasonError,
   MissingEvidenceError,
   InvalidWriteOffError,
+  UnknownWasteReasonError,
 } from '../../packages/waste/src/index';
 import { ApprovalRequiredError } from '../../packages/adjustment/src/index';
 import { money } from '../../packages/contracts/src/money';
@@ -28,7 +29,7 @@ function baseInput(overrides: Record<string, unknown> = {}) {
     qty: 2,
     uom: 'ea',
     lossType: 'expiry' as const,
-    reasonCode: 'past_use_by',
+    reasonCode: 'expiry',
     value: money(2_00, 'INR'),
     raisedBy: 'clerk-1',
     at: AT,
@@ -68,6 +69,14 @@ describe('commitWriteOff', () => {
     expect(() => commitWriteOff(baseInput({ reasonCode: ' ' }), ledger, outbox)).toThrow(
       MissingReasonError,
     );
+  });
+
+  it('D-5: refuses a reason that is not on the closed waste reason list — nothing is appended', () => {
+    const ledger = new Ledger(new InMemoryLedgerStore());
+    const outbox = new SyncOutbox();
+    expect(() => commitWriteOff(baseInput({ reasonCode: 'past_use_by' }), ledger, outbox)).toThrow(UnknownWasteReasonError);
+    expect(ledger.entries()).toHaveLength(0);
+    expect(outbox.unsentCount()).toBe(0);
   });
 
   it('rejects a non-positive quantity', () => {
