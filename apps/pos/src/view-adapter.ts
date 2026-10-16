@@ -198,6 +198,8 @@ export function createPosView(
         // OB-31 "A": the unit's spelling is normalised ('each' → 'ea', 'KG' → 'kg'); a weighed line's qty is in grams.
         uom: (normaliseUom(input.uom ?? 'ea') ?? input.uom ?? 'ea') as Uom,
         ...(minimumAge === undefined ? {} : { minimumAge }),
+        // B14 · B19: the pack's flags ride with a line added by id too — no way onto the bill skips the gate.
+        ...(known?.regulatedFlags === undefined ? {} : { regulatedFlags: known.regulatedFlags }),
       });
     },
 
@@ -232,6 +234,8 @@ export function createPosView(
         // Freeze the HSN the lane priced under (from the pack), for the GST return (A5). Record only.
         ...(hit.product.hsnCode !== undefined ? { hsnCode: hit.product.hsnCode } : {}),
         ...(hit.minimumAge === undefined ? {} : { minimumAge: hit.minimumAge }),
+        // B14 · B19: the tobacco pack size and the carry-bag / plastic facts, from the signed pack.
+        ...(hit.product.regulatedFlags === undefined ? {} : { regulatedFlags: hit.product.regulatedFlags }),
       });
       return {
         lineId: entry.lineId,

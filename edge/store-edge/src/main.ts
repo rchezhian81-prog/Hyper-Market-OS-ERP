@@ -97,7 +97,8 @@ import { sealDecision, sealTillFact, tillSealKey } from '../../../packages/ident
 import { withDeciderSeal } from './decision-seal';
 import { readSales } from './read-model';
 import { emptyPack, readPack, withMigrationFeed, withPublishedTemplates, withIndentsFeed, withAssignmentsFeed, type StorePack } from './store-pack';
-import { managerPayload, type ScreenInput } from './screen-data';
+import { managerPayload, tillCatalogue, type ScreenInput } from './screen-data';
+import { checkTillRules, laneScalesFor, type GateProduct } from './lane-scales';
 import { hmacSigner } from '../../../services/catalogue/src/index';
 import { makeEvent, type DomainEvent } from '../../../packages/contracts/src/event';
 import { closeDay as decideDayClose, reopenDay as decideReopenDay, carriedForwardOf } from '../../../packages/day-close/src/day-close';
@@ -259,6 +260,24 @@ function dayCloseEventFrom(record: string, index: number): DomainEvent | undefin
 }
 
 /** Gap between drains when the last one delivered something. */
+/**
+ * The box's catalogue as the till's legal gate reads it (B14 · B19): name and pack flags, by product id. Indexed once per
+ * catalogue the box holds (the same object until a new pack or pack file lands), so a sale does not re-index 40,000
+ * products.
+ */
+const gateIndex = new WeakMap<object, ReadonlyMap<string, GateProduct>>();
+function gateProductsOf(pack: StorePack, cataloguePack: Parameters<typeof tillCatalogue>[1], now: string): ReadonlyMap<string, GateProduct> {
+  // Head office's pulled pack wins whenever the box holds one; else the pack file (`tillCatalogue`). Either is replaced,
+  // never edited, when a new one lands — so the object itself is the key.
+  const key: object = cataloguePack ?? pack;
+  const held = gateIndex.get(key);
+  if (held !== undefined) return held;
+  const catalogue = tillCatalogue(pack, cataloguePack, now);
+  const map = new Map((catalogue?.products ?? []).map((p) => [p.productId, { name: p.name, ...(p.regulatedFlags === undefined ? {} : { regulatedFlags: p.regulatedFlags }) }] as const));
+  gateIndex.set(key, map);
+  return map;
+}
+
 const BASE_INTERVAL_MS = 15_000;
 /** Ceiling on the gap when nothing is getting through. Five minutes, not five hours. */
 const MAX_INTERVAL_MS = 300_000;
@@ -1553,6 +1572,17 @@ export async function startEdge(
         tradingDate(wallClockIn(new Date().toISOString()), packCutoff(pack)),
         (pack.policies.known ? pack.policies.value.branchId : undefined) ?? undefined,
       ),
+    },
+    // B6 · B14 · B19: the till's legal gates again, before the disk — from this box's own catalogue and this lane's scales.
+    tillRules: {
+      check: (record) => {
+        const now = new Date().toISOString();
+        return checkTillRules(record, {
+          products: gateProductsOf(pack, node.pack(), now),
+          scales: laneScalesFor(pack, laneIdOfThisBox()),
+          today: tradingDate(wallClockIn(now), makeTradingDayRule('00:00')),
+        });
+      },
     },
     closeDay: (req) => {
       const fn = dayCloseRelay.current;

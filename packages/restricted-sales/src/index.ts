@@ -5,3 +5,5 @@
 
 export * from './restricted-sales';
 export * from './single-use-plastic';
+// The same rules on one till line, from the signed packs — the scan, the commit and the store computer (B6 · B14 · B19).
+export * from './till-gate';

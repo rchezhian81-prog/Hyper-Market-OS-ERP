@@ -492,6 +492,12 @@ export function startLaneServer(input: {
    * allow trading today is refused before the disk. Absent → no decision here (the line is kept; head office flags it).
    */
   readonly concessionTrading?: { check(record: Record<string, unknown>): import('./concession-trading').CounterCheck };
+  /**
+   * The till's legal gates, again, before the disk (roadmap v2.1 B6 · B14 · B19): a sale with a banned single-use plastic,
+   * a thin or free carry bag, a below-pack tobacco quantity or a weight from a scale whose stamp lapsed is refused here in
+   * the cashier's words, from this box's own catalogue and scales (`lane-scales.ts`). No override. Absent → not judged here.
+   */
+  readonly tillRules?: { check(record: Record<string, unknown>): import('./lane-scales').TillRulesAnswer };
 }): Promise<LaneServer> {
   const maxBytes = input.maxBytes ?? 256 * 1024;
 
@@ -1394,6 +1400,16 @@ export function startLaneServer(input: {
               }, cors);
               return;
             }
+          }
+        }
+
+        // THE LAW, before anything else is spent (B6 · B14 · B19): a line the till must never sell is refused before the
+        // disk, before a receipt number or a card attempt is used — the same gate the till ran, from this box's own pack.
+        if (!isTag && !isReturn && input.tillRules !== undefined && parsed !== null && typeof parsed === 'object') {
+          const legal = input.tillRules.check(parsed as Record<string, unknown>);
+          if (!legal.ok) {
+            send(res, 200, { committed: false, refusedBecause: legal.refusedBecause, productId: legal.productId, laneMessage: legal.laneMessage }, cors);
+            return;
           }
         }
 

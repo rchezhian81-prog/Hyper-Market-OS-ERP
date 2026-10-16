@@ -17,6 +17,7 @@
 
 import { isUom, normaliseUom } from '../../contracts/src/quantity';
 import type { Promotion } from '../../promotions/src/promotions';
+import { TOBACCO_MINIMUM_AGE } from '../../restricted-sales/src/till-gate';
 
 export type ProductStatus = 'draft' | 'active' | 'discontinued' | 'clearance';
 export type BarcodeKind = 'standard' | 'weight_embedded' | 'price_embedded' | 'alternate';
@@ -149,7 +150,11 @@ export interface ScanResult {
  */
 export function minimumAgeOf(product: Pick<CatalogueProduct, 'regulatedFlags'>): number | undefined {
   const minimumAge = product.regulatedFlags?.['minimumAge'];
-  return typeof minimumAge === 'number' && Number.isInteger(minimumAge) && minimumAge > 0 ? minimumAge : undefined;
+  const declared = typeof minimumAge === 'number' && Number.isInteger(minimumAge) && minimumAge > 0 ? minimumAge : undefined;
+  // B14 (COTPA 2003 s.6): a TOBACCO product needs at least 18, whatever else was declared — so a tobacco line can never
+  // reach a bill without the age question, even when its record carries no age of its own.
+  if (product.regulatedFlags?.['tobacco'] === true) return Math.max(TOBACCO_MINIMUM_AGE, declared ?? 0);
+  return declared;
 }
 
 export class UnknownBarcodeError extends Error {

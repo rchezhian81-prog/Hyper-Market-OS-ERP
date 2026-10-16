@@ -52,6 +52,13 @@ export interface LinePricingInput {
   readonly pricesIncludeTax?: boolean;
   /** Rounding for every money result (default half-up). */
   readonly rounding?: Rounding;
+  /**
+   * Rounding for the ONE step that multiplies the unit price by the quantity (the gross), when it differs from
+   * `rounding`. The till passes `'down'` (roadmap v2.1 B5): a weighed line's amount is the weighed net quantity times
+   * the displayed price per kg, and a fraction of a paisa is never rounded up against the customer. The tax split
+   * keeps `rounding`. Absent → `rounding`.
+   */
+  readonly quantityRounding?: Rounding;
 }
 
 export interface LinePricing {
@@ -70,7 +77,7 @@ export interface LinePricing {
 export function priceLine(input: LinePricingInput): LinePricing {
   const rounding: Rounding = input.rounding ?? 'half_up';
   const denominator = 10 ** precisionOf(input.quantity.uom);
-  const gross = scaleMoney(input.unitPrice, input.quantity.minor, denominator, rounding);
+  const gross = scaleMoney(input.unitPrice, input.quantity.minor, denominator, input.quantityRounding ?? rounding);
   const discount = input.discountRate
     ? applyRate(gross, input.discountRate, rounding)
     : zero(gross.currency);

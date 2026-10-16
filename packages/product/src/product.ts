@@ -100,6 +100,21 @@ export interface SafetyContent {
   /** Name and address of the packer/importer — a Legal Metrology label field. */
   readonly packerDetails?: string;
   readonly minimumAge?: number;
+  /**
+   * B14 (COTPA 2003): the product is tobacco. It then needs the customer to be at least 18 at the till, whatever
+   * `minimumAge` says, and `packMinimumMinor` must say one whole pack — the till refuses anything less.
+   */
+  readonly tobacco?: boolean;
+  /** One whole pack, in the base unit's smallest units (e.g. 10 for a pack of 10 sold `ea`). Required for tobacco. */
+  readonly packMinimumMinor?: number;
+  /** B19: the product is a carry bag — the till sells it only as its own line, at a price above zero. */
+  readonly carryBag?: boolean;
+  /** B19: what the bag is made of — `plastic` is held to the 120-micron minimum; cloth, paper and compostable are not. */
+  readonly plasticMaterial?: 'plastic' | 'cloth' | 'paper' | 'compostable';
+  /** B19: a plastic bag's thickness in microns. A plastic carry bag with none recorded cannot be sold. */
+  readonly plasticThicknessMicrons?: number;
+  /** B19: the product is on the banned single-use-plastic list — the till never sells it. */
+  readonly bannedSingleUsePlastic?: boolean;
 }
 
 /** An effective-dated value — MRP and tax are historised, never overwritten. */
@@ -336,6 +351,57 @@ export function validateProduct(
       field: 'safety.minimumAge',
       severity: 'blocks_publish',
       message: 'no minimum age — the till must know when to ask for proof of age',
+    });
+  }
+  // B14 · B19 (roadmap v2.1): the till's legal gates read these from the pack, so a value the till cannot read is refused
+  // HERE rather than published as a product the till would then refuse at the counter for a reason nobody can fix there.
+  const wholePositive = (v: unknown): boolean => typeof v === 'number' && Number.isSafeInteger(v) && v > 0;
+  for (const key of ['tobacco', 'carryBag', 'bannedSingleUsePlastic'] as const) {
+    const v: unknown = safety?.[key];
+    if (v !== undefined && typeof v !== 'boolean') {
+      issues.push({ field: `safety.${key}`, severity: 'blocks_publish', message: `${key} must be true or false — the till cannot read "${String(v)}"` });
+    }
+  }
+  if (safety?.tobacco === true && !wholePositive(safety.packMinimumMinor)) {
+    issues.push({
+      field: 'safety.packMinimumMinor',
+      severity: 'blocks_publish',
+      message: 'a tobacco product needs its pack size (a whole number of units) — the till sells whole packs only and refuses loose cigarettes',
+    });
+  }
+  if (safety?.tobacco === true && safety.minimumAge !== undefined && safety.minimumAge < 18) {
+    issues.push({
+      field: 'safety.minimumAge',
+      severity: 'blocks_publish',
+      message: 'a tobacco product cannot be sold to anyone under 18 — its minimum age must be 18 or more',
+    });
+  }
+  if (safety?.plasticThicknessMicrons !== undefined && !wholePositive(safety.plasticThicknessMicrons)) {
+    issues.push({
+      field: 'safety.plasticThicknessMicrons',
+      severity: 'blocks_publish',
+      message: 'the plastic thickness must be a whole number of microns',
+    });
+  }
+  if (safety?.plasticMaterial !== undefined && !['plastic', 'cloth', 'paper', 'compostable'].includes(safety.plasticMaterial)) {
+    issues.push({
+      field: 'safety.plasticMaterial',
+      severity: 'blocks_publish',
+      message: 'the bag material must be one of plastic, cloth, paper or compostable',
+    });
+  }
+  if (safety?.carryBag === true && safety.plasticMaterial === 'plastic' && (safety.plasticThicknessMicrons ?? 0) < 120) {
+    issues.push({
+      field: 'safety.plasticThicknessMicrons',
+      severity: 'advisory',
+      message: 'a plastic carry bag thinner than 120 microns (or with no thickness recorded) cannot be sold at the till',
+    });
+  }
+  if (safety?.bannedSingleUsePlastic === true) {
+    issues.push({
+      field: 'safety.bannedSingleUsePlastic',
+      severity: 'advisory',
+      message: 'this item is on the banned single-use-plastic list — the till will refuse to sell it',
     });
   }
   if (regulated.includes('food') && (safety?.storageConditions ?? '') === '') {

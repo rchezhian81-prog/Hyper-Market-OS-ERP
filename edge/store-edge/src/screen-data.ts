@@ -39,6 +39,7 @@
 //   • expiry         — every batch and its expiry date, and every recall, so the list and the
 //                      backwards trace both work with the cable out
 
+import { laneScalesFor } from './lane-scales';
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { isUom, normaliseUom } from '../../../packages/contracts/src/quantity';
 import { assessChecklist } from '../../../packages/workforce/src/index';
@@ -1951,6 +1952,9 @@ export function posLanePayload(input: ScreenInput, laneId: string | undefined): 
     tradingDayCutoffKnown: policies !== undefined,
     tradingDay: input.tradingDay,
     storeId: policies?.storeId ?? null,
+    // B6: the weighing scales this lane takes weight from, with the last day each stamp is valid — or why the box does not
+    // know. The till sells nothing by weight without a current one.
+    scales: laneScalesFor(input.pack, laneId),
   };
 }
 
