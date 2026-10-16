@@ -2253,6 +2253,11 @@ export async function startApi(
   // Round 35 · verifier r34 NEW-2 / NEW-3: each build lease is held on a database connection of its OWN (opened for the lease,
   // closed after it — never one of the requests' ten, never handed back to a pool), at most BOX_HISTORY_BUILDS_AT_ONCE at once
   // (the next shop's build waits its turn, said on its health read); a lease that could not be let go is said here by name.
+  // Round 39 · verifier r37 L3: a build lease's own connection, with (the baseline) or without client_connection_check_interval.
+  const leaseClient = (clientCheck: boolean): Client => new Client({
+    connectionString: settings['DATABASE_URL']!, options: leaseSessionOptions(session.options, { clientCheck }), connectionTimeoutMillis: DB_CONNECT_TIMEOUT_MS,
+    keepAlive: true, keepAliveInitialDelayMillis: LEASE_KEEPALIVE_DELAY_MS,
+  });
   const snapshots = new SqlSnapshotStore(pgPoolClient(db), {
     // Round 36 · verifier r35 NEW-6: TCP keepalive on, and every lease query (and the close) bounded — a half-open connection
     // is destroyed after LEASE_QUERY_TIMEOUT_MS (the lease then reads as lost and is let go), never left hanging.
@@ -2262,10 +2267,14 @@ export async function startApi(
     // also during a query), and (2) when this side cuts or loses a lease connection, the session's backend is ENDED from one
     // of the pool's connections (`pg_terminate_backend`, exact pid and start time; the same login role may end its own
     // sessions), so the lock is freed at once; a refusal is said here by name (`DedicatedSessionEndRefusedError`).
-    leaseSession: pgDedicatedSession(() => new Client({
-      connectionString: settings['DATABASE_URL']!, options: leaseSessionOptions(session.options), connectionTimeoutMillis: DB_CONNECT_TIMEOUT_MS,
-      keepAlive: true, keepAliveInitialDelayMillis: LEASE_KEEPALIVE_DELAY_MS,
-    }), { queryTimeoutMs: LEASE_QUERY_TIMEOUT_MS, endBackend: pgEndBackendVia(db), onProblem: (detail) => { err(`${detail}\n`); } }),
+    // Round 39 · verifier r37 L1 / L3: ending a cut-off session waits at most END_BACKEND_ANSWER_MS (then said by name,
+    // `DedicatedSessionEndTimeoutError`, and the release completes); a database server that is not Linux refuses
+    // client_connection_check_interval at connect — the lease connection then connects without it, said by name once
+    // (`ClientConnectionCheckRefused`). On Linux (the baseline) nothing changes.
+    leaseSession: pgDedicatedSession(() => leaseClient(true), {
+      queryTimeoutMs: LEASE_QUERY_TIMEOUT_MS, endBackend: pgEndBackendVia(db), openWithoutCheckInterval: () => leaseClient(false),
+      onProblem: (detail) => { err(`${detail}\n`); },
+    }),
     maxConcurrentLeases: BOX_HISTORY_BUILDS_AT_ONCE,
     onLeaseProblem: (detail) => { err(`${detail}\n`); },
   });
@@ -2614,9 +2623,14 @@ export const LEASE_KEEPALIVE_DELAY_MS = 10_000;
  * is still there. All are settings any role may set for its own session (PostgreSQL 14+).
  */
 export const LEASE_SERVER_KEEPALIVE = { idleSeconds: 30, intervalSeconds: 10, count: 3, clientCheckMs: 10_000 } as const;
-export function leaseSessionOptions(base: string): string {
+/**
+ * Round 39 · verifier r37 L3: `clientCheck: false` leaves client_connection_check_interval out (PostgreSQL refuses a non-zero
+ * value on a server that is not Linux; the lease connection then connects without it, `pgDedicatedSession`). Default: in.
+ */
+export function leaseSessionOptions(base: string, opts: { readonly clientCheck?: boolean } = {}): string {
   const k = LEASE_SERVER_KEEPALIVE;
-  return `${base} -c tcp_keepalives_idle=${k.idleSeconds} -c tcp_keepalives_interval=${k.intervalSeconds} -c tcp_keepalives_count=${k.count} -c client_connection_check_interval=${k.clientCheckMs}`.trim();
+  const check = opts.clientCheck === false ? '' : ` -c client_connection_check_interval=${k.clientCheckMs}`;
+  return `${base} -c tcp_keepalives_idle=${k.idleSeconds} -c tcp_keepalives_interval=${k.intervalSeconds} -c tcp_keepalives_count=${k.count}${check}`.trim();
 }
 /**
  * Round 35 · verifier r34 NEW-2: how many shops' store-computer histories one head-office process builds at once (each holds

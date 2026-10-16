@@ -213,7 +213,10 @@ export function editGoesToEveryOwner(r: AlertRule, owners: readonly ShopOwner[])
  *     (filled in from the owner role at each read). One saved before round 36 naming a person is said on the page ("read as
  *     going to every owner — to send it to one person only, the owner saves the edit again naming that person").
  *   • A redirect target who no longer holds any role that may see alerts (`platform.health.read`: left the shop, roles revoked)
- *     does not get it: the rule goes to every owner instead, and the page says so by name, until the owner changes the edit.
+ *     does not get it: the rule goes to every owner instead, and the page says so by name, until the owner removes the edit.
+ *     Round 39 · verifier r37 L5 (OB-134 "A"): the words are exact — sending the rule back as GET shows it ("every owner") is
+ *     no change and KEEPS the saved redirect, which comes back into force by itself if that person is given a role that may
+ *     see alerts again; only removing the edit (or changing another part of it) stops that.
  */
 export function savedEditIsRedirect(r: AlertRule): boolean {
   return r.builtInRedirect === true && r.ownerUserId !== EVERY_OWNER;
@@ -288,9 +291,13 @@ export function builtInEditShownUnchanged(current: StoredAlertRules | undefined,
   return editFields(builtInEditAsShown(saved[0]!, mayReceive)) === editFields(sent) ? saved[0] : undefined;
 }
 
-/** Round 36 · NEW-1: the words for a redirect whose person may no longer see alerts (it goes to the owners instead). */
-function redirectGoneWords(r: AlertRule): string {
-  return `the owner's edit redirects it to ${r.ownerName} (${r.ownerUserId}) only, but ${r.ownerUserId} no longer holds any role that may see alerts, so it goes to the owners instead until the owner changes the edit (OB-115)`;
+/**
+ * Round 36 · NEW-1: the words for a redirect whose person may no longer see alerts (it goes to the owners instead).
+ * Round 39 · verifier r37 L5 (OB-134 "A"): said exactly — saving it as shown ("every owner") keeps the redirect saved, and it
+ * returns by itself when that person is given a role that may see alerts again; only the owner removing the edit stops that.
+ */
+export function redirectGoneWords(r: AlertRule): string {
+  return `the owner's edit redirects it to ${r.ownerName} (${r.ownerUserId}) only, but ${r.ownerUserId} no longer holds any role that may see alerts, so it goes to the owners instead — until the owner removes this edit, or ${r.ownerUserId} is given a role that may see alerts again, when it goes back to ${r.ownerName} by itself (OB-115, OB-134). Saving the rule as shown here ("every owner") keeps the edit; to stop it going back, the owner removes the edit (sends the rules without it)`;
 }
 /** Round 35 · NEW-1, round 36: who an edited built-in rule really reaches, in words (`saved`: as saved; else as sent). */
 function editRecipientsInWords(r: AlertRule, owners: readonly ShopOwner[], saved: boolean, mayReceive?: ReadonlySet<string>): string {
@@ -780,6 +787,15 @@ function rulesChangedSinceRead(basedOnVersion: number, current: StoredAlertRules
   });
 }
 
+/**
+ * Round 39 · verifier r37 L5: do the saved rules hold an edit of a built-in rule and nothing else? Then a save with no rules
+ * removes just that edit (the built-in rule goes back to every owner) — allowed, for the owner only (a built-in change).
+ */
+async function savedRulesAreOnlyBuiltInEdits(deps: ObservedHealthDeps, tenantId: string): Promise<boolean> {
+  const saved = (await deps.alertRules(tenantId))?.rules ?? [];
+  return saved.length > 0 && saved.every((r) => BUILT_IN_ALERT_RULE_IDS.includes(r.alertId));
+}
+
 export function observedHealthRoutes(deps: ObservedHealthDeps): readonly Route[] {
   const judge = (tenantId: string, at: string) => judgeObserved(deps, tenantId, at);
 
@@ -823,8 +839,11 @@ export function observedHealthRoutes(deps: ObservedHealthDeps): readonly Route[]
             nextSafeAction: 'Correct the list and send the whole set again. The rules in force are unchanged.',
           });
         }
-        // Only turning a built-in rule off may come with no rules of the owner's own.
-        if (rules === undefined || (rules.length === 0 && (builtInOff === undefined || builtInOff.length === 0)) || thresholds === undefined || !Number.isInteger(maxAge) || (maxAge as number) <= 0) {
+        // Only turning a built-in rule off may come with no rules of the owner's own — or (round 39 · verifier r37 L5,
+        // OB-134) removing the owner's edit of a built-in rule when that edit is all the saved rules hold: the owner can always
+        // put a built-in rule back to "every owner" (removing an edit is a built-in change: owner-only, below, and noticed).
+        const removesOnlyBuiltInEdits = rules !== undefined && rules.length === 0 && await savedRulesAreOnlyBuiltInEdits(deps, ctx.tenantId);
+        if (rules === undefined || (rules.length === 0 && (builtInOff === undefined || builtInOff.length === 0) && !removesOnlyBuiltInEdits) || thresholds === undefined || !Number.isInteger(maxAge) || (maxAge as number) <= 0) {
           throw apiError(400, {
             code: 'alert_rules_not_readable',
             whatHappened: 'Alert rules need a non-empty rules[] (alertId, component, firesAt, ownerUserId, ownerName, ackWithinMinutes, optional escalatesToUserId), '

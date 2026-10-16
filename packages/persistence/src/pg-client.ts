@@ -157,6 +157,10 @@ export class DedicatedSessionTimeoutError extends Error {
 /**
  * Round 37 · verifier r36 NEW-4: the server-side session (backend) behind a connection of its own — its process id and when it
  * started (the two together name it exactly: a process id alone may be reused by a later session).
+ * Round 39 · verifier r37 L2: `startedAt` is the start time as SECONDS SINCE 1970 with its microseconds, as PostgreSQL's own
+ * numeric text (`extract(epoch from backend_start)::text`, e.g. "1760593624.567480") — never a date written out in the
+ * session's DateStyle / TimeZone, which another session would read differently (a "SQL, DMY" date with "IST" failed to parse,
+ * or could be read as Israel time). It is compared inside SQL as a number.
  */
 export interface DedicatedBackend { readonly pid: number; readonly startedAt: string }
 /** Round 37 · NEW-4: what ending a backend from another connection did. */
@@ -177,10 +181,48 @@ export interface DedicatedSessionOptions {
   readonly endBackend?: (backend: DedicatedBackend) => Promise<EndBackendOutcome>;
   /** Round 37 · NEW-4: said (by name) when ending the backend was refused or did not finish — never swallowed. */
   readonly onProblem?: (detail: string) => void;
+  /**
+   * Round 39 · verifier r37 L1: the longest the session waits for `endBackend` to answer (default END_BACKEND_ANSWER_MS). Past
+   * it the session is let go anyway (a build lease's release completes) and that is said by name
+   * (`DedicatedSessionEndTimeoutError`); the server's own keepalive and connection check then free what it holds.
+   */
+  readonly endBackendTimeoutMs?: number;
+  /**
+   * Round 39 · verifier r37 L3: opens the same connection WITHOUT `client_connection_check_interval`. PostgreSQL refuses a
+   * non-zero value at connect on a server that is not Linux; when the connect is refused for exactly that
+   * (`checkIntervalRefused`), the session connects again with this, says so by name (`ClientConnectionCheckRefused`) once, and
+   * every later session of this process uses it. Absent: such a refusal fails the connect, as before.
+   */
+  readonly openWithoutCheckInterval?: () => PgStandaloneClient;
 }
 export const DEDICATED_SESSION_QUERY_TIMEOUT_MS = 30_000;
 /** Round 37 · NEW-4: how long `pg_terminate_backend` waits for the backend to be gone before answering (ms). */
 export const END_BACKEND_WAIT_MS = 5_000;
+/**
+ * Round 39 · verifier r37 L1: how long a session waits for the end of its backend to be ANSWERED (ms) — the server's own wait
+ * (END_BACKEND_WAIT_MS) and 5 s more for the request pool to lend a connection and the answer to come back.
+ */
+export const END_BACKEND_ANSWER_MS = END_BACKEND_WAIT_MS + 5_000;
+
+/**
+ * Round 39 · verifier r37 L1: ending a session's backend from another connection did not answer within its bound (the request
+ * pool hung, or the database stopped answering). The session is let go anyway; said by name, never waited on for good.
+ */
+export class DedicatedSessionEndTimeoutError extends Error {
+  override readonly name = 'DedicatedSessionEndTimeoutError';
+}
+
+/**
+ * Round 39 · verifier r37 L3: did the server refuse the connect because `client_connection_check_interval` may not be non-zero
+ * on its platform? PostgreSQL answers 22023 (invalid_parameter_value) "invalid value for parameter
+ * "client_connection_check_interval"" (detail: "must be set to 0 on this platform") on a server that is not Linux. Only that
+ * error — any other connect failure is not this.
+ */
+export function checkIntervalRefused(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null) return false;
+  const e = err as { code?: unknown; message?: unknown; detail?: unknown };
+  return e.code === '22023' && /client_connection_check_interval/.test(`${String(e.message ?? '')} ${String(e.detail ?? '')}`);
+}
 
 /**
  * Round 37 · verifier r36 NEW-4: a refusal by the database to end a session of our own from another connection
@@ -202,9 +244,11 @@ export function pgEndBackendVia(pool: PgQueryable, waitMs = END_BACKEND_WAIT_MS)
     let rows: readonly { ok: boolean | null; hidden: boolean; same: boolean | null }[];
     try {
       // Only that exact session: ended only when its start time matches (a session of another role shows none — not ours).
+      // Round 39 · verifier r37 L2: compared as a NUMBER inside SQL (seconds since 1970, microseconds and all) — the same in
+      // every DateStyle and TimeZone, never a date read back from text.
       rows = (await pool.query(
-        `SELECT CASE WHEN backend_start = $2::timestamptz THEN pg_terminate_backend(pid, $3::bigint) ELSE false END AS ok,
-                backend_start IS NULL AS hidden, backend_start = $2::timestamptz AS same
+        `SELECT CASE WHEN extract(epoch from backend_start) = $2::numeric THEN pg_terminate_backend(pid, $3::bigint) ELSE false END AS ok,
+                backend_start IS NULL AS hidden, extract(epoch from backend_start) = $2::numeric AS same
            FROM pg_stat_activity WHERE pid = $1::int`,
         [b.pid, b.startedAt, waitMs],
       )).rows as { ok: boolean | null; hidden: boolean; same: boolean | null }[];
@@ -229,8 +273,11 @@ export function pgDedicatedSession(open: () => PgStandaloneClient, opts: Dedicat
   const queryMs = opts.queryTimeoutMs ?? DEDICATED_SESSION_QUERY_TIMEOUT_MS;
   const endMs = opts.endTimeoutMs ?? queryMs;
   const say = opts.onProblem ?? ((detail: string) => { process.stderr.write(`${detail}\n`); });
+  const answerMs = opts.endBackendTimeoutMs ?? END_BACKEND_ANSWER_MS;
+  // Round 39 · verifier r37 L3: once the server refused client_connection_check_interval, every later session goes without it.
+  let withoutCheckInterval = false;
   return async <T>(fn: (conn: SqlClient, ended: () => unknown) => Promise<T>): Promise<T> => {
-    const c = open();
+    let c = withoutCheckInterval && opts.openWithoutCheckInterval !== undefined ? opts.openWithoutCheckInterval() : open();
     let ended: unknown;
     let closing = false;
     // Round 37 · verifier r36 NEW-4: the backend behind this connection (when `endBackend` is given), and ending it on the server.
@@ -241,16 +288,32 @@ export function pgDedicatedSession(open: () => PgStandaloneClient, opts: Dedicat
       const b = backend;
       const endBackend = opts.endBackend;
       ending = (async () => {
+        let timer: ReturnType<typeof setTimeout> | undefined;
         try {
-          const outcome = await endBackend(b);
+          // Round 39 · verifier r37 L1: bounded — a request pool that never answers never holds the session (and a build
+          // lease's release) open; past the bound it is said by name and the server's keepalive is the backstop.
+          const outcome = await Promise.race([
+            endBackend(b),
+            new Promise<never>((_resolve, reject) => {
+              timer = setTimeout(() => { reject(new DedicatedSessionEndTimeoutError(`ending it did not answer within ${answerMs} ms (the request pool or the database is not answering)`)); }, answerMs);
+              timer.unref?.();
+            }),
+          ]);
           if (outcome === 'still_running') say(`a database session of its own (pid ${b.pid}) was asked to end after its connection was lost here (${errorInWords(why)}) and had not ended within the wait — the server frees what it holds when it does (DedicatedSessionEndRefusedError)`);
         } catch (e) {
-          say(`a database session of its own (pid ${b.pid}) could not be ended from another connection after its connection was lost here (${errorInWords(why)}): ${errorInWords(e)} — the server frees what it holds (a build lease's lock) only when its own keepalive notices the connection gone (DedicatedSessionEndRefusedError)`);
+          if (e instanceof DedicatedSessionEndTimeoutError) say(`a database session of its own (pid ${b.pid}) could not be ended from another connection after its connection was lost here (${errorInWords(why)}): ${errorInWords(e)} — the session is let go here; the server frees what it holds (a build lease's lock) when its own keepalive or connection check notices the connection gone (DedicatedSessionEndTimeoutError)`);
+          else say(`a database session of its own (pid ${b.pid}) could not be ended from another connection after its connection was lost here (${errorInWords(why)}): ${errorInWords(e)} — the server frees what it holds (a build lease's lock) only when its own keepalive notices the connection gone (DedicatedSessionEndRefusedError)`);
+        } finally {
+          if (timer !== undefined) clearTimeout(timer);
         }
       })();
     };
-    c.on?.('error', (e) => { ended ??= e ?? new Error('the connection failed'); endOnServer(ended); });
-    c.on?.('end', () => { if (!closing) { ended ??= new Error('Connection terminated unexpectedly'); endOnServer(ended); } });
+    // Round 39 · L3: each listener belongs to ITS connection — a connection given up at connect (below) says nothing more.
+    const listen = (client: PgStandaloneClient): void => {
+      client.on?.('error', (e) => { if (client !== c) return; ended ??= e ?? new Error('the connection failed'); endOnServer(ended); });
+      client.on?.('end', () => { if (client !== c || closing) return; ended ??= new Error('Connection terminated unexpectedly'); endOnServer(ended); });
+    };
+    listen(c);
     // Round 36 · verifier r35 NEW-6: every query, and the close, is bounded; past its bound the connection is destroyed and the
     // session counts as ended (`ended()`), so a lease on it reads as lost and is let go — never a hang until a restart.
     // Round 37 · NEW-4: and its backend is ended on the server from another connection, so what it held is freed AT ONCE.
@@ -264,10 +327,23 @@ export function pgDedicatedSession(open: () => PgStandaloneClient, opts: Dedicat
       timer.unref?.();
       p.then((v) => { clearTimeout(timer); resolve(v); }, (e: unknown) => { clearTimeout(timer); reject(e instanceof Error ? e : new Error(String(e))); });
     });
-    await c.connect();
+    try {
+      await c.connect();
+    } catch (e) {
+      // Round 39 · verifier r37 L3: a server that is not Linux refuses client_connection_check_interval at connect — connect
+      // again without it (the TCP keepalives stay), said by name once; any other connect failure is thrown as it is.
+      if (withoutCheckInterval || opts.openWithoutCheckInterval === undefined || !checkIntervalRefused(e)) throw e;
+      withoutCheckInterval = true;
+      say(`the database server refused client_connection_check_interval on a connection of its own (${errorInWords(e)}) — PostgreSQL allows it only on Linux; this and every later such connection of this process connects without it (its TCP keepalives stay, so a dead client is still noticed) (ClientConnectionCheckRefused)`);
+      c = opts.openWithoutCheckInterval();
+      ended = undefined;
+      listen(c);
+      await c.connect();
+    }
     try {
       if (opts.endBackend !== undefined) {
-        const rows = await bounded(unwrap<{ pid: number; started: string }>(c, 'SELECT pid, backend_start::text AS started FROM pg_stat_activity WHERE pid = pg_backend_pid()'), queryMs, 'a query');
+        // Round 39 · verifier r37 L2: the start time as seconds since 1970 in PostgreSQL's numeric text (DateStyle-free).
+        const rows = await bounded(unwrap<{ pid: number; started: string }>(c, 'SELECT pid, extract(epoch from backend_start)::text AS started FROM pg_stat_activity WHERE pid = pg_backend_pid()'), queryMs, 'a query');
         if (rows[0] !== undefined) backend = { pid: Number(rows[0].pid), startedAt: String(rows[0].started) };
       }
       return await fn({ query: (sql, params) => bounded(unwrap(c, sql, params), queryMs, 'a query') }, () => ended);
