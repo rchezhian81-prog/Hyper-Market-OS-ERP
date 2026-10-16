@@ -15398,6 +15398,14 @@ export function nextFoldClock(prev: { readonly at: string; readonly ms: number }
   return Date.parse(at) < Date.parse(foldMoment(prev, nowMs)) - READINESS_CLOCK_TOLERANCE_MS ? { at, ms: nowMs } : prev;
 }
 
+/**
+ * Round 39 · verifier r37 L4: did result `a` fold MORE reports than result `b` (`ord` counts every report a result has folded,
+ * so of two results for one shop the one with the higher count is the newer)?
+ */
+export function foldedMore(a: { readonly ord: number }, b: { readonly ord: number }): boolean {
+  return a.ord > b.ord;
+}
+
 /** Round 28 · OB-104: what a windowed reading answers (the full reading's answers, and what the health read's judge needs). */
 export interface StoreComputerHistoryReading {
   readonly findings: ReadonlyMap<string, readonly BillNumberFinding[]>;
@@ -15527,16 +15535,18 @@ export async function storeComputerHistory(
   // Keep a new result: saved when its fence settled; else held in this process's memory until one does.
   const keep = async (snapshot: BoxHistorySnapshot, settled: boolean): Promise<void> => {
     tb.traced = snapshot.check; // made here from the reports, so its bindings are traced by construction
-    if (!settled) { tb.held = snapshot; return; }
-    // Round 37 (coordinator, CI on PR #785): what is held when this save starts — a read that holds a NEWER result while the
-    // save is under way must not have it dropped unsaved (it stays held, and the kept lease saves it next).
-    const heldBefore = tb.held;
+    // Round 39 · verifier r37 L4: a result held already that folded MORE reports than this one (a parallel read made it) is
+    // never replaced by this older one, nor dropped when this one is saved — it stays held, and is saved next.
+    if (!settled) { if (tb.held === undefined || !foldedMore(tb.held, snapshot)) tb.held = snapshot; return; }
     // Kept as its JSON text (jsonb keeps a string exactly; the seal is over the text as written).
     await snapshots.save<{ readonly format: string; readonly text: string }>({
       tenantId, stream: BOX_HEALTH_STREAM, projection: BOX_HISTORY_PROJECTION, takenAt: snapshot.never.settledAt,
       result: { state: boxHistoryToStore(snapshot), watermarkSeq: snapshot.seq, lastEventAt: snapshot.never.settledAt, eventCount: snapshot.ord },
     });
-    if (tb.held === heldBefore) tb.held = undefined;
+    // Round 37 (coordinator, CI on PR #785): a read that held a NEWER result while the save was under way keeps it held.
+    // Round 39 · verifier r37 L4: so does one held BEFORE the save began (round 37 compared with what was held at the start,
+    // so a newer result held then was still dropped). A held result is dropped only when this saved one folded at least as much.
+    if (tb.held !== undefined && !foldedMore(tb.held, snapshot)) tb.held = undefined;
   };
   // A full read of every report (inline for a small store, or the background build): returns the reading.
   const fullRead = async (when: string, events: readonly PersistedEvent[] | undefined, settledThrough: number | undefined, pause?: () => Promise<void>) => {
@@ -15800,6 +15810,10 @@ export function boxHistoryBuilding(snapshots: SnapshotStore, tenantId: string): 
 /** Round 35 · NEW-4: the build lease kept until a built result is saved, when there is one (tests and support). */
 export function boxHistoryLeaseKept(snapshots: SnapshotStore, tenantId: string): Promise<void> | undefined {
   return BOX_HISTORY_TENANTS.get(snapshots)?.get(tenantId)?.keeper?.done;
+}
+/** Round 39 · verifier r37 L4: how many reports the result held back from saving has folded (tests and support), if one is held. */
+export function boxHistoryHeldCount(snapshots: SnapshotStore, tenantId: string): number | undefined {
+  return BOX_HISTORY_TENANTS.get(snapshots)?.get(tenantId)?.held?.ord;
 }
 
 /**

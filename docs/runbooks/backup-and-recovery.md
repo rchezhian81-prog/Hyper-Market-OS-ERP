@@ -568,6 +568,9 @@ count still open and names the others.
   later loses every role that can see alerts (left the shop, roles revoked), they no longer get it: the rule goes to every
   owner and the page says so by name ("… no longer holds any role that may see alerts, so it goes to the owners instead
   until the owner changes the edit"). The owner then saves the edit again (to another person, or back to the owners).
+  *(Corrected in round 39, verifier r37 L5: saving it "back to the owners" as GET shows it is no change and KEEPS the
+  redirect, which goes back to that person by itself if they are given a role again (OB-134). Only REMOVING the edit stops
+  that — see round 39 below. The page now says so.)*
 - **A wrong clock cannot freeze the "not ready" hour (NEW-3).** Each running note keeps what it counted from (`basis`). If
   the newest note is stamped more than a minute AHEAD of head office's clock (a second head-office process with a wrong
   clock, or a clock that jumped and stepped back), it is set aside, counting goes on from the note before it, and the health
@@ -629,6 +632,32 @@ count still open and names the others.
   folded, a little extra work. The test now checks the saved record itself. A real race found on the way is fixed: a
   newer result held by a read while the kept lease's save was under way was dropped unsaved; it now stays held and is
   saved next. Nothing to configure.
+
+**Round 39 (verifier r37 low notes closed, 16 Oct 2026):**
+
+- **Ending a cut-off lease session never holds up the release (L1).** Head office waits at most 10 seconds for the
+  database to answer "end that session" (the database's own 5-second wait plus 5 seconds). If it does not answer (the
+  ordinary connections are stuck too), the log says `DedicatedSessionEndTimeoutError` with the session's process id, the
+  build lock is let go on head office's side, and the database's own keepalive and connection check end the session
+  within about a minute. If that line repeats, the database itself is not answering — check it first.
+- **The session's start time is matched as a number (L2).** Head office reads it as seconds since 1970
+  (`extract(epoch from backend_start)`) and compares it inside the database, so a database or login with another date
+  style (`DateStyle`, e.g. "SQL, DMY") or time zone (e.g. Asia/Kolkata) no longer stops it ending the right session.
+  Nothing to configure; the default ISO style still works as before.
+- **A database server that is not Linux (L3).** PostgreSQL allows `client_connection_check_interval` only on Linux. If
+  head office's database ever runs on Windows or macOS, the first lease connection is refused for it; head office then
+  connects again without it (the TCP keepalives stay) and logs `ClientConnectionCheckRefused` once. Expected only off
+  Linux; on the Linux baseline the line never appears. If it appears on Linux, call support.
+- **No lost work when two reads overlap (L4).** A newer saved-history result held by one read is no longer dropped when
+  another read saves an older one. Nothing to configure.
+- **Removing a redirect of the built-in alert (L5, OB-134).** When the person a redirect names loses every alert-seeing
+  role, the alert goes to the owners and the page now says exactly: "until the owner removes this edit, or <person> is
+  given a role that may see alerts again, when it goes back to <person> by itself … Saving the rule as shown here
+  ("every owner") keeps the edit". To stop it for good the OWNER removes the edit: he sends the alert rules without the
+  built-in rule (PUT /v1/platform/alert-rules). If that edit is the only rule the shop has saved, he sends `rules: []`
+  (before round 39 that was refused: "needs a non-empty rules[]"). Only the owner may do it (the IT administrator and
+  everyone else: 403); it is kept as a new rules version with who and when, and every owner gets a notice. A save with no
+  rules is still refused when the shop has rules of its own.
 
 ## Part 4 — Restoring (the one that matters)
 

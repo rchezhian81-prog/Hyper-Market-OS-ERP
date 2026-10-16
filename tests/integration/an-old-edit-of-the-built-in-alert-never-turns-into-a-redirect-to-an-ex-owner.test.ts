@@ -29,7 +29,7 @@ import type { AlertLifecycleDeps } from '../../services/platform/src/alert-lifec
  *   • from round 36 the owner's redirect is SAVED with a marker (`builtInRedirect`), set only by head office — one sent in a
  *     body is not used (an edit naming an owner stays with the owners);
  *   • the redirect's person (the store manager) gets it while they hold a role that may see alerts; once that role is revoked
- *     the rule goes to every owner instead, said by name on the page, until the owner changes the edit.
+ *     the rule goes to every owner instead, said by name on the page, until the owner removes the edit (round 39 words).
  */
 
 const DATABASE_URL = process.env['DATABASE_URL'];
@@ -126,7 +126,7 @@ async function noRedirectToAnExOwner(store: EventStore): Promise<void> {
   b = (await get()).builtIn[0]!;
   expect(b).toMatchObject({ state: 'edited', rule: { ownerUserId: B, ackWithinMinutes: 25 } });
   expect((b.rule as { builtInRedirect?: true }).builtInRedirect).toBeUndefined();
-  expect(b.description).toContain(`redirects it to Manager (${MANAGER}) only, but ${MANAGER} no longer holds any role that may see alerts, so it goes to the owners instead until the owner changes the edit`);
+  expect(b.description).toContain(`redirects it to Manager (${MANAGER}) only, but ${MANAGER} no longer holds any role that may see alerts, so it goes to the owners instead — until the owner removes this edit`); // round 39 · verifier r37 L5: the exact words
   expect(await deliveredTo(deps, life, T)).toEqual([B]);
   // The saved edit itself is unchanged (append-only; the owner decides what to do with it). Round 37 (verifier r36 NEW-1):
   // GET shows it as it is read — to every owner, never naming the manager, who no longer may see alerts.
