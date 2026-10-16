@@ -504,6 +504,61 @@ count still open and names the others.
   2.82 MB, about 20 MB a day). If you see that line, call support the same day; ask them to block that store computer's
   sign-in if it goes on.
 
+**Round 34 (owner decision OB-124 "A", 15 Oct 2026 — the five store-computer leftovers, built before the pilot):**
+
+- **Refunds too are judged on the store computer's own clock (OB-108).** The store computer now writes on each refund
+  when IT took it from the till (`storeComputerTakenAt`), and head office keeps that on the return — so a till whose
+  clock is slow no longer makes an honest refund number look "said unused, but head office has the bill". A refund
+  from a store computer not yet updated is still judged on the till's clock, and the line says so.
+- **The built-in alert goes to EVERY owner (OB-114).** If two people hold the owner role, both get
+  `built-in:store-computer-checks-stuck` (and the notice when a built-in rule is changed) in their inbox and, with a
+  message provider, on their phone. Either of them may tick it as seen. Nobody else gets it or may tick it.
+  `GET /v1/platform/alert-rules` shows the rule with `alsoToUserIds` naming the other owner(s). An alert already open
+  when an owner is added keeps the owners it was raised to; its next occurrence goes to the new list. (Round 35,
+  NEW-7: the same the other way — someone who stops being an owner while it is open still sees it in their inbox and
+  still gets its escalation, but can no longer tick it.)
+- **The "not ready since" hour survives a head-office restart (OB-114).** Each time the store computer checks become
+  not ready (or ready again) head office writes one record (never changed afterwards). After a restart the hour
+  carries on from when it really started, so the owner is told on time. Support can list the records
+  (`StoreComputerChecksReadiness` on the `store-computer-checks-readiness` stream).
+- **The three rare buttons no longer read every store-computer report (OB-104).** Acknowledging a refused report,
+  acknowledging a not-checked line and "store computer replaced" read the saved history and the latest reports only.
+  While the saved history is "being prepared" they answer "being prepared … try again in a few minutes". A refused
+  count that head office has since banked (or that a "store computer replaced" act answered) is no longer on the
+  health page and can no longer be acknowledged — the refusal says so.
+- **Only one head-office process builds the saved history at a time (OB-106).** The build now holds a database lock
+  (a PostgreSQL advisory lock on its own connection; it goes away by itself if that process stops). Another
+  head-office process that needs it meanwhile says "being prepared — another head-office process is building it now"
+  and then uses the finished result. **The release still refuses more than one API container** (`release.sh`):
+  lifting that is an owner decision (STATUS round 34), not something to change on the box.
+
+**Round 35 (verifier r34 findings closed; owner decision OB-129 "A", 15 Oct 2026):**
+
+- **An owner's edit of the built-in alert still reaches every owner (NEW-1).** Who the built-in rule reaches is filled in by
+  head office from the owner role each time the rules are read — never from what was sent. An edit that changes only
+  "answer within" keeps every owner. If the owner REDIRECTS it to someone who is not an owner (allowed by OB-115), the
+  Alert rules page and the change notice now say in words that the owners no longer get it.
+- **Building the saved history never ties up head office's connections (NEW-2, NEW-3).** Each build holds its lock on a
+  database connection of its own (opened for the build, closed after it — never one of the ten the requests use), and one
+  head-office process builds at most 4 shops at once; another shop's health page says "being prepared — waiting its
+  turn". A request now waits at most 15 seconds for a database connection and then fails visibly. If letting go of a
+  lock ever fails, the head-office log says `projection build lease … BuildLeaseUnlockError` and the connection is
+  closed so the lock goes with it — nothing to do unless it repeats (then call support).
+- **The saved history is built once, even on a busy database (NEW-4).** The process that built it keeps its lock until
+  the result is saved (at most 30 minutes); the others say "being prepared — another head-office process is building it
+  now" and then use it. If the database ends the building process's connection, that build stops and says so
+  ("the build lease's database session ended under the build") and the next read builds it again.
+- **The "not ready" hour counts only time head office is running (OB-129 "A", NEW-5).** While the checks are not ready,
+  head office notes every 5 minutes that it is still running. A gap of more than 15 minutes (head office switched off,
+  or not reading) is NOT counted towards the hour; the health page says "head office was off for N hours … not
+  counted". So there is no "stuck" alert straight after a long outage. A change of reason (no seal key, then being
+  prepared) does not restart the hour: it is said on the page. Support can list the notes
+  (`StoreComputerChecksReadiness`, now with `seenAt`, `runningMs`, `offMs`).
+- **Only the store computer may say when it took a bill or a refund (NEW-6).** If a person's sign-in (cashier, manager,
+  owner) posts a sale or a refund straight to head office with a store-computer time, head office does not keep it: the
+  record notes `storeComputerTakenAtIgnored` (what was sent, by whom) and the "said unused" check uses the till's clock.
+  Nothing to configure; the store computer's own sign-in is unchanged.
+
 ## Part 4 — Restoring (the one that matters)
 
 **1. Do not restore over live data.** Make an empty database first:

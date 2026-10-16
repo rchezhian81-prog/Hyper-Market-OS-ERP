@@ -60,6 +60,8 @@ if (DATABASE_URL !== undefined) backings.push({ name: 'real PostgreSQL', harness
 
 type Res = { status: number; body: unknown };
 const codeOf = (r: Res): string | undefined => (r.body as { error?: { code?: string } }).error?.code;
+// Stock arrives at the very start of today (UTC), never later than "now": at 01:00 it was still in the future when the
+// suite ran between 00:00 and 01:00 UTC, so the count saw none of it.
 const TODAY = new Date().toISOString().slice(0, 10);
 
 async function shop(harness: () => ApiHarness) {
@@ -80,7 +82,7 @@ async function shop(harness: () => ApiHarness) {
     .map((e) => e.event.payload as { step: string; plan: { planId: string } }).filter((p) => p.plan.planId === planId && (p.step === 'approved' || p.step === 'cancelled')).map((p) => p.step);
   /** A plan on one product, opened, counted 2 short by u-c1, its cause set — ready for approval. */
   const countedPlan = async (planId: string, productId: string) => {
-    await ok(call('POST', '/v1/inventory/movements', 'u-owner', { movementId: `rcv-${productId}`, productId, locationId: 'S1', kind: 'received', quantityMinor: 20, uom: 'EA', occurredAt: `${TODAY}T01:00:00.000Z`, enteredBy: 'u-owner', unitCostMinor: 1_000 }), 'stock');
+    await ok(call('POST', '/v1/inventory/movements', 'u-owner', { movementId: `rcv-${productId}`, productId, locationId: 'S1', kind: 'received', quantityMinor: 20, uom: 'EA', occurredAt: `${TODAY}T00:00:00.000Z`, enteredBy: 'u-owner', unitCostMinor: 1_000 }), 'stock');
     await ok(call('POST', `/v1/inventory/count-plans/${planId}`, 'u-plan', { locationId: 'S1', productIds: [productId], recountThresholdMinor: 1_000_000, note: 'aisle' }), 'plan');
     await ok(call('POST', `/v1/inventory/count-plans/${planId}/open`, 'u-plan', {}), 'open');
     await ok(call('POST', `/v1/inventory/count-plans/${planId}/counts/k-${planId}`, 'u-c1', { productId, locationId: 'S1', uom: 'EA', countedMinor: 18 }), 'count');
@@ -222,7 +224,7 @@ describe.each(backings)('a count plan is closed once — approved or cancelled, 
     const { call, ok, onHand, movementIds, terminalSteps } = await shop(harness);
     const HELD = 'ind-1:is-1-damaged-1';
     for (const [id, loc, qty] of [['s-floor', 'S1', 20], ['s-back', 'S1-BACK', 10]] as const) {
-      await ok(call('POST', '/v1/inventory/movements', 'u-owner', { movementId: id, productId: 'P2', locationId: loc, kind: 'received', quantityMinor: qty, uom: 'EA', occurredAt: `${TODAY}T01:00:00.000Z`, enteredBy: 'u-owner', unitCostMinor: 1_000 }), id);
+      await ok(call('POST', '/v1/inventory/movements', 'u-owner', { movementId: id, productId: 'P2', locationId: loc, kind: 'received', quantityMinor: qty, uom: 'EA', occurredAt: `${TODAY}T00:00:00.000Z`, enteredBy: 'u-owner', unitCostMinor: 1_000 }), id);
     }
     await ok(call('POST', '/v1/floor/indents/ind-1', 'u-plan', { fromLocationId: 'S1-BACK', toLocationId: 'S1', lines: [{ productId: 'P2', quantityMinor: 6, uom: 'EA' }], reason: 'shelf 4 empty' }), 'indent');
     await ok(call('POST', '/v1/floor/indents/ind-1/approval', 'u-appr', {}), 'indent approval');

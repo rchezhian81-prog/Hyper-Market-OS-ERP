@@ -40,7 +40,10 @@ describeOrSkip('head-office reports reconcile to their source records — real A
   const today = new Date().toISOString().slice(0, 10);
   const at = (hhmm: string): string => `${today}T${hhmm}:00.000Z`;
   /** Sales are rung a little in the past, so none is "from the future" against the read. */
-  const minutesAgo = (n: number): string => new Date(Date.now() - n * 60_000).toISOString();
+  // Never before the stock arrived (00:00 today, UTC) and never on yesterday: run between 00:00 and 00:30 UTC, a sale
+  // "20 minutes ago" fell before the receipt (or on the day before), and the valuation moved. Order is kept: a bigger n is earlier.
+  const dayStart = Date.parse(`${today}T00:00:00.000Z`);
+  const minutesAgo = (n: number): string => new Date(Math.max(Date.now() - n * 60_000, dayStart + 1_000 - n * 10)).toISOString();
 
   const call = (method: 'GET' | 'POST' | 'PUT', path: string, userId: string, body?: unknown, idempotencyKey?: string): Promise<Reply> =>
     cloud.request({ method, path, userId, ...(body === undefined ? {} : { body }), ...(idempotencyKey === undefined ? {} : { idempotencyKey }) });
@@ -99,7 +102,7 @@ describeOrSkip('head-office reports reconcile to their source records — real A
     for (const [mv, product, loc, qty, cost] of [['mv-r1', 'P-RICE', 'S1', 10, 40_000], ['mv-m1', 'P-MILK', 'S1', 20, 3_000], ['mv-r2', 'P-RICE', 'S2', 5, 40_000]] as const) {
       await ok(call('POST', '/v1/inventory/movements', OWNER, {
         movementId: mv, productId: product, locationId: loc, kind: 'received', quantityMinor: qty, uom: 'ea',
-        occurredAt: at('00:30'), enteredBy: OWNER, unitCostMinor: cost,
+        occurredAt: at('00:00'), enteredBy: OWNER, unitCostMinor: cost,
       }, mv), 202);
     }
     // A loyalty member, enrolled at the desk with consent and a checked number.

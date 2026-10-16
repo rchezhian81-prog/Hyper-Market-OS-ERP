@@ -78,6 +78,11 @@ async function passAt(worker: OpsAlertWorker, at: string): Promise<OpsAlertPass>
     await new Promise((resolve) => { setTimeout(resolve, 10); });
   }
 }
+/**
+ * Round 35 · OB-129 "A": only the time head office is RUNNING counts towards the hour — a jump of more than 15 minutes with no
+ * pass is head office switched off. So the clock walks in 5-minute steps, a pass at each, as a running worker's would.
+ */
+const everyFiveMinutes = (from: number, to: number): number[] => [...Array.from({ length: Math.floor((to - from) / 5) + 1 }, (_, k) => from + k * 5), ...((to - from) % 5 === 0 ? [] : [to])];
 const builtIn = (alerts: readonly LiveAlert[]): LiveAlert | undefined => alerts.find((a) => a.alert.alertId === BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID);
 
 const ctx = (T: string, userId: string, body?: unknown): RequestContext =>
@@ -99,7 +104,7 @@ async function beingPreparedForMoreThanAnHour(c: Ctx): Promise<void> {
   const said: string[] = [];
   const worker = startOpsAlertWorker({ tenants: async () => [c.T], deps, transport, intervalMs: 20, now: t.now, say: (l) => said.push(l) });
   try {
-    for (const minutes of [0, 59]) {
+    for (const minutes of everyFiveMinutes(0, 59)) {
       t.to(minutes);
       const p = await passAt(worker, t.now());
       expect(p.failed).toEqual([]);
@@ -160,7 +165,7 @@ async function cannotBeSealedForMoreThanAnHour(c: Ctx): Promise<void> {
   const transport = recordingTransport();
   const worker = startOpsAlertWorker({ tenants: async () => [c.T], deps, transport, intervalMs: 20, now: t.now, say: () => undefined });
   try {
-    for (const minutes of [0, 60]) {
+    for (const minutes of everyFiveMinutes(0, 60)) {
       t.to(minutes);
       const p = await passAt(worker, t.now());
       expect(p.failed).toEqual([]);
@@ -200,11 +205,9 @@ async function theOwnerTurnsItOffAndEditsIt(c: Ctx): Promise<void> {
   expect(v1.builtIn).toEqual([expect.objectContaining({ state: 'off' })]);
   const worker = startOpsAlertWorker({ tenants: async () => [c.T], deps, intervalMs: 20, now: t.now, say: () => undefined });
   try {
-    t.to(0);
-    await passAt(worker, t.now());
-    t.to(90);
-    const p = await passAt(worker, t.now());
-    expect(p.raised).toBe(0);
+    let p: OpsAlertPass | undefined;
+    for (const minutes of everyFiveMinutes(0, 90)) { t.to(minutes); p = await passAt(worker, t.now()); }
+    expect(p!.raised).toBe(0);
     expect(builtIn(await deps.alerts(c.T))).toBeUndefined();
     // He edits it instead — his manager to answer it within 15 minutes; a later version that does not name builtInOff keeps
     // it off, so he names the list (empty) to turn it back on, with his own version of the rule.

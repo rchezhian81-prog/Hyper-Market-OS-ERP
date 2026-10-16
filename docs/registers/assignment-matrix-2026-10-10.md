@@ -8,20 +8,30 @@ and every accepted-but-unbuilt decision (OB-76..OB-79) that held 15 Table B rows
 cited test; 14 of those rows moved to the state of what is left (see "Refreshed 15 Oct 2026" below). What is still
 software, row by row:
 
-**A. Open in software, not deferred (all on the M35 row, recorded as "not done" in STATUS):**
+**A. Open in software, not deferred — all five BUILT in round 34 (owner decision OB-124 "A", 15 Oct 2026, "Build all five before pilot"; branch for round 34, not yet merged):**
 
-1. **M35-FR-04 · OB-108** — the "said unused, but head office has the bill" check still compares a *return* on the till's
-   clock; only sales use the store computer's own time (STATUS round 29). Target: no target recorded — owner decision needed.
-2. **M35-FR-04 · OB-114** — when a shop has two owners, the built-in "store-computer checks stuck" alert reaches only the
-   alphabetically first (STATUS round 32). Target: no target recorded — owner decision needed.
-3. **M35-FR-04 · OB-114** — the "not ready since" hour is held in head office's memory, so a head-office restart starts the
-   hour again and delays the alert (STATUS round 32). Target: no target recorded — owner decision needed.
-4. **M35-FR-03 · OB-104** — three rare person acts (refused-report and not-checked acknowledgements, "store computer
-   replaced") still read every store-computer report once per act (STATUS round 28). Target: no target recorded — owner
-   decision needed.
-5. **M35-FR-03 · OB-106** — the background build of the saved store-computer history is single-flight per API process,
-   not across a cluster; safe today because `release.sh` refuses more than one API container (STATUS rounds 22 and 29).
-   Target: no target recorded — owner decision needed (must be done before head office runs two API containers).
+1. **M35-FR-04 · OB-108** — DONE (round 34): a *return* in the "said unused, but head office has the bill" check is now judged on
+   the store computer's own clock, as a sale is (the store computer stamps the refund; head office keeps the stamp).
+   Tests: `tests/integration/a-return-in-the-said-unused-check-uses-the-store-computers-clock.test.ts` (memory + PG),
+   `tests/unit/the-store-computer-stamps-when-it-took-the-refund.test.ts`.
+2. **M35-FR-04 · OB-114** — DONE (round 34): the built-in "store-computer checks stuck" alert reaches EVERY owner (inbox and
+   phone), owner-only. Test: `tests/integration/the-built-in-alert-reaches-every-owner.test.ts` (memory + PG).
+3. **M35-FR-04 · OB-114** — DONE (round 34): the "not ready since" hour is kept as append-only guarded records, so a
+   head-office restart keeps the hour. Test: `tests/integration/the-not-ready-hour-survives-a-head-office-restart.test.ts`
+   (memory + PG).
+4. **M35-FR-03 · OB-104** — DONE (round 34): the three rare person acts read the saved running result and the reports after it
+   only (no whole-stream read). Test: `tests/integration/the-rare-store-computer-acts-read-only-recent-reports.test.ts`
+   (memory + PG, reads counted).
+5. **M35-FR-03 · OB-106** — DONE (round 34): the background build is single-flight across head-office processes (PostgreSQL
+   advisory lock; in-process guard kept). Test:
+   `tests/integration/the-store-computer-history-is-built-once-across-head-office-processes.test.ts` (PG: 2 and 4
+   independent instances; memory). `release.sh` still refuses more than one API container — lifting it is an owner decision
+   (STATUS round 34).
+6. **Round 35 (verifier r34, 15 Oct 2026)** — the round-34 work HARDENED, nothing new opened: an owner's edit of the built-in
+   alert keeps every owner (NEW-1); the build lease is held on its own connection, at most 4 at once, and never returned to a
+   pool held (NEW-2, NEW-3); single-flight holds under load — the lease is kept until the result is saved (NEW-4); the "not
+   ready" hour counts only head-office running time (OB-129 "A", NEW-5); only the store computer's own sign-in may stamp
+   when it took a bill or refund (NEW-6); the OB-104 load flake's product cause fixed. Tests: traceability rows "Round 35".
 
 **B. Approved deferrals — software still to build, at the release the owner named in writing:**
 
@@ -43,7 +53,6 @@ software, row by row:
     block is built) — **R3** (OB-25).
 21. **M36 / PA-13 / D12-FR-06 / D14 SDK** commercialisation: billing, metering, tenant closure, connector SDK — **R8** (OA-12).
 22. **D08** voice search — off for the pilot (OB-62); typing and barcode search work. Target: **R4** (OB-125).
-    decision needed.
 
 Not listed: rows whose software is built and only an outside party (payment, SMS/WhatsApp, model, courier, Tally/GST,
 OCR, hardware), an administrator step or a staff run (SP-10: 0 sessions) remains. Operational, not software: the demo
@@ -209,7 +218,7 @@ because its own record says only the consolidation, drill-through and roster rou
 | M32 | Integration and developer platform | E2E_VERIFIED | PA-08 | B1 | `external dependency` | 12 Oct 2026 (rounds 9–13): nothing in software: outbound webhooks signed, retried, dead-lettered, reconciled; non-public destinations refused at subscribe and at send; HTTPS transport pinned to the vetted address, no redirects, timeouts, reply cap (r13 verifier HOLDS); a second person approves a subscription (OB-72); connector SDK is the R8 deferral (PA-13); external: real partners (Tally, payments, GST, logistics) — none configured |
 | M33 | Platform administration and support | E2E_VERIFIED | PA-06, PA-10, PA-06-r1 | B1 | `staff/device acceptance` | nothing in software (PA-06, PA-06-r1, PA-10 verified); the real-Keycloak suites run in CI (`identity` job, since 10 Oct; noted 12 Oct 2026) — the administrator still makes it a required check; SP-10 |
 | M34 | Audit, risk and compliance evidence | E2E_VERIFIED | PA-11 | B1 | `verified complete` | nothing (PA-11 verified) |
-| M35 | Backup, disaster recovery and observability | PARTIALLY_WIRED | GT-07, PA-12 | B4 | `pending software` | 15 Oct 2026 (rounds 14–33): the round-13 items are CLOSED: verifier r13 B5 — each till's device report is judged by its own report time and a till that never reported or went quiet is named stale (`the-box-health-reaches-head-office.test.ts`, `a-quiet-healthy-till-stays-fresh-at-head-office.test.ts`, `a-hung-device-adapter-reads-stale-and-the-box-starts-from-its-index.test.ts`, PG); OB-78 — early disk warning in hours of trading left, default 48 h, owner-adjustable on Store setup, raised to the named owner, overnight gaps excluded (`a-store-computer-warns-before-its-disk-fills.test.ts`, `overnight-gaps-never-stretch-the-hours-of-trading-left.test.ts`, `store-setup-on-the-production-api.e2e.ts`); PR #762. Rounds 17–33 then built the store-computer bill-number health (OB-85..OB-121: never-received, unused, refused reports, one computer per prefix, replacement act, the Store computers page, bounded and sealed saved history, built-in owner alert; PRs #763–#776, round 33 on the working branch; traceability rows Round 17–33). STILL OPEN IN SOFTWARE (recorded in STATUS, no target release recorded): (1) OB-108 — returns in the "said unused, but head office has the bill" check still use the till's clock, not the store computer's (STATUS round 29); (2) OB-114 — with two owners only the alphabetically first receives the built-in alert (STATUS round 32); (3) OB-114 — the "not ready since" hour is held in memory, so a head-office restart restarts the hour (STATUS round 32); (4) OB-104 — three rare person acts (refused-report and not-checked acknowledgements, "store computer replaced") still read every report once per act (STATUS round 28); (5) OB-106 — the background build is single-flight per process, not cluster-wide (safe today: `release.sh` refuses more than one API container) (STATUS round 29). Carried: backup_job machine-only (PG); Incidents and recovery-drills page (connected); DR-drill register PG leg. External: off-site storage, custodians, spare machine; operational: the demo deploy is refused by the box's settings pre-check since round 32 (OB-123, administrator log check) |
+| M35 | Backup, disaster recovery and observability | PARTIALLY_WIRED | GT-07, PA-12 | B4 | `pending software` | 15 Oct 2026 (rounds 14–33): the round-13 items are CLOSED: verifier r13 B5 — each till's device report is judged by its own report time and a till that never reported or went quiet is named stale (`the-box-health-reaches-head-office.test.ts`, `a-quiet-healthy-till-stays-fresh-at-head-office.test.ts`, `a-hung-device-adapter-reads-stale-and-the-box-starts-from-its-index.test.ts`, PG); OB-78 — early disk warning in hours of trading left, default 48 h, owner-adjustable on Store setup, raised to the named owner, overnight gaps excluded (`a-store-computer-warns-before-its-disk-fills.test.ts`, `overnight-gaps-never-stretch-the-hours-of-trading-left.test.ts`, `store-setup-on-the-production-api.e2e.ts`); PR #762. Rounds 17–33 then built the store-computer bill-number health (OB-85..OB-121: never-received, unused, refused reports, one computer per prefix, replacement act, the Store computers page, bounded and sealed saved history, built-in owner alert; PRs #763–#776, round 33 on the working branch; traceability rows Round 17–33). ROUND 34 (OB-124 "A"): the five items left open in software are BUILT — (1) OB-108 returns on the store computer's clock; (2) OB-114 built-in alert to every owner; (3) OB-114 "not ready since" kept across restarts; (4) OB-104 the three rare acts read only recent reports; (5) OB-106 build single-flight across processes (tests listed in "Remaining software" A, traceability rows Round 34; not yet merged). ROUND 35: verifier r34 NEW-1 to NEW-7 closed and OB-129 "A" built (traceability rows Round 35; not yet merged). Carried: backup_job machine-only (PG); Incidents and recovery-drills page (connected); DR-drill register PG leg. External: off-site storage, custodians, spare machine; operational: the demo deploy is refused by the box's settings pre-check since round 32 (OB-123, administrator log check) |
 | M36 | Commercialization and multi-tenant readiness | PARTIALLY_WIRED | PA-13 | B1 | `approved deferral` | R8 scope (OA-12, PA-13): billing, metering, closure, SDK |
 | D01 | Product and catalogue | PARTIALLY_WIRED | EA-10 | B2 | `approved deferral` | 12 Oct 2026 (rounds 9–13): approved deferral: the content-editor screen deferred to R4 (OB-74), product images to R4 (OB-60); content and synonyms flow from the master to the app on PG; typo tolerance and completeness built |
 | D02 | Merchandise planning | PARTIALLY_WIRED | EA-10 | B2 | `approved deferral` | 15 Oct 2026 (rounds 14–33): nothing left in software for the pilot. Verifier r13 A4 CLOSED — an amendment decided on an older copy of the order is refused; judged again it raises the order and escalates on the budget (`an-amendment-is-judged-on-the-order-as-it-stands.test.ts`, PG); closed at the close of round 13 and merged to main in PR #762 (rounds 9–16); the verifier rounds r14–r17 closed in turn (STATUS, rounds 13–16). Built: D02-FR-01 open-to-buy on every PO and raising amendment (OB-63, `a-purchase-order-is-checked-against-open-to-buy.test.ts` PG; `open-to-buy-on-the-production-api.e2e.ts`, connected). Approved deferrals: D02-FR-02 store clustering to R8, D02-FR-04 range gaps and private label to R6 (OB-65) |

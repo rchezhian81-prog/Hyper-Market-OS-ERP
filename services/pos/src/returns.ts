@@ -105,9 +105,69 @@ export interface ReturnRecord {
   /** The customer the refund belongs to — required for a store-credit refund (the credit is issued to
    *  them), carried on the record for reporting. Absent for cash/card refunds. */
   readonly customerRef?: string;
+  /**
+   * Round 34 · OB-108 / OB-124 (1): when the STORE COMPUTER took this refund from the till (its own clock), as it sent it —
+   * only a well-formed time, and never later than head office received it (a time ahead is cut back to head office's).
+   * Absent on a desk refund and from an older store computer. The "said unused, but head office has the bill" check
+   * compares with it, as it does for a sale; absent, the till's time stands in and the line says so.
+   */
+  readonly storeComputerTakenAt?: string;
+  /**
+   * Round 35 · verifier r34 NEW-6: a store-computer time that was SENT but not kept, because the request did not come from the
+   * store computer's own sign-in (a person — cashier, manager or owner — posting the refund straight to head office). What was
+   * offered (as text, cut to 64 characters), by whom, and why. The till's clock then stands in, and the check says so.
+   */
+  readonly storeComputerTakenAtIgnored?: StoreComputerTimeIgnored;
+}
+
+/** Round 35 · NEW-6: a store-computer time offered by somebody who is not the store computer — kept as a note, never used. */
+export interface StoreComputerTimeIgnored { readonly offered: string; readonly by: string; readonly why: string }
+
+/**
+ * Round 35 · verifier r34 NEW-6: is the caller a store computer — the `store_computer` role, granted for a store (its machine
+ * identity; head office's store binding has already judged that this request is for its own store)? `undefined` in a
+ * composition that cannot tell: then nobody's store-computer time is kept (fail closed).
+ */
+export type StoreComputerScopeOfCaller = (tenantId: string, userId: string) => Promise<readonly string[] | 'all' | undefined>;
+
+/**
+ * Round 35 · verifier r34 NEW-6 — ONLY THE STORE COMPUTER SAYS WHEN IT TOOK A BILL OR A REFUND (stated). `storeComputerTakenAt`
+ * on a synced sale (round 29) or refund (round 34) is kept only when the request is authenticated as the store computer itself
+ * (its own sign-in: the `store_computer` role for a store). From anybody else — a cashier, a manager or the owner posting
+ * straight to head office, who could otherwise pick a time that hides or softens the "said unused, but head office has the
+ * bill" line — it is NOT kept: the record notes that it was offered and ignored (`storeComputerTakenAtIgnored`), and the
+ * check uses the till's clock and says so. The till's own offline path is unchanged (the store computer stamps it, on disk).
+ */
+export async function storeComputerTimeFrom(
+  scopeOf: StoreComputerScopeOfCaller | undefined, tenantId: string, userId: string, offered: unknown, receivedAt: string,
+): Promise<{ readonly takenAt?: string; readonly ignored?: StoreComputerTimeIgnored }> {
+  if (offered === undefined) return {};
+  const scope = scopeOf === undefined ? undefined : await scopeOf(tenantId, userId);
+  const isStoreComputer = Array.isArray(scope) && scope.length > 0;
+  if (!isStoreComputer) {
+    return {
+      ignored: {
+        offered: (typeof offered === 'string' ? offered : JSON.stringify(offered) ?? String(offered)).slice(0, 64), by: userId,
+        why: 'only the store computer\'s own sign-in may say when it took a bill or a refund; this came from another sign-in, so the till\'s clock is used (verifier r34 NEW-6)',
+      },
+    };
+  }
+  const takenAt = storeComputerTakenAtOf(offered, receivedAt);
+  return takenAt === undefined ? {} : { takenAt };
+}
+
+/**
+ * Round 34 · OB-108 / OB-124 (1): the store computer's own time for a synced refund — only a well-formed one, and never later
+ * than head office received it (a store computer cannot have taken a refund after head office had it). Undefined: none sent.
+ */
+export function storeComputerTakenAtOf(v: unknown, receivedAt: string): string | undefined {
+  if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/.test(v) || Number.isNaN(Date.parse(v))) return undefined;
+  return Date.parse(v) > Date.parse(receivedAt) ? receivedAt : v;
 }
 
 export interface ReturnsDeps {
+  /** Round 35 · NEW-6: whether a caller is a store computer (only its own time on a synced refund is kept). */
+  readonly storeComputerScopeOf?: StoreComputerScopeOfCaller;
   /** The original bill, or `undefined` if this system never banked it. */
   readonly originalSale: (tenantId: string, saleId: string) => Promise<OriginalSale | undefined> | OriginalSale | undefined;
   /** Every return already recorded against this bill (for the at-most-once register). */
@@ -813,9 +873,14 @@ export function returnsRoutes(deps: ReturnsDeps): readonly Route[] {
           }
         }
 
+        // Round 34 · OB-108 / OB-124 (1): the store computer's own time for the refund (it took it from the till), when sent.
+        // Round 35 · NEW-6: kept only from the store computer's own sign-in; from anybody else it is noted as ignored.
+        const { takenAt, ignored: takenAtIgnored } = await storeComputerTimeFrom(deps.storeComputerScopeOf, ctx.tenantId, ctx.userId, (ctx.body as Record<string, unknown> | undefined)?.['storeComputerTakenAt'], deps.now());
         const record: ReturnRecord = {
           returnId: s.returnId, number: s.number, originalSaleId: saleId,
           processedBy: s.processedBy, processedAt,
+          ...(takenAt === undefined ? {} : { storeComputerTakenAt: takenAt }),
+          ...(takenAtIgnored === undefined ? {} : { storeComputerTakenAtIgnored: takenAtIgnored }),
           reasonCode: s.reasonCode, refundMinor: s.refundMinor, refundTender: s.refundTender,
           refundStatus: s.refundStatus, lines: lots.lines,
           ...(flags.length > 0 ? { governanceFlags: flags } : {}),
@@ -856,7 +921,7 @@ export function returnsRoutes(deps: ReturnsDeps): readonly Route[] {
         const returned = sale === undefined ? undefined : { valueMinor: returnedValueAtOriginalPrices(sale, s.lines), exchange: s.exchange !== undefined };
         const loyalty = await loyaltyAfterReturn(deps, ctx.tenantId, saleId, s.returnId, s.refundMinor, returned);
         // 202: the refund happened and is now reconciled; a §28 breach is surfaced as an exception, not a refusal.
-        return { status: 202, body: { returnId: s.returnId, reconciled: true, flags, ...(loyalty === undefined ? {} : { loyalty }) } };
+        return { status: 202, body: { returnId: s.returnId, reconciled: true, flags, ...(loyalty === undefined ? {} : { loyalty }), ...(takenAtIgnored === undefined ? {} : { storeComputerTakenAtIgnored: takenAtIgnored }) } };
       },
     },
     {

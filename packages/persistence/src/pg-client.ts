@@ -115,7 +115,7 @@ export function fromDatabaseDriver(err: unknown): boolean {
  * IDLE-CRASH), and hand it back WITH the error when its session ended, so the pool DISCARDS it rather than lending a dead
  * socket to the next request. `run` gets the connection and a probe saying whether the server already ended the session.
  */
-async function pinned<T>(pool: PgPool, run: (conn: PgPoolClient, ended: () => unknown) => Promise<T>): Promise<T> {
+async function pinned<T>(pool: PgPool, run: (conn: PgPoolClient, ended: () => unknown) => Promise<T>, discard = false): Promise<T> {
   const conn = await pool.connect();
   let ended: unknown;
   const onError = (e: Error): void => { ended ??= e; };
@@ -127,11 +127,43 @@ async function pinned<T>(pool: PgPool, run: (conn: PgPoolClient, ended: () => un
     if (ended !== undefined || isSessionEnded(err)) releaseWith = ended ?? err;
     throw err;
   } finally {
-    conn.release(releaseWith);
+    // Round 35 · verifier r34 NEW-3: a SESSION (`discard`) is never handed back — whatever it leaves behind on the server (a
+    // session advisory lock whose unlock failed) ends with it, rather than go back to the pool for the next borrower.
+    conn.release(releaseWith ?? (discard ? true : undefined));
     // A healthy connection goes back to the pool with only the pool's own listener on it. A broken one KEEPS ours: the
     // socket's last words ("Connection terminated unexpectedly") can arrive after the release, and they are already said.
-    if (releaseWith === undefined) conn.removeListener?.('error', onError);
+    if (releaseWith === undefined && !discard) conn.removeListener?.('error', onError);
   }
+}
+
+/** Round 35 · verifier r34 NEW-2: the subset of `pg.Client` a session of its own needs (structural — `pg` is never imported). */
+export interface PgStandaloneClient extends PgQueryable {
+  connect(): Promise<unknown>;
+  end(): Promise<unknown>;
+  on?(event: 'error' | 'end', listener: (err?: Error) => void): unknown;
+}
+
+/**
+ * Round 35 · verifier r34 NEW-2 / NEW-3: a database session of its OWN — a fresh connection (`open`, e.g. a `pg.Client` with a
+ * connect timeout) made for `fn` and ENDED when `fn` settles, never taken from (or handed back to) the pool that serves
+ * requests. For a session-level advisory lock held for a long time (a build lease): holding it can never leave requests
+ * without a connection, and whatever the session holds ends with it. `ended()` says when the server ended it under `fn`.
+ */
+export function pgDedicatedSession(open: () => PgStandaloneClient) {
+  return async <T>(fn: (conn: SqlClient, ended: () => unknown) => Promise<T>): Promise<T> => {
+    const c = open();
+    let ended: unknown;
+    let closing = false;
+    c.on?.('error', (e) => { ended ??= e ?? new Error('the connection failed'); });
+    c.on?.('end', () => { if (!closing) ended ??= new Error('Connection terminated unexpectedly'); });
+    await c.connect();
+    try {
+      return await fn({ query: (sql, params) => unwrap(c, sql, params) }, () => ended);
+    } finally {
+      closing = true;
+      await c.end().catch(() => undefined);
+    }
+  };
 }
 
 /**
@@ -227,6 +259,10 @@ export function pgPoolClient(pool: PgPool, options: PgPoolOptions = {}): SqlClie
     // SqlClient.transaction contract). BEGIN → run → COMMIT, and any throw rolls the whole thing back before it propagates.
     transaction: <T>(fn: (tx: SqlClient) => Promise<T>): Promise<T> =>
       inTransaction(pool, [], (conn) => fn({ query: (sql, params) => unwrap(conn, sql, params) })),
+    // Round 34 · OB-124 (5): one pinned connection, no transaction — a session-level advisory lock lives exactly as long as `fn`.
+    // Round 35 · NEW-3: and the connection is discarded afterwards (never handed back with anything the session held).
+    session: <T>(fn: (conn: SqlClient, ended: () => unknown) => Promise<T>): Promise<T> =>
+      pinned(pool, (conn, ended) => fn({ query: (sql, params) => unwrap(conn, sql, params) }, ended), true),
   };
 }
 

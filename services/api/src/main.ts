@@ -19,13 +19,13 @@
 //   5. **On SIGTERM, drain.** In-flight requests finish before the process goes.
 
 import { once } from 'node:events';
-import { Pool } from 'pg';
+import { Pool, Client } from 'pg';
 import { SqlEventStore } from '../../../packages/persistence/src/event-store';
 import { SqlSubjectKeyStore, personalDataKek, type SubjectKeyStore } from '../../../packages/persistence/src/personal-data';
 import { SqlSnapshotStore, type SnapshotStore } from '../../../packages/persistence/src/snapshot';
 import { SqlConfigVersionStore } from '../../../packages/persistence/src/config-store';
 import { SqlNumberSeriesStore, type NumberSeriesStore } from '../../../packages/persistence/src/number-series-store';
-import { pgPoolClient, listenForEndedConnections, isSessionEnded, fromDatabaseDriver, describeDbError } from '../../../packages/persistence/src/pg-client';
+import { pgPoolClient, pgDedicatedSession, listenForEndedConnections, isSessionEnded, fromDatabaseDriver, describeDbError } from '../../../packages/persistence/src/pg-client';
 import { DurableTenantSettings, SETTINGS } from '../../../packages/tenant/src/index';
 import {
   buildRouter, loadConfig, startHttpServer, CLOUD_API_CONFIG, SqlIdempotencyStore, SqlAuditSink,
@@ -2172,7 +2172,9 @@ export async function startApi(
   }
   const session = databaseSessionOptions(settings['DB_IDLE_IN_TRANSACTION_TIMEOUT_MS']);
   const idleInTransactionMs = session.idleInTransactionMs;
-  const db = new Pool({ connectionString: settings['DATABASE_URL']!, max: 10, options: session.options });
+  // Round 35 · verifier r34 NEW-2: a request waiting for a connection gives up after DB_CONNECT_TIMEOUT_MS and is answered as a
+  // visible failure — never a request (or the whole API) left waiting forever for a connection that never comes.
+  const db = new Pool({ connectionString: settings['DATABASE_URL']!, max: 10, options: session.options, connectionTimeoutMillis: DB_CONNECT_TIMEOUT_MS });
   // Verifier r21 IDLE-CRASH: the database ending an IDLE pooled connection is said in the log and the process keeps serving
   // (the pool has already dropped it). A CHECKED-OUT connection is handled per transaction in pg-client.ts.
   listenForEndedConnections(db, { onConnectionEnded: (detail) => { err(`${detail}\n`); } });
@@ -2248,7 +2250,14 @@ export async function startApi(
   // Durable projection snapshots (CORE-03) — ONE store for this process. Round 32 (verifier r31): the saved store-computer
   // history keeps its single-flight background build and its "not ready since" clock per snapshot store, so the routes and
   // the alert worker share this one: one build per shop per process (never two at once), one clock.
-  const snapshots = new SqlSnapshotStore(pgPoolClient(db));
+  // Round 35 · verifier r34 NEW-2 / NEW-3: each build lease is held on a database connection of its OWN (opened for the lease,
+  // closed after it — never one of the requests' ten, never handed back to a pool), at most BOX_HISTORY_BUILDS_AT_ONCE at once
+  // (the next shop's build waits its turn, said on its health read); a lease that could not be let go is said here by name.
+  const snapshots = new SqlSnapshotStore(pgPoolClient(db), {
+    leaseSession: pgDedicatedSession(() => new Client({ connectionString: settings['DATABASE_URL']!, options: session.options, connectionTimeoutMillis: DB_CONNECT_TIMEOUT_MS })),
+    maxConcurrentLeases: BOX_HISTORY_BUILDS_AT_ONCE,
+    onLeaseProblem: (detail) => { err(`${detail}\n`); },
+  });
   const built = buildRouter(buildSurface({
     onBriefDeps: (d) => { briefDeps = d; },
     signingKey: settings['PACK_SIGNING_KEY']!,
@@ -2577,3 +2586,14 @@ export function databaseSessionOptions(configured: string | undefined): { readon
   const idleInTransactionMs = Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 60_000;
   return { idleInTransactionMs, options: `-c idle_in_transaction_session_timeout=${idleInTransactionMs}` };
 }
+
+/**
+ * Round 35 · verifier r34 NEW-2: how long a request (or a build lease) waits to get a database connection before it gives up
+ * and fails visibly (15 s) — instead of waiting forever when every connection is in use.
+ */
+export const DB_CONNECT_TIMEOUT_MS = 15_000;
+/**
+ * Round 35 · verifier r34 NEW-2: how many shops' store-computer histories one head-office process builds at once (each holds
+ * one connection of its own for its build lease). The next waits its turn and its health read says so.
+ */
+export const BOX_HISTORY_BUILDS_AT_ONCE = 4;
