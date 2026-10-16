@@ -5,6 +5,7 @@ import { STREAM } from '../../services/api/src/adapters';
 import { makeEvent } from '../../packages/contracts/src/event';
 import { receiptRuleFor } from '../../services/inventory/src/goods-receipt';
 import { COLD_CHAIN_CLASS_DEFAULTS } from '../../packages/fulfilment/src/packing';
+import { recordReceivingChecklist } from '../support/receiving-checklist';
 
 /**
  * **SF-07 — receiving takes the cold-chain rule from head office's PRODUCT MASTER and requires temperature evidence; a
@@ -34,8 +35,12 @@ const req = (h: ApiHarness, method: 'POST' | 'GET', path: string, userId: string
   h.request({ method, path, userId, tenantId: A, ...(key === undefined ? {} : { idempotencyKey: key }), ...(body === undefined ? {} : { body }), ...(query === undefined ? {} : { query }) });
 const line = (productId: string, extra: Record<string, unknown> = {}) =>
   ({ lineId: 'L1', productId, orderedMinor: 10, countedMinor: 10, uom: 'ea', unitCost: { minor: 4000, currency: 'INR' }, condition: 'good', ...extra });
-const receive = (h: ApiHarness, grnId: string, lines: Record<string, unknown>[], userId = 'u-recv') =>
-  req(h, 'POST', `/v1/inventory/goods-receipt/${grnId}`, userId, grnId, { warehouseId: WH, receivedOnDate: '2026-10-09', currency: 'INR', lines });
+// OB-164: every delivery here records its receiving checklist at the door first (the refusal without it is proved in
+// tests/integration/ob164-a-chilled-delivery-is-checked-before-it-is-booked.test.ts).
+const receive = async (h: ApiHarness, grnId: string, lines: Record<string, unknown>[], userId = 'u-recv') => {
+  await recordReceivingChecklist(h, A, grnId, userId);
+  return req(h, 'POST', `/v1/inventory/goods-receipt/${grnId}`, userId, grnId, { warehouseId: WH, receivedOnDate: '2026-10-09', currency: 'INR', lines });
+};
 const grnOf = (res: { body: unknown }): Grn => (res.body as { grn: Grn }).grn;
 const onHand = async (h: ApiHarness, productId: string): Promise<number> =>
   ((await req(h, 'GET', '/v1/inventory/availability', 'u-owner', undefined, undefined, { productId })).body as { rows: { onHandMinor: number }[] }).rows.reduce((s, r) => s + r.onHandMinor, 0);

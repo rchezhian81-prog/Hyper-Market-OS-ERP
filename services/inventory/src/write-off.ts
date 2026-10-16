@@ -14,7 +14,7 @@ import {
   DEFAULT_WRITE_OFF_THRESHOLD_MINOR, readWriteOffThreshold,
   type LossType, type WrittenOff,
 } from '../../../packages/waste/src/waste';
-import { checkWasteReason, WASTE_REASON_CODES, UnknownWasteReasonError } from '../../../packages/waste/src/reasons';
+import { checkWasteReason, isWasteReason, WASTE_REASON_CODES, UnknownWasteReasonError } from '../../../packages/waste/src/reasons';
 import { checkStockAccess, type OwnershipStatus } from '../../../packages/concession/src/index';
 import { ApprovalRequiredError } from '../../../packages/adjustment/src/adjustment';
 import { Ledger, InMemoryLedgerStore } from '../../../packages/ledger/src/ledger';
@@ -62,6 +62,22 @@ export interface StoredWriteOff {
    * The stock movement carries it, so the batch's own on-hand falls too (the recall's "what is left of it" reads true).
    */
   readonly batchId?: string;
+  /**
+   * NEW-7 (D-5): the free-text detail of WHY, kept beside the closed reason — never in its place. A held returned unit's
+   * "smelt funny", or "arrived damaged on transfer T-1" for a damaged arrival (reason `damage`). Absent when none was given.
+   */
+  readonly note?: string;
+}
+
+/**
+ * NEW-7 (D-5) — the one gate every write-off passes before it is stored: its reason is a code from the closed waste reason
+ * list (OB-159: the six), whichever path raised it (the write-off route, a held returned unit's decision, a damaged arrival,
+ * a held write-off applied at a count's close). Off the list → `UnknownWasteReasonError`; nothing is written. The
+ * guardrail `tests/guardrails/every-write-off-speaks-the-closed-reason-list.test.ts` proves no path stores a write-off
+ * except through the store's one entry builder, which calls this.
+ */
+export function assertWriteOffReasonOnList(w: Pick<StoredWriteOff, 'id' | 'reasonCode'>): void {
+  if (!isWasteReason(w.reasonCode)) throw new UnknownWasteReasonError(w.id, String(w.reasonCode));
 }
 
 /** SF-05 — what a loss of this stock is worth, from head office's own cost. */

@@ -28,7 +28,7 @@ import {
   type CapturedLine, type CapturedReceipt,
 } from '../../../packages/receiving/src/index';
 import {
-  DEFAULT_RECEIPT_POLICY, RECEIPT_FLAGS, rulesFromMaster, sayHandling, policyInForce, inboundMovements, orderForReceipt, alignToOrder, poPostingFor, commitAgainstOrder,
+  DEFAULT_RECEIPT_POLICY, RECEIPT_FLAGS, rulesFromMaster, sayHandling, receivingChecklistGate, policyInForce, inboundMovements, orderForReceipt, alignToOrder, poPostingFor, commitAgainstOrder,
   type GoodsReceiptDeps, type GrnRecord, type ReceiptFlag,
 } from './goods-receipt';
 
@@ -141,6 +141,9 @@ export function syncedGoodsReceiptRoutes(deps: SyncedGoodsReceiptDeps): readonly
         // unvalued rather than folding at ₹0). The same helpers the direct route runs.
         const master = await rulesFromMaster(deps, ctx.tenantId, r.lines.map((l) => l.productId));
         if (master.unverified) flags.push('product_rules_unverified'); sayHandling(flags, master);
+        // OB-164: booked at the store with no network — a chilled/frozen delivery with no receiving checklist on file is
+        // booked (the goods are in the building, P-01) and FLAGGED `receiving_checklist_missing`, never silently passed.
+        const checklist = await receivingChecklistGate(deps, ctx.tenantId, grnId, master.rules, r.lines.map((l) => l.productId), flags, 'flag');
         const costByProduct = new Map<string, number>();
         let costUnknown = false;
         for (const productId of new Set(r.lines.map((l) => l.productId))) {
@@ -191,6 +194,7 @@ export function syncedGoodsReceiptRoutes(deps: SyncedGoodsReceiptDeps): readonly
         const poReceipt = poPostingFor(order, grnId, captured, r.receivedBy, r.receivedAt);
         const record: GrnRecord = {
           grnId, number: r.number, poId: r.poId, warehouseId: r.warehouseId,
+          ...(checklist === undefined ? {} : { receivingChecklist: checklist }),
           receivedBy: r.receivedBy, // the RELAYED receiver — the person who booked it in at the store
           receivedAt: r.receivedAt,
           captured, availableMinor: availableFromReceipt(captured), heldMinor: heldFromReceipt(captured),

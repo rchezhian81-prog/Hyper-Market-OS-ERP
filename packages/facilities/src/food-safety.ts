@@ -52,6 +52,13 @@ export interface FoodSafetyCheck {
   /** Who hears about a missed check. */
   readonly escalatesTo: string;
   readonly active: boolean;
+  /**
+   * NEW-8: when this VERSION of the check came into force (the moment it was defined or redefined). A redefinition — a later
+   * start, a new interval, set inactive — governs only from its own `effectiveFrom` forward; every slot that fell due under
+   * the earlier version stays that version's, so a check that was missed stays missed. The FIRST version of a check governs
+   * from its own schedule's start. Absent on a definition read without its history (then it is the only version).
+   */
+  readonly effectiveFrom?: string;
 }
 
 export type ItemResult = 'pass' | 'fail';
@@ -220,7 +227,42 @@ export interface FoodSafetyStatus {
   readonly detail: string;
 }
 
-/** Where every scheduled check stands over [from, asAt]: done, failed (with its action), late, due, or MISSED. */
+/**
+ * NEW-8: the versions of each check in the order they came into force, each with the window it governs: from its own
+ * `effectiveFrom` (the first version: from the beginning) up to — not including — the next version's.
+ */
+export function versionWindows(checks: readonly FoodSafetyCheck[]): { readonly check: FoodSafetyCheck; readonly fromMs: number; readonly toMs: number }[] {
+  const byId = new Map<string, FoodSafetyCheck[]>();
+  for (const c of checks) byId.set(c.checkId, [...(byId.get(c.checkId) ?? []), c]);
+  const out: { check: FoodSafetyCheck; fromMs: number; toMs: number }[] = [];
+  for (const versions of byId.values()) {
+    // Stable: versions without a stamp keep their order; stamped ones go by when they came into force.
+    const ordered = versions.map((v, i) => ({ v, i })).sort((a, b) => {
+      const ea = a.v.effectiveFrom === undefined ? Number.NEGATIVE_INFINITY : Date.parse(a.v.effectiveFrom);
+      const eb = b.v.effectiveFrom === undefined ? Number.NEGATIVE_INFINITY : Date.parse(b.v.effectiveFrom);
+      return ea - eb || a.i - b.i;
+    }).map((x) => x.v);
+    ordered.forEach((v, i) => {
+      const fromMs = i === 0 || v.effectiveFrom === undefined ? Number.NEGATIVE_INFINITY : Date.parse(v.effectiveFrom);
+      const next = ordered[i + 1];
+      const toMs = next === undefined || next.effectiveFrom === undefined ? Number.POSITIVE_INFINITY : Date.parse(next.effectiveFrom);
+      out.push({ check: v, fromMs, toMs });
+    });
+  }
+  return out;
+}
+
+/** NEW-8: the version of a check that governed the moment `at` (undefined when the check is unknown). */
+export function checkInForceAt(versions: readonly FoodSafetyCheck[], checkId: string, at: string): FoodSafetyCheck | undefined {
+  const ms = Date.parse(at);
+  return versionWindows(versions.filter((v) => v.checkId === checkId)).find((w) => ms >= w.fromMs && ms < w.toMs)?.check;
+}
+
+/**
+ * Where every scheduled check stands over [from, asAt]: done, failed (with its action), late, due, or MISSED. `checks` may
+ * carry every VERSION of a check (NEW-8): each version's slots are derived only over the window it was in force, so a
+ * redefinition or deactivation never erases a slot that fell due — and was missed — under the version before it.
+ */
 export function foodSafetyStatus(input: {
   readonly checks: readonly FoodSafetyCheck[];
   readonly records: readonly FoodSafetyCheckRecord[];
@@ -229,10 +271,14 @@ export function foodSafetyStatus(input: {
 }): FoodSafetyStatus {
   const asAtMs = Date.parse(input.asAt);
   const slots: SlotStatus[] = [];
-  for (const check of input.checks.filter((c) => c.active && c.kind !== 'receiving')) {
+  for (const { check, fromMs, toMs } of versionWindows(input.checks).filter((w) => w.check.active && w.check.kind !== 'receiving')) {
     const mine = input.records.filter((r) => r.checkId === check.checkId);
-    // Include the slot that opens within its grace before asAt (so "due" shows), never one further ahead.
-    for (const slot of slotsOf(check, input.from, new Date(asAtMs + check.graceMinutes * MINUTE_MS).toISOString())) {
+    // Include the slot that opens within its grace before asAt (so "due" shows), never one further ahead — and only the
+    // slots that fell due while THIS version was in force.
+    const lo = Math.max(Date.parse(input.from), fromMs);
+    const hi = Math.min(asAtMs + check.graceMinutes * MINUTE_MS, toMs - 1);
+    if (hi < lo) continue;
+    for (const slot of slotsOf(check, new Date(lo).toISOString(), new Date(hi).toISOString())) {
       const rec = mine.find((r) => r.slotDueAt === slot);
       const base = { checkId: check.checkId, title: check.title, kind: check.kind, branchId: check.branchId, slotDueAt: slot };
       const dueMs = Date.parse(slot);

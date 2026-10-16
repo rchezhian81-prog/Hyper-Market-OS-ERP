@@ -2,13 +2,15 @@
 // cleaning/receiving checklists with corrective-action capture and a tamper-evident trail; a missed check surfaces".
 //
 //   • POST /v1/facilities/food-safety/checks/:checkId                  — define a check (its kind, schedule, limits, items,
-//     who does it, who a miss escalates to). facilities.schedule.manage. A change is a new version (append-only).
+//     who does it, who a miss escalates to). facilities.schedule.manage. A change is a new version (append-only) that
+//     governs from the moment it is made (NEW-8): a later start, a new interval or "inactive" never erases a slot that was
+//     already due — a missed check stays missed, and the redefinition is sealed in the trail with what it changed.
 //   • POST /v1/facilities/food-safety/checks/:checkId/records/:recordId — a person records the check as DONE, in their own
 //     name (never a typed name): the reading, each item pass/fail, and — on any failure — the corrective action taken. A
 //     failure with no action is refused; a slot already recorded is refused (a correction is a new record of its own
 //     kind, never an overwrite). facilities.task.record.
 //   • GET  /v1/facilities/food-safety/status?asOf=&from=&branchId=      — every scheduled slot: done / failed (with the
-//     action) / done late / due / MISSED (with who it escalates to), and the receiving checklists. facilities.overdue.read.
+//     action) / done late / due / MISSED (with who it escalates to), and the receiving checklists, with the checks in force (their kind, limits and items). facilities.overdue.read.
 //
 // The tamper-evident trail: every definition and every record is SEALED into the hash-chained audit trail (M34-FR-01) in
 // the actor's name — `GET /v1/audit/trail/verify` names any break, and `GET /v1/audit/trail?objectType=food_safety_check`
@@ -20,7 +22,7 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError, notFound, requireActorIsCaller, assertBranchInScope, narrowScope } from '../../kernel/src/index';
 import {
-  assessCheckRecord, definitionProblem, foodSafetyStatus, FOOD_SAFETY_CHECK_KINDS,
+  assessCheckRecord, definitionProblem, foodSafetyStatus, checkInForceAt, FOOD_SAFETY_CHECK_KINDS,
   type FoodSafetyCheck, type FoodSafetyCheckKind, type FoodSafetyCheckRecord, type ItemResult, type ChecklistItem,
 } from '../../../packages/facilities/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
@@ -34,7 +36,11 @@ export class SlotAlreadyRecordedError extends Error {
 }
 
 export interface FoodSafetyDeps {
+  /** The version of each check in force now (the latest). */
   readonly checks: (tenantId: string) => Promise<readonly FoodSafetyCheck[]> | readonly FoodSafetyCheck[];
+  /** NEW-8: EVERY version of every check, each stamped with when it came into force (`effectiveFrom`). Absent on a bare
+   *  stub — then the latest versions are the only history. */
+  readonly checkVersions?: (tenantId: string) => Promise<readonly FoodSafetyCheck[]> | readonly FoodSafetyCheck[];
   readonly records: (tenantId: string) => Promise<readonly FoodSafetyCheckRecord[]> | readonly FoodSafetyCheckRecord[];
   readonly recordCheck: (tenantId: string, check: FoodSafetyCheck, by: string, at: string) => Promise<void> | void;
   readonly recordRecord: (tenantId: string, record: FoodSafetyCheckRecord) => Promise<void> | void;
@@ -48,6 +54,13 @@ const isInt = (v: unknown): v is number => typeof v === 'number' && Number.isInt
 const isTime = (v: unknown): v is string => isStr(v) && !Number.isNaN(Date.parse(v));
 const iso = (v: string): string => new Date(Date.parse(v)).toISOString();
 const DAY_MS = 86_400_000;
+
+/** The definition's own content — what a person set — without when or by whom it was set. */
+const META = new Set(['effectiveFrom', 'definedBy', 'definedAt']);
+const contentOf = (c: FoodSafetyCheck): string => {
+  const r = c as unknown as Record<string, unknown>;
+  return JSON.stringify(Object.keys(r).filter((k) => !META.has(k)).sort().map((k) => [k, r[k]]));
+};
 
 function readItems(v: unknown): ChecklistItem[] | undefined {
   if (v === undefined) return [];
@@ -76,6 +89,8 @@ function readItemResults(v: unknown): Record<string, ItemResult> | undefined | '
 export function foodSafetyRoutes(deps: FoodSafetyDeps): readonly Route[] {
   const checkOf = async (tenantId: string, checkId: string): Promise<FoodSafetyCheck | undefined> =>
     (await deps.checks(tenantId)).find((c) => c.checkId === checkId);
+  const versionsOf = async (tenantId: string): Promise<readonly FoodSafetyCheck[]> =>
+    deps.checkVersions === undefined ? deps.checks(tenantId) : deps.checkVersions(tenantId);
   return [
     {
       api: 'API-11', method: 'POST', path: '/v1/facilities/food-safety/checks/:checkId',
@@ -108,17 +123,29 @@ export function foodSafetyRoutes(deps: FoodSafetyDeps): readonly Route[] {
         assertBranchInScope(ctx, draft.branchId); // PA-01-r1
         const before = await checkOf(ctx.tenantId, checkId);
         if (before !== undefined) assertBranchInScope(ctx, before.branchId);
-        const check: FoodSafetyCheck = { checkId, ...draft };
         const at = deps.now();
+        // The same definition again changes nothing — no new version, nothing sealed twice.
+        if (before !== undefined && contentOf(before) === contentOf({ checkId, ...draft })) {
+          return { status: 200, body: { check: before, unchanged: true } };
+        }
+        // NEW-8: a (re)definition is a new VERSION in force from now; the slots that fell due before stay the earlier one's.
+        const check: FoodSafetyCheck = { checkId, ...draft, effectiveFrom: at };
         await deps.recordCheck(ctx.tenantId, check, ctx.userId, at);
+        const shape = (c: FoodSafetyCheck): Record<string, string> => ({
+          kind: c.kind, title: c.title, active: String(c.active), everyMinutes: String(c.everyMinutes ?? ''), startsAt: c.startsAt ?? '',
+          graceMinutes: String(c.graceMinutes), limits: c.kind === 'temperature' ? `${c.minTenthsC}..${c.maxTenthsC}` : '', items: c.items.map((i) => i.itemId).join(','),
+          assignedRole: c.assignedRole, escalatesTo: c.escalatesTo,
+        });
         await deps.recordAudit?.(ctx.tenantId, {
-          actorId: ctx.userId, action: 'food_safety.check.define', objectType: 'food_safety_check', objectId: checkId, at,
+          actorId: ctx.userId, action: before === undefined ? 'food_safety.check.define' : 'food_safety.check.redefine',
+          objectType: 'food_safety_check', objectId: checkId, at,
           origin: { tenantId: ctx.tenantId, branchId: check.branchId },
-          before: before === undefined ? null : { kind: before.kind, title: before.title, active: String(before.active) },
-          after: { kind: check.kind, title: check.title, active: String(check.active), everyMinutes: String(check.everyMinutes ?? ''), limits: check.kind === 'temperature' ? `${check.minTenthsC}..${check.maxTenthsC}` : '', items: check.items.map((i) => i.itemId).join(',') },
+          before: before === undefined ? null : shape(before),
+          after: { ...shape(check), effectiveFrom: at },
+          ...(before === undefined ? {} : { reason: `redefined — in force from ${at}; every slot due before stays as it was` }),
           correlationId: checkId,
         });
-        return { status: 201, body: { check } };
+        return { status: 201, body: { check, ...(before === undefined ? {} : { redefined: true, effectiveFrom: at }) } };
       },
     },
     {
@@ -130,7 +157,13 @@ export function foodSafetyRoutes(deps: FoodSafetyDeps): readonly Route[] {
         const b = (ctx.body ?? {}) as Record<string, unknown>;
         // Who did the check is the signed-in person — a body naming someone else is refused by name.
         requireActorIsCaller(ctx, b, 'performedBy');
-        const check = await checkOf(ctx.tenantId, checkId);
+        // NEW-8: a slot is judged by the version of the check in force when it fell due (a receiving checklist: now) — so a
+        // slot missed before a redefinition can still be recorded, late, and stays that version's slot.
+        const at = deps.now();
+        const latest = await checkOf(ctx.tenantId, checkId);
+        const governing = latest === undefined ? undefined
+          : checkInForceAt(await versionsOf(ctx.tenantId), checkId, latest.kind !== 'receiving' && isTime(b['slotDueAt']) ? iso(b['slotDueAt']) : at) ?? latest;
+        const check = governing;
         if (check === undefined || !check.active) throw notFound(`food-safety check ${checkId}`);
         assertBranchInScope(ctx, check.branchId); // PA-01-r1
         const itemResults = readItemResults(b['itemResults']);
@@ -147,7 +180,6 @@ export function foodSafetyRoutes(deps: FoodSafetyDeps): readonly Route[] {
         const all = await deps.records(ctx.tenantId);
         const existing = all.find((r) => r.recordId === recordId);
         if (existing !== undefined) return { status: 200, body: { record: existing, alreadyRecorded: true } };
-        const at = deps.now();
         const assessed = assessCheckRecord(check, {
           recordId, checkId, performedBy: ctx.userId, performedAt: at,
           ...(isTime(b['slotDueAt']) ? { slotDueAt: iso(b['slotDueAt']) } : {}),
@@ -212,10 +244,13 @@ export function foodSafetyRoutes(deps: FoodSafetyDeps): readonly Route[] {
         const since = from === undefined ? new Date(Date.parse(asAt) - DAY_MS).toISOString() : iso(from);
         const asked = ctx.query['branchId'];
         const scope = narrowScope(ctx, isStr(asked) ? [asked] : undefined); // PA-01-r1
-        const checks = (await deps.checks(ctx.tenantId)).filter((c) => scope === 'all' || scope.includes(c.branchId));
+        // NEW-8: every version of every check, so a slot missed under an earlier version is still shown missed.
+        const checks = (await versionsOf(ctx.tenantId)).filter((c) => scope === 'all' || scope.includes(c.branchId));
         const ids = new Set(checks.map((c) => c.checkId));
         const status = foodSafetyStatus({ checks, records: (await deps.records(ctx.tenantId)).filter((r) => ids.has(r.checkId)), from: since, asAt });
-        return { status: 200, body: { ...status, missedCount: status.missed.length, failedCount: status.failed.length } };
+        // The checks in force now (their kind, limits and items), so a screen can offer the right record form (OB-154).
+        const inForce = (await deps.checks(ctx.tenantId)).filter((c) => scope === 'all' || scope.includes(c.branchId));
+        return { status: 200, body: { ...status, missedCount: status.missed.length, failedCount: status.failed.length, checks: inForce } };
       },
     },
   ];

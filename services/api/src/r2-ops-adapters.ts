@@ -22,6 +22,7 @@ import type { PriceObservation, ChargedLine } from '../../../packages/self-check
 import type { IncomingSale } from '../../pos/src/sale-intake';
 import { locationIsItsOwnBranch } from '../../inventory/src/location-scope';
 import type { AssignedTaskDeps } from '../../finance/src/assigned-tasks';
+import type { ReceivingChecklistOnFile } from '../../inventory/src/goods-receipt';
 import type { AssignedTask, AssignedTaskCompletion } from '../../../packages/workforce/src/assigned-tasks';
 
 const digest = (key: string): string => createHash('sha256').update(key).digest('hex').slice(0, 16);
@@ -52,17 +53,23 @@ export function foodSafetyAdapter(input: {
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
 }): FoodSafetyDeps {
   const records = (tenantId: string) => all<FoodSafetyCheckRecord>(input.store, tenantId, FOOD_SAFETY, 'FoodSafetyCheckRecorded');
+  const versions = async (tenantId: string): Promise<FoodSafetyCheck[]> =>
+    (await all<FoodSafetyCheck & { definedAt?: string }>(input.store, tenantId, FOOD_SAFETY, 'FoodSafetyCheckDefined'))
+      .map((c) => (c.effectiveFrom !== undefined || c.definedAt === undefined ? c : { ...c, effectiveFrom: c.definedAt }));
   return {
     now: input.now,
-    // The latest definition of each check wins (each version is kept: append-only).
+    // The latest definition of each check is the one in force now (each version is kept: append-only).
     checks: async (tenantId) => {
       const byId = new Map<string, FoodSafetyCheck>();
-      for (const c of await all<FoodSafetyCheck>(input.store, tenantId, FOOD_SAFETY, 'FoodSafetyCheckDefined')) byId.set(c.checkId, c);
+      for (const c of await versions(tenantId)) byId.set(c.checkId, c);
       return [...byId.values()];
     },
+    // NEW-8: every version, each stamped with when it came into force (a version stored before NEW-8: when it was defined).
+    checkVersions: versions,
     records,
     recordCheck: async (tenantId, check, by, at) => {
-      // Keyed on the definition's content: the same definition again collapses; a change is a new, latest version.
+      // Keyed on the definition's content AND when it came into force: a change is a new, latest version — even one that
+      // returns to an earlier definition (A → B → A is three versions, never collapsed back into the first).
       const d = digest(JSON.stringify(check));
       await input.store.append(tenantId, FOOD_SAFETY, makeEvent({
         id: `food-safety-check-${check.checkId}-${d}`, type: 'FoodSafetyCheckDefined', occurredAt: at,
@@ -88,6 +95,20 @@ export function foodSafetyAdapter(input: {
       }
     },
     ...(input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit }),
+  };
+}
+
+/**
+ * OB-164: the D-6 receiving checklist recorded against a delivery — a record of a `receiving` check whose subjectRef is the
+ * goods receipt id (the earliest, when more than one). Read by every goods-receipt route; head office's record, never the body.
+ */
+export function receivingChecklistLookup(input: { readonly store: EventStore }): (tenantId: string, grnId: string) => Promise<ReceivingChecklistOnFile | undefined> {
+  return async (tenantId, grnId) => {
+    const receiving = new Set((await all<FoodSafetyCheck>(input.store, tenantId, FOOD_SAFETY, 'FoodSafetyCheckDefined')).filter((c) => c.kind === 'receiving').map((c) => c.checkId));
+    const rec = (await all<FoodSafetyCheckRecord>(input.store, tenantId, FOOD_SAFETY, 'FoodSafetyCheckRecorded'))
+      .filter((r) => receiving.has(r.checkId) && r.subjectRef === grnId)
+      .sort((a, b) => a.performedAt.localeCompare(b.performedAt))[0];
+    return rec === undefined ? undefined : { recordId: rec.recordId, checkId: rec.checkId, outcome: rec.outcome, performedBy: rec.performedBy, performedAt: rec.performedAt };
   };
 }
 

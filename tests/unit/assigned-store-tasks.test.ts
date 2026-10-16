@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { assignmentProblem, assessAssignedTasks, checkCompletion, type AssignedTask } from '../../packages/workforce/src/assigned-tasks';
+import { assignmentProblem, assessAssignedTasks, checkCompletion, carriedLateness, type AssignedTask } from '../../packages/workforce/src/assigned-tasks';
 
 // D-8 (roadmap v2.1 addendum, ratified R2): "SOP checklists + assigned tasks with deadlines, evidence capture and completion
 // accountability; asserted".
@@ -33,7 +33,7 @@ describe('D-8 evidence capture and completion accountability', () => {
     expect(checkCompletion(task(), done({ evidenceRefs: ['  '] }))).toMatchObject({ ok: false, refusal: 'evidence_required' });
     expect(checkCompletion(task({ evidenceRequired: false }), done({ evidenceRefs: [] }))).toMatchObject({ ok: true });
     const ok = checkCompletion(task(), done({ note: ' all faced ' }));
-    expect(ok).toEqual({ ok: true, completion: { taskId: 't1', doneBy: 'u-ravi', doneAt: '2026-10-16T04:30:00.000Z', evidenceRefs: ['photo-aisle4'], stepsDone: ['front', 'labels'], lateByMinutes: 0, note: 'all faced' } });
+    expect(ok).toEqual({ ok: true, completion: { taskId: 't1', doneBy: 'u-ravi', doneAt: '2026-10-16T04:30:00.000Z', evidenceRefs: ['photo-aisle4'], stepsDone: ['front', 'labels'], lateByMinutes: 0, accountableDueAt: '2026-10-16T05:00:00.000Z', note: 'all faced' } });
     if (!ok.ok) throw new Error('expected ok');
     expect(checkCompletion(task(), done(), ok.completion)).toMatchObject({ ok: false, refusal: 'already_done' });
   });
@@ -59,5 +59,24 @@ describe('D-8 evidence capture and completion accountability', () => {
     expect(v.map((t) => [t.taskId, t.status])).toEqual([['critical', 'escalated'], ['overdue', 'overdue'], ['pending', 'pending'], ['late', 'done_late'], ['on-time', 'done']]);
     expect(v[0]!.detail).toContain('escalated to u-mgr');
     expect(v[1]!.overdueByMinutes).toBe(120);
+  });
+});
+
+describe('NEW-10: a re-assignment after the deadline keeps the missed deadline accountable', () => {
+  it('re-assigned after missing it: the missed deadline stays accountable and on the list; before it: a plain new deadline', () => {
+    const missed = task({ dueAt: '2026-10-16T05:00:00.000Z' });
+    expect(carriedLateness(missed, '2026-10-16T08:00:00.000Z')).toEqual({ accountableDueAt: '2026-10-16T05:00:00.000Z', missedDeadlines: ['2026-10-16T05:00:00.000Z'] });
+    expect(carriedLateness(missed, '2026-10-16T04:00:00.000Z')).toEqual({});
+    // Missed twice: the FIRST missed deadline stays the accountable one; both are on the list.
+    const again = task({ dueAt: '2026-10-16T09:00:00.000Z', accountableDueAt: '2026-10-16T05:00:00.000Z', missedDeadlines: ['2026-10-16T05:00:00.000Z'] });
+    expect(carriedLateness(again, '2026-10-16T10:00:00.000Z')).toEqual({ accountableDueAt: '2026-10-16T05:00:00.000Z', missedDeadlines: ['2026-10-16T05:00:00.000Z', '2026-10-16T09:00:00.000Z'] });
+  });
+  it('a critical task stays escalated, and its completion is late from the missed deadline', () => {
+    const t = task({ critical: true, dueAt: '2026-10-16T12:00:00.000Z', accountableDueAt: '2026-10-16T05:00:00.000Z' });
+    const [v] = assessAssignedTasks([t], [], '2026-10-16T08:00:00.000Z');
+    expect(v).toMatchObject({ status: 'escalated', overdueByMinutes: 180 });
+    expect(v!.detail).toMatch(/re-assigned after missing its deadline of 2026-10-16T05:00:00.000Z/);
+    const c = checkCompletion(t, done({ doneAt: '2026-10-16T09:00:00.000Z' }));
+    expect(c).toMatchObject({ ok: true, completion: { lateByMinutes: 240, accountableDueAt: '2026-10-16T05:00:00.000Z' } });
   });
 });

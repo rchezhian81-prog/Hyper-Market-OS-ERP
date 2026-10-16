@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  assessCheckRecord, definitionProblem, foodSafetyStatus, isSlotOf, slotsOf,
+  assessCheckRecord, definitionProblem, foodSafetyStatus, isSlotOf, slotsOf, checkInForceAt, versionWindows,
   type FoodSafetyCheck, type FoodSafetyCheckRecord,
 } from '../../packages/facilities/src/food-safety';
 
@@ -116,5 +116,25 @@ describe('D-6 a missed check surfaces', () => {
     expect(s.detail).toBe('1 food-safety check(s) MISSED since 2026-10-16T00:00:00.000Z — each escalated to the person named');
     // An inactive check raises nothing; a receiving checklist is never "missed".
     expect(foodSafetyStatus({ checks: [{ ...chiller, active: false }, dock], records: [], from: '2026-10-16T00:00:00.000Z', asAt: '2026-10-16T17:45:00.000Z' }).missed).toEqual([]);
+  });
+});
+
+describe('NEW-8: a redefinition is a version from its own moment — the slots already due stay', () => {
+  const v1: FoodSafetyCheck = { ...chiller, startsAt: '2026-10-16T02:00:00.000Z', everyMinutes: 240, effectiveFrom: '2026-10-16T01:00:00.000Z' };
+  it('a later start does not erase the slots missed before it; the new schedule runs from the redefinition', () => {
+    const v2: FoodSafetyCheck = { ...v1, startsAt: '2026-10-16T20:00:00.000Z', effectiveFrom: '2026-10-16T15:00:00.000Z' };
+    const s = foodSafetyStatus({ checks: [v1, v2], records: [], from: '2026-10-16T00:00:00.000Z', asAt: '2026-10-16T21:00:00.000Z' });
+    expect(s.slots.map((x) => [x.slotDueAt.slice(11, 16), x.state])).toEqual([['02:00', 'missed'], ['06:00', 'missed'], ['10:00', 'missed'], ['14:00', 'missed'], ['20:00', 'missed']]);
+  });
+  it('set inactive stops the future, never the past', () => {
+    const off: FoodSafetyCheck = { ...v1, active: false, effectiveFrom: '2026-10-16T11:00:00.000Z' };
+    const s = foodSafetyStatus({ checks: [v1, off], records: [], from: '2026-10-16T00:00:00.000Z', asAt: '2026-10-16T21:00:00.000Z' });
+    expect(s.missed.map((x) => x.slotDueAt.slice(11, 16))).toEqual(['02:00', '06:00', '10:00']);
+  });
+  it('the version in force at a moment is the one that governed it', () => {
+    const v2: FoodSafetyCheck = { ...v1, everyMinutes: 60, effectiveFrom: '2026-10-16T12:00:00.000Z' };
+    expect(checkInForceAt([v1, v2], v1.checkId, '2026-10-16T06:00:00.000Z')?.everyMinutes).toBe(240);
+    expect(checkInForceAt([v1, v2], v1.checkId, '2026-10-16T13:00:00.000Z')?.everyMinutes).toBe(60);
+    expect(versionWindows([v1, v2]).map((w) => [w.fromMs, w.toMs])).toEqual([[Number.NEGATIVE_INFINITY, Date.parse('2026-10-16T12:00:00.000Z')], [Date.parse('2026-10-16T12:00:00.000Z'), Number.POSITIVE_INFINITY]]);
   });
 });

@@ -135,7 +135,7 @@ describe.each(backings)('an open count freezes every adjustment and write-off pa
     await frozen(call('POST', '/v1/inventory/write-off/wo-1', 'u-mgr', { productId: 'P1', locationId: 'S1', qty: 1, uom: 'EA', lossType: 'damage', reasonCode: 'damage' }), 'write-off');
     expect(((await call('GET', '/v1/inventory/write-offs', 'u-owner')).body as { writeOffs: { id: string }[] }).writeOffs.map((w) => w.id)).toEqual([]);
     // 2. A held returned unit's write-off decision — the unit stays held. (Its restock — a `returned`, not frozen — goes through.)
-    await frozen(call('POST', `/v1/returns/held-stock/${damagedUnit.heldId}/decisions/d-wo`, 'u-mgr', { decision: 'write_off', reasonCode: 'torn', evidenceRef: 'photo-1' }), 'held write-off');
+    await frozen(call('POST', `/v1/returns/held-stock/${damagedUnit.heldId}/decisions/d-wo`, 'u-mgr', { decision: 'write_off', reasonCode: 'damage', note: 'torn', evidenceRef: 'photo-1' }), 'held write-off');
     expect(((await call('GET', '/v1/returns/held-stock/worklist', 'u-mgr')).body as { items: { heldId: string; state: string }[] }).items.find((i) => i.heldId === damagedUnit.heldId)?.state).toBe('held');
     // 3. An adjustment request approved on the head-office screen — it stays pending.
     await frozen(call('POST', '/v1/inventory/adjustment-requests/ar-1/decide', 'u-mgr', { decision: 'approved', reason: 'saw it' }), 'adjustment approval');

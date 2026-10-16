@@ -9,7 +9,7 @@
 //                          under its own batch. Needs the quality-release authority (`quality.hold.release`, M10). A batch
 //                          under an open recall or quality hold is refused by name — it does not go back on sale.
 //   • write_off          — a loss: valued at head office's own average cost (never typed — SF-05), on the write-off
-//                          register (M28) with its reason; a MATERIAL loss (at/above the tenant's threshold, or a cost head
+//                          register (M28) with its reason — a code from the closed waste reason list (D-5), the person's words in the note; a MATERIAL loss (at/above the tenant's threshold, or a cost head
 //                          office does not hold) needs evidence AND a second person's approval, given in their own session
 //                          (kind `stock_write_off`, ADR-0024 — the maker can never approve it). On the ledger the unit
 //                          comes in (`returned`) and goes out as waste (`wasted`) — on-hand is unchanged, the loss is valued.
@@ -29,6 +29,7 @@ import type { Movement } from '../../inventory/src/index';
 import type { StoredWriteOff } from '../../inventory/src/write-off';
 import { lossValueOf } from '../../inventory/src/write-off';
 import { DEFAULT_WRITE_OFF_THRESHOLD_MINOR, type LossType } from '../../../packages/waste/src/waste';
+import { checkWasteReason, WASTE_REASON_CODES } from '../../../packages/waste/src/reasons';
 import { actionDetails, approvalNamedIn, type ApprovalPort } from '../../identity/src/approval-requests';
 import { assertLocationInScope, type LocationBranches } from '../../inventory/src/location-scope';
 import { assertNotFrozenByCount, type CountFreezeCheck } from '../../inventory/src/count-freeze';
@@ -219,6 +220,13 @@ export function heldStockDecisionRoutes(deps: HeldStockDecisionDeps): readonly R
           movements = [{ ...inbound(), movementId: `held-${heldId}-restock` }];
           record = { ...base, movementIds: movements.map((m) => m.movementId) };
         } else if (decision === 'write_off') {
+          // NEW-7 (D-5 · OB-159): a write-off's reason is a code from the closed waste reason list, whichever path raises it.
+          // The person's own words go in `note`, beside the reason — never in its place.
+          if (!checkWasteReason(base.reasonCode).ok) {
+            refuse(400, 'waste_reason_not_in_taxonomy',
+              `"${base.reasonCode}" is not on the waste reason list (${WASTE_REASON_CODES.join(' / ')}). A new reason is never made up on the shop floor (D-5).`,
+              'Choose the reason from the list and put your own words in the note. Nothing was recorded and no stock moved.');
+          }
           const perms = await deps.permissionsOf(ctx.tenantId, ctx.userId);
           if (!perms.includes('inventory.movement.append')) {
             refuse(403, 'write_off_needs_stock_authority', 'Writing off stock needs the stock authority, and you do not hold it.', 'Ask a manager. Nothing was recorded.');
@@ -257,7 +265,7 @@ export function heldStockDecisionRoutes(deps: HeldStockDecisionDeps): readonly R
           }];
           writeOff = {
             id: writeOffId, productId: unit.productId, locationId: locationId!, lossType, qtyRemoved: unit.quantityMinor, uom: unit.uom,
-            valueMinor, currency: 'INR', reasonCode: base.reasonCode, requiredApproval: material, evidenceRef, raisedBy: ctx.userId, approvedBy, at,
+            valueMinor, currency: 'INR', reasonCode: base.reasonCode, ...(base.note === null ? {} : { note: base.note }), requiredApproval: material, evidenceRef, raisedBy: ctx.userId, approvedBy, at,
             valueSource: priced.known ? 'stock_cost' : 'cost_unknown', ...(priced.known ? { unitCostMinor: priced.unitCostMinor } : {}),
           };
           record = {
