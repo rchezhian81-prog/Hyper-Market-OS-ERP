@@ -85,7 +85,10 @@ describe('the review surfaces shortfalls, chargebacks and refunds as exceptions 
   it('puts the chargeback first, values every problem, and says when till refunds were not read', () => {
     expect(review.exceptions[0]?.finding).toBe('chargeback');
     expect(review.atRiskValueMinor).toBe(20_000 + 1_000 + 1_000);
-    expect(review.awaitingValueMinor).toBe(10_000 + 4_000);
+    // Verifier NEW-4: the pending capture (in) less the pending refund (out) — never the two added together.
+    expect(review.awaitingValueMinor).toBe(10_000 - 4_000);
+    expect(review.awaitingCapturesMinor).toBe(10_000);
+    expect(review.awaitingRefundsMinor).toBe(4_000);
     expect(reviewSettlement({ tenders, credits: file.lines, settlementCycleDays: T1, asOf: '2026-10-16' }).detail).toContain('till refunds were not read');
   });
 

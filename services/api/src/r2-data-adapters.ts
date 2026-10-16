@@ -132,6 +132,11 @@ const ELECTRONIC = new Set(['card', 'upi']);
  * The refunds the till gave back to a card or UPI tender in `[fromIso, toIso)`, each by the reference of the capture it
  * reverses (the original bill's tender of the same kind). A refund whose bill or tender reference cannot be found is
  * still returned — keyed `bill:<saleId>` — so it surfaces as an unmatched refund for a person, never vanishes (P-08).
+ *
+ * An EXCHANGE (refund tender `exchange`) moves no money for the part applied to the replacement; but when the shop owed
+ * the customer the difference and paid it back to a card or UPI (`exchange.balance` 'refund', `balanceTender` card/upi),
+ * that balance IS a till refund the provider will debit (C13, verifier NEW-5). It is read here for `balanceMinor`, keyed
+ * to the original bill's tender of that kind exactly like a plain refund, so it matches the provider's refund line.
  */
 export function settlementRefundsAdapter(input: { readonly store: EventStore }) {
   return {
@@ -139,16 +144,23 @@ export function settlementRefundsAdapter(input: { readonly store: EventStore }) 
       const returns = await input.store.readStream(tenantId, STREAM.returns, { type: 'ReturnRecorded', from: fromIso, to: toIso });
       const out: PosRefund[] = [];
       for (const e of returns) {
-        const r = e.event.payload as { readonly returnId: string; readonly originalSaleId: string | null; readonly refundMinor: number; readonly refundTender: string; readonly processedAt: string };
-        if (!ELECTRONIC.has(r.refundTender) || !(r.refundMinor > 0)) continue;
+        const r = e.event.payload as {
+          readonly returnId: string; readonly originalSaleId: string | null; readonly refundMinor: number; readonly refundTender: string; readonly processedAt: string;
+          readonly exchange?: { readonly balance?: string; readonly balanceMinor?: number; readonly balanceTender?: string };
+        };
+        // What went back to a card or UPI, and on which tender kind: the refund itself, or an exchange's refunded balance.
+        const x = r.refundTender === 'exchange' ? r.exchange : undefined;
+        const tenderKind = x === undefined ? r.refundTender : x.balance === 'refund' && typeof x.balanceTender === 'string' ? x.balanceTender : '';
+        const amountMinor = x === undefined ? r.refundMinor : x.balanceMinor;
+        if (!ELECTRONIC.has(tenderKind) || typeof amountMinor !== 'number' || !(amountMinor > 0)) continue;
         let originalRef = r.originalSaleId === null ? `bill:none:${r.returnId}` : `bill:${r.originalSaleId}`;
         if (r.originalSaleId !== null) {
           const held = await input.store.findByIdempotencyKey(tenantId, `sale-${tenantId}-${r.originalSaleId}`);
           const tenders = (held?.event.payload as { readonly tenders?: readonly { readonly kind: string; readonly ref?: string }[] } | undefined)?.tenders ?? [];
-          const ref = tenders.find((t) => t.kind === r.refundTender && typeof t.ref === 'string' && t.ref.trim() !== '')?.ref;
+          const ref = tenders.find((t) => t.kind === tenderKind && typeof t.ref === 'string' && t.ref.trim() !== '')?.ref;
           if (ref !== undefined) originalRef = ref;
         }
-        out.push({ id: r.returnId, originalRef, amountMinor: r.refundMinor, refundedOn: r.processedAt.slice(0, 10) });
+        out.push({ id: r.returnId, originalRef, amountMinor, refundedOn: r.processedAt.slice(0, 10) });
       }
       return out;
     },
