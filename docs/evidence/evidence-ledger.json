@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1238,
+  "testFiles": 1243,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -2314,9 +2314,9 @@
       "id": "M35",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 11,
-        "integration": 30,
-        "realDb": 24,
+        "unit": 13,
+        "integration": 33,
+        "realDb": 27,
         "browser": 3,
         "connected": 2,
         "device": 0,
@@ -2326,17 +2326,21 @@
         "unit": [
           "tests/unit/a-build-lease-on-a-silent-connection-is-let-go-in-bounded-time.test.ts",
           "tests/unit/a-build-lease-that-cannot-be-let-go-never-returns-to-the-pool.test.ts",
+          "tests/unit/a-lease-session-cut-off-here-is-ended-on-the-server.test.ts",
           "tests/unit/alert-lifecycle.test.ts",
           "tests/unit/erp-navigation-catalogue.test.ts",
           "tests/unit/incidents-session.test.ts",
           "tests/unit/observed-health-routes.test.ts",
           "tests/unit/ops-backup.test.ts",
           "tests/unit/ops-health.test.ts",
+          "tests/unit/the-kept-lease-fold-moment-follows-a-clock-step-back.test.ts",
           "tests/unit/the-store-computer-role-covers-what-the-box-sends.test.ts",
           "tests/unit/the-store-computer-stamps-when-it-took-the-refund.test.ts",
           "tests/unit/the-till-re-sends-its-devices.test.ts"
         ],
         "integration": [
+          "tests/integration/a-build-lease-cut-off-here-is-freed-on-the-database-at-once.test.ts",
+          "tests/integration/a-clock-ahead-for-many-notes-never-books-running-time-as-off.test.ts",
           "tests/integration/a-clock-ahead-or-a-round-34-record-never-books-running-time-as-off.test.ts",
           "tests/integration/a-hung-device-adapter-reads-stale-and-the-box-starts-from-its-index.test.ts",
           "tests/integration/a-person-is-never-the-backup-job.test.ts",
@@ -2358,6 +2362,7 @@
           "tests/integration/only-the-store-computer-says-when-it-took-a-bill-or-a-refund.test.ts",
           "tests/integration/operational-health.test.ts",
           "tests/integration/recovery-rehearsal.test.ts",
+          "tests/integration/the-alert-rules-sent-back-as-shown-never-turn-an-old-edit-into-a-redirect.test.ts",
           "tests/integration/the-backup-job-is-a-machine-only-identity.test.ts",
           "tests/integration/the-backup-job-reports-its-own-outcome.test.ts",
           "tests/integration/the-box-health-reaches-head-office.test.ts",
@@ -2369,6 +2374,8 @@
           "tests/integration/the-store-computer-history-is-built-once-across-head-office-processes.test.ts"
         ],
         "realDb": [
+          "tests/integration/a-build-lease-cut-off-here-is-freed-on-the-database-at-once.test.ts",
+          "tests/integration/a-clock-ahead-for-many-notes-never-books-running-time-as-off.test.ts",
           "tests/integration/a-clock-ahead-or-a-round-34-record-never-books-running-time-as-off.test.ts",
           "tests/integration/a-hung-device-adapter-reads-stale-and-the-box-starts-from-its-index.test.ts",
           "tests/integration/a-person-is-never-the-backup-job.test.ts",
@@ -2384,6 +2391,7 @@
           "tests/integration/many-shops-rebuilding-at-once-never-use-up-head-offices-connections.test.ts",
           "tests/integration/only-the-store-computer-says-when-it-took-a-bill-or-a-refund.test.ts",
           "tests/integration/recovery-rehearsal.test.ts",
+          "tests/integration/the-alert-rules-sent-back-as-shown-never-turn-an-old-edit-into-a-redirect.test.ts",
           "tests/integration/the-backup-job-is-a-machine-only-identity.test.ts",
           "tests/integration/the-backup-job-reports-its-own-outcome.test.ts",
           "tests/integration/the-box-health-reaches-head-office.test.ts",
