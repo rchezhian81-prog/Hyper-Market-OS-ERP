@@ -2254,7 +2254,12 @@ export async function startApi(
   // closed after it — never one of the requests' ten, never handed back to a pool), at most BOX_HISTORY_BUILDS_AT_ONCE at once
   // (the next shop's build waits its turn, said on its health read); a lease that could not be let go is said here by name.
   const snapshots = new SqlSnapshotStore(pgPoolClient(db), {
-    leaseSession: pgDedicatedSession(() => new Client({ connectionString: settings['DATABASE_URL']!, options: session.options, connectionTimeoutMillis: DB_CONNECT_TIMEOUT_MS })),
+    // Round 36 · verifier r35 NEW-6: TCP keepalive on, and every lease query (and the close) bounded — a half-open connection
+    // is destroyed after LEASE_QUERY_TIMEOUT_MS (the lease then reads as lost and is let go), never left hanging.
+    leaseSession: pgDedicatedSession(() => new Client({
+      connectionString: settings['DATABASE_URL']!, options: session.options, connectionTimeoutMillis: DB_CONNECT_TIMEOUT_MS,
+      keepAlive: true, keepAliveInitialDelayMillis: LEASE_KEEPALIVE_DELAY_MS,
+    }), { queryTimeoutMs: LEASE_QUERY_TIMEOUT_MS }),
     maxConcurrentLeases: BOX_HISTORY_BUILDS_AT_ONCE,
     onLeaseProblem: (detail) => { err(`${detail}\n`); },
   });
@@ -2592,6 +2597,10 @@ export function databaseSessionOptions(configured: string | undefined): { readon
  * and fails visibly (15 s) — instead of waiting forever when every connection is in use.
  */
 export const DB_CONNECT_TIMEOUT_MS = 15_000;
+/** Round 36 · verifier r35 NEW-6: a build lease's query (try-lock, unlock) and its close may take at most this long. */
+export const LEASE_QUERY_TIMEOUT_MS = 30_000;
+/** Round 36 · NEW-6: TCP keepalive on a build lease's connection starts after this much idle time. */
+export const LEASE_KEEPALIVE_DELAY_MS = 10_000;
 /**
  * Round 35 · verifier r34 NEW-2: how many shops' store-computer histories one head-office process builds at once (each holds
  * one connection of its own for its build lease). The next waits its turn and its health read says so.

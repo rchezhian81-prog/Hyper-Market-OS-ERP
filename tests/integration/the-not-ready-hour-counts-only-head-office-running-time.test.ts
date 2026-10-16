@@ -105,7 +105,7 @@ async function aLongOutageIsNotCounted(store: EventStore, freshSnapshots: () => 
     const all = await storeComputerChecksReadinessHistory(store, T);
     expect(all[0]).toEqual(firstRecord);
     expect(all[0]).toEqual({ state: 'not_ready', since: at(0), why: 'being_prepared', seenAt: at(0), runningMs: 0, offMs: 0 });
-    expect(all.find((x) => x.seenAt === at(600))).toEqual({ state: 'not_ready', since: at(0), why: 'being_prepared', seenAt: at(600), runningMs: 40 * 60_000, offMs: 560 * 60_000 });
+    expect(all.find((x) => x.seenAt === at(600))).toEqual({ state: 'not_ready', since: at(0), why: 'being_prepared', seenAt: at(600), runningMs: 40 * 60_000, offMs: 560 * 60_000, basis: { seenAt: at(40), runningMs: 40 * 60_000, offMs: 0 } }); // round 36 · NEW-3: what it counted from
     expect(all.every((x) => x.state === 'not_ready' && x.since === at(0))).toBe(true);
   } finally {
     for (const g of gates) g();

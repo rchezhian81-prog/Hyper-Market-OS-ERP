@@ -141,7 +141,27 @@ export interface PgStandaloneClient extends PgQueryable {
   connect(): Promise<unknown>;
   end(): Promise<unknown>;
   on?(event: 'error' | 'end', listener: (err?: Error) => void): unknown;
+  /** Round 36 · NEW-6: node-postgres's socket (`client.connection.stream`) — destroyed when a query or the close times out. */
+  readonly connection?: { readonly stream?: { destroy?(err?: Error): unknown } };
 }
+
+/**
+ * Round 36 · verifier r35 NEW-6: a query (or the close) on a session of its own took longer than its bound — on a half-open
+ * connection (the network dropped with no reset) it would otherwise never answer, and a build lease would hang for good. The
+ * connection is DESTROYED (its socket closed here; the server ends the session, and its advisory lock with it, when it sees).
+ */
+export class DedicatedSessionTimeoutError extends Error {
+  override readonly name = 'DedicatedSessionTimeoutError';
+}
+
+/** Round 36 · NEW-6: bounds for a session of its own. */
+export interface DedicatedSessionOptions {
+  /** The longest any query on it may take before the connection is destroyed (default 30 s). */
+  readonly queryTimeoutMs?: number;
+  /** The longest closing it may take before the connection is destroyed (default the query bound). */
+  readonly endTimeoutMs?: number;
+}
+export const DEDICATED_SESSION_QUERY_TIMEOUT_MS = 30_000;
 
 /**
  * Round 35 · verifier r34 NEW-2 / NEW-3: a database session of its OWN — a fresh connection (`open`, e.g. a `pg.Client` with a
@@ -149,19 +169,33 @@ export interface PgStandaloneClient extends PgQueryable {
  * requests. For a session-level advisory lock held for a long time (a build lease): holding it can never leave requests
  * without a connection, and whatever the session holds ends with it. `ended()` says when the server ended it under `fn`.
  */
-export function pgDedicatedSession(open: () => PgStandaloneClient) {
+export function pgDedicatedSession(open: () => PgStandaloneClient, opts: DedicatedSessionOptions = {}) {
+  const queryMs = opts.queryTimeoutMs ?? DEDICATED_SESSION_QUERY_TIMEOUT_MS;
+  const endMs = opts.endTimeoutMs ?? queryMs;
   return async <T>(fn: (conn: SqlClient, ended: () => unknown) => Promise<T>): Promise<T> => {
     const c = open();
     let ended: unknown;
     let closing = false;
     c.on?.('error', (e) => { ended ??= e ?? new Error('the connection failed'); });
     c.on?.('end', () => { if (!closing) ended ??= new Error('Connection terminated unexpectedly'); });
+    // Round 36 · verifier r35 NEW-6: every query, and the close, is bounded; past its bound the connection is destroyed and the
+    // session counts as ended (`ended()`), so a lease on it reads as lost and is let go — never a hang until a restart.
+    const destroy = (why: Error): void => { ended ??= why; try { c.connection?.stream?.destroy?.(why); } catch { /* already gone */ } };
+    const bounded = <R>(p: Promise<R>, ms: number, what: string): Promise<R> => new Promise<R>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        const e = new DedicatedSessionTimeoutError(`${what} took more than ${ms} ms on a database session of its own — the connection was destroyed (a half-open network connection, or a database that stopped answering)`);
+        destroy(e);
+        reject(e);
+      }, ms);
+      timer.unref?.();
+      p.then((v) => { clearTimeout(timer); resolve(v); }, (e: unknown) => { clearTimeout(timer); reject(e instanceof Error ? e : new Error(String(e))); });
+    });
     await c.connect();
     try {
-      return await fn({ query: (sql, params) => unwrap(c, sql, params) }, () => ended);
+      return await fn({ query: (sql, params) => bounded(unwrap(c, sql, params), queryMs, 'a query') }, () => ended);
     } finally {
       closing = true;
-      await c.end().catch(() => undefined);
+      await bounded(c.end(), endMs, 'closing the connection').catch(() => undefined);
     }
   };
 }

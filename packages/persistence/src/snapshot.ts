@@ -55,7 +55,16 @@ export const PROJECTION_BUILD_LEASE_CLASS = 340_124;
  * session holding it ended under it (an idle-session timeout, a network cut, an administrator): the lock went with that
  * session, so another process may take it — the build stops at its next step rather than build alongside it.
  */
-export interface BuildLeaseHeld { (): Promise<void>; readonly lost: () => boolean }
+export interface BuildLeaseHeld {
+  (): Promise<void>;
+  readonly lost: () => boolean;
+  /**
+   * Round 36 · verifier r35 NEW-5: the build is over but its result waits to be saved — move this lease out of the BUILDS'
+   * count (`maxConcurrentLeases`) into the KEPT count (`maxKeptLeases`), so a lease kept for up to 30 minutes never makes another
+   * shop (a small one in particular) wait its turn. False: no room to keep it (the caller lets go). Absent: kept as it is.
+   */
+  readonly keep?: () => boolean;
+}
 /**
  * Round 35 · verifier r34 NEW-2: this process already holds as many build leases as it may (`maxConcurrentLeases`) — the
  * build waits for its turn (said, never waited on), so builds can never use up head office's connections.
@@ -77,6 +86,12 @@ export interface SqlSnapshotStoreOptions {
   readonly leaseSession?: LeaseSession;
   /** How many build leases this process may hold at once (default 4 with `leaseSession`, else 1). The next waits its turn. */
   readonly maxConcurrentLeases?: number;
+  /**
+   * Round 36 · verifier r35 NEW-5: how many leases this process may KEEP after their builds, waiting to save (default 4 with
+   * `leaseSession`, counted apart from the builds; on the pool's fallback there is no separate room — a kept lease stays in the
+   * builds' count of 1, so the request pool is never used up).
+   */
+  readonly maxKeptLeases?: number;
   /** Round 35 · NEW-3: said when letting go of a lease failed (by name; the session is ended so the lock goes with it). */
   readonly onLeaseProblem?: (detail: string) => void;
 }
@@ -125,11 +140,15 @@ export class InMemorySnapshotStore implements SnapshotStore {
 export class SqlSnapshotStore implements SnapshotStore {
   /** Round 35 · NEW-2: the build leases this store holds now (each one session). */
   private leasesHeld = 0;
+  /** Round 36 · NEW-5: the leases kept after their builds, waiting to save (each one session; not in `leasesHeld`). */
+  private leasesKept = 0;
 
   constructor(private readonly client: Pick<SqlClient, 'query' | 'forTenant' | 'session'>, private readonly opts: SqlSnapshotStoreOptions = {}) {}
 
   /** Round 35 · NEW-2: how many build leases this store holds right now (for the tests and support). */
   get buildLeasesHeld(): number { return this.leasesHeld; }
+  /** Round 36 · NEW-5: how many leases this store keeps after their builds right now (for the tests and support). */
+  get buildLeasesKept(): number { return this.leasesKept; }
 
   /**
    * Round 34 · OB-124 (5): a PostgreSQL session-level advisory lock (`pg_try_advisory_lock`, never waiting) on its own
@@ -152,7 +171,18 @@ export class SqlSnapshotStore implements SnapshotStore {
     if (this.leasesHeld >= max) return Promise.resolve(BUILD_LEASES_BUSY_HERE);
     this.leasesHeld += 1;
     let freed = false;
-    const free = (): void => { if (!freed) { freed = true; this.leasesHeld -= 1; } };
+    let kept = false;
+    const free = (): void => { if (!freed) { freed = true; if (kept) this.leasesKept -= 1; else this.leasesHeld -= 1; } };
+    // Round 36 · NEW-5: moved to the kept count (with its own room) once its build is over — never blocking other builds.
+    const separate = this.opts.leaseSession !== undefined;
+    const maxKept = this.opts.maxKeptLeases ?? (separate ? 4 : 0);
+    const keep = (): boolean => {
+      if (freed || kept) return !freed;
+      if (!separate) return true; // the pool's fallback: it stays in the builds' count
+      if (this.leasesKept >= maxKept) return false;
+      kept = true; this.leasesHeld -= 1; this.leasesKept += 1;
+      return true;
+    };
     const say = this.opts.onLeaseProblem ?? ((detail: string) => { process.stderr.write(`${detail}\n`); });
     const key = `${tenantId}:${name}`;
     return new Promise((resolve, reject) => {
@@ -164,7 +194,7 @@ export class SqlSnapshotStore implements SnapshotStore {
         const rows = await conn.query<{ got: boolean }>('SELECT pg_try_advisory_lock($1::int, hashtext($2)) AS got', [PROJECTION_BUILD_LEASE_CLASS, key]);
         if (rows[0]?.got !== true) { free(); answered = true; resolve(undefined); return; }
         answered = true;
-        resolve(Object.assign(async () => { letGo(); await held.catch(() => undefined); }, { lost: () => over || ended() !== undefined }));
+        resolve(Object.assign(async () => { letGo(); await held.catch(() => undefined); }, { lost: () => over || ended() !== undefined, keep }));
         await released;
         if (ended() !== undefined) return; // the session already ended: the lock went with it
         let unlocked: boolean;

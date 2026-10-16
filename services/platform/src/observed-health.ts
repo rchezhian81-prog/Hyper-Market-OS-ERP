@@ -193,9 +193,38 @@ function ownersInWords(all: readonly ShopOwner[]): string {
     : all.length === 1 ? `the owner (${all[0]!.userId})`
     : `every owner (all ${all.length}: ${all.map((o) => o.userId).join(', ')})`;
 }
-/** Round 35 · NEW-1: does this edit of a built-in rule leave it with the owners (rather than redirect it, OB-115)? */
+/**
+ * Round 35 · NEW-1: does this edit of a built-in rule, AS SENT in a save, leave it with the owners (rather than redirect it,
+ * OB-115)? It names `EVERY_OWNER` or a person who holds the owner role now.
+ */
 export function editGoesToEveryOwner(r: AlertRule, owners: readonly ShopOwner[]): boolean {
   return r.ownerUserId === EVERY_OWNER || owners.some((o) => o.userId === r.ownerUserId);
+}
+/**
+ * Round 36 · verifier r35 NEW-1 (OB-130 "A") — A REDIRECT IS WHAT THE OWNER SAVED AS ONE, NEVER A GUESS FROM TODAY'S ROLES
+ * (stated). Round 35 told "kept with the owners" from "redirected" by whether the person an edit names holds the owner role
+ * NOW — so an edit saved in rounds 31-34 naming owner A (the form those rounds saved) turned into a redirect to A the day A
+ * stopped being an owner: the ex-owner kept getting the alert, the real owner got nothing, and the page said "redirected by the
+ * owner's edit", which nobody did.
+ *
+ *   • From round 36 a redirect is SAVED with an explicit marker (`builtInRedirect: true`, set only by head office when the edit
+ *     names somebody who does not hold the owner role at the save). Only a saved edit carrying it is a redirect.
+ *   • A saved edit WITHOUT the marker — `EVERY_OWNER`, or any edit saved before round 36, whoever it names — goes to every owner
+ *     (filled in from the owner role at each read). One saved before round 36 naming a person is said on the page ("read as
+ *     going to every owner — to send it to one person only, the owner saves the edit again naming that person").
+ *   • A redirect target who no longer holds any role that may see alerts (`platform.health.read`: left the shop, roles revoked)
+ *     does not get it: the rule goes to every owner instead, and the page says so by name, until the owner changes the edit.
+ */
+export function savedEditIsRedirect(r: AlertRule): boolean {
+  return r.builtInRedirect === true && r.ownerUserId !== EVERY_OWNER;
+}
+/** Round 36 · NEW-1: an edit saved before round 36 naming a person, now read as going to every owner (said on the page). */
+function legacyNamedEdit(r: AlertRule): boolean {
+  return !savedEditIsRedirect(r) && r.ownerUserId !== EVERY_OWNER;
+}
+/** Round 36 · NEW-1: the redirect people of the saved built-in edits (whose right to see alerts is checked at each read). */
+export function savedRedirectTargets(stored: StoredAlertRules | undefined): readonly string[] {
+  return [...new Set((stored?.rules ?? []).filter((r) => BUILT_IN_ALERT_RULE_IDS.includes(r.alertId) && savedEditIsRedirect(r)).map((r) => r.ownerUserId))];
 }
 /** Round 35 · NEW-1: a rule without any list of further recipients (only the server sets one, on a built-in rule). */
 function withoutRecipients(r: AlertRule): AlertRule {
@@ -217,12 +246,19 @@ function toEveryOwner(r: AlertRule, owners: readonly ShopOwner[]): AlertRule | u
  */
 export function builtInEditAsSaved(r: AlertRule, owners: readonly ShopOwner[]): AlertRule {
   if (!BUILT_IN_ALERT_RULE_IDS.includes(r.alertId)) return r;
-  const rest = withoutRecipients(r);
-  return editGoesToEveryOwner(r, owners) ? { ...rest, ownerUserId: EVERY_OWNER, ownerName: 'every owner' } : rest;
+  const { builtInRedirect: _marker, ...rest } = withoutRecipients(r);
+  void _marker;
+  // Round 36 · NEW-1: a redirect is saved WITH its marker — the only thing that makes a saved edit a redirect.
+  return editGoesToEveryOwner(r, owners) ? { ...rest, ownerUserId: EVERY_OWNER, ownerName: 'every owner' } : { ...rest, builtInRedirect: true };
 }
-/** Round 35 · NEW-1: who an edited built-in rule really reaches, in words. */
-function editRecipientsInWords(r: AlertRule, owners: readonly ShopOwner[]): string {
-  if (editGoesToEveryOwner(r, owners)) return ownersInWords(owners);
+/** Round 36 · NEW-1: the words for a redirect whose person may no longer see alerts (it goes to the owners instead). */
+function redirectGoneWords(r: AlertRule): string {
+  return `the owner's edit redirects it to ${r.ownerName} (${r.ownerUserId}) only, but ${r.ownerUserId} no longer holds any role that may see alerts, so it goes to the owners instead until the owner changes the edit (OB-115)`;
+}
+/** Round 35 · NEW-1, round 36: who an edited built-in rule really reaches, in words (`saved`: as saved; else as sent). */
+function editRecipientsInWords(r: AlertRule, owners: readonly ShopOwner[], saved: boolean, mayReceive?: ReadonlySet<string>): string {
+  if (saved ? !savedEditIsRedirect(r) : editGoesToEveryOwner(r, owners)) return ownersInWords(owners);
+  if (saved && mayReceive !== undefined && !mayReceive.has(r.ownerUserId)) return `${ownersInWords(owners)} — ${redirectGoneWords(r)}`;
   return `${r.ownerName} (${r.ownerUserId}) ONLY — redirected by the owner's edit (OB-115); ${owners.length === 0 ? 'nobody holds the owner role now' : `${owners.map((o) => o.userId).join(', ')} ${owners.length === 1 ? 'does' : 'do'} NOT get it`}`;
 }
 
@@ -246,33 +282,34 @@ function editRecipientsInWords(r: AlertRule, owners: readonly ShopOwner[]): stri
  *
  * Returns what a save changes about the built-in rules, in words (empty: nothing).
  */
-export function builtInRuleChanges(current: StoredAlertRules | undefined, rules: readonly AlertRule[], offAfter: readonly string[] | undefined, owners: ShopOwners = undefined): string[] {
+export function builtInRuleChanges(current: StoredAlertRules | undefined, rules: readonly AlertRule[], offAfter: readonly string[] | undefined, owners: ShopOwners = undefined, mayReceive?: ReadonlySet<string>): string[] {
   const out: string[] = [];
   const all = shopOwnersSorted(owners);
   const offBefore = new Set(current?.builtInOff ?? []);
   const offNow = new Set(offAfter ?? []);
   // Round 35 · NEW-1: an edit that leaves the rule with the owners compares as "every owner", whichever owner it names.
-  const key = (r: AlertRule): string => {
-    const toOwners = editGoesToEveryOwner(r, all);
+  // Round 36 · NEW-1: a SAVED edit is a redirect only with its marker; a SENT one when it names somebody who is not an owner.
+  const key = (r: AlertRule, saved: boolean): string => {
+    const toOwners = saved ? !savedEditIsRedirect(r) : editGoesToEveryOwner(r, all);
     return JSON.stringify([r.alertId, r.component, r.firesAt, toOwners ? EVERY_OWNER : r.ownerUserId, toOwners ? EVERY_OWNER : r.ownerName, r.ackWithinMinutes, r.escalatesToUserId ?? null, r.branchId ?? null]);
   };
-  const words = (r: AlertRule): string => `to ${editRecipientsInWords(r, all)}, at ${r.firesAt}, answered within ${r.ackWithinMinutes} minutes${r.escalatesToUserId === undefined ? '' : `, escalating to ${r.escalatesToUserId}`}`;
+  const words = (r: AlertRule, saved: boolean): string => `to ${editRecipientsInWords(r, all, saved, saved ? mayReceive : undefined)}, at ${r.firesAt}, answered within ${r.ackWithinMinutes} minutes${r.escalatesToUserId === undefined ? '' : `, escalating to ${r.escalatesToUserId}`}`;
   for (const id of BUILT_IN_ALERT_RULE_IDS) {
     if (!offBefore.has(id) && offNow.has(id)) out.push(`turned ${id} OFF`);
     if (offBefore.has(id) && !offNow.has(id)) out.push(`turned ${id} back on`);
-    const before = current?.rules.filter((r) => r.alertId === id).map(key).join('|') ?? '';
+    const before = current?.rules.filter((r) => r.alertId === id).map((r) => key(r, true)).join('|') ?? '';
     const after = rules.filter((r) => r.alertId === id);
-    if (before === after.map(key).join('|')) continue;
+    if (before === after.map((r) => key(r, false)).join('|')) continue;
     const was = current?.rules.find((r) => r.alertId === id);
     out.push(after.length === 0 ? `removed the owner's edit of ${id} (it goes back to the built-in rule, to ${ownersInWords(all)})`
-      : was === undefined ? `edited ${id}: it would go ${words(after[0]!)}`
-      : `changed the edit of ${id}: from ${words(was)} to ${words(after[0]!)}`);
+      : was === undefined ? `edited ${id}: it would go ${words(after[0]!, false)}`
+      : `changed the edit of ${id}: from ${words(was, true)} to ${words(after[0]!, false)}`);
   }
   return out;
 }
 
 /** Round 31 · OB-114: the rules in force — the owner's own, and every built-in rule he has not turned off or replaced. */
-export function rulesInForce(stored: StoredAlertRules | undefined, owner: ShopOwners): { readonly rules: readonly AlertRule[]; readonly builtIn: readonly BuiltInRuleState[] } {
+export function rulesInForce(stored: StoredAlertRules | undefined, owner: ShopOwners, mayReceive?: ReadonlySet<string>): { readonly rules: readonly AlertRule[]; readonly builtIn: readonly BuiltInRuleState[] } {
   const own = stored?.rules ?? [];
   const off = new Set(stored?.builtInOff ?? []);
   const rules: AlertRule[] = [...own];
@@ -289,15 +326,23 @@ export function rulesInForce(stored: StoredAlertRules | undefined, owner: ShopOw
   for (const b of builtInRules(owner)) {
     const edited = own.find((r) => r.alertId === b.alertId);
     if (off.has(b.alertId)) builtIn.push({ alertId: b.alertId, state: 'off', description: `${b.description} — TURNED OFF${stored?.builtInChangedBy === undefined ? '' : ` (last changed by ${stored.builtInChangedBy} at ${stored.builtInChangedAt})`}`, ...changed });
-    else if (edited !== undefined && editGoesToEveryOwner(edited, all)) {
+    else if (edited !== undefined && (!savedEditIsRedirect(edited) || (mayReceive !== undefined && !mayReceive.has(edited.ownerUserId)))) {
       // Round 35 · NEW-1: the owner's edit kept with the owners — addressed by the server to every owner holding the role NOW.
-      const inForce = toEveryOwner(edited, all);
+      // Round 36 · NEW-1: so is an edit saved before round 36 (no redirect marker), and a redirect whose person may no longer
+      // see alerts — each said in words.
+      const gone = savedEditIsRedirect(edited);
+      const { builtInRedirect: _m, ...unmarked } = edited;
+      void _m;
+      const inForce = toEveryOwner(unmarked, all);
       swap(edited, inForce);
-      if (inForce === undefined) builtIn.push({ alertId: b.alertId, state: 'no_owner', description: `${b.description} — the owner's edit is NOT in force: nobody holds the owner role`, ...changed });
-      else builtIn.push({ alertId: b.alertId, state: 'edited', rule: inForce, description: `${b.description} — edited: answered within ${inForce.ackWithinMinutes} minutes, at ${inForce.firesAt}${inForce.escalatesToUserId === undefined ? '' : `, escalating to ${inForce.escalatesToUserId}`}`, ...changed });
+      const why = gone ? `; ${redirectGoneWords(edited)}`
+        : legacyNamedEdit(edited) ? `; this edit was saved before round 36 naming ${edited.ownerUserId} — it is read as going to every owner (to send it to one person only, the owner saves the edit again naming that person)`
+        : '';
+      if (inForce === undefined) builtIn.push({ alertId: b.alertId, state: 'no_owner', description: `${b.description} — the owner's edit is NOT in force: nobody holds the owner role${why}`, ...changed });
+      else builtIn.push({ alertId: b.alertId, state: 'edited', rule: inForce, description: `${b.description} — edited: answered within ${inForce.ackWithinMinutes} minutes, at ${inForce.firesAt}${inForce.escalatesToUserId === undefined ? '' : `, escalating to ${inForce.escalatesToUserId}`}${why}`, ...changed });
     } else if (edited !== undefined) {
       // OB-115: the owner redirected it to somebody who is not an owner — kept, and said in words (round 35 · NEW-1).
-      builtIn.push({ alertId: b.alertId, state: 'edited', rule: edited, description: `the owner's edit of this rule sends it to ${editRecipientsInWords(edited, all)}, when the store computer checks stay "being prepared" (or the saved history cannot be sealed) for more than ${STORE_COMPUTER_CHECKS_STUCK_MINUTES} minutes (owner decisions OB-114, OB-115)`, ...changed });
+      builtIn.push({ alertId: b.alertId, state: 'edited', rule: edited, description: `the owner's edit of this rule sends it to ${editRecipientsInWords(edited, all, true)}, when the store computer checks stay "being prepared" (or the saved history cannot be sealed) for more than ${STORE_COMPUTER_CHECKS_STUCK_MINUTES} minutes (owner decisions OB-114, OB-115)`, ...changed });
     } else if (b.rule === undefined) builtIn.push({ alertId: b.alertId, state: 'no_owner', description: `${b.description} — NOT in force: nobody holds the owner role`, ...changed });
     else { rules.push(b.rule); builtIn.push({ alertId: b.alertId, state: 'on', rule: b.rule, description: b.description, ...changed }); }
   }
@@ -395,6 +440,12 @@ export interface ObservedHealthDeps extends Pick<AlertLifecycleDeps, 'alerts' | 
    * administration function (said by name when refused, as OB-91). Absent: nobody may change a built-in rule (fail closed).
    */
   readonly builtInRuleAuthorityOf?: (tenantId: string, userId: string) => Promise<{ readonly owner: boolean; readonly platformAdministration: boolean }>;
+  /**
+   * Round 36 · verifier r35 NEW-1: may this person still receive an alert — do they hold any role that may see alerts
+   * (`platform.health.read`) now? Asked for the person an owner's REDIRECT of a built-in rule names: one who may not (left the
+   * shop, roles revoked) does not get it — the rule goes to every owner instead, said on the page. Absent: not checked.
+   */
+  readonly mayReceiveAlerts?: (tenantId: string, userId: string) => Promise<boolean>;
 }
 
 /** OB-95: one component naming each person who holds both the IT/platform role and a business role (none: no component). */
@@ -592,6 +643,17 @@ export function withBoxes(health: SystemHealth, boxComponents: readonly Componen
   return { ...health, components, status, summary };
 }
 
+/**
+ * Round 36 · verifier r35 NEW-1: of the people the owner's saved redirects name, the ones who may still see alerts now
+ * (`mayReceiveAlerts`). Undefined when head office cannot tell (no such dependency): the redirects are then taken as saved.
+ */
+async function redirectReceivers(deps: Pick<ObservedHealthDeps, 'mayReceiveAlerts'>, tenantId: string, stored: StoredAlertRules | undefined): Promise<ReadonlySet<string> | undefined> {
+  if (deps.mayReceiveAlerts === undefined) return undefined;
+  const out = new Set<string>();
+  for (const userId of savedRedirectTargets(stored)) if (await deps.mayReceiveAlerts(tenantId, userId)) out.add(userId);
+  return out;
+}
+
 /** Round 34 · OB-124 (2): every person who holds the owner role now (`shopOwners`, else the one `shopOwner` names). */
 async function ownersNow(deps: Pick<ObservedHealthDeps, 'shopOwner' | 'shopOwners'>, tenantId: string): Promise<readonly ShopOwner[]> {
   if (deps.shopOwners !== undefined) return shopOwnersSorted(await deps.shopOwners(tenantId));
@@ -607,7 +669,7 @@ export async function judgeObserved(deps: ObservedHealthDeps, tenantId: string, 
     withFailedBackup(checkHealth(observed.signals, at, thresholds), observed.lastBackup),
     await deps.backups(tenantId), stored, at), observed.boxComponents);
   // Round 31 · OB-114: the owner's rules and the built-in ones in force (addressed to whoever holds the owner role now).
-  const { rules, builtIn } = rulesInForce(stored, await ownersNow(deps, tenantId));
+  const { rules, builtIn } = rulesInForce(stored, await ownersNow(deps, tenantId), await redirectReceivers(deps, tenantId, stored));
   const alerts: readonly RaisedAlert[] = raiseAlerts(health, rules);
   return { stored, rules, builtIn, observed, health, alerts };
 }
@@ -693,7 +755,7 @@ export function observedHealthRoutes(deps: ObservedHealthDeps): readonly Route[]
           body: {
             rules: stored ?? null,
             // Round 31 · OB-114: the built-in rules — in force, replaced by the owner's version, turned off, or waiting for an owner.
-            builtIn: rulesInForce(stored, await ownersNow(deps, ctx.tenantId)).builtIn,
+            builtIn: rulesInForce(stored, await ownersNow(deps, ctx.tenantId), await redirectReceivers(deps, ctx.tenantId, stored)).builtIn,
             defaults: { thresholds: DEFAULT_THRESHOLDS, backupMaxAgeSeconds: DEFAULT_BACKUP_MAX_AGE_SECONDS },
             asAt: deps.now(),
           },
@@ -776,7 +838,7 @@ export function observedHealthRoutes(deps: ObservedHealthDeps): readonly Route[]
         // Round 32 · OB-115: what this save changes about the BUILT-IN rules — turned off / on, or edited / un-edited.
         // Round 35 · NEW-1: who a built-in rule reaches is the server's (the owner role now), never the body's.
         const ownersAtSave = shopOwnersSorted(await ownersNow(deps, ctx.tenantId));
-        const builtInChanges = builtInRuleChanges(current, rules, offAfter, ownersAtSave);
+        const builtInChanges = builtInRuleChanges(current, rules, offAfter, ownersAtSave, await redirectReceivers(deps, ctx.tenantId, current));
         const recipientsIgnored = (b['rules'] as unknown[]).some((r) => typeof r === 'object' && r !== null && BUILT_IN_ALERT_RULE_IDS.includes(String((r as Record<string, unknown>)['alertId'])) && (r as Record<string, unknown>)['alsoToUserIds'] !== undefined);
         if (builtInChanges.length > 0) {
           const who = deps.builtInRuleAuthorityOf === undefined ? { owner: false, platformAdministration: false } : await deps.builtInRuleAuthorityOf(ctx.tenantId, ctx.userId);
@@ -817,7 +879,7 @@ export function observedHealthRoutes(deps: ObservedHealthDeps): readonly Route[]
         }
         const owners = ownersAtSave;
         const owner = owners[0];
-        const { builtIn } = rulesInForce(stored, owners);
+        const { builtIn } = rulesInForce(stored, owners, await redirectReceivers(deps, ctx.tenantId, stored));
         // Round 32 · OB-115: every change to a built-in rule is also sent to the owner — a notice on his alert board, which the
         // ops-alert worker delivers to his inbox (and phone, when a message provider is set) on its next pass. Kept, never deleted.
         let noticeTo: string | undefined;

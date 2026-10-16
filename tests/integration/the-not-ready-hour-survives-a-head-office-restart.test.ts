@@ -90,7 +90,7 @@ async function theHourSurvivesARestart(store: EventStore, freshSnapshots: () => 
     const kept = await storeComputerChecksReadinessHistory(store, T);
     expect(kept).toHaveLength(13);
     expect(kept[0]).toEqual({ state: 'not_ready', since: at(0), why: 'being_prepared', seenAt: at(0), runningMs: 0, offMs: 0 });
-    expect(kept[12]).toEqual({ state: 'not_ready', since: at(0), why: 'being_prepared', seenAt: at(61), runningMs: 61 * 60_000, offMs: 0 });
+    expect(kept[12]).toEqual({ state: 'not_ready', since: at(0), why: 'being_prepared', seenAt: at(61), runningMs: 61 * 60_000, offMs: 0, basis: { seenAt: at(55), runningMs: 55 * 60_000, offMs: 0 } }); // round 36 · NEW-3: what it counted from
 
     // Ready: B's build is let go and finishes; the next read records "ready" once.
     for (const g of gates) g();
