@@ -99,3 +99,25 @@ release that includes round 38 makes the refusal more specific. It never shows a
 2. Read the `still unfilled:` line and the `read:` line under it.
 3. Compare with what you checked yourself. If the `read:` line names a different file or a different account than the one you checked, add the setting to the file it names, as that account or with `sudo`. Use `infra/deploy/set-box-history-seal-key.sh` and keep the file's owner and permissions.
 4. Never paste the value anywhere.
+
+### What the 16 Oct release log said (PR #786, round 38)
+
+> still unfilled: BOX_HISTORY_SEAL_KEY … — there is no line for it in this file at all
+> read: /opt/sre/app/infra/compose/.env.pilot (as the deploy user, uid 1001) — 20 setting(s) in it
+
+The file the release reads has **no `BOX_HISTORY_SEAL_KEY` line**. The key was added somewhere else: another file,
+another copy of the app, or another computer.
+
+**IT — do these on the demo box. It takes about 5 minutes and no value is ever shown.**
+
+1. Check which account is 1001: `getent passwd 1001 | cut -d: -f1`. This is the deploy user.
+2. Check the release's file, as that user. The answer `0` means the line is missing; `1` means it is there.
+   `sudo -u <deploy-user> grep -c '^BOX_HISTORY_SEAL_KEY=' /opt/sre/app/infra/compose/.env.pilot`
+3. Run the helper on that exact file. It prints "the release reads: …"; that path must be
+   `/opt/sre/app/infra/compose/.env.pilot`.
+   `sudo SRE_DEPLOY_CONF=/opt/sre/deploy.conf bash /opt/sre/app/infra/deploy/set-box-history-seal-key.sh`
+   - If it prints a different path, `/opt/sre/deploy.conf` points somewhere else. Tell the owner the path it printed; do not change deploy.conf on your own.
+4. Repeat step 2. It must now say `1`.
+5. Check the deploy user can still read the file (the helper keeps the owner and permissions):
+   `sudo -u <deploy-user> test -r /opt/sre/app/infra/compose/.env.pilot && echo readable`
+6. Tell the owner "seal key is in the release's file". The owner (or the build session) then starts the update again.

@@ -5,11 +5,11 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
-## Coordinated programme · Round 38 — the demo update's refusal names its cause (16 October 2026) — gated, PR pending
+## Coordinated programme · Round 38 — the demo update's refusal names its cause (16 October 2026) — merged in PR #786 (7f102a6a)
 
 - **What happened:** the demo update for PR #785 (11ce09cd) was refused again with exit 78: "still unfilled: BOX_HISTORY_SEAL_KEY", read from `.env.pilot`. Before this round, the refusal could not say whether the line was missing, empty, the placeholder, or malformed, nor which account had read which file. IT's helper had passed when run as root with `sudo`.
 - **Built (unit-tested; synthetic):** the release pre-check now says HOW each required setting is unfilled (absent / empty / placeholder, or a named malformed line: commented out, `export ` in front, glued, no `=`). It also names the file it read, the account it read it as, and how many settings the file holds. It never shows a value or its length. The Fix line names that same file and the seal-key helper. Proof: `tests/unit/standup-check.test.ts` (round 38 block).
-- **Next (OB-123):** the next refused update's log names the cause. The runbook `docs/runbooks/round-32-administrator-step.md` ("Round 38") tells IT what to compare. This is still an administrator step on the box; the build session cannot reach the box.
+- **Result (16 Oct, release of PR #786 = 7f102a6a, refused, exit 78; box still on 4db4951b):** the refusal now names the cause — the file the release reads, `/opt/sre/app/infra/compose/.env.pilot`, read as the deploy user (uid 1001), holds 20 settings and **no `BOX_HISTORY_SEAL_KEY` line at all**. The key was put in a different file, copy or computer. **Next (administrator, OB-123):** the six steps in `docs/runbooks/round-32-administrator-step.md` ("What the 16 Oct release log said"): put the key in that exact file with the helper, and confirm as the deploy user that the line is there. Then the update is started again.
 - **What to check in the store:** nothing in the store. On GitHub, open the next "Deploy the merged release to the demo box" job, step "Deploy this exact commit over SSH", and read the `still unfilled:` and `read:` lines (or the success).
 
 ## Coordinated programme · Round 37 — verifier r36 closed; CI kept-lease failure fixed (16 October 2026) — merged in PR #785 (11ce09cd) with round 36
