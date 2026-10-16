@@ -5,6 +5,14 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Coordinated programme · R2 coverage correction and R3 start (16 October 2026) — in progress
+
+- **Correction (P-08, no silent gap):** the earlier statement "all pilot software is built" was wrong. A read-only audit of every requirement ratified for R2 in `docs/roadmap/roadmap-v2.1-addendum.md` (53 items) found: 32 built and proved; 3 built but untraced (A3, A13, A29 — rows now added); **12 partial** (B5, B6, B14, B19, C6, C7, C10, C13, D-5, D-6, D-7, D-8); **3 not built** (C12 payment data pinned to India, C18 Shops Act weekly holiday / hours / spread-over / leave / registers, C20 POSH complaints register + annual report); 3 deferred in writing (C15/C16/C19 payroll → R4 per OWNER_DECISIONS D7). The traceability rows for B6, B14 and B19 overstated: the engines exist but the till sale path did not enforce them.
+- **Now (OB-136 "A"):** four builders in parallel close the R2 gaps first. Lane 1 is till enforcement (B5, B6, B14, B19). Lane 2 is payments and data protection (C6, C7, C10, C12, C13). Lane 3 is HR compliance (C18, C20). Lane 4 is store operations (D-5, D-6, D-7, D-8). Each lane is gated and independently verified before its PR.
+- **R3:** scope is fixed by OB-136, OB-138 and OB-150; the owner's answers are OB-137 to OB-149. No R3 item is built before its acceptance sentence is signed (OB-137 "A"). The draft for signature is `docs/requirements/R3_ACCEPTANCE_DRAFT_2026-10-16.md`.
+- **Also open:** B15 (tobacco warning board: physical + configuration) and PMLA high-value cash reporting (needs the CA's exact rule, OB-138) are R2 items in OWNER_DECISIONS 2026-08-11 with no code yet. The traceability row "Payroll (priority 16 / WP3 inc1–9)" says R3; the owner's written D7 says **R4**, and D7 stands.
+- **What to check in the store:** nothing new yet; each lane gives its own checks when it is released.
+
 ## Coordinated programme · Round 39 — verifier r37's five low notes closed (16 October 2026) — gated, PR pending
 
 - **Built and tested (memory + PostgreSQL); no staff UAT.** Each note was reproduced first (the verifier's probe re-run on this branch: L1 "still pending after 5 s", L2 "out of range" under SQL, DMY / IST; L4 shown failing on round-37 code by the new test), then fixed:
