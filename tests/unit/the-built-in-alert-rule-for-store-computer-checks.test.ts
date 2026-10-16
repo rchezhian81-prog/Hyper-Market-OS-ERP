@@ -63,7 +63,8 @@ describe('round 31 · OB-114: the built-in rule in force', () => {
   });
 
   it('his own version replaces it; turned off it is not in force (nor his version); nobody holding the owner role: not in force, said', () => {
-    const mine: AlertRule = { alertId: BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID, component: STORE_COMPUTER_CHECKS_STUCK_COMPONENT, firesAt: 'down', ownerUserId: 'u-mgr', ownerName: 'Manager', ackWithinMinutes: 10 };
+    // Round 36 · verifier r35 NEW-1: a redirect is saved with its marker (only head office sets it); without one, see below.
+    const mine: AlertRule = { alertId: BUILT_IN_STORE_COMPUTER_CHECKS_RULE_ID, component: STORE_COMPUTER_CHECKS_STUCK_COMPONENT, firesAt: 'down', ownerUserId: 'u-mgr', ownerName: 'Manager', ackWithinMinutes: 10, builtInRedirect: true };
     const edited = rulesInForce(stored({ rules: [mine] }), OWNER);
     expect(edited.rules).toEqual([mine]);
     expect(edited.builtIn).toEqual([expect.objectContaining({ state: 'edited', rule: mine })]);

@@ -1918,6 +1918,10 @@ export interface BoxHistoryState {
   readonly headOfficeOffMs?: number;
   /** Round 35 · OB-129: the reason changed during this not-ready time (from what, noted when) — the hour went on. */
   readonly notReadyReasonChanged?: { readonly from: 'being_prepared' | 'no_seal_key'; readonly at: string };
+  /** Round 36 · verifier r35 NEW-3: the last running note set aside because it was stamped ahead of head office's clock. */
+  readonly notReadyClockAhead?: { readonly stamped: string; readonly noticedAt: string };
+  /** Round 36 · verifier r35 NEW-4: of the counted time, the part before the first running note (a round-34 record), counted as running. */
+  readonly notReadyBeforeNotesMs?: number;
 }
 /** Round 35 · OB-129: a length of time in the owner's words ("9 hours 20 minutes", "45 minutes"). */
 export function durationInWords(ms: number): string {
@@ -1997,7 +2001,11 @@ export function boxHistoryComponents(input: { readonly preparing?: { readonly si
     const stuck = countedMs > STORE_COMPUTER_CHECKS_STUCK_MINUTES * 60_000;
     const what = input.preparing !== undefined ? 'being prepared' : 'running without the seal key, so the saved history cannot be sealed';
     const off = offMs < 60_000 ? '' : `; head office was off for ${durationInWords(offMs)} in that time — not counted`;
-    const after = h.notReadyReasonChanged === undefined ? '' : `; until ${h.notReadyReasonChanged.at} the reason was ${h.notReadyReasonChanged.from === 'no_seal_key' ? 'that head office had no seal key' : 'that they were being prepared'} — the time is counted from the start, whatever the reason`;
+    const reason = h.notReadyReasonChanged === undefined ? '' : `; until ${h.notReadyReasonChanged.at} the reason was ${h.notReadyReasonChanged.from === 'no_seal_key' ? 'that head office had no seal key' : 'that they were being prepared'} — the time is counted from the start, whatever the reason`;
+    // Round 36 · NEW-3 / NEW-4: said, never silent — a note from a clock ahead set aside, and time from before the notes.
+    const ahead = h.notReadyClockAhead === undefined ? '' : `; a running note stamped ${h.notReadyClockAhead.stamped} (ahead of head office's clock) was set aside at ${h.notReadyClockAhead.noticedAt} — a head-office clock is wrong, call support`;
+    const before = (h.notReadyBeforeNotesMs ?? 0) < 60_000 ? '' : `; ${durationInWords(h.notReadyBeforeNotesMs!)} of it is from before head office noted its running time (an earlier version) — counted as running`;
+    const after = `${reason}${ahead}${before}`;
     out.push({
       name: STORE_COMPUTER_CHECKS_STUCK_COMPONENT, status: stuck ? 'down' : 'ok',
       detail: stuck
@@ -2006,6 +2014,8 @@ export function boxHistoryComponents(input: { readonly preparing?: { readonly si
       evidence: {
         notReadySince: h.notReadySince, minutes, alertAfterMinutes: STORE_COMPUTER_CHECKS_STUCK_MINUTES, why: input.preparing !== undefined ? 'being_prepared' : 'no_seal_key',
         headOfficeOffMinutes: Math.floor(offMs / 60_000), ...(h.notReadyReasonChanged === undefined ? {} : { reasonWas: h.notReadyReasonChanged.from, reasonChangedAt: h.notReadyReasonChanged.at }),
+        ...(h.notReadyClockAhead === undefined ? {} : { clockAheadNoteStamped: h.notReadyClockAhead.stamped, clockAheadNoticedAt: h.notReadyClockAhead.noticedAt }),
+        ...(h.notReadyBeforeNotesMs === undefined ? {} : { countedBeforeNotesMinutes: Math.floor(h.notReadyBeforeNotesMs / 60_000) }),
       },
     });
   }

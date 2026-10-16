@@ -141,6 +141,82 @@ export interface PgStandaloneClient extends PgQueryable {
   connect(): Promise<unknown>;
   end(): Promise<unknown>;
   on?(event: 'error' | 'end', listener: (err?: Error) => void): unknown;
+  /** Round 36 · NEW-6: node-postgres's socket (`client.connection.stream`) — destroyed when a query or the close times out. */
+  readonly connection?: { readonly stream?: { destroy?(err?: Error): unknown } };
+}
+
+/**
+ * Round 36 · verifier r35 NEW-6: a query (or the close) on a session of its own took longer than its bound — on a half-open
+ * connection (the network dropped with no reset) it would otherwise never answer, and a build lease would hang for good. The
+ * connection is DESTROYED (its socket closed here; the server ends the session, and its advisory lock with it, when it sees).
+ */
+export class DedicatedSessionTimeoutError extends Error {
+  override readonly name = 'DedicatedSessionTimeoutError';
+}
+
+/**
+ * Round 37 · verifier r36 NEW-4: the server-side session (backend) behind a connection of its own — its process id and when it
+ * started (the two together name it exactly: a process id alone may be reused by a later session).
+ */
+export interface DedicatedBackend { readonly pid: number; readonly startedAt: string }
+/** Round 37 · NEW-4: what ending a backend from another connection did. */
+export type EndBackendOutcome = 'ended' | 'already_gone' | 'still_running';
+
+/** Round 36 · NEW-6: bounds for a session of its own. */
+export interface DedicatedSessionOptions {
+  /** The longest any query on it may take before the connection is destroyed (default 30 s). */
+  readonly queryTimeoutMs?: number;
+  /** The longest closing it may take before the connection is destroyed (default the query bound). */
+  readonly endTimeoutMs?: number;
+  /**
+   * Round 37 · verifier r36 NEW-4: end the session's backend ON THE SERVER from ANOTHER connection (`pgEndBackendVia`) when this
+   * side destroyed or lost the connection. Closing the socket here does not end the backend while the network is half-open —
+   * the server would hold the session (and a build lease's advisory lock) until its own keepalive notices, about 2 hours with
+   * the system default. Absent: not done (the server's keepalive is all there is).
+   */
+  readonly endBackend?: (backend: DedicatedBackend) => Promise<EndBackendOutcome>;
+  /** Round 37 · NEW-4: said (by name) when ending the backend was refused or did not finish — never swallowed. */
+  readonly onProblem?: (detail: string) => void;
+}
+export const DEDICATED_SESSION_QUERY_TIMEOUT_MS = 30_000;
+/** Round 37 · NEW-4: how long `pg_terminate_backend` waits for the backend to be gone before answering (ms). */
+export const END_BACKEND_WAIT_MS = 5_000;
+
+/**
+ * Round 37 · verifier r36 NEW-4: a refusal by the database to end a session of our own from another connection
+ * (`pg_terminate_backend`: "permission denied" — the roles differ, or it is a superuser's session), or a failure to ask.
+ */
+export class DedicatedSessionEndRefusedError extends Error {
+  override readonly name = 'DedicatedSessionEndRefusedError';
+}
+
+/**
+ * Round 37 · verifier r36 NEW-4: end a backend from a connection of the pool (`pg_terminate_backend`, waiting up to
+ * END_BACKEND_WAIT_MS for it to be gone). Only the exact session is ended — matched on its process id AND its start time
+ * (`pg_stat_activity`), so a reused process id is never ended by mistake. PostgreSQL lets a role end its OWN sessions with no
+ * superuser right (head office's lease connections log in as the same role as its pool). A refusal throws
+ * `DedicatedSessionEndRefusedError` (said by name by the session).
+ */
+export function pgEndBackendVia(pool: PgQueryable, waitMs = END_BACKEND_WAIT_MS): (backend: DedicatedBackend) => Promise<EndBackendOutcome> {
+  return async (b) => {
+    let rows: readonly { ok: boolean | null; hidden: boolean; same: boolean | null }[];
+    try {
+      // Only that exact session: ended only when its start time matches (a session of another role shows none — not ours).
+      rows = (await pool.query(
+        `SELECT CASE WHEN backend_start = $2::timestamptz THEN pg_terminate_backend(pid, $3::bigint) ELSE false END AS ok,
+                backend_start IS NULL AS hidden, backend_start = $2::timestamptz AS same
+           FROM pg_stat_activity WHERE pid = $1::int`,
+        [b.pid, b.startedAt, waitMs],
+      )).rows as { ok: boolean | null; hidden: boolean; same: boolean | null }[];
+    } catch (e) {
+      throw new DedicatedSessionEndRefusedError(`ending database session ${b.pid} (started ${b.startedAt}) was refused: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    const r = rows[0];
+    if (r === undefined) return 'already_gone';
+    if (r.hidden) throw new DedicatedSessionEndRefusedError(`database session ${b.pid} is not visible to this role (another role's session) — it may not be ended from here`);
+    if (r.same !== true) return 'already_gone'; // that process id is now another session: never ended by mistake
+    return r.ok === true ? 'ended' : 'still_running';
+  };
 }
 
 /**
@@ -149,22 +225,61 @@ export interface PgStandaloneClient extends PgQueryable {
  * requests. For a session-level advisory lock held for a long time (a build lease): holding it can never leave requests
  * without a connection, and whatever the session holds ends with it. `ended()` says when the server ended it under `fn`.
  */
-export function pgDedicatedSession(open: () => PgStandaloneClient) {
+export function pgDedicatedSession(open: () => PgStandaloneClient, opts: DedicatedSessionOptions = {}) {
+  const queryMs = opts.queryTimeoutMs ?? DEDICATED_SESSION_QUERY_TIMEOUT_MS;
+  const endMs = opts.endTimeoutMs ?? queryMs;
+  const say = opts.onProblem ?? ((detail: string) => { process.stderr.write(`${detail}\n`); });
   return async <T>(fn: (conn: SqlClient, ended: () => unknown) => Promise<T>): Promise<T> => {
     const c = open();
     let ended: unknown;
     let closing = false;
-    c.on?.('error', (e) => { ended ??= e ?? new Error('the connection failed'); });
-    c.on?.('end', () => { if (!closing) ended ??= new Error('Connection terminated unexpectedly'); });
+    // Round 37 · verifier r36 NEW-4: the backend behind this connection (when `endBackend` is given), and ending it on the server.
+    let backend: DedicatedBackend | undefined;
+    let ending: Promise<void> | undefined;
+    const endOnServer = (why: unknown): void => {
+      if (ending !== undefined || backend === undefined || opts.endBackend === undefined) return;
+      const b = backend;
+      const endBackend = opts.endBackend;
+      ending = (async () => {
+        try {
+          const outcome = await endBackend(b);
+          if (outcome === 'still_running') say(`a database session of its own (pid ${b.pid}) was asked to end after its connection was lost here (${errorInWords(why)}) and had not ended within the wait — the server frees what it holds when it does (DedicatedSessionEndRefusedError)`);
+        } catch (e) {
+          say(`a database session of its own (pid ${b.pid}) could not be ended from another connection after its connection was lost here (${errorInWords(why)}): ${errorInWords(e)} — the server frees what it holds (a build lease's lock) only when its own keepalive notices the connection gone (DedicatedSessionEndRefusedError)`);
+        }
+      })();
+    };
+    c.on?.('error', (e) => { ended ??= e ?? new Error('the connection failed'); endOnServer(ended); });
+    c.on?.('end', () => { if (!closing) { ended ??= new Error('Connection terminated unexpectedly'); endOnServer(ended); } });
+    // Round 36 · verifier r35 NEW-6: every query, and the close, is bounded; past its bound the connection is destroyed and the
+    // session counts as ended (`ended()`), so a lease on it reads as lost and is let go — never a hang until a restart.
+    // Round 37 · NEW-4: and its backend is ended on the server from another connection, so what it held is freed AT ONCE.
+    const destroy = (why: Error): void => { ended ??= why; try { c.connection?.stream?.destroy?.(why); } catch { /* already gone */ } endOnServer(why); };
+    const bounded = <R>(p: Promise<R>, ms: number, what: string): Promise<R> => new Promise<R>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        const e = new DedicatedSessionTimeoutError(`${what} took more than ${ms} ms on a database session of its own — the connection was destroyed (a half-open network connection, or a database that stopped answering)`);
+        destroy(e);
+        reject(e);
+      }, ms);
+      timer.unref?.();
+      p.then((v) => { clearTimeout(timer); resolve(v); }, (e: unknown) => { clearTimeout(timer); reject(e instanceof Error ? e : new Error(String(e))); });
+    });
     await c.connect();
     try {
-      return await fn({ query: (sql, params) => unwrap(c, sql, params) }, () => ended);
+      if (opts.endBackend !== undefined) {
+        const rows = await bounded(unwrap<{ pid: number; started: string }>(c, 'SELECT pid, backend_start::text AS started FROM pg_stat_activity WHERE pid = pg_backend_pid()'), queryMs, 'a query');
+        if (rows[0] !== undefined) backend = { pid: Number(rows[0].pid), startedAt: String(rows[0].started) };
+      }
+      return await fn({ query: (sql, params) => bounded(unwrap(c, sql, params), queryMs, 'a query') }, () => ended);
     } finally {
       closing = true;
-      await c.end().catch(() => undefined);
+      await bounded(c.end(), endMs, 'closing the connection').catch(() => undefined);
+      // Round 37 · NEW-4: the session is over only when its backend is gone (or ending it was said to have failed).
+      if (ending !== undefined) await ending;
     }
   };
 }
+const errorInWords = (e: unknown): string => (e instanceof Error ? `${e.name}: ${e.message}` : String(e));
 
 /**
  * BEGIN → setup → fn → COMMIT on one pinned connection. Any failure before COMMIT was SENT, on a session the server ended,

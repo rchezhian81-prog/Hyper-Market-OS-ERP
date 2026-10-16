@@ -12884,6 +12884,10 @@ export function observedHealthAdapter(input: {
     // Round 32 · OB-115: who may change a BUILT-IN rule — only a person who holds the owner role; whether this person holds
     // the IT/platform administration function is said too (refused by name, as OB-91).
     builtInRuleAuthorityOf: (tenantId, userId) => builtInAuthorityOf(input.store, tenantId, userId),
+    // Round 36 · verifier r35 NEW-1: the person an owner's redirect of a built-in rule names still receives it only while they
+    // hold a role that may see alerts (platform.health.read) — else it goes to every owner (said on the page).
+    mayReceiveAlerts: async (tenantId, userId) => (await effectiveGrants(input.store, tenantId)).some((g) => g.userId === userId
+      && (ROLE_CATALOGUE.find((r) => r.id === g.roleId)?.permissions.includes('platform.health.read') ?? false)),
     // Round 33 · OB-120: the rules' write guard — read before the rules in force, passed back on the save.
     alertRulesGuardVersion: (tenantId) => input.store.guardVersion(tenantId, ALERT_RULES_GUARD),
     defineAlertRules: async (tenantId, rules, opts) => {
@@ -15133,6 +15137,10 @@ interface BoxHistoryTenant {
   notReadySince?: string;
   /** Round 35 · OB-129: that not-ready time, counted (head office running) and not (head office off). */
   notReady?: ChecksNotReady;
+  /** Round 36 · NEW-7: the newest read's moment for this shop, and this process's clock then (a kept lease's fold moves on from it). */
+  clock?: { readonly at: string; readonly ms: number };
+  /** Round 37 · verifier r36 NEW-3: when this process last wrote a readiness note for this shop (its own clock). */
+  readinessNoter?: ReadinessNoter;
 }
 const BOX_HISTORY_TENANTS = new WeakMap<SnapshotStore, Map<string, BoxHistoryTenant>>();
 
@@ -15166,6 +15174,25 @@ export interface StoreComputerChecksReadiness {
   readonly offMs?: number;
   /** Round 35 · OB-129: the reason changed during this not-ready time — from what, and when it was noted (the hour goes on). */
   readonly reasonChanged?: { readonly from: 'being_prepared' | 'no_seal_key'; readonly at: string };
+  /**
+   * Round 36 · verifier r35 NEW-3: what this note counted FROM — the note before it (its `seenAt` and totals). A later read
+   * that finds this note stamped AHEAD of its own clock sets it aside and counts from here instead.
+   */
+  readonly basis?: { readonly seenAt: string; readonly runningMs: number; readonly offMs: number };
+  /** Round 36 · NEW-3: the last note set aside because it was stamped ahead of head office's clock (its stamp; when noticed). */
+  readonly clockAhead?: { readonly stamped: string; readonly noticedAt: string };
+  /**
+   * Round 36 · verifier r35 NEW-4: of `runningMs`, the time from a round-34 record (it kept no running notes) up to the first
+   * note — counted as running, as round 34 did, never booked as "head office was off".
+   */
+  readonly beforeNotesMs?: number;
+  /**
+   * Round 37 · verifier r36 NEW-2: the last note this one can TRUST to count from if a later read finds the notes after it
+   * stamped ahead — the note just before the newest gap booked as "head office was off" (a clock that jumped ahead looks
+   * exactly like that when it happens), carried unchanged on every note until the next such gap. Absent: the start of the
+   * not-ready time (`since`).
+   */
+  readonly trusted?: { readonly seenAt: string; readonly runningMs: number; readonly offMs: number };
 }
 /**
  * Round 35 · OB-129 "A" (owner, 15 Oct 2026, in writing, "Count only running time"; verifier r34 NEW-5) — THE HOUR COUNTS ONLY
@@ -15188,12 +15215,54 @@ export interface StoreComputerChecksReadiness {
  */
 export const READINESS_SEEN_EVERY_MS = 5 * 60_000;
 export const HEAD_OFFICE_OFF_AFTER_MS = 15 * 60_000;
+/**
+ * Round 36 · verifier r35 NEW-3 / NEW-4 (stated):
+ *
+ *   • A NOTE FROM A CLOCK AHEAD IS SET ASIDE. Every note is stamped with the read's own time (head office's own clock, never a
+ *     caller's), so no note is ever stamped later than the clock of the process that wrote it. A read that finds the newest
+ *     note stamped more than READINESS_CLOCK_TOLERANCE_MS (one minute) AHEAD of its own clock — a second head-office process
+ *     whose clock runs ahead, or this one's clock stepped back after a jump forward — does not trust it: it counts from the
+ *     note before it (`basis`, kept on every note), so the jump is booked neither as running nor as "head office was off", and
+ *     it writes a new note at once with its own time (the count never freezes waiting for real time to pass the bad stamp).
+ *     Said on the health read ("a note from a clock N minutes ahead was set aside"). Records stay append-only.
+ *   • A ROUND-34 RECORD IS NOT BOOKED AS "OFF". A record written before round 35 has no running notes (`seenAt`): the time
+ *     from it to the first note is counted as running, as round 34 counted it (`beforeNotesMs`, said on the health read) —
+ *     never as "head office was off", which nobody could know.
+ */
+export const READINESS_CLOCK_TOLERANCE_MS = 60_000;
+/**
+ * Round 37 · verifier r36 NEW-2 / NEW-3 (stated):
+ *
+ *   • A RUN OF NOTES FROM A CLOCK AHEAD IS SET ASIDE AS A WHOLE. Round 36 went back ONE note (`basis`); when the clock had stayed
+ *     ahead for several notes, that note was ahead too and its totals already held the jump booked as "off". Now a read that
+ *     finds the newest note stamped ahead counts from the note it can trust (`trusted`: the note before the newest "off" gap —
+ *     the gap the jump made — or the start of the not-ready time), over the real time since that note by its own clock: the
+ *     running time the set-aside notes counted between them (each a few minutes apart on the same wrong clock) is counted as
+ *     running, never more than the real time; what is left (the minutes the wrong stamps hid when the clock jumped and when
+ *     it stepped back, and any real outage) is running when it is at most HEAD_OFFICE_OFF_AFTER_MS, else "off" — as any gap.
+ *     Nothing is rewritten (append-only); a new note is made from this read's own time (no freeze). When even the trusted note
+ *     is stamped ahead (a clock ahead from the very start), it falls back to round 36's rule and the page says so as before.
+ *   • ONE NOTE PER PROCESS PER 5 MINUTES. A process writes a "still not ready" note at most once per READINESS_SEEN_EVERY_MS
+ *     of ITS OWN clock (`ReadinessNoter`, kept in the process's memory), whatever the newest note's stamp says — so two
+ *     head-office processes whose clocks disagree write at most two notes per 5 minutes between them, never one per read
+ *     (round 36: up to 2 a minute). A clock that steps back lets the process note at once. A process restart forgets it.
+ *   • LIMITATION, stated (OB-126 keeps ONE head-office process for the pilot): with two processes whose clocks differ by more
+ *     than a minute, each reads the other's notes through its own clock — the one behind sees notes "ahead" (set aside, said
+ *     on its page), the one ahead sees a gap as long as the difference (said as "head office was off" on ITS page when that is
+ *     more than 15 minutes) and the count can be off by about the difference. It does not grow, but it is not exact. The cure
+ *     is the same as for any clock problem: keep every head-office server on NTP; the page says when notes are set aside.
+ */
+export interface ReadinessNoter { at?: string }
 /** Round 35 · OB-129: the checks' not-ready time as the reads see it now. */
 export interface ChecksNotReady {
   readonly since: string;
   readonly runningMs: number;
   readonly offMs: number;
   readonly reasonChanged?: { readonly from: 'being_prepared' | 'no_seal_key'; readonly at: string };
+  /** Round 36 · NEW-3: the last note set aside because it was stamped ahead of head office's clock. */
+  readonly clockAhead?: { readonly stamped: string; readonly noticedAt: string };
+  /** Round 36 · NEW-4: of `runningMs`, the time before the first running note (a round-34 record) — counted as running. */
+  readonly beforeNotesMs?: number;
 }
 /** Round 34 · OB-124 (3): every readiness change kept, oldest first (for the tests and support). */
 export async function storeComputerChecksReadinessHistory(store: EventStore, tenantId: string): Promise<readonly StoreComputerChecksReadiness[]> {
@@ -15204,23 +15273,54 @@ export async function storeComputerChecksReadinessHistory(store: EventStore, ten
  * Undefined: ready. A change that keeps losing the race (another process recording one each time) is answered from what was
  * last read, never thrown. Round 35 · OB-129 "A": with how long of it head office was running, and how long off (see above).
  */
-export async function checksNotReadySince(store: EventStore, tenantId: string, notReady: false | 'being_prepared' | 'no_seal_key', at: string): Promise<ChecksNotReady | undefined> {
+export async function checksNotReadySince(store: EventStore, tenantId: string, notReady: false | 'being_prepared' | 'no_seal_key', at: string, noter?: ReadinessNoter): Promise<ChecksNotReady | undefined> {
   const atMs = Date.parse(at);
   const read = async (): Promise<StoreComputerChecksReadiness | undefined> =>
     (await store.latestOfType(tenantId, BOX_CHECKS_READINESS_STREAM, BOX_CHECKS_READINESS_TYPE))?.event.payload as StoreComputerChecksReadiness | undefined;
   // The not-ready time as it stands at this read, from the newest record of it.
-  const counted = (last: StoreComputerChecksReadiness): { readonly now: ChecksNotReady; readonly gapMs: number } => {
-    const seenAt = last.seenAt ?? last.since;
-    const gapMs = Math.max(0, atMs - Date.parse(seenAt));
-    const off = gapMs > HEAD_OFFICE_OFF_AFTER_MS;
+  // Round 36 · NEW-3: a newest note stamped ahead of this read's clock is set aside (counted from the note before it);
+  // NEW-4: a round-34 record (no running notes) counts as running up to the first note.
+  type Point = NonNullable<StoreComputerChecksReadiness['trusted']>;
+  const ahead = (iso: string): boolean => Date.parse(iso) > atMs + READINESS_CLOCK_TOLERANCE_MS;
+  const counted = (last: StoreComputerChecksReadiness): { readonly now: ChecksNotReady; readonly gapMs: number; readonly basis: Point; readonly trusted?: Point; readonly setAside: boolean } => {
+    const extras = (clockAhead: StoreComputerChecksReadiness['clockAhead'], beforeNotesMs: number) => ({
+      ...(last.reasonChanged === undefined ? {} : { reasonChanged: last.reasonChanged }),
+      ...(clockAhead === undefined ? {} : { clockAhead }),
+      ...(beforeNotesMs === 0 ? {} : { beforeNotesMs }),
+    });
+    if (last.seenAt !== undefined && ahead(last.seenAt)) {
+      // Round 37 · NEW-2: the newest note is stamped ahead — set aside with every note since the one it can trust.
+      const clockAhead = { stamped: last.seenAt, noticedAt: at };
+      const anchor: Point = last.trusted ?? last.basis ?? { seenAt: last.since, runningMs: 0, offMs: 0 };
+      if (!ahead(anchor.seenAt)) {
+        const elapsedMs = Math.max(0, atMs - Date.parse(anchor.seenAt));
+        const ranMs = Math.min(Math.max(0, (last.runningMs ?? 0) - anchor.runningMs), elapsedMs);
+        const restMs = elapsedMs - ranMs;
+        const restOff = restMs > HEAD_OFFICE_OFF_AFTER_MS;
+        return {
+          gapMs: 0, setAside: true, basis: anchor, trusted: anchor,
+          now: { since: last.since, runningMs: anchor.runningMs + ranMs + (restOff ? 0 : restMs), offMs: anchor.offMs + (restOff ? restMs : 0), ...extras(clockAhead, last.beforeNotesMs ?? 0) },
+        };
+      }
+      // Even the trusted note is stamped ahead: count nothing for this read, go on from it (round 36's rule; said).
+      const from: Point = { seenAt: at, runningMs: anchor.runningMs, offMs: anchor.offMs };
+      return { gapMs: 0, setAside: true, basis: from, trusted: from, now: { since: last.since, runningMs: from.runningMs, offMs: from.offMs, ...extras(clockAhead, last.beforeNotesMs ?? 0) } };
+    }
+    const legacy = last.seenAt === undefined; // round 34: no running notes yet
+    const from: Point = { seenAt: last.seenAt ?? last.since, runningMs: last.runningMs ?? 0, offMs: last.offMs ?? 0 };
+    const fromMs = Date.parse(from.seenAt);
+    const gapMs = Math.max(0, atMs - Math.min(fromMs, atMs));
+    const off = !legacy && gapMs > HEAD_OFFICE_OFF_AFTER_MS;
+    const beforeNotesMs = (last.beforeNotesMs ?? 0) + (legacy ? gapMs : 0);
+    // Round 37 · NEW-2: a gap booked as off may be a clock jumping ahead — the note before it is the one to trust from now on.
+    const trusted = off ? from : last.trusted;
     return {
-      gapMs,
-      now: {
-        since: last.since, runningMs: (last.runningMs ?? 0) + (off ? 0 : gapMs), offMs: (last.offMs ?? 0) + (off ? gapMs : 0),
-        ...(last.reasonChanged === undefined ? {} : { reasonChanged: last.reasonChanged }),
-      },
+      gapMs, setAside: false, basis: from, ...(trusted === undefined ? {} : { trusted }),
+      now: { since: last.since, runningMs: from.runningMs + (off ? 0 : gapMs), offMs: from.offMs + (off ? gapMs : 0), ...extras(last.clockAhead, beforeNotesMs) },
     };
   };
+  // Round 37 · NEW-3: this process noted at most once per READINESS_SEEN_EVERY_MS of its own clock (a step back: at once).
+  const mayNote = (): boolean => noter?.at === undefined || atMs < Date.parse(noter.at) || atMs - Date.parse(noter.at) >= READINESS_SEEN_EVERY_MS;
   let last: StoreComputerChecksReadiness | undefined;
   for (let attempt = 0; attempt < 5; attempt += 1) {
     last = await read();
@@ -15237,8 +15337,16 @@ export async function checksNotReadySince(store: EventStore, tenantId: string, n
       const c = counted(last!);
       const changed = last!.why !== undefined && last!.why !== notReady ? { from: last!.why, at } : last!.reasonChanged;
       const now: ChecksNotReady = { ...c.now, ...(changed === undefined ? {} : { reasonChanged: changed }) };
-      if (c.gapMs < READINESS_SEEN_EVERY_MS && c.gapMs <= HEAD_OFFICE_OFF_AFTER_MS) return now;
-      next = { state: 'not_ready', since: last!.since, why: notReady, seenAt: at, runningMs: now.runningMs, offMs: now.offMs, ...(changed === undefined ? {} : { reasonChanged: changed }) };
+      // Round 36 · NEW-3 / NEW-4: a note set aside, or a round-34 record, is noted at once (counting goes on from this read).
+      if (c.gapMs < READINESS_SEEN_EVERY_MS && c.gapMs <= HEAD_OFFICE_OFF_AFTER_MS && !c.setAside && last!.seenAt !== undefined) return now;
+      // Round 37 · NEW-3: never more than one note per process per 5 minutes of its own clock (the answer is the same).
+      if (last!.seenAt !== undefined && !mayNote()) return now;
+      next = {
+        state: 'not_ready', since: last!.since, why: notReady, seenAt: at, runningMs: now.runningMs, offMs: now.offMs, basis: c.basis,
+        ...(c.trusted === undefined ? {} : { trusted: c.trusted }),
+        ...(changed === undefined ? {} : { reasonChanged: changed }),
+        ...(now.clockAhead === undefined ? {} : { clockAhead: now.clockAhead }), ...(now.beforeNotesMs === undefined ? {} : { beforeNotesMs: now.beforeNotesMs }),
+      };
       answer = now;
     } else {
       // Not ready from now: the first time, or after "ready".
@@ -15256,6 +15364,7 @@ export async function checksNotReadySince(store: EventStore, tenantId: string, n
         event: makeEvent({ id: keyedEventId('box-checks-readiness', key), type: BOX_CHECKS_READINESS_TYPE, occurredAt: at, idempotencyKey: key, source: 'api/platform', payload: next }),
       }], { guard: { key: BOX_CHECKS_READINESS_GUARD, expectedVersion: version } });
       if (res!.deduped) continue; // another process recorded this change first: read what it kept
+      if (noter !== undefined && next.state === 'not_ready') noter.at = at;
       return answer;
     } catch (e) {
       if (e instanceof ConcurrencyConflictError) continue;
@@ -15271,6 +15380,22 @@ function boxHistoryTenant(snapshots: SnapshotStore, tenantId: string): BoxHistor
   let t = m.get(tenantId);
   if (t === undefined) { t = {}; m.set(tenantId, t); }
   return t;
+}
+
+/** Round 36 · NEW-7: a kept lease's fold moment — the newest read's moment, moved on by this process's clock since. */
+export function foldMoment(c: { readonly at: string; readonly ms: number }, nowMs: number): string {
+  return new Date(Date.parse(c.at) + Math.max(0, nowMs - c.ms)).toISOString();
+}
+/**
+ * Round 36 · NEW-7: the newest read's moment for a shop, kept for the kept lease's folds — it moves FORWARD only (a read that
+ * started a moment earlier and finished later never moves it back). Round 37 · verifier r36 NEW-5: except when a read's moment
+ * is more than READINESS_CLOCK_TOLERANCE_MS BEHIND that moment moved on — head office's clock stepped back after running ahead —
+ * when it starts again from that read: the kept lease never folds at a moment ahead of the reads (which would settle reports a
+ * fresh read leaves unsettled, so the next read set the saved result aside: extra work).
+ */
+export function nextFoldClock(prev: { readonly at: string; readonly ms: number } | undefined, at: string, nowMs: number): { readonly at: string; readonly ms: number } {
+  if (prev === undefined || Date.parse(at) >= Date.parse(prev.at)) return { at, ms: nowMs };
+  return Date.parse(at) < Date.parse(foldMoment(prev, nowMs)) - READINESS_CLOCK_TOLERANCE_MS ? { at, ms: nowMs } : prev;
 }
 
 /** Round 28 · OB-104: what a windowed reading answers (the full reading's answers, and what the health read's judge needs). */
@@ -15333,25 +15458,39 @@ export async function storeComputerHistory(
   const { unsentWarnHours, claimSlack } = opts;
   const snapshots = opts.snapshots ?? processHighWaterSnapshots(store);
   const tb = boxHistoryTenant(snapshots, tenantId);
-  const banked = await bankedReceiptCounts(store, tenantId);
-  const issuedPrefixes = await issuedPrefixStores(store, tenantId);
-  const replacements = await allOf<StoreComputerReplacement>(store, tenantId, BOX_REPLACEMENT_STREAM, 'StoreComputerReplaced');
-  const acknowledged = await allOf<RefusalAcknowledgement>(store, tenantId, BOX_REFUSAL_ACK_STREAM, 'BoxReportRefusalAcknowledged');
-  const atRiskAcknowledged = await allOf<AtRiskAcknowledgement>(store, tenantId, BOX_AT_RISK_ACK_STREAM, 'BoxAtRiskNotCheckedAcknowledged');
-  const unusedAcknowledged = await allOf<UnusedReceivedAcknowledgement>(store, tenantId, BOX_UNUSED_ACK_STREAM, 'BoxUnusedReceivedAcknowledged');
-  // Verifier r19 BOX-1 / r20 BOX-2: every report is re-judged at read (`judgeReportedIssued`), as `storeComputerReading` does.
-  // Round 33 · OB-121: a store's own lane prefixes are the ones REGISTERED for its store computers — never "looks like R-…-".
-  const lanes = await lanePrefixRegistrationsOf(store, tenantId);
-  const registered = registeredByStore(lanes);
-  const judge: BoxHistoryJudge = {
-    owns: (storeId, prefix) => {
-      const stores = issuedPrefixes.get(prefix);
-      return stores === undefined ? registered.get(storeId)?.has(prefix) ?? false : stores.has(storeId);
-    },
-    plausible: (prefix, through) => through <= (banked.get(prefix) ?? 0) + PLAUSIBLE_ISSUED_AHEAD,
+  // Round 36 · verifier r35 NEW-7: what every fold is judged with — read for this read, and read AGAIN before each fold the
+  // kept lease makes later (up to 30 minutes on), so a late report is never judged on bill counts or registered tills as they
+  // were when the build began (the same answers as a fresh full reading at that moment, OB-104).
+  const loadInputs = async () => {
+    const banked = await bankedReceiptCounts(store, tenantId);
+    const issuedPrefixes = await issuedPrefixStores(store, tenantId);
+    const replacements = await allOf<StoreComputerReplacement>(store, tenantId, BOX_REPLACEMENT_STREAM, 'StoreComputerReplaced');
+    const acknowledged = await allOf<RefusalAcknowledgement>(store, tenantId, BOX_REFUSAL_ACK_STREAM, 'BoxReportRefusalAcknowledged');
+    const atRiskAcknowledged = await allOf<AtRiskAcknowledgement>(store, tenantId, BOX_AT_RISK_ACK_STREAM, 'BoxAtRiskNotCheckedAcknowledged');
+    const unusedAcknowledged = await allOf<UnusedReceivedAcknowledgement>(store, tenantId, BOX_UNUSED_ACK_STREAM, 'BoxUnusedReceivedAcknowledged');
+    // Verifier r19 BOX-1 / r20 BOX-2: every report is re-judged at read (`judgeReportedIssued`), as `storeComputerReading` does.
+    // Round 33 · OB-121: a store's own lane prefixes are the ones REGISTERED for its store computers — never "looks like R-…-".
+    const lanes = await lanePrefixRegistrationsOf(store, tenantId);
+    const registered = registeredByStore(lanes);
+    const judge: BoxHistoryJudge = {
+      owns: (storeId, prefix) => {
+        const stores = issuedPrefixes.get(prefix);
+        return stores === undefined ? registered.get(storeId)?.has(prefix) ?? false : stores.has(storeId);
+      },
+      plausible: (prefix, through) => through <= (banked.get(prefix) ?? 0) + PLAUSIBLE_ISSUED_AHEAD,
+    };
+    return { banked, issuedPrefixes, replacements, acknowledged, atRiskAcknowledged, unusedAcknowledged, lanes, registered, judge };
   };
+  type FoldInputs = Awaited<ReturnType<typeof loadInputs>>;
+  const inputs = await loadInputs();
+  const { banked, replacements, unusedAcknowledged } = inputs;
+  // Round 36 · NEW-7: the newest read's moment for this shop, moved on by the time this process has run since — the moment of
+  // a fold the kept lease makes later (never before the moment of a result a newer read held: NEW-2).
+  tb.clock = nextFoldClock(tb.clock, at, Date.now());
+  const later = (): string => foldMoment(tb.clock ?? { at, ms: Date.now() }, Date.now());
   // Each report as kept and as judged — judged only when it will be folded (one a saved result already folded is not).
-  const entriesOf = async (events: readonly PersistedEvent[], skip?: (seq: number) => boolean): Promise<BoxHistoryEntry[]> => {
+  const entriesOf = async (events: readonly PersistedEvent[], skip?: (seq: number) => boolean, inp: FoldInputs = inputs): Promise<BoxHistoryEntry[]> => {
+    const { issuedPrefixes, banked, registered } = inp;
     const out: BoxHistoryEntry[] = new Array(events.length);
     for (let i = 0; i < events.length; i += 1) {
       const e = events[i]!;
@@ -15364,8 +15503,8 @@ export async function storeComputerHistory(
     return out;
   };
   const sealed = opts.sealKey === undefined ? {} : { sealKey: opts.sealKey };
-  const common = (when: string) => ({
-    at: when, banked, replacements, refusalAcks: acknowledged, atRiskAcks: atRiskAcknowledged, judge, lanes,
+  const common = (when: string, inp: FoldInputs = inputs) => ({
+    at: when, banked: inp.banked, replacements: inp.replacements, refusalAcks: inp.acknowledged, atRiskAcks: inp.atRiskAcknowledged, judge: inp.judge, lanes: inp.lanes,
     settleBefore: new Date(Date.parse(when) - FOLD_SETTLE_MINUTES * 60_000).toISOString(),
     ...(unsentWarnHours === undefined ? {} : { warnHours: unsentWarnHours }), ...(claimSlack === undefined ? {} : { slack: claimSlack }),
     ...(opts.timeZone === undefined ? {} : { timeZone: opts.timeZone }),
@@ -15389,12 +15528,15 @@ export async function storeComputerHistory(
   const keep = async (snapshot: BoxHistorySnapshot, settled: boolean): Promise<void> => {
     tb.traced = snapshot.check; // made here from the reports, so its bindings are traced by construction
     if (!settled) { tb.held = snapshot; return; }
+    // Round 37 (coordinator, CI on PR #785): what is held when this save starts — a read that holds a NEWER result while the
+    // save is under way must not have it dropped unsaved (it stays held, and the kept lease saves it next).
+    const heldBefore = tb.held;
     // Kept as its JSON text (jsonb keeps a string exactly; the seal is over the text as written).
     await snapshots.save<{ readonly format: string; readonly text: string }>({
       tenantId, stream: BOX_HEALTH_STREAM, projection: BOX_HISTORY_PROJECTION, takenAt: snapshot.never.settledAt,
       result: { state: boxHistoryToStore(snapshot), watermarkSeq: snapshot.seq, lastEventAt: snapshot.never.settledAt, eventCount: snapshot.ord },
     });
-    tb.held = undefined;
+    if (tb.held === heldBefore) tb.held = undefined;
   };
   // A full read of every report (inline for a small store, or the background build): returns the reading.
   const fullRead = async (when: string, events: readonly PersistedEvent[] | undefined, settledThrough: number | undefined, pause?: () => Promise<void>) => {
@@ -15406,27 +15548,32 @@ export async function storeComputerHistory(
   };
   // Round 35 · NEW-4: save a result held back from saving once a fence has settled — its position moved up to the fence
   // (only the reports after it are read, the ones it folded are skipped); set aside, it is dropped.
+  // Round 36 · NEW-7: the fold is judged with the bill counts, registered tills and acts read NOW, at the moment now.
   const saveHeld = async (snap: BoxHistorySnapshot, settled: number): Promise<void> => {
+    const fresh = await loadInputs();
     const events = await store.readStream(tenantId, BOX_HEALTH_STREAM, { type: 'StoreComputerHealthReported', sinceSeq: snap.seq });
     const folded = new Set(snap.folded);
-    const read = await readBoxHistoryInSteps({ entries: await entriesOf(events, (seq) => folded.has(seq)), snapshot: snap, sealChecked: snap.check, ...common(at), ...sealed, settledThrough: settled });
+    const read = await readBoxHistoryInSteps({ entries: await entriesOf(events, (seq) => folded.has(seq), fresh), snapshot: snap, sealChecked: snap.check, ...common(later(), fresh), ...sealed, settledThrough: settled });
     if (tb.held !== snap) return;
     if ('setAside' in read) { tb.held = undefined; return; }
     await keep(read.snapshot ?? snap, true);
   };
   // Round 35 · NEW-4: keep the build lease until the result it made is saved (or set aside, or BOX_HISTORY_LEASE_KEEP_MAX_MS).
-  const keepLeaseUntilSaved = (snap: BoxHistorySnapshot, lease: BuildLeaseHeld): NonNullable<BoxHistoryTenant['keeper']> => {
+  // Round 36 · verifier r35 NEW-2: until ANY result held for this shop is saved — a read that folds newer reports onto the
+  // held result holds a NEWER one (still unsaved), and the lease is kept for that one too (before, it was let go unsaved).
+  const keepLeaseUntilSaved = (lease: BuildLeaseHeld): NonNullable<BoxHistoryTenant['keeper']> => {
     let stopped = false;
     let wake: () => void = () => undefined;
     const token: { done?: Promise<void> } = {};
     const done = (async (): Promise<void> => {
       const until = Date.now() + BOX_HISTORY_LEASE_KEEP_MAX_MS;
       try {
-        while (!stopped && tb.held === snap && !lease.lost() && Date.now() < until) {
+        while (!stopped && tb.held !== undefined && !lease.lost() && Date.now() < until) {
           await new Promise<void>((resolve) => { wake = resolve; setTimeout(resolve, opts.saveRetryMs ?? BOX_HISTORY_SAVE_RETRY_MS).unref?.(); });
-          if (stopped || tb.held !== snap) break;
+          if (stopped || tb.held === undefined) break;
           const settled = await fenceNow();
-          if (settled !== undefined) await saveHeld(snap, settled);
+          const current = tb.held; // the newest result held for this shop now (a read may have made a newer one meanwhile)
+          if (settled !== undefined && current !== undefined) await saveHeld(current, settled);
         }
       } catch (e) {
         // Said on the health read (as a failed build) — the reads go on using the result and try to save it themselves.
@@ -15442,7 +15589,9 @@ export async function storeComputerHistory(
   // Round 31 · OB-114: each answer says whether the checks are ready; not ready since the first read that found them so.
   // Round 34 · OB-124 (3): that moment is KEPT (append-only, guarded) — a restart or a second process keeps the same hour.
   const state = async (sizeBytes: number | null, notReady: false | 'being_prepared' | 'no_seal_key'): Promise<BoxHistoryState> => {
-    tb.notReady = await checksNotReadySince(store, tenantId, notReady, at);
+    // Round 37 · NEW-3: this process's own note-taking (at most one note per 5 minutes of its own clock).
+    tb.readinessNoter ??= {};
+    tb.notReady = await checksNotReadySince(store, tenantId, notReady, at, tb.readinessNoter);
     tb.notReadySince = tb.notReady?.since;
     return {
       sizeBytes, ...(opts.sealKey === undefined ? { noSealKey: true } : {}),
@@ -15453,6 +15602,9 @@ export async function storeComputerHistory(
         // Round 35 · OB-129 "A": only the running time counts towards the hour; the off time is said separately.
         notReadyCountedMs: tb.notReady.runningMs, headOfficeOffMs: tb.notReady.offMs,
         ...(tb.notReady.reasonChanged === undefined ? {} : { notReadyReasonChanged: tb.notReady.reasonChanged }),
+        // Round 36 · NEW-3 / NEW-4: a note from a clock ahead set aside, and the time before the first note (round 34) — said.
+        ...(tb.notReady.clockAhead === undefined ? {} : { notReadyClockAhead: tb.notReady.clockAhead }),
+        ...(tb.notReady.beforeNotesMs === undefined ? {} : { notReadyBeforeNotesMs: tb.notReady.beforeNotesMs }),
       }),
     };
   };
@@ -15565,7 +15717,9 @@ export async function storeComputerHistory(
           tb.failed = undefined;
           // Round 35 · NEW-4: held back from saving (an open transaction) — the lease is KEPT until it is saved.
           const made = done.read.snapshot;
-          if (lease !== undefined && made !== undefined && tb.held === made) { leaseKept = true; tb.keeper = keepLeaseUntilSaved(made, lease); }
+          // Round 36 · NEW-5: kept OUTSIDE the builds' count (`keep()`), so it never makes another shop wait its turn; with no
+          // room left to keep it, it is let go (another process may then build it too — extra work only, never a wrong answer).
+          if (lease !== undefined && made !== undefined && tb.held === made && (lease.keep?.() ?? true)) { leaseKept = true; tb.keeper = keepLeaseUntilSaved(lease); }
         } catch (e) {
           reportsFailed(e);
           tb.failed = { at: new Date().toISOString(), error: e instanceof Error ? e.message : String(e) };
