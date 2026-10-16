@@ -210,6 +210,8 @@ Status legend: **Accepted** · **Open — blocking** (holds coding / a gate) ·
 | OB-162 | **C12 a payment adapter that does not declare where it keeps data: refuse vs allow with a warning.** | Change: refuse registration; only India accepted. | **ACCEPTED — A, "Refuse it" (owner, 16 Oct 2026, in writing).** |
 | OB-163 | **D-7 price-mismatch ageing bands and window: <1, 1–3, 3–7, >7 days; products seen or sold in the last 30 days.** | Keep as built. | **ACCEPTED — A, "Under 1, 1–3, 3–7, over 7 days" (owner, 16 Oct 2026, in writing).** |
 | OB-164 | **D-6 receiving checklist: required for chilled and frozen deliveries vs every delivery vs optional.** | Change: a chilled/frozen goods receipt needs its receiving checklist before it is booked; dry goods optional. | **ACCEPTED — A, "Chilled and frozen only" (owner, 16 Oct 2026, in writing).** |
+| OB-165 | **C20 adding/removing Internal Committee members after set-up (verifier lanes34 NEW-6): A — the owner may grant/revoke the internal_committee role only, a second person confirms, audited, and the owner can never hold it; B — committee members manage their own; C — operator tenant script only.** | Build A. | **ACCEPTED — A, "Owner adds, 2 people" (owner, 16 Oct 2026, in writing).** |
+| OB-166 | **C18 roster visibility and edits after publishing (verifier lanes34 NEW-3): A — staff see only published weeks; any edit after publishing returns the week to 'needs publishing' and it is checked again before staff see it; B — staff see shifts at once, post-publish edits checked and breaches shown.** | Build A. | **ACCEPTED — A, "Published only, re-check edits" (owner, 16 Oct 2026, in writing).** |
 
 ## AI-assisted development governance — AID-01 to AID-10 (roadmap §18)
 

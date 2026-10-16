@@ -75,4 +75,35 @@ describe.each(backings)('C10 â€” the legacy-card-purge check reads an extract â€
     expect((await check(CASHIER, [{ source: 's', rowRef: '1', fields: {} }])).status).toBe(403);
     expect((await check(OWNER, [])).status).toBe(400);
   });
+
+  it('L4: finds a card number written with dots, slashes or underscores, and passes dates and phone numbers', async () => {
+    const h = harness();
+    const T = randomUUID();
+    await h.seedOwner(T, OWNER);
+    const check = (records: unknown) => h.request({ method: 'POST', path: '/v1/migration/legacy-card-purge/check', userId: OWNER, tenantId: T, idempotencyKey: `purge-${randomUUID()}`, body: { records } });
+    const grouped = (sep: string) => TEST_VISA.replace(/(\d{4})(?=\d)/g, `$1${sep}`);
+
+    const dirty = await check([
+      { source: 'old-pos.sales', rowRef: 'd', fields: { remarks: `card ${grouped('.')} swiped` } },
+      { source: 'old-pos.sales', rowRef: 's', fields: { remarks: grouped('/') } },
+      { source: 'old-pos.sales', rowRef: 'u', fields: { note: grouped('_') } },
+    ]);
+    expect(dirty.status).toBe(200);
+    const body = dirty.body as { passed: boolean; findings: { rowRef: string; column: string; kind: string }[] };
+    expect(body.passed).toBe(false);
+    expect(body.findings.map((f) => [f.rowRef, f.column, f.kind])).toEqual([
+      ['d', 'remarks', 'card_number_value'], ['s', 'remarks', 'card_number_value'], ['u', 'note', 'card_number_value'],
+    ]);
+    const words = JSON.stringify(dirty.body);
+    for (const sep of ['.', '/', '_']) expect(words).not.toContain(grouped(sep));
+    if (ledgerText !== undefined) {
+      const ledger = await ledgerText(T);
+      for (const sep of ['.', '/', '_']) expect(ledger).not.toContain(grouped(sep));
+    }
+
+    const clean = await check([
+      { source: 'old-pos.sales', rowRef: '1', fields: { billDate: '16.10.2026', time: '16/10/2026 10:30:15', due: '2026_10_16', mobile: '+91.98765.43210', landline: '044/2345/6789', alt: '98765_43210' } },
+    ]);
+    expect(clean.body).toMatchObject({ passed: true, findings: [] });
+  });
 });

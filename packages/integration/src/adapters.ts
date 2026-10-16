@@ -23,6 +23,8 @@
 //
 // Pure and deterministic: the clock is injected, no I/O, no card data anywhere.
 
+import { isIndiaRegion, indiaRegionName } from './india-regions';
+
 export type AdapterCategory =
   | 'accounting'
   | 'payment'
@@ -147,9 +149,9 @@ export interface AdapterConfig {
    */
   readonly retains?: readonly string[];
   /**
-   * Payments only (C12 · ADR-0002): where this provider keeps and processes the shop's payment data, as ISO 3166 —
-   * `IN` or `IN-<state>`. A payment adapter declaring anywhere else is refused registration. Absent = not declared
-   * (the registration says so in its words; requiring it is an owner decision, not assumed here).
+   * Payments: where this provider keeps and processes the shop's payment data, as ISO 3166 — `IN`, or `IN-<code>` for a
+   * real Indian state or union territory (`./india-regions.ts`). REQUIRED for a payment adapter (C12 · ADR-0002 ·
+   * OB-162 "A"): a payment adapter that does not declare it, or declares anywhere else, is refused registration.
    */
   readonly dataRegion?: string;
   readonly enabled: boolean;
@@ -164,7 +166,9 @@ export type AdapterRegistrationOutcome =
   | 'credential_inline'
   | 'not_certified'
   | 'sandbox_credential_in_production'
-  | 'payment_data_outside_india';
+  | 'payment_data_outside_india'
+  /** OB-162 "A": a payment adapter that does not say where it keeps the shop's payment data is refused. */
+  | 'payment_data_region_not_declared';
 
 export interface AdapterRegistration {
   readonly adapterId: string;
@@ -186,9 +190,6 @@ export const PERMITTED_PAYMENT_RETENTION: readonly string[] = [
   'issuing_bank',
   'network_name',
 ];
-
-/** India or an Indian state, ISO 3166 (`IN`, `IN-MH`) — the same rule the API's boot check applies (C12). */
-const PAYMENT_DATA_REGION = /^IN(-[A-Z]{2})?$/;
 
 /** A credential that is a literal rather than a vault pointer (hard rule #4). */
 function looksInline(ref: string): boolean {
@@ -242,12 +243,22 @@ export function registerAdapter(input: {
         detail: `this adapter declares it retains ${notPermitted.join(', ')}, which is not on the permitted list — refused outright, with no override anywhere (hard rule #3). A payment adapter may keep only ${PERMITTED_PAYMENT_RETENTION.join(', ')}`,
       };
     }
-    if (c.dataRegion !== undefined && !PAYMENT_DATA_REGION.test(c.dataRegion.trim().toUpperCase())) {
+    // C12 · OB-162 "A": where the provider keeps payment data must be SAID, and must be India — the same list of real
+    // Indian state and union-territory codes the API's boot check uses (`isIndiaRegion`).
+    if (c.dataRegion === undefined || c.dataRegion.trim() === '') {
+      return {
+        ...base,
+        registered: false,
+        outcome: 'payment_data_region_not_declared',
+        detail: `${c.vendor} does not say where it keeps the shop's payment data — a payment adapter must declare its data region, and only India is accepted (IN, or IN-<state> such as IN-TN) (C12 · OB-162); refused`,
+      };
+    }
+    if (!isIndiaRegion(c.dataRegion)) {
       return {
         ...base,
         registered: false,
         outcome: 'payment_data_outside_india',
-        detail: `${c.vendor} declares it keeps the shop's payment data in "${c.dataRegion.trim()}", which is not India — payment data stays in an India region (C12 · ADR-0002); refused`,
+        detail: `${c.vendor} declares it keeps the shop's payment data in "${c.dataRegion.trim()}", which is not India or not a real Indian state or union territory code — payment data stays in an India region (IN, or IN-<state> such as IN-TN) (C12 · ADR-0002); refused`,
       };
     }
     const entry = input.matrix.find(
@@ -279,7 +290,7 @@ export function registerAdapter(input: {
     ...base,
     registered: true,
     outcome: 'registered',
-    detail: `${c.vendor} ${c.category.replace(/_/g, ' ')} adapter registered in ${input.environment}${c.queueOnOutage === true ? ', queueing during an outage rather than failing the caller' : ''}${c.category !== 'payment' ? '' : c.dataRegion === undefined ? '; where it keeps payment data is not declared' : `; payment data kept in ${c.dataRegion.trim().toUpperCase()}`}`,
+    detail: `${c.vendor} ${c.category.replace(/_/g, ' ')} adapter registered in ${input.environment}${c.queueOnOutage === true ? ', queueing during an outage rather than failing the caller' : ''}${c.category !== 'payment' || c.dataRegion === undefined ? '' : `; payment data kept in ${c.dataRegion.trim().toUpperCase()} (${indiaRegionName(c.dataRegion) ?? 'India'})`}`,
   };
 }
 

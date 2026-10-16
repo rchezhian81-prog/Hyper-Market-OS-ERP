@@ -7,7 +7,9 @@
 // So before a legacy extract is loaded, it is read for card data and the check PASSES only when there is none. What it
 // looks for:
 //   • a VALUE anywhere that is structurally a full card number (length 15/16/19, issuer prefix, Luhn — the same quiet
-//     test as the tender surface, so 13-digit barcodes and GST numbers do not trip it);
+//     test as the tender surface, so 13-digit barcodes and GST numbers do not trip it), whether its groups are written
+//     together, with spaces or dashes, or with any other separator (dots, slashes, underscores …) in a card's printed
+//     grouping — dates and phone numbers never have that grouping, so they do not trip it either;
 //   • a VALUE that is a masked card showing more than the last four digits (e.g. the first six as well) — the new
 //     system keeps only the last four;
 //   • a COLUMN that is, by its header, the card number, the security code, or the CARD's expiry. An "expiry" column on
@@ -20,7 +22,7 @@
 //
 // Pure and deterministic. It reads; it changes nothing.
 
-import { containsCardNumber } from './card-token';
+import { containsCardNumber, isCardNumberShape } from './card-token';
 
 /** One legacy record, as extracted: which source, which row, and its columns. */
 export interface LegacyRecord {
@@ -69,6 +71,48 @@ const CARD_QUALIFIED = /^(card|cc|creditcard|debitcard)/;
 /** A masked card: 4–6 visible leading digits, masking characters, then visible trailing digits. */
 const MASKED_CARD = /\b\d{4,6}[ -]?(?:[xX*#•]{2,}[ -]?){1,4}\d{2,4}\b/;
 
+/**
+ * The ways a card number is printed in groups: 4-4-4-4 (16 digits), 4-4-4-4-3 (19), 4-6-5 (15, Amex) and 4-4-4-3 (15).
+ * A date (2-2-4, 4-2-2), a time, an Indian mobile (5-5, 2-5-5, 3-3-4), a landline (3-4-4, 4-3-4, 2-4-4) or a GSTIN never
+ * has these shapes, so they are never read as a card however they are separated.
+ */
+const CARD_GROUPINGS: readonly (readonly number[])[] = [[4, 4, 4, 4], [4, 4, 4, 4, 3], [4, 6, 5], [4, 4, 4, 3]];
+
+/** A run of digit groups joined by short separators: anything that is not a letter, a digit, a line break, a comma or a
+ *  semicolon (commas and semicolons separate LIST items in free text; a card is never printed with them). */
+const GROUP_RUN = /(?<!\d)\d+(?:[^\p{L}\p{N}\r\n,;]{1,3}\d+)+(?!\d)/gu;
+const GROUP_SPLIT = /(\d+)/u;
+
+/**
+ * L4 (verifier lane 2, C10): true when the text holds a card number written in its printed GROUPS with ANY separator —
+ * dots, slashes, underscores, backslashes, pipes, colons, middle dots, several spaces — not only the single space or
+ * dash `containsCardNumber` reads. To stay quiet on dates and phone numbers, a run is read only in windows that are a
+ * card's printed grouping (`CARD_GROUPINGS`) with the SAME separator between every group, and the digits must still be
+ * structurally a card (used length, issuer prefix, Luhn). A window inside a longer run is read, so "4111.1111.1111.1111/
+ * 12-29" (a number followed by its expiry) is still found.
+ */
+export function containsGroupedCardNumber(text: string): boolean {
+  for (const m of text.matchAll(GROUP_RUN)) {
+    const parts = m[0].split(GROUP_SPLIT); // ['', d1, s1, d2, s2, …, dn, '']
+    const digits: string[] = [];
+    const seps: string[] = [];
+    for (let i = 1; i < parts.length; i += 2) {
+      digits.push(parts[i]!);
+      if (i + 1 < parts.length - 1) seps.push(parts[i + 1]!);
+    }
+    for (const grouping of CARD_GROUPINGS) {
+      for (let start = 0; start + grouping.length <= digits.length; start += 1) {
+        const window = digits.slice(start, start + grouping.length);
+        if (!window.every((d, k) => d.length === grouping[k])) continue;
+        const between = seps.slice(start, start + grouping.length - 1);
+        if (!between.every((sep) => sep === between[0])) continue;
+        if (isCardNumberShape(window.join(''))) return true;
+      }
+    }
+  }
+  return false;
+}
+
 /** Read a legacy extract for card data. Passes only when there is none. */
 export function checkLegacyCardPurge(records: readonly LegacyRecord[]): LegacyCardPurgeResult {
   const findings: LegacyCardFinding[] = [];
@@ -100,7 +144,7 @@ export function checkLegacyCardPurge(records: readonly LegacyRecord[]): LegacyCa
         recordHasCardData = true;
         continue;
       }
-      if (containsCardNumber(text)) {
+      if (containsCardNumber(text) || containsGroupedCardNumber(text)) {
         valueFindings.push({ ...at, kind: 'card_number_value', detail: `column "${column}" holds a full card number — cut it out before the load; it is not repeated here (hard rule #3)` });
         recordHasCardData = true;
       } else if (MASKED_CARD.test(text)) {

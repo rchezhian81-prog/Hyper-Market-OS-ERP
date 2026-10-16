@@ -41,12 +41,12 @@ describe('integration gateway: card data and inline credentials refused, silence
     // A payment adapter declaring it keeps a PAN — refused outright, no override (hard rule #3).
     expect(codeOf(await adapter(h, A, 'u-owner', 'a-card', { category: 'payment', vendor: 'razorpay', credentialRef: 'vault://pay', environment: 'production', enabled: true, retains: ['pan', 'provider_token'] }))).toBe('stores_card_data');
     // A payment vendor not on the matrix.
-    expect(codeOf(await adapter(h, A, 'u-owner', 'a-unknown', { category: 'payment', vendor: 'unknownpay', credentialRef: 'vault://pay', environment: 'production', enabled: true }))).toBe('not_certified');
+    expect(codeOf(await adapter(h, A, 'u-owner', 'a-unknown', { category: 'payment', vendor: 'unknownpay', credentialRef: 'vault://pay', environment: 'production', enabled: true, dataRegion: 'IN' }))).toBe('not_certified');
     // Certified but not RBI-authorised — tokenisation from an unauthorised gateway is refused (§35).
-    expect(codeOf(await adapter(h, A, 'u-owner', 'a-dodgy', { category: 'payment', vendor: 'dodgypay', credentialRef: 'vault://pay', environment: 'production', enabled: true }))).toBe('provider_not_authorised');
+    expect(codeOf(await adapter(h, A, 'u-owner', 'a-dodgy', { category: 'payment', vendor: 'dodgypay', credentialRef: 'vault://pay', environment: 'production', enabled: true, dataRegion: 'IN' }))).toBe('provider_not_authorised');
 
     // A clean payment adapter (certified, RBI, only permitted retention, vault credential) is registered.
-    expect((await adapter(h, A, 'u-owner', 'a-rzp', { category: 'payment', vendor: 'razorpay', credentialRef: 'vault://pay', environment: 'production', enabled: true, retains: ['provider_token', 'last4'] })).status).toBe(201);
+    expect((await adapter(h, A, 'u-owner', 'a-rzp', { category: 'payment', vendor: 'razorpay', credentialRef: 'vault://pay', environment: 'production', enabled: true, retains: ['provider_token', 'last4'], dataRegion: 'IN-TN' })).status).toBe(201);
     // A non-payment adapter needs no matrix entry, just a vault credential.
     expect((await adapter(h, A, 'u-owner', 'a-tally', { category: 'accounting', vendor: 'tally', credentialRef: 'vault://tally', environment: 'production', enabled: true })).status).toBe(201);
   });

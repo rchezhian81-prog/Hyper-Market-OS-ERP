@@ -10,7 +10,7 @@ import { apiHarness } from '../support/api-harness';
 
 // C7 (v2.1 addendum · M02/M34/M35 · DPDP s.8(5)) — reasonable security safeguards, asserted beside the role checks:
 //   • every personal-data field in the code is sealed under its subject's key, masked wherever shown, never kept, or held
-//     by the identity server — and the ONLY exception is the one waiting on an owner decision, named;
+//     by the identity server; the supplier contact details are business data by the owner's decision OB-153 "A", cited;
 //   • security logs (sign-in events, administrator events, the tamper-evident audit trail) are kept ≥ 1 year;
 //   • the people who may read who processes personal data, and the audit trail, are the privacy and audit roles — not a
 //     cashier — and the API refuses the cashier.
@@ -21,14 +21,14 @@ describe('personal-data fields are encrypted or masked (C7)', () => {
   const report = assessPiiSafeguards({ declarations: PII_FIELD_INVENTORY, sealingPolicy: SEALED_FIELDS, maskers });
 
   it('no declaration is false: every "sealed" field is sealed by the policy that runs, every "masked" one has its masker', () => {
-    expect(report.findings.filter((f) => f.flag !== 'unprotected')).toEqual([]);
+    expect(report.findings).toEqual([]);
     expect(report.byProtection.sealed_per_subject).toBeGreaterThan(0);
     expect(report.byProtection.masked_on_read).toBe(3);
   });
 
-  it('the only unprotected fields are the supplier contact details, each naming the owner decision they wait on', () => {
-    const open = report.findings.filter((f) => f.flag === 'unprotected');
-    expect(open.map((f) => `${f.file}:${f.field}`)).toEqual([
+  it('OB-153 "A": the supplier contact details are business data by the owner\'s decision, and the C7 check passes', () => {
+    const business = PII_FIELD_INVENTORY.filter((d) => d.protection === 'business_data_by_owner_decision');
+    expect(business.map((d) => `${d.file}:${d.field}`)).toEqual([
       'services/purchase/src/supplier-master.ts:phone',
       'services/purchase/src/supplier-master.ts:email',
       'services/purchase/src/supplier-master.ts:address',
@@ -36,8 +36,11 @@ describe('personal-data fields are encrypted or masked (C7)', () => {
       'services/purchase/src/data-export.ts:email',
       'services/purchase/src/data-export.ts:address',
     ]);
-    expect(open.every((f) => f.detail.includes('waiting on the owner\'s decision'))).toBe(true);
-    expect(report.compliant).toBe(false); // said, not hidden, until the owner decides
+    expect(business.every((d) => d.whose === 'supplier_contact' && d.ownerDecision === 'OB-153')).toBe(true);
+    expect(report.byProtection.unprotected).toBe(0);
+    expect(report.byProtection.business_data_by_owner_decision).toBe(6);
+    expect(report.compliant).toBe(true);
+    expect(report.detail).toContain('business data by a recorded owner decision (6)');
   });
 
   it('each field is declared once, and the customer\'s own words in the ledger are sealed by the running policy', () => {
