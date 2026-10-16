@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1247,
+  "testFiles": 1274,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -117,8 +117,8 @@
       "id": "M02",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 24,
-        "integration": 22,
+        "unit": 25,
+        "integration": 23,
         "realDb": 10,
         "browser": 7,
         "connected": 2,
@@ -130,6 +130,7 @@
           "tests/unit/approval-requests.test.ts",
           "tests/unit/approvals-delegation.test.ts",
           "tests/unit/approvals.test.ts",
+          "tests/unit/customer-pii-safeguards.test.ts",
           "tests/unit/edge-feeds-the-screens.test.ts",
           "tests/unit/edge-today-figures.test.ts",
           "tests/unit/effective-grants.test.ts",
@@ -174,6 +175,7 @@
           "tests/integration/the-till-names-its-operator.test.ts",
           "tests/integration/the-till-signs-its-operator-in.test.ts",
           "tests/integration/trusted-approvals.test.ts",
+          "tests/security/personal-data-safeguards.test.ts",
           "tests/security/separation-of-duties.test.ts"
         ],
         "realDb": [
@@ -846,7 +848,7 @@
       "id": "M12",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 17,
+        "unit": 18,
         "integration": 24,
         "realDb": 5,
         "browser": 13,
@@ -871,6 +873,7 @@
           "tests/unit/sale-intake-approved-price-override.test.ts",
           "tests/unit/service-pos.test.ts",
           "tests/unit/suspended-bills.test.ts",
+          "tests/unit/tender-card-token.test.ts",
           "tests/unit/tender.test.ts",
           "tests/unit/till-seal.test.ts"
         ],
@@ -1024,9 +1027,9 @@
       "id": "M14",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 17,
-        "integration": 17,
-        "realDb": 5,
+        "unit": 18,
+        "integration": 18,
+        "realDb": 6,
         "browser": 5,
         "connected": 0,
         "device": 0,
@@ -1049,12 +1052,14 @@
           "tests/unit/lane-server-till-cash.test.ts",
           "tests/unit/over-short-review.test.ts",
           "tests/unit/pos-till-session.test.ts",
+          "tests/unit/settlement-t-plus-one-reversals.test.ts",
           "tests/unit/settlement.test.ts",
           "tests/unit/till.test.ts"
         ],
         "integration": [
           "tests/integration/a-card-no-answer-reaches-finance-the-moment-it-happens.test.ts",
           "tests/integration/a-day-closes-with-a-pending-payment-carried-to-head-office.test.ts",
+          "tests/integration/a-t-plus-one-settlement-file-surfaces-shortfalls-chargebacks-and-refunds.test.ts",
           "tests/integration/day-close-honestly.test.ts",
           "tests/integration/day-close-reaches-the-cloud-through-the-edge.test.ts",
           "tests/integration/day-close-reaches-the-cloud.test.ts",
@@ -1074,6 +1079,7 @@
         "realDb": [
           "tests/integration/a-card-no-answer-reaches-finance-the-moment-it-happens.test.ts",
           "tests/integration/a-day-closes-with-a-pending-payment-carried-to-head-office.test.ts",
+          "tests/integration/a-t-plus-one-settlement-file-surfaces-shortfalls-chargebacks-and-refunds.test.ts",
           "tests/integration/day-close-honestly.test.ts",
           "tests/integration/refund-approval-is-the-approvers-own-act.test.ts",
           "tests/integration/sale-to-shift-close-journey.test.ts"
@@ -1160,9 +1166,9 @@
       "id": "M16",
       "label": "WIRED",
       "counts": {
-        "unit": 8,
-        "integration": 15,
-        "realDb": 6,
+        "unit": 9,
+        "integration": 16,
+        "realDb": 7,
         "browser": 1,
         "connected": 0,
         "device": 0,
@@ -1174,6 +1180,7 @@
           "tests/unit/customer-data-rights.test.ts",
           "tests/unit/customer-erasure-executor.test.ts",
           "tests/unit/customer-privacy-centre.test.ts",
+          "tests/unit/customer-processor-register.test.ts",
           "tests/unit/customer-segments.test.ts",
           "tests/unit/customer.test.ts",
           "tests/unit/loyalty-coupons.test.ts",
@@ -1194,6 +1201,7 @@
           "tests/integration/the-assistant-drafts-and-a-person-decides.test.ts",
           "tests/integration/the-customer-privacy-centre-saves-on-the-shop.test.ts",
           "tests/integration/the-customer-record-is-built-from-what-they-bought.test.ts",
+          "tests/integration/the-processor-register-flags-processing-without-a-contract.test.ts",
           "tests/integration/till-names-a-loyalty-member.test.ts"
         ],
         "realDb": [
@@ -1202,7 +1210,8 @@
           "tests/integration/one-customer.test.ts",
           "tests/integration/the-assistant-drafts-and-a-person-decides.test.ts",
           "tests/integration/the-customer-privacy-centre-saves-on-the-shop.test.ts",
-          "tests/integration/the-customer-record-is-built-from-what-they-bought.test.ts"
+          "tests/integration/the-customer-record-is-built-from-what-they-bought.test.ts",
+          "tests/integration/the-processor-register-flags-processing-without-a-contract.test.ts"
         ],
         "browser": [
           "tests/e2e/customer-privacy-centre.e2e.ts"
@@ -1594,9 +1603,9 @@
       "id": "M23",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 23,
-        "integration": 29,
-        "realDb": 15,
+        "unit": 24,
+        "integration": 30,
+        "realDb": 16,
         "browser": 5,
         "connected": 1,
         "device": 0,
@@ -1626,12 +1635,14 @@
           "tests/unit/period-close.test.ts",
           "tests/unit/rate.test.ts",
           "tests/unit/reconciliation.test.ts",
+          "tests/unit/settlement-t-plus-one-reversals.test.ts",
           "tests/unit/supplier-account-fold.test.ts"
         ],
         "integration": [
           "tests/integration/a-b2b-invoice-and-its-collection-reach-the-books.test.ts",
           "tests/integration/a-damaged-arrival-under-an-open-count-is-received-good-and-written-off-at-the-close.test.ts",
           "tests/integration/a-damaged-arrival-with-no-count-open-is-its-own-write-off-line.test.ts",
+          "tests/integration/a-t-plus-one-settlement-file-surfaces-shortfalls-chargebacks-and-refunds.test.ts",
           "tests/integration/b2b-reconcile-ar.test.ts",
           "tests/integration/cod-reconciliation.test.ts",
           "tests/integration/confirmed-lost-stock-is-posted-once.test.ts",
@@ -1663,6 +1674,7 @@
           "tests/integration/a-b2b-invoice-and-its-collection-reach-the-books.test.ts",
           "tests/integration/a-damaged-arrival-under-an-open-count-is-received-good-and-written-off-at-the-close.test.ts",
           "tests/integration/a-damaged-arrival-with-no-count-open-is-its-own-write-off-line.test.ts",
+          "tests/integration/a-t-plus-one-settlement-file-surfaces-shortfalls-chargebacks-and-refunds.test.ts",
           "tests/integration/b2b-reconcile-ar.test.ts",
           "tests/integration/confirmed-lost-stock-is-posted-once.test.ts",
           "tests/integration/credit-note-reconciliation.test.ts",
@@ -1807,8 +1819,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 2,
-        "integration": 10,
-        "realDb": 3,
+        "integration": 11,
+        "realDb": 4,
         "browser": 2,
         "connected": 1,
         "device": 0,
@@ -1824,6 +1836,7 @@
           "tests/integration/beyond-the-till.test.ts",
           "tests/integration/branch-scope-every-family.test.ts",
           "tests/integration/cold-room-breach-holds-stock.test.ts",
+          "tests/integration/d6-food-safety-checks-are-scheduled-corrected-and-sealed.test.ts",
           "tests/integration/facilities-assets.test.ts",
           "tests/integration/facilities-durability.test.ts",
           "tests/integration/facilities-incidents.test.ts",
@@ -1834,7 +1847,8 @@
         "realDb": [
           "tests/integration/attendance-exports-for-a-bounded-period.test.ts",
           "tests/integration/beyond-the-till.test.ts",
-          "tests/integration/branch-scope-every-family.test.ts"
+          "tests/integration/branch-scope-every-family.test.ts",
+          "tests/integration/d6-food-safety-checks-are-scheduled-corrected-and-sealed.test.ts"
         ],
         "browser": [
           "tests/e2e/attendance-export-on-the-production-api.e2e.ts",
@@ -2127,9 +2141,9 @@
       "id": "M32",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 8,
-        "integration": 14,
-        "realDb": 6,
+        "unit": 10,
+        "integration": 16,
+        "realDb": 8,
         "browser": 1,
         "connected": 0,
         "device": 0,
@@ -2138,13 +2152,15 @@
       "files": {
         "unit": [
           "tests/unit/customer-processor-erasure-notice.test.ts",
+          "tests/unit/customer-processor-register.test.ts",
           "tests/unit/edge-feeds-the-screens.test.ts",
           "tests/unit/erp-ai-session.test.ts",
           "tests/unit/erp-integration-health-session.test.ts",
           "tests/unit/integration-adapters.test.ts",
           "tests/unit/integration-api-gateway.test.ts",
           "tests/unit/integration-connector.test.ts",
-          "tests/unit/integration-secrets.test.ts"
+          "tests/unit/integration-secrets.test.ts",
+          "tests/unit/kernel-payment-data-residency.test.ts"
         ],
         "integration": [
           "tests/integration/connector-delivery.test.ts",
@@ -2157,6 +2173,8 @@
           "tests/integration/outbound-webhooks-are-signed-retried-and-reconciled.test.ts",
           "tests/integration/outbound-webhooks-go-over-pinned-https.test.ts",
           "tests/integration/outbound-webhooks-refuse-private-destinations.test.ts",
+          "tests/integration/payment-data-is-pinned-to-india.test.ts",
+          "tests/integration/the-processor-register-flags-processing-without-a-contract.test.ts",
           "tests/integration/the-screens-are-fed.test.ts",
           "tests/integration/the-seams-hold.test.ts",
           "tests/integration/the-sender-rechecks-template-and-recipient.test.ts",
@@ -2167,6 +2185,8 @@
           "tests/integration/outbound-webhooks-are-signed-retried-and-reconciled.test.ts",
           "tests/integration/outbound-webhooks-go-over-pinned-https.test.ts",
           "tests/integration/outbound-webhooks-refuse-private-destinations.test.ts",
+          "tests/integration/payment-data-is-pinned-to-india.test.ts",
+          "tests/integration/the-processor-register-flags-processing-without-a-contract.test.ts",
           "tests/integration/the-seams-hold.test.ts",
           "tests/integration/the-sender-rechecks-template-and-recipient.test.ts"
         ],
@@ -2260,8 +2280,8 @@
       "id": "M34",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 8,
-        "integration": 12,
+        "unit": 9,
+        "integration": 13,
         "realDb": 4,
         "browser": 2,
         "connected": 0,
@@ -2274,6 +2294,7 @@
           "tests/unit/audit.test.ts",
           "tests/unit/compliance-obligations.test.ts",
           "tests/unit/compliance-risk.test.ts",
+          "tests/unit/customer-pii-safeguards.test.ts",
           "tests/unit/edge-feeds-the-screens.test.ts",
           "tests/unit/erp-admin-session.test.ts",
           "tests/unit/erp-risk-acceptance-session.test.ts",
@@ -2291,7 +2312,8 @@
           "tests/integration/physical-to-system.test.ts",
           "tests/integration/risk-followthrough.test.ts",
           "tests/integration/risk-register.test.ts",
-          "tests/integration/the-screens-are-fed.test.ts"
+          "tests/integration/the-screens-are-fed.test.ts",
+          "tests/security/personal-data-safeguards.test.ts"
         ],
         "realDb": [
           "tests/integration/branch-scope-every-family.test.ts",
@@ -2314,9 +2336,9 @@
       "id": "M35",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 14,
-        "integration": 36,
-        "realDb": 29,
+        "unit": 16,
+        "integration": 38,
+        "realDb": 30,
         "browser": 3,
         "connected": 2,
         "device": 0,
@@ -2329,8 +2351,10 @@
           "tests/unit/a-lease-session-cut-off-here-is-ended-on-the-server.test.ts",
           "tests/unit/a-lease-session-end-is-bounded-and-connects-without-the-check-off-linux.test.ts",
           "tests/unit/alert-lifecycle.test.ts",
+          "tests/unit/customer-pii-safeguards.test.ts",
           "tests/unit/erp-navigation-catalogue.test.ts",
           "tests/unit/incidents-session.test.ts",
+          "tests/unit/kernel-payment-data-residency.test.ts",
           "tests/unit/observed-health-routes.test.ts",
           "tests/unit/ops-backup.test.ts",
           "tests/unit/ops-health.test.ts",
@@ -2364,6 +2388,7 @@
           "tests/integration/observed-health.test.ts",
           "tests/integration/only-the-store-computer-says-when-it-took-a-bill-or-a-refund.test.ts",
           "tests/integration/operational-health.test.ts",
+          "tests/integration/payment-data-is-pinned-to-india.test.ts",
           "tests/integration/recovery-rehearsal.test.ts",
           "tests/integration/the-alert-rules-sent-back-as-shown-never-turn-an-old-edit-into-a-redirect.test.ts",
           "tests/integration/the-backup-job-is-a-machine-only-identity.test.ts",
@@ -2375,7 +2400,8 @@
           "tests/integration/the-not-ready-hour-survives-a-head-office-restart.test.ts",
           "tests/integration/the-owner-removes-a-redirect-that-fell-back-to-the-owners.test.ts",
           "tests/integration/the-rare-store-computer-acts-read-only-recent-reports.test.ts",
-          "tests/integration/the-store-computer-history-is-built-once-across-head-office-processes.test.ts"
+          "tests/integration/the-store-computer-history-is-built-once-across-head-office-processes.test.ts",
+          "tests/security/personal-data-safeguards.test.ts"
         ],
         "realDb": [
           "tests/integration/a-build-lease-cut-off-here-is-freed-on-the-database-at-once.test.ts",
@@ -2395,6 +2421,7 @@
           "tests/integration/dr-readiness.test.ts",
           "tests/integration/many-shops-rebuilding-at-once-never-use-up-head-offices-connections.test.ts",
           "tests/integration/only-the-store-computer-says-when-it-took-a-bill-or-a-refund.test.ts",
+          "tests/integration/payment-data-is-pinned-to-india.test.ts",
           "tests/integration/recovery-rehearsal.test.ts",
           "tests/integration/the-alert-rules-sent-back-as-shown-never-turn-an-old-edit-into-a-redirect.test.ts",
           "tests/integration/the-backup-job-is-a-machine-only-identity.test.ts",
@@ -5004,9 +5031,9 @@
       "id": "MG-04",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 10,
-        "integration": 6,
-        "realDb": 2,
+        "unit": 11,
+        "integration": 7,
+        "realDb": 3,
         "browser": 1,
         "connected": 0,
         "device": 0,
@@ -5023,17 +5050,20 @@
           "tests/unit/migration-load.test.ts",
           "tests/unit/migration-report-parser.test.ts",
           "tests/unit/migration-screen-route.test.ts",
-          "tests/unit/sync-http-transport.test.ts"
+          "tests/unit/sync-http-transport.test.ts",
+          "tests/unit/tender-legacy-card-purge.test.ts"
         ],
         "integration": [
           "tests/integration/migration-decisions-reach-the-cloud.test.ts",
           "tests/integration/migration-decisions-through-the-api.test.ts",
           "tests/integration/migration-pipeline.test.ts",
           "tests/integration/the-box-pulls-its-migration-register.test.ts",
+          "tests/integration/the-legacy-card-purge-check-reads-an-extract.test.ts",
           "tests/integration/the-old-shop-arrives-whole.test.ts",
           "tests/migration/schema-migrations.test.ts"
         ],
         "realDb": [
+          "tests/integration/the-legacy-card-purge-check-reads-an-extract.test.ts",
           "tests/integration/the-old-shop-arrives-whole.test.ts",
           "tests/migration/schema-migrations.test.ts"
         ],
