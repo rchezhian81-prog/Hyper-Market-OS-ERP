@@ -259,6 +259,10 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   { id: 'warehouse-handheld', label: 'Warehouse handheld', labelTa: 'கிடங்கு கைக்கருவி', path: '/warehouse/', requires: 'inventory.movement.append', group: 'Devices' },
   { id: 'picker-handheld', label: 'Picker handheld', labelTa: 'பிக்கர் கைக்கருவி', path: '/picker/', requires: 'fulfilment.assignment.read', group: 'Devices' },
   { id: 'driver-handheld', label: 'Delivery handheld', labelTa: 'டெலிவரி கைக்கருவி', path: '/driver/', requires: 'fulfilment.assignment.read', group: 'Devices' },
+  // R2 C20 · OB-154 "A": the owner's view of the Internal Committee's annual report — due, overdue or filed, counts only,
+  // and recording the filing. Gated on the filing permission the route checks (`posh.report.file`, the owner's). A
+  // head-office page (the box does not serve it). The complaints register itself stays the committee's (OB-157).
+  { id: 'posh-report', label: 'Committee annual report', labelTa: 'குழு ஆண்டு அறிக்கை', path: '/posh-report', requires: 'posh.report.file', group: 'People', served: 'unserved' },
 ]);
 
 /** An item retired from the catalogue, with the reason and where its job lives now — never a silent drop. */
