@@ -263,20 +263,35 @@ screen is served to a device that has not enrolled.
    phone to anyone, or put it down at the end of your work.** Then the next person signs in with their own staff ID and
    PIN. Never work on a phone that shows somebody else's name — sign them out and sign in as yourself. (If the next
    person signs in without the first signing out, that still signs the first person out.)
-   **A phone sign-in ends by itself after four hours** (a till's lasts the shift, as before). **At four hours the phone
-   goes to the sign-in page by itself (OB-186 "A", owner, 17 Oct 2026, "Lock the screen")** — even with the wifi down —
-   and says *Your sign-in has ended (4 hours). Sign in again — your saved work is kept · உங்கள் உள்நுழைவு முடிந்தது*.
+   **Signing out needs the store computer.** Sign out is a message to the store computer, so it only works while the
+   phone is on the shop wifi. **With the wifi down, a phone cannot be signed out — so never hand a signed-in phone to
+   anyone while the wifi is down.** Keep it with you until the wifi is back and sign out then; if you cannot, the phone
+   locks itself at the end of your sign-in (below), even offline, and nobody can carry on as you after that.
+   **How long a phone sign-in lasts:** on the **warehouse** and **picker** screens, **four hours** (OB-184); on the
+   **delivery driver's** screen, **twelve hours** — the whole shift, like a till — because the driver is away from the
+   shop wifi for the route and can only sign in again at the shop (OB-187 "A", owner, 17 Oct 2026, "Driver gets 12
+   hours"). A driver signs in at the shop before the route; a route longer than twelve hours needs the driver to sign
+   in again at the shop first. **At the end of its sign-in the phone goes to the sign-in page by itself (OB-186 "A",
+   owner, 17 Oct 2026, "Lock the screen")** — even with the wifi down — and says *Your sign-in has ended (4 hours). Sign
+   in again — your saved work is kept · உங்கள் உள்நுழைவு முடிந்தது* (the driver's says *12 hours* and *Sign in again at
+   the shop*). **Do not change a phone's date or time.** If the phone's clock is turned back, the phone ends the sign-in
+   at once and says *This phone's clock was turned back, so your sign-in has ended* — sign in again (and tell the manager
+   if nobody knows why the clock changed).
    Nobody can keep scanning on an ended sign-in. Sign in again with your staff ID and PIN (signing in needs the store
-   computer, so if the wifi is down, wait for it to come back). Everything scanned before the four hours is still
+   computer, so if the wifi is down, wait for it to come back). Everything scanned before the end is still
    saved on the phone — nothing is lost — and is handed to the store computer, still recorded as the person who did it,
-   once somebody signs in; do not scan those items again. Work done BEFORE the
-   four hours that is still waiting on the phone stays the person's and is still taken for twelve hours after their
-   sign-in ended (OB-185); later than that it is refused with the reason on the phone, never silently lost. A wrong PIN counts toward the same lock as the till; a leaver (role removed, or PIN
-   withdrawn) cannot sign in, and a phone signed in as them stops sending at once.
-   *To check in the store:* sign in on a phone and see the bar say about four hours; press Sign out — the phone goes
-   back to the sign-in page and nobody's name is shown. Leave a phone signed in for four hours (or scan one item, then
-   switch the shop wifi off and wait): at four hours the screen changes to the sign-in page by itself with the red
-   "sign-in has ended" message; sign in again and check the item appears under **"Sent from this handheld"** as sent.
+   once somebody signs in; do not scan those items again. Work done BEFORE the end that is still waiting on the phone
+   stays the person's and is still taken for twelve hours after the sign-in it was made under ended (OB-185) — even if
+   the same person has signed in again since; later than that it is refused with the reason on the phone (*more than 12
+   hours later (OB-185)*), never silently lost. A wrong PIN counts toward the same lock as the till; a leaver (role
+   removed, or PIN withdrawn) cannot sign in, and a phone signed in as them stops sending at once.
+   *To check in the store:* sign in on a warehouse phone and see the bar say about four hours; on the driver's phone,
+   about twelve. Press Sign out — the phone goes back to the sign-in page and nobody's name is shown. Switch the shop
+   wifi off and press Sign out on a signed-in phone: it cannot sign out (that is why nobody hands a signed-in phone over
+   offline). Leave a phone signed in for four hours (or scan one item, then switch the shop wifi off and wait): at four
+   hours the screen changes to the sign-in page by itself with the red "sign-in has ended" message; sign in again and
+   check the item appears under **"Sent from this handheld"** as sent. On a spare phone, scan one item and then turn the
+   phone's clock back an hour in its settings: the screen goes to the sign-in page saying the clock was turned back.
 5. **Check it took:** the boot log line `handheld <deviceId> (warehouse) handed over N record(s)` appears after the
    first scan; on the handheld the list **"Sent from this handheld"** shows each scan and where it is —
    *saved on this handheld* → *with the store computer* → *posted at head office* (or *refused*, with the reason).
