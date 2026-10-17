@@ -935,13 +935,17 @@ export async function startEdge(
       // A back-office decision is sealed here when the person this box verified is the one it names (2b-vi-c-3);
       // any stamp the device sent itself is removed — only the box vouches.
       // OB-172: a HANDHELD's record reaches here only once the device socket has checked that the person it names held THIS
-      // phone this shift, signed in with their own PIN (DF-3-c). Verifier r2final NEW-4: the box vouches only for the person
-      // holding the phone NOW — a record naming an earlier holder (somebody else signed in since) travels UNSEALED, so head
-      // office flags it as not accepted instead of booking it in that person's name (hard rule #10).
+      // phone this shift, signed in with their own PIN (DF-3-c). OB-180 "A": a record STAMPED with the sign-in it was made
+      // under — a stamp the device socket verified (this phone, this record, inside that sign-in) — is sealed for the
+      // person whose sign-in made it, even if somebody else holds the phone now. An UNSTAMPED record (a phone queue from
+      // before OB-180) keeps verifier r2final NEW-4's rule: sealed only for the person holding the phone NOW; naming
+      // anybody else it travels UNSEALED and head office flags it as not accepted (hard rule #10).
       const verified = batch.deviceId === undefined ? batch.verifiedPerson : (() => {
         const named = personNamedBy(read.item.event);
-        return named.ok && batch.phoneHolder !== undefined && named.userId === batch.phoneHolder
-          ? { userId: named.userId, via: 'phone_pin', laneId: deviceLaneOf(batch.deviceId) } : undefined;
+        if (!named.ok) return undefined;
+        const stampedBy = batch.stampedBy?.[key];
+        const vouched = stampedBy !== undefined ? stampedBy === named.userId : batch.phoneHolder !== undefined && named.userId === batch.phoneHolder;
+        return vouched ? { userId: named.userId, via: 'phone_pin', laneId: deviceLaneOf(batch.deviceId) } : undefined;
       })();
       const event = withDeciderSeal(sealKey, tenantId, read.item.event, verified);
       if (!isRelayable(event.type, batch.source)) {

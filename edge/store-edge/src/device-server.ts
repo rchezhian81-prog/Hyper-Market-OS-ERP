@@ -37,7 +37,9 @@ import {
 } from '../../../packages/sync/src/device-relay';
 import type { DeviceEnrolments, PackDevice } from './device-enrolments';
 import type { LaneSyncStatus } from './sync-status';
-import type { CheckOutcome, SignInOutcome } from './till-operators';
+import type { CheckOutcome, SignInOutcome, StampVerdict } from './till-operators';
+import type { SignInStamp } from '../../../packages/sync/src/sign-in-stamp';
+import type { DomainEvent } from '../../../packages/contracts/src/event';
 import {
   HANDHELD_AUTHORITY, asPhoneHolder, personNamedBy, phoneHolderStrip, phoneSignInPage, withPhoneHolderStrip,
 } from './handheld-sign-in';
@@ -66,6 +68,10 @@ export interface PhoneOperators {
   signOut(token: string | undefined): Promise<boolean>;
   /** Has this person held this phone — now, or within the last shift (the box's own log and clock)? */
   heldRecently(userId: string, deviceId: string): boolean;
+  /** OB-180: the live sign-in's stamp reference and key, for the served page — null when nobody is signed in. */
+  stampFor(token: string | undefined, deviceId: string): { readonly ref: string; readonly key: string; readonly userId: string; readonly signedInAt: string; readonly expiresAt: string } | null;
+  /** OB-180: is this record's sign-in stamp one this box made, on this phone, for its person, while it was valid? */
+  verifyStamp(stamp: SignInStamp, event: DomainEvent, deviceId: string): StampVerdict;
 }
 
 /** The handheld screen a sign-in is for — one of the three, or the warehouse's when nothing (or nonsense) was named. */
@@ -86,7 +92,11 @@ export function homeAfterEnrol(requested: unknown): string {
 }
 
 /** A device's batch, with the device this socket authenticated it from — the box logs who handed what. */
-export type DeviceRelayHandler = (batch: { readonly source: string; readonly items: readonly unknown[]; readonly deviceId: string; readonly phoneHolder?: string }) => Promise<RelayReply>;
+export type DeviceRelayHandler = (batch: {
+  readonly source: string; readonly items: readonly unknown[]; readonly deviceId: string; readonly phoneHolder?: string;
+  /** OB-180: per item key, the person whose sign-in stamp on it this socket verified (made on this phone, while valid). */
+  readonly stampedBy?: Readonly<Record<string, string>>;
+}) => Promise<RelayReply>;
 export type DeviceStatusHandler = (keys: readonly string[]) => readonly BoxItemStatus[];
 
 export interface DeviceServer {
@@ -362,6 +372,10 @@ export function startDeviceServer(input: {
         }
         // Each record must name a person who held THIS phone this shift — the box's log and clock decide. Anything
         // else is refused by name (a person must look), never re-stamped (hard rule #10).
+        // OB-180: a record carrying a sign-in stamp must carry a TRUE one — made by a sign-in on this phone, for the person
+        // the record names, over this very record, while that sign-in was valid. A forged, altered, replayed or out-of-window
+        // stamp is refused by name; it never falls back to an unstamped record's path.
+        const stampedBy: Record<string, string> = {};
         const verdicts: (DeviceAck | null)[] = batch.items.map((raw) => {
           const read = readRelayItem(raw);
           if (!read.ok) return null; // the box's relay refuses a malformed item with its own reason
@@ -371,11 +385,20 @@ export function startDeviceServer(input: {
           if (!input.operators!.heldRecently(named.userId, auth.deviceId)) {
             return { key: read.item.key, status: 'refused', reason: `the record names ${named.userId}, who has not been signed in on this phone this shift` };
           }
+          const stamp = read.item.stamp;
+          if (stamp !== undefined) {
+            if (stamp.userId !== named.userId) {
+              return { key: read.item.key, status: 'refused', reason: `the record names ${named.userId}, but it was made under ${stamp.userId}'s sign-in` };
+            }
+            const verdict = input.operators!.verifyStamp(stamp, read.item.event, auth.deviceId);
+            if (!verdict.ok) return { key: read.item.key, status: 'refused', reason: verdict.reason };
+            stampedBy[read.item.key] = verdict.userId;
+          }
           return null;
         });
         try {
           const passed = batch.items.filter((_, i) => verdicts[i] === null);
-          const relayed = passed.length === 0 ? { acks: [] } : await input.relayDeviceEvents({ source: batch.source, items: passed, deviceId: auth.deviceId, phoneHolder: holder.userId });
+          const relayed = passed.length === 0 ? { acks: [] } : await input.relayDeviceEvents({ source: batch.source, items: passed, deviceId: auth.deviceId, phoneHolder: holder.userId, stampedBy });
           let next = 0;
           sendJson(res, 200, { acks: verdicts.map((v) => v ?? relayed.acks[next++]!) });
         } catch (e) {
@@ -429,12 +452,15 @@ export function startDeviceServer(input: {
         return;
       }
       const snap = input.snapshot();
+      // OB-180: the sign-in this page's records are stamped under — its reference and key, and the box's clock now.
+      const stamping = input.operators!.stampFor(operatorToken, auth.deviceId);
       const page = withPhoneHolderStrip(body.toString('utf8'), phoneHolderStrip({ displayName: holder.displayName, signOutAction: `${PHONE_SIGN_OUT_ROUTE}?screen=${screen}` }));
       send(res, 200, type, injectPayload(page, GLOBAL_FOR[route.screen], asPhoneHolder(screen, payloadFor(route.screen, snap, holder.userId), holder.userId), {
         catalogueFreshness: catalogueFreshness(snap),
         // Same origin: the shell's drain and badge post to `/lane/…` on THIS socket, under the device's cookie.
         laneWriteBase: '',
         deviceId: auth.deviceId,
+        ...(stamping === null ? {} : { phoneSignIn: { ...stamping, boxNow: input.now() } }),
       }));
     })();
   });

@@ -100,8 +100,17 @@ const JOB_WORDS: Readonly<Record<HandheldSource, string>> = Object.freeze({
 });
 
 /**
- * The phone's sign-in page: staff ID and PIN, one button, English and Tamil. A plain form post — no script, so it works on
- * the cheapest phone and nothing on the page can read the session (it comes back as an HttpOnly cookie).
+ * OB-180: the sign-in page forgets every handheld page the phone's service workers kept. A kept page carries the last
+ * person's sign-in stamp key; once this page shows, nobody is signed in on this phone (signed out, replaced, or ended), so
+ * that page must never open again offline and let somebody else stamp records as them. The queued work is in the phone's
+ * own storage, not in these caches, and is untouched.
+ */
+export const FORGET_KEPT_PAGES_SCRIPT = '<script>(function(){try{if(!self.caches)return;caches.keys().then(function(ks){ks.forEach(function(k){caches.open(k).then(function(c){c.keys().then(function(rs){rs.forEach(function(r){var p=new URL(r.url).pathname;if(/^[/](warehouse|picker|driver)[/](index[.]html)?$/.test(p))c.delete(r);});});});});});}catch(e){}})();</script>';
+
+/**
+ * The phone's sign-in page: staff ID and PIN, one button, English and Tamil. A plain form post, so it works on the
+ * cheapest phone and nothing on the page can read the session (it comes back as an HttpOnly cookie). Its one script only
+ * forgets the kept handheld pages (OB-180).
  */
 export function phoneSignInPage(input: { readonly screen: HandheldSource; readonly action: string; readonly message: string | null }): string {
   const notice = input.message === null ? '' : `<p class="notice" role="alert">${escapeHtml(input.message)}</p>`;
@@ -125,7 +134,7 @@ export function phoneSignInPage(input: { readonly screen: HandheldSource; readon
     <label>PIN <small>உங்கள் PIN — the same six digits as the till</small><input name="pin" type="password" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="off" required></label>
     <button type="submit">Sign in · உள்நுழை</button>
   </form>
-</main></body></html>`;
+</main>${FORGET_KEPT_PAGES_SCRIPT}</body></html>`;
 }
 
 /** The strip at the top of a phone screen: who is signed in, and the one button to hand the phone over. */
@@ -147,5 +156,7 @@ export function phoneOperatorsOf(register: TillOperators): PhoneOperators {
     check: (token, deviceId) => register.check(token, deviceLaneOf(deviceId)),
     signOut: (token) => register.signOut(token),
     heldRecently: (userId, deviceId) => register.heldRecently(userId, deviceLaneOf(deviceId), PHONE_HANDOVER_WINDOW_MS),
+    stampFor: (token, deviceId) => register.stampFor(token, deviceLaneOf(deviceId)),
+    verifyStamp: (stamp, event, deviceId) => register.verifyStamp(stamp, event, deviceLaneOf(deviceId)),
   };
 }

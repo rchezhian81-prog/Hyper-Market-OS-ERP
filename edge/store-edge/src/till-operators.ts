@@ -19,11 +19,24 @@
 // Every sign-in, refusal, lock and sign-out is appended to an fsync'd log (`till-operators.log`) and folded at start,
 // so a restart signs nobody out and every attempt can be read later. Neither a PIN nor a token is ever written to it.
 
-import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import type { OpenFileLog } from './file-log';
 import { openFileLog, readLog } from './file-log';
 import { isTillPin, tillPinMatches, type TillCredential } from '../../../packages/identity/src/till-pin';
+import type { DomainEvent } from '../../../packages/contracts/src/event';
+import { stampMessage, type SignInStamp } from '../../../packages/sync/src/sign-in-stamp';
+
+/**
+ * OB-180: how far a stamp's "made at" may sit outside its sign-in on the box's clock and still be that sign-in's — the
+ * phone tells the time on the box's clock as it last learnt it, so a little drift is a phone's clock, not a forgery.
+ */
+export const STAMP_CLOCK_SLACK_MS = 2 * 60_000;
+
+/** OB-180: why a handheld record's sign-in stamp was not accepted — said to the phone as it is. */
+export type StampVerdict =
+  | { readonly ok: true; readonly userId: string; readonly signedInAt: string }
+  | { readonly ok: false; readonly reason: string };
 
 /** The permission that makes a person a till operator — the same one head office re-checks on every synced sale. */
 export const TILL_AUTHORITY = 'pos.sale.sync';
@@ -127,6 +140,9 @@ export class TillOperators {
   private readonly spans = new Map<string, SessionSpan>();
   private readonly wrongByPerson = new Map<string, number[]>();
   private readonly refusedByLane = new Map<string, number[]>();
+  /** OB-180: each session's public stamp reference → its token hash (the box re-derives the stamp key from it). */
+  private readonly byStampRef = new Map<string, string>();
+  private readonly stampSecret: Buffer;
   /** Records on the disk that could not be read whole — surfaced, never repaired (hard rule #6). */
   readonly unreadableRecords: number;
 
@@ -142,6 +158,8 @@ export class TillOperators {
     unreadable: number,
   ) {
     this.unreadableRecords = unreadable;
+    // OB-180: its own secret, under its own label — never the PIN key itself, never written anywhere.
+    this.stampSecret = createHmac('sha256', deps.key).update('sre-handheld-sign-in-stamp-v1').digest();
     for (const r of restored) this.fold(r);
   }
 
@@ -172,6 +190,7 @@ export class TillOperators {
     if (r.kind === 'signed_in') {
       this.sessions.set(r.tokenHash, { tokenHash: r.tokenHash, userId: r.userId, laneId: r.laneId, via: r.via, at: r.at, expiresAt: r.expiresAt, authority: r.authority ?? TILL_AUTHORITY });
       this.spans.set(r.tokenHash, { userId: r.userId, laneId: r.laneId, at: r.at, expiresAt: r.expiresAt, endedAt: null });
+      this.byStampRef.set(this.stampRefOf(r.tokenHash), r.tokenHash);
     } else if (r.kind === 'signed_out') {
       this.sessions.delete(r.tokenHash);
       const span = this.spans.get(r.tokenHash);
@@ -319,6 +338,49 @@ export class TillOperators {
     if (session.laneId !== laneId) return fail('operator_on_another_lane');
     if (this.holdsTillAuthority(session.userId, session.authority) !== true) return fail(session.authority === TILL_AUTHORITY ? 'operator_lost_till_authority' : 'operator_lost_handheld_authority');
     return { ok: true, userId: session.userId, displayName: this.displayNameOf(session.userId), via: session.via, expiresAt: session.expiresAt, authority: session.authority };
+  }
+
+  private stampRefOf(tokenHash: string): string {
+    return createHmac('sha256', this.stampSecret).update(`ref|${tokenHash}`).digest('hex').slice(0, 32);
+  }
+  private stampKeyOf(tokenHash: string): Buffer {
+    return createHmac('sha256', this.stampSecret).update(`key|${tokenHash}`).digest();
+  }
+
+  /**
+   * OB-180: what a signed-in phone's page needs to stamp its records — the sign-in's public reference and its stamp key —
+   * for a LIVE session on this lane only. Derived, never stored; the token itself is never in it.
+   */
+  stampFor(token: string | undefined, laneId: string): { readonly ref: string; readonly key: string; readonly userId: string; readonly signedInAt: string; readonly expiresAt: string } | null {
+    if (token === undefined || token === '' || !this.check(token, laneId).ok) return null;
+    const session = this.sessions.get(sha256(token));
+    if (session === undefined) return null;
+    return { ref: this.stampRefOf(session.tokenHash), key: this.stampKeyOf(session.tokenHash).toString('hex'), userId: session.userId, signedInAt: session.at, expiresAt: session.expiresAt };
+  }
+
+  /**
+   * OB-180: is this the stamp of a sign-in this box made, on THIS lane (phone), for the person it names, over THIS record,
+   * made while that sign-in was valid (from signing in to signing out, being replaced, or expiry — the box's own log)?
+   * Any other answer is a refusal with its reason; nothing here ever falls back to sealing for somebody else.
+   */
+  verifyStamp(stamp: SignInStamp, event: DomainEvent, laneId: string): StampVerdict {
+    const tokenHash = this.byStampRef.get(stamp.ref);
+    const span = tokenHash === undefined ? undefined : this.spans.get(tokenHash);
+    if (tokenHash === undefined || span === undefined) return { ok: false, reason: 'the record\'s sign-in stamp names a sign-in this store computer never made' };
+    if (span.laneId !== laneId) return { ok: false, reason: 'the record\'s sign-in stamp was made on another phone' };
+    if (span.userId !== stamp.userId) return { ok: false, reason: `the record's sign-in stamp names ${stamp.userId}, but that sign-in was somebody else's` };
+    const expected = createHmac('sha256', this.stampKeyOf(tokenHash)).update(stampMessage(stamp, event), 'utf8').digest();
+    const given = Buffer.from(stamp.mac, 'hex');
+    if (given.length !== expected.length || !timingSafeEqual(given, expected)) {
+      return { ok: false, reason: 'the record\'s sign-in stamp does not match the record — it was altered or not made on this phone\'s sign-in' };
+    }
+    const made = Date.parse(stamp.madeAt);
+    const end = Math.min(Date.parse(span.expiresAt), span.endedAt === null ? Number.POSITIVE_INFINITY : Date.parse(span.endedAt));
+    const latest = Math.min(end, Date.parse(this.deps.now()));
+    if (made < Date.parse(span.at) - STAMP_CLOCK_SLACK_MS || made > latest + STAMP_CLOCK_SLACK_MS) {
+      return { ok: false, reason: `the record was stamped at ${stamp.madeAt}, outside ${stamp.userId}'s sign-in on this phone (from ${span.at}${Number.isFinite(end) ? ` to ${new Date(end).toISOString()}` : ''})` };
+    }
+    return { ok: true, userId: span.userId, signedInAt: span.at };
   }
 
   /** End a session. Unknown tokens are simply not signed in. */

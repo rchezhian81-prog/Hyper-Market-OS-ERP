@@ -304,6 +304,11 @@ export type LaneDeviceRelayHandler = (
      * handheld's record only for this person; a record naming anybody else travels unsealed.
      */
     readonly phoneHolder?: string;
+    /**
+     * OB-180: per item key, the person whose sign-in stamp the device socket verified on it — made on THIS phone, over this
+     * record, while that person's sign-in was valid. The box seals such a record for that person, whoever holds the phone now.
+     */
+    readonly stampedBy?: Readonly<Record<string, string>>;
   },
 ) => Promise<RelayReply>;
 

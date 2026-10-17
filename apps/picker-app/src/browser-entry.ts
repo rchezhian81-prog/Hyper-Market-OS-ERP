@@ -19,6 +19,7 @@
 
 import { openDeviceOutbox, guardedStore, type DeviceOutbox } from '../../../packages/sync/src/device-outbox';
 import { drainToBox, boxStatus } from '../../../packages/sync/src/device-drain';
+import { stamperForPage } from '../../../packages/sync/src/sign-in-stamp';
 import { PickSession, type PickLineInput } from './pick-session';
 
 import { mountDemoBanner, type BannerDocument } from '../../../packages/ui/src/demo-banner';
@@ -124,7 +125,8 @@ if (browserWindow !== undefined) {
     // saved needs to know before the end of the wave, not after it.
     browserWindow.pickerStorageProblem = why;
   });
-  const outbox = openDeviceOutbox(store, (why) => { browserWindow.pickerStorageProblem = why; });
+  // OB-180: every record this phone queues is stamped with the sign-in it is made under (the box injected it).
+  const outbox = openDeviceOutbox(store, (why) => { browserWindow.pickerStorageProblem = why; }, stamperForPage(browserWindow));
   browserWindow.pickerOutbox = outbox;
   const session = bootPicker(browserWindow.pickerData, outbox);
   if (session !== null) {

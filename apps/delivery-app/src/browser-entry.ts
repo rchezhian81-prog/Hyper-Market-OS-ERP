@@ -23,6 +23,7 @@
 
 import { openDeviceOutbox, guardedStore, type DeviceOutbox } from '../../../packages/sync/src/device-outbox';
 import { drainToBox, boxStatus } from '../../../packages/sync/src/device-drain';
+import { stamperForPage } from '../../../packages/sync/src/sign-in-stamp';
 import { RouteSession, type ContributionRule, type StopInput } from './route-session';
 
 import { mountDemoBanner, type BannerDocument } from '../../../packages/ui/src/demo-banner';
@@ -127,7 +128,8 @@ if (browserWindow !== undefined) {
   const store = guardedStore(`sre.driver.outbox.${route}`, storage, (why) => {
     browserWindow.driverStorageProblem = why;
   });
-  const outbox = openDeviceOutbox(store, (why) => { browserWindow.driverStorageProblem = why; });
+  // OB-180: every record this phone queues is stamped with the sign-in it is made under (the box injected it).
+  const outbox = openDeviceOutbox(store, (why) => { browserWindow.driverStorageProblem = why; }, stamperForPage(browserWindow));
   browserWindow.driverOutbox = outbox;
   // Defaulted to ₹100 and overridable per tenant. A tolerance of zero would send every driver to
   // the cash office over a rupee, and a control everybody routes around is not a control.
