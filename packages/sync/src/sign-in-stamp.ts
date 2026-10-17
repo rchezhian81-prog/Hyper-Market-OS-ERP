@@ -170,33 +170,242 @@ export function readPhoneSignIn(v: unknown): PhoneSignIn | undefined {
   return { ref, userId, signedInAt, expiresAt, key, boxNow };
 }
 
+// ── The phone's reading of the box's clock only moves forward (verifier hh NEW-1, L1, L2, L3) ──────────────────────
+//
+// The phone tells "when" on the box's clock: its own clock moved by how far it was from the box when the page was
+// served. But a phone's clock is the holder's to change — in Android's settings, offline — so on its own it cannot be
+// trusted to say a sign-in has not ended yet. So, for each sign-in, the phone keeps the LATEST box time it has ever seen
+// ("the mark"), on the phone beside the queues (`PHONE_CLOCK_MARKS_KEY`), written on every strip tick and every stamp.
+// If the clock ever reads earlier than that mark, or earlier than when the page was served, or it ran slower than the
+// page's own stopwatch (`performance.now`, which changing the clock does not move), the sign-in is ENDED on this phone:
+// nothing more is stamped and the screen locks. It stays ended (the mark says so), so putting the clock right again, or
+// reopening the kept page, does not bring it back.
+//
+// What this cannot see: a clock set back while no page of that sign-in was open, to a time after the last moment the
+// phone saw. Then the person gains at most the time from that moment to the sign-in's own end (never past it); the box
+// still refuses a stamp that runs backwards against one it already took from that sign-in, and anything arriving more
+// than twelve hours after the sign-in's end (OB-185, `verifyStamp`).
+//
+// When the phone hears the box's own clock (each reply to a hand-over carries it), that replaces the phone's estimate and
+// its mark — so a phone clock that jumped forward is put right at the next hand-over, without a reload (L1).
+
+/** Where the phone keeps each sign-in's mark (localStorage, beside the queues). The strip's own script reads the same. */
+export const PHONE_CLOCK_MARKS_KEY = 'sre.phone-sign-in.marks';
+/** How far the clock may step back and still be a clock's own small correction, not a hand on the settings. */
+export const PHONE_CLOCK_TOLERANCE_MS = 2 * 60_000;
+/** How long a sign-in's mark is kept after its end: twelve hours after it nothing it stamped is taken anyway (OB-185). */
+const MARK_KEPT_AFTER_END_MS = 24 * 3_600_000;
+
+/** Why a sign-in ended on the phone. */
+export type PhoneEndedWhy = 'expired' | 'clock_set_back' | 'locked';
+
+/** One sign-in's mark: `m` the latest box time seen; `o` the offset last heard from the box; `e` ended, and why; `x` its end. */
+interface ClockMark { m?: number; o?: number; e?: PhoneEndedWhy; x?: number }
+
+/** The phone's storage the marks live in (localStorage in a browser). Absent → kept in memory, for this page only. */
+export interface MarkStorage {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+}
+
+export type SignInClockReading =
+  | { readonly ended: false; readonly boxNowMs: number; readonly leftMs: number }
+  | { readonly ended: true; readonly why: PhoneEndedWhy };
+
+export interface SignInClock {
+  /** The box's time now as the phone reckons it — never earlier than any it read before — or that the sign-in ended. */
+  read(): SignInClockReading;
+  /** The box said its time was `boxMs` when the phone's clock read `phoneMs`: from now on the phone reckons from that. */
+  learn(boxMs: number, phoneMs: number): void;
+  /** The screen locked: every later reading is ended. */
+  forget(): void;
+}
+
+export interface PhoneClockOptions {
+  /** Where the marks are kept (the phone's localStorage). Absent → in memory, for this page only. */
+  readonly storage?: MarkStorage;
+  /** The page's stopwatch (`performance.now`). Absent → the stopwatch check is not made. */
+  readonly perfNow?: () => number;
+}
+
+function memoryMarks(): MarkStorage {
+  const held = new Map<string, string>();
+  return { getItem: (k) => held.get(k) ?? null, setItem: (k, v) => { held.set(k, v); } };
+}
+
+const num = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+const WHY: readonly PhoneEndedWhy[] = ['expired', 'clock_set_back', 'locked'];
+
 /**
- * The phone's stamper: called once per record as it is queued. `phoneNow` is the phone's clock; `phoneAtServe` is the
- * phone's clock when the box served the page (the page load, or the service worker's `shellCachedAt` when the page came
- * from the cache), so `madeAt` is told on the box's clock. After the sign-in's end the phone stamps nothing (the record
- * goes unstamped and the box will not seal it for anybody).
+ * The phone's clock for one sign-in. `phoneAtServe` is the phone's clock when the box served the page (the page load, or
+ * the service worker's `shellCachedAt`). The strip's own script (`signInLeftScript` in edge/store-edge/src/handheld-
+ * sign-in.ts) reads and writes the same marks the same way; a test binds the two.
  */
-export function phoneStamper(signIn: PhoneSignIn | undefined, phoneAtServe: string, phoneNow: () => string = () => new Date().toISOString()): ((event: DomainEvent) => SignInStamp | undefined) | undefined {
-  if (signIn === undefined) return undefined;
-  const offset = Date.parse(signIn.boxNow) - Date.parse(phoneAtServe);
-  const key = fromHex(signIn.key);
-  return (event) => {
-    // Never before the sign-in itself: the key only exists after it, so an earlier time can only be a clock slip.
-    const madeMs = Math.max(Date.parse(phoneNow()) + (Number.isFinite(offset) ? offset : 0), Date.parse(signIn.signedInAt));
-    if (!Number.isFinite(madeMs) || madeMs >= Date.parse(signIn.expiresAt)) return undefined;
-    const base = { v: 1 as const, ref: signIn.ref, userId: signIn.userId, madeAt: new Date(madeMs).toISOString() };
-    return { ...base, mac: hmacSha256Hex(key, stampMessage(base, event)) };
+export function signInClock(
+  signIn: PhoneSignIn,
+  phoneAtServe: string,
+  phoneNow: () => string = () => new Date().toISOString(),
+  options: PhoneClockOptions = {},
+): SignInClock {
+  const storage = options.storage ?? memoryMarks();
+  // A copy in memory as well: a phone whose storage throws (private mode, full) still guards THIS page.
+  const inMemory = memoryMarks();
+  const served = Date.parse(signIn.boxNow);
+  const expiry = Date.parse(signIn.expiresAt);
+  const baseOffset = served - Date.parse(phoneAtServe);
+  const perf = options.perfNow ?? ((): number => Number.NaN);
+  const wall0 = Date.parse(phoneNow());
+  const perf0 = perf();
+  let locked = false;
+
+  const readAll = (): Record<string, ClockMark> => {
+    for (const s of [storage, inMemory]) {
+      try {
+        const raw = s.getItem(PHONE_CLOCK_MARKS_KEY);
+        if (raw !== null) {
+          const v = JSON.parse(raw) as unknown;
+          if (isObj(v)) return v as Record<string, ClockMark>;
+        }
+      } catch { /* unreadable → the copy in memory, then nothing */ }
+    }
+    return {};
+  };
+  const markOf = (): ClockMark => {
+    const m = readAll()[signIn.ref];
+    return isObj(m) ? m : {};
+  };
+  const save = (mark: ClockMark, nowMs: number): void => {
+    const all = readAll();
+    all[signIn.ref] = mark;
+    for (const [ref, m] of Object.entries(all)) {
+      if (ref !== signIn.ref && (!isObj(m) || (num(m.x) && m.x + MARK_KEPT_AFTER_END_MS < nowMs))) delete all[ref];
+    }
+    const text = JSON.stringify(all);
+    inMemory.setItem(PHONE_CLOCK_MARKS_KEY, text);
+    try { storage.setItem(PHONE_CLOCK_MARKS_KEY, text); } catch { /* the copy in memory still guards this page */ }
+  };
+
+  return {
+    read() {
+      if (locked) return { ended: true, why: 'locked' };
+      const mark = markOf();
+      if (mark.e !== undefined) return { ended: true, why: WHY.includes(mark.e) ? mark.e : 'clock_set_back' };
+      const wall = Date.parse(phoneNow());
+      const est = wall + (num(mark.o) ? mark.o : num(baseOffset) ? baseOffset : 0);
+      const floor = Math.max(num(mark.m) ? mark.m : -Infinity, num(served) ? served : -Infinity);
+      const ran = perf() - perf0;
+      // Earlier than the mark or the serving, or slower than the stopwatch: the clock was turned back. (A phone asleep only
+      // makes the clock run AHEAD of the stopwatch, so an honest phone never trips this.)
+      const setBack = !Number.isFinite(est) || est < floor - PHONE_CLOCK_TOLERANCE_MS || (num(ran) && wall - wall0 < ran - PHONE_CLOCK_TOLERANCE_MS);
+      const at = Math.max(est, floor);
+      if (setBack || !(at < expiry)) {
+        const why: PhoneEndedWhy = setBack ? 'clock_set_back' : 'expired';
+        save({ ...mark, e: why, x: expiry }, num(at) ? at : Date.now());
+        return { ended: true, why };
+      }
+      save({ ...mark, m: at, x: expiry }, at);
+      return { ended: false, boxNowMs: at, leftMs: expiry - at };
+    },
+    learn(boxMs, phoneMs) {
+      if (locked || !num(boxMs) || !num(phoneMs)) return;
+      const mark = markOf();
+      if (mark.e !== undefined) return;
+      // The box's clock is the truth: it replaces the phone's offset AND its mark (a phone clock that had jumped ahead
+      // pushed the mark ahead with it).
+      save({ ...mark, o: boxMs - phoneMs, m: boxMs, x: expiry }, boxMs);
+    },
+    forget() { locked = true; },
   };
 }
 
+/** A handheld page's stamping: the stamper its queue calls, and the clock it stamps by. */
+export interface PageStamping {
+  readonly stamp: (event: DomainEvent) => SignInStamp | undefined;
+  readonly clock: SignInClock;
+}
+
 /**
- * The stamper for a handheld page, from what the box injected (`window.phoneSignIn`) and, when the page came from the
+ * The phone's stamping: `stamp` is called once per record as it is queued. `phoneNow` is the phone's clock; `phoneAtServe`
+ * is the phone's clock when the box served the page (the page load, or the service worker's `shellCachedAt` when the page
+ * came from the cache), so `madeAt` is told on the box's clock, and never runs backwards (the clock's mark). After the
+ * sign-in's end — its expiry, or the clock turned back — the phone stamps nothing and `onEnded` is told AT ONCE, so the
+ * screen locks on the very record that found the end rather than at the strip's next tick (L2). That one record is still
+ * queued — never lost — unstamped, and the box never seals it for anybody but whoever holds the phone at the time.
+ * `forget` (the lock) drops the stamp key from memory (L3).
+ */
+export function phoneStamping(
+  signIn: PhoneSignIn | undefined,
+  phoneAtServe: string,
+  phoneNow: () => string = () => new Date().toISOString(),
+  options: PhoneClockOptions & { readonly onEnded?: (why: PhoneEndedWhy) => void } = {},
+): PageStamping | undefined {
+  if (signIn === undefined) return undefined;
+  const clock = signInClock(signIn, phoneAtServe, phoneNow, options);
+  let key: Uint8Array | null = fromHex(signIn.key);
+  const signedInAt = Date.parse(signIn.signedInAt);
+  return {
+    clock: { read: () => clock.read(), learn: (b, p) => clock.learn(b, p), forget: () => { key = null; clock.forget(); } },
+    stamp: (event) => {
+      const reading = clock.read();
+      if (reading.ended || key === null) {
+        options.onEnded?.(reading.ended ? reading.why : 'locked');
+        return undefined;
+      }
+      // Never before the sign-in itself: the key only exists after it, so an earlier time can only be a clock slip.
+      const madeMs = Math.max(reading.boxNowMs, signedInAt);
+      const base = { v: 1 as const, ref: signIn.ref, userId: signIn.userId, madeAt: new Date(madeMs).toISOString() };
+      return { ...base, mac: hmacSha256Hex(key, stampMessage(base, event)) };
+    },
+  };
+}
+
+/** The stamper alone (`phoneStamping`'s). */
+export function phoneStamper(
+  signIn: PhoneSignIn | undefined,
+  phoneAtServe: string,
+  phoneNow: () => string = () => new Date().toISOString(),
+  options: PhoneClockOptions & { readonly onEnded?: (why: PhoneEndedWhy) => void } = {},
+): ((event: DomainEvent) => SignInStamp | undefined) | undefined {
+  return phoneStamping(signIn, phoneAtServe, phoneNow, options)?.stamp;
+}
+
+/**
+ * The stamping for a handheld page, from what the box injected (`window.phoneSignIn`) and, when the page came from the
  * service worker's cache, when it was kept (`window.shellCachedAt`). `undefined` → this page stamps nothing (not served
  * by a box with a sign-in): its records go unstamped, and the box never seals them for anybody but the holder at the time.
+ *
+ * On the page, a stamp that finds the sign-in ended locks the screen at once — through the strip's
+ * `window.phoneSignInLock`, once the record that found it is saved — and the lock drops the stamp key from memory through
+ * `window.phoneSignInOnLock` (L2, L3).
  */
-export function stamperForPage(win: unknown, phoneNow: () => string = () => new Date().toISOString()): ((event: DomainEvent) => SignInStamp | undefined) | undefined {
+export function pageStamping(
+  win: unknown,
+  phoneNow: () => string = () => new Date().toISOString(),
+  options: PhoneClockOptions = {},
+): PageStamping | undefined {
   if (!isObj(win)) return undefined;
   const signIn = readPhoneSignIn(win['phoneSignIn']);
   const cachedAt = win['shellCachedAt'];
-  return phoneStamper(signIn, typeof cachedAt === 'string' && Number.isFinite(Date.parse(cachedAt)) ? cachedAt : phoneNow(), phoneNow);
+  const onEnded = (why: PhoneEndedWhy): void => {
+    // A microtask: the queue saves the record that found the end first; then the lock replaces the page.
+    void Promise.resolve().then(() => {
+      const lock = win['phoneSignInLock'];
+      if (typeof lock === 'function') (lock as (why: PhoneEndedWhy) => void)(why);
+    });
+  };
+  const stamping = phoneStamping(signIn, typeof cachedAt === 'string' && Number.isFinite(Date.parse(cachedAt)) ? cachedAt : phoneNow(), phoneNow, { ...options, onEnded });
+  if (stamping !== undefined) {
+    if (!Array.isArray(win['phoneSignInOnLock'])) win['phoneSignInOnLock'] = [];
+    (win['phoneSignInOnLock'] as (() => void)[]).push(() => stamping.clock.forget());
+  }
+  return stamping;
+}
+
+/** The stamper for a handheld page (`pageStamping`'s). */
+export function stamperForPage(
+  win: unknown,
+  phoneNow: () => string = () => new Date().toISOString(),
+  options: PhoneClockOptions = {},
+): ((event: DomainEvent) => SignInStamp | undefined) | undefined {
+  return pageStamping(win, phoneNow, options)?.stamp;
 }

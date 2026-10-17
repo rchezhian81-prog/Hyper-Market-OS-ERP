@@ -423,7 +423,9 @@ async function syncToBox() {
   }
   render();
 }
-setInterval(() => { void syncToBox(); }, 10_000);
+const syncTimer = setInterval(() => { void syncToBox(); }, 10_000);
+// Verifier hh L3: when the sign-in ends the screen locks (the strip's script); this screen's timers stop with it.
+(window.phoneSignInOnLock = Array.isArray(window.phoneSignInOnLock) ? window.phoneSignInOnLock : []).push(() => clearInterval(syncTimer));
 
 function render() {
   const stops = session.route();
@@ -770,7 +772,8 @@ async function refreshBadge() {
 }
 window.driverBadge = { refresh: refreshBadge, state: () => box };
 void refreshBadge();
-setInterval(() => { void refreshBadge(); }, 10_000);
+const badgeTimer = setInterval(() => { void refreshBadge(); }, 10_000);
+window.phoneSignInOnLock.push(() => clearInterval(badgeTimer));
 
 // ── Boot ────────────────────────────────────────────────────────────────────
 

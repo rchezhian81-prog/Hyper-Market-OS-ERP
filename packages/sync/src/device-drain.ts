@@ -35,6 +35,14 @@ export interface DrainToBoxInput {
   readonly fetch: FetchLike;
   /** Items per batch. Small on purpose: a handheld on shop wifi should not post a day's work in one body. */
   readonly limit?: number;
+  /**
+   * The box's own clock, as its reply said it (`boxNow`), and the device's clock when the reply came — so a handheld
+   * whose clock jumped reckons from the box's again without a reload (verifier hh L1). Told for a reply that carries it:
+   * a hand-over (200) or "nobody is signed in" (401).
+   */
+  readonly onBoxTime?: (boxMs: number, deviceMs: number) => void;
+  /** The device's clock (ms), for `onBoxTime`. */
+  readonly deviceNow?: () => number;
 }
 
 export interface DrainToBoxResult {
@@ -82,7 +90,10 @@ export async function drainToBox(input: DrainToBoxInput): Promise<DrainToBoxResu
     });
     // Anything but 200 is the box declining the BATCH (malformed envelope, wrong origin, too large) — not a
     // verdict on any item, so every item is kept and counted as a failed attempt, never dead-lettered.
-    acks = res.status === 200 ? readAcks(await res.json().catch(() => undefined)) : [];
+    const reply = res.status === 200 || res.status === 401 ? await res.json().catch(() => undefined) : undefined;
+    const boxNow = isObj(reply) && typeof reply['boxNow'] === 'string' ? Date.parse(reply['boxNow']) : Number.NaN;
+    if (input.onBoxTime !== undefined && Number.isFinite(boxNow)) input.onBoxTime(boxNow, (input.deviceNow ?? Date.now)());
+    acks = res.status === 200 ? readAcks(reply) : [];
   } catch {
     for (const item of batch) input.outbox.recordFailure(item.key);
     return { attempted: batch.length, handed: 0, refused: 0, failed: batch.length, offline: true };

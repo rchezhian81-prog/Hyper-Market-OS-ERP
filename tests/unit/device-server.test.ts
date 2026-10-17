@@ -239,11 +239,11 @@ describe('the device socket', () => {
     const e = event('s1');
     const stamp = phoneStamper(signInA, NOW, () => NOW)!(e)!;
     const ok = await fetch(`${base}/lane/outbox`, { method: 'POST', headers: { 'content-type': 'application/json', cookie }, body: JSON.stringify({ source: 'warehouse', items: [{ key: e.idempotencyKey, event: e, stamp }] }) });
-    expect(await ok.json()).toEqual({ acks: [{ key: e.idempotencyKey, status: 'accepted' }] });
+    expect(await ok.json()).toEqual({ boxNow: NOW, acks: [{ key: e.idempotencyKey, status: 'accepted' }] });
     expect(relayed.at(-1)).toMatchObject({ phoneHolder: 'u-worker', stampedBy: { [e.idempotencyKey]: 'u-worker' } });
     const f = event('s2');
     const forged = await fetch(`${base}/lane/outbox`, { method: 'POST', headers: { 'content-type': 'application/json', cookie }, body: JSON.stringify({ source: 'warehouse', items: [{ key: f.idempotencyKey, event: f, stamp: { ...stamp, mac: '0'.repeat(64) } }] }) });
-    expect(await forged.json()).toEqual({ acks: [{ key: f.idempotencyKey, status: 'refused', reason: expect.stringContaining('does not match the record') as unknown }] });
+    expect(await forged.json()).toEqual({ boxNow: NOW, acks: [{ key: f.idempotencyKey, status: 'refused', reason: expect.stringContaining('does not match the record') as unknown }] });
     expect(relayed).toHaveLength(1);
   });
 
@@ -253,7 +253,7 @@ describe('the device socket', () => {
     const e = event('c1');
     const res = await fetch(`${base}/lane/outbox`, { method: 'POST', headers: { 'content-type': 'application/json', cookie }, body: JSON.stringify({ source: 'warehouse', items: [{ key: e.idempotencyKey, event: e }] }) });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ acks: [{ key: 'wh-move:c1', status: 'accepted' }] });
+    expect(await res.json()).toEqual({ boxNow: NOW, acks: [{ key: 'wh-move:c1', status: 'accepted' }] });
     expect(relayed).toHaveLength(1);
     expect(relayed[0]).toMatchObject({ source: 'warehouse', deviceId: 'hh-01', phoneHolder: 'u-worker' });
 
@@ -338,7 +338,7 @@ describe('the device socket', () => {
     // A record naming somebody else is refused by name; the worker's own goes through, in order.
     const other = event('c2', 'u-someone-else');
     const mixed = await fetch(`${base}/lane/outbox`, { method: 'POST', headers: { 'content-type': 'application/json', cookie }, body: JSON.stringify({ source: 'warehouse', items: [{ key: other.idempotencyKey, event: other }, { key: e1.idempotencyKey, event: e1 }] }) });
-    expect(await mixed.json()).toEqual({ acks: [
+    expect(await mixed.json()).toEqual({ boxNow: NOW, acks: [
       { key: 'wh-move:c2', status: 'refused', reason: 'the record names u-someone-else, who has not been signed in on this phone this shift' },
       { key: 'wh-move:c1', status: 'accepted' },
     ] });

@@ -23,7 +23,7 @@
 
 import { openDeviceOutbox, guardedStore, type DeviceOutbox } from '../../../packages/sync/src/device-outbox';
 import { drainToBox, boxStatus } from '../../../packages/sync/src/device-drain';
-import { stamperForPage } from '../../../packages/sync/src/sign-in-stamp';
+import { pageStamping, type SignInClock } from '../../../packages/sync/src/sign-in-stamp';
 import { RouteSession, type ContributionRule, type StopInput } from './route-session';
 
 import { mountDemoBanner, type BannerDocument } from '../../../packages/ui/src/demo-banner';
@@ -80,13 +80,15 @@ export function openDriverRelay(
   laneWriteBase: string | undefined,
   session: RouteSession,
   outbox: DeviceOutbox,
+  /** The sign-in's clock (OB-180): each hand-over reply carries the box's time, and the clock reckons from it (L1). */
+  clock?: SignInClock,
 ): DriverRelay | undefined {
   if (laneWriteBase === undefined) return undefined;
   const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
   if (fetchFn === undefined) return undefined;
   return {
     syncNow: async () => {
-      const result = await drainToBox({ outbox, boxBase: laneWriteBase, source: 'driver', fetch: fetchFn });
+      const result = await drainToBox({ outbox, boxBase: laneWriteBase, source: 'driver', fetch: fetchFn, ...(clock === undefined ? {} : { onBoxTime: (box, phone) => clock.learn(box, phone) }) });
       const statuses = await boxStatus({ boxBase: laneWriteBase, keys: session.handedKeys(), fetch: fetchFn });
       if (statuses !== undefined) session.noteBoxStatus(statuses);
       return { handed: result.handed, refused: result.refused, failed: result.failed, offline: result.offline };
@@ -128,8 +130,15 @@ if (browserWindow !== undefined) {
   const store = guardedStore(`sre.driver.outbox.${route}`, storage, (why) => {
     browserWindow.driverStorageProblem = why;
   });
-  // OB-180: every record this phone queues is stamped with the sign-in it is made under (the box injected it).
-  const outbox = openDeviceOutbox(store, (why) => { browserWindow.driverStorageProblem = why; }, stamperForPage(browserWindow));
+  // OB-180: every record this phone queues is stamped with the sign-in it is made under (the box injected it), on a
+  // clock that only moves forward and is kept beside the queue (verifier hh NEW-1); the end of the sign-in found by a
+  // record locks the screen at once (L2).
+  const perf = (globalThis as { performance?: { now(): number } }).performance;
+  const stamping = pageStamping(browserWindow, () => new Date().toISOString(), {
+    ...(storage === undefined ? {} : { storage }),
+    ...(perf === undefined ? {} : { perfNow: () => perf.now() }),
+  });
+  const outbox = openDeviceOutbox(store, (why) => { browserWindow.driverStorageProblem = why; }, stamping?.stamp);
   browserWindow.driverOutbox = outbox;
   // Defaulted to ₹100 and overridable per tenant. A tolerance of zero would send every driver to
   // the cash office over a rupee, and a control everybody routes around is not a control.
@@ -138,7 +147,7 @@ if (browserWindow !== undefined) {
   if (session !== null) {
     browserWindow.routeSession = session;
     // The relay to the store computer — present only when the box served this page (it injects `laneWriteBase`).
-    const relay = openDriverRelay(browserWindow.laneWriteBase, session, outbox);
+    const relay = openDriverRelay(browserWindow.laneWriteBase, session, outbox, stamping?.clock);
     if (relay !== undefined) browserWindow.driverRelay = relay;
   }
 }

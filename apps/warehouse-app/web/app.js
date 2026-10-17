@@ -632,7 +632,9 @@ async function syncToBox() {
   }
   render();
 }
-setInterval(() => { void syncToBox(); }, 10_000);
+const syncTimer = setInterval(() => { void syncToBox(); }, 10_000);
+// Verifier hh L3: when the sign-in ends the screen locks (the strip's script); this screen's timers stop with it.
+(window.phoneSignInOnLock = Array.isArray(window.phoneSignInOnLock) ? window.phoneSignInOnLock : []).push(() => clearInterval(syncTimer));
 
 // ── OB-37: the store's open deliveries ──────────────────────────────────────
 // Each issued order that names this store, with what is still to arrive. Choosing one reloads the phone on it (the box
@@ -1013,7 +1015,8 @@ async function refreshBadge() {
 }
 window.warehouseBadge = { refresh: refreshBadge, state: () => box };
 void refreshBadge();
-setInterval(() => { void refreshBadge(); }, 10_000);
+const badgeTimer = setInterval(() => { void refreshBadge(); }, 10_000);
+window.phoneSignInOnLock.push(() => clearInterval(badgeTimer));
 
 // ── Boot ────────────────────────────────────────────────────────────────────
 el('who').firstChild.textContent = (data && data.workerId) || '—';

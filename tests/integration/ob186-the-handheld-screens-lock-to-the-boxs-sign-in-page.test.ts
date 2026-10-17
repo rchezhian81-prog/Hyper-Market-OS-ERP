@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { withTillPeople, issueTillPins, signInOnPhone, type TillPerson } from '../support/till-operator';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
-import { FORGET_KEPT_PAGES_SCRIPT, SIGN_IN_ENDED_MESSAGE } from '../../edge/store-edge/src/handheld-sign-in';
+import { FORGET_KEPT_PAGES_SCRIPT, SIGN_IN_CLOCK_MESSAGE, SIGN_IN_ENDED_MESSAGE, DRIVER_SIGN_IN_ENDED_MESSAGE, signInEndedMessageFor } from '../../edge/store-edge/src/handheld-sign-in';
 import { enrolmentCodeHash } from '../../packages/platform-admin/src/device-enrolment';
 
 /**
@@ -53,14 +53,22 @@ describe('OB-186: each handheld screen carries the sign-in page it locks to', ()
       const shell = await fetch(`${device}/${screen}/`, { headers: { accept: 'text/html', cookie } });
       expect(shell.status).toBe(200);
       const html = await shell.text();
-      const m = /,L=(\{.*?\}),locked=false;/.exec(html);
+      const m = /,L=(\{.*?\}),locked=false,/.exec(html);
       expect(m, `${screen} carries the lock`).not.toBeNull();
-      const lock = JSON.parse(m![1]!) as { url: string; page: string };
+      const lock = JSON.parse(m![1]!) as { url: string; page: string; clock: { url: string; page: string } };
       expect(lock.url).toBe(`/device/sign-in?screen=${screen}&ended=1`);
       // Byte for byte the page the box serves at that address — said with the reason, forgetting the kept pages.
       const served = await (await fetch(`${device}${lock.url}`, { headers: { accept: 'text/html', cookie: phone } })).text();
       expect(lock.page).toBe(served);
-      expect(served).toContain(SIGN_IN_ENDED_MESSAGE.split(' · ')[0]!);
+      expect(served).toContain(signInEndedMessageFor(screen).split(' · ')[0]!);
+      // OB-187: the driver's screen says twelve hours; warehouse and picker four (OB-184).
+      expect(signInEndedMessageFor(screen)).toBe(screen === 'driver' ? DRIVER_SIGN_IN_ENDED_MESSAGE : SIGN_IN_ENDED_MESSAGE);
+      expect(html).toContain(screen === 'driver' ? 'Sign-in ends in 12 h 0 min' : 'Sign-in ends in 4 h 0 min');
+      // Verifier hh NEW-1: a clock turned back locks to the box's own page for that, saying so.
+      expect(lock.clock.url).toBe(`/device/sign-in?screen=${screen}&ended=clock`);
+      const servedClock = await (await fetch(`${device}${lock.clock.url}`, { headers: { accept: 'text/html', cookie: phone } })).text();
+      expect(lock.clock.page).toBe(servedClock);
+      expect(servedClock).toContain(SIGN_IN_CLOCK_MESSAGE.split(' · ')[0]!.replace(/'/g, '&#39;'));
       expect(served).toContain(FORGET_KEPT_PAGES_SCRIPT);
       expect(served).toContain(`action="/device/sign-in?screen=${screen}"`);
       // The page packed in the screen cannot break out of the script it rides in.

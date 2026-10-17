@@ -37,11 +37,11 @@ import {
 } from '../../../packages/sync/src/device-relay';
 import type { DeviceEnrolments, PackDevice } from './device-enrolments';
 import type { LaneSyncStatus } from './sync-status';
-import { PHONE_SESSION_HOURS, type CheckOutcome, type SignInOutcome, type StampVerdict } from './till-operators';
+import { deviceLaneOf, sessionHoursFor, type CheckOutcome, type SignInOutcome, type StampVerdict } from './till-operators';
 import type { SignInStamp } from '../../../packages/sync/src/sign-in-stamp';
 import type { DomainEvent } from '../../../packages/contracts/src/event';
 import {
-  HANDHELD_AUTHORITY, SIGN_IN_ENDED_MESSAGE, asPhoneHolder, personNamedBy, phoneHolderStrip, phoneSignInPage, signInLockOf, withPhoneHolderStrip,
+  HANDHELD_AUTHORITY, signInEndedMessageFor, asPhoneHolder, personNamedBy, phoneHolderStrip, phoneSignInPage, signInLockOf, withPhoneHolderStrip,
 } from './handheld-sign-in';
 
 /** Loopback unless a deployment names the shop's address explicitly — the device socket never widens by itself. */
@@ -54,9 +54,12 @@ export const DEVICE_SYNC_STATUS_ROUTE = '/lane/sync-status';
 /** DF-3-c (OB-30 "A"): the person holding the phone signs in here with their staff ID and the till PIN, and out again. */
 export const PHONE_SIGN_IN_ROUTE = '/device/sign-in';
 export const PHONE_SIGN_OUT_ROUTE = '/device/sign-out';
-/** The phone holder's session: HttpOnly, SameSite=Strict, the box keeps only its hash. Four hours, as the sign-in (OB-184). */
+/**
+ * The phone holder's session: HttpOnly, SameSite=Strict, the box keeps only its hash. As long as the sign-in: four hours on
+ * the warehouse and picker screens (OB-184), twelve on the driver's (OB-187).
+ */
 export const OPERATOR_COOKIE = 'sre_operator';
-const OPERATOR_COOKIE_SECONDS = PHONE_SESSION_HOURS * 3600;
+const operatorCookieSeconds = (deviceId: string, screen: HandheldSource): number => sessionHoursFor(deviceLaneOf(deviceId), HANDHELD_AUTHORITY[screen]) * 3600;
 
 /**
  * Who is holding the phone (DF-3-c · OB-30 "A"): the box's till register, addressed by the DEVICE. Absent → nobody can
@@ -326,7 +329,12 @@ export function startDeviceServer(input: {
         const screen = phoneScreenOf(url.searchParams.get('screen'));
         const action = `${PHONE_SIGN_IN_ROUTE}?screen=${screen}`;
         // OB-186: a screen that locked itself at the end of its sign-in comes here marked `ended=1`, and is told why.
-        if (req.method === 'GET') { send(res, 200, TYPES['.html']!, phoneSignInPage({ screen, action, message: url.searchParams.get('ended') === '1' ? SIGN_IN_ENDED_MESSAGE : null })); return; }
+        // (`ended=clock`: it locked because the phone's clock was turned back — verifier hh NEW-1.)
+        if (req.method === 'GET') {
+          const ended = url.searchParams.get('ended');
+          send(res, 200, TYPES['.html']!, phoneSignInPage({ screen, action, message: ended === '1' ? signInEndedMessageFor(screen) : ended === 'clock' ? signInEndedMessageFor(screen, 'clock') : null }));
+          return;
+        }
         if (req.method !== 'POST') { send(res, 405, 'text/plain; charset=utf-8', 'sign-in is a POST'); return; }
         const wantsJson = (req.headers.accept ?? '').includes('application/json');
         const fields = await readFormOrJson(req, 4096);
@@ -338,7 +346,7 @@ export function startDeviceServer(input: {
         if (input.operators === null) { answer(503, 'This store computer cannot sign anybody in on a phone. Tell the manager.', 'no_sign_in_here'); return; }
         const outcome = await input.operators.signIn({ staffId: fields['staffId'] ?? '', pin: fields['pin'] ?? '', deviceId: auth.deviceId, authority: HANDHELD_AUTHORITY[screen] });
         if (!outcome.signedIn) { answer(outcome.refusedBecause === 'locked' || outcome.refusedBecause === 'lane_locked' ? 429 : 401, outcome.laneMessage, outcome.refusedBecause); return; }
-        const cookie = `${OPERATOR_COOKIE}=${encodeURIComponent(outcome.token)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${OPERATOR_COOKIE_SECONDS}`;
+        const cookie = `${OPERATOR_COOKIE}=${encodeURIComponent(outcome.token)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${operatorCookieSeconds(auth.deviceId, screen)}`;
         if (wantsJson) { sendJson(res, 200, { signedIn: true, userId: outcome.userId, displayName: outcome.displayName, expiresAt: outcome.expiresAt, next: `/${screen}/` }, { 'set-cookie': cookie }); return; }
         res.writeHead(303, { location: `/${screen}/`, 'set-cookie': cookie, ...SECURITY_HEADERS });
         res.end();
@@ -368,7 +376,8 @@ export function startDeviceServer(input: {
         // DF-3-c: nobody signed in on this phone → nothing is taken. Not a refusal: the phone keeps every item and retries
         // once somebody signs in (a 401 is "not now", never "never").
         if (holder === null || !holder.ok) {
-          sendJson(res, 401, { acks: [], reason: holder === null ? 'this store computer cannot sign anybody in on a phone' : holder.laneMessage });
+          // The box's clock rides along (as on every hand-over reply), so the phone reckons from it again (verifier hh L1).
+          sendJson(res, 401, { acks: [], reason: holder === null ? 'this store computer cannot sign anybody in on a phone' : holder.laneMessage, boxNow: input.now() });
           return;
         }
         // Each record must name a person who held THIS phone this shift — the box's log and clock decide. Anything
@@ -401,7 +410,7 @@ export function startDeviceServer(input: {
           const passed = batch.items.filter((_, i) => verdicts[i] === null);
           const relayed = passed.length === 0 ? { acks: [] } : await input.relayDeviceEvents({ source: batch.source, items: passed, deviceId: auth.deviceId, phoneHolder: holder.userId, stampedBy });
           let next = 0;
-          sendJson(res, 200, { acks: verdicts.map((v) => v ?? relayed.acks[next++]!) });
+          sendJson(res, 200, { acks: verdicts.map((v) => v ?? relayed.acks[next++]!), boxNow: input.now() });
         } catch (e) {
           // The box failed mid-batch: no verdict on any item; the device keeps them all and tries again.
           sendJson(res, 500, { acks: [], reason: e instanceof Error ? e.message : String(e) });

@@ -21,7 +21,8 @@
 
 import type { DomainEvent } from '../../../packages/contracts/src/event';
 import type { HandheldSource } from '../../../packages/sync/src/device-relay';
-import { deviceLaneOf, type TillOperators } from './till-operators';
+import { DRIVER_PHONE_AUTHORITY, PHONE_LATE_ARRIVAL_MS, deviceLaneOf, type TillOperators } from './till-operators';
+import { PHONE_CLOCK_MARKS_KEY, PHONE_CLOCK_TOLERANCE_MS } from '../../../packages/sync/src/sign-in-stamp';
 import type { PhoneOperators } from './device-server';
 
 /** The permission each phone's job needs — exactly the one head office re-verifies on that job's records. */
@@ -30,8 +31,8 @@ export const HANDHELD_AUTHORITY: Readonly<Record<HandheldSource, string>> = Obje
   warehouse: 'inventory.movement.append',
   // services/fulfilment/src/waves.ts PICK_PERMISSION
   picker: 'fulfilment.pack.record',
-  // services/fulfilment/src/driver-runs.ts DRIVE_PERMISSION
-  driver: 'delivery.attempt.record',
+  // services/fulfilment/src/driver-runs.ts DRIVE_PERMISSION — the job whose sign-in lasts the shift (OB-187)
+  driver: DRIVER_PHONE_AUTHORITY,
 });
 
 /** Where each phone record names the person who did it. A record type not listed here is not a phone's to send. */
@@ -56,7 +57,7 @@ export const HANDHELD_PERSON_FIELD: Readonly<Record<string, string>> = Object.fr
  * limit, OB-184), so the two rules never meet: the four hours bound when work may be MADE under a sign-in, the twelve
  * hours how late it may still ARRIVE. Later than that it is refused with the reason, never silently lost.
  */
-export const PHONE_HANDOVER_WINDOW_MS = 12 * 3_600_000;
+export const PHONE_HANDOVER_WINDOW_MS = PHONE_LATE_ARRIVAL_MS;
 
 const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
 
@@ -141,14 +142,16 @@ export function phoneSignInPage(input: { readonly screen: HandheldSource; readon
 </main>${FORGET_KEPT_PAGES_SCRIPT}</body></html>`;
 }
 
+/** The strip's words once the sign-in has ended (OB-184), and once the phone's clock was turned back (verifier hh NEW-1). */
+const SIGN_IN_ENDED_WORDS = 'Your sign-in has ended. Sign out and sign in again. · உங்கள் உள்நுழைவு முடிந்தது. வெளியேறி மீண்டும் உள்நுழைக.';
+const SIGN_IN_CLOCK_WORDS = 'This phone\'s clock was turned back: your sign-in has ended. Sign in again. · கைபேசியின் நேரம் பின்னோக்கி மாற்றப்பட்டது: உங்கள் உள்நுழைவு முடிந்தது. மீண்டும் உள்நுழைக.';
+
 /**
  * OB-184: how long a phone sign-in has left, in the strip's words — English and Tamil — or that it has ended. The same
  * words the page's own script writes as the minutes pass (`SIGN_IN_LEFT_SCRIPT` mirrors this; a test binds the two).
  */
 export function signInLeftWords(remainingMs: number): { readonly ended: boolean; readonly text: string } {
-  if (!Number.isFinite(remainingMs) || remainingMs <= 0) {
-    return { ended: true, text: 'Your sign-in has ended. Sign out and sign in again. · உங்கள் உள்நுழைவு முடிந்தது. வெளியேறி மீண்டும் உள்நுழைக.' };
-  }
+  if (!Number.isFinite(remainingMs) || remainingMs <= 0) return { ended: true, text: SIGN_IN_ENDED_WORDS };
   const minutes = Math.ceil(remainingMs / 60_000);
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;
@@ -156,42 +159,80 @@ export function signInLeftWords(remainingMs: number): { readonly ended: boolean;
 }
 
 /**
- * The strip's own script: re-says the time left every half minute from what the box injected (`window.phoneSignIn`,
- * on the box's clock) and, for a page kept for offline use, when it was kept (`window.shellCachedAt`) — the same reading
- * of the clock the phone stamps by, so the strip says "ended" exactly when the phone stops stamping.
+ * The strip's own script: re-says the time left every half minute (and whenever the screen comes back into view) from
+ * what the box injected (`window.phoneSignIn`, on the box's clock) and, for a page kept for offline use, when it was kept
+ * (`window.shellCachedAt`) — the same reading of the clock the phone stamps by (`signInClock` in
+ * packages/sync/src/sign-in-stamp.ts: the same marks under `PHONE_CLOCK_MARKS_KEY`, the same tolerance, the same
+ * stopwatch check), so the strip says "ended" exactly when the phone stops stamping. A clock turned back — earlier than the
+ * latest time this sign-in's pages have seen, earlier than when the page was served, or running slower than the page's
+ * stopwatch — ends the sign-in too (verifier hh NEW-1), and for good: the mark remembers it.
  *
  * OB-186 "A" (owner, 17 Oct 2026, "Lock the screen"): when the sign-in has ended the screen LOCKS — it goes to the phone's
  * sign-in page by itself (`lock`). It never asks the network: it replaces the whole screen with the sign-in page the box
- * packed into this strip (`L.page`, byte for byte the page the box serves at `L.url`) and the address becomes the sign-in
- * page's — so it works the same on a page opened from the phone's own cache with the wifi down as on a live one, and a
- * box that drops out at that very moment cannot leave the phone on an error page. Replacing the document removes the old
- * screen with its buttons and key listeners, so nothing more can be scanned. The sign-in page forgets the kept handheld
- * pages (OB-180), and nothing in the phone's queue is touched: it stays queued and is handed over under the next sign-in
- * (signing in there is an ordinary form post to the box, which then opens the screen afresh). `L` is `null` for a strip
- * with nothing to lock to (it then only says "ended", as before).
+ * packed into this strip (`L.page`, byte for byte the page the box serves at `L.url`; `L.clock` for a clock turned back)
+ * and the address becomes the sign-in page's — so it works the same on a page opened from the phone's own cache with the
+ * wifi down as on a live one, and a box that drops out at that very moment cannot leave the phone on an error page.
+ * Replacing the document removes the old screen with its buttons and key listeners, so nothing more can be scanned. Before
+ * it does, the lock runs the page's own lock hooks (`window.phoneSignInOnLock`: the screen's sync timers stop and the stamp
+ * key is dropped from memory) and forgets `window.phoneSignIn` (verifier hh L3). The page's queue calls `lock` itself
+ * (`window.phoneSignInLock`) the moment a record finds the sign-in ended, rather than at the next tick (L2). The sign-in
+ * page forgets the kept handheld pages (OB-180), and nothing in the phone's queue is touched: it stays queued and is
+ * handed over under the next sign-in. `L` is `null` for a strip with nothing to lock to (it then only says "ended").
  */
-const signInLeftScript = (lock: string): string => '<script>(function(){var d=document,w=window,t0=Date.now(),L=' + lock + ',locked=false;'
-  + 'function lock(){if(L===null||locked)return;locked=true;try{w.history.replaceState(null,"",L.url);}catch(e){}d.open();d.write(L.page);d.close();}'
-  + 'function say(){var el=d.querySelector("[data-sign-in-left]");var s=w.phoneSignIn;if(!el||!s)return;'
-  + 'var at=typeof w.shellCachedAt==="string"&&isFinite(Date.parse(w.shellCachedAt))?Date.parse(w.shellCachedAt):t0;var off=Date.parse(s.boxNow)-at;if(!isFinite(off))off=0;'
-  + 'var left=Date.parse(s.expiresAt)-(Date.now()+off);var txt;if(!isFinite(left)||left<=0){txt="Your sign-in has ended. Sign out and sign in again. \u00b7 உங்கள் உள்நுழைவு முடிந்தது. வெளியேறி மீண்டும் உள்நுழைக.";el.setAttribute("data-ended","");el.setAttribute("role","alert");el.style.background="#7f1d1d";el.style.color="#fee2e2";}'
-  + 'else{var mins=Math.ceil(left/60000),h=Math.floor(mins/60),m=mins%60;txt="Sign-in ends in "+h+" h "+m+" min \u00b7 உள்நுழைவு முடிய "+h+" மணி "+m+" நிமிடம்";}if(el.textContent!==txt)el.textContent=txt;if(!isFinite(left)||left<=0)lock();}'
-  + 'if(d.readyState==="loading")d.addEventListener("DOMContentLoaded",say);else say();setInterval(say,30000);})();</script>';
+const signInLeftScript = (lock: string): string => '<script>(function(){var d=document,w=window,t0=Date.now(),L=' + lock + ',locked=false,tk=null,mem=null,K=' + JSON.stringify(PHONE_CLOCK_MARKS_KEY) + ',TOL=' + String(PHONE_CLOCK_TOLERANCE_MS) + ';'
+  + 'function P(){try{return typeof performance!=="undefined"&&performance&&typeof performance.now==="function"?performance.now():NaN;}catch(e){return NaN;}}var p0=P();'
+  + 'function num(v){return typeof v==="number"&&isFinite(v);}'
+  + 'function ls(){try{return w.localStorage||null;}catch(e){return null;}}'
+  + 'function all(){var s=ls(),raw=null;try{raw=s?s.getItem(K):null;}catch(e){}if(raw===null)raw=mem;try{var v=raw===null?null:JSON.parse(raw);if(v&&typeof v==="object"&&!(v instanceof Array))return v;}catch(e){}return {};}'
+  + 'function save(ref,m){var a=all();a[ref]=m;var t=JSON.stringify(a);mem=t;var s=ls();try{if(s)s.setItem(K,t);}catch(e){}}'
+  + 'function lock(why){if(L===null||locked)return;locked=true;var hs=w.phoneSignInOnLock;if(hs&&hs.length)for(var i=0;i<hs.length;i++){try{hs[i]();}catch(e){}}'
+  + 'try{w.phoneSignIn=undefined;}catch(e){}if(tk!==null){try{clearInterval(tk);}catch(e){}}var pg=why==="clock_set_back"&&L.clock?L.clock:L;'
+  + 'try{w.history.replaceState(null,"",pg.url);}catch(e){}d.open();d.write(pg.page);d.close();}'
+  + 'w.phoneSignInLock=function(why){lock(why==="clock_set_back"?why:"expired");};'
+  + 'function say(){if(locked)return;var el=d.querySelector("[data-sign-in-left]");var s=w.phoneSignIn;if(!el||!s)return;'
+  + 'var at=typeof w.shellCachedAt==="string"&&isFinite(Date.parse(w.shellCachedAt))?Date.parse(w.shellCachedAt):t0;var served=Date.parse(s.boxNow),exp=Date.parse(s.expiresAt),off=served-at;if(!isFinite(off))off=0;'
+  + 'var m=all()[s.ref];if(!m||typeof m!=="object")m={};var why=null,left=NaN;'
+  + 'if(m.e){why=m.e==="expired"?"expired":"clock_set_back";}else{var wall=Date.now(),est=wall+(num(m.o)?m.o:off),fl=Math.max(num(m.m)?m.m:-Infinity,num(served)?served:-Infinity),ran=P()-p0;'
+  + 'var back=!isFinite(est)||est<fl-TOL||(num(ran)&&wall-t0<ran-TOL),now=Math.max(est,fl);'
+  + 'if(back||!(now<exp)){why=back?"clock_set_back":"expired";m.e=why;m.x=exp;save(s.ref,m);}else{m.m=now;m.x=exp;save(s.ref,m);left=exp-now;}}'
+  + 'var txt;if(why!==null){txt=why==="clock_set_back"?' + JSON.stringify(SIGN_IN_CLOCK_WORDS) + ':' + JSON.stringify(SIGN_IN_ENDED_WORDS) + ';el.setAttribute("data-ended","");el.setAttribute("role","alert");el.style.background="#7f1d1d";el.style.color="#fee2e2";}'
+  + 'else{var mins=Math.ceil(left/60000),h=Math.floor(mins/60),mm=mins%60;txt="Sign-in ends in "+h+" h "+mm+" min · உள்நுழைவு முடிய "+h+" மணி "+mm+" நிமிடம்";}if(el.textContent!==txt)el.textContent=txt;if(why!==null)lock(why);}'
+  + 'if(d.readyState==="loading")d.addEventListener("DOMContentLoaded",say);else say();tk=setInterval(say,30000);'
+  + 'if(typeof d.addEventListener==="function")d.addEventListener("visibilitychange",say);if(typeof w.addEventListener==="function"){w.addEventListener("pageshow",say);w.addEventListener("focus",say);}})();</script>';
 
-/** OB-186: the words on the sign-in page the screen locks to. */
+/** OB-186: the words on the sign-in page a warehouse or picker screen locks to (four hours, OB-184). */
 export const SIGN_IN_ENDED_MESSAGE = 'Your sign-in has ended (4 hours). Sign in again — your saved work is kept. · உங்கள் உள்நுழைவு முடிந்தது (4 மணி). மீண்டும் உள்நுழைக — சேமித்த பணி பாதுகாப்பாக உள்ளது.';
+/** OB-187: the words on the sign-in page the driver screen locks to (twelve hours). */
+export const DRIVER_SIGN_IN_ENDED_MESSAGE = 'Your sign-in has ended (12 hours). Sign in again at the shop — your saved work is kept. · உங்கள் உள்நுழைவு முடிந்தது (12 மணி). கடையில் மீண்டும் உள்நுழைக — சேமித்த பணி பாதுகாப்பாக உள்ளது.';
+/** Verifier hh NEW-1: the words on the sign-in page a screen locks to when the phone's clock was turned back. */
+export const SIGN_IN_CLOCK_MESSAGE = 'This phone\'s clock was turned back, so your sign-in has ended. Sign in again — your saved work is kept. Do not change the phone\'s date or time. · கைபேசியின் நேரம் பின்னோக்கி மாற்றப்பட்டதால் உங்கள் உள்நுழைவு முடிந்தது. மீண்டும் உள்நுழைக — சேமித்த பணி பாதுகாப்பாக உள்ளது. கைபேசியின் தேதி, நேரத்தை மாற்ற வேண்டாம்.';
+
+/** The words on the sign-in page a screen locks to, for this job (`ended=1`) or for a clock turned back (`ended=clock`). */
+export function signInEndedMessageFor(screen: HandheldSource, why: 'ended' | 'clock' = 'ended'): string {
+  if (why === 'clock') return SIGN_IN_CLOCK_MESSAGE;
+  return screen === 'driver' ? DRIVER_SIGN_IN_ENDED_MESSAGE : SIGN_IN_ENDED_MESSAGE;
+}
+
+/** What a locked screen shows: the sign-in page's address and the page itself. */
+export interface SignInLockPage { readonly url: string; readonly page: string }
+/** What the strip locks to: at the sign-in's end, and (`clock`) when the phone's clock was turned back. */
+export interface SignInLock extends SignInLockPage { readonly clock: SignInLockPage }
 
 /**
- * OB-186: what the strip locks to — the sign-in page's address for this job (marked `ended=1`, so the box says why), and
- * the sign-in page itself, exactly as the box serves it there, packed so it can be shown with no box in reach.
+ * OB-186: what the strip locks to — the sign-in page's address for this job (marked `ended=1`, or `ended=clock` for a
+ * clock turned back, so the box says why), and the sign-in page itself, exactly as the box serves it there, packed so it
+ * can be shown with no box in reach.
  */
-export function signInLockOf(screen: HandheldSource, signInRoute: string): { readonly url: string; readonly page: string } {
+export function signInLockOf(screen: HandheldSource, signInRoute: string): SignInLock {
   const action = `${signInRoute}?screen=${screen}`;
-  return { url: `${action}&ended=1`, page: phoneSignInPage({ screen, action, message: SIGN_IN_ENDED_MESSAGE }) };
+  return {
+    url: `${action}&ended=1`, page: phoneSignInPage({ screen, action, message: signInEndedMessageFor(screen) }),
+    clock: { url: `${action}&ended=clock`, page: phoneSignInPage({ screen, action, message: SIGN_IN_CLOCK_MESSAGE }) },
+  };
 }
 
 /** The lock as a script literal that cannot end the script it sits in (`<` and the two JS line breaks escaped). */
-const lockLiteral = (lock: { readonly url: string; readonly page: string } | undefined): string =>
+const lockLiteral = (lock: (SignInLockPage & { readonly clock?: SignInLockPage }) | undefined): string =>
   lock === undefined ? 'null' : JSON.stringify(lock).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
 
 const LEFT_STYLE = 'flex-basis:100%;margin:0;padding:4px 8px;border-radius:8px;font-size:14px';
@@ -202,7 +243,7 @@ const ENDED_STYLE = `${LEFT_STYLE};background:#7f1d1d;color:#fee2e2`;
  * the sign-in has left — or, once it has ended, that it has; and (OB-186, `lockTo` from `signInLockOf`) at the end the
  * screen locks to the sign-in page by itself.
  */
-export function phoneHolderStrip(input: { readonly displayName: string; readonly signOutAction: string; readonly expiresAt?: string; readonly now?: string; readonly lockTo?: { readonly url: string; readonly page: string } }): string {
+export function phoneHolderStrip(input: { readonly displayName: string; readonly signOutAction: string; readonly expiresAt?: string; readonly now?: string; readonly lockTo?: SignInLockPage & { readonly clock?: SignInLockPage } }): string {
   const left = input.expiresAt === undefined ? null : signInLeftWords(Date.parse(input.expiresAt) - Date.parse(input.now ?? new Date().toISOString()));
   return `<form method="post" action="${escapeHtml(input.signOutAction)}" data-phone-holder style="margin:0;display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;justify-content:space-between;padding:8px 12px;background:#1e293b;color:#f8fafc;font:15px/1.3 system-ui,sans-serif">`
     + `<span>Signed in: <strong>${escapeHtml(input.displayName)}</strong></span>`

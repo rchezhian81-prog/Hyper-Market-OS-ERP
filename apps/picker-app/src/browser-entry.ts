@@ -19,7 +19,7 @@
 
 import { openDeviceOutbox, guardedStore, type DeviceOutbox } from '../../../packages/sync/src/device-outbox';
 import { drainToBox, boxStatus } from '../../../packages/sync/src/device-drain';
-import { stamperForPage } from '../../../packages/sync/src/sign-in-stamp';
+import { pageStamping, type SignInClock } from '../../../packages/sync/src/sign-in-stamp';
 import { PickSession, type PickLineInput } from './pick-session';
 
 import { mountDemoBanner, type BannerDocument } from '../../../packages/ui/src/demo-banner';
@@ -80,13 +80,15 @@ export function openPickerRelay(
   laneWriteBase: string | undefined,
   session: PickSession,
   outbox: DeviceOutbox,
+  /** The sign-in's clock (OB-180): each hand-over reply carries the box's time, and the clock reckons from it (L1). */
+  clock?: SignInClock,
 ): PickerRelay | undefined {
   if (laneWriteBase === undefined) return undefined;
   const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
   if (fetchFn === undefined) return undefined;
   return {
     syncNow: async () => {
-      const result = await drainToBox({ outbox, boxBase: laneWriteBase, source: 'picker', fetch: fetchFn });
+      const result = await drainToBox({ outbox, boxBase: laneWriteBase, source: 'picker', fetch: fetchFn, ...(clock === undefined ? {} : { onBoxTime: (box, phone) => clock.learn(box, phone) }) });
       const statuses = await boxStatus({ boxBase: laneWriteBase, keys: session.handedKeys(), fetch: fetchFn });
       if (statuses !== undefined) session.noteBoxStatus(statuses);
       return { handed: result.handed, refused: result.refused, failed: result.failed, offline: result.offline };
@@ -125,14 +127,21 @@ if (browserWindow !== undefined) {
     // saved needs to know before the end of the wave, not after it.
     browserWindow.pickerStorageProblem = why;
   });
-  // OB-180: every record this phone queues is stamped with the sign-in it is made under (the box injected it).
-  const outbox = openDeviceOutbox(store, (why) => { browserWindow.pickerStorageProblem = why; }, stamperForPage(browserWindow));
+  // OB-180: every record this phone queues is stamped with the sign-in it is made under (the box injected it), on a
+  // clock that only moves forward and is kept beside the queue (verifier hh NEW-1); the end of the sign-in found by a
+  // record locks the screen at once (L2).
+  const perf = (globalThis as { performance?: { now(): number } }).performance;
+  const stamping = pageStamping(browserWindow, () => new Date().toISOString(), {
+    ...(storage === undefined ? {} : { storage }),
+    ...(perf === undefined ? {} : { perfNow: () => perf.now() }),
+  });
+  const outbox = openDeviceOutbox(store, (why) => { browserWindow.pickerStorageProblem = why; }, stamping?.stamp);
   browserWindow.pickerOutbox = outbox;
   const session = bootPicker(browserWindow.pickerData, outbox);
   if (session !== null) {
     browserWindow.pickSession = session;
     // The relay to the store computer — present only when the box served this page (it injects `laneWriteBase`).
-    const relay = openPickerRelay(browserWindow.laneWriteBase, session, outbox);
+    const relay = openPickerRelay(browserWindow.laneWriteBase, session, outbox, stamping?.clock);
     if (relay !== undefined) browserWindow.pickerRelay = relay;
   }
 }

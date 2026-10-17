@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { runInNewContext } from 'node:vm';
 import {
-  FORGET_KEPT_PAGES_SCRIPT, SIGN_IN_ENDED_MESSAGE, phoneHolderStrip, phoneSignInPage, signInLockOf,
+  FORGET_KEPT_PAGES_SCRIPT, SIGN_IN_ENDED_MESSAGE, DRIVER_SIGN_IN_ENDED_MESSAGE, SIGN_IN_CLOCK_MESSAGE, phoneHolderStrip, phoneSignInPage, signInLockOf,
 } from '../../edge/store-edge/src/handheld-sign-in';
 import { PHONE_SIGN_IN_ROUTE } from '../../edge/store-edge/src/device-server';
 import { makeEvent } from '../../packages/contracts/src/event';
@@ -76,12 +76,16 @@ describe('OB-186: what the screen locks to', () => {
     for (const screen of ['warehouse', 'picker', 'driver'] as const) {
       const l = signInLockOf(screen, PHONE_SIGN_IN_ROUTE);
       expect(l.url).toBe(`/device/sign-in?screen=${screen}&ended=1`);
-      expect(l.page).toBe(phoneSignInPage({ screen, action: `/device/sign-in?screen=${screen}`, message: SIGN_IN_ENDED_MESSAGE }));
+      // OB-187: the driver's screen locks at its own twelve hours, and says so.
+      expect(l.page).toBe(phoneSignInPage({ screen, action: `/device/sign-in?screen=${screen}`, message: screen === 'driver' ? DRIVER_SIGN_IN_ENDED_MESSAGE : SIGN_IN_ENDED_MESSAGE }));
+      expect(l.clock).toEqual({ url: `/device/sign-in?screen=${screen}&ended=clock`, page: phoneSignInPage({ screen, action: `/device/sign-in?screen=${screen}`, message: SIGN_IN_CLOCK_MESSAGE }) });
       expect(l.page).toContain(`<form method="post" action="/device/sign-in?screen=${screen}">`);
       expect(l.page).toContain(FORGET_KEPT_PAGES_SCRIPT);
       expect(l.page).toContain('role="alert"');
     }
     expect(SIGN_IN_ENDED_MESSAGE).toContain('your saved work is kept');
+    expect(DRIVER_SIGN_IN_ENDED_MESSAGE).toContain('(12 hours)');
+    expect(SIGN_IN_CLOCK_MESSAGE).toContain('clock was turned back');
   });
 
   it('the strip carries it inside its script, unable to close the script early', () => {

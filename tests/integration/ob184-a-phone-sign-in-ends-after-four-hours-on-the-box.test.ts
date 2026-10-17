@@ -155,9 +155,11 @@ describe('OB-184: a phone sign-in ends after four hours on the real box; a till\
 
     // ── OB-185: twelve hours after A's sign-in ENDED (23:00) A's work is still taken; a minute later it is refused. ───────
     const keptScan = scan('grn-kept', 'u-worker');
-    const kept = { key: keptScan.idempotencyKey, event: keptScan, stamp: stampWith(signInA, keptScan, iso(3 * 60)) };
+    // Made in the last minute of the sign-in, like the two above: the phone hands records over in the order it made them,
+    // and a stamp running backwards against one the box already took from that sign-in is refused (verifier hh NEW-1).
+    const kept = { key: keptScan.idempotencyKey, event: keptScan, stamp: stampWith(signInA, keptScan, iso(4 * 60 - 1)) };
     const tooLateScan = scan('grn-too-late', 'u-worker');
-    const tooLate = { key: tooLateScan.idempotencyKey, event: tooLateScan, stamp: stampWith(signInA, tooLateScan, iso(3 * 60)) };
+    const tooLate = { key: tooLateScan.idempotencyKey, event: tooLateScan, stamp: stampWith(signInA, tooLateScan, iso(4 * 60 - 1)) };
     travel((4 + 12) * 60 - 1);
     const cookieB2 = await signInOnPhone(device, phone, 'u-other', 'warehouse'); // B's first sign-in has ended too
     expect((await post(cookieB2, [kept])).acks).toEqual([{ key: kept.key, status: 'accepted' }]);

@@ -102,13 +102,27 @@ describe('the phone stamps on the box\'s clock, and never after its sign-in ends
     expect(stamperForPage({ phoneSignIn: { ...signIn, key: 'not-hex' } }, now)).toBeUndefined();
     expect(readPhoneSignIn({ ...signIn, boxNow: undefined })).toBeUndefined();
   });
-  it('after the sign-in\'s end the phone stamps nothing; a clock slip before it is held at the sign-in', () => {
+  it('after the sign-in\'s end the phone stamps nothing — and turning the clock back does not bring it back', () => {
     let phone = '2026-10-17T06:00:05.000Z';
     const stamp = phoneStamper(signIn, phone, () => phone)!;
     phone = '2026-10-17T18:00:05.000Z';
     expect(stamp(ev('k1', 'u-a'))).toBeUndefined();
-    phone = '2026-10-17T05:00:00.000Z';
-    expect(stamp(ev('k2', 'u-a'))!.madeAt).toBe(signIn.signedInAt);
+    phone = '2026-10-17T07:00:00.000Z';
+    expect(stamp(ev('k2', 'u-a'))).toBeUndefined();
+  });
+  it('a small clock slip back (inside the two minutes) is held at the latest time seen; a bigger one ends the sign-in (verifier hh NEW-1)', () => {
+    let phone = '2026-10-17T06:00:05.000Z';
+    const stamp = phoneStamper(signIn, phone, () => phone)!;
+    phone = '2026-10-17T05:59:00.000Z'; // 65 s before the page was served
+    expect(stamp(ev('k1', 'u-a'))!.madeAt).toBe(signIn.boxNow);
+    phone = '2026-10-17T07:00:00.000Z';
+    expect(stamp(ev('k2', 'u-a'))!.madeAt).toBe('2026-10-17T07:00:00.000Z');
+    phone = '2026-10-17T06:59:00.000Z'; // a minute back from the latest seen: held there, never earlier
+    expect(stamp(ev('k3', 'u-a'))!.madeAt).toBe('2026-10-17T07:00:00.000Z');
+    phone = '2026-10-17T06:57:59.000Z'; // more than two minutes back: the clock was turned back
+    expect(stamp(ev('k4', 'u-a'))).toBeUndefined();
+    phone = '2026-10-17T07:30:00.000Z'; // and putting it right does not bring the sign-in back
+    expect(stamp(ev('k5', 'u-a'))).toBeUndefined();
   });
 });
 
