@@ -53,6 +53,12 @@ import { unitsPerLevel, type PackHierarchy } from '../../../packages/product/src
 import { valueAtCost, normaliseUom, minorPerUnit, type CostBasis } from '../../../packages/contracts/src/quantity';
 import { assertLocationInScope, stockReadScope, locationIsItsOwnBranch, type LocationBranches } from './location-scope';
 import type { RequestContext } from '../../kernel/src/index';
+import { deciderSealFlags } from '../../pos/src/store-seal';
+import type { DecisionKind } from '../../../packages/identity/src/till-seal';
+import {
+  assessCheckRecord, carriedChecklistDraft, readCarriedReceivingChecklist, RECEIVING_CHECKLIST_FIELD,
+  type FoodSafetyCheck, type FoodSafetyCheckRecord,
+} from '../../../packages/facilities/src/food-safety';
 
 /** PA-01-r1: a receipt is its warehouse's — acting on one outside the caller's branches is refused by name. */
 async function assertReceiptInScope(ctx: Pick<RequestContext, 'scope' | 'tenantId'>, deps: Pick<GoodsReceiptDeps, 'grn' | 'locationBranches'>, grnId: string): Promise<void> {
@@ -87,6 +93,10 @@ export const RECEIPT_FLAGS = Object.freeze([
   // OB-164: a chilled/frozen (cold-chain) delivery relayed from the store, or assembled from the handheld's scans, reached
   // head office with no D-6 receiving checklist on file. The goods are in the building, so it is booked — and SAID.
   'receiving_checklist_missing',
+  // OB-172: the delivery carried a receiving checklist from the dock that head office could not accept — not sealed by the
+  // store computer for the person who booked it, changed after the seal, done by someone else, unreadable, a checklist head
+  // office does not hold, or one that does not pass the D-6 rules. The reason is on the receipt; the checklist is not on file.
+  'receiving_checklist_not_accepted',
 ] as const);
 export type ReceiptFlag = (typeof RECEIPT_FLAGS)[number];
 
@@ -150,6 +160,8 @@ export interface GrnRecord {
   readonly grnId: string;
   /** OB-164: the D-6 receiving checklist on file for this delivery when it was booked (a cold-chain receipt needs one). */
   readonly receivingChecklist?: ReceivingChecklistOnFile;
+  /** OB-172: why a checklist carried in from the dock was not accepted (with the `receiving_checklist_not_accepted` flag). */
+  readonly receivingChecklistNotAccepted?: string;
   readonly number: string;
   readonly poId: string | null;
   readonly warehouseId: string;
@@ -309,7 +321,72 @@ export async function receivingChecklistGate(
   });
 }
 
+/**
+ * OB-172 "A" (owner, 17 Oct 2026, "Checklist on handheld") — a relayed or assembled receipt that CARRIES its receiving
+ * checklist from the dock: head office accepts it as its own D-6 record (`rc-<grnId>`, subject the receipt) when, and only
+ * when, the store computer sealed the whole receipt for the person it names (`named`: who booked it in / declared it
+ * complete — their own sign-in) and the checklist names that same person, it is a checklist head office holds (an active
+ * `receiving` check) and it passes the D-6 rules (every item ticked; a failure with its corrective action). Then the receipt
+ * is booked with its checklist on file, as complete. Anything else is SAID: `receiving_checklist_not_accepted` with the
+ * reason, and — for a cold-chain delivery — `receiving_checklist_missing` as before; the delivery is still booked (P-01).
+ * A checklist already on file for the receipt is kept as it is (never overwritten, hard rule #2).
+ */
+export async function acceptCarriedChecklist(
+  deps: Pick<GoodsReceiptDeps, 'receivingChecklistFor' | 'receivingCheckFor' | 'recordCarriedChecklist' | 'tillSealKey' | 'recordAudit' | 'now'>,
+  input: { readonly tenantId: string; readonly grnId: string; readonly body: unknown; readonly named: string; readonly kind: DecisionKind; readonly branchId: string | null; readonly source: string },
+  flags: ReceiptFlag[],
+): Promise<{ readonly notAccepted?: string }> {
+  const raw = input.body !== null && typeof input.body === 'object' ? (input.body as Record<string, unknown>)[RECEIVING_CHECKLIST_FIELD] : undefined;
+  if (raw === undefined || deps.receivingCheckFor === undefined || deps.recordCarriedChecklist === undefined) return {};
+  const refuse = (why: string): { notAccepted: string } => {
+    if (!flags.includes('receiving_checklist_not_accepted')) flags.push('receiving_checklist_not_accepted');
+    return { notAccepted: why };
+  };
+  if (deps.receivingChecklistFor !== undefined && await deps.receivingChecklistFor(input.tenantId, input.grnId) !== undefined) return {};
+  const carried = readCarriedReceivingChecklist(raw);
+  if (carried === undefined) return refuse('the receiving checklist on this receipt could not be read');
+  if (carried.performedBy !== input.named.trim()) {
+    return refuse(`the receiving checklist names ${carried.performedBy}, but ${input.named} booked the delivery in — a checklist is done in the doer's own sign-in`);
+  }
+  const seal = deciderSealFlags(deps.tillSealKey, { tenantId: input.tenantId, kind: input.kind, recordId: input.grnId, named: input.named, record: input.body });
+  if (seal.length > 0) {
+    return refuse(seal[0] === 'decider_not_verified_at_store'
+      ? `the store computer did not seal this receipt for ${input.named}, so head office cannot tell the checklist was done in their sign-in`
+      : 'the receipt was changed after the store computer sealed it (or the seal belongs to another record), so its checklist cannot be trusted');
+  }
+  const check = await deps.receivingCheckFor(input.tenantId, carried.checkId);
+  if (check === undefined) return refuse(`head office holds no active receiving checklist "${carried.checkId}"`);
+  const assessed = assessCheckRecord(check, carriedChecklistDraft(input.grnId, carried));
+  if (!assessed.ok) return refuse(assessed.detail);
+  const rec = assessed.record;
+  await deps.recordCarriedChecklist(input.tenantId, rec);
+  // The tamper-evident trail (D-6): sealed in the DOER's name, with what was found and what was done, as the route does.
+  await deps.recordAudit?.(input.tenantId, {
+    actorId: rec.performedBy, action: rec.outcome === 'fail' ? 'food_safety.check.failed' : 'food_safety.check.passed',
+    objectType: 'food_safety_check', objectId: rec.checkId, at: deps.now(),
+    origin: { tenantId: input.tenantId, branchId: input.branchId },
+    before: null,
+    after: {
+      recordId: rec.recordId, slotDueAt: '', subjectRef: rec.subjectRef ?? '', outcome: rec.outcome, late: String(rec.late),
+      reading: rec.readingTenthsC === undefined ? '' : String(rec.readingTenthsC), failures: rec.failures.join('; '),
+      correctiveAction: rec.correctiveAction ?? '', carriedIn: input.source,
+    },
+    reason: rec.correctiveAction ?? `receiving checklist done at the dock (${input.source}), carried with receipt ${input.grnId}`,
+    correlationId: rec.recordId,
+  });
+  return {};
+}
+
 export interface GoodsReceiptDeps {
+  /**
+   * OB-172: the receiving check a carried checklist names — an ACTIVE `receiving` check head office holds — and the way it
+   * keeps that checklist as its own D-6 record. With the seal key, the three are how a checklist captured at the dock (on the
+   * manager's screen or the handheld, maybe offline) becomes head office's record. Absent on a bare stub (none accepted).
+   */
+  readonly receivingCheckFor?: (tenantId: string, checkId: string) => Promise<FoodSafetyCheck | undefined> | FoodSafetyCheck | undefined;
+  readonly recordCarriedChecklist?: (tenantId: string, record: FoodSafetyCheckRecord) => Promise<void> | void;
+  /** The store computer's seal key (ADR-0023): a carried checklist counts only inside a receipt the box sealed for its person. */
+  readonly tillSealKey?: Buffer;
   /**
    * OB-164: the D-6 receiving checklist recorded for this delivery (a `receiving` check's record whose subjectRef is the
    * goods receipt id), or undefined when none is. Absent on a bare stub (nothing is checked).

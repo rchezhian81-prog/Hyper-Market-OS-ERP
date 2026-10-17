@@ -70,6 +70,13 @@ const WORDS = {
     received: 'Received', unknown_barcode: 'Unknown barcode — set aside for someone to sort out',
     receiving_done: 'Receipt sent — head office will match the delivery to the order',
     nothing_received: 'Nothing has been received on this handheld for this delivery yet',
+    // OB-172: the receiving checklist for chilled, frozen or raw-meat goods, done at the door before the receipt is sent
+    checklist_required: 'Chilled or frozen goods — do the receiving checklist first',
+    checklist_incomplete: 'The receiving checklist is not finished',
+    checklistTitle: 'Receiving checklist — chilled and frozen goods', checklistHint: 'Tick each check at the door. It goes with the receipt, in your name.',
+    checkPass: 'Pass', checkFail: 'Fail', sendReceipt: 'Send the receipt',
+    checklistActionHint: 'A check failed — tap what was done about it',
+    actionRefused: 'Refused — sent back with the driver', actionChilled: 'Moved straight to the chiller or freezer', actionHeld: 'Held aside for the manager to check',
     over_delivery_needs_approval: 'More than ordered — a second person must approve it',
     dsd_needs_approval: 'No purchase order — a second person must approve it',
     price_change_refused: 'The price cannot be changed at the door',
@@ -142,6 +149,12 @@ const WORDS = {
     received: 'பெறப்பட்டது', unknown_barcode: 'தெரியாத பார்கோடு — சரிபார்க்க ஒதுக்கி வைக்கப்பட்டது',
     receiving_done: 'ரசீது அனுப்பப்பட்டது — தலைமை அலுவலகம் வரவை ஆர்டருடன் ஒப்பிடும்',
     nothing_received: 'இந்த வரவுக்கு இந்தக் கருவியில் இன்னும் எதுவும் பெறப்படவில்லை',
+    checklist_required: 'குளிர் அல்லது உறைந்த பொருட்கள் — முதலில் பெறுதல் சரிபார்ப்பைச் செய்யவும்',
+    checklist_incomplete: 'பெறுதல் சரிபார்ப்பு முடியவில்லை',
+    checklistTitle: 'பெறுதல் சரிபார்ப்பு — குளிர் மற்றும் உறைந்த பொருட்கள்', checklistHint: 'வாசலில் ஒவ்வொரு சோதனையையும் குறிக்கவும். அது உங்கள் பெயரில் ரசீதுடன் செல்லும்.',
+    checkPass: 'சரி', checkFail: 'தவறு', sendReceipt: 'ரசீதை அனுப்பு',
+    checklistActionHint: 'ஒரு சோதனை தவறியது — அதற்கு என்ன செய்யப்பட்டது என்பதைத் தட்டவும்',
+    actionRefused: 'மறுக்கப்பட்டது — ஓட்டுநருடன் திருப்பி அனுப்பப்பட்டது', actionChilled: 'உடனே குளிர்சாதனம் அல்லது உறைவிப்பானுக்கு மாற்றப்பட்டது', actionHeld: 'மேலாளர் சரிபார்க்க ஒதுக்கி வைக்கப்பட்டது',
     over_delivery_needs_approval: 'ஆர்டரை விட அதிகம் — இரண்டாவது நபர் ஒப்புதல் அளிக்க வேண்டும்',
     dsd_needs_approval: 'கொள்முதல் ஆர்டர் இல்லை — இரண்டாவது நபர் ஒப்புதல் அளிக்க வேண்டும்',
     price_change_refused: 'வாசலில் விலையை மாற்ற முடியாது',
@@ -664,13 +677,93 @@ el('receive').addEventListener('click', async () => {
  * completion behind the scans; head office assembles the goods receipt from the scans it already holds and matches it to
  * the order. No quantity is typed or sent here — the scans are the truth, this only says they are all in.
  */
-el('done-receiving').addEventListener('click', () => {
+el('done-receiving').addEventListener('click', async () => {
   if (real === undefined) return;
-  const out = real.completeReceiving({ grnId });
+  // OB-172: a chilled / frozen / raw-meat delivery asks for the receiving checklist first (head office's own, from the store
+  // setup — no network needed). Cancelled → nothing is sent; the delivery stays open on this handheld.
+  const need = typeof real.deliveryChecklist === 'function' ? real.deliveryChecklist(grnId) : { known: false, coldChain: [] };
+  let checklist;
+  if (need.check !== undefined && need.coldChain.length > 0) {
+    checklist = await awaitChecklist(need.check, need.coldChain);
+    if (checklist === null) return;
+  }
+  const out = real.completeReceiving({ grnId, ...(checklist === undefined ? {} : { checklist }) });
   feltResult(out.signal);
   render();
   if (out.signal.feedback === 'accept') void syncToBox();
 });
+
+/**
+ * OB-172: the receiving checklist sheet — one Pass / Fail pair per check, and on any failure the corrective action as a
+ * tap (no text box on the handheld). Resolves the answer, or null on Cancel. The session judges it again before it sends.
+ */
+let checklistResolve = null;
+function awaitChecklist(check, coldChain) {
+  const results = {};
+  let action = null;
+  const ACTIONS = ['actionRefused', 'actionChilled', 'actionHeld'];
+  const paint = () => {
+    const anyFail = check.items.some((i) => results[i.itemId] === 'fail');
+    el('checklist-action-hint').hidden = !anyFail;
+    el('checklist-actions').hidden = !anyFail;
+    if (!anyFail) action = null;
+    for (const b of el('checklist-actions').querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.action === action));
+    for (const b of el('checklist-items').querySelectorAll('button')) b.setAttribute('aria-pressed', String(results[b.dataset.item] === b.dataset.result));
+    el('checklist-ok').disabled = !(check.items.every((i) => results[i.itemId] !== undefined) && (!anyFail || action !== null));
+  };
+  el('checklist-title').textContent = check.title ? `${t('checklistTitle')} · ${check.title}` : t('checklistTitle');
+  el('checklist-hint').textContent = `${t('checklistHint')} (${coldChain.join(', ')})`;
+  el('checklist-action-hint').textContent = t('checklistActionHint');
+  el('checklist-cancel').textContent = t('cancel');
+  el('checklist-ok').textContent = t('sendReceipt');
+  el('checklist-items').replaceChildren(...check.items.map((item) => {
+    const row = document.createElement('div');
+    row.className = 'check-item';
+    const name = document.createElement('span');
+    name.id = `check-${item.itemId}`;
+    name.textContent = item.label;
+    const pair = document.createElement('div');
+    pair.className = 'direction';
+    pair.setAttribute('role', 'group');
+    pair.setAttribute('aria-labelledby', name.id);
+    for (const result of ['pass', 'fail']) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.dataset.item = item.itemId;
+      b.dataset.result = result;
+      b.textContent = t(result === 'pass' ? 'checkPass' : 'checkFail');
+      b.setAttribute('aria-pressed', 'false');
+      b.addEventListener('click', () => { results[item.itemId] = result; paint(); });
+      pair.append(b);
+    }
+    row.append(name, pair);
+    return row;
+  }));
+  el('checklist-actions').replaceChildren(...ACTIONS.map((key) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.dataset.action = key;
+    b.textContent = t(key);
+    b.setAttribute('aria-pressed', 'false');
+    b.addEventListener('click', () => { action = key; paint(); });
+    return b;
+  }));
+  paint();
+  el('checklist').hidden = false;
+  return new Promise((resolve) => {
+    checklistResolve = (answer) => resolve(answer === null ? null : {
+      checkId: check.checkId, itemResults: { ...results },
+      // The words of what was done go in English for the record (head office's inspector reads one language).
+      ...(action === null ? {} : { correctiveAction: WORDS.en[action] }),
+    });
+  });
+}
+function settleChecklist(answer) {
+  el('checklist').hidden = true;
+  if (checklistResolve !== null) { const r = checklistResolve; checklistResolve = null; r(answer); }
+}
+el('checklist-cancel').addEventListener('click', () => settleChecklist(null));
+el('checklist-ok').addEventListener('click', () => settleChecklist({}));
 
 el('put-away').addEventListener('click', async () => {
   if (selected === null || real === undefined) return;

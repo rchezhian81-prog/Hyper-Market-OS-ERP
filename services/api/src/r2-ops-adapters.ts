@@ -22,7 +22,9 @@ import type { PriceObservation, ChargedLine } from '../../../packages/self-check
 import type { IncomingSale } from '../../pos/src/sale-intake';
 import { locationIsItsOwnBranch } from '../../inventory/src/location-scope';
 import type { AssignedTaskDeps } from '../../finance/src/assigned-tasks';
-import type { ReceivingChecklistOnFile } from '../../inventory/src/goods-receipt';
+import { receiptRuleFor, type ReceivingChecklistOnFile } from '../../inventory/src/goods-receipt';
+import { COLD_CHAIN_CLASS_DEFAULTS } from '../../../packages/fulfilment/src/packing';
+import type { SignedPack } from '../../catalogue/src/pack';
 import type { AssignedTask, AssignedTaskCompletion } from '../../../packages/workforce/src/assigned-tasks';
 
 const digest = (key: string): string => createHash('sha256').update(key).digest('hex').slice(0, 16);
@@ -109,6 +111,48 @@ export function receivingChecklistLookup(input: { readonly store: EventStore }):
       .filter((r) => receiving.has(r.checkId) && r.subjectRef === grnId)
       .sort((a, b) => a.performedAt.localeCompare(b.performedAt))[0];
     return rec === undefined ? undefined : { recordId: rec.recordId, checkId: rec.checkId, outcome: rec.outcome, performedBy: rec.performedBy, performedAt: rec.performedAt };
+  };
+}
+
+/**
+ * OB-172: the receiving check a carried checklist names — the latest definition, when it is an active `receiving` check —
+ * and the way head office keeps the carried checklist as its D-6 record (the same register and slot rules as the route).
+ */
+export function carriedChecklistAdapter(input: { readonly store: EventStore; readonly now: () => string }): {
+  readonly receivingCheckFor: (tenantId: string, checkId: string) => Promise<FoodSafetyCheck | undefined>;
+  readonly recordCarriedChecklist: (tenantId: string, record: FoodSafetyCheckRecord) => Promise<void>;
+} {
+  const fs = foodSafetyAdapter(input);
+  return {
+    receivingCheckFor: async (tenantId, checkId) => {
+      const check = (await fs.checks(tenantId)).find((c) => c.checkId === checkId);
+      return check !== undefined && check.kind === 'receiving' && check.active ? check : undefined;
+    },
+    recordCarriedChecklist: async (tenantId, record) => { await fs.recordRecord(tenantId, record); },
+  };
+}
+
+/**
+ * OB-172: the store pack's `receivingChecklist` section for one store — the active receiving checklists head office has for
+ * it, and every product its product master makes cold-chain (a cold class, or cold limits of its own: the SAME rule the
+ * goods-receipt routes apply). Undefined when head office has no receiving checklist for the store (the section is left out).
+ */
+export async function receivingChecklistSectionFor(store: EventStore, now: () => string, tenantId: string, storeId: string): Promise<Record<string, unknown> | undefined> {
+  const checks = (await foodSafetyAdapter({ store, now }).checks(tenantId)).filter((c) => c.kind === 'receiving' && c.active && c.branchId === storeId);
+  if (checks.length === 0) return undefined;
+  const packs = await store.readStream(tenantId, STREAM.catalogue, { type: 'CataloguePublished' });
+  const published = (packs[packs.length - 1]?.event.payload as SignedPack | undefined)?.snapshot.products ?? [];
+  const master = new Map((await productMasterAdapter({ store, now }).products(tenantId)).map((p) => [p.productId, p] as const));
+  const ids = [...new Set([...published.map((p) => p.productId), ...master.keys()])].sort();
+  const coldChainProductIds = ids.filter((id) => receiptRuleFor(id, published.find((p) => p.productId === id), master.get(id), COLD_CHAIN_CLASS_DEFAULTS)?.coldChain === true);
+  return {
+    checks: checks.map((c) => ({
+      checkId: c.checkId, branchId: c.branchId, title: c.title, kind: c.kind, graceMinutes: c.graceMinutes, items: c.items,
+      assignedRole: c.assignedRole, escalatesTo: c.escalatesTo, active: c.active,
+      ...(c.minTenthsC === undefined ? {} : { minTenthsC: c.minTenthsC }),
+      ...(c.maxTenthsC === undefined ? {} : { maxTenthsC: c.maxTenthsC }),
+    })),
+    coldChainProductIds,
   };
 }
 

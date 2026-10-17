@@ -30,7 +30,7 @@ import {
   type CapturedLine, type CapturedReceipt,
 } from '../../../packages/receiving/src/index';
 import {
-  rulesFromMaster, sayHandling, receivingChecklistGate, policyInForce, orderForReceipt, alignToOrder, poPostingFor, commitAgainstOrder, awaitsDecision, linesAwaitingDisposition,
+  rulesFromMaster, sayHandling, receivingChecklistGate, acceptCarriedChecklist, policyInForce, orderForReceipt, alignToOrder, poPostingFor, commitAgainstOrder, awaitsDecision, linesAwaitingDisposition,
   type GrnRecord, type ReceiptFlag, type AssembledFromScans,
 } from './goods-receipt';
 import type { SyncedGoodsReceiptDeps } from './goods-receipt-synced';
@@ -153,6 +153,8 @@ export async function assembleReceipt(deps: AssembledGoodsReceiptDeps, input: {
   readonly completedBy: string; readonly completedAt: string;
   readonly relayedBy?: string; readonly storeId?: string | null; readonly source: string;
   readonly via: 'direct' | 'relayed'; readonly branchId: string | null; readonly idempotencyKey: string;
+  /** OB-172: the relayed completion as the box carried it — its receiving checklist inside, sealed with it. */
+  readonly relayedBody?: unknown;
 }): Promise<AssembleOutcome> {
   const existing = await deps.grn(input.tenantId, input.grnId);
   if (existing !== undefined) return { ok: true, record: existing, alreadyReceived: true };
@@ -174,6 +176,12 @@ export async function assembleReceipt(deps: AssembledGoodsReceiptDeps, input: {
   const productIds = [...new Set(scans.map((s) => s.productId))];
   const master = await rulesFromMaster(deps, input.tenantId, productIds);
   if (master.unverified) flags.push('product_rules_unverified'); sayHandling(flags, master);
+  // OB-172: the receiving checklist the worker did at the door on the handheld travels INSIDE the completion — accepted as
+  // head office's D-6 record only when the store computer sealed the completion for the person signed in on the phone (their
+  // own PIN) who declared it complete, and it passes the D-6 rules; otherwise the reason is said on the receipt.
+  const carried: { readonly notAccepted?: string } = input.relayedBody === undefined ? {} : await acceptCarriedChecklist(deps, {
+    tenantId: input.tenantId, grnId: input.grnId, body: input.relayedBody, named: input.completedBy, kind: 'receiving_completion', branchId: input.branchId, source: input.source,
+  }, flags);
   // OB-164: the scans already put the goods on-hand, so a chilled/frozen delivery with no receiving checklist on file is
   // assembled and FLAGGED `receiving_checklist_missing` for the review — never silently passed.
   const checklist = await receivingChecklistGate(deps, input.tenantId, input.grnId, master.rules, productIds, flags, 'flag');
@@ -224,6 +232,7 @@ export async function assembleReceipt(deps: AssembledGoodsReceiptDeps, input: {
   const record: GrnRecord = {
     grnId: input.grnId, number: input.grnId, poId: order.poId,
     ...(checklist === undefined ? {} : { receivingChecklist: checklist }),
+    ...(carried.notAccepted === undefined ? {} : { receivingChecklistNotAccepted: carried.notAccepted }),
     // The scans posted their stock at the store's location; the GRN lives there too, so a later release lands in the same place.
     warehouseId: scans[0]!.storeId,
     receivedBy: input.completedBy, receivedAt: input.completedAt,
@@ -299,7 +308,7 @@ export function assembledGoodsReceiptRoutes(deps: AssembledGoodsReceiptDeps): re
         }
         const out = await assembleReceipt(deps, {
           tenantId: ctx.tenantId, grnId, poId: c.poId, completedBy: c.completedBy, completedAt: c.at, relayedBy: ctx.userId, storeId: c.storeId,
-          source: c.source, via: 'relayed', branchId: ctx.branchId ?? null, idempotencyKey: ctx.idempotencyKey ?? grnId,
+          source: c.source, via: 'relayed', branchId: ctx.branchId ?? null, idempotencyKey: ctx.idempotencyKey ?? grnId, relayedBody: ctx.body,
         });
         if (!out.ok) throw refusal(out, true);
         // 202, not 201: the delivery was completed at the store and this records that it happened.

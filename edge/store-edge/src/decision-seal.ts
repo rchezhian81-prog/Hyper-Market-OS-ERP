@@ -21,6 +21,10 @@ export const SEALED_DECISIONS: Readonly<Record<string, { readonly kind: Decision
   ChecklistCompleted: { kind: 'checklist', named: 'signedBy', id: 'checklistId' },
   MigrationExceptionResolved: { kind: 'migration_exception', named: 'decidedBy', id: 'exceptionId' },
   MigrationTotalSigned: { kind: 'migration_total', named: 'signedBy', id: 'totalId' },
+  // OB-172: a delivery booked in carries its receiving checklist INSIDE it — one record, sealed for the person who booked it
+  // (the manager's screen) or declared it complete (the handheld, signed in with their own PIN), every word of it covered.
+  GoodsReceived: { kind: 'goods_receipt', named: 'receivedBy', id: 'grnId' },
+  ReceivingCompleted: { kind: 'receiving_completion', named: 'completedBy', id: 'grnId' },
 });
 
 /** The person the box verified for this request, and how. */

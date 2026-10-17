@@ -80,8 +80,8 @@ import { laneSyncStatus, type LaneSyncStatus, type QueueHealth } from './sync-st
 import { startScreenServer, SCREEN_HOST, type ScreenServer } from './screen-server';
 import { startDeviceServer, DEVICE_HOST, type DeviceServer } from './device-server';
 import { DeviceEnrolments, readPackDevices } from './device-enrolments';
-import { TillOperators, loadTillCredentials } from './till-operators';
-import { phoneOperatorsOf } from './handheld-sign-in';
+import { TillOperators, loadTillCredentials, deviceLaneOf } from './till-operators';
+import { phoneOperatorsOf, personNamedBy } from './handheld-sign-in';
 import { TillApprovals } from './till-approvals';
 import { ReceiptNumbers } from './receipt-numbers';
 import { HeldBills } from './held-bills';
@@ -934,7 +934,13 @@ export async function startEdge(
       const { key } = read.item;
       // A back-office decision is sealed here when the person this box verified is the one it names (2b-vi-c-3);
       // any stamp the device sent itself is removed — only the box vouches.
-      const event = withDeciderSeal(sealKey, tenantId, read.item.event, batch.verifiedPerson);
+      // OB-172: a HANDHELD's record reaches here only once the device socket has checked that the person it names held THIS
+      // phone this shift, signed in with their own PIN (DF-3-c) — so the box vouches for that person, on that device's lane.
+      const verified = batch.deviceId === undefined ? batch.verifiedPerson : (() => {
+        const named = personNamedBy(read.item.event);
+        return named.ok ? { userId: named.userId, via: 'phone_pin', laneId: deviceLaneOf(batch.deviceId) } : undefined;
+      })();
+      const event = withDeciderSeal(sealKey, tenantId, read.item.event, verified);
       if (!isRelayable(event.type, batch.source)) {
         acks.push({ key, status: 'refused', reason: `${event.type} is not a record this box relays for ${batch.source}` });
         continue;

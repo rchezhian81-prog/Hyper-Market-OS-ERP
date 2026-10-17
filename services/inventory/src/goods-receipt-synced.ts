@@ -28,7 +28,7 @@ import {
   type CapturedLine, type CapturedReceipt,
 } from '../../../packages/receiving/src/index';
 import {
-  DEFAULT_RECEIPT_POLICY, RECEIPT_FLAGS, rulesFromMaster, sayHandling, receivingChecklistGate, policyInForce, inboundMovements, orderForReceipt, alignToOrder, poPostingFor, commitAgainstOrder,
+  DEFAULT_RECEIPT_POLICY, RECEIPT_FLAGS, rulesFromMaster, sayHandling, receivingChecklistGate, acceptCarriedChecklist, policyInForce, inboundMovements, orderForReceipt, alignToOrder, poPostingFor, commitAgainstOrder,
   type GoodsReceiptDeps, type GrnRecord, type ReceiptFlag,
 } from './goods-receipt';
 
@@ -141,6 +141,12 @@ export function syncedGoodsReceiptRoutes(deps: SyncedGoodsReceiptDeps): readonly
         // unvalued rather than folding at ₹0). The same helpers the direct route runs.
         const master = await rulesFromMaster(deps, ctx.tenantId, r.lines.map((l) => l.productId));
         if (master.unverified) flags.push('product_rules_unverified'); sayHandling(flags, master);
+        // OB-172: the receiving checklist done at the door on the manager's screen travels INSIDE this receipt — accepted as
+        // head office's D-6 record only when the store computer sealed the receipt for the manager who booked it, and it
+        // passes the D-6 rules; otherwise the reason is said on the receipt (never silently dropped, P-08).
+        const carried = await acceptCarriedChecklist(deps, {
+          tenantId: ctx.tenantId, grnId, body: ctx.body, named: r.receivedBy, kind: 'goods_receipt', branchId: ctx.branchId ?? null, source: r.source,
+        }, flags);
         // OB-164: booked at the store with no network — a chilled/frozen delivery with no receiving checklist on file is
         // booked (the goods are in the building, P-01) and FLAGGED `receiving_checklist_missing`, never silently passed.
         const checklist = await receivingChecklistGate(deps, ctx.tenantId, grnId, master.rules, r.lines.map((l) => l.productId), flags, 'flag');
@@ -195,6 +201,7 @@ export function syncedGoodsReceiptRoutes(deps: SyncedGoodsReceiptDeps): readonly
         const record: GrnRecord = {
           grnId, number: r.number, poId: r.poId, warehouseId: r.warehouseId,
           ...(checklist === undefined ? {} : { receivingChecklist: checklist }),
+          ...(carried.notAccepted === undefined ? {} : { receivingChecklistNotAccepted: carried.notAccepted }),
           receivedBy: r.receivedBy, // the RELAYED receiver — the person who booked it in at the store
           receivedAt: r.receivedAt,
           captured, availableMinor: availableFromReceipt(captured), heldMinor: heldFromReceipt(captured),
