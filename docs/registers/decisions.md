@@ -231,6 +231,7 @@ Status legend: **Accepted** · **Open — blocking** (holds coding / a gate) ·
 | OB-183 | **C10 the 13-digit rule for card-like tender values (UPI references are 12 digits).** | Keep the rule; adjust if a provider later uses longer references. | **ACCEPTED — A, "No, keep the rule" (owner, 17 Oct 2026, in writing).** |
 | OB-184 | **OB-180 handheld handover: staff sign out when handing over a phone and phone sign-ins end by themselves after 4 hours vs training only (sign-ins last the shift).** | Change: a phone (handheld) sign-in lasts at most 4 hours; tills unchanged; staff are trained to sign out at handover (SOP). | **ACCEPTED — A, "Sign out + 4-hour limit" (owner, 17 Oct 2026, in writing).** |
 | OB-185 | **OB-180 records reaching the box more than one shift (12 hours) after the person's sign-in ended: keep 12 hours vs 24 hours.** | Keep 12 hours; such records are refused with the reason and nothing is silently lost. | **ACCEPTED — A, "12 hours" (owner, 17 Oct 2026, in writing).** |
+| OB-186 | **OB-184 when a handheld's 4-hour sign-in ends: lock the screen (go to the sign-in page) vs warning only.** | Change: at the 4-hour end the phone goes to the sign-in page; work already queued stays and drains under the next sign-in (OB-180 rules). | **ACCEPTED — A, "Lock the screen" (owner, 17 Oct 2026, in writing).** |
 
 ## AI-assisted development governance — AID-01 to AID-10 (roadmap §18)
 
