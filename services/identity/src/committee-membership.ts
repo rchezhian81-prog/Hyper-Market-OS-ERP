@@ -10,7 +10,8 @@
 //   • a SECOND PERSON confirms, through head office's maker-checker engine (ADR-0024): the owner asks for approval of
 //     exactly this change (kind `posh_committee_change`), a different person who takes part in access changes
 //     (`identity.role.request`) approves it in their own session, and only then does the owner's change apply — once.
-//     OB-167 "A": that second person is a STORE MANAGER (holds the store_manager role now). Verifier r2final NEW-5: the
+//     OB-167 "A": that second person is a STORE MANAGER (holds the store_manager role now) — OB-182 "A": who does NOT
+//     hold the owner role (a person holding both is refused by name). Verifier r2final NEW-5: the
 //     person joining or leaving is NEVER the one who confirms it — elevated access never approves its own (§28);
 //   • the act is AUDITED on the domain trail (`role.grant` / `role.revoke`, object `user`, naming the role, who asked and
 //     who confirmed) — it is an access change the owner sees, not a committee record;
@@ -138,9 +139,15 @@ export function committeeMembershipRoutes(deps: CommitteeMembershipDeps): readon
         if (approvedBy === userId) {
           throw refuse(422, 'committee_change_confirmed_by_its_subject', `${userId} is the person ${action === 'add' ? 'joining' : 'leaving'} the Internal Committee and cannot also be the second person who confirms it.`, 'Ask a different store manager to confirm exactly this change in their own session. Nobody\'s access changed.');
         }
-        // OB-167 "A": the second person is a store manager.
-        if (!(await deps.rolesHeldBy(ctx.tenantId, approvedBy)).includes(COMMITTEE_CHANGE_CONFIRMER_ROLE)) {
+        // OB-167 "A": the second person is a store manager. OB-182 "A": and NOT an owner — a person holding both roles is
+        // refused, so the owner (the maker) or a second owner never confirms a committee change. Both are judged on the
+        // roles held NOW and BEFORE the approval is spent, so a refused confirmation leaves the approval unused.
+        const confirmerRoles = await deps.rolesHeldBy(ctx.tenantId, approvedBy);
+        if (!confirmerRoles.includes(COMMITTEE_CHANGE_CONFIRMER_ROLE)) {
           throw refuse(422, 'committee_change_needs_a_store_manager', `${approvedBy} confirmed this change but does not hold the store manager role. An Internal Committee change is confirmed by a store manager (owner decision OB-167).`, 'Ask a store manager to confirm exactly this change in their own session. Nobody\'s access changed.');
+        }
+        if (confirmerRoles.includes(OWNER_ROLE)) {
+          throw refuse(422, 'committee_change_confirmed_by_an_owner', `${approvedBy} confirmed this change but holds the owner role. An Internal Committee change is confirmed by a store manager who is not an owner (owner decision OB-182).`, 'Ask a store manager who is not an owner to confirm exactly this change in their own session. Nobody\'s access changed.');
         }
         const revokes = action === 'remove' ? await deps.committeeGrantsOf(ctx.tenantId, userId) : [];
         await opened.spend();

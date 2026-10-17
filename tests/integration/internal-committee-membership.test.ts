@@ -120,6 +120,41 @@ describe.each(backings)('OB-165 — Internal Committee membership: the owner cha
     expect(trail.filter((r) => (r.action === 'role.grant' || r.action === 'role.revoke') && ['V1', 'V2', 'V4'].includes(r.correlationId ?? ''))).toEqual([]);
   });
 
+  it('OB-182: a store manager who also holds the owner role cannot confirm — refused by name, before the approval is used up', async () => {
+    const h = harness();
+    const t = randomUUID();
+    const s = await cast(h, t);
+    // A person who holds BOTH roles (the owner, made a store manager too), and a second owner who is also a store manager.
+    await h.provisionRole(t, 'u-both', 'owner');
+    await h.provisionRole(t, 'u-both', 'store_manager');
+    await h.provisionRole(t, 'u-owner', 'store_manager');
+    const add = { action: 'add', userId: 'u-new', reason: 'synthetic: a replacement joins' };
+    const body = await approvedBody(h, t, 'u-owner', 'u-both', 'posh_committee_change', 'B1', add, { changeId: 'B1' });
+    const refused = await s.change('B1', body);
+    expect(refused.status).toBe(422);
+    expect(codeOf(refused)).toBe('committee_change_confirmed_by_an_owner');
+    const words = (refused.body as { error: { whatHappened: string; nextSafeAction: string } }).error;
+    expect(words.whatHappened).toBe('u-both confirmed this change but holds the owner role. An Internal Committee change is confirmed by a store manager who is not an owner (owner decision OB-182).');
+    expect(words.nextSafeAction).toContain('Nobody\'s access changed.');
+    expect((await s.complaints('u-new')).status).toBe(403);
+    // The approval was NOT used up by the refusal: it is still "approved", with nothing named as having used it.
+    const mine = ((await h.request({ method: 'GET', path: '/v1/approvals/requests', userId: 'u-owner', tenantId: t })).body as { mine: { requestId: string; status: string; usedBy?: string }[] }).mine;
+    const approval = mine.find((r) => r.requestId === body['approvalId'])!;
+    expect(approval).toMatchObject({ status: 'approved' });
+    expect(approval.usedBy).toBeUndefined();
+    // A second owner who is also made a store manager: refused the same way.
+    await h.provisionRole(t, 'u-owner2', 'store_manager');
+    expect(codeOf(await s.confirmed('B2', { action: 'add', userId: 'u-new', reason: 'synthetic' }, 'u-owner2'))).toBe('committee_change_confirmed_by_an_owner');
+    // A store manager who is not an owner confirms: it applies.
+    const ok = await s.confirmed('B3', add, 'u-mgr');
+    expect(ok.status).toBe(201);
+    expect(ok.body).toMatchObject({ userId: 'u-new', approvedBy: 'u-mgr' });
+    expect((await s.complaints('u-new')).status).toBe(200);
+    // Nothing refused reached the audit trail as an access change.
+    const trail = await auditTrailAdapter({ store: h.store }).records(t);
+    expect(trail.filter((r) => (r.action === 'role.grant' || r.action === 'role.revoke') && ['B1', 'B2'].includes(r.correlationId ?? ''))).toEqual([]);
+  });
+
   it('the owner never holds the role; nobody else may use the route; the route gives no other role; OB-157 stands', async () => {
     const h = harness();
     const t = randomUUID();
