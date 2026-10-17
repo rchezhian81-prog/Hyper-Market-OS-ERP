@@ -299,6 +299,11 @@ export type LaneDeviceRelayHandler = (
      * person the front's sign-in named. Absent when nobody was verified — the decisions then travel unstamped.
      */
     readonly verifiedPerson?: { readonly userId: string; readonly via: string; readonly laneId: string };
+    /**
+     * Verifier r2final NEW-4 (OB-172): on the device socket, the person signed in on that phone NOW. The box seals a
+     * handheld's record only for this person; a record naming anybody else travels unsealed.
+     */
+    readonly phoneHolder?: string;
   },
 ) => Promise<RelayReply>;
 

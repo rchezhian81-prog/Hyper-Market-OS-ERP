@@ -935,10 +935,13 @@ export async function startEdge(
       // A back-office decision is sealed here when the person this box verified is the one it names (2b-vi-c-3);
       // any stamp the device sent itself is removed — only the box vouches.
       // OB-172: a HANDHELD's record reaches here only once the device socket has checked that the person it names held THIS
-      // phone this shift, signed in with their own PIN (DF-3-c) — so the box vouches for that person, on that device's lane.
+      // phone this shift, signed in with their own PIN (DF-3-c). Verifier r2final NEW-4: the box vouches only for the person
+      // holding the phone NOW — a record naming an earlier holder (somebody else signed in since) travels UNSEALED, so head
+      // office flags it as not accepted instead of booking it in that person's name (hard rule #10).
       const verified = batch.deviceId === undefined ? batch.verifiedPerson : (() => {
         const named = personNamedBy(read.item.event);
-        return named.ok ? { userId: named.userId, via: 'phone_pin', laneId: deviceLaneOf(batch.deviceId) } : undefined;
+        return named.ok && batch.phoneHolder !== undefined && named.userId === batch.phoneHolder
+          ? { userId: named.userId, via: 'phone_pin', laneId: deviceLaneOf(batch.deviceId) } : undefined;
       })();
       const event = withDeciderSeal(sealKey, tenantId, read.item.event, verified);
       if (!isRelayable(event.type, batch.source)) {
