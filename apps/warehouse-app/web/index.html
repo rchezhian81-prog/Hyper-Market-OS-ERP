@@ -116,6 +116,10 @@
       .choices { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
       .direction { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
       .direction button[aria-pressed='true'] { outline: 3px solid var(--focus); background: var(--panel-2); }
+      /* OB-172: one receiving-checklist line — its words, then Pass / Fail as two big buttons. */
+      .check-item { display: grid; gap: 6px; padding: 6px 0; }
+      .check-item .direction button { min-height: 56px; }
+      .choices button[aria-pressed='true'] { outline: 3px solid var(--focus); background: var(--panel-2); }
       /* The confirm step of a pick: the number about to be committed, unmissable, then one tap. */
       .big-qty {
         background: var(--panel-2); border-radius: 12px; padding: 18px 16px; text-align: center;
@@ -258,6 +262,25 @@
         <div class="sheet-actions two">
           <button id="temp-cancel" type="button">Cancel</button>
           <button id="temp-ok" class="primary" type="button">OK</button>
+        </div>
+      </div>
+    </div>
+
+    <!--
+      OB-172: the receiving checklist for a chilled, frozen or raw-meat delivery, done at the door before "Delivery complete".
+      A Pass / Fail pair per check (buttons, never a text box); on any failure, tap what was done. It travels INSIDE the one
+      receipt this handheld sends, in the name of the person signed in on it.
+    -->
+    <div class="sheet" id="checklist" hidden role="dialog" aria-modal="true" aria-labelledby="checklist-title">
+      <div class="sheet-inner">
+        <h2 id="checklist-title">—</h2>
+        <div class="hint" id="checklist-hint"></div>
+        <div id="checklist-items"></div>
+        <div class="hint" id="checklist-action-hint" hidden></div>
+        <div class="choices" id="checklist-actions" hidden></div>
+        <div class="sheet-actions two">
+          <button id="checklist-cancel" type="button">Cancel</button>
+          <button id="checklist-ok" class="primary" type="button" disabled>Send the receipt</button>
         </div>
       </div>
     </div>

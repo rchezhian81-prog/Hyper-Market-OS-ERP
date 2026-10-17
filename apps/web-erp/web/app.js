@@ -93,6 +93,15 @@ const WORDS = {
     andMore: 'and more', whatToDo: 'What to do',
     sampleData: 'Sample data — this is not your store.',
     countedSoFar: 'Counted', item: 'Item',
+    // OB-172: the receiving checklist for chilled, frozen or raw-meat goods, done at the door and saved with the delivery.
+    rcTitle: 'Receiving checklist — chilled and frozen goods',
+    rcWhy: 'This delivery has chilled or frozen goods. Tick each check at the door; it is saved with the delivery, in your name.',
+    rcPass: 'Pass', rcFail: 'Fail',
+    rcAction: 'What was done about the failure (for example: crate refused and sent back)',
+    rcNotTold: 'This store computer was not sent the receiving checklist. The delivery is saved and head office will see the checklist is missing.',
+    rcNeeded: 'Do the receiving checklist first: tick every check pass or fail.',
+    rcNeedAction: 'A check failed. Write what was done about it before saving.',
+    rcSaved: 'Receiving checklist saved with the delivery.',
   },
   ta: {
     manager: 'கடை பணியிடம்', tradingDay: 'வியாபார நாள்', today: 'இன்று', approvals: 'ஒப்புதல்கள்',
@@ -147,6 +156,14 @@ const WORDS = {
     andMore: 'மேலும்', whatToDo: 'என்ன செய்ய வேண்டும்',
     sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.',
     countedSoFar: 'எண்ணப்பட்டது', item: 'பொருள்',
+    rcTitle: 'பெறுதல் சரிபார்ப்பு — குளிர் மற்றும் உறைந்த பொருட்கள்',
+    rcWhy: 'இந்த டெலிவரியில் குளிர் அல்லது உறைந்த பொருட்கள் உள்ளன. வாசலில் ஒவ்வொரு சோதனையையும் குறிக்கவும்; அது உங்கள் பெயரில் டெலிவரியுடன் சேமிக்கப்படும்.',
+    rcPass: 'சரி', rcFail: 'தவறு',
+    rcAction: 'தவறுக்கு என்ன செய்யப்பட்டது (எ.கா.: பெட்டி மறுக்கப்பட்டு திருப்பி அனுப்பப்பட்டது)',
+    rcNotTold: 'இந்தக் கடை கணினிக்கு பெறுதல் சரிபார்ப்புப் பட்டியல் அனுப்பப்படவில்லை. டெலிவரி சேமிக்கப்படும்; சரிபார்ப்பு இல்லை என்பதை தலைமை அலுவலகம் காணும்.',
+    rcNeeded: 'முதலில் பெறுதல் சரிபார்ப்பைச் செய்யுங்கள்: ஒவ்வொரு சோதனையையும் சரி அல்லது தவறு எனக் குறிக்கவும்.',
+    rcNeedAction: 'ஒரு சோதனை தவறியது. சேமிக்கும் முன் அதற்கு என்ன செய்யப்பட்டது என்று எழுதுங்கள்.',
+    rcSaved: 'பெறுதல் சரிபார்ப்பு டெலிவரியுடன் சேமிக்கப்பட்டது.',
   },
 };
 let lang = 'en';
@@ -827,7 +844,58 @@ async function decide(request, decision) {
 
 let receiptLines = [];
 
+/**
+ * OB-172: the receiving checklist, shown once a chilled, frozen or raw-meat item is on the delivery (head office's product
+ * master says which, through the store computer — no network needed). One Pass / Fail pair per check, and a box for what
+ * was done when any check fails. Nothing is decided here: the session judges it by head office's own rule when it saves.
+ */
+let checklistAnswers = {};
+function receivingSetup() {
+  return session && typeof session.receivingChecklist === 'function' ? session.receivingChecklist() : undefined;
+}
+function coldOnDelivery() {
+  return session && typeof session.coldChainAmong === 'function' ? session.coldChainAmong(receiptLines.map((l) => l.productId)) : [];
+}
+function renderChecklist() {
+  const setup = receivingSetup();
+  const check = setup && setup.checks.length > 0 ? setup.checks[0] : undefined;
+  const cold = coldOnDelivery();
+  const show = check !== undefined && cold.length > 0;
+  el('receive-checklist').hidden = !show;
+  el('receive-checklist-missing').hidden = !(setup === undefined && receiptLines.some((l) => l.temperatureC !== undefined));
+  if (!show) return;
+  el('receive-checklist-title').textContent = check.title ? `${t('rcTitle')} · ${check.title}` : t('rcTitle');
+  el('receive-checklist-why').textContent = `${t('rcWhy')} (${cold.join(', ')})`;
+  el('receive-checklist-items').replaceChildren(...check.items.map((item) => {
+    const row = document.createElement('div');
+    row.className = 'rc-row';
+    row.setAttribute('role', 'radiogroup');
+    const name = document.createElement('span');
+    name.id = `rc-label-${item.itemId}`;
+    name.textContent = item.label;
+    row.setAttribute('aria-labelledby', name.id);
+    row.append(name);
+    for (const result of ['pass', 'fail']) {
+      const label = document.createElement('label');
+      const input = document.createElement('input');
+      input.type = 'radio';
+      input.name = `rc-${item.itemId}`;
+      input.value = result;
+      input.dataset.item = item.itemId;
+      input.checked = checklistAnswers[item.itemId] === result;
+      input.addEventListener('change', () => { checklistAnswers[item.itemId] = result; renderChecklist(); });
+      label.append(input, document.createTextNode(` ${t(result === 'pass' ? 'rcPass' : 'rcFail')}`));
+      row.append(label);
+    }
+    return row;
+  }));
+  const anyFail = check.items.some((i) => checklistAnswers[i.itemId] === 'fail');
+  el('receive-checklist-action-field').hidden = !anyFail;
+  el('receive-checklist-action-label').textContent = t('rcAction');
+}
+
 function renderLines() {
+  renderChecklist();
   el('receive-empty').hidden = receiptLines.length > 0;
   el('receive-lines').replaceChildren(...receiptLines.map((line, index) => {
     const row = document.createElement('div');
@@ -876,6 +944,23 @@ el('save-receipt').addEventListener('click', () => {
   if (receiptLines.length === 0) { tell(t('read'), t('needLines')); return; }
   const po = el('grn-po').value.trim();
 
+  // OB-172: the checklist travels inside the delivery. A cold-chain delivery is not saved without every check ticked.
+  const setup = receivingSetup();
+  const check = setup && setup.checks.length > 0 ? setup.checks[0] : undefined;
+  let checklist;
+  if (check !== undefined && coldOnDelivery().length > 0) {
+    if (check.items.some((i) => checklistAnswers[i.itemId] !== 'pass' && checklistAnswers[i.itemId] !== 'fail')) { tell(t('read'), t('rcNeeded')); return; }
+    const action = el('receive-checklist-action').value.trim();
+    if (check.items.some((i) => checklistAnswers[i.itemId] === 'fail') && action === '') { tell(t('read'), t('rcNeedAction')); return; }
+    const probed = receiptLines.find((l) => l.temperatureC !== undefined && coldOnDelivery().includes(l.productId));
+    checklist = {
+      checkId: check.checkId,
+      itemResults: Object.fromEntries(check.items.map((i) => [i.itemId, checklistAnswers[i.itemId]])),
+      ...(probed === undefined ? {} : { readingTenthsC: Math.round(probed.temperatureC * 10) }),
+      ...(action === '' ? {} : { correctiveAction: action }),
+    };
+  }
+
   const stamp = Date.now().toString(36);
   try {
     const received = session.receive({
@@ -884,6 +969,7 @@ el('save-receipt').addEventListener('click', () => {
       poId: po === '' ? null : po,
       receivedAt: new Date().toISOString(),
       lines: receiptLines,
+      ...(checklist === undefined ? {} : { checklist }),
     });
     // An unmatched delivery is SAID, not filed quietly. Nobody can check an invoice against a
     // purchase order that does not exist, and the person who can still fix that is the buyer today.
@@ -891,9 +977,11 @@ el('save-receipt').addEventListener('click', () => {
     // receipt now travels to head office on the same path as a decision, never a bare "saved" (P-08).
     const saved = session.savedWork().find((w) => w.kind === 'receipt' && w.id === received.receipt.id);
     const where = saved === undefined ? '' : ` — ${words(STATE_WORDS, saved.state)}`;
-    tell(t('received'), `${received.unmatched ? t('unmatchedWarning') : t('matchedNote')}${where}`, !received.unmatched);
+    tell(t('received'), `${received.unmatched ? t('unmatchedWarning') : t('matchedNote')}${checklist === undefined ? '' : ` ${t('rcSaved')}`}${where}`, !received.unmatched);
     void syncToBox();
     receiptLines = [];
+    checklistAnswers = {};
+    el('receive-checklist-action').value = '';
     el('grn-number').value = '';
     el('grn-po').value = '';
     renderLines();
@@ -1140,6 +1228,7 @@ function paintChrome() {
   el('add-line').textContent = t('addItem');
   el('receive-empty').textContent = t('noItemsYet');
   el('save-receipt').textContent = t('saveDelivery');
+  el('receive-checklist-missing').textContent = t('rcNotTold');
   el('count-title').textContent = t('count');
   el('count-lead').textContent = t('countBlindHint');
   el('count-product-label').textContent = t('productCode');

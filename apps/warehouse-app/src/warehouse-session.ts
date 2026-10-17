@@ -41,6 +41,10 @@ import { isAdjustmentReason, type AdjustmentReasonCode } from '../../../packages
 import type { StockState } from '../../../packages/stock/src/position';
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
 import {
+  judgeDockChecklist, coldChainAmong, readReceivingChecklistSetup,
+  type DockChecklistAnswer, type FoodSafetyCheck, type ReceivingChecklistSetup,
+} from '../../../packages/facilities/src/food-safety';
+import {
   deviceItemReason, deviceItemState, type BoxItemStatus, type DeviceItemState,
 } from '../../../packages/sync/src/device-relay';
 
@@ -67,6 +71,8 @@ export const FEEDBACK_CODES = Object.freeze([
   'counted', 'adjustment_requested', 'not_a_quantity', 'no_reason',
   // the delivery declared complete — sent as ONE receipt for head office to assemble against the order (SP-6b)
   'receiving_done', 'nothing_received',
+  // OB-172: a chilled/frozen delivery is not declared complete without its receiving checklist, ticked in full
+  'checklist_required', 'checklist_incomplete',
   // SP-8c: the back store ISSUES against a floor indent (tap the line → scan the bin you take from → scan the item → confirm)
   'issued', 'not_on_indent', 'indent_line_done', 'requester_cannot_issue', 'bin_has_none',
 ] as const);
@@ -278,6 +284,17 @@ export interface CompleteReceivingInput {
   /** Overrides the assignment's order; `null` says there is none (a DSD). */
   readonly poId?: string | null;
   readonly at?: string;
+  /** OB-172: the receiving checklist the signed-in worker did at the door (needed for chilled, frozen or raw-meat goods). */
+  readonly checklist?: DockChecklistAnswer;
+}
+
+/** OB-172: what "Delivery complete" asks for this delivery — the checklist to offer and the cold-chain products received. */
+export interface DeliveryChecklistNeed {
+  /** The store computer was told the receiving checklist (absent → it cannot be offered; head office will flag it missing). */
+  readonly known: boolean;
+  readonly check?: FoodSafetyCheck;
+  /** The chilled / frozen / raw-meat products this handheld has received on the delivery. Non-empty → the checklist is needed. */
+  readonly coldChain: readonly string[];
 }
 export interface CompleteReceivingResult {
   readonly accepted: boolean;
@@ -387,6 +404,12 @@ export interface WarehouseAssignment {
   readonly recalledProductIds?: readonly string[];
   readonly recalledBatchIds?: readonly string[];
   readonly receivingPolicy?: ReceivingPolicy;
+  /**
+   * OB-172 · D-6: the receiving checklists head office has in force for this store and its cold-chain products, as the
+   * store computer was told them (read strictly here). Absent = not told: "Delivery complete" cannot ask for it, and head
+   * office books such a delivery flagged `receiving_checklist_missing`.
+   */
+  readonly receivingChecklist?: unknown;
 }
 
 const gKey = (productId: string, batchId: string | null): string => `${productId}|${batchId ?? ''}`;
@@ -417,6 +440,8 @@ export class WarehouseSession {
 
   private readonly currency: CurrencyCode;
   private readonly at: () => string;
+  /** OB-172: the receiving checklist setup the store computer served, read strictly (undefined = not told). */
+  private readonly receivingSetup: ReceivingChecklistSetup | undefined;
 
   constructor(
     private readonly assignment: WarehouseAssignment,
@@ -434,6 +459,7 @@ export class WarehouseSession {
     this.policy = assignment.receivingPolicy ?? DEFAULT_RECEIVING_POLICY;
     this.currency = options.currency ?? 'INR';
     this.at = options.now ?? (() => new Date().toISOString());
+    this.receivingSetup = readReceivingChecklistSetup(assignment.receivingChecklist);
     for (const item of assignment.goodsIn ?? []) this.goods.set(gKey(item.productId, item.batchId), { ...item });
     for (const line of assignment.pickLines ?? []) this.picks.set(line.lineId, { line: { ...line, batchId: line.batchId ?? null }, pickedMinor: 0 });
     for (const line of assignment.indentLines ?? []) this.indents.set(`${line.indentId}|${line.productId}`, { line, issuedMinor: 0 });
@@ -619,6 +645,16 @@ export class WarehouseSession {
    * truth, this only says they are all in. Refused when nothing was received here (a completion with no scans would be a
    * dead-letter at head office) and, harmlessly, when the delivery was already completed.
    */
+  /**
+   * OB-172: what "Delivery complete" asks for this delivery — the receiving checklist to offer (head office's own, from the
+   * store setup) and the chilled / frozen / raw-meat products this handheld received on it. Offline; decides nothing.
+   */
+  deliveryChecklist(grnId: string): DeliveryChecklistNeed {
+    const scanned = this.receiptScansOf(grnId.trim()).map((i) => (i.event.payload as { productId: string }).productId);
+    const check = this.receivingSetup?.checks[0];
+    return { known: this.receivingSetup !== undefined, ...(check === undefined ? {} : { check }), coldChain: coldChainAmong(this.receivingSetup, scanned) };
+  }
+
   completeReceiving(input: CompleteReceivingInput): CompleteReceivingResult {
     const grnId = input.grnId.trim();
     const scans = this.receiptScansOf(grnId);
@@ -628,6 +664,19 @@ export class WarehouseSession {
     if (scans.length === 0) return refused('nothing_received', `nothing has been received on this handheld for delivery ${grnId} — scan the delivery in first`);
     const at = input.at ?? this.at();
     const poId = input.poId === undefined ? (this.assignment.poId ?? null) : input.poId;
+    // OB-172 (OB-164 at the door, offline): a chilled/frozen delivery is not declared complete without its receiving
+    // checklist, judged by head office's own rule; it is done by — and travels in the name of — the person signed in on
+    // this phone (the box readdressed the assignment to them), INSIDE the one completion record the store computer seals.
+    const scanned = scans.map((i) => i.event.payload as { productId: string; temperatureC?: number });
+    const cold = coldChainAmong(this.receivingSetup, scanned.map((x) => x.productId));
+    const probed = scanned.find((x) => cold.includes(x.productId) && typeof x.temperatureC === 'number');
+    const answer = input.checklist === undefined ? undefined
+      : input.checklist.readingTenthsC === undefined && probed?.temperatureC !== undefined ? { ...input.checklist, readingTenthsC: Math.round(probed.temperatureC * 10) } : input.checklist;
+    const verdict = judgeDockChecklist({
+      setup: this.receivingSetup, grnId, productIds: scanned.map((x) => x.productId), ...(answer === undefined ? {} : { answer }),
+      performedBy: this.assignment.workerId, performedAt: at,
+    });
+    if (!verdict.ok) return refused(verdict.refusal === 'checklist_required' ? 'checklist_required' : 'checklist_incomplete', verdict.detail);
     this.outbox.enqueue(makeEvent({
       id: `recv-done-${grnId}`,
       type: RECEIVING_COMPLETED,
@@ -637,6 +686,7 @@ export class WarehouseSession {
       payload: {
         grnId, poId, completedBy: this.assignment.workerId, storeId: this.assignment.storeId, at,
         scanCount: scans.length, commandIds: scans.map((i) => (i.event.payload as { commandId: string }).commandId), source: 'warehouse-handheld',
+        ...(verdict.carried === undefined ? {} : { receivingChecklist: verdict.carried }),
       },
     }));
     const detail = `delivery ${grnId} sent as one receipt of ${scans.length} ${scans.length === 1 ? 'scan' : 'scans'} — head office assembles it against ${poId ?? 'no order'}`;

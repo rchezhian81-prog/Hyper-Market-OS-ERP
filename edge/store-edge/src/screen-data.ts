@@ -43,6 +43,7 @@ import { laneScalesFor } from './lane-scales';
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { isUom, normaliseUom } from '../../../packages/contracts/src/quantity';
 import { assessChecklist } from '../../../packages/workforce/src/index';
+import { readReceivingChecklistSetup } from '../../../packages/facilities/src/food-safety';
 import type { LpRule } from '../../../packages/loss-prevention/src/index';
 import { planDispatch, type DispatchPlan } from '../../../packages/fulfilment/src/routing';
 import { generateDeliverySlots } from '../../../packages/storefront/src/checkout';
@@ -627,8 +628,21 @@ export function managerPayload(input: ScreenInput): Record<string, unknown> {
       .filter((p) => p.unitCostMinor !== undefined)
       .map((p) => ({ id: p.productId, valuePerUnitMinor: p.unitCostMinor! }));
   }
+  // OB-172: the receiving checklist the Receive form offers, offline. Absent stays absent (the screen says it was not told).
+  Object.assign(payload, receivingChecklistFor(input));
 
   return payload;
+}
+
+/**
+ * OB-172 · D-6 — the receiving checklists head office has in force for this store and its cold-chain products, as the store
+ * setup carried them, for the manager's Receive form and the warehouse handheld. Read strictly; absent when not told.
+ */
+export function receivingChecklistFor(input: ScreenInput): Record<string, unknown> {
+  const register = input.pack.receivingChecklist;
+  if (register === undefined || !register.known) return {};
+  const setup = readReceivingChecklistSetup(register.value);
+  return setup === undefined ? {} : { receivingChecklist: setup };
 }
 
 /**
@@ -851,6 +865,8 @@ export function warehousePayload(input: ScreenInput): Record<string, unknown> | 
     // SP-8c: the floor indents the back store owes, from head office's register as the box last pulled it — approved or
     // part-issued, lines with something still owed, for THIS back store when the pack names one. Absent stays absent.
     ...indentLinesFor(input),
+    // OB-172: the receiving checklist "Delivery complete" asks for a chilled/frozen delivery, offline.
+    ...receivingChecklistFor(input),
   };
 }
 

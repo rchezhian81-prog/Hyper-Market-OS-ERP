@@ -26,6 +26,9 @@ const CASES: { type: string; payload: Record<string, unknown> }[] = [
   { type: 'ChecklistCompleted', payload: { checklistId: 'cl-1', items: [{ id: 'i1', done: true }], signedBy: 'u-meena' } },
   { type: 'MigrationExceptionResolved', payload: { exceptionId: 'ex-1', action: 'exclude', decidedBy: 'u-meena', reason: 'obsolete' } },
   { type: 'MigrationTotalSigned', payload: { totalId: 'ct-1', signerRole: 'owner', signedBy: 'u-meena', statement: 'counted' } },
+  // OB-172: a delivery and its receiving checklist travel as ONE sealed record — a changed tick no longer matches.
+  { type: 'GoodsReceived', payload: { grnId: 'grn-1', number: 'DN-1', receivedBy: 'u-meena', lines: [{ productId: 'p-paneer', quantityMinor: 10 }], receivingChecklist: { checkId: 'dock', performedBy: 'u-meena', itemResults: { temp: 'pass' } } } },
+  { type: 'ReceivingCompleted', payload: { grnId: 'grn-2', poId: 'po-1', completedBy: 'u-meena', receivingChecklist: { checkId: 'dock', performedBy: 'u-meena', itemResults: { temp: 'fail' }, correctiveAction: 'Rejected the crate' } } },
 ];
 const eventOf = (type: string, payload: Record<string, unknown>) =>
   makeEvent({ id: `e-${type}`, type, occurredAt: '2026-10-08T10:00:00.000Z', idempotencyKey: `k-${type}`, source: 'web-erp', payload });
@@ -74,7 +77,8 @@ describe('the box seals a decision for the person it verified, and only them', (
   }
 
   it('a record the box does not seal passes through untouched; without a key head office claims nothing', () => {
-    const sale = eventOf('GoodsReceived', { grnId: 'g1', receivedBy: 'u-meena' });
+    // (OB-172 made a delivery a sealed record; a blind count is still one the box carries unsealed.)
+    const sale = eventOf('StockCounted', { countId: 'c1', counterId: 'u-meena' });
     expect(withDeciderSeal(key, A, sale, MEENA)).toBe(sale);
     expect(deciderSealFlags(undefined, { tenantId: A, kind: 'checklist', recordId: 'cl-1', named: 'u-meena', record: {} })).toEqual([]);
   });

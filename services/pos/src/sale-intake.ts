@@ -163,7 +163,8 @@ export type SaleExceptionKind =
   | 'sold_expired_batch'
   /** An age-restricted product was sold with no confirmed age check covering it (PF-03). **Critical**: possibly a minor. */
   | 'age_restricted_sold_without_check'
-  /** B19: a banned single-use plastic, a carry bag below 120 µm, or a carry bag given free was sold. **Critical**: unlawful. */
+  /** B19: a banned single-use plastic, a carry bag below 120 µm, or a carry bag given free — or (OB-173) charged below its
+   *  list price — was sold. **Critical**: unlawful / against the owner's written rule. */
   | 'unlawful_plastic_sold'
   /** B14: a tobacco line below one whole pack, or not a whole number of packs (OB-160), was sold — loose cigarettes.
    *  **Critical**: COTPA s.7. */
@@ -452,14 +453,22 @@ export function acceptSale(sale: IncomingSale, ctx: IntakeContext): IntakeResult
     // ── computer refuse these before the money; this is the backstop for an old till, or a product whose flags changed ──
     // ── after the lane's pack was built. The sale stands (the goods are gone, hard rule #1), so each is CRITICAL. ─────────
     // NEW-1 (B19): judged as CHARGED — a bag that a promotion took to zero is a free bag.
+    // OB-173 (owner, 17 Oct 2026, "Never discount bags"): a carry bag is charged its FULL list price — judged against the
+    // higher of head office's own catalogue price (when the lane priced from the current pack — a lane a pack behind sold at
+    // the price it was given, which is the pack-lag exception's business) and the line's price before any change at the till.
+    const listUnit = Math.max(
+      sale.packVersion >= ctx.currentPackVersion && typeof product.unitPriceMinor === 'number' && Number.isFinite(product.unitPriceMinor) ? product.unitPriceMinor : 0,
+      typeof line.priceOverride?.fromUnitPriceMinor === 'number' && Number.isFinite(line.priceOverride.fromUnitPriceMinor) ? line.priceOverride.fromUnitPriceMinor : 0,
+      line.unitPriceMinor,
+    );
     const legal = productRuleRefusals({
       productId: line.productId, description: product.sku, quantityMinor: line.quantityMinor, uom: line.uom,
-      unitPriceMinor: line.unitPriceMinor,
+      unitPriceMinor: line.unitPriceMinor, listUnitPriceMinor: listUnit,
       ...(typeof line.lineTotalMinor === 'number' && Number.isFinite(line.lineTotalMinor) ? { chargedMinor: line.lineTotalMinor } : {}),
       ...(product.regulatedFlags === undefined ? {} : { regulatedFlags: product.regulatedFlags }),
     });
     for (const r of legal) {
-      if (r.reason === 'banned_single_use_plastic' || r.reason === 'carry_bag_below_min_thickness' || r.reason === 'carry_bag_not_priced') {
+      if (r.reason === 'banned_single_use_plastic' || r.reason === 'carry_bag_below_min_thickness' || r.reason === 'carry_bag_not_priced' || r.reason === 'carry_bag_discounted') {
         add('unlawful_plastic_sold', 'critical',
           `${product.sku}: ${r.detail}`,
           'ACT NOW: an item the plastic rules forbid was sold. Take the item off sale, find why the till did not stop it (an old till, or a pack that predates the rule), and keep the receipt for the record.',

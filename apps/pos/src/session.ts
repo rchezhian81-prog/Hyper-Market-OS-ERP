@@ -487,7 +487,7 @@ export class PosSession {
       throw new RangeError(`A till price change only lowers a price: ${toUnitMinor} is not below ${line.unitPrice.minor}.`);
     }
     // B19: a carry bag stays a PRICED line — no approval can make it free. Asked here, before any approval is spent.
-    const refusals = this.lineRefusals({ ...line, unitPrice: money(toUnitMinor, line.unitPrice.currency) }, this.nowIso());
+    const refusals = this.lineRefusals({ ...line, unitPrice: money(toUnitMinor, line.unitPrice.currency) }, this.nowIso(), undefined, line.priceOverride?.fromUnitMinor ?? line.unitPrice.minor);
     if (refusals.length > 0) throw new TillRuleRefusedError(refusals);
     const before = this.priceOf(line).total.minor;
     const after = this.priceOf({ ...line, unitPrice: money(toUnitMinor, line.unitPrice.currency) }).total.minor;
@@ -547,12 +547,15 @@ export class PosSession {
     return this.config.regulatedFlagsOf?.(l.productId) ?? l.regulatedFlags;
   }
 
-  private lineRefusals(l: BasketEntry, atIsoUtc: string, chargedMinor?: number): ReturnType<typeof tillLineRefusals> {
+  private lineRefusals(l: BasketEntry, atIsoUtc: string, chargedMinor?: number, listUnitMinor?: number): ReturnType<typeof tillLineRefusals> {
     const regulatedFlags = this.flagsOf(l);
     const catalogueUom = this.config.baseUomOf?.(l.productId);
+    // OB-173: the line's list price is its price before any change at the till — a bag lowered at the till is refused.
+    const list = listUnitMinor ?? l.priceOverride?.fromUnitMinor;
     return tillLineRefusals({
       productId: l.productId, description: l.description, quantityMinor: l.quantityMinor, uom: l.uom,
       unitPriceMinor: l.unitPrice.minor, ...(regulatedFlags === undefined ? {} : { regulatedFlags }),
+      ...(list === undefined ? {} : { listUnitPriceMinor: list }),
       ...(chargedMinor === undefined ? {} : { chargedMinor }),
       ...(catalogueUom === undefined ? {} : { catalogueUom }),
     }, this.gateContext(atIsoUtc));
@@ -610,6 +613,9 @@ export class PosSession {
       // Promotions count whole sellable units; a weighed line counts as one unit.
       qty: l.uom === 'ea' ? l.quantityMinor : 1,
       group: l.group,
+      // OB-173 (owner, 17 Oct 2026, "Never discount bags"): no offer reaches a carry bag — not a basket-wide one, not a
+      // category one — so it is charged its full price and the discount is spread over the other lines only.
+      ...(tillRuleFlagsOf(this.flagsOf(l)).carryBag === true ? { carryBag: true } : {}),
     }));
     const at = this.nowRef ?? this.config.clock?.() ?? '1970-01-01T00:00:00Z';
     return bestPrice(basket, this.promotions, { at, currency: this.config.currency });

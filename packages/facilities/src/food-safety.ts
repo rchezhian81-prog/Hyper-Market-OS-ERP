@@ -314,3 +314,152 @@ export function foodSafetyStatus(input: {
       : `${missed.length} food-safety check(s) MISSED since ${input.from} — each escalated to the person named`,
   };
 }
+
+// ── OB-172 · the receiving checklist taken at the dock, on the store screen or the handheld, possibly offline ─────────────
+//
+// OB-172 "A" (owner, 17 Oct 2026, in writing, "Checklist on handheld"): a chilled, frozen or raw-meat delivery booked on the
+// manager's store screen or on the warehouse handheld carries its D-6 receiving checklist INSIDE the receipt record — one
+// record, which the store computer seals for the person it verified (their own sign-in: the till PIN on the handheld) and
+// head office checks. The checklist is the same D-6 receiving check head office defines (its items, its limits), carried to
+// the store in the store setup so the screen can offer it with no network; the person ticks each item pass / fail and, on
+// any failure, writes what was done. Judged by the SAME `assessCheckRecord` here (offline, on the device) and at head office.
+
+/** The field a relayed receipt carries its receiving checklist in. Covered by the store computer's seal. */
+export const RECEIVING_CHECKLIST_FIELD = 'receivingChecklist';
+
+/** The D-6 record id a receipt's carried checklist is kept under at head office — one per delivery. */
+export const receivingChecklistRecordId = (grnId: string): string => `rc-${grnId}`;
+
+/** A receiving checklist as the dock captured it, travelling inside the receipt. `performedBy` is the signed-in person. */
+export interface CarriedReceivingChecklist {
+  readonly checkId: string;
+  readonly performedBy: string;
+  readonly performedAt: string;
+  readonly itemResults: Readonly<Record<string, ItemResult>>;
+  readonly readingTenthsC?: number;
+  readonly correctiveAction?: string;
+}
+
+/** A carried checklist, read strictly — `undefined` when it cannot be read as one (never repaired). */
+export function readCarriedReceivingChecklist(v: unknown): CarriedReceivingChecklist | undefined {
+  if (v === null || typeof v !== 'object' || Array.isArray(v)) return undefined;
+  const r = v as Record<string, unknown>;
+  if (!isStr(r['checkId']) || !isStr(r['performedBy']) || !isTime(r['performedAt'])) return undefined;
+  const raw = r['itemResults'];
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const itemResults: Record<string, ItemResult> = {};
+  for (const [k, x] of Object.entries(raw as Record<string, unknown>)) {
+    if (x !== 'pass' && x !== 'fail') return undefined;
+    itemResults[k] = x;
+  }
+  if (r['readingTenthsC'] !== undefined && !isInt(r['readingTenthsC'])) return undefined;
+  if (r['correctiveAction'] !== undefined && typeof r['correctiveAction'] !== 'string') return undefined;
+  return {
+    checkId: r['checkId'].trim(), performedBy: r['performedBy'].trim(), performedAt: r['performedAt'], itemResults,
+    ...(isInt(r['readingTenthsC']) ? { readingTenthsC: r['readingTenthsC'] } : {}),
+    ...(isStr(r['correctiveAction']) ? { correctiveAction: r['correctiveAction'].trim() } : {}),
+  };
+}
+
+/** The D-6 record draft a carried checklist is for this delivery (its goods receipt id is the subject). */
+export function carriedChecklistDraft(grnId: string, c: CarriedReceivingChecklist): CheckRecordDraft {
+  return {
+    recordId: receivingChecklistRecordId(grnId), checkId: c.checkId, subjectRef: grnId, performedBy: c.performedBy, performedAt: c.performedAt,
+    itemResults: c.itemResults,
+    ...(c.readingTenthsC === undefined ? {} : { readingTenthsC: c.readingTenthsC }),
+    ...(c.correctiveAction === undefined ? {} : { correctiveAction: c.correctiveAction }),
+  };
+}
+
+/**
+ * What the store setup tells the dock (`receivingChecklist` section): the receiving checklists head office has in force for
+ * this store, and which products are cold-chain by head office's product master (chilled, frozen, raw meat, or a product
+ * with cold limits of its own) — so a screen with no network knows when the checklist is needed and what it asks.
+ */
+export interface ReceivingChecklistSetup {
+  readonly checks: readonly FoodSafetyCheck[];
+  readonly coldChainProductIds: readonly string[];
+}
+
+/** The section, read strictly: only receiving checks that are whole definitions; `undefined` when it is not one. */
+export function readReceivingChecklistSetup(v: unknown): ReceivingChecklistSetup | undefined {
+  if (v === null || typeof v !== 'object' || Array.isArray(v)) return undefined;
+  const r = v as Record<string, unknown>;
+  if (!Array.isArray(r['checks']) || !Array.isArray(r['coldChainProductIds'])) return undefined;
+  const checks: FoodSafetyCheck[] = [];
+  for (const c of r['checks'] as unknown[]) {
+    if (c === null || typeof c !== 'object') continue;
+    const d = c as Record<string, unknown>;
+    const items = Array.isArray(d['items'])
+      ? (d['items'] as unknown[]).filter((i): i is ChecklistItem => i !== null && typeof i === 'object' && isStr((i as ChecklistItem).itemId) && isStr((i as ChecklistItem).label))
+      : [];
+    const check: FoodSafetyCheck = {
+      checkId: isStr(d['checkId']) ? d['checkId'] : '', branchId: isStr(d['branchId']) ? d['branchId'] : '', title: isStr(d['title']) ? d['title'] : '',
+      kind: 'receiving', graceMinutes: isInt(d['graceMinutes']) ? d['graceMinutes'] : 0, items: items.map((i) => ({ itemId: i.itemId, label: i.label })),
+      assignedRole: isStr(d['assignedRole']) ? d['assignedRole'] : 'store_manager', escalatesTo: isStr(d['escalatesTo']) ? d['escalatesTo'] : 'owner',
+      active: d['active'] !== false,
+      ...(isInt(d['minTenthsC']) ? { minTenthsC: d['minTenthsC'] } : {}),
+      ...(isInt(d['maxTenthsC']) ? { maxTenthsC: d['maxTenthsC'] } : {}),
+    };
+    if (d['kind'] !== 'receiving' || check.checkId === '' || !check.active) continue;
+    const { checkId: _id, ...rest } = check;
+    void _id;
+    if (definitionProblem(rest) === null) checks.push(check);
+  }
+  return { checks, coldChainProductIds: (r['coldChainProductIds'] as unknown[]).filter(isStr) };
+}
+
+/** What the person at the dock answered (the screen's form): which checklist, each item, a reading, what was done. */
+export interface DockChecklistAnswer {
+  readonly checkId?: string;
+  readonly itemResults: Readonly<Record<string, ItemResult>>;
+  readonly readingTenthsC?: number;
+  readonly correctiveAction?: string;
+}
+
+export type DockChecklistRefusal = 'checklist_required' | 'unknown_checklist' | RecordRefusal;
+
+export type DockChecklistVerdict =
+  | { readonly ok: true; readonly carried?: CarriedReceivingChecklist; readonly coldChain: readonly string[] }
+  | { readonly ok: false; readonly refusal: DockChecklistRefusal; readonly detail: string; readonly coldChain: readonly string[] };
+
+/** The cold-chain products among these, by the store setup — the dock's own question, with no network. */
+export function coldChainAmong(setup: ReceivingChecklistSetup | undefined, productIds: Iterable<string>): string[] {
+  if (setup === undefined) return [];
+  const cold = new Set(setup.coldChainProductIds);
+  return [...new Set(productIds)].filter((p) => cold.has(p)).sort();
+}
+
+/**
+ * Judge the dock's checklist for one delivery, offline, by the same rule head office applies (OB-164 / OB-172): a delivery
+ * carrying a cold-chain product needs the receiving checklist when the store setup names one; every item ticked; a failure
+ * needs its corrective action. Dry goods may carry one (optional) or none. Pure: the clock and the person are passed in.
+ */
+export function judgeDockChecklist(input: {
+  readonly setup: ReceivingChecklistSetup | undefined;
+  readonly grnId: string;
+  readonly productIds: Iterable<string>;
+  readonly answer?: DockChecklistAnswer;
+  readonly performedBy: string;
+  readonly performedAt: string;
+}): DockChecklistVerdict {
+  const coldChain = coldChainAmong(input.setup, input.productIds);
+  const checks = input.setup?.checks ?? [];
+  const answer = input.answer;
+  if (answer === undefined) {
+    if (coldChain.length > 0 && checks.length > 0) {
+      return { ok: false, refusal: 'checklist_required', coldChain, detail: `This delivery carries chilled or frozen goods (${coldChain.join(', ')}). Do the receiving checklist before it is saved (OB-164).` };
+    }
+    return { ok: true, coldChain };
+  }
+  const check = answer.checkId === undefined ? checks[0] : checks.find((c) => c.checkId === answer.checkId);
+  if (check === undefined) return { ok: false, refusal: 'unknown_checklist', coldChain, detail: 'This store has not been sent that receiving checklist from head office.' };
+  const carried: CarriedReceivingChecklist = {
+    checkId: check.checkId, performedBy: input.performedBy, performedAt: input.performedAt, itemResults: answer.itemResults,
+    ...(answer.readingTenthsC === undefined ? {} : { readingTenthsC: answer.readingTenthsC }),
+    ...(isStr(answer.correctiveAction) ? { correctiveAction: answer.correctiveAction.trim() } : {}),
+  };
+  const assessed = assessCheckRecord(check, carriedChecklistDraft(input.grnId, carried));
+  if (!assessed.ok) return { ok: false, refusal: assessed.refusal, detail: assessed.detail, coldChain };
+  return { ok: true, carried, coldChain };
+}

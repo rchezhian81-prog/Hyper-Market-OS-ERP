@@ -219,7 +219,10 @@ export function promotionCatalogueRoutes(deps: PromotionCatalogueDeps): readonly
           ...(strArray(b.coupons) ? { coupons: b.coupons } : {}),
         };
         const all = await deps.promotions(ctx.tenantId);
-        return { status: 200, body: bestPrice(lines, all, promoCtx) };
+        // OB-173: a carry bag is never discounted — head office's own product master says which lines are bags, never the body.
+        const bags = deps.carryBagsAmong === undefined ? [] : await deps.carryBagsAmong(ctx.tenantId, [...new Set(lines.map((l) => l.productId))]);
+        const priced = lines.map((l) => (bags.includes(l.productId) ? { ...l, carryBag: true } : l));
+        return { status: 200, body: bestPrice(priced, all, promoCtx) };
       },
     },
   ];

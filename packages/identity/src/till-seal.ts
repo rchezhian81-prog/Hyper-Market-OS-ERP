@@ -143,7 +143,11 @@ export const APPROVER_STAMP_FIELD = 'approverVerified';
 /** The kinds of decision a box seals. Each kind is its own namespace: a seal for one never fits another. */
 export type DecisionKind = 'approval_decision' | 'supplier_invoice' | 'checklist' | 'migration_exception' | 'migration_total' | 'day_reopen' | 'day_reopen_approval'
   /** OB-55: the second person who approved closing the day with card/UPI payments carried forward, by their PIN at the box. */
-  | 'day_close_exception_approval';
+  | 'day_close_exception_approval'
+  /** OB-172: a delivery booked in on the manager's store screen (`GoodsReceived`), its receiving checklist inside it. */
+  | 'goods_receipt'
+  /** OB-172: a delivery declared complete on the warehouse handheld (`ReceivingCompleted`), its receiving checklist inside it. */
+  | 'receiving_completion';
 
 /** The box's stamp on the person who made a decision, as it travels on the relayed record. */
 export interface DeciderStamp {

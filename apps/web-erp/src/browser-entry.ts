@@ -21,6 +21,7 @@ import { createReceiptPrefixSession, type ReceiptPrefixSession, type ReceiptPref
 import { InMemoryLedgerStore, Ledger } from '../../../packages/ledger/src/ledger';
 import { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { openDeviceOutbox, guardedStore } from '../../../packages/sync/src/device-outbox';
+import { readReceivingChecklistSetup, type ReceivingChecklistSetup } from '../../../packages/facilities/src/food-safety';
 import { drainToBox, boxStatus } from '../../../packages/sync/src/device-drain';
 import type { BoxItemStatus } from '../../../packages/sync/src/device-relay';
 import { makeTradingDayRule } from '../../../packages/calendar/src/trading-day';
@@ -338,6 +339,8 @@ export interface ManagerData {
   readonly tradingDay?: string;
   readonly tradingDayCutoff?: string;
   readonly warehouseId?: string;
+  /** OB-172: the receiving checklist and cold-chain products head office sent this store (absent = not told). */
+  readonly receivingChecklist?: unknown;
 }
 
 /** What the buyer's screen was last told. Absent means this box knows nothing about buying. */
@@ -5139,6 +5142,11 @@ export function bootManager(config?: {
       },
       currency: 'INR',
       warehouseId: config?.warehouseId ?? data?.warehouseId ?? 'store-1',
+      // OB-172: read strictly — a section that is not a whole receiving checklist is the same as none (the form says so).
+      ...((): { receivingChecklist?: ReceivingChecklistSetup } => {
+        const setup = readReceivingChecklistSetup(data?.receivingChecklist);
+        return setup === undefined ? {} : { receivingChecklist: setup };
+      })(),
     },
     // The read registers come from the last-synced payload; the one WRITE port (day close) is added
     // only when this box serves a lane to post to. `??` on the whole port keeps a missing box honest.
