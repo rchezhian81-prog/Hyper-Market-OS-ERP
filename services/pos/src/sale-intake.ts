@@ -191,6 +191,9 @@ export type SaleExceptionKind =
   | 'committed_in_the_future'
   /** Lines do not add up to the sale total. */
   | 'lines_do_not_sum_to_total'
+  /** Verifier r2final NEW-2: a line was recorded below zero — a negative taxable value and negative GST, which no return
+   *  can file. An offer spread onto a line more than the line charged. */
+  | 'line_charged_below_zero'
   /** The sale names no cashier — nobody can be asked about it (SP-4b · F09 · §28 · hard rule #4). */
   | 'sale_names_no_cashier'
   /** The named cashier holds no grants in this shop — head office does not know them (F09). */
@@ -324,6 +327,16 @@ export function acceptSale(sale: IncomingSale, ctx: IntakeContext): IntakeResult
       `the lines add to ${lineSum} against a total of ${sale.totalMinor}`,
       'The receipt the customer holds does not add up. Keep it for the day-end review.',
       { differenceMinor: lineSum - sale.totalMinor });
+  }
+
+  // NEW-2: a line below zero is never a sale anybody made — it is an offer spread past what the line charged.
+  for (const l of sale.lines) {
+    if (typeof l.lineTotalMinor === 'number' && l.lineTotalMinor < 0) {
+      add('line_charged_below_zero', 'material',
+        `${l.productId} was recorded at ${l.lineTotalMinor} — below zero, so its taxable value and GST are negative`,
+        'This bill cannot be filed as it stands. Find which till sent it (an old till spread an offer by the price per kg) and correct the GST record for that bill.',
+        { productId: l.productId, differenceMinor: l.lineTotalMinor });
+    }
   }
 
   // ── Card data on a tender (C10 · hard rule #3 · NEW-3). A tender keeps a token reference, the last four digits and the ──
@@ -465,6 +478,8 @@ export function acceptSale(sale: IncomingSale, ctx: IntakeContext): IntakeResult
       productId: line.productId, description: product.sku, quantityMinor: line.quantityMinor, uom: line.uom,
       unitPriceMinor: line.unitPriceMinor, listUnitPriceMinor: listUnit,
       ...(typeof line.lineTotalMinor === 'number' && Number.isFinite(line.lineTotalMinor) ? { chargedMinor: line.lineTotalMinor } : {}),
+      // L1: a carry bag is judged in head office's catalogue unit, whatever unit the line says.
+      ...(typeof product.baseUom === 'string' && product.baseUom !== '' ? { catalogueUom: product.baseUom } : {}),
       ...(product.regulatedFlags === undefined ? {} : { regulatedFlags: product.regulatedFlags }),
     });
     for (const r of legal) {

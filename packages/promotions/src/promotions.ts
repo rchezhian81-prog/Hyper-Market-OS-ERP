@@ -66,6 +66,12 @@ export interface BasketLine {
   readonly unitPrice: Money;
   /** Whole units on this line (>= 1). */
   readonly qty: number;
+  /**
+   * Verifier r2final NEW-2: the line's ACTUAL gross — what it charges before any promotion (a weighed line: weight × the
+   * price per kg, as the till rounds it). When given, it IS the line's gross for the cap, the minimum spend and the
+   * spread, so a 333 g line at a per-kg price never counts as a whole kilo. Absent → `unitPrice` × `qty`.
+   */
+  readonly lineTotal?: Money;
   /** Optional group tag for mix-match / group promotions. */
   readonly group?: string;
   /**
@@ -112,7 +118,12 @@ export interface PromotionResult {
 }
 
 function lineGross(line: BasketLine): Money {
-  return multiplyByInteger(line.unitPrice, line.qty);
+  return line.lineTotal ?? multiplyByInteger(line.unitPrice, line.qty);
+}
+
+/** Whether the line's actual gross is exactly `unitPrice` × `qty` (a line sold in whole units). */
+function soldInWholeUnits(line: BasketLine): boolean {
+  return line.lineTotal === undefined || line.lineTotal.minor === line.unitPrice.minor * line.qty;
 }
 
 /** OB-173: the lines any promotion may reach — every line but a carry bag. */
@@ -186,6 +197,8 @@ function discountFor(promo: Promotion, lines: readonly BasketLine[], ctx: PromoC
       // Expand eligible units and free the CHEAPEST y per (x+y) block.
       const unitPrices: number[] = [];
       for (const l of targeted) {
+        // NEW-2: a line not sold in whole units (a weighed line) is ONE unit worth what it actually charges.
+        if (!soldInWholeUnits(l)) { unitPrices.push(lineGross(l).minor); continue; }
         for (let i = 0; i < l.qty; i += 1) unitPrices.push(l.unitPrice.minor);
       }
       const block = x + y;
@@ -206,7 +219,9 @@ function discountFor(promo: Promotion, lines: readonly BasketLine[], ctx: PromoC
       for (const l of targeted) {
         const perUnit = subtract(l.unitPrice, promo.memberUnitPrice);
         if (isPositive(perUnit)) {
-          total = add(total, multiplyByInteger(perUnit, l.qty));
+          // NEW-2: never more off a line than the line actually charges.
+          const off = multiplyByInteger(perUnit, l.qty);
+          total = add(total, compare(off, lineGross(l)) > 0 ? lineGross(l) : off);
         }
       }
       return total;

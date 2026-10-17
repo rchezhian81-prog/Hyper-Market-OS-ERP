@@ -252,6 +252,19 @@ export class NoLaneError extends Error {
   }
 }
 
+/**
+ * Verifier r2final NEW-2: the bill's own arithmetic does not hold — a line would be recorded below zero (a negative
+ * taxable value and negative GST), or the lines would not add up to what the customer pays. Refused BEFORE the disk and
+ * before the money: such a bill cannot be filed. The promotions engine never produces one; this is the last check.
+ */
+export class BillArithmeticError extends Error {
+  readonly laneMessage = 'Do not take payment. This bill does not add up (an offer would take a line below zero). Nothing was saved. Remove the offer line and tell the manager.';
+  constructor(public readonly saleId: string, public readonly detail: string) {
+    super(`sale ${saleId}: ${detail}`);
+    this.name = 'BillArithmeticError';
+  }
+}
+
 export class PosSession {
   private readonly lines: BasketEntry[] = [];
   private seq = 0;
@@ -612,6 +625,9 @@ export class PosSession {
       unitPrice: l.unitPrice,
       // Promotions count whole sellable units; a weighed line counts as one unit.
       qty: l.uom === 'ea' ? l.quantityMinor : 1,
+      // Verifier r2final NEW-2: the line's ACTUAL gross (a weighed line: weight × price per kg, as charged) — the cap, the
+      // minimum spend and the spread all read this, never the per-kg price as if a whole kilo were sold.
+      lineTotal: this.priceOf(l).total,
       group: l.group,
       // OB-173 (owner, 17 Oct 2026, "Never discount bags"): no offer reaches a carry bag — not a basket-wide one, not a
       // category one — so it is charged its full price and the discount is spread over the other lines only.
@@ -792,6 +808,11 @@ export class PosSession {
     // The record's net and GST are the sum of what is INSIDE each line as actually charged — after the attributed
     // promotion discount — so net + tax == total on the disk record exactly as on the cloud's lines, and the box's
     // day figures (`costTheDay`) read the same GST the GST return will file.
+    // NEW-2: no line below zero, and the lines add to the payable — checked before the disk and before the money.
+    const negative = recordLines.filter((l) => l.lineTotalMinor < 0);
+    if (negative.length > 0) throw new BillArithmeticError(saleId, `line(s) ${negative.map((l) => l.productId).join(', ')} would be charged below zero`);
+    const lineSum = recordLines.reduce((t, l) => t + l.lineTotalMinor, 0);
+    if (lineSum !== totals.payable.minor) throw new BillArithmeticError(saleId, `the lines add to ${lineSum} against a payable of ${totals.payable.minor}`);
     const inside = recordLines.reduce(
       (acc, l) => {
         const split = splitInclusive(money(l.lineTotalMinor, totals.payable.currency), rate(l.taxRateBps));

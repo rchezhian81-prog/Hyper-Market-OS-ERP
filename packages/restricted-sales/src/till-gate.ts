@@ -168,7 +168,10 @@ export function productRuleRefusals(line: TillGateLine): readonly TillRefusal[] 
   if (flags.bannedSingleUsePlastic === true || flags.carryBag === true) {
     // OB-173: a bag sold by the piece is judged against its LIST price for the whole line. Without a charged amount (a scan,
     // a price change) the line charges its unit price × quantity — so a bag's price lowered at the till is refused too.
-    const each = line.uom === 'ea' && Number.isSafeInteger(line.quantityMinor) && line.quantityMinor > 0;
+    // Verifier r2final L1: a carry bag is judged by the PIECE whatever unit the line carries — a bag line sent as "kg" or
+    // "L" (a hand-made request) is still a number of bags, unless the judging side's own catalogue sells it by weight.
+    const bagByPiece = flags.carryBag === true && (line.catalogueUom === undefined || line.catalogueUom === '' || line.catalogueUom === 'ea');
+    const each = (line.uom === 'ea' || bagByPiece) && Number.isSafeInteger(line.quantityMinor) && line.quantityMinor > 0;
     const listUnit = typeof line.listUnitPriceMinor === 'number' && Number.isFinite(line.listUnitPriceMinor) ? Math.max(line.listUnitPriceMinor, line.unitPriceMinor) : line.unitPriceMinor;
     const charged = typeof line.chargedMinor === 'number' && Number.isFinite(line.chargedMinor) ? line.chargedMinor : each ? line.unitPriceMinor * line.quantityMinor : undefined;
     const verdict = checkSingleUsePlastic({
