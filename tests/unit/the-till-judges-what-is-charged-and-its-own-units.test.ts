@@ -80,24 +80,25 @@ describe('NEW-1 (B19) — an offer can never give a carry bag away', () => {
     expect(bag.lineTotalMinor).toBe(5_00);
   });
 
-  it('a 100% offer on the whole basket (no product named) reaches the bag: the till\'s commit refuses before the disk', async () => {
+  it('OB-173: a 100% offer on the whole basket (no product named) never reaches the bag — the bag is still charged its ₹5', async () => {
     const cat: CatalogueSnapshot = { ...BASE, promotions: [{ id: 'PR-ALL', kind: 'percent_off', ...WINDOW, percentBps: 10_000 }] };
     const { pos, written } = till(cat);
-    expect(pos.refusedOffers()).toEqual([]); // it names no carry bag; the charged amount is what is judged
+    expect(pos.refusedOffers()).toEqual([]); // it names no carry bag; the engine simply never lets it reach one
     pos.scanBarcode(RICE); pos.scanBarcode(BAG);
-    const e = await refused(() => pos.tenderCash('S-2', 'R-2', NOW));
-    expect(e.refusals.map((r) => [r.productId, r.reason])).toEqual([['P-BAG', 'carry_bag_not_priced']]);
-    expect(e.laneMessage).toMatch(/^Do not take payment\. Carry bag 120 micron is a carry bag and an offer has taken its price to nothing/);
-    expect(written).toHaveLength(0);
+    expect(pos.payableMinor()).toBe(5_00); // the rice is free; the bag is not
+    await pos.tenderCash('S-2', 'R-2', NOW);
+    const bag = (written[0]!['lines'] as { productId: string; lineTotalMinor: number }[]).find((l) => l.productId === 'P-BAG')!;
+    expect(bag.lineTotalMinor).toBe(5_00);
   });
 
-  it('a part discount on the bag is still a priced bag (the rule is "never free", not "never discounted")', async () => {
+  it('OB-173: a part discount never reaches the bag either (the rule is now "never discounted", not only "never free")', async () => {
     const cat: CatalogueSnapshot = { ...BASE, promotions: [{ id: 'PR-10', kind: 'percent_off', ...WINDOW, percentBps: 1_000 }] };
     const { pos, written } = till(cat);
     pos.scanBarcode(RICE); pos.scanBarcode(BAG);
     await pos.tenderCash('S-3', 'R-3', NOW);
-    const bag = (written[0]!['lines'] as { productId: string; lineTotalMinor: number }[]).find((l) => l.productId === 'P-BAG')!;
-    expect(bag.lineTotalMinor).toBeGreaterThan(0);
+    const lines = written[0]!['lines'] as { productId: string; lineTotalMinor: number }[];
+    expect(lines.find((l) => l.productId === 'P-BAG')!.lineTotalMinor).toBe(5_00);
+    expect(lines.find((l) => l.productId === 'P-RICE')!.lineTotalMinor).toBe(63_00);
   });
 
   it('the store computer and head office judge the line as CHARGED (lineTotalMinor), not its unit price', () => {

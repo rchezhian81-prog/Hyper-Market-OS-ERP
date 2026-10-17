@@ -68,6 +68,12 @@ export interface BasketLine {
   readonly qty: number;
   /** Optional group tag for mix-match / group promotions. */
   readonly group?: string;
+  /**
+   * OB-173 (owner, 17 Oct 2026, "Never discount bags" · B19): this line is a CARRY BAG. No promotion ever reaches it — not a
+   * basket-wide offer, not a category or group offer, not one that names it — so it is always charged its full list price,
+   * and no share of any discount is ever spread onto it. It does not count toward an offer's minimum spend either.
+   */
+  readonly carryBag?: boolean;
 }
 
 export interface PromoContext {
@@ -109,8 +115,14 @@ function lineGross(line: BasketLine): Money {
   return multiplyByInteger(line.unitPrice, line.qty);
 }
 
-/** Lines a promotion targets: explicit products and/or a group; neither = all. */
-function eligibleLines(promo: Promotion, lines: readonly BasketLine[]): BasketLine[] {
+/** OB-173: the lines any promotion may reach — every line but a carry bag. */
+function discountable(lines: readonly BasketLine[]): BasketLine[] {
+  return lines.filter((l) => l.carryBag !== true);
+}
+
+/** Lines a promotion targets: explicit products and/or a group; neither = all. A carry bag is never one (OB-173). */
+function eligibleLines(promo: Promotion, basket: readonly BasketLine[]): BasketLine[] {
+  const lines = discountable(basket);
   const hasProducts = promo.productIds !== undefined && promo.productIds.length > 0;
   const hasGroup = promo.group !== undefined;
   if (!hasProducts && !hasGroup) return [...lines];
@@ -245,8 +257,10 @@ export function bestPrice(
   }
   for (const c of bestByGroup.values()) chosen.push(c);
 
+  // Never below zero — and never onto a carry bag (OB-173): the cap is what the DISCOUNTABLE lines are worth.
+  const discountableGross = sumGross(discountable(lines), currency);
   let discount = chosen.reduce((total, c) => add(total, c.discount), zero(currency));
-  if (compare(discount, grossTotal) > 0) discount = grossTotal; // never below zero
+  if (compare(discount, discountableGross) > 0) discount = discountableGross;
 
   const applied: AppliedPromotion[] = chosen
     .map((c) => ({ promotionId: c.promo.id, kind: c.promo.kind, discount: c.discount }))
@@ -257,8 +271,9 @@ export function bestPrice(
   // accumulating per line. A discount can never exceed a promotion's eligible spend, so each split is valid.
   // If a pathological input (an overall discount capped at the basket, or stacking that would take a line
   // below zero) breaks the accumulation, fall back to spreading the final capped discount across the whole
-  // basket by gross — always exact-summing and never negative.
-  const grosses = lines.map((l) => lineGross(l).minor);
+  // basket by gross — always exact-summing and never negative. A carry bag takes no share on either path (OB-173): it
+  // counts as worth nothing to the spread, so it is charged in full.
+  const grosses = lines.map((l) => (l.carryBag === true ? 0 : lineGross(l).minor));
   const byLine = new Map<string, number>(lines.map((l) => [l.lineId, 0]));
   for (const c of chosen) {
     const elig = eligibleLines(c.promo, lines);

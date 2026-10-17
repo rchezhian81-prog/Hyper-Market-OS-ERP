@@ -66,6 +66,8 @@ export interface GateProduct {
   readonly name: string;
   /** NEW-2 (B6): the product's base unit in THIS box's catalogue — whether its line is weighed is decided from it. */
   readonly baseUom?: string;
+  /** OB-173: the product's price in THIS box's catalogue — a carry bag is never charged below it. */
+  readonly unitPriceMinor?: number;
   readonly regulatedFlags?: Readonly<Record<string, unknown>>;
 }
 
@@ -93,8 +95,13 @@ export function checkTillRules(
     const uom = text(l['uom']) ?? 'ea';
     // NEW-1 (B19): the line as CHARGED, after the promotion the till attributed to it — a free bag is refused here too.
     const chargedMinor = typeof l['lineTotalMinor'] === 'number' && Number.isFinite(l['lineTotalMinor']) ? l['lineTotalMinor'] : undefined;
+    // OB-173: a carry bag is charged its full list price — the higher of this box's catalogue price and the line's price
+    // before any change at the till.
+    const override = (l['priceOverride'] !== null && typeof l['priceOverride'] === 'object' ? l['priceOverride'] : {}) as Record<string, unknown>;
+    const fromUnit = typeof override['fromUnitPriceMinor'] === 'number' && Number.isFinite(override['fromUnitPriceMinor']) ? override['fromUnitPriceMinor'] : undefined;
+    const listUnit = Math.max(product?.unitPriceMinor ?? 0, fromUnit ?? 0, unitPriceMinor);
     const refusals = tillLineRefusals({
-      productId, description: product?.name ?? productId, quantityMinor, uom, unitPriceMinor,
+      productId, description: product?.name ?? productId, quantityMinor, uom, unitPriceMinor, listUnitPriceMinor: listUnit,
       ...(chargedMinor === undefined ? {} : { chargedMinor }),
       // NEW-2 (B6): weighed or not is THIS box's catalogue's answer, whatever unit the record wrote (or left out).
       ...(product?.baseUom === undefined ? {} : { catalogueUom: product.baseUom }),

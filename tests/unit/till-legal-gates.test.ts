@@ -235,13 +235,14 @@ describe('B19 — no banned single-use plastic, no carry bag under 120 µm, and 
     expect(lines.find((l) => l.productId === 'P-CLOTH')?.carryBag).toEqual({ material: 'cloth' });
   });
 
-  it('no manager approval can make a bag free: the price change is refused before any approval is spent', () => {
+  it('no manager approval can make a bag free — or (OB-173) cheaper: the price change is refused before any approval is spent', () => {
     const { pos } = till(CURRENT);
     pos.scanBarcode(GOOD_BAG);
     const change = pos.priceChangeValue(pos.basket()[0]!.lineId, 0);
     expect(change).toEqual({ ok: false, laneMessage: 'Carry bag 120 micron is a carry bag. A bag is sold as its own line at its price — it cannot be given free.' });
-    // Lowered but still priced is an ordinary approved change.
-    expect(pos.priceChangeValue(pos.basket()[0]!.lineId, 4_00)).toMatchObject({ ok: true, reductionMinor: 1_00 });
+    // OB-173 (owner, 17 Oct 2026, "Never discount bags"): lowered but still priced is refused too — a bag is charged in full.
+    const lowered = pos.priceChangeValue(pos.basket()[0]!.lineId, 4_00);
+    expect(lowered).toEqual({ ok: false, laneMessage: expect.stringContaining('A bag is always charged its full price') as unknown });
   });
 
   it('the flags are read strictly from the pack', () => {

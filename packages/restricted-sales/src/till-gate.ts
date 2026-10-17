@@ -95,6 +95,7 @@ export type TillRefusalReason =
   | 'banned_single_use_plastic'
   | 'carry_bag_below_min_thickness'
   | 'carry_bag_not_priced'
+  | 'carry_bag_discounted'
   | 'tobacco_below_pack'
   | 'tobacco_not_whole_packs'
   | 'tobacco_pack_size_unknown'
@@ -121,6 +122,11 @@ export interface TillGateLine {
    * store computer and at head office (`lineTotalMinor`); absent at a scan, where only the unit price is known.
    */
   readonly chargedMinor?: number;
+  /**
+   * OB-173 (B19): the line's LIST unit price — what it cost before any price change at the till (a lowered line's original
+   * price). Absent → `unitPriceMinor` is the list price. A carry bag charged below list price × quantity is refused.
+   */
+  readonly listUnitPriceMinor?: number;
   /**
    * NEW-2 (B6): the product's base unit in the JUDGING side's own catalogue. A line is weighed when this OR the line's
    * own unit is a weight — so a weighed product cannot skip the scale gate by being sent in another unit.
@@ -160,10 +166,16 @@ export function productRuleRefusals(line: TillGateLine): readonly TillRefusal[] 
 
   // ── B19 · single-use plastic and carry bags (the tested engine decides) ────────────────────────────────────────
   if (flags.bannedSingleUsePlastic === true || flags.carryBag === true) {
+    // OB-173: a bag sold by the piece is judged against its LIST price for the whole line. Without a charged amount (a scan,
+    // a price change) the line charges its unit price × quantity — so a bag's price lowered at the till is refused too.
+    const each = line.uom === 'ea' && Number.isSafeInteger(line.quantityMinor) && line.quantityMinor > 0;
+    const listUnit = typeof line.listUnitPriceMinor === 'number' && Number.isFinite(line.listUnitPriceMinor) ? Math.max(line.listUnitPriceMinor, line.unitPriceMinor) : line.unitPriceMinor;
+    const charged = typeof line.chargedMinor === 'number' && Number.isFinite(line.chargedMinor) ? line.chargedMinor : each ? line.unitPriceMinor * line.quantityMinor : undefined;
     const verdict = checkSingleUsePlastic({
       lines: [{
         lineId: line.productId, productId: line.productId, unitPriceMinor: line.unitPriceMinor,
-        ...(typeof line.chargedMinor === 'number' && Number.isFinite(line.chargedMinor) ? { chargedMinor: line.chargedMinor } : {}),
+        ...(charged === undefined ? {} : { chargedMinor: charged }),
+        ...(flags.carryBag === true && each ? { listMinor: listUnit * line.quantityMinor } : {}),
         ...(flags.carryBag === true ? { isCarryBag: true } : {}),
         ...(flags.plasticMaterial === undefined ? {} : { material: flags.plasticMaterial }),
         ...(flags.plasticThicknessMicrons === undefined ? {} : { plasticThicknessMicrons: flags.plasticThicknessMicrons }),
@@ -180,6 +192,9 @@ export function productRuleRefusals(line: TillGateLine): readonly TillRefusal[] 
           laneMessage: flags.plasticThicknessMicrons === undefined
             ? `${name} is a plastic carry bag with no thickness on record, so it cannot be shown to be ${MIN_CARRY_BAG_MICRONS} microns or more. It cannot be sold — offer a ${MIN_CARRY_BAG_MICRONS}-micron, cloth or paper bag.`
             : `${name} is a ${flags.plasticThicknessMicrons}-micron plastic carry bag, thinner than the ${MIN_CARRY_BAG_MICRONS}-micron minimum. It cannot be sold — offer a ${MIN_CARRY_BAG_MICRONS}-micron, cloth or paper bag.` });
+      } else if (b.reason === 'carry_bag_discounted') {
+        out.push({ reason: b.reason, productId: line.productId, detail: b.detail,
+          laneMessage: `${name} is a carry bag and it is being charged less than its price. A bag is always charged its full price — no offer or price change applies to it. Tell the manager.` });
       } else {
         out.push({ reason: b.reason, productId: line.productId, detail: b.detail,
           laneMessage: line.unitPriceMinor > 0
