@@ -229,6 +229,8 @@ Status legend: **Accepted** · **Open — blocking** (holds coding / a gate) ·
 | OB-181 | **OB-179 the roster week start: locked to Monday vs changeable by the owner.** | Change: locked to Monday; the setting is removed. | **ACCEPTED — A, "Lock to Monday" (owner, 17 Oct 2026, in writing).** |
 | OB-182 | **OB-165 / OB-167 a person holding both owner and store-manager roles as the committee-change confirmer: refuse owners vs allow.** | Change: the confirmer must be a store manager who is not an owner. | **ACCEPTED — A, "No, refuse owners" (owner, 17 Oct 2026, in writing).** |
 | OB-183 | **C10 the 13-digit rule for card-like tender values (UPI references are 12 digits).** | Keep the rule; adjust if a provider later uses longer references. | **ACCEPTED — A, "No, keep the rule" (owner, 17 Oct 2026, in writing).** |
+| OB-184 | **OB-180 handheld handover: staff sign out when handing over a phone and phone sign-ins end by themselves after 4 hours vs training only (sign-ins last the shift).** | Change: a phone (handheld) sign-in lasts at most 4 hours; tills unchanged; staff are trained to sign out at handover (SOP). | **ACCEPTED — A, "Sign out + 4-hour limit" (owner, 17 Oct 2026, in writing).** |
+| OB-185 | **OB-180 records reaching the box more than one shift (12 hours) after the person's sign-in ended: keep 12 hours vs 24 hours.** | Keep 12 hours; such records are refused with the reason and nothing is silently lost. | **ACCEPTED — A, "12 hours" (owner, 17 Oct 2026, in writing).** |
 
 ## AI-assisted development governance — AID-01 to AID-10 (roadmap §18)
 
