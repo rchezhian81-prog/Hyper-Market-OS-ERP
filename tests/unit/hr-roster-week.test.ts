@@ -1,14 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import {
   UNSET_WORKING_TIME_SETTINGS, WORKING_TIME_LIMIT_KEYS, PENDING_REST_STRETCH_GAP_MINUTES,
-  checkWorkingTime, holidayRegister, rosterWeekStartOf, isRosterWeekStart, rosterWeekStartDay, weekdayOf, rosterLimitsNotChecked,
+  checkWorkingTime, holidayRegister, rosterWeekStartOf, isRosterWeekStart, weekdayOf, rosterLimitsNotChecked, ROSTER_WEEK_STARTS_ON,
   type WorkingTimeSettings, type WorkingTimeLimitKey, type Employee, type ShiftRequirement, type ShiftAssignment,
 } from '../../packages/workforce/src/index';
 import { staffRosterVisibility, rosterBasisDigest, type RosterPublication } from '../../services/finance/src/hr-compliance';
 import { rosterWeekBasis } from '../../packages/workforce/src/index';
+import { foldWorkingTimeSettings } from '../../services/api/src/r2-hr-adapters';
 
-// C18 — OB-179 "A" (the roster week is the shop's fixed Monday-to-Sunday week) and verifier r2final NEW-1 / L2, at the
-// engine. SYNTHETIC limits only.
+// C18 — OB-179 "A" (the roster week is the shop's fixed Monday-to-Sunday week), OB-181 "A" (locked to Monday; not a
+// setting) and verifier r2final NEW-1 / L2, at the engine. SYNTHETIC limits only.
 
 const SYNTHETIC: Readonly<Record<WorkingTimeLimitKey, number>> = {
   weeklyHolidayMinDays: 1, maxDailyWorkMinutes: 9 * 60, maxWeeklyWorkMinutes: 48 * 60, maxSpreadOverMinutes: 11 * 60,
@@ -28,28 +29,35 @@ const sh = (id: string, day: string, from: string, to: string): ShiftRequirement
 const on = (shiftId: string): ShiftAssignment => ({ shiftId, employeeId: 'E1', role: 'cashier' });
 const WEEK = ['2026-10-19', '2026-10-20', '2026-10-21', '2026-10-22', '2026-10-23', '2026-10-24', '2026-10-25'];
 
-describe('OB-179: the shop\'s roster week', () => {
-  it('starts on Monday as shipped; a setting stored before OB-179 reads as Monday', () => {
-    expect(rosterWeekStartDay(UNSET_WORKING_TIME_SETTINGS)).toBe('monday');
-    const { rosterWeekStartsOn: _drop, ...old } = UNSET_WORKING_TIME_SETTINGS;
-    void _drop;
-    expect(rosterWeekStartDay(old)).toBe('monday');
+describe('OB-179 / OB-181: the roster week', () => {
+  it('always starts on Monday — it is not a setting', () => {
+    expect(ROSTER_WEEK_STARTS_ON).toBe('monday');
+    expect('rosterWeekStartsOn' in UNSET_WORKING_TIME_SETTINGS).toBe(false);
     expect(weekdayOf('2026-10-19')).toBe('monday');
     expect(weekdayOf('2026-10-18')).toBe('sunday');
-    expect(isRosterWeekStart(old, '2026-10-19')).toBe(true);
-    expect(isRosterWeekStart(old, '2026-10-20')).toBe(false);
-    expect(WEEK.map((d) => rosterWeekStartOf(old, d))).toEqual(Array(7).fill('2026-10-19'));
-    expect(rosterWeekStartOf(old, '2026-10-26')).toBe('2026-10-26');
-    const sunday = { ...old, rosterWeekStartsOn: 'sunday' as const };
-    expect(rosterWeekStartOf(sunday, '2026-10-24')).toBe('2026-10-18');
-    expect(rosterWeekStartOf(sunday, '2026-10-25')).toBe('2026-10-25');
+    expect(isRosterWeekStart('2026-10-19')).toBe(true);
+    expect(isRosterWeekStart('2026-10-20')).toBe(false);
+    expect(isRosterWeekStart('2026-10-18')).toBe(false);
+    expect(isRosterWeekStart('not-a-date')).toBe(false);
+    expect(WEEK.map((d) => rosterWeekStartOf(d))).toEqual(Array(7).fill('2026-10-19'));
+    expect(rosterWeekStartOf('2026-10-26')).toBe('2026-10-26');
+    expect(rosterWeekStartOf('2026-10-18')).toBe('2026-10-12');
+  });
+
+  it('a roster-week-start change recorded between OB-179 and OB-181 is kept on the stream and never applied', () => {
+    const folded = foldWorkingTimeSettings([
+      { target: 'rosterWeekStartsOn', rosterWeekStartsOn: 'sunday', by: 'u-owner', at: '2026-10-17T08:00:00.000Z' },
+      { target: 'utcOffsetMinutes', utcOffsetMinutes: 330, by: 'u-owner', at: '2026-10-17T08:01:00.000Z' },
+    ]);
+    expect('rosterWeekStartsOn' in folded).toBe(false);
+    expect(folded.utcOffsetMinutes).toBe(330);
   });
 
   it('NEW-1: the engine never checks a window that is not a roster week', () => {
     const shifts = WEEK.map((d) => sh(`D-${d}`, d, '09:00', '14:00'));
     const input = { settings: inForce(), branchId: 'b1', shifts, assignments: shifts.map((s) => on(s.shiftId)), employees: [emp('E1')] };
     expect(checkWorkingTime({ ...input, weekStart: WEEK[0]! }).breaches.map((b) => b.rule)).toEqual(['weeklyHolidayMinDays']);
-    expect(() => checkWorkingTime({ ...input, weekStart: '2026-10-18' })).toThrow(/roster week starts on monday/);
+    expect(() => checkWorkingTime({ ...input, weekStart: '2026-10-18' })).toThrow(/roster week always starts on monday/);
     expect(() => checkWorkingTime({ ...input, weekStart: '2026-10-20' })).toThrow(/is a tuesday/);
   });
 

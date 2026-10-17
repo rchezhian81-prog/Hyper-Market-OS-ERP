@@ -8,17 +8,18 @@ import { SqlIdempotencyStore } from '../../services/kernel/src/index';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { runMigrations } from '../../packages/persistence/src/migrations';
-import { auditTrailAdapter } from '../../services/api/src/adapters';
+import { auditTrailAdapter, STREAM, streamName } from '../../services/api/src/adapters';
+import { makeEvent } from '../../packages/contracts/src/event';
 
 /**
- * **C18 — the roster week is the shop's fixed week (owner decision OB-179 "A", 17 Oct 2026), closing verifier r2final
- * NEW-1 and L2.**
- *   • NEW-1: a roster is checked and published only for a week starting on the shop's roster week day (Monday as
- *     shipped). Any other weekStart is refused by name (400 `not_the_shops_roster_week`), so the verifier's trick —
- *     a Sunday-to-Saturday window and a Tuesday-to-Monday window laid across one real week of seven straight days —
- *     can never publish it, and a shift is shown to staff only while the publication of ITS OWN Monday week stands.
- *   • The week-start day is an owner setting, audited; changing it leaves the weeks published under the old setting
- *     unpublished for staff until they are published again.
+ * **C18 — the roster week is the shop's fixed Monday week (owner decisions OB-179 "A" and OB-181 "A", 17 Oct 2026),
+ * closing verifier r2final NEW-1 and L2.**
+ *   • NEW-1: a roster is checked and published only for a week starting on a Monday. Any other weekStart is refused by
+ *     name (400 `not_the_shops_roster_week`), so the verifier's trick — a Sunday-to-Saturday window and a
+ *     Tuesday-to-Monday window laid across one real week of seven straight days — can never publish it, and a shift is
+ *     shown to staff only while the publication of ITS OWN Monday week stands.
+ *   • OB-181: the week start is NOT a setting — "roster-week-start" is refused by name, and a change recorded while it
+ *     briefly was one (between OB-179 and OB-181) stays on the stream and is never applied.
  *   • L2: while the shortest rest interval is pending (OB-155), shifts less than 15 minutes apart are one stretch for
  *     the daily hours cap — a one-minute gap at midnight no longer splits a 10-hour stretch — and the publication says so.
  * In-memory and, with DATABASE_URL, real PostgreSQL. Synthetic data and synthetic limits only.
@@ -67,7 +68,7 @@ afterAll(async () => { await pool?.end(); });
 const backings: { name: string; harness: () => ApiHarness }[] = [{ name: 'the in-memory event store', harness: () => apiHarness() }];
 if (DATABASE_URL !== undefined) backings.push({ name: 'real PostgreSQL', harness: () => { const sql = pgPoolClient(pool!); return apiHarness({ store: new SqlEventStore(sql), idempotency: new SqlIdempotencyStore(sql) }); } });
 
-describe.each(backings)('C18 / OB-179 the roster week is the shop\'s fixed Monday week — on $name', ({ harness }) => {
+describe.each(backings)('C18 / OB-179 / OB-181 the roster week is always the Monday week — on $name', ({ harness }) => {
   it('NEW-1: the overlapping-window trick is refused — Sunday and Tuesday "weeks" get 400 by name, and staff see nothing', async () => {
     const h = harness();
     const s = await shop(h, randomUUID());
@@ -112,27 +113,37 @@ describe.each(backings)('C18 / OB-179 the roster week is the shop\'s fixed Monda
     expect((await s.mine()).count).toBe(7);
   });
 
-  it('the week-start day is an owner setting (Monday as shipped), audited; changing it unpublishes the old weeks for staff', async () => {
+  it('OB-181: the week start is not a setting — always Monday; the old setting is refused by name; a change recorded while it was one is never applied', async () => {
     const h = harness();
     const t = randomUUID();
     const s = await shop(h, t);
-    const st = (await s.call('GET', '/v1/hr/compliance/working-time/settings', 'u-owner')).body as { rosterWeek: { startsOn: string }; settings: { rosterWeekStartsOn: string } };
-    expect(st.rosterWeek.startsOn).toBe('monday');
-    expect(st.settings.rosterWeekStartsOn).toBe('monday');
+    const st = (await s.call('GET', '/v1/hr/compliance/working-time/settings', 'u-owner')).body as { rosterWeek: { startsOn: string; words: string }; settings: Record<string, unknown> };
+    expect(st.rosterWeek).toEqual({ startsOn: 'monday', words: 'A roster week always runs Monday to Sunday; rosters are published only for those weeks.' });
+    expect(st.settings).not.toHaveProperty('rosterWeekStartsOn');
     await s.shift('S1', at(WEEK[2]!, '09:00'), at(WEEK[2]!, '14:00'));
     expect((await s.publish('p-mon', WEEK[0]!)).status).toBe(201);
     expect((await s.mine()).count).toBe(1);
-    // Only the owner sets it, and only to a day of the week.
+    // The old setting: the manager is still stopped at the permission; the owner is told it is not a setting. Nothing saved.
     expect((await s.call('POST', '/v1/hr/compliance/working-time/settings/roster-week-start', 'u-mgr', { day: 'sunday' }, 'w-mgr')).status).toBe(403);
-    expect(codeOf(await s.call('POST', '/v1/hr/compliance/working-time/settings/roster-week-start', 'u-owner', { day: 'someday' }, 'w-bad'))).toBe('not_a_roster_week_day');
-    expect((await s.call('POST', '/v1/hr/compliance/working-time/settings/roster-week-start', 'u-owner', { day: 'sunday' }, 'w-sun')).status).toBe(200);
-    // The Monday publication no longer stands: staff see nothing until the Sunday week is published.
-    expect((await s.mine()).count).toBe(0);
-    expect(codeOf(await s.publish('p-mon2', WEEK[0]!))).toBe('not_the_shops_roster_week');
-    expect((await s.publish('p-sun', '2026-10-18')).status).toBe(201);
-    expect((await s.mine()).count).toBe(1);
+    const refused = await s.call('POST', '/v1/hr/compliance/working-time/settings/roster-week-start', 'u-owner', { day: 'sunday' }, 'w-sun');
+    expect(refused.status).toBe(404);
+    expect(codeOf(refused)).toBe('no_such_working_time_setting');
+    expect((refused.body as { error: { whatHappened: string; wasItSaved: string } }).error).toMatchObject({ wasItSaved: 'not_saved', whatHappened: expect.stringContaining('always runs Monday to Sunday') as unknown });
+    const other = await s.call('POST', '/v1/hr/compliance/working-time/settings/nonsense', 'u-owner', {}, 'w-x');
+    expect((other.body as { error: { nextSafeAction: string } }).error.nextSafeAction).not.toContain('roster-week-start');
     const trail = await auditTrailAdapter({ store: h.store }).records(t);
-    expect(trail.filter((r) => r.action === 'hr.working_time.setting.change' && r.objectId === 'rosterWeekStartsOn')).toHaveLength(1);
+    expect(trail.filter((r) => r.action === 'hr.working_time.setting.change' && r.objectId === 'rosterWeekStartsOn')).toHaveLength(0);
+    // A Sunday change written while the setting existed (between OB-179 and OB-181) stays where it is and changes nothing.
+    await h.store.append(t, streamName(STREAM.workforce, 'hr-compliance'), makeEvent({
+      id: 'WorkingTimeSettingChanged-legacy-sunday', type: 'WorkingTimeSettingChanged', occurredAt: '2026-10-17T08:00:00.000Z',
+      idempotencyKey: `WorkingTimeSettingChanged-${t}-legacy-sunday`, source: 'api/hr',
+      payload: { target: 'rosterWeekStartsOn', rosterWeekStartsOn: 'sunday', by: 'u-owner', at: '2026-10-17T08:00:00.000Z' },
+    }));
+    expect(((await s.call('GET', '/v1/hr/compliance/working-time/settings', 'u-owner')).body as { rosterWeek: { startsOn: string } }).rosterWeek.startsOn).toBe('monday');
+    expect((await s.mine()).count).toBe(1); // the Monday week still stands for staff
+    expect(codeOf(await s.publish('p-sun', '2026-10-18'))).toBe('not_the_shops_roster_week');
+    expect(codeOf(await s.check('2026-10-18'))).toBe('not_the_shops_roster_week');
+    expect((await s.check(WEEK[0]!)).status).toBe(200);
   });
 
   it('L2: while the rest interval is pending, a 1-minute gap at midnight does not split a 10-hour stretch for the daily cap', async () => {

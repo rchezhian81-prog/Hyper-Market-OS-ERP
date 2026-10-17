@@ -71,19 +71,17 @@ export interface WorkingTimeSettings {
   readonly utcOffsetMinutes: number;
   /** OB-156: the configurable leave types (casual, sick, festival, unpaid) — every one pending until the CA's values. */
   readonly leaveTypes: Readonly<Record<LeaveTypeKey, LeaveTypeSetting>>;
-  /**
-   * OB-179 "A": the shop's roster week — the day every roster week starts on (Monday as shipped). A roster is published
-   * only for a week that starts on this day, and the weekly holiday and the weekly hours cap are judged per such week.
-   * Absent on settings stored before OB-179: read as Monday.
-   */
-  readonly rosterWeekStartsOn?: RosterWeekday;
 }
 
-/** OB-179: the days a roster week may start on (the shop's setting; Monday as shipped). */
-export type RosterWeekday = 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday';
-export const ROSTER_WEEKDAYS: readonly RosterWeekday[] = Object.freeze(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']);
-/** The shop's roster week start as shipped (OB-179 "A"). */
-export const DEFAULT_ROSTER_WEEK_START: RosterWeekday = 'monday';
+/** The days of the week, Monday first. */
+export type Weekday = 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday';
+export const WEEKDAYS: readonly Weekday[] = Object.freeze(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']);
+/**
+ * OB-179 "A" + OB-181 "A" (owner, 17 Oct 2026, "Lock to Monday"): the roster week ALWAYS starts on Monday and runs to
+ * Sunday. It is not a setting. A roster is checked and published only for a Monday week, and the weekly holiday and the
+ * weekly hours cap are judged per Monday–Sunday week.
+ */
+export const ROSTER_WEEK_STARTS_ON: Weekday = 'monday';
 
 const EMPTY_LIMIT: LimitSetting = Object.freeze({ value: null, source: null, confirmation: null });
 
@@ -92,7 +90,6 @@ export const UNSET_WORKING_TIME_SETTINGS: WorkingTimeSettings = Object.freeze({
   limits: Object.freeze(Object.fromEntries(WORKING_TIME_LIMIT_KEYS.map((k) => [k, EMPTY_LIMIT])) as Record<WorkingTimeLimitKey, LimitSetting>),
   publicHolidays: Object.freeze({ dates: [], source: null, confirmation: null }),
   utcOffsetMinutes: 330,
-  rosterWeekStartsOn: DEFAULT_ROSTER_WEEK_START,
   leaveTypes: Object.freeze({
     casual: { daysPerYear: null, carryOverMaxDays: null, source: null, confirmation: null },
     sick: { daysPerYear: null, carryOverMaxDays: null, source: null, confirmation: null },
@@ -161,26 +158,20 @@ export function datesBetween(from: string, to: string): readonly string[] {
   return out;
 }
 
-/** OB-179: the day the shop's roster week starts on (Monday when the setting predates OB-179). */
-export function rosterWeekStartDay(settings: WorkingTimeSettings): RosterWeekday {
-  const d = settings.rosterWeekStartsOn;
-  return d !== undefined && ROSTER_WEEKDAYS.includes(d) ? d : DEFAULT_ROSTER_WEEK_START;
-}
-
 /** The weekday of a calendar date (YYYY-MM-DD). */
-export function weekdayOf(date: string): RosterWeekday {
-  // getUTCDay: 0 = Sunday … 6 = Saturday; ROSTER_WEEKDAYS starts on Monday.
-  return ROSTER_WEEKDAYS[(new Date(Date.parse(`${date}T00:00:00Z`)).getUTCDay() + 6) % 7]!;
+export function weekdayOf(date: string): Weekday {
+  // getUTCDay: 0 = Sunday … 6 = Saturday; WEEKDAYS starts on Monday.
+  return WEEKDAYS[(new Date(Date.parse(`${date}T00:00:00Z`)).getUTCDay() + 6) % 7]!;
 }
 
-/** OB-179: whether `date` is the first day of one of the shop's roster weeks. */
-export function isRosterWeekStart(settings: WorkingTimeSettings, date: string): boolean {
-  return isDate(date) && weekdayOf(date) === rosterWeekStartDay(settings);
+/** OB-179 / OB-181: whether `date` is the first day of a roster week — a Monday. */
+export function isRosterWeekStart(date: string): boolean {
+  return isDate(date) && weekdayOf(date) === ROSTER_WEEK_STARTS_ON;
 }
 
-/** OB-179: the first day of the shop's roster week that `date` falls in. */
-export function rosterWeekStartOf(settings: WorkingTimeSettings, date: string): string {
-  const back = (ROSTER_WEEKDAYS.indexOf(weekdayOf(date)) - ROSTER_WEEKDAYS.indexOf(rosterWeekStartDay(settings)) + 7) % 7;
+/** OB-179 / OB-181: the Monday of the roster week that `date` falls in. */
+export function rosterWeekStartOf(date: string): string {
+  const back = (WEEKDAYS.indexOf(weekdayOf(date)) - WEEKDAYS.indexOf(ROSTER_WEEK_STARTS_ON) + 7) % 7;
   return addDays(date, -back);
 }
 
@@ -384,10 +375,10 @@ export function checkWorkingTime(input: {
   readonly assignments: readonly ShiftAssignment[];
   readonly employees: readonly Employee[];
 }): WorkingTimeCheck {
-  // OB-179 "A": the weekly limits are judged per the shop's roster week only — a window starting on any other day
-  // could be laid across a real week to hide a breach (verifier r2final NEW-1), so it is never checked.
-  if (isDate(input.weekStart) && !isRosterWeekStart(input.settings, input.weekStart)) {
-    throw new RangeError(`weekStart ${input.weekStart} is a ${weekdayOf(input.weekStart)}; the shop's roster week starts on ${rosterWeekStartDay(input.settings)}`);
+  // OB-179 / OB-181 "A": the weekly limits are judged per Monday–Sunday roster week only — a window starting on any
+  // other day could be laid across a real week to hide a breach (verifier r2final NEW-1), so it is never checked.
+  if (isDate(input.weekStart) && !isRosterWeekStart(input.weekStart)) {
+    throw new RangeError(`weekStart ${input.weekStart} is a ${weekdayOf(input.weekStart)}; the roster week always starts on ${ROSTER_WEEK_STARTS_ON}`);
   }
   const scope = weekScope(input);
   const { weekEnd, weekStartMs, weekEndMs } = scope;
@@ -875,10 +866,10 @@ export function holidayRegister(input: {
       return t === undefined ? s !== undefined && rosteredOn(employeeId, date, [s], [a], off).length > 0 : t.startMs < from + DAY_MS && t.endMs > from;
     });
   };
-  // OB-179 "A": the weekly holiday is judged per the shop's roster week (Monday to Sunday as shipped), never per a
-  // 7-day window that starts wherever the period does. A week cut by the period is reported but not judged.
+  // OB-179 / OB-181 "A": the weekly holiday is judged per Monday–Sunday roster week, never per a 7-day window that
+  // starts wherever the period does. A week cut by the period is reported but not judged.
   const weeks: { weekStart: string; dates: string[] }[] = [];
-  for (let start = rosterWeekStartOf(input.settings, input.from); start <= input.to; start = addDays(start, 7)) {
+  for (let start = rosterWeekStartOf(input.from); start <= input.to; start = addDays(start, 7)) {
     const lo = start < input.from ? input.from : start;
     const hi = addDays(start, 6) < input.to ? addDays(start, 6) : input.to;
     weeks.push({ weekStart: start, dates: [...datesBetween(lo, hi)] });
