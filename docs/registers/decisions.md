@@ -220,6 +220,7 @@ Status legend: **Accepted** · **Open — blocking** (holds coding / a gate) ·
 | OB-172 | **OB-164 for a chilled/frozen receipt taken on the store screen or a handheld (possibly offline): add the receiving checklist to the store screen and handheld so it travels with the receipt vs book and flag.** | Change: build the checklist on the store screen and handheld before the pilot; it is captured offline and travels with the relayed/assembled receipt. | **ACCEPTED — A, "Checklist on handheld" (owner, 17 Oct 2026, in writing).** |
 | OB-173 | **B19 a basket-wide or category discount and the carry bag: never discount bags vs allow a partial discount (never free).** | Change: discounts never apply to a carry bag; the bag is charged in full. | **ACCEPTED — A, "Never discount bags" (owner, 17 Oct 2026, in writing).** |
 | OB-174 | **B6 a brand-new scale on the register: certificate only vs also a second person.** | Keep as built (certificate only; extending a stamp needs a second person). | **ACCEPTED — A, "Certificate only" (owner, 17 Oct 2026, in writing).** |
+| OB-175 | **C18 / OB-168 a split day (e.g. 08:00–13:00 and 14:00–19:00) against the daily-hours cap: add up all work that starts on the same day vs judge each stretch alone.** | Keep as built (added up; a 10-hour split day breaks a 9-hour cap). | **ACCEPTED — A, "Yes, add them up" (owner, 17 Oct 2026, in writing).** |
 
 ## AI-assisted development governance — AID-01 to AID-10 (roadmap §18)
 
