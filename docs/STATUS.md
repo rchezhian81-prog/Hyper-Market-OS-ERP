@@ -5,7 +5,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
-## Coordinated programme · R2 coverage correction: the 15 open pilot (R2) items built, verified and fixed (16–17 October 2026) — gated, PR pending
+## Coordinated programme · R2 coverage correction: the 15 open pilot (R2) items built, verified and fixed (16–17 October 2026) — merged in PR #788 (c98fa7a5)
 
 - **Built (four parallel lanes, then fix rounds F1–F10; synthetic data; no staff UAT):**
   - **Lane 1 — till rules:** B5 weighed price rounded down, B6 verified-scale register (signed in the store pack; lapsed stamp stops weighed sales on that lane), B14 tobacco 18+ and whole packs only, B19 banned plastic and thin bags refused; carry bags never discounted (OB-173/178).
