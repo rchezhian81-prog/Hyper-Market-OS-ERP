@@ -13,7 +13,7 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import {
-  checkDevice, registerAdapter, integrationHealth,
+  checkDevice, registerAdapter, integrationHealth, adapterUsable,
   type CertifiedEntry, type AdapterCategory, type DeviceKind, type AdapterConfig, type AdapterHeartbeat,
 } from '../../../packages/integration/src/index';
 
@@ -122,6 +122,20 @@ export function integrationRoutes(deps: IntegrationDeps): readonly Route[] {
         const b = (ctx.body ?? {}) as Record<string, unknown>;
         if (typeof b['ok'] !== 'boolean' || !isDateTime(b['at']) || (b['detail'] !== undefined && !isStr(b['detail']))) {
           throw apiError(400, { code: 'not_readable_as_a_heartbeat', whatHappened: 'A heartbeat needs ok (true/false) and a timestamp.', wasItSaved: 'not_saved', nextSafeAction: 'Send { "ok": true|false, "at": "<timestamp>" }. Nothing was recorded.' });
+        }
+        // OB-170 "A": an adapter that may not be used as registered (a payment adapter registered before OB-162 with no
+        // India region declared) is refused by name — its traffic is not recorded as the adapter working.
+        const registered = (await deps.adapters(ctx.tenantId)).find((a) => a.adapterId === adapterId);
+        if (registered !== undefined) {
+          const use = adapterUsable(registered);
+          if (!use.usable) {
+            throw apiError(422, {
+              code: use.refusal,
+              whatHappened: use.detail,
+              wasItSaved: 'not_saved',
+              nextSafeAction: 'Nothing was recorded. Register the adapter again with dataRegion IN or IN-<state> (India only); it can be used once the region is declared.',
+            });
+          }
         }
         const heartbeat: AdapterHeartbeat = {
           adapterId, at: b['at'] as string, ok: b['ok'] as boolean,

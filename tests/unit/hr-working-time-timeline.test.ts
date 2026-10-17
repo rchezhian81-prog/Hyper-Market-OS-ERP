@@ -32,9 +32,12 @@ const check = (shifts: ShiftRequirement[], settings = inForce(), employees = [em
 describe('NEW-1: continuous work across local midnight is ONE stretch', () => {
   it('a 10-hour stretch split at midnight into two shifts is caught (it used to pass every check)', () => {
     const c = check([sh('A', [WEEK[1]!, '19:00'], [WEEK[1]!, '23:59']), sh('B', [WEEK[2]!, '00:00'], [WEEK[2]!, '04:59'])]);
-    expect(c.breaches.map((b) => b.rule)).toEqual(['maxContinuousWorkMinutes']);
+    // OB-168: the stretch also counts in full against the daily cap — 4h 59m + 4h 59m worked = 9h 58m on the 20th.
+    expect(c.breaches.map((b) => b.rule)).toEqual(['maxContinuousWorkMinutes', 'maxDailyWorkMinutes']);
     expect(c.breaches[0]).toMatchObject({ date: WEEK[1], observed: 599, limit: 300, shiftIds: ['A', 'B'] });
     expect(c.breaches[0]!.detail).toBe('Person E1 works from 2026-10-20 19:00 to 2026-10-21 04:59 (9h 59m) with no rest of at least 1h — longer than the 5h allowed before a rest interval');
+    expect(c.breaches[1]).toMatchObject({ date: WEEK[1], observed: 598, limit: 540, shiftIds: ['A', 'B'] });
+    expect(c.breaches[1]!.detail).toBe('Person E1 is rostered 9h 58m on 2026-10-20, counting work that runs past midnight to 2026-10-21 04:59 — more than the daily cap of 9h');
   });
 
   it('a gap of exactly the rest interval is a rest; a shorter gap is not', () => {
@@ -44,14 +47,32 @@ describe('NEW-1: continuous work across local midnight is ONE stretch', () => {
     expect(short.breaches.map((b) => b.rule)).toEqual(['maxContinuousWorkMinutes']);
   });
 
-  it('daily hours count the minutes on each local calendar day (IST), split at local midnight', () => {
-    // 12:00–23:00 and 23:00–02:00 touching: 11h on the 20th (over the 9h cap) and 2h on the 21st.
+  it('OB-168: daily hours are judged per stretch of work, counted in full on the day it starts — not split at midnight', () => {
+    // 12:00–17:00, then 18:00–23:00 and 23:00–02:00 touching (one stretch 18:00–02:00): both stretches start on the
+    // 20th, so the 20th carries 5h + 8h = 13h (it was 11h + 2h when split at midnight); nothing is put on the 21st.
     const c = check([sh('A', [WEEK[1]!, '12:00'], [WEEK[1]!, '17:00']), sh('B', [WEEK[1]!, '18:00'], [WEEK[1]!, '23:00']), sh('C', [WEEK[1]!, '23:00'], [WEEK[2]!, '02:00'])],
       inForce({ maxContinuousWorkMinutes: 24 * 60, maxSpreadOverMinutes: 24 * 60 }));
-    expect(c.breaches.map((b) => `${b.rule}@${b.date}:${b.observed}`)).toEqual(['maxDailyWorkMinutes@2026-10-20:660']);
-    // One overnight shift of 10 hours is 5h on each local day — within the daily cap; the stretch is still judged.
+    expect(c.breaches.map((b) => `${b.rule}@${b.date}:${b.observed}`)).toEqual(['maxDailyWorkMinutes@2026-10-20:780']);
+    expect(c.breaches[0]!.shiftIds).toEqual(['A', 'B', 'C']);
+    expect(c.breaches[0]!.detail).toBe('Person E1 is rostered 13h on 2026-10-20, counting work that runs past midnight to 2026-10-21 02:00 — more than the daily cap of 9h');
+    // One overnight shift of 10 hours is 10 hours against the daily cap (it used to count 5h on each local day).
     const night = check([sh('N', [WEEK[1]!, '19:00'], [WEEK[2]!, '05:00'])]);
-    expect(night.breaches.map((b) => b.rule)).toEqual(['maxContinuousWorkMinutes']);
+    expect(night.breaches.map((b) => `${b.rule}@${b.date}:${b.observed}`)).toEqual(['maxContinuousWorkMinutes@2026-10-20:600', 'maxDailyWorkMinutes@2026-10-20:600']);
+    expect(night.breaches[1]).toMatchObject({ limit: 540, shiftIds: ['N'] });
+    // A 9-hour night shift is exactly at the cap: no daily breach (the cap is "more than", as before).
+    const atCap = check([sh('N', [WEEK[1]!, '20:00'], [WEEK[2]!, '05:00'])], inForce({ maxContinuousWorkMinutes: 24 * 60 }));
+    expect(atCap.breaches).toEqual([]);
+  });
+
+  it('OB-168: a night stretch that started the day before the week is judged in full on that day', () => {
+    const c = check([sh('PREV', ['2026-10-18', '20:00'], [WEEK[0]!, '06:00'])], inForce({ maxContinuousWorkMinutes: 24 * 60 }));
+    expect(c.breaches.map((b) => `${b.rule}@${b.date}:${b.observed}`)).toEqual(['maxDailyWorkMinutes@2026-10-18:600']);
+  });
+
+  it('OB-168: the weekly hours cap still counts the minutes inside the week, split at midnight', () => {
+    // 2026-10-18 20:00 → 19 Oct 06:00: only 6h fall inside the week; a weekly cap of 5h is breached by exactly 6h.
+    const c = check([sh('PREV', ['2026-10-18', '20:00'], [WEEK[0]!, '06:00'])], inForce({ maxContinuousWorkMinutes: 24 * 60, maxDailyWorkMinutes: 24 * 60, maxWeeklyWorkMinutes: 5 * 60 }));
+    expect(c.breaches.map((b) => `${b.rule}:${b.observed}`)).toEqual(['maxWeeklyWorkMinutes:360']);
   });
 
   it('spread-over follows a stretch past midnight — the split cannot hide it', () => {

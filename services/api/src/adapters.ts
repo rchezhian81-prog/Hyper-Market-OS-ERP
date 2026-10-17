@@ -4569,14 +4569,19 @@ export function integrationAdapter(input: {
     },
 
     recordAdapter: async (tenantId, config) => {
-      await input.store.append(tenantId, STREAM.integration, makeEvent({
-        id: `intg-adapter-${config.adapterId}`,
-        type: 'IntegrationAdapterRegistered',
-        occurredAt: input.now(),
-        idempotencyKey: `intg-adapter-${tenantId}-${config.adapterId}-${config.environment}-${config.credentialRef}-${config.enabled}`,
-        source: 'api/platform',
-        payload: config,
-      }));
+      // OB-170: registering an adapter again with a change (a payment adapter declaring its India region) is a new, latest
+      // fact keyed on what it supersedes — the old registration is kept (append-only), never rewritten. The same
+      // configuration again writes nothing. (A fixed event id here refused every change with an id clash.)
+      const v = (c: AdapterConfig): string => JSON.stringify([c.category, c.vendor, c.environment, c.credentialRef, c.enabled,
+        [...(c.retains ?? [])], c.queueOnOutage ?? null, c.dataRegion ?? null]);
+      await appendSetting(input.store, tenantId, STREAM.integration, {
+        type: 'IntegrationAdapterRegistered', idPrefix: `intg-adapter-${config.adapterId}`,
+        valueKey: `intg-adapter-${tenantId}-${config.adapterId}-${config.environment}-${config.credentialRef}-${config.enabled}${config.dataRegion === undefined ? '' : `-${config.dataRegion}`}`,
+        occurredAt: input.now(), source: 'api/platform', payload: config,
+        sameSubject: (p) => (p as AdapterConfig).adapterId === config.adapterId,
+        subjectKey: config.adapterId,
+        sameValue: (p) => v(p as AdapterConfig) === v(config),
+      });
     },
 
     recordHeartbeat: async (tenantId, heartbeatId, heartbeat) => {

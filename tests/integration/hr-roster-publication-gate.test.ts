@@ -79,7 +79,9 @@ describe.each(backings)('C18 publishing is the gate staff see through — on $na
     await s.assign('A'); await s.assign('B');
     const split = await s.publish('P-split');
     expect(split.status).toBe(422);
-    expect((split.body as { breaches: { rule: string }[] }).breaches.map((b) => b.rule)).toEqual(['maxContinuousWorkMinutes']);
+    // OB-168: the stretch counts in full against the daily cap too (9h 58m worked on the 20th > 9h).
+    expect((split.body as { breaches: { rule: string; date: string; observed: number }[] }).breaches.map((b) => `${b.rule}@${b.date}:${b.observed}`))
+      .toEqual(['maxContinuousWorkMinutes@2026-10-20:599', 'maxDailyWorkMinutes@2026-10-20:598']);
     expect((split.body as { error: { whatHappened: string } }).error.whatHappened).toContain('from 2026-10-20 19:00 to 2026-10-21 04:59');
 
     const h2 = harness();

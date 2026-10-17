@@ -319,7 +319,8 @@ function weekScope(input: {
  *   • shifts that touch, or are separated by less than the shortest rest interval, are ONE stretch of work — even
  *     across local midnight — for the continuous-work and the spread-over rules; a stretch is dated by the local day
  *     it starts on, and a stretch that started the day before the week and runs into it is judged too;
- *   • daily hours count the minutes that fall on each local calendar day (IST), split at local midnight;
+ *   • daily hours are judged per stretch of work (OB-168): every stretch counts in full on the local day it starts,
+ *     so a night shift across midnight is not halved; the weekly hours cap still counts minutes per local day;
  *   • a day counts as a weekly holiday only when NO minute of work falls on it (NEW-2) — the tail of an overnight shift
  *     is work on the day it runs into — and a shift from the previous week running into this one counts.
  * A shift whose times cannot be read is itself a breach (never skipped silently), at any branch for a person checked.
@@ -390,35 +391,48 @@ export function checkWorkingTime(input: {
       .filter((b) => b.startMs < weekEndMs && b.endMs > weekStartMs);
     const inWeek = all.filter((i) => i.startMs < weekEndMs && i.endMs > weekStartMs);
 
+    // Weekly hours and days off stay by local calendar day (IST), split at local midnight.
     let weekMinutes = 0;
     const daysOff: string[] = [];
     for (const d of days) {
       const from = localMidnightMs(d, off);
       const worked = minutesWithin(all, from, from + DAY_MS);
       weekMinutes += worked;
-      if (worked === 0) { daysOff.push(d); continue; }
-      if (daily !== undefined && worked > daily) {
-        const ids = all.filter((i) => i.startMs < from + DAY_MS && i.endMs > from).map((i) => i.shiftId).sort();
-        breaches.push({ employeeId, name, rule: 'maxDailyWorkMinutes', date: d, observed: worked, limit: daily, shiftIds: ids,
-          detail: `${name} is rostered ${asHours(worked)} on ${d} — more than the daily cap of ${asHours(daily)}` });
+      if (worked === 0) daysOff.push(d);
+    }
+
+    // The stretches that START on each local day (a stretch running past midnight is not cut there). The day before
+    // the week counts when one of its stretches runs into the week; a day's earlier stretches that ended before the
+    // week are still part of that day. Daily hours (OB-168) and spread-over are both judged on this.
+    const byStartDay = new Map<string, { startMs: number; endMs: number; shiftIds: string[] }[]>();
+    for (const b of stretches) {
+      const d = localDateOf(b.startMs, off);
+      byStartDay.set(d, [...(byStartDay.get(d) ?? []), b]);
+    }
+    for (const b of blocks(all, rest === undefined ? 1 : rest * 60_000)) {
+      const d = localDateOf(b.startMs, off);
+      const list = byStartDay.get(d);
+      if (list !== undefined && !list.some((x) => x.startMs === b.startMs)) list.push(b);
+    }
+    const startDays = [...byStartDay.entries()].sort(([a], [b]) => a.localeCompare(b));
+
+    // Daily hours (OB-168, owner 16 Oct 2026): judged per stretch of work, not per calendar day — a stretch counts in
+    // full on the day it starts, so a 10-hour night shift is 10 hours against the daily cap, never 5 + 5.
+    if (daily !== undefined) {
+      for (const [d, list] of startDays) {
+        const ids = list.flatMap((b) => b.shiftIds).sort();
+        const worked = coveredMinutes(ids.flatMap((id) => { const i = mine.get(id); return i === undefined ? [] : [i]; }));
+        if (worked > daily) {
+          const last = Math.max(...list.map((b) => b.endMs));
+          const pastMidnight = localDateOf(last - 1, off) !== d ? `, counting work that runs past midnight to ${localDateOf(last, off)} ${hhmm(last, off)}` : '';
+          breaches.push({ employeeId, name, rule: 'maxDailyWorkMinutes', date: d, observed: worked, limit: daily, shiftIds: ids,
+            detail: `${name} is rostered ${asHours(worked)} on ${d}${pastMidnight} — more than the daily cap of ${asHours(daily)}` });
+        }
       }
     }
 
-    // Spread-over: the stretches that START on a day, from the first start to the last finish (a stretch running past
-    // midnight is not cut there). The day before the week counts when one of its stretches runs into the week.
     if (spread !== undefined) {
-      const byStartDay = new Map<string, { startMs: number; endMs: number; shiftIds: string[] }[]>();
-      for (const b of stretches) {
-        const d = localDateOf(b.startMs, off);
-        byStartDay.set(d, [...(byStartDay.get(d) ?? []), b]);
-      }
-      // A day's earlier stretches that ended before the week are still part of that day's spread.
-      for (const b of blocks(all, rest === undefined ? 1 : rest * 60_000)) {
-        const d = localDateOf(b.startMs, off);
-        const list = byStartDay.get(d);
-        if (list !== undefined && !list.some((x) => x.startMs === b.startMs)) list.push(b);
-      }
-      for (const [d, list] of [...byStartDay.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+      for (const [d, list] of startDays) {
         const first = Math.min(...list.map((b) => b.startMs));
         const last = Math.max(...list.map((b) => b.endMs));
         const spanMinutes = Math.round((last - first) / 60_000);
