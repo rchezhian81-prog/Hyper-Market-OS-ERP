@@ -30,7 +30,7 @@ import {
   type CapturedLine, type CapturedReceipt,
 } from '../../../packages/receiving/src/index';
 import {
-  rulesFromMaster, sayHandling, policyInForce, orderForReceipt, alignToOrder, poPostingFor, commitAgainstOrder, awaitsDecision, linesAwaitingDisposition,
+  rulesFromMaster, sayHandling, receivingChecklistGate, policyInForce, orderForReceipt, alignToOrder, poPostingFor, commitAgainstOrder, awaitsDecision, linesAwaitingDisposition,
   type GrnRecord, type ReceiptFlag, type AssembledFromScans,
 } from './goods-receipt';
 import type { SyncedGoodsReceiptDeps } from './goods-receipt-synced';
@@ -174,6 +174,9 @@ export async function assembleReceipt(deps: AssembledGoodsReceiptDeps, input: {
   const productIds = [...new Set(scans.map((s) => s.productId))];
   const master = await rulesFromMaster(deps, input.tenantId, productIds);
   if (master.unverified) flags.push('product_rules_unverified'); sayHandling(flags, master);
+  // OB-164: the scans already put the goods on-hand, so a chilled/frozen delivery with no receiving checklist on file is
+  // assembled and FLAGGED `receiving_checklist_missing` for the review — never silently passed.
+  const checklist = await receivingChecklistGate(deps, input.tenantId, input.grnId, master.rules, productIds, flags, 'flag');
   const costByProduct = new Map<string, number>();
   let costUnknown = false;
   for (const productId of productIds) {
@@ -220,6 +223,7 @@ export async function assembleReceipt(deps: AssembledGoodsReceiptDeps, input: {
   const storeId = input.storeId ?? scans[0]!.storeId;
   const record: GrnRecord = {
     grnId: input.grnId, number: input.grnId, poId: order.poId,
+    ...(checklist === undefined ? {} : { receivingChecklist: checklist }),
     // The scans posted their stock at the store's location; the GRN lives there too, so a later release lands in the same place.
     warehouseId: scans[0]!.storeId,
     receivedBy: input.completedBy, receivedAt: input.completedAt,

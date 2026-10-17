@@ -22,7 +22,7 @@ import { runMigrations } from '../../packages/persistence/src/migrations';
  * and, with DATABASE_URL, on real PostgreSQL): the floor S1 holds 20 of P2 (₹10 each), the back store 10. Two floor indents:
  *
  *   • ind-1 counted in on the DIRECT route: 5 good + 1 damaged. On-hand at the floor +5; the damaged unit is written off in
- *     the SAME write as the receipt — one `wasted` posting and ONE register write-off (damage / arrived_damaged, ₹10 = the cost
+ *     the SAME write as the receipt — one `wasted` posting and ONE register write-off (reason damage, note "arrived damaged", ₹10 = the cost
  *     it left the back store with). A role without receiving rights is refused (403) and records nothing; a re-sent receipt
  *     (direct, and the same receipt relayed by the store computer) adds nothing.
  *   • ind-2 counted in on the store computer's RELAYED route: 2 good + 1 damaged — its own register write-off; a re-relay adds
@@ -109,7 +109,7 @@ describe.each(backings)('OB-71 — a damaged arrival with no count open is its o
     expect(await onHand()).toBe(25); // +5: the damaged unit came in and went out in the same write
     expect(await onHand('S1-BACK')).toBe(1);
     expect((await register()).map((w) => [w.id, w.productId, w.locationId, w.qtyRemoved, w.valueMinor, w.reasonCode, w.lossType, w.valueSource, w.unitCostMinor]))
-      .toEqual([[WO1, 'P2', 'S1', 1, 1_000, 'arrived_damaged', 'damage', 'stock_cost', 1_000]]);
+      .toEqual([[WO1, 'P2', 'S1', 1, 1_000, 'damage', 'damage', 'stock_cost', 1_000]]);
     // Its stock effect is the receipt's one `wasted` posting — not a second `writeoff-` one.
     let ids = await movementIds();
     expect(ids.filter((id) => id === 'ind-1:is-1-damaged-1')).toHaveLength(1);

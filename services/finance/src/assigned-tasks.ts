@@ -4,7 +4,10 @@
 //   • POST /v1/hr/workforce/assigned-tasks/:taskId          — assign a task to a NAMED person with a deadline: { branchId,
 //     title, assignedTo, dueAt, critical, evidenceRequired, sopId?, steps?[] }. The assigner is the caller. With an
 //     `sopId` the task is that SOP's checklist, at the version in force now. The assignee must be a person in this shop
-//     who may complete tasks. Re-assigning before it is done is a new version (append-only); after, refused.
+//     who may complete tasks. Re-assigning before it is done is a new version (append-only); after, refused. NEW-10: a
+//     re-assignment after the deadline passed keeps that missed deadline as the accountable one (the task stays overdue, a
+//     critical one stays escalated, and its completion is late from it), lists it among the missed deadlines, and is
+//     sealed in the trail as "re-assigned after missing its deadline", with the reason given (optional `reason`).
 //     workforce.roster.manage.
 //   • POST /v1/hr/workforce/assigned-tasks/:taskId/complete — the ASSIGNEE completes it, in their own sign-in: { stepsDone[],
 //     evidenceRefs[], note? }. Every step ticked; the evidence the task requires; on time or minutes late, kept.
@@ -19,7 +22,7 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError, notFound, requireActorIsCaller, assertBranchInScope, narrowScope } from '../../kernel/src/index';
 import {
-  assignmentProblem, assessAssignedTasks, checkCompletion,
+  assignmentProblem, assessAssignedTasks, checkCompletion, carriedLateness, accountableDueOf,
   type AssignedTask, type AssignedTaskCompletion, type TaskStep,
 } from '../../../packages/workforce/src/assigned-tasks';
 import type { AuditEntry } from '../../../packages/audit/src/index';
@@ -111,14 +114,29 @@ export function assignedTaskRoutes(deps: AssignedTaskDeps): readonly Route[] {
             throw apiError(400, { code: 'not_readable_as_an_assigned_task', whatHappened: 'An SOP checklist needs its steps.', wasItSaved: 'not_saved', nextSafeAction: 'Send the SOP\'s steps. Nothing was assigned.' });
           }
         }
+        if (b['reason'] !== undefined && typeof b['reason'] !== 'string') {
+          throw apiError(400, { code: 'not_readable_as_an_assigned_task', whatHappened: 'reason, when sent, is text.', wasItSaved: 'not_saved', nextSafeAction: 'Send the reason as text. Nothing was assigned.' });
+        }
+        const reason = isStr(b['reason']) ? b['reason'].trim() : undefined;
         const at = deps.now();
-        const task: AssignedTask = { taskId, ...draft, dueAt: new Date(Date.parse(draft.dueAt)).toISOString(), assignedBy: ctx.userId, assignedAt: at, ...(sop === undefined ? {} : { sop }) };
+        // NEW-10: a missed deadline stays on record and stays the one the task is accounted against.
+        const carried = carriedLateness(before, at);
+        const task: AssignedTask = {
+          taskId, ...draft, dueAt: new Date(Date.parse(draft.dueAt)).toISOString(), assignedBy: ctx.userId, assignedAt: at,
+          ...(sop === undefined ? {} : { sop }), ...carried,
+        };
+        const afterMissing = before !== undefined && carried.accountableDueAt !== undefined;
         await deps.recordTask(ctx.tenantId, task);
         await deps.recordAudit?.(ctx.tenantId, {
-          actorId: ctx.userId, action: before === undefined ? 'store_task.assign' : 'store_task.reassign', objectType: 'store_task', objectId: taskId, at,
+          actorId: ctx.userId, action: before === undefined ? 'store_task.assign' : afterMissing ? 'store_task.reassign_after_missed_deadline' : 'store_task.reassign',
+          objectType: 'store_task', objectId: taskId, at,
           origin: { tenantId: ctx.tenantId, branchId: task.branchId },
-          before: before === undefined ? null : { assignedTo: before.assignedTo, dueAt: before.dueAt },
-          after: { assignedTo: task.assignedTo, dueAt: task.dueAt, critical: String(task.critical), evidenceRequired: String(task.evidenceRequired), sop: sop === undefined ? '' : `${sop.sopId}@${sop.version}`, steps: task.steps.map((s) => s.stepId).join(',') },
+          before: before === undefined ? null : { assignedTo: before.assignedTo, dueAt: before.dueAt, accountableDueAt: accountableDueOf(before) },
+          after: {
+            assignedTo: task.assignedTo, dueAt: task.dueAt, accountableDueAt: accountableDueOf(task), missedDeadlines: (task.missedDeadlines ?? []).join(','),
+            critical: String(task.critical), evidenceRequired: String(task.evidenceRequired), sop: sop === undefined ? '' : `${sop.sopId}@${sop.version}`, steps: task.steps.map((s) => s.stepId).join(','),
+          },
+          ...(reason !== undefined ? { reason } : afterMissing ? { reason: `re-assigned after missing its deadline of ${carried.accountableDueAt}` } : {}),
           correlationId: taskId,
         });
         return { status: 201, body: { task } };
@@ -153,7 +171,7 @@ export function assignedTaskRoutes(deps: AssignedTaskDeps): readonly Route[] {
           actorId: ctx.userId, action: 'store_task.complete', objectType: 'store_task', objectId: taskId, at,
           origin: { tenantId: ctx.tenantId, branchId: task.branchId },
           before: null,
-          after: { doneBy: ctx.userId, lateByMinutes: String(checked.completion.lateByMinutes), evidenceRefs: checked.completion.evidenceRefs.join(','), steps: checked.completion.stepsDone.join(',') },
+          after: { doneBy: ctx.userId, lateByMinutes: String(checked.completion.lateByMinutes), accountableDueAt: accountableDueOf(task), evidenceRefs: checked.completion.evidenceRefs.join(','), steps: checked.completion.stepsDone.join(',') },
           correlationId: taskId,
         });
         return { status: 201, body: { completion: checked.completion } };

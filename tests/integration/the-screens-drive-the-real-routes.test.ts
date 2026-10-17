@@ -1,3 +1,4 @@
+import { recordReceivingChecklist } from '../support/receiving-checklist';
 import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -174,7 +175,9 @@ describe.each(backings)('Batch 2 · the screens drive the real routes — on $na
       categories: [{ categoryId: 'grocery', name: 'Grocery', parentId: null }],
     }, 'pub-paneer')).status).toBe(201);
     expect((await post('u-owner', '/v1/inventory/receipt-policy', { excessToleranceBp: 0, shortageToleranceBp: 0, nearExpiryDays: 7 }, 'pol')).status).toBe(201);
-    // No temperature on a chilled line: received but HELD; a second person disposes of it as a return.
+    // No temperature on a chilled line: received but HELD; a second person disposes of it as a return. OB-164: its
+    // receiving checklist is recorded at the door first.
+    await recordReceivingChecklist(h, t, 'g-ret', 'u-recv');
     expect((await post('u-recv', '/v1/inventory/goods-receipt/g-ret', { warehouseId: 'wh-1', receivedOnDate: '2026-10-10', currency: 'INR', lines: [
       { lineId: 'L1', productId: 'p-paneer', orderedMinor: 10, countedMinor: 10, uom: 'ea', unitCost: { minor: 4_000, currency: 'INR' }, condition: 'good', batchId: 'B-1', expiry: '2026-10-20' },
     ] }, 'g-ret')).status).toBe(201);

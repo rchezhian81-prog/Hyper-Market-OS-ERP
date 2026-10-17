@@ -295,6 +295,11 @@ import type { Producer } from '../../../packages/reporting/src/index';
 import { mountDemoBanner } from '../../../packages/ui/src/demo-banner';
 import { createIncidentsSession, wordsFor as incidentsWords, outcomeWords as incidentsOutcomeWords, summarise as incidentsSummary, type IncidentsSession } from './incidents-session';
 import {
+  createStoreOpsSession, wordsFor as storeOpsWords, outcomeWords as storeOpsOutcomeWords, slotWords as storeOpsSlotWords, taskWords as storeOpsTaskWords,
+  bandWords as storeOpsBandWords, surfaceWords as storeOpsSurfaceWords, kindWords as storeOpsKindWords, reasonWords as storeOpsReasonWords,
+  splitToday as storeOpsSplitToday, rupees as storeOpsRupees, percent as storeOpsPercent, OB163_BANDS, type StoreOpsSession,
+} from './store-ops-session';
+import {
   createStoreComputersSession, wordsFor as storeComputersWords, outcomeWords as storeComputersOutcomeWords, summarise as storeComputersSummary,
   requestWords as storeComputersRequestWords, findingKindWords as storeComputersFindingWords, type StoreComputersSession,
   unusedNumbersWords as storeComputersUnusedWords, acknowledgeable as storeComputersAcknowledgeable,
@@ -4808,6 +4813,17 @@ interface ManagerWindow {
     readonly requestWords: typeof scalesRequestWords;
     readonly formOf: typeof scalesFormOf;
   };
+  /** OB-154: the store-operations pages (food-safety checks, price mismatches, store tasks, my tasks, waste analytics) —
+   *  who is looking; head office answers the rest. */
+  storeOpsData?: ViewerIdentity;
+  storeOps?: {
+    readonly session: StoreOpsSession;
+    readonly words: typeof storeOpsWords; readonly outcomeWords: typeof storeOpsOutcomeWords;
+    readonly slotWords: typeof storeOpsSlotWords; readonly taskWords: typeof storeOpsTaskWords; readonly bandWords: typeof storeOpsBandWords;
+    readonly surfaceWords: typeof storeOpsSurfaceWords; readonly kindWords: typeof storeOpsKindWords; readonly reasonWords: typeof storeOpsReasonWords;
+    readonly splitToday: typeof storeOpsSplitToday; readonly rupees: typeof storeOpsRupees; readonly percent: typeof storeOpsPercent;
+    readonly bands: typeof OB163_BANDS;
+  };
   substitutionExceptionInboxData?: SubstitutionExceptionInboxData;
   substitutionExceptionInboxSession?: SubExceptionInboxSession;
   /** The shell reads the live exceptions worklist through this and re-presents it — a GET read, never a write. */
@@ -6505,5 +6521,14 @@ if (browserWindow !== undefined) {
     session: createScalesSession({ viewer: browserWindow.scalesData }),
     words: scalesWords, outcomeWords: scalesOutcomeWords, summarise: scalesSummary,
     stampWords: scalesStampWords, requestWords: scalesRequestWords, formOf: scalesFormOf,
+  };
+  // OB-154: the store-operations pages — their session is the tested model in store-ops-session.ts; it reads and writes
+  // head office's own routes in the signed-in person's session, never on open.
+  browserWindow.storeOpsData = viewerIdentity(browserWindow.storeOpsData);
+  browserWindow.storeOps = {
+    session: createStoreOpsSession({ viewer: browserWindow.storeOpsData }),
+    words: storeOpsWords, outcomeWords: storeOpsOutcomeWords, slotWords: storeOpsSlotWords, taskWords: storeOpsTaskWords,
+    bandWords: storeOpsBandWords, surfaceWords: storeOpsSurfaceWords, kindWords: storeOpsKindWords, reasonWords: storeOpsReasonWords,
+    splitToday: storeOpsSplitToday, rupees: storeOpsRupees, percent: storeOpsPercent, bands: OB163_BANDS,
   };
 }

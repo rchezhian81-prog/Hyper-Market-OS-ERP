@@ -1,3 +1,4 @@
+import { recordReceivingChecklist } from '../support/receiving-checklist';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -149,6 +150,8 @@ async function journey(h: ApiHarness, t: string, rows: JourneyRow[]): Promise<vo
       { lineId: 'L3', productId: PRODUCT, orderedMinor: ORDERED, countedMinor: UNREAD, uom: 'ea', unitCost, condition: 'good', batchId: BATCH, expiry },
     ],
   };
+  // OB-164: a chilled delivery's receiving checklist is recorded at the door before it is booked.
+  await recordReceivingChecklist(h, t, GRN, RECEIVER);
   const grnBody = await ok(call('POST', `/v1/inventory/goods-receipt/${GRN}`, RECEIVER, delivery, GRN), 201);
   const grn = grnBody['grn'] as {
     availableMinor: number; heldMinor: number; receivedBy: string; governanceFlags: string[];

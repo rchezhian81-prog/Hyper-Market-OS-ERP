@@ -83,3 +83,27 @@ describe('D-7 price of record vs shelf vs POS vs app — an ageing exception rep
     expect(before.detail).toBe('all 1 product(s) agree with their price of record on every surface seen and at the till');
   });
 });
+
+describe('NEW-9: each till sale is judged against the price of record in force at its own moment', () => {
+  const drop = [{ ...entry('P1', 12_000, '2026-10-01T00:00:00.000Z'), effectiveTo: '2026-10-09T23:59:59.999Z' }, entry('P1', 10_000, '2026-10-10T00:00:00.000Z', 2)];
+  const shelf = [seen('o1', 'P1', 'shelf_label', 10_000, '2026-10-10T09:00:00.000Z')];
+  it('the verifier\'s case: a correct ₹120 sale before the drop to ₹100 is no mismatch', () => {
+    const r = reconcilePriceIntegrity({ branchId: 'BR1', asAt: ASAT, entries: drop, observations: shelf, charged: [sold('s1', 'P1', 12_000, '2026-10-05T10:00:00.000Z')] });
+    expect(r.exceptions).toEqual([]);
+  });
+  it('a rise does not make a correct earlier sale "charged below record" either', () => {
+    const rise = [{ ...entry('P1', 10_000, '2026-10-01T00:00:00.000Z'), effectiveTo: '2026-10-09T23:59:59.999Z' }, entry('P1', 12_000, '2026-10-10T00:00:00.000Z', 2)];
+    const r = reconcilePriceIntegrity({ branchId: 'BR1', asAt: ASAT, entries: rise, observations: [seen('o1', 'P1', 'shelf_label', 12_000, '2026-10-10T09:00:00.000Z')], charged: [sold('s1', 'P1', 10_000, '2026-10-05T10:00:00.000Z')] });
+    expect(r.exceptions).toEqual([]);
+  });
+  it('a sale wrong at its own time is caught against THAT price, aged from the first of the run of wrong sales', () => {
+    const r = reconcilePriceIntegrity({ branchId: 'BR1', asAt: ASAT, entries: drop, observations: shelf, charged: [
+      sold('s0', 'P1', 10_000, '2026-10-11T10:00:00.000Z'), sold('s1', 'P1', 12_000, '2026-10-12T10:00:00.000Z'), sold('s2', 'P1', 12_000, '2026-10-14T10:00:00.000Z'),
+    ] });
+    expect(r.exceptions.map((e) => [e.surface, e.kind, e.recordMinor, e.surfaceMinor, e.openSince])).toEqual([['pos', 'charged_above_record', 10_000, 12_000, '2026-10-12T10:00:00.000Z']]);
+  });
+  it('is not carried past a later change in the price of record — the next sale is the evidence', () => {
+    const r = reconcilePriceIntegrity({ branchId: 'BR1', asAt: ASAT, entries: drop, observations: shelf, charged: [sold('s1', 'P1', 11_000, '2026-10-05T10:00:00.000Z')] });
+    expect(r.exceptions.filter((e) => e.surface === 'pos')).toEqual([]);
+  });
+});

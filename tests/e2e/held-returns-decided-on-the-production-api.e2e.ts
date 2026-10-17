@@ -101,10 +101,12 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('Returned g
       // Written off — a small loss at head office's own cost (₹40), no second person needed.
       const second = page.locator('#rows .row', { hasText: 'seal broken' });
       await second.locator('select.decision').selectOption('write_off');
-      await second.locator('input.reason').fill('contents_spilt');
+      // NEW-7 (D-5): the reason is chosen from the closed list; the typed words are kept as the note.
+      await second.locator('select.waste-reason').selectOption('damage');
+      await second.locator('input.reason').fill('contents spilt');
       await second.locator('button.record').click();
       await page.locator('#done-rows .row', { hasText: 'seal broken' }).waitFor({ timeout: 15_000 });
-      expect(await page.locator('#done-rows .row', { hasText: 'seal broken' }).locator('.facts').textContent()).toMatch(/Write off by u-owner \(contents_spilt\) · Loss value ₹40\.00/);
+      expect(await page.locator('#done-rows .row', { hasText: 'seal broken' }).locator('.facts').textContent()).toMatch(/Write off by u-owner \(Damaged — contents spilt\) · Loss value ₹40\.00/);
       expect(await page.textContent('#summary')).toBe('Nothing is waiting — every returned unit has been decided.');
       expect(await onHand()).toBe(9);
       expect(asked.filter((a) => a.startsWith('POST /v1/returns/held-stock/'))).toHaveLength(3);

@@ -108,6 +108,7 @@ import type { TransfersDeps } from '../../inventory/src/warehouse-transfers';
 import { shortfallLinesOf, shortfallLossOf, type AvailableLot, type ShortfallLoss, type Transfer, type TransferDiscrepancy } from '../../../packages/warehouse/src/transfers';
 import { countCorrection, type CountsDeps, type StoredReconciliation, type CountPolicy } from '../../inventory/src/counts';
 import type { WriteOffDeps, StoredWriteOff } from '../../inventory/src/write-off';
+import { assertWriteOffReasonOnList } from '../../inventory/src/write-off';
 import type { HeldStockDecisionDeps, HeldStockDecision } from '../../pos/src/held-stock-decisions';
 import { recipeDigest, type ProductionDeps, type StoredRun, type StoredRelease } from '../../inventory/src/production';
 import type { WeighedCostingDeps, StoredWeighedRun } from '../../inventory/src/weighed-costing';
@@ -6212,10 +6213,7 @@ export function floorIndentsAdapter(input: {
         ...(held ?? []).map((h) => heldWriteOffEntry(tenantId, h)),
         // OB-71: a damaged write-off with NO count holding it — on the write-off register (M28) in the same write, keyed on its
         // `wasted` posting, so a replayed receipt records it once and the books post it once (stock_write_off).
-        ...(writeOffs ?? []).map((w) => ({
-          stream: streamName(STREAM.inventory, 'write-offs'),
-          event: makeEvent({ id: `write-off-${w.id}`, type: 'WriteOffCommitted', occurredAt: w.at, idempotencyKey: `write-off-${tenantId}-${w.id}`, source: 'api/inventory', payload: w }),
-        })),
+        ...(writeOffs ?? []).map((w) => writeOffCommittedEntry(tenantId, w)),
       ], expectedIndentVersion === undefined ? undefined : { guard: { key: indentGuardKey(indent.indentId), expectedVersion: expectedIndentVersion } });
     },
     // A RETURN accepted at the back store: the indent step and the return's transfer proposed, dispatched and received in
@@ -6410,14 +6408,8 @@ export function writeOffAdapter(input: {
         // WF-09 (round 8): a batch's write-off takes the stock off THAT batch.
         ...(rec.batchId === undefined ? {} : { batchId: rec.batchId }),
       });
-      await input.store.append(tenantId, writeOffStream, makeEvent({
-        id: `write-off-${rec.id}`,
-        type: 'WriteOffCommitted',
-        occurredAt: rec.at,
-        idempotencyKey: `write-off-${tenantId}-${rec.id}`,
-        source: 'api/inventory',
-        payload: rec,
-      }));
+      const entry = writeOffCommittedEntry(tenantId, rec);
+      await input.store.append(tenantId, entry.stream, entry.event);
     },
     // SF-05: head office's own average unit cost of the stock at the location — the same read a transfer values by.
     unitCostAt: async (tenantId, locationId, productId) => {
@@ -6793,6 +6785,20 @@ interface StockSnapshot {
   readonly balances: readonly Availability[];
   /** SF-03 — the same balances per batch. Absent on snapshots taken before SF-03: the batch read then folds from the start. */
   readonly batchBalances?: readonly BatchBalance[];
+}
+
+/**
+ * NEW-7 (D-5): the ONE way a write-off reaches the register stream. Every path (the write-off route, a held returned unit's
+ * decision, a damaged arrival, a held write-off applied at a count's close) builds its entry here, and this refuses a reason
+ * that is not on the closed waste reason list (OB-159) before anything is appended. The guardrail
+ * tests/guardrails/every-write-off-speaks-the-closed-reason-list.test.ts proves there is no other builder.
+ */
+export function writeOffCommittedEntry(tenantId: string, w: StoredWriteOff, occurredAt: string = w.at): { readonly stream: string; readonly event: DomainEvent } {
+  assertWriteOffReasonOnList(w);
+  return {
+    stream: streamName(STREAM.inventory, 'write-offs'),
+    event: makeEvent({ id: `write-off-${w.id}`, type: 'WriteOffCommitted', occurredAt, idempotencyKey: `write-off-${tenantId}-${w.id}`, source: 'api/inventory', payload: w }),
+  };
 }
 
 const RECEIPT_POLICY_STREAM = streamName(STREAM.inventory, 'receipt-policy');
@@ -14150,10 +14156,7 @@ export function heldStockDecisionsAdapter(input: { readonly store: EventStore; r
           event: makeEvent({ id: `held-decision-${d.decisionId}`, type: 'HeldStockDecided', occurredAt: d.decidedAt, idempotencyKey: `held-decision-${tenantId}-${d.decisionId}`, source: 'api/pos', payload: d }),
         },
         ...movements.map((m) => movementEvent(tenantId, m)),
-        ...(writeOff === undefined ? [] : [{
-          stream: streamName(STREAM.inventory, 'write-offs'),
-          event: makeEvent({ id: `write-off-${writeOff.id}`, type: 'WriteOffCommitted', occurredAt: writeOff.at, idempotencyKey: `write-off-${tenantId}-${writeOff.id}`, source: 'api/inventory', payload: writeOff }),
-        }]),
+        ...(writeOff === undefined ? [] : [writeOffCommittedEntry(tenantId, writeOff)]),
       ], { guard: { key: `held-stock:${d.heldId}`, expectedVersion } });
     },
     permissionsOf: async (tenantId, userId) => {
@@ -14517,10 +14520,7 @@ export async function applyHeldWriteOffsFor(store: EventStore, tenantId: string,
     const app = heldApplication(h, plan.state, by, at);
     await store.appendBatch(tenantId, [
       ...movementEntries(tenantId, [app.inMovement, app.wasted]),
-      {
-        stream: streamName(STREAM.inventory, 'write-offs'),
-        event: makeEvent({ id: `write-off-${app.writeOff.id}`, type: 'WriteOffCommitted', occurredAt: at, idempotencyKey: `write-off-${tenantId}-${app.writeOff.id}`, source: 'api/inventory', payload: app.writeOff }),
-      },
+      writeOffCommittedEntry(tenantId, app.writeOff, at),
       { stream: COUNT_PLANS_STREAM, event: makeEvent({ id: `count-held-write-off-applied-${h.heldId}`, type: 'CountHeldWriteOffApplied', occurredAt: at, idempotencyKey: `count-held-write-off-applied-${tenantId}-${h.heldId}`, source: 'api/inventory', payload: app.applied }) },
     ]);
     out.push(app.applied);

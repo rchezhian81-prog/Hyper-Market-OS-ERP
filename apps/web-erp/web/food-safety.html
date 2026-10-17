@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Food-safety checks</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Food-safety checks (D-6 · OB-154). A THIN CLIENT over head office's food-safety register: today's scheduled checks
+      (GET /v1/facilities/food-safety/status) - what is due now, what was MISSED (and who it was escalated to) and what was
+      done - and a person records a check in their own name (POST /v1/facilities/food-safety/checks/:checkId/records/:id):
+      the reading, each item pass or fail and, on any failure, the corrective action taken. A failure with no action is
+      refused by head office; the page shows its words. Its session is the tested model in
+      apps/web-erp/src/store-ops-session.ts. Nothing is written on open. No prompt/confirm/alert; nothing on a timer.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      input, select, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; }
+      button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
+      .panel { border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--bg); display: grid; gap: 2px; }
+      .panel .k { color: var(--muted); font-size: 14px; } .panel .v { font-size: 22px; font-weight: 700; }
+      .panel.attention { border-left: 6px solid var(--degraded); }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+      li.row { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 8px; border-left: 6px solid var(--idle); overflow-wrap: anywhere; }
+      li.row.tone-ok { border-left-color: var(--ok); } li.row.tone-degraded { border-left-color: var(--degraded); } li.row.tone-error { border-left-color: var(--danger-text); }
+      .row .head { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; align-items: baseline; }
+      .row .state { font-weight: 600; font-size: 14px; display: inline-flex; gap: 6px; align-items: center; }
+      .row .facts { font-size: 14px; color: var(--muted); }
+      .row form { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); align-items: end; }
+      .status { font-size: 14px; min-height: 20px; margin: 0; } .status.good { color: var(--good); } .status.err { color: var(--danger-text); }
+      .nobody { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
+      .muted { color: var(--muted); font-size: 14px; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Food-safety checks</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section aria-labelledby="page-h">
+        <h2 id="page-h">Food-safety checks</h2>
+        <p class="lead" id="lead"></p>
+        <div class="panels" role="status" aria-live="polite">
+          <div class="panel" id="p-missed"><span class="k" id="k-missed">Missed</span><span class="v" id="v-missed">—</span></div>
+          <div class="panel" id="p-due"><span class="k" id="k-due">Due now</span><span class="v" id="v-due">—</span></div>
+          <div class="panel" id="p-done"><span class="k" id="k-done">Done</span><span class="v" id="v-done">—</span></div>
+          <div class="panel" id="p-failed"><span class="k" id="k-failed">Failed</span><span class="v" id="v-failed">—</span></div>
+        </div>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+      <section aria-labelledby="today-h">
+        <h3 id="today-h">Today</h3>
+        <ul class="rows" id="rows" aria-label="Today's food-safety checks"></ul>
+        <p class="muted" id="none" hidden></p>
+      </section>
+      <section aria-labelledby="receiving-h">
+        <h3 id="receiving-h">Delivery checklists today</h3>
+        <ul class="rows" id="receiving-rows" aria-label="Delivery checklists recorded today"></ul>
+        <p class="muted" id="no-receiving" hidden></p>
+        <ul class="rows" id="receiving-forms" aria-label="Record a delivery checklist"></ul>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./food-safety.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

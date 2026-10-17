@@ -13,7 +13,11 @@
 //     reporting what it displayed), assumed to keep showing it until seen again — a label nobody re-checked after a price
 //     change is still showing the old price;
 //   • the POS — what the till actually CHARGED, read from the banked sale lines (never the till's code). A line lowered at
-//     the till with a manager's approval (PF-07) is an approved override, not a mismatch.
+//     the till with a manager's approval (PF-07) is an approved override, not a mismatch. Unlike a label, a sale is not
+//     something that "keeps showing": NEW-9 judges EACH sale line against the price of record IN FORCE AT ITS OWN
+//     committedAt. A correct sale made before a price change is never a mismatch; a till exception is open only while the
+//     latest sales keep disagreeing with the price of their own moment, and is never carried past a change in the price
+//     of record that came after the last sale (the next sale is the evidence of what the till charges now).
 //
 // For each (product, surface) the surface's price is a step function of time, and so is the price of record; an exception
 // is OPEN when they differ now, and it is open SINCE the earliest moment from which they have differed without a break.
@@ -178,6 +182,29 @@ export function reconcilePriceIntegrity(input: {
     for (const [surface, raw] of surfaces) {
       const pts = [...raw].sort((a, b) => a.at - b.at);
       const latest = pts[pts.length - 1]!;
+      if (surface === 'pos') {
+        // NEW-9: each sale line against the price of record at ITS OWN moment.
+        const wrongAtItsTime = (p: Point): boolean => { const rec = recordAt(productId, p.at); return rec !== null && rec !== p.priceMinor; };
+        if (!wrongAtItsTime(latest)) continue;
+        // Not carried forward: a change in the price of record after the last sale ends what that sale can say.
+        if (recordChanges.some((t) => t > latest.at)) continue;
+        let first = pts.length - 1;
+        while (first > 0 && wrongAtItsTime(pts[first - 1]!)) first -= 1;
+        const since = pts[first]!.at;
+        const recordAtSale = recordAt(productId, latest.at)!;
+        const diff = latest.priceMinor - recordAtSale;
+        const kind: PriceExceptionKind = diff > 0 ? 'charged_above_record' : 'charged_below_record';
+        const ageMinutes = Math.floor((asAtMs - since) / MINUTE_MS);
+        const ageDays = Math.floor((asAtMs - since) / DAY_MS);
+        exceptions.push({
+          productId, surface, kind, recordMinor: recordAtSale, surfaceMinor: latest.priceMinor, differenceMinor: diff,
+          openSince: new Date(since).toISOString(), ageMinutes, ageDays, band: bandOf(ageDays, bands), evidence: latest.evidence,
+          detail: kind === 'charged_above_record'
+            ? `${productId}: the till charged ${rupees(latest.priceMinor)} when the price of record was ${rupees(recordAtSale)} — customers paid more than the shop's own price`
+            : `${productId}: the till charged ${rupees(latest.priceMinor)} when the price of record was ${rupees(recordAtSale)} — margin lost at the till`,
+        });
+        continue;
+      }
       if (latest.priceMinor === recordNow) continue;
       // Walk back over every moment the state could change; the exception is open since the earliest moment from which
       // the surface's price (its latest evidence at that moment) has differed from the price of record without a break.
@@ -189,9 +216,7 @@ export function reconcilePriceIntegrity(input: {
         if (rec !== null && shown !== rec) since = t; else break;
       }
       const diff = latest.priceMinor - recordNow;
-      const kind: PriceExceptionKind = surface === 'pos'
-        ? (diff > 0 ? 'charged_above_record' : 'charged_below_record')
-        : (diff < 0 ? 'shown_below_record' : 'shown_above_record');
+      const kind: PriceExceptionKind = diff < 0 ? 'shown_below_record' : 'shown_above_record';
       const ageMinutes = Math.floor((asAtMs - since) / MINUTE_MS);
       const ageDays = Math.floor((asAtMs - since) / DAY_MS);
       exceptions.push({
@@ -201,11 +226,7 @@ export function reconcilePriceIntegrity(input: {
         ...(latest.deviceId === undefined ? {} : { deviceId: latest.deviceId }),
         detail: kind === 'shown_below_record'
           ? `${productId}: the ${WORDS[surface]} shows ${rupees(latest.priceMinor)} and the price of record is ${rupees(recordNow)} — the shown price is what the customer was offered; honour it and fix the ${WORDS[surface]}`
-          : kind === 'charged_above_record'
-            ? `${productId}: the till charged ${rupees(latest.priceMinor)} and the price of record is ${rupees(recordNow)} — customers paid more than the shop's own price`
-            : kind === 'charged_below_record'
-              ? `${productId}: the till charged ${rupees(latest.priceMinor)} and the price of record is ${rupees(recordNow)} — margin lost at the till`
-              : `${productId}: the ${WORDS[surface]} shows ${rupees(latest.priceMinor)} and the price of record is ${rupees(recordNow)}`,
+          : `${productId}: the ${WORDS[surface]} shows ${rupees(latest.priceMinor)} and the price of record is ${rupees(recordNow)}`,
       });
     }
   }
