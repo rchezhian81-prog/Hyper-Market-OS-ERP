@@ -257,10 +257,22 @@ screen is served to a device that has not enrolled.
    (`till/start-till.sh till-pin --user <their id> --by <administrator>`, shown once, kept nowhere), and a role in the
    store setup that gives them the job: warehouse `inventory.movement.append`, picking `fulfilment.pack.record`, delivery
    `delivery.attempt.record`. The screen then opens as THAT person and everything they do is recorded as them. The bar
-   at the top says **Signed in: <name>** with a **Sign out** button. Handing the phone over: the next person signs in —
-   that signs the first person out. Their work still waiting on the phone stays theirs and is still taken for twelve
-   hours. A wrong PIN counts toward the same lock as the till; a leaver (role removed, or PIN withdrawn) cannot sign in,
-   and a phone signed in as them stops sending at once.
+   at the top says **Signed in: <name>** with a **Sign out** button, and under it how long the sign-in has left
+   (*Sign-in ends in 3 h 12 min · உள்நுழைவு முடிய 3 மணி 12 நிமிடம்*).
+   **Handing the phone over (OB-184 "A", owner, 17 Oct 2026): ALWAYS press Sign out · வெளியேறு before you hand the
+   phone to anyone, or put it down at the end of your work.** Then the next person signs in with their own staff ID and
+   PIN. Never work on a phone that shows somebody else's name — sign them out and sign in as yourself. (If the next
+   person signs in without the first signing out, that still signs the first person out.)
+   **A phone sign-in ends by itself after four hours** (a till's lasts the shift, as before). When it ends, the bar
+   turns red and says *Your sign-in has ended. Sign out and sign in again · உங்கள் உள்நுழைவு முடிந்தது*. Stop, press
+   Sign out, and sign in again before scanning anything more: the phone hands nothing to the store computer until
+   somebody signs in, and a scan made after the end is no longer stamped as yours — if somebody else then signs in on
+   that phone, head office marks it for the manager to check. Do not scan the same item twice. Work done BEFORE the
+   four hours that is still waiting on the phone stays the person's and is still taken for twelve hours after their
+   sign-in ended (OB-185); later than that it is refused with the reason on the phone, never silently lost. A wrong PIN counts toward the same lock as the till; a leaver (role removed, or PIN
+   withdrawn) cannot sign in, and a phone signed in as them stops sending at once.
+   *To check in the store:* sign in on a phone and see the bar say about four hours; press Sign out — the phone goes
+   back to the sign-in page and nobody's name is shown.
 5. **Check it took:** the boot log line `handheld <deviceId> (warehouse) handed over N record(s)` appears after the
    first scan; on the handheld the list **"Sent from this handheld"** shows each scan and where it is —
    *saved on this handheld* → *with the store computer* → *posted at head office* (or *refused*, with the reason).

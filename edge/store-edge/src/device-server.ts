@@ -37,7 +37,7 @@ import {
 } from '../../../packages/sync/src/device-relay';
 import type { DeviceEnrolments, PackDevice } from './device-enrolments';
 import type { LaneSyncStatus } from './sync-status';
-import type { CheckOutcome, SignInOutcome, StampVerdict } from './till-operators';
+import { PHONE_SESSION_HOURS, type CheckOutcome, type SignInOutcome, type StampVerdict } from './till-operators';
 import type { SignInStamp } from '../../../packages/sync/src/sign-in-stamp';
 import type { DomainEvent } from '../../../packages/contracts/src/event';
 import {
@@ -54,9 +54,9 @@ export const DEVICE_SYNC_STATUS_ROUTE = '/lane/sync-status';
 /** DF-3-c (OB-30 "A"): the person holding the phone signs in here with their staff ID and the till PIN, and out again. */
 export const PHONE_SIGN_IN_ROUTE = '/device/sign-in';
 export const PHONE_SIGN_OUT_ROUTE = '/device/sign-out';
-/** The phone holder's session: HttpOnly, SameSite=Strict, the box keeps only its hash. Twelve hours, like a till shift. */
+/** The phone holder's session: HttpOnly, SameSite=Strict, the box keeps only its hash. Four hours, as the sign-in (OB-184). */
 export const OPERATOR_COOKIE = 'sre_operator';
-const OPERATOR_COOKIE_SECONDS = 12 * 3600;
+const OPERATOR_COOKIE_SECONDS = PHONE_SESSION_HOURS * 3600;
 
 /**
  * Who is holding the phone (DF-3-c · OB-30 "A"): the box's till register, addressed by the DEVICE. Absent → nobody can
@@ -454,7 +454,7 @@ export function startDeviceServer(input: {
       const snap = input.snapshot();
       // OB-180: the sign-in this page's records are stamped under — its reference and key, and the box's clock now.
       const stamping = input.operators!.stampFor(operatorToken, auth.deviceId);
-      const page = withPhoneHolderStrip(body.toString('utf8'), phoneHolderStrip({ displayName: holder.displayName, signOutAction: `${PHONE_SIGN_OUT_ROUTE}?screen=${screen}` }));
+      const page = withPhoneHolderStrip(body.toString('utf8'), phoneHolderStrip({ displayName: holder.displayName, signOutAction: `${PHONE_SIGN_OUT_ROUTE}?screen=${screen}`, expiresAt: holder.expiresAt, now: input.now() }));
       send(res, 200, type, injectPayload(page, GLOBAL_FOR[route.screen], asPhoneHolder(screen, payloadFor(route.screen, snap, holder.userId), holder.userId), {
         catalogueFreshness: catalogueFreshness(snap),
         // Same origin: the shell's drain and badge post to `/lane/…` on THIS socket, under the device's cookie.

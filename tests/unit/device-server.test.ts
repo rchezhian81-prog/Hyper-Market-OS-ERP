@@ -321,7 +321,7 @@ describe('the device socket', () => {
     const form = await fetch(`${base}/device/sign-in?screen=warehouse`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', cookie: deviceCookie }, body: new URLSearchParams({ staffId: 'u-worker', pin: pinOf('u-worker') }).toString(), redirect: 'manual' });
     expect(form.status).toBe(303);
     expect(form.headers.get('location')).toBe('/warehouse/');
-    expect(form.headers.get('set-cookie')).toMatch(/^sre_operator=[^;]+; Path=\/; HttpOnly; SameSite=Strict; Max-Age=43200$/);
+    expect(form.headers.get('set-cookie')).toMatch(/^sre_operator=[^;]+; Path=\/; HttpOnly; SameSite=Strict; Max-Age=14400$/);
     const cookie = `${deviceCookie}; ${cookieHeader(form.headers.get('set-cookie')!)}`;
     // The screen names the signed-in person and shows who is holding the phone.
     const html = await (await fetch(`${base}/warehouse/`, { headers: { accept: 'text/html', cookie } })).text();

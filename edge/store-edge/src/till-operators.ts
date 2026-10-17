@@ -11,7 +11,7 @@
 //   • five wrong PINs for one staff ID in fifteen minutes lock that ID for fifteen minutes; twenty refusals on one lane
 //     lock that lane's sign-in for fifteen minutes;
 //   • success opens a SHIFT SESSION bound to the lane: 32 random bytes the till keeps for its tab, of which this box
-//     keeps only the hash, ending after twelve hours or at sign-out.
+//     keeps only the hash, ending after twelve hours or at sign-out. A PHONE's sign-in ends after four hours (OB-184).
 //
 // Every money write the till makes is then checked here (`check`): a live session, on this lane, for a person who STILL
 // holds till authority in the current pack — a leaver or a removed role ends the session at the next write.
@@ -41,6 +41,12 @@ export type StampVerdict =
 /** The permission that makes a person a till operator — the same one head office re-checks on every synced sale. */
 export const TILL_AUTHORITY = 'pos.sale.sync';
 export const SESSION_HOURS = 12;
+/**
+ * OB-184 "A" (owner, 17 Oct 2026, "Sign out + 4-hour limit"): a phone (handheld) sign-in lasts at most four hours, so a
+ * phone left on a shelf or handed over without signing out stops working as the last person by itself. Tills keep
+ * `SESSION_HOURS`. A phone's session is told apart by its lane: the device lane (`DEVICE_LANE_PREFIX`), never a till's.
+ */
+export const PHONE_SESSION_HOURS = 4;
 const WINDOW_MS = 15 * 60 * 1000;
 const MAX_WRONG_PER_PERSON = 5;
 const MAX_REFUSED_PER_LANE = 20;
@@ -59,6 +65,20 @@ export type SignInRefusal = 'wrong_staff_id_or_pin' | 'locked' | 'no_till_author
  */
 export const DEVICE_LANE_PREFIX = 'device:';
 export const deviceLaneOf = (deviceId: string): string => `${DEVICE_LANE_PREFIX}${deviceId}`;
+const isPhoneLane = (laneId: string): boolean => laneId.startsWith(DEVICE_LANE_PREFIX);
+
+/** How long a sign-in on this lane lasts: four hours on a phone (OB-184), the shift on a till. */
+export const sessionHoursFor = (laneId: string): number => (isPhoneLane(laneId) ? PHONE_SESSION_HOURS : SESSION_HOURS);
+
+/**
+ * OB-184: when a sign-in recorded in the log ends. A phone sign-in written before the four-hour limit (with a twelve-hour
+ * expiry) is read as ending four hours after it began — the log line is kept as written (hard rule #2), only read shorter.
+ */
+function expiryOf(laneId: string, at: string, recorded: string): string {
+  if (!isPhoneLane(laneId)) return recorded;
+  const cap = Date.parse(at) + PHONE_SESSION_HOURS * 3_600_000;
+  return Number.isFinite(cap) && cap < Date.parse(recorded) ? new Date(cap).toISOString() : recorded;
+}
 
 /** The words a cashier reads, per refusal — the screen shows these as they are. */
 const WORDS: Readonly<Record<SignInRefusal, string>> = {
@@ -188,8 +208,9 @@ export class TillOperators {
 
   private fold(r: LogRecord): void {
     if (r.kind === 'signed_in') {
-      this.sessions.set(r.tokenHash, { tokenHash: r.tokenHash, userId: r.userId, laneId: r.laneId, via: r.via, at: r.at, expiresAt: r.expiresAt, authority: r.authority ?? TILL_AUTHORITY });
-      this.spans.set(r.tokenHash, { userId: r.userId, laneId: r.laneId, at: r.at, expiresAt: r.expiresAt, endedAt: null });
+      const expiresAt = expiryOf(r.laneId, r.at, r.expiresAt);
+      this.sessions.set(r.tokenHash, { tokenHash: r.tokenHash, userId: r.userId, laneId: r.laneId, via: r.via, at: r.at, expiresAt, authority: r.authority ?? TILL_AUTHORITY });
+      this.spans.set(r.tokenHash, { userId: r.userId, laneId: r.laneId, at: r.at, expiresAt, endedAt: null });
       this.byStampRef.set(this.stampRefOf(r.tokenHash), r.tokenHash);
     } else if (r.kind === 'signed_out') {
       this.sessions.delete(r.tokenHash);
@@ -230,7 +251,7 @@ export class TillOperators {
   private async open(userId: string, laneId: string, via: SignInVia, nowMs: number, authority: string = TILL_AUTHORITY): Promise<SignInOutcome> {
     const token = randomBytes(32).toString('base64url');
     const at = new Date(nowMs).toISOString();
-    const expiresAt = new Date(nowMs + SESSION_HOURS * 3_600_000).toISOString();
+    const expiresAt = new Date(nowMs + sessionHoursFor(laneId) * 3_600_000).toISOString();
     await this.record({ kind: 'signed_in', at, userId, laneId, via, tokenHash: sha256(token), expiresAt, ...(authority === TILL_AUTHORITY ? {} : { authority }) });
     return { signedIn: true, token, userId, displayName: this.displayNameOf(userId), expiresAt, via };
   }
@@ -362,6 +383,11 @@ export class TillOperators {
    * OB-180: is this the stamp of a sign-in this box made, on THIS lane (phone), for the person it names, over THIS record,
    * made while that sign-in was valid (from signing in to signing out, being replaced, or expiry — the box's own log)?
    * Any other answer is a refusal with its reason; nothing here ever falls back to sealing for somebody else.
+   *
+   * The clock slack (`STAMP_CLOCK_SLACK_MS`) covers the start, a sign-out or replacement the phone was not told of, and
+   * the box's own "now". The EXPIRY is a hard edge (OB-184): the phone's page knows it and stops stamping at it, on the
+   * same box clock it stamps by (`phoneStamper`), so an honest phone never stamps at or past it — a phone sign-in made at
+   * 08:00 seals a record stamped 11:59 and refuses one stamped 12:01.
    */
   verifyStamp(stamp: SignInStamp, event: DomainEvent, laneId: string): StampVerdict {
     const tokenHash = this.byStampRef.get(stamp.ref);
@@ -375,9 +401,10 @@ export class TillOperators {
       return { ok: false, reason: 'the record\'s sign-in stamp does not match the record — it was altered or not made on this phone\'s sign-in' };
     }
     const made = Date.parse(stamp.madeAt);
-    const end = Math.min(Date.parse(span.expiresAt), span.endedAt === null ? Number.POSITIVE_INFINITY : Date.parse(span.endedAt));
+    const expiry = Date.parse(span.expiresAt);
+    const end = Math.min(expiry, span.endedAt === null ? Number.POSITIVE_INFINITY : Date.parse(span.endedAt));
     const latest = Math.min(end, Date.parse(this.deps.now()));
-    if (made < Date.parse(span.at) - STAMP_CLOCK_SLACK_MS || made > latest + STAMP_CLOCK_SLACK_MS) {
+    if (made < Date.parse(span.at) - STAMP_CLOCK_SLACK_MS || made > latest + STAMP_CLOCK_SLACK_MS || made >= expiry) {
       return { ok: false, reason: `the record was stamped at ${stamp.madeAt}, outside ${stamp.userId}'s sign-in on this phone (from ${span.at}${Number.isFinite(end) ? ` to ${new Date(end).toISOString()}` : ''})` };
     }
     return { ok: true, userId: span.userId, signedInAt: span.at };

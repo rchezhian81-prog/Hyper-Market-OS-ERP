@@ -10,7 +10,8 @@
 //     same guess limits, same fsync'd log. No network: the phones and the box keep working with head office unreachable.
 //   • The person must hold the job's permission in the CURRENT store setup — the same permission head office re-checks on
 //     that job's records — so a leaver or a removed role is refused at sign-in and at the next record.
-//   • One person per phone at a time. Signing in ends whoever was signed in on that phone.
+//   • One person per phone at a time. Signing in ends whoever was signed in on that phone. A phone sign-in ends by
+//     itself after four hours (OB-184); the bar at the top of the screen says how long it has left, and when it has ended.
 //   • The served screen is readdressed to the signed-in person, so the phone stamps THEM on every record it makes.
 //   • Every record a phone hands over must name a person who held THAT phone — signed in now, or within the last shift (the
 //     box's own log and clock decide; never the phone's clock). Anything else is REFUSED with the reason — visible on the
@@ -49,8 +50,11 @@ export const HANDHELD_PERSON_FIELD: Readonly<Record<string, string>> = Object.fr
 });
 
 /**
- * How long after a person stops holding a phone their queued work is still taken from it: a shift. Work done offline on
- * the phone reaches the box when the wifi comes back — perhaps after the next person signed in — and is still theirs.
+ * How long after a person stops holding a phone their queued work is still taken from it: a shift (OB-185 "A", owner, 17
+ * Oct 2026, "12 hours"). Work done offline on the phone reaches the box when the wifi comes back — perhaps after the next
+ * person signed in — and is still theirs. Counted from when the sign-in ENDED (signed out, replaced, or its four-hour
+ * limit, OB-184), so the two rules never meet: the four hours bound when work may be MADE under a sign-in, the twelve
+ * hours how late it may still ARRIVE. Later than that it is refused with the reason, never silently lost.
  */
 export const PHONE_HANDOVER_WINDOW_MS = 12 * 3_600_000;
 
@@ -137,11 +141,45 @@ export function phoneSignInPage(input: { readonly screen: HandheldSource; readon
 </main>${FORGET_KEPT_PAGES_SCRIPT}</body></html>`;
 }
 
-/** The strip at the top of a phone screen: who is signed in, and the one button to hand the phone over. */
-export function phoneHolderStrip(input: { readonly displayName: string; readonly signOutAction: string }): string {
-  return `<form method="post" action="${escapeHtml(input.signOutAction)}" data-phone-holder style="margin:0;display:flex;gap:12px;align-items:center;justify-content:space-between;padding:8px 12px;background:#1e293b;color:#f8fafc;font:15px/1.3 system-ui,sans-serif">`
+/**
+ * OB-184: how long a phone sign-in has left, in the strip's words — English and Tamil — or that it has ended. The same
+ * words the page's own script writes as the minutes pass (`SIGN_IN_LEFT_SCRIPT` mirrors this; a test binds the two).
+ */
+export function signInLeftWords(remainingMs: number): { readonly ended: boolean; readonly text: string } {
+  if (!Number.isFinite(remainingMs) || remainingMs <= 0) {
+    return { ended: true, text: 'Your sign-in has ended. Sign out and sign in again. · உங்கள் உள்நுழைவு முடிந்தது. வெளியேறி மீண்டும் உள்நுழைக.' };
+  }
+  const minutes = Math.ceil(remainingMs / 60_000);
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return { ended: false, text: `Sign-in ends in ${h} h ${m} min · உள்நுழைவு முடிய ${h} மணி ${m} நிமிடம்` };
+}
+
+/**
+ * The strip's own script: re-says the time left every half minute from what the box injected (`window.phoneSignIn`,
+ * on the box's clock) and, for a page kept for offline use, when it was kept (`window.shellCachedAt`) — the same reading
+ * of the clock the phone stamps by, so the strip says "ended" exactly when the phone stops stamping.
+ */
+const SIGN_IN_LEFT_SCRIPT = '<script>(function(){var d=document,w=window,t0=Date.now();function say(){var el=d.querySelector("[data-sign-in-left]");var s=w.phoneSignIn;if(!el||!s)return;'
+  + 'var at=typeof w.shellCachedAt==="string"&&isFinite(Date.parse(w.shellCachedAt))?Date.parse(w.shellCachedAt):t0;var off=Date.parse(s.boxNow)-at;if(!isFinite(off))off=0;'
+  + 'var left=Date.parse(s.expiresAt)-(Date.now()+off);var txt;if(!isFinite(left)||left<=0){txt="Your sign-in has ended. Sign out and sign in again. \u00b7 உங்கள் உள்நுழைவு முடிந்தது. வெளியேறி மீண்டும் உள்நுழைக.";el.setAttribute("data-ended","");el.setAttribute("role","alert");el.style.background="#7f1d1d";el.style.color="#fee2e2";}'
+  + 'else{var mins=Math.ceil(left/60000),h=Math.floor(mins/60),m=mins%60;txt="Sign-in ends in "+h+" h "+m+" min \u00b7 உள்நுழைவு முடிய "+h+" மணி "+m+" நிமிடம்";}if(el.textContent!==txt)el.textContent=txt;}'
+  + 'if(d.readyState==="loading")d.addEventListener("DOMContentLoaded",say);else say();setInterval(say,30000);})();</script>';
+
+const LEFT_STYLE = 'flex-basis:100%;margin:0;padding:4px 8px;border-radius:8px;font-size:14px';
+const ENDED_STYLE = `${LEFT_STYLE};background:#7f1d1d;color:#fee2e2`;
+
+/**
+ * The strip at the top of a phone screen: who is signed in, the one button to hand the phone over, and (OB-184) how long
+ * the sign-in has left — or, once it has ended, that it has.
+ */
+export function phoneHolderStrip(input: { readonly displayName: string; readonly signOutAction: string; readonly expiresAt?: string; readonly now?: string }): string {
+  const left = input.expiresAt === undefined ? null : signInLeftWords(Date.parse(input.expiresAt) - Date.parse(input.now ?? new Date().toISOString()));
+  return `<form method="post" action="${escapeHtml(input.signOutAction)}" data-phone-holder style="margin:0;display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;justify-content:space-between;padding:8px 12px;background:#1e293b;color:#f8fafc;font:15px/1.3 system-ui,sans-serif">`
     + `<span>Signed in: <strong>${escapeHtml(input.displayName)}</strong></span>`
-    + `<button type="submit" style="font:inherit;font-weight:700;min-height:48px;padding:0 14px;border:0;border-radius:10px;background:#fbbf24;color:#1c1917">Sign out · வெளியேறு</button></form>`;
+    + `<button type="submit" style="font:inherit;font-weight:700;min-height:48px;padding:0 14px;border:0;border-radius:10px;background:#fbbf24;color:#1c1917">Sign out · வெளியேறு</button>`
+    + (left === null ? '' : `<p data-sign-in-left${left.ended ? ' data-ended role="alert"' : ''} style="${left.ended ? ENDED_STYLE : LEFT_STYLE}">${escapeHtml(left.text)}</p>${SIGN_IN_LEFT_SCRIPT}`)
+    + `</form>`;
 }
 
 /** Put the strip at the top of the page body (after the opening tag). A page with no body tag is served as it is. */
