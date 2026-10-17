@@ -41,7 +41,7 @@ import { PHONE_SESSION_HOURS, type CheckOutcome, type SignInOutcome, type StampV
 import type { SignInStamp } from '../../../packages/sync/src/sign-in-stamp';
 import type { DomainEvent } from '../../../packages/contracts/src/event';
 import {
-  HANDHELD_AUTHORITY, asPhoneHolder, personNamedBy, phoneHolderStrip, phoneSignInPage, withPhoneHolderStrip,
+  HANDHELD_AUTHORITY, SIGN_IN_ENDED_MESSAGE, asPhoneHolder, personNamedBy, phoneHolderStrip, phoneSignInPage, signInLockOf, withPhoneHolderStrip,
 } from './handheld-sign-in';
 
 /** Loopback unless a deployment names the shop's address explicitly — the device socket never widens by itself. */
@@ -325,7 +325,8 @@ export function startDeviceServer(input: {
       if (pathname === PHONE_SIGN_IN_ROUTE) {
         const screen = phoneScreenOf(url.searchParams.get('screen'));
         const action = `${PHONE_SIGN_IN_ROUTE}?screen=${screen}`;
-        if (req.method === 'GET') { send(res, 200, TYPES['.html']!, phoneSignInPage({ screen, action, message: null })); return; }
+        // OB-186: a screen that locked itself at the end of its sign-in comes here marked `ended=1`, and is told why.
+        if (req.method === 'GET') { send(res, 200, TYPES['.html']!, phoneSignInPage({ screen, action, message: url.searchParams.get('ended') === '1' ? SIGN_IN_ENDED_MESSAGE : null })); return; }
         if (req.method !== 'POST') { send(res, 405, 'text/plain; charset=utf-8', 'sign-in is a POST'); return; }
         const wantsJson = (req.headers.accept ?? '').includes('application/json');
         const fields = await readFormOrJson(req, 4096);
@@ -454,7 +455,7 @@ export function startDeviceServer(input: {
       const snap = input.snapshot();
       // OB-180: the sign-in this page's records are stamped under — its reference and key, and the box's clock now.
       const stamping = input.operators!.stampFor(operatorToken, auth.deviceId);
-      const page = withPhoneHolderStrip(body.toString('utf8'), phoneHolderStrip({ displayName: holder.displayName, signOutAction: `${PHONE_SIGN_OUT_ROUTE}?screen=${screen}`, expiresAt: holder.expiresAt, now: input.now() }));
+      const page = withPhoneHolderStrip(body.toString('utf8'), phoneHolderStrip({ displayName: holder.displayName, signOutAction: `${PHONE_SIGN_OUT_ROUTE}?screen=${screen}`, expiresAt: holder.expiresAt, now: input.now(), lockTo: signInLockOf(screen, PHONE_SIGN_IN_ROUTE) }));
       send(res, 200, type, injectPayload(page, GLOBAL_FOR[route.screen], asPhoneHolder(screen, payloadFor(route.screen, snap, holder.userId), holder.userId), {
         catalogueFreshness: catalogueFreshness(snap),
         // Same origin: the shell's drain and badge post to `/lane/…` on THIS socket, under the device's cookie.

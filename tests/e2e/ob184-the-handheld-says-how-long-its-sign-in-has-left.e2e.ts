@@ -15,8 +15,10 @@ import { signInOnPhonePage } from '../support/phone-sign-in-page';
  *
  * A real headless Chromium as the dock phone. u-worker signs in; the bar at the top of the screen says how long the
  * sign-in has left, in English and Tamil — four hours. The phone's clock is then wound on: at 3 h 58 m the bar says two
- * minutes, and a scan is still stamped with the sign-in; past four hours the bar says, as an alert, that the sign-in has
- * ended, and a scan made then is kept on the phone UNSTAMPED (the store computer will not seal it for anybody). The
+ * minutes, and a scan is still stamped with the sign-in; past four hours — OB-186 "A" ("Lock the screen") — the screen
+ * goes to the sign-in page by itself, so no scan can be made on the ended sign-in, and the stamped scan is still kept on
+ * the phone (the phone's own stamper stamping nothing after the end is tests/unit/ob184-*.test.ts; the lock in full,
+ * online and offline, is tests/e2e/ob186-*.e2e.ts). The
  * phone cannot reach the box meanwhile, so nothing is handed over. Skips where no browser binary is present. Synthetic data.
  */
 
@@ -56,7 +58,7 @@ describe.skipIf(!HAVE_BROWSER)('OB-184: the handheld says how long its sign-in h
     await page.click('#banner-ok');
   };
 
-  it('four hours, counting down; at 3 h 58 m still stamped; past four hours "ended" and nothing stamped', async () => {
+  it('four hours, counting down; at 3 h 58 m still stamped; past four hours the screen locks to the sign-in page', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'sre-ob184-e2e-'));
     dirs.push(dir);
     const packFile = join(dir, 'store-pack.json');
@@ -106,14 +108,14 @@ describe.skipIf(!HAVE_BROWSER)('OB-184: the handheld says how long its sign-in h
     await expect.poll(async () => (await queued(page)).length, { timeout: 10_000 }).toBe(1);
     expect((await queued(page))[0]).toMatchObject({ event: { type: 'ReceivingScanned' }, stamp: { userId: 'u-worker' } });
 
-    // ── Past four hours: the bar says, as an alert, the sign-in has ended; a scan now is kept UNSTAMPED. ────────────────
+    // ── Past four hours (OB-186): the screen goes to the sign-in page by itself; nothing more can be scanned; the stamped
+    //    scan is still kept on the phone. ─────────────────────────────────────────────────────────────────────────────
     await page.clock.fastForward('00:03:00');
-    await expect.poll(() => left(page), { timeout: 10_000 }).toBe('Your sign-in has ended. Sign out and sign in again. · உங்கள் உள்நுழைவு முடிந்தது. வெளியேறி மீண்டும் உள்நுழைக.');
-    expect(await page.getAttribute('[data-sign-in-left]', 'role')).toBe('alert');
-    await scanIce(page);
-    await expect.poll(async () => (await queued(page)).length, { timeout: 10_000 }).toBe(2);
-    const after = (await queued(page))[1]!;
-    expect(after.event.type).toBe('ReceivingScanned');
-    expect(after.stamp).toBeUndefined();
+    await page.waitForFunction(() => (globalThis as unknown as { location: { pathname: string } }).location.pathname === '/device/sign-in', undefined, { timeout: 10_000 });
+    await page.waitForSelector('input[name="staffId"]');
+    expect(await page.$('#receive')).toBeNull();
+    expect(await page.$('[data-phone-holder]')).toBeNull();
+    expect(await queued(page)).toHaveLength(1);
+    expect((await queued(page))[0]).toMatchObject({ event: { type: 'ReceivingScanned' }, stamp: { userId: 'u-worker' } });
   });
 });

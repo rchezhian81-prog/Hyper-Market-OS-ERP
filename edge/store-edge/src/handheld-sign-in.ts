@@ -159,26 +159,55 @@ export function signInLeftWords(remainingMs: number): { readonly ended: boolean;
  * The strip's own script: re-says the time left every half minute from what the box injected (`window.phoneSignIn`,
  * on the box's clock) and, for a page kept for offline use, when it was kept (`window.shellCachedAt`) — the same reading
  * of the clock the phone stamps by, so the strip says "ended" exactly when the phone stops stamping.
+ *
+ * OB-186 "A" (owner, 17 Oct 2026, "Lock the screen"): when the sign-in has ended the screen LOCKS — it goes to the phone's
+ * sign-in page by itself (`lock`). It never asks the network: it replaces the whole screen with the sign-in page the box
+ * packed into this strip (`L.page`, byte for byte the page the box serves at `L.url`) and the address becomes the sign-in
+ * page's — so it works the same on a page opened from the phone's own cache with the wifi down as on a live one, and a
+ * box that drops out at that very moment cannot leave the phone on an error page. Replacing the document removes the old
+ * screen with its buttons and key listeners, so nothing more can be scanned. The sign-in page forgets the kept handheld
+ * pages (OB-180), and nothing in the phone's queue is touched: it stays queued and is handed over under the next sign-in
+ * (signing in there is an ordinary form post to the box, which then opens the screen afresh). `L` is `null` for a strip
+ * with nothing to lock to (it then only says "ended", as before).
  */
-const SIGN_IN_LEFT_SCRIPT = '<script>(function(){var d=document,w=window,t0=Date.now();function say(){var el=d.querySelector("[data-sign-in-left]");var s=w.phoneSignIn;if(!el||!s)return;'
+const signInLeftScript = (lock: string): string => '<script>(function(){var d=document,w=window,t0=Date.now(),L=' + lock + ',locked=false;'
+  + 'function lock(){if(L===null||locked)return;locked=true;try{w.history.replaceState(null,"",L.url);}catch(e){}d.open();d.write(L.page);d.close();}'
+  + 'function say(){var el=d.querySelector("[data-sign-in-left]");var s=w.phoneSignIn;if(!el||!s)return;'
   + 'var at=typeof w.shellCachedAt==="string"&&isFinite(Date.parse(w.shellCachedAt))?Date.parse(w.shellCachedAt):t0;var off=Date.parse(s.boxNow)-at;if(!isFinite(off))off=0;'
   + 'var left=Date.parse(s.expiresAt)-(Date.now()+off);var txt;if(!isFinite(left)||left<=0){txt="Your sign-in has ended. Sign out and sign in again. \u00b7 உங்கள் உள்நுழைவு முடிந்தது. வெளியேறி மீண்டும் உள்நுழைக.";el.setAttribute("data-ended","");el.setAttribute("role","alert");el.style.background="#7f1d1d";el.style.color="#fee2e2";}'
-  + 'else{var mins=Math.ceil(left/60000),h=Math.floor(mins/60),m=mins%60;txt="Sign-in ends in "+h+" h "+m+" min \u00b7 உள்நுழைவு முடிய "+h+" மணி "+m+" நிமிடம்";}if(el.textContent!==txt)el.textContent=txt;}'
+  + 'else{var mins=Math.ceil(left/60000),h=Math.floor(mins/60),m=mins%60;txt="Sign-in ends in "+h+" h "+m+" min \u00b7 உள்நுழைவு முடிய "+h+" மணி "+m+" நிமிடம்";}if(el.textContent!==txt)el.textContent=txt;if(!isFinite(left)||left<=0)lock();}'
   + 'if(d.readyState==="loading")d.addEventListener("DOMContentLoaded",say);else say();setInterval(say,30000);})();</script>';
+
+/** OB-186: the words on the sign-in page the screen locks to. */
+export const SIGN_IN_ENDED_MESSAGE = 'Your sign-in has ended (4 hours). Sign in again — your saved work is kept. · உங்கள் உள்நுழைவு முடிந்தது (4 மணி). மீண்டும் உள்நுழைக — சேமித்த பணி பாதுகாப்பாக உள்ளது.';
+
+/**
+ * OB-186: what the strip locks to — the sign-in page's address for this job (marked `ended=1`, so the box says why), and
+ * the sign-in page itself, exactly as the box serves it there, packed so it can be shown with no box in reach.
+ */
+export function signInLockOf(screen: HandheldSource, signInRoute: string): { readonly url: string; readonly page: string } {
+  const action = `${signInRoute}?screen=${screen}`;
+  return { url: `${action}&ended=1`, page: phoneSignInPage({ screen, action, message: SIGN_IN_ENDED_MESSAGE }) };
+}
+
+/** The lock as a script literal that cannot end the script it sits in (`<` and the two JS line breaks escaped). */
+const lockLiteral = (lock: { readonly url: string; readonly page: string } | undefined): string =>
+  lock === undefined ? 'null' : JSON.stringify(lock).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
 
 const LEFT_STYLE = 'flex-basis:100%;margin:0;padding:4px 8px;border-radius:8px;font-size:14px';
 const ENDED_STYLE = `${LEFT_STYLE};background:#7f1d1d;color:#fee2e2`;
 
 /**
  * The strip at the top of a phone screen: who is signed in, the one button to hand the phone over, and (OB-184) how long
- * the sign-in has left — or, once it has ended, that it has.
+ * the sign-in has left — or, once it has ended, that it has; and (OB-186, `lockTo` from `signInLockOf`) at the end the
+ * screen locks to the sign-in page by itself.
  */
-export function phoneHolderStrip(input: { readonly displayName: string; readonly signOutAction: string; readonly expiresAt?: string; readonly now?: string }): string {
+export function phoneHolderStrip(input: { readonly displayName: string; readonly signOutAction: string; readonly expiresAt?: string; readonly now?: string; readonly lockTo?: { readonly url: string; readonly page: string } }): string {
   const left = input.expiresAt === undefined ? null : signInLeftWords(Date.parse(input.expiresAt) - Date.parse(input.now ?? new Date().toISOString()));
   return `<form method="post" action="${escapeHtml(input.signOutAction)}" data-phone-holder style="margin:0;display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;justify-content:space-between;padding:8px 12px;background:#1e293b;color:#f8fafc;font:15px/1.3 system-ui,sans-serif">`
     + `<span>Signed in: <strong>${escapeHtml(input.displayName)}</strong></span>`
     + `<button type="submit" style="font:inherit;font-weight:700;min-height:48px;padding:0 14px;border:0;border-radius:10px;background:#fbbf24;color:#1c1917">Sign out · வெளியேறு</button>`
-    + (left === null ? '' : `<p data-sign-in-left${left.ended ? ' data-ended role="alert"' : ''} style="${left.ended ? ENDED_STYLE : LEFT_STYLE}">${escapeHtml(left.text)}</p>${SIGN_IN_LEFT_SCRIPT}`)
+    + (left === null ? '' : `<p data-sign-in-left${left.ended ? ' data-ended role="alert"' : ''} style="${left.ended ? ENDED_STYLE : LEFT_STYLE}">${escapeHtml(left.text)}</p>${signInLeftScript(lockLiteral(input.lockTo))}`)
     + `</form>`;
 }
 

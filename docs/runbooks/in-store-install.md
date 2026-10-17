@@ -263,16 +263,20 @@ screen is served to a device that has not enrolled.
    phone to anyone, or put it down at the end of your work.** Then the next person signs in with their own staff ID and
    PIN. Never work on a phone that shows somebody else's name — sign them out and sign in as yourself. (If the next
    person signs in without the first signing out, that still signs the first person out.)
-   **A phone sign-in ends by itself after four hours** (a till's lasts the shift, as before). When it ends, the bar
-   turns red and says *Your sign-in has ended. Sign out and sign in again · உங்கள் உள்நுழைவு முடிந்தது*. Stop, press
-   Sign out, and sign in again before scanning anything more: the phone hands nothing to the store computer until
-   somebody signs in, and a scan made after the end is no longer stamped as yours — if somebody else then signs in on
-   that phone, head office marks it for the manager to check. Do not scan the same item twice. Work done BEFORE the
+   **A phone sign-in ends by itself after four hours** (a till's lasts the shift, as before). **At four hours the phone
+   goes to the sign-in page by itself (OB-186 "A", owner, 17 Oct 2026, "Lock the screen")** — even with the wifi down —
+   and says *Your sign-in has ended (4 hours). Sign in again — your saved work is kept · உங்கள் உள்நுழைவு முடிந்தது*.
+   Nobody can keep scanning on an ended sign-in. Sign in again with your staff ID and PIN (signing in needs the store
+   computer, so if the wifi is down, wait for it to come back). Everything scanned before the four hours is still
+   saved on the phone — nothing is lost — and is handed to the store computer, still recorded as the person who did it,
+   once somebody signs in; do not scan those items again. Work done BEFORE the
    four hours that is still waiting on the phone stays the person's and is still taken for twelve hours after their
    sign-in ended (OB-185); later than that it is refused with the reason on the phone, never silently lost. A wrong PIN counts toward the same lock as the till; a leaver (role removed, or PIN
    withdrawn) cannot sign in, and a phone signed in as them stops sending at once.
    *To check in the store:* sign in on a phone and see the bar say about four hours; press Sign out — the phone goes
-   back to the sign-in page and nobody's name is shown.
+   back to the sign-in page and nobody's name is shown. Leave a phone signed in for four hours (or scan one item, then
+   switch the shop wifi off and wait): at four hours the screen changes to the sign-in page by itself with the red
+   "sign-in has ended" message; sign in again and check the item appears under **"Sent from this handheld"** as sent.
 5. **Check it took:** the boot log line `handheld <deviceId> (warehouse) handed over N record(s)` appears after the
    first scan; on the handheld the list **"Sent from this handheld"** shows each scan and where it is —
    *saved on this handheld* → *with the store computer* → *posted at head office* (or *refused*, with the reason).
