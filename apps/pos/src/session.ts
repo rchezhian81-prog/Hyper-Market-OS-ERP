@@ -21,8 +21,9 @@ import type { CommitOutcome } from '../../../edge/store-edge/src/durability';
 import { makeTradingDayRule, tradingDateOf } from '../../../packages/calendar/src/index';
 import type { SuspendedLine, SuspendedAgeAnswer } from '../../../packages/suspended-sales/src/suspended-bill';
 import { normaliseMobile } from '../../../packages/loyalty/src/mobile';
+import { withoutCardData } from '../../../packages/tender/src/tender-card-data';
 import {
-  tillLineRefusals, tillRuleFlagsOf, scaleEvidence, isWeighedUom, TillRuleRefusedError, TOBACCO_MINIMUM_AGE,
+  tillLineRefusals, tillRuleFlagsOf, scaleEvidence, lineIsWeighed, TillRuleRefusedError, TOBACCO_MINIMUM_AGE,
   type LaneScales, type TillGateContext,
 } from '../../../packages/restricted-sales/src/till-gate';
 
@@ -60,6 +61,18 @@ export interface PosSessionConfig {
    * gate and a recalled held basket read the PACK, not only what the scan said. Absent → only the scan's own flags.
    */
   readonly regulatedFlagsOf?: (productId: string) => Readonly<Record<string, unknown>> | undefined;
+  /**
+   * NEW-2 (B6) — a product's base unit as the lane's signed catalogue pack carries it, by id. Whether a line is WEIGHED is
+   * decided from the pack, not only from the unit a scan or a recalled basket wrote on the line. Absent → the line's unit.
+   */
+  readonly baseUomOf?: (productId: string) => string | undefined;
+}
+
+/** NEW-1 (B19): an offer the till refused to apply because it targets a carry bag — said, never dropped quietly (P-08). */
+export interface RefusedOffer {
+  readonly offerId: string;
+  readonly carryBags: readonly string[];
+  readonly laneMessage: string;
 }
 
 export { TillRuleRefusedError } from '../../../packages/restricted-sales/src/till-gate';
@@ -245,6 +258,7 @@ export class PosSession {
   private state: PosState = 'idle';
   private connection: ConnectionState = 'online';
   private promotions: readonly Promotion[] = [];
+  private refusedOfferList: readonly RefusedOffer[] = [];
   /** The cashier who signed in at this till (SP-4b) — over the configured one, when both exist. */
   private operatorId: string | undefined;
   /** Every answer to the age question for THIS basket, in order (PF-03). Cleared with the basket, kept across hold/recall. */
@@ -299,9 +313,29 @@ export class PosSession {
     return { connection: this.connection, unsentCount: this.outbox.unsentCount() };
   }
 
-  /** Load the approved promotion pack (from the signed local cache — §31). */
+  /**
+   * Load the approved promotion pack (from the signed local cache — §31). NEW-1 (B19): an offer that names a carry bag
+   * among its products is REFUSED here — a bag is a priced line, never given away by an offer — and kept on
+   * `refusedOffers()` so the lane can say so. Head office refuses such an offer when it is defined; this is the till's own
+   * check for a pack built before that, or a product that became a carry bag afterwards.
+   */
   loadPromotions(promotions: readonly Promotion[]): void {
-    this.promotions = promotions;
+    const refused: RefusedOffer[] = [];
+    this.promotions = promotions.filter((p) => {
+      const bags = (p.productIds ?? []).filter((id) => tillRuleFlagsOf(this.config.regulatedFlagsOf?.(id)).carryBag === true);
+      if (bags.length === 0) return true;
+      refused.push({
+        offerId: p.id, carryBags: bags,
+        laneMessage: `Offer ${p.id} names a carry bag (${bags.join(', ')}), so this till does not apply it — a bag is always sold at its price. Tell the manager.`,
+      });
+      return false;
+    });
+    this.refusedOfferList = refused;
+  }
+
+  /** NEW-1 (B19): the offers this till refused to apply because they target a carry bag. */
+  refusedOffers(): readonly RefusedOffer[] {
+    return this.refusedOfferList.slice();
   }
 
   /** Scan an item onto the basket — 1 interaction (design bar). */
@@ -312,9 +346,11 @@ export class PosSession {
     // B6 · B14 · B19 — what the law forbids selling at all is refused FIRST, before any age question: a banned plastic,
     // a thin or free carry bag, a loose cigarette, or weight from a scale whose stamp has lapsed. No override exists.
     const regulatedFlags = input.regulatedFlags ?? this.config.regulatedFlagsOf?.(input.productId);
+    const catalogueUom = this.config.baseUomOf?.(input.productId);
     const refusals = tillLineRefusals({
       productId: input.productId, description: input.description, quantityMinor: input.quantityMinor, uom: input.uom,
       unitPriceMinor: input.unitPrice.minor, ...(regulatedFlags === undefined ? {} : { regulatedFlags }),
+      ...(catalogueUom === undefined ? {} : { catalogueUom }),
     }, this.gateContext(this.nowIso()));
     if (refusals.length > 0) throw new TillRuleRefusedError(refusals);
     // An age-restricted item joins the basket only behind a confirmed answer for at least its age (PF-03). Tobacco needs
@@ -511,12 +547,21 @@ export class PosSession {
     return this.config.regulatedFlagsOf?.(l.productId) ?? l.regulatedFlags;
   }
 
-  private lineRefusals(l: BasketEntry, atIsoUtc: string): ReturnType<typeof tillLineRefusals> {
+  private lineRefusals(l: BasketEntry, atIsoUtc: string, chargedMinor?: number): ReturnType<typeof tillLineRefusals> {
     const regulatedFlags = this.flagsOf(l);
+    const catalogueUom = this.config.baseUomOf?.(l.productId);
     return tillLineRefusals({
       productId: l.productId, description: l.description, quantityMinor: l.quantityMinor, uom: l.uom,
       unitPriceMinor: l.unitPrice.minor, ...(regulatedFlags === undefined ? {} : { regulatedFlags }),
+      ...(chargedMinor === undefined ? {} : { chargedMinor }),
+      ...(catalogueUom === undefined ? {} : { catalogueUom }),
     }, this.gateContext(atIsoUtc));
+  }
+
+  /** Whether a line is sold by weight (B6): its own unit, or its product's unit in the lane's pack (NEW-2). */
+  private weighed(l: Pick<BasketEntry, 'productId' | 'uom'>): boolean {
+    const catalogueUom = this.config.baseUomOf?.(l.productId);
+    return lineIsWeighed({ uom: l.uom, ...(catalogueUom === undefined ? {} : { catalogueUom }) });
   }
 
   /** Price every active line (exact, weighed goods included). */
@@ -673,7 +718,10 @@ export class PosSession {
     // **B6 · B14 · B19, again, at the moment it matters** — before the disk and before the money. A recalled held basket,
     // a scale whose stamp ran out while the basket was open (midnight), a quantity typed in: none reaches a bill.
     const gate = this.gateContext(committedAt);
-    const refused = active.flatMap((l) => this.lineRefusals(l, committedAt));
+    // NEW-1 (B19): each line judged as CHARGED — after the promotion discount attributed to it — so an offer cannot give a
+    // carry bag away free.
+    const discountByLine = this.promotionDiscountByLine();
+    const refused = active.flatMap((l) => this.lineRefusals(l, committedAt, this.priceOf(l).total.minor - (discountByLine.get(l.lineId) ?? 0)));
     if (refused.length > 0) throw new TillRuleRefusedError(refused, 'Do not take payment. ');
     // A TOBACCO line needs 18 even when it was rung before the pack said so, or recalled from a held basket (B14).
     const tobaccoUnchecked = active
@@ -692,7 +740,10 @@ export class PosSession {
           quantityMinor: l.quantityMinor,
           uom: l.uom,
         })),
-        tenders,
+        // C10 · hard rule #3 (NEW-3): a tender leaves this till with a token reference, the last four digits and the network
+        // at most — anything else, and anything shaped like a card number, is removed here. The store computer and head
+        // office remove (and raise) it again; this is the till's own copy of the rule, so nothing card-like is handed over.
+        tenders: withoutCardData(tenders).tenders as readonly Tender[],
     };
 
     // The lines the CLOUD sees carry more than the local ledger needs: the unit price and the
@@ -712,7 +763,7 @@ export class PosSession {
       const lineTotalMinor = this.priceOf(l).total.minor;
       const flags = tillRuleFlagsOf(this.flagsOf(l));
       const requiredAge = tobaccoAge(l.minimumAge, this.flagsOf(l));
-      const scale = isWeighedUom(l.uom) ? scaleEvidence(gate) : undefined;
+      const scale = this.weighed(l) ? scaleEvidence(gate) : undefined;
       return {
         productId: l.productId,
         quantityMinor: l.quantityMinor,

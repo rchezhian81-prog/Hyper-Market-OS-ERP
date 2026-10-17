@@ -15,7 +15,8 @@ import type { AuditEntry } from '../../../packages/audit/src/index';
 import {
   scaleRegisterRoutes, foldScaleRegister, weighingScalesSection, type ScaleRegisterDeps, type WeighingScaleRecord,
 } from '../../platform/src/scale-register';
-import { STREAM, streamName, orgStructureAdapter } from './adapters';
+import { STREAM, streamName, orgStructureAdapter, saleStockLocationOf, approvalRequestsAdapter } from './adapters';
+import type { IncomingSale } from '../../pos/src/index';
 
 const SCALES = streamName(STREAM.facilities, 'weighing-scales');
 const SCALE_SET = 'WeighingScaleSet';
@@ -61,5 +62,23 @@ export function r2TillRoutes(input: {
     ...scaleRegisterAdapter({ store, now }),
     stores: async (t) => new Map((await orgStructureAdapter({ store, now }).nodes(t)).filter((n) => n.kind === 'branch').map((n) => [n.nodeId, n.name] as const)),
     ...(input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit }),
+    // L2: a changed stamp date is approved by a second person on head office's maker-checker engine (ADR-0024).
+    approvals: approvalRequestsAdapter({ store, now }),
   });
+}
+
+/**
+ * L3 (B6): the scales head office's OWN register says weigh for a sale's lane, in the sale's store — what intake judges a
+ * weighed line by (`services/pos/src/sale-intake.ts`), rather than the till's claim. `undefined` while head office holds
+ * no scale at all for that store (the register is not set up there yet): the till's evidence is then judged, as before.
+ */
+export function scalesOnRegisterAdapter(input: { readonly store: EventStore; readonly now: () => string }): (tenantId: string, sale: IncomingSale) => Promise<readonly { readonly assetId: string; readonly reverificationDueOn: string }[] | undefined> {
+  return async (tenantId, sale) => {
+    const register = foldScaleRegister(await scaleRegisterAdapter(input).scaleVersions(tenantId));
+    if (register.length === 0) return undefined;
+    const { locationId } = await saleStockLocationOf(input.store, tenantId, sale);
+    const inStore = register.filter((s) => s.storeId === locationId);
+    if (inStore.length === 0) return undefined;
+    return inStore.filter((s) => s.laneIds.includes(sale.laneId)).map((s) => ({ assetId: s.assetId, reverificationDueOn: s.reverificationDueOn }));
+  };
 }

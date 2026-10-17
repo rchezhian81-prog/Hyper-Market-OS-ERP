@@ -456,7 +456,7 @@ export function returnsRoutes(deps: ReturnsDeps): readonly Route[] {
         // A bill partly paid with POINTS (PF-09 step 3 · OB-34 "A"): the money side of a refund is the MONEY SHARE of the
         // goods coming back — the points share goes back to the member as points. The same cap the store computer applies
         // before its disk; here no money has moved, so more is refused, in words.
-        const returnedValueMinor = returnedValueAtOriginalPrices(sale, request.lines);
+        const returnedValueMinor = returnedValueAtOriginalPrices(sale, request.lines, priorReturns.flatMap((r) => r.lines));
         const pointsRoom = refundRoomOutsidePoints({
           totalMinor: sale.totalMinor, tenders: sale.tenders, priorRefundsMinor: alreadyRefundedMinor(saleId, priorRefunds),
           returnedValueMinor: returnedValueAtOriginalPrices(sale, [...priorReturns.flatMap((r) => r.lines), ...request.lines]),

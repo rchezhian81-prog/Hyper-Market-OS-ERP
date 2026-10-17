@@ -299,6 +299,10 @@ import {
   requestWords as storeComputersRequestWords, findingKindWords as storeComputersFindingWords, type StoreComputersSession,
   unusedNumbersWords as storeComputersUnusedWords, acknowledgeable as storeComputersAcknowledgeable,
 } from './store-computers-session';
+import {
+  createScalesSession, wordsFor as scalesWords, outcomeWords as scalesOutcomeWords, summarise as scalesSummary,
+  stampWords as scalesStampWords, requestWords as scalesRequestWords, formOf as scalesFormOf, type ScalesSession,
+} from './scales-session';
 
 // The practice-data strip ("TRIAL COPY · PRACTICE DATA"). `PILOT_DEMO_BANNER` is a build-time constant baked in by
 // esbuild (`scripts/build-app.mjs`): '1' in the hosted-demo build, empty in production. `typeof` guards
@@ -4793,6 +4797,17 @@ interface ManagerWindow {
     readonly unusedWords: typeof storeComputersUnusedWords;
     readonly acknowledgeable: typeof storeComputersAcknowledgeable;
   };
+  /** OB-154 "A" (B6 · B7 · L2): the Weighing scales page — who is looking; head office re-checks every act. */
+  scalesData?: ViewerIdentity;
+  scales?: {
+    readonly session: ScalesSession;
+    readonly words: typeof scalesWords;
+    readonly outcomeWords: typeof scalesOutcomeWords;
+    readonly summarise: typeof scalesSummary;
+    readonly stampWords: typeof scalesStampWords;
+    readonly requestWords: typeof scalesRequestWords;
+    readonly formOf: typeof scalesFormOf;
+  };
   substitutionExceptionInboxData?: SubstitutionExceptionInboxData;
   substitutionExceptionInboxSession?: SubExceptionInboxSession;
   /** The shell reads the live exceptions worklist through this and re-presents it — a GET read, never a write. */
@@ -6482,5 +6497,13 @@ if (browserWindow !== undefined) {
     words: storeComputersWords, outcomeWords: storeComputersOutcomeWords, summarise: storeComputersSummary,
     requestWords: storeComputersRequestWords, findingWords: storeComputersFindingWords,
     unusedWords: storeComputersUnusedWords, acknowledgeable: storeComputersAcknowledgeable,
+  };
+  // OB-154 "A" (B6 · B7 · L2): the Weighing scales page — its session is the tested model in scales-session.ts; it offers
+  // only what the person's permissions allow, head office re-checks every act, and nothing is written on open.
+  browserWindow.scalesData = viewerIdentity(browserWindow.scalesData);
+  browserWindow.scales = {
+    session: createScalesSession({ viewer: browserWindow.scalesData }),
+    words: scalesWords, outcomeWords: scalesOutcomeWords, summarise: scalesSummary,
+    stampWords: scalesStampWords, requestWords: scalesRequestWords, formOf: scalesFormOf,
   };
 }

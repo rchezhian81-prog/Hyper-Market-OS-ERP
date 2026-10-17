@@ -64,6 +64,7 @@ const SCREENS = [
   { name: 'the facilities', dir: 'web-erp', view: 'facilities.js', page: 'facilities.html', bundle: 'web-erp.bundle.js' },
   { name: 'the devices', dir: 'web-erp', view: 'fleet.js', page: 'fleet.html', bundle: 'web-erp.bundle.js' },
   { name: 'the store setup', dir: 'web-erp', view: 'setup.js', page: 'setup.html', bundle: 'web-erp.bundle.js' },
+  { name: 'the weighing scales', dir: 'web-erp', view: 'scales.js', page: 'scales.html', bundle: 'web-erp.bundle.js' },
   { name: 'the owner', dir: 'owner-app', view: 'app.js', page: 'index.html', bundle: 'owner-app.bundle.js' },
   { name: 'the picker', dir: 'picker-app', view: 'app.js', page: 'index.html', bundle: 'picker-app.bundle.js' },
   { name: 'the driver', dir: 'delivery-app', view: 'app.js', page: 'index.html', bundle: 'delivery-app.bundle.js' },

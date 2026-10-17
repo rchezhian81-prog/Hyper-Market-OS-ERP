@@ -118,7 +118,7 @@ import { facilitiesRoutes } from '../../platform/src/facilities';
 import { facilitiesAssetsRoutes } from '../../platform/src/facilities-assets';
 import { facilitiesMonitoringRoutes } from '../../platform/src/facilities-monitoring';
 import { weighingVerificationRoutes } from '../../platform/src/facilities-metrology';
-import { r2TillRoutes } from './r2-till-adapters';
+import { r2TillRoutes, scalesOnRegisterAdapter } from './r2-till-adapters';
 import { complianceRoutes } from '../../compliance/src/index';
 import { riskRegisterRoutes } from '../../compliance/src/risk';
 import { inventoryRoutes } from '../../inventory/src/index';
@@ -789,7 +789,15 @@ export function buildSurface(deps: {
       : { ...promotionAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }) }),
     ...promotionCatalogueRoutes(store === undefined
       ? { promotion: empty(undefined), promotions: empty([]), recordDefined: () => {}, recordStatus: () => {}, now }
-      : promotionCatalogueAdapter({ store, now })),
+      : {
+        ...promotionCatalogueAdapter({ store, now }),
+        // NEW-1 (B19): an offer that names a carry bag (by the product master's own flag) is refused when it is defined.
+        carryBagsAmong: async (t, ids) => {
+          const wanted = new Set(ids);
+          const bags = new Set((await productMasterAdapter({ store, now }).products(t)).filter((p) => wanted.has(p.productId) && p.safety?.carryBag === true).map((p) => p.productId));
+          return ids.filter((id) => bags.has(id));
+        },
+      }),
     // Supplier invoices (SP-7a · F02 · F04): the invoice is a durable record; the match joins it to the STORED order and receipts.
     ...purchaseRoutes(store === undefined ? {
       invoice: empty(undefined), invoices: empty([]), recordInvoice: () => {}, purchaseOrder: empty(undefined), permissionsOfUser: empty(undefined),
@@ -1198,7 +1206,7 @@ export function buildSurface(deps: {
       bankSale: () => {}, recordExceptions: () => {}, openExceptions: empty([]), now,
       permissionsOfUser: empty(undefined),
     } : {
-      ...posAdapter({ store, now }), tillSealKey: sealKey, loyaltyOnSale: (t, sale) => earnOnSale(loyaltyEffects!, t, sale),
+      ...posAdapter({ store, now }), tillSealKey: sealKey, scalesOnRegisterFor: scalesOnRegisterAdapter({ store, now }), loyaltyOnSale: (t, sale) => earnOnSale(loyaltyEffects!, t, sale),
       loyaltySpendOnSale: (t, sale) => spendOnSale(loyaltyWallets!, t, sale),
     }),
     ...returnsRoutes(store === undefined ? {

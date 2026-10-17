@@ -68,14 +68,16 @@ export function isCardNumberShape(digits: string): boolean {
 
 /**
  * True when the text CONTAINS something structurally a card number — on its own, with spaces or dashes between the
- * groups, or inside a longer string (`tok_4111…`). Each run of digits (single spaces/dashes allowed inside) is read as
+ * groups, or inside a longer string (`tok_4111…`). Each run of digits (single spaces, dashes, dots, slashes or underscores
+ * allowed inside) is read as
  * a whole. Windows inside a LONGER digit run are deliberately not read: a 23-digit acquirer reference number would
  * then "contain" a card about one time in three, and a check that cries wolf on every refund is a check that gets
  * switched off (the kernel's outbound guard made the same choice for the same reason).
  */
 export function containsCardNumber(text: string): boolean {
-  for (const m of text.matchAll(/\d(?:[ -]?\d)+/g)) {
-    if (isCardNumberShape(m[0].replace(/[ -]/g, ''))) return true;
+  // Verifier L4: a card number written with dots, slashes or underscores between the groups is still a card number.
+  for (const m of text.matchAll(/\d(?:[ ./_-]?\d)+/g)) {
+    if (isCardNumberShape(m[0].replace(/[ ./_-]/g, ''))) return true;
   }
   return false;
 }

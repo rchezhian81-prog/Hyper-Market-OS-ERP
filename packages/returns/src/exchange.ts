@@ -66,11 +66,21 @@ export interface ExchangeAssessment {
 
 /**
  * Value the returned units at the price the bill actually charged for them: each original line's
- * per-unit price (line total ÷ quantity, so a line-level discount is honoured) × the units coming back,
- * rounded to the paise. A product sold on two lines at two prices is valued at the bill's average for
- * that product — the register is per product, not per line, so this is the only consistent choice.
+ * per-unit price (line total ÷ quantity, so a line-level discount is honoured) × the units coming back.
+ * A product sold on two lines at two prices is valued at the bill's average for that product — the
+ * register is per product, not per line, so this is the only consistent choice.
+ *
+ * Verifier L1 (B5): a PART return — 170 g of a 337 g weighed line — rarely lands on a whole paisa. The fraction is
+ * rounded UP, the customer's way, never against them; and the value is worked out on the CUMULATIVE quantity back
+ * (`alreadyReturned` + these lines) less what the earlier returns were already given, so the parts of a line returned
+ * in pieces always add up to exactly what the bill charged for it — never a paisa more, never a paisa less. Integer
+ * arithmetic throughout: no floating-point remainder can decide which way a paisa goes.
  */
-export function returnedValueAtOriginalPrices(sale: OriginalSale, lines: readonly Pick<ReturnRequestLine, 'productId' | 'quantityMinor'>[]): number {
+export function returnedValueAtOriginalPrices(
+  sale: OriginalSale,
+  lines: readonly Pick<ReturnRequestLine, 'productId' | 'quantityMinor'>[],
+  alreadyReturned: readonly Pick<ReturnRequestLine, 'productId' | 'quantityMinor'>[] = [],
+): number {
   const byProduct = new Map<string, { qty: number; total: number }>();
   for (const l of sale.lines) {
     const cur = byProduct.get(l.productId) ?? { qty: 0, total: 0 };
@@ -81,12 +91,26 @@ export function returnedValueAtOriginalPrices(sale: OriginalSale, lines: readonl
   }
   const anyPriced = [...byProduct.values()].some((v) => v.total > 0);
   const totalQty = [...byProduct.values()].reduce((s, v) => s + v.qty, 0);
+  // What `qty` units of a product are worth: the product's share of the money, rounded UP (the customer's way); the
+  // whole quantity is worth exactly its whole total.
+  const worth = (productId: string, qty: number): number => {
+    const p = byProduct.get(productId);
+    if (p === undefined || p.qty <= 0 || qty <= 0) return 0;
+    const money = anyPriced ? p.total : totalQty > 0 ? Math.round((sale.totalMinor * p.qty) / totalQty) : 0;
+    if (qty >= p.qty) return money; // a whole return — or more than was sold, which the register refuses elsewhere
+    return Math.ceil((money * qty) / p.qty);
+  };
+  const sum = (ls: readonly Pick<ReturnRequestLine, 'productId' | 'quantityMinor'>[]): Map<string, number> => {
+    const m = new Map<string, number>();
+    for (const l of ls) if (Number.isFinite(l.quantityMinor) && l.quantityMinor > 0) m.set(l.productId, (m.get(l.productId) ?? 0) + l.quantityMinor);
+    return m;
+  };
+  const before = sum(alreadyReturned);
+  const now = sum(lines);
   let value = 0;
-  for (const line of lines) {
-    const p = byProduct.get(line.productId);
-    if (p === undefined || p.qty <= 0) continue;
-    const perUnit = anyPriced ? p.total / p.qty : (totalQty > 0 ? sale.totalMinor / totalQty : 0);
-    value += Math.round(perUnit * line.quantityMinor);
+  for (const [productId, qty] of now) {
+    const prior = before.get(productId) ?? 0;
+    value += worth(productId, prior + qty) - worth(productId, prior);
   }
   return value;
 }
@@ -107,7 +131,7 @@ export function assessExchange(input: {
   const priorRefunds = input.priorRefunds.filter((r) => r.returnId !== exchange.exchangeId);
 
   const replacementTotalMinor = exchange.replacementLines.reduce((s, l) => s + l.lineTotalMinor, 0);
-  const returnedValueMinor = returnedValueAtOriginalPrices(sale, exchange.returnLines);
+  const returnedValueMinor = returnedValueAtOriginalPrices(sale, exchange.returnLines, priorReturns.flatMap((r) => r.lines));
   const netMinor = replacementTotalMinor - returnedValueMinor;
   const balance: ExchangeBalanceKind = netMinor === 0 ? 'even' : netMinor > 0 ? 'top_up' : 'refund';
   const base = {

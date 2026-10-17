@@ -273,7 +273,7 @@ function gateProductsOf(pack: StorePack, cataloguePack: Parameters<typeof tillCa
   const held = gateIndex.get(key);
   if (held !== undefined) return held;
   const catalogue = tillCatalogue(pack, cataloguePack, now);
-  const map = new Map((catalogue?.products ?? []).map((p) => [p.productId, { name: p.name, ...(p.regulatedFlags === undefined ? {} : { regulatedFlags: p.regulatedFlags }) }] as const));
+  const map = new Map((catalogue?.products ?? []).map((p) => [p.productId, { name: p.name, baseUom: p.uom, ...(p.regulatedFlags === undefined ? {} : { regulatedFlags: p.regulatedFlags }) }] as const));
   gateIndex.set(key, map);
   return map;
 }
