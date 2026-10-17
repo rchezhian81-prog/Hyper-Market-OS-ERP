@@ -80,9 +80,15 @@ day, the first one is cancelled. The cancellation is a new record; the first rec
   still holds shifts is checked too.
 - **Work is judged as one timeline, not day by day.**
   - Shifts that touch, or that have a gap shorter than the rest interval, are one stretch of work. This
-    holds across midnight. A stretch is used for the rest-interval rule and for spread-over, and it is
-    dated by the day it starts.
-  - Daily hours count the minutes worked on each calendar day in the store's time (IST), split at midnight.
+    holds across midnight. A stretch is used for the rest-interval rule, for spread-over and for daily
+    hours, and it is dated by the day it starts.
+  - **Daily hours are judged per stretch of work, not per calendar day** (OB-168, owner, 16 Oct 2026). A
+    stretch counts in full on the day it starts; it is not cut at midnight. A 10-hour night shift is 10 hours
+    against the daily cap, not 5 hours on each day. All the stretches that start on one day are added
+    together for that day (the same grouping spread-over uses), so a split day of 8:00–13:00 and 14:00–19:00
+    is still 10 hours. A night stretch that started the day before the week is judged on that day.
+  - Weekly hours still count the minutes worked inside the week, by calendar day in the store's time (IST),
+    split at midnight.
   - A day counts as a weekly holiday only if no minute of work falls on it. The end of an overnight shift is
     work on the day it runs into. A shift from the previous week that runs into this week counts.
 - **If the roster breaks a limit that is filled in**, it is **refused**. Every breach is named in words:
