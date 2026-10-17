@@ -9,7 +9,9 @@
 //     `internal_committee` role — that role ONLY; this route grants and revokes nothing else;
 //   • a SECOND PERSON confirms, through head office's maker-checker engine (ADR-0024): the owner asks for approval of
 //     exactly this change (kind `posh_committee_change`), a different person who takes part in access changes
-//     (`identity.role.request`) approves it in their own session, and only then does the owner's change apply — once;
+//     (`identity.role.request`) approves it in their own session, and only then does the owner's change apply — once.
+//     OB-167 "A": that second person is a STORE MANAGER (holds the store_manager role now). Verifier r2final NEW-5: the
+//     person joining or leaving is NEVER the one who confirms it — elevated access never approves its own (§28);
 //   • the act is AUDITED on the domain trail (`role.grant` / `role.revoke`, object `user`, naming the role, who asked and
 //     who confirmed) — it is an access change the owner sees, not a committee record;
 //   • the owner can NEVER hold the role: the change is refused for anyone who holds the owner role, and everywhere else a
@@ -33,6 +35,8 @@ import { dutiesGrantRefusal, SEPARATION_OF_DUTIES_REFUSAL_CODE } from './separat
 export const COMMITTEE_ROLE_ID = 'internal_committee';
 /** The owner role (mirrors services/api/src/roles.ts OWNER_ROLE_ID). */
 export const OWNER_ROLE = 'owner';
+/** OB-167 "A": the role of the person who confirms a committee change (mirrors services/api/src/roles.ts STORE_MANAGER_ROLE_ID). */
+export const COMMITTEE_CHANGE_CONFIRMER_ROLE = 'store_manager';
 /** The code every "owner and committee on one person" refusal carries. */
 export const OWNER_ON_COMMITTEE_REFUSAL_CODE = 'owner_never_on_the_internal_committee';
 
@@ -130,6 +134,14 @@ export function committeeMembershipRoutes(deps: CommitteeMembershipDeps): readon
           throw refuse(422, 'committee_change_needs_a_second_person', 'Adding or removing an Internal Committee member applies only once a second person has confirmed exactly this change in their own session (owner decision OB-165).', 'Ask for approval (POST /v1/approvals/requests, kind posh_committee_change, with exactly this change); once a second person approves it, send it again with the approvalId. Nobody\'s access changed.');
         }
         const approvedBy = opened.decision.decidedBy;
+        // NEW-5: the person joining or leaving never confirms their own change (§28: access never approves its own).
+        if (approvedBy === userId) {
+          throw refuse(422, 'committee_change_confirmed_by_its_subject', `${userId} is the person ${action === 'add' ? 'joining' : 'leaving'} the Internal Committee and cannot also be the second person who confirms it.`, 'Ask a different store manager to confirm exactly this change in their own session. Nobody\'s access changed.');
+        }
+        // OB-167 "A": the second person is a store manager.
+        if (!(await deps.rolesHeldBy(ctx.tenantId, approvedBy)).includes(COMMITTEE_CHANGE_CONFIRMER_ROLE)) {
+          throw refuse(422, 'committee_change_needs_a_store_manager', `${approvedBy} confirmed this change but does not hold the store manager role. An Internal Committee change is confirmed by a store manager (owner decision OB-167).`, 'Ask a store manager to confirm exactly this change in their own session. Nobody\'s access changed.');
+        }
         const revokes = action === 'remove' ? await deps.committeeGrantsOf(ctx.tenantId, userId) : [];
         await opened.spend();
         const reason = (b['reason'] as string).trim();

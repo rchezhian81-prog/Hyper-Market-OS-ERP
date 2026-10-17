@@ -92,6 +92,34 @@ describe.each(backings)('OB-165 — Internal Committee membership: the owner cha
     expect((await h.request({ method: 'GET', path: '/v1/hr/workforce/my-roster', userId: 'u-new', tenantId: t })).status).not.toBe(403);
   });
 
+  it('r2final NEW-5 / OB-167: the person joining or leaving never confirms it; the confirmer is a store manager', async () => {
+    const h = harness();
+    const t = randomUUID();
+    const s = await cast(h, t);
+    await h.provisionRole(t, 'u-mgr2', 'store_manager');
+    // The verifier's case: the owner asks to add store manager u-mgr, and u-mgr confirms his own appointment.
+    const self = await s.confirmed('V1', { action: 'add', userId: 'u-mgr', reason: 'synthetic' }, 'u-mgr');
+    expect(self.status).toBe(422);
+    expect(codeOf(self)).toBe('committee_change_confirmed_by_its_subject');
+    expect((await s.complaints('u-mgr')).status).toBe(403);
+    // A second OWNER confirming is not a store manager confirming (OB-167).
+    const owner2 = await s.confirmed('V2', { action: 'add', userId: 'u-new', reason: 'synthetic' }, 'u-owner2');
+    expect(codeOf(owner2)).toBe('committee_change_needs_a_store_manager');
+    expect((await s.complaints('u-new')).status).toBe(403);
+    // Another store manager confirms u-mgr's appointment: it applies.
+    const ok = await s.confirmed('V3', { action: 'add', userId: 'u-mgr', reason: 'synthetic' }, 'u-mgr2');
+    expect(ok.status).toBe(201);
+    expect(ok.body).toMatchObject({ userId: 'u-mgr', approvedBy: 'u-mgr2' });
+    // Leaving: u-mgr cannot confirm his own removal either; u-mgr2 can.
+    expect(codeOf(await s.confirmed('V4', { action: 'remove', userId: 'u-mgr', reason: 'synthetic' }, 'u-mgr'))).toBe('committee_change_confirmed_by_its_subject');
+    expect((await s.complaints('u-mgr')).status).toBe(200);
+    expect((await s.confirmed('V5', { action: 'remove', userId: 'u-mgr', reason: 'synthetic' }, 'u-mgr2')).status).toBe(201);
+    expect((await s.complaints('u-mgr')).status).toBe(403);
+    // Nothing refused reached the audit trail as an access change.
+    const trail = await auditTrailAdapter({ store: h.store }).records(t);
+    expect(trail.filter((r) => (r.action === 'role.grant' || r.action === 'role.revoke') && ['V1', 'V2', 'V4'].includes(r.correlationId ?? ''))).toEqual([]);
+  });
+
   it('the owner never holds the role; nobody else may use the route; the route gives no other role; OB-157 stands', async () => {
     const h = harness();
     const t = randomUUID();
