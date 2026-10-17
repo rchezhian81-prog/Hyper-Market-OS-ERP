@@ -147,7 +147,7 @@ describe('the legacy-card-purge check finds a card number with ANY separator, an
       }
     }
     expect(samples).toBeGreaterThan(10_000);
-  });
+  }, 60_000); // exhaustive (10,000+ samples): ~3.5 s locally, longer on a shared CI runner
 
   it('PASSES Indian mobile and landline numbers in every common format and separator (no false positive)', () => {
     let seed = 7;
@@ -174,5 +174,5 @@ describe('the legacy-card-purge check finds a card number with ANY separator, an
       }
     }
     expect(samples).toBeGreaterThan(50_000);
-  });
+  }, 60_000); // exhaustive (50,000+ samples)
 });
