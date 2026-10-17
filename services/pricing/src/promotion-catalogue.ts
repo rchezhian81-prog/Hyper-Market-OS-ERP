@@ -35,8 +35,21 @@ export interface PromotionCatalogueDeps {
    * refused. Optional on a bare stub.
    */
   readonly launched?: (tenantId: string, promotionId: string) => Promise<boolean> | boolean;
+  /**
+   * NEW-1 (B19): which of these products are carry bags in the product master. An offer naming one is refused — a bag is a
+   * separate priced line and is never given away, by an offer or otherwise. Optional on a bare stub (then not checked).
+   */
+  readonly carryBagsAmong?: (tenantId: string, productIds: readonly string[]) => Promise<readonly string[]> | readonly string[];
   readonly now: () => string;
 }
+
+/** NEW-1 (B19): the refusal for an offer that names a carry bag. */
+const carryBagRefusal = (promotionId: string, bags: readonly string[]) => apiError(422, {
+  code: 'promotion_targets_a_carry_bag',
+  whatHappened: `Offer ${promotionId} names ${bags.length === 1 ? 'a carry bag' : 'carry bags'} (${bags.join(', ')}). A carry bag is sold as its own line at its price and can never be given free or cheaper by an offer (Plastic Waste Management Rules · B19).`,
+  wasItSaved: 'not_saved',
+  nextSafeAction: 'Take the carry bag off the offer\'s products. Nothing was recorded.',
+});
 
 /** Read a promotion definition from the body (status is server-set to 'draft'), or null if malformed. */
 function readDefinition(promotionId: string, body: unknown): Promotion | null {
@@ -114,6 +127,8 @@ export function promotionCatalogueRoutes(deps: PromotionCatalogueDeps): readonly
             nextSafeAction: 'Send a valid definition. Nothing was recorded.',
           });
         }
+        const bags = deps.carryBagsAmong === undefined || promo.productIds === undefined ? [] : await deps.carryBagsAmong(ctx.tenantId, promo.productIds);
+        if (bags.length > 0) throw carryBagRefusal(promotionId, bags);
         if ((await deps.promotion(ctx.tenantId, promotionId)) !== undefined) {
           throw apiError(409, {
             code: 'promotion_already_defined',
@@ -150,6 +165,9 @@ export function promotionCatalogueRoutes(deps: PromotionCatalogueDeps): readonly
             nextSafeAction: 'Launch the offer (POST /v1/promotions/:promotionId/launch) — that switches it on. Nothing was changed.',
           });
         }
+        // NEW-1 (B19): a product may have become a carry bag since the offer was defined — asked again before it goes live.
+        const bags = deps.carryBagsAmong === undefined || promo.productIds === undefined ? [] : await deps.carryBagsAmong(ctx.tenantId, promo.productIds);
+        if (promo.status !== 'active' && bags.length > 0) throw carryBagRefusal(promotionId, bags);
         if (promo.status !== 'active') await deps.recordStatus(ctx.tenantId, promotionId, 'active', deps.now());
         return { status: 200, body: { promotionId, status: 'active' } };
       },
@@ -201,7 +219,10 @@ export function promotionCatalogueRoutes(deps: PromotionCatalogueDeps): readonly
           ...(strArray(b.coupons) ? { coupons: b.coupons } : {}),
         };
         const all = await deps.promotions(ctx.tenantId);
-        return { status: 200, body: bestPrice(lines, all, promoCtx) };
+        // OB-173: a carry bag is never discounted — head office's own product master says which lines are bags, never the body.
+        const bags = deps.carryBagsAmong === undefined ? [] : await deps.carryBagsAmong(ctx.tenantId, [...new Set(lines.map((l) => l.productId))]);
+        const priced = lines.map((l) => (bags.includes(l.productId) ? { ...l, carryBag: true } : l));
+        return { status: 200, body: bestPrice(priced, all, promoCtx) };
       },
     },
   ];

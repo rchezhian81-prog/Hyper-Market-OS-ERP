@@ -13,3 +13,5 @@ export * from './waste';
 export * from './scrap';
 export * from './packaging';
 export * from './sustainability';
+// D-5: the closed waste reason taxonomy and the SKU / department / reason analytics.
+export * from './reasons';

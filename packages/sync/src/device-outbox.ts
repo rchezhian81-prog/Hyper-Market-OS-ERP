@@ -27,6 +27,11 @@
 
 import type { OutboxItem } from './outbox';
 import { SyncOutbox } from './outbox';
+import type { DomainEvent } from '../../contracts/src/event';
+import type { SignInStamp } from './sign-in-stamp';
+
+/** OB-180: stamps a record with the sign-in it is made under, as it is queued (a handheld's page supplies it). */
+export type RecordStamper = (event: DomainEvent) => SignInStamp | undefined;
 
 /** The device's own storage, as a string in and a string out. Injectable, so it can be tested. */
 export interface DeviceStore {
@@ -114,6 +119,7 @@ export class DeviceOutbox<TType extends string = string, TPayload = unknown>
   constructor(
     private readonly store: DeviceStore,
     restored: readonly OutboxItem<TType, TPayload>[] = [],
+    private readonly stamper?: RecordStamper,
   ) {
     super(restored);
   }
@@ -122,8 +128,10 @@ export class DeviceOutbox<TType extends string = string, TPayload = unknown>
     this.store.write(JSON.stringify(this.all()));
   }
 
-  override enqueue(event: Parameters<SyncOutbox<TType, TPayload>['enqueue']>[0]): OutboxItem<TType, TPayload> {
-    const item = super.enqueue(event);
+  override enqueue(event: Parameters<SyncOutbox<TType, TPayload>['enqueue']>[0], stamp?: SignInStamp): OutboxItem<TType, TPayload> {
+    // OB-180: stamped once, when first queued — a re-queue of the same key keeps the stamp it was made under.
+    const stamped = stamp ?? (this.stamper === undefined || this.find(event.idempotencyKey) !== undefined ? undefined : this.stamper(event as DomainEvent));
+    const item = super.enqueue(event, stamped);
     this.save();
     return item;
   }
@@ -149,7 +157,8 @@ export class DeviceOutbox<TType extends string = string, TPayload = unknown>
 export function openDeviceOutbox<TType extends string = string, TPayload = unknown>(
   store: DeviceStore,
   onProblem: (why: string) => void,
+  stamper?: RecordStamper,
 ): DeviceOutbox<TType, TPayload> {
   const restored = restoreItems(store, onProblem) as OutboxItem<TType, TPayload>[];
-  return new DeviceOutbox<TType, TPayload>(store, restored);
+  return new DeviceOutbox<TType, TPayload>(store, restored, stamper);
 }

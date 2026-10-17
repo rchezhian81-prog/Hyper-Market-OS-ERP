@@ -37,9 +37,11 @@ import {
 } from '../../../packages/sync/src/device-relay';
 import type { DeviceEnrolments, PackDevice } from './device-enrolments';
 import type { LaneSyncStatus } from './sync-status';
-import type { CheckOutcome, SignInOutcome } from './till-operators';
+import { deviceLaneOf, sessionHoursFor, type CheckOutcome, type SignInOutcome, type StampVerdict } from './till-operators';
+import type { SignInStamp } from '../../../packages/sync/src/sign-in-stamp';
+import type { DomainEvent } from '../../../packages/contracts/src/event';
 import {
-  HANDHELD_AUTHORITY, asPhoneHolder, personNamedBy, phoneHolderStrip, phoneSignInPage, withPhoneHolderStrip,
+  HANDHELD_AUTHORITY, signInEndedMessageFor, asPhoneHolder, personNamedBy, phoneHolderStrip, phoneSignInPage, signInLockOf, withPhoneHolderStrip,
 } from './handheld-sign-in';
 
 /** Loopback unless a deployment names the shop's address explicitly — the device socket never widens by itself. */
@@ -52,9 +54,12 @@ export const DEVICE_SYNC_STATUS_ROUTE = '/lane/sync-status';
 /** DF-3-c (OB-30 "A"): the person holding the phone signs in here with their staff ID and the till PIN, and out again. */
 export const PHONE_SIGN_IN_ROUTE = '/device/sign-in';
 export const PHONE_SIGN_OUT_ROUTE = '/device/sign-out';
-/** The phone holder's session: HttpOnly, SameSite=Strict, the box keeps only its hash. Twelve hours, like a till shift. */
+/**
+ * The phone holder's session: HttpOnly, SameSite=Strict, the box keeps only its hash. As long as the sign-in: four hours on
+ * the warehouse and picker screens (OB-184), twelve on the driver's (OB-187).
+ */
 export const OPERATOR_COOKIE = 'sre_operator';
-const OPERATOR_COOKIE_SECONDS = 12 * 3600;
+const operatorCookieSeconds = (deviceId: string, screen: HandheldSource): number => sessionHoursFor(deviceLaneOf(deviceId), HANDHELD_AUTHORITY[screen]) * 3600;
 
 /**
  * Who is holding the phone (DF-3-c · OB-30 "A"): the box's till register, addressed by the DEVICE. Absent → nobody can
@@ -66,6 +71,10 @@ export interface PhoneOperators {
   signOut(token: string | undefined): Promise<boolean>;
   /** Has this person held this phone — now, or within the last shift (the box's own log and clock)? */
   heldRecently(userId: string, deviceId: string): boolean;
+  /** OB-180: the live sign-in's stamp reference and key, for the served page — null when nobody is signed in. */
+  stampFor(token: string | undefined, deviceId: string): { readonly ref: string; readonly key: string; readonly userId: string; readonly signedInAt: string; readonly expiresAt: string } | null;
+  /** OB-180: is this record's sign-in stamp one this box made, on this phone, for its person, while it was valid? */
+  verifyStamp(stamp: SignInStamp, event: DomainEvent, deviceId: string): StampVerdict;
 }
 
 /** The handheld screen a sign-in is for — one of the three, or the warehouse's when nothing (or nonsense) was named. */
@@ -86,7 +95,11 @@ export function homeAfterEnrol(requested: unknown): string {
 }
 
 /** A device's batch, with the device this socket authenticated it from — the box logs who handed what. */
-export type DeviceRelayHandler = (batch: { readonly source: string; readonly items: readonly unknown[]; readonly deviceId: string; readonly phoneHolder?: string }) => Promise<RelayReply>;
+export type DeviceRelayHandler = (batch: {
+  readonly source: string; readonly items: readonly unknown[]; readonly deviceId: string; readonly phoneHolder?: string;
+  /** OB-180: per item key, the person whose sign-in stamp on it this socket verified (made on this phone, while valid). */
+  readonly stampedBy?: Readonly<Record<string, string>>;
+}) => Promise<RelayReply>;
 export type DeviceStatusHandler = (keys: readonly string[]) => readonly BoxItemStatus[];
 
 export interface DeviceServer {
@@ -315,7 +328,13 @@ export function startDeviceServer(input: {
       if (pathname === PHONE_SIGN_IN_ROUTE) {
         const screen = phoneScreenOf(url.searchParams.get('screen'));
         const action = `${PHONE_SIGN_IN_ROUTE}?screen=${screen}`;
-        if (req.method === 'GET') { send(res, 200, TYPES['.html']!, phoneSignInPage({ screen, action, message: null })); return; }
+        // OB-186: a screen that locked itself at the end of its sign-in comes here marked `ended=1`, and is told why.
+        // (`ended=clock`: it locked because the phone's clock was turned back — verifier hh NEW-1.)
+        if (req.method === 'GET') {
+          const ended = url.searchParams.get('ended');
+          send(res, 200, TYPES['.html']!, phoneSignInPage({ screen, action, message: ended === '1' ? signInEndedMessageFor(screen) : ended === 'clock' ? signInEndedMessageFor(screen, 'clock') : null }));
+          return;
+        }
         if (req.method !== 'POST') { send(res, 405, 'text/plain; charset=utf-8', 'sign-in is a POST'); return; }
         const wantsJson = (req.headers.accept ?? '').includes('application/json');
         const fields = await readFormOrJson(req, 4096);
@@ -327,7 +346,7 @@ export function startDeviceServer(input: {
         if (input.operators === null) { answer(503, 'This store computer cannot sign anybody in on a phone. Tell the manager.', 'no_sign_in_here'); return; }
         const outcome = await input.operators.signIn({ staffId: fields['staffId'] ?? '', pin: fields['pin'] ?? '', deviceId: auth.deviceId, authority: HANDHELD_AUTHORITY[screen] });
         if (!outcome.signedIn) { answer(outcome.refusedBecause === 'locked' || outcome.refusedBecause === 'lane_locked' ? 429 : 401, outcome.laneMessage, outcome.refusedBecause); return; }
-        const cookie = `${OPERATOR_COOKIE}=${encodeURIComponent(outcome.token)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${OPERATOR_COOKIE_SECONDS}`;
+        const cookie = `${OPERATOR_COOKIE}=${encodeURIComponent(outcome.token)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${operatorCookieSeconds(auth.deviceId, screen)}`;
         if (wantsJson) { sendJson(res, 200, { signedIn: true, userId: outcome.userId, displayName: outcome.displayName, expiresAt: outcome.expiresAt, next: `/${screen}/` }, { 'set-cookie': cookie }); return; }
         res.writeHead(303, { location: `/${screen}/`, 'set-cookie': cookie, ...SECURITY_HEADERS });
         res.end();
@@ -357,11 +376,16 @@ export function startDeviceServer(input: {
         // DF-3-c: nobody signed in on this phone → nothing is taken. Not a refusal: the phone keeps every item and retries
         // once somebody signs in (a 401 is "not now", never "never").
         if (holder === null || !holder.ok) {
-          sendJson(res, 401, { acks: [], reason: holder === null ? 'this store computer cannot sign anybody in on a phone' : holder.laneMessage });
+          // The box's clock rides along (as on every hand-over reply), so the phone reckons from it again (verifier hh L1).
+          sendJson(res, 401, { acks: [], reason: holder === null ? 'this store computer cannot sign anybody in on a phone' : holder.laneMessage, boxNow: input.now() });
           return;
         }
         // Each record must name a person who held THIS phone this shift — the box's log and clock decide. Anything
         // else is refused by name (a person must look), never re-stamped (hard rule #10).
+        // OB-180: a record carrying a sign-in stamp must carry a TRUE one — made by a sign-in on this phone, for the person
+        // the record names, over this very record, while that sign-in was valid. A forged, altered, replayed or out-of-window
+        // stamp is refused by name; it never falls back to an unstamped record's path.
+        const stampedBy: Record<string, string> = {};
         const verdicts: (DeviceAck | null)[] = batch.items.map((raw) => {
           const read = readRelayItem(raw);
           if (!read.ok) return null; // the box's relay refuses a malformed item with its own reason
@@ -371,13 +395,22 @@ export function startDeviceServer(input: {
           if (!input.operators!.heldRecently(named.userId, auth.deviceId)) {
             return { key: read.item.key, status: 'refused', reason: `the record names ${named.userId}, who has not been signed in on this phone this shift` };
           }
+          const stamp = read.item.stamp;
+          if (stamp !== undefined) {
+            if (stamp.userId !== named.userId) {
+              return { key: read.item.key, status: 'refused', reason: `the record names ${named.userId}, but it was made under ${stamp.userId}'s sign-in` };
+            }
+            const verdict = input.operators!.verifyStamp(stamp, read.item.event, auth.deviceId);
+            if (!verdict.ok) return { key: read.item.key, status: 'refused', reason: verdict.reason };
+            stampedBy[read.item.key] = verdict.userId;
+          }
           return null;
         });
         try {
           const passed = batch.items.filter((_, i) => verdicts[i] === null);
-          const relayed = passed.length === 0 ? { acks: [] } : await input.relayDeviceEvents({ source: batch.source, items: passed, deviceId: auth.deviceId, phoneHolder: holder.userId });
+          const relayed = passed.length === 0 ? { acks: [] } : await input.relayDeviceEvents({ source: batch.source, items: passed, deviceId: auth.deviceId, phoneHolder: holder.userId, stampedBy });
           let next = 0;
-          sendJson(res, 200, { acks: verdicts.map((v) => v ?? relayed.acks[next++]!) });
+          sendJson(res, 200, { acks: verdicts.map((v) => v ?? relayed.acks[next++]!), boxNow: input.now() });
         } catch (e) {
           // The box failed mid-batch: no verdict on any item; the device keeps them all and tries again.
           sendJson(res, 500, { acks: [], reason: e instanceof Error ? e.message : String(e) });
@@ -429,12 +462,15 @@ export function startDeviceServer(input: {
         return;
       }
       const snap = input.snapshot();
-      const page = withPhoneHolderStrip(body.toString('utf8'), phoneHolderStrip({ displayName: holder.displayName, signOutAction: `${PHONE_SIGN_OUT_ROUTE}?screen=${screen}` }));
+      // OB-180: the sign-in this page's records are stamped under — its reference and key, and the box's clock now.
+      const stamping = input.operators!.stampFor(operatorToken, auth.deviceId);
+      const page = withPhoneHolderStrip(body.toString('utf8'), phoneHolderStrip({ displayName: holder.displayName, signOutAction: `${PHONE_SIGN_OUT_ROUTE}?screen=${screen}`, expiresAt: holder.expiresAt, now: input.now(), lockTo: signInLockOf(screen, PHONE_SIGN_IN_ROUTE) }));
       send(res, 200, type, injectPayload(page, GLOBAL_FOR[route.screen], asPhoneHolder(screen, payloadFor(route.screen, snap, holder.userId), holder.userId), {
         catalogueFreshness: catalogueFreshness(snap),
         // Same origin: the shell's drain and badge post to `/lane/…` on THIS socket, under the device's cookie.
         laneWriteBase: '',
         deviceId: auth.deviceId,
+        ...(stamping === null ? {} : { phoneSignIn: { ...stamping, boxNow: input.now() } }),
       }));
     })();
   });

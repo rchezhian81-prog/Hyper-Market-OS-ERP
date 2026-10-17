@@ -217,7 +217,7 @@ describe('the audit trail records a stock loss — a write-off (M34 slice 7, har
 
     const r = await writeOff(h, 'u-owner', 'WO-1', {
       productId: 'MILK-1', locationId: 'store-1', qty: 6, uom: 'ea', lossType: 'expiry',
-      reasonCode: 'past-use-by', valueMinor: 30_000, // below the ₹500 material threshold → no approver needed
+      reasonCode: 'expiry', valueMinor: 30_000, // below the ₹500 material threshold → no approver needed
     });
     expect(r.status).toBe(201);
 
@@ -225,7 +225,7 @@ describe('the audit trail records a stock loss — a write-off (M34 slice 7, har
     expect(body.total).toBe(1);
     const rec = body.matches[0]!;
     expect(rec).toMatchObject({ action: 'stock.write_off', objectType: 'product', objectId: 'MILK-1', actorId: 'u-owner' });
-    expect(rec.after).toMatchObject({ writeOffId: 'WO-1', lossType: 'expiry', qtyRemoved: '6', valueMinor: '30000', reasonCode: 'past-use-by' });
+    expect(rec.after).toMatchObject({ writeOffId: 'WO-1', lossType: 'expiry', qtyRemoved: '6', valueMinor: '30000', reasonCode: 'expiry' });
     expect((await verify(h, 'u-owner')).body).toMatchObject({ intact: true, recordsChecked: 1 });
   });
 });

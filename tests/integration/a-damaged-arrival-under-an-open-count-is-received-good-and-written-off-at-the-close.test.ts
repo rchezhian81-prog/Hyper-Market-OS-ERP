@@ -124,7 +124,7 @@ describe.each(backings)('OB-66 — a damaged arrival under an open count: good u
     expect(ids.filter((id) => id === `writeoff-held-${HELD}`)).toHaveLength(1);
     expect(ids.filter((id) => id === 'count:k1')).toHaveLength(1);
     const wos = ((await call('GET', '/v1/inventory/write-offs', 'u-owner')).body as { writeOffs: { id: string; qtyRemoved: number; valueMinor: number; reasonCode: string; lossType: string }[] }).writeOffs;
-    expect(wos.map((w) => [w.id, w.qtyRemoved, w.valueMinor, w.reasonCode, w.lossType])).toEqual([[`held-${HELD}`, 1, 1_000, 'arrived_damaged', 'damage']]);
+    expect(wos.map((w) => [w.id, w.qtyRemoved, w.valueMinor, w.reasonCode, w.lossType])).toEqual([[`held-${HELD}`, 1, 1_000, 'damage', 'damage']]);
     v = await view();
     expect(v.plan.state).toBe('approved');
     expect(v.freezeBreaches).toEqual([]); // its own applied write-off is not a breach of its freeze

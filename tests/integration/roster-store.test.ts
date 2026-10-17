@@ -95,10 +95,13 @@ describe('durable roster store (M25-FR-01 follow-on)', () => {
     await assign(h, 'u-mgr', 'S1', 'u-cash', 'cashier', 'k4');
     await assign(h, 'u-mgr', 'S1', 'other', 'cashier', 'k5');
 
+    interface Mine { readonly known: boolean; readonly active: boolean; readonly count: number; readonly notYetPublished: number; readonly shifts: readonly { shiftId: string; role: string }[] }
+    // OB-166 "A": staff see only a PUBLISHED week — before the manager publishes it, the shift is held back (and counted).
+    expect((await myRoster(h, 'u-cash')).body as Mine).toMatchObject({ known: true, count: 0, notYetPublished: 1 });
+    expect((await h.request({ method: 'POST', path: '/v1/hr/compliance/roster-publications/P-0920', userId: 'u-mgr', tenantId: A, idempotencyKey: 'pub', body: { branchId: 'b1', weekStart: '2026-09-14' } })).status).toBe(201); // OB-179: the Monday week holding Sunday 20 Sep
     // The cashier (holds payroll.ess.self, NOT workforce.roster.read) sees only their own shift.
-    interface Mine { readonly known: boolean; readonly active: boolean; readonly count: number; readonly shifts: readonly { shiftId: string; role: string }[] }
     const mine = (await myRoster(h, 'u-cash')).body as Mine;
-    expect(mine).toMatchObject({ known: true, active: true, count: 1 });
+    expect(mine).toMatchObject({ known: true, active: true, count: 1, notYetPublished: 0 });
     expect(mine.shifts[0]).toMatchObject({ shiftId: 'S1', role: 'cashier' });
 
     // Someone the roster does not know reads as known:false with an empty rota — a new hire, not a 404.

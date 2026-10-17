@@ -53,6 +53,8 @@ describe('a weighed item is sold and returned in grams, end to end (OB-31)', () 
       pack: {
         policies: { storeId: 'store-1', branchId: 'store-1', branchName: 'Main', tradingDayCutoff: '00:00', staleAfterSeconds: 300, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 10_000, cashVarianceToleranceMinor: 10_000, privacySlaDays: 30, warehouseId: 'wh-1' },
         lossPreventionRules: [],
+        // B6: the lane's scale, with a current Legal Metrology stamp (synthetic register entry).
+        weighingScales: [{ assetId: 'SCALE-1', laneIds: ['lane-1'], reverificationDueOn: '2099-12-31' }],
       },
     });
   });
@@ -71,7 +73,7 @@ describe('a weighed item is sold and returned in grams, end to end (OB-31)', () 
       EDGE_PACK_FILE: join(dir, 'store-pack.json'), CLOUD_API_URL: 'https://cloud.example.test', CLOUD_API_TOKEN: TEST_IDP.issue({ sub: 'u-box', tenantId: A, branchId: 'store-1' }),
     }, () => {}))!;
     try {
-      const till = bootPos({ laneId: 'lane-1', taxPercent: 0, lanePort: edge.lane!.port, tradingDayCutoff: '00:00' });
+      const till = bootPos({ laneId: 'lane-1', taxPercent: 0, lanePort: edge.lane!.port, tradingDayCutoff: '00:00', laneScales: { known: true, scales: [{ assetId: 'SCALE-1', reverificationDueOn: '2099-12-31' }] } });
       await signInTill(till, 'u-meena');
       // The scale says 1.234 kg; the product's unit arrives spelt 'KG'.
       till.scan({ productId: 'TOM', description: 'Tomato (loose)', unitPriceMinor: 4_000, qty: 1_234, uom: 'KG' });

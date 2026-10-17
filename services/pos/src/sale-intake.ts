@@ -24,6 +24,10 @@
 
 import { isStoreComputerDefaultReceipt } from '../../../packages/contracts/src/receipt-number';
 import { minimumAgeOf, type CatalogueProduct } from '../../../packages/catalogue/src/catalogue';
+import { productRuleRefusals, lineIsWeighed, isWeighedUom } from '../../../packages/restricted-sales/src/till-gate';
+import { weighingScaleVerification, InvalidScaleVerification } from '../../../packages/facilities/src/weighing-verification';
+import type { CardTokenReference } from '../../../packages/tender/src/card-token';
+import { withoutCardData, cardDataRemovalWords } from '../../../packages/tender/src/tender-card-data';
 
 export interface IncomingSaleLine {
   readonly productId: string;
@@ -72,15 +76,32 @@ export interface IncomingSaleLine {
     readonly approvedBy?: string;
     readonly activityId?: string;
   };
+  /**
+   * B6: the scales the lane took weight from for a WEIGHED line, and the last day each stamp was valid, as the till's gate
+   * checked them (`till-gate.ts` `scaleEvidence`). A record, never a control here — the till and its store computer refuse
+   * the line; head office flags a weighed line without it, or with a stamp that had lapsed.
+   */
+  readonly scaleCheck?: { readonly checkedOn?: string; readonly scales?: readonly { readonly assetId?: string; readonly reverificationDueOn?: string }[] };
+  /** B14: the pack size a tobacco line was judged against at the till. A record. */
+  readonly packCheck?: { readonly packMinimumMinor?: number };
+  /** B19: a carry-bag line's material and thickness as the till judged them. A record. */
+  readonly carryBag?: { readonly material?: string; readonly thicknessMicrons?: number };
 }
 
 export interface IncomingTender {
   readonly kind: string;
   readonly amountMinor: number;
-  /** A provider token or reference. Never a card number (hard rule #3). */
+  /** A provider token or reference. Never a card number (hard rule #3): one shaped like it is removed before banking. */
   readonly ref?: string;
   /** On a `loyalty_points` tender: the whole points the store computer took for this amount (PF-09 step 3). */
   readonly points?: number;
+  /** C10: on a card tender, the ONLY card facts kept — the network-token reference, the last four digits, the network. */
+  readonly card?: CardTokenReference;
+  /**
+   * NEW-3 (C10): the store computer REMOVED card data the till sent with this tender, before its disk — field names only,
+   * never the values. Written by the store computer (one a till sends is dropped there); head office raises it, critical.
+   */
+  readonly cardDataRemoved?: { readonly fields?: readonly string[] };
 }
 
 export interface IncomingSale {
@@ -142,6 +163,22 @@ export type SaleExceptionKind =
   | 'sold_expired_batch'
   /** An age-restricted product was sold with no confirmed age check covering it (PF-03). **Critical**: possibly a minor. */
   | 'age_restricted_sold_without_check'
+  /** B19: a banned single-use plastic, a carry bag below 120 µm, or a carry bag given free — or (OB-173) charged below its
+   *  list price — was sold. **Critical**: unlawful / against the owner's written rule. */
+  | 'unlawful_plastic_sold'
+  /** B14: a tobacco line below one whole pack, or not a whole number of packs (OB-160), was sold — loose cigarettes.
+   *  **Critical**: COTPA s.7. */
+  | 'tobacco_sold_below_pack'
+  /** B6: a weighed line came with no scale evidence, or its scale's Legal Metrology stamp had lapsed when it sold. Judged
+   *  against head office's OWN scale register where it is wired (L3), not only the till's claim. */
+  | 'weighed_on_unverified_scale'
+  /** NEW-2 (B6): a line's unit is not the product's unit in head office's catalogue (a weighed product sent as "L" or "ea"). */
+  | 'unit_differs_from_catalogue'
+  /** NEW-3 (C10 · hard rule #3): a tender arrived carrying card data a tender may not keep (a card number, a security
+   *  code, an expiry, any field beyond token / last four / network). **Critical**. It was removed before banking. */
+  | 'card_data_in_tender'
+  /** B5: a weighed line was charged more than weighed quantity × the price per kg (rounded against the customer). */
+  | 'weighed_line_charged_above_weight_times_price'
   /** The tenders do not add up to the total. Somebody's day will not balance. */
   | 'tender_does_not_sum_to_total'
   /** Priced from a pack far behind the current one. */
@@ -154,6 +191,9 @@ export type SaleExceptionKind =
   | 'committed_in_the_future'
   /** Lines do not add up to the sale total. */
   | 'lines_do_not_sum_to_total'
+  /** Verifier r2final NEW-2: a line was recorded below zero — a negative taxable value and negative GST, which no return
+   *  can file. An offer spread onto a line more than the line charged. */
+  | 'line_charged_below_zero'
   /** The sale names no cashier — nobody can be asked about it (SP-4b · F09 · §28 · hard rule #4). */
   | 'sale_names_no_cashier'
   /** The named cashier holds no grants in this shop — head office does not know them (F09). */
@@ -241,6 +281,12 @@ export interface IntakeContext {
    * own desk) — then no finding is raised.
    */
   readonly cashierSeal?: 'verified' | 'missing' | 'does_not_match';
+  /**
+   * L3 (B6): head office's OWN scale register for the lane this sale came from — the scales it says weigh for that lane and
+   * the last day each stamp is valid. A weighed line is judged against THIS, on the sale's trading day, not against what
+   * the till claimed. Absent when the composition has no register (then the till's evidence is judged, as before).
+   */
+  readonly laneScalesOnRegister?: readonly { readonly assetId: string; readonly reverificationDueOn: string }[];
 }
 
 const text = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
@@ -281,6 +327,36 @@ export function acceptSale(sale: IncomingSale, ctx: IntakeContext): IntakeResult
       `the lines add to ${lineSum} against a total of ${sale.totalMinor}`,
       'The receipt the customer holds does not add up. Keep it for the day-end review.',
       { differenceMinor: lineSum - sale.totalMinor });
+  }
+
+  // NEW-2: a line below zero is never a sale anybody made — it is an offer spread past what the line charged.
+  for (const l of sale.lines) {
+    if (typeof l.lineTotalMinor === 'number' && l.lineTotalMinor < 0) {
+      add('line_charged_below_zero', 'material',
+        `${l.productId} was recorded at ${l.lineTotalMinor} — below zero, so its taxable value and GST are negative`,
+        'This bill cannot be filed as it stands. Find which till sent it (an old till spread an offer by the price per kg) and correct the GST record for that bill.',
+        { productId: l.productId, differenceMinor: l.lineTotalMinor });
+    }
+  }
+
+  // ── Card data on a tender (C10 · hard rule #3 · NEW-3). A tender keeps a token reference, the last four digits and the ──
+  // ── network — nothing else. What arrived beyond that is REMOVED before banking (`withoutCardData`, by the route) and ──
+  // ── raised here, critical, by field NAME: the value is never repeated. The sale stands — it happened. ──────────────────
+  const cardData = withoutCardData(sale.tenders);
+  if (cardData.removed.length > 0) {
+    add('card_data_in_tender', 'critical',
+      `a tender arrived with card data a tender may not keep — ${cardDataRemovalWords(cardData.removed)}; it was removed and not banked`,
+      'ACT NOW: something sent a card number, security code or expiry with this sale. Nothing card-like was kept. Find which till, card machine link or program sent it and stop it — card data must never leave the card machine.');
+  }
+  const removedAtStore = sale.tenders.flatMap((t, i) => {
+    const fields = t !== null && typeof t === 'object' && t.cardDataRemoved !== undefined && Array.isArray(t.cardDataRemoved.fields)
+      ? t.cardDataRemoved.fields.filter((f): f is string => typeof f === 'string') : undefined;
+    return fields === undefined ? [] : [`tender ${i + 1} (${typeof t.kind === 'string' ? t.kind : ''}): ${fields.length === 0 ? 'card data' : fields.join(', ')}`];
+  });
+  if (removedAtStore.length > 0) {
+    add('card_data_in_tender', 'critical',
+      `the store computer removed card data the till sent, before its disk — ${removedAtStore.join('; ')}`,
+      'ACT NOW: a till or a card machine link sent card data with this sale. The store computer kept nothing card-like. Find which program on that till sent it and stop it — card data must never leave the card machine.');
   }
 
   // ── Who rang it, on which lane, on which day (SP-4b · F09). The money is real either way; a sale that ──────
@@ -383,6 +459,92 @@ export function acceptSale(sale: IncomingSale, ctx: IntakeContext): IntakeResult
               : `${product.sku} is restricted to ${requiredAge}+ but the customer was only confirmed ${confirmedAge}+`,
           'ACT NOW: an age-restricted item may have been sold to someone under age. Ask the cashier on that bill what was checked, and find why the till did not stop the sale (an old till, or a pack that predates the restriction).',
           { productId: line.productId });
+      }
+    }
+
+    // ── The till's legal gates, re-checked against head office's OWN catalogue (B14 · B19). The till and its store ──────
+    // ── computer refuse these before the money; this is the backstop for an old till, or a product whose flags changed ──
+    // ── after the lane's pack was built. The sale stands (the goods are gone, hard rule #1), so each is CRITICAL. ─────────
+    // NEW-1 (B19): judged as CHARGED — a bag that a promotion took to zero is a free bag.
+    // OB-173 (owner, 17 Oct 2026, "Never discount bags"): a carry bag is charged its FULL list price — judged against the
+    // higher of head office's own catalogue price (when the lane priced from the current pack — a lane a pack behind sold at
+    // the price it was given, which is the pack-lag exception's business) and the line's price before any change at the till.
+    const listUnit = Math.max(
+      sale.packVersion >= ctx.currentPackVersion && typeof product.unitPriceMinor === 'number' && Number.isFinite(product.unitPriceMinor) ? product.unitPriceMinor : 0,
+      typeof line.priceOverride?.fromUnitPriceMinor === 'number' && Number.isFinite(line.priceOverride.fromUnitPriceMinor) ? line.priceOverride.fromUnitPriceMinor : 0,
+      line.unitPriceMinor,
+    );
+    const legal = productRuleRefusals({
+      productId: line.productId, description: product.sku, quantityMinor: line.quantityMinor, uom: line.uom,
+      unitPriceMinor: line.unitPriceMinor, listUnitPriceMinor: listUnit,
+      ...(typeof line.lineTotalMinor === 'number' && Number.isFinite(line.lineTotalMinor) ? { chargedMinor: line.lineTotalMinor } : {}),
+      // L1: a carry bag is judged in head office's catalogue unit, whatever unit the line says.
+      ...(typeof product.baseUom === 'string' && product.baseUom !== '' ? { catalogueUom: product.baseUom } : {}),
+      ...(product.regulatedFlags === undefined ? {} : { regulatedFlags: product.regulatedFlags }),
+    });
+    for (const r of legal) {
+      if (r.reason === 'banned_single_use_plastic' || r.reason === 'carry_bag_below_min_thickness' || r.reason === 'carry_bag_not_priced' || r.reason === 'carry_bag_discounted') {
+        add('unlawful_plastic_sold', 'critical',
+          `${product.sku}: ${r.detail}`,
+          'ACT NOW: an item the plastic rules forbid was sold. Take the item off sale, find why the till did not stop it (an old till, or a pack that predates the rule), and keep the receipt for the record.',
+          { productId: line.productId });
+      } else if (r.reason === 'tobacco_below_pack' || r.reason === 'tobacco_not_whole_packs') {
+        add('tobacco_sold_below_pack', 'critical',
+          `${product.sku}: ${r.detail}`,
+          'ACT NOW: loose cigarettes were sold, which the law forbids. Ask the cashier on that bill, and find why the till did not stop it.',
+          { productId: line.productId });
+      }
+    }
+
+    // ── NEW-2 (B6): the unit is head office's catalogue's, not the line's word for it. ─────────────────────────────────
+    if (typeof product.baseUom === 'string' && product.baseUom !== '' && line.uom !== product.baseUom) {
+      add('unit_differs_from_catalogue', 'material',
+        `${product.sku} was sold in "${String(line.uom)}" and head office's catalogue sells it in "${product.baseUom}"`,
+        isWeighedUom(product.baseUom)
+          ? 'This product is sold by weight. Check the till that sent it: a weighed item sent in another unit skips the scale check and is priced on the wrong unit.'
+          : 'Check which till sent it and whether its catalogue is current — the quantity and the price may be read on the wrong unit.',
+        { productId: line.productId });
+    }
+
+    // ── B6 · B5 — a WEIGHED line (by head office's catalogue OR the line's unit): its scale's stamp, and its amount ─────
+    // ── against weight × price. ────────────────────────────────────────────────────────────────────────────────────────
+    if (lineIsWeighed({ uom: line.uom, ...(typeof product.baseUom === 'string' ? { catalogueUom: product.baseUom } : {}) })) {
+      const evidence = line.scaleCheck;
+      // L3: head office's OWN register for this lane, on the sale's trading day, when it is wired; else the till's claim.
+      const onRegister = ctx.laneScalesOnRegister;
+      const scales = onRegister !== undefined ? onRegister : Array.isArray(evidence?.scales) ? evidence.scales : [];
+      const day = onRegister !== undefined ? sale.tradingDay : typeof evidence?.checkedOn === 'string' ? evidence.checkedOn : sale.tradingDay;
+      const lapsed = scales.filter((s) => {
+        try { return weighingScaleVerification({ reverificationDueOn: String(s.reverificationDueOn ?? '') }, day).tradingBlocked; } catch (err) {
+          if (err instanceof InvalidScaleVerification) return true; // an unreadable stamp date is no proof of a current one
+          throw err;
+        }
+      });
+      if (scales.length === 0) {
+        add('weighed_on_unverified_scale', 'material',
+          onRegister !== undefined
+            ? `${product.sku} was sold by weight on lane ${sale.laneId}, and head office's scale register has no scale for that lane`
+            : `${product.sku} was sold by weight with no record of a verified scale`,
+          onRegister !== undefined
+            ? 'Head office cannot show this weight came from a scale with a current Legal Metrology stamp: put the scale on that lane on the register (Scales page), with its stamp date and certificate.'
+            : 'Head office cannot show this weight came from a scale with a current Legal Metrology stamp. Check which till sent it (an old till sends no scale record) and that its scale is on the register.',
+          { productId: line.productId });
+      } else if (lapsed.length > 0) {
+        add('weighed_on_unverified_scale', 'critical',
+          `${product.sku} was weighed on ${lapsed.map((s) => `${String(s.assetId)} (stamp valid to ${String(s.reverificationDueOn)})`).join(', ')} on ${day} — the verification had lapsed`,
+          'ACT NOW: goods were sold by weight on a scale whose Legal Metrology stamp had run out. Stop weighing on it, book the re-verification, and find why the till did not stop the sale.',
+          { productId: line.productId });
+      }
+      // The amount the customer may be charged at most: weighed net quantity × the price per unit, rounded DOWN (B5). The
+      // unit is the catalogue's when it says the product is weighed (NEW-2), else the line's.
+      const unit = typeof product.baseUom === 'string' && isWeighedUom(product.baseUom) ? product.baseUom : line.uom;
+      const per = unit === 'kg' ? 1000 : 1;
+      const most = Math.floor((line.unitPriceMinor * line.quantityMinor) / per);
+      if (Number.isSafeInteger(most) && line.lineTotalMinor > most) {
+        add('weighed_line_charged_above_weight_times_price', 'material',
+          `${product.sku}: ${line.quantityMinor} ${line.uom === 'kg' ? 'g' : line.uom} at ${line.unitPriceMinor} per ${line.uom} is at most ${most}, and the line charged ${line.lineTotalMinor}`,
+          'The customer was charged more than the weight times the displayed price. Refund the difference if they ask, and find which till rounds against the customer.',
+          { productId: line.productId, differenceMinor: line.lineTotalMinor - most });
       }
     }
 

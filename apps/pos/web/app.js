@@ -38,12 +38,14 @@ const descOf = (productId) => (session.productName && session.productName(produc
 const WORDS = {
   en: {
     staleShell: 'No connection to the store computer. Billing still works. This price list is what this lane was last given, at',
+    offersRefused: 'Offers this till does not apply, because they would give a carry bag free (a bag is always sold at its price). Tell the manager:',
     scanToBegin: 'Scan an item to begin.', qty: 'Qty', void: 'Void', tender: 'Tender',
     // The age question (M12-FR-04 · Wave 2b PF-03): asked BEFORE the item joins the bill, answered in the signed-in
     // cashier's name. {item} and {age} are filled in from the product the till just scanned.
     ageQuestion: '{item} is age restricted. Check the customer\'s identification. Is the customer {age} or over?',
     ageYes: 'Yes — ID checked, {age} or over', ageNo: 'No — do not sell',
     ageNotSoldTitle: 'Item not sold',
+    cannotSellTitle: 'Cannot be sold',
     ageNotSold: 'The customer could not show they are {age} or over, so {item} was not added to the bill. Nothing else changes.',
     // Who is on the till (SP-4b · F09): the lane the box said it is, and the cashier who signed in — or nobody.
     lane: 'Lane', noLane: 'No lane set on this till', notSignedIn: 'Nobody signed in',
@@ -173,10 +175,12 @@ const WORDS = {
   },
   ta: {
     staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. பில் போடுவது வேலை செய்யும். இந்த விலைப் பட்டியல் இந்த லேனுக்குக் கடைசியாகக் கொடுக்கப்பட்டது:',
+    offersRefused: 'கேரி பையை இலவசமாக்கும் சலுகைகளை இந்த டில் பயன்படுத்தாது (பை எப்போதும் அதன் விலைக்கே விற்கப்படும்). மேலாளரிடம் சொல்லுங்கள்:',
     scanToBegin: 'தொடங்க ஒரு பொருளை ஸ்கேன் செய்யவும்.', qty: 'எண்ணிக்கை', void: 'நீக்கு',
     ageQuestion: '{item} வயது வரம்புள்ள பொருள். வாடிக்கையாளரின் அடையாள அட்டையைச் சரிபார்க்கவும். வாடிக்கையாளருக்கு {age} வயது அல்லது அதற்கு மேல் ஆகிறதா?',
     ageYes: 'ஆம் — அடையாளம் சரிபார்க்கப்பட்டது, {age} அல்லது அதற்கு மேல்', ageNo: 'இல்லை — விற்க வேண்டாம்',
     ageNotSoldTitle: 'பொருள் விற்கப்படவில்லை',
+    cannotSellTitle: 'இதை விற்க முடியாது',
     ageNotSold: 'வாடிக்கையாளர் {age} வயது அல்லது அதற்கு மேல் என்று காட்ட முடியவில்லை, எனவே {item} பில்லில் சேர்க்கப்படவில்லை. வேறு எதுவும் மாறவில்லை.',
     lane: 'லேன்', noLane: 'இந்த கவுண்டருக்கு லேன் அமைக்கப்படவில்லை', notSignedIn: 'யாரும் உள்நுழையவில்லை',
     signIn: 'உள்நுழை', signOut: 'வெளியேறு', signInTitle: 'உங்கள் பணியாளர் குறியீடு',
@@ -852,7 +856,13 @@ el('qty').addEventListener('click', async () => {
   if (answer === null) return;
   const qty = Number(answer);
   if (!Number.isInteger(qty) || qty <= 0) return;
-  session.setQuantity(selectedLineId, qty);
+  try {
+    session.setQuantity(selectedLineId, qty);
+  } catch (e) {
+    // B6 · B14: a loose-cigarette count, or a weight on a lane whose scale stamp ran out, is refused; the line keeps its quantity.
+    tell(e && e.name === 'TillRuleRefusedError' ? t('cannotSellTitle') : t('read'), e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e));
+    return;
+  }
   render();
 });
 
@@ -1810,6 +1820,9 @@ window.addEventListener('keydown', (event) => {
       // An age-restricted item with no confirmed answer in this basket: the session refused to add it (PF-03). Ask, and
       // scan again only on a yes.
       if (e && e.name === 'AgeCheckRequiredError') { void askAge(e, () => session.scanBarcode(code)); return; }
+      // A line the law forbids (B6 · B14 · B19 — a banned plastic, a thin or free bag, a loose cigarette, weight on a
+      // scale whose stamp ran out) is refused in the gate's own words; there is no override to offer.
+      if (e && e.name === 'TillRuleRefusedError') { tell(t('cannotSellTitle'), e.laneMessage); return; }
       tell(t('read'), String(e && e.message ? e.message : e));
     }
     return;
@@ -1837,6 +1850,18 @@ function paintStale() {
 }
 paintStale();
 el('lang').addEventListener('click', paintStale);
+
+// NEW-1 (B19 · P-08): an offer in the pack that would give a carry bag away is refused by the till, and the lane says so.
+function paintRefusedOffers() {
+  const strip = el('offers-refused');
+  const refused = session && typeof session.refusedOffers === 'function' ? session.refusedOffers() : [];
+  if (!strip) return;
+  strip.hidden = refused.length === 0;
+  if (refused.length === 0) return;
+  strip.textContent = `${t('offersRefused')} ${refused.map((o) => o.offerId).join(', ')}`;
+}
+paintRefusedOffers();
+el('lang').addEventListener('click', paintRefusedOffers);
 
 // The shell existed and nothing ever registered it, so nothing was ever cached and every one of
 // these screens fell back to its sample data the moment the box was unreachable.

@@ -21,6 +21,7 @@ import { createReceiptPrefixSession, type ReceiptPrefixSession, type ReceiptPref
 import { InMemoryLedgerStore, Ledger } from '../../../packages/ledger/src/ledger';
 import { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { openDeviceOutbox, guardedStore } from '../../../packages/sync/src/device-outbox';
+import { readReceivingChecklistSetup, type ReceivingChecklistSetup } from '../../../packages/facilities/src/food-safety';
 import { drainToBox, boxStatus } from '../../../packages/sync/src/device-drain';
 import type { BoxItemStatus } from '../../../packages/sync/src/device-relay';
 import { makeTradingDayRule } from '../../../packages/calendar/src/trading-day';
@@ -295,10 +296,19 @@ import type { Producer } from '../../../packages/reporting/src/index';
 import { mountDemoBanner } from '../../../packages/ui/src/demo-banner';
 import { createIncidentsSession, wordsFor as incidentsWords, outcomeWords as incidentsOutcomeWords, summarise as incidentsSummary, type IncidentsSession } from './incidents-session';
 import {
+  createStoreOpsSession, wordsFor as storeOpsWords, outcomeWords as storeOpsOutcomeWords, slotWords as storeOpsSlotWords, taskWords as storeOpsTaskWords,
+  bandWords as storeOpsBandWords, surfaceWords as storeOpsSurfaceWords, kindWords as storeOpsKindWords, reasonWords as storeOpsReasonWords,
+  splitToday as storeOpsSplitToday, rupees as storeOpsRupees, percent as storeOpsPercent, OB163_BANDS, type StoreOpsSession,
+} from './store-ops-session';
+import {
   createStoreComputersSession, wordsFor as storeComputersWords, outcomeWords as storeComputersOutcomeWords, summarise as storeComputersSummary,
   requestWords as storeComputersRequestWords, findingKindWords as storeComputersFindingWords, type StoreComputersSession,
   unusedNumbersWords as storeComputersUnusedWords, acknowledgeable as storeComputersAcknowledgeable,
 } from './store-computers-session';
+import {
+  createScalesSession, wordsFor as scalesWords, outcomeWords as scalesOutcomeWords, summarise as scalesSummary,
+  stampWords as scalesStampWords, requestWords as scalesRequestWords, formOf as scalesFormOf, type ScalesSession,
+} from './scales-session';
 
 // The practice-data strip ("TRIAL COPY · PRACTICE DATA"). `PILOT_DEMO_BANNER` is a build-time constant baked in by
 // esbuild (`scripts/build-app.mjs`): '1' in the hosted-demo build, empty in production. `typeof` guards
@@ -329,6 +339,8 @@ export interface ManagerData {
   readonly tradingDay?: string;
   readonly tradingDayCutoff?: string;
   readonly warehouseId?: string;
+  /** OB-172: the receiving checklist and cold-chain products head office sent this store (absent = not told). */
+  readonly receivingChecklist?: unknown;
 }
 
 /** What the buyer's screen was last told. Absent means this box knows nothing about buying. */
@@ -4793,6 +4805,28 @@ interface ManagerWindow {
     readonly unusedWords: typeof storeComputersUnusedWords;
     readonly acknowledgeable: typeof storeComputersAcknowledgeable;
   };
+  /** OB-154 "A" (B6 · B7 · L2): the Weighing scales page — who is looking; head office re-checks every act. */
+  scalesData?: ViewerIdentity;
+  scales?: {
+    readonly session: ScalesSession;
+    readonly words: typeof scalesWords;
+    readonly outcomeWords: typeof scalesOutcomeWords;
+    readonly summarise: typeof scalesSummary;
+    readonly stampWords: typeof scalesStampWords;
+    readonly requestWords: typeof scalesRequestWords;
+    readonly formOf: typeof scalesFormOf;
+  };
+  /** OB-154: the store-operations pages (food-safety checks, price mismatches, store tasks, my tasks, waste analytics) —
+   *  who is looking; head office answers the rest. */
+  storeOpsData?: ViewerIdentity;
+  storeOps?: {
+    readonly session: StoreOpsSession;
+    readonly words: typeof storeOpsWords; readonly outcomeWords: typeof storeOpsOutcomeWords;
+    readonly slotWords: typeof storeOpsSlotWords; readonly taskWords: typeof storeOpsTaskWords; readonly bandWords: typeof storeOpsBandWords;
+    readonly surfaceWords: typeof storeOpsSurfaceWords; readonly kindWords: typeof storeOpsKindWords; readonly reasonWords: typeof storeOpsReasonWords;
+    readonly splitToday: typeof storeOpsSplitToday; readonly rupees: typeof storeOpsRupees; readonly percent: typeof storeOpsPercent;
+    readonly bands: typeof OB163_BANDS;
+  };
   substitutionExceptionInboxData?: SubstitutionExceptionInboxData;
   substitutionExceptionInboxSession?: SubExceptionInboxSession;
   /** The shell reads the live exceptions worklist through this and re-presents it — a GET read, never a write. */
@@ -5108,6 +5142,11 @@ export function bootManager(config?: {
       },
       currency: 'INR',
       warehouseId: config?.warehouseId ?? data?.warehouseId ?? 'store-1',
+      // OB-172: read strictly — a section that is not a whole receiving checklist is the same as none (the form says so).
+      ...((): { receivingChecklist?: ReceivingChecklistSetup } => {
+        const setup = readReceivingChecklistSetup(data?.receivingChecklist);
+        return setup === undefined ? {} : { receivingChecklist: setup };
+      })(),
     },
     // The read registers come from the last-synced payload; the one WRITE port (day close) is added
     // only when this box serves a lane to post to. `??` on the whole port keeps a missing box honest.
@@ -6482,5 +6521,22 @@ if (browserWindow !== undefined) {
     words: storeComputersWords, outcomeWords: storeComputersOutcomeWords, summarise: storeComputersSummary,
     requestWords: storeComputersRequestWords, findingWords: storeComputersFindingWords,
     unusedWords: storeComputersUnusedWords, acknowledgeable: storeComputersAcknowledgeable,
+  };
+  // OB-154 "A" (B6 · B7 · L2): the Weighing scales page — its session is the tested model in scales-session.ts; it offers
+  // only what the person's permissions allow, head office re-checks every act, and nothing is written on open.
+  browserWindow.scalesData = viewerIdentity(browserWindow.scalesData);
+  browserWindow.scales = {
+    session: createScalesSession({ viewer: browserWindow.scalesData }),
+    words: scalesWords, outcomeWords: scalesOutcomeWords, summarise: scalesSummary,
+    stampWords: scalesStampWords, requestWords: scalesRequestWords, formOf: scalesFormOf,
+  };
+  // OB-154: the store-operations pages — their session is the tested model in store-ops-session.ts; it reads and writes
+  // head office's own routes in the signed-in person's session, never on open.
+  browserWindow.storeOpsData = viewerIdentity(browserWindow.storeOpsData);
+  browserWindow.storeOps = {
+    session: createStoreOpsSession({ viewer: browserWindow.storeOpsData }),
+    words: storeOpsWords, outcomeWords: storeOpsOutcomeWords, slotWords: storeOpsSlotWords, taskWords: storeOpsTaskWords,
+    bandWords: storeOpsBandWords, surfaceWords: storeOpsSurfaceWords, kindWords: storeOpsKindWords, reasonWords: storeOpsReasonWords,
+    splitToday: storeOpsSplitToday, rupees: storeOpsRupees, percent: storeOpsPercent, bands: OB163_BANDS,
   };
 }

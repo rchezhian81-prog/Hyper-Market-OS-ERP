@@ -27,6 +27,7 @@
 
 import type { DomainEvent } from '../../contracts/src/event';
 import type { OutboxItem } from './outbox';
+import { readSignInStamp, type SignInStamp } from './sign-in-stamp';
 
 /** The box's routes for device work. Named here so the device and the box cannot drift apart. */
 export const DEVICE_OUTBOX_PATH = '/lane/outbox';
@@ -107,6 +108,8 @@ export function isRelayable(type: string, source: string): boolean {
 export interface RelayItem {
   readonly key: string;
   readonly event: DomainEvent;
+  /** OB-180: the sign-in a handheld made it under. Only the device socket reads it; it never travels to head office. */
+  readonly stamp?: SignInStamp;
 }
 
 /** What a device posts: who it is (the surface) and the items, in enqueue order. */
@@ -175,7 +178,9 @@ export function readRelayItem(v: unknown): ReadRelayItem {
     id: e['id'] as string, type: e['type'] as string, occurredAt: e['occurredAt'] as string,
     idempotencyKey: key, source: e['source'] as string, version: e['version'] as number, payload: e['payload'],
   };
-  return { ok: true, item: { key, event } };
+  const stamp = readSignInStamp(v['stamp']);
+  if (!stamp.ok) return { ok: false, key, reason: stamp.reason };
+  return { ok: true, item: stamp.stamp === undefined ? { key, event } : { key, event, stamp: stamp.stamp } };
 }
 
 export type ReadRelayBatch =

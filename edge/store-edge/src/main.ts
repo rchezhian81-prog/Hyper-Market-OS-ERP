@@ -80,8 +80,8 @@ import { laneSyncStatus, type LaneSyncStatus, type QueueHealth } from './sync-st
 import { startScreenServer, SCREEN_HOST, type ScreenServer } from './screen-server';
 import { startDeviceServer, DEVICE_HOST, type DeviceServer } from './device-server';
 import { DeviceEnrolments, readPackDevices } from './device-enrolments';
-import { TillOperators, loadTillCredentials } from './till-operators';
-import { phoneOperatorsOf } from './handheld-sign-in';
+import { TillOperators, loadTillCredentials, deviceLaneOf } from './till-operators';
+import { phoneOperatorsOf, personNamedBy } from './handheld-sign-in';
 import { TillApprovals } from './till-approvals';
 import { ReceiptNumbers } from './receipt-numbers';
 import { HeldBills } from './held-bills';
@@ -97,7 +97,8 @@ import { sealDecision, sealTillFact, tillSealKey } from '../../../packages/ident
 import { withDeciderSeal } from './decision-seal';
 import { readSales } from './read-model';
 import { emptyPack, readPack, withMigrationFeed, withPublishedTemplates, withIndentsFeed, withAssignmentsFeed, type StorePack } from './store-pack';
-import { managerPayload, type ScreenInput } from './screen-data';
+import { managerPayload, tillCatalogue, type ScreenInput } from './screen-data';
+import { checkTillRules, laneScalesFor, type GateProduct } from './lane-scales';
 import { hmacSigner } from '../../../services/catalogue/src/index';
 import { makeEvent, type DomainEvent } from '../../../packages/contracts/src/event';
 import { closeDay as decideDayClose, reopenDay as decideReopenDay, carriedForwardOf } from '../../../packages/day-close/src/day-close';
@@ -259,6 +260,24 @@ function dayCloseEventFrom(record: string, index: number): DomainEvent | undefin
 }
 
 /** Gap between drains when the last one delivered something. */
+/**
+ * The box's catalogue as the till's legal gate reads it (B14 · B19): name and pack flags, by product id. Indexed once per
+ * catalogue the box holds (the same object until a new pack or pack file lands), so a sale does not re-index 40,000
+ * products.
+ */
+const gateIndex = new WeakMap<object, ReadonlyMap<string, GateProduct>>();
+function gateProductsOf(pack: StorePack, cataloguePack: Parameters<typeof tillCatalogue>[1], now: string): ReadonlyMap<string, GateProduct> {
+  // Head office's pulled pack wins whenever the box holds one; else the pack file (`tillCatalogue`). Either is replaced,
+  // never edited, when a new one lands — so the object itself is the key.
+  const key: object = cataloguePack ?? pack;
+  const held = gateIndex.get(key);
+  if (held !== undefined) return held;
+  const catalogue = tillCatalogue(pack, cataloguePack, now);
+  const map = new Map((catalogue?.products ?? []).map((p) => [p.productId, { name: p.name, baseUom: p.uom, unitPriceMinor: p.unitPriceMinor, ...(p.regulatedFlags === undefined ? {} : { regulatedFlags: p.regulatedFlags }) }] as const));
+  gateIndex.set(key, map);
+  return map;
+}
+
 const BASE_INTERVAL_MS = 15_000;
 /** Ceiling on the gap when nothing is getting through. Five minutes, not five hours. */
 const MAX_INTERVAL_MS = 300_000;
@@ -915,7 +934,20 @@ export async function startEdge(
       const { key } = read.item;
       // A back-office decision is sealed here when the person this box verified is the one it names (2b-vi-c-3);
       // any stamp the device sent itself is removed — only the box vouches.
-      const event = withDeciderSeal(sealKey, tenantId, read.item.event, batch.verifiedPerson);
+      // OB-172: a HANDHELD's record reaches here only once the device socket has checked that the person it names held THIS
+      // phone this shift, signed in with their own PIN (DF-3-c). OB-180 "A": a record STAMPED with the sign-in it was made
+      // under — a stamp the device socket verified (this phone, this record, inside that sign-in) — is sealed for the
+      // person whose sign-in made it, even if somebody else holds the phone now. An UNSTAMPED record (a phone queue from
+      // before OB-180) keeps verifier r2final NEW-4's rule: sealed only for the person holding the phone NOW; naming
+      // anybody else it travels UNSEALED and head office flags it as not accepted (hard rule #10).
+      const verified = batch.deviceId === undefined ? batch.verifiedPerson : (() => {
+        const named = personNamedBy(read.item.event);
+        if (!named.ok) return undefined;
+        const stampedBy = batch.stampedBy?.[key];
+        const vouched = stampedBy !== undefined ? stampedBy === named.userId : batch.phoneHolder !== undefined && named.userId === batch.phoneHolder;
+        return vouched ? { userId: named.userId, via: 'phone_pin', laneId: deviceLaneOf(batch.deviceId) } : undefined;
+      })();
+      const event = withDeciderSeal(sealKey, tenantId, read.item.event, verified);
       if (!isRelayable(event.type, batch.source)) {
         acks.push({ key, status: 'refused', reason: `${event.type} is not a record this box relays for ${batch.source}` });
         continue;
@@ -1553,6 +1585,17 @@ export async function startEdge(
         tradingDate(wallClockIn(new Date().toISOString()), packCutoff(pack)),
         (pack.policies.known ? pack.policies.value.branchId : undefined) ?? undefined,
       ),
+    },
+    // B6 · B14 · B19: the till's legal gates again, before the disk — from this box's own catalogue and this lane's scales.
+    tillRules: {
+      check: (record) => {
+        const now = new Date().toISOString();
+        return checkTillRules(record, {
+          products: gateProductsOf(pack, node.pack(), now),
+          scales: laneScalesFor(pack, laneIdOfThisBox()),
+          today: tradingDate(wallClockIn(now), makeTradingDayRule('00:00')),
+        });
+      },
     },
     closeDay: (req) => {
       const fn = dayCloseRelay.current;

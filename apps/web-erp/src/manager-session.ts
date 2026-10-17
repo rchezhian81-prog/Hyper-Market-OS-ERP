@@ -52,6 +52,7 @@ import { closeDay, type DayCloseResult } from '../../../packages/day-close/src/d
 import type { Ledger } from '../../../packages/ledger/src/ledger';
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { makeEvent } from '../../../packages/contracts/src/event';
+import { judgeDockChecklist, coldChainAmong, type DockChecklistAnswer, type DockChecklistRefusal, type ReceivingChecklistSetup } from '../../../packages/facilities/src/food-safety';
 import {
   deviceItemReason, deviceItemState, type BoxItemStatus, type DeviceItemState,
 } from '../../../packages/sync/src/device-relay';
@@ -408,6 +409,12 @@ export interface ManagerConfig {
   readonly currency: CurrencyCode;
   /** Where received goods land. Per-tenant. */
   readonly warehouseId: string;
+  /**
+   * OB-172 · D-6: the receiving checklists head office has in force for this store and its cold-chain products, as the store
+   * computer was told them. Absent = not told: the Receive form cannot ask for the checklist, and head office books such a
+   * chilled/frozen delivery flagged `receiving_checklist_missing` (P-08).
+   */
+  readonly receivingChecklist?: ReceivingChecklistSetup;
 }
 
 export interface ReceiveInput {
@@ -417,6 +424,19 @@ export interface ReceiveInput {
   readonly poId: string | null;
   readonly receivedAt: string;
   readonly lines: readonly ReceiptLineInput[];
+  /** OB-172: the receiving checklist the manager did at the door (needed for chilled, frozen or raw-meat goods). */
+  readonly checklist?: DockChecklistAnswer;
+}
+
+/**
+ * OB-172: a delivery with chilled or frozen goods is not saved without its receiving checklist — every item ticked, and a
+ * failure with what was done. Nothing was saved and no stock moved; the words are the person's (English and the reason code).
+ */
+export class ReceivingChecklistRefusedError extends Error {
+  constructor(readonly refusal: DockChecklistRefusal, readonly detail: string, readonly coldChain: readonly string[]) {
+    super(detail);
+    this.name = 'ReceivingChecklistRefusedError';
+  }
 }
 
 export interface ReceivedGoods {
@@ -522,6 +542,10 @@ export interface ManagerSession {
   noteBoxStatus(statuses: readonly BoxItemStatus[]): void;
   /** Book a delivery in. Stock rises locally; the WHOLE receipt queues for head office on the durable device queue (M07). */
   receive(input: ReceiveInput): ReceivedGoods;
+  /** OB-172: the receiving checklist this store was sent (absent = not told), for the Receive form to offer offline. */
+  receivingChecklist(): ReceivingChecklistSetup | undefined;
+  /** OB-172: which of these products are chilled / frozen / raw meat by head office's master (they need the checklist). */
+  coldChainAmong(productIds: readonly string[]): readonly string[];
   /** Capture a blind count and queue it for head office to reconcile (M09-FR-04). Nothing here reveals — or computes — the expected. */
   countStock(input: CountInput): CountAttempt;
   /** Everything standing between this store and a closed day — enumerated, never just counted. */
@@ -772,8 +796,19 @@ export function createManagerSession(
       for (const s of statuses) boxWord.set(s.key, s);
     },
 
+    receivingChecklist: () => config.receivingChecklist,
+    coldChainAmong: (productIds) => coldChainAmong(config.receivingChecklist, productIds),
+
     receive: (input) => {
       if (config.manager === null) throw new NobodyNamedError('book a delivery in');
+      // OB-172 (OB-164 at the door, offline): a chilled/frozen delivery is not saved without its receiving checklist, judged
+      // by the same rule head office applies; it is done by — and travels in the name of — the manager booking it in.
+      const verdict = judgeDockChecklist({
+        setup: config.receivingChecklist, grnId: input.grnId, productIds: input.lines.map((l) => l.productId),
+        ...(input.checklist === undefined ? {} : { answer: input.checklist }),
+        performedBy: config.manager.userId, performedAt: input.receivedAt,
+      });
+      if (!verdict.ok) throw new ReceivingChecklistRefusedError(verdict.refusal, verdict.detail, verdict.coldChain);
       return {
       receipt: commitReceipt(
         {
@@ -787,6 +822,7 @@ export function createManagerSession(
           // Where and on what it was booked in (SP-2b) — head office re-verifies the receiver and re-runs the rules.
           storeId: config.storeId,
           source: 'manager-screen',
+          ...(verdict.carried === undefined ? {} : { receivingChecklist: verdict.carried }),
         },
         stockLedger,
         outbox,

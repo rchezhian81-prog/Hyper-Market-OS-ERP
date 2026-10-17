@@ -7,6 +7,7 @@
 import { makeEvent } from '../../contracts/src/event';
 import type { Ledger } from '../../ledger/src/ledger';
 import type { SyncOutbox } from '../../sync/src/outbox';
+import type { CarriedReceivingChecklist } from '../../facilities/src/food-safety';
 
 export interface ReceiptLineInput {
   readonly productId: string;
@@ -33,6 +34,11 @@ export interface CommitReceiptInput {
   readonly storeId?: string;
   /** Which surface booked it in, e.g. `manager-screen` (SP-2b). */
   readonly source?: string;
+  /**
+   * OB-172: the D-6 receiving checklist done at the dock for this delivery (chilled, frozen, raw meat), by the person who
+   * booked it in. It travels INSIDE the receipt — one record the store computer seals — never as a separate message.
+   */
+  readonly receivingChecklist?: CarriedReceivingChecklist;
 }
 
 export interface CommittedReceipt {
@@ -109,6 +115,7 @@ export function commitReceipt(
         })),
         storeId: input.storeId ?? null,
         source: input.source ?? 'receiving',
+        ...(input.receivingChecklist === undefined ? {} : { receivingChecklist: input.receivingChecklist }),
       },
     }),
   );

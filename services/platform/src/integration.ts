@@ -13,7 +13,7 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import {
-  checkDevice, registerAdapter, integrationHealth,
+  checkDevice, registerAdapter, integrationHealth, adapterUsable,
   type CertifiedEntry, type AdapterCategory, type DeviceKind, type AdapterConfig, type AdapterHeartbeat,
 } from '../../../packages/integration/src/index';
 
@@ -85,8 +85,9 @@ export function integrationRoutes(deps: IntegrationDeps): readonly Route[] {
         if (!CATEGORIES.includes(b['category'] as AdapterCategory) || !isStr(b['vendor']) || !isStr(b['credentialRef'])
           || !(ENVIRONMENTS as readonly string[]).includes(b['environment'] as string) || typeof b['enabled'] !== 'boolean'
           || retains === undefined
-          || (b['queueOnOutage'] !== undefined && typeof b['queueOnOutage'] !== 'boolean')) {
-          throw apiError(400, { code: 'not_readable_as_an_adapter', whatHappened: 'An adapter needs a category, a vendor, a vault credentialRef, an environment (sandbox/production) and an enabled flag; retains (payments) and queueOnOutage are optional.', wasItSaved: 'not_saved', nextSafeAction: 'Send the adapter fields. Nothing was registered.' });
+          || (b['queueOnOutage'] !== undefined && typeof b['queueOnOutage'] !== 'boolean')
+          || (b['dataRegion'] !== undefined && !isStr(b['dataRegion']))) {
+          throw apiError(400, { code: 'not_readable_as_an_adapter', whatHappened: 'An adapter needs a category, a vendor, a vault credentialRef, an environment (sandbox/production) and an enabled flag; retains (payments) and queueOnOutage are optional; a payment adapter also needs dataRegion (IN or IN-<state>).', wasItSaved: 'not_saved', nextSafeAction: 'Send the adapter fields. Nothing was registered.' });
         }
         const environment = b['environment'] as 'sandbox' | 'production';
         const config: AdapterConfig = {
@@ -94,6 +95,8 @@ export function integrationRoutes(deps: IntegrationDeps): readonly Route[] {
           environment, credentialRef: b['credentialRef'] as string, enabled: b['enabled'] as boolean,
           ...(retains.length > 0 ? { retains } : {}),
           ...(typeof b['queueOnOutage'] === 'boolean' ? { queueOnOutage: b['queueOnOutage'] } : {}),
+          // C12: where a payment provider keeps the shop's payment data (India only — `registerAdapter` refuses elsewhere).
+          ...(isStr(b['dataRegion']) ? { dataRegion: b['dataRegion'] } : {}),
         };
         const result = registerAdapter({ config, matrix: await deps.matrix(ctx.tenantId), environment });
         if (!result.registered) {
@@ -101,7 +104,7 @@ export function integrationRoutes(deps: IntegrationDeps): readonly Route[] {
             code: result.outcome,
             whatHappened: result.detail,
             wasItSaved: 'not_saved',
-            nextSafeAction: 'The adapter was not registered. A payment adapter may keep only a provider token and its like, its provider must be RBI-authorised, and every credential is a vault:// reference.',
+            nextSafeAction: 'The adapter was not registered. A payment adapter may keep only a provider token and its like, must declare where it keeps payment data (dataRegion IN or IN-<state>, India only), its provider must be RBI-authorised, and every credential is a vault:// reference.',
           });
         }
         await deps.recordAdapter(ctx.tenantId, config);
@@ -119,6 +122,20 @@ export function integrationRoutes(deps: IntegrationDeps): readonly Route[] {
         const b = (ctx.body ?? {}) as Record<string, unknown>;
         if (typeof b['ok'] !== 'boolean' || !isDateTime(b['at']) || (b['detail'] !== undefined && !isStr(b['detail']))) {
           throw apiError(400, { code: 'not_readable_as_a_heartbeat', whatHappened: 'A heartbeat needs ok (true/false) and a timestamp.', wasItSaved: 'not_saved', nextSafeAction: 'Send { "ok": true|false, "at": "<timestamp>" }. Nothing was recorded.' });
+        }
+        // OB-170 "A": an adapter that may not be used as registered (a payment adapter registered before OB-162 with no
+        // India region declared) is refused by name — its traffic is not recorded as the adapter working.
+        const registered = (await deps.adapters(ctx.tenantId)).find((a) => a.adapterId === adapterId);
+        if (registered !== undefined) {
+          const use = adapterUsable(registered);
+          if (!use.usable) {
+            throw apiError(422, {
+              code: use.refusal,
+              whatHappened: use.detail,
+              wasItSaved: 'not_saved',
+              nextSafeAction: 'Nothing was recorded. Register the adapter again with dataRegion IN or IN-<state> (India only); it can be used once the region is declared.',
+            });
+          }
         }
         const heartbeat: AdapterHeartbeat = {
           adapterId, at: b['at'] as string, ok: b['ok'] as boolean,

@@ -155,6 +155,12 @@
       }
       .line-row .q { font-variant-numeric: tabular-nums; font-weight: 700; }
       .line-row button { min-height: 44px; min-width: 44px; }
+      /* OB-172: the receiving checklist — one Pass / Fail pair per check, big enough for a thumb at the back door. */
+      .rc { border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; margin: 12px 0; }
+      .rc legend { font-weight: 700; padding: 0 6px; }
+      .rc-row { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center; padding: 6px 0; font-size: 17px; }
+      .rc-row label { display: inline-flex; align-items: center; gap: 6px; min-height: var(--tap); padding: 0 10px; }
+      .rc-row input { width: 24px; height: 24px; }
 
       /* ── Panels and the banner: same behaviour as the till ─────────────── */
       .sheet h2 { margin: 0; font-size: 21px; }
@@ -279,6 +285,17 @@
         <button id="add-line" type="button" class="wide">Add this item</button>
         <div class="lines" id="receive-lines"></div>
         <p class="empty" id="receive-empty">No items added yet.</p>
+        <!-- OB-172: the receiving checklist for chilled, frozen or raw-meat goods — done at the door, saved WITH the delivery. -->
+        <fieldset id="receive-checklist" class="rc" hidden>
+          <legend id="receive-checklist-title">Receiving checklist — chilled and frozen goods</legend>
+          <p class="hint" id="receive-checklist-why">This delivery has chilled or frozen goods. Tick each check at the door.</p>
+          <div id="receive-checklist-items"></div>
+          <div class="field" id="receive-checklist-action-field" hidden>
+            <label for="receive-checklist-action" id="receive-checklist-action-label">What was done about the failure</label>
+            <input id="receive-checklist-action" type="text" autocomplete="off" />
+          </div>
+        </fieldset>
+        <p class="hint" id="receive-checklist-missing" role="status" hidden>This store computer was not sent the receiving checklist.</p>
         <button id="save-receipt" type="button" class="primary wide">Save the delivery</button>
       </section>
 

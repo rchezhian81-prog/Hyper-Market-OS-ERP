@@ -11,7 +11,7 @@
 //   • five wrong PINs for one staff ID in fifteen minutes lock that ID for fifteen minutes; twenty refusals on one lane
 //     lock that lane's sign-in for fifteen minutes;
 //   • success opens a SHIFT SESSION bound to the lane: 32 random bytes the till keeps for its tab, of which this box
-//     keeps only the hash, ending after twelve hours or at sign-out.
+//     keeps only the hash, ending after twelve hours or at sign-out. A PHONE's sign-in ends after four hours (OB-184).
 //
 // Every money write the till makes is then checked here (`check`): a live session, on this lane, for a person who STILL
 // holds till authority in the current pack — a leaver or a removed role ends the session at the next write.
@@ -19,15 +19,55 @@
 // Every sign-in, refusal, lock and sign-out is appended to an fsync'd log (`till-operators.log`) and folded at start,
 // so a restart signs nobody out and every attempt can be read later. Neither a PIN nor a token is ever written to it.
 
-import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import type { OpenFileLog } from './file-log';
 import { openFileLog, readLog } from './file-log';
 import { isTillPin, tillPinMatches, type TillCredential } from '../../../packages/identity/src/till-pin';
+import type { DomainEvent } from '../../../packages/contracts/src/event';
+import { stampMessage, type SignInStamp } from '../../../packages/sync/src/sign-in-stamp';
+
+/**
+ * OB-180: how far a stamp's "made at" may sit outside its sign-in on the box's clock and still be that sign-in's — the
+ * phone tells the time on the box's clock as it last learnt it, so a little drift is a phone's clock, not a forgery.
+ */
+export const STAMP_CLOCK_SLACK_MS = 2 * 60_000;
+
+/** OB-180: why a handheld record's sign-in stamp was not accepted — said to the phone as it is. */
+export type StampVerdict =
+  | { readonly ok: true; readonly userId: string; readonly signedInAt: string }
+  | { readonly ok: false; readonly reason: string };
 
 /** The permission that makes a person a till operator — the same one head office re-checks on every synced sale. */
 export const TILL_AUTHORITY = 'pos.sale.sync';
 export const SESSION_HOURS = 12;
+/**
+ * OB-184 "A" (owner, 17 Oct 2026, "Sign out + 4-hour limit"): a phone (handheld) sign-in lasts at most four hours, so a
+ * phone left on a shelf or handed over without signing out stops working as the last person by itself. Tills keep
+ * `SESSION_HOURS`. A phone's session is told apart by its lane: the device lane (`DEVICE_LANE_PREFIX`), never a till's.
+ */
+export const PHONE_SESSION_HOURS = 4;
+/**
+ * OB-187 "A" (owner, 17 Oct 2026, "Driver gets 12 hours"): the delivery driver's phone is off the shop wifi for the whole
+ * route and can only sign in again at the shop, so the DRIVER screen's sign-in lasts the shift, like a till. Warehouse and
+ * picker phones keep `PHONE_SESSION_HOURS` and the lock. Told apart by the job the sign-in was made for — the driver
+ * screen's permission (`DRIVER_PHONE_AUTHORITY`, the same one head office re-checks on the route's records) — never by
+ * how the person signed in.
+ */
+export const DRIVER_PHONE_SESSION_HOURS = 12;
+/** The driver screen's job (services/fulfilment/src/driver-runs.ts DRIVE_PERMISSION; `HANDHELD_AUTHORITY.driver`). */
+export const DRIVER_PHONE_AUTHORITY = 'delivery.attempt.record';
+/**
+ * OB-185 "A" (owner, 17 Oct 2026, "12 hours"): how long after a phone sign-in ENDED its work may still arrive at the box —
+ * a shift. Later than that it is refused with the reason, never silently lost.
+ */
+export const PHONE_LATE_ARRIVAL_MS = 12 * 3_600_000;
+/**
+ * Verifier hh NEW-1: how far a stamp's "made at" may run BACKWARDS against a stamp the box already took from the same
+ * sign-in (the phone's queue hands records over in the order they were made) and still be the phone's own small clock
+ * correction rather than a clock turned back.
+ */
+export const STAMP_ORDER_TOLERANCE_MS = 2 * 60_000;
 const WINDOW_MS = 15 * 60 * 1000;
 const MAX_WRONG_PER_PERSON = 5;
 const MAX_REFUSED_PER_LANE = 20;
@@ -46,6 +86,26 @@ export type SignInRefusal = 'wrong_staff_id_or_pin' | 'locked' | 'no_till_author
  */
 export const DEVICE_LANE_PREFIX = 'device:';
 export const deviceLaneOf = (deviceId: string): string => `${DEVICE_LANE_PREFIX}${deviceId}`;
+const isPhoneLane = (laneId: string): boolean => laneId.startsWith(DEVICE_LANE_PREFIX);
+
+/**
+ * How long a sign-in on this lane, for this job, lasts: the shift on a till; on a phone four hours (OB-184) — but the
+ * shift for the driver screen (OB-187).
+ */
+export const sessionHoursFor = (laneId: string, authority?: string): number => {
+  if (!isPhoneLane(laneId)) return SESSION_HOURS;
+  return authority === DRIVER_PHONE_AUTHORITY ? DRIVER_PHONE_SESSION_HOURS : PHONE_SESSION_HOURS;
+};
+
+/**
+ * OB-184: when a sign-in recorded in the log ends. A phone sign-in written before the four-hour limit (with a twelve-hour
+ * expiry) is read as ending four hours after it began — the log line is kept as written (hard rule #2), only read shorter.
+ */
+function expiryOf(laneId: string, at: string, recorded: string, authority: string | undefined): string {
+  if (!isPhoneLane(laneId)) return recorded;
+  const cap = Date.parse(at) + sessionHoursFor(laneId, authority) * 3_600_000;
+  return Number.isFinite(cap) && cap < Date.parse(recorded) ? new Date(cap).toISOString() : recorded;
+}
 
 /** The words a cashier reads, per refusal — the screen shows these as they are. */
 const WORDS: Readonly<Record<SignInRefusal, string>> = {
@@ -127,6 +187,15 @@ export class TillOperators {
   private readonly spans = new Map<string, SessionSpan>();
   private readonly wrongByPerson = new Map<string, number[]>();
   private readonly refusedByLane = new Map<string, number[]>();
+  /** OB-180: each session's public stamp reference → its token hash (the box re-derives the stamp key from it). */
+  private readonly byStampRef = new Map<string, string>();
+  /**
+   * Verifier hh NEW-1: per sign-in (token hash), the latest "made at" of a stamp this box took, and the records it took —
+   * so a stamp that runs backwards against an earlier one from the same sign-in is refused, while a retry of a record
+   * already taken is not. Kept in memory: a box restart forgets it (the check then starts again from the next stamp).
+   */
+  private readonly stampOrder = new Map<string, { latest: number; readonly keys: Set<string> }>();
+  private readonly stampSecret: Buffer;
   /** Records on the disk that could not be read whole — surfaced, never repaired (hard rule #6). */
   readonly unreadableRecords: number;
 
@@ -142,6 +211,8 @@ export class TillOperators {
     unreadable: number,
   ) {
     this.unreadableRecords = unreadable;
+    // OB-180: its own secret, under its own label — never the PIN key itself, never written anywhere.
+    this.stampSecret = createHmac('sha256', deps.key).update('sre-handheld-sign-in-stamp-v1').digest();
     for (const r of restored) this.fold(r);
   }
 
@@ -170,8 +241,10 @@ export class TillOperators {
 
   private fold(r: LogRecord): void {
     if (r.kind === 'signed_in') {
-      this.sessions.set(r.tokenHash, { tokenHash: r.tokenHash, userId: r.userId, laneId: r.laneId, via: r.via, at: r.at, expiresAt: r.expiresAt, authority: r.authority ?? TILL_AUTHORITY });
-      this.spans.set(r.tokenHash, { userId: r.userId, laneId: r.laneId, at: r.at, expiresAt: r.expiresAt, endedAt: null });
+      const expiresAt = expiryOf(r.laneId, r.at, r.expiresAt, r.authority);
+      this.sessions.set(r.tokenHash, { tokenHash: r.tokenHash, userId: r.userId, laneId: r.laneId, via: r.via, at: r.at, expiresAt, authority: r.authority ?? TILL_AUTHORITY });
+      this.spans.set(r.tokenHash, { userId: r.userId, laneId: r.laneId, at: r.at, expiresAt, endedAt: null });
+      this.byStampRef.set(this.stampRefOf(r.tokenHash), r.tokenHash);
     } else if (r.kind === 'signed_out') {
       this.sessions.delete(r.tokenHash);
       const span = this.spans.get(r.tokenHash);
@@ -211,7 +284,7 @@ export class TillOperators {
   private async open(userId: string, laneId: string, via: SignInVia, nowMs: number, authority: string = TILL_AUTHORITY): Promise<SignInOutcome> {
     const token = randomBytes(32).toString('base64url');
     const at = new Date(nowMs).toISOString();
-    const expiresAt = new Date(nowMs + SESSION_HOURS * 3_600_000).toISOString();
+    const expiresAt = new Date(nowMs + sessionHoursFor(laneId, authority) * 3_600_000).toISOString();
     await this.record({ kind: 'signed_in', at, userId, laneId, via, tokenHash: sha256(token), expiresAt, ...(authority === TILL_AUTHORITY ? {} : { authority }) });
     return { signedIn: true, token, userId, displayName: this.displayNameOf(userId), expiresAt, via };
   }
@@ -319,6 +392,90 @@ export class TillOperators {
     if (session.laneId !== laneId) return fail('operator_on_another_lane');
     if (this.holdsTillAuthority(session.userId, session.authority) !== true) return fail(session.authority === TILL_AUTHORITY ? 'operator_lost_till_authority' : 'operator_lost_handheld_authority');
     return { ok: true, userId: session.userId, displayName: this.displayNameOf(session.userId), via: session.via, expiresAt: session.expiresAt, authority: session.authority };
+  }
+
+  private stampRefOf(tokenHash: string): string {
+    return createHmac('sha256', this.stampSecret).update(`ref|${tokenHash}`).digest('hex').slice(0, 32);
+  }
+  private stampKeyOf(tokenHash: string): Buffer {
+    return createHmac('sha256', this.stampSecret).update(`key|${tokenHash}`).digest();
+  }
+
+  /**
+   * OB-180: what a signed-in phone's page needs to stamp its records — the sign-in's public reference and its stamp key —
+   * for a LIVE session on this lane only. Derived, never stored; the token itself is never in it.
+   */
+  stampFor(token: string | undefined, laneId: string): { readonly ref: string; readonly key: string; readonly userId: string; readonly signedInAt: string; readonly expiresAt: string } | null {
+    if (token === undefined || token === '' || !this.check(token, laneId).ok) return null;
+    const session = this.sessions.get(sha256(token));
+    if (session === undefined) return null;
+    return { ref: this.stampRefOf(session.tokenHash), key: this.stampKeyOf(session.tokenHash).toString('hex'), userId: session.userId, signedInAt: session.at, expiresAt: session.expiresAt };
+  }
+
+  /**
+   * OB-180: is this the stamp of a sign-in this box made, on THIS lane (phone), for the person it names, over THIS record,
+   * made while that sign-in was valid (from signing in to signing out, being replaced, or expiry — the box's own log)?
+   * Any other answer is a refusal with its reason; nothing here ever falls back to sealing for somebody else.
+   *
+   * The clock slack (`STAMP_CLOCK_SLACK_MS`) covers the start, a sign-out or replacement the phone was not told of, and
+   * the box's own "now". The EXPIRY is a hard edge (OB-184): the phone's page knows it and stops stamping at it, on the
+   * same box clock it stamps by (`phoneStamper`), so an honest phone never stamps at or past it — a phone sign-in made at
+   * 08:00 seals a record stamped 11:59 and refuses one stamped 12:01 (a driver's, OB-187: 19:59 and 20:01).
+   *
+   * Two more refusals (verifier hh): more than twelve hours after THIS stamp's sign-in ended, the record is too late
+   * (OB-185 — `PHONE_LATE_ARRIVAL_MS`), whoever is signed in now; and a stamp more than `STAMP_ORDER_TOLERANCE_MS`
+   * earlier than one this box already took from the same sign-in is a clock turned back (NEW-1). What the box can prove
+   * is only that: the order of what it was handed. A phone clock set back before the first record of a sign-in reached
+   * the box, with nothing later to compare it against, still reads as inside the sign-in — the phone's own mark
+   * (`signInClock`) is what stops that on the phone, and the twelve hours bound it here.
+   */
+  verifyStamp(stamp: SignInStamp, event: DomainEvent, laneId: string): StampVerdict {
+    const tokenHash = this.byStampRef.get(stamp.ref);
+    const span = tokenHash === undefined ? undefined : this.spans.get(tokenHash);
+    if (tokenHash === undefined || span === undefined) return { ok: false, reason: 'the record\'s sign-in stamp names a sign-in this store computer never made' };
+    if (span.laneId !== laneId) return { ok: false, reason: 'the record\'s sign-in stamp was made on another phone' };
+    if (span.userId !== stamp.userId) return { ok: false, reason: `the record's sign-in stamp names ${stamp.userId}, but that sign-in was somebody else's` };
+    const expected = createHmac('sha256', this.stampKeyOf(tokenHash)).update(stampMessage(stamp, event), 'utf8').digest();
+    const given = Buffer.from(stamp.mac, 'hex');
+    if (given.length !== expected.length || !timingSafeEqual(given, expected)) {
+      return { ok: false, reason: 'the record\'s sign-in stamp does not match the record — it was altered or not made on this phone\'s sign-in' };
+    }
+    const made = Date.parse(stamp.madeAt);
+    const expiry = Date.parse(span.expiresAt);
+    const end = Math.min(expiry, span.endedAt === null ? Number.POSITIVE_INFINITY : Date.parse(span.endedAt));
+    const nowMs = Date.parse(this.deps.now());
+    const latest = Math.min(end, nowMs);
+    // OB-185: twelve hours after the sign-in the record was MADE under ended, it is too late — whoever holds the phone
+    // now, and even if that is the same person signed in again (verifier hh NEW-2).
+    if (Number.isFinite(end) && nowMs > end + PHONE_LATE_ARRIVAL_MS) {
+      return { ok: false, reason: `the record was made under ${stamp.userId}'s sign-in on this phone, which ended at ${new Date(end).toISOString()}, and it reached this store computer more than 12 hours later (OB-185) — too late to be taken; a person must look at it` };
+    }
+    if (made < Date.parse(span.at) - STAMP_CLOCK_SLACK_MS || made > latest + STAMP_CLOCK_SLACK_MS || made >= expiry) {
+      return { ok: false, reason: `the record was stamped at ${stamp.madeAt}, outside ${stamp.userId}'s sign-in on this phone (from ${span.at}${Number.isFinite(end) ? ` to ${new Date(end).toISOString()}` : ''})` };
+    }
+    // Verifier hh NEW-1: the phone hands its records over in the order it made them, and its clock only moves forward
+    // (packages/sync/src/sign-in-stamp.ts `signInClock`). A stamp earlier than one already taken from the same sign-in
+    // means the phone's clock was turned back between the two.
+    const order = this.stampOrder.get(tokenHash);
+    const key = event.idempotencyKey;
+    if (order !== undefined && !order.keys.has(key) && made < order.latest - STAMP_ORDER_TOLERANCE_MS) {
+      return { ok: false, reason: `the record was stamped at ${stamp.madeAt}, earlier than a record made before it under ${stamp.userId}'s sign-in on this phone (${new Date(order.latest).toISOString()}) — the phone's clock was turned back; a person must look at it` };
+    }
+    this.noteStampOrder(tokenHash, key, made, nowMs);
+    return { ok: true, userId: span.userId, signedInAt: span.at };
+  }
+
+  private noteStampOrder(tokenHash: string, key: string, made: number, nowMs: number): void {
+    const order = this.stampOrder.get(tokenHash) ?? { latest: made, keys: new Set<string>() };
+    order.latest = Math.max(order.latest, made);
+    order.keys.add(key);
+    this.stampOrder.set(tokenHash, order);
+    // A sign-in whose work can no longer arrive (OB-185) needs no order kept.
+    for (const [hash] of this.stampOrder) {
+      const span = this.spans.get(hash);
+      const end = span === undefined ? Number.NEGATIVE_INFINITY : Math.min(Date.parse(span.expiresAt), span.endedAt === null ? Number.POSITIVE_INFINITY : Date.parse(span.endedAt));
+      if (end + PHONE_LATE_ARRIVAL_MS < nowMs) this.stampOrder.delete(hash);
+    }
   }
 
   /** End a session. Unknown tokens are simply not signed in. */

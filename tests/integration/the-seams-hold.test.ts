@@ -473,7 +473,7 @@ describe.skipIf(!DATABASE_URL)('Stage 19 — the seams hold (real PostgreSQL)', 
     const good: AdapterConfig = {
       adapterId: `adp-${RUN}-pay`, tenantId: TENANT, category: 'payment', vendor: 'Razorpay',
       environment: 'production', credentialRef: 'vault://payments/live#v5',
-      retains: ['provider_token', 'last4'], enabled: true, queueOnOutage: true,
+      retains: ['provider_token', 'last4'], dataRegion: 'IN', enabled: true, queueOnOutage: true,
     };
     expect(registerAdapter({ config: good, matrix: MATRIX, environment: 'production' }).registered).toBe(true);
 
@@ -503,7 +503,11 @@ describe.skipIf(!DATABASE_URL)('Stage 19 — the seams hold (real PostgreSQL)', 
     const configs: readonly AdapterConfig[] = [
       { adapterId: 'adp-tally', tenantId: TENANT, category: 'accounting', vendor: 'Tally', environment: 'production', credentialRef: 'vault://accounting/live#v2', enabled: true, queueOnOutage: true },
       { adapterId: 'adp-esl', tenantId: TENANT, category: 'hardware', vendor: 'SoluM', environment: 'production', credentialRef: 'vault://esl/live#v1', enabled: true },
-      { adapterId: `adp-${RUN}-pay`, tenantId: TENANT, category: 'payment', vendor: 'Razorpay', environment: 'production', credentialRef: 'vault://payments/live#v5', retains: ['provider_token'], enabled: true, queueOnOutage: true },
+      // The payment adapter as REGISTERED above — with its India data region. Since OB-170 (F5) a payment adapter that
+      // never declared one is `blocked`, not healthy; this fixture had silently relied on the older rule.
+      { adapterId: `adp-${RUN}-pay`, tenantId: TENANT, category: 'payment', vendor: 'Razorpay', environment: 'production', credentialRef: 'vault://payments/live#v5', retains: ['provider_token'], dataRegion: 'IN', enabled: true, queueOnOutage: true },
+      // An old payment adapter registered before a data region was required: blocked by name — and the till still unaffected.
+      { adapterId: `adp-${RUN}-oldpay`, tenantId: TENANT, category: 'payment', vendor: 'Razorpay', environment: 'production', credentialRef: 'vault://payments/live#v4', retains: ['provider_token'], enabled: true },
     ];
     const heartbeats: readonly AdapterHeartbeat[] = [
       { adapterId: 'adp-tally', at: '2026-08-04T14:00:00Z', ok: true },
@@ -523,6 +527,7 @@ describe.skipIf(!DATABASE_URL)('Stage 19 — the seams hold (real PostgreSQL)', 
     expect(tally?.shopKeepsTrading).toBe(true);
     expect(report.adapters.find((a) => a.adapterId === 'adp-esl')?.detail).toContain('"configured" is not health');
     expect(report.adapters.find((a) => a.adapterId === `adp-${RUN}-pay`)?.state).toBe('healthy');
+    expect(report.adapters.find((a) => a.adapterId === `adp-${RUN}-oldpay`)).toMatchObject({ state: 'blocked', notUsableBecause: 'payment_data_region_not_declared', shopKeepsTrading: true });
 
     // And the status centre tells the owner the same thing, from the SAME health
     // computation rather than a cheerful status of its own: the cloud is unreachable and

@@ -15,11 +15,24 @@ export interface PosTender {
   readonly amountMinor: number;
 }
 
+/**
+ * What a provider-file line is (C13). A line with no type is a CAPTURE — money the provider pays the shop for a sale,
+ * which is every line a file had before refunds and chargebacks were read. A REFUND line is money the provider took
+ * back because the shop refunded a customer; a CHARGEBACK line is money it took back because a cardholder disputed a
+ * payment. Both carry `originalRef`: the reference of the capture they reverse.
+ */
+export type SettlementLineType = 'capture' | 'refund' | 'chargeback';
+
 export interface SettlementLine {
   /** Statement/settlement line id. */
   readonly id: string;
   readonly ref: string;
+  /** Always the magnitude (≥ 0); the type says which way the money went. */
   readonly amountMinor: number;
+  /** Absent = `capture`. */
+  readonly type?: SettlementLineType;
+  /** For a refund or chargeback: the reference of the capture it reverses. */
+  readonly originalRef?: string;
 }
 
 export interface ReconMatch {
@@ -64,6 +77,11 @@ export class CardDataError extends Error {
 
 // A bare 13–19 digit string is treated as a possible card PAN and refused.
 const PAN_LIKE = /^\d{13,19}$/;
+
+/** Refuse a reference that looks like a raw card number (hard rule #3) — for every reference any matcher reads. */
+export function assertReferenceIsNotACardNumber(ref: string): void {
+  assertNotPan(ref);
+}
 
 function assertNotPan(ref: string): void {
   if (PAN_LIKE.test(ref.replace(/[\s-]/g, ''))) {

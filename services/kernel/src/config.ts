@@ -17,12 +17,15 @@
 // `REPLACE_WITH_A_GENERATED_VALUE`, which is exactly what gets copied and forgotten — so the
 // values that appear in the example file are refused by name.
 
+import { PAYMENT_DATA_REGION_KEY, PAYMENT_BACKUP_REGION_KEY, indiaRegionProblem } from './data-residency';
+
 export type ConfigProblem =
   | 'missing'
   | 'still_the_placeholder'
   | 'too_short_to_be_a_secret'
   | 'not_a_number'
-  | 'not_one_of_the_allowed_values';
+  | 'not_one_of_the_allowed_values'
+  | 'refused_by_policy';
 
 export interface ConfigFinding {
   readonly key: string;
@@ -72,6 +75,11 @@ export interface Spec {
   readonly oneOf?: readonly string[];
   readonly optional?: boolean;
   readonly fallback?: string;
+  /**
+   * A policy the value must meet beyond its shape (e.g. C12: payment data stays in India). Returns why the value is
+   * refused, or `undefined` when it is acceptable. Never used on a secret — its words may repeat the value.
+   */
+  readonly check?: (raw: string) => string | undefined;
 }
 
 /**
@@ -133,6 +141,12 @@ export function loadConfig(
       continue;
     }
 
+    const refused = spec.secret === true ? undefined : spec.check?.(raw);
+    if (refused !== undefined) {
+      problems.push({ key: spec.key, problem: 'refused_by_policy', detail: refused });
+      continue;
+    }
+
     value[spec.key] = raw;
   }
 
@@ -191,6 +205,11 @@ export const CLOUD_API_CONFIG: readonly Spec[] = [
   // open holds back the bill-number high-water's visibility fence; the API's transactions are short, so one minute is
   // generous. 0 switches it off (never in production).
   { key: 'DB_IDLE_IN_TRANSACTION_TIMEOUT_MS', numeric: true, fallback: '60000' },
+  // C12 (v2.1) · ADR-0002: where head office keeps the shop's payment data (its database and document store), and where
+  // off-site copies of it go. India, as ISO 3166 (`IN` or `IN-<state>`) — any other value and the API does not start
+  // (`indiaRegionProblem`). The default is India because the policy is India; what a deployment cannot do is say otherwise.
+  { key: PAYMENT_DATA_REGION_KEY, fallback: 'IN', check: (raw) => indiaRegionProblem(PAYMENT_DATA_REGION_KEY, raw) },
+  { key: PAYMENT_BACKUP_REGION_KEY, optional: true, check: (raw) => indiaRegionProblem(PAYMENT_BACKUP_REGION_KEY, raw) },
   { key: 'NODE_ENV', oneOf: ['development', 'test', 'production'], fallback: 'production' },
   { key: 'MIGRATION_TARGET_KIND', oneOf: ['rehearsal', 'staging', 'local', 'production'], fallback: 'rehearsal' },
   // Genesis owner (optional). A brand-new tenant has nobody who can grant the first role, so — where

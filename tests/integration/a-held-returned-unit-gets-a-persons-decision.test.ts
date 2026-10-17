@@ -130,7 +130,12 @@ describe.each(backings)('WF-11 — a person decides each held returned unit — 
 
     // ── Write off a dal. The owner sets the material-loss line at ₹10 — one dal at ₹40 cost is material.
     expect((await h.request({ method: 'POST', path: '/v1/inventory/write-off-threshold', userId: 'u-owner', tenantId: t, idempotencyKey: 'thr', body: { thresholdMinor: 1_000 } })).status).toBe(200);
-    const wo = { decision: 'write_off', reasonCode: 'pack_torn_contents_spilt', lossType: 'damage' };
+    // NEW-7 (D-5): the reason is a code from the closed waste list; the person's own words go in the note. An off-list reason
+    // ("pack_torn_contents_spilt" in the reason field) is refused by name and nothing moves.
+    const offList = await s.decide(dal1!.heldId, 'd-dal1', { decision: 'write_off', reasonCode: 'pack_torn_contents_spilt', lossType: 'damage', evidenceRef: 'photo-17' });
+    expect(offList.status).toBe(400);
+    expect(codeOf(offList)).toBe('waste_reason_not_in_taxonomy');
+    const wo = { decision: 'write_off', reasonCode: 'damage', note: 'pack torn, contents spilt', lossType: 'damage' };
     expect(codeOf(await s.decide(dal1!.heldId, 'd-dal1', wo))).toBe('write_off_needs_evidence');
     expect(codeOf(await s.decide(dal1!.heldId, 'd-dal1', { ...wo, evidenceRef: 'photo-17', valueMinor: 0 }))).toBe('write_off_value_is_the_stock_cost');
     expect(codeOf(await s.decide(dal1!.heldId, 'd-dal1', { ...wo, evidenceRef: 'photo-17' }))).toBe('write_off_needs_approval');
@@ -144,7 +149,7 @@ describe.each(backings)('WF-11 — a person decides each held returned unit — 
     expect(await s.onHand('DAL')).toBe(7); // in as a return, out as waste
     expect((await s.moved()).filter((m) => m.movementId.includes(dal1!.heldId)).map((m) => m.kind)).toEqual(['returned', 'wasted']);
     const register = (await h.request({ method: 'GET', path: '/v1/inventory/write-offs', userId: 'u-owner', tenantId: t })).body as { writeOffs: Record<string, unknown>[]; totalLossMinor: number };
-    expect(register.writeOffs).toEqual([expect.objectContaining({ id: `held-${dal1!.heldId}`, productId: 'DAL', valueMinor: 4_000, requiredApproval: true, approvedBy: 'u-owner', raisedBy: 'u-mgr', lossType: 'damage' })]);
+    expect(register.writeOffs).toEqual([expect.objectContaining({ id: `held-${dal1!.heldId}`, productId: 'DAL', valueMinor: 4_000, requiredApproval: true, approvedBy: 'u-owner', raisedBy: 'u-mgr', lossType: 'damage', reasonCode: 'damage', note: 'pack torn, contents spilt' })]);
     expect(register.totalLossMinor).toBe(4_000);
 
     // ── The other dal goes for repair (nothing moves), cannot go twice, then comes back and is restocked.
@@ -178,7 +183,7 @@ describe.each(backings)('WF-11 — a person decides each held returned unit — 
     expect((await h.request({ method: 'POST', path: '/v1/quality/holds/M-1', userId: 'u-owner', tenantId: t, idempotencyKey: 'hold-m1', body: { productId: 'MILK', reason: 'temperature excursion' } })).status).toBe(201);
     expect(codeOf(await s.decide(milk1.heldId, 'd-1', { decision: 'restock', reasonCode: 'qc_passed' }, 'u-owner'))).toBe('batch_blocked_from_sale');
     // Write-off of a small loss needs no second person: one milk at ₹15 is under the default ₹500 line.
-    const small = await s.decide(milk1.heldId, 'd-2', { decision: 'write_off', reasonCode: 'temperature_excursion' });
+    const small = await s.decide(milk1.heldId, 'd-2', { decision: 'write_off', reasonCode: 'expiry', note: 'temperature excursion' });
     expect(small.status, JSON.stringify(small.body)).toBe(201);
     expect(small.body).toMatchObject({ decision: { valueMinor: 1_500, approvedBy: null, evidenceRef: null } });
   }, 60_000);

@@ -23,6 +23,8 @@
 //
 // Pure and deterministic: the clock is injected, no I/O, no card data anywhere.
 
+import { isIndiaRegion, indiaRegionName } from './india-regions';
+
 export type AdapterCategory =
   | 'accounting'
   | 'payment'
@@ -146,6 +148,12 @@ export interface AdapterConfig {
    * next year.
    */
   readonly retains?: readonly string[];
+  /**
+   * Payments: where this provider keeps and processes the shop's payment data, as ISO 3166 — `IN`, or `IN-<code>` for a
+   * real Indian state or union territory (`./india-regions.ts`). REQUIRED for a payment adapter (C12 · ADR-0002 ·
+   * OB-162 "A"): a payment adapter that does not declare it, or declares anywhere else, is refused registration.
+   */
+  readonly dataRegion?: string;
   readonly enabled: boolean;
   /** Queue traffic during an outage rather than failing the caller (hard rule #1). */
   readonly queueOnOutage?: boolean;
@@ -157,7 +165,10 @@ export type AdapterRegistrationOutcome =
   | 'provider_not_authorised'
   | 'credential_inline'
   | 'not_certified'
-  | 'sandbox_credential_in_production';
+  | 'sandbox_credential_in_production'
+  | 'payment_data_outside_india'
+  /** OB-162 "A": a payment adapter that does not say where it keeps the shop's payment data is refused. */
+  | 'payment_data_region_not_declared';
 
 export interface AdapterRegistration {
   readonly adapterId: string;
@@ -232,6 +243,24 @@ export function registerAdapter(input: {
         detail: `this adapter declares it retains ${notPermitted.join(', ')}, which is not on the permitted list — refused outright, with no override anywhere (hard rule #3). A payment adapter may keep only ${PERMITTED_PAYMENT_RETENTION.join(', ')}`,
       };
     }
+    // C12 · OB-162 "A": where the provider keeps payment data must be SAID, and must be India — the same list of real
+    // Indian state and union-territory codes the API's boot check uses (`isIndiaRegion`).
+    if (c.dataRegion === undefined || c.dataRegion.trim() === '') {
+      return {
+        ...base,
+        registered: false,
+        outcome: 'payment_data_region_not_declared',
+        detail: `${c.vendor} does not say where it keeps the shop's payment data — a payment adapter must declare its data region, and only India is accepted (IN, or IN-<state> such as IN-TN) (C12 · OB-162); refused`,
+      };
+    }
+    if (!isIndiaRegion(c.dataRegion)) {
+      return {
+        ...base,
+        registered: false,
+        outcome: 'payment_data_outside_india',
+        detail: `${c.vendor} declares it keeps the shop's payment data in "${c.dataRegion.trim()}", which is not India or not a real Indian state or union territory code — payment data stays in an India region (IN, or IN-<state> such as IN-TN) (C12 · ADR-0002); refused`,
+      };
+    }
     const entry = input.matrix.find(
       (e) => e.category === 'payment' && e.vendor.toLowerCase() === c.vendor.toLowerCase(),
     );
@@ -261,11 +290,49 @@ export function registerAdapter(input: {
     ...base,
     registered: true,
     outcome: 'registered',
-    detail: `${c.vendor} ${c.category.replace(/_/g, ' ')} adapter registered in ${input.environment}${c.queueOnOutage === true ? ', queueing during an outage rather than failing the caller' : ''}`,
+    detail: `${c.vendor} ${c.category.replace(/_/g, ' ')} adapter registered in ${input.environment}${c.queueOnOutage === true ? ', queueing during an outage rather than failing the caller' : ''}${c.category !== 'payment' || c.dataRegion === undefined ? '' : `; payment data kept in ${c.dataRegion.trim().toUpperCase()} (${indiaRegionName(c.dataRegion) ?? 'India'})`}`,
   };
 }
 
-export type AdapterHealthState = 'healthy' | 'degraded' | 'failing' | 'silent' | 'disabled';
+/**
+ * Why a registered adapter may not be USED (OB-170 "A", owner, 16 Oct 2026). A payment adapter registered before OB-162
+ * made the data region a registration rule may hold no region at all; it stays in the ledger (nothing is deleted or
+ * rewritten), but it cannot be used until an India region is declared by registering it again with `dataRegion`.
+ */
+export type AdapterUseRefusal = 'payment_data_region_not_declared' | 'payment_data_outside_india';
+
+export type AdapterUse =
+  | { readonly usable: true }
+  | { readonly usable: false; readonly refusal: AdapterUseRefusal; readonly detail: string };
+
+/**
+ * May this registered adapter be used? Judged on the configuration as it stands in the ledger, so an adapter registered
+ * the old way (before OB-162) is held to today's rule: a payment adapter that does not say where it keeps the shop's
+ * payment data — or names anywhere outside India — is refused by name until an India region is declared.
+ * Every other category is usable as registered.
+ */
+export function adapterUsable(config: AdapterConfig): AdapterUse {
+  if (config.category !== 'payment') return { usable: true };
+  const region = typeof config.dataRegion === 'string' ? config.dataRegion.trim() : '';
+  if (region === '') {
+    return {
+      usable: false,
+      refusal: 'payment_data_region_not_declared',
+      detail: `${config.vendor} was registered before a payment adapter had to say where it keeps the shop's payment data, and it has not said — it cannot be used until an India region is declared (register it again with dataRegion IN, or IN-<state> such as IN-TN) (C12 · OB-170)`,
+    };
+  }
+  if (!isIndiaRegion(region)) {
+    return {
+      usable: false,
+      refusal: 'payment_data_outside_india',
+      detail: `${config.vendor} is recorded as keeping the shop's payment data in "${region}", which is not India — it cannot be used until an India region is declared (C12 · ADR-0002)`,
+    };
+  }
+  return { usable: true };
+}
+
+/** `blocked`: switched on, but it may not be used (OB-170 — e.g. a payment adapter with no India region declared). */
+export type AdapterHealthState = 'healthy' | 'degraded' | 'failing' | 'silent' | 'disabled' | 'blocked';
 
 export interface AdapterHeartbeat {
   readonly adapterId: string;
@@ -282,6 +349,10 @@ export interface AdapterHealth {
   readonly consecutiveFailures: number;
   /** True when the shop keeps trading regardless — hard rule #1. */
   readonly shopKeepsTrading: boolean;
+  /** OB-170: false when the adapter may not be used as registered (shown even when it is switched off). */
+  readonly usable: boolean;
+  /** OB-170: why it may not be used, by name — absent when usable. */
+  readonly notUsableBecause?: AdapterUseRefusal;
   readonly detail: string;
 }
 
@@ -326,16 +397,23 @@ export function adapterHealth(input: {
     consecutiveFailures += 1;
   }
 
+  const use = adapterUsable(input.config);
   const base = {
     adapterId: input.config.adapterId,
     category: input.config.category,
     minutesSinceLastSuccess,
     consecutiveFailures,
     shopKeepsTrading,
+    usable: use.usable,
+    ...(use.usable ? {} : { notUsableBecause: use.refusal }),
   };
 
   if (!input.config.enabled) {
-    return { ...base, state: 'disabled', detail: 'this adapter is switched off' };
+    return { ...base, state: 'disabled', detail: use.usable ? 'this adapter is switched off' : `this adapter is switched off — and ${use.detail}` };
+  }
+  // OB-170: switched on but not usable is its own state, ranked first — never shown as healthy from old heartbeats.
+  if (!use.usable) {
+    return { ...base, state: 'blocked', detail: use.detail };
   }
   if (mine.length === 0 || minutesSinceLastSuccess === 'never') {
     return {
@@ -392,11 +470,11 @@ export function integrationHealth(input: {
     .filter((c) => c.tenantId === input.tenantId)
     .map((config) => adapterHealth({ config, heartbeats: input.heartbeats, at: input.at }))
     .sort((a, b) => {
-      const rank: Record<AdapterHealthState, number> = { silent: 0, failing: 1, degraded: 2, healthy: 3, disabled: 4 };
+      const rank: Record<AdapterHealthState, number> = { blocked: 0, silent: 1, failing: 2, degraded: 3, healthy: 4, disabled: 5 };
       return rank[a.state] - rank[b.state] || a.adapterId.localeCompare(b.adapterId);
     });
 
-  const bad = adapters.filter((a) => a.state === 'silent' || a.state === 'failing');
+  const bad = adapters.filter((a) => a.state === 'blocked' || a.state === 'silent' || a.state === 'failing');
 
   return {
     tenantId: input.tenantId,

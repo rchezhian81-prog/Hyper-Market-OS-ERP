@@ -109,6 +109,9 @@ export async function holdDamagedUnderCount(input: {
   return { damaged, immediate, held, writeOffs };
 }
 
+/** NEW-7 (D-5): the note a damaged arrival's write-off carries beside its closed reason `damage`. */
+export const ARRIVED_DAMAGED_NOTE = 'arrived damaged';
+
 /** OB-71: the register id of a damaged-on-arrival write-off taken at once (no count holding it) — keyed on its `wasted` movement. */
 export const arrivedDamagedWriteOffId = (movementId: string): string => `arrived-${movementId}`;
 
@@ -116,7 +119,7 @@ export const arrivedDamagedWriteOffId = (movementId: string): string => `arrived
  * OB-71 "A" (owner, 12 Oct 2026, in writing, "Own write-off line") — a damaged arrival when NO count holds it is written off
  * at once AND recorded on the write-off register (M28-FR-01) as its own line, so the books post it ONCE through the one
  * stock-adjustment path (`stock_write_off` → inventory_write_off) instead of the loss hiding inside month-end cost of goods
- * sold. Same shape as OB-66's applied held write-off: loss type `damage`, reason `arrived_damaged`, valued at the cost the
+ * sold. Same shape as OB-66's applied held write-off: loss type `damage`, reason `damage` (D-5's closed list; the note says "arrived damaged"), valued at the cost the
  * stock left the back store with (the transfer line's cost — never a caller's figure). Its stock effect is the receipt's own
  * `wasted` posting (`<transferId>-damaged-<n>`, same write), so on-hand falls once; the id is keyed on that posting, so a
  * replayed receipt (direct or relayed) records and posts nothing twice. Pure.
@@ -124,7 +127,8 @@ export const arrivedDamagedWriteOffId = (movementId: string): string => `arrived
 export function arrivedDamagedWriteOff(wasted: Movement, d: DamagedLine, unitCostMinor: number | null, by: string, at: string): StoredWriteOff {
   return {
     id: arrivedDamagedWriteOffId(wasted.movementId), productId: d.productId, locationId: wasted.locationId, lossType: 'damage', qtyRemoved: d.quantityMinor, uom: wasted.uom,
-    valueMinor: d.valueMinor, currency: 'INR', reasonCode: 'arrived_damaged', requiredApproval: false, evidenceRef: null,
+    // NEW-7 (D-5): the reason is a code from the closed list — `damage` — and how it was damaged stays beside it as the note.
+    valueMinor: d.valueMinor, currency: 'INR', reasonCode: 'damage', note: ARRIVED_DAMAGED_NOTE, requiredApproval: false, evidenceRef: null,
     raisedBy: by, approvedBy: null, at, valueSource: 'stock_cost', ...(unitCostMinor === null ? {} : { unitCostMinor }),
     ...(d.batchId === null ? {} : { batchId: d.batchId }),
   };
@@ -162,7 +166,7 @@ export function heldApplication(h: HeldWriteOff, outcome: 'approved' | 'cancelle
   };
   const writeOff: StoredWriteOff = {
     id: heldWriteOffId(h.heldId), productId: h.productId, locationId: h.locationId, lossType: 'damage', qtyRemoved: h.quantityMinor, uom: h.uom,
-    valueMinor: h.valueMinor, currency: 'INR', reasonCode: 'arrived_damaged', requiredApproval: false, evidenceRef: null,
+    valueMinor: h.valueMinor, currency: 'INR', reasonCode: 'damage', note: `${ARRIVED_DAMAGED_NOTE} — transfer ${h.source.transferId}`, requiredApproval: false, evidenceRef: null,
     raisedBy: h.recordedBy, approvedBy: null, at, valueSource: 'stock_cost', ...(h.unitCostMinor === null ? {} : { unitCostMinor: h.unitCostMinor }),
     ...(h.batchId === null ? {} : { batchId: h.batchId }),
   };

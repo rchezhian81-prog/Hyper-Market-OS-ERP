@@ -6,6 +6,7 @@
 // Pure and storage-agnostic (in-memory here; a durable edge store slots in later).
 
 import type { DomainEvent } from '../../contracts/src/event';
+import type { SignInStamp } from './sign-in-stamp';
 
 export type OutboxState = 'pending' | 'acknowledged' | 'dead_letter';
 
@@ -17,6 +18,8 @@ export interface OutboxItem<TType extends string = string, TPayload = unknown> {
   readonly state: OutboxState;
   readonly attempts: number;
   readonly reason: string | null;
+  /** OB-180: the sign-in a handheld made this record under, stamped when it was queued. Absent everywhere else. */
+  readonly stamp?: SignInStamp;
 }
 
 export class SyncOutbox<TType extends string = string, TPayload = unknown> {
@@ -39,8 +42,8 @@ export class SyncOutbox<TType extends string = string, TPayload = unknown> {
     }
   }
 
-  /** Enqueue a locally-committed event; idempotent on its idempotency key. */
-  enqueue(event: DomainEvent<TType, TPayload>): OutboxItem<TType, TPayload> {
+  /** Enqueue a locally-committed event; idempotent on its idempotency key. `stamp`: OB-180, a handheld's sign-in stamp. */
+  enqueue(event: DomainEvent<TType, TPayload>, stamp?: SignInStamp): OutboxItem<TType, TPayload> {
     const existing = this.items.get(event.idempotencyKey);
     if (existing) {
       return existing; // already queued or handled — one effect (§31.1)
@@ -51,6 +54,7 @@ export class SyncOutbox<TType extends string = string, TPayload = unknown> {
       state: 'pending',
       attempts: 0,
       reason: null,
+      ...(stamp === undefined ? {} : { stamp }),
     });
     this.items.set(event.idempotencyKey, item);
     return item;

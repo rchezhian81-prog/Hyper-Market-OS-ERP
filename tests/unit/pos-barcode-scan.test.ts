@@ -34,7 +34,9 @@ function newLane(): { view: PosView; ledger: Ledger; outbox: SyncOutbox } {
   const ledger = new Ledger(new InMemoryLedgerStore());
   const outbox = new SyncOutbox();
   const session = new PosSession(
-    { laneId: 'lane-1', cashierId: 'clerk-1', tradingDay: '2026-08-02', currency: 'INR', defaultTaxRate: taxRateFromPercent(18) },
+    { laneId: 'lane-1', cashierId: 'clerk-1', tradingDay: '2026-08-02', currency: 'INR', defaultTaxRate: taxRateFromPercent(18),
+      // B6: this lane weighs on a scale whose Legal Metrology stamp is current (synthetic register entry).
+      laneScales: { known: true, scales: [{ assetId: 'SCALE-1', reverificationDueOn: '2099-12-31' }] } },
     ledger,
     outbox,
       // A session with nowhere to write is a lane that must not take payment.

@@ -11,7 +11,8 @@ import { SyncOutbox } from '../../packages/sync/src/outbox';
 import { makeEvent } from '../../packages/contracts/src/event';
 import type { RelayReply } from '../../packages/sync/src/device-relay';
 import { TillOperators, loadTillCredentials } from '../../edge/store-edge/src/till-operators';
-import { phoneOperatorsOf } from '../../edge/store-edge/src/handheld-sign-in';
+import { FORGET_KEPT_PAGES_SCRIPT, phoneOperatorsOf } from '../../edge/store-edge/src/handheld-sign-in';
+import { phoneStamper, readPhoneSignIn } from '../../packages/sync/src/sign-in-stamp';
 import { tillPinKey } from '../../packages/identity/src/till-pin';
 import { peopleFrom, permissionsOf } from '../../edge/store-edge/src/screen-navigation';
 import { withTillPeople, issueTillPins, pinOf } from '../support/till-operator';
@@ -59,7 +60,7 @@ describe('the device socket', () => {
     for (const d of dirs.splice(0)) await rm(d, { recursive: true, force: true });
   });
 
-  interface Started { base: string; relayed: { source: string; deviceId: string; items: readonly unknown[]; phoneHolder?: string }[]; devices: { current: PackDevice[] | undefined }; server: DeviceServer }
+  interface Started { base: string; relayed: { source: string; deviceId: string; items: readonly unknown[]; phoneHolder?: string; stampedBy?: Readonly<Record<string, string>> }[]; devices: { current: PackDevice[] | undefined }; server: DeviceServer }
   async function start(opts: { host?: string; devices?: PackDevice[] | undefined } = {}): Promise<Started> {
     const dir = await mkdtemp(join(tmpdir(), 'sre-device-socket-'));
     dirs.push(dir);
@@ -80,7 +81,7 @@ describe('the device socket', () => {
       port: 0, ...(opts.host === undefined ? {} : { host: opts.host }), appsDir: 'apps', snapshot, enrolments,
       devices: () => devices.current,
       relayDeviceEvents: async (batch): Promise<RelayReply> => {
-        relayed.push({ source: batch.source, deviceId: batch.deviceId, items: batch.items, ...(batch.phoneHolder === undefined ? {} : { phoneHolder: batch.phoneHolder }) });
+        relayed.push({ source: batch.source, deviceId: batch.deviceId, items: batch.items, ...(batch.phoneHolder === undefined ? {} : { phoneHolder: batch.phoneHolder }), ...(batch.stampedBy === undefined ? {} : { stampedBy: batch.stampedBy }) });
         return { acks: batch.items.map((raw) => ({ key: (raw as { key: string }).key, status: 'accepted' as const })) };
       },
       deviceEventStatus: (keys) => keys.map((key) => ({ key, state: 'pending' as const, attempts: 0 })),
@@ -224,13 +225,35 @@ describe('the device socket', () => {
     expect((await fetch(`${base}/warehouse/..%2F..%2Fpackage.json`, { headers: { cookie } })).status).not.toBe(200);
   });
 
+  it('OB-180: the served page carries the sign-in to stamp under (never the session); a true stamp is passed on as that person\'s; a forged one is refused', async () => {
+    const { base, relayed } = await start();
+    const deviceCookie = cookieHeader((await enrol(base, 'hh-01', CODE)).cookie!);
+    const signInPage = await (await fetch(`${base}/device/sign-in?screen=warehouse`, { headers: { cookie: deviceCookie } })).text();
+    expect(signInPage).toContain(FORGET_KEPT_PAGES_SCRIPT);
+    const cookie = await signIn(base, deviceCookie);
+    const html = await (await fetch(`${base}/warehouse/`, { headers: { accept: 'text/html', cookie } })).text();
+    const m = /<script>window\.phoneSignIn = (.*?);<\/script>/.exec(html);
+    const signInA = readPhoneSignIn(JSON.parse(m![1]!) as unknown)!;
+    expect(signInA).toMatchObject({ userId: 'u-worker', boxNow: NOW });
+    expect(html).not.toContain(cookie.split('sre_operator=')[1]!);
+    const e = event('s1');
+    const stamp = phoneStamper(signInA, NOW, () => NOW)!(e)!;
+    const ok = await fetch(`${base}/lane/outbox`, { method: 'POST', headers: { 'content-type': 'application/json', cookie }, body: JSON.stringify({ source: 'warehouse', items: [{ key: e.idempotencyKey, event: e, stamp }] }) });
+    expect(await ok.json()).toEqual({ boxNow: NOW, acks: [{ key: e.idempotencyKey, status: 'accepted' }] });
+    expect(relayed.at(-1)).toMatchObject({ phoneHolder: 'u-worker', stampedBy: { [e.idempotencyKey]: 'u-worker' } });
+    const f = event('s2');
+    const forged = await fetch(`${base}/lane/outbox`, { method: 'POST', headers: { 'content-type': 'application/json', cookie }, body: JSON.stringify({ source: 'warehouse', items: [{ key: f.idempotencyKey, event: f, stamp: { ...stamp, mac: '0'.repeat(64) } }] }) });
+    expect(await forged.json()).toEqual({ boxNow: NOW, acks: [{ key: f.idempotencyKey, status: 'refused', reason: expect.stringContaining('does not match the record') as unknown }] });
+    expect(relayed).toHaveLength(1);
+  });
+
   it('relays a handheld batch with the device named, answers status and sync-status, and refuses a batch that claims to be the manager', async () => {
     const { base, relayed } = await start();
     const cookie = await signIn(base, cookieHeader((await enrol(base, 'hh-01', CODE)).cookie!));
     const e = event('c1');
     const res = await fetch(`${base}/lane/outbox`, { method: 'POST', headers: { 'content-type': 'application/json', cookie }, body: JSON.stringify({ source: 'warehouse', items: [{ key: e.idempotencyKey, event: e }] }) });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ acks: [{ key: 'wh-move:c1', status: 'accepted' }] });
+    expect(await res.json()).toEqual({ boxNow: NOW, acks: [{ key: 'wh-move:c1', status: 'accepted' }] });
     expect(relayed).toHaveLength(1);
     expect(relayed[0]).toMatchObject({ source: 'warehouse', deviceId: 'hh-01', phoneHolder: 'u-worker' });
 
@@ -298,7 +321,7 @@ describe('the device socket', () => {
     const form = await fetch(`${base}/device/sign-in?screen=warehouse`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', cookie: deviceCookie }, body: new URLSearchParams({ staffId: 'u-worker', pin: pinOf('u-worker') }).toString(), redirect: 'manual' });
     expect(form.status).toBe(303);
     expect(form.headers.get('location')).toBe('/warehouse/');
-    expect(form.headers.get('set-cookie')).toMatch(/^sre_operator=[^;]+; Path=\/; HttpOnly; SameSite=Strict; Max-Age=43200$/);
+    expect(form.headers.get('set-cookie')).toMatch(/^sre_operator=[^;]+; Path=\/; HttpOnly; SameSite=Strict; Max-Age=14400$/);
     const cookie = `${deviceCookie}; ${cookieHeader(form.headers.get('set-cookie')!)}`;
     // The screen names the signed-in person and shows who is holding the phone.
     const html = await (await fetch(`${base}/warehouse/`, { headers: { accept: 'text/html', cookie } })).text();
@@ -315,7 +338,7 @@ describe('the device socket', () => {
     // A record naming somebody else is refused by name; the worker's own goes through, in order.
     const other = event('c2', 'u-someone-else');
     const mixed = await fetch(`${base}/lane/outbox`, { method: 'POST', headers: { 'content-type': 'application/json', cookie }, body: JSON.stringify({ source: 'warehouse', items: [{ key: other.idempotencyKey, event: other }, { key: e1.idempotencyKey, event: e1 }] }) });
-    expect(await mixed.json()).toEqual({ acks: [
+    expect(await mixed.json()).toEqual({ boxNow: NOW, acks: [
       { key: 'wh-move:c2', status: 'refused', reason: 'the record names u-someone-else, who has not been signed in on this phone this shift' },
       { key: 'wh-move:c1', status: 'accepted' },
     ] });

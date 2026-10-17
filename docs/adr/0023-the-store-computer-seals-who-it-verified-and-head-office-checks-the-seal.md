@@ -110,6 +110,30 @@ when their name was written — anyone holding the sync permission could post a 
 in-store-install Step 2b). Until the back-office screens on a real store box have a sign-in (OB-15), a decision made
 there is still relayed unsealed and flagged; a reopen works there by PINs alone.
 
+## Amendment — 17 October 2026 (OB-180 "A"): a handheld record carries the sign-in it was made under
+
+Before (verifier r2final NEW-4, F7): the box sealed a handheld's record only for the person holding the phone NOW, so
+work done offline by one person and handed over after somebody else signed in on that phone travelled unsealed and its
+checklist was flagged as not accepted. The owner's decision OB-180 "A" ("Stamp each record", 17 Oct 2026):
+
+1. **The phone stamps each record as it is queued** with the sign-in it was made under: the sign-in's reference, the
+   person, when it was made (on the box's clock as the page last learnt it), and an HMAC-SHA256 over those and the whole
+   record, under a stamp key only that sign-in's served page holds (`window.phoneSignIn`). Reference and key are derived
+   on the box from the session and the box's own secret (`TillOperators.stampFor`) and never written anywhere; the
+   session token is never in the page. The shared code is `packages/sync/src/sign-in-stamp.ts` (plain SHA-256/HMAC —
+   the phones reach the box over plain http on the shop wifi, where browsers offer no Web Crypto).
+2. **The device socket checks every stamp** (`TillOperators.verifyStamp`): a sign-in this box made, on THIS phone, the
+   stamp's person is that sign-in's and the record's, the mac matches the record, and "made at" lies inside that sign-in
+   (signing in → signing out / being replaced / expiry, from the box's own log, with two minutes for a phone's clock, and
+   never after the box's own now). A stamp that fails is REFUSED by name — never sealed, never read as "no stamp".
+3. **The box seals a verified-stamp record for the person whose sign-in made it**, whoever holds the phone when it is
+   handed over. An unstamped record (a phone queue from before OB-180) keeps the F7 rule: sealed only for the holder now.
+4. **The phone's sign-in page forgets the handheld pages the service workers kept**, because a kept page carries the
+   last person's stamp key; the queued work lives in the phone's own storage and is untouched.
+
+**Limit, stated:** while a person's sign-in is open and the phone is offline, whoever holds the phone works as that
+person — exactly as at a till left signed in. Signing out (or the next person signing in) ends it.
+
 ## Reconsider-when
 
 Each store computer is enrolled with its own key (device identity, ADR-0019's identity server or a per-box certificate):

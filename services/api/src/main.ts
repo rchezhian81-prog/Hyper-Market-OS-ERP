@@ -118,6 +118,7 @@ import { facilitiesRoutes } from '../../platform/src/facilities';
 import { facilitiesAssetsRoutes } from '../../platform/src/facilities-assets';
 import { facilitiesMonitoringRoutes } from '../../platform/src/facilities-monitoring';
 import { weighingVerificationRoutes } from '../../platform/src/facilities-metrology';
+import { r2TillRoutes, scalesOnRegisterAdapter } from './r2-till-adapters';
 import { complianceRoutes } from '../../compliance/src/index';
 import { riskRegisterRoutes } from '../../compliance/src/risk';
 import { inventoryRoutes } from '../../inventory/src/index';
@@ -293,6 +294,18 @@ import { aiRoutes } from '../../ai/src/index';
 import { modelGatewayRoutes, governedEvidence } from '../../ai/src/model-gateway';
 import { draftingLegRoutes } from '../../ai/src/drafting-legs';
 import { serviceDeskExtrasAdapter, anomalySummaryAdapter, orderFactsFor, breachAlertAdapter, storefrontSelfAdapter, competitorPriceAdapter } from './round8-adapters';
+import { hrComplianceAdapter, poshRegisterAdapter, staffRosterVisibilityAdapter, committeeMembershipAdapter } from './r2-hr-adapters';
+import { committeeMembershipRoutes } from '../../identity/src/committee-membership';
+import { hrComplianceRoutes } from '../../finance/src/hr-compliance';
+import { poshRegisterRoutes } from '../../finance/src/posh-register';
+import { processorRegisterAdapter, settlementRefundsAdapter } from './r2-data-adapters';
+import { processorRegisterRoutes } from '../../customer/src/processor-register';
+import { legacyCardPurgeRoutes } from '../../migration/src/legacy-card-purge';
+import { wasteAnalyticsAdapter, foodSafetyAdapter, priceIntegrityAgeingAdapter, assignedTaskAdapter, receivingChecklistLookup, carriedChecklistAdapter } from './r2-ops-adapters';
+import { assignedTaskRoutes } from '../../finance/src/assigned-tasks';
+import { priceIntegrityAgeingRoutes } from '../../pricing/src/price-integrity-ageing';
+import { foodSafetyRoutes } from '../../platform/src/food-safety';
+import { wasteAnalyticsRoutes } from '../../inventory/src/waste-analytics';
 import type { ModelTransport, ModelTier, TierPricing } from '../../../packages/ai/src/index';
 import {
   STREAM, personalDataStore, outsidePartyLoginAdapter, syncWatermarksAdapter, storeSyncView, dayBookAdapter, payablesAdapter, supplierAccountAdapter, supplierMasterAdapter, supplierOpeningsAdapter, accountOpeningsAdapter, openingReversalAdapter, storeStockFactsAdapter, replenishmentFactsAdapter, displayFundingAdapter, concessionTagsAdapter, observedHealthAdapter, catalogueAdapter, productMasterAdapter, categoryRegisterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, refundApprovalsAdapter, approvalRequestsAdapter, noReceiptReturnsAdapter, exchangesAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, floorIndentsAdapter, countsAdapter, writeOffAdapter, productionAdapter, weighedCostingAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, spacePerformanceAdapter, assortmentAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, importQualityAdapter, dataImportAdapter, supplierInvoiceIdUsed, productUomFrom, acceptedAsn, productInUse, storeSettingsAdapter, storeRulesAdapter, heldVersionsAdapter, branchScopeHeldBy, dataExportAdapter, financeAdapter, settlementAdapter, customerAdapter, segmentDataAdapter, marketingDraftInputs, dataRightsAdapter, erasureExecutionAdapter, privacyDomainHoldingsAdapter, serviceCaseAdapter, campaignAdapter, campaignSendAdapter, modelGatewayAdapter, ordersAdapter, fulfilmentAdapter, dispatchAdapter, notificationQueueAdapter, fulfilmentPackingAdapter, orderFulfilmentAdapter, stockLossAdapter, substitutionTruthAdapter, b2bMoneyEffectsAdapter, b2bPostingAdapter, fulfilmentWaveAdapter, assignmentsAdapter, driverRunAdapter, identityAdapter, accessLifecycleAdapter, peopleAdapter, signInEnder, delegationAdapter, approvalDecisionAdapter, syncedGoodsReceiptAdapter, assembledGoodsReceiptAdapter, syncedCountsAdapter, countPlansAdapter, openToBuyAdapter, invoiceIngestionAdapter, onlineBufferAdapter, productVersionsOf, adjustmentRequestAdapter, syncedWarehouseAdapter, receivingScanAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, partnerAdapter, backgroundJobsAdapter, supportAccessAdapter, statusCentreAdapter, licencesAdapter, serviceRequestsAdapter, remoteSessionsAdapter, alertLifecycleAdapter, legalHoldsAdapter, riskRegisterAdapter, drReadinessAdapter, auditTrailAdapter, reportingAdapter, migrationAdapter, legacyHistoryAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, periodBooksAdapter, heldStockDecisionsAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, dayCloseAdapter, lpCasesAdapter, lpRulesAdapter, lpActivityAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bPortalAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, quotationsAdapter, scheduledBriefAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, connectorDeliveryAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, qualityHoldAdapter, saleBlocksAdapter, loyaltyMembersAdapter, loyaltyEffectsAdapter, loyaltyWalletsAdapter, loyaltyLiabilityAdapter, independentEvidenceAdapter, compensationFulfilmentAdapter, nearExpiryAdapter, rosterStoreAdapter, certStoreAdapter, sopStoreAdapter, attendanceStoreAdapter, checklistStoreAdapter, taskStoreAdapter, payslipStoreAdapter, salesHistoryAdapter, billingAdapter, serviceabilityAdapter, consolidationAdapter, planogramStoreAdapter, documentTemplatesAdapter, tokenRevocationAdapter, effectiveGrants, deliveryServiceAdapter, b2bStockAdapter, commissionRuleAdapter, b2bOrderingAdapter, customer360Adapter, b2bTransferNotesAdapter, registeredStores, knownStockPlace,
@@ -567,15 +580,18 @@ export function buildSurface(deps: {
     grn: empty(undefined), all: empty([]), commit: () => {}, now,
     productRule: empty(undefined), receiptPolicy: empty(undefined), recordReceiptPolicy: () => {}, commitExcessDecision: () => {},
     purchaseOrder: empty(undefined), commitDisposition: () => {}, commitExcessReturn: () => {}, commitLineReturn: () => {},
-  } : { ...goodsReceiptAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now), packOf: packHierarchyAdapter({ store, now }).pack };
+  } : { ...goodsReceiptAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now), packOf: packHierarchyAdapter({ store, now }).pack, receivingChecklistFor: receivingChecklistLookup({ store }) };
   const syncedGoodsReceiptDeps = store === undefined ? {
     ...goodsReceiptDeps, permissionsOfUser: empty(undefined), unitCostMinor: empty(undefined),
-  } : { ...syncedGoodsReceiptAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now) };
+  } : { ...syncedGoodsReceiptAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now), receivingChecklistFor: receivingChecklistLookup({ store }),
+    // OB-172: a checklist done at the dock, carried inside the relayed receipt and sealed with it by the store computer.
+    ...carriedChecklistAdapter({ store, now }), tillSealKey: sealKey };
   // SP-6b: the handheld's receiving scans assembled into ONE GRN against the order — the relayed receipt's deps plus the
   // SP-3a scan register; the assembly appends no stock movement of its own (the scans did).
   const assembledGoodsReceiptDeps = store === undefined ? {
     ...syncedGoodsReceiptDeps, scansOf: empty([]),
-  } : { ...assembledGoodsReceiptAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now) };
+  } : { ...assembledGoodsReceiptAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now), receivingChecklistFor: receivingChecklistLookup({ store }),
+    ...carriedChecklistAdapter({ store, now }), tillSealKey: sealKey };
   // Approve-then-apply (SP-4): a CLEAN decision relayed from the manager's screen reaches its subject — a held blind count,
   // a pending adjustment request or a held receipt excess — through that subject's own decide step (the same code the
   // direct routes run).
@@ -666,6 +682,9 @@ export function buildSurface(deps: {
     ...emergencyAccessRoutes(store === undefined
       ? { grant: empty(undefined), grants: empty([]), recordGrant: () => {}, now }
       : { ...emergencyAccessAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }) }),
+    // R2 C20 · OB-165 "A": the owner adds or removes an Internal Committee member (that role only), a second person
+    // confirms through the maker-checker engine, the change is audited, and the owner never holds the role.
+    ...(store === undefined ? [] : committeeMembershipRoutes({ ...committeeMembershipAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, approvals: approvalRequestsAdapter({ store, now }) })),
     // Joiner/mover/leaver access lifecycle (M02-FR-04 · Wave 2b PA-02) — a durable COMMAND now: it reads what the
     // person holds from the ledger, appends the grants and revocations, and cuts the live session through the same
     // revocation list the authenticator consults, so a leaver's access ends on the next request.
@@ -773,7 +792,15 @@ export function buildSurface(deps: {
       : { ...promotionAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }) }),
     ...promotionCatalogueRoutes(store === undefined
       ? { promotion: empty(undefined), promotions: empty([]), recordDefined: () => {}, recordStatus: () => {}, now }
-      : promotionCatalogueAdapter({ store, now })),
+      : {
+        ...promotionCatalogueAdapter({ store, now }),
+        // NEW-1 (B19): an offer that names a carry bag (by the product master's own flag) is refused when it is defined.
+        carryBagsAmong: async (t, ids) => {
+          const wanted = new Set(ids);
+          const bags = new Set((await productMasterAdapter({ store, now }).products(t)).filter((p) => wanted.has(p.productId) && p.safety?.carryBag === true).map((p) => p.productId));
+          return ids.filter((id) => bags.has(id));
+        },
+      }),
     // Supplier invoices (SP-7a · F02 · F04): the invoice is a durable record; the match joins it to the STORED order and receipts.
     ...purchaseRoutes(store === undefined ? {
       invoice: empty(undefined), invoices: empty([]), recordInvoice: () => {}, purchaseOrder: empty(undefined), permissionsOfUser: empty(undefined),
@@ -1075,6 +1102,8 @@ export function buildSurface(deps: {
     ...wasteRoutes(store === undefined ? {
       records: empty([]), coverage: empty({ expected: [], departmentNames: {} }), recordWaste: () => {}, recordCoverage: () => {}, now,
     } : wasteAdapter({ store, now })),
+    // D-5 (R2): waste analytics by SKU / department / reason over write-offs and waste records (r2-ops-adapters).
+    ...wasteAnalyticsRoutes(store === undefined ? { writeOffs: empty([]), wasteRecords: empty([]), departmentOf: empty(new Map()), now } : wasteAnalyticsAdapter({ store, now, locationBranches: locationBranchesOf(store, now) })),
     ...integrationRoutes(store === undefined ? {
       matrix: empty([]), adapters: empty([]), heartbeats: empty([]),
       recordMatrixEntry: () => {}, recordAdapter: () => {}, recordHeartbeat: () => {}, now,
@@ -1180,7 +1209,7 @@ export function buildSurface(deps: {
       bankSale: () => {}, recordExceptions: () => {}, openExceptions: empty([]), now,
       permissionsOfUser: empty(undefined),
     } : {
-      ...posAdapter({ store, now }), tillSealKey: sealKey, loyaltyOnSale: (t, sale) => earnOnSale(loyaltyEffects!, t, sale),
+      ...posAdapter({ store, now }), tillSealKey: sealKey, scalesOnRegisterFor: scalesOnRegisterAdapter({ store, now }), loyaltyOnSale: (t, sale) => earnOnSale(loyaltyEffects!, t, sale),
       loyaltySpendOnSale: (t, sale) => spendOnSale(loyaltyWallets!, t, sale),
     }),
     ...returnsRoutes(store === undefined ? {
@@ -1469,7 +1498,13 @@ export function buildSurface(deps: {
       importedBatchIds: empty([]), recordBatch: () => {}, credits: empty([]),
       electronicTenders: empty([]), investigations: empty([]),
       recordInvestigationOpened: () => {}, recordInvestigationEvidence: () => {}, recordInvestigationResolved: () => {}, now,
-    } : { ...settlementAdapter({ store, now }), recordAudit: auditTrail?.recordAudit }),
+    } : { ...settlementAdapter({ store, now }), ...settlementRefundsAdapter({ store }), recordAudit: auditTrail?.recordAudit }),
+    // C6 (v2.1): the data-processor contract register, checked against the vendors really processing personal data.
+    ...processorRegisterRoutes(store === undefined
+      ? { entries: empty([]), recordEntry: () => {}, activities: empty([]), now }
+      : { ...processorRegisterAdapter({ store, now }), recordAudit: auditTrail?.recordAudit }),
+    // C10 (v2.1): the legacy-card-purge check — a legacy extract passes only with no card data anywhere. Reads only.
+    ...legacyCardPurgeRoutes(),
     // Pending-tender recovery (D04-FR-02 / M12-FR-03) — reconcile an uncertain card/UPI tender against the
     // provider's own authorisation record: money owed TO the shop and money owed BACK to the customer both
     // surfaced, the day blocked only while the shop holds a customer's money. A pure compute over supplied
@@ -1565,6 +1600,8 @@ export function buildSurface(deps: {
       schedules: empty([]), tasks: empty([]), recordSchedule: () => {}, recordTaskDue: () => {}, recordTaskCompleted: () => {}, recordTaskVerified: () => {},
       incidents: empty([]), recordIncident: () => {}, now,
     } : facilitiesAdapter({ store, now })),
+    // D-6 (R2): scheduled food-safety / HACCP checks — corrective action on a failure, sealed into the audit chain (r2-ops-adapters).
+    ...foodSafetyRoutes(store === undefined ? { checks: empty([]), records: empty([]), recordCheck: () => {}, recordRecord: () => {}, now } : foodSafetyAdapter({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) })),
     ...facilitiesAssetsRoutes(store === undefined ? {
       assets: empty([]), services: empty([]), downtime: empty([]), energyReadings: empty([]),
       recordAsset: () => {}, recordService: () => {}, recordDowntime: () => {}, recordEnergy: () => {}, now,
@@ -1575,6 +1612,8 @@ export function buildSurface(deps: {
     } : facilitiesMonitoringAdapter({ store, now })),
     // Verified-scale gate (B6, Legal Metrology) — stateless, folds no ledger, so no deps/stub.
     ...weighingVerificationRoutes(),
+    // R2 lane 1 (B6): the weighing-scale register the store pack carries to the lanes.
+    ...r2TillRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
     // Owner alerts inbox (M29-FR-03) — control by exception; stateless grouping of the period's exceptions.
     ...ownerAlertsRoutes(),
     // Owner drill-through + KPI comparison (M29-FR-02) — "show me the transactions behind this figure",
@@ -1677,7 +1716,8 @@ export function buildSurface(deps: {
     // missing from STORED facts (the stateful counterpart to the POST what-if above). Writes manage-gated.
     ...rosterStoreRoutes(store === undefined ? {
       putEmployee: () => {}, putShift: () => {}, putAssignment: () => {}, roster: () => ({ employees: [], shifts: [], assignments: [] }), now,
-    } : rosterStoreAdapter({ store, now })),
+      staffVisibility: () => Promise.resolve({ visible: new Map() }),
+    } : { ...rosterStoreAdapter({ store, now }), staffVisibility: staffRosterVisibilityAdapter({ store, now }) }),
     // HR/Workforce DURABLE certification store (M25-FR-03 follow-on) — certificates persisted alongside the
     // roster (same tenant stream), so GET …/task-gate reads a stored employee + their certificate on file and
     // runs the tested canPerformTask (the stateful counterpart to the POST what-if). Writes manage-gated.
@@ -1696,6 +1736,10 @@ export function buildSurface(deps: {
     ...attendanceStoreRoutes(store === undefined ? {
       putAttendance: () => {}, attendance: () => [], employees: () => [], now,
     } : attendanceStoreAdapter({ store, now })),
+    // R2 addendum C18: the TN Shops and Establishments working-time pack (limits are settings; publish enforces them;
+    // the attendance, leave and holiday registers). C20: the Internal Committee complaints register and annual report.
+    ...(store === undefined ? [] : hrComplianceRoutes(hrComplianceAdapter({ store, now }))),
+    ...(store === undefined ? [] : poshRegisterRoutes(poshRegisterAdapter({ store, now }))),
     // HR/Workforce DURABLE checklist-completion store (M25-FR-02 follow-on) — a submitted opening/closing/handover
     // checklist persisted alongside the roster (same tenant stream), so GET …/checklists[/:id/status] reads the
     // STORED checklist and runs the tested assessChecklist (the stateful counterpart to the POST /checklist-assess
@@ -1710,6 +1754,8 @@ export function buildSurface(deps: {
     ...taskStoreRoutes(store === undefined ? {
       putTask: () => {}, completeTask: () => {}, tasks: () => [], now,
     } : taskStoreAdapter({ store, now })),
+    // D-8 (R2): tasks assigned to a named person — SOP checklist, deadline, evidence, only the assignee completes (r2-ops-adapters).
+    ...assignedTaskRoutes(store === undefined ? { tasks: empty([]), completions: empty([]), recordTask: () => {}, recordCompletion: () => {}, sop: empty(undefined), permissionsOfUser: empty(undefined), now } : assignedTaskAdapter({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) })),
     // Payroll pay-run DURABLE lifecycle store (WP3 inc9) — append draft→submit→approve→lock→reverse to the
     // append-only ledger (one stream per run) so a run survives a restart; maker ≠ checker enforced at the
     // write boundary. Confidential — owner-gated. The stateless /pay-run/evaluate route stays for previews.
@@ -1735,6 +1781,8 @@ export function buildSurface(deps: {
     // Price integrity across shelf/POS/app/ESL (D06/D14, ratified R2 B25) — stateless audit; the till is
     // the reference and a shelf underpricing it is ranked first as a legal exposure.
     ...priceIntegrityRoutes(),
+    // D-7 (R2): the automated price-integrity audit — price of record vs shelf / app / till as an ageing report (r2-ops-adapters).
+    ...priceIntegrityAgeingRoutes(store === undefined ? { observations: empty([]), observation: empty(undefined), recordObservation: () => {}, priceEntries: empty([]), chargedAt: empty([]), now } : priceIntegrityAgeingAdapter({ store, now, locationBranches: locationBranchesOf(store, now) })),
     // Cold-chain assessment (M10-FR-02) — stateless verdict on a perishable batch; no second temperature
     // store (facilities-monitoring owns that truth, P-02), so no deps/stub.
     ...coldChainRoutes(),

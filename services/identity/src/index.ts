@@ -21,6 +21,7 @@ import { firstUnknownStore, storeComputerGrantRefusal, unknownStoreWords } from 
 import { machineIdentityGrantRefusal, MACHINE_IDENTITY_REFUSAL_CODE } from './machine-identities';
 import { outsidePartyGrantRefusal, OUTSIDE_LOGIN_REFUSAL_CODE } from './outside-party-logins';
 import { dutiesGrantRefusal, SEPARATION_OF_DUTIES_REFUSAL_CODE } from './separation-of-duties';
+import { ownerAndCommitteeRefusal, OWNER_ON_COMMITTEE_REFUSAL_CODE, COMMITTEE_ROLE_ID } from './committee-membership';
 
 /**
  * Document number formats per type (M01-FR-02) — configuration, not tenant data: what an invoice
@@ -277,6 +278,13 @@ export function identityRoutes(deps: IdentityDeps): readonly Route[] {
           if (both !== undefined) {
             throw apiError(422, { code: SEPARATION_OF_DUTIES_REFUSAL_CODE, whatHappened: both, wasItSaved: 'not_saved', nextSafeAction: 'Give the IT work and the business work to two different people, each with their own sign-in. Nothing was requested.' });
           }
+          // OB-165: the owner never holds the Internal Committee role — in either order.
+          const owner = ownerAndCommitteeRefusal([roleId, ...held]);
+          if (owner !== undefined) throw apiError(422, { code: OWNER_ON_COMMITTEE_REFUSAL_CODE, whatHappened: owner, wasItSaved: 'not_saved', nextSafeAction: 'Give the role to somebody else. Nothing was requested.' });
+        }
+        // OB-165: committee membership has its own route — the owner's change, confirmed by a second person.
+        if (roleId === COMMITTEE_ROLE_ID) {
+          throw apiError(422, { code: 'committee_membership_has_its_own_route', whatHappened: 'Internal Committee members are added and removed by the owner, with a second person confirming (owner decision OB-165) — not through a general role grant.', wasItSaved: 'not_saved', nextSafeAction: 'The owner uses POST /v1/identity/internal-committee/changes/:changeId. Nothing was requested.' });
         }
         // Round 14 (verifier G5): nothing is added to an outside party's login, and an outside-party role is never given here.
         const outside = outsidePartyGrantRefusal(roleId, await deps.outsideLoginOf?.(ctx.tenantId, userId));
@@ -341,6 +349,9 @@ export function identityRoutes(deps: IdentityDeps): readonly Route[] {
           if (both !== undefined) {
             throw apiError(422, { code: SEPARATION_OF_DUTIES_REFUSAL_CODE, whatHappened: both, wasItSaved: 'not_saved', nextSafeAction: 'Reject this request; give the IT work and the business work to two different people. Nobody\'s access changed.' });
           }
+          // OB-165: judged again at APPROVAL — the owner role and the committee role never meet on one person.
+          const owner = ownerAndCommitteeRefusal([pending.roleId, ...held]);
+          if (owner !== undefined) throw apiError(422, { code: OWNER_ON_COMMITTEE_REFUSAL_CODE, whatHappened: owner, wasItSaved: 'not_saved', nextSafeAction: 'Reject this request. Nobody\'s access changed.' });
         }
         // Verifier r18 C2-R2: the SCOPE judged again at APPROVAL — a request made before round 18's checks (or a store closed
         // since) may name a store head office does not know, or one that is not plain text; approving it would add a ghost

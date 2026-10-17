@@ -7,3 +7,7 @@
 // deliberate exception — reported, never enforced.
 
 export * from './workforce';
+// R2 addendum C18 — the TN Shops and Establishments working-time pack (every limit a setting, none hard-coded).
+export * from './working-time';
+// R2 addendum C20 — the Internal Committee complaints register and its annual report.
+export * from './posh';

@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1024 | 628 | 628 | 89 | 301 |
+| 13 | 1039 | 636 | 636 | 89 | 302 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -132,7 +132,9 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/prices/list/:productId/entries/:entryId` | `price.change.propose` | core | yes |
 | GET | `/v1/prices/list/:productId/history` | `catalogue.pack.read` | core | — |
 | GET | `/v1/prices/list/:productId/resolve` | `catalogue.pack.read` | core | — |
+| GET | `/v1/pricing/integrity/ageing` | `price.integrity.audit` | core | — |
 | POST | `/v1/pricing/integrity/audit` | `price.integrity.audit` | core | yes |
+| POST | `/v1/pricing/integrity/observations/:observationId` | `price.integrity.audit` | core | yes |
 | GET | `/v1/promotions/:promotionId` | `promotion.read` | core | — |
 | POST | `/v1/promotions/:promotionId/abuse-check` | `promotion.read` | core | yes |
 | POST | `/v1/promotions/:promotionId/activate` | `promotion.launch` | core | yes |
@@ -358,6 +360,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/warehouse/transfers/:transferId/dispatch` | `inventory.movement.append` | core | yes |
 | POST | `/v1/warehouse/transfers/:transferId/receive` | `inventory.movement.append` | core | yes |
 | POST | `/v1/warehouse/transfers/:transferId/shortfall/resolution` | `inventory.adjustment.approve` | core | yes |
+| GET | `/v1/waste/analytics` | `waste.view` | core | — |
 | GET | `/v1/waste/compare` | `reporting.report.read` | core | — |
 | POST | `/v1/waste/coverage` | `inventory.movement.append` | core | yes |
 | POST | `/v1/waste/records/:wasteId` | `inventory.movement.append` | core | yes |
@@ -494,6 +497,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/privacy/data-requests/overdue` | `privacy.request.manage` | core | — |
 | GET | `/v1/privacy/pii/:customerRef` | `privacy.request.manage` | core | — |
 | POST | `/v1/privacy/pii/:customerRef/:category` | `privacy.request.manage` | core | yes |
+| GET | `/v1/privacy/processor-contracts` | `privacy.request.manage` | core | — |
+| POST | `/v1/privacy/processor-contracts` | `privacy.request.manage` | core | yes |
 | POST | `/v1/privacy/retention/sweep` | `customer.consent.write` | core | yes |
 | POST | `/v1/service/campaigns/:campaignId/attribution` | `customer.campaign.read` | core | yes |
 | POST | `/v1/service/campaigns/:campaignId/messages/:messageId/status` | `notification.delivery.report` | core | yes |
@@ -869,16 +874,24 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/facilities/equipment/:assetId/range` | `facilities.asset.manage` | core | yes |
 | POST | `/v1/facilities/equipment/:assetId/readings/:readingId` | `facilities.reading.record` | core | yes |
 | GET | `/v1/facilities/evidence` | `facilities.overdue.read` | core | — |
+| POST | `/v1/facilities/food-safety/checks/:checkId` | `facilities.schedule.manage` | core | yes |
+| POST | `/v1/facilities/food-safety/checks/:checkId/records/:recordId` | `facilities.task.record` | core | yes |
+| GET | `/v1/facilities/food-safety/status` | `facilities.overdue.read` | core | — |
 | POST | `/v1/facilities/incidents/:incidentId` | `facilities.incident.record` | core | yes |
 | POST | `/v1/facilities/incidents/:incidentId/close` | `facilities.incident.record` | core | yes |
 | GET | `/v1/facilities/overdue` | `facilities.overdue.read` | core | — |
 | GET | `/v1/facilities/power` | `facilities.asset.read` | core | — |
 | POST | `/v1/facilities/power/:eventId` | `facilities.reading.record` | core | yes |
 | GET | `/v1/facilities/scale-verification` | `facilities.asset.read` | core | — |
+| GET | `/v1/facilities/scales` | `facilities.asset.read` | core | — |
+| POST | `/v1/facilities/scales/:assetId` | `facilities.asset.manage` | core | yes |
 | POST | `/v1/facilities/schedules/:scheduleId` | `facilities.schedule.manage` | core | yes |
 | POST | `/v1/facilities/schedules/:scheduleId/tasks/:taskId` | `facilities.task.record` | core | yes |
 | POST | `/v1/facilities/tasks/:taskId/complete` | `facilities.task.record` | core | yes |
 | POST | `/v1/facilities/tasks/:taskId/verify` | `facilities.task.record` | core | yes |
+| GET | `/v1/hr/workforce/assigned-tasks` | `workforce.task.read` | core | — |
+| POST | `/v1/hr/workforce/assigned-tasks/:taskId` | `workforce.roster.manage` | core | yes |
+| POST | `/v1/hr/workforce/assigned-tasks/:taskId/complete` | `workforce.task.complete.own` | core | yes |
 | GET | `/v1/hr/workforce/attendance` | `workforce.roster.read` | core | — |
 | POST | `/v1/hr/workforce/attendance/:employeeId/:date` | `workforce.roster.manage` | core | yes |
 | GET | `/v1/hr/workforce/certifications` | `workforce.roster.read` | core | — |
@@ -895,6 +908,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/hr/workforce/labour-cost` | `workforce.roster.read` | core | — |
 | POST | `/v1/hr/workforce/labour-cost` | `workforce.roster.read` | core | yes |
 | GET | `/v1/hr/workforce/my-roster` | `payroll.ess.self` | core | — |
+| GET | `/v1/hr/workforce/my-tasks` | `workforce.task.complete.own` | core | — |
 | GET | `/v1/hr/workforce/roster` | `workforce.roster.read` | core | — |
 | GET | `/v1/hr/workforce/roster-gaps` | `workforce.roster.read` | core | — |
 | POST | `/v1/hr/workforce/roster-gaps` | `workforce.roster.read` | core | yes |
@@ -1066,6 +1080,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/migration/history/exclusions` | `migration.reconciliation.read` | core | — |
 | POST | `/v1/migration/history/exclusions` | `migration.exclusion.propose` | core | yes |
 | POST | `/v1/migration/history/exclusions/:exclusionId/decision` | `migration.exclusion.approve` | core | yes |
+| POST | `/v1/migration/legacy-card-purge/check` | `migration.cleaning.read` | core | yes |
 | POST | `/v1/migration/mapping/approve` | `migration.mapping.approve` | core | yes |
 | POST | `/v1/migration/mapping/coverage` | `migration.mapping.read` | core | yes |
 | POST | `/v1/migration/opening-events` | `migration.opening.build` | core | yes |

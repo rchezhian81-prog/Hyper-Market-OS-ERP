@@ -37,7 +37,7 @@ const codeOf = (res: { body: unknown }): string | undefined => (res.body as { er
 // exactly that figure (a different one is refused: tests/integration/a-loss-is-worth-what-the-stock-cost.test.ts).
 const base = (over: Record<string, unknown> = {}) => ({
   productId: 'MILK-1', locationId: 'store-1', qty: 6, uom: 'ea', lossType: 'expiry',
-  reasonCode: 'past-use-by', valueMinor: 30_000, ...over,
+  reasonCode: 'expiry', valueMinor: 30_000, ...over,
 });
 
 // u-owner raises; u-mgr (store_manager) is a genuine Manager approver; u-cash (cashier) holds neither.

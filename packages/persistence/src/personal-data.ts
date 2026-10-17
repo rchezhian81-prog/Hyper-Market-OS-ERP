@@ -306,9 +306,16 @@ const clone = <T>(v: T): T => (v === undefined ? v : JSON.parse(JSON.stringify(v
  */
 export class PersonalDataSealingStore implements EventStore {
   private readonly types: ReadonlySet<string>;
+  private readonly sealedOnExport: ReadonlySet<string>;
 
-  constructor(readonly inner: EventStore, readonly keys: SubjectKeyStore, private readonly policy: PersonalDataPolicy) {
+  /**
+   * `options.sealedOnExport`: categories whose values a whole-tenant EXPORT leaves sealed (the platform export is run by IT,
+   * and some text — the Internal Committee's register, C20 — is for nobody outside its own routes). Reads through the
+   * domain's own adapters still open them while the key exists.
+   */
+  constructor(readonly inner: EventStore, readonly keys: SubjectKeyStore, private readonly policy: PersonalDataPolicy, options: { readonly sealedOnExport?: readonly string[] } = {}) {
     this.types = new Set(Object.keys(policy));
+    this.sealedOnExport = new Set(options.sealedOnExport ?? []);
   }
 
   private async sealPayload(tenantId: string, type: string, payload: unknown): Promise<unknown> {
@@ -338,12 +345,13 @@ export class PersonalDataSealingStore implements EventStore {
     return copy;
   }
 
-  private async open(records: readonly PersistedEvent[]): Promise<PersistedEvent[]> {
+  private async open(records: readonly PersistedEvent[], keepSealed: ReadonlySet<string> = new Set()): Promise<PersistedEvent[]> {
     const touched = records.filter((r) => this.types.has(r.event.type));
     if (touched.length === 0) return [...records];
     // One key read per tenant per call — every sealed value in the batch opens from it.
     const refsByTenant = new Map<string, SubjectKeyRef[]>();
     const collect = (tenantId: string, v: unknown): void => {
+      if (isSealed(v) && keepSealed.has(v.c)) return;
       if (isSealed(v)) { const l = refsByTenant.get(tenantId) ?? []; l.push({ subjectRef: v.s, category: v.c }); refsByTenant.set(tenantId, l); return; }
       if (Array.isArray(v)) { for (const x of v) collect(tenantId, x); return; }
       if (isObj(v)) for (const x of Object.values(v)) collect(tenantId, x);
@@ -353,6 +361,7 @@ export class PersonalDataSealingStore implements EventStore {
     const keysByTenant = new Map<string, ReadonlyMap<string, ReadKey>>();
     for (const [tenantId, refs] of refsByTenant) keysByTenant.set(tenantId, await this.keys.keysForRead(tenantId, refs));
     const openValue = (tenantId: string, v: unknown): unknown => {
+      if (isSealed(v) && keepSealed.has(v.c)) return v;
       if (isSealed(v)) {
         const key = keysByTenant.get(tenantId)?.get(refKey({ subjectRef: v.s, category: v.c }));
         if (key === undefined || key === 'missing') return KEY_MISSING_TEXT;
@@ -409,7 +418,7 @@ export class PersonalDataSealingStore implements EventStore {
   }
 
   async exportTenant(tenantId: string): Promise<readonly PersistedEvent[]> {
-    return this.open(await this.inner.exportTenant(tenantId));
+    return this.open(await this.inner.exportTenant(tenantId), this.sealedOnExport);
   }
 
   registerTenant(tenantId: string, registeredBy: string): Promise<void> { return this.inner.registerTenant(tenantId, registeredBy); }

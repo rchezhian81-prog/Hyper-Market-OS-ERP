@@ -18,6 +18,7 @@
 
 import { openDeviceOutbox, guardedStore, type DeviceOutbox } from '../../../packages/sync/src/device-outbox';
 import { drainToBox, boxStatus } from '../../../packages/sync/src/device-drain';
+import { pageStamping, type SignInClock } from '../../../packages/sync/src/sign-in-stamp';
 import { WarehouseSession, type WarehouseAssignment } from './warehouse-session';
 
 import { mountDemoBanner, type BannerDocument } from '../../../packages/ui/src/demo-banner';
@@ -61,13 +62,15 @@ export function openWarehouseRelay(
   laneWriteBase: string | undefined,
   session: WarehouseSession,
   outbox: DeviceOutbox,
+  /** The sign-in's clock (OB-180): each hand-over reply carries the box's time, and the clock reckons from it (L1). */
+  clock?: SignInClock,
 ): WarehouseRelay | undefined {
   if (laneWriteBase === undefined) return undefined;
   const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
   if (fetchFn === undefined) return undefined;
   return {
     syncNow: async () => {
-      const result = await drainToBox({ outbox, boxBase: laneWriteBase, source: 'warehouse', fetch: fetchFn });
+      const result = await drainToBox({ outbox, boxBase: laneWriteBase, source: 'warehouse', fetch: fetchFn, ...(clock === undefined ? {} : { onBoxTime: (box, phone) => clock.learn(box, phone) }) });
       const statuses = await boxStatus({ boxBase: laneWriteBase, keys: session.handedKeys(), fetch: fetchFn });
       if (statuses !== undefined) session.noteBoxStatus(statuses);
       return { handed: result.handed, refused: result.refused, failed: result.failed, offline: result.offline };
@@ -116,7 +119,15 @@ if (browserWindow !== undefined) {
     // A worker whose scans are not being saved needs to know before the end of the shift, not after.
     browserWindow.warehouseStorageProblem = why;
   });
-  const outbox = openDeviceOutbox(store, (why) => { browserWindow.warehouseStorageProblem = why; });
+  // OB-180: every record this phone queues is stamped with the sign-in it is made under (the box injected it), on a
+  // clock that only moves forward and is kept beside the queue (verifier hh NEW-1); the end of the sign-in found by a
+  // record locks the screen at once (L2).
+  const perf = (globalThis as { performance?: { now(): number } }).performance;
+  const stamping = pageStamping(browserWindow, () => new Date().toISOString(), {
+    ...(storage === undefined ? {} : { storage }),
+    ...(perf === undefined ? {} : { perfNow: () => perf.now() }),
+  });
+  const outbox = openDeviceOutbox(store, (why) => { browserWindow.warehouseStorageProblem = why; }, stamping?.stamp);
   const search = (globalThis as { location?: { search?: string } }).location?.search ?? '';
   browserWindow.warehouseData = withChosenDelivery(browserWindow.warehouseData, new URLSearchParams(search).get('delivery'));
   browserWindow.warehouseOutbox = outbox;
@@ -124,7 +135,7 @@ if (browserWindow !== undefined) {
   if (session !== null) {
     browserWindow.warehouseSession = session;
     // The relay to the store computer — present only when the box served this page (it injects `laneWriteBase`).
-    const relay = openWarehouseRelay(browserWindow.laneWriteBase, session, outbox);
+    const relay = openWarehouseRelay(browserWindow.laneWriteBase, session, outbox, stamping?.clock);
     if (relay !== undefined) browserWindow.warehouseRelay = relay;
   }
 }

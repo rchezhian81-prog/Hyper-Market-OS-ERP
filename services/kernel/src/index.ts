@@ -50,6 +50,11 @@ export {
 } from './config';
 
 export {
+  isIndiaRegion, indiaRegionProblem, checkPaymentDataResidency, PAYMENT_DATA_REGION_KEY, PAYMENT_BACKUP_REGION_KEY,
+  type ResidencyFinding,
+} from './data-residency';
+
+export {
   startHttpServer,
   type ServerOptions, type RunningServer,
 } from './http-server';

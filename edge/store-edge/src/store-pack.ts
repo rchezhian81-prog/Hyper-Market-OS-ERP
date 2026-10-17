@@ -1328,6 +1328,20 @@ export interface StorePack {
   readonly supportSessions: Register<readonly unknown[]>;
   /** The tills, handhelds and phones this shop runs on (M33). */
   readonly devices: Register<readonly unknown[]>;
+  /**
+   * B6 · B7 — the store's weighing scales on the Legal Metrology register, each with the lanes it weighs for and the last
+   * day its verification stamp is valid. Absent means the box was never told: no lane may then sell by weight, because
+   * no stamp can be shown to be current (read per lane by `lane-scales.ts`). Optional in the type only so a pack built
+   * before B6 still type-checks: an absent property reads exactly as not known.
+   */
+  readonly weighingScales?: Register<readonly unknown[]>;
+  /**
+   * OB-172 · D-6 — the receiving checklists head office has in force for this store, and which products are cold-chain by
+   * its product master (`{ checks, coldChainProductIds }`, read by `readReceivingChecklistSetup`). The manager's screen and
+   * the warehouse handheld offer the checklist from it with no network, and it travels inside the receipt. Absent → the
+   * screens were not told: they cannot ask for it, and head office books such a delivery flagged `receiving_checklist_missing`.
+   */
+  readonly receivingChecklist?: Register<unknown>;
   /** Minimum versions this tenant enforces. **Absent means nothing is being enforced.** */
   readonly versionPolicy: Register<unknown>;
   /** Audit records in scope for a retention review, the shop's policies, and any legal holds. */
@@ -1497,6 +1511,8 @@ export function emptyPack(why: string = NEVER): StorePack {
     accounts: notKnown(why),
     supportSessions: notKnown(why),
     devices: notKnown(why),
+    weighingScales: notKnown(why),
+    receivingChecklist: notKnown(why),
     versionPolicy: notKnown(why),
     auditRecords: notKnown(why),
     retentionPolicies: notKnown(why),
@@ -1640,6 +1656,8 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     accounts: section<readonly unknown[]>('accounts'),
     supportSessions: section<readonly unknown[]>('supportSessions'),
     devices: section<readonly unknown[]>('devices'),
+    weighingScales: section<readonly unknown[]>('weighingScales'),
+    receivingChecklist: section<unknown>('receivingChecklist'),
     versionPolicy: section<unknown>('versionPolicy'),
     auditRecords: section<readonly unknown[]>('auditRecords'),
     retentionPolicies: section<readonly unknown[]>('retentionPolicies'),

@@ -177,6 +177,9 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // Round 26 (OB-99 · OB-97 · OB-98): which store computer each till's bill numbers belong to, what needs a person, and the
   // owner-approved "store computer replaced" act — a head-office page over its own routes (the store computer does not serve it).
   { id: 'store-computers', label: 'Store computers', labelTa: 'கடை கணினிகள்', path: '/store-computers', requires: 'platform.health.read', group: 'Administration', served: 'unserved' },
+  // OB-154 "A" (B6 · B7 · L2): the weighing-scale register — every scale's Legal Metrology stamp, certificate and tills, and
+  // adding or updating one (a later stamp date with a second person's approval) — a head-office page over its own routes.
+  { id: 'scales', label: 'Weighing scales', labelTa: 'எடைத் தராசுகள்', path: '/scales', requires: 'facilities.asset.read', group: 'Administration', served: 'unserved' },
   // Outside access — the admin screen on its "Outside access" tab: support sessions granted and expiring (M02 /
   // M36). Gated on the support-session read (`platform.support.read`).
   { id: 'support-access', label: 'Outside access', labelTa: 'வெளி அணுகல்', path: '/admin/?tab=support', requires: 'platform.support.read', group: 'Administration' },
@@ -188,6 +191,13 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   { id: 'integration-health', label: 'Connections', labelTa: 'இணைப்புகள்', path: '/integration-health/', requires: 'platform.health.read', group: 'Administration' },
   // Facilities — overdue maintenance and compliance tasks (M26). Gated on `facilities.overdue.read`.
   { id: 'facilities', label: 'Facilities', labelTa: 'வசதிகள்', path: '/facilities/', requires: 'facilities.overdue.read', group: 'Operations' },
+  // OB-154 (owner, 16 Oct 2026, "Add screens before pilot"): the store-operations pages — head-office pages over their own
+  // routes (the store computer does not serve them), each gated on the SAME permission its read route checks.
+  { id: 'food-safety', label: 'Food-safety checks', labelTa: 'உணவுப் பாதுகாப்புச் சோதனைகள்', path: '/food-safety', requires: 'facilities.overdue.read', group: 'Operations', served: 'unserved' },
+  { id: 'price-integrity', label: 'Price mismatches', labelTa: 'விலை முரண்பாடுகள்', path: '/price-integrity', requires: 'price.integrity.audit', group: 'Products', served: 'unserved' },
+  { id: 'store-tasks', label: 'Store tasks', labelTa: 'கடைப் பணிகள்', path: '/store-tasks', requires: 'workforce.task.read', group: 'People', served: 'unserved' },
+  { id: 'my-tasks', label: 'My tasks', labelTa: 'என் பணிகள்', path: '/my-tasks', requires: 'workforce.task.complete.own', group: 'People', served: 'unserved' },
+  { id: 'waste-analytics', label: 'Waste analytics', labelTa: 'வீண் பகுப்பாய்வு', path: '/waste-analytics', requires: 'waste.view', group: 'Reports', served: 'unserved' },
   // AI control — the kill switch, agents, the proposal queue, cost (A01–A10 governance). Gated on the budget read
   // (`ai.budget.read`), the owner's permission; the switches need `ai.killswitch.set` / `ai.budget.set` /
   // `ai.agent.enable`, which the routes enforce.
@@ -259,6 +269,10 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   { id: 'warehouse-handheld', label: 'Warehouse handheld', labelTa: 'கிடங்கு கைக்கருவி', path: '/warehouse/', requires: 'inventory.movement.append', group: 'Devices' },
   { id: 'picker-handheld', label: 'Picker handheld', labelTa: 'பிக்கர் கைக்கருவி', path: '/picker/', requires: 'fulfilment.assignment.read', group: 'Devices' },
   { id: 'driver-handheld', label: 'Delivery handheld', labelTa: 'டெலிவரி கைக்கருவி', path: '/driver/', requires: 'fulfilment.assignment.read', group: 'Devices' },
+  // R2 C20 · OB-154 "A": the owner's view of the Internal Committee's annual report — due, overdue or filed, counts only,
+  // and recording the filing. Gated on the filing permission the route checks (`posh.report.file`, the owner's). A
+  // head-office page (the box does not serve it). The complaints register itself stays the committee's (OB-157).
+  { id: 'posh-report', label: 'Committee annual report', labelTa: 'குழு ஆண்டு அறிக்கை', path: '/posh-report', requires: 'posh.report.file', group: 'People', served: 'unserved' },
 ]);
 
 /** An item retired from the catalogue, with the reason and where its job lives now — never a silent drop. */

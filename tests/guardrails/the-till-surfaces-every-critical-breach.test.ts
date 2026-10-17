@@ -28,6 +28,9 @@ const CATALOGUE = new Map<string, CatalogueProduct>([
   ['RECALLED', product('RECALLED', { recallBlock: true })],
   ['NORMAL', product('NORMAL')],
   ['BEER', product('BEER', { regulatedFlags: { minimumAge: 21 } })],
+  // R2 lane 1 (B19 · B14): a banned single-use plastic, and tobacco sold by the stick.
+  ['STRAW', product('STRAW', { regulatedFlags: { bannedSingleUsePlastic: true } })],
+  ['STICK', product('STICK', { regulatedFlags: { tobacco: true, packMinimumMinor: 10 } })],
 ]);
 const AT = '2026-08-07';
 const ctx = (): IntakeContext => ({
@@ -47,6 +50,9 @@ const BREACHES: Readonly<Record<string, IncomingSale>> = {
   sold_above_mrp: sale({ totalMinor: 9_500, lines: [line({ unitPriceMinor: 9_500, lineTotalMinor: 9_500 })], tenders: [{ kind: 'cash', amountMinor: 9_500 }] }),
   sold_expired_batch: sale({ lines: [line({ batchId: 'LOT-1', batchExpiry: '2026-08-01' })] }),
   age_restricted_sold_without_check: sale({ lines: [line({ productId: 'BEER' })] }),
+  // R2 lane 1: an unlawful plastic (B19) and a loose cigarette, its 18+ check made (B14).
+  unlawful_plastic_sold: sale({ lines: [line({ productId: 'STRAW' })] }),
+  tobacco_sold_below_pack: sale({ lines: [line({ productId: 'STICK', ageCheck: { minimumAge: 18, confirmedAtLeast: 18, confirmedBy: 'u-meena', confirmedAt: `${AT}T09:59:00Z` } })] }),
 };
 
 describe('the till surfaces every critical breach', () => {

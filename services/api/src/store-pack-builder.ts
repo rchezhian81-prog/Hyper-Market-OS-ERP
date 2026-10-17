@@ -43,6 +43,8 @@ import { openDeliveriesFor } from '../../purchase/src/purchase-orders';
 import { branchOfLocationIn } from '../../inventory/src/location-scope';
 import { normaliseUom } from '../../../packages/contracts/src/quantity';
 import type { PackSigner } from '../../catalogue/src/pack';
+import { weighingScalesSectionFor } from './r2-till-adapters';
+import { receivingChecklistSectionFor } from './r2-ops-adapters';
 
 export interface StorePackBuildInput {
   readonly store: EventStore;
@@ -347,6 +349,12 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
     }
     sections['backstock'] = backstock;
   }
+  // B6 (roadmap v2.1): the store's weighing scales and the lanes each weighs for — the till refuses weight from a lapsed stamp.
+  const scales = await weighingScalesSectionFor(store, now, tenantId, storeId);
+  if (scales !== undefined) sections['weighingScales'] = scales;
+  // OB-172 (D-6 · OB-164): the receiving checklist the dock offers with no network, and which products need it.
+  const receiving = await receivingChecklistSectionFor(store, now, tenantId, storeId);
+  if (receiving !== undefined) sections['receivingChecklist'] = receiving;
   const range = await assortmentAdapter({ store, now }).entries(tenantId, storeId);
   if (range.length > 0) sections['assortment'] = range;
   const contracts = (await spacePerformanceAdapter({ store, now }).contracts(tenantId)).filter((c) => c.storeId === storeId);

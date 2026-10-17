@@ -75,6 +75,7 @@ import type { AttemptAnswer, TenderCheck, Attempt } from './payment-attempts';
 import type { ReportAnswer } from './peripheral-health';
 import { refundRoomOutsidePoints } from '../../../packages/loyalty/src/wallet';
 import { returnedValueAtOriginalPrices } from '../../../packages/returns/src/exchange';
+import { withoutCardData, type TenderCardDataRemoval } from '../../../packages/tender/src/tender-card-data';
 
 /** The one address this may listen on. Named so the test can assert on it. */
 export const LANE_HOST = '127.0.0.1';
@@ -298,6 +299,16 @@ export type LaneDeviceRelayHandler = (
      * person the front's sign-in named. Absent when nobody was verified — the decisions then travel unstamped.
      */
     readonly verifiedPerson?: { readonly userId: string; readonly via: string; readonly laneId: string };
+    /**
+     * Verifier r2final NEW-4 (OB-172): on the device socket, the person signed in on that phone NOW. The box seals a
+     * handheld's record only for this person; a record naming anybody else travels unsealed.
+     */
+    readonly phoneHolder?: string;
+    /**
+     * OB-180: per item key, the person whose sign-in stamp the device socket verified on it — made on THIS phone, over this
+     * record, while that person's sign-in was valid. The box seals such a record for that person, whoever holds the phone now.
+     */
+    readonly stampedBy?: Readonly<Record<string, string>>;
   },
 ) => Promise<RelayReply>;
 
@@ -492,6 +503,12 @@ export function startLaneServer(input: {
    * allow trading today is refused before the disk. Absent → no decision here (the line is kept; head office flags it).
    */
   readonly concessionTrading?: { check(record: Record<string, unknown>): import('./concession-trading').CounterCheck };
+  /**
+   * The till's legal gates, again, before the disk (roadmap v2.1 B6 · B14 · B19): a sale with a banned single-use plastic,
+   * a thin or free carry bag, a below-pack tobacco quantity or a weight from a scale whose stamp lapsed is refused here in
+   * the cashier's words, from this box's own catalogue and scales (`lane-scales.ts`). No override. Absent → not judged here.
+   */
+  readonly tillRules?: { check(record: Record<string, unknown>): import('./lane-scales').TillRulesAnswer };
 }): Promise<LaneServer> {
   const maxBytes = input.maxBytes ?? 256 * 1024;
 
@@ -1368,6 +1385,19 @@ export function startLaneServer(input: {
           parsed = { ...rest, ...(memberRef === undefined ? {} : { customerRef: memberRef }) };
           if (keyed !== undefined && memberRef === undefined) delete (parsed as Record<string, unknown>)['customerRef'];
         }
+        // CARD DATA (C10 · hard rule #3 · NEW-3): a tender keeps a token reference, the last four digits and the network —
+        // nothing else ever reaches this disk. The sale has happened (the card machine said yes, the customer is at the
+        // counter), so refusing it would lose a real sale; instead the forbidden part is REMOVED here, before the seal and
+        // before the disk, and the tender is marked with the field NAMES removed (never the values) for head office to raise
+        // as critical. A mark the till sent itself is dropped first — only this box writes one. Deterministic, so a re-sent
+        // sale is the same record.
+        let cardDataRemoved: readonly TenderCardDataRemoval[] = [];
+        if (!isTag && parsed !== null && typeof parsed === 'object') {
+          const cleaned = cleanTenders(parsed as Record<string, unknown>, isReturn);
+          parsed = cleaned.record;
+          cardDataRemoved = cleaned.removed;
+        }
+
         // A bill partly paid with POINTS (PF-09 step 3 · OB-34 "A"): its refund in money or credit is capped at the MONEY
         // SHARE of the goods coming back — the points share goes back to the member as points, at head office. Refunding
         // more would turn points into rupees. Checked before the disk, in the cashier's words.
@@ -1394,6 +1424,16 @@ export function startLaneServer(input: {
               }, cors);
               return;
             }
+          }
+        }
+
+        // THE LAW, before anything else is spent (B6 · B14 · B19): a line the till must never sell is refused before the
+        // disk, before a receipt number or a card attempt is used — the same gate the till ran, from this box's own pack.
+        if (!isTag && !isReturn && input.tillRules !== undefined && parsed !== null && typeof parsed === 'object') {
+          const legal = input.tillRules.check(parsed as Record<string, unknown>);
+          if (!legal.ok) {
+            send(res, 200, { committed: false, refusedBecause: legal.refusedBecause, productId: legal.productId, laneMessage: legal.laneMessage }, cors);
+            return;
           }
         }
 
@@ -1499,7 +1539,7 @@ export function startLaneServer(input: {
                 if (numberUse?.ok === true) await numberUse.record();
                 if (tenderUse?.ok === true) await tenderUse.record();
               }
-              send(res, 200, loyaltyNote === undefined ? outcome : { ...outcome, loyalty: loyaltyNote }, cors);
+              send(res, 200, withCardNote(loyaltyNote === undefined ? outcome : { ...outcome, loyalty: loyaltyNote }, cardDataRemoved), cors);
             });
           } catch (e) {
             send(res, 200, refusal(noun, e instanceof Error ? e.message : String(e)), cors);
@@ -1521,7 +1561,7 @@ export function startLaneServer(input: {
           // 200 on a refusal too: the *request* was understood, and the answer is in the body. A
           // 5xx here would make a refused sale look like a broken lane, and the cashier needs to
           // know which it is — one means use another lane, the other means try again.
-          send(res, 200, loyaltyNote === undefined ? outcome : { ...outcome, loyalty: loyaltyNote }, cors);
+          send(res, 200, withCardNote(loyaltyNote === undefined ? outcome : { ...outcome, loyalty: loyaltyNote }, cardDataRemoved), cors);
         } catch (e) {
           send(res, 200, refusal(noun, e instanceof Error ? e.message : String(e)), cors);
         }
@@ -1542,4 +1582,52 @@ export function startLaneServer(input: {
       });
     });
   });
+}
+
+/** Drop a tender's till-sent removal mark (only the store computer writes one), then remove card data and mark what went. */
+function cleanTenderList(list: unknown): { readonly list: unknown; readonly removed: readonly TenderCardDataRemoval[] } {
+  if (!Array.isArray(list)) return { list, removed: [] };
+  const unmarked = list.map((t) => {
+    if (t === null || typeof t !== 'object' || Array.isArray(t) || !('cardDataRemoved' in t)) return t;
+    const { cardDataRemoved: _tillSent, ...rest } = t as Record<string, unknown>;
+    void _tillSent;
+    return rest;
+  });
+  const { tenders, removed } = withoutCardData(unmarked);
+  if (removed.length === 0) return { list: unmarked, removed };
+  const marked = tenders.map((t, i) => {
+    const r = removed.find((x) => x.tender === i);
+    return r === undefined || t === null || typeof t !== 'object' ? t : { ...(t as Record<string, unknown>), cardDataRemoved: { fields: r.fields } };
+  });
+  return { list: marked, removed };
+}
+
+/**
+ * NEW-3 (C10 · hard rule #3): a sale's or refund's tenders as this box may keep them — and the exchange top-up tenders a
+ * refund carries. Pure: the same record always gives the same answer.
+ */
+export function cleanTenders(record: Record<string, unknown>, isReturn: boolean): { readonly record: Record<string, unknown>; readonly removed: readonly TenderCardDataRemoval[] } {
+  let out = record;
+  let removed: readonly TenderCardDataRemoval[] = [];
+  if (Array.isArray(record['tenders'])) {
+    const t = cleanTenderList(record['tenders']);
+    out = { ...out, tenders: t.list };
+    removed = t.removed;
+  }
+  const exchange = record['exchange'];
+  if (isReturn && exchange !== null && typeof exchange === 'object' && !Array.isArray(exchange) && Array.isArray((exchange as Record<string, unknown>)['topUpTenders'])) {
+    const t = cleanTenderList((exchange as Record<string, unknown>)['topUpTenders']);
+    out = { ...out, exchange: { ...(exchange as Record<string, unknown>), topUpTenders: t.list } };
+    removed = [...removed, ...t.removed];
+  }
+  return { record: out, removed };
+}
+
+/** The lane's answer, with what was removed (by name) when anything was — so the screen can tell the manager. */
+function withCardNote<T extends object>(answer: T, removed: readonly TenderCardDataRemoval[]): T | (T & { readonly cardDataRemoved: readonly TenderCardDataRemoval[]; readonly cardDataNotice: string }) {
+  if (removed.length === 0) return answer;
+  return {
+    ...answer, cardDataRemoved: removed,
+    cardDataNotice: 'Card details beyond the card token, the last four digits and the card network were sent with this payment. They were NOT kept. Tell the manager.',
+  };
 }
