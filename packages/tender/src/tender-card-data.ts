@@ -45,12 +45,31 @@ export interface TendersWithoutCardData {
 /** A field's NAME as it may be repeated: a name that is itself shaped like a card number is not repeated either. */
 const nameOf = (key: string): string => (holdsCardNumber(key) ? '(a field named like a card number)' : key);
 
-const looksCardLike = (v: unknown): boolean => {
+/**
+ * Verifier r2final NEW-3: the smallest number with 13 digits — the shortest card number. No figure a tender carries
+ * reaches it: an amount of ₹1,000 crore is 10^12 paise.
+ */
+export const CARD_LENGTH_NUMBER = 1e12;
+
+/**
+ * Whether a value holds a card number, wherever it is: in a string (either detector), in a NUMBER or bigint of 13 digits or
+ * more (a card number sent as JSON `4111111111111111`, verifier r2final NEW-3), or nested in an array or an object.
+ */
+export const looksCardLike = (v: unknown): boolean => {
   if (typeof v === 'string') return holdsCardNumber(v);
+  if (typeof v === 'number') return Number.isFinite(v) && (Math.abs(v) >= CARD_LENGTH_NUMBER || holdsCardNumber(String(v)));
+  if (typeof v === 'bigint') return (v < 0n ? -v : v) >= BigInt(CARD_LENGTH_NUMBER) || holdsCardNumber(v.toString());
   if (Array.isArray(v)) return v.some(looksCardLike);
   if (v !== null && typeof v === 'object') return Object.values(v as Record<string, unknown>).some(looksCardLike);
   return false;
 };
+
+/**
+ * NEW-3: `amountMinor` and `points` are read as what they are — a whole number (a safe integer) below 13 digits is a figure,
+ * never card data, so a normal amount is never mistaken for a card number; a card number put in either field (13 digits or
+ * more, a number or a string) is removed like any other.
+ */
+const isTenderFigure = (v: unknown): boolean => Number.isSafeInteger(v) && Math.abs(v as number) < CARD_LENGTH_NUMBER;
 
 /**
  * The tenders with every card fact a tender may not keep REMOVED, and what was removed (by name). Pure and deterministic:
@@ -59,7 +78,12 @@ const looksCardLike = (v: unknown): boolean => {
 export function withoutCardData(tenders: readonly unknown[]): TendersWithoutCardData {
   const removed: TenderCardDataRemoval[] = [];
   const kept = tenders.map((t, index) => {
-    if (t === null || typeof t !== 'object' || Array.isArray(t)) return t;
+    // NEW-3: a "tender" that is itself a card number (a bare string or number in the list) is replaced by an empty tender.
+    if (t === null || typeof t !== 'object' || Array.isArray(t)) {
+      if (!looksCardLike(t)) return t;
+      removed.push({ tender: index, kind: '', fields: ['(the tender itself)'] });
+      return {};
+    }
     const rec = t as Record<string, unknown>;
     const fields: string[] = [];
     const out: Record<string, unknown> = {};
@@ -74,8 +98,12 @@ export function withoutCardData(tenders: readonly unknown[]): TendersWithoutCard
         fields.push(...(inner.length === 0 ? ['card'] : inner.map((k) => `card.${nameOf(k)}`)));
         continue;
       }
-      // Amounts and points are numbers the money depends on; every other field is read for a card number's shape.
-      if (key !== 'amountMinor' && key !== 'points' && looksCardLike(v)) { fields.push(key); continue; }
+      // Amounts and points are kept only as whole numbers below 13 digits (NEW-3); every other field — numbers and nested
+      // values included — is read for a card number's shape.
+      if (key === 'amountMinor' || key === 'points') {
+        // A figure (a safe integer below 13 digits) is never card data; anything else in the field is read like any value.
+        if (!isTenderFigure(v) && looksCardLike(v)) { fields.push(key); continue; }
+      } else if (looksCardLike(v)) { fields.push(key); continue; }
       out[key] = v;
     }
     if (fields.length === 0) return t;

@@ -113,6 +113,36 @@ describe.each(backings)('F1 at head office — on $name', ({ harness, sql }) => 
     }
   });
 
+  it('r2final NEW-3: a card number sent as a JSON NUMBER, or nested, is banked removed and raised; a normal amount is kept', async () => {
+    const { h, T, call } = await headOffice();
+    const NUM = Number(PAN);
+    const hostile = sale({ tenders: [
+      { kind: 'card', amountMinor: 30_00, ref: NUM },
+      { kind: 'card', amountMinor: 20_00, status: { pan: NUM }, amount: { minor: 20_00, deep: [NUM] } },
+      { kind: 'upi', amountMinor: 20_00, ref: 'UTR2026101700042' },
+    ] });
+    const res = await call('POST', '/v1/sales', hostile, 'u-box');
+    expect(res.status).toBe(202);
+    const body = res.body as Banked;
+    expect(body.banked).toBe(true);
+    const found = body.exceptions.filter((e) => e.kind === 'card_data_in_tender');
+    expect(found.map((e) => e.severity)).toEqual(['critical']);
+    expect(found[0]!.detail).toMatch(/tender 1 \(card\): ref; tender 2 \(card\): amount, status/);
+    expect(JSON.stringify(res.body)).not.toContain(PAN);
+    const everything = JSON.stringify(await h.store.exportTenant(T));
+    expect(everything).toContain(hostile.saleId);
+    expect(everything).not.toContain(PAN);
+    // The amounts were figures, not card data: every tender kept its amountMinor, so the tenders still add up.
+    expect(body.exceptions.map((e) => e.kind)).not.toContain('tender_does_not_sum_to_total');
+    if (sql) {
+      const tables = (await pool!.query<{ table_name: string }>("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'")).rows.map((r) => r.table_name);
+      for (const t of tables) {
+        const hit = await pool!.query<{ n: string }>(`SELECT count(*)::text AS n FROM "${t}" x WHERE x::text LIKE $1`, [`%${PAN}%`]);
+        expect(hit.rows[0]!.n, `table ${t}`).toBe('0');
+      }
+    }
+  });
+
   it('NEW-1: an offer that names a carry bag is refused when it is defined; one on rice is defined', async () => {
     const { call } = await headOffice();
     const product = (sku: string, safety: Record<string, unknown>) => ({ sku, name: sku, baseUom: 'each', primaryCategoryId: 'grocery', taxClass: '63053300', lifecycle: 'draft', safety });

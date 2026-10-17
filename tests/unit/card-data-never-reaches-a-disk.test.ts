@@ -256,3 +256,67 @@ describe('head office: the intake raises it, and what it banks holds nothing car
     for (const text of [JSON.stringify(banked), JSON.stringify(recorded), JSON.stringify(out.body)]) noCardIn(text);
   });
 });
+
+describe('verifier r2final NEW-3: a card number sent as a NUMBER, or nested, is removed too — at the till, the box disk and head office', () => {
+  const NUM = Number(PAN);
+
+  it('the rule reads numbers, bigints and nested values; a normal amount, points and a short numeric ref are kept', () => {
+    const { tenders, removed } = withoutCardData([
+      { kind: 'card', amountMinor: 100, ref: NUM },
+      { kind: 'card', amount: { minor: 100, currency: 'INR', pan: NUM } },
+      { kind: 'card', amountMinor: 100, status: { nested: [{ deeper: NUM }] } },
+      { kind: 'card', amountMinor: BigInt(PAN) as never, points: NUM },
+      NUM,
+    ]);
+    expect(removed).toEqual([
+      { tender: 0, kind: 'card', fields: ['ref'] },
+      { tender: 1, kind: 'card', fields: ['amount'] },
+      { tender: 2, kind: 'card', fields: ['status'] },
+      { tender: 3, kind: 'card', fields: ['amountMinor', 'points'] },
+      { tender: 4, kind: '', fields: ['(the tender itself)'] },
+    ]);
+    expect(tenders).toEqual([{ kind: 'card', amountMinor: 100 }, { kind: 'card' }, { kind: 'card', amountMinor: 100 }, { kind: 'card' }, {}]);
+    noCardIn(JSON.stringify(tenders, (_k, v: unknown) => (typeof v === 'bigint' ? v.toString() : v)));
+    // Ordinary figures are never mistaken for a card: the largest amount a shop will see, points, a 12-digit UPI reference.
+    const ok = [{ kind: 'cash', amountMinor: 999_999_999_999 }, { kind: 'loyalty_points', amountMinor: 50, points: 5_000 }, { kind: 'upi', amountMinor: 1, ref: 123_456_789_012 }, { kind: 'cash', amount: { minor: 70_00, currency: 'INR' } }];
+    const out = withoutCardData(ok);
+    expect(out.removed).toEqual([]);
+    expect(out.tenders).toBe(ok);
+  });
+
+  it('the till: a card machine link that sends the ref as a number hands the box nothing card-like', async () => {
+    const written: string[] = [];
+    const { PosSession } = await import('../../apps/pos/src/session');
+    const { Ledger, InMemoryLedgerStore } = await import('../../packages/ledger/src/ledger');
+    const { rate } = await import('../../packages/contracts/src/rate');
+    const s = new PosSession({ laneId: 'lane-1', cashierId: 'u', currency: 'INR', defaultTaxRate: rate(0) }, new Ledger(new InMemoryLedgerStore()), new SyncOutbox(), async (_id, r) => { written.push(r); return { committed: true, durable: true, detail: 'd', laneMessage: 'ok' }; });
+    s.scan({ productId: 'P-RICE', description: 'Rice', unitPrice: money(70_00, 'INR'), quantityMinor: 1, uom: 'ea' } as never);
+    await s.commit('S-N', 'R-N', new Date().toISOString(), [{ kind: 'card', amount: money(70_00, 'INR'), status: 'authorized', ref: NUM as never }]);
+    const record = written.at(-1)!;
+    noCardIn(record);
+    expect((JSON.parse(record) as { tenders: unknown[] }).tenders).toEqual([{ kind: 'card', amount: { minor: 70_00, currency: 'INR' }, status: 'authorized' }]);
+  });
+
+  it('the store computer: cleanTenders keeps the sale with the numeric and nested card numbers removed and marked', () => {
+    const rec = { id: 'S1', lines: [], tenders: [{ kind: 'card', amountMinor: 100, ref: NUM, status: { pan: NUM } }] };
+    const c = cleanTenders(rec, false);
+    noCardIn(JSON.stringify(c.record));
+    expect(c.record['tenders']).toEqual([{ kind: 'card', amountMinor: 100, cardDataRemoved: { fields: ['ref', 'status'] } }]);
+    expect(c.removed).toEqual([{ tender: 0, kind: 'card', fields: ['ref', 'status'] }]);
+  });
+
+  it('head office: POST /v1/sales raises card_data_in_tender for a numeric card number and banks the sale without it', async () => {
+    const banked: IncomingSale[] = [];
+    const route = posRoutes({
+      catalogue: () => new Map(), currentPackVersion: () => 1, saleHoldingReceipt: () => undefined, isBanked: () => false,
+      bankSale: (_t, x) => { banked.push(x); }, recordExceptions: () => {}, openExceptions: () => [], now: () => '2026-10-16T05:01:00Z',
+    }).find((r) => r.path === '/v1/sales')!;
+    const out = await route.handler({ tenantId: 't', userId: 'u-box', params: {}, query: {}, body: {
+      saleId: 'S-G', receiptNumber: 'R-G', laneId: 'lane-1', cashierId: 'u', tradingDay: '2026-10-16', committedAt: '2026-10-16T05:00:00Z',
+      totalMinor: 100, currency: 'INR', packVersion: 1, lines: [], tenders: [{ kind: 'card', amountMinor: 100, ref: NUM }],
+    } } as never);
+    expect((out.body as { exceptions: { kind: string }[] }).exceptions.map((e) => e.kind)).toContain('card_data_in_tender');
+    expect(banked[0]!.tenders).toEqual([{ kind: 'card', amountMinor: 100 }]);
+    noCardIn(JSON.stringify(banked));
+  });
+});
