@@ -42,14 +42,16 @@ export function foldWorkingTimeSettings(changes: readonly WorkingTimeSettingChan
   const limits: Record<WorkingTimeLimitKey, LimitSetting> = { ...UNSET_WORKING_TIME_SETTINGS.limits };
   let publicHolidays = UNSET_WORKING_TIME_SETTINGS.publicHolidays;
   let utcOffsetMinutes = UNSET_WORKING_TIME_SETTINGS.utcOffsetMinutes;
+  let rosterWeekStartsOn = UNSET_WORKING_TIME_SETTINGS.rosterWeekStartsOn ?? 'monday';
   const leaveTypes: Record<LeaveTypeKey, LeaveTypeSetting> = { ...UNSET_WORKING_TIME_SETTINGS.leaveTypes };
   for (const c of changes) {
     if (c.target === 'publicHolidays') publicHolidays = c.publicHolidays;
     else if (c.target === 'utcOffsetMinutes') utcOffsetMinutes = c.utcOffsetMinutes;
+    else if (c.target === 'rosterWeekStartsOn') rosterWeekStartsOn = c.rosterWeekStartsOn;
     else if (c.target === 'leaveType') { if ((LEAVE_TYPE_KEYS as readonly string[]).includes(c.leaveType)) leaveTypes[c.leaveType] = c.setting; }
     else if ((WORKING_TIME_LIMIT_KEYS as readonly string[]).includes(c.target)) limits[c.target] = c.limit;
   }
-  return { limits, publicHolidays, utcOffsetMinutes, leaveTypes };
+  return { limits, publicHolidays, utcOffsetMinutes, leaveTypes, rosterWeekStartsOn };
 }
 
 export function hrComplianceAdapter(input: { readonly store: EventStore; readonly now: () => string }): HrComplianceDeps {

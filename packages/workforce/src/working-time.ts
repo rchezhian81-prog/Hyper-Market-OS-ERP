@@ -71,7 +71,19 @@ export interface WorkingTimeSettings {
   readonly utcOffsetMinutes: number;
   /** OB-156: the configurable leave types (casual, sick, festival, unpaid) — every one pending until the CA's values. */
   readonly leaveTypes: Readonly<Record<LeaveTypeKey, LeaveTypeSetting>>;
+  /**
+   * OB-179 "A": the shop's roster week — the day every roster week starts on (Monday as shipped). A roster is published
+   * only for a week that starts on this day, and the weekly holiday and the weekly hours cap are judged per such week.
+   * Absent on settings stored before OB-179: read as Monday.
+   */
+  readonly rosterWeekStartsOn?: RosterWeekday;
 }
+
+/** OB-179: the days a roster week may start on (the shop's setting; Monday as shipped). */
+export type RosterWeekday = 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday';
+export const ROSTER_WEEKDAYS: readonly RosterWeekday[] = Object.freeze(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']);
+/** The shop's roster week start as shipped (OB-179 "A"). */
+export const DEFAULT_ROSTER_WEEK_START: RosterWeekday = 'monday';
 
 const EMPTY_LIMIT: LimitSetting = Object.freeze({ value: null, source: null, confirmation: null });
 
@@ -80,6 +92,7 @@ export const UNSET_WORKING_TIME_SETTINGS: WorkingTimeSettings = Object.freeze({
   limits: Object.freeze(Object.fromEntries(WORKING_TIME_LIMIT_KEYS.map((k) => [k, EMPTY_LIMIT])) as Record<WorkingTimeLimitKey, LimitSetting>),
   publicHolidays: Object.freeze({ dates: [], source: null, confirmation: null }),
   utcOffsetMinutes: 330,
+  rosterWeekStartsOn: DEFAULT_ROSTER_WEEK_START,
   leaveTypes: Object.freeze({
     casual: { daysPerYear: null, carryOverMaxDays: null, source: null, confirmation: null },
     sick: { daysPerYear: null, carryOverMaxDays: null, source: null, confirmation: null },
@@ -148,6 +161,29 @@ export function datesBetween(from: string, to: string): readonly string[] {
   return out;
 }
 
+/** OB-179: the day the shop's roster week starts on (Monday when the setting predates OB-179). */
+export function rosterWeekStartDay(settings: WorkingTimeSettings): RosterWeekday {
+  const d = settings.rosterWeekStartsOn;
+  return d !== undefined && ROSTER_WEEKDAYS.includes(d) ? d : DEFAULT_ROSTER_WEEK_START;
+}
+
+/** The weekday of a calendar date (YYYY-MM-DD). */
+export function weekdayOf(date: string): RosterWeekday {
+  // getUTCDay: 0 = Sunday … 6 = Saturday; ROSTER_WEEKDAYS starts on Monday.
+  return ROSTER_WEEKDAYS[(new Date(Date.parse(`${date}T00:00:00Z`)).getUTCDay() + 6) % 7]!;
+}
+
+/** OB-179: whether `date` is the first day of one of the shop's roster weeks. */
+export function isRosterWeekStart(settings: WorkingTimeSettings, date: string): boolean {
+  return isDate(date) && weekdayOf(date) === rosterWeekStartDay(settings);
+}
+
+/** OB-179: the first day of the shop's roster week that `date` falls in. */
+export function rosterWeekStartOf(settings: WorkingTimeSettings, date: string): string {
+  const back = (ROSTER_WEEKDAYS.indexOf(weekdayOf(date)) - ROSTER_WEEKDAYS.indexOf(rosterWeekStartDay(settings)) + 7) % 7;
+  return addDays(date, -back);
+}
+
 const hhmm = (ms: number, off: number): string => new Date(ms + off * 60_000).toISOString().slice(11, 16);
 const asHours = (minutes: number): string => {
   const h = Math.floor(minutes / 60);
@@ -202,7 +238,18 @@ export interface LimitNotChecked {
   readonly label: string;
   /** What is missing, in words. */
   readonly missing: string;
+  /** What the check does instead while this limit is pending, in words (verifier r2final L2). */
+  readonly meanwhile?: string;
 }
+
+/**
+ * Verifier r2final L2: while the shortest rest interval (minRestIntervalMinutes) is pending (OB-155), shifts LESS than
+ * this many minutes apart are judged as ONE stretch of work for the daily hours cap (OB-168) and the spread-over — so a
+ * one-minute gap at midnight can never split a long stretch into two short ones. It is not a legal figure: it only
+ * makes the check stricter until the owner or the CA fills in the real rest interval, which then replaces it.
+ */
+export const PENDING_REST_STRETCH_GAP_MINUTES = 15;
+const PENDING_REST_MEANWHILE = `Until it is in force, shifts less than ${PENDING_REST_STRETCH_GAP_MINUTES} minutes apart are judged as one stretch of work for the daily hours cap and the spread-over.`;
 
 export interface WorkingTimeCheck {
   readonly weekStart: string;
@@ -231,7 +278,9 @@ export function rosterLimitsNotChecked(settings: WorkingTimeSettings): readonly 
   const st = limitStatuses(settings).filter((s) => ROSTER_LIMIT_KEYS.includes(s.key));
   const pending = new Set(st.filter((s) => s.status === 'pending').map((s) => s.key));
   return st.flatMap((s): LimitNotChecked[] => {
-    if (s.status === 'pending') return [{ key: s.key, label: s.label, missing: s.missing ?? 'pending' }];
+    if (s.status === 'pending') {
+      return [{ key: s.key, label: s.label, missing: s.missing ?? 'pending', ...(s.key === 'minRestIntervalMinutes' ? { meanwhile: PENDING_REST_MEANWHILE } : {}) }];
+    }
     if (s.key === 'maxContinuousWorkMinutes' && pending.has('minRestIntervalMinutes')) {
       return [{ key: s.key, label: s.label, missing: 'needs the shortest rest interval (minRestIntervalMinutes) to be in force too' }];
     }
@@ -317,7 +366,8 @@ function weekScope(input: {
  *
  * Work is judged as one timeline, not day by day (verifier lanes34 NEW-1):
  *   • shifts that touch, or are separated by less than the shortest rest interval, are ONE stretch of work — even
- *     across local midnight — for the continuous-work and the spread-over rules; a stretch is dated by the local day
+ *     across local midnight — for the continuous-work and the spread-over rules (while the rest interval is pending,
+ *     less than PENDING_REST_STRETCH_GAP_MINUTES apart — verifier r2final L2); a stretch is dated by the local day
  *     it starts on, and a stretch that started the day before the week and runs into it is judged too;
  *   • daily hours are judged per stretch of work (OB-168): every stretch counts in full on the local day it starts,
  *     so a night shift across midnight is not halved; the weekly hours cap still counts minutes per local day;
@@ -334,6 +384,11 @@ export function checkWorkingTime(input: {
   readonly assignments: readonly ShiftAssignment[];
   readonly employees: readonly Employee[];
 }): WorkingTimeCheck {
+  // OB-179 "A": the weekly limits are judged per the shop's roster week only — a window starting on any other day
+  // could be laid across a real week to hide a breach (verifier r2final NEW-1), so it is never checked.
+  if (isDate(input.weekStart) && !isRosterWeekStart(input.settings, input.weekStart)) {
+    throw new RangeError(`weekStart ${input.weekStart} is a ${weekdayOf(input.weekStart)}; the shop's roster week starts on ${rosterWeekStartDay(input.settings)}`);
+  }
   const scope = weekScope(input);
   const { weekEnd, weekStartMs, weekEndMs } = scope;
   const off = input.settings.utcOffsetMinutes;
@@ -369,6 +424,9 @@ export function checkWorkingTime(input: {
   }
 
   const rest = limit('minRestIntervalMinutes');
+  // Shifts closer than this are one stretch: the rest interval in force, or — while it is pending — the stricter
+  // PENDING_REST_STRETCH_GAP_MINUTES (verifier r2final L2), never a bare touch.
+  const stretchGapMs = (rest ?? PENDING_REST_STRETCH_GAP_MINUTES) * 60_000;
   const continuous = limit('maxContinuousWorkMinutes');
   const daily = limit('maxDailyWorkMinutes');
   const spread = limit('maxSpreadOverMinutes');
@@ -387,7 +445,7 @@ export function checkWorkingTime(input: {
     }
     const all = [...mine.values()];
     // Stretches over the person's whole timeline: touching, or a gap shorter than the rest interval, is one stretch.
-    const stretches = blocks(all, rest === undefined ? 1 : rest * 60_000)
+    const stretches = blocks(all, stretchGapMs)
       .filter((b) => b.startMs < weekEndMs && b.endMs > weekStartMs);
     const inWeek = all.filter((i) => i.startMs < weekEndMs && i.endMs > weekStartMs);
 
@@ -409,7 +467,7 @@ export function checkWorkingTime(input: {
       const d = localDateOf(b.startMs, off);
       byStartDay.set(d, [...(byStartDay.get(d) ?? []), b]);
     }
-    for (const b of blocks(all, rest === undefined ? 1 : rest * 60_000)) {
+    for (const b of blocks(all, stretchGapMs)) {
       const d = localDateOf(b.startMs, off);
       const list = byStartDay.get(d);
       if (list !== undefined && !list.some((x) => x.startMs === b.startMs)) list.push(b);
@@ -512,6 +570,12 @@ export function rosterWeekBasis(input: {
     return e === undefined ? [id, null] : [id, e.name, e.branchId, e.active];
   });
   return JSON.stringify({ v: 1, branchId: input.branchId, weekStart: input.weekStart, utcOffsetMinutes: input.settings.utcOffsetMinutes, shifts, assignments, employees });
+}
+
+/** OB-179: the store-local day a shift starts on, or undefined when its start cannot be read. */
+export function shiftLocalStartDay(shift: ShiftRequirement, utcOffsetMinutes: number): string | undefined {
+  const ms = Date.parse(shift.startsAt);
+  return Number.isNaN(ms) ? undefined : localDateOf(ms, utcOffsetMinutes);
 }
 
 /** Whether a shift's local start day falls in the week [weekStart, weekStart + 6]. */
@@ -785,7 +849,7 @@ export interface HolidayRegister {
 }
 
 /**
- * The holiday register for a period, in 7-day weeks from `from`: each person's days off (no shift and no hours) and
+ * The holiday register for a period, in the shop's roster weeks (OB-179 — Monday to Sunday as shipped): each person's days off (no shift and no hours) and
  * whether the weekly holiday was given; and the declared public holidays with who worked them.
  */
 export function holidayRegister(input: {
@@ -811,10 +875,13 @@ export function holidayRegister(input: {
       return t === undefined ? s !== undefined && rosteredOn(employeeId, date, [s], [a], off).length > 0 : t.startMs < from + DAY_MS && t.endMs > from;
     });
   };
-  const weeks: string[][] = [];
-  for (let start = input.from; start <= input.to; start = addDays(start, 7)) {
-    const end = addDays(start, 6) < input.to ? addDays(start, 6) : input.to;
-    weeks.push([...datesBetween(start, end)]);
+  // OB-179 "A": the weekly holiday is judged per the shop's roster week (Monday to Sunday as shipped), never per a
+  // 7-day window that starts wherever the period does. A week cut by the period is reported but not judged.
+  const weeks: { weekStart: string; dates: string[] }[] = [];
+  for (let start = rosterWeekStartOf(input.settings, input.from); start <= input.to; start = addDays(start, 7)) {
+    const lo = start < input.from ? input.from : start;
+    const hi = addDays(start, 6) < input.to ? addDays(start, 6) : input.to;
+    weeks.push({ weekStart: start, dates: [...datesBetween(lo, hi)] });
   }
   const ph = input.settings.publicHolidays;
   const phInForce = filled(ph.source) && filled(ph.confirmation);
@@ -824,10 +891,10 @@ export function holidayRegister(input: {
     people: [...input.employees].sort((a, b) => a.employeeId.localeCompare(b.employeeId)).map((e) => ({
       employeeId: e.employeeId, name: e.name, branchId: e.branchId,
       weeks: weeks.map((w) => {
-        const daysOff = w.filter((d) => !worked(e.employeeId, d));
-        // A part week at the end of the period is reported but not judged — it is not a whole week.
-        const judged = min !== undefined && w.length === 7;
-        return { weekStart: w[0]!, daysOff, weeklyHolidayGiven: judged ? daysOff.length >= min : null };
+        const daysOff = w.dates.filter((d) => !worked(e.employeeId, d));
+        // A part week at either end of the period is reported but not judged — it is not a whole roster week.
+        const judged = min !== undefined && w.dates.length === 7;
+        return { weekStart: w.weekStart, daysOff, weeklyHolidayGiven: judged ? daysOff.length >= min : null };
       }),
     })),
     publicHolidays: ph.dates.filter((h) => h.date >= input.from && h.date <= input.to).sort((a, b) => a.date.localeCompare(b.date)).map((h) => ({

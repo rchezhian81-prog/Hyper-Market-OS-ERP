@@ -40,6 +40,11 @@ Set with `POST /v1/hr/compliance/working-time/settings/:key` (owner only). Read 
 | `annualLeaveDaysWorkedPerDayEarned` | Days worked that earn one day of annual leave | days worked | **pending** | **pending** | **pending** |
 | `public-holidays` | The declared public and festival holidays the holiday register reports against | list of dates | **pending** | **pending** | **pending** |
 | `utc-offset` | The store's clock offset from UTC. This is a fact about the clock, not a legal limit. | minutes | 330 (India Standard Time) | not a legal figure | not needed |
+| `roster-week-start` | The day the shop's roster week starts on (OB-179 "A"). Rosters are published only for weeks starting on this day; the weekly holiday and the weekly hours cap are judged per such week; a shift is shown to staff only while its own week's publication stands. Send `{ day }`. | day of the week | monday | owner decision OB-179 | the owner (17 Oct 2026) |
+
+While `minRestIntervalMinutes` is pending (OB-155), the check treats shifts **less than 15 minutes apart** as one
+stretch of work for the daily hours cap and the spread-over (verifier r2final L2). This is not a legal figure. It only
+makes the check stricter until the real rest interval is filled in, and every publication made meanwhile says so.
 
 ## C18 leave types (all pending, OB-156)
 

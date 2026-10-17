@@ -98,7 +98,7 @@ describe('durable roster store (M25-FR-01 follow-on)', () => {
     interface Mine { readonly known: boolean; readonly active: boolean; readonly count: number; readonly notYetPublished: number; readonly shifts: readonly { shiftId: string; role: string }[] }
     // OB-166 "A": staff see only a PUBLISHED week — before the manager publishes it, the shift is held back (and counted).
     expect((await myRoster(h, 'u-cash')).body as Mine).toMatchObject({ known: true, count: 0, notYetPublished: 1 });
-    expect((await h.request({ method: 'POST', path: '/v1/hr/compliance/roster-publications/P-0920', userId: 'u-mgr', tenantId: A, idempotencyKey: 'pub', body: { branchId: 'b1', weekStart: '2026-09-20' } })).status).toBe(201);
+    expect((await h.request({ method: 'POST', path: '/v1/hr/compliance/roster-publications/P-0920', userId: 'u-mgr', tenantId: A, idempotencyKey: 'pub', body: { branchId: 'b1', weekStart: '2026-09-14' } })).status).toBe(201); // OB-179: the Monday week holding Sunday 20 Sep
     // The cashier (holds payroll.ess.self, NOT workforce.roster.read) sees only their own shift.
     const mine = (await myRoster(h, 'u-cash')).body as Mine;
     expect(mine).toMatchObject({ known: true, active: true, count: 1, notYetPublished: 0 });

@@ -5,10 +5,14 @@
 //     pending one still needs. hr.compliance.read.
 //   • `POST /v1/hr/compliance/working-time/settings/:key`         — set one limit (value + the provision of the Act
 //     + who confirmed it), the declared public holidays (`public-holidays`), or the store's clock offset
-//     (`utc-offset`). Each change is a new version on an append-only stream and is sealed into the audit trail.
+//     (`utc-offset`), or the shop's roster week (`roster-week-start`, OB-179 — Monday as shipped). Each change is a new version on an append-only stream and is sealed into the audit trail.
 //     hr.compliance.configure (the owner).
 //   • `GET  /v1/hr/compliance/roster-check?branchId=&weekStart=`  — what publishing that week would find: the
 //     pending limits and every breach, in words. Changes nothing. workforce.roster.read.
+//     OB-179 "A": a roster week is the shop's fixed week (Monday to Sunday as shipped). A weekStart on any other day is
+//     refused by name (400 `not_the_shops_roster_week`) here and on publishing, and a shift is shown to staff only
+//     while the publication of ITS OWN roster week stands — so two windows laid across one real week can never make
+//     a week the limits refuse visible (verifier r2final NEW-1).
 //   • `POST /v1/hr/compliance/roster-publications/:publicationId` — PUBLISH a branch's week. Refused (422) with every
 //     breach named when the roster breaks a limit that is in force (OB-152 "A": refuse it — a breach is never routed
 //     around). Limits still pending do NOT stop it (OB-155 "A"): the publication records exactly which limits were not
@@ -34,7 +38,8 @@ import type { AuditEntry } from '../../../packages/audit/src/audit-trail';
 import {
   WORKING_TIME_LIMIT_KEYS, WORKING_TIME_LAW, REGISTER_FORMAT_NOTE,
   limitStatuses, limitValueIsValid, limitInForce, checkWorkingTime, leaveBalance, leaveDaysTaken,
-  attendanceRegister, holidayRegister, datesBetween, rosterWeekBasis, rosterLimitsNotChecked, shiftStartsInWeek, addDays,
+  attendanceRegister, holidayRegister, datesBetween, rosterWeekBasis, rosterLimitsNotChecked, addDays,
+  ROSTER_WEEKDAYS, rosterWeekStartDay, isRosterWeekStart, rosterWeekStartOf, weekdayOf, shiftLocalStartDay, type RosterWeekday,
   LEAVE_TYPE_KEYS, LEAVE_KINDS, LEAVE_TYPES, leaveTypeStatuses, leaveTypeBalance, leaveDaysValueIsValid, standingLeave, leaveKindOf,
   type WorkingTimeSettings, type WorkingTimeLimitKey, type LimitSetting, type PublicHoliday,
   type LeaveRecord, type AttendanceFact, type WorkingTimeBreach, type LimitNotChecked,
@@ -47,6 +52,7 @@ export type WorkingTimeSettingChange =
   | { readonly target: WorkingTimeLimitKey; readonly limit: LimitSetting; readonly by: string; readonly at: string }
   | { readonly target: 'publicHolidays'; readonly publicHolidays: WorkingTimeSettings['publicHolidays']; readonly by: string; readonly at: string }
   | { readonly target: 'utcOffsetMinutes'; readonly utcOffsetMinutes: number; readonly by: string; readonly at: string }
+  | { readonly target: 'rosterWeekStartsOn'; readonly rosterWeekStartsOn: RosterWeekday; readonly by: string; readonly at: string }
   | { readonly target: 'leaveType'; readonly leaveType: LeaveTypeKey; readonly setting: LeaveTypeSetting; readonly by: string; readonly at: string };
 
 /** A week of a branch's roster that was checked and published. */
@@ -97,11 +103,15 @@ export interface StaffRosterVisibility {
 
 type StoredRosterLike = { readonly employees: readonly Employee[]; readonly shifts: readonly ShiftRequirement[]; readonly assignments: readonly ShiftAssignment[] };
 
-/** The publications of (branch, week) that still match the roster — the week is published while any does. */
+/**
+ * The publications of (branch, week) that still match the roster — the week is published while any does. OB-179: only
+ * a publication of one of the shop's roster weeks can stand; one made for a window starting on any other day (before
+ * OB-179, or under an earlier week-start setting) never does.
+ */
 export function standingPublications(settings: WorkingTimeSettings, roster: StoredRosterLike, publications: readonly RosterPublication[]): readonly RosterPublication[] {
   const digestOf = new Map<string, string>();
   return publications.filter((p) => {
-    if (p.basis === undefined) return false;
+    if (p.basis === undefined || !isRosterWeekStart(settings, p.weekStart)) return false;
     const k = `${p.branchId}\u0000${p.weekStart}`;
     let d = digestOf.get(k);
     if (d === undefined) {
@@ -123,12 +133,20 @@ export function rosterWeekState(settings: WorkingTimeSettings, roster: StoredRos
 /**
  * OB-166 "A": what staff may see — only the shifts of a branch's week that is published NOW (a publication whose
  * roster digest still matches). A week edited after publishing is hidden until it is checked and published again.
+ * OB-179 "A": a shift belongs to exactly ONE roster week — the shop's week its store-local start day falls in — and it
+ * is visible only while a publication of THAT week stands. No other publication can show it.
  */
 export function staffRosterVisibility(settings: WorkingTimeSettings, roster: StoredRosterLike, publications: readonly RosterPublication[]): StaffRosterVisibility {
-  const visible = new Map<string, PublishedWeek>();
+  const standing = new Map<string, PublishedWeek>();
   for (const p of standingPublications(settings, roster, publications)) {
-    const week: PublishedWeek = { branchId: p.branchId, weekStart: p.weekStart, weekEnd: p.weekEnd, publicationId: p.publicationId, publishedAt: p.publishedAt, limitsNotChecked: p.limitsNotChecked ?? [] };
-    for (const s of roster.shifts) if (s.branchId === p.branchId && shiftStartsInWeek(s, p.weekStart, settings.utcOffsetMinutes)) visible.set(s.shiftId, week);
+    standing.set(`${p.branchId}\u0000${p.weekStart}`, { branchId: p.branchId, weekStart: p.weekStart, weekEnd: p.weekEnd, publicationId: p.publicationId, publishedAt: p.publishedAt, limitsNotChecked: p.limitsNotChecked ?? [] });
+  }
+  const visible = new Map<string, PublishedWeek>();
+  for (const s of roster.shifts) {
+    const day = shiftLocalStartDay(s, settings.utcOffsetMinutes);
+    if (day === undefined) continue;
+    const week = standing.get(`${s.branchId}\u0000${rosterWeekStartOf(settings, day)}`);
+    if (week !== undefined) visible.set(s.shiftId, week);
   }
   return { visible };
 }
@@ -156,6 +174,16 @@ const MAX_REGISTER_DAYS = 92;
 
 const badRequest = (code: string, whatHappened: string, nextSafeAction: string) =>
   apiError(400, { code, whatHappened, wasItSaved: 'not_saved', nextSafeAction });
+
+/** OB-179 "A": refuse, by name, a week that does not start on the shop's roster week day. */
+function assertRosterWeek(settings: WorkingTimeSettings, weekStart: string): void {
+  if (isRosterWeekStart(settings, weekStart)) return;
+  const day = rosterWeekStartDay(settings);
+  const nearest = rosterWeekStartOf(settings, weekStart);
+  throw badRequest('not_the_shops_roster_week',
+    `${weekStart} is a ${weekdayOf(weekStart)}. The shop's roster week starts on ${day}, so a roster is checked and published only for a week starting on a ${day}.`,
+    `Use the week starting ${nearest} (the ${day} of that week).`);
+}
 
 /** The staff THIS caller may see: one branch (theirs) when asked for, otherwise everything their scope holds. */
 function staffInScope(ctx: RequestContext, employees: readonly Employee[], branchId: string | undefined): readonly Employee[] {
@@ -196,7 +224,8 @@ export function hrComplianceRoutes(deps: HrComplianceDeps): readonly Route[] {
         return {
           status: 200,
           body: {
-            law: WORKING_TIME_LAW, settings, limits,
+            law: WORKING_TIME_LAW, settings: { ...settings, rosterWeekStartsOn: rosterWeekStartDay(settings) }, limits,
+            rosterWeek: { startsOn: rosterWeekStartDay(settings), words: `A roster week runs from ${rosterWeekStartDay(settings)} for seven days; rosters are published only for those weeks.` },
             pending: limits.filter((l) => l.status === 'pending').map((l) => l.key),
             // OB-155: what a roster check cannot apply yet. OB-156: every leave type and whether it is checked.
             limitsNotChecked: rosterLimitsNotChecked(settings),
@@ -238,6 +267,14 @@ export function hrComplianceRoutes(deps: HrComplianceDeps): readonly Route[] {
             throw badRequest('not_a_clock_offset', 'utcOffsetMinutes must be a whole number of minutes from -720 to 840 (India is 330).', 'Send { utcOffsetMinutes: 330 }.');
           }
           change = { target: 'utcOffsetMinutes', utcOffsetMinutes: v as number, by: ctx.userId, at };
+        } else if (key === 'roster-week-start') {
+          // OB-179: the day the shop's roster week starts on. Changing it leaves every week published under the old
+          // setting unpublished for staff until it is checked and published again as one of the new weeks.
+          const day = b['day'];
+          if (typeof day !== 'string' || !(ROSTER_WEEKDAYS as readonly string[]).includes(day)) {
+            throw badRequest('not_a_roster_week_day', `The roster week start must be one of: ${ROSTER_WEEKDAYS.join(', ')}.`, 'Send { day: "monday" }.');
+          }
+          change = { target: 'rosterWeekStartsOn', rosterWeekStartsOn: day as RosterWeekday, by: ctx.userId, at };
         } else if (key.startsWith('leave-') && (LEAVE_TYPE_KEYS as readonly string[]).includes(key.slice(6))) {
           // OB-156: a configurable leave type — days a year and the carry-over rule (0 = nothing carries over).
           const type = key.slice(6) as LeaveTypeKey;
@@ -246,7 +283,7 @@ export function hrComplianceRoutes(deps: HrComplianceDeps): readonly Route[] {
           }
           change = { target: 'leaveType', leaveType: type, setting: { daysPerYear: b['daysPerYear'], carryOverMaxDays: b['carryOverMaxDays'], source: optText(b['source']), confirmation: optText(b['confirmation']) }, by: ctx.userId, at };
         } else {
-          throw apiError(404, { code: 'no_such_working_time_setting', whatHappened: `"${key}" is not a working-time setting.`, wasItSaved: 'not_saved', nextSafeAction: `Use one of: ${[...WORKING_TIME_LIMIT_KEYS, 'public-holidays', 'utc-offset', ...LEAVE_TYPE_KEYS.map((t) => `leave-${t}`)].join(', ')}.` });
+          throw apiError(404, { code: 'no_such_working_time_setting', whatHappened: `"${key}" is not a working-time setting.`, wasItSaved: 'not_saved', nextSafeAction: `Use one of: ${[...WORKING_TIME_LIMIT_KEYS, 'public-holidays', 'utc-offset', 'roster-week-start', ...LEAVE_TYPE_KEYS.map((t) => `leave-${t}`)].join(', ')}.` });
         }
         await deps.recordSettingChange(ctx.tenantId, change, idem);
         const target = change.target === 'leaveType' ? `leave-${change.leaveType}` : change.target;
@@ -263,8 +300,9 @@ export function hrComplianceRoutes(deps: HrComplianceDeps): readonly Route[] {
         const weekStart = ctx.query['weekStart'];
         if (!isStr(branchId) || !isDate(weekStart)) throw badRequest('roster_check_needs_branch_and_week', 'A roster check needs branchId and weekStart (YYYY-MM-DD).', 'Ask again with ?branchId=b1&weekStart=2026-10-19.');
         assertBranchInScope(ctx, branchId);
-        const r = await deps.roster(ctx.tenantId);
         const settings = await deps.settings(ctx.tenantId);
+        assertRosterWeek(settings, weekStart);
+        const r = await deps.roster(ctx.tenantId);
         const check = checkWorkingTime({ settings, branchId, weekStart, ...r });
         const week = rosterWeekState(settings, r, await deps.publications(ctx.tenantId), branchId, weekStart);
         // OB-155: pending limits do not stop publishing — they are named in `notChecked`. A breach of a limit in force does.
@@ -285,6 +323,7 @@ export function hrComplianceRoutes(deps: HrComplianceDeps): readonly Route[] {
         const weekStart = b['weekStart'];
         assertBranchInScope(ctx, branchId);
         const settings = await deps.settings(ctx.tenantId);
+        assertRosterWeek(settings, weekStart);
         const r = await deps.roster(ctx.tenantId);
         const check = checkWorkingTime({ settings, branchId, weekStart, ...r });
         // OB-155 "A": limits still pending do not stop the publication — it names them. OB-152 "A": a breach of a limit
@@ -324,7 +363,7 @@ export function hrComplianceRoutes(deps: HrComplianceDeps): readonly Route[] {
         }, branchId);
         const unchecked = check.notChecked.length === 0
           ? 'Every working-time limit was checked.'
-          : `Published with ${check.notChecked.length} working-time limit(s) NOT checked, because they are not filled in and confirmed yet: ${check.notChecked.map((n) => `${n.label} (${n.missing})`).join('; ')}.`;
+          : `Published with ${check.notChecked.length} working-time limit(s) NOT checked, because they are not filled in and confirmed yet: ${check.notChecked.map((n) => `${n.label} (${n.missing})`).join('; ')}.${check.notChecked.flatMap((n) => (n.meanwhile === undefined ? [] : [` ${n.meanwhile}`])).join('')}`;
         return { status: 201, body: { publication, notChecked: check.notChecked, words: unchecked } };
       },
     },
