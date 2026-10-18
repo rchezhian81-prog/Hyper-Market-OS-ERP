@@ -18,6 +18,8 @@
 //     ☰ button opens and Escape closes. Nothing when a page was opened off the box, and a stated reason when the
 //     box could name nobody or holds no register;
 //   • opening the tab a menu link asked for (`?tab=…`) on a page that has that tab;
+//   • the icons beside the chrome's words (OB-201): which shape of the ONE set (sre-icons.js) fits each workspace,
+//     each screen on the rail and each control — always with its word, never instead of it;
 //   • repainting all of it whenever `<html lang>` changes, however the page changed it.
 // What it does not own: the page's words. A page keeps its own `en` / `ta` tables and its own toggle handler.
 //
@@ -82,10 +84,21 @@
       text.id = 'conn-text';
       dot.after(text);
     }
+    // OB-201: the dot and its words are one chip in the state's tone — the dot carries the state's shape from the one
+    // icon set, the words stay exactly the words. Same elements, same ids; they are only held together.
+    let badge = byId('sre-badge');
+    if (!badge) {
+      badge = document.createElement('span');
+      badge.id = 'sre-badge';
+      badge.className = 'sre-badge';
+      dot.before(badge);
+      badge.append(dot, text);
+    }
+    if (window.sreIcon && typeof window.sreIcon.statusDot === 'function') window.sreIcon.statusDot(dot);
     // The toggle belongs beside the badge, as it does on the till and the handhelds.
     const toggle = byId('lang');
     if (toggle && toggle.parentElement !== sync) sync.append(toggle);
-    return { dot, text };
+    return { dot, text, badge };
   }
 
   // ── The sync badge — connection · freshness, from the store computer (rule 4) ──────────────────────
@@ -96,8 +109,15 @@
   function paintBadge() {
     const els = badgeElements();
     if (!els) return;
-    const { dot, text } = els;
+    const { dot, text, badge } = els;
     dot.classList.remove('unknown', 'degraded', 'error', 'idle');
+    paintBadgeWords(dot, text);
+    // the chip's tone follows the dot's class — the one fact, said once, in the dot, the shape, the colour and the words
+    const tone = dot.classList.contains('error') ? 'error' : dot.classList.contains('idle') ? 'idle'
+      : dot.classList.contains('unknown') || dot.classList.contains('degraded') ? 'degraded' : 'ok';
+    if (badge.dataset.tone !== tone) badge.dataset.tone = tone;
+  }
+  function paintBadgeWords(dot, text) {
     // A page that could not read its own registers says so first — the link to the store is one fact.
     if (window.sreBlind === true) { dot.classList.add('unknown'); text.textContent = t('notConnected'); return; }
     if (laneBase() === null) { dot.classList.add('idle'); text.textContent = t('notConnected'); return; }
@@ -143,14 +163,28 @@
     strip.hidden = at === undefined;
     if (at === undefined) return;
     const own = strip.dataset[lang()];
-    strip.textContent = `${own ?? t('staleShell')} ${new Date(at).toLocaleString()}`;
+    // the words, with the one set's "history" shape before them (OB-201) — the words alone are the message
+    let words = strip.querySelector(':scope > .sre-words');
+    if (!words) {
+      strip.replaceChildren();
+      const mark = icon(CHROME_ICONS.stale, 20);
+      if (mark) strip.append(mark);
+      words = document.createElement('span');
+      words.className = 'sre-words';
+      strip.append(words);
+    }
+    setText(words, `${own ?? t('staleShell')} ${new Date(at).toLocaleString()}`);
   }
 
   // ── The toggle says what you get ─────────────────────────────────────────────────────────────────
   function paintToggle() {
     const toggle = byId('lang');
     if (!toggle) return;
-    toggle.textContent = t('otherLanguage');
+    // OB-201: the globe from the one set before the word; the word is still the whole of the button's text.
+    toggle.classList.add('sre-lang');
+    const mark = icon(CHROME_ICONS.language, 18);
+    if (mark) toggle.replaceChildren(mark, document.createTextNode(t('otherLanguage')));
+    else toggle.textContent = t('otherLanguage');
     toggle.setAttribute('aria-label', t('switchLanguage'));
   }
 
@@ -291,7 +325,10 @@
     const els = menuElements();
     if (!els) return;
     const { button, panel } = els;
-    button.textContent = `☰ ${t('screens')}`;
+    // the one set's menu shape (OB-201) where the ☰ glyph was, then the word — the word is the button's name
+    const menuMark = icon(CHROME_ICONS.menu, 20);
+    if (menuMark) button.replaceChildren(menuMark, document.createTextNode(t('screens')));
+    else button.textContent = `☰ ${t('screens')}`;
     panel.setAttribute('aria-label', t('screens'));
     panel.replaceChildren(brand());
     const groups = Array.isArray(nav.groups) ? nav.groups : [];
@@ -314,15 +351,18 @@
       section.className = 'group-section';
       const title = document.createElement('p');
       title.className = 'group';
-      const mark = icon(group.group && typeof group.group === 'object' ? group.group.en : group.group);
-      if (mark) title.append(mark);
+      // OB-201: on the rail each SCREEN carries its shape, so the workspace heading is words alone — one icon per row,
+      // never two stacked. The workspace's own shape (GROUP_ICONS) is still the Today page's workspace tiles'.
       title.append(document.createTextNode(word(group.group)));
       const list = document.createElement('ul');
       for (const item of group.items ?? []) {
         const li = document.createElement('li');
         const link = document.createElement('a');
         link.href = item.path;
-        link.textContent = word(item.label);
+        // the screen's shape from the one set, then its name (OB-201); the name alone is the link's text
+        const shape = itemIcon(item);
+        if (shape) link.append(shape);
+        link.append(document.createTextNode(word(item.label)));
         if (isCurrent(item)) link.setAttribute('aria-current', 'page');
         li.append(link);
         list.append(li);
@@ -338,48 +378,121 @@
   }
 
 
-  // ── Icons (UX-2b): one small, consistent set — 24-grid, 2px round strokes — keyed by the workspace's English name
-  // and a few figure names. Drawn here, not fetched: the shell must open with no network (P-01).
-  const ICON_PATHS = {
-    'Today': '<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>',
-    'Products & pricing': '<path d="M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0L2 12V2h10l8.6 8.6a2 2 0 0 1 0 2.8z"/><circle cx="7" cy="7" r="1.5"/>',
-    'Purchase': '<circle cx="9" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M1 2h4l2.7 13.4a2 2 0 0 0 2 1.6h9.7a2 2 0 0 0 2-1.6L23 6H6"/>',
-    'Receiving & QC': '<path d="M21 10V7.5L12 3 3 7.5v9L12 21l3-1.5"/><path d="M3 7.5l9 4.5 9-4.5"/><path d="M12 12v9"/><path d="M16 17l2 2 4-4"/>',
-    'Inventory & backstore': '<path d="M3 21V8l9-4 9 4v13"/><path d="M3 21h18"/><rect x="7" y="13" width="4" height="4"/><rect x="13" y="13" width="4" height="4"/><rect x="10" y="17" width="4" height="4"/>',
-    'Shop floor': '<path d="M3 9l1.5-5h15L21 9"/><path d="M3 9a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0"/><path d="M5 11v10h14V11"/><path d="M9 21v-6h6v6"/>',
-    'Sales & service': '<path d="M5 2h14v20l-2.5-1.5L14 22l-2-1.5L10 22l-2.5-1.5L5 22z"/><path d="M9 7h6"/><path d="M9 11h6"/><path d="M9 15h4"/>',
-    'Orders & delivery': '<path d="M1 4h14v12H1z"/><path d="M15 9h4l4 4v3h-8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/>',
-    'Cash & finance': '<path d="M6 3h12"/><path d="M6 8h12"/><path d="M6 13l8.5 8"/><path d="M6 13h3a5 5 0 0 0 0-10"/>',
-    'Customers & loyalty': '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.9"/><path d="M16 3.1a4 4 0 0 1 0 7.8"/>',
-    'Fresh food & café': '<path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><path d="M6 1v3"/><path d="M10 1v3"/><path d="M14 1v3"/>',
-    'People & tasks': '<rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/>',
-    'Store operations': '<path d="M4 21v-7"/><path d="M4 10V3"/><path d="M12 21v-9"/><path d="M12 8V3"/><path d="M20 21v-5"/><path d="M20 12V3"/><path d="M1 14h6"/><path d="M9 8h6"/><path d="M17 16h6"/>',
-    'Reports': '<path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>',
-    'Administration': '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/>',
-    'Devices': '<path d="M18 8V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h8"/><path d="M10 19v-4"/><path d="M7 19h5"/><rect x="16" y="12" width="6" height="10" rx="2"/>',
-    // figures
-    'rupee': '<path d="M6 3h12"/><path d="M6 8h12"/><path d="M6 13l8.5 8"/><path d="M6 13h3a5 5 0 0 0 0-10"/>',
-    'check': '<circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/>',
-    'alert': '<path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
-    'cloud': '<path d="M17.5 19a4.5 4.5 0 0 0 .5-9 7 7 0 0 0-13.4 2A4 4 0 0 0 6 19z"/><path d="M12 12v6"/><path d="M9 15l3-3 3 3"/>',
-    'list': '<path d="M9 6h12"/><path d="M9 12h12"/><path d="M9 18h12"/><path d="M4 6h.01"/><path d="M4 12h.01"/><path d="M4 18h.01"/>',
-  };
-  function icon(name) {
-    const d = ICON_PATHS[name];
-    if (!d) return null;
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('viewBox', '0 0 24 24');
-    svg.setAttribute('fill', 'none');
-    svg.setAttribute('stroke', 'currentColor');
-    svg.setAttribute('stroke-width', '2');
-    svg.setAttribute('stroke-linecap', 'round');
-    svg.setAttribute('stroke-linejoin', 'round');
-    svg.setAttribute('aria-hidden', 'true');
-    svg.setAttribute('focusable', 'false');
-    svg.classList.add('sre-icon');
-    svg.innerHTML = d;
-    return svg;
+  // ── Icons (UX-2b · OB-201 "Icons A"): the ONE set, packages/ui/web/sre-icons.js (`window.sreIcon`), loaded before
+  // every page's own script — thin line, 1.5px, 24 grid, inline SVG, no network (P-01). The chrome only says WHICH
+  // shape fits what: a workspace (by its English name), a screen on the rail (by the catalogue's item id), and the
+  // few figure names the Today page asks for. Every one is drawn beside its word, never instead of it; a name the set
+  // does not know draws nothing and the word stands alone. tests/guardrails/every-icon-comes-from-the-one-set.test.ts
+  // proves every name here is in the set and every item in apps/web-erp/src/navigation.ts has one.
+  const GROUP_ICONS = Object.freeze({
+    'Today': 'layout-dashboard',
+    'Products & pricing': 'tag',
+    'Purchase': 'shopping-cart',
+    'Receiving & QC': 'package-check',
+    'Inventory & backstore': 'warehouse',
+    'Shop floor': 'store',
+    'Sales & service': 'receipt',
+    'Orders & delivery': 'truck',
+    'Cash & finance': 'wallet',
+    'Customers & loyalty': 'users',
+    'Fresh food & café': 'chef-hat',
+    'People & tasks': 'clipboard-list',
+    'Store operations': 'sliders',
+    'Reports': 'chart-column',
+    'Administration': 'shield-check',
+    'Devices': 'monitor-smartphone',
+  });
+  const ITEM_ICONS = Object.freeze({
+    'dashboard': 'layout-dashboard',
+    'approval-requests': 'badge-check',
+    'products': 'package',
+    'pricing': 'tag',
+    'promotions': 'percent',
+    'category-policy': 'layers',
+    'product-publish-review': 'send',
+    'data-quality': 'list-checks',
+    'buying': 'shopping-cart',
+    'suppliers': 'factory',
+    'supplier-bills': 'file-text',
+    'goods-receipt': 'package-check',
+    'indents': 'clipboard-list',
+    'counts': 'scan-barcode',
+    'count-plans': 'calendar-check',
+    'transfers': 'arrow-left-right',
+    'waste': 'trash',
+    'write-off-capture': 'package-minus',
+    'stock-health': 'activity',
+    'held-returns': 'rotate-ccw',
+    'unsellable': 'search-x',
+    'merchandising': 'layout-grid',
+    'expiry': 'calendar-clock',
+    'production': 'chef-hat',
+    'warehouse-supervisor': 'warehouse',
+    'finance': 'landmark',
+    'day-book': 'book-open',
+    'finance-close': 'calendar-days',
+    'reconciliation': 'git-compare-arrows',
+    'gst-reconciliation': 'git-merge',
+    'gst-returns': 'receipt-text',
+    'payroll': 'banknote',
+    'my-payslip': 'wallet',
+    'ess': 'user-round',
+    'rostering': 'calendar',
+    'checklist': 'clipboard-check',
+    'users': 'users-round',
+    'organisation': 'building',
+    'delegation': 'git-branch',
+    'incidents': 'life-buoy',
+    'store-computers': 'database',
+    'scales': 'scale',
+    'support-access': 'key-round',
+    'fleet': 'monitor',
+    'integration-health': 'plug',
+    'facilities': 'wrench',
+    'food-safety': 'thermometer',
+    'price-integrity': 'barcode',
+    'store-tasks': 'list-plus',
+    'my-tasks': 'check-square',
+    'waste-analytics': 'trending-down',
+    'ai': 'sparkles',
+    'migration': 'database-backup',
+    'store-setup': 'settings',
+    'document-templates': 'files',
+    'settings': 'settings-2',
+    'audit': 'history',
+    'operations': 'shield-alert',
+    'loss-prevention': 'fingerprint',
+    'reporting': 'chart-column',
+    'service': 'headphones',
+    'stored-value': 'ticket',
+    'service-desk': 'message-circle',
+    'ai-drafts': 'message-square-plus',
+    'substitution-exceptions': 'repeat',
+    'return-governance': 'circle-dollar-sign',
+    'cash-office': 'calculator',
+    'risk-acceptance': 'hand',
+    'day-reopen': 'lock',
+    'data-io': 'arrow-up-down',
+    'workforce': 'users',
+    'till': 'scan-line',
+    'owner-figures': 'chart-line',
+    'warehouse-handheld': 'boxes',
+    'picker-handheld': 'shopping-basket',
+    'driver-handheld': 'navigation',
+    'posh-report': 'book',
+  });
+  // The Today page's figure tiles (app.js) name their figure, not a shape.
+  const FIGURE_ICONS = Object.freeze({ rupee: 'indian-rupee', check: 'circle-check', alert: 'triangle-alert', cloud: 'upload', list: 'list' });
+  // The chrome's own controls.
+  const CHROME_ICONS = Object.freeze({ menu: 'menu', find: 'search', language: 'globe', branch: 'store', update: 'refresh-cw', stale: 'history' });
+
+  /** The set's name for what the chrome or a page asked for: a workspace, a figure, or a name already in the set. */
+  const shapeFor = (name) => GROUP_ICONS[name] ?? FIGURE_ICONS[name] ?? name;
+  function icon(name, size) {
+    if (typeof window.sreIcon !== 'function') return null;
+    return window.sreIcon(shapeFor(name), size);
   }
+  const itemIcon = (item) => (item && typeof item.id === 'string' && ITEM_ICONS[item.id] ? icon(ITEM_ICONS[item.id], 18) : null);
 
   // ── The branch and the person (OB-16): the rail names the shop and the person, as head office named them ──
   // The pack carries the branch's name and, when head office sent one, the person's name and role. Without them the
@@ -390,7 +503,8 @@
     const mark = document.createElement('span');
     mark.className = 'mark';
     mark.setAttribute('aria-hidden', 'true');
-    mark.textContent = '⌂';
+    const shop = icon(CHROME_ICONS.branch, 20);
+    if (shop) mark.append(shop); else mark.textContent = '⌂';
     const words = document.createElement('span');
     const b = document.createElement('b');
     b.textContent = name;
@@ -484,7 +598,14 @@
         if (e.key === 'Enter') { const first = byId('sre-menu')?.querySelector('li:not([hidden]) a'); if (first) { e.preventDefault(); first.click(); } }
         if (e.key === 'Escape') { find.value = ''; filterMenu(''); }
       });
-      line.append(crumbs, find);
+      // the magnifier sits inside the field (OB-201); the field keeps its own name and its own hidden state
+      const findWrap = document.createElement('span');
+      findWrap.id = 'sre-find-wrap';
+      findWrap.className = 'sre-find-wrap';
+      const lens = icon(CHROME_ICONS.find, 18);
+      if (lens) findWrap.append(lens);
+      findWrap.append(find);
+      line.append(crumbs, findWrap);
       header.prepend(line);
     }
     const place = nav ? currentPlace(nav) : null;
@@ -499,6 +620,7 @@
     find.setAttribute('aria-label', t('findScreen'));
     find.placeholder = t('findScreen');
     find.hidden = !nav || (nav.groups ?? []).length === 0;
+    byId('sre-find-wrap').hidden = find.hidden;
   }
 
   // ── A menu link may name a tab: /manager/?tab=approvals opens the manager on Approvals ─────────────
@@ -524,6 +646,9 @@
       strip.className = 'stale sre-update';
       strip.setAttribute('role', 'status');
       const words = document.createElement('span');
+      const mark = icon(CHROME_ICONS.update, 20);
+      if (mark) words.append(mark);
+      words.append(document.createElement('span'));
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'sre-btn';
@@ -531,7 +656,7 @@
       strip.append(words, button);
       (byId('sre-page') ?? document.body).prepend(strip);
     }
-    strip.firstElementChild.textContent = t('newVersion');
+    strip.firstElementChild.lastElementChild.textContent = t('newVersion');
     strip.lastElementChild.textContent = t('reload');
   }
   if ('serviceWorker' in navigator) {
@@ -627,7 +752,7 @@
   void refreshBadge();
   setInterval(() => { void refreshBadge(); }, 10_000);
 
-  window.sreChrome = { repaint, icon, badge: { refresh: refreshBadge, state: () => box }, menu: { toggle: toggleMenu, open: () => !byId('sre-menu')?.hidden } };
+  window.sreChrome = { repaint, icon, icons: { group: GROUP_ICONS, item: ITEM_ICONS, figure: FIGURE_ICONS, chrome: CHROME_ICONS }, badge: { refresh: refreshBadge, state: () => box }, menu: { toggle: toggleMenu, open: () => !byId('sre-menu')?.hidden } };
   // A page that paints before the chrome loaded (its own script runs first) may now take the icons: it listens for this.
   document.dispatchEvent(new Event('sre:chrome'));
 })();

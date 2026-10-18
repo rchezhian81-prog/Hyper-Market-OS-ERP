@@ -25,7 +25,11 @@
       strip.id = 'sre-update';
       strip.className = 'stale sre-update';
       strip.setAttribute('role', 'status');
+      // The words, with the one set's refresh shape before them when the icons are loaded (OB-201) — never instead of them.
       const words = document.createElement('span');
+      const mark = typeof window.sreIcon === 'function' ? window.sreIcon('refresh-cw', 20) : null;
+      if (mark) words.append(mark);
+      words.append(document.createElement('span'));
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'sre-btn';
@@ -33,7 +37,7 @@
       strip.append(words, button);
       document.body.prepend(strip);
     }
-    strip.firstElementChild.textContent = t('newVersion');
+    strip.firstElementChild.lastElementChild.textContent = t('newVersion');
     strip.lastElementChild.textContent = t('reload');
   }
 

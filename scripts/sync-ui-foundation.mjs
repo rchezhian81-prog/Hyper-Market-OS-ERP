@@ -2,8 +2,8 @@
 // Copy the ONE visual foundation to every app that serves screens — and stamp every service worker's cache name
 // with what its shell actually contains, so a deploy reaches the browser.
 //
-// Source of truth: packages/ui/web/sre-foundation.css (the look) and packages/ui/web/sre-update.js (the "new version"
-// strip for the shells outside the back office, UX-1b). Each `apps/<app>/web/` that holds a screen gets a
+// Source of truth: packages/ui/web/sre-foundation.css (the look), packages/ui/web/sre-icons.js (the one icon set,
+// OB-201) and packages/ui/web/sre-update.js (the "new version" strip for the shells outside the back office, UX-1b). Each `apps/<app>/web/` that holds a screen gets a
 // byte-identical, TRACKED copy, because every screen is served from its own folder — by the store box's
 // screen socket, by the nginx shell container, by the public proxy — and each one precaches the copies in its service
 // worker so a lane opens with the right look and no network (P-01). One source each, one copy per app, and this script
@@ -35,6 +35,8 @@ export const FOUNDATION_SOURCE = 'packages/ui/web/sre-foundation.css';
 export const FOUNDATION_FILE = 'sre-foundation.css';
 export const UPDATE_SOURCE = 'packages/ui/web/sre-update.js';
 export const UPDATE_FILE = 'sre-update.js';
+export const ICONS_SOURCE = 'packages/ui/web/sre-icons.js';
+export const ICONS_FILE = 'sre-icons.js';
 export const BACK_OFFICE = 'web-erp';
 export const NOT_A_SCREEN = new Set(['site']);
 export const WORKER_FILE = 'sw.js';
@@ -43,6 +45,8 @@ const CACHE_LINE = /^const CACHE = '(sre-[a-z0-9-]+-shell)-[0-9a-z]+';$/m;
 /** The shared files, and which apps take a copy of each. */
 export const SHARED_FILES = [
   { source: FOUNDATION_SOURCE, file: FOUNDATION_FILE, takes: () => true },
+  // The one icon set (OB-201 "Icons A"): every screen, the back office included — its chrome draws the rail's icons.
+  { source: ICONS_SOURCE, file: ICONS_FILE, takes: () => true },
   { source: UPDATE_SOURCE, file: UPDATE_FILE, takes: (app) => app !== BACK_OFFICE },
 ];
 
@@ -141,7 +145,7 @@ if (isMain) {
     process.exit(1);
   }
   console.log(check
-    ? `every apps/*/web/${FOUNDATION_FILE} and ${UPDATE_FILE} matches packages/ui/web; every apps/*/web/${WORKER_FILE} cache name matches its shell`
+    ? `every apps/*/web/${ICONS_FILE}, ${FOUNDATION_FILE} and ${UPDATE_FILE} matches packages/ui/web; every apps/*/web/${WORKER_FILE} cache name matches its shell`
     : drifted.length === 0
       ? `every shared copy was already current`
       : `shared copies written: ${drifted.join(', ')}`);
