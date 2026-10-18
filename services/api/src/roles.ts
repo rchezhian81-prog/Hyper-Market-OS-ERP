@@ -504,6 +504,10 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // A14: the accountant records a reverse-charge purchase (the self-invoice follows from the CA's heads) and marks its
       // tax paid in cash with the challan; never configures a head or switches reverse charge on.
       'finance.rcm.read', 'finance.rcm.record', 'finance.rcm.pay',
+      // OB-192 "A" (owner, 18 Oct 2026): the accountant may OPEN the GST returns page — view only. GSTR-3B, the controls,
+      // the filing calendar and the annual return are read with `finance.gstr.read`; locking, amending, filing and the
+      // switches stay with the owner (`finance.gstr.generate` / `.approve` / `.submit`, the switch codes — none here).
+      'finance.gstr.read',
       // ── end R3 lane 1 ──
       // ── R3 lane 2 (A17 · A24 · C14) ── the accountant uploads the GSTR-2B (OB-145 "A") and works the ITC review; reads
       // TDS and records its challans; records and reads card / UPI disputes. Never switches TDS on (the owner's act).
@@ -532,6 +536,9 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // ── R3 lane 1 (GST liability and returns) ──
       // A14 · OB-143 "A": the CA alone lists the reverse-charge heads (code, rate, notification entry) and reads them.
       'finance.rcm.configure', 'finance.rcm.read',
+      // OB-192 "A" (owner, 18 Oct 2026): the CA may OPEN the GST returns page — view only; nothing that locks, files,
+      // amends or switches.
+      'finance.gstr.read',
       // ── end R3 lane 1 ──
       // ── R3 lane 2 · A24 · OB-143 "A" ── the CA fills the TDS payee / section / rate list and reads the register; the
       // owner alone switches it on. Nothing else.
