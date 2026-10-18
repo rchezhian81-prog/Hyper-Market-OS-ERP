@@ -301,6 +301,8 @@ import { poshRegisterRoutes } from '../../finance/src/posh-register';
 import { processorRegisterAdapter, settlementRefundsAdapter } from './r2-data-adapters';
 import { processorRegisterRoutes } from '../../customer/src/processor-register';
 import { legacyCardPurgeRoutes } from '../../migration/src/legacy-card-purge';
+// R3 Lane 4 (store operations and people): D-14 · D-16 · D-11 · D-25 · D-19 · C21 · D-9 (r3-ops-adapters).
+import { r3OpsRoutes } from './r3-ops-adapters';
 import { wasteAnalyticsAdapter, foodSafetyAdapter, priceIntegrityAgeingAdapter, assignedTaskAdapter, receivingChecklistLookup, carriedChecklistAdapter } from './r2-ops-adapters';
 import { assignedTaskRoutes } from '../../finance/src/assigned-tasks';
 import { priceIntegrityAgeingRoutes } from '../../pricing/src/price-integrity-ageing';
@@ -1614,6 +1616,7 @@ export function buildSurface(deps: {
     ...weighingVerificationRoutes(),
     // R2 lane 1 (B6): the weighing-scale register the store pack carries to the lanes.
     ...r2TillRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
+    ...r3OpsRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
     // Owner alerts inbox (M29-FR-03) — control by exception; stateless grouping of the period's exceptions.
     ...ownerAlertsRoutes(),
     // Owner drill-through + KPI comparison (M29-FR-02) — "show me the transactions behind this figure",

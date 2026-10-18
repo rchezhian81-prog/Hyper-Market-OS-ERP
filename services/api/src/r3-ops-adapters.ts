@@ -1,0 +1,80 @@
+// R3 Lane 4 — store operations and people. Head office's wiring for D-14 · D-16 · D-11 · D-25 · D-19 · C21 · D-9, each
+// register append-only on its own stream (hard rules #2, #6). Reads fold the streams; nothing here edits or deletes a
+// record. One entry point, `r3OpsRoutes`, is registered from main.ts.
+
+import { makeEvent } from '../../../packages/contracts/src/event';
+import { InMemoryEventStore, type EventStore } from '../../../packages/persistence/src/event-store';
+import type { Route } from '../../kernel/src/index';
+import type { AuditEntry } from '../../../packages/audit/src/index';
+import {
+  STREAM, streamName, inventoryAdapter, adjustmentRequestAdapter, saleStockLocationOf, productUomFrom, orgStructureAdapter,
+} from './adapters';
+import type { IncomingSale } from '../../pos/src/sale-intake';
+import { branchOfLocationIn, type LocationBranches } from '../../inventory/src/location-scope';
+import {
+  onShelfAvailabilityRoutes, type OnShelfAvailabilityDeps, type OsaCountTask, type OsaMinimumSetting,
+} from '../../inventory/src/on-shelf-availability';
+import type { OsaSoldLine } from '../../../packages/replenishment/src/on-shelf-availability';
+
+const all = async <T>(store: EventStore, tenantId: string, stream: string, type: string): Promise<T[]> =>
+  (await store.readStream(tenantId, stream, { type })).map((e) => e.event.payload as T);
+const addDays = (day: string, n: number): string => new Date(Date.parse(`${day}T00:00:00.000Z`) + n * 86_400_000).toISOString().slice(0, 10);
+
+type Recorder = (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
+
+// ── D-14 on-shelf availability ───────────────────────────────────────────────────────────────────────────────────
+
+const OSA = streamName(STREAM.inventory, 'on-shelf-availability');
+
+/** The banked sales' lines with their stock place, for trading days in [fromDay, toDay]. */
+export async function soldLinesWithPlace(store: EventStore, tenantId: string, fromDay: string, toDay: string): Promise<OsaSoldLine[]> {
+  // A sale booked to a trading day can be committed after midnight, so the read is padded; the trading day decides.
+  const sales = await store.readStream(tenantId, STREAM.sales, { type: 'SaleCommitted', from: `${addDays(fromDay, -1)}T00:00:00.000Z`, to: `${addDays(toDay, 2)}T00:00:00.000Z` });
+  const out: OsaSoldLine[] = [];
+  for (const e of sales) {
+    const sale = e.event.payload as IncomingSale;
+    if (sale.tradingDay < fromDay || sale.tradingDay > toDay) continue;
+    const { locationId } = await saleStockLocationOf(store, tenantId, sale);
+    for (const l of sale.lines ?? []) out.push({ productId: l.productId, locationId, tradingDay: sale.tradingDay, quantityMinor: l.quantityMinor });
+  }
+  return out;
+}
+
+export function onShelfAvailabilityAdapter(input: { readonly store: EventStore; readonly now: () => string; readonly recordAudit?: Recorder; readonly locationBranches?: LocationBranches }): OnShelfAvailabilityDeps {
+  const { store, now } = input;
+  const adj = adjustmentRequestAdapter({ store, now });
+  const inv = inventoryAdapter({ store, now });
+  return {
+    now,
+    minimum: async (t) => (await all<OsaMinimumSetting>(store, t, OSA, 'OsaMinimumSet')).at(-1),
+    recordMinimum: async (t, s) => {
+      await store.append(t, OSA, makeEvent({ id: `osa-minimum-v${s.version}`, type: 'OsaMinimumSet', occurredAt: s.setAt, idempotencyKey: `osa-minimum-${t}-v${s.version}`, source: 'api/inventory', payload: s }));
+    },
+    stock: async (t) => (await inv.availability(t)).map((a) => ({ productId: a.productId, locationId: a.locationId, onHandMinor: a.onHandMinor })),
+    soldLines: (t, from, to) => soldLinesWithPlace(store, t, from, to),
+    tasks: (t) => all<OsaCountTask>(store, t, OSA, 'OsaCountTaskRecorded'),
+    recordTask: async (t, task) => {
+      await store.append(t, OSA, makeEvent({ id: `osa-task-${task.taskId}-${task.state}`, type: 'OsaCountTaskRecorded', occurredAt: task.countedAt ?? task.raisedAt, idempotencyKey: `osa-task-${t}-${task.taskId}-${task.state}`, source: 'api/inventory', payload: task }));
+    },
+    adjustmentRequest: (t, id) => adj.request(t, id),
+    raiseAdjustmentRequest: (t, r) => adj.recordRequest(t, r),
+    permissionsOfUser: (t, u) => adj.permissionsOfUser(t, u),
+    unitValueMinor: (t, p) => adj.unitValueMinor(t, p),
+    uomOf: (t, p) => productUomFrom({ store, now }, t, p),
+    ...(input.locationBranches === undefined ? {} : { locationBranches: input.locationBranches }),
+    ...(input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit }),
+  };
+}
+
+// ── the one entry point ──────────────────────────────────────────────────────────────────────────────────────────
+
+/** Every Lane 4 route, composed over head office's store (or a throw-away in-memory one when the surface has none). */
+export function r3OpsRoutes(input: { readonly store: EventStore | undefined; readonly now: () => string; readonly recordAudit?: Recorder }): readonly Route[] {
+  const store = input.store ?? new InMemoryEventStore();
+  const now = input.now;
+  const locationBranches: LocationBranches = async (t) => branchOfLocationIn(await orgStructureAdapter({ store, now }).nodes(t));
+  const base = { store, now, locationBranches, ...(input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit }) };
+  return [
+    ...onShelfAvailabilityRoutes(onShelfAvailabilityAdapter(base)),
+  ];
+}

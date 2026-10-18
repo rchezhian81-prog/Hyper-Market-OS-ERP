@@ -208,6 +208,10 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // R2 C20 · OB-165 "A": the owner adds or removes an Internal Committee member — that role only, confirmed by a second
       // person, audited — and can never hold the role himself (services/identity/src/committee-membership.ts).
       'posh.committee.manage',
+      // ── R3 Lane 4 (store operations and people) — begin
+      // D-14: the owner sets the minimum days (OB-147); raises and records an on-shelf availability count.
+      'inventory.osa.configure', 'inventory.osa.task.raise', 'inventory.osa.count.record',
+      // ── R3 Lane 4 — end
     ],
   },
   {
@@ -302,6 +306,10 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'migration.screen.read',
       // R2 C18: the manager reads the working-time limits and the statutory registers for their branches.
       'hr.compliance.read', 'hr.register.read',
+      // ── R3 Lane 4 (store operations and people) — begin
+      // D-14: raise and record an on-shelf availability count (a difference goes to a second person's approval).
+      'inventory.osa.task.raise', 'inventory.osa.count.record',
+      // ── R3 Lane 4 — end
     ],
   },
   {
