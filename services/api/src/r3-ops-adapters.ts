@@ -9,8 +9,10 @@ import type { AuditEntry } from '../../../packages/audit/src/index';
 import {
   STREAM, streamName, inventoryAdapter, adjustmentRequestAdapter, saleStockLocationOf, productUomFrom, orgStructureAdapter,
   productMasterAdapter, assortmentAdapter, priceListAdapter, purchaseOrdersAdapter, permissionsHeldBy,
-  productionAdapter, lotTraceAdapter,
+  productionAdapter, lotTraceAdapter, rosterStoreAdapter,
 } from './adapters';
+import { biometricConsentRoutes, type BiometricConsentDeps, type AttendanceMark } from '../../finance/src/biometric-consent';
+import type { BiometricConsentEvent } from '../../../packages/workforce/src/biometric-consent';
 import { tenantEntitlementResolver } from './access';
 import { productionPlanRoutes, productionInputsOf, type ProductionPlanDeps, type ProductionTraceRun } from '../../inventory/src/production-plan';
 import type { IngredientBatchOnHand, RunInputBatch } from '../../inventory/src/production';
@@ -242,6 +244,28 @@ export function channelPricingAdapter(input: { readonly store: EventStore; reado
 /** D-19: the gate the existing price-list routes ask (wired in main.ts beside them). */
 export const channelPricingGateFor = (input: { readonly store: EventStore; readonly now: () => string }) => channelPricingGate(channelPricingAdapter(input));
 
+// ── C21 fingerprint attendance consent ───────────────────────────────────────────────────────────────────────────
+
+const BIOMETRIC = streamName(STREAM.workforce, 'biometric-consent');
+const MARKS = streamName(STREAM.workforce, 'attendance-marks');
+
+export function biometricConsentAdapter(input: { readonly store: EventStore; readonly now: () => string; readonly recordAudit?: Recorder }): BiometricConsentDeps {
+  const { store, now } = input;
+  return {
+    now,
+    events: (t) => all<BiometricConsentEvent>(store, t, BIOMETRIC, 'BiometricConsentRecorded'),
+    recordEvent: async (t, e) => {
+      await store.append(t, BIOMETRIC, makeEvent({ id: `biometric-consent-${e.eventId}`, type: 'BiometricConsentRecorded', occurredAt: e.at, idempotencyKey: `biometric-consent-${t}-${e.eventId}`, source: 'api/hr', payload: e }));
+    },
+    marks: async (t, date) => (await all<AttendanceMark>(store, t, MARKS, 'AttendanceMarked')).filter((m) => date === undefined || m.date === date),
+    recordMark: async (t, m) => {
+      await store.append(t, MARKS, makeEvent({ id: `attendance-mark-${m.markId}`, type: 'AttendanceMarked', occurredAt: m.at, idempotencyKey: `attendance-mark-${t}-${m.markId}`, source: 'api/hr', payload: m }));
+    },
+    employees: async (t) => (await rosterStoreAdapter({ store, now }).roster(t)).employees,
+    ...(input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit }),
+  };
+}
+
 // ── the one entry point ──────────────────────────────────────────────────────────────────────────────────────────
 
 /** Every Lane 4 route, composed over head office's store (or a throw-away in-memory one when the surface has none). */
@@ -256,5 +280,6 @@ export function r3OpsRoutes(input: { readonly store: EventStore | undefined; rea
     ...dsdCheckInRoutes(dsdCheckInAdapter(base)),
     ...productionPlanRoutes(productionPlanAdapter(base)),
     ...channelPricingRoutes(channelPricingAdapter(base)),
+    ...biometricConsentRoutes(biometricConsentAdapter(base)),
   ];
 }

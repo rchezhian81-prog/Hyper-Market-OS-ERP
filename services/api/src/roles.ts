@@ -217,6 +217,8 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'inventory.dsd.sync',
       // D-19: the owner keeps the store → zone register (zone prices stay switched off until a second person approves).
       'price.zone.manage',
+      // C21: record my own fingerprint-attendance consent, and mark my own attendance (fingerprint only with consent).
+      'workforce.consent.self', 'workforce.attendance.mark',
       // ── R3 Lane 4 — end
     ],
   },
@@ -317,6 +319,8 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'inventory.osa.task.raise', 'inventory.osa.count.record',
       // D-11: check a direct delivery in at the door (no cash, OB-141) and keep the vendors' route sheets.
       'inventory.dsd.checkin', 'inventory.dsd.route.manage',
+      // C21: record my own fingerprint-attendance consent, and mark my own attendance (fingerprint only with consent).
+      'workforce.consent.self', 'workforce.attendance.mark',
       // ── R3 Lane 4 — end
     ],
   },
@@ -397,6 +401,10 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'order.exception.work',
       // D-8 (R2): floor staff complete the store tasks assigned to THEM, in their own sign-in (only the assignee may).
       'workforce.task.complete.own',
+      // ── R3 Lane 4 (store operations and people) — begin
+      // C21: record my own fingerprint-attendance consent, and mark my own attendance (fingerprint only with consent).
+      'workforce.consent.self', 'workforce.attendance.mark',
+      // ── R3 Lane 4 — end
     ],
   },
   {
