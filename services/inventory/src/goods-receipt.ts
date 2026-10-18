@@ -1127,6 +1127,76 @@ export async function dispatchSupplierReturn(deps: GoodsReceiptDeps, input: {
   return { ok: true, dispatch, verdict, alreadyDispatched: false };
 }
 
+/**
+ * OB-204: where each supplier return of a receipt stands on its dispatch, in head office's words — so the goods-receipt
+ * screen can say it before anyone presses Dispatch. One entry per return still to go (a rejected excess, a line disposed
+ * of as a return) and per return already dispatched; a return recorded with no dispatch (at or below the threshold) has
+ * none. It reads what `dispatchSupplierReturn` would judge (the same gate, the same register) and changes nothing.
+ *   • `not_required` — at or below the threshold: the return is recorded as before, no dispatch step;
+ *   • `no_ewb` · `ewb_waiting` (pending / provider error) · `ewb_not_usable` (rejected / cancelled) — above it, and the
+ *     dispatch would be refused (`ewb_required`) today;
+ *   • `ewb_generated` — above it, covered by a generated e-way bill: the dispatch would proceed, linking `ewbNo`;
+ *   • `dispatched` — recorded, with the e-way bill it left under (null when none was needed);
+ *   • `not_known` — the check could not be read just now (said, never guessed — P-08).
+ * Absent (`undefined`) when this head office has no e-way-bill check wired, which is when the dispatch step does not apply.
+ */
+export interface SupplierReturnDispatchStatus {
+  /** 'excess', or the line id. */
+  readonly target: string;
+  readonly movementId: string;
+  readonly valueMinor: number;
+  readonly thresholdMinor: number | null;
+  readonly state: 'not_required' | 'no_ewb' | 'ewb_waiting' | 'ewb_not_usable' | 'ewb_generated' | 'dispatched' | 'not_known';
+  /** The e-way bill's own state when one is on the register for the movement ('none' when never submitted). */
+  readonly ewbState: string | null;
+  readonly ewbNo: string | null;
+  readonly dispatch: SupplierReturnDispatch | null;
+  /** The gate's plain-English reason, shown as-is. */
+  readonly detail: string;
+}
+
+export async function supplierReturnDispatchStatuses(deps: Pick<GoodsReceiptDeps, 'supplierReturnEwb'>, tenantId: string, rec: GrnRecord): Promise<readonly SupplierReturnDispatchStatus[] | undefined> {
+  const ewb = deps.supplierReturnEwb;
+  if (ewb === undefined) return undefined;
+  const targets: { readonly target: SupplierReturnTarget; readonly valueMinor: number; readonly returned: boolean }[] = [];
+  if (rec.excessDecision?.decision === 'rejected' && rec.heldMinor > 0) targets.push({ target: { kind: 'excess' }, valueMinor: excessValue(rec), returned: rec.excessReturn !== undefined });
+  for (const d of rec.dispositions ?? []) {
+    if (d.disposition !== 'return') continue;
+    const line = rec.captured.lines.find((l) => l.lineId === d.lineId);
+    if (line === undefined || line.quarantinedMinor <= 0) continue;
+    targets.push({ target: { kind: 'line', lineId: line.lineId }, valueMinor: valueAtCost(line.quarantinedMinor, line.uom, line.unitCost), returned: (rec.lineReturns ?? []).some((r) => r.lineId === line.lineId) });
+  }
+  if (targets.length === 0) return [];
+  let dispatches: readonly SupplierReturnDispatch[];
+  try { dispatches = await ewb.dispatches(tenantId, rec.grnId); } catch { dispatches = []; }
+  const out: SupplierReturnDispatchStatus[] = [];
+  for (const { target, valueMinor, returned } of targets) {
+    const key = targetKey(target);
+    const movementId = supplierReturnEwbMovementId(rec.grnId, target);
+    const prior = dispatches.find((d) => d.target === key);
+    if (prior !== undefined) {
+      out.push({ target: key, movementId, valueMinor: prior.valueMinor, thresholdMinor: prior.thresholdMinor, state: 'dispatched', ewbState: prior.ewbNo === null ? null : 'generated', ewbNo: prior.ewbNo, dispatch: prior, detail: prior.ewbNo === null ? 'dispatched — no e-way bill was needed' : `dispatched under e-way bill ${prior.ewbNo}` });
+      continue;
+    }
+    if (returned) continue; // recorded with no dispatch (at or below the threshold): nothing to dispatch
+    let verdict: DispatchEwbVerdict;
+    try {
+      verdict = await ewb.gate(tenantId, rec, movementId, valueMinor);
+    } catch {
+      out.push({ target: key, movementId, valueMinor, thresholdMinor: null, state: 'not_known', ewbState: null, ewbNo: null, dispatch: null, detail: 'the e-way-bill check could not be read just now' });
+      continue;
+    }
+    const base = { target: key, movementId, valueMinor, thresholdMinor: verdict.thresholdMinor, dispatch: null, detail: verdict.detail } as const;
+    if (verdict.outcome === 'not_required') out.push({ ...base, state: 'not_required', ewbState: null, ewbNo: null });
+    else if (verdict.outcome === 'covered') out.push({ ...base, state: 'ewb_generated', ewbState: 'generated', ewbNo: verdict.ewbNo });
+    else {
+      const s = verdict.ewbState;
+      out.push({ ...base, state: s === 'none' ? 'no_ewb' : s === 'pending_unknown' || s === 'provider_error' ? 'ewb_waiting' : 'ewb_not_usable', ewbState: s, ewbNo: null });
+    }
+  }
+  return out;
+}
+
 export type LineDispositionOutcome =
   | { readonly ok: true; readonly record: GrnRecord; readonly disposition: LineDisposition; readonly alreadyDecided: boolean }
   | { readonly ok: false; readonly refusedBecause: 'receipt_unknown' | 'line_unknown' | 'nothing_to_dispose' | 'self_approval' | 'line_already_disposed' | 'cannot_accept_refused_stock'; readonly detail: string };
@@ -1515,10 +1585,15 @@ export function goodsReceiptRoutes(deps: GoodsReceiptDeps): readonly Route[] {
         const all = (await deps.all(ctx.tenantId)).filter((g) => scope.covers(g.warehouseId));
         const waiting = all.filter(awaitsDecision);
         const ordered = [...waiting, ...all.filter((g) => !awaitsDecision(g))];
+        // OB-204: each supplier return's dispatch state, so the screen can say it before anyone presses Dispatch.
+        const receipts = await Promise.all(ordered.map(async (g) => {
+          const returnDispatches = await supplierReturnDispatchStatuses(deps, ctx.tenantId, g);
+          return returnDispatches === undefined ? g : { ...g, returnDispatches };
+        }));
         return {
           status: 200,
           body: {
-            receipts: ordered, count: ordered.length, needingApprovalCount: waiting.length,
+            receipts, count: ordered.length, needingApprovalCount: waiting.length,
             heldExcessCount: all.filter((g) => g.heldMinor > 0 && g.excessDecision === undefined).length,
             awaitingDispositionCount: all.filter((g) => linesAwaitingDisposition(g).length > 0).length,
           },

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { createServer, type Server } from 'node:http';
@@ -449,6 +449,55 @@ describe.skipIf(!HAVE_BROWSER)('the ERP\'s forty-six pages, audited on the rende
       }
     }
   }, 120_000);
+
+  it('the subpage tiles fit their page: no tab runs past the content area, at a desk with the rail open and on a phone, in English and Tamil, each reachable by keyboard', async () => {
+    // The owner's report (18 Oct 2026): on the Today page at a 1280px desk, "Close the day" ran past the right edge.
+    // Every page with a tab row is held to it, with the rail drawn (the desk loses 248px to it) and without.
+    const tabbed = PAGES.filter((f) => /id="tabs"/.test(readFileSync(join(WEB_DIR, f), 'utf8')));
+    expect(tabbed).toContain('index.html');
+    const overruns: string[] = [];
+    for (const device of [DESK, PHONE]) {
+      for (const file of tabbed) {
+        const page = await open(file, device, undefined, { sreNavigation: MENU });
+        for (const lang of ['en', 'ta'] as const) {
+          if (lang === 'ta') {
+            await page.click('#lang');
+            await page.waitForFunction('document.documentElement.lang === "ta"', undefined, { timeout: 5_000 });
+          }
+          await page.waitForFunction('document.getAnimations().every((a) => a.playState !== "running")', undefined, { timeout: 5_000 });
+          const fit = await page.evaluate(`(() => {
+            // the content area: inside the tab row's own padding, inside the page column's 16px gutter, inside the window
+            const nav = document.getElementById('tabs');
+            const column = nav.parentElement.getBoundingClientRect();
+            const contentRight = Math.min(nav.getBoundingClientRect().right - parseFloat(getComputedStyle(nav).paddingRight), column.right - 16, document.documentElement.clientWidth - 16);
+            const tabs = [...document.querySelectorAll('#tabs button')].filter((b) => b.closest('[hidden]') === null && getComputedStyle(b).display !== 'none');
+            return {
+              contentRight,
+              past: tabs.filter((b) => b.getBoundingClientRect().right > contentRight + 0.5).map((b) => b.id + '@' + Math.round(b.getBoundingClientRect().right)),
+              unreachable: tabs.filter((b) => b.disabled || b.tabIndex < 0).map((b) => b.id),
+              pageScroll: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+              count: tabs.length,
+            };
+          })()`) as { contentRight: number; past: string[]; unreachable: string[]; pageScroll: boolean; count: number };
+          const where = `${file}@${device.viewport.width}/${lang}`;
+          if (fit.count === 0) overruns.push(`${where}: no tab drawn`);
+          if (fit.past.length > 0) overruns.push(`${where}: past the content edge at ${Math.round(fit.contentRight)}px — ${fit.past.join(', ')}`);
+          if (fit.unreachable.length > 0) overruns.push(`${where}: not reachable by keyboard — ${fit.unreachable.join(', ')}`);
+          if (fit.pageScroll) overruns.push(`${where}: the page scrolls sideways`);
+        }
+        // Keyboard: Tab reaches every shown tile, in order.
+        const shown = await page.evaluate('[...document.querySelectorAll("#tabs button")].filter((b) => b.closest("[hidden]") === null && getComputedStyle(b).display !== "none").map((b) => b.id)') as string[];
+        await page.focus(`#${shown[0]!}`);
+        const order: string[] = [shown[0]!];
+        for (let i = 1; i < shown.length; i += 1) {
+          await page.keyboard.press('Tab');
+          order.push(await page.evaluate('document.activeElement?.id ?? ""') as string);
+        }
+        if (order.join(' ') !== shown.join(' ')) overruns.push(`${file}@${device.viewport.width}: Tab walks ${order.join(', ')}, not ${shown.join(', ')}`);
+      }
+    }
+    expect(overruns).toEqual([]);
+  }, 300_000);
 
   it('one primary action at a time, on every page, at a desk and on a phone (design system §1 rule 3)', async () => {
     const offenders: string[] = [];
