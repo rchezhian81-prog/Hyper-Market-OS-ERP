@@ -57,6 +57,12 @@ export interface PosSessionConfig {
    */
   readonly laneScales?: LaneScales;
   /**
+   * B13 (OB-138) — the hallmark HUIDs this store has already sold, as its store computer knows them from its own sales
+   * (served with the page; no network on the scan). Absent → only what this till sold since it loaded is known; the store
+   * computer and head office judge the rest.
+   */
+  readonly soldHuids?: () => ReadonlySet<string>;
+  /**
    * B14 · B19 — a product's `regulatedFlags` as the lane's signed catalogue pack carries them, by id. The commit's second
    * gate and a recalled held basket read the PACK, not only what the scan said. Absent → only the scan's own flags.
    */
@@ -275,6 +281,8 @@ export class BillArithmeticError extends Error {
 export class PosSession {
   private readonly lines: BasketEntry[] = [];
   private seq = 0;
+  /** B13: the HUIDs this till has committed since it loaded — refused again at once, offline. */
+  private readonly huidsSoldHere = new Set<string>();
   private state: PosState = 'idle';
   private connection: ConnectionState = 'online';
   private promotions: readonly Promotion[] = [];
@@ -566,11 +574,21 @@ export class PosSession {
     return this.nowRef ?? this.config.clock?.() ?? new Date().toISOString();
   }
 
-  /** The gate's view of this lane at a moment: its scales, and the lane's LOCAL calendar date (B6). */
-  private gateContext(atIsoUtc: string): TillGateContext {
+  /**
+   * The gate's view of this lane at a moment: its scales, the lane's LOCAL calendar date (B6 · B16), and the HUIDs already
+   * sold — by this store, by this till since it loaded, and on this bill's OTHER lines (B13). `exceptLineId` is the line
+   * being judged, so a gold line never counts against itself.
+   */
+  private gateContext(atIsoUtc: string, exceptLineId?: string): TillGateContext {
     let today: string | undefined;
     try { today = tradingDateOf(atIsoUtc, makeTradingDayRule('00:00')); } catch { today = undefined; }
-    return { ...(this.config.laneScales === undefined ? {} : { scales: this.config.laneScales }), ...(today === undefined ? {} : { today }) };
+    const sold = new Set<string>([...(this.config.soldHuids?.() ?? []), ...this.huidsSoldHere]);
+    for (const l of this.activeLines()) {
+      if (l.lineId === exceptLineId) continue;
+      const huid = huidOf(this.flagsOf(l));
+      if (huid !== undefined) sold.add(huid);
+    }
+    return { ...(this.config.laneScales === undefined ? {} : { scales: this.config.laneScales }), ...(today === undefined ? {} : { today }), soldHuids: sold };
   }
 
   /** The flags a line is judged by: the lane's signed pack first, else what the scan carried (B14 · B19). */
@@ -589,7 +607,7 @@ export class PosSession {
       ...(list === undefined ? {} : { listUnitPriceMinor: list }),
       ...(chargedMinor === undefined ? {} : { chargedMinor }),
       ...(catalogueUom === undefined ? {} : { catalogueUom }),
-    }, this.gateContext(atIsoUtc));
+    }, this.gateContext(atIsoUtc, l.lineId));
   }
 
   /** Whether a line is sold by weight (B6): its own unit, or its product's unit in the lane's pack (NEW-2). */
@@ -812,6 +830,8 @@ export class PosSession {
         lineTotalMinor: lineTotalMinor - (perLineDiscount.get(l.lineId) ?? 0),
         taxRateBps: l.taxRate.bps,
         ...(l.hsnCode !== undefined ? { hsnCode: l.hsnCode } : {}),
+        // B13: the hallmark HUID of a gold piece, kept with the sale (and printed on the bill).
+        ...(huidOf(this.flagsOf(l)) === undefined ? {} : { huid: huidOf(this.flagsOf(l)) }),
         // D-20: the batch the barcode carried and its use-by date — the one-step-forward half of the recall trace (M10-FR-03).
         ...(l.batchId === undefined ? {} : { batchId: l.batchId }),
         ...(l.batchExpiry === undefined ? {} : { batchExpiry: l.batchExpiry }),
@@ -892,6 +912,8 @@ export class PosSession {
       ...(this.loyaltyMobile === undefined ? {} : { customerMobile: this.loyaltyMobile }),
     }));
     if (!outcome.committed) throw new LocalCommitRefusedError(saleId, outcome.laneMessage);
+    // B13: a HUID on the disk is sold — this till refuses it again at once, before the store computer's list is re-read.
+    for (const l of active) { const huid = huidOf(this.flagsOf(l)); if (huid !== undefined) this.huidsSoldHere.add(huid); }
 
     const sale = commitSale(
       { ...input, total: totals.payable },
@@ -1043,4 +1065,10 @@ export function taxRateFromPercent(percent: number): Rate {
 /** Convenience: sum a list of Money in one currency (used by the receipt view). */
 export function sumMoney(amounts: readonly Money[], currency: CurrencyCode): Money {
   return amounts.reduce((total, a) => add(total, a), money(0, currency));
+}
+
+/** B13: the well-formed hallmark HUID a gold line carries in its pack flags, or undefined. */
+function huidOf(flags: Readonly<Record<string, unknown>> | undefined): string | undefined {
+  const read = tillRuleFlagsOf(flags);
+  return read.gold === true ? read.huid : undefined;
 }

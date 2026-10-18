@@ -120,6 +120,11 @@ export interface PosLane {
    * never told. Absent on a page from an older box: the till then sells nothing by weight (no stamp can be shown current).
    */
   readonly scales?: LaneScales;
+  /**
+   * B13 (OB-138): the hallmark HUIDs this store computer has already sold (from its own sales on disk) — so a gold piece
+   * already sold is refused at the scan with no network. Absent on a page from an older box.
+   */
+  readonly soldHuids?: readonly string[];
 }
 
 /** The browser global this bundle attaches to (typed without needing the DOM lib). */
@@ -700,6 +705,8 @@ export function bootPos(config?: {
   tradingDayCutoff?: string;
   /** B6: the weighing scales this lane takes weight from (store pack, via the box). Absent = never told → no weighed sale. */
   laneScales?: LaneScales;
+  /** B13: the HUIDs the store computer has already sold (served with the page). */
+  soldHuids?: readonly string[];
   taxPercent?: number;
   /** The lane's cached catalogue snapshot; without it, barcode scanning is off. */
   catalogue?: CatalogueSnapshot;
@@ -887,6 +894,8 @@ export function bootPos(config?: {
       clock: () => new Date().toISOString(),
       // B6: weight only from a scale whose stamp is current — this lane's scales, as the box's store pack names them.
       ...(config?.laneScales === undefined ? {} : { laneScales: config.laneScales }),
+      // B13: the HUIDs the store computer has sold, as it served them with this page — read once, held in memory.
+      ...(config?.soldHuids === undefined ? {} : { soldHuids: ((sold) => () => sold)(new Set(config.soldHuids)) }),
       // B14 · B19: the commit's second gate reads each product's flags from the lane's own signed catalogue.
       regulatedFlagsOf: (productId: string) => catalogueRef.cache?.findByProductId(productId)?.regulatedFlags,
       // B6 · NEW-2: whether a line is weighed comes from the lane's own signed catalogue, not only the line's unit.
@@ -1430,6 +1439,7 @@ if (browserWindow !== undefined) {
     ...(lane === undefined ? {} : { tradingDayCutoff: lane.tradingDayCutoff }),
     // B6: this lane's scales as the box's store pack names them; a page without them sells nothing by weight.
     ...(lane?.scales === undefined ? {} : { laneScales: lane.scales }),
+    ...(Array.isArray(lane?.soldHuids) ? { soldHuids: lane.soldHuids } : {}),
     ...(browserWindow.posReceiptTemplate === undefined ? {} : { receiptTemplate: browserWindow.posReceiptTemplate }),
     // The refund policy the box was given (SP-9b-i): without it the till offers no return without a receipt.
     ...(browserWindow.posRefundPolicy === undefined ? {} : { refundPolicy: browserWindow.posRefundPolicy }),

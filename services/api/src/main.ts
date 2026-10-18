@@ -119,6 +119,7 @@ import { facilitiesAssetsRoutes } from '../../platform/src/facilities-assets';
 import { facilitiesMonitoringRoutes } from '../../platform/src/facilities-monitoring';
 import { weighingVerificationRoutes } from '../../platform/src/facilities-metrology';
 import { r2TillRoutes, scalesOnRegisterAdapter } from './r2-till-adapters';
+import { r3TillTraceRoutes, huidsSoldElsewhereAdapter } from './r3-till-trace-adapters';
 import { complianceRoutes } from '../../compliance/src/index';
 import { riskRegisterRoutes } from '../../compliance/src/risk';
 import { inventoryRoutes } from '../../inventory/src/index';
@@ -1211,6 +1212,8 @@ export function buildSurface(deps: {
     } : {
       ...posAdapter({ store, now }), tillSealKey: sealKey, scalesOnRegisterFor: scalesOnRegisterAdapter({ store, now }), loyaltyOnSale: (t, sale) => earnOnSale(loyaltyEffects!, t, sale),
       loyaltySpendOnSale: (t, sale) => spendOnSale(loyaltyWallets!, t, sale),
+      // R3 lane 3 (B13 · OB-138): head office's backstop for a hallmark HUID sold twice.
+      huidsSoldElsewhere: huidsSoldElsewhereAdapter({ store }),
     }),
     ...returnsRoutes(store === undefined ? {
       originalSale: empty(undefined), priorReturns: empty([]), priorRefunds: empty([]),
@@ -1614,6 +1617,7 @@ export function buildSurface(deps: {
     ...weighingVerificationRoutes(),
     // R2 lane 1 (B6): the weighing-scale register the store pack carries to the lanes.
     ...r2TillRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
+    ...r3TillTraceRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
     // Owner alerts inbox (M29-FR-03) — control by exception; stateless grouping of the period's exceptions.
     ...ownerAlertsRoutes(),
     // Owner drill-through + KPI comparison (M29-FR-02) — "show me the transactions behind this figure",

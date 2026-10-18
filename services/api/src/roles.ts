@@ -208,6 +208,10 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // R2 C20 · OB-165 "A": the owner adds or removes an Internal Committee member — that role only, confirmed by a second
       // person, audited — and can never hold the role himself (services/identity/src/committee-membership.ts).
       'posh.committee.manage',
+      // ── R3 lane 3 (till, batch and traceability) ──────────────────────────────────────────────────────────────────
+      // B16 (OB-140 "A"): record a government health-warning picture; confirm a tobacco product's packs carry it.
+      // D-26: record and answer a lot-trace request (the 24-hour clock).
+      'catalogue.tobacco.picture.record', 'catalogue.tobacco.warning.confirm', 'quality.lottrace.request',
     ],
   },
   {
@@ -277,6 +281,8 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'quality.coldchain.assess', 'quality.lottrace.read',
       'quality.recall.initiate', 'quality.recall.read',
       'quality.hold.manage', 'quality.hold.release',
+      // R3 lane 3: B16 — confirm a tobacco product's packs carry the warning picture; D-26 — record and answer a lot-trace request.
+      'catalogue.tobacco.warning.confirm', 'quality.lottrace.request',
       'price.integrity.audit', 'selfcheckout.operate',
       'owner.alert.read', 'owner.kpi.read', 'owner.brief.manage',
       'refund.exception.read',

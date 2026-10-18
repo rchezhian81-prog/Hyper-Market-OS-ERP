@@ -82,9 +82,11 @@ export type TillRulesAnswer =
  */
 export function checkTillRules(
   record: Record<string, unknown>,
-  ctx: { readonly products: ReadonlyMap<string, GateProduct>; readonly scales: LaneScales; readonly today: string },
+  ctx: { readonly products: ReadonlyMap<string, GateProduct>; readonly scales: LaneScales; readonly today: string; readonly soldHuids?: ReadonlySet<string> },
 ): TillRulesAnswer {
   const lines = Array.isArray(record['lines']) ? (record['lines'] as unknown[]) : [];
+  // B13: a HUID this box has sold, or one an earlier line of THIS bill already carries, is sold — refused before the disk.
+  const sold = new Set<string>(ctx.soldHuids ?? []);
   for (const raw of lines) {
     const l = (raw !== null && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
     const productId = text(l['productId']);
@@ -106,11 +108,13 @@ export function checkTillRules(
       // NEW-2 (B6): weighed or not is THIS box's catalogue's answer, whatever unit the record wrote (or left out).
       ...(product?.baseUom === undefined ? {} : { catalogueUom: product.baseUom }),
       ...(product?.regulatedFlags === undefined ? {} : { regulatedFlags: product.regulatedFlags }),
-    }, { scales: ctx.scales, today: ctx.today });
+    }, { scales: ctx.scales, today: ctx.today, soldHuids: sold });
     const first = refusals[0];
     if (first !== undefined) {
       return { ok: false, refusedBecause: first.reason, productId, laneMessage: `Do not take payment. ${first.laneMessage} Nothing was saved.` };
     }
+    const huid = product?.regulatedFlags?.['gold'] === true ? product.regulatedFlags['huid'] : undefined;
+    if (typeof huid === 'string') sold.add(huid);
   }
   return { ok: true };
 }

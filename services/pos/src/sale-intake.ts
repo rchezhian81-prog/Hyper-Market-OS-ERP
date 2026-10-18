@@ -82,6 +82,8 @@ export interface IncomingSaleLine {
    * the line; head office flags a weighed line without it, or with a stamp that had lapsed.
    */
   readonly scaleCheck?: { readonly checkedOn?: string; readonly scales?: readonly { readonly assetId?: string; readonly reverificationDueOn?: string }[] };
+  /** B13 (OB-138): the hallmark HUID of the gold piece sold on this line, as the till printed it on the bill. A record. */
+  readonly huid?: string;
   /** B14: the pack size a tobacco line was judged against at the till. A record. */
   readonly packCheck?: { readonly packMinimumMinor?: number };
   /** B19: a carry-bag line's material and thickness as the till judged them. A record. */
@@ -169,6 +171,10 @@ export type SaleExceptionKind =
   /** B14: a tobacco line below one whole pack, or not a whole number of packs (OB-160), was sold — loose cigarettes.
    *  **Critical**: COTPA s.7. */
   | 'tobacco_sold_below_pack'
+  /** B13 (OB-138): a gold piece was sold with no hallmark HUID on head office's product. **Critical**: BIS hallmarking. */
+  | 'gold_sold_without_huid'
+  /** B13: a HUID head office already holds a sale for was sold again — one hallmarked piece, sold twice. **Critical**. */
+  | 'gold_huid_sold_twice'
   /** B6: a weighed line came with no scale evidence, or its scale's Legal Metrology stamp had lapsed when it sold. Judged
    *  against head office's OWN scale register where it is wired (L3), not only the till's claim. */
   | 'weighed_on_unverified_scale'
@@ -287,6 +293,11 @@ export interface IntakeContext {
    * the till claimed. Absent when the composition has no register (then the till's evidence is judged, as before).
    */
   readonly laneScalesOnRegister?: readonly { readonly assetId: string; readonly reverificationDueOn: string }[];
+  /**
+   * B13 (OB-138): for each HUID this sale carries, the OTHER sale head office already banked it on (absent when none) —
+   * the cloud's backstop for a piece sold at another store, or by a till whose store computer did not know.
+   */
+  readonly huidsSoldElsewhere?: ReadonlyMap<string, string>;
 }
 
 const text = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
@@ -499,6 +510,24 @@ export function acceptSale(sale: IncomingSale, ctx: IntakeContext): IntakeResult
         add('tobacco_sold_below_pack', 'critical',
           `${product.sku}: ${r.detail}`,
           'ACT NOW: loose cigarettes were sold, which the law forbids. Ask the cashier on that bill, and find why the till did not stop it.',
+          { productId: line.productId });
+      }
+    }
+
+    // ── B13 (BIS IS 1417:2016 · OB-138): a gold piece is sold with its HUID, once. The till and its store computer refuse ──
+    // ── both before the money; this is head office's backstop — an old till, or a piece sold at another store. ──────────
+    if (product.regulatedFlags?.['gold'] === true) {
+      const onProduct = typeof product.regulatedFlags['huid'] === 'string' ? product.regulatedFlags['huid'] : undefined;
+      const huid = typeof line.huid === 'string' && line.huid !== '' ? line.huid : onProduct;
+      if (huid === undefined) {
+        add('gold_sold_without_huid', 'critical',
+          `${product.sku} is gold and was sold with no hallmark HUID`,
+          'ACT NOW: a gold piece left the store without its hallmark HUID on the bill. Record the HUID on the product, give the customer a bill that shows it, and find why the till did not stop the sale.',
+          { productId: line.productId });
+      } else if (ctx.huidsSoldElsewhere?.has(huid) === true) {
+        add('gold_huid_sold_twice', 'critical',
+          `${product.sku} HUID ${huid} was already sold on sale ${ctx.huidsSoldElsewhere.get(huid)} and has been sold again on ${sale.saleId}`,
+          'ACT NOW: one hallmarked piece cannot be sold twice. Check both bills and the piece itself — either the HUID on the product is wrong, or a piece is missing from the record. Do not sell the HUID again until it is resolved.',
           { productId: line.productId });
       }
     }

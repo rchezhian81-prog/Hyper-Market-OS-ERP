@@ -160,7 +160,13 @@ describe.each(backings)('R2 lane 1 — the till enforces the legal gates — on 
     expect(JSON.stringify(noPack.body)).toContain('a tobacco product needs its pack size');
     const underAge = await publish('p-cig', product('CIG10', 'Cigarettes 10s', 'tobacco', { minimumAge: 16, tobacco: true, packMinimumMinor: 1 }), [TOBACCO]);
     expect(underAge.status).toBe(422);
-    expect((await publish('p-cig', product('CIG10', 'Cigarettes 10s', 'tobacco', { minimumAge: 18, tobacco: true, packMinimumMinor: 1 }), [TOBACCO])).status).toBe(201);
+    // R3 · B16 (OB-140 "A"): a tobacco product is saved, but NOT put on sale, until a named person confirms its warning picture.
+    const unconfirmed = await publish('p-cig', product('CIG10', 'Cigarettes 10s', 'tobacco', { minimumAge: 18, tobacco: true, packMinimumMinor: 1 }), [TOBACCO]);
+    expect(unconfirmed.status).toBe(201);
+    expect(unconfirmed.body).toMatchObject({ product: { lifecycle: 'draft' }, activation: { refused: true, because: 'tobacco_warning_not_confirmed' } });
+    expect((await call('POST', '/v1/catalogue/tobacco-warning-pictures/P-2020', { effectiveFrom: '2020-01-01', notifiedOn: '2019-10-01', reference: 'G.S.R. demo', evidenceRef: 'DOC-gsr-demo' })).status).toBe(201);
+    expect((await call('POST', '/v1/catalogue/products/p-cig/tobacco-warning-confirmation', { imageId: 'P-2020', evidenceRef: 'PHOTO-cig-pack' })).status).toBe(201);
+    expect((await publish('p-cig', product('CIG10', 'Cigarettes 10s', 'tobacco', { minimumAge: 18, tobacco: true, packMinimumMinor: 1 }), [TOBACCO])).body).toMatchObject({ product: { lifecycle: 'new' } });
     expect((await publish('p-bag', product('BAG120', 'Carry bag 120 micron', 'grocery', { carryBag: true, plasticMaterial: 'plastic', plasticThicknessMicrons: 120 }), [GROCERY])).status).toBe(201);
     expect((await publish('p-straw', product('STRAW', 'Plastic straws', 'grocery', { bannedSingleUsePlastic: true }), [GROCERY])).status).toBe(201);
     expect((await call('POST', '/v1/catalogue/tax-classes/24022010/rates/2017-07-01', { rateBps: 2800 })).status).toBe(201);

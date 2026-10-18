@@ -79,6 +79,11 @@ export interface PosDeps {
    * each stamp is valid — what a weighed line is judged against. Absent → the till's own scale evidence is judged.
    */
   readonly scalesOnRegisterFor?: (tenantId: string, sale: IncomingSale) => Promise<readonly { readonly assetId: string; readonly reverificationDueOn: string }[] | undefined>;
+  /**
+   * B13 (OB-138): for the HUIDs a sale carries, the OTHER banked sale each was already sold on. Absent → head office does
+   * not judge a HUID sold twice (a composition without the sales ledger); a gold line with no HUID is still raised.
+   */
+  readonly huidsSoldElsewhere?: (tenantId: string, sale: IncomingSale) => Promise<ReadonlyMap<string, string>>;
   readonly loyaltySpendOnSale?: (tenantId: string, sale: IncomingSale) => Promise<readonly {
     readonly kind: string; readonly ref: string; readonly requestedMinor: number; readonly appliedMinor: number;
     readonly shortfallMinor: number; readonly alreadyApplied: boolean; readonly detail: string;
@@ -185,9 +190,12 @@ export function posRoutes(deps: PosDeps): readonly Route[] {
           fact: 'sale', tenantId: ctx.tenantId, recordId: sale.saleId, amountMinor: sale.totalMinor, named: cashierId, stamp: sale.operatorVerified,
         });
         const laneScalesOnRegister = deps.scalesOnRegisterFor === undefined ? undefined : await deps.scalesOnRegisterFor(ctx.tenantId, sale);
+        const huidsSoldElsewhere = deps.huidsSoldElsewhere === undefined || !sale.lines.some((l) => typeof l.huid === 'string' || catalogue.get(l.productId)?.regulatedFlags?.['gold'] === true)
+          ? undefined : await deps.huidsSoldElsewhere(ctx.tenantId, sale);
         const intake = acceptSale(sale, {
           catalogue,
           ...(laneScalesOnRegister === undefined ? {} : { laneScalesOnRegister }),
+          ...(huidsSoldElsewhere === undefined ? {} : { huidsSoldElsewhere }),
           currentPackVersion: await deps.currentPackVersion(ctx.tenantId),
           saleHoldingThisReceipt: await deps.saleHoldingReceipt(ctx.tenantId, sale.receiptNumber),
           alreadyBanked,

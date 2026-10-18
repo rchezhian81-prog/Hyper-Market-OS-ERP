@@ -4,3 +4,4 @@
 
 export * from './cold-chain';
 export * from './lot-trace';
+export * from './lot-trace-chain';
