@@ -197,6 +197,55 @@ export interface PendingLineReturn {
   readonly returnedAt: string | null;
 }
 
+/**
+ * R3 · D-11 · OB-196 "A" (owner, 18 Oct 2026, in writing, "Yes, numbered") — the debit note raised at the DSD door for goods
+ * handed back to the driver, NUMBERED from the shop's own debit-note series (the same gap-free series every debit note is
+ * issued under, M23-FR-02). It is SHOWN on the supplier's statement. It is not netted into `owedMinor`: whether a DSD bill
+ * already leaves out the goods handed back is not yet settled, so netting it could take the same goods off twice — the
+ * statement says so (`nettedInBalance: false`) rather than guessing.
+ */
+export interface DoorDebitNote {
+  readonly debitNoteRef: string;
+  /** The number from the shop's own series (e.g. DN-000007); null on a record from before OB-196 (said, never invented). */
+  readonly number: string | null;
+  readonly supplierId: string;
+  readonly checkInId: string;
+  readonly storeId: string;
+  readonly lines: readonly { readonly productId: string; readonly quantityMinor: number; readonly reason: string }[];
+  /** Σ at cost; null when a line's cost is not known (said, never a zero). */
+  readonly valueMinor: number | null;
+  readonly raisedAt: string;
+  readonly nettedInBalance: false;
+}
+
+/** A DSD door check-in as the account reads it — a structural subset of the inventory service's `DsdCheckInRecord`. */
+export interface DoorCheckInForAccount {
+  readonly checkInId: string;
+  readonly version: number;
+  readonly supplierId: string;
+  readonly storeId: string;
+  readonly debitNote: {
+    readonly debitNoteRef: string; readonly number?: string | null; readonly supplierId: string;
+    readonly lines: readonly { readonly productId: string; readonly quantityMinor: number; readonly reason: string }[];
+    readonly valueMinor: number | null; readonly raisedAt: string;
+  } | null;
+}
+
+/** OB-196: the door debit notes from the check-ins' versions — the latest version of each check-in, one note per check-in. */
+export function doorDebitNotesFrom(versions: readonly DoorCheckInForAccount[]): readonly DoorDebitNote[] {
+  const latest = new Map<string, DoorCheckInForAccount>();
+  for (const v of versions) { const held = latest.get(v.checkInId); if (held === undefined || v.version >= held.version) latest.set(v.checkInId, v); }
+  const out: DoorDebitNote[] = [];
+  for (const c of latest.values()) {
+    if (c.debitNote === null) continue;
+    out.push({
+      debitNoteRef: c.debitNote.debitNoteRef, number: c.debitNote.number ?? null, supplierId: c.debitNote.supplierId, checkInId: c.checkInId,
+      storeId: c.storeId, lines: c.debitNote.lines, valueMinor: c.debitNote.valueMinor, raisedAt: c.debitNote.raisedAt, nettedInBalance: false,
+    });
+  }
+  return out.sort((a, b) => (a.raisedAt < b.raisedAt ? -1 : a.raisedAt > b.raisedAt ? 1 : a.debitNoteRef < b.debitNoteRef ? -1 : 1));
+}
+
 export interface SupplierAccountTotals {
   readonly invoicedMinor: number;
   /** Σ matched payable — what the shop has agreed it owes. */
@@ -229,6 +278,9 @@ export interface SupplierAccountStatement extends PayablesAccount {
   readonly payments: readonly SupplierPayment[];
   /** GT-05 — the legacy bills still outstanding at cutover, each with its sign-off state. */
   readonly openings: readonly AccountOpening[];
+  /** R3 · D-11 · OB-196 — the numbered debit notes raised at the DSD door; shown, not netted (see `DoorDebitNote`). */
+  readonly doorDebitNotes: readonly DoorDebitNote[];
+  readonly doorDebitNotesTotal: { readonly valueMinor: number; readonly notesWithValueUnknown: number; readonly nettedInBalance: false };
   readonly totals: SupplierAccountTotals;
   readonly asAt: string;
 }
@@ -253,6 +305,8 @@ export interface SupplierAccountInput {
   readonly debitNoteIssues?: readonly DebitNoteIssue[];
   /** GT-05 — every opening balance (all suppliers), with its sign-off state. Optional for callers that have none. */
   readonly openings?: readonly AccountOpening[];
+  /** R3 · OB-196 — every door debit note (all suppliers). Optional for callers that have none. */
+  readonly doorDebitNotes?: readonly DoorDebitNote[];
   readonly asAt: string;
 }
 
@@ -346,9 +400,15 @@ export function foldSupplierAccount(input: SupplierAccountInput): SupplierAccoun
   const paidMinor = payments.reduce((s, p) => s + p.amountMinor, 0);
   const openings = (input.openings ?? []).filter((o) => o.supplierId === input.supplierId);
   const openingMinor = openings.filter((o) => o.signed && o.reversed !== true).reduce((s, o) => s + o.amountMinor, 0); // OB-44: a reversed opening is not owed
+  const doorDebitNotes = (input.doorDebitNotes ?? []).filter((d) => d.supplierId === input.supplierId);
   return {
     supplierId: input.supplierId, currency: 'INR',
     invoices, debitNotes, refusedNotOwed, pendingSupplierReturns, pendingLineReturns, payments, openings,
+    doorDebitNotes,
+    doorDebitNotesTotal: {
+      valueMinor: doorDebitNotes.reduce((s, d) => s + (d.valueMinor ?? 0), 0),
+      notesWithValueUnknown: doorDebitNotes.filter((d) => d.valueMinor === null).length, nettedInBalance: false,
+    },
     totals: {
       invoicedMinor: invoices.reduce((s, i) => s + i.invoicedMinor, 0),
       accruedMinor, withheldMinor: invoices.reduce((s, i) => s + i.withheldMinor, 0),
@@ -369,7 +429,7 @@ export function foldAllSupplierAccounts(input: Omit<SupplierAccountInput, 'suppl
 } {
   const supplierIds = [...new Set([
     ...input.invoices.map((i) => i.supplierId), ...input.orders.map((o) => o.supplierId), ...(input.payments ?? []).map((p) => p.supplierId),
-    ...(input.openings ?? []).map((o) => o.supplierId),
+    ...(input.openings ?? []).map((o) => o.supplierId), ...(input.doorDebitNotes ?? []).map((d) => d.supplierId), // OB-196
   ])].sort();
   const accounts = supplierIds.map((supplierId) => foldSupplierAccount({ ...input, supplierId }));
   const known = new Set(input.orders.map((o) => o.poId));
@@ -400,16 +460,18 @@ export interface SupplierAccountDeps {
   readonly debitNoteIssues: (tenantId: string) => Promise<readonly DebitNoteIssue[]> | readonly DebitNoteIssue[];
   /** GT-05 — every opening balance with its sign-off state (supplier-openings.ts). Optional: a stub has none. */
   readonly openingBalances?: (tenantId: string) => Promise<readonly AccountOpening[]> | readonly AccountOpening[];
+  /** R3 · OB-196 — the debit notes raised at the DSD door, numbered. Optional: a stub has none. */
+  readonly doorDebitNotes?: (tenantId: string) => Promise<readonly DoorDebitNote[]> | readonly DoorDebitNote[];
   readonly now: () => string;
 }
 
 /** The registers the account folds from, read once — shared by the account routes, the master (SP-7c) and finance. */
 export async function accountRegisters(deps: SupplierAccountDeps, tenantId: string): Promise<Omit<SupplierAccountInput, 'supplierId'>> {
-  const [invoices, matches, orders, receipts, payments, debitNoteIssues, openings] = await Promise.all([
+  const [invoices, matches, orders, receipts, payments, debitNoteIssues, openings, doorDebitNotes] = await Promise.all([
     deps.invoices(tenantId), deps.latestMatches(tenantId), deps.purchaseOrders(tenantId), deps.receipts(tenantId),
-    deps.payments(tenantId), deps.debitNoteIssues(tenantId), deps.openingBalances?.(tenantId) ?? [],
+    deps.payments(tenantId), deps.debitNoteIssues(tenantId), deps.openingBalances?.(tenantId) ?? [], deps.doorDebitNotes?.(tenantId) ?? [],
   ]);
-  return { invoices, matchOf: (id) => matches.get(id), orders, receipts, payments, debitNoteIssues, openings, asAt: deps.now() };
+  return { invoices, matchOf: (id) => matches.get(id), orders, receipts, payments, debitNoteIssues, openings, doorDebitNotes, asAt: deps.now() };
 }
 const registers = accountRegisters;
 

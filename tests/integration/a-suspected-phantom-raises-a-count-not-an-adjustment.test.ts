@@ -102,4 +102,39 @@ describe.each(backings)('a suspected phantom raises a count, not an adjustment �
     // Ghee now has no stock, so it is no longer a suspect.
     expect((await osa()).suspects.map((s) => s.productId)).toEqual(['p-rice']);
   });
+
+  it('OB-198: a newly stocked item is judged from its first delivery at the store; one with no receipt on record is flagged', async () => {
+    let h: ApiHarness = harness();
+    const T = randomUUID();
+    await h.seedOwner(T, 'u-owner');
+    await h.provisionRole(T, 'u-till', 'cashier');
+    const { req, ok } = tenantClient(() => h, T);
+    await ok(req('POST', '/v1/catalogue/tax-classes/10063000/rates/2017-07-01', { rateBps: 500 }), 'tax');
+    for (const [id, sku] of [['p-new', 'SKU-NEW'], ['p-quiet', 'SKU-QUIET'], ['p-old', 'SKU-OLD'], ['p-norx', 'SKU-NORX']] as const) {
+      await ok(req('POST', `/v1/catalogue/products/${id}/publish`, { product: { sku, name: id, baseUom: 'ea', primaryCategoryId: 'grocery', taxClass: '10063000', lifecycle: 'draft' }, categories: [GROCERY] }), `publish ${id}`);
+    }
+    const mv = (movementId: string, productId: string, kind: string, occurredAt: string) =>
+      ok(req('POST', '/v1/inventory/movements', { movementId, productId, locationId: STORE, kind, quantityMinor: 10, uom: 'ea', occurredAt, enteredBy: 'u-owner', ...(kind === 'received' ? { unitCostMinor: 5_000 } : {}) }), movementId);
+    await mv('rx-new', 'p-new', 'received', '2030-06-26T04:00:00.000Z'); // first delivery two days before the day judged
+    await mv('rx-quiet', 'p-quiet', 'received', '2030-06-20T04:00:00.000Z'); // eight days before, never sold
+    await mv('rx-quiet-2', 'p-quiet', 'received', '2030-06-27T04:00:00.000Z'); // a later delivery does not restart the clock
+    await mv('rx-old', 'p-old', 'received', '2030-05-01T04:00:00.000Z'); // long before the window
+    await mv('ct-norx', 'p-norx', 'counted', '2030-05-01T04:00:00.000Z'); // stock on the books, but no receipt on record
+    await ok(req('POST', '/v1/inventory/on-shelf-availability/minimum', { minimumDays: 3 }), 'minimum');
+
+    h = restart(h); // ── COLD RESTART ──
+
+    const r = (await ok(req('GET', '/v1/inventory/on-shelf-availability', undefined, 'u-owner', { asOf: AS_OF }), 'osa')).body as {
+      judged: number; judgedWithoutReceiptOnRecord: number; suspects: { productId: string; daysWithoutSale: number; daysWithoutSaleIsAtLeast: boolean; clockStart: string; clockStartDay: string; firstReceiptDay: string | null; basis: string; flags: string[] }[];
+    };
+    expect(r.judged).toBe(4);
+    expect(r.judgedWithoutReceiptOnRecord).toBe(1);
+    // p-new (2 quiet days since its first delivery) is NOT raised — under the old rule it was "at least 28 days".
+    expect(r.suspects.map((s) => s.productId)).toEqual(['p-norx', 'p-old', 'p-quiet']);
+    expect(r.suspects.find((s) => s.productId === 'p-quiet')).toMatchObject({ daysWithoutSale: 8, daysWithoutSaleIsAtLeast: false, clockStart: 'first_receipt', clockStartDay: '2030-06-20', firstReceiptDay: '2030-06-20', basis: 'no_sale_since_first_receipt', flags: [] });
+    expect(r.suspects.find((s) => s.productId === 'p-old')).toMatchObject({ daysWithoutSale: 28, daysWithoutSaleIsAtLeast: true, clockStart: 'window_start_received_before_window', firstReceiptDay: '2030-05-01', flags: [] });
+    expect(r.suspects.find((s) => s.productId === 'p-norx')).toMatchObject({ daysWithoutSale: 28, daysWithoutSaleIsAtLeast: true, clockStart: 'window_start_no_receipt_on_record', firstReceiptDay: null, flags: ['no_receipt_on_record'] });
+    // A cashier cannot read the list.
+    expect((await req('GET', '/v1/inventory/on-shelf-availability', undefined, 'u-till', { asOf: AS_OF })).status).toBe(403);
+  });
 });

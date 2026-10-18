@@ -167,7 +167,7 @@ export const PILOT_FOUNDATION: PilotFoundation = {
     // office's record. OC-06: the trading day ends at 00:00. The till tolerances are the seeded shift close's (₹100).
     settings: {
       tradingDayCutoff: '00:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 100_000,
-      handoverToleranceMinor: 10_000, cashVarianceToleranceMinor: 10_000, privacySlaDays: 30, warehouseId: WAREHOUSE_ID,
+      handoverToleranceMinor: 10_000, cashVarianceToleranceMinor: 10_000, privacySlaDays: 15, warehouseId: WAREHOUSE_ID,
     },
     rules: {
       approvalLimitMinor: 500_000, marginFloorBps: 2_000,

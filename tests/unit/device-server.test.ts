@@ -34,7 +34,7 @@ const CODE = 'ABCDE-FGHJK-LMNPQ-RSTUV';
 const SIGNING = ['device', 'socket', 'unit', 'key'].join('-').padEnd(48, '0');
 const BASE_PACK = {
   version: 1,
-  policies: { storeId: 'store-1', branchId: 'store-1', branchName: 'Main', tradingDayCutoff: '02:00', staleAfterSeconds: 300, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 10_000, privacySlaDays: 30, warehouseId: 'wh-1' },
+  policies: { storeId: 'store-1', branchId: 'store-1', branchName: 'Main', tradingDayCutoff: '02:00', staleAfterSeconds: 300, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 10_000, privacySlaDays: 15, warehouseId: 'wh-1' },
   warehouse: {
     assignmentId: 'A-1', workerId: 'u-worker', storeId: 'store-1',
     bins: [{ binId: 'BIN-A', storeId: 'store-1', capacityMinor: 1000, pickable: true, zone: 'ambient' }],

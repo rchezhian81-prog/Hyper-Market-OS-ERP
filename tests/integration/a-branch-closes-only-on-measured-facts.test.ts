@@ -45,7 +45,7 @@ async function cast(h: ApiHarness, t: string): Promise<void> {
   for (const b of ['B1', 'B2']) {
     expect((await owner.post(`/v1/org/nodes/${b}`, { kind: 'branch', name: `Store ${b}`, parentId: 'C1', companyId: 'C1', gstin: G1 }, `n-${b}`)).status).toBe(201);
     expect((await owner.post(`/v1/org/nodes/${b}/activation`, {}, `a-${b}`)).status).toBe(200);
-    expect((await owner.post(`/v1/stores/${b}/settings`, { tradingDayCutoff: '02:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 100000, handoverToleranceMinor: 5000, cashVarianceToleranceMinor: 5000, privacySlaDays: 30, warehouseId: null }, `s-${b}`)).status).toBe(201);
+    expect((await owner.post(`/v1/stores/${b}/settings`, { tradingDayCutoff: '02:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 100000, handoverToleranceMinor: 5000, cashVarianceToleranceMinor: 5000, privacySlaDays: 15, warehouseId: null }, `s-${b}`)).status).toBe(201);
   }
   // B1 is trading: a till, stock on the shelf, a cashier holding a float — and its computer still has 3 records to send.
   expect((await owner.post('/v1/platform/devices/till-1/register', { branchId: 'B1', kind: 'pos_lane', label: 'Lane 1' }, 'd1')).status).toBe(201);

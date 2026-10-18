@@ -45,6 +45,22 @@ export const RIGHT_KINDS: readonly RightKind[] = ['access', 'correction', 'expor
  */
 export const PUBLISHED_RESPONSE_SLA_DAYS = 15;
 
+/**
+ * R3 · C5 · OB-195 "A" (owner, 18 Oct 2026, in writing, "Lock to 15 days"): a store's own privacy reply time is FIXED at the
+ * published 15 days. Setting any other value is refused; a value stored before the lock is READ as 15 and flagged
+ * (`privacy_sla_stored_value_read_as_15`, with the value that was stored) — never silently used, never silently dropped.
+ */
+export const PRIVACY_SLA_READ_AS_15_FLAG = 'privacy_sla_stored_value_read_as_15' as const;
+export function fixedPrivacySlaDays(stored: unknown): {
+  readonly days: number;
+  readonly flag: typeof PRIVACY_SLA_READ_AS_15_FLAG | null;
+  /** What was stored, when it was not the published figure (else null). */
+  readonly storedDays: unknown;
+} {
+  if (stored === PUBLISHED_RESPONSE_SLA_DAYS) return { days: PUBLISHED_RESPONSE_SLA_DAYS, flag: null, storedDays: null };
+  return { days: PUBLISHED_RESPONSE_SLA_DAYS, flag: PRIVACY_SLA_READ_AS_15_FLAG, storedDays: stored ?? null };
+}
+
 /** The promise as the customer reads it. */
 export function publishedSlaStatement(days: number = PUBLISHED_RESPONSE_SLA_DAYS): string {
   return `We answer every privacy request and every complaint about your data within ${days} days of receiving it.`;

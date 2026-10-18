@@ -29,6 +29,7 @@ import type { StorefrontProduct } from '../../../packages/storefront/src/browse'
 import { searchCatalogue, repeatOrder, type SavedList } from '../../../packages/storefront/src/browse';
 import type { Slot, ServiceabilityPolicy } from '../../../packages/storefront/src/checkout';
 import type { ConsentState } from '../../../packages/customer/src/consent';
+import { PUBLISHED_RESPONSE_SLA_DAYS } from '../../../packages/customer/src/data-rights';
 import {
   newSession,
   setLine,
@@ -78,7 +79,7 @@ export interface ShopData {
   /** The purposes this tenant asks consent for. Choose-able, never hard-coded. */
   readonly consentPurposes?: readonly ConsentPurposeSpec[];
   readonly consent?: ConsentState;
-  /** Days the tenant has to answer a data request. Per-tenant policy. */
+  /** Days the shop has to answer a data request — fixed at the published 15 days (R3 C5 · OB-195); the app never uses another figure. */
   readonly privacySlaDays?: number;
 }
 
@@ -483,7 +484,7 @@ export function bootShop(
 
     raise: async (kind, at) => {
       // The phone's own check that this is a right it offers (an unknown one throws, as before) — nothing sent.
-      raiseRequest({ requestId: 'check', tenantId: data?.tenantId ?? 'tenant', customerRef: 'self', kind, at, slaDays: data?.privacySlaDays ?? 30 });
+      raiseRequest({ requestId: 'check', tenantId: data?.tenantId ?? 'tenant', customerRef: 'self', kind, at, slaDays: PUBLISHED_RESPONSE_SLA_DAYS }); // R3 C5 · OB-195: always 15
       // One reference for this request, kept for a retry so a lost answer can never raise it twice.
       const requestId = pendingRequest?.kind === kind ? pendingRequest.requestId : newRequestId();
       pendingRequest = { kind, requestId };

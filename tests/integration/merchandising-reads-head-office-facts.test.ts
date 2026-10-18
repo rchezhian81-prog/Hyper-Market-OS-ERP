@@ -172,7 +172,7 @@ describe.each(backings)('FUL-11 merchandising reads head office\'s own facts —
     for (const [id, body] of [['C1', { kind: 'company', name: 'SRE Retail' }], [STORE, { kind: 'branch', name: 'SRE Hyper Market', parentId: 'C1', companyId: 'C1' }], [BACK, { kind: 'warehouse', name: 'Back store', parentId: STORE, companyId: 'C1' }]] as const) {
       expect((await call('POST', `/v1/org/nodes/${id}`, OWNER, body)).status).toBe(201);
     }
-    expect((await call('POST', `/v1/stores/${STORE}/settings`, OWNER, { tradingDayCutoff: '02:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 5_000, cashVarianceToleranceMinor: 5_000, privacySlaDays: 30, warehouseId: BACK })).status).toBe(201);
+    expect((await call('POST', `/v1/stores/${STORE}/settings`, OWNER, { tradingDayCutoff: '02:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 5_000, cashVarianceToleranceMinor: 5_000, privacySlaDays: 15, warehouseId: BACK })).status).toBe(201);
     expect((await call('PUT', `/v1/merchandising/stores/${STORE}/shelf-map`, OWNER, { locations: [
       { locationId: 'A1-1', aisle: 1, rack: 1, bay: 1, shelf: 1, position: 1, zone: 'ambient' },
       { locationId: 'END-1', aisle: 9, rack: 1, bay: 1, shelf: 1, position: 1, zone: 'ambient', label: 'End-cap by the door' },

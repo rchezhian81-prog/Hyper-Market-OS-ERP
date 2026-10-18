@@ -68,7 +68,7 @@ async function headOffice(): Promise<{ h: ApiHarness; section: unknown }> {
     expect(r.status, JSON.stringify(r.body)).toBe(201);
   }
   await defineReceivingCheck(h, A, 'u-owner');
-  expect((await h.request({ method: 'POST', path: '/v1/stores/store-1/settings', userId: 'u-owner', tenantId: A, idempotencyKey: 'settings', body: { tradingDayCutoff: '02:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 5_000, cashVarianceToleranceMinor: 5_000, privacySlaDays: 30, warehouseId: WH } })).status).toBe(201);
+  expect((await h.request({ method: 'POST', path: '/v1/stores/store-1/settings', userId: 'u-owner', tenantId: A, idempotencyKey: 'settings', body: { tradingDayCutoff: '02:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 5_000, cashVarianceToleranceMinor: 5_000, privacySlaDays: 15, warehouseId: WH } })).status).toBe(201);
   // What head office's store setup says about the dock — exactly what the box will be given.
   const pull = await h.request({ method: 'GET', path: '/v1/store-packs/store-1', userId: 'u-box', tenantId: A });
   expect(pull.status).toBe(200);
@@ -84,7 +84,7 @@ describe('NEW-4: two people on one handheld — only the person holding it now i
     const packFile = join(dir, 'store-pack.json');
     await writeFile(packFile, JSON.stringify(withTillPeople({
       version: 1,
-      policies: { tradingDayCutoff: '02:00', storeId: 'store-1', branchId: 'store-1', branchName: 'Main', staleAfterSeconds: 300, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 10_000, privacySlaDays: 30, warehouseId: WH },
+      policies: { tradingDayCutoff: '02:00', storeId: 'store-1', branchId: 'store-1', branchName: 'Main', staleAfterSeconds: 300, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 10_000, privacySlaDays: 15, warehouseId: WH },
       lossPreventionRules: [],
       receivingChecklist: section,
       warehouse: { assignmentId: 'A-1', workerId: 'u-worker', storeId: 'store-1', bins: [{ binId: 'BIN-A', storeId: 'store-1', capacityMinor: 1000, pickable: true, zone: 'frozen' }] },

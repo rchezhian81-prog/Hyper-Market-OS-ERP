@@ -5,6 +5,18 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## R3 follow-ups: the owner's answers OB-193 to OB-204 built (18 October 2026) — gate and PR pending
+
+- **A23 (OB-194):** a supplier return above the e-way bill threshold needs a dispatch step, refused until a generated e-way bill exists. The **Dispatch button** on the goods-receipt page follows after the shared look merges (OB-204); until then a manager dispatches through the API.
+- **C5 (OB-195):** the privacy reply time is fixed at 15 days everywhere.
+- **D-11 (OB-196, OB-202):** door hand-backs get a numbered debit note from the shop's own series, shown on the supplier statement but not netted into the balance.
+- **D-14 (OB-198):** the "not selling" clock starts at an item's first delivery.
+- **C21 (OB-197, OB-203):** consent notice drafted in English and Tamil (`docs/requirements/C21_FINGERPRINT_CONSENT_NOTICE_DRAFT_2026-10-18.md`), saying the reader keeps the pattern on the device.
+  - Fingerprint stays refused until the owner signs the notice in the system. PIN works.
+  - Blanks still to fill: the grievance officer, the record-keeping period (CA), the reader's deletion days, and the Board's address. A fluent reader must check the Tamil.
+- **No code needed:** OB-193 (confirm tobacco before go-live), OB-199 and OB-200 (kept as built).
+- **Demo:** R3 (PR #790) deployed 18 Oct; the ₹NaN fix (PR #791) merged.
+
 ## Fix: the till showed ₹NaN for each line's amount (18 October 2026)
 
 - **Cause:** the till screen printed each line's `amountMinor`, but the real till view (`apps/pos/src/view-adapter.ts`) never supplied it. Only the stand-in used before the bundle loads did, so every line on a real till read ₹NaN. The bill total was always right.

@@ -242,6 +242,11 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // D-9: the owner sets the service standard per role (OB-142), and drafts the week's roster from the forecast.
       'workforce.standard.set', 'workforce.schedule.draft',
       // ── R3 Lane 4 — end
+      // ── R3 follow-up (OB-193 to OB-200) — begin
+      // OB-197 (C21): the OWNER alone records that he signed the fingerprint-attendance consent notice; until he has,
+      // fingerprint attendance is not in use. No other role holds this.
+      'workforce.consent.notice.sign',
+      // ── R3 follow-up — end
     ],
   },
   {

@@ -55,7 +55,7 @@ const PEOPLE = [
   { userId: 'u-owner', displayName: 'Owner', permissions: ['till.dayclose.read', 'till.dayclose.approve'] },
 ];
 const PACK = {
-  policies: { storeId: 'store-1', branchId: 'store-1', branchName: 'Main', tradingDayCutoff: '02:00', staleAfterSeconds: 300, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 10_000, cashVarianceToleranceMinor: 10_000, privacySlaDays: 30, warehouseId: 'wh-1' },
+  policies: { storeId: 'store-1', branchId: 'store-1', branchName: 'Main', tradingDayCutoff: '02:00', staleAfterSeconds: 300, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 10_000, cashVarianceToleranceMinor: 10_000, privacySlaDays: 15, warehouseId: 'wh-1' },
   lossPreventionRules: [],
   managerPolicy: { userId: 'u-mgr', approvalLimitMinor: 500_000 },
 };

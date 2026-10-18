@@ -43,3 +43,48 @@ export const methodsAllowed = (state: ConsentState): readonly AttendanceMethod[]
 export const IDENTITY_NUMBER_FIELD = /aadhaar|aadhar|uid(ai)?$|national_?id/i;
 export const identityNumberFieldsIn = (body: unknown): readonly string[] =>
   body !== null && typeof body === 'object' && !Array.isArray(body) ? Object.keys(body as Record<string, unknown>).filter((k) => IDENTITY_NUMBER_FIELD.test(k)) : [];
+
+// ── OB-197 "A" (owner, 18 Oct 2026, in writing, "We draft, you sign") ─────────────────────────────────────────────
+// The consent notice (DPDP Act s.5 / s.6) is drafted for the owner and SIGNED by him before fingerprint attendance is used.
+// So consent to the fingerprint method can be GIVEN only against a notice reference whose status is "signed by owner";
+// until a notice is signed, the fingerprint method is refused by name (`consent_notice_not_signed`) and PIN works exactly
+// as before. Refusing or withdrawing consent never needs a signed notice — saying no is always possible.
+
+export const NOTICE_SIGNED_BY_OWNER = 'signed_by_owner' as const;
+
+/** A consent notice the owner signed — recorded in his own sign-in, append-only, pointing at the signed document. */
+export interface BiometricConsentNotice {
+  readonly noticeRef: string;
+  readonly status: typeof NOTICE_SIGNED_BY_OWNER;
+  /** Where the signed notice is kept (the repository path of the draft he signed, or the scan of the signed paper). */
+  readonly documentPath: string;
+  readonly signedBy: string;
+  readonly signedAt: string;
+}
+
+/** The notice references whose status is "signed by owner". */
+export const signedNoticeRefs = (notices: readonly BiometricConsentNotice[]): ReadonlySet<string> =>
+  new Set(notices.filter((n) => n.status === NOTICE_SIGNED_BY_OWNER).map((n) => n.noticeRef));
+
+export type FingerprintVerdict =
+  | { readonly allowed: true; readonly noticeRef: string }
+  | { readonly allowed: false; readonly code: 'consent_notice_not_signed' | 'fingerprint_consent_not_given'; readonly detail: string };
+
+/**
+ * May this person use the fingerprint method now? Only when their latest decision is `given` AND it was given against a
+ * notice the owner signed. With no signed notice behind it the answer is `consent_notice_not_signed`, whatever was
+ * recorded — so a consent taken on an unsigned (draft) notice is never relied on.
+ */
+export function fingerprintVerdict(events: readonly BiometricConsentEvent[], employeeId: string, signed: ReadonlySet<string>): FingerprintVerdict {
+  const s = consentStateOf(events, employeeId);
+  const last = s.history.at(-1);
+  if (s.state === 'given' && last !== undefined) {
+    if (signed.has(last.noticeRef)) return { allowed: true, noticeRef: last.noticeRef };
+    return { allowed: false, code: 'consent_notice_not_signed', detail: `${employeeId}'s consent was given on notice ${last.noticeRef}, which the owner has not signed` };
+  }
+  if (signed.size === 0) return { allowed: false, code: 'consent_notice_not_signed', detail: 'the owner has not yet signed the fingerprint-attendance consent notice, so fingerprint attendance is not in use' };
+  return { allowed: false, code: 'fingerprint_consent_not_given', detail: `${employeeId} has ${s.state === 'not_asked' ? 'not given' : s.state} consent to fingerprint attendance` };
+}
+
+/** The methods a person may use now, the signed notice taken into account: PIN always; fingerprint only when allowed. */
+export const methodsAllowedNow = (v: FingerprintVerdict): readonly AttendanceMethod[] => (v.allowed ? ['fingerprint', 'pin'] : ['pin']);

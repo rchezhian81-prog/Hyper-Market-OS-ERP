@@ -49,7 +49,7 @@ const line = (productId: string, outstandingMinor: number) => ({ productId, uom:
 const PHONE_PERSON = 'u-back';
 const PACK_JSON = JSON.stringify(withTillPeople({
   version: 1,
-  policies: { tradingDayCutoff: '02:00', storeId: 'store-1', branchId: 'store-1', branchName: 'Main', staleAfterSeconds: 300, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 10_000, privacySlaDays: 30, warehouseId: 'S1-BACK' },
+  policies: { tradingDayCutoff: '02:00', storeId: 'store-1', branchId: 'store-1', branchName: 'Main', staleAfterSeconds: 300, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 10_000, privacySlaDays: 15, warehouseId: 'S1-BACK' },
   lossPreventionRules: [],
   warehouse: {
     assignmentId: 'A-1', workerId: 'u-back', storeId: 'store-1',

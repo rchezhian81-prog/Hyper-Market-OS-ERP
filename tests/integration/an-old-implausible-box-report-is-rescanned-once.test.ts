@@ -88,7 +88,7 @@ describe('verifier r21 (cost): an old implausible box report is re-read once, no
     for (const [id, body] of [['C1', { kind: 'company', name: 'SRE Retail' }], [S1, { kind: 'branch', name: 'Store One', parentId: 'C1', companyId: 'C1' }]] as const) {
       expect((await call('POST', `/v1/org/nodes/${id}`, body)).status).toBeLessThan(300);
     }
-    expect((await call('POST', `/v1/stores/${S1}/settings`, { tradingDayCutoff: '02:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 5_000, cashVarianceToleranceMinor: 5_000, privacySlaDays: 30 })).status).toBeLessThan(300);
+    expect((await call('POST', `/v1/stores/${S1}/settings`, { tradingDayCutoff: '02:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 5_000, cashVarianceToleranceMinor: 5_000, privacySlaDays: 15 })).status).toBeLessThan(300);
     expect((await call('POST', `/v1/stores/${S1}/tills/lane-1/receipt-prefix`, { prefix: P })).status).toBe(201);
     await bankDirect(c.store, T, 1, 30);
     await keepReports(c.store, T);
@@ -171,7 +171,7 @@ describe.skipIf(DATABASE_URL === undefined)('verifier r21: the store pack still 
       for (const [id, body] of [['C1', { kind: 'company', name: 'SRE Retail' }], [S1, { kind: 'branch', name: 'Store One', parentId: 'C1', companyId: 'C1' }]] as const) {
         expect((await send('POST', `/v1/org/nodes/${id}`, OWNER, body)).status).toBeLessThan(300);
       }
-      expect((await send('POST', `/v1/stores/${S1}/settings`, OWNER, { tradingDayCutoff: '02:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 5_000, cashVarianceToleranceMinor: 5_000, privacySlaDays: 30 })).status).toBeLessThan(300);
+      expect((await send('POST', `/v1/stores/${S1}/settings`, OWNER, { tradingDayCutoff: '02:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 5_000, cashVarianceToleranceMinor: 5_000, privacySlaDays: 15 })).status).toBeLessThan(300);
       expect((await send('POST', `/v1/stores/${S1}/tills/lane-1/receipt-prefix`, OWNER, { prefix: P })).status).toBe(201);
       await real.grant('u-box', 'store_computer', undefined, [S1]);
       for (let i = 0; i < 80; i += 1) {

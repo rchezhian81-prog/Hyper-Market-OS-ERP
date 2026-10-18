@@ -21,7 +21,7 @@ import type { CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
 const backings = useBackings();
 const day = (offset: number): string => new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
 const NOW = new Date().toISOString();
-const SETTINGS = { tradingDayCutoff: '02:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 5_000, cashVarianceToleranceMinor: 5_000, privacySlaDays: 30, warehouseId: null };
+const SETTINGS = { tradingDayCutoff: '02:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 5_000, cashVarianceToleranceMinor: 5_000, privacySlaDays: 15, warehouseId: null };
 const SNAPSHOT = (tenantId: string): CatalogueSnapshot => ({
   tenantId, version: 1, builtAt: NOW, scope: { tenantId, storeId: 'S1' },
   products: [

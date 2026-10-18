@@ -73,7 +73,7 @@ describeOrSkip('GT-02 — a rehearsed rollback reconciles, store sync included �
     }) as typeof globalThis.fetch;
 
     const dir = await mkdtemp(join(tmpdir(), 'sre-gt02-')); dirs.push(dir);
-    await writeFile(join(dir, 'setup.json'), JSON.stringify({ version: 1, policies: { storeId: 'S1', branchId: 'S1', branchName: 'SRE Hyper Market', tradingDayCutoff: '00:00', staleAfterSeconds: 3600, countApprovalThresholdMinor: 1, handoverToleranceMinor: 1, privacySlaDays: 30, warehouseId: 'S1' } }));
+    await writeFile(join(dir, 'setup.json'), JSON.stringify({ version: 1, policies: { storeId: 'S1', branchId: 'S1', branchName: 'SRE Hyper Market', tradingDayCutoff: '00:00', staleAfterSeconds: 3600, countApprovalThresholdMinor: 1, handoverToleranceMinor: 1, privacySlaDays: 15, warehouseId: 'S1' } }));
     // Round 7: a TILL-SHAPED sale — each line its product, quantity in minor units, unit, unit price and line total, as the
     // till writes it — so head office's intake turns every line into a `sold` stock movement (a sale is a stock movement), and the
     // rollback's per-product stock check (OB-50) is exercised against SALES, not only the delivery and the refund.

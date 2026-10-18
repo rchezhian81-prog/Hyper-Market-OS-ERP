@@ -304,6 +304,7 @@ import { r3TaxPayRoutes, supplierPaymentHooks, deskRefundHooks, privacyNomineeHo
 import { processorRegisterRoutes } from '../../customer/src/processor-register';
 import { legacyCardPurgeRoutes } from '../../migration/src/legacy-card-purge';
 // R3 Lane 4 (store operations and people): D-14 · D-16 · D-11 · D-25 · D-19 · C21 · D-9 (r3-ops-adapters).
+import { supplierReturnDispatchHooks, oneDebitNoteSeries } from './r3-followup-adapters'; // R3 follow-up · OB-194 supplier-return dispatch gate
 import { r3OpsRoutes, masterLifecycleOf, ingredientBatchesAt, channelPricingGateFor, packPricingFor } from './r3-ops-adapters';
 import { wasteAnalyticsAdapter, foodSafetyAdapter, priceIntegrityAgeingAdapter, assignedTaskAdapter, receivingChecklistLookup, carriedChecklistAdapter } from './r2-ops-adapters';
 import { assignedTaskRoutes } from '../../finance/src/assigned-tasks';
@@ -581,13 +582,15 @@ export function buildSurface(deps: {
     permissionsOfUser: empty(undefined), unitValueMinor: empty(undefined), request: empty(undefined), requests: empty([]),
     recordRequest: () => {}, recordDecision: () => {}, appendMovement: () => {}, now,
   } : { ...adjustmentRequestAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now), countFreeze: countPlanFreeze };
+  // R3 OB-196: ONE `debit_note` series for the supplier master's issued notes and the DSD door's (never the same number twice).
+  const debitNoteSeries: NumberSeriesStore = oneDebitNoteSeries(deps.numberSeries);
   // Goods receipt / GRN capture (M07-FR-01/02/03 · D03-FR-02) — the durable cloud receiving record; since SP-4 (ii) the
   // product rules and tolerance policy are head office's own and a held excess is decided here (F03).
   const goodsReceiptDeps = store === undefined ? {
     grn: empty(undefined), all: empty([]), commit: () => {}, now,
     productRule: empty(undefined), receiptPolicy: empty(undefined), recordReceiptPolicy: () => {}, commitExcessDecision: () => {},
     purchaseOrder: empty(undefined), commitDisposition: () => {}, commitExcessReturn: () => {}, commitLineReturn: () => {},
-  } : { ...goodsReceiptAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now), packOf: packHierarchyAdapter({ store, now }).pack, receivingChecklistFor: receivingChecklistLookup({ store }) };
+  } : { ...goodsReceiptAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now), packOf: packHierarchyAdapter({ store, now }).pack, receivingChecklistFor: receivingChecklistLookup({ store }), ...supplierReturnDispatchHooks({ store, now }) /* R3 OB-194 */ };
   const syncedGoodsReceiptDeps = store === undefined ? {
     ...goodsReceiptDeps, permissionsOfUser: empty(undefined), unitCostMinor: empty(undefined),
   } : { ...syncedGoodsReceiptAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now), receivingChecklistFor: receivingChecklistLookup({ store }),
@@ -832,7 +835,7 @@ export function buildSurface(deps: {
       invoices: empty([]), latestMatches: empty(new Map()), purchaseOrders: empty([]), receipts: empty([]), payments: empty([]), debitNoteIssues: empty([]), now,
       record: empty(undefined), records: empty([]), recordSupplier: () => {}, supplierBlocked: empty(false), bankState: empty(undefined), bankHolders: empty([]),
       permissionsOfUser: empty(undefined), recordPayment: () => {}, allocateNumber: () => Promise.resolve(1), recordDebitNoteIssue: () => {},
-    } : { ...supplierMasterAdapter({ store, now, numberSeries: deps.numberSeries }), recordAudit: auditTrail?.recordAudit, approvals: approvalRequestsAdapter({ store, now }), ...supplierPaymentHooks({ store, now }) /* R3 A24 TDS */ }),
+    } : { ...supplierMasterAdapter({ store, now, numberSeries: debitNoteSeries /* R3 OB-196 */ }), recordAudit: auditTrail?.recordAudit, approvals: approvalRequestsAdapter({ store, now }), ...supplierPaymentHooks({ store, now }) /* R3 A24 TDS */ }),
     // GT-05 (MG-08): opening supplier balances from the old system — recorded per legacy bill, signed off by a second person
     // against the old system's control total, then owed, payable and posted like any other balance.
     ...supplierOpeningRoutes(store === undefined ? {
@@ -1628,7 +1631,7 @@ export function buildSurface(deps: {
     // (r3-itc-bridge.ts); with no store there is nothing reconciled, so the stand-in says "not yet reconciled".
     ...r3GstRoutes({ store, now, timeZone: (t) => settings.value(t, SETTINGS.STORE_TIME_ZONE), ...(store === undefined ? {} : { itc: itcPortForStore({ store, now }) }), ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
     ...r3TillTraceRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
-    ...r3OpsRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
+    ...r3OpsRoutes({ store, now, numberSeries: debitNoteSeries /* R3 OB-196 */, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
     // Owner alerts inbox (M29-FR-03) — control by exception; stateless grouping of the period's exceptions.
     ...ownerAlertsRoutes(),
     // Owner drill-through + KPI comparison (M29-FR-02) — "show me the transactions behind this figure",

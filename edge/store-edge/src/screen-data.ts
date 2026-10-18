@@ -42,6 +42,7 @@
 import { laneScalesFor } from './lane-scales';
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { isUom, normaliseUom } from '../../../packages/contracts/src/quantity';
+import { fixedPrivacySlaDays } from '../../../packages/customer/src/data-rights';
 import { assessChecklist } from '../../../packages/workforce/src/index';
 import { readReceivingChecklistSetup } from '../../../packages/facilities/src/food-safety';
 import type { LpRule } from '../../../packages/loss-prevention/src/index';
@@ -97,6 +98,12 @@ export interface ScreenInput {
  * age is measured from the pack's own cloud `builtAt` via the same `packFreshness` the cloud serves,
  * so "3 hours old" means three hours behind the cloud — never "three hours since this box rebooted".
  */
+/** R3 · C5 · OB-195 "A": the privacy reply time served on the box is the published 15 days; another figure in an older pack is read as 15 and said. */
+function privacySlaOf(packed: unknown): { readonly privacySlaDays: number; readonly privacySlaFlag?: string; readonly packedPrivacySlaDays?: unknown } {
+  const fixed = fixedPrivacySlaDays(packed);
+  return fixed.flag === null ? { privacySlaDays: fixed.days } : { privacySlaDays: fixed.days, privacySlaFlag: fixed.flag, packedPrivacySlaDays: fixed.storedDays };
+}
+
 export function catalogueFreshness(input: ScreenInput): Record<string, unknown> {
   const pack = input.cataloguePack;
   if (pack === undefined) {
@@ -699,7 +706,8 @@ export function ownerPayload(input: ScreenInput): Record<string, unknown> | null
   return {
     ownerId: 'owner',
     staleAfterSeconds: policies.staleAfterSeconds,
-    privacySlaDays: policies.privacySlaDays,
+    // R3 · C5 · OB-195: always the published 15 days; a pack carrying another figure is read as 15 and flagged.
+    ...privacySlaOf(policies.privacySlaDays),
     branches: [{
       branchId: policies.branchId ?? policies.storeId,
       name: policies.branchName,
@@ -1072,7 +1080,7 @@ export function customerPayload(input: ScreenInput): Record<string, unknown> | n
     // own stock movements use (`store_of_pack`) — so a customer's reservation and the till's sale
     // draw on ONE stock figure (P-02). Without a pack policy the app is told no store, and refuses
     // to send an order rather than guess one.
-    ...(policies === undefined ? {} : { tenantId: policies.storeId, locationId: policies.storeId, privacySlaDays: policies.privacySlaDays }),
+    ...(policies === undefined ? {} : { tenantId: policies.storeId, locationId: policies.storeId, ...privacySlaOf(policies.privacySlaDays) }),
     packVersion: input.pack.version,
     products: input.pack.products.value.map((p) => ({
       productId: p.productId,

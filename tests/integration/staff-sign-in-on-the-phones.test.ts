@@ -38,7 +38,7 @@ const RAVI: TillPerson = { userId: 'u-ravi', displayName: 'Ravi', permissions: [
 
 const packJson = (people: readonly TillPerson[] = [KAVYA, RAVI]): string => JSON.stringify(withTillPeople({
   version: 1,
-  policies: { tradingDayCutoff: '02:00', storeId: 'store-1', branchId: 'store-1', branchName: 'Main', staleAfterSeconds: 300, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 10_000, privacySlaDays: 30, warehouseId: 'wh-1' },
+  policies: { tradingDayCutoff: '02:00', storeId: 'store-1', branchId: 'store-1', branchName: 'Main', staleAfterSeconds: 300, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 10_000, privacySlaDays: 15, warehouseId: 'wh-1' },
   lossPreventionRules: [],
   warehouse: {
     assignmentId: 'A-1', workerId: 'u-named-in-the-setup', storeId: 'store-1',

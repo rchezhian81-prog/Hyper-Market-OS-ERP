@@ -209,7 +209,7 @@ describe.each(backings)('Round 16 — old till cash placed once; over/short by o
     await approvedSuppliers(h, b.T, 'sup-1');
     await h.provisionRole(b.T, 'u-recv', 'store_manager');
     await h.provisionRole(b.T, 'u-buyer', 'owner');
-    expect((await b.call('POST', `/v1/stores/${S2}/settings`, 'u-owner', { tradingDayCutoff: '02:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 5_000, cashVarianceToleranceMinor: 5_000, privacySlaDays: 30, warehouseId: S2 })).status).toBe(201);
+    expect((await b.call('POST', `/v1/stores/${S2}/settings`, 'u-owner', { tradingDayCutoff: '02:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 5_000, cashVarianceToleranceMinor: 5_000, privacySlaDays: 15, warehouseId: S2 })).status).toBe(201);
     const order = async (poId: string, to: string): Promise<void> => {
       expect((await b.call('POST', `/v1/purchase/orders/${poId}`, 'u-buyer', { supplierId: 'sup-1', deliverToLocationId: to, lines: [{ productId: 'P3', orderedQty: 5, unitCost: { minor: 1_000, currency: 'INR' } }] })).status).toBe(201);
       expect((await b.call('POST', `/v1/purchase/orders/${poId}/approval`, 'u-owner', { reason: 'stock' })).status).toBe(200);

@@ -33,7 +33,7 @@ const packWith = (over: Partial<Pick<StorePack, 'roles' | 'roleAssignments' | 'p
   const base = new Proxy({} as Record<string, unknown>, { get: (_t, key) => (key in over ? over[key as keyof typeof over] : notKnown('not pulled')) });
   return base as unknown as StorePack;
 };
-const POLICIES = known({ storeId: 'store-1', branchId: 'b1', branchName: 'Main', tradingDayCutoff: '02:00', staleAfterSeconds: 300, countApprovalThresholdMinor: 1, handoverToleranceMinor: 1, privacySlaDays: 30, warehouseId: 'wh-1' }) as StorePack['policies'];
+const POLICIES = known({ storeId: 'store-1', branchId: 'b1', branchName: 'Main', tradingDayCutoff: '02:00', staleAfterSeconds: 300, countApprovalThresholdMinor: 1, handoverToleranceMinor: 1, privacySlaDays: 15, warehouseId: 'wh-1' }) as StorePack['policies'];
 const FULL = packWith({ roles: known(ROLES), roleAssignments: known(ASSIGNMENTS), policies: POLICIES });
 
 const screenOf = (path: string) => (path.startsWith('/manager/') ? 'manager' : path.startsWith('/counts') ? 'counts' : path.startsWith('/admin/') ? 'admin' : null) as never;
