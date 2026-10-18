@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1039 | 636 | 636 | 89 | 302 |
+| 13 | 1057 | 648 | 648 | 89 | 311 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -468,6 +468,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/loyalty/wallets` | `loyalty.points.read` | core | — |
 | GET | `/v1/me/privacy` | `customer.privacy.self` | core | — |
 | POST | `/v1/me/privacy/consent` | `customer.privacy.self` | core | yes |
+| POST | `/v1/me/privacy/nominee` | `customer.privacy.self` | core | yes |
+| POST | `/v1/me/privacy/nominee/withdrawal` | `customer.privacy.self` | core | yes |
 | POST | `/v1/me/privacy/requests/:requestId` | `customer.privacy.self` | core | yes |
 | GET | `/v1/notifications/budget` | `notification.send.check` | core | — |
 | POST | `/v1/notifications/budget` | `notification.budget.set` | core | yes |
@@ -495,6 +497,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/privacy/data-requests/:requestId/tombstone` | `privacy.request.manage` | core | — |
 | POST | `/v1/privacy/data-requests/:requestId/verification` | `privacy.request.manage` | core | yes |
 | GET | `/v1/privacy/data-requests/overdue` | `privacy.request.manage` | core | — |
+| GET | `/v1/privacy/nominees/:customerRef` | `privacy.request.manage` | core | — |
+| POST | `/v1/privacy/nominees/:customerRef/activation` | `privacy.request.manage` | core | yes |
 | GET | `/v1/privacy/pii/:customerRef` | `privacy.request.manage` | core | — |
 | POST | `/v1/privacy/pii/:customerRef/:category` | `privacy.request.manage` | core | yes |
 | GET | `/v1/privacy/processor-contracts` | `privacy.request.manage` | core | — |
@@ -736,11 +740,20 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/finance/gstr1/submission/:period/submit` | `finance.gstr.submit` | core | yes |
 | GET | `/v1/finance/gstr1/submissions` | `finance.gstr.read` | core | — |
 | GET | `/v1/finance/gstr1/table-12` | `finance.gstr.read` | core | — |
+| GET | `/v1/finance/itc/:period` | `finance.itc.read` | core | — |
+| GET | `/v1/finance/itc/:period/claim` | `finance.itc.read` | core | — |
+| POST | `/v1/finance/itc/:period/lines/:lineId/action` | `finance.itc.action` | core | yes |
+| POST | `/v1/finance/itc/:period/reversals/:reversalId` | `finance.itc.action` | core | yes |
+| POST | `/v1/finance/itc/:period/statement` | `finance.itc.import` | core | yes |
 | POST | `/v1/finance/journals` | `finance.journal.post` | core | yes |
 | GET | `/v1/finance/loyalty-liability` | `finance.period.read` | core | — |
 | POST | `/v1/finance/outward-supplies/:documentId` | `finance.gstr.generate` | core | yes |
 | GET | `/v1/finance/payables` | `finance.period.read` | core | — |
 | POST | `/v1/finance/payables/post` | `finance.journal.post` | core | yes |
+| GET | `/v1/finance/payment-disputes` | `payment.dispute.read` | core | — |
+| POST | `/v1/finance/payment-disputes/:disputeId` | `payment.dispute.record` | core | yes |
+| POST | `/v1/finance/payment-disputes/:disputeId/outcome` | `payment.dispute.record` | core | yes |
+| POST | `/v1/finance/payment-disputes/:disputeId/response` | `payment.dispute.record` | core | yes |
 | GET | `/v1/finance/payment-exceptions` | `finance.period.read` | core | — |
 | POST | `/v1/finance/payment-exceptions/:attemptId/late-answer/synced` | `till.dayclose.sync` | core | yes |
 | POST | `/v1/finance/payment-exceptions/:attemptId/no-answer/synced` | `till.dayclose.sync` | core | yes |
@@ -771,6 +784,11 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/finance/tax/invoice-number` | `finance.period.read` | core | — |
 | GET | `/v1/finance/tax/rate-on-date` | `finance.period.read` | core | — |
 | GET | `/v1/finance/tax/voucher-timing` | `finance.period.read` | core | — |
+| GET | `/v1/finance/tds` | `finance.tds.read` | core | — |
+| GET | `/v1/finance/tds/26q/:fy/:quarter` | `finance.tds.read` | core | — |
+| POST | `/v1/finance/tds/challans/:challanId` | `finance.tds.challan.record` | core | yes |
+| POST | `/v1/finance/tds/config` | `finance.tds.configure` | core | yes |
+| POST | `/v1/finance/tds/switch` | `finance.tds.switch` | core | yes |
 | POST | `/v1/hr/payroll/bank-file` | `payroll.statutory.read` | core | yes |
 | POST | `/v1/hr/payroll/ess/self` | `payroll.ess.self` | core | yes |
 | POST | `/v1/hr/payroll/journal` | `payroll.statutory.read` | core | yes |

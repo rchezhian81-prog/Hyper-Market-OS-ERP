@@ -54,7 +54,7 @@ describe.each(backings)('a nominee can be recorded and a grievance has the publi
     const me = async (who = CUSTOMER) => (await call('GET', '/v1/me/privacy', who)).body as { responseSlaDays: number; slaStatement: string; nominee: { nomineeRef: string; relationship: string } | null; requests: { requestId: string; kind: string; dueBy: string; raisedAt: string }[] };
 
     // ── THE PUBLISHED TIME, shown on /v1/me/privacy ──
-    let mine = await me();
+    const mine = await me();
     expect(mine).toMatchObject({ responseSlaDays: 15, slaStatement: 'We answer every privacy request and every complaint about your data within 15 days of receiving it.', nominee: null });
 
     // ── NOMINEE: record, change, withdraw, record again — each a new record ──
