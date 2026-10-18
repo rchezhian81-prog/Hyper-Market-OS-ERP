@@ -302,7 +302,7 @@ import { processorRegisterAdapter, settlementRefundsAdapter } from './r2-data-ad
 import { processorRegisterRoutes } from '../../customer/src/processor-register';
 import { legacyCardPurgeRoutes } from '../../migration/src/legacy-card-purge';
 // R3 Lane 4 (store operations and people): D-14 · D-16 · D-11 · D-25 · D-19 · C21 · D-9 (r3-ops-adapters).
-import { r3OpsRoutes, masterLifecycleOf } from './r3-ops-adapters';
+import { r3OpsRoutes, masterLifecycleOf, ingredientBatchesAt } from './r3-ops-adapters';
 import { wasteAnalyticsAdapter, foodSafetyAdapter, priceIntegrityAgeingAdapter, assignedTaskAdapter, receivingChecklistLookup, carriedChecklistAdapter } from './r2-ops-adapters';
 import { assignedTaskRoutes } from '../../finance/src/assigned-tasks';
 import { priceIntegrityAgeingRoutes } from '../../pricing/src/price-integrity-ageing';
@@ -1094,7 +1094,7 @@ export function buildSurface(deps: {
       onHand: empty(0), priorConsumption: empty({}),
       runExists: empty(false), runs: empty([]), run: empty(undefined), recordRun: () => {}, recordRelease: () => {},
       enabledDepartments: empty([]), recordDepartmentEnabled: () => {}, entitledFeatures: empty([]), now,
-    } : { ...productionAdapter({ store, now, entitledFeatures: tenantEntitlementResolver(store) }), locationBranches: locationBranchesOf(store, now) }),
+    } : { ...productionAdapter({ store, now, entitledFeatures: tenantEntitlementResolver(store) }), locationBranches: locationBranchesOf(store, now), ingredientBatchesAt: ingredientBatchesAt({ store, now }) /* D-25 (R3) */ }),
     // Weighed-department costing (M11-FR-02) — recipe-less weigh-in/weigh-out cost + yield exceptions.
     ...weighedCostingRoutes(store === undefined ? {
       weighedRuns: empty([]), weighedRun: empty(undefined), recordWeighedRun: () => {}, now,

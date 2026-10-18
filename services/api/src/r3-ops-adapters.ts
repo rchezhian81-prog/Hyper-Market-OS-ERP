@@ -9,7 +9,13 @@ import type { AuditEntry } from '../../../packages/audit/src/index';
 import {
   STREAM, streamName, inventoryAdapter, adjustmentRequestAdapter, saleStockLocationOf, productUomFrom, orgStructureAdapter,
   productMasterAdapter, assortmentAdapter, priceListAdapter, purchaseOrdersAdapter, permissionsHeldBy,
+  productionAdapter, lotTraceAdapter,
 } from './adapters';
+import { tenantEntitlementResolver } from './access';
+import { productionPlanRoutes, productionInputsOf, type ProductionPlanDeps, type ProductionTraceRun } from '../../inventory/src/production-plan';
+import type { IngredientBatchOnHand, RunInputBatch } from '../../inventory/src/production';
+import type { Recipe } from '../../../packages/production/src/recipe';
+import { fefoBatchesAt } from '../../inventory/src/index';
 import { dsdCheckInRoutes, type DsdCheckInDeps, type DsdCheckInRecord, type DsdRouteSheet } from '../../inventory/src/dsd-checkin';
 import { assertBranchInScope } from '../../kernel/src/index';
 import { rangeStatusOf } from '../../inventory/src/assortment';
@@ -155,6 +161,58 @@ export function dsdCheckInAdapter(input: { readonly store: EventStore; readonly 
   };
 }
 
+// ── D-25 production plan + prep-batch traceability ───────────────────────────────────────────────────────────────
+
+const PRODUCTION = streamName(STREAM.inventory, 'production');
+
+/** D-25: an ingredient's batches on hand at a place, earliest expiry first (OB-35's FEFO read). */
+export function ingredientBatchesAt(input: { readonly store: EventStore; readonly now: () => string }): (tenantId: string, locationId: string, productId: string) => Promise<readonly IngredientBatchOnHand[]> {
+  return async (tenantId, locationId, productId) =>
+    fefoBatchesAt(await inventoryAdapter(input).batches!(tenantId, productId), locationId, productId)
+      .map((b) => ({ batchId: b.batchId, onHandMinor: b.onHandMinor, ...(b.expiry === undefined ? {} : { expiry: b.expiry }) }));
+}
+
+/**
+ * D-25 → D-26 (Lane 3's lot trace adds the production hop with this): the ingredient batches that went into one OUTPUT
+ * batch, from the stored runs. `[]` when no run made it; `inputsRecorded: false` on a run recorded before D-25.
+ */
+export async function productionInputsForOutputBatch(input: { readonly store: EventStore; readonly now: () => string }, tenantId: string, outputBatchId: string): Promise<readonly { readonly runId: string; readonly outputProductId: string; readonly inputsRecorded: boolean; readonly inputBatches: readonly RunInputBatch[] }[]> {
+  return productionInputsOf(await productionTraceRuns(input, tenantId), outputBatchId);
+}
+
+async function productionTraceRuns(input: { readonly store: EventStore; readonly now: () => string }, tenantId: string): Promise<readonly ProductionTraceRun[]> {
+  return (await productionAdapter({ ...input, entitledFeatures: tenantEntitlementResolver(input.store) }).runs(tenantId)) as readonly ProductionTraceRun[];
+}
+
+export function productionPlanAdapter(input: { readonly store: EventStore; readonly now: () => string; readonly locationBranches: LocationBranches }): ProductionPlanDeps {
+  const { store, now } = input;
+  const prod = () => productionAdapter({ store, now, entitledFeatures: tenantEntitlementResolver(store) });
+  return {
+    now,
+    recipes: async (t) => {
+      const latest = new Map<string, Recipe>();
+      for (const r of await all<Recipe>(store, t, PRODUCTION, 'RecipeRegistered')) latest.set(r.recipeId, r);
+      return [...latest.values()];
+    },
+    enabledDepartments: async (t) => prod().enabledDepartments(t),
+    soldNear: async (t, locationId, from, to) => {
+      const branchOf = await input.locationBranches(t);
+      const store0 = branchOf(locationId);
+      return (await soldLinesWithPlace(store, t, from, to)).filter((l) => branchOf(l.locationId) === store0).map((l) => ({ productId: l.productId, quantityMinor: l.quantityMinor, tradingDay: l.tradingDay }));
+    },
+    usableOnHand: async (t, locationId, productId, onDay) => {
+      const branchOf = await input.locationBranches(t);
+      const here = branchOf(locationId);
+      return (await inventoryAdapter({ store, now }).batches!(t, productId))
+        .filter((b) => branchOf(b.locationId) === here && b.onHandMinor > 0 && (b.expiry === undefined || b.expiry >= onDay))
+        .reduce((n, b) => n + b.onHandMinor, 0);
+    },
+    runs: (t) => productionTraceRuns({ store, now }, t),
+    soldOfBatch: async (t, batchId) => lotTraceAdapter({ store }).soldOfBatch(t, batchId),
+    locationBranches: input.locationBranches,
+  };
+}
+
 // ── the one entry point ──────────────────────────────────────────────────────────────────────────────────────────
 
 /** Every Lane 4 route, composed over head office's store (or a throw-away in-memory one when the surface has none). */
@@ -167,5 +225,6 @@ export function r3OpsRoutes(input: { readonly store: EventStore | undefined; rea
     ...onShelfAvailabilityRoutes(onShelfAvailabilityAdapter(base)),
     ...clearanceMarkdownRoutes(clearanceMarkdownAdapter(base)),
     ...dsdCheckInRoutes(dsdCheckInAdapter(base)),
+    ...productionPlanRoutes(productionPlanAdapter(base)),
   ];
 }

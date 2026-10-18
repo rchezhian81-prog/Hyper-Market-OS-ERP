@@ -98,10 +98,69 @@ export interface StoredRun {
    * cost: the output then enters stock "not valued" by name — never at zero. Absent on runs recorded before OB-68.
    */
   readonly runCost?: RunCost;
+  /**
+   * D-25 (R3): which ingredient BATCHES went into this run — the prep-batch traceability a recall of an ingredient walks
+   * (input batch → this output batch → its sales). `captured` when the person named the batch; `fefo_assigned` when head
+   * office assigned the earliest-expiry batch on hand (OB-35's rule); `not_known` (batchId null) when no batch was on
+   * hand to name — said, never guessed. Absent on runs recorded before D-25.
+   */
+  readonly inputBatches?: readonly RunInputBatch[];
+  /** D-25: the production plan line this run was committed from, when a person committed it from a plan. */
+  readonly planRef?: string | null;
   /** Quality-release state, set by the adapter's fold of release events (M11-FR-03). */
   readonly released?: boolean;
   readonly releasedBy?: string | null;
   readonly releasedAt?: string | null;
+}
+
+/** D-25: one ingredient batch consumed by a run. */
+export interface RunInputBatch {
+  readonly productId: string;
+  readonly batchId: string | null;
+  readonly quantityMinor: number;
+  readonly uom: string;
+  readonly source: 'captured' | 'fefo_assigned' | 'not_known';
+}
+
+/** D-25: an ingredient batch on hand at a place (earliest expiry first), for assigning a run's consumption to batches. */
+export interface IngredientBatchOnHand { readonly batchId: string | null; readonly onHandMinor: number; readonly expiry?: string }
+
+/**
+ * D-25 (pure): split each consumed ingredient across batches — the batches the person named (each must be on hand in that
+ * quantity, and they must add up to what the run uses), else earliest expiry first; whatever no batch covers is `not_known`.
+ */
+export function assignInputBatches(
+  consumed: readonly RecipeInput[],
+  named: readonly { readonly productId: string; readonly batchId: string; readonly quantityMinor: number }[],
+  onHand: (productId: string) => readonly IngredientBatchOnHand[] | undefined,
+): { readonly ok: true; readonly batches: readonly RunInputBatch[] } | { readonly ok: false; readonly code: string; readonly detail: string } {
+  const out: RunInputBatch[] = [];
+  for (const c of consumed) {
+    const mine = named.filter((n) => n.productId === c.productId);
+    const held = onHand(c.productId);
+    if (mine.length > 0) {
+      const total = mine.reduce((n, m) => n + m.quantityMinor, 0);
+      if (total !== c.quantityMinor) return { ok: false, code: 'input_batches_do_not_add_up', detail: `The batches named for ${c.productId} add up to ${total} ${c.uom}, but the run uses ${c.quantityMinor}.` };
+      for (const m of mine) {
+        const b = held?.find((h) => h.batchId === m.batchId);
+        if (held !== undefined && (b === undefined || b.onHandMinor < m.quantityMinor)) {
+          return { ok: false, code: 'input_batch_not_on_hand', detail: `Batch ${m.batchId} of ${c.productId} does not have ${m.quantityMinor} ${c.uom} on hand here (${b?.onHandMinor ?? 0}).` };
+        }
+        out.push({ productId: c.productId, batchId: m.batchId, quantityMinor: m.quantityMinor, uom: c.uom, source: 'captured' });
+      }
+      continue;
+    }
+    let left = c.quantityMinor;
+    for (const b of held ?? []) {
+      if (left === 0) break;
+      if (b.onHandMinor <= 0 || b.batchId === null) continue;
+      const take = Math.min(left, b.onHandMinor);
+      out.push({ productId: c.productId, batchId: b.batchId, quantityMinor: take, uom: c.uom, source: 'fefo_assigned' });
+      left -= take;
+    }
+    if (left > 0) out.push({ productId: c.productId, batchId: null, quantityMinor: left, uom: c.uom, source: 'not_known' });
+  }
+  return { ok: true, batches: out };
 }
 
 /** OB-68: one consumed ingredient's cost on the run. */
@@ -199,6 +258,9 @@ export interface ProductionDeps {
   readonly recordRelease: (tenantId: string, release: StoredRelease, movements: readonly Movement[]) => Promise<void> | void;
   /** The location's stock guard (SF-04's key) — optional; a bare stub runs unguarded. */
   readonly stockVersion?: (tenantId: string, locationId: string) => Promise<number> | number;
+  /** D-25: the ingredient batches on hand at a place for a product, earliest expiry first. Optional on a bare stub (then each
+   *  run's input batches are recorded as `not_known`). */
+  readonly ingredientBatchesAt?: (tenantId: string, locationId: string, productId: string) => Promise<readonly IngredientBatchOnHand[]> | readonly IngredientBatchOnHand[];
   /** The production departments this tenant has switched on (M11-FR-04). */
   readonly enabledDepartments: (tenantId: string) => Promise<readonly string[]> | readonly string[];
   readonly recordDepartmentEnabled: (tenantId: string, departmentId: string) => Promise<void> | void;
@@ -282,8 +344,14 @@ export function productionRoutes(deps: ProductionDeps): readonly Route[] {
         const runId = ctx.params['runId'] ?? '';
         const b = (ctx.body ?? {}) as {
           recipeId?: unknown; batches?: unknown; actualOutputMinor?: unknown; outputBatchId?: unknown;
-          locationId?: unknown; currency?: unknown;
+          locationId?: unknown; currency?: unknown; inputBatches?: unknown; planRef?: unknown;
         };
+        // D-25: the ingredient batches the person named (optional; otherwise head office assigns earliest expiry first).
+        const namedBatches = b.inputBatches === undefined ? [] : Array.isArray(b.inputBatches) && b.inputBatches.every((x) => x !== null && typeof x === 'object' && isStr((x as Record<string, unknown>)['productId']) && isStr((x as Record<string, unknown>)['batchId']) && isPosInt((x as Record<string, unknown>)['quantityMinor']))
+          ? (b.inputBatches as { productId: string; batchId: string; quantityMinor: number }[]) : null;
+        if (namedBatches === null) {
+          throw apiError(400, { code: 'not_readable_as_input_batches', whatHappened: 'inputBatches must be a list of { productId, batchId, quantityMinor }.', wasItSaved: 'not_saved', nextSafeAction: 'Send the batches as named on the ingredients, or leave them out for earliest expiry first. Nothing was recorded.' });
+        }
         if (!isStr(runId) || !isStr(b.recipeId) || !isPosInt(b.batches) || !isNonNegInt(b.actualOutputMinor)
           || !isStr(b.outputBatchId) || !isStr(b.locationId)
           || (b.currency !== undefined && !isCurrencyCode(b.currency as string))) {
@@ -364,6 +432,11 @@ export function productionRoutes(deps: ProductionDeps): readonly Route[] {
         }
 
         const consumed = consumedInputs(result.movements);
+        // D-25: which ingredient batches the run used — named, else earliest expiry first; uncovered → not known.
+        const held: Record<string, readonly IngredientBatchOnHand[]> = {};
+        if (deps.ingredientBatchesAt !== undefined) for (const c of consumed) held[c.productId] = await deps.ingredientBatchesAt(ctx.tenantId, b.locationId, c.productId);
+        const assigned = assignInputBatches(consumed, namedBatches, (p) => (deps.ingredientBatchesAt === undefined ? undefined : held[p] ?? []));
+        if (!assigned.ok) throw apiError(422, { code: assigned.code, whatHappened: assigned.detail, wasItSaved: 'not_saved', nextSafeAction: 'Name the batches actually used, or leave them out. Nothing was consumed.' });
         // OB-68: the run's own cost — the ingredients it consumed at the OB-39 average at this moment (the registered cost
         // only where head office holds no average); an ingredient with neither is named and the output is not valued.
         const averages: Record<string, number | undefined> = {};
@@ -378,13 +451,15 @@ export function productionRoutes(deps: ProductionDeps): readonly Route[] {
           currency, costKnown: runCost.notValuedBecause.length === 0, uncostedProducts: [...runCost.notValuedBecause], runCost,
           yieldBp: result.yieldBp, yieldVerdict: result.yieldVerdict, exceptions: result.exceptions,
           consumed, recipeDigest: recipeDigest(recipe), producedBy: ctx.userId, at,
+          inputBatches: assigned.batches, planRef: isStr(b.planRef) ? b.planRef : null,
         };
         // FUL-01: the ingredients leave ordinary stock in the SAME write as the run record.
-        const movements: Movement[] = consumed.map((c, i): Movement => ({
-          movementId: `prod-run:${runId}:in-${i + 1}`, productId: c.productId, locationId: b.locationId as string, kind: 'consumed_in_production',
-          quantityMinor: c.quantityMinor, uom: c.uom, occurredAt: at, enteredBy: ctx.userId,
+        // D-25: one movement per ingredient batch, so the batch's own on-hand falls with it (one truth, SF-03).
+        const movements: Movement[] = consumed.flatMap((c, i): Movement[] => assigned.batches.filter((x) => x.productId === c.productId).map((x, j): Movement => ({
+          movementId: j === 0 ? `prod-run:${runId}:in-${i + 1}` : `prod-run:${runId}:in-${i + 1}-${j + 1}`, productId: c.productId, locationId: b.locationId as string, kind: 'consumed_in_production',
+          quantityMinor: x.quantityMinor, uom: c.uom, occurredAt: at, enteredBy: ctx.userId, ...(x.batchId === null ? {} : { batchId: x.batchId }),
           reason: `production run ${runId} (${recipe.recipeId}) → ${result.outputQuantityMinor} ${recipe.outputUom} of ${result.outputProductId} batch ${result.outputBatchId}`,
-        }));
+        })));
         try {
           await deps.recordRun(ctx.tenantId, { ...run, ledgerMovementIds: movements.map((m) => m.movementId) }, movements, stockVersion);
         } catch (e) {
@@ -399,6 +474,7 @@ export function productionRoutes(deps: ProductionDeps): readonly Route[] {
             inputCostMinor: run.inputCostMinor, outputUnitCostMinor: run.outputUnitCostMinor,
             costKnown: run.costKnown, uncostedProducts: run.uncostedProducts, runCost,
             yieldBp: run.yieldBp, yieldVerdict: run.yieldVerdict, exceptions: run.exceptions,
+            inputBatches: run.inputBatches, planRef: run.planRef,
           },
         };
       },
