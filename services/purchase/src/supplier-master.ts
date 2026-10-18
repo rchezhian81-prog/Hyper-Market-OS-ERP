@@ -29,6 +29,7 @@ import { actionDetails, approvalNamedIn, type ApprovalPort } from '../../identit
 import { isPayable, detectDuplicateBankAccounts, holdersBlockedForDuplicate, type BankAccountHolder } from '../../../packages/bank-controls/src/index';
 import type { PartnerDocumentKind } from '../../../packages/supplier-portal/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
+import type { TdsAssessment } from '../../../packages/withholding/src/index';
 import {
   accountRegisters, foldSupplierAccount, needsAttention,
   type SupplierAccountDeps, type SupplierAccountStatement, type SupplierPayment, type DebitNoteIssue,
@@ -118,6 +119,11 @@ export interface SupplierMasterDeps extends SupplierAccountDeps {
   readonly allocateNumber: (tenantId: string, docType: string) => Promise<number>;
   readonly recordDebitNoteIssue: (tenantId: string, issue: DebitNoteIssue) => Promise<void> | void;
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
+  /**
+   * R3 · A24: the income-tax TDS this payment carries (the CA's list, the owner's switch, the year's aggregate so far).
+   * Absent on a bare stub (then nothing is withheld). A refusal stops the payment before anything is recorded.
+   */
+  readonly withholding?: (tenantId: string, input: { readonly supplierId: string; readonly paymentId: string; readonly grossMinor: number; readonly paidOn: string }) => Promise<TdsAssessment> | TdsAssessment;
 }
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
@@ -394,22 +400,46 @@ export function supplierMasterRoutes(deps: SupplierMasterDeps): readonly Route[]
             nextSafeAction: 'Pay up to the balance owed, or match the invoice that justifies the rest first. Nothing was recorded.',
           });
         }
+        // R3 · A24: the TDS this payment carries. A payee flagged "TDS applicable" with no section (or a section not on the
+        // list) is refused here — before the approval is spent, so nothing is recorded and the approval stays usable.
+        const tds = deps.withholding === undefined ? undefined
+          : await Promise.resolve(deps.withholding(t, { supplierId, paymentId, grossMinor: b['amountMinor'], paidOn: b['paidOn'] }));
+        if (tds?.outcome === 'refused') {
+          throw apiError(422, {
+            code: tds.code,
+            whatHappened: `${tds.detail}.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: tds.code === 'tds_more_than_payment' ? 'Pay at least the TDS due. Nothing was recorded.' : 'Ask the CA to tag the payee\'s TDS section on the list (or clear the "TDS applicable" flag), then record the payment. Nothing was recorded.',
+          });
+        }
         // Every rule passed: the approval is spent — once — and only then is the payment recorded.
         await opened.spend();
         const now = deps.now();
         const payment: SupplierPayment = {
           paymentId, supplierId, amountMinor: b['amountMinor'], currency: 'INR', paidOn: b['paidOn'], method, reference: b['reference'].trim(),
           recordedBy: ctx.userId, recordedAt: now, approvedBy, approvedAt: now,
+          ...(tds?.outcome === 'deducted' ? { tds: { section: tds.section, rateBps: tds.rateBps, baseMinor: tds.baseMinor, tdsMinor: tds.tdsMinor, netMinor: tds.netMinor } } : {}),
         };
         await deps.recordPayment(t, payment);
         await audit(t, {
           actorId: ctx.userId, action: 'supplier.payment.record', objectType: 'supplier', objectId: supplierId,
           at: now, origin: { tenantId: t, branchId: ctx.branchId ?? null },
           before: { owedMinor: String(account.totals.owedMinor) },
-          after: { paymentId, amountMinor: String(payment.amountMinor), method, reference: payment.reference, approvedBy, owedMinor: String(account.totals.owedMinor - payment.amountMinor) },
+          after: {
+            paymentId, amountMinor: String(payment.amountMinor), method, reference: payment.reference, approvedBy, owedMinor: String(account.totals.owedMinor - payment.amountMinor),
+            ...(payment.tds === undefined ? {} : { tdsSection: payment.tds.section, tdsMinor: String(payment.tds.tdsMinor), netPaidMinor: String(payment.tds.netMinor) }),
+          },
           correlationId: paymentId,
         });
-        return { status: 201, body: { payment, alreadyRecorded: false, owedMinor: account.totals.owedMinor - payment.amountMinor } };
+        return {
+          status: 201,
+          body: {
+            payment, alreadyRecorded: false, owedMinor: account.totals.owedMinor - payment.amountMinor,
+            // What actually leaves the shop's account, and why (P-08: TDS switched off is said, not silent).
+            netPaidMinor: payment.tds?.netMinor ?? payment.amountMinor,
+            ...(tds === undefined ? {} : { tds: { outcome: tds.outcome, detail: tds.detail, ...(payment.tds === undefined ? {} : payment.tds) } }),
+          },
+        };
       },
     },
     {

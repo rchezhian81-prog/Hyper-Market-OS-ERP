@@ -299,7 +299,7 @@ import { committeeMembershipRoutes } from '../../identity/src/committee-membersh
 import { hrComplianceRoutes } from '../../finance/src/hr-compliance';
 import { poshRegisterRoutes } from '../../finance/src/posh-register';
 import { processorRegisterAdapter, settlementRefundsAdapter } from './r2-data-adapters';
-import { r3TaxPayRoutes } from './r3-tax-pay-adapters';
+import { r3TaxPayRoutes, supplierPaymentHooks } from './r3-tax-pay-adapters';
 import { processorRegisterRoutes } from '../../customer/src/processor-register';
 import { legacyCardPurgeRoutes } from '../../migration/src/legacy-card-purge';
 import { wasteAnalyticsAdapter, foodSafetyAdapter, priceIntegrityAgeingAdapter, assignedTaskAdapter, receivingChecklistLookup, carriedChecklistAdapter } from './r2-ops-adapters';
@@ -826,7 +826,7 @@ export function buildSurface(deps: {
       invoices: empty([]), latestMatches: empty(new Map()), purchaseOrders: empty([]), receipts: empty([]), payments: empty([]), debitNoteIssues: empty([]), now,
       record: empty(undefined), records: empty([]), recordSupplier: () => {}, supplierBlocked: empty(false), bankState: empty(undefined), bankHolders: empty([]),
       permissionsOfUser: empty(undefined), recordPayment: () => {}, allocateNumber: () => Promise.resolve(1), recordDebitNoteIssue: () => {},
-    } : { ...supplierMasterAdapter({ store, now, numberSeries: deps.numberSeries }), recordAudit: auditTrail?.recordAudit, approvals: approvalRequestsAdapter({ store, now }) }),
+    } : { ...supplierMasterAdapter({ store, now, numberSeries: deps.numberSeries }), recordAudit: auditTrail?.recordAudit, approvals: approvalRequestsAdapter({ store, now }), ...supplierPaymentHooks({ store, now }) /* R3 A24 TDS */ }),
     // GT-05 (MG-08): opening supplier balances from the old system — recorded per legacy bill, signed off by a second person
     // against the old system's control total, then owed, payable and posted like any other balance.
     ...supplierOpeningRoutes(store === undefined ? {

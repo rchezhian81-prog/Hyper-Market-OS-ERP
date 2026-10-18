@@ -12,6 +12,8 @@ import type { AuditEntry } from '../../../packages/audit/src/index';
 import { makeItcForPeriod, type BookedInvoice, type ItcLineAction, type ItcReversal, type ItcForPeriod } from '../../../packages/input-tax/src/index';
 import { taxOfLines } from '../../purchase/src/index';
 import { itcStoreRoutes, loadItcReview, type ItcStoreDeps, type StoredStatement } from '../../finance/src/itc-store';
+import { assessTds, priorInYear, EMPTY_TDS_CONFIG, type TdsConfig, type TdsSwitch, type TdsChallan, type PaymentWithTds, type TdsAssessment } from '../../../packages/withholding/src/index';
+import { tdsStoreRoutes, type TdsStoreDeps } from '../../finance/src/tds-store';
 import { STREAM, streamName, supplierMasterAdapter } from './adapters';
 
 const all = async <T>(store: EventStore, tenantId: string, stream: string, type: string): Promise<T[]> =>
@@ -99,6 +101,68 @@ export function itcForPeriodAdapter(input: { readonly store: EventStore; readonl
   return makeItcForPeriod((tenantId, period) => loadItcReview(deps, tenantId, period));
 }
 
+// ── A24 · TDS on supplier payments (switched off, OB-143) ───────────────────────────────────────────────────────────
+
+const TDS_STREAM = streamName(STREAM.finance, 'tds');
+
+/** Every supplier payment with the TDS it carried, as the register and the threshold read them. */
+async function paymentsWithTds(store: EventStore, now: () => string, tenantId: string): Promise<readonly PaymentWithTds[]> {
+  return (await supplierMasterAdapter({ store, now }).payments(tenantId)).map((p) => ({
+    paymentId: p.paymentId, supplierId: p.supplierId, paidOn: p.paidOn, grossMinor: p.amountMinor, ...(p.tds === undefined ? {} : { tds: p.tds }),
+  }));
+}
+
+const latestOf = async <T>(store: EventStore, tenantId: string, type: string): Promise<T | undefined> => (await all<T>(store, tenantId, TDS_STREAM, type)).at(-1);
+
+export function tdsStoreAdapter(input: { readonly store: EventStore; readonly now: () => string }): Omit<TdsStoreDeps, 'recordAudit'> {
+  const { store, now } = input;
+  return {
+    now,
+    config: (tenantId) => latestOf<TdsConfig>(store, tenantId, 'TdsConfigSet'),
+    recordConfig: async (tenantId, c) => {
+      await store.append(tenantId, TDS_STREAM, makeEvent({
+        id: `tds-config-v${c.version}-${sha(c.setAt).slice(0, 8)}`, type: 'TdsConfigSet', occurredAt: c.setAt,
+        idempotencyKey: `tds-config-${tenantId}-v${c.version}`, source: 'api/finance', payload: c,
+      }));
+    },
+    switchState: (tenantId) => latestOf<TdsSwitch>(store, tenantId, 'TdsSwitched'),
+    recordSwitch: async (tenantId, s) => {
+      await store.append(tenantId, TDS_STREAM, makeEvent({
+        id: `tds-switch-${sha(`${s.at}|${s.by}|${s.enabled}`).slice(0, 24)}`, type: 'TdsSwitched', occurredAt: s.at,
+        idempotencyKey: `tds-switch-${tenantId}-${s.at}-${s.by}-${s.enabled}`, source: 'api/finance', payload: s,
+      }));
+    },
+    payments: (tenantId) => paymentsWithTds(store, now, tenantId),
+    challans: (tenantId) => all<TdsChallan>(store, tenantId, TDS_STREAM, 'TdsChallanRecorded'),
+    recordChallan: async (tenantId, c) => {
+      const r = await store.append(tenantId, TDS_STREAM, makeEvent({
+        id: `tds-challan-${c.challanId}-${sha(c.at).slice(0, 8)}`, type: 'TdsChallanRecorded', occurredAt: c.at,
+        idempotencyKey: `tds-challan-${tenantId}-${c.challanId}`, source: 'api/finance', payload: c,
+      }));
+      return r.record.event.payload as TdsChallan;
+    },
+  };
+}
+
+/**
+ * The hook spread into the supplier payment route's deps (`supplierMasterRoutes`): the TDS a payment carries, from the
+ * CA's list, the owner's switch and the payee's financial-year payments so far.
+ */
+export function supplierPaymentHooks(input: { readonly store: EventStore; readonly now: () => string }): {
+  readonly withholding: (tenantId: string, p: { readonly supplierId: string; readonly paymentId: string; readonly grossMinor: number; readonly paidOn: string }) => Promise<TdsAssessment>;
+} {
+  const tds = tdsStoreAdapter(input);
+  return {
+    withholding: async (tenantId, p) => {
+      const [config, sw, payments] = await Promise.all([tds.config(tenantId), tds.switchState(tenantId), tds.payments(tenantId)]);
+      return assessTds({
+        enabled: sw?.enabled === true, config: config ?? EMPTY_TDS_CONFIG, supplierId: p.supplierId, grossMinor: p.grossMinor,
+        priorInYear: priorInYear(payments, p.supplierId, p.paidOn, p.paymentId),
+      });
+    },
+  };
+}
+
 // ── the lane's routes, registered once in main.ts ───────────────────────────────────────────────────────────────────
 
 export function r3TaxPayRoutes(input: {
@@ -113,5 +177,8 @@ export function r3TaxPayRoutes(input: {
     ...itcStoreRoutes(store === undefined
       ? { statements: none([]), recordStatement: () => {}, booked: none([]), actions: none([]), recordAction: () => {}, reversals: none([]), recordReversal: (_t, r) => r, fingerprint: (raw) => sha(canonical(raw)).slice(0, 32), now }
       : { ...itcStoreAdapter({ store, now }), ...audit }),
+    ...tdsStoreRoutes(store === undefined
+      ? { config: none(undefined), recordConfig: () => {}, switchState: none(undefined), recordSwitch: () => {}, payments: none([]), challans: none([]), recordChallan: (_t, c) => c, now }
+      : { ...tdsStoreAdapter({ store, now }), ...audit }),
   ];
 }

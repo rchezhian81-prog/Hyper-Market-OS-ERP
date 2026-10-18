@@ -88,7 +88,7 @@ describe('reading the portal file', () => {
     expect(readGstr2b('not json')).toMatchObject({ ok: false });
     const twice = portal2b();
     (twice.data.docdata.b2b[0]!.inv as unknown[]).push({ inum: 'a/ 101', dt: '05-10-2026', val: 1 });
-    expect((readGstr2b(twice) as { problems: string[] }).problems.join()).toMatch(/appears twice/);
+    expect((readGstr2b(twice) as { problems: readonly string[] }).problems.join()).toMatch(/appears twice/);
   });
 
   it('turns rupees into paise exactly', () => {
