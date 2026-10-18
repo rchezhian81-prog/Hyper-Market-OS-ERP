@@ -5,6 +5,17 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## UI/UX shared look (OB-201): the sage look polished, with thin line icons — gate and PR pending
+
+- **Built:**
+  - The shared foundation (`packages/ui/web/sre-foundation.css`) is refined, not repainted: spacing, type scale, radius, soft elevation, short ease-out motion that respects reduced-motion, visible focus, and tabular figures.
+  - One thin-line icon set (`packages/ui/web/sre-icons.js`) is vendored offline with its licence. Every icon sits beside a word.
+  - The back-office menu, header, search, status labels and "new version" strip wear it.
+  - The till and the handhelds take the tokens and icons only; layouts and 56px buttons are unchanged.
+- **Review fix:** a long Today figure (₹12,345.00) ran past its tile; it now shrinks to fit, with a browser check that failed before the fix.
+- **Proof:** an icon-set guardrail (no icon without a word), a token-scale guardrail, AA contrast for the key colour pairs, and the rendered chrome in real Chromium.
+- **Not yet:** the owner's visual approval; page-by-page polish (next); the OB-204 Dispatch button on goods receipt. On the home page the five tabs run past the right edge at 1280px (seen in review); this goes in the page-by-page round.
+
 ## R3 follow-ups: the owner's answers OB-193 to OB-204 built (18 October 2026) — merged in PR #792 (ee6e7619), deployed
 
 - **A23 (OB-194):** a supplier return above the e-way bill threshold needs a dispatch step, refused until a generated e-way bill exists. The **Dispatch button** on the goods-receipt page follows after the shared look merges (OB-204); until then a manager dispatches through the API.
