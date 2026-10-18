@@ -98,8 +98,9 @@ describe('the ops-alert worker\'s per-shop hook runs the GST time-bar sweep besi
     expect(g3b.alert.ownerUserId).toBe('u-owner');
     expect(g3b.alert.detail).toMatch(/barred/);
     // The worker says what it raised (the line follows the write, so wait for the pass to finish).
-    for (let i = 0; i < 200 && !/GST time-bar alert\(s\) raised/.test(cloud.said.join('\n')); i += 1) await sleep(20);
-    expect(cloud.said.join('\n')).toMatch(/GST time-bar alert\(s\) raised to the owners of shop/);
+    const target = cloud.opsAlertWorker!.total() + 2;
+    for (let i = 0; i < 1_500 && cloud.opsAlertWorker!.total() < target; i += 1) await sleep(20);
+    expect(cloud.said.join('\n'), JSON.stringify(cloud.opsAlertWorker!.passes)).toMatch(/GST time-bar alert\(s\) raised to the owners of shop/);
     // No pass failed on the way.
     expect(cloud.opsAlertWorker!.passes.every((p) => p.failed.length === 0)).toBe(true);
   }, 120_000);
