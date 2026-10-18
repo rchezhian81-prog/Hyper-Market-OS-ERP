@@ -6,6 +6,10 @@
 // write (Batch 2), on an explicit click, goes through the session's online port: a held line a second person disposed
 // of as a RETURN has physically gone back to the supplier. Refresh re-reads the list live (a GET); offline the screen
 // keeps its view and the stale strip says so. No prompt/confirm/alert.
+// OB-204: a return above the e-way-bill limit shows where its e-way bill stands and, for a reader holding the
+// stock-movement right, a Dispatch button beside it — an online write under the reader's session. A refusal is said in
+// plain words and the return stays undispatched; with no connection the screen says it needs one. Only once head office
+// has recorded the dispatch is the return offered as "gone back".
 
 const el = (id) => document.getElementById(id);
 let lang = 'en';
@@ -58,6 +62,8 @@ function sampleSession() {
       count: 1, needingApprovalCount: 0, nobodyNamed: false, canRecordReturn: false, awaitingReturn: [],
     }),
     recordReturn: async () => ({ outcome: 'no_link' }),
+    dispatchReturn: async () => ({ outcome: 'no_link' }),
+    presentDispatchOutcome: () => ({ tone: 'degraded', icon: '⚠', label: '', announcement: '', needsAttention: true }),
     presentReturnOutcome: () => ({ tone: 'degraded', icon: '⚠', label: '', announcement: '', needsAttention: true }),
   };
 }
@@ -127,11 +133,63 @@ function receiptNode(r) {
       const who = document.createElement('span'); who.className = 'd-detail';
       who.textContent = `${t('decidedByLabel')} ${l.decidedBy}` + (l.returnedBy ? ` · ${t('returnedByLabel')} ${l.returnedBy}` : '');
       item.append(word, what, who);
+      // OB-204: above the e-way-bill limit the goods are dispatched first — where it stands, in words, and Dispatch beside it.
+      if (l.dispatchState) item.append(dispatchChip(l.dispatchState));
+      if (l.canDispatch) item.append(dispatcher(r, l));
       returns.append(item);
     }
     li.append(returns);
   }
   return li;
+}
+
+// ── dispatched under an e-way bill (OB-204) ─────────────────────────────────
+
+/** The dispatch state as a chip: the tone's shape from the one icon set AND the word (never colour alone). */
+function dispatchChip(state) {
+  const chip = window.sreIcon && typeof window.sreIcon.chip === 'function'
+    ? window.sreIcon.chip({ tone: state.tone, label: state.label })
+    : Object.assign(document.createElement('span'), { className: 'sre-chip', textContent: state.label });
+  chip.classList.add('ewb');
+  chip.dataset.tone = state.tone;
+  if (state.detail) chip.title = state.detail;
+  return chip;
+}
+
+/** Dispatch, next to the return it is for: who is taking it, and the button (a word beside the truck, never icon-only). */
+function dispatcher(r, l) {
+  const box = document.createElement('span');
+  box.className = 'dispatcher';
+  const id = `dispatch-reason-${r.grnId}-${l.lineId}`.replace(/[^A-Za-z0-9_-]/g, '_');
+  const label = document.createElement('label');
+  label.htmlFor = id;
+  label.textContent = t('dispatchReasonLabel');
+  const input = document.createElement('input');
+  input.id = id; input.type = 'text'; input.autocomplete = 'off'; input.className = 'sre-input dispatch-reason';
+  input.placeholder = t('dispatchReasonPlaceholder');
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'sre-btn dispatch';
+  button.dataset.grnId = r.grnId;
+  button.dataset.lineId = l.lineId;
+  const word = t('dispatchBtn');
+  if (window.sreIcon && typeof window.sreIcon.withWord === 'function') button.append(window.sreIcon.withWord('truck', word));
+  else button.textContent = word;
+  button.addEventListener('click', () => {
+    void (async () => {
+      button.disabled = true;
+      try {
+        const outcome = await session.dispatchReturn({ grnId: r.grnId, lineId: l.lineId, reason: input.value });
+        paintResult(session.presentDispatchOutcome(lang, outcome));
+        // Only a dispatch head office recorded changes the screen; a refusal leaves the return exactly as it was.
+        if (outcome.outcome === 'dispatched' || outcome.outcome === 'already_dispatched') { paint(); await refresh(); }
+      } finally {
+        button.disabled = false;
+      }
+    })();
+  });
+  box.append(label, input, button);
+  return box;
 }
 
 // ── going back to the supplier (Batch 2) ────────────────────────────────────
@@ -161,7 +219,9 @@ function paintReturner(view) {
   if (chosen && view.awaitingReturn.some((a) => `${a.grnId}|${a.line.lineId}` === chosen)) select.value = chosen;
   const none = view.awaitingReturn.length === 0;
   el('return-none').hidden = !none;
-  el('return-none').textContent = none ? t('returnNoneWaiting') : '';
+  // OB-204: a return waiting on its dispatch is not "nothing waiting" — say what comes first.
+  const waitsForDispatch = view.receipts.some((r) => (r.returnLines ?? []).some((l) => l.needsDispatch));
+  el('return-none').textContent = none ? t(waitsForDispatch ? 'returnWaitsForDispatch' : 'returnNoneWaiting') : '';
   el('return-fields').hidden = none;
   el('return').hidden = none;
 }
