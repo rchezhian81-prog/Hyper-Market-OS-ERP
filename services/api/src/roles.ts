@@ -208,6 +208,13 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // R2 C20 · OB-165 "A": the owner adds or removes an Internal Committee member — that role only, confirmed by a second
       // person, audited — and can never hold the role himself (services/identity/src/committee-membership.ts).
       'posh.committee.manage',
+      // ── R3 lane 1 (GST liability and returns) ──
+      // OB-143 "A": the owner alone switches reverse charge on; OB-149 "A": the owner alone switches the 30-day e-invoice
+      // guard on; A19: the owner sets how many days before the 3-year bar he is warned. He reads, records and pays
+      // reverse charge like the accountant.
+      'finance.rcm.switch', 'finance.einvoice.guard.switch', 'finance.gst.timebar.set',
+      'finance.rcm.read', 'finance.rcm.record', 'finance.rcm.pay',
+      // ── end R3 lane 1 ──
     ],
   },
   {
@@ -450,6 +457,11 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'reporting.dashboard.read', 'reporting.report.read',
       // GT-05 (MG-07): finance reads the migrated history it reconciles against.
       'migration.history.read',
+      // ── R3 lane 1 (GST liability and returns) ──
+      // A14: the accountant records a reverse-charge purchase (the self-invoice follows from the CA's heads) and marks its
+      // tax paid in cash with the challan; never configures a head or switches reverse charge on.
+      'finance.rcm.read', 'finance.rcm.record', 'finance.rcm.pay',
+      // ── end R3 lane 1 ──
     ],
   },
   {
@@ -468,6 +480,10 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'migration.controltotal.sign',
       'migration.verification.sign',
       'migration.parallel.read',
+      // ── R3 lane 1 (GST liability and returns) ──
+      // A14 · OB-143 "A": the CA alone lists the reverse-charge heads (code, rate, notification entry) and reads them.
+      'finance.rcm.configure', 'finance.rcm.read',
+      // ── end R3 lane 1 ──
     ],
   },
   {

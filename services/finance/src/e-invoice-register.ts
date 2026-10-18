@@ -35,6 +35,12 @@ export interface EInvoiceRegisterDeps {
   /** The invoice ids that have entered the lifecycle — the reconciliation queue folds each one. */
   readonly listInvoiceIds: (tenantId: string) => Promise<readonly string[]> | readonly string[];
   readonly now: () => string;
+  /**
+   * R3 A21 (OB-149, switched off): the 30-day reporting guard, consulted before a document enters the lifecycle. While
+   * it is on, a document dated more than 30 days ago is refused (and recorded as an exception by the guard). Absent or
+   * off: nothing is blocked.
+   */
+  readonly reportingGuard?: (tenantId: string, doc: { readonly invoiceId: string; readonly documentType: EInvoiceDocType; readonly documentNumber: string; readonly documentDate: string }) => Promise<{ readonly blocked: boolean; readonly detail: string }>;
 }
 
 export function eInvoiceRegisterRoutes(deps: EInvoiceRegisterDeps): readonly Route[] {
@@ -72,6 +78,12 @@ export function eInvoiceRegisterRoutes(deps: EInvoiceRegisterDeps): readonly Rou
         });
         if (!built.built || built.request === undefined) {
           throw apiError(422, { code: 'invalid_invoice', whatHappened: built.detail, wasItSaved: 'not_saved', nextSafeAction: 'Fix the named Rule 46 fields and submit again — a malformed invoice must not be sent to the IRP.' });
+        }
+        if (deps.reportingGuard !== undefined) {
+          const guard = await deps.reportingGuard(ctx.tenantId, { invoiceId, documentType: built.request.documentType, documentNumber: built.request.documentNumber, documentDate: built.request.documentDate });
+          if (guard.blocked) {
+            throw apiError(422, { code: 'einvoice_reporting_window_passed', whatHappened: guard.detail, wasItSaved: 'not_saved', nextSafeAction: 'The portal will not register it. The document is listed as an exception on the GST page for the accountant.' });
+          }
         }
         await deps.recordSubmit(ctx.tenantId, invoiceId, built.request, deps.now());
         return { status: 201, body: { invoiceId, state: 'submitted', idempotencyKey: built.idempotencyKey } };
