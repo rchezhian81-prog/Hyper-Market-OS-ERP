@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1039 | 636 | 636 | 89 | 302 |
+| 13 | 1047 | 640 | 640 | 89 | 305 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -123,10 +123,14 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/catalogue/products/:productId/pack` | `catalogue.pack.publish` | core | yes |
 | GET | `/v1/catalogue/products/:productId/pack/convert` | `catalogue.pack.read` | core | — |
 | POST | `/v1/catalogue/products/:productId/publish` | `catalogue.pack.publish` | core | yes |
+| POST | `/v1/catalogue/products/:productId/tobacco-warning-confirmation` | `catalogue.tobacco.warning.confirm` | core | yes |
 | POST | `/v1/catalogue/products/duplicates` | `catalogue.pack.read` | core | yes |
 | GET | `/v1/catalogue/tax-classes/:hsnCode/rate` | `catalogue.pack.read` | core | — |
 | GET | `/v1/catalogue/tax-classes/:hsnCode/rates` | `catalogue.pack.read` | core | — |
 | POST | `/v1/catalogue/tax-classes/:hsnCode/rates/:effectiveFrom` | `catalogue.pack.publish` | core | yes |
+| GET | `/v1/catalogue/tobacco-warning` | `catalogue.pack.read` | core | — |
+| GET | `/v1/catalogue/tobacco-warning-pictures` | `catalogue.pack.read` | core | — |
+| POST | `/v1/catalogue/tobacco-warning-pictures/:imageId` | `catalogue.tobacco.picture.record` | core | yes |
 | GET | `/v1/catalogue/unit-price` | `catalogue.pack.read` | core | — |
 | POST | `/v1/prices/changes` | `price.change.propose` | core | yes |
 | POST | `/v1/prices/list/:productId/entries/:entryId` | `price.change.propose` | core | yes |
@@ -339,8 +343,12 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/quality/holds/:batchId` | `quality.hold.manage` | core | — |
 | POST | `/v1/quality/holds/:batchId` | `quality.hold.manage` | core | yes |
 | POST | `/v1/quality/holds/:batchId/release` | `quality.hold.release` | core | yes |
+| GET | `/v1/quality/lot-trace/:batchId/chain` | `quality.lottrace.read` | core | — |
 | GET | `/v1/quality/lot-trace/:batchId/sold` | `quality.lottrace.read` | core | — |
 | POST | `/v1/quality/lot-trace/export` | `quality.lottrace.read` | core | yes |
+| GET | `/v1/quality/lot-trace/requests` | `quality.lottrace.read` | core | — |
+| POST | `/v1/quality/lot-trace/requests/:requestId` | `quality.lottrace.request` | core | yes |
+| POST | `/v1/quality/lot-trace/requests/:requestId/answer` | `quality.lottrace.request` | core | yes |
 | GET | `/v1/quality/recalls` | `quality.recall.read` | core | — |
 | GET | `/v1/quality/recalls/:batchId` | `quality.recall.read` | core | — |
 | POST | `/v1/quality/recalls/:batchId` | `quality.recall.initiate` | core | yes |
