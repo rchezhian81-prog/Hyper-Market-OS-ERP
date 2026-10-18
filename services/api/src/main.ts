@@ -327,6 +327,7 @@ import type { DependencyProbe } from '../../platform/src/index';
 import { SandboxRecurringBillingProvider, type Plan as BillingPlan } from '../../../packages/platform/src/index';
 import type { EventStore } from '../../../packages/persistence/src/event-store';
 import { r3GstRoutes, eInvoiceReportingGuardFor } from './r3-gst-adapters'; // R3 lane 1 — GST liability and returns
+import { itcPortForStore } from './r3-itc-bridge'; // R3 seam — GSTR-3B Table 4 reads the A17 reconciliation
 
 const now = (): string => new Date().toISOString();
 
@@ -1622,7 +1623,9 @@ export function buildSurface(deps: {
     ...weighingVerificationRoutes(),
     // R2 lane 1 (B6): the weighing-scale register the store pack carries to the lanes.
     ...r2TillRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
-    ...r3GstRoutes({ store, now, timeZone: (t) => settings.value(t, SETTINGS.STORE_TIME_ZONE), ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // R3 lane 1 — GST returns
+    // R3 lane 1 — GST returns. GSTR-3B Table 4 reads the A17 GSTR-2B / IMS reconciliation through the bridge
+    // (r3-itc-bridge.ts); with no store there is nothing reconciled, so the stand-in says "not yet reconciled".
+    ...r3GstRoutes({ store, now, timeZone: (t) => settings.value(t, SETTINGS.STORE_TIME_ZONE), ...(store === undefined ? {} : { itc: itcPortForStore({ store, now }) }), ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
     ...r3TillTraceRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
     ...r3OpsRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
     // Owner alerts inbox (M29-FR-03) — control by exception; stateless grouping of the period's exceptions.

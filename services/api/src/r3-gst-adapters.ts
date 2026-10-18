@@ -6,8 +6,9 @@
 // stored facts. The sales, returns, outward documents, catalogue tax table, GSTR-1 submissions, supplier master, day
 // book and e-invoice lifecycle are READ through the existing adapters — this lane never writes them.
 //
-// GSTR-3B Table 4 reads input credit through the A17 port (`packages/finance/src/itc-port.ts`). Until the input-credit
-// lane wires its implementation, the stand-in answers "ITC not yet reconciled" — an exception on the return, never zero.
+// GSTR-3B Table 4 reads input credit through the A17 port (`packages/finance/src/itc-port.ts`). main.ts wires the A17
+// reconciliation through `r3-itc-bridge.ts`; with no port given, the stand-in answers "ITC not yet reconciled" — an
+// exception on the return, never zero.
 
 import { createHash } from 'node:crypto';
 import { makeEvent } from '../../../packages/contracts/src/event';
@@ -70,7 +71,7 @@ export interface R3GstInput {
   /** The shop's IANA time zone (store setup). Default Asia/Kolkata. */
   readonly timeZone?: (tenantId: string) => Promise<string>;
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown>;
-  /** A17's implementation of the ITC port. Until the input-credit lane wires it: "ITC not yet reconciled". */
+  /** A17's implementation of the ITC port (main.ts: `itcPortForStore`, r3-itc-bridge.ts). Absent: "ITC not yet reconciled". */
   readonly itc?: ItcPort;
 }
 
