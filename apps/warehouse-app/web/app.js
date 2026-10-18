@@ -298,7 +298,7 @@ function awaitConfirmIssue(line, quantity, binId) {
 
 // ── A quantity on a keypad (W2 / W3) ────────────────────────────────────────
 // Buttons, never a text box (the scanner discipline above). '0' is a real count — an empty bin is a finding.
-function buildKeypad(hostId, entryId) {
+function buildKeypad(hostId, entryId, maxDigits = 6) {
   el(hostId).replaceChildren(...['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', '0', '⌫'].map((key) => {
     const button = document.createElement('button');
     button.type = 'button';
@@ -307,13 +307,14 @@ function buildKeypad(hostId, entryId) {
       const current = el(entryId).textContent;
       el(entryId).textContent = key === 'C' ? '0'
         : key === '⌫' ? (current.length > 1 ? current.slice(0, -1) : '0')
-          : (current === '0' ? key : (current + key).slice(0, 6));
+          : (current === '0' ? key : (current + key).slice(0, maxDigits));
     });
     return button;
   }));
 }
 buildKeypad('qty-keypad', 'qty-entry');
 buildKeypad('adjust-keypad', 'adjust-entry');
+buildKeypad('dsd-driver-keypad', 'dsd-driver-entry', 10); // R3 D-11: a driver's mobile number is ten digits
 
 // ── The arrival temperature (Wave 3 · SF-07 part 3) ──────────────────────────
 // Keyed, never typed: digits, a minus and a decimal point. The reading rides on every receiving scan until it is changed or
@@ -907,6 +908,171 @@ async function startAdjust() {
   if (out.signal.feedback === 'accept') void syncToBox();
 }
 el('adjust-stock').addEventListener('click', () => { void startAdjust(); });
+
+// ── R3 D-11 (OB-141): a direct delivery at the back door — no cash ───────────────────────────────────────
+// The rules are the tested `DsdDoorSession` (apps/warehouse-app/src/dsd-door.ts) over the same engine head office runs.
+// This view only shows its lines and differences and passes the worker's taps and scans. There is no money field.
+// NOTE: the Tamil below is pending a native-speaker review before go-live (OWNER-ACTION OA-10), like the rest.
+const DSD_WORDS = {
+  en: {
+    dsd_started: 'Check-in started', dsd_scanned: 'Scanned', dsd_handed_back: 'Handed back to the driver',
+    dsd_closed: 'Delivery closed — note signed', unknown_barcode: 'Not a product this phone knows', not_a_quantity: 'That is not a quantity',
+    no_reason: 'Choose why it is handed back', hand_back_more_than_scanned: 'More handed back than came off the van',
+    delivery_note_not_signed: 'Scan the delivery note first', no_cash_at_the_door: 'No cash at the door',
+    dsd_not_started: 'Start the check-in first', dsd_already_closed: 'This delivery is already closed', dsd_needs_vendor: 'Choose the delivery and key the driver',
+    expected: 'expected', scanned: 'scanned', back: 'handed back', kept: 'kept',
+    short: 'short', over: 'over', not_expected: 'not on the order', noDifferences: 'No differences',
+    driverKeyed: 'Driver\'s mobile number', notKeyed: 'not keyed', noteScanned: 'Delivery note', scanNote: 'scan its barcode',
+    chooseItemBack: 'Tap the item to hand back', chooseWhy: 'Why is it handed back?', howMany: 'How many are handed back?',
+    damaged: 'Damaged', temperature_breach: 'Too warm / too cold', expired: 'Expired', not_ordered: 'Not ordered', other: 'Other',
+    nothingToChoose: 'No delivery for this store is on this phone', route: 'route', useNumber: 'tap to use the ten digits keyed above',
+  },
+  ta: {
+    dsd_started: 'சரிபார்ப்பு தொடங்கியது', dsd_scanned: 'ஸ்கேன் செய்யப்பட்டது', dsd_handed_back: 'ஓட்டுநரிடம் திருப்பி கொடுக்கப்பட்டது',
+    dsd_closed: 'டெலிவரி முடிந்தது — குறிப்பு கையெழுத்திடப்பட்டது', unknown_barcode: 'இந்த போனுக்கு தெரியாத பொருள்', not_a_quantity: 'அது ஒரு எண்ணிக்கை அல்ல',
+    no_reason: 'ஏன் திருப்பி கொடுக்கப்படுகிறது என்பதைத் தேர்வு செய்யவும்', hand_back_more_than_scanned: 'வண்டியிலிருந்து வந்ததை விட அதிகம் திருப்பப்பட்டது',
+    delivery_note_not_signed: 'முதலில் டெலிவரி குறிப்பை ஸ்கேன் செய்யவும்', no_cash_at_the_door: 'வாசலில் பணம் இல்லை',
+    dsd_not_started: 'முதலில் சரிபார்ப்பைத் தொடங்கவும்', dsd_already_closed: 'இந்த டெலிவரி ஏற்கனவே முடிந்தது', dsd_needs_vendor: 'டெலிவரியைத் தேர்வு செய்து ஓட்டுநர் எண்ணை உள்ளிடவும்',
+    expected: 'எதிர்பார்த்தது', scanned: 'ஸ்கேன்', back: 'திருப்பியது', kept: 'வைத்தது',
+    short: 'குறைவு', over: 'அதிகம்', not_expected: 'ஆர்டரில் இல்லை', noDifferences: 'வேறுபாடு இல்லை',
+    driverKeyed: 'ஓட்டுநரின் மொபைல் எண்', notKeyed: 'உள்ளிடப்படவில்லை', noteScanned: 'டெலிவரி குறிப்பு', scanNote: 'அதன் பார்கோடை ஸ்கேன் செய்யவும்',
+    chooseItemBack: 'திருப்ப வேண்டிய பொருளைத் தட்டவும்', chooseWhy: 'ஏன் திருப்பப்படுகிறது?', howMany: 'எத்தனை திருப்பப்படுகின்றன?',
+    damaged: 'சேதம்', temperature_breach: 'அதிக சூடு / அதிக குளிர்', expired: 'காலாவதி', not_ordered: 'ஆர்டர் செய்யப்படவில்லை', other: 'மற்றவை',
+    nothingToChoose: 'இந்த கடைக்கான டெலிவரி இந்த போனில் இல்லை', route: 'வழி', useNumber: 'மேலே உள்ளிட்ட பத்து இலக்கங்களைப் பயன்படுத்த தட்டவும்',
+  },
+};
+const dt = (key) => DSD_WORDS[lang][key] ?? DSD_WORDS.en[key] ?? key;
+const dsd = window.dsdSession;
+let dsdChoice = null; // { poId } | { routeId, supplierId }
+let dsdDriver = null; // the driver's mobile number, keyed
+let dsdNote = null; // the delivery note's scanned reference
+let dsdBack = null; // a hand-back in progress: { productId, quantityMinor }
+
+function dsdFelt(signal) {
+  feltResult({ ...signal, code: signal.code });
+  el('banner-title').textContent = dt(signal.code);
+}
+
+function renderDsd() {
+  if (!dsd) return;
+  const view = dsd.view();
+  const open = view !== null && !view.closed;
+  el('dsd-start-panel').hidden = open;
+  el('dsd-work-panel').hidden = !open;
+  if (!open) {
+    const c = dsd.choices();
+    const buttons = [
+      ...c.orders.map((o) => ({ key: `po:${o.poId}`, text: `${o.number} · ${o.supplierId}`, choice: { poId: o.poId } })),
+      ...c.routes.map((r) => ({ key: `route:${r.routeId}`, text: `${dt('route')} ${r.routeId} · ${r.supplierId}`, choice: { routeId: r.routeId, supplierId: r.supplierId } })),
+    ];
+    el('dsd-choose-hint').textContent = buttons.length === 0 ? dt('nothingToChoose') : t('chooseDelivery');
+    el('dsd-choices').replaceChildren(...buttons.map((b) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.dataset.choice = b.key;
+      button.textContent = b.text;
+      button.setAttribute('aria-pressed', String(dsdChoice !== null && JSON.stringify(dsdChoice) === JSON.stringify(b.choice)));
+      button.addEventListener('click', () => { dsdChoice = b.choice; renderDsd(); });
+      return button;
+    }));
+    el('dsd-driver').textContent = `${dt('driverKeyed')}: ${dsdDriver ?? dt('notKeyed')} — ${dt('useNumber')}`;
+    el('dsd-start').disabled = dsdChoice === null || dsdDriver === null;
+    return;
+  }
+  el('dsd-against').textContent = `${view.supplierId} · ${view.against}`;
+  el('dsd-lines').replaceChildren(...view.lines.map((l) => {
+    const row = document.createElement('div');
+    row.className = 'item';
+    row.dataset.product = l.productId;
+    const what = document.createElement('span'); what.className = 'what'; what.textContent = l.productId;
+    const qty = document.createElement('span'); qty.className = 'qty';
+    qty.textContent = `${dt('expected')} ${l.expectedMinor} · ${dt('scanned')} ${l.scannedMinor} · ${dt('back')} ${l.handedBackMinor} · ${dt('kept')} ${l.keptMinor}`;
+    row.append(what, qty);
+    return row;
+  }));
+  el('dsd-differences').replaceChildren(...(view.discrepancies.length === 0
+    ? [Object.assign(document.createElement('p'), { className: 'hint', textContent: dt('noDifferences') })]
+    : view.discrepancies.map((d) => {
+      const p = document.createElement('p');
+      p.className = 'flag discrepancy';
+      p.dataset.kind = d.kind;
+      p.textContent = `${d.productId}: ${dt(d.kind)} ${Math.abs(d.differenceMinor)}`;
+      return p;
+    })));
+  el('dsd-note').textContent = `${dt('noteScanned')}: ${dsdNote ?? dt('scanNote')}`;
+  el('dsd-close').disabled = dsdNote === null;
+}
+
+el('dsd-open').hidden = !dsd;
+el('dsd-open').addEventListener('click', () => { el('dsd').hidden = false; renderDsd(); });
+el('dsd-cancel').addEventListener('click', () => { el('dsd').hidden = true; });
+el('dsd-driver').addEventListener('click', () => {
+  const entry = el('dsd-driver-entry').textContent;
+  if (/^[0-9]{10}$/.test(entry)) dsdDriver = entry;
+  renderDsd();
+});
+el('dsd-start').addEventListener('click', () => {
+  if (!dsd || dsdChoice === null || dsdDriver === null) return;
+  const out = dsd.start({ checkInId: nextId('dsd'), ...dsdChoice, driverName: `mobile ${dsdDriver}` });
+  dsdFelt(out);
+  renderDsd();
+});
+el('dsd-scan').addEventListener('click', async () => {
+  const code = await awaitScan(t('scanBarcode'));
+  if (code === null || !dsd) return;
+  dsdFelt(dsd.scan(nextId('dsd-scan'), code));
+  renderDsd();
+});
+el('dsd-hand-back').addEventListener('click', () => {
+  const view = dsd ? dsd.view() : null;
+  if (view === null) return;
+  el('dsd-back-hint').hidden = false;
+  el('dsd-back-hint').textContent = dt('chooseItemBack');
+  el('dsd-back-products').hidden = false;
+  el('dsd-back-products').replaceChildren(...view.lines.filter((l) => l.keptMinor > 0).map((l) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.dataset.product = l.productId;
+    button.textContent = l.productId;
+    button.addEventListener('click', async () => {
+      const n = await awaitQty(dt('howMany'), l.productId, '1');
+      if (n === null) return;
+      dsdBack = { productId: l.productId, quantityMinor: n };
+      el('dsd-back-products').hidden = true;
+      el('dsd-back-hint').textContent = dt('chooseWhy');
+      el('dsd-back-reasons').hidden = false;
+      el('dsd-back-reasons').replaceChildren(...['damaged', 'temperature_breach', 'expired', 'not_ordered', 'other'].map((reason) => {
+        const r = document.createElement('button');
+        r.type = 'button';
+        r.dataset.reason = reason;
+        r.textContent = dt(reason);
+        r.addEventListener('click', () => {
+          el('dsd-back-reasons').hidden = true;
+          el('dsd-back-hint').hidden = true;
+          if (dsdBack === null) return;
+          dsdFelt(dsd.handBack(nextId('dsd-back'), dsdBack.productId, dsdBack.quantityMinor, reason));
+          dsdBack = null;
+          renderDsd();
+        });
+        return r;
+      }));
+    });
+    return button;
+  }));
+});
+el('dsd-note').addEventListener('click', async () => {
+  const code = await awaitScan(`${dt('noteScanned')}: ${dt('scanNote')}`);
+  if (code !== null) dsdNote = code;
+  renderDsd();
+});
+el('dsd-close').addEventListener('click', () => {
+  if (!dsd || dsdNote === null || dsdDriver === null) return;
+  const out = dsd.close({ noteRef: dsdNote, driverSignedName: `mobile ${dsdDriver}` });
+  dsdFelt(out);
+  if (out.feedback === 'accept') { dsdChoice = null; dsdNote = null; dsdDriver = null; void syncToBox(); }
+  renderDsd();
+  render();
+});
 
 // ── Language ────────────────────────────────────────────────────────────────
 el('lang').addEventListener('click', () => {

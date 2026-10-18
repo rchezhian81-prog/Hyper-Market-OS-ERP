@@ -7,7 +7,7 @@ import { SyncOutbox } from '../../packages/sync/src/outbox';
 import { money } from '../../packages/contracts/src/money';
 import { quantity } from '../../packages/contracts/src/quantity';
 import { rate } from '../../packages/contracts/src/rate';
-import { measure, measureComplexity, againstBudget, certifiedHardwareGate, TARGETS } from './harness';
+import { measure, measureComplexity, againstBudget, certifiedHardwareGate, TARGETS, HEADROOM } from './harness';
 
 // §32 — the POS hot path. NFR-02, QG-05, hard rule #1.
 //
@@ -134,6 +134,45 @@ describe('a scan costs the same at 500 products and at 50,000', () => {
     // cost more than a hit (construction and a stack), so the bar is generous — what it catches
     // is a miss that is HUNDREDS of times slower, which is what a linear fallback looks like.
     expect(miss.p50Ms).toBeLessThan(Math.max(hit.p50Ms, 1e-4) * 100);
+  });
+});
+
+// D-20 (R3): a GS1 2D scan — the code read into GTIN, batch and use-by, then the same O(1) lookup — must cost the same at
+// 500 and 50,000 products, and stay far inside the scan budget with headroom for a slow till. Barcodes here carry real
+// check digits so their GTINs read.
+const checkDigit = (body: string): string => {
+  let sum = 0;
+  for (let i = 0; i < body.length; i += 1) sum += Number(body[i]) * ((body.length - i) % 2 === 1 ? 3 : 1);
+  return String((10 - (sum % 10)) % 10);
+};
+const ean = (i: number): string => { const body = `89${String(i).padStart(10, '0')}`; return body + checkDigit(body); };
+function gs1Snapshot(n: number): CatalogueSnapshot {
+  const base = snapshot(n);
+  return { ...base, barcodes: base.barcodes.map((b, i) => ({ ...b, code: ean(i) })) };
+}
+const twoD = (i: number): string => `(01)0${ean(i)}(17)301231(10)B-${i % 97}`;
+
+describe('D-20: a GS1 2D scan costs the same at 500 products and at 50,000, inside the scan budget', () => {
+  it('does not grow with the catalogue', () => {
+    const r = measureComplexity({
+      label: 'gs1-scan-to-line',
+      sizes: [500, 5_000, 50_000],
+      setup: (n) => ({ cache: new CatalogueCache(gs1Snapshot(n)), n }),
+      operation: (fixture, i) => {
+        const { cache, n } = fixture as { cache: CatalogueCache; n: number };
+        cache.scan(twoD(spread(i, n)), { asOf: '2030-06-10' });
+      },
+      runsPerSize: 3_000,
+      repeats: 5,
+      flatCeiling: 10,
+    });
+    expect(r.verdict, r.detail).toBe('flat');
+  });
+
+  it('stays within the 300 ms scan-to-line target with the slow-till headroom to spare', () => {
+    const cache = new CatalogueCache(gs1Snapshot(50_000));
+    const s = measure({ label: 'gs1-scan', runs: 5_000, operation: (i) => { cache.scan(twoD(spread(i, 50_000)), { asOf: '2030-06-10' }); } });
+    expect(s.p95Ms * HEADROOM).toBeLessThan(TARGETS.posScanToLineMs);
   });
 });
 

@@ -99,6 +99,11 @@ export interface PackProduct {
    * reached a till and the refusal was unreachable. This is that field.
    */
   readonly recallBlock?: boolean;
+  /**
+   * SF-08 · OB-139 "A" (R3): the batches the recall block comes from, as head office's store pack names them. A 2D code
+   * carrying a different batch sells; a plain barcode still refuses the whole product. Absent = the whole product.
+   */
+  readonly blockedBatches?: readonly string[];
 }
 
 /** One person waiting on somebody else's decision, as the cloud routed it here. */

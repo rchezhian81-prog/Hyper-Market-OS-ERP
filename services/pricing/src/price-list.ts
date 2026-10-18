@@ -36,6 +36,16 @@ export interface PriceListDeps {
   /** Head office's maker-checker engine (ADR-0024): a loss-making entry's approver gave it in their own session.
    *  Optional on a bare stub (then every approval is unknown); the running system provides it. */
   readonly approvals?: ApprovalPort;
+  /**
+   * D-19 (R3, OB-148/OB-190): whether the switch for a channel or zone scope is ON (store and customer scopes have none).
+   * While it is off, an entry for it is refused and any on file is not resolved — every channel charges the shelf price.
+   * Optional on a bare stub (then nothing is gated, as before).
+   */
+  readonly channelPricingOn?: (tenantId: string, scope: PriceScope, scopeRef: string) => Promise<boolean>;
+  /** D-19: the entries the switches allow to resolve (channel / zone entries whose switch is off are left out). */
+  readonly allowedEntries?: (tenantId: string, entries: readonly PriceEntry[]) => Promise<readonly PriceEntry[]>;
+  /** D-19: the store → zone register — the zone a store belongs to, when the request names none. */
+  readonly zoneOfStore?: (tenantId: string, storeId: string) => Promise<string | undefined>;
   readonly now: () => string;
 }
 
@@ -51,7 +61,7 @@ export function priceListRoutes(deps: PriceListDeps): readonly Route[] {
       handler: async (ctx) => {
         const productId = ctx.params['productId'] ?? '';
         const entryId = ctx.params['entryId'] ?? '';
-        const b = (ctx.body ?? {}) as { scope?: unknown; scopeRef?: unknown; priceMinor?: unknown; currency?: unknown; mrpMinor?: unknown; costMinor?: unknown; marginFloorBps?: unknown; effectiveFrom?: unknown; effectiveTo?: unknown; approval?: unknown; approvalId?: unknown };
+        const b = (ctx.body ?? {}) as { scope?: unknown; scopeRef?: unknown; priceMinor?: unknown; currency?: unknown; mrpMinor?: unknown; costMinor?: unknown; marginFloorBps?: unknown; effectiveFrom?: unknown; effectiveTo?: unknown; approval?: unknown; approvalId?: unknown; batchId?: unknown };
 
         if (!isScope(b.scope) || !isStr(b.scopeRef)
           || !isNonNegInt(b.priceMinor) || !isNonNegInt(b.mrpMinor) || !isNonNegInt(b.costMinor)
@@ -66,9 +76,29 @@ export function priceListRoutes(deps: PriceListDeps): readonly Route[] {
             nextSafeAction: 'Send the scope, ref, price, mrp, cost, margin floor, currency and effective date. Nothing was recorded.',
           });
         }
+        // D-20: a price for ONE batch (a markdown on a batch near its use-by) — charged only when the barcode carries that
+        // batch. It clears exactly the same gate as any price: MRP, margin floor with a second person, no back-dating.
+        if (b.batchId !== undefined && !(isStr(b.batchId) && (b.batchId as string).trim().length <= 20)) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_price_entry',
+            whatHappened: 'batchId, when sent, must be the batch number as printed (up to 20 characters) — the same number its 2D barcode carries.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send the batch number, or leave batchId out for the product\'s own price. Nothing was recorded.',
+          });
+        }
+        const batchId = b.batchId === undefined ? undefined : (b.batchId as string).trim();
         const currency = b.currency as CurrencyCode;
         const priceMinor = b.priceMinor as number;
         const setBy = ctx.userId;
+        // D-19 (OB-148 "A"): one price everywhere — a channel or zone price is refused while its switch is off.
+        if (deps.channelPricingOn !== undefined && !(await deps.channelPricingOn(ctx.tenantId, b.scope, b.scopeRef))) {
+          throw apiError(409, {
+            code: 'channel_pricing_switched_off',
+            whatHappened: `${b.scope === 'zone' ? 'Zone' : `The ${b.scopeRef} channel's`} pricing is switched off: the till, the app and delivery all charge the same shelf price (OB-148). A ${b.scope} price cannot be set while it is off.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Set the store (shelf) price instead, or ask for the switch to be turned on — a second person must approve it. Nothing was recorded.',
+          });
+        }
 
         // Back-dating is refused first — checkPrice does not judge dates, and a price active before today
         // rewrites what past sales should have charged.
@@ -125,7 +155,7 @@ export function priceListRoutes(deps: PriceListDeps): readonly Route[] {
         // Version is monotonic per (scope, ref) — a later entry supersedes on tie, and a sale can lock it.
         const existing = await deps.entries(ctx.tenantId, productId);
         const version = existing
-          .filter((e) => e.scope === b.scope && e.scopeRef === b.scopeRef)
+          .filter((e) => e.scope === b.scope && e.scopeRef === b.scopeRef && (e.batchId ?? null) === (batchId ?? null))
           .reduce((max, e) => Math.max(max, e.version), 0) + 1;
 
         const entry: PriceEntry = {
@@ -134,9 +164,10 @@ export function priceListRoutes(deps: PriceListDeps): readonly Route[] {
           effectiveFrom: b.effectiveFrom as string,
           effectiveTo: b.effectiveTo === undefined ? null : (b.effectiveTo as string | null),
           status: 'active', version,
+          ...(batchId === undefined ? {} : { batchId }),
         };
         await deps.recordEntry(ctx.tenantId, productId, entry);
-        return { status: 201, body: { entryId, productId, scope: entry.scope, scopeRef: entry.scopeRef, priceMinor, currency, effectiveFrom: entry.effectiveFrom, version, approvedBy: approval?.decidedBy ?? null } };
+        return { status: 201, body: { entryId, productId, scope: entry.scope, scopeRef: entry.scopeRef, priceMinor, currency, effectiveFrom: entry.effectiveFrom, version, approvedBy: approval?.decidedBy ?? null, ...(batchId === undefined ? {} : { batchId }) } };
       },
     },
     {
@@ -155,13 +186,16 @@ export function priceListRoutes(deps: PriceListDeps): readonly Route[] {
             nextSafeAction: 'Send ?at=<ISO date>&storeId=<id> (optionally zoneId, channel, customerId). Nothing was changed.',
           });
         }
+        const zoneId = isStr(q['zoneId']) ? q['zoneId'] : await deps.zoneOfStore?.(ctx.tenantId, q['storeId'] as string);
         const ctxIn: ResolveContext = {
           productId, at: q['at'] as string, storeId: q['storeId'] as string,
-          ...(isStr(q['zoneId']) ? { zoneId: q['zoneId'] } : {}),
+          ...(zoneId !== undefined ? { zoneId } : {}),
           ...(isStr(q['channel']) ? { channel: q['channel'] } : {}),
           ...(isStr(q['customerId']) ? { customerId: q['customerId'] } : {}),
         };
-        const entry = resolvePrice(await deps.entries(ctx.tenantId, productId), ctxIn);
+        const stored = await deps.entries(ctx.tenantId, productId);
+        // D-19: a channel or zone entry whose switch is off is not resolved — the shelf price applies.
+        const entry = resolvePrice(deps.allowedEntries === undefined ? stored : await deps.allowedEntries(ctx.tenantId, stored), ctxIn);
         if (entry === null) throw notFound(`an effective price for ${productId}`);
         return {
           status: 200,

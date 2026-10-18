@@ -67,6 +67,11 @@ export interface Transfer {
   readonly receivedBy?: string;
   /** Batch 2: how a person resolved the transfer's receipt shortfall — absent while it is open (plain transfers). */
   readonly shortfallResolution?: ShortfallResolution;
+  /**
+   * R3 · A23: the e-way bill the goods travelled under, when the dispatch needed one (above the threshold): the register's
+   * movement it was generated for and the portal's 12-digit number. Set by the dispatching surface; absent below it.
+   */
+  readonly ewayBill?: { readonly movementId: string; readonly ewbNo: string };
 }
 
 // ── Batch 2: resolving a receipt shortfall (shared by plain transfers and floor-indent issues) ─────────────────

@@ -17,13 +17,15 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
 import {
-  planErasure, fulfilRequest, overdueRequests,
+  planErasure, fulfilRequest, overdueRequests, mayNomineeAct, currentNominee, RIGHT_KINDS, PUBLISHED_RESPONSE_SLA_DAYS, ACTIVATION_BASES,
   type DataSubjectRequest, type RightKind, type RetentionBasis, type DataCategory, type FulfilmentRefusal,
+  type NomineeRecord, type NomineeActivation, type ActivationBasis,
 } from '../../../packages/customer/src/index';
 
 export type { DataSubjectRequest } from '../../../packages/customer/src/index';
 
-const KINDS: readonly RightKind[] = ['access', 'correction', 'export', 'erasure'];
+// R3 · C5: a grievance is a request kind of its own, with the same published answer-by time.
+const KINDS: readonly RightKind[] = RIGHT_KINDS;
 const BASES: readonly RetentionBasis[] = ['tax_invoice', 'gst_record', 'company_law', 'audit_evidence', 'legal_hold', 'fraud_investigation'];
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
 const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -56,11 +58,16 @@ export interface DataRightsDeps {
   readonly requests: (tenantId: string) => Promise<readonly DataSubjectRequest[]> | readonly DataSubjectRequest[];
   /** Append one state of a request (append-only: raised → verified → fulfilled is the audit trail). */
   readonly record: (tenantId: string, requestId: string, request: DataSubjectRequest, key: string) => Promise<void> | void;
+  /** R3 · C5 (DPDP s.14): every nominee record and verified activation (absent on a bare stub — a nominee cannot act). */
+  readonly nomineeRecords?: (tenantId: string) => Promise<readonly NomineeRecord[]> | readonly NomineeRecord[];
+  readonly nomineeActivations?: (tenantId: string) => Promise<readonly NomineeActivation[]> | readonly NomineeActivation[];
+  readonly recordActivation?: (tenantId: string, a: NomineeActivation) => Promise<NomineeActivation> | NomineeActivation;
   readonly now: () => string;
 }
 
 export function dataRightsRoutes(deps: DataRightsDeps): readonly Route[] {
-  const DEFAULT_SLA_DAYS = 30;
+  // R3 · C5 · OB-146 "B": the shop's published answer-by time — 15 days — for every request and complaint.
+  const DEFAULT_SLA_DAYS = PUBLISHED_RESPONSE_SLA_DAYS;
   return [
     {
       // Record a data-subject request (access / correction / export / erasure). Raised, not yet verified.
@@ -74,7 +81,7 @@ export function dataRightsRoutes(deps: DataRightsDeps): readonly Route[] {
           || (b['slaDays'] !== undefined && (!isInt(b['slaDays']) || (b['slaDays'] as number) <= 0))) {
           throw apiError(400, {
             code: 'not_readable_as_a_data_request',
-            whatHappened: 'A data-subject request needs a requestId in the path and { customerRef, kind (access/correction/export/erasure), slaDays? } in the body.',
+            whatHappened: 'A data-subject request needs a requestId in the path and { customerRef, kind (access/correction/export/erasure/grievance), slaDays?, onBehalfOf? { nomineeRef } } in the body.',
             wasItSaved: 'not_saved',
             nextSafeAction: 'Send who the request is for and which right is being exercised.',
           });
@@ -84,12 +91,32 @@ export function dataRightsRoutes(deps: DataRightsDeps): readonly Route[] {
         }
         const now = deps.now();
         const slaDays = isInt(b['slaDays']) ? b['slaDays'] as number : DEFAULT_SLA_DAYS;
+        // R3 · C5: the published time is a promise to the customer — a request may be given less time, never more.
+        if (slaDays > PUBLISHED_RESPONSE_SLA_DAYS) {
+          throw apiError(422, { code: 'sla_longer_than_published', whatHappened: `The shop publishes that every request and complaint is answered within ${PUBLISHED_RESPONSE_SLA_DAYS} days (OB-146); ${slaDays} days would break that promise.`, wasItSaved: 'not_saved', nextSafeAction: `Leave slaDays out (${PUBLISHED_RESPONSE_SLA_DAYS} days) or give fewer. Nothing was raised.` });
+        }
+        // R3 · C5 (DPDP s.14): raised by the customer's NOMINEE — only the nominee the customer named, and only after a
+        // death or incapacity a named person verified.
+        const behalf = b['onBehalfOf'];
+        let actingAs: DataSubjectRequest['actingAs'];
+        if (behalf !== undefined) {
+          const nomineeRef = isObj(behalf) && isStr(behalf['nomineeRef']) ? behalf['nomineeRef'].trim() : undefined;
+          if (nomineeRef === undefined) throw apiError(400, { code: 'not_readable_as_a_data_request', whatHappened: 'onBehalfOf is { nomineeRef } — the nominee the customer recorded.', wasItSaved: 'not_saved', nextSafeAction: 'Send the nominee\'s reference. Nothing was raised.' });
+          const may = mayNomineeAct({
+            records: (await deps.nomineeRecords?.(ctx.tenantId)) ?? [], activations: (await deps.nomineeActivations?.(ctx.tenantId)) ?? [],
+            customerRef: b['customerRef'] as string, nomineeRef,
+          });
+          if (!may.ok) {
+            throw apiError(422, { code: `nominee_${may.reason}`, whatHappened: `The nominee cannot exercise this customer's rights: ${may.detail}.`, wasItSaved: 'not_saved', nextSafeAction: may.reason === 'not_verified' ? 'Verify the death or incapacity against the certificate first (POST /v1/privacy/nominees/:customerRef/activation). Nothing was raised.' : 'Check who the customer named. Nothing was raised.' });
+          }
+          actingAs = { role: 'nominee', nomineeRef, activationRef: may.activation.activationId };
+        }
         const request: DataSubjectRequest = {
           requestId, tenantId: ctx.tenantId, customerRef: b['customerRef'] as string, kind: b['kind'] as RightKind,
-          raisedAt: now, state: 'raised', dueBy: dueDate(now, slaDays),
+          raisedAt: now, state: 'raised', dueBy: dueDate(now, slaDays), ...(actingAs === undefined ? {} : { actingAs }),
         };
         await deps.record(ctx.tenantId, requestId, request, `${requestId}-raised`);
-        return { status: 201, body: { requestId, kind: request.kind, state: request.state, dueBy: request.dueBy } };
+        return { status: 201, body: { requestId, kind: request.kind, state: request.state, dueBy: request.dueBy, ...(actingAs === undefined ? {} : { actingAs }) } };
       },
     },
     {
@@ -188,6 +215,44 @@ export function dataRightsRoutes(deps: DataRightsDeps): readonly Route[] {
         const open = ctx.query['state'] === 'all' ? [...all] : all.filter((r) => r.state === 'raised' || r.state === 'verified');
         const queue = open.sort((a, b) => a.dueBy.localeCompare(b.dueBy) || a.raisedAt.localeCompare(b.raisedAt));
         return { status: 200, body: { queue, count: queue.length, asAt: deps.now() } };
+      },
+    },
+    {
+      // R3 · C5 (DPDP s.14): a named staff member VERIFIES a customer's death or incapacity against evidence, so their
+      // nominee may act. Only for the nominee the customer named; the certificate's reference is kept, never its contents.
+      // Body: { activationId, nomineeRef, basis (death / incapacity), evidenceRef }.
+      api: 'API-06', method: 'POST', path: '/v1/privacy/nominees/:customerRef/activation',
+      permission: 'privacy.request.manage', idempotent: true,
+      handler: async (ctx) => {
+        const customerRef = (ctx.params['customerRef'] ?? '').trim();
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        if (customerRef === '' || !isStr(b['activationId']) || !isStr(b['nomineeRef']) || !ACTIVATION_BASES.includes(b['basis'] as ActivationBasis) || !isStr(b['evidenceRef'])) {
+          throw apiError(400, { code: 'not_readable_as_a_nominee_activation', whatHappened: 'A verification is { activationId, nomineeRef, basis (death / incapacity), evidenceRef (the certificate\'s reference) }.', wasItSaved: 'not_saved', nextSafeAction: 'Send what was verified. Nothing was recorded.' });
+        }
+        if (deps.recordActivation === undefined || deps.nomineeRecords === undefined) {
+          throw apiError(503, { code: 'nominee_register_not_wired', whatHappened: 'Head office cannot keep nominee records here.', wasItSaved: 'not_saved', nextSafeAction: 'Nothing was recorded.' });
+        }
+        const current = currentNominee(await deps.nomineeRecords(ctx.tenantId), customerRef);
+        if (current === null || current.nomineeRef !== b['nomineeRef'].trim()) {
+          throw apiError(422, { code: current === null ? 'nominee_no_nominee' : 'nominee_not_the_nominee', whatHappened: current === null ? `${customerRef} has no nominee on record.` : `${b['nomineeRef']} is not the nominee ${customerRef} named.`, wasItSaved: 'not_saved', nextSafeAction: 'Check the nomination on record. Nothing was recorded.' });
+        }
+        const activation: NomineeActivation = {
+          activationId: b['activationId'].trim(), customerRef, nomineeRef: current.nomineeRef, basis: b['basis'] as ActivationBasis,
+          evidenceRef: b['evidenceRef'].trim().slice(0, 120), verifiedBy: ctx.userId, verifiedAt: deps.now(),
+        };
+        const standing = await deps.recordActivation(ctx.tenantId, activation);
+        return { status: 201, body: { activation: standing } };
+      },
+    },
+    {
+      // R3 · C5: the customer's nomination as the officer reads it — every record (append-only) and every verification.
+      api: 'API-06', method: 'GET', path: '/v1/privacy/nominees/:customerRef',
+      permission: 'privacy.request.manage',
+      handler: async (ctx) => {
+        const customerRef = (ctx.params['customerRef'] ?? '').trim();
+        const records = ((await deps.nomineeRecords?.(ctx.tenantId)) ?? []).filter((r) => r.customerRef === customerRef);
+        const activations = ((await deps.nomineeActivations?.(ctx.tenantId)) ?? []).filter((a) => a.customerRef === customerRef);
+        return { status: 200, body: { customerRef, current: currentNominee(records, customerRef), history: records, activations } };
       },
     },
     {

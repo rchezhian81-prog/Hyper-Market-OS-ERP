@@ -99,6 +99,7 @@ import { readSales } from './read-model';
 import { emptyPack, readPack, withMigrationFeed, withPublishedTemplates, withIndentsFeed, withAssignmentsFeed, type StorePack } from './store-pack';
 import { managerPayload, tillCatalogue, type ScreenInput } from './screen-data';
 import { checkTillRules, laneScalesFor, type GateProduct } from './lane-scales';
+import { SoldHuids } from './sold-huids';
 import { hmacSigner } from '../../../services/catalogue/src/index';
 import { makeEvent, type DomainEvent } from '../../../packages/contracts/src/event';
 import { closeDay as decideDayClose, reopenDay as decideReopenDay, carriedForwardOf } from '../../../packages/day-close/src/day-close';
@@ -1137,6 +1138,8 @@ export async function startEdge(
     } catch { return []; }
   };
   const salesRecords = (await readLog(log.path)).flatMap((r) => (r.ok ? [r.record] : []));
+  // B13 (OB-138): every hallmark HUID this box has sold, from its own disk — refused again at the till and before the disk.
+  const soldHuids = new SoldHuids(salesRecords);
   const returnsRecords = (await readLog(returnsLog.path)).flatMap((r) => (r.ok ? [r.record] : []));
   const returnsEntitlement = new ReturnEntitlement(
     salesRecords.flatMap((rec) => {
@@ -1176,6 +1179,7 @@ export async function startEdge(
   const node = createEdgeNode({
     tenantId,
     log,
+    soldHuids,
     signer,
     // The seam. Without it a sale is durable on the disk and never queued, which is exactly how
     // it was: every piece on either side built and tested, nothing joining them, nothing failing.
@@ -1594,6 +1598,7 @@ export async function startEdge(
           products: gateProductsOf(pack, node.pack(), now),
           scales: laneScalesFor(pack, laneIdOfThisBox()),
           today: tradingDate(wallClockIn(now), makeTradingDayRule('00:00')),
+          soldHuids: soldHuids.asSet(),
         });
       },
     },
@@ -1680,6 +1685,8 @@ export async function startEdge(
     snapshot,
     // Which lane this box is — told to the served till so every sale names it (SP-4b · F09).
     ...(laneOfBox === undefined ? {} : { laneId: laneOfBox }),
+    // B13: the HUIDs this box has sold, read per request, so a reloaded till refuses a piece another till sold.
+    soldHuids: () => soldHuids.list(),
     // The manager's day close (M14-FR-04) posts to this box's lane socket — tell the screen where it is.
     // Only when this box actually serves a lane; otherwise the screen stays read-only (a local preview).
     ...(lane === null ? {} : { laneWriteBase: `http://${LANE_HOST}:${lane.port}` }),

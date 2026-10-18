@@ -139,6 +139,8 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
         categoryId: typeof m?.primaryCategoryId === 'string' && m.primaryCategoryId !== '' ? m.primaryCategoryId : 'uncategorised',
         unitPriceMinor: p.unitPriceMinor, ...(unitCostMinor === undefined ? {} : { unitCostMinor }),
         uom: unitCode(p.baseUom), taxBps: p.taxBps, status: p.status, recallBlock: p.recallBlock === true,
+        // SF-08 · OB-139 "A" (R3): the batches the block comes from, for the store's own screens.
+        ...(p.recallBlock === true && p.blockedBatches !== undefined ? { blockedBatches: p.blockedBatches } : {}),
         barcodes: barcodes.get(p.productId) ?? [],
         availableMinor: onHand.get(p.productId) ?? 0,
         // D01-FR-06 (round 8): the app's content and synonyms, from the product master, for the customer app on this store.

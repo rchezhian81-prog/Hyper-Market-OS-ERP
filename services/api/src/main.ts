@@ -119,6 +119,7 @@ import { facilitiesAssetsRoutes } from '../../platform/src/facilities-assets';
 import { facilitiesMonitoringRoutes } from '../../platform/src/facilities-monitoring';
 import { weighingVerificationRoutes } from '../../platform/src/facilities-metrology';
 import { r2TillRoutes, scalesOnRegisterAdapter } from './r2-till-adapters';
+import { r3TillTraceRoutes, huidsSoldElsewhereAdapter } from './r3-till-trace-adapters';
 import { complianceRoutes } from '../../compliance/src/index';
 import { riskRegisterRoutes } from '../../compliance/src/risk';
 import { inventoryRoutes } from '../../inventory/src/index';
@@ -299,8 +300,11 @@ import { committeeMembershipRoutes } from '../../identity/src/committee-membersh
 import { hrComplianceRoutes } from '../../finance/src/hr-compliance';
 import { poshRegisterRoutes } from '../../finance/src/posh-register';
 import { processorRegisterAdapter, settlementRefundsAdapter } from './r2-data-adapters';
+import { r3TaxPayRoutes, supplierPaymentHooks, deskRefundHooks, privacyNomineeHooks, transferDispatchHooks } from './r3-tax-pay-adapters';
 import { processorRegisterRoutes } from '../../customer/src/processor-register';
 import { legacyCardPurgeRoutes } from '../../migration/src/legacy-card-purge';
+// R3 Lane 4 (store operations and people): D-14 · D-16 · D-11 · D-25 · D-19 · C21 · D-9 (r3-ops-adapters).
+import { r3OpsRoutes, masterLifecycleOf, ingredientBatchesAt, channelPricingGateFor, packPricingFor } from './r3-ops-adapters';
 import { wasteAnalyticsAdapter, foodSafetyAdapter, priceIntegrityAgeingAdapter, assignedTaskAdapter, receivingChecklistLookup, carriedChecklistAdapter } from './r2-ops-adapters';
 import { assignedTaskRoutes } from '../../finance/src/assigned-tasks';
 import { priceIntegrityAgeingRoutes } from '../../pricing/src/price-integrity-ageing';
@@ -322,6 +326,9 @@ import type { MemberRecord } from '../../customer/src/loyalty-members';
 import type { DependencyProbe } from '../../platform/src/index';
 import { SandboxRecurringBillingProvider, type Plan as BillingPlan } from '../../../packages/platform/src/index';
 import type { EventStore } from '../../../packages/persistence/src/event-store';
+import { r3GstRoutes, eInvoiceReportingGuardFor, gstTimeBarSweep } from './r3-gst-adapters';
+import { alsoEachPassOf } from './ops-alert-sweeps'; // R3 lane 1 — GST liability and returns
+import { itcPortForStore } from './r3-itc-bridge'; // R3 seam — GSTR-3B Table 4 reads the A17 reconciliation
 
 const now = (): string => new Date().toISOString();
 
@@ -729,7 +736,7 @@ export function buildSurface(deps: {
         signer, currentPack: empty(undefined), storePack: () => {},
         buildSnapshot: (tenantId) => ({ tenantId, version: 1, builtAt: now(), products: [], barcodes: [] }),
         approvalsSince: empty([]), now,
-      } : catalogueAdapter({ store, signer, now })),
+      } : catalogueAdapter({ store, signer, now, pricing: packPricingFor({ store, now }) /* D-19: the pack carries a switched-on zone price */ })),
       // The owner's bulk-publish threshold (ADR-0013 point 4, Stage E slice 1) — read from the durable tenant
       // settings at request time, so a bulk or regulated-product publish asks for a fresh second-factor sign-in.
       bulkPublishThreshold: (tenantId) => settings.value(tenantId, SETTINGS.CATALOGUE_BULK_PUBLISH_THRESHOLD),
@@ -769,7 +776,7 @@ export function buildSurface(deps: {
     // Catalogue pack ASSEMBLY/preview (slice 2) — fold master + prices + barcodes + tax rates for a store.
     ...cataloguePreviewRoutes(store === undefined
       ? { products: empty([]), priceEntries: empty([]), barcodes: empty([]), taxSchedule: empty([]), now }
-      : cataloguePreviewAdapter({ store, now })),
+      : cataloguePreviewAdapter({ store, now, pricing: packPricingFor({ store, now }) /* D-19: the preview is the pack */ })),
     ...pricingRoutes(store === undefined
       ? { recordPriceChange: () => {}, now }
       : {
@@ -779,7 +786,7 @@ export function buildSurface(deps: {
       }),
     ...priceListRoutes(store === undefined
       ? { entries: empty([]), recordEntry: () => {}, now }
-      : { ...priceListAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }) }),
+      : { ...priceListAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }), ...channelPricingGateFor({ store, now }) /* D-19 (R3): one price until a switch is approved on */ }),
     // Round 8 (D06-FR-05): competitor price sightings, compared with the shop's own effective price — changes no price.
     ...(store === undefined ? [] : competitorPriceRoutes({
       now, ...competitorPriceAdapter({ store, now }),
@@ -825,7 +832,7 @@ export function buildSurface(deps: {
       invoices: empty([]), latestMatches: empty(new Map()), purchaseOrders: empty([]), receipts: empty([]), payments: empty([]), debitNoteIssues: empty([]), now,
       record: empty(undefined), records: empty([]), recordSupplier: () => {}, supplierBlocked: empty(false), bankState: empty(undefined), bankHolders: empty([]),
       permissionsOfUser: empty(undefined), recordPayment: () => {}, allocateNumber: () => Promise.resolve(1), recordDebitNoteIssue: () => {},
-    } : { ...supplierMasterAdapter({ store, now, numberSeries: deps.numberSeries }), recordAudit: auditTrail?.recordAudit, approvals: approvalRequestsAdapter({ store, now }) }),
+    } : { ...supplierMasterAdapter({ store, now, numberSeries: deps.numberSeries }), recordAudit: auditTrail?.recordAudit, approvals: approvalRequestsAdapter({ store, now }), ...supplierPaymentHooks({ store, now }) /* R3 A24 TDS */ }),
     // GT-05 (MG-08): opening supplier balances from the old system — recorded per legacy bill, signed off by a second person
     // against the old system's control total, then owed, payable and posted like any other balance.
     ...supplierOpeningRoutes(store === undefined ? {
@@ -861,7 +868,7 @@ export function buildSurface(deps: {
       order: empty(undefined), all: empty([]), supplierBlocked: empty(false),
       propose: () => {}, issue: () => {}, setSupplierBlocked: () => {},
       amend: () => {}, cancel: () => {}, postReceipt: () => {}, now,
-    } : { ...purchaseOrdersAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now), packOf: packHierarchyAdapter({ store, now }).pack,
+    } : { ...purchaseOrdersAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now), packOf: packHierarchyAdapter({ store, now }).pack, masterLifecycle: masterLifecycleOf({ store, now }), // D-16 (R3)
       openToBuy: { ...openToBuyAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, storeOf: locationBranchesOf(store, now) } }),
     // WF-03 · D02-FR-01 (round 8): category purchase budgets and open-to-buy — checked on every order, over budget escalates.
     ...openToBuyRoutes(store === undefined ? {
@@ -1057,7 +1064,7 @@ export function buildSurface(deps: {
     ...transfersRoutes(store === undefined ? {
       transfer: empty(undefined), availableAt: empty([]), recordProposed: () => {}, recordDispatched: () => {}, recordReceived: () => {},
       unitCostAt: empty(undefined), knownLocation: empty(true), now,
-    } : { ...transfersAdapter({ store, now }), locationBranches: locationBranchesOf(store, now), countFreeze: countPlanFreeze }),
+    } : { ...transfersAdapter({ store, now }), locationBranches: locationBranchesOf(store, now), countFreeze: countPlanFreeze, ...transferDispatchHooks({ store, now }) /* R3 A23 EWB gate */ }),
     // The floor indent chain (SP-8 · F08): request → approval → back-store issue (a transfer, dispatched) → in transit →
     // independent floor receipt → shelf availability; cancel and floor→back-store return. Rides the transfer engine.
     ...floorIndentRoutes(floorIndentDeps),
@@ -1067,6 +1074,7 @@ export function buildSurface(deps: {
     ...replenishmentRoutes(store === undefined ? { now } : {
       now, ...replenishmentFactsAdapter({ store, now, branchOf: locationBranchesOf(store, now) }),
       rangeOf: assortmentAdapter({ store, now }).entries, locationBranches: locationBranchesOf(store, now),
+      masterLifecycle: masterLifecycleOf({ store, now }), // D-16 (R3)
     }),
     ...salesHistoryRoutes(store === undefined ? { soldLines: empty([]), now } : salesHistoryAdapter({ store, now })),
     // Blind counts (M09-FR-04): the direct route and the RELAYED route (SP-2b · F11) share one reconcile — expected, value
@@ -1091,7 +1099,7 @@ export function buildSurface(deps: {
       onHand: empty(0), priorConsumption: empty({}),
       runExists: empty(false), runs: empty([]), run: empty(undefined), recordRun: () => {}, recordRelease: () => {},
       enabledDepartments: empty([]), recordDepartmentEnabled: () => {}, entitledFeatures: empty([]), now,
-    } : { ...productionAdapter({ store, now, entitledFeatures: tenantEntitlementResolver(store) }), locationBranches: locationBranchesOf(store, now) }),
+    } : { ...productionAdapter({ store, now, entitledFeatures: tenantEntitlementResolver(store) }), locationBranches: locationBranchesOf(store, now), ingredientBatchesAt: ingredientBatchesAt({ store, now }) /* D-25 (R3) */ }),
     // Weighed-department costing (M11-FR-02) — recipe-less weigh-in/weigh-out cost + yield exceptions.
     ...weighedCostingRoutes(store === undefined ? {
       weighedRuns: empty([]), weighedRun: empty(undefined), recordWeighedRun: () => {}, now,
@@ -1211,6 +1219,8 @@ export function buildSurface(deps: {
     } : {
       ...posAdapter({ store, now }), tillSealKey: sealKey, scalesOnRegisterFor: scalesOnRegisterAdapter({ store, now }), loyaltyOnSale: (t, sale) => earnOnSale(loyaltyEffects!, t, sale),
       loyaltySpendOnSale: (t, sale) => spendOnSale(loyaltyWallets!, t, sale),
+      // R3 lane 3 (B13 · OB-138): head office's backstop for a hallmark HUID sold twice.
+      huidsSoldElsewhere: huidsSoldElsewhereAdapter({ store }),
     }),
     ...returnsRoutes(store === undefined ? {
       originalSale: empty(undefined), priorReturns: empty([]), priorRefunds: empty([]),
@@ -1218,7 +1228,7 @@ export function buildSurface(deps: {
       returnWindow: () => undefined, recordReturnWindow: () => {},
       storeCreditCap: () => undefined, recordStoreCreditCap: () => {},
       flaggedReturns: empty([]), now,
-    } : { ...returnsAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, tillSealKey: sealKey,
+    } : { ...returnsAdapter({ store, now }), ...deskRefundHooks({ store }) /* R3 C14 refund to source */, recordAudit: auditTrail?.recordAudit, tillSealKey: sealKey,
       // OB-34 "A": a return gives back the points the member PAID WITH, in proportion to the goods coming back; and on such
       // a bill the earn is taken back against those goods too (its refund is only the money share). An exchange gives
       // nothing back (its goods are credited in full) and takes back against its credit, as before.
@@ -1309,13 +1319,13 @@ export function buildSurface(deps: {
     // Data-subject rights lifecycle (M20-FR-04 / DPDP) — raise/verify/fulfil/erasure-plan + overdue.
     ...dataRightsRoutes(store === undefined
       ? { request: empty(undefined), requests: empty([]), record: () => {}, now }
-      : dataRightsAdapter({ store, now })),
+      : { ...dataRightsAdapter({ store, now }), ...privacyNomineeHooks({ store }) /* R3 C5 nominee */ }),
     // FUL-06: the signed-in customer's own privacy centre — consent and rights saved on the SAME ledgers the senders and
     // the DPO read, scoped from the session, read back after every write.
     ...privacySelfRoutes(store === undefined ? privacySelfUnwired(now) : (() => {
       const c = customerAdapter({ store, now });
       const r = dataRightsAdapter({ store, now });
-      return { consentRecords: c.consentRecords, appendConsent: c.appendConsent, requests: r.requests, recordRequest: r.record, now };
+      return { consentRecords: c.consentRecords, appendConsent: c.appendConsent, requests: r.requests, recordRequest: r.record, now, ...privacyNomineeHooks({ store }) /* R3 C5 nominee */ };
     })()),
     // Erasure EXECUTION (M20-FR-04 / DPDP) — locate PII, checker approval, two-person execute + tombstone,
     // processor notices. DEVELOPMENT-APPROVED; legal confirmation required.
@@ -1614,6 +1624,11 @@ export function buildSurface(deps: {
     ...weighingVerificationRoutes(),
     // R2 lane 1 (B6): the weighing-scale register the store pack carries to the lanes.
     ...r2TillRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
+    // R3 lane 1 — GST returns. GSTR-3B Table 4 reads the A17 GSTR-2B / IMS reconciliation through the bridge
+    // (r3-itc-bridge.ts); with no store there is nothing reconciled, so the stand-in says "not yet reconciled".
+    ...r3GstRoutes({ store, now, timeZone: (t) => settings.value(t, SETTINGS.STORE_TIME_ZONE), ...(store === undefined ? {} : { itc: itcPortForStore({ store, now }) }), ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
+    ...r3TillTraceRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
+    ...r3OpsRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
     // Owner alerts inbox (M29-FR-03) — control by exception; stateless grouping of the period's exceptions.
     ...ownerAlertsRoutes(),
     // Owner drill-through + KPI comparison (M29-FR-02) — "show me the transactions behind this figure",
@@ -1686,7 +1701,7 @@ export function buildSurface(deps: {
     // GSP connector posts responses back here (that connector is the deployment step).
     ...eInvoiceRegisterRoutes(store === undefined ? {
       load: () => undefined, recordSubmit: () => {}, recordResponse: () => {}, recordCancel: () => {}, recordMismatch: () => {}, listInvoiceIds: () => [], now,
-    } : eInvoiceAdapter({ store, now })),
+    } : { ...eInvoiceAdapter({ store, now }), reportingGuard: eInvoiceReportingGuardFor({ store, now, timeZone: (t) => settings.value(t, SETTINGS.STORE_TIME_ZONE) }) }), // R3 A21 guard (off)
     // GST e-invoicing sandbox GSP (A20) — a deterministic simulator on the same EInvoiceProvider port a real
     // certified GSP uses, so the submit → register → apply loop can be driven without live credentials. Its
     // IRN/QR are SANDBOX-marked and never valid for a real filing.
@@ -1700,6 +1715,8 @@ export function buildSurface(deps: {
     ...eWayBillRegisterRoutes(store === undefined ? {
       load: () => undefined, recordSubmit: () => {}, recordResponse: () => {}, recordCancel: () => {}, recordMismatch: () => {}, listMovementIds: () => [], now,
     } : eWayBillAdapter({ store, now })),
+    // R3 lane 2 (A17 ITC via GSTR-2B + IMS · A24 TDS · C14 payment disputes · C5 nomination): r3-tax-pay-adapters.
+    ...r3TaxPayRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
     // GST government-portal switch — the feature flag + kill switch keeping LIVE e-invoice/e-way-bill portal
     // calls OFF by default and killable; the gate a deployment consults before the real connector. Sandbox
     // routes are exempt.
@@ -2537,9 +2554,14 @@ export async function startApi(
     say: (line) => { out(`${line}\n`); },
     // Round 8 (M19-FR-04 · PA-08): a delivery exception past its time limit is put on the message queue for the people
     // who staff its queue, on this same timer — nobody has to press anything for it to be told.
-    alsoEachPass: async (t, at) => (await raiseBreachAlerts({
-      ...ordersAdapter({ store, now, holdMinutes: HOLD_MINUTES, refundProcessor: testModeRefundProcessor() }), ...breachAlertAdapter({ store, now }),
-    }, t, at, OPS_ALERT_WORKER)).queued.length,
+    // R3 · A19: on the same timer, a GST return near or past its 3-year time bar is raised to every owner. Both run.
+    alsoEachPass: alsoEachPassOf({
+      breaches: async (t, at) => (await raiseBreachAlerts({
+        ...ordersAdapter({ store, now, holdMinutes: HOLD_MINUTES, refundProcessor: testModeRefundProcessor() }), ...breachAlertAdapter({ store, now }),
+      }, t, at, OPS_ALERT_WORKER)).queued.length,
+      gstTimeBar: gstTimeBarSweep({ store, now, timeZone: (t: string) => new DurableTenantSettings(new SqlConfigVersionStore(pgPoolClient(db))).value(t, SETTINGS.STORE_TIME_ZONE) }),
+      say: (line) => { out(`${line}\n`); },
+    }),
   });
 
   // D14 / M32: the outbound webhook sender — the PA-08 worker shape (sequential, never stops quietly, restart-safe) over

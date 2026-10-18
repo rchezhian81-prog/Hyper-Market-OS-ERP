@@ -28,3 +28,12 @@ export * from './gstr1';
 export * from './outward-from-sales';
 export * from './gstr1-submission';
 export * from './gstn-sandbox';
+// R3 lane 1 — GST liability and returns (A15 GSTR-3B · A16 lock · A14 reverse charge · A19 calendar · A18 GSTR-9/9C ·
+// A21 e-invoice 30-day guard). The ITC port (A17) is its own small file so the input-credit lane implements it alone.
+export * from './gst-period';
+export * from './itc-port';
+export * from './gstr3b';
+export * from './rcm';
+export * from './filing-calendar';
+export * from './gstr9';
+export * from './einvoice-reporting-guard';

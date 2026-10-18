@@ -11,6 +11,8 @@
 //
 // Pure and deterministic — it validates the notice it is handed and commits nothing.
 
+import { PUBLISHED_RESPONSE_SLA_DAYS } from './data-rights';
+
 export interface ConsentNoticeItem {
   readonly dataCategory: string;
   /** WHY this category is processed — a specific, non-empty purpose (blanket "for business" is not one). */
@@ -29,6 +31,8 @@ export interface ConsentNotice {
    *  symmetry is only checked when both are supplied. */
   readonly giveSteps?: number;
   readonly withdrawSteps?: number;
+  /** R3 · C5 · OB-146: the answer-by time for a request or a complaint, in days, as the notice states it to the customer. */
+  readonly responseSlaDays?: number;
 }
 
 export type ConsentNoticeDefect =
@@ -43,7 +47,11 @@ export type ConsentNoticeDefect =
   /** No grievance-redressal contact (s.5 / s.13). */
   | 'no_grievance_contact'
   /** No way to complain to the Data Protection Board. */
-  | 'no_board_complaint_link';
+  | 'no_board_complaint_link'
+  /** R3 · C5: the notice does not tell the customer how soon a request or complaint is answered. */
+  | 'no_response_sla'
+  /** R3 · C5: the notice promises a different time from the shop's published one (OB-146: 15 days). */
+  | 'response_sla_not_the_published_one';
 
 export interface ConsentNoticeCheck {
   readonly compliant: boolean;
@@ -58,7 +66,7 @@ const present = (v: unknown): v is string => typeof v === 'string' && v.trim() !
  * contact, a Board-complaint link, and withdrawal no harder than giving. Every gap is a named defect;
  * the notice is compliant only when there are none. It names EVERY defect at once, not just the first.
  */
-export function checkConsentNotice(notice: ConsentNotice): ConsentNoticeCheck {
+export function checkConsentNotice(notice: ConsentNotice, publishedSlaDays: number = PUBLISHED_RESPONSE_SLA_DAYS): ConsentNoticeCheck {
   const defects: { defect: ConsentNoticeDefect; detail: string }[] = [];
   const items = Array.isArray(notice.items) ? notice.items : [];
 
@@ -89,6 +97,12 @@ export function checkConsentNotice(notice: ConsentNotice): ConsentNoticeCheck {
   }
   if (!present(notice.boardComplaintLink)) {
     defects.push({ defect: 'no_board_complaint_link', detail: 'the notice carries no way to complain to the Data Protection Board' });
+  }
+
+  if (typeof notice.responseSlaDays !== 'number' || !Number.isInteger(notice.responseSlaDays) || notice.responseSlaDays <= 0) {
+    defects.push({ defect: 'no_response_sla', detail: `the notice does not say how soon a request or a complaint is answered — the shop's published time is ${publishedSlaDays} days` });
+  } else if (notice.responseSlaDays !== publishedSlaDays) {
+    defects.push({ defect: 'response_sla_not_the_published_one', detail: `the notice promises ${notice.responseSlaDays} days, but the shop's published time is ${publishedSlaDays} days` });
   }
 
   return { compliant: defects.length === 0, defects, itemCount: items.length };

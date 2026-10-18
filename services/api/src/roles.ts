@@ -208,6 +208,40 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // R2 C20 · OB-165 "A": the owner adds or removes an Internal Committee member — that role only, confirmed by a second
       // person, audited — and can never hold the role himself (services/identity/src/committee-membership.ts).
       'posh.committee.manage',
+      // ── R3 lane 1 (GST liability and returns) ──
+      // OB-143 "A": the owner alone switches reverse charge on; OB-149 "A": the owner alone switches the 30-day e-invoice
+      // guard on; A19: the owner sets how many days before the 3-year bar he is warned. He reads, records and pays
+      // reverse charge like the accountant.
+      'finance.rcm.switch', 'finance.einvoice.guard.switch', 'finance.gst.timebar.set',
+      'finance.rcm.read', 'finance.rcm.record', 'finance.rcm.pay',
+      // ── end R3 lane 1 ──
+      // ── R3 lane 2 (A17 · A24 · C14) ──
+      // A17: upload the month's GSTR-2B, read the ITC review, accept / reject / keep pending each line (IMS).
+      'finance.itc.import', 'finance.itc.read', 'finance.itc.action',
+      // A24 · OB-143 "A": read the TDS register, record a challan, and SWITCH TDS on or off — the owner's act, once the
+      // CA has filled the payee / section / rate list (the list itself is the CA's: `finance.tds.configure`).
+      'finance.tds.read', 'finance.tds.challan.record', 'finance.tds.switch',
+      // C14: record a card / UPI dispute and its answer and outcome; read the register and its overdue exceptions.
+      'payment.dispute.record', 'payment.dispute.read',
+      // ── end R3 lane 2 ──
+      // ── R3 lane 3 (till, batch and traceability) ──────────────────────────────────────────────────────────────────
+      // B16 (OB-140 "A"): record a government health-warning picture; confirm a tobacco product's packs carry it.
+      // D-26: record and answer a lot-trace request (the 24-hour clock).
+      'catalogue.tobacco.picture.record', 'catalogue.tobacco.warning.confirm', 'quality.lottrace.request',
+      // ── R3 Lane 4 (store operations and people) — begin
+      // D-14: the owner sets the minimum days (OB-147); raises and records an on-shelf availability count.
+      'inventory.osa.configure', 'inventory.osa.task.raise', 'inventory.osa.count.record',
+      // D-11: check a direct delivery in at the door (no cash, OB-141) and keep the vendors' route sheets.
+      'inventory.dsd.checkin', 'inventory.dsd.route.manage',
+      // D-11: the owner approves the store computer's grant, so he must hold what it relays (no escalation, OB-36).
+      'inventory.dsd.sync',
+      // D-19: the owner keeps the store → zone register (zone prices stay switched off until a second person approves).
+      'price.zone.manage',
+      // C21: record my own fingerprint-attendance consent, and mark my own attendance (fingerprint only with consent).
+      'workforce.consent.self', 'workforce.attendance.mark',
+      // D-9: the owner sets the service standard per role (OB-142), and drafts the week's roster from the forecast.
+      'workforce.standard.set', 'workforce.schedule.draft',
+      // ── R3 Lane 4 — end
     ],
   },
   {
@@ -277,6 +311,8 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'quality.coldchain.assess', 'quality.lottrace.read',
       'quality.recall.initiate', 'quality.recall.read',
       'quality.hold.manage', 'quality.hold.release',
+      // R3 lane 3: B16 — confirm a tobacco product's packs carry the warning picture; D-26 — record and answer a lot-trace request.
+      'catalogue.tobacco.warning.confirm', 'quality.lottrace.request',
       'price.integrity.audit', 'selfcheckout.operate',
       'owner.alert.read', 'owner.kpi.read', 'owner.brief.manage',
       'refund.exception.read',
@@ -302,6 +338,16 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'migration.screen.read',
       // R2 C18: the manager reads the working-time limits and the statutory registers for their branches.
       'hr.compliance.read', 'hr.register.read',
+      // ── R3 Lane 4 (store operations and people) — begin
+      // D-14: raise and record an on-shelf availability count (a difference goes to a second person's approval).
+      'inventory.osa.task.raise', 'inventory.osa.count.record',
+      // D-11: check a direct delivery in at the door (no cash, OB-141) and keep the vendors' route sheets.
+      'inventory.dsd.checkin', 'inventory.dsd.route.manage',
+      // C21: record my own fingerprint-attendance consent, and mark my own attendance (fingerprint only with consent).
+      'workforce.consent.self', 'workforce.attendance.mark',
+      // D-9: the manager drafts the week's roster from the forecast and commits it (workforce.roster.manage, P-05).
+      'workforce.schedule.draft',
+      // ── R3 Lane 4 — end
     ],
   },
   {
@@ -381,6 +427,10 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'order.exception.work',
       // D-8 (R2): floor staff complete the store tasks assigned to THEM, in their own sign-in (only the assignee may).
       'workforce.task.complete.own',
+      // ── R3 Lane 4 (store operations and people) — begin
+      // C21: record my own fingerprint-attendance consent, and mark my own attendance (fingerprint only with consent).
+      'workforce.consent.self', 'workforce.attendance.mark',
+      // ── R3 Lane 4 — end
     ],
   },
   {
@@ -450,6 +500,21 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'reporting.dashboard.read', 'reporting.report.read',
       // GT-05 (MG-07): finance reads the migrated history it reconciles against.
       'migration.history.read',
+      // ── R3 lane 1 (GST liability and returns) ──
+      // A14: the accountant records a reverse-charge purchase (the self-invoice follows from the CA's heads) and marks its
+      // tax paid in cash with the challan; never configures a head or switches reverse charge on.
+      'finance.rcm.read', 'finance.rcm.record', 'finance.rcm.pay',
+      // OB-192 "A" (owner, 18 Oct 2026): the accountant may OPEN the GST returns page — view only. GSTR-3B, the controls,
+      // the filing calendar and the annual return are read with `finance.gstr.read`; locking, amending, filing and the
+      // switches stay with the owner (`finance.gstr.generate` / `.approve` / `.submit`, the switch codes — none here).
+      'finance.gstr.read',
+      // ── end R3 lane 1 ──
+      // ── R3 lane 2 (A17 · A24 · C14) ── the accountant uploads the GSTR-2B (OB-145 "A") and works the ITC review; reads
+      // TDS and records its challans; records and reads card / UPI disputes. Never switches TDS on (the owner's act).
+      'finance.itc.import', 'finance.itc.read', 'finance.itc.action',
+      'finance.tds.read', 'finance.tds.challan.record',
+      'payment.dispute.record', 'payment.dispute.read',
+      // ── end R3 lane 2 ──
     ],
   },
   {
@@ -468,6 +533,17 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'migration.controltotal.sign',
       'migration.verification.sign',
       'migration.parallel.read',
+      // ── R3 lane 1 (GST liability and returns) ──
+      // A14 · OB-143 "A": the CA alone lists the reverse-charge heads (code, rate, notification entry) and reads them.
+      'finance.rcm.configure', 'finance.rcm.read',
+      // OB-192 "A" (owner, 18 Oct 2026): the CA may OPEN the GST returns page — view only; nothing that locks, files,
+      // amends or switches.
+      'finance.gstr.read',
+      // ── end R3 lane 1 ──
+      // ── R3 lane 2 · A24 · OB-143 "A" ── the CA fills the TDS payee / section / rate list and reads the register; the
+      // owner alone switches it on. Nothing else.
+      'finance.tds.configure', 'finance.tds.read',
+      // ── end R3 lane 2 ──
     ],
   },
   {
@@ -547,6 +623,8 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'workforce.completion.sync', 'concession.tag.sync', 'approvals.decision.sync', 'delivery.stop.sync', 'fulfilment.pick.sync', 'inventory.movement.sync', 'inventory.receipt.sync',
       'inventory.adjustment.sync', 'inventory.count.sync', 'inventory.indent.sync', 'purchase.invoice.sync', 'shelf.count.sync',
       'migration.decision.sync', 'lp.activity.sync',
+      // R3 Lane 4 · D-11: a direct delivery checked in on the warehouse handheld (head office re-verifies the receiver).
+      'inventory.dsd.sync',
       // the GST portal's poll/verify, relayed for the operator (no maker-checker decision; re-authorised on this permission)
       'finance.einvoice.generate',
     ],

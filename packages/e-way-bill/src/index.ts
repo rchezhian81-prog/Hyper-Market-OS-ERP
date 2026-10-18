@@ -5,3 +5,5 @@
 
 export * from './e-way-bill';
 export * from './sandbox-ewb';
+// R3 · A23 remainder: the gate on a dispatch — above the threshold, only with a generated e-way bill.
+export * from './dispatch-check';

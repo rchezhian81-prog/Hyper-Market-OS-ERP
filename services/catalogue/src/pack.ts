@@ -123,10 +123,18 @@ export function canonicalise(snapshot: CatalogueSnapshot): string {
       .map((p) => [p.productId, p.baseUom].join(FIELD)),
     '--embedded', ...(snapshot.embeddedRules ?? []).map((r) => stableJson(r))]
     : [];
+  // SF-08 · D-20 (R3): which batches of a product are blocked, and which batches are charged a markdown price, ride under
+  // the signature — a pack edited after signing to unblock a recalled batch, or to cheapen one, fails to verify. Only when
+  // some product carries either, so a pack without them signs to exactly the bytes it always did.
+  const batches = [...snapshot.products]
+    .filter((p) => (p.blockedBatches?.length ?? 0) > 0 || (p.batchPrices?.length ?? 0) > 0)
+    .sort((a, b) => (a.productId < b.productId ? -1 : 1))
+    .map((p) => [p.productId, stableJson({ blockedBatches: p.blockedBatches ?? [], batchPrices: p.batchPrices ?? [] })].join(FIELD));
   return [snapshot.tenantId, snapshot.version, snapshot.builtAt, ...products, '--', ...barcodes,
     ...(promotions.length === 0 ? [] : ['--promotions', ...promotions]),
     ...(regulated.length === 0 ? [] : ['--regulated', ...regulated]),
-    ...units]
+    ...units,
+    ...(batches.length === 0 ? [] : ['--batches', ...batches])]
     .join(RECORD);
 }
 

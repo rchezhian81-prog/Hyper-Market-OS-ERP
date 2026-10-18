@@ -39,7 +39,7 @@ const WORDS = {
   en: {
     staleShell: 'No connection to the store computer. Billing still works. This price list is what this lane was last given, at',
     offersRefused: 'Offers this till does not apply, because they would give a carry bag free (a bag is always sold at its price). Tell the manager:',
-    scanToBegin: 'Scan an item to begin.', qty: 'Qty', void: 'Void', tender: 'Tender',
+    batch: 'Batch', scanToBegin: 'Scan an item to begin.', qty: 'Qty', void: 'Void', tender: 'Tender',
     // The age question (M12-FR-04 · Wave 2b PF-03): asked BEFORE the item joins the bill, answered in the signed-in
     // cashier's name. {item} and {age} are filled in from the product the till just scanned.
     ageQuestion: '{item} is age restricted. Check the customer\'s identification. Is the customer {age} or over?',
@@ -176,7 +176,7 @@ const WORDS = {
   ta: {
     staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. பில் போடுவது வேலை செய்யும். இந்த விலைப் பட்டியல் இந்த லேனுக்குக் கடைசியாகக் கொடுக்கப்பட்டது:',
     offersRefused: 'கேரி பையை இலவசமாக்கும் சலுகைகளை இந்த டில் பயன்படுத்தாது (பை எப்போதும் அதன் விலைக்கே விற்கப்படும்). மேலாளரிடம் சொல்லுங்கள்:',
-    scanToBegin: 'தொடங்க ஒரு பொருளை ஸ்கேன் செய்யவும்.', qty: 'எண்ணிக்கை', void: 'நீக்கு',
+    batch: 'தொகுதி', scanToBegin: 'தொடங்க ஒரு பொருளை ஸ்கேன் செய்யவும்.', qty: 'எண்ணிக்கை', void: 'நீக்கு',
     ageQuestion: '{item} வயது வரம்புள்ள பொருள். வாடிக்கையாளரின் அடையாள அட்டையைச் சரிபார்க்கவும். வாடிக்கையாளருக்கு {age} வயது அல்லது அதற்கு மேல் ஆகிறதா?',
     ageYes: 'ஆம் — அடையாளம் சரிபார்க்கப்பட்டது, {age} அல்லது அதற்கு மேல்', ageNo: 'இல்லை — விற்க வேண்டாம்',
     ageNotSoldTitle: 'பொருள் விற்கப்படவில்லை',
@@ -729,7 +729,8 @@ function render() {
     row.tabIndex = 0;
     row.addEventListener('click', () => { selectedLineId = line.lineId; render(); });
     for (const [text, cls] of [
-      [line.description, ''], [String(line.qty), 'amount'], [inr(line.amountMinor), 'amount'],
+      // D-20: the batch a 2D code carried is shown on its line, so the cashier can see which batch is on the bill.
+      [line.batchId ? `${line.description} · ${t('batch')} ${line.batchId}` : line.description, ''], [String(line.qty), 'amount'], [inr(line.amountMinor), 'amount'],
     ]) {
       const cell = document.createElement('td');
       cell.textContent = text;
@@ -987,8 +988,9 @@ el('tender').addEventListener('click', async () => {
   try {
     // Awaited, and the await is the guarantee: the receipt number does not exist until the sale is
     // on this till's disk (hard rule #1). There is nothing to print with before then.
+    const sold = huidLines();
     const receipt = await session.tenderCash(`S-${receiptNumber}`, receiptNumber, new Date().toISOString());
-    tell(`${t('changeDue')}: ${inr(change)}`, withReceiptNotice(receipt));
+    tell(`${t('changeDue')}: ${inr(change)}`, withReceiptNotice(withHuids(receipt, sold)));
     session.newSale();
     void refreshBadge();
     selectedLineId = null;
@@ -1010,6 +1012,17 @@ async function takeReceiptNumber() {
     tell(t('read'), e && e.refusedBecause === 'receipt_numbers_used_up' ? t('receiptsUsedUp') : (e && e.laneMessage ? e.laneMessage : t('receiptsUsedUp')));
     return null;
   }
+}
+
+/**
+ * B13 (OB-138): the gold pieces on this bill and their hallmark HUIDs, read BEFORE the sale clears the basket, so the bill
+ * the cashier hands over names each HUID sold. The sale record keeps them too (the store computer and head office read it).
+ */
+function huidLines() {
+  return session.basket().filter((l) => l.huid).map((l) => `${l.description} — HUID ${l.huid}`);
+}
+function withHuids(receipt, sold) {
+  return sold.length === 0 ? receipt : `${receipt}\n${sold.join('\n')}`;
 }
 
 /** The receipt, with what the box last said about the numbers (running low, or no range set up) when it said anything. */
@@ -1077,11 +1090,12 @@ async function takeCardOrUpi(kind, payable) {
   const receiptNumber = await takeReceiptNumber();
   if (receiptNumber === null) return;
   try {
+    const soldGold = huidLines();
     const receipt = await session.tenderCardOrUpi({
       saleId: `S-${receiptNumber}`, receiptNumber,
       atIsoUtc: new Date().toISOString(), kind, outcome, ...(ref ? { ref } : {}),
     });
-    tell(`${t('approved')} — ${kind === 'card' ? t('card') : t('upi')}`, withReceiptNotice(receipt));
+    tell(`${t('approved')} — ${kind === 'card' ? t('card') : t('upi')}`, withReceiptNotice(withHuids(receipt, soldGold)));
     session.newSale();
     void refreshBadge();
     selectedLineId = null;
@@ -1155,8 +1169,9 @@ async function splitPayment(payable) {
   const receiptNumber = await takeReceiptNumber();
   if (receiptNumber === null) return;
   try {
+    const soldGold = huidLines();
     const receipt = await session.tenderSplit({ saleId: `S-${receiptNumber}`, receiptNumber, atIsoUtc: new Date().toISOString(), parts });
-    tell(change > 0 ? `${t('changeDue')}: ${inr(change)}` : t('approved'), withReceiptNotice(receipt));
+    tell(change > 0 ? `${t('changeDue')}: ${inr(change)}` : t('approved'), withReceiptNotice(withHuids(receipt, soldGold)));
     session.newSale();
     void refreshBadge();
     selectedLineId = null;
@@ -1771,7 +1786,16 @@ el('unsent').addEventListener('click', () => {
 // is deliberately **no input box to focus** — losing focus is how a scan goes into whatever was
 // last tapped, which at a till is a quantity field, and a barcode typed into a quantity is a sale
 // of nine hundred million units. Digits are collected globally and flushed on Enter.
+//
+// D-20: a 2D scanner (DataMatrix, GS1 QR) types more than digits — the printed "(01)…(17)…(10)…" form, a web address,
+// or the raw code with group separators (sent as Ctrl+]). Every character is collected; at Enter a code shaped like a
+// GS1 code goes to the catalogue whole, and anything else keeps ONLY its digits — exactly what a 1D scan did before.
 let scanBuffer = '';
+const GS = String.fromCharCode(29);
+/** A GS1 2D code by its shape alone (the tested reader in packages/gs1 decides the rest). */
+function gs1Shaped(code) {
+  return code.startsWith('(') || code.startsWith(']') || /^https?:\/\//i.test(code) || code.includes(GS);
+}
 
 /**
  * Ask the age question (M12-FR-04 · Wave 2b audit PF-03) on the big-button panel — two answers, nothing else on screen.
@@ -1806,8 +1830,9 @@ window.addEventListener('keydown', (event) => {
   // A panel is open; the scan is not for us.
   if (!el('sheet').hidden || !el('pay').hidden || !el('count').hidden || !el('refusal').hidden) return;
   if (event.key === 'Enter') {
-    const code = scanBuffer;
+    const raw = scanBuffer;
     scanBuffer = '';
+    const code = gs1Shaped(raw) ? raw : raw.replace(/[^0-9]/g, '');
     if (code.length < 6) return; // a person pressing Enter, not a scanner
     // A scanner ends every code with Enter, and Enter on a FOCUSED button presses it: the button last tapped — the
     // language toggle, Void, Tender — would be pressed by the next scan. The Enter belongs to the scan, so it stops here.
@@ -1827,7 +1852,10 @@ window.addEventListener('keydown', (event) => {
     }
     return;
   }
-  if (/^[0-9]$/.test(event.key)) scanBuffer += event.key;
+  // A 2D scanner sends FNC1 as Ctrl+] (the group separator); every other printable character is kept as typed.
+  if (event.ctrlKey && event.key === ']') { scanBuffer += GS; return; }
+  if (event.ctrlKey || event.metaKey || event.altKey) return;
+  if (event.key.length === 1) scanBuffer += event.key;
 });
 
 render();

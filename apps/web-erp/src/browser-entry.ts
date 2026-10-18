@@ -300,6 +300,8 @@ import {
   bandWords as storeOpsBandWords, surfaceWords as storeOpsSurfaceWords, kindWords as storeOpsKindWords, reasonWords as storeOpsReasonWords,
   splitToday as storeOpsSplitToday, rupees as storeOpsRupees, percent as storeOpsPercent, OB163_BANDS, type StoreOpsSession,
 } from './store-ops-session';
+// R3 Lane 4 · D-9: the Staff schedule page (labour-demand forecast, draft roster a manager commits, actuals).
+import { createScheduleSession, scheduleWords, scheduleOutcomeWords, scheduleRupees, type ScheduleSession } from './schedule-session';
 import {
   createStoreComputersSession, wordsFor as storeComputersWords, outcomeWords as storeComputersOutcomeWords, summarise as storeComputersSummary,
   requestWords as storeComputersRequestWords, findingKindWords as storeComputersFindingWords, type StoreComputersSession,
@@ -4827,6 +4829,9 @@ interface ManagerWindow {
     readonly splitToday: typeof storeOpsSplitToday; readonly rupees: typeof storeOpsRupees; readonly percent: typeof storeOpsPercent;
     readonly bands: typeof OB163_BANDS;
   };
+  /** R3 D-9: the Staff schedule page — who is looking; head office answers the rest. */
+  scheduleData?: ViewerIdentity;
+  schedule?: { readonly session: ScheduleSession; readonly words: typeof scheduleWords; readonly outcomeWords: typeof scheduleOutcomeWords; readonly rupees: typeof scheduleRupees };
   substitutionExceptionInboxData?: SubstitutionExceptionInboxData;
   substitutionExceptionInboxSession?: SubExceptionInboxSession;
   /** The shell reads the live exceptions worklist through this and re-presents it — a GET read, never a write. */
@@ -6539,4 +6544,8 @@ if (browserWindow !== undefined) {
     bandWords: storeOpsBandWords, surfaceWords: storeOpsSurfaceWords, kindWords: storeOpsKindWords, reasonWords: storeOpsReasonWords,
     splitToday: storeOpsSplitToday, rupees: storeOpsRupees, percent: storeOpsPercent, bands: OB163_BANDS,
   };
+  // R3 D-9: the Staff schedule page — its session is the tested model in schedule-session.ts; nothing is written on open,
+  // and the draft rosters nobody until a manager commits it (P-05).
+  browserWindow.scheduleData = viewerIdentity(browserWindow.scheduleData);
+  browserWindow.schedule = { session: createScheduleSession({ viewer: browserWindow.scheduleData }), words: scheduleWords, outcomeWords: scheduleOutcomeWords, rupees: scheduleRupees };
 }

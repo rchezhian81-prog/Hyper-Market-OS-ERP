@@ -20,11 +20,12 @@ import {
   buildCatalogueSnapshot, type MasterProduct, type BuildSnapshotResult,
 } from '../../../packages/catalogue/src/snapshot-builder';
 import type { CatalogueBarcode, ProductStatus } from '../../../packages/catalogue/src/catalogue';
-import { mrpOn, type ProductRecord, type BarcodeAssignment } from '../../../packages/product/src/index';
+import { mrpOn, isTobacco, warningStanding, type ProductRecord, type BarcodeAssignment } from '../../../packages/product/src/index';
 import type { PriceEntry } from '../../../packages/price-list/src/price-list';
 import type { Promotion } from '../../../packages/promotions/src/promotions';
 import { resolveGstRate, InvalidRateSchedule, type GstRatePeriod } from '../../../packages/finance/src/rate';
 import { TOBACCO_MINIMUM_AGE } from '../../../packages/restricted-sales/src/till-gate';
+import { knowsBlockedBatches } from '../../inventory/src/sale-blocks';
 
 export interface CataloguePreviewDeps {
   readonly products: (tenantId: string) => Promise<readonly ProductRecord[]> | readonly ProductRecord[];
@@ -36,6 +37,15 @@ export interface CataloguePreviewDeps {
   /** SF-08 — the products with a batch under open recall or on quality hold; each goes in the pack `recallBlock`, so
    *  every till refuses it, offline (owner decision "C": the whole product until the batch block lands in R3). */
   readonly blockedProducts?: (tenantId: string) => Promise<ReadonlySet<string>> | ReadonlySet<string>;
+  /**
+   * D-19 (R3, OB-148 / OB-190): zone / channel pricing as the owner's switches allow it. `allowedEntries` leaves out every
+   * channel or zone entry whose switch is off; `zoneOfStore` names the store's zone only while zone pricing is switched
+   * on. With every switch off the pack is exactly what it was before D-19 (one shelf price). Absent: nothing gated.
+   */
+  readonly pricing?: {
+    readonly allowedEntries: (tenantId: string, entries: readonly PriceEntry[]) => Promise<readonly PriceEntry[]>;
+    readonly zoneOfStore: (tenantId: string, storeId: string) => Promise<string | undefined>;
+  };
   readonly now: () => string;
 }
 
@@ -71,6 +81,8 @@ export function regulatedFlagsFor(r: Pick<ProductRecord, 'safety'>): Readonly<Re
     ...(typeof s?.plasticMaterial === 'string' && s.plasticMaterial.trim() !== '' ? { plasticMaterial: s.plasticMaterial } : {}),
     ...(posInt(s?.plasticThicknessMicrons) ? { plasticThicknessMicrons: s.plasticThicknessMicrons } : {}),
     ...(s?.bannedSingleUsePlastic === true ? { bannedSingleUsePlastic: true } : {}),
+    // B13 (OB-138): a gold piece and its hallmark HUID — the till refuses a gold line with none, or with one already sold.
+    ...(s?.gold === true ? { gold: true, ...(typeof s.huid === 'string' && s.huid !== '' ? { huid: s.huid } : {}) } : {}),
   };
   return Object.keys(flags).length === 0 ? undefined : flags;
 }
@@ -104,11 +116,26 @@ export async function assembleCatalogueSnapshot(
   opts: { readonly tenantId: string; readonly storeId: string; readonly asOf: string; readonly version: number },
 ): Promise<BuildSnapshotResult> {
   const asOfDate = opts.asOf.slice(0, 10); // date part, for the effective-dated tax + MRP lookups
-  const records = await deps.products(opts.tenantId);
+  const all = await deps.products(opts.tenantId);
+  // B16 (COTPA s.7 · OB-140 "A"): a tobacco product reaches the pack only with a named person's confirmation for the
+  // warning picture in force on the build date. One never confirmed, or confirmed only for an earlier picture, is LEFT
+  // OUT and said — so a new picture coming into force takes it off sale on the next pack. One that is confirmed carries
+  // the last day its confirmation stays good (the day before the next notified picture), so a till that gets no new pack
+  // stops selling it on that day by its own clock, offline.
+  const asOfDay = opts.asOf.slice(0, 10);
+  const unconfirmed = all.filter((r) => isTobacco(r) && !warningStanding(r.tobaccoWarning, asOfDay).sellable);
+  const records = all.filter((r) => !unconfirmed.includes(r));
+  const confirmedUntil = new Map(records.filter(isTobacco).flatMap((r) => {
+    const standing = warningStanding(r.tobaccoWarning, asOfDay);
+    return standing.sellable && standing.goodUntil !== undefined ? [[r.productId, standing.goodUntil] as const] : [];
+  }));
 
-  // Prices: every entry for every product (the engine resolves the one that applies at this store/date).
-  const priceEntries: PriceEntry[] = [];
-  for (const r of records) priceEntries.push(...(await deps.priceEntries(opts.tenantId, r.productId)));
+  // Prices: every entry for every product (the engine resolves the one that applies at this store/date) — D-19: only the
+  // entries the owner's channel / zone switches allow, and the store's zone only while zone pricing is on.
+  const stored: PriceEntry[] = [];
+  for (const r of records) stored.push(...(await deps.priceEntries(opts.tenantId, r.productId)));
+  const priceEntries = deps.pricing === undefined ? stored : await deps.pricing.allowedEntries(opts.tenantId, stored);
+  const zoneId = deps.pricing === undefined ? undefined : await deps.pricing.zoneOfStore(opts.tenantId, opts.storeId);
 
   // Tax rates: resolve each distinct tax class's rate in force on the date. An HSN with no schedule (or a
   // gap before its earliest rate) is left unset — the engine then excludes its products as 'no_tax_class'
@@ -137,12 +164,21 @@ export async function assembleCatalogueSnapshot(
   const blocked = deps.blockedProducts === undefined ? new Set<string>() : await deps.blockedProducts(opts.tenantId);
 
   const built = buildCatalogueSnapshot({
-    scope: { tenantId: opts.tenantId, storeId: opts.storeId },
+    // A store's own pack is the till's (in-store) channel: no channel is named, so an app or delivery price never resolves.
+    scope: { tenantId: opts.tenantId, storeId: opts.storeId, ...(zoneId === undefined ? {} : { zoneId }) },
     version: opts.version,
     asOf: opts.asOf,
     products: records.map((r) => {
-      const master = toMaster(r, opts.asOf);
-      return blocked.has(r.productId) ? { ...master, recallBlock: true } : master;
+      const plain = toMaster(r, opts.asOf);
+      const until = confirmedUntil.get(r.productId);
+      const master = until === undefined ? plain : { ...plain, regulatedFlags: { ...(plain.regulatedFlags ?? {}), tobaccoWarningConfirmedUntil: until } };
+      if (!blocked.has(r.productId)) return master;
+      // SF-08 · OB-139 "A" (R3): the pack says WHICH batches block the product, so a 2D code carrying a sibling batch sells.
+      // A recall flag on the product itself (`recallBlocked`) blocks every batch — no batch list is sent for it.
+      const batches = knowsBlockedBatches(blocked) ? blocked.batchesOf(r.productId) : [];
+      return master.recallBlock === true || batches.length === 0
+        ? { ...master, recallBlock: true }
+        : { ...master, recallBlock: true, blockedBatches: batches };
     }),
     barcodes,
     priceEntries,
@@ -154,7 +190,11 @@ export async function assembleCatalogueSnapshot(
   const promotions = (deps.promotions === undefined ? [] : await deps.promotions(opts.tenantId))
     .filter((p) => p.status === 'active' && Date.parse(p.endsAt) >= at)
     .sort((a, b) => (a.id < b.id ? -1 : 1));
-  return promotions.length === 0 ? built : { ...built, snapshot: { ...built.snapshot, promotions } };
+  const withTobacco = unconfirmed.length === 0 ? built : {
+    ...built,
+    excluded: [...built.excluded, ...unconfirmed.map((r) => ({ productId: r.productId, sku: r.sku, reason: 'tobacco_warning_not_confirmed' as const }))],
+  };
+  return promotions.length === 0 ? withTobacco : { ...withTobacco, snapshot: { ...withTobacco.snapshot, promotions } };
 }
 
 export function cataloguePreviewRoutes(deps: CataloguePreviewDeps): readonly Route[] {

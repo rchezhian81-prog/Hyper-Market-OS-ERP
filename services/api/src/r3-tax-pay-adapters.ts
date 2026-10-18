@@ -1,0 +1,324 @@
+// R3 lane 2 — input credit, TDS, refunds and customer rights (A17, A24, C14, C5, A23 remainder). Head-office wiring only;
+// the rules live in the packages (`packages/input-tax`, `packages/withholding`, `packages/payment-disputes`,
+// `packages/returns/src/refund-channel.ts`, `packages/customer/src/nomination.ts`). Every register is append-only on its
+// own stream (hard rules #2, #6); reads fold the streams. `r3TaxPayRoutes` is the lane's one registration in main.ts; the
+// `…Hooks` functions are spread into the existing registrations they extend (supplier payments, desk refunds, transfers).
+
+import { createHash } from 'node:crypto';
+import { makeEvent } from '../../../packages/contracts/src/event';
+import type { EventStore } from '../../../packages/persistence/src/event-store';
+import type { Route } from '../../kernel/src/index';
+import type { AuditEntry } from '../../../packages/audit/src/index';
+import { makeItcForPeriod, type BookedInvoice, type ItcLineAction, type ItcReversal, type ItcForPeriod } from '../../../packages/input-tax/src/index';
+import { taxOfLines } from '../../purchase/src/index';
+import { itcStoreRoutes, loadItcReview, type ItcStoreDeps, type StoredStatement } from '../../finance/src/itc-store';
+import { assessTds, priorInYear, EMPTY_TDS_CONFIG, type TdsConfig, type TdsSwitch, type TdsChallan, type PaymentWithTds, type TdsAssessment } from '../../../packages/withholding/src/index';
+import { tdsStoreRoutes, type TdsStoreDeps } from '../../finance/src/tds-store';
+import type { ReturnRecord } from '../../pos/src/returns';
+import type { NomineeRecord, NomineeActivation } from '../../../packages/customer/src/index';
+import type { DisputeRecord, DisputeResponse, DisputeOutcome } from '../../../packages/payment-disputes/src/index';
+import { paymentDisputeRoutes, type PaymentDisputeDeps } from '../../finance/src/payment-disputes';
+import { checkDispatchEwb, supplyRouteBetween, type DispatchEwbVerdict } from '../../../packages/e-way-bill/src/index';
+import type { Transfer } from '../../../packages/warehouse/src/transfers';
+import { valueAtCost } from '../../../packages/contracts/src/quantity';
+import { branchOfLocationIn } from '../../inventory/src/location-scope';
+import { STREAM, STREAM_FOR, streamName, supplierMasterAdapter, eWayBillAdapter, orgStructureAdapter } from './adapters';
+
+const all = async <T>(store: EventStore, tenantId: string, stream: string, type: string): Promise<T[]> =>
+  (await store.readStream(tenantId, stream, { type })).map((e) => e.event.payload as T);
+
+/** Canonical JSON (keys sorted) — so the same file uploaded twice has one fingerprint however its keys were ordered. */
+function canonical(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(canonical).join(',')}]`;
+  if (v !== null && typeof v === 'object') return `{${Object.keys(v as object).sort().map((k) => `${JSON.stringify(k)}:${canonical((v as Record<string, unknown>)[k])}`).join(',')}}`;
+  return JSON.stringify(v) ?? 'null';
+}
+const sha = (s: string): string => createHash('sha256').update(s).digest('hex');
+
+// ── A17 · input tax credit through GSTR-2B + IMS ───────────────────────────────────────────────────────────────────
+
+const ITC_STREAM = streamName(STREAM.finance, 'itc-gstr2b');
+
+/**
+ * The shop's booked supplier invoices as the ITC match reads them: every live captured invoice, its supplier's GSTIN from
+ * the supplier master (the latest version), the supplier's own invoice number and date as captured, the GST its lines
+ * charge, and whether it has passed the three-way match (its latest match recorded and clear). Purchase lines carry no
+ * cess, so cess is 0.
+ */
+export async function bookedInvoicesFor(store: EventStore, now: () => string, tenantId: string): Promise<readonly BookedInvoice[]> {
+  const m = supplierMasterAdapter({ store, now });
+  const [invoices, matches, records] = await Promise.all([m.invoices(tenantId), m.latestMatches(tenantId), m.records(tenantId)]);
+  const gstinOf = new Map(records.map((r) => [r.supplierId, r.gstin]));
+  return invoices.map((inv): BookedInvoice => {
+    const tax = taxOfLines(inv.lines);
+    return {
+      invoiceId: inv.invoiceId, supplierId: inv.supplierId, supplierGstin: gstinOf.get(inv.supplierId) ?? null,
+      supplierInvoiceNo: inv.supplierInvoiceNo ?? null, supplierInvoiceDate: inv.supplierInvoiceDate ?? null,
+      igstMinor: tax.igstMinor, cgstMinor: tax.cgstMinor, sgstMinor: tax.sgstMinor, cessMinor: 0,
+      // Received and agreed: the latest three-way match is recorded and NOT blocked (goods short or price over is not yet
+      // a bill the shop holds in full — s.16(2)(b)).
+      threeWayMatched: matches.get(inv.invoiceId)?.blocked === false,
+    };
+  });
+}
+
+export function itcStoreAdapter(input: { readonly store: EventStore; readonly now: () => string }): Omit<ItcStoreDeps, 'recordAudit'> {
+  const { store, now } = input;
+  return {
+    now,
+    fingerprint: (raw) => sha(canonical(raw)).slice(0, 32),
+    statements: async (tenantId) => {
+      const latest = new Map<string, StoredStatement>();
+      for (const s of await all<StoredStatement>(store, tenantId, ITC_STREAM, 'Gstr2bUploaded')) latest.set(s.statement.period, s);
+      return [...latest.values()];
+    },
+    recordStatement: async (tenantId, s) => {
+      await store.append(tenantId, ITC_STREAM, makeEvent({
+        id: `gstr2b-${s.statement.period}-${s.fingerprint}`, type: 'Gstr2bUploaded', occurredAt: s.uploadedAt,
+        // One fact per month and file: the same file again collapses; a different file is a new, later fact.
+        idempotencyKey: `gstr2b-${tenantId}-${s.statement.period}-${s.fingerprint}`, source: 'api/finance', payload: s,
+      }));
+    },
+    booked: (tenantId) => bookedInvoicesFor(store, now, tenantId),
+    actions: (tenantId) => all<ItcLineAction>(store, tenantId, ITC_STREAM, 'ItcLineActioned'),
+    recordAction: async (tenantId, a) => {
+      const key = sha(`${a.period}|${a.lineId}|${a.action}|${a.by}|${a.at}`).slice(0, 32);
+      await store.append(tenantId, ITC_STREAM, makeEvent({
+        id: `itc-action-${key}`, type: 'ItcLineActioned', occurredAt: a.at,
+        idempotencyKey: `itc-action-${tenantId}-${key}`, source: 'api/finance', payload: a,
+      }));
+    },
+    reversals: (tenantId) => all<ItcReversal>(store, tenantId, ITC_STREAM, 'ItcReversalRecorded'),
+    recordReversal: async (tenantId, r) => {
+      const res = await store.append(tenantId, ITC_STREAM, makeEvent({
+        id: `itc-reversal-${r.reversalId}-${sha(r.at).slice(0, 8)}`, type: 'ItcReversalRecorded', occurredAt: r.at,
+        idempotencyKey: `itc-reversal-${tenantId}-${r.reversalId}`, source: 'api/finance', payload: r,
+      }));
+      return res.record.event.payload as ItcReversal;
+    },
+  };
+}
+
+/**
+ * **The port for GSTR-3B Table 4** — `itcForPeriod(tenantId, period)` (period YYYY-MM): `{ status: 'reconciled', igstMinor,
+ * cgstMinor, sgstMinor, cessMinor }` summing the ACCEPTED 2B lines of the month, or `{ status: 'not_reconciled', reason }`
+ * while no 2B is uploaded or any line awaits a person. Never a silent zero (P-08).
+ */
+export function itcForPeriodAdapter(input: { readonly store: EventStore; readonly now: () => string }): ItcForPeriod {
+  const deps = itcStoreAdapter(input);
+  return makeItcForPeriod((tenantId, period) => loadItcReview(deps, tenantId, period));
+}
+
+// ── A24 · TDS on supplier payments (switched off, OB-143) ───────────────────────────────────────────────────────────
+
+const TDS_STREAM = streamName(STREAM.finance, 'tds');
+
+/** Every supplier payment with the TDS it carried, as the register and the threshold read them. */
+async function paymentsWithTds(store: EventStore, now: () => string, tenantId: string): Promise<readonly PaymentWithTds[]> {
+  return (await supplierMasterAdapter({ store, now }).payments(tenantId)).map((p) => ({
+    paymentId: p.paymentId, supplierId: p.supplierId, paidOn: p.paidOn, grossMinor: p.amountMinor, ...(p.tds === undefined ? {} : { tds: p.tds }),
+  }));
+}
+
+const latestOf = async <T>(store: EventStore, tenantId: string, type: string): Promise<T | undefined> => (await all<T>(store, tenantId, TDS_STREAM, type)).at(-1);
+
+export function tdsStoreAdapter(input: { readonly store: EventStore; readonly now: () => string }): Omit<TdsStoreDeps, 'recordAudit'> {
+  const { store, now } = input;
+  return {
+    now,
+    config: (tenantId) => latestOf<TdsConfig>(store, tenantId, 'TdsConfigSet'),
+    recordConfig: async (tenantId, c) => {
+      await store.append(tenantId, TDS_STREAM, makeEvent({
+        id: `tds-config-v${c.version}-${sha(c.setAt).slice(0, 8)}`, type: 'TdsConfigSet', occurredAt: c.setAt,
+        idempotencyKey: `tds-config-${tenantId}-v${c.version}`, source: 'api/finance', payload: c,
+      }));
+    },
+    switchState: (tenantId) => latestOf<TdsSwitch>(store, tenantId, 'TdsSwitched'),
+    recordSwitch: async (tenantId, s) => {
+      await store.append(tenantId, TDS_STREAM, makeEvent({
+        id: `tds-switch-${sha(`${s.at}|${s.by}|${s.enabled}`).slice(0, 24)}`, type: 'TdsSwitched', occurredAt: s.at,
+        idempotencyKey: `tds-switch-${tenantId}-${s.at}-${s.by}-${s.enabled}`, source: 'api/finance', payload: s,
+      }));
+    },
+    payments: (tenantId) => paymentsWithTds(store, now, tenantId),
+    challans: (tenantId) => all<TdsChallan>(store, tenantId, TDS_STREAM, 'TdsChallanRecorded'),
+    recordChallan: async (tenantId, c) => {
+      const r = await store.append(tenantId, TDS_STREAM, makeEvent({
+        id: `tds-challan-${c.challanId}-${sha(c.at).slice(0, 8)}`, type: 'TdsChallanRecorded', occurredAt: c.at,
+        idempotencyKey: `tds-challan-${tenantId}-${c.challanId}`, source: 'api/finance', payload: c,
+      }));
+      return r.record.event.payload as TdsChallan;
+    },
+  };
+}
+
+/**
+ * The hook spread into the supplier payment route's deps (`supplierMasterRoutes`): the TDS a payment carries, from the
+ * CA's list, the owner's switch and the payee's financial-year payments so far.
+ */
+export function supplierPaymentHooks(input: { readonly store: EventStore; readonly now: () => string }): {
+  readonly withholding: (tenantId: string, p: { readonly supplierId: string; readonly paymentId: string; readonly grossMinor: number; readonly paidOn: string }) => Promise<TdsAssessment>;
+} {
+  const tds = tdsStoreAdapter(input);
+  return {
+    withholding: async (tenantId, p) => {
+      const [config, sw, payments] = await Promise.all([tds.config(tenantId), tds.switchState(tenantId), tds.payments(tenantId)]);
+      return assessTds({
+        enabled: sw?.enabled === true, config: config ?? EMPTY_TDS_CONFIG, supplierId: p.supplierId, grossMinor: p.grossMinor,
+        priorInYear: priorInYear(payments, p.supplierId, p.paidOn, p.paymentId),
+      });
+    },
+  };
+}
+
+// ── C14 · a refund goes back to the source (OB-144) ─────────────────────────────────────────────────────────────────
+
+/**
+ * The hook spread into the desk refund route's deps (`returnsRoutes`): what was already refunded against a bill, per
+ * tender kind — a plain refund by its tender, an exchange's refunded balance by the balance's tender — each return once.
+ */
+export function deskRefundHooks(input: { readonly store: EventStore }): {
+  readonly refundedByTender: (tenantId: string, saleId: string) => Promise<Readonly<Record<string, number>>>;
+} {
+  return {
+    refundedByTender: async (tenantId, saleId) => {
+      const out: Record<string, number> = {};
+      const seen = new Set<string>();
+      for (const r of await all<ReturnRecord>(input.store, tenantId, STREAM_FOR.forSaleReturns(saleId), 'ReturnRecorded')) {
+        if (seen.has(r.returnId)) continue;
+        seen.add(r.returnId);
+        const x = r.refundTender === 'exchange' ? r.exchange : undefined;
+        const kind = x === undefined ? r.refundTender : x.balance === 'refund' ? x.balanceTender : undefined;
+        const amount = x === undefined ? r.refundMinor : x.balance === 'refund' ? x.balanceMinor : 0;
+        if (kind !== undefined && amount > 0) out[kind] = (out[kind] ?? 0) + amount;
+      }
+      return out;
+    },
+  };
+}
+
+const DISPUTES_STREAM = streamName(STREAM.finance, 'payment-disputes');
+
+export function paymentDisputesAdapter(input: { readonly store: EventStore; readonly now: () => string }): Omit<PaymentDisputeDeps, 'recordAudit'> {
+  const { store, now } = input;
+  const once = async <T>(tenantId: string, type: string, key: string, at: string, payload: T): Promise<T> => {
+    const r = await store.append(tenantId, DISPUTES_STREAM, makeEvent({
+      id: `${key}-${sha(at).slice(0, 8)}`, type, occurredAt: at, idempotencyKey: `${tenantId}-${key}`, source: 'api/finance', payload,
+    }));
+    return r.record.event.payload as T;
+  };
+  return {
+    now,
+    disputes: (tenantId) => all<DisputeRecord>(store, tenantId, DISPUTES_STREAM, 'PaymentDisputeRecorded'),
+    responses: (tenantId) => all<DisputeResponse>(store, tenantId, DISPUTES_STREAM, 'PaymentDisputeAnswered'),
+    outcomes: (tenantId) => all<DisputeOutcome>(store, tenantId, DISPUTES_STREAM, 'PaymentDisputeDecided'),
+    recordDispute: (tenantId, d) => once(tenantId, 'PaymentDisputeRecorded', `dispute-${d.disputeId}`, d.recordedAt, d),
+    recordResponse: (tenantId, r) => once(tenantId, 'PaymentDisputeAnswered', `dispute-answer-${r.disputeId}`, r.at, r),
+    recordOutcome: (tenantId, o) => once(tenantId, 'PaymentDisputeDecided', `dispute-outcome-${o.disputeId}`, o.at, o),
+    paidBy: async (tenantId, saleId, instrument) => {
+      const held = await store.findByIdempotencyKey(tenantId, `sale-${tenantId}-${saleId}`);
+      if (held === undefined) return undefined;
+      const tenders = (held.event.payload as { readonly tenders?: readonly { readonly kind: string; readonly amountMinor: number }[] }).tenders ?? [];
+      return tenders.filter((t) => t.kind === instrument).reduce((s, t) => s + t.amountMinor, 0);
+    },
+  };
+}
+
+// ── C5 · the customer's nominee (DPDP s.14) ──────────────────────────────────────────────────────────────────────────
+
+const NOMINEES_STREAM = streamName(STREAM.privacy, 'nominees');
+
+/**
+ * The hooks spread into the DPO's data-rights routes and the customer's own privacy routes: the nominee records
+ * (append-only — recorded, changed, withdrawn) and the staff verifications of death or incapacity.
+ */
+export function privacyNomineeHooks(input: { readonly store: EventStore }): {
+  readonly nomineeRecords: (tenantId: string) => Promise<readonly NomineeRecord[]>;
+  readonly recordNominee: (tenantId: string, r: NomineeRecord) => Promise<void>;
+  readonly nomineeActivations: (tenantId: string) => Promise<readonly NomineeActivation[]>;
+  readonly recordActivation: (tenantId: string, a: NomineeActivation) => Promise<NomineeActivation>;
+} {
+  const { store } = input;
+  return {
+    nomineeRecords: (tenantId) => all<NomineeRecord>(store, tenantId, NOMINEES_STREAM, 'NomineeRecorded'),
+    recordNominee: async (tenantId, r) => {
+      const key = sha(`${r.customerRef}|${r.action}|${r.nomineeRef ?? ''}|${r.relationship ?? ''}|${r.at}`).slice(0, 32);
+      await store.append(tenantId, NOMINEES_STREAM, makeEvent({
+        id: `nominee-${key}`, type: 'NomineeRecorded', occurredAt: r.at, idempotencyKey: `nominee-${tenantId}-${key}`, source: 'api/customer', payload: r,
+      }));
+    },
+    nomineeActivations: (tenantId) => all<NomineeActivation>(store, tenantId, NOMINEES_STREAM, 'NomineeActivationVerified'),
+    recordActivation: async (tenantId, a) => {
+      const res = await store.append(tenantId, NOMINEES_STREAM, makeEvent({
+        id: `nominee-activation-${a.activationId}-${sha(a.verifiedAt).slice(0, 8)}`, type: 'NomineeActivationVerified', occurredAt: a.verifiedAt,
+        idempotencyKey: `nominee-activation-${tenantId}-${a.activationId}`, source: 'api/customer', payload: a,
+      }));
+      return res.record.event.payload as NomineeActivation;
+    },
+  };
+}
+
+// ── A23 remainder · a dispatch above the threshold needs a generated e-way bill ─────────────────────────────────────
+
+/** The e-way-bill register's movement a stock transfer's e-way bill is generated under. */
+export const transferEwbMovementId = (transferId: string): string => `transfer-${transferId}`;
+
+/**
+ * The hook spread into the transfer routes' deps (`transfersRoutes`): the dispatch's consignment value (each line at the
+ * source's unit cost, the lines with no cost counted out and said), its route (the GST state of each end's registration —
+ * the location's own, else its branch's), and the movement's e-way bill as the register holds it.
+ */
+export function transferDispatchHooks(input: { readonly store: EventStore; readonly now: () => string }): {
+  readonly ewayBillGate: (tenantId: string, transfer: Transfer, lineCostsMinor: readonly (number | null)[]) => Promise<DispatchEwbVerdict>;
+} {
+  const ewb = eWayBillAdapter(input);
+  const org = orgStructureAdapter(input);
+  return {
+    ewayBillGate: async (tenantId, transfer, lineCostsMinor) => {
+      let value = 0;
+      let unvalued = 0;
+      transfer.lines.forEach((line, i) => {
+        const cost = lineCostsMinor[i] ?? null;
+        if (cost === null) unvalued += 1;
+        else value += valueAtCost(line.quantityMinor, line.uom, { minor: cost });
+      });
+      const nodes = await org.nodes(tenantId);
+      const branchOf = branchOfLocationIn(nodes);
+      const stateOf = (locationId: string): string | null => {
+        const own = nodes.find((n) => n.nodeId === locationId)?.gstin;
+        const gstin = own ?? nodes.find((n) => n.nodeId === branchOf(locationId))?.gstin;
+        return typeof gstin === 'string' && gstin.length >= 2 ? gstin.slice(0, 2) : null;
+      };
+      const movementId = transferEwbMovementId(transfer.transferId);
+      const held = await ewb.load(tenantId, movementId);
+      return checkDispatchEwb({
+        movementId, consignmentValueMinor: value, unvaluedLines: unvalued,
+        supplyRoute: supplyRouteBetween(stateOf(transfer.fromLocationId), stateOf(transfer.toLocationId)),
+        ewb: held === undefined ? undefined : { state: held.state, ...(held.ewbNo === undefined ? {} : { ewbNo: held.ewbNo }) },
+      });
+    },
+  };
+}
+
+// ── the lane's routes, registered once in main.ts ───────────────────────────────────────────────────────────────────
+
+export function r3TaxPayRoutes(input: {
+  readonly store: EventStore | undefined;
+  readonly now: () => string;
+  readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
+}): readonly Route[] {
+  const { store, now } = input;
+  const audit = input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit };
+  const none = <T>(v: T) => () => v;
+  return [
+    ...itcStoreRoutes(store === undefined
+      ? { statements: none([]), recordStatement: () => {}, booked: none([]), actions: none([]), recordAction: () => {}, reversals: none([]), recordReversal: (_t, r) => r, fingerprint: (raw) => sha(canonical(raw)).slice(0, 32), now }
+      : { ...itcStoreAdapter({ store, now }), ...audit }),
+    ...tdsStoreRoutes(store === undefined
+      ? { config: none(undefined), recordConfig: () => {}, switchState: none(undefined), recordSwitch: () => {}, payments: none([]), challans: none([]), recordChallan: (_t, c) => c, now }
+      : { ...tdsStoreAdapter({ store, now }), ...audit }),
+    ...paymentDisputeRoutes(store === undefined
+      ? { disputes: none([]), responses: none([]), outcomes: none([]), recordDispute: (_t, d) => d, recordResponse: (_t, r) => r, recordOutcome: (_t, o) => o, paidBy: none(undefined), now }
+      : { ...paymentDisputesAdapter({ store, now }), ...audit }),
+  ];
+}

@@ -20,6 +20,7 @@ import { openDeviceOutbox, guardedStore, type DeviceOutbox } from '../../../pack
 import { drainToBox, boxStatus } from '../../../packages/sync/src/device-drain';
 import { pageStamping, type SignInClock } from '../../../packages/sync/src/sign-in-stamp';
 import { WarehouseSession, type WarehouseAssignment } from './warehouse-session';
+import { DsdDoorSession, type DsdDoorData } from './dsd-door';
 
 import { mountDemoBanner, type BannerDocument } from '../../../packages/ui/src/demo-banner';
 
@@ -42,6 +43,8 @@ interface WarehouseWindow {
   /** The store computer's write base the box injected: `''` on the device socket (same origin), absent off it. */
   laneWriteBase?: string;
   warehouseRelay?: WarehouseRelay;
+  /** R3 D-11: the direct-delivery door check-in (no cash at the door, OB-141), on the same device outbox. */
+  dsdSession?: DsdDoorSession;
 }
 
 export interface WarehouseRelay {
@@ -132,6 +135,8 @@ if (browserWindow !== undefined) {
   browserWindow.warehouseData = withChosenDelivery(browserWindow.warehouseData, new URLSearchParams(search).get('delivery'));
   browserWindow.warehouseOutbox = outbox;
   const session = bootWarehouse(browserWindow.warehouseData, outbox);
+  const assigned = browserWindow.warehouseData;
+  if (assigned?.workerId !== undefined && assigned.storeId !== undefined) browserWindow.dsdSession = new DsdDoorSession(assigned as unknown as DsdDoorData, outbox);
   if (session !== null) {
     browserWindow.warehouseSession = session;
     // The relay to the store computer — present only when the box served this page (it injects `laneWriteBase`).

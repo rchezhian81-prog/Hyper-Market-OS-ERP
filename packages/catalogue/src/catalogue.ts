@@ -18,6 +18,7 @@
 import { isUom, normaliseUom } from '../../contracts/src/quantity';
 import type { Promotion } from '../../promotions/src/promotions';
 import { TOBACCO_MINIMUM_AGE } from '../../restricted-sales/src/till-gate';
+import { parseGs1, parseGs1Date, looksLikeGs1, gtinCandidates, type Gs1Read } from '../../gs1/src/gs1';
 
 export type ProductStatus = 'draft' | 'active' | 'discontinued' | 'clearance';
 export type BarcodeKind = 'standard' | 'weight_embedded' | 'price_embedded' | 'alternate';
@@ -41,6 +42,18 @@ export interface CatalogueProduct {
   readonly status: ProductStatus;
   /** Stops sale everywhere, honoured offline (M10-FR-04). */
   readonly recallBlock?: boolean;
+  /**
+   * SF-08 · OB-139 "A" — WHICH batches the `recallBlock` comes from, when it comes only from named batches (an open recall
+   * or a quality hold on each). A scan whose barcode CARRIES its batch (a GS1 2D code) is then refused only for these
+   * batches and a sibling batch sells; a plain barcode still blocks the whole product. Absent while `recallBlock` is set
+   * means the whole product is blocked whatever the barcode says (a recall flag on the product itself). Signed.
+   */
+  readonly blockedBatches?: readonly string[];
+  /**
+   * D-20 — a batch under an approved markdown, and the unit price it is charged at. Only a scan whose barcode carries that
+   * batch is charged it; a plain barcode is charged the product's price. Signed with the rest of the pack.
+   */
+  readonly batchPrices?: readonly { readonly batchId: string; readonly unitPriceMinor: number }[];
   /** This product is lot/batch-tracked (perishable, pharma, regulated): the lane should capture the
    *  batch on each sale line so it can be traced in a recall (M10-FR-03). A sale of a batch-tracked
    *  product with no batch is banked but flagged, never refused (hard rule #1/#10). */
@@ -78,23 +91,10 @@ export interface EmbeddedBarcodeRule {
 }
 
 /**
- * Parse a GS1-style 6-digit YYMMDD date into `YYYY-MM-DD`, or `undefined` if it is not a valid date.
- * The year maps to 20YY (retail use-by dates are near-future); a day of `00` means the last day of the
- * month (GS1 AI-17 convention). Pure — no clock.
+ * Parse a GS1-style 6-digit YYMMDD date into `YYYY-MM-DD` (GS1 AI-17 convention). The one reading lives in
+ * `packages/gs1`; re-exported here because the embedded-barcode rules above read the same dates.
  */
-export function parseGs1Date(yymmdd: string): string | undefined {
-  if (!/^\d{6}$/.test(yymmdd)) return undefined;
-  const year = 2000 + Number(yymmdd.slice(0, 2));
-  const month = Number(yymmdd.slice(2, 4));
-  let day = Number(yymmdd.slice(4, 6));
-  if (month < 1 || month > 12) return undefined;
-  if (day === 0) day = new Date(Date.UTC(year, month, 0)).getUTCDate(); // "00" → last day of the month
-  const iso = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-  // Reject an impossible day (e.g. 31 April) by checking the date round-trips.
-  const parsed = new Date(`${iso}T00:00:00.000Z`);
-  if (Number.isNaN(parsed.getTime()) || parsed.getUTCDate() !== day) return undefined;
-  return iso;
-}
+export { parseGs1Date } from '../../gs1/src/gs1';
 
 /** Where a snapshot is for — drives price precedence (M05-FR-01) and names the store a lane sells from. */
 export interface SnapshotScope {
@@ -146,6 +146,13 @@ export interface ScanResult {
   /** The minimum age in whole years when `requiresAgeCheck` — the number the question asks and the basket must hold
    *  a confirmed answer for (Wave 2b · audit PF-03). Absent for an unrestricted product. */
   readonly minimumAge?: number;
+  /**
+   * D-20 — the batch the barcode CARRIED (a GS1 2D code): its id (AI 10) and use-by date (AI 17), which the sale line keeps
+   * for the recall trace. Absent for a plain 1D scan — the lane does not guess a batch.
+   */
+  readonly batch?: { readonly batchId?: string; readonly expiry?: string; readonly gtin: string };
+  /** D-20 — the scanned batch is under an approved markdown: the line is charged this unit price, not the product's. */
+  readonly markdownPriceMinor?: number;
 }
 
 /**
@@ -193,9 +200,25 @@ export class UnknownUnitError extends Error {
 }
 
 export class RecalledItemError extends Error {
-  constructor(name: string) {
-    super(`"${name}" is under recall and cannot be sold (M10-FR-04) — even offline.`);
+  /** SF-08: the batch the refusal is for, when the barcode carried it. */
+  readonly batchId?: string;
+  constructor(name: string, batchId?: string) {
+    super(batchId === undefined
+      ? `"${name}" is under recall and cannot be sold (M10-FR-04) — even offline.`
+      : `"${name}" batch ${batchId} is under recall and cannot be sold (M10-FR-04) — even offline. Put it aside; other batches may be sold.`);
     this.name = 'RecalledItemError';
+    if (batchId !== undefined) this.batchId = batchId;
+  }
+}
+
+/**
+ * D-20 — a 2D barcode that names a product, but carries something this till cannot price safely (a weight or a price
+ * inside the code). Refused by name rather than sold as one unit at the shelf price.
+ */
+export class UnsupportedGs1ContentError extends Error {
+  constructor(name: string, what: string) {
+    super(`Cannot sell "${name}" from this 2D barcode: it carries ${what}, which this till does not read yet. Scan the shelf label or the 1D barcode instead.`);
+    this.name = 'UnsupportedGs1ContentError';
   }
 }
 
@@ -321,10 +344,14 @@ export class CatalogueCache {
     return undefined;
   }
 
-  private assertSellable(product: CatalogueProduct): void {
+  private assertSellable(product: CatalogueProduct, carriedBatch?: string): void {
     // Recall is checked first: it blocks the sale regardless of status (M10-FR-04).
     if (product.recallBlock) {
-      throw new RecalledItemError(product.name);
+      // SF-08 · OB-139 "A": only a barcode that CARRIES its batch may sell a sibling of a recalled batch, and only when the
+      // block is known to come from named batches. A plain barcode, or a block on the product itself, refuses every batch.
+      const named = product.blockedBatches;
+      if (carriedBatch === undefined || named === undefined) throw new RecalledItemError(product.name);
+      if (named.includes(carriedBatch)) throw new RecalledItemError(product.name, carriedBatch);
     }
     if (!SELLABLE.includes(product.status)) {
       throw new ItemNotSellableError(product.name, product.status);
@@ -389,7 +416,11 @@ export class CatalogueCache {
       };
     }
 
-    // 2. A variable-weight / price-embedded barcode, per the tenant's rules.
+    // 2. A GS1 2D code (DataMatrix, GS1 QR, Digital Link) — GTIN, batch and expiry, read offline (D-20). Decided by the
+    //    code's SHAPE, so a plain 1D barcode never comes here and behaves exactly as before.
+    if (looksLikeGs1(trimmed)) return this.scanGs1(trimmed, batch);
+
+    // 3. A variable-weight / price-embedded barcode, per the tenant's rules.
     const embedded = this.decodeEmbedded(trimmed);
     if (embedded !== undefined) {
       // The item code inside the barcode is matched as a barcode or an SKU.
@@ -421,5 +452,38 @@ export class CatalogueCache {
     }
 
     throw new UnknownBarcodeError(trimmed);
+  }
+
+  /**
+   * D-20 — a GS1 2D scan. The GTIN finds the product by the 1D code its label carries; the batch (AI 10) and use-by date
+   * (AI 17) come from the code itself. Then, in order: the recall block (only the recalled batch when the code names one —
+   * SF-08 · OB-139), status and unit, the use-by date (B8 — `batch.asOf` is today at the lane), and the batch's markdown
+   * price. A code that cannot be read with certainty is refused with its reason (`Gs1ParseError`). O(1), no network.
+   */
+  private scanGs1(code: string, ctx?: ScanBatchContext): ScanResult {
+    const read: Gs1Read = parseGs1(code);
+    let hit: CatalogueBarcode | undefined;
+    for (const candidate of gtinCandidates(read.gtin)) {
+      hit = this.byBarcode.get(candidate);
+      if (hit !== undefined) break;
+    }
+    const product = hit === undefined ? undefined : this.byProductId.get(hit.productId);
+    if (product === undefined) throw new UnknownBarcodeError(read.gtin);
+    this.assertSellable(product, read.batch);
+    // A weight or a price inside the code would make this line wrong if sold as one unit — refused by name instead.
+    const measured = Object.keys(read.elements).find((ai) => /^3[1-6]\d\d$/.test(ai) || /^39[0-3]\d$/.test(ai));
+    if (measured !== undefined) throw new UnsupportedGs1ContentError(product.name, `a ${measured.startsWith('39') ? 'price' : 'weight or measure'} (AI ${measured})`);
+    // The code's own use-by date wins over anything the lane passed; today comes from the lane (clockless here).
+    const expiry = read.expiry ?? ctx?.batchExpiry;
+    this.assertNotExpired(product, { ...(ctx?.asOf === undefined ? {} : { asOf: ctx.asOf }), ...(expiry === undefined ? {} : { batchExpiry: expiry }) });
+    const markdown = read.batch === undefined ? undefined : product.batchPrices?.find((b) => b.batchId === read.batch)?.unitPriceMinor;
+    return {
+      product,
+      barcodeKind: hit!.kind,
+      quantityMinor: 1,
+      batch: { gtin: read.gtin, ...(read.batch === undefined ? {} : { batchId: read.batch }), ...(read.expiry === undefined ? {} : { expiry: read.expiry }) },
+      ...(markdown === undefined ? {} : { markdownPriceMinor: markdown }),
+      ...this.age(product),
+    };
   }
 }

@@ -198,6 +198,9 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   { id: 'store-tasks', label: 'Store tasks', labelTa: 'கடைப் பணிகள்', path: '/store-tasks', requires: 'workforce.task.read', group: 'People', served: 'unserved' },
   { id: 'my-tasks', label: 'My tasks', labelTa: 'என் பணிகள்', path: '/my-tasks', requires: 'workforce.task.complete.own', group: 'People', served: 'unserved' },
   { id: 'waste-analytics', label: 'Waste analytics', labelTa: 'வீண் பகுப்பாய்வு', path: '/waste-analytics', requires: 'waste.view', group: 'Reports', served: 'unserved' },
+  // R3 D-9 (OB-142 "A"): the Staff schedule — staff needed per hour from the sales, a draft roster within the Shops Act
+  // limits that a manager commits, and actual attendance against it. A head-office page over its own routes.
+  { id: 'schedule', label: 'Staff schedule', labelTa: 'பணியாளர் அட்டவணை', path: '/schedule', requires: 'workforce.roster.read', group: 'People', served: 'unserved' },
   // AI control — the kill switch, agents, the proposal queue, cost (A01–A10 governance). Gated on the budget read
   // (`ai.budget.read`), the owner's permission; the switches need `ai.killswitch.set` / `ai.budget.set` /
   // `ai.agent.enable`, which the routes enforce.
@@ -273,6 +276,10 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // and recording the filing. Gated on the filing permission the route checks (`posh.report.file`, the owner's). A
   // head-office page (the box does not serve it). The complaints register itself stays the committee's (OB-157).
   { id: 'posh-report', label: 'Committee annual report', labelTa: 'குழு ஆண்டு அறிக்கை', path: '/posh-report', requires: 'posh.report.file', group: 'People', served: 'unserved' },
+  // R3 lane 2 · A17 · OB-145 "A": the accountant's GSTR-2B review — upload the month's file, see every line matched with
+  // the books and the exceptions, accept / reject / keep pending each line. Gated on the read the review route checks
+  // (`finance.itc.read`). A head-office page (the box does not serve it).
+  { id: 'itc-review', label: 'Input tax credit (GSTR-2B)', labelTa: 'உள்ளீட்டு வரி வரவு (GSTR-2B)', path: '/itc-review', requires: 'finance.itc.read', group: 'Finance', served: 'unserved' },
 ]);
 
 /** An item retired from the catalogue, with the reason and where its job lives now — never a silent drop. */

@@ -305,6 +305,8 @@ export function startScreenServer(input: {
   readonly laneWriteBase?: string;
   /** Which LANE this box is (`EDGE_LANE_ID`, SP-4b · F09) — told to the served till so every sale names it. */
   readonly laneId?: string;
+  /** B13 (OB-138): the hallmark HUIDs this box has sold — told to the served till with its lane, per request. */
+  readonly soldHuids?: () => readonly string[];
   /**
    * Run the ERP screens as the person the relay's `X-Sre-User` header names (OB-16). ONLY a deployment whose screens
    * are reached solely through a front that authenticates every request and sets this header itself
@@ -378,7 +380,9 @@ export function startScreenServer(input: {
       const receiptTemplate = route.screen === 'pos' ? posReceiptTemplate(snap) : undefined;
       // The till alone is also told which lane it IS and when the shop's day ends (SP-4b · F09) — never who the cashier
       // is; the person signs in at the till.
-      const posLane = route.screen === 'pos' ? posLanePayload(snap, input.laneId) : undefined;
+      const posLane = route.screen === 'pos'
+        ? { ...posLanePayload(snap, input.laneId), ...(input.soldHuids === undefined ? {} : { soldHuids: input.soldHuids() }) }
+        : undefined;
       // And the refund policy its store pack carries (SP-9b-i · M13-FR-01): the approval threshold and the no-receipt
       // cap. Absent when the box holds none — the till then offers no return without a receipt, rather than guessing a cap.
       const posRefundPolicy = route.screen === 'pos' ? posRefundPolicyPayload(snap) : undefined;

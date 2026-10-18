@@ -67,6 +67,12 @@ export interface ReplenishmentRoutesDeps {
    * listed, delisted, or on clearance) is taken out of the proposal and listed under `outOfRange` — visible, never silent.
    */
   readonly rangeOf?: (tenantId: string, storeId: string) => Promise<readonly AssortmentEntry[]> | readonly AssortmentEntry[];
+  /**
+   * D-16 (R3, OB-189): the product MASTER's lifecycle. A discontinued or clearance product is never reordered
+   * automatically, whatever the store's range says (including no range at all) — it is taken out of the proposal and
+   * listed under `stoppedByLifecycle`, visible, never silent.
+   */
+  readonly masterLifecycle?: (tenantId: string, productId: string) => Promise<string | undefined> | string | undefined;
 }
 
 /** A whole-day shift on a YYYY-MM-DD date. */
@@ -203,6 +209,17 @@ export function replenishmentRoutes(deps: ReplenishmentRoutesDeps): readonly Rou
           outOfRange.push({ productId: it.productId, status });
           return false;
         });
+        // D-16 (R3): the master's lifecycle stops automatic reordering whatever the range says.
+        const stoppedByLifecycle: { productId: string; lifecycle: string }[] = [];
+        if (deps.masterLifecycle !== undefined) {
+          const kept: typeof priced = [];
+          for (const it of priced) {
+            const lifecycle = await deps.masterLifecycle(ctx.tenantId, it.productId);
+            if (lifecycle === 'discontinued' || lifecycle === 'clearance') stoppedByLifecycle.push({ productId: it.productId, lifecycle });
+            else kept.push(it);
+          }
+          priced = kept;
+        }
         const stockFacts = items.map((it) => ({
           productId: it.productId, onHand: facts.onHand[it.productId] ?? 0, onOrder: facts.onOrder[it.productId] ?? 0, inTransit: facts.inTransit[it.productId] ?? 0,
           reserved: facts.reserved?.[it.productId] ?? 0,
@@ -213,7 +230,7 @@ export function replenishmentRoutes(deps: ReplenishmentRoutesDeps): readonly Rou
             status: 200,
             body: {
               proposals, count: proposals.length, asAt: deps.now(), ...(demandWindow === undefined ? {} : { demandWindow }),
-              storeId, outOfRange, stockFacts, factsFrom: 'head_office_stock_ledger',
+              storeId, outOfRange, stoppedByLifecycle, stockFacts, factsFrom: 'head_office_stock_ledger',
             },
           };
         } catch (e) {

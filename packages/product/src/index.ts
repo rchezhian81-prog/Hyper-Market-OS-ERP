@@ -15,3 +15,4 @@ export * from './pack-declarations';
 export * from './dual-mrp';
 export * from './category-policy';
 export * from './category-presets';
+export * from './tobacco-warning';

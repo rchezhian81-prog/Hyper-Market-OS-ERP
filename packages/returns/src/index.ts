@@ -8,3 +8,4 @@ export * from './return-register';
 export * from './assess-return';
 export * from './return-eligibility';
 export * from './exchange';
+export * from './refund-channel';
