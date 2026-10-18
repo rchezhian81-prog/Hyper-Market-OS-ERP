@@ -457,6 +457,14 @@ export class PosSession {
     return this.lines.slice();
   }
 
+  /**
+   * What one line charges, in minor units: the unit price times the quantity, as the totals price it (a weighed line is
+   * its weight times the price per kg, rounded down). Before any offer — the offer's discount is shown on its own.
+   */
+  lineAmountMinor(line: BasketEntry): number {
+    return this.priceOf(line).total.minor;
+  }
+
   /** Lines that count toward the total (not voided). */
   private activeLines(): BasketEntry[] {
     return this.lines.filter((l) => !l.voided);

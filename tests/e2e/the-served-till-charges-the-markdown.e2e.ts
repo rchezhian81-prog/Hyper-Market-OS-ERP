@@ -117,7 +117,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('an approve
   }
 
   /** Open the served till, sign the cashier in, scan the barcode as a scanner does; the total the till asks. */
-  async function ringOne(edge: EdgeProcess, expectVersion: number): Promise<{ total: string; errors: string[] }> {
+  async function ringOne(edge: EdgeProcess, expectVersion: number): Promise<{ total: string; line: string; errors: string[] }> {
     const context = await browser.newContext();
     try {
       const page: Page = await context.newPage();
@@ -131,7 +131,8 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('an approve
       await page.keyboard.type(BARCODE);
       await page.keyboard.press('Enter');
       await page.waitForSelector('#lines tr');
-      return { total: (await page.textContent('#total')) ?? '', errors };
+      // The line's own amount cell — it once read ₹NaN because the real till sent no line amount.
+      return { total: (await page.textContent('#total')) ?? '', line: (await page.locator('#lines tr td').nth(2).textContent()) ?? '', errors };
     } finally {
       await context.close();
     }
@@ -147,6 +148,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('an approve
     expect(await edge.refreshPack!()).toMatchObject({ status: 'updated', heldVersion: 1 });
     const before = await ringOne(edge, 1);
     expect(before.total).toBe('₹50.00');
+    expect(before.line).toBe('₹50.00');
     expect(before.errors).toEqual([]);
 
     // ── The advisory markdown: 100 on hand, 10 a day, 2 days left → 80 will not sell → 25% off → ₹37.50. It changes no price.
@@ -175,6 +177,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('an approve
     expect(await edge.refreshPack!()).toMatchObject({ status: 'updated', heldVersion: next.version });
     const after = await ringOne(edge, next.version);
     expect(after.total).toBe('₹37.50');
+    expect(after.line).toBe('₹37.50');
     expect(after.errors).toEqual([]);
 
     // ── A restart of the box: the till still charges ₹37.50 from the pack on its own disk (no cloud round trip).
@@ -184,5 +187,6 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('an approve
     running = true;
     const restarted = await ringOne(edge, next.version);
     expect(restarted.total).toBe('₹37.50');
+    expect(restarted.line).toBe('₹37.50');
   }, 180_000);
 });

@@ -29,6 +29,8 @@ export interface ViewLine {
   readonly description: string;
   readonly unitPriceMinor: number;
   readonly qty: number;
+  /** What the line charges, in minor units (unit price × quantity as the totals price it; a weighed line by weight). */
+  readonly amountMinor: number;
   readonly uom: string;
   readonly voided: boolean;
   readonly voidReason?: string;
@@ -300,6 +302,7 @@ export function createPosView(
         description: l.description,
         unitPriceMinor: l.unitPrice.minor,
         qty: l.quantityMinor,
+        amountMinor: session.lineAmountMinor(l),
         uom: l.uom,
         voided: l.voided,
         voidReason: l.voidReason,

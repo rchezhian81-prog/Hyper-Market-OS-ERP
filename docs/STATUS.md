@@ -5,6 +5,14 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Fix: the till showed ₹NaN for each line's amount (18 October 2026)
+
+- **Cause:** the till screen printed each line's `amountMinor`, but the real till view (`apps/pos/src/view-adapter.ts`) never supplied it. Only the stand-in used before the bundle loads did, so every line on a real till read ₹NaN. The bill total was always right.
+- **Fix:** the session exposes `lineAmountMinor` (the same pricing as the totals: a weighed line is weight × price per kg, rounded down), and the view gives every line its `amountMinor`.
+- **Proof:**
+  - Unit test: line amounts are whole numbers, a weighed line rounds down, and the lines add up to the total.
+  - Browser test on the served till: the line cell reads ₹50.00, and ₹37.50 after a markdown and after a box restart. It read ₹NaN before the fix.
+
 ## Release R3 — built in four parallel lanes and joined (18 October 2026) — branch `claude/new-session-lw91i4`, gate green, PR opened
 
 - **Owner sign-off:** R3 acceptance sentences signed (OB-188); D-16 and D-19 signed separately (OB-189, OB-190); lane questions answered (OB-191 to OB-200).
