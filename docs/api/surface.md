@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1039 | 636 | 636 | 89 | 302 |
+| 13 | 1060 | 649 | 649 | 89 | 309 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -706,6 +706,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/finance/e-invoice/invoices/:invoiceId/submit` | `finance.einvoice.generate` | core | yes |
 | POST | `/v1/finance/e-invoice/invoices/:invoiceId/verify` | `finance.einvoice.generate` | core | yes |
 | GET | `/v1/finance/e-invoice/register` | `finance.einvoice.read` | core | — |
+| GET | `/v1/finance/e-invoice/reporting-guard` | `finance.gstr.read` | core | — |
 | POST | `/v1/finance/e-invoice/sandbox/register` | `finance.einvoice.generate` | core | yes |
 | POST | `/v1/finance/e-way-bill/eligibility` | `finance.einvoice.read` | core | yes |
 | GET | `/v1/finance/e-way-bill/movements/:movementId` | `finance.einvoice.read` | core | — |
@@ -717,12 +718,18 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/finance/e-way-bill/register` | `finance.einvoice.read` | core | — |
 | POST | `/v1/finance/e-way-bill/sandbox/generate` | `finance.einvoice.generate` | core | yes |
 | POST | `/v1/finance/e-way-bill/validity` | `finance.einvoice.read` | core | yes |
+| GET | `/v1/finance/filing-calendar` | `finance.gstr.read` | core | — |
+| POST | `/v1/finance/filing-calendar/raise-owner-exceptions` | `finance.gstr.generate` | core | yes |
 | GET | `/v1/finance/fixed-assets` | `finance.period.read` | core | — |
 | POST | `/v1/finance/fixed-assets/:assetId` | `finance.journal.post` | core | yes |
 | POST | `/v1/finance/fixed-assets/:assetId/dispose` | `finance.journal.post` | core | yes |
 | POST | `/v1/finance/fixed-assets/:assetId/transfer` | `finance.journal.post` | core | yes |
 | POST | `/v1/finance/fixed-assets/depreciation/:period` | `finance.journal.post` | core | yes |
 | POST | `/v1/finance/gst-portal/gate` | `finance.einvoice.read` | core | yes |
+| GET | `/v1/finance/gst/controls` | `finance.gstr.read` | core | — |
+| PUT | `/v1/finance/gst/controls/einvoice-30-day-guard` | `finance.einvoice.guard.switch` | core | yes |
+| PUT | `/v1/finance/gst/controls/reverse-charge` | `finance.rcm.switch` | core | yes |
+| PUT | `/v1/finance/gst/controls/time-bar-warning-days` | `finance.gst.timebar.set` | core | yes |
 | GET | `/v1/finance/gstr1/export` | `finance.gstr.read` | core | — |
 | POST | `/v1/finance/gstr1/from-sales/table-12` | `finance.gstr.read` | core | yes |
 | GET | `/v1/finance/gstr1/return` | `finance.gstr.read` | core | — |
@@ -736,6 +743,13 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/finance/gstr1/submission/:period/submit` | `finance.gstr.submit` | core | yes |
 | GET | `/v1/finance/gstr1/submissions` | `finance.gstr.read` | core | — |
 | GET | `/v1/finance/gstr1/table-12` | `finance.gstr.read` | core | — |
+| GET | `/v1/finance/gstr3b/:period` | `finance.gstr.read` | core | — |
+| POST | `/v1/finance/gstr3b/:period/amendments/:amendmentId` | `finance.gstr.generate` | core | yes |
+| POST | `/v1/finance/gstr3b/:period/lock` | `finance.gstr.generate` | core | yes |
+| POST | `/v1/finance/gstr3b/:period/outward-liability` | `finance.gstr.generate` | core | yes |
+| GET | `/v1/finance/gstr9/:fy` | `finance.gstr.read` | core | — |
+| GET | `/v1/finance/gstr9c/:fy` | `finance.gstr.read` | core | — |
+| POST | `/v1/finance/gstr9c/:fy/reasons` | `finance.gstr.generate` | core | yes |
 | POST | `/v1/finance/journals` | `finance.journal.post` | core | yes |
 | GET | `/v1/finance/loyalty-liability` | `finance.period.read` | core | — |
 | POST | `/v1/finance/outward-supplies/:documentId` | `finance.gstr.generate` | core | yes |
@@ -756,9 +770,16 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/finance/periods/:period/stock-valuation` | `finance.period.read` | core | — |
 | GET | `/v1/finance/posting-map` | `finance.period.read` | core | — |
 | PUT | `/v1/finance/posting-map` | `finance.posting.configure` | core | yes |
+| GET | `/v1/finance/rcm/heads` | `finance.rcm.read` | core | — |
+| POST | `/v1/finance/rcm/heads/:headCode` | `finance.rcm.configure` | core | yes |
+| POST | `/v1/finance/rcm/heads/:headCode/retire` | `finance.rcm.configure` | core | yes |
+| POST | `/v1/finance/rcm/purchases/:purchaseId` | `finance.rcm.record` | core | yes |
+| POST | `/v1/finance/rcm/purchases/:purchaseId/paid` | `finance.rcm.pay` | core | yes |
+| GET | `/v1/finance/rcm/register` | `finance.rcm.read` | core | — |
 | POST | `/v1/finance/refunds/day-totals` | `refund.exception.read` | core | yes |
 | POST | `/v1/finance/refunds/exceptions` | `refund.exception.read` | core | yes |
 | GET | `/v1/finance/retention` | `finance.period.read` | core | — |
+| POST | `/v1/finance/returns/:returnType/:period/filed` | `finance.gstr.submit` | core | yes |
 | GET | `/v1/finance/stock-losses` | `finance.period.read` | core | — |
 | POST | `/v1/finance/stock-losses/post` | `finance.journal.post` | core | yes |
 | GET | `/v1/finance/tax/bogo` | `finance.period.read` | core | — |
