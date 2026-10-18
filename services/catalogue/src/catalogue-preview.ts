@@ -25,6 +25,7 @@ import type { PriceEntry } from '../../../packages/price-list/src/price-list';
 import type { Promotion } from '../../../packages/promotions/src/promotions';
 import { resolveGstRate, InvalidRateSchedule, type GstRatePeriod } from '../../../packages/finance/src/rate';
 import { TOBACCO_MINIMUM_AGE } from '../../../packages/restricted-sales/src/till-gate';
+import { knowsBlockedBatches } from '../../inventory/src/sale-blocks';
 
 export interface CataloguePreviewDeps {
   readonly products: (tenantId: string) => Promise<readonly ProductRecord[]> | readonly ProductRecord[];
@@ -142,7 +143,13 @@ export async function assembleCatalogueSnapshot(
     asOf: opts.asOf,
     products: records.map((r) => {
       const master = toMaster(r, opts.asOf);
-      return blocked.has(r.productId) ? { ...master, recallBlock: true } : master;
+      if (!blocked.has(r.productId)) return master;
+      // SF-08 · OB-139 "A" (R3): the pack says WHICH batches block the product, so a 2D code carrying a sibling batch sells.
+      // A recall flag on the product itself (`recallBlocked`) blocks every batch — no batch list is sent for it.
+      const batches = knowsBlockedBatches(blocked) ? blocked.batchesOf(r.productId) : [];
+      return master.recallBlock === true || batches.length === 0
+        ? { ...master, recallBlock: true }
+        : { ...master, recallBlock: true, blockedBatches: batches };
     }),
     barcodes,
     priceEntries,

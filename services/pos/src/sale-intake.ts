@@ -411,11 +411,18 @@ export function acceptSale(sale: IncomingSale, ctx: IntakeContext): IntakeResult
       continue;
     }
 
-    if (product.recallBlock === true) {
+    // SF-08 · OB-139 "A" (R3): a line whose batch the till read off a 2D code, for a product blocked only by OTHER named
+    // batches, is a sibling batch that may be sold. Every other line of a blocked product is the finding it always was —
+    // and a line naming a blocked batch says which batch reached a customer.
+    const lineBatch = typeof line.batchId === 'string' && line.batchId.trim() !== '' && line.batchAssigned === undefined ? line.batchId.trim() : undefined;
+    const siblingOfABlockedBatch = product.recallBlock === true && lineBatch !== undefined
+      && product.blockedBatches !== undefined && !product.blockedBatches.includes(lineBatch);
+    if (product.recallBlock === true && !siblingOfABlockedBatch) {
       // The one finding on this list that is about a person rather than a number.
+      const batchWords = lineBatch !== undefined && product.blockedBatches?.includes(lineBatch) === true ? ` (recalled batch ${lineBatch})` : '';
       add('sold_a_recalled_product', 'critical',
-        `${product.sku} is recall-blocked and this lane sold it — its pack (v${sale.packVersion}) predates the block`,
-        `ACT NOW: ${product.sku} is in a customer's hands. Check whether the receipt identifies them, and follow the recall procedure. Then confirm every lane has taken the pack that blocks it.`,
+        `${product.sku}${batchWords} is recall-blocked and this lane sold it — its pack (v${sale.packVersion}) predates the block`,
+        `ACT NOW: ${product.sku}${batchWords} is in a customer's hands. Check whether the receipt identifies them, and follow the recall procedure. Then confirm every lane has taken the pack that blocks it.`,
         { productId: line.productId });
     }
 

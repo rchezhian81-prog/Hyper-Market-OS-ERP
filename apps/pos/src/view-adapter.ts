@@ -31,6 +31,8 @@ export interface ViewLine {
   readonly uom: string;
   readonly voided: boolean;
   readonly voidReason?: string;
+  /** D-20 — the batch the barcode carried, when it carried one. */
+  readonly batchId?: string;
 }
 
 /** A scan as the view supplies it (e.g. from the scanner or a lookup). */
@@ -52,6 +54,11 @@ export interface ScanOutcome {
   readonly requiresAgeCheck: boolean;
   /** The age that was asked for, when the item is age-restricted (PF-03). */
   readonly minimumAge?: number;
+  /** D-20 — the batch the barcode carried (a GS1 2D code), shown on the line and kept on the sale. */
+  readonly batchId?: string;
+  readonly batchExpiry?: string;
+  /** D-20 — the line is charged the batch's approved markdown price (`amountMinor` is that price). */
+  readonly markdown?: boolean;
 }
 
 /** One age answer as the view shows it (PF-03). */
@@ -220,10 +227,12 @@ export function createPosView(
       // The error surfaces to the cashier unchanged.
       // An age-restricted item with no confirmed answer in this basket is refused by the session with
       // `AgeCheckRequiredError` — the line is NOT added; the screen asks, and scans again on a yes (PF-03).
-      const hit = catalogue.scan(code, batch);
-      // A price-embedded barcode carries the line price for one unit; otherwise the
-      // catalogue's unit price applies to the scanned quantity.
-      const unitPriceMinor = hit.priceOverrideMinor ?? hit.product.unitPriceMinor;
+      // D-20: today at THIS lane, so a 2D code's use-by date is judged offline with no clock in the catalogue (B8).
+      const today = batch?.asOf ?? session.laneToday();
+      const hit = catalogue.scan(code, { ...batch, ...(today === undefined ? {} : { asOf: today }) });
+      // A price-embedded barcode carries the line price for one unit; a batch under markdown is charged its markdown price
+      // (D-20); otherwise the catalogue's unit price applies to the scanned quantity.
+      const unitPriceMinor = hit.priceOverrideMinor ?? hit.markdownPriceMinor ?? hit.product.unitPriceMinor;
       const entry = session.scan({
         productId: hit.product.productId,
         description: hit.product.name,
@@ -236,6 +245,9 @@ export function createPosView(
         ...(hit.minimumAge === undefined ? {} : { minimumAge: hit.minimumAge }),
         // B14 · B19: the tobacco pack size and the carry-bag / plastic facts, from the signed pack.
         ...(hit.product.regulatedFlags === undefined ? {} : { regulatedFlags: hit.product.regulatedFlags }),
+        // D-20: the batch the barcode carried rides on the line — never a guessed one.
+        ...(hit.batch?.batchId === undefined ? {} : { batchId: hit.batch.batchId }),
+        ...(hit.batch?.expiry === undefined ? {} : { batchExpiry: hit.batch.expiry }),
       });
       return {
         lineId: entry.lineId,
@@ -244,6 +256,9 @@ export function createPosView(
         amountMinor: unitPriceMinor,
         requiresAgeCheck: hit.requiresAgeCheck,
         ...(hit.minimumAge === undefined ? {} : { minimumAge: hit.minimumAge }),
+        ...(hit.batch?.batchId === undefined ? {} : { batchId: hit.batch.batchId }),
+        ...(hit.batch?.expiry === undefined ? {} : { batchExpiry: hit.batch.expiry }),
+        ...(hit.markdownPriceMinor === undefined ? {} : { markdown: true }),
       };
     },
 
@@ -285,6 +300,7 @@ export function createPosView(
         uom: l.uom,
         voided: l.voided,
         voidReason: l.voidReason,
+        ...(l.batchId === undefined ? {} : { batchId: l.batchId }),
       }));
     },
 

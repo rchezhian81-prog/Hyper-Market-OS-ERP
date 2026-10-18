@@ -51,7 +51,7 @@ export function priceListRoutes(deps: PriceListDeps): readonly Route[] {
       handler: async (ctx) => {
         const productId = ctx.params['productId'] ?? '';
         const entryId = ctx.params['entryId'] ?? '';
-        const b = (ctx.body ?? {}) as { scope?: unknown; scopeRef?: unknown; priceMinor?: unknown; currency?: unknown; mrpMinor?: unknown; costMinor?: unknown; marginFloorBps?: unknown; effectiveFrom?: unknown; effectiveTo?: unknown; approval?: unknown; approvalId?: unknown };
+        const b = (ctx.body ?? {}) as { scope?: unknown; scopeRef?: unknown; priceMinor?: unknown; currency?: unknown; mrpMinor?: unknown; costMinor?: unknown; marginFloorBps?: unknown; effectiveFrom?: unknown; effectiveTo?: unknown; approval?: unknown; approvalId?: unknown; batchId?: unknown };
 
         if (!isScope(b.scope) || !isStr(b.scopeRef)
           || !isNonNegInt(b.priceMinor) || !isNonNegInt(b.mrpMinor) || !isNonNegInt(b.costMinor)
@@ -66,6 +66,17 @@ export function priceListRoutes(deps: PriceListDeps): readonly Route[] {
             nextSafeAction: 'Send the scope, ref, price, mrp, cost, margin floor, currency and effective date. Nothing was recorded.',
           });
         }
+        // D-20: a price for ONE batch (a markdown on a batch near its use-by) — charged only when the barcode carries that
+        // batch. It clears exactly the same gate as any price: MRP, margin floor with a second person, no back-dating.
+        if (b.batchId !== undefined && !(isStr(b.batchId) && (b.batchId as string).trim().length <= 20)) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_price_entry',
+            whatHappened: 'batchId, when sent, must be the batch number as printed (up to 20 characters) — the same number its 2D barcode carries.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send the batch number, or leave batchId out for the product\'s own price. Nothing was recorded.',
+          });
+        }
+        const batchId = b.batchId === undefined ? undefined : (b.batchId as string).trim();
         const currency = b.currency as CurrencyCode;
         const priceMinor = b.priceMinor as number;
         const setBy = ctx.userId;
@@ -125,7 +136,7 @@ export function priceListRoutes(deps: PriceListDeps): readonly Route[] {
         // Version is monotonic per (scope, ref) — a later entry supersedes on tie, and a sale can lock it.
         const existing = await deps.entries(ctx.tenantId, productId);
         const version = existing
-          .filter((e) => e.scope === b.scope && e.scopeRef === b.scopeRef)
+          .filter((e) => e.scope === b.scope && e.scopeRef === b.scopeRef && (e.batchId ?? null) === (batchId ?? null))
           .reduce((max, e) => Math.max(max, e.version), 0) + 1;
 
         const entry: PriceEntry = {
@@ -134,9 +145,10 @@ export function priceListRoutes(deps: PriceListDeps): readonly Route[] {
           effectiveFrom: b.effectiveFrom as string,
           effectiveTo: b.effectiveTo === undefined ? null : (b.effectiveTo as string | null),
           status: 'active', version,
+          ...(batchId === undefined ? {} : { batchId }),
         };
         await deps.recordEntry(ctx.tenantId, productId, entry);
-        return { status: 201, body: { entryId, productId, scope: entry.scope, scopeRef: entry.scopeRef, priceMinor, currency, effectiveFrom: entry.effectiveFrom, version, approvedBy: approval?.decidedBy ?? null } };
+        return { status: 201, body: { entryId, productId, scope: entry.scope, scopeRef: entry.scopeRef, priceMinor, currency, effectiveFrom: entry.effectiveFrom, version, approvedBy: approval?.decidedBy ?? null, ...(batchId === undefined ? {} : { batchId }) } };
       },
     },
     {

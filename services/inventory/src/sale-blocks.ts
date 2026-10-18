@@ -34,9 +34,41 @@ export interface SaleBlockDeps {
   readonly currentPack: (tenantId: string) => Promise<SignedPack | undefined> | SignedPack | undefined;
 }
 
-/** The products the till must refuse — any product with at least one open block on it (decision "C"). */
-export function blockedProductIds(blocks: readonly SaleBlock[]): ReadonlySet<string> {
-  return new Set(blocks.map((b) => b.productId).filter((p): p is string => p !== null));
+/**
+ * The products the till must refuse — any product with at least one open block on it (decision "C") — and, for each,
+ * WHICH batches are blocked (SF-08 · OB-139 "A", release R3). A plain barcode still blocks the whole product; a barcode
+ * that carries its batch (a GS1 2D code) is refused only for these. It is a `Set` of product ids, so every reader that
+ * asks "is this product blocked?" reads exactly as before; the pack assembly also asks `batchesOf`.
+ */
+export interface BlockedProducts extends ReadonlySet<string> {
+  /** The blocked batches of a product, sorted — empty when the product is not blocked. */
+  batchesOf(productId: string): readonly string[];
+}
+
+class BlockedProductSet extends Set<string> implements BlockedProducts {
+  private readonly batches = new Map<string, string[]>();
+  constructor(blocks: readonly SaleBlock[]) {
+    super();
+    for (const b of blocks) {
+      if (b.productId === null) continue;
+      this.add(b.productId);
+      const list = this.batches.get(b.productId) ?? [];
+      if (!list.includes(b.batchId)) list.push(b.batchId);
+      this.batches.set(b.productId, list);
+    }
+  }
+  batchesOf(productId: string): readonly string[] {
+    return [...(this.batches.get(productId) ?? [])].sort();
+  }
+}
+
+export function blockedProductIds(blocks: readonly SaleBlock[]): BlockedProducts {
+  return new BlockedProductSet(blocks);
+}
+
+/** True when a set of blocked products also says which batches (`blockedProductIds`) — a bare set of ids does not. */
+export function knowsBlockedBatches(set: ReadonlySet<string>): set is BlockedProducts {
+  return typeof (set as Partial<BlockedProducts>).batchesOf === 'function';
 }
 
 export function saleBlockRoutes(deps: SaleBlockDeps): readonly Route[] {
@@ -48,10 +80,19 @@ export function saleBlockRoutes(deps: SaleBlockDeps): readonly Route[] {
       handler: async (ctx) => {
         const blocks = [...(await deps.blocks(ctx.tenantId))].sort((a, b) => (a.since < b.since ? 1 : a.since > b.since ? -1 : 0));
         const pack = await deps.currentPack(ctx.tenantId);
-        const onPack = new Set((pack?.snapshot.products ?? []).filter((p) => p.recallBlock === true).map((p) => p.productId));
+        // SF-08 · R3: a block is on the pack when the pack blocks its product AND either names this batch or blocks the whole
+        // product (a recall flag on the product itself). A pack that blocks the product for other batches only has not got it.
+        const packed = new Map((pack?.snapshot.products ?? []).filter((p) => p.recallBlock === true).map((p) => [p.productId, p] as const));
+        const reaches = (b: SaleBlock): boolean => {
+          const p = b.productId === null ? undefined : packed.get(b.productId);
+          return p !== undefined && (p.blockedBatches === undefined || p.blockedBatches.includes(b.batchId));
+        };
         const rows = blocks.map((b) => ({
           ...b,
-          state: b.productId === null ? 'product_unknown' as const : onPack.has(b.productId) ? 'on_pack' as const : 'not_yet_on_pack' as const,
+          state: b.productId === null ? 'product_unknown' as const : reaches(b) ? 'on_pack' as const : 'not_yet_on_pack' as const,
+          // OB-139 "A": how the tills refuse it — a plain barcode refuses the whole product; a barcode carrying the batch
+          // refuses only this batch, and sells its sibling batches.
+          ...(b.productId === null ? {} : { atTheTill: 'plain_barcode_blocks_whole_product_2d_barcode_blocks_this_batch' as const }),
         }));
         const waiting = rows.filter((r) => r.state === 'not_yet_on_pack').length;
         const unknown = rows.filter((r) => r.state === 'product_unknown').length;
@@ -60,6 +101,8 @@ export function saleBlockRoutes(deps: SaleBlockDeps): readonly Route[] {
           body: {
             blocks: rows,
             blockedProducts: [...blockedProductIds(blocks)].sort(),
+            // SF-08 · R3: each blocked product's blocked batches.
+            blockedBatches: Object.fromEntries([...blockedProductIds(blocks)].sort().map((p) => [p, blockedProductIds(blocks).batchesOf(p)])),
             packVersion: pack?.snapshot.version ?? null,
             packPublishedAt: pack?.publishedAt ?? null,
             notYetOnPack: waiting,
