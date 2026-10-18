@@ -5,7 +5,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
-## Coordinated programme · R2 coverage correction: the 15 open pilot (R2) items built, verified and fixed (16–17 October 2026) — gated, PR pending
+## Coordinated programme · R2 coverage correction: the 15 open pilot (R2) items built, verified and fixed (16–17 October 2026) — merged in PR #788 (c98fa7a5)
 
 - **Built (four parallel lanes, then fix rounds F1–F10; synthetic data; no staff UAT):**
   - **Lane 1 — till rules:** B5 weighed price rounded down, B6 verified-scale register (signed in the store pack; lapsed stamp stops weighed sales on that lane), B14 tobacco 18+ and whole packs only, B19 banned plastic and thin bags refused; carry bags never discounted (OB-173/178).
@@ -16,6 +16,8 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   - **Handhelds:** each record stamped with the sign-in it was made under (OB-180); phone sign-ins end at 4 hours and the screen locks (OB-184/186).
 - **Handheld known limits (stated, not hidden):** a phone clock turned back while no page of that sign-in was open, to a time still later than the last moment the phone saw, cannot be detected on the phone; the gain is bounded by that sign-in's own end, and the next contact with the box locks it. The box's per-sign-in stamp-order memory is lost on a box restart (the 12-hour late limit stays the upper bound).
 - **Verification:** five independent verifier passes (lanes 1–2, lanes 3–4, r2final, handhelds; fix rounds F1–F11) found 2 high + many medium defects; every one was reproduced, fixed and re-proved. Owner decisions OB-151 to OB-186 recorded in writing.
+- **Demo update (17 Oct, PR #788 = c98fa7a5):** refused again, exit 78, same cause as 16 Oct: `/opt/sre/app/infra/compose/.env.pilot` (read as uid 1001, 20 settings) has no `BOX_HISTORY_SEAL_KEY` line. The box is safely unchanged on 4db4951b. Waiting for IT's six steps in `docs/runbooks/round-32-administrator-step.md`.
+- **Seal key added (18 Oct):** the box was still on 4db4951b, which predates the helper, so IT took `set-box-history-seal-key.sh` from `origin/main` on the box and ran it. It reported CHECK PASSED, the line count is now 1 and the file is readable by the deploy user. This merge re-triggers the demo update.
 - **Open (not software):** the CA must fill every Shops Act limit and leave value (`docs/requirements/hr-compliance-settings.md`); every till scale must be entered on the Weighing scales page with its certificate before go-live; IT must switch on the one-year sign-in event log in the running identity server; PMLA cash reporting waits for the CA's rule; B15 tobacco warning board is physical. R3 waits for the owner to sign `docs/requirements/R3_ACCEPTANCE_DRAFT_2026-10-16.md` (OB-137).
 - **What to check in the store (once released):** ring a 10% basket offer with a bag (bag stays ₹5); scan a single cigarette (refused); set a test scale's stamp to yesterday (weighed items refused, rice still rings); record a loss without a reason (refused); receive a frozen delivery on the handheld with the wifi off (checklist required, booked complete in that person's name after sync); publish a roster with a 7-day week (refused).
 
