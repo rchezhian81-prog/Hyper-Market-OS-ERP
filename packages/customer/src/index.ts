@@ -40,6 +40,8 @@
 export * from './matching';
 export * from './consent';
 export * from './data-rights';
+// R3 · C5 (DPDP s.14): the customer's nominee, append-only, acting only after a verified death or incapacity.
+export * from './nomination';
 export * from './erasure-executor';
 export * from './erasure-governance';
 export * from './processor-erasure-notice';

@@ -19,6 +19,7 @@
 // Finance posts this account to the ledger through the accountant's mapping (services/finance/src/payables.ts) and
 // reconciles the two — the register and the ledger — as two figures reached two different ways (QG-07).
 
+import type { TdsDeduction } from '../../../packages/withholding/src/index';
 import type { Route } from '../../kernel/src/index';
 import { valueAtCost } from '../../../packages/contracts/src/quantity';
 import { notFound } from '../../kernel/src/index';
@@ -80,6 +81,12 @@ export interface SupplierPayment {
   readonly recordedAt: string;
   readonly approvedBy: string;
   readonly approvedAt: string;
+  /**
+   * R3 · A24: the income-tax TDS withheld from this payment (ss.194C/I/J), when the CA's list and the owner's switch make
+   * one due. `amountMinor` stays the GROSS the payment settles; the payee was paid `tds.netMinor`, and the TDS is a
+   * liability until a challan covers it. Absent when nothing was withheld.
+   */
+  readonly tds?: TdsDeduction;
 }
 
 /** SP-7c — a debit note ISSUED to the supplier under a number from the tenant's series (M23-FR-02). */

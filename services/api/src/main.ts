@@ -299,6 +299,7 @@ import { committeeMembershipRoutes } from '../../identity/src/committee-membersh
 import { hrComplianceRoutes } from '../../finance/src/hr-compliance';
 import { poshRegisterRoutes } from '../../finance/src/posh-register';
 import { processorRegisterAdapter, settlementRefundsAdapter } from './r2-data-adapters';
+import { r3TaxPayRoutes, supplierPaymentHooks, deskRefundHooks, privacyNomineeHooks, transferDispatchHooks } from './r3-tax-pay-adapters';
 import { processorRegisterRoutes } from '../../customer/src/processor-register';
 import { legacyCardPurgeRoutes } from '../../migration/src/legacy-card-purge';
 import { wasteAnalyticsAdapter, foodSafetyAdapter, priceIntegrityAgeingAdapter, assignedTaskAdapter, receivingChecklistLookup, carriedChecklistAdapter } from './r2-ops-adapters';
@@ -826,7 +827,7 @@ export function buildSurface(deps: {
       invoices: empty([]), latestMatches: empty(new Map()), purchaseOrders: empty([]), receipts: empty([]), payments: empty([]), debitNoteIssues: empty([]), now,
       record: empty(undefined), records: empty([]), recordSupplier: () => {}, supplierBlocked: empty(false), bankState: empty(undefined), bankHolders: empty([]),
       permissionsOfUser: empty(undefined), recordPayment: () => {}, allocateNumber: () => Promise.resolve(1), recordDebitNoteIssue: () => {},
-    } : { ...supplierMasterAdapter({ store, now, numberSeries: deps.numberSeries }), recordAudit: auditTrail?.recordAudit, approvals: approvalRequestsAdapter({ store, now }) }),
+    } : { ...supplierMasterAdapter({ store, now, numberSeries: deps.numberSeries }), recordAudit: auditTrail?.recordAudit, approvals: approvalRequestsAdapter({ store, now }), ...supplierPaymentHooks({ store, now }) /* R3 A24 TDS */ }),
     // GT-05 (MG-08): opening supplier balances from the old system — recorded per legacy bill, signed off by a second person
     // against the old system's control total, then owed, payable and posted like any other balance.
     ...supplierOpeningRoutes(store === undefined ? {
@@ -1058,7 +1059,7 @@ export function buildSurface(deps: {
     ...transfersRoutes(store === undefined ? {
       transfer: empty(undefined), availableAt: empty([]), recordProposed: () => {}, recordDispatched: () => {}, recordReceived: () => {},
       unitCostAt: empty(undefined), knownLocation: empty(true), now,
-    } : { ...transfersAdapter({ store, now }), locationBranches: locationBranchesOf(store, now), countFreeze: countPlanFreeze }),
+    } : { ...transfersAdapter({ store, now }), locationBranches: locationBranchesOf(store, now), countFreeze: countPlanFreeze, ...transferDispatchHooks({ store, now }) /* R3 A23 EWB gate */ }),
     // The floor indent chain (SP-8 · F08): request → approval → back-store issue (a transfer, dispatched) → in transit →
     // independent floor receipt → shelf availability; cancel and floor→back-store return. Rides the transfer engine.
     ...floorIndentRoutes(floorIndentDeps),
@@ -1219,7 +1220,7 @@ export function buildSurface(deps: {
       returnWindow: () => undefined, recordReturnWindow: () => {},
       storeCreditCap: () => undefined, recordStoreCreditCap: () => {},
       flaggedReturns: empty([]), now,
-    } : { ...returnsAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, tillSealKey: sealKey,
+    } : { ...returnsAdapter({ store, now }), ...deskRefundHooks({ store }) /* R3 C14 refund to source */, recordAudit: auditTrail?.recordAudit, tillSealKey: sealKey,
       // OB-34 "A": a return gives back the points the member PAID WITH, in proportion to the goods coming back; and on such
       // a bill the earn is taken back against those goods too (its refund is only the money share). An exchange gives
       // nothing back (its goods are credited in full) and takes back against its credit, as before.
@@ -1310,13 +1311,13 @@ export function buildSurface(deps: {
     // Data-subject rights lifecycle (M20-FR-04 / DPDP) — raise/verify/fulfil/erasure-plan + overdue.
     ...dataRightsRoutes(store === undefined
       ? { request: empty(undefined), requests: empty([]), record: () => {}, now }
-      : dataRightsAdapter({ store, now })),
+      : { ...dataRightsAdapter({ store, now }), ...privacyNomineeHooks({ store }) /* R3 C5 nominee */ }),
     // FUL-06: the signed-in customer's own privacy centre — consent and rights saved on the SAME ledgers the senders and
     // the DPO read, scoped from the session, read back after every write.
     ...privacySelfRoutes(store === undefined ? privacySelfUnwired(now) : (() => {
       const c = customerAdapter({ store, now });
       const r = dataRightsAdapter({ store, now });
-      return { consentRecords: c.consentRecords, appendConsent: c.appendConsent, requests: r.requests, recordRequest: r.record, now };
+      return { consentRecords: c.consentRecords, appendConsent: c.appendConsent, requests: r.requests, recordRequest: r.record, now, ...privacyNomineeHooks({ store }) /* R3 C5 nominee */ };
     })()),
     // Erasure EXECUTION (M20-FR-04 / DPDP) — locate PII, checker approval, two-person execute + tombstone,
     // processor notices. DEVELOPMENT-APPROVED; legal confirmation required.
@@ -1702,6 +1703,8 @@ export function buildSurface(deps: {
     ...eWayBillRegisterRoutes(store === undefined ? {
       load: () => undefined, recordSubmit: () => {}, recordResponse: () => {}, recordCancel: () => {}, recordMismatch: () => {}, listMovementIds: () => [], now,
     } : eWayBillAdapter({ store, now })),
+    // R3 lane 2 (A17 ITC via GSTR-2B + IMS · A24 TDS · C14 payment disputes · C5 nomination): r3-tax-pay-adapters.
+    ...r3TaxPayRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
     // GST government-portal switch — the feature flag + kill switch keeping LIVE e-invoice/e-way-bill portal
     // calls OFF by default and killable; the gate a deployment consults before the real connector. Sandbox
     // routes are exempt.

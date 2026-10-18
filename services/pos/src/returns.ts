@@ -30,6 +30,7 @@ import {
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import { approvalIdIn, namedApproverRefusal, takeRefundApproval, type ApprovalUse, type RefundApprovalState } from './refund-approvals';
 import { lotsOfReturn, lotProblemWords } from '../../../packages/returns/src/return-lots';
+import { refundChannel } from '../../../packages/returns/src/refund-channel';
 import { returnedValueAtOriginalPrices } from '../../../packages/returns/src/exchange';
 import { refundRoomOutsidePoints } from '../../../packages/loyalty/src/wallet';
 import type { HeldReturnedStock } from './sale-stock';
@@ -102,6 +103,13 @@ export interface ReturnRecord {
   readonly approvedBy?: string;
   /** The approval a desk refund spent (ADR-0022) — the object, not a name. */
   readonly approvalId?: string;
+  /**
+   * R3 · C14 · OB-144 "A": a refund that did NOT go back the way the bill was paid — the second person's approval it spent,
+   * who gave it and their written reason. Absent on a refund to the source.
+   */
+  readonly tenderException?: { readonly approvalId: string; readonly approvedBy: string; readonly reason: string; readonly detail: string };
+  /** R3 · C14: head office could not say how the bill was paid, so the refund-to-source rule could not be applied (P-08). */
+  readonly refundSourceNotKnown?: true;
   /** The customer the refund belongs to — required for a store-credit refund (the credit is issued to
    *  them), carried on the record for reporting. Absent for cash/card refunds. */
   readonly customerRef?: string;
@@ -232,6 +240,11 @@ export interface ReturnsDeps {
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
   /** PF-14 — returned goods held off the shelf (quarantined, damaged, scrap), linked to their return and lot. */
   readonly heldReturnedStock?: (tenantId: string) => Promise<readonly HeldReturnedStock[]> | readonly HeldReturnedStock[];
+  /**
+   * R3 · C14 · OB-144 "A": what was already refunded against this bill, per tender kind — the refund-to-source rule reads
+   * it. Absent on a bare stub (then the rule is not applied); the running system provides it.
+   */
+  readonly refundedByTender?: (tenantId: string, saleId: string) => Promise<Readonly<Record<string, number>>> | Readonly<Record<string, number>>;
   readonly now: () => string;
 }
 
@@ -427,7 +440,7 @@ export function returnsRoutes(deps: ReturnsDeps): readonly Route[] {
         const approvalId = approvalIdIn(ctx.body);
         if (approvalId === undefined && namedApprover !== undefined) throw namedApproverRefusal(namedApprover, 'approvedBy');
         const approvalUses: ApprovalUse[] = [];
-        const take = async (id: string, kind: 'refund' | 'out_of_window') => {
+        const take = async (id: string, kind: 'refund' | 'out_of_window' | 'tender_exception') => {
           const state = deps.refundApproval === undefined ? undefined : await Promise.resolve(deps.refundApproval(ctx.tenantId, id));
           const approval = await takeRefundApproval({
             state, kind, saleId, valueMinor: parsed.refundMinor, processedBy: ctx.userId, returnId: parsed.returnId, now: deps.now(),
@@ -532,6 +545,32 @@ export function returnsRoutes(deps: ReturnsDeps): readonly Route[] {
           });
         }
 
+        // R3 · C14 · OB-144 "A": the refund goes back the way the bill was paid. One that does not (cash on a card or UPI
+        // sale, or more to a tender than it paid) needs a SECOND person's approval of kind `tender_exception`, given in their
+        // own session with a written reason (ADR-0022); without it nothing moves. A bill whose tenders are not held is said.
+        let tenderException: ReturnRecord['tenderException'];
+        let refundSourceNotKnown = false;
+        if (deps.refundedByTender !== undefined) {
+          const channel = refundChannel({
+            saleTenders: sale.tenders, refundedByTender: await Promise.resolve(deps.refundedByTender(ctx.tenantId, saleId)),
+            refundTender: request.refundTender, refundMinor: request.refundMinor,
+          });
+          if (channel.verdict === 'source_not_known') refundSourceNotKnown = true;
+          if (channel.verdict === 'exception_needed') {
+            const exceptionId = approvalIdIn(ctx.body, 'tenderExceptionApprovalId');
+            if (exceptionId === undefined) {
+              throw apiError(422, {
+                code: 'refund_not_to_source',
+                whatHappened: `A refund goes back the way the bill was paid: ${channel.detail}. Refunding it another way is an exception that needs a second person and a written reason (OB-144).`,
+                wasItSaved: 'not_saved',
+                nextSafeAction: 'Refund to the card or UPI the bill was paid by, or have a supervisor approve the exception in their own session (POST /v1/pos/refund-approvals, kind tender_exception, with the reason) and send tenderExceptionApprovalId. No money has moved.',
+              });
+            }
+            const given = await take(exceptionId, 'tender_exception');
+            tenderException = { approvalId: exceptionId, approvedBy: given.approvedBy, reason: given.reason, detail: channel.detail };
+          }
+        }
+
         // Store credit as a refund method (M13-FR-03 / M17): a `store_credit` refund ISSUES a real,
         // spendable balance — the shop taking on a liability, so it is capped and issued to a named
         // customer. Computed here, after every refusal check has passed, and appended atomically WITH
@@ -580,6 +619,8 @@ export function returnsRoutes(deps: ReturnsDeps): readonly Route[] {
             ...(request.approvedBy === undefined ? {} : { approvedBy: request.approvedBy }),
             ...(approvalId === undefined ? {} : { approvalId }),
             ...(storeCredit === undefined ? {} : { customerRef: readCustomerRef(ctx.body) }),
+            ...(tenderException === undefined ? {} : { tenderException }),
+            ...(refundSourceNotKnown ? { refundSourceNotKnown: true as const } : {}),
           }, storeCredit, expectedVersion, approvalUses);
         } catch (err) {
           // The other refund of this sale landed first (Wave 2a · PF-01): this one was decided on figures that are no
@@ -599,6 +640,8 @@ export function returnsRoutes(deps: ReturnsDeps): readonly Route[] {
             approvedBy: request.approvedBy ?? '',
             // An out-of-window return let through by a supervisor is visible on the trail (§28, P-08).
             ...(outOfWindowApprovedBy === undefined ? {} : { outOfWindowApprovedBy }),
+            // R3 · C14: a refund not to the source is visible on the trail with the second person who allowed it.
+            ...(tenderException === undefined ? {} : { tenderExceptionApprovedBy: tenderException.approvedBy, tenderExceptionReason: tenderException.reason }),
             // The store-credit instrument issued by this refund (no tender instrument — hard rule #3).
             ...(storeCredit === undefined ? {} : { storeCreditInstrumentId: storeCredit.movement.instrumentId }),
           },
@@ -619,6 +662,9 @@ export function returnsRoutes(deps: ReturnsDeps): readonly Route[] {
             ...(storeCredit === undefined ? {} : {
               storeCredit: { instrumentId: storeCredit.movement.instrumentId, balanceMinor: creditBalanceMinor },
             }),
+            // R3 · C14: where the money went relative to how the bill was paid — an exception and who allowed it, or unknown.
+            refundSource: tenderException !== undefined ? 'exception_approved' : refundSourceNotKnown ? 'not_known' : deps.refundedByTender === undefined ? 'not_checked' : 'to_source',
+            ...(tenderException === undefined ? {} : { tenderException: { approvedBy: tenderException.approvedBy, reason: tenderException.reason } }),
           },
         };
       },

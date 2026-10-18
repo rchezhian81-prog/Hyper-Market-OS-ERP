@@ -31,7 +31,24 @@
 // Pure and deterministic: the clock is injected, nothing is deleted here — this produces
 // the plan a fulfilment step executes and an auditor later reads.
 
-export type RightKind = 'access' | 'correction' | 'export' | 'erasure';
+/**
+ * The rights a data principal exercises. R3 · C5 (DPDP s.13): a `grievance` — a complaint about how the shop handled their
+ * data — is a request kind of its own, worked and answered within the same published time.
+ */
+export type RightKind = 'access' | 'correction' | 'export' | 'erasure' | 'grievance';
+export const RIGHT_KINDS: readonly RightKind[] = ['access', 'correction', 'export', 'erasure', 'grievance'];
+
+/**
+ * R3 · C5 · OB-146 "B" (owner, 16 Oct 2026, in writing): the shop's PUBLISHED answer-by time for every privacy request and
+ * complaint — 15 days. Shown to the customer in the notice and on their privacy page; a request or grievance not answered
+ * by then is overdue and reaches the owner like every other overdue request.
+ */
+export const PUBLISHED_RESPONSE_SLA_DAYS = 15;
+
+/** The promise as the customer reads it. */
+export function publishedSlaStatement(days: number = PUBLISHED_RESPONSE_SLA_DAYS): string {
+  return `We answer every privacy request and every complaint about your data within ${days} days of receiving it.`;
+}
 
 export type RequestState = 'raised' | 'verified' | 'fulfilled' | 'refused' | 'partially_fulfilled';
 
@@ -47,6 +64,11 @@ export interface DataSubjectRequest {
   readonly state: RequestState;
   /** The policy SLA in days, per tenant. */
   readonly dueBy: string;
+  /**
+   * R3 · C5 (DPDP s.14): raised by the customer's NOMINEE, after a verified death or incapacity — who the nominee is (the
+   * reference the customer recorded) and the verification that let them act. Absent when the customer acts themselves.
+   */
+  readonly actingAs?: { readonly role: 'nominee'; readonly nomineeRef: string; readonly activationRef: string };
 }
 
 /** Why a record cannot be erased. Each is a real statute, not a general excuse. */

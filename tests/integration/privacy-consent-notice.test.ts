@@ -18,6 +18,8 @@ const complete = {
   items: [{ dataCategory: 'contact', purpose: 'order updates' }],
   withdrawMethod: 'one tap in the app', grievanceContact: 'dpo@sre.example',
   boardComplaintLink: 'https://dpb.gov.in/complaint', giveSteps: 2, withdrawSteps: 1,
+  // R3 · C5 · OB-146: a complete notice states the shop's published answer-by time.
+  responseSlaDays: 15,
 };
 
 describe('consent-notice check on the live API (C1 / DPDP s.5–6)', () => {

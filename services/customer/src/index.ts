@@ -279,7 +279,7 @@ export function customerRoutes(deps: CustomerDeps): readonly Route[] {
       handler: (ctx) => {
         const b = (ctx.body ?? {}) as {
           items?: unknown; withdrawMethod?: unknown; grievanceContact?: unknown;
-          boardComplaintLink?: unknown; giveSteps?: unknown; withdrawSteps?: unknown;
+          boardComplaintLink?: unknown; giveSteps?: unknown; withdrawSteps?: unknown; responseSlaDays?: unknown;
         };
         if (b.items !== undefined && !Array.isArray(b.items)) {
           throw apiError(400, {
@@ -305,6 +305,8 @@ export function customerRoutes(deps: CustomerDeps): readonly Route[] {
           ...(typeof b.boardComplaintLink === 'string' ? { boardComplaintLink: b.boardComplaintLink } : {}),
           ...(Number.isInteger(b.giveSteps) ? { giveSteps: b.giveSteps as number } : {}),
           ...(Number.isInteger(b.withdrawSteps) ? { withdrawSteps: b.withdrawSteps as number } : {}),
+          // R3 · C5 · OB-146: the answer-by time the notice states, checked against the shop's published 15 days.
+          ...(Number.isInteger(b.responseSlaDays) ? { responseSlaDays: b.responseSlaDays as number } : {}),
         };
         return { status: 200, body: checkConsentNotice(notice) };
       },

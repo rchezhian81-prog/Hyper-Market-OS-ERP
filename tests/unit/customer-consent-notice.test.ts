@@ -15,6 +15,8 @@ const complete = (over: Partial<ConsentNotice> = {}): ConsentNotice => ({
   boardComplaintLink: 'https://dpb.gov.in/complaint',
   giveSteps: 2,
   withdrawSteps: 1,
+  // R3 · C5 · OB-146: a complete notice states the shop's published answer-by time.
+  responseSlaDays: 15,
   ...over,
 });
 
@@ -52,11 +54,17 @@ describe('checkConsentNotice', () => {
     expect(checkConsentNotice(complete({ giveSteps: undefined, withdrawSteps: undefined })).compliant).toBe(true);
   });
 
+  it('R3 · C5 · OB-146: the notice states the published 15-day answer-by time — absent or different is a defect', () => {
+    expect(defectsOf(complete({ responseSlaDays: undefined }))).toEqual(['no_response_sla']);
+    expect(defectsOf(complete({ responseSlaDays: 30 }))).toEqual(['response_sla_not_the_published_one']);
+    expect(checkConsentNotice(complete({ responseSlaDays: 30 })).defects[0]!.detail).toBe('the notice promises 30 days, but the shop\'s published time is 15 days');
+  });
+
   it('names EVERY defect at once, not just the first', () => {
     const bare: ConsentNotice = { items: [] };
     const defects = defectsOf(bare);
     expect(defects).toEqual(
-      expect.arrayContaining(['no_itemised_purposes', 'no_withdraw_method', 'no_grievance_contact', 'no_board_complaint_link']),
+      expect.arrayContaining(['no_itemised_purposes', 'no_withdraw_method', 'no_grievance_contact', 'no_board_complaint_link', 'no_response_sla']),
     );
   });
 });

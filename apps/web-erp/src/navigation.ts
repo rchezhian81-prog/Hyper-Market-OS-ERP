@@ -273,6 +273,10 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // and recording the filing. Gated on the filing permission the route checks (`posh.report.file`, the owner's). A
   // head-office page (the box does not serve it). The complaints register itself stays the committee's (OB-157).
   { id: 'posh-report', label: 'Committee annual report', labelTa: 'குழு ஆண்டு அறிக்கை', path: '/posh-report', requires: 'posh.report.file', group: 'People', served: 'unserved' },
+  // R3 lane 2 · A17 · OB-145 "A": the accountant's GSTR-2B review — upload the month's file, see every line matched with
+  // the books and the exceptions, accept / reject / keep pending each line. Gated on the read the review route checks
+  // (`finance.itc.read`). A head-office page (the box does not serve it).
+  { id: 'itc-review', label: 'Input tax credit (GSTR-2B)', labelTa: 'உள்ளீட்டு வரி வரவு (GSTR-2B)', path: '/itc-review', requires: 'finance.itc.read', group: 'Finance', served: 'unserved' },
 ]);
 
 /** An item retired from the catalogue, with the reason and where its job lives now — never a silent drop. */

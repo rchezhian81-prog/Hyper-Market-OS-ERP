@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Input tax credit</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Input tax credit through GSTR-2B (R3 · A17 · OB-145 "A"). The accountant uploads the month's GSTR-2B file downloaded
+      from the GST portal (POST /v1/finance/itc/:period/statement). Head office matches every line against the shop's own
+      three-way-matched supplier bills and this page shows its answer (GET /v1/finance/itc/:period): each line with its match
+      (an icon and a word, never a colour alone), the bills missing from the 2B, the lines with no bill in the books, and the
+      credit that may be claimed. Each line is accepted, rejected or kept pending by the person signed in
+      (POST /v1/finance/itc/:period/lines/:lineId/action); a reject or a pending needs a written reason. The page decides
+      nothing itself: a refusal is shown as head office said it. No prompt/confirm/alert; nothing on a timer.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <style>
+      :root { --tap:48px; }
+      body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.5 var(--font); min-height:100dvh; display:flex; flex-direction:column; }
+      main { flex:1; padding:16px; display:grid; gap:16px; align-content:start; max-width:960px; width:100%; }
+      h2 { margin:0 0 4px; font-size:20px; } p.lead { margin:0 0 4px; color:var(--muted); font-size:15px; }
+      h3 { margin:8px 0 0; font-size:16px; color:var(--muted); font-weight:700; }
+      form.ask { display:grid; gap:10px; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); align-items:end; }
+      label { display:grid; gap:2px; font-size:14px; color:var(--muted); }
+      input, select { min-height:var(--tap); font:inherit; padding:0 10px; border:1px solid var(--line); border-radius:10px; background:var(--field); color:var(--ink); min-width:0; }
+      button.act { min-height:var(--tap); font:inherit; font-weight:600; border:0; border-radius:10px; background:var(--accent); color:var(--on-accent); padding:0 16px; cursor:pointer; }
+      button.act.quiet { background:var(--line); color:var(--ink); }
+      button.act:disabled { background:var(--line); color:var(--muted); cursor:default; }
+      button.act:focus-visible, input:focus-visible, select:focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
+      .claim { font-size:18px; font-weight:700; } .claim.tone-error { color:var(--danger-text); }
+      .panels { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:10px; }
+      .panel { border:1px solid var(--line); border-radius:12px; padding:12px; background:var(--panel); display:grid; gap:2px; }
+      .panel .k { color:var(--muted); font-size:14px; } .panel .v { font-size:20px; font-weight:700; font-variant-numeric:tabular-nums; }
+      ul.rows { list-style:none; margin:0; padding:0; display:grid; gap:10px; }
+      li.row { background:var(--panel); border-radius:12px; padding:12px 14px; display:grid; gap:8px; border-left:6px solid var(--idle); overflow-wrap:anywhere; }
+      li.row.tone-ok { border-left-color:var(--ok); } li.row.tone-degraded { border-left-color:var(--degraded); } li.row.tone-error { border-left-color:var(--error); }
+      .row .head { display:flex; align-items:baseline; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+      .row .headline { font-weight:600; } .row .state { font-weight:600; font-size:14px; display:inline-flex; gap:6px; align-items:center; }
+      .row .facts { font-size:14px; color:var(--muted); display:flex; gap:14px; flex-wrap:wrap; }
+      .row form { display:grid; gap:8px; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); align-items:end; }
+      p.result { margin:0; padding:12px 16px; border-radius:12px; background:var(--panel); font-weight:600; }
+      p.result.tone-error { background:var(--danger-surface); color:var(--danger-text); } p.result.tone-ok { background:var(--ok-surface); color:var(--on-ok-surface); }
+      p.state-line { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; }
+      [hidden] { display:none !important; }
+    </style>
+  </head>
+  <body>
+    <p class="stale" id="stale" hidden></p>
+    <header>
+      <h1 class="who" id="who">Input tax credit <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <main>
+      <div>
+        <h2 id="title">Input tax credit</h2>
+        <p class="lead" id="lead"></p>
+      </div>
+      <form class="ask" id="ask">
+        <label for="period"><span id="l-period">Month</span><input id="period" type="month" required /></label>
+        <button class="act" id="show" type="submit">Show</button>
+      </form>
+      <form class="ask" id="upload">
+        <label for="file"><span id="l-file">GSTR-2B file from the GST portal (JSON)</span><input id="file" type="file" accept=".json,application/json" /></label>
+        <button class="act" id="send-file" type="submit">Upload</button>
+      </form>
+      <p class="result" id="result" role="status" aria-live="polite" hidden></p>
+      <p class="state-line" id="state" hidden></p>
+      <div class="claim" id="claim" role="status" aria-live="polite"></div>
+      <div class="panels" id="panels"></div>
+      <h3 id="lines-heading"></h3>
+      <ul class="rows" id="rows" aria-label="GSTR-2B lines"></ul>
+      <h3 id="missing-heading"></h3>
+      <ul class="rows" id="missing-rows" aria-label="Bills missing from the GSTR-2B"></ul>
+    </main>
+    <!--SCREEN-DATA-->
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./itc-review.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

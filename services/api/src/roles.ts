@@ -215,6 +215,15 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'finance.rcm.switch', 'finance.einvoice.guard.switch', 'finance.gst.timebar.set',
       'finance.rcm.read', 'finance.rcm.record', 'finance.rcm.pay',
       // ── end R3 lane 1 ──
+      // ── R3 lane 2 (A17 · A24 · C14) ──
+      // A17: upload the month's GSTR-2B, read the ITC review, accept / reject / keep pending each line (IMS).
+      'finance.itc.import', 'finance.itc.read', 'finance.itc.action',
+      // A24 · OB-143 "A": read the TDS register, record a challan, and SWITCH TDS on or off — the owner's act, once the
+      // CA has filled the payee / section / rate list (the list itself is the CA's: `finance.tds.configure`).
+      'finance.tds.read', 'finance.tds.challan.record', 'finance.tds.switch',
+      // C14: record a card / UPI dispute and its answer and outcome; read the register and its overdue exceptions.
+      'payment.dispute.record', 'payment.dispute.read',
+      // ── end R3 lane 2 ──
     ],
   },
   {
@@ -462,6 +471,12 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // tax paid in cash with the challan; never configures a head or switches reverse charge on.
       'finance.rcm.read', 'finance.rcm.record', 'finance.rcm.pay',
       // ── end R3 lane 1 ──
+      // ── R3 lane 2 (A17 · A24 · C14) ── the accountant uploads the GSTR-2B (OB-145 "A") and works the ITC review; reads
+      // TDS and records its challans; records and reads card / UPI disputes. Never switches TDS on (the owner's act).
+      'finance.itc.import', 'finance.itc.read', 'finance.itc.action',
+      'finance.tds.read', 'finance.tds.challan.record',
+      'payment.dispute.record', 'payment.dispute.read',
+      // ── end R3 lane 2 ──
     ],
   },
   {
@@ -484,6 +499,10 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // A14 · OB-143 "A": the CA alone lists the reverse-charge heads (code, rate, notification entry) and reads them.
       'finance.rcm.configure', 'finance.rcm.read',
       // ── end R3 lane 1 ──
+      // ── R3 lane 2 · A24 · OB-143 "A" ── the CA fills the TDS payee / section / rate list and reads the register; the
+      // owner alone switches it on. Nothing else.
+      'finance.tds.configure', 'finance.tds.read',
+      // ── end R3 lane 2 ──
     ],
   },
   {
