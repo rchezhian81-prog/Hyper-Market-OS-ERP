@@ -209,7 +209,9 @@ describe.skipIf(!HAVE_BROWSER)('the ERP\'s forty-six pages, audited on the rende
         expect(await page.evaluate('document.body.firstElementChild.id')).toBe('sre-menu');
         expect(await page.evaluate('document.getElementById("sre-page").contains(document.querySelector("main"))')).toBe(true);
       } else {
-        expect(await page.textContent('#sre-menu-button')).toBe('☰ Screens');
+        // OB-201: the one set's menu shape where the ☰ glyph was, then the word — the word is the button's whole text
+        expect(await page.textContent('#sre-menu-button')).toBe('Screens');
+        expect(await page.getAttribute('#sre-menu-button svg.sre-icon', 'data-icon')).toBe('menu');
         expect(await page.getAttribute('#sre-menu-button', 'aria-expanded')).toBe('false');
         expect(await page.evaluate('document.getElementById("sre-menu").hidden')).toBe(true);
         await page.click('#sre-menu-button');
@@ -260,7 +262,7 @@ describe.skipIf(!HAVE_BROWSER)('the ERP\'s forty-six pages, audited on the rende
       await page.click('#lang');
       await page.waitForFunction('document.documentElement.lang === "ta"');
       if (!desk) {
-        expect(await page.textContent('#sre-menu-button')).toBe('☰ திரைகள்');
+        expect(await page.textContent('#sre-menu-button')).toBe('திரைகள்');
         await page.click('#sre-menu-button');
       }
       expect(await page.textContent('#sre-menu .branch small')).toBe('கிளைப் பணியிடம்');

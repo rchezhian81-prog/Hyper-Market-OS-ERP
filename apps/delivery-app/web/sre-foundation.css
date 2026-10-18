@@ -53,7 +53,7 @@
   --line: #dce3de;          /* borders, dividers, plain buttons */
   --line-soft: #e7ece9;     /* the hairline inside a panel: between register rows, under a heading */
   --line-strong: #aebbb3;   /* a tile's resting stripe, a stronger border */
-  --field-line: #8c9a92;    /* an input's edge: 3.0:1 on white, so the box itself is seen (WCAG 1.4.11) */
+  --field-line: #7f8d86;    /* an input's edge: 3.5:1 on white, 3.2:1 on the canvas — the box itself is seen (WCAG 1.4.11) */
 
   /* Text */
   --ink: #25362e;
@@ -186,8 +186,8 @@
   --on-info: #0f172a;
   --on-idle: #f8fafc;
   --ok: #22c55e;
-  --accent-hover: #16a34a;
-  --accent-press: #15803d;
+  --accent-hover: #4ade80;
+  --accent-press: #86efac;
   --degraded: #f59e0b;
   --error: #ef4444;
   --danger-text: #fca5a5;
@@ -347,8 +347,8 @@ span.dot[data-sre-status] > .sre-icon { width: 13px; height: 13px; stroke-width:
 /* Fields: one height, a 3:1 edge you can see, the focus halo above; a tick box takes the accent. */
 .sre-field { display: grid; gap: 6px; }
 .sre-field > label { color: var(--muted); font-size: 15px; font-weight: 500; }
-.sre-input, .sre-select { min-height: var(--tap); background: var(--field); color: var(--ink); border: 1px solid var(--line-strong); border-radius: var(--radius); padding: 0 14px; font-size: 17px; box-shadow: inset 0 1px 1px rgba(25, 47, 39, .04); }
-.sre-input:hover, .sre-select:hover { border-color: var(--field-line); }
+.sre-input, .sre-select { min-height: var(--tap); background: var(--field); color: var(--ink); border: 1px solid var(--field-line); border-radius: var(--radius); padding: 0 14px; font-size: 17px; box-shadow: inset 0 1px 1px rgba(25, 47, 39, .04); }
+.sre-input:hover, .sre-select:hover { border-color: var(--ink-2); }
 .sre-input:focus-visible, .sre-select:focus-visible { border-color: var(--accent); }
 .sre-input::placeholder { color: var(--idle); }
 .sre-check { width: 20px; height: 20px; accent-color: var(--accent); vertical-align: middle; }
@@ -391,9 +391,11 @@ span.dot[data-sre-status] > .sre-icon { width: 13px; height: 13px; stroke-width:
 .sre-skeleton[data-shape="figure"] { min-height: 40px; width: 60%; }
 .sre-skeleton[data-shape="line"] { width: 100%; }
 
-@keyframes sre-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+/* Entering WORDS never fade: they move in fully opaque, so a person (and the audit) can read them from the first frame.
+   Only the scrim, which holds no words, fades. */
+@keyframes sre-rise { from { transform: translateY(6px); } to { transform: none; } }
 @keyframes sre-fade { from { opacity: 0; } to { opacity: 1; } }
-@keyframes sre-slide-in { from { opacity: .6; transform: translateX(24px); } to { opacity: 1; transform: none; } }
+@keyframes sre-slide-in { from { transform: translateX(24px); } to { transform: none; } }
 @keyframes sre-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
 
 /* ── The ERP's one menu, drawn as the back office's rail (Stage G slice 5b · OB-13 UX-1a · §27 · P-07) ── */
@@ -434,7 +436,7 @@ body.sre-shell { display: grid; grid-template-columns: var(--rail-width) minmax(
   body.sre-shell { display: block; }
   .sre-menu { position: fixed; inset: 0 auto 0 0; width: min(320px, 86vw); height: 100dvh; z-index: 40; box-shadow: 8px 0 24px var(--scrim); animation: sre-drawer var(--dur-slow) var(--ease-out) both; }
 }
-@keyframes sre-drawer { from { transform: translateX(-16px); opacity: .4; } to { transform: none; opacity: 1; } }
+@keyframes sre-drawer { from { transform: translateX(-16px); } to { transform: none; } }
 
 /* ── What the browser tells us about the person ──────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
@@ -475,7 +477,7 @@ body.sre-shell { display: grid; grid-template-columns: var(--rail-width) minmax(
 .sre-register td { padding: 10px 12px; border-top: 1px solid var(--line-soft); vertical-align: top; }
 .sre-register tbody tr:first-child > td { border-top: 0; }
 .sre-register tbody tr:hover > td { background: var(--hover); }
-body.sre-shell .sheet, body.sre-shell .sre-sheet { position: fixed; inset: 0; background: var(--scrim); display: grid; place-items: center; z-index: 20; padding: var(--pad); animation: sre-fade var(--dur) var(--ease-out) both; }
+body.sre-shell .sheet, body.sre-shell .sre-sheet { position: fixed; inset: 0; background: var(--scrim); display: grid; place-items: center; z-index: 20; padding: var(--pad); }
 body.sre-shell .sheet[hidden], body.sre-shell .sre-sheet[hidden] { display: none; }
 body.sre-shell .sheet-inner, body.sre-shell .sre-sheet-inner, body.sre-shell .sheet > .card { width: min(560px, 100%); max-width: none; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 20px; display: grid; gap: 12px; align-content: start; max-height: 90dvh; overflow-y: auto; box-shadow: var(--shadow-lg); animation: sre-rise var(--dur-slow) var(--ease-out) both; }
 @media (min-width: 1000px) {
@@ -508,8 +510,8 @@ body.sre-shell .sheet-inner, body.sre-shell .sre-sheet-inner, body.sre-shell .sh
 .sre-find-wrap { position: relative; display: inline-flex; align-items: center; width: min(320px, 100%); color: var(--muted); }
 .sre-find-wrap[hidden] { display: none; }
 .sre-find-wrap > .sre-icon { position: absolute; left: 12px; width: 18px; height: 18px; pointer-events: none; }
-.sre-find-wrap > .sre-find { width: 100%; padding-left: 40px; border-color: var(--line-strong); box-shadow: inset 0 1px 1px rgba(25, 47, 39, .04); }
-.sre-find-wrap > .sre-find:hover { border-color: var(--field-line); }
+.sre-find-wrap > .sre-find { width: 100%; padding-left: 40px; border-color: var(--field-line); box-shadow: inset 0 1px 1px rgba(25, 47, 39, .04); }
+.sre-find-wrap > .sre-find:hover { border-color: var(--ink-2); }
 .sre-find-wrap > .sre-find:focus-visible { border-color: var(--accent); }
 /* The rail's workspace headings (UX-2b → OB-201): words only; each screen under them carries its own icon. */
 .sre-menu .group { display: flex; align-items: center; gap: 8px; }

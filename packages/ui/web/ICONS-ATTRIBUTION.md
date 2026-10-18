@@ -5,7 +5,7 @@ Lucide is released under the ISC licence. Some of its shapes come from **Feather
 Both licence texts are in `ICONS-LICENSE.txt` in this folder. The notices are also at the top of `sre-icons.js`, so every
 copy that `scripts/sync-ui-foundation.mjs` writes into `apps/<app>/web/` carries them too.
 
-- **What was taken:** only the icons a screen uses (102 of them), with their shapes unchanged. Each one is copied from the
+- **What was taken:** only the icons a screen uses (99 of them), with their shapes unchanged. Each one is copied from the
   owner's approved reference pack (`docs/design/reference/professional-pack-2026-10-04/source/icons.js`), which is itself
   Lucide. The one exception is `indian-rupee`. It is Lucide's own icon (same licence) and is not in the pack.
 - **What was changed:** the stroke is drawn at 1.5px instead of Lucide's 2px. This is the owner's "thin line" choice
