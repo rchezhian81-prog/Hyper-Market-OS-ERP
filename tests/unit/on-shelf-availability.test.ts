@@ -3,7 +3,7 @@ import { findPhantomSuspects, InvalidOsaInputError, osaWindowStart } from '../..
 
 /** D-14 (R3, OB-147 "A"): a suspected phantom is judged per item from its own selling rate, with the owner's minimum. */
 const sale = (productId: string, tradingDay: string, q = 1, locationId = 'store-01') => ({ productId, locationId, tradingDay, quantityMinor: q });
-const stock = (productId: string, onHandMinor: number, locationId = 'store-01') => ({ productId, locationId, onHandMinor });
+const stock = (productId: string, onHandMinor: number, locationId = 'store-01', firstReceiptDay?: string | null) => ({ productId, locationId, onHandMinor, ...(firstReceiptDay === undefined ? {} : { firstReceiptDay }) });
 const AS_OF = '2030-06-28';
 
 describe('D-14 phantom-stock rule', () => {
@@ -47,6 +47,37 @@ describe('D-14 phantom-stock rule', () => {
     });
     expect(r.state === 'judged' && r.suspects.map((s) => `${s.productId}@${s.locationId}`)).toEqual(['c@store-02']);
     expect(r.state === 'judged' && r.judged).toBe(1);
+  });
+
+  it('OB-198: a newly stocked item\'s clock starts at its first receipt, not at the start of the window', () => {
+    // Received on 26 June, no sale yet: 2 quiet days since it arrived — not more than the owner's 3. Before OB-198 it was
+    // "at least 28 days" and raised the day it arrived.
+    const fresh = findPhantomSuspects({ asOf: AS_OF, lookbackDays: 28, ownerMinimumDays: 3, stock: [stock('new-oil', 12, 'store-01', '2030-06-26')], sales: [] });
+    expect(fresh.state === 'judged' && fresh.suspects).toEqual([]);
+    // Received on 20 June and never sold: 8 days, counted exactly from the delivery.
+    const quiet = findPhantomSuspects({ asOf: AS_OF, lookbackDays: 28, ownerMinimumDays: 3, stock: [stock('new-oil', 12, 'store-01', '2030-06-20')], sales: [] });
+    expect(quiet.state === 'judged' && quiet.suspects[0]).toMatchObject({
+      daysWithoutSale: 8, daysWithoutSaleIsAtLeast: false, basis: 'no_sale_since_first_receipt', clockStart: 'first_receipt',
+      clockStartDay: '2030-06-20', firstReceiptDay: '2030-06-20', windowDays: 9, flags: [],
+    });
+    // Its selling rate is over the days it was on the shelf: received 15 June (14 days to 28 June), sold on 2 of them
+    // → expected about every 7 days; 8 quiet days is more than 7.
+    const rate = findPhantomSuspects({ asOf: AS_OF, lookbackDays: 28, ownerMinimumDays: 3, stock: [stock('new-oil', 12, 'store-01', '2030-06-15')], sales: [sale('new-oil', '2030-06-16'), sale('new-oil', '2030-06-20')] });
+    expect(rate.state === 'judged' && rate.suspects[0]).toMatchObject({ windowDays: 14, sellingDays: 2, expectedGapDays: 7, daysWithoutSale: 8, basis: 'own_selling_rate', clockStart: 'first_receipt' });
+    // Received before the window: judged over the whole window, as before.
+    const old = findPhantomSuspects({ asOf: AS_OF, lookbackDays: 28, ownerMinimumDays: 3, stock: [stock('ghost', 6, 'store-01', '2030-05-01')], sales: [] });
+    expect(old.state === 'judged' && old.suspects[0]).toMatchObject({ daysWithoutSale: 28, daysWithoutSaleIsAtLeast: true, basis: 'no_sale_in_window', clockStart: 'window_start_received_before_window', clockStartDay: '2030-06-01', flags: [] });
+    // Received after the day judged: it was not there to sell, so it is not a suspect.
+    const later = findPhantomSuspects({ asOf: AS_OF, lookbackDays: 28, ownerMinimumDays: 3, stock: [stock('later', 6, 'store-01', '2030-07-02')], sales: [] });
+    expect(later.state === 'judged' && later.suspects).toEqual([]);
+  });
+
+  it('OB-198: an item with no receipt on record keeps the window-start rule and is flagged', () => {
+    for (const none of [undefined, null, 'not-a-day']) {
+      const r = findPhantomSuspects({ asOf: AS_OF, lookbackDays: 28, ownerMinimumDays: 3, stock: [stock('ghost', 6, 'store-01', none)], sales: [] });
+      expect(r.state === 'judged' && r.judgedWithoutReceiptOnRecord).toBe(1);
+      expect(r.state === 'judged' && r.suspects[0]).toMatchObject({ daysWithoutSale: 28, daysWithoutSaleIsAtLeast: true, basis: 'no_sale_in_window', firstReceiptDay: null, clockStart: 'window_start_no_receipt_on_record', clockStartDay: '2030-06-01', flags: ['no_receipt_on_record'] });
+    }
   });
 
   it('refuses a malformed window or minimum by name', () => {

@@ -34,7 +34,7 @@ const S1 = 'S1';
 const P = 'S1L1-';
 const pad = (n: number): string => String(n).padStart(6, '0');
 const AT = new Date(Date.now() - 60_000).toISOString();
-const SETTINGS = { tradingDayCutoff: '02:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 5_000, cashVarianceToleranceMinor: 5_000, privacySlaDays: 30 };
+const SETTINGS = { tradingDayCutoff: '02:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 5_000, cashVarianceToleranceMinor: 5_000, privacySlaDays: 15 };
 const ACK_PATH = '/v1/store-computers/bill-number-refusals/acknowledgements';
 
 interface Finding { kind: string; prefix: string; ranges?: [number, number][]; count?: number; through?: number; since: string; detail: string }

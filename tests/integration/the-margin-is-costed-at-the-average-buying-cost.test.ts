@@ -86,7 +86,7 @@ describeOrSkip('OB-39 — the margin is costed at the average buying cost (real 
     await ok(call('POST', `/v1/org/nodes/${COMPANY}`, OWNER, { kind: 'company', name: 'SRE Retail' }, 'org-c'), 'company');
     await ok(call('POST', `/v1/org/nodes/${STORE}`, OWNER, { kind: 'branch', name: 'SRE Hyper Market', parentId: COMPANY, companyId: COMPANY }, 'org-s'), 'store');
     await ok(call('POST', `/v1/org/nodes/${BACK}`, OWNER, { kind: 'warehouse', name: 'Back store', parentId: STORE, companyId: COMPANY }, 'org-b'), 'back store');
-    await ok(call('POST', `/v1/stores/${STORE}/settings`, OWNER, { tradingDayCutoff: '00:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 5_000, cashVarianceToleranceMinor: 5_000, privacySlaDays: 30, warehouseId: BACK }, 'settings'), 'store settings');
+    await ok(call('POST', `/v1/stores/${STORE}/settings`, OWNER, { tradingDayCutoff: '00:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 5_000, cashVarianceToleranceMinor: 5_000, privacySlaDays: 15, warehouseId: BACK }, 'settings'), 'store settings');
     // B6: the lane's weighing scale on head office's register, with a current Legal Metrology stamp (synthetic) — the
     // store pack carries it, and the till and the store computer accept weight from it.
     await ok(call('POST', '/v1/facilities/scales/SCALE-1', OWNER, { storeId: STORE, laneIds: [LANE], approvalNo: 'LM/TEST/1', capacityGrams: 30_000, lastStampedOn: '2026-01-01', reverificationDueOn: '2099-12-31', certificateRef: 'LM/VC/TEST/1' }, 'scale-1'), 'weighing scale');

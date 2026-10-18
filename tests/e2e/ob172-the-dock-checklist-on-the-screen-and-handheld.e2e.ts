@@ -46,7 +46,7 @@ const RECEIVING = {
 };
 const PACK = (extra: Record<string, unknown>) => JSON.stringify(withTillPeople({
   version: 1,
-  policies: { tradingDayCutoff: '02:00', storeId: 'store-1', branchId: 'store-1', branchName: 'Main', staleAfterSeconds: 300, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 10_000, privacySlaDays: 30, warehouseId: 'wh-1' },
+  policies: { tradingDayCutoff: '02:00', storeId: 'store-1', branchId: 'store-1', branchName: 'Main', staleAfterSeconds: 300, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 10_000, privacySlaDays: 15, warehouseId: 'wh-1' },
   managerPolicy: { userId: 'u-mgr', approvalLimitMinor: 500_000 },
   lossPreventionRules: [],
   receivingChecklist: RECEIVING,

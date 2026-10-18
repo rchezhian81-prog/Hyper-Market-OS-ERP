@@ -91,7 +91,7 @@ const fullPack = (over: Partial<StorePack> = {}): StorePack => ({
   policies: known({
     storeId: 'store-1', branchId: 'b1', branchName: 'SRE Hyper Market',
     tradingDayCutoff: '02:00', staleAfterSeconds: 300, countApprovalThresholdMinor: 100_00,
-    handoverToleranceMinor: 100_00, privacySlaDays: 30, warehouseId: 'wh-1',
+    handoverToleranceMinor: 100_00, privacySlaDays: 15, warehouseId: 'wh-1',
   }),
   products: known(PRODUCTS),
   approvals: known([]),
@@ -595,6 +595,14 @@ describe('each screen gets what it needs, and nothing when the box has nothing',
     expect(customerPayload(input({ pack: fullPack({ policies: notKnown('x') }) }))!['locationId']).toBeUndefined();
   });
 
+  it('R3 C5 · OB-195: serves the privacy reply time as the published 15 days; an older pack\'s other figure is read as 15 and flagged', () => {
+    expect(customerPayload(input())).toMatchObject({ privacySlaDays: 15 });
+    expect(customerPayload(input())!['privacySlaFlag']).toBeUndefined();
+    const old = fullPack({ policies: known({ storeId: 'store-1', branchId: 'b1', branchName: 'SRE Hyper Market', tradingDayCutoff: '02:00', staleAfterSeconds: 300, countApprovalThresholdMinor: 1, handoverToleranceMinor: 1, privacySlaDays: 30, warehouseId: 'wh-1' }) });
+    expect(customerPayload(input({ pack: old }))).toMatchObject({ privacySlaDays: 15, privacySlaFlag: 'privacy_sla_stored_value_read_as_15', packedPrivacySlaDays: 30 });
+    expect(ownerPayload(input({ pack: old }))).toMatchObject({ privacySlaDays: 15, privacySlaFlag: 'privacy_sla_stored_value_read_as_15', packedPrivacySlaDays: 30 });
+  });
+
   it('feeds the customer app the store location + radius so the 10 km check works, not {0,0}-refuse-everyone', () => {
     const payload = customerPayload(input())!;
     // The routing policy's store location and radius are the SAME ones dispatch uses (§6.2).
@@ -932,7 +940,7 @@ describe('the manager\'s payload carries who runs the screen, where and which da
   it('a limit the pack leaves out is served as null (no limit), and a company-wide branch as null — never dropped', () => {
     const payload = managerPayload(input({ pack: fullPack({
       managerPolicy: known({ userId: 'u-owner' }),
-      policies: known({ storeId: 'store-1', branchId: null, branchName: 'HQ', tradingDayCutoff: '02:00', staleAfterSeconds: 300, countApprovalThresholdMinor: 1, handoverToleranceMinor: 1, privacySlaDays: 30, warehouseId: 'wh-1' }),
+      policies: known({ storeId: 'store-1', branchId: null, branchName: 'HQ', tradingDayCutoff: '02:00', staleAfterSeconds: 300, countApprovalThresholdMinor: 1, handoverToleranceMinor: 1, privacySlaDays: 15, warehouseId: 'wh-1' }),
     }) }));
     expect(payload['approvalLimitMinor']).toBeNull();
     expect(payload['branchId']).toBeNull();

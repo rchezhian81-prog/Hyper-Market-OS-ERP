@@ -15,6 +15,10 @@
 // Append-only: every change is a new version of the check-in record, never an edit (hard rule #2). At close the goods
 // kept within the order post as `received` movements once, keyed on the check-in; goods handed back are an on-spot return
 // linked to the delivery's debit note `DN-DSD-<checkInId>`; goods kept beyond the order wait for a second person (§28).
+//
+// OB-196 "A" (owner, 18 Oct 2026, in writing, "Yes, numbered"): that debit note is NUMBERED at close from the shop's own
+// gap-free debit-note series (`debit_note`, the series the supplier master issues every debit note under — DN-000001 …,
+// packages/numbering), and it shows on the supplier's account statement (services/purchase/src/supplier-account.ts).
 
 import type { Route, RequestContext } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
@@ -25,6 +29,7 @@ import {
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import { assertLocationInScope, stockReadScope, type LocationBranches } from './location-scope';
 import type { Movement } from './index';
+import { formatNumber } from '../../../packages/numbering/src/index';
 
 export interface DsdRouteSheet {
   readonly routeId: string;
@@ -48,6 +53,9 @@ export type DsdFlag = 'receiver_unknown' | 'receiver_lacks_authority' | 'order_o
 
 export interface DsdDebitNote {
   readonly debitNoteRef: string;
+  /** OB-196: the number from the shop's own debit-note series (DN-000007), allocated once at close; null only on a bare stub. */
+  readonly number: string | null;
+  readonly seq: number | null;
   readonly supplierId: string;
   readonly checkInId: string;
   readonly handBackIds: readonly string[];
@@ -103,6 +111,11 @@ export interface DsdCheckInDeps {
   /** The M08 ledger append — idempotent on the movement id. */
   readonly appendMovement: (tenantId: string, m: Movement) => Promise<void>;
   readonly permissionsOfUser: (tenantId: string, userId: string) => Promise<readonly string[] | undefined>;
+  /**
+   * OB-196: the next number in the shop's own gap-free `debit_note` series — the SAME series the supplier master issues
+   * debit notes under, so the two never give one number twice. Called once, only when a check-in with hand-backs closes.
+   */
+  readonly allocateDebitNoteNumber?: (tenantId: string) => Promise<number>;
   readonly locationBranches?: LocationBranches;
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
 }
@@ -110,6 +123,8 @@ export interface DsdCheckInDeps {
 /** The permission a receiver needs — the same as receiving any delivery. */
 export const DSD_RECEIVE_PERMISSION = 'inventory.dsd.checkin';
 export const dsdDebitNoteRef = (checkInId: string): string => `DN-DSD-${checkInId}`;
+/** OB-196: how a debit-note number reads — the supplier master's format (supplier-master.ts), from packages/numbering. */
+export const DEBIT_NOTE_NUMBER_FORMAT = Object.freeze({ prefix: 'DN-', padTo: 6 });
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
 const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -169,8 +184,12 @@ async function close(deps: DsdCheckInDeps, tenantId: string, rec: DsdCheckInReco
   for (const m of movements) await deps.appendMovement(tenantId, m);
   const heldLines = reconciliation.lines.filter((l) => l.heldMinor > 0).map((l) => ({ productId: l.productId, quantityMinor: l.heldMinor }));
   const needsDecision = heldLines.length > 0 && heldNeedsSecondPerson(reconciliation.heldValueMinor);
+  // OB-196: numbered from the shop's own series — drawn last, once everything else about the close has succeeded, so a
+  // refused close never spends a number (the series stays gap-free).
+  const seq = rec.handBacks.length === 0 || deps.allocateDebitNoteNumber === undefined ? null : await deps.allocateDebitNoteNumber(tenantId);
   const debitNote: DsdDebitNote | null = rec.handBacks.length === 0 ? null : {
-    debitNoteRef: dsdDebitNoteRef(rec.checkInId), supplierId: rec.supplierId, checkInId: rec.checkInId,
+    debitNoteRef: dsdDebitNoteRef(rec.checkInId), number: seq === null ? null : formatNumber(DEBIT_NOTE_NUMBER_FORMAT, seq), seq,
+    supplierId: rec.supplierId, checkInId: rec.checkInId,
     handBackIds: rec.handBacks.map((h) => h.handBackId),
     lines: rec.handBacks.map((h) => ({ productId: h.productId, quantityMinor: h.quantityMinor, reason: h.reason })),
     valueMinor: reconciliation.handedBackValueMinor, raisedAt: at,
@@ -328,7 +347,7 @@ export function dsdCheckInRoutes(deps: DsdCheckInDeps): readonly Route[] {
         const rec = await openOne(ctx);
         const done = await close(deps, ctx.tenantId, rec, (ctx.body ?? {}) as Record<string, unknown>, ctx.userId, deps.now());
         await deps.recordCheckIn(ctx.tenantId, done);
-        await audit(deps, ctx, 'dsd.check_in.close', done, { noteRef: done.deliveryNote!.noteRef, driverSignedName: done.deliveryNote!.driverSignedName, debitNoteRef: done.debitNote?.debitNoteRef ?? '', held: done.held.state, discrepancies: String(done.reconciliation!.discrepancies.length) });
+        await audit(deps, ctx, 'dsd.check_in.close', done, { noteRef: done.deliveryNote!.noteRef, driverSignedName: done.deliveryNote!.driverSignedName, debitNoteRef: done.debitNote?.debitNoteRef ?? '', debitNoteNumber: done.debitNote?.number ?? '', held: done.held.state, discrepancies: String(done.reconciliation!.discrepancies.length) });
         return { status: 200, body: { checkIn: present(done) } };
       },
     },
@@ -361,7 +380,7 @@ export function dsdCheckInRoutes(deps: DsdCheckInDeps): readonly Route[] {
         const done = await close(deps, ctx.tenantId, judged, b, receivedBy, deps.now());
         const kept: DsdCheckInRecord = { ...done, against: opened.against };
         await deps.recordCheckIn(ctx.tenantId, kept);
-        await audit(deps, ctx, 'dsd.check_in.synced', kept, { relayedBy: ctx.userId, flags: kept.flags.join(','), held: kept.held.state }, receivedBy);
+        await audit(deps, ctx, 'dsd.check_in.synced', kept, { relayedBy: ctx.userId, flags: kept.flags.join(','), held: kept.held.state, debitNoteNumber: kept.debitNote?.number ?? '' }, receivedBy);
         return { status: 201, body: { checkIn: present(kept), flags: kept.flags } };
       },
     },

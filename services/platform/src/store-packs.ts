@@ -24,6 +24,7 @@ import type { Route } from '../../kernel/src/index';
 import { STORE_COMPUTER_REPORT, assertStoreComputerOf, type StoreComputerScopeOf } from './store-computer-identity';
 import { apiError, notFound, stableStringify } from '../../kernel/src/index';
 import type { PackSigner } from '../../catalogue/src/pack';
+import { PUBLISHED_RESPONSE_SLA_DAYS, fixedPrivacySlaDays } from '../../../packages/customer/src/data-rights';
 
 export const STORE_PACK_FORMAT = 'sre-store-pack/1';
 /** How long a pack is current for. Past this the store keeps trading on it (P-01) and SAYS it is out of date (P-08). */
@@ -96,10 +97,20 @@ export interface StoreSettings {
   readonly countApprovalThresholdMinor: number;
   readonly handoverToleranceMinor: number;
   readonly cashVarianceToleranceMinor: number;
+  /** R3 · C5 · OB-195: fixed at the published 15 days — any other value is refused when set. */
   readonly privacySlaDays: number;
   readonly version: number;
   readonly setBy: string;
   readonly setAt: string;
+}
+
+/**
+ * R3 · C5 · OB-195: a store's settings as they are READ — the privacy reply time is always the published 15 days; a version
+ * stored before the lock with another figure is read as 15 and carries the flag and the figure that was stored.
+ */
+export function readStoreSettings(s: StoreSettings): StoreSettings & { readonly flags?: readonly string[]; readonly storedPrivacySlaDays?: unknown } {
+  const fixed = fixedPrivacySlaDays(s.privacySlaDays);
+  return fixed.flag === null ? s : { ...s, privacySlaDays: fixed.days, flags: [fixed.flag], storedPrivacySlaDays: fixed.storedDays };
 }
 
 /**
@@ -320,6 +331,14 @@ export function storePackRoutes(deps: StorePackDeps): readonly Route[] {
             wasItSaved: 'not_saved', nextSafeAction: 'Send every setting. Nothing was saved.',
           });
         }
+        // R3 · C5 · OB-195 "A": the privacy reply time is the published 15 days — no store may promise another.
+        if (b['privacySlaDays'] !== PUBLISHED_RESPONSE_SLA_DAYS) {
+          throw apiError(422, {
+            code: 'privacy_sla_fixed_at_15_days',
+            whatHappened: `The time the shop takes to answer a privacy request or complaint is fixed at the published ${PUBLISHED_RESPONSE_SLA_DAYS} days for every store (owner decision OB-195); ${String(b['privacySlaDays'])} was sent.`,
+            wasItSaved: 'not_saved', nextSafeAction: `Send privacySlaDays: ${PUBLISHED_RESPONSE_SLA_DAYS}. Nothing was saved.`,
+          });
+        }
         const before = await deps.settings(ctx.tenantId, storeId);
         const s: StoreSettings = {
           storeId, warehouseId: typeof b['warehouseId'] === 'string' && b['warehouseId'] !== '' ? b['warehouseId'] : null,
@@ -369,7 +388,7 @@ export function storePackRoutes(deps: StorePackDeps): readonly Route[] {
         await knownStore(ctx.tenantId, storeId);
         const s = await deps.settings(ctx.tenantId, storeId);
         if (s === undefined) throw notFound(`settings for store ${storeId}`);
-        return { status: 200, body: { settings: s } };
+        return { status: 200, body: { settings: readStoreSettings(s) } };
       },
     },
   ];

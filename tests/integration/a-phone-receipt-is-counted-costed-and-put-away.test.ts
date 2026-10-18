@@ -42,7 +42,7 @@ async function shop(): Promise<{ h: ApiHarness; t: string; call: (m: 'GET' | 'PO
     [STORE, { kind: 'branch', name: 'SRE Hyper Market', parentId: 'C1', companyId: 'C1' }],
     [BACK, { kind: 'warehouse', name: 'Back store', parentId: STORE, companyId: 'C1' }],
   ] as const) expect((await call('POST', `/v1/org/nodes/${id}`, 'u-owner', body, `org-${id}`)).status).toBe(201);
-  expect((await call('POST', `/v1/stores/${STORE}/settings`, 'u-owner', { tradingDayCutoff: '00:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 5_000, cashVarianceToleranceMinor: 5_000, privacySlaDays: 30, warehouseId: BACK }, 'settings')).status).toBe(201);
+  expect((await call('POST', `/v1/stores/${STORE}/settings`, 'u-owner', { tradingDayCutoff: '00:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 5_000, cashVarianceToleranceMinor: 5_000, privacySlaDays: 15, warehouseId: BACK }, 'settings')).status).toBe(201);
   expect((await call('POST', '/v1/catalogue/tax-classes/0702/rates/2017-07-01', 'u-owner', { rateBps: 0 }, 'tax')).status).toBe(201);
   expect((await call('POST', '/v1/catalogue/products/p-tom/publish', 'u-owner', {
     product: { sku: 'TOM', name: 'Tomato (loose)', baseUom: 'kg', primaryCategoryId: 'veg', taxClass: '0702', lifecycle: 'active' },

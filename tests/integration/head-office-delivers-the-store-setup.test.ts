@@ -28,7 +28,7 @@ import { makeEvent } from '../../packages/contracts/src/event';
  */
 
 const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa6';
-const SETTINGS = { tradingDayCutoff: '02:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 5_000, cashVarianceToleranceMinor: 5_000, privacySlaDays: 30, warehouseId: 'WH' };
+const SETTINGS = { tradingDayCutoff: '02:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 5_000, cashVarianceToleranceMinor: 5_000, privacySlaDays: 15, warehouseId: 'WH' };
 const signer = hmacSigner(TEST_PACK_KEY);
 
 describe('PA-06 — head office delivers each store its setup', () => {

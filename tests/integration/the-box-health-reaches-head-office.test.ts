@@ -84,7 +84,7 @@ async function scene(h: ApiHarness, tenant: string) {
   dirs.push(dir);
   const ready = await prepareTillBox({
     dir, key: KEY, people: [{ userId: 'u-lanecash', displayName: 'Lane Cashier' }, { userId: 'u-mgr', displayName: 'Manager', manager: true }],
-    pack: { managerPolicy: { userId: 'u-mgr', approvalLimitMinor: 500_000 }, lossPreventionRules: [], policies: { storeId: 'S1', branchId: 'S1', branchName: 'S1', tradingDayCutoff: '00:00', staleAfterSeconds: 3600, countApprovalThresholdMinor: 1, handoverToleranceMinor: 1, privacySlaDays: 30, warehouseId: 'S1' } },
+    pack: { managerPolicy: { userId: 'u-mgr', approvalLimitMinor: 500_000 }, lossPreventionRules: [], policies: { storeId: 'S1', branchId: 'S1', branchName: 'S1', tradingDayCutoff: '00:00', staleAfterSeconds: 3600, countApprovalThresholdMinor: 1, handoverToleranceMinor: 1, privacySlaDays: 15, warehouseId: 'S1' } },
   });
   const boot = async (capacityBytes = '10485760'): Promise<EdgeProcess> => {
     const e = (await startEdge({

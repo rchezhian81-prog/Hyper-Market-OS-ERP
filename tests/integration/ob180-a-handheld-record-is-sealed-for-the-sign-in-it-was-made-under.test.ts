@@ -68,7 +68,7 @@ async function headOffice(): Promise<{ h: ApiHarness; section: unknown }> {
     body: { product: { sku: 'p-icecream', name: 'p-icecream', baseUom: 'each', primaryCategoryId: 'fresh', taxClass: '04061000', lifecycle: 'draft', handling: 'frozen' }, categories: [{ categoryId: 'fresh', name: 'Fresh', parentId: null }] } });
   expect(r.status, JSON.stringify(r.body)).toBe(201);
   await defineReceivingCheck(h, A_TENANT, 'u-owner');
-  expect((await h.request({ method: 'POST', path: '/v1/stores/store-1/settings', userId: 'u-owner', tenantId: A_TENANT, idempotencyKey: 'settings', body: { tradingDayCutoff: '02:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 5_000, cashVarianceToleranceMinor: 5_000, privacySlaDays: 30, warehouseId: WH } })).status).toBe(201);
+  expect((await h.request({ method: 'POST', path: '/v1/stores/store-1/settings', userId: 'u-owner', tenantId: A_TENANT, idempotencyKey: 'settings', body: { tradingDayCutoff: '02:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 5_000, cashVarianceToleranceMinor: 5_000, privacySlaDays: 15, warehouseId: WH } })).status).toBe(201);
   const pull = await h.request({ method: 'GET', path: '/v1/store-packs/store-1', userId: 'u-box', tenantId: A_TENANT });
   expect(pull.status).toBe(200);
   return { h, section: (pull.body as { sections: Record<string, unknown> }).sections['receivingChecklist'] };
@@ -102,7 +102,7 @@ describe('OB-180: a handheld record is sealed for the sign-in it was made under'
     const packFile = join(dir, 'store-pack.json');
     await writeFile(packFile, JSON.stringify(withTillPeople({
       version: 1,
-      policies: { tradingDayCutoff: '02:00', storeId: 'store-1', branchId: 'store-1', branchName: 'Main', staleAfterSeconds: 300, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 10_000, privacySlaDays: 30, warehouseId: WH },
+      policies: { tradingDayCutoff: '02:00', storeId: 'store-1', branchId: 'store-1', branchName: 'Main', staleAfterSeconds: 300, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 10_000, privacySlaDays: 15, warehouseId: WH },
       lossPreventionRules: [],
       receivingChecklist: section,
       warehouse: { assignmentId: 'A-1', workerId: 'u-worker', storeId: 'store-1', bins: [{ binId: 'BIN-A', storeId: 'store-1', capacityMinor: 1000, pickable: true, zone: 'frozen' }] },

@@ -47,7 +47,7 @@ const HANDHELD = { viewport: { width: 360, height: 640 }, deviceScaleFactor: 2, 
 const PHONE_PERSON = 'u-worker';
 const PACK_JSON = JSON.stringify(withTillPeople({
   version: 1,
-  policies: { tradingDayCutoff: '02:00', storeId: 'store-1', branchId: 'store-1', branchName: 'Main', staleAfterSeconds: 300, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 10_000, privacySlaDays: 30, warehouseId: 'wh-1' },
+  policies: { tradingDayCutoff: '02:00', storeId: 'store-1', branchId: 'store-1', branchName: 'Main', staleAfterSeconds: 300, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 10_000, privacySlaDays: 15, warehouseId: 'wh-1' },
   lossPreventionRules: [],
   warehouse: {
     assignmentId: 'A-1', workerId: 'u-worker', storeId: 'store-1',

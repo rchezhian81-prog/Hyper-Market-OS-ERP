@@ -82,7 +82,7 @@ describe.skipIf(!HAVE_BROWSER)('OB-186: the handheld locks to the sign-in page w
     const packFile = join(dir, 'store-pack.json');
     await writeFile(packFile, JSON.stringify(withTillPeople({
       version: 1,
-      policies: { tradingDayCutoff: '02:00', storeId: 'store-1', branchId: 'store-1', branchName: 'Main', staleAfterSeconds: 300, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 10_000, privacySlaDays: 30, warehouseId: 'wh-1' },
+      policies: { tradingDayCutoff: '02:00', storeId: 'store-1', branchId: 'store-1', branchName: 'Main', staleAfterSeconds: 300, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 10_000, privacySlaDays: 15, warehouseId: 'wh-1' },
       lossPreventionRules: [],
       receivingChecklist: RECEIVING,
       warehouse: {

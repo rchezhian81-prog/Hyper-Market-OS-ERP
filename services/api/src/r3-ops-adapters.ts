@@ -4,6 +4,7 @@
 
 import { makeEvent } from '../../../packages/contracts/src/event';
 import { InMemoryEventStore, type EventStore } from '../../../packages/persistence/src/event-store';
+import { InMemoryNumberSeriesStore, type NumberSeriesStore } from '../../../packages/persistence/src/number-series-store';
 import type { Route } from '../../kernel/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import {
@@ -12,7 +13,7 @@ import {
   productionAdapter, lotTraceAdapter, rosterStoreAdapter,
 } from './adapters';
 import { biometricConsentRoutes, type BiometricConsentDeps, type AttendanceMark } from '../../finance/src/biometric-consent';
-import type { BiometricConsentEvent } from '../../../packages/workforce/src/biometric-consent';
+import type { BiometricConsentEvent, BiometricConsentNotice } from '../../../packages/workforce/src/biometric-consent';
 import { scheduleRoutes, type ScheduleDeps, type StoredDraft } from '../../finance/src/schedule-store';
 import type { ServiceStandard } from '../../../packages/workforce/src/labour-demand';
 import { hrComplianceAdapter } from './r2-hr-adapters';
@@ -43,6 +44,8 @@ type Recorder = (tenantId: string, entry: AuditEntry) => Promise<unknown> | void
 // ── D-14 on-shelf availability ───────────────────────────────────────────────────────────────────────────────────
 
 const OSA = streamName(STREAM.inventory, 'on-shelf-availability');
+/** OB-198: the shop's day for a ledger time (India Standard Time, UTC+05:30). */
+const IST_OFFSET_MS = 330 * 60_000;
 
 /** The banked sales' lines with their stock place, for trading days in [fromDay, toDay]. */
 export async function soldLinesWithPlace(store: EventStore, tenantId: string, fromDay: string, toDay: string): Promise<OsaSoldLine[]> {
@@ -70,6 +73,22 @@ export function onShelfAvailabilityAdapter(input: { readonly store: EventStore; 
     },
     stock: async (t) => (await inv.availability(t)).map((a) => ({ productId: a.productId, locationId: a.locationId, onHandMinor: a.onHandMinor })),
     soldLines: (t, from, to) => soldLinesWithPlace(store, t, from, to),
+    // OB-198: the first day stock of each product came IN at each place — received from a supplier or transferred in —
+    // from the stock ledger itself (append-only, so the earliest is never rewritten). The day is the shop's own (IST).
+    firstReceipts: async (t) => {
+      const first = new Map<string, { productId: string; locationId: string; firstReceiptDay: string }>();
+      for (const e of await store.readStream(t, STREAM.inventory, { type: 'InventoryMoved' })) {
+        const m = e.event.payload as { productId: string; locationId: string; kind: string; occurredAt: string };
+        if (m.kind !== 'received' && m.kind !== 'transferred_in') continue;
+        const ms = Date.parse(m.occurredAt);
+        if (Number.isNaN(ms)) continue;
+        const day = new Date(ms + IST_OFFSET_MS).toISOString().slice(0, 10);
+        const k = `${m.productId}\u001f${m.locationId}`;
+        const held = first.get(k);
+        if (held === undefined || day < held.firstReceiptDay) first.set(k, { productId: m.productId, locationId: m.locationId, firstReceiptDay: day });
+      }
+      return [...first.values()];
+    },
     tasks: (t) => all<OsaCountTask>(store, t, OSA, 'OsaCountTaskRecorded'),
     recordTask: async (t, task) => {
       await store.append(t, OSA, makeEvent({ id: `osa-task-${task.taskId}-${task.state}`, type: 'OsaCountTaskRecorded', occurredAt: task.countedAt ?? task.raisedAt, idempotencyKey: `osa-task-${t}-${task.taskId}-${task.state}`, source: 'api/inventory', payload: task }));
@@ -128,8 +147,10 @@ export function clearanceMarkdownAdapter(input: { readonly store: EventStore; re
 
 const DSD = streamName(STREAM.inventory, 'dsd-checkins');
 
-export function dsdCheckInAdapter(input: { readonly store: EventStore; readonly now: () => string; readonly recordAudit?: Recorder; readonly locationBranches?: LocationBranches }): DsdCheckInDeps {
+export function dsdCheckInAdapter(input: { readonly store: EventStore; readonly now: () => string; readonly recordAudit?: Recorder; readonly locationBranches?: LocationBranches; readonly numberSeries?: NumberSeriesStore }): DsdCheckInDeps {
   const { store, now } = input;
+  // OB-196: the shop's own `debit_note` series — main.ts hands in the one the supplier master issues under (one series).
+  const series = input.numberSeries ?? new InMemoryNumberSeriesStore();
   const po = purchaseOrdersAdapter({ store, now });
   const latestBy = <T>(xs: readonly T[], key: (x: T) => string): Map<string, T> => { const m = new Map<string, T>(); for (const x of xs) m.set(key(x), x); return m; };
   const sheets = async (t: string) => latestBy(await all<DsdRouteSheet>(store, t, DSD, 'DsdRouteSheetRecorded'), (r) => r.routeId);
@@ -162,6 +183,7 @@ export function dsdCheckInAdapter(input: { readonly store: EventStore; readonly 
     },
     appendMovement: async (t, m) => { await inventoryAdapter({ store, now }).appendMovement(t, m); },
     permissionsOfUser: (t, u) => permissionsHeldBy(store, t, u),
+    allocateDebitNoteNumber: (t) => series.allocate(t, 'debit_note'),
     ...(input.locationBranches === undefined ? {} : { locationBranches: input.locationBranches }),
     ...(input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit }),
   };
@@ -287,6 +309,11 @@ export function biometricConsentAdapter(input: { readonly store: EventStore; rea
       await store.append(t, MARKS, makeEvent({ id: `attendance-mark-${m.markId}`, type: 'AttendanceMarked', occurredAt: m.at, idempotencyKey: `attendance-mark-${t}-${m.markId}`, source: 'api/hr', payload: m }));
     },
     employees: async (t) => (await rosterStoreAdapter({ store, now }).roster(t)).employees,
+    // OB-197: the owner's signature on a consent notice — one fact per notice, never edited (hard rules #2, #6).
+    notices: (t) => all<BiometricConsentNotice>(store, t, BIOMETRIC, 'BiometricConsentNoticeSigned'),
+    recordNotice: async (t, n) => {
+      await store.append(t, BIOMETRIC, makeEvent({ id: `biometric-notice-${n.noticeRef}`, type: 'BiometricConsentNoticeSigned', occurredAt: n.signedAt, idempotencyKey: `biometric-notice-${t}-${n.noticeRef}`, source: 'api/hr', payload: n }));
+    },
     ...(input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit }),
   };
 }
@@ -333,7 +360,7 @@ export function scheduleAdapter(input: { readonly store: EventStore; readonly no
 // ── the one entry point ──────────────────────────────────────────────────────────────────────────────────────────
 
 /** Every Lane 4 route, composed over head office's store (or a throw-away in-memory one when the surface has none). */
-export function r3OpsRoutes(input: { readonly store: EventStore | undefined; readonly now: () => string; readonly recordAudit?: Recorder }): readonly Route[] {
+export function r3OpsRoutes(input: { readonly store: EventStore | undefined; readonly now: () => string; readonly recordAudit?: Recorder; readonly numberSeries?: NumberSeriesStore }): readonly Route[] {
   const store = input.store ?? new InMemoryEventStore();
   const now = input.now;
   const locationBranches: LocationBranches = async (t) => branchOfLocationIn(await orgStructureAdapter({ store, now }).nodes(t));
@@ -341,7 +368,7 @@ export function r3OpsRoutes(input: { readonly store: EventStore | undefined; rea
   return [
     ...onShelfAvailabilityRoutes(onShelfAvailabilityAdapter(base)),
     ...clearanceMarkdownRoutes(clearanceMarkdownAdapter(base)),
-    ...dsdCheckInRoutes(dsdCheckInAdapter(base)),
+    ...dsdCheckInRoutes(dsdCheckInAdapter({ ...base, ...(input.numberSeries === undefined ? {} : { numberSeries: input.numberSeries }) })), // OB-196
     ...productionPlanRoutes(productionPlanAdapter(base)),
     ...channelPricingRoutes(channelPricingAdapter(base)),
     ...biometricConsentRoutes(biometricConsentAdapter(base)),

@@ -28,6 +28,7 @@
 import type { EventStore } from '../../../packages/persistence/src/event-store';
 import type { SnapshotStore } from '../../../packages/persistence/src/snapshot';
 import type { StoreSettings, StoreRules } from '../../platform/src/store-packs';
+import { readStoreSettings } from '../../platform/src/store-packs';
 import { SUPPLIER_INVOICE_SPEC, SUPPLIER_INVOICE_LABEL, PRODUCT_SPEC, PRODUCT_LABEL, templateView, PRODUCT_UPDATE_SPEC, PRODUCT_UPDATE_LABEL } from '../../purchase/src/import-templates';
 import { AccessControl } from '../../../packages/rbac/src/rbac';
 import {
@@ -106,7 +107,7 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
       storeId, branchId: storeId, branchName: (await input.storeName(tenantId, storeId)) ?? storeId,
       tradingDayCutoff: settings.tradingDayCutoff, staleAfterSeconds: settings.staleAfterSeconds,
       countApprovalThresholdMinor: settings.countApprovalThresholdMinor, handoverToleranceMinor: settings.handoverToleranceMinor,
-      cashVarianceToleranceMinor: settings.cashVarianceToleranceMinor, privacySlaDays: settings.privacySlaDays,
+      cashVarianceToleranceMinor: settings.cashVarianceToleranceMinor, privacySlaDays: readStoreSettings(settings).privacySlaDays, // R3 C5 · OB-195: always 15
       warehouseId: settings.warehouseId ?? storeId,
     };
   }

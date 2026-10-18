@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
-  foldSupplierAccount, foldAllSupplierAccounts, needsAttention,
-  type ReceiptForAccount, type OrderForAccount,
+  foldSupplierAccount, foldAllSupplierAccounts, needsAttention, doorDebitNotesFrom,
+  type ReceiptForAccount, type OrderForAccount, type DoorCheckInForAccount,
 } from '../../services/purchase/src/supplier-account';
 import type { SupplierInvoiceRecord, StoredMatch } from '../../services/purchase/src/index';
 
@@ -126,5 +126,33 @@ describe('foldSupplierAccount — what is owed is read from the registers, never
       { grnId: 'grn-3', reason: 'no_purchase_order', dispositions: 1, rejectedExcess: false },
       { grnId: 'grn-4', reason: 'order_unknown', dispositions: 0, rejectedExcess: true },
     ]);
+  });
+});
+
+describe('R3 · D-11 · OB-196 — the numbered debit notes from the DSD door', () => {
+  const v = (checkInId: string, version: number, debitNote: DoorCheckInForAccount['debitNote'], supplierId = 's-1'): DoorCheckInForAccount => ({ checkInId, version, supplierId, storeId: 'S-A', debitNote });
+  const dn = (checkInId: string, number: string | null | undefined, valueMinor: number | null, supplierId = 's-1') => ({
+    debitNoteRef: `DN-DSD-${checkInId}`, ...(number === undefined ? {} : { number }), supplierId, lines: [{ productId: 'p-milk', quantityMinor: 3, reason: 'damaged' }], valueMinor, raisedAt: `2030-06-0${checkInId.slice(-1)}T07:00:00.000Z`,
+  });
+  it('one note per check-in, from its latest version; a record from before OB-196 says "no number", never invents one', () => {
+    const notes = doorDebitNotesFrom([
+      v('c-1', 1, null), v('c-1', 2, dn('c-1', 'DN-000001', 7_500)), // opened, then closed with a note
+      v('c-2', 1, null), v('c-2', 2, null), // closed with nothing handed back
+      v('c-3', 2, dn('c-3', undefined, null)), // closed before OB-196: no number on record, cost not known
+    ]);
+    expect(notes.map((n) => [n.debitNoteRef, n.number, n.valueMinor, n.nettedInBalance])).toEqual([
+      ['DN-DSD-c-1', 'DN-000001', 7_500, false], ['DN-DSD-c-3', null, null, false],
+    ]);
+  });
+  it('the statement shows the supplier\'s own door notes and their total, says the unknown values, and does not net them', () => {
+    const doorDebitNotes = doorDebitNotesFrom([v('c-1', 2, dn('c-1', 'DN-000001', 7_500)), v('c-3', 2, dn('c-3', 'DN-000002', null)), v('c-4', 2, dn('c-4', 'DN-000003', 900, 's-2'), 's-2')]);
+    const a = foldSupplierAccount({ supplierId: 's-1', invoices: [], matchOf: () => undefined, orders, receipts: [], doorDebitNotes, asAt: AT });
+    expect(a.doorDebitNotes.map((d) => d.number)).toEqual(['DN-000001', 'DN-000002']);
+    expect(a.doorDebitNotesTotal).toEqual({ valueMinor: 7_500, notesWithValueUnknown: 1, nettedInBalance: false });
+    expect(a.totals.debitNotesMinor).toBe(0);
+    expect(a.totals.owedMinor).toBe(0);
+    // A supplier known only from the door (a route sheet, no order or bill yet) still has its statement.
+    const all = foldAllSupplierAccounts({ invoices: [], matchOf: () => undefined, orders: [], receipts: [], doorDebitNotes, asAt: AT });
+    expect(all.accounts.map((x) => x.supplierId)).toEqual(['s-1', 's-2']);
   });
 });

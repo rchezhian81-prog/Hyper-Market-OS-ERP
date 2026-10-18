@@ -40,7 +40,7 @@ if (DATABASE_URL !== undefined) backings.push({ name: 'real PostgreSQL', harness
 const savedFetch = globalThis.fetch;
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => { globalThis.fetch = savedFetch; for (const c of cleanups.splice(0).reverse()) await c(); });
-const SETTINGS = { tradingDayCutoff: '02:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 5_000, cashVarianceToleranceMinor: 5_000, privacySlaDays: 30, warehouseId: 'S1' };
+const SETTINGS = { tradingDayCutoff: '02:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 5_000, cashVarianceToleranceMinor: 5_000, privacySlaDays: 15, warehouseId: 'S1' };
 
 describe.each(backings)('product content and synonyms reach the customer app — on $name (D01-FR-06)', ({ harness }) => {
   it('authored on the product master → head office\'s store pack → the box\'s customer page → the app finds it by a customer\'s word', async () => {

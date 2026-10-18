@@ -97,7 +97,7 @@ const pack = (over: Partial<StorePack> = {}): StorePack => ({
   policies: known({
     storeId: 'store-1', branchId: 'b1', branchName: 'SRE Hyper Market',
     tradingDayCutoff: '02:00', staleAfterSeconds: 300, countApprovalThresholdMinor: 100_00,
-    handoverToleranceMinor: 100_00, privacySlaDays: 30, warehouseId: 'wh-1',
+    handoverToleranceMinor: 100_00, privacySlaDays: 15, warehouseId: 'wh-1',
   }),
   products: known(PRODUCTS),
   approvals: known([{

@@ -34,7 +34,7 @@ import { PLAUSIBLE_ISSUED_AHEAD, UNRECEIVED_GRACE_MINUTES } from '../../services
 const OWNER = 'u-owner';
 const S1 = 'S1';
 const S2 = 'S2';
-const SETTINGS = { tradingDayCutoff: '02:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 5_000, cashVarianceToleranceMinor: 5_000, privacySlaDays: 30 };
+const SETTINGS = { tradingDayCutoff: '02:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 5_000, cashVarianceToleranceMinor: 5_000, privacySlaDays: 15 };
 
 interface Reply { readonly status: number; readonly body: unknown }
 interface Cloud {

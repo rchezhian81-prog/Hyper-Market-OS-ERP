@@ -82,7 +82,7 @@ async function scene(h: ApiHarness, tenant: string) {
     if (dirOf[storeId] === undefined) {
       dirOf[storeId] = await mkdtemp(join(tmpdir(), `sre-ea01-${storeId}-`)); dirs.push(dirOf[storeId]);
       // The store's setup names the store, so every sale this box sends is stamped with it (store:S1 / store:S2).
-      await writeFile(join(dirOf[storeId], 'setup.json'), JSON.stringify({ version: 1, policies: { storeId, branchId: storeId, branchName: storeId, tradingDayCutoff: '00:00', staleAfterSeconds: 3600, countApprovalThresholdMinor: 1, handoverToleranceMinor: 1, privacySlaDays: 30, warehouseId: storeId } }));
+      await writeFile(join(dirOf[storeId], 'setup.json'), JSON.stringify({ version: 1, policies: { storeId, branchId: storeId, branchName: storeId, tradingDayCutoff: '00:00', staleAfterSeconds: 3600, countApprovalThresholdMinor: 1, handoverToleranceMinor: 1, privacySlaDays: 15, warehouseId: storeId } }));
     }
     const e = (await startEdge({
       EDGE_DATA_DIR: dirOf[storeId], EDGE_TENANT_ID: tenant, PACK_SIGNING_KEY: KEY, EDGE_CAPACITY_BYTES: '10485760',

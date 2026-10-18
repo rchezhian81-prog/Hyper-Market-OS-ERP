@@ -33,7 +33,7 @@ const P = 'S1L1-';
 const P2 = 'S2L1-';
 const pad = (n: number): string => String(n).padStart(6, '0');
 const AT = new Date(Date.now() - 60_000).toISOString();
-const SETTINGS = { tradingDayCutoff: '02:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 5_000, cashVarianceToleranceMinor: 5_000, privacySlaDays: 30 };
+const SETTINGS = { tradingDayCutoff: '02:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 5_000, cashVarianceToleranceMinor: 5_000, privacySlaDays: 15 };
 
 afterEach(() => { vi.useRealTimers(); });
 

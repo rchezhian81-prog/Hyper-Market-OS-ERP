@@ -16,6 +16,7 @@ import { buildRouter, handle, MemoryIdempotencyStore, type HttpRequest, type Htt
 import { revocationAwareAuthenticator, TokenRevocationList } from '../../services/identity/src/revocation';
 import { tokenRevocationAdapter, personalDataStore } from '../../services/api/src/adapters';
 import type { SubjectKeyStore } from '../../packages/persistence/src/personal-data';
+import type { NumberSeriesStore } from '../../packages/persistence/src/number-series-store';
 import { sessionChannelsOf } from '../../services/api/src/session-channels';
 import { storeComputerBinding } from '../../services/api/src/store-computer-binding';
 import { idempotencyConflictsAdapter } from '../../services/api/src/idempotency-conflicts';
@@ -141,6 +142,8 @@ export function apiHarness(opts: {
   settings?: DurableTenantSettings;
   /** Round 32 · OB-116: the seal secret this head office runs with (default: the run-time TEST_BOX_HISTORY_SEAL_SECRET). */
   boxHistorySealSecret?: string;
+  /** R3 OB-196: the gap-free number series (a SqlNumberSeriesStore on PostgreSQL, or one shared in-memory store) — so a restart continues it. */
+  numberSeries?: NumberSeriesStore;
 } = {}): ApiHarness {
   const store = opts.personalDataKeys === undefined ? opts.store ?? new InMemoryEventStore()
     : personalDataStore(opts.store ?? new InMemoryEventStore(), opts.personalDataKeys);
@@ -161,6 +164,7 @@ export function apiHarness(opts: {
     ...(opts.outboundSecrets === undefined ? {} : { outboundSecrets: opts.outboundSecrets }),
     ...(opts.identityDirectory === undefined ? {} : { identityDirectory: opts.identityDirectory }),
     ...(opts.settings === undefined ? {} : { settings: opts.settings }),
+    ...(opts.numberSeries === undefined ? {} : { numberSeries: opts.numberSeries }),
   }));
   if (!built.ok) throw new Error(`surface malformed: ${built.refusals.map((r) => r.detail).join('; ')}`);
 

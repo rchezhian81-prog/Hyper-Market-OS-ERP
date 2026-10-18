@@ -51,7 +51,7 @@ describe('a weighed item is sold and returned in grams, end to end (OB-31)', () 
     await prepareTillBox({
       dir, key: TEST_PACK_KEY, people: [{ userId: 'u-meena', displayName: 'Meena' }, { userId: 'u-mgr', displayName: 'Manager', manager: true }],
       pack: {
-        policies: { storeId: 'store-1', branchId: 'store-1', branchName: 'Main', tradingDayCutoff: '00:00', staleAfterSeconds: 300, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 10_000, cashVarianceToleranceMinor: 10_000, privacySlaDays: 30, warehouseId: 'wh-1' },
+        policies: { storeId: 'store-1', branchId: 'store-1', branchName: 'Main', tradingDayCutoff: '00:00', staleAfterSeconds: 300, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 10_000, cashVarianceToleranceMinor: 10_000, privacySlaDays: 15, warehouseId: 'wh-1' },
         lossPreventionRules: [],
         // B6: the lane's scale, with a current Legal Metrology stamp (synthetic register entry).
         weighingScales: [{ assetId: 'SCALE-1', laneIds: ['lane-1'], reverificationDueOn: '2099-12-31' }],

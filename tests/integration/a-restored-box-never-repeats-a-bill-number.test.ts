@@ -32,7 +32,7 @@ import { isStoreComputerDefaultReceipt } from '../../packages/contracts/src/rece
 
 const OWNER = 'u-owner';
 const S2 = 'S2';
-const SETTINGS = { tradingDayCutoff: '02:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 5_000, cashVarianceToleranceMinor: 5_000, privacySlaDays: 30 };
+const SETTINGS = { tradingDayCutoff: '02:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 5_000, cashVarianceToleranceMinor: 5_000, privacySlaDays: 15 };
 const AT = new Date(Date.now() - 60_000).toISOString();
 
 interface Reply { readonly status: number; readonly body: unknown }

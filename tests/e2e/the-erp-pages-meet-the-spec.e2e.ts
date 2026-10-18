@@ -460,7 +460,7 @@ describe.skipIf(!HAVE_BROWSER)('the ERP\'s forty-six pages, audited on the rende
   }, 300_000);
 
   it('on the REAL store computer: the box works the menu out from its role register, a link opens a served screen, and that screen\'s menu marks itself current', async () => {
-    const policies: StorePack['policies'] = known({ storeId: 'store-1', branchId: 'b1', branchName: 'Main', tradingDayCutoff: '02:00', staleAfterSeconds: 300, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 10_000, privacySlaDays: 30, warehouseId: 'wh-1' });
+    const policies: StorePack['policies'] = known({ storeId: 'store-1', branchId: 'b1', branchName: 'Main', tradingDayCutoff: '02:00', staleAfterSeconds: 300, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 10_000, privacySlaDays: 15, warehouseId: 'wh-1' });
     const pack: StorePack = {
       ...emptyPack('this test pulled nothing else'),
       policies,

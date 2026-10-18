@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1124 | 683 | 683 | 89 | 333 |
+| 13 | 1128 | 686 | 686 | 89 | 334 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -302,7 +302,9 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/inventory/goods-receipt/:grnId/assemble` | `inventory.movement.append` | core | yes |
 | POST | `/v1/inventory/goods-receipt/:grnId/assembled` | `inventory.receipt.sync` | core | yes |
 | POST | `/v1/inventory/goods-receipt/:grnId/excess/decide` | `inventory.adjustment.approve` | core | yes |
+| POST | `/v1/inventory/goods-receipt/:grnId/excess/dispatch` | `inventory.movement.append` | core | yes |
 | POST | `/v1/inventory/goods-receipt/:grnId/excess/returned` | `inventory.movement.append` | core | yes |
+| POST | `/v1/inventory/goods-receipt/:grnId/lines/:lineId/dispatch` | `inventory.movement.append` | core | yes |
 | POST | `/v1/inventory/goods-receipt/:grnId/lines/:lineId/disposition` | `inventory.adjustment.approve` | core | yes |
 | POST | `/v1/inventory/goods-receipt/:grnId/lines/:lineId/returned` | `inventory.movement.append` | core | yes |
 | POST | `/v1/inventory/goods-receipt/:grnId/synced` | `inventory.receipt.sync` | core | yes |
@@ -969,6 +971,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/hr/workforce/attendance-marks/:markId` | `workforce.attendance.mark` | core | yes |
 | POST | `/v1/hr/workforce/attendance/:employeeId/:date` | `workforce.roster.manage` | core | yes |
 | GET | `/v1/hr/workforce/biometric-consent` | `workforce.roster.read` | core | — |
+| GET | `/v1/hr/workforce/biometric-consent-notices` | `workforce.consent.self` | core | — |
+| POST | `/v1/hr/workforce/biometric-consent-notices/:noticeRef/sign` | `workforce.consent.notice.sign` | core | yes |
 | GET | `/v1/hr/workforce/biometric-consent/:employeeId` | `workforce.consent.self` | core | — |
 | POST | `/v1/hr/workforce/biometric-consent/:employeeId/:eventId` | `workforce.consent.self` | core | yes |
 | GET | `/v1/hr/workforce/certifications` | `workforce.roster.read` | core | — |

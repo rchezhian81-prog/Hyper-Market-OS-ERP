@@ -57,6 +57,12 @@ export interface OnShelfAvailabilityDeps {
   readonly recordMinimum: (tenantId: string, s: OsaMinimumSetting) => Promise<void> | void;
   /** On-hand per (product, place), from the M08 ledger. */
   readonly stock: (tenantId: string) => Promise<readonly OsaStockRow[]> | readonly OsaStockRow[];
+  /**
+   * OB-198: the first receipt (first delivery) of each product at each place, as the stock ledger holds it — the earliest
+   * day stock came IN there (received from a supplier, or transferred in). The item's clock starts at the earliest of these
+   * across the places of its store. Absent on a bare stub: every item is then judged from the window start, flagged.
+   */
+  readonly firstReceipts?: (tenantId: string) => Promise<readonly { readonly productId: string; readonly locationId: string; readonly firstReceiptDay: string }[]>;
   /** Sold lines with their stock place, for trading days in [fromDay, toDay]. */
   readonly soldLines: (tenantId: string, fromDay: string, toDay: string) => Promise<readonly OsaSoldLine[]> | readonly OsaSoldLine[];
   readonly tasks: (tenantId: string) => Promise<readonly OsaCountTask[]> | readonly OsaCountTask[];
@@ -84,7 +90,16 @@ async function judge(deps: OnShelfAvailabilityDeps, ctx: RequestContext, asOf: s
   const min = await deps.minimum(ctx.tenantId);
   const from = osaWindowStart(asOf, lookbackDays);
   const scope = await stockReadScope(ctx, deps.locationBranches);
-  const stock = (await deps.stock(ctx.tenantId)).filter((r) => scope.covers(r.locationId));
+  const rows = (await deps.stock(ctx.tenantId)).filter((r) => scope.covers(r.locationId));
+  // OB-198: each row's first receipt AT ITS STORE — the earliest receipt at any place of the same store (floor or back).
+  const branchOf = deps.locationBranches === undefined ? (l: string) => l : await deps.locationBranches(ctx.tenantId);
+  const firstAt = new Map<string, string>();
+  for (const r of (await deps.firstReceipts?.(ctx.tenantId)) ?? []) {
+    const k = `${r.productId}\u001f${branchOf(r.locationId)}`;
+    const held = firstAt.get(k);
+    if (held === undefined || r.firstReceiptDay < held) firstAt.set(k, r.firstReceiptDay);
+  }
+  const stock: OsaStockRow[] = rows.map((r) => ({ ...r, firstReceiptDay: firstAt.get(`${r.productId}\u001f${branchOf(r.locationId)}`) ?? null }));
   const sales = (await deps.soldLines(ctx.tenantId, from, asOf)).filter((s) => scope.covers(s.locationId));
   try {
     return { min, result: findPhantomSuspects({ asOf, lookbackDays, ownerMinimumDays: min?.minimumDays, stock, sales }) };

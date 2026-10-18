@@ -79,7 +79,7 @@ describe.each(backings)('OB-172 — the dock checklist travels with the receipt 
 
   it('the store setup carries the receiving checklist and the cold-chain products (head office\'s master) to the store computer, signed', async () => {
     const { call } = await headOffice();
-    const settings = await call('POST', '/v1/stores/store-1/settings', 'u-owner', { tradingDayCutoff: '02:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 5_000, cashVarianceToleranceMinor: 5_000, privacySlaDays: 30, warehouseId: WH });
+    const settings = await call('POST', '/v1/stores/store-1/settings', 'u-owner', { tradingDayCutoff: '02:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 5_000, cashVarianceToleranceMinor: 5_000, privacySlaDays: 15, warehouseId: WH });
     expect(settings.status, JSON.stringify(settings.body)).toBe(201);
     const pull = await call('GET', '/v1/store-packs/store-1', 'u-box');
     expect(pull.status, JSON.stringify(pull.body)).toBe(200);
