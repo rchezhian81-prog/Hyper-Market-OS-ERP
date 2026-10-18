@@ -100,6 +100,9 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the GST re
       expect(await late.getAttribute('data-explained')).toBe('false');
       expect(await late.locator('.state').textContent()).toContain('₹105.00');
 
+      // Every read the reload started has answered before the person types (the page repaints on each answer — under load
+      // a late one would repaint the form under the typed reason).
+      await page.waitForLoadState('networkidle');
       // No reason → refused on the page; with a reason → recorded, declared in June.
       await page.click('#amend');
       await page.locator('#ho-result.tone-error').waitFor({ timeout: 15_000 });
