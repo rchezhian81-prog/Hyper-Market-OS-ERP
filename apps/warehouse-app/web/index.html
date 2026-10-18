@@ -164,6 +164,8 @@
       <!-- OB-37: the deliveries this store is waiting for; the receiver chooses which one is at the door. -->
       <h2 class="section" id="deliveries-heading" hidden>—</h2>
       <div id="deliveries"></div>
+      <!-- R3 D-11 (OB-141): a direct delivery at the back door — check it in against its order or route; no cash at the door. -->
+      <button id="dsd-open" class="item" type="button">Direct delivery at the door (no cash)</button>
       <h2 class="section" id="goods-in-heading">—</h2>
       <div id="goods-in"></div>
       <p class="empty" id="empty" hidden>—</p>
@@ -299,6 +301,47 @@
         <div class="choices" id="adjust-reasons"></div>
         <div class="sheet-actions">
           <button id="adjust-cancel" type="button">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!--
+      R3 D-11 (OB-141): the direct-delivery door check-in. Choose the order (or the vendor's route), key the driver's name,
+      scan what comes off the van, hand back what is refused, then close with the signed delivery note. There is NO money
+      field: the supplier is paid later against the bill.
+    -->
+    <div class="sheet" id="dsd" hidden role="dialog" aria-modal="true" aria-labelledby="dsd-title" style="z-index: 15">
+      <div class="sheet-inner">
+        <h2 id="dsd-title">Direct delivery at the door</h2>
+        <p class="hint" id="dsd-no-cash">No cash at the door. The driver gets the signed delivery note; the supplier is paid later as a supplier bill.</p>
+        <div id="dsd-start-panel">
+          <div class="hint" id="dsd-choose-hint">Choose the delivery</div>
+          <div class="choices" id="dsd-choices"></div>
+          <!-- Buttons, never a text box: the driver's mobile number is keyed on this keypad. -->
+          <div class="entry" id="dsd-driver-entry" aria-live="polite">0</div>
+          <div class="keypad" id="dsd-driver-keypad"></div>
+          <button id="dsd-driver" type="button" class="wide">Driver's mobile number: not keyed</button>
+          <div class="sheet-actions">
+            <button id="dsd-start" class="primary" type="button" disabled>Start the check-in</button>
+          </div>
+        </div>
+        <div id="dsd-work-panel" hidden>
+          <div class="hint" id="dsd-against"></div>
+          <div id="dsd-lines"></div>
+          <div id="dsd-differences"></div>
+          <div class="sheet-actions two">
+            <button id="dsd-scan" class="primary" type="button">Scan an item</button>
+            <button id="dsd-hand-back" type="button">Hand back to the driver</button>
+          </div>
+          <div class="hint" id="dsd-back-hint" hidden></div>
+          <div class="choices" id="dsd-back-products" hidden></div>
+          <div class="choices" id="dsd-back-reasons" hidden></div>
+          <!-- The delivery note's own barcode is scanned; the driver then signs it on this screen with one tap. -->
+          <button id="dsd-note" type="button" class="wide">Delivery note: scan its barcode</button>
+          <button id="dsd-close" class="primary wide" type="button" disabled>Driver signs the note — close the delivery</button>
+        </div>
+        <div class="sheet-actions">
+          <button id="dsd-cancel" type="button">Back</button>
         </div>
       </div>
     </div>

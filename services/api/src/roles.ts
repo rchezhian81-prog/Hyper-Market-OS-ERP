@@ -211,6 +211,8 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // ── R3 Lane 4 (store operations and people) — begin
       // D-14: the owner sets the minimum days (OB-147); raises and records an on-shelf availability count.
       'inventory.osa.configure', 'inventory.osa.task.raise', 'inventory.osa.count.record',
+      // D-11: check a direct delivery in at the door (no cash, OB-141) and keep the vendors' route sheets.
+      'inventory.dsd.checkin', 'inventory.dsd.route.manage',
       // ── R3 Lane 4 — end
     ],
   },
@@ -309,6 +311,8 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // ── R3 Lane 4 (store operations and people) — begin
       // D-14: raise and record an on-shelf availability count (a difference goes to a second person's approval).
       'inventory.osa.task.raise', 'inventory.osa.count.record',
+      // D-11: check a direct delivery in at the door (no cash, OB-141) and keep the vendors' route sheets.
+      'inventory.dsd.checkin', 'inventory.dsd.route.manage',
       // ── R3 Lane 4 — end
     ],
   },
@@ -555,6 +559,8 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'workforce.completion.sync', 'concession.tag.sync', 'approvals.decision.sync', 'delivery.stop.sync', 'fulfilment.pick.sync', 'inventory.movement.sync', 'inventory.receipt.sync',
       'inventory.adjustment.sync', 'inventory.count.sync', 'inventory.indent.sync', 'purchase.invoice.sync', 'shelf.count.sync',
       'migration.decision.sync', 'lp.activity.sync',
+      // R3 Lane 4 · D-11: a direct delivery checked in on the warehouse handheld (head office re-verifies the receiver).
+      'inventory.dsd.sync',
       // the GST portal's poll/verify, relayed for the operator (no maker-checker decision; re-authorised on this permission)
       'finance.einvoice.generate',
     ],

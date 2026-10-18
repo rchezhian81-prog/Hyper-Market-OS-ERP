@@ -8,8 +8,9 @@ import type { Route } from '../../kernel/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import {
   STREAM, streamName, inventoryAdapter, adjustmentRequestAdapter, saleStockLocationOf, productUomFrom, orgStructureAdapter,
-  productMasterAdapter, assortmentAdapter, priceListAdapter,
+  productMasterAdapter, assortmentAdapter, priceListAdapter, purchaseOrdersAdapter, permissionsHeldBy,
 } from './adapters';
+import { dsdCheckInRoutes, type DsdCheckInDeps, type DsdCheckInRecord, type DsdRouteSheet } from '../../inventory/src/dsd-checkin';
 import { assertBranchInScope } from '../../kernel/src/index';
 import { rangeStatusOf } from '../../inventory/src/assortment';
 import { resolvePrice } from '../../../packages/price-list/src/price-list';
@@ -111,6 +112,49 @@ export function clearanceMarkdownAdapter(input: { readonly store: EventStore; re
   };
 }
 
+// ── D-11 DSD door check-in ───────────────────────────────────────────────────────────────────────────────────────
+
+const DSD = streamName(STREAM.inventory, 'dsd-checkins');
+
+export function dsdCheckInAdapter(input: { readonly store: EventStore; readonly now: () => string; readonly recordAudit?: Recorder; readonly locationBranches?: LocationBranches }): DsdCheckInDeps {
+  const { store, now } = input;
+  const po = purchaseOrdersAdapter({ store, now });
+  const latestBy = <T>(xs: readonly T[], key: (x: T) => string): Map<string, T> => { const m = new Map<string, T>(); for (const x of xs) m.set(key(x), x); return m; };
+  const sheets = async (t: string) => latestBy(await all<DsdRouteSheet>(store, t, DSD, 'DsdRouteSheetRecorded'), (r) => r.routeId);
+  const checkIns = async (t: string) => latestBy(await all<DsdCheckInRecord>(store, t, DSD, 'DsdCheckInRecorded'), (r) => r.checkInId);
+  return {
+    now,
+    routeSheet: async (t, id) => (await sheets(t)).get(id),
+    routeSheets: async (t) => [...(await sheets(t)).values()],
+    recordRouteSheet: async (t, r) => {
+      await store.append(t, DSD, makeEvent({ id: `dsd-route-${r.routeId}-v${r.version}`, type: 'DsdRouteSheetRecorded', occurredAt: r.recordedAt, idempotencyKey: `dsd-route-${t}-${r.routeId}-v${r.version}`, source: 'api/inventory', payload: r }));
+    },
+    // The ORDER's open lines — ordered less received less cancelled — at the order's own cost per whole unit.
+    order: async (t, poId) => {
+      const o = await po.order(t, poId);
+      if (o === undefined) return undefined;
+      return {
+        poId, supplierId: o.supplierId, deliverToLocationId: o.deliverToLocationId ?? null, status: o.status,
+        lines: o.lines.map((l) => ({
+          productId: l.productId,
+          expectedMinor: Math.max(0, l.orderedQty - (o.receivedByProduct[l.productId] ?? 0) - (o.cancelledByProduct[l.productId] ?? 0)),
+          unitCostMinor: Math.round(l.unitCost.minor / (l.unitCost.per ?? 1)), uom: l.uom ?? 'ea',
+        })),
+      };
+    },
+    supplierActive: async (t, supplierId) => (await po.supplierStatus?.(t, supplierId)) === 'active',
+    checkIn: async (t, id) => (await checkIns(t)).get(id),
+    checkIns: async (t) => [...(await checkIns(t)).values()],
+    recordCheckIn: async (t, r) => {
+      await store.append(t, DSD, makeEvent({ id: `dsd-checkin-${r.checkInId}-v${r.version}`, type: 'DsdCheckInRecorded', occurredAt: r.recordedAt, idempotencyKey: `dsd-checkin-${t}-${r.checkInId}-v${r.version}`, source: 'api/inventory', payload: r }));
+    },
+    appendMovement: async (t, m) => { await inventoryAdapter({ store, now }).appendMovement(t, m); },
+    permissionsOfUser: (t, u) => permissionsHeldBy(store, t, u),
+    ...(input.locationBranches === undefined ? {} : { locationBranches: input.locationBranches }),
+    ...(input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit }),
+  };
+}
+
 // ── the one entry point ──────────────────────────────────────────────────────────────────────────────────────────
 
 /** Every Lane 4 route, composed over head office's store (or a throw-away in-memory one when the surface has none). */
@@ -122,5 +166,6 @@ export function r3OpsRoutes(input: { readonly store: EventStore | undefined; rea
   return [
     ...onShelfAvailabilityRoutes(onShelfAvailabilityAdapter(base)),
     ...clearanceMarkdownRoutes(clearanceMarkdownAdapter(base)),
+    ...dsdCheckInRoutes(dsdCheckInAdapter(base)),
   ];
 }
