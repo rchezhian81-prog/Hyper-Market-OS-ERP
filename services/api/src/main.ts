@@ -326,7 +326,8 @@ import type { MemberRecord } from '../../customer/src/loyalty-members';
 import type { DependencyProbe } from '../../platform/src/index';
 import { SandboxRecurringBillingProvider, type Plan as BillingPlan } from '../../../packages/platform/src/index';
 import type { EventStore } from '../../../packages/persistence/src/event-store';
-import { r3GstRoutes, eInvoiceReportingGuardFor } from './r3-gst-adapters'; // R3 lane 1 — GST liability and returns
+import { r3GstRoutes, eInvoiceReportingGuardFor, gstTimeBarSweep } from './r3-gst-adapters';
+import { alsoEachPassOf } from './ops-alert-sweeps'; // R3 lane 1 — GST liability and returns
 import { itcPortForStore } from './r3-itc-bridge'; // R3 seam — GSTR-3B Table 4 reads the A17 reconciliation
 
 const now = (): string => new Date().toISOString();
@@ -2553,9 +2554,14 @@ export async function startApi(
     say: (line) => { out(`${line}\n`); },
     // Round 8 (M19-FR-04 · PA-08): a delivery exception past its time limit is put on the message queue for the people
     // who staff its queue, on this same timer — nobody has to press anything for it to be told.
-    alsoEachPass: async (t, at) => (await raiseBreachAlerts({
-      ...ordersAdapter({ store, now, holdMinutes: HOLD_MINUTES, refundProcessor: testModeRefundProcessor() }), ...breachAlertAdapter({ store, now }),
-    }, t, at, OPS_ALERT_WORKER)).queued.length,
+    // R3 · A19: on the same timer, a GST return near or past its 3-year time bar is raised to every owner. Both run.
+    alsoEachPass: alsoEachPassOf({
+      breaches: async (t, at) => (await raiseBreachAlerts({
+        ...ordersAdapter({ store, now, holdMinutes: HOLD_MINUTES, refundProcessor: testModeRefundProcessor() }), ...breachAlertAdapter({ store, now }),
+      }, t, at, OPS_ALERT_WORKER)).queued.length,
+      gstTimeBar: gstTimeBarSweep({ store, now, timeZone: (t: string) => new DurableTenantSettings(new SqlConfigVersionStore(pgPoolClient(db))).value(t, SETTINGS.STORE_TIME_ZONE) }),
+      say: (line) => { out(`${line}\n`); },
+    }),
   });
 
   // D14 / M32: the outbound webhook sender — the PA-08 worker shape (sequential, never stops quietly, restart-safe) over

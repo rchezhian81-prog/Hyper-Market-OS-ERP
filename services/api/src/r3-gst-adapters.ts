@@ -352,7 +352,7 @@ async function annualMonths(store: EventStore, ledger: ReturnType<typeof r3GstLe
 /**
  * A19 on a timer: the same raise the `raise-owner-exceptions` route runs, for the ops-alert worker's `alsoEachPass` hook
  * (`services/api/src/main.ts`), so a return near the bar reaches the owners without anyone pressing anything. Answers
- * how many alerts it newly raised. (Wiring it into the worker is a one-line change in main.ts, left to the merge.)
+ * how many alerts it newly raised. Wired into the worker through `alsoEachPassOf` (ops-alert-sweeps.ts).
  */
 export function gstTimeBarSweep(input: { readonly store: EventStore; readonly now: () => string; readonly timeZone?: (tenantId: string) => Promise<string> }) {
   const ledger = r3GstLedger(input);
