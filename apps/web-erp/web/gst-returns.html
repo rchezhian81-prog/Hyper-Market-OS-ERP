@@ -42,6 +42,27 @@
       li.row.tone-error .detail { color:var(--danger-text); }
       p.state { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
       p.state .icon { font-size:18px; } p.state.tone-error { color:var(--danger-text); }
+      section.ho { display:grid; gap:12px; border-top:2px solid var(--line); padding-top:16px; }
+      section.ho h3 { margin:8px 0 0; font-size:16px; color:var(--muted); font-weight:700; }
+      p.ho-lead, p.cal-summary { margin:0; color:var(--muted); font-size:15px; }
+      ul.facts-list { list-style:none; margin:0; padding:0; display:grid; gap:6px; }
+      ul.facts-list li { background:var(--panel); border-radius:10px; padding:10px 12px; display:flex; gap:8px; align-items:baseline; }
+      ul.facts-list li .word { font-weight:600; }
+      form.pick { display:flex; gap:10px; align-items:end; flex-wrap:wrap; }
+      form.pick label { display:grid; gap:2px; font-size:13px; color:var(--muted); }
+      section.ho input { min-height:var(--tap); font:inherit; padding:0 10px; border:1px solid var(--line); border-radius:10px; background:var(--field); color:var(--ink); }
+      section.ho button.act { min-height:var(--tap); font:inherit; font-weight:600; border:0; border-radius:10px; background:var(--accent); color:var(--on-accent); padding:0 16px; cursor:pointer; }
+      section.ho button.act:disabled { background:var(--line); color:var(--muted); cursor:default; }
+      section.ho button.act:focus-visible, section.ho input:focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
+      p.basis { margin:0; font-weight:600; }
+      dl.figures { margin:0; display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:4px 16px; background:var(--panel); border-radius:12px; padding:12px 14px; }
+      dl.figures dt { color:var(--muted); font-size:14px; } dl.figures dd { margin:0; font-variant-numeric:tabular-nums; font-weight:600; text-align:right; }
+      .g3b-actions { display:flex; gap:10px; flex-wrap:wrap; align-items:end; }
+      .row .facts { font-size:13px; color:var(--muted); display:flex; gap:14px; flex-wrap:wrap; }
+      p.result { margin:0; padding:12px 16px; border-radius:12px; background:var(--panel); font-weight:600; }
+      p.result.tone-error { background:var(--danger-surface); color:var(--danger-text); } p.result.tone-ok { background:var(--ok-surface); color:var(--on-ok-surface); }
+      p.state-line { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; }
+      [hidden] { display:none !important; }
     </style>
   </head>
   <body>
@@ -67,11 +88,49 @@
 
       <ul class="rows" id="rows" aria-label="GST return filing periods"></ul>
       <p class="state" id="state" hidden><span class="icon" id="state-icon" aria-hidden="true"></span><span id="state-text"></span></p>
+
+      <!--
+        R3 lane 1 (A15 · A16 · A14 · A19 · A18 · A21): the month's GSTR-3B reconciled to the till, the lock to the filed
+        GSTR-1 and the amendment, the switched-off controls (reverse charge, the 30-day e-invoice guard, the owner's
+        warning window), the filing calendar with the three-year bar, and GSTR-9 / GSTR-9C — read live from head office
+        by gst-returns-ho.js. It shows what head office answered, never its own figure; a figure not known is said.
+      -->
+      <section class="ho" id="ho" aria-labelledby="ho-title">
+        <h2 id="ho-title">This month's GST, from head office</h2>
+        <p class="ho-lead" id="ho-lead"></p>
+        <p class="result" id="ho-result" role="status" aria-live="polite" hidden></p>
+        <p class="state-line" id="ho-state" hidden></p>
+
+        <h3 id="controls-heading"></h3>
+        <ul class="facts-list" id="controls" aria-label="GST controls"></ul>
+
+        <form class="pick" id="pick">
+          <label><span id="period-label"></span> <input id="period" name="period" inputmode="numeric" autocomplete="off" maxlength="6" /></label>
+          <button class="act" id="show" type="submit"></button>
+        </form>
+        <div class="g3b" id="g3b" aria-live="polite">
+          <p class="basis" id="basis"></p>
+          <dl class="figures" id="figures"></dl>
+          <div class="g3b-actions" id="g3b-actions"></div>
+          <h3 id="diff-heading"></h3>
+          <ul class="rows" id="differences" aria-label="Differences between GSTR-3B and the till"></ul>
+          <h3 id="exc-heading"></h3>
+          <ul class="rows" id="exceptions" aria-label="GSTR-3B exceptions"></ul>
+        </div>
+
+        <h3 id="cal-heading"></h3>
+        <p class="cal-summary" id="cal-summary"></p>
+        <ul class="rows" id="calendar" aria-label="GST filing calendar"></ul>
+
+        <h3 id="annual-heading"></h3>
+        <ul class="rows" id="annual" aria-label="Annual return"></ul>
+      </section>
     </main>
 
     <!--SCREEN-DATA-->
     <script src="./web-erp.bundle.js" type="module"></script>
     <script src="./gst-returns.js" type="module"></script>
+    <script src="./gst-returns-ho.js" type="module"></script>
     <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
     <script type="module" src="./sre-chrome.js"></script>
   </body>
