@@ -213,6 +213,10 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'inventory.osa.configure', 'inventory.osa.task.raise', 'inventory.osa.count.record',
       // D-11: check a direct delivery in at the door (no cash, OB-141) and keep the vendors' route sheets.
       'inventory.dsd.checkin', 'inventory.dsd.route.manage',
+      // D-11: the owner approves the store computer's grant, so he must hold what it relays (no escalation, OB-36).
+      'inventory.dsd.sync',
+      // D-19: the owner keeps the store → zone register (zone prices stay switched off until a second person approves).
+      'price.zone.manage',
       // ── R3 Lane 4 — end
     ],
   },

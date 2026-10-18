@@ -16,6 +16,7 @@ import { productionPlanRoutes, productionInputsOf, type ProductionPlanDeps, type
 import type { IngredientBatchOnHand, RunInputBatch } from '../../inventory/src/production';
 import type { Recipe } from '../../../packages/production/src/recipe';
 import { fefoBatchesAt } from '../../inventory/src/index';
+import { channelPricingRoutes, channelPricingGate, type ChannelPricingDeps, type ChannelSwitchRequest, type ZoneMembership } from '../../pricing/src/channel-pricing';
 import { dsdCheckInRoutes, type DsdCheckInDeps, type DsdCheckInRecord, type DsdRouteSheet } from '../../inventory/src/dsd-checkin';
 import { assertBranchInScope } from '../../kernel/src/index';
 import { rangeStatusOf } from '../../inventory/src/assortment';
@@ -213,6 +214,34 @@ export function productionPlanAdapter(input: { readonly store: EventStore; reado
   };
 }
 
+// ── D-19 zone / channel pricing (built, switched off) ────────────────────────────────────────────────────────────
+
+const CHANNEL_PRICING = streamName(STREAM.pricing, 'channel-pricing');
+
+export function channelPricingAdapter(input: { readonly store: EventStore; readonly now: () => string; readonly recordAudit?: Recorder }): ChannelPricingDeps {
+  const { store, now } = input;
+  return {
+    now,
+    requests: (t) => all<ChannelSwitchRequest>(store, t, CHANNEL_PRICING, 'ChannelPricingSwitchRequest'),
+    recordRequest: async (t, r) => {
+      await store.append(t, CHANNEL_PRICING, makeEvent({ id: `channel-switch-${r.requestId}-${r.status}`, type: 'ChannelPricingSwitchRequest', occurredAt: r.approvedAt ?? r.requestedAt, idempotencyKey: `channel-switch-${t}-${r.requestId}-${r.status}`, source: 'api/pricing', payload: r }));
+    },
+    zones: (t) => all<ZoneMembership>(store, t, CHANNEL_PRICING, 'StoreZoneSet'),
+    recordZone: async (t, z) => {
+      await store.append(t, CHANNEL_PRICING, makeEvent({ id: `store-zone-${z.storeId}-${z.zoneId}-${z.setAt}`, type: 'StoreZoneSet', occurredAt: z.setAt, idempotencyKey: `store-zone-${t}-${z.storeId}-${z.zoneId}-${z.setAt}`, source: 'api/pricing', payload: z }));
+    },
+    permissionsOfUser: (t, u) => permissionsHeldBy(store, t, u),
+    priceLists: async (t) => {
+      const ids = (await productMasterAdapter({ store, now }).products(t)).map((p) => p.productId);
+      return Promise.all(ids.map(async (productId) => ({ productId, entries: await priceListAdapter({ store, now }).entries(t, productId) })));
+    },
+    ...(input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit }),
+  };
+}
+
+/** D-19: the gate the existing price-list routes ask (wired in main.ts beside them). */
+export const channelPricingGateFor = (input: { readonly store: EventStore; readonly now: () => string }) => channelPricingGate(channelPricingAdapter(input));
+
 // ── the one entry point ──────────────────────────────────────────────────────────────────────────────────────────
 
 /** Every Lane 4 route, composed over head office's store (or a throw-away in-memory one when the surface has none). */
@@ -226,5 +255,6 @@ export function r3OpsRoutes(input: { readonly store: EventStore | undefined; rea
     ...clearanceMarkdownRoutes(clearanceMarkdownAdapter(base)),
     ...dsdCheckInRoutes(dsdCheckInAdapter(base)),
     ...productionPlanRoutes(productionPlanAdapter(base)),
+    ...channelPricingRoutes(channelPricingAdapter(base)),
   ];
 }

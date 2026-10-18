@@ -302,7 +302,7 @@ import { processorRegisterAdapter, settlementRefundsAdapter } from './r2-data-ad
 import { processorRegisterRoutes } from '../../customer/src/processor-register';
 import { legacyCardPurgeRoutes } from '../../migration/src/legacy-card-purge';
 // R3 Lane 4 (store operations and people): D-14 · D-16 · D-11 · D-25 · D-19 · C21 · D-9 (r3-ops-adapters).
-import { r3OpsRoutes, masterLifecycleOf, ingredientBatchesAt } from './r3-ops-adapters';
+import { r3OpsRoutes, masterLifecycleOf, ingredientBatchesAt, channelPricingGateFor } from './r3-ops-adapters';
 import { wasteAnalyticsAdapter, foodSafetyAdapter, priceIntegrityAgeingAdapter, assignedTaskAdapter, receivingChecklistLookup, carriedChecklistAdapter } from './r2-ops-adapters';
 import { assignedTaskRoutes } from '../../finance/src/assigned-tasks';
 import { priceIntegrityAgeingRoutes } from '../../pricing/src/price-integrity-ageing';
@@ -781,7 +781,7 @@ export function buildSurface(deps: {
       }),
     ...priceListRoutes(store === undefined
       ? { entries: empty([]), recordEntry: () => {}, now }
-      : { ...priceListAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }) }),
+      : { ...priceListAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }), ...channelPricingGateFor({ store, now }) /* D-19 (R3): one price until a switch is approved on */ }),
     // Round 8 (D06-FR-05): competitor price sightings, compared with the shop's own effective price — changes no price.
     ...(store === undefined ? [] : competitorPriceRoutes({
       now, ...competitorPriceAdapter({ store, now }),
