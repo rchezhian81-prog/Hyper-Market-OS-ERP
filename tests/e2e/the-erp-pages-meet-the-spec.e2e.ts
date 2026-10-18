@@ -304,6 +304,12 @@ describe.skipIf(!HAVE_BROWSER)('the ERP\'s forty-six pages, audited on the rende
       // the band: sales first, as money, with its note; then the floor's four
       expect(await texts(page, '#tiles .tile .label')).toEqual(['Sales today', 'Approvals waiting', 'Exceptions open', 'Not yet sent to cloud', 'Tasks today']);
       expect(await texts(page, '#tiles .tile .n')).toEqual(['₹12,345.00', '1', '0', '0', '1']);
+      // every figure fits inside its tile — ₹12,345.00 once ran past the tile's edge (OB-201 review)
+      expect(await page.evaluate(`[...document.querySelectorAll('#tiles .tile')].filter((t) => {
+        const n = t.querySelector('.n'); const r = document.createRange(); r.selectNodeContents(n);
+        const a = r.getBoundingClientRect(); const b = t.getBoundingClientRect(); const pad = parseFloat(getComputedStyle(t).paddingRight) || 0;
+        return a.right > b.right - pad + 0.5 || a.left < b.left - 0.5;
+      }).length`), `tiles at ${device.viewport.width}`).toBe(0);
       expect(await page.textContent('#tiles .tile:first-child .note')).toBe('41 sales on this box');
       expect(await page.evaluate('document.querySelectorAll("#tiles .tile .chip svg").length')).toBe(5); // an icon on each
       // what needs you: the number first, then the words; a way in where the person holds one; a figure the box lacks says why
