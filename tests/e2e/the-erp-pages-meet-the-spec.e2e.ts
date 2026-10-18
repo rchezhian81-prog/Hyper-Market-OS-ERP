@@ -429,6 +429,8 @@ describe.skipIf(!HAVE_BROWSER)('the ERP\'s forty-six pages, audited on the rende
 
       // the sheet: a record drawer on the right at a desk, a centred sheet on a phone
       await page.evaluate('document.getElementById("sheet").hidden = false');
+      // OB-201: the drawer slides in (200ms, transform only); measure where it comes to rest
+      await page.waitForFunction('document.getAnimations().every((a) => a.playState !== "running")', undefined, { timeout: 5_000 });
       const box = (await page.locator('#sheet .sheet-inner').boundingBox())!;
       if (desk) {
         expect(Math.round(box.x + box.width), 'the drawer sits on the right edge').toBe(device.viewport.width);

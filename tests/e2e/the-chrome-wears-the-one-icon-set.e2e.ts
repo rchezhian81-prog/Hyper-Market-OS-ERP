@@ -221,6 +221,11 @@ describe.skipIf(!HAVE_BROWSER)('the shared look in a real browser: the one icon 
     const ring = await page.evaluate(`(() => { const t0 = performance.now();
       for (let i = 0; i < 20; i++) globalThis.posSession.scan({ productId: 'P' + (i % 4), description: 'Toor dal 1kg', unitPriceMinor: 14500, qty: 1 });
       return { ms: performance.now() - t0 }; })()`) as { ms: number };
+    // the shell draws the bill on its own events; a language switch there and back redraws it with the twenty lines
+    await page.click('#lang');
+    await page.click('#lang');
+    expect(await page.evaluate('document.querySelectorAll("#lines tr").length')).toBeGreaterThan(0);
+    expect(await page.textContent('#total')).not.toBe('₹0.00');
     await page.waitForTimeout(250);
     expect(await page.evaluate('document.getAnimations().length'), 'something animates on the till').toBe(0);
     expect(await page.evaluate('document.querySelectorAll("svg:not(.sre-icon)").length')).toBe(0);
