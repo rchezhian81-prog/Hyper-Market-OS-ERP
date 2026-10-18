@@ -5,7 +5,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
-## UI/UX shared look (OB-201): the sage look polished, with thin line icons — gate and PR pending
+## UI/UX shared look (OB-201): the sage look polished, with thin line icons — gate green (12,661 tests; perf 52/52; browser 404/404), PR opened
 
 - **Built:**
   - The shared foundation (`packages/ui/web/sre-foundation.css`) is refined, not repainted: spacing, type scale, radius, soft elevation, short ease-out motion that respects reduced-motion, visible focus, and tabular figures.
