@@ -204,7 +204,7 @@ describe('an icon is never the only signal (design system §3, §3.4)', () => {
     expect(CHROME).toMatch(/if \(shape\) link\.append\(shape\);\n\s+link\.append\(document\.createTextNode\(word\(item\.label\)\)\);/);
     expect(CHROME).toMatch(/button\.replaceChildren\(menuMark, document\.createTextNode\(t\('screens'\)\)\)/);
     expect(CHROME).toMatch(/toggle\.replaceChildren\(mark, document\.createTextNode\(t\('otherLanguage'\)\)\)/);
-    expect(CHROME).toMatch(/strip\.firstElementChild\.lastElementChild\.textContent = t\('newVersion'\)/);
+    expect(CHROME).toMatch(/words\.replaceChildren\(\.\.\.\(shape \? \[shape\] : \[\]\), t\('newVersion'\)\)/);
     expect(CHROME).toMatch(/setText\(words, `\$\{own \?\? t\('staleShell'\)\}/);
     // and the chrome draws through the one set only
     expect(CHROME).toMatch(/return window\.sreIcon\(shapeFor\(name\), size\);/);

@@ -29,7 +29,6 @@
       const words = document.createElement('span');
       const mark = typeof window.sreIcon === 'function' ? window.sreIcon('refresh-cw', 20) : null;
       if (mark) words.append(mark);
-      words.append(document.createElement('span'));
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'sre-btn';
@@ -37,7 +36,10 @@
       strip.append(words, button);
       document.body.prepend(strip);
     }
-    strip.firstElementChild.lastElementChild.textContent = t('newVersion');
+    // one span: the shape (if any) and the words as its own text, so the span's text is exactly the message
+    const words = strip.firstElementChild;
+    const shape = words.querySelector('svg');
+    words.replaceChildren(...(shape ? [shape] : []), t('newVersion'));
     strip.lastElementChild.textContent = t('reload');
   }
 
