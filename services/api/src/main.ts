@@ -322,6 +322,7 @@ import type { MemberRecord } from '../../customer/src/loyalty-members';
 import type { DependencyProbe } from '../../platform/src/index';
 import { SandboxRecurringBillingProvider, type Plan as BillingPlan } from '../../../packages/platform/src/index';
 import type { EventStore } from '../../../packages/persistence/src/event-store';
+import { r3GstRoutes, eInvoiceReportingGuardFor } from './r3-gst-adapters'; // R3 lane 1 — GST liability and returns
 
 const now = (): string => new Date().toISOString();
 
@@ -1614,6 +1615,7 @@ export function buildSurface(deps: {
     ...weighingVerificationRoutes(),
     // R2 lane 1 (B6): the weighing-scale register the store pack carries to the lanes.
     ...r2TillRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
+    ...r3GstRoutes({ store, now, timeZone: (t) => settings.value(t, SETTINGS.STORE_TIME_ZONE), ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // R3 lane 1 — GST returns
     // Owner alerts inbox (M29-FR-03) — control by exception; stateless grouping of the period's exceptions.
     ...ownerAlertsRoutes(),
     // Owner drill-through + KPI comparison (M29-FR-02) — "show me the transactions behind this figure",
@@ -1686,7 +1688,7 @@ export function buildSurface(deps: {
     // GSP connector posts responses back here (that connector is the deployment step).
     ...eInvoiceRegisterRoutes(store === undefined ? {
       load: () => undefined, recordSubmit: () => {}, recordResponse: () => {}, recordCancel: () => {}, recordMismatch: () => {}, listInvoiceIds: () => [], now,
-    } : eInvoiceAdapter({ store, now })),
+    } : { ...eInvoiceAdapter({ store, now }), reportingGuard: eInvoiceReportingGuardFor({ store, now, timeZone: (t) => settings.value(t, SETTINGS.STORE_TIME_ZONE) }) }), // R3 A21 guard (off)
     // GST e-invoicing sandbox GSP (A20) — a deterministic simulator on the same EInvoiceProvider port a real
     // certified GSP uses, so the submit → register → apply loop can be driven without live credentials. Its
     // IRN/QR are SANDBOX-marked and never valid for a real filing.
