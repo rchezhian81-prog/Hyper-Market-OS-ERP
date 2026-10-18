@@ -5,7 +5,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
-## R3 follow-ups: the owner's answers OB-193 to OB-204 built (18 October 2026) — gate green (12,612 tests; perf 52/52; browser 394/394), PR opened
+## R3 follow-ups: the owner's answers OB-193 to OB-204 built (18 October 2026) — merged in PR #792 (ee6e7619), deployed
 
 - **A23 (OB-194):** a supplier return above the e-way bill threshold needs a dispatch step, refused until a generated e-way bill exists. The **Dispatch button** on the goods-receipt page follows after the shared look merges (OB-204); until then a manager dispatches through the API.
 - **C5 (OB-195):** the privacy reply time is fixed at 15 days everywhere.
@@ -15,7 +15,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   - Fingerprint stays refused until the owner signs the notice in the system. PIN works.
   - Blanks still to fill: the grievance officer, the record-keeping period (CA), the reader's deletion days, and the Board's address. A fluent reader must check the Tamil.
 - **No code needed:** OB-193 (confirm tobacco before go-live), OB-199 and OB-200 (kept as built).
-- **Demo:** R3 (PR #790) deployed 18 Oct; the ₹NaN fix (PR #791) merged.
+- **Demo:** R3 (PR #790), the ₹NaN fix (PR #791) and these follow-ups (PR #792) are deployed. The demo now runs ee6e7619 and the stand-up check is GREEN (5/5), 18 Oct.
 
 ## Fix: the till showed ₹NaN for each line's amount (18 October 2026)
 
