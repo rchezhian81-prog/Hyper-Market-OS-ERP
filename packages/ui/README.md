@@ -78,3 +78,13 @@ shell container, the public proxy) and precaches its own files, so each folder n
 never a copy: `tests/guardrails/every-screen-shares-the-foundation.test.ts` fails the build if a copy drifts, a page
 does not link it before its own `<style>`, a service worker does not precache it, a page's `:root` declares anything
 but `--tap`, a page names a literal font stack, or red words use the signal red.
+
+## `web/sre-icons.js` — the one icon set (OB-201 "Icons A")
+
+Thin line icons (Lucide outline, 1.5px stroke, 24px grid, round caps and joins), only the ones a screen uses, drawn as
+inline SVG with DOM calls — no CDN, no font, no fetch. Copied into every `apps/<app>/web/` by the same sync as the
+stylesheet, linked by every page (`<script src="./sre-icons.js" defer></script>`, after the stylesheet and before the
+page's own scripts) and precached by every service worker. `window.sreIcon(name)` returns an `aria-hidden` SVG;
+`sreIcon.chip({ tone, label })` and `sreIcon.withWord(name, label)` build an icon with its word and refuse a blank word;
+`sreIcon.statusDot(el)` gives a status dot the shape of its state. Licence: `web/ICONS-LICENSE.txt`; where each shape
+came from: `web/ICONS-ATTRIBUTION.md`. Rules: design system §3.4.

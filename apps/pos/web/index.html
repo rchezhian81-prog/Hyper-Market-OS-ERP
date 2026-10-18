@@ -15,6 +15,7 @@
       under glare; the language toggle is per cashier.
     -->
     <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
     <script src="./sre-update.js" defer></script>
     <style>
       :root { --tap: 56px; }
@@ -119,7 +120,7 @@
       <h1 class="lane" id="lane">—</h1>
       <span class="sync">
         <button class="signin" id="signin" type="button">Sign in</button>
-        <span class="dot" id="conn-dot" title="Connection"></span>
+        <span class="dot" id="conn-dot" data-sre-status title="Connection"></span>
         <span id="conn-text">Online</span>
         <!-- Tapping the unsent count lists queued sales (spec). -->
         <button class="unsent" id="unsent" type="button">Unsent: 0</button>

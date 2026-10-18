@@ -25,7 +25,10 @@
       strip.id = 'sre-update';
       strip.className = 'stale sre-update';
       strip.setAttribute('role', 'status');
+      // The words, with the one set's refresh shape before them when the icons are loaded (OB-201) — never instead of them.
       const words = document.createElement('span');
+      const mark = typeof window.sreIcon === 'function' ? window.sreIcon('refresh-cw', 20) : null;
+      if (mark) words.append(mark);
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'sre-btn';
@@ -33,7 +36,10 @@
       strip.append(words, button);
       document.body.prepend(strip);
     }
-    strip.firstElementChild.textContent = t('newVersion');
+    // one span: the shape (if any) and the words as its own text, so the span's text is exactly the message
+    const words = strip.firstElementChild;
+    const shape = words.querySelector('svg');
+    words.replaceChildren(...(shape ? [shape] : []), t('newVersion'));
     strip.lastElementChild.textContent = t('reload');
   }
 

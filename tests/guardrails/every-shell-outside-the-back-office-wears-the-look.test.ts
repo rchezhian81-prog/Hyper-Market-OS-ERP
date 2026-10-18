@@ -54,7 +54,8 @@ describe('the shells outside the back office', () => {
     for (const p of pagesOf(BACK_OFFICE)) expect(read(p), `${p}`).not.toMatch(/sre-update\.js/);
     expect(existsSync(`apps/${BACK_OFFICE}/web/${UPDATE_FILE}`)).toBe(false);
     expect(read(`apps/${BACK_OFFICE}/web/sre-chrome.js`)).toMatch(/controllerchange/);
-    expect(copiesOf(BACK_OFFICE)).toEqual([`apps/${BACK_OFFICE}/web/sre-foundation.css`]);
+    // the back office takes the look and the one icon set (OB-201), never the strip script
+    expect(copiesOf(BACK_OFFICE)).toEqual([`apps/${BACK_OFFICE}/web/sre-foundation.css`, `apps/${BACK_OFFICE}/web/sre-icons.js`]);
   });
 
   it('every copy of the script is the source byte for byte, and the sync script names the same copies', () => {
@@ -63,7 +64,7 @@ describe('the shells outside the back office', () => {
       const copy = `apps/${app}/web/${UPDATE_FILE}`;
       expect(existsSync(copy), `${copy} exists`).toBe(true);
       expect(readFileSync(copy).equals(source), `${copy} is the source`).toBe(true);
-      expect(copiesOf(app)).toEqual([`apps/${app}/web/sre-foundation.css`, copy]);
+      expect(copiesOf(app)).toEqual([`apps/${app}/web/sre-foundation.css`, `apps/${app}/web/sre-icons.js`, copy]);
     }
   });
 

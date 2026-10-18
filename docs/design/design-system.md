@@ -28,7 +28,8 @@
 - **Typography:** large base size (min 16px equivalent on POS; larger on primary numbers); high legibility; Tamil and Latin scripts render cleanly (Unicode, tested fonts).
 - **Spacing & targets:** touch targets ≥ 44×44px; generous spacing to prevent mis-taps during a rush.
 - **Numbers & money:** money always shows currency and fixed precision (§29.1); quantities show UOM; totals are the largest text on a tender screen.
-- **Iconography:** paired with text labels (never icon-only for critical actions).
+- **Iconography:** paired with text labels (never icon-only for critical actions). Since OB-201, one thin line set for
+  every screen, never icon-only for any action or status (§3.4).
 
 ### 3.1 Implemented: the one foundation file (Stage G slice 1)
 `packages/ui/web/sre-foundation.css` is the palette, type stack, touch target and fixtures above, as one stylesheet
@@ -75,7 +76,7 @@ unless said.
 | `--warn` | `#8A5E1B` | pending · degraded · **not known** | 5.7:1 |
 | `--error` | `#A03E36` | error · short · destructive | 6.5:1 |
 | `--focus` | `#0F4C3A` | 3px focus ring, offset 2px | — |
-| shape | radius 6px, no shadow, tile top stripe 3px | | |
+| shape | radius 6px, no shadow, tile top stripe 3px (OB-201 keeps the radius and adds a soft layered elevation, §3.4) | | |
 
 **Rules the look keeps — the design system's, so not negotiable (QG-02, §27.1, NFR-07/08, P-08):** §1 rules 4, 6 and 7
 as written; base 16px with nothing a person must read under 14px (uppercase letter-spaced labels ≥ 12.5px; the logo
@@ -122,6 +123,86 @@ server knows (§1 rule 4 is met honestly: this is the ONLINE sign-in; the store 
 workspace after sign-in); errors generic for credentials, named for everything else; no sample state, no preview, no
 *Remember me*, no role selector. Verified in headless Chromium at 1280 / 390 / 320, EN and TA, with the §5.1 audit
 (`tests/e2e/sign-in-page.e2e.ts`).
+
+### 3.4 The polish (OB-201, 18 October 2026): refined tokens, one icon set, motion
+The owner's written decision OB-201: "Start UI/UX now, shared look first. Premium, crisp, polished, smooth." He chose
+**Style A**: polish the approved sage look of §3.2 and §3.3, with no new palette. He chose **Icons A**: thin line icons,
+one set, built in. This slice changes only the shared foundation every screen inherits. Pages are not redesigned yet.
+
+**Where it lives.** `packages/ui/web/sre-foundation.css` holds the tokens and components. `packages/ui/web/sre-icons.js`
+holds the icon set and its helper. Both are copied byte for byte into every `apps/<app>/web/` by
+`node scripts/sync-ui-foundation.mjs`, and every service worker precaches both. The back office's chrome
+(`apps/web-erp/web/sre-chrome.js`, which has no copies) says which icon fits each workspace, screen and control.
+
+**Refined tokens (light set; the dark set carries the same names).** Every colour in §3.2 keeps its value. These are
+added:
+
+| Token | Value | Use |
+| --- | --- | --- |
+| `--space-1` … `--space-10` | 4 · 8 · 12 · 16 · 20 · 24 · 32 · 40 px | the one spacing scale; `--gap` = `--space-3`, `--pad` = `--space-4` |
+| `--fs-label` | 12.5px | uppercase, letter-spaced labels only |
+| `--fs-sm` · `--fs-base` · `--fs-md` · `--fs-lg` · `--fs-xl` · `--fs-2xl` · `--fs-figure` | 14 · 16 · 17 · 20 · 24 · 30 · 40 px | the type scale; nothing a person must read is under 14px |
+| `--leading-tight` · `--tracking-caps` · `--tracking-tight` | 1.25 · .06em · −.01em | headings and figures; uppercase labels |
+| `--numbers` | `tabular-nums lining-nums` | money and quantities (`.money .qty .amount .total .n .sre-num`, every register) |
+| `--radius-sm` · `--radius` · `--radius-lg` · `--radius-xl` · `--radius-pill` | 4 · 6 · 8 · 12 · 999 px | one radius scale; 6px stays the default |
+| `--hairline` | 1px | every border |
+| `--shadow-xs` · `--shadow-sm` · `--shadow-md` · `--shadow-lg` | two layers each, forest-tinted, opacity ≤ .16 | a control off its panel · a resting card · a card under the pointer · the drawer, a sheet, a toast |
+| `--hover` | `#F6F8F7` | a row or quiet button under the pointer (ink 12:1, muted 6.0:1) |
+| `--ink-2` | `#34443B` | body copy one step quieter than a heading (10.3:1) |
+| `--line-soft` | `#E7ECE9` | the hairline inside a panel (between register rows) |
+| `--field-line` | `#7F8D86` | an input's edge: 3.5:1 on white, 3.2:1 on the canvas (WCAG 1.4.11) |
+| `--accent-hover` · `--accent-press` | `#12523F` · `#0F4636` | the primary action under the pointer (9.1:1) and pressed (10.8:1) |
+| `--danger-hover` | `#8A332C` | a red button under the pointer |
+| `--focus-halo` | `rgba(22, 97, 77, .22)` | the soft glow inside the 3px ring on a focused field |
+| `--dur-fast` · `--dur` · `--dur-slow` | 120 · 160 · 200 ms | motion durations |
+| `--ease-out` · `--ease-in-out` | `cubic-bezier(.2,.8,.2,1)` · `cubic-bezier(.4,0,.2,1)` | motion curves |
+
+The §3.2 row "radius 6px, no shadow" is replaced by OB-201: the same 6px radius, and a soft layered elevation.
+
+**Components refined in the foundation:** buttons (`.sre-btn` secondary by default, `-primary`, `-quiet`, `-danger`:
+one height, a hairline edge, hover shades, a 1px press); fields (`.sre-input`, `.sre-select`, `.sre-check`);
+cards and panels (`.sre-card`, `.sre-panel`, `.sre-panel-head`); tiles and rows; registers (sticky head, hairline rows,
+a row lit under the pointer, tabular figures); status chips (`.sre-chip`, tinted in their tone, with the tone's icon);
+the record drawer and sheets (they slide in); the subpage tiles (they lift slightly under the pointer); toasts
+(`.sre-toasts` / `.sre-toast`); empty and "not known" states (`.sre-empty`, `.sre-unknown`); skeleton loading
+(`.sre-skeleton`, never for a figure the box does not know); and the "new version ready" strip (with its refresh icon).
+The chrome draws the sync badge as a chip in its tone, the language toggle as a bordered button with a globe, and the
+search with a magnifier inside the field.
+
+**The icon set — rules.**
+1. **One set:** Lucide's outline icons, drawn at **1.5px** on a **24px grid** with round caps and joins. Every shape is
+   copied unchanged from the owner's approved reference pack. The one exception is `indian-rupee`, which is Lucide's
+   own. 99 icons, only the ones in use. The ISC (and Feather MIT) notices are in `packages/ui/web/ICONS-LICENSE.txt`,
+   `ICONS-ATTRIBUTION.md`, and the head of every copy of `sre-icons.js`.
+2. **Built in:** inline SVG made with DOM calls, no CDN, no icon font, no fetch. It draws with the internet off (P-01).
+3. **Never alone:** every icon sits beside its word. The SVG is `aria-hidden` and cannot take focus; the word is the
+   name. `sreIcon.chip()` and `sreIcon.withWord()` refuse a blank word. No action and no status is icon-only.
+4. **The colour of its words:** `stroke: currentColor`. An icon never carries meaning by colour alone.
+5. **What the screens use:** `window.sreIcon(name)`, `sreIcon.forTone(tone)`, `sreIcon.chip({ tone, label })` and
+   `sreIcon.statusDot(el)`. Tones map to shapes: ok = circle-check, pending = clock, degraded = triangle-alert,
+   error = circle-alert, idle = pause-circle, not known = circle-help.
+6. **Where it is wired:** the rail gives every screen of the menu catalogue its own icon, and every workspace has one
+   for the Today page's workspace tiles. Workspace headings on the rail are words alone (one icon per row). The header
+   has the menu, search and language icons; the branch card has the shop icon; the badge has the state's shape; the
+   cache and update strips have the history and refresh icons. The till's and the handhelds' status dots wear the shape
+   of their state (tick, clock, cross, pause) inside a thin ring in the tone. Their layouts and their 56 / 60 / 64px
+   targets are unchanged.
+
+**Motion — rules.**
+1. **Short:** 120–200ms, ease-out.
+2. **Opacity and transform only:** never a size or position that moves other things, so there is no layout jank.
+3. **Entering words never fade:** a drawer, sheet, toast or strip moves in fully opaque, so it is readable from its
+   first frame. Only the scrim (which has no words) fades. The skeleton's slow pulse is the one loop.
+4. **None on request:** under `prefers-reduced-motion: reduce` every duration token is 0ms and every animation and
+   transition stops.
+5. **Never on the till's scan or total:** nothing in the foundation animates a bare element or the till's classes.
+   The till's own page sets no motion.
+
+**Proof:** `tests/guardrails/every-icon-comes-from-the-one-set.test.ts`,
+`tests/guardrails/the-foundation-carries-the-refined-scale.test.ts`, `tests/unit/ui-token-contrast.test.ts` (each new
+pair at AA in both sets), and `tests/e2e/the-chrome-wears-the-one-icon-set.e2e.ts` (the whole menu rendered, an icon per
+screen beside its name, no icon-only element, no console error, the audit clean at a desk and on a phone in English and
+Tamil, and no animation after twenty till scans).
 
 ## 4. Core components (implemented later in `packages/ui`)
 | Component | Rules |

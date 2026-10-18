@@ -21,6 +21,7 @@
       Framework-free and static, so it opens with the shop's wifi down.
     -->
     <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
     <script src="./sre-update.js" defer></script>
     <style>
       :root { --tap: 64px; }
@@ -145,7 +146,7 @@
     <header>
       <h1 class="who" id="who">—<small id="assignment">—</small></h1>
       <span class="sync">
-        <span class="dot" id="queue-dot" title="Sync"></span>
+        <span class="dot" id="queue-dot" data-sre-status title="Sync"></span>
         <span class="sync-words"><span id="queue-text">—</span><small id="box-text">—</small></span>
         <button class="lang" id="lang" type="button" aria-label="Language">EN / த</button>
       </span>

@@ -1,12 +1,12 @@
 /*
-  SRE Retail OS — the ONE visual foundation every screen imports (Stage G slice 1 · OB-13 look, UX-1a).
+  SRE Retail OS — the ONE visual foundation every screen imports (Stage G slice 1 · OB-13 look, UX-1a · OB-201 polish).
 
   Source of truth: packages/ui/web/sre-foundation.css. Every apps/<app>/web/sre-foundation.css is a byte-identical
   copy written by `node scripts/sync-ui-foundation.mjs` (which every `scripts/build-app.mjs` build also runs) and
   pinned by tests/guardrails/every-screen-shares-the-foundation.test.ts. Edit THIS file; never a copy.
 
-  What it holds (docs/design/design-system.md §1 hard rules, §3 foundations, §3.2 the owner's look, §4 components;
-  QG-02; NFR-07/08; P-07):
+  What it holds (docs/design/design-system.md §1 hard rules, §3 foundations, §3.2 the owner's look, §3.4 the refined
+  tokens, icons and motion of OB-201, §4 components; QG-02; NFR-07/08; P-07):
     • one palette with ONE meaning per colour everywhere — green ok · amber degraded/pending · red error/destructive ·
       grey idle — and colour is never the only signal (a word and an icon ride with it);
     • TWO token sets for that one palette. The LIGHT set is the default from UX-1a on: the owner's professional
@@ -15,6 +15,9 @@
       set is what every screen looked like before, kept under `:root[data-theme="dark"]` so a shell outside the back
       office stays exactly as it was until its own slice (UX-1b) brings it over: the owner chose the order the
       screens change in. A screen's look is a product decision, never the operating system's — no media query picks.
+    • the scales OB-201 ("premium, crisp, polished, smooth", 18 Oct 2026) added to that palette WITHOUT changing a
+      colour of it: a 4px spacing scale, a type scale, one radius scale, hairline borders, a soft layered elevation,
+      motion durations and easing, and the focus ring — each a token below, each used by the components here;
     • one type stack that renders Tamil and Latin cleanly, from the system, with the line-height Tamil glyphs need;
     • touch targets of at least 48px (a screen may raise `--tap` in its own :root — gloves, glare, a doorstep);
     • the fixtures every screen carries: the sync badge, the language toggle, the sample / cached / nobody strips;
@@ -32,6 +35,10 @@
   --danger-surface  a red BUTTON or banner under --on-danger
   — and every tinted panel is a PAIR, surface + words: --ok-surface/--on-ok-surface, --warn-surface/--on-warn-surface,
   --info-surface/--on-info-surface, --error-surface (its words are --danger-text), --demo-surface/--on-demo.
+
+  Motion (OB-201, design system §3.4): short (120–200ms), ease-out, on opacity and transform ONLY, never on a size or a
+  position that moves other things; nothing animates on the till's scan or total; a person who asked for less motion
+  gets none (the reduced-motion block below zeroes every duration token and every animation).
 */
 
 :root {
@@ -41,11 +48,16 @@
   --panel: #ffffff;         /* panels, tiles, tables, the header */
   --panel-2: #eef2ef;       /* chips, bars, tags, a secondary surface */
   --field: #ffffff;         /* an input */
+  --hover: #f6f8f7;         /* a register row or a quiet button under the pointer (ink 12:1, muted 6.0:1 on it) */
+  --mint: #ebf3ee;          /* a selected row, a pale badge (accent on it 6.5:1) */
   --line: #dce3de;          /* borders, dividers, plain buttons */
+  --line-soft: #e7ece9;     /* the hairline inside a panel: between register rows, under a heading */
   --line-strong: #aebbb3;   /* a tile's resting stripe, a stronger border */
+  --field-line: #7f8d86;    /* an input's edge: 3.5:1 on white, 3.2:1 on the canvas — the box itself is seen (WCAG 1.4.11) */
 
   /* Text */
   --ink: #25362e;
+  --ink-2: #34443b;         /* body copy one step quieter than a heading (10.3:1) */
   --muted: #53625a;         /* 6.4:1 on white, 5.9:1 on the canvas, 5.7:1 on --panel-2, 4.9:1 on --line — never under 14px */
   --on-accent: #ffffff;
   --on-warn: #ffffff;       /* words on the amber strip (--degraded as a surface) */
@@ -58,12 +70,15 @@
   --good: var(--ok);
   --accent: var(--ok);
   --accent-ink: var(--on-accent);
+  --accent-hover: #12523f;  /* the primary action under the pointer (white on it 9.1:1) */
+  --accent-press: #0f4636;  /* …and pressed (10.8:1) */
   --degraded: #8a5e1b;      /* amber: pending · degraded · NOT KNOWN (5.7:1) */
   --warn: var(--degraded);
   --error: #e04e48;         /* the signal red: 3.9:1 on white — a dot or an edge, never words */
   --danger: var(--error);
   --danger-text: #a03e36;   /* red words: 6.5:1 on white */
   --danger-surface: #a03e36;/* a red button or banner under white words: 6.5:1 */
+  --danger-hover: #8a332c;  /* …under the pointer */
   --idle: #6b7a72;
   --info: #1d5fa6;
   --info-surface: #dce9f7;
@@ -80,6 +95,7 @@
   --on-demo: #ffffff;
   --scrim: rgba(20, 32, 27, .55);
   --focus: #0f4c3a;
+  --focus-halo: rgba(22, 97, 77, .22); /* the soft glow round a focused field, inside its 3px ring */
 
   /* The rail (the back office's shell, UX-1a) */
   --rail: #192f27;
@@ -98,13 +114,55 @@
   --mono: ui-monospace, Menlo, Consolas, monospace;
   --text: 16px;
   --leading: 1.5;
+  /* The type scale (OB-201): one step per role, nothing a person must read under 14px; 12.5px is for uppercase,
+     letter-spaced labels only (design system §3.2). */
+  --fs-label: 12.5px;
+  --fs-sm: 14px;
+  --fs-base: 16px;
+  --fs-md: 17px;
+  --fs-lg: 20px;
+  --fs-xl: 24px;
+  --fs-2xl: 30px;
+  --fs-figure: 40px;
+  --leading-tight: 1.25;
+  --tracking-caps: .06em;
+  --tracking-tight: -.01em;
+  --weight-medium: 500;
+  --weight-strong: 600;
+  --weight-bold: 700;
+  --numbers: tabular-nums lining-nums; /* money and quantities: every digit the same width, so columns line up */
 
-  /* Size and shape — compact corners, no shadows (the owner's reference) */
+  /* Size and shape — compact corners (the owner's reference); a soft, layered elevation since OB-201 */
   --tap: 48px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --gap: 12px;              /* = --space-3 */
+  --pad: 16px;              /* = --space-4 */
+  --radius-sm: 4px;
   --radius: 6px;
   --radius-lg: 8px;
-  --gap: 12px;
-  --pad: 16px;
+  --radius-xl: 12px;
+  --radius-pill: 999px;
+  --hairline: 1px;
+  /* Elevation: two low-opacity layers tinted with the rail's forest, never a grey smudge. xs lifts a control off its
+     panel; sm is a resting card; md a card under the pointer or a popover; lg the drawer, a sheet, a toast. */
+  --shadow-xs: 0 1px 1px rgba(25, 47, 39, .05);
+  --shadow-sm: 0 1px 2px rgba(25, 47, 39, .06), 0 1px 3px rgba(25, 47, 39, .04);
+  --shadow-md: 0 2px 4px rgba(25, 47, 39, .05), 0 6px 16px rgba(25, 47, 39, .08);
+  --shadow-lg: 0 4px 8px rgba(25, 47, 39, .06), 0 16px 40px rgba(25, 47, 39, .16);
+
+  /* Motion (OB-201): short, ease-out, opacity and transform only. Zeroed for a person who asked for less motion. */
+  --dur-fast: 120ms;
+  --dur: 160ms;
+  --dur-slow: 200ms;
+  --ease-out: cubic-bezier(.2, .8, .2, 1);
+  --ease-in-out: cubic-bezier(.4, 0, .2, 1);
 }
 
 /* ── The dark set — every screen's look before OB-13, kept for the shells UX-1b has not brought over yet ── */
@@ -113,9 +171,14 @@
   --panel: #1e293b;
   --panel-2: #0b1220;
   --field: #0b1220;
+  --hover: #172036;
+  --mint: #12301f;
   --line: #334155;
+  --line-soft: #273449;
   --line-strong: #475569;
+  --field-line: #64748b;
   --ink: #f8fafc;
+  --ink-2: #e2e8f0;
   --muted: #94a3b8;
   --on-accent: #052e16;
   --on-warn: #451a03;
@@ -123,10 +186,13 @@
   --on-info: #0f172a;
   --on-idle: #f8fafc;
   --ok: #22c55e;
+  --accent-hover: #4ade80;
+  --accent-press: #86efac;
   --degraded: #f59e0b;
   --error: #ef4444;
   --danger-text: #fca5a5;
   --danger-surface: #b91c1c;
+  --danger-hover: #991b1b;
   --idle: #64748b;
   --info: #38bdf8;
   --info-surface: #1e3a5f;
@@ -141,6 +207,7 @@
   --on-demo: #ffffff;
   --scrim: rgba(2, 6, 23, .82);
   --focus: #93c5fd;
+  --focus-halo: rgba(147, 197, 253, .25);
   --rail: #0b1220;
   --on-rail: #f8fafc;
   --on-rail-muted: #94a3b8;
@@ -151,31 +218,45 @@
   --rail-line: #1e293b;
   --radius: 12px;
   --radius-lg: 16px;
+  --shadow-xs: 0 1px 1px rgba(0, 0, 0, .25);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .3), 0 1px 3px rgba(0, 0, 0, .2);
+  --shadow-md: 0 2px 4px rgba(0, 0, 0, .3), 0 6px 16px rgba(0, 0, 0, .3);
+  --shadow-lg: 0 4px 8px rgba(0, 0, 0, .35), 0 16px 40px rgba(0, 0, 0, .45);
 }
 
 /* ── Base ─────────────────────────────────────────────────────────────────────────────────────────── */
 * { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; }
+html { -webkit-text-size-adjust: 100%; text-rendering: optimizeLegibility; -webkit-font-smoothing: antialiased; }
 body { margin: 0; background: var(--bg); color: var(--ink); font: var(--text)/var(--leading) var(--font); }
 /* Tamil glyphs sit taller than Latin ones; give the lines room or the ascenders clip. */
 html[lang="ta"] body, [lang="ta"] { line-height: 1.65; }
 [hidden] { display: none; }
+/* The focus ring (OB-201): 3px in the deep green, 2px clear of the control, following its corners — seen from arm's
+   length, never removed. A field adds a soft halo inside the ring so the place you type is unmistakable. */
 :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+input:focus-visible, select:focus-visible, textarea:focus-visible { box-shadow: 0 0 0 4px var(--focus-halo); }
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; }
-.tabular, .money, .qty, .amount, .total, .n { font-variant-numeric: tabular-nums; }
+/* Money and quantities: tabular, lining figures, so a column of rupees lines up digit under digit. */
+.tabular, .money, .qty, .amount, .total, .n, .sre-num { font-variant-numeric: var(--numbers); }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 /* A keyboard or screen-reader user should not tab through the chrome on every screen. */
 .skip { position: absolute; left: -9999px; top: 0; background: var(--ink); color: var(--bg); padding: 12px 16px; border-radius: 0 0 8px 0; z-index: 50; }
 .skip:focus { left: 0; }
 
+/* ── The one icon set (OB-201 "Icons A", design system §3.4) ──────────────────────────────────────────
+   Drawn by packages/ui/web/sre-icons.js: thin line icons, 1.5px stroke on a 24px grid, round caps and joins, inline
+   SVG with no network. An icon takes the colour of the words beside it and never stands alone. */
+.sre-icon { display: inline-block; vertical-align: middle; flex: none; width: 1.25em; height: 1.25em; stroke-width: 1.5; }
+.sre-with-icon { display: inline-flex; align-items: center; gap: var(--space-2); }
+
 /* ── The fixtures every screen carries (design system §1 rules 4 and 6, §7) ───────────────────────── */
 /* The header is the top bar of the owner's look: a white line with the page's name, the person, the badge and the
    toggle; a hairline under it separates it from the canvas. */
 header { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 16px; background:var(--panel); border-bottom:1px solid var(--line); flex-wrap:wrap; }
-.who { font-weight:600; }
-.who small { display:block; color:var(--muted); font-weight:400; font-size:14px; }
+.who { font-weight:600; letter-spacing: var(--tracking-tight); }
+.who small { display:block; color:var(--muted); font-weight:400; font-size:14px; letter-spacing: 0; }
 /* The page's one heading is the header line (Stage G slice 5a): an h1 styled as the line it is, not a headline. */
 h1.who { margin:0; font-size:17px; }
 /* The sync badge: connection state + unsent count + freshness. The dot is decoration; the words beside it are the badge. */
@@ -184,6 +265,15 @@ h1.who { margin:0; font-size:17px; }
 .dot.offline, .dot.off, .dot.unknown, .dot.degraded { background: var(--degraded); }
 .dot.error { background: var(--error); }
 .dot.idle { background: var(--idle); }
+/* A status dot that has taken its icon (sre-icons.js `statusDot`, OB-201): a thin ring in the tone with the state's
+   shape inside — a tick, a clock, a cross, a pause — so the state reads in greyscale, under glare and to one man in
+   twelve. Same tones, same classes the screens already set; the ring is the 3:1 edge (WCAG 1.4.11). */
+span.dot[data-sre-status] { width: 20px; height: 20px; display: inline-grid; place-items: center; background: transparent; border: 1.5px solid currentColor; color: var(--ok); }
+span.dot[data-sre-status].offline, span.dot[data-sre-status].off, span.dot[data-sre-status].unknown, span.dot[data-sre-status].degraded,
+span.dot[data-sre-status].waiting, span.dot[data-sre-status].stale { color: var(--degraded); }
+span.dot[data-sre-status].error, span.dot[data-sre-status].missing { color: var(--error); }
+span.dot[data-sre-status].idle { color: var(--idle); }
+span.dot[data-sre-status] > .sre-icon { width: 13px; height: 13px; stroke-width: 2.25; }
 /* The per-user English / Tamil toggle — a real target (design system §1: ≥ 44px; this codebase's bar is --tap, 48px). */
 .lang { background:var(--line); color:var(--ink); min-height:var(--tap); padding:0 14px; font-size:15px; border:0; border-radius:var(--radius); }
 /* The strips: sample data · served from cache (and WHEN) · nobody signed in. None fades; none is colour alone. */
@@ -195,66 +285,118 @@ h1.who { margin:0; font-size:17px; }
 /* A deploy that reached this browser (RL-1): the cache strip's colours, the words and a real button to reload. */
 .sre-update { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
 .sre-update .sre-btn { font-size:15px; }
+.sre-update > span { display: inline-flex; align-items: center; gap: var(--space-2); }
+.sre-update { animation: sre-rise var(--dur-slow) var(--ease-out) both; }
 
 /* ── Namespaced components — screens adopt these slice by slice (G2–G5); nothing here targets a bare tag ── */
-.sre-btn { min-height: var(--tap); border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--ink); font-size: 17px; font-weight: 600; padding: 0 16px; }
-.sre-btn-primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-size: 20px; }
+/* Buttons (OB-201): primary · secondary (the default) · quiet · danger. One height, one radius, a hairline edge and
+   a soft lift; hover darkens, a press settles 1px — transform only, so nothing around it moves. */
+.sre-btn { min-height: var(--tap); border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--ink); font-size: 17px; font-weight: 600; padding: 0 16px; display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2); box-shadow: var(--shadow-xs); transition: transform var(--dur-fast) var(--ease-out); }
+.sre-btn:hover { background: var(--hover); border-color: var(--line-strong); }
+.sre-btn:active { transform: translateY(1px); }
+.sre-btn-secondary { background: var(--panel); border-color: var(--line); color: var(--ink); }
+.sre-btn-primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-size: 20px; box-shadow: var(--shadow-sm); }
+.sre-btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+.sre-btn-primary:active { background: var(--accent-press); border-color: var(--accent-press); }
 .sre-btn-danger { background: var(--danger-surface); border-color: var(--danger-surface); color: var(--on-danger); }
-.sre-btn-quiet { background: transparent; border-color: transparent; color: var(--muted); }
-.sre-btn:disabled { opacity: .55; }
+.sre-btn-danger:hover { background: var(--danger-hover); border-color: var(--danger-hover); }
+.sre-btn-quiet { background: transparent; border-color: transparent; color: var(--muted); box-shadow: none; }
+.sre-btn-quiet:hover { background: var(--panel-2); border-color: transparent; color: var(--ink); }
+.sre-btn:disabled { opacity: .55; box-shadow: none; transform: none; }
 .sre-btn[aria-pressed="true"] { outline: 3px solid var(--accent); }
+.sre-btn .sre-icon { width: 18px; height: 18px; }
 
 /* Wide content — a table, a code block — scrolls in its own box; the page never scrolls sideways (1.4.10). */
 .sre-scroll-x { overflow-x: auto; max-width: 100%; }
 
+/* Cards and panels: white, a hairline, a soft resting lift. A panel's heading sits on a hairline of its own. */
+.sre-card, .sre-panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); padding: var(--space-5); }
+.sre-panel > .sre-panel-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin: calc(var(--space-5) * -1) calc(var(--space-5) * -1) var(--space-4); padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--line-soft); font-size: 16px; font-weight: 600; }
+
 /* A tile: white, a hairline all round, a fine stripe along the top that carries the tone (the owner's "tile strips"). */
 .sre-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--gap); }
-.sre-tile { background: var(--panel); border: 1px solid var(--line); border-top: 3px solid var(--line-strong); border-radius: var(--radius-lg); padding: var(--pad); min-height: 120px; display: grid; align-content: start; gap: 4px; }
+.sre-tile { background: var(--panel); border: 1px solid var(--line); border-top: 3px solid var(--line-strong); border-radius: var(--radius-lg); padding: var(--pad); min-height: 120px; display: grid; align-content: start; gap: 4px; box-shadow: var(--shadow-sm); }
 .sre-tile[data-tone="ok"] { border-top-color: var(--ok); }
 .sre-tile[data-tone="degraded"] { border-top-color: var(--degraded); }
 .sre-tile[data-tone="error"] { border-top-color: var(--error); }
-.sre-tile .n { font-size: 44px; font-weight: 700; }
+.sre-tile .n { font-size: 44px; font-weight: 700; letter-spacing: var(--tracking-tight); line-height: var(--leading-tight); }
 .sre-tile .n.unknown { font-size: 24px; color: var(--degraded); }
 .sre-tile .label, .sre-tile .note { color: var(--muted); font-size: 15px; }
 
 .sre-rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
-.sre-row { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--idle); border-radius: var(--radius-lg); padding: 14px var(--pad); display: grid; gap: 10px; }
+.sre-row { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--idle); border-radius: var(--radius-lg); padding: 14px var(--pad); display: grid; gap: 10px; box-shadow: var(--shadow-xs); }
 .sre-row[data-tone="ok"] { border-left-color: var(--ok); }
 .sre-row[data-tone="degraded"], .sre-row[data-tone="pending"] { border-left-color: var(--degraded); }
 .sre-row[data-tone="error"] { border-left-color: var(--error); }
 .sre-row .what { font-size: 17px; font-weight: 600; }
 .sre-row .meta { color: var(--muted); font-size: 14px; }
-.sre-row .value { font-size: 22px; font-weight: 700; }
+.sre-row .value { font-size: 22px; font-weight: 700; font-variant-numeric: var(--numbers); }
 
-/* The seven universal screen states as a chip: word + icon + tone (packages/ui states.ts, packages/a11y signals). */
-.sre-chip { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; padding: 4px 12px; border-radius: 999px; background: var(--panel-2); border-left: 4px solid var(--idle); }
+/* The seven universal screen states as a chip: word + icon + tone (packages/ui states.ts, packages/a11y signals).
+   OB-201: a soft pill tinted by its tone, the icon from the one set (`sreIcon.chip`) or the state's own glyph. The
+   tint is a PAIR — surface + words — so the chip passes AA on its own, wherever it sits. */
+.sre-chip { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 14px; line-height: 1.3; padding: 4px 12px 4px 8px; border-radius: var(--radius-pill); background: var(--panel-2); color: var(--ink); border: 1px solid var(--line); border-left: 4px solid var(--idle); max-width: 100%; }
 .sre-chip .icon { font-size: 18px; width: 1.4em; text-align: center; }
-.sre-chip[data-tone="ok"] { border-left-color: var(--ok); }
-.sre-chip[data-tone="degraded"], .sre-chip[data-tone="pending"] { border-left-color: var(--degraded); }
-.sre-chip[data-tone="error"] { border-left-color: var(--error); color: var(--danger-text); }
+.sre-chip > .sre-icon { width: 16px; height: 16px; }
+.sre-chip[data-tone="ok"] { border-left-color: var(--ok); background: var(--ok-surface); color: var(--on-ok-surface); border-color: var(--ok-surface); border-left-color: var(--ok); }
+.sre-chip[data-tone="degraded"], .sre-chip[data-tone="pending"] { border-left-color: var(--degraded); background: var(--warn-surface); color: var(--on-warn-surface); border-color: var(--warn-surface); border-left-color: var(--degraded); }
+.sre-chip[data-tone="error"] { border-left-color: var(--error); color: var(--danger-text); background: var(--error-surface); border-color: var(--error-surface); border-left-color: var(--error); }
 .sre-chip[data-tone="idle"] { border-left-color: var(--idle); color: var(--muted); }
+.sre-chip[data-tone="unknown"] { border-left-color: var(--degraded); color: var(--on-warn-surface); background: var(--warn-surface); border-color: var(--warn-surface); border-left-color: var(--degraded); }
 
+/* Fields: one height, a 3:1 edge you can see, the focus halo above; a tick box takes the accent. */
 .sre-field { display: grid; gap: 6px; }
-.sre-field > label { color: var(--muted); font-size: 15px; }
-.sre-input { min-height: var(--tap); background: var(--field); color: var(--ink); border: 1px solid var(--line-strong); border-radius: var(--radius); padding: 0 14px; font-size: 17px; }
+.sre-field > label { color: var(--muted); font-size: 15px; font-weight: 500; }
+.sre-input, .sre-select { min-height: var(--tap); background: var(--field); color: var(--ink); border: 1px solid var(--field-line); border-radius: var(--radius); padding: 0 14px; font-size: 17px; box-shadow: inset 0 1px 1px rgba(25, 47, 39, .04); }
+.sre-input:hover, .sre-select:hover { border-color: var(--ink-2); }
+.sre-input:focus-visible, .sre-select:focus-visible { border-color: var(--accent); }
 .sre-input::placeholder { color: var(--idle); }
+.sre-check { width: 20px; height: 20px; accent-color: var(--accent); vertical-align: middle; }
 .sre-hint { color: var(--muted); font-size: 15px; min-height: 22px; }
 .sre-hint[data-tone="error"] { color: var(--danger-text); font-weight: 600; }
 
 /* The on-screen sheet (never a browser prompt) and its keypad. */
 .sre-sheet { position: fixed; inset: 0; background: var(--scrim); display: grid; place-items: center; z-index: 20; padding: var(--pad); }
-.sre-sheet-inner { width: min(560px, 100%); background: var(--panel); border: 1px solid var(--line); padding: 20px; border-radius: var(--radius-lg); display: grid; gap: 14px; max-height: 90dvh; overflow-y: auto; }
+.sre-sheet-inner { width: min(560px, 100%); background: var(--panel); border: 1px solid var(--line); padding: 20px; border-radius: var(--radius-lg); display: grid; gap: 14px; max-height: 90dvh; overflow-y: auto; box-shadow: var(--shadow-lg); }
 .sre-entry { font-size: 44px; font-weight: 700; text-align: right; padding: 10px 16px; background: var(--panel-2); border-radius: var(--radius); min-height: 68px; font-variant-numeric: tabular-nums; }
 .sre-keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 .sre-keypad .sre-btn { font-size: 22px; }
 
 /* The banner that must not be missed: full width, top, stays until acknowledged (design system §1 rule 5). */
-.sre-banner { position: fixed; inset: 0 0 auto 0; z-index: 30; padding: 20px; background: var(--danger-surface); color: var(--on-danger); display: grid; gap: 10px; }
+.sre-banner { position: fixed; inset: 0 0 auto 0; z-index: 30; padding: 20px; background: var(--danger-surface); color: var(--on-danger); display: grid; gap: 10px; box-shadow: var(--shadow-lg); }
 .sre-banner strong { font-size: 24px; }
 .sre-banner p { margin: 0; font-size: 18px; line-height: 1.45; }
 .sre-banner .sre-btn { background: var(--on-danger); border-color: var(--on-danger); color: var(--danger-surface); }
 .sre-banner[data-tone="ok"] { background: var(--accent); color: var(--on-accent); }
 .sre-banner[data-tone="ok"] .sre-btn { background: var(--on-accent); border-color: var(--on-accent); color: var(--accent); }
+
+/* A toast: what happened, whether it was saved, the next safe action (design system §1 rule 5) — it rises in, it
+   does not slide the page; a toast that matters stays until it is closed. */
+.sre-toasts { position: fixed; right: var(--space-4); bottom: var(--space-4); z-index: 35; display: grid; gap: var(--space-2); width: min(420px, calc(100vw - 32px)); }
+.sre-toast { display: flex; align-items: flex-start; gap: var(--space-3); background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-left: 4px solid var(--idle); border-radius: var(--radius-lg); padding: var(--space-3) var(--space-4); box-shadow: var(--shadow-lg); font-size: 15px; animation: sre-rise var(--dur-slow) var(--ease-out) both; }
+.sre-toast[data-tone="ok"] { border-left-color: var(--ok); }
+.sre-toast[data-tone="degraded"], .sre-toast[data-tone="pending"] { border-left-color: var(--degraded); }
+.sre-toast[data-tone="error"] { border-left-color: var(--error); }
+.sre-toast > .sre-icon { width: 20px; height: 20px; margin-top: 1px; }
+
+/* Empty, no-result and "not known" (design system §2): an icon, the words, and why — never a blank, never a zero. */
+.sre-empty { display: grid; justify-items: center; gap: var(--space-2); padding: var(--space-8) var(--space-4); color: var(--muted); font-size: 15px; text-align: center; }
+.sre-empty > .sre-icon { width: 32px; height: 32px; color: var(--line-strong); }
+.sre-empty > strong { color: var(--ink); font-size: 16px; }
+.sre-unknown { color: var(--degraded); font-weight: 600; }
+
+/* Skeleton loading: a quiet placeholder in the shape of what is coming, pulsing in opacity only. Never shown for a
+   figure the box does not know — that is "Not known", in words. */
+.sre-skeleton { display: block; min-height: 14px; border-radius: var(--radius-sm); background: var(--panel-2); animation: sre-pulse 1.4s var(--ease-in-out) infinite; }
+.sre-skeleton[data-shape="figure"] { min-height: 40px; width: 60%; }
+.sre-skeleton[data-shape="line"] { width: 100%; }
+
+/* Entering WORDS never fade: they move in fully opaque, so a person (and the audit) can read them from the first frame.
+   Only the scrim, which holds no words, fades. */
+@keyframes sre-rise { from { transform: translateY(6px); } to { transform: none; } }
+@keyframes sre-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes sre-slide-in { from { transform: translateX(24px); } to { transform: none; } }
+@keyframes sre-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
 
 /* ── The ERP's one menu, drawn as the back office's rail (Stage G slice 5b · OB-13 UX-1a · §27 · P-07) ── */
 /* Rendered by sre-chrome.js from what the store computer says this person may open — never a hand-kept list.
@@ -262,35 +404,48 @@ h1.who { margin:0; font-size:17px; }
    drawer the ☰ button in the header opens and Escape closes. Opened off the box, there is no rail at all. */
 body.sre-shell { display: grid; grid-template-columns: var(--rail-width) minmax(0, 1fr); align-items: stretch; min-height: 100dvh; padding: 0; }
 .sre-page { min-width: 0; display: flex; flex-direction: column; min-height: 100dvh; }
-.sre-menu-button { min-height: var(--tap); min-width: var(--tap); padding: 0 14px; border: 0; border-radius: var(--radius); background: var(--line); color: var(--ink); font-size: 15px; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; }
-.sre-menu-button[aria-expanded="true"] { background: var(--ink); color: var(--bg); }
+.sre-menu-button { min-height: var(--tap); min-width: var(--tap); padding: 0 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--ink); font-size: 15px; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; box-shadow: var(--shadow-xs); }
+.sre-menu-button:hover { background: var(--hover); border-color: var(--line-strong); }
+.sre-menu-button[aria-expanded="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
 .sre-menu-button[hidden] { display: none; }
-.sre-menu { background: var(--rail); color: var(--on-rail); margin: 0; padding: 14px 12px 20px; display: flex; flex-direction: column; gap: 2px; position: sticky; top: 0; height: 100dvh; overflow: hidden auto; border: 0; scrollbar-width: thin; }
+.sre-menu-button .sre-icon { width: 20px; height: 20px; }
+.sre-menu { background: var(--rail); color: var(--on-rail); margin: 0; padding: 14px 12px 20px; display: flex; flex-direction: column; gap: 2px; position: sticky; top: 0; height: 100dvh; overflow: hidden auto; border: 0; scrollbar-width: thin; scrollbar-color: var(--rail-line) transparent; }
 .sre-menu[hidden] { display: none; }
 .sre-menu .brand { display: flex; align-items: center; gap: 10px; padding: 6px 8px 14px; }
-.sre-menu .brand .mark { width: 40px; height: 40px; flex: none; border-radius: var(--radius-lg); background: var(--rail-accent); color: var(--rail); font-weight: 800; font-size: 15px; letter-spacing: .02em; display: grid; place-items: center; }
+.sre-menu .brand .mark { width: 40px; height: 40px; flex: none; border-radius: var(--radius-lg); background: var(--rail-accent); color: var(--rail); font-weight: 800; font-size: 15px; letter-spacing: .02em; display: grid; place-items: center; box-shadow: inset 0 -2px 0 rgba(25, 47, 39, .18); }
 .sre-menu .brand b { display: block; font-size: 15px; letter-spacing: .04em; }
 .sre-menu .brand small { display: block; color: var(--on-rail-muted); font-size: 14px; }
-.sre-menu .group { margin: 0; padding: 14px 10px 4px; color: var(--on-rail-muted); font-size: 12.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
+.sre-menu .group { margin: 0; padding: 16px 12px 6px; color: var(--on-rail-muted); font-size: 12.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
 .sre-menu ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
-.sre-menu a { display: flex; align-items: center; min-height: var(--tap); padding: 0 10px 0 12px; border-radius: var(--radius); color: var(--on-rail); text-decoration: none; font-size: 15px; }
+.sre-menu a { display: flex; align-items: center; min-height: var(--tap); padding: 6px 10px 6px 12px; border-radius: var(--radius); color: var(--on-rail); text-decoration: none; font-size: 15px; gap: 12px; line-height: var(--leading-tight); }
+.sre-menu a .sre-icon { width: 18px; height: 18px; color: var(--on-rail-muted); }
 .sre-menu a:hover { background: var(--rail-2); }
+.sre-menu a:hover .sre-icon { color: var(--on-rail); }
 .sre-menu a[aria-current="page"] { background: var(--rail-2); font-weight: 700; box-shadow: inset 3px 0 0 var(--rail-accent); }
+.sre-menu a[aria-current="page"] .sre-icon { color: var(--rail-accent); }
 .sre-menu .who-can { margin: 0 0 6px; padding: 10px; border: 1px solid var(--rail-line); border-radius: var(--radius); color: var(--on-rail-muted); font-size: 14px; }
 .sre-menu .who-can b { color: var(--on-rail); }
 .sre-menu :focus-visible { outline-color: var(--rail-accent); }
-.sre-scrim { position: fixed; inset: 0; background: var(--scrim); z-index: 39; border: 0; padding: 0; margin: 0; }
+.sre-scrim { position: fixed; inset: 0; background: var(--scrim); z-index: 39; border: 0; padding: 0; margin: 0; animation: sre-fade var(--dur) var(--ease-out) both; }
+/* At a desk with a mouse the rail's rows sit at the back office's 44px (design system §3.2); a touch screen keeps the
+   page's own target, however large it asked for. */
+@media (min-width: 1000px) and (pointer: fine) {
+  .sre-menu { --tap: 44px; }
+}
 @media (max-width: 999px) {
   body.sre-shell { display: block; }
-  .sre-menu { position: fixed; inset: 0 auto 0 0; width: min(320px, 86vw); height: 100dvh; z-index: 40; box-shadow: 8px 0 24px var(--scrim); }
+  .sre-menu { position: fixed; inset: 0 auto 0 0; width: min(320px, 86vw); height: 100dvh; z-index: 40; box-shadow: 8px 0 24px var(--scrim); animation: sre-drawer var(--dur-slow) var(--ease-out) both; }
 }
+@keyframes sre-drawer { from { transform: translateX(-16px); } to { transform: none; } }
 
 /* ── What the browser tells us about the person ──────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
+  :root { --dur-fast: 0ms; --dur: 0ms; --dur-slow: 0ms; }
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+  .sre-skeleton { animation: none !important; }
 }
 @media (prefers-contrast: more) {
-  :root { --line: #8e9c94; --line-strong: #56655d; --muted: #34443b; }
+  :root { --line: #8e9c94; --line-strong: #56655d; --muted: #34443b; --line-soft: #aebbb3; }
   :root[data-theme="dark"] { --line: #64748b; --line-strong: #94a3b8; --muted: #cbd5e1; }
   :focus-visible { outline-width: 4px; }
 }
@@ -301,50 +456,75 @@ body.sre-shell { display: grid; grid-template-columns: var(--rail-width) minmax(
    page's own tab buttons into subpage tiles (title, the subpage's purpose, a live count), classes every table a
    register, and the page's sheet opens as a record drawer at a desk. Nothing a person must read is under 14px.
    Scoped to `body.sre-shell` (the back office) where it would otherwise reach the till's sheets. */
-[data-sre-head] > .sre-eyebrow { margin: 0 0 2px; font-size: 14px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
-[data-sre-head] > h2 { margin: 0; font-size: 24px; line-height: 1.2; font-weight: 600; text-wrap: balance; }
-[data-sre-head] > p.lead { margin: 4px 0 0; color: var(--muted); font-size: 16px; max-width: 70ch; }
-.sre-tabs { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(200px, 1fr); gap: 10px; padding: 12px 16px; background: transparent; overflow-x: auto; }
-.sre-tab { text-align: left; background: var(--panel); border: 1px solid var(--line); border-top: 3px solid var(--line-strong); border-radius: var(--radius-lg); padding: 10px 14px; min-height: var(--tap); display: grid; align-content: start; gap: 2px; color: var(--ink); font: inherit; font-size: 16px; cursor: pointer; }
-.sre-tab[aria-current="page"] { border-top-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); color: var(--ink); background: var(--panel); }
+[data-sre-head] > .sre-eyebrow { margin: 0 0 4px; font-size: 14px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+[data-sre-head] > h2 { margin: 0; font-size: 26px; line-height: 1.2; font-weight: 600; letter-spacing: -.015em; text-wrap: balance; }
+[data-sre-head] > p.lead { margin: 6px 0 0; color: var(--muted); font-size: 16px; max-width: 70ch; }
+.sre-tabs { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(200px, 1fr); gap: 12px; padding: 12px 16px; background: transparent; overflow-x: auto; }
+.sre-tab { text-align: left; background: var(--panel); border: 1px solid var(--line); border-top: 3px solid var(--line-strong); border-radius: var(--radius-lg); padding: 10px 14px; min-height: var(--tap); display: grid; align-content: start; gap: 2px; color: var(--ink); font: inherit; font-size: 16px; cursor: pointer; box-shadow: var(--shadow-xs); transition: transform var(--dur) var(--ease-out); }
+.sre-tab:hover { border-color: var(--line-strong); box-shadow: var(--shadow-md); transform: translateY(-1px); }
+.sre-tab[aria-current="page"] { border-top-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent), var(--shadow-sm); color: var(--ink); background: var(--panel); }
+.sre-tab[aria-current="page"]:hover { transform: none; }
 .sre-tab .t { font-size: 16px; font-weight: 600; }
 .sre-tab .d { color: var(--muted); font-size: 14px; font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sre-tab .c { color: var(--accent); font-size: 14px; font-weight: 600; }
+.sre-tab .c { color: var(--accent); font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .sre-tab .d[hidden], .sre-tab .c[hidden] { display: none; }
-.sre-register { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--line); font-size: 15px; }
-.sre-register th { text-align: left; background: var(--panel-2); color: var(--muted); font-size: 14px; font-weight: 600; letter-spacing: .02em; padding: 10px 12px; border-top: 0; }
-.sre-register td { padding: 10px 12px; border-top: 1px solid var(--line); vertical-align: top; }
-.sre-register tbody tr:hover > td { background: var(--panel-2); }
+/* A register (OB-201): hairline frame and rows, a soft lift, the head stuck to the top while its rows scroll, a row
+   lit under the pointer, every figure tabular. */
+.sre-register { width: 100%; border-collapse: separate; border-spacing: 0; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg); font-size: 15px; font-variant-numeric: tabular-nums lining-nums; box-shadow: var(--shadow-sm); }
+.sre-register th { text-align: left; background: var(--panel-2); color: var(--muted); font-size: 14px; font-weight: 600; letter-spacing: .02em; padding: 10px 12px; border-top: 0; border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 1; }
+.sre-register thead tr:first-child > th:first-child { border-top-left-radius: var(--radius-lg); }
+.sre-register thead tr:first-child > th:last-child { border-top-right-radius: var(--radius-lg); }
+.sre-register td { padding: 10px 12px; border-top: 1px solid var(--line-soft); vertical-align: top; }
+.sre-register tbody tr:first-child > td { border-top: 0; }
+.sre-register tbody tr:hover > td { background: var(--hover); }
 body.sre-shell .sheet, body.sre-shell .sre-sheet { position: fixed; inset: 0; background: var(--scrim); display: grid; place-items: center; z-index: 20; padding: var(--pad); }
 body.sre-shell .sheet[hidden], body.sre-shell .sre-sheet[hidden] { display: none; }
-body.sre-shell .sheet-inner, body.sre-shell .sre-sheet-inner, body.sre-shell .sheet > .card { width: min(560px, 100%); max-width: none; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 20px; display: grid; gap: 12px; align-content: start; max-height: 90dvh; overflow-y: auto; }
+body.sre-shell .sheet-inner, body.sre-shell .sre-sheet-inner, body.sre-shell .sheet > .card { width: min(560px, 100%); max-width: none; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 20px; display: grid; gap: 12px; align-content: start; max-height: 90dvh; overflow-y: auto; box-shadow: var(--shadow-lg); animation: sre-rise var(--dur-slow) var(--ease-out) both; }
 @media (min-width: 1000px) {
   /* the record drawer: at a desk the sheet is a panel on the right, the page still visible behind the scrim */
   body.sre-shell .sheet, body.sre-shell .sre-sheet { place-items: stretch end; padding: 0; }
-  body.sre-shell .sheet-inner, body.sre-shell .sre-sheet-inner, body.sre-shell .sheet > .card { width: min(600px, 100%); height: 100%; max-height: none; border-radius: 0; border-width: 0 0 0 1px; padding: 24px; }
+  body.sre-shell .sheet-inner, body.sre-shell .sre-sheet-inner, body.sre-shell .sheet > .card { width: min(600px, 100%); height: 100%; max-height: none; border-radius: 0; border-width: 0 0 0 1px; padding: 24px; animation-name: sre-slide-in; }
 }
 
 /* ── The rail names the shop and the person; the header says where you are and finds any screen (OB-16, 5 Oct 2026) ──
    The rail is a column: brand, the branch card, the groups, then the person at the foot. The top line sits above the
    page's own header row: the breadcrumb read off the rail, and a search that filters the rail's links. */
 .sre-menu { display: flex; flex-direction: column; overflow: hidden; }
-.sre-menu .groups { flex: 1 1 auto; min-height: 0; overflow: hidden auto; scrollbar-width: thin; margin: 0 -4px; padding: 0 4px 8px; }
+.sre-menu .groups { flex: 1 1 auto; min-height: 0; overflow: hidden auto; scrollbar-width: thin; scrollbar-color: var(--rail-line) transparent; margin: 0 -4px; padding: 0 4px 8px; }
 .sre-menu .branch { display: flex; align-items: center; gap: 10px; margin: 0 0 8px; padding: 10px; border: 1px solid var(--rail-line); border-radius: var(--radius-lg); background: var(--rail-2); color: var(--on-rail); }
 .sre-menu .branch .mark { width: 36px; height: 36px; flex: none; display: grid; place-items: center; border-radius: var(--radius); background: var(--rail); color: var(--rail-accent); font-size: 18px; }
+.sre-menu .branch .mark .sre-icon { width: 20px; height: 20px; }
 .sre-menu .branch b { display: block; font-size: 15px; }
 .sre-menu .branch small { display: block; color: var(--on-rail-muted); font-size: 14px; }
 .sre-menu .branch .dot { width: 8px; height: 8px; margin-left: auto; border-radius: 50%; background: var(--rail-accent); }
 .sre-menu .group-section[hidden], .sre-menu li[hidden] { display: none; }
 .sre-menu .person { display: flex; align-items: center; gap: 10px; margin-top: 8px; padding: 12px 8px 4px; border-top: 1px solid var(--rail-line); color: var(--on-rail); }
-.sre-menu .person .avatar { width: 36px; height: 36px; flex: none; display: grid; place-items: center; border-radius: 50%; background: var(--rail-2); color: var(--on-rail); font-weight: 700; font-size: 14px; }
+.sre-menu .person .avatar { width: 36px; height: 36px; flex: none; display: grid; place-items: center; border-radius: 50%; background: var(--rail-2); color: var(--on-rail); font-weight: 700; font-size: 14px; box-shadow: inset 0 0 0 1px var(--rail-line); }
 .sre-menu .person b { display: block; font-size: 15px; }
 .sre-menu .person small { display: block; color: var(--on-rail-muted); font-size: 14px; }
 .sre-topline { flex-basis: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .sre-crumbs { margin: 0; color: var(--muted); font-size: 14px; }
 .sre-find { min-height: var(--tap); width: min(320px, 100%); padding: 0 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--field); color: var(--ink); font: inherit; font-size: 15px; }
 .sre-find[hidden] { display: none; }
-/* The workspace icons in the rail (UX-2b): small, before the group's name, never carrying meaning alone. */
+/* The search with its magnifier inside the field (OB-201): the icon is decoration, the field keeps its own name. */
+.sre-find-wrap { position: relative; display: inline-flex; align-items: center; width: min(320px, 100%); color: var(--muted); }
+.sre-find-wrap[hidden] { display: none; }
+.sre-find-wrap > .sre-icon { position: absolute; left: 12px; width: 18px; height: 18px; pointer-events: none; }
+.sre-find-wrap > .sre-find { width: 100%; padding-left: 40px; border-color: var(--field-line); box-shadow: inset 0 1px 1px rgba(25, 47, 39, .04); }
+.sre-find-wrap > .sre-find:hover { border-color: var(--ink-2); }
+.sre-find-wrap > .sre-find:focus-visible { border-color: var(--accent); }
+/* The rail's workspace headings (UX-2b → OB-201): words only; each screen under them carries its own icon. */
 .sre-menu .group { display: flex; align-items: center; gap: 8px; }
-.sre-menu .group .sre-icon { width: 15px; height: 15px; flex: none; opacity: .85; }
-.sre-icon { display: inline-block; vertical-align: middle; }
-
+/* The header's own controls, drawn by the chrome (OB-201): the badge as a chip in its tone, the language toggle as a
+   quiet bordered button with its globe. Words and colours are each other's pair; the icon rides with the words. */
+.sre-badge { display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 4px 14px 4px 8px; border-radius: var(--radius-pill); background: var(--panel-2); color: var(--ink); border: 1px solid var(--line); font-size: 14px; font-weight: 500; line-height: 1.3; }
+.sre-badge[data-tone="ok"] { background: var(--ok-surface); color: var(--on-ok-surface); border-color: var(--ok-surface); }
+.sre-badge[data-tone="degraded"] { background: var(--warn-surface); color: var(--on-warn-surface); border-color: var(--warn-surface); }
+.sre-badge[data-tone="error"] { background: var(--error-surface); color: var(--danger-text); border-color: var(--error-surface); }
+.sre-badge[data-tone="idle"] { background: var(--panel-2); color: var(--ink); }
+.sre-badge > span.dot[data-sre-status] { width: 22px; height: 22px; }
+.sre-badge[data-tone="error"] > span.dot[data-sre-status] { color: var(--danger-text); }
+.lang.sre-lang { display: inline-flex; align-items: center; gap: 8px; background: var(--panel); border: 1px solid var(--line); color: var(--ink); font-weight: 600; box-shadow: var(--shadow-xs); }
+.lang.sre-lang:hover { background: var(--hover); border-color: var(--line-strong); }
+.lang.sre-lang .sre-icon { width: 18px; height: 18px; color: var(--muted); }
+.stale > .sre-icon, .sre-update > span > .sre-icon { width: 20px; height: 20px; margin-right: 8px; }
