@@ -87,6 +87,12 @@ export interface PurchaseOrderDeps {
   readonly productUom?: (tenantId: string, productId: string) => Promise<string | undefined> | string | undefined;
   /** FUL-11: a product's range status at a store on a date (`rangeStatusOf`) — the order refuses what the store does not range. */
   readonly rangeStatus?: (tenantId: string, storeId: string, productId: string, onDate: string) => Promise<'no_range' | 'not_ranged' | 'listed' | 'clearance' | 'delisted'>;
+  /**
+   * D-16 (R3, OB-189): the product MASTER's lifecycle (`draft` · `new` · `active` · `clearance` · `discontinued`), or
+   * undefined when the master does not know the product. A discontinued or clearance product is refused on an order
+   * whatever the store's range says — including a store with no range recorded (`no_range`). Optional on a bare stub.
+   */
+  readonly masterLifecycle?: (tenantId: string, productId: string) => Promise<string | undefined> | string | undefined;
   readonly supplierStatus?: (tenantId: string, supplierId: string) => Promise<'active' | 'proposed' | undefined> | 'active' | 'proposed' | undefined;
   /** Record a proposed PO. Idempotent on the PO id. */
   readonly propose: (tenantId: string, po: StoredPurchaseOrder, key: string) => Promise<void> | void;
@@ -357,6 +363,20 @@ export function purchaseOrderRoutes(deps: PurchaseOrderDeps): readonly Route[] {
         }
         await requireApprovedSupplier(deps, ctx.tenantId, b['supplierId']);
         const deliverToLocationId = await requireDeliverTo(deps, ctx, b['deliverToLocationId']);
+        // D-16 (R3, OB-189): the product master's lifecycle stops ordering first — a discontinued or clearance product is
+        // never put on a purchase order, even where the store's range is silent (no range) or still lists it.
+        if (deps.masterLifecycle !== undefined) {
+          for (const l of lines as RawLine[]) {
+            const lifecycle = await deps.masterLifecycle(ctx.tenantId, l.productId);
+            if (lifecycle !== 'discontinued' && lifecycle !== 'clearance') continue;
+            throw apiError(422, {
+              code: 'product_lifecycle_stops_ordering',
+              whatHappened: `${l.productId} is marked ${lifecycle} on the product master, so it cannot be put on a purchase order${lifecycle === 'clearance' ? ' — it is being sold down, never reordered' : ''} (D-16). This holds whatever the store's range says.`,
+              wasItSaved: 'not_saved',
+              nextSafeAction: 'Take the line off the order. If the product should be bought again, change its lifecycle on the product master first. Nothing was ordered.',
+            });
+          }
+        }
         // FUL-11 (M04-FR-01): the effective range is enforced at ordering — a store that has a range does not order what
         // it does not carry (delisted), what it is selling down (clearance) or what it never ranged. A store with no range
         // recorded yet is not judged (there is nothing to enforce) — the range screen is where that starts.

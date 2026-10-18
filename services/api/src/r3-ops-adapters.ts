@@ -8,7 +8,12 @@ import type { Route } from '../../kernel/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import {
   STREAM, streamName, inventoryAdapter, adjustmentRequestAdapter, saleStockLocationOf, productUomFrom, orgStructureAdapter,
+  productMasterAdapter, assortmentAdapter, priceListAdapter,
 } from './adapters';
+import { assertBranchInScope } from '../../kernel/src/index';
+import { rangeStatusOf } from '../../inventory/src/assortment';
+import { resolvePrice } from '../../../packages/price-list/src/price-list';
+import { clearanceMarkdownRoutes, type ClearanceMarkdownDeps } from '../../pricing/src/clearance-markdowns';
 import type { IncomingSale } from '../../pos/src/sale-intake';
 import { branchOfLocationIn, type LocationBranches } from '../../inventory/src/location-scope';
 import {
@@ -66,6 +71,46 @@ export function onShelfAvailabilityAdapter(input: { readonly store: EventStore; 
   };
 }
 
+// ── D-16 lifecycle stops ordering + clearance suggestions ────────────────────────────────────────────────────────
+
+/** D-16: the product master's lifecycle for a product (undefined when the master does not know it). */
+export function masterLifecycleOf(input: { readonly store: EventStore; readonly now: () => string }): (tenantId: string, productId: string) => Promise<string | undefined> {
+  return async (tenantId, productId) => (await productMasterAdapter(input).product(tenantId, productId))?.lifecycle;
+}
+
+/** Today's shelf price at a store: the store-scope price-list entry in force (the one price truth, P-02). */
+export async function shelfPriceAt(input: { readonly store: EventStore; readonly now: () => string }, tenantId: string, productId: string, storeId: string, at: string): Promise<number | undefined> {
+  const entry = resolvePrice(await priceListAdapter(input).entries(tenantId, productId), { productId, at, storeId });
+  return entry === null ? undefined : entry.price.minor;
+}
+
+export function clearanceMarkdownAdapter(input: { readonly store: EventStore; readonly now: () => string; readonly locationBranches: LocationBranches }): ClearanceMarkdownDeps {
+  const { store, now } = input;
+  const storeOf = async (t: string) => input.locationBranches(t);
+  return {
+    now,
+    clearanceProducts: async (t, storeId, onDate) => {
+      const out = new Map<string, 'product_master' | 'store_range'>();
+      for (const p of await productMasterAdapter({ store, now }).products(t)) if (p.lifecycle === 'clearance') out.set(p.productId, 'product_master');
+      const entries = await assortmentAdapter({ store, now }).entries(t, storeId);
+      for (const productId of new Set(entries.map((e) => e.productId))) {
+        if (!out.has(productId) && rangeStatusOf(entries, storeId, productId, onDate) === 'clearance') out.set(productId, 'store_range');
+      }
+      return [...out].map(([productId, source]) => ({ productId, source })).sort((a, b) => (a.productId < b.productId ? -1 : 1));
+    },
+    batchesAtStore: async (t, storeId) => {
+      const branchOf = await storeOf(t);
+      return (await inventoryAdapter({ store, now }).batches!(t)).filter((b) => branchOf(b.locationId) === storeId);
+    },
+    soldAtStore: async (t, storeId, from, to) => {
+      const branchOf = await storeOf(t);
+      return (await soldLinesWithPlace(store, t, from, to)).filter((l) => branchOf(l.locationId) === storeId);
+    },
+    shelfPriceMinor: (t, p, storeId, at) => shelfPriceAt({ store, now }, t, p, storeId, at),
+    assertStoreInScope: async (ctx) => { assertBranchInScope(ctx, (ctx.query['storeId'] ?? '').trim()); },
+  };
+}
+
 // ── the one entry point ──────────────────────────────────────────────────────────────────────────────────────────
 
 /** Every Lane 4 route, composed over head office's store (or a throw-away in-memory one when the surface has none). */
@@ -76,5 +121,6 @@ export function r3OpsRoutes(input: { readonly store: EventStore | undefined; rea
   const base = { store, now, locationBranches, ...(input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit }) };
   return [
     ...onShelfAvailabilityRoutes(onShelfAvailabilityAdapter(base)),
+    ...clearanceMarkdownRoutes(clearanceMarkdownAdapter(base)),
   ];
 }
