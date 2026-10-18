@@ -5,7 +5,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
-## Release R3 — built in four parallel lanes and joined (18 October 2026) — branch `claude/new-session-lw91i4`, gate and PR pending
+## Release R3 — built in four parallel lanes and joined (18 October 2026) — branch `claude/new-session-lw91i4`, gate green, PR opened
 
 - **Owner sign-off:** R3 acceptance sentences signed (OB-188); D-16 and D-19 signed separately (OB-189, OB-190); lane questions answered (OB-191 to OB-200).
 - **Built (synthetic data; no staff UAT):**
@@ -40,7 +40,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - **Verification so far:**
   - Each lane passed its own unit, memory + PostgreSQL (with cold restart), guardrail and browser tests.
   - The integration pass joined the seams (3B Table 4 ← A17, D-26 ← D-25, A19 timer, OB-191, OB-192, D-19 → pack) with 1,622 targeted tests passing.
-  - The full gate on the joined branch has not been run yet.
+  - Full gate on the joined branch (18 Oct): 1,348 test files and 12,590 tests passed, 16 skipped. Performance 52/52. Browser 394/394.
 - **In progress (parallel):**
   - R3 follow-ups OB-194 (supplier-return dispatch step), OB-195 (privacy time locked to 15), OB-196 (numbered DSD debit note), OB-198 (new-item clock from first delivery), and OB-197 (the C21 consent notice drafted for the owner's signature; fingerprint use refused until signed).
   - UI/UX shared look (OB-201: polish the sage look, thin line icons, shared foundation first).
