@@ -49,6 +49,19 @@ describe('createPosView', () => {
     expect(view.payableMinor()).toBe(98_72); // 1.234 kg × ₹80, GST inside
   });
 
+  it('gives every line the amount it charges, so the till never shows ₹NaN', () => {
+    const { view } = newView();
+    view.scan({ productId: 'p1', description: 'Rice 1kg', unitPriceMinor: 100_00, qty: 2 });
+    view.scan({ productId: 'p2', description: 'Tomato', unitPriceMinor: 80_00, qty: 1234, uom: 'kg' });
+    const [rice, tomato] = view.basket();
+    expect(rice?.amountMinor).toBe(200_00); // 2 × ₹100
+    expect(tomato?.amountMinor).toBe(98_72); // 1.234 kg × ₹80, rounded down — the same as the total
+    view.setQuantity(rice!.lineId, 3);
+    expect(view.basket()[0]?.amountMinor).toBe(300_00);
+    for (const line of view.basket()) expect(Number.isInteger(line.amountMinor)).toBe(true);
+    expect(view.basket().reduce((t, l) => t + l.amountMinor, 0)).toBe(view.payableMinor());
+  });
+
   it('changes quantity through the model', () => {
     const { view } = newView();
     view.scan({ productId: 'p1', description: 'Rice', unitPriceMinor: 100_00, qty: 1 });
