@@ -5,7 +5,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
-## R3 follow-ups: the owner's answers OB-193 to OB-204 built (18 October 2026) — gate and PR pending
+## R3 follow-ups: the owner's answers OB-193 to OB-204 built (18 October 2026) — gate green (12,612 tests; perf 52/52; browser 394/394), PR opened
 
 - **A23 (OB-194):** a supplier return above the e-way bill threshold needs a dispatch step, refused until a generated e-way bill exists. The **Dispatch button** on the goods-receipt page follows after the shared look merges (OB-204); until then a manager dispatches through the API.
 - **C5 (OB-195):** the privacy reply time is fixed at 15 days everywhere.
