@@ -12,7 +12,7 @@
 //   • a dispute LOST posts a compensating entry — the money the shop gives back — beside the sale; nothing about the sale
 //     is ever edited (hard rule #2). A dispute won posts nothing.
 //
-// The provider's reference is a case or transaction reference, never a card number, CVV or expiry (hard rule #3) — the
+// The provider's reference is a case or transaction reference, never any card data (hard rule #3) — the
 // caller refuses one that looks like card data. Pure and deterministic: no clock, no I/O.
 
 /** NPCI: the shop answers a UPI P2M dispute within 15 days of receiving it. */
