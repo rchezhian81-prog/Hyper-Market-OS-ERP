@@ -139,6 +139,8 @@ export function createEdgeNode(input: {
    * standalone/demo edge and the direct-construction unit tests still run.
    */
   readonly returnsEntitlement?: ReturnEntitlement;
+  /** B13 (OB-138): the HUIDs this box has sold — taught each sale as it commits, so the next scan of that piece is refused. */
+  readonly soldHuids?: { note(record: string): void };
   /**
    * Operation-identity guard for SALES (GAP-SALE-IDEMPOTENCY-01) — the sale-path mirror of
    * `returnsIdempotency`. Rebuilt from the durable sale log at boot and consulted before every sale
@@ -218,6 +220,10 @@ export function createEdgeNode(input: {
               : [];
             input.returnsEntitlement.recordSale(saleId, lines);
           } catch { /* the sale is committed regardless; entitlement just won't know this line */ }
+        }
+        // B13: a gold piece on the disk is sold — off the money-critical path, and it never affects the sale.
+        if (outcome.committed && input.soldHuids !== undefined) {
+          try { input.soldHuids.note(record); } catch { /* the sale stands */ }
         }
         return outcome;
       };

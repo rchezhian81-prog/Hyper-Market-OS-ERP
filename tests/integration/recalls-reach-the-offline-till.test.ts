@@ -121,6 +121,22 @@ describe('SF-08: a recalled or held batch reaches the offline till on the next s
     expect(v3.cache.scan('8901000000028').product.productId).toBe('p-curd');
   });
 
+  it('R3 (OB-139 "A"): a 2D code carrying the recalled batch is refused by name, its sibling batch sells; a plain barcode still blocks the product', async () => {
+    const h = await shop();
+    await product(h, 'p-ghee', 'SKU-GHEE', 'Ghee 500ml', '8901000000033'); // a real check digit, so its GTIN reads
+    await receive(h, 'p-ghee', 'G-1');
+    await receive(h, 'p-ghee', 'G-2');
+    const v1 = laneTrading(await publish(h));
+    await req(h, 'POST', '/v1/quality/recalls/G-1', 'rc-g1', { reason: 'supplier notice' });
+    const v2 = laneTrading(await publish(h), v1.pack);
+    expect(() => v2.cache.scan('(01)08901000000033(10)G-1', { asOf: AS_OF })).toThrow(/Ghee 500ml" batch G-1/);
+    expect(v2.cache.scan('(01)08901000000033(10)G-2', { asOf: AS_OF }).batch?.batchId).toBe('G-2');
+    expect(() => v2.cache.scan('8901000000033')).toThrow(RecalledItemError);
+    await req(h, 'POST', '/v1/quality/recalls/G-1/closure', 'rc-g1-close', { evidenceRef: 'DOC-G-1' });
+    const v3 = laneTrading(await publish(h), v2.pack);
+    expect(v3.cache.scan('(01)08901000000033(10)G-1', { asOf: AS_OF }).product.productId).toBe('p-ghee');
+  });
+
   it('a product stays blocked while ANY of its blocks stands', async () => {
     const h = await shop();
     await req(h, 'POST', '/v1/quality/recalls/B-0412', 'rc-1', { reason: 'notice' });

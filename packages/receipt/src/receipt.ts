@@ -26,6 +26,10 @@ export interface ReceiptLineInput {
   readonly unitPriceMinor: number;
   /** Line total after any discount, in minor units. */
   readonly lineTotalMinor: number;
+  /** B13 (OB-138): the hallmark HUID of a gold piece — printed under its line. */
+  readonly huid?: string;
+  /** D-20: the batch a 2D code carried — printed under its line, for the customer's own recall record. */
+  readonly batchId?: string;
 }
 
 export interface ReceiptTenderInput {
@@ -196,6 +200,9 @@ export function renderText(doc: ReceiptDocument, width = 42): string[] {
   for (const line of doc.lines) {
     for (const part of wrap(line.description, width)) out.push(part);
     out.push(pair(`  ${quantityText(line)} x ${amount(line.unitPriceMinor)}`, amount(line.lineTotalMinor), width));
+    // B13: the HUID sold is printed on the bill (BIS hallmarking); D-20: the batch, when the code carried one.
+    if (line.huid !== undefined && line.huid !== '') out.push(`  HUID: ${line.huid}`);
+    if (line.batchId !== undefined && line.batchId !== '') out.push(`  Batch: ${line.batchId}`);
   }
 
   out.push(rule);

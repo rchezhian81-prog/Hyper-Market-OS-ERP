@@ -20,7 +20,7 @@ import { apiError, notFound } from '../../kernel/src/index';
 import { ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
 import { settlePublishCategories, type CategoryRegisterDeps } from './categories';
 import {
-  publishProduct, NotPublishableError, CategoryNotFoundError,
+  publishProduct, NotPublishableError, CategoryNotFoundError, isTobacco, warningStanding,
   type ProductRecord, type ProductLifecycle, type HandlingClass,
 } from '../../../packages/product/src/index';
 
@@ -39,7 +39,12 @@ export interface ProductMasterDeps {
   readonly products: (tenantId: string) => Promise<readonly ProductRecord[]> | readonly ProductRecord[];
   /** Head office's own category list (SF-06-b · OB-24 "A") — what every product is judged against. */
   readonly categoryRegister: CategoryRegisterDeps;
+  /** Today, for the B16 tobacco-warning check at activation. Absent → the machine's clock. */
+  readonly now?: () => string;
 }
+
+/** The lifecycles a till sells (the pack maps `new` to active). */
+const SELLING: readonly ProductLifecycle[] = ['new', 'active', 'clearance'];
 
 const LIFECYCLES: readonly ProductLifecycle[] = ['draft', 'new', 'active', 'clearance', 'discontinued'];
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
@@ -109,7 +114,10 @@ export function productMasterRoutes(deps: ProductMasterDeps): readonly Route[] {
         const read = readProduct(productId, ctx.tenantId, b['product']);
         // D01-FR-06 (round 8): the app content is authored on its own route; a publish of the record keeps what is there.
         const current = await deps.product(ctx.tenantId, productId);
-        const record: ProductRecord = current?.appContent === undefined ? read : { ...read, appContent: current.appContent };
+        // B16 (OB-140 "A"): the tobacco-warning confirmations are authored on their own route by a named person and are
+        // carried forward here — never taken from the body, so a publish cannot type a confirmation in.
+        const carried: ProductRecord = current?.tobaccoWarning === undefined ? read : { ...read, tobaccoWarning: current.tobaccoWarning };
+        const record: ProductRecord = current?.appContent === undefined ? carried : { ...carried, appContent: current.appContent };
         // The categories are head office's OWN list (SF-06-b · OB-24 "A") — never the sender's. An expected category that
         // differs from the list is refused; a missing one is defined only by someone who may define categories, and said.
         const { categories, defined } = await settlePublishCategories(deps.categoryRegister, ctx, b['categories']);
@@ -117,6 +125,7 @@ export function productMasterRoutes(deps: ProductMasterDeps): readonly Route[] {
         // central boundary trusts no client verdict (ADR-0013 control 9): mandatory fields, category, HSN/tax
         // class, MRP/UOM, and a regulated item's safety content (allergen/country-of-origin/min-age).
         let published: ProductRecord;
+        let activationRefused: ReturnType<typeof warningStanding> | undefined;
         try {
           published = publishProduct(record, categories); // draft → 'new' on first publish
         } catch (err) {
@@ -138,6 +147,24 @@ export function productMasterRoutes(deps: ProductMasterDeps): readonly Route[] {
             });
           }
           throw err;
+        }
+        // B16 (COTPA s.7 · OB-140 "A"): a tobacco product is ACTIVATED only with a named person's confirmation that its packs
+        // carry the health-warning picture in force today. Without one, a product sent as a draft is kept as a draft (not on
+        // sale, never in the pack); one sent to be sold now is refused. There is no override.
+        if (isTobacco(published) && SELLING.includes(published.lifecycle)) {
+          const standing = warningStanding(published.tobaccoWarning, (deps.now?.() ?? new Date().toISOString()).slice(0, 10));
+          if (!standing.sellable) {
+            if (read.lifecycle !== 'draft') {
+              throw apiError(422, {
+                code: 'tobacco_warning_not_confirmed',
+                whatHappened: `This tobacco product cannot be put on sale: ${standing.detail}.`,
+                wasItSaved: 'not_saved',
+                nextSafeAction: 'Save it as a draft, have the person who checked the packs confirm the warning picture (POST /v1/catalogue/products/:productId/tobacco-warning-confirmation), then publish it again. Nothing was saved.',
+              });
+            }
+            published = { ...published, lifecycle: 'draft' };
+            activationRefused = standing;
+          }
         }
         // The one re-check a single device CANNOT do (ADR-0013 control 9): SKU uniqueness across the WHOLE
         // tenant. Each device validates the product it holds, but two devices authoring offline each believe
@@ -168,7 +195,19 @@ export function productMasterRoutes(deps: ProductMasterDeps): readonly Route[] {
             }
             throw err;
           }
-          return { status: 201, body: { product: published, ...(defined.length > 0 ? { categoriesDefined: defined } : {}) } };
+          return {
+            status: 201,
+            body: {
+              product: published, ...(defined.length > 0 ? { categoriesDefined: defined } : {}),
+              // B16: said, never silent — the product is saved as a draft and is NOT on sale until its warning is confirmed.
+              ...(activationRefused === undefined || activationRefused.sellable ? {} : {
+                activation: {
+                  refused: true, because: 'tobacco_warning_not_confirmed', standing: activationRefused.reason, detail: activationRefused.detail,
+                  nextSafeAction: 'A named person confirms the packs carry the warning picture in force, then publish it again to put it on sale.',
+                },
+              }),
+            },
+          };
         }
       },
     },

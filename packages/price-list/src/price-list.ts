@@ -31,6 +31,11 @@ export interface PriceEntry {
   readonly status: PriceEntryStatus;
   /** Monotonic version for tie-breaks and for a sale to reference. */
   readonly version: number;
+  /**
+   * D-20 — the ONE batch this price is for (a markdown on a batch near its use-by). It is charged only when the barcode
+   * carries that batch (a GS1 2D code); it never becomes the product's own price. Absent = the product's price.
+   */
+  readonly batchId?: string;
 }
 
 /** The context a price is resolved against at a moment in time. */
@@ -41,6 +46,8 @@ export interface ResolveContext {
   readonly zoneId?: string;
   readonly channel?: string;
   readonly customerId?: string;
+  /** D-20 — resolve the price of THIS batch. Absent = the product's own price; a batch's price never answers for it. */
+  readonly batchId?: string;
 }
 
 function scopeValue(scope: PriceScope, ctx: ResolveContext): string | undefined {
@@ -92,6 +99,7 @@ export function resolvePrice(
         e.productId === ctx.productId &&
         e.scope === scope &&
         e.scopeRef === ref &&
+        (e.batchId ?? null) === (ctx.batchId ?? null) &&
         isEffective(e, ctx.at),
     );
     if (candidates.length === 0) continue;

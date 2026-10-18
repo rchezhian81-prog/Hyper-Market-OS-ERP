@@ -48,6 +48,9 @@ export interface SuspendedLine {
   readonly hsnCode?: string;
   /** The minimum age the line needs (PF-03) — a recalled age-restricted line still needs its question answered. */
   readonly minimumAge?: number;
+  /** D-20 — the batch the barcode carried and its use-by date, so the recalled line is still traceable. */
+  readonly batchId?: string;
+  readonly batchExpiry?: string;
   readonly voided: boolean;
   readonly voidReason?: string;
 }

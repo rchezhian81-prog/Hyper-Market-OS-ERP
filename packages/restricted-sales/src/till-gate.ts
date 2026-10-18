@@ -32,7 +32,14 @@ export const MIN_CARRY_BAG_MICRONS = 120;
  * The keys in a product's `regulatedFlags` (catalogue pack) this gate reads. Written once: the pack signature covers a
  * product's flags whenever it carries any of these (`services/catalogue/src/pack.ts` `canonicalise`).
  */
-export const TILL_RULE_FLAG_KEYS = ['tobacco', 'packMinimumMinor', 'carryBag', 'plasticMaterial', 'plasticThicknessMicrons', 'bannedSingleUsePlastic'] as const;
+export const TILL_RULE_FLAG_KEYS = [
+  'tobacco', 'packMinimumMinor', 'carryBag', 'plasticMaterial', 'plasticThicknessMicrons', 'bannedSingleUsePlastic',
+  // R3: B16 — the last day a tobacco product's health-warning confirmation stays good; B13 — a gold piece and its HUID.
+  'tobaccoWarningConfirmedUntil', 'gold', 'huid',
+] as const;
+
+/** B13: a Hallmark Unique ID as the till reads it — six capital letters and digits (BIS). */
+const HUID = /^[A-Z0-9]{6}$/;
 
 /** What the gate reads from a product's `regulatedFlags`. Absent = the product master did not declare it. */
 export interface TillRuleFlags {
@@ -43,6 +50,12 @@ export interface TillRuleFlags {
   readonly plasticMaterial?: string;
   readonly plasticThicknessMicrons?: number;
   readonly bannedSingleUsePlastic?: boolean;
+  /** B16: the last day (YYYY-MM-DD) the tobacco health-warning confirmation is good — the next picture comes in after it. */
+  readonly tobaccoWarningConfirmedUntil?: string;
+  /** B13: a gold piece. */
+  readonly gold?: boolean;
+  /** B13: its hallmark HUID, when well-formed. A gold piece without one is not sold. */
+  readonly huid?: string;
 }
 
 const posInt = (v: unknown): number | undefined => (typeof v === 'number' && Number.isSafeInteger(v) && v > 0 ? v : undefined);
@@ -60,6 +73,9 @@ export function tillRuleFlagsOf(flags: Readonly<Record<string, unknown>> | undef
     ...(typeof material === 'string' && material.trim() !== '' ? { plasticMaterial: material.trim() } : {}),
     ...(microns === undefined ? {} : { plasticThicknessMicrons: microns }),
     ...(flags['bannedSingleUsePlastic'] === true ? { bannedSingleUsePlastic: true } : {}),
+    ...(typeof flags['tobaccoWarningConfirmedUntil'] === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(flags['tobaccoWarningConfirmedUntil']) ? { tobaccoWarningConfirmedUntil: flags['tobaccoWarningConfirmedUntil'] } : {}),
+    ...(flags['gold'] === true ? { gold: true } : {}),
+    ...(typeof flags['huid'] === 'string' && HUID.test(flags['huid']) ? { huid: flags['huid'] } : {}),
   };
 }
 
@@ -100,7 +116,15 @@ export type TillRefusalReason =
   | 'tobacco_not_whole_packs'
   | 'tobacco_pack_size_unknown'
   | 'weighed_without_verified_scale'
-  | 'weighed_on_lapsed_scale';
+  | 'weighed_on_lapsed_scale'
+  /** B16: the tobacco product's health-warning confirmation ran out (a new government picture is in force). */
+  | 'tobacco_warning_confirmation_expired'
+  /** B13: a gold piece with no hallmark HUID recorded on the product. */
+  | 'gold_without_huid'
+  /** B13: this HUID has already been sold — a hallmarked piece is sold once. */
+  | 'gold_huid_already_sold'
+  /** B13: one HUID is one piece — a gold line is exactly one. */
+  | 'gold_huid_more_than_one_piece';
 
 export interface TillRefusal {
   readonly reason: TillRefusalReason;
@@ -145,6 +169,11 @@ export interface TillGateContext {
   readonly scales?: LaneScales;
   /** The lane's local calendar date (YYYY-MM-DD); absent = unknown, and a weighed line is refused. */
   readonly today?: string;
+  /**
+   * B13: the HUIDs already sold — by this store (its store computer's own sales) and already on this bill (other lines).
+   * Absent = not known here; a gold line is then judged only on carrying a HUID, and head office backstops the rest.
+   */
+  readonly soldHuids?: ReadonlySet<string>;
 }
 
 const qtyWords = (minor: number, uom: string): string => (uom === 'ea' ? `${minor}` : `${minor} ${uom === 'kg' ? 'g' : uom === 'L' ? 'ml' : uom}`);
@@ -155,7 +184,41 @@ const qtyWords = (minor: number, uom: string): string => (uom === 'ea' ? `${mino
 export function tillLineRefusals(line: TillGateLine, ctx: TillGateContext): readonly TillRefusal[] {
   const name = typeof line.description === 'string' && line.description.trim() !== '' ? line.description : line.productId;
   // ── B6 · weight only from a scale whose verification is current ────────────────────────────────────────────────
-  return [...productRuleRefusals(line), ...(lineIsWeighed(line) ? scaleRefusals(line.productId, name, ctx) : [])];
+  return [
+    ...productRuleRefusals(line),
+    ...(lineIsWeighed(line) ? scaleRefusals(line.productId, name, ctx) : []),
+    ...datedAndOnceOnlyRefusals(line, name, ctx),
+  ];
+}
+
+/**
+ * R3 — the two rules that need what only the till knows: today's date (B16) and the HUIDs this store has sold (B13).
+ * Pure; every input comes from the signed pack and the store computer's own sales, never a network call.
+ */
+export function datedAndOnceOnlyRefusals(line: TillGateLine, name: string, ctx: TillGateContext): readonly TillRefusal[] {
+  const flags = tillRuleFlagsOf(line.regulatedFlags);
+  const out: TillRefusal[] = [];
+  // B16 · OB-140 "A": the confirmation is good up to the day before the next government picture comes into force.
+  if (flags.tobacco === true && flags.tobaccoWarningConfirmedUntil !== undefined && ctx.today !== undefined && ctx.today > flags.tobaccoWarningConfirmedUntil) {
+    out.push({ reason: 'tobacco_warning_confirmation_expired', productId: line.productId,
+      detail: `${line.productId}: health-warning confirmation good until ${flags.tobaccoWarningConfirmedUntil}; today is ${ctx.today}`,
+      laneMessage: `${name} cannot be sold: a new government health-warning picture is in force and nobody has confirmed these packs carry it. Keep it off the bill and tell the manager.` });
+  }
+  // B13 (BIS IS 1417:2016 · OB-138): a gold piece is sold only with its HUID, once, one piece per line.
+  const raw = line.regulatedFlags?.['gold'] === true;
+  if (raw || flags.gold === true) {
+    if (flags.huid === undefined) {
+      out.push({ reason: 'gold_without_huid', productId: line.productId, detail: `${line.productId}: gold with no well-formed HUID on the product`,
+        laneMessage: `${name} is gold and has no hallmark HUID recorded on the product. It cannot be sold — keep it off the bill and ask head office to record its HUID.` });
+    } else if (ctx.soldHuids?.has(flags.huid) === true) {
+      out.push({ reason: 'gold_huid_already_sold', productId: line.productId, detail: `${line.productId}: HUID ${flags.huid} already sold`,
+        laneMessage: `${name} (HUID ${flags.huid}) has already been sold — a hallmarked piece is sold once. Do not sell it; tell the manager.` });
+    } else if (line.quantityMinor !== 1) {
+      out.push({ reason: 'gold_huid_more_than_one_piece', productId: line.productId, detail: `${line.productId}: quantity ${line.quantityMinor} for one HUID`,
+        laneMessage: `${name} (HUID ${flags.huid}) is one hallmarked piece — it is sold as exactly one.` });
+    }
+  }
+  return out;
 }
 
 /** The product's own rules (B14 · B19) — what the line is, not where it is weighed. Head office's intake re-asks these. */

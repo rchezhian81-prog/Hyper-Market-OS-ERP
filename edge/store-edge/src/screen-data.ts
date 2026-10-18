@@ -144,6 +144,10 @@ export interface TillProduct {
   readonly mrpMinor?: number;
   readonly status?: string;
   readonly recallBlock?: boolean;
+  /** SF-08 · OB-139 "A": the batches the recall block comes from — a 2D code carrying another batch sells. */
+  readonly blockedBatches?: readonly string[];
+  /** D-20: batches under an approved markdown and the price each is charged at. */
+  readonly batchPrices?: readonly { readonly batchId: string; readonly unitPriceMinor: number }[];
   readonly batchTracked?: boolean;
   /** `ageRestricted` on the pack file; the master's minimum age fills the number where it knows one. */
   readonly ageRestricted?: boolean;
@@ -207,6 +211,8 @@ export function tillCatalogue(pack: StorePack, cataloguePack: SignedPack | undef
         ...(p.mrpMinor === undefined ? {} : { mrpMinor: p.mrpMinor }),
         status: p.status,
         ...(p.recallBlock === true ? { recallBlock: true } : {}),
+        ...(p.recallBlock === true && p.blockedBatches !== undefined && p.blockedBatches.length > 0 ? { blockedBatches: p.blockedBatches } : {}),
+        ...(p.batchPrices === undefined || p.batchPrices.length === 0 ? {} : { batchPrices: p.batchPrices }),
         ...(p.batchTracked === true ? { batchTracked: true } : {}),
         ...(p.regulatedFlags === undefined ? {} : { regulatedFlags: p.regulatedFlags }),
       })),
@@ -229,6 +235,8 @@ export function tillCatalogue(pack: StorePack, cataloguePack: SignedPack | undef
       ...(p.taxBps === undefined ? {} : { taxBps: p.taxBps }),
       ...(p.status === undefined ? {} : { status: p.status }),
       ...(p.recallBlock === true ? { recallBlock: true } : {}),
+      ...(p.recallBlock === true && Array.isArray(p.blockedBatches) && p.blockedBatches.length > 0 && p.blockedBatches.every((b) => typeof b === 'string' && b !== '')
+        ? { blockedBatches: p.blockedBatches } : {}),
       ...(p.ageRestricted === true ? { ageRestricted: true } : {}),
     })),
   };
@@ -351,6 +359,12 @@ export function posPayload(input: ScreenInput): Record<string, unknown> | null {
       // the flag had no field to arrive in, so the refusal was unreachable and a recalled batch
       // could be sold at the till.
       ...(recallBlock ? { recallBlock: true } : {}),
+      // SF-08 · OB-139 "A": which batches block it — sent ONLY when head office's pack blocks it by named batches and the
+      // product master does not block the whole product (either source saying "whole product" means whole product).
+      ...(recallBlock && p.recallBlock === true && m?.recallBlocked !== true && p.blockedBatches !== undefined && p.blockedBatches.length > 0
+        ? { blockedBatches: p.blockedBatches } : {}),
+      // D-20: a batch under an approved markdown is charged its markdown price when its 2D code is scanned.
+      ...(p.batchPrices === undefined ? {} : { batchPrices: p.batchPrices }),
       ...(p.batchTracked === true ? { batchTracked: true } : {}),
       // Head office's flags ride as published; the pack file's `ageRestricted` becomes the lane's age prompt.
       ...(p.regulatedFlags !== undefined ? { regulatedFlags: p.regulatedFlags }

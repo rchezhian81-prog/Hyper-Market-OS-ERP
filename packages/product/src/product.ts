@@ -31,6 +31,7 @@
 // Pure and deterministic: no clock, no I/O.
 
 import type { Money } from '../../contracts/src/money';
+import type { TobaccoWarningRecord } from './tobacco-warning';
 
 export type ProductLifecycle = 'draft' | 'new' | 'active' | 'clearance' | 'discontinued';
 
@@ -115,7 +116,17 @@ export interface SafetyContent {
   readonly plasticThicknessMicrons?: number;
   /** B19: the product is on the banned single-use-plastic list — the till never sells it. */
   readonly bannedSingleUsePlastic?: boolean;
+  /**
+   * B13 (BIS IS 1417:2016 · OB-138): the product is a gold article. Each piece is its own product and must carry its
+   * hallmark's HUID before the till sells it.
+   */
+  readonly gold?: boolean;
+  /** B13: the piece's 6-character Hallmark Unique ID (letters and digits), exactly as hallmarked. */
+  readonly huid?: string;
 }
+
+/** B13: a Hallmark Unique ID — six characters, capital letters and digits (BIS). */
+export const HUID_PATTERN = /^[A-Z0-9]{6}$/;
 
 /** An effective-dated value — MRP and tax are historised, never overwritten. */
 export interface EffectiveValue<T> {
@@ -166,6 +177,11 @@ export interface ProductRecord {
   readonly coldChain?: ColdChainLimits;
   /** D01-FR-06 (round 8): the customer app's content and synonyms — authored apart from the record, carried to the app. */
   readonly appContent?: AppContent;
+  /**
+   * B16 (OB-140 "A"): the tobacco health-warning confirmations a named person gave, and the government pictures known when
+   * they were stamped. Authored on its own route (`/tobacco-warning-confirmation`), carried forward on every publish.
+   */
+  readonly tobaccoWarning?: TobaccoWarningRecord;
 }
 
 export type ValidationSeverity = 'blocks_publish' | 'advisory';
@@ -356,7 +372,7 @@ export function validateProduct(
   // B14 · B19 (roadmap v2.1): the till's legal gates read these from the pack, so a value the till cannot read is refused
   // HERE rather than published as a product the till would then refuse at the counter for a reason nobody can fix there.
   const wholePositive = (v: unknown): boolean => typeof v === 'number' && Number.isSafeInteger(v) && v > 0;
-  for (const key of ['tobacco', 'carryBag', 'bannedSingleUsePlastic'] as const) {
+  for (const key of ['tobacco', 'carryBag', 'bannedSingleUsePlastic', 'gold'] as const) {
     const v: unknown = safety?.[key];
     if (v !== undefined && typeof v !== 'boolean') {
       issues.push({ field: `safety.${key}`, severity: 'blocks_publish', message: `${key} must be true or false — the till cannot read "${String(v)}"` });
@@ -374,6 +390,21 @@ export function validateProduct(
       field: 'safety.minimumAge',
       severity: 'blocks_publish',
       message: 'a tobacco product cannot be sold to anyone under 18 — its minimum age must be 18 or more',
+    });
+  }
+  // B13 (OB-138): a HUID the till cannot read is no HUID — refused here, never published as a hallmark nobody can check.
+  if (safety?.huid !== undefined && !(typeof safety.huid === 'string' && HUID_PATTERN.test(safety.huid))) {
+    issues.push({
+      field: 'safety.huid',
+      severity: 'blocks_publish',
+      message: 'the HUID must be the 6 letters and digits of the hallmark, exactly as printed (for example AB12CD)',
+    });
+  }
+  if (safety?.gold === true && safety.huid === undefined) {
+    issues.push({
+      field: 'safety.huid',
+      severity: 'advisory',
+      message: 'a gold item cannot be sold at the till until its hallmark HUID is recorded on the product',
     });
   }
   if (safety?.plasticThicknessMicrons !== undefined && !wholePositive(safety.plasticThicknessMicrons)) {

@@ -36,6 +36,8 @@ export interface MasterProduct {
   readonly status: ProductStatus;
   readonly mrpMinor?: number;
   readonly recallBlock?: boolean;
+  /** SF-08 · OB-139 "A": the named batches the recall block comes from (absent = the whole product, whatever the code). */
+  readonly blockedBatches?: readonly string[];
   /** Lot/batch-tracked — the lane captures the batch on each sale line for recall traceability (M10-FR-03). */
   readonly batchTracked?: boolean;
   readonly regulatedFlags?: Readonly<Record<string, unknown>>;
@@ -63,7 +65,9 @@ export interface BuildSnapshotInput {
   readonly embeddedRules?: readonly EmbeddedBarcodeRule[];
 }
 
-export type ExclusionReason = 'no_price' | 'no_tax_class' | 'price_above_mrp';
+export type ExclusionReason = 'no_price' | 'no_tax_class' | 'price_above_mrp'
+  /** B16 (COTPA s.7 · OB-140 "A"): a tobacco product with no named person's confirmation for the warning picture in force. */
+  | 'tobacco_warning_not_confirmed';
 
 export interface ExcludedProduct {
   readonly productId: string;
@@ -118,6 +122,19 @@ export function buildCatalogueSnapshot(input: BuildSnapshotInput): BuildSnapshot
       continue;
     }
 
+    // D-20: each batch under an approved markdown, resolved by the same precedence engine at the same instant — charged only
+    // when the barcode carries that batch. A batch price above the MRP is never shipped (M05-FR-02); the product still is.
+    const batchIds = [...new Set(input.priceEntries
+      .filter((e) => e.productId === master.productId && typeof e.batchId === 'string' && e.batchId !== '')
+      .map((e) => e.batchId as string))].sort();
+    const batchPrices = batchIds.flatMap((batchId) => {
+      const entry = resolvePrice(input.priceEntries, {
+        productId: master.productId, at: input.asOf, storeId: input.scope.storeId, zoneId: input.scope.zoneId, channel: input.scope.channel, batchId,
+      });
+      if (entry === null || (master.mrpMinor !== undefined && entry.price.minor > master.mrpMinor)) return [];
+      return [{ batchId, unitPriceMinor: entry.price.minor }];
+    });
+
     products.push({
       productId: master.productId,
       sku: master.sku,
@@ -129,6 +146,9 @@ export function buildCatalogueSnapshot(input: BuildSnapshotInput): BuildSnapshot
       mrpMinor: master.mrpMinor,
       status: master.status,
       recallBlock: master.recallBlock,
+      ...(master.recallBlock === true && master.blockedBatches !== undefined && master.blockedBatches.length > 0
+        ? { blockedBatches: [...master.blockedBatches].sort() } : {}),
+      ...(batchPrices.length === 0 ? {} : { batchPrices }),
       batchTracked: master.batchTracked,
       regulatedFlags: master.regulatedFlags,
       ...(master.handling === undefined ? {} : { handling: master.handling }),
