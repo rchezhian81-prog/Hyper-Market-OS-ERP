@@ -14,7 +14,10 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   - The till and the handhelds take the tokens and icons only; layouts and 56px buttons are unchanged.
 - **Review fix:** a long Today figure (₹12,345.00) ran past its tile; it now shrinks to fit, with a browser check that failed before the fix.
 - **Proof:** an icon-set guardrail (no icon without a word), a token-scale guardrail, AA contrast for the key colour pairs, and the rendered chrome in real Chromium.
-- **Not yet:** the owner's visual approval; page-by-page polish (next); the OB-204 Dispatch button on goods receipt. On the home page the five tabs run past the right edge at 1280px (seen in review); this goes in the page-by-page round.
+- **OB-204 Dispatch button (built):** the goods-receipt page shows each supplier return's e-way bill state and a Dispatch button. A refusal shows the reason and records nothing; without a connection it says "Needs connection".
+- **Tab row (fixed):** tabs wrap inside the page at desk and phone widths. The check failed on 11 pages before the fix.
+- **Also fixed:** the "Record it as gone back" button had dark text on dark green.
+- **Not yet:** the owner's visual approval; page-by-page polish; dispatch for rejected *excess* returns (the page has never recorded excess returns).
 
 ## R3 follow-ups: the owner's answers OB-193 to OB-204 built (18 October 2026) — merged in PR #792 (ee6e7619), deployed
 

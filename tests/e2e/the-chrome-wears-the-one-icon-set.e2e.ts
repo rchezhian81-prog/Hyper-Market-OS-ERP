@@ -136,7 +136,14 @@ describe.skipIf(!HAVE_BROWSER)('the shared look in a real browser: the one icon 
     const page = await context.newPage();
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
-    page.on('console', (m) => { if (m.type() === 'error' && !/favicon\.ico/.test(m.location().url)) errors.push(`console: ${m.text()} (${m.location().url})`); });
+    // This harness serves the files only — there is no head office behind it — so a head-office read (`/v1/…`) answers
+    // 404 here, which the browser logs itself. The page shows "cannot read" for that (proved on the real API in the
+    // GST returns e2e); every other console error still fails the test.
+    page.on('console', (m) => {
+      if (m.type() !== 'error' || /favicon\.ico/.test(m.location().url)) return;
+      if (/status of 404/.test(m.text()) && new URL(m.location().url).pathname.startsWith('/v1/')) return;
+      errors.push(`console: ${m.text()} (${m.location().url})`);
+    });
     await page.goto(`${srv.base}/${file}`, { waitUntil: 'load' });
     return { page, errors };
   }
