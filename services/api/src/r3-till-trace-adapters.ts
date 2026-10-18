@@ -8,15 +8,15 @@
 //   • D-26 — the facts one batch's trace is folded from (goods receipts and the orders behind them, stock movements,
 //     transfers, production, sales), and the trace-request register with its 24-hour clock.
 //
-// SEAM — D-25 (Lane 4): which ingredient batches a production run USED is recorded only once D-25 merges. Until then
-// `productionUseOf` answers `connected: false` and every trace says so in words; replace it with D-25's run inputs.
+// The production hop reads D-25 (Lane 4): each run records the ingredient batches it used, so `productionUseOf` follows an
+// ingredient batch into the output batch and on to that batch's sales.
 
 import { makeEvent } from '../../../packages/contracts/src/event';
 import type { EventStore } from '../../../packages/persistence/src/event-store';
 import type { Route } from '../../kernel/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import type { WarningImage } from '../../../packages/product/src/index';
-import type { TraceReceipt, TraceTransfer, TraceProducedBy, ProductionUse, TraceRequest, TraceAnswer } from '../../../packages/quality/src/lot-trace-chain';
+import type { TraceReceipt, TraceTransfer, TraceProducedBy, ProductionUse, TraceUsedIn, TraceRequest, TraceAnswer } from '../../../packages/quality/src/lot-trace-chain';
 import type { IncomingSale } from '../../pos/src/index';
 import type { Transfer } from '../../../packages/warehouse/src/transfers';
 import { tobaccoWarningRoutes, type TobaccoWarningDeps } from '../../catalogue/src/tobacco-warning';
@@ -24,6 +24,7 @@ import { lotTraceChainRoutes, type LotTraceChainDeps, type LotTraceFacts } from 
 import {
   STREAM, streamName, productMasterAdapter, peopleAdapter, goodsReceiptAdapter, foldPurchaseOrders, transfersAdapter, lotTraceAdapter,
 } from './adapters';
+import { productionInputsForOutputBatch, productionTraceRunsOf } from './r3-ops-adapters';
 
 const PICTURES = streamName(STREAM.catalogue, 'tobacco-warning-pictures');
 const PICTURE_RECORDED = 'TobaccoWarningPictureRecorded';
@@ -78,15 +79,30 @@ export function huidsSoldElsewhereAdapter(input: { readonly store: EventStore })
 }
 
 /**
- * D-26 SEAM for D-25 (Lane 4): which production runs USED a batch as an ingredient. Production runs do not yet record
- * their ingredients' batches, so this cannot be answered — and says so. D-25 replaces this with the runs it records.
+ * D-26 ← D-25: which production runs USED a batch as an ingredient, from the input batches each run records (Lane 4's
+ * production register), and the sales of each output batch — so a trace of an ingredient reaches the customers of what
+ * was made from it. A run recorded before D-25 carries no input batches; how many there are is said, never read as
+ * "not used".
  */
-export function productionUseOf(tenantId: string, batchId: string): Promise<ProductionUse> {
-  void tenantId; void batchId; // the seam's signature is the one D-25's adapter will fill
-  return Promise.resolve({
-    connected: false,
-    why: 'production runs do not record which ingredient batches they used yet (D-25, release R3, Lane 4) — until then a trace cannot follow an ingredient batch into what was made from it',
-  });
+export function productionUseOf(input: Input): (tenantId: string, batchId: string) => Promise<ProductionUse> {
+  return async (tenantId, batchId) => {
+    const runs = await productionTraceRunsOf(input, tenantId);
+    const sold = lotTraceAdapter(input);
+    const used: TraceUsedIn[] = [];
+    for (const r of runs) {
+      const mine = (r.inputBatches ?? []).filter((i) => i.batchId === batchId);
+      if (mine.length === 0) continue;
+      // Each output batch is confirmed against Lane 4's own output → inputs answer for it.
+      const made = (await productionInputsForOutputBatch(input, tenantId, r.outputBatchId)).find((m) => m.runId === r.runId);
+      if (made === undefined) continue;
+      used.push({
+        runId: r.runId, at: r.at, outputProductId: r.outputProductId, outputBatchId: r.outputBatchId,
+        quantityMinor: made.inputBatches.filter((i) => i.batchId === batchId).reduce((n, i) => n + i.quantityMinor, 0),
+        outputSales: (await sold.soldOfBatch(tenantId, r.outputBatchId)).map((s) => ({ ...s, productId: r.outputProductId })),
+      });
+    }
+    return { connected: true, runs: used, runsWithoutRecordedInputs: runs.filter((r) => r.inputBatches === undefined).length };
+  };
 }
 
 /** One movement as the inventory stream stores it — the fields the trace reads. */
@@ -143,7 +159,7 @@ export function lotTraceFactsAdapter(input: Input & { readonly productionUse?: (
         quantityMinor: l.quantityMinor,
       })));
     const sales = await lotTraceAdapter(input).soldOfBatch(tenantId, batchId);
-    const usedIn = await (input.productionUse ?? productionUseOf)(tenantId, batchId);
+    const usedIn = await (input.productionUse ?? productionUseOf(input))(tenantId, batchId);
     return { receipts, producedBy, transfers, usedIn, sales };
   };
 }
@@ -183,7 +199,8 @@ export function r3TillTraceRoutes(input: {
       ...tobaccoWarningRoutes({ now, pictures: none, recordPicture: async () => {}, product: async () => undefined, products: none, publish: async () => {} }),
       ...lotTraceChainRoutes({
         now, requests: none, recordRequest: async () => {}, answers: none, recordAnswer: async () => {},
-        facts: async (t, b) => ({ receipts: [], producedBy: [], transfers: [], sales: [], usedIn: await productionUseOf(t, b) }),
+        // No store: no production run is recorded, so none used the batch.
+        facts: async () => ({ receipts: [], producedBy: [], transfers: [], sales: [], usedIn: { connected: true, runs: [] } }),
       }),
     ];
   }

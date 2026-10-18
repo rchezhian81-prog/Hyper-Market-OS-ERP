@@ -22,8 +22,10 @@ import { traceDueAt } from '../../packages/quality/src/lot-trace-chain';
  *
  * The facts are put in the way the shop puts them in: a purchase order to an approved supplier, a goods receipt of batch
  * B-7 against it, a transfer from the back store to the floor dispatched and received by different people, a sale of the
- * batch, and a few units booked straight onto the ledger with no receipt note (a gap the trace must name). The production
- * hop is D-25's (Lane 4): until it records which batches a run used, the trace says so.
+ * batch, and a few units booked straight onto the ledger with no receipt note (a gap the trace must name).
+ *
+ * The production hop reads D-25 (Lane 4): a bakery run records the flour batch it used, so a trace of the flour batch
+ * reaches the bun batch it went into and the bun's sales — and no longer says the hop is missing.
  */
 
 const DATABASE_URL = process.env['DATABASE_URL'];
@@ -106,9 +108,11 @@ describe.each(backings)('D-26: a lot trace reaches supplier to customer from sto
     expect(chain.rows.find((r) => r.from === 'sup-dairy')!.reference).toMatch(/^GRN .* \(PO po-1\)$/);
     const byHop = (await ok(req('GET', '/v1/quality/lot-trace/B-7/chain', undefined, 'u-owner', { sort: 'hop' }), 'by hop')).body as Chain;
     expect(byHop.csv.trim().split('\n').slice(1).map((l) => l.split(',')[1])).toEqual(['supplier_to_store', 'supplier_to_store', 'transfer', 'sale']);
-    expect(chain).toMatchObject({ receivedMinor: 34, soldMinor: 2, usedInProductionMinor: 'not_known', complete: false, sortedBy: 'date' });
+    // No production run used B-7 (none is recorded at all): 0 used, said as a number — and the hop is no longer a gap.
+    expect(chain).toMatchObject({ receivedMinor: 34, soldMinor: 2, usedInProductionMinor: 0, complete: false, sortedBy: 'date' });
     expect(chain.gaps.join(' | ')).toMatch(/4 received at S1 .* no goods-receipt note \(movement mv-direct-B-7\)/);
-    expect(chain.gaps.join(' | ')).toMatch(/used in production is not known: .*D-25/);
+    expect(chain.gaps.join(' | ')).not.toMatch(/used in production is not known/);
+    expect(chain.gaps).toHaveLength(1);
     // The CSV: one header, one row a hop, sortable by any column.
     const lines = chain.csv.trim().split('\n');
     expect(lines[0]).toBe('batch,hop,date,at,reference,from,to,product,quantity_minor,source');
@@ -139,4 +143,52 @@ describe.each(backings)('D-26: a lot trace reaches supplier to customer from sto
     // Answered once, kept once.
     expect(((await ok(req('POST', '/v1/quality/lot-trace/requests/TR-1/answer', {}), 're-answer')).body as { alreadyAnswered: boolean }).alreadyAnswered).toBe(true);
   });
+  it('the production hop (D-25): a flour batch → the bun batch a run made from it → the bun sales, with no gap for the hop', async () => {
+    let h = harness();
+    const T = randomUUID();
+    await h.seedOwner(T, 'u-owner');
+    await h.provisionRole(T, 'u-baker', 'store_manager');
+    await h.provisionRole(T, 'u-qc', 'store_manager');
+    await h.enableFeature(T, 'dept.bakery');
+    const req = (method: 'GET' | 'POST', path: string, body?: unknown, userId = 'u-owner', query?: Record<string, string>): Promise<Res> =>
+      h.request({ method, path, userId, tenantId: T, ...(method === 'POST' ? { idempotencyKey: `k-${randomUUID()}` } : {}), ...(body === undefined ? {} : { body }), ...(query === undefined ? {} : { query }) });
+    const ok = async (p: Promise<Res>, what: string): Promise<Res> => { const r = await p; expect(r.status, `${what}: ${JSON.stringify(r.body)}`).toBeLessThan(300); return r; };
+    await ok(req('POST', '/v1/org/nodes/C1', { kind: 'company', name: 'SRE Retail' }), 'company');
+    await ok(req('POST', '/v1/org/nodes/S1', { kind: 'branch', name: 'Store 1', parentId: 'C1', companyId: 'C1' }), 'store');
+    await ok(req('POST', '/v1/production/departments/bakery', {}), 'bakery on');
+    for (const [id, productId, qty, batchId, expiry] of [['rx-f1', 'FLOUR', 600, 'F-1', '2030-07-01'], ['rx-f2', 'FLOUR', 2_000, 'F-2', '2030-08-01'], ['rx-s1', 'SUGAR', 1_000, 'S-1', '2030-12-01']] as const) {
+      await ok(req('POST', '/v1/inventory/movements', { movementId: id, productId, locationId: 'S1', kind: 'received', quantityMinor: qty, uom: 'kg', occurredAt: '2030-04-01T01:00:00.000Z', enteredBy: 'u-owner', unitCostMinor: 4_000, batchId, expiry }), id);
+    }
+    await ok(req('POST', '/v1/production/recipes/bun', { departmentId: 'bakery', outputProductId: 'BUN', outputQuantityMinor: 10, outputUom: 'ea', shelfLifeHours: 48, expectedYieldBp: 9_000, yieldToleranceBp: 2_000, inputs: [{ productId: 'FLOUR', quantityMinor: 500, uom: 'kg' }, { productId: 'SUGAR', quantityMinor: 100, uom: 'kg' }] }), 'bun recipe');
+    // Two batches of buns: earliest expiry first, all of F-1 (600) and 400 of F-2 go in.
+    await ok(req('POST', '/v1/production/runs/run-1', { recipeId: 'bun', batches: 2, actualOutputMinor: 18, outputBatchId: 'BUN-A', locationId: 'S1' }, 'u-baker'), 'run 1');
+    await ok(req('POST', '/v1/production/runs/run-1/release', { qcPassed: true }, 'u-qc'), 'release');
+    await ok(req('POST', '/v1/sales', {
+      saleId: 'S-BUN-1', receiptNumber: 'R-BUN-1', laneId: 'lane-1', locationId: 'S1', cashierId: 'u-owner', tradingDay: '2030-06-10', committedAt: '2030-06-10T10:00:00Z',
+      totalMinor: 1_500, currency: 'INR', packVersion: 1,
+      lines: [{ productId: 'BUN', quantityMinor: 3, uom: 'ea', unitPriceMinor: 500, lineTotalMinor: 1_500, batchId: 'BUN-A' }], tenders: [{ kind: 'cash', amountMinor: 1_500 }],
+    }), 'bun sale');
+
+    h = restart(h); // ── COLD RESTART: the trace is folded from what is stored ──
+    const chain = (await ok(req('GET', '/v1/quality/lot-trace/F-1/chain', undefined, 'u-owner', { sort: 'hop' }), 'chain')).body as Chain;
+    // (The rows are compared as a set — the run is dated by when it was booked; the road order is checked on the CSV.)
+    expect(chain.rows.map((r) => [r.hop, r.reference, r.from, r.to, r.quantityMinor])).toEqual(expect.arrayContaining([
+      ['supplier_to_store', 'movement rx-f1', 'not known', 'S1', 600],
+      ['production_used', 'production run run-1', 'F-1', 'BUN batch BUN-A', 600],
+      ['sale', 'sale S-BUN-1', 'BUN batch BUN-A', 'walk-in', 3],
+    ]));
+    expect(chain.rows).toHaveLength(3);
+    expect(chain.csv.trim().split('\n').slice(1).map((l) => l.split(',')[1])).toEqual(['supplier_to_store', 'production_used', 'sale']);
+    expect(chain.usedInProductionMinor).toBe(600);
+    // The output's sale is on the road but not counted as a sale of the flour itself.
+    expect(chain.soldMinor).toBe(0);
+    expect(chain.gaps.join(' | ')).not.toMatch(/used in production is not known|D-25/);
+    expect(chain.csv).toMatch(/made from this batch in run run-1/);
+    // F-2 went in too (400) — its trace reaches the same bun batch; sugar S-1 likewise.
+    const f2 = (await ok(req('GET', '/v1/quality/lot-trace/F-2/chain'), 'F-2')).body as Chain;
+    expect(f2.rows.filter((r) => r.hop === 'production_used').map((r) => [r.to, r.quantityMinor])).toEqual([['BUN batch BUN-A', 400]]);
+    // The bun batch's own trace names the run that made it.
+    const bun = (await ok(req('GET', '/v1/quality/lot-trace/BUN-A/chain'), 'BUN-A')).body as Chain;
+    expect(bun.rows.map((r) => r.hop).sort()).toEqual(['production_made', 'sale']);
+  }, 120_000);
 });

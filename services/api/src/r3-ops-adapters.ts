@@ -186,6 +186,11 @@ export async function productionInputsForOutputBatch(input: { readonly store: Ev
   return productionInputsOf(await productionTraceRuns(input, tenantId), outputBatchId);
 }
 
+/** D-25 → D-26: every stored production run with the input batches it recorded (Lane 3's trace reads which runs USED a batch). */
+export async function productionTraceRunsOf(input: { readonly store: EventStore; readonly now: () => string }, tenantId: string): Promise<readonly ProductionTraceRun[]> {
+  return productionTraceRuns(input, tenantId);
+}
+
 async function productionTraceRuns(input: { readonly store: EventStore; readonly now: () => string }, tenantId: string): Promise<readonly ProductionTraceRun[]> {
   return (await productionAdapter({ ...input, entitledFeatures: tenantEntitlementResolver(input.store) }).runs(tenantId)) as readonly ProductionTraceRun[];
 }

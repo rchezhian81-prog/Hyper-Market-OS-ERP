@@ -56,6 +56,29 @@ describe('D-26: one batch, every hop', () => {
     expect(buildLotTraceChain({ ...facts(), receipts: [], transfers: [], sales: [] }).gaps).toContain('no receipt and no production of this batch is on record — where it came from is not known');
   });
 
+  it('D-25 → D-26: a run that used the batch, and the output batch\'s sales, are on the road — not counted as this batch\'s sales', () => {
+    const chain = buildLotTraceChain({
+      ...facts(),
+      usedIn: { connected: true, runsWithoutRecordedInputs: 0, runs: [{
+        runId: 'run-1', at: '2030-05-05T06:00:00.000Z', quantityMinor: 4, outputProductId: 'p-tikka', outputBatchId: 'TK-1',
+        outputSales: [{ saleId: 'S-T1', soldDate: '2030-05-06', quantityMinor: 2, customerId: 'cust-7', source: 'captured' }],
+      }] },
+    });
+    expect(chain.rows.filter((r) => r.hop === 'production_used' || r.from.startsWith('p-tikka')).map((r) => [r.hop, r.reference, r.from, r.to, r.productId, r.quantityMinor])).toEqual([
+      ['production_used', 'production run run-1', 'B-7', 'p-tikka batch TK-1', 'p-tikka', 4],
+      ['sale', 'sale S-T1', 'p-tikka batch TK-1', 'cust-7', 'p-tikka', 2],
+    ]);
+    expect(chain.rows.find((r) => r.reference === 'sale S-T1')!.source).toBe('till recorded the batch — made from this batch in run run-1');
+    // 30 in; 5 sold + 4 into the run out; the tikka's 2 are not the paneer's own sales.
+    expect(chain).toMatchObject({ soldMinor: 5, usedInProductionMinor: 4, gaps: [], complete: true });
+  });
+
+  it('runs recorded before D-25 carry no input batches — how many is a gap, never "not used"', () => {
+    const chain = buildLotTraceChain({ ...facts(), usedIn: { connected: true, runs: [], runsWithoutRecordedInputs: 3 } });
+    expect(chain.complete).toBe(false);
+    expect(chain.gaps).toEqual(['3 production run(s) were recorded before runs kept their ingredient batches (D-25) — whether they used this batch is not known']);
+  });
+
   it('the CSV has a fixed header and sorts by any column, ties in road order', () => {
     const chain = buildLotTraceChain(facts());
     const csv = traceCsv(chain, 'quantity').trim().split('\n');

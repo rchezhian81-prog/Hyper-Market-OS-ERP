@@ -6,11 +6,12 @@
 // B11's export (`lot-trace.ts`) answers one step back and one step forward, with the step back typed in by the caller.
 // This folds every hop from what the shop already STORED — the goods-receipt notes and the purchase orders they were
 // received against (supplier → GRN), the stock movements that received a batch with no receipt note at all, the transfers
-// between its places, the production runs (the batch made here, and — once D-25 records them — the runs that used it),
-// and the sales — into one table a person can sort and hand to an inspector.
+// between its places, the production runs (the batch made here, and the runs that used it as an ingredient with the
+// sales of what they made — D-25), and the sales — into one table a person can sort and hand to an inspector.
 //
 // No silent failure (P-08): a hop the shop cannot name is a GAP on the trace, said in words — a receipt with no supplier,
-// a batch received with no receipt note, the production seam not yet connected, more sold or moved than ever arrived.
+// a batch received with no receipt note, a production run recorded before it kept its ingredient batches, more sold or
+// moved than ever arrived.
 // Pure and deterministic: the facts go in, the trace and its CSV come out; no clock, no storage.
 
 import type { OutboundLotRecord } from './lot-trace';
@@ -58,14 +59,21 @@ export interface TraceUsedIn {
   readonly quantityMinor: number;
   readonly outputProductId: string;
   readonly outputBatchId: string;
+  /** The sales of the OUTPUT batch — the road continues past the run to the customer (D-25 → D-26). */
+  readonly outputSales?: readonly (OutboundLotRecord & { readonly productId?: string })[];
 }
 
 /**
- * Which production runs used the batch. A SEAM: the runs record which ingredient batches they used only once D-25 (Lane
- * 4, release R3) lands — until then this is `connected: false` and the trace says so, rather than reading "used in nothing".
+ * Which production runs used the batch, from the input batches each run records (D-25). `connected: false` is for a
+ * source that cannot answer at all — the trace then says so, rather than reading "used in nothing".
  */
 export type ProductionUse =
-  | { readonly connected: true; readonly runs: readonly TraceUsedIn[] }
+  | {
+    readonly connected: true;
+    readonly runs: readonly TraceUsedIn[];
+    /** Runs recorded before D-25, which carry no input batches: whether they used this batch cannot be said. */
+    readonly runsWithoutRecordedInputs?: number;
+  }
   | { readonly connected: false; readonly why: string };
 
 export type TraceHop = 'supplier_to_store' | 'production_made' | 'transfer' | 'production_used' | 'sale';
@@ -160,6 +168,19 @@ export function buildLotTraceChain(input: {
         hop: 'production_used', date: day(u.at), at: u.at, reference: `production run ${u.runId}`, from: input.batchId,
         to: `${u.outputProductId} batch ${u.outputBatchId}`, productId: u.outputProductId, quantityMinor: u.quantityMinor, source: 'production run inputs',
       });
+      // One step further: the output batch's own sales. Not this batch's sales (they are not counted in `soldMinor`), but
+      // the customers a recall of this ingredient must reach.
+      for (const s of u.outputSales ?? []) {
+        rows.push({
+          hop: 'sale', date: s.soldDate, at: s.soldDate, reference: `sale ${s.saleId}`, from: `${u.outputProductId} batch ${u.outputBatchId}`,
+          to: s.customerId ?? 'walk-in', productId: s.productId ?? u.outputProductId, quantityMinor: s.quantityMinor,
+          source: `${s.source === 'fifo_receipt_estimate' ? 'estimate (FIFO by receipt, not a till record)' : 'till recorded the batch'} — made from this batch in run ${u.runId}`,
+        });
+      }
+    }
+    const unrecorded = input.usedIn.runsWithoutRecordedInputs ?? 0;
+    if (unrecorded > 0) {
+      gaps.push(`${unrecorded} production run(s) were recorded before runs kept their ingredient batches (D-25) — whether they used this batch is not known`);
     }
   } else {
     gaps.push(`whether this batch was used in production is not known: ${input.usedIn.why}`);
@@ -182,6 +203,9 @@ export function buildLotTraceChain(input: {
   if (arrived === 0) gaps.push('no receipt and no production of this batch is on record — where it came from is not known');
   if (left > arrived) gaps.push(`${left} of this batch left the shop but only ${arrived} ever arrived — a traceability gap`);
   if (input.sales.some((s) => s.source === 'fifo_receipt_estimate')) gaps.push('some sales are a FIFO estimate, not a till record of the batch');
+  if (input.usedIn.connected && input.usedIn.runs.some((u) => (u.outputSales ?? []).some((s) => s.source === 'fifo_receipt_estimate'))) {
+    gaps.push('some sales of what was made from this batch are a FIFO estimate, not a till record of the output batch');
+  }
 
   return {
     batchId: input.batchId,
