@@ -9,6 +9,7 @@ import { money, type CurrencyCode } from '../../../packages/contracts/src/money'
 import { normaliseUom, type Uom } from '../../../packages/contracts/src/quantity';
 import { rate } from '../../../packages/contracts/src/rate';
 import type { Tender } from '../../../packages/tender/src/tender';
+import { tillRuleFlagsOf } from '../../../packages/restricted-sales/src/till-gate';
 
 /** One part of a split payment (PF-09 step 3 · M12-FR-03). Amounts in paise. */
 export interface SplitPart {
@@ -33,6 +34,8 @@ export interface ViewLine {
   readonly voidReason?: string;
   /** D-20 — the batch the barcode carried, when it carried one. */
   readonly batchId?: string;
+  /** B13 — the hallmark HUID of a gold piece (from the signed pack), printed on the bill. */
+  readonly huid?: string;
 }
 
 /** A scan as the view supplies it (e.g. from the scanner or a lookup). */
@@ -301,6 +304,7 @@ export function createPosView(
         voided: l.voided,
         voidReason: l.voidReason,
         ...(l.batchId === undefined ? {} : { batchId: l.batchId }),
+        ...(huidOfLine(l.regulatedFlags) === undefined ? {} : { huid: huidOfLine(l.regulatedFlags) }),
       }));
     },
 
@@ -371,4 +375,10 @@ export function createPosView(
       session.newSale();
     },
   };
+}
+
+/** B13: a gold line's well-formed HUID from its pack flags (the same reading the till's gate uses). */
+function huidOfLine(flags: Readonly<Record<string, unknown>> | undefined): string | undefined {
+  const read = tillRuleFlagsOf(flags);
+  return read.gold === true ? read.huid : undefined;
 }

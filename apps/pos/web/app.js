@@ -988,8 +988,9 @@ el('tender').addEventListener('click', async () => {
   try {
     // Awaited, and the await is the guarantee: the receipt number does not exist until the sale is
     // on this till's disk (hard rule #1). There is nothing to print with before then.
+    const sold = huidLines();
     const receipt = await session.tenderCash(`S-${receiptNumber}`, receiptNumber, new Date().toISOString());
-    tell(`${t('changeDue')}: ${inr(change)}`, withReceiptNotice(receipt));
+    tell(`${t('changeDue')}: ${inr(change)}`, withReceiptNotice(withHuids(receipt, sold)));
     session.newSale();
     void refreshBadge();
     selectedLineId = null;
@@ -1011,6 +1012,17 @@ async function takeReceiptNumber() {
     tell(t('read'), e && e.refusedBecause === 'receipt_numbers_used_up' ? t('receiptsUsedUp') : (e && e.laneMessage ? e.laneMessage : t('receiptsUsedUp')));
     return null;
   }
+}
+
+/**
+ * B13 (OB-138): the gold pieces on this bill and their hallmark HUIDs, read BEFORE the sale clears the basket, so the bill
+ * the cashier hands over names each HUID sold. The sale record keeps them too (the store computer and head office read it).
+ */
+function huidLines() {
+  return session.basket().filter((l) => l.huid).map((l) => `${l.description} — HUID ${l.huid}`);
+}
+function withHuids(receipt, sold) {
+  return sold.length === 0 ? receipt : `${receipt}\n${sold.join('\n')}`;
 }
 
 /** The receipt, with what the box last said about the numbers (running low, or no range set up) when it said anything. */
@@ -1078,11 +1090,12 @@ async function takeCardOrUpi(kind, payable) {
   const receiptNumber = await takeReceiptNumber();
   if (receiptNumber === null) return;
   try {
+    const soldGold = huidLines();
     const receipt = await session.tenderCardOrUpi({
       saleId: `S-${receiptNumber}`, receiptNumber,
       atIsoUtc: new Date().toISOString(), kind, outcome, ...(ref ? { ref } : {}),
     });
-    tell(`${t('approved')} — ${kind === 'card' ? t('card') : t('upi')}`, withReceiptNotice(receipt));
+    tell(`${t('approved')} — ${kind === 'card' ? t('card') : t('upi')}`, withReceiptNotice(withHuids(receipt, soldGold)));
     session.newSale();
     void refreshBadge();
     selectedLineId = null;
@@ -1156,8 +1169,9 @@ async function splitPayment(payable) {
   const receiptNumber = await takeReceiptNumber();
   if (receiptNumber === null) return;
   try {
+    const soldGold = huidLines();
     const receipt = await session.tenderSplit({ saleId: `S-${receiptNumber}`, receiptNumber, atIsoUtc: new Date().toISOString(), parts });
-    tell(change > 0 ? `${t('changeDue')}: ${inr(change)}` : t('approved'), withReceiptNotice(receipt));
+    tell(change > 0 ? `${t('changeDue')}: ${inr(change)}` : t('approved'), withReceiptNotice(withHuids(receipt, soldGold)));
     session.newSale();
     void refreshBadge();
     selectedLineId = null;
