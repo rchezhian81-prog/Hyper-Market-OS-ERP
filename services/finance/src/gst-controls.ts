@@ -6,8 +6,8 @@
 //   • The 30-day e-invoice reporting guard (A21, OB-149 "A") — SWITCHED OFF (the shop's turnover band is ₹5–10 crore,
 //     D2; the guard applies at ₹10 crore). One setting; the owner turns it on.
 //   • The time-bar warning window N (A19) — how many days before the 3-year bar an unfiled return reaches the owner.
-//     The signed sentence names N but not its value, so there is NO default: until the owner sets it the calendar says
-//     the near-bar step is not judged (P-08).
+//     The owner decided its value in writing (OB-191, 18 Oct 2026): 180 days. That is the value in force until he
+//     changes it, and the page says so — "180 days (owner's decision OB-191)" — never "not set".
 //   • The reverse-charge heads (A14) — the CA's call alone (`finance.rcm.configure`, the chartered-accountant role): code,
 //     name, rate and the notification entry. A head is retired, never deleted.
 //
@@ -48,6 +48,8 @@ export interface RcmHeadChange {
 
 export interface ControlState<T> {
   readonly value: T;
+  /** The owner's written decision the built value comes from (e.g. OB-191) — present only while it is unchanged. */
+  readonly decision?: string;
   /** Absent: never changed — the built state. */
   readonly changedBy?: string;
   readonly changedAt?: string;
@@ -57,19 +59,29 @@ export interface ControlState<T> {
 export interface GstControls {
   readonly reverseCharge: ControlState<boolean>;
   readonly einvoice30DayGuard: ControlState<boolean>;
-  /** null: the owner has not set N. */
-  readonly timeBarWarningDays: ControlState<number | null>;
+  /** N in days: the owner's OB-191 value (180) until he changes it. */
+  readonly timeBarWarningDays: ControlState<number>;
   readonly rcmHeads: readonly (RcmHead & { readonly setBy: string; readonly setAt: string })[];
   readonly retiredHeads: readonly { readonly headCode: string; readonly reason: string; readonly by: string; readonly at: string }[];
 }
 
-/** Fold the control facts into the controls in force. Off / off / not set / no heads until changed. Pure. */
+/** OB-191 (owner, 18 Oct 2026, in writing): an unfiled return reaches the owner 180 days before its 3-year bar. */
+export const OB191_TIME_BAR_WARNING_DAYS = 180;
+export const OB191 = 'OB-191';
+
+/** N as the page says it: "180 days (owner's decision OB-191)" while it is the decided value, else "N days". */
+export function timeBarWindowSaid(c: ControlState<number>): string {
+  return c.decision !== undefined ? `${c.value} days (owner's decision ${c.decision})` : `${c.value} days`;
+}
+
+/** Fold the control facts into the controls in force. Off / off / 180 days (OB-191) / no heads until changed. Pure. */
 export function foldGstControls(changes: readonly GstControlChange[], heads: readonly RcmHeadChange[]): GstControls {
   const latest = new Map<GstControlName, GstControlChange>();
   for (const c of changes) latest.set(c.control, c);
-  const state = <T>(name: GstControlName, built: T): ControlState<T> => {
+  const state = <T>(name: GstControlName, built: T, decision?: string): ControlState<T> => {
     const c = latest.get(name);
-    return c === undefined ? { value: built } : { value: c.value as T, changedBy: c.by, changedAt: c.at, reason: c.reason };
+    if (c === undefined) return decision === undefined ? { value: built } : { value: built, decision };
+    return { value: c.value as T, changedBy: c.by, changedAt: c.at, reason: c.reason };
   };
   const inForce = new Map<string, RcmHead & { setBy: string; setAt: string }>();
   const retired = new Map<string, { headCode: string; reason: string; by: string; at: string }>();
@@ -80,7 +92,7 @@ export function foldGstControls(changes: readonly GstControlChange[], heads: rea
   return {
     reverseCharge: state('reverse_charge', false),
     einvoice30DayGuard: state('einvoice_30_day_guard', false),
-    timeBarWarningDays: state<number | null>('time_bar_warning_days', null),
+    timeBarWarningDays: state<number>('time_bar_warning_days', OB191_TIME_BAR_WARNING_DAYS, OB191),
     rcmHeads: [...inForce.values()].sort((a, b) => a.headCode.localeCompare(b.headCode)),
     retiredHeads: [...retired.values()].sort((a, b) => a.headCode.localeCompare(b.headCode)),
   };
@@ -118,9 +130,9 @@ export function describeControls(c: GstControls): { readonly reverseCharge: stri
     einvoice30DayGuard: c.einvoice30DayGuard.value
       ? 'The 30-day e-invoice reporting guard is ON — a B2B document not reported within 30 days is blocked'
       : 'The 30-day e-invoice reporting guard is SWITCHED OFF (OB-149) — it applies at ₹10 crore turnover; nothing is blocked',
-    timeBarWarningDays: c.timeBarWarningDays.value === null
-      ? 'The owner has not set how many days before the 3-year bar an unfiled return must reach him — not judged until set'
-      : `An unfiled return reaches the owner ${c.timeBarWarningDays.value} day(s) before it is barred`,
+    timeBarWarningDays: c.timeBarWarningDays.decision !== undefined
+      ? `An unfiled return reaches the owner ${timeBarWindowSaid(c.timeBarWarningDays)} before it is barred; the owner can change it`
+      : `An unfiled return reaches the owner ${timeBarWindowSaid(c.timeBarWarningDays)} before it is barred (set by ${c.timeBarWarningDays.changedBy ?? 'the owner'})`,
   };
 }
 
@@ -172,7 +184,7 @@ export function gstControlsRoutes(deps: GstControlsDeps): readonly Route[] {
         const before = await gstControlsOf(deps, ctx.tenantId);
         const at = deps.now();
         await deps.recordControl(ctx.tenantId, { control: 'time_bar_warning_days', value: b['days'], reason, by: ctx.userId, at });
-        await audit(deps, ctx, 'gst.control.time_bar_warning_days', 'time_bar_warning_days', before.timeBarWarningDays.value === null ? null : { days: String(before.timeBarWarningDays.value) }, { days: String(b['days']) }, reason);
+        await audit(deps, ctx, 'gst.control.time_bar_warning_days', 'time_bar_warning_days', { days: String(before.timeBarWarningDays.value), ...(before.timeBarWarningDays.decision !== undefined ? { decision: before.timeBarWarningDays.decision } : {}) }, { days: String(b['days']) }, reason);
         const after = await gstControlsOf(deps, ctx.tenantId);
         return { status: 200, body: { days: b['days'], controls: after, said: describeControls(after) } };
       },

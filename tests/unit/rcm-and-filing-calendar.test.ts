@@ -5,7 +5,7 @@ import {
   judgeEInvoiceReporting, EINVOICE_REPORTING_WINDOW_DAYS,
   type RcmControl, type RcmPurchase, type RcmSelfInvoice,
 } from '../../packages/finance/src/index';
-import { foldGstControls, describeControls } from '../../services/finance/src/gst-controls';
+import { foldGstControls, describeControls, timeBarWindowSaid, OB191_TIME_BAR_WARNING_DAYS } from '../../services/finance/src/gst-controls';
 
 /** R3 A14 (reverse charge, OB-143 switched off), A19 (filing calendar + 3-year bar) and A21 (30-day guard, OB-149 off). */
 
@@ -85,12 +85,11 @@ describe('A19 — the filing calendar and the 3-year time bar', () => {
     expect(judgeFiling({ type: 'GSTR3B', period: '052027', today: '2030-06-21', nearBarDays: 90, fact: { type: 'GSTR3B', period: '052027', filedOn: '2027-06-19', arn: 'A' } }).warning).toBe('filed');
   });
 
-  it('with the owner\'s N not set, near-the-bar is not judged — and the calendar says so (no default is guessed)', () => {
+  it('with no N given to the engine, near-the-bar is not judged — and the calendar says so (the engine guesses no default)', () => {
     expect(judgeFiling({ type: 'GSTR1', period: '052027', today: '2030-06-01', nearBarDays: null }).warning).toBe('overdue');
     const cal = buildFilingCalendar({ today: '2030-06-01', monthlyPeriods: ['052027'], financialYears: ['2027-28'], facts: [], nearBarDays: null });
     expect(cal.nearBarNotJudged).toBe(true);
     expect(cal.detail).toMatch(/has not set how many days/);
-    expect(foldGstControls([], []).timeBarWarningDays.value).toBeNull();
     expect(isValidNearBarDays(0)).toBe(false);
     expect(isValidNearBarDays(90)).toBe(true);
   });
@@ -104,6 +103,31 @@ describe('A19 — the filing calendar and the 3-year time bar', () => {
     expect(cal.entries[0]).toMatchObject({ warning: 'near_time_bar', type: 'GSTR1', period: '052027' });
     expect(cal.entries.find((e) => e.type === 'GSTR9')?.dueDate).toBe('2028-12-31');
     expect(cal.ownerExceptions.map((e) => `${e.type} ${e.period}`)).toEqual(['GSTR1 052027', 'GSTR3B 052027']);
+  });
+});
+
+describe('A19 · OB-191 — the warning window is 180 days, the owner\'s written decision, until he changes it', () => {
+  it('unchanged: 180 days, said with the decision — never "not set"', () => {
+    const c = foldGstControls([], []);
+    expect(c.timeBarWarningDays).toEqual({ value: 180, decision: 'OB-191' });
+    expect(OB191_TIME_BAR_WARNING_DAYS).toBe(180);
+    expect(timeBarWindowSaid(c.timeBarWarningDays)).toBe("180 days (owner's decision OB-191)");
+    expect(describeControls(c).timeBarWarningDays).toBe("An unfiled return reaches the owner 180 days (owner's decision OB-191) before it is barred; the owner can change it");
+    expect(describeControls(c).timeBarWarningDays).not.toMatch(/not set/);
+    // 180 days in force: a GSTR-3B for May 2027 (barred 20 June 2030) is near the bar from 22 December 2029.
+    expect(judgeFiling({ type: 'GSTR3B', period: '052027', today: '2029-12-22', nearBarDays: c.timeBarWarningDays.value })).toMatchObject({ warning: 'near_time_bar', ownerException: true, daysToTimeBar: 180 });
+    expect(judgeFiling({ type: 'GSTR3B', period: '052027', today: '2029-12-21', nearBarDays: c.timeBarWarningDays.value }).warning).toBe('overdue');
+    const cal = buildFilingCalendar({ today: '2030-01-01', monthlyPeriods: ['052027'], financialYears: [], facts: [], nearBarDays: c.timeBarWarningDays.value });
+    expect(cal.nearBarNotJudged).toBe(false);
+    expect(cal.detail).not.toMatch(/has not set/);
+  });
+
+  it('the owner can still change it: his number stands, the decision label goes, who set it is said', () => {
+    const c = foldGstControls([{ control: 'time_bar_warning_days', value: 365, reason: 'warn me a year ahead (synthetic)', by: 'u-owner', at: '2028-04-02T00:00:00.000Z' }], []);
+    expect(c.timeBarWarningDays).toMatchObject({ value: 365, changedBy: 'u-owner' });
+    expect(c.timeBarWarningDays.decision).toBeUndefined();
+    expect(timeBarWindowSaid(c.timeBarWarningDays)).toBe('365 days');
+    expect(describeControls(c).timeBarWarningDays).toBe('An unfiled return reaches the owner 365 days before it is barred (set by u-owner)');
   });
 });
 

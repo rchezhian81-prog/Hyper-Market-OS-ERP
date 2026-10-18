@@ -11,8 +11,8 @@ import { startInboxShop, ok, OWNER, MGR, type InboxShop } from './lib/ai-inbox-s
  *
  * May 2026 at the till: paneer ×2 (₹210 at 5%) and ghee (₹118 at 18%). GSTR-1 for May is prepared with the digest head
  * office gives, approved by a different person and filed (sandbox). Through Chromium the owner: sees the three controls
- * as head office holds them — reverse charge SWITCHED OFF, the 30-day e-invoice guard SWITCHED OFF, the warning window NOT
- * SET (and the calendar says "near the bar" is not judged); opens May: 3.1(a) ₹300.00 taxable / ₹28.00 tax, equal to the
+ * as head office holds them — reverse charge SWITCHED OFF, the 30-day e-invoice guard SWITCHED OFF, the warning window
+ * "180 days (owner's decision OB-191)" (never "not set", and the calendar judges "near the bar"); opens May: 3.1(a) ₹300.00 taxable / ₹28.00 tax, equal to the
  * till, input credit NOT KNOWN (never ₹0.00), and "GSTR-1 is filed — lock GSTR-3B to it"; locks it. A paneer sale for
  * 30 May then reaches head office: reloaded, May still shows the FILED ₹300.00 and names the late ₹105.00 as an OPEN
  * difference; the owner records an amendment with a reason and the page says it is declared in 062026, the difference now
@@ -76,7 +76,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the GST re
       await page.locator('#controls li[data-control="reverse-charge"]').waitFor({ timeout: 15_000 });
       expect(await page.textContent('#controls li[data-control="reverse-charge"] .word')).toBe('SWITCHED OFF');
       expect(await page.textContent('#controls li[data-control="einvoice-30-day-guard"] .word')).toBe('SWITCHED OFF');
-      expect(await page.textContent('#controls li[data-control="time-bar-warning-days"] .word')).toBe('NOT SET');
+      expect(await page.textContent('#controls li[data-control="time-bar-warning-days"] .word')).toBe("180 days (owner's decision OB-191)");
 
       await showMay(page);
       expect(await page.getAttribute('#basis', 'data-basis')).toBe('gstr1_filed_not_yet_locked');
@@ -114,7 +114,8 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the GST re
 
       // The calendar and the annual return.
       expect(await page.locator('#calendar li[data-type="GSTR3B"][data-period="052026"]').count()).toBe(1);
-      expect(await page.textContent('#cal-summary')).toMatch(/has not set how many days/);
+      // OB-191: N is 180 days, so "near the bar" is judged — the page never says it is not set.
+      expect(await page.textContent('#cal-summary')).not.toMatch(/has not set how many days/);
       expect(await page.textContent('#annual-heading')).toBe('Annual return 2026-27');
       expect(await page.textContent('#annual li[data-return="GSTR9"] .state')).toContain('INCOMPLETE');
 
@@ -122,6 +123,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the GST re
       await page.click('#lang');
       expect(await page.textContent('#ho-title')).toBe('இந்த மாத GST, தலைமை அலுவலகத்திலிருந்து');
       expect(await page.textContent('#controls li[data-control="reverse-charge"] .word')).toBe('நிறுத்தப்பட்டுள்ளது');
+      expect(await page.textContent('#controls li[data-control="time-bar-warning-days"] .word')).toBe('180 நாள் (உரிமையாளர் முடிவு OB-191)');
       expect(errors).toEqual([]);
     } finally { await context.close(); }
 

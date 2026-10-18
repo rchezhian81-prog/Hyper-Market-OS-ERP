@@ -43,6 +43,8 @@ export interface FilingRegisterDeps {
   /** Every filed fact: GSTR-1 from the submission store (`filed`) and every filing recorded here. */
   readonly facts: (tenantId: string) => Promise<readonly FilingFact[]>;
   readonly nearBarDays: (tenantId: string) => Promise<number | null>;
+  /** N in words for the page (e.g. "180 days (owner's decision OB-191)"). */
+  readonly nearBarDaysSaid?: (tenantId: string) => Promise<string>;
   readonly gstr1State: (tenantId: string, period: string) => Promise<Gstr1FilingState>;
   readonly gstr3bLocked: (tenantId: string, period: string) => Promise<boolean>;
   readonly recordFiling: (tenantId: string, filing: RecordedFiling) => Promise<void>;
@@ -66,10 +68,11 @@ export function financialYearsOf(periods: readonly string[]): readonly string[] 
 export async function filingCalendarOf(deps: FilingRegisterDeps, tenantId: string) {
   const today = await deps.today(tenantId);
   const periods = await deps.monthlyPeriods(tenantId, today);
-  return buildFilingCalendar({
+  const cal = buildFilingCalendar({
     today, monthlyPeriods: periods, financialYears: financialYearsOf(periods),
     facts: await deps.facts(tenantId), nearBarDays: await deps.nearBarDays(tenantId),
   });
+  return deps.nearBarDaysSaid === undefined ? cal : { ...cal, nearBarDaysSaid: await deps.nearBarDaysSaid(tenantId) };
 }
 
 export function filingRegisterRoutes(deps: FilingRegisterDeps): readonly Route[] {

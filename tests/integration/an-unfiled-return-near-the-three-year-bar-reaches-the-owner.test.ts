@@ -17,8 +17,9 @@ import { localDateOf, gstTimeBarSweep } from '../../services/api/src/r3-gst-adap
  * The shop traded four years ago (every return of that month is now permanently BARRED), three years ago (its returns
  * fall barred within about two months) and this month. The calendar lists every GSTR-1 / GSTR-3B month and every
  * GSTR-9 / GSTR-9C year with its due date (GSTR-9/9C: 31 December after the year) and status, most urgent first. The
- * barred returns are owner exceptions. The owner has not set N, so "near the bar" is not judged — and the calendar says
- * so rather than guess. Only the owner may set N; once he sets it, the three-year-old month is "near the time bar".
+ * barred returns are owner exceptions. N is 180 days — the owner's written decision OB-191 — until he changes it, so the
+ * three-year-old month is already "near the time bar" and the calendar says N as "180 days (owner's decision OB-191)",
+ * never "not set". Only the owner may change N: at 7 days that month is merely overdue; at 400 it is near the bar again.
  * Raising the exceptions puts each into every owner's alert inbox, once (a second raise finds them open). When a return
  * is recorded filed (here, a GSTR-1 filed outside this system before cutover), its alert is cleared.
  *
@@ -54,7 +55,7 @@ const BARRED = fp(Y - 4, M);     // due a month later, four years ago — barred
 const NEAR = fp(Y - 3, M);       // GSTR-3B due on the 20th of next month, three years ago — barred in roughly 3–8 weeks
 const NOW = fp(Y, M);
 interface Entry { type: string; period: string; warning: string; dueDate: string; ownerException: boolean }
-interface Cal { entries: Entry[]; nearBarNotJudged: boolean; ownerExceptions: Entry[]; nearBarDays: number | null }
+interface Cal { entries: Entry[]; nearBarNotJudged: boolean; ownerExceptions: Entry[]; nearBarDays: number | null; nearBarDaysSaid?: string }
 
 describe.each(backings)('an unfiled return near the three-year bar reaches the owner — on $name (A19)', ({ harness, restart }) => {
   it('calendar → barred returns are exceptions → N not set is said → owner sets N → near-bar raised to every owner once → cleared when filed', async () => {
@@ -88,16 +89,28 @@ describe.each(backings)('an unfiled return near the three-year bar reaches the o
     expect(g9.length).toBeGreaterThanOrEqual(4);
     expect(g9.every((e) => e.dueDate.endsWith('-12-31'))).toBe(true);
     expect(cal.entries.find((e) => e.type === 'GSTR3B' && e.period === BARRED)?.warning).toBe('time_barred');
-    expect(cal.entries.find((e) => e.type === 'GSTR3B' && e.period === NEAR)?.warning).toBe('overdue');
+    // OB-191: N is 180 days with nobody setting it — the three-year-old month is already near the bar.
+    expect(cal.entries.find((e) => e.type === 'GSTR3B' && e.period === NEAR)).toMatchObject({ warning: 'near_time_bar', ownerException: true });
     expect(cal.entries.find((e) => e.type === 'GSTR1' && e.period === NOW)?.warning).toBe('period_not_ended');
     expect(cal.entries[0]!.warning).toBe('time_barred'); // the most urgent first
-    expect(cal.nearBarDays).toBeNull();
-    expect(cal.nearBarNotJudged).toBe(true);
+    expect(cal.nearBarDays).toBe(180);
+    expect(cal.nearBarDaysSaid).toBe("180 days (owner's decision OB-191)");
+    expect(cal.nearBarNotJudged).toBe(false);
+    const controls = (await ok(req('GET', '/v1/finance/gst/controls'), 'controls')).body as { controls: { timeBarWarningDays: { value: number; decision?: string } }; said: { timeBarWarningDays: string } };
+    expect(controls.controls.timeBarWarningDays).toEqual({ value: 180, decision: 'OB-191' });
+    expect(controls.said.timeBarWarningDays).toMatch(/180 days \(owner's decision OB-191\)/);
+    expect(controls.said.timeBarWarningDays).not.toMatch(/not set/);
     expect((await req('GET', '/v1/finance/filing-calendar', undefined, 'u-cash')).status).toBe(403);
 
-    // ── only the owner sets N; it must be a whole number of days ───────────────────────────────────────────────────
+    // ── only the owner changes N; it must be a whole number of days ────────────────────────────────────────────────
     expect((await req('PUT', '/v1/finance/gst/controls/time-bar-warning-days', { days: 400, reason: 'x' }, 'u-mgr')).status).toBe(403);
     expect(codeOf(await req('PUT', '/v1/finance/gst/controls/time-bar-warning-days', { days: 0, reason: 'x' }))).toBe('warning_days_need_days_and_reason');
+    // At 7 days the three-year-old month (weeks from its bar) is only overdue — his number stands, the label goes.
+    await ok(req('PUT', '/v1/finance/gst/controls/time-bar-warning-days', { days: 7, reason: 'synthetic: a short window' }), 'set N 7');
+    cal = await calendar();
+    expect(cal.nearBarDays).toBe(7);
+    expect(cal.nearBarDaysSaid).toBe('7 days');
+    expect(cal.entries.find((e) => e.type === 'GSTR3B' && e.period === NEAR)?.warning).toBe('overdue');
     await ok(req('PUT', '/v1/finance/gst/controls/time-bar-warning-days', { days: 400, reason: 'warn me well before a return is lost (synthetic)' }), 'set N');
     h = restart(h);
     cal = await calendar();
@@ -141,7 +154,7 @@ describe.each(backings)('an unfiled return near the three-year bar reaches the o
     expect(r.status).toBeLessThan(300);
     const sweep = gstTimeBarSweep({ store: h.store, now: () => new Date().toISOString() });
     const raised = await sweep(T, new Date().toISOString());
-    expect(raised).toBeGreaterThanOrEqual(2); // at least GSTR-1 and GSTR-3B of the barred month (N not set: barred only)
+    expect(raised).toBeGreaterThanOrEqual(2); // at least GSTR-1 and GSTR-3B of the barred month (and anything within the 180 days of OB-191)
     expect(await sweep(T, new Date().toISOString())).toBe(0);
   }, 60_000);
 });

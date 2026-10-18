@@ -22,7 +22,7 @@ import {
   type FilingFact, type CalendarEntry, type Gstr9cReason, type AnnualMonthInput, type SoldTaxLine, type OutwardDocument,
 } from '../../../packages/finance/src/index';
 import type { Gstr1SubmissionEvent } from '../../../packages/finance/src/gstr1-submission';
-import { gstControlsRoutes, gstControlsOf, type GstControlChange, type RcmHeadChange, type GstControlsDeps } from '../../finance/src/gst-controls';
+import { gstControlsRoutes, gstControlsOf, timeBarWindowSaid, type GstControlChange, type RcmHeadChange, type GstControlsDeps } from '../../finance/src/gst-controls';
 import { gstr3bRoutes, type GstMonth } from '../../finance/src/gstr3b-store';
 import { rcmRoutes, type RecordedRcmPurchase } from '../../finance/src/rcm-store';
 import { filingRegisterRoutes, financialYearsOf, type RecordedFiling, type FilingRegisterDeps } from '../../finance/src/filing-register';
@@ -232,6 +232,8 @@ export function r3GstRoutes(input: R3GstInput): readonly Route[] {
   const filingDeps: FilingRegisterDeps = {
     now, today: ledger.today, monthlyPeriods: ledger.monthlyPeriods, facts: ledger.facts,
     nearBarDays: async (t) => (await ledger.controls(t)).timeBarWarningDays.value,
+    // OB-191: 180 days unless the owner has changed it — said as "180 days (owner's decision OB-191)".
+    nearBarDaysSaid: async (t) => timeBarWindowSaid((await ledger.controls(t)).timeBarWarningDays),
     gstr1State: async (t, p) => (await submissions(t, p)),
     gstr3bLocked: async (t, p) => (await ledger.locks(t)).some((l) => l.period === p),
     recordFiling: (t, f) => append(store, t, FILINGS, 'GstReturnFiledRecorded', `${f.type}|${f.period}`, f.recordedAt, f),

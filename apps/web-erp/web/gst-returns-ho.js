@@ -16,7 +16,7 @@ const WORDS = {
     hoLead: 'GSTR-3B is worked out from the till\'s banked sales less returns — never typed in. Once GSTR-1 is filed it is locked to it; a sale that reaches head office later is corrected by an amendment in the next month.',
     controlsHeading: 'Controls', periodLabel: 'Month (MMYYYY)', show: 'Show',
     rcm: 'Reverse charge', guard: '30-day e-invoice guard', window: 'Warning before the 3-year bar',
-    on: 'ON', off: 'SWITCHED OFF', notSet: 'NOT SET',
+    on: 'ON', off: 'SWITCHED OFF', notSet: 'NOT SET', days: 'days', ownerDecision: 'owner\'s decision',
     basis_provisional_gstr1_not_filed: 'Provisional — GSTR-1 for this month is not filed yet',
     basis_gstr1_filed_not_yet_locked: 'GSTR-1 is filed — lock GSTR-3B to it',
     basis_locked_to_filed_gstr1: 'Locked to the filed GSTR-1 — it cannot be changed',
@@ -40,7 +40,7 @@ const WORDS = {
     hoLead: 'GSTR-3B கல்லாவில் வங்கியில் செலுத்திய விற்பனையிலிருந்து திருப்பியவை கழித்துக் கணக்கிடப்படுகிறது — தட்டச்சு செய்யப்படுவதில்லை. GSTR-1 தாக்கல் ஆனதும் அதனுடன் பூட்டப்படும்; பின்னர் வரும் விற்பனை அடுத்த மாதத் திருத்தமாகச் சரிசெய்யப்படும்.',
     controlsHeading: 'கட்டுப்பாடுகள்', periodLabel: 'மாதம் (MMYYYY)', show: 'காட்டு',
     rcm: 'தலைகீழ் வரி (RCM)', guard: '30 நாள் மின்-விலைப்பட்டியல் காவல்', window: '3 ஆண்டு தடைக்கு முன் எச்சரிக்கை',
-    on: 'இயக்கத்தில்', off: 'நிறுத்தப்பட்டுள்ளது', notSet: 'அமைக்கப்படவில்லை',
+    on: 'இயக்கத்தில்', off: 'நிறுத்தப்பட்டுள்ளது', notSet: 'அமைக்கப்படவில்லை', days: 'நாள்', ownerDecision: 'உரிமையாளர் முடிவு',
     basis_provisional_gstr1_not_filed: 'தற்காலிகம் — இந்த மாத GSTR-1 இன்னும் தாக்கல் ஆகவில்லை',
     basis_gstr1_filed_not_yet_locked: 'GSTR-1 தாக்கல் ஆனது — GSTR-3B-ஐ அதனுடன் பூட்டவும்',
     basis_locked_to_filed_gstr1: 'தாக்கல் ஆன GSTR-1 உடன் பூட்டப்பட்டது — மாற்ற முடியாது',
@@ -133,8 +133,11 @@ function paintControls() {
   const on = guardState?.switchedOn ?? controls.controls.einvoice30DayGuard.value;
   const g = fact(list, t('guard'), on ? t('on') : t('off'), on ? 'ok' : 'idle');
   g.dataset.control = 'einvoice-30-day-guard'; g.title = guardState?.said ?? controls.said.einvoice30DayGuard;
-  const n = controls.controls.timeBarWarningDays.value;
-  const w = fact(list, t('window'), n === null ? t('notSet') : `${n}`, n === null ? 'degraded' : 'ok');
+  // OB-191: 180 days is the owner's decided value until he changes it — said with the decision, never "not set".
+  const tb = controls.controls.timeBarWarningDays;
+  const n = tb.value ?? null;
+  const said = n === null ? t('notSet') : tb.decision ? `${n} ${t('days')} (${t('ownerDecision')} ${tb.decision})` : `${n} ${t('days')}`;
+  const w = fact(list, t('window'), said, n === null ? 'degraded' : 'ok');
   w.dataset.control = 'time-bar-warning-days'; w.title = controls.said.timeBarWarningDays;
 }
 

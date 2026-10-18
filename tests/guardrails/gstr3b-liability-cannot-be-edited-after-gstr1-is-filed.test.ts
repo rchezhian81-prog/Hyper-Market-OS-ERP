@@ -93,11 +93,11 @@ describe('A14 — reverse-charge tax is paid in cash only', () => {
 describe('OB-143 / OB-149 / A19 — built switched off; the owner switches; the CA lists heads', () => {
   const holders = (perm: string): string[] => ROLE_CATALOGUE.filter((r) => r.permissions.includes(perm)).map((r) => r.id).sort();
 
-  it('everything starts off / unset / empty', () => {
+  it('everything starts off / at the owner\'s decided 180 days (OB-191) / empty', () => {
     const c = foldGstControls([], []);
     expect(c.reverseCharge.value).toBe(false);
     expect(c.einvoice30DayGuard.value).toBe(false);
-    expect(c.timeBarWarningDays.value).toBeNull();
+    expect(c.timeBarWarningDays).toEqual({ value: 180, decision: 'OB-191' });
     expect(c.rcmHeads).toEqual([]);
   });
 
