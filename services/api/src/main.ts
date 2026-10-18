@@ -304,7 +304,7 @@ import { r3TaxPayRoutes, supplierPaymentHooks, deskRefundHooks, privacyNomineeHo
 import { processorRegisterRoutes } from '../../customer/src/processor-register';
 import { legacyCardPurgeRoutes } from '../../migration/src/legacy-card-purge';
 // R3 Lane 4 (store operations and people): D-14 · D-16 · D-11 · D-25 · D-19 · C21 · D-9 (r3-ops-adapters).
-import { r3OpsRoutes, masterLifecycleOf, ingredientBatchesAt, channelPricingGateFor } from './r3-ops-adapters';
+import { r3OpsRoutes, masterLifecycleOf, ingredientBatchesAt, channelPricingGateFor, packPricingFor } from './r3-ops-adapters';
 import { wasteAnalyticsAdapter, foodSafetyAdapter, priceIntegrityAgeingAdapter, assignedTaskAdapter, receivingChecklistLookup, carriedChecklistAdapter } from './r2-ops-adapters';
 import { assignedTaskRoutes } from '../../finance/src/assigned-tasks';
 import { priceIntegrityAgeingRoutes } from '../../pricing/src/price-integrity-ageing';
@@ -736,7 +736,7 @@ export function buildSurface(deps: {
         signer, currentPack: empty(undefined), storePack: () => {},
         buildSnapshot: (tenantId) => ({ tenantId, version: 1, builtAt: now(), products: [], barcodes: [] }),
         approvalsSince: empty([]), now,
-      } : catalogueAdapter({ store, signer, now })),
+      } : catalogueAdapter({ store, signer, now, pricing: packPricingFor({ store, now }) /* D-19: the pack carries a switched-on zone price */ })),
       // The owner's bulk-publish threshold (ADR-0013 point 4, Stage E slice 1) — read from the durable tenant
       // settings at request time, so a bulk or regulated-product publish asks for a fresh second-factor sign-in.
       bulkPublishThreshold: (tenantId) => settings.value(tenantId, SETTINGS.CATALOGUE_BULK_PUBLISH_THRESHOLD),
@@ -776,7 +776,7 @@ export function buildSurface(deps: {
     // Catalogue pack ASSEMBLY/preview (slice 2) — fold master + prices + barcodes + tax rates for a store.
     ...cataloguePreviewRoutes(store === undefined
       ? { products: empty([]), priceEntries: empty([]), barcodes: empty([]), taxSchedule: empty([]), now }
-      : cataloguePreviewAdapter({ store, now })),
+      : cataloguePreviewAdapter({ store, now, pricing: packPricingFor({ store, now }) /* D-19: the preview is the pack */ })),
     ...pricingRoutes(store === undefined
       ? { recordPriceChange: () => {}, now }
       : {

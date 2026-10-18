@@ -37,6 +37,15 @@ export interface CataloguePreviewDeps {
   /** SF-08 — the products with a batch under open recall or on quality hold; each goes in the pack `recallBlock`, so
    *  every till refuses it, offline (owner decision "C": the whole product until the batch block lands in R3). */
   readonly blockedProducts?: (tenantId: string) => Promise<ReadonlySet<string>> | ReadonlySet<string>;
+  /**
+   * D-19 (R3, OB-148 / OB-190): zone / channel pricing as the owner's switches allow it. `allowedEntries` leaves out every
+   * channel or zone entry whose switch is off; `zoneOfStore` names the store's zone only while zone pricing is switched
+   * on. With every switch off the pack is exactly what it was before D-19 (one shelf price). Absent: nothing gated.
+   */
+  readonly pricing?: {
+    readonly allowedEntries: (tenantId: string, entries: readonly PriceEntry[]) => Promise<readonly PriceEntry[]>;
+    readonly zoneOfStore: (tenantId: string, storeId: string) => Promise<string | undefined>;
+  };
   readonly now: () => string;
 }
 
@@ -121,9 +130,12 @@ export async function assembleCatalogueSnapshot(
     return standing.sellable && standing.goodUntil !== undefined ? [[r.productId, standing.goodUntil] as const] : [];
   }));
 
-  // Prices: every entry for every product (the engine resolves the one that applies at this store/date).
-  const priceEntries: PriceEntry[] = [];
-  for (const r of records) priceEntries.push(...(await deps.priceEntries(opts.tenantId, r.productId)));
+  // Prices: every entry for every product (the engine resolves the one that applies at this store/date) — D-19: only the
+  // entries the owner's channel / zone switches allow, and the store's zone only while zone pricing is on.
+  const stored: PriceEntry[] = [];
+  for (const r of records) stored.push(...(await deps.priceEntries(opts.tenantId, r.productId)));
+  const priceEntries = deps.pricing === undefined ? stored : await deps.pricing.allowedEntries(opts.tenantId, stored);
+  const zoneId = deps.pricing === undefined ? undefined : await deps.pricing.zoneOfStore(opts.tenantId, opts.storeId);
 
   // Tax rates: resolve each distinct tax class's rate in force on the date. An HSN with no schedule (or a
   // gap before its earliest rate) is left unset — the engine then excludes its products as 'no_tax_class'
@@ -152,7 +164,8 @@ export async function assembleCatalogueSnapshot(
   const blocked = deps.blockedProducts === undefined ? new Set<string>() : await deps.blockedProducts(opts.tenantId);
 
   const built = buildCatalogueSnapshot({
-    scope: { tenantId: opts.tenantId, storeId: opts.storeId },
+    // A store's own pack is the till's (in-store) channel: no channel is named, so an app or delivery price never resolves.
+    scope: { tenantId: opts.tenantId, storeId: opts.storeId, ...(zoneId === undefined ? {} : { zoneId }) },
     version: opts.version,
     asOf: opts.asOf,
     products: records.map((r) => {

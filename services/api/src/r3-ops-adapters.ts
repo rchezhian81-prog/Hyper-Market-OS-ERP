@@ -25,7 +25,7 @@ import { channelPricingRoutes, channelPricingGate, type ChannelPricingDeps, type
 import { dsdCheckInRoutes, type DsdCheckInDeps, type DsdCheckInRecord, type DsdRouteSheet } from '../../inventory/src/dsd-checkin';
 import { assertBranchInScope } from '../../kernel/src/index';
 import { rangeStatusOf } from '../../inventory/src/assortment';
-import { resolvePrice } from '../../../packages/price-list/src/price-list';
+import { resolvePrice, type PriceEntry } from '../../../packages/price-list/src/price-list';
 import { clearanceMarkdownRoutes, type ClearanceMarkdownDeps } from '../../pricing/src/clearance-markdowns';
 import type { IncomingSale } from '../../pos/src/sale-intake';
 import { branchOfLocationIn, type LocationBranches } from '../../inventory/src/location-scope';
@@ -251,6 +251,23 @@ export function channelPricingAdapter(input: { readonly store: EventStore; reado
 
 /** D-19: the gate the existing price-list routes ask (wired in main.ts beside them). */
 export const channelPricingGateFor = (input: { readonly store: EventStore; readonly now: () => string }) => channelPricingGate(channelPricingAdapter(input));
+
+/**
+ * D-19 → the pack: the price entries a catalogue pack is built from pass the owner's switches (`allowedEntries`), and the
+ * store's zone is named only while ZONE pricing is switched on — so with every switch off the pack is byte-for-byte what
+ * it was before D-19 (one shelf price), and a store put in a zone gets that zone's prices only once a second person has
+ * approved zone pricing on.
+ */
+export function packPricingFor(input: { readonly store: EventStore; readonly now: () => string }): {
+  readonly allowedEntries: (tenantId: string, entries: readonly PriceEntry[]) => Promise<readonly PriceEntry[]>;
+  readonly zoneOfStore: (tenantId: string, storeId: string) => Promise<string | undefined>;
+} {
+  const gate = channelPricingGateFor(input);
+  return {
+    allowedEntries: gate.allowedEntries,
+    zoneOfStore: async (tenantId, storeId) => ((await gate.channelPricingOn(tenantId, 'zone', storeId)) ? gate.zoneOfStore(tenantId, storeId) : undefined),
+  };
+}
 
 // ── C21 fingerprint attendance consent ───────────────────────────────────────────────────────────────────────────
 

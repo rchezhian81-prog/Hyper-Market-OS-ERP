@@ -1990,6 +1990,8 @@ export function catalogueAdapter(input: {
   readonly store: EventStore;
   readonly signer: CatalogueDeps['signer'];
   readonly now: () => string;
+  /** D-19: the owner's zone / channel switches, applied to the price entries the pack is built from (main.ts wires it). */
+  readonly pricing?: CataloguePreviewDeps['pricing'];
 }): CatalogueDeps {
   return {
     signer: input.signer,
@@ -2029,7 +2031,7 @@ export function catalogueAdapter(input: {
       const previous = await latest<SignedPack>(input.store, tenantId, STREAM.catalogue, 'CataloguePublished');
       const version = (previous?.snapshot.version ?? 0) + 1;
       const result = await assembleCatalogueSnapshot(
-        cataloguePreviewAdapter({ store: input.store, now: input.now }),
+        cataloguePreviewAdapter({ store: input.store, now: input.now, ...(input.pricing === undefined ? {} : { pricing: input.pricing }) }),
         { tenantId, storeId: options.storeId, asOf: options.asOf ?? input.now(), version },
       );
       return result.snapshot;
@@ -2480,6 +2482,7 @@ export function consolidationAdapter(input: {
 export function cataloguePreviewAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
+  readonly pricing?: CataloguePreviewDeps['pricing'];
 }): CataloguePreviewDeps {
   const pm = productMasterAdapter(input);
   const pl = priceListAdapter(input);
@@ -2494,6 +2497,7 @@ export function cataloguePreviewAdapter(input: {
     promotions: promotionCatalogueAdapter(input).promotions,
     // SF-08: recalled and held batches' products go in the pack blocked, so every till refuses them offline.
     blockedProducts: saleBlocksAdapter(input).blockedProducts,
+    ...(input.pricing === undefined ? {} : { pricing: input.pricing }),
     now: input.now,
   };
 }

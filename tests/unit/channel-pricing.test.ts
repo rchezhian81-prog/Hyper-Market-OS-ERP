@@ -44,4 +44,19 @@ describe('D-19 guardrail: no channel price is charged while its switch is off', 
   it('the running system wires the gate into the price-list routes', () => {
     expect(readFileSync('services/api/src/main.ts', 'utf8')).toContain('...channelPricingGateFor({ store, now })');
   });
+  it('the running system builds the catalogue pack and its preview through the same switches (D-19 → the pack)', () => {
+    const main = readFileSync('services/api/src/main.ts', 'utf8');
+    expect(main).toContain('catalogueAdapter({ store, signer, now, pricing: packPricingFor({ store, now })');
+    expect(main).toContain('cataloguePreviewAdapter({ store, now, pricing: packPricingFor({ store, now })');
+    const assemble = strip(readFileSync('services/catalogue/src/catalogue-preview.ts', 'utf8'));
+    expect(assemble).toContain('deps.pricing === undefined ? stored : await deps.pricing.allowedEntries(opts.tenantId, stored)');
+    // The till's own pack names no channel: an app or delivery price can never resolve into it.
+    expect(assemble).not.toMatch(/channel:\s*/);
+  });
+  it('a till (in-store) pack never takes an app or delivery price, even with both switched on', () => {
+    const on = switchesOn([req('1', 'channel:app', 'on', 'applied', '2030-01-02'), req('2', 'channel:delivery', 'on', 'applied', '2030-01-02')]);
+    const entries = [...ENTRIES, e('delivery', 'channel', 'delivery', 8_800)];
+    // The pack's resolve context: the store, and its zone only when zone pricing is on — no channel.
+    expect(resolvePrice(gatedEntries(entries, on), { productId: 'p', at: '2030-06-01T00:00:00Z', storeId: 'S-A' })!.id).toBe('shelf');
+  });
 });
