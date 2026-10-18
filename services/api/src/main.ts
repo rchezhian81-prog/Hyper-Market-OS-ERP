@@ -299,7 +299,7 @@ import { committeeMembershipRoutes } from '../../identity/src/committee-membersh
 import { hrComplianceRoutes } from '../../finance/src/hr-compliance';
 import { poshRegisterRoutes } from '../../finance/src/posh-register';
 import { processorRegisterAdapter, settlementRefundsAdapter } from './r2-data-adapters';
-import { r3TaxPayRoutes, supplierPaymentHooks, deskRefundHooks } from './r3-tax-pay-adapters';
+import { r3TaxPayRoutes, supplierPaymentHooks, deskRefundHooks, privacyNomineeHooks } from './r3-tax-pay-adapters';
 import { processorRegisterRoutes } from '../../customer/src/processor-register';
 import { legacyCardPurgeRoutes } from '../../migration/src/legacy-card-purge';
 import { wasteAnalyticsAdapter, foodSafetyAdapter, priceIntegrityAgeingAdapter, assignedTaskAdapter, receivingChecklistLookup, carriedChecklistAdapter } from './r2-ops-adapters';
@@ -1310,13 +1310,13 @@ export function buildSurface(deps: {
     // Data-subject rights lifecycle (M20-FR-04 / DPDP) — raise/verify/fulfil/erasure-plan + overdue.
     ...dataRightsRoutes(store === undefined
       ? { request: empty(undefined), requests: empty([]), record: () => {}, now }
-      : dataRightsAdapter({ store, now })),
+      : { ...dataRightsAdapter({ store, now }), ...privacyNomineeHooks({ store }) /* R3 C5 nominee */ }),
     // FUL-06: the signed-in customer's own privacy centre — consent and rights saved on the SAME ledgers the senders and
     // the DPO read, scoped from the session, read back after every write.
     ...privacySelfRoutes(store === undefined ? privacySelfUnwired(now) : (() => {
       const c = customerAdapter({ store, now });
       const r = dataRightsAdapter({ store, now });
-      return { consentRecords: c.consentRecords, appendConsent: c.appendConsent, requests: r.requests, recordRequest: r.record, now };
+      return { consentRecords: c.consentRecords, appendConsent: c.appendConsent, requests: r.requests, recordRequest: r.record, now, ...privacyNomineeHooks({ store }) /* R3 C5 nominee */ };
     })()),
     // Erasure EXECUTION (M20-FR-04 / DPDP) — locate PII, checker approval, two-person execute + tombstone,
     // processor notices. DEVELOPMENT-APPROVED; legal confirmation required.

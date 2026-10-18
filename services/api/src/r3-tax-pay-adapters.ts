@@ -15,6 +15,7 @@ import { itcStoreRoutes, loadItcReview, type ItcStoreDeps, type StoredStatement 
 import { assessTds, priorInYear, EMPTY_TDS_CONFIG, type TdsConfig, type TdsSwitch, type TdsChallan, type PaymentWithTds, type TdsAssessment } from '../../../packages/withholding/src/index';
 import { tdsStoreRoutes, type TdsStoreDeps } from '../../finance/src/tds-store';
 import type { ReturnRecord } from '../../pos/src/returns';
+import type { NomineeRecord, NomineeActivation } from '../../../packages/customer/src/index';
 import type { DisputeRecord, DisputeResponse, DisputeOutcome } from '../../../packages/payment-disputes/src/index';
 import { paymentDisputeRoutes, type PaymentDisputeDeps } from '../../finance/src/payment-disputes';
 import { STREAM, STREAM_FOR, streamName, supplierMasterAdapter } from './adapters';
@@ -215,6 +216,40 @@ export function paymentDisputesAdapter(input: { readonly store: EventStore; read
       if (held === undefined) return undefined;
       const tenders = (held.event.payload as { readonly tenders?: readonly { readonly kind: string; readonly amountMinor: number }[] }).tenders ?? [];
       return tenders.filter((t) => t.kind === instrument).reduce((s, t) => s + t.amountMinor, 0);
+    },
+  };
+}
+
+// ── C5 · the customer's nominee (DPDP s.14) ──────────────────────────────────────────────────────────────────────────
+
+const NOMINEES_STREAM = streamName(STREAM.privacy, 'nominees');
+
+/**
+ * The hooks spread into the DPO's data-rights routes and the customer's own privacy routes: the nominee records
+ * (append-only — recorded, changed, withdrawn) and the staff verifications of death or incapacity.
+ */
+export function privacyNomineeHooks(input: { readonly store: EventStore }): {
+  readonly nomineeRecords: (tenantId: string) => Promise<readonly NomineeRecord[]>;
+  readonly recordNominee: (tenantId: string, r: NomineeRecord) => Promise<void>;
+  readonly nomineeActivations: (tenantId: string) => Promise<readonly NomineeActivation[]>;
+  readonly recordActivation: (tenantId: string, a: NomineeActivation) => Promise<NomineeActivation>;
+} {
+  const { store } = input;
+  return {
+    nomineeRecords: (tenantId) => all<NomineeRecord>(store, tenantId, NOMINEES_STREAM, 'NomineeRecorded'),
+    recordNominee: async (tenantId, r) => {
+      const key = sha(`${r.customerRef}|${r.action}|${r.nomineeRef ?? ''}|${r.relationship ?? ''}|${r.at}`).slice(0, 32);
+      await store.append(tenantId, NOMINEES_STREAM, makeEvent({
+        id: `nominee-${key}`, type: 'NomineeRecorded', occurredAt: r.at, idempotencyKey: `nominee-${tenantId}-${key}`, source: 'api/customer', payload: r,
+      }));
+    },
+    nomineeActivations: (tenantId) => all<NomineeActivation>(store, tenantId, NOMINEES_STREAM, 'NomineeActivationVerified'),
+    recordActivation: async (tenantId, a) => {
+      const res = await store.append(tenantId, NOMINEES_STREAM, makeEvent({
+        id: `nominee-activation-${a.activationId}-${sha(a.verifiedAt).slice(0, 8)}`, type: 'NomineeActivationVerified', occurredAt: a.verifiedAt,
+        idempotencyKey: `nominee-activation-${tenantId}-${a.activationId}`, source: 'api/customer', payload: a,
+      }));
+      return res.record.event.payload as NomineeActivation;
     },
   };
 }

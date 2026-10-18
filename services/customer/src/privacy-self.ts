@@ -21,12 +21,16 @@
 
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
-import type { DataSubjectRequest, RightKind } from '../../../packages/customer/src/index';
+import {
+  RIGHT_KINDS, PUBLISHED_RESPONSE_SLA_DAYS, publishedSlaStatement, currentNominee, nominationAction,
+  type DataSubjectRequest, type RightKind, type NomineeRecord,
+} from '../../../packages/customer/src/index';
 import { mayWeSend, type ConsentRecord, type ConsentPurpose, type Channel } from './index';
 
 const PURPOSES: readonly ConsentPurpose[] = ['transactional', 'marketing', 'profiling', 'third_party'];
 const CHANNELS: readonly Channel[] = ['whatsapp', 'sms', 'email', 'push', 'post'];
-const KINDS: readonly RightKind[] = ['access', 'correction', 'export', 'erasure'];
+// R3 · C5: a complaint about how the shop handled the customer's data is raised the same way (a `grievance`).
+const KINDS: readonly RightKind[] = RIGHT_KINDS;
 
 export interface PrivacySelfDeps {
   /** The customer's consent ledger — the same record every sender reads (P-02). */
@@ -35,8 +39,11 @@ export interface PrivacySelfDeps {
   /** Every data-subject request for the tenant (latest state per id) — the DPO's own stream. */
   readonly requests: (tenantId: string) => Promise<readonly DataSubjectRequest[]> | readonly DataSubjectRequest[];
   readonly recordRequest: (tenantId: string, requestId: string, request: DataSubjectRequest, key: string) => Promise<void> | void;
-  /** The tenant's answer-by SLA in days (per-tenant policy); 30 when the tenant has set none. */
+  /** The tenant's answer-by SLA in days (per-tenant policy); the published 15 days (OB-146) when the tenant has set none. */
   readonly slaDays?: (tenantId: string) => Promise<number | undefined> | number | undefined;
+  /** R3 · C5 (DPDP s.14): the nominee records (append-only) — absent on a bare stub (then nominating is refused, said). */
+  readonly nomineeRecords?: (tenantId: string) => Promise<readonly NomineeRecord[]> | readonly NomineeRecord[];
+  readonly recordNominee?: (tenantId: string, r: NomineeRecord) => Promise<void> | void;
   readonly now: () => string;
 }
 
@@ -69,12 +76,16 @@ function dueDate(nowIso: string, slaDays: number): string {
 
 /** What the customer is told about a raised request — received, never done; erasure's legal limits said up front. */
 export function tellRaised(kind: RightKind, requestId: string, dueBy: string): string {
+  if (kind === 'grievance') return `We have your complaint (reference ${requestId}). We must answer it by ${dueBy}. If you are not satisfied with our answer, you may complain to the Data Protection Board.`;
   return kind === 'erasure'
     ? `We have your request (reference ${requestId}). We must answer by ${dueBy}. We will delete everything we are allowed to delete, and we will tell you exactly what we have to keep and why — invoices and tax records have to be kept by law even when you ask us to delete them.`
     : `We have your request (reference ${requestId}). We must answer by ${dueBy}. Nobody needs to be contacted — this is already with us.`;
 }
 
 const mine = (r: DataSubjectRequest) => ({ requestId: r.requestId, kind: r.kind, state: r.state, raisedAt: r.raisedAt, dueBy: r.dueBy });
+
+const NOMINEE_REF = /^[A-Za-z0-9-]{3,64}$/;
+const nomineeUnwired = () => apiError(503, { code: 'nominee_register_not_wired', whatHappened: 'Head office cannot keep a nominee here, so nothing was saved.', wasItSaved: 'not_saved', nextSafeAction: 'Try again later. Your earlier choice stands.' });
 
 export function privacySelfRoutes(deps: PrivacySelfDeps): readonly Route[] {
   const readBack = async (tenantId: string, customerId: string) =>
@@ -87,15 +98,22 @@ export function privacySelfRoutes(deps: PrivacySelfDeps): readonly Route[] {
       // My privacy position: my consents as the shop holds them, and my requests. Nobody else's.
       api: 'API-06', method: 'GET', path: '/v1/me/privacy',
       permission: 'customer.privacy.self',
-      handler: async (ctx) => ({
-        status: 200,
-        body: {
-          customerRef: ctx.userId,
-          consent: await readBack(ctx.tenantId, ctx.userId),
-          requests: (await myRequests(ctx.tenantId, ctx.userId)).map(mine),
-          asAt: deps.now(),
-        },
-      }),
+      handler: async (ctx) => {
+        const days = (await deps.slaDays?.(ctx.tenantId)) ?? PUBLISHED_RESPONSE_SLA_DAYS;
+        return {
+          status: 200,
+          body: {
+            customerRef: ctx.userId,
+            consent: await readBack(ctx.tenantId, ctx.userId),
+            requests: (await myRequests(ctx.tenantId, ctx.userId)).map(mine),
+            // R3 · C5 · OB-146: the published answer-by time, shown to the customer here and in the notice.
+            responseSlaDays: days, slaStatement: publishedSlaStatement(days),
+            // R3 · C5 (DPDP s.14): who may act for me if I die or can no longer act — null when I have named nobody.
+            nominee: deps.nomineeRecords === undefined ? null : currentNominee(await deps.nomineeRecords(ctx.tenantId), ctx.userId),
+            asAt: deps.now(),
+          },
+        };
+      },
     },
     {
       // Grant or withdraw — one route, one shape, both directions cost the same. Body: { purpose, channel, given }.
@@ -151,7 +169,7 @@ export function privacySelfRoutes(deps: PrivacySelfDeps): readonly Route[] {
         if (!/^[A-Za-z0-9-]{4,64}$/.test(requestId) || !KINDS.includes(kind as RightKind)) {
           throw apiError(400, {
             code: 'not_readable_as_a_data_request',
-            whatHappened: 'A request needs a reference (4–64 letters, digits or dashes) in the path and { kind: access/correction/export/erasure }.',
+            whatHappened: 'A request needs a reference (4–64 letters, digits or dashes) in the path and { kind: access/correction/export/erasure/grievance }.',
             wasItSaved: 'not_saved',
             nextSafeAction: 'Nothing was raised. Try again from the privacy screen.',
           });
@@ -171,7 +189,7 @@ export function privacySelfRoutes(deps: PrivacySelfDeps): readonly Route[] {
           return { status: 200, body: { ...mine(existing), alreadyRaised: true, tellTheCustomer: tellRaised(existing.kind, requestId, existing.dueBy) } };
         }
         const now = deps.now();
-        const slaDays = (await deps.slaDays?.(ctx.tenantId)) ?? 30;
+        const slaDays = (await deps.slaDays?.(ctx.tenantId)) ?? PUBLISHED_RESPONSE_SLA_DAYS;
         const request: DataSubjectRequest = {
           requestId, tenantId: ctx.tenantId, customerRef: ctx.userId, kind: kind as RightKind,
           raisedAt: now, state: 'raised', dueBy: dueDate(now, slaDays),
@@ -182,6 +200,45 @@ export function privacySelfRoutes(deps: PrivacySelfDeps): readonly Route[] {
           throw apiError(503, { code: 'request_not_kept', whatHappened: 'The request could not be read back after saving.', wasItSaved: 'unknown', nextSafeAction: 'Try again — the same reference is safe to resend.' });
         }
         return { status: 201, body: { ...mine(stored), tellTheCustomer: tellRaised(stored.kind, requestId, stored.dueBy) } };
+      },
+    },
+    {
+      // R3 · C5 (DPDP s.14): name or change my nominee — by their reference (their own account here, or the number of the
+      // nomination form I signed) and our relationship. A new record each time; the earlier ones stay. Body: { nomineeRef,
+      // relationship }.
+      api: 'API-06', method: 'POST', path: '/v1/me/privacy/nominee',
+      permission: 'customer.privacy.self', idempotent: true,
+      handler: async (ctx) => {
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const nomineeRef = typeof b['nomineeRef'] === 'string' ? b['nomineeRef'].trim() : '';
+        const relationship = typeof b['relationship'] === 'string' ? b['relationship'].trim().slice(0, 40) : '';
+        if (!NOMINEE_REF.test(nomineeRef) || relationship === '') {
+          throw apiError(400, { code: 'not_readable_as_a_nominee', whatHappened: 'A nominee is { nomineeRef (their account or your nomination form number: 3–64 letters, digits or dashes), relationship }. No name or phone number is needed or kept.', wasItSaved: 'not_saved', nextSafeAction: 'Nothing changed. Your earlier choice stands.' });
+        }
+        if (nomineeRef === ctx.userId) throw apiError(422, { code: 'nominee_is_yourself', whatHappened: 'You cannot be your own nominee.', wasItSaved: 'not_saved', nextSafeAction: 'Name someone else. Nothing changed.' });
+        if (deps.nomineeRecords === undefined || deps.recordNominee === undefined) throw nomineeUnwired();
+        const records = await deps.nomineeRecords(ctx.tenantId);
+        const current = currentNominee(records, ctx.userId);
+        if (current !== null && current.nomineeRef === nomineeRef && current.relationship === relationship) {
+          return { status: 200, body: { nominee: current, alreadyRecorded: true, tellTheCustomer: `Your nominee is already ${nomineeRef} (${relationship}).` } };
+        }
+        const record: NomineeRecord = { customerRef: ctx.userId, action: nominationAction(records, ctx.userId), nomineeRef, relationship, by: ctx.userId, at: deps.now() };
+        await deps.recordNominee(ctx.tenantId, record);
+        const now = currentNominee(await deps.nomineeRecords(ctx.tenantId), ctx.userId);
+        return { status: 201, body: { action: record.action, nominee: now, tellTheCustomer: `Saved: ${nomineeRef} (${relationship}) may exercise your privacy rights if you die or can no longer act, once we have verified it. You can change or withdraw this at any time.` } };
+      },
+    },
+    {
+      // R3 · C5: withdraw my nominee. The withdrawal is a new record; the earlier nomination stays on file.
+      api: 'API-06', method: 'POST', path: '/v1/me/privacy/nominee/withdrawal',
+      permission: 'customer.privacy.self', idempotent: true,
+      handler: async (ctx) => {
+        if (deps.nomineeRecords === undefined || deps.recordNominee === undefined) throw nomineeUnwired();
+        const current = currentNominee(await deps.nomineeRecords(ctx.tenantId), ctx.userId);
+        if (current === null) throw apiError(409, { code: 'no_nominee_to_withdraw', whatHappened: 'You have no nominee to withdraw.', wasItSaved: 'not_saved', nextSafeAction: 'Nothing changed.' });
+        const record: NomineeRecord = { customerRef: ctx.userId, action: 'withdrawn', nomineeRef: null, relationship: null, by: ctx.userId, at: deps.now() };
+        await deps.recordNominee(ctx.tenantId, record);
+        return { status: 201, body: { action: 'withdrawn', nominee: null, tellTheCustomer: `Saved: ${current.nomineeRef} is no longer your nominee. This took effect now.` } };
       },
     },
   ];
