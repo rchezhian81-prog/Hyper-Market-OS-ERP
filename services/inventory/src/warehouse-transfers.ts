@@ -46,6 +46,7 @@ import { normaliseUom } from '../../../packages/contracts/src/quantity';
 import { assertLocationInScope, locationInScope, type LocationBranches } from './location-scope';
 import { assertNotFrozenByCount, type CountFreezeCheck } from './count-freeze';
 import { outsideBranchScope, type RequestContext } from '../../kernel/src/index';
+import type { DispatchEwbVerdict } from '../../../packages/e-way-bill/src/index';
 
 /**
  * PA-01-r1: a transfer is the business of the branches at its two ends. Proposing or reading one needs either end in the
@@ -148,6 +149,11 @@ export interface TransfersDeps {
   readonly recordShortfallResolved?: (tenantId: string, transfer: Transfer, posted: readonly Movement[], expectedVersion?: number) => Promise<void> | void;
   /** WF-08 / OB-59: which open count plan freezes an adjustment here (absent on a bare stub — nothing is frozen). */
   readonly countFreeze?: CountFreezeCheck;
+  /**
+   * R3 · A23: may these goods leave — above the e-way-bill threshold only with a generated e-way bill for the transfer's
+   * movement. Absent on a bare stub (then not checked); the running system provides it.
+   */
+  readonly ewayBillGate?: (tenantId: string, transfer: Transfer, lineCostsMinor: readonly (number | null)[]) => Promise<DispatchEwbVerdict> | DispatchEwbVerdict;
   readonly now: () => string;
 }
 
@@ -306,14 +312,25 @@ export function transfersRoutes(deps: TransfersDeps): readonly Route[] {
           // aggregate so the receipt re-enters it at the destination — never the proposer's figure.
           const lineCostsMinor: (number | null)[] = [];
           for (const line of transfer.lines) lineCostsMinor.push((await deps.unitCostAt(ctx.tenantId, transfer.fromLocationId, line.productId)) ?? null);
-          const dispatched: Transfer = { ...result.transfer, lineCostsMinor };
+          // R3 · A23: above the e-way-bill threshold the goods leave only under a GENERATED e-way bill — refused by name
+          // otherwise, before anything moves; with one, the transfer carries its number.
+          const ewb = deps.ewayBillGate === undefined ? undefined : await Promise.resolve(deps.ewayBillGate(ctx.tenantId, transfer, lineCostsMinor));
+          if (ewb?.outcome === 'refused') {
+            throw apiError(409, {
+              code: ewb.code,
+              whatHappened: `Transfer ${transferId} cannot leave without an e-way bill: ${ewb.detail}.`,
+              wasItSaved: 'not_saved',
+              nextSafeAction: `Generate the e-way bill for movement ${ewb.movementId} (POST /v1/finance/e-way-bill/movements/${ewb.movementId}/submit, then the portal's answer), then dispatch again. Nothing was moved.`,
+            });
+          }
+          const dispatched: Transfer = { ...result.transfer, lineCostsMinor, ...(ewb?.outcome === 'covered' ? { ewayBill: { movementId: ewb.movementId, ewbNo: ewb.ewbNo } } : {}) };
           const posted = dispatchPostings(dispatched, result.movements, ctx.userId);
           // WF-08 / OB-59: stock leaving a place where an open count froze `transferred_out` for the product is refused by
           // name, like every other direct head-office movement (the default freeze — adjustments and write-offs — leaves a
           // dispatch alone). Nothing moves; a relayed record would be kept and shown instead.
           await assertNotFrozenByCount(deps.countFreeze, ctx.tenantId, posted, 'transfer dispatch');
           await deps.recordDispatched(ctx.tenantId, dispatched, result.movements, posted, expectedVersion);
-          return { status: 200, body: { transferId, state: dispatched.state, approvedBy: dispatched.approvedBy, movements: result.movements.length, posted: posted.map((m) => m.movementId), lineCostsMinor, availableChecked: available.map((l) => ({ productId: l.productId, batchId: l.batchId, quantityMinor: l.quantityMinor, state: l.state, recalled: l.recalled === true })) } };
+          return { status: 200, body: { transferId, state: dispatched.state, approvedBy: dispatched.approvedBy, movements: result.movements.length, posted: posted.map((m) => m.movementId), lineCostsMinor, ...(ewb === undefined ? {} : { ewayBill: ewb }), availableChecked: available.map((l) => ({ productId: l.productId, batchId: l.batchId, quantityMinor: l.quantityMinor, state: l.state, recalled: l.recalled === true })) } };
         } catch (e) {
           if (e instanceof TransferRefusedError) refused(e.why);
           // Another movement out of this stock landed first (Wave 2a · SF-04): this dispatch was decided on a figure that

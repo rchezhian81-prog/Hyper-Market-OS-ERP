@@ -299,7 +299,7 @@ import { committeeMembershipRoutes } from '../../identity/src/committee-membersh
 import { hrComplianceRoutes } from '../../finance/src/hr-compliance';
 import { poshRegisterRoutes } from '../../finance/src/posh-register';
 import { processorRegisterAdapter, settlementRefundsAdapter } from './r2-data-adapters';
-import { r3TaxPayRoutes, supplierPaymentHooks, deskRefundHooks, privacyNomineeHooks } from './r3-tax-pay-adapters';
+import { r3TaxPayRoutes, supplierPaymentHooks, deskRefundHooks, privacyNomineeHooks, transferDispatchHooks } from './r3-tax-pay-adapters';
 import { processorRegisterRoutes } from '../../customer/src/processor-register';
 import { legacyCardPurgeRoutes } from '../../migration/src/legacy-card-purge';
 import { wasteAnalyticsAdapter, foodSafetyAdapter, priceIntegrityAgeingAdapter, assignedTaskAdapter, receivingChecklistLookup, carriedChecklistAdapter } from './r2-ops-adapters';
@@ -1058,7 +1058,7 @@ export function buildSurface(deps: {
     ...transfersRoutes(store === undefined ? {
       transfer: empty(undefined), availableAt: empty([]), recordProposed: () => {}, recordDispatched: () => {}, recordReceived: () => {},
       unitCostAt: empty(undefined), knownLocation: empty(true), now,
-    } : { ...transfersAdapter({ store, now }), locationBranches: locationBranchesOf(store, now), countFreeze: countPlanFreeze }),
+    } : { ...transfersAdapter({ store, now }), locationBranches: locationBranchesOf(store, now), countFreeze: countPlanFreeze, ...transferDispatchHooks({ store, now }) /* R3 A23 EWB gate */ }),
     // The floor indent chain (SP-8 · F08): request → approval → back-store issue (a transfer, dispatched) → in transit →
     // independent floor receipt → shelf availability; cancel and floor→back-store return. Rides the transfer engine.
     ...floorIndentRoutes(floorIndentDeps),

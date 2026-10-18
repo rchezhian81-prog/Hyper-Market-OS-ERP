@@ -18,7 +18,11 @@ import type { ReturnRecord } from '../../pos/src/returns';
 import type { NomineeRecord, NomineeActivation } from '../../../packages/customer/src/index';
 import type { DisputeRecord, DisputeResponse, DisputeOutcome } from '../../../packages/payment-disputes/src/index';
 import { paymentDisputeRoutes, type PaymentDisputeDeps } from '../../finance/src/payment-disputes';
-import { STREAM, STREAM_FOR, streamName, supplierMasterAdapter } from './adapters';
+import { checkDispatchEwb, supplyRouteBetween, type DispatchEwbVerdict } from '../../../packages/e-way-bill/src/index';
+import type { Transfer } from '../../../packages/warehouse/src/transfers';
+import { valueAtCost } from '../../../packages/contracts/src/quantity';
+import { branchOfLocationIn } from '../../inventory/src/location-scope';
+import { STREAM, STREAM_FOR, streamName, supplierMasterAdapter, eWayBillAdapter, orgStructureAdapter } from './adapters';
 
 const all = async <T>(store: EventStore, tenantId: string, stream: string, type: string): Promise<T[]> =>
   (await store.readStream(tenantId, stream, { type })).map((e) => e.event.payload as T);
@@ -250,6 +254,48 @@ export function privacyNomineeHooks(input: { readonly store: EventStore }): {
         idempotencyKey: `nominee-activation-${tenantId}-${a.activationId}`, source: 'api/customer', payload: a,
       }));
       return res.record.event.payload as NomineeActivation;
+    },
+  };
+}
+
+// ── A23 remainder · a dispatch above the threshold needs a generated e-way bill ─────────────────────────────────────
+
+/** The e-way-bill register's movement a stock transfer's e-way bill is generated under. */
+export const transferEwbMovementId = (transferId: string): string => `transfer-${transferId}`;
+
+/**
+ * The hook spread into the transfer routes' deps (`transfersRoutes`): the dispatch's consignment value (each line at the
+ * source's unit cost, the lines with no cost counted out and said), its route (the GST state of each end's registration —
+ * the location's own, else its branch's), and the movement's e-way bill as the register holds it.
+ */
+export function transferDispatchHooks(input: { readonly store: EventStore; readonly now: () => string }): {
+  readonly ewayBillGate: (tenantId: string, transfer: Transfer, lineCostsMinor: readonly (number | null)[]) => Promise<DispatchEwbVerdict>;
+} {
+  const ewb = eWayBillAdapter(input);
+  const org = orgStructureAdapter(input);
+  return {
+    ewayBillGate: async (tenantId, transfer, lineCostsMinor) => {
+      let value = 0;
+      let unvalued = 0;
+      transfer.lines.forEach((line, i) => {
+        const cost = lineCostsMinor[i] ?? null;
+        if (cost === null) unvalued += 1;
+        else value += valueAtCost(line.quantityMinor, line.uom, { minor: cost });
+      });
+      const nodes = await org.nodes(tenantId);
+      const branchOf = branchOfLocationIn(nodes);
+      const stateOf = (locationId: string): string | null => {
+        const own = nodes.find((n) => n.nodeId === locationId)?.gstin;
+        const gstin = own ?? nodes.find((n) => n.nodeId === branchOf(locationId))?.gstin;
+        return typeof gstin === 'string' && gstin.length >= 2 ? gstin.slice(0, 2) : null;
+      };
+      const movementId = transferEwbMovementId(transfer.transferId);
+      const held = await ewb.load(tenantId, movementId);
+      return checkDispatchEwb({
+        movementId, consignmentValueMinor: value, unvaluedLines: unvalued,
+        supplyRoute: supplyRouteBetween(stateOf(transfer.fromLocationId), stateOf(transfer.toLocationId)),
+        ewb: held === undefined ? undefined : { state: held.state, ...(held.ewbNo === undefined ? {} : { ewbNo: held.ewbNo }) },
+      });
     },
   };
 }
