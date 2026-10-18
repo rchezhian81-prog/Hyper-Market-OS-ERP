@@ -185,6 +185,8 @@ export const EVENT_ROUTES: Readonly<Record<string, EventRoute>> = {
   // SP-6b: the delivery declared complete on the handheld → head office assembles ONE GRN from the scans on ITS register
   // (never the body), against the issued order, appending no second stock movement. Idempotent on the GRN id.
   ReceivingCompleted: '/v1/inventory/goods-receipt/:grnId/assembled',
+  // R3 D-11 (OB-141): a direct delivery checked in on the handheld — no cash at the door; head office re-verifies the receiver.
+  DsdCheckInClosed: '/v1/inventory/dsd-checkins/:checkInId/synced',
   // SP-3b (W3): an adjustment request raised on the warehouse handheld, recorded at head office pending approval.
   AdjustmentRequested: '/v1/inventory/adjustment-requests/:requestId/synced',
   // SP-3c-i (F11's picker half · M19-FR-01/02 · D09): the PICKER handheld's work, relayed by the box from its device socket.

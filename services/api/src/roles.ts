@@ -228,6 +228,20 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // B16 (OB-140 "A"): record a government health-warning picture; confirm a tobacco product's packs carry it.
       // D-26: record and answer a lot-trace request (the 24-hour clock).
       'catalogue.tobacco.picture.record', 'catalogue.tobacco.warning.confirm', 'quality.lottrace.request',
+      // ── R3 Lane 4 (store operations and people) — begin
+      // D-14: the owner sets the minimum days (OB-147); raises and records an on-shelf availability count.
+      'inventory.osa.configure', 'inventory.osa.task.raise', 'inventory.osa.count.record',
+      // D-11: check a direct delivery in at the door (no cash, OB-141) and keep the vendors' route sheets.
+      'inventory.dsd.checkin', 'inventory.dsd.route.manage',
+      // D-11: the owner approves the store computer's grant, so he must hold what it relays (no escalation, OB-36).
+      'inventory.dsd.sync',
+      // D-19: the owner keeps the store → zone register (zone prices stay switched off until a second person approves).
+      'price.zone.manage',
+      // C21: record my own fingerprint-attendance consent, and mark my own attendance (fingerprint only with consent).
+      'workforce.consent.self', 'workforce.attendance.mark',
+      // D-9: the owner sets the service standard per role (OB-142), and drafts the week's roster from the forecast.
+      'workforce.standard.set', 'workforce.schedule.draft',
+      // ── R3 Lane 4 — end
     ],
   },
   {
@@ -324,6 +338,16 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'migration.screen.read',
       // R2 C18: the manager reads the working-time limits and the statutory registers for their branches.
       'hr.compliance.read', 'hr.register.read',
+      // ── R3 Lane 4 (store operations and people) — begin
+      // D-14: raise and record an on-shelf availability count (a difference goes to a second person's approval).
+      'inventory.osa.task.raise', 'inventory.osa.count.record',
+      // D-11: check a direct delivery in at the door (no cash, OB-141) and keep the vendors' route sheets.
+      'inventory.dsd.checkin', 'inventory.dsd.route.manage',
+      // C21: record my own fingerprint-attendance consent, and mark my own attendance (fingerprint only with consent).
+      'workforce.consent.self', 'workforce.attendance.mark',
+      // D-9: the manager drafts the week's roster from the forecast and commits it (workforce.roster.manage, P-05).
+      'workforce.schedule.draft',
+      // ── R3 Lane 4 — end
     ],
   },
   {
@@ -403,6 +427,10 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'order.exception.work',
       // D-8 (R2): floor staff complete the store tasks assigned to THEM, in their own sign-in (only the assignee may).
       'workforce.task.complete.own',
+      // ── R3 Lane 4 (store operations and people) — begin
+      // C21: record my own fingerprint-attendance consent, and mark my own attendance (fingerprint only with consent).
+      'workforce.consent.self', 'workforce.attendance.mark',
+      // ── R3 Lane 4 — end
     ],
   },
   {
@@ -588,6 +616,8 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'workforce.completion.sync', 'concession.tag.sync', 'approvals.decision.sync', 'delivery.stop.sync', 'fulfilment.pick.sync', 'inventory.movement.sync', 'inventory.receipt.sync',
       'inventory.adjustment.sync', 'inventory.count.sync', 'inventory.indent.sync', 'purchase.invoice.sync', 'shelf.count.sync',
       'migration.decision.sync', 'lp.activity.sync',
+      // R3 Lane 4 · D-11: a direct delivery checked in on the warehouse handheld (head office re-verifies the receiver).
+      'inventory.dsd.sync',
       // the GST portal's poll/verify, relayed for the operator (no maker-checker decision; re-authorised on this permission)
       'finance.einvoice.generate',
     ],

@@ -42,6 +42,7 @@ export const HANDHELD_PERSON_FIELD: Readonly<Record<string, string>> = Object.fr
   WarehouseMovementApplied: 'movedBy',
   ReceivingScanned: 'receivedBy',
   ReceivingCompleted: 'completedBy',
+  DsdCheckInClosed: 'receivedBy',
   FloorIndentIssued: 'issuedBy',
   PickLineResolved: 'pickedBy',
   WavePacked: 'packedBy',

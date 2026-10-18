@@ -303,6 +303,8 @@ import { processorRegisterAdapter, settlementRefundsAdapter } from './r2-data-ad
 import { r3TaxPayRoutes, supplierPaymentHooks, deskRefundHooks, privacyNomineeHooks, transferDispatchHooks } from './r3-tax-pay-adapters';
 import { processorRegisterRoutes } from '../../customer/src/processor-register';
 import { legacyCardPurgeRoutes } from '../../migration/src/legacy-card-purge';
+// R3 Lane 4 (store operations and people): D-14 · D-16 · D-11 · D-25 · D-19 · C21 · D-9 (r3-ops-adapters).
+import { r3OpsRoutes, masterLifecycleOf, ingredientBatchesAt, channelPricingGateFor } from './r3-ops-adapters';
 import { wasteAnalyticsAdapter, foodSafetyAdapter, priceIntegrityAgeingAdapter, assignedTaskAdapter, receivingChecklistLookup, carriedChecklistAdapter } from './r2-ops-adapters';
 import { assignedTaskRoutes } from '../../finance/src/assigned-tasks';
 import { priceIntegrityAgeingRoutes } from '../../pricing/src/price-integrity-ageing';
@@ -782,7 +784,7 @@ export function buildSurface(deps: {
       }),
     ...priceListRoutes(store === undefined
       ? { entries: empty([]), recordEntry: () => {}, now }
-      : { ...priceListAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }) }),
+      : { ...priceListAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }), ...channelPricingGateFor({ store, now }) /* D-19 (R3): one price until a switch is approved on */ }),
     // Round 8 (D06-FR-05): competitor price sightings, compared with the shop's own effective price — changes no price.
     ...(store === undefined ? [] : competitorPriceRoutes({
       now, ...competitorPriceAdapter({ store, now }),
@@ -864,7 +866,7 @@ export function buildSurface(deps: {
       order: empty(undefined), all: empty([]), supplierBlocked: empty(false),
       propose: () => {}, issue: () => {}, setSupplierBlocked: () => {},
       amend: () => {}, cancel: () => {}, postReceipt: () => {}, now,
-    } : { ...purchaseOrdersAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now), packOf: packHierarchyAdapter({ store, now }).pack,
+    } : { ...purchaseOrdersAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now), packOf: packHierarchyAdapter({ store, now }).pack, masterLifecycle: masterLifecycleOf({ store, now }), // D-16 (R3)
       openToBuy: { ...openToBuyAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, storeOf: locationBranchesOf(store, now) } }),
     // WF-03 · D02-FR-01 (round 8): category purchase budgets and open-to-buy — checked on every order, over budget escalates.
     ...openToBuyRoutes(store === undefined ? {
@@ -1070,6 +1072,7 @@ export function buildSurface(deps: {
     ...replenishmentRoutes(store === undefined ? { now } : {
       now, ...replenishmentFactsAdapter({ store, now, branchOf: locationBranchesOf(store, now) }),
       rangeOf: assortmentAdapter({ store, now }).entries, locationBranches: locationBranchesOf(store, now),
+      masterLifecycle: masterLifecycleOf({ store, now }), // D-16 (R3)
     }),
     ...salesHistoryRoutes(store === undefined ? { soldLines: empty([]), now } : salesHistoryAdapter({ store, now })),
     // Blind counts (M09-FR-04): the direct route and the RELAYED route (SP-2b · F11) share one reconcile — expected, value
@@ -1094,7 +1097,7 @@ export function buildSurface(deps: {
       onHand: empty(0), priorConsumption: empty({}),
       runExists: empty(false), runs: empty([]), run: empty(undefined), recordRun: () => {}, recordRelease: () => {},
       enabledDepartments: empty([]), recordDepartmentEnabled: () => {}, entitledFeatures: empty([]), now,
-    } : { ...productionAdapter({ store, now, entitledFeatures: tenantEntitlementResolver(store) }), locationBranches: locationBranchesOf(store, now) }),
+    } : { ...productionAdapter({ store, now, entitledFeatures: tenantEntitlementResolver(store) }), locationBranches: locationBranchesOf(store, now), ingredientBatchesAt: ingredientBatchesAt({ store, now }) /* D-25 (R3) */ }),
     // Weighed-department costing (M11-FR-02) — recipe-less weigh-in/weigh-out cost + yield exceptions.
     ...weighedCostingRoutes(store === undefined ? {
       weighedRuns: empty([]), weighedRun: empty(undefined), recordWeighedRun: () => {}, now,
@@ -1621,6 +1624,7 @@ export function buildSurface(deps: {
     ...r2TillRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
     ...r3GstRoutes({ store, now, timeZone: (t) => settings.value(t, SETTINGS.STORE_TIME_ZONE), ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // R3 lane 1 — GST returns
     ...r3TillTraceRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
+    ...r3OpsRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
     // Owner alerts inbox (M29-FR-03) — control by exception; stateless grouping of the period's exceptions.
     ...ownerAlertsRoutes(),
     // Owner drill-through + KPI comparison (M29-FR-02) — "show me the transactions behind this figure",
