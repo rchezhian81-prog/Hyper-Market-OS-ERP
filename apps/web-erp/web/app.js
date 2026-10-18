@@ -477,6 +477,8 @@ function tile({ figure, label, note, goTo, attentionWhen, iconName, money }) {
   const amount = figure.known ? (figure.count ?? figure.value ?? 0) : null;
   if (figure.known) {
     n.textContent = money ? inr(amount) : String(amount);
+    // The figure's length sizes it, so a long amount never runs past the tile (index.html `#view-home .tile .n`).
+    n.style.setProperty('--chars', String(Math.max(6, n.textContent.length)));
     if (attentionWhen && attentionWhen(amount)) box.classList.add('attention');
   } else {
     n.classList.add('unknown');

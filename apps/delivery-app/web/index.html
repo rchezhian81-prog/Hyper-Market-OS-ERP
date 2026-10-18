@@ -17,6 +17,7 @@
       Framework-free and static, so it opens with no signal between two streets.
     -->
     <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
     <script src="./sre-update.js" defer></script>
     <style>
       :root { --tap: 60px; }
@@ -142,7 +143,7 @@
     <header>
       <h1 class="route" id="route">—<small id="progress">—</small></h1>
       <span class="sync">
-        <span class="dot" id="queue-dot" title="Sync"></span>
+        <span class="dot" id="queue-dot" data-sre-status title="Sync"></span>
         <span class="sync-words"><span id="queue-text">—</span><small id="box-text">—</small></span>
         <button class="lang" id="lang" type="button" aria-label="Language">EN / த</button>
       </span>

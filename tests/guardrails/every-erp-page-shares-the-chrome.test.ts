@@ -14,7 +14,7 @@ import { join } from 'node:path';
 
 const WEB = 'apps/web-erp/web';
 const PAGES = readdirSync(WEB).filter((f) => f.endsWith('.html')).sort();
-const SCRIPTS = readdirSync(WEB).filter((f) => f.endsWith('.js') && !f.endsWith('.bundle.js') && !['sw.js', 'sre-chrome.js'].includes(f)).sort();
+const SCRIPTS = readdirSync(WEB).filter((f) => f.endsWith('.js') && !f.endsWith('.bundle.js') && !['sw.js', 'sre-chrome.js', 'sre-icons.js'].includes(f)).sort();
 const read = (f: string): string => readFileSync(join(WEB, f), 'utf8');
 const CHROME = read('sre-chrome.js');
 const SW = read('sw.js');

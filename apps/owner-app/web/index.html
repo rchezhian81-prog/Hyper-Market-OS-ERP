@@ -17,6 +17,7 @@
       the till and the manager screen: it is one product.
     -->
     <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
     <script src="./sre-update.js" defer></script>
     <style>
       :root { --tap: 48px; }
@@ -154,7 +155,7 @@
         <button class="lang" id="lang" type="button" aria-label="Language">EN / த</button>
       </div>
       <div class="freshness">
-        <span class="dot" id="fresh-dot"></span>
+        <span class="dot" id="fresh-dot" data-sre-status></span>
         <span id="fresh-text">—</span>
       </div>
       <div class="branches" id="branches"></div>

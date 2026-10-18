@@ -5,7 +5,21 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
-## R3 follow-ups: the owner's answers OB-193 to OB-204 built (18 October 2026) — gate green (12,612 tests; perf 52/52; browser 394/394), PR opened
+## UI/UX shared look (OB-201): the sage look polished, with thin line icons — gate green (12,661 tests; perf 52/52; browser 404/404), PR opened
+
+- **Built:**
+  - The shared foundation (`packages/ui/web/sre-foundation.css`) is refined, not repainted: spacing, type scale, radius, soft elevation, short ease-out motion that respects reduced-motion, visible focus, and tabular figures.
+  - One thin-line icon set (`packages/ui/web/sre-icons.js`) is vendored offline with its licence. Every icon sits beside a word.
+  - The back-office menu, header, search, status labels and "new version" strip wear it.
+  - The till and the handhelds take the tokens and icons only; layouts and 56px buttons are unchanged.
+- **Review fix:** a long Today figure (₹12,345.00) ran past its tile; it now shrinks to fit, with a browser check that failed before the fix.
+- **Proof:** an icon-set guardrail (no icon without a word), a token-scale guardrail, AA contrast for the key colour pairs, and the rendered chrome in real Chromium.
+- **OB-204 Dispatch button (built):** the goods-receipt page shows each supplier return's e-way bill state and a Dispatch button. A refusal shows the reason and records nothing; without a connection it says "Needs connection".
+- **Tab row (fixed):** tabs wrap inside the page at desk and phone widths. The check failed on 11 pages before the fix.
+- **Also fixed:** the "Record it as gone back" button had dark text on dark green.
+- **Not yet:** the owner's visual approval; page-by-page polish; dispatch for rejected *excess* returns (the page has never recorded excess returns).
+
+## R3 follow-ups: the owner's answers OB-193 to OB-204 built (18 October 2026) — merged in PR #792 (ee6e7619), deployed
 
 - **A23 (OB-194):** a supplier return above the e-way bill threshold needs a dispatch step, refused until a generated e-way bill exists. The **Dispatch button** on the goods-receipt page follows after the shared look merges (OB-204); until then a manager dispatches through the API.
 - **C5 (OB-195):** the privacy reply time is fixed at 15 days everywhere.
@@ -15,7 +29,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   - Fingerprint stays refused until the owner signs the notice in the system. PIN works.
   - Blanks still to fill: the grievance officer, the record-keeping period (CA), the reader's deletion days, and the Board's address. A fluent reader must check the Tamil.
 - **No code needed:** OB-193 (confirm tobacco before go-live), OB-199 and OB-200 (kept as built).
-- **Demo:** R3 (PR #790) deployed 18 Oct; the ₹NaN fix (PR #791) merged.
+- **Demo:** R3 (PR #790), the ₹NaN fix (PR #791) and these follow-ups (PR #792) are deployed. The demo now runs ee6e7619 and the stand-up check is GREEN (5/5), 18 Oct.
 
 ## Fix: the till showed ₹NaN for each line's amount (18 October 2026)
 

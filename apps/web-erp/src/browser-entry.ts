@@ -207,6 +207,7 @@ import {
 } from './integration-health-session';
 import {
   createGoodsReceiptSession, type GrnReturnLineView, type GrnLineReturnPort, type LineReturnPostResult,
+  type GrnLineDispatchPort, type LineDispatchPostResult, type GrnReturnDispatchView,
   type GoodsReceiptPorts, type GoodsReceiptSession, type GoodsReceiptData, type GrnRecordView, type GrnDiscrepancyView,
 } from './goods-receipt-session';
 import {
@@ -2919,6 +2920,7 @@ export function goodsReceiptPortsFromData(
   data: GoodsReceiptScreenData | undefined,
   snapshot?: GoodsReceiptData,
   returnPort?: GrnLineReturnPort,
+  dispatchPort?: GrnLineDispatchPort,
 ): GoodsReceiptPorts {
   const held = new Set(data?.permissions ?? []);
   return {
@@ -2928,6 +2930,39 @@ export function goodsReceiptPortsFromData(
     // Batch 2: recording a supplier return is the route's own right (`inventory.movement.append`).
     mayRecordReturn: () => held.has(WRITE_OFF_APPEND_PERMISSION),
     returnPort: () => returnPort ?? null,
+    // OB-204: the dispatch is the same route right; head office re-checks it and the e-way bill on every press.
+    dispatchPort: () => dispatchPort ?? null,
+  };
+}
+
+/** OB-204 — the authenticated POST that a supplier return's goods are leaving under their e-way bill, under the reader's own
+ *  session: exactly `{ reason }`; who dispatched is the caller, never a body field. Head office refuses by name
+ *  (`ewb_required`) unless a generated e-way bill exists for the return's movement; a resend answers `alreadyDispatched`.
+ *  No connection is `lost_link` — the dispatch is head office's record, so nothing is queued here (P-08). */
+export function openGrnLineDispatchPort(): GrnLineDispatchPort {
+  return {
+    post: async ({ grnId, lineId, reason }): Promise<LineDispatchPostResult> => {
+      const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+      if (fetchFn === undefined) return { result: 'lost_link' };
+      const key = globalThis.crypto?.randomUUID?.() ?? `grn-line-dispatch-${grnId}-${lineId}-${reason.length}`;
+      try {
+        const res = await fetchFn(`/v1/inventory/goods-receipt/${encodeURIComponent(grnId)}/lines/${encodeURIComponent(lineId)}/dispatch`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'idempotency-key': key, accept: 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ reason }),
+        });
+        const body = (await res.json().catch(() => ({}))) as { alreadyDispatched?: boolean; dispatch?: { ewbNo?: unknown }; whatHappened?: string; error?: { code?: string; whatHappened?: string } };
+        if (res.status >= 200 && res.status < 300) {
+          const ewbNo = typeof body.dispatch?.ewbNo === 'string' ? body.dispatch.ewbNo : null;
+          return { result: body.alreadyDispatched === true ? 'already_dispatched' : 'dispatched', ewbNo };
+        }
+        const reasonWords = body.error?.whatHappened ?? body.whatHappened ?? 'head office did not record the dispatch';
+        return { result: body.error?.code === 'ewb_required' ? 'ewb_required' : 'refused', reason: reasonWords };
+      } catch {
+        return { result: 'lost_link' };
+      }
+    },
   };
 }
 
@@ -2962,12 +2997,30 @@ export function bootGoodsReceipt(
   data: GoodsReceiptScreenData | undefined,
   snapshot?: GoodsReceiptData,
   returnPort?: GrnLineReturnPort,
+  dispatchPort?: GrnLineDispatchPort,
 ): GoodsReceiptSession | null {
   if (data === undefined) return null;
   return createGoodsReceiptSession(
     { userId: data.userId === undefined ? null : data.userId },
-    goodsReceiptPortsFromData(data, snapshot, returnPort),
+    goodsReceiptPortsFromData(data, snapshot, returnPort, dispatchPort),
   );
+}
+
+const DISPATCH_STATES: readonly GrnReturnDispatchView['state'][] = ['not_required', 'no_ewb', 'ewb_waiting', 'ewb_not_usable', 'ewb_generated', 'dispatched', 'not_known'];
+
+/** OB-204: head office's word on one return's dispatch (`returnDispatches` on the GRN), carried as-is; an unreadable entry is
+ *  "not known", never a guess. Absent when head office sent none (no dispatch step applies). */
+function dispatchOf(g: Record<string, unknown>, lineId: string): GrnReturnDispatchView | undefined {
+  if (!Array.isArray(g['returnDispatches'])) return undefined;
+  const d = (g['returnDispatches'] as Record<string, unknown>[]).find((x) => x['target'] === lineId);
+  if (d === undefined) return undefined;
+  const state = DISPATCH_STATES.find((s) => s === d['state']) ?? 'not_known';
+  return {
+    state, movementId: String(d['movementId'] ?? ''),
+    ewbNo: typeof d['ewbNo'] === 'string' ? d['ewbNo'] : null,
+    ewbState: typeof d['ewbState'] === 'string' ? d['ewbState'] : null,
+    detail: String(d['detail'] ?? ''),
+  };
 }
 
 /** Read the live GRN list — one GET, read-only — and fold it into the review snapshot. Returns null when nothing
@@ -2992,6 +3045,7 @@ function returnLinesOf(g: Record<string, unknown>, lines: readonly Record<string
       valueMinor: num(gone?.['valueMinor'] ?? d['valueMinor']), currency: String(gone?.['currency'] ?? money(line['unitCost']).currency ?? 'INR'),
       decidedBy: String(d['decidedBy'] ?? ''), state: gone === undefined ? 'awaiting_return' : 'returned',
       returnedBy: gone === undefined ? null : String(gone['returnedBy'] ?? ''), needsCount: gone === undefined && needsCount,
+      ...((): { dispatch?: GrnReturnDispatchView } => { const dispatch = dispatchOf(g, lineId); return dispatch === undefined ? {} : { dispatch }; })(),
     }];
   });
 }
@@ -6326,14 +6380,15 @@ if (browserWindow !== undefined) {
   // receiving is captured on the handheld, on the offline dock (§31); this only reviews the outcome.
   const goodsReceiptData = browserWindow.goodsReceiptData;
   const grnLineReturnPort = openGrnLineReturnPort();
-  const goodsReceipt = bootGoodsReceipt(goodsReceiptData, undefined, grnLineReturnPort);
+  const grnLineDispatchPort = openGrnLineDispatchPort(); // OB-204
+  const goodsReceipt = bootGoodsReceipt(goodsReceiptData, undefined, grnLineReturnPort, grnLineDispatchPort);
   if (goodsReceipt !== null) {
     browserWindow.goodsReceiptSession = goodsReceipt;
     browserWindow.goodsReceipt = {
       refresh: fetchGoodsReceipt,
       present: (snapshot) => createGoodsReceiptSession(
         { userId: goodsReceiptData?.userId === undefined ? null : goodsReceiptData.userId },
-        goodsReceiptPortsFromData(goodsReceiptData, snapshot, grnLineReturnPort),
+        goodsReceiptPortsFromData(goodsReceiptData, snapshot, grnLineReturnPort, grnLineDispatchPort),
       ),
     };
   }

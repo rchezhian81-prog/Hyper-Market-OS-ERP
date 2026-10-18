@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { createServer, type Server } from 'node:http';
@@ -209,7 +209,9 @@ describe.skipIf(!HAVE_BROWSER)('the ERP\'s forty-six pages, audited on the rende
         expect(await page.evaluate('document.body.firstElementChild.id')).toBe('sre-menu');
         expect(await page.evaluate('document.getElementById("sre-page").contains(document.querySelector("main"))')).toBe(true);
       } else {
-        expect(await page.textContent('#sre-menu-button')).toBe('☰ Screens');
+        // OB-201: the one set's menu shape where the ☰ glyph was, then the word — the word is the button's whole text
+        expect(await page.textContent('#sre-menu-button')).toBe('Screens');
+        expect(await page.getAttribute('#sre-menu-button svg.sre-icon', 'data-icon')).toBe('menu');
         expect(await page.getAttribute('#sre-menu-button', 'aria-expanded')).toBe('false');
         expect(await page.evaluate('document.getElementById("sre-menu").hidden')).toBe(true);
         await page.click('#sre-menu-button');
@@ -260,7 +262,7 @@ describe.skipIf(!HAVE_BROWSER)('the ERP\'s forty-six pages, audited on the rende
       await page.click('#lang');
       await page.waitForFunction('document.documentElement.lang === "ta"');
       if (!desk) {
-        expect(await page.textContent('#sre-menu-button')).toBe('☰ திரைகள்');
+        expect(await page.textContent('#sre-menu-button')).toBe('திரைகள்');
         await page.click('#sre-menu-button');
       }
       expect(await page.textContent('#sre-menu .branch small')).toBe('கிளைப் பணியிடம்');
@@ -302,6 +304,12 @@ describe.skipIf(!HAVE_BROWSER)('the ERP\'s forty-six pages, audited on the rende
       // the band: sales first, as money, with its note; then the floor's four
       expect(await texts(page, '#tiles .tile .label')).toEqual(['Sales today', 'Approvals waiting', 'Exceptions open', 'Not yet sent to cloud', 'Tasks today']);
       expect(await texts(page, '#tiles .tile .n')).toEqual(['₹12,345.00', '1', '0', '0', '1']);
+      // every figure fits inside its tile — ₹12,345.00 once ran past the tile's edge (OB-201 review)
+      expect(await page.evaluate(`[...document.querySelectorAll('#tiles .tile')].filter((t) => {
+        const n = t.querySelector('.n'); const r = document.createRange(); r.selectNodeContents(n);
+        const a = r.getBoundingClientRect(); const b = t.getBoundingClientRect(); const pad = parseFloat(getComputedStyle(t).paddingRight) || 0;
+        return a.right > b.right - pad + 0.5 || a.left < b.left - 0.5;
+      }).length`), `tiles at ${device.viewport.width}`).toBe(0);
       expect(await page.textContent('#tiles .tile:first-child .note')).toBe('41 sales on this box');
       expect(await page.evaluate('document.querySelectorAll("#tiles .tile .chip svg").length')).toBe(5); // an icon on each
       // what needs you: the number first, then the words; a way in where the person holds one; a figure the box lacks says why
@@ -427,6 +435,8 @@ describe.skipIf(!HAVE_BROWSER)('the ERP\'s forty-six pages, audited on the rende
 
       // the sheet: a record drawer on the right at a desk, a centred sheet on a phone
       await page.evaluate('document.getElementById("sheet").hidden = false');
+      // OB-201: the drawer slides in (200ms, transform only); measure where it comes to rest
+      await page.waitForFunction('document.getAnimations().every((a) => a.playState !== "running")', undefined, { timeout: 5_000 });
       const box = (await page.locator('#sheet .sheet-inner').boundingBox())!;
       if (desk) {
         expect(Math.round(box.x + box.width), 'the drawer sits on the right edge').toBe(device.viewport.width);
@@ -439,6 +449,55 @@ describe.skipIf(!HAVE_BROWSER)('the ERP\'s forty-six pages, audited on the rende
       }
     }
   }, 120_000);
+
+  it('the subpage tiles fit their page: no tab runs past the content area, at a desk with the rail open and on a phone, in English and Tamil, each reachable by keyboard', async () => {
+    // The owner's report (18 Oct 2026): on the Today page at a 1280px desk, "Close the day" ran past the right edge.
+    // Every page with a tab row is held to it, with the rail drawn (the desk loses 248px to it) and without.
+    const tabbed = PAGES.filter((f) => /id="tabs"/.test(readFileSync(join(WEB_DIR, f), 'utf8')));
+    expect(tabbed).toContain('index.html');
+    const overruns: string[] = [];
+    for (const device of [DESK, PHONE]) {
+      for (const file of tabbed) {
+        const page = await open(file, device, undefined, { sreNavigation: MENU });
+        for (const lang of ['en', 'ta'] as const) {
+          if (lang === 'ta') {
+            await page.click('#lang');
+            await page.waitForFunction('document.documentElement.lang === "ta"', undefined, { timeout: 5_000 });
+          }
+          await page.waitForFunction('document.getAnimations().every((a) => a.playState !== "running")', undefined, { timeout: 5_000 });
+          const fit = await page.evaluate(`(() => {
+            // the content area: inside the tab row's own padding, inside the page column's 16px gutter, inside the window
+            const nav = document.getElementById('tabs');
+            const column = nav.parentElement.getBoundingClientRect();
+            const contentRight = Math.min(nav.getBoundingClientRect().right - parseFloat(getComputedStyle(nav).paddingRight), column.right - 16, document.documentElement.clientWidth - 16);
+            const tabs = [...document.querySelectorAll('#tabs button')].filter((b) => b.closest('[hidden]') === null && getComputedStyle(b).display !== 'none');
+            return {
+              contentRight,
+              past: tabs.filter((b) => b.getBoundingClientRect().right > contentRight + 0.5).map((b) => b.id + '@' + Math.round(b.getBoundingClientRect().right)),
+              unreachable: tabs.filter((b) => b.disabled || b.tabIndex < 0).map((b) => b.id),
+              pageScroll: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+              count: tabs.length,
+            };
+          })()`) as { contentRight: number; past: string[]; unreachable: string[]; pageScroll: boolean; count: number };
+          const where = `${file}@${device.viewport.width}/${lang}`;
+          if (fit.count === 0) overruns.push(`${where}: no tab drawn`);
+          if (fit.past.length > 0) overruns.push(`${where}: past the content edge at ${Math.round(fit.contentRight)}px — ${fit.past.join(', ')}`);
+          if (fit.unreachable.length > 0) overruns.push(`${where}: not reachable by keyboard — ${fit.unreachable.join(', ')}`);
+          if (fit.pageScroll) overruns.push(`${where}: the page scrolls sideways`);
+        }
+        // Keyboard: Tab reaches every shown tile, in order.
+        const shown = await page.evaluate('[...document.querySelectorAll("#tabs button")].filter((b) => b.closest("[hidden]") === null && getComputedStyle(b).display !== "none").map((b) => b.id)') as string[];
+        await page.focus(`#${shown[0]!}`);
+        const order: string[] = [shown[0]!];
+        for (let i = 1; i < shown.length; i += 1) {
+          await page.keyboard.press('Tab');
+          order.push(await page.evaluate('document.activeElement?.id ?? ""') as string);
+        }
+        if (order.join(' ') !== shown.join(' ')) overruns.push(`${file}@${device.viewport.width}: Tab walks ${order.join(', ')}, not ${shown.join(', ')}`);
+      }
+    }
+    expect(overruns).toEqual([]);
+  }, 300_000);
 
   it('one primary action at a time, on every page, at a desk and on a phone (design system §1 rule 3)', async () => {
     const offenders: string[] = [];

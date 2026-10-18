@@ -18,6 +18,7 @@
       the same hardware, and a manager covering a lane should not have to relearn it.
     -->
     <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
     <style>
       :root { --tap: 56px; }
       body {
@@ -68,7 +69,10 @@
       #view-home .tile .top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
       #view-home .tile .chip { width: 30px; height: 30px; border-radius: 9px; background: var(--rail); color: var(--rail-accent); display: grid; place-items: center; flex: none; }
       #view-home .tile .chip svg { width: 16px; height: 16px; }
-      #view-home .tile .n { font-size: 34px; color: var(--on-rail); }
+      /* A figure always fits its tile: the tile is a size container and the figure shrinks with its own length
+         (--chars, set by app.js), from 34px down to 18px — ₹12,345.00 once ran past the tile's edge. */
+      #view-home .tile { container-type: inline-size; min-width: 0; }
+      #view-home .tile .n { font-size: clamp(18px, calc(145cqi / var(--chars, 6)), 34px); white-space: nowrap; color: var(--on-rail); }
       #view-home .tile .n.unknown { font-size: 20px; color: var(--on-rail-warn); }
       #view-home .tile .label { color: var(--on-rail-muted); font-size: 12.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
       #view-home .tile .note { color: var(--on-rail-muted); }

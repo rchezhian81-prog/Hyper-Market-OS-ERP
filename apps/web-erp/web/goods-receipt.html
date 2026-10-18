@@ -16,9 +16,12 @@
       dock. Its one write (Batch 2) records that a held line a second person disposed of as a RETURN has physically gone
       back to the supplier (an online write under the reader's session; it moves no stock). The list is read live
       (GET /v1/inventory/goods-receipt) and Refresh re-reads it; offline the screen shows its sample stand-in and says
-      so. No prompt/confirm/alert.
+      so. No prompt/confirm/alert. OB-204: a return above the e-way-bill limit shows its e-way bill's state in words and,
+      for a reader holding inventory.movement.append, a Dispatch button beside it (POST …/lines/:lineId/dispatch, online);
+      only once head office records the dispatch is the return offered as gone back. No connection: "needs connection".
     -->
     <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
     <style>
       :root { --tap:48px; }
       body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.5 var(--font); min-height:100dvh; display:flex; flex-direction:column; }
@@ -30,7 +33,7 @@
       .bar { display:flex; align-items:center; gap:16px; flex-wrap:wrap; justify-content:space-between; }
       .asof { color:var(--muted); font-size:14px; } .summary { font-size:15px; font-weight:600; }
       button.refresh, button.act { min-height: var(--tap); padding:0 14px; border:0; border-radius:10px; font-size:15px; font-weight:700; background:var(--line); color:var(--ink); }
-      button.act { background:var(--accent, var(--line)); }
+      button.act { background:var(--accent, var(--line)); color:var(--on-accent, var(--ink)); }
       button:focus-visible, .lang:focus-visible, input:focus-visible, select:focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
       ul.rows { list-style:none; margin:0; padding:0; display:grid; gap:10px; }
       li.row { background:var(--panel); border-radius:12px; padding:12px 14px; display:grid; gap:6px; border-left:6px solid var(--idle); }
@@ -48,6 +51,11 @@
       p.state .icon { font-size:18px; } p.state.tone-error { color:var(--danger-text); }
       ul.returns { list-style:none; margin:4px 0 0; padding:0; display:grid; gap:4px; font-size:13px; }
       ul.returns li { display:flex; gap:10px; flex-wrap:wrap; align-items:baseline; } ul.returns .r-word { font-weight:600; }
+      ul.returns .sre-chip.ewb { font-size:14px; }
+      ul.returns .dispatcher { display:flex; gap:8px; flex-wrap:wrap; align-items:center; flex-basis:100%; }
+      ul.returns .dispatcher label { font-size:14px; color:var(--muted); }
+      ul.returns .dispatcher input { flex:1 1 220px; min-width:0; font-size:16px; }
+      ul.returns .dispatcher button { font-size:16px; }
       section.form { background:var(--panel); border-radius:12px; padding:14px; display:grid; gap:10px; }
       section.form h3 { margin:0; }
       section.form label { display:block; font-size:13px; color:var(--muted); margin-bottom:4px; }

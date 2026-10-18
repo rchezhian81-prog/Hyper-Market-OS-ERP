@@ -29,7 +29,8 @@ describe('the foundation carries the anatomy', () => {
     expect(ANATOMY).toMatch(/\[data-sre-head\] > \.sre-eyebrow \{/);
     expect(ANATOMY).toMatch(/\[data-sre-head\] > h2 \{/);
     expect(ANATOMY).toMatch(/\[data-sre-head\] > p\.lead \{/);
-    expect(ANATOMY).toMatch(/\.sre-tabs \{ display: grid; grid-auto-flow: column;/);
+    // the tiles wrap onto another row rather than run past the page's edge (owner's report, 18 Oct 2026)
+    expect(ANATOMY).toMatch(/\.sre-tabs \{ display: grid; grid-template-columns: repeat\(auto-fit, minmax\(min\(100%, 140px\), 1fr\)\);[^}]*overflow: visible; \}/);
     expect(ANATOMY).toMatch(/\.sre-tab\[aria-current="page"\] \{ border-top-color: var\(--accent\);/);
     expect(ANATOMY).toMatch(/\.sre-register th \{/);
     expect(ANATOMY).toMatch(/@media \(min-width: 1000px\) \{[\s\S]*place-items: stretch end;[\s\S]*height: 100%; max-height: none; border-radius: 0;/);
