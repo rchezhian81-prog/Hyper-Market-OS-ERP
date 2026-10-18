@@ -81,7 +81,8 @@ export function huidsSoldElsewhereAdapter(input: { readonly store: EventStore })
  * D-26 SEAM for D-25 (Lane 4): which production runs USED a batch as an ingredient. Production runs do not yet record
  * their ingredients' batches, so this cannot be answered — and says so. D-25 replaces this with the runs it records.
  */
-export function productionUseOf(_tenantId: string, _batchId: string): Promise<ProductionUse> {
+export function productionUseOf(tenantId: string, batchId: string): Promise<ProductionUse> {
+  void tenantId; void batchId; // the seam's signature is the one D-25's adapter will fill
   return Promise.resolve({
     connected: false,
     why: 'production runs do not record which ingredient batches they used yet (D-25, release R3, Lane 4) — until then a trace cannot follow an ingredient batch into what was made from it',
