@@ -208,6 +208,15 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // R2 C20 · OB-165 "A": the owner adds or removes an Internal Committee member — that role only, confirmed by a second
       // person, audited — and can never hold the role himself (services/identity/src/committee-membership.ts).
       'posh.committee.manage',
+      // ── R3 lane 2 (A17 · A24 · C14) ──
+      // A17: upload the month's GSTR-2B, read the ITC review, accept / reject / keep pending each line (IMS).
+      'finance.itc.import', 'finance.itc.read', 'finance.itc.action',
+      // A24 · OB-143 "A": read the TDS register, record a challan, and SWITCH TDS on or off — the owner's act, once the
+      // CA has filled the payee / section / rate list (the list itself is the CA's: `finance.tds.configure`).
+      'finance.tds.read', 'finance.tds.challan.record', 'finance.tds.switch',
+      // C14: record a card / UPI dispute and its answer and outcome; read the register and its overdue exceptions.
+      'payment.dispute.record', 'payment.dispute.read',
+      // ── end R3 lane 2 ──
     ],
   },
   {
@@ -450,6 +459,12 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'reporting.dashboard.read', 'reporting.report.read',
       // GT-05 (MG-07): finance reads the migrated history it reconciles against.
       'migration.history.read',
+      // ── R3 lane 2 (A17 · A24 · C14) ── the accountant uploads the GSTR-2B (OB-145 "A") and works the ITC review; reads
+      // TDS and records its challans; records and reads card / UPI disputes. Never switches TDS on (the owner's act).
+      'finance.itc.import', 'finance.itc.read', 'finance.itc.action',
+      'finance.tds.read', 'finance.tds.challan.record',
+      'payment.dispute.record', 'payment.dispute.read',
+      // ── end R3 lane 2 ──
     ],
   },
   {
@@ -468,6 +483,10 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'migration.controltotal.sign',
       'migration.verification.sign',
       'migration.parallel.read',
+      // ── R3 lane 2 · A24 · OB-143 "A" ── the CA fills the TDS payee / section / rate list and reads the register; the
+      // owner alone switches it on. Nothing else.
+      'finance.tds.configure', 'finance.tds.read',
+      // ── end R3 lane 2 ──
     ],
   },
   {

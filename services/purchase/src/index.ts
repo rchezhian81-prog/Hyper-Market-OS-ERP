@@ -248,6 +248,25 @@ export interface SupplierInvoiceRecord {
   readonly governanceFlags: readonly string[];
   /** A checker the store's screen NAMED but no second person verified (2b-vi-c-3) — kept as evidence, never as an approval. */
   readonly approvalClaimedBy?: string;
+  /**
+   * R3 · A17: the supplier's OWN invoice number and date, as printed on the paper — what the GSTR-2B statement lists the
+   * bill by (with the supplier's GSTIN). Absent on a capture that did not record them; the ITC review then names the bill
+   * as one it cannot compare, never guesses.
+   */
+  readonly supplierInvoiceNo?: string;
+  readonly supplierInvoiceDate?: string;
+}
+
+/** R3 · A17: the supplier's own invoice number and date from a capture body — both optional, the date a real YYYY-MM-DD. */
+export function readSupplierInvoiceRef(b: Record<string, unknown>): { readonly supplierInvoiceNo?: string; readonly supplierInvoiceDate?: string } | undefined {
+  const no = b['supplierInvoiceNo'];
+  const date = b['supplierInvoiceDate'];
+  if (no !== undefined && no !== null && (typeof no !== 'string' || no.trim() === '' || no.length > 40)) return undefined;
+  if (date !== undefined && date !== null && (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(`${date}T00:00:00.000Z`)))) return undefined;
+  return {
+    ...(typeof no === 'string' ? { supplierInvoiceNo: no.trim() } : {}),
+    ...(typeof date === 'string' ? { supplierInvoiceDate: date } : {}),
+  };
 }
 
 /** A recorded three-way match: the engine's verdict plus what it was computed FROM (never the body). */
@@ -570,6 +589,8 @@ export async function capturePortalInvoice(deps: PurchaseDeps, tenantId: string,
   readonly lines: unknown; readonly submittedBy: string; readonly reviewedBy: string; readonly submissionId: string; readonly branchId: string | null;
   /** D03-FR-02 (round 8): the channel the bill came by when it is not the portal (`e-invoice/<irn>`, `ocr/<documentId>`), and its audit action. */
   readonly source?: string; readonly auditAction?: string;
+  /** R3 · A17: the supplier's own invoice number and date, when the channel carries them (an e-invoice, a read scan). */
+  readonly supplierInvoiceNo?: string | null; readonly supplierInvoiceDate?: string | null;
 }): Promise<{ readonly ok: true; readonly record: SupplierInvoiceRecord } | { readonly ok: false; readonly code: string; readonly detail: string }> {
   const read = readInvoiceLines(input.lines, await unitsOfLines(deps, tenantId, input.lines));
   if (!read.ok) return { ok: false, code: read.code === 'line_does_not_multiply' ? 'invoice_line_does_not_multiply' : 'not_readable_as_a_supplier_invoice', detail: read.detail };
@@ -584,6 +605,8 @@ export async function capturePortalInvoice(deps: PurchaseDeps, tenantId: string,
   const record: SupplierInvoiceRecord = {
     invoiceId: input.invoiceId, supplierId: input.supplierId, poId: input.poId, lines: read.lines, declaredTotalMinor: input.declaredTotalMinor, totalMinor, currency: 'INR',
     capturedBy: input.submittedBy, capturedAt: at, approvedBy: null, approvedAt: null, source: input.source ?? `supplier-portal/${input.submissionId}`, governanceFlags: flags,
+    ...(typeof input.supplierInvoiceNo === 'string' && input.supplierInvoiceNo.trim() !== '' ? { supplierInvoiceNo: input.supplierInvoiceNo.trim() } : {}),
+    ...(typeof input.supplierInvoiceDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(input.supplierInvoiceDate) ? { supplierInvoiceDate: input.supplierInvoiceDate } : {}),
   };
   await deps.recordInvoice(tenantId, record);
   await deps.recordAudit?.(tenantId, {
@@ -642,11 +665,12 @@ export function purchaseRoutes(deps: PurchaseDeps): readonly Route[] {
         if (!read.ok) throw refuseLines(read, false);
         const poId = b['poId'];
         const approvedBy = b['approvedBy'];
-        if (invoiceId === '' || !isStr(b['supplierId']) || !isNonNegInt(b['declaredTotalMinor'])
+        const supplierRef = readSupplierInvoiceRef(b);
+        if (invoiceId === '' || supplierRef === undefined || !isStr(b['supplierId']) || !isNonNegInt(b['declaredTotalMinor'])
           || !(poId === undefined || poId === null || isStr(poId)) || !(approvedBy === undefined || approvedBy === null || isStr(approvedBy))) {
           throw apiError(400, {
             code: 'not_readable_as_a_supplier_invoice',
-            whatHappened: 'A supplier invoice needs the invoiceId in the path and { supplierId, declaredTotalMinor, lines[] } in the body (poId and approvedBy optional).',
+            whatHappened: 'A supplier invoice needs the invoiceId in the path and { supplierId, declaredTotalMinor, lines[] } in the body (poId, approvedBy, and the supplier\'s own supplierInvoiceNo and supplierInvoiceDate YYYY-MM-DD optional).',
             wasItSaved: 'not_saved',
             nextSafeAction: 'Send the invoice as the paper says it. Nothing was saved.',
           });
@@ -688,7 +712,7 @@ export function purchaseRoutes(deps: PurchaseDeps): readonly Route[] {
         const record: SupplierInvoiceRecord = {
           invoiceId, supplierId: b['supplierId'], poId: isStr(poId) ? poId : null, lines: read.lines, declaredTotalMinor: b['declaredTotalMinor'], totalMinor, currency: 'INR',
           capturedBy: ctx.userId, capturedAt, approvedBy: checkedBy ?? null, approvedAt: checkedBy === undefined ? null : opened!.decision.decidedAt,
-          source: 'head-office', governanceFlags: flags,
+          source: 'head-office', governanceFlags: flags, ...supplierRef,
         };
         // Round 13 (verifier B3 · P-08): the scan's link and the invoice are ONE atomic write — a crash or refusal can no
         // longer leave the scan "captured" as an invoice that was never saved. The approval is spent first (a refused spend

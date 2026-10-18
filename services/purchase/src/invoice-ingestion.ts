@@ -228,6 +228,8 @@ export function invoiceIngestionRoutes(deps: InvoiceIngestionDeps): readonly Rou
         const out = await capturePortalInvoice(deps.purchase, ctx.tenantId, {
           invoiceId: b['invoiceId'].trim(), supplierId, poId, declaredTotalMinor, lines, submittedBy: ctx.userId, reviewedBy: ctx.userId,
           submissionId: documentId, branchId: ctx.branchId ?? null, source, auditAction: doc.channel === 'e_invoice' ? 'invoice.capture.e_invoice' : 'invoice.capture.ocr',
+          // R3 · A17: the bill's own number and date as read off it — what the GSTR-2B lists it by.
+          supplierInvoiceNo: doc.extracted.supplierInvoiceNo, supplierInvoiceDate: doc.extracted.invoiceDate,
         });
         if (!out.ok) throw refuse(out.code === 'invoice_id_already_used' ? 409 : 422, out.code, out.detail);
         const at = deps.now();
