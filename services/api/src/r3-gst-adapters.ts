@@ -16,7 +16,7 @@ import type { AuditEntry } from '../../../packages/audit/src/audit-trail';
 import type { Route } from '../../kernel/src/index';
 import {
   computeGstr1Figures, gstr1CanonicalForm, reverseChargeForPeriod, nextSelfInvoiceNumber, parseMonthlyPeriod, parseFinancialYear,
-  periodOfDate, periodsBetween, comparePeriods, ITC_NOT_YET_RECONCILED,
+  periodOfDate, periodsBetween, comparePeriods, ITC_NOT_YET_RECONCILED, buildFilingCalendar,
   type ItcPort, type Gstr3bLock, type CarriedAmendment, type Gstr1FilingState, type RcmControl, type RcmSelfInvoice, type RcmPayment,
   type FilingFact, type CalendarEntry, type Gstr9cReason, type AnnualMonthInput, type SoldTaxLine, type OutwardDocument,
 } from '../../../packages/finance/src/index';
@@ -24,7 +24,7 @@ import type { Gstr1SubmissionEvent } from '../../../packages/finance/src/gstr1-s
 import { gstControlsRoutes, gstControlsOf, type GstControlChange, type RcmHeadChange, type GstControlsDeps } from '../../finance/src/gst-controls';
 import { gstr3bRoutes, type GstMonth } from '../../finance/src/gstr3b-store';
 import { rcmRoutes, type RecordedRcmPurchase } from '../../finance/src/rcm-store';
-import { filingRegisterRoutes, type RecordedFiling, type FilingRegisterDeps } from '../../finance/src/filing-register';
+import { filingRegisterRoutes, financialYearsOf, type RecordedFiling, type FilingRegisterDeps } from '../../finance/src/filing-register';
 import { annualReturnRoutes } from '../../finance/src/annual-return';
 import { eInvoiceGuardRoutes, eInvoiceReportingGuard, type EInvoiceReportingBlock, type EInvoiceGuardDeps } from '../../finance/src/einvoice-reporting-guard';
 import type { AlertLifecycleEvent } from '../../platform/src/alert-lifecycle';
@@ -346,6 +346,22 @@ async function annualMonths(store: EventStore, ledger: ReturnType<typeof r3GstLe
     });
   }
   return out;
+}
+
+/**
+ * A19 on a timer: the same raise the `raise-owner-exceptions` route runs, for the ops-alert worker's `alsoEachPass` hook
+ * (`services/api/src/main.ts`), so a return near the bar reaches the owners without anyone pressing anything. Answers
+ * how many alerts it newly raised. (Wiring it into the worker is a one-line change in main.ts, left to the merge.)
+ */
+export function gstTimeBarSweep(input: { readonly store: EventStore; readonly now: () => string; readonly timeZone?: (tenantId: string) => Promise<string> }) {
+  const ledger = r3GstLedger(input);
+  return async (tenantId: string, at: string): Promise<number> => {
+    const today = await ledger.today(tenantId);
+    const periods = await ledger.monthlyPeriods(tenantId, today);
+    const facts = await ledger.facts(tenantId);
+    const cal = buildFilingCalendar({ today, monthlyPeriods: periods, financialYears: financialYearsOf(periods), facts, nearBarDays: (await ledger.controls(tenantId)).timeBarWarningDays.value });
+    return (await raiseTimeBarAlerts(input.store, input.now, tenantId, cal.ownerExceptions, facts, 'system:gst-time-bar', at)).raised;
+  };
 }
 
 const TIME_BAR_ALERT = 'gst-time-bar:';

@@ -8,7 +8,7 @@ import { SqlIdempotencyStore } from '../../services/kernel/src/index';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { runMigrations } from '../../packages/persistence/src/migrations';
-import { localDateOf } from '../../services/api/src/r3-gst-adapters';
+import { localDateOf, gstTimeBarSweep } from '../../services/api/src/r3-gst-adapters';
 
 /**
  * **R3 A19 — the filing calendar and the three-year time bar (signed OB-188), in memory AND on real PostgreSQL, with a
@@ -127,4 +127,21 @@ describe.each(backings)('an unfiled return near the three-year bar reaches the o
     cal = await calendar();
     expect(cal.entries.find((e) => e.type === 'GSTR1' && e.period === NEAR)?.warning).toBe('filed');
   }, 90_000);
+
+  it('the timer sweep (for the ops-alert worker) raises the same exceptions with nobody pressing anything, once', async () => {
+    const h = harness();
+    const T = randomUUID();
+    await h.seedOwner(T, 'u-owner');
+    const day = `${BARRED.slice(2)}-${BARRED.slice(0, 2)}-05`;
+    const r = await h.request({ method: 'POST', path: '/v1/sales', userId: 'u-owner', tenantId: T, idempotencyKey: `k-${randomUUID()}`, body: {
+      saleId: 'S-OLD', receiptNumber: 'R-S-OLD', laneId: 'lane-1', cashierId: 'u-owner', tradingDay: day, committedAt: `${day}T05:30:00Z`, totalMinor: 10_500, currency: 'INR', packVersion: 1,
+      lines: [{ productId: 'p-paneer', quantityMinor: 1, uom: 'each', unitPriceMinor: 10_500, lineTotalMinor: 10_500, hsnCode: '040610', taxRateBps: 500 }],
+      tenders: [{ kind: 'cash', amountMinor: 10_500 }],
+    } });
+    expect(r.status).toBeLessThan(300);
+    const sweep = gstTimeBarSweep({ store: h.store, now: () => new Date().toISOString() });
+    const raised = await sweep(T, new Date().toISOString());
+    expect(raised).toBeGreaterThanOrEqual(2); // at least GSTR-1 and GSTR-3B of the barred month (N not set: barred only)
+    expect(await sweep(T, new Date().toISOString())).toBe(0);
+  }, 60_000);
 });
