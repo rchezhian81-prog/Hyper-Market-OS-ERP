@@ -14,7 +14,10 @@ import { taxOfLines } from '../../purchase/src/index';
 import { itcStoreRoutes, loadItcReview, type ItcStoreDeps, type StoredStatement } from '../../finance/src/itc-store';
 import { assessTds, priorInYear, EMPTY_TDS_CONFIG, type TdsConfig, type TdsSwitch, type TdsChallan, type PaymentWithTds, type TdsAssessment } from '../../../packages/withholding/src/index';
 import { tdsStoreRoutes, type TdsStoreDeps } from '../../finance/src/tds-store';
-import { STREAM, streamName, supplierMasterAdapter } from './adapters';
+import type { ReturnRecord } from '../../pos/src/returns';
+import type { DisputeRecord, DisputeResponse, DisputeOutcome } from '../../../packages/payment-disputes/src/index';
+import { paymentDisputeRoutes, type PaymentDisputeDeps } from '../../finance/src/payment-disputes';
+import { STREAM, STREAM_FOR, streamName, supplierMasterAdapter } from './adapters';
 
 const all = async <T>(store: EventStore, tenantId: string, stream: string, type: string): Promise<T[]> =>
   (await store.readStream(tenantId, stream, { type })).map((e) => e.event.payload as T);
@@ -163,6 +166,59 @@ export function supplierPaymentHooks(input: { readonly store: EventStore; readon
   };
 }
 
+// ── C14 · a refund goes back to the source (OB-144) ─────────────────────────────────────────────────────────────────
+
+/**
+ * The hook spread into the desk refund route's deps (`returnsRoutes`): what was already refunded against a bill, per
+ * tender kind — a plain refund by its tender, an exchange's refunded balance by the balance's tender — each return once.
+ */
+export function deskRefundHooks(input: { readonly store: EventStore }): {
+  readonly refundedByTender: (tenantId: string, saleId: string) => Promise<Readonly<Record<string, number>>>;
+} {
+  return {
+    refundedByTender: async (tenantId, saleId) => {
+      const out: Record<string, number> = {};
+      const seen = new Set<string>();
+      for (const r of await all<ReturnRecord>(input.store, tenantId, STREAM_FOR.forSaleReturns(saleId), 'ReturnRecorded')) {
+        if (seen.has(r.returnId)) continue;
+        seen.add(r.returnId);
+        const x = r.refundTender === 'exchange' ? r.exchange : undefined;
+        const kind = x === undefined ? r.refundTender : x.balance === 'refund' ? x.balanceTender : undefined;
+        const amount = x === undefined ? r.refundMinor : x.balance === 'refund' ? x.balanceMinor : 0;
+        if (kind !== undefined && amount > 0) out[kind] = (out[kind] ?? 0) + amount;
+      }
+      return out;
+    },
+  };
+}
+
+const DISPUTES_STREAM = streamName(STREAM.finance, 'payment-disputes');
+
+export function paymentDisputesAdapter(input: { readonly store: EventStore; readonly now: () => string }): Omit<PaymentDisputeDeps, 'recordAudit'> {
+  const { store, now } = input;
+  const once = async <T>(tenantId: string, type: string, key: string, at: string, payload: T): Promise<T> => {
+    const r = await store.append(tenantId, DISPUTES_STREAM, makeEvent({
+      id: `${key}-${sha(at).slice(0, 8)}`, type, occurredAt: at, idempotencyKey: `${tenantId}-${key}`, source: 'api/finance', payload,
+    }));
+    return r.record.event.payload as T;
+  };
+  return {
+    now,
+    disputes: (tenantId) => all<DisputeRecord>(store, tenantId, DISPUTES_STREAM, 'PaymentDisputeRecorded'),
+    responses: (tenantId) => all<DisputeResponse>(store, tenantId, DISPUTES_STREAM, 'PaymentDisputeAnswered'),
+    outcomes: (tenantId) => all<DisputeOutcome>(store, tenantId, DISPUTES_STREAM, 'PaymentDisputeDecided'),
+    recordDispute: (tenantId, d) => once(tenantId, 'PaymentDisputeRecorded', `dispute-${d.disputeId}`, d.recordedAt, d),
+    recordResponse: (tenantId, r) => once(tenantId, 'PaymentDisputeAnswered', `dispute-answer-${r.disputeId}`, r.at, r),
+    recordOutcome: (tenantId, o) => once(tenantId, 'PaymentDisputeDecided', `dispute-outcome-${o.disputeId}`, o.at, o),
+    paidBy: async (tenantId, saleId, instrument) => {
+      const held = await store.findByIdempotencyKey(tenantId, `sale-${tenantId}-${saleId}`);
+      if (held === undefined) return undefined;
+      const tenders = (held.event.payload as { readonly tenders?: readonly { readonly kind: string; readonly amountMinor: number }[] }).tenders ?? [];
+      return tenders.filter((t) => t.kind === instrument).reduce((s, t) => s + t.amountMinor, 0);
+    },
+  };
+}
+
 // ── the lane's routes, registered once in main.ts ───────────────────────────────────────────────────────────────────
 
 export function r3TaxPayRoutes(input: {
@@ -180,5 +236,8 @@ export function r3TaxPayRoutes(input: {
     ...tdsStoreRoutes(store === undefined
       ? { config: none(undefined), recordConfig: () => {}, switchState: none(undefined), recordSwitch: () => {}, payments: none([]), challans: none([]), recordChallan: (_t, c) => c, now }
       : { ...tdsStoreAdapter({ store, now }), ...audit }),
+    ...paymentDisputeRoutes(store === undefined
+      ? { disputes: none([]), responses: none([]), outcomes: none([]), recordDispute: (_t, d) => d, recordResponse: (_t, r) => r, recordOutcome: (_t, o) => o, paidBy: none(undefined), now }
+      : { ...paymentDisputesAdapter({ store, now }), ...audit }),
   ];
 }

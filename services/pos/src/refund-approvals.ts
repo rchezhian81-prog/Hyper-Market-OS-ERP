@@ -20,9 +20,10 @@ import { randomUUID } from 'node:crypto';
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 
-/** What an approval is for. */
-export type RefundApprovalKind = 'refund' | 'exchange_refund' | 'no_receipt_return' | 'out_of_window';
-const KINDS: readonly RefundApprovalKind[] = ['refund', 'exchange_refund', 'no_receipt_return', 'out_of_window'];
+/** What an approval is for. R3 · C14 · OB-144 "A": `tender_exception` — a refund that does not go back the way the bill
+ *  was paid (cash on a card or UPI sale), allowed only with a second person's approval and a written reason. */
+export type RefundApprovalKind = 'refund' | 'exchange_refund' | 'no_receipt_return' | 'out_of_window' | 'tender_exception';
+const KINDS: readonly RefundApprovalKind[] = ['refund', 'exchange_refund', 'no_receipt_return', 'out_of_window', 'tender_exception'];
 /** How long an approval given at head office stays usable. */
 export const REFUND_APPROVAL_MINUTES = 15;
 /** The authority to approve a refund; and the authority the person processing it must hold. */
@@ -80,7 +81,7 @@ export function refundApprovalRoutes(deps: RefundApprovalDeps): readonly Route[]
         if (kind === undefined || valueMinor === undefined || requestedBy === undefined || reason === undefined || (kind !== 'no_receipt_return' && saleId === null)) {
           throw apiError(400, {
             code: 'not_readable_as_a_refund_approval',
-            whatHappened: 'An approval names what it is for: the kind (refund, exchange_refund, no_receipt_return or out_of_window), the bill (saleId, except for a return without a receipt), the amount in paise, who will process the refund (requestedBy), and why.',
+            whatHappened: 'An approval names what it is for: the kind (refund, exchange_refund, no_receipt_return, out_of_window or tender_exception), the bill (saleId, except for a return without a receipt), the amount in paise, who will process the refund (requestedBy), and why.',
             wasItSaved: 'not_saved',
             nextSafeAction: 'Nothing was approved. Send those five things.',
           });

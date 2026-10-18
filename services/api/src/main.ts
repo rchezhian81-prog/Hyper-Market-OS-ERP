@@ -299,7 +299,7 @@ import { committeeMembershipRoutes } from '../../identity/src/committee-membersh
 import { hrComplianceRoutes } from '../../finance/src/hr-compliance';
 import { poshRegisterRoutes } from '../../finance/src/posh-register';
 import { processorRegisterAdapter, settlementRefundsAdapter } from './r2-data-adapters';
-import { r3TaxPayRoutes, supplierPaymentHooks } from './r3-tax-pay-adapters';
+import { r3TaxPayRoutes, supplierPaymentHooks, deskRefundHooks } from './r3-tax-pay-adapters';
 import { processorRegisterRoutes } from '../../customer/src/processor-register';
 import { legacyCardPurgeRoutes } from '../../migration/src/legacy-card-purge';
 import { wasteAnalyticsAdapter, foodSafetyAdapter, priceIntegrityAgeingAdapter, assignedTaskAdapter, receivingChecklistLookup, carriedChecklistAdapter } from './r2-ops-adapters';
@@ -1219,7 +1219,7 @@ export function buildSurface(deps: {
       returnWindow: () => undefined, recordReturnWindow: () => {},
       storeCreditCap: () => undefined, recordStoreCreditCap: () => {},
       flaggedReturns: empty([]), now,
-    } : { ...returnsAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, tillSealKey: sealKey,
+    } : { ...returnsAdapter({ store, now }), ...deskRefundHooks({ store }) /* R3 C14 refund to source */, recordAudit: auditTrail?.recordAudit, tillSealKey: sealKey,
       // OB-34 "A": a return gives back the points the member PAID WITH, in proportion to the goods coming back; and on such
       // a bill the earn is taken back against those goods too (its refund is only the money share). An exchange gives
       // nothing back (its goods are credited in full) and takes back against its credit, as before.

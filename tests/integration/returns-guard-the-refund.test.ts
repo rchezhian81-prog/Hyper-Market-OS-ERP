@@ -141,7 +141,8 @@ describe('a refund is guarded where the whole history lives (M13/M21, API-05)', 
 
   it('reports a card refund as pending, never assumed settled (M13-FR-04)', async () => {
     const h = await cast();
-    await bank(h, A, 'u-owner');
+    // R3 · C14 (OB-144 "A"): a card refund goes back to the card the bill was paid by — so this bill is paid by card.
+    await bank(h, A, 'u-owner', sale({ tenders: [{ kind: 'card', amountMinor: 15000, ref: 'tok_synthetic_1' }] }));
 
     const res = await ret(h, A, 'u-owner', 'S1', req({ returnId: 'RT1', lines: [line(1)], refundMinor: 5000, refundTender: 'card' }));
     expect(res.status).toBe(201);
