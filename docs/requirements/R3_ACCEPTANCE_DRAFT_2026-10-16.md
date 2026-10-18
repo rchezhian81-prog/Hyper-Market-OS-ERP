@@ -1,4 +1,4 @@
-# R3 acceptance sentences — DRAFT for the owner's signature (16 Oct 2026)
+# R3 acceptance sentences — SIGNED 18 Oct 2026 (OB-188; drafted 16 Oct 2026)
 
 Decision OB-137 "A": you approve all of these in one sitting; no R3 item is built before its sentence is approved. Each sentence is how the item will be proved by an automated test. Change any word you want; cross out anything you do not want.
 
@@ -30,4 +30,4 @@ Scope: OB-136, OB-138 and OB-150. Your answers already taken: OB-139 to OB-149 (
 | C21 — Fingerprint attendance consent (added by OB-138) | A person's fingerprint attendance is used only after their own recorded consent for that specific purpose. Anyone may refuse or withdraw consent and use the PIN method instead, with no other difference. Aadhaar is never required. Without consent, the fingerprint method is refused by name. (Source: gap analysis C21, DPDP Act s.7.) | |
 | A21 — 30-day e-invoice reporting guard (OB-149, switched off) | When switched on (turnover ₹10 crore or more), a B2B invoice or credit/debit note not reported to the e-invoice portal within 30 days is blocked and shown as an exception. While switched off, nothing is blocked, and the setting's state is shown on the GST page. (Source: gap analysis A21.) | |
 
-Signed by the owner: ____________________   Date: ____________
+Signed by the owner: "R3 signed" (owner, in writing; decision OB-188)   Date: 18 Oct 2026. D-16 and D-19 have no sentence yet, so they are not covered by this signature.
