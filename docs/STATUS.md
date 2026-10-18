@@ -5,6 +5,57 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Release R3 — built in four parallel lanes and joined (18 October 2026) — branch `claude/new-session-lw91i4`, gate and PR pending
+
+- **Owner sign-off:** R3 acceptance sentences signed (OB-188); D-16 and D-19 signed separately (OB-189, OB-190); lane questions answered (OB-191 to OB-200).
+- **Built (synthetic data; no staff UAT):**
+  - **Lane 1, GST returns:**
+    - A15 GSTR-3B from banked till sales, matched to GSTR-1 to the paisa.
+    - A16 locked to the filed GSTR-1; corrections are next-month amendments.
+    - A14 RCM self-invoice, switched off (OB-143).
+    - A19 filing calendar and 3-year bar, warned 180 days ahead on the alert timer (OB-191).
+    - A18 GSTR-9/9C.
+    - A21 30-day e-invoice guard, switched off.
+    - The accountant and CA can view the GST page (OB-192).
+  - **Lane 2, tax credit and refunds:**
+    - A17 GSTR-2B/IMS review, feeding 3B Table 4 (never zero while unreconciled).
+    - A24 TDS, switched off.
+    - C14 refund to source and card/UPI disputes (UPI 15 days).
+    - C5 nominee, grievance and the published 15 days.
+    - A23 e-way bill check on transfer dispatch.
+  - **Lane 3, till and batches:**
+    - D-20 GS1 2D at the till, offline.
+    - SF-08 batch-precise recall block (OB-139).
+    - B16 tobacco warning confirmation (OB-140).
+    - B13 gold HUID, sold once, offline.
+    - D-26 one-call batch trace incl. the production hop, with a 24 h clock.
+  - **Lane 4, store and staff:**
+    - D-14 suspected phantom stock proposes a count.
+    - D-16 lifecycle stops ordering, with clearance suggestions.
+    - D-11 DSD door check-in, no cash.
+    - D-25 production plan with input batches.
+    - D-19 one price everywhere; switches off; the pack follows them.
+    - C21 fingerprint consent with PIN fallback.
+    - D-9 labour demand and a draft roster within the Shops Act limits in force.
+- **Verification so far:**
+  - Each lane passed its own unit, memory + PostgreSQL (with cold restart), guardrail and browser tests.
+  - The integration pass joined the seams (3B Table 4 ← A17, D-26 ← D-25, A19 timer, OB-191, OB-192, D-19 → pack) with 1,622 targeted tests passing.
+  - The full gate on the joined branch has not been run yet.
+- **In progress (parallel):**
+  - R3 follow-ups OB-194 (supplier-return dispatch step), OB-195 (privacy time locked to 15), OB-196 (numbered DSD debit note), OB-198 (new-item clock from first delivery), and OB-197 (the C21 consent notice drafted for the owner's signature; fingerprint use refused until signed).
+  - UI/UX shared look (OB-201: polish the sage look, thin line icons, shared foundation first).
+- **Go-live steps before R3 reaches a real till:**
+  - Record the tobacco warning picture and confirm each tobacco product (OB-193); until then tobacco does not sell.
+  - CA fills the RCM heads, the TDS list and the Shops Act limits.
+  - Owner sets the D-9 service standards and the D-14 minimum days.
+  - Owner signs the C21 notice.
+- **Known limits (from the lane reports):**
+  - 3B 4(B) reversals are stated in the detail only.
+  - HUID printing waits for a till printer path.
+  - Store scale and kitchen labels carry no batch, so a recall blocks the whole product.
+  - Route sheets are not yet served to the handheld.
+  - D-9 gives at most one shift per person per day.
+
 ## Coordinated programme · R2 coverage correction: the 15 open pilot (R2) items built, verified and fixed (16–17 October 2026) — merged in PR #788 (c98fa7a5)
 
 - **Built (four parallel lanes, then fix rounds F1–F10; synthetic data; no staff UAT):**
