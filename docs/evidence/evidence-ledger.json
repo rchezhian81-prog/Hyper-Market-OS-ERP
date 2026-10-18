@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1320,
+  "testFiles": 1374,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -731,8 +731,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 20,
-        "integration": 22,
-        "realDb": 4,
+        "integration": 23,
+        "realDb": 5,
         "browser": 3,
         "connected": 0,
         "device": 0,
@@ -762,6 +762,7 @@
           "tests/unit/traceability.test.ts"
         ],
         "integration": [
+          "tests/integration/a-lot-trace-reaches-supplier-to-customer-from-stored-facts.test.ts",
           "tests/integration/a-recall-runs-its-whole-lifecycle-on-postgresql.test.ts",
           "tests/integration/a-returned-item-keeps-its-lot.test.ts",
           "tests/integration/a-transfer-sends-only-what-the-batch-holds.test.ts",
@@ -786,6 +787,7 @@
           "tests/integration/warehouse-screen-fed.test.ts"
         ],
         "realDb": [
+          "tests/integration/a-lot-trace-reaches-supplier-to-customer-from-stored-facts.test.ts",
           "tests/integration/a-recall-runs-its-whole-lifecycle-on-postgresql.test.ts",
           "tests/integration/fulfilment-packing.test.ts",
           "tests/integration/supplier-to-shelf-journey.test.ts",
