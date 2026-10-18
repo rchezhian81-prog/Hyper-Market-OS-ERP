@@ -13,6 +13,9 @@ import {
 } from './adapters';
 import { biometricConsentRoutes, type BiometricConsentDeps, type AttendanceMark } from '../../finance/src/biometric-consent';
 import type { BiometricConsentEvent } from '../../../packages/workforce/src/biometric-consent';
+import { scheduleRoutes, type ScheduleDeps, type StoredDraft } from '../../finance/src/schedule-store';
+import type { ServiceStandard } from '../../../packages/workforce/src/labour-demand';
+import { hrComplianceAdapter } from './r2-hr-adapters';
 import { tenantEntitlementResolver } from './access';
 import { productionPlanRoutes, productionInputsOf, type ProductionPlanDeps, type ProductionTraceRun } from '../../inventory/src/production-plan';
 import type { IngredientBatchOnHand, RunInputBatch } from '../../inventory/src/production';
@@ -266,6 +269,45 @@ export function biometricConsentAdapter(input: { readonly store: EventStore; rea
   };
 }
 
+// ── D-9 labour demand + draft roster + actuals ───────────────────────────────────────────────────────────────────
+
+const SCHEDULE = streamName(STREAM.workforce, 'schedule');
+
+export function scheduleAdapter(input: { readonly store: EventStore; readonly now: () => string; readonly recordAudit?: Recorder; readonly locationBranches: LocationBranches }): ScheduleDeps {
+  const { store, now } = input;
+  const hr = hrComplianceAdapter({ store, now });
+  const roster = rosterStoreAdapter({ store, now });
+  return {
+    now,
+    settings: (t) => hr.settings(t),
+    standards: (t) => all<ServiceStandard>(store, t, SCHEDULE, 'ServiceStandardSet'),
+    recordStandard: async (t, st) => {
+      await store.append(t, SCHEDULE, makeEvent({ id: `service-standard-${st.role}-${st.setAt}`, type: 'ServiceStandardSet', occurredAt: st.setAt, idempotencyKey: `service-standard-${t}-${st.role}-${st.billsPerStaffHour}-${st.setAt}`, source: 'api/hr', payload: st }));
+    },
+    billsAt: async (t, branchId, fromIso, toIso) => {
+      const branchOf = await input.locationBranches(t);
+      const out: { at: string }[] = [];
+      for (const e of await store.readStream(t, STREAM.sales, { type: 'SaleCommitted', from: fromIso, to: toIso })) {
+        const sale = e.event.payload as IncomingSale;
+        const { locationId } = await saleStockLocationOf(store, t, sale);
+        if (branchOf(locationId) === branchId) out.push({ at: sale.committedAt });
+      }
+      return out;
+    },
+    roster: (t) => Promise.resolve(roster.roster(t)),
+    putShift: async (t, sh, key) => { await roster.putShift(t, sh, key); },
+    putAssignment: async (t, a, key) => { await roster.putAssignment(t, a, key); },
+    drafts: (t) => all<StoredDraft>(store, t, SCHEDULE, 'ScheduleDraftRecorded'),
+    recordDraft: async (t, d) => {
+      const state = d.committedBy === null ? 'drafted' : 'committed';
+      await store.append(t, SCHEDULE, makeEvent({ id: `schedule-draft-${d.draftId}-${state}`, type: 'ScheduleDraftRecorded', occurredAt: d.committedAt ?? d.draftedAt, idempotencyKey: `schedule-draft-${t}-${d.draftId}-${state}`, source: 'api/hr', payload: d }));
+    },
+    marks: async (t) => (await biometricConsentAdapter({ store, now }).marks(t)),
+    hours: (t, from, to) => hr.attendanceBetween(t, from, to),
+    ...(input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit }),
+  };
+}
+
 // ── the one entry point ──────────────────────────────────────────────────────────────────────────────────────────
 
 /** Every Lane 4 route, composed over head office's store (or a throw-away in-memory one when the surface has none). */
@@ -281,5 +323,6 @@ export function r3OpsRoutes(input: { readonly store: EventStore | undefined; rea
     ...productionPlanRoutes(productionPlanAdapter(base)),
     ...channelPricingRoutes(channelPricingAdapter(base)),
     ...biometricConsentRoutes(biometricConsentAdapter(base)),
+    ...scheduleRoutes(scheduleAdapter(base)),
   ];
 }

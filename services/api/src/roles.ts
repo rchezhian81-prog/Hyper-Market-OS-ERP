@@ -219,6 +219,8 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'price.zone.manage',
       // C21: record my own fingerprint-attendance consent, and mark my own attendance (fingerprint only with consent).
       'workforce.consent.self', 'workforce.attendance.mark',
+      // D-9: the owner sets the service standard per role (OB-142), and drafts the week's roster from the forecast.
+      'workforce.standard.set', 'workforce.schedule.draft',
       // ── R3 Lane 4 — end
     ],
   },
@@ -321,6 +323,8 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'inventory.dsd.checkin', 'inventory.dsd.route.manage',
       // C21: record my own fingerprint-attendance consent, and mark my own attendance (fingerprint only with consent).
       'workforce.consent.self', 'workforce.attendance.mark',
+      // D-9: the manager drafts the week's roster from the forecast and commits it (workforce.roster.manage, P-05).
+      'workforce.schedule.draft',
       // ── R3 Lane 4 — end
     ],
   },
