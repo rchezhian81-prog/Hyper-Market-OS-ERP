@@ -440,6 +440,12 @@
     'ess': 'user-round',
     'rostering': 'calendar',
     'schedule': 'calendar-clock',
+    // ── R4 Lane 3: the insight pages (existing icons only) ──
+    'customers': 'users',
+    'basket-affinity': 'shopping-basket',
+    'demand-events': 'calendar-days',
+    'morning-brief': 'book-open',
+    // ── end R4 Lane 3 ──
     'checklist': 'clipboard-check',
     'users': 'users-round',
     'organisation': 'building',
