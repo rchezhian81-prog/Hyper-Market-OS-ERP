@@ -5,7 +5,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
-## Known gaps in signed R3/R4 items closed (19–20 October 2026) — gate and PR pending
+## Known gaps in signed R3/R4 items closed (19–20 October 2026) — full gate green: 12,898 unit/integration (16 skipped), 52 performance, 453 browser
 
 - **Till:**
   - "Unsent" says "not known" in amber when the store computer has not given the number (P-08).
