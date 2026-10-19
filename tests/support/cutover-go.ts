@@ -33,6 +33,8 @@ export async function prepareCutoverEvidence(h: ApiHarness, input: CutoverGoInpu
   const ok = (r: Reply, status: number): void => { expect(r.status, JSON.stringify(r.body)).toBe(status); };
 
   ok(await call('POST', '/v1/migration/extraction-runs/run-cutover', input.ownerId, { operatorId: input.ownerId }), 201);
+  // Who ran the LOAD is the stored load record's operator (MG-06): the owner, signed in — so the signer below is not them.
+  ok(await call('POST', '/v1/migration/loads/load-cutover', input.ownerId, { sliceDigest: 'digest-cutover', counts: { 'products.csv': { rows: 89, staged: 89, quarantined: 0 } }, exceptions: [] }), 201);
   ok(await call('POST', '/v1/migration/control-totals', input.ownerId, { totals: [{ totalId: 'CT-STOCK', kind: 'stock', name: 'Stock units', unit: 'quantity', legacyValue: 89, loadedValue: 89, legacyDerivation: 'SUM(qty) FROM legacy stock', loadedDerivation: 'count of opening movements' }] }), 201);
   ok(await call('POST', '/v1/migration/control-totals/CT-STOCK/signature', input.signerId, { statement: 'counted a sample on the shelf myself' }), 200);
   ok(await call('PUT', '/v1/migration/parallel-run/policy', input.ownerId, { cutoverId: 'C-parallel', dailyReconcilerUserId: input.reconcilerId, requiredCleanDays: 3, maxParallelDays: 14, startedOn: '2026-10-01' }), 201);

@@ -870,6 +870,8 @@ export interface PackMigrationPolicy {
   readonly openAssessments?: number;
   /** Who is on the migration screen. Absent means nothing may be signed, decided or rolled back. */
   readonly userId?: string;
+  /** MG-10: the ONE person the owner named to reconcile the parallel run daily (R-05) — from the cloud's written terms. */
+  readonly dailyReconcilerUserId?: string;
 }
 
 /**
@@ -888,6 +890,8 @@ export interface PackMigrationFeed {
   readonly refusedDecisions?: readonly unknown[];
   /** Where the twelve-domain verification report stands (MG-05 / QG-07). */
   readonly verification?: Readonly<Record<string, unknown>>;
+  /** MG-10: every parallel-run day signature on the cloud, and whether each still applies to the day's figures. */
+  readonly parallelDaySignatures?: readonly unknown[];
 }
 
 /**
@@ -1744,6 +1748,7 @@ export function withMigrationFeed(pack: StorePack, feed: MigrationFeed, received
       ...(held === undefined ? {} : held),
       cutoverId: feed.policy.cutoverId,
       requiredCleanDays: feed.policy.requiredCleanDays,
+      ...(typeof feed.policy['dailyReconcilerUserId'] === 'string' && feed.policy['dailyReconcilerUserId'] !== '' ? { dailyReconcilerUserId: feed.policy['dailyReconcilerUserId'] } : {}),
       ...cloudFacts,
     });
   } else if (held !== undefined) {
@@ -1764,6 +1769,7 @@ export function withMigrationFeed(pack: StorePack, feed: MigrationFeed, received
       receivedAt,
       ...(feed.refusedDecisions === undefined ? {} : { refusedDecisions: feed.refusedDecisions }),
       ...(feed.verification === undefined ? {} : { verification: feed.verification }),
+      ...(feed.parallelDaySignatures === undefined ? {} : { parallelDaySignatures: feed.parallelDaySignatures }),
     }),
   };
 }
