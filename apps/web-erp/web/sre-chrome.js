@@ -435,6 +435,7 @@
     'gst-reconciliation': 'git-merge',
     'gst-returns': 'receipt-text',
     'itc-review': 'file-text',
+    'epr': 'trash', // R4 Lane 1 (B20–B22): the EPR registers page — this one line only
     'payroll': 'banknote',
     'my-payslip': 'wallet',
     'ess': 'user-round',

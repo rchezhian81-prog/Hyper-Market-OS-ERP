@@ -102,6 +102,9 @@ export const PII_FIELD_INVENTORY: readonly PiiFieldDeclaration[] = Object.freeze
   { file: 'packages/payroll/src/mask.ts', field: 'bankAccount', whose: 'staff', protection: 'masked_on_read', evidence: 'maskBankAccount' },
   { file: 'packages/payroll/src/mask.ts', field: 'uan', whose: 'staff', protection: 'masked_on_read', evidence: 'maskUan' },
   { file: 'packages/payroll/src/mask.ts', field: 'aadhaar', whose: 'staff', protection: 'masked_on_read', evidence: 'maskAadhaar' },
+  // R4 Lane 1 · C15: a payslip particular the CA may list — the payslip-issue route (services/finance/src/payslip-store.ts)
+  // keeps the UAN and the ESI number masked (last four) at issue, never whole.
+  { file: 'packages/payroll/src/legal-settings.ts', field: 'uan', whose: 'staff', protection: 'masked_on_read', evidence: 'maskUan' },
   { file: 'packages/payroll/src/bank-file.ts', field: 'accountNumber', whose: 'staff', protection: 'not_kept', evidence: 'the salary bank file is built from the request and handed back; it is never stored' },
   { file: 'packages/payroll/src/bank-file.ts', field: 'ifsc', whose: 'staff', protection: 'not_kept', evidence: 'the salary bank file is built from the request and handed back; it is never stored' },
   { file: 'packages/identity/src/account.ts', field: 'fullName', whose: 'user', protection: 'held_by_identity_server', evidence: 'people and their contacts live at the identity server (ADR-0019); this is the policy shape only' },
