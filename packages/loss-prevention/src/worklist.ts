@@ -21,6 +21,8 @@ export interface OpenCaseSummary {
   readonly raisedFromRef: string;
   readonly openedBy: string;
   readonly openedAt: string;
+  /** OB-235: a rule opened it (a material till shortage), not a person. Absent when a person opened it. */
+  readonly openedByRule?: true;
   /** How many evidence items are on file — not the items themselves. */
   readonly evidenceCount: number;
 }
@@ -63,6 +65,7 @@ export function buildOpenCaseWorklist(
       raisedFromRef: c.raisedFromRef,
       openedBy: c.openedBy,
       openedAt: c.openedAt,
+      ...(c.openedByRule === true ? { openedByRule: true as const } : {}),
       evidenceCount: c.evidence.length,
     })),
   };

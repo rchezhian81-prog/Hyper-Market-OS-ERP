@@ -3849,7 +3849,9 @@ export function shiftAdapter(input: {
         caseId: plan.caseId!, tenantId, raisedFromRef: plan.raisedFromRef!, subjectRef: plan.subjectRef!,
         summary: plan.summary!, valueMinor: plan.valueMinor!,
         // A deterministic rule opened this, not a person — recorded honestly as the system actor (P-05).
-        openedBy: 'system:till-shortage-rule', assignedTo: plan.assignedTo!, at: input.now(),
+        openedBy: SHORTAGE_RULE_ACTOR, assignedTo: plan.assignedTo!, at: input.now(),
+        // OB-235: marked "opened by rule" on the case record — nobody reads it as a person accusing someone.
+        openedByRule: plan.openedByRule === true,
       });
       if (!result.opened || result.case === undefined) {
         return { opened: false, blockedReason: 'refused', detail: result.detail };
@@ -5642,6 +5644,9 @@ export function b2bDocumentsAdapter(input: {
   };
 }
 
+/** The system actor the till-shortage rule opens a case as (M15-FR-04) — a rule, never a person (P-05). */
+const SHORTAGE_RULE_ACTOR = 'system:till-shortage-rule';
+
 export function lpCasesAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
@@ -5656,7 +5661,9 @@ export function lpCasesAdapter(input: {
       const p = e.event.payload as Record<string, unknown>;
       if (e.event.type === 'LpCaseOpened') {
         const c = p as unknown as InvestigationCase;
-        byId.set(c.caseId, c);
+        // OB-235: a shortage case recorded before the mark existed was opened by the same rule (its system actor says
+        // so) — it reads "opened by rule" too. Nothing stored is rewritten (hard rule #2).
+        byId.set(c.caseId, c.openedByRule !== true && c.openedBy === SHORTAGE_RULE_ACTOR ? { ...c, openedByRule: true } : c);
       } else if (e.event.type === 'LpEvidenceAdded') {
         const cur = byId.get(p['caseId'] as string);
         if (cur !== undefined) byId.set(cur.caseId, { ...cur, evidence: [...cur.evidence, p['item'] as EvidenceItem] });

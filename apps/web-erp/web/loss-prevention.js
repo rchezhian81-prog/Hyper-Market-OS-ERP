@@ -34,6 +34,11 @@ function sampleSession() {
     summary: l === 'ta' ? 'பணப்பெட்டி 3 மூடும்போது ₹1,200 குறைவு' : 'Till 3 came up ₹1,200 short at close',
     value: '₹1,200.00', valueMinor: 120000, assignedTo: 'manager', raisedFromRef: 'shift-close:till-3', openedBy: 'system', openedAt: '', evidenceCount: 0,
     status: { tone: 'degraded', icon: '⚠', label: l === 'ta' ? 'திறந்தது' : 'Open', announcement: 'open', needsAttention: true },
+    // ── R4 integration · OB-235 — begin (the sample case was opened by the till-shortage rule)
+    openedByRule: l === 'ta'
+      ? { label: 'விதியால் திறக்கப்பட்டது', say: 'பணப்பெட்டி குறைவு விதியால் தானாகத் திறக்கப்பட்டது — யாரும் யாரையும் குற்றம் சாட்டவில்லை.' }
+      : { label: 'Opened by rule', say: 'Opened automatically by the till-shortage rule — no person has accused anyone.' },
+    // ── R4 integration · OB-235 — end
   });
   const OUTCOMES = [
     { value: 'proven', label: { en: 'Proven', ta: 'நிரூபிக்கப்பட்டது' } },
@@ -81,8 +86,24 @@ function rowNode(r) {
   facts.append(subj, ev, asg);
 
   li.append(head, status, facts);
+  // ── R4 integration · OB-235 — begin: a case a RULE opened (a material till shortage) carries a chip with an icon and
+  //    a word, so nobody reads it as a person accusing someone. The words come from the tested session (English/Tamil).
+  if (r.openedByRule) li.append(ruleChip(r.openedByRule));
+  // ── R4 integration · OB-235 — end
   return li;
 }
+
+// ── R4 integration · OB-235 — begin
+function ruleChip(rule) {
+  const chip = window.sreIcon?.chip
+    ? window.sreIcon.chip({ tone: 'idle', label: rule.label, icon: 'list-checks' })
+    : Object.assign(document.createElement('span'), { className: 'sre-chip', textContent: rule.label });
+  chip.classList.add('opened-by-rule');
+  chip.title = rule.say;
+  chip.setAttribute('aria-label', rule.say);
+  return chip;
+}
+// ── R4 integration · OB-235 — end
 
 function raisedNode(r) {
   const li = document.createElement('li');

@@ -40,6 +40,8 @@ export interface ShortageInvestigationPlan {
   readonly assignedTo?: string;
   readonly summary?: string;
   readonly valueMinor?: number;
+  /** OB-235: every case this rule opens is marked "opened by rule" on the case record. */
+  readonly openedByRule?: true;
 }
 
 /**
@@ -86,5 +88,6 @@ export function planInvestigationFromShortage(input: {
     assignedTo,
     summary: `Till ${shift.tillId} closed ${shortMinor} ${shift.currency} (minor units) short on ${shift.tradingDay}, over tolerance on the blind count. Auto-opened for investigation.`,
     valueMinor: shortMinor,
+    openedByRule: true,
   };
 }
