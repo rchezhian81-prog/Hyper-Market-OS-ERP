@@ -360,6 +360,11 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // D-9: the manager drafts the week's roster from the forecast and commits it (workforce.roster.manage, P-05).
       'workforce.schedule.draft',
       // ── R3 Lane 4 — end
+      // ── R4 Lane 1 (pay and EPR registers) — begin
+      // B20 · B21 · B22: the store manager marks own-brand packaging, records take-backs, recyclers, handovers and bin
+      // counts, and reads the EPR registers; never sets the registration or brand-owner answers (`epr.settings.configure`).
+      'epr.register.read', 'epr.register.record',
+      // ── R4 Lane 1 — end
     ],
   },
   {
@@ -527,11 +532,6 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'finance.tds.read', 'finance.tds.challan.record',
       'payment.dispute.record', 'payment.dispute.read',
       // ── end R3 lane 2 ──
-      // ── R4 Lane 1 (pay and EPR registers) — begin
-      // B21 · B22: the store manager records take-backs, recyclers, handovers and bin counts and reads the EPR registers;
-      // never sets the registration or brand-owner answers (`epr.settings.configure`).
-      'epr.register.read', 'epr.register.record',
-      // ── R4 Lane 1 — end
     ],
   },
   {
