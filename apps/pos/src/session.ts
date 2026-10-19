@@ -160,6 +160,30 @@ export interface SyncBadge {
   readonly unsentCount: number;
 }
 
+/**
+ * B13 · M31-FR-02: the last committed sale as its bill prints — the record's own lines (each with its name, its HUID for
+ * a gold piece, its batch), the GST inside each rate band, and the payments. Prices are GST-INCLUSIVE (A9): the lines add
+ * to the total, and net + GST = total. `@sre/receipt` turns this into the printed lines (`apps/pos/src/bill-receipt.ts`).
+ */
+export interface CommittedBill {
+  readonly number: string;
+  readonly saleId: string;
+  readonly tradingDay: string;
+  readonly committedAt: string;
+  readonly laneId: string;
+  readonly cashierId: string;
+  readonly currency: CurrencyCode;
+  readonly lines: readonly {
+    readonly description: string; readonly quantityMinor: number; readonly uom: string;
+    readonly unitPriceMinor: number; readonly lineTotalMinor: number; readonly huid?: string; readonly batchId?: string;
+  }[];
+  readonly taxBands: readonly { readonly rateBps: number; readonly netMinor: number; readonly taxMinor: number }[];
+  readonly netMinor: number;
+  readonly taxMinor: number;
+  readonly totalMinor: number;
+  readonly tenders: readonly { readonly kind: string; readonly amountMinor: number }[];
+}
+
 export interface BasketTotals extends BillTotals {
   /** Promotion discount applied to the basket, on top of any line discounts. */
   readonly promotionDiscount: Money;
@@ -283,6 +307,13 @@ export class PosSession {
   private seq = 0;
   /** B13: the HUIDs this till has committed since it loaded — refused again at once, offline. */
   private readonly huidsSoldHere = new Set<string>();
+  /** B13 · M31-FR-02: the bill of the sale this till last committed — what its receipt prints. */
+  private lastBillValue: CommittedBill | undefined;
+
+  /** The bill of the last sale this till committed (kept until the next one commits), or undefined before the first. */
+  lastBill(): CommittedBill | undefined {
+    return this.lastBillValue;
+  }
   private state: PosState = 'idle';
   private connection: ConnectionState = 'online';
   private promotions: readonly Promotion[] = [];
@@ -762,6 +793,8 @@ export class PosSession {
     if (this.state === 'committed') {
       throw new SessionStateError('commit', this.state);
     }
+    // A bill is never shown for a sale that did not commit: the last one is forgotten until this one is on the disk.
+    this.lastBillValue = undefined;
     const totals = this.totals();
     if (totals.lineCount === 0) {
       throw new EmptyBasketError();
@@ -929,6 +962,26 @@ export class PosSession {
       this.outbox,
     );
     this.state = 'committed';
+    // B13 · M31-FR-02: the bill as it prints — read off the record just saved, never re-priced. A record only: building it
+    // can add no way for the sale to fail (hard rule #1), and nothing here is sent anywhere.
+    const bands = new Map<number, { net: number; tax: number }>();
+    for (const l of recordLines) {
+      const split = splitInclusive(money(l.lineTotalMinor, totals.payable.currency), rate(l.taxRateBps));
+      const band = bands.get(l.taxRateBps) ?? { net: 0, tax: 0 };
+      bands.set(l.taxRateBps, { net: band.net + split.net.minor, tax: band.tax + split.tax.minor });
+    }
+    this.lastBillValue = Object.freeze({
+      number, saleId, tradingDay: input.tradingDay, committedAt, laneId, cashierId, currency: totals.payable.currency,
+      lines: recordLines.map((l, i) => ({
+        description: active[i]?.description ?? l.productId,
+        quantityMinor: l.quantityMinor, uom: l.uom, unitPriceMinor: l.unitPriceMinor, lineTotalMinor: l.lineTotalMinor,
+        ...(l.huid === undefined ? {} : { huid: l.huid }),
+        ...(l.batchId === undefined ? {} : { batchId: l.batchId }),
+      })),
+      taxBands: [...bands.entries()].sort((a, b) => a[0] - b[0]).map(([rateBps, b]) => ({ rateBps, netMinor: b.net, taxMinor: b.tax })),
+      netMinor: inside.net, taxMinor: inside.tax, totalMinor: totals.payable.minor,
+      tenders: input.tenders.map((t) => ({ kind: t.kind, amountMinor: t.amount.minor })),
+    });
     return sale;
   }
 
