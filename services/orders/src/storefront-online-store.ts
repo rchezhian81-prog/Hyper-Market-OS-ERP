@@ -75,6 +75,23 @@ export function listedNow(records: readonly OnlineListingRecord[]): ReadonlySet<
   return new Set([...state.entries()].filter(([, v]) => v).map(([k]) => k));
 }
 
+/** OB-234: whether a product may be sold online NOW — or Lane 2's own words for why not. */
+export type OnlineSaleVerdict = { readonly soldOnline: true } | { readonly soldOnline: false; readonly refusal: string };
+
+/**
+ * OB-234: the same answer the customer's listing gives (`soldOnline`): published online (its latest listing record) AND
+ * still carrying every duty. Else Lane 2's wording: "online listing incomplete: <field>", "other seller's goods: not sold
+ * online", or "not sold online: not published online yet" / "not sold online: not in the published catalogue".
+ */
+export async function onlineSaleOf(deps: Pick<OnlineStoreDeps, 'shopDetails' | 'listingFacts' | 'deliveryTerms' | 'listings'>, tenantId: string, productId: string): Promise<OnlineSaleVerdict> {
+  const facts = await deps.listingFacts(tenantId, productId);
+  if (facts === undefined) return { soldOnline: false, refusal: 'not sold online: not in the published catalogue' };
+  const verdict = checkOnlineListing(facts, latest(await deps.shopDetails(tenantId)), await deps.deliveryTerms(tenantId));
+  if (!verdict.publishable) return { soldOnline: false, refusal: verdict.refusal };
+  if (!listedNow(await deps.listings(tenantId)).has(productId)) return { soldOnline: false, refusal: 'not sold online: not published online yet' };
+  return { soldOnline: true };
+}
+
 export function onlineStoreRoutes(deps: OnlineStoreDeps): readonly Route[] {
   const details = async (t: string): Promise<OnlineShopDetails | undefined> => latest(await deps.shopDetails(t));
   const detailView = (d: OnlineShopDetails | undefined) => ({

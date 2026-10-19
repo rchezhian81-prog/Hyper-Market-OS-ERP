@@ -11,7 +11,7 @@ import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { runMigrations } from '../../packages/persistence/src/migrations';
 import { testModePaymentProvider } from '../../packages/orders/src/payment-verification';
 import { ordersAdapter } from '../../services/api/src/adapters';
-import { seedOnlineShop, deliveredOrder, callsFor, codeOf, saidOf, OWNER, MANAGER, CASHIER, CHECKER, CUSTOMER, OTHER_CUSTOMER, STORE } from '../support/online-shop';
+import { seedOnlineShop, listShopOnline, deliveredOrder, callsFor, codeOf, saidOf, OWNER, MANAGER, CASHIER, CHECKER, CUSTOMER, OTHER_CUSTOMER, STORE } from '../support/online-shop';
 
 /**
  * **R4 · WF-16 — an online return after delivery refunds only what came back — on the real API, in memory and on REAL
@@ -53,6 +53,7 @@ describe.each(backings)('WF-16 — an online return refunds only what came back,
     const c = callsFor(() => h, T);
     const { req, ok } = c;
     await seedOnlineShop(h, T, c);
+    await listShopOnline(c); // OB-234: only what is published online is sold online
     await deliveredOrder(c, provider, 'ORD-1');
 
     // OB-213: nothing set yet — the windows and the list read "not set", and a return cannot be judged.

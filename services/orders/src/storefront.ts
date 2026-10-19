@@ -58,6 +58,12 @@ export interface StorefrontDeps {
    * record the dispatcher's `GET /v1/delivery/orders/:id` folds. Absent (a bare composition) → the read carries no delivery.
    */
   readonly deliveryHistory?: (tenantId: string, orderId: string) => Promise<readonly { readonly to: string; readonly at: string; readonly receivedAt?: string }[]> | readonly { readonly to: string; readonly at: string; readonly receivedAt?: string }[];
+  /**
+   * OB-234 (R4 · B23 · A26): whether each product is sold online now — published on the online listing register and
+   * still carrying every display duty. Present → an order with any other product is refused before anything is reserved
+   * (`online_listing_incomplete` / `not_sold_online`, in Lane 2's words). Absent (a bare composition) → not checked.
+   */
+  readonly onlineListed?: (tenantId: string, productId: string) => Promise<{ readonly soldOnline: true } | { readonly soldOnline: false; readonly refusal: string }>;
 }
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
@@ -267,6 +273,21 @@ export function storefrontRoutes(deps: OrdersDeps & PaymentRefundDeps & Storefro
         if (existing !== undefined) {
           const own = await ownOrRefused(ctx.tenantId, ctx.userId, orderId, 'place');
           return { status: 200, body: { ...(await view(ctx.tenantId, own)), alreadyPlaced: true } };
+        }
+        // OB-234: only a product the shop has published online (and that still carries every duty) is sold online —
+        // checked before any delivery slot is bound or any stock is held. It still sells in the shop.
+        if (deps.onlineListed !== undefined) {
+          for (const productId of [...new Set((b['lines'] as { productId: string }[]).map((l) => l.productId))]) {
+            const v = await deps.onlineListed(ctx.tenantId, productId);
+            if (!v.soldOnline) {
+              throw apiError(409, {
+                code: v.refusal.startsWith('online listing incomplete') ? 'online_listing_incomplete' : 'not_sold_online',
+                whatHappened: `${productId}: ${v.refusal}.`,
+                wasItSaved: 'not_saved',
+                nextSafeAction: 'Remove it from the basket and order again. Nothing was reserved or charged. It may still be bought in the shop.',
+              });
+            }
+          }
         }
         const locationId = b['locationId'] as string;
         const fulfilment = b['fulfilment'] === 'delivery' || b['fulfilment'] === 'pickup' ? b['fulfilment'] : undefined;

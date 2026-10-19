@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { listableProduct } from '../support/sell-online';
 import { SqlIdempotencyStore } from '../../services/kernel/src/index';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
@@ -48,6 +49,8 @@ describe.each(backings)('FUL-03 — the shop judges a delivery\'s slot and addre
     for (const c of ['c-1', 'c-2', 'c-3', 'c-4', 'c-5']) await h.provisionRole(t, c, 'customer');
     await h.enableFeature(t, 'customer_app');
     expect((await h.request({ method: 'POST', path: '/v1/inventory/movements', userId: OWNER, tenantId: t, idempotencyKey: 'mv-1', body: { movementId: 'mv-1', productId: 'MILK', locationId: 'L1', kind: 'received', quantityMinor: 50, uom: 'each', occurredAt: new Date().toISOString(), enteredBy: OWNER } })).status).toBeLessThan(300);
+    // OB-234: milk is published and listed online before it can be ordered online.
+    await listableProduct((path, body) => h.request({ method: 'POST', path, userId: OWNER, tenantId: t, idempotencyKey: `online-${path}`, body }), { productId: 'MILK', storeId: 'L1', priceMinor: 50_00 });
     const place = (customer: string, orderId: string, extra: Record<string, unknown>, key = `k-${orderId}`) => h.request({
       method: 'POST', path: `/v1/storefront/orders/${orderId}`, userId: customer, tenantId: t, idempotencyKey: key,
       body: { lines: [{ productId: 'MILK', quantityMinor: 1 }], locationId: 'L1', fulfilment: 'delivery', ...extra },
@@ -74,7 +77,7 @@ describe.each(backings)('FUL-03 — the shop judges a delivery\'s slot and addre
   it('THE CASE: an address 20 km out, a slot the shop does not run, a slot too soon — refused before anything is reserved; the store location the app might send is never used', async () => {
     const s = await shop();
     expect((await s.setUp({ storeLocation: STORE, slotsPerDay: 8, windowOpen: '09:00', windowClose: '21:00', capacityPerSlot: 10, leadMinutes: 60 })).status).toBe(200);
-    expect((await s.h.request({ method: 'POST', path: '/v1/serviceability/periods/2026-01-01', userId: OWNER, tenantId: s.t, idempotencyKey: 'p', body: { radiusMetres: 10_000 } })).status).toBe(201);
+    expect((await s.h.request({ method: 'POST', path: '/v1/serviceability/periods/2026-01-01', userId: OWNER, tenantId: s.t, idempotencyKey: 'p', body: { radiusMetres: 10_000, deliveryFeeMinor: 0 } })).status).toBe(201); // OB-234: a fee (0) is a listing duty
     const slots = await s.slotsOn(tomorrow());
     expect(slots).toHaveLength(8); // OA-11: 8 a day, 9 am–9 pm shop time
     const first = slots[0]!;

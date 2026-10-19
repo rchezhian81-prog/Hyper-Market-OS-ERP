@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { sellOnline, onlineReady } from '../support/sell-online';
 import { SqlIdempotencyStore } from '../../services/kernel/src/index';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
@@ -64,11 +65,12 @@ describe.each(backings)('WF-15 — the customer reads their delivery in progress
     const today = new Date().toISOString().slice(0, 10);
     await ok(call('POST', '/v1/inventory/movements', 'u-owner', { movementId: 'mv-1', productId: 'MILK', locationId: 'L1', kind: 'received', quantityMinor: 5, uom: 'each', occurredAt: new Date().toISOString(), enteredBy: 'u-owner', unitCostMinor: 40_00 }), 'stock');
     await ok(call('POST', '/v1/catalogue/tax-classes/0401/rates/2017-07-01', 'u-owner', { rateBps: 0 }), 'tax');
-    await ok(call('POST', '/v1/catalogue/products/MILK/publish', 'u-owner', { product: { sku: 'MILK-1L', name: 'Aavin Milk 1L', baseUom: 'each', primaryCategoryId: 'dairy', taxClass: '0401', lifecycle: 'active', handling: 'ambient' }, categories: [{ categoryId: 'dairy', name: 'Dairy', parentId: null }] }), 'publish');
+    await ok(call('POST', '/v1/catalogue/products/MILK/publish', 'u-owner', { product: { sku: 'MILK-1L', name: 'Aavin Milk 1L', baseUom: 'each', primaryCategoryId: 'dairy', taxClass: '0401', lifecycle: 'active', handling: 'ambient', ...onlineReady(70_00) }, categories: [{ categoryId: 'dairy', name: 'Dairy', parentId: null }] }), 'publish');
     await ok(call('POST', '/v1/prices/list/MILK/entries/e1', 'u-owner', { scope: 'store', scopeRef: 'L1', priceMinor: 60_00, mrpMinor: 70_00, costMinor: 40_00, marginFloorBps: 0, currency: 'INR', effectiveFrom: today }), 'price');
     await ok(call('POST', '/v1/catalogue/pack', 'u-owner', { storeId: 'L1', asOf: today }), 'pack');
     await ok(call('POST', '/v1/serviceability/periods/2026-01-01', 'u-owner', { radiusMetres: 10_000, deliveryFeeMinor: 40_00 }), 'serviceability');
     await ok(call('PUT', '/v1/serviceability/delivery-service', 'u-owner', { storeLocation: { lat: 11.0168, lon: 76.9558 }, slotsPerDay: 8, windowOpen: '09:00', windowClose: '21:00', capacityPerSlot: 10, leadMinutes: 60 }), 'delivery service');
+    await sellOnline((path, body) => call('POST', path, 'u-owner', body), ['MILK']); // OB-234: published online first
     const tomorrow = new Date(Date.now() + 864e5).toISOString().slice(0, 10);
     const slot = ((await call('GET', '/v1/serviceability/delivery-service', 'u-owner', undefined, { day: tomorrow })).body as { slots: { startsAt: string }[] }).slots[0]!;
     const mine = async (orderId: string, hh: ApiHarness = h, who = 'cust-1') => {

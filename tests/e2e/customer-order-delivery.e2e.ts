@@ -16,6 +16,7 @@ import { SqlIdempotencyStore } from '../../services/kernel/src/index';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { runMigrations } from '../../packages/persistence/src/migrations';
+import { sellOnline, onlineReady } from '../support/sell-online';
 
 /**
  * **A real customer, in a real browser, places a real order that the cloud then holds** (M20-FR-03,
@@ -177,10 +178,12 @@ async function seededApi(capacityPerSlot = 10, make?: (p: TestModePaymentProvide
   const today = new Date().toISOString().slice(0, 10);
   const ok = async (path: string, body: unknown, key: string) => expect((await h.request({ method: 'POST', path, userId: OWNER, tenantId: T, idempotencyKey: key, body })).status, path).toBeLessThan(300);
   await ok('/v1/catalogue/tax-classes/0401/rates/2017-07-01', { rateBps: 0 }, 'tax');
-  await ok('/v1/catalogue/products/MILK/publish', { product: { sku: 'MILK-1L', name: 'Aavin Milk 1L', baseUom: 'each', primaryCategoryId: 'dairy', taxClass: '0401', lifecycle: 'active' }, categories: [{ categoryId: 'dairy', name: 'Dairy', parentId: null }] }, 'pub');
+  await ok('/v1/catalogue/products/MILK/publish', { product: { sku: 'MILK-1L', name: 'Aavin Milk 1L', baseUom: 'each', primaryCategoryId: 'dairy', taxClass: '0401', lifecycle: 'active', ...onlineReady(70_00) }, categories: [{ categoryId: 'dairy', name: 'Dairy', parentId: null }] }, 'pub');
   await ok('/v1/prices/list/MILK/entries/e1', { scope: 'store', scopeRef: 'L1', priceMinor: 60_00, mrpMinor: 70_00, costMinor: 40_00, marginFloorBps: 0, currency: 'INR', effectiveFrom: today }, 'price');
   await ok('/v1/catalogue/pack', { storeId: 'L1', asOf: today }, 'pack');
   await ok('/v1/serviceability/periods/2026-01-01', { radiusMetres: 10_000, deliveryFeeMinor: 40_00 }, 'svc');
+  // OB-234: milk is published online — the online store sells only what the shop has listed.
+  await sellOnline((path, body) => h.request({ method: 'POST', path, userId: OWNER, tenantId: T, idempotencyKey: `online-${path}`, body }), ['MILK']);
   // FUL-03: how the store delivers, held at head office (OA-11: the main store, 8 slots 9 am–9 pm).
   expect((await h.request({ method: 'PUT', path: '/v1/serviceability/delivery-service', userId: OWNER, tenantId: T, idempotencyKey: 'dsvc', body: { storeLocation: STORE, slotsPerDay: 8, windowOpen: '09:00', windowClose: '21:00', capacityPerSlot, leadMinutes: 60 } })).status).toBe(200);
   const tomorrow = new Date(Date.now() + 864e5).toISOString().slice(0, 10);
@@ -436,7 +439,7 @@ describe.skipIf(!HAVE_BROWSER)('a customer orders in a real browser and the clou
     await current.provisionRole(T, 'u-mgr', 'store_manager');
     // The packer needs the product's handling class on the product master (never guessed from its name).
     for (const [path, body] of [
-      ['/v1/catalogue/products/MILK/publish', { product: { sku: 'MILK-1L', name: 'Aavin Milk 1L', baseUom: 'each', primaryCategoryId: 'dairy', taxClass: '0401', lifecycle: 'active', handling: 'ambient' }, categories: [{ categoryId: 'dairy', name: 'Dairy', parentId: null }] }],
+      ['/v1/catalogue/products/MILK/publish', { product: { sku: 'MILK-1L', name: 'Aavin Milk 1L', baseUom: 'each', primaryCategoryId: 'dairy', taxClass: '0401', lifecycle: 'active', handling: 'ambient', ...onlineReady(70_00) }, categories: [{ categoryId: 'dairy', name: 'Dairy', parentId: null }] }],
       ['/v1/catalogue/pack', { storeId: 'L1', asOf: new Date().toISOString().slice(0, 10) }],
     ] as const) expect((await current.request({ method: 'POST', path, userId: OWNER, tenantId: T, idempotencyKey: `ob77-${path}`, body })).status, path).toBeLessThan(300);
     // The store's reverse proxy always talks to whichever head-office instance is running now.

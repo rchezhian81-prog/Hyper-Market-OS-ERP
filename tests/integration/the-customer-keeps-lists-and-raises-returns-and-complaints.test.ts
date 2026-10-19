@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
 import { seedSubstitutionTruth, SWAP_PRODUCTS } from '../support/substitution-truth';
+import { sellOnline } from '../support/sell-online';
 import { SqlIdempotencyStore } from '../../services/kernel/src/index';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
@@ -53,6 +54,9 @@ describe.each(backings)('the customer\'s own lists, favourites, complaints and r
     await h.provisionRole(T, C2, 'customer');
     await h.enableFeature(T, 'customer_app');
     await seedSubstitutionTruth(h, T, SWAP_PRODUCTS);
+    // OB-234: milk is published online (a delivery fee of 0 is the shop's listing duty) before it is ordered online.
+    expect((await call('POST', '/v1/serviceability/periods/2026-01-01', OWNER, { radiusMetres: 10_000, deliveryFeeMinor: 0 })).status).toBeLessThan(300);
+    await sellOnline((path, body) => call('POST', path, OWNER, body), ['MILK']);
     expect((await call('POST', '/v1/inventory/movements', OWNER, { movementId: 'mv-milk', productId: 'MILK', locationId: 'L1', kind: 'received', quantityMinor: 50, uom: 'ea', occurredAt: new Date().toISOString(), enteredBy: OWNER })).status).toBeLessThan(300);
   }, 120_000);
 

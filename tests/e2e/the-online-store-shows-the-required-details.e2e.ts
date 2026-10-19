@@ -117,6 +117,15 @@ describe.skipIf(!existsSync(CHROMIUM))('the online store shows the required deta
       expect(await milk.locator('.duties div[data-field="grievance officer name"] dd').textContent()).toBe('அமைக்கப்படவில்லை');
       await page.click('#lang');
 
+      // ── OB-234: a product not sold online cannot be paid for. The owner names the grievance officer (synthetic) and
+      //    publishes MILK online; the basket reads it again and MILK is "Sold online" ──
+      await ok(req('POST', '/v1/online-store/details', { grievanceOfficerName: 'Test Grievance Officer (synthetic)', grievanceOfficerContact: 'grievance@example.test (synthetic)', reason: 'e2e (synthetic)' }), 'grievance officer');
+      await ok(req('POST', '/v1/online-store/listings/MILK', { action: 'publish' }), 'publish MILK online');
+      await page.click('#tab-shop');
+      await page.click('#tab-basket');
+      await milk.locator('.state', { hasText: /^Sold online$/ }).waitFor({ timeout: 10_000 });
+      expect(await duty('grievance officer name')).toBe('Test Grievance Officer (synthetic)');
+
       // ── Pay; the shop delivers ──
       provider.capture(PAY_REF, 100_00);
       await page.click('#pay');

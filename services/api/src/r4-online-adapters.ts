@@ -24,7 +24,7 @@ import type { Movement } from '../../inventory/src/index';
 import type { AppContent, ProductRecord } from '../../../packages/product/src/product';
 import type { PackResult } from '../../../packages/fulfilment/src/packing';
 import type { IncomingSale } from '../../pos/src/sale-intake';
-import { onlineStoreRoutes, type OnlineListingRecord, type OnlineStorePublication } from '../../orders/src/storefront-online-store';
+import { onlineStoreRoutes, onlineSaleOf, type OnlineListingRecord, type OnlineStorePublication, type OnlineStoreDeps, type OnlineSaleVerdict } from '../../orders/src/storefront-online-store';
 import { storefrontRatingRoutes } from '../../orders/src/storefront-ratings';
 import { onlineReturnRoutes, noProviderRefundProcessor } from '../../orders/src/storefront-online-returns';
 import { digitalReceiptRoutes, type MemberAppLink, type ReceiptAccessRefusal } from '../../customer/src/digital-receipts';
@@ -99,21 +99,18 @@ export interface R4OnlineInput {
   readonly imageStore?: ProductImageStore;
 }
 
-export function r4OnlineRoutes(input: R4OnlineInput): readonly Route[] {
-  const store = input.store ?? new InMemoryEventStore();
-  const { now } = input;
+/** B23 · A26: the online store's register deps over head office's store — the listing routes and the order route's check. */
+function onlineStoreDepsOf(input: { readonly store: EventStore; readonly now: () => string; readonly signer: CatalogueDeps['signer']; readonly recordAudit?: Recorder }): OnlineStoreDeps {
+  const { store, now } = input;
   const base = { store, now };
   const catalogue = catalogueAdapter({ store, now, signer: input.signer });
   const master = productMasterAdapter(base);
   const inventory = inventoryAdapter(base);
-  const orders = ordersAdapter({ ...base, holdMinutes: HOLD_MINUTES });
   const cases = serviceCaseAdapter(base);
-  const imageStore = input.imageStore ?? eventStoreImageStore(store);
   const pack = async (t: string): Promise<SignedPack | undefined> => (await catalogue.currentPack(t)) as SignedPack | undefined;
   const imageVersions = async (t: string, productId?: string): Promise<ProductImageVersion[]> =>
     (await all<ProductImageVersion>(store, t, IMAGE_VERSIONS, 'ProductImageVersioned')).filter((v) => productId === undefined || v.productId === productId);
   const ratings = (t: string): Promise<RatingRecord[]> => all<RatingRecord>(store, t, RATINGS, 'ProductRated');
-
   // ── B23 / A26: one product's online listing facts, from the published catalogue, the master and the ledgers ──────
   const listingFacts = async (t: string, productId: string): Promise<OnlineListingFacts | undefined> => {
     const p = (await pack(t))?.snapshot.products.find((x) => x.productId === productId);
@@ -136,33 +133,60 @@ export function r4OnlineRoutes(input: R4OnlineInput): readonly Route[] {
     };
   };
 
+  return {
+    now,
+    shopDetails: (t) => all<OnlineShopDetails>(store, t, SHOP_DETAILS, 'OnlineShopDetailsSet'),
+    recordShopDetails: (t, d) => put(store, t, SHOP_DETAILS, 'OnlineShopDetailsSet', d, d.setAt, `v${d.version}`),
+    catalogueProducts: async (t) => ((await pack(t))?.snapshot.products ?? []).map((p) => p.productId),
+    listingFacts,
+    deliveryTerms: async (t) => {
+      const { policy, source } = resolveServiceabilityPolicy({ schedule: await serviceabilityAdapter(base).schedule(t), on: now().slice(0, 10) });
+      // The D08 default carries no fee the owner set — "not set", never a silent zero.
+      return source === 'default' ? {} : { ...(policy.deliveryFeeMinor === undefined ? {} : { deliveryFeeMinor: policy.deliveryFeeMinor }), ...(policy.freeDeliveryAboveMinor === undefined ? {} : { freeDeliveryAboveMinor: policy.freeDeliveryAboveMinor }) };
+    },
+    listings: (t) => all<OnlineListingRecord>(store, t, LISTINGS, 'OnlineListingRecorded'),
+    recordListing: (t, r, key) => put(store, t, LISTINGS, 'OnlineListingRecorded', r, r.at, key),
+    publications: (t) => all<OnlineStorePublication>(store, t, PUBLICATIONS, 'OnlineStorePublished'),
+    recordPublication: (t, p) => put(store, t, PUBLICATIONS, 'OnlineStorePublished', p, p.at, `v${p.version}`),
+    onlineComplaints: async (t) => (await cases.serviceCases(t))
+      .filter((c: ServiceCase) => c.caseId.startsWith('app-'))
+      .map((c) => ({ caseId: c.caseId, openedAt: c.openedAt, state: c.state, ...(c.firstRespondedAt === undefined ? {} : { firstRespondedAt: c.firstRespondedAt }), ...(c.resolvedAt === undefined ? {} : { resolvedAt: c.resolvedAt }) })),
+    ratingSummary: async (t, productId) => ratingSummary(await ratings(t), productId),
+    imageOf: async (t, productId) => {
+      const cur = currentImage(await imageVersions(t, productId), productId);
+      return cur === undefined ? undefined : { version: cur.version, mediaType: cur.mediaType };
+    },
+    ...(input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit }),
+  };
+}
+
+/**
+ * OB-234: the storefront order route's check — whether a product is sold online now (published on the listing register
+ * and still carrying every duty), in Lane 2's words when not. Wired beside `storefrontSelfRoutes` in main.ts.
+ */
+export function onlineListedAdapter(input: { readonly store: EventStore; readonly now: () => string; readonly signer: CatalogueDeps['signer'] }): (tenantId: string, productId: string) => Promise<OnlineSaleVerdict> {
+  const deps = onlineStoreDepsOf(input);
+  return (tenantId, productId) => onlineSaleOf(deps, tenantId, productId);
+}
+
+export function r4OnlineRoutes(input: R4OnlineInput): readonly Route[] {
+  const store = input.store ?? new InMemoryEventStore();
+  const { now } = input;
+  const base = { store, now };
+  const catalogue = catalogueAdapter({ store, now, signer: input.signer });
+  const master = productMasterAdapter(base);
+  const inventory = inventoryAdapter(base);
+  const orders = ordersAdapter({ ...base, holdMinutes: HOLD_MINUTES });
+  const cases = serviceCaseAdapter(base);
+  const imageStore = input.imageStore ?? eventStoreImageStore(store);
+  const pack = async (t: string): Promise<SignedPack | undefined> => (await catalogue.currentPack(t)) as SignedPack | undefined;
+  const imageVersions = async (t: string, productId?: string): Promise<ProductImageVersion[]> =>
+    (await all<ProductImageVersion>(store, t, IMAGE_VERSIONS, 'ProductImageVersioned')).filter((v) => productId === undefined || v.productId === productId);
+  const ratings = (t: string): Promise<RatingRecord[]> => all<RatingRecord>(store, t, RATINGS, 'ProductRated');
+
   return [
     // ── B23 · A26 — the online store's display duties ──
-    ...onlineStoreRoutes({
-      now,
-      shopDetails: (t) => all<OnlineShopDetails>(store, t, SHOP_DETAILS, 'OnlineShopDetailsSet'),
-      recordShopDetails: (t, d) => put(store, t, SHOP_DETAILS, 'OnlineShopDetailsSet', d, d.setAt, `v${d.version}`),
-      catalogueProducts: async (t) => ((await pack(t))?.snapshot.products ?? []).map((p) => p.productId),
-      listingFacts,
-      deliveryTerms: async (t) => {
-        const { policy, source } = resolveServiceabilityPolicy({ schedule: await serviceabilityAdapter(base).schedule(t), on: now().slice(0, 10) });
-        // The D08 default carries no fee the owner set — "not set", never a silent zero.
-        return source === 'default' ? {} : { ...(policy.deliveryFeeMinor === undefined ? {} : { deliveryFeeMinor: policy.deliveryFeeMinor }), ...(policy.freeDeliveryAboveMinor === undefined ? {} : { freeDeliveryAboveMinor: policy.freeDeliveryAboveMinor }) };
-      },
-      listings: (t) => all<OnlineListingRecord>(store, t, LISTINGS, 'OnlineListingRecorded'),
-      recordListing: (t, r, key) => put(store, t, LISTINGS, 'OnlineListingRecorded', r, r.at, key),
-      publications: (t) => all<OnlineStorePublication>(store, t, PUBLICATIONS, 'OnlineStorePublished'),
-      recordPublication: (t, p) => put(store, t, PUBLICATIONS, 'OnlineStorePublished', p, p.at, `v${p.version}`),
-      onlineComplaints: async (t) => (await cases.serviceCases(t))
-        .filter((c: ServiceCase) => c.caseId.startsWith('app-'))
-        .map((c) => ({ caseId: c.caseId, openedAt: c.openedAt, state: c.state, ...(c.firstRespondedAt === undefined ? {} : { firstRespondedAt: c.firstRespondedAt }), ...(c.resolvedAt === undefined ? {} : { resolvedAt: c.resolvedAt }) })),
-      ratingSummary: async (t, productId) => ratingSummary(await ratings(t), productId),
-      imageOf: async (t, productId) => {
-        const cur = currentImage(await imageVersions(t, productId), productId);
-        return cur === undefined ? undefined : { version: cur.version, mediaType: cur.mediaType };
-      },
-      ...(input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit }),
-    }),
+    ...onlineStoreRoutes(onlineStoreDepsOf({ store, now, signer: input.signer, ...(input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit }) })),
     // ── M20-FR-04 — ratings, stars only, buyers only ──
     ...storefrontRatingRoutes({
       now,

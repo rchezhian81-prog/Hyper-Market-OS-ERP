@@ -310,7 +310,7 @@ import { supplierReturnDispatchHooks, oneDebitNoteSeries } from './r3-followup-a
 import { r3OpsRoutes, masterLifecycleOf, ingredientBatchesAt, channelPricingGateFor, packPricingFor } from './r3-ops-adapters';
 // R4 Lane 3 (customer insight, offers and demand): M16 · M17-FR-02 · D-23 · D-22 · D-24 · EA-07 sending off (r4-insight-adapters).
 import { r4InsightRoutes, demandCalendarFor, type BriefSendingLink } from './r4-insight-adapters';
-import { r4OnlineRoutes } from './r4-online-adapters'; // R4 Lane 2 · B23 · A26 · D-28 · WF-16 · M20-FR-04 · D01-FR-06 · D08 · M16-FR-01
+import { r4OnlineRoutes, onlineListedAdapter } from './r4-online-adapters'; // R4 Lane 2 · B23 · A26 · D-28 · WF-16 · M20-FR-04 · D01-FR-06 · D08 · M16-FR-01
 import { wasteAnalyticsAdapter, foodSafetyAdapter, priceIntegrityAgeingAdapter, assignedTaskAdapter, receivingChecklistLookup, carriedChecklistAdapter } from './r2-ops-adapters';
 import { assignedTaskRoutes } from '../../finance/src/assigned-tasks';
 import { priceIntegrityAgeingRoutes } from '../../pricing/src/price-integrity-ageing';
@@ -1422,6 +1422,9 @@ export function buildSurface(deps: {
       ...(store === undefined ? {} : { deliveryService: deliveryServiceAdapter({ store, now, timeZone: (t: string) => settings.value(t, SETTINGS.STORE_TIME_ZONE) }) }),
       // OB-77: the driver's delivery steps for the customer's own order read — the dispatcher's record, one truth.
       ...(store === undefined ? {} : { deliveryHistory: (t: string, orderId: string) => fulfilmentAdapter({ store, now }).deliveryState(t, orderId) }),
+      // R4 · OB-234: only a product published online (and still carrying every display duty) is sold online — the same
+      // answer the customer's listing gives (B23 · A26, r4-online-adapters).
+      ...(store === undefined ? {} : { onlineListed: onlineListedAdapter({ store, now, signer }) }),
     }),
     // FUL-03: how the store delivers, as head office holds it — set by the owner/manager, read by staff.
     ...deliveryServiceRoutes(store === undefined

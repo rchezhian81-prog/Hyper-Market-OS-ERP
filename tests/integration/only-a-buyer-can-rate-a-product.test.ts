@@ -9,7 +9,7 @@ import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { runMigrations } from '../../packages/persistence/src/migrations';
 import { testModePaymentProvider } from '../../packages/orders/src/payment-verification';
-import { seedOnlineShop, deliveredOrder, callsFor, codeOf, saidOf, CASHIER, CUSTOMER, OTHER_CUSTOMER } from '../support/online-shop';
+import { seedOnlineShop, listShopOnline, deliveredOrder, callsFor, codeOf, saidOf, CASHIER, CUSTOMER, OTHER_CUSTOMER } from '../support/online-shop';
 
 /**
  * **R4 · M20-FR-04 — product ratings, stars only, buyers only (OB-74 · OB-218) — on the real API, in memory and on REAL
@@ -46,6 +46,7 @@ describe.each(backings)('M20-FR-04 — only a buyer can rate a product, on $name
     const c = callsFor(() => h, T);
     const { req, ok } = c;
     await seedOnlineShop(h, T, c);
+    await listShopOnline(c); // OB-234: only what is published online is sold online
 
     // Not delivered yet: the customer has not bought it.
     provider.capture('tok-ORD-R1', 270_00);

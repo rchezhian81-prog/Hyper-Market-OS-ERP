@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { expect } from 'vitest';
 import type { ApiHarness } from './api-harness';
 import type { TestModePaymentProvider } from '../../packages/orders/src/payment-verification';
+import { sellOnline } from './sell-online';
 
 export const OWNER = 'u-owner';
 export const MANAGER = 'u-manager';
@@ -78,6 +79,18 @@ export async function seedOnlineCatalogue(c: ShopCalls, store = STORE): Promise<
   await ok(req('POST', '/v1/inventory/movements', { movementId: 'rx-saree', productId: 'SAREE', locationId: store, kind: 'received', quantityMinor: 3, uom: 'ea', occurredAt: arrived, enteredBy: OWNER, ownership: 'concession', ownerId: 'silks-counter' }), 'receive SAREE (concession)');
   await ok(req('POST', '/v1/catalogue/pack', { storeId: store, asOf: today }), 'pack');
   await ok(req('POST', '/v1/serviceability/periods/2026-01-01', { radiusMetres: 10_000, deliveryFeeMinor: 40_00 }), 'delivery fee');
+}
+
+/**
+ * OB-234: the online store sells only what the shop has published online. Set the shop's (synthetic) details, give BROOM
+ * the country of origin it lacks, and publish MILK and BROOM online. SAREE (another seller's goods) is never listed.
+ */
+export async function listShopOnline(c: ShopCalls): Promise<void> {
+  await c.ok(c.req('POST', '/v1/catalogue/products/BROOM/publish', {
+    product: { sku: 'BROOM-1', name: 'Synthetic Broom', baseUom: 'ea', primaryCategoryId: 'household', taxClass: '9603', lifecycle: 'active', mrpHistory: mrp(180_00), safety: { countryOfOrigin: 'India' } },
+    categories: [{ categoryId: 'household', name: 'Household', parentId: null }],
+  }), 'BROOM country of origin');
+  await sellOnline((path, body) => c.req('POST', path, body), ['MILK', 'BROOM']);
 }
 
 /** The customer orders 2 MILK and 1 BROOM, pays (the test provider captures it), and the shop delivers it. */
