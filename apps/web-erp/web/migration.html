@@ -108,6 +108,18 @@
       .banner p { margin: 0; font-size: 16px; }
       .banner button { background: var(--danger-surface); color: var(--on-danger); }
       .banner.good button { background: var(--ok-surface); color: var(--on-ok-surface); }
+
+      /* MG-10 day entry: one card per area — old ERP beside the new system, then the reason if they differ. */
+      .area { background: var(--panel); border-radius: 12px; padding: 12px 14px; margin-bottom: 8px; display: grid; gap: 6px; }
+      .area.differs { border-left: 6px solid var(--warn); }
+      .area.unexplained { border-left: 6px solid var(--danger); background: var(--error-surface); }
+      .area .cols { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+      .area label { margin: 0 0 2px; font-size: 14px; }
+      .area .diff { font-weight: 600; font-variant-numeric: tabular-nums; }
+      .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+      .actions button { flex: 1 1 200px; padding: 0 14px; }
+      .file-pick { display: inline-flex; align-items: center; gap: 8px; }
+      @media (max-width: 420px) { .area .cols { grid-template-columns: 1fr; } .row2 { grid-template-columns: 1fr; } }
     </style>
   </head>
   <body>
@@ -170,6 +182,17 @@
           </div>
         </div>
         <button id="sign" class="primary wide" type="button">Sign it</button>
+
+        <!-- STEP-1 §4 item 5: the six witness checks' figures, as the cloud last sent them (MG-06 / QG-07). -->
+        <h3 id="witness-title">What the outside evidence says</h3>
+        <p class="lead" id="witness-lead">Each of the twelve kinds of record, checked against something outside the old system — the stock count, the bank, the tax returns, the accountant's books, the suppliers, the customers. A kind with no finding is listed as missing, never as fine.</p>
+        <div class="bill" id="witness-summary"></div>
+        <div id="witness-list"></div>
+
+        <!-- OB-241 / MG-05: the four CSV templates for the first department's products, barcodes, tax classes and prices. -->
+        <h3 id="templates-title">Templates for the first department</h3>
+        <p class="lead" id="templates-lead">Download each one, fill it in from the old system's export, one row per line, and give the folder to the person doing the load on the store computer. A bad row is set aside with its reason — it never stops the good ones, and nothing goes in until a named person has read the list.</p>
+        <div id="templates-list"></div>
       </section>
 
       <section id="view-data" hidden>
@@ -200,6 +223,28 @@
         <p class="lead" id="both-lead">Both systems ringing the same sales. Where they disagree, one of them is wrong about your shop, and somebody has to put their name to which. A bad day resets the count — the clean days only count from after the problem was fixed.</p>
         <div class="bill" id="both-summary"></div>
         <div id="both-list"></div>
+
+        <!-- MG-10: the old ERP's daily totals typed or imported beside the new system's, a reason on every difference,
+             and the day signed by the named reconciler. Saved on this device first, then sent (hard rule #1). -->
+        <h3 id="day-title">Enter a day</h3>
+        <p class="lead" id="day-lead">Type the old system's total for the day beside the new system's, area by area — or bring in the old system's day-end file. Where the two differ by more than the allowed amount, write why. A day with a difference nobody has explained cannot be signed.</p>
+        <p class="lead" id="day-reconciler"></p>
+        <label for="day-date" id="day-date-label">Which day</label>
+        <input id="day-date" type="date" autocomplete="off" />
+        <label for="day-import" id="day-import-label">Bring in the old system's day-end file (area, old system, new system, allowed difference)</label>
+        <input id="day-import" type="file" accept=".csv,text/csv" />
+        <div id="day-areas"></div>
+        <div class="actions">
+          <button id="day-save" class="primary" type="button">Save the day</button>
+        </div>
+        <div id="day-view"></div>
+        <label for="day-statement" id="day-statement-label">What you checked (in your own words)</label>
+        <textarea id="day-statement"></textarea>
+        <div class="actions">
+          <button id="day-sign" class="primary" type="button">Sign the day</button>
+        </div>
+        <h3 id="days-title">Days so far</h3>
+        <div id="days-list"></div>
       </section>
 
       <section id="view-old" hidden>

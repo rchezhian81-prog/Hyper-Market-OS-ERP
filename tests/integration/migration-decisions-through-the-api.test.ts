@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { recordLoadAs } from '../support/load-record';
 import { sealedDecision } from '../support/store-seal';
 
 // MG-04 / MG-06 — the migration screen's decisions KEPT on the cloud, through the real authenticated API
@@ -20,6 +21,8 @@ async function seeded(): Promise<ApiHarness> {
   await h.provisionRole(T, LOADER, 'store_manager');  // ran the extraction/load
   // Who ran the extraction — the ledger fact the signature rule reads (never the body).
   expect((await post(h, '/v1/migration/extraction-runs/run-1', OWNER, 'er1', { operatorId: LOADER })).status).toBe(201);
+  // Who ran the LOAD is the stored load record's operator — LOADER, signed in (MG-06), never the typed operatorId above.
+  expect((await recordLoadAs(h, T, LOADER)).status).toBe(201);
   return h;
 }
 const post = (h: ApiHarness, path: string, userId: string, key: string, body: unknown) =>

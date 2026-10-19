@@ -33,11 +33,13 @@ export interface MigrationFeed {
   readonly rollbacks?: readonly unknown[];
   readonly exclusions?: readonly unknown[];
   readonly verification?: Readonly<Record<string, unknown>>;
+  /** MG-10: each parallel-run day's signatures, with whether each still applies to the day's figures. */
+  readonly parallelDaySignatures?: readonly unknown[];
 }
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
 const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
-const LIST_SECTIONS = ['exceptions', 'totals', 'refusedDecisions', 'parallelDays', 'parallelDifferences', 'rollbacks', 'exclusions'] as const;
+const LIST_SECTIONS = ['exceptions', 'totals', 'refusedDecisions', 'parallelDays', 'parallelDifferences', 'rollbacks', 'exclusions', 'parallelDaySignatures'] as const;
 
 /**
  * Read a body as a feed, or say it is not one. Strict on the fields the box INTERPRETS (tenant, clock, the

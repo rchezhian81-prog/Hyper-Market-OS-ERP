@@ -363,6 +363,23 @@ export async function runLoadCommand(input: LoadCommandInput): Promise<LoadComma
     return done(0, 'dry_run', { plan });
   }
 
+  // ── the load record (MG-06): kept on the cloud under the operator's own session BEFORE anything is sent ──────
+  // Who ran the load is then a fact the cloud recorded from the signed-in session — the control-total signature reads it,
+  // never a name anybody typed (STEP-1 §4 item 9). The digest is the seals of every file, so a re-run of the same load
+  // is the same record and a re-sealed extract is a new one.
+  const loadDigest = simpleHasher(present.map((n) => `${n}:${manifest.files[n]!.seal.digest}`).sort().join('|'));
+  const recorded = await input.client!.request({
+    method: 'POST', path: `/v1/migration/loads/${encodeURIComponent(manifest.loadId)}`, userId: manifest.operator, tenantId: manifest.tenantId,
+    idempotencyKey: `${manifest.loadId}-record-${loadDigest}`,
+    body: { sliceDigest: loadDigest, counts: Object.fromEntries(present.map((n) => [n, { rows: parsed[n]!.rows.length, staged: parsed[n]!.rows.length, quarantined: 0 }])), exceptions: [] },
+  });
+  if (recorded.status !== 200 && recorded.status !== 201) {
+    const why = (recorded.body as { error?: { whatHappened?: string } } | undefined)?.error?.whatHappened ?? `HTTP ${recorded.status}`;
+    say(`REFUSED — the cloud did not keep the load record, so nobody could later check who ran this load: ${why}. Nothing was sent.`);
+    return done(1, 'load', { plan });
+  }
+  say(`Load record kept — ${(recorded.body as { record?: { operator?: string } }).record?.operator ?? manifest.operator} ran this load (the person signed in); they cannot sign its totals.`);
+
   // ── load ──────────────────────────────────────────────────────────────────────────────────────
   const report = await executeLoad(input.client!, plan);
   const l = report.landed;

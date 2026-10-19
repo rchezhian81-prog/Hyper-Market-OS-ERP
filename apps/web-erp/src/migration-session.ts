@@ -60,6 +60,9 @@ import {
   type ParallelDifference, type ParallelRunPosition, type ReconciliationReport,
   type RetirementAssessment, type RollbackResult, type RollbackTrigger, type TeamMember,
 } from '../../../packages/migration/src/index';
+import { compareParallelDay, ownDifference, type ComparisonArea, type DayComparison } from '../../../packages/migration/src/cutover';
+import { dayDigestOf, signParallelDay, unexplainedDifferences, type DaySignRefusal } from '../../../packages/migration/src/parallel-day-sign';
+import { SLICE_FILES, SLICE_TEMPLATES, sliceTemplateCsv, type SliceFile } from '../../../packages/migration/src/slice-import';
 import { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { makeEvent } from '../../../packages/contracts/src/event';
 
@@ -71,8 +74,12 @@ export interface MigrationPorts {
   exceptions(): readonly MigrationException[] | undefined;
   /** Every control total recorded (MG-06). Absent means none has been. */
   totals(): readonly ControlTotal[] | undefined;
-  /** Each day both systems were compared (MG-10). Absent means no parallel run. */
-  parallelDays(): readonly ParallelDayResult[] | undefined;
+  /** Each day both systems were compared (MG-10), with the figures each side gave. Absent means no parallel run. */
+  parallelDays(): readonly RecordedDayView[] | undefined;
+  /** Every signature a parallel-run day has had, and whether it still applies to the day's figures (MG-10). */
+  daySignatures?(): readonly DaySignatureView[] | undefined;
+  /** The twelve-domain witness figures from the cloud (STEP-1 §4 item 5). Absent means the box has not been told. */
+  verification?(): WitnessView | undefined;
   /** Every difference raised by those comparisons, in whatever state. */
   parallelDifferences(): readonly ParallelDifference[] | undefined;
   /** History exclusions (MG-07), proposed and approved. */
@@ -105,6 +112,59 @@ export interface MigrationPorts {
   outbox(): SyncOutbox;
 }
 
+/** A compared day as the box carries it: the engine's result, and — when the cloud recorded them — the figures. */
+export type RecordedDayView = ParallelDayResult & { readonly comparisons?: readonly DayComparison[]; readonly recordedBy?: string };
+
+/** A day's signature as the box carries it. */
+export interface DaySignatureView {
+  readonly businessDate: string;
+  readonly signedBy: string;
+  readonly signedAt: string;
+  readonly statement: string;
+  readonly dayDigest: string;
+  /** False when the day was recorded again with other figures after it was signed. */
+  readonly stillApplies?: boolean;
+}
+
+/** The twelve-domain witness position, with each domain's figure (MG-06 / QG-07 evidence). */
+export interface WitnessView {
+  readonly findings?: readonly { readonly domain: string; readonly verdict: string; readonly figureMinor?: number; readonly figureLabel?: string; readonly provedBy?: readonly string[]; readonly whatItCannotProve?: string }[];
+  readonly covered?: readonly string[];
+  readonly missing?: readonly string[];
+  readonly signaturesOverThisPage?: number;
+  readonly detail?: string;
+}
+
+/** One area of a day as the reconciler types it: both systems' figures, the tolerance, and — if they differ — why. */
+export interface DayEntryLine {
+  readonly area: ComparisonArea;
+  readonly legacyValue: number;
+  readonly newValue: number;
+  readonly toleranceMinor: number;
+  readonly explanation?: string;
+  readonly wrongSide?: 'legacy' | 'new' | 'both' | 'neither';
+}
+
+export type DayRefusal = 'nobody_is_named_at_this_desk' | 'nobody_named_to_reconcile' | 'not_the_named_reconciler' | 'not_a_date' | 'no_figures' | 'explanation_refused';
+export type DaySignScreenRefusal = 'nobody_is_named_at_this_desk' | 'nobody_named_to_reconcile' | DaySignRefusal;
+
+export interface DayView {
+  readonly businessDate: string;
+  readonly comparisons?: readonly DayComparison[];
+  readonly differences: readonly ParallelDifference[];
+  /** The differences beyond tolerance that still have no reason — the ones that stop a signature. */
+  readonly unexplained: readonly ParallelDifference[];
+  readonly signature?: DaySignatureView;
+}
+
+export type DayOutcome =
+  | { readonly ok: true; readonly day: DayView; readonly detail: string }
+  | { readonly ok: false; readonly refusal: DayRefusal; readonly detail: string };
+
+export type DaySignOutcome =
+  | { readonly ok: true; readonly signature: DaySignatureView; readonly detail: string }
+  | { readonly ok: false; readonly refusal: DaySignScreenRefusal; readonly detail: string; readonly unexplained: readonly ParallelDifference[] };
+
 export interface MigrationConfig {
   readonly tenantId: string;
   /** Who is looking. `null` means the box was not told — nothing may be signed or decided. */
@@ -123,6 +183,11 @@ export interface MigrationConfig {
   readonly loadOperator: string | undefined;
   /** Whether the cutover has been accepted, for the retirement assessment (MG-12). */
   readonly cutoverAccepted: boolean;
+  /**
+   * The ONE person the owner named to reconcile the parallel run daily (R-05), from the cloud's written terms. Absent:
+   * nobody is named, and no day can be entered or signed here.
+   */
+  readonly dailyReconcilerUserId?: string;
 }
 
 export type SignRefusal = 'nobody_is_named_at_this_desk' | 'nobody_ran_the_load' | 'refused';
@@ -192,6 +257,19 @@ export interface MigrationSession {
   sign(input: { readonly totalId: string; readonly signerRole: string; readonly statement: string }): SignOutcome;
   /** Roll back. One clearly-labelled action, needing nobody's approval. */
   rollback(input: { readonly trigger: RollbackTrigger; readonly legacySystemAvailable: boolean }): RollbackOutcome;
+  /** One parallel-run day: both systems' figures, its differences, what still has no reason, and its signature. */
+  day(businessDate: string): DayView;
+  /**
+   * Enter a day (MG-10): the old ERP's totals typed or imported beside the new system's, with a reason on each
+   * difference. Committed here and queued for the cloud (hard rule #1); the cloud re-checks the person and the rules.
+   */
+  enterDay(input: { readonly businessDate: string; readonly lines: readonly DayEntryLine[] }): DayOutcome;
+  /** Sign a day. Refused while any difference beyond tolerance has no reason. */
+  signDay(input: { readonly businessDate: string; readonly statement: string }): DaySignOutcome;
+  /** The witness figures, as the cloud last sent them. */
+  witness(): WitnessView | undefined;
+  /** The four department-slice CSV templates (OB-241), header line only — the file a person downloads and fills in. */
+  sliceTemplates(): readonly { readonly file: SliceFile; readonly csv: string; readonly columns: readonly string[]; readonly required: readonly string[] }[];
   /**
    * Decisions made here that have not yet reached the store computer.
    *
@@ -214,6 +292,25 @@ export function createMigrationSession(config: MigrationConfig, ports: Migration
    */
   let workingTotals: readonly ControlTotal[] | undefined;
   let workingExceptions: readonly MigrationException[] | undefined;
+  // MG-10: days entered and signed on THIS page, over what the box last sent — drawn at once, queued for the cloud.
+  const workingDays = new Map<string, RecordedDayView>();
+  let workingDifferences: readonly ParallelDifference[] | undefined;
+  const workingSignatures: DaySignatureView[] = [];
+  const daysNow = (): readonly RecordedDayView[] | undefined => {
+    const sent = ports.parallelDays();
+    if (sent === undefined && workingDays.size === 0) return undefined;
+    const byDate = new Map<string, RecordedDayView>();
+    for (const d of sent ?? []) byDate.set(d.businessDate, d);
+    for (const [k, d] of workingDays) byDate.set(k, d);
+    return [...byDate.values()];
+  };
+  const differencesNow = (): readonly ParallelDifference[] | undefined => workingDifferences ?? ports.parallelDifferences();
+  const signaturesNow = (): readonly DaySignatureView[] => [...(ports.daySignatures?.() ?? []), ...workingSignatures];
+  const shortHash = (text: string): string => {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < text.length; i += 1) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193) >>> 0;
+    return h.toString(16).padStart(8, '0');
+  };
 
   const totalsNow = (): readonly ControlTotal[] | undefined => workingTotals ?? ports.totals();
   const exceptionsNow = (): readonly MigrationException[] | undefined =>
@@ -247,8 +344,8 @@ export function createMigrationSession(config: MigrationConfig, ports: Migration
   };
 
   const parallel = (): ParallelRunPosition | undefined => {
-    const days = ports.parallelDays();
-    const differences = ports.parallelDifferences();
+    const days = daysNow();
+    const differences = differencesNow();
     // Days without differences would report every day clean; differences without days would
     // report no run at all. Both are needed, and neither is defaulted to an empty list.
     if (days === undefined || differences === undefined) return undefined;
@@ -304,7 +401,7 @@ export function createMigrationSession(config: MigrationConfig, ports: Migration
 
     parallel,
 
-    unowned: () => (ports.parallelDifferences() ?? [])
+    unowned: () => (differencesNow() ?? [])
       .filter((d) => d.status !== 'resolved' && d.ownerUserId === undefined),
 
     exclusions: () => {
@@ -437,6 +534,103 @@ export function createMigrationSession(config: MigrationConfig, ports: Migration
         }),
       };
     },
+
+    day: (businessDate) => {
+      const recorded = (daysNow() ?? []).find((d) => d.businessDate === businessDate);
+      const differences = (differencesNow() ?? []).filter((d) => d.businessDate === businessDate);
+      const comparisons = recorded?.comparisons;
+      const signature = signaturesNow().filter((sg) => sg.businessDate === businessDate
+        && sg.stillApplies !== false && comparisons !== undefined && sg.dayDigest === dayDigestOf(comparisons)).at(-1);
+      return {
+        businessDate, differences, unexplained: unexplainedDifferences(businessDate, differences),
+        ...(comparisons === undefined ? {} : { comparisons }),
+        ...(signature === undefined ? {} : { signature }),
+      };
+    },
+
+    enterDay: (input) => {
+      if (config.userId === null) {
+        return { ok: false, refusal: 'nobody_is_named_at_this_desk', detail: 'this store box has not been told who is using this screen. A day\'s figures carry the name of whoever entered them.' };
+      }
+      if (config.dailyReconcilerUserId === undefined) {
+        return { ok: false, refusal: 'nobody_named_to_reconcile', detail: 'the owner has not named the person who reconciles the parallel run daily (R-05), so no day can be entered.' };
+      }
+      if (config.userId !== config.dailyReconcilerUserId) {
+        return { ok: false, refusal: 'not_the_named_reconciler', detail: `${config.dailyReconcilerUserId} is the person named to reconcile daily; at the store screen only they enter a day (the owner may, at head office).` };
+      }
+      const date = input.businessDate.trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { ok: false, refusal: 'not_a_date', detail: 'the business date must be YYYY-MM-DD.' };
+      const lines = input.lines.filter((l) => Number.isFinite(l.legacyValue) && Number.isFinite(l.newValue) && Number.isFinite(l.toleranceMinor) && l.toleranceMinor >= 0);
+      if (lines.length === 0 || lines.length !== input.lines.length) {
+        return { ok: false, refusal: 'no_figures', detail: 'every line needs both systems\' figures and a tolerance of 0 or more — a blank is not a zero.' };
+      }
+      const comparisons: DayComparison[] = lines.map((l) => ({ area: l.area, legacyValue: l.legacyValue, newValue: l.newValue, toleranceMinor: l.toleranceMinor }));
+      const held = (daysNow() ?? []).find((d) => d.businessDate === date);
+      let differences = [...(differencesNow() ?? [])];
+      let fresh: RecordedDayView | undefined;
+      if (held?.comparisons === undefined || dayDigestOf(held.comparisons) !== dayDigestOf(comparisons)) {
+        // New figures are a new fact about the day: its differences are raised afresh and need their reasons afresh.
+        const result = compareParallelDay({ tenantId: config.tenantId, businessDate: date, comparisons });
+        differences = [...differences.filter((d) => d.businessDate !== date), ...result.differences];
+        fresh = { ...result, comparisons, recordedBy: config.userId };
+      }
+      const refusedReasons: string[] = [];
+      for (const l of lines) {
+        const why = (l.explanation ?? '').trim();
+        if (why === '') continue;
+        const target = differences.find((d) => d.businessDate === date && d.area === l.area && d.status !== 'resolved');
+        if (target === undefined) continue;
+        const r = ownDifference({ differences, differenceId: target.differenceId, ownerUserId: config.userId, explanation: why, ...(l.wrongSide === undefined ? {} : { wrongSide: l.wrongSide }) });
+        if (!r.ok) { refusedReasons.push(r.detail); continue; }
+        differences = [...r.differences];
+      }
+      if (refusedReasons.length > 0) return { ok: false, refusal: 'explanation_refused', detail: refusedReasons.join('; ') };
+      if (fresh !== undefined) workingDays.set(date, fresh);
+      workingDifferences = differences;
+      const explanations = lines.filter((l) => (l.explanation ?? '').trim() !== '')
+        .map((l) => ({ area: l.area, explanation: l.explanation!.trim(), ...(l.wrongSide === undefined ? {} : { wrongSide: l.wrongSide }) }));
+      queue('MigrationParallelDayEntered', `${date}:${shortHash(JSON.stringify({ comparisons, explanations }))}`, {
+        businessDate: date, enteredBy: config.userId, comparisons, explanations, enteredAt: config.now,
+      });
+      const day = session.day(date);
+      return {
+        ok: true, day,
+        detail: day.differences.length === 0
+          ? `${date}: both systems agree in every area`
+          : `${date}: ${day.differences.length} difference(s), ${day.unexplained.length} still without a reason`,
+      };
+    },
+
+    signDay: (input) => {
+      if (config.userId === null) {
+        return { ok: false, refusal: 'nobody_is_named_at_this_desk', detail: 'this store box has not been told who is using this screen. A day is signed by a name or not at all.', unexplained: [] };
+      }
+      if (config.dailyReconcilerUserId === undefined) {
+        return { ok: false, refusal: 'nobody_named_to_reconcile', detail: 'the owner has not named the person who reconciles daily (R-05).', unexplained: [] };
+      }
+      const date = input.businessDate.trim();
+      const day = session.day(date);
+      const result = signParallelDay({
+        businessDate: date, comparisons: day.comparisons, differences: differencesNow() ?? [], signedBy: config.userId,
+        statement: input.statement, now: config.now, reconcilerUserId: config.dailyReconcilerUserId, ownerUserId: undefined,
+      });
+      if (!result.ok) return { ok: false, refusal: result.refusedBecause, detail: result.detail, unexplained: result.unexplained };
+      const signature: DaySignatureView = {
+        businessDate: date, signedBy: result.signature.signedBy, signedAt: result.signature.signedAt,
+        statement: result.signature.statement, dayDigest: result.signature.dayDigest, stillApplies: true,
+      };
+      workingSignatures.push(signature);
+      queue('MigrationParallelDaySigned', `${date}:${signature.dayDigest}`, {
+        businessDate: date, signedBy: config.userId, statement: signature.statement, dayDigest: signature.dayDigest, signedAt: config.now,
+      });
+      return { ok: true, signature, detail: result.detail };
+    },
+
+    witness: () => ports.verification?.(),
+
+    sliceTemplates: () => SLICE_FILES.map((file) => ({
+      file, csv: sliceTemplateCsv(file), columns: SLICE_TEMPLATES[file].columns, required: SLICE_TEMPLATES[file].required,
+    })),
 
     // What this page has decided and not yet managed to send. Drawn on the page, because a
     // screen showing a signature it could not record is the failure P-08 exists to refuse.

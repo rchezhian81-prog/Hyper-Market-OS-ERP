@@ -5,6 +5,17 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Cutover-readiness tools for the pilot (OB-239 to OB-242) — built and tested on synthetic data, gate and PR pending
+
+- **One department first (MG-05):** four CSV templates. Each row is judged on its own; bad rows (and rows that depend on them) are set aside with file, line, old key, column and reason. Nothing is applied until a named person accepts the list in their own session.
+- **Who ran the load (MG-06):** recorded from the signed-in session, never typed. That person cannot sign the control totals.
+- **Running both (MG-10):** the migration screen takes the old ERP's day totals beside the new system's. A day cannot be signed while any difference lacks a reason. The witness figures are shown. English and Tamil.
+- **Rollback drill (G9):** a timed script against the roadmap §32 targets. Not yet run on the store computer.
+- **Runbooks:** store-computer real-data environment (OB-240, ten isolation checks), delta capture (MG-09, questions D-1 to D-7).
+- **Tests:** unit, memory, PostgreSQL with cold restart, browser. No real data read. No staff UAT.
+- **Blocked:** delta automation waits for D-1 and D-2. The Option 2 GO waits for OB-243 names, the G4 checks and a PASSED G9 drill.
+- **Known limits:** store-computer sign-in is the pilot stand-in (KL-01); tolerance is typed per day (default 0); purchase/balance/margin daily controls not covered; store-computer gaps G-RD-1 to G-RD-5 in the runbook.
+
 ## Known gaps in signed R3/R4 items closed (19–20 October 2026) — gate and PR pending
 
 - **Till:**
