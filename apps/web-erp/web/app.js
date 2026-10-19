@@ -52,7 +52,7 @@ const WORDS = {
     approvalsLabel: 'Approvals waiting', notKnown: 'Not known', nothingWaiting: 'Nothing is waiting.',
     // The Today command centre (UX-2b · OB-15/OB-16).
     salesTodayLabel: 'Sales today', boxSilent: 'the store computer has not said',
-    needsAttention: 'Needs attention', nothingNeedsYou: 'Nothing needs you right now.', purchaseToShelf: 'Purchase to shelf', storeToday: 'Store today', workspaces: 'Workspaces', screensWord: 'screens', open: 'Open',
+    needsAttention: 'Needs attention', nothingNeedsYou: 'Nothing needs you right now.', purchaseToShelf: 'Purchase to shelf', storeToday: 'Store today', workspaces: 'Workspaces', screenWord: 'screen', screensWord: 'screens', open: 'Open',
     poOpen: 'Purchase orders open', receiptsRecorded: 'Receipts recorded', countsAwaiting: 'Counts awaiting approval', indentsOpen: 'Floor indents open',
     deliveriesToday: 'Deliveries today', checklistOpen: 'Checklist items open', expiringSoon: 'Expiring soon', recallsOpen: 'Recall notices',
     attnApprovals: 'approvals you can clear', attnExceptions: 'exceptions open', attnUnsent: 'items not yet sent to the cloud', attnRecalls: 'recall notices', attnExpiring: 'batches expiring soon', attnChecklist: 'checklist items still open', attnCounts: 'counts awaiting approval', tillDevicesLabel: 'Till devices', attnTillDevices: 'till device(s) failed or not working properly',
@@ -87,6 +87,11 @@ const WORDS = {
     carryApprover: 'Second person\'s staff ID', carryPin: 'Their till PIN — they key it themselves', carryReason: 'Why',
     carryProvider: 'The card or UPI provider is not answering', carryMachine: 'The card machine is faulty',
     carryNow: 'Close with these sent to head office', carryNeeds: 'Key your own PIN above, and the second person\'s staff ID and their own PIN.',
+    // OB-205: the approvals register's captions and the day close's help lines.
+    colRequest: 'Request', colValue: 'Value', colDecision: 'Decision',
+    receiveLead: 'Saved on this screen with or without a connection; the store computer sends it to head office.',
+    closePinHint: 'Up to six digits. The store computer checks it; it is cleared from this screen as soon as it is sent.',
+    carryPinHint: 'The second person types this themselves, on this screen.',
     carried: 'The day is closed and locked. These payments are on head office\'s list until the provider answers',
     closedNote: 'A closed day is locked. Anything found afterwards is a correction, not a change.',
     dayClosed: 'The day is closed and locked.', stillOpen: 'The day cannot close yet',
@@ -114,7 +119,7 @@ const WORDS = {
     unsentLabel: 'கிளௌடுக்கு அனுப்பப்படாதவை', tasksLabel: 'இன்றைய பணிகள்',
     approvalsLabel: 'காத்திருக்கும் ஒப்புதல்கள்', notKnown: 'தெரியவில்லை',
     salesTodayLabel: 'இன்றைய விற்பனை', boxSilent: 'கடை கணினி சொல்லவில்லை',
-    needsAttention: 'கவனம் தேவை', nothingNeedsYou: 'இப்போது உங்களுக்கு எதுவும் தேவையில்லை.', purchaseToShelf: 'கொள்முதலிலிருந்து அலமாரிக்கு', storeToday: 'இன்று கடை', workspaces: 'பணியிடங்கள்', screensWord: 'திரைகள்', open: 'திற',
+    needsAttention: 'கவனம் தேவை', nothingNeedsYou: 'இப்போது உங்களுக்கு எதுவும் தேவையில்லை.', purchaseToShelf: 'கொள்முதலிலிருந்து அலமாரிக்கு', storeToday: 'இன்று கடை', workspaces: 'பணியிடங்கள்', screenWord: 'திரை', screensWord: 'திரைகள்', open: 'திற',
     poOpen: 'திறந்த கொள்முதல் ஆணைகள்', receiptsRecorded: 'பதிவான பெறுதல்கள்', countsAwaiting: 'ஒப்புதலுக்குக் காத்திருக்கும் எண்ணிக்கைகள்', indentsOpen: 'திறந்த தளக் கோரிக்கைகள்',
     deliveriesToday: 'இன்றைய டெலிவரிகள்', checklistOpen: 'முடிக்காத சரிபார்ப்புகள்', expiringSoon: 'விரைவில் காலாவதி', recallsOpen: 'திரும்பப்பெறல் அறிவிப்புகள்',
     attnApprovals: 'நீங்கள் தீர்க்கக்கூடிய ஒப்புதல்கள்', attnExceptions: 'திறந்த விதிவிலக்குகள்', attnUnsent: 'கிளௌடுக்கு அனுப்பப்படாத பதிவுகள்', attnRecalls: 'திரும்பப்பெறல் அறிவிப்புகள்', attnExpiring: 'விரைவில் காலாவதியாகும் தொகுதிகள்', attnChecklist: 'முடிக்காத சரிபார்ப்புகள்', attnCounts: 'ஒப்புதலுக்குக் காத்திருக்கும் எண்ணிக்கைகள்', tillDevicesLabel: 'கல்லா சாதனங்கள்', attnTillDevices: 'செயலிழந்த அல்லது சரியாக வேலை செய்யாத கல்லா சாதனம்(கள்)',
@@ -151,6 +156,10 @@ const WORDS = {
     carryApprover: 'இரண்டாவது நபரின் பணியாளர் எண்', carryPin: 'அவர்களின் கடை PIN — அவர்களே உள்ளிட வேண்டும்', carryReason: 'காரணம்',
     carryProvider: 'கார்டு அல்லது UPI வழங்குநர் பதில் தரவில்லை', carryMachine: 'கார்டு இயந்திரம் பழுதாக உள்ளது',
     carryNow: 'இவற்றைத் தலைமை அலுவலகத்துக்கு அனுப்பி நாளை முடி', carryNeeds: 'மேலே உங்கள் சொந்த PIN, இரண்டாவது நபரின் பணியாளர் எண் மற்றும் அவரின் சொந்த PIN ஆகியவற்றை உள்ளிடவும்.',
+    colRequest: 'கோரிக்கை', colValue: 'மதிப்பு', colDecision: 'முடிவு',
+    receiveLead: 'இணைப்பு இருந்தாலும் இல்லாவிட்டாலும் இந்தத் திரையில் சேமிக்கப்படும்; கடை கணினி அதைத் தலைமை அலுவலகத்திற்கு அனுப்பும்.',
+    closePinHint: 'ஆறு இலக்கங்கள் வரை. கடை கணினி இதைச் சரிபார்க்கும்; அனுப்பியவுடன் இந்தத் திரையிலிருந்து அழிக்கப்படும்.',
+    carryPinHint: 'இரண்டாம் நபர் இதைத் தாமே இந்தத் திரையில் தட்டச்சு செய்ய வேண்டும்.',
     carried: 'நாள் முடிக்கப்பட்டு பூட்டப்பட்டது. வழங்குநர் பதில் தரும் வரை இந்தக் கட்டணங்கள் தலைமை அலுவலகப் பட்டியலில் இருக்கும்',
     dayClosed: 'நாள் முடிக்கப்பட்டு பூட்டப்பட்டது.', stillOpen: 'நாளை இன்னும் முடிக்க முடியாது',
     andMore: 'மேலும்', whatToDo: 'என்ன செய்ய வேண்டும்',
@@ -377,8 +386,24 @@ const REASONS = window.managerReasons ?? {
  * No timeout, for the same reason the till's has none: a message that fades is a message that was
  * missed, and "the day did not close" is not a message to miss.
  */
+/**
+ * OB-205: a thin line icon from the one set (sre-icons.js), or nothing when the set is not loaded — the words carry the
+ * meaning either way; the shape only sits beside them.
+ */
+const lineIcon = (name, size) => (window.sreIcon && typeof window.sreIcon === 'function' ? window.sreIcon(name, size) : null);
+/** A control's words with its shape in front: the words stay the control's whole text (its name). */
+function worded(node, name, words) {
+  const mark = lineIcon(name, 18);
+  if (!mark) { node.textContent = words; return; }
+  const text = document.createElement('span');
+  text.textContent = words;
+  node.replaceChildren(mark, text);
+}
+
 function tell(title, message, good = false) {
-  el('banner-title').textContent = title;
+  // OB-205: the title wears its shape — a tick for done, the alert for anything else; the title is still its whole text.
+  const mark = lineIcon(good === true ? 'circle-check' : 'circle-alert', 24);
+  el('banner-title').replaceChildren(...(mark ? [mark] : []), document.createTextNode(title));
   el('banner-text').textContent = message;
   el('banner').classList.toggle('good', good === true);
   el('banner').hidden = false;
@@ -390,6 +415,8 @@ el('banner-ok').addEventListener('click', () => { el('banner').hidden = true; })
 // ── The panel ───────────────────────────────────────────────────────────────
 
 let sheetResolve = null;
+/** OB-205: what had the focus when the drawer opened — it gets the focus back when the drawer closes, if still there. */
+let sheetOpener = null;
 
 /**
  * Ask the manager something, on screen. `mode` is `'number'` (keypad) or `'choice'` (buttons).
@@ -405,7 +432,7 @@ function ask({ title, mode, hint = '', initial = '0', options = [] }) {
   el('keypad').hidden = mode !== 'number';
   el('choices').hidden = mode !== 'choice';
   el('sheet-ok').hidden = mode !== 'number';
-  el('sheet-cancel').textContent = t('cancel');
+  worded(el('sheet-cancel'), 'x', t('cancel'));
   el('sheet-ok').textContent = t('ok');
 
   if (mode === 'choice') {
@@ -418,12 +445,21 @@ function ask({ title, mode, hint = '', initial = '0', options = [] }) {
     }));
   }
 
+  sheetOpener = document.activeElement;
   el('sheet').hidden = false;
+  // OB-205: the drawer takes the focus as it opens — its first choice, or Cancel — so the keyboard is where the eye is.
+  const first = mode === 'choice' ? el('choices').querySelector('button') : el('sheet-cancel');
+  if (first) first.focus();
   return new Promise((resolve) => { sheetResolve = resolve; });
 }
+// Escape is the drawer's Cancel: the same answer, nothing else.
+el('sheet').addEventListener('keydown', (e) => { if (e.key === 'Escape' && !el('sheet').hidden) { e.preventDefault(); closeSheet(null); } });
 
 function closeSheet(answer) {
   el('sheet').hidden = true;
+  const opener = sheetOpener;
+  sheetOpener = null;
+  if (opener && opener.isConnected && typeof opener.focus === 'function') opener.focus();
   const resolve = sheetResolve;
   sheetResolve = null;
   if (resolve) resolve(answer);
@@ -558,6 +594,9 @@ function renderAttention(floor, today) {
   list.replaceChildren(...(rows.length === 0 ? [quiet(t('nothingNeedsYou'))] : rows.map((row) => {
     const li = document.createElement('li');
     li.className = row.tone;
+    // OB-205: a figure the box did not give wears the "not known" shape beside its words.
+    const mark = row.tone === 'unknown' ? lineIcon('circle-help', 18) : null;
+    if (mark) li.append(mark);
     const text = document.createElement('span'); text.className = 'text';
     if (row.n !== null) { const b = document.createElement('b'); b.className = 'n'; b.textContent = String(row.n); text.append(b, document.createTextNode(` ${row.text}`)); } else text.textContent = row.text;
     li.append(text);
@@ -612,7 +651,7 @@ function renderWorkspaces() {
     if (mark) ic.append(mark);
     const words = document.createElement('span');
     const b = document.createElement('b'); b.textContent = word(g.group);
-    const small = document.createElement('small'); small.textContent = `${g.items.length} ${t('screensWord')}`;
+    const small = document.createElement('small'); small.textContent = `${g.items.length} ${t(g.items.length === 1 ? 'screenWord' : 'screensWord')}`;
     words.append(b, small);
     a.append(ic, words);
     return a;
@@ -694,11 +733,11 @@ function renderApprovals() {
     // An empty list and an unreadable one look identical. Only one of them means "nothing to do".
     el('approval-rows').replaceChildren();
     el('approvals-empty').hidden = false;
-    el('approvals-empty').textContent = `${t('notKnown')} — ${queue.why}`;
+    stateBlock(el('approvals-empty'), 'unknown', `${t('notKnown')} — ${queue.why}`);
     return;
   }
   el('approvals-empty').hidden = queue.rows.length > 0;
-  el('approvals-empty').textContent = t('nothingWaiting');
+  stateBlock(el('approvals-empty'), 'empty', t('nothingWaiting'));
 
   el('approval-rows').replaceChildren(...queue.rows.map((row) => {
     const box = document.createElement('div');
@@ -709,7 +748,7 @@ function renderApprovals() {
     what.textContent = `${words(SUBJECT_WORDS, row.request.subjectType)} · ${row.request.subjectRef}`;
 
     const value = document.createElement('div');
-    value.className = 'value';
+    value.className = row.request.value ? 'value' : 'value none';
     value.textContent = row.request.value ? inr(row.request.value.minor) : t('noValue');
 
     const meta = document.createElement('div');
@@ -735,8 +774,10 @@ function renderApprovals() {
     } else {
       // Never a button that will fail on submit. The reason is the whole row's message.
       const blocked = document.createElement('div');
-      blocked.className = 'blocked';
-      blocked.textContent = words(BLOCKED_WORDS, row.blockedReason);
+      blocked.className = 'blocked sre-with-icon';
+      const mark = lineIcon('lock', 16);
+      if (mark) blocked.append(mark);
+      blocked.append(document.createTextNode(words(BLOCKED_WORDS, row.blockedReason)));
       box.appendChild(blocked);
     }
     return box;
@@ -766,8 +807,10 @@ function renderSavedWork() {
     what.textContent = `${words(KIND_WORDS, w.kind)} · ${w.what} — ${detailOf(w)}`;
 
     const state = document.createElement('div');
-    state.className = `pill ${w.state}`;
-    state.textContent = words(STATE_WORDS, w.state);
+    state.className = `pill ${w.state} sre-with-icon`;
+    const mark = lineIcon(STATE_SHAPES[w.state] ?? 'clock', 16);
+    if (mark) state.append(mark);
+    state.append(document.createTextNode(words(STATE_WORDS, w.state)));
 
     box.append(what, state);
     if (w.reason) {
@@ -778,6 +821,18 @@ function renderSavedWork() {
     }
     return box;
   }));
+}
+
+/** OB-205: each saved state's shape from the one set, beside its word (posted is done; refused needs a person). */
+const STATE_SHAPES = { posted: 'circle-check', refused: 'circle-alert', retrying: 'refresh-cw', saved_here: 'clock', handed_to_box: 'clock' };
+
+/** OB-205: an empty or not-known list as a block — the shape and the words; "not known" is never drawn like "nothing". */
+function stateBlock(node, kind, words_) {
+  node.className = kind === 'unknown' ? 'state-block unknown' : 'state-block';
+  const mark = lineIcon(kind === 'unknown' ? 'circle-help' : 'circle-check', 24);
+  const text = document.createElement('span');
+  text.textContent = words_;
+  node.replaceChildren(...(mark ? [mark] : []), text);
 }
 
 /** The second line of a saved-work row, in the reader's language. */
@@ -1080,6 +1135,9 @@ function renderBlockers(blockers) {
     const title = document.createElement('h3');
     // A count belongs in front of the sentence where there is one, and nowhere where there is not.
     title.textContent = blocker.count > 0 ? `${blocker.count} ${words_.title}` : words_.title;
+    // OB-205: a blocker wears the alert shape beside its title — the title is still its whole text.
+    const mark = lineIcon('circle-alert', 20);
+    if (mark) { title.prepend(mark); title.className = 'sre-with-icon'; }
 
     const todo = document.createElement('div');
     todo.className = 'todo';
@@ -1140,7 +1198,17 @@ el('do-carry').addEventListener('click', () => {
     // The PINs never stay on the screen, whatever happens next.
     el('close-pin').value = '';
     el('carry-pin').value = '';
-    if (closerPin === '' || approvedBy === '' || approverPin === '') { tell(t('stillOpen'), t('carryNeeds')); return; }
+    if (closerPin === '' || approvedBy === '' || approverPin === '') {
+      // OB-205: say it beside the fields too, and mark the ones still empty — the banner alone is gone once read.
+      el('close-pin').setAttribute('aria-invalid', closerPin === '' ? 'true' : 'false');
+      el('carry-approver').setAttribute('aria-invalid', approvedBy === '' ? 'true' : 'false');
+      el('carry-pin').setAttribute('aria-invalid', approverPin === '' ? 'true' : 'false');
+      el('carry-needs').textContent = t('carryNeeds');
+      el('carry-needs').hidden = false;
+      tell(t('stillOpen'), t('carryNeeds'));
+      return;
+    }
+    el('carry-needs').hidden = true;
     const stamp = Date.now().toString(36);
     const outcome = await session.closeViaBox({
       dayCloseId: `dc-${stamp}`, closedAtLocal: localStamp(), closedAt: new Date().toISOString(), closerPin,
@@ -1221,6 +1289,7 @@ function paintChrome() {
   el('saved-title').textContent = t('savedHere');
   el('saved-lead').textContent = t('savedLead');
   el('receive-title').textContent = t('receive');
+  el('receive-lead').textContent = t('receiveLead');
   el('grn-number-label').textContent = t('deliveryNote');
   el('grn-po-label').textContent = t('poNumber');
   el('grn-product-label').textContent = t('itemCode');
@@ -1238,7 +1307,13 @@ function paintChrome() {
   el('enter-count').textContent = t('enterCount');
   el('close-title').textContent = t('closeDay');
   el('close-lead').textContent = t('closedNote');
-  el('check-close').textContent = t('checkOpen');
+  worded(el('check-close'), 'list-checks', t('checkOpen'));
+  el('approvals-col-what').textContent = t('colRequest');
+  el('approvals-col-value').textContent = t('colValue');
+  el('approvals-col-act').textContent = t('colDecision');
+  el('close-pin-hint').textContent = t('closePinHint');
+  el('carry-pin-hint').textContent = t('carryPinHint');
+  if (!el('carry-needs').hidden) el('carry-needs').textContent = t('carryNeeds');
   el('do-close').textContent = t('closeNow');
   el('close-pin-label').textContent = t('closePin');
   el('close-pin').setAttribute('aria-label', t('closePin'));
@@ -1251,6 +1326,9 @@ function paintChrome() {
   el('do-carry').textContent = t('carryNow');
   el('sample').textContent = t('sampleData');
 }
+
+// OB-205: a field marked as still needed stops saying so the moment something is typed into it.
+for (const id of ['close-pin', 'carry-approver', 'carry-pin']) el(id).addEventListener('input', () => { el(id).removeAttribute('aria-invalid'); });
 
 el('lang').addEventListener('click', () => {
   lang = lang === 'en' ? 'ta' : 'en';

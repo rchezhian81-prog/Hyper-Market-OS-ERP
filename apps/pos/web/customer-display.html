@@ -15,15 +15,23 @@
     <script src="./sre-update.js" defer></script>
     <style>
       body { margin:0; background:var(--bg); color:var(--ink); font:22px/1.4 var(--font); min-height:100dvh; display:flex; flex-direction:column; }
-      header { display:flex; justify-content:space-between; align-items:center; padding:16px 24px; background:var(--rail); color:var(--on-rail); }
-      header h1 { margin:0; font-size:22px; }
-      main { flex:1; padding:24px; display:grid; gap:16px; align-content:start; }
-      p.welcome { margin:0; font-size:32px; font-weight:700; text-align:center; padding:48px 0; }
-      table { width:100%; border-collapse:collapse; }
-      td { padding:8px 4px; border-bottom:1px solid var(--line); }
-      td.amount { text-align:right; font-variant-numeric:tabular-nums; }
-      .saved { font-size:20px; color:var(--muted); text-align:right; }
-      .pay { display:flex; justify-content:space-between; align-items:baseline; font-size:36px; font-weight:800; padding-top:12px; border-top:3px solid var(--ink); }
+      header { display:flex; justify-content:space-between; align-items:center; padding:16px 24px; background:var(--rail); color:var(--on-rail); border-bottom:0; }
+      header h1 { margin:0; font-size:24px; letter-spacing: var(--tracking-tight); }
+      #lane { color: var(--on-rail-muted); font-size: 20px; }
+      /* OB-205: the bill on a white panel, read from across the counter — big lines, the amount to pay biggest of all. */
+      main { flex:1; width:100%; max-width:1120px; margin:0 auto; padding:24px; display:grid; gap:16px; align-content:start; }
+      p.welcome { margin:0; font-size:44px; font-weight:700; text-align:center; padding:72px 24px; background:var(--panel); border:1px solid var(--line); border-radius:var(--radius-lg); box-shadow:var(--shadow-sm); }
+      table { width:100%; border-collapse:separate; border-spacing:0; table-layout:fixed; background:var(--panel); border:1px solid var(--line); border-radius:var(--radius-lg); box-shadow:var(--shadow-sm); }
+      td { padding:14px 20px; border-top:1px solid var(--line-soft); font-size:24px; overflow-wrap:anywhere; }
+      tr:first-child td { border-top:0; }
+      td:nth-child(2) { width:6rem; }
+      td:nth-child(3) { width:12rem; }
+      td.amount { text-align:right; font-variant-numeric:var(--numbers); }
+      td:nth-child(3).amount { font-weight:600; }
+      .saved { justify-self:end; font-size:22px; font-weight:600; color:var(--on-ok-surface); background:var(--ok-surface); border-left:4px solid var(--ok); border-radius:var(--radius-lg); padding:6px 16px; font-variant-numeric:var(--numbers); }
+      .pay { display:flex; justify-content:space-between; align-items:baseline; gap:24px; font-size:44px; font-weight:800; padding:16px 24px; background:var(--panel); border:1px solid var(--line); border-left:6px solid var(--accent); border-radius:var(--radius-lg); box-shadow:var(--shadow-sm); }
+      #pay-label { font-size:30px; font-weight:700; }
+      #pay-amount { font-size:56px; line-height:1.1; font-variant-numeric:var(--numbers); white-space:nowrap; }
       [hidden] { display:none !important; }
     </style>
   </head>

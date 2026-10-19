@@ -21,6 +21,8 @@
     <script src="./sre-update.js" defer></script>
     <style>
       :root { --tap: 60px; }
+      /* OB-205: the page, polished inside the approved look — tokens only, the foundation's spacing, radius, elevation and
+         type scales; the stop-first layout, the 60px targets and every rule of the screen unchanged. */
       body {
         margin: 0; background: var(--bg); color: var(--ink);
         font: 17px/1.45 var(--font);
@@ -28,72 +30,142 @@
            template counted in rows shifts the layout every time one is hidden. */
         height: 100dvh; display: flex; flex-direction: column;
       }
+      /* The header: the route and how far along it on the left, the language on the right, the sync badge under them. */
       header {
-        display: flex; align-items: center; justify-content: space-between;
-        gap: 10px; padding: 8px 14px; background: var(--panel);
+        display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center;
+        gap: var(--space-2) var(--space-3); padding: var(--space-3) var(--space-4);
+        background: var(--panel); border-bottom: 1px solid var(--line);
       }
       /* The page's one heading: the route. Styled as the header line it is, not as a headline. */
-      h1.route { margin: 0; font-size: 17px; font-weight: 600; }
-      .route small { display: block; color: var(--muted); font-weight: 400; font-size: 13px; }
-      /* The sync badge (design system §1 rule 4): the dot is decoration, the two lines of words are the badge —
-         this phone's unsent count, then the store computer's state and last contact. */
-      .sync-words { display: grid; line-height: 1.25; text-align: right; }
-      .sync-words small { color: var(--muted); font-size: 13px; }
+      h1.route { margin: 0; font-size: 18px; font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
+      .route small { display: block; color: var(--ink-2); font-weight: 600; font-size: 15px; font-variant-numeric: var(--numbers); }
+      /* How far along the route, drawn: the words above are the signal, the bar only helps them. */
+      .meter { display: block; height: 6px; margin-top: 6px; border-radius: var(--radius-pill); background: var(--panel-2); border: 1px solid var(--line); overflow: hidden; }
+      .meter[hidden] { display: none; }
+      .meter > span { display: block; height: 100%; background: var(--accent); transform-origin: left center; transform: scaleX(0); transition: transform var(--dur-slow) var(--ease-out); }
+      #lang {
+        min-height: 56px; padding: 0 var(--space-3); display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+        background: var(--panel); color: var(--ink); border: 1px solid var(--field-line); border-radius: var(--radius-lg);
+        font-size: 16px; box-shadow: var(--shadow-xs);
+      }
+      #lang .sre-icon { width: 18px; height: 18px; }
+      /* The sync badge (design system §1 rule 4): the dot wears its state's shape, the two lines of words are the badge —
+         this phone's unsent count, then the store computer's state and last contact. Calm by default; amber while work
+         waits here; the readable red only when a person must act. Colour is never the only signal: the words say it. */
+      .sync {
+        grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; padding: var(--space-2) var(--space-3);
+        background: var(--panel-2); color: var(--ink); border: 1px solid var(--line-soft); border-radius: var(--radius-lg);
+        font-size: 15px; min-width: 0;
+      }
+      .sync:has(.dot.waiting) { background: var(--warn-surface); color: var(--on-warn-surface); border-color: var(--warn-surface); }
+      .sync:has(.dot.error) { background: var(--error-surface); color: var(--danger-text); border-color: var(--error-surface); }
+      .sync-words { display: grid; line-height: 1.3; min-width: 0; }
+      #queue-text { font-weight: 700; }
+      .sync-words small { color: inherit; font-size: 14px; }
       .dot.waiting { background: var(--warn); }
 
-      .storage { background: var(--danger-surface); color: var(--on-danger); padding: 8px 14px; font-size: 15px; margin: 0; }
+      .storage { background: var(--danger-surface); color: var(--on-danger); padding: var(--space-2) var(--space-4); font-size: 15px; font-weight: 600; margin: 0; }
       .storage[hidden] { display: none; }
       /* A stop the contribution rule flagged. Surfaced, never buried (D09) — an amber strip, a warning that is not an error. */
-      .flagged { background: var(--warn-surface); color: var(--on-warn-surface); padding: 8px 14px; font-size: 15px; margin: 0; }
+      .flagged { background: var(--warn-surface); color: var(--on-warn-surface); padding: var(--space-2) var(--space-4); font-size: 15px; font-weight: 600; margin: 0; border-bottom: 2px solid var(--degraded); }
       .flagged[hidden] { display: none; }
 
-      main { flex: 1; min-height: 0; overflow-y: auto; padding: 10px 14px; }
-      .empty { color: var(--muted); padding: 32px 4px; font-size: 17px; }
-
-      .stop {
-        width: 100%; text-align: left; background: var(--panel); color: var(--ink);
-        border: 0; border-left: 6px solid var(--line); border-radius: 14px;
-        padding: 12px 14px; margin-bottom: 10px; min-height: var(--tap); display: grid; gap: 3px;
+      main { flex: 1; min-height: 0; overflow-y: auto; padding: var(--space-3) var(--space-4) var(--space-4); }
+      .empty {
+        color: var(--muted); padding: var(--space-6) var(--space-4); font-size: 17px; text-align: center;
+        background: var(--panel); border: 1px dashed var(--line-strong); border-radius: var(--radius-xl);
       }
-      .stop[aria-selected='true'] { outline: 3px solid var(--focus); }
+
+      /* One stop per row, as a card: the area is where the van goes; the money to collect is the biggest thing, because it
+         is what has to be right; the stop's state is a chip with its shape. */
+      .stop {
+        width: 100%; text-align: left; background: var(--panel); color: var(--ink); font: inherit;
+        border: 1px solid var(--line); border-left: 6px solid var(--line-strong); border-radius: var(--radius-xl);
+        padding: var(--space-3) var(--space-4) var(--space-3) var(--space-3); margin-bottom: 10px; min-height: var(--tap);
+        display: grid; grid-template-columns: minmax(0, 1fr); gap: 3px; box-shadow: var(--shadow-sm);
+      }
+      .stop > * { min-width: 0; overflow-wrap: anywhere; }
+      .stop[aria-selected='true'] { outline: 3px solid var(--focus); outline-offset: 0; background: var(--mint); }
       .stop.delivered { border-left-color: var(--good); }
       .stop.failed { border-left-color: var(--danger); }
       .stop.returned_to_origin { border-left-color: var(--info); }
       .stop.out_for_delivery { border-left-color: var(--warn); }
-      .stop .area { font-size: 20px; font-weight: 700; }
-      .stop .order { color: var(--muted); font-size: 14px; }
+      .stop .area { font-size: 20px; font-weight: 700; line-height: 1.3; }
+      .stop .order { color: var(--muted); font-size: 14px; font-weight: 600; }
       /* The money is the biggest thing on the row — it is what has to be right. */
-      .stop .cod { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
+      .stop .cod { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.25; }
       .stop .cod.prepaid { font-size: 17px; font-weight: 600; color: var(--muted); }
-      .stop .state { font-size: 14px; font-weight: 600; }
-      .stop .flag { font-size: 14px; color: var(--warn); }
+      .stop .state {
+        justify-self: start; display: inline-flex; align-items: center; gap: 6px; margin-top: var(--space-1);
+        padding: 2px 10px 2px 8px; border-radius: var(--radius-pill); background: var(--panel-2); color: var(--ink);
+        border: 1px solid var(--line); font-size: 14px; font-weight: 700;
+      }
+      .stop .state .sre-icon { width: 16px; height: 16px; }
+      .stop.delivered .state, .stop.partially_delivered .state { background: var(--ok-surface); color: var(--on-ok-surface); border-color: var(--ok-surface); }
+      .stop.out_for_delivery .state, .stop.attempted .state { background: var(--warn-surface); color: var(--on-warn-surface); border-color: var(--warn-surface); }
+      .stop.failed .state { background: var(--error-surface); color: var(--danger-text); border-color: var(--error-surface); }
+      .stop.returned_to_origin .state { background: var(--info-surface); color: var(--on-info-surface); border-color: var(--info-surface); }
+      .stop .flag { font-size: 14px; font-weight: 700; color: var(--on-warn-surface); background: var(--warn-surface); justify-self: start; padding: 2px 10px; border-radius: var(--radius-pill); }
 
-      /* Sent from this phone (SP-3c-ii): what each queued outcome was, then one of the five shared state words as a pill;
-         a refusal carries its reason. The same shape the warehouse and picker handhelds show, for the same reason. */
-      .section { font-size: 14px; font-weight: 600; color: var(--muted); margin: 16px 0 8px; text-transform: uppercase; letter-spacing: .04em; }
+      /* Sent from this phone (SP-3c-ii): what each queued outcome was, then one of the five shared state words as a chip
+         with its shape; a refusal carries its reason. The same shape the warehouse and picker handhelds show, for the same reason. */
+      .section {
+        display: flex; align-items: center; gap: var(--space-2); font-size: 14px; font-weight: 700; color: var(--muted);
+        margin: var(--space-4) 2px var(--space-2); text-transform: uppercase; letter-spacing: var(--tracking-caps);
+      }
       .section[hidden] { display: none; }
-      .sent { background: var(--panel); border-radius: 14px; padding: 10px 14px; margin-bottom: 8px; display: grid; gap: 6px; border-left: 6px solid var(--line); }
-      .sent .what { font-size: 16px; font-weight: 600; }
-      .sent .why { font-size: 14px; color: var(--muted); }
+      .section .sre-icon { width: 18px; height: 18px; }
+      .section[data-count]::after {
+        content: attr(data-count); margin-left: auto; min-width: 28px; padding: 2px 10px; border-radius: var(--radius-pill);
+        background: var(--panel); border: 1px solid var(--line); color: var(--ink); font-size: 15px; letter-spacing: 0;
+        text-align: center; font-variant-numeric: var(--numbers);
+      }
+      .sent {
+        background: var(--panel); border: 1px solid var(--line-soft); border-left: 6px solid var(--line-strong); border-radius: var(--radius-xl);
+        padding: 10px var(--space-4) 10px var(--space-3); margin-bottom: var(--space-2); display: grid; gap: 6px; box-shadow: var(--shadow-xs);
+      }
+      .sent .what { font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
+      .sent .why { font-size: 15px; color: var(--danger-text); font-weight: 600; }
       .sent.refused { border-left-color: var(--danger); }
       .sent.posted { border-left-color: var(--good); }
-      .pill { display: inline-block; padding: 4px 12px; border-radius: 999px; font-size: 14px; font-weight: 600; background: var(--line); color: var(--ink); justify-self: start; }
-      .pill.posted { background: var(--good); color: var(--on-accent); }
-      .pill.refused { background: var(--danger-surface); color: var(--on-danger); }
-      .pill.retrying { background: var(--warn); color: var(--on-warn); }
+      .sent.saved_here, .sent.retrying { border-left-color: var(--degraded); }
+      .pill {
+        display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px 4px 8px; border-radius: var(--radius-pill);
+        font-size: 14px; font-weight: 600; background: var(--panel-2); color: var(--ink); border: 1px solid var(--line); justify-self: start;
+        line-height: 1.35; max-width: 100%;
+      }
+      .pill .sre-icon { width: 16px; height: 16px; }
+      .pill.posted { background: var(--ok-surface); color: var(--on-ok-surface); border-color: var(--ok-surface); }
+      .pill.refused { background: var(--danger-surface); color: var(--on-danger); border-color: var(--danger-surface); }
+      .pill.retrying, .pill.saved_here { background: var(--warn-surface); color: var(--on-warn-surface); border-color: var(--warn-surface); }
 
-      footer { background: var(--panel); padding: 12px 14px 18px; display: grid; gap: 10px; }
-      .summary { display: flex; justify-content: space-between; font-size: 15px; color: var(--muted); }
+      /* The footer: the cash being carried, then the quieter actions, then the one that matters — Delivered — at the bottom,
+         under the thumb. */
+      footer {
+        background: var(--panel); border-top: 1px solid var(--line); box-shadow: var(--shadow-md);
+        padding: var(--space-3) var(--space-4) calc(var(--space-4) + env(safe-area-inset-bottom, 0px)); display: grid; gap: 10px;
+      }
+      .summary { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-3); font-size: 15px; color: var(--muted); }
+      #held { color: var(--ink); font-size: 22px; font-weight: 700; font-variant-numeric: var(--numbers); white-space: nowrap; }
       .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
       button {
-        min-height: var(--tap); border-radius: 14px; border: 0; font-size: 18px; font-weight: 600;
-        background: var(--line); color: var(--ink);
+        min-height: var(--tap); border-radius: var(--radius-xl); border: 1px solid var(--line); font-size: 18px; font-weight: 600;
+        background: var(--panel-2); color: var(--ink); padding: 0 var(--space-3); line-height: 1.25;
+        display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2); text-align: center;
+        transition: transform var(--dur-fast) var(--ease-out);
       }
-      button.primary { background: var(--good); color: var(--on-accent); font-size: 20px; }
+      button:active:not(:disabled) { transform: translateY(1px); }
+      button .sre-icon { width: 22px; height: 22px; }
+      button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-size: 20px; font-weight: 700; box-shadow: var(--shadow-sm); }
+      button.primary:active:not(:disabled) { background: var(--accent-press); border-color: var(--accent-press); }
       /* The readable red — white on the signal red is 3.8:1, short of the 4.5:1 these words need. */
-      button.danger { background: var(--danger-surface); color: var(--on-danger); }
+      button.danger { background: var(--danger-surface); border-color: var(--danger-surface); color: var(--on-danger); }
+      button:disabled { opacity: 1; background: var(--panel-2); color: var(--muted); border-style: dashed; border-color: var(--line-strong); box-shadow: none; cursor: not-allowed; }
       button:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       .wide { grid-column: 1 / -1; }
+      /* The quieter actions at the handhelds' 56px bar, so the footer leaves room for the route. */
+      .actions > button:not(.primary) { min-height: 56px; font-size: 17px; }
+      .actions > button:not(.primary):not(.danger) { background: var(--panel); }
 
       /* ── Panels ─────────────────────────────────────────────────────────── */
       .sheet {
@@ -102,50 +174,65 @@
       }
       .sheet[hidden] { display: none; }
       .sheet-inner {
-        width: min(560px, 100%); background: var(--panel); padding: 18px;
-        border-radius: 20px 20px 0 0; display: grid; gap: 12px; max-height: 92dvh; overflow-y: auto;
+        width: min(560px, 100%); background: var(--panel); padding: var(--space-3) var(--space-4) calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
+        border-radius: 16px 16px 0 0; display: grid; gap: var(--space-3); max-height: 92dvh; overflow-y: auto;
+        box-shadow: var(--shadow-lg); animation: sre-rise var(--dur-slow) var(--ease-out) both;
       }
-      .sheet h2 { margin: 0; font-size: 20px; }
+      /* A grab line: says "this is a panel over the route", nothing more. */
+      .sheet-inner::before { content: ''; justify-self: center; width: 40px; height: 4px; border-radius: var(--radius-pill); background: var(--line-strong); }
+      .sheet h2 { margin: 0; font-size: 20px; line-height: 1.3; display: flex; align-items: flex-start; gap: var(--space-2); overflow-wrap: anywhere; }
+      .sheet h2 .sre-icon { width: 24px; height: 24px; margin-top: 1px; color: var(--accent); }
+      .sheet h2 .sre-with-icon { align-items: flex-start; }
       .entry {
-        font-size: 42px; font-weight: 700; text-align: right; padding: 8px 16px;
-        background: var(--panel-2); border-radius: 12px; min-height: 64px;
+        font-size: 44px; font-weight: 700; text-align: right; padding: var(--space-2) var(--space-4); line-height: 1.2;
+        background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius-xl); min-height: 64px;
+        font-variant-numeric: var(--numbers); overflow-wrap: anywhere;
       }
+      #count-total { font-size: 30px; text-align: center; }
       .hint { color: var(--muted); font-size: 15px; min-height: 22px; }
-      .keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+      .keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-2); }
       .keypad button, .choices button, .sheet-actions button { min-height: var(--tap); font-size: 20px; }
-      .choices { display: grid; gap: 8px; }
-      .choices button { text-align: left; padding: 0 16px; font-size: 17px; }
+      .keypad button { background: var(--panel); font-size: 24px; font-weight: 700; font-variant-numeric: var(--numbers); }
+      .choices { display: grid; gap: var(--space-2); }
+      .choices button { justify-content: flex-start; text-align: left; padding: 0 var(--space-4); font-size: 17px; background: var(--panel); }
+      /* A panel's parts that are not in use stay out of the way: the classes above would otherwise outrank [hidden]. */
+      .entry[hidden], .keypad[hidden], .choices[hidden] { display: none; }
       .sheet-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-      .sheet-actions .primary, .keypad .primary { background: var(--good); color: var(--on-accent); }
+      .sheet-actions .primary, .keypad .primary { background: var(--accent); color: var(--on-accent); }
 
       /* Counting the bag: one row per note, a big count in the middle. */
-      .denoms { display: grid; gap: 8px; max-height: 46dvh; overflow-y: auto; }
-      .denom { display: grid; grid-template-columns: 5rem 1fr 3.5rem 1fr; align-items: center; gap: 8px; }
-      .denom span { font-size: 20px; font-weight: 600; }
-      .denom .n { text-align: center; font-size: 24px; font-variant-numeric: tabular-nums; }
+      .denoms { display: grid; gap: var(--space-2); max-height: 46dvh; overflow-y: auto; }
+      .denom { display: grid; grid-template-columns: minmax(5rem, auto) 1fr 3rem 1fr; align-items: center; gap: var(--space-2); }
+      .denom span { font-size: 18px; font-weight: 700; font-variant-numeric: var(--numbers); white-space: nowrap; }
+      .denom .n { text-align: center; font-size: 26px; font-variant-numeric: tabular-nums; }
       /* The same target as every other button: a thumb counting notes at the end of a shift is not more accurate. */
-      .denom button { min-height: var(--tap); font-size: 26px; border: 0; border-radius: 12px; background: var(--line); color: var(--ink); }
+      .denom button { min-height: var(--tap); font-size: 26px; border: 1px solid var(--line); border-radius: var(--radius-xl); background: var(--panel); color: var(--ink); }
 
-      /* The banner. No timer, never colour alone. */
+      /* The banner. No timer, never colour alone — its shape rides beside the words. */
       .banner {
-        position: fixed; inset: 0 0 auto 0; z-index: 30; padding: 18px 14px;
-        background: var(--danger-surface); color: var(--on-danger); display: grid; gap: 10px;
+        position: fixed; inset: 0 0 auto 0; z-index: 30; padding: var(--space-5) var(--space-4) var(--space-4);
+        background: var(--danger-surface); color: var(--on-danger); display: grid; gap: 10px; box-shadow: var(--shadow-lg);
+        animation: sre-rise var(--dur-slow) var(--ease-out) both;
       }
       .banner[hidden] { display: none; }
       .banner.good { background: var(--good); color: var(--on-accent); }
-      .banner strong { font-size: 21px; }
-      .banner p { margin: 0; font-size: 17px; }
-      .banner button { background: var(--panel-2); color: var(--ink); }
+      .banner-head { display: flex; align-items: flex-start; gap: 10px; }
+      #banner-mark { display: inline-flex; flex: none; }
+      #banner-mark .sre-icon { width: 28px; height: 28px; stroke-width: 2; }
+      .banner strong { font-size: 21px; line-height: 1.3; overflow-wrap: anywhere; }
+      .banner p { margin: 0; font-size: 17px; overflow-wrap: anywhere; }
+      .banner p:empty { display: none; }
+      .banner button { background: var(--panel); color: var(--ink); border-color: var(--panel); font-weight: 700; }
       .banner.good button { background: var(--on-accent); color: var(--ink); }
     </style>
   </head>
   <body>
     <header>
-      <h1 class="route" id="route">—<small id="progress">—</small></h1>
+      <h1 class="route" id="route">—<small id="progress">—</small><span class="meter" id="progress-meter" aria-hidden="true" hidden><span id="progress-bar"></span></span></h1>
+      <button class="lang" id="lang" type="button" aria-label="Language"><span data-sre-icon="globe"></span>EN / த</button>
       <span class="sync">
         <span class="dot" id="queue-dot" data-sre-status title="Sync"></span>
         <span class="sync-words"><span id="queue-text">—</span><small id="box-text">—</small></span>
-        <button class="lang" id="lang" type="button" aria-label="Language">EN / த</button>
       </span>
     </header>
 
@@ -171,11 +258,13 @@
         <span id="held-label">Cash you are carrying</span>
         <span id="held">—</span>
       </div>
+      <!-- OB-205: the quieter actions first; Delivered — the one the driver taps at almost every door — last, full width,
+           at the bottom under the thumb. -->
       <div class="actions">
-        <button id="deliver" class="primary" type="button">Delivered</button>
+        <button id="handover" class="wide" type="button">End of shift — hand cash over</button>
         <button id="delivered-partial" type="button">Partly delivered</button>
         <button id="failed" class="danger" type="button">Could not deliver</button>
-        <button id="handover" class="wide" type="button">End of shift — hand cash over</button>
+        <button id="deliver" class="primary wide" type="button">Delivered</button>
       </div>
     </footer>
 
@@ -214,7 +303,7 @@
 
     <!-- The message that must not be missed. No timer. -->
     <div class="banner" id="banner" hidden role="alert">
-      <strong id="banner-title">—</strong>
+      <div class="banner-head sre-with-icon"><span id="banner-mark" aria-hidden="true"></span><strong id="banner-title">—</strong></div>
       <p id="banner-text"></p>
       <button id="banner-ok" type="button">I have read this</button>
     </div>

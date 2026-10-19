@@ -194,6 +194,123 @@
       .banner p { margin: 0; font-size: 17px; line-height: 1.45; }
       .banner button { background: var(--danger-surface); color: var(--on-danger); }
       .banner.good button { background: var(--on-accent); color: var(--on-ok-surface); }
+
+      /* ── OB-205 (19 Oct 2026): the page, polished inside the approved look — page-level only ─────────── */
+      /* A hidden subpage stays hidden: the band's own `display: grid` (an id rule) used to beat `section[hidden]`, so the
+         Today band sat above Approvals and the day close. */
+      [hidden] { display: none !important; }
+      main { padding: var(--space-4) var(--space-4) var(--space-8); gap: var(--space-5); }
+      @media (min-width: 1000px) { main { padding: var(--space-5) var(--space-4) var(--space-10); } }
+      main > section:not(#view-home):not(#view-home-dash) > h2 { font-size: var(--fs-2xl); line-height: var(--leading-tight); letter-spacing: var(--tracking-tight); margin: 0 0 6px; }
+      main > section:not(#view-home) > p.lead { font-size: var(--fs-base); color: var(--ink-2); max-width: 72ch; margin: 0 0 var(--space-4); }
+
+      /* Today: the figures line up whatever their label's length; a tile you can press says so, and shows its focus on the dark band. */
+      #view-home .tile .top { min-height: 38px; }
+      /* A tile that needs you keeps the tile's padding: the list's `.attention { padding: 0 }` used to strip it, so
+         those figures sat higher than their neighbours'. */
+      #view-home .tile.attention { padding: 16px 16px 16px 20px; display: grid; gap: 6px; }
+      #view-home .tile[role="button"] { cursor: pointer; transition: transform var(--dur-fast) var(--ease-out); }
+      #view-home .tile[role="button"]:hover { transform: translateY(-1px); }
+      #view-home :focus-visible { outline-color: var(--rail-accent); }
+      .card { border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); padding: var(--space-4) var(--space-5) var(--space-5); gap: var(--space-3); }
+      .card h3 { font-size: var(--fs-md); padding-bottom: 10px; border-bottom: 1px solid var(--line-soft); }
+      .attention li { border-left: 0; border-radius: var(--radius); box-shadow: inset 3px 0 0 var(--line-strong); min-height: 48px; padding: 6px 8px 6px 14px; }
+      .attention li.attention { box-shadow: inset 3px 0 0 var(--degraded); }
+      .attention li.unknown { box-shadow: inset 3px 0 0 var(--error); }
+      .attention li.quiet { box-shadow: none; }
+      .attention li .text .n { font-weight: 700; }
+      .attention li > .sre-icon { flex: none; width: 18px; height: 18px; color: var(--degraded); }
+      .go { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow-xs); flex: none; }
+      .go:hover { background: var(--hover); border-color: var(--line-strong); }
+      .flow li, .ops .op { border: 1px solid var(--line-soft); border-radius: var(--radius); }
+      .ws a { border: 1px solid transparent; border-radius: var(--radius); }
+      .ws a:hover { background: var(--hover); border-color: var(--line); }
+      .ws a .ic:empty { display: none; }
+      /* Nothing a person must read is under 14px (design system §3.2): the figure notes and the workspace counts were 13px. */
+      .flow li .note, .ops .op .note, .ws a small { font-size: 14px; }
+
+      /* The registers: one panel, a sticky caption row, hairline rows lit under the pointer and while a control in them
+         has the focus; money right-aligned in tabular figures. Narrow, the captions go and each row stacks. */
+      .reg { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); container-type: inline-size; }
+      .reg-head { position: sticky; top: 0; z-index: 2; display: grid; column-gap: var(--space-5); padding: 10px 16px; background: var(--panel-2); border-bottom: 1px solid var(--line); border-radius: var(--radius-lg) var(--radius-lg) 0 0; color: var(--muted); font-size: 14px; font-weight: 600; letter-spacing: .02em; }
+      .reg-head .r { text-align: right; }
+      .reg .rows { gap: 0; }
+      .reg .row { border-radius: 0; background: transparent; border-top: 1px solid var(--line-soft); padding: 12px 16px; }
+      .reg .row:first-child { border-top: 0; }
+      .reg .row:last-child { border-radius: 0 0 var(--radius-lg) var(--radius-lg); }
+      .reg .row:hover, .reg .row:focus-within { background: var(--hover); }
+      #approvals-reg:has(#approval-rows:empty), #saved-reg:has(#saved-rows:empty) { display: none; }
+      .approvals-grid { grid-template-columns: minmax(0, 1fr) 10rem 18rem; }
+      #approval-rows .row { grid-template-columns: minmax(0, 1fr) 10rem 18rem; grid-template-areas: "what value act" "meta value act"; column-gap: var(--space-5); row-gap: 2px; align-items: center; }
+      #approval-rows .row .what { grid-area: what; font-size: 16px; font-weight: 600; }
+      #approval-rows .row .meta { grid-area: meta; }
+      #approval-rows .row .value { grid-area: value; text-align: right; font-size: var(--fs-lg); font-variant-numeric: var(--numbers); }
+      #approval-rows .row .value.none { color: var(--muted); font-size: 15px; font-weight: 600; }
+      #approval-rows .row .row-actions, #approval-rows .row .blocked { grid-area: act; justify-self: end; }
+      .row-actions button { min-height: var(--tap); border-radius: var(--radius); font-size: 17px; }
+      .blocked { display: inline-flex; align-items: center; gap: 6px; background: var(--warn-surface); color: var(--on-warn-surface); border-radius: var(--radius-pill); padding: 4px 12px; font-size: 14px; line-height: 1.35; }
+      .blocked > .sre-icon { flex: none; width: 16px; height: 16px; }
+      @container (max-width: 760px) {
+        .reg-head { display: none; }
+        #approval-rows .row { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "what value" "meta meta" "act act"; row-gap: 8px; }
+        #approval-rows .row .row-actions, #approval-rows .row .blocked { justify-self: start; }
+      }
+      #saved-rows .row { grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: var(--space-4); row-gap: 6px; }
+      #saved-rows .row .what { font-size: 16px; }
+      #saved-rows .row .blocked { grid-column: 1 / -1; justify-self: start; }
+      @container (max-width: 560px) { #saved-rows .row { grid-template-columns: minmax(0, 1fr); } }
+      /* Where a saved item has got to: the state's shape and its word, tinted in its tone — never colour alone. */
+      .pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px 4px 8px; border-radius: var(--radius-pill); font-size: 14px; line-height: 1.35; background: var(--panel-2); color: var(--ink); border: 1px solid var(--line); border-left: 4px solid var(--idle); }
+      .pill > .sre-icon { flex: none; width: 16px; height: 16px; }
+      .pill.posted { background: var(--ok-surface); color: var(--on-ok-surface); border-color: var(--ok-surface); border-left-color: var(--ok); }
+      .pill.refused { background: var(--error-surface); color: var(--danger-text); border-color: var(--error-surface); border-left-color: var(--error); }
+      .pill.retrying, .pill.saved_here, .pill.handed_to_box { background: var(--warn-surface); color: var(--on-warn-surface); border-color: var(--warn-surface); border-left-color: var(--degraded); }
+      #saved-title { margin: var(--space-6) 0 4px; font-size: var(--fs-lg); }
+      /* An empty list and one that could not be read never look alike: a shape and words for each, and the reason. */
+      .state-block { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-5); background: var(--panel); border: 1px dashed var(--line-strong); border-radius: var(--radius-lg); color: var(--ink-2); font-size: 16px; }
+      .state-block > .sre-icon { flex: none; width: 24px; height: 24px; color: var(--ok); }
+      .state-block.unknown { border-style: solid; border-color: var(--warn-surface); background: var(--warn-surface); color: var(--on-warn-surface); }
+      .state-block.unknown > .sre-icon { color: var(--on-warn-surface); }
+
+      /* Fields: a label you can read, an edge you can see, help under it, and an error that says what to do. */
+      .field label, #view-close label { color: var(--ink-2); font-size: 15px; font-weight: 600; }
+      .field input, .field select, #view-close input, #view-close select { min-height: var(--tap); background: var(--field); color: var(--ink); border: 1px solid var(--field-line); border-radius: var(--radius); padding: 0 14px; font-size: 18px; }
+      .field input:focus-visible, .field select:focus-visible, #view-close input:focus-visible, #view-close select:focus-visible { border-color: var(--accent); box-shadow: 0 0 0 4px var(--focus-halo); }
+      [aria-invalid="true"] { border-color: var(--error) !important; }
+      .field .hint, #view-close .hint { font-size: 14px; min-height: 0; margin: 0; }
+      .field .hint[data-tone="error"] { color: var(--danger-text); font-weight: 600; }
+      p.empty { margin: 0; padding: var(--space-4); border: 1px dashed var(--line-strong); border-radius: var(--radius); background: var(--panel); color: var(--muted); text-align: center; }
+      .line-row { border: 1px solid var(--line-soft); border-radius: var(--radius); }
+      .line-row .q { font-variant-numeric: var(--numbers); }
+
+      /* The day close: one step after another — check, read what is open, then close with your own PIN. */
+      #view-close .wide.sre-btn { width: 100%; }
+      #blockers:not(:empty) { margin: var(--space-4) 0; }
+      .blocker { border: 1px solid var(--line); border-left: 0; border-radius: var(--radius-lg); box-shadow: var(--shadow-sm), inset 4px 0 0 var(--error); padding: 14px 18px 14px 22px; gap: 8px; }
+      .blocker h3 { display: flex; align-items: center; gap: 8px; font-size: var(--fs-md); }
+      .blocker h3 > .sre-icon { flex: none; width: 20px; height: 20px; stroke: var(--error); }
+      .blocker .todo { background: var(--warn-surface); color: var(--on-warn-surface); border-radius: var(--radius); padding: 8px 12px; font-size: 15px; }
+      .blocker .meta { color: var(--muted); font-size: 14px; }
+      .blocker ul { margin: 0; }
+      .close-form { display: grid; gap: var(--space-3); margin: var(--space-4) 0; padding: var(--space-4) var(--space-5); background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); }
+      .close-form .field { margin: 0; }
+      .close-form p.lead { margin: 0; }
+
+      /* The sheet — a record drawer at a desk: a heading on its own hairline, choices you can read, a close that says so. */
+      .sheet h2 { font-size: var(--fs-lg); padding-bottom: 12px; border-bottom: 1px solid var(--line-soft); }
+      .choices button, .keypad button, .sheet-actions button { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); box-shadow: var(--shadow-xs); display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+      .choices button { justify-content: flex-start; }
+      .choices button:hover, .keypad button:hover, .sheet-actions button:hover { background: var(--hover); border-color: var(--line-strong); }
+      .sheet-actions .primary, .keypad .primary { border-color: var(--accent); }
+      .sheet-actions .primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+      .sheet-actions .sre-icon { width: 18px; height: 18px; }
+
+      /* The banner that must not be missed: its shape beside the title, the words in a readable measure, a button you can see. */
+      .banner { padding: 18px max(16px, calc((100% - 880px) / 2)); box-shadow: var(--shadow-lg); }
+      .banner > strong { gap: 10px; }
+      .banner > strong .sre-icon { width: 24px; height: 24px; }
+      .banner button, .banner.good button { justify-self: start; min-width: 180px; padding: 0 20px; border-radius: var(--radius); background: var(--on-danger); color: var(--danger-surface); }
+      .banner.good button { background: var(--on-accent); color: var(--accent); }
     </style>
   </head>
   <body>
@@ -250,15 +367,19 @@
       <section id="view-approvals" hidden>
         <h2 id="approvals-title">Approvals</h2>
         <p class="lead" id="approvals-lead">Biggest first.</p>
-        <div class="rows" id="approval-rows"></div>
-        <p class="empty" id="approvals-empty" hidden>Nothing is waiting.</p>
+        <div class="reg" id="approvals-reg">
+          <!-- The captions are for the eye; each row still says what it is to a screen reader. -->
+          <div class="reg-head approvals-grid" aria-hidden="true"><span id="approvals-col-what">Request</span><span class="r" id="approvals-col-value">Value</span><span class="r" id="approvals-col-act">Decision</span></div>
+          <div class="rows" id="approval-rows"></div>
+        </div>
+        <p class="state-block" id="approvals-empty" hidden>Nothing is waiting.</p>
         <!--
           Everything this screen saved — decisions, deliveries, counts — from its DURABLE device queue, each with
           where it has got to (SP-2a/2b). A count row shows what was counted, never what was expected.
         -->
         <h3 id="saved-title" hidden>Saved on this screen</h3>
         <p class="lead" id="saved-lead" hidden>Where each item has got to.</p>
-        <div class="rows" id="saved-rows"></div>
+        <div class="reg" id="saved-reg"><div class="rows" id="saved-rows"></div></div>
       </section>
 
       <!-- Receiving: goods in. A delivery with no purchase order is SAID to be unmatched. -->
@@ -330,27 +451,36 @@
       <section id="view-close" hidden>
         <h2 id="close-title">Close the day</h2>
         <p class="lead" id="close-lead">Check what is still open before you close. A closed day is locked.</p>
-        <button id="check-close" type="button" class="wide">Check what is still open</button>
+        <button id="check-close" type="button" class="wide sre-btn">Check what is still open</button>
         <div class="blockers" id="blockers"></div>
         <!-- Round 4: the close is the manager's own act — they key their own till PIN; the store computer checks it. -->
-        <div id="close-pin-row" hidden>
+        <div id="close-pin-row" class="field close-form" hidden>
           <label for="close-pin" id="close-pin-label">Your till PIN — you key it yourself</label>
-          <input id="close-pin" type="password" inputmode="numeric" autocomplete="off" maxlength="6" />
+          <input id="close-pin" type="password" inputmode="numeric" autocomplete="off" maxlength="6" aria-describedby="close-pin-hint" />
+          <p class="hint" id="close-pin-hint"></p>
         </div>
         <button id="do-close" type="button" class="primary wide" hidden>Close the day now</button>
         <!-- OB-55: only card/UPI payments are open — the day may close with them carried to head office, on a SECOND
              person's approval (their own staff ID and till PIN, keyed by them) and the manager's own PIN above. -->
-        <div id="carry-row" hidden>
+        <div id="carry-row" class="close-form" hidden>
           <p class="lead" id="carry-lead">These payments go to head office by name. Finance settles each one when the provider answers.</p>
-          <label for="carry-approver" id="carry-approver-label">Second person's staff ID</label>
-          <input id="carry-approver" type="text" autocomplete="off" maxlength="40" />
-          <label for="carry-pin" id="carry-pin-label">Their till PIN — they key it themselves</label>
-          <input id="carry-pin" type="password" inputmode="numeric" autocomplete="off" maxlength="6" />
-          <label for="carry-reason" id="carry-reason-label">Why</label>
-          <select id="carry-reason">
-            <option value="provider_not_answering" id="carry-reason-provider">The card or UPI provider is not answering</option>
-            <option value="machine_fault" id="carry-reason-machine">The card machine is faulty</option>
-          </select>
+          <div class="field">
+            <label for="carry-approver" id="carry-approver-label">Second person's staff ID</label>
+            <input id="carry-approver" type="text" autocomplete="off" maxlength="40" aria-describedby="carry-needs" />
+          </div>
+          <div class="field">
+            <label for="carry-pin" id="carry-pin-label">Their till PIN — they key it themselves</label>
+            <input id="carry-pin" type="password" inputmode="numeric" autocomplete="off" maxlength="6" aria-describedby="carry-pin-hint carry-needs" />
+            <p class="hint" id="carry-pin-hint"></p>
+          </div>
+          <div class="field">
+            <label for="carry-reason" id="carry-reason-label">Why</label>
+            <select id="carry-reason">
+              <option value="provider_not_answering" id="carry-reason-provider">The card or UPI provider is not answering</option>
+              <option value="machine_fault" id="carry-reason-machine">The card machine is faulty</option>
+            </select>
+          </div>
+          <p class="hint" id="carry-needs" data-tone="error" role="alert" hidden></p>
           <button id="do-carry" type="button" class="primary wide">Close with these sent to head office</button>
         </div>
       </section>
@@ -373,7 +503,7 @@
 
     <!-- The message that must not be missed. No timer, and never colour alone. -->
     <div class="banner" id="banner" hidden role="alert">
-      <strong id="banner-title">—</strong>
+      <strong id="banner-title" class="sre-with-icon">—</strong>
       <p id="banner-text"></p>
       <button id="banner-ok" type="button">I have read this</button>
     </div>

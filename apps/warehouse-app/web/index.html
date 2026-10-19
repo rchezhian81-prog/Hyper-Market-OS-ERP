@@ -25,119 +25,242 @@
     <script src="./sre-update.js" defer></script>
     <style>
       :root { --tap: 64px; }
+      /* OB-205: the page, polished inside the approved look — tokens only, the foundation's spacing, radius, elevation and
+         type scales; the task-first layout, the 64px targets and every rule of the screen unchanged. */
       body {
         margin: 0; background: var(--bg); color: var(--ink);
         font: 17px/1.45 var(--font);
         height: 100dvh; display: flex; flex-direction: column;
       }
+      /* The header: who and what on the left, the language on the right, the sync badge as one full-width line under them. */
       header {
-        display: flex; align-items: center; justify-content: space-between;
-        gap: 10px; padding: 8px 14px; background: var(--panel);
+        display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center;
+        gap: var(--space-2) var(--space-3); padding: var(--space-3) var(--space-4);
+        background: var(--panel); border-bottom: 1px solid var(--line);
       }
       /* The page's one heading: who is working and on what. Styled as the header line it is. */
-      h1.who { margin: 0; font-size: 17px; font-weight: 600; }
-      .who small { display: block; color: var(--muted); font-weight: 400; font-size: 13px; }
-      /* The sync badge (design system §1 rule 4): the dot is decoration, the two lines of words are the badge —
-         this device's unsent count, then the store computer's state and last contact. */
-      .sync-words { display: grid; line-height: 1.25; text-align: right; }
-      .sync-words small { color: var(--muted); font-size: 13px; }
+      h1.who { margin: 0; font-size: 18px; font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
+      .who small { display: block; color: var(--muted); font-weight: 400; font-size: 14px; }
+      #lang {
+        min-height: 56px; padding: 0 var(--space-3); display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+        background: var(--panel); color: var(--ink); border: 1px solid var(--field-line); border-radius: var(--radius-lg);
+        font-size: 16px; box-shadow: var(--shadow-xs);
+      }
+      #lang .sre-icon { width: 18px; height: 18px; }
+      /* The sync badge (design system §1 rule 4): the dot wears its state's shape, the two lines of words are the badge —
+         this device's unsent count, then the store computer's state and last contact. Calm by default; amber while work
+         waits here; the readable red only when a person must act. Colour is never the only signal: the words say it. */
+      .sync {
+        grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; padding: var(--space-2) var(--space-3);
+        background: var(--panel-2); color: var(--ink); border: 1px solid var(--line-soft); border-radius: var(--radius-lg);
+        font-size: 15px; min-width: 0;
+      }
+      .sync:has(.dot.waiting) { background: var(--warn-surface); color: var(--on-warn-surface); border-color: var(--warn-surface); }
+      .sync:has(.dot.error) { background: var(--error-surface); color: var(--danger-text); border-color: var(--error-surface); }
+      .sync-words { display: grid; line-height: 1.3; min-width: 0; }
+      #queue-text { font-weight: 700; }
+      .sync-words small { color: inherit; font-size: 14px; }
       .dot.waiting { background: var(--warn); }
 
-      .storage { background: var(--danger-surface); color: var(--on-danger); padding: 8px 14px; font-size: 15px; margin: 0; }
+      .storage { background: var(--danger-surface); color: var(--on-danger); padding: var(--space-2) var(--space-4); font-size: 15px; font-weight: 600; margin: 0; }
       .storage[hidden] { display: none; }
 
-      main { flex: 1; min-height: 0; overflow-y: auto; padding: 10px 14px; }
-      .empty { color: var(--muted); padding: 32px 4px; font-size: 17px; }
-      h2.section { font-size: 15px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin: 14px 2px 8px; }
-
-      /* One goods-in item per row. The product is the biggest thing; recall/expiry shout. */
-      .item {
-        width: 100%; text-align: left; background: var(--panel); color: var(--ink);
-        border: 0; border-left: 6px solid var(--line); border-radius: 14px;
-        padding: 12px 14px; margin-bottom: 10px; min-height: var(--tap); display: grid; gap: 2px;
+      main { flex: 1; min-height: 0; overflow-y: auto; padding: var(--space-1) var(--space-4) var(--space-4); }
+      .empty {
+        color: var(--muted); padding: var(--space-6) var(--space-4); font-size: 17px; text-align: center; margin: var(--space-3) 0;
+        background: var(--panel); border: 1px dashed var(--line-strong); border-radius: var(--radius-xl);
       }
-      .item[aria-selected='true'] { outline: 3px solid var(--focus); }
+      /* A list's heading: its icon, its words, and — drawn from data-count, so the words stay exactly the words — how many. */
+      h2.section {
+        display: flex; align-items: center; gap: var(--space-2); font-size: 14px; font-weight: 700; color: var(--muted);
+        text-transform: uppercase; letter-spacing: var(--tracking-caps); margin: var(--space-4) 2px var(--space-2);
+      }
+      h2.section[data-count]::after {
+        content: attr(data-count); margin-left: auto; min-width: 28px; padding: 2px 10px; border-radius: var(--radius-pill);
+        background: var(--panel); border: 1px solid var(--line); color: var(--ink); font-size: 15px; letter-spacing: 0;
+        text-align: center; font-variant-numeric: var(--numbers);
+      }
+      h2.section .sre-icon { width: 18px; height: 18px; }
+
+      /* One goods-in item per row, as a card. The product is the biggest thing; the quantity stands on the right, big;
+         recall/expiry shout in words. */
+      .item {
+        width: 100%; text-align: left; background: var(--panel); color: var(--ink); font: inherit;
+        border: 1px solid var(--line); border-left: 6px solid var(--line-strong); border-radius: var(--radius-xl);
+        padding: var(--space-3) var(--space-4) var(--space-3) var(--space-3); margin-bottom: 10px; min-height: var(--tap);
+        display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 2px var(--space-3);
+        box-shadow: var(--shadow-sm);
+      }
+      .item > * { grid-column: 1; min-width: 0; overflow-wrap: anywhere; }
+      .item[aria-selected='true'] { outline: 3px solid var(--focus); outline-offset: 0; background: var(--mint); }
       .item.recalled { border-left-color: var(--danger); }
       /* A pick line: the bin is the biggest thing, because the bin is where the worker must walk to. */
       .item.pick { border-left-color: var(--accent); }
       .item.issue { border-left-color: var(--accent); }
-      .item .where { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
-      .item .what { font-size: 20px; font-weight: 700; }
-      .item .qty { color: var(--muted); font-size: 15px; font-variant-numeric: tabular-nums; }
-      .item .flag { font-size: 14px; font-weight: 600; color: var(--warn); }
-      /* A sent scan: what it was, then one of the five state words as a pill; a refusal carries its reason. */
-      .sent { background: var(--panel); border-radius: 14px; padding: 10px 14px; margin-bottom: 8px; display: grid; gap: 6px; border-left: 6px solid var(--line); }
-      .sent .what { font-size: 16px; font-weight: 600; }
-      .sent .why { font-size: 14px; color: var(--muted); }
+      .item .where { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: .02em; line-height: 1.2; }
+      .item .what { font-size: 19px; font-weight: 700; line-height: 1.3; }
+      .item .where + .what { font-size: 16px; font-weight: 600; color: var(--ink-2); }
+      /* The quantity: the number big and on the right where the eye lands, its unit beside it. */
+      .item .qty {
+        grid-column: 2; grid-row: 1 / span 3; justify-self: end; text-align: right; display: grid; justify-items: end;
+        color: var(--muted); font-size: 14px; font-variant-numeric: var(--numbers); line-height: 1.25; max-width: 9.5em;
+      }
+      .item .qty .n { color: var(--ink); font-size: 22px; font-weight: 700; }
+      .item .flag {
+        justify-self: start; margin-top: var(--space-1); padding: 2px 10px; border-radius: var(--radius-pill);
+        background: var(--warn-surface); color: var(--on-warn-surface); font-size: 14px; font-weight: 700;
+      }
+      .item.recalled .flag { background: var(--error-surface); color: var(--danger-text); }
+      /* OB-37: a delivery waiting for this store — a link the receiver taps to receive against it. */
+      #deliveries .row {
+        display: flex; align-items: center; min-height: 56px; padding: var(--space-2) var(--space-4); margin-bottom: var(--space-2);
+        background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-left: 6px solid var(--line-strong);
+        border-radius: var(--radius-xl); text-decoration: none; font-weight: 600; box-shadow: var(--shadow-xs); overflow-wrap: anywhere;
+      }
+      #deliveries .row[aria-current='true'] { border-left-color: var(--accent); background: var(--mint); }
+      /* R3 D-11: the door check-in's way in — a card with its icon beside its words. */
+      #dsd-open { display: flex; align-items: center; justify-content: flex-start; gap: var(--space-2); margin-top: var(--space-3); font-weight: 700; font-size: 17px; border-left-color: var(--info); }
+      #dsd-open[hidden] { display: none; }
+      /* A sent scan: what it was, then one of the five state words as a chip with its shape; a refusal carries its reason. */
+      .sent {
+        background: var(--panel); border: 1px solid var(--line-soft); border-left: 6px solid var(--line-strong); border-radius: var(--radius-xl);
+        padding: 10px var(--space-4) 10px var(--space-3); margin-bottom: var(--space-2); display: grid; gap: 6px; box-shadow: var(--shadow-xs);
+      }
+      .sent .what { font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
+      .sent .why { font-size: 15px; color: var(--danger-text); font-weight: 600; }
       .sent.refused { border-left-color: var(--danger); }
       .sent.posted { border-left-color: var(--good); }
-      .pill { display: inline-block; padding: 4px 12px; border-radius: 999px; font-size: 14px; font-weight: 600; background: var(--line); color: var(--ink); justify-self: start; }
-      .pill.posted { background: var(--good); color: var(--on-accent); }
-      .pill.refused { background: var(--danger-surface); color: var(--on-danger); }
-      .pill.retrying { background: var(--warn); color: var(--on-warn); }
+      .sent.saved_here, .sent.retrying { border-left-color: var(--degraded); }
+      .pill {
+        display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px 4px 8px; border-radius: var(--radius-pill);
+        font-size: 14px; font-weight: 600; background: var(--panel-2); color: var(--ink); border: 1px solid var(--line); justify-self: start;
+        line-height: 1.35; max-width: 100%;
+      }
+      .pill .sre-icon { width: 16px; height: 16px; }
+      .pill.posted { background: var(--ok-surface); color: var(--on-ok-surface); border-color: var(--ok-surface); }
+      .pill.refused { background: var(--danger-surface); color: var(--on-danger); border-color: var(--danger-surface); }
+      .pill.retrying, .pill.saved_here { background: var(--warn-surface); color: var(--on-warn-surface); border-color: var(--warn-surface); }
 
-      footer { background: var(--panel); padding: 12px 14px 18px; display: grid; gap: 10px; }
-      .step { font-size: 19px; font-weight: 600; min-height: 26px; }
-      .step small { display: block; color: var(--muted); font-weight: 400; font-size: 14px; }
+      /* The footer: what comes next, then the actions — the quieter ones on top, the one action that matters at the bottom,
+         under the thumb. */
+      footer {
+        background: var(--panel); border-top: 1px solid var(--line); box-shadow: var(--shadow-md);
+        padding: var(--space-3) var(--space-4) calc(var(--space-4) + env(safe-area-inset-bottom, 0px)); display: grid; gap: 10px;
+      }
+      .step {
+        font-size: 17px; font-weight: 700; line-height: 1.3; min-height: 26px; padding-left: var(--space-3);
+        border-left: 4px solid var(--accent);
+      }
+      .step small { display: block; color: var(--muted); font-weight: 400; font-size: 15px; }
+      .step small:empty { display: none; }
       .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
       button {
-        min-height: var(--tap); border-radius: 14px; border: 0; font-size: 18px; font-weight: 600;
-        background: var(--line); color: var(--ink);
+        min-height: var(--tap); border-radius: var(--radius-xl); border: 1px solid var(--line); font-size: 18px; font-weight: 600;
+        background: var(--panel-2); color: var(--ink); padding: 0 var(--space-3); line-height: 1.25;
+        display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2); text-align: center;
+        transition: transform var(--dur-fast) var(--ease-out);
       }
-      button.primary { background: var(--good); color: var(--on-accent); font-size: 20px; }
-      button:disabled { opacity: .45; }
+      button:active:not(:disabled) { transform: translateY(1px); }
+      button .sre-icon { width: 22px; height: 22px; }
+      button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-size: 20px; font-weight: 700; box-shadow: var(--shadow-sm); }
+      button.primary:active:not(:disabled) { background: var(--accent-press); border-color: var(--accent-press); }
+      /* A step not yet open looks waiting, not washed out: the step line above says what opens it. */
+      button:disabled { opacity: 1; background: var(--panel-2); color: var(--muted); border-style: dashed; border-color: var(--line-strong); box-shadow: none; cursor: not-allowed; }
       button:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       .wide { grid-column: 1 / -1; }
+      /* Two to a row on a 360px phone: the words at 17px so a label wraps to two lines, not four. */
+      .actions > button { font-size: 17px; padding: 0 10px; gap: 6px; }
+      .actions > button.wide { font-size: 19px; }
+      .actions > button .sre-icon { width: 20px; height: 20px; }
+      /* The quieter row — counting and adjusting — at the handhelds' 56px bar, so the footer leaves room for the list. */
+      button.quiet { min-height: 56px; font-size: 16px; background: var(--panel); }
+      /* At the door: once the note is scanned, closing is the one green action and scanning steps back. */
+      #dsd-work-panel:has(#dsd-close:not(:disabled)) #dsd-scan { background: var(--panel); color: var(--ink); border-color: var(--line); font-size: 18px; box-shadow: none; }
+      /* With both pick and issue work held, the two sit side by side rather than stacking the footer up the screen. */
+      .actions:has(> #pick:not([hidden])):has(> #issue:not([hidden])) > #pick,
+      .actions:has(> #pick:not([hidden])):has(> #issue:not([hidden])) > #issue { grid-column: auto; font-size: 17px; }
 
       /* Waiting for a scan — there is deliberately no text box to type into. */
       .sheet { position: fixed; inset: 0; background: var(--scrim); display: grid; place-items: end center; z-index: 20; }
       .sheet[hidden] { display: none; }
       .sheet-inner {
-        width: min(560px, 100%); background: var(--panel); padding: 18px;
-        border-radius: 20px 20px 0 0; display: grid; gap: 12px; max-height: 92dvh; overflow-y: auto;
+        width: min(560px, 100%); background: var(--panel); padding: var(--space-3) var(--space-4) calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
+        border-radius: 16px 16px 0 0; display: grid; gap: var(--space-3); max-height: 92dvh; overflow-y: auto;
+        box-shadow: var(--shadow-lg); animation: sre-rise var(--dur-slow) var(--ease-out) both;
       }
-      .sheet h2 { margin: 0; font-size: 20px; }
-      .hint { color: var(--muted); font-size: 15px; min-height: 22px; }
+      /* A grab line: says "this is a panel over the list", nothing more. */
+      .sheet-inner::before { content: ''; justify-self: center; width: 40px; height: 4px; border-radius: var(--radius-pill); background: var(--line-strong); }
+      .sheet h2 { margin: 0; font-size: 20px; line-height: 1.3; display: flex; align-items: flex-start; gap: var(--space-2); overflow-wrap: anywhere; }
+      .sheet h2 .sre-icon { width: 24px; height: 24px; margin-top: 1px; color: var(--accent); }
+      .sheet h2 .sre-with-icon { align-items: flex-start; }
+      .hint { color: var(--muted); font-size: 15px; min-height: 22px; margin: 0; }
       .awaiting {
-        background: var(--panel-2); border-radius: 12px; padding: 18px 16px; text-align: center;
-        font-size: 20px; font-weight: 600; border: 2px dashed var(--line);
+        background: var(--mint); color: var(--on-ok-surface); border-radius: var(--radius-xl); padding: var(--space-5) var(--space-4); text-align: center;
+        font-size: 20px; font-weight: 700; border: 2px dashed var(--accent); display: grid; justify-items: center; gap: var(--space-2);
       }
+      .awaiting .sre-icon { width: 36px; height: 36px; }
+      .awaiting .sre-with-icon { display: grid; justify-items: center; gap: var(--space-2); }
       .sheet-actions { display: grid; grid-template-columns: 1fr; gap: 10px; }
       .sheet-actions.two { grid-template-columns: 1fr 1fr; }
       /* A quantity typed on a keypad (a count, an adjustment): the number is big, the keys are buttons — never a text box. */
       .entry {
-        background: var(--panel-2); border-radius: 12px; padding: 14px 16px; text-align: center;
-        font-size: 34px; font-weight: 700; font-variant-numeric: tabular-nums;
+        background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius-xl); padding: var(--space-3) var(--space-4); text-align: center;
+        font-size: 40px; font-weight: 700; font-variant-numeric: var(--numbers); line-height: 1.2; overflow-wrap: anywhere;
       }
       /* Wave 3 · SF-07 part 3: the arrival-temperature box — a full-width 56 px touch target, the phone's number keyboard. */
-      #recv-temp-field { margin: 0 0 10px; }
-      #recv-temp { min-height: 56px; width: 100%; font-size: 17px; }
-      .keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-      .keypad button, .choices button, .direction button { min-height: 56px; font-size: 19px; }
-      .choices { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
-      .direction { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-      .direction button[aria-pressed='true'] { outline: 3px solid var(--focus); background: var(--panel-2); }
-      /* OB-172: one receiving-checklist line — its words, then Pass / Fail as two big buttons. */
-      .check-item { display: grid; gap: 6px; padding: 6px 0; }
+      #recv-temp-field { margin: var(--space-2) 0 10px; }
+      #recv-temp { min-height: 56px; width: 100%; font-size: 16px; background: var(--panel); justify-content: flex-start; text-align: left; padding: var(--space-2) var(--space-4); }
+      .keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-2); }
+      .keypad button, .choices button, .direction button { min-height: 56px; font-size: 19px; background: var(--panel); }
+      .keypad button { font-size: 24px; font-weight: 700; font-variant-numeric: var(--numbers); }
+      .choices { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--space-2); }
+      /* A hidden choice list stays hidden: the class above would otherwise outrank the [hidden] attribute and show the
+         corrective actions before any check had failed. */
+      .choices[hidden] { display: none; }
+      .direction { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); }
+      .direction button[aria-pressed='true'], .choices button[aria-pressed='true'] {
+        outline: 3px solid var(--focus); outline-offset: 0; background: var(--mint); border-color: var(--accent); color: var(--on-ok-surface);
+      }
+      /* OB-172: one receiving-checklist line — its words, then Pass / Fail as two big buttons; the count of checks done above. */
+      .check-item { display: grid; gap: 6px; padding: var(--space-3) 0; border-top: 1px solid var(--line-soft); }
+      .check-item > span { font-weight: 600; }
       .check-item .direction button { min-height: 56px; }
-      .choices button[aria-pressed='true'] { outline: 3px solid var(--focus); background: var(--panel-2); }
+      .progress { margin: 0; font-size: 15px; font-weight: 700; color: var(--ink); font-variant-numeric: var(--numbers); }
+      .progress[hidden] { display: none; }
       /* The confirm step of a pick: the number about to be committed, unmissable, then one tap. */
       .big-qty {
-        background: var(--panel-2); border-radius: 12px; padding: 18px 16px; text-align: center;
-        font-size: 34px; font-weight: 700; font-variant-numeric: tabular-nums;
+        background: var(--mint); border: 1px solid var(--line); border-radius: var(--radius-xl); padding: var(--space-4); text-align: center;
+        font-size: 22px; font-weight: 700; font-variant-numeric: var(--numbers); color: var(--on-ok-surface); line-height: 1.2;
       }
+      .big-qty .n { display: block; font-size: 52px; color: var(--ink); letter-spacing: var(--tracking-tight); }
+      /* R3 D-11: a line at the door — the product, then how many came off the van out of how many the order expects, big. */
+      #dsd-start-panel:not([hidden]), #dsd-work-panel:not([hidden]) { display: grid; gap: var(--space-3); }
+      #dsd-lines .item { margin-bottom: var(--space-2); }
+      #dsd-lines .item .qty { grid-column: 1; grid-row: auto; justify-self: start; text-align: left; display: block; max-width: none; }
+      #dsd-lines .item .count { grid-column: 2; grid-row: 1 / span 2; font-size: 14px; color: var(--muted); text-align: right; font-variant-numeric: var(--numbers); }
+      #dsd-lines .item .count .n { display: block; font-size: 24px; font-weight: 700; color: var(--ink); }
+      #dsd-differences .discrepancy {
+        margin: 0 0 var(--space-2); padding: var(--space-2) var(--space-3); border-radius: var(--radius-lg); font-size: 16px; font-weight: 700;
+        background: var(--warn-surface); color: var(--on-warn-surface); border-left: 4px solid var(--degraded);
+      }
+      #dsd-no-cash { padding: var(--space-2) var(--space-3); border-radius: var(--radius-lg); background: var(--info-surface); color: var(--on-info-surface); font-weight: 600; }
 
-      /* The scan-result banner. No timer, never colour alone — a rejected scan carries a word. */
+      /* The scan-result banner. No timer, never colour alone — a rejected scan carries a word and its shape. */
       .banner {
-        position: fixed; inset: 0 0 auto 0; z-index: 30; padding: 18px 14px;
-        background: var(--danger-surface); color: var(--on-danger); display: grid; gap: 10px;
+        position: fixed; inset: 0 0 auto 0; z-index: 30; padding: var(--space-5) var(--space-4) var(--space-4);
+        background: var(--danger-surface); color: var(--on-danger); display: grid; gap: 10px; box-shadow: var(--shadow-lg);
+        animation: sre-rise var(--dur-slow) var(--ease-out) both;
       }
       .banner[hidden] { display: none; }
       .banner.good { background: var(--good); color: var(--on-accent); }
       .banner.warn { background: var(--warn); color: var(--on-warn); }
-      .banner strong { font-size: 21px; }
-      .banner p { margin: 0; font-size: 17px; }
-      .banner button { background: var(--panel-2); color: var(--ink); }
+      .banner-head { display: flex; align-items: flex-start; gap: 10px; }
+      #banner-mark { display: inline-flex; flex: none; }
+      #banner-mark .sre-icon { width: 28px; height: 28px; stroke-width: 2; }
+      .banner strong { font-size: 21px; line-height: 1.3; overflow-wrap: anywhere; }
+      .banner p { margin: 0; font-size: 17px; overflow-wrap: anywhere; }
+      .banner p:empty { display: none; }
+      .banner button { background: var(--panel); color: var(--ink); border-color: var(--panel); font-weight: 700; }
       .banner.good button { background: var(--on-accent); color: var(--ink); }
       .banner.warn button { background: var(--on-warn); color: var(--ink); }
     </style>
@@ -145,10 +268,10 @@
   <body>
     <header>
       <h1 class="who" id="who">—<small id="assignment">—</small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Language"><span data-sre-icon="globe"></span>EN / த</button>
       <span class="sync">
         <span class="dot" id="queue-dot" data-sre-status title="Sync"></span>
         <span class="sync-words"><span id="queue-text">—</span><small id="box-text">—</small></span>
-        <button class="lang" id="lang" type="button" aria-label="Language">EN / த</button>
       </span>
     </header>
 
@@ -182,19 +305,21 @@
 
     <footer>
       <div class="step" id="step">—<small id="step-detail"></small></div>
+      <!-- OB-205: the quieter actions first, the primary ones last — at the bottom, under the thumb. Only the one the worker
+           has opened (by tapping a line) is enabled, so only one is ever the dominant green. -->
       <div class="actions">
-        <button id="receive" type="button">Receive a delivery</button>
-        <button id="put-away" class="primary" type="button" disabled>Put away — scan the bin</button>
+        <!-- SP-3b: a BLIND bin count (W2) and an adjustment REQUEST with a reason (W3). Neither moves stock on this handheld. -->
+        <button id="count-bin" class="quiet" type="button" disabled>Count a bin</button>
+        <button id="adjust-stock" class="quiet" type="button" disabled>Adjust stock</button>
         <!-- SP-6b: shown once this handheld has received something for the delivery. Sends it as ONE receipt for head office
              to assemble against the order — no quantity travels, the scans already did. -->
         <button id="done-receiving" class="wide" type="button" hidden>Delivery complete — send the receipt</button>
+        <button id="receive" type="button">Receive a delivery</button>
+        <button id="put-away" class="primary" type="button" disabled>Put away — scan the bin</button>
         <!-- Shown only when the handheld holds pick work. Scanning a line's bin from the list starts the pick without it. -->
         <button id="pick" class="primary wide" type="button" disabled hidden>Pick — scan the bin</button>
         <!-- SP-8c: shown only when the handheld holds floor indents to issue. -->
         <button id="issue" class="primary wide" type="button" disabled hidden>Issue to the floor — scan the bin</button>
-        <!-- SP-3b: a BLIND bin count (W2) and an adjustment REQUEST with a reason (W3). Neither moves stock on this handheld. -->
-        <button id="count-bin" type="button" disabled>Count a bin</button>
-        <button id="adjust-stock" type="button" disabled>Adjust stock</button>
       </div>
     </footer>
 
@@ -278,6 +403,8 @@
       <div class="sheet-inner">
         <h2 id="checklist-title">—</h2>
         <div class="hint" id="checklist-hint"></div>
+        <!-- OB-205: how many of the checks are answered, in words — "2 of 3 checked". -->
+        <p class="progress" id="checklist-progress" hidden></p>
         <div id="checklist-items"></div>
         <div class="hint" id="checklist-action-hint" hidden></div>
         <div class="choices" id="checklist-actions" hidden></div>
@@ -315,6 +442,10 @@
       <div class="sheet-inner">
         <h2 id="dsd-title">Direct delivery at the door</h2>
         <p class="hint" id="dsd-no-cash">No cash at the door. The driver gets the signed delivery note; the supplier is paid later as a supplier bill.</p>
+        <!-- OB-205: Back sits at the top, quiet, so the step's own action is the last thing on the panel, under the thumb. -->
+        <div class="sheet-actions">
+          <button id="dsd-cancel" class="quiet" type="button">Back</button>
+        </div>
         <div id="dsd-start-panel">
           <div class="hint" id="dsd-choose-hint">Choose the delivery</div>
           <div class="choices" id="dsd-choices"></div>
@@ -341,15 +472,12 @@
           <button id="dsd-note" type="button" class="wide">Delivery note: scan its barcode</button>
           <button id="dsd-close" class="primary wide" type="button" disabled>Driver signs the note — close the delivery</button>
         </div>
-        <div class="sheet-actions">
-          <button id="dsd-cancel" type="button">Back</button>
-        </div>
       </div>
     </div>
 
     <!-- The scan result that must not be missed. No timer; a colour, a word, a sound and a buzz. -->
     <div class="banner" id="banner" hidden role="alert">
-      <strong id="banner-title">—</strong>
+      <div class="banner-head sre-with-icon"><span id="banner-mark" aria-hidden="true"></span><strong id="banner-title">—</strong></div>
       <p id="banner-text"></p>
       <button id="banner-ok" type="button">OK</button>
     </div>

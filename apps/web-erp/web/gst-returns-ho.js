@@ -34,6 +34,7 @@ const WORDS = {
     annualHeading: 'Annual return', g9: 'GSTR-9', g9c: 'GSTR-9C', complete: 'complete — all twelve months filed', incomplete: 'INCOMPLETE — months missing', openDiffs: 'difference(s) without a reason', noOpen: 'every difference has a reason',
     locked: 'Locked', amended: 'Amendment recorded — declared in', refused: 'Not done', unreachable: 'Head office could not be reached. Nothing was changed — try again.',
     cannotRead: 'This could not be read from head office. Nothing here is current.', badPeriod: 'Write the month as MMYYYY, e.g. 052026.',
+    periodHelp: 'Six digits: the month, then the year — for example 052026.',
   },
   ta: {
     hoTitle: 'இந்த மாத GST, தலைமை அலுவலகத்திலிருந்து',
@@ -58,6 +59,7 @@ const WORDS = {
     annualHeading: 'ஆண்டு வருமானம்', g9: 'GSTR-9', g9c: 'GSTR-9C', complete: 'முழுமை — பன்னிரண்டு மாதமும் தாக்கல்', incomplete: 'முழுமையில்லை — மாதங்கள் விடுபட்டுள்ளன', openDiffs: 'காரணமில்லாத வேறுபாடு(கள்)', noOpen: 'ஒவ்வொரு வேறுபாட்டிற்கும் காரணம் உள்ளது',
     locked: 'பூட்டப்பட்டது', amended: 'திருத்தம் பதிவானது — அறிவிக்கப்படும் மாதம்', refused: 'செய்யப்படவில்லை', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை. எதுவும் மாறவில்லை — மீண்டும் முயலவும்.',
     cannotRead: 'இதைத் தலைமை அலுவலகத்திலிருந்து படிக்க முடியவில்லை. இங்குள்ளவை தற்போதையவை அல்ல.', badPeriod: 'மாதத்தை MMYYYY ஆக எழுதுங்கள், எ.கா. 052026.',
+    periodHelp: 'ஆறு இலக்கங்கள்: மாதம், பிறகு ஆண்டு — எ.கா. 052026.',
   },
 };
 const t = (key) => WORDS[lang]?.[key] ?? WORDS.en[key] ?? key;
@@ -114,9 +116,20 @@ async function post(key, path, body, done) {
   await refresh();
 }
 
+/** OB-205: a shape from the one icon set (sre-icons.js), or null when the set is not loaded — the words carry the meaning. */
+const lineIcon = (name, size) => (window.sreIcon && typeof window.sreIcon === 'function' ? window.sreIcon(name, size) : null);
+const toneIcon = (tone, size) => (window.sreIcon && typeof window.sreIcon.forTone === 'function' ? lineIcon(window.sreIcon.forTone(tone), size) : null);
+/** Words with a shape in front, in one holder; the words stay its whole text. */
+function shaped(holder, mark, words) {
+  const text = document.createElement('span'); text.textContent = words;
+  holder.replaceChildren(...(mark ? [mark] : []), text);
+}
+
 function fact(list, label, word, tone) {
   const li = document.createElement('li');
   li.className = `tone-${tone}`;
+  const mark = toneIcon(tone, 18);
+  if (mark) li.append(mark);
   const l = document.createElement('span'); l.textContent = `${label}:`;
   const w = document.createElement('span'); w.className = 'word'; w.textContent = word;
   li.append(l, w);
@@ -141,20 +154,32 @@ function paintControls() {
   w.dataset.control = 'time-bar-warning-days'; w.title = controls.said.timeBarWarningDays;
 }
 
-function figure(dl, label, value, key) {
+function figure(dl, label, value, key, notKnown = false) {
   const dt = document.createElement('dt'); dt.textContent = label;
   const dd = document.createElement('dd'); dd.textContent = value; dd.dataset.figure = key;
+  // OB-205: a figure head office does not know wears the "not known" shape beside its words — never a zero.
+  if (notKnown) { dd.className = 'unknown sre-with-icon'; const mark = lineIcon('circle-help', 16); if (mark) dd.prepend(mark); }
   dl.append(dt, dd);
 }
 
-function row(list, head, word, tone, facts, data) {
+/** One line of head office's answer. OB-205: the state is a chip — the tone's shape and its word (`icon` names a
+ *  clearer shape where the tone's own would mislead); a line whose words are all in its title wears the shape there. */
+function row(list, head, word, tone, facts, data, icon) {
   const li = document.createElement('li');
   li.className = `row tone-${tone}`;
   for (const [k, v] of Object.entries(data)) li.dataset[k] = v;
   const h = document.createElement('div'); h.className = 'head';
-  const a = document.createElement('span'); a.className = 'headline'; a.textContent = head;
-  const s = document.createElement('span'); s.className = 'state'; s.textContent = word;
-  h.append(a, s);
+  const a = document.createElement('span'); a.className = 'headline';
+  const mark = icon ? lineIcon(icon, 18) : toneIcon(tone, 18);
+  if (word === '') shaped(a, mark, head); else a.textContent = head;
+  h.append(a);
+  if (word !== '') {
+    const s = document.createElement('span');
+    s.className = 'state sre-chip';
+    s.dataset.tone = tone;
+    shaped(s, icon ? lineIcon(icon, 16) : toneIcon(tone, 16), word);
+    h.append(s);
+  }
   li.append(h);
   if (facts.length > 0) {
     const f = document.createElement('div'); f.className = 'facts';
@@ -168,7 +193,9 @@ function paintG3b() {
   const box = el('g3b');
   box.hidden = g3b === null;
   if (g3b === null) return;
-  el('basis').textContent = t(`basis_${g3b.basis}`);
+  // OB-205: where GSTR-3B stands, with its shape: provisional waits, filed-not-locked needs the lock, locked is fixed.
+  const basisShape = { provisional_gstr1_not_filed: 'clock', gstr1_filed_not_yet_locked: 'triangle-alert', locked_to_filed_gstr1: 'lock' }[g3b.basis] ?? 'circle-help';
+  shaped(el('basis'), lineIcon(basisShape, 18), t(`basis_${g3b.basis}`));
   el('basis').dataset.basis = g3b.basis;
   const dl = el('figures');
   dl.replaceChildren();
@@ -177,7 +204,8 @@ function paintG3b() {
   figure(dl, t('f31c'), rupees(g3b.table31.c.taxableMinor), '31c');
   figure(dl, t('f31d'), rupees(taxOf(g3b.table31.d)), '31d');
   figure(dl, t('f4a3'), rupees(taxOf(g3b.table4.a3ReverseCharge)), '4a3');
-  figure(dl, t('f4a5'), g3b.table4.a5AllOther.status === 'reconciled' ? rupees(g3b.table4.a5AllOther.cgstMinor + g3b.table4.a5AllOther.sgstMinor + g3b.table4.a5AllOther.igstMinor) : t('notKnown'), '4a5');
+  const a5Known = g3b.table4.a5AllOther.status === 'reconciled';
+  figure(dl, t('f4a5'), a5Known ? rupees(g3b.table4.a5AllOther.cgstMinor + g3b.table4.a5AllOther.sgstMinor + g3b.table4.a5AllOther.igstMinor) : t('notKnown'), '4a5', !a5Known);
   figure(dl, t('tillNet'), rupees(g3b.reconciliation.salesLedger.netGrossMinor), 'till-net');
 
   const actions = el('g3b-actions');
@@ -211,15 +239,15 @@ function paintG3b() {
   el('diff-heading').textContent = t('diffHeading');
   const diffs = el('differences');
   diffs.replaceChildren();
-  if (g3b.reconciliation.differences.length === 0) row(diffs, t('noDiff'), '✓', 'ok', [], { code: 'none' });
+  if (g3b.reconciliation.differences.length === 0) row(diffs, t('noDiff'), '', 'ok', [], { code: 'none' });
   for (const d of g3b.reconciliation.differences) {
-    row(diffs, t(`d_${d.code}`), `${d.explained ? '✓' : '⚠'} ${d.explained ? t('explained') : t('open')} · ${rupees(d.grossMinor)}`, d.explained ? 'ok' : 'error', [d.detail], { code: d.code, explained: String(d.explained) });
+    row(diffs, t(`d_${d.code}`), `${d.explained ? t('explained') : t('open')} · ${rupees(d.grossMinor)}`, d.explained ? 'ok' : 'error', [d.detail], { code: d.code, explained: String(d.explained) });
   }
   el('exc-heading').textContent = t('excHeading');
   const exc = el('exceptions');
   exc.replaceChildren();
-  if (g3b.exceptions.length === 0) row(exc, t('noExc'), '✓', 'ok', [], { code: 'none' });
-  for (const e of g3b.exceptions) row(exc, e.detail, '⚠', 'degraded', [], { code: e.code });
+  if (g3b.exceptions.length === 0) row(exc, t('noExc'), '', 'ok', [], { code: 'none' });
+  for (const e of g3b.exceptions) row(exc, e.detail, '', 'degraded', [], { code: e.code });
 }
 
 function paintCalendar() {
@@ -229,13 +257,13 @@ function paintCalendar() {
   if (calendar === null) { el('cal-summary').textContent = ''; return; }
   el('cal-summary').textContent = calendar.nearBarNotJudged ? t('notJudged') : '';
   const urgent = calendar.entries.filter((e) => e.warning === 'time_barred' || e.warning === 'near_time_bar' || e.warning === 'overdue' || e.warning === 'not_due_yet');
-  if (urgent.length === 0) row(list, t('calNone'), '✓', 'ok', [], { warning: 'none' });
+  if (urgent.length === 0) row(list, t('calNone'), '', 'ok', [], { warning: 'none' });
   for (const e of urgent.slice(0, 24)) {
     const tone = e.warning === 'time_barred' || e.warning === 'near_time_bar' ? 'error' : e.warning === 'overdue' ? 'degraded' : 'idle';
     const facts = [`${t('due')}: ${e.dueDate}`, `${t('bar')}: ${e.timeBarDate}`];
     if (e.daysOverdue !== undefined) facts.push(`${e.daysOverdue} ${t('daysOver')}`);
     if (e.daysToTimeBar !== undefined && e.warning !== 'time_barred') facts.push(`${e.daysToTimeBar} ${t('daysLeft')}`);
-    row(list, `${e.type} ${e.period}`, `${tone === 'error' ? '⛔' : tone === 'degraded' ? '⚠' : '◔'} ${t(`w_${e.warning}`)}`, tone, facts, { type: e.type, period: e.period, warning: e.warning });
+    row(list, `${e.type} ${e.period}`, t(`w_${e.warning}`), tone, facts, { type: e.type, period: e.period, warning: e.warning }, tone === 'idle' ? 'calendar-clock' : undefined);
   }
 }
 
@@ -244,9 +272,9 @@ function paintAnnual() {
   const list = el('annual');
   list.replaceChildren();
   if (annual === null) return;
-  row(list, t('g9'), annual.g9.complete ? `✓ ${t('complete')}` : `⚠ ${t('incomplete')}`, annual.g9.complete ? 'ok' : 'degraded',
+  row(list, t('g9'), annual.g9.complete ? t('complete') : t('incomplete'), annual.g9.complete ? 'ok' : 'degraded',
     [`${t('due')}: ${annual.g9.dueDate}`, ...annual.g9.missing.slice(0, 6).map((m) => `${m.period}: ${m.reason.replace(/_/g, ' ')}`)], { return: 'GSTR9' });
-  row(list, t('g9c'), annual.g9c.open === 0 ? `✓ ${t('noOpen')}` : `⚠ ${annual.g9c.open} ${t('openDiffs')}`, annual.g9c.open === 0 ? 'ok' : 'degraded',
+  row(list, t('g9c'), annual.g9c.open === 0 ? t('noOpen') : `${annual.g9c.open} ${t('openDiffs')}`, annual.g9c.open === 0 ? 'ok' : 'degraded',
     [`${t('due')}: ${annual.g9c.dueDate}`], { return: 'GSTR9C' });
 }
 
@@ -258,7 +286,8 @@ function paint() {
   el('show').textContent = t('show');
   const state = el('ho-state');
   state.hidden = !readFailed;
-  state.textContent = readFailed ? t('cannotRead') : '';
+  if (readFailed) shaped(state, lineIcon('circle-help', 20), t('cannotRead')); else state.textContent = '';
+  el('period-help').textContent = el('period').getAttribute('aria-invalid') === 'true' ? t('badPeriod') : t('periodHelp');
   paintControls();
   paintG3b();
   paintCalendar();
@@ -286,7 +315,17 @@ el('period').value = period;
 el('pick').addEventListener('submit', (event) => {
   event.preventDefault();
   const v = el('period').value.trim();
-  if (!/^(0[1-9]|1[0-2])\d{4}$/.test(v)) { tell(false, t('badPeriod')); return; }
+  if (!/^(0[1-9]|1[0-2])\d{4}$/.test(v)) {
+    // OB-205: said beside the field too — what is wrong and how to write it — and the field is marked.
+    el('period').setAttribute('aria-invalid', 'true');
+    el('period-help').dataset.tone = 'error';
+    el('period-help').textContent = t('badPeriod');
+    tell(false, t('badPeriod'));
+    return;
+  }
+  el('period').removeAttribute('aria-invalid');
+  delete el('period-help').dataset.tone;
+  el('period-help').textContent = t('periodHelp');
   period = v;
   el('ho-result').hidden = true;
   void refresh();

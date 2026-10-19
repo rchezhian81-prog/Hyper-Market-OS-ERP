@@ -31,6 +31,47 @@ const inr = (minor) =>
  *  cashier reads "Amul Ghee 1L", not "P1", but a delisted item still shows something rather than blank. */
 const descOf = (productId) => (session.productName && session.productName(productId)) || productId;
 
+// ── Words and marks on the page's own controls (OB-205) ─────────────────────
+//
+// Every icon comes from the one set (`window.sreIcon`, design system §3.4) and sits beside its word; with no set loaded
+// the word alone is shown, which is always enough. Each control is drawn ONCE and afterwards only its words change —
+// and only when they differ — so drawing the bill after a scan creates no icon and changes nothing it need not.
+/** The set's icon, or null when the set is not loaded. */
+function mark(name, size = 22) {
+  return typeof window.sreIcon === 'function' ? window.sreIcon(name, size) : null;
+}
+/** Set an element's words, touching the page only when they changed. */
+function setText(id, words) {
+  const node = el(id);
+  if (node.textContent !== words) node.textContent = words;
+}
+/** A button's word (in its `.label`) and, when named, its icon in front of it — redrawn only when either changed. */
+function setLabel(id, words, icon) {
+  const button = el(id);
+  let label = button.querySelector(':scope > .label');
+  if (!label) {
+    label = document.createElement('span');
+    label.className = 'label';
+    label.textContent = button.textContent;
+    button.replaceChildren(label);
+  }
+  if (icon) {
+    const had = label.previousElementSibling;
+    if (!had || had.getAttribute('data-icon') !== icon) {
+      const svg = mark(icon);
+      if (svg && had) had.replaceWith(svg); else if (svg) button.prepend(svg);
+    }
+  }
+  if (words !== undefined && label.textContent !== words) label.textContent = words;
+}
+/** The icon at the front of a status line (the empty bill, the age check's label), swapped only when it changed. */
+function setLeadIcon(node, icon, size) {
+  const had = node.firstElementChild && node.firstElementChild.tagName.toLowerCase() === 'svg' ? node.firstElementChild : null;
+  if (had && had.getAttribute('data-icon') === icon) return;
+  const svg = mark(icon, size);
+  if (svg && had) had.replaceWith(svg); else if (svg) node.prepend(svg);
+}
+
 // ── Words ───────────────────────────────────────────────────────────────────
 //
 // Tamil is a first language for much of the floor staff, not a translation afterthought. Numbers
@@ -40,6 +81,10 @@ const WORDS = {
     staleShell: 'No connection to the store computer. Billing still works. This price list is what this lane was last given, at',
     offersRefused: 'Offers this till does not apply, because they would give a carry bag free (a bag is always sold at its price). Tell the manager:',
     batch: 'Batch', scanToBegin: 'Scan an item to begin.', qty: 'Qty', void: 'Void', tender: 'Tender',
+    // The bill's own words (OB-205): the column heads, the total's name, a voided line's tag, the age check's label, and
+    // what the drawer count's − and + buttons say to a screen reader.
+    item: 'Item', amount: 'Amount', totalToPay: 'Total to pay', voided: 'Voided', ageCheck: 'Age check — ask for ID',
+    oneMore: 'one more', oneFewer: 'one fewer',
     // The age question (M12-FR-04 · Wave 2b PF-03): asked BEFORE the item joins the bill, answered in the signed-in
     // cashier's name. {item} and {age} are filled in from the product the till just scanned.
     ageQuestion: '{item} is age restricted. Check the customer\'s identification. Is the customer {age} or over?',
@@ -177,6 +222,8 @@ const WORDS = {
     staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. பில் போடுவது வேலை செய்யும். இந்த விலைப் பட்டியல் இந்த லேனுக்குக் கடைசியாகக் கொடுக்கப்பட்டது:',
     offersRefused: 'கேரி பையை இலவசமாக்கும் சலுகைகளை இந்த டில் பயன்படுத்தாது (பை எப்போதும் அதன் விலைக்கே விற்கப்படும்). மேலாளரிடம் சொல்லுங்கள்:',
     batch: 'தொகுதி', scanToBegin: 'தொடங்க ஒரு பொருளை ஸ்கேன் செய்யவும்.', qty: 'எண்ணிக்கை', void: 'நீக்கு',
+    item: 'பொருள்', amount: 'தொகை', totalToPay: 'செலுத்த வேண்டிய மொத்தம்', voided: 'நீக்கப்பட்டது', ageCheck: 'வயதுச் சரிபார்ப்பு — அடையாள அட்டை கேளுங்கள்',
+    oneMore: 'இன்னும் ஒன்று', oneFewer: 'ஒன்று குறைவு',
     ageQuestion: '{item} வயது வரம்புள்ள பொருள். வாடிக்கையாளரின் அடையாள அட்டையைச் சரிபார்க்கவும். வாடிக்கையாளருக்கு {age} வயது அல்லது அதற்கு மேல் ஆகிறதா?',
     ageYes: 'ஆம் — அடையாளம் சரிபார்க்கப்பட்டது, {age} அல்லது அதற்கு மேல்', ageNo: 'இல்லை — விற்க வேண்டாம்',
     ageNotSoldTitle: 'பொருள் விற்கப்படவில்லை',
@@ -434,10 +481,15 @@ function paintOperator() {
   const lane = session.lane ? session.lane() : { laneId: null };
   const who = session.operator ? session.operator() : undefined;
   const laneWords = lane.laneId ? `${t('lane')} ${lane.laneId}` : t('noLane');
-  el('lane').textContent = `${laneWords} · ${who ? `${t('signedInAs')}: ${who}` : t('notSignedIn')}`;
+  // The heading reads "Lane 1 · Signed in: …" as one line of words; on screen the lane sits over the cashier, and a
+  // missing lane or nobody signed in is said in amber words (the words are the signal, the colour only helps).
+  setText('lane-name', laneWords);
+  setText('cashier', who ? `${t('signedInAs')}: ${who}` : t('notSignedIn'));
+  el('lane-name').toggleAttribute('data-missing', !lane.laneId);
+  el('cashier').toggleAttribute('data-missing', !who);
   el('lane').setAttribute('data-operator', who || '');
   el('lane').setAttribute('data-lane', lane.laneId || '');
-  el('signin').textContent = who ? t('signOut') : t('signIn');
+  setLabel('signin', who ? t('signOut') : t('signIn'));
 }
 async function toggleSignIn() {
   if (session.operator && session.operator()) {
@@ -447,7 +499,7 @@ async function toggleSignIn() {
     return;
   }
   // The stand-in (no bundle) has no store computer to ask: it cannot sign anybody in.
-  if (!session.signInAtTill) { tell(t('read'), t('noStoreBox')); return; }
+  if (!session.signInAtTill) { tell(t('read'), t('noStoreBox'), STOP); return; }
   // On the hosted copy the person already signed in with their password; the store computer takes them from that sign-in.
   // The way this box signs people in is learned once at start-up (below) — never awaited here, because a badge scanned
   // the instant Sign in is tapped must land in an OPEN prompt (found by the PF-02 browser test: the first keystrokes were
@@ -463,7 +515,7 @@ async function toggleSignIn() {
     if (pin === null || pin === '') return;
     outcome = await session.signInAtTill({ staffId: String(staffId), pin: String(pin) });
   }
-  if (!outcome.signedIn) { tell(t('signInRefused'), outcome.laneMessage); paintOperator(); return; }
+  if (!outcome.signedIn) { tell(t('signInRefused'), outcome.laneMessage, STOP); paintOperator(); return; }
   rememberOperator(session.operatorToken());
   paintOperator();
   void refreshHeld();
@@ -514,9 +566,25 @@ async function reportDevices() {
  * No timeout. The words come from the model wherever there is a model — the session's
  * `laneMessage` is written for a cashier with a customer watching, and rewording it here would put
  * a second, untested version of the most important sentence in the product.
+ *
+ * OB-238 (19 Oct 2026): every banner says which kind of message it is, and the caller says it — never guessed from the
+ * words. SUCCESS is good news (change due, approved, refund recorded, cash recorded, the sale done): the green surface
+ * and the tick. STOP is a stop, a refusal or an error (a recalled batch, tobacco, the HUID, age refused, declined,
+ * offline, anything that went wrong): red with the stop mark. Anything that is not plainly SUCCESS is STOP, so a refusal
+ * can never look green. The mark sits beside the title's words (never the only signal); the two marks are drawn once and
+ * reused, so a refused scan makes no new icon and asks nothing of the network.
  */
-function tell(title, message) {
-  el('refusal-title').textContent = title;
+const SUCCESS = 'success';
+const STOP = 'stop';
+const TONE_MARK = Object.freeze({ [SUCCESS]: 'circle-check', [STOP]: 'circle-alert' });
+const toneMarks = {};
+function tell(title, message, tone = STOP) {
+  const kind = tone === SUCCESS ? SUCCESS : STOP;
+  if (!toneMarks[kind]) toneMarks[kind] = mark(TONE_MARK[kind], 28);
+  const words = document.createElement('span');
+  words.textContent = title;
+  el('refusal-title').replaceChildren(...(toneMarks[kind] ? [toneMarks[kind]] : []), words);
+  el('refusal').dataset.tone = kind;
   el('refusal-text').textContent = message;
   el('refusal').hidden = false;
   el('refusal-ok').textContent = t('ok');
@@ -640,17 +708,27 @@ el('sheet-ok').addEventListener('click', () => {
  * A separate panel from `ask` because this is a **choice between three big things** with nothing
  * else on screen. It is the moment a cashier is most watched and least able to hunt for a control.
  */
-function choose(title, options) {
+function choose(title, options, kicker = null) {
   el('pay-title').textContent = title;
+  // What kind of question this is, said first when the till must stop the cashier (the age check): a label with its mark.
+  el('pay-kicker').hidden = kicker === null;
+  if (kicker !== null) { el('pay-kicker-text').textContent = kicker.words; setLeadIcon(el('pay-kicker'), kicker.icon, 18); }
   el('pay-kinds').replaceChildren(...options.map((option) => {
     const button = document.createElement('button');
     button.type = 'button';
-    button.textContent = option.label;
+    // An answer may carry the set's mark in front of its words (cash, card, yes, no); the words alone are the answer.
+    // The words stay the button's own text (not wrapped in a span), so the button itself is what carries them.
+    const svg = option.icon ? mark(option.icon) : null;
+    if (svg) {
+      button.append(svg, document.createTextNode(option.label));
+    } else {
+      button.textContent = option.label;
+    }
     button.addEventListener('click', () => { el('pay').hidden = true; payResolve?.(option.value); payResolve = null; });
     return button;
   }));
   el('pay-cancel').textContent = t('cancel');
-  el('more').textContent = t('more');
+  setLabel('more', t('more'));
   el('pay').hidden = false;
   return new Promise((resolve) => { payResolve = resolve; });
 }
@@ -687,7 +765,7 @@ function countDrawer() {
     const minus = document.createElement('button');
     minus.type = 'button';
     minus.textContent = '−';
-    minus.setAttribute('aria-label', `one fewer ${inr(value)}`);
+    minus.setAttribute('aria-label', `${t('oneFewer')} ${inr(value)}`);
     const shown = document.createElement('span');
     shown.className = 'n';
     shown.id = `n-${value}`;
@@ -695,7 +773,7 @@ function countDrawer() {
     const plus = document.createElement('button');
     plus.type = 'button';
     plus.textContent = '+';
-    plus.setAttribute('aria-label', `one more ${inr(value)}`);
+    plus.setAttribute('aria-label', `${t('oneMore')} ${inr(value)}`);
     minus.addEventListener('click', () => { counts.set(value, Math.max(0, counts.get(value) - 1)); paint(); });
     plus.addEventListener('click', () => { counts.set(value, counts.get(value) + 1); paint(); });
     row.append(label, minus, shown, plus);
@@ -721,32 +799,66 @@ el('count-ok').addEventListener('click', () => { el('count').hidden = true; coun
 
 // ── Rendering ───────────────────────────────────────────────────────────────
 
+/**
+ * The item cell: the name, then each detail on its own tag under it — the batch a 2D code carried (D-20), the gold
+ * piece's hallmark HUID (B13), and for a voided line the word and its reason. The joins (" · ") stay in the words, so
+ * the line still reads "Paneer 200g · Batch B-2"; on screen they are hidden and the tags do the separating.
+ */
+function itemCell(line) {
+  const cell = document.createElement('td');
+  cell.className = 'item';
+  const desc = document.createElement('span');
+  desc.className = 'desc';
+  desc.textContent = line.description;
+  cell.append(desc);
+  const tag = (words, cls) => {
+    const sep = document.createElement('span');
+    sep.className = 'sep';
+    sep.textContent = ' · ';
+    const span = document.createElement('span');
+    span.className = cls;
+    span.textContent = words;
+    cell.append(sep, span);
+  };
+  if (line.batchId) tag(`${t('batch')} ${line.batchId}`, 'meta');
+  if (line.huid) tag(`HUID ${line.huid}`, 'meta');
+  if (line.voided) {
+    const why = VOID_REASONS.find((r) => r.code === line.voidReason);
+    tag(why ? `${t('voided')}: ${why[lang] ?? why.en}` : t('voided'), 'void-note');
+  }
+  return cell;
+}
+function numberCell(words, cls) {
+  const cell = document.createElement('td');
+  cell.className = cls;
+  cell.textContent = words;
+  return cell;
+}
+
 function render() {
   const lines = session.basket();
   el('lines').replaceChildren(...lines.map((line) => {
     const row = document.createElement('tr');
     if (line.lineId === selectedLineId) row.setAttribute('aria-selected', 'true');
+    // A voided line stays on the bill — it is evidence (M15) — struck through, with the word and its reason.
+    if (line.voided) row.className = 'voided';
     row.tabIndex = 0;
     row.addEventListener('click', () => { selectedLineId = line.lineId; render(); });
-    for (const [text, cls] of [
-      // D-20: the batch a 2D code carried is shown on its line, so the cashier can see which batch is on the bill.
-      [line.batchId ? `${line.description} · ${t('batch')} ${line.batchId}` : line.description, ''], [String(line.qty), 'amount'], [inr(line.amountMinor), 'amount'],
-    ]) {
-      const cell = document.createElement('td');
-      cell.textContent = text;
-      if (cls) cell.className = cls;
-      row.appendChild(cell);
-    }
+    row.append(itemCell(line), numberCell(String(line.qty), 'qty'), numberCell(inr(line.amountMinor), 'amount'));
     return row;
   }));
+  el('bill-table').hidden = lines.length === 0;
 
   // On the box (PF-05): Hold while there are items, Recall when the till is empty. The stand-in keeps its flag.
   const suspended = session.holdAtTill ? (lines.length === 0 && heldCount > 0) : (session.state && session.state() === 'suspended');
-  el('hold').textContent = (session.holdAtTill ? lines.length === 0 : suspended) ? t('recall') : t('hold');
+  const recall = session.holdAtTill ? lines.length === 0 : suspended;
+  setLabel('hold', recall ? t('recall') : t('hold'), recall ? 'rotate-ccw' : 'pause');
   el('empty').hidden = lines.length > 0 && !suspended;
   // A held basket must SAY it is held. A screen showing an empty basket when one is parked is how
   // the same customer's items get rung up twice.
-  el('empty').textContent = suspended ? t('onHold') : t('scanToBegin');
+  setText('empty-text', suspended ? t('onHold') : t('scanToBegin'));
+  el('empty').toggleAttribute('data-held', Boolean(suspended));
+  setLeadIcon(el('empty'), suspended ? 'pause-circle' : 'scan-barcode', 28);
   el('total').textContent = inr(session.payableMinor());
 
   paintOperator();
@@ -801,29 +913,42 @@ function connectionFor(b) {
 function paintBadge() {
   const dot = el('conn-dot');
   dot.classList.remove('offline', 'degraded', 'error', 'idle');
-  let words;
+  // The chip says the state in bold and the detail after it; read together they are the same sentence as before.
+  let state;
+  let detail = '';
+  let tone;
   if (!box.asked) {
     dot.classList.add('idle');
-    words = t('checkingBox');
+    tone = 'idle';
+    state = t('checkingBox');
   } else if (!box.reachable) {
     dot.classList.add('error');
-    words = `${t('offline')} — ${t('boxNotAnswering')}`;
+    tone = 'error';
+    state = t('offline');
+    detail = ` — ${t('boxNotAnswering')}`;
   } else {
     const s = box.status;
     const when = s.lastContactAt ? ` · ${t('lastContact')} ${clock(s.lastContactAt)}` : '';
+    detail = when;
     if (s.cloud === 'online') {
-      words = `${t('online')}${when}`;
+      tone = 'ok';
+      state = t('online');
     } else {
-      dot.classList.add(s.cloud === 'unknown' || s.cloud === 'starting' ? 'idle' : 'degraded');
-      words = `${s.cloud === 'offline' ? t('noCloud') : s.cloud === 'not_configured' ? t('cloudNotSetUp') : t('cloudUnknown')}${when}`;
+      tone = s.cloud === 'unknown' || s.cloud === 'starting' ? 'idle' : 'degraded';
+      dot.classList.add(tone);
+      state = s.cloud === 'offline' ? t('noCloud') : s.cloud === 'not_configured' ? t('cloudNotSetUp') : t('cloudUnknown');
     }
   }
   // Words as well as a dot. A colour-only badge is invisible to one man in twelve, and this badge
   // is how a cashier knows whether the shop is behind.
-  el('conn-text').textContent = words;
+  el('conn').dataset.tone = tone;
+  setText('conn-state', state);
+  setText('conn-detail', detail);
   // The unsent count is the BOX's — the sale was saved there, and there is where it waits.
   const unsent = box.reachable && box.status ? box.status.unsent : session.syncBadge().unsentCount;
-  el('unsent').textContent = `${t('unsent')}: ${unsent}`;
+  setText('unsent-label', t('unsent'));
+  setText('unsent-count', String(unsent));
+  el('unsent').toggleAttribute('data-waiting', unsent > 0);
 }
 
 async function refreshBadge() {
@@ -848,7 +973,7 @@ window.posBadge = { refresh: refreshBadge, state: () => box };
 // ── Cashier intents ─────────────────────────────────────────────────────────
 
 el('qty').addEventListener('click', async () => {
-  if (!selectedLineId) { tell(t('read'), t('tapLineFirst')); return; }
+  if (!selectedLineId) { tell(t('read'), t('tapLineFirst'), STOP); return; }
   // Tap the line, tap Qty, tap the number: three (pos-cashier.md). The keypad + OK remain for larger quantities.
   const answer = await ask({
     title: t('quantity'), mode: 'number', initial: '1',
@@ -861,21 +986,21 @@ el('qty').addEventListener('click', async () => {
     session.setQuantity(selectedLineId, qty);
   } catch (e) {
     // B6 · B14: a loose-cigarette count, or a weight on a lane whose scale stamp ran out, is refused; the line keeps its quantity.
-    tell(e && e.name === 'TillRuleRefusedError' ? t('cannotSellTitle') : t('read'), e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e));
+    tell(e && e.name === 'TillRuleRefusedError' ? t('cannotSellTitle') : t('read'), e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e), STOP);
     return;
   }
   render();
 });
 
 el('void').addEventListener('click', async () => {
-  if (!selectedLineId) { tell(t('read'), t('tapLineFirst')); return; }
+  if (!selectedLineId) { tell(t('read'), t('tapLineFirst'), STOP); return; }
   // A reason is mandatory (M15) and it is chosen, not typed.
   const reason = await ask({ title: t('reasonForVoid'), mode: 'choice' });
   if (!reason) return;
   // The void, its value and the reason go to the store computer first (audit PF-07); the line goes only once it has them.
   if (session.voidAtTill) {
     const r = await session.voidAtTill(selectedLineId, reason);
-    if (!r.ok) { tell(t('read'), r.laneMessage); return; }
+    if (!r.ok) { tell(t('read'), r.laneMessage, STOP); return; }
   } else {
     session.voidLine(selectedLineId, reason);
   }
@@ -902,13 +1027,13 @@ const heldBasketOption = (b) => ({
  */
 async function giveUpHeldBasket() {
   const baskets = await session.heldAtTill();
-  if (baskets.length === 0) { tell(t('read'), t('noneHeld')); await refreshHeld(); return; }
+  if (baskets.length === 0) { tell(t('read'), t('noneHeld'), STOP); await refreshHeld(); return; }
   const pick = await choose(t('giveUpWhich'), baskets.map(heldBasketOption));
   if (pick === null || pick === undefined) return;
   const why = await choose(t('whyGiveUp'), GIVE_UP_REASONS.map((r) => ({ value: r.code, label: r[lang] ?? r.en })));
   if (why === null || why === undefined) return;
   const r = await session.abandonAtTill(pick, why);
-  tell(t('read'), r.ok ? t('givenUp') : r.laneMessage);
+  tell(t('read'), r.ok ? t('givenUp') : r.laneMessage, r.ok ? SUCCESS : STOP);
   await refreshHeld();
 }
 
@@ -928,14 +1053,14 @@ el('hold').addEventListener('click', async () => {
   if (session.basket().length > 0) {
     // One tap (pos-cashier.md): on success the screen itself says the basket is on hold; only a refusal interrupts.
     const r = await session.holdAtTill();
-    if (!r.ok) tell(t('read'), r.laneMessage);
+    if (!r.ok) tell(t('read'), r.laneMessage, STOP);
   } else {
     const baskets = await session.heldAtTill();
-    if (baskets.length === 0) { tell(t('read'), t('noneHeld')); return; }
+    if (baskets.length === 0) { tell(t('read'), t('noneHeld'), STOP); return; }
     const pick = baskets.length === 1 ? baskets[0].billId : await choose(t('recallWhich'), baskets.map(heldBasketOption));
     if (pick === null || pick === undefined) return;
     const r = await session.recallAtTill(pick);
-    if (!r.ok || r.repriceRequired) tell(t('read'), r.laneMessage);
+    if (!r.ok || r.repriceRequired) tell(t('read'), r.laneMessage, STOP);
   }
   selectedLineId = null;
   await refreshHeld();
@@ -954,14 +1079,14 @@ function quickCash(payableMinor) {
 
 el('tender').addEventListener('click', async () => {
   const payable = session.payableMinor();
-  if (payable <= 0) { tell(t('read'), t('scanFirst')); return; }
+  if (payable <= 0) { tell(t('read'), t('scanFirst'), STOP); return; }
 
   const kind = await choose(t('howPaying'), [
-    { value: 'cash', label: `${t('cash')} — ${inr(payable)}` },
-    { value: 'card', label: `${t('card')} — ${inr(payable)}` },
-    { value: 'upi', label: `${t('upi')} — ${inr(payable)}` },
+    { value: 'cash', label: `${t('cash')} — ${inr(payable)}`, icon: 'banknote' },
+    { value: 'card', label: `${t('card')} — ${inr(payable)}`, icon: 'wallet' },
+    { value: 'upi', label: `${t('upi')} — ${inr(payable)}`, icon: 'monitor-smartphone' },
     // A split across tenders, and a loyalty member's points and store credit (M12-FR-03 · PF-09 step 3).
-    ...(session.tenderSplit ? [{ value: 'split', label: t('split') }] : []),
+    ...(session.tenderSplit ? [{ value: 'split', label: t('split'), icon: 'arrow-left-right' }] : []),
   ]);
   if (kind === null) return;
   if (kind === 'split') return splitPayment(payable);
@@ -990,14 +1115,14 @@ el('tender').addEventListener('click', async () => {
     // on this till's disk (hard rule #1). There is nothing to print with before then.
     const sold = huidLines();
     const receipt = await session.tenderCash(`S-${receiptNumber}`, receiptNumber, new Date().toISOString());
-    tell(`${t('changeDue')}: ${inr(change)}`, withReceiptNotice(withHuids(receipt, sold)));
+    tell(`${t('changeDue')}: ${inr(change)}`, withReceiptNotice(withHuids(receipt, sold)), SUCCESS);
     session.newSale();
     void refreshBadge();
     selectedLineId = null;
     render();
   } catch (e) {
     // The model's words, unchanged.
-    tell(t('read'), e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e));
+    tell(t('read'), e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e), STOP);
   }
 });
 
@@ -1009,7 +1134,7 @@ async function takeReceiptNumber() {
   try {
     return await session.nextReceipt();
   } catch (e) {
-    tell(t('read'), e && e.refusedBecause === 'receipt_numbers_used_up' ? t('receiptsUsedUp') : (e && e.laneMessage ? e.laneMessage : t('receiptsUsedUp')));
+    tell(t('read'), e && e.refusedBecause === 'receipt_numbers_used_up' ? t('receiptsUsedUp') : (e && e.laneMessage ? e.laneMessage : t('receiptsUsedUp')), STOP);
     return null;
   }
 }
@@ -1052,14 +1177,14 @@ function withReceiptNotice(receipt) {
  */
 async function cardAttempt(kind, amountMinor) {
   const machine = () => choose(`${t('tapTerminal')} — ${inr(amountMinor)}`, [
-    { value: 'approved', label: t('approved') },
-    { value: 'declined', label: t('declined') },
-    { value: 'no_answer', label: t('noAnswer') },
+    { value: 'approved', label: t('approved'), icon: 'circle-check' },
+    { value: 'declined', label: t('declined'), icon: 'x' },
+    { value: 'no_answer', label: t('noAnswer'), icon: 'clock' },
   ]);
   if (!session.startCardPayment) {
     const outcome = await machine();
     if (outcome === null) return null;
-    if (outcome !== 'approved') { tell(t('read'), outcome === 'declined' ? t('declinedMsg') : t('noAnswerMsg')); return null; }
+    if (outcome !== 'approved') { tell(t('read'), outcome === 'declined' ? t('declinedMsg') : t('noAnswerMsg'), STOP); return null; }
     return '';
   }
   let started = await session.startCardPayment(kind, amountMinor);
@@ -1067,18 +1192,18 @@ async function cardAttempt(kind, amountMinor) {
     const what = await choose(started.laneMessage, [{ value: 'check', label: t('checkPayment') }, { value: 'cancel', label: t('cancel') }]);
     if (what !== 'check') return null;
     const checked = await session.checkCardPayment(started.attemptId);
-    if (!checked.ok) { tell(t('read'), checked.laneMessage); return null; }
+    if (!checked.ok) { tell(t('read'), checked.laneMessage, STOP); return null; }
     if (checked.state === 'recovered_paid') return checked.attemptId;
     started = await session.startCardPayment(kind, amountMinor);
   }
   if (!started.ok && started.refusedBecause === 'already_paid_on_this_bill' && started.attemptId) return started.attemptId;
-  if (!started.ok || !started.attemptId) { tell(t('read'), started.laneMessage); return null; }
+  if (!started.ok || !started.attemptId) { tell(t('read'), started.laneMessage, STOP); return null; }
   const outcome = await machine();
   if (outcome === null) return null;
   const answered = await session.answerCardPayment(started.attemptId, outcome);
-  if (!answered.ok) { tell(t('read'), answered.laneMessage); return null; }
+  if (!answered.ok) { tell(t('read'), answered.laneMessage, STOP); return null; }
   // Said in the cashier's words: an unpaid sale does not commit, and the goods stay on the counter.
-  if (outcome !== 'approved') { tell(t('read'), outcome === 'declined' ? t('declinedMsg') : t('noAnswerMsg')); return null; }
+  if (outcome !== 'approved') { tell(t('read'), outcome === 'declined' ? t('declinedMsg') : t('noAnswerMsg'), STOP); return null; }
   return started.attemptId;
 }
 
@@ -1095,13 +1220,13 @@ async function takeCardOrUpi(kind, payable) {
       saleId: `S-${receiptNumber}`, receiptNumber,
       atIsoUtc: new Date().toISOString(), kind, outcome, ...(ref ? { ref } : {}),
     });
-    tell(`${t('approved')} — ${kind === 'card' ? t('card') : t('upi')}`, withReceiptNotice(withHuids(receipt, soldGold)));
+    tell(`${t('approved')} — ${kind === 'card' ? t('card') : t('upi')}`, withReceiptNotice(withHuids(receipt, soldGold)), SUCCESS);
     session.newSale();
     void refreshBadge();
     selectedLineId = null;
     render();
   } catch (e) {
-    tell(t('read'), e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e));
+    tell(t('read'), e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e), STOP);
   }
 }
 
@@ -1116,13 +1241,13 @@ async function splitPayment(payable) {
   let wallet = null;
   if (session.loyaltyWallet && session.loyaltyMemberLast4 && session.loyaltyMemberLast4() !== null) {
     wallet = await session.loyaltyWallet();
-    if (!wallet.ok) { tell(t('read'), wallet.laneMessage); wallet = null; }
+    if (!wallet.ok) { tell(t('read'), wallet.laneMessage, STOP); wallet = null; }
     else {
       tell(t('member'), t('splitWallet').replace('{last4}', wallet.last4 || session.loyaltyMemberLast4()).replace('{points}', String(wallet.points))
-        .replace('{pointsValue}', inr(wallet.pointsValueMinor)).replace('{credit}', inr(wallet.storeCreditMinor)).replace('{asOf}', wallet.asOf ? new Date(wallet.asOf).toLocaleString() : '—'));
+        .replace('{pointsValue}', inr(wallet.pointsValueMinor)).replace('{credit}', inr(wallet.storeCreditMinor)).replace('{asOf}', wallet.asOf ? new Date(wallet.asOf).toLocaleString() : '—'), STOP);
     }
   } else if (session.loyaltyWallet) {
-    tell(t('read'), t('splitNoMember'));
+    tell(t('read'), t('splitNoMember'), STOP);
   }
   const parts = [];
   let remaining = payable;
@@ -1149,8 +1274,8 @@ async function splitPayment(payable) {
     if (typed === null) return;
     const amountMinor = Math.round(Number(typed) * 100);
     if (!(amountMinor > 0)) continue;
-    if (kind !== 'cash' && amountMinor > max) { tell(t('read'), `${t('upTo')} ${inr(max)}`); continue; }
-    if (kind === 'loyalty_points' && amountMinor % wallet.pointValuePaise !== 0) { tell(t('read'), t('pointsWhole').replace('{value}', inr(wallet.pointValuePaise))); continue; }
+    if (kind !== 'cash' && amountMinor > max) { tell(t('read'), `${t('upTo')} ${inr(max)}`, STOP); continue; }
+    if (kind === 'loyalty_points' && amountMinor % wallet.pointValuePaise !== 0) { tell(t('read'), t('pointsWhole').replace('{value}', inr(wallet.pointValuePaise)), STOP); continue; }
     if (kind === 'card' || kind === 'upi') {
       const ref = await cardAttempt(kind, amountMinor);
       if (ref === null) return;
@@ -1171,13 +1296,13 @@ async function splitPayment(payable) {
   try {
     const soldGold = huidLines();
     const receipt = await session.tenderSplit({ saleId: `S-${receiptNumber}`, receiptNumber, atIsoUtc: new Date().toISOString(), parts });
-    tell(change > 0 ? `${t('changeDue')}: ${inr(change)}` : t('approved'), withReceiptNotice(withHuids(receipt, soldGold)));
+    tell(change > 0 ? `${t('changeDue')}: ${inr(change)}` : t('approved'), withReceiptNotice(withHuids(receipt, soldGold)), SUCCESS);
     session.newSale();
     void refreshBadge();
     selectedLineId = null;
     render();
   } catch (e) {
-    tell(t('read'), e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e));
+    tell(t('read'), e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e), STOP);
   }
 }
 
@@ -1217,7 +1342,7 @@ el('more').addEventListener('click', async () => {
   if (what === 'member') return nameLoyaltyMember();
   if (what === 'no_sale') return openDrawerNoSale();
   if (what === 'price_change') return changeLinePrice();
-  if (what === 'member_remove') { session.setLoyaltyMobile(null); tell(t('member'), t('memberRemoved')); return undefined; }
+  if (what === 'member_remove') { session.setLoyaltyMobile(null); tell(t('member'), t('memberRemoved'), SUCCESS); return undefined; }
 });
 
 /**
@@ -1228,7 +1353,7 @@ async function openDrawerNoSale() {
   const approval = await managerApproves({ kind: 'no_sale', valueMinor: 0, hint: t('noSaleHint'), reasons: NO_SALE_REASONS, reasonTitle: 'overrideReason' });
   if (!approval) return;
   const r = await session.noSaleAtTill(approval.reason, { approvalId: approval.approvalId });
-  tell(r.ok ? t('noSaleDone') : t('read'), r.laneMessage);
+  tell(r.ok ? t('noSaleDone') : t('read'), r.laneMessage, r.ok ? SUCCESS : STOP);
 }
 
 /**
@@ -1237,17 +1362,17 @@ async function openDrawerNoSale() {
  */
 async function changeLinePrice() {
   const lineId = selectedLineId;
-  if (!lineId) { tell(t('read'), t('tapLineFirst')); return; }
+  if (!lineId) { tell(t('read'), t('tapLineFirst'), STOP); return; }
   const typed = await ask({ title: t('newPrice'), mode: 'number', initial: '' });
   if (typed === null || typed === '') return;
   const toUnitMinor = Math.round(Number(typed) * 100);
   const value = session.priceChangeValue(lineId, toUnitMinor);
-  if (!value.ok) { tell(t('read'), value.laneMessage); return; }
+  if (!value.ok) { tell(t('read'), value.laneMessage, STOP); return; }
   const approval = await managerApproves({ kind: 'price_override', billRef: session.currentBillRef(), valueMinor: value.reductionMinor, hint: t('overrideHint'), reasons: PRICE_CHANGE_REASONS, reasonTitle: 'overrideReason' });
   if (!approval) return;
   const r = await session.priceChangeAtTill(lineId, toUnitMinor, approval.reason, { approvalId: approval.approvalId });
-  if (!r.ok) { tell(t('read'), r.laneMessage); return; }
-  tell(t('priceChanged'), r.laneMessage);
+  if (!r.ok) { tell(t('read'), r.laneMessage, STOP); return; }
+  tell(t('priceChanged'), r.laneMessage, SUCCESS);
   render();
 }
 
@@ -1260,8 +1385,8 @@ async function nameLoyaltyMember() {
   const typed = await ask({ title: t('memberAsk'), mode: 'number', hint: t('memberHint'), initial: '' });
   if (typed === null || typed === '' || typed === '0') return;
   const outcome = session.setLoyaltyMobile(String(typed));
-  if (!outcome.ok) { tell(t('member'), outcome.laneMessage); return; }
-  tell(t('member'), t('memberSet').replace('{last4}', outcome.last4));
+  if (!outcome.ok) { tell(t('member'), outcome.laneMessage, STOP); return; }
+  tell(t('member'), t('memberSet').replace('{last4}', outcome.last4), SUCCESS);
 }
 
 // ── Cash on the store computer (SP-4c · F10 · M14-FR-01) ─────────────────────────────────────────────────────────────
@@ -1292,8 +1417,8 @@ async function flushPendingCash() {
   const pending = pendingCash();
   if (!pending) return true;
   const outcome = await sendCash(pending);
-  if (!outcome.committed && outcome.refusedBecause === 'lane_unreachable') { tell(t('cashNotSaved'), cashWords(outcome)); return false; }
-  if (outcome.committed) tell(t('pendingCash'), `${inr(pending.amountMinor)} — ${t('cashSaved')}`);
+  if (!outcome.committed && outcome.refusedBecause === 'lane_unreachable') { tell(t('cashNotSaved'), cashWords(outcome), STOP); return false; }
+  if (outcome.committed) tell(t('pendingCash'), `${inr(pending.amountMinor)} — ${t('cashSaved')}`, SUCCESS);
   return true;
 }
 async function moveCashToBox(kind, titleKey, doneKey) {
@@ -1304,11 +1429,11 @@ async function moveCashToBox(kind, titleKey, doneKey) {
   if (minor <= 0) return;
   try {
     const outcome = await sendCash({ kind, amountMinor: minor, at: new Date().toISOString(), movementId: `cm-${kind}-${Date.now().toString(36)}` });
-    if (outcome.committed) tell(t(doneKey), `${inr(minor)} — ${t('cashSaved')}`);
-    else tell(t('cashNotSaved'), cashWords(outcome));
+    if (outcome.committed) tell(t(doneKey), `${inr(minor)} — ${t('cashSaved')}`, SUCCESS);
+    else tell(t('cashNotSaved'), cashWords(outcome), STOP);
   } catch (e) {
     // Nobody signed in, or no lane: the model refuses before the store computer is asked, in its own words (F09).
-    tell(t('read'), e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e));
+    tell(t('read'), e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e), STOP);
   }
 }
 const takeFloat = () => moveCashToBox('float_issue', 'floatAmount', 'floatTaken');
@@ -1356,15 +1481,15 @@ function askScanOrKey({ title, hint = '' }) {
  * approval for the refund to carry, or `null` once the cashier has been told why not.
  */
 async function managerApproves({ kind, billRef, valueMinor, hint, reasons = REFUND_REASONS, reasonTitle = 'refundApproveReason' }) {
-  if (!session.approveAtTill) { tell(t('read'), t('noStoreBox')); return null; }
+  if (!session.approveAtTill) { tell(t('read'), t('noStoreBox'), STOP); return null; }
   const by = await askScanOrKey({ title: t('refundManagerId'), hint });
-  if (by === null || by === '' || by === '0') { tell(t('read'), t('refundNeedManager')); return null; }
+  if (by === null || by === '' || by === '0') { tell(t('read'), t('refundNeedManager'), STOP); return null; }
   const pin = await ask({ title: t('managerPinTitle'), mode: 'number', hint: t('managerPinHint'), initial: '', mask: true });
-  if (pin === null || pin === '') { tell(t('read'), t('refundNeedManager')); return null; }
+  if (pin === null || pin === '') { tell(t('read'), t('refundNeedManager'), STOP); return null; }
   const reason = await ask({ title: t(reasonTitle), mode: 'choice', choices: reasons });
   if (!reason) return null;
   const outcome = await session.approveAtTill({ managerId: String(by), pin: String(pin), kind, ...(billRef ? { billRef } : {}), valueMinor, reason });
-  if (!outcome.approved) { tell(t('approvalRefused'), outcome.laneMessage); return null; }
+  if (!outcome.approved) { tell(t('approvalRefused'), outcome.laneMessage, STOP); return null; }
   return { by: outcome.approvedBy, reason, approvalId: outcome.approvalId };
 }
 
@@ -1383,13 +1508,13 @@ async function startRefund() {
   try {
     bill = await session.lookupRefund(String(receipt));
   } catch {
-    tell(t('refundStop'), t('refundLookupFailed'));
+    tell(t('refundStop'), t('refundLookupFailed'), STOP);
     return;
   }
-  if (!bill) { tell(t('read'), t('refundNotFound')); return; }
+  if (!bill) { tell(t('read'), t('refundNotFound'), STOP); return; }
 
   const returnable = bill.returnable.filter((l) => l.returnableMinor > 0);
-  if (returnable.length === 0) { tell(t('read'), t('refundNothingLeft')); return; }
+  if (returnable.length === 0) { tell(t('read'), t('refundNothingLeft'), STOP); return; }
 
   // 2. Which item, and how many — capped at what is still returnable on the bill.
   const productId = await choose(t('refundWhichItem'), returnable.map((l) => ({
@@ -1404,7 +1529,7 @@ async function startRefund() {
   });
   if (qtyAns === null) return;
   const qty = Number(qtyAns);
-  if (!Number.isInteger(qty) || qty <= 0 || qty > line.returnableMinor) { tell(t('read'), t('refundBadQty')); return; }
+  if (!Number.isInteger(qty) || qty <= 0 || qty > line.returnableMinor) { tell(t('read'), t('refundBadQty'), STOP); return; }
 
   // 3. Reason (chosen, never typed — M15), and the condition the goods come back in (M13-FR-02).
   const reason = await ask({ title: t('refundReason'), mode: 'choice', choices: REFUND_REASONS });
@@ -1442,7 +1567,7 @@ async function startRefund() {
   let customerRef;
   if (refundTender === 'store_credit') {
     const who = await askScanOrKey({ title: t('refundCustomerId'), hint: t('refundCustomerHint') });
-    if (who === null || who === '' || who === '0') { tell(t('read'), t('refundNeedCustomer')); return; }
+    if (who === null || who === '' || who === '0') { tell(t('read'), t('refundNeedCustomer'), STOP); return; }
     customerRef = String(who);
   }
 
@@ -1473,7 +1598,7 @@ async function startRefund() {
   } catch (e) {
     // submit is written not to throw, but a lost connection to the store can still reject here — treat
     // it as a stop, never as a silent success.
-    tell(t('refundStop'), e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e));
+    tell(t('refundStop'), e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e), STOP);
     return;
   }
   showRefundOutcome(outcome);
@@ -1494,7 +1619,7 @@ async function startRefund() {
  */
 async function startExchange() {
   // 0. The replacement must already be on the bill.
-  if (session.basket().filter((l) => !l.voided).length === 0) { tell(t('read'), t('exchangeNeedsBasket')); return; }
+  if (session.basket().filter((l) => !l.voided).length === 0) { tell(t('read'), t('exchangeNeedsBasket'), STOP); return; }
 
   // 1. Find the customer's bill — scan the receipt, or key the bill number.
   const receipt = await askScanOrKey({ title: t('refundFind'), hint: t('refundFindHint') });
@@ -1503,13 +1628,13 @@ async function startExchange() {
   try {
     bill = await session.lookupRefund(String(receipt));
   } catch {
-    tell(t('refundStop'), t('refundLookupFailed'));
+    tell(t('refundStop'), t('refundLookupFailed'), STOP);
     return;
   }
-  if (!bill) { tell(t('read'), t('refundNotFound')); return; }
-  if (!bill.exchange) { tell(t('read'), t('refundNotFound')); return; }
+  if (!bill) { tell(t('read'), t('refundNotFound'), STOP); return; }
+  if (!bill.exchange) { tell(t('read'), t('refundNotFound'), STOP); return; }
   const returnable = bill.returnable.filter((l) => l.returnableMinor > 0);
-  if (returnable.length === 0) { tell(t('read'), t('refundNothingLeft')); return; }
+  if (returnable.length === 0) { tell(t('read'), t('refundNothingLeft'), STOP); return; }
 
   // 2. What is coming back, and how many — capped at what is still returnable on the bill.
   const productId = await choose(t('refundWhichItem'), returnable.map((l) => ({
@@ -1523,7 +1648,7 @@ async function startExchange() {
   });
   if (qtyAns === null) return;
   const qty = Number(qtyAns);
-  if (!Number.isInteger(qty) || qty <= 0 || qty > line.returnableMinor) { tell(t('read'), t('refundBadQty')); return; }
+  if (!Number.isInteger(qty) || qty <= 0 || qty > line.returnableMinor) { tell(t('read'), t('refundBadQty'), STOP); return; }
 
   // 3. Reason (chosen, never typed — M15) and the condition the goods come back in (M13-FR-02).
   const reason = await ask({ title: t('refundReason'), mode: 'choice', choices: REFUND_REASONS });
@@ -1537,7 +1662,7 @@ async function startExchange() {
 
   // 4. The quote — the engine's arithmetic over the bill's history and the goods on the bill now. Nothing recorded.
   const quote = bill.exchange.quote(returnLines);
-  if (!quote.ok) { tell(t('read'), quote.detail); return; }
+  if (!quote.ok) { tell(t('read'), quote.detail, STOP); return; }
 
   // 5. Settle the difference — the customer's way in, or the shop's way out (with a manager where §28 says so).
   const settlement = {};
@@ -1572,7 +1697,7 @@ async function startExchange() {
     settlement.refundTender = refundTender;
     if (refundTender === 'store_credit') {
       const who = await askScanOrKey({ title: t('refundCustomerId'), hint: t('refundCustomerHint') });
-      if (who === null || who === '' || who === '0') { tell(t('read'), t('refundNeedCustomer')); return; }
+      if (who === null || who === '' || who === '0') { tell(t('read'), t('refundNeedCustomer'), STOP); return; }
       settlement.customerRef = String(who);
     }
     if (quote.needsApproval) {
@@ -1596,18 +1721,18 @@ async function startExchange() {
       ...(approval ? { approval } : {}),
     });
   } catch (e) {
-    tell(t('exchangeStop'), e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e));
+    tell(t('exchangeStop'), e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e), STOP);
     return;
   }
   if (outcome.kind === 'done') {
-    tell(t('exchangeDone'), `${outcome.laneMessage} ${outcome.number} · ${outcome.replacementReceipt}`);
+    tell(t('exchangeDone'), `${outcome.laneMessage} ${outcome.number} · ${outcome.replacementReceipt}`, SUCCESS);
     session.newSale();
     void refreshBadge();
     selectedLineId = null;
     render();
     return;
   }
-  if (outcome.kind === 'half_done') { tell(t('exchangeStop'), outcome.laneMessage); return; }
+  if (outcome.kind === 'half_done') { tell(t('exchangeStop'), outcome.laneMessage, STOP); return; }
   showRefundOutcome(outcome);
 }
 
@@ -1620,19 +1745,19 @@ async function startExchange() {
  */
 async function startNoReceiptReturn() {
   const desk = session.noReceiptReturn ? session.noReceiptReturn() : null;
-  if (!desk) { tell(t('read'), t('noReceiptUnknown')); return; }
+  if (!desk) { tell(t('read'), t('noReceiptUnknown'), STOP); return; }
 
   // 1. The item — the only evidence there is. Scanned, or its code keyed.
   const code = await askScanOrKey({ title: t('noReceiptItem'), hint: t('noReceiptItemHint') });
   if (code === null || code === '' || code === '0') return;
   const item = desk.findProduct(String(code));
-  if (!item) { tell(t('read'), t('noReceiptUnknown')); return; }
+  if (!item) { tell(t('read'), t('noReceiptUnknown'), STOP); return; }
 
   // 2. How many.
   const qtyAns = await ask({ title: `${t('refundHowMany')} — ${item.name}`, mode: 'number', initial: '1' });
   if (qtyAns === null) return;
   const qty = Number(qtyAns);
-  if (!Number.isInteger(qty) || qty <= 0) { tell(t('read'), t('refundBadQty')); return; }
+  if (!Number.isInteger(qty) || qty <= 0) { tell(t('read'), t('refundBadQty'), STOP); return; }
 
   // 3. Reason (chosen, never typed — M15) and the condition the goods come back in (M13-FR-02).
   const reason = await ask({ title: t('refundReason'), mode: 'choice', choices: REFUND_REASONS });
@@ -1654,7 +1779,7 @@ async function startNoReceiptReturn() {
   if (amount === null) return;
   const refundMinor = Math.round(Number(amount) * 100);
   if (refundMinor <= 0) return;
-  if (refundMinor > desk.capMinor) { tell(t('read'), `${t('noReceiptOverCap')} ${inr(desk.capMinor)}`); return; }
+  if (refundMinor > desk.capMinor) { tell(t('read'), `${t('noReceiptOverCap')} ${inr(desk.capMinor)}`, STOP); return; }
 
   const refundTender = await choose(t('refundHow'), [
     { value: 'cash', label: t('cash') },
@@ -1668,7 +1793,7 @@ async function startNoReceiptReturn() {
   let customerRef;
   if (refundTender === 'store_credit') {
     const who = await askScanOrKey({ title: t('refundCustomerId'), hint: t('refundCustomerHint') });
-    if (who === null || who === '' || who === '0') { tell(t('read'), t('refundNeedCustomer')); return; }
+    if (who === null || who === '' || who === '0') { tell(t('read'), t('refundNeedCustomer'), STOP); return; }
     customerRef = String(who);
   }
 
@@ -1692,7 +1817,7 @@ async function startNoReceiptReturn() {
       ...(customerRef ? { customerRef } : {}),
     });
   } catch (e) {
-    tell(t('refundStop'), e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e));
+    tell(t('refundStop'), e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e), STOP);
     return;
   }
   showRefundOutcome(outcome);
@@ -1712,7 +1837,7 @@ function showRefundOutcome(outcome) {
     : outcome.kind === 'pending' ? t('refundPending')
       : stop ? t('refundStop')
         : t('read');
-  tell(title, outcome.laneMessage);
+  tell(title, outcome.laneMessage, outcome.kind === 'settled' ? SUCCESS : STOP);
 }
 
 /**
@@ -1738,29 +1863,46 @@ async function closeTheTill() {
       // The count is made, so the difference can be shown; a reason is a CODE the cash office can report on, never prose.
       const out = result.varianceMinor ?? 0;
       const reasonCode = await ask({ title: `${out > 0 ? t('over') : t('short')} ${inr(Math.abs(out))} — ${t('whyOut')}`, mode: 'choice', choices: CASH_REASONS });
-      if (reasonCode === null) { tell(t('read'), t('needsReason')); return; }
+      if (reasonCode === null) { tell(t('read'), t('needsReason'), STOP); return; }
       result = await session.till.close({ shiftId, closedAt, countedMinor: counted, denominations: count.denominations, reasonCode });
     }
-    if (!result.closed) { tell(t('read'), cashWords(result)); return; }
+    if (!result.closed) { tell(t('read'), cashWords(result), STOP); return; }
     const variance = result.varianceMinor;
     const headline = variance === 0 ? t('balanced')
       : variance > 0 ? `${t('over')} ${inr(variance)}`
         : `${t('short')} ${inr(-variance)}`;
     // A material difference is not a number to note down — it is an instruction to call the manager before the money is
     // put away. The store computer has recorded it and the cash office will see it.
-    tell(headline, result.exceptionRaised ? t('needsReason') : `${t('tillClosed')} — ${t('counted')}: ${inr(counted)}`);
+    tell(headline, result.exceptionRaised ? t('needsReason') : `${t('tillClosed')} — ${t('counted')}: ${inr(counted)}`, variance === 0 && !result.exceptionRaised ? SUCCESS : STOP);
   } catch (e) {
     // Nobody signed in, or no lane: refused before the store computer is asked, in the model's words (F09).
-    tell(t('read'), e && e.laneMessage ? e.laneMessage : t('needsReason'));
+    tell(t('read'), e && e.laneMessage ? e.laneMessage : t('needsReason'), STOP);
   }
 }
 
+/**
+ * The words that are the page's own (the buttons, the bill's column heads, the total's name) in the cashier's language,
+ * and the page's language with them — so a screen reader reads Tamil as Tamil, and Tamil gets its taller lines.
+ */
+function paintWords() {
+  document.documentElement.lang = lang;
+  setLabel('qty', t('qty'));
+  setLabel('void', t('void'));
+  setLabel('tender', t('tender'));
+  setLabel('more', t('more'));
+  el('pay-cancel').textContent = t('cancel');
+  setText('th-item', t('item'));
+  setText('th-qty', t('qty'));
+  setText('th-amount', t('amount'));
+  setText('total-label', t('totalToPay'));
+}
+// Each control takes its mark from the one set once, here; afterwards only its words change.
+for (const [id, icon] of [['signin', 'user-round'], ['unsent', 'upload'], ['lang', 'globe'], ['qty', 'calculator'], ['void', 'x'], ['hold', 'pause'], ['more', 'layout-grid'], ['tender', 'indian-rupee']]) setLabel(id, undefined, icon);
+paintWords();
+
 el('lang').addEventListener('click', () => {
   lang = lang === 'en' ? 'ta' : 'en';
-  el('qty').textContent = t('qty');
-  el('void').textContent = t('void');
-  el('tender').textContent = t('tender');
-  el('pay-cancel').textContent = t('cancel');
+  paintWords();
   render();
 });
 
@@ -1777,7 +1919,7 @@ el('signin').addEventListener('click', () => { void toggleSignIn(); });
 
 el('unsent').addEventListener('click', () => {
   const unsent = box.reachable && box.status ? box.status.unsent : session.syncBadge().unsentCount;
-  tell(`${t('unsent')}: ${unsent}`, unsent === 0 ? t('allSent') : `${unsent} ${t('unsentHeld')}`);
+  tell(`${t('unsent')}: ${unsent}`, unsent === 0 ? t('allSent') : `${unsent} ${t('unsentHeld')}`, unsent === 0 ? SUCCESS : STOP);
 });
 
 // ── The scanner ─────────────────────────────────────────────────────────────
@@ -1806,9 +1948,9 @@ function gs1Shaped(code) {
 async function askAge(refusal, retry) {
   const fill = (words) => words.replace('{item}', refusal.description).replace(/\{age\}/g, String(refusal.minimumAge));
   const answer = await choose(fill(t('ageQuestion')), [
-    { label: fill(t('ageYes')), value: 'yes' },
-    { label: t('ageNo'), value: 'no' },
-  ]);
+    { label: fill(t('ageYes')), value: 'yes', icon: 'check' },
+    { label: t('ageNo'), value: 'no', icon: 'x' },
+  ], { words: t('ageCheck'), icon: 'shield-alert' });
   if (answer === null) return; // backed out: nothing added, nothing recorded
   const at = new Date().toISOString();
   try {
@@ -1820,11 +1962,11 @@ async function askAge(refusal, retry) {
     }
     session.refuseAge(refusal.minimumAge, at, refusal.productId);
   } catch (e) {
-    tell(t('read'), e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e));
+    tell(t('read'), e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e), STOP);
     return;
   }
   render();
-  tell(t('ageNotSoldTitle'), fill(t('ageNotSold')));
+  tell(t('ageNotSoldTitle'), fill(t('ageNotSold')), STOP);
 }
 window.addEventListener('keydown', (event) => {
   // A panel is open; the scan is not for us.
@@ -1837,7 +1979,7 @@ window.addEventListener('keydown', (event) => {
     // A scanner ends every code with Enter, and Enter on a FOCUSED button presses it: the button last tapped — the
     // language toggle, Void, Tender — would be pressed by the next scan. The Enter belongs to the scan, so it stops here.
     event.preventDefault();
-    if (!session.hasCatalogue()) { tell(t('read'), t('noCatalogue')); return; }
+    if (!session.hasCatalogue()) { tell(t('read'), t('noCatalogue'), STOP); return; }
     try {
       session.scanBarcode(code);
       render();
@@ -1847,8 +1989,8 @@ window.addEventListener('keydown', (event) => {
       if (e && e.name === 'AgeCheckRequiredError') { void askAge(e, () => session.scanBarcode(code)); return; }
       // A line the law forbids (B6 · B14 · B19 — a banned plastic, a thin or free bag, a loose cigarette, weight on a
       // scale whose stamp ran out) is refused in the gate's own words; there is no override to offer.
-      if (e && e.name === 'TillRuleRefusedError') { tell(t('cannotSellTitle'), e.laneMessage); return; }
-      tell(t('read'), String(e && e.message ? e.message : e));
+      if (e && e.name === 'TillRuleRefusedError') { tell(t('cannotSellTitle'), e.laneMessage, STOP); return; }
+      tell(t('read'), String(e && e.message ? e.message : e), STOP);
     }
     return;
   }

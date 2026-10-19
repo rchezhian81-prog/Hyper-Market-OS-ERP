@@ -63,30 +63,69 @@ function sampleSession() {
 let session = window.suppliersSession ?? sampleSession();
 const t = (key) => session.text(lang, key);
 
-/** One supplier row. Every row reads as a state — a tone AND an icon AND a word (colour is never alone). */
+// OB-205: the register's captions, in both languages (the page's own words; the session's words are untouched).
+const VIEW_WORDS = {
+  en: { colId: 'Supplier', colStatus: 'Where it stands', colFacts: 'Record, bank and bills', colValue: 'Owed' },
+  ta: { colId: 'விநியோகஸ்தர்', colStatus: 'நிலை', colFacts: 'பதிவு, வங்கி, பில்கள்', colValue: 'தர வேண்டியது' },
+};
+const vw = (key) => VIEW_WORDS[lang]?.[key] ?? VIEW_WORDS.en[key] ?? key;
+
+/** OB-205: a tone's shape from the one icon set (sre-icons.js), with the session's glyph only if the set is missing. */
+function toneMark(holder, tone, glyph) {
+  const mark = window.sreIcon && typeof window.sreIcon === 'function' ? window.sreIcon(window.sreIcon.forTone(tone), 16) : null;
+  if (mark) holder.replaceChildren(mark); else holder.textContent = glyph ?? '';
+}
+
+/** A control's words with its shape in front; the words stay its whole text, so its name is unchanged. */
+function worded(node, name, words) {
+  const mark = window.sreIcon && typeof window.sreIcon === 'function' ? window.sreIcon(name, 18) : null;
+  if (!mark) { node.textContent = words; return; }
+  const text = document.createElement('span'); text.textContent = words;
+  node.replaceChildren(mark, text);
+}
+
+/** The summary panel: each figure large with its words under it. The text reads exactly as the one-line summary did
+ *  ("4 suppliers · 3 need a person · ₹… owed in total"), so a screen reader hears the same sentence. */
+function paintStats(holder, stats) {
+  const nodes = [];
+  stats.forEach((s, i) => {
+    if (i > 0) { const sep = document.createElement('span'); sep.className = 'sr-only'; sep.textContent = ' · '; nodes.push(sep); }
+    const cell = document.createElement('span'); cell.className = 'stat';
+    if (s.tone) cell.dataset.tone = s.tone;
+    const n = document.createElement('b'); n.className = 'n'; n.textContent = s.n;
+    const l = document.createElement('span'); l.className = 'l'; l.textContent = s.words;
+    cell.append(n, document.createTextNode(' '), l);
+    nodes.push(cell);
+  });
+  holder.replaceChildren(...nodes);
+}
+
+/** One supplier row. Every row reads as a state — a tone AND an icon AND a word (colour is never alone). OB-205: the
+ *  cells line up under the register's captions — the supplier, where it stands, its record, the one balance owed. */
 function supplierNode(s) {
   const li = document.createElement('li');
   li.className = `row tone-${s.status.tone}`;
   li.dataset.supplierId = s.supplierId;
 
-  const head = document.createElement('div');
-  head.className = 'head';
+  const id = document.createElement('div');
+  id.className = 'c-id';
   const headline = document.createElement('span');
   headline.className = 'headline';
   headline.textContent = s.headline;
+  id.append(headline);
   if (s.headline !== s.supplierId) {
-    const code = document.createElement('span'); code.className = 'code'; code.textContent = s.supplierId; headline.append(code);
+    const code = document.createElement('span'); code.className = 'code'; code.textContent = s.supplierId; id.append(code);
   }
-  head.append(headline);
+  li.append(id);
 
   const status = document.createElement('span');
-  status.className = 'status';
-  const icon = document.createElement('span'); icon.className = 'icon'; icon.setAttribute('aria-hidden', 'true'); icon.textContent = s.status.icon;
+  status.className = 'status sre-chip';
+  status.dataset.tone = s.status.tone;
+  const icon = document.createElement('span'); icon.className = 'icon'; icon.setAttribute('aria-hidden', 'true'); toneMark(icon, s.status.tone, s.status.icon);
   const slabel = document.createElement('span'); slabel.textContent = s.status.label;
   status.append(icon, slabel);
   status.setAttribute('aria-label', s.status.announcement || s.status.label);
-  head.append(status);
-  li.append(head);
+  li.append(status);
 
   const facts = document.createElement('div');
   facts.className = 'facts';
@@ -95,13 +134,19 @@ function supplierNode(s) {
   if (s.ownProposal) fact(t('approveOwnProposal'));
   else if (s.masterStatus === 'proposed' && s.proposedBy) fact(`${t('proposedByLabel')}: ${s.proposedBy}`);
   fact(s.bankLabel);
-  fact(`${t('owedLabel')}: ${money(s.owedMinor, s.currency)}`, 'money');
+  // The one balance the matched bills say, right-aligned in tabular figures, its word above it (read as "Owed: ₹…").
+  const owed = document.createElement('span');
+  owed.className = 'c-val';
+  const owedN = document.createElement('span'); owedN.className = 'n money'; owedN.textContent = money(s.owedMinor, s.currency);
+  const owedL = document.createElement('span'); owedL.className = 'l'; owedL.textContent = t('owedLabel');
+  const colon = document.createElement('span'); colon.className = 'sr-only'; colon.textContent = ': ';
+  owed.append(owedL, colon, owedN);
   if (s.withheldMinor > 0) fact(`${t('withheldLabel')}: ${money(s.withheldMinor, s.currency)}`, 'money');
   if (s.paidMinor > 0) fact(`${t('paidLabel')}: ${money(s.paidMinor, s.currency)}`, 'money');
   if (s.unmatchedInvoices > 0) fact(`${s.unmatchedInvoices} ${t('unmatchedLabel')}`);
   if (s.blockedInvoices > 0) fact(`${s.blockedInvoices} ${t('blockedInvoicesLabel')}`);
   if (s.pendingReturns > 0) fact(`${s.pendingReturns} ${t('pendingReturnsLabel')}`);
-  li.append(facts);
+  li.append(facts, owed);
 
   // Every reason, in words (P-08) — in the order head office gave them.
   if (s.reasons.length > 0) {
@@ -135,7 +180,8 @@ function paintApprover(view) {
   el('approve-heading').textContent = t('approveHeading');
   el('approve-supplier-label').textContent = t('approveChoiceLabel');
   el('approve-reason-label').textContent = t('approveReasonLabel');
-  el('approve-reason').placeholder = t('approveReasonPlaceholder');
+  // OB-205: the example stays readable under the field while it is typed into, not only as a placeholder that vanishes.
+  el('approve-reason-help').textContent = t('approveReasonPlaceholder');
   el('approve').textContent = t('approveBtn');
   const select = el('approve-supplier');
   const chosen = select.value;
@@ -167,7 +213,7 @@ function paintProposer(view) {
   proposer.hidden = false;
   el('propose-heading').textContent = t('proposeHeading');
   el('propose-code-label').textContent = t('proposeCodeLabel');
-  el('propose-code').placeholder = t('proposeCodePlaceholder');
+  el('propose-code-help').textContent = t('proposeCodePlaceholder');
   el('propose-name-label').textContent = t('proposeNameLabel');
   el('propose-gstin-label').textContent = t('proposeGstinLabel');
   el('propose-phone-label').textContent = t('proposePhoneLabel');
@@ -180,7 +226,7 @@ function paintResult(presentation) {
   const result = el('result');
   result.hidden = false;
   result.className = `result tone-${presentation.tone}`;
-  el('result-icon').textContent = presentation.icon;
+  toneMark(el('result-icon'), presentation.tone, presentation.icon);
   el('result-text').textContent = presentation.label;
   result.setAttribute('aria-label', presentation.announcement || presentation.label);
 }
@@ -189,28 +235,40 @@ function paint() {
   const view = session.view(lang);
 
   el('title').textContent = t('title');
+  // OB-205: the page's one heading (the header line) speaks the reader's language too.
+  el('who').firstChild.textContent = `${t('title')} `;
   el('lead').textContent = t('lead');
   el('whoami').textContent = window.suppliersData?.userId ?? '';
   el('lang').textContent = t('langName');
-  el('refresh').textContent = t('refresh');
+  worded(el('refresh'), 'refresh-cw', t('refresh'));
   el('asof').textContent = view.asOf ? `${t('asOfLabel')}: ${new Date(view.asOf).toLocaleString()}` : '';
+  el('col-id').textContent = vw('colId');
+  el('col-status').textContent = vw('colStatus');
+  el('col-facts').textContent = vw('colFacts');
+  el('col-value').textContent = vw('colValue');
 
   // A not-permitted / nothing-yet state has no rows: show the state line rather than an empty list.
   const state = el('state');
   if (view.suppliers.length === 0) {
     state.hidden = false;
     state.className = `state tone-${view.screenState.tone}`;
-    el('state-icon').textContent = view.screenState.icon;
+    toneMark(el('state-icon'), view.screenState.tone, view.screenState.icon);
     el('state-text').textContent = view.screenState.label;
     state.setAttribute('aria-label', view.screenState.announcement || view.screenState.label);
     el('summary').hidden = true;
     el('list-heading').hidden = true;
+    el('register').hidden = true;
     el('rows').replaceChildren();
   } else {
     state.hidden = true;
+    el('register').hidden = false;
     el('summary').hidden = false;
     const currency = view.suppliers[0]?.currency ?? 'INR';
-    el('summary').textContent = `${view.count} ${t('summarySuppliers')} · ${view.needingAttentionCount} ${t('summaryNeedAttention')} · ${money(view.owedMinor, currency)} ${t('summaryOwed')}`;
+    paintStats(el('summary'), [
+      { n: String(view.count), words: t('summarySuppliers') },
+      { n: String(view.needingAttentionCount), words: t('summaryNeedAttention'), tone: view.needingAttentionCount > 0 ? 'degraded' : undefined },
+      { n: money(view.owedMinor, currency), words: t('summaryOwed') },
+    ]);
     el('list-heading').hidden = false;
     el('list-heading').textContent = t('listHeading');
     el('rows').replaceChildren(...view.suppliers.map((s) => supplierNode(s)));

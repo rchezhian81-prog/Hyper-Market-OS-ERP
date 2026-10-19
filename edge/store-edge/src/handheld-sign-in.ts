@@ -124,16 +124,23 @@ export function phoneSignInPage(input: { readonly screen: HandheldSource; readon
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sign in on this phone · உள்நுழைக</title>
 <style>
-  body{margin:0;font:17px/1.45 system-ui,sans-serif;background:#0f172a;color:#f8fafc;display:grid;place-items:center;min-height:100dvh}
-  main{width:min(480px,92vw);display:grid;gap:14px;padding:20px}
-  h1{font-size:22px;margin:0}h1 small{display:block;font-size:15px;color:#cbd5e1;font-weight:400}
-  label{display:grid;gap:6px;font-weight:600}label small{color:#cbd5e1;font-weight:400}
-  input{font:inherit;padding:14px;border-radius:12px;border:2px solid #334155;background:#1e293b;color:#f8fafc;min-height:56px}
-  input:focus-visible,button:focus-visible{outline:3px solid #fbbf24;outline-offset:2px}
-  button{font:inherit;font-weight:700;min-height:64px;border:0;border-radius:14px;background:#22c55e;color:#052e16;font-size:19px}
-  .notice{margin:0;padding:12px 14px;border-radius:12px;background:#7f1d1d;color:#fee2e2}
+  *{box-sizing:border-box}
+  body{margin:0;font:17px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans","Noto Sans Tamil","Nirmala UI","Latha",sans-serif;background:#f5f7f2;color:#193b31;display:grid;place-items:start center;min-height:100dvh;-webkit-text-size-adjust:100%}
+  main{width:min(451px,100%);margin:16px 0;padding:24px 20px 28px;display:grid;gap:18px;background:#fff;border:1px solid #dce4d9;border-top:3px solid #17654f;border-radius:12px;box-shadow:0 1px 2px rgba(25,47,39,.06),0 6px 16px rgba(25,47,39,.08)}
+  @media (max-width:500px){main{margin:0;min-height:100dvh;border-radius:0;border-left:0;border-right:0;align-content:start}}
+  .job{justify-self:start;margin:0;padding:4px 12px;border-radius:999px;background:#eaf0e1;color:#143f32;font-size:14px;font-weight:600;line-height:1.4}
+  h1{font-size:24px;line-height:1.25;letter-spacing:-.01em;margin:0}h1 small{display:block;margin-top:6px;font-size:16px;color:#586e61;font-weight:400;letter-spacing:0;line-height:1.5}
+  form{display:grid;gap:18px}
+  label{display:grid;gap:6px;font-weight:600;font-size:17px}label small{color:#586e61;font-weight:400;font-size:15px}
+  input{font:inherit;font-size:20px;letter-spacing:.02em;padding:0 16px;border-radius:8px;border:1px solid #819483;background:#fcfdfb;color:#193b31;min-height:56px;width:100%}
+  input:focus-visible,button:focus-visible{outline:3px solid #17654f;outline-offset:2px}
+  input:focus-visible{box-shadow:0 0 0 4px rgba(23,101,79,.18)}
+  button{font:inherit;font-weight:700;font-size:19px;min-height:60px;width:100%;margin-top:4px;border:1px solid #17654f;border-radius:8px;background:#17654f;color:#fff;box-shadow:0 1px 2px rgba(25,47,39,.12);cursor:pointer}
+  button:active{background:#0f4636;border-color:#0f4636}
+  .notice{margin:0;padding:12px 14px 12px 12px;border-radius:8px;background:#fcf0ec;color:#a13932;border:1px solid #f3d6cf;border-left:4px solid #a13932;font-weight:600;font-size:16px;line-height:1.5}
 </style></head><body><main>
-  <h1>Sign in on this phone<small>${escapeHtml(JOB_WORDS[input.screen])} — உங்கள் பணியாளர் எண் மற்றும் PIN</small></h1>
+  <p class="job">${escapeHtml(JOB_WORDS[input.screen])}</p>
+  <h1>Sign in on this phone<small>உங்கள் பணியாளர் எண் மற்றும் PIN</small></h1>
   ${notice}
   <form method="post" action="${escapeHtml(input.action)}">
     <label>Staff ID <small>பணியாளர் எண் — scan your badge or key it</small><input name="staffId" autocomplete="off" autocapitalize="none" required></label>
@@ -236,8 +243,38 @@ export function signInLockOf(screen: HandheldSource, signInRoute: string): SignI
 const lockLiteral = (lock: (SignInLockPage & { readonly clock?: SignInLockPage }) | undefined): string =>
   lock === undefined ? 'null' : JSON.stringify(lock).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
 
-const LEFT_STYLE = 'flex-basis:100%;margin:0;padding:4px 8px;border-radius:8px;font-size:14px';
-const ENDED_STYLE = `${LEFT_STYLE};background:#7f1d1d;color:#fee2e2`;
+const LEFT_STYLE = 'margin:0;min-width:0';
+const ENDED_STYLE = `${LEFT_STYLE};background:var(--error-surface,#fbe9e7);color:var(--danger-text,#a03e36)`;
+
+/**
+ * OB-205: the strip's look — the handheld's own tokens (the page it is put on carries the shared foundation), each with
+ * the light set's value as a fallback. The signed-in person and the time left are chips: an icon from the one set beside
+ * the words (the screen's own script puts the icon in each `data-sre-icon` slot; with no icon set the words stand alone),
+ * a clock while the sign-in runs, a lock once it has ended — so the state is never told by colour alone. The ended words
+ * are written by the strip's script as an inline dark red; the rule below keeps them on the readable red tint instead.
+ */
+const STRIP_STYLE = '<style>'
+  + '[data-phone-holder]{margin:0;display:flex;flex-wrap:wrap;gap:8px 10px;align-items:center;justify-content:space-between;padding:10px 16px;background:var(--panel,#fff);color:var(--ink,#25362e);border-bottom:1px solid var(--line,#dce3de);font:15px/1.35 var(--font,system-ui,sans-serif)}'
+  + '[data-phone-holder] .hh-chip{display:inline-flex;align-items:center;gap:8px;min-width:0;padding:6px 12px 6px 10px;border-radius:999px;background:var(--panel-2,#eef2ef);border:1px solid var(--line,#dce3de);font-size:15px}'
+  + '[data-phone-holder] .hh-who{flex:1 1 12em;border-radius:8px;min-height:44px}'
+  + '[data-phone-holder] .hh-who strong{font-weight:700;overflow-wrap:break-word}'
+  + '[data-phone-holder] [data-sre-icon]{display:inline-flex;flex:none}[data-phone-holder] [data-sre-icon]:empty{display:none}'
+  + '[data-phone-holder] [data-sre-icon] svg{width:18px;height:18px}'
+  + '[data-phone-holder] .hh-out{flex:1 0 auto;font:inherit;font-size:16px;font-weight:700;min-height:56px;padding:0 16px;border:1px solid var(--field-line,#7f8d86);border-radius:8px;background:var(--panel,#fff);color:var(--ink,#25362e);cursor:pointer;box-shadow:var(--shadow-xs,none)}'
+  + '[data-phone-holder] .hh-out:focus-visible{outline:3px solid var(--focus,#0f4c3a);outline-offset:2px}'
+  + '[data-phone-holder] .hh-left{flex:1 1 100%;border-radius:8px;padding:8px 12px 8px 10px;align-items:flex-start;background:var(--ok-surface,#e3f1ea);color:var(--on-ok-surface,#0f4c3a);border-color:var(--ok-surface,#e3f1ea);border-left:4px solid var(--ok,#16614d);font-weight:600}'
+  + '[data-phone-holder] .hh-left [data-sre-icon]{margin-top:1px}'
+  // The ended look twice over: once for the strip the box drew ended (`is-ended`), once for the moment the script ends it
+  // (`:has`) — separate rules, so a phone whose browser lacks `:has` still keeps the first.
+  + '[data-phone-holder] .hh-left [data-sre-icon="lock"]{display:none}'
+  + '[data-phone-holder] .hh-left.is-ended [data-sre-icon="clock"]{display:none}'
+  + '[data-phone-holder] .hh-left.is-ended [data-sre-icon="lock"]:not(:empty){display:inline-flex}'
+  + '[data-phone-holder] .hh-left.is-ended{background:var(--error-surface,#fbe9e7);color:var(--danger-text,#a03e36);border-color:var(--error-surface,#fbe9e7);border-left-color:var(--danger-text,#a03e36)}'
+  + '[data-phone-holder] .hh-left:has([data-ended]) [data-sre-icon="clock"]{display:none}'
+  + '[data-phone-holder] .hh-left:has([data-ended]) [data-sre-icon="lock"]:not(:empty){display:inline-flex}'
+  + '[data-phone-holder] .hh-left:has([data-ended]){background:var(--error-surface,#fbe9e7);color:var(--danger-text,#a03e36);border-color:var(--error-surface,#fbe9e7);border-left-color:var(--danger-text,#a03e36)}'
+  + '[data-phone-holder] .hh-left p[data-ended]{background:transparent!important;color:var(--danger-text,#a03e36)!important}'
+  + '</style>';
 
 /**
  * The strip at the top of a phone screen: who is signed in, the one button to hand the phone over, and (OB-184) how long
@@ -246,10 +283,10 @@ const ENDED_STYLE = `${LEFT_STYLE};background:#7f1d1d;color:#fee2e2`;
  */
 export function phoneHolderStrip(input: { readonly displayName: string; readonly signOutAction: string; readonly expiresAt?: string; readonly now?: string; readonly lockTo?: SignInLockPage & { readonly clock?: SignInLockPage } }): string {
   const left = input.expiresAt === undefined ? null : signInLeftWords(Date.parse(input.expiresAt) - Date.parse(input.now ?? new Date().toISOString()));
-  return `<form method="post" action="${escapeHtml(input.signOutAction)}" data-phone-holder style="margin:0;display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;justify-content:space-between;padding:8px 12px;background:#1e293b;color:#f8fafc;font:15px/1.3 system-ui,sans-serif">`
-    + `<span>Signed in: <strong>${escapeHtml(input.displayName)}</strong></span>`
-    + `<button type="submit" style="font:inherit;font-weight:700;min-height:48px;padding:0 14px;border:0;border-radius:10px;background:#fbbf24;color:#1c1917">Sign out · வெளியேறு</button>`
-    + (left === null ? '' : `<p data-sign-in-left${left.ended ? ' data-ended role="alert"' : ''} style="${left.ended ? ENDED_STYLE : LEFT_STYLE}">${escapeHtml(left.text)}</p>${signInLeftScript(lockLiteral(input.lockTo))}`)
+  return `${STRIP_STYLE}<form method="post" action="${escapeHtml(input.signOutAction)}" data-phone-holder>`
+    + `<span class="hh-chip hh-who sre-with-icon"><span data-sre-icon="user-round" aria-hidden="true"></span><span>Signed in: <strong>${escapeHtml(input.displayName)}</strong></span></span>`
+    + `<button type="submit" class="hh-out">Sign out · வெளியேறு</button>`
+    + (left === null ? '' : `<div class="hh-chip hh-left sre-with-icon${left.ended ? ' is-ended' : ''}"><span data-sre-icon="clock" aria-hidden="true"></span><span data-sre-icon="lock" aria-hidden="true"></span><p data-sign-in-left${left.ended ? ' data-ended role="alert"' : ''} style="${left.ended ? ENDED_STYLE : LEFT_STYLE}">${escapeHtml(left.text)}</p></div>${signInLeftScript(lockLiteral(input.lockTo))}`)
     + `</form>`;
 }
 
