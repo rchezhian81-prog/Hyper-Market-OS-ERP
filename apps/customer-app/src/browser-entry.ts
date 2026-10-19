@@ -48,7 +48,7 @@ import {
   type ConsentPurposeSpec,
 } from './privacy-centre';
 import { httpShopTransport, readShopAnswer, type ShopTransport, type ShopPaymentResult, type ShopMineRequest } from './shop-transport';
-import { voiceQuery, type VoiceSearchPort } from './voice-search';
+import { voiceQuery, voiceSearchLink, VOICE_SEARCH_SWITCHED_ON, type VoiceSearchPort } from './voice-search';
 
 import { mountDemoBanner, type BannerDocument } from '../../../packages/ui/src/demo-banner';
 
@@ -751,6 +751,8 @@ interface ShopWindow {
    *  that turns what it heard into search words. */
   shopVoice?: VoiceSearchPort;
   shopVoiceQuery?: typeof voiceQuery;
+  /** R4 · D08: a browser test's stand-in engine (never set by the product). */
+  shopVoiceStandIn?: VoiceSearchPort;
 }
 
 // In the browser `globalThis.window` IS the window, so this needs no DOM types.
@@ -771,4 +773,9 @@ if (browserWindow !== undefined) {
   const shop = bootShop(browserWindow.shopData, basket, randomRequestId, transport);
   if (shop !== null) browserWindow.shop = shop;
   browserWindow.shopVoiceQuery = voiceQuery;
+  // R4 · D08 · OB-222: the voice link is switched OFF — it cannot listen, so the microphone button is not shown, and no
+  // customer's voice leaves the phone. Only a browser TEST puts its stand-in engine behind the link (`shopVoiceStandIn`,
+  // set before this bundle runs); nothing in the product ever sets it, and no real engine exists in this build.
+  const standIn = browserWindow.shopVoiceStandIn;
+  browserWindow.shopVoice = voiceSearchLink(standIn === undefined ? { switchedOn: VOICE_SEARCH_SWITCHED_ON } : { switchedOn: true, engine: standIn });
 }

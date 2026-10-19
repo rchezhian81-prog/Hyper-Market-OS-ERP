@@ -360,9 +360,10 @@ describe.skipIf(!HAVE_BROWSER)('a customer orders in a real browser and the clou
     const store = await startStore(h, rec);
     const context: BrowserContext = await browser.newContext({ geolocation: NEARBY, permissions: ['geolocation'] });
     const page = await context.newPage();
-    // The fake speech engine (no engine is chosen — the owner's decision): it "hears" one phrase.
+    // The fake speech engine (no engine is chosen — the owner's decision): it "hears" one phrase. R4 · D08 (OB-222): the
+    // voice link is switched off in the product; a test puts its stand-in behind the link as `shopVoiceStandIn`.
     await page.addInitScript(() => {
-      (globalThis as unknown as { shopVoice: unknown }).shopVoice = { name: 'fake voice engine (e2e)', available: () => true, listen: async () => ({ heard: true, transcript: 'Please, Aavin MILK!' }) };
+      (globalThis as unknown as { shopVoiceStandIn: unknown }).shopVoiceStandIn = { name: 'fake voice engine (e2e)', available: () => true, listen: async () => ({ heard: true, transcript: 'Please, Aavin MILK!' }) };
     });
     try {
       await readyToPay(page, store.base, store.sms);
