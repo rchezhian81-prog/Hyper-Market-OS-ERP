@@ -130,4 +130,50 @@ describe.skipIf(!HAVE_BROWSER)('the warehouse handheld checks in a direct delive
       await srv.stop();
     }
   });
+
+  it('R3 D-11 — the route half: a route sheet the box served is chosen at the door, offline; what is kept is held for a second person; one record names the route', async () => {
+    // The box serves the store's route sheets beside its open orders (tests/integration/a-dsd-route-sheet-reaches-the-handheld-through-the-box.test.ts).
+    const srv = await startShell({ ...assignment(), storeId: 'WH-A', dsdRoutes: [{ routeId: 'r-bread', supplierId: 'sup-bake', storeId: 'S-A', version: 2, lines: [{ productId: 'p-milk', expectedMinor: 3, unitCostMinor: 2_000, uom: 'ea' }] }] });
+    const context = await browser.newContext({ offline: false });
+    const page = await context.newPage();
+    try {
+      await page.goto(`${srv.base}/`, { waitUntil: 'load' });
+      await page.waitForFunction(() => (globalThis as unknown as Globals).dsdSession != null, undefined, { timeout: 10_000 });
+      await context.setOffline(true); // the van is at the door with the wifi down
+      await page.click('#dsd-open');
+      await expect.poll(() => page.locator('#dsd').isVisible()).toBe(true);
+      // Both are offered: the order and the vendor's route.
+      expect(await page.locator('#dsd-choices button').evaluateAll((bs) => bs.map((b) => b.getAttribute('data-choice')))).toEqual(['po:po-dairy', 'route:r-bread']);
+      expect(await page.textContent('#dsd-choices button[data-choice="route:r-bread"]')).toBe('route r-bread · sup-bake');
+      await page.click('#dsd-choices button[data-choice="route:r-bread"]');
+      expect(await page.getAttribute('#dsd-choices button[data-choice="route:r-bread"]', 'aria-pressed')).toBe('true');
+      for (const d of '9876543210') await page.click(`#dsd-driver-keypad button:text-is("${d}")`);
+      await page.click('#dsd-driver');
+      await page.click('#dsd-start');
+      await okBanner(page);
+      await expect.poll(() => page.locator('#dsd-work-panel').isVisible()).toBe(true);
+      expect(await page.textContent('#dsd-against')).toBe('sup-bake · r-bread');
+      for (const code of ['890MILK', '890MILK']) {
+        await page.click('#dsd-scan');
+        await scan(page, code);
+        await okBanner(page);
+      }
+      // A route sheet carries no purchase order: what is kept is held for a second person — said on the line.
+      expect(await page.textContent('#dsd-lines [data-product="p-milk"] .qty')).toBe('expected 3 · scanned 2 · handed back 0 · kept 2 · held for a second person 2');
+      await expect.poll(async () => page.locator('#dsd-differences .discrepancy').allTextContents()).toEqual(['p-milk: short 1']);
+      await page.click('#dsd-note');
+      await scan(page, 'NOTE-BAKE-7');
+      await page.click('#dsd-close');
+      expect(await page.textContent('#banner-title')).toBe('Delivery closed — note signed');
+      await okBanner(page);
+      const queued = await page.evaluate(() => (globalThis as unknown as Globals).warehouseOutbox!.all().map((i) => ({ type: i.event.type, payload: i.event.payload as Record<string, unknown> })));
+      expect(queued).toHaveLength(1);
+      expect(queued[0]!.payload).toMatchObject({ routeId: 'r-bread', supplierId: 'sup-bake', storeId: 'S-A', receivedBy: 'u-recv', deliveryNote: { noteRef: 'NOTE-BAKE-7' } });
+      expect(queued[0]!.payload['poId']).toBeUndefined();
+      expect(JSON.stringify(queued[0]!.payload)).not.toMatch(/cash|tender|payment/i);
+    } finally {
+      await context.close();
+      await srv.stop();
+    }
+  });
 });

@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1439,
+  "testFiles": 1446,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -4333,17 +4333,19 @@
       "id": "WF-16",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 1,
-        "integration": 6,
-        "realDb": 3,
-        "browser": 2,
+        "unit": 3,
+        "integration": 7,
+        "realDb": 4,
+        "browser": 3,
         "connected": 1,
         "device": 0,
         "uat": 0
       },
       "files": {
         "unit": [
-          "tests/unit/online-returns-engine.test.ts"
+          "tests/unit/delivery-route.test.ts",
+          "tests/unit/online-returns-engine.test.ts",
+          "tests/unit/the-driver-collects-an-online-return.test.ts"
         ],
         "integration": [
           "tests/integration/a-granted-compensation-is-carried-out.test.ts",
@@ -4351,14 +4353,17 @@
           "tests/integration/one-fulfilment-command.test.ts",
           "tests/integration/order-payments-and-refunds.test.ts",
           "tests/integration/orders-lifecycle.test.ts",
-          "tests/integration/the-customer-keeps-lists-and-raises-returns-and-complaints.test.ts"
+          "tests/integration/the-customer-keeps-lists-and-raises-returns-and-complaints.test.ts",
+          "tests/integration/the-driver-collects-an-online-return-through-the-box.test.ts"
         ],
         "realDb": [
           "tests/integration/an-online-return-refunds-only-what-came-back.test.ts",
           "tests/integration/one-fulfilment-command.test.ts",
-          "tests/integration/the-customer-keeps-lists-and-raises-returns-and-complaints.test.ts"
+          "tests/integration/the-customer-keeps-lists-and-raises-returns-and-complaints.test.ts",
+          "tests/integration/the-driver-collects-an-online-return-through-the-box.test.ts"
         ],
         "browser": [
+          "tests/e2e/the-driver-collects-an-online-return-on-his-phone.e2e.ts",
           "tests/e2e/the-online-store-and-app-content-pages-meet-the-spec.e2e.ts",
           "tests/e2e/the-online-store-shows-the-required-details.e2e.ts"
         ],

@@ -46,6 +46,7 @@ import { normaliseUom } from '../../../packages/contracts/src/quantity';
 import type { PackSigner } from '../../catalogue/src/pack';
 import { weighingScalesSectionFor } from './r2-till-adapters';
 import { receivingChecklistSectionFor } from './r2-ops-adapters';
+import { dsdCheckInAdapter } from './r3-ops-adapters';
 
 export interface StorePackBuildInput {
   readonly store: EventStore;
@@ -87,7 +88,7 @@ export const VIEWER_ONLY_SCREEN_SECTIONS: readonly string[] = Object.freeze([
  */
 export const PACK_QUANTITY_SCALE = Object.freeze({
   products: { availableMinor: 'smallest step (from the stock ledger)', uom: 'normalised unit code' },
-  warehouse: { 'ordered[].quantityMinor': 'smallest step', 'openDeliveries[].ordered[].quantityMinor': 'smallest step', 'contents{}': 'smallest step', 'bins[].capacityMinor': 'smallest step' },
+  warehouse: { 'ordered[].quantityMinor': 'smallest step', 'openDeliveries[].ordered[].quantityMinor': 'smallest step', 'dsdRoutes[].lines[].expectedMinor': 'smallest step', 'contents{}': 'smallest step', 'bins[].capacityMinor': 'smallest step' },
   purchaseOrders: { 'lines[].qty': 'smallest step, priced per whole unit (unitMinor)', 'lines[].uom': 'normalised unit code' },
   receipts: { 'lines[].qty': 'smallest step' },
   supplierInvoices: { 'lines[].quantity': 'smallest step, priced per whole unit (unitPriceMinor)' },
@@ -282,12 +283,23 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
       if (loose > 0) goodsIn.push({ productId: row.productId, batchId: null, quantityMinor: loose, uom: unit, state: 'on_hand', expiry: null });
     }
   }
+  // R3 D-11 (OB-141 "A"): the vendors' route sheets head office keeps for this store or its back store (the latest version
+  // of each), so the door check-in on the phone can be made against a route as well as an order, offline. The rule stays
+  // head office's: everything kept from a route sheet is held for a second person.
+  const dsdRoutes = (await dsdCheckInAdapter({ store, now }).routeSheets(tenantId))
+    .filter((r) => branchOf(r.storeId) === storeId)
+    .sort((x, y) => x.routeId.localeCompare(y.routeId))
+    .map((r) => ({
+      routeId: r.routeId, supplierId: r.supplierId, storeId: r.storeId, version: r.version,
+      lines: r.lines.map((l) => ({ productId: l.productId, expectedMinor: l.expectedMinor, ...(l.unitCostMinor === undefined ? {} : { unitCostMinor: l.unitCostMinor }), ...(l.uom === undefined ? {} : { uom: unitCode(l.uom) }) })),
+    }));
   sections['warehouse'] = {
     assignmentId: `warehouse-${storeId}`, workerId: '', storeId: settings?.warehouseId ?? storeId,
     bins: bins.map((b) => ({ binId: b.binId, storeId: b.storeId, capacityMinor: b.capacityMinor, pickable: b.pickable, ...(b.zone === undefined ? {} : { zone: b.zone }) })),
     contents,
     ...(published === undefined ? {} : { barcodes: published.snapshot.barcodes.map((b) => ({ barcode: b.code, productId: b.productId, level: 'unit' })) }),
     openDeliveries: deliveries,
+    dsdRoutes,
     goodsIn,
     // Exactly one delivery waiting: the phone receives against it directly; with several, the receiver chooses on the phone.
     ...(only === undefined ? {} : { grnId: only.grnId, poId: only.poId, ordered: only.ordered }),

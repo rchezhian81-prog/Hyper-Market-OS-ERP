@@ -16,6 +16,7 @@
 // a duplicate can never be passed off as an original (M12-FR-02).
 
 import { type CurrencyCode } from '../../contracts/src/money';
+import { quantityLabel } from '../../contracts/src/quantity';
 
 export interface ReceiptLineInput {
   readonly description: string;
@@ -63,6 +64,11 @@ export interface BuildReceiptInput {
   readonly totalMinor: number;
   readonly tenders: readonly ReceiptTenderInput[];
   readonly changeMinor?: number;
+  /**
+   * The line prices INCLUDE GST (the till's shelf prices — A9): the lines add to the TOTAL, the GST bands say the tax
+   * inside it, and the net is printed as the taxable value. Absent/false: the lines add to the net and GST is on top.
+   */
+  readonly pricesIncludeTax?: boolean;
   /** Per-tenant header/footer (store name, GSTIN, thanks line) — choose-able. */
   readonly header: readonly string[];
   readonly footer: readonly string[];
@@ -116,7 +122,9 @@ export function buildReceipt(input: BuildReceiptInput): ReceiptDocument {
 
   // The printed totals must add up, or the receipt is not issued.
   const lineSum = input.lines.reduce((sum, l) => sum + l.lineTotalMinor, 0);
-  if (lineSum !== input.netMinor) {
+  if (input.pricesIncludeTax === true) {
+    if (lineSum !== input.totalMinor) throw new ReceiptTotalsError(`lines ${lineSum} ≠ total ${input.totalMinor} (prices include GST)`);
+  } else if (lineSum !== input.netMinor) {
     throw new ReceiptTotalsError(`lines ${lineSum} ≠ net ${input.netMinor}`);
   }
   const bandTax = input.taxBands.reduce((sum, b) => sum + b.taxMinor, 0);
@@ -165,14 +173,9 @@ function centre(text: string, width: number): string {
   return ' '.repeat(pad) + text;
 }
 
-/** Quantity as printed: whole units as-is, weighed goods with their decimals. */
+/** Quantity as printed: whole units as-is, weighed goods with their decimals ("1.234 kg", "500 g") — OB-31's one rule. */
 function quantityText(line: ReceiptLineInput): string {
-  if (line.uom === 'ea') return String(line.quantityMinor);
-  // 1234 g → "1.234 kg"; the UOM's own precision governs (3 for kg/l).
-  const precision = line.uom === 'kg' || line.uom === 'l' ? 3 : 0;
-  if (precision === 0) return `${line.quantityMinor} ${line.uom}`;
-  const scale = 10 ** precision;
-  return `${Math.trunc(line.quantityMinor / scale)}.${String(line.quantityMinor % scale).padStart(precision, '0')} ${line.uom}`;
+  return quantityLabel(line.quantityMinor, line.uom);
 }
 
 /**
@@ -206,7 +209,7 @@ export function renderText(doc: ReceiptDocument, width = 42): string[] {
   }
 
   out.push(rule);
-  out.push(pair('Subtotal', amount(doc.netMinor), width));
+  out.push(pair(doc.pricesIncludeTax === true ? 'Taxable value' : 'Subtotal', amount(doc.netMinor), width));
   for (const band of doc.taxBands) {
     out.push(pair(`GST ${(band.rateBps / 100).toFixed(band.rateBps % 100 === 0 ? 0 : 2)}%`, amount(band.taxMinor), width));
   }

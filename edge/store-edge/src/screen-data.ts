@@ -876,6 +876,12 @@ export function warehousePayload(input: ScreenInput): Record<string, unknown> | 
       poId: d.poId, number: d.number, supplierId: d.supplierId, grnId: d.grnId,
       ordered: d.ordered.map((o) => ({ productId: o.productId, quantityMinor: o.quantityMinor, unitCost: { minor: o.unitCostMinor, currency: o.currency } })),
     })) }),
+    // R3 D-11: the vendors' route sheets for this store, so the door check-in can be made against a route offline as well as
+    // against an order (each sheet names the place it is for). Absent stays absent: the phone then offers orders only.
+    ...(w.dsdRoutes === undefined ? {} : { dsdRoutes: w.dsdRoutes.map((r) => ({
+      routeId: r.routeId, supplierId: r.supplierId, storeId: r.storeId, version: r.version,
+      lines: r.lines.map((l) => ({ productId: l.productId, expectedMinor: l.expectedMinor, ...(l.unitCostMinor === undefined ? {} : { unitCostMinor: l.unitCostMinor }), ...(l.uom === undefined ? {} : { uom: l.uom }) })),
+    })) }),
     ...(w.recalledProductIds === undefined ? {} : { recalledProductIds: w.recalledProductIds }),
     ...(w.recalledBatchIds === undefined ? {} : { recalledBatchIds: w.recalledBatchIds }),
     // The pick list, line by line, each naming its bin. Passed through as sent — absent stays absent, so a
@@ -1013,10 +1019,21 @@ export function driverPayload(input: ScreenInput, driverId?: string): Record<str
     const assigned = input.pack.assignments.value;
     const route = driverId === undefined ? assigned.routes[0] : assigned.routes.find((r) => r.driverId === driverId);
     if (route !== undefined) {
+      // WF-16 (driver): the route's booked return collections, each line named from the pack's products where it knows them.
+      // A route with no collections carries none — never an invented empty list.
+      const products = input.pack.products.known ? input.pack.products.value : undefined;
+      const collections = route.collections === undefined ? undefined : route.collections.map((c) => ({
+        ...c,
+        lines: c.lines.map((l) => {
+          const p = products?.find((x) => x.productId === l.productId);
+          return { ...l, ...(p === undefined ? {} : { name: p.name, ...(p.nameTa === undefined ? {} : { nameTa: p.nameTa }) }) };
+        }),
+      }));
       return {
         routeId: route.routeId,
         driverId: route.driverId,
         stops: route.stops,
+        ...(collections === undefined || collections.length === 0 ? {} : { collections }),
         plannedBy: `head office, as of ${assigned.asAt}`,
         routesAssigned: assigned.routes.length,
         ...(route.contributionRule === undefined ? {} : { contributionRule: route.contributionRule }),

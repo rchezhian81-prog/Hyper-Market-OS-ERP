@@ -5,7 +5,52 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
-## UI page-by-page polish (OB-205, OB-238), joined on top of R4 (19 October 2026) — gate green (12,876 tests; perf 52/52; browser 448/448), PR opened
+## Known gaps in signed R3/R4 items closed (19–20 October 2026) — full gate green: 12,898 unit/integration (16 skipped), 52 performance, 453 browser
+
+- **Till:**
+  - "Unsent" says "not known" in amber when the store computer has not given the number (P-08).
+  - Every sale's bill is rendered through the receipt package, so a gold line shows "HUID: <code>" (B13). Paper printing waits for the printer.
+  - Weighed lines read "1.234 kg" / "500 g".
+- **Warehouse phone:**
+  - The footer reads calmly at 360/412 px.
+  - Vendor route sheets reach the handheld through the box, so a DSD check-in can be made against a route offline. Kept goods are still held for a second person (D-11).
+- **Driver phone:** the driver collects online returns on his phone. He records only booked lines and never more, or "not collected" with a reason. It works offline, is stamped and relayed, and head office re-checks it. No money moves at the door.
+- **Count check:** the shop's count against the driver's is now shown as a named difference on the Online store page (hard rule #10).
+- **Still open:**
+  - A paper printer adapter (hardware stage).
+  - Route sheets cannot yet be retired.
+  - A missed collection has no dedicated panel on the Online store page.
+
+## Next stage chosen: the store pilot and data cutover before more features (19 October 2026)
+
+- **Why:** the roadmap puts Stage 12 (store pilot) and Stage 13 (parallel run and cutover) before more features (§21; §12.1 "R6 Rollout"). The gates are still open:
+  - staff UAT: 0 sessions;
+  - G8 (UAT with real people), G9 (timed rollback drill), G10 (named incident owner and daily reconciler): not done;
+  - QG-07 (signed control totals) and QG-09: not met.
+- **Owner decisions:** OB-239 pilot first; OB-240 real data on a computer in the store; OB-241 first load = one department's products, barcodes, tax and prices; OB-242 written Option 2 GO only after the tools are tested; OB-243 pilot names pending.
+- **In progress:**
+  - **Cutover tools,** each checked first and built only if still missing:
+    - MG-05 file import with row-by-row exceptions;
+    - MG-06 load operator taken from the stored load record;
+    - MG-10 parallel-run day and witness figures on the migration screen;
+    - MG-09 delta capture;
+    - the store-computer real-data runbook;
+    - the G9 rollback drill script.
+  - **Closing gaps in signed R3/R4 items:**
+    - the till shows an unknown unsent count as "not known";
+    - the HUID printed on the bill;
+    - weighed items in their units;
+    - warehouse phone footer;
+    - route sheets on the handheld (D-11);
+    - driver collection of online returns (WF-16).
+- **Owner actions for the pilot:**
+  - name the incident owner, the daily reconciler and the pilot department;
+  - run staff practice sessions on the demo using `docs/pilot/UAT-ROLE-CHECKLIST.md` (12 roles), recorded in `docs/registers/sp10-staff-uat.md`;
+  - have IT set up the store computer;
+  - provide the owner's own backup drive.
+- **R5 (fulfilment):** researched (scratchpad r5-scope); waits until the pilot passes.
+
+## UI page-by-page polish (OB-205, OB-238), joined on top of R4 (19 October 2026) — merged in PR #795 and deployed to the demo, 19 Oct; owner approval of the polished pages pending
 
 - **Built inside the owner-approved look (no feature, route, data or permission changes):**
   - **Till:**

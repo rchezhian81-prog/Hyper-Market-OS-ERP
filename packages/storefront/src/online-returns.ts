@@ -62,10 +62,27 @@ export const DISPOSITIONS: readonly ReturnDisposition[] = ['sellable', 'quaranti
 export type OnlineReturnStep =
   | { readonly kind: 'requested'; readonly returnId: string; readonly orderId: string; readonly customerRef: string; readonly lines: readonly { readonly productId: string; readonly quantityMinor: number }[]; readonly reason: string; readonly at: string }
   | { readonly kind: 'collection_scheduled'; readonly returnId: string; readonly collectOn: string; readonly by: string; readonly at: string }
-  | { readonly kind: 'collected'; readonly returnId: string; readonly by: string; readonly at: string }
+  | {
+    readonly kind: 'collected'; readonly returnId: string; readonly by: string; readonly at: string;
+    /** WF-16 (driver): what the driver took at the door, from the booked lines only. Absent when the desk recorded it. */
+    readonly lines?: readonly { readonly productId: string; readonly collectedMinor: number }[];
+    /** WF-16 (driver): the route it was collected on, and the store computer that relayed the phone's record. */
+    readonly routeId?: string;
+    readonly relayedBy?: string;
+  }
+  /** WF-16 (driver): the driver came and nothing was collected — the booking stands until the shop books again. */
+  | { readonly kind: 'collection_missed'; readonly returnId: string; readonly reason: CollectionMissReason; readonly note?: string; readonly routeId?: string; readonly by: string; readonly relayedBy?: string; readonly at: string }
   | { readonly kind: 'received'; readonly returnId: string; readonly lines: readonly { readonly productId: string; readonly receivedMinor: number }[]; readonly by: string; readonly at: string }
   | { readonly kind: 'disposed'; readonly returnId: string; readonly productId: string; readonly disposition: ReturnDisposition; readonly reason?: string; readonly by: string; readonly at: string }
   | { readonly kind: 'refund_recorded'; readonly returnId: string; readonly refundId: string; readonly lines: readonly { readonly productId: string; readonly quantityMinor: number; readonly unitPriceMinor: number; readonly priceBasis: string }[]; readonly amountMinor: number; readonly state: 'issued' | 'pending' | 'refused'; readonly by: string; readonly at: string };
+
+/** Why a driver came back without the goods. Chosen on the phone, never typed. */
+export const COLLECTION_MISS_REASONS = Object.freeze(['customer_not_available', 'nothing_handed_over'] as const);
+export type CollectionMissReason = (typeof COLLECTION_MISS_REASONS)[number];
+const MISS_WORDS: Readonly<Record<CollectionMissReason, string>> = Object.freeze({
+  customer_not_available: 'nobody was there to hand it over',
+  nothing_handed_over: 'nothing was handed over',
+});
 
 export type OnlineReturnStage = 'requested' | 'collection_scheduled' | 'collected' | 'received' | 'refund_waiting' | 'refunded' | 'refund_refused';
 
@@ -78,6 +95,8 @@ export interface OnlineReturnView {
   readonly lines: readonly {
     readonly productId: string;
     readonly requestedMinor: number;
+    /** What the driver recorded taking at the door (WF-16, driver) — absent when the desk recorded the collection. */
+    readonly collectedMinor?: number;
     readonly receivedMinor?: number;
     readonly disposition?: ReturnDisposition;
     readonly dispositionReason?: string;
@@ -86,7 +105,17 @@ export interface OnlineReturnView {
   }[];
   readonly collectOn?: string;
   readonly collectedAt?: string;
+  /** Who recorded the collection, and the route it was on when a driver did. */
+  readonly collectedBy?: string;
+  readonly collectedOnRoute?: string;
+  /** Every visit that came back without the goods, oldest first (P-08: a miss is shown, never dropped). */
+  readonly missedCollections: readonly { readonly at: string; readonly reason: CollectionMissReason; readonly by: string; readonly note?: string }[];
   readonly receivedAt?: string;
+  /**
+   * WF-16 (driver) · hard rule #10: every line where the shop's count differs from what the driver recorded taking at the
+   * door. Shown, never absorbed — the refund still covers only what was counted in. Empty until both are recorded.
+   */
+  readonly countDifferences: readonly { readonly productId: string; readonly collectedMinor: number; readonly receivedMinor: number }[];
   readonly refunds: readonly { readonly refundId: string; readonly amountMinor: number; readonly state: 'issued' | 'pending' | 'refused' }[];
   readonly stage: OnlineReturnStage;
   /** Each step in words, oldest first — what the customer sees in the app. */
@@ -108,10 +137,26 @@ export function foldOnlineReturn(steps: readonly OnlineReturnStep[], refundState
   const refunds: { refundId: string; amountMinor: number; state: 'issued' | 'pending' | 'refused' }[] = [];
   const say: { at: string; say: string }[] = [{ at: req.at, say: `Return asked for: ${req.lines.map((l) => `${l.quantityMinor} × ${l.productId}`).join(', ')}` }];
   let collectOn: string | undefined; let collectedAt: string | undefined; let receivedAt: string | undefined;
+  let collectedBy: string | undefined; let collectedOnRoute: string | undefined;
+  const collected = new Map<string, number>();
+  const missed: { at: string; reason: CollectionMissReason; by: string; note?: string }[] = [];
   for (const s of steps) {
     switch (s.kind) {
       case 'collection_scheduled': collectOn = s.collectOn; say.push({ at: s.at, say: `Collection booked for ${s.collectOn}` }); break;
-      case 'collected': if (collectedAt === undefined) { collectedAt = s.at; say.push({ at: s.at, say: 'Collected from you' }); } break;
+      case 'collected':
+        if (collectedAt === undefined) {
+          collectedAt = s.at; collectedBy = s.by; collectedOnRoute = s.routeId;
+          for (const l of s.lines ?? []) collected.set(l.productId, l.collectedMinor);
+          const taken = (s.lines ?? []).filter((l) => l.collectedMinor > 0);
+          say.push({ at: s.at, say: taken.length === 0 ? 'Collected from you' : `Collected from you: ${taken.map((l) => `${l.collectedMinor} × ${l.productId}`).join(', ')}` });
+        }
+        break;
+      case 'collection_missed':
+        if (collectedAt === undefined) {
+          missed.push({ at: s.at, reason: s.reason, by: s.by, ...(s.note === undefined ? {} : { note: s.note }) });
+          say.push({ at: s.at, say: `The driver came to collect, but ${MISS_WORDS[s.reason]}. The shop will book again.` });
+        }
+        break;
       case 'received':
         if (receivedAt === undefined) {
           receivedAt = s.at;
@@ -135,20 +180,32 @@ export function foldOnlineReturn(steps: readonly OnlineReturnStep[], refundState
     : live.length > 0 ? 'refunded'
       : refunds.length > 0 ? 'refund_refused'
         : receivedAt !== undefined ? 'received' : collectedAt !== undefined ? 'collected' : collectOn !== undefined ? 'collection_scheduled' : 'requested';
+  const countDifferences = collectedAt === undefined || collected.size === 0 || receivedAt === undefined ? []
+    : req.lines.flatMap((l) => {
+      const c = collected.get(l.productId) ?? 0;
+      const r = received.get(l.productId) ?? 0;
+      return c === r ? [] : [{ productId: l.productId, collectedMinor: c, receivedMinor: r }];
+    });
   return {
     returnId: req.returnId, orderId: req.orderId, customerRef: req.customerRef, reason: req.reason, requestedAt: req.at,
     lines: req.lines.map((l) => {
       const d = disposed.get(l.productId);
       const r = received.get(l.productId);
       const f = refundOf.get(l.productId);
+      const c = collectedAt === undefined || collected.size === 0 ? undefined : collected.get(l.productId) ?? 0;
       return {
         productId: l.productId, requestedMinor: l.quantityMinor,
+        ...(c === undefined ? {} : { collectedMinor: c }),
         ...(r === undefined ? {} : { receivedMinor: r }),
         ...(d === undefined ? {} : { disposition: d.disposition, ...(d.reason === undefined ? {} : { dispositionReason: d.reason }) }),
         ...(f === undefined ? {} : { refundId: f }),
       };
     }),
-    ...(collectOn === undefined ? {} : { collectOn }), ...(collectedAt === undefined ? {} : { collectedAt }), ...(receivedAt === undefined ? {} : { receivedAt }),
+    ...(collectOn === undefined ? {} : { collectOn }), ...(collectedAt === undefined ? {} : { collectedAt }),
+    ...(collectedBy === undefined ? {} : { collectedBy }), ...(collectedOnRoute === undefined ? {} : { collectedOnRoute }),
+    missedCollections: missed,
+    ...(receivedAt === undefined ? {} : { receivedAt }),
+    countDifferences,
     refunds, stage, steps: say.sort((a, b) => a.at.localeCompare(b.at)),
   };
 }
@@ -168,6 +225,31 @@ export function checkReceivedCount(view: OnlineReturnView, lines: readonly { rea
   }
   for (const id of asked.keys()) if (!seen.has(id)) return { ok: false, detail: `${id} was not counted — count it, 0 if it did not come back` };
   return { ok: true };
+}
+
+export type CollectedCheck =
+  | { readonly ok: true; readonly lines: readonly { readonly productId: string; readonly collectedMinor: number }[] }
+  | { readonly ok: false; readonly code: 'not_on_this_return' | 'not_a_whole_number' | 'more_than_booked' | 'counted_twice' | 'nothing_collected'; readonly detail: string };
+
+/**
+ * WF-16 (driver): what the driver took at the door may name only lines booked on this return, whole numbers from 0 to what
+ * was booked — never more. A line not named was not taken (0). Taking nothing at all is not a collection: it is a miss.
+ * The answer lists every booked line, in the return's order.
+ */
+export function checkCollectedLines(view: OnlineReturnView, lines: readonly { readonly productId: string; readonly collectedMinor: number }[]): CollectedCheck {
+  const booked = new Map(view.lines.map((l) => [l.productId, l.requestedMinor] as const));
+  const took = new Map<string, number>();
+  for (const l of lines) {
+    if (took.has(l.productId)) return { ok: false, code: 'counted_twice', detail: `${l.productId} is named twice` };
+    const b = booked.get(l.productId);
+    if (b === undefined) return { ok: false, code: 'not_on_this_return', detail: `${l.productId} was not booked on this return` };
+    if (!Number.isInteger(l.collectedMinor) || l.collectedMinor < 0) return { ok: false, code: 'not_a_whole_number', detail: `${l.productId}: ${l.collectedMinor} is not a whole number of items` };
+    if (l.collectedMinor > b) return { ok: false, code: 'more_than_booked', detail: `${l.productId}: collected ${l.collectedMinor}, but ${b} was booked for collection` };
+    took.set(l.productId, l.collectedMinor);
+  }
+  const out = view.lines.map((l) => ({ productId: l.productId, collectedMinor: took.get(l.productId) ?? 0 }));
+  if (out.every((l) => l.collectedMinor === 0)) return { ok: false, code: 'nothing_collected', detail: 'no item was taken — record it as "nothing handed over" instead' };
+  return { ok: true, lines: out };
 }
 
 export type RefundLinePlan =

@@ -104,6 +104,9 @@ describe.skipIf(!HAVE_BROWSER)('the served till\'s sync badge shows what the box
     const gone = (await page.textContent('#conn-text'))!;
     expect(gone).toMatch(/^Offline — the store box is not answering/);
     expect(await page.getAttribute('#conn-dot', 'class')).toContain('error');
+    // P-08: with the box gone, how many sales it holds is NOT KNOWN — said so, never this till's own count or a 0.
+    expect(await page.textContent('#unsent')).toBe('Unsent: not known');
+    expect(await page.getAttribute('#unsent', 'data-unknown')).toBe('');
     expect(await page.evaluate(() => (globalThis as unknown as PosWindow).posBadge!.state())).toMatchObject({ asked: true, reachable: false });
   });
 });

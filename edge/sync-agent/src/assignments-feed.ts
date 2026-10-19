@@ -44,8 +44,19 @@ export interface AssignedRoute {
     readonly orderValueMinor?: number;
   }[];
   readonly contributionRule?: { readonly maxCostShareBps: number };
+  /** WF-16 (driver): online returns BOOKED for collection on this route, with their booked lines. Absent when there are none. */
+  readonly collections?: readonly AssignedCollection[];
   readonly assignedBy: string;
   readonly assignedAt: string;
+}
+
+/** WF-16 (driver): one booked return collection as head office hands it to a driver — a reference, an area, the booked lines. */
+export interface AssignedCollection {
+  readonly returnId: string;
+  readonly orderRef: string;
+  readonly area: string;
+  readonly collectOn: string;
+  readonly lines: readonly { readonly productId: string; readonly quantityMinor: number }[];
 }
 
 /** The store's open assignments as the box reads them: the cloud's clock, the store, the waves, the routes. */
@@ -79,6 +90,13 @@ export function readAssignmentsFeed(body: unknown): AssignmentsFeed | undefined 
       if (s['orderValueMinor'] !== undefined && !isNonNegInt(s['orderValueMinor'])) return undefined;
     }
     if (r['contributionRule'] !== undefined && (!isObj(r['contributionRule']) || !isNonNegInt(r['contributionRule']['maxCostShareBps']))) return undefined;
+    if (r['collections'] !== undefined) {
+      if (!Array.isArray(r['collections'])) return undefined;
+      for (const c of r['collections']) {
+        if (!isObj(c) || !isStr(c['returnId']) || !isStr(c['orderRef']) || !isStr(c['area']) || !isStr(c['collectOn']) || !Array.isArray(c['lines']) || c['lines'].length === 0) return undefined;
+        for (const l of c['lines']) if (!isObj(l) || !isStr(l['productId']) || !isNonNegInt(l['quantityMinor'])) return undefined;
+      }
+    }
   }
   return body as unknown as AssignmentsFeed;
 }

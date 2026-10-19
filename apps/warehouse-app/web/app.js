@@ -39,6 +39,17 @@ function say(node, text, icon) {
   pair.append(m, text);
   node.replaceChildren(pair);
 }
+/**
+ * OB-205 (footer): a footer action — its icon and words as one pair, then what it waits for on its own smaller line
+ * ("scan the bin"), so the action keeps its whole meaning without its label wrapping to three or four lines.
+ */
+function sayAction(node, text, icon, waitsFor) {
+  say(node, text, icon);
+  const why = document.createElement('small');
+  why.className = 'why';
+  why.textContent = waitsFor;
+  node.append(why);
+}
 /** A quantity: the number on its own, big, then its words — `12 units · EA` stays exactly that text. */
 function sayQty(node, n, rest) {
   const big = document.createElement('span');
@@ -74,7 +85,8 @@ const WORDS = {
     goodsIn: 'Waiting to be put away', noWork: 'No warehouse work has been given to this handheld yet.',
     noWorkBody: 'Nothing is wrong. When work is assigned to you it will appear here on its own.',
     sample: 'Sample assignment — this is not real work.',
-    receive: 'Receive a delivery', putAway: 'Put away — scan the bin',
+    // OB-205 (footer): an action's words, then — on its own smaller line — what it waits for, so a label never wraps to four lines.
+    receive: 'Receive a delivery', putAway: 'Put away', waitsForBin: 'scan the bin',
     deliveries: 'Deliveries waiting for this store', chooseDelivery: 'Choose the delivery at the door first',
     receivingThis: 'receiving now', chooseThis: 'receive this one',
     doneReceiving: 'Delivery complete — send the receipt',
@@ -92,7 +104,7 @@ const WORDS = {
     stepScanBin: 'Scan the bin to put it in',
     recalledFlag: 'RECALLED — holding bin only', expiredFlag: 'EXPIRED — holding bin only',
     // picking an order line: scan the bin → scan the item → confirm
-    toPick: 'To pick', pick: 'Pick — scan the bin', scanPickBin: 'Scan the bin shown', scanItem: 'Scan the item',
+    toPick: 'To pick', pick: 'Pick', scanPickBin: 'Scan the bin shown', scanItem: 'Scan the item',
     confirmPick: 'Confirm the pick', confirm: 'Confirm', fromBin: 'from bin',
     stepPick: 'Scan a bin on the pick list to start picking, or tap an item',
     stepPickScanBin: 'Pick — scan the bin shown on the line',
@@ -140,7 +152,7 @@ const WORDS = {
     counted: 'Counted', adjustment_requested: 'Adjustment requested — waits for a supervisor',
     not_a_quantity: 'That is not a whole quantity', no_reason: 'Pick a reason from the list',
     // SP-8c: the back store issues against a floor indent — tap the line → scan the bin you take from → scan the item → confirm
-    toIssue: 'To issue to the floor', issue: 'Issue to the floor — scan the bin', scanIssueBin: 'Scan the bin you are taking it from',
+    toIssue: 'To issue to the floor', issue: 'Issue to the floor', scanIssueBin: 'Scan the bin you are taking it from',
     confirmIssue: 'Confirm the issue', askedBy: 'asked by', owed: 'still owed',
     stepIssue: 'Tap an indent line to issue it to the floor', stepIssueScanBin: 'Scan the bin you are taking it from',
     issued: 'Issued to the floor', not_on_indent: 'Not on an indent this handheld holds', indent_line_done: 'This line is already fully issued',
@@ -155,7 +167,7 @@ const WORDS = {
     goodsIn: 'அடுக்க வைக்கக் காத்திருப்பவை', noWork: 'இந்த கருவிக்கு இதுவரை கிடங்கு வேலை தரப்படவில்லை.',
     noWorkBody: 'எந்தப் பிரச்சனையும் இல்லை. உங்களுக்கு வேலை ஒதுக்கப்பட்டால் அது தானாகவே இங்கே தோன்றும்.',
     sample: 'மாதிரி வேலை — இது உண்மையான வேலை அல்ல.',
-    receive: 'பொருள் வரவு பெறு', putAway: 'அடுக்கு — இடத்தை ஸ்கேன் செய்',
+    receive: 'பொருள் வரவு பெறு', putAway: 'அடுக்கு', waitsForBin: 'இடத்தை ஸ்கேன் செய்',
     deliveries: 'இந்தக் கடைக்கு வர வேண்டிய சரக்குகள்', chooseDelivery: 'முதலில் வாசலில் உள்ள சரக்கைத் தேர்ந்தெடுக்கவும்',
     receivingThis: 'இப்போது பெறப்படுகிறது', chooseThis: 'இதைப் பெறு',
     doneReceiving: 'வரவு முடிந்தது — ரசீதை அனுப்பு',
@@ -171,7 +183,7 @@ const WORDS = {
     stepSelect: 'அடுக்க ஒரு பொருளைத் தொடவும், அல்லது வரவு பெறவும்',
     stepScanBin: 'வைக்கும் இடத்தை ஸ்கேன் செய்யவும்',
     recalledFlag: 'திரும்பப் பெறப்பட்டது — சேமிப்பு இடம் மட்டும்', expiredFlag: 'காலாவதி — சேமிப்பு இடம் மட்டும்',
-    toPick: 'எடுக்க வேண்டியவை', pick: 'எடு — இடத்தை ஸ்கேன் செய்', scanPickBin: 'காட்டப்பட்ட இடத்தை ஸ்கேன் செய்யவும்',
+    toPick: 'எடுக்க வேண்டியவை', pick: 'எடு', scanPickBin: 'காட்டப்பட்ட இடத்தை ஸ்கேன் செய்யவும்',
     scanItem: 'பொருளை ஸ்கேன் செய்யவும்',
     confirmPick: 'எடுத்ததை உறுதிப்படுத்தவும்', confirm: 'உறுதிப்படுத்து', fromBin: 'இடத்திலிருந்து',
     stepPick: 'எடுக்கத் தொடங்க பட்டியலில் உள்ள இடத்தை ஸ்கேன் செய்யவும், அல்லது ஒரு பொருளைத் தொடவும்',
@@ -217,7 +229,7 @@ const WORDS = {
     counted: 'எண்ணப்பட்டது', adjustment_requested: 'திருத்தக் கோரிக்கை — மேற்பார்வையாளருக்குக் காத்திருக்கிறது',
     not_a_quantity: 'அது முழு அளவு அல்ல', no_reason: 'பட்டியலில் இருந்து ஒரு காரணத்தைத் தேர்வு செய்யவும்',
     // SP-8c
-    toIssue: 'தளத்திற்கு வழங்க வேண்டியவை', issue: 'தளத்திற்கு வழங்கு — இடத்தை ஸ்கேன் செய்', scanIssueBin: 'எடுக்கும் இடத்தை ஸ்கேன் செய்யவும்',
+    toIssue: 'தளத்திற்கு வழங்க வேண்டியவை', issue: 'தளத்திற்கு வழங்கு', scanIssueBin: 'எடுக்கும் இடத்தை ஸ்கேன் செய்யவும்',
     confirmIssue: 'வழங்கலை உறுதிப்படுத்து', askedBy: 'கேட்டவர்', owed: 'இன்னும் தர வேண்டியது',
     stepIssue: 'தளத்திற்கு வழங்க ஒரு கோரிக்கை வரியைத் தட்டவும்', stepIssueScanBin: 'எடுக்கும் இடத்தை ஸ்கேன் செய்யவும்',
     issued: 'தளத்திற்கு வழங்கப்பட்டது', not_on_indent: 'இந்தக் கருவியில் உள்ள கோரிக்கையில் இல்லை', indent_line_done: 'இந்த வரி முழுமையாக வழங்கப்பட்டது',
@@ -499,11 +511,11 @@ function render() {
   // SP-6b: "Delivery complete" appears once something has been received here for this delivery and not yet sent as one receipt.
   say(el('done-receiving'), t('doneReceiving'), 'send');
   el('done-receiving').hidden = !(real !== undefined && typeof real.receivingOpen === 'function' && real.receivingOpen(grnId));
-  say(el('put-away'), t('putAway'), 'layers');
+  sayAction(el('put-away'), t('putAway'), 'layers', t('waitsForBin'));
   el('put-away').disabled = selected === null;
   say(el('pick-heading'), t('toPick'), 'shopping-basket');
   el('pick-heading').dataset.count = String(lines.length);
-  say(el('pick'), t('pick'), 'shopping-basket');
+  sayAction(el('pick'), t('pick'), 'shopping-basket', t('waitsForBin'));
   say(el('count-bin'), t('countBin'), 'calculator');
   say(el('adjust-stock'), t('adjustStock'), 'sliders');
   el('count-bin').disabled = real === undefined;
@@ -515,7 +527,7 @@ function render() {
   // SP-8c: the Issue button exists only while the handheld holds floor indents to issue.
   say(el('issue-heading'), t('toIssue'), 'package-minus');
   el('issue-heading').dataset.count = String(issues.length);
-  say(el('issue'), t('issue'), 'package-minus');
+  sayAction(el('issue'), t('issue'), 'package-minus', t('waitsForBin'));
   el('issue').hidden = issues.length === 0;
   if (!issues.some((l) => `${l.indentId}|${l.productId}` === selectedIssue)) selectedIssue = null;
   el('issue').disabled = selectedIssue === null;
@@ -965,6 +977,8 @@ const DSD_WORDS = {
     delivery_note_not_signed: 'Scan the delivery note first', no_cash_at_the_door: 'No cash at the door',
     dsd_not_started: 'Start the check-in first', dsd_already_closed: 'This delivery is already closed', dsd_needs_vendor: 'Choose the delivery and key the driver',
     expected: 'expected', scanned: 'scanned', back: 'handed back', kept: 'kept',
+    // D-11: what is kept from a route sheet (no order) or beyond the order waits for a second person at head office.
+    held: 'held for a second person',
     short: 'short', over: 'over', not_expected: 'not on the order', noDifferences: 'No differences',
     driverKeyed: 'Driver\'s mobile number', notKeyed: 'not keyed', noteScanned: 'Delivery note', scanNote: 'scan its barcode',
     chooseItemBack: 'Tap the item to hand back', chooseWhy: 'Why is it handed back?', howMany: 'How many are handed back?',
@@ -983,6 +997,7 @@ const DSD_WORDS = {
     delivery_note_not_signed: 'முதலில் டெலிவரி குறிப்பை ஸ்கேன் செய்யவும்', no_cash_at_the_door: 'வாசலில் பணம் இல்லை',
     dsd_not_started: 'முதலில் சரிபார்ப்பைத் தொடங்கவும்', dsd_already_closed: 'இந்த டெலிவரி ஏற்கனவே முடிந்தது', dsd_needs_vendor: 'டெலிவரியைத் தேர்வு செய்து ஓட்டுநர் எண்ணை உள்ளிடவும்',
     expected: 'எதிர்பார்த்தது', scanned: 'ஸ்கேன்', back: 'திருப்பியது', kept: 'வைத்தது',
+    held: 'இரண்டாம் நபர் முடிவுக்காக நிறுத்தப்பட்டது',
     short: 'குறைவு', over: 'அதிகம்', not_expected: 'ஆர்டரில் இல்லை', noDifferences: 'வேறுபாடு இல்லை',
     driverKeyed: 'ஓட்டுநரின் மொபைல் எண்', notKeyed: 'உள்ளிடப்படவில்லை', noteScanned: 'டெலிவரி குறிப்பு', scanNote: 'அதன் பார்கோடை ஸ்கேன் செய்யவும்',
     chooseItemBack: 'திருப்ப வேண்டிய பொருளைத் தட்டவும்', chooseWhy: 'ஏன் திருப்பப்படுகிறது?', howMany: 'எத்தனை திருப்பப்படுகின்றன?',
@@ -1039,7 +1054,8 @@ function renderDsd() {
     row.dataset.product = l.productId;
     const what = document.createElement('span'); what.className = 'what'; what.textContent = l.productId;
     const qty = document.createElement('span'); qty.className = 'qty';
-    qty.textContent = `${dt('expected')} ${l.expectedMinor} · ${dt('scanned')} ${l.scannedMinor} · ${dt('back')} ${l.handedBackMinor} · ${dt('kept')} ${l.keptMinor}`;
+    qty.textContent = `${dt('expected')} ${l.expectedMinor} · ${dt('scanned')} ${l.scannedMinor} · ${dt('back')} ${l.handedBackMinor} · ${dt('kept')} ${l.keptMinor}`
+      + (l.heldMinor > 0 ? ` · ${dt('held')} ${l.heldMinor}` : '');
     // OB-205: the one number the receiver checks at a glance — scanned against expected — big, on the right.
     const count = document.createElement('span'); count.className = 'count';
     sayQty(count, `${l.scannedMinor} / ${l.expectedMinor}`, `${dt('scanned')} / ${dt('expected')}`);

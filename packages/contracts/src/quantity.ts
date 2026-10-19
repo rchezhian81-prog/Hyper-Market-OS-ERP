@@ -172,6 +172,19 @@ export function toDecimalString(a: Quantity): string {
   return `${sign}${whole}.${frac}`;
 }
 
+/**
+ * A quantity as a person reads it, in its unit (OB-31 rule 1 — look only): a weighed `kg` line holding 1234 grams reads
+ * "1.234 kg", a `g` product's 500 reads "500 g", `L` / `ml` likewise; an `ea` count is the bare number ("2"). Any
+ * spelling of a known unit is read as that unit; an unknown spelling shows the raw count beside it, never a guess.
+ * Changes nothing stored and no calculation — it only words the integer the line already holds.
+ */
+export function quantityLabel(quantityMinor: number, uomCode: string): string {
+  const uom = normaliseUom(uomCode);
+  if (uom === undefined) return uomCode.trim() === '' ? String(quantityMinor) : `${quantityMinor} ${uomCode.trim()}`;
+  const decimal = toDecimalString({ minor: quantityMinor, uom });
+  return uom === 'ea' ? decimal : `${decimal} ${uom}`;
+}
+
 // ── OB-31: the boundary rules ───────────────────────────────────────────────────────────────────────────────────────
 
 /** Spellings people and older screens use for each unit, mapped to the one code the system stores (OB-31 rule 4). */

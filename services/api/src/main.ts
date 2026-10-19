@@ -310,7 +310,7 @@ import { supplierReturnDispatchHooks, oneDebitNoteSeries } from './r3-followup-a
 import { r3OpsRoutes, masterLifecycleOf, ingredientBatchesAt, channelPricingGateFor, packPricingFor } from './r3-ops-adapters';
 // R4 Lane 3 (customer insight, offers and demand): M16 · M17-FR-02 · D-23 · D-22 · D-24 · EA-07 sending off (r4-insight-adapters).
 import { r4InsightRoutes, demandCalendarFor, type BriefSendingLink } from './r4-insight-adapters';
-import { r4OnlineRoutes, onlineListedAdapter } from './r4-online-adapters'; // R4 Lane 2 · B23 · A26 · D-28 · WF-16 · M20-FR-04 · D01-FR-06 · D08 · M16-FR-01
+import { r4OnlineRoutes, onlineListedAdapter, onlineReturnViewOf } from './r4-online-adapters'; // R4 Lane 2 · B23 · A26 · D-28 · WF-16 · M20-FR-04 · D01-FR-06 · D08 · M16-FR-01
 import { wasteAnalyticsAdapter, foodSafetyAdapter, priceIntegrityAgeingAdapter, assignedTaskAdapter, receivingChecklistLookup, carriedChecklistAdapter } from './r2-ops-adapters';
 import { assignedTaskRoutes } from '../../finance/src/assigned-tasks';
 import { priceIntegrityAgeingRoutes } from '../../pricing/src/price-integrity-ageing';
@@ -1462,7 +1462,17 @@ export function buildSurface(deps: {
     // and refused by name when they may not do the work; finished work (packed / settled) cannot be reassigned.
     ...assignmentRoutes(store === undefined
       ? { permissionsOfUser: empty(undefined), waveAssignments: empty([]), recordWaveAssignment: () => {}, routeAssignments: empty([]), recordRouteAssignment: () => {}, wavePacked: empty(false), routeSettled: empty(false), now }
-      : { ...assignmentsAdapter({ store, now }), recordAudit: auditTrail?.recordAudit }),
+      : {
+        ...assignmentsAdapter({ store, now }), recordAudit: auditTrail?.recordAudit,
+        // R4 gap lane "driver" (WF-16): a return collection on a route reads the return's own stage and booked lines.
+        collectionOf: async (t: string, returnId: string) => {
+          const v = await onlineReturnViewOf(store, t, returnId);
+          return v === undefined ? undefined : {
+            orderRef: v.orderId, stage: v.stage, ...(v.collectOn === undefined ? {} : { collectOn: v.collectOn }),
+            lines: v.lines.map((l) => ({ productId: l.productId, quantityMinor: l.requestedMinor })),
+          };
+        },
+      }),
     // SP-3c-ii (F11's driver half): the DRIVER handheld's stop outcomes, settlement and cash handover, RELAYED by the box. The
     // routes re-verify the driver, run the order's own state machine, compare the money with the stop register and
     // record-and-flag; a material handover variance is flagged for the cash office.

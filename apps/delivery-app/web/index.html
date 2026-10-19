@@ -105,6 +105,16 @@
       .stop.out_for_delivery .state, .stop.attempted .state { background: var(--warn-surface); color: var(--on-warn-surface); border-color: var(--warn-surface); }
       .stop.failed .state { background: var(--error-surface); color: var(--danger-text); border-color: var(--error-surface); }
       .stop.returned_to_origin .state { background: var(--info-surface); color: var(--on-info-surface); border-color: var(--info-surface); }
+      /* WF-16 (driver): an online return to collect — the same card as a stop, its booked lines listed, its state a chip. */
+      .stop.collected { border-left-color: var(--good); }
+      .stop.not_collected { border-left-color: var(--danger); }
+      .stop.booked { border-left-color: var(--info); }
+      .stop .lines { font-size: 17px; font-weight: 600; font-variant-numeric: var(--numbers); }
+      .stop.collected .state { background: var(--ok-surface); color: var(--on-ok-surface); border-color: var(--ok-surface); }
+      .stop.not_collected .state { background: var(--error-surface); color: var(--danger-text); border-color: var(--error-surface); }
+      .stop.booked .state { background: var(--info-surface); color: var(--on-info-surface); border-color: var(--info-surface); }
+      .returns-note { margin: 0 2px var(--space-2); color: var(--ink-2); font-size: 15px; }
+      .returns-note[hidden] { display: none; }
       .stop .flag { font-size: 14px; font-weight: 700; color: var(--on-warn-surface); background: var(--warn-surface); justify-self: start; padding: 2px 10px; border-radius: var(--radius-pill); }
 
       /* Sent from this phone (SP-3c-ii): what each queued outcome was, then one of the five shared state words as a chip
@@ -244,6 +254,10 @@
     <main>
       <div id="stops"></div>
       <p class="empty" id="empty" hidden>—</p>
+      <!-- WF-16 (driver): online returns booked for collection on this route. No money changes hands at the door. -->
+      <h2 class="section" id="returns-heading" hidden>—</h2>
+      <p class="returns-note" id="returns-note" hidden>—</p>
+      <div id="collections"></div>
       <!-- Where each outcome, the settlement and the handover have got to — from the durable device queue and the store computer's word. -->
       <h2 class="section" id="sent-heading" hidden>—</h2>
       <div id="sent-work"></div>

@@ -23,7 +23,7 @@ const WORDS = {
     policyNotSet: 'Return windows: not set. Non-returnable list: not set. No return can be judged until both are set (OB-213).', policyIs: 'Return windows:', listIs: 'Not returnable:', none: 'none',
     noReturns: 'No online returns.', book: 'Book collection', collectOn: 'Collect on', collected: 'Collected', receive: 'Received — count', counted: 'Count', dispose: 'Where it goes',
     sellable: 'Back to sellable', quarantine: 'Quarantine', waste: 'Waste', dispReason: 'Reason (needed for waste)', setDisposition: 'Choose', refund: 'Refund what came back', refundId: 'Refund reference', approvalId: 'Approval id (second person)',
-    requested: 'Requested', collection_scheduled: 'Collection booked', received: 'Received', refund_waiting: 'Refund waiting for the bank', refunded: 'Refunded', refund_refused: 'Refund refused by the bank', stageCollected: 'Collected',
+    requested: 'Requested', collection_scheduled: 'Collection booked', received: 'Received', refund_waiting: 'Refund waiting for the bank', refunded: 'Refunded', refund_refused: 'Refund refused by the bank', stageCollected: 'Collected', countDiffers: 'Count differs from the driver', driverTook: 'driver took', countedIn: 'counted in',
     done: 'Recorded', refused: 'Not recorded', unreachable: 'Head office could not be reached. Nothing was recorded — try again.', cannotRead: 'The online store could not be read from head office. Nothing here is current.',
     needReason: 'Write the reason first.',
   },
@@ -41,7 +41,7 @@ const WORDS = {
     policyNotSet: 'திருப்பி அனுப்பும் காலம்: அமைக்கப்படவில்லை. திருப்ப முடியாதவை பட்டியல்: அமைக்கப்படவில்லை. இரண்டும் அமைக்கப்படும் வரை எந்தத் திருப்பி அனுப்புதலையும் தீர்மானிக்க முடியாது (OB-213).', policyIs: 'திருப்பி அனுப்பும் காலம்:', listIs: 'திருப்ப முடியாதவை:', none: 'இல்லை',
     noReturns: 'ஆன்லைன் திருப்பி அனுப்புதல்கள் இல்லை.', book: 'சேகரிப்பை முன்பதிவு செய்', collectOn: 'சேகரிக்கும் நாள்', collected: 'சேகரிக்கப்பட்டது', receive: 'பெறப்பட்டது — எண்ணிக்கை', counted: 'எண்ணிக்கை', dispose: 'எங்கே செல்கிறது',
     sellable: 'மீண்டும் விற்பனைக்கு', quarantine: 'தனிமைப்படுத்து', waste: 'கழிவு', dispReason: 'காரணம் (கழிவுக்குத் தேவை)', setDisposition: 'தேர்ந்தெடு', refund: 'திரும்பி வந்ததற்குப் பணம் திருப்பு', refundId: 'பணம் திருப்பும் குறிப்பு', approvalId: 'ஒப்புதல் எண் (இரண்டாம் நபர்)',
-    requested: 'கேட்கப்பட்டது', collection_scheduled: 'சேகரிப்பு முன்பதிவு', received: 'பெறப்பட்டது', refund_waiting: 'பணம் திருப்புதல் வங்கிக்காகக் காத்திருக்கிறது', refunded: 'பணம் திருப்பப்பட்டது', refund_refused: 'வங்கி மறுத்தது', stageCollected: 'சேகரிக்கப்பட்டது',
+    requested: 'கேட்கப்பட்டது', collection_scheduled: 'சேகரிப்பு முன்பதிவு', received: 'பெறப்பட்டது', refund_waiting: 'பணம் திருப்புதல் வங்கிக்காகக் காத்திருக்கிறது', refunded: 'பணம் திருப்பப்பட்டது', refund_refused: 'வங்கி மறுத்தது', stageCollected: 'சேகரிக்கப்பட்டது', countDiffers: 'ஓட்டுநரின் எண்ணிக்கையுடன் வேறுபடுகிறது', driverTook: 'ஓட்டுநர் எடுத்தது', countedIn: 'கடையில் எண்ணியது',
     done: 'பதிவு செய்யப்பட்டது', refused: 'பதிவு செய்யப்படவில்லை', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை. எதுவும் பதிவு செய்யப்படவில்லை — மீண்டும் முயலவும்.', cannotRead: 'ஆன்லைன் கடையைத் தலைமை அலுவலகத்திலிருந்து படிக்க முடியவில்லை. இங்குள்ளவை தற்போதையவை அல்ல.',
     needReason: 'முதலில் காரணத்தை எழுதுங்கள்.',
   },
@@ -134,6 +134,14 @@ function paintReturns() {
     const li = row(STAGE_TONE[x.stage] ?? 'idle', `${x.returnId} — ${x.orderId}`, t(STAGE_WORD[x.stage] ?? x.stage));
     li.dataset.return = x.returnId; li.dataset.stage = x.stage;
     facts(li, x.lines.map((l) => `${l.productId}: ${l.requestedMinor}${l.receivedMinor === undefined ? '' : ` → ${l.receivedMinor}`}${l.disposition === undefined ? '' : ` (${t(l.disposition)})`}`));
+    // WF-16 · hard rule #10: the shop's count differs from what the driver took at the door — said, never absorbed.
+    const diffs = x.countDifferences ?? [];
+    if (diffs.length > 0) {
+      li.dataset.countDiffers = 'true';
+      li.classList.replace(`tone-${STAGE_TONE[x.stage] ?? 'idle'}`, 'tone-degraded');
+      const f = facts(li, diffs.map((d) => `${t('countDiffers')}: ${d.productId} — ${t('driverTook')} ${d.collectedMinor}, ${t('countedIn')} ${d.receivedMinor}`));
+      f.classList.add('count-differs');
+    }
     const form = document.createElement('form');
     const act = (path, body, what) => async () => { await post(`/v1/online-returns/${encodeURIComponent(x.returnId)}/${path}`, body(), what); await refresh(); };
     if (x.stage === 'requested' || x.stage === 'collection_scheduled') {

@@ -141,6 +141,11 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'fulfilment.pick.sync',
       // SP-3c-ii hop: the box relays the driver handheld's stop outcomes, settlement and cash handover to the route register.
       'delivery.stop.sync',
+      // ── R4 gap lane "driver" (WF-16) — begin
+      // The box relays a return collection recorded on the driver's phone. Held by the owner only so he may approve granting
+      // it to the store computer; the route re-verifies the DRIVER's own online.return.collect, so this grants no collection.
+      'online.return.collect.sync',
+      // ── R4 gap lane "driver" — end
       'finance.journal.post', 'finance.posting.configure', 'finance.period.close', 'finance.period.read', 'finance.period.sign', 'finance.creditnote.issue',
       'settlement.batch.import', 'settlement.review.read', 'settlement.investigation.manage',
       'b2b.account.manage', 'b2b.account.read', 'b2b.receivable.record', 'b2b.credit.check',
@@ -678,6 +683,10 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'migration.decision.sync', 'lp.activity.sync',
       // R3 Lane 4 · D-11: a direct delivery checked in on the warehouse handheld (head office re-verifies the receiver).
       'inventory.dsd.sync',
+      // ── R4 gap lane "driver" (WF-16) — begin
+      // A return collection recorded on the driver's phone (head office re-verifies the driver, the booking and the quantities).
+      'online.return.collect.sync',
+      // ── R4 gap lane "driver" — end
       // the GST portal's poll/verify, relayed for the operator (no maker-checker decision; re-authorised on this permission)
       'finance.einvoice.generate',
     ],

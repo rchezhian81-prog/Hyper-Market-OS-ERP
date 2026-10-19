@@ -161,6 +161,14 @@ export interface PackRoute {
     readonly orderValueMinor?: number;
   }[];
   readonly contributionRule?: { readonly maxCostShareBps: number };
+  /** WF-16 (driver): booked return collections — only ever from head office's assignments, never the hand-written file. */
+  readonly collections?: readonly {
+    readonly returnId: string;
+    readonly orderRef: string;
+    readonly area: string;
+    readonly collectOn: string;
+    readonly lines: readonly { readonly productId: string; readonly quantityMinor: number }[];
+  }[];
 }
 
 /** Today's confirmed deliveries, for the box to plan into routes (M19-FR-03). */
@@ -1057,6 +1065,20 @@ export interface PackOpenDelivery {
 }
 
 /**
+ * R3 D-11 (OB-141 "A"): one vendor's route sheet for this store — what that van brings to the door when it comes with no
+ * purchase order — as head office keeps it (`POST /v1/inventory/dsd-routes/:routeId`, its latest version). Served so the
+ * door check-in on the phone can be judged against it offline; head office re-judges the check-in against its own copy.
+ */
+export interface PackDsdRoute {
+  readonly routeId: string;
+  readonly supplierId: string;
+  /** The place the sheet is for (this store, or its back store) — the check-in is made against that place. */
+  readonly storeId: string;
+  readonly version: number;
+  readonly lines: readonly { readonly productId: string; readonly expectedMinor: number; readonly unitCostMinor?: number; readonly uom?: string }[];
+}
+
+/**
  * The warehouse work the cloud assigned this box (M09 / OA-9) — the bins, the catalogue for
  * scanning, what is on order, what is awaiting put-away and what is under recall. The offline
  * Warehouse PWA boots on exactly this; the same authoritative rules decide every scan.
@@ -1073,6 +1095,8 @@ export interface PackWarehouse {
   readonly ordered?: readonly PackWarehouseOrdered[];
   /** OB-37: every delivery this store is waiting for; the receiver chooses one on the phone (with one, it is preset). */
   readonly openDeliveries?: readonly PackOpenDelivery[];
+  /** R3 D-11: the vendors' route sheets head office keeps for this store; absent = head office sent none (not "no routes"). */
+  readonly dsdRoutes?: readonly PackDsdRoute[];
   readonly grnId?: string;
   /** SP-6b: the purchase order the delivery is against — named on the handheld's "delivery complete" so head office folds the GRN into it. */
   readonly poId?: string;
