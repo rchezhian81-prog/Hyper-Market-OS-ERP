@@ -200,6 +200,9 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'migration.parallel.record', 'migration.parallel.read',
       'migration.exception.record', 'migration.exception.resolve', 'migration.controltotal.record', 'migration.decision.sync',
       'migration.screen.read',
+      // MG-05 / MG-06 / MG-10 (cutover readiness, OB-239): record a real-data load as its operator (the session is the
+      // operator), accept a load's exception list by name, read a load, and sign a parallel-run day.
+      'migration.load.record', 'migration.load.accept', 'migration.load.read', 'migration.parallel.sign',
       'ai.agent.run', 'ai.proposal.read', 'ai.suggestion.dismiss', 'ai.budget.read', 'ai.budget.set', 'ai.agent.enable', 'ai.killswitch.set',
       // R2 C18: the owner sets the working-time limits (with the Act's provision and who confirmed each) and reads the
       // statutory registers. R2 C20: the owner reads the Internal Committee's annual report (counts only) and its
@@ -359,6 +362,9 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // The migration operator PROPOSES a history exclusion (MG-07); only the OWNER approves it, and
       // never one they proposed themselves — so the proposer must be a role other than the owner.
       'migration.parallel.record', 'migration.parallel.read', 'migration.exclusion.propose',
+      // MG-05 / MG-10 (cutover readiness, OB-239): the manager may be the load operator, accept an exception list, read a
+      // load, and — when the owner names them the daily reconciler — sign a parallel-run day (the route checks the name).
+      'migration.load.record', 'migration.load.accept', 'migration.load.read', 'migration.parallel.sign',
       // The manager works the night's exception list and records the totals the operator produced (MG-04 /
       // MG-06); signing a total stays the owner's and the CA's. The box's relayed decisions come in under
       // `migration.decision.sync`, which re-checks the decider's OWN authority.
@@ -579,6 +585,8 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'migration.controltotal.sign',
       'migration.verification.sign',
       'migration.parallel.read',
+      // MG-06: the CA reads the load record a total came from (who ran it, what was quarantined) before signing it.
+      'migration.load.read',
       // ── R3 lane 1 (GST liability and returns) ──
       // A14 · OB-143 "A": the CA alone lists the reverse-charge heads (code, rate, notification entry) and reads them.
       'finance.rcm.configure', 'finance.rcm.read',

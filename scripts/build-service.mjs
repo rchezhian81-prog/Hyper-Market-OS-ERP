@@ -19,7 +19,7 @@
 //
 // Usage:  node scripts/build-service.mjs <api|edge|demo-login|sign-in|tools>
 // Output: <service>/dist/start.js  (git-ignored — `dist/` is in .gitignore)
-//         `tools` bundles the operator commands (scripts/migration-load.ts, scripts/bootstrap-tenant.ts)
+//         `tools` bundles the operator commands (scripts/migration-load.ts, scripts/migration-slice.ts, scripts/bootstrap-tenant.ts)
 //         into scripts/dist/ — they import the workspace TypeScript the same way the services do.
 
 import { build } from 'esbuild';
@@ -41,7 +41,7 @@ const SERVICES = {
 
 /** Operator commands a person runs on the box; bundled together, each to its own file. */
 const TOOLS = {
-  entries: ['scripts/migration-load.ts', 'scripts/bootstrap-tenant.ts', 'scripts/demo-smoke.ts', 'scripts/realm-for-shop.ts', 'scripts/new-shop.ts', 'scripts/shops.ts'],
+  entries: ['scripts/migration-load.ts', 'scripts/migration-slice.ts', 'scripts/bootstrap-tenant.ts', 'scripts/demo-smoke.ts', 'scripts/realm-for-shop.ts', 'scripts/new-shop.ts', 'scripts/shops.ts'],
   outdir: 'scripts/dist',
 };
 

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, TEST_IDP, TEST_PACK_KEY, type ApiHarness } from '../support/api-harness';
+import { recordLoadAs } from '../support/load-record';
 import { withDeciderSeal } from '../../edge/store-edge/src/decision-seal';
 import { tillSealKey } from '../../packages/identity/src/till-seal';
 import { SyncOutbox } from '../../packages/sync/src/outbox';
@@ -40,6 +41,8 @@ async function scene(screenUser: string) {
   await h.provisionRole(T, SYNC, 'store_computer', ['S1']); // the box's sync identity: migration.decision.sync and nothing more
   await h.provisionRole(T, 'u-cash', 'cashier');
   expect((await post(h, '/v1/migration/extraction-runs/run-1', OWNER, 'er1', { operatorId: LOADER })).status).toBe(201);
+  // Who ran the load is the stored load record's operator — LOADER, signed in (MG-06).
+  expect((await recordLoadAs(h, T, LOADER)).status).toBe(201);
   expect((await post(h, '/v1/migration/exceptions', MGR, 'x1', { exceptions: [EX] })).status).toBe(201);
   expect((await post(h, '/v1/migration/control-totals', MGR, 't1', { totals: [TOTAL] })).status).toBe(201);
 

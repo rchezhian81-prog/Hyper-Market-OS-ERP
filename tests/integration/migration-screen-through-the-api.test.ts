@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { recordLoadAs } from '../support/load-record';
 import { reconcileRehearsedRollback } from '../support/rollback-rehearsal';
 
 // Stage C3b — the migration screen's feed through the real authenticated API: the store box's sync identity
@@ -67,6 +68,7 @@ describe('GET /v1/migration/screen through the API (C3b)', () => {
   it('once the night\'s work is recorded, the box reads all of it with the desk\'s decisions folded in — the same register the desk sees', async () => {
     const h = await seeded();
     expect((await post(h, '/v1/migration/extraction-runs/run-1', OWNER, 'er1', { operatorId: LOADER })).status).toBe(201);
+    expect((await recordLoadAs(h, T, LOADER)).status).toBe(201); // who ran the load: the stored, signed-in record (MG-06)
     expect((await post(h, '/v1/migration/exceptions', MGR, 'x1', { exceptions: EX })).status).toBe(201);
     expect((await post(h, '/v1/migration/exceptions/EX-1/resolution', MGR, 'r1', { action: 'merge', reason: 'same item, keep the newer', survivingLegacyId: 'L-2' })).status).toBe(200);
     expect((await post(h, '/v1/migration/control-totals', MGR, 't1', { totals: [TOTAL] })).status).toBe(201);

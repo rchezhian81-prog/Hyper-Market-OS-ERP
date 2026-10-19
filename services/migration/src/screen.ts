@@ -31,12 +31,22 @@ import { ledgerCutoverEvidence, type ParallelRunPolicy, type RecordedParallelDay
 import { ALL_DOMAINS, applicableSignatures, findingsDigest } from './witness';
 import type { RefusedDecision } from './decisions';
 import type { MigrationDeps } from './index';
+import { storedLoadOperators } from './load-records';
+import { signatureStillApplies, type ParallelDaySignature } from '../../../packages/migration/src/parallel-day-sign';
 
 /** The owner's written parallel-run terms as the screen needs them (MG-10, §34.1). */
 export type MigrationScreenPolicy = Pick<ParallelRunPolicy, 'cutoverId' | 'requiredCleanDays' | 'maxParallelDays' | 'startedOn' | 'dailyReconcilerUserId'>;
 
 /** Where the twelve-domain verification report stands (MG-05 / QG-07 evidence, Stage B2). */
 export interface MigrationScreenVerification {
+  /**
+   * The witness figures themselves (STEP-1 §4 item 5): each domain's latest finding — its verdict, the figure it
+   * carries and what outside evidence checked it — so the screen can show the figures, not only which are missing.
+   */
+  readonly findings: readonly {
+    readonly domain: string; readonly verdict: string; readonly figureMinor?: number; readonly figureLabel?: string;
+    readonly provedBy?: readonly string[]; readonly whatItCannotProve: string;
+  }[];
   readonly covered: readonly string[];
   readonly missing: readonly string[];
   readonly ownerKnown: boolean;
@@ -55,8 +65,12 @@ export interface MigrationScreenFeed {
   readonly generatedAt: string;
   /** Present exactly when the owner has written the parallel-run terms; that is when a cutover has an id. */
   readonly policy?: MigrationScreenPolicy;
-  /** Who ran the extraction/load (§28). Absent means nothing can be signed at all. */
+  /** Who ran the load (§28) — from the stored, signed-in load record. Absent means nothing can be signed at all. */
   readonly loadOperator?: string;
+  /** Where `loadOperator` came from: the stored load record, or (bare stubs only) the extraction-run record. */
+  readonly loadOperatorSource?: 'load_record' | 'extraction_run';
+  /** MG-10: every signature a parallel-run day has had, and whether it still applies to the day's recorded figures. */
+  readonly parallelDaySignatures?: readonly (ParallelDaySignature & { readonly stillApplies: boolean })[];
   /** When a rollback was PERFORMED, the latest. Absent when none has been — a designed one does not count. */
   readonly rollbackDemonstratedAt?: string;
   /** Every exception ever recorded, resolutions folded in, never pruned (#6). Absent until a cleaning pass is recorded. */
@@ -78,7 +92,9 @@ export interface MigrationScreenFeed {
 /** Assemble the feed from the ledger. Exported so the composition root and the tests share one assembly. */
 export async function migrationScreenFeed(deps: MigrationDeps, tenantId: string): Promise<MigrationScreenFeed> {
   const policy = deps.parallelPolicy === undefined ? undefined : await deps.parallelPolicy(tenantId);
-  const loadOperator = await deps.extractionOperator(tenantId);
+  const operator = await storedLoadOperators(deps, tenantId);
+  const loadOperator = operator.latest;
+  const extractionOperator = await deps.extractionOperator(tenantId);
   const { rollbackDemonstratedAt } = await ledgerCutoverEvidence(deps, tenantId);
   const exceptions = deps.exceptions === undefined ? [] : await deps.exceptions(tenantId);
   const totals = deps.controlTotals === undefined ? [] : await deps.controlTotals(tenantId);
@@ -94,10 +110,17 @@ export async function migrationScreenFeed(deps: MigrationDeps, tenantId: string)
   const ownerId = await deps.ownerId(tenantId);
   const signatures = await deps.signatures(tenantId);
   const verification: MigrationScreenVerification = {
+    findings: [...findings].sort((a, b) => (a.domain < b.domain ? -1 : 1)).map((f) => ({
+      domain: f.domain, verdict: f.verdict,
+      ...(f.figureMinor === undefined ? {} : { figureMinor: f.figureMinor }),
+      ...(f.figureLabel === undefined ? {} : { figureLabel: f.figureLabel }),
+      ...(f.provedBy === undefined ? {} : { provedBy: [...f.provedBy] }),
+      whatItCannotProve: f.whatItCannotProve,
+    })),
     covered: [...covered].sort(),
     missing,
     ownerKnown: ownerId !== undefined,
-    extractionOperatorKnown: loadOperator !== undefined,
+    extractionOperatorKnown: extractionOperator !== undefined,
     signaturesOverThisPage: applicableSignatures(signatures, findingsDigest(findings)).length,
     detail: missing.length === 0
       ? `all ${ALL_DOMAINS.length} domains have a finding`
@@ -113,17 +136,22 @@ export async function migrationScreenFeed(deps: MigrationDeps, tenantId: string)
         startedOn: policy.startedOn, dailyReconcilerUserId: policy.dailyReconcilerUserId,
       },
     }),
-    ...(loadOperator === undefined ? {} : { loadOperator }),
+    ...(loadOperator === undefined ? {} : { loadOperator, loadOperatorSource: operator.source as 'load_record' | 'extraction_run' }),
     ...(rollbackDemonstratedAt === undefined ? {} : { rollbackDemonstratedAt }),
     ...(exceptions.length === 0 ? {} : { exceptions }),
     ...(totals.length === 0 ? {} : { totals }),
     refusedDecisions: refused,
     // The run's days and differences exist as a register only once the run has terms. Before that, "no
     // days" is not "zero clean days of a run" — it is no run — and the screen must not read it as either.
-    ...(policy === undefined ? {} : {
-      parallelDays: deps.parallelDays === undefined ? [] : await deps.parallelDays(tenantId),
-      parallelDifferences: deps.parallelDifferences === undefined ? [] : await deps.parallelDifferences(tenantId),
-    }),
+    ...(policy === undefined ? {} : await (async () => {
+      const parallelDays = deps.parallelDays === undefined ? [] : await deps.parallelDays(tenantId);
+      const signatures = deps.parallelDaySignatures === undefined ? [] : await deps.parallelDaySignatures(tenantId);
+      return {
+        parallelDays,
+        parallelDifferences: deps.parallelDifferences === undefined ? [] : await deps.parallelDifferences(tenantId),
+        parallelDaySignatures: signatures.map((s) => ({ ...s, stillApplies: signatureStillApplies(s, parallelDays.find((d) => d.businessDate === s.businessDate)?.comparisons) })),
+      };
+    })()),
     rollbacks,
     ...(exclusions.length === 0 ? {} : { exclusions }),
     verification,

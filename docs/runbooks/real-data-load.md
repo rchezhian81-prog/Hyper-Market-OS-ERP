@@ -202,6 +202,137 @@ and valuation; the catalogue for products. Nothing is signed until the figures a
 
 ---
 
+## One department first (OB-241 · D3 option B) — `pnpm run migration:slice`
+
+The owner decided (19 Oct 2026, OB-241) that the **first** real load is one pilot department's products, barcodes,
+tax classes and prices — nothing else. Stock arrives afterwards by goods receipt; suppliers, customers and the books
+come in a later slice. This is done with its own command, on the **store computer's real-data copy**
+(`docs/runbooks/store-computer-real-data-environment.md`), and it differs from the full load above in three ways:
+
+1. **Four published templates**, one row per line. Get them from the migration screen ("The figures" → "Templates for
+   the first department" → Download) or with `pnpm run migration:slice -- --templates <folder>`:
+
+   | File | Columns (in any order; the header must be exactly these names) | Must be filled |
+   |---|---|---|
+   | `tax-classes.csv` | hsn_code · effective_from · rate_percent | all three |
+   | `products.csv` | item_code · sku · description · uom · category · hsn_code · brand · status · allergens · country_of_origin · net_quantity · packer · ingredients · storage · minimum_age | item_code, description, uom, category, hsn_code |
+   | `prices.csv` | item_code · mrp · selling_price · cost_price · margin_floor_percent | item_code, mrp, selling_price, cost_price |
+   | `barcodes.csv` | item_code · barcode · kind | item_code, barcode |
+
+   Every product names the pilot department's category; a row from another department is set aside, not loaded.
+   Money is rupees with paise (`123.45`); a blank price is never read as zero. Each file is read from disk — up to
+   64 MB each, far beyond what a screen paste could carry.
+
+2. **Row by row.** A bad row never stops the good ones. Each bad row is **quarantined** — set aside with its file,
+   line, the old ERP's key (item code, HSN or barcode), the column and the reason — and a row that depends on it (the
+   price or barcode of an item that was set aside) goes with it. The list is written to `slice-exceptions.csv` in the
+   folder.
+
+3. **A named person accepts the list before anything goes in.** Nothing is applied — not even the good rows — until a
+   named person (the owner, or a store manager) has read the exception list and accepted it **by its digest**, in
+   their own session. Change one byte of a file afterwards and the acceptance no longer matches: stage again.
+
+### The folder
+
+The four CSV files and `slice.json`:
+
+```json
+{
+  "loadId": "slice-<department>-1",
+  "tenantId": "<the real tenant's uuid>",
+  "operator": "<the operator's login>",
+  "storeId": "<the store whose tills the prices are for>",
+  "department": { "categoryId": "<the pilot department's category id>", "name": "<its name>", "regulated": ["food", "packed"] },
+  "files": {
+    "tax-classes.csv": { "seal": { "...the seal route's response..." }, "declaredRows": 12 },
+    "products.csv":    { "seal": { }, "declaredRows": 412 },
+    "prices.csv":      { "seal": { }, "declaredRows": 412 },
+    "barcodes.csv":    { "seal": { }, "declaredRows": 530 }
+  }
+}
+```
+
+Seal each file exactly as in Step 3 above (`POST /v1/migration/extracts/<extractId>/seal`, after the old ERP's backup
+was restored and checked). `declaredRows` is the count read off the old ERP's screen. `operator` is only the login the
+command signs in as — **the cloud records whoever that session is as the operator, never this field**, and that person
+can then never sign the slice's control totals (MG-06).
+
+### The three commands, by two different people
+
+```bash
+# 1. The operator stages it: every row judged, the load record kept on this copy under the operator's own session.
+pnpm run migration:slice -- --dir /path/to/slice --stage --settings infra/compose/.env.real
+
+# 2. A NAMED person reads slice-exceptions.csv and accepts it — in words, at least a full sentence.
+pnpm run migration:slice -- --dir /path/to/slice --accept --as <their login> \
+  --statement "read every quarantined row; the 4 items without allergen declarations wait for the next slice" \
+  --settings infra/compose/.env.real
+
+# 3. The operator applies it: only the staged rows, only if the files still give the accepted digest.
+pnpm run migration:slice -- --dir /path/to/slice --apply --settings infra/compose/.env.real --out /path/to/slice/outcome-1.json
+```
+
+Expected endings: `RECORDED — load … is staged on the cloud by <operator>`, then `ACCEPTED — <person> accepted N
+quarantined row(s)`, then `APPLIED — every staged row landed; N quarantined row(s) stayed behind, accepted by <person>`.
+
+| Message | What it means | What to do |
+|---|---|---|
+| `REFUSED (production_target)` / `REFUSED (demo_tenant)` | wrong machine, or the demo tenant | Stop. Use the store computer's real-data copy and the real tenant |
+| `SEAL BROKEN` / `SHORT` | the file changed after sealing, or is shorter than the old ERP's screen said | Re-export, re-seal |
+| `the files do not follow the published templates` | a header is not the template's | Use the downloaded template |
+| `REFUSED (not_accepted)` | nobody has accepted the list | Step 2, by a named person |
+| `they changed after staging` | a file changed after the list was accepted | Stage again; have the NEW list accepted |
+| `load_has_another_operator` | somebody else staged this load id | Use a new load id |
+| `acceptance_explains_nothing` | the statement was too short ("ok") | Say what you read and decided |
+
+The cloud keeps all of it (`GET /v1/migration/loads/<loadId>`): the staging, every quarantined row, who accepted the
+list and when, and what landed. Nothing is deleted.
+
+---
+
+## Changes after the export — delta capture (MG-09)
+
+Between the moment the old ERP's files are exported and the moment the slice is applied — and every day of the
+parallel run after it — the shop keeps trading on the old ERP. Anything that changes there in the pilot department
+(a new item, a new barcode, a price, a tax rate) must reach the new system **exactly once**, or the two systems drift
+and every parallel-run day shows differences nobody can explain.
+
+**What the software already does:** `POST /v1/migration/deltas` applies stock and sale changes exactly once, refuses
+a change dated before the extract cut-off (it is already in the load), and records each one. It does **not** apply
+product, barcode or price changes — those are refused by name, never counted as applied.
+
+**The procedure, until the old ERP's export facts below are known:**
+
+1. **Freeze.** From the export cut-off until the slice is applied, nobody changes items, barcodes, prices or tax
+   rates of the pilot department in the old ERP. Put a paper sign on the old ERP's item screen. Write the cut-off time
+   in the workbook.
+2. **If a change cannot wait,** write it on the change sheet (time, item code, what changed, who) and key it into
+   **both** systems: in the new system on its own screen (a price change goes through its approval), never by editing
+   the files after sealing.
+3. **During the parallel run,** every item, barcode and price change in the department is keyed into both systems the
+   same day by the same named person, and initialled on the change sheet. The daily reconciliation (the migration
+   screen, "Running both") shows any day the two disagree.
+4. **Stock** arrives in the new system by goods receipt on the set-up day; stock and sales changes after the cut-off go
+   through `POST /v1/migration/deltas` — once each, never twice.
+
+**What we need to know from the old ERP before delta capture can be automated** (owner, with whoever supports the old
+ERP — each answer goes in the workbook):
+
+| # | Question | Why it matters |
+|---|---|---|
+| D-1 | Does the old ERP keep a change log, or a last-modified date and time, on items, barcodes and prices? | Without one, "what changed since the export" can only be found by comparing two full exports |
+| D-2 | Can it export only the items changed since a given date and time? In what file format and columns? | That export is what a delta tool would read |
+| D-3 | Does a price change carry its own effective date, or does it apply the moment it is keyed? | Decides which day a changed price belongs to |
+| D-4 | Is an item code ever re-used for a different product? Can a barcode move from one item to another? | A re-used key would be loaded as a change to the wrong item |
+| D-5 | Can the pilot department be made read-only in the old ERP (for the freeze), or is the paper sign the only lock? | The freeze's strength |
+| D-6 | What time does the old ERP close its trading day, and is the export taken before or after it? | The cut-off must sit on a day boundary both systems agree on |
+| D-7 | Who keys changes in the old ERP today, and can the same person key them in the new system the same day? | Dual keying during the parallel run needs a named person (OB-243) |
+
+Until D-1 and D-2 are answered, there is no honest basis for a delta-capture tool: building one would mean guessing the
+old ERP's export, which this project does not do.
+
+---
+
 ## When it says no
 
 | Message | What it means | What to do |

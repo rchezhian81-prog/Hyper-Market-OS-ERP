@@ -160,7 +160,7 @@ describe('withMigrationFeed — the cloud\'s register laid over the pack, never 
   it('the cloud owns the cutover\'s terms and the ledger facts; the box keeps who is on its screen and what the cloud does not record', () => {
     const merged = withMigrationFeed(filePack(), feed({ rollbackDemonstratedAt: '2026-10-05T10:00:00.000Z' }), NOW);
     expect(merged.migrationPolicy).toEqual({ known: true, value: {
-      cutoverId: 'cut-1', requiredCleanDays: 3,               // from the owner's written terms on the cloud
+      cutoverId: 'cut-1', requiredCleanDays: 3, dailyReconcilerUserId: 'u-recon', // from the owner's written terms on the cloud
       loadOperator: 'u-loader', rollbackDemonstratedAt: '2026-10-05T10:00:00.000Z', // ledger facts
       userId: 'u-owner', namedTeam: [{ userId: 'u-owner', role: 'decides' }], openAssessments: 1, // the box's own
     } });

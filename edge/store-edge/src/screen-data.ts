@@ -2423,6 +2423,8 @@ export function migrationPayload(input: ScreenInput): Record<string, unknown> | 
   };
   if (policy.userId !== undefined) payload['userId'] = policy.userId;
   if (policy.loadOperator !== undefined) payload['loadOperator'] = policy.loadOperator;
+  // MG-10: the day entry and signature are the NAMED RECONCILER's (or the owner's) — the cloud's written terms say who.
+  if (policy.dailyReconcilerUserId !== undefined) payload['dailyReconcilerUserId'] = policy.dailyReconcilerUserId;
   if (policy.deltaAppliedAt !== undefined) payload['deltaAppliedAt'] = policy.deltaAppliedAt;
   if (policy.rollbackDemonstratedAt !== undefined) {
     payload['rollbackDemonstratedAt'] = policy.rollbackDemonstratedAt;
@@ -2451,6 +2453,8 @@ export function migrationPayload(input: ScreenInput): Record<string, unknown> | 
     };
     if (feed.refusedDecisions !== undefined) payload['refusedDecisions'] = feed.refusedDecisions;
     if (feed.verification !== undefined) payload['verification'] = feed.verification;
+    if (feed.parallelDaySignatures !== undefined) payload['parallelDaySignatures'] = feed.parallelDaySignatures;
+
   }
 
   return payload;

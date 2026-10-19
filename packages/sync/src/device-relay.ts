@@ -90,6 +90,10 @@ export const RELAYABLE_DEVICE_EVENTS: Readonly<Record<string, { readonly surface
   // name and re-checks the decider's authority and the load operator from its own records.
   MigrationExceptionResolved: { surfaces: ['manager'] },
   MigrationTotalSigned: { surfaces: ['manager'] },
+  // MG-10: the parallel-run day the reconciler entered on the migration screen, and its signature. Head office re-checks
+  // that the person is the named reconciler or the owner and re-runs the same engines; a refusal is kept, visible.
+  MigrationParallelDayEntered: { surfaces: ['manager'] },
+  MigrationParallelDaySigned: { surfaces: ['manager'] },
 });
 
 /**

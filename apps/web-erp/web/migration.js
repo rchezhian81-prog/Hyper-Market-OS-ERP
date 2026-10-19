@@ -76,6 +76,45 @@ const WORDS = {
     nobodyNamed: 'This store box has not been told who is using this screen. Nothing can be signed, decided or rolled back — all three carry the name of whoever did them.',
     sampleData: 'Sample data — this is not your shop.',
     unsent: 'decision(s) made here and not yet sent to the store computer — they are saved and will be sent when the connection is back',
+    // MG-10 day entry, witness figures and the first department's templates (cutover readiness, OB-239).
+    witnessTitle: 'What the outside evidence says',
+    witnessLead: 'Each of the twelve kinds of record, checked against something outside the old system — the stock count, the bank, the tax returns, the accountant\'s books, the suppliers, the customers. A kind with no finding is listed as missing, never as fine.',
+    noWitness: 'The store computer has not been told what the outside evidence says. That is not the same as it agreeing.',
+    witnessCovered: 'kinds of record have a finding', witnessMissing: 'still missing', witnessSigned: 'signatures over this page',
+    verdict_proved: 'proved by outside evidence', verdict_proved_with_differences: 'checked — differences found and listed',
+    verdict_not_proved: 'NOT PROVED YET', verdict_no_evidence_exists: 'nothing outside the old system can check this',
+    checkedBy: 'checked against', cannotProve: 'what this cannot prove',
+    templatesTitle: 'Templates for the first department',
+    templatesLead: 'Download each one, fill it in from the old system\'s export, one row per line, and give the folder to the person doing the load on the store computer. A bad row is set aside with its reason — it never stops the good ones, and nothing goes in until a named person has read the list.',
+    download: 'Download', requiredColumns: 'must be filled',
+    tpl_products: 'Products (one row per item)', tpl_barcodes: 'Barcodes (one row per barcode)',
+    tpl_taxClasses: 'Tax classes (HSN and GST rate)', tpl_prices: 'Prices (one row per item: MRP, selling price, cost)',
+    dayTitle: 'Enter a day',
+    dayLead: 'Type the old system\'s total for the day beside the new system\'s, area by area — or bring in the old system\'s day-end file. Where the two differ by more than the allowed amount, write why. A day with a difference nobody has explained cannot be signed.',
+    dayDate: 'Which day', dayImport: 'Bring in the old system\'s day-end file (area, old system, new system, allowed difference)',
+    reconciler: 'The person named to reconcile each day', noReconciler: 'Nobody has been named to reconcile each day. The owner names them first — until then no day can be entered or signed.',
+    oldSystem: 'Old system', newSystem: 'New system', allowed: 'Allowed difference',
+    reason: 'Why do they differ', wrongSide: 'Which one was wrong',
+    side_legacy: 'the old system', side_new: 'the new system', side_both: 'both', side_neither: 'neither — a timing difference',
+    area_sales_value: 'Sales (₹)', area_sales_count: 'Number of bills', area_stock_movement: 'Stock moved (units)',
+    area_tax: 'Tax (₹)', area_payments: 'Payments taken (₹)', area_loyalty: 'Loyalty points',
+    daySave: 'Save the day', daySaved: 'Day saved on this device — it will be sent to head office',
+    dayStatement: 'What you checked (in your own words)', daySign: 'Sign the day', daySigned: 'Day signed',
+    dayAgrees: 'agrees', dayDiffers: 'differs by', needsReason: 'NEEDS A REASON — the day cannot be signed',
+    explainedAs: 'explained', daysTitle: 'Days so far', noDays: 'No day has been entered yet.',
+    signedDay: 'signed by', unsignedDay: 'NOT SIGNED', resignNeeded: 'the figures changed after it was signed — sign it again',
+    importDone: 'The file was read into the boxes below. Check them, then save the day.',
+    importBad: 'This file could not be read. Each line must be: area, old system, new system, allowed difference.',
+    notSaved: 'Not saved', notSigned2: 'Not signed', cannotSign: 'This day cannot be signed yet',
+    day_refusal_nobody_is_named_at_this_desk: 'This store computer has not been told who is using this screen.',
+    day_refusal_nobody_named_to_reconcile: 'Nobody has been named to reconcile each day.',
+    day_refusal_not_the_named_reconciler: 'Only the person named to reconcile each day can enter or sign a day here.',
+    day_refusal_not_a_date: 'Choose the day first.',
+    day_refusal_no_figures: 'Every area needs both figures. A blank box is not a zero.',
+    day_refusal_explanation_refused: 'A reason was refused: say why the systems differ, not which one you prefer.',
+    day_refusal_unexplained_material_difference: 'Some differences still have no reason. Write why for each one, save the day, then sign.',
+    day_refusal_statement_says_nothing: 'Say in your own words what you checked — at least a full sentence.',
+    day_refusal_day_not_recorded: 'Save the day\'s figures first.',
   },
   ta: {
     title: 'பழைய அமைப்பிலிருந்து மாறுதல்',
@@ -126,6 +165,44 @@ const WORDS = {
     nobodyNamed: 'இந்தத் திரையை யார் பயன்படுத்துகிறார்கள் என்று கடைப் பெட்டிக்குத் தெரியவில்லை. கையெழுத்திடவோ, முடிவு செய்யவோ, திரும்பவோ முடியாது — மூன்றும் செய்தவரின் பெயரைச் சுமக்கும்.',
     sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.',
     unsent: 'முடிவு(கள்) இங்கே எடுக்கப்பட்டு இன்னும் கடைக் கணினிக்கு அனுப்பப்படவில்லை — அவை சேமிக்கப்பட்டுள்ளன, இணைப்பு திரும்பியதும் அனுப்பப்படும்',
+    witnessTitle: 'வெளிச் சான்று என்ன சொல்கிறது',
+    witnessLead: 'பன்னிரண்டு வகைப் பதிவுகள் ஒவ்வொன்றும் பழைய அமைப்புக்கு வெளியே உள்ள ஒன்றுடன் சரிபார்க்கப்படுகிறது — இருப்பு எண்ணிக்கை, வங்கி, வரி அறிக்கைகள், கணக்காளரின் கணக்குகள், விற்பனையாளர்கள், வாடிக்கையாளர்கள். கண்டுபிடிப்பு இல்லாத வகை "இல்லை" என்று காட்டப்படும், ஒருபோதும் "சரி" என்று அல்ல.',
+    noWitness: 'வெளிச் சான்று என்ன சொல்கிறது என்று கடைக் கணினிக்குச் சொல்லப்படவில்லை. அது பொருந்துகிறது என்பது இதன் பொருள் அல்ல.',
+    witnessCovered: 'வகைப் பதிவுகளுக்குக் கண்டுபிடிப்பு உள்ளது', witnessMissing: 'இன்னும் இல்லை', witnessSigned: 'இந்தப் பக்கத்தின் மீதான கையெழுத்துகள்',
+    verdict_proved: 'வெளிச் சான்றால் நிரூபிக்கப்பட்டது', verdict_proved_with_differences: 'சரிபார்க்கப்பட்டது — வேறுபாடுகள் கண்டறிந்து பட்டியலிடப்பட்டன',
+    verdict_not_proved: 'இன்னும் நிரூபிக்கப்படவில்லை', verdict_no_evidence_exists: 'பழைய அமைப்புக்கு வெளியே இதைச் சரிபார்க்க எதுவும் இல்லை',
+    checkedBy: 'சரிபார்த்தது', cannotProve: 'இது நிரூபிக்க முடியாதது',
+    templatesTitle: 'முதல் துறைக்கான வார்ப்புருக்கள்',
+    templatesLead: 'ஒவ்வொன்றையும் பதிவிறக்கி, பழைய அமைப்பின் ஏற்றுமதியிலிருந்து நிரப்பி — ஒரு வரிக்கு ஒரு வரிசை — கடைக் கணினியில் ஏற்றம் செய்பவரிடம் கோப்புறையைக் கொடுங்கள். தவறான வரிசை அதன் காரணத்துடன் ஒதுக்கி வைக்கப்படும் — நல்லவற்றை அது ஒருபோதும் நிறுத்தாது, பெயர் குறிப்பிட்ட ஒருவர் பட்டியலைப் படிக்கும் வரை எதுவும் உள்ளே செல்லாது.',
+    download: 'பதிவிறக்கு', requiredColumns: 'கட்டாயம் நிரப்ப வேண்டியவை',
+    tpl_products: 'பொருட்கள் (ஒரு பொருளுக்கு ஒரு வரிசை)', tpl_barcodes: 'பார்கோடுகள் (ஒரு பார்கோடுக்கு ஒரு வரிசை)',
+    tpl_taxClasses: 'வரி வகைகள் (HSN மற்றும் GST விகிதம்)', tpl_prices: 'விலைகள் (ஒரு பொருளுக்கு ஒரு வரிசை: MRP, விற்பனை விலை, அடக்க விலை)',
+    dayTitle: 'ஒரு நாளைப் பதிவு செய்',
+    dayLead: 'பழைய அமைப்பின் அன்றைய மொத்தத்தைப் புதிய அமைப்பின் மொத்தத்திற்கு அருகில், பகுதி வாரியாகத் தட்டச்சு செய்யுங்கள் — அல்லது பழைய அமைப்பின் நாள்-முடிவுக் கோப்பைக் கொண்டு வாருங்கள். அனுமதிக்கப்பட்ட அளவை விட அதிகமாக வேறுபட்டால், ஏன் என்று எழுதுங்கள். யாரும் விளக்காத வேறுபாடு உள்ள நாளில் கையெழுத்திட முடியாது.',
+    dayDate: 'எந்த நாள்', dayImport: 'பழைய அமைப்பின் நாள்-முடிவுக் கோப்பைக் கொண்டு வா (பகுதி, பழைய அமைப்பு, புதிய அமைப்பு, அனுமதிக்கப்பட்ட வேறுபாடு)',
+    reconciler: 'ஒவ்வொரு நாளும் சரிபார்க்கப் பெயரிடப்பட்டவர்', noReconciler: 'ஒவ்வொரு நாளும் சரிபார்க்க யாரும் பெயரிடப்படவில்லை. உரிமையாளர் முதலில் பெயரிட வேண்டும் — அதுவரை எந்த நாளையும் பதிவு செய்யவோ கையெழுத்திடவோ முடியாது.',
+    oldSystem: 'பழைய அமைப்பு', newSystem: 'புதிய அமைப்பு', allowed: 'அனுமதிக்கப்பட்ட வேறுபாடு',
+    reason: 'ஏன் வேறுபடுகின்றன', wrongSide: 'எது தவறு',
+    side_legacy: 'பழைய அமைப்பு', side_new: 'புதிய அமைப்பு', side_both: 'இரண்டும்', side_neither: 'இரண்டும் அல்ல — நேர வேறுபாடு',
+    area_sales_value: 'விற்பனை (₹)', area_sales_count: 'பில்களின் எண்ணிக்கை', area_stock_movement: 'நகர்ந்த இருப்பு (அலகுகள்)',
+    area_tax: 'வரி (₹)', area_payments: 'பெற்ற பணம் (₹)', area_loyalty: 'விசுவாசப் புள்ளிகள்',
+    daySave: 'நாளைச் சேமி', daySaved: 'நாள் இந்தச் சாதனத்தில் சேமிக்கப்பட்டது — தலைமை அலுவலகத்துக்கு அனுப்பப்படும்',
+    dayStatement: 'நீங்கள் எதைச் சரிபார்த்தீர்கள் (உங்கள் சொந்த வார்த்தைகளில்)', daySign: 'நாளில் கையெழுத்திடு', daySigned: 'நாளில் கையெழுத்திடப்பட்டது',
+    dayAgrees: 'பொருந்துகிறது', dayDiffers: 'வேறுபாடு', needsReason: 'காரணம் தேவை — இந்த நாளில் கையெழுத்திட முடியாது',
+    explainedAs: 'விளக்கம்', daysTitle: 'இதுவரையிலான நாட்கள்', noDays: 'இதுவரை எந்த நாளும் பதிவு செய்யப்படவில்லை.',
+    signedDay: 'கையெழுத்திட்டவர்', unsignedDay: 'கையெழுத்து இல்லை', resignNeeded: 'கையெழுத்திட்ட பிறகு கணக்குகள் மாறின — மீண்டும் கையெழுத்திடுங்கள்',
+    importDone: 'கோப்பு கீழே உள்ள பெட்டிகளில் படிக்கப்பட்டது. சரிபார்த்து, பின் நாளைச் சேமியுங்கள்.',
+    importBad: 'இந்தக் கோப்பைப் படிக்க முடியவில்லை. ஒவ்வொரு வரியும்: பகுதி, பழைய அமைப்பு, புதிய அமைப்பு, அனுமதிக்கப்பட்ட வேறுபாடு.',
+    notSaved: 'சேமிக்கப்படவில்லை', notSigned2: 'கையெழுத்திடப்படவில்லை', cannotSign: 'இந்த நாளில் இன்னும் கையெழுத்திட முடியாது',
+    day_refusal_nobody_is_named_at_this_desk: 'இந்தத் திரையை யார் பயன்படுத்துகிறார்கள் என்று கடைக் கணினிக்குத் தெரியவில்லை.',
+    day_refusal_nobody_named_to_reconcile: 'ஒவ்வொரு நாளும் சரிபார்க்க யாரும் பெயரிடப்படவில்லை.',
+    day_refusal_not_the_named_reconciler: 'ஒவ்வொரு நாளும் சரிபார்க்கப் பெயரிடப்பட்டவர் மட்டுமே இங்கே நாளைப் பதிவு செய்யவோ கையெழுத்திடவோ முடியும்.',
+    day_refusal_not_a_date: 'முதலில் நாளைத் தேர்ந்தெடுங்கள்.',
+    day_refusal_no_figures: 'ஒவ்வொரு பகுதிக்கும் இரண்டு கணக்குகளும் தேவை. காலியான பெட்டி பூஜ்ஜியம் அல்ல.',
+    day_refusal_explanation_refused: 'ஒரு காரணம் மறுக்கப்பட்டது: எதை விரும்புகிறீர்கள் என்று அல்ல, அமைப்புகள் ஏன் வேறுபடுகின்றன என்று சொல்லுங்கள்.',
+    day_refusal_unexplained_material_difference: 'சில வேறுபாடுகளுக்கு இன்னும் காரணம் இல்லை. ஒவ்வொன்றுக்கும் ஏன் என்று எழுதி, நாளைச் சேமித்து, பின் கையெழுத்திடுங்கள்.',
+    day_refusal_statement_says_nothing: 'நீங்கள் எதைச் சரிபார்த்தீர்கள் என்று உங்கள் சொந்த வார்த்தைகளில் சொல்லுங்கள் — குறைந்தது ஒரு முழு வாக்கியம்.',
+    day_refusal_day_not_recorded: 'முதலில் நாளின் கணக்குகளைச் சேமியுங்கள்.',
   },
 };
 let lang = 'en';
@@ -247,6 +324,11 @@ function sampleSession() {
     resolve: () => refused,
     sign: () => refused,
     rollback: () => refused,
+    day: (businessDate) => ({ businessDate, differences: [], unexplained: [] }),
+    enterDay: () => refused,
+    signDay: () => ({ ...refused, unexplained: [] }),
+    witness: () => undefined,
+    sliceTemplates: () => [],
   };
 }
 
@@ -557,6 +639,287 @@ function renderBoth() {
       })));
 }
 
+// ── Running both: enter, explain and sign a day (MG-10) ────────────────────
+
+const AREAS = ['sales_value', 'sales_count', 'stock_movement', 'tax', 'payments', 'loyalty'];
+/** Areas counted in money are typed in rupees and kept in paise; the rest are whole counts. */
+const MONEY_AREAS = new Set(['sales_value', 'tax', 'payments']);
+const SIDES = ['legacy', 'new', 'both', 'neither'];
+const toMinor = (area, text) => {
+  const v = String(text ?? '').replace(/[₹,\s]/g, '');
+  if (v === '' || !/^-?\d+(\.\d{1,2})?$/.test(v)) return NaN;
+  return MONEY_AREAS.has(area) ? Math.round(Number(v) * 100) : (Number.isInteger(Number(v)) ? Number(v) : NaN);
+};
+const shown = (area, minor) => (MONEY_AREAS.has(area) ? money(minor) : Number(minor).toLocaleString('en-IN'));
+const icon = (name, size = 18) => (window.sreIcon && typeof window.sreIcon === 'function' ? window.sreIcon(name, size) : null);
+/** A button's word with its icon beside it — never an icon alone (design system §3.4). */
+function labelled(button, iconName, word) {
+  const mark = icon(iconName);
+  const text = document.createElement('span');
+  text.textContent = word;
+  button.replaceChildren(...(mark ? [mark, text] : [text]));
+  button.classList.add('sre-with-icon');
+}
+const today = () => (window.migrationData?.now ?? new Date().toISOString()).slice(0, 10);
+const enteredHere = new Set();
+
+function buildAreas() {
+  const box = el('day-areas');
+  if (box.childElementCount > 0) return;
+  for (const area of AREAS) {
+    const card = document.createElement('div');
+    card.className = 'area';
+    card.id = `day-${area}`;
+    const name = document.createElement('strong');
+    name.id = `day-${area}-name`;
+    const cols = document.createElement('div');
+    cols.className = 'cols';
+    for (const [suffix, key] of [['old', 'oldSystem'], ['new', 'newSystem'], ['tol', 'allowed']]) {
+      const wrap = document.createElement('div');
+      const label = document.createElement('label');
+      label.htmlFor = `day-${area}-${suffix}`;
+      label.dataset.word = key;
+      const input = document.createElement('input');
+      input.id = `day-${area}-${suffix}`;
+      input.type = 'text';
+      input.inputMode = 'decimal';
+      input.autocomplete = 'off';
+      if (suffix === 'tol') input.value = '0';
+      wrap.append(label, input);
+      cols.append(wrap);
+    }
+    const diff = document.createElement('span');
+    diff.className = 'diff';
+    diff.id = `day-${area}-diff`;
+    const whyLabel = document.createElement('label');
+    whyLabel.htmlFor = `day-${area}-why`;
+    whyLabel.dataset.word = 'reason';
+    const why = document.createElement('input');
+    why.id = `day-${area}-why`;
+    why.type = 'text';
+    why.autocomplete = 'off';
+    const sideLabel = document.createElement('label');
+    sideLabel.htmlFor = `day-${area}-side`;
+    sideLabel.dataset.word = 'wrongSide';
+    const side = document.createElement('select');
+    side.id = `day-${area}-side`;
+    const blank = document.createElement('option');
+    blank.value = '';
+    blank.textContent = '—';
+    side.append(blank, ...SIDES.map((v) => { const o = document.createElement('option'); o.value = v; o.dataset.word = `side_${v}`; return o; }));
+    card.append(name, cols, diff, whyLabel, why, sideLabel, side);
+    box.append(card);
+    for (const suffix of ['old', 'new', 'tol']) el(`day-${area}-${suffix}`).addEventListener('input', () => { paintDiff(area); });
+  }
+}
+
+function paintDiff(area) {
+  const legacy = toMinor(area, el(`day-${area}-old`).value);
+  const now = toMinor(area, el(`day-${area}-new`).value);
+  const tol = toMinor(area, el(`day-${area}-tol`).value);
+  const card = el(`day-${area}`);
+  const out = el(`day-${area}-diff`);
+  if (Number.isNaN(legacy) || Number.isNaN(now) || Number.isNaN(tol)) { out.textContent = ''; card.className = 'area'; return; }
+  const d = now - legacy;
+  const material = Math.abs(d) > tol;
+  const explained = el(`day-${area}-why`).value.trim() !== '';
+  card.className = `area${material ? (explained ? ' differs' : ' unexplained') : ''}`;
+  out.textContent = d === 0 ? t('dayAgrees') : `${t('dayDiffers')} ${shown(area, Math.abs(d))}${material && !explained ? ` — ${t('needsReason')}` : ''}`;
+}
+
+function linesFromForm() {
+  return AREAS.map((area) => {
+    const why = el(`day-${area}-why`).value.trim();
+    const side = el(`day-${area}-side`).value;
+    return {
+      area,
+      legacyValue: toMinor(area, el(`day-${area}-old`).value),
+      newValue: toMinor(area, el(`day-${area}-new`).value),
+      toleranceMinor: toMinor(area, el(`day-${area}-tol`).value),
+      ...(why === '' ? {} : { explanation: why }),
+      ...(side === '' ? {} : { wrongSide: side }),
+    };
+  });
+}
+
+/** The old system's day-end file: `area,old,new,allowed` per line; a header line is skipped. Rupees for money areas. */
+el('day-import').addEventListener('change', async () => {
+  const file = el('day-import').files?.[0];
+  if (!file) return;
+  let ok = 0;
+  try {
+    const text = await file.text();
+    for (const raw of text.split(/\r?\n/)) {
+      const cells = raw.split(',').map((c) => c.trim());
+      if (cells.length < 3 || !AREAS.includes(cells[0])) continue;
+      el(`day-${cells[0]}-old`).value = cells[1];
+      el(`day-${cells[0]}-new`).value = cells[2];
+      if (cells[3] !== undefined && cells[3] !== '') el(`day-${cells[0]}-tol`).value = cells[3];
+      paintDiff(cells[0]);
+      ok += 1;
+    }
+  } catch { ok = 0; }
+  if (ok === 0) tell(t('read'), t('importBad'));
+  else tell(t('read'), t('importDone'), true);
+});
+
+el('day-save').addEventListener('click', () => {
+  const outcome = session.enterDay({ businessDate: el('day-date').value, lines: linesFromForm() });
+  // The rule's own sentence is English; in Tamil the screen's own words carry the refusal.
+  if (!outcome.ok) { tell(t('notSaved'), `${t(`day_refusal_${outcome.refusal}`)}${lang === 'en' ? ` ${outcome.detail}` : ''}`); return; }
+  enteredHere.add(outcome.day.businessDate);
+  // Saved on this device; now handed to the store computer, which carries it to head office (hard rule #1).
+  void syncToBox();
+  tell(t('daySaved'), lang === 'en' ? outcome.detail : `${outcome.day.differences.length} · ${outcome.day.unexplained.length === 0 ? t('explainedAs') : t('needsReason')}`, outcome.day.unexplained.length === 0);
+  paintChrome();
+});
+
+el('day-sign').addEventListener('click', () => {
+  const outcome = session.signDay({ businessDate: el('day-date').value, statement: el('day-statement').value });
+  if (!outcome.ok) {
+    const named = outcome.unexplained.map((d) => `${t(`area_${d.area}`)} (${d.differenceId})`).join(', ');
+    tell(t('cannotSign'), `${t(`day_refusal_${outcome.refusal}`)}${named === '' ? '' : ` — ${named}`}`);
+    return;
+  }
+  el('day-statement').value = '';
+  void syncToBox();
+  tell(t('daySigned'), lang === 'en' ? outcome.detail : `${t('signedDay')} ${outcome.signature.signedBy}`, true);
+  paintChrome();
+});
+el('day-date').addEventListener('change', () => { renderDay(); });
+
+function renderDay() {
+  const date = el('day-date').value;
+  const view = el('day-view');
+  view.replaceChildren();
+  if (date === '') return;
+  const day = session.day(date);
+  if (day.comparisons === undefined) return;
+  for (const c of day.comparisons) {
+    const row = document.createElement('div');
+    const diff = day.differences.find((d) => d.area === c.area);
+    const open = day.unexplained.some((d) => d.area === c.area);
+    row.className = `row ${diff === undefined ? 'clean' : open ? 'failed' : 'flagged'}`;
+    const what = document.createElement('span');
+    what.className = 'what';
+    const name = document.createElement('strong');
+    name.textContent = t(`area_${c.area}`);
+    const sides = document.createElement('div');
+    sides.className = 'sides';
+    for (const [label, value] of [[t('oldSystem'), c.legacyValue], [t('newSystem'), c.newValue]]) {
+      const cell = document.createElement('span');
+      const small = document.createElement('small');
+      small.textContent = label;
+      cell.append(small, document.createTextNode(shown(c.area, value)));
+      sides.append(cell);
+    }
+    what.append(name, sides);
+    if (diff !== undefined) {
+      what.append(line(open ? `${diff.differenceId} · ${t('needsReason')}` : `${diff.differenceId} · ${t('explainedAs')}: ${diff.explanation}`));
+    }
+    row.append(what);
+    view.append(row);
+  }
+  const status = document.createElement('p');
+  status.className = 'lead';
+  status.id = 'day-status';
+  status.textContent = day.signature !== undefined ? `${t('signedDay')} ${day.signature.signedBy} · ${day.signature.signedAt}` : t('unsignedDay');
+  view.append(status);
+}
+
+function renderDays() {
+  const reconciler = window.migrationData?.dailyReconcilerUserId;
+  el('day-reconciler').textContent = reconciler === undefined ? t('noReconciler') : `${t('reconciler')}: ${reconciler}`;
+  for (const area of AREAS) {
+    el(`day-${area}-name`).textContent = t(`area_${area}`);
+  }
+  for (const node of document.querySelectorAll('#day-areas [data-word]')) node.textContent = t(node.dataset.word);
+  if (el('day-date').value === '') el('day-date').value = today();
+  renderDay();
+  const list = el('days-list');
+  const position = session.parallel();
+  // Days the store computer sent, and days entered on this page — saved here even before the store computer has them.
+  const all = [...new Set([...(window.migrationData?.parallelDays ?? []).map((d) => d.businessDate), ...enteredHere])].sort().reverse();
+  if (position === undefined && all.length === 0) { list.replaceChildren(emptyLine(t('noDays'))); return; }
+  list.replaceChildren(...(all.length === 0 ? [emptyLine(t('noDays'))] : all.map((date) => {
+    const day = session.day(date);
+    const row = document.createElement('div');
+    row.className = `row ${day.signature !== undefined ? 'done' : day.unexplained.length > 0 ? 'failed' : 'held'}`;
+    const what = document.createElement('span');
+    what.className = 'what';
+    const name = document.createElement('strong');
+    name.textContent = date;
+    what.append(name, line(day.signature !== undefined
+      ? `${t('signedDay')} ${day.signature.signedBy}`
+      : day.unexplained.length > 0 ? `${day.unexplained.length} · ${t('needsReason')}` : t('unsignedDay')));
+    const stale = (window.migrationData?.parallelDaySignatures ?? []).some((sg) => sg.businessDate === date && sg.stillApplies === false);
+    if (stale && day.signature === undefined) what.append(line(t('resignNeeded')));
+    row.append(what);
+    return row;
+  })));
+}
+
+// ── The figures: the witness checks, and the first department's templates ─
+
+function renderWitness() {
+  const w = session.witness();
+  const box = el('witness-summary');
+  box.replaceChildren();
+  if (w === undefined) { box.append(emptyLine(t('noWitness'))); el('witness-list').replaceChildren(); return; }
+  const covered = (w.covered ?? []).length;
+  const missing = w.missing ?? [];
+  const headline = document.createElement('span');
+  headline.className = 'big';
+  headline.textContent = `${covered} / ${covered + missing.length}`;
+  box.append(headline, line(`${t('witnessCovered')} · ${w.signaturesOverThisPage ?? 0} ${t('witnessSigned')}`));
+  if (missing.length > 0) box.append(line(`${t('witnessMissing')}: ${missing.join(', ')}`));
+  el('witness-list').replaceChildren(...(w.findings ?? []).map((f) => {
+    const row = document.createElement('div');
+    row.className = `row ${f.verdict === 'proved' ? 'passed' : f.verdict === 'not_proved' ? 'failed' : 'flagged'}`;
+    const what = document.createElement('span');
+    what.className = 'what';
+    const name = document.createElement('strong');
+    const figure = f.figureMinor !== undefined ? money(f.figureMinor) : (f.figureLabel ?? '');
+    name.textContent = `${f.domain.replace(/_/g, ' ')}${figure === '' ? '' : ` — ${figure}`}`;
+    what.append(name, line(t(`verdict_${f.verdict}`)));
+    if ((f.provedBy ?? []).length > 0) what.append(line(`${t('checkedBy')}: ${f.provedBy.join(', ').replace(/_/g, ' ')}`));
+    if (f.whatItCannotProve) what.append(line(`${t('cannotProve')}: ${f.whatItCannotProve}`));
+    row.append(what);
+    return row;
+  }));
+}
+
+const TEMPLATE_WORDS = { 'products.csv': 'tpl_products', 'barcodes.csv': 'tpl_barcodes', 'tax-classes.csv': 'tpl_taxClasses', 'prices.csv': 'tpl_prices' };
+
+function renderTemplates() {
+  el('templates-list').replaceChildren(...session.sliceTemplates().map((tpl) => {
+    const row = document.createElement('div');
+    row.className = 'row held';
+    const what = document.createElement('span');
+    what.className = 'what';
+    const name = document.createElement('strong');
+    name.textContent = `${t(TEMPLATE_WORDS[tpl.file] ?? tpl.file)} — ${tpl.file}`;
+    what.append(name, line(`${t('requiredColumns')}: ${tpl.required.join(', ')}`), line(tpl.columns.join(', ')));
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.id = `template-${tpl.file.replace('.csv', '')}`;
+    labelled(button, 'file-text', t('download'));
+    // Made here, from the bundled template — no network needed (P-01).
+    button.addEventListener('click', () => {
+      const url = URL.createObjectURL(new Blob([tpl.csv], { type: 'text/csv' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = tpl.file;
+      document.body.append(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    });
+    row.append(what, button);
+    return row;
+  }));
+}
+
 // ── The old system ──────────────────────────────────────────────────────────
 
 function renderOld() {
@@ -654,9 +1017,15 @@ function paintChrome() {
     ['decide-reason-label', 'decideReasonLabel'], ['decide', 'decide'],
     ['retire-title', 'retireTitle'], ['retire-lead', 'retireLead'],
     ['sample', 'sampleData'],
+    ['witness-title', 'witnessTitle'], ['witness-lead', 'witnessLead'],
+    ['templates-title', 'templatesTitle'], ['templates-lead', 'templatesLead'],
+    ['day-title', 'dayTitle'], ['day-lead', 'dayLead'], ['day-date-label', 'dayDate'],
+    ['day-import-label', 'dayImport'], ['day-statement-label', 'dayStatement'], ['days-title', 'daysTitle'],
   ]) {
     el(id).textContent = t(key);
   }
+  labelled(el('day-save'), 'clipboard-check', t('daySave'));
+  labelled(el('day-sign'), 'badge-check', t('daySign'));
 
   const nobody = el('nobody');
   nobody.hidden = window.migrationData?.userId !== undefined;
@@ -673,6 +1042,10 @@ function paintChrome() {
   renderFigures();
   renderData();
   renderBoth();
+  buildAreas();
+  renderDays();
+  renderWitness();
+  renderTemplates();
   renderOld();
 }
 

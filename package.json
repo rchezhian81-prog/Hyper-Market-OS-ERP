@@ -55,6 +55,7 @@
     "extract:check": "node --experimental-strip-types scripts/extract-check.mts",
     "tools:build": "node scripts/build-service.mjs tools",
     "migration:load": "node scripts/build-service.mjs tools >/dev/null && node scripts/dist/migration-load.js",
+    "migration:slice": "node scripts/build-service.mjs tools >/dev/null && node scripts/dist/migration-slice.js",
     "tenant:bootstrap": "node scripts/build-service.mjs tools >/dev/null && node scripts/dist/bootstrap-tenant.js",
     "realm:for-shop": "node scripts/build-service.mjs tools >/dev/null && node scripts/dist/realm-for-shop.js",
     "shop:new": "node scripts/build-service.mjs tools >/dev/null && node scripts/dist/new-shop.js",

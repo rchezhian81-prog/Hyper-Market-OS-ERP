@@ -38,6 +38,7 @@ import {
   type ControlTotal, type TotalSignature,
 } from '../../../packages/migration/src/reconcile';
 import { assertSafeTarget } from './guards';
+import { loadOperatorFor } from './load-records';
 import { deciderSealFlags } from '../../pos/src/store-seal';
 import type { MigrationDeps } from './index';
 
@@ -46,7 +47,7 @@ import type { MigrationDeps } from './index';
 /** A decision the store box relayed that the cloud could not accept — kept, never dropped (hard rule #10). */
 export interface RefusedDecision {
   readonly decisionId: string;
-  readonly kind: 'exception_resolution' | 'total_signature';
+  readonly kind: 'exception_resolution' | 'total_signature' | 'parallel_day' | 'parallel_day_signature';
   /** The exception id or the total id the decision was about. */
   readonly subjectId: string;
   /** The person the box says made it. */
@@ -356,13 +357,15 @@ export function decisionRoutes(deps: MigrationDeps): readonly Route[] {
         }
         const all = await totalsNow(ctx.tenantId);
         if (!all.some((t) => t.totalId === totalId)) throw notFound(`control total ${totalId}`);
-        const loadOperator = await deps.extractionOperator(ctx.tenantId);
+        // Who ran the load is the STORED load record's operator — the person signed in when it was recorded — never a
+        // name anybody typed (MG-06 · STEP-1 §4 item 9).
+        const loadOperator = await loadOperatorFor(deps, ctx.tenantId, ctx.userId);
         if (loadOperator === undefined) {
           throw apiError(422, {
             code: 'nobody_ran_the_load',
-            whatHappened: 'The ledger does not say who ran the extraction/load, so it cannot check that the signer is somebody else (§28) — and a signature that cannot be checked is not a control.',
+            whatHappened: 'The ledger holds no load record, so it cannot check that the signer is somebody other than whoever ran the load (§28) — and a signature that cannot be checked is not a control.',
             wasItSaved: 'not_saved',
-            nextSafeAction: 'Record the extraction run (POST /v1/migration/extraction-runs/:runId) first. Nothing was signed.',
+            nextSafeAction: 'The operator records the load, signed in as themselves (POST /v1/migration/loads/:loadId — the load command does this). Nothing was signed.',
           });
         }
         const signerRole = await signerRoleOf(deps, ctx.tenantId, ctx.userId);
@@ -422,8 +425,8 @@ export function decisionRoutes(deps: MigrationDeps): readonly Route[] {
           }
           return refusedAs('already_signed', `${totalId} was signed by ${target.signature.signedBy} first — the store's later signature does not replace it.`);
         }
-        const loadOperator = await deps.extractionOperator(ctx.tenantId);
-        if (loadOperator === undefined) return refusedAs('nobody_ran_the_load', 'the ledger does not say who ran the extraction/load, so the cloud cannot check the signer is somebody else (§28).');
+        const loadOperator = await loadOperatorFor(deps, ctx.tenantId, signedBy);
+        if (loadOperator === undefined) return refusedAs('nobody_ran_the_load', 'the ledger holds no load record, so the cloud cannot check the signer is somebody other than whoever ran the load (§28).');
         const signerRole = await signerRoleOf(deps, ctx.tenantId, signedBy);
         const signedAt = isStr(b['signedAt']) ? b['signedAt'] : deps.now();
         const result = signControlTotal({ totals: all, totalId, signedBy, signerRole, loadOperator, statement, now: signedAt });

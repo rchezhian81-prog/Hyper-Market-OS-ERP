@@ -283,7 +283,7 @@ import {
 } from './ai-session';
 import type { AgentBudget, KillSwitch, UsageEntry } from '../../../packages/ai/src/index';
 import {
-  createMigrationSession, type MigrationPorts, type MigrationSession,
+  createMigrationSession, type MigrationPorts, type MigrationSession, type DaySignatureView, type WitnessView,
 } from './migration-session';
 import type {
   ControlTotal, HistoryExclusion, LegacyArchive, LegacySource, MigrationException,
@@ -4630,6 +4630,12 @@ export interface MigrationData {
   readonly namedTeam?: readonly TeamMember[];
   readonly ownerGoBy?: string;
   readonly openAssessments?: number;
+  /** MG-10: the ONE person named to reconcile daily (R-05), from the cloud's written terms. */
+  readonly dailyReconcilerUserId?: string;
+  /** MG-10: every day signature the cloud holds, and whether each still applies. */
+  readonly parallelDaySignatures?: readonly DaySignatureView[];
+  /** The twelve-domain witness figures (STEP-1 §4 item 5). */
+  readonly verification?: WitnessView;
 }
 
 /**
@@ -4655,6 +4661,8 @@ export function migrationPortsFromData(data: MigrationData | undefined, outbox: 
     namedTeam: () => data?.namedTeam,
     ownerGoBy: () => data?.ownerGoBy,
     openAssessments: () => data?.openAssessments,
+    daySignatures: () => data?.parallelDaySignatures,
+    verification: () => data?.verification,
     // A signature made on this page is committed here and queued (hard rule #1). The screen draws
     // the working copy, and the sync agent drains this to the cloud. A signature that lives only
     // in the tab is not a signature — which is exactly what the first version produced.
@@ -4713,6 +4721,7 @@ export function bootMigration(data: MigrationData | undefined, outbox: SyncOutbo
       // NOT defaulted. A separation of duties that cannot be checked is not a separation.
       loadOperator: data.loadOperator,
       cutoverAccepted: data.cutoverAccepted === true,
+      ...(data.dailyReconcilerUserId === undefined ? {} : { dailyReconcilerUserId: data.dailyReconcilerUserId }),
     },
     migrationPortsFromData(data, outbox),
   );

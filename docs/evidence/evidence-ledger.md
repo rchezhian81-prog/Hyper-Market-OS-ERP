@@ -18,8 +18,8 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 
 ## Totals
 
-- Evidence test files scanned: 1439. SP-10 sessions: 0 (0 PASS, 0 on real hardware).
-- Requirements with at least one proof of each kind: Unit 89 · Integration (in-process) 101 · Real PostgreSQL 97 · Browser (stub cloud) 81 · Browser (connected) 48 · Device 0 · Staff UAT 0.
+- Evidence test files scanned: 1445. SP-10 sessions: 0 (0 PASS, 0 on real hardware).
+- Requirements with at least one proof of each kind: Unit 89 · Integration (in-process) 101 · Real PostgreSQL 97 · Browser (stub cloud) 82 · Browser (connected) 48 · Device 0 · Staff UAT 0.
 - Labels: E2E_VERIFIED 41 · INTEGRATION_TESTED 18 · PARTIALLY_WIRED 40 · WIRED 5.
 - Labels that do NOT hold: none.
 
@@ -122,13 +122,13 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 | MG-01 | INTEGRATION_TESTED | 7 | 3 | 1 | · | · | · | · | ✓ an integration test cites it |
 | MG-02 | INTEGRATION_TESTED | 5 | 4 | 3 | · | · | · | · | ✓ an integration test cites it |
 | MG-03 | INTEGRATION_TESTED | 3 | 2 | 1 | · | · | · | · | ✓ an integration test cites it |
-| MG-04 | E2E_VERIFIED | 11 | 7 | 3 | 1 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
-| MG-05 | INTEGRATION_TESTED | 6 | 8 | 6 | · | · | · | · | ✓ an integration test cites it |
-| MG-06 | E2E_VERIFIED | 17 | 11 | 4 | 1 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
+| MG-04 | E2E_VERIFIED | 11 | 8 | 3 | 1 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
+| MG-05 | INTEGRATION_TESTED | 7 | 9 | 6 | · | · | · | · | ✓ an integration test cites it |
+| MG-06 | E2E_VERIFIED | 17 | 13 | 4 | 1 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
 | MG-07 | INTEGRATION_TESTED | 2 | 6 | 4 | · | · | · | · | ✓ an integration test cites it |
 | MG-08 | INTEGRATION_TESTED | 2 | 7 | 6 | · | · | · | · | ✓ an integration test cites it |
 | MG-09 | INTEGRATION_TESTED | 3 | 4 | 3 | · | · | · | · | ✓ an integration test cites it |
-| MG-10 | INTEGRATION_TESTED | 5 | 4 | 1 | · | · | · | · | ✓ an integration test cites it |
+| MG-10 | INTEGRATION_TESTED | 6 | 5 | 1 | 1 | · | · | · | ✓ an integration test cites it |
 | MG-11 | E2E_VERIFIED | 2 | 4 | 3 | 1 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
 | MG-12 | INTEGRATION_TESTED | 4 | 3 | 1 | · | · | · | · | ✓ an integration test cites it |
 
@@ -216,5 +216,6 @@ _The JSON twin (`evidence-ledger.json`) lists every file and session per item. H
 - **QG-11** — browser: `data-quality-inbox-on-the-production-api.e2e.ts`, `operations-inbox-on-the-production-api.e2e.ts`, `workforce-inbox-on-the-production-api.e2e.ts` · connected: `data-quality-inbox-on-the-production-api.e2e.ts`, `operations-inbox-on-the-production-api.e2e.ts`, `workforce-inbox-on-the-production-api.e2e.ts` · real PostgreSQL: `ai-inboxes-keep-to-the-readers-branches.test.ts`, `ai-model-calls-are-governed.test.ts`
 - **MG-04** — browser: `migration-decision-delivery.e2e.ts` · real PostgreSQL: `the-legacy-card-purge-check-reads-an-extract.test.ts`, `the-old-shop-arrives-whole.test.ts`, `schema-migrations.test.ts`
 - **MG-06** — browser: `migration-decision-delivery.e2e.ts` · real PostgreSQL: `opening-state-loads.test.ts`, `the-books-open-from-the-old-trial-balance.test.ts`, `the-old-shop-arrives-whole.test.ts`, `the-whole-load-runs-from-one-command.test.ts`
+- **MG-10** — browser: `the-migration-screen-runs-a-parallel-day.e2e.ts` · real PostgreSQL: `the-old-shop-arrives-whole.test.ts`
 - **MG-11** — browser: `migration-decision-delivery.e2e.ts` · real PostgreSQL: `a-rehearsed-rollback-reconciles.test.ts`, `an-opening-load-is-reversed-only-in-the-cutover-window.test.ts`, `the-old-shop-arrives-whole.test.ts`
 

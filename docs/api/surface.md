@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1213 | 728 | 728 | 109 | 349 |
+| 13 | 1220 | 734 | 734 | 109 | 353 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -1255,11 +1255,18 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/migration/history/exclusions` | `migration.exclusion.propose` | core | yes |
 | POST | `/v1/migration/history/exclusions/:exclusionId/decision` | `migration.exclusion.approve` | core | yes |
 | POST | `/v1/migration/legacy-card-purge/check` | `migration.cleaning.read` | core | yes |
+| GET | `/v1/migration/loads/:loadId` | `migration.load.read` | core | — |
+| POST | `/v1/migration/loads/:loadId` | `migration.load.record` | core | yes |
+| POST | `/v1/migration/loads/:loadId/applied` | `migration.load.record` | core | yes |
+| POST | `/v1/migration/loads/:loadId/exception-list/acceptance` | `migration.load.accept` | core | yes |
 | POST | `/v1/migration/mapping/approve` | `migration.mapping.approve` | core | yes |
 | POST | `/v1/migration/mapping/coverage` | `migration.mapping.read` | core | yes |
 | POST | `/v1/migration/opening-events` | `migration.opening.build` | core | yes |
 | GET | `/v1/migration/parallel-run` | `migration.parallel.read` | core | — |
 | POST | `/v1/migration/parallel-run/days/:businessDate` | `migration.parallel.record` | core | yes |
+| POST | `/v1/migration/parallel-run/days/:businessDate/signature` | `migration.parallel.sign` | core | yes |
+| POST | `/v1/migration/parallel-run/days/:businessDate/signature/synced` | `migration.decision.sync` | core | yes |
+| POST | `/v1/migration/parallel-run/days/:businessDate/synced` | `migration.decision.sync` | core | yes |
 | POST | `/v1/migration/parallel-run/differences/:differenceId/own` | `migration.parallel.record` | core | yes |
 | PUT | `/v1/migration/parallel-run/policy` | `migration.cutover.decide` | core | yes |
 | GET | `/v1/migration/parallel-run/sheet` | `migration.parallel.read` | core | — |
