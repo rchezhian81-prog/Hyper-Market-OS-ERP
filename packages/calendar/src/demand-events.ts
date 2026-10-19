@@ -11,7 +11,7 @@
 //   • It becomes a forecast SIGNAL (packages/demand/src/forecast.ts `DemandSignal`) whose label is the event's own name,
 //     so every forecast day it lifts says which event did it.
 //   • The weather feed is a PORT. The only one production has is `WEATHER_FEED_SWITCHED_OFF`: it fetches nothing, sends
-//     nothing, and says so. A test stand-in is the only other implementation (tests/support), and only the owner's
+//     nothing, and says so. A test stand-in in the tests is the only other implementation, and only the owner's
 //     choice of a provider would add a real one (OB-220, OB-222).
 
 export type DemandEventKind = 'festival' | 'local_event';
