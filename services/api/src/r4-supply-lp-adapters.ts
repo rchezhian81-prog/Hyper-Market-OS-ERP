@@ -137,6 +137,8 @@ export function competitorDraftAdapter(input: { readonly store: EventStore; read
 
 const LP_ACTIVITY = streamName(STREAM.lossPrevention, 'activity');
 const WRITE_OFFS = streamName(STREAM.inventory, 'write-offs');
+/** The write-off register's event, READ here only (NEW-7: one builder appends it, in adapters.ts). */
+const WRITE_OFF_READ = 'WriteOffCommitted';
 const COUNTS = streamName(STREAM.inventory, 'counts');
 const padFrom = (day: string): string => new Date(Date.parse(`${day}T00:00:00.000Z`) - 86_400_000).toISOString();
 const padTo = (day: string): string => new Date(Date.parse(`${day}T00:00:00.000Z`) + 2 * 86_400_000).toISOString();
@@ -170,7 +172,7 @@ export function lpCorrelationAdapter(input: { readonly store: EventStore; readon
       }
       return out;
     },
-    shrink: async (t, from, to) => (await store.readStream(t, WRITE_OFFS, { type: 'WriteOffCommitted' }))
+    shrink: async (t, from, to) => (await store.readStream(t, WRITE_OFFS, { type: WRITE_OFF_READ }))
       .map((e) => e.event.payload as StoredWriteOff)
       .map((w) => ({ w, day: shopDay(w.at) }))
       .filter((x) => x.day >= from && x.day <= to)

@@ -440,6 +440,10 @@
     'ess': 'user-round',
     'rostering': 'calendar',
     'schedule': 'calendar-clock',
+    // R4 Lane 4 — begin: the two new pages' menu icons, from icons already in the set (no restyle).
+    'supplier-scorecard': 'list-checks',
+    'planogram-compliance': 'layout-grid',
+    // R4 Lane 4 — end
     'checklist': 'clipboard-check',
     'users': 'users-round',
     'organisation': 'building',

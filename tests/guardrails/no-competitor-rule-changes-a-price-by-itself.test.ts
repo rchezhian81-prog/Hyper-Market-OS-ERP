@@ -48,7 +48,7 @@ describe('no competitor rule changes a price by itself (D-18)', () => {
 
   it('the adapter appends to the competitor-rule stream only', () => {
     const from = ADAPTERS.indexOf('export function competitorDraftAdapter');
-    const adapter = ADAPTERS.slice(from, ADAPTERS.indexOf('\n// ── ', from));
+    const adapter = ADAPTERS.slice(from, ADAPTERS.indexOf('\nexport function ', from + 1));
     const appends = [...adapter.matchAll(/store\.append(?:Batch)?\(t, ([A-Z_]+)/g)].map((m) => m[1]);
     expect(appends).toEqual(['COMPETITOR_RULE']);
     expect(adapter).not.toMatch(/recordPriceChange|recordEntry|pricingAdapter/);

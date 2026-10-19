@@ -36,7 +36,7 @@ describe('the LP view opens no case and keeps no video (D-21)', () => {
 
   it('the adapter only reads the till, the write-offs and the counts — the one write is the case evidence it delegates', () => {
     const from = ADAPTERS.indexOf('export function lpCorrelationAdapter');
-    const adapter = ADAPTERS.slice(from, ADAPTERS.indexOf('\n// ── ', from));
+    const adapter = ADAPTERS.slice(from, ADAPTERS.indexOf('\nexport function ', from + 1));
     expect(adapter).not.toMatch(/\.append\(|\.appendBatch\(|recordOpened/);
     expect(adapter).toMatch(/recordEvidence: \(t, caseId, item\) => cases\.recordEvidence\(t, caseId, item\)/);
   });

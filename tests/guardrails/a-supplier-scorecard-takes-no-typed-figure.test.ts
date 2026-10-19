@@ -28,7 +28,7 @@ describe('a supplier scorecard takes no typed figure (D-10)', () => {
 
   it('the facts come from the purchase-order fold, the goods receipts and the matched invoices — and are only read', () => {
     const from = FACTS.indexOf('export function supplierFactsFor');
-    const facts = FACTS.slice(from, FACTS.indexOf('\n// ── ', from));
+    const facts = FACTS.slice(from, FACTS.indexOf('\nexport function ', from + 1));
     expect(facts).toMatch(/foldPurchaseOrders\(/);
     expect(facts).toMatch(/goodsReceiptAdapter\(input\)\.all\(/);
     expect(facts).toMatch(/'InvoiceMatched'/);
