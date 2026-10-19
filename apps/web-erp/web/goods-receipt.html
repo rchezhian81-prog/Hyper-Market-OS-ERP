@@ -19,6 +19,8 @@
       so. No prompt/confirm/alert. OB-204: a return above the e-way-bill limit shows its e-way bill's state in words and,
       for a reader holding inventory.movement.append, a Dispatch button beside it (POST …/lines/:lineId/dispatch, online);
       only once head office records the dispatch is the return offered as gone back. No connection: "needs connection".
+      OB-205: the same page, polished inside the approved look — a head with its one action, a summary panel, the
+      deliveries as one register (captions, aligned columns, money right-aligned), status chips from the one icon set.
     -->
     <link rel="stylesheet" href="./sre-foundation.css" />
     <script src="./sre-icons.js" defer></script>
@@ -26,45 +28,104 @@
       :root { --tap:48px; }
       body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.5 var(--font); min-height:100dvh; display:flex; flex-direction:column; }
       .sample,.stale { margin:0; padding:10px 16px; font-size:15px; font-weight:600; }
-      .sample[hidden],.stale[hidden] { display:none; }
-      main { flex:1; padding:16px; display:grid; gap:16px; align-content:start; max-width:900px; width:100%; }
-      h2 { margin:0 0 4px; font-size:20px; } p.lead { margin:0 0 4px; color:var(--muted); font-size:15px; }
-      h3 { margin:8px 0 0; font-size:16px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.04em; }
-      .bar { display:flex; align-items:center; gap:16px; flex-wrap:wrap; justify-content:space-between; }
-      .asof { color:var(--muted); font-size:14px; } .summary { font-size:15px; font-weight:600; }
-      button.refresh, button.act { min-height: var(--tap); padding:0 14px; border:0; border-radius:10px; font-size:15px; font-weight:700; background:var(--line); color:var(--ink); }
-      button.act { background:var(--accent, var(--line)); color:var(--on-accent, var(--ink)); }
+      [hidden] { display:none !important; }
       button:focus-visible, .lang:focus-visible, input:focus-visible, select:focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
-      ul.rows { list-style:none; margin:0; padding:0; display:grid; gap:10px; }
-      li.row { background:var(--panel); border-radius:12px; padding:12px 14px; display:grid; gap:6px; border-left:6px solid var(--idle); }
-      li.row.tone-ok { border-left-color:var(--ok); } li.row.tone-degraded { border-left-color:var(--degraded); }
-      li.row.tone-error { border-left-color:var(--error); } li.row.tone-idle { border-left-color:var(--idle); }
-      .row .head { display:flex; align-items:baseline; justify-content:space-between; gap:10px; flex-wrap:wrap; }
-      .row .headline { font-weight:600; font-variant-numeric:tabular-nums; }
-      .status { display:inline-flex; align-items:center; gap:8px; font-weight:600; font-size:14px; }
-      .status .icon { font-size:18px; width:1.4em; text-align:center; }
-      .row .facts { font-size:13px; color:var(--muted); display:flex; gap:14px; flex-wrap:wrap; }
-      ul.diffs { list-style:none; margin:4px 0 0; padding:0; display:grid; gap:4px; }
-      li.diff { font-size:13px; display:flex; gap:10px; flex-wrap:wrap; align-items:baseline; }
-      li.diff .d-word { font-weight:600; } li.diff .d-val { font-variant-numeric:tabular-nums; } li.diff .d-detail { color:var(--muted); }
-      p.state { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
-      p.state .icon { font-size:18px; } p.state.tone-error { color:var(--danger-text); }
-      ul.returns { list-style:none; margin:4px 0 0; padding:0; display:grid; gap:4px; font-size:13px; }
-      ul.returns li { display:flex; gap:10px; flex-wrap:wrap; align-items:baseline; } ul.returns .r-word { font-weight:600; }
+
+      /* ── OB-205 (19 Oct 2026): the office polish — the approved look, page-level only ─────────────────── */
+      main { flex:1; padding: var(--space-5) var(--space-4) var(--space-10); display:grid; gap: var(--space-5); align-content:start; max-width: 1180px; width:100%; box-sizing:border-box; }
+      /* The head: the module, the title, one line of purpose — and the page's one action beside them. */
+      .page-head { display:grid; grid-template-columns:minmax(0, 1fr) auto; column-gap: var(--space-6); align-items:end; }
+      .page-head > * { grid-column:1; }
+      .page-head > .head-actions { grid-column:2; grid-row:1 / span 3; display:flex; align-items:center; gap: var(--space-3); flex-wrap:wrap; justify-content:flex-end; }
+      .page-head h2 { margin:0 0 6px; font-size: var(--fs-2xl); line-height: var(--leading-tight); letter-spacing: var(--tracking-tight); }
+      .page-head p.lead { margin:0; max-width:72ch; color: var(--ink-2); font-size: var(--fs-base); }
+      .asof { color:var(--muted); font-size:14px; }
+      .head-actions .sre-btn { font-size:16px; }
+      @media (max-width: 720px) {
+        .page-head { grid-template-columns:minmax(0, 1fr); }
+        .page-head > .head-actions { grid-column:1; grid-row:auto; justify-content:flex-start; margin-top: var(--space-3); }
+      }
+      /* The summary panel: each figure large, its words under it; the one that needs a person carries the amber edge. */
+      .stats { margin:0; display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap:1px; background: var(--line-soft); border:1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); overflow:hidden; }
+      .stats .stat { background: var(--panel); padding:14px 18px; display:grid; gap:2px; align-content:start; }
+      .stats .stat .n { font-size: var(--fs-xl); font-weight:700; line-height: var(--leading-tight); font-variant-numeric: var(--numbers); color: var(--ink); }
+      .stats .stat .l { font-size:14px; color: var(--muted); font-weight:600; }
+      .stats .stat[data-tone="degraded"] { box-shadow: inset 0 3px 0 var(--degraded); }
+      .stats .stat[data-tone="error"] { box-shadow: inset 0 3px 0 var(--error); }
+      h3.section { margin: var(--space-2) 0 calc(var(--space-3) * -1); font-size: var(--fs-lg); color: var(--ink); font-weight:600; letter-spacing:0; }
+
+      /* The register: one panel, a sticky caption row, hairline rows lit under the pointer and while a control in one
+         has the focus; the tone as a 3px edge AND a chip with its shape and word. Narrow, the captions go and rows stack. */
+      .register { --cols: minmax(8rem, 1fr) minmax(12rem, 1.3fr) minmax(0, 2fr) 9rem; background: var(--panel); border:1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); container-type:inline-size; }
+      .reg-head { position:sticky; top:0; z-index:2; display:grid; grid-template-columns: var(--cols); column-gap: var(--space-4); padding:10px 16px 10px 19px; background: var(--panel-2); border-bottom:1px solid var(--line); border-radius: var(--radius-lg) var(--radius-lg) 0 0; color: var(--muted); font-size:14px; font-weight:600; letter-spacing:.02em; }
+      .reg-head .r { text-align:right; }
+      ul.rows { list-style:none; margin:0; padding:0; display:grid; }
+      li.row { --tone: var(--idle); display:grid; grid-template-columns: var(--cols); column-gap: var(--space-4); row-gap: var(--space-2); align-items:start; padding:14px 16px 14px 19px; border-top:1px solid var(--line-soft); box-shadow: inset 3px 0 0 var(--tone); }
+      li.row:first-child { border-top:0; }
+      li.row:last-child { border-radius:0 0 var(--radius-lg) var(--radius-lg); }
+      li.row:hover, li.row:focus-within { background: var(--hover); }
+      li.row.tone-ok { --tone: var(--ok); } li.row.tone-degraded { --tone: var(--degraded); }
+      li.row.tone-error { --tone: var(--error); } li.row.tone-idle { --tone: var(--idle); }
+      .row .c-id { display:grid; gap:2px; min-width:0; }
+      .row .headline { font-weight:700; font-variant-numeric: var(--numbers); overflow-wrap:anywhere; }
+      .row .sub { color: var(--muted); font-size:14px; }
+      .row .status { justify-self:start; }
+      .status .icon { display:inline-flex; width:16px; height:16px; align-items:center; justify-content:center; font-size:14px; }
+      .status .icon .sre-icon { width:16px; height:16px; }
+      .row .facts { font-size:14px; color: var(--ink-2); display:flex; gap:4px 14px; flex-wrap:wrap; min-width:0; }
+      .row .c-val { text-align:right; font-weight:700; font-variant-numeric: var(--numbers); white-space:nowrap; }
+      .row .c-val.none { color: var(--muted); font-weight:500; }
+      ul.diffs, ul.returns { grid-column: 2 / -1; list-style:none; margin:0; padding: var(--space-2) 0 0; border-top:1px dashed var(--line); display:grid; gap:6px; font-size:14px; }
+      li.diff { display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:2px 14px; align-items:baseline; }
+      li.diff .d-word { font-weight:600; } li.diff .d-val { font-variant-numeric: var(--numbers); text-align:right; font-weight:600; }
+      li.diff .d-detail, ul.returns .d-detail { color: var(--muted); grid-column:1 / -1; }
+      ul.returns li { display:flex; gap:4px 12px; flex-wrap:wrap; align-items:baseline; }
+      ul.returns .r-word { font-weight:600; }
       ul.returns .sre-chip.ewb { font-size:14px; }
-      ul.returns .dispatcher { display:flex; gap:8px; flex-wrap:wrap; align-items:center; flex-basis:100%; }
-      ul.returns .dispatcher label { font-size:14px; color:var(--muted); }
+      ul.returns .dispatcher { display:flex; gap:8px 10px; flex-wrap:wrap; align-items:flex-end; flex-basis:100%; padding: var(--space-2) 0 var(--space-1); }
+      ul.returns .dispatcher label { flex-basis:100%; font-size:14px; color: var(--ink-2); font-weight:600; }
       ul.returns .dispatcher input { flex:1 1 220px; min-width:0; font-size:16px; }
       ul.returns .dispatcher button { font-size:16px; }
-      section.form { background:var(--panel); border-radius:12px; padding:14px; display:grid; gap:10px; }
-      section.form h3 { margin:0; }
-      section.form label { display:block; font-size:13px; color:var(--muted); margin-bottom:4px; }
-      section.form input, section.form select { width:100%; box-sizing:border-box; min-height: var(--tap); padding:0 12px; border:1px solid var(--line); border-radius:10px; background:var(--bg); color:var(--ink); font:inherit; }
-      section.form .grid { display:grid; gap:10px; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); }
-      p.note { margin:0; color:var(--muted); font-size:14px; }
-      p.result { margin:0; padding:12px 16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
-      p.result .icon { font-size:18px; } p.result.tone-error { color:var(--danger-text); } p.result.tone-ok { color:var(--ink); }
-      [hidden] { display:none !important; }
+      @container (max-width: 760px) {
+        .reg-head { display:none; }
+        li.row { grid-template-columns:minmax(0, 1fr) auto; }
+        .row .c-id { grid-column:1; } .row .c-val { grid-column:2; grid-row:1; }
+        .row .status, .row .facts, ul.diffs, ul.returns { grid-column:1 / -1; }
+      }
+
+      /* An empty, not-permitted or not-known list: a shape and words, never a blank box. */
+      p.state { margin:0; display:flex; gap: var(--space-3); align-items:center; padding: var(--space-5); background: var(--panel); border:1px dashed var(--line-strong); border-radius: var(--radius-lg); color: var(--ink-2); font-size:16px; }
+      p.state .icon { display:inline-flex; flex:none; width:24px; height:24px; align-items:center; justify-content:center; font-size:20px; color: var(--idle); }
+      p.state .icon .sre-icon { width:24px; height:24px; }
+      p.state.tone-error { color: var(--danger-text); border-style:solid; border-color: var(--error-surface); background: var(--error-surface); }
+      p.state.tone-error .icon { color: var(--danger-text); }
+      p.state.tone-degraded { color: var(--on-warn-surface); border-style:solid; border-color: var(--warn-surface); background: var(--warn-surface); }
+      p.state.tone-degraded .icon { color: var(--on-warn-surface); }
+      p.state.tone-ok .icon { color: var(--ok); }
+
+      /* The form: a panel with its heading on a hairline; labels you can read, help under each field. */
+      section.form { background: var(--panel); border:1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); padding: var(--space-4) var(--space-5) var(--space-5); display:grid; gap: var(--space-4); }
+      section.form h3 { margin:0 calc(var(--space-5) * -1); padding:0 var(--space-5) var(--space-3); border-bottom:1px solid var(--line-soft); font-size: var(--fs-md); font-weight:600; color: var(--ink); }
+      section.form label { display:block; font-size:15px; color: var(--ink-2); font-weight:600; margin-bottom:6px; }
+      section.form input, section.form select { width:100%; box-sizing:border-box; min-height: var(--tap); padding:0 14px; border:1px solid var(--field-line); border-radius: var(--radius); background: var(--field); color:var(--ink); font:inherit; }
+      section.form input:focus-visible, section.form select:focus-visible { border-color: var(--accent); box-shadow: 0 0 0 4px var(--focus-halo); }
+      section.form .grid { display:grid; gap: var(--space-4); grid-template-columns:repeat(auto-fit, minmax(min(100%, 240px), 1fr)); }
+      /* Each field is label · input · help on the row's shared tracks, so inputs line up however long a label runs. */
+      section.form .grid > div { display:grid; grid-row: span 3; grid-template-rows: subgrid; row-gap:6px; }
+      section.form .grid > div > label { margin-bottom:0; align-self:end; }
+      section.form .grid > div > .help { margin:0; }
+      .help { margin:6px 0 0; color: var(--muted); font-size:14px; }
+      button.act { justify-self:start; min-height: var(--tap); padding:0 20px; border:1px solid var(--accent); border-radius: var(--radius); font-size:16px; font-weight:700; background: var(--accent); color: var(--on-accent); box-shadow: var(--shadow-sm); }
+      button.act:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+      button.act:active { transform: translateY(1px); }
+      p.note { margin:0; color: var(--ink-2); font-size:15px; }
+      section.form p.note { color: var(--muted); }
+      p.result { margin:0; padding:12px 16px; background:var(--panel); border:1px solid var(--line); border-radius: var(--radius-lg); color:var(--ink-2); font-size:15px; display:flex; gap:10px; align-items:center; box-shadow: var(--shadow-sm); }
+      p.result .icon { display:inline-flex; flex:none; width:20px; height:20px; align-items:center; justify-content:center; font-size:18px; }
+      p.result .icon .sre-icon { width:20px; height:20px; }
+      p.result.tone-error { color:var(--danger-text); background: var(--error-surface); border-color: var(--error-surface); }
+      p.result.tone-ok { color: var(--on-ok-surface); background: var(--ok-surface); border-color: var(--ok-surface); }
+      p.result.tone-degraded { color: var(--on-warn-surface); background: var(--warn-surface); border-color: var(--warn-surface); }
     </style>
   </head>
   <body>
@@ -77,20 +138,23 @@
     </header>
 
     <main>
-      <div>
+      <div class="page-head">
         <h2 id="title">Goods receipt review</h2>
         <p class="lead" id="lead"></p>
+        <div class="head-actions">
+          <span class="asof" id="asof" role="status" aria-live="polite"></span>
+          <button class="refresh sre-btn" id="refresh" type="button"></button>
+        </div>
       </div>
 
-      <div class="bar">
-        <span class="asof" id="asof" role="status" aria-live="polite"></span>
-        <button class="refresh" id="refresh" type="button"></button>
+      <div class="stats" id="summary" role="status" aria-live="polite" hidden></div>
+
+      <h3 class="section" id="list-heading" hidden></h3>
+      <div class="register" id="register">
+        <!-- The captions are for the eye; every cell in a row still says what it is to a screen reader. -->
+        <div class="reg-head" id="reg-head" aria-hidden="true"><span id="col-id"></span><span id="col-status"></span><span id="col-facts"></span><span class="r" id="col-value"></span></div>
+        <ul class="rows" id="rows" aria-label="Deliveries — what needs attention"></ul>
       </div>
-
-      <p class="summary" id="summary" role="status" aria-live="polite" hidden></p>
-
-      <h3 id="list-heading" hidden></h3>
-      <ul class="rows" id="rows" aria-label="Deliveries — what needs attention"></ul>
 
       <p class="state" id="state" hidden><span class="icon" id="state-icon" aria-hidden="true"></span><span id="state-text"></span></p>
 
@@ -104,7 +168,8 @@
           </div>
           <div>
             <label for="return-reason" id="return-reason-label"></label>
-            <input id="return-reason" type="text" autocomplete="off" />
+            <input id="return-reason" type="text" autocomplete="off" aria-describedby="return-reason-help" />
+            <p class="help" id="return-reason-help"></p>
           </div>
         </div>
         <button id="return" class="act" type="button"></button>

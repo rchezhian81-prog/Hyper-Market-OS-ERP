@@ -27,6 +27,42 @@
 
 const el = (id) => document.getElementById(id);
 
+// ── OB-205: an icon from the one set beside the words ───────────────────────
+// `say` writes an element's words with the set's icon in front of them. The element's text stays exactly the words (an
+// SVG adds none), so nothing that reads it changes; with no icon set loaded, the words stand alone — they are the signal.
+const mark = (name, size = 20) => (typeof window.sreIcon === 'function' ? window.sreIcon(name, size) : null);
+function say(node, text, icon) {
+  const m = icon ? mark(icon) : null;
+  if (m === null) { node.replaceChildren(text); return; }
+  // The icon and its words travel as one pair (`sre-with-icon`), so the icon is never found apart from its words.
+  const pair = document.createElement('span');
+  pair.className = 'sre-with-icon';
+  pair.append(m, text);
+  node.replaceChildren(pair);
+}
+/** The slots the markup — and the store box's sign-in strip above this screen — leave for an icon (`data-sre-icon`). */
+function paintIconSlots() {
+  for (const slot of document.querySelectorAll('[data-sre-icon]')) {
+    if (slot.firstElementChild !== null) continue;
+    const m = mark(slot.dataset.sreIcon, 18);
+    if (m !== null) slot.append(m);
+  }
+}
+/** The banner's shape beside its words: a tick when it went through, a stop when it did not — never the colour alone. */
+function bannerMark(good) {
+  const shape = mark(good ? 'circle-check' : 'circle-alert', 28);
+  el('banner-mark').replaceChildren(...(shape === null ? [] : [shape]));
+}
+/** The shape a sent record's state wears beside its words (the five shared states). */
+const STATE_ICON = { saved_here: 'clock', retrying: 'refresh-cw', handed_to_box: 'store', posted: 'circle-check', refused: 'circle-alert' };
+/** "3 of 8 done" — the progress words, with the two numbers put in. */
+const progressWords = (template, n, total) => template.replace('{n}', String(n)).replace('{total}', String(total));
+/** The bar under the progress words: drawn only when there is a total to measure against (never a made-up zero). */
+function paintMeter(n, total) {
+  el('progress-meter').hidden = !(total > 0);
+  if (total > 0) el('progress-bar').style.transform = `scaleX(${Math.min(1, Math.max(0, n / total))})`;
+}
+
 const inr = (minor) =>
   '₹' + (minor / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -39,7 +75,7 @@ const WORDS = {
     noCloud: 'store computer cannot reach head office', cloudNotSetUp: 'no head office link set up',
     cloudUnknown: 'head office not checked yet', lastContact: 'last contact',
     staleShell: 'No connection to the store computer. This is the work this handheld was last given, at',
-    myWave: 'My wave', done: 'done', waiting: 'waiting to sync', allSent: 'everything sent',
+    myWave: 'My wave', done: 'done', progressOf: '{n} of {total} done', waiting: 'waiting to sync', allSent: 'everything sent',
     sentHeading: 'Sent from this handheld', nothingSent: 'nothing sent yet',
     noShelfAddress: 'no shelf address — look for it', walkedIn: 'Walked in',
     scanTheBin: 'Scan the bin', scanTheItem: 'Scan the item', confirmQty: 'Confirm how many',
@@ -80,7 +116,7 @@ const WORDS = {
     noCloud: 'கடை கணினி தலைமை அலுவலகத்தை அடைய முடியவில்லை', cloudNotSetUp: 'தலைமை அலுவலக இணைப்பு அமைக்கப்படவில்லை',
     cloudUnknown: 'தலைமை அலுவலகம் இன்னும் சரிபார்க்கப்படவில்லை', lastContact: 'கடைசித் தொடர்பு',
     staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்த ஹேண்ட்ஹெல்டுக்குக் கடைசியாகக் கொடுக்கப்பட்ட வேலை இதுதான்:',
-    myWave: 'என் வேலை', done: 'முடிந்தது', waiting: 'அனுப்பக் காத்திருக்கிறது', allSent: 'அனைத்தும் அனுப்பப்பட்டன',
+    myWave: 'என் வேலை', done: 'முடிந்தது', progressOf: '{total} இல் {n} முடிந்தது', waiting: 'அனுப்பக் காத்திருக்கிறது', allSent: 'அனைத்தும் அனுப்பப்பட்டன',
     noShelfAddress: 'அலமாரி முகவரி இல்லை — தேடிப் பாருங்கள்', walkedIn: 'நடக்கும் வரிசை',
     sentHeading: 'இந்தக் கருவியிலிருந்து அனுப்பப்பட்டவை', nothingSent: 'இன்னும் எதுவும் அனுப்பப்படவில்லை',
     scanTheBin: 'இடத்தை ஸ்கேன் செய்யவும்', scanTheItem: 'பொருளை ஸ்கேன் செய்யவும்', confirmQty: 'எத்தனை என்று உறுதி செய்யவும்',
@@ -133,6 +169,9 @@ const STATE_WORDS = {
  * languages (SP-3c-i). The device's own "saved" is never shown as "sent": only the store computer's word says head office
  * has it (P-08). A guardrail binds these to the shared list.
  */
+/** The shape each line's state wears beside its words (OB-205). */
+const LINE_ICON = { pending: 'clock', picked: 'circle-check', short: 'triangle-alert', substituted: 'repeat', quality_failed: 'circle-alert' };
+
 const SENT_STATE_WORDS = {
   saved_here: { en: 'Saved on this handheld — not yet with the store computer', ta: 'இந்தக் கருவியில் சேமிக்கப்பட்டது — கடை கணினிக்கு இன்னும் செல்லவில்லை' },
   retrying: { en: 'Retrying — the store computer did not take it yet', ta: 'மீண்டும் முயற்சி — கடை கணினி இன்னும் ஏற்கவில்லை' },
@@ -239,6 +278,7 @@ function tell(title, message, good = false) {
   el('banner-title').textContent = title;
   el('banner-text').textContent = message;
   el('banner').classList.toggle('good', good === true);
+  bannerMark(good === true);
   el('banner').hidden = false;
   el('banner-ok').textContent = t('ok');
   el('banner-ok').focus();
@@ -250,7 +290,7 @@ el('banner-ok').addEventListener('click', () => { el('banner').hidden = true; })
 let sheetResolve = null;
 
 function ask({ title, mode, hint = '', initial = '0', options = [] }) {
-  el('sheet-title').textContent = title;
+  say(el('sheet-title'), title, mode === 'number' ? 'calculator' : 'list');
   el('entry-hint').textContent = hint;
   el('entry').textContent = initial;
   el('entry').hidden = mode !== 'number';
@@ -313,8 +353,8 @@ const PROBLEM = Symbol('problem');
  * place the picker is standing rather than after a walk back to the list (picker-packer.md).
  */
 function awaitScan(title, hint, offer = false) {
-  el('scan-title').textContent = title;
-  el('scan-awaiting').textContent = t('waitingForScan');
+  say(el('scan-title'), title, 'scan-barcode');
+  say(el('scan-awaiting'), t('waitingForScan'), 'scan-line');
   el('scan-hint').textContent = hint;
   el('scan-cancel').textContent = t('cancel');
   el('scan-substitute').textContent = t('substitute');
@@ -373,7 +413,8 @@ function renderStep() {
  */
 function renderSent() {
   const sent = real && typeof real.sentWork === 'function' ? real.sentWork().slice(0, 12) : [];
-  el('sent-heading').textContent = t('sentHeading');
+  say(el('sent-heading'), t('sentHeading'), 'send');
+  el('sent-heading').dataset.count = String(sent.length);
   el('sent-heading').hidden = sent.length === 0;
   const host = el('sent-work');
   host.textContent = '';
@@ -388,7 +429,7 @@ function renderSent() {
     what.textContent = `${words(KIND_WORDS, w.kind)} · ${w.what} — ${w.detail}`;
     const state = document.createElement('div');
     state.className = `pill ${w.state}`;
-    state.textContent = words(SENT_STATE_WORDS, w.state);
+    say(state, words(SENT_STATE_WORDS, w.state), STATE_ICON[w.state]);
     row.append(what, state);
     if (w.reason) {
       const why = document.createElement('div');
@@ -428,7 +469,8 @@ function render() {
   const lines = session.work();
   const progress = session.progress();
   el('wave').firstChild.textContent = `${t('myWave')} · ${session.waveId ?? ''} `;
-  el('progress').textContent = `${progress.resolved}/${progress.total} ${t('done')}`;
+  el('progress').textContent = progressWords(t('progressOf'), progress.resolved, progress.total);
+  paintMeter(progress.resolved, progress.total);
   // How this list came to be in the order it is in. A picker who believes it is in shelf order
   // when it is not walks it trusting a sequence nobody applied (M04-FR-02).
   const orderedBy = window.pickerData?.orderedBy;
@@ -455,8 +497,11 @@ function render() {
     qty.className = 'qty';
     // Weighed lines are held in grams by the model; the picker thinks in kilos.
     const asQty = (n) => (line.uom === 'kg' ? `${(n / 1000).toFixed(3)} kg` : String(n));
-    qty.textContent = `${t('required')} ${asQty(line.requiredQty)}` +
-      (line.pickedQty > 0 ? ` · ${t('picked')} ${asQty(line.pickedQty)}` : '');
+    // OB-205: the quantity asked for, big; the words around it read exactly as before ("Asked for 2 · Picked 1").
+    const big = document.createElement('span');
+    big.className = 'n';
+    big.textContent = asQty(line.requiredQty);
+    qty.replaceChildren(`${t('required')} `, big, line.pickedQty > 0 ? ` · ${t('picked')} ${asQty(line.pickedQty)}` : '');
     // HA-2: how it travels, when the catalogue pack says — a cold item is told to the picker, never assumed.
     const handling = document.createElement('span');
     handling.className = 'handling';
@@ -464,16 +509,16 @@ function render() {
     if (line.handling !== undefined) handling.textContent = words(HANDLING_WORDS, line.handling);
     const state = document.createElement('span');
     state.className = 'state';
-    state.textContent = words(STATE_WORDS, line.state);
+    say(state, words(STATE_WORDS, line.state), LINE_ICON[line.state] ?? 'clock');
 
     row.append(bin, what, handling, qty, state);
     row.addEventListener('click', () => { selectedLineId = line.lineId; startLine(line); });
     return row;
   }));
 
-  el('pack').textContent = t('packCrate');
-  el('substitute').textContent = t('substitute');
-  el('problem').textContent = t('problem');
+  say(el('pack'), t('packCrate'), 'package-check');
+  say(el('substitute'), t('substitute'), 'repeat');
+  say(el('problem'), t('problem'), 'triangle-alert');
   renderStep();
   renderQueue();
 }
@@ -765,6 +810,7 @@ window.phoneSignInOnLock.push(() => clearInterval(badgeTimer));
 
 el('sample').hidden = real !== undefined;
 el('sample').textContent = t('sampleWave');
+paintIconSlots();
 
 const storageProblem = window.pickerStorageProblem;
 el('storage').hidden = !storageProblem;

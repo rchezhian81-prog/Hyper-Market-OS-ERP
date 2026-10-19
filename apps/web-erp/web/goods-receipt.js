@@ -71,39 +71,94 @@ function sampleSession() {
 let session = window.goodsReceiptSession ?? sampleSession();
 const t = (key) => session.text(lang, key);
 
-/** One delivery row. Every row reads as a state — a tone AND an icon AND a word (colour is never alone). */
+// OB-205: the register's captions, in both languages (the page's own words; the session's words are untouched).
+const VIEW_WORDS = {
+  en: { colId: 'Delivery', colStatus: 'Where it stands', colFacts: 'What came in', colValue: 'Difference', noDifference: 'No difference' },
+  ta: { colId: 'டெலிவரி', colStatus: 'நிலை', colFacts: 'வந்தவை', colValue: 'வேறுபாடு', noDifference: 'வேறுபாடு இல்லை' },
+};
+const vw = (key) => VIEW_WORDS[lang]?.[key] ?? VIEW_WORDS.en[key] ?? key;
+
+/** OB-205: a tone's shape from the one icon set (sre-icons.js), with the session's glyph only if the set is missing. */
+function toneMark(holder, tone, glyph) {
+  const mark = window.sreIcon && typeof window.sreIcon === 'function' ? window.sreIcon(window.sreIcon.forTone(tone), 16) : null;
+  if (mark) holder.replaceChildren(mark); else holder.textContent = glyph ?? '';
+}
+
+/** A control's words with its shape in front; the words stay its whole text, so its name is unchanged. */
+function worded(node, name, words) {
+  const mark = window.sreIcon && typeof window.sreIcon === 'function' ? window.sreIcon(name, 18) : null;
+  if (!mark) { node.textContent = words; return; }
+  const text = document.createElement('span'); text.textContent = words;
+  node.replaceChildren(mark, text);
+}
+
+/** The summary panel: each figure large with its words under it. The text reads exactly as the one-line summary did
+ *  ("4 deliveries · 1 need a second person"), so a screen reader hears the same sentence. */
+function paintStats(holder, stats) {
+  const nodes = [];
+  stats.forEach((s, i) => {
+    if (i > 0) { const sep = document.createElement('span'); sep.className = 'sr-only'; sep.textContent = ' · '; nodes.push(sep); }
+    const cell = document.createElement('span'); cell.className = 'stat';
+    if (s.tone) cell.dataset.tone = s.tone;
+    const n = document.createElement('b'); n.className = 'n'; n.textContent = s.n;
+    const l = document.createElement('span'); l.className = 'l'; l.textContent = s.words;
+    cell.append(n, document.createTextNode(' '), l);
+    nodes.push(cell);
+  });
+  holder.replaceChildren(...nodes);
+}
+
+/** A status chip: the tone's shape AND the word, the tone in data-tone (colour is never alone). */
+function statusChip(status) {
+  const chip = document.createElement('span');
+  chip.className = 'status sre-chip';
+  chip.dataset.tone = status.tone;
+  const icon = document.createElement('span'); icon.className = 'icon'; icon.setAttribute('aria-hidden', 'true'); toneMark(icon, status.tone, status.icon);
+  const word = document.createElement('span'); word.textContent = status.label;
+  chip.append(icon, word);
+  chip.setAttribute('aria-label', status.announcement || status.label);
+  return chip;
+}
+
+/** One delivery row. Every row reads as a state — a tone AND an icon AND a word (colour is never alone). OB-205: the
+ *  cells line up under the register's captions — the delivery, where it stands, what came in, the valued difference. */
 function receiptNode(r) {
   const li = document.createElement('li');
   li.className = `row tone-${r.status.tone}`;
 
-  const head = document.createElement('div');
-  head.className = 'head';
+  const id = document.createElement('div');
+  id.className = 'c-id';
   const headline = document.createElement('span');
   headline.className = 'headline';
   headline.textContent = r.number;
-  head.append(headline);
-
-  const status = document.createElement('span');
-  status.className = 'status';
-  const icon = document.createElement('span'); icon.className = 'icon'; icon.setAttribute('aria-hidden', 'true'); icon.textContent = r.status.icon;
-  const slabel = document.createElement('span'); slabel.textContent = r.status.label;
-  status.append(icon, slabel);
-  status.setAttribute('aria-label', r.status.announcement || r.status.label);
-  head.append(status);
-  li.append(head);
+  id.append(headline);
+  for (const line of [r.poId ?? t('noPo'), r.receivedAt ? new Date(r.receivedAt).toLocaleString() : '']) {
+    if (line === '') continue;
+    const sub = document.createElement('span'); sub.className = 'sub'; sub.textContent = line; id.append(sub);
+  }
+  li.append(id, statusChip(r.status));
 
   const facts = document.createElement('div');
   facts.className = 'facts';
   const fact = (text) => { const s = document.createElement('span'); s.textContent = text; facts.append(s); };
-  if (r.receivedAt) fact(new Date(r.receivedAt).toLocaleString());
   fact(`${t('warehouseLabel')}: ${r.warehouseId}`);
   fact(`${t('receivedByLabel')}: ${r.receivedBy}`);
-  fact(r.poId ?? t('noPo'));
   fact(`${t('sellableLabel')}: ${qty(r.sellableMinor)} ${t('unitsWord')}`);
   if (r.quarantinedMinor > 0) fact(`${t('quarantinedLabel')}: ${qty(r.quarantinedMinor)} ${t('unitsWord')}`);
   if (r.rejectedMinor > 0) fact(`${t('rejectedLabel')}: ${qty(r.rejectedMinor)} ${t('unitsWord')}`);
-  if (r.discrepancyValueMinor > 0) fact(`${t('discrepancyValueLabel')}: ${money(r.discrepancyValueMinor, r.currency)}`);
   li.append(facts);
+
+  // The valued difference, right-aligned in tabular figures; a delivery with none says so in words.
+  const val = document.createElement('span');
+  if (r.discrepancyValueMinor > 0) {
+    val.className = 'c-val';
+    val.textContent = money(r.discrepancyValueMinor, r.currency);
+    val.setAttribute('aria-label', `${t('discrepancyValueLabel')}: ${money(r.discrepancyValueMinor, r.currency)}`);
+  } else {
+    val.className = 'c-val none';
+    val.textContent = vw('noDifference');
+  }
+  li.append(val);
 
   // Each difference, named and valued (P-08) — worst money first, as the session ordered them.
   if (r.discrepancies.length > 0) {
@@ -207,7 +262,8 @@ function paintReturner(view) {
   el('return-heading').textContent = t('returnsHeading');
   el('return-line-label').textContent = t('returnChoiceLabel');
   el('return-reason-label').textContent = t('returnReasonLabel');
-  el('return-reason').placeholder = t('returnReasonPlaceholder');
+  // OB-205: the example stays readable under the field while it is typed into, not only as a placeholder that vanishes.
+  el('return-reason-help').textContent = t('returnReasonPlaceholder');
   el('return').textContent = t('returnBtn');
   const select = el('return-line');
   const chosen = select.value;
@@ -230,7 +286,7 @@ function paintResult(presentation) {
   const result = el('result');
   result.hidden = false;
   result.className = `result tone-${presentation.tone}`;
-  el('result-icon').textContent = presentation.icon;
+  toneMark(el('result-icon'), presentation.tone, presentation.icon);
   el('result-text').textContent = presentation.label;
   result.setAttribute('aria-label', presentation.announcement || presentation.label);
 }
@@ -239,11 +295,17 @@ function paint() {
   const view = session.view(lang);
 
   el('title').textContent = t('title');
+  // OB-205: the page's one heading (the header line) speaks the reader's language too.
+  el('who').firstChild.textContent = `${t('title')} `;
   el('lead').textContent = t('lead');
   el('whoami').textContent = window.goodsReceiptData?.userId ?? '';
   el('lang').textContent = t('langName');
-  el('refresh').textContent = t('refresh');
+  worded(el('refresh'), 'refresh-cw', t('refresh'));
   el('asof').textContent = view.asOf ? `${t('asOfLabel')}: ${new Date(view.asOf).toLocaleString()}` : '';
+  el('col-id').textContent = vw('colId');
+  el('col-status').textContent = vw('colStatus');
+  el('col-facts').textContent = vw('colFacts');
+  el('col-value').textContent = vw('colValue');
   paintReturner(view);
 
   // A not-permitted / nothing-yet state has no rows: show the state line rather than an empty list.
@@ -251,18 +313,23 @@ function paint() {
   if (view.receipts.length === 0) {
     state.hidden = false;
     state.className = `state tone-${view.screenState.tone}`;
-    el('state-icon').textContent = view.screenState.icon;
+    toneMark(el('state-icon'), view.screenState.tone, view.screenState.icon);
     el('state-text').textContent = view.screenState.label;
     state.setAttribute('aria-label', view.screenState.announcement || view.screenState.label);
     el('summary').hidden = true;
     el('list-heading').hidden = true;
+    el('register').hidden = true;
     el('rows').replaceChildren();
     return;
   }
 
   state.hidden = true;
+  el('register').hidden = false;
   el('summary').hidden = false;
-  el('summary').textContent = `${view.count} ${t('summaryDeliveries')} · ${view.needingApprovalCount} ${t('summaryNeedApproval')}`;
+  paintStats(el('summary'), [
+    { n: String(view.count), words: t('summaryDeliveries') },
+    { n: String(view.needingApprovalCount), words: t('summaryNeedApproval'), tone: view.needingApprovalCount > 0 ? 'error' : undefined },
+  ]);
   el('list-heading').hidden = false;
   el('list-heading').textContent = t('listHeading');
   el('rows').replaceChildren(...view.receipts.map((r) => receiptNode(r)));

@@ -5,7 +5,39 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
-## Release R4: built in four parallel lanes and joined (19 October 2026) — gate green, PR opened
+## UI page-by-page polish (OB-205, OB-238), joined on top of R4 (19 October 2026) — gate green (12,876 tests; perf 52/52; browser 448/448), PR opened
+
+- **Built inside the owner-approved look (no feature, route, data or permission changes):**
+  - **Till:**
+    - a one-line status strip with a connection chip;
+    - clear bill columns with batch and HUID tags;
+    - a marked selected line, and a struck-through voided line showing its reason;
+    - "Total to pay" as the largest text;
+    - one row of grouped actions;
+    - clearer dialogs and a nine-note drawer count;
+    - Tamil column heads and total;
+    - **OB-238:** good news is green with a tick, and stops stay red with a stop mark (red when unsure).
+  - **Back office** (Today, Approvals, Day close, Goods receipt, Suppliers, Stock counts, GST returns):
+    - page heads and summary panels;
+    - registers with sticky captions and right-aligned money;
+    - status chips;
+    - "not known" with its reason;
+    - form help and inline errors;
+    - seven display bugs fixed: the band showing on other tabs, misaligned tiles, text under 14 px, a raw copy key, English headings in Tamil, an invisible banner button and an invisible focus ring.
+  - **Staff phones** (warehouse, picker, driver):
+    - a calm sync line, and item cards with big quantities;
+    - one bottom primary action;
+    - "n of m done" progress;
+    - the DSD door sheet and dock checklist in Tamil;
+    - a hidden-list bug fixed.
+- **Proof:**
+  - New browser checks for the till, office and phones, each failing on the old pages.
+  - The join run on the R4 base: guardrails 1,542, unit 7,602, browser 448 of 448.
+- **Open:**
+  - On the warehouse phone at 360 px, the disabled footer actions wrap to 3–4 lines. They pass the overflow check but look cramped.
+  - The loyalty-points note before a split payment stays red (unsure, so red).
+
+## Release R4: built in four parallel lanes and joined (19 October 2026) — merged in PR #794 (237062b4) and deployed to the demo, 19 Oct
 
 - **Owner sign-off:** R4 sentences signed (OB-227). Scope answers: OB-207 to OB-226. Lane answers: OB-228 to OB-237.
 - **Built (synthetic data; nothing bought; no provider called; no staff UAT):**

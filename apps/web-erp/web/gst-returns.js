@@ -42,24 +42,37 @@ const real = window.gstReturnsSession;
 const session = real ?? sampleSession();
 const t = (key) => session.text(lang, key);
 let attentionOnly = false;
-const VIEW_WORDS = { en: { filterAll: 'Show all', filterAttention: 'Only the ones needing attention' }, ta: { filterAll: 'அனைத்தையும் காட்டு', filterAttention: 'கவனம் தேவைப்படுபவை மட்டும்' } };
+const VIEW_WORDS = {
+  en: { filterAll: 'Show all', filterAttention: 'Only the ones needing attention',
+    colPeriod: 'Month', colStatus: 'Where it stands', colAction: 'What to do next', colWho: 'Reference and people' },
+  ta: { filterAll: 'அனைத்தையும் காட்டு', filterAttention: 'கவனம் தேவைப்படுபவை மட்டும்',
+    colPeriod: 'மாதம்', colStatus: 'நிலை', colAction: 'அடுத்து செய்ய வேண்டியது', colWho: 'குறிப்பும் நபர்களும்' },
+};
 const vw = (key) => VIEW_WORDS[lang]?.[key] ?? VIEW_WORDS.en[key] ?? key;
 
+/** OB-205: a shape from the one icon set (sre-icons.js), or null when the set is not loaded. */
+const lineIcon = (name, size) => (window.sreIcon && typeof window.sreIcon === 'function' ? window.sreIcon(name, size) : null);
+/** A tone's shape, with the session's glyph only if the set is missing. */
+function toneMark(holder, tone, glyph) {
+  const mark = window.sreIcon && typeof window.sreIcon.forTone === 'function' ? lineIcon(window.sreIcon.forTone(tone), 16) : null;
+  if (mark) holder.replaceChildren(mark); else holder.textContent = glyph ?? '';
+}
+
+/** One filing period: the month, where it stands (a chip — shape + word), the next step with its button, and the
+ *  portal reference and the people — each in its own column under the register's captions. */
 function rowNode(r) {
   const li = document.createElement('li');
   li.className = `row tone-${r.status.tone}`;
 
-  const head = document.createElement('div');
-  head.className = 'head';
   const period = document.createElement('span'); period.className = 'period'; period.textContent = r.period;
   const status = document.createElement('span');
-  status.className = 'status';
-  const icon = document.createElement('span'); icon.className = 'icon'; icon.setAttribute('aria-hidden', 'true'); icon.textContent = r.status.icon;
+  status.className = 'status sre-chip';
+  status.dataset.tone = r.status.tone;
+  const icon = document.createElement('span'); icon.className = 'icon'; icon.setAttribute('aria-hidden', 'true'); toneMark(icon, r.status.tone, r.status.icon);
   const slabel = document.createElement('span'); slabel.textContent = r.status.label;
   status.append(icon, slabel);
   status.setAttribute('aria-label', r.status.announcement || r.status.label);
-  head.append(period, status);
-  li.append(head);
+  li.append(period, status);
 
   const action = document.createElement('div');
   action.className = 'action';
@@ -91,14 +104,13 @@ function rowNode(r) {
   }
   li.append(action);
 
-  if (r.arn || r.preparedBy || r.approvedByName) {
-    const who = document.createElement('div');
-    who.className = 'who-line';
-    if (r.arn) { const s = document.createElement('span'); s.className = 'arn'; s.textContent = r.arn; who.append(s); }
-    if (r.preparedBy) { const s = document.createElement('span'); s.textContent = r.preparedBy; who.append(s); }
-    if (r.approvedByName) { const s = document.createElement('span'); s.textContent = r.approvedByName; who.append(s); }
-    li.append(who);
-  }
+  // The reference column is always there, so the columns line up; it is empty only when the box knows no one yet.
+  const who = document.createElement('div');
+  who.className = 'who-line';
+  if (r.arn) { const s = document.createElement('span'); s.className = 'arn'; s.textContent = r.arn; who.append(s); }
+  if (r.preparedBy) { const s = document.createElement('span'); s.textContent = r.preparedBy; who.append(s); }
+  if (r.approvedByName) { const s = document.createElement('span'); s.textContent = r.approvedByName; who.append(s); }
+  li.append(who);
 
   if (r.detail) { const d = document.createElement('p'); d.className = 'detail'; d.textContent = r.detail; li.append(d); }
   return li;
@@ -120,13 +132,34 @@ function paint() {
   const view = session.view(lang);
 
   el('title').textContent = t('title');
+  // OB-205: the page's one heading (the header line) speaks the reader's language too.
+  el('who').firstChild.textContent = `${t('title')} `;
   el('lead').textContent = t('lead');
   el('whoami').textContent = window.gstReturnsData?.userId ?? '';
   el('lang').textContent = t('langName');
-  el('filter').textContent = attentionOnly ? vw('filterAll') : vw('filterAttention');
+  const filterWords = document.createElement('span');
+  filterWords.textContent = attentionOnly ? vw('filterAll') : vw('filterAttention');
+  const filterMark = lineIcon(attentionOnly ? 'list' : 'triangle-alert', 18);
+  el('filter').replaceChildren(...(filterMark ? [filterMark] : []), filterWords);
   el('filter').setAttribute('aria-pressed', attentionOnly ? 'true' : 'false');
+  el('col-period').textContent = vw('colPeriod');
+  el('col-status').textContent = vw('colStatus');
+  el('col-action').textContent = vw('colAction');
+  el('col-who').textContent = vw('colWho');
 
-  el('attention-count').textContent = view.attentionCount === 0 ? t('allClear') : `${view.attentionCount} ${t('attentionCount')}`;
+  // The summary: the count large with its words (read in the same order), the shape of the day's state beside it.
+  const count = el('attention-count');
+  count.className = 'count attention sre-with-icon';
+  el('summary').dataset.tone = view.attentionCount === 0 ? 'ok' : 'degraded';
+  const countMark = lineIcon(view.attentionCount === 0 ? 'circle-check' : 'triangle-alert', 22);
+  if (view.attentionCount === 0) {
+    const words = document.createElement('span'); words.textContent = t('allClear');
+    count.replaceChildren(...(countMark ? [countMark] : []), words);
+  } else {
+    const n = document.createElement('b'); n.className = 'n'; n.textContent = String(view.attentionCount);
+    const words = document.createElement('span'); words.textContent = t('attentionCount');
+    count.replaceChildren(...(countMark ? [countMark] : []), n, document.createTextNode(' '), words);
+  }
 
   const nobody = el('nobody');
   nobody.hidden = !view.nobodyNamed;
@@ -136,10 +169,11 @@ function paint() {
   el('rows').replaceChildren(...shown.map(rowNode));
 
   const state = el('state');
+  el('register').hidden = shown.length === 0;
   if (shown.length === 0) {
     state.hidden = false;
     state.className = `state tone-${view.screenState.tone}`;
-    el('state-icon').textContent = view.screenState.icon;
+    toneMark(el('state-icon'), view.screenState.tone, view.screenState.icon);
     el('state-text').textContent = view.screenState.label;
   } else {
     state.hidden = true;

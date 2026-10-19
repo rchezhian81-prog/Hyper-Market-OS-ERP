@@ -23,6 +23,8 @@
     <script src="./sre-update.js" defer></script>
     <style>
       :root { --tap: 64px; }
+      /* OB-205: the page, polished inside the approved look — tokens only, the foundation's spacing, radius, elevation and
+         type scales; the three-step layout, the 64px targets and every rule of the screen unchanged. */
       body {
         margin: 0; background: var(--bg); color: var(--ink);
         font: 17px/1.45 var(--font);
@@ -30,72 +32,145 @@
            template counted in rows shifts the layout every time one is hidden. */
         height: 100dvh; display: flex; flex-direction: column;
       }
+      /* The header: the wave and how far through it on the left, the language on the right, the sync badge under them. */
       header {
-        display: flex; align-items: center; justify-content: space-between;
-        gap: 10px; padding: 8px 14px; background: var(--panel);
+        display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center;
+        gap: var(--space-2) var(--space-3); padding: var(--space-3) var(--space-4);
+        background: var(--panel); border-bottom: 1px solid var(--line);
       }
       /* The page's one heading: the wave. Styled as the header line it is, not as a headline. */
-      h1.wave { margin: 0; font-size: 17px; font-weight: 600; }
-      .wave small { display: block; color: var(--muted); font-weight: 400; font-size: 13px; }
-      /* The sync badge (design system §1 rule 4): the dot is decoration, the two lines of words are the badge —
-         this device's unsent count, then the store computer's state and last contact. */
-      .sync-words { display: grid; line-height: 1.25; text-align: right; }
-      .sync-words small { color: var(--muted); font-size: 13px; }
+      h1.wave { margin: 0; font-size: 18px; font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
+      .wave small { display: block; color: var(--ink-2); font-weight: 600; font-size: 15px; font-variant-numeric: var(--numbers); }
+      /* How far through the wave, drawn: the words above are the signal, the bar only helps them. */
+      .meter { display: block; height: 6px; margin-top: 6px; border-radius: var(--radius-pill); background: var(--panel-2); border: 1px solid var(--line); overflow: hidden; }
+      .meter[hidden] { display: none; }
+      .meter > span { display: block; height: 100%; background: var(--accent); transform-origin: left center; transform: scaleX(0); transition: transform var(--dur-slow) var(--ease-out); }
+      #lang {
+        min-height: 56px; padding: 0 var(--space-3); display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+        background: var(--panel); color: var(--ink); border: 1px solid var(--field-line); border-radius: var(--radius-lg);
+        font-size: 16px; box-shadow: var(--shadow-xs);
+      }
+      #lang .sre-icon { width: 18px; height: 18px; }
+      /* The sync badge (design system §1 rule 4): the dot wears its state's shape, the two lines of words are the badge —
+         this device's unsent count, then the store computer's state and last contact. Calm by default; amber while work
+         waits here; the readable red only when a person must act. Colour is never the only signal: the words say it. */
+      .sync {
+        grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; padding: var(--space-2) var(--space-3);
+        background: var(--panel-2); color: var(--ink); border: 1px solid var(--line-soft); border-radius: var(--radius-lg);
+        font-size: 15px; min-width: 0;
+      }
+      .sync:has(.dot.waiting) { background: var(--warn-surface); color: var(--on-warn-surface); border-color: var(--warn-surface); }
+      .sync:has(.dot.error) { background: var(--error-surface); color: var(--danger-text); border-color: var(--error-surface); }
+      .sync-words { display: grid; line-height: 1.3; min-width: 0; }
+      #queue-text { font-weight: 700; }
+      .sync-words small { color: inherit; font-size: 14px; }
       .dot.waiting { background: var(--warn); }
 
-      .storage { background: var(--danger-surface); color: var(--on-danger); padding: 8px 14px; font-size: 15px; margin: 0; }
+      .storage { background: var(--danger-surface); color: var(--on-danger); padding: var(--space-2) var(--space-4); font-size: 15px; font-weight: 600; margin: 0; }
       .storage[hidden] { display: none; }
-      .ordered-by { background: var(--panel-2); color: var(--muted); padding: 6px 14px; margin: 0; font-size: 14px; }
+      .ordered-by { background: var(--panel-2); color: var(--muted); padding: 6px var(--space-4); margin: 0; font-size: 14px; border-bottom: 1px solid var(--line-soft); }
       .ordered-by[hidden] { display: none; }
-      /* A line with no shelf address: it sits last, and it says why. */
-      .bin.unmapped { background: var(--warn); color: var(--on-warn); }
 
-      main { flex: 1; min-height: 0; overflow-y: auto; padding: 10px 14px; }
-      .empty { color: var(--muted); padding: 32px 4px; font-size: 17px; }
-
-      /* One line per row. The bin is the biggest thing, because it is where they walk to. */
-      .line {
-        width: 100%; text-align: left; background: var(--panel); color: var(--ink);
-        border: 0; border-left: 6px solid var(--line); border-radius: 14px;
-        padding: 12px 14px; margin-bottom: 10px; min-height: var(--tap); display: grid; gap: 2px;
+      main { flex: 1; min-height: 0; overflow-y: auto; padding: var(--space-3) var(--space-4) var(--space-4); }
+      .empty {
+        color: var(--muted); padding: var(--space-6) var(--space-4); font-size: 17px; text-align: center;
+        background: var(--panel); border: 1px dashed var(--line-strong); border-radius: var(--radius-xl);
       }
-      .line[aria-selected='true'] { outline: 3px solid var(--focus); }
+
+      /* One line per row, as a card. The bin is the biggest thing, because it is where they walk to; the quantity asked
+         for stands big on the right; the line's state is a chip with its shape. */
+      .line {
+        width: 100%; text-align: left; background: var(--panel); color: var(--ink); font: inherit;
+        border: 1px solid var(--line); border-left: 6px solid var(--line-strong); border-radius: var(--radius-xl);
+        padding: var(--space-3) var(--space-4) var(--space-3) var(--space-3); margin-bottom: 10px; min-height: var(--tap);
+        display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 2px var(--space-3);
+        box-shadow: var(--shadow-sm);
+      }
+      .line > * { grid-column: 1; min-width: 0; overflow-wrap: anywhere; }
+      .line[aria-selected='true'] { outline: 3px solid var(--focus); outline-offset: 0; background: var(--mint); }
       .line.picked { border-left-color: var(--good); }
       .line.short { border-left-color: var(--warn); }
       .line.substituted { border-left-color: var(--info); }
       .line.quality_failed { border-left-color: var(--danger); }
-      .line .bin { font-size: 24px; font-weight: 700; letter-spacing: .04em; }
-      .line .what { font-size: 17px; }
-      .line .qty { color: var(--muted); font-size: 15px; font-variant-numeric: tabular-nums; }
-      .line .state { font-size: 14px; font-weight: 600; }
+      .line .bin { font-size: 24px; font-weight: 700; letter-spacing: .04em; line-height: 1.2; justify-self: start; }
+      /* A line with no shelf address: it sits last, and it says why. */
+      .bin.unmapped { background: var(--warn); color: var(--on-warn); padding: 0 var(--space-2); border-radius: var(--radius); }
+      .line .what { font-size: 17px; font-weight: 600; line-height: 1.3; }
+      .line .handling { justify-self: start; padding: 2px 10px; border-radius: var(--radius-pill); background: var(--info-surface); color: var(--on-info-surface); font-size: 14px; font-weight: 700; }
+      .line .handling[hidden] { display: none; }
+      .line .qty {
+        grid-column: 2; grid-row: 1 / span 2; justify-self: end; text-align: right; display: grid; justify-items: end;
+        color: var(--muted); font-size: 14px; font-variant-numeric: var(--numbers); line-height: 1.25; max-width: 9em;
+      }
+      .line .qty .n { color: var(--ink); font-size: 24px; font-weight: 700; }
+      .line .state {
+        justify-self: start; display: inline-flex; align-items: center; gap: 6px; margin-top: var(--space-1);
+        padding: 2px 10px 2px 8px; border-radius: var(--radius-pill); background: var(--panel-2); color: var(--ink);
+        border: 1px solid var(--line); font-size: 14px; font-weight: 700;
+      }
+      .line .state .sre-icon { width: 16px; height: 16px; }
+      .line.picked .state { background: var(--ok-surface); color: var(--on-ok-surface); border-color: var(--ok-surface); }
+      .line.short .state { background: var(--warn-surface); color: var(--on-warn-surface); border-color: var(--warn-surface); }
+      .line.substituted .state { background: var(--info-surface); color: var(--on-info-surface); border-color: var(--info-surface); }
+      .line.quality_failed .state { background: var(--error-surface); color: var(--danger-text); border-color: var(--error-surface); }
 
       /* Sent from this handheld (SP-3c-i): what each queued outcome was, then one of the five shared state words as a
-         pill; a refusal carries its reason. The same shape the warehouse handheld shows, for the same reason. */
-      .section { font-size: 14px; font-weight: 600; color: var(--muted); margin: 16px 0 8px; text-transform: uppercase; letter-spacing: .04em; }
+         chip with its shape; a refusal carries its reason. The same shape the warehouse handheld shows, for the same reason. */
+      .section {
+        display: flex; align-items: center; gap: var(--space-2); font-size: 14px; font-weight: 700; color: var(--muted);
+        margin: var(--space-4) 2px var(--space-2); text-transform: uppercase; letter-spacing: var(--tracking-caps);
+      }
       .section[hidden] { display: none; }
-      .sent { background: var(--panel); border-radius: 14px; padding: 10px 14px; margin-bottom: 8px; display: grid; gap: 6px; border-left: 6px solid var(--line); }
-      .sent .what { font-size: 16px; font-weight: 600; }
-      .sent .why { font-size: 14px; color: var(--muted); }
+      .section .sre-icon { width: 18px; height: 18px; }
+      .section[data-count]::after {
+        content: attr(data-count); margin-left: auto; min-width: 28px; padding: 2px 10px; border-radius: var(--radius-pill);
+        background: var(--panel); border: 1px solid var(--line); color: var(--ink); font-size: 15px; letter-spacing: 0;
+        text-align: center; font-variant-numeric: var(--numbers);
+      }
+      .sent {
+        background: var(--panel); border: 1px solid var(--line-soft); border-left: 6px solid var(--line-strong); border-radius: var(--radius-xl);
+        padding: 10px var(--space-4) 10px var(--space-3); margin-bottom: var(--space-2); display: grid; gap: 6px; box-shadow: var(--shadow-xs);
+      }
+      .sent .what { font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
+      .sent .why { font-size: 15px; color: var(--danger-text); font-weight: 600; }
       .sent.refused { border-left-color: var(--danger); }
       .sent.posted { border-left-color: var(--good); }
-      .pill { display: inline-block; padding: 4px 12px; border-radius: 999px; font-size: 14px; font-weight: 600; background: var(--line); color: var(--ink); justify-self: start; }
-      .pill.posted { background: var(--good); color: var(--on-accent); }
-      .pill.refused { background: var(--danger-surface); color: var(--on-danger); }
-      .pill.retrying { background: var(--warn); color: var(--on-warn); }
+      .sent.saved_here, .sent.retrying { border-left-color: var(--degraded); }
+      .pill {
+        display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px 4px 8px; border-radius: var(--radius-pill);
+        font-size: 14px; font-weight: 600; background: var(--panel-2); color: var(--ink); border: 1px solid var(--line); justify-self: start;
+        line-height: 1.35; max-width: 100%;
+      }
+      .pill .sre-icon { width: 16px; height: 16px; }
+      .pill.posted { background: var(--ok-surface); color: var(--on-ok-surface); border-color: var(--ok-surface); }
+      .pill.refused { background: var(--danger-surface); color: var(--on-danger); border-color: var(--danger-surface); }
+      .pill.retrying, .pill.saved_here { background: var(--warn-surface); color: var(--on-warn-surface); border-color: var(--warn-surface); }
 
-      footer { background: var(--panel); padding: 12px 14px 18px; display: grid; gap: 10px; }
+      /* The footer: the next step, spelled out, then the two alternatives, then the one action that matters at the bottom. */
+      footer {
+        background: var(--panel); border-top: 1px solid var(--line); box-shadow: var(--shadow-md);
+        padding: var(--space-3) var(--space-4) calc(var(--space-4) + env(safe-area-inset-bottom, 0px)); display: grid; gap: 10px;
+      }
       /* The next step, spelled out. A handheld user should never have to work out where they are. */
-      .step { font-size: 19px; font-weight: 600; min-height: 26px; }
-      .step small { display: block; color: var(--muted); font-weight: 400; font-size: 14px; }
+      .step { font-size: 17px; font-weight: 700; line-height: 1.3; min-height: 26px; padding-left: var(--space-3); border-left: 4px solid var(--accent); }
+      .step small { display: block; color: var(--muted); font-weight: 400; font-size: 15px; }
+      .step small:empty { display: none; }
       .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
       button {
-        min-height: var(--tap); border-radius: 14px; border: 0; font-size: 18px; font-weight: 600;
-        background: var(--line); color: var(--ink);
+        min-height: var(--tap); border-radius: var(--radius-xl); border: 1px solid var(--line); font-size: 18px; font-weight: 600;
+        background: var(--panel-2); color: var(--ink); padding: 0 var(--space-3); line-height: 1.25;
+        display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2); text-align: center;
+        transition: transform var(--dur-fast) var(--ease-out);
       }
-      button.primary { background: var(--good); color: var(--on-accent); font-size: 20px; }
-      button:disabled { opacity: .45; }
+      button:active:not(:disabled) { transform: translateY(1px); }
+      button .sre-icon { width: 22px; height: 22px; }
+      button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-size: 20px; font-weight: 700; box-shadow: var(--shadow-sm); }
+      button.primary:active:not(:disabled) { background: var(--accent-press); border-color: var(--accent-press); }
+      button:disabled { opacity: 1; background: var(--panel-2); color: var(--muted); border-style: dashed; border-color: var(--line-strong); box-shadow: none; cursor: not-allowed; }
       button:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       .wide { grid-column: 1 / -1; }
+      /* The two honest alternatives at the handhelds' 56px bar, quieter than the one green action under them. */
+      .actions > button:not(.primary) { min-height: 56px; background: var(--panel); font-size: 17px; }
 
       /* ── Panels ─────────────────────────────────────────────────────────── */
       .sheet {
@@ -104,49 +179,65 @@
       }
       .sheet[hidden] { display: none; }
       .sheet-inner {
-        width: min(560px, 100%); background: var(--panel); padding: 18px;
-        border-radius: 20px 20px 0 0; display: grid; gap: 12px; max-height: 92dvh; overflow-y: auto;
+        width: min(560px, 100%); background: var(--panel); padding: var(--space-3) var(--space-4) calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
+        border-radius: 16px 16px 0 0; display: grid; gap: var(--space-3); max-height: 92dvh; overflow-y: auto;
+        box-shadow: var(--shadow-lg); animation: sre-rise var(--dur-slow) var(--ease-out) both;
       }
-      .sheet h2 { margin: 0; font-size: 20px; }
+      /* A grab line: says "this is a panel over the list", nothing more. */
+      .sheet-inner::before { content: ''; justify-self: center; width: 40px; height: 4px; border-radius: var(--radius-pill); background: var(--line-strong); }
+      .sheet h2 { margin: 0; font-size: 20px; line-height: 1.3; display: flex; align-items: flex-start; gap: var(--space-2); overflow-wrap: anywhere; }
+      .sheet h2 .sre-icon { width: 24px; height: 24px; margin-top: 1px; color: var(--accent); }
+      .sheet h2 .sre-with-icon { align-items: flex-start; }
       .entry {
-        font-size: 42px; font-weight: 700; text-align: right; padding: 8px 16px;
-        background: var(--panel-2); border-radius: 12px; min-height: 64px;
+        font-size: 44px; font-weight: 700; text-align: right; padding: var(--space-2) var(--space-4); line-height: 1.2;
+        background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius-xl); min-height: 64px;
+        font-variant-numeric: var(--numbers); overflow-wrap: anywhere;
       }
       .hint { color: var(--muted); font-size: 15px; min-height: 22px; }
-      .keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+      .keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-2); }
       .keypad button, .choices button, .sheet-actions button { min-height: var(--tap); font-size: 20px; }
-      .choices { display: grid; gap: 8px; }
-      .choices button { text-align: left; padding: 0 16px; font-size: 17px; }
+      .keypad button { background: var(--panel); font-size: 24px; font-weight: 700; font-variant-numeric: var(--numbers); }
+      .choices { display: grid; gap: var(--space-2); }
+      .choices button { justify-content: flex-start; text-align: left; padding: 0 var(--space-4); font-size: 17px; background: var(--panel); }
+      /* A panel's parts that are not in use stay out of the way: the classes above would otherwise outrank [hidden]. */
+      .entry[hidden], .keypad[hidden], .choices[hidden] { display: none; }
       .sheet-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-      .sheet-actions .primary, .keypad .primary { background: var(--good); color: var(--on-accent); }
+      .sheet-actions .primary, .keypad .primary { background: var(--accent); color: var(--on-accent); }
       /* At the item step the two honest alternatives sit beside Cancel: a swap, or a problem (picker-packer.md). */
       .scan-actions { grid-template-columns: 1fr 1fr; }
       /* Waiting for a scan — there is deliberately no text box to type into. */
       .awaiting {
-        background: var(--panel-2); border-radius: 12px; padding: 18px 16px; text-align: center;
-        font-size: 20px; font-weight: 600; border: 2px dashed var(--line);
+        background: var(--mint); color: var(--on-ok-surface); border-radius: var(--radius-xl); padding: var(--space-5) var(--space-4); text-align: center;
+        font-size: 20px; font-weight: 700; border: 2px dashed var(--accent); display: grid; justify-items: center; gap: var(--space-2);
       }
+      .awaiting .sre-icon { width: 36px; height: 36px; }
+      .awaiting .sre-with-icon { display: grid; justify-items: center; gap: var(--space-2); }
 
-      /* The banner. No timer, never colour alone. */
+      /* The banner. No timer, never colour alone — its shape rides beside the words. */
       .banner {
-        position: fixed; inset: 0 0 auto 0; z-index: 30; padding: 18px 14px;
-        background: var(--danger-surface); color: var(--on-danger); display: grid; gap: 10px;
+        position: fixed; inset: 0 0 auto 0; z-index: 30; padding: var(--space-5) var(--space-4) var(--space-4);
+        background: var(--danger-surface); color: var(--on-danger); display: grid; gap: 10px; box-shadow: var(--shadow-lg);
+        animation: sre-rise var(--dur-slow) var(--ease-out) both;
       }
       .banner[hidden] { display: none; }
       .banner.good { background: var(--good); color: var(--on-accent); }
-      .banner strong { font-size: 21px; }
-      .banner p { margin: 0; font-size: 17px; }
-      .banner button { background: var(--panel-2); color: var(--ink); }
+      .banner-head { display: flex; align-items: flex-start; gap: 10px; }
+      #banner-mark { display: inline-flex; flex: none; }
+      #banner-mark .sre-icon { width: 28px; height: 28px; stroke-width: 2; }
+      .banner strong { font-size: 21px; line-height: 1.3; overflow-wrap: anywhere; }
+      .banner p { margin: 0; font-size: 17px; overflow-wrap: anywhere; }
+      .banner p:empty { display: none; }
+      .banner button { background: var(--panel); color: var(--ink); border-color: var(--panel); font-weight: 700; }
       .banner.good button { background: var(--on-accent); color: var(--ink); }
     </style>
   </head>
   <body>
     <header>
-      <h1 class="wave" id="wave">—<small id="progress">—</small></h1>
+      <h1 class="wave" id="wave">—<small id="progress">—</small><span class="meter" id="progress-meter" aria-hidden="true" hidden><span id="progress-bar"></span></span></h1>
+      <button class="lang" id="lang" type="button" aria-label="Language"><span data-sre-icon="globe"></span>EN / த</button>
       <span class="sync">
         <span class="dot" id="queue-dot" data-sre-status title="Sync"></span>
         <span class="sync-words"><span id="queue-text">—</span><small id="box-text">—</small></span>
-        <button class="lang" id="lang" type="button" aria-label="Language">EN / த</button>
       </span>
     </header>
 
@@ -209,7 +300,7 @@
 
     <!-- The message that must not be missed. No timer. -->
     <div class="banner" id="banner" hidden role="alert">
-      <strong id="banner-title">—</strong>
+      <div class="banner-head sre-with-icon"><span id="banner-mark" aria-hidden="true"></span><strong id="banner-title">—</strong></div>
       <p id="banner-text"></p>
       <button id="banner-ok" type="button">I have read this</button>
     </div>

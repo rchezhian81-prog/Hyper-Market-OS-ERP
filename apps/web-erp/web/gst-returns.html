@@ -13,57 +13,127 @@
       GSTR-1 submission engine. Read-only: every filing period with the ones needing attention first (a portal
       rejection, or an unknown outcome to reconcile), each with a status that is never a bare colour (an icon
       and a word ride with it) and, in plain language, the next step. Nothing is filed from here.
+      OB-205: the same page, polished inside the approved look — a summary panel, the periods as one register with
+      captions and aligned columns, status chips from the one icon set, head office's figures as a right-aligned
+      statement, "not known" said with its shape, and the month field with help and an inline error.
     -->
     <link rel="stylesheet" href="./sre-foundation.css" />
     <script src="./sre-icons.js" defer></script>
     <style>
       :root { --tap:48px; }
       body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.5 var(--font); min-height:100dvh; display:flex; flex-direction:column; }
-      main { flex:1; padding:16px; display:grid; gap:16px; align-content:start; max-width:900px; width:100%; }
-      h2 { margin:0 0 4px; font-size:20px; } p.lead { margin:0 0 4px; color:var(--muted); font-size:15px; }
-      .summary { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
-      .summary .count { font-size:18px; font-weight:700; } .summary .count.attention { color:var(--degraded); }
-      .filter { min-height: var(--tap); padding:0 14px; border:0; border-radius:10px; background:var(--line); color:var(--ink); font-size:15px; }
-      .filter[aria-pressed='true'] { background:var(--ink); color:var(--bg); }
-      ul.rows { list-style:none; margin:0; padding:0; display:grid; gap:10px; }
-      li.row { background:var(--panel); border-radius:12px; padding:12px 14px; display:grid; gap:6px; border-left:6px solid var(--idle); }
-      li.row.tone-ok { border-left-color:var(--ok); } li.row.tone-degraded { border-left-color:var(--degraded); }
-      li.row.tone-error { border-left-color:var(--error); } li.row.tone-idle { border-left-color:var(--idle); }
-      .row .head { display:flex; align-items:baseline; justify-content:space-between; gap:10px; flex-wrap:wrap; }
-      .row .period { font-weight:600; font-variant-numeric:tabular-nums; } .row .arn { color:var(--muted); font-size:14px; font-variant-numeric:tabular-nums; }
-      .status { display:inline-flex; align-items:center; gap:8px; font-weight:600; }
-      .status .icon { font-size:18px; width:1.4em; text-align:center; }
-      .action { color:var(--ink); font-size:15px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
-      .action .do { display:inline-flex; align-items:center; gap:8px; flex-wrap:wrap; }
-      .do-btn { min-height:var(--tap); padding:0 16px; border:0; border-radius:10px; background:var(--info); color:var(--on-info); font-size:15px; font-weight:600; cursor:pointer; }
-      .do-btn:disabled { background:var(--line); color:var(--muted); cursor:default; }
-      .do-note { font-size:13px; color:var(--muted); }
-      .who-line { color:var(--muted); font-size:13px; display:flex; gap:14px; flex-wrap:wrap; }
-      .row .detail { font-size:13px; color:var(--muted); }
-      li.row.tone-error .detail { color:var(--danger-text); }
-      p.state { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
-      p.state .icon { font-size:18px; } p.state.tone-error { color:var(--danger-text); }
-      section.ho { display:grid; gap:12px; border-top:2px solid var(--line); padding-top:16px; }
-      section.ho h3 { margin:8px 0 0; font-size:16px; color:var(--muted); font-weight:700; }
-      p.ho-lead, p.cal-summary { margin:0; color:var(--muted); font-size:15px; }
-      ul.facts-list { list-style:none; margin:0; padding:0; display:grid; gap:6px; }
-      ul.facts-list li { background:var(--panel); border-radius:10px; padding:10px 12px; display:flex; gap:8px; align-items:baseline; }
-      ul.facts-list li .word { font-weight:600; }
-      form.pick { display:flex; gap:10px; align-items:end; flex-wrap:wrap; }
-      form.pick label { display:grid; gap:2px; font-size:13px; color:var(--muted); }
-      section.ho input { min-height:var(--tap); font:inherit; padding:0 10px; border:1px solid var(--line); border-radius:10px; background:var(--field); color:var(--ink); }
-      section.ho button.act { min-height:var(--tap); font:inherit; font-weight:600; border:0; border-radius:10px; background:var(--accent); color:var(--on-accent); padding:0 16px; cursor:pointer; }
-      section.ho button.act:disabled { background:var(--line); color:var(--muted); cursor:default; }
-      section.ho button.act:focus-visible, section.ho input:focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
-      p.basis { margin:0; font-weight:600; }
-      dl.figures { margin:0; display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:4px 16px; background:var(--panel); border-radius:12px; padding:12px 14px; }
-      dl.figures dt { color:var(--muted); font-size:14px; } dl.figures dd { margin:0; font-variant-numeric:tabular-nums; font-weight:600; text-align:right; }
-      .g3b-actions { display:flex; gap:10px; flex-wrap:wrap; align-items:end; }
-      .row .facts { font-size:13px; color:var(--muted); display:flex; gap:14px; flex-wrap:wrap; }
-      p.result { margin:0; padding:12px 16px; border-radius:12px; background:var(--panel); font-weight:600; }
-      p.result.tone-error { background:var(--danger-surface); color:var(--danger-text); } p.result.tone-ok { background:var(--ok-surface); color:var(--on-ok-surface); }
-      p.state-line { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; }
       [hidden] { display:none !important; }
+
+      /* ── OB-205 (19 Oct 2026): the office polish — the approved look, page-level only ─────────────────── */
+      main { flex:1; padding: var(--space-5) var(--space-4) var(--space-10); display:grid; gap: var(--space-5); align-content:start; max-width: 1180px; width:100%; box-sizing:border-box; }
+      .page-head h2 { margin:0 0 6px; font-size: var(--fs-2xl); line-height: var(--leading-tight); letter-spacing: var(--tracking-tight); }
+      .page-head p.lead { margin:0; max-width:72ch; color: var(--ink-2); font-size: var(--fs-base); }
+      /* The summary: how many need attention, and the one filter beside it. */
+      .summary { display:flex; align-items:center; justify-content:space-between; gap: var(--space-3); flex-wrap:wrap; padding:14px 18px; background: var(--panel); border:1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); }
+      .summary .count { display:inline-flex; align-items:center; gap:10px; font-size: var(--fs-md); font-weight:600; color: var(--ink); }
+      .summary .count .n { font-size: var(--fs-xl); font-weight:700; font-variant-numeric: var(--numbers); }
+      .summary .count .sre-icon { flex:none; width:22px; height:22px; }
+      .summary[data-tone="degraded"] { box-shadow: var(--shadow-sm), inset 0 3px 0 var(--degraded); }
+      .summary[data-tone="degraded"] .count .sre-icon { color: var(--degraded); }
+      .summary[data-tone="ok"] .count .sre-icon { color: var(--ok); }
+      .filter { min-height: var(--tap); padding:0 16px; border:1px solid var(--line); border-radius: var(--radius); background: var(--panel); color:var(--ink); font-size:15px; font-weight:600; box-shadow: var(--shadow-xs); display:inline-flex; align-items:center; gap:8px; }
+      .filter:hover { background: var(--hover); border-color: var(--line-strong); }
+      .filter[aria-pressed='true'] { background: var(--mint); border-color: var(--accent); color: var(--accent); }
+      .filter .sre-icon { width:18px; height:18px; }
+
+      /* The register: captions that stay on screen, hairline rows lit under the pointer and while a control in one has
+         the focus; the tone as a 3px edge AND a chip with its shape and word. Narrow, the captions go and rows stack. */
+      .register { --cols: 7rem minmax(12rem, 1.1fr) minmax(0, 2fr) minmax(8rem, .9fr); background: var(--panel); border:1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); container-type:inline-size; }
+      .reg-head { position:sticky; top:0; z-index:2; display:grid; grid-template-columns: var(--cols); column-gap: var(--space-4); padding:10px 16px 10px 19px; background: var(--panel-2); border-bottom:1px solid var(--line); border-radius: var(--radius-lg) var(--radius-lg) 0 0; color: var(--muted); font-size:14px; font-weight:600; letter-spacing:.02em; }
+      ul.rows { list-style:none; margin:0; padding:0; display:grid; }
+      li.row { --tone: var(--idle); padding:14px 16px 14px 19px; border-top:1px solid var(--line-soft); box-shadow: inset 3px 0 0 var(--tone); }
+      li.row:first-child { border-top:0; }
+      li.row:hover, li.row:focus-within { background: var(--hover); }
+      li.row.tone-ok { --tone: var(--ok); } li.row.tone-degraded { --tone: var(--degraded); }
+      li.row.tone-error { --tone: var(--error); } li.row.tone-idle { --tone: var(--idle); }
+      #rows > li.row { display:grid; grid-template-columns: var(--cols); column-gap: var(--space-4); row-gap: var(--space-2); align-items:start; }
+      #rows > li.row:last-child { border-radius:0 0 var(--radius-lg) var(--radius-lg); }
+      .row .period { font-weight:700; font-variant-numeric: var(--numbers); }
+      .row .status { justify-self:start; }
+      .status .icon { display:inline-flex; width:16px; height:16px; align-items:center; justify-content:center; font-size:14px; }
+      .status .icon .sre-icon { width:16px; height:16px; }
+      .action { color:var(--ink); font-size:15px; display:flex; align-items:center; gap:8px 12px; flex-wrap:wrap; min-width:0; }
+      .action .do { display:inline-flex; align-items:center; gap:8px; flex-wrap:wrap; }
+      .do-btn { min-height:var(--tap); padding:0 16px; border:1px solid var(--info); border-radius: var(--radius); background:var(--info); color:var(--on-info); font-size:15px; font-weight:600; cursor:pointer; box-shadow: var(--shadow-xs); }
+      .do-btn:disabled { background:var(--panel-2); border-color: var(--line); color:var(--muted); cursor:default; box-shadow:none; }
+      .do-note { font-size:14px; color:var(--muted); }
+      .who-line { color:var(--ink-2); font-size:14px; display:grid; gap:2px; min-width:0; overflow-wrap:anywhere; }
+      .who-line .arn { font-variant-numeric: var(--numbers); font-weight:600; color: var(--ink); }
+      .row .detail { margin:0; font-size:14px; color:var(--muted); grid-column: 2 / -1; }
+      li.row.tone-error .detail { color:var(--danger-text); }
+      @container (max-width: 760px) {
+        .reg-head { display:none; }
+        #rows > li.row { grid-template-columns:minmax(0, 1fr) auto; }
+        .row .period { grid-column:1; } .row .status { grid-column:2; grid-row:1; justify-self:end; }
+        .action, .who-line, .row .detail { grid-column:1 / -1; }
+      }
+
+      /* An empty, not-permitted or not-known list: a shape and words, never a blank box. */
+      p.state { margin:0; display:flex; gap: var(--space-3); align-items:center; padding: var(--space-5); background: var(--panel); border:1px dashed var(--line-strong); border-radius: var(--radius-lg); color: var(--ink-2); font-size:16px; }
+      p.state .icon { display:inline-flex; flex:none; width:24px; height:24px; align-items:center; justify-content:center; font-size:20px; color: var(--idle); }
+      p.state .icon .sre-icon { width:24px; height:24px; }
+      p.state.tone-error { color: var(--danger-text); border-style:solid; border-color: var(--error-surface); background: var(--error-surface); }
+      p.state.tone-error .icon { color: var(--danger-text); }
+      p.state.tone-degraded { color: var(--on-warn-surface); border-style:solid; border-color: var(--warn-surface); background: var(--warn-surface); }
+      p.state.tone-ok .icon { color: var(--ok); }
+
+      /* Head office's part: a panel of its own; each block a titled list on hairlines. */
+      section.ho { display:grid; gap: var(--space-4); margin-top: var(--space-4); padding: var(--space-5); background: var(--panel); border:1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); }
+      section.ho > h2 { margin:0; font-size: var(--fs-xl); line-height: var(--leading-tight); letter-spacing: var(--tracking-tight); }
+      section.ho h3 { margin: var(--space-3) 0 0; font-size: var(--fs-md); color: var(--ink); font-weight:600; }
+      p.ho-lead, p.cal-summary { margin:0; color: var(--ink-2); font-size:15px; max-width:80ch; }
+      p.cal-summary:empty { display:none; }
+      ul.facts-list { list-style:none; margin:0; padding:0; display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%, 230px), 1fr)); gap: var(--space-3); }
+      ul.facts-list li { --tone: var(--idle); background: var(--panel-2); border:1px solid var(--line-soft); border-radius: var(--radius); padding:10px 14px; display:grid; grid-template-columns:auto minmax(0, 1fr); column-gap:10px; row-gap:2px; align-items:start; font-size:15px; box-shadow: inset 3px 0 0 var(--tone); }
+      ul.facts-list li > .sre-icon { grid-row: 1 / span 2; width:18px; height:18px; margin-top:2px; color: var(--tone); }
+      ul.facts-list li.tone-ok { --tone: var(--ok); } ul.facts-list li.tone-degraded { --tone: var(--degraded); }
+      ul.facts-list li.tone-idle { --tone: var(--idle); }
+      ul.facts-list li .word { font-weight:700; }
+      form.pick { display:flex; gap: var(--space-3); align-items:flex-start; flex-wrap:wrap; }
+      form.pick .field { display:grid; gap:6px; min-width:min(100%, 220px); }
+      form.pick label { font-size:15px; color: var(--ink-2); font-weight:600; }
+      form.pick .act { margin-top: 28px; }
+      .help { margin:0; color: var(--muted); font-size:14px; }
+      .help[data-tone="error"] { color: var(--danger-text); font-weight:600; }
+      section.ho input { min-height:var(--tap); font:inherit; padding:0 14px; border:1px solid var(--field-line); border-radius: var(--radius); background:var(--field); color:var(--ink); }
+      section.ho input:focus-visible { border-color: var(--accent); box-shadow: 0 0 0 4px var(--focus-halo); }
+      section.ho input[aria-invalid="true"] { border-color: var(--error); }
+      section.ho button.act { min-height:var(--tap); font:inherit; font-weight:700; border:1px solid var(--accent); border-radius: var(--radius); background:var(--accent); color:var(--on-accent); padding:0 20px; cursor:pointer; box-shadow: var(--shadow-xs); }
+      section.ho button.act:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+      /* One filled action at a time: reading a month and recording an amendment are quieter than the lock. */
+      section.ho button#show, section.ho button#amend { background: var(--panel); color: var(--ink); border-color: var(--field-line); }
+      section.ho button#show:hover, section.ho button#amend:hover { background: var(--hover); border-color: var(--ink-2); }
+      .g3b-actions > form { flex-basis:100%; }
+      .g3b-actions > form label input { min-width: min(100%, 360px); }
+      section.ho button.act:disabled { background:var(--panel-2); border-color: var(--line); color:var(--muted); cursor:default; }
+      section.ho button.act:focus-visible, section.ho input:focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
+      p.basis { margin:0; font-weight:600; display:flex; align-items:center; gap:8px; }
+      /* GSTR-3B as a statement: each line on a hairline, the figure right-aligned in tabular figures. */
+      dl.figures { margin: var(--space-3) 0; display:grid; grid-template-columns:minmax(0, 1fr) auto; background: var(--panel); border:1px solid var(--line); border-radius: var(--radius-lg); overflow:hidden; }
+      dl.figures dt, dl.figures dd { padding:10px 16px; border-top:1px solid var(--line-soft); }
+      dl.figures dt:first-of-type, dl.figures dd:first-of-type { border-top:0; }
+      dl.figures dt { color: var(--ink-2); font-size:15px; }
+      dl.figures dd { margin:0; font-variant-numeric: var(--numbers); font-weight:700; text-align:right; white-space:nowrap; }
+      dl.figures dd.unknown { display:flex; align-items:center; justify-content:flex-end; gap:6px; color: var(--degraded); white-space:normal; }
+      dl.figures dd.unknown .sre-icon { flex:none; width:16px; height:16px; }
+      dl.figures dt:last-of-type, dl.figures dd:last-of-type { background: var(--panel-2); }
+      .g3b-actions { display:flex; gap: var(--space-3); flex-wrap:wrap; align-items:flex-end; }
+      .g3b-actions label { display:grid; gap:6px; font-size:15px; color: var(--ink-2); font-weight:600; }
+      section.ho ul.rows { background: var(--panel); border:1px solid var(--line); border-radius: var(--radius-lg); }
+      section.ho ul.rows:empty { display:none; }
+      section.ho li.row:last-child { border-radius:0 0 var(--radius-lg) var(--radius-lg); }
+      section.ho .row .head { display:flex; align-items:center; justify-content:space-between; gap:8px 12px; flex-wrap:wrap; }
+      section.ho .row .headline { display:inline-flex; align-items:center; gap:8px; font-weight:600; }
+      section.ho .row .headline > .sre-icon { flex:none; width:18px; height:18px; color: var(--tone); }
+      section.ho .row .facts { font-size:14px; color: var(--ink-2); display:flex; gap:4px 14px; flex-wrap:wrap; margin-top:4px; }
+      p.result { margin:0; padding:12px 16px; border-radius: var(--radius-lg); background:var(--panel-2); font-weight:600; }
+      p.result.tone-error { background:var(--error-surface); color:var(--danger-text); } p.result.tone-ok { background:var(--ok-surface); color:var(--on-ok-surface); }
+      p.state-line { margin:0; display:flex; align-items:center; gap: var(--space-3); padding:16px; background: var(--warn-surface); border-radius: var(--radius-lg); color: var(--on-warn-surface); font-size:15px; }
     </style>
   </head>
   <body>
@@ -77,17 +147,21 @@
     </header>
 
     <main>
-      <div>
+      <div class="page-head">
         <h2 id="title">GST returns</h2>
         <p class="lead" id="lead"></p>
       </div>
 
-      <div class="summary" role="status" aria-live="polite">
+      <div class="summary" id="summary" role="status" aria-live="polite">
         <span class="count attention" id="attention-count"></span>
         <button class="filter" id="filter" type="button" aria-pressed="false"></button>
       </div>
 
-      <ul class="rows" id="rows" aria-label="GST return filing periods"></ul>
+      <div class="register" id="register">
+        <!-- The captions are for the eye; every cell in a row still says what it is to a screen reader. -->
+        <div class="reg-head" aria-hidden="true"><span id="col-period"></span><span id="col-status"></span><span id="col-action"></span><span id="col-who"></span></div>
+        <ul class="rows" id="rows" aria-label="GST return filing periods"></ul>
+      </div>
       <p class="state" id="state" hidden><span class="icon" id="state-icon" aria-hidden="true"></span><span id="state-text"></span></p>
 
       <!--
@@ -109,7 +183,11 @@
         <!-- R4 Lane 2 · A26 (end) -->
 
         <form class="pick" id="pick">
-          <label><span id="period-label"></span> <input id="period" name="period" inputmode="numeric" autocomplete="off" maxlength="6" /></label>
+          <div class="field">
+            <label for="period" id="period-label"></label>
+            <input id="period" name="period" inputmode="numeric" autocomplete="off" maxlength="6" aria-describedby="period-help" />
+            <p class="help" id="period-help"></p>
+          </div>
           <button class="act" id="show" type="submit"></button>
         </form>
         <div class="g3b" id="g3b" aria-live="polite">

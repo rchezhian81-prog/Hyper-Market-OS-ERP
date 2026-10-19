@@ -67,7 +67,8 @@ describe('the view renders from the tested session and re-decides nothing', () =
   });
 
   it('labels each status for a screen reader and hides the decorative icon', () => {
-    expect(VIEW).toMatch(/status\.setAttribute\('aria-label'/);
+    // OB-205 restyled the status as a chip built by statusChip(); the label still rides on the status element.
+    expect(VIEW).toMatch(/chip\.className = 'status sre-chip'[\s\S]*chip\.setAttribute\('aria-label', status\.announcement \|\| status\.label\)/);
     expect(VIEW).toMatch(/icon\.setAttribute\('aria-hidden', 'true'\)/);
   });
 });

@@ -13,6 +13,11 @@
       "POS desktop/PWA shell") and fully static, so the lane loads and bills with no
       network. Accessibility: large targets and high contrast for arm's-length use
       under glare; the language toggle is per cashier.
+
+      OB-205 (page polish, inside the approved look of OB-201): a calm status strip that never wraps its buttons, a
+      bill with clear columns (the batch or HUID under the item, a voided line struck through with its reason), the
+      total named "Total to pay", one row of actions grouped line · basket · Tender, and panels with a clear title and
+      big buttons. Nothing on this page moves: no motion on the scan or the total (design system §3.4 rule 5).
     -->
     <link rel="stylesheet" href="./sre-foundation.css" />
     <script src="./sre-icons.js" defer></script>
@@ -26,40 +31,127 @@
            template counted in rows shifts the layout every time one is hidden. */
         height: 100dvh; display: flex; flex-direction: column;
       }
+
+      /* ── The status strip ────────────────────────────────────────────────
+         One line at every desk width: who and where on the left, the connection chip taking the room that is left (its
+         words wrap INSIDE the chip, never pushing a button to a second line), then the unsent count and the language. */
       header {
-        display: flex; align-items: center; justify-content: space-between;
-        gap: 12px; padding: 12px 16px; background: var(--panel);
+        display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto auto; align-items: center;
+        gap: var(--space-3); padding: var(--space-3) var(--space-4);
+        background: var(--panel); border-bottom: var(--hairline) solid var(--line);
       }
-      .lane { font-weight: 600; letter-spacing: .02em; margin: 0; font-size: inherit; } /* the till's one heading (2.4.6): the lane and the cashier, at the header's own size */
+      /* The till's one heading (2.4.6): the lane on the first line, the cashier under it. */
+      .lane { margin: 0; display: grid; gap: 2px; min-width: 0; font-size: inherit; font-weight: 400; line-height: var(--leading-tight); }
+      .lane-name { font-size: var(--fs-md); font-weight: 600; letter-spacing: var(--tracking-tight); }
+      .cashier { font-size: var(--fs-sm); color: var(--muted); }
+      .lane [data-missing] { color: var(--degraded); font-weight: 600; }
+      .head-btn {
+        min-height: var(--tap); padding: 0 var(--space-4); border-radius: var(--radius-lg);
+        border: var(--hairline) solid var(--line-strong); background: var(--panel); color: var(--ink);
+        font-size: var(--fs-base); font-weight: 600; box-shadow: var(--shadow-xs);
+        display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2); white-space: nowrap;
+      }
+      .head-btn:hover { background: var(--hover); }
       /* Permanent sync badge (§27.1 / P-08 · design system §1 rule 4) — connection + unsent + last contact, from
-         the BOX. Readable at arm's length: the till's base size, and a real target for the unsent count. */
-      .sync { font-size: 16px; }
+         the BOX. A chip in its tone: the state's shape in the ring, the state in bold, the detail after it. */
+      .conn {
+        justify-self: start; max-width: 100%; min-height: 44px;
+        display: flex; align-items: center; gap: var(--space-2); padding: 6px var(--space-3) 6px 10px;
+        border-radius: var(--radius-lg); border: var(--hairline) solid var(--line); border-left: 4px solid var(--idle);
+        background: var(--panel-2); color: var(--ink); font-size: 15px; line-height: 1.3;
+      }
+      .conn[data-tone="ok"] { background: var(--ok-surface); color: var(--on-ok-surface); border-color: var(--ok-surface); border-left-color: var(--ok); }
+      .conn[data-tone="degraded"] { background: var(--warn-surface); color: var(--on-warn-surface); border-color: var(--warn-surface); border-left-color: var(--degraded); }
+      .conn[data-tone="error"] { background: var(--error-surface); color: var(--danger-text); border-color: var(--error-surface); border-left-color: var(--error); }
+      #conn-text { min-width: 0; overflow-wrap: anywhere; }
+      .conn-state { font-weight: 700; }
       .unsent {
-        min-width: var(--tap); min-height: var(--tap); padding: 6px 12px; border-radius: 8px;
-        background: var(--line); color: var(--ink); border: 0; font-size: 16px;
+        min-width: var(--tap); min-height: var(--tap); padding: 0 var(--space-4); border-radius: var(--radius-lg);
+        border: var(--hairline) solid var(--line-strong); background: var(--panel); color: var(--ink); font-size: 16px; font-weight: 600;
+        box-shadow: var(--shadow-xs); display: inline-flex; align-items: center; gap: var(--space-2); white-space: nowrap;
       }
-      .signin {
-        min-width: var(--tap); min-height: var(--tap); padding: 6px 12px; border-radius: 8px;
-        background: var(--line); color: var(--ink); border: 0; font-size: 16px;
+      .unsent:hover { background: var(--hover); }
+      .unsent .count {
+        display: inline-block; min-width: 1.75em; padding: 0 6px; border-radius: var(--radius-pill); text-align: center;
+        background: var(--panel-2); font-variant-numeric: var(--numbers);
       }
-      main { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 16px; }
-      table { width: 100%; border-collapse: collapse; }
-      th { text-align: left; color: var(--muted); font-size: 13px; font-weight: 500; padding: 8px 4px; }
-      td { padding: 12px 4px; border-top: 1px solid var(--line); font-variant-numeric: tabular-nums; }
-      td.amount, th.amount { text-align: right; }
-      tr.voided td { color: var(--muted); text-decoration: line-through; }
-      footer { background: var(--panel); padding: 12px 16px 20px; }
-      /* The running total is the largest element on the screen. */
-      .total-row { display: flex; align-items: baseline; justify-content: space-between; }
-      .total-label { color: var(--muted); font-size: 15px; }
-      .total { font-size: clamp(40px, 9vw, 72px); font-weight: 700; font-variant-numeric: tabular-nums; }
-      .actions { display: grid; grid-template-columns: 1fr 1fr 2fr; gap: 12px; margin-top: 12px; }
+      .unsent[data-waiting] .count { background: var(--warn-surface); color: var(--on-warn-surface); }
+      header .lang { min-height: var(--tap); border-radius: var(--radius-lg); border: var(--hairline) solid var(--line-strong); background: var(--panel); font-weight: 600; display: inline-flex; align-items: center; gap: var(--space-2); white-space: nowrap; box-shadow: var(--shadow-xs); }
+      header .lang:hover { background: var(--hover); }
+
+      /* ── The bill ────────────────────────────────────────────────────────
+         A white panel on the canvas; the column heads stay put while the lines scroll under them. */
+      main { flex: 1; min-height: 0; overflow-y: auto; padding: var(--space-3) var(--space-4); }
+      .bill { background: var(--panel); border: var(--hairline) solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); }
+      table { width: 100%; border-collapse: separate; border-spacing: 0; table-layout: fixed; }
+      table[hidden] { display: none; }
+      col.c-qty { width: 7.5rem; }
+      col.c-amount { width: 11rem; }
+      th {
+        position: sticky; top: 0; z-index: 1; background: var(--panel);
+        text-align: left; color: var(--muted); font-size: var(--fs-sm); font-weight: 600;
+        padding: 10px var(--space-4); border-bottom: var(--hairline) solid var(--line);
+      }
+      th:first-child { border-top-left-radius: var(--radius-lg); }
+      th:last-child { border-top-right-radius: var(--radius-lg); }
+      td {
+        padding: var(--space-3) var(--space-4); border-top: var(--hairline) solid var(--line-soft);
+        font-size: var(--fs-md); vertical-align: top; font-variant-numeric: var(--numbers);
+      }
+      tbody tr:first-child td { border-top: 0; }
+      td.qty, th.qty, td.amount, th.amount { text-align: right; }
+      td.amount { font-weight: 600; }
+      td.item { overflow-wrap: anywhere; }
+      tbody tr { cursor: pointer; }
+      tbody tr:hover td { background: var(--hover); }
+      /* The selected line: a mint row AND a bar down its left edge — the bar is a shape, so it reads without colour. */
+      tbody tr[aria-selected="true"] td { background: var(--mint); }
+      tbody tr[aria-selected="true"] td:first-child { box-shadow: inset 5px 0 0 var(--accent); }
+      tbody tr:focus-visible { outline-offset: -3px; }
+      .desc { display: block; }
+      /* The joins are kept in the text (a scanner of the words reads "Paneer 200g · Batch B-2") and hidden on screen,
+         where each detail sits on its own tag under the name. */
+      .sep { display: none; }
+      .meta, .void-note {
+        display: inline-block; margin: 4px 6px 0 0; padding: 1px 8px; border-radius: var(--radius-sm);
+        font-size: var(--fs-sm); font-weight: 600; line-height: 1.5;
+      }
+      .meta { background: var(--panel-2); color: var(--ink-2); }
+      /* A voided line stays on the bill (it is evidence), struck through, with the word and the reason beside it. */
+      tr.voided td { color: var(--muted); }
+      tr.voided .desc, tr.voided td.qty, tr.voided td.amount { text-decoration: line-through; }
+      .void-note { background: var(--error-surface); color: var(--danger-text); }
+      .empty {
+        margin: 0; padding: var(--space-10) var(--space-6); text-align: center;
+        color: var(--muted); font-size: var(--fs-lg);
+        display: flex; align-items: center; justify-content: center; gap: var(--space-3);
+      }
+      .empty[hidden] { display: none; }
+      .empty .sre-icon { width: 28px; height: 28px; }
+      .empty[data-held] { color: var(--on-warn-surface); background: var(--warn-surface); border-radius: var(--radius-lg); font-weight: 600; }
+
+      /* ── The total and the actions ───────────────────────────────────────
+         The running total is the largest element on the screen. */
+      footer { background: var(--panel); border-top: var(--hairline) solid var(--line); padding: var(--space-3) var(--space-4) var(--space-4); }
+      .total-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-4); }
+      .total-label { color: var(--ink-2); font-size: var(--fs-lg); font-weight: 600; }
+      .total { font-size: clamp(48px, 5.4vw, 76px); line-height: 1.05; font-weight: 700; letter-spacing: var(--tracking-tight); font-variant-numeric: var(--numbers); white-space: nowrap; }
+      /* One row: the line's actions (Qty, Void), the basket's (Hold, More), then Tender — wide, green, last. */
+      .actions { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr 2fr; gap: var(--space-3); margin-top: var(--space-3); }
+      .actions #hold, .actions #tender { margin-left: var(--space-3); }
       button {
-        min-height: var(--tap); border-radius: 12px; border: 0; font-size: 18px; font-weight: 600;
-        background: var(--line); color: var(--ink);
+        min-height: var(--tap); border-radius: var(--radius-lg); border: var(--hairline) solid var(--line-strong);
+        font-size: 18px; font-weight: 600; background: var(--panel); color: var(--ink); box-shadow: var(--shadow-xs);
       }
-      button.primary { background: var(--accent); color: var(--on-accent); font-size: 22px; }
-      .empty { color: var(--muted); padding: 32px 4px; }
+      .actions button { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2); padding: 0 var(--space-3); line-height: 1.2; }
+      .actions button:hover, .sheet button:hover { background: var(--hover); }
+      button:active { transform: translateY(1px); }
+      button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-size: 22px; box-shadow: var(--shadow-sm); }
+      button.primary:hover, .sheet button.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+      button.primary:active { background: var(--accent-press); }
+      .actions .primary { font-size: 24px; font-weight: 700; }
+      .actions .primary .sre-icon { width: 26px; height: 26px; }
+
       /* ── On-screen panels ────────────────────────────────────────────────
          Every target is at least 56px and spaced, for fingers under time pressure. */
       .sheet {
@@ -68,85 +160,125 @@
       }
       .sheet[hidden] { display: none; }
       .sheet-inner {
-        width: min(560px, 100%); background: var(--panel); padding: 20px;
-        border-radius: 20px 20px 0 0; display: grid; gap: 14px;
+        width: min(560px, 100%); max-height: 100dvh; overflow-y: auto; background: var(--panel);
+        padding: var(--space-5) var(--space-5) var(--space-6); border: var(--hairline) solid var(--line); border-bottom: 0;
+        border-radius: var(--radius-xl) var(--radius-xl) 0 0; box-shadow: var(--shadow-lg); display: grid; gap: 14px;
       }
-      .sheet h2 { margin: 0; font-size: 22px; font-weight: 600; }
+      .sheet h2 { margin: 0; font-size: 22px; font-weight: 700; line-height: var(--leading-tight); }
+      .kicker { margin: 0 0 -4px; display: inline-flex; align-items: center; gap: var(--space-2); color: var(--on-warn-surface); background: var(--warn-surface); padding: 2px 10px; border-radius: var(--radius-sm); font-size: var(--fs-sm); font-weight: 700; justify-self: start; }
+      .kicker[hidden] { display: none; }
       .entry {
-        font-size: 44px; font-weight: 700; text-align: right; padding: 10px 16px;
-        background: var(--panel-2); border-radius: 12px; min-height: 68px;
+        font-size: 44px; font-weight: 700; text-align: right; padding: 10px 16px; font-variant-numeric: var(--numbers);
+        background: var(--panel-2); border: var(--hairline) solid var(--line); border-radius: var(--radius-lg); min-height: 68px;
       }
-      .hint { color: var(--muted); font-size: 15px; min-height: 22px; }
+      .hint { color: var(--ink-2); font-size: var(--fs-md); font-weight: 600; min-height: 22px; }
       .quick { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 10px; }
-      .quick button { min-height: var(--tap); font-size: 20px; border: 0; border-radius: 12px; background: var(--line-strong); color: var(--ink); font-weight: 700; }
+      .quick button { min-height: var(--tap); font-size: 20px; border: var(--hairline) solid var(--accent); border-radius: var(--radius-lg); background: var(--mint); color: var(--on-ok-surface); font-weight: 700; font-variant-numeric: var(--numbers); }
+      .quick button:hover { background: var(--ok-surface); }
       .quick[hidden] { display: none; }
       /* An author `display: grid` beats the browser's own `[hidden] { display: none }`, so without these the keypad stayed
          on screen above the reason chips and pushed OK below a 720px viewport (found by the SP-4c close e2e). */
       .keypad[hidden], .reasons[hidden], .entry[hidden] { display: none; }
       .keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
       .keypad button, .reasons button, .sheet-actions button, .refusal button {
-        min-height: var(--tap); font-size: 22px; border: 0; border-radius: 12px;
-        background: var(--line); color: var(--ink); font-weight: 600;
+        min-height: var(--tap); font-size: 22px; border-radius: var(--radius-lg); font-weight: 600;
       }
+      .keypad button { font-size: 26px; font-variant-numeric: var(--numbers); }
       .reasons { display: grid; gap: 10px; }
-      .reasons button { font-size: 18px; text-align: left; padding: 0 16px; }
-      .reasons button[aria-pressed='true'] { background: var(--line-strong); outline: 3px solid var(--accent); }
-      .sheet-actions { display: grid; grid-template-columns: 1fr 2fr; gap: 12px; }
+      .reasons button {
+        font-size: 18px; text-align: left; padding: 10px 16px; line-height: 1.3;
+        display: flex; align-items: center; gap: var(--space-3);
+      }
+      .reasons button .sre-icon { width: 22px; height: 22px; }
+      .reasons button[aria-pressed='true'] { background: var(--mint); border-color: var(--accent); outline: 3px solid var(--accent); }
+      .sheet-actions { display: grid; grid-template-columns: 1fr 2fr; gap: 12px; margin-top: 2px; }
       .sheet-actions .primary, .keypad .primary { background: var(--accent); color: var(--on-accent); }
 
       /* ── The refusal banner ──────────────────────────────────────────────
-         Full width, top of screen, and it stays until acknowledged. */
+         Full width, top of screen, and it stays until acknowledged. The words on the left, one big button on the right. */
       .refusal {
-        position: fixed; inset: 0 0 auto 0; z-index: 30; padding: 20px;
-        background: var(--danger-surface); color: var(--on-danger); display: grid; gap: 10px;
+        position: fixed; inset: 0 0 auto 0; z-index: 30; padding: var(--space-5) var(--space-6);
+        background: var(--danger-surface); color: var(--on-danger); box-shadow: var(--shadow-lg);
+        display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--space-6); row-gap: var(--space-2); align-items: center;
       }
       .refusal[hidden] { display: none; }
-      .refusal strong { font-size: 24px; }
-      .refusal p { margin: 0; font-size: 18px; line-height: 1.45; }
-      .refusal button { background: var(--panel); color: var(--danger-text); }
+      .refusal strong { font-size: 26px; line-height: var(--leading-tight); grid-column: 1; }
+      .refusal p { margin: 0; font-size: 19px; line-height: 1.45; grid-column: 1; white-space: pre-line; }
+      .refusal button {
+        grid-column: 2; grid-row: 1 / span 2; min-width: 12rem; padding: 0 var(--space-6);
+        background: var(--panel); border-color: var(--panel); color: var(--danger-text); font-weight: 700;
+      }
+      .refusal button:focus-visible { outline-color: var(--on-danger); outline-offset: 3px; }
+      /* OB-238: the title carries its tone's mark beside its words — the stop mark on red, the tick on green. Good news
+         (change due, approved, recorded) is the shared success pair; a stop or a refusal keeps the red above. */
+      .refusal strong { display: flex; align-items: center; gap: var(--space-3); }
+      .refusal strong .sre-icon { width: 28px; height: 28px; flex: none; }
+      .refusal[data-tone="success"] { background: var(--ok-surface); color: var(--on-ok-surface); }
+      .refusal[data-tone="success"] button { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+      .refusal[data-tone="success"] button:focus-visible { outline-color: var(--on-ok-surface); }
 
-      /* Counting the drawer: one row per denomination, a big count in the middle. */
-      .denoms { display: grid; gap: 8px; max-height: 46dvh; overflow-y: auto; }
-      .denom { display: grid; grid-template-columns: 5rem 1fr 3.5rem 1fr; align-items: center; gap: 8px; }
-      .denom span { font-size: 20px; font-weight: 600; }
-      .denom .n { text-align: center; font-size: 24px; font-variant-numeric: tabular-nums; }
-      .denom button { min-height: 52px; font-size: 26px; border: 0; border-radius: 12px; background: var(--line); color: var(--ink); }
+      /* Counting the drawer: one row per denomination, a big count in the middle. At a desk the nine rows sit in two
+         columns, largest note first down the left, so the whole drawer is on screen without scrolling. */
+      #count .sheet-inner { width: min(880px, 100%); }
+      .denoms { display: grid; gap: 8px var(--space-6); max-height: 46dvh; overflow-y: auto; }
+      @media (min-width: 760px) {
+        .denoms { grid-template-rows: repeat(5, auto); grid-auto-flow: column; grid-auto-columns: 1fr; max-height: none; }
+      }
+      .denom { display: grid; grid-template-columns: 6.5rem 1fr 4rem 1fr; align-items: center; gap: 8px; }
+      .denom span { font-size: 20px; font-weight: 600; font-variant-numeric: var(--numbers); white-space: nowrap; }
+      .denom .n { text-align: center; font-size: 26px; font-weight: 700; }
+      .denom button { min-height: var(--tap); font-size: 28px; line-height: 1; }
+      #count-total { font-size: 34px; white-space: nowrap; }
+
+      /* A narrow window (a till's second screen, a tablet): the strip may take two rows, the actions two lines. */
+      @media (max-width: 900px) {
+        header { grid-template-columns: minmax(0, 1fr) auto auto; }
+        .conn { grid-column: 1 / -1; grid-row: 2; }
+        .actions { grid-template-columns: repeat(4, 1fr); }
+        .actions #tender { grid-column: 1 / -1; margin-left: 0; }
+        .actions #hold { margin-left: 0; }
+        .refusal { grid-template-columns: 1fr; }
+        .refusal button { grid-column: 1; grid-row: auto; }
+      }
     </style>
   </head>
   <body>
     <header>
       <!-- Who and where (SP-4b · F09): the lane this box IS and the cashier who signed in — painted by app.js from the
            session, never a stand-in name. The button signs a cashier in with their staff code, or out. -->
-      <h1 class="lane" id="lane">—</h1>
-      <span class="sync">
-        <button class="signin" id="signin" type="button">Sign in</button>
+      <h1 class="lane" id="lane"><span class="lane-name" id="lane-name">—</span><span class="sr-only"> · </span><span class="cashier" id="cashier"></span></h1>
+      <button class="signin head-btn" id="signin" type="button">Sign in</button>
+      <div class="conn" id="conn" data-tone="idle">
         <span class="dot" id="conn-dot" data-sre-status title="Connection"></span>
-        <span id="conn-text">Online</span>
-        <!-- Tapping the unsent count lists queued sales (spec). -->
-        <button class="unsent" id="unsent" type="button">Unsent: 0</button>
-        <button class="lang" id="lang" type="button" aria-label="Language">EN / த</button>
-      </span>
+        <span id="conn-text"><span class="conn-state" id="conn-state">Online</span><span class="conn-detail" id="conn-detail"></span></span>
+      </div>
+      <!-- Tapping the unsent count lists queued sales (spec). -->
+      <button class="unsent" id="unsent" type="button"><span class="label"><span id="unsent-label">Unsent</span>: <span class="count" id="unsent-count">0</span></span></button>
+      <button class="lang" id="lang" type="button" aria-label="Language">EN / த</button>
     </header>
 
     <p class="stale" id="stale" hidden role="status"></p>
     <p class="stale" id="offers-refused" hidden role="status"></p>
     <main>
-      <table>
-        <thead>
-          <tr>
-            <th>Item</th>
-            <th class="amount">Qty</th>
-            <th class="amount">Amount</th>
-          </tr>
-        </thead>
-        <tbody id="lines"></tbody>
-      </table>
-      <p class="empty" id="empty">Scan an item to begin.</p>
+      <div class="bill">
+        <table id="bill-table">
+          <colgroup><col /><col class="c-qty" /><col class="c-amount" /></colgroup>
+          <thead>
+            <tr>
+              <th id="th-item">Item</th>
+              <th class="qty" id="th-qty">Qty</th>
+              <th class="amount" id="th-amount">Amount</th>
+            </tr>
+          </thead>
+          <tbody id="lines"></tbody>
+        </table>
+        <p class="empty" id="empty"><span id="empty-text">Scan an item to begin.</span></p>
+      </div>
     </main>
 
     <footer>
       <div class="total-row">
-        <span class="total-label">Total to pay</span>
+        <span class="total-label" id="total-label">Total to pay</span>
         <span class="total" id="total">₹0.00</span>
       </div>
       <div class="actions">
@@ -186,6 +318,8 @@
     -->
     <div class="sheet" id="pay" hidden role="dialog" aria-modal="true" aria-labelledby="pay-title">
       <div class="sheet-inner">
+        <!-- What kind of question this is, when the till must say so first (the age check). -->
+        <p class="kicker" id="pay-kicker" hidden><span id="pay-kicker-text"></span></p>
         <h2 id="pay-title">How is the customer paying?</h2>
         <div class="reasons" id="pay-kinds"></div>
         <div class="sheet-actions">
@@ -218,7 +352,7 @@
       "Do not take payment" is the one message in this product that must not be
       missed, and a toast that fades is a message that was missed.
     -->
-    <div class="refusal" id="refusal" hidden role="alert">
+    <div class="refusal" id="refusal" data-tone="stop" hidden role="alert">
       <strong id="refusal-title">Do not take payment</strong>
       <p id="refusal-text"></p>
       <button id="refusal-ok" type="button">I have read this</button>

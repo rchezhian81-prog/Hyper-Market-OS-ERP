@@ -328,7 +328,7 @@ describe.skipIf(!HAVE_BROWSER)('the ERP\'s forty-six pages, audited on the rende
       expect(await texts(page, '#ops .op .n')).toEqual(['3', '2', '4', '0', '1']);
       // the workspaces: the rail's own groups, each a link to its first screen
       expect(await texts(page, '#workspaces a b')).toEqual(['Today', 'Inventory & backstore', 'Administration']);
-      expect(await texts(page, '#workspaces a small')).toEqual(['1 screens', '2 screens', '2 screens']);
+      expect(await texts(page, '#workspaces a small')).toEqual(['1 screen', '2 screens', '2 screens']);
       expect(await page.getAttribute('#workspaces a:nth-child(2)', 'href')).toMatch(/\/counts\/$/);
       // the one primary action still stands, and the tabs' tiles still say their purpose
       expect(await page.textContent('#next-approval')).toBe('Clear the next approval (1)');

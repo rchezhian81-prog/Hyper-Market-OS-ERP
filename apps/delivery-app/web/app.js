@@ -25,6 +25,42 @@
 
 const el = (id) => document.getElementById(id);
 
+// ── OB-205: an icon from the one set beside the words ───────────────────────
+// `say` writes an element's words with the set's icon in front of them. The element's text stays exactly the words (an
+// SVG adds none), so nothing that reads it changes; with no icon set loaded, the words stand alone — they are the signal.
+const mark = (name, size = 20) => (typeof window.sreIcon === 'function' ? window.sreIcon(name, size) : null);
+function say(node, text, icon) {
+  const m = icon ? mark(icon) : null;
+  if (m === null) { node.replaceChildren(text); return; }
+  // The icon and its words travel as one pair (`sre-with-icon`), so the icon is never found apart from its words.
+  const pair = document.createElement('span');
+  pair.className = 'sre-with-icon';
+  pair.append(m, text);
+  node.replaceChildren(pair);
+}
+/** The slots the markup — and the store box's sign-in strip above this screen — leave for an icon (`data-sre-icon`). */
+function paintIconSlots() {
+  for (const slot of document.querySelectorAll('[data-sre-icon]')) {
+    if (slot.firstElementChild !== null) continue;
+    const m = mark(slot.dataset.sreIcon, 18);
+    if (m !== null) slot.append(m);
+  }
+}
+/** The banner's shape beside its words: a tick when it went through, a stop when it did not — never the colour alone. */
+function bannerMark(good) {
+  const shape = mark(good ? 'circle-check' : 'circle-alert', 28);
+  el('banner-mark').replaceChildren(...(shape === null ? [] : [shape]));
+}
+/** The shape a sent record's state wears beside its words (the five shared states). */
+const STATE_ICON = { saved_here: 'clock', retrying: 'refresh-cw', handed_to_box: 'store', posted: 'circle-check', refused: 'circle-alert' };
+/** "3 of 8 done" — the progress words, with the two numbers put in. */
+const progressWords = (template, n, total) => template.replace('{n}', String(n)).replace('{total}', String(total));
+/** The bar under the progress words: drawn only when there is a total to measure against (never a made-up zero). */
+function paintMeter(n, total) {
+  el('progress-meter').hidden = !(total > 0);
+  if (total > 0) el('progress-bar').style.transform = `scaleX(${Math.min(1, Math.max(0, n / total))})`;
+}
+
 const inr = (minor) =>
   '₹' + (minor / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -37,7 +73,7 @@ const WORDS = {
     noCloud: 'store computer cannot reach head office', cloudNotSetUp: 'no head office link set up',
     cloudUnknown: 'head office not checked yet', lastContact: 'last contact',
     staleShell: 'No signal. This is the route this phone was last given, at',
-    myRoute: 'My route', stopsDone: 'stops done', waiting: 'waiting to sync', allSent: 'everything sent',
+    myRoute: 'My route', stopsDone: 'stops done', progressOf: '{n} of {total} stops done', waiting: 'waiting to sync', allSent: 'everything sent',
     cashCarrying: 'Cash you are carrying', collect: 'Collect', prepaid: 'Already paid',
     delivered: 'Delivered', couldNotDeliver: 'Could not deliver', endOfShift: 'End of shift — hand cash over',
     partlyDelivered: 'Partly delivered', partialOk: 'Recorded as partly delivered',
@@ -75,7 +111,7 @@ const WORDS = {
     noCloud: 'கடை கணினி தலைமை அலுவலகத்தை அடைய முடியவில்லை', cloudNotSetUp: 'தலைமை அலுவலக இணைப்பு அமைக்கப்படவில்லை',
     cloudUnknown: 'தலைமை அலுவலகம் இன்னும் சரிபார்க்கப்படவில்லை', lastContact: 'கடைசித் தொடர்பு',
     staleShell: 'சிக்னல் இல்லை. இந்த ஃபோனுக்குக் கடைசியாகக் கொடுக்கப்பட்ட வழி இதுதான்:',
-    myRoute: 'என் வழி', stopsDone: 'நிறுத்தங்கள் முடிந்தன', waiting: 'அனுப்பக் காத்திருக்கிறது', allSent: 'அனைத்தும் அனுப்பப்பட்டன',
+    myRoute: 'என் வழி', stopsDone: 'நிறுத்தங்கள் முடிந்தன', progressOf: '{total} இல் {n} நிறுத்தங்கள் முடிந்தன', waiting: 'அனுப்பக் காத்திருக்கிறது', allSent: 'அனைத்தும் அனுப்பப்பட்டன',
     cashCarrying: 'நீங்கள் வைத்திருக்கும் பணம்', collect: 'வாங்க வேண்டியது', prepaid: 'ஏற்கனவே செலுத்தப்பட்டது',
     delivered: 'கொடுக்கப்பட்டது', couldNotDeliver: 'கொடுக்க முடியவில்லை', endOfShift: 'ஷிப்ட் முடிவு — பணத்தை ஒப்படை',
     partlyDelivered: 'ஓரளவு கொடுக்கப்பட்டது', partialOk: 'ஓரளவு கொடுக்கப்பட்டதாக பதிவானது',
@@ -129,6 +165,9 @@ const STATE_WORDS = {
  * only the store computer's word says head office has it (P-08). For a driver carrying cash that is the difference between a
  * record and a rumour. A guardrail binds these to the shared list.
  */
+/** The shape each stop's state wears beside its words (OB-205). */
+const STOP_ICON = { assigned: 'clock', picked_up: 'package', out_for_delivery: 'truck', attempted: 'navigation', delivered: 'circle-check', partially_delivered: 'package-minus', failed: 'circle-alert', returned_to_origin: 'rotate-ccw' };
+
 const SENT_STATE_WORDS = {
   saved_here: { en: 'Saved on this phone — not yet with the store computer', ta: 'இந்த ஃபோனில் சேமிக்கப்பட்டது — கடை கணினிக்கு இன்னும் செல்லவில்லை' },
   retrying: { en: 'Retrying — the store computer did not take it yet', ta: 'மீண்டும் முயற்சி — கடை கணினி இன்னும் ஏற்கவில்லை' },
@@ -234,6 +273,7 @@ function tell(title, message, good = false) {
   el('banner-title').textContent = title;
   el('banner-text').textContent = message;
   el('banner').classList.toggle('good', good === true);
+  bannerMark(good === true);
   el('banner').hidden = false;
   el('banner-ok').textContent = t('ok');
   el('banner-ok').focus();
@@ -246,7 +286,7 @@ let sheetResolve = null;
 let onEntryChange = null;
 
 function ask({ title, mode, hint = '', initial = '0', options = [], onChange = null }) {
-  el('sheet-title').textContent = title;
+  say(el('sheet-title'), title, mode === 'number' ? 'calculator' : 'list');
   el('entry-hint').textContent = hint;
   el('entry').textContent = initial;
   el('entry').hidden = mode !== 'number';
@@ -335,7 +375,7 @@ function countCash() {
     return row;
   }));
 
-  el('count-title').textContent = t('countCash');
+  say(el('count-title'), t('countCash'), 'banknote');
   el('count-hint').textContent = t('countHint');
   el('count-cancel').textContent = t('cancel');
   el('count-ok').textContent = t('handOver');
@@ -375,7 +415,8 @@ function currentStop() {
  */
 function renderSent() {
   const sent = real && typeof real.sentWork === 'function' ? real.sentWork().slice(0, 12) : [];
-  el('sent-heading').textContent = t('sentHeading');
+  say(el('sent-heading'), t('sentHeading'), 'send');
+  el('sent-heading').dataset.count = String(sent.length);
   el('sent-heading').hidden = sent.length === 0;
   const host = el('sent-work');
   host.textContent = '';
@@ -390,7 +431,7 @@ function renderSent() {
     what.textContent = `${words(KIND_WORDS, w.kind)} · ${w.what} — ${w.detail}`;
     const state = document.createElement('div');
     state.className = `pill ${w.state}`;
-    state.textContent = words(SENT_STATE_WORDS, w.state);
+    say(state, words(SENT_STATE_WORDS, w.state), STATE_ICON[w.state]);
     row.append(what, state);
     if (w.reason) {
       const why = document.createElement('div');
@@ -433,7 +474,8 @@ function render() {
   const chosen = selected();
   if (chosen === null || TERMINAL.has(chosen.state)) selectedStopId = currentStop()?.stopId ?? null;
   el('route').firstChild.textContent = `${t('myRoute')} · ${session.routeId ?? ''} `;
-  el('progress').textContent = `${progress.delivered}/${progress.total} ${t('stopsDone')}`;
+  el('progress').textContent = progressWords(t('progressOf'), progress.delivered, progress.total);
+  paintMeter(progress.delivered, progress.total);
 
   el('empty').hidden = stops.length > 0;
   el('stops').replaceChildren(...stops.map((stop) => {
@@ -454,7 +496,7 @@ function render() {
     cod.textContent = stop.codMinor > 0 ? `${t('collect')} ${inr(stop.codMinor)}` : t('prepaid');
     const state = document.createElement('span');
     state.className = 'state';
-    state.textContent = words(STATE_WORDS, stop.state);
+    say(state, words(STATE_WORDS, stop.state), STOP_ICON[stop.state] ?? 'clock');
 
     row.append(area, order, cod, state);
     if (stop.contributionFlag) {
@@ -474,10 +516,10 @@ function render() {
 
   el('held-label').textContent = t('cashCarrying');
   el('held').textContent = inr(session.codHeld().minor);
-  el('deliver').textContent = t('delivered');
-  el('delivered-partial').textContent = t('partlyDelivered');
-  el('failed').textContent = t('couldNotDeliver');
-  el('handover').textContent = t('endOfShift');
+  say(el('deliver'), t('delivered'), 'circle-check');
+  say(el('delivered-partial'), t('partlyDelivered'), 'package-minus');
+  say(el('failed'), t('couldNotDeliver'), 'circle-alert');
+  say(el('handover'), t('endOfShift'), 'wallet');
   renderQueue();
 }
 
@@ -779,6 +821,7 @@ window.phoneSignInOnLock.push(() => clearInterval(badgeTimer));
 
 el('sample').hidden = real !== undefined;
 el('sample').textContent = t('sampleRoute');
+paintIconSlots();
 
 const storageProblem = window.driverStorageProblem;
 el('storage').hidden = !storageProblem;

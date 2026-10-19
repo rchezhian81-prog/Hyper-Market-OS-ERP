@@ -26,6 +26,37 @@
 
 const el = (id) => document.getElementById(id);
 
+// ── OB-205: an icon from the one set beside the words ───────────────────────
+// `say` writes an element's words with the set's icon in front of them. The element's text stays exactly the words (an
+// SVG adds none), so nothing that reads it changes; with no icon set loaded, the words stand alone — they are the signal.
+const mark = (name, size = 20) => (typeof window.sreIcon === 'function' ? window.sreIcon(name, size) : null);
+function say(node, text, icon) {
+  const m = icon ? mark(icon) : null;
+  if (m === null) { node.replaceChildren(text); return; }
+  // The icon and its words travel as one pair (`sre-with-icon`), so the icon is never found apart from its words.
+  const pair = document.createElement('span');
+  pair.className = 'sre-with-icon';
+  pair.append(m, text);
+  node.replaceChildren(pair);
+}
+/** A quantity: the number on its own, big, then its words — `12 units · EA` stays exactly that text. */
+function sayQty(node, n, rest) {
+  const big = document.createElement('span');
+  big.className = 'n';
+  big.textContent = String(n);
+  node.replaceChildren(big, rest);
+}
+/** The slots the markup — and the store box's sign-in strip above this screen — leave for an icon (`data-sre-icon`). */
+function paintIconSlots() {
+  for (const slot of document.querySelectorAll('[data-sre-icon]')) {
+    if (slot.firstElementChild !== null) continue;
+    const m = mark(slot.dataset.sreIcon, 18);
+    if (m !== null) slot.append(m);
+  }
+}
+/** The shape a sent record's state wears beside its words (the five shared states, and a request awaiting approval). */
+const STATE_ICON = { saved_here: 'clock', retrying: 'refresh-cw', handed_to_box: 'store', posted: 'circle-check', refused: 'circle-alert', awaiting: 'clock' };
+
 // ── Words ─────────────────────────────────────────────────────────────────
 //
 // The scan-feedback keys are the session's own `FEEDBACK_CODES`. A completeness tripwire
@@ -74,7 +105,7 @@ const WORDS = {
     checklist_required: 'Chilled or frozen goods — do the receiving checklist first',
     checklist_incomplete: 'The receiving checklist is not finished',
     checklistTitle: 'Receiving checklist — chilled and frozen goods', checklistHint: 'Tick each check at the door. It goes with the receipt, in your name.',
-    checkPass: 'Pass', checkFail: 'Fail', sendReceipt: 'Send the receipt',
+    checkPass: 'Pass', checkFail: 'Fail', sendReceipt: 'Send the receipt', checkedOf: '{n} of {total} checked',
     checklistActionHint: 'A check failed — tap what was done about it',
     actionRefused: 'Refused — sent back with the driver', actionChilled: 'Moved straight to the chiller or freezer', actionHeld: 'Held aside for the manager to check',
     over_delivery_needs_approval: 'More than ordered — a second person must approve it',
@@ -152,7 +183,7 @@ const WORDS = {
     checklist_required: 'குளிர் அல்லது உறைந்த பொருட்கள் — முதலில் பெறுதல் சரிபார்ப்பைச் செய்யவும்',
     checklist_incomplete: 'பெறுதல் சரிபார்ப்பு முடியவில்லை',
     checklistTitle: 'பெறுதல் சரிபார்ப்பு — குளிர் மற்றும் உறைந்த பொருட்கள்', checklistHint: 'வாசலில் ஒவ்வொரு சோதனையையும் குறிக்கவும். அது உங்கள் பெயரில் ரசீதுடன் செல்லும்.',
-    checkPass: 'சரி', checkFail: 'தவறு', sendReceipt: 'ரசீதை அனுப்பு',
+    checkPass: 'சரி', checkFail: 'தவறு', sendReceipt: 'ரசீதை அனுப்பு', checkedOf: '{total} இல் {n} சரிபார்க்கப்பட்டது',
     checklistActionHint: 'ஒரு சோதனை தவறியது — அதற்கு என்ன செய்யப்பட்டது என்பதைத் தட்டவும்',
     actionRefused: 'மறுக்கப்பட்டது — ஓட்டுநருடன் திருப்பி அனுப்பப்பட்டது', actionChilled: 'உடனே குளிர்சாதனம் அல்லது உறைவிப்பானுக்கு மாற்றப்பட்டது', actionHeld: 'மேலாளர் சரிபார்க்க ஒதுக்கி வைக்கப்பட்டது',
     over_delivery_needs_approval: 'ஆர்டரை விட அதிகம் — இரண்டாவது நபர் ஒப்புதல் அளிக்க வேண்டும்',
@@ -254,8 +285,8 @@ let adjustStep = null; // where an adjustment request is: 'item' | 'reason' | nu
 // A promise that resolves with the next scanned code, or null if cancelled. No text box exists.
 let scanResolve = null;
 function awaitScan(title) {
-  el('scan-title').textContent = title;
-  el('scan-awaiting').textContent = t('pointAndPull');
+  say(el('scan-title'), title, 'scan-barcode');
+  say(el('scan-awaiting'), t('pointAndPull'), 'scan-line');
   el('scan').hidden = false;
   return new Promise((resolve) => { scanResolve = resolve; });
 }
@@ -270,8 +301,8 @@ el('scan-cancel').addEventListener('click', () => {
 // call on the ERP, not a number a worker adjusts up a ladder.
 let confirmResolve = null;
 function awaitConfirm(line) {
-  el('confirm-title').textContent = `${t('confirmPick')} — ${line.orderRef}`;
-  el('confirm-qty').textContent = `${line.remainingMinor} ${t('units')} · ${line.uom}`;
+  say(el('confirm-title'), `${t('confirmPick')} — ${line.orderRef}`, 'package-check');
+  sayQty(el('confirm-qty'), line.remainingMinor, ` ${t('units')} · ${line.uom}`);
   el('confirm-hint').textContent = `${line.productId}${line.batchId ? ` · ${line.batchId}` : ''} · ${t('fromBin')} ${line.binId}`;
   el('confirm-cancel').textContent = t('cancel');
   el('confirm-ok').textContent = t('confirm');
@@ -287,8 +318,8 @@ el('confirm-cancel').addEventListener('click', () => settleConfirm(false));
 
 /** SP-8c: the confirm step of an issue to the floor — the number shown before it is committed. */
 function awaitConfirmIssue(line, quantity, binId) {
-  el('confirm-title').textContent = `${t('confirmIssue')} — ${line.indentId}`;
-  el('confirm-qty').textContent = `${quantity} ${t('units')} · ${line.uom}`;
+  say(el('confirm-title'), `${t('confirmIssue')} — ${line.indentId}`, 'package-minus');
+  sayQty(el('confirm-qty'), quantity, ` ${t('units')} · ${line.uom}`);
   el('confirm-hint').textContent = `${line.productId} · ${t('fromBin')} ${binId} · ${t('askedBy')} ${line.requestedBy}`;
   el('confirm-cancel').textContent = t('cancel');
   el('confirm-ok').textContent = t('confirm');
@@ -321,7 +352,7 @@ buildKeypad('dsd-driver-keypad', 'dsd-driver-entry', 10); // R3 D-11: a driver's
 // cleared ("No reading"); head office holds a chilled or frozen scan without one. A keyed value that is not a plain number
 // (a lone minus, a trailing point) is refused on OK — nothing is set.
 function renderTemp() {
-  el('recv-temp').textContent = `${t('tempLabel')}: ${arrivalTempC === null ? t('tempNotTaken') : `${arrivalTempC} °C`}`;
+  say(el('recv-temp'), `${t('tempLabel')}: ${arrivalTempC === null ? t('tempNotTaken') : `${arrivalTempC} °C`}`, 'thermometer');
 }
 el('temp-keypad').replaceChildren(...['1', '2', '3', '4', '5', '6', '7', '8', '9', '−', '0', '.', 'C', '⌫'].map((key) => {
   const button = document.createElement('button');
@@ -339,7 +370,7 @@ el('temp-keypad').replaceChildren(...['1', '2', '3', '4', '5', '6', '7', '8', '9
   return button;
 }));
 el('recv-temp').addEventListener('click', () => {
-  el('temp-title').textContent = t('tempTitle');
+  say(el('temp-title'), t('tempTitle'), 'thermometer');
   el('temp-hint').textContent = t('tempHint');
   el('temp-none').textContent = t('tempNone');
   el('temp-cancel').textContent = t('cancel');
@@ -365,7 +396,7 @@ el('temp-ok').addEventListener('click', () => {
 // The blind count's quantity: what the worker SAW. The panel carries no expected figure — the model has none to give.
 let qtyResolve = null;
 function awaitQty(title, hint, initial = '0') {
-  el('qty-title').textContent = title;
+  say(el('qty-title'), title, 'calculator');
   el('qty-hint').textContent = hint;
   el('qty-entry').textContent = initial;
   el('qty-cancel').textContent = t('cancel');
@@ -390,7 +421,7 @@ function setAdjustSign(sign) {
   el('adjust-plus').setAttribute('aria-pressed', String(sign > 0));
 }
 function awaitAdjustment(productId) {
-  el('adjust-title').textContent = t('adjustTitle');
+  say(el('adjust-title'), t('adjustTitle'), 'sliders');
   el('adjust-hint').textContent = productId;
   el('adjust-minus').textContent = t('missing');
   el('adjust-plus').textContent = t('found');
@@ -423,6 +454,9 @@ function feltResult(signal) {
   banner.className = 'banner' + (signal.feedback === 'accept' ? ' good' : signal.feedback === 'warn' ? ' warn' : '');
   el('banner-title').textContent = t(signal.code) ?? signal.detail;
   el('banner-text').textContent = signal.detail;
+  // OB-205: the outcome's shape beside its word — a tick, a warning, a stop — never the colour alone.
+  const shape = mark(signal.feedback === 'accept' ? 'circle-check' : signal.feedback === 'warn' ? 'triangle-alert' : 'circle-alert', 28);
+  el('banner-mark').replaceChildren(...(shape === null ? [] : [shape]));
   banner.hidden = false;
   if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
     try { navigator.vibrate(signal.vibrateMs); } catch { /* vibration is a nicety, never required */ }
@@ -457,19 +491,21 @@ function render() {
   const items = real && typeof real.goodsIn === 'function' ? real.goodsIn() : [];
   const issues = real && typeof real.indentLines === 'function' ? real.indentLines() : [];
 
-  el('goods-in-heading').textContent = t('goodsIn');
-  el('receive').textContent = t('receive');
+  say(el('goods-in-heading'), t('goodsIn'), 'layers');
+  el('goods-in-heading').dataset.count = String(items.length);
+  say(el('receive'), t('receive'), 'truck');
   renderDeliveries();
   renderTemp();
   // SP-6b: "Delivery complete" appears once something has been received here for this delivery and not yet sent as one receipt.
-  el('done-receiving').textContent = t('doneReceiving');
+  say(el('done-receiving'), t('doneReceiving'), 'send');
   el('done-receiving').hidden = !(real !== undefined && typeof real.receivingOpen === 'function' && real.receivingOpen(grnId));
-  el('put-away').textContent = t('putAway');
+  say(el('put-away'), t('putAway'), 'layers');
   el('put-away').disabled = selected === null;
-  el('pick-heading').textContent = t('toPick');
-  el('pick').textContent = t('pick');
-  el('count-bin').textContent = t('countBin');
-  el('adjust-stock').textContent = t('adjustStock');
+  say(el('pick-heading'), t('toPick'), 'shopping-basket');
+  el('pick-heading').dataset.count = String(lines.length);
+  say(el('pick'), t('pick'), 'shopping-basket');
+  say(el('count-bin'), t('countBin'), 'calculator');
+  say(el('adjust-stock'), t('adjustStock'), 'sliders');
   el('count-bin').disabled = real === undefined;
   el('adjust-stock').disabled = real === undefined;
   // The Pick button exists only while there is pick work; a bin scanned from the list needs it not at all.
@@ -477,8 +513,9 @@ function render() {
   if (!lines.some((l) => l.lineId === selectedPick)) selectedPick = null;
   el('pick').disabled = selectedPick === null;
   // SP-8c: the Issue button exists only while the handheld holds floor indents to issue.
-  el('issue-heading').textContent = t('toIssue');
-  el('issue').textContent = t('issue');
+  say(el('issue-heading'), t('toIssue'), 'package-minus');
+  el('issue-heading').dataset.count = String(issues.length);
+  say(el('issue'), t('issue'), 'package-minus');
   el('issue').hidden = issues.length === 0;
   if (!issues.some((l) => `${l.indentId}|${l.productId}` === selectedIssue)) selectedIssue = null;
   el('issue').disabled = selectedIssue === null;
@@ -524,7 +561,7 @@ function render() {
     what.textContent = `${line.orderRef} · ${line.productId}${line.batchId ? ` · ${line.batchId}` : ''}`;
     const qty = document.createElement('div');
     qty.className = 'qty';
-    qty.textContent = `${line.remainingMinor} ${t('units')} · ${line.uom}`;
+    sayQty(qty, line.remainingMinor, ` ${t('units')} · ${line.uom}`);
     row.append(where, what, qty);
     row.addEventListener('click', () => { selectedPick = line.lineId; selected = null; selectedIssue = null; render(); });
     pickHost.append(row);
@@ -548,7 +585,7 @@ function render() {
     what.textContent = `${line.indentId} · ${line.productId} · ${t('askedBy')} ${line.requestedBy}`;
     const qty = document.createElement('div');
     qty.className = 'qty';
-    qty.textContent = `${line.remainingMinor} ${t('units')} · ${line.uom} · ${t('owed')}`;
+    sayQty(qty, line.remainingMinor, ` ${t('units')} · ${line.uom} · ${t('owed')}`);
     row.append(where, what, qty);
     row.addEventListener('click', () => { selectedIssue = `${line.indentId}|${line.productId}`; selectedPick = null; selected = null; render(); });
     issueHost.append(row);
@@ -574,7 +611,7 @@ function render() {
     what.textContent = item.productId + (item.batchId ? ` · ${item.batchId}` : '');
     const qty = document.createElement('div');
     qty.className = 'qty';
-    qty.textContent = `${item.quantityMinor} ${t('units')} · ${item.uom}`;
+    sayQty(qty, item.quantityMinor, ` ${t('units')} · ${item.uom}`);
     row.append(what, qty);
     if (item.recalled) { const f = document.createElement('div'); f.className = 'flag'; f.textContent = t('recalledFlag'); row.append(f); }
     row.addEventListener('click', () => { selected = index; selectedPick = null; selectedIssue = null; render(); });
@@ -589,7 +626,8 @@ function render() {
  */
 function renderSent() {
   const sent = real && typeof real.sentWork === 'function' ? real.sentWork().slice(0, 12) : [];
-  el('sent-heading').textContent = t('sentHeading');
+  say(el('sent-heading'), t('sentHeading'), 'send');
+  el('sent-heading').dataset.count = String(sent.length);
   el('sent-heading').hidden = sent.length === 0;
   const host = el('sent-work');
   host.textContent = '';
@@ -605,7 +643,8 @@ function renderSent() {
     const state = document.createElement('div');
     state.className = `pill ${w.state}`;
     // A request head office has RECORDED is not yet applied: it waits for a supervisor — say so, never "posted".
-    state.textContent = w.kind === 'adjustment' && w.state === 'posted' ? t('awaitingApproval') : words(STATE_WORDS, w.state);
+    const awaiting = w.kind === 'adjustment' && w.state === 'posted';
+    say(state, awaiting ? t('awaitingApproval') : words(STATE_WORDS, w.state), STATE_ICON[awaiting ? 'awaiting' : w.state]);
     row.append(what, state);
     if (w.reason) {
       const why = document.createElement('div');
@@ -643,7 +682,8 @@ const syncTimer = setInterval(() => { void syncToBox(); }, 10_000);
 function renderDeliveries() {
   const list = (data && Array.isArray(data.openDeliveries)) ? data.openDeliveries : [];
   el('deliveries-heading').hidden = list.length === 0;
-  el('deliveries-heading').textContent = t('deliveries');
+  say(el('deliveries-heading'), t('deliveries'), 'truck');
+  el('deliveries-heading').dataset.count = String(list.length);
   el('deliveries').replaceChildren(...list.map((d) => {
     const row = document.createElement('a');
     row.className = 'row';
@@ -713,8 +753,12 @@ function awaitChecklist(check, coldChain) {
     for (const b of el('checklist-actions').querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.action === action));
     for (const b of el('checklist-items').querySelectorAll('button')) b.setAttribute('aria-pressed', String(results[b.dataset.item] === b.dataset.result));
     el('checklist-ok').disabled = !(check.items.every((i) => results[i.itemId] !== undefined) && (!anyFail || action !== null));
+    // OB-205: how far through the checks the receiver is, in words.
+    const answered = check.items.filter((i) => results[i.itemId] !== undefined).length;
+    el('checklist-progress').hidden = check.items.length === 0;
+    el('checklist-progress').textContent = t('checkedOf').replace('{n}', String(answered)).replace('{total}', String(check.items.length));
   };
-  el('checklist-title').textContent = check.title ? `${t('checklistTitle')} · ${check.title}` : t('checklistTitle');
+  say(el('checklist-title'), check.title ? `${t('checklistTitle')} · ${check.title}` : t('checklistTitle'), 'clipboard-check');
   el('checklist-hint').textContent = `${t('checklistHint')} (${coldChain.join(', ')})`;
   el('checklist-action-hint').textContent = t('checklistActionHint');
   el('checklist-cancel').textContent = t('cancel');
@@ -926,6 +970,11 @@ const DSD_WORDS = {
     chooseItemBack: 'Tap the item to hand back', chooseWhy: 'Why is it handed back?', howMany: 'How many are handed back?',
     damaged: 'Damaged', temperature_breach: 'Too warm / too cold', expired: 'Expired', not_ordered: 'Not ordered', other: 'Other',
     nothingToChoose: 'No delivery for this store is on this phone', route: 'route', useNumber: 'tap to use the ten digits keyed above',
+    // OB-205: the sheet's own labels, which were English only.
+    dsdOpen: 'Direct delivery at the door (no cash)', dsdTitle: 'Direct delivery at the door',
+    noCashNote: 'No cash at the door. The driver gets the signed delivery note; the supplier is paid later as a supplier bill.',
+    startCheckIn: 'Start the check-in', dsdScanItem: 'Scan an item', handBack: 'Hand back to the driver', backBtn: 'Back',
+    closeDelivery: 'Driver signs the note — close the delivery',
   },
   ta: {
     dsd_started: 'சரிபார்ப்பு தொடங்கியது', dsd_scanned: 'ஸ்கேன் செய்யப்பட்டது', dsd_handed_back: 'ஓட்டுநரிடம் திருப்பி கொடுக்கப்பட்டது',
@@ -939,6 +988,10 @@ const DSD_WORDS = {
     chooseItemBack: 'திருப்ப வேண்டிய பொருளைத் தட்டவும்', chooseWhy: 'ஏன் திருப்பப்படுகிறது?', howMany: 'எத்தனை திருப்பப்படுகின்றன?',
     damaged: 'சேதம்', temperature_breach: 'அதிக சூடு / அதிக குளிர்', expired: 'காலாவதி', not_ordered: 'ஆர்டர் செய்யப்படவில்லை', other: 'மற்றவை',
     nothingToChoose: 'இந்த கடைக்கான டெலிவரி இந்த போனில் இல்லை', route: 'வழி', useNumber: 'மேலே உள்ளிட்ட பத்து இலக்கங்களைப் பயன்படுத்த தட்டவும்',
+    dsdOpen: 'வாசலில் நேரடி டெலிவரி (பணம் இல்லை)', dsdTitle: 'வாசலில் நேரடி டெலிவரி',
+    noCashNote: 'வாசலில் பணம் இல்லை. ஓட்டுநருக்குக் கையெழுத்திட்ட டெலிவரி குறிப்பு கிடைக்கும்; சப்ளையருக்குப் பின்னர் சப்ளையர் பில்லாகப் பணம் செலுத்தப்படும்.',
+    startCheckIn: 'சரிபார்ப்பைத் தொடங்கு', dsdScanItem: 'ஒரு பொருளை ஸ்கேன் செய்', handBack: 'ஓட்டுநரிடம் திருப்பிக் கொடு', backBtn: 'பின்செல்',
+    closeDelivery: 'ஓட்டுநர் குறிப்பில் கையெழுத்திடுகிறார் — டெலிவரியை முடி',
   },
 };
 const dt = (key) => DSD_WORDS[lang][key] ?? DSD_WORDS.en[key] ?? key;
@@ -987,7 +1040,10 @@ function renderDsd() {
     const what = document.createElement('span'); what.className = 'what'; what.textContent = l.productId;
     const qty = document.createElement('span'); qty.className = 'qty';
     qty.textContent = `${dt('expected')} ${l.expectedMinor} · ${dt('scanned')} ${l.scannedMinor} · ${dt('back')} ${l.handedBackMinor} · ${dt('kept')} ${l.keptMinor}`;
-    row.append(what, qty);
+    // OB-205: the one number the receiver checks at a glance — scanned against expected — big, on the right.
+    const count = document.createElement('span'); count.className = 'count';
+    sayQty(count, `${l.scannedMinor} / ${l.expectedMinor}`, `${dt('scanned')} / ${dt('expected')}`);
+    row.append(what, qty, count);
     return row;
   }));
   el('dsd-differences').replaceChildren(...(view.discrepancies.length === 0
@@ -1004,6 +1060,18 @@ function renderDsd() {
 }
 
 el('dsd-open').hidden = !dsd;
+/** OB-205: the door sheet's fixed labels, in the worker's language, with their icons. */
+function paintDsdWords() {
+  say(el('dsd-open'), dt('dsdOpen'), 'truck');
+  say(el('dsd-title'), dt('dsdTitle'), 'truck');
+  el('dsd-no-cash').textContent = dt('noCashNote');
+  say(el('dsd-start'), dt('startCheckIn'), 'clipboard-list');
+  say(el('dsd-scan'), dt('dsdScanItem'), 'scan-barcode');
+  say(el('dsd-hand-back'), dt('handBack'), 'rotate-ccw');
+  say(el('dsd-cancel'), dt('backBtn'), 'x');
+  say(el('dsd-close'), dt('closeDelivery'), 'file-text');
+}
+paintDsdWords();
 el('dsd-open').addEventListener('click', () => { el('dsd').hidden = false; renderDsd(); });
 el('dsd-cancel').addEventListener('click', () => { el('dsd').hidden = true; });
 el('dsd-driver').addEventListener('click', () => {
@@ -1079,6 +1147,8 @@ el('lang').addEventListener('click', () => {
   lang = lang === 'en' ? 'ta' : 'en';
   document.documentElement.lang = lang;
   el('sample').textContent = t('sample');
+  paintDsdWords();
+  renderDsd();
   render();
 });
 
@@ -1189,6 +1259,7 @@ el('who').firstChild.textContent = (data && data.workerId) || '—';
 el('assignment').textContent = (data && data.assignmentId) || '';
 el('sample').hidden = real !== undefined;
 el('sample').textContent = t('sample');
+paintIconSlots();
 
 const storageProblem = window.warehouseStorageProblem;
 el('storage').hidden = !storageProblem;
