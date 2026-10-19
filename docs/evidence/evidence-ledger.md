@@ -18,7 +18,7 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 
 ## Totals
 
-- Evidence test files scanned: 1439. SP-10 sessions: 0 (0 PASS, 0 on real hardware).
+- Evidence test files scanned: 1442. SP-10 sessions: 0 (0 PASS, 0 on real hardware).
 - Requirements with at least one proof of each kind: Unit 89 · Integration (in-process) 101 · Real PostgreSQL 97 · Browser (stub cloud) 81 · Browser (connected) 48 · Device 0 · Staff UAT 0.
 - Labels: E2E_VERIFIED 41 · INTEGRATION_TESTED 18 · PARTIALLY_WIRED 40 · WIRED 5.
 - Labels that do NOT hold: none.
@@ -102,7 +102,7 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 | WF-13 | E2E_VERIFIED | · | 6 | 1 | 1 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | WF-14 | E2E_VERIFIED | · | 5 | 3 | 2 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
 | WF-15 | INTEGRATION_TESTED | · | 7 | 3 | 2 | · | · | · | ✓ an integration test cites it |
-| WF-16 | PARTIALLY_WIRED | 1 | 6 | 3 | 2 | 1 | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
+| WF-16 | PARTIALLY_WIRED | 3 | 7 | 4 | 3 | 1 | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | WF-17 | E2E_VERIFIED | · | 8 | 2 | 1 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | WF-18 | PARTIALLY_WIRED | 1 | 11 | 7 | 3 | 1 | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | WF-19 | INTEGRATION_TESTED | 1 | 13 | 8 | 1 | · | · | · | ✓ an integration test cites it |
@@ -205,7 +205,7 @@ _The JSON twin (`evidence-ledger.json`) lists every file and session per item. H
 - **WF-13** — browser: `customer-order-delivery.e2e.ts` · connected: `customer-order-delivery.e2e.ts` · real PostgreSQL: `a-delivery-slot-and-address-are-the-shops-to-judge.test.ts`
 - **WF-14** — browser: `picker-handheld-syncs-through-the-box.e2e.ts`, `picker-substitution-delivery.e2e.ts` · real PostgreSQL: `fulfilment-packing.test.ts`, `one-fulfilment-command.test.ts`, `pick-to-doorstep.test.ts`
 - **WF-15** — browser: `delivery-route-partial-delivery.e2e.ts`, `driver-handheld-syncs-through-the-box.e2e.ts` · real PostgreSQL: `a-customer-reads-a-delivery-in-progress.test.ts`, `one-fulfilment-command.test.ts`, `pick-to-doorstep.test.ts`
-- **WF-16** — browser: `the-online-store-and-app-content-pages-meet-the-spec.e2e.ts`, `the-online-store-shows-the-required-details.e2e.ts` · connected: `the-online-store-and-app-content-pages-meet-the-spec.e2e.ts` · real PostgreSQL: `an-online-return-refunds-only-what-came-back.test.ts`, `one-fulfilment-command.test.ts`, `the-customer-keeps-lists-and-raises-returns-and-complaints.test.ts`
+- **WF-16** — browser: `the-driver-collects-an-online-return-on-his-phone.e2e.ts`, `the-online-store-and-app-content-pages-meet-the-spec.e2e.ts`, `the-online-store-shows-the-required-details.e2e.ts` · connected: `the-online-store-and-app-content-pages-meet-the-spec.e2e.ts` · real PostgreSQL: `an-online-return-refunds-only-what-came-back.test.ts`, `one-fulfilment-command.test.ts`, `the-customer-keeps-lists-and-raises-returns-and-complaints.test.ts`, `the-driver-collects-an-online-return-through-the-box.test.ts`
 - **WF-17** — browser: `service-desk-and-assistant-drafts.e2e.ts` · connected: `service-desk-and-assistant-drafts.e2e.ts` · real PostgreSQL: `the-assistant-drafts-and-a-person-decides.test.ts`, `the-customer-keeps-lists-and-raises-returns-and-complaints.test.ts`
 - **WF-18** — browser: `day-book-post-delivery.e2e.ts`, `finance-close-on-the-production-api.e2e.ts`, `finance-month-close-delivery.e2e.ts` · connected: `finance-close-on-the-production-api.e2e.ts` · real PostgreSQL: `a-damaged-arrival-with-no-count-open-is-its-own-write-off-line.test.ts`, `books-reconcile.test.ts`, `goods-made-in-the-store-are-valued-at-their-production-run-cost.test.ts`, `store-acceptance-journey.test.ts`, `the-margin-is-costed-at-the-average-buying-cost.test.ts`, `the-month-end-stock-adjustment-books-cost-of-goods-sold.test.ts`, `the-period-books-reconcile-and-show-profit.test.ts`
 - **WF-19** — browser: `migration-decision-delivery.e2e.ts` · real PostgreSQL: `a-delta-lands-once.test.ts`, `a-rehearsed-rollback-reconciles.test.ts`, `a-sale-delta-lands-once.test.ts`, `an-opening-load-is-reversed-only-in-the-cutover-window.test.ts`, `history-and-open-orders-load.test.ts`, `opening-load-at-store-volume.test.ts`, `opening-state-loads.test.ts`, `the-whole-load-runs-from-one-command.test.ts`
