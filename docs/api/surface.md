@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1204 | 725 | 725 | 109 | 349 |
+| 13 | 1213 | 728 | 728 | 109 | 349 |
 
 ## API-01 — Identity / Admin (M01–M02)
 

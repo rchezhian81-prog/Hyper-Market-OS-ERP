@@ -5,6 +5,43 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Release R4: built in four parallel lanes and joined (19 October 2026) — gate and PR pending
+
+- **Owner sign-off:** R4 sentences signed (OB-227). Scope answers: OB-207 to OB-226. Lane answers: OB-228 to OB-237.
+- **Built (synthetic data; nothing bought; no provider called; no staff UAT):**
+  - **Lane 1, pay and EPR:**
+    - C19 PF/ESI, C15 payslip particulars, C16 overtime and minimum wage. Every legal figure is "not confirmed" until the CA fills it.
+    - Pay release stays on hold. The owner's hard switch (OB-228) now refuses approve, lock and the bank file, even with MFA.
+    - B20–B22 EPR registers and a new EPR page.
+  - **Lane 2, online store:**
+    - B23 required details before payment; unpublishable until the grievance officer is named.
+    - A26 own goods only. D-28 receipts opt-in.
+    - WF-16 returns by category, waiting for the owner's windows.
+    - Stars only, buyers only. Content editor with images on the shop's own server.
+    - Voice and SMS code built switched off.
+    - Orders for products not sold online are refused (OB-234).
+  - **Lane 3, customers and offers:**
+    - Customers page (M16) and referral liability (M17-FR-02).
+    - Bought-together pairs (D-23) and personal offers approved by the owner (D-22).
+    - Festivals and events in the forecast (D-24). The morning brief is prepared, never sent.
+  - **Lane 4, suppliers, pricing and loss prevention:**
+    - D-10 scorecard from facts. D-18 competitor drafts at 5%/14 days, approved by a person.
+    - D-21 "seen together" panel with CCTV references; shortage cases marked "opened by rule" (OB-235).
+    - D-13 shelf compliance by bay, with photos.
+- **Verification so far:**
+  - Each lane: unit, memory + PostgreSQL with cold restart, guardrail and browser tests passed.
+  - Integration pass: 1,526 guardrail tests, 1,233 targeted unit + integration tests and 20 R4 browser tests passed.
+  - The full gate on the joined branch is running.
+- **Waiting on the owner:**
+  - The grievance officer name and contact (OB-223), which blocks B23 and, through OB-234, every online order, as well as the C21 notice.
+  - The return windows and the non-returnable list (OB-213).
+- **Waiting on the CA:** the 22-question sheet `docs/requirements/CA_QUESTIONS_R4_2026-10-19.md`. PMLA joins when the CA sends the rule (OB-225).
+- **Known limits:**
+  - The driver collection step for online returns needs a store-box relay; until then it is recorded at head office.
+  - Reversing a pay run is not held by the switch (MFA only).
+  - The minimum-wage basis needs the CA's confirmation.
+  - D-22 offers are bill-level coupons.
+
 ## UI/UX shared look (OB-201): the sage look polished, with thin line icons — merged in PR #793 (4023b166) and deployed to the demo, 19 Oct; **approved by the owner (OB-205)**
 
 - **Built:**
