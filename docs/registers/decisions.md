@@ -280,6 +280,9 @@ Status legend: **Accepted** · **Open — blocking** (holds coding / a gate) ·
 | OB-232 | **D-22: who approves personal-offer batches.** | Owner only (as built). | **ACCEPTED — "Owner only" (owner, 19 Oct 2026, in writing).** |
 | OB-233 | **M16: the source for the duplicate-customer check.** | The desk types the records to compare; nothing extra stored (as built). | **ACCEPTED — "Desk types records" (owner, 19 Oct 2026, in writing).** |
 | OB-234 | **B23 gap: the order route accepts a product not published online.** | Close it: head office refuses an order for a product not published online. | **ACCEPTED — "Yes, refuse it" (owner, 19 Oct 2026, in writing).** |
+| OB-235 | **D-21 vs the pre-R4 automatic case on a material till shortage.** | Keep it automatic, and mark the case "opened by rule" on the Investigations page so no person is seen as accusing anyone. | **ACCEPTED — "Auto, marked 'by rule'" (owner, 19 Oct 2026, in writing).** |
+| OB-236 | **D-13 shelf-photo size limit.** | Keep 700 KB now (the existing ledger cap); raise it later with the shop's own image store (OB-215). | **ACCEPTED — "Keep 700 KB now" (owner, 19 Oct 2026, in writing).** |
+| OB-237 | **D-10: typed delivery figures are refused (410).** | Accept, as the signed sentence requires; old typed records stay on file, unread. | **ACCEPTED — "No, accept the change" (owner, 19 Oct 2026, in writing).** |
 
 ## AI-assisted development governance — AID-01 to AID-10 (roadmap §18)
 
