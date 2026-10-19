@@ -273,6 +273,13 @@ Status legend: **Accepted** · **Open — blocking** (holds coding / a gate) ·
 | OB-225 | **PMLA cash reporting (Q12).** (scratchpad r4-scope §4) | Added to R4 the day the CA sends the rule. | **ACCEPTED — "Add to R4 when CA sends it" (owner, 19 Oct 2026, in writing).** |
 | OB-226 | **R4 acceptance sentences (Q0).** (scratchpad r4-scope §4) | Signed all at once, in one document, before any R4 build (as OB-137 for R3). | **ACCEPTED — "All at once" (owner, 19 Oct 2026, in writing).** |
 | OB-227 | **OB-226: the R4 acceptance sentences in `docs/requirements/R4_ACCEPTANCE_DRAFT_2026-10-19.md`, signed all at once.** | Signed: the 24 drafted sentences are the R4 acceptance criteria (PMLA has no sentence yet, OB-225). B23 and WF-16 cannot pass until the grievance officer (OB-223) and the return windows with the non-returnable list (OB-213) are given. | **ACCEPTED — "R4 signed" (owner, 19 Oct 2026, in writing).** |
+| OB-228 | **OB-209 hold strength (R4 lane 1): the pay hold rests on the pilot sign-in and unserved pages; add a hard switch?** | A hard switch refuses approve, lock and the bank file outright until the owner switches it on in writing; default off. | **ACCEPTED — "Add the hard switch" (owner, 19 Oct 2026, in writing).** |
+| OB-229 | **C15 UAN and ESI numbers on payslips.** | Masked to the last four digits (as built). | **ACCEPTED — "Last 4 digits only" (owner, 19 Oct 2026, in writing).** |
+| OB-230 | **Who enters the legal payroll figures (OB-208).** | The owner or the CA, each naming the CA's confirmation (as built). | **ACCEPTED — "Owner or CA" (owner, 19 Oct 2026, in writing).** |
+| OB-231 | **D-28: how an app account is tied to a loyalty member for receipts.** | At the desk, by a named person who has seen the number on the customer's phone (as built). | **ACCEPTED — "Desk links it" (owner, 19 Oct 2026, in writing).** |
+| OB-232 | **D-22: who approves personal-offer batches.** | Owner only (as built). | **ACCEPTED — "Owner only" (owner, 19 Oct 2026, in writing).** |
+| OB-233 | **M16: the source for the duplicate-customer check.** | The desk types the records to compare; nothing extra stored (as built). | **ACCEPTED — "Desk types records" (owner, 19 Oct 2026, in writing).** |
+| OB-234 | **B23 gap: the order route accepts a product not published online.** | Close it: head office refuses an order for a product not published online. | **ACCEPTED — "Yes, refuse it" (owner, 19 Oct 2026, in writing).** |
 
 ## AI-assisted development governance — AID-01 to AID-10 (roadmap §18)
 
