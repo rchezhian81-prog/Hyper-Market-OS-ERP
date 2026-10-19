@@ -202,6 +202,75 @@ async function refresh() {
 }
 refresh();
 
+// ── R4 Lane 4 · D-21 (OB-217) — begin: "Seen together" ─────────────────────────────────────────────────────────────
+// The tested session (apps/web-erp/src/lp-correlation-session.ts, in the bundle as window.lpCorrelation) asks head office
+// for the view and the proposed case; this block only draws them. Nothing is opened on read: a case is opened only on
+// the explicit "Open this case" click, naming the investigator. A CCTV clip is a reference (camera, from–to, who collected
+// it); there is no field for video.
+const together = window.lpCorrelation ?? null;
+let togetherView = null;
+const tw = (key) => (together === null ? key : together.words(lang, key));
+
+function factRow(text, attrs) {
+  const li = document.createElement('li');
+  li.className = 'row tone-idle';
+  li.textContent = text;
+  for (const [k, v] of Object.entries(attrs)) li.dataset[k] = v;
+  return li;
+}
+
+function paintTogether() {
+  const box = el('together');
+  box.hidden = together === null || !together.session.may.read;
+  if (box.hidden) return;
+  for (const [id, k] of [['together-heading', 'heading'], ['together-lead', 'lead'], ['together-kind-label', 'subjectKind'], ['together-id-label', 'subjectId'], ['together-from-label', 'from'], ['together-to-label', 'to'], ['together-show', 'show'],
+    ['till-heading', 'tillH'], ['shrink-heading', 'shrinkH'], ['counts-heading', 'countsH'], ['open-case-id-label', 'caseId'], ['open-assignee-label', 'investigator'], ['open-case', 'open'],
+    ['cctv-heading', 'cctvH'], ['cctv-case-label', 'caseId'], ['cctv-camera-label', 'camera'], ['cctv-from-label', 'clipFrom'], ['cctv-to-label', 'clipTo'], ['cctv-by-label', 'collectedBy'], ['cctv-add', 'addCctv']]) el(id).textContent = tw(k);
+  const kinds = el('together-kind').options;
+  kinds[0].textContent = tw('product'); kinds[1].textContent = tw('cashier');
+  el('cctv-form').hidden = !together.session.may.manage;
+  const v = togetherView;
+  el('together-result').hidden = v === null;
+  if (v === null) return;
+  const none = (list) => (list.length === 0 ? [factRow(tw('none'), { none: 'true' })] : list);
+  el('till-rows').replaceChildren(...none(v.tillExceptions.map((x) => factRow(`${x.day} · ${tw(x.kind)} · ${x.cashierId}${x.productIds.length === 0 ? '' : ` · ${x.productIds.join(', ')}`} · ${together.rupees(x.valueMinor)}`, { ref: x.ref, kind: x.kind }))));
+  el('shrink-rows').replaceChildren(...none(v.shrink.map((x) => factRow(`${x.day} · ${x.productId} · ${x.lossType} (${x.reasonCode}) · ${x.quantityMinor} · ${together.rupees(x.valueMinor)}`, { ref: x.ref }))));
+  el('count-rows').replaceChildren(...none(v.countDifferences.map((x) => factRow(`${x.day} · ${x.productId} · ${x.varianceMinor > 0 ? '+' : ''}${x.varianceMinor} · ${together.rupees(Math.abs(x.valueMinor))}`, { ref: x.ref, variance: String(x.varianceMinor) }))));
+  el('joined').hidden = v.subject.kind !== 'cashier';
+  el('joined').textContent = `${tw('joined')} ${v.productsJoined.join(', ')}`;
+  el('proposal').dataset.propose = String(v.proposal.propose);
+  el('proposal').textContent = `${v.proposal.propose ? tw('proposed') : tw('notProposed')} ${v.proposal.propose ? v.proposal.summary : v.proposal.because}`;
+  el('open-form').hidden = !v.proposal.propose || !together.session.may.manage;
+}
+
+if (together !== null) {
+  el('together-show').addEventListener('click', () => {
+    void (async () => {
+      const out = await together.session.view(el('together-kind').value, el('together-id').value, el('together-from').value, el('together-to').value);
+      togetherView = out.result === 'ok' ? out.value : null;
+      el('together-status').textContent = out.result === 'ok' ? '' : together.outcomeWords(lang, out);
+      paintTogether();
+    })();
+  });
+  el('open-case').addEventListener('click', () => {
+    void (async () => {
+      if (togetherView === null) return;
+      const out = await together.session.open(el('open-case-id').value, togetherView.proposal, el('open-assignee').value);
+      el('together-status').textContent = out.result === 'ok' ? tw('opened') : together.outcomeWords(lang, out);
+      if (out.result === 'ok') { el('cctv-case').value = el('open-case-id').value; await refresh(); }
+    })();
+  });
+  el('cctv-add').addEventListener('click', () => {
+    void (async () => {
+      const out = await together.session.cctv(el('cctv-case').value, { cameraId: el('cctv-camera').value, from: el('cctv-from').value, to: el('cctv-to').value, collectedBy: el('cctv-by').value });
+      el('cctv-status').textContent = out.result === 'ok' ? tw('cctvAdded') : together.outcomeWords(lang, out);
+    })();
+  });
+  el('lang').addEventListener('click', () => { paintTogether(); });
+}
+paintTogether();
+// ── R4 Lane 4 · D-21 — end
+
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {
     /* the screen still opens; it just will not be there without a network */

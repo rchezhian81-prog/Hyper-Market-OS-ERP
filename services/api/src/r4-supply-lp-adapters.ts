@@ -10,8 +10,14 @@ import type { AuditEntry } from '../../../packages/audit/src/index';
 import { makeEvent } from '../../../packages/contracts/src/event';
 import {
   STREAM, streamName, foldPurchaseOrders, goodsReceiptAdapter, liveSupplierInvoices,
-  productMasterAdapter, priceListAdapter, storeRulesAdapter, averageBuyingCosts,
+  productMasterAdapter, priceListAdapter, storeRulesAdapter, averageBuyingCosts, lpCasesAdapter,
 } from './adapters';
+import { lpCorrelationRoutes, type LpCorrelationDeps } from '../../pos/src/lp-correlation';
+import type { TillExceptionFact } from '../../../packages/loss-prevention/src/correlate';
+import type { TillActivity } from '../../pos/src/loss-prevention';
+import type { ReturnRecord } from '../../pos/src/returns';
+import type { StoredWriteOff } from '../../inventory/src/write-off';
+import type { StoredReconciliation } from '../../inventory/src/counts';
 import { competitorPriceAdapter } from './round8-adapters';
 import type { SupplierFacts } from '../../purchase/src/supplier-scorecard';
 import type { ScorecardOrder, ScorecardReceipt, ScorecardMatchedInvoice } from '../../../packages/purchasing/src/index';
@@ -123,6 +129,67 @@ export function competitorDraftAdapter(input: { readonly store: EventStore; read
   };
 }
 
+// ── D-21 loss-prevention view: till exceptions, shrink and counts together ──────────────────────────────────────────
+
+const LP_ACTIVITY = streamName(STREAM.lossPrevention, 'activity');
+const WRITE_OFFS = streamName(STREAM.inventory, 'write-offs');
+const COUNTS = streamName(STREAM.inventory, 'counts');
+const padFrom = (day: string): string => new Date(Date.parse(`${day}T00:00:00.000Z`) - 86_400_000).toISOString();
+const padTo = (day: string): string => new Date(Date.parse(`${day}T00:00:00.000Z`) + 2 * 86_400_000).toISOString();
+
+/**
+ * D-21 (R4, OB-217): what the correlation view joins — read from head office's own registers, never written:
+ *   • till exceptions: the relayed voids / no-sale opens / price overrides (the LP activity register, dated by the box's
+ *     trading day, else the shop's day) and the refunds (the returns register — a refund names every product it took back);
+ *   • waste and shrink: the write-offs (the one register every write-off path reaches, NEW-7);
+ *   • count differences: each count's latest state (reconciled, then decided), latest per count id.
+ * CCTV references are sealed onto the case's existing evidence stream (the LP cases adapter), never a video.
+ */
+export function lpCorrelationAdapter(input: { readonly store: EventStore; readonly now: () => string; readonly recordAudit?: Recorder }): LpCorrelationDeps {
+  const { store, now } = input;
+  const cases = lpCasesAdapter({ store, now });
+  return {
+    now,
+    tillExceptions: async (t, from, to) => {
+      const out: TillExceptionFact[] = [];
+      for (const e of await store.readStream(t, LP_ACTIVITY, { type: 'TillActivityRecorded' })) {
+        const a = e.event.payload as TillActivity;
+        const day = a.tradingDay ?? shopDay(a.at);
+        if (day < from || day > to) continue;
+        out.push({ ref: `till-activity:${a.activityId}`, kind: a.kind, cashierId: a.cashierId, productIds: a.productId === undefined ? [] : [a.productId], valueMinor: a.valueMinor, day, reason: a.reason });
+      }
+      for (const e of await store.readStream(t, STREAM.returns, { type: 'ReturnRecorded', from: padFrom(from), to: padTo(to) })) {
+        const r = e.event.payload as ReturnRecord;
+        const day = shopDay(r.processedAt);
+        if (day < from || day > to) continue;
+        out.push({ ref: `return:${r.returnId}`, kind: 'refund', cashierId: r.processedBy, productIds: [...new Set(r.lines.map((l) => l.productId))], valueMinor: r.refundMinor, day, reason: r.reasonCode });
+      }
+      return out;
+    },
+    shrink: async (t, from, to) => (await store.readStream(t, WRITE_OFFS, { type: 'WriteOffCommitted' }))
+      .map((e) => e.event.payload as StoredWriteOff)
+      .map((w) => ({ w, day: shopDay(w.at) }))
+      .filter((x) => x.day >= from && x.day <= to)
+      .map(({ w, day }) => ({ ref: `write-off:${w.id}`, productId: w.productId, lossType: w.lossType, reasonCode: w.reasonCode, quantityMinor: w.qtyRemoved, valueMinor: w.valueMinor, day })),
+    countDifferences: async (t, from, to) => {
+      const byId = new Map<string, StoredReconciliation>();
+      for (const e of await store.readStream(t, COUNTS)) {
+        if (e.event.type === 'CountReconciled' || e.event.type === 'CountDecided') {
+          const r = e.event.payload as StoredReconciliation;
+          byId.set(r.countId, r);
+        }
+      }
+      return [...byId.values()]
+        .map((r) => ({ r, day: shopDay(r.at) }))
+        .filter((x) => x.day >= from && x.day <= to)
+        .map(({ r, day }) => ({ ref: `count:${r.countId}`, productId: r.productId, varianceMinor: r.varianceMinor, valueMinor: r.valueMinor, day }));
+    },
+    case: (t, caseId) => cases.case(t, caseId),
+    recordEvidence: (t, caseId, item) => cases.recordEvidence(t, caseId, item),
+    ...(input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit }),
+  };
+}
+
 // ── the one entry point ──────────────────────────────────────────────────────────────────────────────────────────
 
 /** Every Lane 4 route, composed over head office's store (or a throw-away in-memory one when the surface has none). */
@@ -131,5 +198,6 @@ export function r4SupplyLpRoutes(input: { readonly store: EventStore | undefined
   const base = { store, now: input.now, ...(input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit }) };
   return [
     ...competitorDraftRoutes(competitorDraftAdapter(base)),
+    ...lpCorrelationRoutes(lpCorrelationAdapter(base)),
   ];
 }

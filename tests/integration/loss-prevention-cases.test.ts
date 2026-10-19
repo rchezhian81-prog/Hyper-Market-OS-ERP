@@ -53,7 +53,9 @@ describe('loss-prevention cases: raised-from-a-signal, sealed evidence, second-s
     const e1 = await addEv(h, A, 'u-owner', 'c1', 'e1', EV);
     expect(e1.status).toBe(201);
     expect((e1.body as { seal: string }).seal).toBeTruthy();
-    expect((await addEv(h, A, 'u-owner', 'c1', 'e2', { ...EV, kind: 'cctv_reference', ref: 'clip-7' })).status).toBe(201);
+    // R4 D-21 (OB-217): a CCTV clip is a reference on its own route (camera, from–to, who collected it); here it is refused.
+    expect(codeOf(await addEv(h, A, 'u-owner', 'c1', 'e-cctv', { ...EV, kind: 'cctv_reference', ref: 'clip-7' }))).toBe('cctv_reference_has_its_own_form');
+    expect((await addEv(h, A, 'u-owner', 'c1', 'e2', { ...EV, kind: 'witness_statement', ref: 'statement-7' })).status).toBe(201);
 
     const got = (await getCase(h, A, 'u-owner', 'c1')).body as CaseBody;
     expect(got.evidence).toHaveLength(2);

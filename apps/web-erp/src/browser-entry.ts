@@ -305,6 +305,7 @@ import {
 import { createScheduleSession, scheduleWords, scheduleOutcomeWords, scheduleRupees, type ScheduleSession } from './schedule-session';
 // ── R4 Lane 4 (supply, pricing and loss prevention) — begin
 import { createScorecardSession, scorecardWords, scorecardOutcomeWords, ratingWords as scorecardRatingWords, SCORECARD_FIGURES, type ScorecardSession } from './supplier-scorecard-session';
+import { createCorrelationSession, correlationWords, correlationOutcomeWords, correlationRupees, type CorrelationSession } from './lp-correlation-session';
 // ── R4 Lane 4 — end
 import {
   createStoreComputersSession, wordsFor as storeComputersWords, outcomeWords as storeComputersOutcomeWords, summarise as storeComputersSummary,
@@ -4893,6 +4894,8 @@ interface ManagerWindow {
   /** R4 D-10: the Supplier scorecard page — who is looking; head office answers the rest. */
   supplierScorecardData?: ViewerIdentity;
   supplierScorecard?: { readonly session: ScorecardSession; readonly words: typeof scorecardWords; readonly outcomeWords: typeof scorecardOutcomeWords; readonly ratingWords: typeof scorecardRatingWords; readonly figures: typeof SCORECARD_FIGURES };
+  /** R4 D-21: the "Seen together" panel on the Investigations page (reads who is looking from the inbox's own payload). */
+  lpCorrelation?: { readonly session: CorrelationSession; readonly words: typeof correlationWords; readonly outcomeWords: typeof correlationOutcomeWords; readonly rupees: typeof correlationRupees };
   // ── R4 Lane 4 — end
   substitutionExceptionInboxData?: SubstitutionExceptionInboxData;
   substitutionExceptionInboxSession?: SubExceptionInboxSession;
@@ -6615,5 +6618,9 @@ if (browserWindow !== undefined) {
   // R4 D-10: the Supplier scorecard page — a read of figures built from the registers; nothing is typed, nothing written.
   browserWindow.supplierScorecardData = viewerIdentity(browserWindow.supplierScorecardData);
   browserWindow.supplierScorecard = { session: createScorecardSession({ viewer: browserWindow.supplierScorecardData }), words: scorecardWords, outcomeWords: scorecardOutcomeWords, ratingWords: scorecardRatingWords, figures: SCORECARD_FIGURES };
+  // R4 D-21: "Seen together" — only where the Investigations page was given who is looking; it opens nothing on read.
+  if (browserWindow.lossPreventionInboxData !== undefined) {
+    browserWindow.lpCorrelation = { session: createCorrelationSession({ viewer: viewerIdentity(browserWindow.lossPreventionInboxData) }), words: correlationWords, outcomeWords: correlationOutcomeWords, rupees: correlationRupees };
+  }
   // ── R4 Lane 4 — end
 }

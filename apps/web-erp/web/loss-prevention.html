@@ -96,6 +96,43 @@
         <button id="close" class="act" type="button"></button>
       </section>
 
+      <!-- R4 Lane 4 · D-21 (OB-217) — begin: "Seen together" — till exceptions, waste and shrink, count differences for a
+           product or a cashier and a period (GET /v1/loss-prevention/correlation); a proposed case a PERSON opens; a CCTV clip
+           as a reference only (camera, time from–to, who collected it). Tested model: apps/web-erp/src/lp-correlation-session.ts. -->
+      <section class="closer" id="together" hidden aria-labelledby="together-heading">
+        <h3 id="together-heading"></h3>
+        <p class="lead" id="together-lead"></p>
+        <div><label for="together-kind" id="together-kind-label"></label><select id="together-kind"><option value="product"></option><option value="cashier"></option></select></div>
+        <div><label for="together-id" id="together-id-label"></label><input id="together-id" type="text" autocomplete="off" /></div>
+        <div><label for="together-from" id="together-from-label"></label><input id="together-from" type="date" /></div>
+        <div><label for="together-to" id="together-to-label"></label><input id="together-to" type="date" /></div>
+        <button id="together-show" class="act" type="button"></button>
+        <p class="lead" id="together-status" role="status" aria-live="polite"></p>
+        <div id="together-result" hidden>
+          <h3 id="till-heading"></h3><ul class="rows" id="till-rows"></ul>
+          <h3 id="shrink-heading"></h3><ul class="rows" id="shrink-rows"></ul>
+          <h3 id="counts-heading"></h3><ul class="rows" id="count-rows"></ul>
+          <p class="lead" id="joined"></p>
+          <p class="lead" id="proposal"></p>
+          <div id="open-form" hidden>
+            <div><label for="open-case-id" id="open-case-id-label"></label><input id="open-case-id" type="text" autocomplete="off" /></div>
+            <div><label for="open-assignee" id="open-assignee-label"></label><input id="open-assignee" type="text" autocomplete="off" /></div>
+            <button id="open-case" class="act" type="button"></button>
+          </div>
+        </div>
+        <div id="cctv-form" hidden>
+          <h3 id="cctv-heading"></h3>
+          <div><label for="cctv-case" id="cctv-case-label"></label><input id="cctv-case" type="text" autocomplete="off" /></div>
+          <div><label for="cctv-camera" id="cctv-camera-label"></label><input id="cctv-camera" type="text" autocomplete="off" /></div>
+          <div><label for="cctv-from" id="cctv-from-label"></label><input id="cctv-from" type="datetime-local" /></div>
+          <div><label for="cctv-to" id="cctv-to-label"></label><input id="cctv-to" type="datetime-local" /></div>
+          <div><label for="cctv-by" id="cctv-by-label"></label><input id="cctv-by" type="text" autocomplete="off" /></div>
+          <button id="cctv-add" class="act" type="button"></button>
+          <p class="lead" id="cctv-status" role="status" aria-live="polite"></p>
+        </div>
+      </section>
+      <!-- R4 Lane 4 · D-21 — end -->
+
       <p class="result" id="result" hidden role="status" aria-live="polite"><span class="icon" id="result-icon" aria-hidden="true"></span><span id="result-text"></span></p>
       <p class="state" id="state" hidden><span class="icon" id="state-icon" aria-hidden="true"></span><span id="state-text"></span></p>
     </main>

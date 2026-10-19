@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1131 | 687 | 687 | 89 | 334 |
+| 13 | 1133 | 688 | 688 | 89 | 334 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -417,8 +417,10 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/loss-prevention/cases` | `lp.case.read` | core | — |
 | GET | `/v1/loss-prevention/cases/:caseId` | `lp.case.read` | core | — |
 | POST | `/v1/loss-prevention/cases/:caseId` | `lp.case.manage` | core | yes |
+| POST | `/v1/loss-prevention/cases/:caseId/cctv/:evidenceId` | `lp.case.manage` | core | yes |
 | POST | `/v1/loss-prevention/cases/:caseId/close` | `lp.case.manage` | core | yes |
 | POST | `/v1/loss-prevention/cases/:caseId/evidence/:evidenceId` | `lp.case.manage` | core | yes |
+| GET | `/v1/loss-prevention/correlation` | `lp.case.read` | core | — |
 | POST | `/v1/loss-prevention/evaluate` | `lp.case.read` | core | yes |
 | GET | `/v1/loss-prevention/exceptions` | `lp.case.read` | core | — |
 | GET | `/v1/loss-prevention/rule-feedback` | `lp.case.read` | core | — |
