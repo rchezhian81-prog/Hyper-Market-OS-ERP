@@ -5,7 +5,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
-## UI page-by-page polish (OB-205, OB-238), joined on top of R4 (19 October 2026) — gate and PR pending
+## UI page-by-page polish (OB-205, OB-238), joined on top of R4 (19 October 2026) — gate green (12,876 tests; perf 52/52; browser 448/448), PR opened
 
 - **Built inside the owner-approved look (no feature, route, data or permission changes):**
   - **Till:**
