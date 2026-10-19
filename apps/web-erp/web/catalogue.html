@@ -381,6 +381,18 @@
           <p class="lead" id="rival-record-status" role="status" aria-live="polite"></p>
         </div>
         <div id="rivals-list"></div>
+        <!-- R4 Lane 4 · D-18 (OB-216) — begin: price changes DRAFTED from competitor prices (GET /v1/prices/competitor-drafts);
+             a person approves one through the normal price route (POST /v1/prices/changes). Existing classes only. -->
+        <div id="drafts-block" hidden>
+          <h3 id="drafts-title">Drafted price changes</h3>
+          <p class="lead" id="drafts-lead"></p>
+          <p class="lead" id="drafts-rule"></p>
+          <div id="drafts-list"></div>
+          <p class="lead" id="drafts-status" role="status" aria-live="polite"></p>
+          <h3 id="not-drafted-title">Not drafted, and why</h3>
+          <div id="not-drafted-list"></div>
+        </div>
+        <!-- R4 Lane 4 · D-18 — end -->
         <p class="lead" id="rivals-note">This comparison changes no price.</p>
       </section>
     </main>

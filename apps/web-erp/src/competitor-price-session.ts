@@ -57,7 +57,9 @@ export const COMPETITOR_PERMISSIONS = Object.freeze({ read: 'catalogue.pack.read
 export type CompetitorCopyKey =
   | 'tab' | 'h' | 'lede' | 'product' | 'competitor' | 'price' | 'source' | 'seenAt' | 'note' | 'record' | 'recorded' | 'already'
   | 'ours' | 'theirs' | 'gap' | 'dearer' | 'cheaper' | 'same' | 'daysOld' | 'today' | 'ourNotKnown' | 'none' | 'noPrice'
-  | 'shelf_visit' | 'website' | 'flyer' | 'phone' | 'changesNoPrice' | 'refused' | 'unreachable' | 'notAllowed' | 'cannotRead' | 'readOnly' | 'needFields' | 'noStore' | 'notConnected';
+  | 'shelf_visit' | 'website' | 'flyer' | 'phone' | 'changesNoPrice' | 'refused' | 'unreachable' | 'notAllowed' | 'cannotRead' | 'readOnly' | 'needFields' | 'noStore' | 'notConnected'
+  // R4 D-18 (OB-216): drafted price changes a person approves.
+  | 'draftsH' | 'draftsLede' | 'noDrafts' | 'draftLine' | 'approveDraft' | 'draftApproved' | 'notDraftedH' | 'ruleLine' | 'ruleOwner' | 'ruleDefault' | 'cappedAtMrp';
 
 export const COMPETITOR_COPY: BilingualCopy<CompetitorCopyKey> = {
   en: {
@@ -71,6 +73,10 @@ export const COMPETITOR_COPY: BilingualCopy<CompetitorCopyKey> = {
     cannotRead: 'Your role cannot read the comparison.', readOnly: 'You can read the comparison; recording a price needs a pricing role.', needFields: 'Pick an item, name the shop and give their price.',
     noStore: 'This screen was not told which store it is for.',
     notConnected: 'Competitor prices are kept at head office. Open Products and prices from head office to record or compare them.',
+    draftsH: 'Drafted price changes', draftsLede: 'Where a competitor is far enough below us and was seen recently, a price change is drafted — never above MRP, never below cost or the margin floor. Nothing changes until a person approves it here, through the normal price checks.',
+    noDrafts: 'No price change is drafted for this store.', draftLine: '{name}: {from} → {to} to match {who} ({gap}% below, seen {age} day(s) ago)',
+    approveDraft: 'Approve this price', draftApproved: 'Approved — the new price goes to the tills with the next price update.', notDraftedH: 'Not drafted, and why',
+    ruleLine: 'Rule: a competitor {gap}% or more below us, seen under {age} days ago', ruleOwner: '(your setting)', ruleDefault: '(the agreed starting setting)', cappedAtMrp: 'kept at the MRP',
   },
   ta: {
     tab: 'போட்டியாளர் விலைகள்', h: 'போட்டியாளர் விலைகள்', lede: 'மற்றொரு கடையில் பார்த்த விலையை எழுதி, நம் விலையுடன் ஒப்பிடுங்கள். விலையைப் பதிவு செய்வது எந்த விலையையும் மாற்றாது — மாற்றம் “விலையை மாற்று” வழியாக அதன் சரிபார்ப்புகளுடனும் ஒப்புதலுடனும் செல்லும்.',
@@ -83,6 +89,10 @@ export const COMPETITOR_COPY: BilingualCopy<CompetitorCopyKey> = {
     cannotRead: 'உங்கள் பங்கால் ஒப்பீட்டைப் படிக்க முடியாது.', readOnly: 'நீங்கள் ஒப்பீட்டைப் படிக்கலாம்; விலையைப் பதிவு செய்ய விலை நிர்ணயப் பங்கு தேவை.', needFields: 'ஒரு பொருளைத் தேர்ந்தெடுத்து, கடையின் பெயரையும் அவர்கள் விலையையும் கொடுங்கள்.',
     noStore: 'இந்தத் திரைக்கு எந்தக் கடை என்று சொல்லப்படவில்லை.',
     notConnected: 'போட்டியாளர் விலைகள் தலைமை அலுவலகத்தில் வைக்கப்படுகின்றன. அவற்றைப் பதிவு செய்ய அல்லது ஒப்பிட, தலைமை அலுவலகத்திலிருந்து பொருட்களும் விலைகளும் திரையைத் திறக்கவும்.',
+    draftsH: 'வரைவு விலை மாற்றங்கள்', draftsLede: 'ஒரு போட்டியாளர் நம்மைவிடப் போதுமான அளவு குறைவாகவும் சமீபத்தில் பார்க்கப்பட்டும் இருந்தால், விலை மாற்றம் வரைவு செய்யப்படும் — MRP-க்கு மேல் இல்லை, அடக்கவிலை அல்லது குறைந்தபட்ச லாப வரம்புக்குக் கீழ் இல்லை. ஒருவர் இங்கே வழக்கமான விலைச் சரிபார்ப்புகளுடன் ஒப்புதல் அளிக்கும் வரை எதுவும் மாறாது.',
+    noDrafts: 'இந்தக் கடைக்கு எந்த விலை மாற்றமும் வரைவு செய்யப்படவில்லை.', draftLine: '{name}: {from} → {to}, {who} உடன் பொருந்த ({gap}% குறைவு, {age} நாள் முன் பார்த்தது)',
+    approveDraft: 'இந்த விலைக்கு ஒப்புதல் அளி', draftApproved: 'ஒப்புதல் அளிக்கப்பட்டது — அடுத்த விலை புதுப்பிப்புடன் புதிய விலை பில் இயந்திரங்களுக்குச் செல்லும்.', notDraftedH: 'வரைவு செய்யப்படாதவை, ஏன்',
+    ruleLine: 'விதி: ஒரு போட்டியாளர் நம்மைவிட {gap}% அல்லது அதற்கு மேல் குறைவு, {age} நாட்களுக்குள் பார்த்தது', ruleOwner: '(உங்கள் அமைப்பு)', ruleDefault: '(ஒப்புக்கொண்ட தொடக்க அமைப்பு)', cappedAtMrp: 'MRP-யில் வைக்கப்பட்டது',
   },
 };
 export const COMPETITOR_COPY_KEYS: readonly CompetitorCopyKey[] = Object.freeze(Object.keys(COMPETITOR_COPY.en) as CompetitorCopyKey[]);
@@ -111,6 +121,19 @@ export function competitorOutcomeWords(lang: Lang, o: Outcome<{ alreadyRecorded?
   }
 }
 
+/** R4 D-18: one drafted price change, as head office drafts it (`GET /v1/prices/competitor-drafts`). */
+export interface DraftView {
+  readonly productId: string; readonly storeId: string; readonly fromPriceMinor: number; readonly draftPriceMinor: number;
+  readonly mrpMinor: number; readonly costMinor: number; readonly currency: string; readonly competitor: string; readonly competitorPriceMinor: number;
+  readonly ageDays: number; readonly gapBps: number; readonly cappedAtMrp: boolean; readonly detail: string;
+}
+export interface DraftsView {
+  readonly storeId: string; readonly rule: { readonly gapBps: number; readonly maxAgeDays: number; readonly source: string; readonly version: number | null };
+  readonly drafts: readonly DraftView[];
+  readonly notDrafted: readonly { readonly productId: string; readonly reason: string; readonly words: string; readonly detail: string; readonly competitor?: string }[];
+  readonly advisoryOnly: true; readonly pricesChanged: false;
+}
+
 export interface CompetitorPriceSession {
   readonly may: { readonly read: boolean; readonly record: boolean };
   readonly storeId: string | null;
@@ -118,6 +141,13 @@ export interface CompetitorPriceSession {
   nameOf(productId: string): string;
   compare(): Promise<Outcome<Comparison>>;
   record(input: SightingInput): Promise<Outcome<{ readonly alreadyRecorded?: boolean }>>;
+  /** R4 D-18: the drafted price changes for this store — a read; it changes nothing. */
+  drafts(): Promise<Outcome<DraftsView>>;
+  /**
+   * R4 D-18: a PERSON approves one draft — it goes through the existing price route (`POST /v1/prices/changes`) with the
+   * draft's own figures, where head office judges it again against the MRP, the cost and the store's margin floor.
+   */
+  approveDraft(draft: DraftView): Promise<Outcome<{ readonly priceMinor: number; readonly verdict: string }>>;
 }
 
 export function createCompetitorPriceSession(viewer: CompetitorViewer, http: CompetitorHttp, newId: () => string = () => globalThis.crypto?.randomUUID?.() ?? `obs-${Date.now()}`): CompetitorPriceSession {
@@ -145,6 +175,17 @@ export function createCompetitorPriceSession(viewer: CompetitorViewer, http: Com
       return outcomeOf(await http.post(`/v1/prices/competitor/${encodeURIComponent(newId())}`, {
         productId: input.productId, storeId, competitor: input.competitor.trim(), priceMinor, observedAt: new Date(when).toISOString(), source: input.source,
         ...(note === '' ? {} : { note }),
+      }));
+    },
+    drafts: async () => {
+      if (!may.record) return { kind: 'not_allowed', needs: COMPETITOR_PERMISSIONS.record };
+      if (storeId === null) return { kind: 'invalid', detail: '' };
+      return outcomeOf<DraftsView>(await http.get(`/v1/prices/competitor-drafts?storeId=${encodeURIComponent(storeId)}`));
+    },
+    approveDraft: async (d) => {
+      if (!may.record) return { kind: 'not_allowed', needs: COMPETITOR_PERMISSIONS.record };
+      return outcomeOf(await http.post('/v1/prices/changes', {
+        productId: d.productId, priceMinor: d.draftPriceMinor, mrpMinor: d.mrpMinor, costMinor: d.costMinor, currency: d.currency, storeId: d.storeId,
       }));
     },
   };

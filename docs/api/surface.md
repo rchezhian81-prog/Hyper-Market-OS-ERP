@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1128 | 686 | 686 | 89 | 334 |
+| 13 | 1131 | 687 | 687 | 89 | 334 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -137,6 +137,9 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/prices/channel-pricing` | `catalogue.pack.read` | core | — |
 | POST | `/v1/prices/channel-pricing/requests/:requestId` | `price.change.propose` | core | yes |
 | POST | `/v1/prices/channel-pricing/requests/:requestId/approve` | `price.change.approve` | core | yes |
+| GET | `/v1/prices/competitor-drafts` | `price.change.propose` | core | — |
+| GET | `/v1/prices/competitor-rule` | `price.change.propose` | core | — |
+| POST | `/v1/prices/competitor-rule` | `price.change.approve` | core | yes |
 | POST | `/v1/prices/list/:productId/entries/:entryId` | `price.change.propose` | core | yes |
 | GET | `/v1/prices/list/:productId/history` | `catalogue.pack.read` | core | — |
 | GET | `/v1/prices/list/:productId/resolve` | `catalogue.pack.read` | core | — |

@@ -1098,10 +1098,62 @@ function renderRivals() {
   }
 }
 
+// ── R4 Lane 4 · D-18 (OB-216) — begin: drafted price changes a person approves ─────────────────────────────────
+let draftsRead = null;
+function renderDrafts() {
+  const block = el('drafts-block');
+  block.hidden = rivals === null || rivalKit === null || !rivals.may.record || draftsRead === null || draftsRead.kind !== 'done';
+  if (block.hidden) return;
+  const d = draftsRead.body;
+  el('drafts-title').textContent = rw('draftsH');
+  el('drafts-lead').textContent = rw('draftsLede');
+  el('drafts-rule').textContent = `${rw('ruleLine', { gap: (d.rule.gapBps / 100).toFixed(1), age: d.rule.maxAgeDays })} ${d.rule.source === 'owner_setting' ? rw('ruleOwner') : rw('ruleDefault')}`;
+  el('not-drafted-title').textContent = rw('notDraftedH');
+  const list = el('drafts-list');
+  list.replaceChildren();
+  if (d.drafts.length === 0) { const p = document.createElement('p'); p.className = 'lead'; p.textContent = rw('noDrafts'); list.append(p); }
+  for (const draft of d.drafts) {
+    const box = document.createElement('div');
+    box.className = 'row';
+    box.dataset.draft = draft.productId;
+    const what = document.createElement('div');
+    what.className = 'what';
+    const line = document.createElement('strong');
+    line.textContent = rw('draftLine', { name: rivals.nameOf(draft.productId), from: rivalKit.rupees(draft.fromPriceMinor), to: rivalKit.rupees(draft.draftPriceMinor), who: draft.competitor, gap: (draft.gapBps / 100).toFixed(1), age: draft.ageDays })
+      + (draft.cappedAtMrp ? ` · ${rw('cappedAtMrp')}` : '');
+    what.append(line);
+    const approve = document.createElement('button');
+    approve.type = 'button';
+    approve.className = 'primary';
+    approve.dataset.approve = draft.productId;
+    approve.textContent = rw('approveDraft');
+    approve.addEventListener('click', async () => {
+      approve.disabled = true;
+      const out = await rivals.approveDraft(draft);
+      if (out.kind === 'done') rivalSay('drafts-status', rw('draftApproved'), true);
+      else rivalSay('drafts-status', rivalKit.competitorOutcomeWords(lang, out).text, false);
+      await loadRivals();
+    });
+    box.append(what, approve);
+    list.append(box);
+  }
+  el('not-drafted-list').replaceChildren(...d.notDrafted.map((n) => {
+    const p = document.createElement('p');
+    p.className = 'lead';
+    p.dataset.notDrafted = n.productId;
+    p.dataset.reason = n.reason;
+    p.textContent = `${rivals.nameOf(n.productId)}: ${n.words}${n.competitor === undefined ? '' : ` (${n.competitor})`}`;
+    return p;
+  }));
+}
+// ── R4 Lane 4 · D-18 — end
+
 async function loadRivals() {
   if (rivals === null || !rivals.may.read) { renderRivals(); return; }
   rivalsRead = await rivals.compare();
   renderRivals();
+  // R4 D-18: the drafts are read only by someone who may propose a price (a read; it changes nothing).
+  if (rivals.may.record) { draftsRead = await rivals.drafts(); renderDrafts(); }
 }
 
 el('rival-record').addEventListener('click', () => busy('rival-record', async () => {
@@ -1161,6 +1213,7 @@ el('lang').addEventListener('click', () => {
   if (lastProposal !== null) renderProposal(lastProposal, lastProposal.draft.productId);
   if (lastSimulation !== null) renderSimulation(lastSimulation);
   renderRivals();
+  renderDrafts(); // R4 D-18
 });
 
 // ── Boot ────────────────────────────────────────────────────────────────────
