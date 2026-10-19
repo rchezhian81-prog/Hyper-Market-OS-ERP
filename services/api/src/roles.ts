@@ -255,7 +255,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // M17-FR-02 (OB-221): pay out, or let lapse, an earned referral reward — a compensating entry on the liability.
       'loyalty.referral.settle',
       // D-24 (OB-220): record and withdraw the store's festivals and local events.
-      'inventory.demand-event.manage',
+      'inventory.calendar.manage',
       // ── R4 Lane 3 — end
     ],
   },
@@ -369,7 +369,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // M17-FR-02 (OB-221): pay out, or let lapse, an earned referral reward.
       'loyalty.referral.settle',
       // D-24: record and withdraw the store's festivals and local events.
-      'inventory.demand-event.manage',
+      'inventory.calendar.manage',
       // ── R4 Lane 3 — end
     ],
   },

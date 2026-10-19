@@ -282,8 +282,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/inventory/counts/:countId/decide` | `inventory.adjustment.approve` | core | yes |
 | POST | `/v1/inventory/counts/:countId/synced` | `inventory.count.sync` | core | yes |
 | GET | `/v1/inventory/demand-events` | `inventory.availability.read` | core | — |
-| POST | `/v1/inventory/demand-events/:eventId` | `inventory.demand-event.manage` | core | yes |
-| POST | `/v1/inventory/demand-events/:eventId/withdraw` | `inventory.demand-event.manage` | core | yes |
+| POST | `/v1/inventory/demand-events/:eventId` | `inventory.calendar.manage` | core | yes |
+| POST | `/v1/inventory/demand-events/:eventId/withdraw` | `inventory.calendar.manage` | core | yes |
 | GET | `/v1/inventory/demand-events/weather` | `inventory.availability.read` | core | — |
 | GET | `/v1/inventory/demand-forecast` | `inventory.availability.read` | core | — |
 | POST | `/v1/inventory/dock-slots/book` | `inventory.movement.append` | core | yes |

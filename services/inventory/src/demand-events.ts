@@ -91,7 +91,7 @@ export function demandEventRoutes(deps: DemandEventsDeps): readonly Route[] {
   return [
     {
       api: 'API-04', method: 'POST', path: '/v1/inventory/demand-events/:eventId',
-      permission: 'inventory.demand-event.manage', idempotent: true,
+      permission: 'inventory.calendar.manage', idempotent: true,
       handler: async (ctx) => {
         const eventId = (ctx.params['eventId'] ?? '').trim();
         const b = (ctx.body ?? {}) as Record<string, unknown>;
@@ -123,7 +123,7 @@ export function demandEventRoutes(deps: DemandEventsDeps): readonly Route[] {
     },
     {
       api: 'API-04', method: 'POST', path: '/v1/inventory/demand-events/:eventId/withdraw',
-      permission: 'inventory.demand-event.manage', idempotent: true,
+      permission: 'inventory.calendar.manage', idempotent: true,
       handler: async (ctx) => {
         const eventId = (ctx.params['eventId'] ?? '').trim();
         const reason = ((ctx.body ?? {}) as { reason?: unknown }).reason;

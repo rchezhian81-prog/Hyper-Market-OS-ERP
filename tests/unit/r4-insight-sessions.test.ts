@@ -65,7 +65,7 @@ describe('the Store events session (D-24)', () => {
     const r = recorder();
     const reader = createEventsSession({ viewer: viewer('inventory.availability.read'), fetch: r.fetch });
     expect(await reader.record({ storeId: 'S1', label: 'Pongal', kind: 'festival', from: '2030-01-14', to: '2030-01-15', effect: '1.5', products: '' })).toEqual({ result: 'invalid', why: 'cannotManage' });
-    const mgr = createEventsSession({ viewer: viewer('inventory.availability.read', 'inventory.demand-event.manage'), fetch: r.fetch });
+    const mgr = createEventsSession({ viewer: viewer('inventory.availability.read', 'inventory.calendar.manage'), fetch: r.fetch });
     expect(await mgr.record({ storeId: 'S1', label: 'Pongal', kind: 'festival', from: '2030-01-14', to: '2030-01-15', effect: '0', products: '' })).toEqual({ result: 'invalid', why: 'needEvent' });
     await mgr.record({ storeId: 'S1', label: 'Pongal', kind: 'festival', from: '2030-01-14', to: '2030-01-15', effect: '1.5', products: 'p-tea, p-sugar' });
     await mgr.forecast('p-tea');

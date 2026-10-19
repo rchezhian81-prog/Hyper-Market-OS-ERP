@@ -51,7 +51,7 @@ describe('no AI issues an offer or a price (D-22 · D-23 · hard rule #5)', () =
     expect(holders('loyalty.offer.approve')).toEqual([OWNER_ROLE_ID]);
     const machines = ['store_computer', 'message_provider_relay', 'backup_job'];
     for (const role of ROLE_CATALOGUE.filter((r) => machines.includes(r.id))) {
-      for (const p of role.permissions) expect(p, `${role.id} holds ${p}`).not.toMatch(/^(loyalty\.offer|loyalty\.coupon\.issue|loyalty\.referral|price\.change|promotion\.launch|inventory\.demand-event)/);
+      for (const p of role.permissions) expect(p, `${role.id} holds ${p}`).not.toMatch(/^(loyalty\.offer|loyalty\.coupon\.issue|loyalty\.referral|price\.change|promotion\.launch|inventory\.calendar)/);
     }
   });
 

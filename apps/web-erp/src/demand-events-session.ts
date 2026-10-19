@@ -75,7 +75,7 @@ export interface EventsSession {
 export function createEventsSession(input: { readonly viewer: ViewerIdentity | undefined; readonly fetch?: typeof globalThis.fetch; readonly newKey?: () => string }): EventsSession {
   const perms = new Set(input.viewer?.permissions ?? []);
   const named = input.viewer?.userId !== undefined;
-  const may = { named, read: named && perms.has('inventory.availability.read'), manage: named && perms.has('inventory.demand-event.manage') };
+  const may = { named, read: named && perms.has('inventory.availability.read'), manage: named && perms.has('inventory.calendar.manage') };
   const call = makeCaller({ keyPrefix: 'events', ...(input.fetch === undefined ? {} : { fetch: input.fetch }), ...(input.newKey === undefined ? {} : { newKey: input.newKey }) });
   const enc = encodeURIComponent;
   const guard = (need: boolean, why: EventsCopyKey): Outcome<never, EventsCopyKey> | undefined => (!named ? { result: 'invalid', why: 'nobody' } : !need ? { result: 'invalid', why } : undefined);
