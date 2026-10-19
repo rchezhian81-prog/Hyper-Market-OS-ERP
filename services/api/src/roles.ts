@@ -247,6 +247,13 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // fingerprint attendance is not in use. No other role holds this.
       'workforce.consent.notice.sign',
       // ── R3 follow-up — end
+      // ── R4 Lane 1 (pay and EPR registers) — begin
+      // C15 · C16 · C19 · OB-208: read the payroll legal settings, and fill one on the CA's written confirmation (each names
+      // who confirmed it). B20–B22 · OB-212: read and record the EPR registers, and set the registration / exemption /
+      // brand-owner answers the CA or EPR consultant confirms. Nothing here approves, locks or releases pay (OB-209).
+      'payroll.legal.read', 'payroll.legal.configure',
+      'epr.register.read', 'epr.register.record', 'epr.settings.configure',
+      // ── R4 Lane 1 — end
     ],
   },
   {
@@ -520,6 +527,11 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'finance.tds.read', 'finance.tds.challan.record',
       'payment.dispute.record', 'payment.dispute.read',
       // ── end R3 lane 2 ──
+      // ── R4 Lane 1 (pay and EPR registers) — begin
+      // B21 · B22: the store manager records take-backs, recyclers, handovers and bin counts and reads the EPR registers;
+      // never sets the registration or brand-owner answers (`epr.settings.configure`).
+      'epr.register.read', 'epr.register.record',
+      // ── R4 Lane 1 — end
     ],
   },
   {
@@ -549,6 +561,13 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // owner alone switches it on. Nothing else.
       'finance.tds.configure', 'finance.tds.read',
       // ── end R3 lane 2 ──
+      // ── R4 Lane 1 (pay and EPR registers) — begin
+      // C15 · C16 · C19 · OB-208: the CA fills the payroll legal settings (EPF / ESI rates, ceilings and headcount
+      // thresholds; normal hours; the overtime multiplier; minimum-wage classes; the payslip particulars) and reads them.
+      // B20–B22 · OB-212: the CA (or EPR consultant through the CA) records the EPR registration and brand-owner answers
+      // and reads the registers. Nothing else.
+      'payroll.legal.read', 'payroll.legal.configure', 'epr.register.read', 'epr.settings.configure',
+      // ── R4 Lane 1 — end
     ],
   },
   {

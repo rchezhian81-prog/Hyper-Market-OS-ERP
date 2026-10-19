@@ -330,6 +330,7 @@ import type { EventStore } from '../../../packages/persistence/src/event-store';
 import { r3GstRoutes, eInvoiceReportingGuardFor, gstTimeBarSweep } from './r3-gst-adapters';
 import { alsoEachPassOf } from './ops-alert-sweeps'; // R3 lane 1 — GST liability and returns
 import { itcPortForStore } from './r3-itc-bridge'; // R3 seam — GSTR-3B Table 4 reads the A17 reconciliation
+import { r4PayEprRoutes, r4PayslipHooks } from './r4-pay-epr-adapters'; // R4 Lane 1 — pay (C19 · C15 · C16) and EPR registers (B20 · B21 · B22)
 
 const now = (): string => new Date().toISOString();
 
@@ -1787,7 +1788,9 @@ export function buildSurface(deps: {
     // Confidential writes (payroll.statutory.read); self-service read (payroll.ess.self).
     ...payslipStoreRoutes(store === undefined ? {
       putPayslip: () => {}, payslipsFor: () => [], latestPayslip: () => undefined, now,
-    } : payslipStoreAdapter({ store, now })),
+    } : { ...payslipStoreAdapter({ store, now }), ...r4PayslipHooks({ store }) }), // R4 C15: the CA's particulars list checked at issue
+    // R4 Lane 1 (C19 EPF/ESI · C15 payslip particulars and pay date · C16 hours, overtime, minimum wage · B20–B22 EPR): r4-pay-epr-adapters.
+    ...r4PayEprRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
     // GST returns write path (A5) — persist outward-supply tax lines; GSTR-1 Table 12 folds over them.
     ...gstReturnsRoutes(store === undefined ? {
       documents: empty([]), record: () => {}, soldTaxLines: empty([]), returnedTaxLines: empty([]), productTaxTable: empty([]), now,
