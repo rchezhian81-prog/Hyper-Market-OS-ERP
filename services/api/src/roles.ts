@@ -247,6 +247,11 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // fingerprint attendance is not in use. No other role holds this.
       'workforce.consent.notice.sign',
       // ── R3 follow-up — end
+      // ── R4 Lane 2 (online store and customer app) — begin
+      // B23 · A26: set the online store's details and publish listings; WF-16: return windows, collections, counts,
+      // dispositions (the refund itself stays order.refund.issue, approved by a second person).
+      'online.store.read', 'online.store.manage', 'online.return.manage', 'online.return.collect',
+      // ── R4 Lane 2 — end
     ],
   },
   {
@@ -353,6 +358,10 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // D-9: the manager drafts the week's roster from the forecast and commits it (workforce.roster.manage, P-05).
       'workforce.schedule.draft',
       // ── R3 Lane 4 — end
+      // ── R4 Lane 2 (online store and customer app) — begin
+      // B23: read the online store's duties and publish a complete listing; WF-16: work online returns.
+      'online.store.read', 'online.store.manage', 'online.return.manage', 'online.return.collect',
+      // ── R4 Lane 2 — end
     ],
   },
   {
