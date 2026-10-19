@@ -46,6 +46,18 @@ describe('head office\'s rules for what a driver collected', () => {
     expect(desk.steps.at(-1)!.say).toBe('Collected from you');
   });
 
+  it('the shop\'s count against what the driver took: every difference is shown, never absorbed (hard rule #10)', () => {
+    const took = { kind: 'collected' as const, returnId: 'R', by: 'u-driver', at: AT, routeId: 'R-7', relayedBy: 'u-box', lines: [{ productId: 'MILK', collectedMinor: 2 }, { productId: 'BREAD', collectedMinor: 1 }] };
+    const counted = (milk: number, bread: number): OnlineReturnStep => ({ kind: 'received', returnId: 'R', by: 'm', at: '2026-10-19T10:00:00.000Z', lines: [{ productId: 'MILK', receivedMinor: milk }, { productId: 'BREAD', receivedMinor: bread }] });
+    // Before the count, and when they agree: nothing to show.
+    expect(foldOnlineReturn(booked([took]))!.countDifferences).toEqual([]);
+    expect(foldOnlineReturn(booked([took, counted(2, 1)]))!.countDifferences).toEqual([]);
+    // One milk lost between the van and the shop: named, with both figures.
+    expect(foldOnlineReturn(booked([took, counted(1, 1)]))!.countDifferences).toEqual([{ productId: 'MILK', collectedMinor: 2, receivedMinor: 1 }]);
+    // The desk's button carries no lines, so there is nothing to compare against — no difference is invented.
+    expect(foldOnlineReturn(booked([{ kind: 'collected', returnId: 'R', by: 'm', at: AT }, counted(1, 0)]))!.countDifferences).toEqual([]);
+  });
+
   it('reads the relayed record strictly: the path\'s return, a route, a driver, one of two outcomes, a reason from the closed list', () => {
     const base = { returnId: 'R', routeId: 'R-7', driverId: 'u-driver' };
     expect(readRelayedCollection({ ...base, outcome: 'collected', lines: [{ productId: 'MILK', collectedMinor: 1 }], occurredAt: AT }, 'R')).toEqual({ routeId: 'R-7', driverId: 'u-driver', outcome: 'collected', lines: [{ productId: 'MILK', collectedMinor: 1 }], at: AT });

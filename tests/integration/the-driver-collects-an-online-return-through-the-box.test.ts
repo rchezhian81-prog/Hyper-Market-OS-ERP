@@ -238,6 +238,9 @@ describe.each(backings)('WF-16 — the driver collects an online return through 
     // ── Head office's next steps, unchanged: received with a count → a person's disposition → refund after a second person ──
     h = restart(h);
     await ok(req('POST', '/v1/online-returns/RET-1/received', { lines: [{ productId: 'MILK', receivedMinor: 1 }] }, MANAGER), 'received');
+    // The shop counted what the driver took (1 × MILK): no count difference is shown (hard rule #10 — one would be named).
+    const listed = ((await ok(req('GET', '/v1/online-returns', undefined, MANAGER), 'list')).body as { returns: { returnId: string; countDifferences: unknown[] }[] }).returns;
+    expect(listed.find((r) => r.returnId === 'RET-1')!.countDifferences).toEqual([]);
     await ok(req('POST', '/v1/online-returns/RET-1/lines/MILK/disposition', { disposition: 'quarantine' }, MANAGER), 'disposition');
     expect(codeOf(await req('POST', '/v1/online-returns/RET-1/refund', { refundId: 'rf-1' }, MANAGER))).toBe('given_without_approval');
     const body = await approvedBody(h, T, MANAGER, CHECKER, 'order_refund', 'ORD-1/rf-1', { refundId: 'rf-1' }, { returnId: 'RET-1' }, 60_00);

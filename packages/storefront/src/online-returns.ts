@@ -111,6 +111,11 @@ export interface OnlineReturnView {
   /** Every visit that came back without the goods, oldest first (P-08: a miss is shown, never dropped). */
   readonly missedCollections: readonly { readonly at: string; readonly reason: CollectionMissReason; readonly by: string; readonly note?: string }[];
   readonly receivedAt?: string;
+  /**
+   * WF-16 (driver) · hard rule #10: every line where the shop's count differs from what the driver recorded taking at the
+   * door. Shown, never absorbed — the refund still covers only what was counted in. Empty until both are recorded.
+   */
+  readonly countDifferences: readonly { readonly productId: string; readonly collectedMinor: number; readonly receivedMinor: number }[];
   readonly refunds: readonly { readonly refundId: string; readonly amountMinor: number; readonly state: 'issued' | 'pending' | 'refused' }[];
   readonly stage: OnlineReturnStage;
   /** Each step in words, oldest first — what the customer sees in the app. */
@@ -175,6 +180,12 @@ export function foldOnlineReturn(steps: readonly OnlineReturnStep[], refundState
     : live.length > 0 ? 'refunded'
       : refunds.length > 0 ? 'refund_refused'
         : receivedAt !== undefined ? 'received' : collectedAt !== undefined ? 'collected' : collectOn !== undefined ? 'collection_scheduled' : 'requested';
+  const countDifferences = collectedAt === undefined || collected.size === 0 || receivedAt === undefined ? []
+    : req.lines.flatMap((l) => {
+      const c = collected.get(l.productId) ?? 0;
+      const r = received.get(l.productId) ?? 0;
+      return c === r ? [] : [{ productId: l.productId, collectedMinor: c, receivedMinor: r }];
+    });
   return {
     returnId: req.returnId, orderId: req.orderId, customerRef: req.customerRef, reason: req.reason, requestedAt: req.at,
     lines: req.lines.map((l) => {
@@ -194,6 +205,7 @@ export function foldOnlineReturn(steps: readonly OnlineReturnStep[], refundState
     ...(collectedBy === undefined ? {} : { collectedBy }), ...(collectedOnRoute === undefined ? {} : { collectedOnRoute }),
     missedCollections: missed,
     ...(receivedAt === undefined ? {} : { receivedAt }),
+    countDifferences,
     refunds, stage, steps: say.sort((a, b) => a.at.localeCompare(b.at)),
   };
 }

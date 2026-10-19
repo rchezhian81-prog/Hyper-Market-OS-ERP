@@ -5,6 +5,22 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Known gaps in signed R3/R4 items closed (19–20 October 2026) — gate and PR pending
+
+- **Till:**
+  - "Unsent" says "not known" in amber when the store computer has not given the number (P-08).
+  - Every sale's bill is rendered through the receipt package, so a gold line shows "HUID: <code>" (B13). Paper printing waits for the printer.
+  - Weighed lines read "1.234 kg" / "500 g".
+- **Warehouse phone:**
+  - The footer reads calmly at 360/412 px.
+  - Vendor route sheets reach the handheld through the box, so a DSD check-in can be made against a route offline. Kept goods are still held for a second person (D-11).
+- **Driver phone:** the driver collects online returns on his phone. He records only booked lines and never more, or "not collected" with a reason. It works offline, is stamped and relayed, and head office re-checks it. No money moves at the door.
+- **Count check:** the shop's count against the driver's is now shown as a named difference on the Online store page (hard rule #10).
+- **Still open:**
+  - A paper printer adapter (hardware stage).
+  - Route sheets cannot yet be retired.
+  - A missed collection has no dedicated panel on the Online store page.
+
 ## Next stage chosen: the store pilot and data cutover before more features (19 October 2026)
 
 - **Why:** the roadmap puts Stage 12 (store pilot) and Stage 13 (parallel run and cutover) before more features (§21; §12.1 "R6 Rollout"). The gates are still open:
