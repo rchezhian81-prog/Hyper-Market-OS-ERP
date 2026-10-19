@@ -876,6 +876,12 @@ export function warehousePayload(input: ScreenInput): Record<string, unknown> | 
       poId: d.poId, number: d.number, supplierId: d.supplierId, grnId: d.grnId,
       ordered: d.ordered.map((o) => ({ productId: o.productId, quantityMinor: o.quantityMinor, unitCost: { minor: o.unitCostMinor, currency: o.currency } })),
     })) }),
+    // R3 D-11: the vendors' route sheets for this store, so the door check-in can be made against a route offline as well as
+    // against an order (each sheet names the place it is for). Absent stays absent: the phone then offers orders only.
+    ...(w.dsdRoutes === undefined ? {} : { dsdRoutes: w.dsdRoutes.map((r) => ({
+      routeId: r.routeId, supplierId: r.supplierId, storeId: r.storeId, version: r.version,
+      lines: r.lines.map((l) => ({ productId: l.productId, expectedMinor: l.expectedMinor, ...(l.unitCostMinor === undefined ? {} : { unitCostMinor: l.unitCostMinor }), ...(l.uom === undefined ? {} : { uom: l.uom }) })),
+    })) }),
     ...(w.recalledProductIds === undefined ? {} : { recalledProductIds: w.recalledProductIds }),
     ...(w.recalledBatchIds === undefined ? {} : { recalledBatchIds: w.recalledBatchIds }),
     // The pick list, line by line, each naming its bin. Passed through as sent — absent stays absent, so a
