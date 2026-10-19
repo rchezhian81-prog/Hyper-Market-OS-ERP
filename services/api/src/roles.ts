@@ -264,6 +264,11 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // D-24 (OB-220): record and withdraw the store's festivals and local events.
       'inventory.calendar.manage',
       // ── R4 Lane 3 — end
+      // ── R4 Lane 2 (online store and customer app) — begin
+      // B23 · A26: set the online store's details and publish listings; WF-16: return windows, collections, counts,
+      // dispositions (the refund itself stays order.refund.issue, approved by a second person).
+      'online.store.read', 'online.store.manage', 'online.return.manage', 'online.return.collect',
+      // ── R4 Lane 2 — end
     ],
   },
   {
@@ -383,6 +388,10 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // D-24: record and withdraw the store's festivals and local events.
       'inventory.calendar.manage',
       // ── R4 Lane 3 — end
+      // ── R4 Lane 2 (online store and customer app) — begin
+      // B23: read the online store's duties and publish a complete listing; WF-16: work online returns.
+      'online.store.read', 'online.store.manage', 'online.return.manage', 'online.return.collect',
+      // ── R4 Lane 2 — end
     ],
   },
   {

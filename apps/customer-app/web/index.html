@@ -122,6 +122,17 @@
       .banner.good { border-top-color: var(--good); }
       .banner strong { font-size: 18px; }
       .banner p { margin: 0; font-size: 16px; }
+      /* ── R4 Lane 2: the online store's details before payment, stars, receipts, returns, the legal links ── */
+      .duties { display: grid; gap: 4px; margin: 0; grid-column: 1 / -1; font-size: 14px; }
+      .duties div { display: grid; grid-template-columns: minmax(8em, 40%) 1fr; gap: 8px; }
+      .duties dt { color: var(--muted); } .duties dd { margin: 0; overflow-wrap: anywhere; }
+      .duties .unset { color: var(--on-warn-surface); font-weight: 600; }
+      .row .pic { grid-column: 1 / -1; max-width: 120px; max-height: 120px; border-radius: 8px; }
+      .stars { display: flex; gap: 6px; flex-wrap: wrap; grid-column: 1 / -1; }
+      .stars button { min-width: var(--tap); }
+      .stars button[aria-pressed='true'] { background: var(--good); color: var(--on-accent); }
+      footer.legal { padding: 8px 16px 16px; display: flex; gap: 16px; flex-wrap: wrap; font-size: 15px; }
+      footer.legal a { color: var(--ink); min-height: var(--tap); display: inline-flex; align-items: center; }
     </style>
   </head>
   <body>
@@ -226,6 +237,10 @@
           <p class="note" id="si-status" role="status" aria-live="polite"></p>
         </div>
 
+        <!-- R4 · B23: what the shop must tell the customer BEFORE payment, for every product in the basket (online-store.js). -->
+        <h2 id="duties-title">Before you pay</h2>
+        <div class="say" id="duties-shop" role="status" aria-live="polite">—</div>
+        <div class="rows" id="duties"></div>
         <button id="pay" class="primary wide" type="button">Pay and place the order</button>
       </section>
 
@@ -258,6 +273,14 @@
         <h2 id="cases-title">My questions and complaints</h2>
         <div class="rows" id="my-cases"></div>
         <p class="empty" id="my-cases-empty" hidden>—</p>
+        <!-- R4 · WF-16: my online returns, every step; M20-FR-04: stars for what I bought (online-store.js). -->
+        <h2 id="my-returns-title">My returns</h2>
+        <p class="note" id="return-policy-say"></p>
+        <div class="rows" id="my-returns"></div>
+        <p class="empty" id="my-returns-empty" hidden>—</p>
+        <h2 id="rate-title">Rate what you bought</h2>
+        <div class="rows" id="rate-lines"></div>
+        <p class="note" id="rate-say" role="status" aria-live="polite"></p>
       </section>
 
       <!--
@@ -273,8 +296,27 @@
         <h2 id="rights-title">Ask us about your information</h2>
         <p class="lead" id="rights-lead">You do not need to phone or email anybody. Tap one and we will answer.</p>
         <div class="rights" id="rights"></div>
+
+        <!-- R4 · D-28: digital receipts, only if I switch them on (OB-214); sending by SMS or WhatsApp is off (OB-222). -->
+        <h2 id="receipts-title">My receipts</h2>
+        <div class="consent">
+          <div class="consent-row">
+            <span id="receipts-label">Digital receipts</span>
+            <button id="receipts-switch" class="switch" type="button" role="switch" aria-checked="false" aria-labelledby="receipts-label">OFF</button>
+            <span class="why" id="receipts-why"></span>
+          </div>
+        </div>
+        <p class="note" id="receipts-sending"></p>
+        <div class="rows" id="receipts"></div>
+        <p class="note" id="receipts-say" role="status" aria-live="polite"></p>
       </section>
     </main>
+
+    <!-- R4 · B23: the privacy and terms pages open from every page of the store, without signing in. -->
+    <footer class="legal">
+      <a id="link-privacy" href="./privacy.html">Privacy</a>
+      <a id="link-terms" href="./terms.html">Terms, returns and refunds</a>
+    </footer>
 
     <!-- The message that must not be missed. No timer. -->
     <div class="banner" id="banner" hidden role="status" aria-live="polite">
@@ -295,5 +337,6 @@
     <!--SCREEN-DATA-->
     <script type="module" src="./customer-app.bundle.js"></script>
     <script type="module" src="./app.js"></script>
+    <script type="module" src="./online-store.js"></script>
   </body>
 </html>

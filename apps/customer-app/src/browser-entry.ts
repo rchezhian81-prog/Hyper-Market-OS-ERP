@@ -48,7 +48,7 @@ import {
   type ConsentPurposeSpec,
 } from './privacy-centre';
 import { httpShopTransport, readShopAnswer, type ShopTransport, type ShopPaymentResult, type ShopMineRequest } from './shop-transport';
-import { voiceQuery, type VoiceSearchPort } from './voice-search';
+import { voiceQuery, voiceSearchLink, VOICE_SEARCH_SWITCHED_ON, type VoiceSearchPort } from './voice-search';
 
 import { mountDemoBanner, type BannerDocument } from '../../../packages/ui/src/demo-banner';
 
@@ -269,6 +269,26 @@ export interface Shop {
    * only on the shop's 2xx; signed out, offline or refused, nothing changes and the answer says which (`refusal`).
    */
   mine: MyShop;
+  /** R4 Lane 2: the online store as the signed-in customer reads it — duties, stars, images, receipts, returns. */
+  online: OnlineShop;
+}
+
+/**
+ * R4 Lane 2 (B23 · D-28 · WF-16 · M20-FR-04 · D01-FR-06): reads and writes about the online store, ON THE SHOP — each
+ * answered only by the shop's 2xx; signed out, offline or refused, nothing changes and the answer says which.
+ */
+export interface OnlineShop {
+  /** Every duty for every product, before payment (B23), with stars and whether there is an image. */
+  listing(): Promise<MineOutcome<unknown>>;
+  /** A product's image from the shop's own server (OB-215), as a data address the page can show; none → refused. */
+  image(productId: string): Promise<MineOutcome<string>>;
+  receiptChoice(): Promise<MineOutcome<unknown>>;
+  setReceipts(on: boolean): Promise<MineOutcome<boolean>>;
+  receipts(): Promise<MineOutcome<unknown>>;
+  rate(productId: string, stars: number): Promise<MineOutcome<unknown>>;
+  myRatings(): Promise<MineOutcome<unknown>>;
+  returns(): Promise<MineOutcome<unknown>>;
+  returnPolicy(): Promise<MineOutcome<unknown>>;
 }
 
 /** Why a call about my own records did not happen — the view words each one, in English and Tamil. */
@@ -530,8 +550,9 @@ export function bootShop(
         return a.ok ? { ok: true, value: String((a.body as { caseId?: unknown }).caseId ?? id) } : a;
       },
       requestReturn: async (orderId, lines, reason) => {
+        // R4 · WF-16: an online return after delivery — judged by the window for each product's category (OB-213).
         const id = `r-${nextId()}`.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64);
-        const a = await mineCall({ method: 'POST', path: `orders/${encodeURIComponent(orderId)}/return-requests/${id}`, body: { lines, reason }, idempotencyKey: `return-${id}` });
+        const a = await mineCall({ method: 'POST', path: `orders/${encodeURIComponent(orderId)}/online-returns/${id}`, body: { lines, reason }, idempotencyKey: `return-${id}` });
         return a.ok ? { ok: true, value: id } : a;
       },
       cases: async () => {
@@ -553,7 +574,49 @@ export function bootShop(
         return { ok: true, value: { orderId: String(b.orderId ?? orderId), state: String(b.state ?? ''), tellTheCustomer: String(b.tellTheCustomer ?? ''), delivery: b.delivery ?? null } };
       },
     },
+
+    // ── R4 Lane 2 (begin): the online store, read and written on the shop as me ──
+    online: {
+      listing: async () => { const a = await storefrontCall('listing'); return a.ok ? { ok: true, value: a.body } : a; },
+      image: async (productId) => {
+        const a = await storefrontCall(`products/${encodeURIComponent(productId)}/image`);
+        if (!a.ok) return a;
+        const b = a.body as { mediaType?: unknown; contentBase64?: unknown };
+        // Only the three photo types the shop keeps are ever turned into an address the page shows (OB-215).
+        if ((b.mediaType !== 'image/jpeg' && b.mediaType !== 'image/png' && b.mediaType !== 'image/webp') || typeof b.contentBase64 !== 'string' || !/^[A-Za-z0-9+/]+={0,2}$/.test(b.contentBase64)) return { ok: false, refusal: 'the_shop_refused' };
+        return { ok: true, value: `data:${b.mediaType};base64,${b.contentBase64}` };
+      },
+      receiptChoice: async () => { const a = await mineCall({ method: 'GET', path: 'receipts/choice' }); return a.ok ? { ok: true, value: a.body } : a; },
+      setReceipts: async (on) => {
+        const a = await mineCall({ method: 'POST', path: 'receipts/choice', body: { on }, idempotencyKey: `receipts-${on}-${nextId()}` });
+        return a.ok ? { ok: true, value: (a.body as { on?: unknown }).on === true } : a;
+      },
+      receipts: async () => { const a = await mineCall({ method: 'GET', path: 'receipts' }); return a.ok ? { ok: true, value: a.body } : a; },
+      rate: async (productId, stars) => {
+        const a = await mineCall({ method: 'POST', path: `ratings/${encodeURIComponent(productId)}`, body: { stars }, idempotencyKey: `rate-${productId}-${stars}-${nextId()}` });
+        return a.ok ? { ok: true, value: a.body } : a;
+      },
+      myRatings: async () => { const a = await mineCall({ method: 'GET', path: 'ratings' }); return a.ok ? { ok: true, value: a.body } : a; },
+      returns: async () => { const a = await mineCall({ method: 'GET', path: 'online-returns' }); return a.ok ? { ok: true, value: a.body } : a; },
+      returnPolicy: async () => { const a = await mineCall({ method: 'GET', path: 'return-policy' }); return a.ok ? { ok: true, value: a.body } : a; },
+    },
+    // ── R4 Lane 2 (end) ──
   };
+
+  // ── R4 Lane 2 (begin) ──
+  /** A read of the online store as me — the same honest answers as `mineCall`. */
+  async function storefrontCall(path: 'listing' | 'ratings' | `products/${string}/image`): Promise<{ ok: true; body: unknown } | { ok: false; refusal: MineRefusal; shopSaid?: string }> {
+    if (token === undefined) return { ok: false, refusal: 'not_signed_in' };
+    if (transport?.storefront === undefined) return { ok: false, refusal: 'no_road_to_the_shop' };
+    const answer = await transport.storefront({ token, path });
+    if (!answer.reached) return { ok: false, refusal: 'not_saved_no_connection' };
+    if (answer.status === 200) return { ok: true, body: answer.body };
+    if (answer.status === 401) { token = undefined; return { ok: false, refusal: 'signed_out' }; }
+    if (answer.status >= 500) return { ok: false, refusal: 'the_shop_could_not_answer' };
+    const err = (answer.body as { error?: { whatHappened?: unknown } } | undefined)?.error;
+    return { ok: false, refusal: 'the_shop_refused', ...(typeof err?.whatHappened === 'string' ? { shopSaid: err.whatHappened } : {}) };
+  }
+  // ── R4 Lane 2 (end) ──
 
   /** Round 8: one call about my own records, read honestly — saved only on the shop's 2xx, and why not otherwise. */
   async function mineCall(call: Omit<ShopMineRequest, 'token'>): Promise<{ ok: true; body: unknown } | { ok: false; refusal: MineRefusal; shopSaid?: string }> {
@@ -751,6 +814,8 @@ interface ShopWindow {
    *  that turns what it heard into search words. */
   shopVoice?: VoiceSearchPort;
   shopVoiceQuery?: typeof voiceQuery;
+  /** R4 · D08: a browser test's stand-in engine (never set by the product). */
+  shopVoiceStandIn?: VoiceSearchPort;
 }
 
 // In the browser `globalThis.window` IS the window, so this needs no DOM types.
@@ -771,4 +836,9 @@ if (browserWindow !== undefined) {
   const shop = bootShop(browserWindow.shopData, basket, randomRequestId, transport);
   if (shop !== null) browserWindow.shop = shop;
   browserWindow.shopVoiceQuery = voiceQuery;
+  // R4 · D08 · OB-222: the voice link is switched OFF — it cannot listen, so the microphone button is not shown, and no
+  // customer's voice leaves the phone. Only a browser TEST puts its stand-in engine behind the link (`shopVoiceStandIn`,
+  // set before this bundle runs); nothing in the product ever sets it, and no real engine exists in this build.
+  const standIn = browserWindow.shopVoiceStandIn;
+  browserWindow.shopVoice = voiceSearchLink(standIn === undefined ? { switchedOn: VOICE_SEARCH_SWITCHED_ON } : { switchedOn: true, engine: standIn });
 }

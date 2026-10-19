@@ -436,6 +436,8 @@
     'gst-returns': 'receipt-text',
     'itc-review': 'file-text',
     'epr': 'trash', // R4 Lane 1 (B20–B22): the EPR registers page — this one line only
+    'online-store': 'receipt-text', // R4 Lane 2
+    'product-content': 'package', // R4 Lane 2
     'payroll': 'banknote',
     'my-payslip': 'wallet',
     'ess': 'user-round',

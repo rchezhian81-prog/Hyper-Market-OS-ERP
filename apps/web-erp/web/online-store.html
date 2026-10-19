@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Online store</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      The online store (R4 · B23 · A26 · WF-16). The owner sets the shop's details every listing carries (legal name,
+      address, GSTIN, return terms, grievance officer — OB-223: "not set" until he names one) as versions
+      (POST /v1/online-store/details); publishing the store is refused by name while any is missing
+      (POST /v1/online-store/publish). Each product's listing shows every duty and what is missing, and is published or
+      withdrawn (POST /v1/online-store/listings/:productId) — another seller's goods are refused (A26). The complaint clock
+      (48 hours / one month) and the GST line ("TCS: not applicable") are read from head office. Online returns
+      (WF-16): the windows by category and the non-returnable list (OB-213), and each return's steps — book, collected,
+      count, disposition, refund (a second person's approval id; the refund waits for the bank). The page decides
+      nothing itself: a refusal is shown as head office said it. No prompt/confirm/alert; nothing on a timer.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap:48px; }
+      body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.5 var(--font); min-height:100dvh; display:flex; flex-direction:column; }
+      main { flex:1; padding:16px; display:grid; gap:16px; align-content:start; max-width:960px; width:100%; }
+      h2 { margin:0 0 4px; font-size:20px; } p.lead { margin:0 0 4px; color:var(--muted); font-size:15px; }
+      h3 { margin:8px 0 0; font-size:16px; color:var(--muted); font-weight:700; }
+      form.ask { display:grid; gap:10px; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); align-items:end; }
+      label { display:grid; gap:2px; font-size:14px; color:var(--muted); }
+      input, select, textarea { min-height:var(--tap); font:inherit; padding:0 10px; border:1px solid var(--line); border-radius:10px; background:var(--field); color:var(--ink); min-width:0; }
+      textarea { padding:8px 10px; }
+      button.act { min-height:var(--tap); font:inherit; font-weight:600; border:0; border-radius:10px; background:var(--accent); color:var(--on-accent); padding:0 16px; cursor:pointer; }
+      button.act.quiet { background:var(--line); color:var(--ink); }
+      button.act:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
+      ul.rows { list-style:none; margin:0; padding:0; display:grid; gap:10px; }
+      li.row { background:var(--panel); border-radius:12px; padding:12px 14px; display:grid; gap:8px; border-left:6px solid var(--idle); overflow-wrap:anywhere; }
+      li.row.tone-ok { border-left-color:var(--ok); } li.row.tone-degraded { border-left-color:var(--degraded); } li.row.tone-error { border-left-color:var(--error); }
+      .row .head { display:flex; align-items:baseline; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+      .row .headline { font-weight:600; } .row .state { font-weight:600; font-size:14px; }
+      .row .facts { font-size:14px; color:var(--muted); display:flex; gap:14px; flex-wrap:wrap; }
+      .row form { display:grid; gap:8px; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); align-items:end; }
+      dl.details { display:grid; grid-template-columns:minmax(10em, 30%) 1fr; gap:4px 12px; margin:0; background:var(--panel); border-radius:12px; padding:12px 14px; }
+      dl.details dt { color:var(--muted); } dl.details dd { margin:0; overflow-wrap:anywhere; }
+      dd.unset { color:var(--danger-text); font-weight:700; }
+      p.result { margin:0; padding:12px 16px; border-radius:12px; background:var(--panel); font-weight:600; }
+      p.result.tone-error { background:var(--danger-surface); color:var(--danger-text); } p.result.tone-ok { background:var(--ok-surface); color:var(--on-ok-surface); }
+      p.state-line { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; }
+      [hidden] { display:none !important; }
+    </style>
+  </head>
+  <body>
+    <p class="stale" id="stale" hidden></p>
+    <header>
+      <h1 class="who" id="who">Online store <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <main>
+      <div>
+        <h2 id="title">Online store</h2>
+        <p class="lead" id="lead"></p>
+      </div>
+      <p class="result" id="result" role="status" aria-live="polite" hidden></p>
+      <p class="state-line" id="state" hidden></p>
+
+      <h3 id="h-details"></h3>
+      <dl class="details" id="details"></dl>
+      <p class="lead" id="store-state"></p>
+      <form class="ask" id="details-form">
+        <label for="d-legalName"><span id="l-legalName"></span><input id="d-legalName" type="text" maxlength="200" /></label>
+        <label for="d-address"><span id="l-address"></span><input id="d-address" type="text" maxlength="500" /></label>
+        <label for="d-gstin"><span id="l-gstin"></span><input id="d-gstin" type="text" maxlength="15" /></label>
+        <label for="d-returnTerms"><span id="l-returnTerms"></span><textarea id="d-returnTerms" maxlength="2000" rows="2"></textarea></label>
+        <label for="d-grievanceOfficerName"><span id="l-grievanceOfficerName"></span><input id="d-grievanceOfficerName" type="text" maxlength="120" /></label>
+        <label for="d-grievanceOfficerContact"><span id="l-grievanceOfficerContact"></span><input id="d-grievanceOfficerContact" type="text" maxlength="200" /></label>
+        <label for="d-reason"><span id="l-reason"></span><input id="d-reason" type="text" maxlength="200" /></label>
+        <button class="act" id="save-details" type="submit">Save</button>
+      </form>
+      <button class="act quiet" id="publish-store" type="button">Publish the online store</button>
+      <p class="lead" id="tcs"></p>
+
+      <h3 id="h-listings"></h3>
+      <ul class="rows" id="listings" aria-label="Products online"></ul>
+
+      <h3 id="h-complaints"></h3>
+      <p class="lead" id="complaints-say"></p>
+      <ul class="rows" id="complaints" aria-label="Online complaints"></ul>
+
+      <h3 id="h-returns"></h3>
+      <p class="lead" id="policy-say"></p>
+      <form class="ask" id="policy-form">
+        <label for="p-windows"><span id="l-windows"></span><input id="p-windows" type="text" placeholder="dairy=2, household=7" /></label>
+        <label for="p-nonreturnable"><span id="l-nonreturnable"></span><input id="p-nonreturnable" type="text" /></label>
+        <label for="p-reason"><span id="l-preason"></span><input id="p-reason" type="text" maxlength="200" /></label>
+        <button class="act" id="save-policy" type="submit">Save</button>
+      </form>
+      <ul class="rows" id="returns" aria-label="Online returns"></ul>
+    </main>
+    <!--SCREEN-DATA-->
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./online-store.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

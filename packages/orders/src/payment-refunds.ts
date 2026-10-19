@@ -76,7 +76,9 @@ export function paymentPosition(payment: OrderPayment | undefined, resolution: O
   }
 }
 
-export type RefundBasis = 'cancellation' | 'substitution' | 'short_pick' | 'goodwill';
+// R4 · WF-16: `return` — a refund for the lines of an online return RECEIVED back and counted. Only the online-return
+// route (`services/orders/src/storefront-online-returns.ts`) records it; the desk's refund route does not accept it.
+export type RefundBasis = 'cancellation' | 'substitution' | 'short_pick' | 'goodwill' | 'return';
 export type ProviderRefundResult = 'refunded' | 'declined' | 'unknown';
 export type RefundState = 'issued' | 'pending' | 'refused';
 

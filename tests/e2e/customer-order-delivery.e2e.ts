@@ -124,7 +124,8 @@ async function startStore(h: ApiHarness, rec: Recorder): Promise<{ base: string;
         const key = req.headers['idempotency-key'];
         const body = req.method === 'POST' ? await readBody(req) : undefined;
         // Round 8: the customer's own reads after sign-in (privacy, favourites, lists, cases) are kept apart from the order traffic.
-        if (req.method === 'GET' && path.startsWith('/v1/me/')) (rec.privacyReads ??= []).push({ auth: token !== undefined });
+        // R4 Lane 2 (B23): so are the online store's reads before payment (its details, stars and images) — reads, never orders.
+        if (req.method === 'GET' && (path.startsWith('/v1/me/') || path === '/v1/storefront/listing' || /^\/v1\/storefront\/products\/[^/]+\/image$/.test(path))) (rec.privacyReads ??= []).push({ auth: token !== undefined });
         else rec.apiCalls.push({ method: req.method ?? '?', path, auth: token !== undefined });
         const out = await h.raw({
           method: (req.method ?? 'GET') as 'GET' | 'POST', path,
@@ -360,9 +361,10 @@ describe.skipIf(!HAVE_BROWSER)('a customer orders in a real browser and the clou
     const store = await startStore(h, rec);
     const context: BrowserContext = await browser.newContext({ geolocation: NEARBY, permissions: ['geolocation'] });
     const page = await context.newPage();
-    // The fake speech engine (no engine is chosen — the owner's decision): it "hears" one phrase.
+    // The fake speech engine (no engine is chosen — the owner's decision): it "hears" one phrase. R4 · D08 (OB-222): the
+    // voice link is switched off in the product; a test puts its stand-in behind the link as `shopVoiceStandIn`.
     await page.addInitScript(() => {
-      (globalThis as unknown as { shopVoice: unknown }).shopVoice = { name: 'fake voice engine (e2e)', available: () => true, listen: async () => ({ heard: true, transcript: 'Please, Aavin MILK!' }) };
+      (globalThis as unknown as { shopVoiceStandIn: unknown }).shopVoiceStandIn = { name: 'fake voice engine (e2e)', available: () => true, listen: async () => ({ heard: true, transcript: 'Please, Aavin MILK!' }) };
     });
     try {
       await readyToPay(page, store.base, store.sms);

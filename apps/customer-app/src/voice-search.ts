@@ -64,3 +64,37 @@ export function fakeVoiceSearch(script: readonly VoiceResult[], available = true
     },
   };
 }
+
+// ── R4 · D08 · OB-222: the voice link, built SWITCHED OFF ───────────────────────────────────────────────────────────
+//
+// The owner has not chosen a speech engine and has switched voice off (OB-222). So the app is given a LINK that is off:
+// it says it cannot listen (the microphone button is therefore not shown), and `listen` never starts an engine — no
+// customer's voice leaves the phone. The test stand-in is the only engine that can be put behind the link, and only
+// when the link is switched on in a test; whatever it hears becomes an ordinary search the customer can change, and
+// nothing is ever added to the basket by voice (the link has no basket at all).
+
+/** OB-222: voice search is switched off. There is no setting that turns it on in this build. */
+export const VOICE_SEARCH_SWITCHED_ON = false;
+
+export interface VoiceSearchLink extends VoiceSearchPort {
+  readonly switchedOn: boolean;
+  /** How many times an engine was actually asked to listen through this link — 0 while switched off. */
+  readonly listensSent: () => number;
+}
+
+/** The link the app is given. Off: never available, never listens. On (tests only): the stand-in engine behind it. */
+export function voiceSearchLink(input: { readonly switchedOn: boolean; readonly engine?: VoiceSearchPort }): VoiceSearchLink {
+  let sent = 0;
+  const on = input.switchedOn && input.engine !== undefined;
+  return {
+    name: on ? input.engine!.name : 'voice search (switched off)',
+    switchedOn: on,
+    listensSent: () => sent,
+    available: () => on && input.engine!.available(),
+    listen: async (language) => {
+      if (!on) return { heard: false, why: 'not_supported' };
+      sent += 1;
+      return input.engine!.listen(language);
+    },
+  };
+}
