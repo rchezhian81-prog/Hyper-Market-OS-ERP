@@ -85,4 +85,28 @@ describe('D-11 the handheld door session (offline)', () => {
     expect(s.close({ noteRef: 'NOTE-55', driverSignedName: 'x' }).code).toBe('dsd_already_closed');
     expect(outbox.unsentCount()).toBe(1);
   });
+
+  it('R3 D-11: a route sheet the box served is offered beside the orders; the check-in is made against it for the place it names, and what is kept is held', () => {
+    const outbox = new SyncOutbox();
+    const withRoute = { ...data, storeId: 'WH-A', dsdRoutes: [{ routeId: 'r-bread', supplierId: 'sup-bake', storeId: 'S-A', version: 2, lines: [{ productId: 'milk', expectedMinor: 6, unitCostMinor: 2_000 }] }] };
+    const s = new DsdDoorSession(withRoute as never, outbox, () => AT);
+    expect(s.choices()).toEqual({ orders: [{ poId: 'po-1', number: 'PO-1', supplierId: 'sup-1' }], routes: [{ routeId: 'r-bread', supplierId: 'sup-bake' }] });
+    expect(s.start({ checkInId: 'c-r', routeId: 'r-bread', poId: 'po-1', driverName: 'mobile 9876543210' }).code).toBe('dsd_needs_vendor'); // one or the other
+    expect(s.start({ checkInId: 'c-r', routeId: 'r-bread', driverName: 'mobile 9876543210' })).toMatchObject({ feedback: 'accept', code: 'dsd_started' });
+    s.scan('s1', '890MILK');
+    const view = s.view()!;
+    expect(view).toMatchObject({ against: 'r-bread', supplierId: 'sup-bake' });
+    expect(view.lines).toEqual([expect.objectContaining({ productId: 'milk', expectedMinor: 6, scannedMinor: 1, keptMinor: 1, receivableMinor: 0, heldMinor: 1 })]);
+    expect(view.discrepancies).toEqual([{ productId: 'milk', kind: 'short', expectedMinor: 6, scannedMinor: 1, differenceMinor: -5 }]);
+    expect(s.close({ noteRef: 'NOTE-R', driverSignedName: 'mobile 9876543210' }).code).toBe('dsd_closed');
+    const payload = outbox.all()[0]!.event.payload as Record<string, unknown>;
+    expect(payload).toMatchObject({ checkInId: 'c-r', routeId: 'r-bread', supplierId: 'sup-bake', storeId: 'S-A' });
+    expect(payload['poId']).toBeUndefined();
+    // An order check-in on the same phone is still made for the phone's own place.
+    const o2 = new SyncOutbox();
+    const u = new DsdDoorSession(withRoute as never, o2, () => AT);
+    u.start({ checkInId: 'c-p', poId: 'po-1', driverName: 'd' });
+    u.close({ noteRef: 'N', driverSignedName: 'd' });
+    expect(o2.all()[0]!.event.payload).toMatchObject({ poId: 'po-1', storeId: 'WH-A' });
+  });
 });

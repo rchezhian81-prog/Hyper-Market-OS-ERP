@@ -179,6 +179,10 @@
       /* With both pick and issue work held, the two sit side by side rather than stacking the footer up the screen. */
       .actions:has(> #pick:not([hidden])):has(> #issue:not([hidden])) > #pick,
       .actions:has(> #pick:not([hidden])):has(> #issue:not([hidden])) > #issue { grid-column: auto; font-size: 17px; }
+      /* OB-205 (footer): an action that waits for a scan says so on a smaller second line under its words — never one long
+         label wrapped to three or four lines. The action keeps its icon and its whole meaning; the button stays ≥ 56px. */
+      .actions > button:has(> .why) { flex-direction: column; gap: 2px; padding: var(--space-2) 10px; min-height: var(--tap); }
+      .actions > button .why { display: block; font-size: var(--fs-sm); font-weight: 600; line-height: 1.25; color: inherit; }
 
       /* Waiting for a scan — there is deliberately no text box to type into. */
       .sheet { position: fixed; inset: 0; background: var(--scrim); display: grid; place-items: end center; z-index: 20; }
@@ -315,11 +319,11 @@
              to assemble against the order — no quantity travels, the scans already did. -->
         <button id="done-receiving" class="wide" type="button" hidden>Delivery complete — send the receipt</button>
         <button id="receive" type="button">Receive a delivery</button>
-        <button id="put-away" class="primary" type="button" disabled>Put away — scan the bin</button>
+        <button id="put-away" class="primary" type="button" disabled>Put away<small class="why">scan the bin</small></button>
         <!-- Shown only when the handheld holds pick work. Scanning a line's bin from the list starts the pick without it. -->
-        <button id="pick" class="primary wide" type="button" disabled hidden>Pick — scan the bin</button>
+        <button id="pick" class="primary wide" type="button" disabled hidden>Pick<small class="why">scan the bin</small></button>
         <!-- SP-8c: shown only when the handheld holds floor indents to issue. -->
-        <button id="issue" class="primary wide" type="button" disabled hidden>Issue to the floor — scan the bin</button>
+        <button id="issue" class="primary wide" type="button" disabled hidden>Issue to the floor<small class="why">scan the bin</small></button>
       </div>
     </footer>
 

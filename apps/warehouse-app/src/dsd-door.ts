@@ -30,19 +30,23 @@ const signal = (feedback: DsdSignal['feedback'], code: DsdFeedbackCode, detail: 
   feedback, code, detail, sound: feedback === 'accept' ? 'ok' : feedback === 'warn' ? 'warn' : 'error', vibrateMs: feedback === 'accept' ? 40 : feedback === 'warn' ? 120 : 300,
 });
 
-export interface DsdRouteOnPhone { readonly routeId: string; readonly supplierId: string; readonly lines: readonly DsdExpectedLine[] }
+/**
+ * A vendor's route sheet as the box served it (R3 D-11): what that van brings when it comes with no purchase order. It
+ * names the place it is for; a check-in against it is made for that place, as head office judges it.
+ */
+export interface DsdRouteOnPhone { readonly routeId: string; readonly supplierId: string; readonly storeId?: string; readonly version?: number; readonly lines: readonly DsdExpectedLine[] }
 export interface DsdDoorData {
   readonly workerId: string;
   readonly storeId: string;
   readonly barcodes?: readonly BarcodeResolution[];
   readonly packs?: readonly PackHierarchy[];
   readonly openDeliveries?: readonly { readonly poId: string; readonly number: string; readonly supplierId: string; readonly ordered: readonly { readonly productId: string; readonly quantityMinor: number; readonly unitCost: { readonly minor: number } }[] }[];
-  /** Vendors' route sheets the box served, when it serves them; absent = none on this phone (a route check-in is then judged at head office only). */
+  /** Vendors' route sheets the box served (head office's, for this store); absent = none on this phone, and only orders are offered. */
   readonly dsdRoutes?: readonly DsdRouteOnPhone[];
 }
 
 interface Open {
-  readonly checkInId: string; readonly supplierId: string; readonly against: { kind: 'po'; poId: string } | { kind: 'route'; routeId: string };
+  readonly checkInId: string; readonly supplierId: string; readonly storeId: string; readonly against: { kind: 'po'; poId: string } | { kind: 'route'; routeId: string };
   readonly driverName: string; readonly vehicleRef: string | null; readonly arrivedAt: string; readonly expected: readonly DsdExpectedLine[];
   scans: DsdScan[]; handBacks: DsdHandBack[]; closed: boolean;
 }
@@ -72,7 +76,7 @@ export class DsdDoorSession {
       ? order.ordered.map((o) => ({ productId: o.productId, expectedMinor: o.quantityMinor, unitCostMinor: o.unitCost.minor }))
       : [...(route?.lines ?? [])];
     this.current = {
-      checkInId: input.checkInId, supplierId, against: input.poId !== undefined ? { kind: 'po', poId: input.poId } : { kind: 'route', routeId: input.routeId! },
+      checkInId: input.checkInId, supplierId, storeId: route?.storeId ?? this.data.storeId, against: input.poId !== undefined ? { kind: 'po', poId: input.poId } : { kind: 'route', routeId: input.routeId! },
       driverName: input.driverName.trim(), vehicleRef: input.vehicleRef?.trim() || null, arrivedAt: this.now(), expected, scans: [], handBacks: [], closed: false,
     };
     return signal('accept', 'dsd_started', `checking in ${supplierId} against ${input.poId ?? input.routeId}`);
@@ -129,7 +133,7 @@ export class DsdDoorSession {
     this.outbox.enqueue(makeEvent({
       id: `dsd-${c.checkInId}`, type: DSD_CHECK_IN_CLOSED, occurredAt: at, idempotencyKey: `dsd:${c.checkInId}`, source: 'warehouse-handheld',
       payload: {
-        checkInId: c.checkInId, supplierId: c.supplierId, storeId: this.data.storeId,
+        checkInId: c.checkInId, supplierId: c.supplierId, storeId: c.storeId,
         ...(c.against.kind === 'po' ? { poId: c.against.poId } : { routeId: c.against.routeId }),
         driverName: c.driverName, ...(c.vehicleRef === null ? {} : { vehicleRef: c.vehicleRef }), arrivedAt: c.arrivedAt,
         receivedBy: this.data.workerId, scans: c.scans, handBacks: c.handBacks,
