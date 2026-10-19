@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1128 | 686 | 686 | 89 | 334 |
+| 13 | 1149 | 698 | 698 | 89 | 339 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -846,18 +846,26 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/finance/tds/config` | `finance.tds.configure` | core | yes |
 | POST | `/v1/finance/tds/switch` | `finance.tds.switch` | core | yes |
 | POST | `/v1/hr/payroll/bank-file` | `payroll.statutory.read` | core | yes |
+| GET | `/v1/hr/payroll/contributions/:period` | `payroll.statutory.read` | core | — |
+| POST | `/v1/hr/payroll/contributions/:period/totals` | `payroll.statutory.read` | core | yes |
 | POST | `/v1/hr/payroll/ess/self` | `payroll.ess.self` | core | yes |
 | POST | `/v1/hr/payroll/journal` | `payroll.statutory.read` | core | yes |
+| GET | `/v1/hr/payroll/legal-settings` | `payroll.legal.read` | core | — |
+| POST | `/v1/hr/payroll/legal-settings/:key` | `payroll.legal.configure` | core | yes |
 | GET | `/v1/hr/payroll/my-payslip` | `payroll.ess.self` | core | — |
 | GET | `/v1/hr/payroll/pay-run/:payRunId` | `payroll.statutory.read` | core | — |
 | POST | `/v1/hr/payroll/pay-run/:payRunId/append` | `payroll.statutory.read` | core | yes |
 | POST | `/v1/hr/payroll/pay-run/evaluate` | `payroll.statutory.read` | core | yes |
 | POST | `/v1/hr/payroll/payslip` | `payroll.statutory.read` | core | yes |
+| GET | `/v1/hr/payroll/payslip-exceptions` | `payroll.statutory.read` | core | — |
+| POST | `/v1/hr/payroll/payslip-exceptions/raise` | `payroll.statutory.read` | core | yes |
 | GET | `/v1/hr/payroll/payslips/:employeeId` | `payroll.statutory.read` | core | — |
 | POST | `/v1/hr/payroll/payslips/:employeeId/:period` | `payroll.statutory.read` | core | yes |
 | POST | `/v1/hr/payroll/professional-tax-tn` | `payroll.statutory.read` | core | yes |
 | POST | `/v1/hr/payroll/settlement` | `payroll.statutory.read` | core | yes |
+| GET | `/v1/hr/payroll/statutory-check/:period` | `payroll.statutory.read` | core | — |
 | POST | `/v1/hr/payroll/statutory-deductions` | `payroll.statutory.read` | core | yes |
+| POST | `/v1/hr/payroll/statutory-payslips/:employeeId/:period` | `payroll.statutory.read` | core | yes |
 | POST | `/v1/hr/payroll/tds` | `payroll.statutory.read` | core | yes |
 | GET | `/v1/scrap/review` | `scrap.review.read` | core | — |
 | POST | `/v1/scrap/sales` | `scrap.sale.record` | core | yes |
@@ -913,6 +921,19 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/compliance/attestations/:attestationId` | `compliance.risk.manage` | core | yes |
 | POST | `/v1/compliance/controls/:controlId` | `compliance.risk.manage` | core | yes |
 | GET | `/v1/compliance/controls/health` | `compliance.risk.read` | core | — |
+| POST | `/v1/compliance/epr/assets/:assetId/not-e-waste` | `epr.register.record` | core | yes |
+| POST | `/v1/compliance/epr/handovers/:handoverId` | `epr.register.record` | core | yes |
+| GET | `/v1/compliance/epr/own-brand` | `epr.register.read` | core | — |
+| POST | `/v1/compliance/epr/own-brand/:productId` | `epr.register.record` | core | yes |
+| GET | `/v1/compliance/epr/plastic/:financialYear` | `epr.register.read` | core | — |
+| GET | `/v1/compliance/epr/recyclers` | `epr.register.read` | core | — |
+| POST | `/v1/compliance/epr/recyclers/:recyclerId` | `epr.register.record` | core | yes |
+| GET | `/v1/compliance/epr/settings` | `epr.register.read` | core | — |
+| POST | `/v1/compliance/epr/settings/:key` | `epr.settings.configure` | core | yes |
+| GET | `/v1/compliance/epr/take-back` | `epr.register.read` | core | — |
+| POST | `/v1/compliance/epr/take-back-stock/:handoverId/out` | `epr.register.record` | core | yes |
+| POST | `/v1/compliance/epr/take-back-stock/counts/:countId` | `epr.register.record` | core | yes |
+| POST | `/v1/compliance/epr/take-backs/:takeBackId` | `epr.register.record` | core | yes |
 | GET | `/v1/compliance/evidence-gaps` | `compliance.obligation.read` | core | — |
 | GET | `/v1/compliance/gates/:gate/can-pass` | `compliance.risk.read` | core | — |
 | GET | `/v1/compliance/gates/blocked` | `compliance.risk.read` | core | — |

@@ -280,6 +280,10 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // the books and the exceptions, accept / reject / keep pending each line. Gated on the read the review route checks
   // (`finance.itc.read`). A head-office page (the box does not serve it).
   { id: 'itc-review', label: 'Input tax credit (GSTR-2B)', labelTa: 'உள்ளீட்டு வரி வரவு (GSTR-2B)', path: '/itc-review', requires: 'finance.itc.read', group: 'Finance', served: 'unserved' },
+  // R4 Lane 1 · B20 · B21 · B22 · OB-212: the EPR registers — own-brand plastic per category for the year with the CPCB
+  // file (nothing filed), the take-back register and its exceptions, recording a take-back and handing over to a
+  // registered recycler. Gated on the read the register routes check (`epr.register.read`). A head-office page.
+  { id: 'epr', label: 'EPR registers (plastic, e-waste, batteries)', labelTa: 'EPR பதிவேடுகள் (பிளாஸ்டிக், மின்கழிவு, பேட்டரி)', path: '/epr', requires: 'epr.register.read', group: 'Operations', served: 'unserved' },
 ]);
 
 /** An item retired from the catalogue, with the reason and where its job lives now — never a silent drop. */

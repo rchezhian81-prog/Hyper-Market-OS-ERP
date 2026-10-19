@@ -31,7 +31,7 @@ import type { Route, RequestContext } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/audit-trail';
 import {
-  plasticReturn, packagingLineIsValid, eprSettingStatuses, financialYearBounds, EPR_SETTING_KEYS, EPR_SETTINGS, PLASTIC_CATEGORIES, PLASTIC_CATEGORY_WORDS,
+  plasticReturn, packagingLineIsValid, eprSettingStatuses, financialYearBounds, EPR_SETTINGS, PLASTIC_CATEGORIES, PLASTIC_CATEGORY_WORDS,
   recyclersById, registeredRecycler, assertTakeBackLeavesOnlyToARecycler, takeBackStock, assertWithinTakeBackStock,
   takeBackStockExceptions, disposedAssetExceptions, EprRefusal, InvalidEprInput, TAKE_BACK_KINDS, TAKE_BACK_LOCATION,
   type OwnBrandDeclaration, type UnitsMovement, type EprSettingChange, type EprSettingKey, type Recycler, type TakeBack,

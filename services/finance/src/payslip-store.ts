@@ -16,7 +16,7 @@ import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import {
   employeeSelfView, EssAccessDenied, InvalidEssInput,
-  checkParticulars, PayslipParticularMissing, PAYSLIP_PARTICULARS, PAYSLIP_PARTICULAR_KEYS,
+  checkParticulars, PayslipParticularMissing, PAYSLIP_PARTICULARS, PAYSLIP_PARTICULAR_KEYS, maskUan,
   type Payslip, type ParticularsList, type PayslipParticularKey, type ParticularsCheck,
 } from '../../../packages/payroll/src/index';
 
@@ -87,7 +87,14 @@ export function payslipStoreRoutes(deps: PayslipStoreDeps): readonly Route[] {
             nextSafeAction: 'Send the supplied particulars by those names. Nothing was issued.',
           });
         }
-        const supplied = (raw ?? {}) as Partial<Record<PayslipParticularKey, string>>;
+        // The employee's EPF and ESI numbers are kept MASKED (last four only), never whole: the payslip shows enough for the
+        // person to recognise their own number (C7 · packages/payroll/src/mask.ts).
+        const given = (raw ?? {}) as Partial<Record<PayslipParticularKey, string>>;
+        const supplied: Partial<Record<PayslipParticularKey, string>> = {
+          ...given,
+          ...(given.uan === undefined ? {} : { uan: maskUan(given.uan) }),
+          ...(given.esiNumber === undefined ? {} : { esiNumber: maskUan(given.esiNumber) }),
+        };
         const payslip = b['payslip'];
         const list = deps.particularsList === undefined ? NO_LIST : await deps.particularsList(ctx.tenantId);
         const particulars = checkParticulars(list, { employeeId, period, payslip, supplied });

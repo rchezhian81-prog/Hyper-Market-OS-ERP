@@ -22,7 +22,7 @@ const body = (onDate: string) => ({
   components: [{ code: 'BASIC', monthlyMinor: 1_200_000, partOfPfWage: true }],
 });
 const LIST = ['employerName', 'employeeName', 'payPeriod', 'payDate', 'grossWages', 'deductions', 'netPay', 'hoursWorked'];
-type Issued = { particulars: { listStatus: string; lines: { key: string; status: string }[]; missing: string[] } };
+type Issued = { particulars: { listStatus: string; lines: { key: string; status: string; value?: string }[]; missing: string[] } };
 
 describe.each(backings())('a payslip missing a particular cannot be issued — on $name (C15)', ({ harness, restart }) => {
   it('not confirmed → every particular "not confirmed"; confirmed → a missing one refused by name; only my own; late ones reach the owner', async () => {
@@ -72,7 +72,12 @@ describe.each(backings())('a payslip missing a particular cannot be issued — o
     expect(whatOf(await req('POST', `/v1/hr/payroll/payslips/e2/${PERIOD}`, { payslip: plain, particulars: { employerName: 'SRE', employeeName: 'Staff e2' } }))).toBe('payslip particular missing: Hours actually worked');
     expect(codeOf(await req('POST', `/v1/hr/payroll/payslips/e2/${PERIOD}`, { payslip: p2, particulars: { netPay: '1' } }))).toBe('not_readable_as_payslip_particulars');
     expect(((await ok(req('GET', '/v1/hr/payroll/my-payslip', undefined, 'e2'), 'e2 still none')).body as { issued: boolean }).issued).toBe(false);
-    const done = (await ok(req('POST', `/v1/hr/payroll/payslips/e2/${PERIOD}`, { payslip: p2, particulars: { employerName: 'SRE Hyper Market (test)', employeeName: 'Staff e2' } }), 'issue e2')).body as Issued;
+    const done = (await ok(req('POST', `/v1/hr/payroll/payslips/e2/${PERIOD}`, { payslip: p2, particulars: { employerName: 'SRE Hyper Market (test)', employeeName: 'Staff e2', uan: '100200300400' } }), 'issue e2')).body as Issued;
+    // The EPF number is kept masked — the last four only, never the whole number (C7).
+    const uan = done.particulars.lines.find((l) => l.key === 'uan')!.value!;
+    expect(uan.endsWith('0400')).toBe(true);
+    expect(uan).not.toContain('100200300400');
+    expect(JSON.stringify((await h.store.readStream(T, 'payroll\u001fpayslips')).map((e) => e.event.payload))).not.toContain('100200300400');
     expect(done.particulars.listStatus).toBe('confirmed');
     expect(done.particulars.lines.filter((l) => l.status === 'carried').map((l) => l.key).sort()).toEqual([...LIST].sort());
 

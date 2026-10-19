@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { UNSET_PAYROLL_LEGAL_SETTINGS, PAYROLL_FIGURE_KEYS, OVERTIME_FLOOR_PERCENT } from '../../packages/payroll/src/index';
+import { r4PayEprRoutes } from '../../services/api/src/r4-pay-epr-adapters';
 
 /**
  * **R4 Lane 1 — the controls have no override (C15 · C16 · C19 · B20 · B21 · B22).** Each claim the signed sentences make
@@ -72,5 +73,14 @@ describe('R4 Lane 1 controls have no override', () => {
 
   it('no AI is involved: the lane imports nothing from the AI service or packages', () => {
     for (const f of [...PAY, ...EPR, ADAPTERS]) expect(readFileSync(f, 'utf8'), f).not.toMatch(/from '[^']*(services\/ai|packages\/ai)\//);
+  });
+
+  it('without a durable store the routes are declared but answer 503 by name — never an empty register or a pretend save', async () => {
+    const routes = r4PayEprRoutes({ store: undefined, now: () => '2030-01-01T00:00:00Z' });
+    expect(routes.length).toBeGreaterThan(20);
+    const read = routes.find((r) => r.method === 'GET' && r.path === '/v1/compliance/epr/take-back')!;
+    await expect(read.handler({ tenantId: 't', userId: 'u', params: {}, query: {}, body: undefined } as never)).rejects.toMatchObject({ status: 503 });
+    const write = routes.find((r) => r.path === '/v1/hr/payroll/contributions/:period/totals')!;
+    await expect(write.handler({ tenantId: 't', userId: 'u', params: { period: '2030-05' }, query: {}, body: { pfEmployeeMinor: 0, pfEmployerMinor: 0, esiEmployeeMinor: 0, esiEmployerMinor: 0, reference: 'r' } } as never)).rejects.toMatchObject({ status: 503 });
   });
 });

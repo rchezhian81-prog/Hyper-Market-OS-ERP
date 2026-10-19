@@ -11,6 +11,7 @@ import { createHash } from 'node:crypto';
 import { makeEvent } from '../../../packages/contracts/src/event';
 import type { EventStore } from '../../../packages/persistence/src/event-store';
 import type { Route } from '../../kernel/src/index';
+import { apiError } from '../../kernel/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/audit-trail';
 import {
   foldPayrollLegalSettings, localDate,
@@ -171,8 +172,17 @@ export function r4PayEprRoutes(input: {
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
 }): readonly Route[] {
   const { store, now } = input;
-  if (store === undefined) return []; // the registers are durable or absent — never a silent in-memory stand-in
   const audit = input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit };
+  if (store === undefined) {
+    // No durable store: the routes are still declared (so the surface documents them), but every read and write answers
+    // 503 by name — never a silent empty register or a write that pretends it was kept (P-08).
+    const absent = <T extends object>(): T => new Proxy({ now } as object, {
+      get: (target, prop) => (prop in target ? (target as Record<string | symbol, unknown>)[prop] : () => {
+        throw apiError(503, { code: 'register_store_not_available', whatHappened: 'Head office is running without its durable store, so the pay and EPR registers cannot be read or written.', wasItSaved: 'not_saved', nextSafeAction: 'Start head office with its database. Nothing was read or saved.' });
+      }),
+    }) as T;
+    return [...statutoryPayRoutes(absent<StatutoryPayDeps>()), ...eprRoutes(absent<EprDeps>())];
+  }
   return [
     ...statutoryPayRoutes({ ...statutoryPayAdapter({ store, now }), ...audit }),
     ...eprRoutes({ ...eprAdapter({ store, now }), ...audit }),
