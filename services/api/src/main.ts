@@ -333,7 +333,7 @@ import type { EventStore } from '../../../packages/persistence/src/event-store';
 import { r3GstRoutes, eInvoiceReportingGuardFor, gstTimeBarSweep } from './r3-gst-adapters';
 import { alsoEachPassOf } from './ops-alert-sweeps'; // R3 lane 1 — GST liability and returns
 import { itcPortForStore } from './r3-itc-bridge'; // R3 seam — GSTR-3B Table 4 reads the A17 reconciliation
-import { r4PayEprRoutes, r4PayslipHooks } from './r4-pay-epr-adapters'; // R4 Lane 1 — pay (C19 · C15 · C16) and EPR registers (B20 · B21 · B22)
+import { r4PayEprRoutes, r4PayslipHooks, payslipLateSweep } from './r4-pay-epr-adapters'; // R4 Lane 1 — pay (C19 · C15 · C16) and EPR registers (B20 · B21 · B22)
 
 const now = (): string => new Date().toISOString();
 
@@ -2572,12 +2572,15 @@ export async function startApi(
     say: (line) => { out(`${line}\n`); },
     // Round 8 (M19-FR-04 · PA-08): a delivery exception past its time limit is put on the message queue for the people
     // who staff its queue, on this same timer — nobody has to press anything for it to be told.
-    // R3 · A19: on the same timer, a GST return near or past its 3-year time bar is raised to every owner. Both run.
+    // R3 · A19: on the same timer, a GST return near or past its 3-year time bar is raised to every owner. R4 · C15: and a
+    // late payslip. All run; one failing never stops the others.
     alsoEachPass: alsoEachPassOf({
       breaches: async (t, at) => (await raiseBreachAlerts({
         ...ordersAdapter({ store, now, holdMinutes: HOLD_MINUTES, refundProcessor: testModeRefundProcessor() }), ...breachAlertAdapter({ store, now }),
       }, t, at, OPS_ALERT_WORKER)).queued.length,
       gstTimeBar: gstTimeBarSweep({ store, now, timeZone: (t: string) => new DurableTenantSettings(new SqlConfigVersionStore(pgPoolClient(db))).value(t, SETTINGS.STORE_TIME_ZONE) }),
+      // R4 · C15: a payslip not issued by its pay date is raised to every owner on the same timer.
+      payslipLate: payslipLateSweep({ store, now }),
       say: (line) => { out(`${line}\n`); },
     }),
   });
