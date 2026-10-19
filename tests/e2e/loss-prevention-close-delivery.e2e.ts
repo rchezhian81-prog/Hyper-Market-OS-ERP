@@ -57,6 +57,8 @@ interface Recorder {
   closeStatus: number;
   closed: boolean;
   readonly requests: { method: string; path: string; body: unknown }[];
+  /** OB-235: the open worklist this server hands over (default: the one case). */
+  open?: typeof OPEN_WORKLIST;
 }
 
 /** A server that BOTH serves the shell (GET, manager context injected) AND answers the two routes the inbox
@@ -79,7 +81,7 @@ async function startShellAndCloud(rec: Recorder): Promise<{ base: string; stop: 
       if (req.method === 'GET' && path === '/v1/loss-prevention/cases') {
         rec.requests.push({ method: 'GET', path, body: undefined });
         res.writeHead(200, { 'content-type': 'application/json' });
-        res.end(JSON.stringify(rec.closed ? CLOSED_WORKLIST : OPEN_WORKLIST));
+        res.end(JSON.stringify(rec.closed ? CLOSED_WORKLIST : rec.open ?? OPEN_WORKLIST));
         return;
       }
       const file = path === '/' || path === '/loss-prevention' ? 'loss-prevention.html' : path.replace(/^\//, '');
@@ -187,6 +189,28 @@ describe.skipIf(!HAVE_BROWSER)('the manager closes an investigation, end to end 
       await page.waitForSelector('#result:not([hidden])', { timeout: 10_000 });
       expect(rec.requests.some((r) => r.method === 'POST')).toBe(false);
       expect(await page.locator('#rows .row').count()).toBe(1);
+    } finally {
+      await teardown();
+    }
+  });
+  // ── R4 integration · OB-235 — a case the till-shortage RULE opened wears a chip (icon + word), English and Tamil ─
+  it('OB-235: a case opened by rule shows the "Opened by rule" chip with its icon, in English and Tamil; a person\'s case shows none', async () => {
+    const BY_RULE = { ...ONE_CASE, caseId: 'shortage-S1', openedBy: 'system:till-shortage-rule', openedByRule: true };
+    const BY_PERSON = { ...ONE_CASE, caseId: 'c-person', valueMinor: 50000, openedBy: 'u-owner' };
+    const open = { openCount: 2, totalValueMinor: 170000, cases: [BY_RULE, BY_PERSON] };
+    const rec: Recorder = { inboxData: { ...manager(['lp.case.read']), worklist: open }, closeStatus: 200, closed: false, requests: [], open };
+    const { page, teardown } = await openScreen(rec);
+    try {
+      await page.waitForFunction(() => (globalThis as unknown as BrowserGlobals).document.querySelectorAll('#rows .row').length === 2, undefined, { timeout: 10_000 });
+      const chips = page.locator('#rows .row .opened-by-rule');
+      expect(await chips.count()).toBe(1); // only the rule's case
+      const chip = page.locator('#rows .row', { hasText: BY_RULE.summary }).first().locator('.opened-by-rule');
+      expect((await chip.textContent())?.trim()).toBe('Opened by rule');
+      expect(await chip.locator('svg.sre-icon[data-icon="list-checks"]').count()).toBe(1); // an icon beside the word
+      expect(await chip.getAttribute('aria-label')).toMatch(/no person has accused anyone/);
+      await page.click('#lang');
+      expect((await page.locator('#rows .row .opened-by-rule').first().textContent())?.trim()).toBe('விதியால் திறக்கப்பட்டது');
+      expect(rec.requests.some((r) => r.method === 'POST')).toBe(false);
     } finally {
       await teardown();
     }

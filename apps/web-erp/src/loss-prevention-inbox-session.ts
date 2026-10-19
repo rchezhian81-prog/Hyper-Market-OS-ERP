@@ -39,6 +39,8 @@ export interface LpCaseView {
   readonly raisedFromRef: string;
   readonly openedBy: string;
   readonly openedAt: string;
+  /** OB-235: a rule opened it (a material till shortage), not a person. */
+  readonly openedByRule?: boolean;
   readonly evidenceCount: number;
 }
 
@@ -103,6 +105,7 @@ export type CopyKey =
   | 'kindOpen'
   | 'openHeading' | 'openCount' | 'exposureLabel' | 'allClear'
   | 'subjectLabel' | 'valueLabel' | 'evidenceLabel' | 'assignedLabel' | 'raisedFromLabel' | 'openedByLabel'
+  | 'openedByRule' | 'openedByRuleSay'
   | 'closeHeading' | 'caseLabel' | 'outcomeLabel' | 'noteLabel' | 'notePlaceholder' | 'closeBtn'
   | 'outcomeProven' | 'outcomeUnfounded' | 'outcomeInconclusive' | 'outcomeProcessFailure' | 'outcomeReferredToPolice'
   | 'closeRecorded' | 'closeRefused' | 'closeLostLink'
@@ -121,6 +124,8 @@ export const LP_INBOX_COPY: BilingualCopy<CopyKey> = {
     allClear: 'No open investigations — nothing outstanding.',
     subjectLabel: 'Subject', valueLabel: 'Value at stake', evidenceLabel: 'Evidence on file',
     assignedLabel: 'Assigned to', raisedFromLabel: 'Raised from', openedByLabel: 'Opened by',
+    // OB-235: a case a rule opened says so — nobody reads it as a person accusing someone.
+    openedByRule: 'Opened by rule', openedByRuleSay: 'Opened automatically by the till-shortage rule — no person has accused anyone.',
     closeHeading: 'Close an investigation', caseLabel: 'Which case', outcomeLabel: 'Outcome',
     noteLabel: 'What you concluded (this is the record)', notePlaceholder: 'What did you find, and why this outcome?',
     closeBtn: 'Close the case',
@@ -148,6 +153,7 @@ export const LP_INBOX_COPY: BilingualCopy<CopyKey> = {
     allClear: 'திறந்த விசாரணைகள் இல்லை — நிலுவையில் எதுவும் இல்லை.',
     subjectLabel: 'பொருள்', valueLabel: 'ஆபத்தில் உள்ள மதிப்பு', evidenceLabel: 'கோப்பில் ஆதாரம்',
     assignedLabel: 'ஒப்படைக்கப்பட்டவர்', raisedFromLabel: 'எழுப்பப்பட்டது', openedByLabel: 'திறந்தவர்',
+    openedByRule: 'விதியால் திறக்கப்பட்டது', openedByRuleSay: 'பணப்பெட்டி குறைவு விதியால் தானாகத் திறக்கப்பட்டது — யாரும் யாரையும் குற்றம் சாட்டவில்லை.',
     closeHeading: 'ஒரு விசாரணையை மூடு', caseLabel: 'எந்த வழக்கு', outcomeLabel: 'முடிவு',
     noteLabel: 'நீங்கள் முடிவு செய்தது (இதுவே பதிவு)', notePlaceholder: 'என்ன கண்டீர்கள், ஏன் இந்த முடிவு?',
     closeBtn: 'வழக்கை மூடு',
@@ -194,6 +200,8 @@ export interface PresentedCase {
   readonly openedBy: string;
   readonly openedAt: string;
   readonly evidenceCount: number;
+  /** OB-235: when a rule opened the case, the chip's word and what it means (in the reader's language); else absent. */
+  readonly openedByRule?: { readonly label: string; readonly say: string };
   /** Every open case needs attention (P-03) — a degraded tone with an icon and word, never colour alone. */
   readonly status: StatusPresentation;
   readonly needsAttention: boolean;
@@ -266,6 +274,7 @@ export function createLpInboxSession(config: LpInboxConfig, ports: LpInboxPorts)
       openedBy: c.openedBy,
       openedAt: c.openedAt,
       evidenceCount: c.evidenceCount,
+      ...(c.openedByRule === true ? { openedByRule: { label: t('openedByRule'), say: t('openedByRuleSay') } } : {}),
       // Every open case is work — a degraded tone that asks for a glance (P-03). Colour is never the only
       // signal: an icon and the word "Open" ride with it. Severity bands the engine does not define are
       // not invented here; the value ordering already puts the biggest exposure at the top.

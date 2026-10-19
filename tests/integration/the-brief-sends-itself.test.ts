@@ -44,6 +44,8 @@ function rig(transport: NotificationTransport | undefined) {
     },
     recipient: () => 'u-owner',
     ...(transport === undefined ? {} : { transport }),
+    // R4 · EA-07 · OB-222: production has no sending link (sending switched off); this proves the send path with the stand-in.
+    sendingLink: { name: 'test stand-in', switchedOn: true },
   };
   const routes = scheduledBriefRoutes(deps);
   const route = (path: string): Route => routes.find((r) => r.path === path)!;

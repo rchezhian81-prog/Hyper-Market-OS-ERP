@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
 import { InMemoryEventStore } from '../../packages/persistence/src/event-store';
+import { switchPayReleaseOn } from '../support/pay-run';
 
 // Payroll DURABLE pay-run store (WP3 inc9): append lifecycle steps to the append-only ledger so a run
 // survives a restart; the current state is a fold of the stored events. Maker ≠ checker at the write
@@ -20,6 +21,7 @@ const codeOf = (res: { body: unknown }): string | undefined => (res.body as { er
 async function twoOwners(h: ApiHarness): Promise<void> {
   await h.seedOwner(A, 'u-owner');
   await h.provisionOwner(A, 'u-owner-2');
+  await switchPayReleaseOn(h, A, 'u-owner'); // OB-228: the owner's switch is on, so approve / lock reach their own checks
 }
 
 describe('POST /v1/hr/payroll/pay-run/:id/append + GET …/:id', () => {

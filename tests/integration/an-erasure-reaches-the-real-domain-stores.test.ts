@@ -3,6 +3,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { listableProduct } from '../support/sell-online';
 import { SqlEventStore, type EventStore } from '../../packages/persistence/src/event-store';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { runMigrations } from '../../packages/persistence/src/migrations';
@@ -53,6 +54,8 @@ async function seed(h: ApiHarness, T: string): Promise<void> {
   await ok(OWNER, '/v1/service/cases/case-1', { kind: 'complaint', customerRef: C, priority: 'normal', summary: 'Delivered to 14 Gandhi Street, wrong flat, call me on my number', assignedTo: OWNER }, 'case-1');
   // A storefront order — a tax invoice the law keeps.
   await ok(OWNER, '/v1/inventory/movements', { movementId: 'mv-1', productId: 'MILK', locationId: 'L1', kind: 'received', quantityMinor: 5, uom: 'each', occurredAt: AT, enteredBy: OWNER }, 'mv-1');
+  // OB-234: milk is published and listed online before it can be ordered online.
+  await listableProduct((path, body) => h.request({ method: 'POST', path, userId: OWNER, tenantId: T, idempotencyKey: `online-${path}`, body }), { productId: 'MILK', storeId: 'L1', priceMinor: 50_00 });
   await ok(C, '/v1/storefront/orders/ORD-ERASE-1', { lines: [{ productId: 'MILK', quantityMinor: 1 }], locationId: 'L1' }, 'ord-1');
 }
 

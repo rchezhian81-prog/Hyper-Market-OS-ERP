@@ -59,6 +59,7 @@
 
 import type { EventStore } from '../../../packages/persistence/src/event-store';
 import { makeEvent } from '../../../packages/contracts/src/event';
+import { containsCardNumber } from '../../../packages/tender/src/card-token';
 import { RELAY_RECORD_KEY, type StoreReference } from '../../platform/src/store-computer-identity';
 import type { IncomingSale } from '../../pos/src/sale-intake';
 import type { StockMovement } from '../../../packages/stock/src/position';
@@ -96,6 +97,10 @@ export function relayRecordOwnersAdapter(input: { readonly store: EventStore }):
     // Keyed per record: a second placement of the same record collapses onto the first — and the first is returned, so
     // the caller can tell whether its own claim stands.
     place: async (tenantId, o) => {
+      // Hard rule #3: a record id that looks like a card number is never written down — not even as this placement's key.
+      // The relay route refuses such a record by name (`provider_ref_not_a_token` / `reference_looks_like_card_data`);
+      // placing it first would leave the number in the ledger after the refusal.
+      if (containsCardNumber(o.recordId)) return o;
       const res = await input.store.append(tenantId, OWNERS, makeEvent({
         id: `relay-record-owner-${o.family}-${o.recordId}`, type: 'RelayRecordPlaced', occurredAt: o.at,
         idempotencyKey: key(tenantId, o.family, o.recordId), source: 'api/platform', payload: o,

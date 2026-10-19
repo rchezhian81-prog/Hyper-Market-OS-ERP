@@ -104,7 +104,7 @@ describe.each(backings)('payment-exception answers race, and card data is refuse
   }, 60_000);
 
   it('a card-like reference is refused on the no-answer relay, the late-answer relay and a day close\'s carried payments — nothing kept', async () => {
-    const { call, list, noAnswer } = await setup();
+    const { h, T, call, list, noAnswer } = await setup();
     // No-answer relay: a card-like bill reference, and a card-like attempt id.
     const byBill = await noAnswer('PAY-c1', { billRef: CARD_LIKE });
     expect(byBill.status).toBe(422);
@@ -143,5 +143,8 @@ describe.each(backings)('payment-exception answers race, and card data is refuse
     // The same close with a proper reference is recorded and carried (the refusal is the card data, nothing else).
     expect((await close('dc-ok', 'B-ok')).status).toBe(202);
     expect((await list()).exceptions.map((e) => e.attemptId)).toEqual(['PAY-dc-ok']);
+    // Nothing card-like was written ANYWHERE for this shop — not even the relay's record-owner placement, which once kept
+    // a card-like attempt id as its key after the route had refused it (found by the whole-database scan in F1).
+    expect(JSON.stringify(await h.store.exportTenant(T))).not.toContain(CARD_LIKE);
   }, 60_000);
 });

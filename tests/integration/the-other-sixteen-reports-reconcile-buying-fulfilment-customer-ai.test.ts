@@ -7,6 +7,7 @@ import { apiHarness, type ApiHarness } from '../support/api-harness';
 import { approvedSuppliers, deliveryPlaces } from '../support/approved-supplier';
 import { sentWithApproval } from '../support/approval-request';
 import { seedSubstitutionTruth, recordOrderRules } from '../support/substitution-truth';
+import { sellOnline } from '../support/sell-online';
 import { recordingTransport } from '../../packages/notifications/src/transport';
 import { signedReport, testProviderSecret, TEST_PROVIDER } from '../support/provider-report';
 import { SqlIdempotencyStore } from '../../services/kernel/src/index';
@@ -139,7 +140,8 @@ describe.each(backings)('D13 — the other buying, fulfilment, customer and assi
 
   it('online orders, substitutions, deliveries on time and what a delivery earns reconcile to the orders, slots, steps and routes', async () => {
     await ok(call('PUT', '/v1/serviceability/delivery-service', 'u-owner', { storeLocation: STORE, slotsPerDay: 8, windowOpen: '09:00', windowClose: '21:00', capacityPerSlot: 10, leadMinutes: 60 }), 200);
-    await ok(call('POST', '/v1/serviceability/periods/2026-01-01', 'u-owner', { radiusMetres: 10_000 }), 201);
+    await ok(call('POST', '/v1/serviceability/periods/2026-01-01', 'u-owner', { radiusMetres: 10_000, deliveryFeeMinor: 0 }), 201); // OB-234: a fee (0) is a listing duty
+    await sellOnline((path, body) => call('POST', path, 'u-owner', body), ['MILK']); // OB-234: published online first
     const tomorrow = new Date(Date.now() + 864e5).toISOString().slice(0, 10);
     const slots = ((await ok(call('GET', '/v1/serviceability/delivery-service', 'u-owner', undefined, { day: tomorrow }), 200)).body as { slots: { startsAt: string; endsAt: string }[] }).slots;
     const slot = slots[0]!;

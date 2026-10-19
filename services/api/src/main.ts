@@ -104,6 +104,8 @@ import { eWayBillRegisterRoutes } from '../../finance/src/e-way-bill-register';
 import { gstPortalRoutes } from '../../finance/src/gst-portal';
 import { payrollRoutes } from '../../finance/src/payroll';
 import { payRunStoreRoutes } from '../../finance/src/pay-run-store';
+import { payReleaseSwitchRoutes } from '../../finance/src/pay-release-switch'; // R4 · OB-228 — the owner's hard pay-release switch
+import { payReleaseSwitchAdapter, payReleaseSwitchedOn } from './r4-pay-release-adapters';
 import { rosterStoreRoutes } from '../../finance/src/roster-store';
 import { certStoreRoutes } from '../../finance/src/cert-store';
 import { sopStoreRoutes } from '../../finance/src/sop-store';
@@ -306,6 +308,9 @@ import { legacyCardPurgeRoutes } from '../../migration/src/legacy-card-purge';
 // R3 Lane 4 (store operations and people): D-14 · D-16 · D-11 · D-25 · D-19 · C21 · D-9 (r3-ops-adapters).
 import { supplierReturnDispatchHooks, oneDebitNoteSeries } from './r3-followup-adapters'; // R3 follow-up · OB-194 supplier-return dispatch gate
 import { r3OpsRoutes, masterLifecycleOf, ingredientBatchesAt, channelPricingGateFor, packPricingFor } from './r3-ops-adapters';
+// R4 Lane 3 (customer insight, offers and demand): M16 · M17-FR-02 · D-23 · D-22 · D-24 · EA-07 sending off (r4-insight-adapters).
+import { r4InsightRoutes, demandCalendarFor, type BriefSendingLink } from './r4-insight-adapters';
+import { r4OnlineRoutes, onlineListedAdapter } from './r4-online-adapters'; // R4 Lane 2 · B23 · A26 · D-28 · WF-16 · M20-FR-04 · D01-FR-06 · D08 · M16-FR-01
 import { wasteAnalyticsAdapter, foodSafetyAdapter, priceIntegrityAgeingAdapter, assignedTaskAdapter, receivingChecklistLookup, carriedChecklistAdapter } from './r2-ops-adapters';
 import { assignedTaskRoutes } from '../../finance/src/assigned-tasks';
 import { priceIntegrityAgeingRoutes } from '../../pricing/src/price-integrity-ageing';
@@ -328,8 +333,11 @@ import type { DependencyProbe } from '../../platform/src/index';
 import { SandboxRecurringBillingProvider, type Plan as BillingPlan } from '../../../packages/platform/src/index';
 import type { EventStore } from '../../../packages/persistence/src/event-store';
 import { r3GstRoutes, eInvoiceReportingGuardFor, gstTimeBarSweep } from './r3-gst-adapters';
+// R4 Lane 4 (supply, pricing and loss prevention): D-10 · D-18 · D-21 · D-13 (r4-supply-lp-adapters).
+import { r4SupplyLpRoutes, supplierFactsFor } from './r4-supply-lp-adapters';
 import { alsoEachPassOf } from './ops-alert-sweeps'; // R3 lane 1 — GST liability and returns
 import { itcPortForStore } from './r3-itc-bridge'; // R3 seam — GSTR-3B Table 4 reads the A17 reconciliation
+import { r4PayEprRoutes, r4PayslipHooks, payslipLateSweep } from './r4-pay-epr-adapters'; // R4 Lane 1 — pay (C19 · C15 · C16) and EPR registers (B20 · B21 · B22)
 
 const now = (): string => new Date().toISOString();
 
@@ -409,6 +417,8 @@ export function buildSurface(deps: {
    * test adapter here to prove the send path.
    */
   readonly notificationTransport?: NotificationTransport;
+  /** R4 Lane 3 · EA-07 · OB-222: the brief's sending link. NEVER set by `startApi` — sending stays switched off; tests hand in the stand-in. */
+  readonly briefSendingLink?: BriefSendingLink;
   /** PF-10 r6: each message provider's delivery-report callback secret — `startApi` reads them from its environment
    *  (DELIVERY_REPORT_SECRET__<PROVIDER>); none configured, a delivery report is refused (nothing believed). */
   readonly deliveryReportSecrets?: ReadonlyMap<string, string>;
@@ -881,7 +891,7 @@ export function buildSurface(deps: {
     ...supplierScorecardRoutes(store === undefined ? {
       receipts: empty([]), contractsFor: empty([]), allContracts: empty([]),
       recordReceipt: () => {}, recordContract: () => {}, now,
-    } : { ...supplierScorecardAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }) }),
+    } : { ...supplierScorecardAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }), facts: supplierFactsFor({ store, now }) /* R4 D-10 */ }),
     // Supplier rebates + schemes (M06-FR-03 · M23) — the money earned and not yet claimed.
     ...rebateRoutes(store === undefined ? {
       scheme: empty(undefined), schemes: empty([]), accruals: empty([]),
@@ -1079,7 +1089,7 @@ export function buildSurface(deps: {
       rangeOf: assortmentAdapter({ store, now }).entries, locationBranches: locationBranchesOf(store, now),
       masterLifecycle: masterLifecycleOf({ store, now }), // D-16 (R3)
     }),
-    ...salesHistoryRoutes(store === undefined ? { soldLines: empty([]), now } : salesHistoryAdapter({ store, now })),
+    ...salesHistoryRoutes(store === undefined ? { soldLines: empty([]), now } : { ...salesHistoryAdapter({ store, now }), demandCalendar: demandCalendarFor({ store, now })! /* R4 Lane 3 · D-24 */ }),
     // Blind counts (M09-FR-04): the direct route and the RELAYED route (SP-2b · F11) share one reconcile — expected, value
     // and threshold are head office's on both (SP-4 · F07); a held variance is decided by a separate person.
     ...countsRoutes(countsDeps),
@@ -1414,6 +1424,9 @@ export function buildSurface(deps: {
       ...(store === undefined ? {} : { deliveryService: deliveryServiceAdapter({ store, now, timeZone: (t: string) => settings.value(t, SETTINGS.STORE_TIME_ZONE) }) }),
       // OB-77: the driver's delivery steps for the customer's own order read — the dispatcher's record, one truth.
       ...(store === undefined ? {} : { deliveryHistory: (t: string, orderId: string) => fulfilmentAdapter({ store, now }).deliveryState(t, orderId) }),
+      // R4 · OB-234: only a product published online (and still carrying every display duty) is sold online — the same
+      // answer the customer's listing gives (B23 · A26, r4-online-adapters).
+      ...(store === undefined ? {} : { onlineListed: onlineListedAdapter({ store, now, signer }) }),
     }),
     // FUL-03: how the store delivers, as head office holds it — set by the owner/manager, read by staff.
     ...deliveryServiceRoutes(store === undefined
@@ -1632,6 +1645,8 @@ export function buildSurface(deps: {
     ...r3GstRoutes({ store, now, timeZone: (t) => settings.value(t, SETTINGS.STORE_TIME_ZONE), ...(store === undefined ? {} : { itc: itcPortForStore({ store, now }) }), ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
     ...r3TillTraceRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
     ...r3OpsRoutes({ store, now, numberSeries: debitNoteSeries /* R3 OB-196 */, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
+    ...r4InsightRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // R4 Lane 3
+    ...r4OnlineRoutes({ store, now, signer, memberKey: loyaltyKey, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // R4 Lane 2 (online store and customer app)
     // Owner alerts inbox (M29-FR-03) — control by exception; stateless grouping of the period's exceptions.
     ...ownerAlertsRoutes(),
     // Owner drill-through + KPI comparison (M29-FR-02) — "show me the transactions behind this figure",
@@ -1720,13 +1735,15 @@ export function buildSurface(deps: {
     } : eWayBillAdapter({ store, now })),
     // R3 lane 2 (A17 ITC via GSTR-2B + IMS · A24 TDS · C14 payment disputes · C5 nomination): r3-tax-pay-adapters.
     ...r3TaxPayRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
+    ...r4SupplyLpRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // R4 Lane 4
     // GST government-portal switch — the feature flag + kill switch keeping LIVE e-invoice/e-way-bill portal
     // calls OFF by default and killable; the gate a deployment consults before the real connector. Sandbox
     // routes are exempt.
     ...gstPortalRoutes(),
     // Payroll (priority 16) — statutory-deduction preview (PF/ESI/TN Professional Tax) on effective-dated
     // configurable rate tables; for review, commits nothing. Confidential — owner-gated.
-    ...payrollRoutes(store === undefined ? {} : { loadPayRun: payRunAdapter({ store, now }).load }),
+    // OB-228: the bank file is refused outright while the owner's pay-release switch is off (no store → off).
+    ...payrollRoutes(store === undefined ? { releaseSwitchedOn: () => false } : { loadPayRun: payRunAdapter({ store, now }).load, releaseSwitchedOn: payReleaseSwitchedOn({ store, now }) }),
     // Workforce (M25-FR-01) — roster-gap detection: the named gaps in a proposed roster (per role per shift,
     // with the hour), plus the unstaffed-critical count. Stateless what-if over the tested engine, commits
     // nothing; the durable roster/attendance store is a later increment. Manager-gated (workforce.roster.read).
@@ -1779,15 +1796,22 @@ export function buildSurface(deps: {
     // Payroll pay-run DURABLE lifecycle store (WP3 inc9) — append draft→submit→approve→lock→reverse to the
     // append-only ledger (one stream per run) so a run survives a restart; maker ≠ checker enforced at the
     // write boundary. Confidential — owner-gated. The stateless /pay-run/evaluate route stays for previews.
+    // OB-228: approve and lock are refused outright while the owner's pay-release switch is off (no store → off).
     ...payRunStoreRoutes(store === undefined ? {
-      load: () => undefined, append: () => {}, now,
-    } : payRunAdapter({ store, now })),
+      load: () => undefined, append: () => {}, now, releaseSwitchedOn: () => false,
+    } : { ...payRunAdapter({ store, now }), releaseSwitchedOn: payReleaseSwitchedOn({ store, now }) }),
+    // R4 · OB-228: the owner's pay-release switch (default OFF; his act alone, with a written reason; append-only, audited).
+    ...payReleaseSwitchRoutes(store === undefined ? {
+      current: () => undefined, record: () => { throw new Error('head office is running without its durable store; the pay-release switch cannot be recorded'); }, now,
+    } : { ...payReleaseSwitchAdapter({ store, now }), ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
     // Payroll DURABLE issued-payslip store (M25 · ESS) — HR issues a payslip per (employee, period); an employee
     // reads their OWN latest via GET /v1/hr/payroll/my-payslip, self-redacted by the tested employeeSelfView.
     // Confidential writes (payroll.statutory.read); self-service read (payroll.ess.self).
     ...payslipStoreRoutes(store === undefined ? {
       putPayslip: () => {}, payslipsFor: () => [], latestPayslip: () => undefined, now,
-    } : payslipStoreAdapter({ store, now })),
+    } : { ...payslipStoreAdapter({ store, now }), ...r4PayslipHooks({ store }) }), // R4 C15: the CA's particulars list checked at issue
+    // R4 Lane 1 (C19 EPF/ESI · C15 payslip particulars and pay date · C16 hours, overtime, minimum wage · B20–B22 EPR): r4-pay-epr-adapters.
+    ...r4PayEprRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
     // GST returns write path (A5) — persist outward-supply tax lines; GSTR-1 Table 12 folds over them.
     ...gstReturnsRoutes(store === undefined ? {
       documents: empty([]), record: () => {}, soldTaxLines: empty([]), returnedTaxLines: empty([]), productTaxTable: empty([]), now,
@@ -1901,6 +1925,8 @@ export function buildSurface(deps: {
           },
           recipient: async (tenantId) => (await effectiveGrants(store, tenantId)).find((g) => g.roleId === OWNER_ROLE_ID)?.userId,
           ...(deps.notificationTransport === undefined ? {} : { transport: deps.notificationTransport }),
+          // R4 Lane 3 · EA-07 · OB-222: the sending link — absent in production, so the brief is prepared and NOT sent.
+          ...(deps.briefSendingLink === undefined ? {} : { sendingLink: deps.briefSendingLink }),
         })),
     ...platformRoutes(store === undefined ? {
       probe: probes, flags: empty({}), setFlag: () => {},
@@ -2134,6 +2160,8 @@ export interface RunningApi {
  */
 export interface ApiProviders {
   readonly notificationTransport?: NotificationTransport;
+  /** R4 Lane 3 · EA-07 · OB-222: the brief's sending link — tests only; production has none, so sending stays off. */
+  readonly briefSendingLink?: BriefSendingLink;
   /** How often the notification worker passes over every shop (default 30 s). */
   readonly notificationWorkerIntervalMs?: number;
   /** PA-12: how often the ops-alert worker passes over every shop with alert rules (default 60 s). */
@@ -2356,6 +2384,7 @@ export async function startApi(
     personalDataKeys,
     revocations,
     ...(providers.notificationTransport === undefined ? {} : { notificationTransport: providers.notificationTransport }),
+    ...(providers.briefSendingLink === undefined ? {} : { briefSendingLink: providers.briefSendingLink }), // R4 Lane 3 · EA-07
     // PF-10 r6: the providers' delivery-report secrets, from this process's environment only (never the repo).
     deliveryReportSecrets: reportSecrets.secrets,
     // D14 / M32: outbound webhook signing secrets (OUTBOUND_WEBHOOK_SECRET__<NAME> → vault://<NAME>) and the partner
@@ -2557,12 +2586,15 @@ export async function startApi(
     say: (line) => { out(`${line}\n`); },
     // Round 8 (M19-FR-04 · PA-08): a delivery exception past its time limit is put on the message queue for the people
     // who staff its queue, on this same timer — nobody has to press anything for it to be told.
-    // R3 · A19: on the same timer, a GST return near or past its 3-year time bar is raised to every owner. Both run.
+    // R3 · A19: on the same timer, a GST return near or past its 3-year time bar is raised to every owner. R4 · C15: and a
+    // late payslip. All run; one failing never stops the others.
     alsoEachPass: alsoEachPassOf({
       breaches: async (t, at) => (await raiseBreachAlerts({
         ...ordersAdapter({ store, now, holdMinutes: HOLD_MINUTES, refundProcessor: testModeRefundProcessor() }), ...breachAlertAdapter({ store, now }),
       }, t, at, OPS_ALERT_WORKER)).queued.length,
       gstTimeBar: gstTimeBarSweep({ store, now, timeZone: (t: string) => new DurableTenantSettings(new SqlConfigVersionStore(pgPoolClient(db))).value(t, SETTINGS.STORE_TIME_ZONE) }),
+      // R4 · C15: a payslip not issued by its pay date is raised to every owner on the same timer.
+      payslipLate: payslipLateSweep({ store, now }),
       say: (line) => { out(`${line}\n`); },
     }),
   });

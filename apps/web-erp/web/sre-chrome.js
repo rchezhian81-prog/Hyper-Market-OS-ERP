@@ -435,11 +435,24 @@
     'gst-reconciliation': 'git-merge',
     'gst-returns': 'receipt-text',
     'itc-review': 'file-text',
+    'epr': 'trash', // R4 Lane 1 (B20–B22): the EPR registers page — this one line only
+    'online-store': 'receipt-text', // R4 Lane 2
+    'product-content': 'package', // R4 Lane 2
     'payroll': 'banknote',
     'my-payslip': 'wallet',
     'ess': 'user-round',
     'rostering': 'calendar',
     'schedule': 'calendar-clock',
+    // ── R4 Lane 3: the insight pages (existing icons only) ──
+    'customers': 'users',
+    'basket-affinity': 'shopping-basket',
+    'demand-events': 'calendar-days',
+    'morning-brief': 'book-open',
+    // ── end R4 Lane 3 ──
+    // R4 Lane 4 — begin: the two new pages' menu icons, from icons already in the set (no restyle).
+    'supplier-scorecard': 'list-checks',
+    'planogram-compliance': 'layout-grid',
+    // R4 Lane 4 — end
     'checklist': 'clipboard-check',
     'users': 'users-round',
     'organisation': 'building',

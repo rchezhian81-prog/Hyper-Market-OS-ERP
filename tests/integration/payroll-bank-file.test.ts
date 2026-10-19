@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
 
-import { recordedPayRun } from '../support/pay-run';
+import { recordedPayRun, switchPayReleaseOn } from '../support/pay-run';
 
 // Payroll bank-transfer file (WP3 inc5): a locked pay run's net pay → the bank bulk-salary upload.
 // Confidential — owner-gated. Refuses unless the run is locked and every line is payable. Since 2b-vi-b-2 (audit PA-03,
@@ -28,6 +28,7 @@ async function twoOwners(): Promise<ApiHarness> {
   const h = apiHarness();
   await h.seedOwner(A, 'u-owner');
   await h.provisionOwner(A, 'u-owner-2');
+  await switchPayReleaseOn(h, A, 'u-owner'); // OB-228: the owner's switch is on, so the file reaches its own checks
   return h;
 }
 

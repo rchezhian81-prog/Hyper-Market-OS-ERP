@@ -73,6 +73,11 @@ export interface InvestigationCase {
   readonly valueMinor: number;
   readonly openedBy: string;
   readonly openedAt: string;
+  /**
+   * OB-235 (owner, 19 Oct 2026): true when a deterministic RULE opened the case (a material till cash shortage), not a
+   * person — so nobody reads it as somebody accusing someone. Absent on a case a person opened.
+   */
+  readonly openedByRule?: true;
   readonly assignedTo: string;
   readonly state: CaseState;
   readonly evidence: readonly EvidenceItem[];
@@ -135,6 +140,8 @@ export function openCase(input: {
   readonly openedBy: string;
   readonly assignedTo: string;
   readonly at: string;
+  /** OB-235: a rule (not a person) opens this case — recorded on the case as `openedByRule: true`. */
+  readonly openedByRule?: boolean;
 }): OpenCaseResult {
   if (input.raisedFromRef.trim() === '') {
     return {
@@ -165,6 +172,7 @@ export function openCase(input: {
       valueMinor: input.valueMinor,
       openedBy: input.openedBy,
       openedAt: input.at,
+      ...(input.openedByRule === true ? { openedByRule: true as const } : {}),
       assignedTo: input.assignedTo,
       state: 'open',
       evidence: [],

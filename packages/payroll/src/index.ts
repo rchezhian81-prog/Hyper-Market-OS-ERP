@@ -12,3 +12,12 @@ export * from './journal';
 export * from './settlement';
 export * from './ess';
 export * from './mask';
+// R4 Lane 1 (C15 · C16 · C19): the CA's legal settings (every figure "not confirmed" until filled, OB-208), EPF/ESI on
+// headcount thresholds with the month's reconciliation, hours worked and overtime, the minimum wage, the payslip
+// particulars and the pay-date clock, and the statutory payslip that carries all of them. Review only (OB-209).
+export * from './legal-settings';
+export * from './contribution-summary';
+export * from './overtime';
+export * from './minimum-wage';
+export * from './payslip-particulars';
+export * from './statutory-payslip';

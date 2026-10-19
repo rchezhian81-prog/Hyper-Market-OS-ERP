@@ -16,7 +16,8 @@ import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import {
   employeeSelfView, EssAccessDenied, InvalidEssInput,
-  type Payslip,
+  checkParticulars, PayslipParticularMissing, PAYSLIP_PARTICULARS, PAYSLIP_PARTICULAR_KEYS, maskUan,
+  type Payslip, type ParticularsList, type PayslipParticularKey, type ParticularsCheck,
 } from '../../../packages/payroll/src/index';
 
 /** An issued payslip — the durable record: whose, for which period, and the computed payslip. */
@@ -24,6 +25,12 @@ export interface IssuedPayslip {
   readonly employeeId: string;
   readonly period: string; // e.g. 2026-08
   readonly payslip: Payslip;
+  /** R4 · C15: when it was issued (the pay-date clock reads it). Absent on a payslip issued before R4. */
+  readonly issuedAt?: string;
+  /** R4 · C15: the particulars supplied at issue (name, address, designation…). */
+  readonly supplied?: Readonly<Partial<Record<PayslipParticularKey, string>>>;
+  /** R4 · C15: the payslip's particulars against the CA's list as it stood at issue ("not confirmed" until filled). */
+  readonly particulars?: ParticularsCheck;
 }
 
 export interface PayslipStoreDeps {
@@ -33,7 +40,15 @@ export interface PayslipStoreDeps {
   /** The person's most recent issued payslip (by period), or undefined. */
   readonly latestPayslip: (tenantId: string, employeeId: string) => Promise<IssuedPayslip | undefined> | IssuedPayslip | undefined;
   readonly now: () => string;
+  /**
+   * R4 · C15: the CA's particulars list. When it is confirmed, a payslip missing a listed particular is refused
+   * ("payslip particular missing: <name>"); while it is not, every particular is recorded "not confirmed". Absent (a
+   * bare stub), the list reads as not confirmed.
+   */
+  readonly particularsList?: (tenantId: string) => Promise<ParticularsList> | ParticularsList;
 }
+
+const NO_LIST: ParticularsList = { particulars: null, source: null, confirmation: null };
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -62,9 +77,38 @@ export function payslipStoreRoutes(deps: PayslipStoreDeps): readonly Route[] {
             nextSafeAction: 'Compute the payslip via POST /v1/hr/payroll/payslip, then issue it here.',
           });
         }
-        const issued: IssuedPayslip = { employeeId, period, payslip: b['payslip'] };
-        await deps.putPayslip(ctx.tenantId, issued, ctx.idempotencyKey ?? `payslip-${employeeId}-${period}-${deps.now()}`);
-        return { status: 200, body: { employeeId, period } };
+        // R4 · C15: the supplied particulars, by the names the payslip can carry.
+        const raw = b['particulars'];
+        if (raw !== undefined && (!isObj(raw) || !Object.entries(raw).every(([k, v]) => (PAYSLIP_PARTICULAR_KEYS as readonly string[]).includes(k) && PAYSLIP_PARTICULARS[k as PayslipParticularKey].from === 'supplied' && typeof v === 'string'))) {
+          throw apiError(400, {
+            code: 'not_readable_as_payslip_particulars',
+            whatHappened: `particulars is { name: text } for the supplied particulars only: ${PAYSLIP_PARTICULAR_KEYS.filter((k) => PAYSLIP_PARTICULARS[k].from === 'supplied').join(', ')}. The rest are read from the payslip itself.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send the supplied particulars by those names. Nothing was issued.',
+          });
+        }
+        // The employee's EPF and ESI numbers are kept MASKED (last four only), never whole: the payslip shows enough for the
+        // person to recognise their own number (C7 · packages/payroll/src/mask.ts).
+        const given = (raw ?? {}) as Partial<Record<PayslipParticularKey, string>>;
+        const supplied: Partial<Record<PayslipParticularKey, string>> = {
+          ...given,
+          ...(given.uan === undefined ? {} : { uan: maskUan(given.uan) }),
+          ...(given.esiNumber === undefined ? {} : { esiNumber: maskUan(given.esiNumber) }),
+        };
+        const payslip = b['payslip'];
+        const list = deps.particularsList === undefined ? NO_LIST : await deps.particularsList(ctx.tenantId);
+        const particulars = checkParticulars(list, { employeeId, period, payslip, supplied });
+        if (particulars.missing.length > 0) {
+          const err = new PayslipParticularMissing(particulars.missing);
+          throw apiError(422, {
+            code: err.code, whatHappened: err.message, wasItSaved: 'not_saved',
+            nextSafeAction: 'Give every particular on the CA\'s list (supplied ones in particulars: {…}), then issue again. Nothing was issued.',
+          });
+        }
+        const issuedAt = deps.now();
+        const issued: IssuedPayslip = { employeeId, period, payslip: { ...payslip, particulars } as Payslip, issuedAt, supplied, particulars };
+        await deps.putPayslip(ctx.tenantId, issued, ctx.idempotencyKey ?? `payslip-${employeeId}-${period}-${issuedAt}`);
+        return { status: 200, body: { employeeId, period, issuedAt, particulars } };
       },
     },
     {

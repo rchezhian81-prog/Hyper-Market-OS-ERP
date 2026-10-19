@@ -21,6 +21,7 @@ export async function seedSubstitutionTruth(h: ApiHarness, tenantId: string, pro
     id: `pack-${tenantId}-sub-truth`, type: 'CataloguePublished', occurredAt: at, idempotencyKey: `catalogue-${tenantId}-sub-truth`, source: 'test/catalogue',
     payload: { snapshot: { tenantId, version: 1, builtAt: at, scope: { tenantId, storeId: 'store-1' }, barcodes: [], products: products.map((p) => ({
       productId: p.productId, sku: p.productId, name: p.name, unitPriceMinor: p.priceMinor, taxBps: 0, status: 'active', baseUom: 'ea',
+      mrpMinor: p.priceMinor, // OB-234: listable online (an MRP and a country of origin)
     })) } },
   }));
   for (const p of products) {
@@ -29,7 +30,7 @@ export async function seedSubstitutionTruth(h: ApiHarness, tenantId: string, pro
       payload: {
         productId: p.productId, tenantId, sku: p.productId, name: p.name, primaryCategoryId: p.categoryId ?? null, baseUom: 'ea', taxClass: '0401', lifecycle: 'active',
         ...(p.brand === undefined ? {} : { brand: p.brand }),
-        ...(p.allergens === undefined && p.minimumAge === undefined ? {} : { safety: { ...(p.allergens === undefined ? {} : { allergens: p.allergens }), ...(p.minimumAge === undefined ? {} : { minimumAge: p.minimumAge }) } }),
+        safety: { countryOfOrigin: 'India', ...(p.allergens === undefined ? {} : { allergens: p.allergens }), ...(p.minimumAge === undefined ? {} : { minimumAge: p.minimumAge }) },
       },
     }));
   }

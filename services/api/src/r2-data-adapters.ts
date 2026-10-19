@@ -91,6 +91,10 @@ export const PII_FIELD_INVENTORY: readonly PiiFieldDeclaration[] = Object.freeze
   { file: 'services/customer/src/duplicates.ts', field: 'phone', whose: 'customer', protection: 'not_kept', evidence: 'the duplicate-detection route reads the candidates in the request and keeps only the match it proposes' },
   { file: 'services/customer/src/duplicates.ts', field: 'email', whose: 'customer', protection: 'not_kept', evidence: 'the duplicate-detection route reads the candidates in the request and keeps only the match it proposes' },
   { file: 'services/customer/src/index.ts', field: 'dateOfBirth', whose: 'customer', protection: 'not_kept', evidence: 'the child-data route computes an age from it for one decision and keeps the decision only' },
+  // ── R4 Lane 2 (begin) ──
+  { file: 'services/customer/src/signup-sms-code.ts', field: 'mobile', whose: 'customer', protection: 'not_kept', evidence: 'the switched-off SMS code link reads the number in the request; only a test stand-in challenge holds it, in memory' },
+  { file: 'packages/storefront/src/listing-duties.ts', field: 'address', whose: 'shop', protection: 'not_personal', evidence: 'the shop\'s own registered address shown on every online listing (B23) — not a person' },
+  // ── R4 Lane 2 (end) ──
   { file: 'services/platform/src/outbound-webhooks.ts', field: 'address', whose: 'shop', protection: 'not_personal', evidence: 'the network address a partner webhook is sent to — not a person' },
   { file: 'packages/customer/src/matching.ts', field: 'phone', whose: 'customer', protection: 'not_kept', evidence: 'duplicate detection reads the candidates in the request and keeps only the match it proposes' },
   { file: 'packages/customer/src/matching.ts', field: 'email', whose: 'customer', protection: 'not_kept', evidence: 'duplicate detection reads the candidates in the request and keeps only the match it proposes' },
@@ -102,6 +106,9 @@ export const PII_FIELD_INVENTORY: readonly PiiFieldDeclaration[] = Object.freeze
   { file: 'packages/payroll/src/mask.ts', field: 'bankAccount', whose: 'staff', protection: 'masked_on_read', evidence: 'maskBankAccount' },
   { file: 'packages/payroll/src/mask.ts', field: 'uan', whose: 'staff', protection: 'masked_on_read', evidence: 'maskUan' },
   { file: 'packages/payroll/src/mask.ts', field: 'aadhaar', whose: 'staff', protection: 'masked_on_read', evidence: 'maskAadhaar' },
+  // R4 Lane 1 · C15: a payslip particular the CA may list — the payslip-issue route (services/finance/src/payslip-store.ts)
+  // keeps the UAN and the ESI number masked (last four) at issue, never whole.
+  { file: 'packages/payroll/src/legal-settings.ts', field: 'uan', whose: 'staff', protection: 'masked_on_read', evidence: 'maskUan' },
   { file: 'packages/payroll/src/bank-file.ts', field: 'accountNumber', whose: 'staff', protection: 'not_kept', evidence: 'the salary bank file is built from the request and handed back; it is never stored' },
   { file: 'packages/payroll/src/bank-file.ts', field: 'ifsc', whose: 'staff', protection: 'not_kept', evidence: 'the salary bank file is built from the request and handed back; it is never stored' },
   { file: 'packages/identity/src/account.ts', field: 'fullName', whose: 'user', protection: 'held_by_identity_server', evidence: 'people and their contacts live at the identity server (ADR-0019); this is the policy shape only' },

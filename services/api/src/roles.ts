@@ -247,6 +247,30 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // fingerprint attendance is not in use. No other role holds this.
       'workforce.consent.notice.sign',
       // ── R3 follow-up — end
+      // ── R4 Lane 1 (pay and EPR registers) — begin
+      // C15 · C16 · C19 · OB-208: read the payroll legal settings, and fill one on the CA's written confirmation (each names
+      // who confirmed it). B20–B22 · OB-212: read and record the EPR registers, and set the registration / exemption /
+      // brand-owner answers the CA or EPR consultant confirms. Nothing here approves, locks or releases pay (OB-209).
+      'payroll.legal.read', 'payroll.legal.configure',
+      'epr.register.read', 'epr.register.record', 'epr.settings.configure',
+      // ── R4 Lane 1 — end
+      // R4 · OB-228: the OWNER alone switches pay release on or off, with a written reason. No other role holds this.
+      'payroll.release.switch',
+      // ── R4 Lane 3 (customer insight, offers and demand) — begin
+      // D-22: draft a batch of personal offers, and APPROVE (or reject) a batch — only a person issues an offer (P-05).
+      'loyalty.offer.draft', 'loyalty.offer.approve',
+      // D-22: record that a member was seen to be 18 or over (no date of birth is kept).
+      'customer.age.confirm',
+      // M17-FR-02 (OB-221): pay out, or let lapse, an earned referral reward — a compensating entry on the liability.
+      'loyalty.referral.settle',
+      // D-24 (OB-220): record and withdraw the store's festivals and local events.
+      'inventory.calendar.manage',
+      // ── R4 Lane 3 — end
+      // ── R4 Lane 2 (online store and customer app) — begin
+      // B23 · A26: set the online store's details and publish listings; WF-16: return windows, collections, counts,
+      // dispositions (the refund itself stays order.refund.issue, approved by a second person).
+      'online.store.read', 'online.store.manage', 'online.return.manage', 'online.return.collect',
+      // ── R4 Lane 2 — end
     ],
   },
   {
@@ -353,6 +377,23 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // D-9: the manager drafts the week's roster from the forecast and commits it (workforce.roster.manage, P-05).
       'workforce.schedule.draft',
       // ── R3 Lane 4 — end
+      // ── R4 Lane 1 (pay and EPR registers) — begin
+      // B20 · B21 · B22: the store manager marks own-brand packaging, records take-backs, recyclers, handovers and bin
+      // counts, and reads the EPR registers; never sets the registration or brand-owner answers (`epr.settings.configure`).
+      'epr.register.read', 'epr.register.record',
+      // ── R4 Lane 1 — end
+      // ── R4 Lane 3 (customer insight, offers and demand) — begin
+      // D-22: draft a batch of personal offers (the OWNER approves it) and record a member's adult check.
+      'loyalty.offer.draft', 'customer.age.confirm',
+      // M17-FR-02 (OB-221): pay out, or let lapse, an earned referral reward.
+      'loyalty.referral.settle',
+      // D-24: record and withdraw the store's festivals and local events.
+      'inventory.calendar.manage',
+      // ── R4 Lane 3 — end
+      // ── R4 Lane 2 (online store and customer app) — begin
+      // B23: read the online store's duties and publish a complete listing; WF-16: work online returns.
+      'online.store.read', 'online.store.manage', 'online.return.manage', 'online.return.collect',
+      // ── R4 Lane 2 — end
     ],
   },
   {
@@ -549,6 +590,13 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // owner alone switches it on. Nothing else.
       'finance.tds.configure', 'finance.tds.read',
       // ── end R3 lane 2 ──
+      // ── R4 Lane 1 (pay and EPR registers) — begin
+      // C15 · C16 · C19 · OB-208: the CA fills the payroll legal settings (EPF / ESI rates, ceilings and headcount
+      // thresholds; normal hours; the overtime multiplier; minimum-wage classes; the payslip particulars) and reads them.
+      // B20–B22 · OB-212: the CA (or EPR consultant through the CA) records the EPR registration and brand-owner answers
+      // and reads the registers. Nothing else.
+      'payroll.legal.read', 'payroll.legal.configure', 'epr.register.read', 'epr.settings.configure',
+      // ── R4 Lane 1 — end
     ],
   },
   {

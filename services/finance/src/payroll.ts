@@ -11,6 +11,7 @@
 
 import type { Route } from '../../kernel/src/index';
 import { PAYROLL_RELEASE_STEP_UP } from './pay-run-store';
+import { requirePayReleaseOn, type PayReleaseSwitchedOn } from './pay-release-switch';
 import { apiError } from '../../kernel/src/index';
 import {
   resolveStatutoryParams, computeStatutoryDeductions, professionalTaxTamilNadu,
@@ -42,6 +43,8 @@ const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object
  */
 export interface PayrollDeps {
   readonly loadPayRun?: (tenantId: string, payRunId: string) => Promise<PayRunAggregate | undefined> | PayRunAggregate | undefined;
+  /** OB-228: whether the owner has switched pay release ON. Absent → OFF (the bank file is refused). */
+  readonly releaseSwitchedOn?: PayReleaseSwitchedOn;
 }
 
 /** Refused: the run's history in the request. Its approver was a string anyone could write; head office reads its own. */
@@ -212,6 +215,8 @@ export function payrollRoutes(deps: PayrollDeps = {}): readonly Route[] {
       // transmits nothing: there is no bank connector on this surface.
       reauth: PAYROLL_RELEASE_STEP_UP,
       handler: async (ctx) => {
+        // OB-228: refused outright while the owner's pay-release switch is off — even with a fresh MFA sign-in.
+        await requirePayReleaseOn(deps.releaseSwitchedOn, ctx.tenantId, 'Building the salary bank file');
         const b = (ctx.body ?? {}) as Record<string, unknown>;
         if (b['events'] !== undefined) throw eventsInTheRequest('bank file');
         if (typeof b['payRunId'] !== 'string' || !Array.isArray(b['lines'])) {

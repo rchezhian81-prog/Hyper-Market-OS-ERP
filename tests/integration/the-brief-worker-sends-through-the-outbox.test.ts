@@ -48,6 +48,8 @@ function rig(store: EventStore, T: string) {
         return { tradingDay, ...(taken?.valueMinor === undefined ? {} : { grossTakenMinor: taken.valueMinor }), ...(bills?.valueMinor === undefined ? {} : { basketCount: bills.valueMinor }) };
       },
       recipient: () => 'u-owner',
+      // R4 · EA-07 · OB-222: production has no sending link (sending switched off); the stand-in proves the outbox path.
+      sendingLink: { name: 'test stand-in', switchedOn: true },
       outbox: { enqueue: nq.record, item: async (tenantId, id) => { const it = (await nq.queue(tenantId)).find(id); return it === undefined ? undefined : { state: it.state, reason: it.reason }; } },
     };
     const queueRoutes = notificationQueueRoutes(nq);

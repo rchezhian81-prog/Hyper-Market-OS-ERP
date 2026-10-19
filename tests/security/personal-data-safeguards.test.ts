@@ -23,7 +23,7 @@ describe('personal-data fields are encrypted or masked (C7)', () => {
   it('no declaration is false: every "sealed" field is sealed by the policy that runs, every "masked" one has its masker', () => {
     expect(report.findings).toEqual([]);
     expect(report.byProtection.sealed_per_subject).toBeGreaterThan(0);
-    expect(report.byProtection.masked_on_read).toBe(3);
+    expect(report.byProtection.masked_on_read).toBe(4); // R4 C15: the UAN a payslip may carry, kept masked at issue
   });
 
   it('OB-153 "A": the supplier contact details are business data by the owner\'s decision, and the C7 check passes', () => {

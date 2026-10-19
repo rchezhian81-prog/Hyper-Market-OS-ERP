@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1128 | 686 | 686 | 89 | 334 |
+| 13 | 1213 | 728 | 728 | 109 | 349 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -115,10 +115,13 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/catalogue/pack/preview` | `catalogue.pack.read` | core | — |
 | GET | `/v1/catalogue/products` | `catalogue.pack.read` | core | — |
 | GET | `/v1/catalogue/products/:productId` | `catalogue.pack.read` | core | — |
+| GET | `/v1/catalogue/products/:productId/app-content` | `catalogue.pack.read` | core | — |
 | GET | `/v1/catalogue/products/:productId/barcodes` | `catalogue.pack.read` | core | — |
 | POST | `/v1/catalogue/products/:productId/barcodes/:code` | `catalogue.pack.publish` | core | yes |
 | GET | `/v1/catalogue/products/:productId/canonical` | `catalogue.pack.read` | core | — |
 | POST | `/v1/catalogue/products/:productId/content` | `catalogue.pack.publish` | core | yes |
+| GET | `/v1/catalogue/products/:productId/image` | `catalogue.pack.read` | core | — |
+| POST | `/v1/catalogue/products/:productId/images` | `catalogue.pack.publish` | core | yes |
 | GET | `/v1/catalogue/products/:productId/pack` | `catalogue.pack.read` | core | — |
 | POST | `/v1/catalogue/products/:productId/pack` | `catalogue.pack.publish` | core | yes |
 | GET | `/v1/catalogue/products/:productId/pack/convert` | `catalogue.pack.read` | core | — |
@@ -137,6 +140,9 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/prices/channel-pricing` | `catalogue.pack.read` | core | — |
 | POST | `/v1/prices/channel-pricing/requests/:requestId` | `price.change.propose` | core | yes |
 | POST | `/v1/prices/channel-pricing/requests/:requestId/approve` | `price.change.approve` | core | yes |
+| GET | `/v1/prices/competitor-drafts` | `price.change.propose` | core | — |
+| GET | `/v1/prices/competitor-rule` | `price.change.propose` | core | — |
+| POST | `/v1/prices/competitor-rule` | `price.change.approve` | core | yes |
 | POST | `/v1/prices/list/:productId/entries/:entryId` | `price.change.propose` | core | yes |
 | GET | `/v1/prices/list/:productId/history` | `catalogue.pack.read` | core | — |
 | GET | `/v1/prices/list/:productId/resolve` | `catalogue.pack.read` | core | — |
@@ -281,6 +287,10 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/inventory/counts/:countId` | `inventory.movement.append` | core | yes |
 | POST | `/v1/inventory/counts/:countId/decide` | `inventory.adjustment.approve` | core | yes |
 | POST | `/v1/inventory/counts/:countId/synced` | `inventory.count.sync` | core | yes |
+| GET | `/v1/inventory/demand-events` | `inventory.availability.read` | core | — |
+| POST | `/v1/inventory/demand-events/:eventId` | `inventory.calendar.manage` | core | yes |
+| POST | `/v1/inventory/demand-events/:eventId/withdraw` | `inventory.calendar.manage` | core | yes |
+| GET | `/v1/inventory/demand-events/weather` | `inventory.availability.read` | core | — |
 | GET | `/v1/inventory/demand-forecast` | `inventory.availability.read` | core | — |
 | POST | `/v1/inventory/dock-slots/book` | `inventory.movement.append` | core | yes |
 | GET | `/v1/inventory/dsd-checkins` | `inventory.availability.read` | core | — |
@@ -337,10 +347,14 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/merchandising/display-contracts/:contractId` | `merchandising.display.manage` | core | yes |
 | POST | `/v1/merchandising/display-contracts/review` | `merchandising.space.read` | core | yes |
 | POST | `/v1/merchandising/planogram-compliance` | `planogram.compliance.read` | core | yes |
+| GET | `/v1/merchandising/planogram-compliance/bays` | `planogram.compliance.read` | core | — |
 | GET | `/v1/merchandising/shelf-counts` | `shelf.count.read` | core | — |
 | POST | `/v1/merchandising/shelf-counts/:countId` | `shelf.count.record` | core | yes |
 | POST | `/v1/merchandising/shelf-counts/:countId/synced` | `shelf.count.sync` | core | yes |
 | POST | `/v1/merchandising/shelf-counts/worklist` | `shelf.count.read` | core | yes |
+| GET | `/v1/merchandising/shelf-photos` | `shelf.count.read` | core | — |
+| GET | `/v1/merchandising/shelf-photos/:photoId` | `shelf.count.read` | core | — |
+| POST | `/v1/merchandising/shelf-photos/:photoId` | `shelf.count.record` | core | yes |
 | POST | `/v1/merchandising/space/performance` | `merchandising.space.read` | core | yes |
 | GET | `/v1/merchandising/stores/:storeId/planograms` | `planogram.compliance.read` | core | — |
 | GET | `/v1/merchandising/stores/:storeId/planograms/:planogramId` | `planogram.compliance.read` | core | — |
@@ -414,8 +428,10 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/loss-prevention/cases` | `lp.case.read` | core | — |
 | GET | `/v1/loss-prevention/cases/:caseId` | `lp.case.read` | core | — |
 | POST | `/v1/loss-prevention/cases/:caseId` | `lp.case.manage` | core | yes |
+| POST | `/v1/loss-prevention/cases/:caseId/cctv/:evidenceId` | `lp.case.manage` | core | yes |
 | POST | `/v1/loss-prevention/cases/:caseId/close` | `lp.case.manage` | core | yes |
 | POST | `/v1/loss-prevention/cases/:caseId/evidence/:evidenceId` | `lp.case.manage` | core | yes |
+| GET | `/v1/loss-prevention/correlation` | `lp.case.read` | core | — |
 | POST | `/v1/loss-prevention/evaluate` | `lp.case.read` | core | yes |
 | GET | `/v1/loss-prevention/exceptions` | `lp.case.read` | core | — |
 | GET | `/v1/loss-prevention/rule-feedback` | `lp.case.read` | core | — |
@@ -469,9 +485,11 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | Method | Path | Permission | Feature | Idempotent |
 |---|---|---|---|---|
+| POST | `/v1/customer/age-confirmations/:customerRef` | `customer.age.confirm` | core | yes |
 | POST | `/v1/customer/duplicates` | `customer.segment.read` | core | yes |
 | POST | `/v1/customer/facts/complaints/:caseId` | `customer.segment.manage` | core | yes |
 | POST | `/v1/customer/facts/orders/:orderId` | `customer.segment.manage` | core | yes |
+| GET | `/v1/customer/overview` | `customer.segment.read` | core | — |
 | GET | `/v1/customer/segments/audience` | `customer.segment.read` | core | — |
 | POST | `/v1/customer/segments/audience` | `customer.segment.read` | core | yes |
 | GET | `/v1/customer/segments/policy` | `customer.segment.read` | core | — |
@@ -496,16 +514,32 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/loyalty/coupons/:code/redemptions/:redemptionId` | `loyalty.coupon.redeem` | `loyalty` | yes |
 | POST | `/v1/loyalty/members` | `loyalty.member.enrol` | core | yes |
 | POST | `/v1/loyalty/members/:memberRef/leave` | `loyalty.member.enrol` | core | yes |
+| POST | `/v1/loyalty/members/app-link` | `loyalty.member.enrol` | core | yes |
 | POST | `/v1/loyalty/members/lookup` | `loyalty.points.read` | core | yes |
+| GET | `/v1/loyalty/offer-batches` | `loyalty.coupon.read` | `loyalty` | — |
+| GET | `/v1/loyalty/offer-batches/:batchId` | `loyalty.coupon.read` | `loyalty` | — |
+| POST | `/v1/loyalty/offer-batches/:batchId` | `loyalty.offer.draft` | `loyalty` | yes |
+| POST | `/v1/loyalty/offer-batches/:batchId/approve` | `loyalty.offer.approve` | `loyalty` | yes |
+| POST | `/v1/loyalty/offer-batches/:batchId/reject` | `loyalty.offer.approve` | `loyalty` | yes |
 | POST | `/v1/loyalty/offers` | `loyalty.coupon.issue` | `loyalty` | yes |
 | POST | `/v1/loyalty/referrals/:referralId` | `loyalty.coupon.issue` | `loyalty` | yes |
+| POST | `/v1/loyalty/referrals/:referralId/expire` | `loyalty.referral.settle` | `loyalty` | yes |
+| POST | `/v1/loyalty/referrals/:referralId/payout` | `loyalty.referral.settle` | `loyalty` | yes |
 | GET | `/v1/loyalty/rule` | `loyalty.points.read` | core | — |
+| GET | `/v1/loyalty/sign-up/sms-code` | `loyalty.member.enrol` | core | — |
+| POST | `/v1/loyalty/sign-up/sms-code/:challengeId` | `loyalty.member.enrol` | core | yes |
+| POST | `/v1/loyalty/sign-up/sms-code/:challengeId/verify` | `loyalty.member.enrol` | core | yes |
 | GET | `/v1/loyalty/wallets` | `loyalty.points.read` | core | — |
 | GET | `/v1/me/privacy` | `customer.privacy.self` | core | — |
 | POST | `/v1/me/privacy/consent` | `customer.privacy.self` | core | yes |
 | POST | `/v1/me/privacy/nominee` | `customer.privacy.self` | core | yes |
 | POST | `/v1/me/privacy/nominee/withdrawal` | `customer.privacy.self` | core | yes |
 | POST | `/v1/me/privacy/requests/:requestId` | `customer.privacy.self` | core | yes |
+| GET | `/v1/me/receipts` | `storefront.order.read` | `customer_app` | — |
+| GET | `/v1/me/receipts/:receiptNumber` | `storefront.order.read` | `customer_app` | — |
+| POST | `/v1/me/receipts/:receiptNumber/send` | `storefront.order.place` | `customer_app` | yes |
+| GET | `/v1/me/receipts/choice` | `storefront.order.read` | `customer_app` | — |
+| POST | `/v1/me/receipts/choice` | `storefront.order.place` | `customer_app` | yes |
 | GET | `/v1/notifications/budget` | `notification.send.check` | core | — |
 | POST | `/v1/notifications/budget` | `notification.budget.set` | core | yes |
 | POST | `/v1/notifications/can-send` | `notification.send.check` | core | yes |
@@ -578,6 +612,27 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | Method | Path | Permission | Feature | Idempotent |
 |---|---|---|---|---|
+| GET | `/v1/catalogue/ratings` | `catalogue.pack.read` | core | — |
+| GET | `/v1/me/online-returns` | `storefront.order.read` | `customer_app` | — |
+| POST | `/v1/me/orders/:orderId/online-returns/:returnId` | `storefront.order.place` | `customer_app` | yes |
+| GET | `/v1/me/ratings` | `storefront.order.read` | `customer_app` | — |
+| POST | `/v1/me/ratings/:productId` | `storefront.order.place` | `customer_app` | yes |
+| GET | `/v1/me/return-policy` | `storefront.order.read` | `customer_app` | — |
+| GET | `/v1/online-returns` | `online.return.manage` | core | — |
+| POST | `/v1/online-returns/:returnId/collected` | `online.return.collect` | core | yes |
+| POST | `/v1/online-returns/:returnId/collection` | `online.return.manage` | core | yes |
+| POST | `/v1/online-returns/:returnId/lines/:productId/disposition` | `online.return.manage` | core | yes |
+| POST | `/v1/online-returns/:returnId/received` | `online.return.manage` | core | yes |
+| POST | `/v1/online-returns/:returnId/refund` | `order.refund.issue` | core | yes |
+| GET | `/v1/online-returns/policy` | `online.return.manage` | core | — |
+| POST | `/v1/online-returns/policy` | `online.store.manage` | core | yes |
+| GET | `/v1/online-store/complaints` | `online.store.read` | core | — |
+| GET | `/v1/online-store/details` | `online.store.read` | core | — |
+| POST | `/v1/online-store/details` | `online.store.manage` | core | yes |
+| GET | `/v1/online-store/listings` | `online.store.read` | core | — |
+| POST | `/v1/online-store/listings/:productId` | `online.store.manage` | core | yes |
+| POST | `/v1/online-store/publish` | `online.store.manage` | core | yes |
+| GET | `/v1/online-store/tcs` | `online.store.read` | core | — |
 | GET | `/v1/orders/:orderId` | `order.read` | core | — |
 | POST | `/v1/orders/:orderId/backorder` | `order.backorder.manage` | core | yes |
 | GET | `/v1/orders/:orderId/backorders` | `order.read` | core | — |
@@ -607,6 +662,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/serviceability/periods` | `delivery.serviceability.read` | core | — |
 | POST | `/v1/serviceability/periods/:effectiveFrom` | `delivery.serviceability.manage` | core | yes |
 | GET | `/v1/storefront/access-refusals` | `order.read` | `customer_app` | — |
+| GET | `/v1/storefront/listing` | `storefront.order.read` | `customer_app` | — |
 | GET | `/v1/storefront/orders` | `storefront.order.read` | `customer_app` | — |
 | GET | `/v1/storefront/orders/:orderId` | `storefront.order.read` | `customer_app` | — |
 | POST | `/v1/storefront/orders/:orderId` | `storefront.order.place` | `customer_app` | yes |
@@ -614,6 +670,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/storefront/orders/:orderId/payment` | `storefront.order.place` | `customer_app` | yes |
 | POST | `/v1/storefront/orders/:orderId/payment/check` | `storefront.order.read` | `customer_app` | yes |
 | POST | `/v1/storefront/orders/:orderId/substitutions/:lineId` | `storefront.order.place` | `customer_app` | yes |
+| GET | `/v1/storefront/products/:productId/image` | `storefront.order.read` | `customer_app` | — |
+| GET | `/v1/storefront/ratings` | `storefront.order.read` | `customer_app` | — |
 | PUT | `/v1/storefront/substitution-preferences` | `storefront.order.place` | `customer_app` | yes |
 
 ## API-08 — Fulfilment / Delivery (M19)
@@ -824,6 +882,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/finance/rcm/purchases/:purchaseId` | `finance.rcm.record` | core | yes |
 | POST | `/v1/finance/rcm/purchases/:purchaseId/paid` | `finance.rcm.pay` | core | yes |
 | GET | `/v1/finance/rcm/register` | `finance.rcm.read` | core | — |
+| GET | `/v1/finance/referral-liability` | `finance.period.read` | core | — |
+| POST | `/v1/finance/referral-liability/post` | `finance.journal.post` | core | yes |
 | POST | `/v1/finance/refunds/day-totals` | `refund.exception.read` | core | yes |
 | POST | `/v1/finance/refunds/exceptions` | `refund.exception.read` | core | yes |
 | GET | `/v1/finance/retention` | `finance.period.read` | core | — |
@@ -846,18 +906,28 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/finance/tds/config` | `finance.tds.configure` | core | yes |
 | POST | `/v1/finance/tds/switch` | `finance.tds.switch` | core | yes |
 | POST | `/v1/hr/payroll/bank-file` | `payroll.statutory.read` | core | yes |
+| GET | `/v1/hr/payroll/contributions/:period` | `payroll.statutory.read` | core | — |
+| POST | `/v1/hr/payroll/contributions/:period/totals` | `payroll.statutory.read` | core | yes |
 | POST | `/v1/hr/payroll/ess/self` | `payroll.ess.self` | core | yes |
 | POST | `/v1/hr/payroll/journal` | `payroll.statutory.read` | core | yes |
+| GET | `/v1/hr/payroll/legal-settings` | `payroll.legal.read` | core | — |
+| POST | `/v1/hr/payroll/legal-settings/:key` | `payroll.legal.configure` | core | yes |
 | GET | `/v1/hr/payroll/my-payslip` | `payroll.ess.self` | core | — |
 | GET | `/v1/hr/payroll/pay-run/:payRunId` | `payroll.statutory.read` | core | — |
 | POST | `/v1/hr/payroll/pay-run/:payRunId/append` | `payroll.statutory.read` | core | yes |
 | POST | `/v1/hr/payroll/pay-run/evaluate` | `payroll.statutory.read` | core | yes |
 | POST | `/v1/hr/payroll/payslip` | `payroll.statutory.read` | core | yes |
+| GET | `/v1/hr/payroll/payslip-exceptions` | `payroll.statutory.read` | core | — |
+| POST | `/v1/hr/payroll/payslip-exceptions/raise` | `payroll.statutory.read` | core | yes |
 | GET | `/v1/hr/payroll/payslips/:employeeId` | `payroll.statutory.read` | core | — |
 | POST | `/v1/hr/payroll/payslips/:employeeId/:period` | `payroll.statutory.read` | core | yes |
 | POST | `/v1/hr/payroll/professional-tax-tn` | `payroll.statutory.read` | core | yes |
+| GET | `/v1/hr/payroll/release-switch` | `payroll.statutory.read` | core | — |
+| POST | `/v1/hr/payroll/release-switch` | `payroll.release.switch` | core | yes |
 | POST | `/v1/hr/payroll/settlement` | `payroll.statutory.read` | core | yes |
+| GET | `/v1/hr/payroll/statutory-check/:period` | `payroll.statutory.read` | core | — |
 | POST | `/v1/hr/payroll/statutory-deductions` | `payroll.statutory.read` | core | yes |
+| POST | `/v1/hr/payroll/statutory-payslips/:employeeId/:period` | `payroll.statutory.read` | core | yes |
 | POST | `/v1/hr/payroll/tds` | `payroll.statutory.read` | core | yes |
 | GET | `/v1/scrap/review` | `scrap.review.read` | core | — |
 | POST | `/v1/scrap/sales` | `scrap.sale.record` | core | yes |
@@ -889,12 +959,14 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/platform/version-policy` | `platform.health.read` | core | — |
 | POST | `/v1/platform/version-policy` | `platform.device.manage` | core | yes |
 | POST | `/v1/platform/version-policy/kill` | `platform.device.manage` | core | yes |
+| GET | `/v1/reporting/basket-affinity` | `reporting.report.read` | core | — |
 | POST | `/v1/reporting/brief` | `owner.kpi.read` | core | yes |
 | GET | `/v1/reporting/brief-schedule` | `owner.kpi.read` | core | — |
 | POST | `/v1/reporting/brief-schedule` | `owner.brief.manage` | core | yes |
 | POST | `/v1/reporting/brief-schedule/due` | `owner.kpi.read` | core | yes |
 | POST | `/v1/reporting/brief-schedule/run` | `owner.brief.manage` | core | yes |
 | POST | `/v1/reporting/brief-schedule/sent` | `owner.brief.manage` | core | yes |
+| GET | `/v1/reporting/brief-today` | `owner.kpi.read` | core | — |
 | POST | `/v1/reporting/compare` | `owner.kpi.read` | core | yes |
 | POST | `/v1/reporting/drill` | `owner.kpi.read` | core | yes |
 | GET | `/v1/reporting/drill-audits` | `owner.kpi.read` | core | — |
@@ -913,6 +985,19 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/compliance/attestations/:attestationId` | `compliance.risk.manage` | core | yes |
 | POST | `/v1/compliance/controls/:controlId` | `compliance.risk.manage` | core | yes |
 | GET | `/v1/compliance/controls/health` | `compliance.risk.read` | core | — |
+| POST | `/v1/compliance/epr/assets/:assetId/not-e-waste` | `epr.register.record` | core | yes |
+| POST | `/v1/compliance/epr/handovers/:handoverId` | `epr.register.record` | core | yes |
+| GET | `/v1/compliance/epr/own-brand` | `epr.register.read` | core | — |
+| POST | `/v1/compliance/epr/own-brand/:productId` | `epr.register.record` | core | yes |
+| GET | `/v1/compliance/epr/plastic/:financialYear` | `epr.register.read` | core | — |
+| GET | `/v1/compliance/epr/recyclers` | `epr.register.read` | core | — |
+| POST | `/v1/compliance/epr/recyclers/:recyclerId` | `epr.register.record` | core | yes |
+| GET | `/v1/compliance/epr/settings` | `epr.register.read` | core | — |
+| POST | `/v1/compliance/epr/settings/:key` | `epr.settings.configure` | core | yes |
+| GET | `/v1/compliance/epr/take-back` | `epr.register.read` | core | — |
+| POST | `/v1/compliance/epr/take-back-stock/:handoverId/out` | `epr.register.record` | core | yes |
+| POST | `/v1/compliance/epr/take-back-stock/counts/:countId` | `epr.register.record` | core | yes |
+| POST | `/v1/compliance/epr/take-backs/:takeBackId` | `epr.register.record` | core | yes |
 | GET | `/v1/compliance/evidence-gaps` | `compliance.obligation.read` | core | — |
 | GET | `/v1/compliance/gates/:gate/can-pass` | `compliance.risk.read` | core | — |
 | GET | `/v1/compliance/gates/blocked` | `compliance.risk.read` | core | — |

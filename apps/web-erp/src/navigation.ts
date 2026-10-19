@@ -96,6 +96,9 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // needs `purchase.order.propose`, which the route enforces.
   { id: 'buying', label: 'Buying', labelTa: 'வாங்குதல்', path: '/buying/', requires: 'purchase.commitment.read', group: 'Purchase' },
   { id: 'suppliers', label: 'Suppliers', labelTa: 'விநியோகஸ்தர்கள்', path: '/suppliers', requires: 'supplier.view', group: 'Purchase' },
+  // R4 Lane 4 · D-10: a supplier's scorecard built from its orders, receipts and matched invoices (nothing typed). Gated on
+  // the read the scorecard route checks (`purchase.commitment.read`). A head-office page (the box does not serve it).
+  { id: 'supplier-scorecard', label: 'Supplier scorecard', labelTa: 'விநியோகஸ்தர் மதிப்பெண் அட்டை', path: '/supplier-scorecard', requires: 'purchase.commitment.read', group: 'Purchase', served: 'unserved' },
   // Round 12 (D03-FR-02 · WF-05): supplier bills handed in as a GST e-invoice or a scan, confirmed by a person, then checked
   // against the order — a head-office page over `/v1/purchase/invoice-documents/*` (the box does not serve it). Gated on the
   // permission those routes check (`purchase.invoice.capture`).
@@ -106,6 +109,10 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   { id: 'counts', label: 'Stock counts', labelTa: 'சரக்கு எண்ணிக்கை', path: '/counts', requires: 'count.view', group: 'Inventory' },
   // Round 12 (WF-08 · D05-FR-05 · M09-FR-04): plan, freeze, count, recount, cause, approve or cancel a stock count — a thin
   // client over head office's count-plan routes, gated on the planning permission the plan routes check. Head-office page.
+  // R4 Lane 4 · D-13 (OB-219): each bay's shelf against the planogram in force, from the staff counts, every gap named; a
+  // photo with a shelf check, kept on the shop's own server; image recognition switched off. Gated on the read the bay route
+  // checks (`planogram.compliance.read`). A head-office page (the box does not serve it).
+  { id: 'planogram-compliance', label: 'Shelf compliance by bay', labelTa: 'அலமாரி இணக்கம் — பகுதி வாரியாக', path: '/planogram-compliance', requires: 'planogram.compliance.read', group: 'Inventory', served: 'unserved' },
   { id: 'count-plans', label: 'Count plans', labelTa: 'எண்ணிக்கைத் திட்டங்கள்', path: '/count-plans', requires: 'inventory.count.plan', group: 'Inventory', served: 'unserved' },
   // Round 12 (WF-07 · M09-FR-03): send and count in transfers, settle a shortfall — gated on the read the register checks.
   { id: 'transfers', label: 'Transfers', labelTa: 'இடமாற்றங்கள்', path: '/transfers', requires: 'inventory.availability.read', group: 'Inventory', served: 'unserved' },
@@ -201,6 +208,12 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // R3 D-9 (OB-142 "A"): the Staff schedule — staff needed per hour from the sales, a draft roster within the Shops Act
   // limits that a manager commits, and actual attendance against it. A head-office page over its own routes.
   { id: 'schedule', label: 'Staff schedule', labelTa: 'பணியாளர் அட்டவணை', path: '/schedule', requires: 'workforce.roster.read', group: 'People', served: 'unserved' },
+  // ── R4 Lane 3 (customer insight, offers and demand): head-office pages over their own routes ──
+  { id: 'customers', label: 'Customers', labelTa: 'வாடிக்கையாளர்கள்', path: '/customers', requires: 'customer.segment.read', group: 'Customers', served: 'unserved' },
+  { id: 'basket-affinity', label: 'Bought together', labelTa: 'சேர்ந்து வாங்கப்பட்டவை', path: '/basket-affinity', requires: 'reporting.report.read', group: 'Reports', served: 'unserved' },
+  { id: 'demand-events', label: 'Store events', labelTa: 'கடை நிகழ்வுகள்', path: '/demand-events', requires: 'inventory.availability.read', group: 'Inventory', served: 'unserved' },
+  { id: 'morning-brief', label: 'Morning brief', labelTa: 'காலைச் சுருக்கம்', path: '/morning-brief', requires: 'owner.kpi.read', group: 'Reports', served: 'unserved' },
+  // ── end R4 Lane 3 ──
   // AI control — the kill switch, agents, the proposal queue, cost (A01–A10 governance). Gated on the budget read
   // (`ai.budget.read`), the owner's permission; the switches need `ai.killswitch.set` / `ai.budget.set` /
   // `ai.agent.enable`, which the routes enforce.
@@ -280,6 +293,17 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // the books and the exceptions, accept / reject / keep pending each line. Gated on the read the review route checks
   // (`finance.itc.read`). A head-office page (the box does not serve it).
   { id: 'itc-review', label: 'Input tax credit (GSTR-2B)', labelTa: 'உள்ளீட்டு வரி வரவு (GSTR-2B)', path: '/itc-review', requires: 'finance.itc.read', group: 'Finance', served: 'unserved' },
+  // R4 Lane 1 · B20 · B21 · B22 · OB-212: the EPR registers — own-brand plastic per category for the year with the CPCB
+  // file (nothing filed), the take-back register and its exceptions, recording a take-back and handing over to a
+  // registered recycler. Gated on the read the register routes check (`epr.register.read`). A head-office page.
+  { id: 'epr', label: 'EPR registers (plastic, e-waste, batteries)', labelTa: 'EPR பதிவேடுகள் (பிளாஸ்டிக், மின்கழிவு, பேட்டரி)', path: '/epr', requires: 'epr.register.read', group: 'Operations', served: 'unserved' },
+  // R4 Lane 2 · B23 · A26 · WF-16: the online store — the shop's details every listing carries (the grievance officer
+  // "not set" until named, OB-223), each product's listing, the complaint clock, the TCS line and online returns. Gated on
+  // the read its routes check (`online.store.read`). A head-office page (the box does not serve it).
+  { id: 'online-store', label: 'Online store', labelTa: 'ஆன்லைன் கடை', path: '/online-store', requires: 'online.store.read', group: 'Customers', served: 'unserved' },
+  // R4 Lane 2 · D01-FR-06: the product content editor — app description, synonyms, versions, completeness and the image
+  // on the shop's own server (OB-215). Gated on the catalogue read its editor read checks (`catalogue.pack.read`).
+  { id: 'product-content', label: 'App content', labelTa: 'செயலி உள்ளடக்கம்', path: '/product-content', requires: 'catalogue.pack.read', group: 'Products', served: 'unserved' },
 ]);
 
 /** An item retired from the catalogue, with the reason and where its job lives now — never a silent drop. */

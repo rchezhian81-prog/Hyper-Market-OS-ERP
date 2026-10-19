@@ -80,6 +80,11 @@ export function lpCasesRoutes(deps: LpCasesDeps): readonly Route[] {
         if (typeof b.kind !== 'string' || !(KINDS as readonly string[]).includes(b.kind) || !isStr(b.ref) || !isStr(b.description) || !isStr(b.collectedBy) || !isStr(b.collectedFrom)) {
           refuse('not_readable_as_evidence', 'Evidence needs a kind, a reference, a description, and a chain of custody (collectedBy and collectedFrom).', 400);
         }
+        // R4 D-21 (OB-217): a CCTV clip is recorded ONLY as a reference — camera, time from and to, who collected it — on
+        // its own route, which refuses any video. A free-text cctv_reference here could carry anything, so it is refused.
+        if (b.kind === 'cctv_reference') {
+          refuse('cctv_reference_has_its_own_form', 'A CCTV clip is recorded only as a reference (camera, time from and to, who collected it) through POST /v1/loss-prevention/cases/:caseId/cctv/:evidenceId — no video is stored.');
+        }
         const investigation = await deps.case(ctx.tenantId, caseId);
         if (investigation === undefined) throw notFound(`case ${caseId}`);
 

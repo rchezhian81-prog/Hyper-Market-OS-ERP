@@ -90,7 +90,38 @@ export interface EmployeeSelfView {
   };
   /** Present only if the employee is a leaver with a computed final settlement. */
   readonly settlement?: EssSettlementSummary;
+  /**
+   * R4 (C15 · C16 · C19): present when the payslip was prepared with the statutory checks — the hours the employee
+   * actually worked each day, their overtime, why PF / ESI were or were not deducted, and each particular (shown
+   * "not confirmed" until the CA's list is confirmed). Their own record only.
+   */
+  readonly statutoryNotes?: EssStatutoryNotes;
   readonly confirmWithCa: true;
+}
+
+export interface EssStatutoryNotes {
+  readonly hoursWorked: readonly { readonly date: string; readonly workedMinutes: number }[];
+  readonly totalWorkedMinutes: number;
+  readonly overtime: { readonly overtimeMinutes: number | null; readonly payMinor: number | null; readonly detail: string };
+  readonly contributions: readonly string[];
+  readonly particulars?: readonly { readonly label: string; readonly status: string; readonly value?: string }[];
+}
+
+/** The R4 notes a payslip carries, read defensively (a payslip issued before R4 has none). */
+function statutoryNotesOf(p: unknown): EssStatutoryNotes | undefined {
+  const c = (p as { statutoryChecks?: Record<string, unknown> }).statutoryChecks;
+  if (c === undefined || c === null || typeof c !== 'object') return undefined;
+  const hw = c['hoursWorked'] as { days?: { date: string; workedMinutes: number }[]; totalWorkedMinutes?: number } | undefined;
+  const ot = c['overtime'] as { overtimeMinutes?: number | null; pay?: { payMinor?: number | null; detail?: string } } | undefined;
+  const co = c['contributions'] as { pf?: { why?: string }; esi?: { why?: string } } | undefined;
+  const parts = (p as { particulars?: { lines?: { label: string; status: string; value?: string }[] } }).particulars;
+  return {
+    hoursWorked: (hw?.days ?? []).map((d) => ({ date: d.date, workedMinutes: d.workedMinutes })),
+    totalWorkedMinutes: hw?.totalWorkedMinutes ?? 0,
+    overtime: { overtimeMinutes: ot?.overtimeMinutes ?? null, payMinor: ot?.pay?.payMinor ?? null, detail: ot?.pay?.detail ?? '' },
+    contributions: [co?.pf?.why, co?.esi?.why].filter((w): w is string => typeof w === 'string'),
+    ...(Array.isArray(parts?.lines) ? { particulars: parts!.lines.map((l) => ({ label: l.label, status: l.status, ...(l.value === undefined ? {} : { value: l.value }) })) } : {}),
+  };
 }
 
 export interface EmployeeSelfViewInput {
@@ -160,6 +191,7 @@ export function employeeSelfView(input: EmployeeSelfViewInput): EmployeeSelfView
     },
     confirmWithCa: true,
     ...(input.settlement !== undefined ? { settlement: summariseSettlement(input.settlement) } : {}),
+    ...(statutoryNotesOf(p) === undefined ? {} : { statutoryNotes: statutoryNotesOf(p)! }),
   };
   return view;
 }

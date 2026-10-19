@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Store events</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Store events (R4 D-24 · OB-220 · signed OB-227). A THIN CLIENT over head office's routes: the festivals and local
+      events a manager records for the store (POST /v1/inventory/demand-events/:id — dates and the expected effect; a change
+      is a new version, a withdrawal a new fact), each with how its effect is known ("manager's estimate" until an earlier
+      occurrence back-tests it), the product forecast that uses them with no extra step and names the event on every day it
+      changes, the 7-day correction from the last days' sales with its back-test error beside it, and the weather link,
+      switched off. Its session is apps/web-erp/src/demand-events-session.ts. No prompt/confirm/alert; nothing on a timer.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      input, select, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; }
+      button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+      .panel { border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--bg); display: grid; gap: 2px; }
+      .panel .k { color: var(--muted); font-size: 14px; } .panel .v { font-size: 22px; font-weight: 700; }
+      .panel.attention { border-left: 6px solid var(--degraded); }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+      li.row { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 8px; border-left: 6px solid var(--idle); overflow-wrap: anywhere; }
+      li.row.tone-degraded { border-left-color: var(--degraded); } li.row.tone-ok { border-left-color: var(--ok); }
+      .row .facts { font-size: 14px; color: var(--muted); }
+      .row form { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); align-items: end; }
+      .status { font-size: 14px; min-height: 20px; margin: 0; } .status.good { color: var(--good); } .status.err { color: var(--danger-text); }
+      .nobody { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
+      .muted { color: var(--muted); font-size: 14px; }
+      table { width: 100%; border-collapse: collapse; }
+      .table-wrap { overflow-x: auto; max-width: 100%; }
+      td, th { text-align: left; }
+      .form-row { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); align-items: end; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Store events</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section aria-labelledby="page-h">
+        <h2 id="page-h">Store events</h2>
+        <p class="lead" id="lead"></p>
+        <p class="muted" id="weather" data-state=""></p>
+        <form class="form-row" id="ask">
+          <label for="store"><span id="l-store">Store</span><input id="store" autocomplete="off" /></label>
+          <button id="show" type="submit">Show the events</button>
+        </form>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+      <section aria-labelledby="record-h">
+        <h3 id="record-h">Record an event</h3>
+        <form class="form-row" id="record">
+          <label for="label"><span id="l-label">Name</span><input id="label" autocomplete="off" /></label>
+          <label for="kind"><span id="l-kind">Kind</span><select id="kind"><option value="festival" id="o-festival">Festival</option><option value="local_event" id="o-local">Local event</option></select></label>
+          <label for="ev-from"><span id="l-ev-from">From</span><input id="ev-from" type="date" /></label>
+          <label for="ev-to"><span id="l-ev-to">To</span><input id="ev-to" type="date" /></label>
+          <label for="effect"><span id="l-effect">Expected effect</span><input id="effect" inputmode="decimal" autocomplete="off" /></label>
+          <label for="products"><span id="l-products">Only these products (codes, optional)</span><input id="products" autocomplete="off" /></label>
+          <button id="save" type="submit">Record the event</button>
+        </form>
+        <p class="status" id="record-status" role="status" aria-live="polite"></p>
+      </section>
+      <section aria-labelledby="events-h">
+        <h3 id="events-h">Events in the calendar</h3>
+        <ul class="rows" id="events"></ul>
+        <p class="status" id="withdraw-status" role="status" aria-live="polite"></p>
+      </section>
+      <section aria-labelledby="forecast-h">
+        <h3 id="forecast-h">What it does to a forecast</h3>
+        <form class="form-row" id="fc">
+          <label for="product"><span id="l-product">Product code</span><input id="product" autocomplete="off" /></label>
+          <button id="forecast" type="submit">Show the next 7 days</button>
+        </form>
+        <p class="status" id="forecast-status" role="status" aria-live="polite"></p>
+        <p class="muted" id="backtest"></p>
+        <div class="table-wrap"><table aria-labelledby="forecast-h"><tbody id="forecast-rows"></tbody></table></div>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./demand-events.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1383,
+  "testFiles": 1436,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -18,11 +18,11 @@
     "PARTIALLY_WIRED": 40
   },
   "totals": {
-    "unit": 88,
+    "unit": 89,
     "integration": 101,
     "realDb": 97,
-    "browser": 80,
-    "connected": 45,
+    "browser": 81,
+    "connected": 48,
     "device": 0,
     "uat": 0
   },
@@ -1168,11 +1168,11 @@
       "id": "M16",
       "label": "WIRED",
       "counts": {
-        "unit": 9,
-        "integration": 16,
-        "realDb": 7,
-        "browser": 1,
-        "connected": 0,
+        "unit": 11,
+        "integration": 17,
+        "realDb": 8,
+        "browser": 2,
+        "connected": 1,
         "device": 0,
         "uat": 0
       },
@@ -1186,7 +1186,9 @@
           "tests/unit/customer-segments.test.ts",
           "tests/unit/customer.test.ts",
           "tests/unit/loyalty-coupons.test.ts",
-          "tests/unit/storefront-browse.test.ts"
+          "tests/unit/r4-insight-sessions.test.ts",
+          "tests/unit/storefront-browse.test.ts",
+          "tests/unit/voice-and-sms-links-are-switched-off.test.ts"
         ],
         "integration": [
           "tests/integration/ai-marketing-agent.test.ts",
@@ -1203,6 +1205,7 @@
           "tests/integration/the-assistant-drafts-and-a-person-decides.test.ts",
           "tests/integration/the-customer-privacy-centre-saves-on-the-shop.test.ts",
           "tests/integration/the-customer-record-is-built-from-what-they-bought.test.ts",
+          "tests/integration/the-customers-overview-lists-every-customer.test.ts",
           "tests/integration/the-processor-register-flags-processing-without-a-contract.test.ts",
           "tests/integration/till-names-a-loyalty-member.test.ts"
         ],
@@ -1213,12 +1216,16 @@
           "tests/integration/the-assistant-drafts-and-a-person-decides.test.ts",
           "tests/integration/the-customer-privacy-centre-saves-on-the-shop.test.ts",
           "tests/integration/the-customer-record-is-built-from-what-they-bought.test.ts",
+          "tests/integration/the-customers-overview-lists-every-customer.test.ts",
           "tests/integration/the-processor-register-flags-processing-without-a-contract.test.ts"
         ],
         "browser": [
-          "tests/e2e/customer-privacy-centre.e2e.ts"
+          "tests/e2e/customer-privacy-centre.e2e.ts",
+          "tests/e2e/the-customers-page-meets-the-spec.e2e.ts"
         ],
-        "connected": [],
+        "connected": [
+          "tests/e2e/the-customers-page-meets-the-spec.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },
@@ -1230,8 +1237,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 8,
-        "integration": 15,
-        "realDb": 5,
+        "integration": 16,
+        "realDb": 6,
         "browser": 5,
         "connected": 0,
         "device": 0,
@@ -1256,6 +1263,7 @@
           "tests/integration/loyalty-liability-reconciles-to-the-books.test.ts",
           "tests/integration/loyalty-points.test.ts",
           "tests/integration/loyalty-value-is-spent-once.test.ts",
+          "tests/integration/referral-liability-reconciles-to-the-books.test.ts",
           "tests/integration/sale-to-shift-close-journey.test.ts",
           "tests/integration/store-credit-cap.test.ts",
           "tests/integration/store-credit-refund.test.ts",
@@ -1268,6 +1276,7 @@
         "realDb": [
           "tests/integration/household-pooling.test.ts",
           "tests/integration/loyalty-value-is-spent-once.test.ts",
+          "tests/integration/referral-liability-reconciles-to-the-books.test.ts",
           "tests/integration/sale-to-shift-close-journey.test.ts",
           "tests/integration/stored-value-liability.test.ts",
           "tests/integration/write-guards-on-postgresql.test.ts"
@@ -1413,10 +1422,10 @@
       "id": "M20",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 18,
-        "integration": 16,
-        "realDb": 9,
-        "browser": 4,
+        "unit": 19,
+        "integration": 17,
+        "realDb": 10,
+        "browser": 5,
         "connected": 1,
         "device": 0,
         "uat": 0
@@ -1437,6 +1446,7 @@
           "tests/unit/identity-test-idp.test.ts",
           "tests/unit/order-payment-refund-routes.test.ts",
           "tests/unit/order-payment-refunds.test.ts",
+          "tests/unit/ratings-receipts-and-images.test.ts",
           "tests/unit/shop-transport.test.ts",
           "tests/unit/storefront-browse.test.ts",
           "tests/unit/storefront-checkout.test.ts",
@@ -1453,6 +1463,7 @@
           "tests/integration/data-rights.test.ts",
           "tests/integration/erasure-execution.test.ts",
           "tests/integration/one-fulfilment-command.test.ts",
+          "tests/integration/only-a-buyer-can-rate-a-product.test.ts",
           "tests/integration/order-payments-and-refunds.test.ts",
           "tests/integration/promotion-abuse-check.test.ts",
           "tests/integration/promotion-governance.test.ts",
@@ -1469,13 +1480,15 @@
           "tests/integration/an-outside-party-login-is-invited-and-approved-by-two-people.test.ts",
           "tests/integration/concurrent-stock-cannot-be-spent-twice.test.ts",
           "tests/integration/one-fulfilment-command.test.ts",
+          "tests/integration/only-a-buyer-can-rate-a-product.test.ts",
           "tests/integration/the-customer-privacy-centre-saves-on-the-shop.test.ts"
         ],
         "browser": [
           "tests/e2e/customer-login.e2e.ts",
           "tests/e2e/customer-order-delivery.e2e.ts",
           "tests/e2e/customer-privacy-centre.e2e.ts",
-          "tests/e2e/erasure-console.e2e.ts"
+          "tests/e2e/erasure-console.e2e.ts",
+          "tests/e2e/the-online-store-shows-the-required-details.e2e.ts"
         ],
         "connected": [
           "tests/e2e/customer-order-delivery.e2e.ts"
@@ -2526,17 +2539,18 @@
       "id": "D01",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 2,
-        "integration": 9,
-        "realDb": 2,
-        "browser": 1,
-        "connected": 0,
+        "unit": 3,
+        "integration": 10,
+        "realDb": 3,
+        "browser": 2,
+        "connected": 1,
         "device": 0,
         "uat": 0
       },
       "files": {
         "unit": [
           "tests/unit/erp-catalogue-session.test.ts",
+          "tests/unit/ratings-receipts-and-images.test.ts",
           "tests/unit/storefront-browse.test.ts"
         ],
         "integration": [
@@ -2546,18 +2560,23 @@
           "tests/integration/categories-and-product-files-are-head-offices.test.ts",
           "tests/integration/pack-chain-case-to-base.test.ts",
           "tests/integration/product-content-and-synonyms-reach-the-customer-app.test.ts",
+          "tests/integration/product-content-versions-and-images-are-kept-on-the-shops-server.test.ts",
           "tests/integration/product-master.test.ts",
           "tests/integration/recalls-reach-the-offline-till.test.ts",
           "tests/integration/the-screens-are-fed.test.ts"
         ],
         "realDb": [
           "tests/integration/pack-chain-case-to-base.test.ts",
-          "tests/integration/product-content-and-synonyms-reach-the-customer-app.test.ts"
+          "tests/integration/product-content-and-synonyms-reach-the-customer-app.test.ts",
+          "tests/integration/product-content-versions-and-images-are-kept-on-the-shops-server.test.ts"
         ],
         "browser": [
-          "tests/e2e/product-publish-delivery.e2e.ts"
+          "tests/e2e/product-publish-delivery.e2e.ts",
+          "tests/e2e/the-online-store-and-app-content-pages-meet-the-spec.e2e.ts"
         ],
-        "connected": [],
+        "connected": [
+          "tests/e2e/the-online-store-and-app-content-pages-meet-the-spec.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },
@@ -2839,8 +2858,8 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 1,
-        "integration": 9,
-        "realDb": 5,
+        "integration": 10,
+        "realDb": 6,
         "browser": 1,
         "connected": 0,
         "device": 0,
@@ -2857,6 +2876,7 @@
           "tests/integration/loyalty-earns-on-a-sale.test.ts",
           "tests/integration/loyalty-liability-reconciles-to-the-books.test.ts",
           "tests/integration/loyalty-value-is-spent-once.test.ts",
+          "tests/integration/referral-liability-reconciles-to-the-books.test.ts",
           "tests/integration/service-cases.test.ts",
           "tests/integration/the-customer-privacy-centre-saves-on-the-shop.test.ts",
           "tests/integration/the-customer-record-is-built-from-what-they-bought.test.ts"
@@ -2865,6 +2885,7 @@
           "tests/integration/a-campaign-goes-through-the-queue-within-the-cap.test.ts",
           "tests/integration/an-erasure-shreds-the-personal-text-in-the-ledger.test.ts",
           "tests/integration/loyalty-value-is-spent-once.test.ts",
+          "tests/integration/referral-liability-reconciles-to-the-books.test.ts",
           "tests/integration/the-customer-privacy-centre-saves-on-the-shop.test.ts",
           "tests/integration/the-customer-record-is-built-from-what-they-bought.test.ts"
         ],
@@ -2882,10 +2903,10 @@
       "id": "D08",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 6,
+        "unit": 7,
         "integration": 6,
         "realDb": 3,
-        "browser": 2,
+        "browser": 3,
         "connected": 1,
         "device": 0,
         "uat": 0
@@ -2897,7 +2918,8 @@
           "tests/unit/dispatch-routing.test.ts",
           "tests/unit/fulfilment-serviceability-simulator.test.ts",
           "tests/unit/storefront-checkout.test.ts",
-          "tests/unit/storefront-serviceability-schedule.test.ts"
+          "tests/unit/storefront-serviceability-schedule.test.ts",
+          "tests/unit/voice-and-sms-links-are-switched-off.test.ts"
         ],
         "integration": [
           "tests/integration/a-delivery-slot-and-address-are-the-shops-to-judge.test.ts",
@@ -2914,7 +2936,8 @@
         ],
         "browser": [
           "tests/e2e/customer-order-delivery.e2e.ts",
-          "tests/e2e/the-customer-app-meets-wcag-aa.e2e.ts"
+          "tests/e2e/the-customer-app-meets-wcag-aa.e2e.ts",
+          "tests/e2e/the-online-store-shows-the-required-details.e2e.ts"
         ],
         "connected": [
           "tests/e2e/customer-order-delivery.e2e.ts"
@@ -4310,29 +4333,38 @@
       "id": "WF-16",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 0,
-        "integration": 5,
-        "realDb": 2,
-        "browser": 0,
-        "connected": 0,
+        "unit": 1,
+        "integration": 6,
+        "realDb": 3,
+        "browser": 2,
+        "connected": 1,
         "device": 0,
         "uat": 0
       },
       "files": {
-        "unit": [],
+        "unit": [
+          "tests/unit/online-returns-engine.test.ts"
+        ],
         "integration": [
           "tests/integration/a-granted-compensation-is-carried-out.test.ts",
+          "tests/integration/an-online-return-refunds-only-what-came-back.test.ts",
           "tests/integration/one-fulfilment-command.test.ts",
           "tests/integration/order-payments-and-refunds.test.ts",
           "tests/integration/orders-lifecycle.test.ts",
           "tests/integration/the-customer-keeps-lists-and-raises-returns-and-complaints.test.ts"
         ],
         "realDb": [
+          "tests/integration/an-online-return-refunds-only-what-came-back.test.ts",
           "tests/integration/one-fulfilment-command.test.ts",
           "tests/integration/the-customer-keeps-lists-and-raises-returns-and-complaints.test.ts"
         ],
-        "browser": [],
-        "connected": [],
+        "browser": [
+          "tests/e2e/the-online-store-and-app-content-pages-meet-the-spec.e2e.ts",
+          "tests/e2e/the-online-store-shows-the-required-details.e2e.ts"
+        ],
+        "connected": [
+          "tests/e2e/the-online-store-and-app-content-pages-meet-the-spec.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },
