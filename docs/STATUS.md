@@ -5,7 +5,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
-## Cutover-readiness tools for the pilot (OB-239 to OB-242) — built and tested on synthetic data; full gate green: 12,947 unit/integration (16 skipped), 52 performance, 455 browser; PR pending
+## Cutover-readiness tools for the pilot (OB-239 to OB-242) — built and tested on synthetic data; full gate green: 12,947 unit/integration (16 skipped), 52 performance, 455 browser; merged (PR #797) and deployed to the demo
 
 - **One department first (MG-05):** four CSV templates. Each row is judged on its own; bad rows (and rows that depend on them) are set aside with file, line, old key, column and reason. Nothing is applied until a named person accepts the list in their own session.
 - **Who ran the load (MG-06):** recorded from the signed-in session, never typed. That person cannot sign the control totals.
