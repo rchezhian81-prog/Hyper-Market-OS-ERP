@@ -85,6 +85,9 @@ export const RELAYABLE_DEVICE_EVENTS: Readonly<Record<string, { readonly surface
   DeliveryStopUpdated: { surfaces: ['driver'] },
   RouteSettled: { surfaces: ['driver'] },
   DriverCashHandedOver: { surfaces: ['driver'] },
+  // R4 gap lane "driver" (WF-16): an online return collected at the door, or not (with the reason). Head office re-verifies the
+  // DRIVER's grant, the booking and the quantities, and records "collected" as its own button does. No money moves.
+  ReturnCollectionRecorded: { surfaces: ['driver'] },
   // 2b-vi-c-4: the migration screen's DECISIONS (an exception resolved, a control total signed), from the ERP surface the
   // box serves. The box seals each for the person it verified (ADR-0023 amended); head office refuses an unsealed one by
   // name and re-checks the decider's authority and the load operator from its own records.

@@ -207,6 +207,11 @@ export const EVENT_ROUTES: Readonly<Record<string, EventRoute>> = {
   DeliveryStopUpdated: '/v1/delivery/routes/:routeId/stops/:stopId/synced',
   RouteSettled: '/v1/delivery/routes/:routeId/settled/synced',
   DriverCashHandedOver: '/v1/delivery/routes/:routeId/handover/synced',
+  // R4 gap lane "driver" (WF-16): an online return collected at the door — or not, with the reason — recorded on the driver's
+  // phone. Head office re-verifies the DRIVER's own grant, that the return is booked for collection and that no line is more
+  // than was booked (403 / 422 by name → dead-lettered here for a person), then records "collected" as its button does.
+  // `returnId` is a plain top-level payload field matching the param. No money moves.
+  ReturnCollectionRecorded: '/v1/online-returns/:returnId/collection/synced',
   // A delivery booked in and a blind count captured on the manager's screen (SP-2b · F11 · M07-FR-01 · M09-FR-04).
   // Same path as the decision: device queue → box → here under the store token → a synced route that re-verifies the
   // RECEIVER / COUNTER and owns every judgement the device must not make (rules, cost, expected quantity, threshold).

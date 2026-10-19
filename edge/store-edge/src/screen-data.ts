@@ -1013,10 +1013,21 @@ export function driverPayload(input: ScreenInput, driverId?: string): Record<str
     const assigned = input.pack.assignments.value;
     const route = driverId === undefined ? assigned.routes[0] : assigned.routes.find((r) => r.driverId === driverId);
     if (route !== undefined) {
+      // WF-16 (driver): the route's booked return collections, each line named from the pack's products where it knows them.
+      // A route with no collections carries none — never an invented empty list.
+      const products = input.pack.products.known ? input.pack.products.value : undefined;
+      const collections = route.collections === undefined ? undefined : route.collections.map((c) => ({
+        ...c,
+        lines: c.lines.map((l) => {
+          const p = products?.find((x) => x.productId === l.productId);
+          return { ...l, ...(p === undefined ? {} : { name: p.name, ...(p.nameTa === undefined ? {} : { nameTa: p.nameTa }) }) };
+        }),
+      }));
       return {
         routeId: route.routeId,
         driverId: route.driverId,
         stops: route.stops,
+        ...(collections === undefined || collections.length === 0 ? {} : { collections }),
         plannedBy: `head office, as of ${assigned.asAt}`,
         routesAssigned: assigned.routes.length,
         ...(route.contributionRule === undefined ? {} : { contributionRule: route.contributionRule }),

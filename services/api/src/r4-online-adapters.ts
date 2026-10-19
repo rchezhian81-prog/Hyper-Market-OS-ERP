@@ -14,7 +14,7 @@ import type { RefundProcessor } from '../../../packages/orders/src/payment-refun
 import type { OnlineShopDetails, OnlineListingFacts } from '../../../packages/storefront/src/listing-duties';
 import type { RatingRecord } from '../../../packages/storefront/src/ratings';
 import { ratingSummary } from '../../../packages/storefront/src/ratings';
-import type { OnlineReturnStep, ReturnPolicySettings } from '../../../packages/storefront/src/online-returns';
+import { foldOnlineReturn, type OnlineReturnStep, type OnlineReturnView, type ReturnPolicySettings } from '../../../packages/storefront/src/online-returns';
 import { resolveServiceabilityPolicy } from '../../../packages/storefront/src/serviceability-schedule';
 import type { DigitalReceiptChoice, BankedSaleForCopy } from '../../../packages/receipt/src/digital-copy';
 import { currentImage, type ProductImageStore, type ProductImageType, type ProductImageVersion } from '../../../packages/product/src/images';
@@ -33,6 +33,7 @@ import { productContentImageRoutes, type AppContentVersion } from '../../catalog
 import {
   STREAM, streamName, catalogueAdapter, productMasterAdapter, inventoryAdapter, ordersAdapter, approvalRequestsAdapter,
   serviceabilityAdapter, serviceCaseAdapter, loyaltyMembersAdapter, fulfilmentPackingAdapter, categoryRegisterAdapter,
+  permissionsHeldBy,
 } from './adapters';
 
 type Recorder = (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
@@ -65,6 +66,15 @@ const DELIVERED = new Set(['delivered', 'collected']);
 export async function deliveredAtOf(store: EventStore, tenantId: string, orderId: string): Promise<string | undefined> {
   const steps = await all<OrderTransition>(store, tenantId, streamName(STREAM.orders, orderId), 'OrderTransitioned');
   return steps.filter((s) => DELIVERED.has(s.to)).map((s) => s.at).sort()[0];
+}
+
+/**
+ * R4 gap lane "driver" (WF-16): one online return as head office holds it — what the route assignment and the box's pull read
+ * to put a booked collection on a driver's route. Undefined when there is no such return.
+ */
+export async function onlineReturnViewOf(store: EventStore, tenantId: string, returnId: string): Promise<OnlineReturnView | undefined> {
+  const steps = (await all<OnlineReturnStep>(store, tenantId, RETURN_STEPS, 'OnlineReturnStep')).filter((s) => s.returnId === returnId);
+  return foldOnlineReturn(steps);
 }
 
 /**
@@ -230,6 +240,9 @@ export function r4OnlineRoutes(input: R4OnlineInput): readonly Route[] {
       refundThreshold: orders.refundThreshold,
       approvals: approvalRequestsAdapter(base),
       refundProcessor: input.refundProcessor ?? noProviderRefundProcessor(),
+      // R4 gap lane "driver" (WF-16): a collection relayed from the driver's phone re-checks the DRIVER's own grants.
+      permissionsOfUser: (t, userId) => permissionsHeldBy(store, t, userId),
+      ...(input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit }),
     }),
     // ── D-28 — digital receipts, only for members who ask ──
     ...digitalReceiptRoutes({

@@ -23,11 +23,12 @@ import {
 } from '../../../packages/orders/src/payment-refunds';
 import { DEFAULT_REFUND_THRESHOLD_MINOR } from '../../../packages/returns/src/assess-return';
 import {
-  lineEligibility, foldOnlineReturn, checkReceivedCount, planReturnRefund, returnStageWords, DISPOSITIONS,
-  type OnlineReturnStep, type OnlineReturnView, type ReturnDisposition, type ReturnPolicySettings,
+  lineEligibility, foldOnlineReturn, checkReceivedCount, checkCollectedLines, planReturnRefund, returnStageWords, DISPOSITIONS,
+  COLLECTION_MISS_REASONS, type CollectionMissReason, type OnlineReturnStep, type OnlineReturnView, type ReturnDisposition, type ReturnPolicySettings,
 } from '../../../packages/storefront/src/online-returns';
 import { NOT_SET } from '../../../packages/storefront/src/listing-duties';
 import type { ServiceCase } from '../../../packages/service-desk/src/index';
+import type { AuditEntry } from '../../../packages/audit/src/index';
 import type { PlacedOrder } from './index';
 
 export interface OnlineReturnDeps {
@@ -59,6 +60,52 @@ export interface OnlineReturnDeps {
   /** The payment provider. No live provider is connected (OA-4): the product's processor answers "unknown" → waiting. */
   readonly refundProcessor: RefundProcessor;
   readonly now: () => string;
+  /**
+   * WF-16 (driver): the grants of the person a relayed collection names — re-checked HERE, never taken from the relay.
+   * Absent → the relayed route refuses every record (fail closed).
+   */
+  readonly permissionsOfUser?: (tenantId: string, userId: string) => Promise<readonly string[] | undefined> | readonly string[] | undefined;
+  readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
+}
+
+/** The grant the head-office "Collected" button needs — and the one a driver must hold for his phone's record to count. */
+export const COLLECT_PERMISSION = 'online.return.collect';
+
+/** A collection as the driver's phone queued it (`ReturnCollectionRecorded`), read strictly; undefined when it cannot be read. */
+export interface RelayedCollection {
+  readonly routeId: string;
+  readonly driverId: string;
+  readonly outcome: 'collected' | 'not_collected';
+  readonly lines: readonly { readonly productId: string; readonly collectedMinor: number }[];
+  readonly reason?: CollectionMissReason;
+  readonly note?: string;
+  readonly at?: string;
+}
+
+export function readRelayedCollection(body: unknown, returnId: string): RelayedCollection | undefined {
+  if (body === null || typeof body !== 'object' || Array.isArray(body)) return undefined;
+  const b = body as Record<string, unknown>;
+  if (b['returnId'] !== returnId || !isStr(b['routeId']) || !isStr(b['driverId'])) return undefined;
+  const at = isStr(b['occurredAt']) && !Number.isNaN(Date.parse(b['occurredAt'] as string)) ? (b['occurredAt'] as string) : undefined;
+  const note = b['note'] === undefined || b['note'] === null ? undefined : isStr(b['note']) && (b['note'] as string).length <= 200 ? (b['note'] as string).trim() : null;
+  if (note === null) return undefined;
+  const base = { routeId: (b['routeId'] as string).trim(), driverId: (b['driverId'] as string).trim(), ...(at === undefined ? {} : { at }), ...(note === undefined ? {} : { note }) };
+  if (b['outcome'] === 'collected') {
+    const raw = b['lines'];
+    if (!Array.isArray(raw) || raw.length === 0 || raw.length > 200) return undefined;
+    const lines: { productId: string; collectedMinor: number }[] = [];
+    for (const x of raw) {
+      const r = x as Record<string, unknown>;
+      if (r === null || typeof r !== 'object' || !isStr(r['productId']) || typeof r['collectedMinor'] !== 'number') return undefined;
+      lines.push({ productId: (r['productId'] as string).trim(), collectedMinor: r['collectedMinor'] as number });
+    }
+    return { ...base, outcome: 'collected', lines };
+  }
+  if (b['outcome'] === 'not_collected') {
+    if (!(COLLECTION_MISS_REASONS as readonly unknown[]).includes(b['reason'])) return undefined;
+    return { ...base, outcome: 'not_collected', lines: [], reason: b['reason'] as CollectionMissReason };
+  }
+  return undefined;
 }
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
@@ -253,6 +300,84 @@ export function onlineReturnRoutes(deps: OnlineReturnDeps): readonly Route[] {
         return { status: 201, body: { return: await view(ctx.tenantId, returnId) } };
       },
     },
+    // ── R4 gap lane "driver" (WF-16 · OB-180/185/187) — begin ──
+    {
+      // The DRIVER's phone recorded the collection at the door — offline, stamped with his sign-in, queued on the phone,
+      // handed to the store computer and relayed HERE under the store's credential. Head office checks it all again:
+      // the DRIVER's own grant (the button's), that the return is booked for collection, and that no line is more than
+      // was booked. Then "collected" is recorded exactly as the button records it (one step, under the button's key, so
+      // the button and the phone can never record it twice). No money moves and nothing is refunded here.
+      // Body: { returnId, routeId, driverId, outcome: collected | not_collected, lines?: [{ productId, collectedMinor }],
+      //         reason?: customer_not_available | nothing_handed_over, note?, occurredAt? }.
+      api: 'API-07', method: 'POST', path: '/v1/online-returns/:returnId/collection/synced',
+      permission: 'online.return.collect.sync', idempotent: true,
+      handler: async (ctx) => {
+        const returnId = (ctx.params['returnId'] ?? '').trim();
+        const r = readRelayedCollection(ctx.body, returnId);
+        if (r === undefined) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_collection_record',
+            whatHappened: 'This could not be read as a collection from a driver\'s phone — it needs returnId matching the path, routeId, driverId, and either outcome "collected" with lines [{ productId, collectedMinor }], or outcome "not_collected" with reason customer_not_available or nothing_handed_over.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Do not discard it at the store. Keep it in the queue and raise it — the goods may be in the van.',
+          });
+        }
+        // The DRIVER, from HIS grants — never the relay's word (hard rules #4/#10). A person who may not collect is refused.
+        const held = deps.permissionsOfUser === undefined ? undefined : await deps.permissionsOfUser(ctx.tenantId, r.driverId);
+        if (held === undefined || !held.includes(COLLECT_PERMISSION)) {
+          throw apiError(403, {
+            code: held === undefined ? 'driver_unknown' : 'driver_lacks_authority',
+            whatHappened: held === undefined
+              ? `${r.driverId} is not a person head office knows, so the collection of return ${returnId} was not recorded.`
+              : `${r.driverId} does not hold ${COLLECT_PERMISSION}, so they may not record collecting return ${returnId}. Nothing was recorded.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'A manager checks who went to the door and where the goods are, then records it on the Online store page.',
+          });
+        }
+        const v = await view(ctx.tenantId, returnId);
+        if (v.collectedAt !== undefined) return { status: 200, body: { return: v, alreadyCollected: true } };
+        if (v.stage !== 'collection_scheduled') {
+          throw apiError(422, {
+            code: 'not_booked_for_collection',
+            whatHappened: `Return ${returnId} is ${v.stage.replace(/_/g, ' ')} — it was not booked for collection, so nothing was recorded.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Book the collection on the Online store page first. Nothing was changed.',
+          });
+        }
+        const now = deps.now();
+        // A phone clock running fast is clamped to head office's receipt time, so a collection never reads as later than it is.
+        const at = r.at === undefined || Date.parse(r.at) > Date.parse(now) ? now : r.at;
+        if (r.outcome === 'not_collected') {
+          const step: OnlineReturnStep = { kind: 'collection_missed', returnId, reason: r.reason!, ...(r.note === undefined ? {} : { note: r.note }), routeId: r.routeId, by: r.driverId, relayedBy: ctx.userId, at };
+          await deps.recordStep(ctx.tenantId, step, `${returnId}-missed-${r.routeId}-${at}`);
+        } else {
+          const check = checkCollectedLines(v, r.lines);
+          if (!check.ok) {
+            throw apiError(422, {
+              code: check.code,
+              whatHappened: `The collection of return ${returnId} was not recorded: ${check.detail}.`,
+              wasItSaved: 'not_saved',
+              nextSafeAction: 'A driver records only the booked lines, never more than was booked. A manager checks what is in the van.',
+            });
+          }
+          const step: OnlineReturnStep = { kind: 'collected', returnId, by: r.driverId, at, lines: check.lines, routeId: r.routeId, relayedBy: ctx.userId };
+          // The button's own key: the button and the phone record ONE collection between them.
+          await deps.recordStep(ctx.tenantId, step, `${returnId}-collected`);
+        }
+        await deps.recordAudit?.(ctx.tenantId, {
+          actorId: r.driverId, action: r.outcome === 'collected' ? 'online.return.collect' : 'online.return.collect_missed', objectType: 'online_return', objectId: returnId,
+          at: now, origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null }, before: { stage: v.stage },
+          after: {
+            routeId: r.routeId, outcome: r.outcome, relayedBy: ctx.userId,
+            ...(r.outcome === 'collected' ? { lines: r.lines.map((l) => `${l.collectedMinor} × ${l.productId}`).join(', ') } : { reason: r.reason! }),
+          },
+          correlationId: returnId,
+        });
+        // 202: it happened at the door; this records that head office now holds it.
+        return { status: 202, body: { return: await view(ctx.tenantId, returnId), recorded: r.outcome } };
+      },
+    },
+    // ── R4 gap lane "driver" — end ──
     {
       // Received back at the shop, WITH A COUNT per line (0 when a line did not come back). Body: { lines: [{ productId, receivedMinor }] }.
       api: 'API-07', method: 'POST', path: '/v1/online-returns/:returnId/received',

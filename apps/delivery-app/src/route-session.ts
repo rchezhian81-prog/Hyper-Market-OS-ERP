@@ -92,13 +92,15 @@ export interface RouteProgress {
   readonly complete: boolean;
 }
 
-/** The three event types this phone queues — named once, for the session, the box's allow-list and the cloud routes. */
+/** The event types this phone queues — named once, for the session, the box's allow-list and the cloud routes. */
 export const DELIVERY_STOP_UPDATED = 'DeliveryStopUpdated';
 export const ROUTE_SETTLED = 'RouteSettled';
 export const DRIVER_CASH_HANDED_OVER = 'DriverCashHandedOver';
+/** R4 gap lane "driver" (WF-16): an online return collected at the door — or not, with the reason. No money moves. */
+export const RETURN_COLLECTION_RECORDED = 'ReturnCollectionRecorded';
 
-/** The kinds of work this phone sends: a stop's outcome, the route's settlement, the cash handover. A guardrail binds the shell's words to this. */
-export const SENT_WORK_KINDS = Object.freeze(['stop', 'settlement', 'handover'] as const);
+/** The kinds of work this phone sends: a stop's outcome, the route's settlement, the cash handover, a return collection. A guardrail binds the shell's words to this. */
+export const SENT_WORK_KINDS = Object.freeze(['stop', 'settlement', 'handover', 'collection'] as const);
 export type SentWorkKind = (typeof SENT_WORK_KINDS)[number];
 
 /**
@@ -118,6 +120,69 @@ export interface SentWork {
   readonly state: DeviceItemState;
   readonly attempts: number;
   readonly reason?: string;
+}
+
+// ── R4 gap lane "driver" (WF-16): online returns to collect on this route ────────────────────────────────
+//
+// Head office books a collection and puts it on the driver's route; the box serves it with the BOOKED lines. At the door the
+// driver records one of two things: what he took (from the booked lines only, never more than was booked), or that nothing
+// was collected and why. Either is queued here on the phone, stamped with his sign-in like every other record, and relayed
+// by the box. Head office checks it all again. No money changes hands at the door and nothing is refunded here: the refund
+// follows only after the shop receives and counts the goods, a person chooses where they go, and a second person approves.
+
+/** One booked line of a return collection. PII-minimised: a product and a quantity. */
+export interface CollectionLineInput {
+  readonly productId: string;
+  readonly quantityMinor: number;
+  /** The product's name from the store's catalogue, when the box knows it. */
+  readonly name?: string;
+  readonly nameTa?: string;
+}
+
+/** One online return booked for collection on this route — a reference and an area, never the customer's name or number. */
+export interface CollectionInput {
+  readonly returnId: string;
+  readonly orderRef: string;
+  readonly area: string;
+  readonly collectOn: string;
+  readonly lines: readonly CollectionLineInput[];
+}
+
+/** Why nothing was collected. Chosen on the phone, never typed — head office reads the same two words. */
+export const COLLECTION_MISS_REASONS = Object.freeze(['customer_not_available', 'nothing_handed_over'] as const);
+export type CollectionMissReason = (typeof COLLECTION_MISS_REASONS)[number];
+
+export type CollectionState = 'booked' | 'collected' | 'not_collected';
+
+export interface Collection extends CollectionInput {
+  readonly state: CollectionState;
+  /** What the driver recorded taking, per booked line (0 for a line not taken) — once collected. */
+  readonly taken?: readonly { readonly productId: string; readonly collectedMinor: number }[];
+  /** How many visits came back without the goods. */
+  readonly missedVisits: number;
+  readonly lastMissReason?: CollectionMissReason;
+}
+
+export class NoSuchCollectionError extends Error {
+  constructor(returnId: string) {
+    super(`No return collection "${returnId}" on this route.`);
+    this.name = 'NoSuchCollectionError';
+  }
+}
+
+/** A line, or a quantity, that was not booked. Refused BY NAME on the phone, before anything is queued. */
+export class CollectionLinesError extends Error {
+  constructor(readonly code: 'not_on_this_return' | 'not_a_whole_number' | 'more_than_booked' | 'counted_twice' | 'nothing_collected', detail: string) {
+    super(detail);
+    this.name = 'CollectionLinesError';
+  }
+}
+
+export class CollectionDoneError extends Error {
+  constructor(returnId: string) {
+    super(`Return ${returnId} is already recorded as collected.`);
+    this.name = 'CollectionDoneError';
+  }
 }
 
 export class NoSuchStopError extends Error {
@@ -170,6 +235,8 @@ export class RouteSession {
   private readonly at: () => string;
   /** The store computer's word on each item it took, keyed by queue key — filled by `noteBoxStatus` (SP-3c-ii). */
   private readonly boxWord = new Map<string, BoxItemStatus>();
+  /** WF-16 (driver): the return collections on this route. */
+  private readonly pickups: Collection[];
 
   constructor(
     readonly routeId: string,
@@ -182,12 +249,86 @@ export class RouteSession {
       readonly contributionRule?: ContributionRule;
       /** Injected so a test is deterministic; the phone passes its own clock. */
       readonly now?: () => string;
+      /** WF-16 (driver): the online returns booked for collection on this route. */
+      readonly collections?: readonly CollectionInput[];
     } = {},
   ) {
     this.currency = options.currency ?? 'INR';
     this.contributionRule = options.contributionRule;
     this.at = options.now ?? (() => new Date().toISOString());
     this.stops = assigned.map((s) => ({ ...s, state: 'assigned' as DeliveryState }));
+    // A collection already recorded on this phone stays recorded after the app is closed: the durable queue is the authority,
+    // so a reopened screen can never offer to collect the same return twice.
+    this.pickups = (options.collections ?? []).map((c) => {
+      let state: CollectionState = 'booked';
+      let taken: Collection['taken'];
+      let missedVisits = 0;
+      let lastMissReason: CollectionMissReason | undefined;
+      for (const item of this.outbox.all()) {
+        if (item.event.type !== RETURN_COLLECTION_RECORDED) continue;
+        const p = item.event.payload as { routeId: string; returnId: string; outcome: string; lines?: Collection['taken']; reason?: CollectionMissReason };
+        if (p.routeId !== this.routeId || p.returnId !== c.returnId) continue;
+        if (p.outcome === 'collected') { state = 'collected'; taken = p.lines; } else if (state !== 'collected') { state = 'not_collected'; missedVisits += 1; lastMissReason = p.reason; }
+      }
+      return { ...c, state, ...(taken === undefined ? {} : { taken }), missedVisits, ...(lastMissReason === undefined ? {} : { lastMissReason }) };
+    });
+  }
+
+  /** WF-16 (driver): the online returns to collect on this route, as the phone lists them. */
+  collections(): readonly Collection[] {
+    return this.pickups.slice();
+  }
+
+  private collectionOrThrow(returnId: string): Collection {
+    const c = this.pickups.find((x) => x.returnId === returnId);
+    if (c === undefined) throw new NoSuchCollectionError(returnId);
+    return c;
+  }
+
+  private queueCollection(c: Collection, outcome: 'collected' | 'not_collected', extra: Record<string, unknown>, key: string): void {
+    const occurredAt = this.at();
+    this.outbox.enqueue(makeEvent({
+      id: key, type: RETURN_COLLECTION_RECORDED, occurredAt, idempotencyKey: key, source: this.routeId,
+      // Thin, like a stop: the return and order references, the product ids and quantities, the reason. No customer, no money.
+      payload: { returnId: c.returnId, routeId: this.routeId, driverId: this.driverId, orderRef: c.orderRef, outcome, occurredAt, ...extra },
+    }));
+  }
+
+  /**
+   * "Collected": the lines and quantities the driver took, from the BOOKED lines only — never more than was booked. A line
+   * not named was not taken. Refused by name, before anything is queued: a line not on the return, a part item, more than
+   * was booked, a line named twice, or nothing at all (that is "nothing handed over"). Once per return.
+   */
+  collect(returnId: string, lines: readonly { readonly productId: string; readonly collectedMinor: number }[]): Collection {
+    const c = this.collectionOrThrow(returnId);
+    if (c.state === 'collected') throw new CollectionDoneError(returnId);
+    const booked = new Map(c.lines.map((l) => [l.productId, l.quantityMinor] as const));
+    const took = new Map<string, number>();
+    for (const l of lines) {
+      if (took.has(l.productId)) throw new CollectionLinesError('counted_twice', `${l.productId} is named twice`);
+      const b = booked.get(l.productId);
+      if (b === undefined) throw new CollectionLinesError('not_on_this_return', `${l.productId} was not booked on this return`);
+      if (!Number.isInteger(l.collectedMinor) || l.collectedMinor < 0) throw new CollectionLinesError('not_a_whole_number', `${l.productId}: ${l.collectedMinor} is not a whole number of items`);
+      if (l.collectedMinor > b) throw new CollectionLinesError('more_than_booked', `${l.productId}: collected ${l.collectedMinor}, but ${b} was booked for collection`);
+      took.set(l.productId, l.collectedMinor);
+    }
+    const taken = c.lines.map((l) => ({ productId: l.productId, collectedMinor: took.get(l.productId) ?? 0 }));
+    if (taken.every((l) => l.collectedMinor === 0)) throw new CollectionLinesError('nothing_collected', 'no item was taken — record it as "nothing handed over" instead');
+    const next: Collection = { ...c, state: 'collected', taken };
+    this.pickups[this.pickups.indexOf(c)] = next;
+    this.queueCollection(next, 'collected', { lines: taken }, `return-collection:${this.routeId}:${returnId}:collected`);
+    return next;
+  }
+
+  /** "Customer not available" / "nothing handed over": the visit is recorded with its reason; the booking stands. */
+  notCollected(returnId: string, reason: CollectionMissReason): Collection {
+    const c = this.collectionOrThrow(returnId);
+    if (c.state === 'collected') throw new CollectionDoneError(returnId);
+    if (!(COLLECTION_MISS_REASONS as readonly string[]).includes(reason)) throw new ReasonRequiredError();
+    const next: Collection = { ...c, state: 'not_collected', missedVisits: c.missedVisits + 1, lastMissReason: reason };
+    this.pickups[this.pickups.indexOf(c)] = next;
+    this.queueCollection(next, 'not_collected', { reason }, `return-collection:${this.routeId}:${returnId}:not_collected:${next.missedVisits}`);
+    return next;
   }
 
   /** The assigned stops, as the phone lists them. */
@@ -559,6 +700,14 @@ export class RouteSession {
         if (item.event.type === ROUTE_SETTLED) {
           const p = item.event.payload as { routeId: string; expectedMinor: number; collectedMinor: number; exceptionCount: number; currency: string };
           return [{ kind: 'settlement', id: p.routeId, what: p.routeId, detail: `${p.collectedMinor} of ${p.expectedMinor} ${p.currency} · ${p.exceptionCount} ${p.exceptionCount === 1 ? 'exception' : 'exceptions'}`, ...common, ...withReason }];
+        }
+        if (item.event.type === RETURN_COLLECTION_RECORDED) {
+          const p = item.event.payload as { returnId: string; orderRef: string; outcome: string; lines?: { productId: string; collectedMinor: number }[]; reason?: string };
+          const area = this.pickups.find((c) => c.returnId === p.returnId)?.area ?? p.returnId;
+          const detail = p.outcome === 'collected'
+            ? `collected ${(p.lines ?? []).filter((l) => l.collectedMinor > 0).map((l) => `${l.collectedMinor} × ${l.productId}`).join(', ')}`
+            : `not collected · ${p.reason ?? ''}`;
+          return [{ kind: 'collection', id: p.returnId, what: `${area} · ${p.returnId}`, detail, ...common, ...withReason }];
         }
         if (item.event.type === DRIVER_CASH_HANDED_OVER) {
           const p = item.event.payload as CashHandover;
