@@ -32,6 +32,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   - Each lane: unit, memory + PostgreSQL with cold restart, guardrail and browser tests passed.
   - Integration pass: 1,526 guardrail tests, 1,233 targeted unit + integration tests and 20 R4 browser tests passed.
   - The full gate on the joined branch is running.
+- **Found and fixed during the R4 gate (hard rule #3, not an R4 change):** head office kept a refused card-like payment attempt id as the relay's record-owner key. It now writes nothing for such an id, with a test that failed before the fix. The defect dated from round 9–16 (PR #762).
 - **Waiting on the owner:**
   - The grievance officer name and contact (OB-223), which blocks B23 and, through OB-234, every online order, as well as the C21 notice.
   - The return windows and the non-returnable list (OB-213).
