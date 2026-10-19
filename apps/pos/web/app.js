@@ -119,6 +119,11 @@ const WORDS = {
     notEnough: 'Not enough — the customer still owes',
     receiptsUsedUp: 'This till has used all its receipt numbers. Do not take money — tell the manager to load a new number range.',
     allSent: 'Everything on this lane has reached the cloud.',
+    // P-08: when the box has not said how many sales it holds, the count is NOT KNOWN — never a zero from this till.
+    unsentNotKnown: 'not known',
+    unsentNotKnownMsg: 'The store box has not said how many sales are waiting to be sent, so this till does not know. It shows "not known" — never 0 — until the box answers.',
+    // The bill as it prints (B13 · M31-FR-02): what the paper says, shown on the screen.
+    receiptPreview: 'The bill', receiptNotMade: 'The sale is saved, but the bill could not be made',
     noCatalogue: 'This lane has no price list loaded, so it cannot scan. Tell the manager.',
     hold: 'Hold', recall: 'Recall', held: 'Basket held',
     howPaying: 'How is the customer paying?', cash: 'Cash', card: 'Card', upi: 'UPI',
@@ -252,6 +257,9 @@ const WORDS = {
     read: 'இதைப் படிக்கவும்', notEnough: 'போதவில்லை — வாடிக்கையாளர் இன்னும் தர வேண்டியது',
     receiptsUsedUp: 'இந்த பணப்பெட்டியின் ரசீது எண்கள் முடிந்துவிட்டன. பணம் வாங்க வேண்டாம் — புதிய எண் வரம்பை ஏற்ற மேலாளரிடம் சொல்லவும்.',
     allSent: 'இந்த லேனில் உள்ள அனைத்தும் அனுப்பப்பட்டுவிட்டன.',
+    unsentNotKnown: 'தெரியவில்லை',
+    unsentNotKnownMsg: 'எத்தனை விற்பனைகள் அனுப்பக் காத்திருக்கின்றன என்று கடைப் பெட்டி சொல்லவில்லை, எனவே இந்த டில்லுக்குத் தெரியாது. பெட்டி பதிலளிக்கும் வரை 0 அல்ல — "தெரியவில்லை" என்றே காட்டும்.',
+    receiptPreview: 'பில்', receiptNotMade: 'விற்பனை சேமிக்கப்பட்டது, ஆனால் பில்லை உருவாக்க முடியவில்லை',
     noCatalogue: 'இந்த லேனில் விலைப் பட்டியல் இல்லை. மேலாளரிடம் சொல்லவும்.',
     hold: 'நிறுத்து', recall: 'திரும்பப் பெறு', held: 'கூடை நிறுத்தப்பட்டது',
     howPaying: 'வாடிக்கையாளர் எவ்வாறு பணம் தருகிறார்?', cash: 'ரொக்கம்', card: 'கார்டு', upi: 'UPI',
@@ -578,7 +586,7 @@ const SUCCESS = 'success';
 const STOP = 'stop';
 const TONE_MARK = Object.freeze({ [SUCCESS]: 'circle-check', [STOP]: 'circle-alert' });
 const toneMarks = {};
-function tell(title, message, tone = STOP) {
+function tell(title, message, tone = STOP, bill = null) {
   const kind = tone === SUCCESS ? SUCCESS : STOP;
   if (!toneMarks[kind]) toneMarks[kind] = mark(TONE_MARK[kind], 28);
   const words = document.createElement('span');
@@ -586,6 +594,11 @@ function tell(title, message, tone = STOP) {
   el('refusal-title').replaceChildren(...(toneMarks[kind] ? [toneMarks[kind]] : []), words);
   el('refusal').dataset.tone = kind;
   el('refusal-text').textContent = message;
+  // The bill, only after a sale: exactly the lines the paper prints. Any other message shows none.
+  const slip = el('refusal-receipt');
+  slip.textContent = bill ?? '';
+  slip.hidden = bill === null;
+  slip.setAttribute('aria-label', t('receiptPreview'));
   el('refusal').hidden = false;
   el('refusal-ok').textContent = t('ok');
   el('refusal-ok').focus();
@@ -844,7 +857,8 @@ function render() {
     if (line.voided) row.className = 'voided';
     row.tabIndex = 0;
     row.addEventListener('click', () => { selectedLineId = line.lineId; render(); });
-    row.append(itemCell(line), numberCell(String(line.qty), 'qty'), numberCell(inr(line.amountMinor), 'amount'));
+    // A weighed line reads in its unit ("1.234 kg", "500 g"); a count stays a count. Words only — the line keeps its integer.
+    row.append(itemCell(line), numberCell(line.qtyText ?? String(line.qty), 'qty'), numberCell(inr(line.amountMinor), 'amount'));
     return row;
   }));
   el('bill-table').hidden = lines.length === 0;
@@ -944,11 +958,20 @@ function paintBadge() {
   el('conn').dataset.tone = tone;
   setText('conn-state', state);
   setText('conn-detail', detail);
-  // The unsent count is the BOX's — the sale was saved there, and there is where it waits.
-  const unsent = box.reachable && box.status ? box.status.unsent : session.syncBadge().unsentCount;
+  // The unsent count is the BOX's — the sale was saved there, and there is where it waits. When the box has not said
+  // (not asked yet, not answering, or an answer with no count), the count is NOT KNOWN, in amber — never this till's own
+  // in-memory queue, which a reload empties and which can read 0 while the box holds sales (P-08).
+  const unsent = unsentKnown();
   setText('unsent-label', t('unsent'));
-  setText('unsent-count', String(unsent));
-  el('unsent').toggleAttribute('data-waiting', unsent > 0);
+  setText('unsent-count', unsent === null ? t('unsentNotKnown') : String(unsent));
+  el('unsent').toggleAttribute('data-waiting', unsent !== null && unsent > 0);
+  el('unsent').toggleAttribute('data-unknown', unsent === null);
+}
+
+/** How many sales the BOX says it holds unsent, or `null` when that is not known (P-08 — a "not known", never a 0). */
+function unsentKnown() {
+  const n = box.asked && box.reachable && box.status ? box.status.unsent : undefined;
+  return Number.isInteger(n) && n >= 0 ? n : null;
 }
 
 async function refreshBadge() {
@@ -1115,7 +1138,7 @@ el('tender').addEventListener('click', async () => {
     // on this till's disk (hard rule #1). There is nothing to print with before then.
     const sold = huidLines();
     const receipt = await session.tenderCash(`S-${receiptNumber}`, receiptNumber, new Date().toISOString());
-    tell(`${t('changeDue')}: ${inr(change)}`, withReceiptNotice(withHuids(receipt, sold)), SUCCESS);
+    tell(`${t('changeDue')}: ${inr(change)}`, withReceiptNotice(withHuids(receipt, sold)), SUCCESS, printedBill());
     session.newSale();
     void refreshBadge();
     selectedLineId = null;
@@ -1151,6 +1174,17 @@ function withHuids(receipt, sold) {
 }
 
 /** The receipt, with what the box last said about the numbers (running low, or no range set up) when it said anything. */
+/**
+ * B13 · M31-FR-02: the bill of the sale just committed, exactly as it prints — `@sre/receipt`'s lines from the saved
+ * record (a gold piece's "HUID: <code>" under its line). A bill that could not be made says so; the sale stays saved.
+ * The stand-in shell has no receipt renderer, so it shows none rather than a made-up one.
+ */
+function printedBill() {
+  if (typeof session.receiptLines !== 'function') return null;
+  const made = session.receiptLines();
+  return made && made.ok ? made.lines.join('\n') : `${t('receiptNotMade')}: ${made && made.why ? made.why : ''}`;
+}
+
 function withReceiptNotice(receipt) {
   const notice = session.receiptNotice ? session.receiptNotice() : undefined;
   return notice ? `${receipt}\n\n${notice}` : receipt;
@@ -1220,7 +1254,7 @@ async function takeCardOrUpi(kind, payable) {
       saleId: `S-${receiptNumber}`, receiptNumber,
       atIsoUtc: new Date().toISOString(), kind, outcome, ...(ref ? { ref } : {}),
     });
-    tell(`${t('approved')} — ${kind === 'card' ? t('card') : t('upi')}`, withReceiptNotice(withHuids(receipt, soldGold)), SUCCESS);
+    tell(`${t('approved')} — ${kind === 'card' ? t('card') : t('upi')}`, withReceiptNotice(withHuids(receipt, soldGold)), SUCCESS, printedBill());
     session.newSale();
     void refreshBadge();
     selectedLineId = null;
@@ -1296,7 +1330,7 @@ async function splitPayment(payable) {
   try {
     const soldGold = huidLines();
     const receipt = await session.tenderSplit({ saleId: `S-${receiptNumber}`, receiptNumber, atIsoUtc: new Date().toISOString(), parts });
-    tell(change > 0 ? `${t('changeDue')}: ${inr(change)}` : t('approved'), withReceiptNotice(withHuids(receipt, soldGold)), SUCCESS);
+    tell(change > 0 ? `${t('changeDue')}: ${inr(change)}` : t('approved'), withReceiptNotice(withHuids(receipt, soldGold)), SUCCESS, printedBill());
     session.newSale();
     void refreshBadge();
     selectedLineId = null;
@@ -1918,7 +1952,8 @@ el('signin').addEventListener('click', () => { void toggleSignIn(); });
 }
 
 el('unsent').addEventListener('click', () => {
-  const unsent = box.reachable && box.status ? box.status.unsent : session.syncBadge().unsentCount;
+  const unsent = unsentKnown();
+  if (unsent === null) { tell(`${t('unsent')}: ${t('unsentNotKnown')}`, t('unsentNotKnownMsg'), STOP); return; }
   tell(`${t('unsent')}: ${unsent}`, unsent === 0 ? t('allSent') : `${unsent} ${t('unsentHeld')}`, unsent === 0 ? SUCCESS : STOP);
 });
 

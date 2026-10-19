@@ -76,6 +76,12 @@
         background: var(--panel-2); font-variant-numeric: var(--numbers);
       }
       .unsent[data-waiting] .count { background: var(--warn-surface); color: var(--on-warn-surface); }
+      /* P-08: a count the box has not given is NOT KNOWN — in words, in the amber of "not known", never a 0. */
+      .unsent[data-unknown] { border-color: var(--degraded); }
+      /* The words are longer than a number, so "not known" sits under its label — the chip stays as narrow as before and
+         the strip stays one line at every desk width, in Tamil too. */
+      .unsent[data-unknown] .label { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 2px; line-height: 1.15; }
+      .unsent[data-unknown] .count { background: var(--warn-surface); color: var(--on-warn-surface); }
       header .lang { min-height: var(--tap); border-radius: var(--radius-lg); border: var(--hairline) solid var(--line-strong); background: var(--panel); font-weight: 600; display: inline-flex; align-items: center; gap: var(--space-2); white-space: nowrap; box-shadow: var(--shadow-xs); }
       header .lang:hover { background: var(--hover); }
 
@@ -101,6 +107,8 @@
       tbody tr:first-child td { border-top: 0; }
       td.qty, th.qty, td.amount, th.amount { text-align: right; }
       td.amount { font-weight: 600; }
+      /* A weighed line reads "1.234 kg" — the number and its unit stay on one line. */
+      td.qty { white-space: nowrap; }
       td.item { overflow-wrap: anywhere; }
       tbody tr { cursor: pointer; }
       tbody tr:hover td { background: var(--hover); }
@@ -209,6 +217,13 @@
         background: var(--panel); border-color: var(--panel); color: var(--danger-text); font-weight: 700;
       }
       .refusal button:focus-visible { outline-color: var(--on-danger); outline-offset: 3px; }
+      /* The bill as it prints: the paper's own fixed-width lines on a white slip, scrolling if the bill is long. */
+      .refusal .receipt {
+        grid-column: 1; justify-self: start; margin: var(--space-2) 0 0; padding: var(--space-3) var(--space-4);
+        background: var(--panel); color: var(--ink); border: var(--hairline) solid var(--line); border-radius: var(--radius-lg);
+        font: 15px/1.35 var(--mono); white-space: pre; max-width: 100%; max-height: 52dvh; overflow: auto;
+      }
+      .refusal .receipt[hidden] { display: none; }
       /* OB-238: the title carries its tone's mark beside its words — the stop mark on red, the tick on green. Good news
          (change due, approved, recorded) is the shared success pair; a stop or a refusal keeps the red above. */
       .refusal strong { display: flex; align-items: center; gap: var(--space-3); }
@@ -253,7 +268,7 @@
         <span id="conn-text"><span class="conn-state" id="conn-state">Online</span><span class="conn-detail" id="conn-detail"></span></span>
       </div>
       <!-- Tapping the unsent count lists queued sales (spec). -->
-      <button class="unsent" id="unsent" type="button"><span class="label"><span id="unsent-label">Unsent</span>: <span class="count" id="unsent-count">0</span></span></button>
+      <button class="unsent" id="unsent" type="button"><span class="label"><span class="name"><span id="unsent-label">Unsent</span>:</span> <span class="count" id="unsent-count">0</span></span></button>
       <button class="lang" id="lang" type="button" aria-label="Language">EN / த</button>
     </header>
 
@@ -355,6 +370,8 @@
     <div class="refusal" id="refusal" data-tone="stop" hidden role="alert">
       <strong id="refusal-title">Do not take payment</strong>
       <p id="refusal-text"></p>
+      <!-- B13 · M31-FR-02: after a sale, the bill exactly as it prints (from @sre/receipt) — a gold piece's HUID under its line. -->
+      <pre class="receipt" id="refusal-receipt" aria-label="The bill" hidden></pre>
       <button id="refusal-ok" type="button">I have read this</button>
     </div>
 

@@ -19,6 +19,12 @@ and **M12-FR-02** (controlled, audited reprints).
     and unit price** (`1.234 kg x 80.00`), the GST bands, the total, tenders and change.
     A long description **wraps rather than truncating**, and a **reprint is stamped
     `*** REPRINT ***` with its reason** so a copy can never be passed off as an original.
+  - A gold line prints **`HUID: <code>`** under it (B13) and a batch prints `Batch: <id>` (D-20).
+  - `pricesIncludeTax: true` — the till's shelf prices include GST (A9): the lines add to the TOTAL,
+    the GST bands say the tax inside it, and the net prints as **Taxable value**.
+  - **The till's bill goes through here** (`apps/pos/src/bill-receipt.ts`): after each sale the
+    served till shows the bill exactly as it prints — from the saved record, on the published
+    template's paper format, header, footer and version (`session.receiptLines()`).
 - **`src/escpos.ts`**
   - `encodeEscPos(lines, options)` — encodes to **ESC/POS**, the command language essentially
     every thermal printer speaks, so the lane isn't tied to one vendor (P-06). Initialise,

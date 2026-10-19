@@ -6,7 +6,7 @@
 // tested) means the bundled shell behaves exactly like the model it wraps.
 
 import { money, type CurrencyCode } from '../../../packages/contracts/src/money';
-import { normaliseUom, type Uom } from '../../../packages/contracts/src/quantity';
+import { normaliseUom, quantityLabel, type Uom } from '../../../packages/contracts/src/quantity';
 import { rate } from '../../../packages/contracts/src/rate';
 import type { Tender } from '../../../packages/tender/src/tender';
 import { tillRuleFlagsOf } from '../../../packages/restricted-sales/src/till-gate';
@@ -29,6 +29,8 @@ export interface ViewLine {
   readonly description: string;
   readonly unitPriceMinor: number;
   readonly qty: number;
+  /** `qty` worded in its unit for the screen — "1.234 kg" for 1234 g of a kg line, "500 g", a bare count for ea. Look only. */
+  readonly qtyText: string;
   /** What the line charges, in minor units (unit price × quantity as the totals price it; a weighed line by weight). */
   readonly amountMinor: number;
   readonly uom: string;
@@ -302,6 +304,7 @@ export function createPosView(
         description: l.description,
         unitPriceMinor: l.unitPrice.minor,
         qty: l.quantityMinor,
+        qtyText: quantityLabel(l.quantityMinor, l.uom),
         amountMinor: session.lineAmountMinor(l),
         uom: l.uom,
         voided: l.voided,

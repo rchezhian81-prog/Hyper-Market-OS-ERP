@@ -34,6 +34,7 @@ import type { ReturnableLine } from '../../../packages/returns/src/return-regist
 import { assessExchange, type ExchangeBalanceKind } from '../../../packages/returns/src/exchange';
 import { refundRequiresApproval, type ExchangeSettlementInput } from '../../../packages/returns/src/returns';
 import { settle, type Tender } from '../../../packages/tender/src/tender';
+import { billReceipt, type BillReceipt } from './bill-receipt';
 
 import { mountDemoBanner, type BannerDocument } from '../../../packages/ui/src/demo-banner';
 
@@ -793,6 +794,11 @@ export function bootPos(config?: {
    *  has reached this box (print with defaults, stamp nothing). Read from the box's pack, never fetched at print time. */
   readonly receiptTemplate: () => PosReceiptTemplate | null;
   /**
+   * B13 · M31-FR-02: the bill of the sale this till last committed, as it prints — through `@sre/receipt`, on the paper
+   * format and with the header/footer of the template above — or why it could not be made (the sale stays saved).
+   */
+  readonly receiptLines: () => BillReceipt;
+  /**
    * Name the person at the till in the MODEL (the sale session and the till). The screen never calls this with a typed
    * code: it calls `signInAtTill`, which calls this only with the person the store computer verified (ADR-0020). Kept for
    * the model's own tests, whose durable write is a double rather than a box.
@@ -1143,6 +1149,7 @@ export function bootPos(config?: {
   };
 
   const receiptTemplate = (): PosReceiptTemplate | null => config?.receiptTemplate ?? null;
+  const receiptLines = (): BillReceipt => billReceipt(session.lastBill(), receiptTemplate());
 
   // The cashier signs in ONCE for both surfaces — the sale and the till name the same person (SP-4b · F09).
   // D04-FR-05 · P-08: the device re-send runs only while somebody is signed in (it is defined further down).
@@ -1422,7 +1429,7 @@ export function bootPos(config?: {
   };
   const customerDisplayChannelName = (): string => CUSTOMER_DISPLAY_CHANNEL;
 
-  return Object.assign(view, { customerDisplay, customerDisplayChannelName, reportDevices, devicesSaid, deviceAdapterClock, deviceHeartbeat, till, nextReceipt, receiptsRemaining, receiptNotice, holdAtTill, heldAtTill, recallAtTill, abandonAtTill, startCardPayment, answerCardPayment, checkCardPayment, voidAtTill, priceChangeValue, priceChangeAtTill, noSaleAtTill, currentBillRef: () => session.billRef(), lookupRefund, noReceiptReturn, receiptTemplate, signIn, signOut, operator, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill, loyaltyWallet, refusedOffers: () => session.refusedOffers() });
+  return Object.assign(view, { customerDisplay, customerDisplayChannelName, reportDevices, devicesSaid, deviceAdapterClock, deviceHeartbeat, till, nextReceipt, receiptsRemaining, receiptNotice, holdAtTill, heldAtTill, recallAtTill, abandonAtTill, startCardPayment, answerCardPayment, checkCardPayment, voidAtTill, priceChangeValue, priceChangeAtTill, noSaleAtTill, currentBillRef: () => session.billRef(), lookupRefund, noReceiptReturn, receiptTemplate, receiptLines, signIn, signOut, operator, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill, loyaltyWallet, refusedOffers: () => session.refusedOffers() });
 }
 
 // Attach for the view. `app.js` uses `window.posSession` when present and falls back to its
