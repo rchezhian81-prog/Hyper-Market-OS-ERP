@@ -280,6 +280,13 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // the books and the exceptions, accept / reject / keep pending each line. Gated on the read the review route checks
   // (`finance.itc.read`). A head-office page (the box does not serve it).
   { id: 'itc-review', label: 'Input tax credit (GSTR-2B)', labelTa: 'உள்ளீட்டு வரி வரவு (GSTR-2B)', path: '/itc-review', requires: 'finance.itc.read', group: 'Finance', served: 'unserved' },
+  // R4 Lane 2 · B23 · A26 · WF-16: the online store — the shop's details every listing carries (the grievance officer
+  // "not set" until named, OB-223), each product's listing, the complaint clock, the TCS line and online returns. Gated on
+  // the read its routes check (`online.store.read`). A head-office page (the box does not serve it).
+  { id: 'online-store', label: 'Online store', labelTa: 'ஆன்லைன் கடை', path: '/online-store', requires: 'online.store.read', group: 'Customers', served: 'unserved' },
+  // R4 Lane 2 · D01-FR-06: the product content editor — app description, synonyms, versions, completeness and the image
+  // on the shop's own server (OB-215). Gated on the catalogue read its editor read checks (`catalogue.pack.read`).
+  { id: 'product-content', label: 'App content', labelTa: 'செயலி உள்ளடக்கம்', path: '/product-content', requires: 'catalogue.pack.read', group: 'Products', served: 'unserved' },
 ]);
 
 /** An item retired from the catalogue, with the reason and where its job lives now — never a silent drop. */

@@ -39,9 +39,6 @@ export function callsFor(h: () => ApiHarness, T: string): ShopCalls {
 const mrp = (minor: number) => [{ value: { minor, currency: 'INR' }, effectiveFrom: '2026-01-01' }];
 
 export async function seedOnlineShop(h: ApiHarness, T: string, c: ShopCalls): Promise<void> {
-  // The API runs on the real clock: prices start today, stock arrived an hour ago (no time-of-day trap: whole days only).
-  const today = new Date().toISOString().slice(0, 10);
-  const arrived = new Date(Date.now() - 3_600_000).toISOString();
   await h.seedOwner(T, OWNER);
   await h.enableFeature(T, 'customer_app');
   await h.provisionRole(T, MANAGER, 'store_manager');
@@ -49,7 +46,15 @@ export async function seedOnlineShop(h: ApiHarness, T: string, c: ShopCalls): Pr
   await h.provisionRole(T, CHECKER, 'store_manager');
   await h.provisionRole(T, CUSTOMER, 'customer');
   await h.provisionRole(T, OTHER_CUSTOMER, 'customer');
+  await seedOnlineCatalogue(c);
+}
+
+/** The catalogue half of the shop — products, prices, stock, the pack and the delivery fee — through any caller's routes. */
+export async function seedOnlineCatalogue(c: ShopCalls, store = STORE): Promise<void> {
   const { ok, req } = c;
+  // The API runs on the real clock: prices start today, stock arrived an hour ago (no time-of-day trap: whole days only).
+  const today = new Date().toISOString().slice(0, 10);
+  const arrived = new Date(Date.now() - 3_600_000).toISOString();
   await ok(req('POST', '/v1/catalogue/tax-classes/0401/rates/2017-07-01', { rateBps: 500 }), 'tax 0401');
   await ok(req('POST', '/v1/catalogue/tax-classes/9603/rates/2017-07-01', { rateBps: 1_800 }), 'tax 9603');
   await ok(req('POST', '/v1/catalogue/tax-classes/5208/rates/2017-07-01', { rateBps: 500 }), 'tax 5208');
@@ -66,12 +71,12 @@ export async function seedOnlineShop(h: ApiHarness, T: string, c: ShopCalls): Pr
     categories: [{ categoryId: 'textiles', name: 'Textiles', parentId: null }],
   }), 'publish SAREE');
   for (const [id, price, mrp] of [['MILK', 60_00, 70_00], ['BROOM', 150_00, 180_00], ['SAREE', 1_200_00, 1_500_00]] as const) {
-    await ok(req('POST', `/v1/prices/list/${id}/entries/e1`, { scope: 'store', scopeRef: STORE, priceMinor: price, mrpMinor: mrp, costMinor: 1, marginFloorBps: 0, currency: 'INR', effectiveFrom: today }), `price ${id}`);
+    await ok(req('POST', `/v1/prices/list/${id}/entries/e1`, { scope: 'store', scopeRef: store, priceMinor: price, mrpMinor: mrp, costMinor: 1, marginFloorBps: 0, currency: 'INR', effectiveFrom: today }), `price ${id}`);
   }
-  await ok(req('POST', '/v1/inventory/movements', { movementId: 'rx-milk', productId: 'MILK', locationId: STORE, kind: 'received', quantityMinor: 20, uom: 'ea', occurredAt: arrived, enteredBy: OWNER, batchId: 'M-01', expiry: '2099-12-31', unitCostMinor: 40_00 }), 'receive MILK');
-  await ok(req('POST', '/v1/inventory/movements', { movementId: 'rx-broom', productId: 'BROOM', locationId: STORE, kind: 'received', quantityMinor: 10, uom: 'ea', occurredAt: arrived, enteredBy: OWNER, unitCostMinor: 90_00 }), 'receive BROOM');
-  await ok(req('POST', '/v1/inventory/movements', { movementId: 'rx-saree', productId: 'SAREE', locationId: STORE, kind: 'received', quantityMinor: 3, uom: 'ea', occurredAt: arrived, enteredBy: OWNER, ownership: 'concession', ownerId: 'silks-counter' }), 'receive SAREE (concession)');
-  await ok(req('POST', '/v1/catalogue/pack', { storeId: STORE, asOf: today }), 'pack');
+  await ok(req('POST', '/v1/inventory/movements', { movementId: 'rx-milk', productId: 'MILK', locationId: store, kind: 'received', quantityMinor: 20, uom: 'ea', occurredAt: arrived, enteredBy: OWNER, batchId: 'M-01', expiry: '2099-12-31', unitCostMinor: 40_00 }), 'receive MILK');
+  await ok(req('POST', '/v1/inventory/movements', { movementId: 'rx-broom', productId: 'BROOM', locationId: store, kind: 'received', quantityMinor: 10, uom: 'ea', occurredAt: arrived, enteredBy: OWNER, unitCostMinor: 90_00 }), 'receive BROOM');
+  await ok(req('POST', '/v1/inventory/movements', { movementId: 'rx-saree', productId: 'SAREE', locationId: store, kind: 'received', quantityMinor: 3, uom: 'ea', occurredAt: arrived, enteredBy: OWNER, ownership: 'concession', ownerId: 'silks-counter' }), 'receive SAREE (concession)');
+  await ok(req('POST', '/v1/catalogue/pack', { storeId: store, asOf: today }), 'pack');
   await ok(req('POST', '/v1/serviceability/periods/2026-01-01', { radiusMetres: 10_000, deliveryFeeMinor: 40_00 }), 'delivery fee');
 }
 

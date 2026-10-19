@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE App content</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      The product content editor (R4 · D01-FR-06 · OB-74 · OB-215). A person with catalogue permission edits a product's
+      app description, Tamil name and synonyms on one page (POST /v1/catalogue/products/:id/content — each change a new
+      version); every version is listed with who made it and when, and the completeness score names what is missing
+      (GET /v1/catalogue/products/:id/app-content). An image is uploaded to the shop's own server
+      (POST /v1/catalogue/products/:id/images), checked for type and size by head office, and replaced as a new version.
+      The content reaches the customer app on the next store publish. The page decides nothing itself.
+      No prompt/confirm/alert; nothing on a timer.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap:48px; }
+      body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.5 var(--font); min-height:100dvh; display:flex; flex-direction:column; }
+      main { flex:1; padding:16px; display:grid; gap:16px; align-content:start; max-width:960px; width:100%; }
+      h2 { margin:0 0 4px; font-size:20px; } p.lead { margin:0 0 4px; color:var(--muted); font-size:15px; }
+      h3 { margin:8px 0 0; font-size:16px; color:var(--muted); font-weight:700; }
+      form.ask { display:grid; gap:10px; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); align-items:end; }
+      label { display:grid; gap:2px; font-size:14px; color:var(--muted); }
+      input, textarea { min-height:var(--tap); font:inherit; padding:0 10px; border:1px solid var(--line); border-radius:10px; background:var(--field); color:var(--ink); min-width:0; }
+      textarea { padding:8px 10px; }
+      button.act { min-height:var(--tap); font:inherit; font-weight:600; border:0; border-radius:10px; background:var(--accent); color:var(--on-accent); padding:0 16px; cursor:pointer; }
+      button.act:focus-visible, input:focus-visible, textarea:focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
+      .score { font-size:18px; font-weight:700; }
+      ul.rows { list-style:none; margin:0; padding:0; display:grid; gap:10px; }
+      li.row { background:var(--panel); border-radius:12px; padding:12px 14px; display:grid; gap:6px; overflow-wrap:anywhere; }
+      .row .facts { font-size:14px; color:var(--muted); }
+      img.pic { max-width:200px; max-height:200px; border-radius:12px; border:1px solid var(--line); }
+      p.result { margin:0; padding:12px 16px; border-radius:12px; background:var(--panel); font-weight:600; }
+      p.result.tone-error { background:var(--danger-surface); color:var(--danger-text); } p.result.tone-ok { background:var(--ok-surface); color:var(--on-ok-surface); }
+      p.state-line { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; }
+      [hidden] { display:none !important; }
+    </style>
+  </head>
+  <body>
+    <p class="stale" id="stale" hidden></p>
+    <header>
+      <h1 class="who" id="who">App content <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <main>
+      <div>
+        <h2 id="title">App content</h2>
+        <p class="lead" id="lead"></p>
+      </div>
+      <form class="ask" id="ask">
+        <label for="product"><span id="l-product">Product id</span><input id="product" type="text" required /></label>
+        <button class="act" id="show" type="submit">Show</button>
+      </form>
+      <p class="result" id="result" role="status" aria-live="polite" hidden></p>
+      <p class="state-line" id="state" hidden></p>
+      <div id="editor" hidden>
+        <p class="score" id="score" role="status" aria-live="polite"></p>
+        <p class="lead" id="missing"></p>
+        <p class="lead" id="reaches"></p>
+        <form class="ask" id="content-form">
+          <label for="c-nameTa"><span id="l-nameTa"></span><input id="c-nameTa" type="text" maxlength="120" /></label>
+          <label for="c-descriptionEn"><span id="l-descriptionEn"></span><textarea id="c-descriptionEn" maxlength="1000" rows="3"></textarea></label>
+          <label for="c-descriptionTa"><span id="l-descriptionTa"></span><textarea id="c-descriptionTa" maxlength="1000" rows="3"></textarea></label>
+          <label for="c-synonyms"><span id="l-synonyms"></span><input id="c-synonyms" type="text" /></label>
+          <label for="c-reason"><span id="l-reason"></span><input id="c-reason" type="text" maxlength="200" /></label>
+          <button class="act" id="save" type="submit">Save</button>
+        </form>
+        <h3 id="h-image"></h3>
+        <p class="lead" id="image-say"></p>
+        <div id="image-box"></div>
+        <form class="ask" id="image-form">
+          <label for="image-file"><span id="l-image"></span><input id="image-file" type="file" accept="image/jpeg,image/png,image/webp" /></label>
+          <button class="act" id="upload" type="submit">Upload</button>
+        </form>
+        <h3 id="h-history"></h3>
+        <ul class="rows" id="history" aria-label="Versions"></ul>
+      </div>
+    </main>
+    <!--SCREEN-DATA-->
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./product-content.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>
