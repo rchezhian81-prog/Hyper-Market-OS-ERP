@@ -5,7 +5,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
-## Release R4: built in four parallel lanes and joined (19 October 2026) — gate green, PR opened
+## Release R4: built in four parallel lanes and joined (19 October 2026) — merged in PR #794 (237062b4) and deployed to the demo, 19 Oct
 
 - **Owner sign-off:** R4 sentences signed (OB-227). Scope answers: OB-207 to OB-226. Lane answers: OB-228 to OB-237.
 - **Built (synthetic data; nothing bought; no provider called; no staff UAT):**
