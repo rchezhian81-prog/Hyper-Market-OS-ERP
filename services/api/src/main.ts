@@ -104,6 +104,8 @@ import { eWayBillRegisterRoutes } from '../../finance/src/e-way-bill-register';
 import { gstPortalRoutes } from '../../finance/src/gst-portal';
 import { payrollRoutes } from '../../finance/src/payroll';
 import { payRunStoreRoutes } from '../../finance/src/pay-run-store';
+import { payReleaseSwitchRoutes } from '../../finance/src/pay-release-switch'; // R4 · OB-228 — the owner's hard pay-release switch
+import { payReleaseSwitchAdapter, payReleaseSwitchedOn } from './r4-pay-release-adapters';
 import { rosterStoreRoutes } from '../../finance/src/roster-store';
 import { certStoreRoutes } from '../../finance/src/cert-store';
 import { sopStoreRoutes } from '../../finance/src/sop-store';
@@ -1734,7 +1736,8 @@ export function buildSurface(deps: {
     ...gstPortalRoutes(),
     // Payroll (priority 16) — statutory-deduction preview (PF/ESI/TN Professional Tax) on effective-dated
     // configurable rate tables; for review, commits nothing. Confidential — owner-gated.
-    ...payrollRoutes(store === undefined ? {} : { loadPayRun: payRunAdapter({ store, now }).load }),
+    // OB-228: the bank file is refused outright while the owner's pay-release switch is off (no store → off).
+    ...payrollRoutes(store === undefined ? { releaseSwitchedOn: () => false } : { loadPayRun: payRunAdapter({ store, now }).load, releaseSwitchedOn: payReleaseSwitchedOn({ store, now }) }),
     // Workforce (M25-FR-01) — roster-gap detection: the named gaps in a proposed roster (per role per shift,
     // with the hour), plus the unstaffed-critical count. Stateless what-if over the tested engine, commits
     // nothing; the durable roster/attendance store is a later increment. Manager-gated (workforce.roster.read).
@@ -1787,9 +1790,14 @@ export function buildSurface(deps: {
     // Payroll pay-run DURABLE lifecycle store (WP3 inc9) — append draft→submit→approve→lock→reverse to the
     // append-only ledger (one stream per run) so a run survives a restart; maker ≠ checker enforced at the
     // write boundary. Confidential — owner-gated. The stateless /pay-run/evaluate route stays for previews.
+    // OB-228: approve and lock are refused outright while the owner's pay-release switch is off (no store → off).
     ...payRunStoreRoutes(store === undefined ? {
-      load: () => undefined, append: () => {}, now,
-    } : payRunAdapter({ store, now })),
+      load: () => undefined, append: () => {}, now, releaseSwitchedOn: () => false,
+    } : { ...payRunAdapter({ store, now }), releaseSwitchedOn: payReleaseSwitchedOn({ store, now }) }),
+    // R4 · OB-228: the owner's pay-release switch (default OFF; his act alone, with a written reason; append-only, audited).
+    ...payReleaseSwitchRoutes(store === undefined ? {
+      current: () => undefined, record: () => { throw new Error('head office is running without its durable store; the pay-release switch cannot be recorded'); }, now,
+    } : { ...payReleaseSwitchAdapter({ store, now }), ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
     // Payroll DURABLE issued-payslip store (M25 · ESS) — HR issues a payslip per (employee, period); an employee
     // reads their OWN latest via GET /v1/hr/payroll/my-payslip, self-redacted by the tested employeeSelfView.
     // Confidential writes (payroll.statutory.read); self-service read (payroll.ess.self).

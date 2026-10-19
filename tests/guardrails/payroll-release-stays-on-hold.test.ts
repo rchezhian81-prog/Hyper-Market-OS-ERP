@@ -6,6 +6,8 @@ import { PAY_RUN_RELEASE_ACTIONS, PAYROLL_RELEASE_STEP_UP } from '../../services
 import { payrollRoutes } from '../../services/finance/src/payroll';
 import { statutoryPayRoutes } from '../../services/finance/src/statutory-pay';
 import { eprRoutes } from '../../services/compliance/src/epr-store';
+import { PAY_RELEASE_SWITCH_PERMISSION } from '../../services/finance/src/pay-release-switch';
+import { ROLE_CATALOGUE, OWNER_ROLE_ID } from '../../services/api/src/roles';
 
 /**
  * **R4 · OB-209 — pay release stays on hold.** The owner (19 Oct 2026, in writing): "Keep on hold" — R4 computes and shows
@@ -18,9 +20,9 @@ import { eprRoutes } from '../../services/compliance/src/epr-store';
  *   4. the R4 lane's pay code never reaches the release path: it imports nothing that builds a bank file or moves a pay
  *      run, writes no pay-run event, and none of its routes is a pay-run or bank-file route.
  *
- * Known limit, said here so nobody reads more into this test than it proves: a session that DOES carry a fresh MFA
- * re-authentication (the production identity provider) can still approve and lock. The hold rests on the pilot sign-in
- * carrying none and on the pages being unserved; a hard switch would be a change to the release path (owner decision).
+ *   5. OB-228 (the owner in writing, 19 Oct): a HARD pay-release switch, default OFF and the owner's act alone. Even a
+ *      session that DOES carry a fresh MFA re-authentication is refused `pay_release_switched_off` on approve, lock and
+ *      the bank file while it is off — and nothing is appended.
  */
 
 const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa209';
@@ -46,6 +48,45 @@ describe('pay release stays on hold (OB-209)', () => {
     const bank = await h.request({ method: 'POST', path: '/v1/hr/payroll/bank-file', userId: 'u-owner', tenantId: A, idempotencyKey: 'b', body: { payRunId: 'pr-r4', lines: [] }, ...PILOT });
     expect(bank.status).toBe(403);
     expect(code(bank)).toBe('reauthentication_required');
+  });
+
+  it('OB-228: with a fresh MFA-stepped-up owner session, approve, lock and the bank file are refused while the switch is off', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await h.provisionOwner(A, 'u-owner-2');
+    // The harness default sign-in carries a fresh MFA re-authentication — the step-up hold is passed.
+    const step = (userId: string, body: unknown, key: string) => h.request({ method: 'POST', path: '/v1/hr/payroll/pay-run/pr-sw/append', userId, tenantId: A, idempotencyKey: key, body });
+    const sw = (on: boolean, key: string) => h.request({ method: 'POST', path: '/v1/hr/payroll/release-switch', userId: 'u-owner', tenantId: A, idempotencyKey: key, body: { on, reason: `guardrail ${on}` } });
+    const runState = async () => ((await h.request({ method: 'GET', path: '/v1/hr/payroll/pay-run/pr-sw', userId: 'u-owner', tenantId: A })).body as { state: string }).state;
+    const bank = (key: string) => h.request({ method: 'POST', path: '/v1/hr/payroll/bank-file', userId: 'u-owner', tenantId: A, idempotencyKey: key, body: { payRunId: 'pr-sw', lines: [] } });
+    // It starts OFF.
+    expect(((await h.request({ method: 'GET', path: '/v1/hr/payroll/release-switch', userId: 'u-owner', tenantId: A })).body as { on: boolean }).on).toBe(false);
+    expect((await step('u-owner', { action: 'draft', payPeriod: '2030-06' }, 'd')).status).toBe(201);
+    expect((await step('u-owner', { action: 'submit' }, 's')).status).toBe(200);
+    const approve = await step('u-owner-2', { action: 'approve' }, 'a');
+    expect(approve.status).toBe(409);
+    expect(code(approve)).toBe('pay_release_switched_off');
+    expect(await runState()).toBe('submitted');
+    // Approve with the switch on, then off again: lock is refused, and nothing is locked.
+    expect((await sw(true, 'on1')).status).toBe(201);
+    expect((await step('u-owner-2', { action: 'approve' }, 'a2')).status).toBe(200);
+    expect((await sw(false, 'off1')).status).toBe(201);
+    const lock = await step('u-owner-2', { action: 'lock' }, 'l');
+    expect(lock.status).toBe(409);
+    expect(code(lock)).toBe('pay_release_switched_off');
+    expect(await runState()).toBe('approved');
+    // Locked with the switch on, then off again: the bank file is refused.
+    expect((await sw(true, 'on2')).status).toBe(201);
+    expect((await step('u-owner-2', { action: 'lock' }, 'l2')).status).toBe(200);
+    expect((await sw(false, 'off2')).status).toBe(201);
+    const file = await bank('b');
+    expect(file.status).toBe(409);
+    expect(code(file)).toBe('pay_release_switched_off');
+  });
+
+  it('OB-228: only the owner role holds the pay-release switch', () => {
+    const holders = ROLE_CATALOGUE.filter((r) => r.permissions.includes(PAY_RELEASE_SWITCH_PERMISSION)).map((r) => r.id);
+    expect(holders).toEqual([OWNER_ROLE_ID]);
   });
 
   it('the release steps still demand a fresh MFA re-authentication', () => {

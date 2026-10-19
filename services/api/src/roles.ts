@@ -254,6 +254,8 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'payroll.legal.read', 'payroll.legal.configure',
       'epr.register.read', 'epr.register.record', 'epr.settings.configure',
       // ── R4 Lane 1 — end
+      // R4 · OB-228: the OWNER alone switches pay release on or off, with a written reason. No other role holds this.
+      'payroll.release.switch',
       // ── R4 Lane 3 (customer insight, offers and demand) — begin
       // D-22: draft a batch of personal offers, and APPROVE (or reject) a batch — only a person issues an offer (P-05).
       'loyalty.offer.draft', 'loyalty.offer.approve',

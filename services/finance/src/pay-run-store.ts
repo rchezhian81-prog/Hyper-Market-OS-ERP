@@ -22,6 +22,7 @@
 
 import type { ReauthRequirement, Route } from '../../kernel/src/index';
 import { apiError, notFound, requireActorIsCaller, requireStepUp } from '../../kernel/src/index';
+import { requirePayReleaseOn, type PayReleaseSwitchedOn } from './pay-release-switch';
 import {
   evaluatePayRunTransition,
   type PayRunAggregate, type PayRunEvent, type PayRunAction,
@@ -32,7 +33,12 @@ export interface PayRunStoreDeps {
   readonly load: (tenantId: string, payRunId: string) => Promise<PayRunAggregate | undefined> | PayRunAggregate | undefined;
   readonly append: (tenantId: string, payRunId: string, event: PayRunEvent) => Promise<void> | void;
   readonly now: () => string;
+  /** OB-228: whether the owner has switched pay release ON. Absent → OFF (approve and lock refused). */
+  readonly releaseSwitchedOn?: PayReleaseSwitchedOn;
 }
+
+/** The pay-run steps the owner's pay-release switch holds (OB-228): approve and lock. */
+export const PAY_RUN_SWITCHED_ACTIONS: readonly PayRunAction[] = ['approve', 'lock'];
 
 // 'draft' bootstraps a run; the rest are the engine's transition actions.
 const ACTIONS: readonly (PayRunAction | 'draft')[] = ['draft', 'submit', 'approve', 'reject', 'lock', 'reverse'];
@@ -92,6 +98,11 @@ export function payRunStoreRoutes(deps: PayRunStoreDeps): readonly Route[] {
         // written. Maker ≠ checker below still applies on top (SEC-03, §28).
         if (PAY_RUN_RELEASE_ACTIONS.includes(action as PayRunAction)) {
           requireStepUp(ctx, PAYROLL_RELEASE_STEP_UP, Date.parse(deps.now()), `A pay-run '${String(action)}' releases or undoes pay.`);
+        }
+        // OB-228: and approve / lock are refused outright while the owner's pay-release switch is off — even with a fresh
+        // MFA sign-in. Checked before the stored state is read or anything is written.
+        if (PAY_RUN_SWITCHED_ACTIONS.includes(action as PayRunAction)) {
+          await requirePayReleaseOn(deps.releaseSwitchedOn, ctx.tenantId, `A pay-run '${String(action)}'`);
         }
         const current = await deps.load(ctx.tenantId, payRunId);
         const decision = evaluatePayRunTransition({

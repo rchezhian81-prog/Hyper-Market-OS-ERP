@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
-import { recordedPayRun } from '../support/pay-run';
+import { recordedPayRun, switchPayReleaseOn } from '../support/pay-run';
 
 /**
  * **API-tier step-up for payroll release and bulk product publish (Stage E slice 1 · SEC-03 · §28 · closes the
@@ -47,6 +47,7 @@ describe('payroll release steps need a fresh MFA re-auth at the write boundary',
     const h = apiHarness();
     await h.seedOwner(A, OWNER);
     await h.provisionOwner(A, CHECKER);
+    await switchPayReleaseOn(h, A, OWNER); // OB-228: the owner's switch is on, so the release steps reach the step-up
     expect((await append(h, 'pr1', { action: 'draft', actor: 'maker', payPeriod: '2026-08' }, 'a1', PWD_ONLY)).status).toBe(201);
     expect((await append(h, 'pr1', { action: 'submit', actor: 'maker' }, 'a2', PWD_ONLY)).status).toBe(200);
 
@@ -68,6 +69,7 @@ describe('payroll release steps need a fresh MFA re-auth at the write boundary',
     const h = apiHarness();
     await h.seedOwner(A, OWNER);
     await h.provisionOwner(A, CHECKER);
+    await switchPayReleaseOn(h, A, OWNER); // OB-228: the owner's switch is on, so the release steps reach the step-up
     await append(h, 'pr2', { action: 'draft', actor: 'maker', payPeriod: '2026-08' }, 'b1');
     await append(h, 'pr2', { action: 'submit', actor: 'maker' }, 'b2');
     await append(h, 'pr2', { action: 'approve', actor: 'checker' }, 'b3');
@@ -92,6 +94,7 @@ describe('payroll release steps need a fresh MFA re-auth at the write boundary',
     const h = apiHarness();
     await h.seedOwner(A, OWNER);
     await h.provisionOwner(A, CHECKER);
+    await switchPayReleaseOn(h, A, OWNER); // OB-228: the owner's switch is on, so the release steps reach the step-up
     await append(h, 'pr4', { action: 'draft', actor: 'maker', payPeriod: '2026-08' }, 'd1');
     await append(h, 'pr4', { action: 'submit', actor: 'maker' }, 'd2');
     expect((await append(h, 'pr4', { action: 'approve', actor: 'maker' }, 'd3', PWD_ONLY)).status).toBe(403); // step-up first
@@ -104,6 +107,7 @@ describe('payroll release steps need a fresh MFA re-auth at the write boundary',
     const h = apiHarness();
     await h.seedOwner(A, OWNER);
     await h.provisionOwner(A, CHECKER);
+    await switchPayReleaseOn(h, A, OWNER); // OB-228: the owner's switch is on, so the release steps reach the step-up
     // The file reads the run head office RECORDED (2b-vi-b-2): submitted by the owner, approved and locked by the checker.
     await recordedPayRun(h, A, 'pr1', { maker: OWNER, checker: CHECKER });
     const refused = await bankFile(h, 'f1', NONE);
@@ -119,6 +123,7 @@ describe('payroll release steps need a fresh MFA re-auth at the write boundary',
     const h = apiHarness();
     await h.seedOwner(A, OWNER);
     await h.provisionOwner(A, CHECKER);
+    await switchPayReleaseOn(h, A, OWNER); // OB-228: the owner's switch is on, so the release steps reach the step-up
     await append(h, 'pr5', { action: 'draft', actor: 'maker', payPeriod: '2026-08' }, 'e1');
     await append(h, 'pr5', { action: 'submit', actor: 'maker' }, 'e2');
     // The checker's OWN genuinely signed token, but with no MFA behind it.

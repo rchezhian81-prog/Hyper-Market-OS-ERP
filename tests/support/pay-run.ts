@@ -4,6 +4,15 @@
 
 import type { ApiHarness } from './api-harness';
 
+/**
+ * OB-228: the owner switches pay release ON (with a written reason) — approve, lock and the bank file are refused
+ * outright until he does. `owner` must hold the owner role.
+ */
+export async function switchPayReleaseOn(h: ApiHarness, tenantId: string, owner: string, on = true): Promise<void> {
+  const res = await h.request({ method: 'POST', path: '/v1/hr/payroll/release-switch', userId: owner, tenantId, idempotencyKey: `release-${on}-${Math.random()}`, body: { on, reason: `test: pay release ${on ? 'on' : 'off'} (synthetic)` } });
+  if (res.status !== 201) throw new Error(`switching pay release ${on ? 'on' : 'off'} refused: ${res.status} ${JSON.stringify(res.body)}`);
+}
+
 export type PayRunStage = 'drafted' | 'submitted' | 'approved' | 'locked';
 
 /** Record pay run `payRunId` up to `stage`, maker `maker`, checker `checker`; fails loudly when a step is refused. */
@@ -24,6 +33,7 @@ export async function recordedPayRun(
   if (stage === 'drafted') return;
   await step(opts.maker, { action: 'submit' }, 'submit');
   if (stage === 'submitted') return;
+  await switchPayReleaseOn(h, tenantId, opts.checker); // OB-228: the owner's switch first (the checker is an owner)
   await step(opts.checker, { action: 'approve' }, 'approve');
   if (stage === 'approved') return;
   await step(opts.checker, { action: 'lock' }, 'lock');
