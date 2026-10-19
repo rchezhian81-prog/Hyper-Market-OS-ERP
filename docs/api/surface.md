@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1149 | 698 | 698 | 89 | 339 |
+| 13 | 1204 | 725 | 725 | 109 | 349 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -913,6 +913,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/hr/payroll/payslips/:employeeId` | `payroll.statutory.read` | core | — |
 | POST | `/v1/hr/payroll/payslips/:employeeId/:period` | `payroll.statutory.read` | core | yes |
 | POST | `/v1/hr/payroll/professional-tax-tn` | `payroll.statutory.read` | core | yes |
+| GET | `/v1/hr/payroll/release-switch` | `payroll.statutory.read` | core | — |
+| POST | `/v1/hr/payroll/release-switch` | `payroll.release.switch` | core | yes |
 | POST | `/v1/hr/payroll/settlement` | `payroll.statutory.read` | core | yes |
 | GET | `/v1/hr/payroll/statutory-check/:period` | `payroll.statutory.read` | core | — |
 | POST | `/v1/hr/payroll/statutory-deductions` | `payroll.statutory.read` | core | yes |
