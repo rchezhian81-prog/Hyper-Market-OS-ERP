@@ -283,6 +283,7 @@ Status legend: **Accepted** · **Open — blocking** (holds coding / a gate) ·
 | OB-235 | **D-21 vs the pre-R4 automatic case on a material till shortage.** | Keep it automatic, and mark the case "opened by rule" on the Investigations page so no person is seen as accusing anyone. | **ACCEPTED — "Auto, marked 'by rule'" (owner, 19 Oct 2026, in writing).** |
 | OB-236 | **D-13 shelf-photo size limit.** | Keep 700 KB now (the existing ledger cap); raise it later with the shop's own image store (OB-215). | **ACCEPTED — "Keep 700 KB now" (owner, 19 Oct 2026, in writing).** |
 | OB-237 | **D-10: typed delivery figures are refused (410).** | Accept, as the signed sentence requires; old typed records stay on file, unread. | **ACCEPTED — "No, accept the change" (owner, 19 Oct 2026, in writing).** |
+| OB-238 | **OB-205 till polish: every till message banner is red, even good news ("Change due", "Approved — Card", "Refund recorded").** A — green for completed sales, refunds and recorded cash; red only for stops; B — keep all red. | Build A (look only; the words and what each message means are unchanged). | **ACCEPTED — A, "Green for good news" (owner, 19 Oct 2026, in writing).** |
 
 ## AI-assisted development governance — AID-01 to AID-10 (roadmap §18)
 
