@@ -303,6 +303,9 @@ import {
 } from './store-ops-session';
 // R3 Lane 4 · D-9: the Staff schedule page (labour-demand forecast, draft roster a manager commits, actuals).
 import { createScheduleSession, scheduleWords, scheduleOutcomeWords, scheduleRupees, type ScheduleSession } from './schedule-session';
+// ── R4 Lane 4 (supply, pricing and loss prevention) — begin
+import { createScorecardSession, scorecardWords, scorecardOutcomeWords, ratingWords as scorecardRatingWords, SCORECARD_FIGURES, type ScorecardSession } from './supplier-scorecard-session';
+// ── R4 Lane 4 — end
 import {
   createStoreComputersSession, wordsFor as storeComputersWords, outcomeWords as storeComputersOutcomeWords, summarise as storeComputersSummary,
   requestWords as storeComputersRequestWords, findingKindWords as storeComputersFindingWords, type StoreComputersSession,
@@ -4886,6 +4889,11 @@ interface ManagerWindow {
   /** R3 D-9: the Staff schedule page — who is looking; head office answers the rest. */
   scheduleData?: ViewerIdentity;
   schedule?: { readonly session: ScheduleSession; readonly words: typeof scheduleWords; readonly outcomeWords: typeof scheduleOutcomeWords; readonly rupees: typeof scheduleRupees };
+  // ── R4 Lane 4 — begin
+  /** R4 D-10: the Supplier scorecard page — who is looking; head office answers the rest. */
+  supplierScorecardData?: ViewerIdentity;
+  supplierScorecard?: { readonly session: ScorecardSession; readonly words: typeof scorecardWords; readonly outcomeWords: typeof scorecardOutcomeWords; readonly ratingWords: typeof scorecardRatingWords; readonly figures: typeof SCORECARD_FIGURES };
+  // ── R4 Lane 4 — end
   substitutionExceptionInboxData?: SubstitutionExceptionInboxData;
   substitutionExceptionInboxSession?: SubExceptionInboxSession;
   /** The shell reads the live exceptions worklist through this and re-presents it — a GET read, never a write. */
@@ -6603,4 +6611,9 @@ if (browserWindow !== undefined) {
   // and the draft rosters nobody until a manager commits it (P-05).
   browserWindow.scheduleData = viewerIdentity(browserWindow.scheduleData);
   browserWindow.schedule = { session: createScheduleSession({ viewer: browserWindow.scheduleData }), words: scheduleWords, outcomeWords: scheduleOutcomeWords, rupees: scheduleRupees };
+  // ── R4 Lane 4 — begin
+  // R4 D-10: the Supplier scorecard page — a read of figures built from the registers; nothing is typed, nothing written.
+  browserWindow.supplierScorecardData = viewerIdentity(browserWindow.supplierScorecardData);
+  browserWindow.supplierScorecard = { session: createScorecardSession({ viewer: browserWindow.supplierScorecardData }), words: scorecardWords, outcomeWords: scorecardOutcomeWords, ratingWords: scorecardRatingWords, figures: SCORECARD_FIGURES };
+  // ── R4 Lane 4 — end
 }

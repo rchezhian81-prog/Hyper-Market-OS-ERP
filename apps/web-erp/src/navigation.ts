@@ -96,6 +96,9 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // needs `purchase.order.propose`, which the route enforces.
   { id: 'buying', label: 'Buying', labelTa: 'வாங்குதல்', path: '/buying/', requires: 'purchase.commitment.read', group: 'Purchase' },
   { id: 'suppliers', label: 'Suppliers', labelTa: 'விநியோகஸ்தர்கள்', path: '/suppliers', requires: 'supplier.view', group: 'Purchase' },
+  // R4 Lane 4 · D-10: a supplier's scorecard built from its orders, receipts and matched invoices (nothing typed). Gated on
+  // the read the scorecard route checks (`purchase.commitment.read`). A head-office page (the box does not serve it).
+  { id: 'supplier-scorecard', label: 'Supplier scorecard', labelTa: 'விநியோகஸ்தர் மதிப்பெண் அட்டை', path: '/supplier-scorecard', requires: 'purchase.commitment.read', group: 'Purchase', served: 'unserved' },
   // Round 12 (D03-FR-02 · WF-05): supplier bills handed in as a GST e-invoice or a scan, confirmed by a person, then checked
   // against the order — a head-office page over `/v1/purchase/invoice-documents/*` (the box does not serve it). Gated on the
   // permission those routes check (`purchase.invoice.capture`).

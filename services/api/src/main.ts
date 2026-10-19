@@ -328,6 +328,8 @@ import type { DependencyProbe } from '../../platform/src/index';
 import { SandboxRecurringBillingProvider, type Plan as BillingPlan } from '../../../packages/platform/src/index';
 import type { EventStore } from '../../../packages/persistence/src/event-store';
 import { r3GstRoutes, eInvoiceReportingGuardFor, gstTimeBarSweep } from './r3-gst-adapters';
+// R4 Lane 4 (supply, pricing and loss prevention): D-10 · D-18 · D-21 · D-13 (r4-supply-lp-adapters).
+import { r4SupplyLpRoutes, supplierFactsFor } from './r4-supply-lp-adapters';
 import { alsoEachPassOf } from './ops-alert-sweeps'; // R3 lane 1 — GST liability and returns
 import { itcPortForStore } from './r3-itc-bridge'; // R3 seam — GSTR-3B Table 4 reads the A17 reconciliation
 
@@ -881,7 +883,7 @@ export function buildSurface(deps: {
     ...supplierScorecardRoutes(store === undefined ? {
       receipts: empty([]), contractsFor: empty([]), allContracts: empty([]),
       recordReceipt: () => {}, recordContract: () => {}, now,
-    } : { ...supplierScorecardAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }) }),
+    } : { ...supplierScorecardAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }), facts: supplierFactsFor({ store, now }) /* R4 D-10 */ }),
     // Supplier rebates + schemes (M06-FR-03 · M23) — the money earned and not yet claimed.
     ...rebateRoutes(store === undefined ? {
       scheme: empty(undefined), schemes: empty([]), accruals: empty([]),
@@ -1720,6 +1722,7 @@ export function buildSurface(deps: {
     } : eWayBillAdapter({ store, now })),
     // R3 lane 2 (A17 ITC via GSTR-2B + IMS · A24 TDS · C14 payment disputes · C5 nomination): r3-tax-pay-adapters.
     ...r3TaxPayRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
+    ...r4SupplyLpRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // R4 Lane 4
     // GST government-portal switch — the feature flag + kill switch keeping LIVE e-invoice/e-way-bill portal
     // calls OFF by default and killable; the gate a deployment consults before the real connector. Sandbox
     // routes are exempt.

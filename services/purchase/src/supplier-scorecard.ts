@@ -1,45 +1,57 @@
 // API-03 Supplier scorecards, contracts & the numbers that contradict the relationship (M06-FR-03 ·
-// D03-FR-03). Buyers judge suppliers on the relationship; the numbers usually say something different,
+// D03-FR-03 · D-10). Buyers judge suppliers on the relationship; the numbers usually say something different,
 // and the gap is expensive — a supplier who ships 82% of what you order is not 5% cheaper, they are the
-// reason the shelf is empty on a Saturday. This is the cloud surface that turns recorded delivery facts
-// into an objective, weighted scorecard, and surfaces contracts about to expire before an order is
-// placed on no terms at all.
+// reason the shelf is empty on a Saturday.
 //
-//   • a delivery OUTCOME is recorded per PO — ordered/received/rejected quantity, the ordered and
-//     received dates, agreed vs invoiced value — as a first-class fact (never an opinion). The scorecard
-//     runs the tested `scoreSupplier`: fill rate, on-time (against the contracted lead time), lead-time
-//     RELIABILITY (the spread, not the mean — a reliable seven days beats an average four that is
-//     sometimes eleven), price adherence and quality, weighted into one overall, worst signal named
-//     first in plain English. A score with no evidence reports `not_rated`, never a flattering default;
+//   • D-10 (R4, OB-227): the scorecard is BUILT from the supplier's own purchase orders, the goods receipts against
+//     them and the invoices the three-way match checked — never from a typed figure. It shows fill rate, on time in
+//     full (the share of order lines delivered complete by the agreed date), lead-time reliability, invoice accuracy
+//     (invoiced against the agreed price) and rejection rate, through the tested `deriveSupplierScorecard`. A supplier
+//     with no delivery in the period reads `not_rated`, never a score. A corrected receipt replaces its figure (each
+//     receipt at its latest state; a later disposition of a quarantined line replaces the dock's first figure) and is
+//     never counted twice. The old typed delivery-outcome door answers 410 by name.
 //   • a supplier CONTRACT is recorded (agreed lead time, term, approver); `reviewContracts` surfaces the
 //     expiring / expired / UNAPPROVED ones worst-first — an expired contract means every order since has
-//     been placed on no agreed terms, and an unapproved one has no §28 sign-off on the terms.
+//     been placed on no agreed terms, and an unapproved one has no §28 sign-off on the terms. The contract's lead time
+//     is the agreed date on-time-in-full is measured against.
 //
 // The rules are the tested engine in `@sre/purchasing` (`services-run-on-their-tested-engine`); this file
-// is the persistence + HTTP skin. Recording is gated `purchase.performance.record` /
-// `purchase.contract.manage`; reads are `purchase.commitment.read`. Auto-deriving the receipt facts from
-// the PO + GRN + three-way-match join (unit-reconciled) and per-tenant scorecard weights are follow-ons.
+// is the HTTP skin. Recording a contract is gated `purchase.contract.manage`; reads are `purchase.commitment.read`.
 
 import type { Route } from '../../kernel/src/index';
 import { actionDetails, approvalNamedIn, type ApprovalPort } from '../../identity/src/approval-requests';
 import { apiError, notFound } from '../../kernel/src/index';
 import {
-  scoreSupplier, reviewContracts,
+  reviewContracts, deriveSupplierScorecard,
   type ReceiptFact, type SupplierContract, type ScorecardWeights,
+  type ScorecardOrder, type ScorecardReceipt, type ScorecardMatchedInvoice,
 } from '../../../packages/purchasing/src/index';
-import { isCurrencyCode, type Money } from '../../../packages/contracts/src/money';
+
+/** D-10: what the scorecard is built from — the registers, never a typed figure. */
+export interface SupplierFacts {
+  readonly orders: readonly ScorecardOrder[];
+  readonly receipts: readonly ScorecardReceipt[];
+  readonly invoices: readonly ScorecardMatchedInvoice[];
+  /** The shop's own today (its days are the shop's calendar, OB-198) — the default end of the period. */
+  readonly today?: string;
+}
 
 export interface SupplierScorecardDeps {
   /** Head office's maker-checker engine (ADR-0024): a contract's approver gave it in their own session. Optional on a
    *  bare stub (then every approval is unknown, and a contract records unapproved); the running system provides it. */
   readonly approvals?: ApprovalPort;
-  /** Every recorded delivery outcome for this supplier (latest per PO). */
+  /**
+   * D-10 (R4): the supplier's own purchase orders, goods receipts (each at its latest state) and matched invoices — what
+   * the scorecard is built from. Absent on a bare stub: every figure then reads `not_rated` (no delivery known).
+   */
+  readonly facts?: (tenantId: string, supplierId: string) => Promise<SupplierFacts>;
+  /** The RETIRED typed delivery-outcome register (before D-10). Read by no route; kept so its history stays readable. */
   readonly receipts: (tenantId: string, supplierId: string) => Promise<readonly ReceiptFact[]> | readonly ReceiptFact[];
   /** This supplier's contracts (latest per contract id) — to pick the one to score against. */
   readonly contractsFor: (tenantId: string, supplierId: string) => Promise<readonly SupplierContract[]> | readonly SupplierContract[];
   /** Every contract — the expiry/approval review surface. */
   readonly allContracts: (tenantId: string) => Promise<readonly SupplierContract[]> | readonly SupplierContract[];
-  /** Record a delivery outcome. Idempotent on the (supplier, PO) pair. */
+  /** The retired typed register's writer (before D-10). No route calls it. */
   readonly recordReceipt: (tenantId: string, fact: ReceiptFact, key: string) => Promise<void> | void;
   /** Record a contract. Latest per contract id. */
   readonly recordContract: (tenantId: string, contract: SupplierContract, key: string) => Promise<void> | void;
@@ -47,11 +59,8 @@ export interface SupplierScorecardDeps {
 }
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
-const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
 const isDate = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(`${v}T00:00:00Z`));
 const isQty = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
-const isMoney = (v: unknown): v is Money =>
-  isObj(v) && typeof v['minor'] === 'number' && Number.isSafeInteger(v['minor']) && typeof v['currency'] === 'string' && isCurrencyCode(v['currency']);
 
 /** The one contract to score a supplier against: the one active on `onDate`, else the latest by term end. */
 function pickContract(contracts: readonly SupplierContract[], onDate: string): SupplierContract | undefined {
@@ -63,57 +72,18 @@ function pickContract(contracts: readonly SupplierContract[], onDate: string): S
 export function supplierScorecardRoutes(deps: SupplierScorecardDeps): readonly Route[] {
   return [
     {
-      // Record a delivery outcome for scoring. Body: { orderedOn, receivedOn, orderedQtyMinor,
-      // receivedQtyMinor, rejectedQtyMinor?, agreedValue{minor,currency}, invoicedValue{minor,currency} }.
-      // Idempotent on the (supplier, PO) pair — a re-record supersedes rather than double-counting.
+      // D-10 (R4, OB-227): RETIRED. A delivery outcome is no longer typed in — the scorecard is built from the supplier's
+      // own purchase orders, goods receipts and matched invoices ("with no typed figures"). The path answers 410 by name
+      // so an old screen or script learns why, and nothing it sends is saved.
       api: 'API-03', method: 'POST', path: '/v1/purchase/suppliers/:supplierId/receipts/:poId',
       permission: 'purchase.performance.record', idempotent: true,
-      handler: async (ctx) => {
-        const supplierId = (ctx.params['supplierId'] ?? '').trim();
-        const poId = (ctx.params['poId'] ?? '').trim();
-        const b = (ctx.body ?? {}) as Record<string, unknown>;
-        const rejected = b['rejectedQtyMinor'];
-        if (supplierId === '' || poId === '' || !isDate(b['orderedOn']) || !isDate(b['receivedOn'])
-          || !isQty(b['orderedQtyMinor']) || !isQty(b['receivedQtyMinor'])
-          || (rejected !== undefined && !isQty(rejected))
-          || !isMoney(b['agreedValue']) || !isMoney(b['invoicedValue'])) {
-          throw apiError(400, {
-            code: 'not_readable_as_a_delivery_outcome',
-            whatHappened: 'A delivery outcome needs supplierId + poId in the path and { orderedOn, receivedOn (YYYY-MM-DD), orderedQtyMinor, receivedQtyMinor (whole, ≥0), optional rejectedQtyMinor, agreedValue { minor, currency }, invoicedValue { minor, currency } } in the body.',
-            wasItSaved: 'not_saved',
-            nextSafeAction: 'Send the ordered/received dates and quantities and the agreed vs invoiced value from the order and its match.',
-          });
-        }
-        if (b['receivedOn'] < b['orderedOn']) {
-          throw apiError(422, {
-            code: 'received_before_ordered',
-            whatHappened: `The delivery date (${b['receivedOn']}) is before the order date (${b['orderedOn']}) — a lead time cannot be negative.`,
-            wasItSaved: 'not_saved',
-            nextSafeAction: 'Correct the dates and record again. Nothing was saved.',
-          });
-        }
-        const agreed = b['agreedValue'] as Money;
-        const invoiced = b['invoicedValue'] as Money;
-        if (agreed.currency !== invoiced.currency) {
-          throw apiError(422, {
-            code: 'value_currency_mismatch',
-            whatHappened: `The agreed value (${agreed.currency}) and the invoiced value (${invoiced.currency}) must be in the same currency to compare.`,
-            wasItSaved: 'not_saved',
-            nextSafeAction: 'Send both values in one currency and record again.',
-          });
-        }
-        const fact: ReceiptFact = {
-          poId, supplierId,
-          orderedOn: b['orderedOn'] as string,
-          receivedOn: b['receivedOn'] as string,
-          orderedQtyMinor: b['orderedQtyMinor'] as number,
-          receivedQtyMinor: b['receivedQtyMinor'] as number,
-          ...(rejected !== undefined ? { rejectedQtyMinor: rejected as number } : {}),
-          agreedValue: { minor: agreed.minor, currency: agreed.currency },
-          invoicedValue: { minor: invoiced.minor, currency: invoiced.currency },
-        };
-        await deps.recordReceipt(ctx.tenantId, fact, ctx.idempotencyKey ?? `${supplierId}:${poId}`);
-        return { status: 201, body: { receipt: fact } };
+      handler: async () => {
+        throw apiError(410, {
+          code: 'typed_delivery_outcome_retired',
+          whatHappened: 'A supplier scorecard is built from the purchase orders, the goods receipts and the matched invoices themselves (D-10). A typed delivery outcome is no longer accepted.',
+          wasItSaved: 'not_saved',
+          nextSafeAction: 'Receive the delivery on the goods-receipt page and match its invoice; the scorecard follows from them.',
+        });
       },
     },
     {
@@ -165,20 +135,32 @@ export function supplierScorecardRoutes(deps: SupplierScorecardDeps): readonly R
       },
     },
     {
-      // A supplier's scorecard, from the recorded delivery facts + its active contract. `not_rated`
-      // where there is no evidence, never a flattering default (P-08).
+      // D-10 (R4): a supplier's scorecard BUILT from its own purchase orders, goods receipts and matched invoices — fill
+      // rate, on time in full, lead-time reliability, invoice accuracy and rejection rate. `?from=&to=` (YYYY-MM-DD) is the
+      // period; the trailing 90 days by default. `not_rated` where there is no delivery, never a flattering default (P-08).
       api: 'API-03', method: 'GET', path: '/v1/purchase/suppliers/:supplierId/scorecard',
       permission: 'purchase.commitment.read',
       handler: async (ctx) => {
         const supplierId = (ctx.params['supplierId'] ?? '').trim();
         if (supplierId === '') throw notFound('supplier (none named)');
-        const [receipts, contracts] = await Promise.all([
-          Promise.resolve(deps.receipts(ctx.tenantId, supplierId)),
-          Promise.resolve(deps.contractsFor(ctx.tenantId, supplierId)),
-        ]);
-        const contract = pickContract(contracts, deps.now().slice(0, 10));
-        const scorecard = scoreSupplier({ supplierId, receipts, ...(contract !== undefined ? { contract } : {}) });
-        return { status: 200, body: { scorecard } };
+        const facts: SupplierFacts = deps.facts === undefined ? { orders: [], receipts: [], invoices: [] } : await deps.facts(ctx.tenantId, supplierId);
+        const today = facts.today ?? deps.now().slice(0, 10);
+        const to = ctx.query['to'] ?? today;
+        const from = ctx.query['from'] ?? (isDate(to) ? new Date(Date.parse(`${to}T00:00:00Z`) - 89 * 86_400_000).toISOString().slice(0, 10) : '');
+        if (!isDate(from) || !isDate(to) || from > to) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_period',
+            whatHappened: 'The scorecard period needs ?from= and ?to= as YYYY-MM-DD dates, with from on or before to.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Correct the dates. Nothing was changed; this only reads.',
+          });
+        }
+        const contract = pickContract(await deps.contractsFor(ctx.tenantId, supplierId), today);
+        const scorecard = deriveSupplierScorecard({
+          supplierId, from, to, orders: facts.orders, receipts: facts.receipts, invoices: facts.invoices,
+          ...(contract === undefined ? {} : { agreedLeadTimeDays: contract.agreedLeadTimeDays }),
+        });
+        return { status: 200, body: { scorecard, contractId: contract?.contractId ?? null, typedFigures: false } };
       },
     },
     {

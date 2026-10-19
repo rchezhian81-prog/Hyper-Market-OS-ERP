@@ -6,4 +6,5 @@
 export * from './purchasing';
 export * from './three-way-match';
 export * from './supplier-performance';
+export * from './supplier-scorecard-derived'; // D-10 (R4)
 export * from './rfq';
