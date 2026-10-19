@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Supplier scorecard</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Supplier scorecard (R4 D-10 · OB-227). A THIN CLIENT over head office's route GET /v1/purchase/suppliers/:id/scorecard:
+      fill rate, on time in full, lead-time reliability, invoice accuracy and rejection rate, each BUILT from the supplier's own
+      purchase orders, goods receipts and matched invoices — nothing typed in. A figure head office cannot rate is shown as
+      "Not rated" with its reason, never a number. Its session is the tested model in apps/web-erp/src/supplier-scorecard-
+      session.ts. A new page beside Suppliers (whose look the UI lane owns). No prompt/confirm/alert; nothing written.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      input { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; }
+      button:focus-visible, input:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+      .panel { border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--bg); display: grid; gap: 4px; border-left: 6px solid var(--idle); }
+      .panel.tone-ok { border-left-color: var(--ok); } .panel.tone-degraded { border-left-color: var(--degraded); }
+      .panel .k { color: var(--muted); font-size: 14px; font-weight: 600; } .panel .v { font-size: 22px; font-weight: 700; overflow-wrap: anywhere; }
+      .panel .hint { color: var(--muted); font-size: 13px; }
+      .panel[data-rated="false"] .v { font-size: 15px; font-weight: 600; }
+      .status { font-size: 14px; min-height: 20px; margin: 0; } .status.err { color: var(--danger-text); }
+      .nobody { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
+      .muted { color: var(--muted); font-size: 14px; margin: 0; }
+      .form-row { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); align-items: end; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Supplier scorecard</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section aria-labelledby="page-h">
+        <h2 id="page-h">Supplier scorecard</h2>
+        <p class="muted" id="lead"></p>
+        <form class="form-row" id="ask">
+          <label for="supplier"><span id="l-supplier">Supplier code</span><input id="supplier" autocomplete="off" /></label>
+          <label for="from"><span id="l-from">From</span><input id="from" type="date" /></label>
+          <label for="to"><span id="l-to">To</span><input id="to" type="date" /></label>
+          <button id="show" type="submit">Show the scorecard</button>
+        </form>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+      <section aria-labelledby="card-h" id="card-section" hidden>
+        <h3 id="card-h"></h3>
+        <div class="panels" id="figures"></div>
+        <p class="muted" id="counts"></p>
+        <p class="muted" id="lead-time"></p>
+        <p class="muted" id="nothing" hidden></p>
+        <p id="summary"></p>
+        <p class="muted" id="sources"></p>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./supplier-scorecard.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

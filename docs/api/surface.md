@@ -140,6 +140,9 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/prices/channel-pricing` | `catalogue.pack.read` | core | — |
 | POST | `/v1/prices/channel-pricing/requests/:requestId` | `price.change.propose` | core | yes |
 | POST | `/v1/prices/channel-pricing/requests/:requestId/approve` | `price.change.approve` | core | yes |
+| GET | `/v1/prices/competitor-drafts` | `price.change.propose` | core | — |
+| GET | `/v1/prices/competitor-rule` | `price.change.propose` | core | — |
+| POST | `/v1/prices/competitor-rule` | `price.change.approve` | core | yes |
 | POST | `/v1/prices/list/:productId/entries/:entryId` | `price.change.propose` | core | yes |
 | GET | `/v1/prices/list/:productId/history` | `catalogue.pack.read` | core | — |
 | GET | `/v1/prices/list/:productId/resolve` | `catalogue.pack.read` | core | — |
@@ -344,10 +347,14 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/merchandising/display-contracts/:contractId` | `merchandising.display.manage` | core | yes |
 | POST | `/v1/merchandising/display-contracts/review` | `merchandising.space.read` | core | yes |
 | POST | `/v1/merchandising/planogram-compliance` | `planogram.compliance.read` | core | yes |
+| GET | `/v1/merchandising/planogram-compliance/bays` | `planogram.compliance.read` | core | — |
 | GET | `/v1/merchandising/shelf-counts` | `shelf.count.read` | core | — |
 | POST | `/v1/merchandising/shelf-counts/:countId` | `shelf.count.record` | core | yes |
 | POST | `/v1/merchandising/shelf-counts/:countId/synced` | `shelf.count.sync` | core | yes |
 | POST | `/v1/merchandising/shelf-counts/worklist` | `shelf.count.read` | core | yes |
+| GET | `/v1/merchandising/shelf-photos` | `shelf.count.read` | core | — |
+| GET | `/v1/merchandising/shelf-photos/:photoId` | `shelf.count.read` | core | — |
+| POST | `/v1/merchandising/shelf-photos/:photoId` | `shelf.count.record` | core | yes |
 | POST | `/v1/merchandising/space/performance` | `merchandising.space.read` | core | yes |
 | GET | `/v1/merchandising/stores/:storeId/planograms` | `planogram.compliance.read` | core | — |
 | GET | `/v1/merchandising/stores/:storeId/planograms/:planogramId` | `planogram.compliance.read` | core | — |
@@ -421,8 +428,10 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/loss-prevention/cases` | `lp.case.read` | core | — |
 | GET | `/v1/loss-prevention/cases/:caseId` | `lp.case.read` | core | — |
 | POST | `/v1/loss-prevention/cases/:caseId` | `lp.case.manage` | core | yes |
+| POST | `/v1/loss-prevention/cases/:caseId/cctv/:evidenceId` | `lp.case.manage` | core | yes |
 | POST | `/v1/loss-prevention/cases/:caseId/close` | `lp.case.manage` | core | yes |
 | POST | `/v1/loss-prevention/cases/:caseId/evidence/:evidenceId` | `lp.case.manage` | core | yes |
+| GET | `/v1/loss-prevention/correlation` | `lp.case.read` | core | — |
 | POST | `/v1/loss-prevention/evaluate` | `lp.case.read` | core | yes |
 | GET | `/v1/loss-prevention/exceptions` | `lp.case.read` | core | — |
 | GET | `/v1/loss-prevention/rule-feedback` | `lp.case.read` | core | — |

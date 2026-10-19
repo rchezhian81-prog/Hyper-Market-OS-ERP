@@ -96,6 +96,9 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // needs `purchase.order.propose`, which the route enforces.
   { id: 'buying', label: 'Buying', labelTa: 'வாங்குதல்', path: '/buying/', requires: 'purchase.commitment.read', group: 'Purchase' },
   { id: 'suppliers', label: 'Suppliers', labelTa: 'விநியோகஸ்தர்கள்', path: '/suppliers', requires: 'supplier.view', group: 'Purchase' },
+  // R4 Lane 4 · D-10: a supplier's scorecard built from its orders, receipts and matched invoices (nothing typed). Gated on
+  // the read the scorecard route checks (`purchase.commitment.read`). A head-office page (the box does not serve it).
+  { id: 'supplier-scorecard', label: 'Supplier scorecard', labelTa: 'விநியோகஸ்தர் மதிப்பெண் அட்டை', path: '/supplier-scorecard', requires: 'purchase.commitment.read', group: 'Purchase', served: 'unserved' },
   // Round 12 (D03-FR-02 · WF-05): supplier bills handed in as a GST e-invoice or a scan, confirmed by a person, then checked
   // against the order — a head-office page over `/v1/purchase/invoice-documents/*` (the box does not serve it). Gated on the
   // permission those routes check (`purchase.invoice.capture`).
@@ -106,6 +109,10 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   { id: 'counts', label: 'Stock counts', labelTa: 'சரக்கு எண்ணிக்கை', path: '/counts', requires: 'count.view', group: 'Inventory' },
   // Round 12 (WF-08 · D05-FR-05 · M09-FR-04): plan, freeze, count, recount, cause, approve or cancel a stock count — a thin
   // client over head office's count-plan routes, gated on the planning permission the plan routes check. Head-office page.
+  // R4 Lane 4 · D-13 (OB-219): each bay's shelf against the planogram in force, from the staff counts, every gap named; a
+  // photo with a shelf check, kept on the shop's own server; image recognition switched off. Gated on the read the bay route
+  // checks (`planogram.compliance.read`). A head-office page (the box does not serve it).
+  { id: 'planogram-compliance', label: 'Shelf compliance by bay', labelTa: 'அலமாரி இணக்கம் — பகுதி வாரியாக', path: '/planogram-compliance', requires: 'planogram.compliance.read', group: 'Inventory', served: 'unserved' },
   { id: 'count-plans', label: 'Count plans', labelTa: 'எண்ணிக்கைத் திட்டங்கள்', path: '/count-plans', requires: 'inventory.count.plan', group: 'Inventory', served: 'unserved' },
   // Round 12 (WF-07 · M09-FR-03): send and count in transfers, settle a shortfall — gated on the read the register checks.
   { id: 'transfers', label: 'Transfers', labelTa: 'இடமாற்றங்கள்', path: '/transfers', requires: 'inventory.availability.read', group: 'Inventory', served: 'unserved' },

@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Shelf compliance by bay</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Shelf compliance by bay (R4 D-13 · OB-219). A THIN CLIENT over head office's routes: the planogram in force compared with
+      the STAFF counts, scored per bay with every gap named (GET /v1/merchandising/planogram-compliance/bays), and a photo of a
+      bay kept on the shop's own server (POST /v1/merchandising/shelf-photos/:photoId). Image recognition is a switched-off
+      link: this page says so, no photo leaves the shop, and every score is "counted by staff". Its session is the tested model
+      in apps/web-erp/src/planogram-bays-session.ts. No prompt/confirm/alert; nothing written on open.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      input, select { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; }
+      button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+      li.row { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 6px; border-left: 6px solid var(--idle); overflow-wrap: anywhere; }
+      li.row.tone-ok { border-left-color: var(--ok); } li.row.tone-degraded { border-left-color: var(--degraded); }
+      .row .head { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; align-items: baseline; font-weight: 600; }
+      .row .facts { font-size: 14px; color: var(--muted); }
+      .status { font-size: 14px; min-height: 20px; margin: 0; } .status.err { color: var(--danger-text); } .status.good { color: var(--good); }
+      .nobody { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
+      .muted { color: var(--muted); font-size: 14px; margin: 0; }
+      .form-row { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); align-items: end; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Shelf compliance by bay</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section aria-labelledby="page-h">
+        <h2 id="page-h">Shelf compliance by bay</h2>
+        <p class="muted" id="lead"></p>
+        <form class="form-row" id="ask">
+          <label for="store"><span id="l-store">Store</span><input id="store" autocomplete="off" /></label>
+          <button id="show" type="submit">Show the bays</button>
+        </form>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+      <section aria-labelledby="bays-h" id="bays-section" hidden>
+        <h3 id="bays-h"></h3>
+        <p class="muted" id="measured"></p>
+        <p class="muted" id="recognition"></p>
+        <ul class="rows" id="bays"></ul>
+      </section>
+      <section aria-labelledby="photo-h" id="photo-section" hidden>
+        <h3 id="photo-h"></h3>
+        <div class="form-row">
+          <label for="photo-bay"><span id="l-bay">Bay</span><select id="photo-bay"></select></label>
+          <label for="photo-file"><span id="l-photo">Photo</span><input id="photo-file" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" /></label>
+          <button id="keep" type="button">Keep this photo</button>
+        </div>
+        <p class="status" id="photo-status" role="status" aria-live="polite"></p>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./planogram-compliance.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

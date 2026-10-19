@@ -2,29 +2,27 @@ import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
 import { sentWithApproval } from '../support/approval-request';
 
-// M06-FR-03: supplier scorecards + contract alerts on the live API. Buyers judge suppliers on the
-// relationship; the numbers usually say something different, and the gap is expensive. Delivery
-// OUTCOMES are recorded per PO (never an opinion) and the tested scoreSupplier turns them into fill
-// rate, on-time (vs the contracted lead time), lead-time RELIABILITY (the spread), price adherence,
-// quality, and a weighted overall — with a plain-English worst-signal-first summary, and `not_rated`
-// where there is no evidence. reviewContracts surfaces expiring/expired/UNAPPROVED contracts worst-first.
-// Recording is gated purchase.performance.record / purchase.contract.manage; reads purchase.commitment.read.
+// M06-FR-03 · D-10: supplier scorecards + contract alerts on the live API. Since D-10 (R4) the scorecard is BUILT from the
+// supplier's own purchase orders, goods receipts and matched invoices — the whole lifecycle is proved in
+// tests/integration/a-scorecard-is-built-from-orders-receipts-and-invoices.test.ts. This file keeps the contract review
+// (expiring / expired / UNAPPROVED, worst-first; an approver who gave it in their own session), proves the old typed
+// delivery-outcome door is closed by name, and that a supplier with no evidence reads `not_rated`.
+// Recording a contract is gated purchase.contract.manage; reads purchase.commitment.read.
 
 const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const INR = 'INR';
 const money = (minor: number) => ({ minor, currency: INR });
 
 const codeOf = (res: { body: unknown }): string | undefined => (res.body as { error?: { code?: string } }).error?.code;
-type Rating = { kind: string; bp?: number };
+type Rating = { kind: string; bp?: number; because?: string };
 interface CardShape {
   deliveries?: number;
   summary?: string;
   fillRate: Rating;
-  onTime: Rating;
+  onTimeInFull: Rating;
   leadTimeReliability: Rating;
-  priceAdherence: Rating;
-  quality: Rating;
-  overall: Rating;
+  invoiceAccuracy: Rating;
+  rejectionRate: Rating;
 }
 const cardOf = (res: { body: unknown }): CardShape =>
   ((res.body as { scorecard?: unknown }).scorecard ?? {}) as CardShape;
@@ -58,52 +56,23 @@ async function cast(): Promise<ApiHarness> {
   return h;
 }
 
-describe('supplier scorecards + contract alerts (M06-FR-03)', () => {
-  it('scores a supplier who does everything right, from the recorded facts', async () => {
+describe('supplier scorecards + contract alerts (M06-FR-03 · D-10)', () => {
+  it('the typed delivery-outcome door is closed by name (D-10: no typed figures) — nothing it sends reaches the scorecard', async () => {
     const h = await cast();
     await recordContract(h, 'u-owner', 'c-1', contract(), 'kc');
-    await recordReceipt(h, 'u-mgr', 'sup-1', 'po-1', receiptBody(), 'k1');
-    await recordReceipt(h, 'u-mgr', 'sup-1', 'po-2', receiptBody({ orderedOn: '2026-07-10', receivedOn: '2026-07-17' }), 'k2');
-
+    const typed = await recordReceipt(h, 'u-mgr', 'sup-1', 'po-1', receiptBody(), 'k1');
+    expect(typed.status).toBe(410);
+    expect(codeOf(typed)).toBe('typed_delivery_outcome_retired');
     const card = cardOf(await scorecard(h, 'u-owner', 'sup-1'));
-    expect(card.deliveries).toBe(2);
-    expect(card.fillRate).toEqual({ kind: 'rated', bp: 10_000 });
-    expect(card.onTime).toEqual({ kind: 'rated', bp: 10_000 }); // 7 days vs an agreed 7
-    expect(card.overall.kind).toBe('rated');
-    expect(card.summary).toBe('no concerns in the period');
-  });
-
-  it('names the short deliverer for what it costs, and catches invoice drift', async () => {
-    const h = await cast();
-    await recordContract(h, 'u-owner', 'c-1', contract(), 'kc');
-    await recordReceipt(h, 'u-mgr', 'sup-1', 'po-1', receiptBody({ receivedQtyMinor: 82, invoicedValue: money(102_000) }), 'k1');
-
-    const card = cardOf(await scorecard(h, 'u-owner', 'sup-1'));
-    expect(card.fillRate).toEqual({ kind: 'rated', bp: 8_200 });
-    expect(card.priceAdherence).toEqual({ kind: 'rated', bp: 9_800 });
-    expect(card.summary).toContain('the lost sale dwarfs any price advantage');
-    expect(card.summary).toContain('invoices run above the agreed value by 2.0%');
-  });
-
-  it('re-recording a delivery supersedes it — the score counts it once, not twice', async () => {
-    const h = await cast();
-    await recordContract(h, 'u-owner', 'c-1', contract(), 'kc');
-    await recordReceipt(h, 'u-mgr', 'sup-1', 'po-1', receiptBody({ receivedQtyMinor: 50 }), 'k1'); // first, wrong
-    await recordReceipt(h, 'u-mgr', 'sup-1', 'po-1', receiptBody({ receivedQtyMinor: 100 }), 'k2'); // corrected
-    const card = cardOf(await scorecard(h, 'u-owner', 'sup-1'));
-    expect(card.deliveries).toBe(1);
-    expect(card.fillRate).toEqual({ kind: 'rated', bp: 10_000 }); // the correction won, not the average
+    expect(card.deliveries).toBe(0);
+    expect(card.fillRate).toEqual({ kind: 'not_rated', because: 'no delivery in the period' });
   });
 
   it('says "not rated" rather than flattering a supplier with no evidence', async () => {
     const h = await cast();
     const empty = cardOf(await scorecard(h, 'u-owner', 'sup-9'));
-    expect(empty.overall.kind).toBe('not_rated');
-    expect(empty.summary).toContain('not the same as good');
-    // With deliveries but no contract, on-time cannot be judged.
-    await recordReceipt(h, 'u-mgr', 'sup-2', 'po-1', receiptBody(), 'k1');
-    const noContract = cardOf(await scorecard(h, 'u-owner', 'sup-2'));
-    expect(noContract.onTime).toEqual({ kind: 'not_rated', because: 'no contracted lead time to measure against' });
+    for (const r of [empty.fillRate, empty.onTimeInFull, empty.leadTimeReliability, empty.invoiceAccuracy, empty.rejectionRate]) expect(r.kind).toBe('not_rated');
+    expect(empty.summary).toContain('not the same as a good supplier');
   });
 
   it('surfaces expiring/expired/unapproved contracts worst-first', async () => {
@@ -135,26 +104,20 @@ describe('supplier scorecards + contract alerts (M06-FR-03)', () => {
     expect((ok.body as { contract: { approvedBy?: string } }).contract.approvedBy).toBe('u-owner');
   });
 
-  it('gates recording and reading, and refuses a malformed body', async () => {
+  it('gates recording and reading, and refuses a malformed contract', async () => {
     const h = await cast();
-    // A cashier can neither record a delivery outcome nor a contract, nor read a scorecard.
     expect((await recordReceipt(h, 'u-cash', 'sup-1', 'po-1', receiptBody(), 'k1')).status).toBe(403);
     expect((await recordContract(h, 'u-cash', 'c-1', contract(), 'k2')).status).toBe(403);
     expect((await scorecard(h, 'u-cash', 'sup-1')).status).toBe(403);
-    // A delivery dated before it was ordered is refused.
-    expect(codeOf(await recordReceipt(h, 'u-mgr', 'sup-1', 'po-2', receiptBody({ orderedOn: '2026-07-08', receivedOn: '2026-07-01' }), 'k3'))).toBe('received_before_ordered');
-    // A body with no dates is not readable.
-    expect(codeOf(await recordReceipt(h, 'u-mgr', 'sup-1', 'po-3', { orderedQtyMinor: 1 }, 'k4'))).toBe('not_readable_as_a_delivery_outcome');
+    expect(codeOf(await recordContract(h, 'u-mgr', 'c-bad', { supplierId: 'sup-1' }, 'k3'))).toBe('not_readable_as_a_contract');
+    expect(codeOf(await recordContract(h, 'u-mgr', 'c-back', contract({ startsOn: '2026-12-31', endsOn: '2026-01-01' }), 'k4'))).toBe('contract_ends_before_it_starts');
   });
 
-  it('survives a restart: the recorded facts and the scorecard are rebuilt from the event store', async () => {
+  it('survives a restart: the contracts are rebuilt from the event store', async () => {
     const h = await cast();
-    await recordContract(h, 'u-owner', 'c-1', contract(), 'kc');
-    await recordReceipt(h, 'u-mgr', 'sup-1', 'po-1', receiptBody(), 'k1');
-
+    await recordContract(h, 'u-owner', 'c-1', contract({ endsOn: '2026-09-01' }), 'kc');
     const restarted = apiHarness({ store: h.store });
-    const card = cardOf(await scorecard(restarted, 'u-owner', 'sup-1'));
-    expect(card.deliveries).toBe(1);
-    expect(card.fillRate).toEqual({ kind: 'rated', bp: 10_000 });
+    const body = (await contractAlerts(restarted, 'u-owner', '2026-08-04')).body as { alerts: { contractId: string }[] };
+    expect(body.alerts.map((a) => a.contractId)).toEqual(['c-1']);
   });
 });

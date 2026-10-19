@@ -309,6 +309,11 @@ import { createAffinitySession, affinityWords, affinityOutcomeWords, type Affini
 import { createEventsSession, eventsWords, eventsOutcomeWords, effectWords, type EventsSession } from './demand-events-session';
 import { createBriefSession, briefWords, briefOutcomeWords, type BriefSession } from './morning-brief-session';
 // ── end R4 Lane 3 ──
+// ── R4 Lane 4 (supply, pricing and loss prevention) — begin
+import { createScorecardSession, scorecardWords, scorecardOutcomeWords, ratingWords as scorecardRatingWords, SCORECARD_FIGURES, type ScorecardSession } from './supplier-scorecard-session';
+import { createCorrelationSession, correlationWords, correlationOutcomeWords, correlationRupees, type CorrelationSession } from './lp-correlation-session';
+import { createBaysSession, baysWords, baysOutcomeWords, bayScoreWords, type BaysSession } from './planogram-bays-session';
+// ── R4 Lane 4 — end
 import {
   createStoreComputersSession, wordsFor as storeComputersWords, outcomeWords as storeComputersOutcomeWords, summarise as storeComputersSummary,
   requestWords as storeComputersRequestWords, findingKindWords as storeComputersFindingWords, type StoreComputersSession,
@@ -4902,6 +4907,16 @@ interface ManagerWindow {
   morningBrief?: { readonly session: BriefSession; readonly words: typeof briefWords; readonly outcomeWords: typeof briefOutcomeWords };
   // ── end R4 Lane 3 ──
   schedule?: { readonly session: ScheduleSession; readonly words: typeof scheduleWords; readonly outcomeWords: typeof scheduleOutcomeWords; readonly rupees: typeof scheduleRupees };
+  // ── R4 Lane 4 — begin
+  /** R4 D-10: the Supplier scorecard page — who is looking; head office answers the rest. */
+  supplierScorecardData?: ViewerIdentity;
+  supplierScorecard?: { readonly session: ScorecardSession; readonly words: typeof scorecardWords; readonly outcomeWords: typeof scorecardOutcomeWords; readonly ratingWords: typeof scorecardRatingWords; readonly figures: typeof SCORECARD_FIGURES };
+  /** R4 D-21: the "Seen together" panel on the Investigations page (reads who is looking from the inbox's own payload). */
+  lpCorrelation?: { readonly session: CorrelationSession; readonly words: typeof correlationWords; readonly outcomeWords: typeof correlationOutcomeWords; readonly rupees: typeof correlationRupees };
+  /** R4 D-13: the Shelf compliance by bay page — who is looking; head office answers the rest. */
+  planogramBaysData?: ViewerIdentity;
+  planogramBays?: { readonly session: BaysSession; readonly words: typeof baysWords; readonly outcomeWords: typeof baysOutcomeWords; readonly scoreWords: typeof bayScoreWords };
+  // ── R4 Lane 4 — end
   substitutionExceptionInboxData?: SubstitutionExceptionInboxData;
   substitutionExceptionInboxSession?: SubExceptionInboxSession;
   /** The shell reads the live exceptions worklist through this and re-presents it — a GET read, never a write. */
@@ -6630,4 +6645,16 @@ if (browserWindow !== undefined) {
   browserWindow.morningBriefData = viewerIdentity(browserWindow.morningBriefData);
   browserWindow.morningBrief = { session: createBriefSession({ viewer: browserWindow.morningBriefData }), words: briefWords, outcomeWords: briefOutcomeWords };
   // ── end R4 Lane 3 ──
+  // ── R4 Lane 4 — begin
+  // R4 D-10: the Supplier scorecard page — a read of figures built from the registers; nothing is typed, nothing written.
+  browserWindow.supplierScorecardData = viewerIdentity(browserWindow.supplierScorecardData);
+  browserWindow.supplierScorecard = { session: createScorecardSession({ viewer: browserWindow.supplierScorecardData }), words: scorecardWords, outcomeWords: scorecardOutcomeWords, ratingWords: scorecardRatingWords, figures: SCORECARD_FIGURES };
+  // R4 D-21: "Seen together" — only where the Investigations page was given who is looking; it opens nothing on read.
+  if (browserWindow.lossPreventionInboxData !== undefined) {
+    browserWindow.lpCorrelation = { session: createCorrelationSession({ viewer: viewerIdentity(browserWindow.lossPreventionInboxData) }), words: correlationWords, outcomeWords: correlationOutcomeWords, rupees: correlationRupees };
+  }
+  // R4 D-13: Shelf compliance by bay — a read of the staff counts against the plan; a photo is kept only on an explicit click.
+  browserWindow.planogramBaysData = viewerIdentity(browserWindow.planogramBaysData);
+  browserWindow.planogramBays = { session: createBaysSession({ viewer: browserWindow.planogramBaysData }), words: baysWords, outcomeWords: baysOutcomeWords, scoreWords: bayScoreWords };
+  // ── R4 Lane 4 — end
 }

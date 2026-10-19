@@ -449,6 +449,10 @@
     'demand-events': 'calendar-days',
     'morning-brief': 'book-open',
     // ── end R4 Lane 3 ──
+    // R4 Lane 4 — begin: the two new pages' menu icons, from icons already in the set (no restyle).
+    'supplier-scorecard': 'list-checks',
+    'planogram-compliance': 'layout-grid',
+    // R4 Lane 4 — end
     'checklist': 'clipboard-check',
     'users': 'users-round',
     'organisation': 'building',
