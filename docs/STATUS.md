@@ -5,7 +5,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
-## Release R4: built in four parallel lanes and joined (19 October 2026) — gate and PR pending
+## Release R4: built in four parallel lanes and joined (19 October 2026) — gate green, PR opened
 
 - **Owner sign-off:** R4 sentences signed (OB-227). Scope answers: OB-207 to OB-226. Lane answers: OB-228 to OB-237.
 - **Built (synthetic data; nothing bought; no provider called; no staff UAT):**
@@ -31,7 +31,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - **Verification so far:**
   - Each lane: unit, memory + PostgreSQL with cold restart, guardrail and browser tests passed.
   - Integration pass: 1,526 guardrail tests, 1,233 targeted unit + integration tests and 20 R4 browser tests passed.
-  - The full gate on the joined branch is running.
+  - Full gate on the joined branch (fresh database): 12,875 tests passed, 16 skipped. Performance 52/52 (one timing test passed on its second run). Browser 419/419.
 - **Found and fixed during the R4 gate (hard rule #3, not an R4 change):** head office kept a refused card-like payment attempt id as the relay's record-owner key. It now writes nothing for such an id, with a test that failed before the fix. The defect dated from round 9–16 (PR #762).
 - **Waiting on the owner:**
   - The grievance officer name and contact (OB-223), which blocks B23 and, through OB-234, every online order, as well as the C21 notice.
