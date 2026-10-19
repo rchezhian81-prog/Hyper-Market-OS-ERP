@@ -61,7 +61,9 @@ describe.skipIf(DATABASE_URL === undefined)('the shop list and a shop\'s feature
     const blockOf = (id: string): string => listed.out.split('\n\n').find((b) => b.includes(id)) ?? `(shop ${id} not listed)\n${listed.out}`;
     expect(blockOf(anna), blockOf(anna)).toMatch(new RegExp(`^SRE Anna Nagar Proof — ${anna}\\n  sign-in area: sre-anna-proof · address: https://x\\.example\\.test`));
     expect(blockOf(tnagar), blockOf(tnagar)).toMatch(new RegExp(`^SRE T Nagar Proof — ${tnagar}\\n  sign-in area: sre-tnagar-proof`));
-  });
+  // The list reads every shop on the database, and a shared test database holds every test's shops (thousands after a full
+  // run): give it room — on a fresh database it takes about 4 s.
+  }, 60_000);
 
   it('a change to ONE shop is in that shop\'s own history, read by head office as its own; the other shop is untouched', async () => {
     const dry = await run('shops.js', ['features', '--tenant', anna, '--operator', 'Test-operator', '--on', 'loyalty', '--dry-run', '--env-file', env()]);
