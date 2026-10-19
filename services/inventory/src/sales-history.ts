@@ -186,11 +186,15 @@ export function salesHistoryRoutes(deps: SalesHistoryDeps): readonly Route[] {
             : undefined;
           // ── R4 Lane 3 · D-24: the short-horizon correction from the recent days, its back-test beside it, how each
           // stored event's effect is known, and the weather link's state (switched off) ──
-          const shortHorizon = calendar === undefined || windowDays <= 7 || coldStart !== undefined ? undefined : (() => {
-            const c = correctedForecast({ history, from, to, horizonDays, recentDays: 7, ...(signals.length === 0 ? {} : { signals }) });
+          const shortHorizon = calendar === undefined || windowDays <= 8 || coldStart !== undefined ? undefined : (() => {
+            // The correction is taken from COMPLETE trading days: today's bills are still coming in, so a window that ends
+            // today is corrected from the days up to yesterday (today's part-day would read as a fall in demand).
+            const corrTo = to >= today ? addDays(today, -1) : to;
+            const extra = Math.round((Date.parse(`${to}T00:00:00.000Z`) - Date.parse(`${corrTo}T00:00:00.000Z`)) / 86_400_000);
+            const c = correctedForecast({ history, from, to: corrTo, horizonDays: horizonDays + extra, recentDays: 7, ...(signals.length === 0 ? {} : { signals }) });
             return {
-              correction: c.correction,
-              horizon: c.horizon.map((d) => ({ day: d.day, forecastQty: d.forecastQty, correctedQty: d.correctedQty, appliedSignals: d.appliedSignals })),
+              correction: { ...c.correction, fromCompleteDaysTo: corrTo },
+              horizon: c.horizon.filter((d) => d.day > to).map((d) => ({ day: d.day, forecastQty: d.forecastQty, correctedQty: d.correctedQty, appliedSignals: d.appliedSignals })),
               backtest: c.backtest ?? { notBackTested: true, detail: 'The history is too short to hold out a week and still correct — not back-tested.' },
             };
           })();
