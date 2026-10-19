@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Hyper Market — Terms and returns</title>
+    <!--
+      R4 · B23 · WF-16 · A26: the terms page opens from every page of the online store WITHOUT signing in. It says how the
+      online store works, in plain words, in English and Tamil, and invents no figure: the return window for each
+      department and the list of items that cannot be returned are the owner's (OB-213) and read "not set" until he gives
+      them; the grievance officer reads "not set" until he names one (OB-223). A lawyer should read this page before the
+      store opens.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <script src="./sre-update.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 17px/1.55 var(--font); }
+      main { padding: 16px; max-width: 720px; display: grid; gap: 12px; }
+      h1 { font-size: 22px; margin: 0; } h2 { font-size: 18px; margin: 12px 0 0; }
+      p, li { font-size: 16px; } ul { margin: 0; padding-left: 20px; }
+      a { color: var(--ink); min-height: var(--tap); display: inline-flex; align-items: center; }
+      a:focus-visible, button:focus-visible { outline: 3px solid var(--info); outline-offset: 2px; }
+      button { min-height: var(--tap); border-radius: 10px; border: 0; font-size: 16px; font-weight: 600; background: var(--line); color: var(--ink); padding: 0 16px; }
+      [lang-block][hidden] { display: none; }
+    </style>
+  </head>
+  <body>
+    <main id="main">
+      <button id="lang" type="button" aria-label="Language / மொழி">EN / த</button>
+      <div lang-block data-lang="en">
+        <h1>Terms, returns and refunds</h1>
+        <p>You do not need to sign in to read this page.</p>
+        <h2>Before you pay</h2>
+        <p>Every product shows its MRP, its price with tax included, the delivery fee and the total, its best-before date where it has one, its country of origin, the shop's legal name, address and GSTIN, the return and refund terms, and the grievance officer's name and contact. A product missing any of these is not sold online.</p>
+        <h2>Whose goods</h2>
+        <p>The online store sells only the shop's own goods.</p>
+        <h2>Returns</h2>
+        <p>You can ask to return a delivered item within the time the shop sets for its department, counted from delivery. Some items cannot be returned. Until the shop sets these they read "not set", and a return cannot be judged — raise a complaint and the shop will help.</p>
+        <h2>Refunds</h2>
+        <p>The shop collects the goods and counts them. The refund goes back to the way you paid, only for what came back. Until the bank confirms it, the app says "waiting".</p>
+        <h2>Complaints</h2>
+        <p>Raise a complaint in the app. The shop acknowledges it within 48 hours; one not resolved within a month goes to the owner.</p>
+        <p><a href="./privacy.html">Privacy</a> · <a href="./index.html">Back to the shop</a></p>
+      </div>
+      <div lang-block data-lang="ta" hidden>
+        <h1>விதிமுறைகள், திருப்பி அனுப்புதல் மற்றும் பணத்தைத் திருப்புதல்</h1>
+        <p>இந்தப் பக்கத்தைப் படிக்க உள்நுழைய வேண்டியதில்லை.</p>
+        <h2>பணம் செலுத்தும் முன்</h2>
+        <p>ஒவ்வொரு பொருளும் அதன் MRP, வரி உட்பட விலை, விநியோகக் கட்டணம் மற்றும் மொத்தம், இருந்தால் சிறந்த பயன்பாட்டுத் தேதி, பிறந்த நாடு, கடையின் சட்டப் பெயர், முகவரி மற்றும் GSTIN, திருப்பி அனுப்புதல் மற்றும் பணத்தைத் திருப்பும் விதிமுறைகள், குறைதீர்ப்பு அலுவலரின் பெயர் மற்றும் தொடர்பு ஆகியவற்றைக் காட்டும். இவற்றில் ஏதேனும் இல்லாத பொருள் ஆன்லைனில் விற்கப்படாது.</p>
+        <h2>யாருடைய பொருட்கள்</h2>
+        <p>ஆன்லைன் கடை கடையின் சொந்தப் பொருட்களை மட்டுமே விற்கிறது.</p>
+        <h2>திருப்பி அனுப்புதல்</h2>
+        <p>விநியோகிக்கப்பட்ட பொருளை, அதன் பிரிவுக்குக் கடை அமைக்கும் காலத்திற்குள், விநியோகத்திலிருந்து கணக்கிட்டு, திருப்பி அனுப்பக் கேட்கலாம். சில பொருட்களைத் திருப்பி அனுப்ப முடியாது. கடை இவற்றை அமைக்கும் வரை அவை "அமைக்கப்படவில்லை" எனக் காட்டும்; அதுவரை புகார் எழுப்பினால் கடை உதவும்.</p>
+        <h2>பணத்தைத் திருப்புதல்</h2>
+        <p>கடை பொருட்களைச் சேகரித்து எண்ணும். திரும்பி வந்தவற்றுக்கு மட்டும், நீங்கள் செலுத்திய வழியிலேயே பணம் திருப்பப்படும். வங்கி உறுதிப்படுத்தும் வரை செயலி "காத்திருக்கிறது" எனக் காட்டும்.</p>
+        <h2>புகார்கள்</h2>
+        <p>செயலியில் புகார் எழுப்புங்கள். கடை 48 மணி நேரத்திற்குள் அதை ஏற்றுக்கொள்ளும்; ஒரு மாதத்திற்குள் தீர்க்கப்படாதது உரிமையாளருக்குச் செல்லும்.</p>
+        <p><a href="./privacy.html">தனியுரிமை</a> · <a href="./index.html">கடைக்குத் திரும்பு</a></p>
+      </div>
+    </main>
+    <script type="module" src="./legal-page.js"></script>
+  </body>
+</html>

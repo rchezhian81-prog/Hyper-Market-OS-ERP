@@ -69,13 +69,17 @@ export interface ShopTransport {
   mine?(request: ShopMineRequest): Promise<ShopAnswer>;
   /** OB-77: read one of MY orders back from the shop (`GET /v1/storefront/orders/:orderId`) — its state and the driver's delivery status. */
   readOrder?(request: { readonly orderId: string; readonly token: string }): Promise<ShopAnswer>;
+  /** R4 Lane 2 (B23 · M20-FR-04 · D01-FR-06): a READ of the online store as the signed-in customer (`GET /v1/storefront/…`). */
+  storefront?(request: { readonly token: string; readonly path: 'listing' | 'ratings' | `products/${string}/image` }): Promise<ShopAnswer>;
 }
 
 /** One call about the signed-in customer's own records. The path is under `/v1/me/`. */
 export interface ShopMineRequest {
   readonly token: string;
   readonly method: 'GET' | 'POST';
-  readonly path: `favourites${string}` | `lists${string}` | `complaints/${string}` | `orders/${string}` | 'cases';
+  readonly path: `favourites${string}` | `lists${string}` | `complaints/${string}` | `orders/${string}` | 'cases'
+    // R4 Lane 2: D-28 receipts · M20-FR-04 ratings · WF-16 online returns and the return policy.
+    | `receipts${string}` | `ratings${string}` | 'online-returns' | 'return-policy';
   readonly body?: unknown;
   readonly idempotencyKey?: string;
 }
@@ -224,6 +228,26 @@ export function httpShopTransport(options: HttpShopTransportOptions): ShopTransp
         clearTimeout(timer);
       }
     },
+    // ── R4 Lane 2: online-store reads (begin) ──
+    storefront: async (request) => {
+      if (options.isOnline !== undefined && !options.isOnline()) {
+        return { reached: false, why: 'no_connection', detail: 'this device reports no connection, so nothing was read' };
+      }
+      const controller = new AbortController();
+      const timer = setTimeout(() => { controller.abort(); }, timeoutMs);
+      try {
+        const res = await options.fetch(`${base}/v1/storefront/${request.path}`, { method: 'GET', headers: { authorization: `Bearer ${request.token}` }, signal: controller.signal });
+        let body: unknown = undefined;
+        try { body = await res.json(); } catch { body = undefined; }
+        return { reached: true, status: res.status, body };
+      } catch (e) {
+        const aborted = e instanceof Error && e.name === 'AbortError';
+        return { reached: false, why: aborted ? 'timed_out' : 'network_error', detail: 'the request could not reach the shop — nothing was read' };
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+    // ── R4 Lane 2 (end) ──
     mine: async (request) => {
       if (options.isOnline !== undefined && !options.isOnline()) {
         return { reached: false, why: 'no_connection', detail: 'this device reports no connection, so nothing was sent' };

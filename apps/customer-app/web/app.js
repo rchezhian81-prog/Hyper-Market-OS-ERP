@@ -582,6 +582,8 @@ el('si-verify').addEventListener('click', async () => {
       if (typeof shop.loadPrivacy === 'function') shop.loadPrivacy().then(() => render());
       // Round 8: my favourites are the shop's, read once signed in.
       void loadFavourites().then(() => render());
+      // R4 Lane 2 (B23): every detail the shop must show before payment, read once signed in.
+      void window.shopR4?.signedIn()?.then(() => render());
       challengeId = null;
       el('si-code').value = '';
       paintSignIn();
@@ -861,6 +863,8 @@ function render() {
   if (view === 'basket') renderBasket();
   if (view === 'order') { renderOrder(); void renderHelp(); }
   if (view === 'privacy') { renderConsent(); renderRights(); }
+  // R4 Lane 2 (B23 · D-28 · WF-16 · M20-FR-04): the online store's sections, drawn by online-store.js.
+  window.shopR4?.render(view);
 }
 
 el('lang').addEventListener('click', () => {
@@ -1041,6 +1045,7 @@ el('return-send').addEventListener('click', async () => {
   const out = await shop.mine.requestReturn(order.orderId, lines, reason);
   el('help-say').textContent = out.ok ? `${t('returnRaised')} ${out.value}` : mineWords(out);
   void renderHelp();
+  window.shopR4?.render('order'); // R4 · WF-16: my returns, read back from the shop
 });
 
 // ── Boot ────────────────────────────────────────────────────────────────────

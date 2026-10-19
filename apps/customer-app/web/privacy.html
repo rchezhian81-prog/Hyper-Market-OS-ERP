@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Hyper Market — Privacy</title>
+    <!--
+      R4 · B23 (Consumer Protection (E-Commerce) Rules 2020) · DPDP: the privacy page opens from every page of the online
+      store WITHOUT signing in. It says what the app keeps and how to ask about it, in plain words, in English and Tamil.
+      It invents no name or contact: the shop's grievance officer is shown on every product before payment, and reads
+      "not set" until the owner names one (OB-223). A lawyer should read this page before the store opens.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <script src="./sre-update.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 17px/1.55 var(--font); }
+      main { padding: 16px; max-width: 720px; display: grid; gap: 12px; }
+      h1 { font-size: 22px; margin: 0; } h2 { font-size: 18px; margin: 12px 0 0; }
+      p, li { font-size: 16px; } ul { margin: 0; padding-left: 20px; }
+      a { color: var(--ink); min-height: var(--tap); display: inline-flex; align-items: center; }
+      a:focus-visible, button:focus-visible { outline: 3px solid var(--info); outline-offset: 2px; }
+      button { min-height: var(--tap); border-radius: 10px; border: 0; font-size: 16px; font-weight: 600; background: var(--line); color: var(--ink); padding: 0 16px; }
+      [lang-block][hidden] { display: none; }
+    </style>
+  </head>
+  <body>
+    <main id="main">
+      <button id="lang" type="button" aria-label="Language / மொழி">EN / த</button>
+      <div lang-block data-lang="en">
+        <h1>Privacy</h1>
+        <p>You do not need to sign in to read this page.</p>
+        <h2>What the app keeps</h2>
+        <ul>
+          <li>Your choices about messages — one switch each, and the same switch turns each one off.</li>
+          <li>Your orders, favourites, lists, complaints, returns and the stars you gave.</li>
+          <li>Copies of your bills — only if you switch digital receipts on. A card shows only its last four digits.</li>
+          <li>At the till your mobile number becomes a member code; the number itself is not kept.</li>
+        </ul>
+        <h2>What is never sent</h2>
+        <p>Nothing is sent to you by SMS or WhatsApp: those are switched off. No voice is recorded: voice search is switched off.</p>
+        <h2>How to ask</h2>
+        <p>Open "My information" in the app to see, correct, copy or delete what the shop holds. The shop answers within 15 days. Invoices and tax records must be kept by law.</p>
+        <h2>Grievance officer</h2>
+        <p>The grievance officer's name and contact are shown on every product before you pay. Until the shop names one they read "not set".</p>
+        <p><a href="./terms.html">Terms, returns and refunds</a> · <a href="./index.html">Back to the shop</a></p>
+      </div>
+      <div lang-block data-lang="ta" hidden>
+        <h1>தனியுரிமை</h1>
+        <p>இந்தப் பக்கத்தைப் படிக்க உள்நுழைய வேண்டியதில்லை.</p>
+        <h2>செயலி வைத்திருப்பவை</h2>
+        <ul>
+          <li>செய்திகள் பற்றிய உங்கள் தேர்வுகள் — ஒவ்வொன்றுக்கும் ஒரு பொத்தான்; அதே பொத்தான் அதை நிறுத்தும்.</li>
+          <li>உங்கள் ஆர்டர்கள், விருப்பங்கள், பட்டியல்கள், புகார்கள், திருப்பி அனுப்புதல்கள் மற்றும் நீங்கள் கொடுத்த நட்சத்திரங்கள்.</li>
+          <li>உங்கள் பில்களின் நகல்கள் — டிஜிட்டல் ரசீதுகளை இயக்கினால் மட்டும். அட்டையின் கடைசி நான்கு எண்கள் மட்டுமே காட்டப்படும்.</li>
+          <li>கட்டணப் பகுதியில் உங்கள் கைபேசி எண் உறுப்பினர் குறியீடாக மாறும்; எண் வைக்கப்படுவதில்லை.</li>
+        </ul>
+        <h2>ஒருபோதும் அனுப்பப்படாதவை</h2>
+        <p>SMS அல்லது WhatsApp மூலம் எதுவும் அனுப்பப்படுவதில்லை: அவை நிறுத்தப்பட்டுள்ளன. குரல் பதிவு செய்யப்படுவதில்லை: குரல் தேடல் நிறுத்தப்பட்டுள்ளது.</p>
+        <h2>எப்படிக் கேட்பது</h2>
+        <p>கடை வைத்திருப்பதைப் பார்க்க, திருத்த, நகலெடுக்க அல்லது நீக்க செயலியில் "என் தகவல்" திறக்கவும். கடை 15 நாட்களுக்குள் பதில் அளிக்கும். பில்கள் மற்றும் வரிப் பதிவுகள் சட்டப்படி வைக்கப்பட வேண்டும்.</p>
+        <h2>குறைதீர்ப்பு அலுவலர்</h2>
+        <p>குறைதீர்ப்பு அலுவலரின் பெயரும் தொடர்பும் பணம் செலுத்தும் முன் ஒவ்வொரு பொருளிலும் காட்டப்படும். கடை ஒருவரை நியமிக்கும் வரை அவை "அமைக்கப்படவில்லை" எனக் காட்டும்.</p>
+        <p><a href="./terms.html">விதிமுறைகள், திருப்பி அனுப்புதல் மற்றும் பணத்தைத் திருப்புதல்</a> · <a href="./index.html">கடைக்குத் திரும்பு</a></p>
+      </div>
+    </main>
+    <script type="module" src="./legal-page.js"></script>
+  </body>
+</html>
