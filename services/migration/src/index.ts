@@ -49,6 +49,10 @@ import { witnessRoutes, applicableSignatures, findingsDigest, type ExtractionRun
 import { parallelRunRoutes, ledgerCutoverEvidence, type ParallelRunPolicy, type RecordedParallelDay, type RecordedRollback } from './parallel-run';
 import { decisionRoutes, type RefusedDecision } from './decisions';
 import { screenRoutes } from './screen';
+import { loadRecordRoutes, type LoadRecord, type LoadApplied } from './load-records';
+import { parallelDayRoutes } from './parallel-day-routes';
+import type { SliceAcceptance } from '../../../packages/migration/src/slice-import';
+import type { ParallelDaySignature } from '../../../packages/migration/src/parallel-day-sign';
 import type { ExceptionResolution, MigrationException } from '../../../packages/migration/src/cleaning';
 import type { TotalSignature } from '../../../packages/migration/src/reconcile';
 import type { ParallelDifference, RollbackReconciliation, WindowTotals, StoreSyncedThrough, RollbackWindowFacts } from '../../../packages/migration/src/cutover';
@@ -58,6 +62,7 @@ import { assertSafeTarget, namedPeople } from './guards';
 
 export type { ExtractionRun, RecordedFinding, StoredSignature } from './witness';
 export type { RefusedDecision } from './decisions';
+export type { LoadRecord, LoadApplied, LoadView } from './load-records';
 export type { MigrationScreenFeed, MigrationScreenPolicy, MigrationScreenVerification } from './screen';
 
 const EXCLUSION_SCOPES: readonly string[] = ['documents_before', 'entity_kind', 'named_records', 'inactive_records'];
@@ -415,6 +420,21 @@ export interface MigrationDeps {
    */
   readonly recordCutoverGo?: (tenantId: string, go: CutoverGo) => Promise<CutoverGo> | CutoverGo;
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
+  /**
+   * MG-05 / MG-06 — the LOAD RECORD (`load-records.ts`): each real-data load as staged, with its operator read from the
+   * signed-in session; the named acceptance of its exception list; and what landed when it was applied. When
+   * `loadRecords` is wired, it is the ONLY source of "who ran the load" for the control-total signature (§28). Optional so
+   * older stubs compile; a writer that is absent refuses 503 rather than pretending.
+   */
+  readonly loadRecords?: (tenantId: string) => Promise<readonly LoadRecord[]> | readonly LoadRecord[];
+  readonly recordLoad?: (tenantId: string, record: LoadRecord) => Promise<void> | void;
+  readonly sliceAcceptances?: (tenantId: string, loadId: string) => Promise<readonly SliceAcceptance[]> | readonly SliceAcceptance[];
+  readonly recordSliceAcceptance?: (tenantId: string, loadId: string, acceptance: SliceAcceptance) => Promise<void> | void;
+  readonly loadsApplied?: (tenantId: string, loadId: string) => Promise<readonly LoadApplied[]> | readonly LoadApplied[];
+  readonly recordLoadApplied?: (tenantId: string, applied: LoadApplied) => Promise<void> | void;
+  /** MG-10 — every signature a parallel-run day has had (`parallel-day-routes.ts`). Append-only. */
+  readonly parallelDaySignatures?: (tenantId: string) => Promise<readonly ParallelDaySignature[]> | readonly ParallelDaySignature[];
+  readonly recordParallelDaySignature?: (tenantId: string, signature: ParallelDaySignature) => Promise<void> | void;
   readonly now: () => string;
 }
 
@@ -797,7 +817,12 @@ export function migrationRoutes(deps: MigrationDeps): readonly Route[] {
             nextSafeAction: 'Send the signature without loadOperator. Nothing was signed.',
           });
         }
-        const operators = deps.trialLoadOperators === undefined ? [] : await deps.trialLoadOperators(ctx.tenantId);
+        // The trial loads' operators AND the stored real-data load records' (MG-05 slice) — each person signed in when
+        // their load was recorded. Whoever ran any of them cannot sign.
+        const operators = [...new Set([
+          ...(deps.trialLoadOperators === undefined ? [] : await deps.trialLoadOperators(ctx.tenantId)),
+          ...(deps.loadRecords === undefined ? [] : (await deps.loadRecords(ctx.tenantId)).map((r) => r.operator)),
+        ])];
         if (operators.length === 0) {
           throw apiError(422, {
             code: 'no_trial_load_on_record',
@@ -1321,7 +1346,9 @@ export function migrationRoutes(deps: MigrationDeps): readonly Route[] {
     },
     ...witnessRoutes(deps),
     ...parallelRunRoutes(deps),
+    ...parallelDayRoutes(deps),
     ...decisionRoutes(deps),
+    ...loadRecordRoutes(deps),
     ...screenRoutes(deps),
   ];
 }

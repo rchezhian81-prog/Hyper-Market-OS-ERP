@@ -147,7 +147,10 @@ export type DecisionKind = 'approval_decision' | 'supplier_invoice' | 'checklist
   /** OB-172: a delivery booked in on the manager's store screen (`GoodsReceived`), its receiving checklist inside it. */
   | 'goods_receipt'
   /** OB-172: a delivery declared complete on the warehouse handheld (`ReceivingCompleted`), its receiving checklist inside it. */
-  | 'receiving_completion';
+  | 'receiving_completion'
+  /** MG-10: a parallel-run day entered on the migration screen (both systems' totals and the reasons), and its signature. */
+  | 'migration_parallel_day'
+  | 'migration_parallel_day_signature';
 
 /** The box's stamp on the person who made a decision, as it travels on the relayed record. */
 export interface DeciderStamp {

@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1446,
+  "testFiles": 1452,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -21,7 +21,7 @@
     "unit": 89,
     "integration": 101,
     "realDb": 97,
-    "browser": 81,
+    "browser": 82,
     "connected": 48,
     "device": 0,
     "uat": 0
@@ -5071,7 +5071,7 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 11,
-        "integration": 7,
+        "integration": 8,
         "realDb": 3,
         "browser": 1,
         "connected": 0,
@@ -5093,6 +5093,7 @@
           "tests/unit/tender-legacy-card-purge.test.ts"
         ],
         "integration": [
+          "tests/integration/a-department-slice-loads-only-after-its-exception-list-is-accepted.test.ts",
           "tests/integration/migration-decisions-reach-the-cloud.test.ts",
           "tests/integration/migration-decisions-through-the-api.test.ts",
           "tests/integration/migration-pipeline.test.ts",
@@ -5120,8 +5121,8 @@
       "id": "MG-05",
       "label": "INTEGRATION_TESTED",
       "counts": {
-        "unit": 6,
-        "integration": 8,
+        "unit": 7,
+        "integration": 9,
         "realDb": 6,
         "browser": 0,
         "connected": 0,
@@ -5134,10 +5135,12 @@
           "tests/unit/migration-extraction.test.ts",
           "tests/unit/migration-load-command.test.ts",
           "tests/unit/migration-load.test.ts",
+          "tests/unit/migration-slice-import.test.ts",
           "tests/unit/migration-trial-reconcile-route.test.ts",
           "tests/unit/migration-trial.test.ts"
         ],
         "integration": [
+          "tests/integration/a-department-slice-loads-only-after-its-exception-list-is-accepted.test.ts",
           "tests/integration/history-and-open-orders-load.test.ts",
           "tests/integration/migration-load.test.ts",
           "tests/integration/migration-pipeline.test.ts",
@@ -5168,7 +5171,7 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 17,
-        "integration": 11,
+        "integration": 13,
         "realDb": 4,
         "browser": 1,
         "connected": 0,
@@ -5196,11 +5199,13 @@
           "tests/unit/sync-http-transport.test.ts"
         ],
         "integration": [
+          "tests/integration/a-department-slice-loads-only-after-its-exception-list-is-accepted.test.ts",
           "tests/integration/every-figure-has-a-witness-through-the-api.test.ts",
           "tests/integration/migration-decisions-reach-the-cloud.test.ts",
           "tests/integration/migration-decisions-through-the-api.test.ts",
           "tests/integration/migration-load.test.ts",
           "tests/integration/migration-pipeline.test.ts",
+          "tests/integration/migration-screen-through-the-api.test.ts",
           "tests/integration/opening-state-loads.test.ts",
           "tests/integration/the-books-open-from-the-old-trial-balance.test.ts",
           "tests/integration/the-box-pulls-its-migration-register.test.ts",
@@ -5346,10 +5351,10 @@
       "id": "MG-10",
       "label": "INTEGRATION_TESTED",
       "counts": {
-        "unit": 5,
-        "integration": 4,
+        "unit": 6,
+        "integration": 5,
         "realDb": 1,
-        "browser": 0,
+        "browser": 1,
         "connected": 0,
         "device": 0,
         "uat": 0
@@ -5359,10 +5364,12 @@
           "tests/unit/migration-cutover-route.test.ts",
           "tests/unit/migration-cutover.test.ts",
           "tests/unit/migration-feed-pull.test.ts",
+          "tests/unit/migration-parallel-day-sign.test.ts",
           "tests/unit/migration-parallel-run-route.test.ts",
           "tests/unit/migration-screen-route.test.ts"
         ],
         "integration": [
+          "tests/integration/a-parallel-day-cannot-be-signed-with-an-unexplained-difference.test.ts",
           "tests/integration/migration-screen-through-the-api.test.ts",
           "tests/integration/parallel-run-through-the-api.test.ts",
           "tests/integration/the-box-pulls-its-migration-register.test.ts",
@@ -5371,7 +5378,9 @@
         "realDb": [
           "tests/integration/the-old-shop-arrives-whole.test.ts"
         ],
-        "browser": [],
+        "browser": [
+          "tests/e2e/the-migration-screen-runs-a-parallel-day.e2e.ts"
+        ],
         "connected": [],
         "device": [],
         "uat": []

@@ -235,6 +235,9 @@ export const EVENT_ROUTES: Readonly<Record<string, EventRoute>> = {
   ShelfCounted: '/v1/merchandising/shelf-counts/:countId/synced',
   MigrationExceptionResolved: '/v1/migration/exceptions/:exceptionId/resolution/synced',
   MigrationTotalSigned: '/v1/migration/control-totals/:totalId/signature/synced',
+  // MG-10: the parallel-run day entered on the migration screen and its signature; `businessDate` is a plain payload field.
+  MigrationParallelDayEntered: '/v1/migration/parallel-run/days/:businessDate/synced',
+  MigrationParallelDaySigned: '/v1/migration/parallel-run/days/:businessDate/signature/synced',
   // PF-07 (M15-FR-01): a till VOID — the line, its value, the reason and the cashier the box verified — kept as
   // loss-prevention evidence on head office's own stream, where the store's rules run on it. `activityId` is a plain
   // top-level payload field matching the param; a payload head office cannot read is 400 → dead-lettered here by name.

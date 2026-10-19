@@ -337,7 +337,9 @@ import { tradingDayIn, tradingDayWindow, type TradingCalendar } from '../../../p
 import type { ConsolidationDeps } from '../../reporting/src/consolidation-route';
 import { salesSummary, ingestContribution } from '../../../packages/reporting/src/index';
 import type { Producer, SaleFact, BranchContribution, BranchMembership } from '../../../packages/reporting/src/index';
-import type { MigrationDeps, ParallelRunPolicy, RecordedParallelDay, RecordedRollback, AppliedDelta } from '../../migration/src/index';
+import type { MigrationDeps, ParallelRunPolicy, RecordedParallelDay, RecordedRollback, AppliedDelta, LoadRecord, LoadApplied } from '../../migration/src/index';
+import type { SliceAcceptance } from '../../../packages/migration/src/slice-import';
+import type { ParallelDaySignature } from '../../../packages/migration/src/parallel-day-sign';
 import type { ParallelDifference, RollbackReconciliation } from '../../../packages/migration/src/cutover';
 import type { TargetKind } from '../../../packages/migration/src/trial';
 import type { DomainFinding, Acceptance } from '../../../packages/migration/src/verification-report';
@@ -11869,6 +11871,39 @@ export function migrationAdapter(input: {
     trialLoadOperators: async (tenantId) => {
       const loads = await allOf<{ readonly operator: string }>(input.store, tenantId, STREAM.migration, 'MigrationTrialLoadRun');
       return [...new Set(loads.map((l) => l.operator))];
+    },
+    // MG-05 / MG-06 (cutover readiness): the load record — one fact per staging (load id + digest), its operator the
+    // signed-in caller; the named acceptance of a staging's exception list; and what landed when it was applied.
+    loadRecords: (tenantId) => allOf<LoadRecord>(input.store, tenantId, STREAM.migration, 'MigrationLoadRecorded'),
+    recordLoad: async (tenantId, record) => {
+      await input.store.append(tenantId, STREAM.migration, makeEvent({
+        id: keyedEventId('mig-load', `mig-load-${tenantId}-${record.loadId}-${record.sliceDigest}`), type: 'MigrationLoadRecorded', occurredAt: record.recordedAt,
+        idempotencyKey: `mig-load-${tenantId}-${record.loadId}-${record.sliceDigest}`, source: 'api/migration', payload: record,
+      }));
+    },
+    sliceAcceptances: async (tenantId, loadId) =>
+      (await allOf<SliceAcceptance & { readonly loadId: string }>(input.store, tenantId, STREAM.migration, 'MigrationLoadExceptionsAccepted')).filter((a) => a.loadId === loadId),
+    recordSliceAcceptance: async (tenantId, loadId, acceptance) => {
+      await input.store.append(tenantId, STREAM.migration, makeEvent({
+        id: keyedEventId('mig-load-accept', `mig-load-accept-${tenantId}-${loadId}-${acceptance.sliceDigest}`), type: 'MigrationLoadExceptionsAccepted', occurredAt: acceptance.acceptedAt,
+        idempotencyKey: `mig-load-accept-${tenantId}-${loadId}-${acceptance.sliceDigest}`, source: 'api/migration', payload: { ...acceptance, loadId },
+      }));
+    },
+    loadsApplied: async (tenantId, loadId) =>
+      (await allOf<LoadApplied>(input.store, tenantId, STREAM.migration, 'MigrationLoadApplied')).filter((a) => a.loadId === loadId),
+    recordLoadApplied: async (tenantId, applied) => {
+      await input.store.append(tenantId, STREAM.migration, makeEvent({
+        id: keyedEventId('mig-load-applied', `mig-load-applied-${tenantId}-${applied.loadId}-${applied.sliceDigest}-${applied.appliedAt}`), type: 'MigrationLoadApplied', occurredAt: applied.appliedAt,
+        idempotencyKey: `mig-load-applied-${tenantId}-${applied.loadId}-${applied.sliceDigest}-${applied.appliedAt}`, source: 'api/migration', payload: applied,
+      }));
+    },
+    // MG-10: each signature a parallel-run day has had — kept even after the day is re-recorded (it then no longer applies).
+    parallelDaySignatures: (tenantId) => allOf<ParallelDaySignature>(input.store, tenantId, STREAM.migration, 'ParallelDaySigned'),
+    recordParallelDaySignature: async (tenantId, signature) => {
+      await input.store.append(tenantId, STREAM.migration, makeEvent({
+        id: keyedEventId('parallel-day-signed', `parallel-day-signed-${tenantId}-${signature.businessDate}-${signature.dayDigest}`), type: 'ParallelDaySigned', occurredAt: signature.signedAt,
+        idempotencyKey: `parallel-day-signed-${tenantId}-${signature.businessDate}-${signature.dayDigest}`, source: 'api/migration', payload: signature,
+      }));
     },
     recordSignature: async (tenantId, signature) => {
       await input.store.append(tenantId, STREAM.migration, makeEvent({

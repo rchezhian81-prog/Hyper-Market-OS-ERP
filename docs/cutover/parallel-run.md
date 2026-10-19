@@ -63,6 +63,27 @@ sentence (hard rule #10), and the stock error it hides surfaces at a count six w
 two differ and which side was wrong (`legacy` / `new` / `both` / `neither`). A resolved difference stays
 resolved; a second decision on it is refused.
 
+## 3b. Sign the day — never over an unexplained difference
+
+When every difference on the day has a real reason, the named reconciler (or the owner) **signs the day**:
+
+```
+POST /v1/migration/parallel-run/days/2026-11-03/signature
+{ "statement": "compared the old day-end report with the new day book, area by area" }
+```
+
+**Refused while any difference beyond tolerance on that day has no reason** (`unexplained_material_difference`,
+naming each one) — owning a difference is not explaining it, and "ok" is not a reason. Refused for anybody but the
+named reconciler or the owner. A signature belongs to the figures it was given over: if the day is recorded again with
+other figures, it is unsigned again (the old signature stays in the ledger).
+
+**On the migration screen at the store** ("Running both" → "Enter a day"), the reconciler types the old ERP's day-end
+totals beside the new system's — or brings in the old ERP's day-end file (`area,old system,new system,allowed
+difference` per line, rupees for money) — writes a reason on each difference the screen names, saves the day, and signs
+it. Both are saved on that device first and carried to head office by the store computer
+(`MigrationParallelDayEntered`, `MigrationParallelDaySigned`); head office re-checks the person and the rule, and keeps
+a refused one visible on the screen. The same tab lists every day so far and whether it is signed.
+
 ## 4. Where the run stands, and the sheet to sign
 
 - `GET /v1/migration/parallel-run` — days run, consecutive clean days, open and unowned differences, value

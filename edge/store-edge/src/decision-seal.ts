@@ -21,6 +21,10 @@ export const SEALED_DECISIONS: Readonly<Record<string, { readonly kind: Decision
   ChecklistCompleted: { kind: 'checklist', named: 'signedBy', id: 'checklistId' },
   MigrationExceptionResolved: { kind: 'migration_exception', named: 'decidedBy', id: 'exceptionId' },
   MigrationTotalSigned: { kind: 'migration_total', named: 'signedBy', id: 'totalId' },
+  // MG-10: a parallel-run day entered on the migration screen (both systems' totals, a reason on each difference) and
+  // the day's signature — each sealed for the person the box verified, every word covered.
+  MigrationParallelDayEntered: { kind: 'migration_parallel_day', named: 'enteredBy', id: 'businessDate' },
+  MigrationParallelDaySigned: { kind: 'migration_parallel_day_signature', named: 'signedBy', id: 'businessDate' },
   // OB-172: a delivery booked in carries its receiving checklist INSIDE it — one record, sealed for the person who booked it
   // (the manager's screen) or declared it complete (the handheld, signed in with their own PIN), every word of it covered.
   GoodsReceived: { kind: 'goods_receipt', named: 'receivedBy', id: 'grnId' },
