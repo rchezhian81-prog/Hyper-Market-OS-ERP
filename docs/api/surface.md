@@ -281,6 +281,10 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/inventory/counts/:countId` | `inventory.movement.append` | core | yes |
 | POST | `/v1/inventory/counts/:countId/decide` | `inventory.adjustment.approve` | core | yes |
 | POST | `/v1/inventory/counts/:countId/synced` | `inventory.count.sync` | core | yes |
+| GET | `/v1/inventory/demand-events` | `inventory.availability.read` | core | — |
+| POST | `/v1/inventory/demand-events/:eventId` | `inventory.calendar.manage` | core | yes |
+| POST | `/v1/inventory/demand-events/:eventId/withdraw` | `inventory.calendar.manage` | core | yes |
+| GET | `/v1/inventory/demand-events/weather` | `inventory.availability.read` | core | — |
 | GET | `/v1/inventory/demand-forecast` | `inventory.availability.read` | core | — |
 | POST | `/v1/inventory/dock-slots/book` | `inventory.movement.append` | core | yes |
 | GET | `/v1/inventory/dsd-checkins` | `inventory.availability.read` | core | — |
@@ -469,9 +473,11 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | Method | Path | Permission | Feature | Idempotent |
 |---|---|---|---|---|
+| POST | `/v1/customer/age-confirmations/:customerRef` | `customer.age.confirm` | core | yes |
 | POST | `/v1/customer/duplicates` | `customer.segment.read` | core | yes |
 | POST | `/v1/customer/facts/complaints/:caseId` | `customer.segment.manage` | core | yes |
 | POST | `/v1/customer/facts/orders/:orderId` | `customer.segment.manage` | core | yes |
+| GET | `/v1/customer/overview` | `customer.segment.read` | core | — |
 | GET | `/v1/customer/segments/audience` | `customer.segment.read` | core | — |
 | POST | `/v1/customer/segments/audience` | `customer.segment.read` | core | yes |
 | GET | `/v1/customer/segments/policy` | `customer.segment.read` | core | — |
@@ -497,8 +503,15 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/loyalty/members` | `loyalty.member.enrol` | core | yes |
 | POST | `/v1/loyalty/members/:memberRef/leave` | `loyalty.member.enrol` | core | yes |
 | POST | `/v1/loyalty/members/lookup` | `loyalty.points.read` | core | yes |
+| GET | `/v1/loyalty/offer-batches` | `loyalty.coupon.read` | `loyalty` | — |
+| GET | `/v1/loyalty/offer-batches/:batchId` | `loyalty.coupon.read` | `loyalty` | — |
+| POST | `/v1/loyalty/offer-batches/:batchId` | `loyalty.offer.draft` | `loyalty` | yes |
+| POST | `/v1/loyalty/offer-batches/:batchId/approve` | `loyalty.offer.approve` | `loyalty` | yes |
+| POST | `/v1/loyalty/offer-batches/:batchId/reject` | `loyalty.offer.approve` | `loyalty` | yes |
 | POST | `/v1/loyalty/offers` | `loyalty.coupon.issue` | `loyalty` | yes |
 | POST | `/v1/loyalty/referrals/:referralId` | `loyalty.coupon.issue` | `loyalty` | yes |
+| POST | `/v1/loyalty/referrals/:referralId/expire` | `loyalty.referral.settle` | `loyalty` | yes |
+| POST | `/v1/loyalty/referrals/:referralId/payout` | `loyalty.referral.settle` | `loyalty` | yes |
 | GET | `/v1/loyalty/rule` | `loyalty.points.read` | core | — |
 | GET | `/v1/loyalty/wallets` | `loyalty.points.read` | core | — |
 | GET | `/v1/me/privacy` | `customer.privacy.self` | core | — |
@@ -824,6 +837,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/finance/rcm/purchases/:purchaseId` | `finance.rcm.record` | core | yes |
 | POST | `/v1/finance/rcm/purchases/:purchaseId/paid` | `finance.rcm.pay` | core | yes |
 | GET | `/v1/finance/rcm/register` | `finance.rcm.read` | core | — |
+| GET | `/v1/finance/referral-liability` | `finance.period.read` | core | — |
+| POST | `/v1/finance/referral-liability/post` | `finance.journal.post` | core | yes |
 | POST | `/v1/finance/refunds/day-totals` | `refund.exception.read` | core | yes |
 | POST | `/v1/finance/refunds/exceptions` | `refund.exception.read` | core | yes |
 | GET | `/v1/finance/retention` | `finance.period.read` | core | — |
@@ -897,12 +912,14 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/platform/version-policy` | `platform.health.read` | core | — |
 | POST | `/v1/platform/version-policy` | `platform.device.manage` | core | yes |
 | POST | `/v1/platform/version-policy/kill` | `platform.device.manage` | core | yes |
+| GET | `/v1/reporting/basket-affinity` | `reporting.report.read` | core | — |
 | POST | `/v1/reporting/brief` | `owner.kpi.read` | core | yes |
 | GET | `/v1/reporting/brief-schedule` | `owner.kpi.read` | core | — |
 | POST | `/v1/reporting/brief-schedule` | `owner.brief.manage` | core | yes |
 | POST | `/v1/reporting/brief-schedule/due` | `owner.kpi.read` | core | yes |
 | POST | `/v1/reporting/brief-schedule/run` | `owner.brief.manage` | core | yes |
 | POST | `/v1/reporting/brief-schedule/sent` | `owner.brief.manage` | core | yes |
+| GET | `/v1/reporting/brief-today` | `owner.kpi.read` | core | — |
 | POST | `/v1/reporting/compare` | `owner.kpi.read` | core | yes |
 | POST | `/v1/reporting/drill` | `owner.kpi.read` | core | yes |
 | GET | `/v1/reporting/drill-audits` | `owner.kpi.read` | core | — |

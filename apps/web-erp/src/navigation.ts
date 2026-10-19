@@ -201,6 +201,12 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // R3 D-9 (OB-142 "A"): the Staff schedule — staff needed per hour from the sales, a draft roster within the Shops Act
   // limits that a manager commits, and actual attendance against it. A head-office page over its own routes.
   { id: 'schedule', label: 'Staff schedule', labelTa: 'பணியாளர் அட்டவணை', path: '/schedule', requires: 'workforce.roster.read', group: 'People', served: 'unserved' },
+  // ── R4 Lane 3 (customer insight, offers and demand): head-office pages over their own routes ──
+  { id: 'customers', label: 'Customers', labelTa: 'வாடிக்கையாளர்கள்', path: '/customers', requires: 'customer.segment.read', group: 'Customers', served: 'unserved' },
+  { id: 'basket-affinity', label: 'Bought together', labelTa: 'சேர்ந்து வாங்கப்பட்டவை', path: '/basket-affinity', requires: 'reporting.report.read', group: 'Reports', served: 'unserved' },
+  { id: 'demand-events', label: 'Store events', labelTa: 'கடை நிகழ்வுகள்', path: '/demand-events', requires: 'inventory.availability.read', group: 'Inventory', served: 'unserved' },
+  { id: 'morning-brief', label: 'Morning brief', labelTa: 'காலைச் சுருக்கம்', path: '/morning-brief', requires: 'owner.kpi.read', group: 'Reports', served: 'unserved' },
+  // ── end R4 Lane 3 ──
   // AI control — the kill switch, agents, the proposal queue, cost (A01–A10 governance). Gated on the budget read
   // (`ai.budget.read`), the owner's permission; the switches need `ai.killswitch.set` / `ai.budget.set` /
   // `ai.agent.enable`, which the routes enforce.

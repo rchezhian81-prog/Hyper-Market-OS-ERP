@@ -37,7 +37,8 @@ describe.skipIf(!DATABASE_URL)('the brief worker runs inside the served API (EA-
     const cloud = await startRealCloud({
       databaseUrl: DATABASE_URL!, tenantId: T, owner: 'u-owner', packSigningKey: randomBytes(32).toString('hex'),
       env: { BRIEF_WORKER_TENANT_IDS: T },
-      providers: { notificationTransport: transport, notificationWorkerIntervalMs: 150, briefWorkerIntervalMs: 150 },
+      // R4 · EA-07 · OB-222: production hands in no sending link (sending switched off); the stand-in proves the path.
+      providers: { notificationTransport: transport, notificationWorkerIntervalMs: 150, briefWorkerIntervalMs: 150, briefSendingLink: { name: 'test stand-in', switchedOn: true } },
     });
     try {
       expect(cloud.said.join('\n')).toMatch(/brief worker: briefing 1 shop\(s\)/);

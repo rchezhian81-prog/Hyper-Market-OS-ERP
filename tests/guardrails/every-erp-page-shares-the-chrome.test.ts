@@ -22,8 +22,8 @@ const styleOf = (html: string): string => html.slice(html.indexOf('<style>'), ht
 const code = (source: string): string => source.replace(/\/\*[\s\S]*?\*\//g, '').split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
 
 describe('every page carries the one chrome', () => {
-  it('finds the sixty pages (round 8: Returned goods to decide, Customer cases, Assistant drafts; round 10: Organisation, Delegation; round 12: Month-end, Supplier bills, Count plans, Transfers, Incidents and recovery drills; round 26: Store computers; R2 C20: Committee annual report; R3 A17: Input tax credit; R3 D-9: Staff schedule; R4 B20–B22: EPR registers)', () => {
-    expect(PAGES.length).toBe(71);
+  it('finds the sixty pages (round 8: Returned goods to decide, Customer cases, Assistant drafts; round 10: Organisation, Delegation; round 12: Month-end, Supplier bills, Count plans, Transfers, Incidents and recovery drills; round 26: Store computers; R2 C20: Committee annual report; R3 A17: Input tax credit; R3 D-9: Staff schedule; R4 B20–B22: EPR registers; R4 Lane 3: Customers, Bought together, Store events, Morning brief)', () => {
+    expect(PAGES.length).toBe(75);
   });
 
   it('loads sre-chrome.js AFTER its own script, so the page\'s words come first and the chrome finishes the frame', () => {
@@ -223,6 +223,11 @@ describe('every word on every page has a Tamil twin (design system §1 rule 6 ·
     'waste-analytics.js': 'apps/web-erp/src/store-ops-session.ts',
     // R3 D-9: the Staff schedule page's words are in its tested session model.
     'schedule.js': 'apps/web-erp/src/schedule-session.ts',
+    // R4 Lane 3: the insight pages' words are in their tested session models.
+    'customers.js': 'apps/web-erp/src/customers-session.ts',
+    'basket-affinity.js': 'apps/web-erp/src/basket-affinity-session.ts',
+    'demand-events.js': 'apps/web-erp/src/demand-events-session.ts',
+    'morning-brief.js': 'apps/web-erp/src/morning-brief-session.ts',
   };
   // No page is English-only any more: the erasure console and the company report joined the toggle in slice 5c.
   for (const script of SCRIPTS) {

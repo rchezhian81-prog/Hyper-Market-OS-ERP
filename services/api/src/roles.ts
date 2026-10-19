@@ -254,6 +254,16 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'payroll.legal.read', 'payroll.legal.configure',
       'epr.register.read', 'epr.register.record', 'epr.settings.configure',
       // ── R4 Lane 1 — end
+      // ── R4 Lane 3 (customer insight, offers and demand) — begin
+      // D-22: draft a batch of personal offers, and APPROVE (or reject) a batch — only a person issues an offer (P-05).
+      'loyalty.offer.draft', 'loyalty.offer.approve',
+      // D-22: record that a member was seen to be 18 or over (no date of birth is kept).
+      'customer.age.confirm',
+      // M17-FR-02 (OB-221): pay out, or let lapse, an earned referral reward — a compensating entry on the liability.
+      'loyalty.referral.settle',
+      // D-24 (OB-220): record and withdraw the store's festivals and local events.
+      'inventory.calendar.manage',
+      // ── R4 Lane 3 — end
     ],
   },
   {
@@ -365,6 +375,14 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // counts, and reads the EPR registers; never sets the registration or brand-owner answers (`epr.settings.configure`).
       'epr.register.read', 'epr.register.record',
       // ── R4 Lane 1 — end
+      // ── R4 Lane 3 (customer insight, offers and demand) — begin
+      // D-22: draft a batch of personal offers (the OWNER approves it) and record a member's adult check.
+      'loyalty.offer.draft', 'customer.age.confirm',
+      // M17-FR-02 (OB-221): pay out, or let lapse, an earned referral reward.
+      'loyalty.referral.settle',
+      // D-24: record and withdraw the store's festivals and local events.
+      'inventory.calendar.manage',
+      // ── R4 Lane 3 — end
     ],
   },
   {

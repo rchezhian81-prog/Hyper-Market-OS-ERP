@@ -42,7 +42,8 @@ describe('role-scoped navigation', () => {
     const labels = nav.flatMap((g) => g.items.map((i) => i.label));
     // The day-close read also opens "Reopen a locked day" — same permission, same people (accountant / owner).
     // OB-16 workspaces: Cash & finance stands before Reports in the rail.
-    expect(labels).toEqual(['Today', 'Over / short sign-off', 'Reopen a locked day', 'Reports']);
+    // R4 Lane 3: the report read also opens "Bought together" (D-23).
+    expect(labels).toEqual(['Today', 'Over / short sign-off', 'Reopen a locked day', 'Bought together', 'Reports']);
     expect(labels).not.toContain('Users & roles'); // not their job
     expect(labels).not.toContain('Stock counts');
   });
@@ -53,7 +54,7 @@ describe('role-scoped navigation', () => {
     expect(nav.map((g) => g.group)).toEqual(['Today', 'Receiving', 'Inventory', 'Sales', 'Finance', 'Customers', 'Reports']); // round 8: + Customers (Customer cases, service.case.read)
     expect(nav[0]?.items.map((i) => i.id)).toEqual(['dashboard']);
     // Round 12: Transfers (gated on the same availability read) joins the Inventory group.
-    expect(nav[2]?.items.map((i) => i.id)).toEqual(['counts', 'transfers', 'stock-health', 'unsellable', 'warehouse-supervisor']);
+    expect(nav[2]?.items.map((i) => i.id)).toEqual(['counts', 'transfers', 'stock-health', 'unsellable', 'warehouse-supervisor', 'demand-events']); // R4 Lane 3: Store events (D-24) on the same read
   });
 
   it('shows nothing to an unknown user (default-deny)', () => {
