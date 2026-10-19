@@ -11,7 +11,11 @@ import { makeEvent } from '../../../packages/contracts/src/event';
 import {
   STREAM, streamName, foldPurchaseOrders, goodsReceiptAdapter, liveSupplierInvoices,
   productMasterAdapter, priceListAdapter, storeRulesAdapter, averageBuyingCosts, lpCasesAdapter,
+  planogramStoreAdapter, shelfCountAdapter, orgStructureAdapter, inventoryAdapter,
 } from './adapters';
+import { shelfBayComplianceRoutes, type ShelfBayComplianceDeps, type StoredShelfPhoto } from '../../inventory/src/shelf-bay-compliance';
+import { SWITCHED_OFF_SHELF_RECOGNITION } from '../../../packages/merchandising/src/shelf-image-port';
+import { branchOfLocationIn } from '../../inventory/src/location-scope';
 import { lpCorrelationRoutes, type LpCorrelationDeps } from '../../pos/src/lp-correlation';
 import type { TillExceptionFact } from '../../../packages/loss-prevention/src/correlate';
 import type { TillActivity } from '../../pos/src/loss-prevention';
@@ -190,6 +194,44 @@ export function lpCorrelationAdapter(input: { readonly store: EventStore; readon
   };
 }
 
+// ── D-13 planogram score per bay, shelf photos, recognition switched off ────────────────────────────────────────────
+
+const shelfPhotos = (storeId: string): string => streamName(STREAM.inventory, 'shelf-photos', storeId);
+
+/**
+ * D-13 (R4, OB-219): the shelf photos (kept on head office's own store, OB-215; one record per photo id, never replaced),
+ * the store's shelf counts, shelf map and planograms (the existing registers), head office's on-hand at the store (what is
+ * "in the building"), and the recognition link — ALWAYS the switched-off one here, so no photo leaves the shop.
+ */
+export function shelfBayComplianceAdapter(input: { readonly store: EventStore; readonly now: () => string; readonly recordAudit?: Recorder }): ShelfBayComplianceDeps {
+  const { store, now } = input;
+  const plans = planogramStoreAdapter({ store, now });
+  return {
+    now,
+    photos: async (t, storeId) => (await store.readStream(t, shelfPhotos(storeId), { type: 'ShelfPhotoKept' })).map((e) => e.event.payload as StoredShelfPhoto),
+    recordPhoto: async (t, p) => {
+      await store.append(t, shelfPhotos(p.storeId), makeEvent({
+        id: `shelf-photo-${p.photoId}`, type: 'ShelfPhotoKept', occurredAt: p.takenAt,
+        idempotencyKey: `shelf-photo-${t}-${p.storeId}-${p.photoId}`, source: 'api/inventory', payload: p,
+      }));
+    },
+    counts: async (t, storeId) => shelfCountAdapter({ store, now }).counts(t, storeId),
+    shelfMap: async (t, storeId) => plans.shelfMap(t, storeId),
+    planograms: async (t, storeId) => plans.planograms(t, storeId),
+    onHandAtStore: async (t, storeId) => {
+      const branchOf = branchOfLocationIn(await orgStructureAdapter({ store, now }).nodes(t));
+      const out: Record<string, number> = {};
+      for (const r of await inventoryAdapter({ store, now }).availability(t)) {
+        if (r.locationId !== storeId && branchOf(r.locationId) !== storeId) continue;
+        out[r.productId] = (out[r.productId] ?? 0) + Math.max(0, r.onHandMinor);
+      }
+      return out;
+    },
+    recognition: SWITCHED_OFF_SHELF_RECOGNITION,
+    ...(input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit }),
+  };
+}
+
 // ── the one entry point ──────────────────────────────────────────────────────────────────────────────────────────
 
 /** Every Lane 4 route, composed over head office's store (or a throw-away in-memory one when the surface has none). */
@@ -199,5 +241,6 @@ export function r4SupplyLpRoutes(input: { readonly store: EventStore | undefined
   return [
     ...competitorDraftRoutes(competitorDraftAdapter(base)),
     ...lpCorrelationRoutes(lpCorrelationAdapter(base)),
+    ...shelfBayComplianceRoutes(shelfBayComplianceAdapter(base)),
   ];
 }

@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1133 | 688 | 688 | 89 | 334 |
+| 13 | 1137 | 689 | 689 | 89 | 334 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -340,10 +340,14 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/merchandising/display-contracts/:contractId` | `merchandising.display.manage` | core | yes |
 | POST | `/v1/merchandising/display-contracts/review` | `merchandising.space.read` | core | yes |
 | POST | `/v1/merchandising/planogram-compliance` | `planogram.compliance.read` | core | yes |
+| GET | `/v1/merchandising/planogram-compliance/bays` | `planogram.compliance.read` | core | — |
 | GET | `/v1/merchandising/shelf-counts` | `shelf.count.read` | core | — |
 | POST | `/v1/merchandising/shelf-counts/:countId` | `shelf.count.record` | core | yes |
 | POST | `/v1/merchandising/shelf-counts/:countId/synced` | `shelf.count.sync` | core | yes |
 | POST | `/v1/merchandising/shelf-counts/worklist` | `shelf.count.read` | core | yes |
+| GET | `/v1/merchandising/shelf-photos` | `shelf.count.read` | core | — |
+| GET | `/v1/merchandising/shelf-photos/:photoId` | `shelf.count.read` | core | — |
+| POST | `/v1/merchandising/shelf-photos/:photoId` | `shelf.count.record` | core | yes |
 | POST | `/v1/merchandising/space/performance` | `merchandising.space.read` | core | yes |
 | GET | `/v1/merchandising/stores/:storeId/planograms` | `planogram.compliance.read` | core | — |
 | GET | `/v1/merchandising/stores/:storeId/planograms/:planogramId` | `planogram.compliance.read` | core | — |

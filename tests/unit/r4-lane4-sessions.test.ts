@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createScorecardSession, ratingWords, SCORECARD_COPY } from '../../apps/web-erp/src/supplier-scorecard-session';
 import { createCorrelationSession, CORRELATION_COPY } from '../../apps/web-erp/src/lp-correlation-session';
+import { createBaysSession, bayScoreWords, BAYS_COPY } from '../../apps/web-erp/src/planogram-bays-session';
 
 // R4 Lane 4 — the two new page sessions (D-10 Supplier scorecard, D-21 "Seen together"): they refuse only the cheap things
 // before a request, say "not rated" with its reason (never a number), send nothing a person did not ask for, and carry a
@@ -51,5 +52,24 @@ describe('"Seen together" session (D-21)', () => {
     ]);
     expect(Object.keys(r.calls[2]!.body as object).sort()).toEqual(['cameraId', 'collectedBy', 'from', 'to']);
     expect(Object.keys(CORRELATION_COPY.ta).sort()).toEqual(Object.keys(CORRELATION_COPY.en).sort());
+  });
+});
+
+describe('Shelf compliance by bay session (D-13)', () => {
+  it('reads with planogram.compliance.read; keeps a photo only with shelf.count.record, of an allowed type and size', async () => {
+    const r = recorder();
+    const s = createBaysSession({ viewer: { userId: 'u', permissions: ['planogram.compliance.read', 'shelf.count.record'] }, fetch: r.fetch, newKey: () => 'k', newId: () => 'ph-1' });
+    expect((await s.bays('br-1')).result).toBe('ok');
+    const photo = { storeId: 'br-1', aisle: 1, rack: 1, bay: 1, mediaType: 'image/png', bytes: 10, contentBase64: 'AA==' };
+    expect(await s.keepPhoto({ ...photo, mediaType: 'image/gif' })).toEqual({ result: 'invalid', why: 'typeNotAllowed' });
+    expect(await s.keepPhoto({ ...photo, bytes: 700 * 1024 + 1 })).toEqual({ result: 'invalid', why: 'tooLarge' });
+    expect((await s.keepPhoto(photo)).result).toBe('ok');
+    expect(r.calls.map((c) => `${c.method} ${c.url}`)).toEqual(['GET /v1/merchandising/planogram-compliance/bays?storeId=br-1', 'POST /v1/merchandising/shelf-photos/ph-1']);
+    const reader = createBaysSession({ viewer: { userId: 'u', permissions: ['planogram.compliance.read'] }, fetch: r.fetch });
+    expect(await reader.keepPhoto(photo)).toEqual({ result: 'invalid', why: 'cannotRecord' });
+    const base = { bayKey: 'A1-R1-B1', aisle: 1, rack: 1, bay: 1, planned: 2, observed: 0, compliant: 0, gaps: [], photos: [], measuredBy: 'counted by staff' };
+    expect(bayScoreWords('en', { ...base, score: { kind: 'not_scored', because: 'nothing counted' } })).toBe('Not scored — nothing counted');
+    expect(bayScoreWords('en', { ...base, observed: 2, compliant: 1, score: { kind: 'scored', bp: 5_000 } })).toBe('50% (1/2 counted, 2 facings planned)');
+    expect(Object.keys(BAYS_COPY.ta).sort()).toEqual(Object.keys(BAYS_COPY.en).sort());
   });
 });
