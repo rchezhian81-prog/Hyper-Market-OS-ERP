@@ -105,8 +105,15 @@ function readLines(raw: unknown, kind: TakeBackKind): HandoverLine[] {
   });
 }
 
+/** Canonical JSON (keys sorted at every depth) — a stored record reads back with its keys in any order (PostgreSQL JSONB). */
+function canonical(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(canonical).join(',')}]`;
+  if (v !== null && typeof v === 'object') return `{${Object.keys(v as object).sort().map((k) => `${JSON.stringify(k)}:${canonical((v as Record<string, unknown>)[k])}`).join(',')}}`;
+  return JSON.stringify(v) ?? 'null';
+}
+/** Whether the stored record is the one just asked for — the same facts, whoever and whenever it was first recorded. */
 const sameRecord = (a: object, b: object, ignore: readonly string[]): boolean => {
-  const strip = (o: object) => JSON.stringify(Object.fromEntries(Object.entries(o).filter(([k]) => !ignore.includes(k)).sort(([x], [y]) => x.localeCompare(y))));
+  const strip = (o: object) => canonical(Object.fromEntries(Object.entries(o).filter(([k]) => !ignore.includes(k))));
   return strip(a) === strip(b);
 };
 
