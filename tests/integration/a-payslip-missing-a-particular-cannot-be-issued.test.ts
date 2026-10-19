@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import type { ApiHarness } from '../support/api-harness';
 import { backings, openDatabase, closeDatabase, caller, addStaff, codeOf, whatOf } from '../support/r4-lane1';
+import { payslipLateSweep } from '../../services/api/src/r4-pay-epr-adapters';
 
 /**
  * **R4 · C15 · OB-208 · OB-209 — the statutory digital payslip (the real API, in memory and on real PostgreSQL, with a
@@ -85,8 +86,12 @@ describe.each(backings())('a payslip missing a particular cannot be issued — o
     expect((await req('GET', '/v1/hr/payroll/payslip-exceptions', undefined, 'u-mgr', { period: PERIOD })).status).toBe(403);
     const late = (await ok(req('GET', '/v1/hr/payroll/payslip-exceptions', undefined, 'u-owner', { period: PERIOD }), 'late')).body as { exceptions: { employeeId: string; kind: string }[] };
     expect(late.exceptions.map((e) => [e.employeeId, e.kind])).toEqual([['e1', 'issued_after_pay_date'], ['e3', 'not_issued_by_pay_date']]);
-    const raised = (await ok(req('POST', '/v1/hr/payroll/payslip-exceptions/raise', { period: PERIOD }), 'raise')).body as { raised: number; owners: number };
-    expect(raised).toMatchObject({ raised: 2, owners: 1 });
+    // On the alert worker's timer (no person presses anything) the sweep raises both, once.
+    const sweep = payslipLateSweep({ store: h.store, now: () => new Date().toISOString() });
+    expect(await sweep(T, new Date().toISOString())).toBe(2);
+    expect(await sweep(T, new Date().toISOString())).toBe(0);
+    const raised = (await ok(req('POST', '/v1/hr/payroll/payslip-exceptions/raise', { period: PERIOD }), 'raise')).body as { raised: number; alreadyOpen: number; owners: number };
+    expect(raised).toMatchObject({ raised: 0, alreadyOpen: 2, owners: 1 });
     // Raised once: a second sweep finds them already open.
     expect(((await ok(req('POST', '/v1/hr/payroll/payslip-exceptions/raise', { period: PERIOD }), 'raise again')).body as { raised: number; alreadyOpen: number })).toMatchObject({ raised: 0, alreadyOpen: 2 });
     const inbox = (await ok(req('GET', '/v1/platform/alerts/inbox'), 'owner inbox')).body as { alerts: { alert: { alertId: string; detail: string } }[] };

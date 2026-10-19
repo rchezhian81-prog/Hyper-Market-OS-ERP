@@ -14,7 +14,7 @@ import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/audit-trail';
 import {
-  foldPayrollLegalSettings, localDate,
+  foldPayrollLegalSettings, localDate, payslipsLateForPayDate,
   type PayrollLegalSettings, type PayrollLegalSettingChange, type RecordedContributionTotals, type PayslipLateException, type ParticularsList,
 } from '../../../packages/payroll/src/index';
 import type { OwnBrandDeclaration, UnitsMovement, EprSettingChange, Recycler, TakeBack, Handover, TakeBackCount, AssetNotEWaste, DisposedAsset } from '../../../packages/epr/src/index';
@@ -111,6 +111,34 @@ export function statutoryPayAdapter(input: { readonly store: EventStore; readonl
     utcOffsetMinutes: (tenantId) => offsetOf(store, now, tenantId),
     raiseOwnerAlerts: (tenantId, exceptions, by, at) => raiseLatePayslipAlerts(store, now, tenantId, exceptions, by, at),
     recordAudit: (tenantId, entry) => auditTrail.recordAudit(tenantId, entry),
+  };
+}
+
+/**
+ * C15 on a timer: raise every payslip late for its pay date — over every month with a payslip prepared — into each
+ * owner's alert inbox, once per payslip, exactly as POST /v1/hr/payroll/payslip-exceptions/raise does. Answers how many
+ * alerts it newly raised. Shaped for the ops-alert worker's `alsoEachPass` hook (`(tenantId, at) => Promise<number>`);
+ * wiring it there is one line in main.ts / ops-alert-sweeps.ts (the coordinator's), until then the raise route does it.
+ */
+export function payslipLateSweep(input: { readonly store: EventStore; readonly now: () => string }) {
+  const deps = statutoryPayAdapter(input);
+  return async (tenantId: string, at: string): Promise<number> => {
+    const periods = [...new Set((await all<PreparedPayslip>(input.store, tenantId, PREPARED_STREAM, 'StatutoryPayslipPrepared')).map((p) => p.period))].sort();
+    const offset = await deps.utcOffsetMinutes(tenantId);
+    const today = localDate(input.now(), offset);
+    let raised = 0;
+    for (const period of periods) {
+      const [prepared, issued] = await Promise.all([deps.prepared(tenantId, period), deps.issued(tenantId, period)]);
+      const issuedAt = new Map(issued.map((i) => [i.employeeId, i.issuedAt] as const));
+      const late = payslipsLateForPayDate({
+        today, utcOffsetMinutes: offset,
+        expected: prepared.filter((p) => !issued.some((i) => i.employeeId === p.employeeId && i.issuedAt === undefined)).map((p) => ({
+          employeeId: p.employeeId, period, payDate: p.payslip.onDate, ...(issuedAt.get(p.employeeId) === undefined ? {} : { issuedAt: issuedAt.get(p.employeeId)! }),
+        })),
+      });
+      raised += (await raiseLatePayslipAlerts(input.store, input.now, tenantId, late, 'system:payslip-pay-date', at)).raised;
+    }
+    return raised;
   };
 }
 
