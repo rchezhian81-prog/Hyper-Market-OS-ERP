@@ -1,4 +1,4 @@
-# R4 acceptance sentences — DRAFT for the owner's signature (19 Oct 2026)
+# R4 acceptance sentences — SIGNED 19 Oct 2026 (OB-227)
 
 Decision OB-226 "All at once": you approve all of these in one sitting; no R4 item is built before its sentence is signed. Each sentence is how the item will be proved by an automated test. Change any word you want; cross out anything you do not want.
 
@@ -34,4 +34,4 @@ Three rules hold for every row: synthetic data only until your written Option 2 
 | EA-07 — Owner's morning brief sending, switched off | The morning brief is still prepared every day, but its sending is a switched-off link with a test stand-in (OB-222). Nothing is sent while switched off, and the brief's screen says it was not sent. (Source: EA-07; OB-47.) | |
 | PMLA — high-value cash reporting | PMLA — added when the CA's rule arrives (OB-225); no sentence yet. | |
 
-Signed by the owner: ____________________   Date: ____________
+Signed by the owner: "R4 signed" (owner, in writing; decision OB-227)   Date: 19 Oct 2026. B23 and WF-16 still wait for the owner's grievance officer and return windows (OB-223, OB-213) before they can pass.

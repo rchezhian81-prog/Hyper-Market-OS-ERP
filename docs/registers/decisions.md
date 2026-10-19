@@ -272,6 +272,7 @@ Status legend: **Accepted** · **Open — blocking** (holds coding / a gate) ·
 | OB-224 | **CA figures for R4 (Q10).** (scratchpad r4-scope §4) | Send the CA one list now (payslip particulars, minimum wages, normal hours, EPF/ESI rates and thresholds, TCS, coupon accounting, attendance record period). | **ACCEPTED — "Send one list now" (owner, 19 Oct 2026, in writing).** |
 | OB-225 | **PMLA cash reporting (Q12).** (scratchpad r4-scope §4) | Added to R4 the day the CA sends the rule. | **ACCEPTED — "Add to R4 when CA sends it" (owner, 19 Oct 2026, in writing).** |
 | OB-226 | **R4 acceptance sentences (Q0).** (scratchpad r4-scope §4) | Signed all at once, in one document, before any R4 build (as OB-137 for R3). | **ACCEPTED — "All at once" (owner, 19 Oct 2026, in writing).** |
+| OB-227 | **OB-226: the R4 acceptance sentences in `docs/requirements/R4_ACCEPTANCE_DRAFT_2026-10-19.md`, signed all at once.** | Signed: the 24 drafted sentences are the R4 acceptance criteria (PMLA has no sentence yet, OB-225). B23 and WF-16 cannot pass until the grievance officer (OB-223) and the return windows with the non-returnable list (OB-213) are given. | **ACCEPTED — "R4 signed" (owner, 19 Oct 2026, in writing).** |
 
 ## AI-assisted development governance — AID-01 to AID-10 (roadmap §18)
 
