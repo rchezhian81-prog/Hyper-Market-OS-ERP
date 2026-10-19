@@ -435,6 +435,8 @@
     'gst-reconciliation': 'git-merge',
     'gst-returns': 'receipt-text',
     'itc-review': 'file-text',
+    'online-store': 'receipt-text', // R4 Lane 2
+    'product-content': 'package', // R4 Lane 2
     'payroll': 'banknote',
     'my-payslip': 'wallet',
     'ess': 'user-round',

@@ -91,6 +91,10 @@ export const PII_FIELD_INVENTORY: readonly PiiFieldDeclaration[] = Object.freeze
   { file: 'services/customer/src/duplicates.ts', field: 'phone', whose: 'customer', protection: 'not_kept', evidence: 'the duplicate-detection route reads the candidates in the request and keeps only the match it proposes' },
   { file: 'services/customer/src/duplicates.ts', field: 'email', whose: 'customer', protection: 'not_kept', evidence: 'the duplicate-detection route reads the candidates in the request and keeps only the match it proposes' },
   { file: 'services/customer/src/index.ts', field: 'dateOfBirth', whose: 'customer', protection: 'not_kept', evidence: 'the child-data route computes an age from it for one decision and keeps the decision only' },
+  // ── R4 Lane 2 (begin) ──
+  { file: 'services/customer/src/signup-sms-code.ts', field: 'mobile', whose: 'customer', protection: 'not_kept', evidence: 'the switched-off SMS code link reads the number in the request; only a test stand-in challenge holds it, in memory' },
+  { file: 'packages/storefront/src/listing-duties.ts', field: 'address', whose: 'shop', protection: 'not_personal', evidence: 'the shop\'s own registered address shown on every online listing (B23) — not a person' },
+  // ── R4 Lane 2 (end) ──
   { file: 'services/platform/src/outbound-webhooks.ts', field: 'address', whose: 'shop', protection: 'not_personal', evidence: 'the network address a partner webhook is sent to — not a person' },
   { file: 'packages/customer/src/matching.ts', field: 'phone', whose: 'customer', protection: 'not_kept', evidence: 'duplicate detection reads the candidates in the request and keeps only the match it proposes' },
   { file: 'packages/customer/src/matching.ts', field: 'email', whose: 'customer', protection: 'not_kept', evidence: 'duplicate detection reads the candidates in the request and keeps only the match it proposes' },

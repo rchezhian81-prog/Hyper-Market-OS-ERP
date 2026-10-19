@@ -22,7 +22,6 @@ import type { MemberRecord } from './loyalty-members';
 export interface MemberAppLink {
   readonly customerRef: string;
   readonly memberRef: string;
-  readonly mobileLast4: string;
   readonly linked: boolean;
   readonly verifiedHow: 'seen_on_phone';
   readonly by: string;
@@ -80,9 +79,11 @@ export function digitalReceiptRoutes(deps: DigitalReceiptDeps): readonly Route[]
       permission: 'storefront.order.read', entitlement: 'customer_app',
       handler: async (ctx) => {
         const link = currentLink(await deps.links(ctx.tenantId), ctx.userId);
+        // The last four digits are read from the member's own (sealed) record, never kept on the link itself.
+        const history = link === undefined ? [] : await deps.memberHistory(ctx.tenantId, link.memberRef);
         return { status: 200, body: {
           on: await choiceNow(ctx.tenantId, ctx.userId),
-          member: link === undefined ? null : { mobileLast4: link.mobileLast4, linkedAt: link.at },
+          member: link === undefined ? null : { mobileLast4: history[history.length - 1]?.mobileLast4 ?? null, linkedAt: link.at },
           ...(link === undefined ? { notLinkedSay: `Your app is not yet tied to your loyalty membership. Show this reference at the service desk with your phone: ${ctx.userId}` } : {}),
           appReference: ctx.userId, sending: RECEIPT_SENDING,
         } };
@@ -153,9 +154,9 @@ export function digitalReceiptRoutes(deps: DigitalReceiptDeps): readonly Route[]
         const memberRef = memberRefFor(deps.memberKey, mobile)!;
         const history = await deps.memberHistory(ctx.tenantId, memberRef);
         if (history[history.length - 1]?.status !== 'member') throw apiError(422, { code: 'not_a_member', whatHappened: 'This number is not a loyalty member, so there are no bills to tie to the app.', wasItSaved: 'not_saved', nextSafeAction: 'Enrol the customer first (with their yes), then tie the app.' });
-        const link: MemberAppLink = { customerRef: app, memberRef, mobileLast4: mobile.slice(-4), linked: b['linked'] !== false, verifiedHow: 'seen_on_phone', by: ctx.userId, at: deps.now() };
+        const link: MemberAppLink = { customerRef: app, memberRef, linked: b['linked'] !== false, verifiedHow: 'seen_on_phone', by: ctx.userId, at: deps.now() };
         await deps.recordLink(ctx.tenantId, link);
-        return { status: 201, body: { appCustomerRef: app, mobileLast4: link.mobileLast4, linked: link.linked } };
+        return { status: 201, body: { appCustomerRef: app, mobileLast4: history[history.length - 1]!.mobileLast4, linked: link.linked } };
       },
     },
   ];
