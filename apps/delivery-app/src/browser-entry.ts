@@ -24,7 +24,7 @@
 import { openDeviceOutbox, guardedStore, type DeviceOutbox } from '../../../packages/sync/src/device-outbox';
 import { drainToBox, boxStatus } from '../../../packages/sync/src/device-drain';
 import { pageStamping, type SignInClock } from '../../../packages/sync/src/sign-in-stamp';
-import { RouteSession, type ContributionRule, type StopInput } from './route-session';
+import { RouteSession, type CollectionInput, type ContributionRule, type StopInput } from './route-session';
 
 import { mountDemoBanner, type BannerDocument } from '../../../packages/ui/src/demo-banner';
 
@@ -42,6 +42,8 @@ export interface DriverData {
   readonly routeId?: string;
   readonly driverId?: string;
   readonly stops?: readonly StopInput[];
+  /** WF-16 (driver): online returns booked for collection on this route, with their booked lines. */
+  readonly collections?: readonly CollectionInput[];
   /** The tenant's contribution stop rule (D09). Choose-able, never hard-coded. */
   readonly contributionRule?: ContributionRule;
   /** |over/short| at or above which a cash handover needs the cash office. Per-tenant. */
@@ -108,14 +110,17 @@ export function bootDriver(
   outbox: DeviceOutbox,
   now: () => string = () => new Date().toISOString(),
 ): RouteSession | null {
-  const stops = data?.stops;
-  if (data?.routeId === undefined || data.driverId === undefined || stops === undefined || stops.length === 0) {
+  const stops = data?.stops ?? [];
+  const collections = data?.collections ?? [];
+  // A route of return collections alone is still a route (WF-16, driver).
+  if (data?.routeId === undefined || data.driverId === undefined || (stops.length === 0 && collections.length === 0)) {
     return null;
   }
   return new RouteSession(data.routeId, data.driverId, stops, outbox, {
     currency: 'INR',
     now,
     ...(data.contributionRule === undefined ? {} : { contributionRule: data.contributionRule }),
+    ...(collections.length === 0 ? {} : { collections }),
   });
 }
 

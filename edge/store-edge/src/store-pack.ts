@@ -161,6 +161,14 @@ export interface PackRoute {
     readonly orderValueMinor?: number;
   }[];
   readonly contributionRule?: { readonly maxCostShareBps: number };
+  /** WF-16 (driver): booked return collections — only ever from head office's assignments, never the hand-written file. */
+  readonly collections?: readonly {
+    readonly returnId: string;
+    readonly orderRef: string;
+    readonly area: string;
+    readonly collectOn: string;
+    readonly lines: readonly { readonly productId: string; readonly quantityMinor: number }[];
+  }[];
 }
 
 /** Today's confirmed deliveries, for the box to plan into routes (M19-FR-03). */

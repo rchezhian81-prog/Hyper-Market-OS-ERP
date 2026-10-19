@@ -252,7 +252,8 @@ describe('where each piece of work is — the five shared device states (SP-3c-i
     expect(before[2]).toMatchObject({ what: 'Gandhipuram · ORD-2', detail: 'failed · nobody_home' });
     expect(before[1]).toMatchObject({ what: 'route-1', detail: '25000 of 25000 INR · 0 exceptions' });
     expect(before[0]).toMatchObject({ what: 'route-1', detail: 'counted 24000 INR · short 1000' });
-    for (const kind of SENT_WORK_KINDS) expect(before.some((w) => w.kind === kind)).toBe(true);
+    // A return collection (WF-16, driver) is its own flow: tests/unit/the-driver-collects-an-online-return.test.ts.
+    for (const kind of SENT_WORK_KINDS.filter((k) => k !== 'collection')) expect(before.some((w) => w.kind === kind)).toBe(true);
     // Never a customer on the list (§31).
     expect(JSON.stringify(before)).not.toMatch(/customer|phone|address/i);
 

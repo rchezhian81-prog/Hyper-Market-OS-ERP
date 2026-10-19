@@ -104,6 +104,14 @@ const WORDS = {
     stopDone: 'That stop is already finished.',
     outForDelivery: 'On the way', assigned: 'Waiting', failedState: 'Not delivered', returnedState: 'Back to store',
     deliveredState: 'Delivered',
+    // WF-16 (driver): online returns to collect.
+    returnsHeading: 'Returns to collect', bookedFor: 'Booked for',
+    noMoneyAtDoor: 'No money changes hands at the door. The shop refunds the customer later, after the goods are back and counted.',
+    whatAtReturn: 'What happened at this return?', collectedAction: 'Collected — record what I took', notCollectedAction: 'Not collected',
+    howManyTook: 'How many did you take of', bookedQty: 'Booked', moreThanBooked: 'More than was booked — this cannot be recorded.',
+    whyNotCollected: 'Why was nothing collected?', customerNotAvailable: 'Customer not available', nothingHandedOver: 'Customer handed nothing over',
+    collectedOk: 'Recorded as collected', notCollectedOk: 'Recorded as not collected', collectionDone: 'That return is already collected.',
+    notRecorded: 'Not recorded', nothingTaken: 'You took nothing. Record it as “Not collected” instead.',
   },
   ta: {
     noBoxLink: 'கடை கணினியுடன் இணைக்கப்படவில்லை', checkingBox: 'கடை கணினியைச் சரிபார்க்கிறது…',
@@ -142,6 +150,13 @@ const WORDS = {
     stopDone: 'அந்த நிறுத்தம் ஏற்கனவே முடிந்துவிட்டது.',
     outForDelivery: 'வழியில்', assigned: 'காத்திருக்கிறது', failedState: 'கொடுக்கப்படவில்லை', returnedState: 'கடைக்குத் திரும்பியது',
     deliveredState: 'கொடுக்கப்பட்டது',
+    returnsHeading: 'திரும்பப் பெற வேண்டியவை', bookedFor: 'முன்பதிவு நாள்',
+    noMoneyAtDoor: 'வாசலில் பணம் கொடுக்கவோ வாங்கவோ வேண்டாம். பொருள் கடைக்கு வந்து எண்ணிய பின் கடை வாடிக்கையாளருக்குப் பணத்தைத் திருப்பித் தரும்.',
+    whatAtReturn: 'இந்தத் திருப்பலில் என்ன நடந்தது?', collectedAction: 'எடுத்தேன் — எடுத்ததைப் பதிவு செய்', notCollectedAction: 'எடுக்கவில்லை',
+    howManyTook: 'எத்தனை எடுத்தீர்கள்:', bookedQty: 'முன்பதிவு', moreThanBooked: 'முன்பதிவை விட அதிகம் — இதைப் பதிவு செய்ய முடியாது.',
+    whyNotCollected: 'ஏன் எதுவும் எடுக்கவில்லை?', customerNotAvailable: 'வாடிக்கையாளர் இல்லை', nothingHandedOver: 'வாடிக்கையாளர் எதுவும் தரவில்லை',
+    collectedOk: 'எடுக்கப்பட்டதாகப் பதிவானது', notCollectedOk: 'எடுக்கவில்லை என்று பதிவானது', collectionDone: 'அந்தத் திருப்பல் ஏற்கனவே எடுக்கப்பட்டது.',
+    notRecorded: 'பதிவாகவில்லை', nothingTaken: 'நீங்கள் எதுவும் எடுக்கவில்லை. “எடுக்கவில்லை” என்று பதிவு செய்யவும்.',
   },
 };
 let lang = 'en';
@@ -188,7 +203,21 @@ const KIND_WORDS = {
   stop: { en: 'Stop', ta: 'நிறுத்தம்' },
   settlement: { en: 'Shift settled', ta: 'ஷிப்ட் கணக்கு' },
   handover: { en: 'Cash handed over', ta: 'பணம் ஒப்படைப்பு' },
+  collection: { en: 'Return collection', ta: 'திருப்பல் சேகரிப்பு' },
 };
+
+/** WF-16 (driver): a return collection's state, in both languages, and the shape it wears beside the words. */
+const COLLECTION_STATE_WORDS = {
+  booked: { en: 'To collect', ta: 'எடுக்க வேண்டும்' },
+  collected: { en: 'Collected', ta: 'எடுக்கப்பட்டது' },
+  not_collected: { en: 'Not collected', ta: 'எடுக்கப்படவில்லை' },
+};
+const COLLECTION_ICON = { booked: 'package', collected: 'package-check', not_collected: 'circle-alert' };
+/** Why nothing was collected — chosen, never typed; head office reads the same two words (the session's list). */
+const MISS_REASONS = [
+  { code: 'customer_not_available', word: 'customerNotAvailable' },
+  { code: 'nothing_handed_over', word: 'nothingHandedOver' },
+];
 
 /** Why a delivery failed. Chosen, never typed — it routes the order and is reported on later. */
 const FAILURE_REASONS = [
@@ -448,6 +477,95 @@ function renderQueue() {
   paintBadge();
 }
 
+/** A booked line's name in the reader's language, from the store's catalogue when the box knew it; else its product id. */
+const lineName = (line) => (lang === 'ta' && line.nameTa ? line.nameTa : line.name ?? line.productId);
+
+/**
+ * WF-16 (driver): the online returns booked for collection on this route. Each is a card like a stop — the area, the return
+ * and order references (never a customer), the booked lines, and its state as a chip with its shape. Tapping it asks what
+ * happened at the door. Nothing here moves money: the note says so in words.
+ */
+function renderCollections() {
+  const list = typeof session.collections === 'function' ? session.collections() : [];
+  say(el('returns-heading'), t('returnsHeading'), 'rotate-ccw');
+  el('returns-heading').dataset.count = String(list.length);
+  el('returns-heading').hidden = list.length === 0;
+  el('returns-note').hidden = list.length === 0;
+  el('returns-note').textContent = t('noMoneyAtDoor');
+  el('collections').replaceChildren(...list.map((c) => {
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = `stop pickup ${c.state}`;
+    card.dataset.returnId = c.returnId;
+    card.dataset.state = c.state;
+    const area = document.createElement('span');
+    area.className = 'area';
+    area.textContent = c.area;
+    const refs = document.createElement('span');
+    refs.className = 'order';
+    refs.textContent = `${c.returnId} · ${c.orderRef} · ${t('bookedFor')} ${c.collectOn}`;
+    const lines = document.createElement('span');
+    lines.className = 'lines';
+    const taken = new Map((c.taken ?? []).map((l) => [l.productId, l.collectedMinor]));
+    lines.textContent = c.lines.map((l) => (c.state === 'collected' ? `${taken.get(l.productId) ?? 0} / ${l.quantityMinor}` : String(l.quantityMinor)) + ` × ${lineName(l)}`).join(' · ');
+    const state = document.createElement('span');
+    state.className = 'state';
+    const missed = c.state === 'not_collected' && c.lastMissReason ? ` · ${t(MISS_REASONS.find((r) => r.code === c.lastMissReason)?.word ?? '')}` : '';
+    say(state, `${words(COLLECTION_STATE_WORDS, c.state)}${missed}`, COLLECTION_ICON[c.state] ?? 'package');
+    card.append(area, refs, lines, state);
+    card.addEventListener('click', () => { void atReturn(c.returnId); });
+    return card;
+  }));
+}
+
+/**
+ * At a return's door: "Collected" — then, line by line on the keypad, how many of each booked line he took (starting at the
+ * booked number; more than booked is said as he types and refused by name) — or "Not collected" with one of two reasons.
+ * The session decides and queues; this only asks. Nothing is refunded and no money is taken.
+ */
+async function atReturn(returnId) {
+  const c = session.collections().find((x) => x.returnId === returnId);
+  if (!c) return;
+  if (c.state === 'collected') { tell(t('read'), t('collectionDone')); return; }
+  const what = await ask({
+    title: `${t('whatAtReturn')} · ${c.area}`,
+    mode: 'choice',
+    options: [{ value: 'collected', label: t('collectedAction') }, { value: 'not_collected', label: t('notCollectedAction') }],
+  });
+  if (what === null) return;
+  try {
+    if (what === 'not_collected') {
+      const reason = await ask({ title: t('whyNotCollected'), mode: 'choice', options: MISS_REASONS.map((r) => ({ value: r.code, label: t(r.word) })) });
+      if (reason === null) return;
+      session.notCollected(returnId, reason);
+      tell(t('notCollectedOk'), `${c.area} · ${t(MISS_REASONS.find((r) => r.code === reason).word)}`, true);
+    } else {
+      const lines = [];
+      for (const l of c.lines) {
+        const answer = await ask({
+          title: `${t('howManyTook')} ${lineName(l)}?`,
+          mode: 'number',
+          hint: `${t('bookedQty')}: ${l.quantityMinor}`,
+          initial: String(l.quantityMinor),
+          onChange: (n) => (n > l.quantityMinor ? t('moreThanBooked') : `${t('bookedQty')}: ${l.quantityMinor}`),
+        });
+        if (answer === null) return;
+        lines.push({ productId: l.productId, collectedMinor: Number(answer) });
+      }
+      session.collect(returnId, lines);
+      const took = lines.filter((x) => x.collectedMinor > 0).map((x) => `${x.collectedMinor} × ${lineName(c.lines.find((b) => b.productId === x.productId))}`).join(', ');
+      tell(t('collectedOk'), `${c.area} · ${took}`, true);
+    }
+    void syncToBox();
+  } catch (e) {
+    // Refused by the session BY NAME — nothing was queued. Said in the reader's words, with the model's own detail beside.
+    const name = e && e.name === 'CollectionLinesError' ? e.code : null;
+    const words2 = name === 'more_than_booked' ? t('moreThanBooked') : name === 'nothing_collected' ? t('nothingTaken') : null;
+    tell(t('notRecorded'), words2 === null ? String(e && e.message ? e.message : e) : `${words2} (${e.message})`);
+  }
+  render();
+}
+
 /**
  * Hand the queued work to the store computer and learn where it has got to (SP-3c-ii). The relay is the composition root's
  * (`window.driverRelay`), present only when the box served this page over its device socket — on the shop wifi, before the
@@ -477,7 +595,7 @@ function render() {
   el('progress').textContent = progressWords(t('progressOf'), progress.delivered, progress.total);
   paintMeter(progress.delivered, progress.total);
 
-  el('empty').hidden = stops.length > 0;
+  el('empty').hidden = stops.length > 0 || (typeof session.collections === 'function' && session.collections().length > 0);
   el('stops').replaceChildren(...stops.map((stop) => {
     const row = document.createElement('button');
     row.type = 'button';
@@ -520,6 +638,7 @@ function render() {
   say(el('delivered-partial'), t('partlyDelivered'), 'package-minus');
   say(el('failed'), t('couldNotDeliver'), 'circle-alert');
   say(el('handover'), t('endOfShift'), 'wallet');
+  renderCollections();
   renderQueue();
 }
 

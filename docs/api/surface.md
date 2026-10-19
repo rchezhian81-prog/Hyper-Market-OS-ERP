@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1213 | 728 | 728 | 109 | 349 |
+| 13 | 1214 | 729 | 729 | 109 | 350 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -621,6 +621,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/online-returns` | `online.return.manage` | core | — |
 | POST | `/v1/online-returns/:returnId/collected` | `online.return.collect` | core | yes |
 | POST | `/v1/online-returns/:returnId/collection` | `online.return.manage` | core | yes |
+| POST | `/v1/online-returns/:returnId/collection/synced` | `online.return.collect.sync` | core | yes |
 | POST | `/v1/online-returns/:returnId/lines/:productId/disposition` | `online.return.manage` | core | yes |
 | POST | `/v1/online-returns/:returnId/received` | `online.return.manage` | core | yes |
 | POST | `/v1/online-returns/:returnId/refund` | `order.refund.issue` | core | yes |

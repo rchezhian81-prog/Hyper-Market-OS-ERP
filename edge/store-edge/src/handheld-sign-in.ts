@@ -49,6 +49,7 @@ export const HANDHELD_PERSON_FIELD: Readonly<Record<string, string>> = Object.fr
   DeliveryStopUpdated: 'driverId',
   RouteSettled: 'driverId',
   DriverCashHandedOver: 'driverId',
+  ReturnCollectionRecorded: 'driverId',
 });
 
 /**

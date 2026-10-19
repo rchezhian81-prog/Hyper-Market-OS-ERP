@@ -53,11 +53,41 @@ export interface AssignedRouteStop {
   readonly orderValueMinor?: number;
 }
 
+/**
+ * R4 gap lane "driver" (WF-16): an online return booked for collection, put on a driver's route. Only the reference and a
+ * coarse area are assigned; the booked lines are read from the return itself when the box pulls, never typed here.
+ */
+export interface AssignedCollection {
+  readonly returnId: string;
+  /** A coarse area label. Never an address record on a driver's phone (§31). */
+  readonly area: string;
+}
+
+/** A collection as the box pulls it: the return's own booked lines and day, from head office's return register. */
+export interface OpenCollection extends AssignedCollection {
+  readonly orderRef: string;
+  readonly collectOn: string;
+  readonly lines: readonly { readonly productId: string; readonly quantityMinor: number }[];
+}
+
+/** One online return as the assignment reads it — its stage, booked day and lines. */
+export interface CollectionFacts {
+  readonly orderRef: string;
+  readonly stage: string;
+  readonly collectOn?: string;
+  readonly lines: readonly { readonly productId: string; readonly quantityMinor: number }[];
+}
+
+/** The grant a driver needs to be handed a return collection — the head-office "Collected" button's. */
+export const COLLECT_PERMISSION = 'online.return.collect';
+
 export interface RouteAssignment {
   readonly routeId: string;
   readonly storeId: string;
   readonly driverId: string;
   readonly stops: readonly AssignedRouteStop[];
+  /** WF-16 (driver): online returns to collect on this route. Absent on records written before 19 Oct 2026. */
+  readonly collections?: readonly AssignedCollection[];
   readonly contributionRule?: { readonly maxCostShareBps: number };
   readonly assignedBy: string;
   readonly at: string;
@@ -79,6 +109,8 @@ export interface AssignmentsDeps {
   readonly routeSettled: (tenantId: string, routeId: string) => Promise<boolean> | boolean;
   readonly now: () => string;
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
+  /** WF-16 (driver): an online return's stage and booked lines, or undefined when there is no such return. */
+  readonly collectionOf?: (tenantId: string, returnId: string) => Promise<CollectionFacts | undefined> | CollectionFacts | undefined;
 }
 
 /** The permission a person must hold to be handed a wave (the crate's recorder) / a route (the door's recorder). */
@@ -120,8 +152,21 @@ function readLines(v: unknown): readonly AssignedWaveLine[] | undefined {
   return out;
 }
 
-function readStops(v: unknown): readonly AssignedRouteStop[] | undefined {
-  if (!Array.isArray(v) || v.length === 0) return undefined;
+function readCollections(v: unknown): readonly AssignedCollection[] | undefined {
+  if (v === undefined) return [];
+  if (!Array.isArray(v) || v.length > 100) return undefined;
+  const out: AssignedCollection[] = [];
+  const ids = new Set<string>();
+  for (const c of v) {
+    if (!isObj(c) || !isStr(c['returnId']) || !isStr(c['area']) || ids.has(c['returnId'])) return undefined;
+    ids.add(c['returnId']);
+    out.push({ returnId: c['returnId'].trim(), area: c['area'].trim() });
+  }
+  return out;
+}
+
+function readStops(v: unknown, allowEmpty = false): readonly AssignedRouteStop[] | undefined {
+  if (!Array.isArray(v) || (v.length === 0 && !allowEmpty)) return undefined;
   const out: AssignedRouteStop[] = [];
   const ids = new Set<string>();
   for (const s of v) {
@@ -163,17 +208,27 @@ async function requireAuthority(deps: AssignmentsDeps, tenantId: string, userId:
 /** The open assignments for a store as the box pulls them — the pack file's `wave` / `route` shapes, with who assigned them and when. */
 export async function openAssignments(deps: AssignmentsDeps, tenantId: string, storeId: string): Promise<{
   readonly waves: readonly (Omit<WaveAssignment, 'storeId' | 'digest' | 'at'> & { readonly assignedAt: string })[];
-  readonly routes: readonly (Omit<RouteAssignment, 'storeId' | 'digest' | 'at'> & { readonly assignedAt: string })[];
+  readonly routes: readonly (Omit<RouteAssignment, 'storeId' | 'digest' | 'at' | 'collections'> & { readonly assignedAt: string; readonly collections?: readonly OpenCollection[] })[];
 }> {
   const waves: (Omit<WaveAssignment, 'storeId' | 'digest' | 'at'> & { readonly assignedAt: string })[] = [];
   for (const a of latestWaves(await deps.waveAssignments(tenantId, storeId))) {
     if (await deps.wavePacked(tenantId, a.waveId)) continue; // done: the crate is sealed and head office holds it
     waves.push({ waveId: a.waveId, pickerId: a.pickerId, lines: a.lines, assignedBy: a.assignedBy, assignedAt: a.at });
   }
-  const routes: (Omit<RouteAssignment, 'storeId' | 'digest' | 'at'> & { readonly assignedAt: string })[] = [];
+  const routes: (Omit<RouteAssignment, 'storeId' | 'digest' | 'at' | 'collections'> & { readonly assignedAt: string; readonly collections?: readonly OpenCollection[] })[] = [];
   for (const a of latestRoutes(await deps.routeAssignments(tenantId, storeId))) {
     if (await deps.routeSettled(tenantId, a.routeId)) continue; // done: the shift settled
-    routes.push({ routeId: a.routeId, driverId: a.driverId, stops: a.stops, ...(a.contributionRule === undefined ? {} : { contributionRule: a.contributionRule }), assignedBy: a.assignedBy, assignedAt: a.at });
+    // WF-16 (driver): only collections still BOOKED travel — one collected (by the phone or the desk) leaves the phone by itself.
+    const collections: OpenCollection[] = [];
+    for (const c of a.collections ?? []) {
+      const facts = await deps.collectionOf?.(tenantId, c.returnId);
+      if (facts === undefined || facts.stage !== 'collection_scheduled' || facts.collectOn === undefined) continue;
+      collections.push({ returnId: c.returnId, area: c.area, orderRef: facts.orderRef, collectOn: facts.collectOn, lines: facts.lines });
+    }
+    routes.push({
+      routeId: a.routeId, driverId: a.driverId, stops: a.stops, ...(a.contributionRule === undefined ? {} : { contributionRule: a.contributionRule }),
+      ...(collections.length === 0 ? {} : { collections }), assignedBy: a.assignedBy, assignedAt: a.at,
+    });
   }
   return { waves, routes };
 }
@@ -233,13 +288,15 @@ export function assignmentRoutes(deps: AssignmentsDeps): readonly Route[] {
       handler: async (ctx) => {
         const routeId = (ctx.params['routeId'] ?? '').trim();
         const b = (ctx.body ?? {}) as Record<string, unknown>;
-        const stops = readStops(b['stops']);
+        // WF-16 (driver): a route may carry return collections; a route of collections alone needs no delivery stop.
+        const collections = readCollections(b['collections']);
+        const stops = readStops(b['stops'], collections !== undefined && collections.length > 0);
         const rule = b['contributionRule'];
         const ruleOk = rule === undefined || (isObj(rule) && isNonNegInt(rule['maxCostShareBps']));
-        if (routeId === '' || !isStr(b['storeId']) || !isStr(b['driverId']) || stops === undefined || !ruleOk) {
+        if (routeId === '' || !isStr(b['storeId']) || !isStr(b['driverId']) || stops === undefined || collections === undefined || !ruleOk) {
           throw apiError(400, {
             code: 'not_readable_as_a_route_assignment',
-            whatHappened: 'Assigning a route needs the route id in the path and { storeId, driverId, stops: [{ stopId, orderRef, area, codMinor, costMinor?, orderValueMinor? }], contributionRule?: { maxCostShareBps } } — at least one stop, stop ids unique.',
+            whatHappened: 'Assigning a route needs the route id in the path and { storeId, driverId, stops: [{ stopId, orderRef, area, codMinor, costMinor?, orderValueMinor? }], collections?: [{ returnId, area }], contributionRule?: { maxCostShareBps } } — at least one stop or collection, ids unique.',
             wasItSaved: 'not_saved',
             nextSafeAction: 'Send the store, the driver and the stops in the order to drive them. Nothing was assigned.',
           });
@@ -247,6 +304,29 @@ export function assignmentRoutes(deps: AssignmentsDeps): readonly Route[] {
         const storeId = b['storeId'];
         const driverId = b['driverId'];
         await requireAuthority(deps, ctx.tenantId, driverId, DRIVE_PERMISSION, 'driver');
+        // WF-16 (driver): a collection goes only to a driver who may record it, and only for a return BOOKED for collection.
+        if (collections.length > 0) {
+          const held = await deps.permissionsOfUser(ctx.tenantId, driverId);
+          if (held === undefined || !held.includes(COLLECT_PERMISSION)) {
+            throw apiError(422, {
+              code: 'driver_lacks_authority',
+              whatHappened: `${driverId} does not hold ${COLLECT_PERMISSION}, so head office does not hand them a return collection.`,
+              wasItSaved: 'not_saved',
+              nextSafeAction: 'Assign the collection to a person who may record it, or grant the role first. Nothing was assigned.',
+            });
+          }
+          for (const c of collections) {
+            const facts = await deps.collectionOf?.(ctx.tenantId, c.returnId);
+            if (facts === undefined || facts.stage !== 'collection_scheduled') {
+              throw apiError(422, {
+                code: 'not_booked_for_collection',
+                whatHappened: `Return ${c.returnId} is ${facts === undefined ? 'not a return head office holds' : facts.stage.replace(/_/g, ' ')} — only a return booked for collection goes on a route.`,
+                wasItSaved: 'not_saved',
+                nextSafeAction: 'Book the collection on the Online store page first. Nothing was assigned.',
+              });
+            }
+          }
+        }
         if (await deps.routeSettled(ctx.tenantId, routeId)) {
           throw apiError(409, {
             code: 'route_already_settled',
@@ -256,22 +336,23 @@ export function assignmentRoutes(deps: AssignmentsDeps): readonly Route[] {
           });
         }
         const contributionRule = isObj(rule) ? { maxCostShareBps: rule['maxCostShareBps'] as number } : undefined;
-        const digest = assignmentDigest({ driverId, stops, contributionRule: contributionRule ?? null });
+        // A route without collections keeps the digest it always had, so a re-sent assignment is still ONE record.
+        const digest = assignmentDigest(collections.length === 0 ? { driverId, stops, contributionRule: contributionRule ?? null } : { driverId, stops, contributionRule: contributionRule ?? null, collections });
         const current = latestRoutes(await deps.routeAssignments(ctx.tenantId, storeId)).find((a) => a.routeId === routeId);
         if (current !== undefined && current.digest === digest) {
-          return { status: 200, body: { routeId, storeId, driverId, stopCount: stops.length, assigned: true, alreadyAssigned: true } };
+          return { status: 200, body: { routeId, storeId, driverId, stopCount: stops.length, ...(collections.length === 0 ? {} : { collectionCount: collections.length }), assigned: true, alreadyAssigned: true } };
         }
         const now = deps.now();
-        const record: RouteAssignment = { routeId, storeId, driverId, stops, ...(contributionRule === undefined ? {} : { contributionRule }), assignedBy: ctx.userId, at: now, digest };
+        const record: RouteAssignment = { routeId, storeId, driverId, stops, ...(contributionRule === undefined ? {} : { contributionRule }), ...(collections.length === 0 ? {} : { collections }), assignedBy: ctx.userId, at: now, digest };
         await deps.recordRouteAssignment(ctx.tenantId, record);
         await deps.recordAudit?.(ctx.tenantId, {
           actorId: ctx.userId, action: 'delivery.route.assign', objectType: 'delivery_route', objectId: routeId,
           at: now, origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
           before: current === undefined ? null : { driverId: current.driverId, stopCount: String(current.stops.length) },
-          after: { storeId, driverId, stopCount: String(stops.length), codMinor: String(stops.reduce((n, s) => n + s.codMinor, 0)), replaced: String(current !== undefined) },
+          after: { storeId, driverId, stopCount: String(stops.length), codMinor: String(stops.reduce((n, s) => n + s.codMinor, 0)), replaced: String(current !== undefined), ...(collections.length === 0 ? {} : { collections: collections.map((c) => c.returnId).join(',') }) },
           correlationId: routeId,
         });
-        return { status: 201, body: { routeId, storeId, driverId, stopCount: stops.length, assigned: true, replaced: current !== undefined } };
+        return { status: 201, body: { routeId, storeId, driverId, stopCount: stops.length, ...(collections.length === 0 ? {} : { collectionCount: collections.length }), assigned: true, replaced: current !== undefined } };
       },
     },
     {
