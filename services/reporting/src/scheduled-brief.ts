@@ -80,7 +80,24 @@ export interface ScheduledBriefDeps {
     readonly enqueue: (tenantId: string, event: NotificationQueueEvent, key: string) => Promise<void> | void;
     readonly item: (tenantId: string, id: string) => Promise<{ readonly state: string; readonly reason: string | null } | undefined>;
   };
+  /**
+   * R4 Lane 3 · EA-07 · OB-222: the brief's SENDING link. Absent — as production has it — means SWITCHED OFF: the brief is
+   * still prepared every day, nothing is queued, sent or handed to any transport, and every pass says "not sent". Only a
+   * test stand-in switches it on; a real provider is the owner's written choice (OB-222).
+   */
+  readonly sendingLink?: BriefSendingLink;
 }
+
+/** R4 · EA-07: the brief's sending link (a test stand-in; production has none, so sending is switched off). */
+export interface BriefSendingLink {
+  readonly name: string;
+  readonly switchedOn: true;
+}
+
+/** What every pass and the brief's screen say while sending is switched off (OB-222). */
+export const BRIEF_SENDING_OFF_DETAIL = 'Prepared, NOT sent: sending is switched off (OB-222) — no provider is chosen, so nothing was sent.';
+
+const sendingOn = (deps: ScheduledBriefDeps): boolean => deps.sendingLink?.switchedOn === true;
 
 /** The shop's wall-clock "now" as YYYY-MM-DDTHH:MM, in its own zone — what a local due time is measured against. */
 export function shopWallClock(nowIso: string, timeZone: string): string {
@@ -176,6 +193,12 @@ export async function runBriefPass(deps: ScheduledBriefDeps, tenantId: string, a
     });
     const lines = d.reason === 'missed_catch_up' ? [`LATE — the brief for ${d.tradingDay}, which did not go out on time.`, ...brief.lines] : [...brief.lines];
     const base = { tradingDay: d.tradingDay, reason: d.reason, lines, deterministic: brief.deterministic };
+    // R4 · EA-07 · OB-222: with the sending link switched off the brief is prepared and NOTHING is sent — not queued, not
+    // handed to a transport — and the day stays unsent.
+    if (!sendingOn(deps)) {
+      ran.push({ ...base, outcome: 'composed_not_sent', detail: BRIEF_SENDING_OFF_DETAIL });
+      continue;
+    }
     if (deps.outbox !== undefined && recipient !== undefined) {
       // The outbox: find this day's live attempt on the queue; acknowledge on delivery; queue again after a dead letter.
       let attempt = 1;
@@ -243,6 +266,38 @@ export function scheduledBriefRoutes(deps: ScheduledBriefDeps): readonly Route[]
           ...(isInt(b['staleAfterMinutes']) ? { staleAfterMinutes: b['staleAfterMinutes'] as number } : {}),
         }, ctx.userId, ctx.idempotencyKey ?? `sched-${deps.now()}`);
         return { status: 200, body: { dueAt, at: deps.now() } };
+      },
+    },
+    {
+      // R4 Lane 3 · EA-07 · OB-222 — the brief's SCREEN: today's brief as prepared from the governed figures (no AI), and
+      // whether it was sent. While the sending link is switched off it says "not sent" in those words. A read: it composes,
+      // and writes, queues and sends nothing.
+      api: 'API-10', method: 'GET', path: '/v1/reporting/brief-today',
+      permission: 'owner.kpi.read',
+      handler: async (ctx) => {
+        const s = await deps.schedule(ctx.tenantId);
+        const now = deps.now();
+        if (deps.calendar === undefined || deps.dayFigures === undefined) {
+          return { status: 200, body: { prepared: false, sent: false, sending: sendingOn(deps) ? 'on' : 'switched_off', detail: 'Head office cannot work out the day\'s figures here, so no brief was prepared.', asAt: now } };
+        }
+        const calendar = await deps.calendar(ctx.tenantId);
+        const tradingDay = tradingDayIn(now, calendar);
+        const brief = buildScheduledBrief({
+          figures: await deps.dayFigures(ctx.tenantId, tradingDay), attention: [],
+          ...(s?.language === undefined ? {} : { language: s.language }),
+          ...(s?.staleAfterMinutes === undefined ? {} : { staleAfterMinutes: s.staleAfterMinutes }),
+        });
+        const sent = s?.sentDays.includes(tradingDay) === true;
+        return {
+          status: 200,
+          body: {
+            tradingDay, prepared: true, lines: brief.lines, deterministic: brief.deterministic,
+            scheduled: s === undefined ? null : { dueAt: s.dueAt },
+            sending: sendingOn(deps) ? 'on' : 'switched_off', sent,
+            detail: sendingOn(deps) ? (sent ? 'Sent.' : 'Not sent yet.') : BRIEF_SENDING_OFF_DETAIL,
+            asAt: now,
+          },
+        };
       },
     },
     {

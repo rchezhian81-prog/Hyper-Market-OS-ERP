@@ -13,11 +13,21 @@ import { salesHistory, InvalidDemandWindowError, type SoldLine } from '../../../
 import { forecastDemand, backtestForecast, InvalidForecastInputError, type DailyDemand, type DemandSignal } from '../../../packages/demand/src/forecast';
 import { proposeMarkdown, InvalidMarkdownInputError, type MarkdownPolicy } from '../../../packages/demand/src/markdown';
 import { proposeConstrainedOrder, InvalidConstrainedOrderError, type ForecastPoint } from '../../../packages/replenishment/src/constrained-order';
+// ── R4 Lane 3 · D-24: the stored festival / event calendar, read through its port ──
+import { correctedForecast } from '../../../packages/demand/src/forecast';
+import { calendarSignals, effectBasisOf, type DemandCalendarPort } from './demand-events';
+// ── end R4 Lane 3 ──
 
 export interface SalesHistoryDeps {
   /** The sold lines whose `occurredAt` falls in [fromIso, toIso). The engine filters to the trading-day window. */
   readonly soldLines: (tenantId: string, fromIso: string, toIso: string) => Promise<readonly SoldLine[]> | readonly SoldLine[];
   readonly now: () => string;
+  /**
+   * R4 Lane 3 · D-24 (OB-220): the store's own festival / event calendar and the weather link (switched off). When wired,
+   * the forecast and the order proposal use every stored event with no extra step and name it on each day it changes;
+   * absent on a bare stub (then only the caller's `?events=` apply, as before).
+   */
+  readonly demandCalendar?: DemandCalendarPort;
 }
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -162,6 +172,11 @@ export function salesHistoryRoutes(deps: SalesHistoryDeps): readonly Route[] {
           }
         }
 
+        // ── R4 Lane 3 · D-24: the stored events join the caller's, with no extra step; each is named on the days it lifts ──
+        const calendar = deps.demandCalendar === undefined ? undefined : await calendarSignals(deps.demandCalendar, ctx.tenantId, productId, from, addDays(to, horizonDays));
+        if (calendar !== undefined) signals = [...signals, ...calendar.signals.map((s) => ({ from: s.from, to: s.to, multiplier: s.multiplier, label: s.label })), ...calendar.weather.signals];
+        // ── end R4 Lane 3 ──
+
         try {
           const forecast = forecastDemand({ history, from, to, horizonDays, ...(signals.length === 0 ? {} : { signals }), ...(coldStart === undefined ? {} : { coldStart }) });
           // Score it only when there is enough history to hold out a week and still train on at least a week.
@@ -169,7 +184,30 @@ export function salesHistoryRoutes(deps: SalesHistoryDeps): readonly Route[] {
           const quality = windowDays >= 14
             ? backtestForecast({ history, from, to, holdoutDays: 7, ...(signals.length === 0 ? {} : { signals }) })
             : undefined;
-          return { status: 200, body: { productId, ...forecast, ...(quality === undefined ? {} : { quality }), asAt: deps.now() } };
+          // ── R4 Lane 3 · D-24: the short-horizon correction from the recent days, its back-test beside it, how each
+          // stored event's effect is known, and the weather link's state (switched off) ──
+          const shortHorizon = calendar === undefined || windowDays <= 7 || coldStart !== undefined ? undefined : (() => {
+            const c = correctedForecast({ history, from, to, horizonDays, recentDays: 7, ...(signals.length === 0 ? {} : { signals }) });
+            return {
+              correction: c.correction,
+              horizon: c.horizon.map((d) => ({ day: d.day, forecastQty: d.forecastQty, correctedQty: d.correctedQty, appliedSignals: d.appliedSignals })),
+              backtest: c.backtest ?? { notBackTested: true, detail: 'The history is too short to hold out a week and still correct — not back-tested.' },
+            };
+          })();
+          const storedEvents = calendar === undefined ? undefined : calendar.signals.map((s) => {
+            const e = calendar.events.find((x) => x.eventId === s.eventId && x.withdrawn === undefined && x.label === s.label);
+            return { eventId: s.eventId, label: s.label, from: s.from, to: s.to, multiplier: s.multiplier, effect: e === undefined ? { basis: 'manager_estimate', words: "manager's estimate" } : effectBasisOf(calendar.events, e, history, from, to) };
+          });
+          return {
+            status: 200,
+            body: {
+              productId, ...forecast, ...(quality === undefined ? {} : { quality }),
+              ...(shortHorizon === undefined ? {} : { shortHorizon }),
+              ...(storedEvents === undefined ? {} : { storedEvents, weather: { state: calendar!.weather.state, detail: calendar!.weather.detail } }),
+              asAt: deps.now(),
+            },
+          };
+          // ── end R4 Lane 3 ──
         } catch (e) {
           if (e instanceof InvalidForecastInputError) {
             throw apiError(400, {
@@ -306,6 +344,8 @@ export function salesHistoryRoutes(deps: SalesHistoryDeps): readonly Route[] {
         // Forecast demand (D-1) from the store's own sales over the horizon up to the delivery-after-next.
         // With fewer than two future deliveries the engine returns no_supplier_calendar and no forecast is needed.
         let forecast: ForecastPoint[] = [];
+        // R4 Lane 3 · D-24: the days a stored event changed, and which event — said on the proposal.
+        let eventsApplied: { readonly day: string; readonly events: readonly string[] }[] | undefined;
         if (deliveries.length >= 2) {
           const coverUntil = deliveries[1]!;
           const horizonDays = Math.round((Date.parse(`${coverUntil}T00:00:00.000Z`) - Date.parse(`${today}T00:00:00.000Z`)) / 86_400_000);
@@ -322,7 +362,13 @@ export function salesHistoryRoutes(deps: SalesHistoryDeps): readonly Route[] {
             .filter((l) => l.productId === productId);
           const byDay = salesHistory({ lines, from, to: today }).products.find((p) => p.productId === productId)?.byDay ?? [];
           const history = byDay.map((d) => ({ day: d.day, qty: d.qtyMinor }));
-          forecast = forecastDemand({ history, from, to: today, horizonDays }).horizon.map((d) => ({ day: d.day, qty: d.forecastQty }));
+          // ── R4 Lane 3 · D-24: the stored events, with no extra step ──
+          const calendar = deps.demandCalendar === undefined ? undefined : await calendarSignals(deps.demandCalendar, ctx.tenantId, productId, today, coverUntil);
+          const stored = calendar === undefined ? [] : [...calendar.signals.map((s) => ({ from: s.from, to: s.to, multiplier: s.multiplier, label: s.label })), ...calendar.weather.signals];
+          const fc = forecastDemand({ history, from, to: today, horizonDays, ...(stored.length === 0 ? {} : { signals: stored }) });
+          forecast = fc.horizon.map((d) => ({ day: d.day, qty: d.forecastQty }));
+          if (calendar !== undefined) eventsApplied = fc.horizon.filter((d) => d.appliedSignals.length > 0).map((d) => ({ day: d.day, events: d.appliedSignals }));
+          // ── end R4 Lane 3 ──
         }
 
         try {
@@ -338,7 +384,7 @@ export function salesHistoryRoutes(deps: SalesHistoryDeps): readonly Route[] {
             ...(isInt(b.minOrderQty) ? { minOrderQty: b.minOrderQty as number } : {}),
             ...(isInt(b.orderMultiple) ? { orderMultiple: b.orderMultiple as number } : {}),
           });
-          return { status: 200, body: { ...proposal, asAt: deps.now() } };
+          return { status: 200, body: { ...proposal, ...(eventsApplied === undefined ? {} : { eventsApplied }), asAt: deps.now() } };
         } catch (e) {
           if (e instanceof InvalidConstrainedOrderError) {
             throw apiError(400, {

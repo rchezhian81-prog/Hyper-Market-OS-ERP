@@ -306,6 +306,8 @@ import { legacyCardPurgeRoutes } from '../../migration/src/legacy-card-purge';
 // R3 Lane 4 (store operations and people): D-14 · D-16 · D-11 · D-25 · D-19 · C21 · D-9 (r3-ops-adapters).
 import { supplierReturnDispatchHooks, oneDebitNoteSeries } from './r3-followup-adapters'; // R3 follow-up · OB-194 supplier-return dispatch gate
 import { r3OpsRoutes, masterLifecycleOf, ingredientBatchesAt, channelPricingGateFor, packPricingFor } from './r3-ops-adapters';
+// R4 Lane 3 (customer insight, offers and demand): M16 · M17-FR-02 · D-23 · D-22 · D-24 · EA-07 sending off (r4-insight-adapters).
+import { r4InsightRoutes, demandCalendarFor, type BriefSendingLink } from './r4-insight-adapters';
 import { wasteAnalyticsAdapter, foodSafetyAdapter, priceIntegrityAgeingAdapter, assignedTaskAdapter, receivingChecklistLookup, carriedChecklistAdapter } from './r2-ops-adapters';
 import { assignedTaskRoutes } from '../../finance/src/assigned-tasks';
 import { priceIntegrityAgeingRoutes } from '../../pricing/src/price-integrity-ageing';
@@ -409,6 +411,8 @@ export function buildSurface(deps: {
    * test adapter here to prove the send path.
    */
   readonly notificationTransport?: NotificationTransport;
+  /** R4 Lane 3 · EA-07 · OB-222: the brief's sending link. NEVER set by `startApi` — sending stays switched off; tests hand in the stand-in. */
+  readonly briefSendingLink?: BriefSendingLink;
   /** PF-10 r6: each message provider's delivery-report callback secret — `startApi` reads them from its environment
    *  (DELIVERY_REPORT_SECRET__<PROVIDER>); none configured, a delivery report is refused (nothing believed). */
   readonly deliveryReportSecrets?: ReadonlyMap<string, string>;
@@ -1079,7 +1083,7 @@ export function buildSurface(deps: {
       rangeOf: assortmentAdapter({ store, now }).entries, locationBranches: locationBranchesOf(store, now),
       masterLifecycle: masterLifecycleOf({ store, now }), // D-16 (R3)
     }),
-    ...salesHistoryRoutes(store === undefined ? { soldLines: empty([]), now } : salesHistoryAdapter({ store, now })),
+    ...salesHistoryRoutes(store === undefined ? { soldLines: empty([]), now } : { ...salesHistoryAdapter({ store, now }), demandCalendar: demandCalendarFor({ store, now })! /* R4 Lane 3 · D-24 */ }),
     // Blind counts (M09-FR-04): the direct route and the RELAYED route (SP-2b · F11) share one reconcile — expected, value
     // and threshold are head office's on both (SP-4 · F07); a held variance is decided by a separate person.
     ...countsRoutes(countsDeps),
@@ -1632,6 +1636,7 @@ export function buildSurface(deps: {
     ...r3GstRoutes({ store, now, timeZone: (t) => settings.value(t, SETTINGS.STORE_TIME_ZONE), ...(store === undefined ? {} : { itc: itcPortForStore({ store, now }) }), ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
     ...r3TillTraceRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
     ...r3OpsRoutes({ store, now, numberSeries: debitNoteSeries /* R3 OB-196 */, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
+    ...r4InsightRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // R4 Lane 3
     // Owner alerts inbox (M29-FR-03) — control by exception; stateless grouping of the period's exceptions.
     ...ownerAlertsRoutes(),
     // Owner drill-through + KPI comparison (M29-FR-02) — "show me the transactions behind this figure",
@@ -1901,6 +1906,8 @@ export function buildSurface(deps: {
           },
           recipient: async (tenantId) => (await effectiveGrants(store, tenantId)).find((g) => g.roleId === OWNER_ROLE_ID)?.userId,
           ...(deps.notificationTransport === undefined ? {} : { transport: deps.notificationTransport }),
+          // R4 Lane 3 · EA-07 · OB-222: the sending link — absent in production, so the brief is prepared and NOT sent.
+          ...(deps.briefSendingLink === undefined ? {} : { sendingLink: deps.briefSendingLink }),
         })),
     ...platformRoutes(store === undefined ? {
       probe: probes, flags: empty({}), setFlag: () => {},
@@ -2134,6 +2141,8 @@ export interface RunningApi {
  */
 export interface ApiProviders {
   readonly notificationTransport?: NotificationTransport;
+  /** R4 Lane 3 · EA-07 · OB-222: the brief's sending link — tests only; production has none, so sending stays off. */
+  readonly briefSendingLink?: BriefSendingLink;
   /** How often the notification worker passes over every shop (default 30 s). */
   readonly notificationWorkerIntervalMs?: number;
   /** PA-12: how often the ops-alert worker passes over every shop with alert rules (default 60 s). */
@@ -2356,6 +2365,7 @@ export async function startApi(
     personalDataKeys,
     revocations,
     ...(providers.notificationTransport === undefined ? {} : { notificationTransport: providers.notificationTransport }),
+    ...(providers.briefSendingLink === undefined ? {} : { briefSendingLink: providers.briefSendingLink }), // R4 Lane 3 · EA-07
     // PF-10 r6: the providers' delivery-report secrets, from this process's environment only (never the repo).
     deliveryReportSecrets: reportSecrets.secrets,
     // D14 / M32: outbound webhook signing secrets (OUTBOUND_WEBHOOK_SECRET__<NAME> → vault://<NAME>) and the partner
