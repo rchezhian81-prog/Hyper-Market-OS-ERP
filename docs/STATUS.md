@@ -5,7 +5,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
-## Mirror-pilot readiness, round 3 (20 October 2026) — gate pending
+## Mirror-pilot readiness, round 3 (20 October 2026) — gate: 13,238 unit/integration passed (16 skipped); 51 of 52 performance (one older timing test slow under load, passes alone); 468 browser passed
 
 - Built: the old ERP bill number on every mirror sale (CGST Rule 46(b) shape, no personal data, refused if keyed twice in a financial year, survives a cold restart); a mirror refund finds its sale by it offline; the day book and a "Bill by bill" list on the evening check show it (OB-264).
 - Built: backup drive red under about 30 days of room, "not known" until it can be worked out (OB-268); the real till is always installed with both mirror settings and `status` shows them; `seal` and `parallel-policy` ask for the person's own PIN; Sheet 2 and Sheet 3 fully written.
