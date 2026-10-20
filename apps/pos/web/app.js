@@ -218,7 +218,18 @@ const WORDS = {
     mirrorSaleDone: 'Recorded — paid on old system',
     mirrorSaleMsg: 'No money in this drawer. The customer\'s bill is the old system\'s.',
     mirrorRefundDone: 'Refund recorded against the old system\'s payment. Do not take money from this drawer — give the refund on the old system as usual.',
-    mirrorNoExchange: 'An exchange is not keyed as one on this till during the mirror pilot. Record the item coming back as a refund (Paid on old system), then ring the new item as a sale.',
+    mirrorNoExchange: 'During the mirror pilot, exchanges are done on the old till only. Ring nothing for an exchange on this till; write it on the pilot list (Sheet 2).',
+    // OB-264: the old system's bill number, typed on every mirror sale; a mirror refund finds its sale by it.
+    oldBillTitle: 'Old bill number',
+    oldBillHint: 'Type the bill number printed on the old system\'s bill, exactly as printed: letters, digits, "-" and "/", up to 16. Then press OK.',
+    oldBillNeeded: 'Mirror pilot: type the old system\'s bill number for this sale — it is printed on the customer\'s old bill. Nothing was saved.',
+    oldBillNotValid: 'That is not an old bill number. A bill number is up to 16 letters, digits, "-" or "/", as printed on the old bill — no spaces or other marks. Nothing was saved.',
+    oldBillPersonal: 'That looks like a phone, Aadhaar or card number, not a bill number. Never type a customer\'s details here. Type the number printed on the old bill. Nothing was saved.',
+    oldBillRepeated: 'Old bill number {old} is already keyed on another sale (new bill {new}). Check the number on the old bill. If it is right, this bill was already keyed — do not key it twice. Nothing was saved.',
+    oldBillShown: 'Old bill',
+    oldBillRefundFind: 'Old bill number on the customer\'s bill',
+    oldBillRefundHint: 'Type the bill number printed on the customer\'s old bill and press OK. The till finds the sale it was keyed on.',
+    oldBillNotFound: 'No sale on this store computer carries that old bill number. Check the number on the customer\'s old bill and try again. Nothing was recorded.',
     // A8: the store computer's answer was lost — the till keeps asking, under the same sale id, until it knows.
     checkingTitle: 'Checking with the store computer — do not ring this again',
     checkingSale: 'The store computer has not answered yet, so the till does not know whether sale {number} was saved. Do not ring it again and do not start another sale. The till keeps asking and will say "saved" or "not saved".',
@@ -373,7 +384,17 @@ const WORDS = {
     mirrorSaleDone: 'பதிவு செய்யப்பட்டது — பழைய பில்லிங் அமைப்பில் செலுத்தப்பட்டது',
     mirrorSaleMsg: 'இந்த டிராயரில் பணம் இல்லை. வாடிக்கையாளரின் பில் பழைய அமைப்பினுடையது.',
     mirrorRefundDone: 'திரும்பப் பணம் பழைய அமைப்பின் கட்டணத்திற்கு எதிராகப் பதிவு செய்யப்பட்டது. இந்த டிராயரிலிருந்து பணம் எடுக்க வேண்டாம் — வழக்கம்போல் பழைய அமைப்பில் திரும்பப் பணம் கொடுக்கவும்.',
-    mirrorNoExchange: 'மிரர் பைலட் காலத்தில் இந்தக் கல்லாவில் பரிமாற்றம் ஒன்றாகப் பதிவு செய்யப்படுவதில்லை. திரும்பும் பொருளைத் திரும்பப் பணமாக (பழைய பில்லிங் அமைப்பில் செலுத்தப்பட்டது) பதிவு செய்து, பிறகு புதிய பொருளை விற்பனையாக பில் செய்யவும்.',
+    mirrorNoExchange: 'மிரர் பைலட் காலத்தில் பரிமாற்றம் பழைய கல்லாவில் மட்டுமே செய்யப்படும். இந்தக் கல்லாவில் பரிமாற்றத்திற்கு எதையும் பதிவு செய்யாதீர்கள்; சோதனைப் பட்டியலில் எழுதுங்கள் (தாள் 2).',
+    oldBillTitle: 'பழைய பில் எண்',
+    oldBillHint: 'பழைய பில்லிங் அமைப்பின் பில்லில் அச்சிடப்பட்ட பில் எண்ணை அப்படியே உள்ளிடவும்: எழுத்துகள், எண்கள், "-" மற்றும் "/", 16 வரை. பிறகு சரி அழுத்தவும்.',
+    oldBillNeeded: 'மிரர் பைலட்: இந்த விற்பனைக்கான பழைய பில்லிங் அமைப்பின் பில் எண்ணை உள்ளிடவும் — அது வாடிக்கையாளரின் பழைய பில்லில் அச்சிடப்பட்டுள்ளது. எதுவும் சேமிக்கப்படவில்லை.',
+    oldBillNotValid: 'இது பழைய பில் எண் அல்ல. பில் எண் என்பது பழைய பில்லில் அச்சிடப்பட்டபடி 16 வரை எழுத்துகள், எண்கள், "-" அல்லது "/" — இடைவெளியோ வேறு குறிகளோ இல்லை. எதுவும் சேமிக்கப்படவில்லை.',
+    oldBillPersonal: 'இது பில் எண் அல்ல, தொலைபேசி, ஆதார் அல்லது கார்டு எண் போலத் தெரிகிறது. வாடிக்கையாளரின் விவரங்களை இங்கே ஒருபோதும் உள்ளிட வேண்டாம். பழைய பில்லில் அச்சிடப்பட்ட எண்ணை உள்ளிடவும். எதுவும் சேமிக்கப்படவில்லை.',
+    oldBillRepeated: 'பழைய பில் எண் {old} ஏற்கனவே வேறொரு விற்பனையில் பதிவாகியுள்ளது (புதிய பில் {new}). பழைய பில்லில் உள்ள எண்ணைச் சரிபார்க்கவும். எண் சரி என்றால், இந்தப் பில் ஏற்கனவே பதிவாகிவிட்டது — இருமுறை பதிவு செய்ய வேண்டாம். எதுவும் சேமிக்கப்படவில்லை.',
+    oldBillShown: 'பழைய பில்',
+    oldBillRefundFind: 'வாடிக்கையாளரின் பில்லில் உள்ள பழைய பில் எண்',
+    oldBillRefundHint: 'வாடிக்கையாளரின் பழைய பில்லில் அச்சிடப்பட்ட பில் எண்ணை உள்ளிட்டு சரி அழுத்தவும். அது பதிவான விற்பனையைக் கல்லா கண்டுபிடிக்கும்.',
+    oldBillNotFound: 'அந்தப் பழைய பில் எண்ணுடன் இந்தக் கடை கணினியில் எந்த விற்பனையும் இல்லை. வாடிக்கையாளரின் பழைய பில்லில் உள்ள எண்ணைச் சரிபார்த்து மீண்டும் முயலவும். எதுவும் பதிவு செய்யப்படவில்லை.',
     checkingTitle: 'கடை கணினியிடம் சரிபார்க்கிறது — இதை மீண்டும் பில் செய்ய வேண்டாம்',
     checkingSale: 'கடை கணினி இன்னும் பதில் தரவில்லை, எனவே விற்பனை {number} சேமிக்கப்பட்டதா என்று கல்லாவுக்குத் தெரியவில்லை. இதை மீண்டும் பில் செய்ய வேண்டாம், வேறு விற்பனையையும் தொடங்க வேண்டாம். கல்லா தொடர்ந்து கேட்கிறது; "சேமிக்கப்பட்டது" அல்லது "சேமிக்கப்படவில்லை" என்று சொல்லும்.',
     checkingRefund: 'கடை கணினி இன்னும் பதில் தரவில்லை, எனவே திரும்பப் பணம் {number} சேமிக்கப்பட்டதா என்று கல்லாவுக்குத் தெரியவில்லை. பணத்தைக் கொடுக்க வேண்டாம், இதை மீண்டும் செய்ய வேண்டாம். கல்லா தொடர்ந்து கேட்கிறது; "சேமிக்கப்பட்டது" அல்லது "சேமிக்கப்படவில்லை" என்று சொல்லும்.',
@@ -491,6 +512,8 @@ function demoSession() {
     nextReceipt: () => Promise.reject(Object.assign(new Error('no store computer'), { laneMessage: 'This till has no store computer to number its bills. Do not take money — tell the manager.' })),
     tenderCash: (_id, number) => Promise.resolve(number),
     tenderPaidOnOldErp: (_id, number) => Promise.resolve(number),
+    // OB-264: no store computer, so no mirror sale is found by its old bill number either.
+    lookupRefundByOldBill: () => Promise.resolve(null),
     tenderCardOrUpi: ({ receiptNumber, outcome }) => (outcome === 'approved'
       ? Promise.resolve(receiptNumber)
       : Promise.reject(Object.assign(new Error('not paid'), { notPaid: outcome }))),
@@ -763,6 +786,8 @@ async function resolveAfterReload() {
 // ── The panel ───────────────────────────────────────────────────────────────
 
 let sheetResolve = null;
+/** What the open sheet asks for: 'number', 'choice' or 'text' (OB-264) — null when it is closed. */
+let sheetMode = null;
 let onEntryChange = null;
 let chosen = null;
 // What the keypad holds. For a PIN it is MASKED: the screen shows one dot per digit, the digits live only here, and they
@@ -807,6 +832,11 @@ function ask({ title, mode, hint = '', initial = '0', onChange = null, choices =
   el('entry').hidden = mode !== 'number';
   el('keypad').hidden = mode !== 'number';
   el('reasons').hidden = mode !== 'choice';
+  // A typed answer with letters (OB-264: the old system's bill number) — a text field, from the keyboard or a scanner.
+  sheetMode = mode;
+  el('entry-text').hidden = mode !== 'text';
+  el('entry-text').value = mode === 'text' ? initial : '';
+  el('entry-text').setAttribute('aria-label', title);
   // The quick row (pos-cashier.md interaction budget): the values a cashier reaches for most, each ONE tap that
   // answers the question outright — a quantity of 3, the ₹500 note the customer is holding. The keypad below
   // stays for everything else, and a TYPED value still ends in OK: the quick tap is the confirm, because the
@@ -840,11 +870,15 @@ function ask({ title, mode, hint = '', initial = '0', onChange = null, choices =
   }
 
   el('sheet').hidden = false;
+  if (mode === 'text') el('entry-text').focus();
   return new Promise((resolve) => { sheetResolve = resolve; });
 }
 
 function closeSheet(answer) {
   el('sheet').hidden = true;
+  el('entry-text').value = '';
+  el('entry-text').hidden = true;
+  sheetMode = null;
   onEntryChange = null;
   // A PIN leaves this screen with the answer and nowhere else.
   entryMasked = false;
@@ -867,7 +901,11 @@ el('keypad').replaceChildren(...['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C
 
 el('sheet-cancel').addEventListener('click', () => { closeSheet(null); });
 el('sheet-ok').addEventListener('click', () => {
-  closeSheet(el('reasons').hidden ? entryValue : chosen);
+  closeSheet(sheetMode === 'text' ? el('entry-text').value : el('reasons').hidden ? entryValue : chosen);
+});
+// Enter in the typed field is OK (a scanner ends its code with Enter); it never reaches the sale screen's scanner.
+el('entry-text').addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') { event.preventDefault(); event.stopPropagation(); closeSheet(el('entry-text').value); }
 });
 
 /**
@@ -1314,18 +1352,41 @@ el('tender').addEventListener('click', async () => {
 async function payOnOldSystem(payable) {
   const kind = await choose(t('howPaying'), [{ value: 'paid_on_old_erp', label: `${t('paidOnOld')} — ${inr(payable)}`, icon: 'receipt-text' }]);
   if (kind === null) return;
+  // OB-264: the old system's bill number for this same bill — required, judged here before a bill number is taken, and
+  // judged again by the store computer (which also refuses one already keyed) before its disk.
+  const oldBill = await askOldBill(t('oldBillTitle'), t('oldBillHint'));
+  if (oldBill === null) return;
   const receiptNumber = await takeReceiptNumber();
   if (receiptNumber === null) return;
   try {
-    const receipt = await session.tenderPaidOnOldErp(`S-${receiptNumber}`, receiptNumber, new Date().toISOString()).catch(lostAnswer);
-    tell(t('mirrorSaleDone'), `${withReceiptNotice(receipt)}\n${t('mirrorSaleMsg')}`, SUCCESS);
+    const receipt = await session.tenderPaidOnOldErp(`S-${receiptNumber}`, receiptNumber, new Date().toISOString(), oldBill).catch(lostAnswer);
+    tell(t('mirrorSaleDone'), `${withReceiptNotice(receipt)}\n${t('oldBillShown')}: ${oldBill}\n${t('mirrorSaleMsg')}`, SUCCESS);
     session.newSale();
     void refreshBadge();
     selectedLineId = null;
     render();
   } catch (e) {
-    tell(e && e.notSavedTitle ? t('notSavedTitle') : t('read'), e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e), STOP);
+    // OB-264: the store computer refused an old bill number already keyed — said in this till's language, with its numbers.
+    const words = e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e);
+    const repeated = /^Old bill number (\S+) is already keyed on another sale \(new bill ([^)]+)\)/.exec(words);
+    tell(e && e.notSavedTitle ? t('notSavedTitle') : t('read'), repeated ? t('oldBillRepeated').replace('{old}', repeated[1]).replace('{new}', repeated[2]) : words, STOP);
   }
+}
+
+/**
+ * OB-264 — ask for the old system's bill number (letters, digits, "-" and "/", so a typed field, not the keypad) and judge
+ * it by the same rule the store computer runs. Resolves the number as it is kept, or `null` once the keyer has been told
+ * why not (nothing is saved and nothing is numbered).
+ */
+async function askOldBill(title, hint) {
+  const typed = await ask({ title, mode: 'text', hint, initial: '' });
+  if (typed === null) return null;
+  if (!session.readOldBill) { tell(t('read'), t('oldBillNeeded'), STOP); return null; }
+  const read = session.readOldBill(String(typed));
+  // The model's reason, said in this till's language (its English words are the model's own).
+  const said = { old_bill_missing: 'oldBillNeeded', old_bill_not_valid: 'oldBillNotValid', old_bill_looks_personal: 'oldBillPersonal' }[read.refusedBecause];
+  if (!read.ok) { tell(t('read'), said ? t(said) : read.laneMessage, STOP); return null; }
+  return read.value;
 }
 
 /**
@@ -1714,18 +1775,30 @@ async function managerApproves({ kind, billRef, valueMinor, hint, reasons = REFU
  * tested refund engine + the till's durable-first write. Every outcome is the model's own words.
  */
 async function startRefund() {
-  // 1. Find the bill — scan the receipt, or key the bill number.
-  const receipt = await askScanOrKey({ title: t('refundFind'), hint: t('refundFindHint') });
-  if (receipt === null || receipt === '' || receipt === '0') return;
-
+  // 1. Find the bill — scan the receipt, or key the bill number. In the mirror pilot (OB-264) the customer holds only the
+  //    old system's bill, so the till asks for ITS number and the store computer finds the sale it was keyed on.
   let bill;
-  try {
-    bill = await session.lookupRefund(String(receipt));
-  } catch {
-    tell(t('refundStop'), t('refundLookupFailed'), STOP);
-    return;
+  if (mirror() && session.lookupRefundByOldBill) {
+    const oldBill = await askOldBill(t('oldBillRefundFind'), t('oldBillRefundHint'));
+    if (oldBill === null) return;
+    try {
+      bill = await session.lookupRefundByOldBill(oldBill);
+    } catch {
+      tell(t('refundStop'), t('refundLookupFailed'), STOP);
+      return;
+    }
+    if (!bill) { tell(t('read'), t('oldBillNotFound'), STOP); return; }
+  } else {
+    const receipt = await askScanOrKey({ title: t('refundFind'), hint: t('refundFindHint') });
+    if (receipt === null || receipt === '' || receipt === '0') return;
+    try {
+      bill = await session.lookupRefund(String(receipt));
+    } catch {
+      tell(t('refundStop'), t('refundLookupFailed'), STOP);
+      return;
+    }
+    if (!bill) { tell(t('read'), t('refundNotFound'), STOP); return; }
   }
-  if (!bill) { tell(t('read'), t('refundNotFound'), STOP); return; }
 
   const returnable = bill.returnable.filter((l) => l.returnableMinor > 0);
   if (returnable.length === 0) { tell(t('read'), t('refundNothingLeft'), STOP); return; }

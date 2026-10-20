@@ -6,6 +6,7 @@ import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
 import { laneDurableReturn } from '../../apps/pos/src/browser-entry';
 import { PAID_ON_OLD_ERP_WORDS } from '../../packages/tender/src/paid-on-old-erp';
 import { prepareTillBox, holdSignedInAt, receiptNumberAt, operatorHeader, approvalFromLane } from '../support/till-operator';
+import { openOldErpBills } from '../../edge/store-edge/src/old-erp-bills';
 import { startLaneServer } from '../../edge/store-edge/src/lane-server';
 import { createEdgeNode } from '../../edge/store-edge/src/index';
 import { openFileLog, readLog } from '../../edge/store-edge/src/file-log';
@@ -70,10 +71,13 @@ const post = async (port: number, path: string, token: string | undefined, body:
   method: 'POST', headers: { 'content-type': 'application/json', ...(token === undefined ? {} : operatorHeader(token)) }, body: JSON.stringify(body),
 })).json() as Promise<Record<string, unknown>>;
 const tender = (kind: string, minor: number, extra: Record<string, unknown> = {}) => ({ kind, amount: { minor, currency: 'INR' }, status: 'settled', ...extra });
+// OB-264: a mirror sale carries the old ERP's bill number — one of its own for each sale here.
+let oldBills = 0;
 const sale = (id: string, number: string, tenders: unknown[] = [tender('paid_on_old_erp', 21_000)]) => ({
   id, number, laneId: 'lane-1', cashierId: 'u-meena', tradingDay: '2026-10-20', committedAt: AT,
   lines: [{ productId: 'P1', quantityMinor: 2, uom: 'ea', unitPriceMinor: 10_500, lineTotalMinor: 21_000, taxRateBps: 500 }],
   tenders, total: 21_000, netMinor: 20_000, taxMinor: 1_000, currency: 'INR',
+  ...(tenders.some((t) => (t as { kind?: string }).kind === 'paid_on_old_erp') ? { oldErpBillNumber: `OLD/${(oldBills += 1)}` } : {}),
 });
 const refund = (n: string, originalSaleId: string | null, refundTender: string, refundMinor = 10_500, extra: Record<string, unknown> = {}) => JSON.stringify({
   returnId: `RT-${n}`, number: n, originalSaleId, noReceipt: originalSaleId === null, laneId: 'lane-1', processedBy: 'u-meena', reasonCode: 'damaged',
@@ -201,7 +205,7 @@ describe('OB-256 · OB-258 — mirror pilot ON: "Paid on old system" alone, refu
     const returnsLog = await openFileLog({ dataDir: dir, capacityBytes: 10_485_760, fileName: 'returns.log' });
     const node = createEdgeNode({ tenantId: 't-sre', log, signer: hmacSigner(KEY), outbox: new SyncOutbox(), returnsLog, returnsOutbox: new SyncOutbox() });
     let guestOnly = true;
-    const server = await startLaneServer({ node, port: 0, mirrorPilot: () => true, guestSalesOnly: () => guestOnly });
+    const server = await startLaneServer({ node, port: 0, mirrorPilot: () => true, guestSalesOnly: () => guestOnly, oldErpBills: openOldErpBills([], []) });
     stops.push(() => server.stop());
     const send = (path: string, body: unknown) => post(server.port, path, undefined, body);
     expect(await send('/lane/sales', sale('S-1', 'R-1'))).toMatchObject({ committed: true });

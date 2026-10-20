@@ -58,6 +58,8 @@ interface Recorder {
   /** What the cloud answers to the POST: 201 posted, or 409 no posting map. */
   postAnswer: 'posted' | 'no_map';
   posted: boolean;
+  /** What the day-book GET answers once posted (default: the cash day above). */
+  readonly postedRead?: Record<string, unknown>;
   readonly requests: { method: string; path: string; headers: Record<string, string | string[] | undefined> }[];
 }
 
@@ -86,7 +88,7 @@ async function startShellAndCloud(rec: Recorder): Promise<{ base: string; stop: 
       if (req.method === 'GET' && read !== null) {
         rec.requests.push({ method: 'GET', path, headers: req.headers });
         res.writeHead(200, { 'content-type': 'application/json' });
-        res.end(JSON.stringify(rec.posted ? POSTED_READ : { ...UNPOSTED, tradingDay: read[1] }));
+        res.end(JSON.stringify(rec.posted ? rec.postedRead ?? POSTED_READ : { ...UNPOSTED, tradingDay: read[1] }));
         return;
       }
       const file = path === '/' || path === '/day-book' ? 'day-book.html' : path.replace(/^\//, '');
@@ -166,6 +168,28 @@ describe.skipIf(!HAVE_BROWSER)('the accountant posts a trading day, end to end i
       expect(await page.locator('#open-count').innerText()).toContain('1');
       expect(await page.locator('#result').getAttribute('class')).toContain('tone-ok');
       expect(await page.locator('#result').innerText()).toContain('2 journals posted');
+    } finally {
+      await teardown();
+    }
+  });
+
+  it('OB-264: a mirror-pilot day lists the old system\'s bill numbers beside each voucher — English and Tamil', async () => {
+    const old = [{ sourceId: 'S-ZZ000001', oldErpBillNumber: 'OLD/4471' }, { sourceId: 'S-ZZ000003', oldErpBillNumber: 'OLD/4472' }];
+    const mirrorDay = {
+      ...POSTED_READ, exceptions: [], open: 0,
+      journals: [
+        { ...JOURNALS[0], sources: 2, oldErpBills: old },
+        { ...JOURNALS[1], entryId: `daybook:${DAY}:tender:paid_on_old_erp:1`, kind: 'tender:paid_on_old_erp', sources: 2, oldErpBills: old },
+      ],
+    };
+    const rec: Recorder = { screenData: user('u-acct', ['finance.period.read', 'finance.journal.post']), postAnswer: 'posted', posted: true, postedRead: mirrorDay, requests: [] };
+    const { page, teardown } = await openScreen(rec);
+    try {
+      await page.waitForFunction(() => (globalThis as unknown as BrowserGlobals).document.querySelectorAll('#journals li.row').length === 2, undefined, { timeout: 10_000 });
+      const bills = await page.locator('#journals li.row .old-bills').allInnerTexts();
+      expect(bills).toEqual(['Old system bill numbers (mirror pilot): OLD/4471, OLD/4472', 'Old system bill numbers (mirror pilot): OLD/4471, OLD/4472']);
+      await page.click('#lang');
+      expect(await page.locator('#journals li.row .old-bills').first().innerText()).toBe('பழைய அமைப்பின் பில் எண்கள் (மிரர் பைலட்): OLD/4471, OLD/4472');
     } finally {
       await teardown();
     }

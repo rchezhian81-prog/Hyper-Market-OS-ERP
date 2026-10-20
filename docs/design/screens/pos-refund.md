@@ -97,7 +97,9 @@ never free text.
 2a. **Lane-local receipt lookup** (`edge/store-edge/src/receipt-lookup.ts`, `EdgeNode.lookupSale`) —
    the offline read that finds a bill this lane rang. **DONE** (#351).
 2b. **Shell refund plumbing** — the lane read route `GET /lane/lookup` + `posSession.lookupRefund`
-   binding lookup + the view surface + `till.refund`. **DONE** (#352).
+   binding lookup + the view surface + `till.refund`. **DONE** (#352). In the mirror pilot (OB-264) the same route
+   takes `?oldBill=<the old ERP's bill number>` and the till's `posSession.lookupRefundByOldBill` asks by it: the
+   store computer finds the sale in its own register of old bill numbers (offline), then answers as for that sale.
 2c. **The on-screen panels** — the real flow in `apps/pos/web/app.js`, replacing the "not built"
    stub. **DONE** (this slice): the owner chose scan-or-key for the receipt AND the manager code,
    every refund needing a manager (threshold 0). Receipt entry via a scan-or-keypad panel; item +

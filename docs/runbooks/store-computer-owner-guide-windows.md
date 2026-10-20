@@ -396,9 +396,15 @@ private save socket. No network is used for a sale.
    ```
    It takes a few minutes (it builds the till screen, the office screens and the till's own program).
    - **When it worked:** it says the till's settings and data go in `C:\SRE-data\till`, outside this release; that the
-     till takes **guest sales only** (OB-252); that it starts **OFFLINE-FIRST** (it sells and saves every sale on this
-     PC, and sends nothing yet — Part 20 connects it); then `Till installed.`, a line `Settings:` naming
-     `C:\SRE-data\till\till.env`, a line `Start script:` naming `C:\SRE\till\start-till.cmd`, and a list under `Next:`.
+     till takes **guest sales only** (OB-252); that it runs the **mirror pilot** — every sale and refund "Paid on old
+     system", with the old bill number (OB-248, OB-256, OB-264); that it starts **OFFLINE-FIRST** (it sells and saves
+     every sale on this PC, and sends nothing yet — Part 20 connects it); then `Till installed.`, a line `Settings:`
+     naming `C:\SRE-data\till\till.env`, a line `Start script:` naming `C:\SRE\till\start-till.cmd`, and a list under
+     `Next:`.
+   - The installer writes the two mirror-pilot settings into `till.env` **together**: the mirror pilot and guest sales
+     only. It refuses to write a till for this copy without both — it then says `The till cannot be installed yet —`
+     and names the setting, and nothing is written. A till installed before 20 Oct 2026 gets the missing one added when
+     you type the same command again.
    - If it says `The till cannot be installed yet —` it lists every problem at once. Send a photo.
    - **Write in the workbook:** "till installed, lane-1" and the date. **Send:** a photo of the window.
 2. `till.env` holds this till's keys. **Never open it, never photograph it, never copy it** — the same rule as
@@ -425,8 +431,14 @@ private save socket. No network is used for a sale.
    ```
    pnpm run store-computer -- status
    ```
-   - **When it worked:** a list of checks, each `OK` or `RED`, and `ALL OK — nothing needs you.` Before the hourly
-     backup is set up (Part 28) the backup line is RED — that is the truth, not a fault.
+   - **When it worked:** a list of checks, each `OK` or `RED` (or `?` where it cannot say yet), and `ALL OK — nothing
+     needs you.` Before the hourly backup is set up (Part 28) the backup line is RED and the `Drive room` line is `?`
+     — that is the truth, not a fault.
+   - **Check the two mirror-pilot settings** the installer wrote (Part 13). Find the line that starts `OK   Mirror`. It
+     must say `the till runs the mirror pilot with guest sales only (EDGE_MIRROR_PILOT=1, EDGE_GUEST_SALES_ONLY=1)`.
+     **Both** must say `=1`. If the line says `RED  Mirror` instead, or either one says `0` or `(not set)`: ring nothing
+     on the new till, type the Part 13 install command again, restart the till (step 2 again), and send a photo. You
+     never open `till.env` to look: `status` reads the two settings for you and shows nothing else from that file.
 3. Open **Microsoft Edge** on this PC. In the address bar, type the till address the installer printed in Part 13
    under `Next:` step 2 ("Open the till in a browser on THIS PC"). Press Enter.
    - **When it worked:** the till's Sale screen opens. Make it a favourite (the star in the address bar), so nobody
@@ -589,8 +601,11 @@ When the GO is written and the department is named:
    ```
    pnpm run store-computer -- seal --dir C:\SRE-slice --as <their-login> --backup-restored-on <YYYY-MM-DD>
    ```
-   - **When it worked:** one `SEALED —` line per file, then `All … file(s) are sealed. Next: stage the slice (--stage).`
-     and `slice.json now holds the seals.` A file already sealed is never sealed again (`kept —`).
+   - It asks the person sealing for **their own till PIN** (`<their-login>'s till PIN:`); nothing shows while they
+     type, and only they type it (OB-257). Without the right PIN nothing is sealed and nothing is sent.
+   - **When it worked:** `<their-login>'s PIN matches.`, then one `SEALED —` line per file, then `All … file(s) are
+     sealed. Next: stage the slice (--stage).` and `slice.json now holds the seals.` A file already sealed is never sealed
+     again (`kept —`).
 3. Then three commands, by two different people (the person who loads can never sign the totals):
    ```
    pnpm run migration:slice -- --dir C:\SRE-slice --stage --settings C:\SRE-data\.env.real
@@ -609,7 +624,9 @@ migration screen.
 ```
 pnpm run store-computer -- parallel-policy --as <your-login> --cutover <cutover-id> --reconciler <your-login> --clean-days <N> --max-days <M> --start <YYYY-MM-DD>
 ```
-- **When it worked:** `POLICY RECORDED — from …, … reconciles every day; …`.
+- It asks for **your own till PIN** (`<your-login>'s till PIN:`); nothing shows while you type (OB-257). Without the
+  right PIN nothing is written and nothing is sent.
+- **When it worked:** `<your-login>'s PIN matches.`, then `POLICY RECORDED — from …, … reconciles every day; …`.
 
 ## Part 24 — The products reach the till (the catalogue pack)
 
@@ -775,11 +792,16 @@ and keep it. **Nothing is ever deleted** — every backup is kept (OB-262).
      is on the drive: how many backups, how much space they use, how much is free, and about how many more days fit**.
    - **When it worked:** the last line says `OK — the last good backup is less than 2 hours old.`
    - **Because nothing is ever deleted, the drive slowly fills** (OB-262). `backup-status` shows, every morning, how
-     many backups are kept, the space they use, the space left and **about how many more days fit**. Write the
-     days-left number in the workbook each Monday. When it falls below a month, bring the drive to me and we decide
-     together (a bigger drive, or moving old backups to your own drive). The tool never deletes one by itself. If the
-     drive does fill, the backups stop, and within two hours `status` and the red banner on the office screens say the
-     last backup is too old.
+     many backups are kept, the space they use, the space left and **about how many more days fit** at the current
+     rate (the newest backup's size, times the backups a day). Write the days-left number in the workbook each Monday.
+   - **Under 30 days left, it turns RED** (OB-268): `backup-status` ends with `RED — the backup drive has room for about
+     … more day(s)`, `status` shows `RED  Drive room`, and the office screens show the red banner "The backup drive has
+     room for about … more day(s) of backups". Then decide what to keep, or plug in a bigger drive; bring the drive to
+     me if you want help. The tool never deletes a backup by itself.
+   - Before the first backup, or when the drive cannot be read, the room left says **NOT KNOWN** (and `status` shows
+     `?  Drive room`). That is the truth, not a number: plug the drive in and let the first backup run.
+   - If the drive does fill, the backups stop, and within two hours `status` and the red banner on the office screens
+     say the last backup is too old.
    - A `RED —` line: plug the drive in, then send a photo.
 3. **Your own daily copy**, at closing: plug in **your own** drive and type
    `pnpm run store-computer -- backup --to E:\sre-real` (Part 8, step 2). Then unplug it and take it with you.
@@ -833,7 +855,7 @@ checked by a Tamil reader):
 1. Switch the PC on if it is off, and sign in to **your** account. Docker, this copy and the till start by themselves
    (Part 14). Wait two minutes.
 2. `pnpm run store-computer -- status` — read what it says. Anything other than `ALL OK`: send a photo before trading on
-   the new till.
+   the new till. The `Mirror` line must say `EDGE_MIRROR_PILOT=1, EDGE_GUEST_SALES_ONLY=1` (Part 14, step 2).
 3. `pnpm run store-computer -- backup-status` — the last hourly backup is recent, and the drive has room.
 4. Switch user to `Till` (Part 26b). Open the till favourite. The cashier signs in with their own staff ID and PIN.
 
@@ -841,8 +863,8 @@ checked by a Tamil reader):
 account when you leave the PC (**Windows key + L**), never sign out.
 
 **Evening (you):**
-1. The till's payment and cash-up for mirror sales: sheet 2, step 5 — still a marked placeholder until the "paid on old
-   ERP" tender (OB-256) arrives on the till.
+1. The till's mirror sales need no cash-up: every one was "Paid on old system", with the old bill number (sheet 2,
+   steps 5 to 7), so the new till's drawer holds no money from them.
 2. Sheet 3: enter and sign the day on the migration screen (it asks for your PIN, Part 26e).
 3. Your own daily copy (Part 28, step 3), then unplug your drive and take it with you.
 4. If you switch the PC off at night, use the clean shutdown in Part 27, step 2.
@@ -865,10 +887,10 @@ test. **None of it has run on real Windows yet.**
 | W-7 | A cashier could type an office screen's address. | The office screens ask for the person's own PIN; a cashier's PIN opens only the till (OB-259, Part 26e). |
 | W-8 | No way to seal the old ERP's export files. | `store-computer seal` (Part 22). |
 
-**Still open** (each said where it is used): the payment and cash-up step for mirror sales (sheet 2, step 5 — the "paid
-on old ERP" tender, OB-256, and refunds against it, OB-258, are being added to the till); the names OB-243 still waits
-for (the department, the cashier, the store manager); and the production sign-in (OA-4) — until then the PC lock
-(OB-251) and each person's own PIN are what stand behind every name on the records.
+**Still open** (each said where it is used): which day-end report the old ERP can give for the pilot department
+(OB-263 — the evening check's bill-by-bill list is ready if it ends bill-wise); the names OB-243 still waits for (the
+department, the cashier, the store manager); and the production sign-in (OA-4) — until then the PC lock (OB-251) and
+each person's own PIN are what stand behind every name on the records.
 
 ---
 

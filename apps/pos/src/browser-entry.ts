@@ -18,6 +18,7 @@ import { CatalogueCache, type CatalogueSnapshot } from '../../../packages/catalo
 import { money } from '../../../packages/contracts/src/money';
 import type { TenderKind } from '../../../packages/contracts/src/enums';
 import { PAID_ON_OLD_ERP_WORDS } from '../../../packages/tender/src/paid-on-old-erp';
+import { readOldErpBillNumber } from '../../../packages/tender/src/old-erp-bill-number';
 import type { DecidedRequest } from '../../../packages/approvals/src/approvals';
 import { PosSession, taxRateFromPercent, NoOperatorError, TillRuleRefusedError, SaleUnconfirmedError, GUEST_SALES_ONLY_WORDS, type RefusedOffer } from './session';
 import type { LaneScales } from '../../../packages/restricted-sales/src/till-gate';
@@ -572,6 +573,20 @@ function laneDurableTo(
  */
 export type LaneLookup = (receipt: string) => Promise<SaleLookupResult | null>;
 
+/**
+ * OB-264: look up the mirror sale that carries this OLD ERP bill number, over the same loopback READ route — the box finds
+ * it in its own register (offline on the box). Resolves `null` when no sale carries it.
+ */
+export function laneLookupByOldBill(port: number = DEFAULT_LANE_PORT): LaneLookup {
+  return async (oldBill) => {
+    const response = await fetch(`${laneBase(port)}/lane/lookup?oldBill=${encodeURIComponent(oldBill)}`);
+    const body = await response.json() as { found?: boolean } & Partial<SaleLookupResult>;
+    return body.found === true && body.sale !== undefined
+      ? { sale: body.sale, returns: body.returns ?? [], refunds: body.refunds ?? [] }
+      : null;
+  };
+}
+
 export function laneLookup(port: number = DEFAULT_LANE_PORT): LaneLookup {
   return async (receipt) => {
     const response = await fetch(`${laneBase(port)}/lane/lookup?receipt=${encodeURIComponent(receipt)}`);
@@ -796,6 +811,8 @@ export function bootPos(config?: {
   refundPolicy?: RefundPolicy;
   /** Look up a bill for a refund. Overridable for tests; production reads this till's own edge. */
   laneLookup?: LaneLookup;
+  /** OB-264: look up a mirror sale by the old ERP's bill number. Overridable for tests; production asks this till's own edge. */
+  laneLookupByOldBill?: LaneLookup;
   /** The till's operator calls to its box (ADR-0020). Overridable for tests; production asks this till's own edge. */
   operatorPort?: TillOperatorPort;
   /** The till's manager-approval call to its box (ADR-0021). Overridable for tests; production asks this till's own edge. */
@@ -867,6 +884,13 @@ export function bootPos(config?: {
   readonly receiptNotice: () => string | undefined;
   /** Look up a bill this lane rang, for the refund screen — or `null` if it did not ring it. */
   readonly lookupRefund: (receipt: string) => Promise<RefundLookup | null>;
+  /**
+   * OB-264: a MIRROR refund finds its sale by the old ERP's bill number on the customer's bill — `null` if no sale on the
+   * store computer carries it. The refund rules then apply exactly as for `lookupRefund` (within the bill, approvals).
+   */
+  readonly lookupRefundByOldBill: (oldBill: string) => Promise<RefundLookup | null>;
+  /** OB-264: what the keyer typed as an old bill number, judged (Rule 46(b) shape, no personal data) — the kept form, or why not. */
+  readonly readOldBill: (typed: string) => { readonly ok: true; readonly value: string } | { readonly ok: false; readonly refusedBecause: string; readonly laneMessage: string };
   /** The return-without-a-receipt surface (SP-9b-i · M13-FR-01) — or `null` when this till may not offer one: no
    *  no-receipt cap was given (or it is 0, switched off), or the till has no catalogue to name the item from. */
   readonly noReceiptReturn: () => NoReceiptReturnSurface | null;
@@ -1069,9 +1093,22 @@ export function bootPos(config?: {
   // The two outcomes that mean the return IS on the disk (settled at the lane, or a reversal pending) — everything else is a refusal.
   const creditRecorded = (o: RefundScreenOutcome): o is Extract<RefundScreenOutcome, { kind: 'settled' | 'pending' }> => o.kind === 'settled' || o.kind === 'pending';
 
+  const lookupByOldBill = config?.laneLookupByOldBill ?? laneLookupByOldBill(config?.lanePort ?? DEFAULT_LANE_PORT);
+  const lookupRefundByOldBill = async (oldBill: string): Promise<RefundLookup | null> => {
+    const read = readOldErpBillNumber(oldBill);
+    if (!read.ok) return null;
+    const found = await lookupByOldBill(read.value);
+    return found === null ? null : refundLookupOf(found);
+  };
+  const readOldBill = (typed: string): { readonly ok: true; readonly value: string } | { readonly ok: false; readonly refusedBecause: string; readonly laneMessage: string } => {
+    const read = readOldErpBillNumber(typed);
+    return read.ok ? { ok: true, value: read.value } : { ok: false, refusedBecause: read.refusedBecause, laneMessage: read.laneMessage };
+  };
   const lookupRefund = async (receipt: string): Promise<RefundLookup | null> => {
     const found = await lookup(receipt);
-    if (found === null) return null;
+    return found === null ? null : refundLookupOf(found);
+  };
+  const refundLookupOf = (found: SaleLookupResult): RefundLookup => {
     const originalSale = found.sale;
     const refundView = createRefundView({
       refund: till.refund,
@@ -1540,7 +1577,7 @@ export function bootPos(config?: {
   const guestSalesOnly = (): boolean => config?.guestSalesOnly === true;
   const mirrorPilot = (): boolean => config?.mirrorPilot === true;
 
-  return Object.assign(view, { guestSalesOnly, mirrorPilot, pendingRefund, confirmPendingRefund, saleOnBox, refundOnBox, customerDisplay, customerDisplayChannelName, reportDevices, devicesSaid, deviceAdapterClock, deviceHeartbeat, till, nextReceipt, receiptsRemaining, receiptNotice, holdAtTill, heldAtTill, recallAtTill, abandonAtTill, startCardPayment, answerCardPayment, checkCardPayment, voidAtTill, priceChangeValue, priceChangeAtTill, noSaleAtTill, currentBillRef: () => session.billRef(), lookupRefund, noReceiptReturn, receiptTemplate, receiptLines, signIn, signOut, operator, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill, loyaltyWallet, refusedOffers: () => session.refusedOffers() });
+  return Object.assign(view, { guestSalesOnly, mirrorPilot, pendingRefund, confirmPendingRefund, saleOnBox, refundOnBox, customerDisplay, customerDisplayChannelName, reportDevices, devicesSaid, deviceAdapterClock, deviceHeartbeat, till, nextReceipt, receiptsRemaining, receiptNotice, holdAtTill, heldAtTill, recallAtTill, abandonAtTill, startCardPayment, answerCardPayment, checkCardPayment, voidAtTill, priceChangeValue, priceChangeAtTill, noSaleAtTill, currentBillRef: () => session.billRef(), lookupRefund, lookupRefundByOldBill, readOldBill, noReceiptReturn, receiptTemplate, receiptLines, signIn, signOut, operator, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill, loyaltyWallet, refusedOffers: () => session.refusedOffers() });
 }
 
 // Attach for the view. `app.js` uses `window.posSession` when present and falls back to its

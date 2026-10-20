@@ -71,6 +71,7 @@ import { SyncPipeline } from './sync-pipeline';
 import { canonicalHash, IdempotencyGuard } from './idempotency';
 import { ReturnEntitlement, type EntitlementLine } from './entitlement';
 import { buildReceiptLookup } from './receipt-lookup';
+import { openOldErpBills } from './old-erp-bills';
 import { returnIdOf } from './cloud-return';
 import { createEdgeNode, type EdgeNode } from './index';
 import { startLaneServer, LANE_HOST, type LaneServer, type LaneDayCloseHandler, type LaneDayReopenHandler, type LaneDeviceRelayHandler, type LaneDeviceStatusHandler, type LaneTillActivityHandler } from './lane-server';
@@ -1173,6 +1174,9 @@ export async function startEdge(
   // B13 (OB-138): every hallmark HUID this box has sold, from its own disk — refused again at the till and before the disk.
   const soldHuids = new SoldHuids(salesRecords);
   const returnsRecords = (await readLog(returnsLog.path)).flatMap((r) => (r.ok ? [r.record] : []));
+  // OB-264: the old ERP's bill numbers on this box's mirror sales, and the refunds against them, from its own disk — so a
+  // number keyed twice is refused, and a mirror refund finds its sale by the number on the customer's old bill.
+  const oldErpBills = openOldErpBills(salesRecords, returnsRecords);
   const returnsEntitlement = new ReturnEntitlement(
     salesRecords.flatMap((rec) => {
       let id: unknown;
@@ -1619,6 +1623,8 @@ export async function startEdge(
     guestSalesOnly: () => guestSalesOnly().on,
     // OB-256 · OB-258: while the mirror pilot is on, "Paid on old system" is the only tender, for sales and refunds.
     mirrorPilot: () => mirrorPilot().on,
+    // OB-264: every mirror sale's old ERP bill number, never keyed twice; a mirror refund looks its sale up by it.
+    oldErpBills,
     // PF-09 step 3: a sale paying with points or store credit is decided against this box's copy, one at a time.
     loyalty: {
       check: (record) => loyaltyWallets.check(record),
@@ -1719,6 +1725,8 @@ export async function startEdge(
       ...(peripheralReports === null ? {} : { peripheralReports: peripheralReports.latest() }),
       // OB-256: the till is told it is in the mirror pilot, and who turned it on.
       mirrorPilot: mirrorPilot(),
+      // OB-264: the mirror sales and their old ERP bill numbers, for the evening check's bill-wise list.
+      oldErpBills: oldErpBills.bills(),
     };
   };
 

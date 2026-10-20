@@ -1027,9 +1027,9 @@ export const USAGE = [
   '  update --from <new release folder> [--to <backup drive folder>]',
   '                                           install a new release, keeping every sale, setting and record',
   '  seal --dir <slice folder> --as <login> --backup-restored-on YYYY-MM-DD [--source <id>]',
-  '                                           seal the old ERP\'s exported files (MG-02)',
+  '                                           seal the old ERP\'s exported files (MG-02) — asks your OWN till PIN',
   '  parallel-policy --as <login> --cutover <id> --reconciler <login> --clean-days N --max-days M --start YYYY-MM-DD',
-  '                                           write the parallel-run policy (MG-10)',
+  '                                           write the parallel-run policy (MG-10) — asks your OWN till PIN',
   ' Head office\'s own jobs on this computer (OB-257) — each asks for a YES, then each person\'s OWN till PIN:',
   '  shop --as <login> --company <code> --legal-name "<as on the GST certificate>" --gstin <GSTIN> --store <code> --store-name "<name>"',
   '                                           the company, its legal name and GSTIN, and the store, active',
@@ -1086,8 +1086,10 @@ export async function ownerStep(deps, step, cl) {
   const args = step === 'seal'
     ? [L.sliceScript, '--dir', pathFor(deps.platform).resolve(cl.dir), '--seal', ...pass('--as', cl.as), ...pass('--backup-restored-on', cl.backupRestoredOn), ...pass('--source', cl.source)]
     : [L.sliceScript, '--parallel-policy', ...pass('--as', cl.as), ...pass('--cutover', cl.cutover), ...pass('--reconciler', cl.reconciler), ...pass('--clean-days', cl.cleanDays), ...pass('--max-days', cl.maxDays), ...pass('--start', cl.start)];
-  const r = deps.spawn(deps.nodePath, [...args, '--settings', L.settings], { cwd: deps.repoRoot, env });
-  for (const l of String(r.stdout ?? '').split(/\r?\n/).filter((x) => x.trim() !== '')) say(l);
+  // OB-257: the step asks the acting person for their own till PIN at THIS keyboard (checked against the till's own
+  // verifiers), so it runs in this window — never captured — and is handed the till's settings.
+  const tillEnv = deps.fs.existsSync(L.tillEnv) ? ['--till-settings', L.tillEnv] : [];
+  const r = deps.spawn(deps.nodePath, [...args, '--settings', L.settings, ...tillEnv], { cwd: deps.repoRoot, env, stdio: 'inherit' });
   if (r.error !== undefined) { say('NOT DONE — the migration tool could not be started.'); return 1; }
   return r.status ?? 1;
 }

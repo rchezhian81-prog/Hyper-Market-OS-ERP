@@ -37,6 +37,11 @@ export interface DayBookJournal extends JournalEntry {
     readonly components: Readonly<Record<string, number>>;
     /** Set when the day's own period was closed and the voucher went to the next open one, carrying its real date. */
     readonly belongsTo?: string;
+    /**
+     * OB-264: in the mirror pilot, the old ERP's bill number for each source that has one — a sale's own, a refund's from
+     * the sale it came off — so the day book reads bill by bill against the old ERP. Absent when no source has one.
+     */
+    readonly oldErpBills?: readonly { readonly sourceId: string; readonly oldErpBillNumber: string }[];
   };
 }
 
@@ -119,7 +124,27 @@ const summarise = (j: DayBookJournal) => ({
   entryId: j.entryId, kind: j.dayBook.kind, sourceKind: j.dayBook.sourceKind, sources: j.dayBook.sourceIds.length,
   period: j.period, documentDate: j.documentDate, ...(j.dayBook.belongsTo === undefined ? {} : { belongsTo: j.dayBook.belongsTo }),
   components: j.dayBook.components, lines: j.lines, postedBy: j.postedBy, narrative: j.narrative,
+  ...(j.dayBook.oldErpBills === undefined ? {} : { oldErpBills: j.dayBook.oldErpBills }),
 });
+
+/**
+ * OB-264: the old ERP's bill number behind each source of a voucher — a sale's own, a refund's from its original sale —
+ * in the voucher's own source order. Undefined when none of its sources carries one (outside the mirror pilot).
+ */
+export function oldErpBillsOf(
+  sourceKind: DayBookSourceKind, sourceIds: readonly string[], sales: readonly DayBookSale[], returns: readonly DayBookReturn[], originals: ReadonlyMap<string, DayBookSale>,
+): readonly { readonly sourceId: string; readonly oldErpBillNumber: string }[] | undefined {
+  const oldOf = new Map<string, string>();
+  if (sourceKind === 'sale') for (const sale of sales) if (typeof sale.oldErpBillNumber === 'string') oldOf.set(sale.saleId, sale.oldErpBillNumber);
+  if (sourceKind === 'return') {
+    for (const r of returns) {
+      const original = r.originalSaleId === null ? undefined : originals.get(r.originalSaleId) ?? sales.find((x) => x.saleId === r.originalSaleId);
+      if (typeof original?.oldErpBillNumber === 'string') oldOf.set(r.returnId, original.oldErpBillNumber);
+    }
+  }
+  const out = sourceIds.flatMap((id) => (oldOf.has(id) ? [{ sourceId: id, oldErpBillNumber: oldOf.get(id)! }] : []));
+  return out.length === 0 ? undefined : out;
+}
 
 export function dayBookRoutes(deps: DayBookDeps): readonly Route[] {
   return [
@@ -206,6 +231,10 @@ export function dayBookRoutes(deps: DayBookDeps): readonly Route[] {
             dayBook: {
               tradingDay, kind: aggregate.kind, sourceKind: aggregate.sourceKind, sourceIds: aggregate.sourceIds,
               components: aggregate.components, ...(closed ? { belongsTo } : {}),
+              ...((): { oldErpBills?: NonNullable<DayBookJournal['dayBook']['oldErpBills']> } => {
+                const old = oldErpBillsOf(aggregate.sourceKind, aggregate.sourceIds, sales, returns, originals);
+                return old === undefined ? {} : { oldErpBills: old };
+              })(),
             },
           };
           // The same gate the manual journal route runs — balance, narrative, closed period. Belt and braces.

@@ -13,6 +13,8 @@
 //     it holds no card number, security code or card expiry anywhere.
 //   • `paid-on-old-erp.ts` (OB-256 · OB-258) — the mirror pilot's one non-cash tender: offered only in the mirror pilot,
 //     then the only tender; refunds go back to it; no drawer money, no card/UPI attempt.
+//   • `old-erp-bill-number.ts` (OB-264) — the old ERP's bill number on every mirror sale: Rule 46(b) shape, no personal
+//     data, never keyed twice; a mirror refund finds its sale by it.
 //
 // Grows one reviewed, tested unit at a time.
 
@@ -22,3 +24,4 @@ export * from './card-token';
 export * from './legacy-card-purge';
 export * from './tender-card-data';
 export * from './paid-on-old-erp';
+export * from './old-erp-bill-number';

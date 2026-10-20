@@ -103,6 +103,10 @@ const WORDS = {
     dayStatement: 'What you checked (in your own words)', daySign: 'Sign the day', daySigned: 'Day signed',
     dayAgrees: 'agrees', dayDiffers: 'differs by', needsReason: 'NEEDS A REASON — the day cannot be signed',
     explainedAs: 'explained', daysTitle: 'Days so far', noDays: 'No day has been entered yet.',
+    billsTitle: 'Bill by bill (mirror pilot)',
+    billsLead: 'Every sale keyed on the new till on this day, with the old system\'s bill number typed on it (OB-264). Use it to check a bill by hand. A comparison against the old system\'s own bill list is not built yet: it waits for your answer on which report the old system can give (OB-263).',
+    billsNone: 'No sale keyed on the new till on this day yet.', billNew: 'New bill', billOld: 'Old bill', billAmount: 'Amount', billRefunded: 'Refunded',
+    billsCount: 'bill(s)', billsTotal: 'in all', billsTruncated: 'Only the latest bills are listed here.',
     signedDay: 'signed by', unsignedDay: 'NOT SIGNED', resignNeeded: 'the figures changed after it was signed — sign it again',
     importDone: 'The file was read into the boxes below. Check them, then save the day.',
     importBad: 'This file could not be read. Each line must be: area, old system, new system, allowed difference.',
@@ -192,6 +196,10 @@ const WORDS = {
     dayStatement: 'நீங்கள் எதைச் சரிபார்த்தீர்கள் (உங்கள் சொந்த வார்த்தைகளில்)', daySign: 'நாளில் கையெழுத்திடு', daySigned: 'நாளில் கையெழுத்திடப்பட்டது',
     dayAgrees: 'பொருந்துகிறது', dayDiffers: 'வேறுபாடு', needsReason: 'காரணம் தேவை — இந்த நாளில் கையெழுத்திட முடியாது',
     explainedAs: 'விளக்கம்', daysTitle: 'இதுவரையிலான நாட்கள்', noDays: 'இதுவரை எந்த நாளும் பதிவு செய்யப்படவில்லை.',
+    billsTitle: 'பில் வாரியாக (மிரர் பைலட்)',
+    billsLead: 'இந்த நாளில் புதிய கல்லாவில் பதிவான ஒவ்வொரு விற்பனையும், அதில் உள்ளிட்ட பழைய அமைப்பின் பில் எண்ணுடன் (OB-264). ஒரு பில்லைக் கையால் சரிபார்க்க இதைப் பயன்படுத்தவும். பழைய அமைப்பின் சொந்தப் பில் பட்டியலுடன் ஒப்பீடு இன்னும் உருவாக்கப்படவில்லை: பழைய அமைப்பு எந்த அறிக்கையைத் தர முடியும் என்ற உங்கள் பதிலுக்காகக் காத்திருக்கிறது (OB-263).',
+    billsNone: 'இந்த நாளில் புதிய கல்லாவில் இன்னும் எந்த விற்பனையும் பதிவாகவில்லை.', billNew: 'புதிய பில்', billOld: 'பழைய பில்', billAmount: 'தொகை', billRefunded: 'திருப்பித் தரப்பட்டது',
+    billsCount: 'பில்(கள்)', billsTotal: 'மொத்தம்', billsTruncated: 'சமீபத்திய பில்கள் மட்டுமே இங்கே பட்டியலிடப்பட்டுள்ளன.',
     signedDay: 'கையெழுத்திட்டவர்', unsignedDay: 'கையெழுத்து இல்லை', resignNeeded: 'கையெழுத்திட்ட பிறகு கணக்குகள் மாறின — மீண்டும் கையெழுத்திடுங்கள்',
     importDone: 'கோப்பு கீழே உள்ள பெட்டிகளில் படிக்கப்பட்டது. சரிபார்த்து, பின் நாளைச் சேமியுங்கள்.',
     importBad: 'இந்தக் கோப்பைப் படிக்க முடியவில்லை. ஒவ்வொரு வரியும்: பகுதி, பழைய அமைப்பு, புதிய அமைப்பு, அனுமதிக்கப்பட்ட வேறுபாடு.',
@@ -806,7 +814,7 @@ el('day-sign').addEventListener('click', () => {
   tell(t('daySigned'), lang === 'en' ? outcome.detail : `${t('signedDay')} ${outcome.signature.signedBy}`, true);
   paintChrome();
 });
-el('day-date').addEventListener('change', () => { renderDay(); });
+el('day-date').addEventListener('change', () => { renderDay(); renderBills(); });
 
 function renderDay() {
   const date = el('day-date').value;
@@ -847,6 +855,39 @@ function renderDay() {
   view.append(status);
 }
 
+/**
+ * OB-264 — the bill-wise list for the evening check: the day chosen above, each mirror sale's new bill, the old system's
+ * bill number keyed on it, its value and what has come back. Read from the store computer's own disk; shown only in the
+ * mirror pilot. A list to check by, never a comparison the screen pretends to have made (that waits for OB-263).
+ */
+function renderBills() {
+  const data = window.migrationData?.mirrorBills;
+  const box = el('bills');
+  box.hidden = data === undefined || data === null || !Array.isArray(data.bills);
+  if (box.hidden) return;
+  el('bills-title').textContent = t('billsTitle');
+  el('bills-lead').textContent = t('billsLead');
+  const day = el('day-date').value;
+  const bills = data.bills.filter((b) => b && b.tradingDay === day);
+  const list = el('bills-list');
+  if (bills.length === 0) { list.replaceChildren(emptyLine(t('billsNone')), ...(data.truncated ? [line(t('billsTruncated'))] : [])); return; }
+  const table = document.createElement('table');
+  table.id = 'bills-table';
+  const head = document.createElement('tr');
+  for (const key of ['billNew', 'billOld', 'billAmount', 'billRefunded']) { const th = document.createElement('th'); th.scope = 'col'; th.textContent = t(key); head.append(th); }
+  const thead = document.createElement('thead');
+  thead.append(head);
+  const body = document.createElement('tbody');
+  for (const b of bills) {
+    const tr = document.createElement('tr');
+    for (const v of [b.number, b.oldErpBillNumber, money(b.totalMinor), money(b.refundedMinor)]) { const td = document.createElement('td'); td.textContent = String(v); tr.append(td); }
+    body.append(tr);
+  }
+  table.append(thead, body);
+  const total = bills.reduce((n, b) => n + (b.totalMinor ?? 0) - (b.refundedMinor ?? 0), 0);
+  list.replaceChildren(table, line(`${bills.length} ${t('billsCount')} · ${money(total)} ${t('billsTotal')}`), ...(data.truncated ? [line(t('billsTruncated'))] : []));
+}
+
 function renderDays() {
   const reconciler = window.migrationData?.dailyReconcilerUserId;
   el('day-reconciler').textContent = reconciler === undefined ? t('noReconciler') : `${t('reconciler')}: ${reconciler}`;
@@ -856,6 +897,7 @@ function renderDays() {
   for (const node of document.querySelectorAll('#day-areas [data-word]')) node.textContent = t(node.dataset.word);
   if (el('day-date').value === '') el('day-date').value = today();
   renderDay();
+  renderBills();
   const list = el('days-list');
   const position = session.parallel();
   // Days the store computer sent, and days entered on this page — saved here even before the store computer has them.

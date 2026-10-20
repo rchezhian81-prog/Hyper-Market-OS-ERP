@@ -10,6 +10,7 @@ import { checkOperatorStamp } from '../../../packages/identity/src/till-seal';
 import { assignSaleLots, type LotOnHand } from './sale-lots';
 import { storeComputerTimeFrom, type StoreComputerScopeOfCaller } from './returns';
 import { withoutCardData } from '../../../packages/tender/src/tender-card-data';
+import { isOldErpBillNumber } from '../../../packages/tender/src/old-erp-bill-number';
 import {
   acceptSale, summariseIntake,
   type IncomingSale, type IntakeContext, type IntakeResult, type SaleException,
@@ -161,13 +162,16 @@ export function posRoutes(deps: PosDeps): readonly Route[] {
         // Round 35 · NEW-6: the store computer's time for the bill is kept only from the store computer's own sign-in; from
         // anybody else it is dropped and the bill notes that it was offered and ignored (head office writes the note — one
         // sent in the body is never kept).
-        const { storeComputerTakenAt: offered, storeComputerTakenAtIgnored: _claimed, ...rest } = sent;
+        const { storeComputerTakenAt: offered, storeComputerTakenAtIgnored: _claimed, oldErpBillNumber: oldBill, oldErpBillNumberIgnored: _oldClaimed, ...rest } = sent;
         void _claimed;
+        void _oldClaimed;
         const time = await storeComputerTimeFrom(deps.storeComputerScopeOf, ctx.tenantId, ctx.userId, offered, deps.now());
         const arrived: IncomingSale = {
           ...rest,
           ...(time.ignored === undefined && offered !== undefined ? { storeComputerTakenAt: offered } : {}),
           ...(time.ignored === undefined ? {} : { storeComputerTakenAtIgnored: time.ignored }),
+          // OB-264: the old ERP's bill number, kept only in its checked form; anything else is dropped and the bill says so.
+          ...(oldBill === undefined ? {} : isOldErpBillNumber(oldBill) ? { oldErpBillNumber: oldBill } : { oldErpBillNumberIgnored: { why: 'not_an_old_bill_number' as const } }),
         };
 
         // OB-35 "A": a batch-tracked line the till sent with no batch is assigned the earliest-expiry batch on hand at the

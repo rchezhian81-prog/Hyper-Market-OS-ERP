@@ -209,11 +209,29 @@ export function planTillSettings(input) {
     ...(realValue(storeId) ? { EDGE_STORE_ID: storeId, EDGE_STORE_PACK_SOURCE: 'head-office' } : {}),
     // OB-252: the real copy takes guest sales only — no customer mobile number, no loyalty — whatever the setup says.
     ...(realCopy || existing?.EDGE_GUEST_SALES_ONLY === '1' ? { EDGE_GUEST_SALES_ONLY: '1' } : {}),
+    // OB-248 · OB-256: the real copy runs the MIRROR PILOT — the old ERP bills every customer; this till records the same
+    // lines "Paid on old system" with the old bill number (OB-264). Always together with guest sales only: the box refuses
+    // to start with the mirror on and guest-only off, and `mirrorSettingsProblem` refuses to write a real till without both.
+    ...(realCopy || existing?.EDGE_MIRROR_PILOT === '1' ? { EDGE_MIRROR_PILOT: '1' } : {}),
     // OB-259: the office screens this PC serves ask for the person's own till PIN; a till-only role opens only the till.
     EDGE_OFFICE_SIGN_IN: 'pin',
   };
   if (realCopy) notes.push('guest sales only (OB-252): the till takes no customer mobile number and no loyalty');
+  if (realCopy) notes.push('mirror pilot (OB-248 · OB-256): every sale and refund is "Paid on old system", with the old bill number (OB-264); no money in this drawer');
   return { ok: problems.length === 0, settings, problems, notes };
+}
+
+/**
+ * OB-248 · OB-252 — the store computer's REAL copy is the mirror pilot, and the mirror pilot is guest sales only. The till's
+ * settings as they will stand after this run (a new file, or an existing one with this run's changes) must say BOTH
+ * `EDGE_MIRROR_PILOT=1` and `EDGE_GUEST_SALES_ONLY=1`; otherwise nothing is written and the reason is given. Undefined =
+ * fine. Outside the real copy there is no rule here (the demo and a rehearsal till keep their own settings).
+ */
+export function mirrorSettingsProblem({ realCopy, finalSettings }) {
+  if (!realCopy) return undefined;
+  const missing = ['EDGE_MIRROR_PILOT', 'EDGE_GUEST_SALES_ONLY'].filter((k) => String(finalSettings?.[k] ?? '').trim() !== '1');
+  if (missing.length === 0) return undefined;
+  return `this is the store computer's real copy, which runs the mirror pilot with guest sales only (OB-248, OB-252), but the till's settings would not say ${missing.map((k) => `${k}=1`).join(' and ')}. Nothing was written. If till.env says otherwise, it was changed by hand: run the install again with --force to write it whole`;
 }
 
 /** The settings file, with a comment per line a technician can read. Values are unquoted so the same
@@ -259,6 +277,11 @@ export function renderTillEnv(settings) {
       '# OB-252: guest sales only — the till takes no customer mobile number and no loyalty.',
       `EDGE_GUEST_SALES_ONLY=${settings.EDGE_GUEST_SALES_ONLY}`,
     ]),
+    ...(settings.EDGE_MIRROR_PILOT === undefined ? [] : [
+      '# OB-248 · OB-256: the mirror pilot — every sale and refund is "Paid on old system", with the old bill number (OB-264).',
+      '# Always with EDGE_GUEST_SALES_ONLY=1: the till refuses to start with this on and guest sales only off.',
+      `EDGE_MIRROR_PILOT=${settings.EDGE_MIRROR_PILOT}`,
+    ]),
     ...(settings.EDGE_OFFICE_SIGN_IN === undefined ? [] : [
       "# OB-259: the office screens ask for the person's own till PIN; a cashier opens only the till.",
       `EDGE_OFFICE_SIGN_IN=${settings.EDGE_OFFICE_SIGN_IN}`,
@@ -270,7 +293,7 @@ export function renderTillEnv(settings) {
 /** How long a store token the installer makes lasts — the same 30 days `token:store` gives by default. */
 export const STORE_TOKEN_HOURS = 720;
 /** What a connect (W-5) or a newer install may add to or change in an existing till.env — never the key, the lane or the folders. */
-export const CONNECT_KEYS = Object.freeze(['CLOUD_API_URL', 'CLOUD_API_TOKEN', 'EDGE_STORE_ID', 'EDGE_STORE_PACK_SOURCE', 'EDGE_GUEST_SALES_ONLY', 'EDGE_OFFICE_SIGN_IN']);
+export const CONNECT_KEYS = Object.freeze(['CLOUD_API_URL', 'CLOUD_API_TOKEN', 'EDGE_STORE_ID', 'EDGE_STORE_PACK_SOURCE', 'EDGE_GUEST_SALES_ONLY', 'EDGE_MIRROR_PILOT', 'EDGE_OFFICE_SIGN_IN']);
 
 /**
  * An existing till.env with the connect keys set from the plan, in place; every other line is kept exactly as it was (the
@@ -302,7 +325,7 @@ export function updateTillEnv(text, settings) {
  */
 export function tillEnvChangesFor({ settings, existing, flags }) {
   if (flags.store !== undefined) return Object.fromEntries(CONNECT_KEYS.filter((k) => settings[k] !== undefined).map((k) => [k, settings[k]]));
-  return Object.fromEntries(['EDGE_GUEST_SALES_ONLY', 'EDGE_OFFICE_SIGN_IN'].filter((k) => settings[k] !== undefined && existing?.[k] === undefined).map((k) => [k, settings[k]]));
+  return Object.fromEntries(['EDGE_GUEST_SALES_ONLY', 'EDGE_MIRROR_PILOT', 'EDGE_OFFICE_SIGN_IN'].filter((k) => settings[k] !== undefined && existing?.[k] === undefined).map((k) => [k, settings[k]]));
 }
 
 /**
@@ -478,6 +501,13 @@ async function main() {
   const changes = existing !== undefined && !flags.force ? tillEnvChangesFor({ settings: plan.settings, existing, flags }) : {};
   if (existing !== undefined && !flags.force && Object.keys(changes).length === 0) {
     process.stdout.write(`• ${envPath} already exists — kept as it is (pass --force to rewrite it)\n`);
+  }
+  // OB-248 · OB-252: a real copy's till is never written without BOTH mirror settings — checked on what the file will say.
+  const mirror = mirrorSettingsProblem({ realCopy, finalSettings: existing === undefined || flags.force ? plan.settings : { ...existing, ...changes } });
+  if (mirror !== undefined) {
+    process.stderr.write(`\nThe till cannot be installed yet — 1 problem(s):\n  ✕ ${mirror}\n\n`);
+    process.exitCode = 78;
+    return;
   }
 
   if (flags.dryRun) {

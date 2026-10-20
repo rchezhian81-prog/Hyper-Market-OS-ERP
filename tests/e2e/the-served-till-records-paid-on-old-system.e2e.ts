@@ -98,10 +98,15 @@ describe.skipIf(!HAVE_BROWSER)('the served till records "Paid on old system" in 
     await shows(page, 'pay', 'pay-title', 'How is the customer paying?');
     expect(await options(page)).toEqual([expect.stringMatching(/^Paid on old system — ₹\s?480(\.00)?$/)]);
     await page.click('#pay-kinds button:first-child');
+    // OB-264: the old system's bill number for this bill, typed before it is saved.
+    await shows(page, 'sheet', 'sheet-title', 'Old bill number');
+    await page.fill('#entry-text', 'OLD/1');
+    await page.click('#sheet-ok');
     expect(await said(page)).toMatchObject({ title: expect.stringContaining('Recorded — paid on old system'), text: expect.stringContaining('No money in this drawer') });
     await expect.poll(async () => (await readLog(edge.log.path)).length, { timeout: 10_000 }).toBe(1);
     const [first] = await readLog(edge.log.path);
-    const sale = JSON.parse(first!.ok ? first!.record : '{}') as { number: string; tenders: { kind: string; amount: { minor: number } }[]; taxMinor: number };
+    const sale = JSON.parse(first!.ok ? first!.record : '{}') as { number: string; oldErpBillNumber: string; tenders: { kind: string; amount: { minor: number } }[]; taxMinor: number };
+    expect(sale.oldErpBillNumber).toBe('OLD/1');
     expect(sale.tenders).toEqual([expect.objectContaining({ kind: 'paid_on_old_erp', amount: expect.objectContaining({ minor: 48_000 }) })]);
     expect(sale.taxMinor).toBeGreaterThan(0); // GST inside, as on every bill
 
@@ -109,8 +114,9 @@ describe.skipIf(!HAVE_BROWSER)('the served till records "Paid on old system" in 
     await page.click('#more');
     await shows(page, 'pay', 'pay-title', 'More');
     await page.click('#pay-kinds button:text-is("Refund")');
-    await shows(page, 'sheet', 'sheet-title', 'Scan the receipt, or key the bill number');
-    await page.keyboard.type(sale.number);
+    // OB-264: in the mirror pilot the customer holds the old system's bill, so the till asks for ITS number.
+    await shows(page, 'sheet', 'sheet-title', 'Old bill number on the customer\'s bill');
+    await page.fill('#entry-text', 'OLD/1');
     await page.keyboard.press('Enter');
     await shows(page, 'pay', 'pay-title', 'Which item is coming back?');
     await page.click('#pay-kinds button:first-child');
@@ -136,7 +142,7 @@ describe.skipIf(!HAVE_BROWSER)('the served till records "Paid on old system" in 
     await page.click('#more');
     await shows(page, 'pay', 'pay-title', 'More');
     await page.click('#pay-kinds button:text-is("Exchange")');
-    expect(await said(page)).toMatchObject({ title: expect.stringContaining('Mirror pilot'), text: expect.stringContaining('Record the item coming back as a refund (Paid on old system)') });
+    expect(await said(page)).toMatchObject({ title: expect.stringContaining('Mirror pilot'), text: expect.stringContaining('exchanges are done on the old till only') });
 
     // ── Tamil: the strip, the one way to pay, and the outcome.
     await page.click('#lang');
@@ -146,12 +152,15 @@ describe.skipIf(!HAVE_BROWSER)('the served till records "Paid on old system" in 
     await shows(page, 'pay', 'pay-title', 'வாடிக்கையாளர் எவ்வாறு பணம் தருகிறார்?');
     expect(await options(page)).toEqual([expect.stringMatching(/^பழைய பில்லிங் அமைப்பில் செலுத்தப்பட்டது — ₹\s?480(\.00)?$/)]);
     await page.click('#pay-kinds button:first-child');
+    await shows(page, 'sheet', 'sheet-title', 'பழைய பில் எண்');
+    await page.fill('#entry-text', 'OLD/2');
+    await page.click('#sheet-ok');
     expect(await said(page)).toMatchObject({ title: expect.stringContaining('பதிவு செய்யப்பட்டது — பழைய பில்லிங் அமைப்பில் செலுத்தப்பட்டது'), text: expect.stringContaining('இந்த டிராயரில் பணம் இல்லை') });
     await expect.poll(async () => (await readLog(edge.log.path)).length, { timeout: 10_000 }).toBe(2);
     await page.click('#more');
     await shows(page, 'pay', 'pay-title', 'மேலும்');
     await page.click('#pay-kinds button:text-is("பரிமாற்றம்")');
-    expect(await said(page)).toMatchObject({ title: expect.stringContaining('மிரர் பைலட்'), text: expect.stringContaining('திரும்பும் பொருளைத் திரும்பப் பணமாக') });
+    expect(await said(page)).toMatchObject({ title: expect.stringContaining('மிரர் பைலட்'), text: expect.stringContaining('பரிமாற்றம் பழைய கல்லாவில் மட்டுமே') });
   }, 90_000);
 
   it('off: nothing is shown and "Paid on old system" is never offered — for a sale or a refund', async () => {

@@ -53,6 +53,7 @@ import {
   basketUnits, costTheDay, exceptionsFor, activityFrom, lineCostMinor, salesOn, tenderPartsOf, tradingDaysHeld,
   type LoggedSale,
 } from './read-model';
+import type { OldErpBillSale } from '../../../packages/tender/src/old-erp-bill-number';
 import type { StorePack, PackRoutingPolicy, PackSlot, PackGstReconciliationPolicy, PackCategoryPolicyPolicy, PackGstReturnsPolicy, PackWastePolicy, PackWriteOffCapturePolicy, PackCountsPolicy, PackFleetPolicy, PackProductPublishReviewPolicy, PackDataQualityPolicy, PackOperationsInboxPolicy, PackLossPreventionPolicy, PackSubstitutionExceptionPolicy, PackDayBookPolicy, PackDocumentTemplatePolicy, PackReturnGovernancePolicy, PackCashOfficePolicy, PackRiskAcceptancePolicy, PackDayReopenPolicy, PackStockHealthPolicy, PackStoredValuePolicy, PackIntegrationHealthPolicy, PackGoodsReceiptPolicy, PackSuppliersPolicy, PackIndentsPolicy, PackDataIoPolicy, PackWorkforceInboxPolicy, PackEssPolicy, PackRosteringPolicy, PackChecklistPolicy, PackProductionPolicy, PackFacilitiesPolicy } from './store-pack';
 import { DEFAULT_WRITE_OFF_THRESHOLD_MINOR } from '../../../packages/waste/src/waste';
 import { packFreshness, type SignedPack } from '../../../services/catalogue/src/pack';
@@ -90,6 +91,11 @@ export interface ScreenInput {
   readonly pendingPayments?: readonly { readonly attemptId: string; readonly laneId: string; readonly billRef: string; readonly kind: 'card' | 'upi'; readonly amountMinor: number; readonly askedAt: string; readonly state: string }[];
   /** OB-256 · OB-258: whether this box is in the mirror pilot, and who turned it on. Absent → off. */
   readonly mirrorPilot?: { readonly on: boolean; readonly by: 'store_pack' | 'store_computer_setting' | null };
+  /**
+   * OB-264: every mirror sale on this box that carries the old ERP's bill number, with what has been refunded against it,
+   * from the box's own register (`old-erp-bills.ts`) — the bill-wise list the evening check shows. Absent → none kept.
+   */
+  readonly oldErpBills?: readonly OldErpBillSale[];
 }
 
 /**
@@ -2428,6 +2434,9 @@ export function aiPayload(input: ScreenInput): Record<string, unknown> | null {
  * it. An unsynced till is an unmigrated sale, and it is not found until a customer asks for the
  * receipt.
  */
+/** OB-264: how many of the latest mirror bills the evening check's bill-wise list carries (weeks of one department). */
+export const MIRROR_BILLS_SHOWN = 5000;
+
 /** OB-256: the MG-10 areas the mirror pilot does not compare, and the decision that says so. */
 export const MIRROR_PILOT_NOT_COMPARED: readonly { readonly area: 'payments' | 'loyalty'; readonly decision: 'OB-256' }[] = Object.freeze([
   { area: 'payments', decision: 'OB-256' },
@@ -2456,6 +2465,17 @@ export function migrationPayload(input: ScreenInput): Record<string, unknown> | 
   // payments are not compared (every payment is taken on the old ERP) and neither is loyalty (the old ERP keeps it, OB-252).
   // Said to the screen so those areas show the decision and send no figure — never a silent zero (P-08).
   if (input.mirrorPilot?.on === true) payload['notCompared'] = MIRROR_PILOT_NOT_COMPARED;
+  // OB-264: the bill-wise list for the evening check — each mirror sale's new bill and the old ERP's bill number keyed on
+  // it, its value and what has come back, from this box's own disk (offline). Only the list: the bill-by-bill comparison
+  // with the old ERP waits for OB-263 (which report the old ERP can give). The most recent MIRROR_BILLS_SHOWN only.
+  if (input.mirrorPilot?.on === true && input.oldErpBills !== undefined) {
+    const kept = input.oldErpBills.slice(-MIRROR_BILLS_SHOWN);
+    payload['mirrorBills'] = {
+      tradingDay: input.tradingDay,
+      truncated: input.oldErpBills.length > kept.length,
+      bills: kept.map((b) => ({ number: b.number, oldErpBillNumber: b.oldErpBillNumber, tradingDay: b.tradingDay, totalMinor: b.totalMinor, refundedMinor: b.refundedMinor })),
+    };
+  }
   if (policy.deltaAppliedAt !== undefined) payload['deltaAppliedAt'] = policy.deltaAppliedAt;
   if (policy.rollbackDemonstratedAt !== undefined) {
     payload['rollbackDemonstratedAt'] = policy.rollbackDemonstratedAt;

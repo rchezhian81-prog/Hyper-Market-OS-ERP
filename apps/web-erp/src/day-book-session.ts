@@ -47,6 +47,8 @@ export interface DayBookJournalView {
   readonly lines: readonly { readonly accountCode: string; readonly debitMinor: number; readonly creditMinor: number }[];
   readonly postedBy: string;
   readonly narrative: string;
+  /** OB-264: in the mirror pilot, the old ERP's bill number behind each source that has one. */
+  readonly oldErpBills?: readonly { readonly sourceId: string; readonly oldErpBillNumber: string }[];
 }
 
 export interface DayBookAccountView {
@@ -132,7 +134,7 @@ export type CopyKey =
   | 'notPosted' | 'postedSummary' | 'salesTotalLabel' | 'returnsTotalLabel' | 'coveredLabel' | 'openLabel'
   | 'journalsHeading' | 'accountsHeading' | 'exceptionsHeading' | 'noExceptions'
   | 'kindSale' | 'kindSaleReturn' | 'kindTender' | 'kindRefund'
-  | 'sourcesLabel' | 'periodLabel' | 'lateLabel' | 'postedByLabel' | 'debitLabel' | 'creditLabel' | 'balanceLabel'
+  | 'sourcesLabel' | 'periodLabel' | 'lateLabel' | 'postedByLabel' | 'debitLabel' | 'creditLabel' | 'balanceLabel' | 'oldBillsLabel'
   | 'stateOpen' | 'stateResolved' | 'stateOk' | 'stateLate'
   | 'reasonTaxRateUnknown' | 'reasonTaxSplitFailed' | 'reasonNegativeLine' | 'reasonLinesDoNotSum' | 'reasonTendersDoNotSum'
   | 'reasonRefundSplitUnknown' | 'reasonUnmappedKind' | 'reasonMissingComponent' | 'reasonUnbalancedJournal' | 'reasonOther'
@@ -150,7 +152,7 @@ export const DAY_BOOK_COPY: BilingualCopy<CopyKey> = {
     journalsHeading: 'Journals', accountsHeading: 'Accounts moved', exceptionsHeading: 'Exceptions', noExceptions: 'No exceptions on this day.',
     kindSale: 'Sales', kindSaleReturn: 'Returns', kindTender: 'Takings', kindRefund: 'Refunds',
     sourcesLabel: 'Receipts', periodLabel: 'Period', lateLabel: 'Belongs to a closed month', postedByLabel: 'Posted by',
-    debitLabel: 'Debit', creditLabel: 'Credit', balanceLabel: 'Balance',
+    debitLabel: 'Debit', creditLabel: 'Credit', balanceLabel: 'Balance', oldBillsLabel: 'Old system bill numbers (mirror pilot)',
     stateOpen: 'Open — not in the accounts', stateResolved: 'Resolved', stateOk: 'Posted', stateLate: 'Posted late to the next open period',
     reasonTaxRateUnknown: 'Tax rate unknown', reasonTaxSplitFailed: 'Tax could not be split', reasonNegativeLine: 'Negative line',
     reasonLinesDoNotSum: 'Lines do not add up to the total', reasonTendersDoNotSum: 'Tenders do not add up to the total',
@@ -175,7 +177,7 @@ export const DAY_BOOK_COPY: BilingualCopy<CopyKey> = {
     journalsHeading: 'ஜர்னல்கள்', accountsHeading: 'நகர்ந்த கணக்குகள்', exceptionsHeading: 'விதிவிலக்குகள்', noExceptions: 'இந்த நாளில் விதிவிலக்குகள் இல்லை.',
     kindSale: 'விற்பனை', kindSaleReturn: 'திருப்பங்கள்', kindTender: 'வசூல்', kindRefund: 'திருப்பிச் செலுத்தல்',
     sourcesLabel: 'ரசீதுகள்', periodLabel: 'காலம்', lateLabel: 'மூடிய மாதத்திற்குரியது', postedByLabel: 'பதிவு செய்தவர்',
-    debitLabel: 'பற்று', creditLabel: 'வரவு', balanceLabel: 'இருப்பு',
+    debitLabel: 'பற்று', creditLabel: 'வரவு', balanceLabel: 'இருப்பு', oldBillsLabel: 'பழைய அமைப்பின் பில் எண்கள் (மிரர் பைலட்)',
     stateOpen: 'திறந்தது — கணக்குகளில் இல்லை', stateResolved: 'தீர்க்கப்பட்டது', stateOk: 'பதிவு செய்யப்பட்டது', stateLate: 'அடுத்த திறந்த காலத்தில் தாமதமாகப் பதிவு',
     reasonTaxRateUnknown: 'வரி விகிதம் தெரியவில்லை', reasonTaxSplitFailed: 'வரியைப் பிரிக்க முடியவில்லை', reasonNegativeLine: 'எதிர்மறை வரி',
     reasonLinesDoNotSum: 'வரிகள் மொத்தத்துடன் பொருந்தவில்லை', reasonTendersDoNotSum: 'பணவகைகள் மொத்தத்துடன் பொருந்தவில்லை',
@@ -220,6 +222,8 @@ export interface PresentedJournal {
   readonly postedBy: string;
   readonly narrative: string;
   readonly lines: readonly { readonly accountCode: string; readonly debit: string; readonly credit: string }[];
+  /** OB-264: the old ERP's bill numbers this voucher covers (mirror pilot), in its own source order — empty outside it. */
+  readonly oldErpBills: readonly string[];
   /** Posted = ok; posted late into the next open period = degraded (a word and an icon ride with it). */
   readonly status: StatusPresentation;
 }
@@ -307,6 +311,7 @@ export function createDayBookSession(config: DayBookConfig, ports: DayBookPorts)
       entryId: j.entryId, kind: j.kind, kindLabel: label, amount: rupees(amountMinor), amountMinor, sources: j.sources,
       period: j.period, documentDate: j.documentDate, late, belongsTo: j.belongsTo ?? null, postedBy: j.postedBy, narrative: j.narrative,
       lines: j.lines.map((l) => ({ accountCode: l.accountCode, debit: rupees(l.debitMinor), credit: rupees(l.creditMinor) })),
+      oldErpBills: (j.oldErpBills ?? []).map((b) => b.oldErpBillNumber),
       status: late
         ? presentStatus({ tone: 'degraded', icon: '⚠', label: t('stateLate'), announcement: `${label}: ${t('stateLate')} ${j.period}`, needsAttention: true })
         : presentStatus({ tone: 'ok', icon: '✓', label: t('stateOk'), announcement: `${label}: ${t('stateOk')} ${j.period}`, needsAttention: false }),

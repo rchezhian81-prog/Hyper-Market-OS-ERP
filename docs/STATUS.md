@@ -5,7 +5,14 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
-## Mirror-pilot readiness, round 2 (20 October 2026) — full gate: 13,199 unit/integration passed, 1 timing failure in an older test (passes alone, 19/19), 16 skipped; 52 performance; 465 browser passed, 1 failed on a test-port clash with a parallel builder (passes alone)
+## Mirror-pilot readiness, round 3 (20 October 2026) — gate: 13,238 unit/integration passed (16 skipped); 51 of 52 performance (one older timing test slow under load, passes alone); 468 browser passed
+
+- Built: the old ERP bill number on every mirror sale (CGST Rule 46(b) shape, no personal data, refused if keyed twice in a financial year, survives a cold restart); a mirror refund finds its sale by it offline; the day book and a "Bill by bill" list on the evening check show it (OB-264).
+- Built: backup drive red under about 30 days of room, "not known" until it can be worked out (OB-268); the real till is always installed with both mirror settings and `status` shows them; `seal` and `parallel-policy` ask for the person's own PIN; Sheet 2 and Sheet 3 fully written.
+- Owner decisions: exchanges on the old ERP only during the pilot (OB-269, supersedes OB-266 for the pilot); a sheet step to correct a wrongly keyed sale (OB-270).
+- Not run on real Windows. No staff UAT. Still open: OB-263 (which old ERP report), OB-243 names.
+
+## Mirror-pilot readiness, round 2 (20 October 2026) — full gate: 13,199 unit/integration passed, 1 timing failure in an older test (passes alone, 19/19), 16 skipped; 52 performance; 465 browser passed, 1 failed on a test-port clash with a parallel builder (passes alone); merged (PR #800) and deployed to the demo
 
 - Built: the "Paid on old system" tender for mirror sales and refunds (OB-256, OB-258), the only tender when the store computer is set for the mirror pilot, no drawer money, its own day-book line; a mirror box with guest-only off refuses to start; the evening check shows payments and loyalty as not compared (OB-265); exchanges keyed as refund then sale (OB-266).
 - Built: owner setup commands on the store PC for shop, GSTIN, bill prefix, roles and catalogue publish, each person's own PIN, roles asked by one and approved by another (OB-257, OB-267); office screens ask for the person's own PIN, a cashier opens only the till (OB-259); guide faults W-1 to W-8 fixed; guide now Parts 1–30 with no stale marks.
