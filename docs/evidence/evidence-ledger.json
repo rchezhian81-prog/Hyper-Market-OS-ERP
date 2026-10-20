@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1458,
+  "testFiles": 1466,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -4999,7 +4999,7 @@
       "label": "INTEGRATION_TESTED",
       "counts": {
         "unit": 5,
-        "integration": 4,
+        "integration": 5,
         "realDb": 3,
         "browser": 0,
         "connected": 0,
@@ -5018,6 +5018,7 @@
           "tests/integration/backup-is-one-moment.test.ts",
           "tests/integration/migration-pipeline.test.ts",
           "tests/integration/the-old-shop-arrives-whole.test.ts",
+          "tests/integration/the-owner-seals-the-export-and-writes-the-parallel-run-terms.test.ts",
           "tests/integration/we-get-it-out-ourselves.test.ts"
         ],
         "realDb": [
@@ -5352,7 +5353,7 @@
       "label": "INTEGRATION_TESTED",
       "counts": {
         "unit": 6,
-        "integration": 5,
+        "integration": 6,
         "realDb": 1,
         "browser": 1,
         "connected": 0,
@@ -5373,7 +5374,8 @@
           "tests/integration/migration-screen-through-the-api.test.ts",
           "tests/integration/parallel-run-through-the-api.test.ts",
           "tests/integration/the-box-pulls-its-migration-register.test.ts",
-          "tests/integration/the-old-shop-arrives-whole.test.ts"
+          "tests/integration/the-old-shop-arrives-whole.test.ts",
+          "tests/integration/the-owner-seals-the-export-and-writes-the-parallel-run-terms.test.ts"
         ],
         "realDb": [
           "tests/integration/the-old-shop-arrives-whole.test.ts"

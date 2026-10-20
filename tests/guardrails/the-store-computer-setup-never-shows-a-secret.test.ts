@@ -18,12 +18,18 @@ import { SECRET_KEYS } from '../../scripts/lib/store-computer.mjs';
  *   • infra/compose/.env.real and infra/compose/records/ are git-ignored.
  */
 
-const FILES = ['scripts/store-computer.mjs', 'scripts/lib/store-computer.mjs', 'scripts/lib/store-computer-recovery.mjs'];
+const FILES = [
+  'scripts/store-computer.mjs', 'scripts/lib/store-computer.mjs', 'scripts/lib/store-computer-recovery.mjs',
+  // OB-249 and audit rows 5, 6, 8, 9: the encryption, the till's data copy, the tasks, the red light, the data folder.
+  'scripts/lib/store-computer-crypto.mjs', 'scripts/lib/store-computer-files.mjs', 'scripts/lib/store-computer-schedule.mjs',
+  'scripts/lib/store-computer-status.mjs', 'scripts/lib/store-computer-data.mjs',
+];
 const OUTPUT = /\b(?:say|console\.\w+|process\.std(?:out|err)\.write|deps\.say)\s*\(/;
 
 /** Lines that output something AND name a secret holder. String contents are blanked first, so prose cannot trip it. */
 export function secretOutputLines(source: string): string[] {
-  const holders = new RegExp(`\\b(?:planned|secretValues|secrets?)\\b|\\.random\\(|randomBytes|\\b(?:settings|s|copied|values|env)(?:\\.|\\[['"])(?:${SECRET_KEYS.join('|')})\\b`);
+  // OB-249: the backup passphrase and the unlocked private key are secret holders too.
+  const holders = new RegExp(`\\b(?:planned|secretValues|secrets?|passphrase\\d?|privateKey|kek)\\b|\\.random\\(|randomBytes|\\b(?:settings|s|copied|values|env)(?:\\.|\\[['"])(?:${SECRET_KEYS.join('|')})\\b`);
   return source.split('\n').filter((line) => {
     if (!OUTPUT.test(line)) return false;
     // Blank quoted text but keep template-literal ${…} expressions, which is where a value would be interpolated.
@@ -51,8 +57,10 @@ describe('the store-computer setup never shows a secret (hard rule #4 · OB-244)
       "  deps.say('password ' + settings['POSTGRES_PASSWORD']);",
       '  process.stdout.write(randomBytes(32).toString("hex"));',
       '  say(`${secretValues}`);',
+      '  say(`typed: ${passphrase}`);',
+      '  deps.say(`key ${privateKey.export()}`);',
     ].join('\n');
-    expect(secretOutputLines(bad)).toHaveLength(5);
+    expect(secretOutputLines(bad)).toHaveLength(7);
     // Prose about secrets, and the names of the settings, are fine.
     expect(secretOutputLines("  say('Filled in (names only — the values are never shown):');\n  say(`  ${key}`);")).toEqual([]);
   });

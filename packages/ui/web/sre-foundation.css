@@ -282,6 +282,12 @@ span.dot[data-sre-status] > .sre-icon { width: 13px; height: 13px; stroke-width:
 .stale { background:var(--info-surface); color:var(--on-info-surface); border-bottom:2px solid var(--info); font-weight:400; }
 .nobody { background:var(--nobody-surface); color:var(--on-nobody-surface); border-bottom:2px solid var(--degraded); }
 .sample[hidden],.stale[hidden],.nobody[hidden] { display:none; }
+/* The store computer's own red light (audit row 6): red under white words, a shape beside the title, never dismissed. */
+.sre-alarm { margin:0; padding:12px 16px; background:var(--danger-surface); color:var(--on-danger); border-bottom:3px solid var(--on-danger); }
+.sre-alarm[hidden] { display:none; }
+.sre-alarm > strong { display:flex; align-items:center; gap:8px; font-size:18px; }
+.sre-alarm > strong > .sre-icon { width:22px; height:22px; flex:none; }
+.sre-alarm > ul { margin:6px 0 0; padding-left:22px; font-size:15px; line-height:1.45; }
 /* A deploy that reached this browser (RL-1): the cache strip's colours, the words and a real button to reload. */
 .sre-update { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
 .sre-update .sre-btn { font-size:15px; }

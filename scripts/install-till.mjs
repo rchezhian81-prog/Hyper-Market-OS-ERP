@@ -31,11 +31,35 @@
 // folder and then STARTS the edge from the settings it wrote — the proof that the install works.
 
 import { randomBytes } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile, chmod } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { dirname, join, resolve, isAbsolute } from 'node:path';
+import path, { dirname, join, resolve, isAbsolute } from 'node:path';
 import { parseEnv, PLACEHOLDER } from './standup-check.mjs';
+
+/**
+ * The store computer's DATA FOLDER (audit row 9 · C-12): when the settings file named with --settings sits in a folder
+ * holding this note (written by `store-computer prepare` / `migrate-data-folder`), the till's settings and data go in
+ * that folder's `till` subfolder — outside the release folder, so a new release never replaces them. The start scripts
+ * stay in this release's own till folder and read the till's settings from there. Same name as scripts/lib/store-computer.mjs.
+ */
+export const DATA_MARKER = 'THIS-IS-THE-SHOP-DATA-FOLDER.txt';
+
+/**
+ * Where the till's settings (till.env), its data (edge-data) and its bill-number witness go:
+ * `--dir`, else `--data-dir`, else `<the data folder>/till` when --settings is in the store computer's data folder, else
+ * this release's own `till` folder (as before). Returns { installDir, dataFolder } — dataFolder set only in the data folder.
+ */
+export function tillInstallDir({ flags, repoRoot, exists = existsSync }) {
+  if (flags.dir !== undefined) return { installDir: resolve(flags.dir) };
+  if (flags.dataDir !== undefined) return { installDir: resolve(flags.dataDir) };
+  if (flags.composeEnv !== undefined) {
+    const folder = dirname(resolve(flags.composeEnv));
+    if (exists(join(folder, DATA_MARKER))) return { installDir: join(folder, 'till'), dataFolder: folder };
+  }
+  return { installDir: join(repoRoot, 'till') };
+}
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..');
@@ -56,13 +80,15 @@ export function checkNodeVersion(version) {
 
 /** Parse the command line into flags. Unknown flags are named, not ignored. */
 export function parseArgs(argv) {
-  const flags = { tenant: undefined, lane: undefined, dir: undefined, composeEnv: undefined, settingsNamed: false, lanePort: '8090', screenPort: '8091', generateKey: false, skipBuild: false, force: false, dryRun: false, unknown: [] };
+  const flags = { tenant: undefined, lane: undefined, dir: undefined, dataDir: undefined, composeEnv: undefined, settingsNamed: false, lanePort: '8090', screenPort: '8091', generateKey: false, skipBuild: false, force: false, dryRun: false, unknown: [] };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     const next = () => { i += 1; return argv[i]; };
     if (a === '--tenant') flags.tenant = next();
     else if (a === '--lane') flags.lane = next();
     else if (a === '--dir') flags.dir = next();
+    // Audit row 9: the till's settings and data in a folder of their own, outside the release (the data folder's `till`).
+    else if (a === '--data-dir') flags.dataDir = next();
     else if (a === '--from-compose-env') flags.composeEnv = next();
     // Gap G-RD-3: the same, under the name every newer command uses — `--settings infra/compose/.env.real` on the store
     // computer's real-data copy. Named on purpose, so a file that cannot be read is a problem, never a silent fall-back.
@@ -93,7 +119,7 @@ const realValue = (v) => typeof v === 'string' && v !== '' && !v.includes(PLACEH
  *   • cloud URL: copied from the cloud settings file when it names one; the token is NEVER copied.
  */
 export function planTillSettings(input) {
-  const { flags, installDir, appsDir, composeEnv = undefined, existing = undefined, generatedKey = undefined } = input;
+  const { flags, installDir, appsDir, composeEnv = undefined, existing = undefined, generatedKey = undefined, statusFile = undefined } = input;
   const problems = [];
   const notes = [];
 
@@ -147,6 +173,8 @@ export function planTillSettings(input) {
     CLOUD_API_URL: cloudUrl,
     // Never copied from anywhere. A person issues a token and puts it here by hand (hard rule #4).
     CLOUD_API_TOKEN: existing?.CLOUD_API_TOKEN ?? '',
+    // Audit row 6: on the store computer, the file its own check writes — the office screens show its red banner.
+    ...(statusFile !== undefined ? { EDGE_STORE_COMPUTER_STATUS_FILE: statusFile } : existing?.EDGE_STORE_COMPUTER_STATUS_FILE !== undefined ? { EDGE_STORE_COMPUTER_STATUS_FILE: existing.EDGE_STORE_COMPUTER_STATUS_FILE } : {}),
   };
   return { ok: problems.length === 0, settings, problems, notes };
 }
@@ -181,19 +209,34 @@ export function renderTillEnv(settings) {
     `CLOUD_API_URL=${settings.CLOUD_API_URL}`,
     '# Issue with `pnpm run token:store` and paste here by hand. Never share it; never commit this file.',
     `CLOUD_API_TOKEN=${settings.CLOUD_API_TOKEN}`,
+    ...(settings.EDGE_STORE_COMPUTER_STATUS_FILE === undefined ? [] : [
+      "# The store computer's own check (store-computer status) writes this file; the office screens show its red banner.",
+      `EDGE_STORE_COMPUTER_STATUS_FILE=${settings.EDGE_STORE_COMPUTER_STATUS_FILE}`,
+    ]),
     '',
   ].join('\n');
 }
 
-/** The start script for this PC's operating system. Loads till.env, then runs the built edge. */
+/**
+ * The start script for this PC's operating system. Loads till.env, then runs the built edge.
+ * `tillEnvPath` (the store computer's data folder, audit row 9): the till's settings are read from there, not from the
+ * script's own folder, and the screens are THIS release's (EDGE_APPS_DIR set after the settings are read), so a new
+ * release's start script runs the new screens on the same till data.
+ */
 export function renderStartScript(platform, input) {
-  const entry = join(input.repoRoot, 'edge', 'store-edge', 'dist', 'start.js');
+  const p = input.platformPath ?? (platform === 'win32' ? path.win32 : path.posix);
+  const entry = (input.platformPath === undefined ? join : p.join)(input.repoRoot, 'edge', 'store-edge', 'dist', 'start.js');
+  const apps = (input.platformPath === undefined ? join : p.join)(input.repoRoot, 'apps');
+  const outside = input.tillEnvPath !== undefined;
   if (platform === 'win32') {
     return [
       '@echo off',
       'rem SRE Retail OS — start this till (the store edge: the save socket + the screens). Written by till:install.',
-      'rem Loads till.env from this folder, then runs the built edge. Leave this window open while the shop trades.',
-      'for /f "usebackq eol=# tokens=1,* delims==" %%A in ("%~dp0till.env") do set "%%A=%%B"',
+      outside ? 'rem Loads till.env from the shop\'s data folder, then runs this release\'s built edge. Leave this window open while the shop trades.'
+        : 'rem Loads till.env from this folder, then runs the built edge. Leave this window open while the shop trades.',
+      ...(outside ? ['rem If the till was started automatically at sign-in (store-computer autostart), do NOT start it here as well.'] : []),
+      `for /f "usebackq eol=# tokens=1,* delims==" %%A in ("${outside ? input.tillEnvPath : '%~dp0till.env'}") do set "%%A=%%B"`,
+      ...(outside ? [`set "EDGE_APPS_DIR=${apps}"`] : []),
       'rem With arguments it runs an administrator command instead, e.g. issuing a till PIN: start-till.cmd till-pin --user <staff id> --by "<name>"',
       `node "${entry}" %*`,
       'pause',
@@ -203,10 +246,12 @@ export function renderStartScript(platform, input) {
   return [
     '#!/usr/bin/env sh',
     '# SRE Retail OS — start this till (the store edge: the save socket + the screens). Written by till:install.',
-    '# Loads till.env from this folder, then runs the built edge. Leave this terminal open while the shop trades.',
+    outside ? "# Loads till.env from the shop's data folder, then runs this release's built edge. Leave this terminal open while the shop trades."
+      : '# Loads till.env from this folder, then runs the built edge. Leave this terminal open while the shop trades.',
     'set -e',
     'HERE="$(cd "$(dirname "$0")" && pwd)"',
-    'set -a; . "$HERE/till.env"; set +a',
+    `set -a; . "${outside ? input.tillEnvPath : '$HERE/till.env'}"; set +a`,
+    ...(outside ? [`EDGE_APPS_DIR="${apps}"; export EDGE_APPS_DIR`] : []),
     '# With arguments it runs an administrator command instead, e.g. issuing a till PIN: start-till.sh till-pin --user <staff id> --by "<name>"',
     `exec node "${entry}" "$@"`,
     '',
@@ -242,6 +287,7 @@ export const BUILD_STEPS = Object.freeze([
 /** What the technician does next, in plain English. Never includes the key or a token. */
 export function renderNextSteps(input) {
   const { settings, installDir, platform } = input;
+  const scriptsDir = input.scriptsDir ?? installDir;
   const start = platform === 'win32' ? 'start-till.cmd' : 'start-till.sh';
   const lines = [
     '',
@@ -249,10 +295,10 @@ export function renderNextSteps(input) {
     '─'.repeat(44),
     `Settings:       ${join(installDir, 'till.env')}`,
     `Sales on disk:  ${settings.EDGE_DATA_DIR}`,
-    `Start script:   ${join(installDir, start)}`,
+    `Start script:   ${join(scriptsDir, start)}`,
     '',
     'Next:',
-    `  1. Start the till: ${platform === 'win32' ? `double-click ${start}` : `run ${join(installDir, start)}`}`,
+    `  1. Start the till: ${platform === 'win32' ? `double-click ${start}` : `run ${join(scriptsDir, start)}`}`,
     '     It prints "lane socket on 127.0.0.1:' + settings.EDGE_LANE_PORT + '" and "screens on 127.0.0.1:' + settings.EDGE_SCREEN_PORT + '". Leave it running.',
     `  2. Open the till in a browser on THIS PC: http://127.0.0.1:${settings.EDGE_SCREEN_PORT}/pos/`,
     '     Sign in with your staff code (top right) before the first sale — every sale names who rang it and on which lane.',
@@ -291,14 +337,17 @@ async function main() {
     return;
   }
 
-  const installDir = resolve(flags.dir ?? join(REPO, 'till'));
+  const { installDir, dataFolder } = tillInstallDir({ flags, repoRoot: REPO });
+  // The start scripts always belong to THIS release; the till's settings and data may live in the data folder.
+  const scriptsDir = flags.dir !== undefined ? installDir : join(REPO, 'till');
   const appsDir = join(REPO, 'apps');
   const composePath = flags.composeEnv !== undefined ? resolve(flags.composeEnv) : join(REPO, 'infra', 'compose', '.env');
   const composeEnv = await readEnvFile(composePath);
   const envPath = join(installDir, 'till.env');
   const existing = await readEnvFile(envPath);
+  if (dataFolder !== undefined) process.stdout.write(`• the store computer's data folder: the till's settings and data go in ${installDir}, outside this release\n`);
 
-  const plan = planTillSettings({ flags, installDir, appsDir, composeEnv, existing });
+  const plan = planTillSettings({ flags, installDir, appsDir, composeEnv, existing, ...(dataFolder === undefined ? {} : { statusFile: join(dataFolder, 'status', 'store-computer-status.json') }) });
   if (!plan.ok) {
     process.stderr.write(`\nThe till cannot be installed yet — ${plan.problems.length} problem(s):\n${plan.problems.map((p) => `  ✕ ${p}`).join('\n')}\n\n`);
     process.exitCode = 78;
@@ -323,12 +372,14 @@ async function main() {
     process.stdout.write(`• wrote ${envPath}\n`);
   }
 
-  const sh = join(installDir, 'start-till.sh');
-  await writeFile(sh, renderStartScript('linux', { repoRoot: REPO }), { mode: 0o755 });
+  await mkdir(scriptsDir, { recursive: true });
+  const outside = scriptsDir === installDir ? {} : { tillEnvPath: envPath };
+  const sh = join(scriptsDir, 'start-till.sh');
+  await writeFile(sh, renderStartScript('linux', { repoRoot: REPO, ...outside }), { mode: 0o755 });
   await chmod(sh, 0o755);
-  await writeFile(join(installDir, 'start-till.cmd'), renderStartScript('win32', { repoRoot: REPO }));
-  await writeFile(join(installDir, 'sre-till.service'), renderSystemdUnit({ installDir, repoRoot: REPO }));
-  process.stdout.write(`• wrote start scripts in ${installDir}\n`);
+  await writeFile(join(scriptsDir, 'start-till.cmd'), renderStartScript('win32', { repoRoot: REPO, ...outside }));
+  await writeFile(join(scriptsDir, 'sre-till.service'), renderSystemdUnit({ installDir, repoRoot: REPO }));
+  process.stdout.write(`• wrote start scripts in ${scriptsDir}\n`);
 
   if (!flags.skipBuild) {
     for (const step of BUILD_STEPS) {
@@ -339,7 +390,7 @@ async function main() {
     process.stdout.write('• build skipped (--skip-build)\n');
   }
 
-  process.stdout.write(`${renderNextSteps({ settings: plan.settings, installDir, platform: process.platform })}\n`);
+  process.stdout.write(`${renderNextSteps({ settings: plan.settings, installDir, scriptsDir, platform: process.platform })}\n`);
 }
 
 // Run only when invoked directly, so the pure helpers can be imported by tests without side effects.

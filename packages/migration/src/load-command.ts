@@ -46,7 +46,7 @@ export interface LoadManifest {
 /** GET + POST as the named operator — the test harness in-process, or the script over HTTP. */
 export interface CommandClient {
   request(input: {
-    readonly method: 'GET' | 'POST';
+    readonly method: 'GET' | 'POST' | 'PUT';
     readonly path: string;
     readonly userId: string;
     readonly tenantId: string;
