@@ -10,7 +10,9 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - The owner does every hands-on step on a Windows PC himself; this session cannot touch his computers.
 - Built: `pnpm run store-computer -- doctor | prepare | up | check` (Windows PowerShell and Linux) and the owner guide `docs/runbooks/store-computer-owner-guide-windows.md`. G-RD-1 and G-RD-3 closed. Tested with a pretend Docker and API only; not yet run on real Windows or Docker.
 - G-RD-2 kept on purpose (passing `BOOTSTRAP_OWNER_*` would change the hosted demo's boot).
-- New gaps needing an owner choice: G-RD-6 (on Windows, backup needs PostgreSQL tools and the rollback drill `--run` needs bash + git, so G9 cannot yet pass there), G-RD-7 (some tool scripts use `>/dev/null`, which Windows cmd cannot run), G-RD-8 (check 3, "secrets differ from the demo's", cannot pass alone on the store PC).
+- OB-245 and OB-246 built: `fingerprints` + `check --demo-fingerprints` (check 3, closes G-RD-8); `backup`, `restore-check`, `drill` on Windows with only Docker, Node and pnpm (closes G-RD-6 in the build); tool scripts without `/dev/null` (G-RD-7). Proved with a stand-in Docker and on real PostgreSQL 16; not yet run on real Windows, real Docker or the demo box. The demo box needs this release deployed before `fingerprints` exists there.
+- Follow-up: `up` does not rebuild images after a new ZIP (the drill does).
+- (Superseded by the line above) gaps found during the first build: G-RD-6 (on Windows, backup needs PostgreSQL tools and the rollback drill `--run` needs bash + git, so G9 cannot yet pass there), G-RD-7 (some tool scripts use `>/dev/null`, which Windows cmd cannot run), G-RD-8 (check 3, "secrets differ from the demo's", cannot pass alone on the store PC).
 - Owner's first step now: check the PC (Windows edition, RAM, free disk, virtualisation) and send the answers.
 
 ## Cutover-readiness tools for the pilot (OB-239 to OB-242) — built and tested on synthetic data; full gate green: 12,947 unit/integration (16 skipped), 52 performance, 455 browser; merged (PR #797) and deployed to the demo
