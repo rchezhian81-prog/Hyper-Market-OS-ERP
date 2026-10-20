@@ -21,7 +21,7 @@ import { world, type World } from '../support/store-computer-world';
  *
  * On the owner's PC every one of those programs runs INSIDE the sre-real db container (`docker compose … exec -T db …`).
  * Here the "docker exec" is injected: the same program, with the same arguments, the same input and the same streams,
- * runs on this computer against a throw-away database made from TEMPLATE sre_core3 (synthetic data, hard rule #7).
+ * runs on this computer against a throw-away empty database, migrated here (synthetic data, hard rule #7).
  * Real Docker and real Windows are NOT exercised here.
  */
 
@@ -61,7 +61,7 @@ describeOrSkip('the store computer backup restores and reconciles — on real Po
   beforeAll(async () => {
     admin = new Pool({ connectionString: urlFor('postgres'), max: 1 });
     admin.on('error', () => { /* a scratch database is dropped; its idle connections are cut */ });
-    await admin.query(`CREATE DATABASE ${DB} TEMPLATE sre_core3`);
+    await admin.query(`CREATE DATABASE ${DB}`);
     const pool = new Pool({ connectionString: urlFor(DB), max: 2, options: '-c app.tenant_id=*' });
     pool.on('error', () => { /* dropped after */ });
     const dir = 'db/migrations';
