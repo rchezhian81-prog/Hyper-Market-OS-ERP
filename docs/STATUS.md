@@ -5,6 +5,12 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## No IT person: the owner does the store-computer steps, guided (OB-244, 20 October 2026)
+
+- The owner does every hands-on step on a Windows PC himself; this session cannot touch his computers.
+- In build: a guided setup helper (`pnpm run store-computer -- doctor | prepare | up | check`) that writes secrets without showing them and runs the ten G4 checks itself, plus a Windows owner guide.
+- Owner's first step now: check the PC (Windows edition, RAM, free disk, virtualisation) and send the answers.
+
 ## Cutover-readiness tools for the pilot (OB-239 to OB-242) — built and tested on synthetic data; full gate green: 12,947 unit/integration (16 skipped), 52 performance, 455 browser; merged (PR #797) and deployed to the demo
 
 - **One department first (MG-05):** four CSV templates. Each row is judged on its own; bad rows (and rows that depend on them) are set aside with file, line, old key, column and reason. Nothing is applied until a named person accepts the list in their own session.
