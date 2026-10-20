@@ -5,7 +5,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
-## Mirror-pilot readiness, round 2 (20 October 2026) — gate pending
+## Mirror-pilot readiness, round 2 (20 October 2026) — full gate: 13,199 unit/integration passed, 1 timing failure in an older test (passes alone, 19/19), 16 skipped
 
 - Built: the "Paid on old system" tender for mirror sales and refunds (OB-256, OB-258), the only tender when the store computer is set for the mirror pilot, no drawer money, its own day-book line; a mirror box with guest-only off refuses to start; the evening check shows payments and loyalty as not compared (OB-265); exchanges keyed as refund then sale (OB-266).
 - Built: owner setup commands on the store PC for shop, GSTIN, bill prefix, roles and catalogue publish, each person's own PIN, roles asked by one and approved by another (OB-257, OB-267); office screens ask for the person's own PIN, a cashier opens only the till (OB-259); guide faults W-1 to W-8 fixed; guide now Parts 1–30 with no stale marks.
