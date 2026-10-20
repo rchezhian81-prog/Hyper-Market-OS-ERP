@@ -59,7 +59,7 @@ describe('schedule-backup --to <drive> --every 60', () => {
     expect(out).toMatch(/^AUTOMATIC BACKUP ON — every 60 minutes to .*, encrypted to backup key [0-9a-f]{16}, while you are signed in to Windows\.$/m);
     expect(out).toMatch(/^BACKUP DONE — sre-real-backup-/m);
     expect(out).toMatch(/NOTHING IS EVER DELETED/);
-    expect(out).toMatch(/room for about \d+ more day\(s\) at this rate/);
+    expect(out).toMatch(/room for about \d+ more day\(s\) at the current rate/);
     expect(readdirSync(drive).filter((f) => f.endsWith('.manifest.json'))).toHaveLength(1);
     // The check ran too: the status file is there for the office screen.
     expect(existsSync(join(w.data, 'status', 'store-computer-status.json'))).toBe(true);
@@ -158,7 +158,7 @@ describe('unschedule-backup · backup-status', () => {
     expect(out).toMatch(/Backup key: {5}[0-9a-f]{16} \(made .*\); the passphrase that opens it is kept nowhere on this computer/);
     expect(out).toMatch(/Automatic: {6}every 60 minutes to /);
     expect(out).toMatch(/Last good: {6}2026-10-20T04:30:00\.000Z — 0 min ago/);
-    expect(out).toMatch(/On the drive: 1 backup\(s\), .* in all; .* free — room for about \d+ more day\(s\) at this rate\./);
+    expect(out).toMatch(/On the drive: 1 backup\(s\), .* in all; .* free — room for about \d+ more day\(s\) at the current rate\./);
     expect(out).toMatch(/^OK — the last good backup is less than 2 hours old\.$/m);
     w.tasks.registered.delete(TASKS.backup);
     const base = w.deps.now().getTime();
@@ -254,18 +254,25 @@ describe('Windows Task Scheduler itself (schtasks, argument arrays, UTF-16 XML)'
 });
 
 describe('seal · parallel-policy — the two owner steps of the migration (audit row 8)', () => {
-  it('build the slice tool, then run it as the signed-in person on THIS copy\'s settings (the data folder), and say its words', async () => {
+  it('build the slice tool, then run it IN THIS WINDOW (it asks the person\'s own till PIN, OB-257) on THIS copy\'s settings and the till\'s', async () => {
     const seen: (readonly string[])[] = [];
-    const w = world({}, { sliceStdout: (args) => { seen.push(args); return { status: 0, stdout: 'SEALED — tax-classes.csv: 2 row(s)\n  • indented line kept\n' }; } });
+    const w = world({}, { sliceStdout: (args) => { seen.push(args); return { status: 0, stdout: '' }; } });
     expect(await prepare(w.deps)).toBe(0);
     w.said.length = 0;
     const slice = mkdtempSync(join(tmpdir(), 'sre-slice-'));
     expect(await main(['seal', '--dir', slice, '--as', 'u-owner', '--backup-restored-on', '2026-10-19'], w.deps)).toBe(0);
     expect(w.calls[0]!.args).toEqual([join('scripts', 'build-service.mjs'), 'tools', '--quiet']);
     expect(seen[0]).toEqual([join('scripts', 'dist', 'migration-slice.js'), '--dir', slice, '--seal', '--as', 'u-owner', '--backup-restored-on', '2026-10-19', '--settings', join(w.data, '.env.real')]);
-    expect(w.said).toEqual(['SEALED — tax-classes.csv: 2 row(s)', '  • indented line kept']);
+    // Run with the keyboard and the screen handed over — never captured — so the PIN is typed by the person, hidden.
+    expect(w.calls.at(-1)!.stdio).toBe('inherit');
     expect(await main(['parallel-policy', '--as', 'u-owner', '--cutover', 'CUT-1', '--reconciler', 'u-recon', '--clean-days', '3', '--max-days', '14', '--start', '2026-10-21'], w.deps)).toBe(0);
     expect(seen[1]).toEqual([join('scripts', 'dist', 'migration-slice.js'), '--parallel-policy', '--as', 'u-owner', '--cutover', 'CUT-1', '--reconciler', 'u-recon', '--clean-days', '3', '--max-days', '14', '--start', '2026-10-21', '--settings', join(w.data, '.env.real')]);
+    expect(w.calls.at(-1)!.stdio).toBe('inherit');
+    // With the till installed, its settings go too: the PIN is checked against the till's own verifiers.
+    mkdirSync(join(w.data, 'till'), { recursive: true });
+    writeFileSync(join(w.data, 'till', 'till.env'), 'EDGE_DATA_DIR=x\n');
+    expect(await main(['parallel-policy', '--as', 'u-owner', '--cutover', 'CUT-1', '--reconciler', 'u-recon', '--clean-days', '3', '--max-days', '14', '--start', '2026-10-21'], w.deps)).toBe(0);
+    expect(seen[2]!.slice(-2)).toEqual(['--till-settings', join(w.data, 'till', 'till.env')]);
     expect(await main(['seal', '--as', 'u-owner'], w.deps)).toBe(2);
     expect(said(w)).toMatch(/REFUSED — name the slice folder/);
   });

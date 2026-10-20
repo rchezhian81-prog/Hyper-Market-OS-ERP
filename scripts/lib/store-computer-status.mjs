@@ -18,6 +18,16 @@
 //   disk 85% full                      docs/pilot/MONITORING-AND-ALERTS.md: "Disk — alert when ≥ 85%"
 //   a container down                   the database and the API must both run (`up` starts exactly these)
 //   status file older than 30 minutes  two missed 15-minute checks
+//   the till's mirror settings         OB-248 · OB-252 · OB-256: the store computer's real copy (its data folder) runs
+//                                      the mirror pilot with guest sales only, so till.env must say BOTH
+//                                      EDGE_MIRROR_PILOT=1 and EDGE_GUEST_SALES_ONLY=1 (till:install writes both); red
+//                                      when it does not, "not known" before the till is installed
+//   backup drive under 30 days of room OB-268 (owner, 20 Oct 2026, "Under 30 days left"): red when the drive that stays
+//                                      plugged in has room for fewer than about 30 more days of backups at the current
+//                                      rate — the last good backup's size × the backups a day the schedule takes.
+//                                      Nothing is ever deleted (OB-262). Before the rate can be worked out (no backup
+//                                      yet, the drive or its free space cannot be read, no schedule) it says "not known"
+//                                      — never a number it does not have (P-08).
 //
 // Every message is in English and Tamil. Nothing here reads or shows a secret.
 
@@ -30,6 +40,7 @@ export const ALERT_RULES = Object.freeze({
   diskMaxUsedFraction: 0.85,
   statusStaleMinutes: 30,
   checkEveryMinutes: 15,
+  backupDriveMinDays: 30,
 });
 export const STATUS_KIND = 'sre-store-computer-status';
 export const SCHEDULE_FILE = 'schedule.json';
@@ -83,6 +94,92 @@ export function backupCheck(deps, L, nowMs) {
     };
   }
   return { name: 'Backup', ok: true, detail: `last good backup ${words.en} ago (${last.lastSuccess.to}); ${auto}${why === undefined ? '' : `; the last try failed: ${why}`}` };
+}
+
+/** How many backups a drive folder holds, their total size, and the drive's free space. Read-only. */
+export function driveTally(deps, dir) {
+  const p = pathFor(deps.platform);
+  let names = [];
+  try { names = deps.fs.readdirSync(dir).map(String); } catch { return { readable: false }; }
+  const backups = names.filter((n) => n.startsWith(`${PROJECT}-backup-`) && n.endsWith('.manifest.json'));
+  let bytes = 0;
+  for (const n of names.filter((x) => x.startsWith(`${PROJECT}-backup-`))) { try { bytes += deps.fs.statSync(p.join(dir, n)).size; } catch { /* a file that vanished is simply not counted */ } }
+  let space;
+  try { space = deps.diskSpace(dir); } catch { space = undefined; }
+  return { readable: true, backups: backups.length, bytes, free: space?.free, total: space?.total };
+}
+
+/** About how many days of backups still fit, at the average backup's size and this many per day. Undefined if not known. */
+export function daysOfRoom(tally, everyMinutes) {
+  if (!tally.readable || tally.backups === 0 || tally.free === undefined) return undefined;
+  const perDay = (tally.bytes / tally.backups) * (1440 / everyMinutes);
+  return perDay <= 0 ? undefined : Math.floor(tally.free / perDay);
+}
+
+/**
+ * OB-268 — the room left on the backup drive, in days at the CURRENT rate: the last good backup's size (the newest, so a
+ * shop whose data grows is measured as it is now; the drive's average backup only when that size is not recorded) times
+ * the backups a day the schedule takes. `known: false` with the reason, in both languages, whenever the rate or the room
+ * cannot be worked out yet — never a guessed number (P-08).
+ */
+export function backupRoom(deps, L, schedule = readSchedule(deps, L)) {
+  if (schedule === undefined) {
+    return { known: false, why: { en: 'automatic backup is not set up, so there is no backup drive to measure', ta: 'தானியங்கி காப்புப் பிரதி அமைக்கப்படவில்லை, எனவே அளக்க காப்புப் பிரதி டிரைவ் இல்லை' } };
+  }
+  const tally = driveTally(deps, schedule.to);
+  if (!tally.readable) return { known: false, tally, why: { en: `the backup drive folder ${schedule.to} cannot be read — is the drive plugged in?`, ta: `காப்புப் பிரதி டிரைவ் கோப்புறை ${schedule.to} படிக்க முடியவில்லை — டிரைவ் இணைக்கப்பட்டுள்ளதா?` } };
+  if (!(tally.free >= 0)) return { known: false, tally, why: { en: 'the free space on the backup drive could not be read', ta: 'காப்புப் பிரதி டிரைவில் உள்ள காலி இடத்தைப் படிக்க முடியவில்லை' } };
+  const last = readLastBackup(deps, L);
+  const lastBytes = last?.lastSuccess?.bytes;
+  const perBackup = Number.isFinite(lastBytes) && lastBytes > 0 ? lastBytes
+    : tally.backups > 0 && tally.bytes > 0 ? tally.bytes / tally.backups : undefined;
+  if (perBackup === undefined) {
+    return { known: false, tally, why: { en: 'no backup has been taken yet, so the rate the drive fills at is not known yet', ta: 'இதுவரை காப்புப் பிரதி எடுக்கப்படவில்லை, எனவே டிரைவ் நிரம்பும் வேகம் இன்னும் தெரியவில்லை' } };
+  }
+  const perDay = perBackup * (1440 / schedule.everyMinutes);
+  return { known: true, tally, perDay, days: Math.floor(tally.free / perDay) };
+}
+
+/** OB-268: the backup drive check — red under about 30 days of room at the current rate; "not known" said, never red. */
+export function backupDriveCheck(deps, L) {
+  const room = backupRoom(deps, L);
+  if (!room.known) return { name: 'Drive room', ok: null, detail: `not known — ${room.why.en}` };
+  const free = gb(room.tally.free);
+  const perDay = `${(room.perDay / 1024 ** 2).toFixed(1)} MB a day`;
+  if (room.days < ALERT_RULES.backupDriveMinDays) {
+    return {
+      name: 'Drive room', ok: false, detail: `room for about ${room.days} more day(s) of backups (${free} free, ${perDay}) — under ${ALERT_RULES.backupDriveMinDays} days`,
+      alert: {
+        code: 'backup_drive_filling',
+        en: `The backup drive has room for about ${room.days} more day(s) of backups at the current rate — under ${ALERT_RULES.backupDriveMinDays} days. Nothing is ever deleted: decide what to keep, or plug in a bigger drive.`,
+        ta: `தற்போதைய வேகத்தில் காப்புப் பிரதி டிரைவில் இன்னும் சுமார் ${room.days} நாள்(கள்) காப்புப் பிரதிகளுக்கு மட்டுமே இடம் உள்ளது — ${ALERT_RULES.backupDriveMinDays} நாட்களுக்குக் குறைவு. எதுவும் ஒருபோதும் நீக்கப்படுவதில்லை: எதை வைத்திருப்பது என்று முடிவு செய்யுங்கள், அல்லது பெரிய டிரைவை இணைக்கவும்.`,
+      },
+    };
+  }
+  return { name: 'Drive room', ok: true, detail: `room for about ${room.days} more day(s) of backups (${free} free, ${perDay})` };
+}
+
+/**
+ * OB-248 · OB-252 · OB-256: the till's two mirror-pilot settings, read from its own till.env (no secret is read or shown:
+ * only these two names and their 1/0). The real copy (the data folder) must say both; red, with what to do, if not.
+ */
+export function mirrorCheck(deps, L) {
+  if (L.mode !== 'data-folder') return { name: 'Mirror', ok: null, detail: "not known — this copy's data is not in the shop's data folder yet" };
+  const till = tillFolders(deps, L);
+  if (!till.installed) return { name: 'Mirror', ok: null, detail: 'not known — no till is installed on this computer yet' };
+  const said = (k) => String(till.env?.[k] ?? '').trim();
+  const mirror = said('EDGE_MIRROR_PILOT') === '1';
+  const guest = said('EDGE_GUEST_SALES_ONLY') === '1';
+  const words = `EDGE_MIRROR_PILOT=${said('EDGE_MIRROR_PILOT') || '(not set)'}, EDGE_GUEST_SALES_ONLY=${said('EDGE_GUEST_SALES_ONLY') || '(not set)'}`;
+  if (mirror && guest) return { name: 'Mirror', ok: true, detail: `the till runs the mirror pilot with guest sales only (${words})` };
+  return {
+    name: 'Mirror', ok: false, detail: `the till's settings do not say the mirror pilot with guest sales only (${words})`,
+    alert: {
+      code: 'mirror_settings_off',
+      en: "The till's settings do not say the mirror pilot with guest sales only. Ring nothing more on the new till, and install the till again (owner guide Part 13).",
+      ta: 'கல்லாவின் அமைப்புகள் "விருந்தினர் விற்பனை மட்டும்" உடன் மிரர் பைலட் என்று சொல்லவில்லை. புதிய கல்லாவில் மேலும் எதையும் பதிவு செய்ய வேண்டாம்; கல்லாவை மீண்டும் நிறுவவும் (உரிமையாளர் வழிகாட்டி பகுதி 13).',
+    },
+  };
 }
 
 /** The till's queue, from the till's own box (GET /lane/sync-status on this computer). */
@@ -153,11 +250,11 @@ export function containersCheck(deps) {
   return { name: 'Containers', ok: true, detail: 'the database and the API are running' };
 }
 
-/** All four checks, and the one answer. */
+/** All six checks, and the one answer. */
 export async function collectStatus(deps) {
   const L = resolveLayout(deps);
   const now = deps.now();
-  const checks = [backupCheck(deps, L, now.getTime()), await tillCheck(deps, L, now.getTime()), diskCheck(deps, L), containersCheck(deps)];
+  const checks = [backupCheck(deps, L, now.getTime()), backupDriveCheck(deps, L), await tillCheck(deps, L, now.getTime()), mirrorCheck(deps, L), diskCheck(deps, L), containersCheck(deps)];
   const alerts = checks.flatMap((c) => c.alerts ?? (c.alert === undefined ? [] : [c.alert]));
   return {
     kind: STATUS_KIND, version: 1, checkedAt: now.toISOString(), staleAfterMinutes: ALERT_RULES.statusStaleMinutes,
@@ -186,7 +283,8 @@ export async function status(deps, opts = {}) {
   const file = writeStatusFile(deps, L, s);
   if (opts.quiet === true) return s.overall === 'ok' ? 0 : 1;
   say(`Store computer check — ${s.checkedAt} (this computer's clock).`);
-  for (const c of s.checks) say(`  ${c.ok ? 'OK ' : 'RED'}  ${c.name.padEnd(10)} ${c.detail}`);
+  // OK, RED, or "?" — a check that cannot say yet (OB-268's room before the first backup) is neither.
+  for (const c of s.checks) say(`  ${c.ok === true ? 'OK ' : c.ok === false ? 'RED' : ' ? '}  ${c.name.padEnd(10)} ${c.detail}`);
   if (s.overall === 'ok') say('ALL OK — nothing needs you.');
   else {
     say('');

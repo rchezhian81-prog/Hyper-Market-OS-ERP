@@ -15,7 +15,11 @@ import { parseCommandLine, SETUP_COMMANDS } from '../../scripts/lib/store-comput
  *     all exist now, so no "LANE-2 CHECK" or "BLOCKED" mark may be left in the guide: a mark next to a command the tool
  *     has is a stale stop that would hold the owner up for nothing (round 2 lane B);
  *   • every sheet exists in English AND Tamil, with the same sheet id and the same numbered steps, and the guide lists
- *     both files of every sheet; each Tamil sheet says at its top it is not yet checked by a Tamil reader (OB-261).
+ *     both files of every sheet; each Tamil sheet says at its top it is not yet checked by a Tamil reader (OB-261);
+ *   • no PLACEHOLDER mark is left in any sheet or in the guide (round 3: SOP-02's payment and refund steps are written);
+ *     SOP-02 names the till's own buttons — in English from the till's English words, in Tamil from its Tamil words
+ *     (apps/pos/web/app.js) — for "Paid on old system", the old bill number (OB-264), the refund and the exchange;
+ *     SOP-03 says payments and loyalty are "Not compared in the mirror pilot" (OB-256, OB-265), never "not decided".
  */
 
 const GUIDE_PATH = 'docs/runbooks/store-computer-owner-guide-windows.md';
@@ -135,6 +139,11 @@ export function staleMarks(text: string, scripts: Readonly<Record<string, string
   return bad;
 }
 
+/** Every line still holding a PLACEHOLDER mark (a step not yet written) — the sheet would be printed unfinished. */
+export function placeholderMarks(text: string): string[] {
+  return text.split('\n').flatMap((line, i) => (line.includes('PLACEHOLDER') ? [`line ${i + 1}: ${line.slice(line.indexOf('PLACEHOLDER') - (line.slice(0, line.indexOf('PLACEHOLDER')).endsWith('**') ? 2 : 0)).trim()}`] : []));
+}
+
 const numberedSteps = (text: string): string[] => [...text.matchAll(/^(\d+)\. /gm)].map((m) => m[1]!);
 const tamilShare = (text: string): number => {
   const letters = [...text].filter((ch) => /\p{L}/u.test(ch));
@@ -208,6 +217,28 @@ describe('the owner guide and the cashier sheets hold together (OB-244 · OB-248
     expect(guide).toMatch(/about how many more days fit/);
   });
 
+  it('round 3: the guide says the installer writes BOTH mirror settings and how `status` shows them; the PIN for seal and parallel-policy; red under 30 days', () => {
+    // The installer writes the mirror pilot and guest sales only together (OB-248 · OB-252), and status names both.
+    expect(guide).toMatch(/The installer writes the two mirror-pilot settings into `till\.env` \*\*together\*\*/);
+    expect(guide).toContain('**Check the two mirror-pilot settings**');
+    expect(guide).toContain('`OK   Mirror`');
+    const statusLine = 'the till runs the mirror pilot with guest sales only (EDGE_MIRROR_PILOT=1, EDGE_GUEST_SALES_ONLY=1)';
+    expect(guide).toContain(statusLine);
+    // …and that is exactly what the status command prints (read from its own source, so the guide follows the tool).
+    const statusSource = readFileSync('scripts/lib/store-computer-status.mjs', 'utf8');
+    expect(statusSource).toContain("name: 'Mirror'");
+    expect(statusSource).toContain('the till runs the mirror pilot with guest sales only (${words})');
+    expect(statusSource).toContain("`EDGE_MIRROR_PILOT=${said('EDGE_MIRROR_PILOT') || '(not set)'}, EDGE_GUEST_SALES_ONLY=${said('EDGE_GUEST_SALES_ONLY') || '(not set)'}`");
+    // OB-257: seal and parallel-policy ask the acting person's own PIN.
+    expect(guide).toMatch(/It asks the person sealing for \*\*their own till PIN\*\*/);
+    expect(guide).toMatch(/It asks for \*\*your own till PIN\*\* \(`<your-login>'s till PIN:`\)/);
+    // OB-268: red under 30 days; "not known" before the rate can be worked out.
+    expect(guide).toMatch(/\*\*Under 30 days left, it turns RED\*\* \(OB-268\)/);
+    expect(guide).toMatch(/\*\*NOT KNOWN\*\*/);
+    // Nothing still waits for the "paid on old ERP" tender: it is built.
+    expect(guide).not.toMatch(/still a marked placeholder|are being added to the till/);
+  });
+
   it('every sheet exists in English and Tamil, with the same id and the same numbered steps, each naming the other', () => {
     for (const id of SHEETS) {
       expect(existsSync(`${SOP_DIR}/${id}.en.md`), `${id}.en.md`).toBe(true);
@@ -244,7 +275,7 @@ describe('the owner guide and the cashier sheets hold together (OB-244 · OB-248
     }
   });
 
-  it('the sheets say what the decisions say: old till only, mirror keying with no new bill, guest only, and a marked tender step', () => {
+  it('the sheets say what the decisions say: old till only, mirror keying with no new bill, guest only, the tender and refund steps written', () => {
     const down = sheetText('sop-01-pc-down', 'en');
     expect(down).toMatch(/Stop keying into the new till/);
     expect(down).toMatch(/time it stopped/);
@@ -256,12 +287,40 @@ describe('the owner guide and the cashier sheets hold together (OB-244 · OB-248
     expect(mirror).toMatch(/Guest sale only/);
     expect(mirrorTa).toMatch(/மொபைல் எண்/);
     expect(mirror).toMatch(/not in the catalogue/);
-    // The tender and cash-up step is lane 1's question: both languages agree on whether it is still the placeholder.
-    expect(mirror.includes('PLACEHOLDER — LANE 1')).toBe(mirrorTa.includes('PLACEHOLDER — LANE 1'));
+    // Round 3: the payment, old bill number, refund and exchange steps are written — in the till's own words.
+    for (const words of [mirror, mirrorTa]) expect(words).not.toMatch(/PLACEHOLDER/);
+    for (const label of ['Tender', 'Paid on old system — ₹', 'Old bill number', 'Recorded — paid on old system', 'No money in this drawer', 'More', 'Refund', 'Old bill number on the customer\'s bill', 'How is the refund given?', 'Exchange', 'Void', 'Scanned twice', 'OB-264', 'OB-269', 'OB-270']) {
+      expect(mirror, label).toContain(label);
+    }
+    for (const label of ['பணம் பெறு', 'பழைய பில்லிங் அமைப்பில் செலுத்தப்பட்டது — ₹', 'பழைய பில் எண்', 'பதிவு செய்யப்பட்டது — பழைய பில்லிங் அமைப்பில் செலுத்தப்பட்டது', 'இந்த டிராயரில் பணம் இல்லை', 'மேலும்', 'திரும்பப் பணம்', 'வாடிக்கையாளரின் பில்லில் உள்ள பழைய பில் எண்', 'திரும்பப் பணம் எப்படித் தரப்படுகிறது?', 'பரிமாற்றம்', 'நீக்கு', 'இருமுறை ஸ்கேன் ஆனது', 'இது பழைய பில் எண் அல்ல', 'OB-264', 'OB-269', 'OB-270']) {
+      expect(mirrorTa, label).toContain(label);
+    }
+    // Every button word the sheet names is the till's own (so the sheet cannot drift from the screen).
+    const till = readFileSync('apps/pos/web/app.js', 'utf8').replace(/\\'/g, "'");
+    for (const label of ['Tender', 'Paid on old system', 'Old bill number', 'Recorded — paid on old system', 'Old bill number on the customer\'s bill', 'How is the refund given?', 'Scanned twice',
+      'பணம் பெறு', 'பழைய பில்லிங் அமைப்பில் செலுத்தப்பட்டது', 'பழைய பில் எண்', 'வாடிக்கையாளரின் பில்லில் உள்ள பழைய பில் எண்', 'திரும்பப் பணம் எப்படித் தரப்படுகிறது?', 'நீக்கு', 'இருமுறை ஸ்கேன் ஆனது', 'இது பழைய பில் எண் அல்ல']) {
+      expect(till, `the till says "${label}"`).toContain(label);
+    }
     const evening = sheetText('sop-03-owner-evening-check', 'en');
     for (const label of ['Running both', 'Enter a day', 'Save the day', 'Sign the day', 'Which one was wrong']) expect(evening).toContain(label);
     const eveningTa = sheetText('sop-03-owner-evening-check', 'ta');
     for (const label of ['இரண்டையும் இயக்குதல்', 'ஒரு நாளைப் பதிவு செய்', 'நாளைச் சேமி', 'நாளில் கையெழுத்திடு', 'எது தவறு']) expect(eveningTa).toContain(label);
+    // OB-256 · OB-265: payments and loyalty are not compared in the mirror pilot — decided, so never "not decided".
+    expect(evening).toMatch(/\*\*Payments taken \(₹\)\*\* and \*\*Loyalty points\*\* say \*\*Not compared in the mirror pilot\*\* \(OB-256, OB-265\)/);
+    expect(eveningTa).toContain('**மிரர் பைலட்டில் ஒப்பிடப்படுவதில்லை**');
+    expect(eveningTa).toContain('(OB-256, OB-265)');
+    expect(evening).not.toMatch(/not decided/i);
+    expect(eveningTa).not.toContain('இன்னும் முடிவு செய்யப்படவில்லை');
+    // OB-264: the bill-wise list, by the migration screen's own words.
+    for (const label of ['Bill by bill (mirror pilot)', 'New bill', 'Old bill', 'Refunded']) expect(evening).toContain(label);
+    for (const label of ['பில் வாரியாக (மிரர் பைலட்)', 'புதிய பில்', 'பழைய பில்', 'திருப்பித் தரப்பட்டது']) expect(eveningTa).toContain(label);
+  });
+
+  it('no PLACEHOLDER mark is left in any sheet, in either language, or in the guide — and the check really looks', () => {
+    for (const id of SHEETS) for (const lang of ['en', 'ta'] as const) expect(placeholderMarks(sheetText(id, lang)), `${id}.${lang}`).toEqual([]);
+    expect(placeholderMarks(guide)).toEqual([]);
+    expect(placeholderMarks('5. **Payment:** **PLACEHOLDER — LANE 1:** written later.\n')).toEqual(['line 1: **PLACEHOLDER — LANE 1:** written later.']);
+    expect(placeholderMarks('a placeholder in words\nPLACEHOLDER\n')).toHaveLength(1);
   });
 
   it('the evening sheet uses the migration screen\'s own words, in both languages', () => {

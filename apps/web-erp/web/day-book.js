@@ -74,9 +74,13 @@ function journalNode(j) {
   head.append(headline, value);
   const facts = document.createElement('div'); facts.className = 'facts';
   const src = document.createElement('span'); src.textContent = `${t('sourcesLabel')}: ${j.sources}`;
+  // OB-264: the mirror pilot's old-system bill numbers behind this voucher, so the day reads bill by bill.
+  const oldBills = Array.isArray(j.oldErpBills) && j.oldErpBills.length > 0 ? (() => {
+    const o = document.createElement('span'); o.className = 'old-bills'; o.textContent = `${t('oldBillsLabel')}: ${j.oldErpBills.join(', ')}`; return o;
+  })() : null;
   const period = document.createElement('span'); period.textContent = `${t('periodLabel')}: ${j.period}${j.late ? ` (${j.belongsTo})` : ''}`;
   const by = document.createElement('span'); by.textContent = `${t('postedByLabel')}: ${j.postedBy}`;
-  facts.append(src, period, by);
+  facts.append(src, ...(oldBills === null ? [] : [oldBills]), period, by);
   const lines = document.createElement('div'); lines.className = 'lines';
   for (const l of j.lines) {
     const row = document.createElement('span');

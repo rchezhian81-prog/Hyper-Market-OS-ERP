@@ -28,7 +28,7 @@ export const PAID_ON_OLD_ERP_WORDS = {
   /** A mirror refund given any other way. */
   refundNeedsIt: 'Mirror pilot: the refund is given on the old system and recorded here as "Paid on old system". No money comes out of this drawer. Nothing was recorded.',
   /** An exchange in the mirror pilot. */
-  noExchange: 'Mirror pilot: an exchange is not keyed as one on this till. Record the item coming back as a refund (Paid on old system), then ring the new item as a sale. Nothing was recorded.',
+  noExchange: 'Mirror pilot: exchanges are done on the old till only (OB-269). Ring nothing for an exchange on this till; write it on the pilot list. Nothing was recorded.',
   /** A refund to the tender against a bill that was not paid that way, or for more than is left of it. */
   overTheBill: 'This refund is more than this bill was paid on the old system, less what has already come back. Check the bill. Nothing was recorded.',
   /** A refund to the tender against a bill this store computer does not hold. */

@@ -115,7 +115,7 @@ describe('the till refuses before the disk, both ways', () => {
   it('mirror ON: "Paid on old system" saves the bill — tax pulled out as for any sale, no cash, the till says it is on', async () => {
     const { view, sent } = till(true);
     expect(view.mirrorPilot()).toBe(true);
-    expect(await view.tenderPaidOnOldErp('S-1', 'R-1', AT)).toBe('R-1');
+    expect(await view.tenderPaidOnOldErp('S-1', 'R-1', AT, 'OLD/1')).toBe('R-1');
     const record = JSON.parse(sent[0]!) as Record<string, unknown>;
     expect(record['tenders']).toEqual([expect.objectContaining({ kind: 'paid_on_old_erp', status: 'settled', amount: { minor: 21_000, currency: 'INR' } })]);
     expect(record).toMatchObject({ total: 21_000, taxMinor: 1_000, netMinor: 20_000 }); // GST inside, as on every bill

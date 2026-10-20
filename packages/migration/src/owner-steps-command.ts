@@ -11,11 +11,15 @@
 //     that, as the signed-in person (the route allows only `migration.cutover.decide` — the owner's role). The numbers are
 //     the owner's to choose; nothing here defaults them.
 //
-// Pure: the HTTP client is injected (scripts/migration-slice.ts mints the person's short-lived token), so tests drive it
-// with a stand-in API. Never against production (hard rule #7), never into the demo tenant (gate G4).
+// Both ask for the acting person's OWN till PIN, checked on this PC, before any call is made — the same check the owner
+// setup commands make (OB-257 · OB-267, `runOwnerSetup` below): no PIN, a wrong one, or none issued, and nothing is
+// called, so the shell never mints that person's token without it.
+//
+// Pure: the HTTP client, the PIN question and the PIN check are injected (scripts/migration-slice.ts mints the person's
+// short-lived token, after their PIN matched), so tests drive it with a stand-in API. Never against production (hard
+// rule #7), never into the demo tenant (gate G4).
 
 import { assertNonProduction, type TargetKind } from './trial';
-import type { CommandClient } from './load-command';
 import { SLICE_FILES, type SliceFile } from './slice-import';
 import { readSliceManifest, type SliceManifest } from './slice-command';
 import type { SealedExtract } from './discovery';
@@ -47,6 +51,29 @@ function targetRefusal(kind: string | undefined, tenantId: string, demoTenantIds
 /** The data rows in a slice file: every non-empty line after the header — the count the slice's seal check uses. */
 export const dataRowsOf = (text: string): number => text.replace(/^\uFEFF/, '').split(/\r?\n/).slice(1).filter((l) => l.trim() !== '').length;
 
+/**
+ * OB-257 · OB-267: the acting person's own till PIN, asked at THIS keyboard and checked on this PC before any call. Both
+ * owner steps and every owner setup command use it; there is no way to run one without it.
+ */
+export interface OwnerPin {
+  /** Ask THIS person for their own till PIN, hidden. Undefined when nothing was typed (or there is no keyboard). */
+  readonly askPin: (userId: string) => Promise<string | undefined>;
+  readonly verifyPin: (userId: string, pin: string) => PinVerdict;
+}
+
+/** Ask one person for their PIN and check it. `ok` carries when it matched (the token's step-up time). */
+async function pinChecked(who: string, pin: OwnerPin, now: () => string, say: (s: string) => void): Promise<{ readonly ok: true; readonly signedInAt: string } | { readonly ok: false; readonly exitCode: 1 | 2 }> {
+  say(`${who}: type YOUR OWN till PIN now (six digits; nothing shows while you type). Only ${who} types it.`);
+  const typed = await pin.askPin(who);
+  if (typed === undefined || typed === '') { say(`NOT DONE — no PIN was typed for ${who}. Nothing was done.`); return { ok: false, exitCode: 1 }; }
+  const verdict = pin.verifyPin(who, typed);
+  if (verdict === 'cannot_check') { say('REFUSED — this PC cannot check till PINs yet (the till is not installed, or its settings cannot be read). Install the till first (owner guide Part 13). Nothing was done.'); return { ok: false, exitCode: 2 }; }
+  if (verdict === 'no_pin_issued') { say(`REFUSED — ${who} has no till PIN on this computer. Make one first, with ${who} there: pnpm run till:pin -- --user ${who} --by "<your name>". Nothing was done.`); return { ok: false, exitCode: 1 }; }
+  if (verdict !== 'ok') { say(`REFUSED — that is not ${who}'s till PIN. Nothing was done.`); return { ok: false, exitCode: 1 }; }
+  say(`  ${who}'s PIN matches.`);
+  return { ok: true, signedInAt: now() };
+}
+
 export interface SealSliceInput {
   readonly manifest: unknown;
   readonly files: Readonly<Partial<Record<SliceFile, string>>>;
@@ -58,16 +85,22 @@ export interface SealSliceInput {
   readonly backupRestoredOn?: string;
   /** Which legacy source the files came from, as named in the discovery inventory. */
   readonly sourceId?: string;
-  readonly client?: CommandClient;
+  /** Called only after the sealer's PIN matched; each request carries when (`signedInAt`). */
+  readonly client?: SetupClient;
+  /** OB-257: the sealer's own till PIN, before any call. */
+  readonly pin: OwnerPin;
   /** A short content fingerprint for the idempotency key (SHA-256 in the shell). */
   readonly fingerprint: (text: string) => string;
   readonly today: string;
+  readonly now: () => string;
+  /** Each line, as it is said (the PIN question comes between them). */
+  readonly say?: (line: string) => void;
 }
 
 /** Seal every slice file in the folder through the seal route. A file already sealed is never sealed again. */
 export async function sealSlice(input: SealSliceInput): Promise<OwnerStepOutcome> {
   const lines: string[] = [];
-  const say = (s: string): void => { lines.push(s); };
+  const say = (s: string): void => { lines.push(s); input.say?.(s); };
   const read = readSliceManifest(input.manifest);
   if (read.manifest === undefined) { say('REFUSED — slice.json could not be read:'); for (const p of read.problems) say(`  • ${p}`); return { exitCode: 2, lines }; }
   const m = read.manifest;
@@ -79,6 +112,10 @@ export async function sealSlice(input: SealSliceInput): Promise<OwnerStepOutcome
   if (input.client === undefined) { say('An API address is needed to seal. Give --api.'); return { exitCode: 2, lines }; }
   const present = SLICE_FILES.filter((f) => input.files[f] !== undefined);
   if (present.length === 0) { say(`REFUSED — the folder holds none of the slice files (${SLICE_FILES.join(', ')}). Put the old ERP's exported files there first.`); return { exitCode: 2, lines }; }
+
+  // OB-257: the sealer's own PIN, before any call — so no token of theirs is ever made without it.
+  const signedIn = await pinChecked(input.sealAs, input.pin, input.now, say);
+  if (!signedIn.ok) return { exitCode: signedIn.exitCode, lines };
 
   const sourceId = input.sourceId !== undefined && input.sourceId.trim() !== '' ? input.sourceId.trim() : 'old-erp';
   const files: Record<string, { seal: SealedExtract; declaredRows?: number }> = { ...(m.files as Record<string, { seal: SealedExtract; declaredRows?: number }>) };
@@ -92,7 +129,7 @@ export async function sealSlice(input: SealSliceInput): Promise<OwnerStepOutcome
     const res = await input.client.request({
       method: 'POST', path: `/v1/migration/extracts/${encodeURIComponent(extractId)}/seal`, userId: input.sealAs, tenantId: m.tenantId,
       body: { sourceId, material: text, rowCount, extractedBy: input.sealAs, backupVerifiedAt: input.backupRestoredOn },
-      idempotencyKey: `${extractId}-seal-${input.fingerprint(text).slice(0, 16)}`,
+      idempotencyKey: `${extractId}-seal-${input.fingerprint(text).slice(0, 16)}`, signedInAt: signedIn.signedInAt,
     });
     if (res.status !== 200) { failed += 1; say(`NOT SEALED — ${f}: ${errorOf(res.body, res.status)}`); continue; }
     const seal = res.body as SealedExtract;
@@ -116,13 +153,19 @@ export interface ParallelPolicyInput {
   readonly requiredCleanDays?: number;
   readonly maxParallelDays?: number;
   readonly startedOn?: string;
-  readonly client?: CommandClient;
+  /** Called only after the owner's PIN matched; each request carries when (`signedInAt`). */
+  readonly client?: SetupClient;
+  /** OB-257: the owner's own till PIN, before any call. */
+  readonly pin: OwnerPin;
+  readonly now: () => string;
+  /** Each line, as it is said (the PIN question comes between them). */
+  readonly say?: (line: string) => void;
 }
 
 /** Write the parallel-run policy through PUT /v1/migration/parallel-run/policy. Every value comes from the owner. */
 export async function writeParallelPolicy(input: ParallelPolicyInput): Promise<OwnerStepOutcome> {
   const lines: string[] = [];
-  const say = (s: string): void => { lines.push(s); };
+  const say = (s: string): void => { lines.push(s); input.say?.(s); };
   const refused = targetRefusal(input.targetKind, input.tenantId, input.demoTenantIds, 'parallel-policy');
   if (refused !== undefined) { say(refused); return { exitCode: 1, lines }; }
   const missing: string[] = [];
@@ -134,10 +177,14 @@ export async function writeParallelPolicy(input: ParallelPolicyInput): Promise<O
   if (!isDate(input.startedOn)) missing.push('--start <the first day, YYYY-MM-DD>');
   if (missing.length > 0) { say(`REFUSED — the parallel-run policy needs: ${missing.join(', ')}. Nothing is filled in for you: these are your decisions (R-05).`); return { exitCode: 2, lines }; }
   if (input.client === undefined) { say('An API address is needed. Give --api.'); return { exitCode: 2, lines }; }
+  // OB-257: the owner's own PIN, before the call — so no token of his is ever made without it.
+  const signedIn = await pinChecked(input.as!, input.pin, input.now, say);
+  if (!signedIn.ok) return { exitCode: signedIn.exitCode, lines };
   const res = await input.client.request({
     method: 'PUT', path: '/v1/migration/parallel-run/policy', userId: input.as!, tenantId: input.tenantId,
     body: { cutoverId: input.cutoverId, dailyReconcilerUserId: input.reconcilerUserId, requiredCleanDays: input.requiredCleanDays, maxParallelDays: input.maxParallelDays, startedOn: input.startedOn },
     idempotencyKey: `parallel-policy-${input.cutoverId}-${input.reconcilerUserId}-${input.requiredCleanDays}-${input.maxParallelDays}-${input.startedOn}`,
+    signedInAt: signedIn.signedInAt,
   });
   if (res.status !== 200 && res.status !== 201) { say(`REFUSED — the policy was not recorded: ${errorOf(res.body, res.status)}`); return { exitCode: 1, lines }; }
   const p = (res.body as { policy: { dailyReconcilerUserId: string; requiredCleanDays: number; maxParallelDays: number; startedOn: string; setBy: string; setAt: string } }).policy;
@@ -405,15 +452,9 @@ export async function runOwnerSetup(input: SetupInput, deps: SetupDeps): Promise
   // Every person's PIN BEFORE any call: a wrong PIN for the second person never leaves the first person's half done.
   const signedIn = new Map<string, string>();
   for (const who of p.actors) {
-    say(`${who}: type YOUR OWN till PIN now (six digits; nothing shows while you type). Only ${who} types it.`);
-    const pin = await deps.askPin(who);
-    if (pin === undefined || pin === '') { say(`NOT DONE — no PIN was typed for ${who}. Nothing was done.`); return { exitCode: 1, lines }; }
-    const verdict = deps.verifyPin(who, pin);
-    if (verdict === 'cannot_check') { say('REFUSED — this PC cannot check till PINs yet (the till is not installed, or its settings cannot be read). Install the till first (owner guide Part 13). Nothing was done.'); return { exitCode: 2, lines }; }
-    if (verdict === 'no_pin_issued') { say(`REFUSED — ${who} has no till PIN on this computer. Make one first, with ${who} there: pnpm run till:pin -- --user ${who} --by "<your name>". Nothing was done.`); return { exitCode: 1, lines }; }
-    if (verdict !== 'ok') { say(`REFUSED — that is not ${who}'s till PIN. Nothing was done.`); return { exitCode: 1, lines }; }
-    signedIn.set(who, input.now());
-    say(`  ${who}'s PIN matches.`);
+    const checked = await pinChecked(who, deps, input.now, say);
+    if (!checked.ok) return { exitCode: checked.exitCode, lines };
+    signedIn.set(who, checked.signedInAt);
   }
 
   for (const call of p.calls) {

@@ -31,7 +31,9 @@ import {
   BACKUP_LOG, backupLines, dataFolderReady, ensureBackupKey, folderRefusal, mins, readBackupKey, readLastBackup, ready,
   recordBackupOutcome, size, takeStoreBackup, tillFolders,
 } from './store-computer-recovery.mjs';
-import { ALERT_RULES, SCHEDULE_FILE, ageWords, readSchedule, status } from './store-computer-status.mjs';
+import { ALERT_RULES, SCHEDULE_FILE, ageWords, backupRoom, readSchedule, status } from './store-computer-status.mjs';
+// Kept importable from here, where they were first written (OB-262 · OB-268 moved them beside the status check).
+export { daysOfRoom, driveTally } from './store-computer-status.mjs';
 
 /** The tasks, by name, in their own "SRE" folder of the Task Scheduler Library. */
 export const TASKS = Object.freeze({
@@ -208,33 +210,16 @@ function registered(deps, tasks, name, xml) {
   return false;
 }
 
-/** How many backups a drive folder holds, their total size, and the drive's free space. Read-only. */
-export function driveTally(deps, dir) {
-  const p = pathFor(deps.platform);
-  let names = [];
-  try { names = deps.fs.readdirSync(dir).map(String); } catch { return { readable: false }; }
-  const backups = names.filter((n) => n.startsWith(`${PROJECT}-backup-`) && n.endsWith('.manifest.json'));
-  let bytes = 0;
-  for (const n of names.filter((x) => x.startsWith(`${PROJECT}-backup-`))) { try { bytes += deps.fs.statSync(p.join(dir, n)).size; } catch { /* a file that vanished is simply not counted */ } }
-  let space;
-  try { space = deps.diskSpace(dir); } catch { space = undefined; }
-  return { readable: true, backups: backups.length, bytes, free: space?.free, total: space?.total };
-}
-
-/** About how many days of backups still fit, at the average backup's size and this many per day. Undefined if not known. */
-export function daysOfRoom(tally, everyMinutes) {
-  if (!tally.readable || tally.backups === 0 || tally.free === undefined) return undefined;
-  const perDay = (tally.bytes / tally.backups) * (1440 / everyMinutes);
-  return perDay <= 0 ? undefined : Math.floor(tally.free / perDay);
-}
-
-function roomLines(deps, dir, everyMinutes) {
-  const t = driveTally(deps, dir);
-  if (!t.readable) return [`  The drive folder ${dir} cannot be read now — is the drive plugged in?`];
-  const days = daysOfRoom(t, everyMinutes);
+function roomLines(deps, L, schedule) {
+  const room = backupRoom(deps, L, schedule);
+  const t = room.tally;
+  if (t === undefined || !t.readable) return [`  The drive folder ${schedule.to} cannot be read now — is the drive plugged in? Room left: NOT KNOWN.`];
+  const days = room.known
+    ? ` — room for about ${room.days} more day(s) at the current rate${room.days < ALERT_RULES.backupDriveMinDays ? ` (RED: under ${ALERT_RULES.backupDriveMinDays} days)` : ''}`
+    : ` — room left: NOT KNOWN yet (${room.why.en})`;
   return [
-    `  On the drive: ${t.backups} backup(s), ${size(t.bytes)} in all${t.free === undefined ? '' : `; ${size(t.free)} free`}${days === undefined ? '' : ` — room for about ${days} more day(s) at this rate`}.`,
-    '  NOTHING IS EVER DELETED: every backup is kept (no rule in the roadmap or the decisions says how long). When the drive gets full, the backups stop and the red banner says so — then bring the drive to me and decide what to keep.',
+    `  On the drive: ${t.backups} backup(s), ${size(t.bytes)} in all${t.free === undefined ? '' : `; ${size(t.free)} free`}${days}.`,
+    `  NOTHING IS EVER DELETED (OB-262): every backup is kept. When the drive has room for fewer than about ${ALERT_RULES.backupDriveMinDays} more days (OB-268), this says RED and so does the office screen — then decide what to keep, or plug in a bigger drive.`,
   ];
 }
 
@@ -287,7 +272,7 @@ export async function scheduleBackup(deps, opts) {
   if (!b.ok) { say(`FIRST BACKUP NOT DONE — ${b.problem}`); say('  The tasks are set up, but fix this first: run "pnpm run store-computer -- up", then "pnpm run store-computer -- backup-status".'); await status(deps, { quiet: true }); return 1; }
   say(`BACKUP DONE — ${b.manifest.backupId}, in ${mins(b.manifest.timeTakenMs)}.`);
   for (const l of backupLines(b.manifest)) say(l);
-  for (const l of roomLines(deps, dir, every)) say(l);
+  for (const l of roomLines(deps, L, { to: dir, everyMinutes: every })) say(l);
   await status(deps, { quiet: true });
   say(`Next: check that it restores — pnpm run store-computer -- restore-check --from ${b.manifestPath}`);
   return 0;
@@ -348,11 +333,15 @@ export async function backupStatus(deps) {
   const age = okAt === undefined ? undefined : Math.floor((nowMs - okAt) / 60_000);
   say(`  Last good:      ${okAt === undefined ? 'none yet' : `${last.lastSuccess.at} — ${ageWords(age).en} ago, ${last.lastSuccess.backupId} on ${last.lastSuccess.to}`}`);
   if (last?.lastAttempt?.ok === false) say(`  Last try:       FAILED at ${last.lastAttempt.at} — ${last.lastAttempt.problem}`);
-  if (schedule !== undefined) for (const l of roomLines(deps, schedule.to, schedule.everyMinutes)) say(l);
+  if (schedule !== undefined) for (const l of roomLines(deps, L, schedule)) say(l);
   const overdue = age === undefined || age > ALERT_RULES.backupMaxAgeMinutes;
   say(overdue ? 'RED — the last good backup is more than 2 hours old, or there is none. Plug the backup drive in and run: pnpm run store-computer -- backup --to <its folder>'
     : 'OK — the last good backup is less than 2 hours old.');
-  return overdue ? 1 : 0;
+  // OB-268: red when the drive has room for fewer than about 30 more days at the current rate; "not known" is said above.
+  const room = schedule === undefined ? undefined : backupRoom(deps, L, schedule);
+  const filling = room?.known === true && room.days < ALERT_RULES.backupDriveMinDays;
+  if (filling) say(`RED — the backup drive has room for about ${room.days} more day(s) of backups at the current rate, under ${ALERT_RULES.backupDriveMinDays}. Nothing is ever deleted: decide what to keep, or plug in a bigger drive.`);
+  return overdue || filling ? 1 : 0;
 }
 
 /**

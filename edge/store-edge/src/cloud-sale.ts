@@ -30,6 +30,7 @@
 
 import type { IncomingSale, IncomingSaleLine, IncomingTender } from '../../../services/pos/src/index';
 import { readCardTokenReference } from '../../../packages/tender/src/card-token';
+import { isOldErpBillNumber } from '../../../packages/tender/src/old-erp-bill-number';
 
 type Rec = Record<string, unknown>;
 
@@ -100,6 +101,8 @@ export function toCloudSale(record: unknown, packVersion: number, storeId?: stri
     ...(isMemberRef(r['customerRef']) ? { customerRef: r['customerRef'] } : {}),
     // Round 29 · OB-108: when the store computer took the bill from the till, by its own clock (stamped as it wrote it).
     ...(isTime(r['storeComputerTakenAt']) ? { storeComputerTakenAt: r['storeComputerTakenAt'] } : {}),
+    // OB-264: the old ERP's bill number keyed on a mirror sale — only in its kept form (Rule 46(b), no personal data).
+    ...(isOldErpBillNumber(r['oldErpBillNumber']) ? { oldErpBillNumber: r['oldErpBillNumber'] } : {}),
   };
 }
 

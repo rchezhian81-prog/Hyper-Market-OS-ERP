@@ -77,6 +77,8 @@ import { refundRoomOutsidePoints } from '../../../packages/loyalty/src/wallet';
 import { returnedValueAtOriginalPrices } from '../../../packages/returns/src/exchange';
 import { withoutCardData, type TenderCardDataRemoval } from '../../../packages/tender/src/tender-card-data';
 import { PAID_ON_OLD_ERP, PAID_ON_OLD_ERP_WORDS, saleTenderRefusal, refundTenderRefusal, paidOnOldErpRoom } from '../../../packages/tender/src/paid-on-old-erp';
+import { oldErpBillRefusal, readOldErpBillNumber } from '../../../packages/tender/src/old-erp-bill-number';
+import type { OldErpBills } from './old-erp-bills';
 
 /** The one address this may listen on. Named so the test can assert on it. */
 export const LANE_HOST = '127.0.0.1';
@@ -530,6 +532,13 @@ export function startLaneServer(input: {
    * start like that) — the mirror pilot needs both.
    */
   readonly mirrorPilot?: () => boolean;
+  /**
+   * OB-264: the old ERP's bill numbers keyed on this box's mirror sales (`old-erp-bills.ts`). While the mirror pilot is on,
+   * every sale carries one (Rule 46(b) shape, no personal data) and a number another live sale this financial year holds
+   * is refused before the disk; a mirror refund looks its sale up by it (`GET /lane/lookup?oldBill=…`). Absent on a box
+   * that keeps none: a mirror sale is then refused (nothing could check it), and a lookup by old bill finds nothing.
+   */
+  readonly oldErpBills?: OldErpBills;
 }): Promise<LaneServer> {
   const maxBytes = input.maxBytes ?? 256 * 1024;
 
@@ -647,16 +656,26 @@ export function startLaneServer(input: {
         send(res, 403, { error: 'this request did not come from this till' }, cors);
         return;
       }
-      const receipt = ((): string => {
-        try { return new URL(req.url ?? '', 'http://lane').searchParams.get('receipt') ?? ''; } catch { return ''; }
+      const query = ((): URLSearchParams => {
+        try { return new URL(req.url ?? '', 'http://lane').searchParams; } catch { return new URLSearchParams(); }
       })();
-      if (receipt === '') {
+      // OB-264: a mirror refund asks by the OLD ERP's bill number (`?oldBill=`), the only number the customer holds; the
+      // box finds the sale that carries it in its own register, then answers exactly as for that sale's own number.
+      const oldBillAsked = query.get('oldBill');
+      let asked = query.get('receipt') ?? '';
+      if (oldBillAsked !== null) {
+        const read = readOldErpBillNumber(oldBillAsked);
+        if (!read.ok) { send(res, 400, { error: read.laneMessage }, cors); return; }
+        const saleId = input.oldErpBills?.find(read.value);
+        if (saleId === undefined) { send(res, 200, { found: false }, cors); return; }
+        asked = saleId;
+      } else if (asked === '') {
         send(res, 400, { error: 'a receipt number or sale id is required' }, cors);
         return;
       }
       void (async () => {
         try {
-          const result = await input.node.lookupSale(receipt);
+          const result = await input.node.lookupSale(asked);
           // 200 either way: the request was understood. `found` lets the screen tell "no such bill on
           // this lane" (send them to look it up online / at the desk) from a lane that is broken.
           send(res, 200, result === undefined ? { found: false } : { found: true, ...result }, cors);
@@ -1413,6 +1432,12 @@ export function startLaneServer(input: {
             send(res, 200, { committed: false, refusedBecause: mirror.refusedBecause, laneMessage: mirror.laneMessage }, cors);
             return;
           }
+          // OB-264: the old ERP's bill number — on every mirror sale, in its kept form; on no sale outside the mirror pilot.
+          const oldBill = isReturn ? undefined : oldErpBillRefusal({ mirrorOn, value: r['oldErpBillNumber'] });
+          if (oldBill !== undefined) {
+            send(res, 200, { committed: false, refusedBecause: oldBill.refusedBecause, laneMessage: oldBill.laneMessage }, cors);
+            return;
+          }
           // A receipted refund to "Paid on old system" stays within its bill: what the bill was paid that way, less every
           // refund already against it — judged from THIS box's own logs, never from numbers the till sent.
           if (isReturn && r['refundTender'] === PAID_ON_OLD_ERP && r['noReceipt'] !== true) {
@@ -1618,6 +1643,38 @@ export function startLaneServer(input: {
           return;
         }
 
+        // OB-264: a sale carrying an old bill number is checked against every other sale that holds one — and written — one
+        // at a time, so two tills cannot both key the same old bill between the check and the disk. Never silently doubled
+        // (hard rule #10): a number another live sale this financial year holds is refused, in words, before the disk.
+        const oldBillOf = !isTag && !isReturn ? (parsed as Record<string, unknown>)['oldErpBillNumber'] : undefined;
+        if (typeof oldBillOf === 'string') {
+          if (input.oldErpBills === undefined) {
+            send(res, 200, { committed: false, refusedBecause: 'old_bill_not_checked', laneMessage: 'This store computer cannot check old bill numbers, so this mirror sale cannot be saved. Tell the owner. Nothing was saved.' }, cors);
+            return;
+          }
+          const bills = input.oldErpBills;
+          try {
+            await bills.serialise(async () => {
+              const tradingDay = (parsed as Record<string, unknown>)['tradingDay'];
+              const repeated = bills.check({ saleId: id, oldErpBillNumber: oldBillOf, tradingDay: typeof tradingDay === 'string' ? tradingDay : '' });
+              if (repeated !== undefined) {
+                send(res, 200, { committed: false, refusedBecause: repeated.refusedBecause, laneMessage: repeated.laneMessage }, cors);
+                return;
+              }
+              const outcome = await input.node.commit(id, JSON.stringify(parsed));
+              if (outcome.committed) {
+                bills.noteSale(parsed);
+                if (numberUse?.ok === true) await numberUse.record();
+                if (tenderUse?.ok === true) await tenderUse.record();
+              }
+              send(res, 200, withCardNote(loyaltyNote === undefined ? outcome : { ...outcome, loyalty: loyaltyNote }, cardDataRemoved), cors);
+            });
+          } catch (e) {
+            send(res, 200, refusal(noun, e instanceof Error ? e.message : String(e)), cors);
+          }
+          return;
+        }
+
         try {
           // The whole of this server. `commit`/`commitReturn` writes to the disk, waits for the
           // fsync, and only then queues for the cloud — the order is the rule and it lives in the
@@ -1629,6 +1686,8 @@ export function startLaneServer(input: {
               : await input.node.commit(id, JSON.stringify(parsed));
           if (outcome.committed && numberUse?.ok === true) await numberUse.record();
           if (outcome.committed && tenderUse?.ok === true) await tenderUse.record();
+          // OB-264: a refund counts against its sale's old bill number (a sale fully refunded no longer holds it).
+          if (outcome.committed && isReturn) input.oldErpBills?.noteReturn(parsed);
           // 200 on a refusal too: the *request* was understood, and the answer is in the body. A
           // 5xx here would make a refused sale look like a broken lane, and the cashier needs to
           // know which it is — one means use another lane, the other means try again.

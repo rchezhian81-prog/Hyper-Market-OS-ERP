@@ -23,6 +23,7 @@ import type { SuspendedLine, SuspendedAgeAnswer } from '../../../packages/suspen
 import { normaliseMobile } from '../../../packages/loyalty/src/mobile';
 import { withoutCardData } from '../../../packages/tender/src/tender-card-data';
 import { saleTenderRefusal } from '../../../packages/tender/src/paid-on-old-erp';
+import { oldErpBillRefusal } from '../../../packages/tender/src/old-erp-bill-number';
 import {
   tillLineRefusals, tillRuleFlagsOf, scaleEvidence, lineIsWeighed, TillRuleRefusedError, TOBACCO_MINIMUM_AGE,
   type LaneScales, type TillGateContext,
@@ -877,6 +878,8 @@ export class PosSession {
    */
   async commit(
     saleId: string, number: string, committedAt: string, tenders: readonly Tender[],
+    /** OB-264: the old ERP's bill number for this sale — required in the mirror pilot, refused outside it. */
+    extra: { readonly oldErpBillNumber?: string } = {},
   ): Promise<CommittedSale> {
     // A sale whose answer was lost is resolved first, under its own id — never rung again as a new one (A8).
     if (this.awaiting !== undefined) {
@@ -1022,6 +1025,10 @@ export class PosSession {
       tenders: tenders.map((t) => ({ kind: t.kind, amountMinor: t.amount.minor, status: t.status, ...(t.ref === undefined ? {} : { ref: t.ref }) })),
     });
     if (mirror !== undefined) throw new LocalCommitRefusedError(saleId, mirror.laneMessage);
+    // OB-264: the old ERP's bill number — required in the mirror pilot (Rule 46(b) shape, no personal data), absent outside
+    // it. Whether another sale already holds it is the store computer's to say, from its own logs, before ITS disk.
+    const oldBill = oldErpBillRefusal({ mirrorOn: this.config.mirrorPilot === true, value: extra.oldErpBillNumber });
+    if (oldBill !== undefined) throw new LocalCommitRefusedError(saleId, oldBill.laneMessage);
 
     // **The disk, before anything else is true.**
     //
@@ -1052,6 +1059,8 @@ export class PosSession {
       netMinor: inside.net,
       taxMinor: inside.tax,
       currency: totals.payable.currency,
+      // OB-264: the old ERP's bill number, on every mirror sale — so a mirror refund finds this sale by it.
+      ...(extra.oldErpBillNumber === undefined || this.config.mirrorPilot !== true ? {} : { oldErpBillNumber: extra.oldErpBillNumber }),
       // Every answer to the age question on this bill, refusals included (PF-03 · M15 loss prevention).
       ...(this.ageAnswerLog.length === 0 ? {} : { ageAnswers: this.ageAnswerLog.slice() }),
       // The member's number, for the STORE COMPUTER to turn into a member code before the disk (PF-09 step 2 · P-04).

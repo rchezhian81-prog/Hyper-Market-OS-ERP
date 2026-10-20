@@ -57,6 +57,8 @@ export interface DayBookSale {
   readonly totalMinor: number;
   readonly lines: readonly DayBookSaleLine[];
   readonly tenders: readonly DayBookTender[];
+  /** OB-264: in the mirror pilot, the old ERP's bill number keyed on this sale — listed on the day book beside it. */
+  readonly oldErpBillNumber?: string;
 }
 
 /** A recorded return as the day book needs it — a structural subset of the desk's `ReturnRecord`. */

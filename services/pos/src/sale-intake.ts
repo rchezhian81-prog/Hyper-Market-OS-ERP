@@ -148,6 +148,15 @@ export interface IncomingSale {
    * number keyed at the till — never the number itself (P-04). Optional: a walk-in buys with no personal data (M16-FR-01).
    */
   readonly customerRef?: string;
+  /**
+   * OB-264 (owner, 20 Oct 2026, "Key old bill number"): in the mirror pilot, the OLD ERP's bill number for the same
+   * customer's bill — the legal invoice (OB-248) — keyed at the till, so a mirror refund finds the sale by it and the
+   * day book lists it. Kept only in its checked form (`packages/tender/src/old-erp-bill-number.ts`); anything else is
+   * dropped before banking and `oldErpBillNumberIgnored` says so (never the value: it may be a customer's number).
+   */
+  readonly oldErpBillNumber?: string;
+  /** OB-264: an old bill number was sent but not kept, and why (written by head office; one sent in the body is dropped). */
+  readonly oldErpBillNumberIgnored?: { readonly why: 'not_an_old_bill_number' };
 }
 
 export type SaleExceptionKind =

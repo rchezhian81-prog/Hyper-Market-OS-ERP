@@ -16,8 +16,7 @@ export declare function windowsTasks(deps: Deps, runDir: string): NonNullable<De
 export declare function tasksFor(deps: Deps, L: Layout): Deps['tasks'];
 export declare function currentRelease(deps: Deps, L: Layout): { folder: string; setAt: string; previous?: string } | undefined;
 export declare function writeLauncher(deps: Deps, L: Layout, release?: string, previous?: string): void;
-export declare function driveTally(deps: Deps, dir: string): { readable: boolean; backups?: number; bytes?: number; free?: number; total?: number };
-export declare function daysOfRoom(tally: ReturnType<typeof driveTally>, everyMinutes: number): number | undefined;
+export { driveTally, daysOfRoom } from './store-computer-status.mjs';
 export declare function scheduleBackup(deps: Deps, opts: { to?: string; every?: string | number }): Promise<number>;
 export declare function unscheduleBackup(deps: Deps): Promise<number>;
 export declare function backupStatus(deps: Deps): Promise<number>;

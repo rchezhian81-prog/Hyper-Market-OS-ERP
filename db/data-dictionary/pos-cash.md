@@ -46,6 +46,15 @@ while the store computer is set for the mirror pilot, and then the only tender (
 no provider reference; no drawer money; its own line in the day book and reports. The full list of kinds is
 `TENDER_KINDS` in `packages/contracts/src/enums.ts`._
 
+_`oldErpBillNumber` (OB-264): on every mirror-pilot sale (the till's record, the store computer's sale log, head office's
+banked `SaleCommitted`), the old ERP's bill number for the same customer's bill — required while the mirror pilot is on,
+absent otherwise. At most 16 characters, capitals, digits, `-` and `/` (CGST Rule 46(b)); never a mobile, Aadhaar or
+card-shaped number. Unique within a financial year on the store computer (a second sale with it is refused before the
+disk, unless the first sale's whole value was refunded). A mirror refund finds its sale by it (`GET /lane/lookup?oldBill=`).
+Head office keeps it only in that form; anything else is dropped and the bill carries `oldErpBillNumberIgnored: { why }`
+(never the value). The day book's vouchers list it per source (`dayBook.oldErpBills`). Rules:
+`packages/tender/src/old-erp-bill-number.ts`._
+
 ## Returns, till & suspends (M13–M15)
 
 ### Refund / Exchange ⊕ (M13)

@@ -25,7 +25,8 @@ async function healthy(): Promise<World & { lane: { body: Record<string, unknown
   expect(await prepare(w.deps)).toBe(0);
   const till = join(w.data, 'till');
   mkdirSync(join(till, 'edge-data'), { recursive: true });
-  writeFileSync(join(till, 'till.env'), `EDGE_DATA_DIR=${join(till, 'edge-data')}\nEDGE_LANE_PORT=8090\n`);
+  // As till:install writes it on the real copy (OB-248 · OB-252): the mirror pilot with guest sales only.
+  writeFileSync(join(till, 'till.env'), `EDGE_DATA_DIR=${join(till, 'edge-data')}\nEDGE_LANE_PORT=8090\nEDGE_GUEST_SALES_ONLY=1\nEDGE_MIRROR_PILOT=1\n`);
   w.docker.ownRunning = ['db', 'api'];
   const lane: { body: Record<string, unknown> | undefined } = { body: { cloud: 'online', unsent: 0, deadLettered: 0, lastSentAt: new Date(at(w) - MIN).toISOString() } };
   const readyz = w.deps.fetch;
@@ -126,6 +127,30 @@ describe('store-computer status — the four checks', () => {
     w.said.length = 0;
     expect(await status(w.deps, { quiet: true })).toBe(1);
     expect(w.said).toEqual([]);
+  });
+});
+
+describe('store-computer status — the till\'s mirror settings (OB-248 · OB-252 · OB-256)', () => {
+  it('both on: OK, said by name; one off or missing: RED, in both languages; no till yet: "not known", never red', async () => {
+    const w = await healthy();
+    const mirror = async () => (await collectStatus(w.deps)).checks.find((c) => c.name === 'Mirror');
+    expect(await mirror()).toEqual({ name: 'Mirror', ok: true, detail: 'the till runs the mirror pilot with guest sales only (EDGE_MIRROR_PILOT=1, EDGE_GUEST_SALES_ONLY=1)' });
+    expect(await status(w.deps)).toBe(0);
+    expect(w.said.join('\n')).toMatch(/OK {3}Mirror {5}the till runs the mirror pilot with guest sales only \(EDGE_MIRROR_PILOT=1, EDGE_GUEST_SALES_ONLY=1\)/);
+    const env = join(w.data, 'till', 'till.env');
+    for (const text of [`EDGE_DATA_DIR=${join(w.data, 'till', 'edge-data')}\nEDGE_LANE_PORT=8090\nEDGE_GUEST_SALES_ONLY=1\n`, `EDGE_DATA_DIR=${join(w.data, 'till', 'edge-data')}\nEDGE_LANE_PORT=8090\nEDGE_GUEST_SALES_ONLY=0\nEDGE_MIRROR_PILOT=1\n`]) {
+      writeFileSync(env, text);
+      const s = await collectStatus(w.deps);
+      expect(s.checks.find((c) => c.name === 'Mirror')?.ok).toBe(false);
+      const alert = s.alerts.find((a) => a.code === 'mirror_settings_off')!;
+      expect(alert.en).toBe("The till's settings do not say the mirror pilot with guest sales only. Ring nothing more on the new till, and install the till again (owner guide Part 13).");
+      expect(alert.ta).toMatch(/[஀-௿]/);
+      expect(judgeStoreComputerStatus(JSON.stringify(s), at(w)).alerts).toContainEqual(alert);
+    }
+    expect((await mirror())?.detail).toMatch(/EDGE_MIRROR_PILOT=1, EDGE_GUEST_SALES_ONLY=0/);
+    const fresh = world();
+    expect(await prepare(fresh.deps)).toBe(0);
+    expect((await collectStatus(fresh.deps)).checks.find((c) => c.name === 'Mirror')).toEqual({ name: 'Mirror', ok: null, detail: 'not known — no till is installed on this computer yet' });
   });
 });
 

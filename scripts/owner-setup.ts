@@ -18,37 +18,12 @@ import { resolve } from 'node:path';
 import { runOwnerSetup, type SetupClient } from '../packages/migration/src/owner-steps-command';
 import { buildPersonToken, demoTenantIds, parseEnvText, parseFlags, tokenPolicyFromEnv } from './lib/operator-env';
 import { pinVerifier } from './lib/owner-setup-pins';
+import { askAtKeyboard } from './lib/keyboard';
 
 const out = (s = ''): void => { process.stdout.write(`${s}\n`); };
 
-/** One answer at the keyboard. `hidden`: nothing typed is shown (a PIN). Undefined with no keyboard, or on Ctrl+C. */
-function ask(prompt: string, hidden: boolean): Promise<string | undefined> {
-  const input = process.stdin;
-  if (!input.isTTY || typeof input.setRawMode !== 'function') return Promise.resolve(undefined);
-  return new Promise((done) => {
-    process.stdout.write(prompt);
-    let typed = '';
-    const finish = (value: string | undefined): void => {
-      input.setRawMode(false);
-      input.pause();
-      input.removeListener('data', onData);
-      process.stdout.write('\n');
-      done(value);
-    };
-    const onData = (chunk: Buffer | string): void => {
-      for (const ch of String(chunk)) {
-        if (ch === '\r' || ch === '\n') { finish(typed); return; }
-        if (ch === '\u0003') { finish(undefined); return; }
-        if (ch === '\u0008' || ch === '\u007f') { if (typed.length > 0) { typed = typed.slice(0, -1); if (!hidden) process.stdout.write('\b \b'); } continue; }
-        if (ch >= ' ') { typed += ch; if (!hidden) process.stdout.write(ch); }
-      }
-    };
-    input.setRawMode(true);
-    input.resume();
-    input.setEncoding('utf8');
-    input.on('data', onData);
-  });
-}
+/** One answer at the keyboard (scripts/lib/keyboard.ts). `hidden`: nothing typed is shown (a PIN). */
+const ask = askAtKeyboard;
 
 const readIfThere = (file: string | undefined): string | undefined => {
   if (file === undefined || !existsSync(file)) return undefined;

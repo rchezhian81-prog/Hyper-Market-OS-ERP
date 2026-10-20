@@ -10,7 +10,11 @@
 //                                                       MG-02: seal each exported file through the seal route
 //   pnpm run migration:slice -- --parallel-policy --as <login> --cutover <id> --reconciler <login> --clean-days N
 //                               --max-days M --start YYYY-MM-DD                MG-10b: write the parallel-run policy
-//   [--settings infra/compose/.env] [--demo-tenant <uuid>[,<uuid>]]
+//   [--settings infra/compose/.env] [--till-settings <till.env>] [--demo-tenant <uuid>[,<uuid>]]
+//
+// --seal and --parallel-policy ask the acting person for their OWN till PIN at this keyboard and check it on this PC
+// (OB-257, the same as the owner setup commands) before any call — run them through `pnpm run store-computer -- seal |
+// parallel-policy`, which hands this the till's settings.
 //
 // The folder holds slice.json (the load id, tenant, department, the operator's login, the seal of every file) and the
 // CSV files. Each file is read from disk — up to MAX_FILE_BYTES each, far above the 1 MB a screen paste could carry —
@@ -27,7 +31,10 @@ import type { CommandClient } from '../packages/migration/src/load-command';
 import { runSliceCommand, type SliceMode } from '../packages/migration/src/slice-command';
 import { sealSlice, writeParallelPolicy } from '../packages/migration/src/owner-steps-command';
 import { SLICE_FILES, sliceTemplateCsv, type SliceFile } from '../packages/migration/src/slice-import';
-import { parseEnvText, parseFlags, tokenPolicyFromEnv, buildOperatorToken, demoTenantIds } from './lib/operator-env';
+import { parseEnvText, parseFlags, tokenPolicyFromEnv, buildOperatorToken, buildPersonToken, demoTenantIds } from './lib/operator-env';
+import type { SetupClient } from '../packages/migration/src/owner-steps-command';
+import { pinVerifier } from './lib/owner-setup-pins';
+import { askAtKeyboard } from './lib/keyboard';
 
 /** The most one slice file may hold. A department's master data is a few megabytes at most; this leaves room for 10×. */
 export const MAX_FILE_BYTES = 64 * 1024 * 1024;
@@ -60,6 +67,40 @@ function clientFor(env: Readonly<Record<string, string>>, api: string): CommandC
             ...(body === undefined ? {} : { 'content-type': 'application/json' }),
           },
           ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        });
+      } catch (e) { out(`Could not reach ${base}: ${e instanceof Error ? e.message : String(e)}`); process.exit(2); }
+      const text = await res.text();
+      let parsed: unknown = text;
+      try { parsed = text === '' ? undefined : JSON.parse(text); } catch { /* keep the text */ }
+      return { status: res.status, body: parsed };
+    },
+  };
+}
+
+/**
+ * OB-257: the client for the two owner steps — the API spoken to as the person whose own till PIN has just matched on this
+ * PC. Each call mints that person's five-minute token stamped with WHEN the PIN matched (`signedInAt`), the same as the
+ * owner setup commands; the step makes no call, so no token is minted, until the PIN matched.
+ */
+function ownerStepClientFor(env: Readonly<Record<string, string>>, api: string): SetupClient {
+  const idp = tokenPolicyFromEnv(env);
+  if (idp.policy === undefined) { out(`Cannot talk to the API without the identity-provider settings in the env file: ${idp.missing.join(', ')} missing.`); process.exit(2); }
+  const policy = idp.policy;
+  const base = api.replace(/\/$/, '');
+  return {
+    request: async ({ method, path, userId, tenantId, body, idempotencyKey, signedInAt }) => {
+      const token = buildPersonToken({ sub: userId, tenantId, ttlSeconds: 300, authTimeSec: Math.floor(Date.parse(signedInAt) / 1000) }, policy, Date.now());
+      let res: Response;
+      try {
+        res = await fetch(`${base}${path}`, {
+          method,
+          headers: {
+            authorization: `Bearer ${token}`,
+            ...(idempotencyKey === undefined ? {} : { 'idempotency-key': idempotencyKey }),
+            ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+          },
+          ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+          signal: AbortSignal.timeout(30_000),
         });
       } catch (e) { out(`Could not reach ${base}: ${e instanceof Error ? e.message : String(e)}`); process.exit(2); }
       const text = await res.text();
@@ -107,16 +148,28 @@ async function main(): Promise<void> {
 
   // Audit row 8: the two owner steps that had no command — MG-02 seal, MG-10b parallel-run policy (owner-steps-command.ts).
   if (ownerStep !== undefined) {
-    const client = clientFor(env, typeof flags['api'] === 'string' ? flags['api'] : `http://127.0.0.1:${env['API_PORT'] ?? '8081'}`);
+    // OB-257: the acting person types their own till PIN at THIS keyboard, so the step runs in a window, never captured.
+    if (!process.stdin.isTTY) { out('REFUSED — this step asks for your own till PIN. Type it yourself in a PowerShell window: pnpm run store-computer -- ' + ownerStep + ' …'); process.exit(2); }
+    const client = ownerStepClientFor(env, typeof flags['api'] === 'string' ? flags['api'] : `http://127.0.0.1:${env['API_PORT'] ?? '8081'}`);
     const str = (k: string): string | undefined => (typeof flags[k] === 'string' ? flags[k] as string : undefined);
     const int = (k: string): number | undefined => (typeof flags[k] === 'string' && /^\d+$/.test(flags[k] as string) ? Number(flags[k]) : undefined);
+    const tillEnvFile = str('till-settings');
+    const readIfThere = (file: string | undefined): string | undefined => {
+      if (file === undefined || !existsSync(file)) return undefined;
+      try { return readFileSync(file, 'utf8'); } catch { return undefined; }
+    };
+    const tillEnvText = readIfThere(tillEnvFile === undefined ? undefined : resolve(tillEnvFile));
+    const pin = {
+      askPin: (userId: string) => askAtKeyboard(`  ${userId}'s till PIN: `, true),
+      verifyPin: pinVerifier({ tillEnv: tillEnvText === undefined ? undefined : parseEnvText(tillEnvText), settings: env, readFile: readIfThere }),
+    };
+    const now = (): string => new Date().toISOString();
     if (ownerStep === 'parallel-policy') {
       const outcome = await writeParallelPolicy({
         tenantId: str('tenant') ?? env['EDGE_TENANT_ID'] ?? '', targetKind: env['MIGRATION_TARGET_KIND'], demoTenantIds: demoTenantIds(env, flags['demo-tenant']),
         ...optional({ as: str('as'), cutoverId: str('cutover'), reconcilerUserId: str('reconciler'), requiredCleanDays: int('clean-days'), maxParallelDays: int('max-days'), startedOn: str('start') }),
-        ...(client === undefined ? {} : { client }),
+        client, pin, now, say: out,
       });
-      for (const line of outcome.lines) out(line);
       process.exit(outcome.exitCode);
     }
     const manifestFile = join(dir!, 'slice.json');
@@ -133,11 +186,10 @@ async function main(): Promise<void> {
     const outcome = await sealSlice({
       manifest: raw, files: sliceFiles, targetKind: env['MIGRATION_TARGET_KIND'], demoTenantIds: demoTenantIds(env, flags['demo-tenant']),
       ...optional({ sealAs: str('as'), backupRestoredOn: str('backup-restored-on'), sourceId: str('source') }),
-      ...(client === undefined ? {} : { client }),
+      client, pin, now, say: out,
       fingerprint: (text: string) => createHash('sha256').update(text, 'utf8').digest('hex'),
       today: new Date().toISOString().slice(0, 10),
     });
-    for (const line of outcome.lines) out(line);
     if (outcome.manifest !== undefined) {
       // slice.json is never overwritten: the one before the seals is kept beside it, then the new one is written.
       const stamp = new Date().toISOString().replace(/[:.]/g, '-');

@@ -130,7 +130,7 @@ describe.each(backings)('OB-256 · OB-258 — a mirror sale and its refund reach
     till.scan({ productId: 'P1', description: 'Toor dal 1kg', unitPriceMinor: 10_500, qty: 2 });
     const r1 = await till.nextReceipt();
     await expect(till.tenderCash(`S-${r1}`, r1, at())).rejects.toMatchObject({ laneMessage: PAID_ON_OLD_ERP_WORDS.saleNeedsIt });
-    expect(await till.tenderPaidOnOldErp(`S-${r1}`, r1, at())).toBe(r1);
+    expect(await till.tenderPaidOnOldErp(`S-${r1}`, r1, at(), 'OLD/4471')).toBe(r1);
     till.newSale();
     const saleId = `S-${r1}`;
     const [onDisk] = (await readLog(edge.log.path)).map((r) => (r.ok ? JSON.parse(r.record) as Record<string, unknown> : {}));
