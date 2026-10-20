@@ -2,11 +2,13 @@
 // into the owner's guided tool so they run on his Windows 10/11 PC with Docker Desktop, Node 22 and pnpm only: no
 // PostgreSQL tools on the computer itself, no bash, no git (his code comes from a ZIP download).
 //
-//   backup --to <folder>          pg_dump runs INSIDE this copy's database container; the file streams to the owner's
-//                                 backup drive, with a manifest (size, SHA-256, time taken, row counts) — both read-only
-//   restore-check --from <file>   restores that file into a NEW scratch database inside the same container (never into
-//                                 sre_real), reconciles it against the manifest, records the result, then drops ONLY the
-//                                 scratch database it made
+//   backup --to <folder>          pg_dump runs INSIDE this copy's database container; with the till's data and the
+//                                 settings it is ENCRYPTED onto the backup drive (OB-249), with a manifest (sizes,
+//                                 SHA-256s, time taken, row counts) — all read-only
+//   restore-check --from <file>   opens it with the backup passphrase, restores the database into a NEW scratch database
+//                                 inside the same container (never into sre_real), reconciles it against the manifest,
+//                                 checks the till's data file by file and the settings copy, records the result, then
+//                                 drops ONLY the scratch database it made
 //   drill --by "<name>" --to <folder> --previous <folder> [--run]
 //                                 the timed G9 drill: backup → restore-check → the previous release back → this release
 //                                 back, each against the roadmap §32 targets; a new dated record every time
@@ -36,9 +38,25 @@
 import { createHash } from 'node:crypto';
 import { DRILL_TARGETS } from './rollback-drill.mjs';
 import {
-  COMPOSE_BASE, DEMO_PROJECT, PROJECT, SETTINGS_NAME, composeEnv, dockerProblem, guarded, lines, loadSettings,
-  ownDriveProblem, pathFor, rel, stampOf, waitReady,
+  DEMO_PROJECT, FINGERPRINT_KEYS, PROJECT, SETTINGS_NAME, composeBase, composeEnv, dockerProblem, fingerprintsOf, guarded, lines,
+  loadSettings, ownDriveProblem, parseEnvText, pathFor, rel, stampOf, waitReady,
 } from './store-computer.mjs';
+import {
+  MIN_PASSPHRASE, SCRYPT, decryptFile, encryptFile, keyFileProblem, makeBackupKey, openJson, passphraseProblem, publicKeyOf,
+  sealJson, unlockBackupKey,
+} from './store-computer-crypto.mjs';
+import { checkBundle, tillSummary, writeBundle } from './store-computer-files.mjs';
+
+// ── Encryption (OB-249 · audit rows 2–3, lane B B7 and B6/Q8) ─────────────────────────────────────────────────────
+// Since OB-249 every backup is ENCRYPTED and holds EVERYTHING: the database, the till's own data (edge-data: unsent
+// sales, the queue, dead letters, PIN verifiers; and till.env), the check records, and an encrypted copy of this copy's
+// settings file (.env.real) — so a dead disk loses neither sales nor keys. See store-computer-crypto.mjs for the scheme
+// (encrypted to a public key; the private key sealed with the owner's passphrase, which is never stored) and
+// store-computer-files.mjs for how the till's data is copied consistently while the till keeps selling.
+//
+// The plain working copies (the dump and the bundle) are made in the data folder's scratch folder on THIS computer's
+// own disk — where the live database already is — encrypted onto the drive, and then removed. Nothing plain ever reaches
+// the backup drive. Removing a working copy is not deleting evidence: the backup is the encrypted file, which is kept.
 
 // ── Fixed names ───────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -160,7 +178,7 @@ export function reconcile(expected, got) {
 // ── Small helpers over `deps` ─────────────────────────────────────────────────────────────────────────────────────
 
 /** `docker compose … exec -T -e PGOPTIONS=… db <program> <args>` — this copy's own database container, never another. */
-export const dbExec = (program, args) => [...COMPOSE_BASE, 'exec', '-T', '-e', PLATFORM_PGOPTIONS, 'db', program, ...args];
+export const dbExec = (program, args, L) => [...composeBase(L), 'exec', '-T', '-e', PLATFORM_PGOPTIONS, 'db', program, ...args];
 const psqlArgs = (user, database) => ['-X', '-q', '-A', '-t', '-v', 'ON_ERROR_STOP=1', '-U', user, '-d', database];
 
 /** SHA-256 of a file, read in pieces (a backup can be larger than memory). */
@@ -187,13 +205,13 @@ function startsWithMagic(fs, file) {
   } finally { fs.closeSync(fd); }
 }
 
-const size = (bytes) => (bytes >= 1024 ** 3 ? `${(bytes / 1024 ** 3).toFixed(2)} GB` : bytes >= 1024 ** 2 ? `${(bytes / 1024 ** 2).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`);
-const mins = (ms) => `${(ms / 60_000).toFixed(1)} min`;
+export const size = (bytes) => (bytes >= 1024 ** 3 ? `${(bytes / 1024 ** 3).toFixed(2)} GB` : bytes >= 1024 ** 2 ? `${(bytes / 1024 ** 2).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`);
+export const mins = (ms) => `${(ms / 60_000).toFixed(1)} min`;
 /** The first line a program said on its error stream, cut short — enough to name the problem, never a page of output. */
 const firstProblem = (text) => (lines(text).find((l) => /error|fatal|could not|failed|denied|no such/i.test(l)) ?? lines(text)[0] ?? '').slice(0, 200);
 
 /** A new file name in `dir` from `stem` and `ext` that does not exist yet — never overwriting one. */
-function freshName(deps, dir, stem, ext) {
+export function freshName(deps, dir, stem, ext) {
   const p = pathFor(deps.platform);
   for (let i = 1; ; i += 1) {
     const candidate = p.join(dir, `${stem}${i === 1 ? '' : `-${i}`}${ext}`);
@@ -201,19 +219,19 @@ function freshName(deps, dir, stem, ext) {
   }
 }
 
-function writeRecord(deps, file, record, readOnly) {
+export function writeRecord(deps, file, record, readOnly) {
   deps.fs.writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' });
   if (readOnly) deps.fs.chmodSync(file, 0o444);
 }
 
-/** The folder the owner named for his backup drive, checked as check 10 checks it. Returns the problem, or undefined. */
-function folderRefusal(deps, dir) {
-  const problem = ownDriveProblem(dir, { platform: deps.platform, repoRoot: deps.repoRoot, systemDrive: deps.env.SystemDrive });
-  return problem === undefined ? undefined : `${problem}. A backup goes to your own backup drive only (for example E:\\sre-real) — never onto this computer's own drive or into the system's folder.`;
+/** The folder the owner named for a backup drive, checked as check 10 checks it. Returns the problem, or undefined. */
+export function folderRefusal(deps, dir) {
+  const problem = ownDriveProblem(dir, { platform: deps.platform, repoRoot: deps.repoRoot, systemDrive: deps.env.SystemDrive, dataRoot: deps.dataRoot });
+  return problem === undefined ? undefined : `${problem}. A backup goes to your own backup drive only (for example E:\\sre-real) — never onto this computer's own drive, into the shop's data folder or into the system's folder.`;
 }
 
 /** Everything a command needs before it touches Docker: the settings, the refusals, Docker itself. */
-function ready(deps) {
+export function ready(deps) {
   const { L, settings } = loadSettings(deps);
   if (settings === undefined) { deps.say('REFUSED — this copy has no settings file yet. Run first: pnpm run store-computer -- prepare'); return { code: 2 }; }
   if (guarded(deps, settings)) return { code: 2 };
@@ -226,7 +244,15 @@ function ready(deps) {
   return { L, settings, user, database, env: composeEnv(deps.env, settings) };
 }
 
-function dockerReady(deps) {
+/** A backup needs the data folder (its key, its scratch space). A copy still inside the release folder is moved first. */
+export function dataFolderReady(deps, ctx) {
+  if (ctx.L.mode === 'data-folder') return true;
+  deps.say("REFUSED — this copy's settings and the till's data are still inside the system's own folder, where a new release would replace them.");
+  deps.say('  Move them first: close the till window, then run: pnpm run store-computer -- migrate-data-folder');
+  return false;
+}
+
+export function dockerReady(deps) {
   const docker = dockerProblem(deps);
   if (docker === undefined) return true;
   deps.say(`NOT DONE — ${docker.what}`);
@@ -234,80 +260,207 @@ function dockerReady(deps) {
   return false;
 }
 
-// ── backup ────────────────────────────────────────────────────────────────────────────────────────────────────────
+// ── The backup key (OB-249: "encrypted, with a passphrase the owner types once") ─────────────────────────────────────
+
+export const KEY_FILE = 'backup-key.json';
+export const keyFilePath = (deps, L) => pathFor(deps.platform).join(L.backupDir, KEY_FILE);
+/** The copy of the sealed key on each backup drive folder, so the drive and the passphrase alone restore on a new PC. */
+export const driveKeyName = (keyId) => `sre-backup-key-${keyId}.json`;
+
+const readJson = (fs, f) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return undefined; } };
+
+/** The backup key file in the data folder: { present: false } · { present: true, key } · { present: true, problem }. */
+export function readBackupKey(deps, L) {
+  if (L.mode !== 'data-folder') return { present: false };
+  const f = keyFilePath(deps, L);
+  if (!deps.fs.existsSync(f)) return { present: false };
+  const k = readJson(deps.fs, f);
+  const problem = keyFileProblem(k);
+  return problem === undefined ? { present: true, key: k } : { present: true, problem };
+}
 
 /**
- * The backup itself, without the talking: returns { ok, manifestPath, dumpPath, manifest } or { ok: false, problem }.
- * `ctx` is what `ready` returned; `dir` the checked folder on the owner's drive.
+ * The backup key: the one already made, or — only with a person at the keyboard — a new one, its private half sealed with
+ * the passphrase typed twice. The passphrase is passed to scrypt and dropped: never stored, never said, never returned.
  */
-export function takeStoreBackup(deps, ctx, dir) {
+export async function ensureBackupKey(deps, L) {
+  const { say } = deps;
+  const got = readBackupKey(deps, L);
+  if (got.present && got.problem !== undefined) { say(`NOT DONE — the backup key file ${keyFilePath(deps, L)} cannot be used: ${got.problem}. Nothing was changed. Send me a photo of this screen.`); return undefined; }
+  if (got.present) return got.key;
+  say('The backups are ENCRYPTED. Choose the backup passphrase now. You type it this once, and again only to check or restore a backup.');
+  say(`  At least ${MIN_PASSPHRASE} characters — a short sentence you will remember. Write it on paper and lock the paper away from this computer.`);
+  say('  This computer keeps only a sealed key that the passphrase opens, never the passphrase. If it is forgotten, NOBODY can open the backups.');
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const passphrase1 = await deps.askSecret('New backup passphrase (nothing shows as you type), then Enter: ');
+    const noKeyboard = passphrase1 === undefined;
+    if (noKeyboard) { say('NOT DONE — there is no keyboard here to type a passphrase. Run this command yourself in PowerShell.'); return undefined; }
+    const passphrase2 = await deps.askSecret('The same passphrase again, then Enter: ');
+    const problem = passphraseProblem(passphrase1, passphrase2 ?? '');
+    if (problem === undefined) {
+      const key = makeBackupKey(passphrase1, { now: deps.now(), scrypt: deps.scryptCost ?? SCRYPT });
+      deps.fs.mkdirSync(L.backupDir, { recursive: true });
+      deps.fs.writeFileSync(keyFilePath(deps, L), `${JSON.stringify(key, null, 2)}\n`, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
+      say(`BACKUP PASSPHRASE SET — backup key ${key.keyId}. The passphrase itself is kept nowhere on this computer.`);
+      return key;
+    }
+    say(`  Not accepted: ${problem}. ${3 - attempt} more ${3 - attempt === 1 ? 'try' : 'tries'}.`);
+  }
+  say('NOT DONE — no passphrase was set, so nothing was backed up. Run the command again when you are ready.');
+  return undefined;
+}
+
+/** Ask for the passphrase and open the key: up to three tries. Returns { ok, privateKey } or { ok: false, problem }. */
+export async function unlockWithPassphrase(deps, key, why) {
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const passphrase = await deps.askSecret(`Backup passphrase, to ${why} (nothing shows as you type), then Enter: `);
+    if (passphrase === undefined) return { ok: false, problem: 'there is no keyboard here to type the passphrase' };
+    const u = unlockBackupKey(key, passphrase);
+    if (u.ok || u.wrongPassphrase !== true) return u;
+    deps.say(`  That passphrase does not open backup key ${key.keyId}. ${3 - attempt} more ${3 - attempt === 1 ? 'try' : 'tries'}.`);
+  }
+  return { ok: false, problem: 'the passphrase given three times does not open the backup key' };
+}
+
+/** The key a backup was encrypted to: the data folder's, or the copy on the drive beside the backup. */
+export function keyForBackup(deps, L, dir, keyId) {
+  const p = pathFor(deps.platform);
+  const own = readBackupKey(deps, L);
+  if (own.key?.keyId === keyId) return { key: own.key };
+  const onDrive = readJson(deps.fs, p.join(dir, driveKeyName(keyId)));
+  if (onDrive !== undefined && keyFileProblem(onDrive) === undefined && onDrive.keyId === keyId) return { key: onDrive };
+  return { problem: `the backup key ${keyId} it was encrypted to is neither in this computer's data folder nor on the drive (${driveKeyName(keyId)})` };
+}
+
+// ── backup ────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** Where the till keeps its data, from its settings — and its bill-number witness, which a backup never carries (OB-87). */
+export function tillFolders(deps, L) {
+  const p = pathFor(deps.platform);
+  const env = deps.fs.existsSync(L.tillEnv) ? parseEnvText(deps.fs.readFileSync(L.tillEnv, 'utf8')) : undefined;
+  const edgeData = typeof env?.EDGE_DATA_DIR === 'string' && env.EDGE_DATA_DIR.trim() !== '' ? p.resolve(env.EDGE_DATA_DIR.trim()) : p.join(L.tillDir, 'edge-data');
+  const witness = typeof env?.EDGE_WITNESS_DIR === 'string' && env.EDGE_WITNESS_DIR.trim() !== '' ? p.resolve(env.EDGE_WITNESS_DIR.trim()) : `${edgeData.replace(/[\\/]+$/, '')}-witness`;
+  return { installed: env !== undefined, env, edgeData, witness, lanePort: Number(env?.EDGE_LANE_PORT || 8090) };
+}
+
+/**
+ * The backup itself, without the talking: returns { ok, manifestPath, manifest } or { ok: false, problem }.
+ * `ctx` is what `ready` returned; `dir` the checked folder on a backup drive; `key` the backup key file (public half used).
+ * Four encrypted files and a manifest, all new ('wx') and then read-only; nothing plain ever reaches the drive.
+ */
+export function takeStoreBackup(deps, ctx, dir, key) {
   const { fs } = deps;
   const p = pathFor(deps.platform);
+  const L = ctx.L;
+  if (L.mode !== 'data-folder') return { ok: false, problem: "this copy's data is still inside the system's own folder — run migrate-data-folder first" };
+  if (key === undefined) return { ok: false, problem: 'there is no backup key yet — take one backup yourself first (backup --to …) to choose the passphrase' };
   try { fs.mkdirSync(dir, { recursive: true }); } catch (e) {
     return { ok: false, problem: `the folder ${dir} could not be made (${e?.code ?? 'error'}). Is your backup drive plugged in, and is its letter right?` };
   }
+  const till = tillFolders(deps, L);
+  const inside = (root, x) => { const r = p.relative(root, x); return r === '' || (!r.startsWith('..') && !p.isAbsolute(r)); };
+  if (inside(till.edgeData, till.witness)) return { ok: false, problem: `the till's bill-number witness (${till.witness}) is inside its data folder, so a backup would carry it (OB-87). Send me a photo of this screen.` };
+
   const at = deps.now();
-  const stamp = stampOf(at);
-  const dumpPath = freshName(deps, dir, `${PROJECT}-backup-${stamp}`, '.dump');
-  const backupId = p.basename(dumpPath, '.dump');
-  const manifestPath = p.join(dir, `${backupId}.manifest.json`);
-  if (fs.existsSync(manifestPath)) return { ok: false, problem: `${manifestPath} is already there. Nothing was written.` };
+  const manifestPath = freshName(deps, dir, `${PROJECT}-backup-${stampOf(at)}`, '.manifest.json');
+  const backupId = p.basename(manifestPath, '.manifest.json');
+  const names = { database: `${backupId}.dump.sreenc`, files: `${backupId}.files.sreenc`, settings: `${backupId}.settings.sreenc` };
+  for (const n of Object.values(names)) if (fs.existsSync(p.join(dir, n))) return { ok: false, problem: `${n} is already there. Nothing was written.` };
 
+  const scratch = p.join(L.scratchDir, backupId);
+  fs.mkdirSync(scratch, { recursive: true });
+  const pub = publicKeyOf(key);
   const t0 = deps.now().getTime();
-  // 'wx': the file is new — an existing backup is never overwritten.
-  const fd = fs.openSync(dumpPath, 'wx', 0o600);
-  let r;
   try {
-    r = deps.spawn('docker', dbExec('psql', psqlArgs(ctx.user, ctx.database)), {
-      cwd: ctx.L.composeDir, env: ctx.env, input: backupScript({ user: ctx.user, database: ctx.database }), stdio: ['pipe', fd, 'pipe'],
-    });
-    try { fs.fsyncSync(fd); } catch { /* a drive that cannot sync still holds what was written */ }
-  } finally { fs.closeSync(fd); }
-  const tookMs = deps.now().getTime() - t0;
-  const said = parseTotals(r.stderr ?? '');
-  const bytes = fs.statSync(dumpPath).size;
+    // 1. The database: one snapshot, counted and dumped (GT-07), into the scratch folder on this computer's own disk.
+    const plainDump = p.join(scratch, 'database.dump');
+    const fd = fs.openSync(plainDump, 'wx', 0o600);
+    let r;
+    try {
+      r = deps.spawn('docker', dbExec('psql', psqlArgs(ctx.user, ctx.database), L), {
+        cwd: L.composeDir, env: ctx.env, input: backupScript({ user: ctx.user, database: ctx.database }), stdio: ['pipe', fd, 'pipe'],
+      });
+      try { fs.fsyncSync(fd); } catch { /* the scratch copy is read back at once */ }
+    } finally { fs.closeSync(fd); }
+    const said = parseTotals(r.stderr ?? '');
+    const bytes = fs.statSync(plainDump).size;
+    const why = r.error !== undefined ? `Docker could not be started (${r.error.code ?? r.error.message})`
+      : r.status !== 0 ? `the database did not finish the backup (it ended ${r.status}): ${firstProblem(said.other.join('\n')) || 'no reason given'}`
+        : said.dumpExit !== 0 ? `pg_dump ended ${said.dumpExit === undefined ? 'without saying how' : said.dumpExit}: ${firstProblem(said.other.join('\n')) || 'no reason given'}`
+          : !said.done || said.snapshot === undefined ? 'the database session did not finish cleanly'
+            : bytes === 0 || !startsWithMagic(fs, plainDump) ? 'the file written is not a database backup'
+              : undefined;
+    if (why !== undefined) return { ok: false, problem: `${why}. Nothing was written to the drive.` };
+    const db = encryptFile(fs, plainDump, p.join(dir, names.database), pub, { purpose: 'database', keyId: key.keyId });
 
-  const why = r.error !== undefined ? `Docker could not be started (${r.error.code ?? r.error.message})`
-    : r.status !== 0 ? `the database did not finish the backup (it ended ${r.status}): ${firstProblem(said.other.join('\n')) || 'no reason given'}`
-      : said.dumpExit !== 0 ? `pg_dump ended ${said.dumpExit === undefined ? 'without saying how' : said.dumpExit}: ${firstProblem(said.other.join('\n')) || 'no reason given'}`
-        : !said.done || said.snapshot === undefined ? 'the database session did not finish cleanly'
-          : bytes === 0 || !startsWithMagic(fs, dumpPath) ? 'the file written is not a database backup'
-            : undefined;
-  if (why !== undefined) {
-    // Kept, never deleted (hard rule #6) — but without a manifest it is never mistaken for a backup: restore-check refuses it.
-    return { ok: false, problem: `${why}. The incomplete file ${p.basename(dumpPath)} is left on the drive with no manifest; it is not a backup.`, dumpPath };
+    // 2. The till's own data and the records — copied consistently while the till keeps selling (store-computer-files.mjs).
+    const bundle = p.join(scratch, 'files.bundle');
+    const toc = writeBundle(fs, deps.platform, [
+      { prefix: 'till/edge-data', dir: till.edgeData },
+      { prefix: 'till/till.env', file: L.tillEnv },
+      { prefix: 'records', dir: L.records },
+    ], bundle, { ...(deps.inFlightWaitMs === undefined ? {} : { waitMs: deps.inFlightWaitMs }) });
+    const files = encryptFile(fs, bundle, p.join(dir, names.files), pub, { purpose: 'files', keyId: key.keyId });
+
+    // 3. This copy's settings, with its secrets (B6/Q8): encrypted, so a dead disk does not lose the keys.
+    const settings = encryptFile(fs, L.settings, p.join(dir, names.settings), pub, { purpose: 'settings', keyId: key.keyId });
+
+    // 4. The sealed key, once per drive folder (it opens only with the passphrase).
+    const keyOnDrive = p.join(dir, driveKeyName(key.keyId));
+    if (!fs.existsSync(keyOnDrive)) { fs.writeFileSync(keyOnDrive, `${JSON.stringify(key, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' }); fs.chmodSync(keyOnDrive, 0o444); }
+
+    const tookMs = deps.now().getTime() - t0;
+    const totalRows = Object.values(said.rowCounts).reduce((a, b) => a + b, 0);
+    const summary = tillSummary(toc);
+    const manifest = {
+      kind: 'store-computer-backup',
+      version: 2,
+      backupId,
+      project: PROJECT,
+      database: ctx.database,
+      computer: deps.platform === 'win32' ? 'Windows' : 'Linux',
+      at: at.toISOString(),
+      folder: dir,
+      encryption: { scheme: 'x25519-hkdf-sha256/aes-256-gcm', keyId: key.keyId, keyFile: driveKeyName(key.keyId), opensWith: "the owner's backup passphrase, which is kept nowhere on any computer" },
+      file: names.database,
+      sizeBytes: db.bytes,
+      sha256: db.sha256,
+      checksumAlgorithm: 'sha256',
+      parts: {
+        database: { file: names.database, sizeBytes: db.bytes, sha256: db.sha256, plainBytes: db.plainBytes, plainSha256: db.plainSha256, format: 'pg_dump custom format, taken inside the database container' },
+        files: { file: names.files, sizeBytes: files.bytes, sha256: files.sha256, plainSha256: files.plainSha256, fileCount: toc.length, till: { installed: till.installed, ...summary }, contents: "the till's data (edge-data and till.env) and the check records — never the bill-number witness (OB-87)" },
+        settings: { file: names.settings, sizeBytes: settings.bytes, sha256: settings.sha256, plainSha256: settings.plainSha256, contents: `this copy's settings file (${SETTINGS_NAME}), with its secrets` },
+      },
+      timeTakenMs: tookMs,
+      consistency: { method: 'exported_snapshot', isolation: 'repeatable_read', snapshotId: said.snapshot, till: 'whole files first, then each log up to its last complete record, the bill-number log last' },
+      // Counts and the newest event are not personal or money figures; the money per event type is sealed to the key.
+      controlTotals: { rowCounts: said.rowCounts, maxEventSeq: said.maxEventSeq, totalRows },
+      sealedValueTotals: sealJson(said.valueTotals, pub),
+      schemaVersion: said.migrations.at(-1) ?? 'unknown',
+      migrationsApplied: said.migrations.length,
+    };
+    writeRecord(deps, manifestPath, manifest, false);
+    for (const n of [...Object.values(names), p.basename(manifestPath)]) fs.chmodSync(p.join(dir, n), 0o444);
+    return { ok: true, manifestPath, manifest, dumpPath: p.join(dir, names.database) };
+  } catch (e) {
+    return { ok: false, problem: `the backup stopped: ${e?.code ?? (e instanceof Error ? e.message : String(e))}. Anything already on the drive has no manifest, so it is never mistaken for a backup` };
+  } finally {
+    // The plain working copies only — on this computer's own disk, never the drive. The backup is the encrypted files.
+    fs.rmSync(scratch, { recursive: true, force: true });
   }
-
-  const sha256 = hashFile(fs, dumpPath);
-  const totalRows = Object.values(said.rowCounts).reduce((a, b) => a + b, 0);
-  const manifest = {
-    kind: 'store-computer-backup',
-    version: 1,
-    backupId,
-    project: PROJECT,
-    database: ctx.database,
-    computer: deps.platform === 'win32' ? 'Windows' : 'Linux',
-    at: at.toISOString(),
-    file: p.basename(dumpPath),
-    folder: dir,
-    sizeBytes: bytes,
-    sha256,
-    checksumAlgorithm: 'sha256',
-    timeTakenMs: tookMs,
-    format: 'pg_dump custom format, taken inside the database container',
-    // GT-07: the dump and these totals are one database moment.
-    consistency: { method: 'exported_snapshot', isolation: 'repeatable_read', snapshotId: said.snapshot },
-    controlTotals: { rowCounts: said.rowCounts, valueTotals: said.valueTotals, maxEventSeq: said.maxEventSeq, totalRows },
-    schemaVersion: said.migrations.at(-1) ?? 'unknown',
-    migrationsApplied: said.migrations.length,
-  };
-  writeRecord(deps, manifestPath, manifest, false);
-  fs.chmodSync(dumpPath, 0o444);
-  fs.chmodSync(manifestPath, 0o444);
-  return { ok: true, dumpPath, manifestPath, manifest };
 }
 
-/** `backup --to <folder>`: one backup of this copy onto the owner's drive. */
+/** What a backup's manifest says, in the owner's words: three lines for the screen. */
+export function backupLines(m) {
+  const t = m.parts?.files?.till;
+  return [
+    `  Database: ${Object.keys(m.controlTotals.rowCounts).length} tables, ${m.controlTotals.totalRows} rows${m.controlTotals.maxEventSeq === null ? '' : `; the newest event is number ${m.controlTotals.maxEventSeq}`}.`,
+    t === undefined || !t.installed ? "  The till's data: there is no till on this computer yet." : `  The till's data: ${t.files} file(s) — ${t.saleRecords} sale record(s), ${t.deadLetterRecords} dead-letter record(s)${t.pinCredentials ? ', the staff PIN checks' : ''}${t.inFlightBytes > 0 ? ' (a record being written that moment goes in the next backup)' : ''}.`,
+    `  This copy's settings (with its keys): encrypted copy included. Encrypted to backup key ${m.encryption.keyId}.`,
+  ];
+}
+
+/** `backup --to <folder>`: one encrypted backup of everything onto a backup drive (the owner's daily drive, on demand). */
 export async function backup(deps, opts) {
   const { say } = deps;
   const to = typeof opts.to === 'string' ? opts.to.trim() : '';
@@ -317,52 +470,146 @@ export async function backup(deps, opts) {
   const dir = pathFor(deps.platform).resolve(to);
   const refusal = folderRefusal(deps, dir);
   if (refusal !== undefined) { say(`REFUSED — ${refusal}`); return 2; }
+  if (!dataFolderReady(deps, ctx)) return 2;
   if (!dockerReady(deps)) return 1;
+  const key = await ensureBackupKey(deps, ctx.L);
+  if (key === undefined) return 1;
 
-  say(`Backing up this copy (${PROJECT}) onto ${dir}. The database keeps working while it runs.`);
-  const b = takeStoreBackup(deps, ctx, dir);
+  say(`Backing up this copy (${PROJECT}) — the database, the till's data and the settings — onto ${dir}, encrypted. The shop keeps working while it runs.`);
+  const b = takeStoreBackup(deps, ctx, dir, key);
+  recordBackupOutcome(deps, ctx.L, { kind: 'on-demand', to: dir, ...b });
   if (!b.ok) { say(`NOT DONE — ${b.problem}`); say('  What to do: run "pnpm run store-computer -- up", then this again. If it says this again, send me a photo of this screen.'); return 1; }
   const m = b.manifest;
-  say(`BACKUP DONE — ${m.file}, ${size(m.sizeBytes)}, in ${mins(m.timeTakenMs)}.`);
-  say(`  Its SHA-256 (the file's own fingerprint, not a secret): ${m.sha256}`);
-  say(`  ${Object.keys(m.controlTotals.rowCounts).length} tables, ${m.controlTotals.totalRows} rows in all${m.controlTotals.maxEventSeq === null ? '' : `; the newest event is number ${m.controlTotals.maxEventSeq}`}.`);
+  say(`BACKUP DONE — ${m.backupId}, ${size(m.parts.database.sizeBytes + m.parts.files.sizeBytes + m.parts.settings.sizeBytes)} encrypted, in ${mins(m.timeTakenMs)}.`);
+  for (const l of backupLines(m)) say(l);
+  say(`  Its SHA-256 (the database file's own fingerprint, not a secret): ${m.sha256}`);
   say(`  Manifest: ${b.manifestPath}`);
-  say('  Both files are now read-only. Nothing was deleted.');
+  say('  Every file is now read-only and encrypted; nothing plain is on the drive. Nothing was deleted.');
   say(`Next: pnpm run store-computer -- restore-check --from ${b.manifestPath}`);
   return 0;
 }
 
+// ── The backup log (append-only) and the last outcome, for backup-status and the red banner ─────────────────────────
+
+export const LAST_BACKUP = 'last-backup.json';
+export const BACKUP_LOG = 'backup-log.jsonl';
+
+/**
+ * Write down how a backup went: one line appended to the backup log (never rewritten — hard rule #6) and the latest
+ * success and the latest attempt in last-backup.json (replaced whole, temp file then rename). No secret is in either.
+ */
+export function recordBackupOutcome(deps, L, b) {
+  if (L.mode !== 'data-folder') return;
+  const { fs } = deps;
+  const p = pathFor(deps.platform);
+  fs.mkdirSync(L.backupDir, { recursive: true });
+  const at = deps.now().toISOString();
+  const entry = b.ok
+    ? { at, kind: b.kind, ok: true, to: b.to, backupId: b.manifest.backupId, manifest: b.manifestPath, bytes: b.manifest.parts.database.sizeBytes + b.manifest.parts.files.sizeBytes + b.manifest.parts.settings.sizeBytes, timeTakenMs: b.manifest.timeTakenMs }
+    : { at, kind: b.kind, ok: false, to: b.to, problem: b.problem };
+  fs.appendFileSync(p.join(L.backupDir, BACKUP_LOG), `${JSON.stringify(entry)}\n`, 'utf8');
+  const last = readJson(fs, p.join(L.backupDir, LAST_BACKUP)) ?? {};
+  const next = { ...last, lastAttempt: entry, ...(b.ok ? { lastSuccess: entry } : {}) };
+  const tmp = p.join(L.backupDir, `${LAST_BACKUP}.tmp`);
+  fs.writeFileSync(tmp, `${JSON.stringify(next, null, 2)}\n`, 'utf8');
+  fs.renameSync(tmp, p.join(L.backupDir, LAST_BACKUP));
+}
+
+/** The last outcome, or undefined. */
+export const readLastBackup = (deps, L) => (L.mode === 'data-folder' ? readJson(deps.fs, pathFor(deps.platform).join(L.backupDir, LAST_BACKUP)) : undefined);
+
 // ── restore-check ─────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** The backup file and its manifest, from either name. */
+/** The backup's manifest (and, for a first-generation backup, its plain dump), from any of its file names. */
 export function backupFiles(platform, from) {
   const p = pathFor(platform);
   const abs = p.resolve(from);
+  for (const ext of ['.dump.sreenc', '.files.sreenc', '.settings.sreenc']) {
+    if (abs.endsWith(ext)) return { manifestPath: `${abs.slice(0, -ext.length)}.manifest.json`, dumpPath: `${abs.slice(0, -ext.length)}.dump` };
+  }
   if (abs.endsWith('.manifest.json')) return { manifestPath: abs, dumpPath: `${abs.slice(0, -'.manifest.json'.length)}.dump` };
   if (abs.endsWith('.dump')) return { manifestPath: `${abs.slice(0, -'.dump'.length)}.manifest.json`, dumpPath: abs };
   return undefined;
 }
 
-/** Is this a manifest `backup` wrote? Returns the problem, or undefined. */
+/** Is this a manifest `backup` wrote (the first, plain generation, or the encrypted one)? Returns the problem, or undefined. */
 export function manifestProblem(m) {
   if (m === null || typeof m !== 'object') return 'it is not a backup manifest';
-  if (m.kind !== 'store-computer-backup' || m.version !== 1) return 'it is not a manifest written by "store-computer backup"';
+  if (m.kind !== 'store-computer-backup' || (m.version !== 1 && m.version !== 2)) return 'it is not a manifest written by "store-computer backup"';
   if (typeof m.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(m.sha256)) return 'it has no SHA-256 for the backup file';
   if (!Number.isInteger(m.sizeBytes) || m.sizeBytes <= 0) return 'it has no size for the backup file';
   const t = m.controlTotals;
   if (t === null || typeof t !== 'object' || t.rowCounts === null || typeof t.rowCounts !== 'object' || Object.keys(t.rowCounts).length === 0) return 'it has no row counts to reconcile against';
+  if (m.version === 2) {
+    if (typeof m.encryption?.keyId !== 'string') return 'it does not say which key it was encrypted to';
+    for (const part of ['database', 'files', 'settings']) {
+      const x = m.parts?.[part];
+      if (typeof x?.file !== 'string' || !/^[0-9a-f]{64}$/.test(String(x.sha256)) || !/^[0-9a-f]{64}$/.test(String(x.plainSha256))) return `it does not describe its ${part} part`;
+    }
+  }
   return undefined;
 }
 
+/** Which of an encrypted backup's files are missing or not the files that were written. Needs no passphrase. */
+export function changedParts(deps, dir, manifest) {
+  const p = pathFor(deps.platform);
+  const out = [];
+  for (const [name, part] of Object.entries(manifest.parts)) {
+    const f = p.join(dir, part.file);
+    if (!deps.fs.existsSync(f)) { out.push(`the ${name} file ${part.file} is not there`); continue; }
+    const bytes = deps.fs.statSync(f).size;
+    if (bytes !== part.sizeBytes) out.push(`the ${name} file is ${bytes} bytes; the manifest says ${part.sizeBytes}`);
+    else if (hashFile(deps.fs, f) !== part.sha256) out.push(`the ${name} file's SHA-256 is not the one in the manifest`);
+  }
+  return out;
+}
+
 /**
- * The restore check without the talking: returns the record it wrote (with `recordPath`). `ctx` is what `ready` returned.
- * Order: the file must be the file that was taken → a NEW scratch database → restore → reconcile → the record on the drive
- * → only then the scratch database is dropped.
+ * Restore one dump file into a NEW scratch database and count it. Returns { scratch, differences, reconciled } — the
+ * caller writes the record and only then drops the scratch database (`dropScratch`).
  */
-export function runRestoreCheck(deps, ctx, files) {
+function restoreIntoScratch(deps, ctx, dumpFile, expected) {
+  const { fs } = deps;
+  const list = deps.spawn('docker', dbExec('psql', [...psqlArgs(ctx.user, 'postgres'), '-c', 'SELECT datname FROM pg_database'], ctx.L), { cwd: ctx.L.composeDir, env: ctx.env });
+  if (list.error !== undefined || list.status !== 0) return { differences: ['this copy\'s database did not answer (run: pnpm run store-computer -- up)'], outcome: 'restore_not_accepted' };
+  const scratch = assertScratch(scratchName(deps.now(), lines(list.stdout)), ctx.settings);
+  const made = deps.spawn('docker', dbExec('psql', [...psqlArgs(ctx.user, 'postgres'), '-c', `CREATE DATABASE "${assertScratch(scratch, ctx.settings)}"`], ctx.L), { cwd: ctx.L.composeDir, env: ctx.env });
+  if (made.error !== undefined || made.status !== 0) return { scratch, made: false, differences: [`the scratch database could not be made: ${firstProblem(made.stderr) || 'no reason given'}`], outcome: 'restore_not_accepted' };
+  try {
+    const fd = fs.openSync(dumpFile, 'r');
+    let restored;
+    try {
+      restored = deps.spawn('docker', dbExec('pg_restore', ['-U', ctx.user, '-d', assertScratch(scratch, ctx.settings), '--no-owner', '--no-privileges'], ctx.L), { cwd: ctx.L.composeDir, env: ctx.env, stdio: [fd, 'pipe', 'pipe'] });
+    } finally { fs.closeSync(fd); }
+    // Reconcile — the step that makes this a restore rather than a hope.
+    const counted = deps.spawn('docker', dbExec('psql', psqlArgs(ctx.user, assertScratch(scratch, ctx.settings)), ctx.L), { cwd: ctx.L.composeDir, env: ctx.env, input: `${totalsScript().join('\n')}\n` });
+    const got = parseTotals(counted.stdout ?? '');
+    const differences = [];
+    if (restored.error !== undefined || restored.status !== 0) differences.push(`the restore program ended ${restored.status ?? restored.error?.code}: ${firstProblem(restored.stderr) || 'no reason given'}`);
+    if (counted.error !== undefined || counted.status !== 0) differences.push('the restored copy could not be counted');
+    else differences.push(...reconcile(expected, got));
+    return { scratch, made: true, differences, reconciled: { tables: Object.keys(got.rowCounts).length, rows: Object.values(got.rowCounts).reduce((a, b) => a + b, 0), maxEventSeq: got.maxEventSeq } };
+  } catch (e) {
+    return { scratch, made: true, differences: [`the restore stopped: ${e instanceof Error ? e.message : String(e)}`] };
+  }
+}
+
+function dropScratch(deps, ctx, scratch) {
+  const drop = deps.spawn('docker', dbExec('psql', [...psqlArgs(ctx.user, 'postgres'), '-c', `DROP DATABASE "${assertScratch(scratch, ctx.settings)}"`], ctx.L), { cwd: ctx.L.composeDir, env: ctx.env });
+  return drop.error === undefined && drop.status === 0;
+}
+
+/**
+ * The restore check without the talking: returns the record it wrote (with `recordPath`). `ctx` is what `ready` returned;
+ * `privateKey` the unlocked backup key (an encrypted backup cannot be opened without it).
+ * Order: the files must be the files that were taken → (encrypted) opened into the scratch folder → a NEW scratch database
+ * → restore → reconcile → the till's data checked file by file → the settings copy opened → the record on the drive →
+ * only then the scratch database is dropped and the plain working copies removed.
+ */
+export function runRestoreCheck(deps, ctx, files, privateKey) {
   const { fs } = deps;
   const p = pathFor(deps.platform);
-  const dir = p.dirname(files.dumpPath);
+  const dir = p.dirname(files.manifestPath);
   const at = deps.now();
   const t0 = at.getTime();
   const recordPath = freshName(deps, dir, `restore-check-${stampOf(at)}`, '.json');
@@ -373,78 +620,128 @@ export function runRestoreCheck(deps, ctx, files) {
     return { ...full, recordPath };
   };
 
-  let manifest;
-  try { manifest = JSON.parse(fs.readFileSync(files.manifestPath, 'utf8')); } catch { manifest = undefined; }
+  const manifest = readJson(fs, files.manifestPath);
   const mp = manifest === undefined ? 'it could not be read' : manifestProblem(manifest);
   if (mp !== undefined) return finish({ outcome: 'refused_no_manifest', differences: [`the manifest ${p.basename(files.manifestPath)}: ${mp}`] });
   base.backupId = manifest.backupId;
   base.sha256 = manifest.sha256;
-  if (!fs.existsSync(files.dumpPath)) return finish({ outcome: 'refused_file_changed', differences: [`the backup file ${p.basename(files.dumpPath)} is not there`] });
 
-  // 1. The file must still be the file that was taken.
-  const bytes = fs.statSync(files.dumpPath).size;
-  const sha256 = hashFile(fs, files.dumpPath);
-  const changed = [];
-  if (bytes !== manifest.sizeBytes) changed.push(`the file is ${bytes} bytes; the manifest says ${manifest.sizeBytes}`);
-  if (sha256 !== manifest.sha256) changed.push(`the file's SHA-256 is ${sha256}; the manifest says ${manifest.sha256}`);
-  if (changed.length > 0) return finish({ outcome: 'refused_file_changed', differences: changed, detail: 'the backup file is not the file that was taken — it was not restored, and it must not be relied on' });
-
-  // 2. A NEW scratch database, by a name that can only be a scratch name.
-  const list = deps.spawn('docker', dbExec('psql', [...psqlArgs(ctx.user, 'postgres'), '-c', 'SELECT datname FROM pg_database']), { cwd: ctx.L.composeDir, env: ctx.env });
-  if (list.error !== undefined || list.status !== 0) return finish({ outcome: 'restore_not_accepted', differences: ['this copy\'s database did not answer (run: pnpm run store-computer -- up)'] });
-  const scratch = assertScratch(scratchName(deps.now(), lines(list.stdout)), ctx.settings);
-  base.scratchDatabase = scratch;
-  const made = deps.spawn('docker', dbExec('psql', [...psqlArgs(ctx.user, 'postgres'), '-c', `CREATE DATABASE "${assertScratch(scratch, ctx.settings)}"`]), { cwd: ctx.L.composeDir, env: ctx.env });
-  if (made.error !== undefined || made.status !== 0) return finish({ outcome: 'restore_not_accepted', differences: [`the scratch database could not be made: ${firstProblem(made.stderr) || 'no reason given'}`], scratchDropped: 'not made' });
-
-  // 3. Restore FROM THE FILE ON THE DRIVE into the scratch database (streamed in, never through this program's memory).
-  let record;
-  try {
-    const fd = fs.openSync(files.dumpPath, 'r');
-    let restored;
-    try {
-      restored = deps.spawn('docker', dbExec('pg_restore', ['-U', ctx.user, '-d', assertScratch(scratch, ctx.settings), '--no-owner', '--no-privileges']), { cwd: ctx.L.composeDir, env: ctx.env, stdio: [fd, 'pipe', 'pipe'] });
-    } finally { fs.closeSync(fd); }
-    // 4. Reconcile — the step that makes this a restore rather than a hope.
-    const counted = deps.spawn('docker', dbExec('psql', psqlArgs(ctx.user, assertScratch(scratch, ctx.settings))), { cwd: ctx.L.composeDir, env: ctx.env, input: `${totalsScript().join('\n')}\n` });
-    const got = parseTotals(counted.stdout ?? '');
-    const differences = [];
-    if (restored.error !== undefined || restored.status !== 0) differences.push(`the restore program ended ${restored.status ?? restored.error?.code}: ${firstProblem(restored.stderr) || 'no reason given'}`);
-    if (counted.error !== undefined || counted.status !== 0) differences.push('the restored copy could not be counted');
-    else differences.push(...reconcile(manifest.controlTotals, got));
-    record = {
-      outcome: differences.length === 0 ? 'restored_and_reconciled' : 'restore_not_accepted',
-      differences,
-      reconciled: { tables: Object.keys(got.rowCounts).length, rows: Object.values(got.rowCounts).reduce((a, b) => a + b, 0), maxEventSeq: got.maxEventSeq },
-      detail: differences.length === 0
-        ? 'restored from the file on the backup drive into a new scratch database, and every table\'s rows, the money and the newest event match the manifest exactly'
-        : 'the restore did NOT reconcile with the manifest — do not rely on this backup',
-      scratchDropped: 'after this record',
-    };
-  } catch (e) {
-    record = { outcome: 'restore_not_accepted', differences: [`the restore stopped: ${e instanceof Error ? e.message : String(e)}`], scratchDropped: 'after this record' };
+  // ── The first, plain generation (before OB-249): the dump itself on the drive ────────────────────────────────
+  if (manifest.version === 1) {
+    if (!fs.existsSync(files.dumpPath)) return finish({ outcome: 'refused_file_changed', differences: [`the backup file ${p.basename(files.dumpPath)} is not there`] });
+    const bytes = fs.statSync(files.dumpPath).size;
+    const sha256 = hashFile(fs, files.dumpPath);
+    const changed = [];
+    if (bytes !== manifest.sizeBytes) changed.push(`the file is ${bytes} bytes; the manifest says ${manifest.sizeBytes}`);
+    if (sha256 !== manifest.sha256) changed.push(`the file's SHA-256 is ${sha256}; the manifest says ${manifest.sha256}`);
+    if (changed.length > 0) return finish({ outcome: 'refused_file_changed', differences: changed, detail: 'the backup file is not the file that was taken — it was not restored, and it must not be relied on' });
+    const r = restoreIntoScratch(deps, ctx, files.dumpPath, manifest.controlTotals);
+    if (r.scratch !== undefined) base.scratchDatabase = r.scratch;
+    const written = finish(r.outcome === 'restore_not_accepted' && r.made !== true
+      ? { outcome: 'restore_not_accepted', differences: r.differences, scratchDropped: 'not made' }
+      : {
+        outcome: r.differences.length === 0 ? 'restored_and_reconciled' : 'restore_not_accepted', differences: r.differences, reconciled: r.reconciled,
+        detail: r.differences.length === 0 ? 'restored from the file on the backup drive into a new scratch database, and every table\'s rows, the money and the newest event match the manifest exactly' : 'the restore did NOT reconcile with the manifest — do not rely on this backup',
+        scratchDropped: 'after this record',
+      });
+    return r.made === true ? { ...written, dropped: dropScratch(deps, ctx, r.scratch) } : written;
   }
-  // 5. The result is on the drive first; only then is the scratch database — and only it — dropped.
-  const written = finish(record);
-  const drop = deps.spawn('docker', dbExec('psql', [...psqlArgs(ctx.user, 'postgres'), '-c', `DROP DATABASE "${assertScratch(scratch, ctx.settings)}"`]), { cwd: ctx.L.composeDir, env: ctx.env });
-  return { ...written, dropped: drop.error === undefined && drop.status === 0 };
+
+  // ── The encrypted generation (OB-249) ─────────────────────────────────────────────────────────────────────────
+  base.backupFile = manifest.file;
+  base.encryption = { keyId: manifest.encryption.keyId };
+  const changed = changedParts(deps, dir, manifest);
+  if (changed.length > 0) return finish({ outcome: 'refused_file_changed', differences: changed, detail: 'the backup\'s files are not the files that were taken — nothing was opened or restored, and the backup must not be relied on' });
+  if (privateKey === undefined) return finish({ outcome: 'not_opened', differences: ['the backup passphrase was not given, so the encrypted backup could not be opened'] });
+
+  const work = p.join(ctx.L.scratchDir, `restore-check-${stampOf(at)}-${Math.floor(t0 % 100000)}`);
+  fs.mkdirSync(work, { recursive: true });
+  try {
+    const open = (part, purpose) => {
+      const out = p.join(work, purpose);
+      const d = decryptFile(fs, p.join(dir, manifest.parts[part].file), out, privateKey, { expectPurpose: purpose });
+      if (!d.ok) return { problem: `the ${part} file: ${d.problem}` };
+      if (d.plainSha256 !== manifest.parts[part].plainSha256) return { problem: `the ${part} file opened, but what is inside is not what was backed up` };
+      return { file: out };
+    };
+    const totals = openJson(manifest.sealedValueTotals, privateKey);
+    const db = open('database', 'database');
+    const bundled = open('files', 'files');
+    const settingsCopy = open('settings', 'settings');
+    const notOpened = [db, bundled, settingsCopy].filter((x) => x.problem !== undefined).map((x) => x.problem);
+    if (!totals.ok) notOpened.push(totals.problem);
+    if (notOpened.length > 0) return finish({ outcome: 'not_opened', differences: notOpened, detail: 'the backup did not open with this key — nothing was restored' });
+
+    // The till's data: every file's SHA-256 and every log's whole records, checked inside the bundle (never restored).
+    const tillCheck = checkBundle(fs, bundled.file);
+    const tillPart = manifest.parts.files.till ?? {};
+    const tillFound = tillSummary(tillCheck.files);
+    const tillProblems = tillCheck.problems.map((x) => `the till's data: ${x}`);
+    if (tillCheck.ok && (tillFound.saleRecords !== tillPart.saleRecords || tillFound.deadLetterRecords !== tillPart.deadLetterRecords)) tillProblems.push(`the till's data: ${tillFound.saleRecords} sale and ${tillFound.deadLetterRecords} dead-letter record(s) found; the manifest says ${tillPart.saleRecords} and ${tillPart.deadLetterRecords}`);
+
+    // The settings copy: it opens, it holds this copy's secrets (names only — values are never read out).
+    const copied = parseEnvText(fs.readFileSync(settingsCopy.file, 'utf8'));
+    const fpCopy = fingerprintsOf(copied);
+    const fpNow = fingerprintsOf(ctx.settings);
+    const secretsInCopy = Object.keys(fpCopy.fingerprints).length;
+    const settingsProblems = secretsInCopy === FINGERPRINT_KEYS.length ? [] : [`the settings copy holds ${secretsInCopy} of the ${FINGERPRINT_KEYS.length} secrets`];
+    const sameAsNow = FINGERPRINT_KEYS.every((k) => fpCopy.fingerprints[k] !== undefined && fpCopy.fingerprints[k] === fpNow.fingerprints[k]);
+
+    const r = restoreIntoScratch(deps, ctx, db.file, { ...manifest.controlTotals, valueTotals: totals.value });
+    if (r.scratch !== undefined) base.scratchDatabase = r.scratch;
+    const differences = [...r.differences, ...tillProblems, ...settingsProblems];
+    const record = r.outcome === 'restore_not_accepted' && r.made !== true
+      ? { outcome: 'restore_not_accepted', differences, scratchDropped: 'not made' }
+      : {
+        outcome: differences.length === 0 ? 'restored_and_reconciled' : 'restore_not_accepted',
+        differences,
+        reconciled: r.reconciled,
+        till: { checked: tillCheck.ok, files: tillCheck.files.length, saleRecords: tillFound.saleRecords, deadLetterRecords: tillFound.deadLetterRecords, pinCredentials: tillFound.pinCredentials },
+        settings: { opened: true, secretsInCopy, sameAsThisComputer: sameAsNow },
+        detail: differences.length === 0
+          ? 'opened with the backup passphrase; the database restored into a new scratch database and every table\'s rows, the money and the newest event match the manifest exactly; every till file matches its fingerprint and every log holds its whole records; the settings copy opens and holds every secret'
+          : 'the backup did NOT check out — do not rely on it',
+        scratchDropped: 'after this record',
+      };
+    const written = finish(record);
+    return r.made === true ? { ...written, dropped: dropScratch(deps, ctx, r.scratch) } : written;
+  } finally {
+    // The plain working copies only, on this computer's own disk. The backup on the drive is untouched.
+    fs.rmSync(work, { recursive: true, force: true });
+  }
 }
 
-/** `restore-check --from <backup file>`: prove a backup restores and reconciles. */
+/** `restore-check --from <backup file>`: prove a backup opens, restores and reconciles. */
 export async function restoreCheck(deps, opts) {
   const { say } = deps;
+  const p = pathFor(deps.platform);
   const from = typeof opts.from === 'string' ? opts.from.trim() : '';
   const files = from === '' ? undefined : backupFiles(deps.platform, from);
-  if (files === undefined) { say('REFUSED — name the backup to check: pnpm run store-computer -- restore-check --from E:\\sre-real\\<the .manifest.json or .dump file backup wrote>'); return 2; }
+  if (files === undefined) { say('REFUSED — name the backup to check: pnpm run store-computer -- restore-check --from E:\\sre-real\\<the .manifest.json file backup wrote>'); return 2; }
   const ctx = ready(deps);
   if (ctx.code !== undefined) return ctx.code;
   if (!deps.fs.existsSync(files.manifestPath) && !deps.fs.existsSync(files.dumpPath)) { say(`REFUSED — there is no backup at ${from}. Is your backup drive plugged in, and is its letter right?`); return 2; }
   if (!dockerReady(deps)) return 1;
 
-  say(`Checking the backup ${pathFor(deps.platform).basename(files.dumpPath)}: restoring it into a NEW scratch database inside this copy's database container (never into ${ctx.database}), then counting.`);
-  const r = runRestoreCheck(deps, ctx, files);
+  const manifest = readJson(deps.fs, files.manifestPath);
+  let privateKey;
+  if (manifest?.version === 2 && manifestProblem(manifest) === undefined) {
+    const dir = p.dirname(files.manifestPath);
+    const changed = changedParts(deps, dir, manifest);
+    if (changed.length === 0) {
+      const k = keyForBackup(deps, ctx.L, dir, manifest.encryption.keyId);
+      if (k.key === undefined) { say(`NOT CHECKED — ${k.problem}. Nothing was opened.`); return 1; }
+      const u = await unlockWithPassphrase(deps, k.key, 'open this backup');
+      if (!u.ok) { say(`NOT CHECKED — ${u.problem}. Nothing was opened or restored.`); }
+      else privateKey = u.privateKey;
+    }
+  }
+  say(`Checking the backup ${manifest?.backupId ?? p.basename(files.dumpPath)}: opening it, restoring the database into a NEW scratch database inside this copy's database container (never into ${ctx.database}), counting, and checking the till's data and the settings copy.`);
+  const r = runRestoreCheck(deps, ctx, files, privateKey);
   say(restoreSummary(r));
   for (const d of r.differences ?? []) say(`  difference: ${d}`);
+  if (r.till !== undefined) say(`  The till's data: ${r.till.files} file(s) checked, ${r.till.saleRecords} sale record(s), ${r.till.deadLetterRecords} dead-letter record(s)${r.till.pinCredentials ? ', the staff PIN checks' : ''} — ${r.till.checked ? 'every one whole' : 'NOT all whole'}.`);
+  if (r.settings !== undefined) say(`  This copy's settings: the encrypted copy opens and holds ${r.settings.secretsInCopy} secret(s)${r.settings.sameAsThisComputer ? ', the same as this computer has now' : ' (they differ from this computer\'s now — it was re-keyed since)'}. No value was shown.`);
   say(`  Record: ${r.recordPath}  (read-only, beside the backup; no secret is in it)`);
   if (r.scratchDatabase !== undefined) {
     say(r.dropped ? `  The scratch database ${r.scratchDatabase} was removed after the record was written. ${ctx.database} was never touched.`
@@ -458,6 +755,7 @@ function restoreSummary(r) {
   if (r.outcome === 'restored_and_reconciled') return `restored_and_reconciled — ${r.reconciled.tables} tables, ${r.reconciled.rows} rows, every count and the money match the manifest (${mins(r.timeTakenMs)}).`;
   if (r.outcome === 'refused_file_changed') return 'NOT ACCEPTED — the backup file is not the file that was taken. It was not restored. Do not rely on it; take a new backup.';
   if (r.outcome === 'refused_no_manifest') return 'NOT ACCEPTED — that backup has no usable manifest, so there is nothing to reconcile against. It was not restored.';
+  if (r.outcome === 'not_opened') return 'NOT ACCEPTED — the encrypted backup was not opened, so nothing was restored. The exact reason:';
   return 'NOT ACCEPTED — the restored copy does not match the manifest. The exact differences:';
 }
 
@@ -606,10 +904,10 @@ export async function drill(deps, opts) {
     return 0;
   }
 
+  if (!dataFolderReady(deps, ctx)) return 2;
   if (!dockerReady(deps)) return 1;
   const demo = lines(deps.spawn('docker', ['ps', '-a', '--filter', `label=com.docker.compose.project=${DEMO_PROJECT}`, '--format', '{{.Names}}'], {}).stdout);
   if (demo.length > 0) { say(`REFUSED — the demo's containers (project ${DEMO_PROJECT}) are on this computer. The demo never runs on the store computer (gate G4). Nothing was changed.`); return 2; }
-
   const at = deps.now();
   const port = ctx.settings.API_PORT || '8081';
   const record = {
@@ -640,7 +938,7 @@ export async function drill(deps, opts) {
     return { ok: true };
   };
   const appliedNow = () => {
-    const r = deps.spawn('docker', dbExec('psql', psqlArgs(ctx.user, ctx.database)), { cwd: ctx.L.composeDir, env: ctx.env, input: `${totalsScript()[3]}\n` });
+    const r = deps.spawn('docker', dbExec('psql', psqlArgs(ctx.user, ctx.database), ctx.L), { cwd: ctx.L.composeDir, env: ctx.env, input: `${totalsScript()[3]}\n` });
     return r.status === 0 ? parseTotals(r.stdout ?? '').migrations : undefined;
   };
 
@@ -652,15 +950,22 @@ export async function drill(deps, opts) {
     return 2;
   }
 
+  // The backup is encrypted, and step 2 opens it: the passphrase is asked for now, before any step is timed.
+  const key = await ensureBackupKey(deps, ctx.L);
+  if (key === undefined) { say('REFUSED — the drill needs the backup passphrase. Nothing was changed.'); return 2; }
+  const opened = await unlockWithPassphrase(deps, key, 'check the drill\'s backup');
+  if (!opened.ok) { say(`REFUSED — ${opened.problem}. Nothing was changed.`); return 2; }
+
   let manifestPath;
   const b = await timed('backup', 'backup onto the backup drive', () => {
-    const r = takeStoreBackup(deps, ctx, plan.to);
+    const r = takeStoreBackup(deps, ctx, plan.to, key);
+    recordBackupOutcome(deps, ctx.L, { kind: 'drill', to: plan.to, ...r });
     manifestPath = r.manifestPath;
     return r.ok ? { ok: true, detail: `${r.manifest.file}, ${size(r.manifest.sizeBytes)}` } : { ok: false, detail: r.problem };
   });
   if (b.ok) {
     await timed('restore', 'restore into a new scratch database and reconcile', () => {
-      const r = runRestoreCheck(deps, ctx, backupFiles(deps.platform, manifestPath));
+      const r = runRestoreCheck(deps, ctx, backupFiles(deps.platform, manifestPath), opened.privateKey);
       record.restoreCheckRecord = r.recordPath;
       const fine = r.outcome === 'restored_and_reconciled' && r.dropped !== false;
       return { ok: fine, detail: fine ? 'restored_and_reconciled' : `${r.outcome}${r.differences.length > 0 ? `: ${r.differences.join('; ')}` : ''}${r.dropped === false ? '; the scratch database could not be removed' : ''}` };
@@ -677,7 +982,7 @@ export async function drill(deps, opts) {
       return { ok: true, detail: 'the previous release is running on this copy\'s current database' };
     });
     // Forward again ALWAYS once the previous release was tried: the shop's copy must end on this release.
-    await timed('rollForward', 'put this release back and wait for READY', () => startRelease(ctx.L.composeDir, plan.currentCompose, SETTINGS_NAME));
+    await timed('rollForward', 'put this release back and wait for READY', () => startRelease(ctx.L.composeDir, plan.currentCompose, ctx.L.mode === 'data-folder' ? ctx.L.settings : SETTINGS_NAME));
   }
 
   const verdict = drillVerdict(record.steps);

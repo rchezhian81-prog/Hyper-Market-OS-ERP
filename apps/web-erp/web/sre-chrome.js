@@ -40,6 +40,7 @@
       noRoles: 'This store computer has no role register, so no screens can be offered.',
       inList: '{n} in the list',
       workspaceWord: 'Workspace', branchWorkspace: 'Branch workspace', findScreen: 'Find a screen', noScreenMatches: 'No screen matches',
+      storeAlarm: 'The store computer needs you',
     },
     ta: {
       staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:',
@@ -54,6 +55,7 @@
       noRoles: 'இந்தக் கடை கணினியில் பங்கு பதிவேடு இல்லை, எனவே திரைகள் வழங்க முடியாது.',
       inList: 'பட்டியலில் {n}',
       workspaceWord: 'பணியிடம்', branchWorkspace: 'கிளைப் பணியிடம்', findScreen: 'ஒரு திரையைத் தேடு', noScreenMatches: 'பொருந்தும் திரை இல்லை',
+      storeAlarm: 'கடை கணினிக்கு உங்கள் கவனம் தேவை',
     },
   };
   const lang = () => (document.documentElement.lang === 'ta' ? 'ta' : 'en');
@@ -144,6 +146,40 @@
       clearTimeout(timer);
     }
     paintBadge();
+    paintStoreComputer();
+  }
+
+  // ── The store computer's own red light (audit row 6 · P-08 · P-03) ───────────────────────────────
+  // The store computer checks itself every 15 minutes (store-computer status: the last backup, the till's queue, the
+  // disk, the database) and its box hands the answer over with the sync status. Anything wrong is a RED banner at the
+  // top of every office page — the manager's and owner's home included — in the reader's language, with the words, the
+  // shape and the colour. It does not fade and it cannot be dismissed: it goes when the store computer says it is fixed.
+  // No banner when the box reports no store-computer check (a box that is not the shop's store computer).
+  function paintStoreComputer() {
+    let strip = byId('sre-store-alarm');
+    const sc = box.reachable && box.status && typeof box.status.storeComputer === 'object' ? box.status.storeComputer : null;
+    const alerts = sc && Array.isArray(sc.alerts) ? sc.alerts : [];
+    if (alerts.length === 0) { if (strip) strip.hidden = true; return; }
+    if (!strip) {
+      strip = document.createElement('div');
+      strip.id = 'sre-store-alarm';
+      strip.className = 'sre-alarm';
+      strip.setAttribute('role', 'alert');
+      (byId('sre-page') ?? document.body).prepend(strip);
+    }
+    strip.hidden = false;
+    const title = t('storeAlarm');
+    const words = alerts.map((a) => (lang() === 'ta' ? a.ta : a.en) || a.en || '');
+    const key = `${lang()}|${words.join('|')}`;
+    if (strip.dataset.key === key) return;
+    strip.dataset.key = key;
+    const head = document.createElement('strong');
+    const mark = icon('triangle-alert', 22);
+    if (mark) head.append(mark);
+    head.append(document.createTextNode(title));
+    const list = document.createElement('ul');
+    for (const w of words) { const li = document.createElement('li'); li.textContent = w; list.append(li); }
+    strip.replaceChildren(head, list);
   }
 
   // ── The "served from this device's cache" strip (P-08) ──────────────────────────────────────────
@@ -756,7 +792,7 @@
   let anatomyQueued = false;
   const scheduleAnatomy = () => { if (anatomyQueued) return; anatomyQueued = true; requestAnimationFrame(() => { anatomyQueued = false; paintAnatomy(); }); };
 
-  function repaint() { paintToggle(); paintStale(); paintBadge(); paintMenu(); paintTopline(); paintUpdate(); paintAnatomy(); }
+  function repaint() { paintToggle(); paintStale(); paintBadge(); paintStoreComputer(); paintMenu(); paintTopline(); paintUpdate(); paintAnatomy(); }
 
   new MutationObserver(repaint).observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
   repaint();

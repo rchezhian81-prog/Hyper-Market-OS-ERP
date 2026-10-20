@@ -75,7 +75,7 @@ describe('fingerprints — a one-way fingerprint of each secret, never the secre
     w.said.length = 0;
     expect(await fingerprints(w.deps, {})).toBe(0);
     const s = settingsOf(w);
-    const all = [...w.said, ...records(join(w.root, 'infra', 'compose', 'records'))].join('\n');
+    const all = [...w.said, ...records(join(w.data, 'records'))].join('\n');
     expect(all).toMatch(/from \.env\.real/);
     for (const k of SECRETS) {
       expect(all.includes(s[k]!), k).toBe(false);
@@ -104,7 +104,7 @@ describe('fingerprints — a one-way fingerprint of each secret, never the secre
     const empty = demoBox({ POSTGRES_DB: 'x' });
     expect(await fingerprints(empty.deps, {})).toBe(2);
     expect(empty.said[0]).toMatch(/holds none of the secrets/);
-    for (const w of [none, both, prod, empty]) expect(existsSync(join(w.root, 'infra', 'compose', 'records'))).toBe(false);
+    for (const w of [none, both, prod, empty]) expect(existsSync(join(w.data, 'records'))).toBe(false);
   });
 
   it('--settings names the file; every run writes a NEW file, never overwriting one', async () => {
@@ -122,7 +122,7 @@ describe('fingerprints — a one-way fingerprint of each secret, never the secre
 
 describe('check 3 by fingerprints — --demo-fingerprints <file>', () => {
   const prepared = async (): Promise<World> => { const w = world(); expect(await prepare(w.deps)).toBe(0); w.said.length = 0; w.calls.length = 0; return w; };
-  const result3 = (w: World, dir = join(w.root, 'infra', 'compose', 'records')): { result: string; detail: string } => {
+  const result3 = (w: World, dir = join(w.data, 'records')): { result: string; detail: string } => {
     const rec = JSON.parse(records(dir).at(-1)!) as { results: { n: number; result: string; detail: string }[] };
     return rec.results.find((r) => r.n === 3)!;
   };
@@ -138,7 +138,7 @@ describe('check 3 by fingerprints — --demo-fingerprints <file>', () => {
     const w = await prepared();
     await check(w.deps, { by: 'Owner', demoFingerprints: file });
     expect(result3(w)).toMatchObject({ result: 'PASS', detail: expect.stringMatching(/^all 5 of this copy's secret fingerprints differ from all 5 of the demo's/) });
-    const rec = JSON.parse(records(join(w.root, 'infra', 'compose', 'records')).at(-1)!) as Record<string, unknown>;
+    const rec = JSON.parse(records(join(w.data, 'records')).at(-1)!) as Record<string, unknown>;
     expect(rec['demoFingerprintFile']).toMatch(/^fingerprints-.*\.json$/);
   });
 

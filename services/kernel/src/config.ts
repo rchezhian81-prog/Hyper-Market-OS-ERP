@@ -298,6 +298,12 @@ export const STORE_EDGE_CONFIG: readonly Spec[] = [
    */
   { key: 'EDGE_WITNESS_DIR', optional: true },
   /**
+   * Audit row 6 (P-08): the file the store computer's own check (`store-computer status`) writes — backup age, the till's
+   * queue, the disk, the containers. Read-only here: the box hands it to the office screens with its sync status, which
+   * show its red banner. Absent → no store-computer check is shown (a box that is not the shop's store computer).
+   */
+  { key: 'EDGE_STORE_COMPUTER_STATUS_FILE', optional: true },
+  /**
    * The pack the cloud last sent: products and costs, approvals, today's checklist, the assigned
    * wave and route, slots, and the store's own thresholds.
    *

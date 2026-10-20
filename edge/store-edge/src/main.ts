@@ -77,6 +77,7 @@ import { startLaneServer, LANE_HOST, type LaneServer, type LaneDayCloseHandler, 
 import { commitLocally } from './durability';
 import { readRelayItem, isRelayable, type BoxItemStatus, type DeviceAck } from '../../../packages/sync/src/device-relay';
 import { laneSyncStatus, type LaneSyncStatus, type QueueHealth } from './sync-status';
+import { watchStoreComputerStatus } from './store-computer-status-file';
 import { startScreenServer, SCREEN_HOST, type ScreenServer } from './screen-server';
 import { startDeviceServer, DEVICE_HOST, type DeviceServer } from './device-server';
 import { DeviceEnrolments, readPackDevices } from './device-enrolments';
@@ -1239,8 +1240,16 @@ export async function startEdge(
   const queuesNow = (): QueueHealth[] => [outbox, returnsOutbox, completionsOutbox, dayCloseOutbox, concessionTagsOutbox, deviceEventsOutbox, tillCashOutbox]
     .map((q) => ({ unsentCount: q.unsentCount(), deadLetterCount: q.deadLetters().length, lastSuccessAt: null }));
   const syncStatusRelay: { current?: () => LaneSyncStatus } = {};
-  const syncStatus = (): LaneSyncStatus => syncStatusRelay.current?.()
-    ?? laneSyncStatus({ configured: 'starting', queues: queuesNow(), lastPackStatus: undefined, lastContactAt: null, now: new Date().toISOString() });
+  // Audit row 6: on the shop's store computer, its own check (store-computer status) rides along with the sync status, so
+  // the office screens show its red banner. Read off the sale path, every 30 seconds; never written here.
+  const storeComputerFile = settings['EDGE_STORE_COMPUTER_STATUS_FILE'];
+  const storeComputer = storeComputerFile === undefined ? undefined : watchStoreComputerStatus({ file: storeComputerFile, read: (f) => readFile(f, 'utf8') });
+  if (storeComputer !== undefined) await storeComputer.refresh();
+  const syncStatus = (): LaneSyncStatus => {
+    const s = syncStatusRelay.current?.()
+      ?? laneSyncStatus({ configured: 'starting', queues: queuesNow(), lastPackStatus: undefined, lastContactAt: null, now: new Date().toISOString() });
+    return storeComputer === undefined ? s : { ...s, storeComputer: storeComputer.current() };
+  };
 
   // ── The till's cash, on the box (SP-4c · F10 · M14-FR-01 · M14-FR-02) ──────────────────────────────────────────
   //

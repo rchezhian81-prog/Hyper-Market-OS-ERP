@@ -20,7 +20,7 @@ describe('the store computer\'s real-data copy — prepared and checked', () => 
   it('prepare writes a file the API and the store edge would boot on, with distinct secrets, never shown', async () => {
     const w = world();
     expect(await main(['--', 'prepare'], w.deps)).toBe(0);
-    const text = readFileSync(join(w.root, 'infra', 'compose', '.env.real'), 'utf8');
+    const text = readFileSync(join(w.data, '.env.real'), 'utf8');
     const s = settingsOf(w);
     // The same reading every other tool uses gives the same values.
     expect(parseEnv(text)).toEqual(s);
@@ -49,7 +49,7 @@ describe('the store computer\'s real-data copy — prepared and checked', () => 
     expect(await main(['prepare'], w.deps)).toBe(0);
     w.said.length = 0;
     expect(await main(['check', '--by', 'Integration test'], w.deps)).toBe(1); // 3, 5 and 10 need a person here
-    const recDir = join(w.root, 'infra', 'compose', 'records');
+    const recDir = join(w.data, 'records');
     const files = readdirSync(recDir);
     expect(files).toHaveLength(1);
     const rec = JSON.parse(readFileSync(join(recDir, files[0]!), 'utf8')) as { results: { n: number; result: string; detail: string }[]; overall: string };

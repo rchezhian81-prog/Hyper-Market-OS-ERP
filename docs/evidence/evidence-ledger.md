@@ -120,7 +120,7 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 | QG-11 | PARTIALLY_WIRED | 1 | 2 | 2 | 3 | 3 | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | QG-12 | PARTIALLY_WIRED | · | 1 | 1 | · | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | MG-01 | INTEGRATION_TESTED | 7 | 3 | 1 | · | · | · | · | ✓ an integration test cites it |
-| MG-02 | INTEGRATION_TESTED | 5 | 4 | 3 | · | · | · | · | ✓ an integration test cites it |
+| MG-02 | INTEGRATION_TESTED | 5 | 5 | 3 | · | · | · | · | ✓ an integration test cites it |
 | MG-03 | INTEGRATION_TESTED | 3 | 2 | 1 | · | · | · | · | ✓ an integration test cites it |
 | MG-04 | E2E_VERIFIED | 11 | 8 | 3 | 1 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
 | MG-05 | INTEGRATION_TESTED | 7 | 9 | 6 | · | · | · | · | ✓ an integration test cites it |
@@ -128,7 +128,7 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 | MG-07 | INTEGRATION_TESTED | 2 | 6 | 4 | · | · | · | · | ✓ an integration test cites it |
 | MG-08 | INTEGRATION_TESTED | 2 | 7 | 6 | · | · | · | · | ✓ an integration test cites it |
 | MG-09 | INTEGRATION_TESTED | 3 | 4 | 3 | · | · | · | · | ✓ an integration test cites it |
-| MG-10 | INTEGRATION_TESTED | 6 | 5 | 1 | 1 | · | · | · | ✓ an integration test cites it |
+| MG-10 | INTEGRATION_TESTED | 6 | 6 | 1 | 1 | · | · | · | ✓ an integration test cites it |
 | MG-11 | E2E_VERIFIED | 2 | 4 | 3 | 1 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
 | MG-12 | INTEGRATION_TESTED | 4 | 3 | 1 | · | · | · | · | ✓ an integration test cites it |
 
