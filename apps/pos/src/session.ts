@@ -22,6 +22,7 @@ import { makeTradingDayRule, tradingDateOf } from '../../../packages/calendar/sr
 import type { SuspendedLine, SuspendedAgeAnswer } from '../../../packages/suspended-sales/src/suspended-bill';
 import { normaliseMobile } from '../../../packages/loyalty/src/mobile';
 import { withoutCardData } from '../../../packages/tender/src/tender-card-data';
+import { saleTenderRefusal } from '../../../packages/tender/src/paid-on-old-erp';
 import {
   tillLineRefusals, tillRuleFlagsOf, scaleEvidence, lineIsWeighed, TillRuleRefusedError, TOBACCO_MINIMUM_AGE,
   type LaneScales, type TillGateContext,
@@ -79,6 +80,13 @@ export interface PosSessionConfig {
    * box. Refused in words when asked, never dropped quietly; the screen shows it is on.
    */
   readonly guestSalesOnly?: boolean;
+  /**
+   * OB-256 (owner, 20 Oct 2026, "One 'paid on old' type"): the MIRROR PILOT — the customer is billed and pays on the old
+   * ERP; this till records the same lines paid by ONE non-cash tender, `paid_on_old_erp`, for the whole bill. Turned on by
+   * the store pack (`policies.mirrorPilot`) or the store computer's own setting (`EDGE_MIRROR_PILOT=1`), told to the till
+   * by its box. Off → that tender is refused; on → every other tender is refused. Both before the disk, in words.
+   */
+  readonly mirrorPilot?: boolean;
 }
 
 /** What the till says when a customer number or loyalty is asked for while guest sales only is on (OB-252). */
@@ -1007,6 +1015,13 @@ export class PosSession {
     if (this.config.guestSalesOnly === true && tenders.some((t) => t.kind === 'loyalty_points' || t.kind === 'store_credit')) {
       throw new LocalCommitRefusedError(saleId, `${GUEST_SALES_ONLY_WORDS} Nothing was saved — take another payment.`);
     }
+    // OB-256: the mirror pilot's tender — offered only in the mirror pilot, and then the only one, for the whole bill.
+    // The same rule the store computer runs before its disk (`packages/tender/src/paid-on-old-erp.ts`).
+    const mirror = saleTenderRefusal({
+      mirrorOn: this.config.mirrorPilot === true, totalMinor: totals.payable.minor,
+      tenders: tenders.map((t) => ({ kind: t.kind, amountMinor: t.amount.minor, status: t.status, ...(t.ref === undefined ? {} : { ref: t.ref }) })),
+    });
+    if (mirror !== undefined) throw new LocalCommitRefusedError(saleId, mirror.laneMessage);
 
     // **The disk, before anything else is true.**
     //

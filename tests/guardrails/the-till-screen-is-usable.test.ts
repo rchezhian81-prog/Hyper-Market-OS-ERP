@@ -259,7 +259,9 @@ describe('the refund screen gives money back, safely', () => {
     // And it is submitted as a no-receipt return against no bill, through the tested surface, outcome in the model's words.
     expect(flow).toMatch(/desk\.submit\(\{/);
     expect(flow).toContain('noReceipt: true');
-    expect(flow).toContain('showRefundOutcome(outcome)');
+    // OB-258: the outcome also names how the refund was given, so a "Paid on old system" refund is worded in the till's
+    // language as not from this drawer — still the model's own outcome.
+    expect(flow).toContain('showRefundOutcome(outcome, refundTender)');
   });
 
   it('exchanges goods only against the replacement already on the bill; quotes through the tested surface; settles the difference the right way round; stops by name when half done (SP-9b-ii · M13-FR-03)', () => {

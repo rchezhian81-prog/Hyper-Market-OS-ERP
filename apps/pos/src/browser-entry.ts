@@ -17,6 +17,7 @@ import { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { CatalogueCache, type CatalogueSnapshot } from '../../../packages/catalogue/src/catalogue';
 import { money } from '../../../packages/contracts/src/money';
 import type { TenderKind } from '../../../packages/contracts/src/enums';
+import { PAID_ON_OLD_ERP_WORDS } from '../../../packages/tender/src/paid-on-old-erp';
 import type { DecidedRequest } from '../../../packages/approvals/src/approvals';
 import { PosSession, taxRateFromPercent, NoOperatorError, TillRuleRefusedError, SaleUnconfirmedError, GUEST_SALES_ONLY_WORDS, type RefusedOffer } from './session';
 import type { LaneScales } from '../../../packages/restricted-sales/src/till-gate';
@@ -131,6 +132,11 @@ export interface PosLane {
    * pack or the store computer's own setting. Absent on a page from an older box: off.
    */
   readonly guestSalesOnly?: { readonly on: boolean; readonly by: 'store_pack' | 'store_computer_setting' | null };
+  /**
+   * OB-256: whether this till is in the MIRROR PILOT (every sale and refund is "Paid on old system") and who turned it on.
+   * Absent on a page from an older box: off.
+   */
+  readonly mirrorPilot?: { readonly on: boolean; readonly by: 'store_pack' | 'store_computer_setting' | null };
 }
 
 /** The browser global this bundle attaches to (typed without needing the DOM lib). */
@@ -809,9 +815,13 @@ export function bootPos(config?: {
   loyaltyWalletPost?: (body: Record<string, unknown>) => Promise<Record<string, unknown>>;
   /** OB-252: guest sales only — no customer number, no loyalty — as the box told the page. Absent = off. */
   guestSalesOnly?: boolean;
+  /** OB-256 · OB-258: the mirror pilot — every sale and refund is "Paid on old system" — as the box told the page. Absent = off. */
+  mirrorPilot?: boolean;
 }): PosView & {
   /** OB-252: whether this till takes guest sales only — the screen shows it whenever it is on. */
   readonly guestSalesOnly: () => boolean;
+  /** OB-256: whether this till is in the mirror pilot — then "Paid on old system" is its only tender, for sales and refunds. */
+  readonly mirrorPilot: () => boolean;
   /** A8 · RR-F02: the refund whose answer was lost, still waiting for the store computer — or null. */
   readonly pendingRefund: () => { readonly returnId: string; readonly number: string } | null;
   /** A8 · RR-F02: ask the store computer again about that refund (same record, same id) — one screen state, never throws. */
@@ -978,6 +988,8 @@ export function bootPos(config?: {
       baseUomOf: (productId: string) => catalogueRef.cache?.findByProductId(productId)?.baseUom,
       // OB-252: guest sales only — no customer number, no points or store credit.
       ...(config?.guestSalesOnly === true ? { guestSalesOnly: true } : {}),
+      // OB-256: the mirror pilot — "Paid on old system" is the only tender.
+      ...(config?.mirrorPilot === true ? { mirrorPilot: true } : {}),
     },
     new Ledger(new InMemoryLedgerStore()),
     outbox,
@@ -1001,6 +1013,8 @@ export function bootPos(config?: {
       ...(identity.cashierId === undefined ? {} : { cashierId: identity.cashierId }),
       ...(identity.tradingDay === undefined ? {} : { tradingDay: identity.tradingDay }),
       ...(config?.guestSalesOnly === true ? { guestSalesOnly: true } : {}),
+      // OB-258: a mirror-pilot refund goes back to "Paid on old system".
+      ...(config?.mirrorPilot === true ? { mirrorPilot: true } : {}),
     },
     new Ledger(new InMemoryLedgerStore()),
     outbox,
@@ -1124,6 +1138,8 @@ export function bootPos(config?: {
             },
           }))();
           if (!q.ok) return { kind: 'invalid', laneMessage: `${q.detail} Nothing was recorded.` };
+          // OB-258: in the mirror pilot an exchange is keyed as a refund plus a sale, each on the old system's payment.
+          if (config?.mirrorPilot === true) return { kind: 'invalid', laneMessage: PAID_ON_OLD_ERP_WORDS.noExchange };
 
           // The settlement, from what the screen captured — refused in words before anything is written.
           const tenders: Tender[] = q.appliedMinor > 0 ? [{ kind: 'exchange_credit', amount: money(q.appliedMinor, 'INR'), status: 'settled' }] : [];
@@ -1522,8 +1538,9 @@ export function bootPos(config?: {
     return found.refunds.some((r) => r.returnId === returnId) || found.returns.some((r) => r.returnId === returnId) ? 'saved' : 'not_saved';
   };
   const guestSalesOnly = (): boolean => config?.guestSalesOnly === true;
+  const mirrorPilot = (): boolean => config?.mirrorPilot === true;
 
-  return Object.assign(view, { guestSalesOnly, pendingRefund, confirmPendingRefund, saleOnBox, refundOnBox, customerDisplay, customerDisplayChannelName, reportDevices, devicesSaid, deviceAdapterClock, deviceHeartbeat, till, nextReceipt, receiptsRemaining, receiptNotice, holdAtTill, heldAtTill, recallAtTill, abandonAtTill, startCardPayment, answerCardPayment, checkCardPayment, voidAtTill, priceChangeValue, priceChangeAtTill, noSaleAtTill, currentBillRef: () => session.billRef(), lookupRefund, noReceiptReturn, receiptTemplate, receiptLines, signIn, signOut, operator, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill, loyaltyWallet, refusedOffers: () => session.refusedOffers() });
+  return Object.assign(view, { guestSalesOnly, mirrorPilot, pendingRefund, confirmPendingRefund, saleOnBox, refundOnBox, customerDisplay, customerDisplayChannelName, reportDevices, devicesSaid, deviceAdapterClock, deviceHeartbeat, till, nextReceipt, receiptsRemaining, receiptNotice, holdAtTill, heldAtTill, recallAtTill, abandonAtTill, startCardPayment, answerCardPayment, checkCardPayment, voidAtTill, priceChangeValue, priceChangeAtTill, noSaleAtTill, currentBillRef: () => session.billRef(), lookupRefund, noReceiptReturn, receiptTemplate, receiptLines, signIn, signOut, operator, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill, loyaltyWallet, refusedOffers: () => session.refusedOffers() });
 }
 
 // Attach for the view. `app.js` uses `window.posSession` when present and falls back to its
@@ -1543,6 +1560,8 @@ if (browserWindow !== undefined) {
     ...(Array.isArray(lane?.soldHuids) ? { soldHuids: lane.soldHuids } : {}),
     // OB-252: guest sales only, when the box says so (store pack or the box's own setting).
     ...(lane?.guestSalesOnly?.on === true ? { guestSalesOnly: true } : {}),
+    // OB-256: the mirror pilot, when the box says so — "Paid on old system" is then the only tender.
+    ...(lane?.mirrorPilot?.on === true ? { mirrorPilot: true } : {}),
     ...(browserWindow.posReceiptTemplate === undefined ? {} : { receiptTemplate: browserWindow.posReceiptTemplate }),
     // The refund policy the box was given (SP-9b-i): without it the till offers no return without a receipt.
     ...(browserWindow.posRefundPolicy === undefined ? {} : { refundPolicy: browserWindow.posRefundPolicy }),

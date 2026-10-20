@@ -27,7 +27,7 @@
     "standup:check": "node scripts/standup-check.mjs",
     "till:install": "node scripts/install-till.mjs",
     "store-computer": "node scripts/store-computer.mjs",
-    "till:pin": "node edge/store-edge/dist/start.js till-pin",
+    "till:pin": "node scripts/till-pin.mjs",
     "token:store": "node scripts/issue-store-token.mjs",
     "seed:pilot": "node scripts/seed-pilot-hosted.mjs",
     "demo:publish-pack": "node scripts/demo-publish-pack.mjs",

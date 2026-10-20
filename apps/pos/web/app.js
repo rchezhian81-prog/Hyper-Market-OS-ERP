@@ -211,6 +211,14 @@ const WORDS = {
     guestOnlyOption: 'Loyalty member — not on this till (guest sales only)',
     guestOnlyTitle: 'Guest sales only',
     guestOnlyMsg: 'Guest sales only on this till during the pilot: no customer mobile number and no loyalty points or store credit. Ring the sale as a guest. The old billing system keeps loyalty as today.',
+    // OB-256 · OB-258: the mirror pilot — the old system bills and takes the money; this till records the same lines.
+    paidOnOld: 'Paid on old system',
+    mirrorStrip: 'Mirror pilot: the customer is billed and pays on the old system. This till records the same items — every sale and refund is "Paid on old system". No money goes into or out of this drawer.',
+    mirrorTitle: 'Mirror pilot',
+    mirrorSaleDone: 'Recorded — paid on old system',
+    mirrorSaleMsg: 'No money in this drawer. The customer\'s bill is the old system\'s.',
+    mirrorRefundDone: 'Refund recorded against the old system\'s payment. Do not take money from this drawer — give the refund on the old system as usual.',
+    mirrorNoExchange: 'An exchange is not keyed as one on this till during the mirror pilot. Record the item coming back as a refund (Paid on old system), then ring the new item as a sale.',
     // A8: the store computer's answer was lost — the till keeps asking, under the same sale id, until it knows.
     checkingTitle: 'Checking with the store computer — do not ring this again',
     checkingSale: 'The store computer has not answered yet, so the till does not know whether sale {number} was saved. Do not ring it again and do not start another sale. The till keeps asking and will say "saved" or "not saved".',
@@ -359,6 +367,13 @@ const WORDS = {
     guestOnlyOption: 'லாயல்டி உறுப்பினர் — இந்தக் கல்லாவில் இல்லை (விருந்தினர் விற்பனை மட்டும்)',
     guestOnlyTitle: 'விருந்தினர் விற்பனை மட்டும்',
     guestOnlyMsg: 'பைலட் காலத்தில் இந்தக் கல்லாவில் விருந்தினர் விற்பனை மட்டும்: வாடிக்கையாளர் கைபேசி எண் இல்லை, லாயல்டி புள்ளிகளோ கடை வரவோ இல்லை. விற்பனையை விருந்தினராக பில் செய்யவும். பழைய பில்லிங் அமைப்பு லாயல்டியை இன்றுபோல் வைத்திருக்கும்.',
+    paidOnOld: 'பழைய பில்லிங் அமைப்பில் செலுத்தப்பட்டது',
+    mirrorStrip: 'மிரர் பைலட்: வாடிக்கையாளருக்குப் பழைய பில்லிங் அமைப்பில் பில் போடப்பட்டு, பணமும் அங்கேயே செலுத்தப்படுகிறது. இந்தக் கல்லா அதே பொருட்களைப் பதிவு செய்கிறது — ஒவ்வொரு விற்பனையும் திரும்பப் பணமும் "பழைய பில்லிங் அமைப்பில் செலுத்தப்பட்டது". இந்த டிராயரில் பணம் வருவதுமில்லை, போவதுமில்லை.',
+    mirrorTitle: 'மிரர் பைலட்',
+    mirrorSaleDone: 'பதிவு செய்யப்பட்டது — பழைய பில்லிங் அமைப்பில் செலுத்தப்பட்டது',
+    mirrorSaleMsg: 'இந்த டிராயரில் பணம் இல்லை. வாடிக்கையாளரின் பில் பழைய அமைப்பினுடையது.',
+    mirrorRefundDone: 'திரும்பப் பணம் பழைய அமைப்பின் கட்டணத்திற்கு எதிராகப் பதிவு செய்யப்பட்டது. இந்த டிராயரிலிருந்து பணம் எடுக்க வேண்டாம் — வழக்கம்போல் பழைய அமைப்பில் திரும்பப் பணம் கொடுக்கவும்.',
+    mirrorNoExchange: 'மிரர் பைலட் காலத்தில் இந்தக் கல்லாவில் பரிமாற்றம் ஒன்றாகப் பதிவு செய்யப்படுவதில்லை. திரும்பும் பொருளைத் திரும்பப் பணமாக (பழைய பில்லிங் அமைப்பில் செலுத்தப்பட்டது) பதிவு செய்து, பிறகு புதிய பொருளை விற்பனையாக பில் செய்யவும்.',
     checkingTitle: 'கடை கணினியிடம் சரிபார்க்கிறது — இதை மீண்டும் பில் செய்ய வேண்டாம்',
     checkingSale: 'கடை கணினி இன்னும் பதில் தரவில்லை, எனவே விற்பனை {number} சேமிக்கப்பட்டதா என்று கல்லாவுக்குத் தெரியவில்லை. இதை மீண்டும் பில் செய்ய வேண்டாம், வேறு விற்பனையையும் தொடங்க வேண்டாம். கல்லா தொடர்ந்து கேட்கிறது; "சேமிக்கப்பட்டது" அல்லது "சேமிக்கப்படவில்லை" என்று சொல்லும்.',
     checkingRefund: 'கடை கணினி இன்னும் பதில் தரவில்லை, எனவே திரும்பப் பணம் {number} சேமிக்கப்பட்டதா என்று கல்லாவுக்குத் தெரியவில்லை. பணத்தைக் கொடுக்க வேண்டாம், இதை மீண்டும் செய்ய வேண்டாம். கல்லா தொடர்ந்து கேட்கிறது; "சேமிக்கப்பட்டது" அல்லது "சேமிக்கப்படவில்லை" என்று சொல்லும்.',
@@ -475,6 +490,7 @@ function demoSession() {
     // No store computer, so no receipt numbers: the stand-in refuses to take money rather than mint one (audit PF-04).
     nextReceipt: () => Promise.reject(Object.assign(new Error('no store computer'), { laneMessage: 'This till has no store computer to number its bills. Do not take money — tell the manager.' })),
     tenderCash: (_id, number) => Promise.resolve(number),
+    tenderPaidOnOldErp: (_id, number) => Promise.resolve(number),
     tenderCardOrUpi: ({ receiptNumber, outcome }) => (outcome === 'approved'
       ? Promise.resolve(receiptNumber)
       : Promise.reject(Object.assign(new Error('not paid'), { notPaid: outcome }))),
@@ -497,6 +513,18 @@ function demoSession() {
 const session = window.posSession ?? demoSession();
 /** OB-252: this till takes guest sales only — no customer mobile number, no loyalty — when its store computer says so. */
 const guestOnly = () => !!(session.guestSalesOnly && session.guestSalesOnly());
+/** OB-256 · OB-258: this till is in the mirror pilot — "Paid on old system" is then its only tender, for sales and refunds. */
+const mirror = () => !!(session.mirrorPilot && session.mirrorPilot());
+/** How a refund may be given on this till: in the mirror pilot only "Paid on old system"; never store credit when guest-only. */
+function refundTenders() {
+  if (mirror()) return [{ value: 'paid_on_old_erp', label: t('paidOnOld') }];
+  return [
+    { value: 'cash', label: t('cash') },
+    { value: 'card', label: t('card') },
+    { value: 'upi', label: t('upi') },
+    ...(guestOnly() ? [] : [{ value: 'store_credit', label: t('storeCredit') }]),
+  ];
+}
 let selectedLineId = null;
 
 // ── Who is on the till (SP-4b · F09) ────────────────────────────────────────
@@ -1230,6 +1258,8 @@ function quickCash(payableMinor) {
 el('tender').addEventListener('click', async () => {
   const payable = session.payableMinor();
   if (payable <= 0) { tell(t('read'), t('scanFirst'), STOP); return; }
+  // OB-256: in the mirror pilot the customer pays on the old system — the one tender, offered alone.
+  if (mirror()) return payOnOldSystem(payable);
 
   const kind = await choose(t('howPaying'), [
     { value: 'cash', label: `${t('cash')} — ${inr(payable)}`, icon: 'banknote' },
@@ -1275,6 +1305,28 @@ el('tender').addEventListener('click', async () => {
     tell(e && e.notSavedTitle ? t('notSavedTitle') : t('read'), e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e), STOP);
   }
 });
+
+/**
+ * OB-256 — the MIRROR PILOT's payment. The customer is billed and pays on the old system; this till records the same lines
+ * as "Paid on old system" — the default and the only tender, for the whole bill: no amount to type, no change, no card
+ * machine, nothing into the drawer. The sale is numbered and saved on the store computer exactly as any other.
+ */
+async function payOnOldSystem(payable) {
+  const kind = await choose(t('howPaying'), [{ value: 'paid_on_old_erp', label: `${t('paidOnOld')} — ${inr(payable)}`, icon: 'receipt-text' }]);
+  if (kind === null) return;
+  const receiptNumber = await takeReceiptNumber();
+  if (receiptNumber === null) return;
+  try {
+    const receipt = await session.tenderPaidOnOldErp(`S-${receiptNumber}`, receiptNumber, new Date().toISOString()).catch(lostAnswer);
+    tell(t('mirrorSaleDone'), `${withReceiptNotice(receipt)}\n${t('mirrorSaleMsg')}`, SUCCESS);
+    session.newSale();
+    void refreshBadge();
+    selectedLineId = null;
+    render();
+  } catch (e) {
+    tell(e && e.notSavedTitle ? t('notSavedTitle') : t('read'), e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e), STOP);
+  }
+}
 
 /**
  * The next receipt number, from the store computer (audit PF-04). `null` when it gave none — the screen has then said
@@ -1715,12 +1767,7 @@ async function startRefund() {
   const refundMinor = Math.round(Number(amount) * 100);
   if (refundMinor <= 0) return;
 
-  const refundTender = await choose(t('refundHow'), [
-    { value: 'cash', label: t('cash') },
-    { value: 'card', label: t('card') },
-    { value: 'upi', label: t('upi') },
-    ...(guestOnly() ? [] : [{ value: 'store_credit', label: t('storeCredit') }]),
-  ]);
+  const refundTender = await choose(t('refundHow'), refundTenders());
   if (refundTender === null) return;
 
   // 4a. Store credit is money on the customer's account, so it must go to a NAMED customer (M13-FR-03).
@@ -1765,7 +1812,7 @@ async function startRefund() {
     tell(t('refundStop'), e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e), STOP);
     return;
   }
-  showRefundOutcome(outcome);
+  showRefundOutcome(outcome, refundTender);
   render();
 }
 
@@ -1782,6 +1829,8 @@ async function startRefund() {
  * second half cannot be recorded, the screen SAYS so (do not hand over the new goods) rather than pretending.
  */
 async function startExchange() {
+  // OB-258: in the mirror pilot an exchange is keyed as a refund, then a sale — each "Paid on old system".
+  if (mirror()) { tell(t('mirrorTitle'), t('mirrorNoExchange'), STOP); return; }
   // 0. The replacement must already be on the bill.
   if (session.basket().filter((l) => !l.voided).length === 0) { tell(t('read'), t('exchangeNeedsBasket'), STOP); return; }
 
@@ -1970,12 +2019,7 @@ async function startNoReceiptReturn() {
   if (refundMinor <= 0) return;
   if (refundMinor > desk.capMinor) { tell(t('read'), `${t('noReceiptOverCap')} ${inr(desk.capMinor)}`, STOP); return; }
 
-  const refundTender = await choose(t('refundHow'), [
-    { value: 'cash', label: t('cash') },
-    { value: 'card', label: t('card') },
-    { value: 'upi', label: t('upi') },
-    ...(guestOnly() ? [] : [{ value: 'store_credit', label: t('storeCredit') }]),
-  ]);
+  const refundTender = await choose(t('refundHow'), refundTenders());
   if (refundTender === null) return;
 
   // 4a. Store credit must go to a NAMED customer (M13-FR-03) — the same rule as the receipted refund.
@@ -2011,7 +2055,7 @@ async function startNoReceiptReturn() {
     tell(t('refundStop'), e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e), STOP);
     return;
   }
-  showRefundOutcome(outcome);
+  showRefundOutcome(outcome, refundTender);
   render();
 }
 
@@ -2021,14 +2065,17 @@ async function startNoReceiptReturn() {
  * instruction that must not be missed; settled and pending get their own headings; anything else is
  * the plain "please read this".
  */
-function showRefundOutcome(outcome) {
+function showRefundOutcome(outcome, refundTender) {
   const stop = outcome.kind === 'refused' || outcome.kind === 'uncertain'
     || outcome.kind === 'conflict' || outcome.kind === 'not_entitled';
   const title = outcome.kind === 'settled' ? t('refundDone')
     : outcome.kind === 'pending' ? t('refundPending')
       : stop ? t('refundStop')
         : t('read');
-  tell(title, outcome.laneMessage, outcome.kind === 'settled' ? SUCCESS : STOP);
+  // OB-258: a refund to "Paid on old system" was given on the old system — said in the till's language, so nobody opens
+  // this drawer for it.
+  const words = outcome.kind === 'settled' && refundTender === 'paid_on_old_erp' ? t('mirrorRefundDone') : outcome.laneMessage;
+  tell(title, words, outcome.kind === 'settled' ? SUCCESS : STOP);
 }
 
 /**
@@ -2234,6 +2281,16 @@ function paintGuestOnly() {
 }
 paintGuestOnly();
 el('lang').addEventListener('click', paintGuestOnly);
+
+// OB-256: the mirror pilot is SAID on the till whenever it is on — "Paid on old system" is not simply the only button.
+function paintMirror() {
+  const strip = el('mirror-pilot');
+  if (!strip) return;
+  strip.hidden = !mirror();
+  if (!strip.hidden) strip.textContent = t('mirrorStrip');
+}
+paintMirror();
+el('lang').addEventListener('click', paintMirror);
 
 // A8: a sale or refund that was still being checked when this page was reloaded is asked about before anything else.
 void resolveAfterReload();

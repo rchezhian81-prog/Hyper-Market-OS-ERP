@@ -93,6 +93,7 @@ import { ConcessionTrading } from './concession-trading';
 import { pullConcessionTradingFeed, type ConcessionTradingPullOutcome } from '../../sync-agent/src/concession-trading-feed';
 import { httpWalletFeedSource, pullWalletFeed, type WalletFeedPullOutcome } from '../../sync-agent/src/loyalty-wallets-feed';
 import { peopleFrom, permissionsOf } from './screen-navigation';
+import { openOfficeGate } from './office-sign-in';
 import { tillPinKey } from '../../../packages/identity/src/till-pin';
 import { sealDecision, sealTillFact, tillSealKey } from '../../../packages/identity/src/till-seal';
 import { withDeciderSeal } from './decision-seal';
@@ -747,6 +748,27 @@ export async function startEdge(
     return { on: false, by: null };
   };
   if (settings['EDGE_GUEST_SALES_ONLY'] === '1') say('guest sales only (OB-252, EDGE_GUEST_SALES_ONLY=1): the tills this box serves take no customer mobile number and no loyalty.');
+
+  // OB-256 · OB-258 (owner, 20 Oct 2026): the MIRROR PILOT — this box's own setting, or the store pack's, read live like
+  // guest sales only. Every sale and refund its tills record is "Paid on old system", and nothing else.
+  const mirrorPilot = (): { readonly on: boolean; readonly by: 'store_pack' | 'store_computer_setting' | null } => {
+    if (settings['EDGE_MIRROR_PILOT'] === '1') return { on: true, by: 'store_computer_setting' };
+    if (pack.policies.known && pack.policies.value.mirrorPilot === true) return { on: true, by: 'store_pack' };
+    return { on: false, by: null };
+  };
+  // Both switches are checked here, at the start: the mirror pilot takes no customer details (OB-252), so a box set for
+  // the mirror pilot with guest sales only off does not start — said plainly, never a silent guess. (A later store pack
+  // that turns the mirror pilot on without guest sales only is refused on every sale and refund instead.)
+  if (mirrorPilot().on && !guestSalesOnly().on) {
+    process.stderr.write(`\nThis store computer is set for the mirror pilot (${mirrorPilot().by === 'store_pack' ? 'the store pack says so' : 'EDGE_MIRROR_PILOT=1'}) but "guest sales only" is off. `
+      + 'The mirror pilot needs both: set EDGE_GUEST_SALES_ONLY=1 as well (or turn the mirror pilot off), then start again. Nothing was started.\n\n');
+    process.exitCode = 78; // EX_CONFIG
+    // Nothing started: the logs opened above are let go again, so a refused start holds no file.
+    for (const l of [log, returnsLog, completionsLog, dayCloseLog, deadLetterLog, returnsDeadLetterLog, completionsDeadLetterLog, dayCloseDeadLetterLog,
+      concessionTagsLog, concessionTagsDeadLetterLog, deviceEventsLog, deviceEventsDeadLetterLog, tillCashLog, tillCashDeadLetterLog]) await l.close();
+    return undefined;
+  }
+  if (mirrorPilot().on) say(`mirror pilot (OB-256, ${mirrorPilot().by === 'store_pack' ? 'store pack' : 'EDGE_MIRROR_PILOT=1'}): the tills this box serves record every sale and refund as "Paid on old system" — the old ERP bills and takes the money; no money goes in or out of the drawer here.`);
   say(laneOfBox === undefined
     ? 'no EDGE_LANE_ID is set: the till this box serves will refuse to take payment until this box is told which lane it is.'
     : `this box is lane ${laneOfBox}: every sale it rings names it.`);
@@ -1595,6 +1617,8 @@ export async function startEdge(
     memberCode: (mobile: string) => memberRefFor(loyaltyKey, mobile),
     // OB-252: while guest sales only is on, no customer reaches this box's disk and no loyalty is spent.
     guestSalesOnly: () => guestSalesOnly().on,
+    // OB-256 · OB-258: while the mirror pilot is on, "Paid on old system" is the only tender, for sales and refunds.
+    mirrorPilot: () => mirrorPilot().on,
     // PF-09 step 3: a sale paying with points or store credit is decided against this box's copy, one at a time.
     loyalty: {
       check: (record) => loyaltyWallets.check(record),
@@ -1693,12 +1717,21 @@ export async function startEdge(
       ...(heldCatalogue === undefined ? {} : { cataloguePack: heldCatalogue }),
       ...(payments === null ? {} : { pendingPayments: payments.pending() }),
       ...(peripheralReports === null ? {} : { peripheralReports: peripheralReports.latest() }),
+      // OB-256: the till is told it is in the mirror pilot, and who turned it on.
+      mirrorPilot: mirrorPilot(),
     };
   };
 
   const screenPort = settings['EDGE_SCREEN_PORT'];
   const screenHost = settings['EDGE_SCREEN_HOST'];
+  // OB-259: on the store PC the office screens ask for the person's own till PIN (edge/store-edge/src/office-sign-in.ts).
+  // Behind the hosted front's own sign-in (EDGE_SCREEN_TRUST_FORWARDED_USER) the front decides instead.
+  const officeGate = screenPort === undefined || settings['EDGE_OFFICE_SIGN_IN'] !== 'pin' || settings['EDGE_SCREEN_TRUST_FORWARDED_USER'] === '1' ? null : await openOfficeGate({
+    dataDir: settings['EDGE_DATA_DIR']!, capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']), pins: staffSignIn, pack: () => pack,
+  });
+  if (officeGate !== null) say(`office screens: staff ID and own till PIN, checked on this box; a cashier opens only the till (${officeGate.live().length} office sign-in(s) still open).`);
   const screens = screenPort === undefined ? null : await startScreenServer({
+    ...(officeGate === null ? {} : { officeSignIn: officeGate }),
     port: Number(screenPort),
     ...(screenHost === undefined ? {} : { host: screenHost }),
     appsDir: settings['EDGE_APPS_DIR'] ?? 'apps',

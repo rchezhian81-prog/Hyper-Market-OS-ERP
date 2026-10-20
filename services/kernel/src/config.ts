@@ -287,6 +287,18 @@ export const STORE_EDGE_CONFIG: readonly Spec[] = [
    */
   { key: 'EDGE_GUEST_SALES_ONLY', optional: true, oneOf: ['0', '1'] },
   /**
+   * OB-256 · OB-258 (owner, 20 Oct 2026): `1` → the MIRROR PILOT — the old ERP bills and takes every payment; the tills this
+   * box serves record the same lines with the one tender "Paid on old system" (sales and refunds), and nothing else (the
+   * store pack's `policies.mirrorPilot` can also turn it on). Needs guest sales only on as well: a box set for the mirror
+   * pilot without it refuses to start.
+   */
+  { key: 'EDGE_MIRROR_PILOT', optional: true, oneOf: ['0', '1'] },
+  /**
+   * OB-259: `pin` — every screen this box serves but the till asks for the person's own till PIN, and opens only for an
+   * office role (edge/store-edge/src/office-sign-in.ts). The installer writes it; absent, the screens open as before.
+   */
+  { key: 'EDGE_OFFICE_SIGN_IN', optional: true, oneOf: ['pin'] },
+  /**
    * The box's till-credentials file (ADR-0020): the PIN verifiers the `till-pin` command writes, owner-only. Absent → the
    * file `till-credentials.json` in the data directory.
    */

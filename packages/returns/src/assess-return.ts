@@ -29,7 +29,8 @@ import {
 } from './return-register';
 
 /** Cash and store credit settle at the desk; a card/UPI reversal is a provider round-trip. */
-const OFFLINE_SETTLED_TENDERS: readonly string[] = ['cash', 'store_credit'];
+// OB-258: `paid_on_old_erp` was given back on the old ERP — nothing waits on a provider, so it is settled, never pending.
+const OFFLINE_SETTLED_TENDERS: readonly string[] = ['cash', 'store_credit', 'paid_on_old_erp'];
 const DISPOSITIONS: ReadonlySet<Disposition> = new Set<Disposition>(['resell', 'quarantine', 'damaged', 'scrap']);
 
 export interface ReturnRequestLine {

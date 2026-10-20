@@ -3,39 +3,44 @@
 **Who this is for:** you, the owner. You do every step yourself, on the shop's Windows 10 or Windows 11 computer. You do
 not need to be a programmer: you type what is in the grey boxes, exactly, and press Enter.
 **What it does:** puts a second, sealed-off copy of the new system on that computer, for the shop's real data only. It
-works with no internet and is never connected to the demo. Parts 1–11 set up and prove the copy; Parts 12–25 put the
-till on this same PC, lock the PC, and give you the daily routine for the mirror pilot (OB-248).
+works with no internet and is never connected to the demo. Parts 1–11 set up and prove the copy; Parts 12–30 put the
+till on this same PC, set up head office's records on it, lock the PC, and give you the daily routine for the mirror
+pilot (OB-248).
 **How long:** about half a day the first time, most of it waiting for downloads.
-**Language:** this guide is in English. A Tamil version can come later. The cashier sheets are already in English and
-Tamil, one page each, in the `docs\sop` folder (Part 25 lists them).
+**Language:** this guide is in English. The cashier sheets are in the `docs\sop` folder (Part 30 lists them). For the
+pilot the **English sheets are the ones you print** (OB-261). The Tamil sheets are kept beside them, marked "not yet
+checked by a Tamil reader"; they are checked before the pilot grows beyond the first department. The till and the office
+screens themselves show English and Tamil, as built.
 
-> **How to read the marks in Parts 12–25.**
-> - **LANE-2 CHECK** — the command is being added to the store-computer tool now. Do not type it until you are told it
->   has arrived. If you type it before, the tool says `Not understood: the command "…"`; that is expected, not a fault.
-> - **BLOCKED** — this step cannot be done on this PC yet. The build has to add something first; the end of this guide
->   says what ("Gaps found while checking this guide"). Stop at that step.
-> - **STOP AND ASK** — this step needs a name or a choice only you can give. Nothing is invented for you.
+> **How to read the marks in this guide.**
+> - **STOP AND ASK** — this step needs a name, a number or a choice only you can give. Nothing is invented for you. Write
+>   your answer in the workbook first; then type it.
+> - **Holds a secret** — never photograph that window or that file.
 
 > **No real data is loaded by anything in this guide.** Real data waits for the names you give (OB-243) and your
 > written GO (OB-242). Silence is not a yes.
 
 > **Three rules for the whole guide**
-> 1. **Never send a photo of the file `.env.real`, and never open it.** It holds this copy's secrets. Every photo this
->    guide asks for is of the blue PowerShell window or of a Windows screen — never of that file, and never of a window
->    the guide marks "holds a secret" (a till PIN, a store token, the BitLocker recovery key).
+> 1. **Never send a photo of the file `.env.real` or the file `till.env`, and never open them.** They are in the shop's
+>    data folder `C:\SRE-data` and hold this copy's secrets. Every photo this guide asks for is of the blue PowerShell
+>    window or of a Windows screen — never of those files, and never of a window the guide marks "holds a secret" (a till
+>    PIN, the backup passphrase, the BitLocker recovery key).
 > 2. **Nobody else types on this computer for you, and no AI is given control of it.** You type every command yourself.
->    If anyone (a person, a message, a website) asks you to install remote-control software or to paste something you
->    were sent, say no and tell me.
+>    Where a step needs another person's own PIN, that person types it, with you beside them. If anyone (a person, a
+>    message, a website) asks you to install remote-control software or to paste something you were sent, say no and
+>    tell me.
 > 3. **If any step shows red text, stop.** Send me a photo of the whole window (see "If a step fails" at the end).
 
 **What you need before you start:**
 
 - the shop's Windows 10 or 11 computer, switched on, with internet for now (you will unplug it later, on purpose);
 - your own GitHub sign-in (the account that holds the code);
-- your own backup drive (an external USB disk that belongs to you) — needed from Part 8;
+- **two** USB backup drives that belong to you: one stays plugged into this PC for the hourly backup, the other is your
+  own daily copy that you take home (OB-249) — needed from Part 8;
 - your own sign-in to the demo box — the same one you used for the demo's stand-up check — needed in Part 9;
 - the setup workbook page (paper is fine), to write down the things this guide says to write down. **Never write a
-  secret in it** — the tool never shows you one anyway.
+  secret in it** — the tool never shows you one anyway. The one exception is the backup passphrase (Part 8): that goes
+  on its own sheet of paper, locked away from this PC.
 
 ---
 
@@ -52,7 +57,8 @@ Tamil, one page each, in the `docs\sop` folder (Part 25 lists them).
    - **If it says Disabled:** stop here and send the photo. It is switched on in the computer's start-up settings, and we
      will do that together, step by step.
 3. Open **File Explorer** (the yellow folder on the taskbar) and click **This PC**.
-   - Under **Local Disk (C:)** it says "… GB free of … GB". The free part must be **50 GB** or more.
+   - Under **Local Disk (C:)** it says "… GB free of … GB". The free part must be **50 GB** or more. You told me this PC
+     has **433 GB free** on C: (OB-260) — plenty.
    - **When it worked:** at least 50 GB free. **Send:** a photo of this screen.
 4. Check the clock: **Settings → Time & language → Date & time**. The time zone must be
    **(UTC+05:30) Chennai, Kolkata, Mumbai, New Delhi**, and the time must be right.
@@ -68,8 +74,7 @@ Download each program **only from the site named here**. Never from a link in a 
    - After the restart, open **Docker Desktop** from the Start menu. Accept its terms. If it asks you to sign in, choose
      **continue without signing in** (or skip).
    - If it says WSL needs to be installed or updated, it shows a command (for example `wsl --update`): open PowerShell
-     (step 4 below shows how), type that command, press Enter, and restart the computer.
-   - In Docker Desktop, open **Settings → General** and tick **Start Docker Desktop when you sign in**.
+     (step 3 below shows how), type that command, press Enter, and restart the computer.
    - **When it worked:** bottom left of Docker Desktop it says **Engine running** (green). **Send:** a photo of that.
 2. **Node.js 22 LTS** — on **nodejs.org**, download the **LTS** version whose number starts with **22**, the
    **Windows Installer (.msi)**. Run it and accept the normal choices (Next, Next, Install).
@@ -107,13 +112,17 @@ Download each program **only from the site named here**. Never from a link in a 
      the name: those places can copy the secrets off this computer, or break the commands.
    - **When it worked:** opening `C:\SRE` shows folders such as `apps`, `docs`, `infra`, `scripts` and a file
      `package.json`. **Send:** a photo of that folder.
+   - `C:\SRE` holds **the system** (this release). The shop's **data** — this copy's settings, the till's sales, the
+     check records, the backup key — lives in a separate folder, `C:\SRE-data`, which the tool makes in Part 5. A new
+     version of the system goes into a folder of its own beside `C:\SRE` (Part 29); `C:\SRE-data` never moves.
 
 ## Part 4 — Open PowerShell in that folder and install
 
 1. In File Explorer, open `C:\SRE`. Click once in the **address bar** at the top (where it says `This PC > Local Disk
    (C:) > SRE`), type `powershell`, press Enter.
    - **When it worked:** a blue window opens whose last line starts with `PS C:\SRE>`.
-   - **Every command from here on is typed in a window like this, in `C:\SRE`.**
+   - **Every command from here on is typed in a window like this, in `C:\SRE`** (after an update: in the new release's
+     folder, Part 29).
 2. Type:
    ```
    pnpm install
@@ -134,8 +143,9 @@ Download each program **only from the site named here**. Never from a link in a 
    ```
    pnpm run store-computer -- prepare
    ```
-   - **When it worked:** it says `Settings file written: infra\compose\.env.real`, lists the names of the settings it
-     filled (never their values), and says `This copy's tenant id:` followed by a long id with dashes.
+   - **When it worked:** it says `Settings file written: C:\SRE-data\.env.real`, that it is in the shop's data folder
+     `C:\SRE-data`, lists the names of the settings it filled (never their values), and says `This copy's tenant id:`
+     followed by a long id with dashes.
    - **Write the tenant id in the workbook**, and the words "compose project sre-real" and today's date. The tenant id
      is a name, not a secret.
    - **Send:** a photo of the window. (This window has no secret in it. The file it made does — never photograph that.)
@@ -157,58 +167,63 @@ Download each program **only from the site named here**. Never from a link in a 
    pnpm run store-computer -- check --by "Your Name"
    ```
    - **When it worked:** it prints a table of ten checks, each `PASS`, `FAIL` or `NEEDS-YOU`, a line starting with
-     `G4`, and `Record written: …`.
+     `G4`, and `Record written: C:\SRE-data\records\…`.
    - The first time, three checks say **NEEDS-YOU**. That is expected:
      - **check 3** (this copy's secrets are not the demo's) waits for Part 9 (the demo's fingerprints);
-     - **check 5** waits for Part 7 (the internet cable);
+     - **check 5** waits for Part 7 (the network cable);
      - **check 10** waits for Part 8 (your backup drive).
    - Every other check must say **PASS**. A **FAIL** says why on the line under it.
    - **Send:** a photo of the whole table.
 
 ## Part 7 — Prove it works with no internet
 
-1. Take the internet away from this computer: unplug the line that brings the internet **into** the shop from your
-   internet box (router). If you are not sure which one that is, unplug the network cable from the back of **this
-   computer** instead, or turn its Wi-Fi off. (No tills are connected yet, so nothing else is affected.)
+1. Take the internet away from this computer. This PC is on a **wired** network (OB-260): unplug the network cable from
+   the back of **this computer**. (No tills are connected yet, so nothing else is affected.)
 2. Wait one minute. Then type:
    ```
    pnpm run store-computer -- check --by "Your Name" --offline-confirmed
    ```
    - **When it worked:** **check 5** now says **PASS**.
    - **Send:** a photo of the table.
-3. Plug the internet back in.
+3. Plug the network cable back in.
 
-## Part 8 — Your backup drive (check 10)
+## Part 8 — Your backup drive and the backup passphrase (check 10)
 
 Nothing extra is installed for this: the backup runs **inside** this copy's own database box in Docker, and the file
-goes straight onto your drive. Nothing on the computer is deleted, ever.
+goes straight onto your drive. Every backup is **encrypted**, and holds the database, the till's own saved sales and this
+copy's settings. **Nothing is ever deleted** — no backup, no record (OB-262).
 
-1. **Plug in your backup drive.** In File Explorer → **This PC**, find it (for example `Backup (E:)`). **The letter
-   after its name is your drive letter.** Write it in the workbook. Everywhere below that says `E:`, type **your** letter
-   instead.
+1. **Plug in your own backup drive** (the one you will take home). In File Explorer → **This PC**, find it (for example
+   `Backup (E:)`). **The letter after its name is your drive letter.** Write it in the workbook. Everywhere below that
+   says `E:`, type **your** letter instead.
 2. Open PowerShell in `C:\SRE` (Part 4, step 1) and take the backup:
    ```
    pnpm run store-computer -- backup --to E:\sre-real
    ```
-   - **When it worked:** it says `BACKUP DONE —` with the file's name, its size and how long it took, then a line
-     `Manifest: E:\sre-real\sre-real-backup-….manifest.json`. **Write that manifest's file name in the workbook.**
-   - It refuses, on purpose, a folder on `C:` or inside `C:\SRE`: a backup on the same computer is not a backup.
-   - **Send:** a photo of the window. (It has no secret in it. The long line of letters and digits after "SHA-256" is
-     the file's own fingerprint, not a password.)
-3. Prove the backup really comes back. Type the line below with the manifest's name (tip: type
-   `E:\sre-real\sre-real-backup-` and press the **Tab** key; PowerShell fills in the rest of the name):
+   - **The first time it asks you to choose the backup passphrase** — **this window holds a secret while you type**:
+     at least the number of characters it says, a short sentence you will remember; nothing shows as you type; it asks
+     twice. Write the passphrase on paper and lock that paper away from this PC (with the BitLocker key, Part 26d).
+     **If it is forgotten, nobody can open the backups — not even me.** The PC keeps only a sealed key that the
+     passphrase opens, never the passphrase. It then says `BACKUP PASSPHRASE SET — backup key …`.
+   - **When it worked:** it says `BACKUP DONE —` with the backup's name, its size and how long it took, then a line
+     `Manifest: E:\sre-real\…manifest.json`. **Write that manifest's file name in the workbook.**
+   - It refuses, on purpose, a folder on `C:`, inside `C:\SRE` or inside `C:\SRE-data`: a backup on the same computer is
+     not a backup.
+   - **Send:** a photo of the window (after the passphrase questions; it shows no secret). The long line of letters and
+     digits after "SHA-256" is the file's own fingerprint, not a password.
+3. Prove the backup really comes back. Type the line below with the manifest's name (tip: type the start of the name
+   and press the **Tab** key; PowerShell fills in the rest):
    ```
    pnpm run store-computer -- restore-check --from E:\sre-real\sre-real-backup-XXXX.manifest.json
    ```
-   - It copies the backup into a **new, empty, temporary** database inside the same Docker box (never into the real
-     one), counts every table, compares the counts and the money with the manifest, writes the result onto your drive,
-     and only then removes that temporary database.
-   - **When it worked:** it says `restored_and_reconciled —` and `The scratch database … was removed after the record
-     was written. sre_real was never touched.`
+   - It asks for the backup passphrase (nothing shows as you type). It copies the backup into a **new, empty,
+     temporary** database inside the same Docker box (never into the real one), counts every table, compares the counts
+     and the money with the manifest, writes the result onto your drive, and only then removes that temporary database.
+   - **When it worked:** it says `restored_and_reconciled —` and that the scratch database was removed after the record
+     was written, and that `sre_real` was never touched.
    - **If it says `NOT ACCEPTED`:** stop. Do not rely on that backup. Send a photo of the whole window.
    - **Send:** a photo of the window.
-4. **Keep the drive plugged in** until Part 10 is done. Then unplug it and put it away with the person who keeps it.
-   It is plugged in only for each backup and each drill.
+4. **Keep the drive plugged in** until Part 10 is done.
 
 ## Part 9 — The demo's fingerprints (check 3)
 
@@ -273,8 +288,9 @@ does not write the box's address or any key: use the address you were given, and
 
 ## Part 10 — The final G4 check
 
-1. Plug in your backup drive (if it is not still in), and unplug the internet again (Part 7, step 1). Open PowerShell in
-   `C:\SRE` and type — your name, the demo's fingerprint file from Part 9 and the backup manifest from Part 8:
+1. Plug in your backup drive (if it is not still in), and unplug the network cable again (Part 7, step 1). Open
+   PowerShell in `C:\SRE` and type — your name, the demo's fingerprint file from Part 9 and the backup manifest from
+   Part 8:
    ```
    pnpm run store-computer -- check --by "Your Name" --offline-confirmed --demo-fingerprints C:\SRE-demo-fingerprints\fingerprints-XXXX.json --backup-record E:\sre-real\sre-real-backup-XXXX.manifest.json
    ```
@@ -282,7 +298,7 @@ does not write the box's address or any key: use the address you were given, and
      `G4 PASSED — all ten isolation checks pass.`
    - Check 10 passes only when that backup has passed its restore-check (Part 8, step 3) and is on your drive.
    - **Send:** a photo of the table and the `G4` line.
-2. Plug the internet back in. Keep every record file: they are in `C:\SRE\infra\compose\records\`.
+2. Plug the network cable back in. Keep every record file: they are in `C:\SRE-data\records\`.
 
 ## Part 11 — The rollback drill (pilot gate G9)
 
@@ -299,12 +315,15 @@ night. The tool checks that this is safe first, and refuses if it is not.
    the **second** commit from the top, then **Browse files**, then the green **Code** button → **Download ZIP**. Extract
    it to `C:\` (Part 3, step 3) and rename the new folder to `SRE-previous`.
    - **The folder must be exactly `C:\SRE-previous`**, beside `C:\SRE` — never inside it. It needs no `pnpm install`
-     and no settings file: the drill uses this copy's own settings.
+     and no settings file: the drill uses this copy's own settings in `C:\SRE-data`.
+   - After your first update (Part 29), the previous version is simply the release folder you updated **from** — it is
+     already beside the new one, and you name that folder instead.
    - If the drill later says "the same release", go one more commit down the list and do this step again.
 2. Plug in your backup drive. Open PowerShell in `C:\SRE` and do the **dry run** (it changes nothing):
    ```
    pnpm run store-computer -- drill --by "Your Name" --to E:\sre-real --previous C:\SRE-previous
    ```
+   - It asks for the backup passphrase first (the real drill opens the backup).
    - **When it worked:** it says `DRY RUN — nothing will change.` and lists five steps.
    - A line starting `REFUSED —` names the one thing to fix. Nothing was changed.
    - **Send:** a photo of the window.
@@ -357,178 +376,267 @@ always have room.
    - If Docker Desktop shows a warning about `.wslconfig`, stop and send a photo of it.
 5. In Docker Desktop, open **Settings → Resources** and turn **Resource Saver** on, if your version shows it.
 6. **The memory photo — later, during a practice hour** (not now). When the till is open and staff are practising
-   (Part 19 onwards), press **Ctrl + Shift + Esc** → **Performance** → **Memory**. **Send:** one photo of that screen
+   (Part 24 onwards), press **Ctrl + Shift + Esc** → **Performance** → **Memory**. **Send:** one photo of that screen
    (it shows "In use" and "Committed"), and one of **Processes** with the **Memory** column clicked so the biggest is at
    the top. We decide about more memory from that photo: only if "In use" stays above about 6.5 GB, and nothing is
    bought without your OK.
 
-> **Rebuilds use a lot of memory.** The first `up`, every rollback drill (Part 11) and every update (Part 24) rebuild
+> **Rebuilds use a lot of memory.** The first `up`, every rollback drill (Part 11) and every update (Part 29) rebuild
 > the system. Do them only when the shop is closed.
 
 ## Part 13 — Install the till on this same PC (one lane)
 
 In the pilot, **this PC is the till**: it stands at the pilot counter, with the scanner plugged into it, and runs one
-lane. The till part runs on Windows itself (a black window), not inside Docker, because only a program on this PC can
-reach the till's private save socket. No network is used for a sale.
+lane. The till part runs on Windows itself, not inside Docker, because only a program on this PC can reach the till's
+private save socket. No network is used for a sale.
 
-1. Open PowerShell in `C:\SRE` (Part 4, step 1). Type — **with no `--` after `till:install`** (with it, the installer
-   refuses):
+1. Open PowerShell in `C:\SRE` (Part 4, step 1). Type:
    ```
-   pnpm run till:install --lane lane-1 --settings infra\compose\.env.real
+   pnpm run till:install -- --lane lane-1 --settings C:\SRE-data\.env.real
    ```
    It takes a few minutes (it builds the till screen, the office screens and the till's own program).
-   - **When it worked:** it ends with `Till installed.`, a line `Settings:` naming `C:\SRE\till\till.env`, a line
-     `Start script:` naming `C:\SRE\till\start-till.cmd`, and a list under `Next:`.
-   - It also says `no cloud URL set — the till starts OFFLINE-FIRST`. That is expected for now: the till sells and
-     saves every sale on this PC, and sends nothing yet (Part 17 turns sending on).
+   - **When it worked:** it says the till's settings and data go in `C:\SRE-data\till`, outside this release; that the
+     till takes **guest sales only** (OB-252); that it starts **OFFLINE-FIRST** (it sells and saves every sale on this
+     PC, and sends nothing yet — Part 20 connects it); then `Till installed.`, a line `Settings:` naming
+     `C:\SRE-data\till\till.env`, a line `Start script:` naming `C:\SRE\till\start-till.cmd`, and a list under `Next:`.
    - If it says `The till cannot be installed yet —` it lists every problem at once. Send a photo.
    - **Write in the workbook:** "till installed, lane-1" and the date. **Send:** a photo of the window.
 2. `till.env` holds this till's keys. **Never open it, never photograph it, never copy it** — the same rule as
-   `.env.real`.
+   `.env.real`. You never need to open it: every setting in it is written by the tool.
+3. Only if `doctor` (Part 5) ever says **FIX Data** — which happens only on a copy set up before 20 Oct 2026 — close the
+   till and type `pnpm run store-computer -- migrate-data-folder`. It copies the data into `C:\SRE-data`, checks every
+   file, and says `MOVED —`. A copy set up with this guide is already there.
 
-**LANE-2 CHECK — move the data out of the release folder.** Today the till's saved sales and this copy's settings sit
-inside `C:\SRE`. Replacing that folder with a new version would delete them. Once lane 2's command arrives, the data
-moves to `C:\SRE-data`, where an update never touches it:
-```
-pnpm run store-computer -- migrate-data-folder
-```
-- **When it worked:** to be written from the tool's own words once it arrives. Until then: do not move, rename or
-  delete anything in `C:\SRE` by hand.
+## Part 14 — Start the till by itself, and open it
 
-## Part 14 — Start the till and open it
-
-1. In File Explorer, open `C:\SRE\till` and **double-click `start-till.cmd`**. A black window opens.
-   - **When it worked:** among its lines are `lane socket on` … `loopback only` and `screens on` … `loopback only`, and
-     `this box is lane lane-1`. **Leave this window open** while the shop trades: it **is** the till. Minimise it;
-     never close it during trading.
-   - **Send:** a photo of the black window.
-2. Open **Microsoft Edge** on this PC. In the address bar, type the till address the installer printed in Part 13
-   under `Next:` step 2 ("Open the till in a browser on THIS PC"). Press Enter.
-   - **When it worked:** the till's Sale screen opens. Make it a favourite (the star in the address bar), so nobody
-     has to type the address again.
-   - Until the shop's products reach the till (Part 20), it says it has no price list. That is the truth, not a fault.
-3. **LANE-2 CHECK — start the till by itself after a restart.** Once lane 2's command arrives, the till starts on its
-   own after a power cut or a Windows update, as soon as you sign in:
+1. Let the till and the system start by themselves whenever you sign in to Windows (after a power cut or an update):
    ```
    pnpm run store-computer -- autostart
    ```
-   - **When it worked:** to be written from the tool's own words once it arrives. Until then, double-click
-     `start-till.cmd` after every restart.
+   - **When it worked:** it says `AUTOSTART ON — when` (your Windows name) `signs in to Windows, the task` … `will, by
+     itself:` and four steps: wait for Docker Desktop (and start it), start this copy, start the till in the background,
+     and run the store computer check.
+   - Read its lines under `THE TRUTH ABOUT WINDOWS`: nothing runs until **you** sign in. So after every restart: sign in
+     first, then lock the PC (**Windows key + L**), and the cashier switches to the `Till` account (Part 26b).
+   - The till now runs in the background, with no window to close by mistake. **Do not also double-click
+     `start-till.cmd`.**
+   - **Send:** a photo of the window.
+2. Restart the computer, sign in, and wait two minutes. Then type:
+   ```
+   pnpm run store-computer -- status
+   ```
+   - **When it worked:** a list of checks, each `OK` or `RED`, and `ALL OK — nothing needs you.` Before the hourly
+     backup is set up (Part 28) the backup line is RED — that is the truth, not a fault.
+3. Open **Microsoft Edge** on this PC. In the address bar, type the till address the installer printed in Part 13
+   under `Next:` step 2 ("Open the till in a browser on THIS PC"). Press Enter.
+   - **When it worked:** the till's Sale screen opens. Make it a favourite (the star in the address bar), so nobody
+     has to type the address again.
+   - Until the shop's products reach the till (Part 24), it says it has no price list. That is the truth, not a fault.
 4. While you are here, stop the PC sleeping: **Settings → System → Power & battery → Screen and sleep** → set every
    "put my device to sleep" box to **Never**. And **Settings → Windows Update → Advanced options → Active hours** →
    set them to cover the shop's opening hours, so Windows never restarts itself while you trade.
 
-## Part 15 — The shop's name, GSTIN and bill prefix at head office
+## Part 15 — The first people: you, the accountant and the store manager (tenant:bootstrap)
 
-The new system must know the shop's **legal name**, its **GSTIN** (the 15-character number on your GST registration
-certificate) and the **bill prefix** the till numbers its bills under (`in-store-install.md` Step 5b: head office
-issues each till its prefix). In the mirror pilot the new bill is never given to a customer (OB-248), but the prefix
-still keeps every bill number unique.
+The first people in the new system are laid down once, by this command. Every later person is added by **two people**:
+one asks, another approves (Part 19). On this PC the only two people who can do that are the **store manager** (asks)
+and **you** (approve) — the accountant's role cannot give roles. So the store manager must be in this first set.
 
-1. **Write in the workbook now:** the legal name exactly as on the GST certificate, the GSTIN, and the bill prefix you
-   want for this till. None of these is a secret. **STOP AND ASK** if you are not sure which prefix to use.
-2. **BLOCKED (gap W-3):** there is no screen or command on this PC yet to record them. Head office's setup screens are
-   not started on this PC, and nothing here signs you in to them. Stop here until the build adds the way.
-
-## Part 16 — The owner and the accountant: the first two people (tenant:bootstrap)
-
-The first people in the new system are laid down once, by this command. Every later person is added under the
-two-person rule (one asks, another approves).
-
-**STOP AND ASK.** This step needs two things only you can give, in writing:
+**STOP AND ASK.** This step needs, in writing:
 - **your own login name** for the new system (a short name, for example your first name; never a shared login);
-- **who the accountant is and which role they get:** the shop's accountant (role `accountant`), your chartered
-  accountant (role `chartered_accountant`), or both — each with their own login name.
+- **the accountant**: the shop's accountant (role `accountant`), your chartered accountant (role
+  `chartered_accountant`), or both — each with their own login name;
+- **the store manager** (role `store_manager`) and their login name. Not named yet (OB-243). Without a store manager
+  in this first set, no cashier can be added later.
 Nobody may invent these (OB-243). Do not type the command below until you have written them down.
 
-1. With the names written down, first the **dry run** (it changes nothing). Your tenant id is the one you wrote in the
-   workbook in Part 5. Type it as one line, putting in your own values:
+1. First the **dry run** (it changes nothing). Your tenant id is the one you wrote in the workbook in Part 5. Type it as
+   one line, putting in your own values (for two people, put a comma between them after `--admin`, no spaces):
    ```
-   pnpm run tenant:bootstrap -- --tenant <tenant id> --owner <your login> --admin <their login>:<their role> --operator "Your Name" --env-file infra\compose\.env.real --dry-run
+   pnpm run tenant:bootstrap -- --tenant <tenant-id> --owner <your-login> --admin <their-login>:<their-role>,<manager-login>:store_manager --operator "Your Name" --env-file C:\SRE-data\.env.real --dry-run
    ```
    - **When it worked:** it lists each person and their role, then `DRY RUN — nothing was written.`
    - Read the list. If anything is wrong, fix the line and run the dry run again.
    - **Send:** a photo of the window.
 2. The real run is the same line **without** `--dry-run`.
-   - **BLOCKED (gap W-2):** on this PC the real run cannot reach the database yet. It would say
-     `Could not write to the ledger: getaddrinfo ENOTFOUND db`. Nothing is written when that happens. Stop after the
-     dry run until the build fixes it.
-   - **When it works (after the fix):** `SEEDED — 2 grant(s) recorded in one atomic append.` (or 3, with three
-     people). It refuses, on purpose, a second run: `NOT CHANGED — … already holds grants`.
+   - **When it worked:** `The database is reached on this computer's own database port (5432), not the container
+     name.`, then `SEEDED — 3 grant(s) recorded in one atomic append.` (the number is how many people you named). It
+     refuses, on purpose, a second run: `NOT CHANGED — … already holds grants`.
+   - **Send:** a photo of the window.
 
-## Part 17 — The store token: let the till send its sales to this copy's books
+## Part 16 — Till PINs for you, the accountant and the manager
 
-So far the till sells and keeps every sale on this PC. To send the sales to this copy's books (for the evening check),
-the till needs a **store token**: a long secret that says "this till belongs to this shop and this store".
+Every person has their own six-digit **till PIN**. It opens the till (for cashiers), the office screens (Part 26e), and
+the head-office steps below: in each of Parts 17–25, the tool asks the person whose act it is to type **their own**
+PIN. You never type anybody else's PIN.
 
-1. **BLOCKED (gap W-4):** the token must name the store (`--store`), and the store exists only after Part 15. The
-   `store-edge` login it names must also hold the cashier role, which needs head office's people screen (gap W-3).
-2. When those are done, the command is (one line, your own values):
+1. With the person beside you, in PowerShell in `C:\SRE`, type — their login and your name:
    ```
-   pnpm run token:store -- --tenant <tenant id> --user store-edge --store <store id> --ttl-hours 720 --settings infra\compose\.env.real
+   pnpm run till:pin -- --user <their-login> --by "Your Name"
    ```
-   - It prints the token **once**. **This window holds a secret: never photograph it, never copy it into a message.**
-   - The token lasts 30 days (720 hours). Write the date it was made in the workbook; it must be made again before then.
-3. **BLOCKED (gap W-5):** the token, the store and this copy's address must then go into the till's settings file.
-   Doing that today means opening `till.env` in Notepad, which shows its keys on the screen. Stop here until the build
-   gives a command that does it without showing anything.
+   - It says `Using the till's settings in C:\SRE-data\till\till.env (never shown).`, then the new PIN **once**, then
+     `Give it to them in person.` **This window holds a secret: never photograph it.** Turn the screen to the person and
+     look away while they read it. Do not write it down for them, do not send it by phone. Then close that window.
+   - The PIN is kept nowhere. If it is forgotten, make a new one the same way (sheet 4).
+   - Someone leaves, or a PIN may be known to someone else: the same line with `--revoke` at the end.
+2. Do this for **yourself**, the accountant(s) and the store manager.
+   - **Write in the workbook:** each login and "PIN made" with the date — never the PIN.
 
-## Part 18 — Staff and their till PINs
+## Part 17 — The shop's legal name, GSTIN and the store
+
+**STOP AND ASK.** Write in the workbook first:
+- the company's **legal name** exactly as on the GST certificate, and the **GSTIN** (the 15-character number on it, in
+  capital letters);
+- a short **company code** (for example `SRE`) and a short **store code** for this shop (for example `SRE-MAIN`), and the
+  store's everyday name. The codes are names the system uses inside; none of these is a secret.
+
+1. In PowerShell in `C:\SRE`, type as one line, with your values:
+   ```
+   pnpm run store-computer -- shop --as <your-login> --company <company-code> --legal-name "<legal name as on the GST certificate>" --gstin <GSTIN> --store <store-code> --store-name "<store name>"
+   ```
+   - It says `This will, at head office on this computer` and lists four steps in plain words. **Read them.** Then
+     `Type YES and press Enter to do this`. Type `YES` only if every word is right; anything else stops it and nothing
+     is done.
+   - It then asks for **your** till PIN (nothing shows as you type) and says `your-login's PIN matches.`
+   - **When it worked:** four lines starting `done —`, then `DONE — the shop is set up at head office on this
+     computer`. Head office checks the GSTIN's check digit: a mistyped GSTIN is refused with `gstin_invalid`.
+   - **Send:** a photo of the window.
+
+## Part 18 — The store's settings
+
+**STOP AND ASK.** These are your decisions; nothing is filled in for you:
+- when the shop's day ends (`00:00` is midnight, the documented starting value OC-06);
+- after how many minutes the store computer's copy of head office's setup counts as old;
+- above how many rupees a stock-count difference needs a second person;
+- how many rupees a cash handover, and a till's cash, may be out before it is a difference.
+(Privacy requests are always answered within 15 days — fixed by OB-195.)
+
+1. Type as one line, with your values:
+   ```
+   pnpm run store-computer -- store-settings --as <your-login> --store <store-code> --cutoff 00:00 --stale-after-minutes <minutes> --count-approval-rupees <rupees> --handover-tolerance-rupees <rupees> --cash-variance-rupees <rupees>
+   ```
+   - It reads your values back to you in words. Type `YES`, then your PIN.
+   - **When it worked:** `done — store … settings saved as version 1.` and `DONE —`. Every later change is a new
+     version; the older ones are kept.
+
+## Part 19 — The till's bill prefix
+
+The till numbers its bills under a **bill prefix** head office issues (`in-store-install.md` Step 5b). In the mirror
+pilot the new bill is never given to a customer (OB-248), but the prefix still keeps every bill number unique.
+**STOP AND ASK** if you are not sure which prefix to use (up to 10 letters, digits or `-`, for example `S1L1-`).
+
+1. Type:
+   ```
+   pnpm run store-computer -- bill-prefix --as <your-login> --store <store-code> --till lane-1 --prefix <prefix> --reason "mirror pilot till"
+   ```
+   - Type `YES`, then your PIN. **When it worked:** `DONE — the bill prefix … is issued to till lane-1`.
+
+## Part 20 — Connect the till to this copy's books
+
+So far the till sells and keeps every sale on this PC. Now it gets the store's setup from head office and sends its
+sales to this copy's books (for the evening check). Two steps.
+
+1. **The till's own sign-in gets its role** — the store computer role, at this store only. This is the first act done by
+   **two people**: the store manager asks, you approve. Both sit at the PC; each types their own PIN when asked.
+   ```
+   pnpm run store-computer -- grant --as <manager-login> --approver <your-login> --person store-edge --role store_computer --store <store-code> --reason "the till on the store PC"
+   ```
+   - It lists the two steps: the manager asks, you approve. Type `YES`. Then it asks the **manager** for their PIN (the
+     manager types it), then **you** for yours.
+   - **When it worked:** `done — … asked for it`, `done — … approved it`, then `DONE — store-edge holds "store_computer"
+     at store …: asked by …, approved by …`.
+   - A wrong PIN, for either person, and **nothing** is done.
+2. **The till's settings.** The installer writes them itself — this copy's own address, the store, and a store token —
+   and shows none of them:
+   ```
+   pnpm run till:install -- --lane lane-1 --store <store-code> --settings C:\SRE-data\.env.real
+   ```
+   - **When it worked:** a line `connected to this copy's books for store …: a NEW store token … was written into
+     till.env — it is never shown`, a line saying which settings it set in `till.env` (names only), and at the end
+     `Connected: this till sends its sales to this copy's books for store …`.
+   - The store token lasts **30 days**. **Write today's date in the workbook**, and run this same command again before
+     30 days are up (it makes a new token).
+3. Restart the computer and sign in (the till starts again by itself, with its new settings). Then type
+   `pnpm run store-computer -- status` — every line `OK` except, until Part 28, the backup.
+
+## Part 21 — Staff and their till PINs
 
 Every cashier signs in at the till with their own staff ID and their own six-digit PIN. **No shared logins.**
 
-**STOP AND ASK.** The pilot cashier(s) and the manager are not named yet (OB-243, OB-254). Each needs:
-1. **a staff ID and a role at head office** (Cashier, or Store manager) — **BLOCKED (gap W-3)**: no screen on this PC
-   yet;
-2. **a till PIN made on this PC.** This part works today. In **your own** Windows account (never the cashier's), open
-   PowerShell in `C:\SRE` and type, with their staff ID and your name:
+**STOP AND ASK.** The pilot cashier(s) are not named yet (OB-243, OB-254). For each cashier, once named:
+1. **Their role at head office** — the store manager asks, you approve, each with their own PIN:
    ```
-   C:\SRE\till\start-till.cmd till-pin --user <their staff id> --by "Your Name"
+   pnpm run store-computer -- grant --as <manager-login> --approver <your-login> --person <cashier-login> --role cashier --store <store-code> --reason "pilot cashier"
    ```
-   - It prints the six-digit PIN **once**, then `Press any key to continue`. **This window holds a secret: never
-     photograph it.** Tell the person their PIN face to face. Do not write it down for them, do not send it by phone.
-   - The PIN is not kept anywhere. If it is forgotten, you make a new one the same way (sheet 4, `docs\sop`).
-   - Someone leaves, or a PIN may be known to someone else: the same line with `--revoke` at the end.
-3. You and the accountant need a till PIN too (for approvals and reopening a closed day). Make them the same way.
+   - **When it worked:** `DONE — <cashier> holds "cashier" at store …`. The till learns it the next time it reaches this
+     copy's books (within a few minutes).
+2. **Their till PIN**, with the cashier beside you (Part 16, step 1):
+   ```
+   pnpm run till:pin -- --user <cashier-login> --by "Your Name"
+   ```
+   - **This window holds a secret.** The cashier reads their PIN themselves; you look away.
 
-**LANE-2 CHECK:** after Part 13's `migrate-data-folder`, the start script may live under `C:\SRE-data`. Use the path
-the tool names.
-
-## Part 19 — The pilot department: only after your written GO
+## Part 22 — The pilot department: only after your written GO
 
 **Nothing real is loaded before your written GO (OB-242).** The first load is one department's products, barcodes, tax
 classes and prices (OB-241); the department is not named yet (OB-243). **STOP AND ASK.**
 
 When the GO is written and the department is named:
 1. On the migration screen ("The figures" → "Templates for the first department") download the four templates and
-   fill them from the old ERP's export, into one folder, for example `C:\SRE-slice`. The folder's `slice.json` needs
-   each file's seal — **BLOCKED (gap W-8)**: there is no screen or command for sealing yet.
-2. Then three commands, by two different people (the person who loads can never sign the totals):
+   fill them from the old ERP's export, into one folder, for example `C:\SRE-slice`, with its `slice.json`.
+2. **Seal the exported files** (MG-02). The old ERP's own backup must have been **restored and checked** first; say on
+   which day. The person who took the export seals it, in their own name:
    ```
-   pnpm run migration:slice -- --dir C:\SRE-slice --stage --settings infra\compose\.env.real
-   pnpm run migration:slice -- --dir C:\SRE-slice --accept --as <their login> --statement "<what they read and decided>" --settings infra\compose\.env.real
-   pnpm run migration:slice -- --dir C:\SRE-slice --apply --settings infra\compose\.env.real --out C:\SRE-slice\outcome-1.json
+   pnpm run store-computer -- seal --dir C:\SRE-slice --as <their-login> --backup-restored-on <YYYY-MM-DD>
+   ```
+   - **When it worked:** one `SEALED —` line per file, then `All … file(s) are sealed. Next: stage the slice (--stage).`
+     and `slice.json now holds the seals.` A file already sealed is never sealed again (`kept —`).
+3. Then three commands, by two different people (the person who loads can never sign the totals):
+   ```
+   pnpm run migration:slice -- --dir C:\SRE-slice --stage --settings C:\SRE-data\.env.real
+   pnpm run migration:slice -- --dir C:\SRE-slice --accept --as <their-login> --statement "<what they read and decided>" --settings C:\SRE-data\.env.real
+   pnpm run migration:slice -- --dir C:\SRE-slice --apply --settings C:\SRE-data\.env.real --out C:\SRE-slice\outcome-1.json
    ```
    - **When it worked:** `RECORDED —`, then `ACCEPTED —`, then `APPLIED — every staged row landed`.
    - Any `REFUSED` line: stop and send a photo. `docs\runbooks\real-data-load.md` explains each message.
 
-## Part 20 — The products reach the till (the catalogue pack)
+## Part 23 — The parallel-run terms (for the evening check)
 
-After the department is loaded, head office **publishes** a signed price list (the catalogue pack), and the till
-pulls it the next time it reaches this copy's books.
+The evening check (sheet 3) records each day only once the terms of the parallel run are written: who reconciles every
+day, how many clean days in a row are needed, the most days it may last, and the first day. **STOP AND ASK** — these
+are your decisions (you are the daily reconciler for the first two weeks, OB-254). The cutover id is the one on the
+migration screen.
+```
+pnpm run store-computer -- parallel-policy --as <your-login> --cutover <cutover-id> --reconciler <your-login> --clean-days <N> --max-days <M> --start <YYYY-MM-DD>
+```
+- **When it worked:** `POLICY RECORDED — from …, … reconciles every day; …`.
 
-1. **BLOCKED (gap W-3):** publishing needs head office's catalogue screen, which is not on this PC yet. The till can
-   pull the pack only once Part 17 is done.
-2. **When it works:** the till window says the catalogue pack was updated, and the till's Sale screen stops saying it
-   has no price list. Scan three products from the pilot department and check each name and price against the old
-   ERP. **Send:** a photo of the till screen with the three lines.
+## Part 24 — The products reach the till (the catalogue pack)
 
-## Part 21 — Lock the PC (OB-251)
+After the department is loaded, head office **publishes** a signed price list (the catalogue pack), and the till takes it
+the next time it reaches this copy's books.
+
+1. Type:
+   ```
+   pnpm run store-computer -- publish-catalogue --as <your-login> --store <store-code>
+   ```
+   - Type `YES`, then your PIN. **When it worked:** `done — the catalogue pack version … is published.` and `DONE —`.
+2. Within a few minutes the till's Sale screen stops saying it has no price list. Scan three products from the pilot
+   department and check each name and price against the old ERP. **Send:** a photo of the till screen with the three
+   lines.
+
+## Part 25 — Practise before the first real day
+
+With the cashier, ring practice sales on the till exactly as sheet 2 says, for at least one practice hour. Take the
+memory photo (Part 12, step 6) during it. Do the power-cut test (Part 27) and the evening check (sheet 3) once on
+practice figures.
+
+## Part 26 — Lock the PC (OB-251)
 
 You decided: only you hold this PC's administrator account, the disk is encrypted, and cashiers get their own standard
 Windows account that opens only the till. Do this part **before** any real data.
 
-### 21a — You keep the only administrator account
+### 26a — You keep the only administrator account
 
 1. Open PowerShell and type:
    ```
@@ -543,7 +651,7 @@ Windows account that opens only the till. Do this part **before** any real data.
    ```
    - **When it worked:** only your account. Anyone in this group can control Docker, and through it the database.
 
-### 21b — A separate standard account for the cashiers
+### 26b — A separate standard account for the cashiers
 
 1. **Settings → Accounts → Other users → Add account.** Choose **I don't have this person's sign-in information**,
    then **Add a user without a Microsoft account**.
@@ -552,45 +660,40 @@ Windows account that opens only the till. Do this part **before** any real data.
    the three security questions.
 3. Back in **Other users**, click the new account → **Change account type** → it must say **Standard User**. Never
    Administrator.
-4. **How the day works with two accounts:** you sign in first (Docker Desktop and the till window start in **your**
-   account). Then press **Windows key + L**, or **Start → your name → switch user**, and sign in as `Till`. Your
+4. **How the day works with two accounts:** you sign in first (Docker Desktop and the till start in **your** account,
+   Part 14). Then press **Windows key + L**, or **Start → your name → switch user**, and sign in as `Till`. Your
    programs keep running. **Never "Sign out" of your own account while the shop trades**: that stops Docker and the
-   till. In the `Till` account, open only Microsoft Edge with the till favourite (Part 14, step 2).
-5. **Optional — kiosk mode (Windows 11 Pro "assigned access").** Windows can lock an account so it opens only one
-   program (Settings → Accounts → Other users → **Set up a kiosk**). For a browser till it can lock Microsoft Edge to
-   one address. Honest notes before you try it: it creates **its own** new account (not `Till`) and signs it in by
-   itself after a restart; Edge in kiosk mode runs as a private window and can restart itself after a quiet spell,
-   which would clear a basket that is half rung up (saved sales are safe: they are on the PC's disk, not in the
-   browser); and it has never been tried with this till. It would stop a cashier opening other screens (gap W-7). Try
-   it only in a practice hour, and only keep it if a full practice day works. Send photos of each screen if you try it.
+   till. In the `Till` account, open only Microsoft Edge with the till favourite (Part 14, step 3).
 
-### 21c — Cashiers cannot open the settings files (folder permissions)
+### 26c — Cashiers cannot open the settings files (folder permissions)
 
-`.env.real` and `till.env` hold this copy's keys. Windows lets every account on the PC read `C:\SRE` unless told
-otherwise, so this step removes every account except you, Windows itself (SYSTEM) and administrators.
+`.env.real` and `till.env` hold this copy's keys, in `C:\SRE-data`. Windows lets every account on the PC read a folder
+unless told otherwise, so this step removes every account except you, Windows itself (SYSTEM) and administrators — on
+**both** folders: `C:\SRE` (the system) and `C:\SRE-data` (the shop's data).
 
-1. In **your own** account, open PowerShell (no need to be in `C:\SRE`) and type as **one** line:
+1. In **your own** account, open PowerShell (no need to be in `C:\SRE`) and type these two lines, each as **one** line:
    ```
    icacls C:\SRE /inheritance:r /grant:r "$($env:USERDOMAIN)\$($env:USERNAME):(OI)(CI)F" "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F"
+   icacls C:\SRE-data /inheritance:r /grant:r "$($env:USERDOMAIN)\$($env:USERNAME):(OI)(CI)F" "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F"
    ```
-   - It may take a minute (there are many files). **When it worked:** `Successfully processed 1 files; Failed
-     processing 0 files`.
-2. Check it on the settings file itself:
+   - The first may take a minute (there are many files). **When it worked:** each says `Successfully processed 1
+     files; Failed processing 0 files`.
+   - After every update (Part 29), run the first line again for the **new** release folder.
+2. Check it on the two settings files themselves:
    ```
-   icacls C:\SRE\infra\compose\.env.real
+   icacls C:\SRE-data\.env.real
+   icacls C:\SRE-data\till\till.env
    ```
-   - **When it worked:** exactly three lines with `(I)(F)`: your PC's name and your account, `NT AUTHORITY\SYSTEM` and
-     `BUILTIN\Administrators`. **Send:** a photo (it shows names of accounts only, never what is in the file).
+   - **When it worked:** each shows exactly three lines with `(I)(F)`: your PC's name and your account,
+     `NT AUTHORITY\SYSTEM` and `BUILTIN\Administrators`. **Send:** a photo (it shows names of accounts only, never what
+     is in the file).
    - **If you also see `BUILTIN\Users` or `NT AUTHORITY\Authenticated Users`:** the lock did not reach that file. Stop
      and send the photo.
-3. Check from the cashier's side: switch to the `Till` account, open File Explorer and double-click `C:\SRE`.
+3. Check from the cashier's side: switch to the `Till` account, open File Explorer and double-click `C:\SRE-data`.
    - **When it worked:** Windows says **You don't currently have permission to access this folder**. Click
-     **Cancel** — never **Continue**, and never type your own password in the `Till` account.
-4. **LANE-2 CHECK:** after Part 13's `migrate-data-folder`, run the same two commands for `C:\SRE-data` (put
-   `C:\SRE-data` where step 1 says `C:\SRE`; in step 2 check a file the tool names), unless the tool says it already
-   locked that folder.
+     **Cancel** — never **Continue**, and never type your own password in the `Till` account. Do the same for `C:\SRE`.
 
-### 21d — Encrypt the disk (BitLocker)
+### 26d — Encrypt the disk (BitLocker)
 
 If the PC is stolen, an encrypted disk cannot be read. BitLocker is part of Windows 11 Pro.
 
@@ -603,8 +706,8 @@ If the PC is stolen, an encrypted disk cannot be read. BitLocker is part of Wind
    Windows ever asks for it (for example after a hardware repair).
    - **Never photograph the recovery key, never type it into a phone or a message, never send it to anyone — including
      me.** Do not choose "Save to your Microsoft account" unless you already keep that account safe and private.
-   - Put the paper in a sealed envelope and keep it **away from this PC**: at home, or in your locker. Write in the
-     workbook where it is (not the key itself).
+   - Put the paper in a sealed envelope and keep it **away from this PC**: at home, or in your locker, with the backup
+     passphrase (Part 8). Write in the workbook where it is (not the key itself).
 4. Choose **Encrypt entire drive**, then **New encryption mode**, then tick **Run BitLocker system check** and
    **Continue**, and restart when it asks.
 5. Encryption runs in the background; the PC can be used meanwhile. Leave it switched on until it finishes.
@@ -616,63 +719,108 @@ If the PC is stolen, an encrypted disk cannot be read. BitLocker is part of Wind
    - **When it worked:** `Percentage Encrypted: 100.0%` and `Protection Status: Protection On`. **Send:** a photo
      (it holds no key). Close this administrator window straight away.
 
-## Part 22 — The UPS and the power-cut test (OB-250)
+### 26e — The office screens ask for the person's own PIN (OB-259)
 
-You told us a UPS already powers this PC.
+The till PC also serves the office screens (the manager's day, the migration screen, the owner's screen). Each of them
+now asks **"Enter your PIN" / "உங்கள் PIN-ஐ உள்ளிடுங்கள்"** before it opens: the person's staff ID and their own till
+PIN. Only you, the store manager and the accountant(s) can open them; **a cashier's PIN opens the till only**. A
+sign-in lasts 30 minutes; the **Sign out** button at the bottom right of every office page ends it at once.
 
-1. **Send:** a photo of the UPS's label (it shows the model and the VA or W number), and tell me how long it runs this
-   PC on battery, if you know (the box or manual says). Also tell me what else is plugged into it (screen, internet
-   box, printer).
+1. Check it from the cashier's side: in the `Till` account, in Edge, change the word `pos` at the end of the till's
+   address to `manager` and press Enter.
+   - **When it worked:** the page says **Enter your PIN** in English and Tamil. Type a **cashier's** staff ID and PIN:
+     it says **This PIN opens the till only.** Then open the till favourite again. **Send:** a photo of the refusal.
+2. In your own account, open the same address and sign in with **your** staff ID and PIN: the manager's screen opens,
+   with your name and **Sign out** at the bottom right. Press **Sign out**.
+
+## Part 27 — The UPS and the power-cut test (OB-250 · OB-260)
+
+You told us the shop has **three Numeric Onfinity 6 kVA UPS units**, with a **diesel generator** behind them (OB-260).
+The system does not rely on the generator; it relies on the UPS keeping this PC on until it can shut down cleanly.
+
+1. **Wire this PC, its screen and the internet router to a UPS** (one of the three), not to a wall socket (OB-260). A
+   sale never needs the router (everything the till uses is on this PC), but with the router on the UPS the shop's
+   network stays up through a short cut too. **Send:** a photo of the plugs at the UPS, and tell me what else is plugged into it.
 2. **The power-cut test**, at a quiet time with no customer at the counter, with the till open and practice data only:
    - Pull the **UPS's own plug out of the wall** (not the PC's plug out of the UPS). The UPS beeps; the PC stays on.
    - Ring one practice sale on the till. **When it worked:** it completes and its bill number appears, on battery.
-   - Then shut down cleanly, still on battery: in the black till window press **Ctrl + C** and answer `Y`; right-click
-     Docker's whale icon by the clock → **Quit Docker Desktop**, wait until the icon goes; then **Start → Power → Shut
-     down**. Write down how many minutes it was on battery.
-   - Plug the UPS back into the wall. Switch the PC on, sign in, wait for Docker's **Engine running**, start the till
+   - Then shut down cleanly, still on battery: right-click Docker's whale icon by the clock → **Quit Docker Desktop**,
+     wait until the icon goes; then **Start → Power → Shut down**. Write down how many minutes it was on battery.
+   - Plug the UPS back into the wall. Switch the PC on and sign in; the system and the till start by themselves
      (Part 14). **When it worked:** the till opens, and the practice sale you rang on battery is still there.
    - **Send:** photos of the till before and after, and the minutes on battery.
 3. If the PC switched off by itself when the plug came out, stop: the UPS is not protecting it. Send what happened.
 
-## Part 23 — Automatic backups (OB-249)
+## Part 28 — Automatic backups, and your own daily copy (OB-249 · OB-262)
 
-You decided: an automatic backup **every hour**, of everything (the database and the till's own saved sales),
-encrypted, onto a second USB drive that **stays plugged in**; and once a day you plug in **your own** drive, take a
-copy, and keep it.
+You decided: an automatic, encrypted backup **every hour**, of everything (the database, the till's saved sales and the
+settings), onto a second USB drive that **stays plugged in**; and once a day you plug in **your own** drive, take a copy,
+and keep it. **Nothing is ever deleted** — every backup is kept (OB-262).
 
-**LANE-2 CHECK — the hourly backup.** Once lane 2's commands arrive (`F:` stands for the letter of the drive that
-stays plugged in; use yours):
-```
-pnpm run store-computer -- schedule-backup --to F:\sre-hourly --every 60
-pnpm run store-computer -- backup-status
-```
-- **When it worked:** to be written from the tool's own words once it arrives. `backup-status` must say when the last
-  hourly backup was made; a backup older than an hour or two is a problem to send a photo of.
-- To stop the hourly backup (only if told to): `pnpm run store-computer -- unschedule-backup`.
+1. Plug in the drive that will stay in this PC and find its letter (Part 8, step 1). `F:` below stands for it.
+   ```
+   pnpm run store-computer -- schedule-backup --to F:\sre-auto --every 60
+   ```
+   - **When it worked:** `AUTOMATIC BACKUP ON — every 60 minutes to F:\sre-auto, encrypted to backup key …, while you are
+     signed in to Windows.`, the names of two Windows tasks, then `Taking the first backup now…` and `BACKUP DONE —`.
+     It uses the backup key you made in Part 8 and never asks for the passphrase (a backup only needs the sealed key;
+     opening one needs the passphrase).
+   - If it says `Access is denied`, it says the one thing to do on the next line.
+   - Then prove that first backup restores: the line it printed after `Next:` (a `restore-check`).
+2. Every morning, check it:
+   ```
+   pnpm run store-computer -- backup-status
+   ```
+   - It shows the backup key, `Automatic: every 60 minutes to F:\sre-auto`, `Last good:` with how long ago, and **what
+     is on the drive: how many backups, how much space they use, how much is free, and about how many more days fit**.
+   - **When it worked:** the last line says `OK — the last good backup is less than 2 hours old.`
+   - **Because nothing is ever deleted, the drive slowly fills** (OB-262). `backup-status` shows, every morning, how
+     many backups are kept, the space they use, the space left and **about how many more days fit**. Write the
+     days-left number in the workbook each Monday. When it falls below a month, bring the drive to me and we decide
+     together (a bigger drive, or moving old backups to your own drive). The tool never deletes one by itself. If the
+     drive does fill, the backups stop, and within two hours `status` and the red banner on the office screens say the
+     last backup is too old.
+   - A `RED —` line: plug the drive in, then send a photo.
+3. **Your own daily copy**, at closing: plug in **your own** drive and type
+   `pnpm run store-computer -- backup --to E:\sre-real` (Part 8, step 2). Then unplug it and take it with you.
+4. To stop the hourly backup (only if told to): `pnpm run store-computer -- unschedule-backup`. Every backup already on
+   the drives is kept, and the office screen turns red after two hours with no backup — on purpose.
 
-**Your own daily copy** works today: plug in your drive and type `pnpm run store-computer -- backup --to E:\sre-real`
-(Part 8). Today it copies the database only; **LANE-2 CHECK:** once lane 2's change arrives it also copies the till's
-saved sales.
+## Part 29 — Installing a new version (update)
 
-## Part 24 — Installing a new version (update)
+Never replace or delete `C:\SRE` by hand. Each new version goes into **its own folder** beside the old one; the shop's
+data stays in `C:\SRE-data`; and the file `C:\SRE-data\run\current-release.json` says which folder is the live one — the
+Windows tasks follow it by themselves.
 
-**LANE-2 CHECK.** Never replace or delete `C:\SRE` by hand: today that would delete the till's saved sales and this
-copy's settings. Once lane 2's command arrives, a new version is downloaded as a ZIP (Part 3), extracted beside the old
-one (for example `C:\SRE-new`), and installed with:
-```
-pnpm run store-computer -- update --from C:\SRE-new
-```
-- Do it only when the shop is closed (it rebuilds the system, Part 12).
-- **When it worked:** to be written from the tool's own words once it arrives.
+1. Do it only when the shop is closed (it rebuilds the system, Part 12). Plug in the backup drive that stays in the PC.
+2. Download the new version's ZIP (Part 3) and extract it to `C:\`. Rename the new folder with the month, for example
+   `SRE-2026-11` — **never** `SRE`, and never inside another folder.
+3. Open PowerShell in the **current** live folder (the first time: `C:\SRE`) and type:
+   ```
+   pnpm run store-computer -- update --from C:\SRE-2026-11
+   ```
+   - It takes a backup first (to the drive that stays in), stops the till, installs and builds the new version (it needs
+     the internet once, for its packages), starts it on the **same** data, makes it the live release and starts the
+     till.
+   - **When it worked:** `1.` … `BACKUP DONE`, `2.` the till stopped, `3.` installing, `READY — the new release runs on
+     this copy's own database`, `4. TILL —`, then `UPDATED — the shop system now runs from C:\SRE-2026-11. The shop's
+     data stayed in C:\SRE-data.`
+   - If anything fails it says `NOT UPDATED —`, puts the old version back on the same data and starts the till again.
+     Send a photo.
+4. From now on open PowerShell in the **new** folder. Keep the old folder: it is now the **previous** release (the
+   rollback drill's `--previous`, Part 11). Never delete the live or the previous release folder; only older ones.
+5. Lock the new folder (Part 26c, step 1, first line, with the new folder's name), and run
+   `pnpm run store-computer -- status`.
 
-## Part 25 — The daily routine (mirror pilot)
+## Part 30 — The daily routine (mirror pilot)
 
 In the mirror pilot the **old ERP bills every customer**, as today, and stays the legal GST record. A trained person
 also rings the pilot department's lines on the new till. The customer never gets the new bill (OB-248). Guest sales
 only: the new till takes no mobile number and no loyalty (OB-252). You are the daily reconciler and the incident owner
 for the first two weeks (OB-254).
 
-**The cashier sheets** (print each in English and Tamil, and keep them at the counter):
+**The cashier sheets** (print the **English** sheets for the pilot, OB-261; the Tamil sheets are kept, marked not yet
+checked by a Tamil reader):
 
 | Sheet | English | Tamil |
 |---|---|---|
@@ -682,50 +830,57 @@ for the first two weeks (OB-254).
 | 4. When a cashier forgets their PIN | `docs\sop\sop-04-forgotten-pin.en.md` | `docs\sop\sop-04-forgotten-pin.ta.md` |
 
 **Morning, before opening (you):**
-1. Switch the PC on if it is off, and sign in to **your** account. Wait for Docker's **Engine running**.
-2. Start the till (Part 14) — **LANE-2 CHECK:** after `autostart` it starts by itself; check the black window is there.
-3. **LANE-2 CHECK:** `pnpm run store-computer -- status` — read what it says. Anything other than all well: send a
-   photo before trading on the new till.
-4. **LANE-2 CHECK:** `pnpm run store-computer -- backup-status` — the last hourly backup is recent.
-5. Switch user to `Till` (Part 21b). Open the till favourite. The cashier signs in with their own staff ID and PIN.
+1. Switch the PC on if it is off, and sign in to **your** account. Docker, this copy and the till start by themselves
+   (Part 14). Wait two minutes.
+2. `pnpm run store-computer -- status` — read what it says. Anything other than `ALL OK`: send a photo before trading on
+   the new till.
+3. `pnpm run store-computer -- backup-status` — the last hourly backup is recent, and the drive has room.
+4. Switch user to `Till` (Part 26b). Open the till favourite. The cashier signs in with their own staff ID and PIN.
 
 **During the day (staff):** sheet 2 for every pilot-department line; sheet 1 if the new till stops. You lock your own
 account when you leave the PC (**Windows key + L**), never sign out.
 
 **Evening (you):**
-1. The till's cash-up and day close: **waiting for lane 1** (sheet 2 has the marked place).
-2. Sheet 3: enter and sign the day on the migration screen.
-3. Your own daily copy (Part 23), then unplug your drive and take it with you.
-4. If you switch the PC off at night, use the clean shutdown in Part 22, step 2.
+1. The till's payment and cash-up for mirror sales: sheet 2, step 5 — still a marked placeholder until the "paid on old
+   ERP" tender (OB-256) arrives on the till.
+2. Sheet 3: enter and sign the day on the migration screen (it asks for your PIN, Part 26e).
+3. Your own daily copy (Part 28, step 3), then unplug your drive and take it with you.
+4. If you switch the PC off at night, use the clean shutdown in Part 27, step 2.
 
 ---
 
-## Gaps found while checking this guide (20 Oct 2026)
+## The gaps found while checking this guide, and how each was closed (20 Oct 2026)
 
-Every command in Parts 12–25 was checked against the scripts and `package.json`. **None of it has run on real Windows.**
-These are the places the guide has to stop:
+Every command in this guide was checked against the scripts and `package.json`, and each one below has an automated
+test. **None of it has run on real Windows yet.**
 
-| Id | Gap | Where it stops | What would close it |
-|---|---|---|---|
-| W-1 | The installer, typed with a `--` after `till:install`, is refused: `Unknown option(s): --`. pnpm 10 passes the `--` on and the installer does not skip it. Without the `--` it works (Part 13 uses that). `in-store-install.md` and the real-data runbook show the form with `--`. The installer's usage line also leaves out `--lane`. | Nowhere, with Part 13's form | Let the installer skip a leading `--` (S) |
-| W-2 | `tenant:bootstrap` reads `DATABASE_URL` from `.env.real`, which names the database by its Docker name `db`. From the PC that name does not exist: `Could not write to the ledger: getaddrinfo ENOTFOUND db` (reproduced). The dry run works. | Part 16 step 2 | Translate `db` to this PC's own database port, as the demo smoke already does (S) |
-| W-3 | No screen or command on this PC for head office's own acts: create the store, record the legal name and GSTIN, issue the till's bill prefix, give people their logins and roles (two-person), give the `store-edge` login its role, publish the catalogue pack, write the parallel-run terms. `store-computer up` starts only the database, the schema check and the API; nothing signs a person in to head office's screens here. | Parts 15, 17, 18, 20; sheet 3 | Owner choice (see the build session's report) (M) |
-| W-4 | `token:store` needs `--store <store id>` (OB-54); both runbooks leave it out. The store id exists only after W-3. | Part 17 | W-3, then the runbooks corrected (S) |
-| W-5 | The till's settings need this copy's address, the token, the store id and "take the store setup from head office". The installer leaves the address and token blank and has no option for the other two, so today they are typed into `till.env` in Notepad, with its keys on screen. | Part 17 step 3 | A command that writes them without showing anything (S) |
-| W-6 | `pnpm run till:pin` runs the till program without loading `till.env`, so it cannot find the till's data. Part 18 uses `start-till.cmd till-pin`, which loads it. | Nowhere | Point the package script at the settings, or drop it (S) |
-| W-7 | The office screens are served by the till window on this PC to **every** Windows account, and on this copy they act as the person the store setup names for each screen, with no sign-in. A cashier in the `Till` account could type an office screen's address. | Part 21b ("opens only the till") | Kiosk mode (21b step 5, untested), or a sign-in on those screens (M) |
-| W-8 | Sealing the old ERP's export files (MG-02) has no screen or command (audit row 8). | Part 19 step 1 | A seal screen or command (S–M) |
+| Id | Gap | Closed by |
+|---|---|---|
+| W-1 | The installer refused the `--` the runbooks show after `till:install`. | The installer skips it (Parts 13, 20). |
+| W-2 | `tenant:bootstrap` could not reach the database from the PC (`getaddrinfo ENOTFOUND db`). | It now uses this PC's own database port (Part 15). |
+| W-3 | No way on this PC to record the shop, its GSTIN, the bill prefix, people's roles, or to publish the catalogue. | The owner setup commands, each person with their own PIN (OB-257, Parts 17–21, 24). |
+| W-4 | `token:store` needs `--store`. | Not needed on this PC: the installer makes the store token itself (Part 20). |
+| W-5 | The till's address, token and store had to be typed into `till.env` in Notepad. | The installer writes them, never showing them (Part 20). |
+| W-6 | `pnpm run till:pin` did not load the till's settings. | It finds and loads `till.env` itself (Parts 16, 21). |
+| W-7 | A cashier could type an office screen's address. | The office screens ask for the person's own PIN; a cashier's PIN opens only the till (OB-259, Part 26e). |
+| W-8 | No way to seal the old ERP's export files. | `store-computer seal` (Part 22). |
+
+**Still open** (each said where it is used): the payment and cash-up step for mirror sales (sheet 2, step 5 — the "paid
+on old ERP" tender, OB-256, and refunds against it, OB-258, are being added to the till); the names OB-243 still waits
+for (the department, the cashier, the store manager); and the production sign-in (OA-4) — until then the PC lock
+(OB-251) and each person's own PIN are what stand behind every name on the records.
 
 ---
 
 ## If a step fails
 
-- **Red text, or `FAIL`, `NOT STARTED`, `NOT READY`, `NOT DONE`, `NOT ACCEPTED`, `NOT PASSED` or `REFUSED`:** stop. Do not try other commands. Send me a photo of
-  the **whole PowerShell window**, so every line is readable.
+- **Red text, or `FAIL`, `NOT STARTED`, `NOT READY`, `NOT DONE`, `NOT ACCEPTED`, `NOT PASSED`, `NOT UPDATED`, `RED` or
+  `REFUSED`:** stop. Do not try other commands. Send me a photo of the **whole PowerShell window**, so every line is
+  readable.
 - The tool always says the one thing to do on the line under the problem. If you did that thing and it still says the
   same, send the photo.
-- **Never** send a photo of `.env.real`, never open it, never copy it anywhere, and never copy it to a file called `.env`.
-  The same for `till.env`, for a window that shows a till PIN (Part 18), a store token (Part 17), or the BitLocker
-  recovery key (Part 21d).
+- **Never** send a photo of `.env.real` or `till.env`, never open them, never copy them anywhere, and never copy them
+  to a file called `.env`. The same for a window that shows a till PIN (Parts 16, 21), the backup passphrase (Part 8),
+  or the BitLocker recovery key (Part 26d).
 - If Docker Desktop is closed, the system stops. Open Docker Desktop again and run `pnpm run store-computer -- up`.
 - Before you send anything, check the photo shows only the blue window or a Windows screen.

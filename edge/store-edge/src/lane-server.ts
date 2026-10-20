@@ -76,6 +76,7 @@ import type { ReportAnswer } from './peripheral-health';
 import { refundRoomOutsidePoints } from '../../../packages/loyalty/src/wallet';
 import { returnedValueAtOriginalPrices } from '../../../packages/returns/src/exchange';
 import { withoutCardData, type TenderCardDataRemoval } from '../../../packages/tender/src/tender-card-data';
+import { PAID_ON_OLD_ERP, PAID_ON_OLD_ERP_WORDS, saleTenderRefusal, refundTenderRefusal, paidOnOldErpRoom } from '../../../packages/tender/src/paid-on-old-erp';
 
 /** The one address this may listen on. Named so the test can assert on it. */
 export const LANE_HOST = '127.0.0.1';
@@ -520,6 +521,15 @@ export function startLaneServer(input: {
    * are refused before the disk in words; the balance route refuses. The till's own rule, again, at the box.
    */
   readonly guestSalesOnly?: () => boolean;
+  /**
+   * OB-256 · OB-258 (owner, 20 Oct 2026): read live — the store pack's `policies.mirrorPilot` or this box's own
+   * `EDGE_MIRROR_PILOT=1`. While true, a sale is paid by "Paid on old system" alone, for the whole bill (no change, no
+   * card/UPI attempt); a refund goes back to it, and on a receipted bill never more than the bill was paid that way less
+   * what already came back; an exchange is not keyed as one. While false, that tender is refused. All before the disk, in
+   * the cashier's words. With it on and guest sales only off, every sale and refund is refused (the box also refuses to
+   * start like that) — the mirror pilot needs both.
+   */
+  readonly mirrorPilot?: () => boolean;
 }): Promise<LaneServer> {
   const maxBytes = input.maxBytes ?? 256 * 1024;
 
@@ -1389,6 +1399,38 @@ export function startLaneServer(input: {
             }
           }
           parsed = { ...rest, ...(memberRef === undefined ? {} : { customerRef: memberRef }) };
+        }
+        // OB-256 · OB-258: the MIRROR PILOT's tender, decided before anything else is spent — the same rule the till ran.
+        if (!isTag && parsed !== null && typeof parsed === 'object') {
+          const mirrorOn = input.mirrorPilot?.() === true;
+          const r = parsed as Record<string, unknown>;
+          const mirror = mirrorOn && !guestOnly
+            ? { refusedBecause: 'mirror_needs_guest_sales_only' as const, laneMessage: PAID_ON_OLD_ERP_WORDS.needsGuestOnly }
+            : isReturn
+              ? refundTenderRefusal({ mirrorOn, refundTender: r['refundTender'], exchange: r['exchange'] })
+              : saleTenderRefusal({ mirrorOn, totalMinor: typeof r['total'] === 'number' ? r['total'] : typeof r['totalMinor'] === 'number' ? r['totalMinor'] : Number.NaN, tenders: r['tenders'] });
+          if (mirror !== undefined) {
+            send(res, 200, { committed: false, refusedBecause: mirror.refusedBecause, laneMessage: mirror.laneMessage }, cors);
+            return;
+          }
+          // A receipted refund to "Paid on old system" stays within its bill: what the bill was paid that way, less every
+          // refund already against it — judged from THIS box's own logs, never from numbers the till sent.
+          if (isReturn && r['refundTender'] === PAID_ON_OLD_ERP && r['noReceipt'] !== true) {
+            const originalId = typeof r['originalSaleId'] === 'string' && r['originalSaleId'] !== '' ? r['originalSaleId'] : undefined;
+            const bill = originalId === undefined ? undefined : await input.node.lookupSale(originalId).catch(() => undefined);
+            if (bill === undefined) {
+              send(res, 200, { committed: false, refusedBecause: 'paid_on_old_erp_bill_not_here', laneMessage: PAID_ON_OLD_ERP_WORDS.billNotHere }, cors);
+              return;
+            }
+            const room = paidOnOldErpRoom({
+              totalMinor: bill.sale.totalMinor, tenders: bill.sale.tenders,
+              priorRefundsMinor: bill.refunds.filter((x) => x.returnId !== id).reduce((n, x) => n + x.refundMinor, 0),
+            });
+            if (typeof r['refundMinor'] !== 'number' || r['refundMinor'] > room) {
+              send(res, 200, { committed: false, refusedBecause: 'paid_on_old_erp_over_the_bill', laneMessage: PAID_ON_OLD_ERP_WORDS.overTheBill }, cors);
+              return;
+            }
+          }
         }
         // A refund's customer (store credit is issued to them): a keyed mobile number becomes the member code HERE too, so
         // no phone number reaches the refund log either (PF-09 step 3 · P-04). Any other reference is carried as before.

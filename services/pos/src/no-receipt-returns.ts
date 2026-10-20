@@ -35,7 +35,8 @@ import { approvalSealFlags, cashierSealFlags, stampIn } from './store-seal';
 
 const DISPOSITIONS: ReadonlySet<string> = new Set(['resell', 'quarantine', 'damaged', 'scrap']);
 /** Cash and store credit settle at the desk; card/UPI is a provider reversal, pending until reconciled (M13-FR-04). */
-const SETTLED_AT_DESK: ReadonlySet<string> = new Set(['cash', 'store_credit']);
+// OB-258: a refund to `paid_on_old_erp` was given on the old ERP — settled, never a pending provider reversal.
+const SETTLED_AT_DESK: ReadonlySet<string> = new Set(['cash', 'store_credit', 'paid_on_old_erp']);
 
 export interface NoReceiptReturnsDeps {
   /** Round 35 · NEW-6: whether a caller is a store computer (only its own time on a synced refund is kept). */

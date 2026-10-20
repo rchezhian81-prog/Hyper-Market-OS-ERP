@@ -114,6 +114,8 @@
       .area.differs { border-left: 6px solid var(--warn); }
       .area.unexplained { border-left: 6px solid var(--danger); background: var(--error-surface); }
       .area .cols { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+      /* OB-256: an area the mirror pilot does not compare shows its reason, not its boxes. */
+      .area [hidden] { display: none; }
       .area label { margin: 0 0 2px; font-size: 14px; }
       .area .diff { font-weight: 600; font-variant-numeric: tabular-nums; }
       .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }

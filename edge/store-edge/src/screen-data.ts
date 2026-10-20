@@ -88,6 +88,8 @@ export interface ScreenInput {
   /** D04-FR-05: the latest device report from each till on this box; absent on a box with no till. */
   readonly peripheralReports?: readonly { readonly laneId: string; readonly reportedBy: string; readonly reportedAt: string; readonly devices: readonly { readonly kind: string; readonly state: string; readonly detail?: string }[] }[];
   readonly pendingPayments?: readonly { readonly attemptId: string; readonly laneId: string; readonly billRef: string; readonly kind: 'card' | 'upi'; readonly amountMinor: number; readonly askedAt: string; readonly state: string }[];
+  /** OB-256 · OB-258: whether this box is in the mirror pilot, and who turned it on. Absent → off. */
+  readonly mirrorPilot?: { readonly on: boolean; readonly by: 'store_pack' | 'store_computer_setting' | null };
 }
 
 /**
@@ -2010,6 +2012,8 @@ export function posLanePayload(input: ScreenInput, laneId: string | undefined): 
     // B6: the weighing scales this lane takes weight from, with the last day each stamp is valid — or why the box does not
     // know. The till sells nothing by weight without a current one.
     scales: laneScalesFor(input.pack, laneId),
+    // OB-256: the mirror pilot — "Paid on old system" is then the till's only tender, for sales and refunds.
+    mirrorPilot: input.mirrorPilot ?? { on: false, by: null },
   };
 }
 
@@ -2424,6 +2428,12 @@ export function aiPayload(input: ScreenInput): Record<string, unknown> | null {
  * it. An unsynced till is an unmigrated sale, and it is not found until a customer asks for the
  * receipt.
  */
+/** OB-256: the MG-10 areas the mirror pilot does not compare, and the decision that says so. */
+export const MIRROR_PILOT_NOT_COMPARED: readonly { readonly area: 'payments' | 'loyalty'; readonly decision: 'OB-256' }[] = Object.freeze([
+  { area: 'payments', decision: 'OB-256' },
+  { area: 'loyalty', decision: 'OB-256' },
+]);
+
 export function migrationPayload(input: ScreenInput): Record<string, unknown> | null {
   if (!input.pack.migrationPolicy.known) return null;
   const policy = input.pack.migrationPolicy.value;
@@ -2442,6 +2452,10 @@ export function migrationPayload(input: ScreenInput): Record<string, unknown> | 
   if (policy.loadOperator !== undefined) payload['loadOperator'] = policy.loadOperator;
   // MG-10: the day entry and signature are the NAMED RECONCILER's (or the owner's) — the cloud's written terms say who.
   if (policy.dailyReconcilerUserId !== undefined) payload['dailyReconcilerUserId'] = policy.dailyReconcilerUserId;
+  // OB-256 (owner, 20 Oct 2026): in the mirror pilot the evening comparison covers sales value, bill count, tax and stock;
+  // payments are not compared (every payment is taken on the old ERP) and neither is loyalty (the old ERP keeps it, OB-252).
+  // Said to the screen so those areas show the decision and send no figure — never a silent zero (P-08).
+  if (input.mirrorPilot?.on === true) payload['notCompared'] = MIRROR_PILOT_NOT_COMPARED;
   if (policy.deltaAppliedAt !== undefined) payload['deltaAppliedAt'] = policy.deltaAppliedAt;
   if (policy.rollbackDemonstratedAt !== undefined) {
     payload['rollbackDemonstratedAt'] = policy.rollbackDemonstratedAt;

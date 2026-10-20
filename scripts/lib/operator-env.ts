@@ -50,6 +50,29 @@ export function buildOperatorToken(claims: OperatorClaims, policy: TokenPolicy, 
   return `${header}.${payload}.${signature}`;
 }
 
+/**
+ * How a person proved who they are at the store PC, for the owner setup commands (OB-257 under OB-251): their own till
+ * PIN (`pin`, something they know), checked on this PC against a verifier keyed by this PC's own secret, in the owner's
+ * locked Windows session — the token itself signed with a key that exists only on this PC (`swk`, proof of possession of
+ * a software-held key). The API reads the two together as a multi-factor sign-in (services/identity/src/amr.ts). This is
+ * the stand-in sign-in the owner accepted for the mirror pilot until the production sign-in decision (OB-251, OA-4,
+ * KL-01): it is said here, in the guide and in the report, never hidden.
+ */
+export const STORE_PC_PIN_AMR: readonly string[] = Object.freeze(['pin', 'swk']);
+
+/**
+ * A short-lived token for ONE person, minted only after that person's own till PIN matched on this PC (OB-257). The same
+ * claims as `buildOperatorToken`, plus the step-up evidence a sensitive route reads (`auth_time` — when the PIN was
+ * checked — and `amr`). Never printed, never written; it goes to the API over loopback and nowhere else.
+ */
+export function buildPersonToken(claims: OperatorClaims & { readonly authTimeSec: number }, policy: TokenPolicy, nowMs: number): string {
+  const nowSec = Math.floor(nowMs / 1000);
+  const header = b64url({ alg: 'HS256', typ: 'JWT' });
+  const payload = b64url({ sub: claims.sub, tenant_id: claims.tenantId, iss: policy.issuer, aud: policy.audience, iat: nowSec, jti: claims.jti ?? randomUUID(), exp: nowSec + claims.ttlSeconds, auth_time: claims.authTimeSec, amr: [...STORE_PC_PIN_AMR] });
+  const signature = createHmac('sha256', policy.secret).update(`${header}.${payload}`).digest('base64url');
+  return `${header}.${payload}.${signature}`;
+}
+
 /** The identity-provider policy from the env, or the names of what is missing. */
 export function tokenPolicyFromEnv(env: Readonly<Record<string, string>>): { readonly policy?: TokenPolicy; readonly missing: readonly string[] } {
   const missing = ['IDP_SIGNING_KEY', 'IDP_ISSUER', 'IDP_AUDIENCE'].filter((k) => (env[k] ?? '') === '');

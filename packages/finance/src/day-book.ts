@@ -480,8 +480,11 @@ export const DEFAULT_RETAIL_POSTING_MAP: PostingMap = {
     },
     // FUL-05: an online order's sale is paid by its prepayment (`online_prepaid`, held by the payment provider until it
     // settles) or by the door's cash / UPI, and a cash-on-delivery remainder the customer still owes is `cod_due`.
-    ...(['cash', 'card', 'upi', 'store_credit', 'exchange_credit', 'loyalty_points', 'online_prepaid', 'cod_due'] as const).flatMap((tender) => {
-      const account = tender === 'cash' ? 'cash_in_hand'
+    // OB-256 · OB-258: a mirror-pilot bill is paid on the OLD ERP (`paid_on_old_erp`) — its own clearing account, never
+    // cash in hand, a card or UPI receivable (P-08); the old ERP stays the legal record, so the CA decides what it posts to.
+    ...(['cash', 'card', 'upi', 'store_credit', 'exchange_credit', 'loyalty_points', 'online_prepaid', 'cod_due', 'paid_on_old_erp'] as const).flatMap((tender) => {
+      const account = tender === 'paid_on_old_erp' ? 'paid_on_old_erp_clearing'
+        : tender === 'cash' ? 'cash_in_hand'
         : tender === 'card' ? 'card_receivable'
           : tender === 'upi' ? 'upi_receivable'
             : tender === 'store_credit' ? 'store_credit_liability'

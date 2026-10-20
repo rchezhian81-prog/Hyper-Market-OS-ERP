@@ -91,7 +91,8 @@ describe('the store-computer setup never shows a secret (hard rule #4 · OB-244)
     expect(guide).not.toMatch(/https?:\/\//); // no URL to ping or paste — official sites are named, not linked
     expect(guide).not.toMatch(/[A-Za-z0-9_-]{40,}/); // nothing shaped like a key or a token
     expect(guide).toMatch(/Never send a photo of the file `\.env\.real`/);
-    expect(guide).toMatch(/A Tamil version can come later/);
+    // OB-261: the guide is in English and the pilot prints the English sheets; the Tamil sheets are kept, marked unchecked.
+    expect(guide).toMatch(/English sheets are the ones you print\*\* \(OB-261\)/);
     for (const step of ['doctor', 'prepare', 'up', 'check --by "Your Name"', '--offline-confirmed', 'fingerprints', '--demo-fingerprints', 'backup --to', 'restore-check --from', 'drill --by "Your Name"', '--run', '--backup-record']) expect(guide).toContain(step);
     // The demo box steps: signed in with the owner's own login, run as the deploy user, never an address or a key.
     expect(guide).toMatch(/sudo -u deploy node scripts\/store-computer\.mjs fingerprints/);
