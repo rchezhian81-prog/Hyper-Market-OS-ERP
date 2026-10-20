@@ -12,7 +12,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - New owner decisions: "paid on old ERP" tender for mirror sales (OB-256); owner setup commands for head-office jobs (OB-257); refunds rung on both (OB-258); office screens ask for a PIN (OB-259).
 - Next round: build OB-256/OB-257/OB-258/OB-259; fix the guide's command faults W-1, W-2, W-4, W-5, W-6, W-8; turn guest-only on in the install; align the guide with the built update path (release folders side by side).
 - Owner facts and decisions: UPS three Numeric Onfinity 6 kVA plus DG; 433 GB free on C:; wired network (OB-260); English sheets for the pilot, Tamil checked before the 2nd department (OB-261); keep every backup until warned (OB-262).
-- Open question: can the old ERP print day totals for one department.
+- Open (OB-263): the old ERP gives whole-shop totals only; the owner is checking for an item-wise, category-wise or bill-wise sales report so the evening check can be scoped to the pilot department.
 
 ## Pilot-readiness gap audit before the store-PC install (OB-247 to OB-255, 20 October 2026)
 
