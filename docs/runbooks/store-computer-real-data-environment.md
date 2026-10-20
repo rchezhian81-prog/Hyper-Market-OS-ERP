@@ -10,8 +10,8 @@ works with **no internet** (P-01) and is **never connected to the hosted demo**.
 > **The owner does this himself, on Windows (OB-244, 20 Oct 2026).** There is no IT person: the owner does every
 > hands-on step on the shop's Windows 10/11 PC, and no AI is ever given admin access to his computers. His step-by-step
 > guide is **`docs/runbooks/store-computer-owner-guide-windows.md`**. It uses one command, `pnpm run store-computer`, which
-> does Steps 1, 2 and 6 below for him (`prepare`, `up`, `check`) and checks the computer first (`doctor`). This runbook
-> stays the reference for what each step does and why.
+> does Steps 1, 2, 4, 6 and 7 below for him (`prepare`, `up`, `backup` + `restore-check`, `check` with `fingerprints`,
+> `drill`) and checks the computer first (`doctor`). This runbook stays the reference for what each step does and why.
 
 > **Nothing real goes into this copy before the owner's written "Option 2 GO"** (OB-242 — after the cutover tools are
 > built and tested). Standing the copy up is allowed before the GO; loading real data is not. Silence is not a yes.
@@ -146,6 +146,26 @@ that already has anybody in it.
 
 ## Step 4 — the owner's backup drive
 
+**The one-command way (Windows or Linux; OB-246, closes the backup half of G-RD-6):** no PostgreSQL tools on the
+computer, no database address typed anywhere.
+
+- `pnpm run store-computer -- backup --to <the drive's folder>` runs `pg_dump` **inside** this copy's db container
+  (`docker compose -p sre-real … exec -T db`) and streams it straight onto the drive. One psql session opens a
+  REPEATABLE READ snapshot, counts every table and the money in it, and runs `pg_dump --snapshot` of that same moment, so
+  the manifest and the file can never disagree (GT-07). It writes `sre-real-backup-<time>.dump` and its
+  `.manifest.json` (size, SHA-256, time taken, row counts, money per event type, newest event), makes both read-only,
+  refuses a folder on the system drive, on the repository's drive or inside the repository (the check 10 rule), and
+  never deletes anything — a failed dump is left with no manifest and is never taken for a backup.
+- `pnpm run store-computer -- restore-check --from <the .manifest.json>` checks the file's size and SHA-256 against the
+  manifest (a changed file is refused before anything is restored), restores it into a **new** scratch database
+  `sre_restore_check_<time>` in the same container — never into `sre_real` — reconciles every table's rows, the money
+  and the newest event against the manifest, writes a read-only `restore-check-<time>.json` beside the backup, and only
+  then drops that scratch database and nothing else. It prints `restored_and_reconciled` or each exact difference.
+- Check 10 takes the backup's manifest as `--backup-record`: it passes when a restore-check record beside it, for that
+  very backup, says `restored_and_reconciled`, judged by where the files really are.
+
+By hand on a Linux computer instead:
+
 1. Plug in the owner's backup drive. Note where it mounts (for example `/media/<drive>`); write it in the workbook.
 2. Take the first backup **of this copy only** onto it, and prove it restores:
    ```bash
@@ -181,9 +201,18 @@ prints a PASS / FAIL / NEEDS-YOU table with no secret in it, then writes a dated
 project, Windows or Linux, the date and time and the name) to `infra/compose/records/` (git-ignored), or to `--out
 <folder>`. The overall answer is `G4 PASSED` only if all ten pass. What it cannot do itself it says so, never as a pass:
 
-- **check 3** compares this copy's secrets with the demo's settings files by fingerprint when they are on this computer;
-  when they are not, it says "not checked here: the demo's settings are not on this computer, which is itself the
-  expected state" (NEEDS-YOU) — see gap G-RD-8;
+- **check 3** compares this copy's secrets with any other settings file on this computer, in memory; and, with
+  `--demo-fingerprints <file>` (OB-245, closes G-RD-8), with the demo's **fingerprints**: `store-computer fingerprints`,
+  run on the demo box (`sudo -u deploy node scripts/store-computer.mjs fingerprints --out /opt/sre/fingerprints`, from
+  `/opt/sre/app`; it reads `infra/compose/.env.pilot` there by default) and copied to the store computer, holds for each
+  generated secret (`POSTGRES_PASSWORD`, `DATABASE_URL`, `PACK_SIGNING_KEY`, `BOX_HISTORY_SEAL_KEY`, `IDP_SIGNING_KEY`)
+  the first 12 hex characters of SHA-256 over a fixed label and the value — never the value. Check 3 passes only when
+  every one of this copy's fingerprints differs from every one of the demo's; a match fails and names the setting; a
+  malformed, empty or cut-short file is refused, never a pass. Without the file it still says NEEDS-YOU. Why that
+  reveals nothing usable: each value is 32 or more random characters (192 bits or more), SHA-256 cannot be reversed, and
+  48 bits of it are shared by about 2^144 other values — a fingerprint cannot point at the secret; a value under 32
+  characters is never fingerprinted (the file says "too short"); a chance match between two random secrets (about 1 in
+  2^48 per pair) fails the check, never passes it;
 - **check 5** cannot unplug a cable: it says NEEDS-YOU until the check is run again with `--offline-confirmed` after the
   internet is unplugged, when it re-asks `readyz`;
 - **check 10** cannot know which drive is the owner's: it reads the Step 4 record given with `--backup-record <file>`
@@ -196,7 +225,7 @@ project, Windows or Linux, the date and time and the name) to `infra/compose/rec
 |---|---|---|---|
 | 1 | Own project, own storage | `docker volume ls --format '{{.Name}}' \| grep '^sre-real_'` | this copy's volumes, and **no** `sre-pilot_` volume on this computer |
 | 2 | Own database | `docker compose -p sre-real -f docker-compose.yml --env-file .env.real exec db psql -U "$POSTGRES_USER" -l` (type the user in the terminal) | `sre_real`, and no demo database |
-| 3 | Own secrets | compare by eye with the custodian: none of the five generated values in `.env.real` is the demo's | all different |
+| 3 | Own secrets | `store-computer fingerprints` on the demo box, copied here, then `check --demo-fingerprints <that file>` | every fingerprint different |
 | 4 | Never connected to the demo | `grep -E '^(CLOUD_API_URL\|IDP_ISSUER\|SRE_PUBLIC_HOST)=' infra/compose/.env.real till/till.env` | only this computer's own values or blank — never the demo's address or issuer |
 | 5 | The demo cannot reach in | with the internet cable unplugged, Steps 2's `curl` and the till still work | works with no internet |
 | 6 | Never production | `grep '^MIGRATION_TARGET_KIND=' infra/compose/.env.real` | `rehearsal` |
@@ -210,8 +239,26 @@ is read.
 
 ## Step 7 — the rollback drill (pilot gate G9)
 
-Before the first real load, run the timed rollback drill on this copy — `docs/runbooks/rollback-drill.md` — with
-`--project sre-real` and the owner's backup drive. Keep the record it writes.
+Before the first real load, run the timed rollback drill on this copy and keep the record it writes.
+
+**On the owner's Windows PC (OB-246, closes the drill half of G-RD-6):** `pnpm run store-computer -- drill --by
+"<name>" --to <the drive's folder> --previous <the previous release's folder> [--run]`. Without `--run` it is a dry run
+that changes nothing. With `--run`, each step on a stopwatch: (1) `backup`; (2) `restore-check`; (3) the previous
+release back — that folder's `db`, `migrate` and `api`, built and started under project `sre-real` with THIS copy's
+`.env.real`, waiting for READY and checking (by compose's own label) that the API answering is the one just started;
+(4) this release back the same way (always attempted once step 3 ran). How releases are told apart: the ZIP has no git,
+so a release is its extracted folder (for example `C:\SRE-previous`, downloaded from that commit's "Browse files →
+Download ZIP"), fingerprinted by what the API image is built from. **The database is not rolled back:** no migration
+has a down step, and they only add. So before anything changes the drill proves the previous release's
+`db/migrations` are an exact prefix of this release's (same names, same contents) and all applied, and after step 3 it
+checks the previous release's `migrate` added nothing — "the previous release's services run against the current
+schema", as `docs/runbooks/rollback-drill.md` says. Targets (roadmap §32): steps 1 + 2 within 4 hours, steps 3 and 4
+within 30 minutes each; over a target is not a pass. Each run writes a new dated `g9-drill-<time>.json` to
+`infra/compose/records/` and a read-only copy onto the drive. `G9 PASSED` only when all four steps worked inside their
+targets.
+
+On a Linux box with a git checkout instead: `docs/runbooks/rollback-drill.md` with `--project sre-real` and the owner's
+backup drive.
 
 ## Then — the first department (only after the written GO)
 
@@ -229,6 +276,6 @@ a named person accepts the exception list, then the operator applies it.
 | G-RD-3 | ~~The till installer and `token:store` read `infra/compose/.env` by default.~~ **Closed 20 Oct 2026:** both take `--settings infra/compose/.env.real` (Step 5), and refuse — saying so — when the named file cannot be read. | — | Closed. |
 | G-RD-4 | The sign-in on this copy is the pilot's stand-in identity provider (KL-01 / OA-4): whoever holds this computer's `IDP_SIGNING_KEY` can act as any login. | The load record and every signature are only as strong as the custody of this computer and its settings file. | The production identity provider (OA-4), a later decision. |
 | G-RD-5 | Node 22 treats `--env-file` as its own option even after the script name. With a file that exists, `tenant:bootstrap` and `migration:load` still work (Node also loads the file into the process); with a mistyped path Node stops with "not found" before the command can explain. | Check the path before running. The new commands (`migration:slice`, the rollback drill, `store-computer`) use `--settings` instead. | Rename the flag on `migration:load` and `tenant:bootstrap` (a small change, with tests). |
-| G-RD-6 | On the owner's Windows PC (OB-244): the backup (Step 4) needs PostgreSQL's command-line tools installed and the database addresses read into PowerShell's memory by hand (the owner guide, Part 8, shows how, without showing them); and the rollback drill's `--run` (Step 7) calls `bash infra/deploy/release.sh`, which needs a Linux shell and a git checkout — a ZIP download on Windows has neither. | The backup works with the extra install; the drill can only be dry-run on that PC. G9 cannot be passed there yet. | A decision: a Windows-ready backup and drill inside `store-computer` (a later build item), or the drill run on a Linux machine, or a git checkout plus a Windows release path. Not run on real Windows yet. |
-| G-RD-7 | The package scripts `migration:slice`, `migration:load`, `tenant:bootstrap`, `realm:for-shop`, `shop:*` and `demo:smoke` end their build step with `>/dev/null`, which Windows' command shell cannot run. | On Windows, run `node scripts/build-service.mjs tools`, then `node scripts/dist/<tool>.js …` directly (`store-computer check` does exactly this for checks 7 and 8). Nothing in the owner guide needs them yet. | Make the build step quiet in Node instead of the shell (a small change, with tests), before Step 3 on Windows. |
-| G-RD-8 | Check 3 (own secrets) can compare only with demo settings files that are on this computer. On the store computer they are not — which is the expected state — so check 3 stays NEEDS-YOU and the tool never reports `G4 PASSED` there. | G4 cannot be passed by the tool alone on the real store computer. | An owner decision on how check 3 is signed off there (for example a written statement from the demo's custodian, recorded with the check). Not invented here. |
+| G-RD-6 | ~~On the owner's Windows PC the backup needed PostgreSQL's tools and the addresses read into PowerShell by hand, and the drill's `--run` needed bash and a git checkout.~~ **Closed in the build 20 Oct 2026 (OB-246):** `store-computer backup`, `restore-check` and `drill` (Steps 4 and 7) run with Docker Desktop, Node and pnpm only. | The previous release is a kept ZIP folder, and the database is not rolled back (migrations only add; the drill proves the previous release's are an exact prefix and adds nothing). | **Not yet run on real Windows or real Docker** — proved with a pretend Docker and on real PostgreSQL 16 with the container step stood in for. G9 still needs a PASSED drill on the store computer itself. |
+| G-RD-7 | ~~The package scripts `migration:slice`, `migration:load`, `tenant:bootstrap`, `realm:for-shop`, `shop:*` and `demo:smoke` ended their build step with `>/dev/null`, which Windows' command shell cannot run.~~ **Closed in the build 20 Oct 2026:** they use `node scripts/build-service.mjs tools --quiet && …` — only `&&`, which cmd.exe, PowerShell 7 and sh all run. | — | Closed (tests/guardrails/the-package-tool-scripts-run-on-windows.test.ts). Not yet run on real Windows. |
+| G-RD-8 | ~~Check 3 could compare only with demo settings files on this computer, so it stayed NEEDS-YOU on the store computer.~~ **Closed in the build 20 Oct 2026 (OB-245, "Compare fingerprints"):** `store-computer fingerprints` on both computers and `check --demo-fingerprints <file>` (Step 6). | Needs the owner's SSH sign-in to the demo box once per check (guide Part 9), and the demo box on a release that has the command. | Closed. Not yet run on the real demo box or the real store computer. |

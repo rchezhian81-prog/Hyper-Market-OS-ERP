@@ -23,6 +23,7 @@ works with no internet and is never connected to the demo.
 - the shop's Windows 10 or 11 computer, switched on, with internet for now (you will unplug it later, on purpose);
 - your own GitHub sign-in (the account that holds the code);
 - your own backup drive (an external USB disk that belongs to you) — needed from Part 8;
+- your own sign-in to the demo box — the same one you used for the demo's stand-up check — needed in Part 9;
 - the setup workbook page (paper is fine), to write down the things this guide says to write down. **Never write a
   secret in it** — the tool never shows you one anyway.
 
@@ -139,7 +140,7 @@ Download each program **only from the site named here**. Never from a link in a 
      then run `up` again.
    - **Send:** a photo of the window.
 
-## Part 6 — The isolation check (pilot gate G4)
+## Part 6 — The isolation check (pilot gate G4), first run
 
 1. Type, with your own name in the quotes:
    ```
@@ -148,9 +149,7 @@ Download each program **only from the site named here**. Never from a link in a 
    - **When it worked:** it prints a table of ten checks, each `PASS`, `FAIL` or `NEEDS-YOU`, a line starting with
      `G4`, and `Record written: …`.
    - The first time, three checks say **NEEDS-YOU**. That is expected:
-     - **check 3** says "not checked here: the demo's settings are not on this computer, which is itself the expected
-       state". That is the honest answer on a computer that never held the demo's settings. How check 3 is signed off
-       is a decision still to be made with you — just send the photo;
+     - **check 3** (this copy's secrets are not the demo's) waits for Part 9 (the demo's fingerprints);
      - **check 5** waits for Part 7 (the internet cable);
      - **check 10** waits for Part 8 (your backup drive).
    - Every other check must say **PASS**. A **FAIL** says why on the line under it.
@@ -171,74 +170,153 @@ Download each program **only from the site named here**. Never from a link in a 
 
 ## Part 8 — Your backup drive (check 10)
 
-This part uses the existing backup script. It needs one more program, and it reads the database's address from the
-settings file **inside PowerShell's memory only** — nothing is shown on the screen and nothing is saved.
+Nothing extra is installed for this: the backup runs **inside** this copy's own database box in Docker, and the file
+goes straight onto your drive. Nothing on the computer is deleted, ever.
 
-1. **Install PostgreSQL's command-line tools** (the backup uses them): on **postgresql.org**, choose **Download →
-   Windows**, and download the installer for version **16**. In the installer, on the **Select Components** page, untick
-   everything except **Command Line Tools**. Finish the installer.
-2. **Plug in your backup drive.** In File Explorer → **This PC**, find it (for example `Backup (E:)`). **The letter
+1. **Plug in your backup drive.** In File Explorer → **This PC**, find it (for example `Backup (E:)`). **The letter
    after its name is your drive letter.** Write it in the workbook. Everywhere below that says `E:`, type **your** letter
    instead.
-3. Open PowerShell in `C:\SRE` (Part 4, step 1) and make an empty database for the restore test (first time
-   `sre_real_restore_1`; the next time `sre_real_restore_2`, and so on — it must be a new, empty one each time):
+2. Open PowerShell in `C:\SRE` (Part 4, step 1) and take the backup:
    ```
-   docker compose -p sre-real -f infra\compose\docker-compose.yml --env-file infra\compose\.env.real exec -T db createdb -U sre_admin sre_real_restore_1
+   pnpm run store-computer -- backup --to E:\sre-real
    ```
-   - **When it worked:** it prints nothing and comes back to `PS C:\SRE>`.
-4. Type these four lines, one at a time. They tell PowerShell where the PostgreSQL tools are, and read the two database
-   addresses into memory **without showing them**:
+   - **When it worked:** it says `BACKUP DONE —` with the file's name, its size and how long it took, then a line
+     `Manifest: E:\sre-real\sre-real-backup-….manifest.json`. **Write that manifest's file name in the workbook.**
+   - It refuses, on purpose, a folder on `C:` or inside `C:\SRE`: a backup on the same computer is not a backup.
+   - **Send:** a photo of the window. (It has no secret in it. The long line of letters and digits after "SHA-256" is
+     the file's own fingerprint, not a password.)
+3. Prove the backup really comes back. Type the line below with the manifest's name (tip: type
+   `E:\sre-real\sre-real-backup-` and press the **Tab** key; PowerShell fills in the rest of the name):
    ```
-   $env:Path += ";C:\Program Files\PostgreSQL\16\bin"
-   $s = Get-Content infra\compose\.env.real -Raw | ConvertFrom-StringData
-   $env:DATABASE_URL = 'postgres' + '://' + $s.POSTGRES_USER + ':' + $s.POSTGRES_PASSWORD + '@localhost:5432/' + $s.POSTGRES_DB
-   $env:RESTORE_TARGET_URL = 'postgres' + '://' + $s.POSTGRES_USER + ':' + $s.POSTGRES_PASSWORD + '@localhost:5432/sre_real_restore_1'
+   pnpm run store-computer -- restore-check --from E:\sre-real\sre-real-backup-XXXX.manifest.json
    ```
-   - **When it worked:** each line comes back to `PS C:\SRE>` with nothing printed.
-5. Take the backup onto your drive and prove it restores (type your drive letter instead of `E:`):
-   ```
-   node scripts\recovery-rehearsal.mjs --work C:\SRE-backups --offsite E:\sre-real
-   ```
-   - **When it worked:** near the end it says `outcome  restored_and_reconciled`, and the last line says
-     `record   C:\SRE-backups/rehearsal-….json`. **Write that record's file name in the workbook.**
-   - **Send:** a photo of the last lines.
-6. **Close this PowerShell window** (the X at the top right). That wipes the addresses from memory.
-7. Unplug the backup drive and put it away with the person who keeps it. It is plugged in only for each backup and each
-   drill.
+   - It copies the backup into a **new, empty, temporary** database inside the same Docker box (never into the real
+     one), counts every table, compares the counts and the money with the manifest, writes the result onto your drive,
+     and only then removes that temporary database.
+   - **When it worked:** it says `restored_and_reconciled —` and `The scratch database … was removed after the record
+     was written. sre_real was never touched.`
+   - **If it says `NOT ACCEPTED`:** stop. Do not rely on that backup. Send a photo of the whole window.
+   - **Send:** a photo of the window.
+4. **Keep the drive plugged in** until Part 10 is done. Then unplug it and put it away with the person who keeps it.
+   It is plugged in only for each backup and each drill.
 
-## Part 9 — The final G4 check
+## Part 9 — The demo's fingerprints (check 3)
 
-1. Unplug the internet again (Part 7, step 1). Open PowerShell in `C:\SRE` and type — your name, and the record file
-   name from Part 8 step 5:
+Check 3 asks: "is any secret on this computer the same as one on the demo?" The demo's secrets must never come to
+this computer, and this computer's must never go to the demo. So each computer shows a **fingerprint** of each secret
+instead: 12 letters and digits worked out from the secret in a way that cannot be turned back. The tool compares the
+two sets; if any two are the same, check 3 fails and names the setting.
+
+> **Why a fingerprint gives nothing away.** Each secret is at least 32 random characters. The fingerprint is a short
+> piece of a one-way scramble of it (SHA-256). Nobody can run the scramble backwards; guessing would mean trying more
+> values than any computer could in the life of the universe; and because only 12 characters are kept, a huge number of
+> different values share each fingerprint — so a fingerprint cannot point at one secret. **A photo of the fingerprints
+> is safe.** A photo of a settings file never is.
+
+**On the demo box** — you sign in the same way you did for the demo's stand-up check, with your own login. This guide
+does not write the box's address or any key: use the address you were given, and type your own password when asked.
+
+1. On this computer, open PowerShell and sign in to the demo box (your login and the box's address where shown):
    ```
-   pnpm run store-computer -- check --by "Your Name" --offline-confirmed --backup-record C:\SRE-backups\rehearsal-XXXX.json
+   ssh <your login>@<the demo box's address>
    ```
-   - **When it worked:** checks 5 and 10 say **PASS**. Check 3 still says NEEDS-YOU (see Part 6).
+   - If PowerShell says `ssh` is not recognised: **Settings → Apps → Optional features → Add a feature → OpenSSH
+     Client**, then open PowerShell again.
+   - **When it worked:** the last line now ends with `$` — you are typing on the demo box.
+2. On the demo box, type these two lines. The second runs the tool as the box's deploy user (it asks for your own
+   password once; nothing appears while you type it):
+   ```
+   cd /opt/sre/app
+   sudo -u deploy node scripts/store-computer.mjs fingerprints --out /opt/sre/fingerprints
+   ```
+   - **When it worked:** it says `Secret fingerprints from .env.pilot on this computer (Linux)`, then five lines, each a
+     setting's name and 12 letters and digits, then `Fingerprint file written: /opt/sre/fingerprints/fingerprints-….json`.
+     **Write that file's name in the workbook.**
+   - If it says `Not understood: the command "fingerprints"`, the demo box is not on the newest release yet. Stop and
+     send the photo.
+   - **Send:** a photo of the window (safe: fingerprints only).
+3. Type `exit` and press Enter. You are back on this computer (`PS …>`).
+
+**Back on the store computer:**
+
+4. In PowerShell in `C:\SRE`, make a folder for the file and copy it across (your login, the box's address and the
+   file's name where shown):
+   ```
+   mkdir C:\SRE-demo-fingerprints
+   scp <your login>@<the demo box's address>:/opt/sre/fingerprints/fingerprints-XXXX.json C:\SRE-demo-fingerprints\
+   ```
+   - **When it worked:** it shows the file name and `100%`.
+5. Optional, for your own eyes: this computer's fingerprints, to compare with the photo from step 2 — every one must be
+   different:
+   ```
+   pnpm run store-computer -- fingerprints
+   ```
+6. Run the check with the demo's file (tip: type `C:\SRE-demo-fingerprints\` and press **Tab**):
+   ```
+   pnpm run store-computer -- check --by "Your Name" --demo-fingerprints C:\SRE-demo-fingerprints\fingerprints-XXXX.json
+   ```
+   - **When it worked:** **check 3** says **PASS** and "all 5 of this copy's secret fingerprints differ from all 5 of
+     the demo's".
+   - **If check 3 says FAIL** and names a setting: stop. That secret is shared with the demo and must be replaced before
+     any real data. Send the photo.
+   - **Send:** a photo of the table.
+
+## Part 10 — The final G4 check
+
+1. Plug in your backup drive (if it is not still in), and unplug the internet again (Part 7, step 1). Open PowerShell in
+   `C:\SRE` and type — your name, the demo's fingerprint file from Part 9 and the backup manifest from Part 8:
+   ```
+   pnpm run store-computer -- check --by "Your Name" --offline-confirmed --demo-fingerprints C:\SRE-demo-fingerprints\fingerprints-XXXX.json --backup-record E:\sre-real\sre-real-backup-XXXX.manifest.json
+   ```
+   - **When it worked:** all ten checks say **PASS**, and the line under the table says
+     `G4 PASSED — all ten isolation checks pass.`
+   - Check 10 passes only when that backup has passed its restore-check (Part 8, step 3) and is on your drive.
    - **Send:** a photo of the table and the `G4` line.
 2. Plug the internet back in. Keep every record file: they are in `C:\SRE\infra\compose\records\`.
 
-## Part 10 — The rollback drill (pilot gate G9): the dry run only, for now
+## Part 11 — The rollback drill (pilot gate G9)
 
-The drill's real run cannot work on this Windows computer yet: it uses a release script that runs only on Linux and
-needs a code copy made with git, and this computer has the ZIP instead. **Do not add `--run`.** (This is listed as gap
-G-RD-6 in the store-computer runbook, for you to decide.) The dry run is safe: it changes nothing and only checks the
-plan.
+The drill proves that if a new version of the system ever goes wrong, the shop can go back to the version before it,
+and the data can be brought back from your drive — and how long each takes. The targets come from the plan: the
+system back within **30 minutes**, the database back within **4 hours**. Over a target is **not** a pass.
 
-1. On github.com, open the repository's **commits** list. Copy the full id (40 letters and digits) of the newest commit
-   and of the one before it.
-2. Plug in your backup drive, open PowerShell in `C:\SRE`, and type (the two ids where shown, your drive letter instead
-   of `E:`):
+What it does, in order, with a stopwatch on each step: backup onto your drive → restore-check of that backup → start
+the **previous** version on this copy → start **this** version again. The database itself is not taken back: each new
+version only **adds** to it, so the previous version runs on today's database — exactly what would happen on a real bad
+night. The tool checks that this is safe first, and refuses if it is not.
+
+1. **Get the previous version** (nothing to install). On **github.com**, open the repository's **commits** list. Click
+   the **second** commit from the top, then **Browse files**, then the green **Code** button → **Download ZIP**. Extract
+   it to `C:\` (Part 3, step 3) and rename the new folder to `SRE-previous`.
+   - **The folder must be exactly `C:\SRE-previous`**, beside `C:\SRE` — never inside it. It needs no `pnpm install`
+     and no settings file: the drill uses this copy's own settings.
+   - If the drill later says "the same release", go one more commit down the list and do this step again.
+2. Plug in your backup drive. Open PowerShell in `C:\SRE` and do the **dry run** (it changes nothing):
    ```
-   node scripts\rollback-drill.mjs --previous <the older id> --current <the newer id> --project sre-real --work C:\SRE-drills --backup-drive E:\sre-real --settings infra\compose\.env.real
+   pnpm run store-computer -- drill --by "Your Name" --to E:\sre-real --previous C:\SRE-previous
    ```
-   - **When it worked:** it says `DRY RUN — nothing will change.` and lists four steps.
-   - **Send:** a photo of the window. Then unplug the drive and put it away.
+   - **When it worked:** it says `DRY RUN — nothing will change.` and lists five steps.
+   - A line starting `REFUSED —` names the one thing to fix. Nothing was changed.
+   - **Send:** a photo of the window.
+3. **The real drill**, at a quiet time (the system restarts twice; no tills are connected yet). The same command with
+   `--run` at the end:
+   ```
+   pnpm run store-computer -- drill --by "Your Name" --to E:\sre-real --previous C:\SRE-previous --run
+   ```
+   - It takes a while (it builds each version). Leave the window open; Docker's own lines scroll past.
+   - **When it worked:** four lines starting `done`, a `times` line, then
+     `G9 PASSED — every step worked, each inside its target …`, then `Record written: …` and
+     `A copy is on your backup drive: …`.
+   - `SLOW` on a step means it worked but took longer than its target: **G9 is not passed**. Send the photo.
+   - **If it says `THIS COPY MAY NOT BE ON THIS RELEASE NOW`:** type `pnpm run store-computer -- up`, wait for
+     `READY`, and send photos of both.
+   - **Send:** a photo of the last lines. Then unplug the drive and put it away.
 
 ---
 
 ## If a step fails
 
-- **Red text, or `FAIL`, `NOT STARTED`, `NOT READY` or `REFUSED`:** stop. Do not try other commands. Send me a photo of
+- **Red text, or `FAIL`, `NOT STARTED`, `NOT READY`, `NOT DONE`, `NOT ACCEPTED`, `NOT PASSED` or `REFUSED`:** stop. Do not try other commands. Send me a photo of
   the **whole PowerShell window**, so every line is readable.
 - The tool always says the one thing to do on the line under the problem. If you did that thing and it still says the
   same, send the photo.

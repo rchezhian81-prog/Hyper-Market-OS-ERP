@@ -17,7 +17,9 @@
 // from `node_modules` at run time rather than inlined. The output is one plain `.js` file with the
 // types stripped and every extension resolved.
 //
-// Usage:  node scripts/build-service.mjs <api|edge|demo-login|sign-in|tools>
+// Usage:  node scripts/build-service.mjs <api|edge|demo-login|sign-in|tools> [--quiet]
+//         --quiet leaves out the one "written" line on standard output (esbuild's own lines and every error still show).
+//         The package scripts use it instead of `>/dev/null`, which Windows' command shell cannot run (gap G-RD-7).
 // Output: <service>/dist/start.js  (git-ignored — `dist/` is in .gitignore)
 //         `tools` bundles the operator commands (scripts/migration-load.ts, scripts/migration-slice.ts, scripts/bootstrap-tenant.ts)
 //         into scripts/dist/ — they import the workspace TypeScript the same way the services do.
@@ -46,6 +48,7 @@ const TOOLS = {
 };
 
 const name = process.argv[2];
+const QUIET = process.argv.slice(3).includes('--quiet');
 if (name === 'tools') {
   await build({
     entryPoints: TOOLS.entries.map((e) => join(ROOT, e)),
@@ -59,7 +62,7 @@ if (name === 'tools') {
     legalComments: 'none',
     logLevel: 'info',
   });
-  console.log(`tools bundle written to ${TOOLS.outdir}/`);
+  if (!QUIET) console.log(`tools bundle written to ${TOOLS.outdir}/`);
   process.exit(0);
 }
 
@@ -92,4 +95,4 @@ await build({
   logLevel: 'info',
 });
 
-console.log(`${name} bundle written to ${service.outfile}`);
+if (!QUIET) console.log(`${name} bundle written to ${service.outfile}`);

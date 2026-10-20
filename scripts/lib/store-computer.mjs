@@ -5,6 +5,10 @@
 //   prepare  writes infra/compose/.env.real ONCE, with fresh secrets made on this computer (never printed, never returned)
 //   up       starts this copy (compose project sre-real: db, migrate, api) and waits for the API to say ready
 //   check    runs the ten isolation checks of pilot gate G4 (runbook Step 6) and writes a dated record — gap G-RD-1
+//   fingerprints  shows a short one-way fingerprint of each secret (never the secret) and writes them to a file that is
+//            safe to share — run on the demo box and on the store computer, so check 3 can compare them (OB-245, G-RD-8)
+//   backup · restore-check · drill   the backup, restore-and-reconcile and timed rollback drill on Windows (OB-246,
+//            G-RD-6, gate G9) — in scripts/lib/store-computer-recovery.mjs
 //
 // Every command refuses, before it does anything: a production box (hard rule #7), the demo tenant (gate G4), the demo's
 // compose project or settings files, and seeding people (that is `tenant:bootstrap`, and it waits for the OB-243 names).
@@ -28,6 +32,7 @@ import { createConnection, createServer } from 'node:net';
 import * as os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { backup, drill, restoreCheck } from './store-computer-recovery.mjs';
 
 // ── Fixed names ───────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -220,7 +225,9 @@ const readOthers = (deps, L) => L.others
   .filter((o) => deps.fs.existsSync(o.path))
   .map((o) => ({ name: o.name, values: parseEnvText(deps.fs.readFileSync(o.path, 'utf8')) }));
 
-const rel = (deps, abs) => pathFor(deps.platform).relative(deps.repoRoot, abs) || '.';
+export const rel = (deps, abs) => pathFor(deps.platform).relative(deps.repoRoot, abs) || '.';
+/** The clock as a file-name stamp: 2026-10-20T04-30-00-000Z. */
+export const stampOf = (at) => at.toISOString().replace(/[:.]/g, '-');
 
 /** `prepare`: write .env.real once. Never overwrites, never seeds, never shows a secret. */
 export async function prepare(deps) {
@@ -277,13 +284,13 @@ export async function prepare(deps) {
 
 // ── Reading this copy's settings ──────────────────────────────────────────────────────────────────────────────────
 
-function loadSettings(deps) {
+export function loadSettings(deps) {
   const L = layout(deps.repoRoot, deps.platform);
   if (!deps.fs.existsSync(L.settings)) return { L, settings: undefined };
   return { L, settings: parseEnvText(deps.fs.readFileSync(L.settings, 'utf8')) };
 }
 
-function guarded(deps, settings) {
+export function guarded(deps, settings) {
   const stop = refusals(settings, deps.env);
   for (const r of stop) deps.say(`REFUSED — ${r}`);
   return stop.length > 0;
@@ -315,7 +322,7 @@ export function dockerProblem(deps) {
   return undefined;
 }
 
-const lines = (s) => String(s ?? '').split(/\r?\n/).map((l) => l.trim()).filter((l) => l !== '');
+export const lines = (s) => String(s ?? '').split(/\r?\n/).map((l) => l.trim()).filter((l) => l !== '');
 const projectContainers = (deps, project) => lines(deps.spawn('docker', ['ps', '-a', '--filter', `label=com.docker.compose.project=${project}`, '--format', '{{.Names}}'], {}).stdout);
 const runningContainers = (deps, project) => lines(deps.spawn('docker', ['ps', '--filter', `label=com.docker.compose.project=${project}`, '--format', '{{.Names}}'], {}).stdout);
 
@@ -392,6 +399,139 @@ export async function up(deps) {
   say('READY — this copy is up on this computer, and needs no internet.');
   say('Next: pnpm run store-computer -- check --by "<your name>"');
   return 0;
+}
+
+// ── fingerprints (OB-245 — how check 3 is signed off; closes gap G-RD-8) ──────────────────────────────────────────
+//
+// The demo's secrets are never on the store computer, and the store computer's never on the demo. So each computer
+// shows — and writes to a small file — a one-way FINGERPRINT of each of its secrets: the first 12 hex characters of
+// SHA-256 over a fixed label and the value. The store computer's `check --demo-fingerprints <file>` compares its own
+// fingerprints with the demo's; check 3 passes only when every one differs from every one.
+//
+// Why a fingerprint gives nothing away: each secret is at least 32 characters from the operating system's random source
+// (192 bits or more). SHA-256 cannot be run backwards; the only way from a fingerprint to a value is to guess values
+// and compare, and 2^192 guesses is out of reach of every computer there will ever be. Only 12 hex characters (48 bits)
+// are kept, so even a guesser with unlimited time would find about 2^144 different values that give the same
+// fingerprint — the fingerprint cannot point at the one value that is the secret. The fixed label means the fingerprint
+// matches no other hash of the same value made anywhere else. A value shorter than 32 characters is never fingerprinted
+// (a short one could be guessed); the file says "too short" for it instead. Two different random secrets share a
+// fingerprint by chance about once in 2^48 (280 million million) comparisons — and a chance match makes check 3 FAIL,
+// never pass, so the mistake is always on the safe side.
+
+/** The fixed label every fingerprint is made with. Changing it would make old fingerprint files incomparable (refused). */
+export const FINGERPRINT_LABEL = 'sre-retail-os/secret-fingerprint/v1';
+/** The secrets `prepare` generates — the ones check 3 says must be this copy's own. */
+export const FINGERPRINT_KEYS = Object.freeze(['POSTGRES_PASSWORD', 'DATABASE_URL', 'PACK_SIGNING_KEY', 'BOX_HISTORY_SEAL_KEY', 'IDP_SIGNING_KEY']);
+export const FINGERPRINT_MIN_LENGTH = 32;
+export const FINGERPRINT_HEX = 12;
+const FINGERPRINT = /^[0-9a-f]{12}$/;
+const NOT_FINGERPRINTED = Object.freeze(['not set', 'too short']);
+
+/** One fingerprint: the first 12 hex of SHA-256(label, NUL, value). One way: the value cannot be worked out from it. */
+export function fingerprintOf(value) {
+  return createHash('sha256').update(FINGERPRINT_LABEL, 'utf8').update('\0').update(String(value), 'utf8').digest('hex').slice(0, FINGERPRINT_HEX);
+}
+
+/** Every FINGERPRINT_KEYS setting: its fingerprint, or why it has none ("not set", "too short"). Values never leave here. */
+export function fingerprintsOf(settings) {
+  const fingerprints = {};
+  const notFingerprinted = {};
+  for (const key of FINGERPRINT_KEYS) {
+    const v = settings?.[key];
+    if (!real(v)) notFingerprinted[key] = 'not set';
+    else if (String(v).trim().length < FINGERPRINT_MIN_LENGTH) notFingerprinted[key] = 'too short';
+    else fingerprints[key] = fingerprintOf(String(v).trim());
+  }
+  return { fingerprints, notFingerprinted };
+}
+
+/** Read a fingerprint file. Anything malformed, empty or made another way is refused — never treated as a pass. */
+export function readFingerprintFile(text) {
+  let f;
+  try { f = JSON.parse(String(text)); } catch { return { ok: false, reason: 'it is not a fingerprint file (it could not be read as one)' }; }
+  if (f === null || typeof f !== 'object' || Array.isArray(f)) return { ok: false, reason: 'it is not a fingerprint file' };
+  if (f.kind !== 'sre-secret-fingerprints' || f.version !== 1) return { ok: false, reason: 'it is not a fingerprint file written by "store-computer fingerprints"' };
+  if (f.label !== FINGERPRINT_LABEL) return { ok: false, reason: 'it was made with a different fingerprint label, so it cannot be compared' };
+  const fps = f.fingerprints;
+  const not = f.notFingerprinted ?? {};
+  if (fps === null || typeof fps !== 'object' || Array.isArray(fps) || not === null || typeof not !== 'object' || Array.isArray(not)) return { ok: false, reason: 'its fingerprints are missing or malformed' };
+  for (const k of [...Object.keys(fps), ...Object.keys(not)]) if (!FINGERPRINT_KEYS.includes(k)) return { ok: false, reason: `it names a setting this check does not know (${k})` };
+  for (const [k, v] of Object.entries(fps)) if (typeof v !== 'string' || !FINGERPRINT.test(v)) return { ok: false, reason: `the fingerprint for ${k} is not 12 hex characters` };
+  for (const [k, v] of Object.entries(not)) if (!NOT_FINGERPRINTED.includes(v) || k in fps) return { ok: false, reason: `the entry for ${k} is malformed` };
+  const missing = FINGERPRINT_KEYS.filter((k) => !(k in fps) && !(k in not));
+  if (missing.length > 0) return { ok: false, reason: `it says nothing about ${missing.join(', ')} — it may be cut short` };
+  if (Object.keys(fps).length === 0) return { ok: false, reason: 'it holds no fingerprint at all — there is nothing to compare' };
+  return { ok: true, file: { settingsFile: typeof f.settingsFile === 'string' ? f.settingsFile : '', fingerprints: { ...fps }, notFingerprinted: { ...not } } };
+}
+
+/** Every pair (ours, theirs) whose fingerprints are equal — any of ours against any of theirs. */
+export function fingerprintMatches(own, theirs) {
+  const found = [];
+  for (const [mine, a] of Object.entries(own)) for (const [other, b] of Object.entries(theirs)) if (a === b) found.push({ own: mine, demo: other });
+  return found;
+}
+
+/** The settings file `fingerprints` reads: --settings, or this repository's .env.real, or (on the demo box) .env.pilot. */
+function fingerprintSource(deps, given) {
+  const p = pathFor(deps.platform);
+  if (given !== undefined) return { file: p.resolve(given) };
+  const L = layout(deps.repoRoot, deps.platform);
+  const pilot = L.others.find((o) => o.name === '.env.pilot').path;
+  const found = [L.settings, pilot].filter((f) => deps.fs.existsSync(f));
+  if (found.length === 1) return { file: found[0] };
+  if (found.length === 0) return { problem: `there is no ${SETTINGS_NAME} (the store computer) or .env.pilot (the demo box) in infra/compose here. Name the settings file with --settings <file>.` };
+  return { problem: `both ${SETTINGS_NAME} and .env.pilot are in infra/compose here. Say which one with --settings <file>. (On the store computer, .env.pilot should not be there at all — check 3 will say so.)` };
+}
+
+/** `fingerprints [--settings <file>] [--out <folder>]`: the secrets' fingerprints, shown and written to a shareable file. */
+export async function fingerprints(deps, opts) {
+  const { say, fs } = deps;
+  const src = fingerprintSource(deps, opts.settings);
+  if (src.problem !== undefined) { say(`REFUSED — ${src.problem}`); return 2; }
+  const p = pathFor(deps.platform);
+  if (!fs.existsSync(src.file)) { say(`REFUSED — there is no settings file at ${src.file}.`); return 2; }
+  const values = parseEnvText(fs.readFileSync(src.file, 'utf8'));
+  if (String(values.MIGRATION_TARGET_KIND ?? '').trim().toLowerCase() === 'production') { say('REFUSED — these settings say MIGRATION_TARGET_KIND=production. This tool never works on a production box (hard rule #7).'); return 2; }
+  const fp = fingerprintsOf(values);
+  if (Object.keys(fp.fingerprints).length === 0) { say(`REFUSED — ${p.basename(src.file)} holds none of the secrets (${FINGERPRINT_KEYS.join(', ')}). Is it the right settings file?`); return 2; }
+
+  const at = deps.now();
+  const where = deps.platform === 'win32' ? 'Windows' : 'Linux';
+  say(`Secret fingerprints from ${p.basename(src.file)} on this computer (${where}). A fingerprint is one-way: the secret is never shown and cannot be worked out from it.`);
+  for (const key of FINGERPRINT_KEYS) {
+    if (key in fp.fingerprints) say(`  ${key.padEnd(22)} ${fp.fingerprints[key]}`);
+    else say(`  ${key.padEnd(22)} (${fp.notFingerprinted[key]} — no fingerprint)`);
+  }
+  const dir = opts.out === undefined ? layout(deps.repoRoot, deps.platform).records : p.resolve(opts.out);
+  fs.mkdirSync(dir, { recursive: true });
+  let file;
+  for (let i = 1; ; i += 1) {
+    file = p.join(dir, `fingerprints-${stampOf(at)}${i === 1 ? '' : `-${i}`}.json`);
+    if (!fs.existsSync(file)) break;
+  }
+  const out = {
+    kind: 'sre-secret-fingerprints', version: 1, label: FINGERPRINT_LABEL, algorithm: `the first ${FINGERPRINT_HEX} hex characters of SHA-256 over the label, a NUL and the value`,
+    at: at.toISOString(), computer: where, settingsFile: p.basename(src.file), fingerprints: fp.fingerprints, notFingerprinted: fp.notFingerprinted,
+  };
+  fs.writeFileSync(file, `${JSON.stringify(out, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' });
+  say(`Fingerprint file written: ${file}`);
+  say('  It holds no secret — it is safe to copy to the store computer. The settings file itself never leaves this computer.');
+  return 0;
+}
+
+/** Check 3 against the demo's fingerprint file. Returns a check result. */
+export function demoFingerprintVerdict(settings, text) {
+  const got = readFingerprintFile(text);
+  if (!got.ok) return { status: 'FAIL', detail: `REFUSED the demo fingerprint file — ${got.reason}. Make it again on the demo box (guide Part 9) and copy it here.` };
+  if (got.file.settingsFile === SETTINGS_NAME) return { status: 'FAIL', detail: `REFUSED the demo fingerprint file — it was made from a store computer's ${SETTINGS_NAME}, not from the demo's settings. Use the file made on the demo box.` };
+  const own = fingerprintsOf(settings);
+  const ownMissing = Object.entries(own.notFingerprinted).map(([k, why]) => `${k} (${why})`);
+  if (ownMissing.length > 0) return { status: 'FAIL', detail: `this copy's own secrets are not all there and long: ${ownMissing.join(', ')}. prepare makes each one at least ${FINGERPRINT_MIN_LENGTH} characters.` };
+  const same = fingerprintMatches(own.fingerprints, got.file.fingerprints);
+  if (same.length > 0) return { status: 'FAIL', detail: `${same.map((m) => `this copy's ${m.own} has the same fingerprint as the demo's ${m.demo}`).join('; ')}. That secret is shared with the demo: it must be replaced before any real data. Send me a photo of this screen.` };
+  const short = Object.keys(got.file.notFingerprinted).filter((k) => got.file.notFingerprinted[k] === 'too short');
+  const theirs = Object.keys(got.file.fingerprints).length;
+  return { status: 'PASS', detail: `all ${FINGERPRINT_KEYS.length} of this copy's secret fingerprints differ from all ${theirs} of the demo's${short.length > 0 ? ` (the demo's ${short.join(', ')} ${short.length === 1 ? 'is' : 'are'} shorter than any of this copy's, so cannot be equal to one)` : ''}. Compared by one-way fingerprint; no secret was shown or moved.` };
 }
 
 // ── check (pilot gate G4, runbook Step 6) ─────────────────────────────────────────────────────────────────────────
@@ -500,7 +640,15 @@ export async function runChecks(deps, settings, opts) {
     const found = clashes(settings, [...SECRET_KEYS, 'IDP_ISSUER', 'EDGE_TENANT_ID'], others);
     if (dupInside.length > 0) results.push(result(3, 'FAIL', `two of this copy's secrets are the same (${dupInside.join(', ')}). Each must be its own.`));
     else if (found.length > 0) results.push(result(3, 'FAIL', `${found.map((c) => `${c.key} equals a value in infra/compose/${c.file}`).join('; ')}. If that file is a copy of ${SETTINGS_NAME}, it is not needed: every command takes ${SETTINGS_NAME} by name.`));
-    else if (others.length === 0) results.push(result(3, 'NEEDS-YOU', "not checked here: the demo's settings are not on this computer, which is itself the expected state. This copy's secrets were made fresh on this computer by prepare."));
+    else if (opts.demoFingerprints !== undefined) {
+      // OB-245: the demo's fingerprints, made on the demo box and copied here. Malformed or empty is refused, never a pass.
+      let text;
+      try { text = fs.readFileSync(opts.demoFingerprints, 'utf8'); } catch { text = undefined; }
+      const v = text === undefined
+        ? { status: 'FAIL', detail: `REFUSED the demo fingerprint file — it could not be read (${opts.demoFingerprints}). Check the file name you gave after --demo-fingerprints.` }
+        : demoFingerprintVerdict(settings, text);
+      results.push(result(3, v.status, v.detail));
+    } else if (others.length === 0) results.push(result(3, 'NEEDS-YOU', "not checked here: the demo's settings are not on this computer, which is itself the expected state. Make the demo's fingerprint file on the demo box (guide Part 9), copy it here, and run check again with --demo-fingerprints \"<that file>\"."));
     else results.push(result(3, 'PASS', `none of this copy's secrets equals any value in ${others.map((o) => `infra/compose/${o.name}`).join(' or ')} (compared by fingerprint, in memory).`));
   }
 
@@ -572,36 +720,67 @@ export async function runChecks(deps, settings, opts) {
 
   // 10 — backups go to the owner's drive. The tool cannot know which drive is his: it reads the backup step's record.
   if (opts.backupRecord === undefined) {
-    results.push(result(10, 'NEEDS-YOU', 'take the first backup onto your own backup drive (guide Part 8), then run check again with --backup-record "<the record file it wrote>".'));
+    results.push(result(10, 'NEEDS-YOU', 'take the first backup onto your own backup drive (guide Part 8), then run check again with --backup-record "<the .manifest.json file backup wrote>".'));
   } else {
-    let rec;
-    try { rec = JSON.parse(fs.readFileSync(opts.backupRecord, 'utf8')); } catch { rec = undefined; }
-    const v = backupVerdict(rec, { platform: deps.platform, repoRoot: deps.repoRoot, systemDrive: deps.env.SystemDrive });
+    const v = backupRecordVerdict(deps, opts.backupRecord);
     results.push(result(10, v.status, v.detail));
   }
   return results;
 }
 
 /**
- * Check 10 from the backup step's own record (scripts/recovery-rehearsal.mjs): it restored and reconciled, and the copy
- * went to a folder that is not on this computer's own drive — on Windows not the system drive (C:) and not the drive the
- * repository is on; anywhere, not inside the repository folder.
+ * Is `dir` on this computer's own drive? On Windows: the system drive (C:) or the drive the repository is on; anywhere:
+ * inside the repository folder. Returns the problem in plain words, or undefined. Check 10 and `backup --to` both use it.
  */
-export function backupVerdict(rec, { platform, repoRoot, systemDrive }) {
+export function ownDriveProblem(dir, { platform, repoRoot, systemDrive }) {
   const p = pathFor(platform);
-  if (rec === undefined || rec === null || typeof rec !== 'object') return { status: 'FAIL', detail: 'the backup record could not be read. Check the file name you gave after --backup-record.' };
-  if (rec.outcome !== 'restored_and_reconciled') return { status: 'FAIL', detail: `the backup record says "${String(rec.outcome)}", not restored_and_reconciled. Take the backup again.` };
-  const dir = typeof rec.offsiteDir === 'string' ? rec.offsiteDir.trim() : '';
-  if (dir === '') return { status: 'FAIL', detail: 'the backup record names no backup drive folder.' };
   const drive = (x) => p.parse(p.resolve(x)).root.replace(/[\\/]+$/, '').toLowerCase();
   const ownDrives = platform === 'win32' ? new Set([drive(repoRoot), String(systemDrive ?? 'C:').toLowerCase()]) : new Set();
   // On Windows `relative` across drives returns the other drive's absolute path, which is NOT inside the repository.
   const fromRepo = p.relative(repoRoot, p.resolve(dir));
   const insideRepo = fromRepo === '' || (!fromRepo.startsWith('..') && !p.isAbsolute(fromRepo));
-  if (insideRepo || (platform === 'win32' && ownDrives.has(drive(dir)))) {
+  if (insideRepo) return `${dir} is inside the system's own folder (${repoRoot})`;
+  if (platform === 'win32' && ownDrives.has(drive(dir))) return `${dir} is on this computer's own drive (${drive(dir).toUpperCase()})`;
+  return undefined;
+}
+
+/**
+ * Check 10 from the backup step's own record: it restored and reconciled, and the copy went to a folder that is not on
+ * this computer's own drive (`ownDriveProblem`). Takes the older recovery-rehearsal record, or a `restore-check` record.
+ */
+export function backupVerdict(rec, { platform, repoRoot, systemDrive }) {
+  if (rec === undefined || rec === null || typeof rec !== 'object') return { status: 'FAIL', detail: 'the backup record could not be read. Check the file name you gave after --backup-record.' };
+  if (rec.outcome !== 'restored_and_reconciled') return { status: 'FAIL', detail: `the backup record says "${String(rec.outcome)}", not restored_and_reconciled. Take the backup again.` };
+  const dir = typeof rec.offsiteDir === 'string' ? rec.offsiteDir.trim() : '';
+  if (dir === '') return { status: 'FAIL', detail: 'the backup record names no backup drive folder.' };
+  if (ownDriveProblem(dir, { platform, repoRoot, systemDrive }) !== undefined) {
     return { status: 'FAIL', detail: `the backup went to ${dir}, which is on this computer's own drive — it must go to your backup drive.` };
   }
   return { status: 'PASS', detail: `the backup record says the copy went to ${dir} and restored and reconciled. Confirm ${dir} is your own backup drive.` };
+}
+
+/**
+ * Check 10 from the file named after --backup-record. Three kinds are accepted:
+ *   • a `store-computer backup` manifest — it passes only if a `restore-check` record beside it, for this very backup
+ *     (same backup id and SHA-256), says restored_and_reconciled; the folder judged is where the manifest really is;
+ *   • a `store-computer restore-check` record — the folder judged is where the record really is;
+ *   • the older recovery-rehearsal record (scripts/recovery-rehearsal.mjs) — as before.
+ */
+export function backupRecordVerdict(deps, file) {
+  const { fs } = deps;
+  const p = pathFor(deps.platform);
+  const where = { platform: deps.platform, repoRoot: deps.repoRoot, systemDrive: deps.env.SystemDrive };
+  const read = (f) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return undefined; } };
+  const rec = read(file);
+  const here = p.dirname(p.resolve(file));
+  if (rec?.kind === 'store-computer-restore-check') return backupVerdict({ ...rec, offsiteDir: here }, where);
+  if (rec?.kind !== 'store-computer-backup') return backupVerdict(rec, where);
+  const checks = (() => { try { return fs.readdirSync(here).map(String).filter((n) => /^restore-check-.*\.json$/.test(n)).sort(); } catch { return []; } })()
+    .map((n) => read(p.join(here, n)))
+    .filter((r) => r?.kind === 'store-computer-restore-check' && r.backupId === rec.backupId && r.sha256 === rec.sha256);
+  if (checks.length === 0) return { status: 'FAIL', detail: `this backup (${String(rec.backupId)}) has not been restore-checked yet. Run: pnpm run store-computer -- restore-check --from "${file}", then check again.` };
+  const good = checks.find((r) => r.outcome === 'restored_and_reconciled');
+  return backupVerdict(good === undefined ? checks.at(-1) : { ...good, offsiteDir: here }, where);
 }
 
 /** A dated record file name that never overwrites another. */
@@ -642,6 +821,7 @@ export async function check(deps, opts) {
     computer: deps.platform === 'win32' ? 'Windows' : 'Linux',
     offlineConfirmed: opts.offlineConfirmed === true,
     results: results.map((r) => ({ n: r.n, check: r.title, result: r.status, detail: r.detail })),
+    ...(opts.demoFingerprints === undefined ? {} : { demoFingerprintFile: pathFor(deps.platform).basename(opts.demoFingerprints) }),
     overall: verdict.passed ? 'G4 PASSED' : 'G4 NOT PASSED',
   };
   fs.writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' });
@@ -728,15 +908,25 @@ export const USAGE = [
   '  doctor                                   check this computer',
   '  prepare                                  write this copy\'s settings file once (infra/compose/.env.real)',
   '  up                                       start this copy and wait until it is ready',
-  '  check --by "<name>" [--offline-confirmed] [--backup-record <file>] [--out <folder>]',
+  '  check --by "<name>" [--offline-confirmed] [--demo-fingerprints <file>] [--backup-record <file>] [--out <folder>]',
   '                                           the ten G4 isolation checks, and a dated record',
+  '  fingerprints [--settings <file>] [--out <folder>]',
+  '                                           one-way fingerprints of the secrets (never the secrets), and a file safe to share',
+  '  backup --to <folder on your backup drive>',
+  '                                           back this copy up onto your backup drive, with a manifest',
+  '  restore-check --from <backup file>       restore a backup into a scratch database and reconcile it',
+  '  drill --by "<name>" --to <folder> --previous <previous release folder> [--run]',
+  '                                           the timed rollback drill (pilot gate G9); a dry run without --run',
 ];
 
 /** Read the command line. Unknown options are named, never ignored. */
 export function parseCommandLine(argv) {
   const args = [...argv];
   while (args[0] === '--') args.shift();
-  const out = { command: undefined, by: undefined, out: undefined, backupRecord: undefined, offlineConfirmed: false, problems: [] };
+  const out = {
+    command: undefined, by: undefined, out: undefined, backupRecord: undefined, offlineConfirmed: false, demoFingerprints: undefined,
+    settings: undefined, to: undefined, from: undefined, previous: undefined, run: false, problems: [],
+  };
   for (let i = 0; i < args.length; i += 1) {
     const a = args[i];
     const value = () => {
@@ -749,6 +939,12 @@ export function parseCommandLine(argv) {
     else if (a === '--out') out.out = value();
     else if (a === '--backup-record') out.backupRecord = value();
     else if (a === '--offline-confirmed') out.offlineConfirmed = true;
+    else if (a === '--demo-fingerprints') out.demoFingerprints = value();
+    else if (a === '--settings') out.settings = value();
+    else if (a === '--to') out.to = value();
+    else if (a === '--from') out.from = value();
+    else if (a === '--previous') out.previous = value();
+    else if (a === '--run') out.run = true;
     else if (!a.startsWith('--') && out.command === undefined) out.command = a;
     else out.problems.push(`unknown option ${a}`);
   }
@@ -767,7 +963,11 @@ export async function main(argv, deps) {
     case 'doctor': return doctor(deps);
     case 'prepare': return prepare(deps);
     case 'up': return up(deps);
-    case 'check': return check(deps, { by: cl.by, out: cl.out, backupRecord: cl.backupRecord, offlineConfirmed: cl.offlineConfirmed });
+    case 'check': return check(deps, { by: cl.by, out: cl.out, backupRecord: cl.backupRecord, offlineConfirmed: cl.offlineConfirmed, demoFingerprints: cl.demoFingerprints });
+    case 'fingerprints': return fingerprints(deps, { settings: cl.settings, out: cl.out });
+    case 'backup': return backup(deps, { to: cl.to });
+    case 'restore-check': return restoreCheck(deps, { from: cl.from });
+    case 'drill': return drill(deps, { by: cl.by, to: cl.to, previous: cl.previous, run: cl.run, out: cl.out });
     default:
       deps.say(`Not understood: the command "${cl.command}"`);
       for (const l of USAGE) deps.say(l);
