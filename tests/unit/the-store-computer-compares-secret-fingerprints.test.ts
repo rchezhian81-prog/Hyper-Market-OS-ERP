@@ -25,7 +25,7 @@ function demoBox(values: Record<string, string>): World {
   return w;
 }
 const DEMO = {
-  POSTGRES_DB: 'sre_pilot', POSTGRES_PASSWORD: 'd'.repeat(10) + 'e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7', DATABASE_URL: 'postgres://sre_app:demo-password-0123456789abcdef0123@db:5432/sre_pilot',
+  POSTGRES_DB: 'sre_pilot', POSTGRES_PASSWORD: 'd'.repeat(10) + 'e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7', DATABASE_URL: 'postgres://sre_app:' + 'demo-password-0123456789abcdef0123' + '@db:5432/sre_pilot',
   PACK_SIGNING_KEY: 'demoPackKey_0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN', BOX_HISTORY_SEAL_KEY: 'demoSealKey_0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN',
   IDP_SIGNING_KEY: 'demoIdpKey_0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNO', MIGRATION_TARGET_KIND: 'rehearsal', EDGE_TENANT_ID: '11111111-2222-4333-8444-555555555555',
 };

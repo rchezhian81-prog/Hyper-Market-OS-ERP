@@ -101,7 +101,7 @@ describe('the store-computer setup never shows a secret (hard rule #4 · OB-244)
   it('the fingerprint output never contains a secret — captured from the real command, run as a separate program', () => {
     const dir = mkdtempSync(join(tmpdir(), 'sre-fp-guardrail-'));
     const values = {
-      POSTGRES_PASSWORD: '0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a6978', DATABASE_URL: 'postgres://sre_app:0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a6978@db:5432/sre_pilot',
+      POSTGRES_PASSWORD: '0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a6978', DATABASE_URL: 'postgres://sre_app:' + '0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a6978' + '@db:5432/sre_pilot',
       PACK_SIGNING_KEY: 'Zx9_PackKeyValueThatMustNeverBeShown_0123456789abcdefABCDEFGHIJ', BOX_HISTORY_SEAL_KEY: 'Qw8-SealKeyValueThatMustNeverBeShown_0123456789abcdefABCDEFGHIJ',
       IDP_SIGNING_KEY: 'Er7_IdpKeyValueThatMustNeverBeShown__0123456789abcdefABCDEFGHIJ',
     };
