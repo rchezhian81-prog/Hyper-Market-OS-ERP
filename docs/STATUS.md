@@ -5,6 +5,14 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Mirror-pilot readiness, round 1 (20 October 2026) — gate pending
+
+- Built: till re-asks after a lost reply and never doubles a sale (A8, the audit's P0); guest-sales-only switch (OB-252, not yet turned on by the install); automatic hourly encrypted backup of everything to a plugged-in drive (OB-249); autostart at sign-in; data kept in `C:\SRE-data` and safe updates; red "store computer needs you" banner offline; seal and parallel-run commands; owner guide Parts 12–25; four sheets in English and Tamil.
+- Not run on real Windows, Docker Desktop, Task Scheduler or a USB drive. Tamil not yet read by a native speaker.
+- New owner decisions: "paid on old ERP" tender for mirror sales (OB-256); owner setup commands for head-office jobs (OB-257); refunds rung on both (OB-258); office screens ask for a PIN (OB-259).
+- Next round: build OB-256/OB-257/OB-258/OB-259; fix the guide's command faults W-1, W-2, W-4, W-5, W-6, W-8; turn guest-only on in the install; align the guide with the built update path (release folders side by side).
+- Open questions: backup retention (keep everything until the drive warns, or a rule); can the old ERP print day totals for one department.
+
 ## Pilot-readiness gap audit before the store-PC install (OB-247 to OB-255, 20 October 2026)
 
 - Report: `docs/pilot/PILOT-READINESS-AUDIT-2026-10-20.md`; lane tables in `docs/pilot/audit-2026-10-20/`. Read-only; nothing run on real Windows or Docker; no staff UAT.
