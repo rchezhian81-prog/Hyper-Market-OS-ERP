@@ -24,7 +24,7 @@
 import { createHmac, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { parseEnv } from './standup-check.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -62,24 +62,44 @@ export function buildStoreToken(claims, policy, nowMs) {
   return `${header}.${payload}.${signature}`;
 }
 
-/** Read `--flag value` pairs from argv into a map. */
+/** Read `--flag value` pairs from argv into a map. A flag followed by another flag (or nothing) gets '' — it never
+ *  swallows the next flag, so `--no-store --settings <file>` keeps the settings file. */
 export function parseArgs(argv) {
   const out = {};
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
-    if (a?.startsWith('--')) { out[a.slice(2)] = argv[i + 1]; i += 1; }
+    if (!a?.startsWith('--')) continue;
+    const next = argv[i + 1];
+    if (next === undefined || next.startsWith('--')) { out[a.slice(2)] = ''; } else { out[a.slice(2)] = next; i += 1; }
   }
   return out;
+}
+
+/**
+ * Which settings file to read (gap G-RD-3): `--settings <file>` when given — the store computer's real-data copy names
+ * `infra/compose/.env.real` this way — else STANDUP_ENV_FILE, else `infra/compose/.env`. `explicit` is true for the flag:
+ * a file named on purpose that cannot be read is an error, never a silent fall-back to another file.
+ */
+export function settingsFileFor(args, env, repo) {
+  if (args['settings'] !== undefined) return { path: args['settings'] === '' ? '' : resolve(args['settings']), explicit: true };
+  return { path: env['STANDUP_ENV_FILE'] ?? join(repo, 'infra', 'compose', '.env'), explicit: false };
 }
 
 // ── The runner ───────────────────────────────────────────────────────────────
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const envFile = process.env['STANDUP_ENV_FILE'] ?? join(REPO, 'infra', 'compose', '.env');
+  const { path: envFile, explicit } = settingsFileFor(args, process.env, REPO);
 
   let env = {};
-  try { env = parseEnv(await readFile(envFile, 'utf8')); } catch { /* fall through to the checks below */ }
+  try { env = parseEnv(await readFile(envFile, 'utf8')); } catch {
+    if (explicit) {
+      console.error(`Cannot issue a token — the settings file named with --settings could not be read${envFile === '' ? ' (no file was named after it)' : `: ${envFile}`}. Check the path.`);
+      process.exitCode = 1;
+      return;
+    }
+    /* otherwise fall through to the checks below */
+  }
 
   const secret = env['IDP_SIGNING_KEY'];
   const issuer = env['IDP_ISSUER'];

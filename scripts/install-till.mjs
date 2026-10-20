@@ -56,7 +56,7 @@ export function checkNodeVersion(version) {
 
 /** Parse the command line into flags. Unknown flags are named, not ignored. */
 export function parseArgs(argv) {
-  const flags = { tenant: undefined, lane: undefined, dir: undefined, composeEnv: undefined, lanePort: '8090', screenPort: '8091', generateKey: false, skipBuild: false, force: false, dryRun: false, unknown: [] };
+  const flags = { tenant: undefined, lane: undefined, dir: undefined, composeEnv: undefined, settingsNamed: false, lanePort: '8090', screenPort: '8091', generateKey: false, skipBuild: false, force: false, dryRun: false, unknown: [] };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     const next = () => { i += 1; return argv[i]; };
@@ -64,6 +64,9 @@ export function parseArgs(argv) {
     else if (a === '--lane') flags.lane = next();
     else if (a === '--dir') flags.dir = next();
     else if (a === '--from-compose-env') flags.composeEnv = next();
+    // Gap G-RD-3: the same, under the name every newer command uses — `--settings infra/compose/.env.real` on the store
+    // computer's real-data copy. Named on purpose, so a file that cannot be read is a problem, never a silent fall-back.
+    else if (a === '--settings') { flags.composeEnv = next(); flags.settingsNamed = true; }
     else if (a === '--lane-port') flags.lanePort = next();
     else if (a === '--screen-port') flags.screenPort = next();
     else if (a === '--generate-key') flags.generateKey = true;
@@ -93,6 +96,10 @@ export function planTillSettings(input) {
   const { flags, installDir, appsDir, composeEnv = undefined, existing = undefined, generatedKey = undefined } = input;
   const problems = [];
   const notes = [];
+
+  if (flags.settingsNamed === true && composeEnv === undefined) {
+    problems.push(`the settings file named with --settings could not be read${flags.composeEnv === undefined ? ' (no file was named after it)' : ` (${flags.composeEnv})`} — check the path, for example infra/compose/.env.real`);
+  }
 
   const tenantId = flags.tenant ?? (realValue(composeEnv?.EDGE_TENANT_ID) ? composeEnv.EDGE_TENANT_ID : undefined) ?? existing?.EDGE_TENANT_ID;
   if (!realValue(tenantId)) problems.push('no tenant id: pass --tenant <id>, or fill EDGE_TENANT_ID in the cloud settings file (infra/compose/.env)');
@@ -272,7 +279,7 @@ async function readEnvFile(path) {
 async function main() {
   const flags = parseArgs(process.argv.slice(2));
   if (flags.unknown.length > 0) {
-    process.stderr.write(`Unknown option(s): ${flags.unknown.join(' ')}\nUsage: node scripts/install-till.mjs [--tenant <id>] [--dir <folder>] [--from-compose-env <file>] [--lane-port 8090] [--screen-port 8091] [--generate-key] [--skip-build] [--force] [--dry-run]\n`);
+    process.stderr.write(`Unknown option(s): ${flags.unknown.join(' ')}\nUsage: node scripts/install-till.mjs [--tenant <id>] [--dir <folder>] [--from-compose-env <file> | --settings <file>] [--lane-port 8090] [--screen-port 8091] [--generate-key] [--skip-build] [--force] [--dry-run]\n`);
     process.exitCode = 64; // EX_USAGE
     return;
   }

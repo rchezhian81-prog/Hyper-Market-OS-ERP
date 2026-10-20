@@ -1,0 +1,1023 @@
+// The owner's guided store-computer setup — OB-240 (the real-data copy on a computer inside the shop) · OB-244 (the owner
+// does every hands-on step himself, on a Windows 10/11 PC; no AI ever gets admin access to his computers).
+//
+//   doctor   checks the computer: Windows/Linux, memory, free disk, the folder, Docker, Node 22, pnpm, the time zone
+//   prepare  writes infra/compose/.env.real ONCE, with fresh secrets made on this computer (never printed, never returned)
+//   up       starts this copy (compose project sre-real: db, migrate, api) and waits for the API to say ready
+//   check    runs the ten isolation checks of pilot gate G4 (runbook Step 6) and writes a dated record — gap G-RD-1
+//   fingerprints  shows a short one-way fingerprint of each secret (never the secret) and writes them to a file that is
+//            safe to share — run on the demo box and on the store computer, so check 3 can compare them (OB-245, G-RD-8)
+//   backup · restore-check · drill   the backup, restore-and-reconcile and timed rollback drill on Windows (OB-246,
+//            G-RD-6, gate G9) — in scripts/lib/store-computer-recovery.mjs
+//
+// Every command refuses, before it does anything: a production box (hard rule #7), the demo tenant (gate G4), the demo's
+// compose project or settings files, and seeding people (that is `tenant:bootstrap`, and it waits for the OB-243 names).
+// Nothing here loads real data: real data waits for the owner's named people (OB-243) and his written GO (OB-242).
+//
+// ── Secrets (hard rule #4) ─────────────────────────────────────────────────────────────────────────────────────────
+// A secret is made with the operating system's CSPRNG, written straight into .env.real, and never printed, logged,
+// returned or put in a record. Every line this module says goes through `say`, and no `say` line names a secret's value —
+// a guardrail scans for it (tests/guardrails/the-store-computer-setup-never-shows-a-secret.test.ts) and the tests capture
+// every line and every record and look for each secret in them.
+//
+// ── Portability ────────────────────────────────────────────────────────────────────────────────────────────────────
+// Node built-ins only (no openssl, grep, curl or uuidgen — Windows has none of them). Every program is started with an
+// argument array and no shell, so no value is ever interpolated into a command line. Everything that touches the world
+// (files, programs, the network, the clock, the CSPRNG) arrives in `deps`, so the tests drive it without Docker.
+
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import * as nodeFs from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { createConnection, createServer } from 'node:net';
+import * as os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { backup, drill, restoreCheck } from './store-computer-recovery.mjs';
+
+// ── Fixed names ───────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** This copy's compose project. Its volumes become sre-real_db-data, sre-real_edge-data, … (runbook Step 1). */
+export const PROJECT = 'sre-real';
+/** The hosted demo's compose project. Never started, stopped or changed from here; its presence is a G4 failure. */
+export const DEMO_PROJECT = 'sre-pilot';
+/** The demo tenant. Real data never goes into it, and this copy is never it. */
+export const DEMO_TENANT = 'pilot-demo';
+/** This copy's settings file, in infra/compose. */
+export const SETTINGS_NAME = '.env.real';
+/** Settings files that belong to other copies (the demo's shape). Read only to compare fingerprints in memory. */
+export const OTHER_SETTINGS_NAMES = Object.freeze(['.env', '.env.pilot']);
+
+/** The secrets this copy holds. None of them is ever shown. */
+export const SECRET_KEYS = Object.freeze(['POSTGRES_PASSWORD', 'DATABASE_URL', 'PACK_SIGNING_KEY', 'BOX_HISTORY_SEAL_KEY', 'IDP_SIGNING_KEY', 'CLOUD_API_TOKEN']);
+/** The values that make this copy itself: none may equal any value in another copy's settings file on this computer. */
+export const OWN_KEYS = Object.freeze(['POSTGRES_PASSWORD', 'DATABASE_URL', 'PACK_SIGNING_KEY', 'BOX_HISTORY_SEAL_KEY', 'IDP_SIGNING_KEY', 'IDP_ISSUER', 'IDP_AUDIENCE', 'EDGE_TENANT_ID', 'POSTGRES_DB']);
+/** Settings that would seed a person at the API's boot. Seeding is `tenant:bootstrap` with the OB-243 names, never this tool. */
+export const SEEDING_KEYS = Object.freeze(['BOOTSTRAP_OWNER_TENANT_ID', 'BOOTSTRAP_OWNER_USER_ID']);
+
+/** The doctor's thresholds. An 8 GB computer reports a little under 8 GiB to the operating system, so 7.5 GiB is "8 GB". */
+export const THRESHOLDS = Object.freeze({
+  ramBytes: 7.5 * 1024 ** 3,
+  diskBytes: 50 * 1024 ** 3,
+  minNodeMajor: 22,
+  /** Windows 10 version 2004 — the first that runs WSL 2, which Docker Desktop needs. */
+  minWindowsBuild: 19041,
+  timeZones: Object.freeze(['Asia/Kolkata', 'Asia/Calcutta']),
+});
+
+/** How long `up` waits for the API to say ready (the first start builds the API, which is the slow part). */
+export const READY_WAIT_MS = 5 * 60_000;
+
+const PLACEHOLDER = 'REPLACE_WITH';
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const sha256 = (s) => createHash('sha256').update(String(s), 'utf8').digest('hex');
+const real = (v) => typeof v === 'string' && v.trim() !== '' && !v.includes(PLACEHOLDER);
+
+// ── Where things are ──────────────────────────────────────────────────────────────────────────────────────────────
+
+/** The path module for the computer the tool runs on (Windows paths on Windows, whatever the tests run on). */
+export const pathFor = (platform) => (platform === 'win32' ? path.win32 : path.posix);
+
+/** Every path the tool uses, from the repository folder. */
+export function layout(repoRoot, platform) {
+  const p = pathFor(platform);
+  const composeDir = p.join(repoRoot, 'infra', 'compose');
+  return {
+    composeDir,
+    settings: p.join(composeDir, SETTINGS_NAME),
+    example: p.join(composeDir, '.env.example'),
+    others: OTHER_SETTINGS_NAMES.map((name) => ({ name, path: p.join(composeDir, name) })),
+    records: p.join(composeDir, 'records'),
+    tillEnv: p.join(repoRoot, 'till', 'till.env'),
+    sliceScript: p.join('scripts', 'dist', 'migration-slice.js'),
+    buildScript: p.join('scripts', 'build-service.mjs'),
+  };
+}
+
+/** `KEY=value` lines; blanks and `#` comments ignored; the first `=` splits (the same reading as standup-check). */
+export function parseEnvText(text) {
+  const out = {};
+  for (const raw of String(text).split(/\r?\n/)) {
+    const line = raw.trim();
+    if (line === '' || line.startsWith('#')) continue;
+    const eq = line.indexOf('=');
+    if (eq === -1) continue;
+    out[line.slice(0, eq).trim()] = line.slice(eq + 1).trim();
+  }
+  return out;
+}
+
+/** The demo tenants this copy must never be: the demo's label, plus the settings' own DEMO_TENANT_IDS list. */
+export function demoTenants(settings) {
+  const listed = String(settings?.DEMO_TENANT_IDS ?? '').split(',').map((s) => s.trim()).filter((s) => s !== '');
+  return [...new Set([DEMO_TENANT, ...listed])];
+}
+
+// ── The refusals every command makes ──────────────────────────────────────────────────────────────────────────────
+
+/**
+ * What stops a command before it does anything. `settings` is this copy's settings (or undefined before `prepare`);
+ * `processEnv` is the terminal's own environment, which Docker Compose would otherwise let win over the file.
+ */
+export function refusals(settings, processEnv = {}) {
+  const out = [];
+  const isProduction = (v) => String(v ?? '').trim().toLowerCase() === 'production';
+  if (isProduction(settings?.MIGRATION_TARGET_KIND)) out.push(`this copy's settings say MIGRATION_TARGET_KIND=production. This tool never works on a production box (hard rule #7). Stop and send me a photo of this screen.`);
+  if (isProduction(processEnv.MIGRATION_TARGET_KIND)) out.push('this window has MIGRATION_TARGET_KIND=production set. Close this PowerShell window, open a new one in the same folder, and run the command again.');
+  const demo = demoTenants(settings);
+  if (settings !== undefined && demo.includes(String(settings.EDGE_TENANT_ID ?? '').trim())) out.push(`this copy's tenant is a demo tenant ("${String(settings.EDGE_TENANT_ID).trim()}"). The real copy is never the demo (pilot gate G4).`);
+  if (processEnv.EDGE_TENANT_ID !== undefined && demo.includes(String(processEnv.EDGE_TENANT_ID).trim())) out.push('this window names the demo tenant (EDGE_TENANT_ID). Close this PowerShell window, open a new one, and run the command again.');
+  for (const key of SEEDING_KEYS) {
+    if (settings !== undefined && String(settings[key] ?? '').trim() !== '') out.push(`this copy's settings name ${key}. People are never seeded by this tool — that is tenant:bootstrap, after the owner names them (OB-243).`);
+  }
+  return out;
+}
+
+/** The terminal's environment with every setting this copy's file holds taken out, so the FILE decides, never the shell. */
+export function composeEnv(processEnv, settings) {
+  const env = { ...processEnv };
+  for (const key of Object.keys(settings ?? {})) delete env[key];
+  for (const key of Object.keys(env)) if (key.startsWith('COMPOSE_')) delete env[key];
+  return env;
+}
+
+/** The fixed start of every compose command: this project, the base file only (never the demo's overlay), this file. */
+export const COMPOSE_BASE = Object.freeze(['compose', '-p', PROJECT, '-f', 'docker-compose.yml', '--env-file', SETTINGS_NAME]);
+
+// ── prepare ───────────────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The values `prepare` writes, from the example file and a CSPRNG. Returns the planned map and the names of the
+ * secrets in it. The caller writes it to disk and never shows it.
+ */
+export function planSettings(example, { random, uuid }) {
+  const tenantId = uuid();
+  const appUser = real(example.APP_DB_USER) ? example.APP_DB_USER : 'sre_app';
+  const fresh = new Set();
+  const make = (bytes, encoding) => {
+    for (;;) {
+      const v = random(bytes).toString(encoding);
+      if (!fresh.has(v)) { fresh.add(v); return v; }
+    }
+  };
+  // Hex for the database password: it sits inside DATABASE_URL, so it must be URL-safe (no '/', '+' or '=').
+  const dbPassword = make(24, 'hex');
+  // base64url for the keys: URL-safe too, and no '=' padding that a Windows `for /f … delims==` could split on.
+  const packKey = make(48, 'base64url');
+  const sealKey = make(48, 'base64url');
+  const idpKey = make(48, 'base64url');
+  const dbName = 'sre_real';
+  const planned = {
+    POSTGRES_DB: dbName,
+    POSTGRES_PASSWORD: dbPassword,
+    DATABASE_URL: ['postgres', '://', appUser, ':', dbPassword, '@db:5432/', dbName].join(''),
+    PACK_SIGNING_KEY: packKey,
+    BOX_HISTORY_SEAL_KEY: sealKey,
+    IDP_SIGNING_KEY: idpKey,
+    IDP_ISSUER: `sre-real-store-computer-${tenantId}`,
+    IDP_AUDIENCE: 'sre-real-api',
+    MIGRATION_TARGET_KIND: 'rehearsal',
+    EDGE_TENANT_ID: tenantId,
+    CLOUD_API_URL: '',
+    CLOUD_API_TOKEN: '',
+    SRE_PUBLIC_HOST: '',
+    SRE_STAFF_ROUTE: 'staff-not-public',
+    DEMO_TENANT_IDS: DEMO_TENANT,
+  };
+  return { planned, secretNames: ['POSTGRES_PASSWORD', 'DATABASE_URL', 'PACK_SIGNING_KEY', 'BOX_HISTORY_SEAL_KEY', 'IDP_SIGNING_KEY'] };
+}
+
+/** The example file with each planned setting filled in place; settings the example lacks are added at the end. */
+export function renderSettings(exampleText, planned, nowIso) {
+  const done = new Set();
+  const lines = String(exampleText).split(/\r?\n/).map((raw) => {
+    const line = raw.trim();
+    if (line === '' || line.startsWith('#') || !line.includes('=')) return raw;
+    const key = line.slice(0, line.indexOf('=')).trim();
+    if (!Object.hasOwn(planned, key)) return raw;
+    done.add(key);
+    return `${key}=${planned[key]}`;
+  });
+  const missing = Object.keys(planned).filter((k) => !done.has(k));
+  const head = [
+    `# THIS COPY'S SETTINGS — the real-data copy on the store computer (compose project ${PROJECT}).`,
+    `# Written by "pnpm run store-computer -- prepare" on ${nowIso}. The secrets in it were made on this computer.`,
+    '# Keep this file on this computer ONLY. Never photograph it, never send it, never copy it to another computer',
+    '# or a cloud folder, and never copy it to .env (every command takes this file by name).',
+    '',
+  ];
+  const tail = missing.length === 0 ? [] : ['', '# ── Added for this copy by store-computer prepare ──', '# The demo tenant(s) every loader refuses by name, as a second lock (gate G4).', ...missing.map((k) => `${k}=${planned[k]}`)];
+  return [...head, ...lines, ...tail, ''].join('\n');
+}
+
+/** Which planned setting equals a value in another copy's settings file. Compared by SHA-256, in memory; names only. */
+export function clashes(planned, keys, others) {
+  const found = [];
+  for (const other of others) {
+    const hashes = new Set(Object.values(other.values).filter(real).map(sha256));
+    for (const key of keys) {
+      if (real(planned[key]) && hashes.has(sha256(planned[key]))) found.push({ key, file: other.name });
+    }
+  }
+  return found;
+}
+
+const readOthers = (deps, L) => L.others
+  .filter((o) => deps.fs.existsSync(o.path))
+  .map((o) => ({ name: o.name, values: parseEnvText(deps.fs.readFileSync(o.path, 'utf8')) }));
+
+export const rel = (deps, abs) => pathFor(deps.platform).relative(deps.repoRoot, abs) || '.';
+/** The clock as a file-name stamp: 2026-10-20T04-30-00-000Z. */
+export const stampOf = (at) => at.toISOString().replace(/[:.]/g, '-');
+
+/** `prepare`: write .env.real once. Never overwrites, never seeds, never shows a secret. */
+export async function prepare(deps) {
+  const { say, fs } = deps;
+  const L = layout(deps.repoRoot, deps.platform);
+  const shownPath = rel(deps, L.settings);
+  if (fs.existsSync(L.settings)) {
+    say(`REFUSED — ${shownPath} already exists. It is never overwritten: it holds this copy's secrets.`);
+    say('If this copy is already set up, the next step is: pnpm run store-computer -- up');
+    return 2;
+  }
+  const stop = refusals(undefined, deps.env);
+  if (stop.length > 0) { for (const r of stop) say(`REFUSED — ${r}`); return 2; }
+  if (!fs.existsSync(L.example)) {
+    say(`REFUSED — ${rel(deps, L.example)} is missing, so this is not a complete copy of the system. Download the ZIP again (guide Part 3).`);
+    return 2;
+  }
+  const exampleText = fs.readFileSync(L.example, 'utf8');
+  const { planned, secretNames } = planSettings(parseEnvText(exampleText), deps);
+
+  const found = clashes(planned, OWN_KEYS, readOthers(deps, L));
+  if (found.length > 0) {
+    for (const c of found) say(`REFUSED — the value this would write for ${c.key} is already in infra/compose/${c.file} on this computer. Nothing was written.`);
+    say('This copy must share nothing with any other copy. Send me a photo of this screen (never of a settings file).');
+    return 2;
+  }
+
+  const text = renderSettings(exampleText, planned, deps.now().toISOString());
+  // Self-check before writing: every planned setting reads back exactly, and no placeholder is left in a value.
+  const back = parseEnvText(text);
+  const wrong = Object.keys(planned).filter((k) => back[k] !== planned[k]);
+  const left = Object.entries(back).filter(([, v]) => v.includes(PLACEHOLDER)).map(([k]) => k).filter((k) => !k.startsWith('KEYCLOAK_'));
+  if (wrong.length > 0 || left.length > 0) {
+    say(`REFUSED — the settings file would not read back correctly (${[...wrong, ...left].join(', ')}). Nothing was written. Send me a photo of this screen.`);
+    return 1;
+  }
+  // 'wx': created only if it does not exist — even a file appearing in the last millisecond is never overwritten.
+  fs.writeFileSync(L.settings, text, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
+
+  // From here on only names and the tenant id (a UUID, not a secret) are said — never `planned` itself.
+  const filledNames = Object.keys(planned);
+  const tenantId = planned.EDGE_TENANT_ID;
+  say(`Settings file written: ${shownPath}`);
+  say('  It stays on this computer only. Never photograph it, never send it, never open it on a shared screen.');
+  say('Filled in (names only — the values are never shown):');
+  for (const key of filledNames) say(`  ${key}${secretNames.includes(key) ? '   (a new secret, made on this computer)' : ''}`);
+  say(`This copy's tenant id: ${tenantId}`);
+  say('  Write it in the setup workbook. It is a name, not a secret.');
+  say(`Compose project: ${PROJECT}`);
+  say('No person was set up. That waits for the names you give (OB-243), and no real data is loaded by this tool.');
+  say('Next: pnpm run store-computer -- up');
+  return 0;
+}
+
+// ── Reading this copy's settings ──────────────────────────────────────────────────────────────────────────────────
+
+export function loadSettings(deps) {
+  const L = layout(deps.repoRoot, deps.platform);
+  if (!deps.fs.existsSync(L.settings)) return { L, settings: undefined };
+  return { L, settings: parseEnvText(deps.fs.readFileSync(L.settings, 'utf8')) };
+}
+
+export function guarded(deps, settings) {
+  const stop = refusals(settings, deps.env);
+  for (const r of stop) deps.say(`REFUSED — ${r}`);
+  return stop.length > 0;
+}
+
+// ── Docker ────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** What is wrong with Docker on this computer, in plain words with the one thing to do — or undefined when it is fine. */
+export function dockerProblem(deps) {
+  const win = deps.platform === 'win32';
+  const v = deps.spawn('docker', ['--version'], {});
+  if (v.error !== undefined || v.status !== 0) {
+    return {
+      what: 'Docker is not installed on this computer, or Windows cannot find it.',
+      fix: win ? 'Install Docker Desktop (guide Part 2), restart the computer, open Docker Desktop once, then run this again.' : 'Install Docker Engine with the compose plugin, then run this again.',
+    };
+  }
+  const info = deps.spawn('docker', ['info', '--format', '{{.ServerVersion}}'], {});
+  if (info.status !== 0) {
+    return {
+      what: win ? 'Docker Desktop is installed but not running.' : 'Docker is installed but not running.',
+      fix: win ? 'Open Docker Desktop from the Start menu, wait until it says "Engine running", then run this again.' : 'Start Docker (sudo systemctl start docker), then run this again.',
+    };
+  }
+  const compose = deps.spawn('docker', ['compose', 'version'], {});
+  if (compose.status !== 0) {
+    return { what: "Docker's compose part is missing.", fix: win ? 'Update Docker Desktop to its latest version (Docker Desktop → Settings → Software updates), then run this again.' : 'Install the Docker compose plugin, then run this again.' };
+  }
+  return undefined;
+}
+
+export const lines = (s) => String(s ?? '').split(/\r?\n/).map((l) => l.trim()).filter((l) => l !== '');
+const projectContainers = (deps, project) => lines(deps.spawn('docker', ['ps', '-a', '--filter', `label=com.docker.compose.project=${project}`, '--format', '{{.Names}}'], {}).stdout);
+const runningContainers = (deps, project) => lines(deps.spawn('docker', ['ps', '--filter', `label=com.docker.compose.project=${project}`, '--format', '{{.Names}}'], {}).stdout);
+
+async function readyNow(deps, port) {
+  try {
+    const res = await deps.fetch(`http://127.0.0.1:${port}/readyz`);
+    if (!res.ok) return false;
+    const body = await res.json();
+    return body?.ready === true;
+  } catch { return false; }
+}
+
+/** Poll readyz until it says ready or the wait is over. */
+export async function waitReady(deps, port, waitMs = READY_WAIT_MS) {
+  const deadline = deps.now().getTime() + waitMs;
+  for (;;) {
+    if (await readyNow(deps, port)) return true;
+    if (deps.now().getTime() >= deadline) return false;
+    await deps.sleep(3_000);
+  }
+}
+
+// ── up ────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** `up`: start this copy's database, schema and API, show them, and wait for READY. */
+export async function up(deps) {
+  const { say } = deps;
+  const { L, settings } = loadSettings(deps);
+  if (settings === undefined) { say('REFUSED — this copy has no settings file yet. Run first: pnpm run store-computer -- prepare'); return 2; }
+  if (guarded(deps, settings)) return 2;
+  const placeholders = Object.entries(settings).filter(([k, v]) => v.includes(PLACEHOLDER) && !k.startsWith('KEYCLOAK_')).map(([k]) => k);
+  if (placeholders.length > 0) { say(`REFUSED — the settings file still has a placeholder in ${placeholders.join(', ')}. Send me a photo of this screen (not of the file).`); return 2; }
+
+  const docker = dockerProblem(deps);
+  if (docker !== undefined) { say(`NOT STARTED — ${docker.what}`); say(`  What to do: ${docker.fix}`); return 1; }
+
+  const demo = projectContainers(deps, DEMO_PROJECT);
+  if (demo.length > 0) {
+    say(`REFUSED — the demo's containers (project ${DEMO_PROJECT}) are on this computer. The demo never runs on the store computer (gate G4).`);
+    say('  Nothing was started or stopped. Send me a photo of this screen.');
+    return 2;
+  }
+
+  if (runningContainers(deps, PROJECT).length === 0) {
+    for (const [name, port] of [['database', settings.POSTGRES_PORT || '5432'], ['API', settings.API_PORT || '8081']]) {
+      if (await deps.portInUse(Number(port))) {
+        say(`NOT STARTED — port ${port} on this computer is already taken by another program, so this copy's ${name} cannot start.`);
+        say('  What to do: restart the computer, open Docker Desktop, and run this again. If it says this again, send me a photo of this screen.');
+        return 1;
+      }
+    }
+  } else {
+    say(`This copy (${PROJECT}) is already running — bringing it up to date.`);
+  }
+
+  const env = composeEnv(deps.env, settings);
+  say(`Starting this copy (${PROJECT}): the database, the schema check and the API. The first time takes several minutes.`);
+  const started = deps.spawn('docker', [...COMPOSE_BASE, 'up', '-d', 'db', 'migrate', 'api'], { cwd: L.composeDir, env, stdio: 'inherit' });
+  if (started.error !== undefined || started.status !== 0) {
+    say('NOT STARTED — Docker could not start this copy. The lines above, in Docker\'s own words, say why.');
+    say('  What to do: send me a photo of the red text.');
+    return 1;
+  }
+  const ps = deps.spawn('docker', [...COMPOSE_BASE, 'ps'], { cwd: L.composeDir, env });
+  for (const l of lines(ps.stdout)) say(`  ${l}`);
+
+  const port = settings.API_PORT || '8081';
+  say('Waiting for the API to say it is ready…');
+  if (!(await waitReady(deps, port))) {
+    say(`NOT READY — the API did not say ready within ${READY_WAIT_MS / 60_000} minutes.`);
+    say('  What to do: run "pnpm run store-computer -- up" once more. If it says this again, send me a photo of this screen.');
+    return 1;
+  }
+  say('READY — this copy is up on this computer, and needs no internet.');
+  say('Next: pnpm run store-computer -- check --by "<your name>"');
+  return 0;
+}
+
+// ── fingerprints (OB-245 — how check 3 is signed off; closes gap G-RD-8) ──────────────────────────────────────────
+//
+// The demo's secrets are never on the store computer, and the store computer's never on the demo. So each computer
+// shows — and writes to a small file — a one-way FINGERPRINT of each of its secrets: the first 12 hex characters of
+// SHA-256 over a fixed label and the value. The store computer's `check --demo-fingerprints <file>` compares its own
+// fingerprints with the demo's; check 3 passes only when every one differs from every one.
+//
+// Why a fingerprint gives nothing away: each secret is at least 32 characters from the operating system's random source
+// (192 bits or more). SHA-256 cannot be run backwards; the only way from a fingerprint to a value is to guess values
+// and compare, and 2^192 guesses is out of reach of every computer there will ever be. Only 12 hex characters (48 bits)
+// are kept, so even a guesser with unlimited time would find about 2^144 different values that give the same
+// fingerprint — the fingerprint cannot point at the one value that is the secret. The fixed label means the fingerprint
+// matches no other hash of the same value made anywhere else. A value shorter than 32 characters is never fingerprinted
+// (a short one could be guessed); the file says "too short" for it instead. Two different random secrets share a
+// fingerprint by chance about once in 2^48 (280 million million) comparisons — and a chance match makes check 3 FAIL,
+// never pass, so the mistake is always on the safe side.
+
+/** The fixed label every fingerprint is made with. Changing it would make old fingerprint files incomparable (refused). */
+export const FINGERPRINT_LABEL = 'sre-retail-os/secret-fingerprint/v1';
+/** The secrets `prepare` generates — the ones check 3 says must be this copy's own. */
+export const FINGERPRINT_KEYS = Object.freeze(['POSTGRES_PASSWORD', 'DATABASE_URL', 'PACK_SIGNING_KEY', 'BOX_HISTORY_SEAL_KEY', 'IDP_SIGNING_KEY']);
+export const FINGERPRINT_MIN_LENGTH = 32;
+export const FINGERPRINT_HEX = 12;
+const FINGERPRINT = /^[0-9a-f]{12}$/;
+const NOT_FINGERPRINTED = Object.freeze(['not set', 'too short']);
+
+/** One fingerprint: the first 12 hex of SHA-256(label, NUL, value). One way: the value cannot be worked out from it. */
+export function fingerprintOf(value) {
+  return createHash('sha256').update(FINGERPRINT_LABEL, 'utf8').update('\0').update(String(value), 'utf8').digest('hex').slice(0, FINGERPRINT_HEX);
+}
+
+/** Every FINGERPRINT_KEYS setting: its fingerprint, or why it has none ("not set", "too short"). Values never leave here. */
+export function fingerprintsOf(settings) {
+  const fingerprints = {};
+  const notFingerprinted = {};
+  for (const key of FINGERPRINT_KEYS) {
+    const v = settings?.[key];
+    if (!real(v)) notFingerprinted[key] = 'not set';
+    else if (String(v).trim().length < FINGERPRINT_MIN_LENGTH) notFingerprinted[key] = 'too short';
+    else fingerprints[key] = fingerprintOf(String(v).trim());
+  }
+  return { fingerprints, notFingerprinted };
+}
+
+/** Read a fingerprint file. Anything malformed, empty or made another way is refused — never treated as a pass. */
+export function readFingerprintFile(text) {
+  let f;
+  try { f = JSON.parse(String(text)); } catch { return { ok: false, reason: 'it is not a fingerprint file (it could not be read as one)' }; }
+  if (f === null || typeof f !== 'object' || Array.isArray(f)) return { ok: false, reason: 'it is not a fingerprint file' };
+  if (f.kind !== 'sre-secret-fingerprints' || f.version !== 1) return { ok: false, reason: 'it is not a fingerprint file written by "store-computer fingerprints"' };
+  if (f.label !== FINGERPRINT_LABEL) return { ok: false, reason: 'it was made with a different fingerprint label, so it cannot be compared' };
+  const fps = f.fingerprints;
+  const not = f.notFingerprinted ?? {};
+  if (fps === null || typeof fps !== 'object' || Array.isArray(fps) || not === null || typeof not !== 'object' || Array.isArray(not)) return { ok: false, reason: 'its fingerprints are missing or malformed' };
+  for (const k of [...Object.keys(fps), ...Object.keys(not)]) if (!FINGERPRINT_KEYS.includes(k)) return { ok: false, reason: `it names a setting this check does not know (${k})` };
+  for (const [k, v] of Object.entries(fps)) if (typeof v !== 'string' || !FINGERPRINT.test(v)) return { ok: false, reason: `the fingerprint for ${k} is not 12 hex characters` };
+  for (const [k, v] of Object.entries(not)) if (!NOT_FINGERPRINTED.includes(v) || k in fps) return { ok: false, reason: `the entry for ${k} is malformed` };
+  const missing = FINGERPRINT_KEYS.filter((k) => !(k in fps) && !(k in not));
+  if (missing.length > 0) return { ok: false, reason: `it says nothing about ${missing.join(', ')} — it may be cut short` };
+  if (Object.keys(fps).length === 0) return { ok: false, reason: 'it holds no fingerprint at all — there is nothing to compare' };
+  return { ok: true, file: { settingsFile: typeof f.settingsFile === 'string' ? f.settingsFile : '', fingerprints: { ...fps }, notFingerprinted: { ...not } } };
+}
+
+/** Every pair (ours, theirs) whose fingerprints are equal — any of ours against any of theirs. */
+export function fingerprintMatches(own, theirs) {
+  const found = [];
+  for (const [mine, a] of Object.entries(own)) for (const [other, b] of Object.entries(theirs)) if (a === b) found.push({ own: mine, demo: other });
+  return found;
+}
+
+/** The settings file `fingerprints` reads: --settings, or this repository's .env.real, or (on the demo box) .env.pilot. */
+function fingerprintSource(deps, given) {
+  const p = pathFor(deps.platform);
+  if (given !== undefined) return { file: p.resolve(given) };
+  const L = layout(deps.repoRoot, deps.platform);
+  const pilot = L.others.find((o) => o.name === '.env.pilot').path;
+  const found = [L.settings, pilot].filter((f) => deps.fs.existsSync(f));
+  if (found.length === 1) return { file: found[0] };
+  if (found.length === 0) return { problem: `there is no ${SETTINGS_NAME} (the store computer) or .env.pilot (the demo box) in infra/compose here. Name the settings file with --settings <file>.` };
+  return { problem: `both ${SETTINGS_NAME} and .env.pilot are in infra/compose here. Say which one with --settings <file>. (On the store computer, .env.pilot should not be there at all — check 3 will say so.)` };
+}
+
+/** `fingerprints [--settings <file>] [--out <folder>]`: the secrets' fingerprints, shown and written to a shareable file. */
+export async function fingerprints(deps, opts) {
+  const { say, fs } = deps;
+  const src = fingerprintSource(deps, opts.settings);
+  if (src.problem !== undefined) { say(`REFUSED — ${src.problem}`); return 2; }
+  const p = pathFor(deps.platform);
+  if (!fs.existsSync(src.file)) { say(`REFUSED — there is no settings file at ${src.file}.`); return 2; }
+  const values = parseEnvText(fs.readFileSync(src.file, 'utf8'));
+  if (String(values.MIGRATION_TARGET_KIND ?? '').trim().toLowerCase() === 'production') { say('REFUSED — these settings say MIGRATION_TARGET_KIND=production. This tool never works on a production box (hard rule #7).'); return 2; }
+  const fp = fingerprintsOf(values);
+  if (Object.keys(fp.fingerprints).length === 0) { say(`REFUSED — ${p.basename(src.file)} holds none of the secrets (${FINGERPRINT_KEYS.join(', ')}). Is it the right settings file?`); return 2; }
+
+  const at = deps.now();
+  const where = deps.platform === 'win32' ? 'Windows' : 'Linux';
+  say(`Secret fingerprints from ${p.basename(src.file)} on this computer (${where}). A fingerprint is one-way: the secret is never shown and cannot be worked out from it.`);
+  for (const key of FINGERPRINT_KEYS) {
+    if (key in fp.fingerprints) say(`  ${key.padEnd(22)} ${fp.fingerprints[key]}`);
+    else say(`  ${key.padEnd(22)} (${fp.notFingerprinted[key]} — no fingerprint)`);
+  }
+  const dir = opts.out === undefined ? layout(deps.repoRoot, deps.platform).records : p.resolve(opts.out);
+  fs.mkdirSync(dir, { recursive: true });
+  let file;
+  for (let i = 1; ; i += 1) {
+    file = p.join(dir, `fingerprints-${stampOf(at)}${i === 1 ? '' : `-${i}`}.json`);
+    if (!fs.existsSync(file)) break;
+  }
+  const out = {
+    kind: 'sre-secret-fingerprints', version: 1, label: FINGERPRINT_LABEL, algorithm: `the first ${FINGERPRINT_HEX} hex characters of SHA-256 over the label, a NUL and the value`,
+    at: at.toISOString(), computer: where, settingsFile: p.basename(src.file), fingerprints: fp.fingerprints, notFingerprinted: fp.notFingerprinted,
+  };
+  fs.writeFileSync(file, `${JSON.stringify(out, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' });
+  say(`Fingerprint file written: ${file}`);
+  say('  It holds no secret — it is safe to copy to the store computer. The settings file itself never leaves this computer.');
+  return 0;
+}
+
+/** Check 3 against the demo's fingerprint file. Returns a check result. */
+export function demoFingerprintVerdict(settings, text) {
+  const got = readFingerprintFile(text);
+  if (!got.ok) return { status: 'FAIL', detail: `REFUSED the demo fingerprint file — ${got.reason}. Make it again on the demo box (guide Part 9) and copy it here.` };
+  if (got.file.settingsFile === SETTINGS_NAME) return { status: 'FAIL', detail: `REFUSED the demo fingerprint file — it was made from a store computer's ${SETTINGS_NAME}, not from the demo's settings. Use the file made on the demo box.` };
+  const own = fingerprintsOf(settings);
+  const ownMissing = Object.entries(own.notFingerprinted).map(([k, why]) => `${k} (${why})`);
+  if (ownMissing.length > 0) return { status: 'FAIL', detail: `this copy's own secrets are not all there and long: ${ownMissing.join(', ')}. prepare makes each one at least ${FINGERPRINT_MIN_LENGTH} characters.` };
+  const same = fingerprintMatches(own.fingerprints, got.file.fingerprints);
+  if (same.length > 0) return { status: 'FAIL', detail: `${same.map((m) => `this copy's ${m.own} has the same fingerprint as the demo's ${m.demo}`).join('; ')}. That secret is shared with the demo: it must be replaced before any real data. Send me a photo of this screen.` };
+  const short = Object.keys(got.file.notFingerprinted).filter((k) => got.file.notFingerprinted[k] === 'too short');
+  const theirs = Object.keys(got.file.fingerprints).length;
+  return { status: 'PASS', detail: `all ${FINGERPRINT_KEYS.length} of this copy's secret fingerprints differ from all ${theirs} of the demo's${short.length > 0 ? ` (the demo's ${short.join(', ')} ${short.length === 1 ? 'is' : 'are'} shorter than any of this copy's, so cannot be equal to one)` : ''}. Compared by one-way fingerprint; no secret was shown or moved.` };
+}
+
+// ── check (pilot gate G4, runbook Step 6) ─────────────────────────────────────────────────────────────────────────
+
+export const CHECK_TITLES = Object.freeze([
+  'Own project, own storage',
+  'Own database',
+  "Own secrets (none is the demo's)",
+  'Never connected to the demo',
+  'Works with the internet cable unplugged',
+  'Never production',
+  'The demo tenant is refused',
+  'Production is refused',
+  'The real tenant is a UUID and nobody\'s demo',
+  "Backups go to the owner's drive only",
+]);
+
+const result = (n, status, detail) => ({ n, title: CHECK_TITLES[n - 1], status, detail });
+const isLocalUrl = (v) => v === '' || /^http:\/\/(api|127\.0\.0\.1|localhost)(:\d{1,5})?\/?$/i.test(v);
+const isLocalHost = (v) => { try { return ['api', '127.0.0.1', 'localhost'].includes(new URL(v).hostname.toLowerCase()); } catch { return false; } };
+
+/** The overall answer: "G4 PASSED" only when all ten pass. */
+export function overall(results) {
+  const fail = results.filter((r) => r.status === 'FAIL').length;
+  const needs = results.filter((r) => r.status === 'NEEDS-YOU').length;
+  const passed = results.length === 10 && results.every((r) => r.status === 'PASS');
+  if (passed) return { passed: true, line: 'G4 PASSED — all ten isolation checks pass.' };
+  const parts = [];
+  if (fail > 0) parts.push(`${fail} failed`);
+  if (needs > 0) parts.push(`${needs} need you`);
+  if (results.length !== 10) parts.push(`${10 - results.length} not run`);
+  return { passed: false, line: `G4 NOT PASSED — ${parts.join(', ')}. No real data may be loaded until G4 passes.` };
+}
+
+/** The table, as lines. Only the statuses and the details the checks wrote — never a setting's value. */
+export function checkTable(results) {
+  const out = [' #  RESULT     CHECK'];
+  for (const r of results) {
+    out.push(`${String(r.n).padStart(2)}  ${r.status.padEnd(9)}  ${r.title}`);
+    out.push(`               ${r.detail}`);
+  }
+  return out;
+}
+
+/** Run the real slice command's refusal path against a folder holding only a slice.json (no CSV, no real data). */
+function sliceRefusal(deps, L, { tenantId, settingsPath, expect }) {
+  const dir = deps.fs.mkdtempSync(pathFor(deps.platform).join(deps.tmpdir(), 'sre-g4-'));
+  try {
+    const manifest = { loadId: 'g4-isolation-check', tenantId, operator: 'g4-isolation-check', storeId: 'g4-isolation-check', department: { categoryId: 'g4-isolation-check', name: 'G4 isolation check (no data)' }, files: {} };
+    deps.fs.writeFileSync(pathFor(deps.platform).join(dir, 'slice.json'), `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+    const r = deps.spawn(deps.nodePath, [L.sliceScript, '--dir', dir, '--stage', '--offline', '--settings', settingsPath], { cwd: deps.repoRoot, env: composeEnv(deps.env, {}) });
+    const said = `${r.stdout ?? ''}`;
+    const refused = r.status === 1 && said.includes(`REFUSED (${expect})`);
+    return { refused, status: r.status };
+  } finally {
+    deps.fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/** The ten checks. Read-only, except the temporary folder and file checks 7 and 8 make and delete. */
+export async function runChecks(deps, settings, opts) {
+  const { fs } = deps;
+  const L = layout(deps.repoRoot, deps.platform);
+  const p = pathFor(deps.platform);
+  const results = [];
+  const docker = dockerProblem(deps);
+  const others = readOthers(deps, L);
+  const port = settings.API_PORT || '8081';
+
+  // 1 — own project, own storage.
+  if (docker !== undefined) results.push(result(1, 'FAIL', `${docker.what} ${docker.fix}`));
+  else {
+    const vols = lines(deps.spawn('docker', ['volume', 'ls', '--format', '{{.Name}}'], {}).stdout);
+    const own = vols.filter((v) => v.startsWith(`${PROJECT}_`));
+    const demo = vols.filter((v) => v.startsWith(`${DEMO_PROJECT}_`));
+    if (demo.length > 0) results.push(result(1, 'FAIL', `the demo's storage is on this computer (${demo.length} ${DEMO_PROJECT}_ volume(s)). The demo never lives here.`));
+    else if (own.length === 0) results.push(result(1, 'FAIL', `no ${PROJECT}_ storage yet — run: pnpm run store-computer -- up`));
+    else results.push(result(1, 'PASS', `${own.length} ${PROJECT}_ volume(s), and no ${DEMO_PROJECT}_ volume on this computer.`));
+  }
+
+  // 2 — own database.
+  if (docker !== undefined) results.push(result(2, 'FAIL', 'Docker is not ready, so the database could not be asked.'));
+  else {
+    const user = settings.POSTGRES_USER || 'sre_admin';
+    const r = deps.spawn('docker', [...COMPOSE_BASE, 'exec', '-T', 'db', 'psql', '-U', user, '-d', 'postgres', '-Atc', 'SELECT datname FROM pg_database WHERE NOT datistemplate ORDER BY 1'], { cwd: L.composeDir, env: composeEnv(deps.env, settings) });
+    const names = lines(r.stdout);
+    const ownDb = settings.POSTGRES_DB || 'sre_real';
+    const demoDbs = new Set(['sre_pilot', ...others.map((o) => o.values.POSTGRES_DB).filter(real)]);
+    demoDbs.delete(ownDb);
+    const foreign = names.filter((n) => demoDbs.has(n));
+    if (r.status !== 0) results.push(result(2, 'FAIL', `this copy's database did not answer — run: pnpm run store-computer -- up`));
+    else if (!names.includes(ownDb)) results.push(result(2, 'FAIL', `the database ${ownDb} is not there.`));
+    else if (foreign.length > 0) results.push(result(2, 'FAIL', `a demo database is inside this copy (${foreign.join(', ')}).`));
+    else results.push(result(2, 'PASS', `${ownDb} is there, and no demo database.`));
+  }
+
+  // 3 — own secrets.
+  {
+    const held = SECRET_KEYS.filter((k) => real(settings[k]));
+    const seen = new Map();
+    const dupInside = [];
+    for (const k of held) {
+      const h = sha256(settings[k]);
+      if (seen.has(h)) dupInside.push(`${seen.get(h)} and ${k}`); else seen.set(h, k);
+    }
+    const found = clashes(settings, [...SECRET_KEYS, 'IDP_ISSUER', 'EDGE_TENANT_ID'], others);
+    if (dupInside.length > 0) results.push(result(3, 'FAIL', `two of this copy's secrets are the same (${dupInside.join(', ')}). Each must be its own.`));
+    else if (found.length > 0) results.push(result(3, 'FAIL', `${found.map((c) => `${c.key} equals a value in infra/compose/${c.file}`).join('; ')}. If that file is a copy of ${SETTINGS_NAME}, it is not needed: every command takes ${SETTINGS_NAME} by name.`));
+    else if (opts.demoFingerprints !== undefined) {
+      // OB-245: the demo's fingerprints, made on the demo box and copied here. Malformed or empty is refused, never a pass.
+      let text;
+      try { text = fs.readFileSync(opts.demoFingerprints, 'utf8'); } catch { text = undefined; }
+      const v = text === undefined
+        ? { status: 'FAIL', detail: `REFUSED the demo fingerprint file — it could not be read (${opts.demoFingerprints}). Check the file name you gave after --demo-fingerprints.` }
+        : demoFingerprintVerdict(settings, text);
+      results.push(result(3, v.status, v.detail));
+    } else if (others.length === 0) results.push(result(3, 'NEEDS-YOU', "not checked here: the demo's settings are not on this computer, which is itself the expected state. Make the demo's fingerprint file on the demo box (guide Part 9), copy it here, and run check again with --demo-fingerprints \"<that file>\"."));
+    else results.push(result(3, 'PASS', `none of this copy's secrets equals any value in ${others.map((o) => `infra/compose/${o.name}`).join(' or ')} (compared by fingerprint, in memory).`));
+  }
+
+  // 4 — never connected to the demo.
+  {
+    const bad = [];
+    const files = [{ name: SETTINGS_NAME, values: settings }];
+    if (fs.existsSync(L.tillEnv)) files.push({ name: 'till/till.env', values: parseEnvText(fs.readFileSync(L.tillEnv, 'utf8')) });
+    for (const f of files) {
+      const url = String(f.values.CLOUD_API_URL ?? '').trim();
+      if (!isLocalUrl(url)) bad.push(`${f.name}: CLOUD_API_URL names an address outside this computer`);
+      if (String(f.values.SRE_PUBLIC_HOST ?? '').trim() !== '') bad.push(`${f.name}: SRE_PUBLIC_HOST is not blank`);
+    }
+    const issuer = String(settings.IDP_ISSUER ?? '').trim();
+    if (!real(issuer)) bad.push(`${SETTINGS_NAME}: IDP_ISSUER is not set`);
+    else if (/^https?:\/\//i.test(issuer) && !isLocalHost(issuer)) bad.push(`${SETTINGS_NAME}: IDP_ISSUER names an address outside this computer`);
+    for (const c of clashes(settings, ['CLOUD_API_URL', 'IDP_ISSUER', 'SRE_PUBLIC_HOST'], others)) bad.push(`${SETTINGS_NAME}: ${c.key} is the same as in infra/compose/${c.file}`);
+    results.push(bad.length > 0 ? result(4, 'FAIL', `${bad.join('; ')}.`) : result(4, 'PASS', `only this computer's own values or blank in ${files.map((f) => f.name).join(' and ')}.`));
+  }
+
+  // 5 — the internet cable. The tool cannot unplug it; the owner does, and says so with --offline-confirmed.
+  {
+    const ready = await readyNow(deps, port);
+    if (!ready) results.push(result(5, 'FAIL', 'the API is not answering ready on this computer — run: pnpm run store-computer -- up'));
+    else if (opts.offlineConfirmed) results.push(result(5, 'PASS', `the API answered ready while ${opts.by} confirmed the internet cable was unplugged.`));
+    else results.push(result(5, 'NEEDS-YOU', 'the API answers ready. Now unplug the INTERNET cable (leave the cable to the tills), then run: pnpm run store-computer -- check --by "<your name>" --offline-confirmed'));
+  }
+
+  // 6 — never production.
+  {
+    const kind = String(settings.MIGRATION_TARGET_KIND ?? '').trim();
+    results.push(kind === 'rehearsal' ? result(6, 'PASS', 'MIGRATION_TARGET_KIND is rehearsal.') : result(6, 'FAIL', `MIGRATION_TARGET_KIND is "${kind}", not rehearsal.`));
+  }
+
+  // 7 and 8 — the real loader's own refusals, on a folder with no data in it.
+  const build = deps.spawn(deps.nodePath, [L.buildScript, 'tools'], { cwd: deps.repoRoot, env: composeEnv(deps.env, {}) });
+  if (build.error !== undefined || build.status !== 0) {
+    results.push(result(7, 'FAIL', 'the loader could not be prepared for the check (the tools build failed). Send me a photo of this screen.'));
+    results.push(result(8, 'FAIL', 'the loader could not be prepared for the check (the tools build failed).'));
+  } else {
+    const seven = sliceRefusal(deps, L, { tenantId: DEMO_TENANT, settingsPath: L.settings, expect: 'demo_tenant' });
+    results.push(seven.refused ? result(7, 'PASS', 'the loader said REFUSED (demo_tenant) for the demo tenant, before reading a row.') : result(7, 'FAIL', `the loader did not refuse the demo tenant (it ended ${seven.status}).`));
+
+    // A temporary copy of this copy's settings with MIGRATION_TARGET_KIND=production — its secrets left out (they play
+    // no part in the refusal, and a secret copied is a secret to look after) — deleted straight afterwards.
+    const tmp = fs.mkdtempSync(p.join(deps.tmpdir(), 'sre-g4-settings-'));
+    const copy = p.join(tmp, '.env.production-check');
+    let eight;
+    try {
+      const copied = { ...settings, MIGRATION_TARGET_KIND: 'production' };
+      for (const k of SECRET_KEYS) copied[k] = '';
+      fs.writeFileSync(copy, `${Object.entries(copied).map(([k, v]) => `${k}=${v}`).join('\n')}\n`, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
+      eight = sliceRefusal(deps, L, { tenantId: settings.EDGE_TENANT_ID, settingsPath: copy, expect: 'production_target' });
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+    const gone = !fs.existsSync(copy);
+    if (!gone) results.push(result(8, 'FAIL', `the temporary copy of the settings could not be deleted (${copy}). Delete that file by hand.`));
+    else results.push(eight.refused ? result(8, 'PASS', 'the loader said REFUSED (production_target) for a temporary copy set to production; that copy is deleted.') : result(8, 'FAIL', `the loader did not refuse production (it ended ${eight.status}).`));
+  }
+
+  // 9 — the real tenant.
+  {
+    const t = String(settings.EDGE_TENANT_ID ?? '').trim();
+    if (!UUID.test(t)) results.push(result(9, 'FAIL', 'EDGE_TENANT_ID is not a UUID.'));
+    else if (demoTenants(settings).includes(t)) results.push(result(9, 'FAIL', 'EDGE_TENANT_ID is listed as a demo tenant.'));
+    else results.push(result(9, 'PASS', `EDGE_TENANT_ID ${t} is a UUID, not ${DEMO_TENANT}, and not in DEMO_TENANT_IDS.`));
+  }
+
+  // 10 — backups go to the owner's drive. The tool cannot know which drive is his: it reads the backup step's record.
+  if (opts.backupRecord === undefined) {
+    results.push(result(10, 'NEEDS-YOU', 'take the first backup onto your own backup drive (guide Part 8), then run check again with --backup-record "<the .manifest.json file backup wrote>".'));
+  } else {
+    const v = backupRecordVerdict(deps, opts.backupRecord);
+    results.push(result(10, v.status, v.detail));
+  }
+  return results;
+}
+
+/**
+ * Is `dir` on this computer's own drive? On Windows: the system drive (C:) or the drive the repository is on; anywhere:
+ * inside the repository folder. Returns the problem in plain words, or undefined. Check 10 and `backup --to` both use it.
+ */
+export function ownDriveProblem(dir, { platform, repoRoot, systemDrive }) {
+  const p = pathFor(platform);
+  const drive = (x) => p.parse(p.resolve(x)).root.replace(/[\\/]+$/, '').toLowerCase();
+  const ownDrives = platform === 'win32' ? new Set([drive(repoRoot), String(systemDrive ?? 'C:').toLowerCase()]) : new Set();
+  // On Windows `relative` across drives returns the other drive's absolute path, which is NOT inside the repository.
+  const fromRepo = p.relative(repoRoot, p.resolve(dir));
+  const insideRepo = fromRepo === '' || (!fromRepo.startsWith('..') && !p.isAbsolute(fromRepo));
+  if (insideRepo) return `${dir} is inside the system's own folder (${repoRoot})`;
+  if (platform === 'win32' && ownDrives.has(drive(dir))) return `${dir} is on this computer's own drive (${drive(dir).toUpperCase()})`;
+  return undefined;
+}
+
+/**
+ * Check 10 from the backup step's own record: it restored and reconciled, and the copy went to a folder that is not on
+ * this computer's own drive (`ownDriveProblem`). Takes the older recovery-rehearsal record, or a `restore-check` record.
+ */
+export function backupVerdict(rec, { platform, repoRoot, systemDrive }) {
+  if (rec === undefined || rec === null || typeof rec !== 'object') return { status: 'FAIL', detail: 'the backup record could not be read. Check the file name you gave after --backup-record.' };
+  if (rec.outcome !== 'restored_and_reconciled') return { status: 'FAIL', detail: `the backup record says "${String(rec.outcome)}", not restored_and_reconciled. Take the backup again.` };
+  const dir = typeof rec.offsiteDir === 'string' ? rec.offsiteDir.trim() : '';
+  if (dir === '') return { status: 'FAIL', detail: 'the backup record names no backup drive folder.' };
+  if (ownDriveProblem(dir, { platform, repoRoot, systemDrive }) !== undefined) {
+    return { status: 'FAIL', detail: `the backup went to ${dir}, which is on this computer's own drive — it must go to your backup drive.` };
+  }
+  return { status: 'PASS', detail: `the backup record says the copy went to ${dir} and restored and reconciled. Confirm ${dir} is your own backup drive.` };
+}
+
+/**
+ * Check 10 from the file named after --backup-record. Three kinds are accepted:
+ *   • a `store-computer backup` manifest — it passes only if a `restore-check` record beside it, for this very backup
+ *     (same backup id and SHA-256), says restored_and_reconciled; the folder judged is where the manifest really is;
+ *   • a `store-computer restore-check` record — the folder judged is where the record really is;
+ *   • the older recovery-rehearsal record (scripts/recovery-rehearsal.mjs) — as before.
+ */
+export function backupRecordVerdict(deps, file) {
+  const { fs } = deps;
+  const p = pathFor(deps.platform);
+  const where = { platform: deps.platform, repoRoot: deps.repoRoot, systemDrive: deps.env.SystemDrive };
+  const read = (f) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return undefined; } };
+  const rec = read(file);
+  const here = p.dirname(p.resolve(file));
+  if (rec?.kind === 'store-computer-restore-check') return backupVerdict({ ...rec, offsiteDir: here }, where);
+  if (rec?.kind !== 'store-computer-backup') return backupVerdict(rec, where);
+  const checks = (() => { try { return fs.readdirSync(here).map(String).filter((n) => /^restore-check-.*\.json$/.test(n)).sort(); } catch { return []; } })()
+    .map((n) => read(p.join(here, n)))
+    .filter((r) => r?.kind === 'store-computer-restore-check' && r.backupId === rec.backupId && r.sha256 === rec.sha256);
+  if (checks.length === 0) return { status: 'FAIL', detail: `this backup (${String(rec.backupId)}) has not been restore-checked yet. Run: pnpm run store-computer -- restore-check --from "${file}", then check again.` };
+  const good = checks.find((r) => r.outcome === 'restored_and_reconciled');
+  return backupVerdict(good === undefined ? checks.at(-1) : { ...good, offsiteDir: here }, where);
+}
+
+/** A dated record file name that never overwrites another. */
+function recordPath(deps, dir, at) {
+  const p = pathFor(deps.platform);
+  const stamp = at.toISOString().replace(/[:.]/g, '-');
+  for (let i = 1; ; i += 1) {
+    const candidate = p.join(dir, `g4-check-${stamp}${i === 1 ? '' : `-${i}`}.json`);
+    if (!deps.fs.existsSync(candidate)) return candidate;
+  }
+}
+
+/** `check`: the ten G4 checks, the table, the record. */
+export async function check(deps, opts) {
+  const { say, fs } = deps;
+  const by = typeof opts.by === 'string' ? opts.by.trim() : '';
+  if (by === '') { say('REFUSED — say who is running the check: pnpm run store-computer -- check --by "<your name>"'); return 2; }
+  const { L, settings } = loadSettings(deps);
+  if (settings === undefined) { say('REFUSED — this copy has no settings file yet. Run first: pnpm run store-computer -- prepare'); return 2; }
+  if (guarded(deps, settings)) return 2;
+
+  const at = deps.now();
+  say(`Pilot gate G4 — the ten isolation checks, on ${deps.platform === 'win32' ? 'Windows' : 'Linux'}, project ${PROJECT}, by ${by}.`);
+  const results = await runChecks(deps, settings, { ...opts, by });
+  for (const l of checkTable(results)) say(l);
+  const verdict = overall(results);
+  say(verdict.line);
+
+  const dir = opts.out ?? L.records;
+  fs.mkdirSync(dir, { recursive: true });
+  const file = recordPath(deps, dir, at);
+  const record = {
+    kind: 'g4-isolation-check',
+    at: at.toISOString(),
+    by,
+    project: PROJECT,
+    tenantId: String(settings.EDGE_TENANT_ID ?? ''),
+    computer: deps.platform === 'win32' ? 'Windows' : 'Linux',
+    offlineConfirmed: opts.offlineConfirmed === true,
+    results: results.map((r) => ({ n: r.n, check: r.title, result: r.status, detail: r.detail })),
+    ...(opts.demoFingerprints === undefined ? {} : { demoFingerprintFile: pathFor(deps.platform).basename(opts.demoFingerprints) }),
+    overall: verdict.passed ? 'G4 PASSED' : 'G4 NOT PASSED',
+  };
+  fs.writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' });
+  say(`Record written: ${rel(deps, file)}  (no secret is in it — keep it with the workbook)`);
+  return verdict.passed ? 0 : 1;
+}
+
+// ── doctor ────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+const gib = (b) => `${(b / 1024 ** 3).toFixed(1)} GB`;
+
+/** The doctor's rows, each OK or FIX with the plain-English fix. Pure over what `deps` reports. */
+export function doctorRows(deps) {
+  const rows = [];
+  const row = (name, ok, detail, fix) => rows.push({ name, status: ok ? 'OK' : 'FIX', detail, ...(ok ? {} : { fix }) });
+  const win = deps.platform === 'win32';
+
+  if (win) {
+    const build = Number(String(deps.os.release()).split('.')[2] ?? 0);
+    const name = `${deps.os.version()} (build ${build})`;
+    row('Windows', build >= THRESHOLDS.minWindowsBuild, name, 'Update Windows: Settings → Windows Update → Check for updates, install everything, restart, run this again.');
+  } else if (deps.platform === 'linux') {
+    row('Linux', true, `Linux ${deps.os.release()}`);
+  } else {
+    row('System', false, `this computer runs ${deps.platform}`, 'This setup is for a Windows 10/11 or Linux computer.');
+  }
+
+  const ram = deps.os.totalmem();
+  row('Memory', ram >= THRESHOLDS.ramBytes, `${gib(ram)} of memory`, 'This computer needs at least 8 GB of memory (RAM). Use another computer, or have memory added.');
+
+  let free;
+  try { free = deps.freeDiskBytes(deps.repoRoot); } catch { free = undefined; }
+  row('Free disk', free !== undefined && free >= THRESHOLDS.diskBytes, free === undefined ? 'could not read the free space' : `${gib(free)} free on the drive holding ${deps.repoRoot}`, 'Free up space until this drive has at least 50 GB free (empty the Recycle Bin, remove old downloads), then run this again.');
+
+  const folder = deps.repoRoot;
+  const synced = /onedrive|dropbox|google ?drive|icloud/i.test(folder);
+  const spaced = /\s/.test(folder);
+  row('Folder', !synced && !spaced, folder, synced
+    ? 'This folder is inside a cloud-synced folder, which would copy the secrets off this computer. Move the folder to C:\\SRE (guide Part 3).'
+    : 'The folder path has a space in it. Move the folder to C:\\SRE (guide Part 3).');
+
+  const docker = dockerProblem(deps);
+  row('Docker', docker === undefined, docker === undefined ? 'installed and running' : docker.what, docker?.fix);
+
+  const major = Number(String(deps.nodeVersion).replace(/^v/, '').split('.')[0]);
+  row('Node.js', Number.isFinite(major) && major >= THRESHOLDS.minNodeMajor, `Node ${deps.nodeVersion}`, 'Install Node.js 22 LTS from nodejs.org (guide Part 2), close PowerShell, open it again, run this again.');
+
+  const agent = String(deps.env.npm_config_user_agent ?? '');
+  const pnpm = /\bpnpm\/(\d+[^\s]*)/.exec(agent);
+  row('pnpm', pnpm !== null, pnpm === null ? 'not found (run this as: pnpm run store-computer -- doctor)' : `pnpm ${pnpm[1]}`, 'Install pnpm: in PowerShell type  npm install -g pnpm  then close PowerShell, open it again, and run this again.');
+
+  const tz = deps.timeZone();
+  row('Time zone', THRESHOLDS.timeZones.includes(tz), tz, win
+    ? 'Settings → Time & language → Date & time → Time zone: (UTC+05:30) Chennai, Kolkata, Mumbai, New Delhi. Then run this again.'
+    : 'Set the time zone to Asia/Kolkata (sudo timedatectl set-timezone Asia/Kolkata), then run this again.');
+
+  const L = layout(deps.repoRoot, deps.platform);
+  if (deps.fs.existsSync(L.settings)) {
+    const stop = refusals(parseEnvText(deps.fs.readFileSync(L.settings, 'utf8')), deps.env);
+    row('This copy', stop.length === 0, stop.length === 0 ? `${SETTINGS_NAME} is there and safe to use` : stop.join(' '), 'Stop here and send me a photo of this screen.');
+  } else {
+    row('This copy', true, `no ${SETTINGS_NAME} yet — the next step makes it (prepare)`);
+  }
+  return rows;
+}
+
+/** `doctor`: the rows, printed. */
+export async function doctor(deps) {
+  const rows = doctorRows(deps);
+  deps.say('Checking this computer for the store setup:');
+  for (const r of rows) {
+    deps.say(`  ${r.status.padEnd(3)}  ${r.name.padEnd(10)} ${r.detail}`);
+    if (r.status === 'FIX') deps.say(`                  What to do: ${r.fix}`);
+  }
+  const fix = rows.filter((r) => r.status === 'FIX').length;
+  deps.say(fix === 0 ? 'All OK. Next: pnpm run store-computer -- prepare' : `${fix} thing(s) to fix first. Fix them one at a time, then run doctor again.`);
+  return fix === 0 ? 0 : 1;
+}
+
+// ── The command line ──────────────────────────────────────────────────────────────────────────────────────────────
+
+export const USAGE = [
+  'Usage: pnpm run store-computer -- <command>',
+  '  doctor                                   check this computer',
+  '  prepare                                  write this copy\'s settings file once (infra/compose/.env.real)',
+  '  up                                       start this copy and wait until it is ready',
+  '  check --by "<name>" [--offline-confirmed] [--demo-fingerprints <file>] [--backup-record <file>] [--out <folder>]',
+  '                                           the ten G4 isolation checks, and a dated record',
+  '  fingerprints [--settings <file>] [--out <folder>]',
+  '                                           one-way fingerprints of the secrets (never the secrets), and a file safe to share',
+  '  backup --to <folder on your backup drive>',
+  '                                           back this copy up onto your backup drive, with a manifest',
+  '  restore-check --from <backup file>       restore a backup into a scratch database and reconcile it',
+  '  drill --by "<name>" --to <folder> --previous <previous release folder> [--run]',
+  '                                           the timed rollback drill (pilot gate G9); a dry run without --run',
+];
+
+/** Read the command line. Unknown options are named, never ignored. */
+export function parseCommandLine(argv) {
+  const args = [...argv];
+  while (args[0] === '--') args.shift();
+  const out = {
+    command: undefined, by: undefined, out: undefined, backupRecord: undefined, offlineConfirmed: false, demoFingerprints: undefined,
+    settings: undefined, to: undefined, from: undefined, previous: undefined, run: false, problems: [],
+  };
+  for (let i = 0; i < args.length; i += 1) {
+    const a = args[i];
+    const value = () => {
+      const v = args[i + 1];
+      if (v === undefined || v.startsWith('--')) { out.problems.push(`${a} needs a value`); return undefined; }
+      i += 1; return v;
+    };
+    if (a === '--') continue;
+    if (a === '--by') out.by = value();
+    else if (a === '--out') out.out = value();
+    else if (a === '--backup-record') out.backupRecord = value();
+    else if (a === '--offline-confirmed') out.offlineConfirmed = true;
+    else if (a === '--demo-fingerprints') out.demoFingerprints = value();
+    else if (a === '--settings') out.settings = value();
+    else if (a === '--to') out.to = value();
+    else if (a === '--from') out.from = value();
+    else if (a === '--previous') out.previous = value();
+    else if (a === '--run') out.run = true;
+    else if (!a.startsWith('--') && out.command === undefined) out.command = a;
+    else out.problems.push(`unknown option ${a}`);
+  }
+  return out;
+}
+
+/** Run one command. Returns the exit code: 0 done · 1 not done (a check failed, a step did not work) · 2 refused or misused. */
+export async function main(argv, deps) {
+  const cl = parseCommandLine(argv);
+  if (cl.problems.length > 0 || cl.command === undefined) {
+    for (const pr of cl.problems) deps.say(`Not understood: ${pr}`);
+    for (const l of USAGE) deps.say(l);
+    return 2;
+  }
+  switch (cl.command) {
+    case 'doctor': return doctor(deps);
+    case 'prepare': return prepare(deps);
+    case 'up': return up(deps);
+    case 'check': return check(deps, { by: cl.by, out: cl.out, backupRecord: cl.backupRecord, offlineConfirmed: cl.offlineConfirmed, demoFingerprints: cl.demoFingerprints });
+    case 'fingerprints': return fingerprints(deps, { settings: cl.settings, out: cl.out });
+    case 'backup': return backup(deps, { to: cl.to });
+    case 'restore-check': return restoreCheck(deps, { from: cl.from });
+    case 'drill': return drill(deps, { by: cl.by, to: cl.to, previous: cl.previous, run: cl.run, out: cl.out });
+    default:
+      deps.say(`Not understood: the command "${cl.command}"`);
+      for (const l of USAGE) deps.say(l);
+      return 2;
+  }
+}
+
+// ── The real world ────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** Is something already listening on this port on this computer? Tries to connect, then to listen (Windows-safe). */
+export function portInUse(port) {
+  return new Promise((resolve) => {
+    const sock = createConnection({ host: '127.0.0.1', port });
+    sock.setTimeout(1_000);
+    let asked = false;
+    const listenCheck = () => {
+      if (asked) return;
+      asked = true;
+      sock.destroy();
+      const srv = createServer();
+      srv.once('error', (e) => resolve(e?.code === 'EADDRINUSE' || e?.code === 'EACCES'));
+      srv.listen({ port, host: '127.0.0.1', exclusive: true }, () => srv.close(() => resolve(false)));
+    };
+    sock.once('connect', () => { asked = true; sock.destroy(); resolve(true); });
+    sock.once('timeout', listenCheck);
+    sock.once('error', listenCheck);
+  });
+}
+
+/** The deps for a real run: this repository, this computer, its programs. No shell, ever. */
+export function defaultDeps() {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  return {
+    repoRoot: path.resolve(here, '..', '..'),
+    platform: process.platform,
+    env: process.env,
+    fs: nodeFs,
+    spawn: (cmd, args, opts = {}) => spawnSync(cmd, args, { encoding: 'utf8', windowsHide: true, maxBuffer: 16 * 1024 * 1024, ...opts, shell: false }),
+    fetch: (url) => fetch(url, { signal: AbortSignal.timeout(5_000) }),
+    portInUse,
+    sleep: (ms) => new Promise((r) => { setTimeout(r, ms); }),
+    now: () => new Date(),
+    random: (n) => randomBytes(n),
+    uuid: () => randomUUID(),
+    os: { totalmem: () => os.totalmem(), release: () => os.release(), version: () => os.version() },
+    freeDiskBytes: (dir) => { const s = nodeFs.statfsSync(dir); return Number(s.bavail) * Number(s.bsize); },
+    timeZone: () => Intl.DateTimeFormat().resolvedOptions().timeZone,
+    nodeVersion: process.version,
+    nodePath: process.execPath,
+    tmpdir: () => os.tmpdir(),
+    say: (line) => { process.stdout.write(`${line}\n`); },
+  };
+}

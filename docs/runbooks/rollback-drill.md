@@ -7,7 +7,11 @@ how long each part takes, against the roadmap's own targets (§32): the service 
 restored within **4 hours**.
 **How long:** about an hour.
 **Where:** the store computer's real-data copy (`docs/runbooks/store-computer-real-data-environment.md`, project
-`sre-real`) before the first real load — or the pilot box, for G9 there. **Never against production, never from a
+`sre-real`) before the first real load — or the pilot box, for G9 there.
+**On the owner's Windows store computer (OB-246):** use `pnpm run store-computer -- drill` instead
+(`docs/runbooks/store-computer-owner-guide-windows.md`, Part 11): the same order and the same §32 targets, with no bash,
+no git and no PostgreSQL tools on the PC — the previous release is its kept ZIP folder, and its services run against
+the current schema (checked compatible first). This page is the Linux box's way, with `infra/deploy/release.sh`. **Never against production, never from a
 developer's machine.** The drill refuses `MIGRATION_TARGET_KIND=production` before it touches anything.
 
 ---
