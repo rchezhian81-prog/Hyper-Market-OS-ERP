@@ -5,7 +5,16 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
-## No IT person: the owner does the store-computer steps, guided (OB-244 to OB-246, 20 October 2026) — full gate green: 13,059 unit/integration (16 skipped), 52 performance, 455 browser
+## Pilot-readiness gap audit before the store-PC install (OB-247 to OB-255, 20 October 2026)
+
+- Report: `docs/pilot/PILOT-READINESS-AUDIT-2026-10-20.md`; lane tables in `docs/pilot/audit-2026-10-20/`. Read-only; nothing run on real Windows or Docker; no staff UAT.
+- Proven today: own-PIN sign-in, manager PIN approval, age check, holds/voids/refunds/offers, never-repeated bill numbers, sales survive restart, honest unsent count, goods in, counts, cash-up, day close; memory 0.55 GB for the store system at 3,000 sales (8 GB PC is tight: ~6 GB in use while trading, more during a build).
+- Owner decisions: **mirror pilot** (old ERP bills every customer; new till records the same pilot lines; OB-248); automatic hourly encrypted backup including till data to a plugged-in drive, owner's drive daily (OB-249); existing UPS, model to send (OB-250); lock the PC, BitLocker, cashier Windows account, stand-in sign-in accepted (OB-251); guest sales only (OB-252); Docker free use confirmed (OB-253); owner is reconciler and incident owner for 2 weeks (OB-254); till stops → old till only (OB-255).
+- Next build (all needed for the mirror pilot): lost-reply retry at the till (P0); automatic encrypted backup incl. till data; auto-start after reboot and a "PC down" sheet; the rest of the Windows guide (till, staff, PINs, update procedure, mirror-keying steps); an alert the owner sees; Windows account and BitLocker steps; screens for seal files and parallel-run policy; guest-only switch.
+- Open for the owner: pilot department, cashier and manager names (OB-243); UPS model; Task Manager memory photo from the real PC; free space on C:; cable or Wi-Fi.
+- Not blocking the mirror pilot, kept for real trading: legal tax invoice on the till, paper printing (Tamil), card/UPI approval capture, GST-return path, B2B e-invoice, mixed basket.
+
+## No IT person: the owner does the store-computer steps, guided (OB-244 to OB-246, 20 October 2026) — full gate green: 13,059 unit/integration (16 skipped), 52 performance, 455 browser; merged (PR #798) and deployed to the demo
 
 - The owner does every hands-on step on a Windows PC himself; this session cannot touch his computers.
 - Built: `pnpm run store-computer -- doctor | prepare | up | check` (Windows PowerShell and Linux) and the owner guide `docs/runbooks/store-computer-owner-guide-windows.md`. G-RD-1 and G-RD-3 closed. Tested with a pretend Docker and API only; not yet run on real Windows or Docker.
