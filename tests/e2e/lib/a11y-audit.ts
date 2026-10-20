@@ -177,7 +177,8 @@ export async function auditPage(page: Page, options: { readonly minTarget?: numb
     if (ratio === undefined || ratio < 300) findings.push({ rule: '1.4.11', selector: n.selector, detail: `${fg ?? n.fg} on ${bg ?? n.bg} = ${((ratio ?? 0) / 100).toFixed(2)}:1 (needs 3:1)` });
   }
   for (const c of raw.targets) {
-    if (c.w < minTarget || c.h < minTarget) findings.push({ rule: '2.5.8', selector: c.selector, detail: `${Math.round(c.w)}×${Math.round(c.h)} px, needs ${minTarget}×${minTarget}` });
+    // Half a CSS pixel of sub-pixel layout (a fractional offset, a font's line box) is rounding, not a smaller target.
+    if (c.w < minTarget - 0.5 || c.h < minTarget - 0.5) findings.push({ rule: '2.5.8', selector: c.selector, detail: `${Math.round(c.w)}×${Math.round(c.h)} px, needs ${minTarget}×${minTarget}` });
   }
   for (const s of raw.unnamed) findings.push({ rule: '4.1.2', selector: s, detail: 'control has no accessible name' });
   for (const s of raw.unlabelled) findings.push({ rule: '3.3.2', selector: s, detail: 'input has no label' });

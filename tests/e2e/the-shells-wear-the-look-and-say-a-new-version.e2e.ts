@@ -107,6 +107,8 @@ describe.skipIf(!HAVE_BROWSER)('the till and a handheld wear the light look and 
       expect(await strip.getAttribute('role')).toBe('status');
       expect(await strip.locator('span').textContent()).toBe('A newer version of this screen has arrived. Reload when you are ready.');
       expect(await strip.locator('button').textContent()).toBe('Reload');
+      // The strip rises in (sre-rise); measure it once it has settled, not mid-animation.
+      await page.evaluate('Promise.all(document.getAnimations().map((a) => a.finished))');
       const button = await strip.locator('button').boundingBox();
       expect(button!.height, 'the Reload button is a real target').toBeGreaterThanOrEqual(shell.target - 0.5);
       expect(await auditPage(page, { minTarget: shell.target }), `${shell.app} with the strip`).toEqual([]);
