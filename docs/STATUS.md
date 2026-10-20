@@ -5,7 +5,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
-## No IT person: the owner does the store-computer steps, guided (OB-244, 20 October 2026)
+## No IT person: the owner does the store-computer steps, guided (OB-244 to OB-246, 20 October 2026) — full gate green: 13,059 unit/integration (16 skipped), 52 performance, 455 browser
 
 - The owner does every hands-on step on a Windows PC himself; this session cannot touch his computers.
 - Built: `pnpm run store-computer -- doctor | prepare | up | check` (Windows PowerShell and Linux) and the owner guide `docs/runbooks/store-computer-owner-guide-windows.md`. G-RD-1 and G-RD-3 closed. Tested with a pretend Docker and API only; not yet run on real Windows or Docker.
