@@ -104,6 +104,8 @@ export function billFingerprint(s: IncomingSale): string {
 
 const TENDER_WORDS: Readonly<Record<string, string>> = {
   cash: 'cash', card: 'card', upi: 'UPI', store_credit: 'store credit', split: 'split', exchange_credit: 'exchange credit', loyalty_points: 'points',
+  // OB-256: the mirror pilot's tender — its own words, never "cash" (P-08).
+  paid_on_old_erp: 'paid on the old system',
 };
 
 /**

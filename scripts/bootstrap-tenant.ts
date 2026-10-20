@@ -20,6 +20,7 @@ import { seedInitialAdmins } from '../services/api/src/access';
 import { OWNER_ROLE_ID, ROLE_CATALOGUE } from '../services/api/src/roles';
 import { planTenantBootstrap } from '../packages/migration/src/tenant-bootstrap';
 import { parseEnvText, parseFlags, demoTenantIds } from './lib/operator-env';
+import { databaseUrlFromTheHost } from './lib/database-url-from-the-host';
 
 const out = (s = ''): void => { process.stdout.write(`${s}\n`); };
 
@@ -67,7 +68,12 @@ async function main(): Promise<void> {
     out(`DATABASE_URL is not in the env file (${envFile}) — cannot reach the ledger. Nothing was written. (The process environment is deliberately NOT consulted.)`);
     process.exit(2);
   }
-  const db = new Pool({ connectionString: databaseUrl, max: 2 });
+  // Gap W-2: the env file names the database by its compose service name, `db`, which does not exist on the computer
+  // itself (`getaddrinfo ENOTFOUND db` on the store PC). The same translation the demo smoke uses: this computer's own
+  // loopback port for the database (POSTGRES_PORT), which compose publishes on 127.0.0.1 only. Never the address shown.
+  const here = databaseUrlFromTheHost(databaseUrl, env);
+  if (here.translated) out(`The database is reached on this computer's own database port (${env['POSTGRES_PORT'] ?? '5432'}), not the container name.`);
+  const db = new Pool({ connectionString: here.url, max: 2 });
   try {
     const store = new SqlEventStore(pgPoolClient(db));
     const outcome = await seedInitialAdmins(store, plan.tenantId, plan.admins, plan.operator, new Date().toISOString());

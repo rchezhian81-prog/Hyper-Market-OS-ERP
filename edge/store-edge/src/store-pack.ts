@@ -984,6 +984,12 @@ export interface PackPolicies {
    * loyalty during the pilot. Optional: absent is off (the box's own `EDGE_GUEST_SALES_ONLY=1` can also turn it on).
    */
   readonly guestSalesOnly?: boolean;
+  /**
+   * OB-256 · OB-258 (owner, 20 Oct 2026): `true` → this store's tills are in the MIRROR PILOT — every sale and refund is
+   * recorded as "Paid on old system", and nothing else. Optional: absent is off (the box's own `EDGE_MIRROR_PILOT=1` can
+   * also turn it on). Needs guest sales only on too.
+   */
+  readonly mirrorPilot?: boolean;
 }
 
 /** A storage bin the warehouse handheld can put stock into (M09 / OA-9). */

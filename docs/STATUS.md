@@ -5,7 +5,15 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
-## Mirror-pilot readiness, round 1 (20 October 2026) — full gate green: 13,151 unit/integration (16 skipped), 52 performance, 461 browser
+## Mirror-pilot readiness, round 2 (20 October 2026) — full gate: 13,199 unit/integration passed, 1 timing failure in an older test (passes alone, 19/19), 16 skipped; 52 performance; 465 browser passed, 1 failed on a test-port clash with a parallel builder (passes alone)
+
+- Built: the "Paid on old system" tender for mirror sales and refunds (OB-256, OB-258), the only tender when the store computer is set for the mirror pilot, no drawer money, its own day-book line; a mirror box with guest-only off refuses to start; the evening check shows payments and loyalty as not compared (OB-265); exchanges keyed as refund then sale (OB-266).
+- Built: owner setup commands on the store PC for shop, GSTIN, bill prefix, roles and catalogue publish, each person's own PIN, roles asked by one and approved by another (OB-257, OB-267); office screens ask for the person's own PIN, a cashier opens only the till (OB-259); guide faults W-1 to W-8 fixed; guide now Parts 1–30 with no stale marks.
+- Not run on real Windows. No staff UAT.
+- New decisions: old ERP bill number keyed on every mirror sale, refunds find the sale by it (OB-264); role sign-in on the locked PC accepted (OB-267); backup drive red under 30 days left (OB-268).
+- Next (round 3): OB-264 old bill number; OB-268 warning; installer writes the mirror setting; SOP-02 payment and refund text; `seal` and `parallel-policy` ask for the PIN.
+
+## Mirror-pilot readiness, round 1 (20 October 2026) — full gate green: 13,151 unit/integration (16 skipped), 52 performance, 461 browser; merged (PR #799) and deployed to the demo
 
 - Built: till re-asks after a lost reply and never doubles a sale (A8, the audit's P0); guest-sales-only switch (OB-252, not yet turned on by the install); automatic hourly encrypted backup of everything to a plugged-in drive (OB-249); autostart at sign-in; data kept in `C:\SRE-data` and safe updates; red "store computer needs you" banner offline; seal and parallel-run commands; owner guide Parts 12–25; four sheets in English and Tamil.
 - Not run on real Windows, Docker Desktop, Task Scheduler or a USB drive. Tamil not yet read by a native speaker.

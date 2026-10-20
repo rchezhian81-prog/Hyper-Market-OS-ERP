@@ -27,6 +27,7 @@ import {
 import {
   LocalRefundRefusedError, RefundConflictError, RefundNotEntitledError, RefundUncertainError,
 } from './till-session';
+import { PAID_ON_OLD_ERP, PAID_ON_OLD_ERP_WORDS } from '../../../packages/tender/src/paid-on-old-erp';
 
 /** A prior refund's value against a bill, so a second refund cannot exceed what is left (M13-FR-03). */
 export interface PriorRefund {
@@ -229,9 +230,10 @@ export async function refundOutcomeOf(run: () => Promise<CommittedReturn>): Prom
         laneMessage: 'Refund sent for reversal. It is PENDING — do not hand over cash; the money returns to the card/UPI.',
       };
     }
+    // OB-258: a refund to "Paid on old system" was given on the old ERP — say so, so nobody opens this drawer for it.
     return {
       kind: 'settled', refundMinor: committed.refund.minor, number: committed.number,
-      laneMessage: 'Refund recorded. Hand over the refund.',
+      laneMessage: committed.refundTender === PAID_ON_OLD_ERP ? PAID_ON_OLD_ERP_WORDS.refundDone : 'Refund recorded. Hand over the refund.',
     };
   } catch (e) {
     return mapError(e);

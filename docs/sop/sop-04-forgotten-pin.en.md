@@ -14,14 +14,14 @@
 
 **The owner:**
 
-4. In **your own** Windows account (never the cashier's `Till` account), open PowerShell in `C:\SRE` and type, with
-   the cashier's staff ID and your own name:
+4. In **your own** Windows account (never the cashier's `Till` account), open PowerShell in the system's folder
+   (`C:\SRE`, or the newer release folder after an update) and type, with the cashier's staff ID and your own name:
    ```
-   C:\SRE\till\start-till.cmd till-pin --user <their staff id> --by "Your Name"
+   pnpm run till:pin -- --user <their-staff-id> --by "Your Name"
    ```
-5. The new six-digit PIN appears **once**. **This window holds a secret: never photograph it.** Tell the cashier the
-   PIN face to face. Do not write it down for them, do not send it by phone or message. The old PIN stops working at
-   once.
+5. The new six-digit PIN appears **once**. **This window holds a secret: never photograph it.** Turn the screen to the
+   cashier and look away while they read it. Do not write it down for them, do not send it by phone or message. Close
+   the window. The old PIN stops working at once — at the till and, for a manager, on the office screens.
 6. If the PIN may be known to someone else, or the person is leaving, use the same line with `--revoke` at the end
    instead. Their next sign-in is refused.
 7. Write in the workbook: the date, the staff ID, "new PIN given" or "PIN revoked", and your initials. **Never the PIN

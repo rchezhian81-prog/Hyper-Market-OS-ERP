@@ -120,6 +120,12 @@ export interface PosView {
    * the sale is on the local disk, so there is nothing to print with before then (hard rule #1).
    */
   tenderCash(saleId: string, receiptNumber: string, atIsoUtc: string): Promise<string>;
+  /**
+   * OB-256 — the MIRROR PILOT's payment: the customer paid on the old system, so the whole bill is recorded as
+   * `paid_on_old_erp` (settled, no change, no card/UPI attempt) and committed to the local disk exactly as a cash sale is.
+   * Refused before the disk unless this till is in the mirror pilot (`mirrorPilot`). Returns the receipt number.
+   */
+  tenderPaidOnOldErp(saleId: string, receiptNumber: string, atIsoUtc: string): Promise<string>;
 
   /**
    * A tender rejects with `SaleUnconfirmedError` when the store computer's answer was lost (audit A8): the sale MAY be
@@ -347,6 +353,13 @@ export function createPosView(
       // receipt number does not exist until the sale is on the disk, so there is nothing to print
       // early with. That is why `commit` is asynchronous — awaiting a local fsync is not awaiting
       // the network.
+      const sale = await session.commit(saleId, receiptNumber, atIsoUtc, tenders);
+      return sale.number;
+    },
+
+    async tenderPaidOnOldErp(saleId: string, receiptNumber: string, atIsoUtc: string): Promise<string> {
+      // The money was taken on the old system; nothing is in this drawer and nothing waits on a provider (OB-256).
+      const tenders: Tender[] = [{ kind: 'paid_on_old_erp', amount: session.totals().payable, status: 'settled' }];
       const sale = await session.commit(saleId, receiptNumber, atIsoUtc, tenders);
       return sale.number;
     },

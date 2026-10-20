@@ -47,6 +47,7 @@ import {
   type CashMovementOutcome, type ShiftCloseOutcome, type TillCashStatus, type CountedDenomination,
 } from '../../../edge/store-edge/src/till-cash';
 import { NoOperatorError, NoLaneError } from './session';
+import { refundTenderRefusal } from '../../../packages/tender/src/paid-on-old-erp';
 
 export type { CashMovementOutcome, ShiftCloseOutcome, TillCashStatus, CountedDenomination, TillCashRefusal } from '../../../edge/store-edge/src/till-cash';
 /** The box's words for each cash refusal, so the lane ports can say the same thing the box would. */
@@ -159,6 +160,12 @@ export interface TillConfig {
    * account). Refused in words before anything is written.
    */
   readonly guestSalesOnly?: boolean;
+  /**
+   * OB-258 (owner, 20 Oct 2026, "Ring on both"): the MIRROR PILOT — a refund done on the old ERP is keyed here against the
+   * same `paid_on_old_erp` tender (no money out of this drawer), and an exchange is not keyed as one. Off → that tender is
+   * refused. Before anything is written, in words.
+   */
+  readonly mirrorPilot?: boolean;
 }
 
 /** What the till says when a refund would name a customer while guest sales only is on (OB-252). */
@@ -366,6 +373,10 @@ export function createTillSession(
         || (full.exchange?.balanceTender === 'store_credit'))) {
         throw new LocalRefundRefusedError(full.id, GUEST_ONLY_REFUND_WORDS);
       }
+      // OB-258: in the mirror pilot the refund goes back to "Paid on old system", never cash from this drawer; outside it,
+      // that tender is refused. The same rule the store computer runs before its disk.
+      const mirror = refundTenderRefusal({ mirrorOn: config.mirrorPilot === true, refundTender: full.refundTender, exchange: full.exchange });
+      if (mirror !== undefined) throw new LocalRefundRefusedError(full.id, mirror.laneMessage);
 
       // Decide first — an invalid refund is refused before anything is written anywhere (the sale
       // path's "decide, then record" order). `assertReturnValid` throws the specific M13 error and

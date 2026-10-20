@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1471,
+  "testFiles": 1483,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -5352,10 +5352,10 @@
       "id": "MG-10",
       "label": "INTEGRATION_TESTED",
       "counts": {
-        "unit": 6,
+        "unit": 7,
         "integration": 6,
         "realDb": 1,
-        "browser": 1,
+        "browser": 2,
         "connected": 0,
         "device": 0,
         "uat": 0
@@ -5367,7 +5367,8 @@
           "tests/unit/migration-feed-pull.test.ts",
           "tests/unit/migration-parallel-day-sign.test.ts",
           "tests/unit/migration-parallel-run-route.test.ts",
-          "tests/unit/migration-screen-route.test.ts"
+          "tests/unit/migration-screen-route.test.ts",
+          "tests/unit/paid-on-old-system-is-the-mirror-tender.test.ts"
         ],
         "integration": [
           "tests/integration/a-parallel-day-cannot-be-signed-with-an-unexplained-difference.test.ts",
@@ -5381,6 +5382,7 @@
           "tests/integration/the-old-shop-arrives-whole.test.ts"
         ],
         "browser": [
+          "tests/e2e/the-migration-screen-leaves-payments-out-in-the-mirror-pilot.e2e.ts",
           "tests/e2e/the-migration-screen-runs-a-parallel-day.e2e.ts"
         ],
         "connected": [],

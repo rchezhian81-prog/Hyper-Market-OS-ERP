@@ -32,11 +32,12 @@
 
 import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, writeFile, chmod } from 'node:fs/promises';
+import { mkdir, readFile, rename, writeFile, chmod } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path, { dirname, join, resolve, isAbsolute } from 'node:path';
 import { parseEnv, PLACEHOLDER } from './standup-check.mjs';
+import { buildStoreToken } from './issue-store-token.mjs';
 
 /**
  * The store computer's DATA FOLDER (audit row 9 · C-12): when the settings file named with --settings sits in a folder
@@ -80,11 +81,17 @@ export function checkNodeVersion(version) {
 
 /** Parse the command line into flags. Unknown flags are named, not ignored. */
 export function parseArgs(argv) {
-  const flags = { tenant: undefined, lane: undefined, dir: undefined, dataDir: undefined, composeEnv: undefined, settingsNamed: false, lanePort: '8090', screenPort: '8091', generateKey: false, skipBuild: false, force: false, dryRun: false, unknown: [] };
+  const flags = { tenant: undefined, lane: undefined, store: undefined, dir: undefined, dataDir: undefined, composeEnv: undefined, settingsNamed: false, lanePort: '8090', screenPort: '8091', generateKey: false, skipBuild: false, force: false, dryRun: false, unknown: [] };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     const next = () => { i += 1; return argv[i]; };
+    // Gap W-1: pnpm 10 hands a typed `--` on to the script (`pnpm run till:install -- --lane lane-1`). It only means "the
+    // options start here", never an option of its own, so it is skipped — the runbooks show that form.
+    if (a === '--') continue;
     if (a === '--tenant') flags.tenant = next();
+    // Gap W-5: the store this till serves, as head office knows it. With the store computer's own settings file it also
+    // connects the till to this copy's books: the address, a store token and "take the store setup from head office".
+    else if (a === '--store') flags.store = next();
     else if (a === '--lane') flags.lane = next();
     else if (a === '--dir') flags.dir = next();
     // Audit row 9: the till's settings and data in a folder of their own, outside the release (the data folder's `till`).
@@ -119,7 +126,7 @@ const realValue = (v) => typeof v === 'string' && v !== '' && !v.includes(PLACEH
  *   • cloud URL: copied from the cloud settings file when it names one; the token is NEVER copied.
  */
 export function planTillSettings(input) {
-  const { flags, installDir, appsDir, composeEnv = undefined, existing = undefined, generatedKey = undefined, statusFile = undefined } = input;
+  const { flags, installDir, appsDir, composeEnv = undefined, existing = undefined, generatedKey = undefined, statusFile = undefined, realCopy = false, mintStoreToken = undefined } = input;
   const problems = [];
   const notes = [];
 
@@ -156,7 +163,29 @@ export function planTillSettings(input) {
   if (isPort(flags.lanePort) && isPort(flags.screenPort) && flags.lanePort === flags.screenPort) problems.push('the lane port and the screen port must differ');
   if (flags.lanePort !== '8090') notes.push(`lane port ${flags.lanePort}: the till screen posts to 8090 by default — only change this if the screen is told the same port`);
 
-  const cloudUrl = realValue(composeEnv?.CLOUD_API_URL) ? composeEnv.CLOUD_API_URL : (existing?.CLOUD_API_URL ?? '');
+  // Gap W-5: the store this till serves — named with --store, or kept from an earlier install. On the store computer's own
+  // real-data copy (`--settings …\.env.real`) naming the store also CONNECTS the till to this copy's books: the address is
+  // this PC's own API port (the tool writes it — the owner never types an address), the store token is made here from the
+  // copy's own signing key and written straight into till.env (never shown, never printed), and the box takes its store
+  // setup from head office. Before the store exists at head office nothing is connected: the till stays offline-first.
+  const storeId = flags.store ?? existing?.EDGE_STORE_ID;
+  if (flags.store !== undefined && !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(String(flags.store))) problems.push(`--store must be the store's id as head office knows it (letters, digits, ".", "_" or "-"), got "${flags.store}"`);
+  const connect = realCopy && flags.store !== undefined;
+  let cloudUrl = realValue(composeEnv?.CLOUD_API_URL) ? composeEnv.CLOUD_API_URL : (existing?.CLOUD_API_URL ?? '');
+  let token = existing?.CLOUD_API_TOKEN ?? '';
+  if (connect) {
+    const port = realValue(composeEnv?.API_PORT) ? composeEnv.API_PORT : '8081';
+    if (!isPort(port)) problems.push(`the settings file's API_PORT is not a port number ("${port}")`);
+    cloudUrl = `http://127.0.0.1:${port}`;
+    const minted = mintStoreToken === undefined ? { problem: 'there is no way to make the store token here' } : mintStoreToken(flags.store);
+    if (minted.problem !== undefined) problems.push(`the store token could not be made: ${minted.problem}`);
+    else {
+      token = minted.token;
+      notes.push(`connected to this copy's books for store ${flags.store}: a NEW store token (the store-edge sign-in, locked to store ${flags.store}, ${STORE_TOKEN_HOURS / 24} days) was written into till.env — it is never shown`);
+    }
+  } else if (flags.store !== undefined) {
+    notes.push(`store ${flags.store} written; no store token is made here (only with the store computer's own settings file, --settings …\\.env.real) — issue one with pnpm run token:store`);
+  }
   if (cloudUrl === '') notes.push('no cloud URL set — the till starts OFFLINE-FIRST: it sells, saves every sale to disk and queues it; turn sync on later by filling CLOUD_API_URL and CLOUD_API_TOKEN');
 
   const settings = {
@@ -171,11 +200,19 @@ export function planTillSettings(input) {
     EDGE_SCREEN_PORT: String(flags.screenPort),
     EDGE_APPS_DIR: appsDir,
     CLOUD_API_URL: cloudUrl,
-    // Never copied from anywhere. A person issues a token and puts it here by hand (hard rule #4).
-    CLOUD_API_TOKEN: existing?.CLOUD_API_TOKEN ?? '',
+    // Never copied from anywhere: kept from an earlier install, or (W-5, the store computer's own copy) made here for this
+    // store from the copy's own signing key. A cloud settings file's token never travels (hard rule #4).
+    CLOUD_API_TOKEN: token,
     // Audit row 6: on the store computer, the file its own check writes — the office screens show its red banner.
     ...(statusFile !== undefined ? { EDGE_STORE_COMPUTER_STATUS_FILE: statusFile } : existing?.EDGE_STORE_COMPUTER_STATUS_FILE !== undefined ? { EDGE_STORE_COMPUTER_STATUS_FILE: existing.EDGE_STORE_COMPUTER_STATUS_FILE } : {}),
+    // W-5: the store, and "take this store's setup from head office", whenever a store is named.
+    ...(realValue(storeId) ? { EDGE_STORE_ID: storeId, EDGE_STORE_PACK_SOURCE: 'head-office' } : {}),
+    // OB-252: the real copy takes guest sales only — no customer mobile number, no loyalty — whatever the setup says.
+    ...(realCopy || existing?.EDGE_GUEST_SALES_ONLY === '1' ? { EDGE_GUEST_SALES_ONLY: '1' } : {}),
+    // OB-259: the office screens this PC serves ask for the person's own till PIN; a till-only role opens only the till.
+    EDGE_OFFICE_SIGN_IN: 'pin',
   };
+  if (realCopy) notes.push('guest sales only (OB-252): the till takes no customer mobile number and no loyalty');
   return { ok: problems.length === 0, settings, problems, notes };
 }
 
@@ -213,8 +250,79 @@ export function renderTillEnv(settings) {
       "# The store computer's own check (store-computer status) writes this file; the office screens show its red banner.",
       `EDGE_STORE_COMPUTER_STATUS_FILE=${settings.EDGE_STORE_COMPUTER_STATUS_FILE}`,
     ]),
+    ...(settings.EDGE_STORE_ID === undefined ? [] : [
+      "# The store this till serves, as head office knows it; the box takes that store's setup from head office.",
+      `EDGE_STORE_ID=${settings.EDGE_STORE_ID}`,
+      `EDGE_STORE_PACK_SOURCE=${settings.EDGE_STORE_PACK_SOURCE}`,
+    ]),
+    ...(settings.EDGE_GUEST_SALES_ONLY === undefined ? [] : [
+      '# OB-252: guest sales only — the till takes no customer mobile number and no loyalty.',
+      `EDGE_GUEST_SALES_ONLY=${settings.EDGE_GUEST_SALES_ONLY}`,
+    ]),
+    ...(settings.EDGE_OFFICE_SIGN_IN === undefined ? [] : [
+      "# OB-259: the office screens ask for the person's own till PIN; a cashier opens only the till.",
+      `EDGE_OFFICE_SIGN_IN=${settings.EDGE_OFFICE_SIGN_IN}`,
+    ]),
     '',
   ].join('\n');
+}
+
+/** How long a store token the installer makes lasts — the same 30 days `token:store` gives by default. */
+export const STORE_TOKEN_HOURS = 720;
+/** What a connect (W-5) or a newer install may add to or change in an existing till.env — never the key, the lane or the folders. */
+export const CONNECT_KEYS = Object.freeze(['CLOUD_API_URL', 'CLOUD_API_TOKEN', 'EDGE_STORE_ID', 'EDGE_STORE_PACK_SOURCE', 'EDGE_GUEST_SALES_ONLY', 'EDGE_OFFICE_SIGN_IN']);
+
+/**
+ * An existing till.env with the connect keys set from the plan, in place; every other line is kept exactly as it was (the
+ * signing key, the lane, the folders, the comments). Returns the new text and the NAMES that changed — never their values.
+ */
+export function updateTillEnv(text, settings) {
+  const want = Object.fromEntries(CONNECT_KEYS.filter((k) => settings[k] !== undefined).map((k) => [k, String(settings[k])]));
+  const changed = [];
+  const done = new Set();
+  const out = String(text).split(/\r?\n/).map((raw) => {
+    const line = raw.trim();
+    if (line === '' || line.startsWith('#') || !line.includes('=')) return raw;
+    const k = line.slice(0, line.indexOf('=')).trim();
+    if (!(k in want)) return raw;
+    done.add(k);
+    if (line.slice(line.indexOf('=') + 1).trim() === want[k]) return raw;
+    changed.push(k);
+    return `${k}=${want[k]}`;
+  });
+  while (out.length > 0 && out[out.length - 1].trim() === '') out.pop();
+  for (const k of Object.keys(want)) if (!done.has(k)) { out.push(`${k}=${want[k]}`); changed.push(k); }
+  return { text: `${out.join('\n')}\n`, changed };
+}
+
+/**
+ * What a run changes in a till.env that is already there (and not --force): with --store, every connect key the plan
+ * sets (W-5); otherwise only the guest-sales and office sign-in settings, and only where the file has none yet — so an
+ * update or a re-run never rewrites the address or the token by surprise.
+ */
+export function tillEnvChangesFor({ settings, existing, flags }) {
+  if (flags.store !== undefined) return Object.fromEntries(CONNECT_KEYS.filter((k) => settings[k] !== undefined).map((k) => [k, settings[k]]));
+  return Object.fromEntries(['EDGE_GUEST_SALES_ONLY', 'EDGE_OFFICE_SIGN_IN'].filter((k) => settings[k] !== undefined && existing?.[k] === undefined).map((k) => [k, settings[k]]));
+}
+
+/**
+ * Is this settings file the store computer's own real-data copy? Its name (`.env.real`, gap G-RD-3) or the shop's data
+ * folder note beside it says so — the two places `store-computer prepare` writes it.
+ */
+export function isRealCopySettings(composePath, exists = existsSync) {
+  if (composePath === undefined) return false;
+  const file = resolve(composePath);
+  return path.basename(file) === '.env.real' || exists(join(dirname(file), DATA_MARKER));
+}
+
+/** The store computer's store token for one store: the store-edge sign-in, locked to that store (OB-54), from the copy's own key. */
+export function storeTokenMinter(composeEnv, nowMs = Date.now()) {
+  return (storeId) => {
+    const missing = ['IDP_SIGNING_KEY', 'IDP_ISSUER', 'IDP_AUDIENCE', 'EDGE_TENANT_ID'].filter((k) => !realValue(composeEnv?.[k]));
+    if (missing.length > 0) return { problem: `the settings file has no ${missing.join(', ')}` };
+    const policy = { secret: composeEnv.IDP_SIGNING_KEY, issuer: composeEnv.IDP_ISSUER, audience: composeEnv.IDP_AUDIENCE };
+    return { token: buildStoreToken({ sub: 'store-edge', tenantId: composeEnv.EDGE_TENANT_ID, storeId, ttlSeconds: STORE_TOKEN_HOURS * 3600 }, policy, nowMs) };
+  };
 }
 
 /**
@@ -306,9 +414,15 @@ export function renderNextSteps(input) {
     '  4. Pull the network cable and ring another — it still completes; the unsent counter goes up. Nothing is lost.',
     `  5. Check the pieces: pnpm run standup:check   (reads ${join(installDir, 'till.env')})`,
   ];
-  if (settings.CLOUD_API_URL === '') {
+  if (settings.CLOUD_API_URL === '' && input.realCopy === true) {
+    lines.push('', "This till is OFFLINE-FIRST for now. Once the store exists at head office, connect it to this copy's books with");
+    lines.push('the same command plus --store <the store id> (it writes the address and a store token itself), then restart the till.');
+  } else if (settings.CLOUD_API_URL === '') {
     lines.push('', 'This till is OFFLINE-FIRST for now (no cloud URL). To sync to the books later: issue a store token');
     lines.push('(pnpm run token:store), then fill CLOUD_API_URL and CLOUD_API_TOKEN in till.env and restart the till.');
+  } else if (settings.CLOUD_API_TOKEN !== '' && settings.EDGE_STORE_ID !== undefined) {
+    lines.push('', `Connected: this till sends its sales to this copy's books for store ${settings.EDGE_STORE_ID}, and takes that store's setup from head office.`);
+    lines.push('Close the till window and start it again so it picks this up. The store token lasts 30 days: run this command again before then.');
   } else {
     lines.push('', `Sync target: ${settings.CLOUD_API_URL}. Fill CLOUD_API_TOKEN in till.env (pnpm run token:store) before starting, or the till runs offline-first.`);
   }
@@ -325,7 +439,7 @@ async function readEnvFile(path) {
 async function main() {
   const flags = parseArgs(process.argv.slice(2));
   if (flags.unknown.length > 0) {
-    process.stderr.write(`Unknown option(s): ${flags.unknown.join(' ')}\nUsage: node scripts/install-till.mjs [--tenant <id>] [--dir <folder>] [--from-compose-env <file> | --settings <file>] [--lane-port 8090] [--screen-port 8091] [--generate-key] [--skip-build] [--force] [--dry-run]\n`);
+    process.stderr.write(`Unknown option(s): ${flags.unknown.join(' ')}\nUsage: pnpm run till:install -- --lane <lane, e.g. lane-1> [--store <store id>] [--tenant <id>] [--dir <folder>] [--from-compose-env <file> | --settings <file>] [--lane-port 8090] [--screen-port 8091] [--generate-key] [--skip-build] [--force] [--dry-run]\n`);
     process.exitCode = 64; // EX_USAGE
     return;
   }
@@ -347,7 +461,11 @@ async function main() {
   const existing = await readEnvFile(envPath);
   if (dataFolder !== undefined) process.stdout.write(`• the store computer's data folder: the till's settings and data go in ${installDir}, outside this release\n`);
 
-  const plan = planTillSettings({ flags, installDir, appsDir, composeEnv, existing, ...(dataFolder === undefined ? {} : { statusFile: join(dataFolder, 'status', 'store-computer-status.json') }) });
+  const realCopy = flags.settingsNamed === true && isRealCopySettings(composePath);
+  const plan = planTillSettings({
+    flags, installDir, appsDir, composeEnv, existing, realCopy, mintStoreToken: storeTokenMinter(composeEnv),
+    ...(dataFolder === undefined ? {} : { statusFile: join(dataFolder, 'status', 'store-computer-status.json') }),
+  });
   if (!plan.ok) {
     process.stderr.write(`\nThe till cannot be installed yet — ${plan.problems.length} problem(s):\n${plan.problems.map((p) => `  ✕ ${p}`).join('\n')}\n\n`);
     process.exitCode = 78;
@@ -355,13 +473,15 @@ async function main() {
   }
   for (const note of plan.notes) process.stdout.write(`• ${note}\n`);
 
-  if (existing !== undefined && !flags.force) {
-    // An earlier install wrote settings. Rebuilding is fine; rewriting the file is not, unless asked.
+  // An earlier install wrote settings. Rebuilding is fine; rewriting the file is not, unless asked — only the store
+  // connection (W-5, with --store) and the newer guest/office settings are written into it, in place, never shown.
+  const changes = existing !== undefined && !flags.force ? tillEnvChangesFor({ settings: plan.settings, existing, flags }) : {};
+  if (existing !== undefined && !flags.force && Object.keys(changes).length === 0) {
     process.stdout.write(`• ${envPath} already exists — kept as it is (pass --force to rewrite it)\n`);
   }
 
   if (flags.dryRun) {
-    process.stdout.write(`\nDry run — would write ${envPath}, start scripts in ${installDir}, and build: ${BUILD_STEPS.map((s) => s.name).join(', ')}.\n`);
+    process.stdout.write(`\nDry run — would write ${envPath}${Object.keys(changes).length > 0 ? ` (${Object.keys(changes).join(', ')})` : ''}, start scripts in ${installDir}, and build: ${BUILD_STEPS.map((s) => s.name).join(', ')}.\n`);
     return;
   }
 
@@ -370,6 +490,13 @@ async function main() {
     await writeFile(envPath, renderTillEnv(plan.settings), { mode: 0o600 });
     await chmod(envPath, 0o600);
     process.stdout.write(`• wrote ${envPath}\n`);
+  } else if (Object.keys(changes).length > 0) {
+    const updated = updateTillEnv(await readFile(envPath, 'utf8'), changes);
+    const tmp = `${envPath}.tmp`;
+    await writeFile(tmp, updated.text, { mode: 0o600 });
+    await rename(tmp, envPath);
+    await chmod(envPath, 0o600);
+    process.stdout.write(`• ${envPath} kept; set in it (names only, never the values): ${updated.changed.length === 0 ? 'nothing new' : updated.changed.join(', ')}\n`);
   }
 
   await mkdir(scriptsDir, { recursive: true });
@@ -390,7 +517,7 @@ async function main() {
     process.stdout.write('• build skipped (--skip-build)\n');
   }
 
-  process.stdout.write(`${renderNextSteps({ settings: plan.settings, installDir, scriptsDir, platform: process.platform })}\n`);
+  process.stdout.write(`${renderNextSteps({ settings: plan.settings, installDir, scriptsDir, platform: process.platform, realCopy })}\n`);
 }
 
 // Run only when invoked directly, so the pure helpers can be imported by tests without side effects.

@@ -29,7 +29,12 @@ import { createServer, type Server, type ServerResponse, type IncomingMessage } 
 import { readFile } from 'node:fs/promises';
 import { join, normalize } from 'node:path';
 import { GLOBAL_FOR, SCREENS, payloadFor, catalogueFreshness, posReceiptTemplate, posLanePayload, posRefundPolicyPayload, type ScreenInput, type ScreenName } from './screen-data';
-import { navigationPayload, type NavigationPayload, asSignedInPerson } from './screen-navigation';
+import { navigationPayload, type NavigationPayload, asSignedInPerson, permissionsOf } from './screen-navigation';
+import { ERP_NAVIGATION } from '../../../apps/web-erp/src/navigation';
+import {
+  SIGN_OUT_BAR, notAllowedPage, officeCookie, officeTokenOf, readSignInForm, safeNext, signInPage, signedInGlobals,
+  type OfficeCheck, type OfficeSignIn,
+} from './office-sign-in';
 import { asPhoneHolder } from './handheld-sign-in';
 import { isHandheldSource } from '../../../packages/sync/src/device-relay';
 
@@ -288,6 +293,44 @@ export function safeFile(file: string): string | null {
   return clean;
 }
 
+/** The screens that stay open with no office sign-in: the till alone — its cashier signs in at the till itself. */
+export const OPEN_SCREENS: readonly ScreenName[] = Object.freeze(['pos']);
+
+/** The permission a screen's own menu item asks for (apps/web-erp/src/navigation.ts), or null when no item opens it. */
+export function permissionForScreen(screen: ScreenName): string | null {
+  const item = ERP_NAVIGATION.find((i) => screenOfPath(i.path.split('?')[0] ?? i.path) === screen);
+  return item === undefined ? null : item.requires;
+}
+
+/** The office gate the screen socket asks (OB-259): edge/store-edge/src/office-sign-in.ts `OfficeSessions`. */
+export interface OfficeGate {
+  signIn(input: { readonly staffId: string; readonly pin: string }): Promise<OfficeSignIn>;
+  check(token: string | undefined): Promise<OfficeCheck>;
+  signOut(token: string | undefined): Promise<boolean>;
+}
+
+/** Read a request body, up to `limit` bytes; anything longer reads as too long (never buffered whole). */
+function readBody(req: IncomingMessage, limit: number): Promise<string | null> {
+  return new Promise((resolve) => {
+    let size = 0;
+    const parts: Buffer[] = [];
+    req.on('data', (c: Buffer) => { size += c.length; if (size <= limit) parts.push(c); });
+    req.on('end', () => { resolve(size > limit ? null : Buffer.concat(parts).toString('utf8')); });
+    req.on('error', () => { resolve(null); });
+  });
+}
+
+/** A POST to the office doors comes from a page this box served, never another site (the browser says where from). */
+function sameOrigin(req: IncomingMessage): boolean {
+  // A browser says where a request comes from (Fetch Metadata). These pages send no referrer, so a form's Origin reads
+  // "null" — the browser's own Sec-Fetch-Site is what tells this page from another site's.
+  const site = req.headers['sec-fetch-site'];
+  if (typeof site === 'string') return site === 'same-origin' || site === 'none';
+  const origin = req.headers['origin'];
+  if (origin === undefined || origin === 'null') return origin === undefined;
+  try { return new URL(origin).host === req.headers['host']; } catch { return false; }
+}
+
 export function startScreenServer(input: {
   readonly port: number;
   /** The address to bind — `SCREEN_HOST` (loopback) unless a deployment names another (see `SCREEN_HOST`). */
@@ -316,9 +359,40 @@ export function startScreenServer(input: {
    * A store box, whose screens are loopback-only with nobody in front, leaves it off and the header is ignored.
    */
   readonly trustForwardedUser?: boolean;
+  /**
+   * OB-259: every screen but the till asks for the person's own PIN (`EDGE_OFFICE_SIGN_IN=pin`, which the installer writes).
+   * Absent: the screens open as before (a test box, or the hosted copy behind its own sign-in front).
+   */
+  readonly officeSignIn?: OfficeGate;
 }): Promise<ScreenServer> {
+  const office = input.officeSignIn;
+  const page = (res: ServerResponse, status: number, html: string, cookie?: string): void => {
+    if (cookie !== undefined) res.setHeader('set-cookie', cookie);
+    send(res, status, 'text/html; charset=utf-8', html);
+  };
   const server: Server = createServer((req: IncomingMessage, res: ServerResponse) => {
     void (async () => {
+      // OB-259: the office's two doors — the only writes this socket takes, and only when the gate is on.
+      const doorPath = (req.url ?? '/').split('?')[0];
+      if (office !== undefined && req.method === 'POST' && (doorPath === '/office/sign-in' || doorPath === '/office/sign-out')) {
+        if (!sameOrigin(req)) { send(res, 403, 'text/plain; charset=utf-8', 'refused: not from a page this store computer served'); return; }
+        if (doorPath === '/office/sign-out') {
+          await office.signOut(officeTokenOf(req.headers['cookie']));
+          page(res, 200, signInPage({ next: '/manager/' }), officeCookie(undefined));
+          return;
+        }
+        const body = await readBody(req, 4096);
+        const form = readSignInForm(body ?? '');
+        const next = safeNext(form.next);
+        const outcome = await office.signIn({ staffId: form.staffId, pin: form.pin });
+        if (!outcome.ok) {
+          page(res, outcome.refusedBecause === 'not_an_office_role' ? 403 : outcome.refusedBecause === 'locked' ? 429 : 401, signInPage({ next, problem: outcome.refusedBecause }), officeCookie(undefined));
+          return;
+        }
+        res.writeHead(303, { location: next, 'set-cookie': officeCookie(outcome.token), 'cache-control': 'no-store', 'x-frame-options': 'DENY', 'referrer-policy': 'no-referrer' });
+        res.end();
+        return;
+      }
       if (req.method !== 'GET') {
         send(res, 405, 'text/plain; charset=utf-8', 'this box serves screens, and only reads');
         return;
@@ -367,13 +441,31 @@ export function startScreenServer(input: {
       // o'clock's exceptions, not the ones this process saw when it started. The pack-age badge
       // (SYNC-01) rides alongside it on every screen, from the same one snapshot.
       const snap = input.snapshot();
+      // OB-259: on the store PC every screen but the till opens only for a person who typed their own PIN, holds an office
+      // role here, and (for a screen in the menu) holds that screen's own permission. Then it runs AS that person.
+      let officeUser: { readonly userId: string; readonly displayName: string; readonly expiresAt: string } | null = null;
+      if (office !== undefined && !OPEN_SCREENS.includes(route.screen)) {
+        const session = await office.check(officeTokenOf(req.headers['cookie']));
+        if (!session.ok) {
+          page(res, 401, signInPage({ next: safeNext(req.url), problem: session.refusedBecause }), session.refusedBecause === 'not_signed_in' ? undefined : officeCookie(undefined));
+          return;
+        }
+        const needs = permissionForScreen(route.screen);
+        if (needs !== null && !(permissionsOf(session.userId, snap.pack) ?? []).includes(needs)) {
+          const menu = navigationPayload({ screen: route.screen, pack: snap.pack, payload: { userId: session.userId }, screenOf: screenOfPath });
+          page(res, 403, notAllowedPage({ displayName: session.displayName, links: menu.groups.flatMap((g) => g.items.map((i) => ({ path: i.path, label: i.label }))) }));
+          return;
+        }
+        officeUser = session;
+      }
       // OB-16: behind the authenticated relay the ERP screens run as the person who SIGNED IN — their id, their
       // permissions from this box's role register — never as whoever the pack named for the screen. The till is
       // untouched: the person signs in at the till itself.
       // DF-3-c (OB-30 "A"): so do the phone screens served here (the hosted copy) — the job is done as the person the
       // front signed in, exactly as a phone on the shop wifi does it as the person who signed in on it with their PIN.
       const handheld = isHandheldSource(route.screen) ? route.screen : null;
-      const signedIn = input.trustForwardedUser === true && (APP_SHELL[route.screen].dir === 'web-erp' || handheld !== null) ? forwardedUser(req.headers['x-sre-user']) : null;
+      const signedIn = officeUser !== null ? officeUser.userId
+        : input.trustForwardedUser === true && (APP_SHELL[route.screen].dir === 'web-erp' || handheld !== null) ? forwardedUser(req.headers['x-sre-user']) : null;
       const built = payloadFor(route.screen, snap, handheld !== null && signedIn !== null ? signedIn : undefined);
       const payload = signedIn === null ? built : handheld !== null ? asPhoneHolder(handheld, built, signedIn) : asSignedInPerson(built, signedIn, snap.pack);
       // The till alone also gets the receipt template head office published, when this box has pulled one
@@ -398,9 +490,11 @@ export function startScreenServer(input: {
       const navigation = APP_SHELL[route.screen].dir === 'web-erp'
         ? withPublicPrefix(navigationPayload({ screen: route.screen, pack: snap.pack, payload: payload ?? (signedIn === null ? null : { userId: signedIn }), screenOf: screenOfPath }), forwardedPrefix(req.headers['x-forwarded-prefix']))
         : undefined;
-      send(res, 200, type, injectPayload(
+      const served = injectPayload(
         body.toString('utf8'), GLOBAL_FOR[route.screen], payload,
         {
+          // OB-259: who is signed in to the office screens, and until when — the box draws the Sign out bar from it.
+          ...(officeUser === null ? {} : signedInGlobals(officeUser)),
           catalogueFreshness: catalogueFreshness(snap),
           ...(receiptTemplate === undefined ? {} : { posReceiptTemplate: receiptTemplate }),
           ...(posLane === undefined ? {} : { posLane }),
@@ -411,7 +505,9 @@ export function startScreenServer(input: {
           // (a local preview) when it is absent.
           ...(input.laneWriteBase === undefined ? {} : { laneWriteBase: input.laneWriteBase }),
         },
-      ));
+      );
+      // The Sign out bar goes on every office page, drawn by the box, just before the page's own end.
+      send(res, 200, type, officeUser === null ? served : served.includes('</body>') ? served.replace('</body>', `${SIGN_OUT_BAR}</body>`) : `${served}${SIGN_OUT_BAR}`);
     })();
   });
 

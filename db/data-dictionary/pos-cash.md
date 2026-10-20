@@ -41,6 +41,11 @@ _Never depends on the network (#1); committed locally first, synced idempotently
 _Cash/store-credit are **full offline**; card/UPI are provider-dependent and shown
 honestly; **no card number anywhere** in data or logs (card-data guardrail)._
 
+_`paid_on_old_erp` (OB-256 · OB-258): the mirror pilot's one non-cash tender — the customer paid on the old ERP. Only
+while the store computer is set for the mirror pilot, and then the only tender (sales and refunds); settled, no change,
+no provider reference; no drawer money; its own line in the day book and reports. The full list of kinds is
+`TENDER_KINDS` in `packages/contracts/src/enums.ts`._
+
 ## Returns, till & suspends (M13–M15)
 
 ### Refund / Exchange ⊕ (M13)

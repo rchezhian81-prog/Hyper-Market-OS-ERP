@@ -145,3 +145,286 @@ export async function writeParallelPolicy(input: ParallelPolicyInput): Promise<O
   say('A later policy is a new, dated fact — the newest applies; this one stays on record.');
   return { exitCode: 0, lines };
 }
+
+// ── OB-257: head office's own jobs, done on the store PC by the owner's setup commands ────────────────────────────────
+//
+// On the store PC there is no head-office screen and no sign-in server (W-3). The owner decided (OB-257, "Owner setup
+// commands"): `store-computer` commands he types himself, under the PC lock he accepted in OB-251, with each person typing
+// their OWN till PIN for their own part. Each command below calls the EXISTING head-office route — nothing here writes to
+// the database, and nothing here adds a rule of its own beyond refusing production and the demo tenant (the routes keep
+// every rule: maker-checker, the GSTIN check digit, the prefix two tills may never share, the store-computer role that
+// names one store). Every command:
+//
+//   1. refuses production (hard rule #7) and the demo tenant (gate G4) before anything else;
+//   2. refuses a missing value by name — nothing is defaulted for the owner (only the privacy reply time, which OB-195
+//      fixes at 15 days for every store and the route refuses any other);
+//   3. says, in plain words, exactly what it will do, and asks for a YES;
+//   4. asks each person whose act it is for their own till PIN — typed by that person, never shown, checked on this PC
+//      against the verifier `till-pin` made (packages/identity/src/till-pin.ts); a wrong PIN, or none, and nothing is done;
+//   5. calls the route as that person (the shell mints that person's short-lived token only after their PIN matched), so
+//      the route's own audit and its own "who" fields name the person, never the owner on somebody's behalf.
+//
+// Pure: the HTTP client, the questions and the PIN check are injected (scripts/owner-setup.ts holds the real ones).
+
+/** The commands, as the owner types them after `store-computer`. */
+export const SETUP_STEPS = Object.freeze(['shop', 'store-settings', 'bill-prefix', 'grant', 'publish-catalogue'] as const);
+export type SetupStep = (typeof SETUP_STEPS)[number];
+
+/** A request made as one person, after their PIN was checked at `signedInAt` (the token's step-up time). */
+export interface SetupRequest {
+  readonly method: 'GET' | 'POST' | 'PUT';
+  readonly path: string;
+  readonly userId: string;
+  readonly tenantId: string;
+  readonly body?: unknown;
+  readonly idempotencyKey?: string;
+  readonly signedInAt: string;
+}
+export interface SetupClient { request(input: SetupRequest): Promise<{ readonly status: number; readonly body: unknown }> }
+
+/** What the PIN check said: the PIN matches; it does not; this person has no PIN on this PC; the PC cannot check. */
+export type PinVerdict = 'ok' | 'wrong' | 'no_pin_issued' | 'cannot_check';
+
+export interface SetupInput {
+  readonly step: string;
+  readonly tenantId: string;
+  readonly targetKind: string | undefined;
+  readonly demoTenantIds: readonly string[];
+  /** The values the owner typed, by flag name without the dashes (`legal-name`, `gstin`, `store`, …). */
+  readonly values: Readonly<Record<string, string | undefined>>;
+  /** Today, YYYY-MM-DD, on this PC's clock (the catalogue's "as of"). */
+  readonly today: string;
+  readonly now: () => string;
+}
+
+export interface SetupDeps {
+  readonly client?: SetupClient;
+  /** Ask for a YES. The plan has already been said. */
+  readonly confirm: () => Promise<boolean>;
+  /** Ask THIS person for their own till PIN, hidden. Undefined when nothing was typed (or there is no keyboard). */
+  readonly askPin: (userId: string) => Promise<string | undefined>;
+  readonly verifyPin: (userId: string, pin: string) => PinVerdict;
+  /** Each line, as it is said (the questions come between them). */
+  readonly say?: (line: string) => void;
+}
+
+export interface SetupOutcome { readonly exitCode: 0 | 1 | 2; readonly lines: readonly string[] }
+
+/** The privacy reply time every store promises — fixed by OB-195; the settings route refuses any other value. */
+export const PRIVACY_REPLY_DAYS = 15;
+/** The login the store PC's till syncs as: its store token is made for this name (scripts/install-till.mjs, W-5). */
+export const STORE_EDGE_LOGIN = 'store-edge';
+/** The store computer's own role (services/api/src/roles.ts STORE_COMPUTER_ROLE_ID). */
+export const STORE_COMPUTER_ROLE = 'store_computer';
+
+const LOGIN = /^[A-Za-z0-9][A-Za-z0-9._@-]{0,127}$/;
+const CODE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$/;
+const GSTIN_SHAPE = /^[0-9]{2}[A-Z0-9]{13}$/;
+const CUTOFF_SHAPE = /^([01]\d|2[0-3]):[0-5]\d$/;
+const RUPEES = /^\d{1,9}(\.\d{1,2})?$/;
+const WHOLE = /^\d{1,7}$/;
+const paise = (rupees: string): number => Math.round(Number(rupees) * 100);
+const rupeesText = (v: string): string => `₹${Number(v).toFixed(2)}`;
+
+interface PlannedCall {
+  readonly as: string;
+  readonly method: 'POST';
+  readonly path: string;
+  readonly body: unknown;
+  readonly key: string;
+  readonly ok: readonly number[];
+  readonly said: (body: unknown) => string;
+}
+interface Planned { readonly actors: readonly string[]; readonly plan: readonly string[]; readonly calls: readonly PlannedCall[]; readonly done: string }
+
+/** Read the values for one step: every problem named at once, or the plan. */
+function planStep(step: SetupStep, v: Readonly<Record<string, string | undefined>>, today: string, nowIso: string): { readonly problems: readonly string[] } | { readonly planned: Planned } {
+  const problems: string[] = [];
+  const need = (flag: string, shape: RegExp, words: string): string => {
+    const value = (v[flag] ?? '').trim();
+    if (value === '') problems.push(`--${flag} <${words}>`);
+    else if (!shape.test(value)) problems.push(`--${flag} must be ${words} (got "${value}")`);
+    return value;
+  };
+  const named = (flag: string, min: number, words: string): string => {
+    const value = (v[flag] ?? '').trim();
+    if (value.length < min) problems.push(`--${flag} "<${words}>"`);
+    return value;
+  };
+  const as = need('as', LOGIN, 'your own login');
+  switch (step) {
+    case 'shop': {
+      const company = need('company', CODE, 'a short code for the company, e.g. SRE');
+      const legalName = named('legal-name', 3, 'the legal name exactly as on the GST certificate');
+      const gstin = need('gstin', GSTIN_SHAPE, 'the 15-character GSTIN, in capital letters and digits');
+      const store = need('store', CODE, 'a short code for this store, e.g. SRE-MAIN');
+      const storeName = named('store-name', 2, "the store's name");
+      if (problems.length > 0) return { problems };
+      return {
+        planned: {
+          actors: [as],
+          plan: [
+            `1. Record the company ${company} under its legal name "${legalName}".`,
+            `2. Record the GST registration ${gstin} for "${legalName}" (head office checks the GSTIN's check digit).`,
+            `3. Record the store ${store} ("${storeName}") under the company, filed under GSTIN ${gstin}.`,
+            `4. Make the store ${store} active.`,
+          ],
+          calls: [
+            { as, method: 'POST', path: `/v1/org/nodes/${encodeURIComponent(company)}`, body: { kind: 'company', name: legalName }, key: `owner-setup-company-${company}`, ok: [200, 201], said: () => `company ${company} recorded` },
+            { as, method: 'POST', path: `/v1/org/gst-registrations/${encodeURIComponent(gstin)}`, body: { companyId: company, legalName }, key: `owner-setup-gstin-${gstin}`, ok: [200, 201], said: () => `GST registration ${gstin} recorded for "${legalName}"` },
+            { as, method: 'POST', path: `/v1/org/nodes/${encodeURIComponent(store)}`, body: { kind: 'branch', name: storeName, parentId: company, companyId: company, gstin }, key: `owner-setup-store-${store}`, ok: [200, 201], said: () => `store ${store} ("${storeName}") recorded under ${company}` },
+            { as, method: 'POST', path: `/v1/org/nodes/${encodeURIComponent(store)}/activation`, body: {}, key: `owner-setup-store-${store}-activation`, ok: [200, 201], said: () => `store ${store} is active` },
+          ],
+          done: `DONE — the shop is set up at head office on this computer: company ${company} ("${legalName}"), GSTIN ${gstin}, store ${store} active. Done as ${as}.`,
+        },
+      };
+    }
+    case 'store-settings': {
+      const store = need('store', CODE, "the store's code");
+      const cutoff = need('cutoff', CUTOFF_SHAPE, "the time the shop's day ends, HH:MM (00:00 is midnight)");
+      const stale = need('stale-after-minutes', WHOLE, 'whole minutes');
+      const count = need('count-approval-rupees', RUPEES, 'rupees, e.g. 500');
+      const handover = need('handover-tolerance-rupees', RUPEES, 'rupees, e.g. 0');
+      const variance = need('cash-variance-rupees', RUPEES, 'rupees, e.g. 0');
+      if (problems.length > 0) return { problems };
+      const body = {
+        tradingDayCutoff: cutoff, staleAfterSeconds: Number(stale) * 60, countApprovalThresholdMinor: paise(count),
+        handoverToleranceMinor: paise(handover), cashVarianceToleranceMinor: paise(variance), privacySlaDays: PRIVACY_REPLY_DAYS,
+      };
+      return {
+        planned: {
+          actors: [as],
+          plan: [
+            `1. Save store ${store}'s settings as a NEW version (every older version is kept):`,
+            `   the shop's day ends at ${cutoff}; the store computer's copy of head office's setup counts as old after ${stale} minute(s);`,
+            `   a stock count difference over ${rupeesText(count)} needs a second person; a cash handover may be out by ${rupeesText(handover)};`,
+            `   a till's cash may be out by ${rupeesText(variance)} before it is a variance; privacy requests are answered within ${PRIVACY_REPLY_DAYS} days (fixed, OB-195).`,
+          ],
+          calls: [{
+            as, method: 'POST', path: `/v1/stores/${encodeURIComponent(store)}/settings`, body,
+            key: `owner-setup-settings-${store}-${cutoff}-${stale}-${body.countApprovalThresholdMinor}-${body.handoverToleranceMinor}-${body.cashVarianceToleranceMinor}`,
+            ok: [200, 201], said: (b) => `store ${store}'s settings saved as version ${String((b as { settings?: { version?: number } } | undefined)?.settings?.version ?? '?')}`,
+          }],
+          done: `DONE — store ${store}'s settings are saved at head office on this computer. Done as ${as}.`,
+        },
+      };
+    }
+    case 'bill-prefix': {
+      const store = need('store', CODE, "the store's code");
+      const till = need('till', CODE, "the till's lane, e.g. lane-1");
+      const prefix = need('prefix', /^[A-Za-z0-9-]{1,10}$/, 'up to 10 letters, digits or "-", e.g. S1L1-');
+      const reason = (v['reason'] ?? '').trim();
+      if (problems.length > 0) return { problems };
+      return {
+        planned: {
+          actors: [as],
+          plan: [`1. Issue till ${till} at store ${store} the bill prefix ${prefix}: its bills are numbered ${prefix}000001 onwards, and no other till may ever use ${prefix}.`],
+          calls: [{
+            as, method: 'POST', path: `/v1/stores/${encodeURIComponent(store)}/tills/${encodeURIComponent(till)}/receipt-prefix`,
+            body: { prefix, ...(reason === '' ? {} : { reason }) }, key: `owner-setup-prefix-${store}-${till}-${prefix}`, ok: [200, 201],
+            said: (b) => ((b as { unchanged?: boolean } | undefined)?.unchanged === true ? `till ${till} already has the prefix ${prefix} — nothing new recorded` : `till ${till} at ${store} has the prefix ${prefix}`),
+          }],
+          done: `DONE — the bill prefix ${prefix} is issued to till ${till} at store ${store}. The till takes it the next time it reaches this copy's books. Done as ${as}.`,
+        },
+      };
+    }
+    case 'grant': {
+      const approver = need('approver', LOGIN, 'the login of the SECOND person, who approves');
+      const person = need('person', LOGIN, 'the login of the person who gets the role');
+      const role = need('role', /^[a-z][a-z_]{1,40}$/, 'a role, e.g. cashier, store_manager or store_computer');
+      const store = need('store', CODE, "the store's code");
+      const reason = named('reason', 3, 'why, in a few words');
+      if (as !== '' && approver !== '' && as === approver) problems.push('--as and --approver must be two different people: one asks, the other approves (§28)');
+      if (person !== '' && (person === as || person === approver)) problems.push('the person who gets the role never asks for it or approves it for themselves');
+      if (role === STORE_COMPUTER_ROLE && person !== '' && person !== STORE_EDGE_LOGIN) problems.push(`the store computer role is only for the till's own sign-in, ${STORE_EDGE_LOGIN} — never a person`);
+      if (person === STORE_EDGE_LOGIN && role !== '' && role !== STORE_COMPUTER_ROLE) problems.push(`${STORE_EDGE_LOGIN} is the till's own sign-in: it holds only the ${STORE_COMPUTER_ROLE} role`);
+      if (problems.length > 0) return { problems };
+      const grantId = `grant-${person}-${role}-${store}`;
+      return {
+        planned: {
+          actors: [as, approver],
+          plan: [
+            `1. ${as} asks head office to give ${person} the role "${role}" at store ${store} only. Reason: "${reason}".`,
+            `2. ${approver} approves it — a second person, with their own PIN. Until then nothing is granted.`,
+          ],
+          calls: [
+            {
+              as, method: 'POST', path: '/v1/identity/grants', body: { grantId, userId: person, roleId: role, branchScope: [store], reason },
+              key: `owner-setup-${grantId}-request`, ok: [200, 201, 202],
+              said: (b) => ((b as { alreadyRequested?: boolean } | undefined)?.alreadyRequested === true ? `already asked — the request is ${String((b as { state?: string }).state)}` : `${as} asked for it; it waits for a second person`),
+            },
+            {
+              as: approver, method: 'POST', path: `/v1/identity/grants/${encodeURIComponent(grantId)}/approve`, body: {},
+              key: `owner-setup-${grantId}-approve`, ok: [200, 201],
+              said: (b) => ((b as { alreadyGranted?: boolean } | undefined)?.alreadyGranted === true ? 'it was already granted' : `${approver} approved it`),
+            },
+          ],
+          done: `DONE — ${person} holds "${role}" at store ${store}: asked by ${as}, approved by ${approver}. The till learns it the next time it reaches this copy's books.`,
+        },
+      };
+    }
+    case 'publish-catalogue': {
+      const store = need('store', CODE, "the store's code");
+      if (problems.length > 0) return { problems };
+      return {
+        planned: {
+          actors: [as],
+          plan: [`1. Publish the signed price list (the catalogue pack) for store ${store} as of ${today}: every product, barcode, tax class and price head office holds now. The till takes it the next time it reaches this copy's books.`],
+          calls: [{
+            as, method: 'POST', path: '/v1/catalogue/pack', body: { storeId: store, asOf: today }, key: `owner-setup-pack-${store}-${nowIso}`, ok: [201],
+            said: (b) => `the catalogue pack version ${String((b as { version?: number } | undefined)?.version ?? '?')} is published`,
+          }],
+          done: `DONE — the catalogue pack is published for store ${store}. Done as ${as}.`,
+        },
+      };
+    }
+  }
+  return { problems: [`no such step ${String(step)}`] };
+}
+
+/** Run one owner setup command. Exit 0 done · 1 refused or not done · 2 could not be understood. */
+export async function runOwnerSetup(input: SetupInput, deps: SetupDeps): Promise<SetupOutcome> {
+  const lines: string[] = [];
+  const say = (s: string): void => { lines.push(s); deps.say?.(s); };
+  if (!(SETUP_STEPS as readonly string[]).includes(input.step)) { say(`Not understood: "${input.step}". The setup commands are: ${SETUP_STEPS.join(', ')}.`); return { exitCode: 2, lines }; }
+  const step = input.step as SetupStep;
+  if (input.tenantId.trim() === '') { say("REFUSED — this copy's settings name no tenant (EDGE_TENANT_ID). Send me a photo of this screen."); return { exitCode: 2, lines }; }
+  const refused = targetRefusal(input.targetKind, input.tenantId, input.demoTenantIds, `owner-setup-${step}`);
+  if (refused !== undefined) { say(refused); return { exitCode: 1, lines }; }
+
+  const read = planStep(step, input.values, input.today, input.now());
+  if ('problems' in read) { say(`REFUSED — ${step} needs: ${read.problems.join('; ')}. Nothing is filled in for you, and nothing was done.`); return { exitCode: 2, lines }; }
+  const p = read.planned;
+  if (deps.client === undefined) { say("REFUSED — this copy's API cannot be spoken to: its settings have no identity settings (IDP_SIGNING_KEY, IDP_ISSUER, IDP_AUDIENCE). Send me a photo of this screen."); return { exitCode: 2, lines }; }
+
+  say(`This will, at head office on this computer (tenant ${input.tenantId}):`);
+  for (const l of p.plan) say(`  ${l}`);
+  say(`Who types their own till PIN: ${p.actors.join(', then ')}. Nobody types anyone else's.`);
+  if (!(await deps.confirm())) { say('NOT DONE — you did not type YES. Nothing was done.'); return { exitCode: 1, lines }; }
+
+  // Every person's PIN BEFORE any call: a wrong PIN for the second person never leaves the first person's half done.
+  const signedIn = new Map<string, string>();
+  for (const who of p.actors) {
+    say(`${who}: type YOUR OWN till PIN now (six digits; nothing shows while you type). Only ${who} types it.`);
+    const pin = await deps.askPin(who);
+    if (pin === undefined || pin === '') { say(`NOT DONE — no PIN was typed for ${who}. Nothing was done.`); return { exitCode: 1, lines }; }
+    const verdict = deps.verifyPin(who, pin);
+    if (verdict === 'cannot_check') { say('REFUSED — this PC cannot check till PINs yet (the till is not installed, or its settings cannot be read). Install the till first (owner guide Part 13). Nothing was done.'); return { exitCode: 2, lines }; }
+    if (verdict === 'no_pin_issued') { say(`REFUSED — ${who} has no till PIN on this computer. Make one first, with ${who} there: pnpm run till:pin -- --user ${who} --by "<your name>". Nothing was done.`); return { exitCode: 1, lines }; }
+    if (verdict !== 'ok') { say(`REFUSED — that is not ${who}'s till PIN. Nothing was done.`); return { exitCode: 1, lines }; }
+    signedIn.set(who, input.now());
+    say(`  ${who}'s PIN matches.`);
+  }
+
+  for (const call of p.calls) {
+    const res = await deps.client.request({ method: call.method, path: call.path, userId: call.as, tenantId: input.tenantId, body: call.body, idempotencyKey: call.key, signedInAt: signedIn.get(call.as)! });
+    if (!call.ok.includes(res.status)) {
+      say(`NOT DONE — head office refused: ${errorOf(res.body, res.status)}`);
+      say('  What was done before this line stays done (it is recorded, never undone); the same command again carries on from here.');
+      return { exitCode: 1, lines };
+    }
+    say(`  done — ${call.said(res.body)}.`);
+  }
+  say(p.done);
+  return { exitCode: 0, lines };
+}

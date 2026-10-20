@@ -167,7 +167,7 @@ So far the till sells and queues. To also send those sales up to the books and t
 issue a **store token** and give the till two settings.
 
 ```
-pnpm run token:store --tenant <your tenant id> --user store-edge --ttl-hours 720
+pnpm run token:store -- --tenant <your tenant id> --user store-edge --store <this store's id> --ttl-hours 720
 ```
 
 It reads the identity settings from `infra/compose/.env`, prints a token **once** (it is a secret —

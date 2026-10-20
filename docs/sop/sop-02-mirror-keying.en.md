@@ -1,14 +1,15 @@
 # Sheet 2 — Mirror keying for the pilot department
 
-**Sheet id:** SOP-02 · **Decisions:** OB-248 (mirror pilot), OB-252 (guest sales only) · **Language:** English (Tamil:
-`sop-02-mirror-keying.ta.md`)
+**Sheet id:** SOP-02 · **Decisions:** OB-248 (mirror pilot), OB-252 (guest sales only), OB-256 (one "paid on old ERP"
+payment), OB-258 (refunds rung on both) · **Language:** English (Tamil: `sop-02-mirror-keying.ta.md`)
 **For:** the trained person at the pilot counter, named by the owner.
 
-> **Do not use this sheet at the counter yet.** Step 5 is not written. It is waiting for a decision being made now
-> (lane 1). The owner fills it in and only then prints this sheet.
+> **Do not use this sheet at the counter yet.** Step 5 and the refund steps wait for the new till's "paid on old ERP"
+> payment, which is being added now (lane 1). The owner fills them in and only then prints this sheet.
 
 **Before you start:** on the new till press **Sign in**, and sign in with **your own** staff ID and **your own** till
-PIN. Never use anyone else's. Press **Sign out** whenever you leave the counter.
+PIN. Never use anyone else's. Press **Sign out** whenever you leave the counter. Your PIN opens the till only: the
+office screens ask for an office person's PIN.
 
 **For every customer:**
 
@@ -19,7 +20,9 @@ PIN. Never use anyone else's. Press **Sign out** whenever you leave the counter.
 3. **Never give the customer anything from the new till** — not a bill, not a slip.
 4. **Guest sale only:** never type a mobile number on the new till, never add loyalty points there. If the customer
    asks for loyalty, it is done on the old till, as today.
-5. **Payment and cash-up on the new till:** **PLACEHOLDER — LANE 1. NOT WRITTEN YET.** Do not guess this step.
+5. **Payment on the new till:** choose **Paid on old system** — the customer has already paid on the old till; the new
+   till's drawer expects no money for it (OB-256). **PLACEHOLDER — LANE 1:** the button's exact name and the cash-up
+   steps are written here once the new till has them. Do not guess this step.
 
 **If the new till says the barcode is not in the catalogue** (no line is added):
 - do not pick a similar item, do not type a price, do not scan a different barcode;
@@ -29,12 +32,13 @@ PIN. Never use anyone else's. Press **Sign out** whenever you leave the counter.
 
 **If the new till shows a different price from the old bill:** do not change anything. Write it in the list too.
 
-**Refunds:** do them on the old till only, as today. Whether a refund is also rung on the new till is **not decided
-yet** — do not ring a refund on the new till until the owner says so.
+**Refunds:** do the refund on the old till, as today. Then ring the **same** refund on the new till against **Paid on old
+system**, so the stock and the sales still match (OB-258). **PLACEHOLDER — LANE 1:** the refund steps on the new till
+are written here once it has them. Until then, ring no refund on the new till; write it in the list below.
 
 **If the new till stops:** use Sheet 1.
 
-| Time | Barcode number | Item (from the old bill) | Quantity | Price on the old bill | Not in catalogue / Price differs | Your initials |
+| Time | Barcode number | Item (from the old bill) | Quantity | Price on the old bill | Not in catalogue / Price differs / Refund | Your initials |
 |---|---|---|---|---|---|---|
 | | | | | | | |
 | | | | | | | |

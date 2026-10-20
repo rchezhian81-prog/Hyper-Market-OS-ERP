@@ -18,7 +18,11 @@ export function isMember<T extends string>(allowed: readonly T[], value: string)
 /** `loyalty_points` is a member's points spent at the till at the owner's point value (PF-09 step 3 · M17-FR-01) — value
  *  that is the shop's liability, never money, decided against the store computer's copy of the balances and the owner's
  *  till spend cap (`packages/loyalty/src/wallet.ts`). */
-export const TENDER_KINDS = ['cash', 'card', 'upi', 'store_credit', 'split', 'exchange_credit', 'loyalty_points'] as const;
+/** `paid_on_old_erp` (OB-256 · OB-258, owner 20 Oct 2026): the mirror pilot's tender — the customer paid on the OLD ERP,
+ *  which stays the legal record; the new till records the same lines with this one non-cash kind. Never money in this
+ *  system's drawer, never a card/UPI attempt; its own line wherever tenders are named (P-08). Rules in
+ *  `packages/tender/src/paid-on-old-erp.ts`. */
+export const TENDER_KINDS = ['cash', 'card', 'upi', 'store_credit', 'split', 'exchange_credit', 'loyalty_points', 'paid_on_old_erp'] as const;
 export type TenderKind = (typeof TENDER_KINDS)[number];
 export const isTenderKind = (v: string): v is TenderKind => isMember(TENDER_KINDS, v);
 

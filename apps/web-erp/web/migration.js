@@ -98,6 +98,7 @@ const WORDS = {
     side_legacy: 'the old system', side_new: 'the new system', side_both: 'both', side_neither: 'neither — a timing difference',
     area_sales_value: 'Sales (₹)', area_sales_count: 'Number of bills', area_stock_movement: 'Stock moved (units)',
     area_tax: 'Tax (₹)', area_payments: 'Payments taken (₹)', area_loyalty: 'Loyalty points',
+    notCompared: 'Not compared in the mirror pilot (owner decision OB-256): the old system takes every payment and keeps loyalty, so the evening comparison covers sales, bills, tax and stock only. Nothing to type here.',
     daySave: 'Save the day', daySaved: 'Day saved on this device — it will be sent to head office',
     dayStatement: 'What you checked (in your own words)', daySign: 'Sign the day', daySigned: 'Day signed',
     dayAgrees: 'agrees', dayDiffers: 'differs by', needsReason: 'NEEDS A REASON — the day cannot be signed',
@@ -186,6 +187,7 @@ const WORDS = {
     side_legacy: 'பழைய அமைப்பு', side_new: 'புதிய அமைப்பு', side_both: 'இரண்டும்', side_neither: 'இரண்டும் அல்ல — நேர வேறுபாடு',
     area_sales_value: 'விற்பனை (₹)', area_sales_count: 'பில்களின் எண்ணிக்கை', area_stock_movement: 'நகர்ந்த இருப்பு (அலகுகள்)',
     area_tax: 'வரி (₹)', area_payments: 'பெற்ற பணம் (₹)', area_loyalty: 'விசுவாசப் புள்ளிகள்',
+    notCompared: 'மிரர் பைலட்டில் ஒப்பிடப்படுவதில்லை (உரிமையாளர் முடிவு OB-256): ஒவ்வொரு பணத்தையும் பழைய அமைப்பே பெறுகிறது, லாயல்டியையும் அதுவே வைத்திருக்கிறது; எனவே மாலை ஒப்பீடு விற்பனை, பில்கள், வரி, இருப்பு மட்டுமே. இங்கே எதையும் தட்டச்சு செய்ய வேண்டாம்.',
     daySave: 'நாளைச் சேமி', daySaved: 'நாள் இந்தச் சாதனத்தில் சேமிக்கப்பட்டது — தலைமை அலுவலகத்துக்கு அனுப்பப்படும்',
     dayStatement: 'நீங்கள் எதைச் சரிபார்த்தீர்கள் (உங்கள் சொந்த வார்த்தைகளில்)', daySign: 'நாளில் கையெழுத்திடு', daySigned: 'நாளில் கையெழுத்திடப்பட்டது',
     dayAgrees: 'பொருந்துகிறது', dayDiffers: 'வேறுபாடு', needsReason: 'காரணம் தேவை — இந்த நாளில் கையெழுத்திட முடியாது',
@@ -642,6 +644,13 @@ function renderBoth() {
 // ── Running both: enter, explain and sign a day (MG-10) ────────────────────
 
 const AREAS = ['sales_value', 'sales_count', 'stock_movement', 'tax', 'payments', 'loyalty'];
+/**
+ * OB-256 (owner, 20 Oct 2026): in the mirror pilot the store computer says which areas are NOT compared — the old system
+ * takes every payment and keeps loyalty. Those cards say so and take no figures; they are left out of the day, never sent
+ * as a zero (P-08).
+ */
+const NOT_COMPARED = new Set((window.migrationData?.notCompared ?? []).map((n) => n && n.area).filter((a) => AREAS.includes(a)));
+const COMPARED = AREAS.filter((a) => !NOT_COMPARED.has(a));
 /** Areas counted in money are typed in rupees and kept in paise; the rest are whole counts. */
 const MONEY_AREAS = new Set(['sales_value', 'tax', 'payments']);
 const SIDES = ['legacy', 'new', 'both', 'neither'];
@@ -708,6 +717,17 @@ function buildAreas() {
     blank.textContent = '—';
     side.append(blank, ...SIDES.map((v) => { const o = document.createElement('option'); o.value = v; o.dataset.word = `side_${v}`; return o; }));
     card.append(name, cols, diff, whyLabel, why, sideLabel, side);
+    if (NOT_COMPARED.has(area)) {
+      // OB-256: decided, and said — no boxes to fill, so nothing can be sent as a zero.
+      card.className = 'area off';
+      for (const node of [cols, diff, whyLabel, why, sideLabel, side]) node.hidden = true;
+      for (const input of card.querySelectorAll('input, select')) input.disabled = true;
+      const off = document.createElement('p');
+      off.id = `day-${area}-off`;
+      off.className = 'lead';
+      off.dataset.word = 'notCompared';
+      card.append(off);
+    }
     box.append(card);
     for (const suffix of ['old', 'new', 'tol']) el(`day-${area}-${suffix}`).addEventListener('input', () => { paintDiff(area); });
   }
@@ -728,7 +748,7 @@ function paintDiff(area) {
 }
 
 function linesFromForm() {
-  return AREAS.map((area) => {
+  return COMPARED.map((area) => {
     const why = el(`day-${area}-why`).value.trim();
     const side = el(`day-${area}-side`).value;
     return {
@@ -751,7 +771,7 @@ el('day-import').addEventListener('change', async () => {
     const text = await file.text();
     for (const raw of text.split(/\r?\n/)) {
       const cells = raw.split(',').map((c) => c.trim());
-      if (cells.length < 3 || !AREAS.includes(cells[0])) continue;
+      if (cells.length < 3 || !COMPARED.includes(cells[0])) continue;
       el(`day-${cells[0]}-old`).value = cells[1];
       el(`day-${cells[0]}-new`).value = cells[2];
       if (cells[3] !== undefined && cells[3] !== '') el(`day-${cells[0]}-tol`).value = cells[3];

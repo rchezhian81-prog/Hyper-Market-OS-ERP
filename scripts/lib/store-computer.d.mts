@@ -119,6 +119,10 @@ export declare const DATA_MARKER: string;
 export declare const DATA_MARKER_TEXT: string;
 export declare function composeBase(L: Layout | undefined): string[];
 export declare function ownerStep(deps: Deps, step: 'seal' | 'parallel-policy', cl: Record<string, unknown>): Promise<number>;
+/** OB-257: the owner setup commands, and their flags. */
+export declare const SETUP_COMMANDS: readonly string[];
+export declare const SETUP_FLAGS: readonly string[];
+export declare function ownerSetup(deps: Deps, step: string, cl: Record<string, unknown>): Promise<number>;
 export declare function askSecret(prompt: string): Promise<string | undefined>;
 export declare function parseEnvText(text: string): Settings;
 export declare function demoTenants(settings: Settings | undefined): string[];
@@ -156,6 +160,8 @@ export declare function parseCommandLine(argv: readonly string[]): {
   command?: string; by?: string; out?: string; backupRecord?: string; offlineConfirmed: boolean; demoFingerprints?: string;
   settings?: string; to?: string; from?: string; previous?: string; run: boolean; every?: string; off: boolean; quiet: boolean;
   dir?: string; as?: string; backupRestoredOn?: string; source?: string; cutover?: string; reconciler?: string; cleanDays?: string; maxDays?: string; start?: string;
+  /** OB-257: the owner setup commands' flags, as typed (`--store` → value), handed on to the setup tool. */
+  setup: Record<string, string>;
   problems: string[];
 };
 export declare function prepare(deps: Deps): Promise<number>;

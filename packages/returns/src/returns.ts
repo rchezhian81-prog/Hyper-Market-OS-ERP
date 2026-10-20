@@ -114,7 +114,9 @@ export interface CommitReturnInput {
  * is a provider reversal that is queued and NEVER assumed successful (M13-FR-04). */
 export type RefundStatus = 'settled' | 'pending';
 
-const OFFLINE_SETTLED_TENDERS: readonly TenderKind[] = ['cash', 'store_credit'];
+/** OB-258: a refund to `paid_on_old_erp` is settled too — it was given on the old ERP, so no provider reversal waits here
+ *  (and, like store credit, no money comes out of this drawer: the cash-up counts `cash` alone). */
+const OFFLINE_SETTLED_TENDERS: readonly TenderKind[] = ['cash', 'store_credit', 'paid_on_old_erp'];
 
 /** Whether the money that actually left settled at the lane: a refund by its tender; an exchange by the tender of its
  *  balance refund (nothing left on an even exchange or a top-up, so settled). Card/UPI is a reversal nobody has done yet. */

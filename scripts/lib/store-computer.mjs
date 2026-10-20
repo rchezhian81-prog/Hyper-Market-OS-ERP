@@ -1030,7 +1030,47 @@ export const USAGE = [
   '                                           seal the old ERP\'s exported files (MG-02)',
   '  parallel-policy --as <login> --cutover <id> --reconciler <login> --clean-days N --max-days M --start YYYY-MM-DD',
   '                                           write the parallel-run policy (MG-10)',
+  ' Head office\'s own jobs on this computer (OB-257) — each asks for a YES, then each person\'s OWN till PIN:',
+  '  shop --as <login> --company <code> --legal-name "<as on the GST certificate>" --gstin <GSTIN> --store <code> --store-name "<name>"',
+  '                                           the company, its legal name and GSTIN, and the store, active',
+  '  store-settings --as <login> --store <code> --cutoff HH:MM --stale-after-minutes N --count-approval-rupees R',
+  '                 --handover-tolerance-rupees R --cash-variance-rupees R',
+  '                                           the store\'s settings (a new version each time)',
+  '  bill-prefix --as <login> --store <code> --till <lane> --prefix <prefix> [--reason "<why>"]',
+  '                                           the till\'s bill-number prefix',
+  '  grant --as <login> --approver <second login> --person <login> --role <role> --store <code> --reason "<why>"',
+  '                                           a role at the store: one person asks, a second approves',
+  '  publish-catalogue --as <login> --store <code>',
+  '                                           the signed price list for the store, to the till',
 ];
+
+/** The owner setup commands (OB-257): scripts/owner-setup.ts → packages/migration/src/owner-steps-command.ts. */
+export const SETUP_COMMANDS = Object.freeze(['shop', 'store-settings', 'bill-prefix', 'grant', 'publish-catalogue']);
+/** Their flags, as typed (each takes a value), handed on as they are. */
+export const SETUP_FLAGS = Object.freeze(['--company', '--legal-name', '--gstin', '--store', '--store-name', '--cutoff', '--stale-after-minutes', '--count-approval-rupees', '--handover-tolerance-rupees', '--cash-variance-rupees', '--till', '--prefix', '--reason', '--approver', '--person', '--role']);
+
+/**
+ * An owner setup command (OB-257), run as the people who do it: this copy's settings and the till's are handed to the
+ * setup tool, which asks for a YES and each person's own PIN at THIS keyboard (so it runs in this window, not captured),
+ * and calls this copy's own head-office routes on loopback. Nothing is written to the database from here.
+ */
+export async function ownerSetup(deps, step, cl) {
+  const { say } = deps;
+  const { L, settings } = loadSettings(deps);
+  if (settings === undefined) { say('REFUSED — this copy has no settings file yet. Run first: pnpm run store-computer -- prepare'); return 2; }
+  if (guarded(deps, settings)) return 2;
+  const env = composeEnv(deps.env, {});
+  const built = deps.spawn(deps.nodePath, [L.buildScript, 'tools', '--quiet'], { cwd: deps.repoRoot, env });
+  if (built.error !== undefined || built.status !== 0) { say('NOT DONE — the setup tool could not be prepared (the tools build failed). Send me a photo of this screen.'); return 1; }
+  const p = pathFor(deps.platform);
+  const pass = [];
+  for (const [flag, value] of Object.entries(cl.setup)) pass.push(flag, value);
+  if (cl.as !== undefined) pass.push('--as', cl.as);
+  const tillEnv = deps.fs.existsSync(L.tillEnv) ? ['--till-settings', L.tillEnv] : [];
+  const r = deps.spawn(deps.nodePath, [p.join('scripts', 'dist', 'owner-setup.js'), step, ...pass, '--settings', L.settings, ...tillEnv], { cwd: deps.repoRoot, env, stdio: 'inherit' });
+  if (r.error !== undefined) { say('NOT DONE — the setup tool could not be started.'); return 1; }
+  return r.status ?? 1;
+}
 
 /** The owner steps of the migration (audit row 8): the slice tool, built, run as the signed-in person on THIS copy. */
 export async function ownerStep(deps, step, cl) {
@@ -1060,7 +1100,7 @@ export function parseCommandLine(argv) {
     command: undefined, by: undefined, out: undefined, backupRecord: undefined, offlineConfirmed: false, demoFingerprints: undefined,
     settings: undefined, to: undefined, from: undefined, previous: undefined, run: false, every: undefined, off: false, quiet: false,
     dir: undefined, as: undefined, backupRestoredOn: undefined, source: undefined, cutover: undefined, reconciler: undefined,
-    cleanDays: undefined, maxDays: undefined, start: undefined, problems: [],
+    cleanDays: undefined, maxDays: undefined, start: undefined, setup: {}, problems: [],
   };
   for (let i = 0; i < args.length; i += 1) {
     const a = args[i];
@@ -1092,6 +1132,7 @@ export function parseCommandLine(argv) {
     else if (a === '--clean-days') out.cleanDays = value();
     else if (a === '--max-days') out.maxDays = value();
     else if (a === '--start') out.start = value();
+    else if (SETUP_FLAGS.includes(a)) { const v = value(); if (v !== undefined) out.setup[a] = v; }
     else if (!a.startsWith('--') && out.command === undefined) out.command = a;
     else out.problems.push(`unknown option ${a}`);
   }
@@ -1124,6 +1165,12 @@ export async function main(argv, deps) {
     case 'update': return update(deps, { from: cl.from, to: cl.to });
     case 'seal': return ownerStep(deps, 'seal', cl);
     case 'parallel-policy': return ownerStep(deps, 'parallel-policy', cl);
+    // OB-257: head office's own jobs on this computer, each by the people whose act it is.
+    case 'shop': return ownerSetup(deps, 'shop', cl);
+    case 'store-settings': return ownerSetup(deps, 'store-settings', cl);
+    case 'bill-prefix': return ownerSetup(deps, 'bill-prefix', cl);
+    case 'grant': return ownerSetup(deps, 'grant', cl);
+    case 'publish-catalogue': return ownerSetup(deps, 'publish-catalogue', cl);
     // What the Windows tasks run (never typed by the owner): the hourly backup and the sign-in start.
     case 'scheduled-backup': return scheduledBackup(deps);
     case 'start-at-sign-in': return startAtSignIn(deps);
