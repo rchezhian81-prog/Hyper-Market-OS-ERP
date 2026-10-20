@@ -154,7 +154,15 @@ export interface TillConfig {
   readonly cashierId?: string;
   /** A FIXED trading day for the REFUND record (tests / replay). Cash and the close are dated by the box. */
   readonly tradingDay?: string;
+  /**
+   * OB-252: guest sales only — a refund names no customer, so no store credit (it is money on a named customer's
+   * account). Refused in words before anything is written.
+   */
+  readonly guestSalesOnly?: boolean;
 }
+
+/** What the till says when a refund would name a customer while guest sales only is on (OB-252). */
+export const GUEST_ONLY_REFUND_WORDS = 'Guest sales only on this till during the pilot: a refund cannot go to a customer\'s account as store credit, and no customer number is taken. Choose cash, card or UPI. Nothing was recorded.';
 
 /** What a denomination count looks like on the screen: how many of each note or coin. */
 export interface DenominationCount {
@@ -203,6 +211,17 @@ export interface TillSession {
    * did not record. The edge queues it for the cloud; the cloud re-verifies the §28 approver on sync.
    */
   refund(input: Omit<CommitReturnInput, 'laneId' | 'processedBy'>): Promise<CommittedReturn>;
+  /**
+   * The refund whose answer was lost (RR-F02 · A8), still waiting for the store computer — its id and document number —
+   * or undefined. While one waits, no other refund is taken.
+   */
+  pendingRefund(): { readonly returnId: string; readonly number: string } | undefined;
+  /**
+   * Ask the store computer again about the refund whose answer was lost, by re-sending the SAME record under the SAME id
+   * (the box is idempotent on it, RR-F03). Resolves the refund once the box says it is saved; throws the box's refusal
+   * (`LocalRefundRefusedError` and kin) once it says it is not; throws `RefundUncertainError` again while it does not answer.
+   */
+  confirmPendingRefund(): Promise<CommittedReturn>;
   /** A cashier signs in with their staff code (SP-4b · F09); cash movements, refunds and the close name them. */
   signIn(cashierId: string): void;
   signOut(): void;
@@ -277,6 +296,32 @@ export function createTillSession(
     })),
   });
 
+  // The refund sent to the box whose answer was lost (RR-F02 · A8): the exact record sent, so a re-send hashes the same.
+  let awaiting: { readonly full: CommitReturnInput; readonly record: string } | undefined;
+
+  /**
+   * The box's definite refusal, as the distinct error the cashier and the caller must tell apart: a conflict (id reused for
+   * different money — RR-F03) and an over-return (more than the receipt entitles — RR-F04) are "this is wrong"; anything
+   * else is a plain durable-write refusal ("try elsewhere").
+   */
+  const throwRefusal = (returnId: string, outcome: CommitOutcome): never => {
+    if (outcome.refusedBecause === 'idempotency_conflict') throw new RefundConflictError(returnId, outcome.laneMessage);
+    if (outcome.refusedBecause === 'over_return') throw new RefundNotEntitledError(returnId, outcome.laneMessage);
+    throw new LocalRefundRefusedError(returnId, outcome.laneMessage);
+  };
+
+  const confirmPendingRefund = async (): Promise<CommittedReturn> => {
+    const pending = awaiting;
+    if (pending === undefined || ports.durableReturn === undefined) {
+      throw new LocalRefundRefusedError('(none)', 'No refund is waiting for the store computer.');
+    }
+    const outcome = await ports.durableReturn(pending.full.id, pending.record);
+    if (!outcome.committed && outcome.unconfirmed === true) throw new RefundUncertainError(pending.full.id, outcome.laneMessage);
+    awaiting = undefined;
+    if (!outcome.committed) throwRefusal(pending.full.id, outcome);
+    return commitReturn(pending.full, stockLedger, outbox);
+  };
+
   return {
     signIn: (cashierId) => {
       const id = cashierId.trim();
@@ -305,8 +350,22 @@ export function createTillSession(
       });
     },
 
+    pendingRefund: () => (awaiting === undefined ? undefined : { returnId: awaiting.full.id, number: awaiting.full.number }),
+
+    confirmPendingRefund,
+
     refund: async (input) => {
+      // A refund whose answer was lost is resolved first, under its own id — never taken again as a new one (A8).
+      if (awaiting !== undefined) {
+        if (awaiting.full.id === input.id) return confirmPendingRefund();
+        throw new RefundUncertainError(awaiting.full.id, `Wait. The till is still checking with the store computer whether refund ${awaiting.full.number} was saved. Do not hand back cash and do not take another refund yet.`);
+      }
       const full: CommitReturnInput = { ...input, laneId: lane('take a refund'), processedBy: who('take a refund') };
+      // OB-252: no customer is named on a guest-only till — so no store credit and no customer reference. Before anything.
+      if (config.guestSalesOnly === true && (full.refundTender === 'store_credit' || full.customerRef !== undefined
+        || (full.exchange?.balanceTender === 'store_credit'))) {
+        throw new LocalRefundRefusedError(full.id, GUEST_ONLY_REFUND_WORDS);
+      }
 
       // Decide first — an invalid refund is refused before anything is written anywhere (the sale
       // path's "decide, then record" order). `assertReturnValid` throws the specific M13 error and
@@ -317,22 +376,16 @@ export function createTillSession(
       // back cash. Absent a durable port (a standalone/demo shell) the refund is recorded locally
       // only; a real lane always supplies one.
       if (ports.durableReturn !== undefined) {
-        const outcome = await ports.durableReturn(full.id, toReturnRecord(full));
+        const record = toReturnRecord(full);
+        const outcome = await ports.durableReturn(full.id, record);
         if (!outcome.committed) {
-          // Explicit, distinct outcomes the cashier and caller must tell apart. Unconfirmed (a lost
-          // reply — RR-F02) is "may have recorded, do not re-run"; a conflict (id reused for different
-          // money — RR-F03) and an over-return (more than the receipt entitles — RR-F04) are "this is
-          // wrong"; anything else is a plain durable-write refusal ("try elsewhere").
+          // Unconfirmed (a lost reply — RR-F02 · A8) is "may have recorded, do not re-run": the till keeps the EXACT record
+          // and re-sends it under the same id (`confirmPendingRefund`) until the box answers; nothing else is taken meanwhile.
           if (outcome.unconfirmed === true) {
+            awaiting = { full, record };
             throw new RefundUncertainError(full.id, outcome.laneMessage);
           }
-          if (outcome.refusedBecause === 'idempotency_conflict') {
-            throw new RefundConflictError(full.id, outcome.laneMessage);
-          }
-          if (outcome.refusedBecause === 'over_return') {
-            throw new RefundNotEntitledError(full.id, outcome.laneMessage);
-          }
-          throw new LocalRefundRefusedError(full.id, outcome.laneMessage);
+          throwRefusal(full.id, outcome);
         }
       }
 

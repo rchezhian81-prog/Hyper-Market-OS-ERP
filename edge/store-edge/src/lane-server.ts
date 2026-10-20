@@ -83,6 +83,10 @@ export const LANE_HOST = '127.0.0.1';
 /** The write routes this socket serves — a sale, and a refund. Both loopback-only, both POST. */
 const LANE_ROUTES = ['/lane/sales', '/lane/returns', '/lane/concession-tags'] as const;
 
+/** OB-252: the box's words when a customer or loyalty reaches a guest-only box. */
+const GUEST_ONLY_SALE = 'Guest sales only on this till during the pilot: no customer mobile number and no loyalty points or store credit.';
+const GUEST_ONLY_REFUND = 'Guest sales only on this till during the pilot: a refund cannot go to a customer\'s account as store credit, and no customer number is taken. Choose cash, card or UPI. Nothing was recorded.';
+
 /**
  * The one READ route: look up a bill this lane rang, for the refund screen (M13-FR-01). A GET, so it
  * mutates nothing — the RR-F01 "a text/plain write slipped through" problem cannot arise, because
@@ -509,6 +513,13 @@ export function startLaneServer(input: {
    * the cashier's words, from this box's own catalogue and scales (`lane-scales.ts`). No override. Absent → not judged here.
    */
   readonly tillRules?: { check(record: Record<string, unknown>): import('./lane-scales').TillRulesAnswer };
+  /**
+   * OB-252 (owner, 20 Oct 2026, "Guest sales only"): read live — the store pack's `policies.guestSalesOnly` or this box's
+   * own `EDGE_GUEST_SALES_ONLY=1`. While true, this box keeps no customer on a sale or a refund: a keyed number is dropped
+   * before the disk and the answer says so (`loyalty: 'guest_sales_only'`); points, store credit and a store-credit refund
+   * are refused before the disk in words; the balance route refuses. The till's own rule, again, at the box.
+   */
+  readonly guestSalesOnly?: () => boolean;
 }): Promise<LaneServer> {
   const maxBytes = input.maxBytes ?? 256 * 1024;
 
@@ -700,6 +711,7 @@ export function startLaneServer(input: {
       const refused = (refusedBecause: string, laneMessage: string) => ({ known: false, refusedBecause, laneMessage });
       const ops = input.operators;
       if (input.loyalty === undefined || input.memberCode === undefined) { send(res, 404, refused('not_served', 'This store computer does not keep loyalty balances.'), cors); req.resume(); return; }
+      if (input.guestSalesOnly?.() === true) { send(res, 200, refused('guest_sales_only', GUEST_ONLY_SALE), { ...cors, 'cache-control': 'no-store' }); req.resume(); return; }
       const authRefusal = laneCallRefusal(req.headers.origin, req.headers['content-type']);
       if (authRefusal !== undefined) { send(res, authRefusal.status, refused('unauthorized_request', authRefusal.reason), cors); req.resume(); return; }
       if (ops !== undefined) {
@@ -1361,13 +1373,16 @@ export function startLaneServer(input: {
         // member code, before the seal and before the disk, so the number is never written anywhere; a code the till sent
         // itself is dropped — only this box makes one. A number that is not one, or a box with no loyalty, keeps no
         // member and the sale goes ahead (hard rule #1); the answer says which.
-        let loyaltyNote: 'member_named' | 'number_not_valid' | 'loyalty_not_on_this_box' | undefined;
+        let loyaltyNote: 'member_named' | 'number_not_valid' | 'loyalty_not_on_this_box' | 'guest_sales_only' | undefined;
+        const guestOnly = input.guestSalesOnly?.() === true;
         if (!isTag && !isReturn && parsed !== null && typeof parsed === 'object') {
           const { customerMobile, customerRef: _tillSent, ...rest } = parsed as Record<string, unknown>;
           void _tillSent;
           let memberRef: string | undefined;
           if (typeof customerMobile === 'string' && customerMobile.trim() !== '') {
-            if (input.memberCode === undefined) loyaltyNote = 'loyalty_not_on_this_box';
+            // OB-252: a guest-only box keeps no customer — the number is dropped unread, and the answer says so.
+            if (guestOnly) loyaltyNote = 'guest_sales_only';
+            else if (input.memberCode === undefined) loyaltyNote = 'loyalty_not_on_this_box';
             else {
               memberRef = input.memberCode(customerMobile);
               loyaltyNote = memberRef === undefined ? 'number_not_valid' : 'member_named';
@@ -1377,6 +1392,16 @@ export function startLaneServer(input: {
         }
         // A refund's customer (store credit is issued to them): a keyed mobile number becomes the member code HERE too, so
         // no phone number reaches the refund log either (PF-09 step 3 · P-04). Any other reference is carried as before.
+        // OB-252: a guest-only box names no customer on a refund either — so no store credit, which is money on one.
+        if (isReturn && guestOnly && parsed !== null && typeof parsed === 'object') {
+          const r = parsed as Record<string, unknown>;
+          const exchange = r['exchange'] !== null && typeof r['exchange'] === 'object' ? r['exchange'] as Record<string, unknown> : undefined;
+          if (r['refundTender'] === 'store_credit' || exchange?.['balanceTender'] === 'store_credit'
+            || (typeof r['customerMobile'] === 'string' && r['customerMobile'] !== '') || (typeof r['customerRef'] === 'string' && r['customerRef'] !== '')) {
+            send(res, 200, { committed: false, refusedBecause: 'guest_sales_only', laneMessage: GUEST_ONLY_REFUND }, cors);
+            return;
+          }
+        }
         if (isReturn && parsed !== null && typeof parsed === 'object' && input.memberCode !== undefined) {
           const { customerMobile, ...rest } = parsed as Record<string, unknown>;
           const keyed = typeof customerMobile === 'string' && customerMobile.trim() !== '' ? customerMobile
@@ -1520,6 +1545,10 @@ export function startLaneServer(input: {
         // the balances — and saved — one at a time, so two tills cannot spend the same value between the check and the disk.
         const spends = !isTag && !isReturn && Array.isArray((parsed as Record<string, unknown>)['tenders'])
           && ((parsed as Record<string, unknown>)['tenders'] as unknown[]).some((t) => t !== null && typeof t === 'object' && (((t as Record<string, unknown>)['kind'] === 'loyalty_points') || (t as Record<string, unknown>)['kind'] === 'store_credit'));
+        if (spends && guestOnly) {
+          send(res, 200, { committed: false, refusedBecause: 'guest_sales_only', laneMessage: `${GUEST_ONLY_SALE} Nothing was saved — take another payment.` }, cors);
+          return;
+        }
         if (spends && input.loyalty === undefined) {
           send(res, 200, { committed: false, refusedBecause: 'loyalty_not_on_this_box', laneMessage: 'This store computer cannot check points or store credit, so they cannot be spent here. Take another payment. Nothing was saved.' }, cors);
           return;

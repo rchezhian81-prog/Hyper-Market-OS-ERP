@@ -6,6 +6,7 @@ import { startEdge } from '../../edge/store-edge/src/main';
 import { LANE_HOST } from '../../edge/store-edge/src/lane-server';
 import { readLog } from '../../edge/store-edge/src/file-log';
 import { bootPos, laneDurable, laneDurableReturn } from '../../apps/pos/src/browser-entry';
+import { SaleUnconfirmedError } from '../../apps/pos/src/session';
 import { money } from '../../packages/contracts/src/money';
 import { prepareTillBox, holdSignedInAt } from '../support/till-operator';
 
@@ -92,14 +93,17 @@ describe('a sale rung on the screen reaches this till\'s disk', () => {
     expect(edge.outbox.unsentCount()).toBe(1);
   });
 
-  it('REFUSES the sale when this till\'s store is not running', async () => {
-    // The screen's honest default. A lane with nowhere to write must not take money — and the
-    // refusal reaches the cashier in words, before the receipt exists.
-    const view = bootPos({ laneId: 'lane-1', cashierId: 'u-lanecash', durable: laneDurable(1) }); // nothing listens on port 1
+  it('does NOT complete the sale when this till\'s store is not running — and does not call it refused either (A8)', async () => {
+    // Was: "REFUSES the sale … /not ready to take payment/". A store that does not answer cannot say whether it saved the
+    // sale (the answer may be what was lost), so the till holds the sale UNCONFIRMED and keeps asking under the same id
+    // (audit A8) — no receipt, no "sale complete", and no "do not take money" for a sale that may be saved.
+    const view = bootPos({ laneId: 'lane-1', cashierId: 'u-lanecash', durable: laneDurable(1, { retryDelayMs: 1 }) }); // nothing listens on port 1
     view.scan({ productId: 'P1', description: 'Amul Ghee Gold 1L', unitPriceMinor: 64_000, qty: 1 });
 
-    await expect(view.tenderCash('S-1', 'R-0001', '2026-08-05T10:00:00Z'))
-      .rejects.toThrow(/not ready to take payment/);
+    const outcome = await view.tenderCash('S-1', 'R-0001', '2026-08-05T10:00:00Z').catch((e: unknown) => e);
+    expect(outcome).toBeInstanceOf(SaleUnconfirmedError);
+    expect((outcome as SaleUnconfirmedError).laneMessage).not.toMatch(/do not take money|not ready to take payment/i);
+    expect(view.state()).toBe('unconfirmed');
   });
 });
 

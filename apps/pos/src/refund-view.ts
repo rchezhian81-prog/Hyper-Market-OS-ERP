@@ -207,26 +207,35 @@ export function createRefundView(deps: RefundViewDeps): RefundView {
       ...(draft.exchange === undefined ? {} : { exchange: draft.exchange }),
     };
 
-    try {
-      const committed = await deps.refund(input);
-      // Cash/store credit settled at the lane → hand it over. Card/UPI is a reversal the provider has
-      // not performed → pending, and the customer is told that, not shown a completed refund (M13-FR-04).
-      if (committed.refundStatus === 'pending') {
-        return {
-          kind: 'pending', refundMinor: committed.refund.minor, number: committed.number,
-          laneMessage: 'Refund sent for reversal. It is PENDING — do not hand over cash; the money returns to the card/UPI.',
-        };
-      }
-      return {
-        kind: 'settled', refundMinor: committed.refund.minor, number: committed.number,
-        laneMessage: 'Refund recorded. Hand over the refund.',
-      };
-    } catch (e) {
-      return mapError(e);
-    }
+    return refundOutcomeOf(() => deps.refund(input));
   };
 
   return { returnable, maxRefundMinor, needsApproval, submit };
+}
+
+/**
+ * Run a durable refund call and resolve it to exactly one screen state — never throws. Shared by the first submit and
+ * by the re-check of a refund whose answer was lost (`TillSession.confirmPendingRefund`, RR-F02 · A8), so a refund
+ * confirmed late is shown exactly as one confirmed at once.
+ */
+export async function refundOutcomeOf(run: () => Promise<CommittedReturn>): Promise<RefundScreenOutcome> {
+  try {
+    const committed = await run();
+    // Cash/store credit settled at the lane → hand it over. Card/UPI is a reversal the provider has
+    // not performed → pending, and the customer is told that, not shown a completed refund (M13-FR-04).
+    if (committed.refundStatus === 'pending') {
+      return {
+        kind: 'pending', refundMinor: committed.refund.minor, number: committed.number,
+        laneMessage: 'Refund sent for reversal. It is PENDING — do not hand over cash; the money returns to the card/UPI.',
+      };
+    }
+    return {
+      kind: 'settled', refundMinor: committed.refund.minor, number: committed.number,
+      laneMessage: 'Refund recorded. Hand over the refund.',
+    };
+  } catch (e) {
+    return mapError(e);
+  }
 }
 
 /**

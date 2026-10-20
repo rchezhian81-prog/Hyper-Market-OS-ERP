@@ -282,6 +282,11 @@ export const STORE_EDGE_CONFIG: readonly Spec[] = [
    */
   { key: 'EDGE_LANE_TRUST_FORWARDED_USER', optional: true, oneOf: ['0', '1'] },
   /**
+   * OB-252 (owner, 20 Oct 2026, "Guest sales only"): `1` → the tills this box serves take no customer mobile number and no
+   * loyalty (the store pack's `policies.guestSalesOnly` can also turn it on). The till shows it whenever it is on.
+   */
+  { key: 'EDGE_GUEST_SALES_ONLY', optional: true, oneOf: ['0', '1'] },
+  /**
    * The box's till-credentials file (ADR-0020): the PIN verifiers the `till-pin` command writes, owner-only. Absent → the
    * file `till-credentials.json` in the data directory.
    */

@@ -232,6 +232,21 @@
       .refusal[data-tone="success"] button { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
       .refusal[data-tone="success"] button:focus-visible { outline-color: var(--on-ok-surface); }
 
+      /* A8: the till is waiting for the store computer's answer — the whole screen, so nothing else can be pressed. */
+      .checking {
+        position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; padding: var(--space-6);
+        background: var(--danger-surface); color: var(--on-danger);
+      }
+      .checking[hidden] { display: none; }
+      .checking-inner { display: grid; gap: var(--space-4); max-width: 46rem; }
+      .checking strong { font-size: 28px; line-height: var(--leading-tight); }
+      .checking p { margin: 0; font-size: 20px; line-height: 1.45; }
+      .checking .checking-asked { font-size: 16px; font-variant-numeric: var(--numbers); }
+      .checking-actions { display: flex; flex-wrap: wrap; gap: var(--space-4); }
+      .checking button { min-height: var(--tap); min-width: 12rem; padding: 0 var(--space-6);
+        background: var(--panel); border-color: var(--panel); color: var(--danger-text); font-weight: 700;
+      }
+
       /* Counting the drawer: one row per denomination, a big count in the middle. At a desk the nine rows sit in two
          columns, largest note first down the left, so the whole drawer is on screen without scrolling. */
       #count .sheet-inner { width: min(880px, 100%); }
@@ -274,6 +289,8 @@
 
     <p class="stale" id="stale" hidden role="status"></p>
     <p class="stale" id="offers-refused" hidden role="status"></p>
+    <!-- OB-252: guest sales only during the pilot — shown whenever it is on, so no customer number is a silent drop. -->
+    <p class="stale" id="guest-only" hidden role="status"></p>
     <main>
       <div class="bill">
         <table id="bill-table">
@@ -373,6 +390,23 @@
       <!-- B13 · M31-FR-02: after a sale, the bill exactly as it prints (from @sre/receipt) — a gold piece's HUID under its line. -->
       <pre class="receipt" id="refusal-receipt" aria-label="The bill" hidden></pre>
       <button id="refusal-ok" type="button">I have read this</button>
+    </div>
+
+    <!--
+      A8: a sale or refund whose answer from the store computer was lost. It covers the whole till — nothing else can be
+      done — and stays until the store computer has said "saved" or "not saved". The till asks again by itself; the
+      button only asks sooner.
+    -->
+    <div class="checking" id="checking" hidden role="alertdialog" aria-live="assertive" aria-labelledby="checking-title" aria-describedby="checking-text">
+      <div class="checking-inner">
+        <strong id="checking-title">Checking with the store computer</strong>
+        <p id="checking-text"></p>
+        <p class="checking-asked" id="checking-asked"></p>
+        <div class="checking-actions">
+          <button id="checking-now" type="button">Ask again now</button>
+          <button id="checking-lang" class="lang" type="button" aria-label="Language">EN / த</button>
+        </div>
+      </div>
     </div>
 
     <!--

@@ -122,6 +122,16 @@ export interface PosView {
   tenderCash(saleId: string, receiptNumber: string, atIsoUtc: string): Promise<string>;
 
   /**
+   * A tender rejects with `SaleUnconfirmedError` when the store computer's answer was lost (audit A8): the sale MAY be
+   * saved. This asks again — the SAME record under the SAME sale id, so it can never make a second sale — and resolves
+   * the receipt number once the box says it is saved; rejects with `LocalCommitRefusedError` once it says it is not;
+   * rejects with `SaleUnconfirmedError` again while it does not answer.
+   */
+  confirmPendingSale(): Promise<string>;
+  /** The sale still waiting for the store computer's answer — its id and bill number — or null. */
+  pendingSale(): { readonly saleId: string; readonly number: string } | null;
+
+  /**
    * Take a card or UPI payment.
    *
    * `outcome` is what the payment terminal actually said, and the three answers are genuinely
@@ -339,6 +349,15 @@ export function createPosView(
       // the network.
       const sale = await session.commit(saleId, receiptNumber, atIsoUtc, tenders);
       return sale.number;
+    },
+
+    async confirmPendingSale(): Promise<string> {
+      const sale = await session.confirmPendingSale();
+      return sale.number;
+    },
+
+    pendingSale() {
+      return session.pendingSale() ?? null;
     },
 
     async tenderCardOrUpi(input): Promise<string> {

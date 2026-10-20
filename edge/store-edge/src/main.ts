@@ -737,6 +737,15 @@ export async function startEdge(
     return v === undefined || v.trim() === '' ? undefined : v.trim();
   };
   const laneOfBox = laneIdOfThisBox();
+
+  // OB-252 (owner, 20 Oct 2026, "Guest sales only"): this box's own setting, or the store pack's — read live, because a
+  // later pull may replace the pack. Who turned it on is said, so the switch is never a mystery on the till.
+  const guestSalesOnly = (): { readonly on: boolean; readonly by: 'store_pack' | 'store_computer_setting' | null } => {
+    if (settings['EDGE_GUEST_SALES_ONLY'] === '1') return { on: true, by: 'store_computer_setting' };
+    if (pack.policies.known && pack.policies.value.guestSalesOnly === true) return { on: true, by: 'store_pack' };
+    return { on: false, by: null };
+  };
+  if (settings['EDGE_GUEST_SALES_ONLY'] === '1') say('guest sales only (OB-252, EDGE_GUEST_SALES_ONLY=1): the tills this box serves take no customer mobile number and no loyalty.');
   say(laneOfBox === undefined
     ? 'no EDGE_LANE_ID is set: the till this box serves will refuse to take payment until this box is told which lane it is.'
     : `this box is lane ${laneOfBox}: every sale it rings names it.`);
@@ -1575,6 +1584,8 @@ export async function startEdge(
     recordTillActivity,
     // PF-09 step 2: the cashier's keyed mobile number becomes the loyalty member code HERE, before the disk (P-04).
     memberCode: (mobile: string) => memberRefFor(loyaltyKey, mobile),
+    // OB-252: while guest sales only is on, no customer reaches this box's disk and no loyalty is spent.
+    guestSalesOnly: () => guestSalesOnly().on,
     // PF-09 step 3: a sale paying with points or store credit is decided against this box's copy, one at a time.
     loyalty: {
       check: (record) => loyaltyWallets.check(record),
@@ -1687,6 +1698,8 @@ export async function startEdge(
     ...(laneOfBox === undefined ? {} : { laneId: laneOfBox }),
     // B13: the HUIDs this box has sold, read per request, so a reloaded till refuses a piece another till sold.
     soldHuids: () => soldHuids.list(),
+    // OB-252: the till is told whether it takes guest sales only, per request.
+    guestSalesOnly,
     // The manager's day close (M14-FR-04) posts to this box's lane socket — tell the screen where it is.
     // Only when this box actually serves a lane; otherwise the screen stays read-only (a local preview).
     ...(lane === null ? {} : { laneWriteBase: `http://${LANE_HOST}:${lane.port}` }),

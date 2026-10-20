@@ -206,6 +206,21 @@ const WORDS = {
     noReceiptManagerHint: 'Every return without a receipt needs a manager — a different person from the cashier',
     exchange: 'Exchange',
     member: 'Loyalty member',
+    // OB-252: guest sales only during the pilot — said on the till whenever it is on, never a silent drop.
+    guestOnlyStrip: 'Guest sales only (pilot): this till takes no customer mobile number and no loyalty. The old billing system keeps loyalty as today.',
+    guestOnlyOption: 'Loyalty member — not on this till (guest sales only)',
+    guestOnlyTitle: 'Guest sales only',
+    guestOnlyMsg: 'Guest sales only on this till during the pilot: no customer mobile number and no loyalty points or store credit. Ring the sale as a guest. The old billing system keeps loyalty as today.',
+    // A8: the store computer's answer was lost — the till keeps asking, under the same sale id, until it knows.
+    checkingTitle: 'Checking with the store computer — do not ring this again',
+    checkingSale: 'The store computer has not answered yet, so the till does not know whether sale {number} was saved. Do not ring it again and do not start another sale. The till keeps asking and will say "saved" or "not saved".',
+    checkingRefund: 'The store computer has not answered yet, so the till does not know whether refund {number} was saved. Do not hand back cash and do not run it again. The till keeps asking and will say "saved" or "not saved".',
+    checkingAsked: 'Last asked at',
+    checkNow: 'Ask again now',
+    notSavedTitle: 'Not saved',
+    notSavedSale: 'The store computer says sale {number} was NOT saved. Nothing was recorded for it.',
+    notSavedRefund: 'The store computer says refund {number} was NOT saved. Do not hand back cash.',
+    savedLate: 'The store computer says it was saved.',
     memberRemove: 'Remove loyalty member ••••{last4}',
     memberAsk: 'Customer\'s mobile number',
     memberHint: 'Key the 10-digit number the customer joined with. Points are added when the sale reaches head office.',
@@ -220,6 +235,7 @@ const WORDS = {
     exchangeHow: 'How does the customer pay?',
     exchangeDone: 'Exchange recorded',
     exchangeStop: 'Do not hand over the new goods',
+    exchangeCreditOnly: 'The credit for the goods coming back is recorded, but the replacement sale was NOT rung. Do not hand over the new goods — get the manager to complete the exchange.',
     declinedMsg: 'The payment was declined. The sale is NOT complete — do not hand over the goods. Ask for another payment method.',
     noAnswerMsg: 'The card machine has not answered, so we do not know whether the customer has paid. The sale is NOT complete — do not hand over the goods. Check the machine, and if it is unclear, ask the manager before trying again.',
   },
@@ -339,6 +355,19 @@ const WORDS = {
     noReceiptManagerHint: 'ரசீது இல்லாத ஒவ்வொரு திரும்பப் பெறலுக்கும் ஒரு மேலாளர் தேவை — காசாளர் அல்லாத வேறு ஒருவர்',
     exchange: 'பரிமாற்றம்',
     member: 'லாயல்டி உறுப்பினர்',
+    guestOnlyStrip: 'விருந்தினர் விற்பனை மட்டும் (பைலட்): இந்தக் கல்லா வாடிக்கையாளர் கைபேசி எண்ணையோ லாயல்டியையோ எடுப்பதில்லை. பழைய பில்லிங் அமைப்பு லாயல்டியை இன்றுபோல் வைத்திருக்கும்.',
+    guestOnlyOption: 'லாயல்டி உறுப்பினர் — இந்தக் கல்லாவில் இல்லை (விருந்தினர் விற்பனை மட்டும்)',
+    guestOnlyTitle: 'விருந்தினர் விற்பனை மட்டும்',
+    guestOnlyMsg: 'பைலட் காலத்தில் இந்தக் கல்லாவில் விருந்தினர் விற்பனை மட்டும்: வாடிக்கையாளர் கைபேசி எண் இல்லை, லாயல்டி புள்ளிகளோ கடை வரவோ இல்லை. விற்பனையை விருந்தினராக பில் செய்யவும். பழைய பில்லிங் அமைப்பு லாயல்டியை இன்றுபோல் வைத்திருக்கும்.',
+    checkingTitle: 'கடை கணினியிடம் சரிபார்க்கிறது — இதை மீண்டும் பில் செய்ய வேண்டாம்',
+    checkingSale: 'கடை கணினி இன்னும் பதில் தரவில்லை, எனவே விற்பனை {number} சேமிக்கப்பட்டதா என்று கல்லாவுக்குத் தெரியவில்லை. இதை மீண்டும் பில் செய்ய வேண்டாம், வேறு விற்பனையையும் தொடங்க வேண்டாம். கல்லா தொடர்ந்து கேட்கிறது; "சேமிக்கப்பட்டது" அல்லது "சேமிக்கப்படவில்லை" என்று சொல்லும்.',
+    checkingRefund: 'கடை கணினி இன்னும் பதில் தரவில்லை, எனவே திரும்பப் பணம் {number} சேமிக்கப்பட்டதா என்று கல்லாவுக்குத் தெரியவில்லை. பணத்தைக் கொடுக்க வேண்டாம், இதை மீண்டும் செய்ய வேண்டாம். கல்லா தொடர்ந்து கேட்கிறது; "சேமிக்கப்பட்டது" அல்லது "சேமிக்கப்படவில்லை" என்று சொல்லும்.',
+    checkingAsked: 'கடைசியாகக் கேட்ட நேரம்',
+    checkNow: 'இப்போதே மீண்டும் கேள்',
+    notSavedTitle: 'சேமிக்கப்படவில்லை',
+    notSavedSale: 'விற்பனை {number} சேமிக்கப்படவில்லை என்று கடை கணினி சொல்கிறது. அதற்கு எதுவும் பதிவு செய்யப்படவில்லை.',
+    notSavedRefund: 'திரும்பப் பணம் {number} சேமிக்கப்படவில்லை என்று கடை கணினி சொல்கிறது. பணத்தைக் கொடுக்க வேண்டாம்.',
+    savedLate: 'சேமிக்கப்பட்டது என்று கடை கணினி சொல்கிறது.',
     memberRemove: 'லாயல்டி உறுப்பினரை நீக்கு ••••{last4}',
     memberAsk: 'வாடிக்கையாளரின் கைபேசி எண்',
     memberHint: 'வாடிக்கையாளர் சேர்ந்த 10 இலக்க எண்ணை உள்ளிடவும். விற்பனை தலைமை அலுவலகத்தை அடைந்ததும் புள்ளிகள் சேர்க்கப்படும்.',
@@ -353,6 +382,7 @@ const WORDS = {
     exchangeHow: 'வாடிக்கையாளர் எப்படிச் செலுத்துகிறார்?',
     exchangeDone: 'பரிமாற்றம் பதிவு செய்யப்பட்டது',
     exchangeStop: 'புதிய பொருட்களைக் கொடுக்க வேண்டாம்',
+    exchangeCreditOnly: 'திரும்பும் பொருட்களுக்கான வரவு பதிவு செய்யப்பட்டது, ஆனால் மாற்று விற்பனை பில் செய்யப்படவில்லை. புதிய பொருட்களைக் கொடுக்க வேண்டாம் — பரிமாற்றத்தை முடிக்க மேலாளரை அழைக்கவும்.',
     declinedMsg: 'பணம் மறுக்கப்பட்டது. விற்பனை முடியவில்லை — பொருட்களைக் கொடுக்க வேண்டாம். வேறு முறையில் பணம் கேட்கவும்.',
     noAnswerMsg: 'கார்டு இயந்திரம் பதில் சொல்லவில்லை. வாடிக்கையாளர் பணம் செலுத்தினாரா என்று தெரியவில்லை. விற்பனை முடியவில்லை — பொருட்களைக் கொடுக்க வேண்டாம். இயந்திரத்தைச் சரிபார்க்கவும்; தெளிவில்லை என்றால் மேலாளரிடம் கேட்கவும்.',
   },
@@ -465,6 +495,8 @@ function demoSession() {
 }
 
 const session = window.posSession ?? demoSession();
+/** OB-252: this till takes guest sales only — no customer mobile number, no loyalty — when its store computer says so. */
+const guestOnly = () => !!(session.guestSalesOnly && session.guestSalesOnly());
 let selectedLineId = null;
 
 // ── Who is on the till (SP-4b · F09) ────────────────────────────────────────
@@ -604,6 +636,101 @@ function tell(title, message, tone = STOP, bill = null) {
   el('refusal-ok').focus();
 }
 el('refusal-ok').addEventListener('click', () => { el('refusal').hidden = true; });
+
+// ── A sale or refund whose answer was lost (audit A8) ───────────────────────
+//
+// The store computer saved it, or did not — the till does not know, because the answer never came back. Saying "not
+// saved" here is how a shop ends up with a phantom sale and a second one for the same customer; saying "saved" is how it
+// hands over goods for nothing. So the till says neither: it covers the screen, keeps asking the store computer under the
+// SAME id (the box answers a repeat with the original outcome and never saves twice), and only says "saved" or "not
+// saved" once the box has answered. Nothing else can be done on the till meanwhile. A reload does not escape it: what is
+// being checked is kept in this tab's session storage (ids only — never a customer's number) and asked about on start.
+const PENDING_WRITE_KEY = 'sre-pos-pending-write';
+const CHECK_EVERY_MS = 2_000;
+function rememberPendingWrite(entry) {
+  try { if (entry) window.sessionStorage.setItem(PENDING_WRITE_KEY, JSON.stringify(entry)); else window.sessionStorage.removeItem(PENDING_WRITE_KEY); } catch { /* the in-page check still runs; only a reload loses it */ }
+}
+function pendingWrite() {
+  try { const raw = window.sessionStorage.getItem(PENDING_WRITE_KEY); return raw ? JSON.parse(raw) : null; } catch { return null; }
+}
+const isUnconfirmed = (e) => !!e && (e.name === 'SaleUnconfirmedError' || e.name === 'RefundUncertainError');
+/**
+ * Cover the till and ask `again()` until it stops answering "unconfirmed". Resolves what `again` resolved; rejects with
+ * what it rejected when that is an answer (refused). `words()` is what the cover says while it waits, in the language
+ * shown — the cover has its own language button, because nothing under it can be pressed.
+ */
+async function untilTheBoxAnswers(again, words, entry) {
+  rememberPendingWrite(entry);
+  const cover = el('checking');
+  let askedAt = null;
+  const paint = () => {
+    setText('checking-title', t('checkingTitle'));
+    setText('checking-text', words());
+    setText('checking-asked', askedAt === null ? '' : `${t('checkingAsked')} ${askedAt.toLocaleTimeString()}`);
+    setText('checking-now', t('checkNow'));
+  };
+  paint();
+  cover.hidden = false;
+  let wake = null;
+  el('checking-now').onclick = () => { if (wake) wake(); };
+  el('checking-lang').onclick = () => { el('lang').click(); paint(); };
+  try {
+    for (;;) {
+      await new Promise((resolve) => { wake = resolve; setTimeout(resolve, CHECK_EVERY_MS); });
+      wake = null;
+      askedAt = new Date();
+      paint();
+      try {
+        const answer = await again();
+        if (answer === 'unknown') continue;
+        return answer;
+      } catch (e) {
+        if (isUnconfirmed(e)) continue;
+        throw e;
+      }
+    }
+  } finally {
+    cover.hidden = true;
+    el('checking-now').onclick = null;
+    el('checking-lang').onclick = null;
+    rememberPendingWrite(null);
+  }
+}
+/**
+ * A tender's rejection, handled (A8): any refusal is passed on as it is; a sale whose answer was LOST is asked about
+ * again, under its own id, until the box says — resolving the receipt number once it says saved, rejecting with the
+ * box's refusal (headed "not saved") once it says not saved. Used as `await session.tenderCash(…).catch(lostAnswer)`.
+ */
+async function lostAnswer(e) {
+  if (!e || e.name !== 'SaleUnconfirmedError') throw e;
+  const number = e.number || '';
+  try {
+    return await untilTheBoxAnswers(() => session.confirmPendingSale(), () => t('checkingSale').replace('{number}', number), { kind: 'sale', saleId: e.saleId, number });
+  } catch (refused) {
+    throw Object.assign(new Error('not saved'), { notSavedTitle: true, laneMessage: `${t('notSavedSale').replace('{number}', number)}\n${refused && refused.laneMessage ? refused.laneMessage : ''}` });
+  }
+}
+/** A refund outcome — and if its answer was lost, keep asking until the box says which (RR-F02 · A8). */
+async function refundOutcome(outcome, number, originalSaleId) {
+  if (!outcome || outcome.kind !== 'uncertain' || !session.confirmPendingRefund) return outcome;
+  return untilTheBoxAnswers(async () => {
+    const again = await session.confirmPendingRefund();
+    return again.kind === 'uncertain' ? 'unknown' : again;
+  }, () => t('checkingRefund').replace('{number}', number), { kind: 'refund', returnId: `RT-${number}`, number, originalSaleId: originalSaleId || null });
+}
+/** After a reload: the page lost what it sent, so it asks the store computer whether that sale or refund is on its disk. */
+async function resolveAfterReload() {
+  const entry = pendingWrite();
+  if (!entry || !session.saleOnBox) { rememberPendingWrite(null); return; }
+  const isSale = entry.kind === 'sale';
+  const answer = await untilTheBoxAnswers(
+    () => (isSale ? session.saleOnBox(entry.saleId) : session.refundOnBox(entry.returnId, entry.originalSaleId)),
+    () => t(isSale ? 'checkingSale' : 'checkingRefund').replace('{number}', entry.number || ''),
+    entry,
+  );
+  if (answer === 'saved') tell(isSale ? t('approved') : t('refundDone'), `${entry.number} — ${t('savedLate')}`, SUCCESS);
+  else tell(t('notSavedTitle'), t(isSale ? 'notSavedSale' : 'notSavedRefund').replace('{number}', entry.number || ''), STOP);
+}
 
 // ── The panel ───────────────────────────────────────────────────────────────
 
@@ -1137,7 +1264,7 @@ el('tender').addEventListener('click', async () => {
     // Awaited, and the await is the guarantee: the receipt number does not exist until the sale is
     // on this till's disk (hard rule #1). There is nothing to print with before then.
     const sold = huidLines();
-    const receipt = await session.tenderCash(`S-${receiptNumber}`, receiptNumber, new Date().toISOString());
+    const receipt = await session.tenderCash(`S-${receiptNumber}`, receiptNumber, new Date().toISOString()).catch(lostAnswer);
     tell(`${t('changeDue')}: ${inr(change)}`, withReceiptNotice(withHuids(receipt, sold)), SUCCESS, printedBill());
     session.newSale();
     void refreshBadge();
@@ -1145,7 +1272,7 @@ el('tender').addEventListener('click', async () => {
     render();
   } catch (e) {
     // The model's words, unchanged.
-    tell(t('read'), e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e), STOP);
+    tell(e && e.notSavedTitle ? t('notSavedTitle') : t('read'), e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e), STOP);
   }
 });
 
@@ -1253,14 +1380,14 @@ async function takeCardOrUpi(kind, payable) {
     const receipt = await session.tenderCardOrUpi({
       saleId: `S-${receiptNumber}`, receiptNumber,
       atIsoUtc: new Date().toISOString(), kind, outcome, ...(ref ? { ref } : {}),
-    });
+    }).catch(lostAnswer);
     tell(`${t('approved')} — ${kind === 'card' ? t('card') : t('upi')}`, withReceiptNotice(withHuids(receipt, soldGold)), SUCCESS, printedBill());
     session.newSale();
     void refreshBadge();
     selectedLineId = null;
     render();
   } catch (e) {
-    tell(t('read'), e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e), STOP);
+    tell(e && e.notSavedTitle ? t('notSavedTitle') : t('read'), e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e), STOP);
   }
 }
 
@@ -1280,7 +1407,7 @@ async function splitPayment(payable) {
       tell(t('member'), t('splitWallet').replace('{last4}', wallet.last4 || session.loyaltyMemberLast4()).replace('{points}', String(wallet.points))
         .replace('{pointsValue}', inr(wallet.pointsValueMinor)).replace('{credit}', inr(wallet.storeCreditMinor)).replace('{asOf}', wallet.asOf ? new Date(wallet.asOf).toLocaleString() : '—'), STOP);
     }
-  } else if (session.loyaltyWallet) {
+  } else if (session.loyaltyWallet && !guestOnly()) {
     tell(t('read'), t('splitNoMember'), STOP);
   }
   const parts = [];
@@ -1329,14 +1456,14 @@ async function splitPayment(payable) {
   if (receiptNumber === null) return;
   try {
     const soldGold = huidLines();
-    const receipt = await session.tenderSplit({ saleId: `S-${receiptNumber}`, receiptNumber, atIsoUtc: new Date().toISOString(), parts });
+    const receipt = await session.tenderSplit({ saleId: `S-${receiptNumber}`, receiptNumber, atIsoUtc: new Date().toISOString(), parts }).catch(lostAnswer);
     tell(change > 0 ? `${t('changeDue')}: ${inr(change)}` : t('approved'), withReceiptNotice(withHuids(receipt, soldGold)), SUCCESS, printedBill());
     session.newSale();
     void refreshBadge();
     selectedLineId = null;
     render();
   } catch (e) {
-    tell(t('read'), e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e), STOP);
+    tell(e && e.notSavedTitle ? t('notSavedTitle') : t('read'), e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e), STOP);
   }
 }
 
@@ -1361,7 +1488,7 @@ el('more').addEventListener('click', async () => {
     ...(session.noSaleAtTill ? [{ value: 'no_sale', label: t('noSale') }] : []),
     ...(session.priceChangeAtTill && selectedLineId ? [{ value: 'price_change', label: t('priceChange') }] : []),
     // The customer's loyalty membership, by the mobile number they joined with (PF-09 step 2 · OB-28 "1").
-    ...(session.setLoyaltyMobile === undefined ? [] : session.loyaltyMemberLast4() === null
+    ...(guestOnly() ? [{ value: 'guest_only', label: t('guestOnlyOption') }] : session.setLoyaltyMobile === undefined ? [] : session.loyaltyMemberLast4() === null
       ? [{ value: 'member', label: t('member') }]
       : [{ value: 'member_remove', label: t('memberRemove').replace('{last4}', session.loyaltyMemberLast4()) }]),
   ];
@@ -1374,6 +1501,7 @@ el('more').addEventListener('click', async () => {
   if (what === 'close') return closeTheTill();
   if (what === 'give_up') return giveUpHeldBasket();
   if (what === 'member') return nameLoyaltyMember();
+  if (what === 'guest_only') { tell(t('guestOnlyTitle'), t('guestOnlyMsg'), STOP); return undefined; }
   if (what === 'no_sale') return openDrawerNoSale();
   if (what === 'price_change') return changeLinePrice();
   if (what === 'member_remove') { session.setLoyaltyMobile(null); tell(t('member'), t('memberRemoved'), SUCCESS); return undefined; }
@@ -1591,7 +1719,7 @@ async function startRefund() {
     { value: 'cash', label: t('cash') },
     { value: 'card', label: t('card') },
     { value: 'upi', label: t('upi') },
-    { value: 'store_credit', label: t('storeCredit') },
+    ...(guestOnly() ? [] : [{ value: 'store_credit', label: t('storeCredit') }]),
   ]);
   if (refundTender === null) return;
 
@@ -1629,6 +1757,8 @@ async function startRefund() {
       ...(approval ? { approval } : {}),
       ...(customerRef ? { customerRef } : {}),
     });
+    // A8 · RR-F02: an answer that was lost is asked again, under the same id, until the store computer says which.
+    outcome = await refundOutcome(outcome, number, bill.sale.saleId);
   } catch (e) {
     // submit is written not to throw, but a lost connection to the store can still reject here — treat
     // it as a stop, never as a silent success.
@@ -1725,7 +1855,7 @@ async function startExchange() {
       { value: 'cash', label: t('cash') },
       { value: 'card', label: t('card') },
       { value: 'upi', label: t('upi') },
-      { value: 'store_credit', label: t('storeCredit') },
+      ...(guestOnly() ? [] : [{ value: 'store_credit', label: t('storeCredit') }]),
     ]);
     if (refundTender === null) return;
     settlement.refundTender = refundTender;
@@ -1755,7 +1885,32 @@ async function startExchange() {
       ...(approval ? { approval } : {}),
     });
   } catch (e) {
+    // A8: the replacement sale's answer was lost. Keep asking under its own id; only then say whether it was saved.
+    if (e && e.name === 'SaleUnconfirmedError') {
+      try {
+        const receipt = await lostAnswer(e);
+        tell(t('exchangeDone'), `${t('savedLate')} RT-${number} · ${receipt}`, SUCCESS);
+        session.newSale();
+        void refreshBadge();
+        selectedLineId = null;
+        render();
+      } catch (refused) {
+        tell(t('exchangeStop'), refused && refused.laneMessage ? refused.laneMessage : String(refused), STOP);
+      }
+      return;
+    }
     tell(t('exchangeStop'), e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e), STOP);
+    return;
+  }
+  // A8 · RR-F02: the credit's answer was lost. Once the box says it is saved, the replacement sale is still not rung —
+  // the screen says so rather than finishing an exchange it did not finish.
+  if (outcome.kind === 'uncertain') {
+    const credit = await refundOutcome(outcome, number, bill.sale.saleId);
+    if (credit.kind === 'settled' || credit.kind === 'pending') {
+      tell(t('exchangeStop'), `${t('savedLate')} RT-${number}. ${t('exchangeCreditOnly')}`, STOP);
+      return;
+    }
+    showRefundOutcome(credit);
     return;
   }
   if (outcome.kind === 'done') {
@@ -1819,7 +1974,7 @@ async function startNoReceiptReturn() {
     { value: 'cash', label: t('cash') },
     { value: 'card', label: t('card') },
     { value: 'upi', label: t('upi') },
-    { value: 'store_credit', label: t('storeCredit') },
+    ...(guestOnly() ? [] : [{ value: 'store_credit', label: t('storeCredit') }]),
   ]);
   if (refundTender === null) return;
 
@@ -1850,6 +2005,8 @@ async function startNoReceiptReturn() {
       approval,
       ...(customerRef ? { customerRef } : {}),
     });
+    // A8 · RR-F02: no bill to look it up by, so the till keeps re-sending the same refund until the box answers.
+    outcome = await refundOutcome(outcome, number, null);
   } catch (e) {
     tell(t('refundStop'), e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e), STOP);
     return;
@@ -2005,7 +2162,7 @@ async function askAge(refusal, retry) {
 }
 window.addEventListener('keydown', (event) => {
   // A panel is open; the scan is not for us.
-  if (!el('sheet').hidden || !el('pay').hidden || !el('count').hidden || !el('refusal').hidden) return;
+  if (!el('sheet').hidden || !el('pay').hidden || !el('count').hidden || !el('refusal').hidden || !el('checking').hidden) return;
   if (event.key === 'Enter') {
     const raw = scanBuffer;
     scanBuffer = '';
@@ -2067,6 +2224,19 @@ function paintRefusedOffers() {
 }
 paintRefusedOffers();
 el('lang').addEventListener('click', paintRefusedOffers);
+
+// OB-252: guest sales only is SAID on the till whenever it is on — the member option is not simply missing.
+function paintGuestOnly() {
+  const strip = el('guest-only');
+  if (!strip) return;
+  strip.hidden = !guestOnly();
+  if (!strip.hidden) strip.textContent = t('guestOnlyStrip');
+}
+paintGuestOnly();
+el('lang').addEventListener('click', paintGuestOnly);
+
+// A8: a sale or refund that was still being checked when this page was reloaded is asked about before anything else.
+void resolveAfterReload();
 
 // The shell existed and nothing ever registered it, so nothing was ever cached and every one of
 // these screens fell back to its sample data the moment the box was unreachable.

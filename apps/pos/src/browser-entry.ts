@@ -18,7 +18,7 @@ import { CatalogueCache, type CatalogueSnapshot } from '../../../packages/catalo
 import { money } from '../../../packages/contracts/src/money';
 import type { TenderKind } from '../../../packages/contracts/src/enums';
 import type { DecidedRequest } from '../../../packages/approvals/src/approvals';
-import { PosSession, taxRateFromPercent, NoOperatorError, TillRuleRefusedError, type RefusedOffer } from './session';
+import { PosSession, taxRateFromPercent, NoOperatorError, TillRuleRefusedError, SaleUnconfirmedError, GUEST_SALES_ONLY_WORDS, type RefusedOffer } from './session';
 import type { LaneScales } from '../../../packages/restricted-sales/src/till-gate';
 import {
   createTillSession, TILL_CASH_WORDS_FOR_THE_LANE,
@@ -28,7 +28,7 @@ import { createPosView, type PosView } from './view-adapter';
 import { customerDisplayFrame, CUSTOMER_DISPLAY_CHANNEL, type CustomerDisplayFrame } from './customer-display';
 import { createDeviceHeartbeat, type DeviceHeartbeat, type DeviceStatus } from './device-heartbeat';
 import {
-  createRefundView, type RefundPolicy, type RefundLineChoice, type RefundScreenOutcome,
+  createRefundView, refundOutcomeOf, type RefundPolicy, type RefundLineChoice, type RefundScreenOutcome,
 } from './refund-view';
 import type { ReturnableLine } from '../../../packages/returns/src/return-register';
 import { assessExchange, type ExchangeBalanceKind } from '../../../packages/returns/src/exchange';
@@ -126,6 +126,11 @@ export interface PosLane {
    * already sold is refused at the scan with no network. Absent on a page from an older box.
    */
   readonly soldHuids?: readonly string[];
+  /**
+   * OB-252: whether this till takes guest sales only (no customer number, no loyalty) and who turned it on — the store
+   * pack or the store computer's own setting. Absent on a page from an older box: off.
+   */
+  readonly guestSalesOnly?: { readonly on: boolean; readonly by: 'store_pack' | 'store_computer_setting' | null };
 }
 
 /** The browser global this bundle attaches to (typed without needing the DOM lib). */
@@ -417,54 +422,102 @@ export function laneReceiptNumbers(port: number = DEFAULT_LANE_PORT): ReceiptNum
 
 export type DurableWrite = (saleId: string, record: string) => Promise<CommitOutcome>;
 
+/** What the till says while a sale's answer is still awaited (A8). Never "saved", never "do not take money". */
+export const SALE_UNCONFIRMED_WORDS = 'The store computer has not answered yet, so the till does not know whether this sale was saved. Do not ring it again. The till keeps asking until the store computer says saved or not saved.';
+/** What the till says while a refund's answer is still awaited (RR-F02 · A8). */
+export const REFUND_UNCONFIRMED_WORDS = 'This lane could not confirm the refund was saved yet. Do NOT hand back cash and do NOT run it again. The till keeps asking until the store computer says saved or not saved.';
+
+/** How many times, and how far apart, a write whose answer was lost is re-sent before the till says "unconfirmed". */
+export interface LaneRetry {
+  readonly attempts?: number;
+  readonly retryDelayMs?: number;
+}
+
 /**
  * The lane's durable write: post the sale to this till's own edge and wait for the answer.
  *
  * The wait is the point. `commit` does not return, the receipt number does not exist, and the
  * screen cannot say "Sale complete" until the disk has confirmed.
+ *
+ * **A lost reply is not a refusal (audit A8).** The edge has been idempotent on the sale id since GAP-SALE-IDEMPOTENCY-01
+ * (12 Sep 2026): the same record sent again is answered with the original outcome and writes nothing new. So a dropped
+ * answer is resolved the way a refund's always was — the SAME record is re-posted under the SAME id. Only when the box
+ * still does not answer is the outcome **unconfirmed**; the session then holds the sale and keeps asking
+ * (`PosSession.confirmPendingSale`). The till used to call a lost reply "Do not take money", which for a sale the box had
+ * in fact saved left a phantom sale (the drawer short) and, when the customer was rung again, a second sale.
  */
-export function laneDurable(port: number = DEFAULT_LANE_PORT): DurableWrite {
-  // A sale is NOT safe to re-post on a lost reply: the edge is not yet idempotent on the sale id
-  // (GAP-SALE-IDEMPOTENCY-01), so a blind retry could double-record. A lost reply is therefore a
-  // refusal, as before — the sale has no receipt yet and the customer is still there.
-  return laneDurableTo('/lane/sales', port,
-    'This lane is not ready to take payment. Do not take money — tell the manager and use another lane.',
-    { safeRetry: false });
+export function laneDurable(port: number = DEFAULT_LANE_PORT, retry: LaneRetry = {}): DurableWrite {
+  return laneDurableTo('/lane/sales', port, SALE_UNCONFIRMED_WORDS, {
+    ...retry,
+    // A sale is on the box when the box's own bill lookup finds it under this id.
+    onTheBox: async (id) => {
+      const found = await askLookup(port, id);
+      if (found === 'unknown') return 'unknown';
+      return found !== null && found.sale.saleId === id ? 'saved' : 'not_saved';
+    },
+  });
 }
 
 /**
  * The lane's durable write for a REFUND: post it to this till's own edge on `/lane/returns` and wait
- * (M13-FR-01). The mirror of `laneDurable`, with one difference that RR-F02 turns on: a lost reply is
- * resolved by re-posting under the SAME id, which the edge treats idempotently (RR-F03), so a retry
- * can never cause a second refund — it only learns whether the first attempt recorded.
+ * (M13-FR-01). The mirror of `laneDurable`: a lost reply is resolved by re-posting under the SAME id, which the edge
+ * treats idempotently (RR-F03), so a retry can never cause a second refund — it only learns whether the first attempt
+ * recorded (RR-F02).
  */
-export function laneDurableReturn(port: number = DEFAULT_LANE_PORT): DurableWrite {
-  return laneDurableTo('/lane/returns', port,
-    'This lane is not ready to record a refund. Do not hand back cash — tell the manager and use another lane.',
-    { safeRetry: true });
+export function laneDurableReturn(port: number = DEFAULT_LANE_PORT, retry: LaneRetry = {}): DurableWrite {
+  return laneDurableTo('/lane/returns', port, REFUND_UNCONFIRMED_WORDS, {
+    ...retry,
+    // A refund against a bill is on the box when that bill's lookup lists it. One with no bill (no receipt) cannot be
+    // looked up this way, so it stays unconfirmed rather than being guessed either way.
+    onTheBox: async (id, record) => {
+      const original = ((): unknown => { try { return (JSON.parse(record) as { originalSaleId?: unknown }).originalSaleId; } catch { return undefined; } })();
+      if (typeof original !== 'string' || original === '') return 'unknown';
+      const found = await askLookup(port, original);
+      if (found === 'unknown' || found === null) return 'unknown';
+      return found.refunds.some((r) => r.returnId === id) || found.returns.some((r) => r.returnId === id) ? 'saved' : 'not_saved';
+    },
+  });
+}
+
+/** The box's own bill lookup (read-only): the bill, `null` when the box says it has none, `'unknown'` when it did not answer. */
+async function askLookup(port: number, receiptOrId: string): Promise<SaleLookupResult | null | 'unknown'> {
+  try {
+    const response = await fetch(`${laneBase(port)}/lane/lookup?receipt=${encodeURIComponent(receiptOrId)}`);
+    const body = await response.json() as { found?: boolean; detail?: unknown } & Partial<SaleLookupResult>;
+    if (body.found === true && body.sale !== undefined) return { sale: body.sale, returns: body.returns ?? [], refunds: body.refunds ?? [] };
+    // `found: false` with a detail is the box failing to read its own logs — not an answer.
+    return body.found === false && body.detail === undefined ? null : 'unknown';
+  } catch {
+    return 'unknown';
+  }
 }
 
 /**
  * Post a record to one of the till's edge write routes and wait for its durable answer.
  *
- * A lost reply is not the same as a refusal (RR-F02). When the route is idempotent (`safeRetry`), a
- * dropped response is retried by re-posting the SAME record: the edge returns the original outcome for
- * a repeat, so the retry resolves whether the first attempt landed without any risk of a double
- * effect. Only when the store cannot be reached at all — after those retries — is the outcome
- * reported as **unconfirmed**: `committed` is false, but it must never be read as a definite failure
- * that invites running the refund again. For a non-idempotent route a lost reply stays a refusal.
+ * A lost reply is not the same as a refusal (RR-F02 · A8). Both routes are idempotent on the record's id, so a dropped
+ * response is retried by re-posting the SAME record: the edge returns the original outcome for a repeat, so the retry
+ * resolves whether the first attempt landed without any risk of a double effect.
+ *
+ * One more case is closed here: once a reply has been lost, a LATER answer that refuses (a check the box runs before its
+ * idempotency guard — the cashier's session ended, the pack changed) cannot be read as "not saved", because the first
+ * attempt may already be on the disk. The till then asks the box's own bill lookup: there → saved; not there → the
+ * refusal stands; no answer → unconfirmed. Only when the store cannot be reached at all is the outcome **unconfirmed**:
+ * `committed` is false, but it must never be read as a definite failure that invites running the write again.
  */
 function laneDurableTo(
   path: '/lane/sales' | '/lane/returns',
   port: number,
-  refusedLaneMessage: string,
-  opts: { readonly safeRetry: boolean; readonly attempts?: number; readonly retryDelayMs?: number },
+  unconfirmedWords: string,
+  opts: LaneRetry & { readonly onTheBox: (id: string, record: string) => Promise<'saved' | 'not_saved' | 'unknown'> },
 ): DurableWrite {
-  const attempts = opts.safeRetry ? (opts.attempts ?? 4) : 1;
+  const attempts = Math.max(1, opts.attempts ?? 4);
   const retryDelayMs = opts.retryDelayMs ?? 100;
-  return async (_id, record) => {
+  return async (id, record) => {
     let lastError: unknown;
+    let replyLost = false;
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      let answer: CommitOutcome;
       try {
         const response = await fetch(`${laneBase(port)}${path}`, {
           method: 'POST',
@@ -472,33 +525,36 @@ function laneDurableTo(
           headers: { 'content-type': 'application/json', ...operatorHeaders() },
           body: record,
         });
-        return await response.json() as CommitOutcome;
+        answer = await response.json() as CommitOutcome;
       } catch (e) {
+        // The reply was lost, or the store did not answer. The same record is re-posted (same identity), so the edge
+        // dedupes it — a retry cannot double-record.
         lastError = e;
-        // The reply was lost, or the store did not answer. On an idempotent route the same record is
-        // re-posted (same identity), so the edge dedupes it — a retry cannot double-record.
+        replyLost = true;
         if (attempt < attempts) await new Promise((resolve) => setTimeout(resolve, retryDelayMs * attempt));
+        continue;
       }
-    }
-    if (opts.safeRetry) {
-      // Could not reach the store after safe retries. The refund MIGHT be recorded — we do not know,
-      // and saying "definitely failed" here is what leads to a second refund (RR-F02). Report it as
-      // unconfirmed instead: hold, do not hand back cash, do not re-run it.
+      if (answer.committed || !replyLost) return answer;
+      // Refused AFTER an earlier reply was lost: the earlier attempt may be on the disk. Ask the box which.
+      const onTheBox = await opts.onTheBox(id, record);
+      if (onTheBox === 'saved') {
+        return { committed: true, durable: true, detail: `${id} was saved by an earlier attempt whose answer was lost`, laneMessage: 'Saved on the store computer.' };
+      }
+      if (onTheBox === 'not_saved') return answer;
       return {
-        committed: false,
-        unconfirmed: true,
-        refusedBecause: 'could_not_write_durably',
-        detail: `the lane's local store did not answer on port ${port} after ${attempts} attempts: ${lastError instanceof Error ? lastError.message : String(lastError)}`,
-        laneMessage: 'This lane could not confirm the refund was saved. Do NOT hand back cash and do NOT run it again — get the manager to check whether it recorded first.',
+        committed: false, unconfirmed: true, refusedBecause: 'could_not_write_durably',
+        detail: `the store computer refused a re-send of ${id} and could not say whether the first attempt was saved: ${answer.detail}`,
+        laneMessage: unconfirmedWords,
       };
     }
-    // A non-idempotent route (a sale): a lost reply is refused, and refused is right — it happens
-    // before the receipt exists and accepting into memory would be a sale that exists nowhere.
+    // Could not reach the store after the safe retries. The record MIGHT be saved — we do not know, and saying
+    // "definitely failed" here is what leads to a second sale or a second refund. Report it as unconfirmed instead.
     return {
       committed: false,
+      unconfirmed: true,
       refusedBecause: 'could_not_write_durably',
-      detail: `the lane's local store did not answer on port ${port}`,
-      laneMessage: refusedLaneMessage,
+      detail: `the lane's local store did not answer on port ${port} after ${attempts} attempts: ${lastError instanceof Error ? lastError.message : String(lastError)}`,
+      laneMessage: unconfirmedWords,
     };
   };
 }
@@ -751,7 +807,21 @@ export function bootPos(config?: {
   deviceHeartbeatTimers?: { readonly every?: (ms: number, fn: () => void) => () => void; readonly soon?: (fn: () => void) => void };
   /** The till's loyalty-balance call to its box (PF-09 step 3). Overridable for tests; production posts to this till's own edge. */
   loyaltyWalletPost?: (body: Record<string, unknown>) => Promise<Record<string, unknown>>;
+  /** OB-252: guest sales only — no customer number, no loyalty — as the box told the page. Absent = off. */
+  guestSalesOnly?: boolean;
 }): PosView & {
+  /** OB-252: whether this till takes guest sales only — the screen shows it whenever it is on. */
+  readonly guestSalesOnly: () => boolean;
+  /** A8 · RR-F02: the refund whose answer was lost, still waiting for the store computer — or null. */
+  readonly pendingRefund: () => { readonly returnId: string; readonly number: string } | null;
+  /** A8 · RR-F02: ask the store computer again about that refund (same record, same id) — one screen state, never throws. */
+  readonly confirmPendingRefund: () => Promise<RefundScreenOutcome>;
+  /**
+   * A8, after a reload: the page no longer holds the record it sent, so it can only ASK the box whether a sale (by its id)
+   * or a refund (by its id and the bill it was against) is on its disk: `saved`, `not_saved`, or `unknown` (no answer).
+   */
+  readonly saleOnBox: (saleId: string) => Promise<'saved' | 'not_saved' | 'unknown'>;
+  readonly refundOnBox: (returnId: string, originalSaleId: string | null) => Promise<'saved' | 'not_saved' | 'unknown'>;
   /**
    * What the named loyalty member may spend at this till now (PF-09 step 3): their points (and what they are worth), their
    * store credit, and what the owner's daily till limit still allows — from the store computer's copy of head office's
@@ -906,6 +976,8 @@ export function bootPos(config?: {
       regulatedFlagsOf: (productId: string) => catalogueRef.cache?.findByProductId(productId)?.regulatedFlags,
       // B6 · NEW-2: whether a line is weighed comes from the lane's own signed catalogue, not only the line's unit.
       baseUomOf: (productId: string) => catalogueRef.cache?.findByProductId(productId)?.baseUom,
+      // OB-252: guest sales only — no customer number, no points or store credit.
+      ...(config?.guestSalesOnly === true ? { guestSalesOnly: true } : {}),
     },
     new Ledger(new InMemoryLedgerStore()),
     outbox,
@@ -928,6 +1000,7 @@ export function bootPos(config?: {
       ...(identity.laneId === undefined ? {} : { laneId: identity.laneId }),
       ...(identity.cashierId === undefined ? {} : { cashierId: identity.cashierId }),
       ...(identity.tradingDay === undefined ? {} : { tradingDay: identity.tradingDay }),
+      ...(config?.guestSalesOnly === true ? { guestSalesOnly: true } : {}),
     },
     new Ledger(new InMemoryLedgerStore()),
     outbox,
@@ -1106,6 +1179,9 @@ export function bootPos(config?: {
               laneMessage: `Exchange recorded. ${moved}`,
             };
           } catch (e) {
+            // The replacement sale's answer was lost (A8): it MAY be saved. Not "half done" yet — the screen keeps asking
+            // the store computer (`confirmPendingSale`) and only then says which.
+            if (e instanceof SaleUnconfirmedError) throw e;
             const why = e !== null && typeof e === 'object' && 'laneMessage' in e && typeof (e as { laneMessage: unknown }).laneMessage === 'string'
               ? (e as { laneMessage: string }).laneMessage : String(e instanceof Error ? e.message : e);
             return {
@@ -1342,6 +1418,8 @@ export function bootPos(config?: {
   };
   // POINTS AND STORE CREDIT (PF-09 step 3): what the named member may spend here now, from the store computer's copy.
   const loyaltyWallet = async (): Promise<LoyaltyWalletAnswer> => {
+    // OB-252: no member is named on a guest-only till, so there is no balance to ask about.
+    if (config?.guestSalesOnly === true) return { ok: false, refusedBecause: 'guest_sales_only', laneMessage: GUEST_SALES_ONLY_WORDS };
     const mobile = session.loyaltyMobileForBox();
     if (mobile === undefined) return { ok: false, refusedBecause: 'no_member_named', laneMessage: 'Key the loyalty member\'s mobile number first.' };
     const body = { mobile, tradingDay: session.tradingDayFor(new Date().toISOString()) };
@@ -1429,7 +1507,23 @@ export function bootPos(config?: {
   };
   const customerDisplayChannelName = (): string => CUSTOMER_DISPLAY_CHANNEL;
 
-  return Object.assign(view, { customerDisplay, customerDisplayChannelName, reportDevices, devicesSaid, deviceAdapterClock, deviceHeartbeat, till, nextReceipt, receiptsRemaining, receiptNotice, holdAtTill, heldAtTill, recallAtTill, abandonAtTill, startCardPayment, answerCardPayment, checkCardPayment, voidAtTill, priceChangeValue, priceChangeAtTill, noSaleAtTill, currentBillRef: () => session.billRef(), lookupRefund, noReceiptReturn, receiptTemplate, receiptLines, signIn, signOut, operator, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill, loyaltyWallet, refusedOffers: () => session.refusedOffers() });
+  // A8 · RR-F02: the refund whose answer was lost — asked again under its own id, shown exactly as a first answer would be.
+  const confirmPendingRefund = (): Promise<RefundScreenOutcome> => refundOutcomeOf(() => till.confirmPendingRefund());
+  const pendingRefund = (): { readonly returnId: string; readonly number: string } | null => till.pendingRefund() ?? null;
+  const saleOnBox = async (saleId: string): Promise<'saved' | 'not_saved' | 'unknown'> => {
+    const found = await askLookup(lanePort, saleId);
+    if (found === 'unknown') return 'unknown';
+    return found !== null && found.sale.saleId === saleId ? 'saved' : 'not_saved';
+  };
+  const refundOnBox = async (returnId: string, originalSaleId: string | null): Promise<'saved' | 'not_saved' | 'unknown'> => {
+    if (originalSaleId === null || originalSaleId === '') return 'unknown';
+    const found = await askLookup(lanePort, originalSaleId);
+    if (found === 'unknown' || found === null) return 'unknown';
+    return found.refunds.some((r) => r.returnId === returnId) || found.returns.some((r) => r.returnId === returnId) ? 'saved' : 'not_saved';
+  };
+  const guestSalesOnly = (): boolean => config?.guestSalesOnly === true;
+
+  return Object.assign(view, { guestSalesOnly, pendingRefund, confirmPendingRefund, saleOnBox, refundOnBox, customerDisplay, customerDisplayChannelName, reportDevices, devicesSaid, deviceAdapterClock, deviceHeartbeat, till, nextReceipt, receiptsRemaining, receiptNotice, holdAtTill, heldAtTill, recallAtTill, abandonAtTill, startCardPayment, answerCardPayment, checkCardPayment, voidAtTill, priceChangeValue, priceChangeAtTill, noSaleAtTill, currentBillRef: () => session.billRef(), lookupRefund, noReceiptReturn, receiptTemplate, receiptLines, signIn, signOut, operator, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill, loyaltyWallet, refusedOffers: () => session.refusedOffers() });
 }
 
 // Attach for the view. `app.js` uses `window.posSession` when present and falls back to its
@@ -1447,6 +1541,8 @@ if (browserWindow !== undefined) {
     // B6: this lane's scales as the box's store pack names them; a page without them sells nothing by weight.
     ...(lane?.scales === undefined ? {} : { laneScales: lane.scales }),
     ...(Array.isArray(lane?.soldHuids) ? { soldHuids: lane.soldHuids } : {}),
+    // OB-252: guest sales only, when the box says so (store pack or the box's own setting).
+    ...(lane?.guestSalesOnly?.on === true ? { guestSalesOnly: true } : {}),
     ...(browserWindow.posReceiptTemplate === undefined ? {} : { receiptTemplate: browserWindow.posReceiptTemplate }),
     // The refund policy the box was given (SP-9b-i): without it the till offers no return without a receipt.
     ...(browserWindow.posRefundPolicy === undefined ? {} : { refundPolicy: browserWindow.posRefundPolicy }),

@@ -19,8 +19,14 @@ import { prepareTillBox, holdSignedInAt, receiptNumberAt } from '../support/till
  * committed:false — a definite failure that invites a second refund for money that already went back.
  * Now a lost reply on the refund route is retried under the SAME id (the edge is idempotent for
  * returns, RR-F03), so it resolves without a double effect; only a store that cannot be reached at all
- * yields an explicit UNCONFIRMED outcome, never a definite failure. The sale route, not yet
- * idempotent, still refuses a lost reply.
+ * yields an explicit UNCONFIRMED outcome, never a definite failure.
+ *
+ * Audit A8 (20 Oct 2026): the sale route now does the same. This file used to prove the OLD sale behaviour — a lost
+ * reply on a sale was a definite refusal, posted once, on the grounds that the edge was "not yet idempotent" on the sale
+ * id. That stopped being true on 12 Sep 2026 (GAP-SALE-IDEMPOTENCY-01, `sale-idempotency.test.ts`), and the old
+ * behaviour was itself the fault: a sale the box HAD saved was called refused ("do not take money"), leaving a phantom
+ * sale and, when the customer was rung again, a second one. The sale case below now proves the corrected behaviour;
+ * `a-lost-sale-reply-is-asked-again-never-doubled.test.ts` proves the rest.
  */
 
 const KEY = ['refund', 'lost', 'reply', 'key'].join('-').padEnd(48, '0');
@@ -98,13 +104,17 @@ describe('RR-F02 — the refund lane write resolves a lost reply safely', () => 
     expect(calls).toBe(1);
   });
 
-  it('a SALE lost reply is still a definite refusal (sale route is not idempotent yet)', async () => {
+  it('A8: a SALE lost reply is re-sent under the same id like a refund, and is UNCONFIRMED — not a refusal — if nothing answers', async () => {
+    // Was: "a SALE lost reply is still a definite refusal" with `calls === 1`. The sale route is idempotent on the sale id
+    // (GAP-SALE-IDEMPOTENCY-01), so re-sending is safe — and calling a possibly-saved sale "refused" is what made the
+    // phantom sale and the second sale (audit A8).
     let calls = 0;
     globalThis.fetch = (async () => { calls += 1; throw new Error('reply lost'); }) as unknown as typeof globalThis.fetch;
-    const outcome = await laneDurable(9)('S-9', JSON.stringify({ id: 'S-9', total: 1 }));
+    const outcome = await laneDurable(9, { retryDelayMs: 1 })('S-9', JSON.stringify({ id: 'S-9', total: 1 }));
     expect(outcome.committed).toBe(false);
-    expect(outcome.unconfirmed).toBeUndefined();     // NOT unconfirmed — a refusal
-    expect(calls).toBe(1);                            // no unsafe retry on the non-idempotent route
+    expect(outcome.unconfirmed).toBe(true);          // unconfirmed — never a definite failure
+    expect(outcome.laneMessage).not.toMatch(/do not take money/i);
+    expect(calls).toBe(4);                            // the same record, asked again under the same id
   });
 });
 
