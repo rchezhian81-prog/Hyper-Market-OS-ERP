@@ -34,6 +34,12 @@ export interface FsLike {
   openSync(p: string, flags: string, mode?: number): number;
   closeSync(fd: number): void;
   readSync(fd: number, buf: Buffer, offset: number, length: number, position: number | null): number;
+  writeSync(fd: number, buf: Buffer, offset?: number, length?: number): number;
+  fstatSync(fd: number): { size: number };
+  appendFileSync(p: string, data: string, enc?: unknown): void;
+  renameSync(from: string, to: string): void;
+  copyFileSync(from: string, to: string, mode?: number): void;
+  constants?: { COPYFILE_EXCL: number };
   fsyncSync(fd: number): void;
   chmodSync(p: string, mode: number): void;
   statSync(p: string): { size: number; isDirectory(): boolean };
@@ -59,9 +65,34 @@ export interface Deps {
   readonly nodePath: string;
   readonly tmpdir: () => string;
   readonly say: (line: string) => void;
+  /** The shop's data folder (audit row 9). Absent: everything stays inside the release folder, as first built. */
+  readonly dataRoot?: string;
+  /** A passphrase typed with nothing shown; undefined when there is no keyboard. */
+  readonly askSecret?: (prompt: string) => Promise<string | undefined>;
+  readonly diskSpace?: (dir: string) => { free: number; total: number };
+  readonly spawnDetached?: (cmd: string, args: readonly string[], opts: { cwd?: string; env?: Record<string, string | undefined>; logFile?: string }) => { pid: number | undefined };
+  readonly processAlive?: (pid: number) => boolean;
+  readonly killProcess?: (pid: number) => void;
+  /** Windows Task Scheduler (or a stand-in). Absent: Windows' own via schtasks, or none off Windows. */
+  readonly tasks?: { register(name: string, xml: string): { ok: boolean; said?: string }; remove(name: string): { ok: boolean; said?: string }; exists(name: string): boolean };
+  /** scrypt's cost for a NEW backup key (tests use a cheaper one; the key file records whichever was used). */
+  readonly scryptCost?: { N: number; r: number; p: number };
+  /** How long a till log's half-written last record is given to finish before it is judged an old one. */
+  readonly inFlightWaitMs?: number;
 }
 
 export interface Layout {
+  readonly mode: 'in-release' | 'data-folder';
+  readonly repoRoot: string;
+  readonly releaseTill: string;
+  readonly tillDir: string;
+  readonly dataRoot?: string;
+  readonly marker?: string;
+  readonly backupDir?: string;
+  readonly statusDir?: string;
+  readonly statusFile?: string;
+  readonly runDir?: string;
+  readonly scratchDir?: string;
   readonly composeDir: string;
   readonly settings: string;
   readonly example: string;
@@ -78,7 +109,17 @@ export interface CheckOptions { readonly by?: string; readonly out?: string; rea
 export interface DoctorRow { readonly name: string; readonly status: 'OK' | 'FIX'; readonly detail: string; readonly fix?: string }
 
 export declare function pathFor(platform: string): typeof import('node:path').posix;
-export declare function layout(repoRoot: string, platform: string): Layout;
+export declare function layout(repoRoot: string, platform: string, dataRoot?: string): Layout;
+export declare function resolveLayout(deps: Deps): Layout;
+export declare function bothLayouts(deps: Deps): { legacy: Layout; data: Layout | undefined };
+export declare function ensureDataFolder(deps: Deps, L: Layout): void;
+export declare function defaultDataRoot(repoRoot: string, platform: string, env?: Record<string, string | undefined>): string;
+export declare const DATA_FOLDER_NAME: 'SRE-data';
+export declare const DATA_MARKER: string;
+export declare const DATA_MARKER_TEXT: string;
+export declare function composeBase(L: Layout | undefined): string[];
+export declare function ownerStep(deps: Deps, step: 'seal' | 'parallel-policy', cl: Record<string, unknown>): Promise<number>;
+export declare function askSecret(prompt: string): Promise<string | undefined>;
 export declare function parseEnvText(text: string): Settings;
 export declare function demoTenants(settings: Settings | undefined): string[];
 export declare function refusals(settings: Settings | undefined, processEnv?: Record<string, string | undefined>): string[];
@@ -102,18 +143,20 @@ export declare function readFingerprintFile(text: string): { ok: true; file: Fin
 export declare function fingerprintMatches(own: Record<string, string>, theirs: Record<string, string>): { own: string; demo: string }[];
 export declare function fingerprints(deps: Deps, opts: { settings?: string; out?: string }): Promise<number>;
 export declare function demoFingerprintVerdict(settings: Settings, text: string): { status: CheckStatus; detail: string };
-export declare function ownDriveProblem(dir: string, where: { platform: string; repoRoot: string; systemDrive?: string }): string | undefined;
+export declare function ownDriveProblem(dir: string, where: { platform: string; repoRoot: string; systemDrive?: string; dataRoot?: string }): string | undefined;
 export declare function backupRecordVerdict(deps: Deps, file: string): { status: CheckStatus; detail: string };
 export declare function loadSettings(deps: Deps): { L: Layout; settings: Settings | undefined };
 export declare function guarded(deps: Deps, settings: Settings): boolean;
 export declare function lines(s: unknown): string[];
 export declare function rel(deps: Deps, abs: string): string;
 export declare function stampOf(at: Date): string;
-export declare function backupVerdict(rec: unknown, where: { platform: string; repoRoot: string; systemDrive?: string }): { status: CheckStatus; detail: string };
+export declare function backupVerdict(rec: unknown, where: { platform: string; repoRoot: string; systemDrive?: string; dataRoot?: string }): { status: CheckStatus; detail: string };
 export declare function doctorRows(deps: Deps): DoctorRow[];
 export declare function parseCommandLine(argv: readonly string[]): {
   command?: string; by?: string; out?: string; backupRecord?: string; offlineConfirmed: boolean; demoFingerprints?: string;
-  settings?: string; to?: string; from?: string; previous?: string; run: boolean; problems: string[];
+  settings?: string; to?: string; from?: string; previous?: string; run: boolean; every?: string; off: boolean; quiet: boolean;
+  dir?: string; as?: string; backupRestoredOn?: string; source?: string; cutover?: string; reconciler?: string; cleanDays?: string; maxDays?: string; start?: string;
+  problems: string[];
 };
 export declare function prepare(deps: Deps): Promise<number>;
 export declare function up(deps: Deps): Promise<number>;

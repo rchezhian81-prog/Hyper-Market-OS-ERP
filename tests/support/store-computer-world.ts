@@ -2,7 +2,7 @@
 // folder holding the real infra/compose/.env.example, a pretend Docker (no Docker is needed), a pretend API, and every
 // line the tool says captured — so a test can look for a secret in everything the owner would see.
 
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, writeSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeSync } from 'node:fs';
 import * as fs from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { randomBytes, randomUUID } from 'node:crypto';
@@ -59,8 +59,24 @@ const totalsOf = (d: PretendDb): string => [
   ...[...d.migrations].sort().map((m) => `MIG|${m}`),
 ].join('\n');
 
+/** The backup passphrase every pretend owner types (synthetic; a test that wants another sets `w.typed`). */
+export const PASSPHRASE = 'synthetic test passphrase 1';
+/** A cheap scrypt for the tests' new keys (the key file records it; the real default is 2^17). */
+export const TEST_SCRYPT = Object.freeze({ N: 2 ** 12, r: 8, p: 1 });
+
+/** A pretend Windows Task Scheduler: what was registered, by name, with its XML. */
+export interface PretendTasks { readonly registered: Map<string, string>; refuse?: string; readonly removed: string[] }
+
 export interface World {
   readonly root: string;
+  /** The shop's data folder for this pretend computer: the release folder's name plus "-data". */
+  readonly data: string;
+  /** What the pretend owner types at each passphrase question, in order (the last one repeats). */
+  typed: string[];
+  readonly asked: string[];
+  readonly tasks: PretendTasks;
+  readonly detached: { cmd: string; args: readonly string[]; env?: Record<string, string | undefined> }[];
+  readonly killed: number[];
   readonly said: string[];
   readonly calls: Call[];
   readonly docker: PretendDocker;
@@ -72,7 +88,7 @@ export interface World {
 }
 
 /** `realNode`: run node commands (the tools build and migration:slice) for real, from the real repository. */
-export function world(over: Partial<Deps> = {}, opts: { realNode?: boolean; sliceStdout?: (args: readonly string[]) => { status: number; stdout: string }; costOf?: (cmd: string, args: readonly string[], input?: string) => number } = {}): World {
+export function world(over: Partial<Deps> = {}, opts: { realNode?: boolean; sliceStdout?: (args: readonly string[]) => { status: number; stdout: string }; costOf?: (cmd: string, args: readonly string[], input?: string) => number; installStatus?: number } = {}): World {
   const root = mkdtempSync(join(tmpdir(), 'sre-store-computer-'));
   mkdirSync(join(root, 'infra', 'compose'), { recursive: true });
   copyFileSync(join(REAL_REPO, 'infra', 'compose', '.env.example'), join(root, 'infra', 'compose', '.env.example'));
@@ -162,6 +178,8 @@ export function world(over: Partial<Deps> = {}, opts: { realNode?: boolean; slic
       return { status: r.status, stdout: r.stdout, stderr: r.stderr };
     }
     if (args.includes('tools')) return { status: 0, stdout: 'tools bundle written\n' };
+    // update: the new release's `pnpm install` and its till build.
+    if (args.includes('install') || args.some((a) => String(a).endsWith('install-till.mjs'))) return { status: opts.installStatus ?? 0, stdout: '' };
     if (opts.sliceStdout !== undefined) return opts.sliceStdout(args);
     const manifest = JSON.parse(readFileSync(join(args[args.indexOf('--dir') + 1]!, 'slice.json'), 'utf8')) as { tenantId: string };
     const seen = sliceSettingsSeen[sliceSettingsSeen.length - 1] ?? '';
@@ -171,8 +189,27 @@ export function world(over: Partial<Deps> = {}, opts: { realNode?: boolean; slic
   };
 
   let clock = Date.parse('2026-10-20T04:30:00.000Z');
+  const data = `${root}-data`;
+  const asked: string[] = [];
+  const state = { typed: [PASSPHRASE] as string[] };
+  const tasks: PretendTasks = { registered: new Map(), removed: [] };
+  const detached: World['detached'] = [];
+  const killed: number[] = [];
   const deps: Deps = {
     repoRoot: root,
+    dataRoot: data,
+    askSecret: async (prompt: string) => { asked.push(prompt); return state.typed.length > 1 ? state.typed.shift() : state.typed[0]; },
+    scryptCost: TEST_SCRYPT,
+    inFlightWaitMs: 0,
+    diskSpace: () => ({ free: 200 * 1024 ** 3, total: 476 * 1024 ** 3 }),
+    spawnDetached: (cmd: string, args: readonly string[], o: { env?: Record<string, string | undefined> }) => { detached.push({ cmd, args: [...args], ...(o.env === undefined ? {} : { env: o.env }) }); return { pid: 4242 }; },
+    processAlive: (pid: number) => pid === 4242 && !killed.includes(pid),
+    killProcess: (pid: number) => { killed.push(pid); },
+    tasks: {
+      register: (name: string, xml: string) => { if (tasks.refuse !== undefined) return { ok: false, said: tasks.refuse }; tasks.registered.set(name, xml); return { ok: true }; },
+      remove: (name: string) => { tasks.removed.push(name); tasks.registered.delete(name); return { ok: true }; },
+      exists: (name: string) => tasks.registered.has(name),
+    },
     platform: 'linux',
     env: {},
     fs,
@@ -196,13 +233,19 @@ export function world(over: Partial<Deps> = {}, opts: { realNode?: boolean; slic
     say: (line: string) => { said.push(line); },
     ...over,
   };
-  return { root, said, calls, docker, api, ports, sliceSettingsSeen, deps };
+  return {
+    root, data, asked, tasks, detached, killed, said, calls, docker, api, ports, sliceSettingsSeen, deps,
+    get typed() { return state.typed; }, set typed(v: string[]) { state.typed = v; },
+  };
 }
+
+/** Where this copy's settings file is: the data folder (since audit row 9), or the release folder for a first-layout copy. */
+export const settingsPathOf = (w: World): string => (existsSync(join(w.data, '.env.real')) ? join(w.data, '.env.real') : join(w.root, 'infra', 'compose', '.env.real'));
 
 /** This copy's settings, as written. */
 export const settingsOf = (w: World): Record<string, string> => {
   const out: Record<string, string> = {};
-  for (const raw of readFileSync(join(w.root, 'infra', 'compose', '.env.real'), 'utf8').split(/\r?\n/)) {
+  for (const raw of readFileSync(settingsPathOf(w), 'utf8').split(/\r?\n/)) {
     const line = raw.trim();
     if (line === '' || line.startsWith('#') || !line.includes('=')) continue;
     out[line.slice(0, line.indexOf('='))] = line.slice(line.indexOf('=') + 1);

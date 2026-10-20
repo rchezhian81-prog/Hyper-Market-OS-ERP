@@ -72,7 +72,17 @@ export interface PosSessionConfig {
    * decided from the pack, not only from the unit a scan or a recalled basket wrote on the line. Absent → the line's unit.
    */
   readonly baseUomOf?: (productId: string) => string | undefined;
+  /**
+   * OB-252 (owner, 20 Oct 2026, "Guest sales only"): during the mirror pilot this till takes no customer mobile number and
+   * no loyalty — no member on the bill, no points or store credit spent. Turned on by the store pack
+   * (`policies.guestSalesOnly`) or the store computer's own setting (`EDGE_GUEST_SALES_ONLY=1`), told to the till by its
+   * box. Refused in words when asked, never dropped quietly; the screen shows it is on.
+   */
+  readonly guestSalesOnly?: boolean;
 }
+
+/** What the till says when a customer number or loyalty is asked for while guest sales only is on (OB-252). */
+export const GUEST_SALES_ONLY_WORDS = 'Guest sales only on this till during the pilot: no customer mobile number and no loyalty points or store credit. Ring the sale as a guest. The old billing system keeps loyalty as today.';
 
 /** NEW-1 (B19): an offer the till refused to apply because it targets a carry bag — said, never dropped quietly (P-08). */
 export interface RefusedOffer {
@@ -153,7 +163,12 @@ export interface AgeAnswer {
   readonly productId?: string;
 }
 
-export type PosState = 'idle' | 'selling' | 'tendering' | 'committed' | 'suspended';
+/**
+ * `unconfirmed` (audit A8): the sale was sent to the store computer and its answer was lost, so the till does not yet know
+ * whether it is saved. Nothing on the basket may change and no other sale may start until the box answers
+ * (`confirmPendingSale`).
+ */
+export type PosState = 'idle' | 'selling' | 'tendering' | 'committed' | 'suspended' | 'unconfirmed';
 
 export interface SyncBadge {
   readonly connection: ConnectionState;
@@ -238,6 +253,27 @@ export class LocalCommitRefusedError extends Error {
     this.name = 'LocalCommitRefusedError';
   }
 }
+
+/**
+ * The till sent the sale to its store computer and did not hear back (audit A8 · roadmap §32 "zero duplicate business
+ * effect"): the reply was lost, or the box did not answer after the till's own same-id retries. The sale MAY be saved.
+ *
+ * It is neither a success nor a refusal, and the screen must treat it as neither: it does not say "saved", it does not
+ * say "do not take money", and it does not let the sale be rung again. The session holds the exact record it sent and
+ * re-sends it, under the SAME sale id, with `confirmPendingSale()` until the store computer answers — the box is
+ * idempotent on the sale id (GAP-SALE-IDEMPOTENCY-01), so a re-send can never make a second sale. Only that answer says
+ * "saved" or "not saved".
+ */
+export class SaleUnconfirmedError extends Error {
+  constructor(public readonly saleId: string, public readonly number: string, public readonly laneMessage: string) {
+    super(`sale ${saleId} could not be confirmed as saved yet: ${laneMessage}`);
+    this.name = 'SaleUnconfirmedError';
+  }
+}
+
+/** The words while a sale's answer is still awaited and something else is asked of the till (A8). */
+const STILL_CHECKING = (number: string): string =>
+  `Wait. The till is still checking with the store computer whether sale ${number} was saved. Do not ring it again and do not start another sale.`;
 
 /**
  * Nobody is signed in at this till (SP-4b · F09 · §28 · hard rule #4). A sale with no cashier is a sale nobody can be
@@ -329,6 +365,11 @@ export class PosSession {
   private billRefValue: string | undefined;
   /** Evaluation instant for effective-dated promotions, when the caller fixed one (`setNow`); else the lane's clock. */
   private nowRef: string | undefined;
+  /**
+   * A sale sent to the store computer whose answer was lost (audit A8): the EXACT record that was sent (so a re-send hashes
+   * the same on the box), what to do once the box says it is saved, and the state to go back to if the box says it is not.
+   */
+  private awaiting: { readonly saleId: string; readonly number: string; readonly record: string; readonly finish: () => CommittedSale; readonly before: PosState } | undefined;
 
   constructor(
     private readonly config: PosSessionConfig,
@@ -360,6 +401,38 @@ export class PosSession {
   /** The current screen state (§27.1). */
   currentState(): PosState {
     return this.state;
+  }
+
+  /** The sale still waiting for the store computer's answer (A8) — its id and bill number — or undefined. */
+  pendingSale(): { readonly saleId: string; readonly number: string } | undefined {
+    return this.awaiting === undefined ? undefined : { saleId: this.awaiting.saleId, number: this.awaiting.number };
+  }
+
+  /** Refuse anything that would change the basket or start another sale while a sale's answer is awaited (A8). */
+  private notWhileAwaiting(): void {
+    if (this.awaiting !== undefined) {
+      throw new SaleUnconfirmedError(this.awaiting.saleId, this.awaiting.number, STILL_CHECKING(this.awaiting.number));
+    }
+  }
+
+  /**
+   * Ask the store computer again about the sale whose answer was lost (A8), by re-sending the SAME record under the SAME
+   * sale id. Resolves the committed sale when the box says it is saved (a re-send of a saved sale is answered "saved",
+   * never saved twice); throws `LocalCommitRefusedError` when the box says it is not saved (the basket is back as it was);
+   * throws `SaleUnconfirmedError` again while the box still does not answer.
+   */
+  async confirmPendingSale(): Promise<CommittedSale> {
+    const pending = this.awaiting;
+    if (pending === undefined) throw new SessionStateError('check a sale that is not waiting', this.state);
+    const outcome = await this.durable(pending.saleId, pending.record);
+    if (outcome.committed) {
+      this.awaiting = undefined;
+      return pending.finish();
+    }
+    if (outcome.unconfirmed === true) throw new SaleUnconfirmedError(pending.saleId, pending.number, outcome.laneMessage);
+    this.awaiting = undefined;
+    this.state = pending.before;
+    throw new LocalCommitRefusedError(pending.saleId, outcome.laneMessage);
   }
 
   /** Set the connection state shown on the badge (the lane observes it; sales never wait on it). */
@@ -399,6 +472,7 @@ export class PosSession {
 
   /** Scan an item onto the basket — 1 interaction (design bar). */
   scan(input: ScanInput): BasketEntry {
+    this.notWhileAwaiting();
     if (this.state === 'committed' || this.state === 'suspended') {
       throw new SessionStateError('scan', this.state);
     }
@@ -445,11 +519,13 @@ export class PosSession {
    * basket in the signed-in person's name; refused when nobody is signed in — an answer in nobody's name is no answer.
    */
   confirmAge(minimumAge: number, atIsoUtc: string, productId?: string): AgeAnswer {
+    this.notWhileAwaiting();
     return this.answerAge('confirmed', minimumAge, atIsoUtc, productId);
   }
 
   /** The customer could not show they are old enough: the item is NOT sold, and that is kept as evidence (PF-03, M15). */
   refuseAge(minimumAge: number, atIsoUtc: string, productId?: string): AgeAnswer {
+    this.notWhileAwaiting();
     return this.answerAge('refused', minimumAge, atIsoUtc, productId);
   }
 
@@ -511,6 +587,7 @@ export class PosSession {
 
   /** Change a line's quantity — ≤ 3 interactions (design bar). */
   setQuantity(lineId: string, quantityMinor: number): BasketEntry {
+    this.notWhileAwaiting();
     const line = this.lines.find((l) => l.lineId === lineId);
     if (line === undefined) {
       throw new NoSuchLineError(lineId);
@@ -533,6 +610,7 @@ export class PosSession {
    * prevention (M15-FR-01).
    */
   voidLine(lineId: string, reason: string): BasketEntry {
+    this.notWhileAwaiting();
     const line = this.lines.find((l) => l.lineId === lineId);
     if (line === undefined) {
       throw new NoSuchLineError(lineId);
@@ -568,6 +646,7 @@ export class PosSession {
    * PF-07). The line keeps where the price came from and who approved it; the sale record carries both.
    */
   overridePrice(lineId: string, toUnitMinor: number, evidence: { readonly approvedBy: string; readonly activityId: string }): BasketEntry {
+    this.notWhileAwaiting();
     const { fromUnitMinor } = this.overrideValue(lineId, toUnitMinor);
     const line = this.lines.find((l) => l.lineId === lineId)!;
     const first = line.priceOverride?.fromUnitMinor ?? fromUnitMinor;
@@ -765,6 +844,7 @@ export class PosSession {
 
   /** Go to tender — 1 interaction. Refuses an empty basket. */
   goToTender(): BasketTotals {
+    this.notWhileAwaiting();
     const totals = this.totals();
     if (totals.lineCount === 0) {
       throw new EmptyBasketError();
@@ -790,6 +870,11 @@ export class PosSession {
   async commit(
     saleId: string, number: string, committedAt: string, tenders: readonly Tender[],
   ): Promise<CommittedSale> {
+    // A sale whose answer was lost is resolved first, under its own id — never rung again as a new one (A8).
+    if (this.awaiting !== undefined) {
+      if (this.awaiting.saleId === saleId) return this.confirmPendingSale();
+      this.notWhileAwaiting();
+    }
     if (this.state === 'committed') {
       throw new SessionStateError('commit', this.state);
     }
@@ -917,6 +1002,11 @@ export class PosSession {
     if (!settle(totals.payable, tenders).fullyPaid) {
       throw new UnpaidSaleError(saleId);
     }
+    // OB-252: guest sales only — points and store credit belong to a named customer, so neither is spent here. Refused
+    // before the disk, in words; the customer pays another way.
+    if (this.config.guestSalesOnly === true && tenders.some((t) => t.kind === 'loyalty_points' || t.kind === 'store_credit')) {
+      throw new LocalCommitRefusedError(saleId, `${GUEST_SALES_ONLY_WORDS} Nothing was saved — take another payment.`);
+    }
 
     // **The disk, before anything else is true.**
     //
@@ -940,7 +1030,7 @@ export class PosSession {
     //
     // These are not new facts. `totals()` already knows all three; they were being computed,
     // used to take the money, and then dropped on the floor.
-    const outcome = await this.durable(saleId, JSON.stringify({
+    const record = JSON.stringify({
       ...input,
       lines: recordLines, // the cloud sees the rich lines (prices + frozen HSN/rate); commitSale keeps the ledger shape
       total: totals.payable.minor,
@@ -950,43 +1040,58 @@ export class PosSession {
       // Every answer to the age question on this bill, refusals included (PF-03 · M15 loss prevention).
       ...(this.ageAnswerLog.length === 0 ? {} : { ageAnswers: this.ageAnswerLog.slice() }),
       // The member's number, for the STORE COMPUTER to turn into a member code before the disk (PF-09 step 2 · P-04).
-      ...(this.loyaltyMobile === undefined ? {} : { customerMobile: this.loyaltyMobile }),
-    }));
-    if (!outcome.committed) throw new LocalCommitRefusedError(saleId, outcome.laneMessage);
-    // B13: a HUID on the disk is sold — this till refuses it again at once, before the store computer's list is re-read.
-    for (const l of active) { const huid = huidOf(this.flagsOf(l)); if (huid !== undefined) this.huidsSoldHere.add(huid); }
-
-    const sale = commitSale(
-      { ...input, total: totals.payable },
-      this.stockLedger,
-      this.outbox,
-    );
-    this.state = 'committed';
-    // B13 · M31-FR-02: the bill as it prints — read off the record just saved, never re-priced. A record only: building it
-    // can add no way for the sale to fail (hard rule #1), and nothing here is sent anywhere.
-    const bands = new Map<number, { net: number; tax: number }>();
-    for (const l of recordLines) {
-      const split = splitInclusive(money(l.lineTotalMinor, totals.payable.currency), rate(l.taxRateBps));
-      const band = bands.get(l.taxRateBps) ?? { net: 0, tax: 0 };
-      bands.set(l.taxRateBps, { net: band.net + split.net.minor, tax: band.tax + split.tax.minor });
-    }
-    this.lastBillValue = Object.freeze({
-      number, saleId, tradingDay: input.tradingDay, committedAt, laneId, cashierId, currency: totals.payable.currency,
-      lines: recordLines.map((l, i) => ({
-        description: active[i]?.description ?? l.productId,
-        quantityMinor: l.quantityMinor, uom: l.uom, unitPriceMinor: l.unitPriceMinor, lineTotalMinor: l.lineTotalMinor,
-        ...(l.huid === undefined ? {} : { huid: l.huid }),
-        ...(l.batchId === undefined ? {} : { batchId: l.batchId }),
-      })),
-      taxBands: [...bands.entries()].sort((a, b) => a[0] - b[0]).map(([rateBps, b]) => ({ rateBps, netMinor: b.net, taxMinor: b.tax })),
-      netMinor: inside.net, taxMinor: inside.tax, totalMinor: totals.payable.minor,
-      tenders: input.tenders.map((t) => ({ kind: t.kind, amountMinor: t.amount.minor })),
+      ...(this.loyaltyMobile === undefined || this.config.guestSalesOnly === true ? {} : { customerMobile: this.loyaltyMobile }),
     });
-    return sale;
+    // Everything that is true only once the box has the sale — kept as one step so a sale confirmed LATE (its first answer
+    // was lost, A8) is finished exactly as one confirmed at once.
+    const finish = (): CommittedSale => {
+      // B13: a HUID on the disk is sold — this till refuses it again at once, before the store computer's list is re-read.
+      for (const l of active) { const huid = huidOf(this.flagsOf(l)); if (huid !== undefined) this.huidsSoldHere.add(huid); }
+
+      const sale = commitSale(
+        { ...input, total: totals.payable },
+        this.stockLedger,
+        this.outbox,
+      );
+      this.state = 'committed';
+      // B13 · M31-FR-02: the bill as it prints — read off the record just saved, never re-priced. A record only: building it
+      // can add no way for the sale to fail (hard rule #1), and nothing here is sent anywhere.
+      const bands = new Map<number, { net: number; tax: number }>();
+      for (const l of recordLines) {
+        const split = splitInclusive(money(l.lineTotalMinor, totals.payable.currency), rate(l.taxRateBps));
+        const band = bands.get(l.taxRateBps) ?? { net: 0, tax: 0 };
+        bands.set(l.taxRateBps, { net: band.net + split.net.minor, tax: band.tax + split.tax.minor });
+      }
+      this.lastBillValue = Object.freeze({
+        number, saleId, tradingDay: input.tradingDay, committedAt, laneId, cashierId, currency: totals.payable.currency,
+        lines: recordLines.map((l, i) => ({
+          description: active[i]?.description ?? l.productId,
+          quantityMinor: l.quantityMinor, uom: l.uom, unitPriceMinor: l.unitPriceMinor, lineTotalMinor: l.lineTotalMinor,
+          ...(l.huid === undefined ? {} : { huid: l.huid }),
+          ...(l.batchId === undefined ? {} : { batchId: l.batchId }),
+        })),
+        taxBands: [...bands.entries()].sort((a, b) => a[0] - b[0]).map(([rateBps, b]) => ({ rateBps, netMinor: b.net, taxMinor: b.tax })),
+        netMinor: inside.net, taxMinor: inside.tax, totalMinor: totals.payable.minor,
+        tenders: input.tenders.map((t) => ({ kind: t.kind, amountMinor: t.amount.minor })),
+      });
+      return sale;
+    };
+
+    const outcome = await this.durable(saleId, record);
+    if (outcome.unconfirmed === true) {
+      // A8: the answer was lost — the sale MAY be on the box. Hold the exact record and refuse everything else until the
+      // box answers; `confirmPendingSale` re-sends it under the same id. Never "not saved", never a second sale.
+      this.awaiting = { saleId, number, record, finish, before: this.state };
+      this.state = 'unconfirmed';
+      throw new SaleUnconfirmedError(saleId, number, outcome.laneMessage);
+    }
+    if (!outcome.committed) throw new LocalCommitRefusedError(saleId, outcome.laneMessage);
+    return finish();
   }
 
   /** Suspend the basket for later recall (≤ 3 interactions). */
   suspend(): void {
+    this.notWhileAwaiting();
     if (this.state === 'committed') {
       throw new SessionStateError('suspend', this.state);
     }
@@ -1018,6 +1123,7 @@ export class PosSession {
    * must be checked. The age answers come back with them; a line still needing one is refused at payment until asked.
    */
   restoreHeld(lines: readonly SuspendedLine[], ageAnswers: readonly SuspendedAgeAnswer[] = []): void {
+    this.notWhileAwaiting();
     if (this.activeLines().length > 0 || this.state === 'committed' || this.state === 'tendering') {
       throw new SessionStateError('recall a held basket onto', this.state);
     }
@@ -1044,6 +1150,7 @@ export class PosSession {
 
   /** Recall a suspended basket. */
   recall(): void {
+    this.notWhileAwaiting();
     if (this.state !== 'suspended') {
       throw new SessionStateError('recall', this.state);
     }
@@ -1064,7 +1171,10 @@ export class PosSession {
    * not a 10-digit Indian mobile is refused with the cashier's words; nothing is set.
    */
   setLoyaltyMobile(raw: string | null): { readonly ok: boolean; readonly last4?: string; readonly laneMessage?: string } {
+    this.notWhileAwaiting();
     if (raw === null) { this.loyaltyMobile = undefined; return { ok: true }; }
+    // OB-252: refused in words — the number is not even read.
+    if (this.config.guestSalesOnly === true) return { ok: false, laneMessage: GUEST_SALES_ONLY_WORDS };
     const mobile = normaliseMobile(raw);
     if (mobile === undefined) return { ok: false, laneMessage: 'That is not a 10-digit mobile number. Ask the customer again, or skip — the sale goes ahead without points.' };
     this.loyaltyMobile = mobile;
@@ -1086,6 +1196,7 @@ export class PosSession {
 
   /** Start a fresh basket on the same lane (after a commit). */
   newSale(): void {
+    this.notWhileAwaiting();
     // A new basket is a new customer: no member carries over (PF-09).
     this.loyaltyMobile = undefined;
     this.billRefValue = undefined;

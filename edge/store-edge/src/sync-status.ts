@@ -9,6 +9,7 @@
 // read-only (`GET /lane/sync-status`) and the screens poll it.
 
 import type { PackPullStatus } from '../../sync-agent/src/pack-puller';
+import type { StoreComputerStatus } from './store-computer-status-file';
 
 /** The box's link to head office, as far as the box can tell. */
 export type CloudLink =
@@ -54,6 +55,11 @@ export interface LaneSyncStatus {
   readonly now: string;
   /** One sentence a cashier or manager can act on (P-08). The screens translate the STATE; this is for logs. */
   readonly staffMessage: string;
+  /**
+   * Audit row 6: the STORE COMPUTER's own check (store-computer status) — backup age, the till's queue, the disk, the
+   * containers — read from its status file. Absent on a box that is not the shop's store computer (no file configured).
+   */
+  readonly storeComputer?: StoreComputerStatus;
   /** Verifier r19 OB87-1: the box's own check of its bill-number witness (absent on a box with no till). */
   readonly billNumbering?: {
     readonly witness: 'kept' | 'unavailable' | 'none'; readonly fault?: string; readonly restoreHeld: boolean; readonly restoreBecause?: string;

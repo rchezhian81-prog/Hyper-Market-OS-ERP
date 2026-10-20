@@ -8,7 +8,7 @@ import {
   assertScratch, backup, backupScript, drill, drillVerdict, migrationProblems, parseTotals, reconcile, releaseId, restoreCheck, scratchName, totalsScript,
   type DrillStep,
 } from '../../scripts/lib/store-computer-recovery.mjs';
-import { settingsOf, world, type Call, type World } from '../support/store-computer-world';
+import { PASSPHRASE, settingsOf, world, type Call, type World } from '../support/store-computer-world';
 
 /**
  * OB-246 — the backup, the restore-and-reconcile and the timed rollback drill (pilot gate G9), built into the owner's
@@ -49,31 +49,48 @@ describe('backup --to <folder> — pg_dump inside the database container, stream
     const w = await prepared({}, { costOf: (_cmd, _args, input) => (input?.includes('pg_export_snapshot') === true ? 3 * MIN : 0) });
     const drive = driveOf();
     expect(await backup(w.deps, { to: drive })).toBe(0);
-    expect(filesIn(drive)).toEqual(['sre-real-backup-2026-10-20T04-30-00-000Z.dump', 'sre-real-backup-2026-10-20T04-30-00-000Z.manifest.json']);
-    const dump = join(drive, 'sre-real-backup-2026-10-20T04-30-00-000Z.dump');
-    const m = JSON.parse(readFileSync(join(drive, 'sre-real-backup-2026-10-20T04-30-00-000Z.manifest.json'), 'utf8')) as Record<string, unknown>;
+    const id = 'sre-real-backup-2026-10-20T04-30-00-000Z';
+    const key = JSON.parse(readFileSync(join(w.data, 'backup', 'backup-key.json'), 'utf8')) as { keyId: string };
+    // OB-249: four encrypted files and a manifest — the database, the till's data and records, the settings, the sealed key.
+    expect(filesIn(drive)).toEqual([`sre-backup-key-${key.keyId}.json`, `${id}.dump.sreenc`, `${id}.files.sreenc`, `${id}.manifest.json`, `${id}.settings.sreenc`]);
+    const enc = join(drive, `${id}.dump.sreenc`);
+    const m = JSON.parse(readFileSync(join(drive, `${id}.manifest.json`), 'utf8')) as Record<string, unknown>;
     expect(m).toMatchObject({
-      kind: 'store-computer-backup', version: 1, project: 'sre-real', database: 'sre_real', folder: drive, file: 'sre-real-backup-2026-10-20T04-30-00-000Z.dump',
-      sizeBytes: statSync(dump).size, timeTakenMs: 3 * MIN, consistency: { method: 'exported_snapshot', snapshotId: '00000003-0000001B-1' },
-      controlTotals: { rowCounts: { event_ledger: 4, products: 12, schema_migrations: 2 }, valueTotals: { SaleCommitted: 100_000 }, maxEventSeq: 4, totalRows: 18 },
+      kind: 'store-computer-backup', version: 2, project: 'sre-real', database: 'sre_real', folder: drive, file: `${id}.dump.sreenc`,
+      sizeBytes: statSync(enc).size, timeTakenMs: 3 * MIN, consistency: { method: 'exported_snapshot', snapshotId: '00000003-0000001B-1' },
+      controlTotals: { rowCounts: { event_ledger: 4, products: 12, schema_migrations: 2 }, maxEventSeq: 4, totalRows: 18 },
+      encryption: { keyId: key.keyId, keyFile: `sre-backup-key-${key.keyId}.json` },
       schemaVersion: '0002_b.sql',
     });
+    // The money per event type is sealed to the key, never plain on the drive.
+    expect((m['controlTotals'] as Record<string, unknown>)['valueTotals']).toBeUndefined();
+    expect(readFileSync(join(drive, `${id}.manifest.json`), 'utf8')).not.toContain('100000');
     expect(m['sha256']).toMatch(/^[0-9a-f]{64}$/);
     for (const f of filesIn(drive)) expect(statSync(join(drive, f)).mode & 0o222, f).toBe(0);
+    // Nothing plain on the drive: no pg_dump archive and no settings value, in any file; the scratch copies are gone.
+    const s = settingsOf(w);
+    for (const f of filesIn(drive)) {
+      const bytes = readFileSync(join(drive, f));
+      expect(bytes.includes(Buffer.from('PGDMP')), f).toBe(false);
+      for (const k of SECRETS) expect(bytes.includes(Buffer.from(s[k]!.slice(0, 16))), `${k} in ${f}`).toBe(false);
+    }
+    expect(readdirSync(join(w.data, 'scratch'))).toEqual([]);
     const out = said(w);
-    expect(out).toMatch(/^BACKUP DONE — sre-real-backup-.*\.dump, \d+ KB, in 3\.0 min\.$/m);
-    expect(out).toMatch(/3 tables, 18 rows in all; the newest event is number 4\./);
+    expect(out).toMatch(/^BACKUP PASSPHRASE SET — backup key [0-9a-f]{16}\./m);
+    expect(out).toMatch(/^BACKUP DONE — sre-real-backup-2026-10-20T04-30-00-000Z, \d+ KB encrypted, in 3\.0 min\.$/m);
+    expect(out).toMatch(/3 tables, 18 rows; the newest event is number 4\./);
+    expect(out).toMatch(/The till's data: there is no till on this computer yet\./);
     expect(out).toMatch(/Nothing was deleted\./);
     expect(out).toMatch(/^Next: pnpm run store-computer -- restore-check --from .*\.manifest\.json$/m);
+    expect(out).not.toContain(PASSPHRASE);
     expectNoSecret(w, textsIn(drive));
   });
-
   it('runs ONE psql session in this copy\'s db container: snapshot, totals and pg_dump of that snapshot, psql\'s own output on stderr', async () => {
     const w = await prepared();
     expect(await backup(w.deps, { to: driveOf() })).toBe(0);
     const [c, ...more] = execs(w, 'psql');
     expect(more).toEqual([]);
-    expect(c!.args).toEqual(['compose', '-p', 'sre-real', '-f', 'docker-compose.yml', '--env-file', '.env.real', 'exec', '-T', '-e', 'PGOPTIONS=-c app.tenant_id=*', 'db',
+    expect(c!.args).toEqual(['compose', '-p', 'sre-real', '-f', 'docker-compose.yml', '--env-file', join(w.data, '.env.real'), 'exec', '-T', '-e', 'PGOPTIONS=-c app.tenant_id=*', 'db',
       'psql', '-X', '-q', '-A', '-t', '-v', 'ON_ERROR_STOP=1', '-U', 'sre_admin', '-d', 'sre_real']);
     expect(c!.cwd).toBe(join(w.root, 'infra', 'compose'));
     expect(Array.isArray(c!.stdio) && typeof (c!.stdio as unknown[])[1]).toBe('number'); // stdout is the file on the drive, never this program's memory
@@ -94,7 +111,7 @@ describe('backup --to <folder> — pg_dump inside the database container, stream
     expect(w.said[0]).toMatch(/^REFUSED — say where the backup goes/);
     expect(await backup(w.deps, { to: join(w.root, 'backups') })).toBe(2);
     expect(said(w)).toMatch(/is inside the system's own folder/);
-    const f = join(w.root, 'infra', 'compose', '.env.real');
+    const f = join(w.data, '.env.real');
     writeFileSync(f, readFileSync(f, 'utf8').replace(/^MIGRATION_TARGET_KIND=rehearsal$/m, 'MIGRATION_TARGET_KIND=production'));
     expect(await backup(w.deps, { to: driveOf() })).toBe(2);
     expect(said(w)).toMatch(/never works on a production box/);
@@ -110,27 +127,32 @@ describe('backup --to <folder> — pg_dump inside the database container, stream
     expect(ownDriveProblem('E:\\sre-real', win)).toBeUndefined();
   });
 
-  it('a pg_dump that fails, or Docker stopped: NOT DONE, no manifest, and the incomplete file is left — never deleted', async () => {
+  it('a pg_dump that fails, or Docker stopped: NOT DONE, nothing on the drive, no plain copy left anywhere — and the failure is on record', async () => {
     const w = await prepared();
     w.docker.dumpExit = 1;
     const drive = driveOf();
     expect(await backup(w.deps, { to: drive })).toBe(1);
     expect(said(w)).toMatch(/NOT DONE — pg_dump ended 1/);
-    expect(said(w)).toMatch(/left on the drive with no manifest; it is not a backup/);
-    expect(filesIn(drive)).toEqual(['sre-real-backup-2026-10-20T04-30-00-000Z.dump']);
+    expect(said(w)).toMatch(/Nothing was written to the drive\./);
+    expect(filesIn(drive)).toEqual([]);
+    expect(readdirSync(join(w.data, 'scratch'))).toEqual([]);
+    // The failure is written down (append-only), so backup-status and the red banner can say it.
+    const log = readFileSync(join(w.data, 'backup', 'backup-log.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as Record<string, unknown>);
+    expect(log.at(-1)).toMatchObject({ kind: 'on-demand', ok: false, to: drive, problem: expect.stringMatching(/pg_dump ended 1/) });
     const v = await prepared();
     v.docker.running = false;
     expect(await backup(v.deps, { to: driveOf() })).toBe(1);
     expect(v.said[0]).toMatch(/^NOT DONE — Docker is installed but not running\./);
     expect(execs(v, 'psql')).toEqual([]);
   });
-
   it('two backups in the same second get two files: nothing is ever overwritten', async () => {
     const w = await prepared();
     const drive = driveOf();
     expect(await backup(w.deps, { to: drive })).toBe(0);
     expect(await backup(w.deps, { to: drive })).toBe(0);
-    expect(filesIn(drive).filter((f) => f.endsWith('.dump'))).toEqual(['sre-real-backup-2026-10-20T04-30-00-000Z-2.dump', 'sre-real-backup-2026-10-20T04-30-00-000Z.dump']);
+    expect(filesIn(drive).filter((f) => f.endsWith('.manifest.json'))).toEqual(['sre-real-backup-2026-10-20T04-30-00-000Z-2.manifest.json', 'sre-real-backup-2026-10-20T04-30-00-000Z.manifest.json']);
+    // The passphrase was asked for once, for the first backup only ("types once"); the second needed none.
+    expect(w.asked).toHaveLength(2);
   });
 
   it('a drive that is not plugged in is said plainly', async () => {
@@ -149,7 +171,7 @@ describe('restore-check --from <backup> — a NEW scratch database, reconciled, 
     expect(await backup(w.deps, { to: drive })).toBe(0);
     w.said.length = 0;
     w.calls.length = 0;
-    return { w, drive, manifest: join(drive, 'sre-real-backup-2026-10-20T04-30-00-000Z.manifest.json'), dump: join(drive, 'sre-real-backup-2026-10-20T04-30-00-000Z.dump') };
+    return { w, drive, manifest: join(drive, 'sre-real-backup-2026-10-20T04-30-00-000Z.manifest.json'), dump: join(drive, 'sre-real-backup-2026-10-20T04-30-00-000Z.dump.sreenc') };
   };
 
   it('restored_and_reconciled: restores into sre_restore_check_<time>, counts, writes the record, THEN drops only that database', async () => {
@@ -190,19 +212,68 @@ describe('restore-check --from <backup> — a NEW scratch database, reconciled, 
     expect(scratchName(new Date('2026-10-20T04:30:00Z'), ['sre_restore_check_20261020043000'])).toBe('sre_restore_check_20261020043000_2');
   });
 
-  it('a tampered backup file is refused BEFORE any database is made — and the exact difference is said', async () => {
+  it('a tampered backup file is refused BEFORE any database is made, and before the passphrase is asked — and the exact difference is said', async () => {
     const { w, drive, dump } = await backedUp();
+    const askedBefore = w.asked.length;
     chmodSync(dump, 0o644);
     appendFileSync(dump, 'x');
     expect(await restoreCheck(w.deps, { from: dump })).toBe(1);
     const out = said(w);
     expect(out).toMatch(/NOT ACCEPTED — the backup file is not the file that was taken/);
-    expect(out).toMatch(/difference: the file is \d+ bytes; the manifest says \d+/);
-    expect(out).toMatch(/difference: the file's SHA-256 is [0-9a-f]{64}; the manifest says [0-9a-f]{64}/);
+    expect(out).toMatch(/difference: the database file is \d+ bytes; the manifest says \d+/);
     expect(w.calls.filter((c) => c.args.includes('exec'))).toEqual([]);
+    expect(w.asked).toHaveLength(askedBefore);
     expect(JSON.parse(textsIn(drive).find((t) => t.includes('store-computer-restore-check'))!)).toMatchObject({ outcome: 'refused_file_changed' });
+    // Same size, one byte changed in the middle of the till's part: the SHA-256 catches it.
+    const v = await backedUp();
+    const files = join(v.drive, 'sre-real-backup-2026-10-20T04-30-00-000Z.files.sreenc');
+    chmodSync(files, 0o644);
+    const bytes = readFileSync(files);
+    bytes[bytes.length - 20] = bytes[bytes.length - 20]! ^ 0xff;
+    writeFileSync(files, bytes);
+    expect(await restoreCheck(v.w.deps, { from: v.manifest })).toBe(1);
+    expect(said(v.w)).toMatch(/difference: the files file's SHA-256 is not the one in the manifest/);
   });
 
+  it('a wrong passphrase three times opens nothing and restores nothing', async () => {
+    const { w, manifest } = await backedUp();
+    w.typed = ['not the passphrase at all'];
+    expect(await restoreCheck(w.deps, { from: manifest })).toBe(1);
+    expect(said(w)).toMatch(/That passphrase does not open backup key [0-9a-f]{16}\. 2 more tries\./);
+    expect(said(w)).toMatch(/NOT CHECKED — the passphrase given three times does not open the backup key\. Nothing was opened or restored\./);
+    expect(said(w)).toMatch(/NOT ACCEPTED — the encrypted backup was not opened/);
+    expect(w.calls.filter((c) => c.args.includes('exec') && c.args.includes('pg_restore'))).toEqual([]);
+    expect(said(w)).not.toContain('not the passphrase at all');
+  });
+
+  it('opens the till\'s data and the settings copy too: every till file whole, every secret there — names and counts only', async () => {
+    const w = await prepared();
+    // A till on this computer, with its data in the data folder (what till:install writes there since audit row 9).
+    const till = join(w.data, 'till');
+    mkdirSync(join(till, 'edge-data'), { recursive: true });
+    mkdirSync(join(till, 'edge-witness'), { recursive: true });
+    writeFileSync(join(till, 'till.env'), `EDGE_DATA_DIR=${join(till, 'edge-data')}\nEDGE_WITNESS_DIR=${join(till, 'edge-witness')}\nEDGE_LANE_PORT=8090\nPACK_SIGNING_KEY=${'k'.repeat(48)}\n`);
+    const frame = (r: string): string => `${Buffer.byteLength(r)} ${r}\n`;
+    writeFileSync(join(till, 'edge-data', 'sales.log'), frame('{"sale":1}') + frame('{"sale":2,"note":"a\\nb"}'));
+    writeFileSync(join(till, 'edge-data', 'dead-letters'), frame('{"key":"k1","kind":"dead_lettered"}'));
+    writeFileSync(join(till, 'edge-data', 'till-credentials.json'), '{"version":1,"credentials":[]}\n');
+    writeFileSync(join(till, 'edge-data', 'sync-cursor'), '1\n');
+    writeFileSync(join(till, 'edge-witness', 'receipt-numbers.witness.log'), frame('{"w":1}'));
+    const drive = driveOf();
+    expect(await backup(w.deps, { to: drive })).toBe(0);
+    expect(said(w)).toMatch(/The till's data: 5 file\(s\) — 2 sale record\(s\), 1 dead-letter record\(s\), the staff PIN checks\./);
+    w.said.length = 0;
+    expect(await restoreCheck(w.deps, { from: join(drive, 'sre-real-backup-2026-10-20T04-30-00-000Z.manifest.json') })).toBe(0);
+    const out = said(w);
+    expect(out).toMatch(/The till's data: 5 file\(s\) checked, 2 sale record\(s\), 1 dead-letter record\(s\), the staff PIN checks — every one whole\./);
+    expect(out).toMatch(/This copy's settings: the encrypted copy opens and holds 5 secret\(s\), the same as this computer has now\. No value was shown\./);
+    const rec = JSON.parse(textsIn(drive).find((t) => t.includes('store-computer-restore-check'))!) as Record<string, unknown>;
+    expect(rec).toMatchObject({ outcome: 'restored_and_reconciled', till: { checked: true, files: 5, saleRecords: 2, deadLetterRecords: 1 }, settings: { opened: true, secretsInCopy: 5, sameAsThisComputer: true } });
+    // The witness never travels (OB-87), and nothing plain stayed behind on this computer.
+    expect(JSON.stringify(rec)).not.toContain('witness.log');
+    expect(readdirSync(join(w.data, 'scratch'))).toEqual([]);
+    expectNoSecret(w, textsIn(drive));
+  });
   it('a restore that does not reconcile is NOT ACCEPTED with each exact difference — and the scratch database is still dropped', async () => {
     const { w, manifest } = await backedUp();
     w.docker.restoreLoses = 1;
@@ -257,11 +328,12 @@ describe('on Windows paths (C:\\SRE, the backup drive E:) — the same commands,
     const drives = join(w.root, '..', `${w.root.split('/').pop()}-drives`);
     const map = (p: unknown): unknown => {
       if (typeof p !== 'string' || !/^[A-Za-z]:\\/.test(p)) return p;
+      if (/^C:\\SRE-data(\\|$)/i.test(p)) return w.data + p.slice(11).replace(/\\/g, '/');
       if (/^C:\\SRE(\\|$)/i.test(p)) return w.root + p.slice(6).replace(/\\/g, '/');
       return join(drives, `drive-${p[0]!.toLowerCase()}`, p.slice(3).replace(/\\/g, '/'));
     };
     const fs = new Proxy(nodeFs, { get: (t, k) => { const f = (t as Record<string | symbol, unknown>)[k]; return typeof f === 'function' ? (...a: unknown[]) => (f as (...x: unknown[]) => unknown).apply(t, a.map(map)) : f; } });
-    return { ...w.deps, platform: 'win32', repoRoot: 'C:\\SRE', env: { SystemDrive: 'C:' }, fs: fs as World['deps']['fs'] };
+    return { ...w.deps, platform: 'win32', repoRoot: 'C:\\SRE', dataRoot: 'C:\\SRE-data', env: { SystemDrive: 'C:' }, fs: fs as World['deps']['fs'] };
   }
 
   it('backup --to E:\\sre-real, restore-check, then check 10 on the manifest passes; C:\\Backups is refused', async () => {
@@ -296,7 +368,7 @@ describe('drill — backup, restore-check, the previous release back, this relea
     return { w, drive, prev, args: { by: 'S. Rajendran', to: drive, previous: prev } };
   }
   const ups = (w: World): Call[] => w.calls.filter((c) => c.args[0] === 'compose' && c.args.includes('up'));
-  const drillRecord = (w: World): Record<string, unknown> => JSON.parse(textsIn(join(w.root, 'infra', 'compose', 'records')).at(-1)!) as Record<string, unknown>;
+  const drillRecord = (w: World): Record<string, unknown> => JSON.parse(textsIn(join(w.data, 'records')).at(-1)!) as Record<string, unknown>;
 
   it('a dry run (no --run) changes nothing, writes nothing, and lists the steps and the targets', async () => {
     const { w, drive, args } = await stage();
@@ -307,7 +379,7 @@ describe('drill — backup, restore-check, the previous release back, this relea
     expect(out).toMatch(/target 30 minutes/);
     expect(w.calls).toEqual([]);
     expect(filesIn(drive)).toEqual([]);
-    expect(existsSync(join(w.root, 'infra', 'compose', 'records'))).toBe(false);
+    expect(existsSync(join(w.data, 'records'))).toBe(false);
   });
 
   it('--run: G9 PASSED — four timed steps, the previous release from ITS folder with THIS copy\'s settings, then this release; a new dated record', async () => {
@@ -316,9 +388,9 @@ describe('drill — backup, restore-check, the previous release back, this relea
     const [back, forward, ...more] = ups(w);
     expect(more).toEqual([]);
     expect(back!.cwd).toBe(join(prev, 'infra', 'compose'));
-    expect(back!.args).toEqual(['compose', '-p', 'sre-real', '-f', 'docker-compose.yml', '--env-file', join(w.root, 'infra', 'compose', '.env.real'), 'up', '-d', '--build', 'db', 'migrate', 'api']);
+    expect(back!.args).toEqual(['compose', '-p', 'sre-real', '-f', 'docker-compose.yml', '--env-file', join(w.data, '.env.real'), 'up', '-d', '--build', 'db', 'migrate', 'api']);
     expect(forward!.cwd).toBe(join(w.root, 'infra', 'compose'));
-    expect(forward!.args).toEqual(['compose', '-p', 'sre-real', '-f', 'docker-compose.yml', '--env-file', '.env.real', 'up', '-d', '--build', 'db', 'migrate', 'api']);
+    expect(forward!.args).toEqual(['compose', '-p', 'sre-real', '-f', 'docker-compose.yml', '--env-file', join(w.data, '.env.real'), 'up', '-d', '--build', 'db', 'migrate', 'api']);
     expect(w.calls.indexOf(back!)).toBeGreaterThan(w.calls.indexOf(execs(w, 'pg_restore')[0]!));
     const out = said(w);
     expect(out).toMatch(/^G9 PASSED — every step worked, each inside its target/m);
@@ -328,10 +400,10 @@ describe('drill — backup, restore-check, the previous release back, this relea
     expect(rec['method']).toMatch(/the database is not rolled back \(migrations only add\)/);
     // A copy of the record on the drive, beside the backup and its restore-check record.
     expect(filesIn(drive).filter((f) => f.startsWith('g9-drill-'))).toEqual(['g9-drill-2026-10-20T04-30-00-000Z.json']);
-    expectNoSecret(w, [...textsIn(drive), ...textsIn(join(w.root, 'infra', 'compose', 'records'))]);
+    expectNoSecret(w, [...textsIn(drive), ...textsIn(join(w.data, 'records'))]);
     // Every drill writes a NEW record.
     expect(await drill(w.deps, { ...args, run: true })).toBe(0);
-    expect(filesIn(join(w.root, 'infra', 'compose', 'records')).filter((f) => f.startsWith('g9-drill-'))).toHaveLength(2);
+    expect(filesIn(join(w.data, 'records')).filter((f) => f.startsWith('g9-drill-'))).toHaveLength(2);
   });
 
   it('a step over its 30-minute target is NOT a pass, even though everything worked', async () => {

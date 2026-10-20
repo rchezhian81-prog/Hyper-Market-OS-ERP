@@ -307,6 +307,8 @@ export function startScreenServer(input: {
   readonly laneId?: string;
   /** B13 (OB-138): the hallmark HUIDs this box has sold — told to the served till with its lane, per request. */
   readonly soldHuids?: () => readonly string[];
+  /** OB-252: whether this box takes guest sales only, and who turned it on — told to the served till, per request. */
+  readonly guestSalesOnly?: () => { readonly on: boolean; readonly by: 'store_pack' | 'store_computer_setting' | null };
   /**
    * Run the ERP screens as the person the relay's `X-Sre-User` header names (OB-16). ONLY a deployment whose screens
    * are reached solely through a front that authenticates every request and sets this header itself
@@ -381,7 +383,11 @@ export function startScreenServer(input: {
       // The till alone is also told which lane it IS and when the shop's day ends (SP-4b · F09) — never who the cashier
       // is; the person signs in at the till.
       const posLane = route.screen === 'pos'
-        ? { ...posLanePayload(snap, input.laneId), ...(input.soldHuids === undefined ? {} : { soldHuids: input.soldHuids() }) }
+        ? {
+          ...posLanePayload(snap, input.laneId), ...(input.soldHuids === undefined ? {} : { soldHuids: input.soldHuids() }),
+          // OB-252: guest sales only — the till shows it whenever it is on, and takes no customer number or loyalty.
+          ...(input.guestSalesOnly === undefined ? {} : { guestSalesOnly: input.guestSalesOnly() }),
+        }
         : undefined;
       // And the refund policy its store pack carries (SP-9b-i · M13-FR-01): the approval threshold and the no-receipt
       // cap. Absent when the box holds none — the till then offers no return without a receipt, rather than guessing a cap.

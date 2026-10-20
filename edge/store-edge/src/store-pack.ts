@@ -979,6 +979,11 @@ export interface PackPolicies {
   /** Days the shop has to answer a data-subject request (PRV). */
   readonly privacySlaDays: number;
   readonly warehouseId: string;
+  /**
+   * OB-252 (owner, 20 Oct 2026, "Guest sales only"): `true` → this store's tills take no customer mobile number and no
+   * loyalty during the pilot. Optional: absent is off (the box's own `EDGE_GUEST_SALES_ONLY=1` can also turn it on).
+   */
+  readonly guestSalesOnly?: boolean;
 }
 
 /** A storage bin the warehouse handheld can put stock into (M09 / OA-9). */

@@ -1,17 +1,19 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { appendFileSync, chmodSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import * as nodeFs from 'node:fs';
+import { appendFileSync, chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID, type KeyObject } from 'node:crypto';
+import { decryptFile, openJson, unlockBackupKey } from '../../scripts/lib/store-computer-crypto.mjs';
 import { Pool } from 'pg';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { runMigrations } from '../../packages/persistence/src/migrations';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { makeEvent } from '../../packages/contracts/src/event';
-import { backupRecordVerdict, type SpawnResult } from '../../scripts/lib/store-computer.mjs';
+import { backupRecordVerdict, FINGERPRINT_KEYS, type SpawnResult } from '../../scripts/lib/store-computer.mjs';
 import { backup, restoreCheck } from '../../scripts/lib/store-computer-recovery.mjs';
-import { world, type World } from '../support/store-computer-world';
+import { PASSPHRASE, world, type World } from '../support/store-computer-world';
 
 /**
  * OB-246 (gap G-RD-6) on REAL PostgreSQL: the store computer's `backup` (one psql session — a REPEATABLE READ snapshot,
@@ -87,24 +89,46 @@ describeOrSkip('the store computer backup restores and reconciles — on real Po
   function storeComputer(pathFirst?: string): World {
     const w = world();
     const u = new URL(DATABASE_URL!);
-    writeFileSync(join(w.root, 'infra', 'compose', '.env.real'), [
-      `POSTGRES_USER=${decodeURIComponent(u.username)}`, `POSTGRES_DB=${DB}`, 'MIGRATION_TARGET_KIND=rehearsal', `EDGE_TENANT_ID=${randomUUID()}`, '',
+    // The data folder layout (audit row 9). The secrets are fresh random stand-ins: the backup encrypts a copy of this file.
+    mkdirSync(w.data, { recursive: true });
+    writeFileSync(join(w.data, '.env.real'), [
+      `POSTGRES_USER=${decodeURIComponent(u.username)}`, `POSTGRES_DB=${DB}`, 'MIGRATION_TARGET_KIND=rehearsal', `EDGE_TENANT_ID=${randomUUID()}`,
+      ...FINGERPRINT_KEYS.map((k) => `${k}=${randomBytes(24).toString('hex')}`), '',
     ].join('\n'));
     w.deps = { ...w.deps, spawn: localExec(w, pathFirst), now: () => new Date() };
     return w;
   }
+  /** The backup key in this pretend computer's data folder, opened with the pretend owner's passphrase. */
+  const privateKeyOf = (w: World): KeyObject => {
+    const u = unlockBackupKey(JSON.parse(readFileSync(join(w.data, 'backup', 'backup-key.json'), 'utf8')), PASSPHRASE);
+    if (!u.ok) throw new Error(u.problem);
+    return u.privateKey;
+  };
+  /** Every file of one backup, by its manifest's name. */
+  const backupSet = (folder: string, manifestName: string): string[] => {
+    const id = manifestName.replace('.manifest.json', '');
+    return readdirSync(folder).filter((f) => f.startsWith(id) || f.startsWith('sre-backup-key-'));
+  };
   const scratchOf = (w: World): string[] => w.calls.flatMap((c) => c.args.filter((a) => /^CREATE DATABASE "/.test(a)).map((a) => /"([a-z0-9_]+)"/.exec(a)![1]!));
 
   it('backup takes one consistent snapshot to the drive; restore-check restores it into a NEW scratch database, reconciles, records, and drops only that', async () => {
     const w = storeComputer();
     expect(await backup(w.deps, { to: drive }), w.said.join('\n')).toBe(0);
     const manifestName = readdirSync(drive).find((f) => f.endsWith('.manifest.json'))!;
-    const manifest = JSON.parse(readFileSync(join(drive, manifestName), 'utf8')) as { controlTotals: { rowCounts: Record<string, number>; valueTotals: Record<string, number>; maxEventSeq: number }; consistency: { snapshotId: string }; sha256: string; sizeBytes: number };
+    const manifest = JSON.parse(readFileSync(join(drive, manifestName), 'utf8')) as { controlTotals: { rowCounts: Record<string, number>; maxEventSeq: number }; sealedValueTotals: never; consistency: { snapshotId: string }; sha256: string; sizeBytes: number };
     expect(manifest.consistency.snapshotId).toMatch(/^[0-9A-F]+-[0-9A-F]+-\d+$/);
     expect(manifest.controlTotals.rowCounts['event_ledger']).toBeGreaterThanOrEqual(3);
-    expect(manifest.controlTotals.valueTotals['SaleCommitted']).toBeGreaterThanOrEqual(3 * 12_345);
-    // The file on the drive is a real custom-format archive (pg_dump's own header), and only that.
-    expect(readFileSync(join(drive, manifestName.replace('.manifest.json', '.dump'))).subarray(0, 5).toString('latin1')).toBe('PGDMP');
+    // The money per event type is sealed to the backup key: it opens with the owner's passphrase only.
+    const totals = openJson(manifest.sealedValueTotals, privateKeyOf(w));
+    expect(totals.ok && (totals.value as Record<string, number>)['SaleCommitted']).toBeGreaterThanOrEqual(3 * 12_345);
+    // OB-249: the file on the drive is ENCRYPTED; opened with the key it is a real custom-format archive (pg_dump's own header).
+    const enc = join(drive, manifestName.replace('.manifest.json', '.dump.sreenc'));
+    expect(readFileSync(enc).subarray(0, 8).toString('latin1')).toBe('SREENC1\n');
+    expect(readFileSync(enc).includes(Buffer.from('PGDMP'))).toBe(false);
+    const opened = join(mkdtempSync(join(tmpdir(), 'sc-opened-')), 'db.dump');
+    expect(decryptFile(nodeFs, enc, opened, privateKeyOf(w), { expectPurpose: 'database' }).ok).toBe(true);
+    expect(readFileSync(opened).subarray(0, 5).toString('latin1')).toBe('PGDMP');
+    rmSync(opened, { force: true });
     // The counts are the database's own at that moment.
     const live = new Pool({ connectionString: urlFor(DB), max: 1, options: '-c app.tenant_id=*' });
     live.on('error', () => { /* dropped after */ });
@@ -131,13 +155,11 @@ describeOrSkip('the store computer backup restores and reconciles — on real Po
     try {
       expect(await backup(w.deps, { to: own }), w.said.join('\n')).toBe(0);
       const manifestName = readdirSync(own).find((f) => f.endsWith('.manifest.json'))!;
-      const dump = join(own, manifestName.replace('.manifest.json', '.dump'));
 
-      // (1) one byte added to the file: the SHA-256 and the size differ — not restored, no database made.
+      // (1) one byte added to the encrypted database file: the size differs — not opened, not restored, no database made.
       const copy = mkdtempSync(join(tmpdir(), 'sc-owner-drive-3-'));
-      writeFileSync(join(copy, manifestName), readFileSync(join(own, manifestName)));
-      writeFileSync(join(copy, manifestName.replace('.manifest.json', '.dump')), readFileSync(dump));
-      appendFileSync(join(copy, manifestName.replace('.manifest.json', '.dump')), Buffer.from([0]));
+      for (const f of backupSet(own, manifestName)) writeFileSync(join(copy, f), readFileSync(join(own, f)));
+      appendFileSync(join(copy, manifestName.replace('.manifest.json', '.dump.sreenc')), Buffer.from([0]));
       w.said.length = 0;
       w.calls.length = 0;
       expect(await restoreCheck(w.deps, { from: join(copy, manifestName) })).toBe(1);

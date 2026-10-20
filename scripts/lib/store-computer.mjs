@@ -8,7 +8,15 @@
 //   fingerprints  shows a short one-way fingerprint of each secret (never the secret) and writes them to a file that is
 //            safe to share — run on the demo box and on the store computer, so check 3 can compare them (OB-245, G-RD-8)
 //   backup · restore-check · drill   the backup, restore-and-reconcile and timed rollback drill on Windows (OB-246,
-//            G-RD-6, gate G9) — in scripts/lib/store-computer-recovery.mjs
+//            G-RD-6, gate G9) — in scripts/lib/store-computer-recovery.mjs; since OB-249 every backup is ENCRYPTED and
+//            holds the database, the till's own data and the settings (store-computer-crypto.mjs, store-computer-files.mjs)
+//   schedule-backup · unschedule-backup · backup-status · autostart   the store computer runs itself: the hourly backup
+//            and the start at sign-in, as Windows tasks (OB-249 · audit row 5) — scripts/lib/store-computer-schedule.mjs
+//   status   the store computer's own red light: backup age, the till's queue, the disk, the containers (audit row 6) —
+//            scripts/lib/store-computer-status.mjs; the office screens show the same banner
+//   migrate-data-folder · update   the shop's data lives OUTSIDE the release folder, so an update never loses it (audit
+//            row 9) — scripts/lib/store-computer-data.mjs
+//   seal · parallel-policy   the two owner steps of the migration that had no command (audit row 8, MG-02 · MG-10b)
 //
 // Every command refuses, before it does anything: a production box (hard rule #7), the demo tenant (gate G4), the demo's
 // compose project or settings files, and seeding people (that is `tenant:bootstrap`, and it waits for the OB-243 names).
@@ -27,12 +35,15 @@
 
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import * as nodeFs from 'node:fs';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createConnection, createServer } from 'node:net';
 import * as os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { backup, drill, restoreCheck } from './store-computer-recovery.mjs';
+import { autostart, backupStatus, scheduleBackup, scheduledBackup, startAtSignIn, unscheduleBackup } from './store-computer-schedule.mjs';
+import { status } from './store-computer-status.mjs';
+import { migrateDataFolder, update } from './store-computer-data.mjs';
 
 // ── Fixed names ───────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -77,20 +88,95 @@ const real = (v) => typeof v === 'string' && v.trim() !== '' && !v.includes(PLAC
 /** The path module for the computer the tool runs on (Windows paths on Windows, whatever the tests run on). */
 export const pathFor = (platform) => (platform === 'win32' ? path.win32 : path.posix);
 
-/** Every path the tool uses, from the repository folder. */
-export function layout(repoRoot, platform) {
+/**
+ * The shop's DATA FOLDER (audit row 9 / C-12 / B11): this copy's settings, the check records, the till's own data and the
+ * backup key live OUTSIDE the release folder, so a new release can be put beside the old one — and an old release folder
+ * removed — without touching a sale, a secret or a record. On Windows it is <system drive>\SRE-data (C:\SRE-data), the
+ * same for every release; SRE_DATA_DIR names another. Elsewhere it is the release folder's name plus "-data".
+ */
+export const DATA_FOLDER_NAME = 'SRE-data';
+/** The note in the data folder that says what it is. Its presence beside a settings file is how till:install knows it. */
+export const DATA_MARKER = 'THIS-IS-THE-SHOP-DATA-FOLDER.txt';
+export const DATA_MARKER_TEXT = [
+  "THIS FOLDER HOLDS THE SHOP'S DATA for the store computer (SRE Retail OS).",
+  '',
+  "In it: this copy's settings and secrets (.env.real), the till's sales, queue, dead letters and staff PIN checks",
+  '(till\\edge-data), the bill-number witness (till\\edge-witness), the check records, and the backup key.',
+  '',
+  '  * Never delete this folder, never move it, and never copy it to a USB stick, an email or a cloud folder.',
+  '    The automatic backup makes ENCRYPTED copies of it on the backup drive.',
+  '  * A new release of the system goes into its OWN folder; this folder stays exactly where it is.',
+  '  * Never photograph the files in it.',
+  '',
+].join('\r\n');
+
+/** The data folder for this computer: SRE_DATA_DIR, else C:\SRE-data on Windows, else "<release folder>-data". */
+export function defaultDataRoot(repoRoot, platform, env = {}) {
+  const p = pathFor(platform);
+  const given = String(env.SRE_DATA_DIR ?? '').trim();
+  if (given !== '') return p.resolve(given);
+  if (platform === 'win32') return p.join(`${String(env.SystemDrive || 'C:').replace(/[\\/]+$/, '')}\\`, DATA_FOLDER_NAME);
+  return `${p.resolve(repoRoot).replace(/[\\/]+$/, '')}-data`;
+}
+
+/**
+ * Every path the tool uses. Without `dataRoot`: the first layout, everything inside the release folder (still read, so a
+ * copy set up that way keeps working until `migrate-data-folder` moves it). With `dataRoot`: the data-folder layout.
+ */
+export function layout(repoRoot, platform, dataRoot) {
   const p = pathFor(platform);
   const composeDir = p.join(repoRoot, 'infra', 'compose');
-  return {
+  const common = {
+    repoRoot,
     composeDir,
-    settings: p.join(composeDir, SETTINGS_NAME),
     example: p.join(composeDir, '.env.example'),
     others: OTHER_SETTINGS_NAMES.map((name) => ({ name, path: p.join(composeDir, name) })),
-    records: p.join(composeDir, 'records'),
-    tillEnv: p.join(repoRoot, 'till', 'till.env'),
     sliceScript: p.join('scripts', 'dist', 'migration-slice.js'),
     buildScript: p.join('scripts', 'build-service.mjs'),
+    releaseTill: p.join(repoRoot, 'till'),
   };
+  if (dataRoot === undefined) {
+    return { ...common, mode: 'in-release', settings: p.join(composeDir, SETTINGS_NAME), records: p.join(composeDir, 'records'), tillDir: p.join(repoRoot, 'till'), tillEnv: p.join(repoRoot, 'till', 'till.env') };
+  }
+  const tillDir = p.join(dataRoot, 'till');
+  return {
+    ...common,
+    mode: 'data-folder',
+    dataRoot,
+    marker: p.join(dataRoot, DATA_MARKER),
+    settings: p.join(dataRoot, SETTINGS_NAME),
+    records: p.join(dataRoot, 'records'),
+    tillDir,
+    tillEnv: p.join(tillDir, 'till.env'),
+    backupDir: p.join(dataRoot, 'backup'),
+    statusDir: p.join(dataRoot, 'status'),
+    statusFile: p.join(dataRoot, 'status', 'store-computer-status.json'),
+    runDir: p.join(dataRoot, 'run'),
+    scratchDir: p.join(dataRoot, 'scratch'),
+  };
+}
+
+/**
+ * The layout this computer uses now: the data folder when its settings file is there; the first, in-release layout when
+ * only that one's settings file is there (until `migrate-data-folder`); the data folder for a copy not set up yet.
+ */
+export function resolveLayout(deps) {
+  const legacy = layout(deps.repoRoot, deps.platform);
+  if (deps.dataRoot === undefined) return legacy;
+  const data = layout(deps.repoRoot, deps.platform, deps.dataRoot);
+  if (deps.fs.existsSync(data.settings)) return data;
+  if (deps.fs.existsSync(legacy.settings)) return legacy;
+  return data;
+}
+
+/** Both layouts, for the commands that move from one to the other. */
+export const bothLayouts = (deps) => ({ legacy: layout(deps.repoRoot, deps.platform), data: deps.dataRoot === undefined ? undefined : layout(deps.repoRoot, deps.platform, deps.dataRoot) });
+
+/** Make the data folder and its note (never overwriting the note). */
+export function ensureDataFolder(deps, L) {
+  if (L.mode !== 'data-folder') return;
+  deps.fs.mkdirSync(L.dataRoot, { recursive: true });
+  if (!deps.fs.existsSync(L.marker)) deps.fs.writeFileSync(L.marker, DATA_MARKER_TEXT, { encoding: 'utf8', flag: 'wx' });
 }
 
 /** `KEY=value` lines; blanks and `#` comments ignored; the first `=` splits (the same reading as standup-check). */
@@ -142,6 +228,8 @@ export function composeEnv(processEnv, settings) {
 
 /** The fixed start of every compose command: this project, the base file only (never the demo's overlay), this file. */
 export const COMPOSE_BASE = Object.freeze(['compose', '-p', PROJECT, '-f', 'docker-compose.yml', '--env-file', SETTINGS_NAME]);
+/** The same for the layout in use: in the data folder, compose is given the settings file by its full path. */
+export const composeBase = (L) => (L?.mode === 'data-folder' ? ['compose', '-p', PROJECT, '-f', 'docker-compose.yml', '--env-file', L.settings] : [...COMPOSE_BASE]);
 
 // ── prepare ───────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -225,14 +313,19 @@ const readOthers = (deps, L) => L.others
   .filter((o) => deps.fs.existsSync(o.path))
   .map((o) => ({ name: o.name, values: parseEnvText(deps.fs.readFileSync(o.path, 'utf8')) }));
 
-export const rel = (deps, abs) => pathFor(deps.platform).relative(deps.repoRoot, abs) || '.';
+/** A path as the owner should read it: inside the release folder, relative to it; anywhere else (the data folder), in full. */
+export const rel = (deps, abs) => {
+  const p = pathFor(deps.platform);
+  const r = p.relative(deps.repoRoot, abs);
+  return r === '' ? '.' : r.startsWith('..') || p.isAbsolute(r) ? abs : r;
+};
 /** The clock as a file-name stamp: 2026-10-20T04-30-00-000Z. */
 export const stampOf = (at) => at.toISOString().replace(/[:.]/g, '-');
 
 /** `prepare`: write .env.real once. Never overwrites, never seeds, never shows a secret. */
 export async function prepare(deps) {
   const { say, fs } = deps;
-  const L = layout(deps.repoRoot, deps.platform);
+  const L = resolveLayout(deps);
   const shownPath = rel(deps, L.settings);
   if (fs.existsSync(L.settings)) {
     say(`REFUSED — ${shownPath} already exists. It is never overwritten: it holds this copy's secrets.`);
@@ -265,6 +358,7 @@ export async function prepare(deps) {
     return 1;
   }
   // 'wx': created only if it does not exist — even a file appearing in the last millisecond is never overwritten.
+  ensureDataFolder(deps, L);
   fs.writeFileSync(L.settings, text, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
 
   // From here on only names and the tenant id (a UUID, not a secret) are said — never `planned` itself.
@@ -272,6 +366,7 @@ export async function prepare(deps) {
   const tenantId = planned.EDGE_TENANT_ID;
   say(`Settings file written: ${shownPath}`);
   say('  It stays on this computer only. Never photograph it, never send it, never open it on a shared screen.');
+  if (L.mode === 'data-folder') say(`  It is in the shop's data folder ${L.dataRoot}, outside the system's own folder, so a new release never touches it.`);
   say('Filled in (names only — the values are never shown):');
   for (const key of filledNames) say(`  ${key}${secretNames.includes(key) ? '   (a new secret, made on this computer)' : ''}`);
   say(`This copy's tenant id: ${tenantId}`);
@@ -285,7 +380,7 @@ export async function prepare(deps) {
 // ── Reading this copy's settings ──────────────────────────────────────────────────────────────────────────────────
 
 export function loadSettings(deps) {
-  const L = layout(deps.repoRoot, deps.platform);
+  const L = resolveLayout(deps);
   if (!deps.fs.existsSync(L.settings)) return { L, settings: undefined };
   return { L, settings: parseEnvText(deps.fs.readFileSync(L.settings, 'utf8')) };
 }
@@ -380,13 +475,13 @@ export async function up(deps) {
 
   const env = composeEnv(deps.env, settings);
   say(`Starting this copy (${PROJECT}): the database, the schema check and the API. The first time takes several minutes.`);
-  const started = deps.spawn('docker', [...COMPOSE_BASE, 'up', '-d', 'db', 'migrate', 'api'], { cwd: L.composeDir, env, stdio: 'inherit' });
+  const started = deps.spawn('docker', [...composeBase(L), 'up', '-d', 'db', 'migrate', 'api'], { cwd: L.composeDir, env, stdio: 'inherit' });
   if (started.error !== undefined || started.status !== 0) {
     say('NOT STARTED — Docker could not start this copy. The lines above, in Docker\'s own words, say why.');
     say('  What to do: send me a photo of the red text.');
     return 1;
   }
-  const ps = deps.spawn('docker', [...COMPOSE_BASE, 'ps'], { cwd: L.composeDir, env });
+  const ps = deps.spawn('docker', [...composeBase(L), 'ps'], { cwd: L.composeDir, env });
   for (const l of lines(ps.stdout)) say(`  ${l}`);
 
   const port = settings.API_PORT || '8081';
@@ -475,7 +570,7 @@ export function fingerprintMatches(own, theirs) {
 function fingerprintSource(deps, given) {
   const p = pathFor(deps.platform);
   if (given !== undefined) return { file: p.resolve(given) };
-  const L = layout(deps.repoRoot, deps.platform);
+  const L = resolveLayout(deps);
   const pilot = L.others.find((o) => o.name === '.env.pilot').path;
   const found = [L.settings, pilot].filter((f) => deps.fs.existsSync(f));
   if (found.length === 1) return { file: found[0] };
@@ -502,7 +597,7 @@ export async function fingerprints(deps, opts) {
     if (key in fp.fingerprints) say(`  ${key.padEnd(22)} ${fp.fingerprints[key]}`);
     else say(`  ${key.padEnd(22)} (${fp.notFingerprinted[key]} — no fingerprint)`);
   }
-  const dir = opts.out === undefined ? layout(deps.repoRoot, deps.platform).records : p.resolve(opts.out);
+  const dir = opts.out === undefined ? resolveLayout(deps).records : p.resolve(opts.out);
   fs.mkdirSync(dir, { recursive: true });
   let file;
   for (let i = 1; ; i += 1) {
@@ -594,7 +689,7 @@ function sliceRefusal(deps, L, { tenantId, settingsPath, expect }) {
 /** The ten checks. Read-only, except the temporary folder and file checks 7 and 8 make and delete. */
 export async function runChecks(deps, settings, opts) {
   const { fs } = deps;
-  const L = layout(deps.repoRoot, deps.platform);
+  const L = resolveLayout(deps);
   const p = pathFor(deps.platform);
   const results = [];
   const docker = dockerProblem(deps);
@@ -616,7 +711,7 @@ export async function runChecks(deps, settings, opts) {
   if (docker !== undefined) results.push(result(2, 'FAIL', 'Docker is not ready, so the database could not be asked.'));
   else {
     const user = settings.POSTGRES_USER || 'sre_admin';
-    const r = deps.spawn('docker', [...COMPOSE_BASE, 'exec', '-T', 'db', 'psql', '-U', user, '-d', 'postgres', '-Atc', 'SELECT datname FROM pg_database WHERE NOT datistemplate ORDER BY 1'], { cwd: L.composeDir, env: composeEnv(deps.env, settings) });
+    const r = deps.spawn('docker', [...composeBase(L), 'exec', '-T', 'db', 'psql', '-U', user, '-d', 'postgres', '-Atc', 'SELECT datname FROM pg_database WHERE NOT datistemplate ORDER BY 1'], { cwd: L.composeDir, env: composeEnv(deps.env, settings) });
     const names = lines(r.stdout);
     const ownDb = settings.POSTGRES_DB || 'sre_real';
     const demoDbs = new Set(['sre_pilot', ...others.map((o) => o.values.POSTGRES_DB).filter(real)]);
@@ -656,7 +751,7 @@ export async function runChecks(deps, settings, opts) {
   {
     const bad = [];
     const files = [{ name: SETTINGS_NAME, values: settings }];
-    if (fs.existsSync(L.tillEnv)) files.push({ name: 'till/till.env', values: parseEnvText(fs.readFileSync(L.tillEnv, 'utf8')) });
+    if (fs.existsSync(L.tillEnv)) files.push({ name: L.mode === 'data-folder' ? L.tillEnv : 'till/till.env', values: parseEnvText(fs.readFileSync(L.tillEnv, 'utf8')) });
     for (const f of files) {
       const url = String(f.values.CLOUD_API_URL ?? '').trim();
       if (!isLocalUrl(url)) bad.push(`${f.name}: CLOUD_API_URL names an address outside this computer`);
@@ -732,14 +827,14 @@ export async function runChecks(deps, settings, opts) {
  * Is `dir` on this computer's own drive? On Windows: the system drive (C:) or the drive the repository is on; anywhere:
  * inside the repository folder. Returns the problem in plain words, or undefined. Check 10 and `backup --to` both use it.
  */
-export function ownDriveProblem(dir, { platform, repoRoot, systemDrive }) {
+export function ownDriveProblem(dir, { platform, repoRoot, systemDrive, dataRoot }) {
   const p = pathFor(platform);
   const drive = (x) => p.parse(p.resolve(x)).root.replace(/[\\/]+$/, '').toLowerCase();
   const ownDrives = platform === 'win32' ? new Set([drive(repoRoot), String(systemDrive ?? 'C:').toLowerCase()]) : new Set();
   // On Windows `relative` across drives returns the other drive's absolute path, which is NOT inside the repository.
-  const fromRepo = p.relative(repoRoot, p.resolve(dir));
-  const insideRepo = fromRepo === '' || (!fromRepo.startsWith('..') && !p.isAbsolute(fromRepo));
-  if (insideRepo) return `${dir} is inside the system's own folder (${repoRoot})`;
+  const inside = (root) => { const r = p.relative(root, p.resolve(dir)); return r === '' || (!r.startsWith('..') && !p.isAbsolute(r)); };
+  if (inside(repoRoot)) return `${dir} is inside the system's own folder (${repoRoot})`;
+  if (dataRoot !== undefined && inside(dataRoot)) return `${dir} is inside the shop's data folder (${dataRoot}) — a backup must be on another drive`;
   if (platform === 'win32' && ownDrives.has(drive(dir))) return `${dir} is on this computer's own drive (${drive(dir).toUpperCase()})`;
   return undefined;
 }
@@ -748,12 +843,12 @@ export function ownDriveProblem(dir, { platform, repoRoot, systemDrive }) {
  * Check 10 from the backup step's own record: it restored and reconciled, and the copy went to a folder that is not on
  * this computer's own drive (`ownDriveProblem`). Takes the older recovery-rehearsal record, or a `restore-check` record.
  */
-export function backupVerdict(rec, { platform, repoRoot, systemDrive }) {
+export function backupVerdict(rec, { platform, repoRoot, systemDrive, dataRoot }) {
   if (rec === undefined || rec === null || typeof rec !== 'object') return { status: 'FAIL', detail: 'the backup record could not be read. Check the file name you gave after --backup-record.' };
   if (rec.outcome !== 'restored_and_reconciled') return { status: 'FAIL', detail: `the backup record says "${String(rec.outcome)}", not restored_and_reconciled. Take the backup again.` };
   const dir = typeof rec.offsiteDir === 'string' ? rec.offsiteDir.trim() : '';
   if (dir === '') return { status: 'FAIL', detail: 'the backup record names no backup drive folder.' };
-  if (ownDriveProblem(dir, { platform, repoRoot, systemDrive }) !== undefined) {
+  if (ownDriveProblem(dir, { platform, repoRoot, systemDrive, dataRoot }) !== undefined) {
     return { status: 'FAIL', detail: `the backup went to ${dir}, which is on this computer's own drive — it must go to your backup drive.` };
   }
   return { status: 'PASS', detail: `the backup record says the copy went to ${dir} and restored and reconciled. Confirm ${dir} is your own backup drive.` };
@@ -769,7 +864,7 @@ export function backupVerdict(rec, { platform, repoRoot, systemDrive }) {
 export function backupRecordVerdict(deps, file) {
   const { fs } = deps;
   const p = pathFor(deps.platform);
-  const where = { platform: deps.platform, repoRoot: deps.repoRoot, systemDrive: deps.env.SystemDrive };
+  const where = { platform: deps.platform, repoRoot: deps.repoRoot, systemDrive: deps.env.SystemDrive, dataRoot: deps.dataRoot };
   const read = (f) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return undefined; } };
   const rec = read(file);
   const here = p.dirname(p.resolve(file));
@@ -878,12 +973,17 @@ export function doctorRows(deps) {
     ? 'Settings → Time & language → Date & time → Time zone: (UTC+05:30) Chennai, Kolkata, Mumbai, New Delhi. Then run this again.'
     : 'Set the time zone to Asia/Kolkata (sudo timedatectl set-timezone Asia/Kolkata), then run this again.');
 
-  const L = layout(deps.repoRoot, deps.platform);
+  const L = resolveLayout(deps);
   if (deps.fs.existsSync(L.settings)) {
     const stop = refusals(parseEnvText(deps.fs.readFileSync(L.settings, 'utf8')), deps.env);
     row('This copy', stop.length === 0, stop.length === 0 ? `${SETTINGS_NAME} is there and safe to use` : stop.join(' '), 'Stop here and send me a photo of this screen.');
   } else {
     row('This copy', true, `no ${SETTINGS_NAME} yet — the next step makes it (prepare)`);
+  }
+  // Audit row 9 / C-12: the shop's data lives outside the release folder, so an update can never lose it.
+  if (deps.dataRoot !== undefined) {
+    if (L.mode === 'data-folder') row('Data', true, `the shop's data folder is ${L.dataRoot} — apart from the system's own folder`);
+    else row('Data', false, `this copy's settings and the till's data are inside the system's own folder (${deps.repoRoot}), where a new release would replace them`, 'Close the till window, then run: pnpm run store-computer -- migrate-data-folder');
   }
   return rows;
 }
@@ -917,7 +1017,40 @@ export const USAGE = [
   '  restore-check --from <backup file>       restore a backup into a scratch database and reconcile it',
   '  drill --by "<name>" --to <folder> --previous <previous release folder> [--run]',
   '                                           the timed rollback drill (pilot gate G9); a dry run without --run',
+  '  schedule-backup --to <folder on the drive that stays plugged in> --every 60',
+  '                                           automatic encrypted backup every N minutes (Windows Task Scheduler)',
+  '  unschedule-backup                        turn the automatic backup off (every backup is kept)',
+  '  backup-status                            the automatic backup, the last backup, and the room left on the drive',
+  '  status                                   the store computer check: backup, till queue, disk, containers (red banner)',
+  '  autostart [--off]                        start everything by itself when you sign in to Windows',
+  '  migrate-data-folder                      move the settings and the till\'s data out of the system\'s folder',
+  '  update --from <new release folder> [--to <backup drive folder>]',
+  '                                           install a new release, keeping every sale, setting and record',
+  '  seal --dir <slice folder> --as <login> --backup-restored-on YYYY-MM-DD [--source <id>]',
+  '                                           seal the old ERP\'s exported files (MG-02)',
+  '  parallel-policy --as <login> --cutover <id> --reconciler <login> --clean-days N --max-days M --start YYYY-MM-DD',
+  '                                           write the parallel-run policy (MG-10)',
 ];
+
+/** The owner steps of the migration (audit row 8): the slice tool, built, run as the signed-in person on THIS copy. */
+export async function ownerStep(deps, step, cl) {
+  const { say } = deps;
+  const { L, settings } = loadSettings(deps);
+  if (settings === undefined) { say('REFUSED — this copy has no settings file yet. Run first: pnpm run store-computer -- prepare'); return 2; }
+  if (guarded(deps, settings)) return 2;
+  if (step === 'seal' && (typeof cl.dir !== 'string' || cl.dir.trim() === '')) { say('REFUSED — name the slice folder: pnpm run store-computer -- seal --dir <folder with slice.json and the CSV files> --as <your login> --backup-restored-on YYYY-MM-DD'); return 2; }
+  const env = composeEnv(deps.env, {});
+  const built = deps.spawn(deps.nodePath, [L.buildScript, 'tools', '--quiet'], { cwd: deps.repoRoot, env });
+  if (built.error !== undefined || built.status !== 0) { say('NOT DONE — the migration tool could not be prepared (the tools build failed). Send me a photo of this screen.'); return 1; }
+  const pass = (flag, value) => (value === undefined ? [] : [flag, String(value)]);
+  const args = step === 'seal'
+    ? [L.sliceScript, '--dir', pathFor(deps.platform).resolve(cl.dir), '--seal', ...pass('--as', cl.as), ...pass('--backup-restored-on', cl.backupRestoredOn), ...pass('--source', cl.source)]
+    : [L.sliceScript, '--parallel-policy', ...pass('--as', cl.as), ...pass('--cutover', cl.cutover), ...pass('--reconciler', cl.reconciler), ...pass('--clean-days', cl.cleanDays), ...pass('--max-days', cl.maxDays), ...pass('--start', cl.start)];
+  const r = deps.spawn(deps.nodePath, [...args, '--settings', L.settings], { cwd: deps.repoRoot, env });
+  for (const l of String(r.stdout ?? '').split(/\r?\n/).filter((x) => x.trim() !== '')) say(l);
+  if (r.error !== undefined) { say('NOT DONE — the migration tool could not be started.'); return 1; }
+  return r.status ?? 1;
+}
 
 /** Read the command line. Unknown options are named, never ignored. */
 export function parseCommandLine(argv) {
@@ -925,7 +1058,9 @@ export function parseCommandLine(argv) {
   while (args[0] === '--') args.shift();
   const out = {
     command: undefined, by: undefined, out: undefined, backupRecord: undefined, offlineConfirmed: false, demoFingerprints: undefined,
-    settings: undefined, to: undefined, from: undefined, previous: undefined, run: false, problems: [],
+    settings: undefined, to: undefined, from: undefined, previous: undefined, run: false, every: undefined, off: false, quiet: false,
+    dir: undefined, as: undefined, backupRestoredOn: undefined, source: undefined, cutover: undefined, reconciler: undefined,
+    cleanDays: undefined, maxDays: undefined, start: undefined, problems: [],
   };
   for (let i = 0; i < args.length; i += 1) {
     const a = args[i];
@@ -945,6 +1080,18 @@ export function parseCommandLine(argv) {
     else if (a === '--from') out.from = value();
     else if (a === '--previous') out.previous = value();
     else if (a === '--run') out.run = true;
+    else if (a === '--every') out.every = value();
+    else if (a === '--off') out.off = true;
+    else if (a === '--quiet') out.quiet = true;
+    else if (a === '--dir') out.dir = value();
+    else if (a === '--as') out.as = value();
+    else if (a === '--backup-restored-on') out.backupRestoredOn = value();
+    else if (a === '--source') out.source = value();
+    else if (a === '--cutover') out.cutover = value();
+    else if (a === '--reconciler') out.reconciler = value();
+    else if (a === '--clean-days') out.cleanDays = value();
+    else if (a === '--max-days') out.maxDays = value();
+    else if (a === '--start') out.start = value();
     else if (!a.startsWith('--') && out.command === undefined) out.command = a;
     else out.problems.push(`unknown option ${a}`);
   }
@@ -968,6 +1115,18 @@ export async function main(argv, deps) {
     case 'backup': return backup(deps, { to: cl.to });
     case 'restore-check': return restoreCheck(deps, { from: cl.from });
     case 'drill': return drill(deps, { by: cl.by, to: cl.to, previous: cl.previous, run: cl.run, out: cl.out });
+    case 'schedule-backup': return scheduleBackup(deps, { to: cl.to, every: cl.every });
+    case 'unschedule-backup': return unscheduleBackup(deps);
+    case 'backup-status': return backupStatus(deps);
+    case 'status': return status(deps, { quiet: cl.quiet });
+    case 'autostart': return autostart(deps, { off: cl.off });
+    case 'migrate-data-folder': return migrateDataFolder(deps);
+    case 'update': return update(deps, { from: cl.from, to: cl.to });
+    case 'seal': return ownerStep(deps, 'seal', cl);
+    case 'parallel-policy': return ownerStep(deps, 'parallel-policy', cl);
+    // What the Windows tasks run (never typed by the owner): the hourly backup and the sign-in start.
+    case 'scheduled-backup': return scheduledBackup(deps);
+    case 'start-at-sign-in': return startAtSignIn(deps);
     default:
       deps.say(`Not understood: the command "${cl.command}"`);
       for (const l of USAGE) deps.say(l);
@@ -997,15 +1156,62 @@ export function portInUse(port) {
   });
 }
 
+/**
+ * Ask for a passphrase at the keyboard without showing it: the terminal is put in raw mode and nothing typed is echoed.
+ * Resolves undefined when there is no keyboard (a scheduled task) — the caller then never waits for one. The value is
+ * handed to the caller only, never written anywhere.
+ */
+export function askSecret(prompt) {
+  const input = process.stdin;
+  if (!input.isTTY || typeof input.setRawMode !== 'function') return Promise.resolve(undefined);
+  return new Promise((resolve) => {
+    process.stdout.write(prompt);
+    let typed = '';
+    const done = (value) => {
+      input.setRawMode(false);
+      input.pause();
+      input.removeListener('data', onData);
+      process.stdout.write('\n');
+      resolve(value);
+    };
+    const onData = (chunk) => {
+      for (const ch of String(chunk)) {
+        if (ch === '\r' || ch === '\n') { done(typed); return; }
+        if (ch === '\u0003') { done(undefined); return; } // Ctrl+C
+        if (ch === '\u0008' || ch === '\u007f') typed = typed.slice(0, -1);
+        else if (ch >= ' ') typed += ch;
+      }
+    };
+    input.setRawMode(true);
+    input.resume();
+    input.setEncoding('utf8');
+    input.on('data', onData);
+  });
+}
+
 /** The deps for a real run: this repository, this computer, its programs. No shell, ever. */
 export function defaultDeps() {
   const here = path.dirname(fileURLToPath(import.meta.url));
+  const repoRoot = path.resolve(here, '..', '..');
   return {
-    repoRoot: path.resolve(here, '..', '..'),
+    repoRoot,
+    dataRoot: defaultDataRoot(repoRoot, process.platform, process.env),
     platform: process.platform,
     env: process.env,
     fs: nodeFs,
     spawn: (cmd, args, opts = {}) => spawnSync(cmd, args, { encoding: 'utf8', windowsHide: true, maxBuffer: 16 * 1024 * 1024, ...opts, shell: false }),
+    // A program left running after this one ends (the till's box, Docker Desktop): no window, its words to a log file.
+    spawnDetached: (cmd, args, opts = {}) => {
+      const out = opts.logFile === undefined ? 'ignore' : nodeFs.openSync(opts.logFile, 'a');
+      const child = spawn(cmd, args, { cwd: opts.cwd, env: opts.env, detached: true, windowsHide: true, stdio: ['ignore', out, out], shell: false });
+      child.unref();
+      if (typeof out === 'number') nodeFs.closeSync(out);
+      return { pid: child.pid };
+    },
+    processAlive: (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } },
+    killProcess: (pid) => { try { process.kill(pid); } catch { /* already gone */ } },
+    askSecret,
+    diskSpace: (dir) => { const s = nodeFs.statfsSync(dir); return { free: Number(s.bavail) * Number(s.bsize), total: Number(s.blocks) * Number(s.bsize) }; },
     fetch: (url) => fetch(url, { signal: AbortSignal.timeout(5_000) }),
     portInUse,
     sleep: (ms) => new Promise((r) => { setTimeout(r, ms); }),

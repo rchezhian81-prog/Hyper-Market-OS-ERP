@@ -196,7 +196,8 @@ describe('closing the shift — the blind count (M14-FR-02 · M15)', () => {
     }
     // And the interface itself has no such method — there is nothing to call early. Since SP-4c the till holds no
     // drawer balance at all; even `tillCash()` answers only who holds the till and since when.
-    expect(Object.keys(till).sort()).toEqual(['close', 'moveCash', 'operator', 'refund', 'signIn', 'signOut', 'tillCash']);
+    // (A8 added the two refund re-check calls — `pendingRefund` names the refund waiting for the box, never a figure.)
+    expect(Object.keys(till).sort()).toEqual(['close', 'confirmPendingRefund', 'moveCash', 'operator', 'pendingRefund', 'refund', 'signIn', 'signOut', 'tillCash']);
     await till.moveCash({ kind: 'float_issue', amountMinor: 200_000, at: AT });
     expect(Object.keys((await till.tillCash())!).sort()).toEqual(['custodian', 'laneId', 'openedAt', 'shiftOpen', 'tillId']);
   });

@@ -27,7 +27,7 @@ function expectNoSecretShown(w: World, extra: string[] = []): void {
   }
 }
 
-const recordsOf = (w: World, dir = join(w.root, 'infra', 'compose', 'records')): string[] =>
+const recordsOf = (w: World, dir = join(w.data, 'records')): string[] =>
   existsSync(dir) ? readdirSync(dir).map((f) => readFileSync(join(dir, f), 'utf8')) : [];
 
 describe('prepare — this copy\'s settings, made once, secrets never shown', () => {
@@ -58,11 +58,11 @@ describe('prepare — this copy\'s settings, made once, secrets never shown', ()
   it('never overwrites an existing settings file — and says so without touching it', async () => {
     const w = world();
     expect(await prepare(w.deps)).toBe(0);
-    const before = readFileSync(join(w.root, 'infra', 'compose', '.env.real'), 'utf8');
+    const before = readFileSync(join(w.data, '.env.real'), 'utf8');
     w.said.length = 0;
     expect(await prepare(w.deps)).toBe(2);
-    expect(w.said[0]).toMatch(/^REFUSED — infra\/compose\/\.env\.real already exists\. It is never overwritten/);
-    expect(readFileSync(join(w.root, 'infra', 'compose', '.env.real'), 'utf8')).toBe(before);
+    expect(w.said[0]).toBe(`REFUSED — ${join(w.data, '.env.real')} already exists. It is never overwritten: it holds this copy's secrets.`);
+    expect(readFileSync(join(w.data, '.env.real'), 'utf8')).toBe(before);
   });
 
   it('refuses when a value it would write is already in the demo\'s settings on this computer — naming only the setting', async () => {
@@ -70,7 +70,7 @@ describe('prepare — this copy\'s settings, made once, secrets never shown', ()
     const demo = 'POSTGRES_PASSWORD=not-this-one-0123456789abcdef0123456789\nIDP_AUDIENCE=sre-real-api\nPOSTGRES_DB=other\n';
     writeFileSync(join(w.root, 'infra', 'compose', '.env.pilot'), demo);
     expect(await prepare(w.deps)).toBe(2);
-    expect(existsSync(join(w.root, 'infra', 'compose', '.env.real'))).toBe(false);
+    expect(existsSync(join(w.data, '.env.real'))).toBe(false);
     expect(w.said.join('\n')).toContain('REFUSED — the value this would write for IDP_AUDIENCE is already in infra/compose/.env.pilot on this computer. Nothing was written.');
     expect(w.said.join('\n')).not.toContain('sre-real-api');
     expect(w.said.join('\n')).not.toContain('not-this-one');
@@ -80,7 +80,7 @@ describe('prepare — this copy\'s settings, made once, secrets never shown', ()
     const w = world({ env: { MIGRATION_TARGET_KIND: ' Production ' } });
     expect(await prepare(w.deps)).toBe(2);
     expect(w.said.join('\n')).toMatch(/REFUSED — this window has MIGRATION_TARGET_KIND=production set/);
-    expect(existsSync(join(w.root, 'infra', 'compose', '.env.real'))).toBe(false);
+    expect(existsSync(join(w.data, '.env.real'))).toBe(false);
   });
 
   it('renders every planned value in place, and adds DEMO_TENANT_IDS (which the example lacks) at the end', () => {
@@ -124,7 +124,7 @@ describe('the refusals every command makes', () => {
     for (const run of [(d: World['deps']) => up(d), (d: World['deps']) => check(d, { by: 'Owner' })]) {
       const w = world();
       expect(await prepare(w.deps)).toBe(0);
-      const f = join(w.root, 'infra', 'compose', '.env.real');
+      const f = join(w.data, '.env.real');
       writeFileSync(f, readFileSync(f, 'utf8').replace(/^MIGRATION_TARGET_KIND=rehearsal$/m, 'MIGRATION_TARGET_KIND=production'));
       w.calls.length = 0;
       expect(await run(w.deps)).toBe(2);
@@ -145,8 +145,8 @@ describe('up — starts this copy only, and says plainly what is wrong', () => {
     expect(await up(w.deps)).toBe(0);
     const compose = w.calls.filter((c) => c.args[0] === 'compose' && c.args.length > 2);
     expect(compose.map((c) => c.args.join(' '))).toEqual([
-      'compose -p sre-real -f docker-compose.yml --env-file .env.real up -d db migrate api',
-      'compose -p sre-real -f docker-compose.yml --env-file .env.real ps',
+      `compose -p sre-real -f docker-compose.yml --env-file ${join(w.data, '.env.real')} up -d db migrate api`,
+      `compose -p sre-real -f docker-compose.yml --env-file ${join(w.data, '.env.real')} ps`,
     ]);
     for (const c of compose) {
       expect(c.cwd).toBe(join(w.root, 'infra', 'compose'));
@@ -267,7 +267,7 @@ describe('check — the ten G4 isolation checks (gap G-RD-1)', () => {
       const dir = c.args[c.args.indexOf('--dir') + 1]!;
       expect(existsSync(dir)).toBe(false); // the temporary folder is gone
     }
-    expect(slices[0]!.args[slices[0]!.args.indexOf('--settings') + 1]).toBe(join(w.root, 'infra', 'compose', '.env.real'));
+    expect(slices[0]!.args[slices[0]!.args.indexOf('--settings') + 1]).toBe(join(w.data, '.env.real'));
     const copyPath = slices[1]!.args[slices[1]!.args.indexOf('--settings') + 1]!;
     expect(existsSync(copyPath)).toBe(false);
     const copy = w.sliceSettingsSeen[1]!;
@@ -309,7 +309,7 @@ describe('check — the ten G4 isolation checks (gap G-RD-1)', () => {
 
   it('check 4 FAILS on an outside address in .env.real or the till\'s settings; check 1 on demo storage; check 2 on a demo database', async () => {
     const w = await prepared();
-    const f = join(w.root, 'infra', 'compose', '.env.real');
+    const f = join(w.data, '.env.real');
     writeFileSync(f, readFileSync(f, 'utf8').replace(/^CLOUD_API_URL=$/m, 'CLOUD_API_URL=https://demo.example.org'));
     w.docker.volumes = ['sre-real_db-data', 'sre-pilot_db-data'];
     w.docker.databases = ['postgres', 'sre_real', 'sre_pilot'];
@@ -408,7 +408,7 @@ describe('doctor — the prerequisites, each OK or FIX with the fix', () => {
   it('reports a production settings file as a FIX', async () => {
     const w = world();
     expect(await prepare(w.deps)).toBe(0);
-    const f = join(w.root, 'infra', 'compose', '.env.real');
+    const f = join(w.data, '.env.real');
     writeFileSync(f, readFileSync(f, 'utf8').replace(/^MIGRATION_TARGET_KIND=rehearsal$/m, 'MIGRATION_TARGET_KIND=production'));
     expect(doctorRows(w.deps).find((r) => r.name === 'This copy')!.status).toBe('FIX');
   });
@@ -458,6 +458,6 @@ describe('the settings file on disk', () => {
   it('is readable by its owner only (Linux); Windows keeps it in the user\'s own folder', async () => {
     const w = world();
     expect(await prepare(w.deps)).toBe(0);
-    expect(statSync(join(w.root, 'infra', 'compose', '.env.real')).mode & 0o077).toBe(0);
+    expect(statSync(join(w.data, '.env.real')).mode & 0o077).toBe(0);
   });
 });

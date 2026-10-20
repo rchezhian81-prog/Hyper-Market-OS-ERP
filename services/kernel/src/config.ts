@@ -282,6 +282,11 @@ export const STORE_EDGE_CONFIG: readonly Spec[] = [
    */
   { key: 'EDGE_LANE_TRUST_FORWARDED_USER', optional: true, oneOf: ['0', '1'] },
   /**
+   * OB-252 (owner, 20 Oct 2026, "Guest sales only"): `1` → the tills this box serves take no customer mobile number and no
+   * loyalty (the store pack's `policies.guestSalesOnly` can also turn it on). The till shows it whenever it is on.
+   */
+  { key: 'EDGE_GUEST_SALES_ONLY', optional: true, oneOf: ['0', '1'] },
+  /**
    * The box's till-credentials file (ADR-0020): the PIN verifiers the `till-pin` command writes, owner-only. Absent → the
    * file `till-credentials.json` in the data directory.
    */
@@ -292,6 +297,12 @@ export const STORE_EDGE_CONFIG: readonly Spec[] = [
    * inside the data directory, and never part of a backup of it.
    */
   { key: 'EDGE_WITNESS_DIR', optional: true },
+  /**
+   * Audit row 6 (P-08): the file the store computer's own check (`store-computer status`) writes — backup age, the till's
+   * queue, the disk, the containers. Read-only here: the box hands it to the office screens with its sync status, which
+   * show its red banner. Absent → no store-computer check is shown (a box that is not the shop's store computer).
+   */
+  { key: 'EDGE_STORE_COMPUTER_STATUS_FILE', optional: true },
   /**
    * The pack the cloud last sent: products and costs, approvals, today's checklist, the assigned
    * wave and route, slots, and the store's own thresholds.
