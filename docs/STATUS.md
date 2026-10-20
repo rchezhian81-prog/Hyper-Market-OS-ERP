@@ -5,7 +5,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
-## Mirror-pilot readiness, round 1 (20 October 2026) — gate pending
+## Mirror-pilot readiness, round 1 (20 October 2026) — full gate green: 13,151 unit/integration (16 skipped), 52 performance, 461 browser
 
 - Built: till re-asks after a lost reply and never doubles a sale (A8, the audit's P0); guest-sales-only switch (OB-252, not yet turned on by the install); automatic hourly encrypted backup of everything to a plugged-in drive (OB-249); autostart at sign-in; data kept in `C:\SRE-data` and safe updates; red "store computer needs you" banner offline; seal and parallel-run commands; owner guide Parts 12–25; four sheets in English and Tamil.
 - Not run on real Windows, Docker Desktop, Task Scheduler or a USB drive. Tamil not yet read by a native speaker.
