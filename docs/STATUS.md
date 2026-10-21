@@ -10,7 +10,8 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - Built: the old ERP bill number on every mirror sale (CGST Rule 46(b) shape, no personal data, refused if keyed twice in a financial year, survives a cold restart); a mirror refund finds its sale by it offline; the day book and a "Bill by bill" list on the evening check show it (OB-264).
 - Built: backup drive red under about 30 days of room, "not known" until it can be worked out (OB-268); the real till is always installed with both mirror settings and `status` shows them; `seal` and `parallel-policy` ask for the person's own PIN; Sheet 2 and Sheet 3 fully written.
 - Owner decisions: exchanges on the old ERP only during the pilot (OB-269, supersedes OB-266 for the pilot); a sheet step to correct a wrongly keyed sale (OB-270).
-- Not run on real Windows. No staff UAT. Still open: OB-263 (which old ERP report), OB-243 names.
+- Not run on real Windows. No staff UAT. Still open: OB-243 names.
+- OB-263 decided (21 Oct): the evening check loads the old ERP's item-wise and bill-wise reports as files, filtered to the pilot department, value/quantity/tax compared and every pilot bill checked as keyed. In build (round 4).
 
 ## Mirror-pilot readiness, round 2 (20 October 2026) — full gate: 13,199 unit/integration passed, 1 timing failure in an older test (passes alone, 19/19), 16 skipped; 52 performance; 465 browser passed, 1 failed on a test-port clash with a parallel builder (passes alone); merged (PR #800) and deployed to the demo
 
