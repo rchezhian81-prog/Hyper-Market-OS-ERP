@@ -63,7 +63,7 @@ describe.skipIf(!HAVE_BROWSER)('the served till\'s sync badge shows what the box
     dirs.push(dir);
     const edge: EdgeProcess = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY,
-      EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '8090', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps',
+      EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '0', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps',
       ...await prepareTillBox({ dir, key: KEY }),
     }, () => {}))!;
     stops.push(() => edge.stop());
@@ -78,7 +78,7 @@ describe.skipIf(!HAVE_BROWSER)('the served till\'s sync badge shows what the box
     }, undefined, { timeout: 15_000 });
 
     // The box told the page where its socket is; the badge asked it.
-    expect(await page.evaluate(() => (globalThis as unknown as PosWindow).laneWriteBase)).toBe('http://127.0.0.1:8090');
+    expect(await page.evaluate(() => (globalThis as unknown as PosWindow).laneWriteBase)).toBe(`http://127.0.0.1:${edge.lane!.port}`);
     await page.evaluate(() => (globalThis as unknown as PosWindow).posBadge!.refresh());
     const words = (await page.textContent('#conn-text'))!;
     expect(words).toContain('No head office link');

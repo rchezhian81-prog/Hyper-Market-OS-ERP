@@ -2297,6 +2297,8 @@ export function openDayReopenPort(laneWriteBase: string | undefined, reopenedBy:
         const res = await fetchFn(`${laneWriteBase}/lane/day-reopen`, {
           method: 'POST',
           headers: { 'content-type': 'application/json', accept: 'application/json' },
+          // OB-259: the office sign-in travels with it — on the store PC the box reopens only for the person signed in here.
+          credentials: 'include',
           // The reopener is the authenticated user at this screen (bound at boot from `dayReopenData.userId`); the approver
           // is named AND proves it with their own till PIN, keyed here (2b-vi-c-4). The box checks both PINs, enforces §28
           // (approver ≠ reopener) and seals who it verified; the PINs go to the box and nowhere else.
@@ -5184,15 +5186,18 @@ export function openDayClosePort(
       const res = await fetchFn(`${laneWriteBase}/lane/day-close`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', accept: 'application/json' },
+        // OB-259: the office sign-in travels with it — on the store PC the box closes only for the person signed in here.
+        credentials: 'include',
         // The PIN goes to the store computer's PIN register and nowhere else (round 4 · ADR-0020).
         body: JSON.stringify({ dayCloseId, closedBy, ...(closerPin === undefined ? {} : { closerPin }), ...(carryForward === undefined ? {} : { carryForward }) }),
       });
-      const body = (await res.json().catch(() => ({}))) as { closed?: boolean; tradingDay?: string; reason?: string };
+      const body = (await res.json().catch(() => ({}))) as { closed?: boolean; tradingDay?: string; reason?: string; reasonTa?: string };
       if (res.status >= 200 && res.status < 300 && body.closed === true && typeof body.tradingDay === 'string') {
         return { closed: true, tradingDay: body.tradingDay };
       }
-      // Anything else is the box declining to close — surface its own reason rather than a bare "no".
-      return { closed: false, reason: body.reason ?? 'the store computer did not close the day' };
+      // Anything else is the box declining to close — surface its own reason rather than a bare "no" (and its Tamil, when
+      // the box said it in both languages — OB-259's office sign-in refusals do).
+      return { closed: false, reason: body.reason ?? 'the store computer did not close the day', ...(typeof body.reasonTa === 'string' && body.reasonTa !== '' ? { reasonTa: body.reasonTa } : {}) };
     } catch {
       // A network/timeout is a lost link, not a lock. The day stays open and the screen says why.
       return { closed: false, reason: 'the store computer could not be reached — the day is not closed' };

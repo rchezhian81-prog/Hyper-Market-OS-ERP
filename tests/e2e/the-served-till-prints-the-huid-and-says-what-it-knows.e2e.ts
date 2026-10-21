@@ -83,7 +83,7 @@ describe.skipIf(!HAVE_BROWSER)('the served till prints the HUID on the bill, rea
     await writeSignedPack(dir, signedPack());
     const edge = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: TENANT, PACK_SIGNING_KEY: KEY,
-      EDGE_CAPACITY_BYTES: '10485760', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps', EDGE_LANE_PORT: '8090',
+      EDGE_CAPACITY_BYTES: '10485760', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps', EDGE_LANE_PORT: '0',
       ...await prepareTillBox({
         dir, key: KEY,
         pack: {
@@ -124,7 +124,7 @@ describe.skipIf(!HAVE_BROWSER)('the served till prints the HUID on the bill, rea
   const refresh = (page: Page): Promise<void> => page.evaluate(() => (globalThis as unknown as PosWindow).posBadge!.refresh());
 
   it('weighed lines read "1.234 kg" and "500 g"; the gold ring\'s bill prints "HUID: AB12CD" (and in Tamil "HUID: EF34GH"); Unsent is the box\'s number, or "not known" in amber', async () => {
-    const { page } = await till();
+    const { edge, page } = await till();
 
     // ── Weighed lines in their unit (look only) ──
     await scan(page, BANANA_1234G, 1);
@@ -205,7 +205,7 @@ describe.skipIf(!HAVE_BROWSER)('the served till prints the HUID on the bill, rea
     await shot(page, 'gap-till-unsent-not-known-tamil');
 
     // The box answers again: the real number comes back.
-    await page.evaluate(() => { (globalThis as unknown as PosWindow).laneWriteBase = 'http://127.0.0.1:8090'; });
+    await page.evaluate((base) => { (globalThis as unknown as PosWindow).laneWriteBase = base; }, `http://127.0.0.1:${edge.lane!.port}`);
     await refresh(page);
     expect(await page.textContent('#unsent')).toBe('அனுப்பப்படாதவை: 2');
   });

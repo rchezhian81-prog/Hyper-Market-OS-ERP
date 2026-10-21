@@ -109,11 +109,12 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
     // The edge exactly as a one-PC install runs it, with NO cloud configured — the offline case.
     const edge: EdgeProcess = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY,
-      EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '8090', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps',
+      EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '0', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps',
       ...await prepareTillBox({ dir, key: KEY, people: TILL_PEOPLE }),
     }, () => {}))!;
     stops.push(() => edge.stop());
-    expect(edge.lane?.port).toBe(8090);
+    // A free port (round 4): the served till posts wherever the box that served it says its lane socket is (window.laneWriteBase).
+    expect(edge.lane?.port).toBeGreaterThan(0);
 
     const context = await browser.newContext();
     stops.push(() => context.close());
@@ -190,7 +191,7 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
     dirs.push(dir);
     const edge: EdgeProcess = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY,
-      EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '8090', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps',
+      EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '0', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps',
       ...await prepareTillBox({ dir, key: KEY, people: TILL_PEOPLE }),
     }, () => {}))!;
     stops.push(() => edge.stop());
@@ -246,7 +247,7 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
     // The box as a one-PC install runs it, with its store pack (cap + price list) and NO cloud — the offline case.
     const edge: EdgeProcess = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY,
-      EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '8090', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps', EDGE_PACK_FILE: packFile,
+      EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '0', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps', EDGE_PACK_FILE: packFile,
       ...await prepareTillBox({ dir, key: KEY, people: TILL_PEOPLE, pack: PACK_FILE_WITH_CAP }),
     }, () => {}))!;
     stops.push(() => edge.stop());
@@ -367,7 +368,7 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
     await writeFile(packFile, JSON.stringify(PACK_FILE_WITH_CAP), 'utf8');
     const edge: EdgeProcess = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY,
-      EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '8090', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps', EDGE_PACK_FILE: packFile,
+      EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '0', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps', EDGE_PACK_FILE: packFile,
       ...await prepareTillBox({ dir, key: KEY, people: TILL_PEOPLE, pack: PACK_FILE_WITH_CAP }),
     }, () => {}))!;
     stops.push(() => edge.stop());
@@ -459,7 +460,7 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
     dirs.push(dir);
     const edge: EdgeProcess = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY,
-      EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '8090', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps',
+      EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '0', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps',
       ...await prepareTillBox({ dir, key: KEY, people: TILL_PEOPLE }),
     }, () => {}))!;
     stops.push(() => edge.stop());
@@ -484,7 +485,7 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
     dirs.push(dir);
     const edge: EdgeProcess = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY,
-      EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '8090', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps',
+      EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '0', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps',
       ...await prepareTillBox({ dir, key: KEY, people: TILL_PEOPLE }),
     }, () => {}))!;
     stops.push(() => edge.stop());

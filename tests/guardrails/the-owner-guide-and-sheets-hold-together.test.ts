@@ -93,7 +93,7 @@ function flagsReadBy(file: string, pattern: RegExp, extra: readonly string[] = [
 const TOKEN_FLAGS = flagsReadBy('scripts/issue-store-token.mjs', /args\['([a-z-]+)'\]/g, ['--no-store']);
 const BOOTSTRAP_FLAGS = flagsReadBy('scripts/bootstrap-tenant.ts', /flags\['([a-z-]+)'\]/g);
 const SLICE_FLAGS = flagsReadBy('scripts/migration-slice.ts', /flags\['([a-z-]+)'\]/g);
-const TILL_PIN_FLAGS = flagsReadBy('edge/store-edge/src/till-pin-command.ts', /arg\(argv, '([a-z-]+)'\)/g, ['--revoke']);
+const TILL_PIN_FLAGS = flagsReadBy('edge/store-edge/src/till-pin-command.ts', /arg\(argv, '([a-z-]+)'\)/g, ['--revoke', '--generate-and-show']);
 
 /** Why a command the reader is told to type would not be understood — empty when it would be. */
 export function commandProblems(command: string, scripts: Readonly<Record<string, string>>): string[] {

@@ -8,10 +8,11 @@ import { tillPinKey, tillPinMatches } from '../../packages/identity/src/till-pin
 import { testPin } from '../support/till-operator';
 
 /**
- * **The administrator issues a till PIN on the store computer itself (ADR-0020 §2 · hard rules #2 #4).**
+ * **A till PIN is set on the store computer itself (ADR-0020 §2 · hard rules #2 #4).**
  *
- * The command makes the PIN, shows it once to the administrator's own terminal, and keeps only its verifier — appended,
- * owner-only. Reissuing replaces, revoking ends, and nothing is ever edited in place.
+ * The old way — the command makes the PIN and shows it once — is kept only behind `--generate-and-show`, with a warning
+ * (the default, where the person types their own, is tests/unit/till-pin-the-person-types-their-own.test.ts). Either way
+ * only the verifier is kept — appended, owner-only. Reissuing replaces, revoking ends, and nothing is ever edited in place.
  */
 
 const BOX_KEY = ['till', 'pin', 'command', 'key'].join('-').padEnd(48, '0');
@@ -20,12 +21,13 @@ afterEach(async () => { for (const d of dirs.splice(0)) await rm(d, { recursive:
 const box = async () => { const d = await mkdtemp(join(tmpdir(), 'sre-till-pin-cmd-')); dirs.push(d); return { EDGE_DATA_DIR: d, PACK_SIGNING_KEY: BOX_KEY }; };
 
 describe('till-pin, on the store computer', () => {
-  it('issues: prints the PIN once, keeps only its verifier, owner-only — and the box then matches it', async () => {
+  it('--generate-and-show: warns first, prints the PIN once, keeps only its verifier, owner-only — and the box then matches it', async () => {
     const env = await box();
     const pin = testPin(7);
-    const out = runTillPinCommand(['--user', 'u-meena', '--by', 'Store admin'], env, { now: () => '2026-10-06T08:00:00.000Z', newPin: () => pin });
+    const out = await runTillPinCommand(['--user', 'u-meena', '--by', 'Store admin', '--generate-and-show'], env, { now: () => '2026-10-06T08:00:00.000Z', newPin: () => pin });
     expect(out.ok).toBe(true);
-    expect(out.lines[0]).toBe(`Till PIN for u-meena: ${pin}`);
+    expect(out.lines[0]).toMatch(/^WARNING: --generate-and-show puts the new PIN on this screen/);
+    expect(out.lines[1]).toBe(`Till PIN for u-meena: ${pin}`);
     expect(out.lines.join(' ')).toMatch(/not stored anywhere/);
     const file = join(env.EDGE_DATA_DIR, 'till-credentials.json');
     const raw = await readFile(file, 'utf8');
@@ -40,15 +42,15 @@ describe('till-pin, on the store computer', () => {
     const env = await box();
     const first = testPin(8);
     const second = testPin(9);
-    runTillPinCommand(['--user', 'u-meena', '--by', 'Store admin'], env, { newPin: () => first });
-    runTillPinCommand(['--user', 'u-meena', '--by', 'Store admin'], env, { newPin: () => second });
+    await runTillPinCommand(['--user', 'u-meena', '--by', 'Store admin', '--generate-and-show'], env, { newPin: () => first });
+    await runTillPinCommand(['--user', 'u-meena', '--by', 'Store admin', '--generate-and-show'], env, { newPin: () => second });
     const file = join(env.EDGE_DATA_DIR, 'till-credentials.json');
     const key = tillPinKey(BOX_KEY);
     const current = (await loadTillCredentials(file)).get('u-meena')!;
     expect(tillPinMatches(first, current, key)).toBe(false);
     expect(tillPinMatches(second, current, key)).toBe(true);
 
-    const revoked = runTillPinCommand(['--user', 'u-meena', '--by', 'Store admin', '--revoke'], env);
+    const revoked = await runTillPinCommand(['--user', 'u-meena', '--by', 'Store admin', '--revoke'], env);
     expect(revoked).toMatchObject({ ok: true, lines: [expect.stringMatching(/revoked by Store admin/)] });
     expect(revoked.pin).toBeUndefined();
     expect(tillPinMatches(second, (await loadTillCredentials(file)).get('u-meena')!, key)).toBe(false);
@@ -58,7 +60,8 @@ describe('till-pin, on the store computer', () => {
 
   it('says how to use it, and refuses to run without the box\'s settings or a named issuer', async () => {
     const env = await box();
-    expect(runTillPinCommand(['--user', 'u-meena'], env)).toMatchObject({ ok: false, lines: [expect.stringMatching(/Usage: till-pin/)] });
-    expect(runTillPinCommand(['--user', 'u-meena', '--by', 'Store admin'], { EDGE_DATA_DIR: env.EDGE_DATA_DIR })).toMatchObject({ ok: false, lines: [expect.stringMatching(/store computer/)] });
+    expect(await runTillPinCommand(['--user', 'u-meena'], env)).toMatchObject({ ok: false, lines: [expect.stringMatching(/Usage: till-pin/)] });
+    expect(await runTillPinCommand(['--user', 'u-meena', '--by', 'Store admin'], { EDGE_DATA_DIR: env.EDGE_DATA_DIR })).toMatchObject({ ok: false, lines: [expect.stringMatching(/store computer/)] });
+    expect(await runTillPinCommand(['--user', 'u-meena', '--by', 'Store admin', '--revoke', '--generate-and-show'], env)).toMatchObject({ ok: false, lines: [expect.stringMatching(/Usage: till-pin/)] });
   });
 });

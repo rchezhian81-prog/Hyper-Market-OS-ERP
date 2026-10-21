@@ -55,7 +55,7 @@ describe.skipIf(!HAVE_BROWSER)('the served till records "Paid on old system" in 
     await writeFile(packFile, JSON.stringify(PACK), 'utf8');
     const edge: EdgeProcess = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY, EDGE_PACK_FILE: packFile,
-      EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '8090', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps',
+      EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '0', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps',
       EDGE_GUEST_SALES_ONLY: '1', ...(mirror ? { EDGE_MIRROR_PILOT: '1' } : {}),
       ...await prepareTillBox({ dir, key: KEY, pack: PACK }),
     }, () => {}))!;

@@ -48,12 +48,12 @@ describe.skipIf(!HAVE_BROWSER)('the served till reports its devices (D04-FR-05)'
     dirs.push(dir);
     const edge: EdgeProcess = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY,
-      EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '8090', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps',
+      EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '0', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps',
       ...await prepareTillBox({ dir, key: KEY, pack: { managerPolicy: { userId: 'u-mgr' }, lossPreventionRules: [] }, people: [{ userId: 'u-lanecash', displayName: 'Lane Cashier' }, { userId: 'u-mgr', displayName: 'Manager', manager: true }] }),
     }, () => {}))!;
     stops.push(() => edge.stop());
-    // The lane socket on the port the till shell posts to (its built-in default), as a one-PC install runs it.
-    expect(edge.lane?.port).toBe(8090);
+    // A free port (round 4): the served till posts wherever the box that served it says its lane socket is (window.laneWriteBase).
+    expect(edge.lane?.port).toBeGreaterThan(0);
     const base = `http://127.0.0.1:${edge.screens!.port}`;
     const context = await browser.newContext();
     stops.push(() => context.close());

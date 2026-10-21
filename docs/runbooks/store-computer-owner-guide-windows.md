@@ -489,10 +489,16 @@ PIN. You never type anybody else's PIN.
    ```
    pnpm run till:pin -- --user <their-login> --by "Your Name"
    ```
-   - It says `Using the till's settings in C:\SRE-data\till\till.env (never shown).`, then the new PIN **once**, then
-     `Give it to them in person.` **This window holds a secret: never photograph it.** Turn the screen to the person and
-     look away while they read it. Do not write it down for them, do not send it by phone. Then close that window.
-   - The PIN is kept nowhere. If it is forgotten, make a new one the same way (sheet 4).
+   - It says `Using the till's settings in C:\SRE-data\till\till.env (never shown).`, then
+     `<their-login>: please come to the keyboard. Everyone else, look away.` **Give the keyboard to the person and look
+     away.** They type their own new six-digit PIN and press Enter — it shows only as stars — then the same PIN again and
+     Enter. They choose six digits nobody could guess (not a birthday, a phone number or 123456).
+   - **When it worked:** `Till PIN for <their-login> set: <their-login> typed it themselves …`. The PIN never appears on
+     the screen: **you never see it**, and nothing prints or keeps it. If it says `The two did not match` or
+     `That was not 6 digits`, they type it again (three tries); after three, nothing was changed — type the line again.
+   - If this window says `This window cannot hide what is typed`, you are not in PowerShell on the store PC itself:
+     open PowerShell there and type the line again.
+   - The PIN is kept nowhere. If it is forgotten, the person sets a new one the same way (sheet 4).
    - Someone leaves, or a PIN may be known to someone else: the same line with `--revoke` at the end.
 2. Do this for **yourself**, the accountant(s) and the store manager.
    - **Write in the workbook:** each login and "PIN made" with the date — never the PIN.
@@ -589,7 +595,8 @@ Every cashier signs in at the till with their own staff ID and their own six-dig
    ```
    pnpm run till:pin -- --user <cashier-login> --by "Your Name"
    ```
-   - **This window holds a secret.** The cashier reads their PIN themselves; you look away.
+   - Give the cashier the keyboard and look away: they type their own new PIN twice. It shows only as stars — you
+     never see it.
 
 ## Part 22 — The pilot department: only after your written GO
 
