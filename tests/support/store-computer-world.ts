@@ -64,6 +64,64 @@ export const PASSPHRASE = 'synthetic test passphrase 1';
 /** A cheap scrypt for the tests' new keys (the key file records it; the real default is 2^17). */
 export const TEST_SCRYPT = Object.freeze({ N: 2 ** 12, r: 8, p: 1 });
 
+/**
+ * A pretend Windows, for what the tool asks PowerShell (scripts/lib/store-computer-windows.mjs): the edition, each drive
+ * letter's DriveType and bus, the Administrators group, and who may read each path. `'fail'` = PowerShell did not answer.
+ * The defaults are the owner's pilot PC (OB-282 · OB-283 · OB-284): Windows 11 Pro; C: and F: inside the PC; E: and G:
+ * the two USB backup drives; only the owner an administrator; every path locked to the owner and SYSTEM.
+ */
+export interface PretendAce { readonly sid: string; readonly name: string; readonly type?: 'Allow' | 'Deny'; readonly rights?: number }
+export interface PretendWindows {
+  edition: { productType: number; caption: string } | 'fail';
+  drives: Record<string, { driveType: number; bus: string } | 'fail'>;
+  me: { sid: string; name: string };
+  admins: { sid: string; name: string; kind?: 'user' | 'group'; disabled?: boolean }[] | 'fail';
+  /** Who may read a path (keyed lower-case); a path not listed gets `aclDefault`. */
+  acl: Record<string, PretendAce[] | 'fail'>;
+  aclDefault: PretendAce[] | 'fail';
+  /** Every script the tool ran, with the variables it was handed. */
+  readonly asked: { script: string; vars: Record<string, string | undefined> }[];
+}
+export const OWNER_SID = 'S-1-5-21-1111-2222-3333-1001';
+export const lockedAcl = (): PretendAce[] => [{ sid: OWNER_SID, name: 'SHOP-PC\\owner', rights: 2032127 }, { sid: 'S-1-5-18', name: 'NT AUTHORITY\\SYSTEM', rights: 2032127 }];
+export const pilotPc = (): PretendWindows => ({
+  edition: { productType: 1, caption: 'Microsoft Windows 11 Pro' },
+  drives: { C: { driveType: 3, bus: 'NVMe' }, F: { driveType: 3, bus: 'SATA' }, E: { driveType: 3, bus: 'USB' }, G: { driveType: 2, bus: 'USB' } },
+  me: { sid: OWNER_SID, name: 'SHOP-PC\\owner' },
+  admins: [{ sid: OWNER_SID, name: 'SHOP-PC\\owner' }, { sid: 'S-1-5-21-1111-2222-3333-500', name: 'SHOP-PC\\Administrator', disabled: true }],
+  acl: {},
+  aclDefault: lockedAcl(),
+  asked: [],
+});
+
+/** The pretend PowerShell: answers the tool's four scripts from `win`, as Windows would print them. */
+function pretendPowershell(win: PretendWindows, args: readonly string[], env: Record<string, string | undefined>): SpawnResult {
+  const script = args[args.indexOf('-Command') + 1] ?? '';
+  win.asked.push({ script, vars: { SRE_DRIVE_LETTER: env['SRE_DRIVE_LETTER'], SRE_ACL_PATH: env['SRE_ACL_PATH'] } });
+  const me = `ME|${win.me.sid}|${win.me.name}`;
+  if (script.includes('Win32_OperatingSystem')) {
+    return win.edition === 'fail' ? { status: 1, stderr: 'Get-CimInstance : Access denied' } : { status: 0, stdout: `EDITION|${win.edition.productType}|${win.edition.caption}\r\n` };
+  }
+  if (script.includes('Win32_LogicalDisk')) {
+    const l = String(env['SRE_DRIVE_LETTER'] ?? '');
+    if (!/^[A-Z]$/.test(l)) return { status: 3 };
+    const d = win.drives[l];
+    if (d === 'fail') return { status: 1, stderr: 'Get-CimInstance : Invalid class' };
+    return { status: 0, stdout: d === undefined ? 'DRIVE|none|\r\n' : `DRIVE|${d.driveType}|${d.bus}\r\n` };
+  }
+  if (script.includes('Win32_Group')) {
+    if (win.admins === 'fail') return { status: 1, stderr: 'Get-CimAssociatedInstance : failed' };
+    return { status: 0, stdout: [me, ...win.admins.map((a) => `MEMBER|${a.sid}|${a.name}|${a.kind === 'group' ? 'Win32_Group' : 'Win32_UserAccount'}|${a.kind === 'group' ? '' : a.disabled === true ? 'True' : 'False'}`)].join('\r\n') };
+  }
+  if (script.includes('Get-Acl')) {
+    const key = String(env['SRE_ACL_PATH'] ?? '').toLowerCase();
+    const aces = win.acl[key] ?? win.aclDefault;
+    if (aces === 'fail') return { status: 1, stderr: 'Get-Acl : Access denied' };
+    return { status: 0, stdout: [me, ...aces.map((a) => `ACE|${a.sid}|${a.name}|${a.type ?? 'Allow'}|${a.rights ?? 2032127}`)].join('\r\n') };
+  }
+  return { status: 1, stderr: 'pretend PowerShell: not a script the tool has' };
+}
+
 /** A pretend Windows Task Scheduler: what was registered, by name, with its XML. */
 export interface PretendTasks { readonly registered: Map<string, string>; refuse?: string; readonly removed: string[] }
 
@@ -84,6 +142,8 @@ export interface World {
   readonly ports: Set<number>;
   /** What each node command was given as its settings file, read at the moment it ran. */
   readonly sliceSettingsSeen: string[];
+  /** The pretend Windows PowerShell answers from (used whenever the tool asks Windows something). */
+  readonly windows: PretendWindows;
   deps: Deps;
 }
 
@@ -102,10 +162,12 @@ export function world(over: Partial<Deps> = {}, opts: { realNode?: boolean; slic
   };
   const api = { ready: true, readyAfter: 0, asked: 0 };
   const ports = new Set<number>();
+  const windows = pilotPc();
 
   const spawn = (cmd: string, args: readonly string[], o: { cwd?: string; env?: Record<string, string | undefined>; input?: string; stdio?: unknown }): SpawnResult => {
     calls.push({ cmd, args: [...args], ...(o.cwd === undefined ? {} : { cwd: o.cwd }), ...(o.env === undefined ? {} : { env: o.env }), ...(o.input === undefined ? {} : { input: o.input }), ...(o.stdio === undefined ? {} : { stdio: o.stdio }) });
     clock += opts.costOf?.(cmd, args, o.input) ?? 0;
+    if (/powershell\.exe$/i.test(cmd)) return pretendPowershell(windows, args, o.env ?? {});
     if (cmd === 'docker') {
       if (!docker.installed) return { status: null, error: Object.assign(new Error('spawn docker ENOENT'), { code: 'ENOENT' }) };
       if (args[0] === '--version') return { status: 0, stdout: 'Docker version 27.0.0\n' };
@@ -234,7 +296,7 @@ export function world(over: Partial<Deps> = {}, opts: { realNode?: boolean; slic
     ...over,
   };
   return {
-    root, data, asked, tasks, detached, killed, said, calls, docker, api, ports, sliceSettingsSeen, deps,
+    root, data, asked, tasks, detached, killed, said, calls, docker, api, ports, sliceSettingsSeen, windows, deps,
     get typed() { return state.typed; }, set typed(v: string[]) { state.typed = v; },
   };
 }

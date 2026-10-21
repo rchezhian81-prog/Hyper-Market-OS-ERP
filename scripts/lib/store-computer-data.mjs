@@ -19,14 +19,16 @@
 
 import { createHash } from 'node:crypto';
 import {
-  bothLayouts, composeBase, ensureDataFolder, parseEnvText, pathFor, PROJECT, refusals, stampOf, waitReady,
+  bothLayouts, composeBase, dataRootOnDrive, ensureDataFolder, layout, parseEnvText, pathFor, PROJECT, refusals, sameFolder, stampOf,
+  waitReady, writeDataPointer,
 } from './store-computer.mjs';
+import { refusedOnServer } from './store-computer-windows.mjs';
 import {
   dataFolderReady, ensureBackupKey, folderRefusal, migrationProblems, migrationsOf, ready, recordBackupOutcome, releaseId,
   takeStoreBackup, tillFolders, DRILL_READY_WAIT_MS,
 } from './store-computer-recovery.mjs';
 import { readSchedule, status } from './store-computer-status.mjs';
-import { currentRelease, runningTill, startTill, writeLauncher } from './store-computer-schedule.mjs';
+import { currentRelease, runningTill, startTill, tasksFor, TASKS, writeLauncher } from './store-computer-schedule.mjs';
 import { renderStartScript } from '../install-till.mjs';
 
 const sha256File = (fs, f) => createHash('sha256').update(fs.readFileSync(f)).digest('hex');
@@ -63,9 +65,25 @@ export function rewriteTillEnv(text, { edgeData, witness, statusFile }) {
   return `${out.join('\n')}\n`;
 }
 
-/** `migrate-data-folder`: move the shop's data out of the release folder, checked file by file. */
-export async function migrateDataFolder(deps) {
-  const { say, fs } = deps;
+/**
+ * `migrate-data-folder [--data-drive F:]`: move the shop's data out of the release folder, checked file by file — into
+ * the data folder on the drive named (OB-283), whose place is then recorded. A copy whose data folder is already set up
+ * on one drive is moved WHOLE to the drive named (`moveDataFolder`).
+ */
+export async function migrateDataFolder(given, opts = {}) {
+  const { say, fs } = given;
+  let deps = given;
+  if (opts.dataDrive !== undefined) {
+    if (given.dataPointer === undefined) { say('REFUSED — this computer has no place to record where the data folder is. Send me a photo of this screen.'); return 2; }
+    const t = dataRootOnDrive(given, opts.dataDrive);
+    if (t.problem !== undefined) { say(`REFUSED — ${t.problem}. Nothing was moved.`); return 2; }
+    const now = bothLayouts(given);
+    if (now.data !== undefined && fs.existsSync(now.data.settings)) {
+      if (sameFolder(given.platform, now.data.dataRoot, t.dataRoot)) { say(`Nothing to move — this copy already uses the shop's data folder ${t.dataRoot}.`); return 0; }
+      return moveDataFolder(given, now.data, t.dataRoot);
+    }
+    deps = { ...given, dataRoot: t.dataRoot };
+  }
   const p = pathFor(deps.platform);
   const { legacy, data } = bothLayouts(deps);
   if (data === undefined) { say('REFUSED — this computer has no data folder named. Send me a photo of this screen.'); return 2; }
@@ -88,6 +106,9 @@ export async function migrateDataFolder(deps) {
   }
 
   ensureDataFolder(deps, data);
+  // OB-283: the data folder's place is recorded before anything is copied. Until its settings file is there, every
+  // command still finds this copy in the old place (resolveLayout), so a stop half-way changes nothing.
+  writeDataPointer(deps, data.dataRoot, 'migrate-data-folder');
   const stamp = stampOf(deps.now());
   const edgeDataNew = p.join(data.tillDir, 'edge-data');
   const witnessNew = p.join(data.tillDir, 'edge-witness');
@@ -154,6 +175,92 @@ export async function migrateDataFolder(deps) {
   return 0;
 }
 
+// ── The whole data folder to another internal drive (OB-283) ─────────────────────────────────────────────────────
+
+/**
+ * Move a data folder that is already set up (C:\SRE-data) WHOLE to another internal drive (F:\SRE-data): every file
+ * copied and checked by its SHA-256, the till's settings rewritten to the new place, the settings file last, the new
+ * place recorded — and only then the old folder renamed "…moved-to-F-<time>", never deleted. Refused while the till
+ * runs or while the Windows tasks (which run from the data folder) are on. Docker's disk image is moved in Docker
+ * Desktop itself (guide Part 2): the database lives there, not in this folder.
+ */
+export async function moveDataFolder(deps, from, toRoot) {
+  const { say, fs } = deps;
+  const p = pathFor(deps.platform);
+  const to = layout(deps.repoRoot, deps.platform, toRoot);
+  const settings = parseEnvText(fs.readFileSync(from.settings, 'utf8'));
+  const stop = refusals(settings, deps.env);
+  if (stop.length > 0) { for (const r of stop) say(`REFUSED — ${r}`); return 2; }
+  if (inside(p, deps.repoRoot, toRoot)) { say(`REFUSED — ${toRoot} is inside the system's own folder. Nothing was moved.`); return 2; }
+  if (inside(p, from.dataRoot, toRoot) || inside(p, toRoot, from.dataRoot)) { say(`REFUSED — ${toRoot} and ${from.dataRoot} are one inside the other. Nothing was moved.`); return 2; }
+  if (fs.existsSync(toRoot) && fs.readdirSync(toRoot).length > 0) { say(`REFUSED — ${toRoot} is already there and not empty. Nothing was moved. Send me a photo of this screen (never of the files).`); return 2; }
+
+  const tasks = tasksFor(deps, from);
+  const on = tasks === undefined ? [] : Object.values(TASKS).filter((n) => tasks.exists(n));
+  if (on.length > 0) {
+    say(`REFUSED — the Windows tasks ${on.map((n) => `"${n}"`).join(', ')} run from ${from.runDir}. Nothing was moved.`);
+    say('  Turn them off first: pnpm run store-computer -- unschedule-backup  and  pnpm run store-computer -- autostart --off');
+    say('  Then run this again, and afterwards set them up again (guide Part 14, step 1 and Part 28, step 1).');
+    return 2;
+  }
+  const till = tillFolders(deps, from);
+  const screenPort = Number(till.env?.EDGE_SCREEN_PORT || 8091);
+  if (till.installed && ((await deps.portInUse(till.lanePort)) || (await deps.portInUse(screenPort)))) {
+    say(`REFUSED — the till is running (port ${till.lanePort} or ${screenPort} answers). Close the till first: restart the PC, sign in as yourself and run this again straight away (with autostart off, nothing starts the till). Nothing was moved.`);
+    return 2;
+  }
+
+  const stamp = stampOf(deps.now());
+  const mapped = (x) => (inside(p, from.dataRoot, x) ? p.join(toRoot, p.relative(from.dataRoot, x)) : x);
+  const skip = new Set([p.relative(from.dataRoot, from.settings), ...(till.installed ? [p.relative(from.dataRoot, from.tillEnv)] : [])].map((r) => r.split(p.sep).join('/')));
+  const files = filesUnder(fs, p, from.dataRoot).filter((r) => !skip.has(r) && !r.startsWith('scratch/'));
+  const made = [];
+  try {
+    fs.mkdirSync(toRoot, { recursive: true });
+    for (const relPath of files) {
+      const src = p.join(from.dataRoot, ...relPath.split('/'));
+      const dst = p.join(toRoot, ...relPath.split('/'));
+      fs.mkdirSync(p.dirname(dst), { recursive: true });
+      fs.copyFileSync(src, dst, fs.constants?.COPYFILE_EXCL ?? 1);
+      made.push(dst);
+      if (sha256File(fs, src) !== sha256File(fs, dst)) throw new Error(`the copy of ${src} is not the same as the original`);
+    }
+    if (till.installed) {
+      fs.mkdirSync(to.tillDir, { recursive: true });
+      fs.writeFileSync(to.tillEnv, rewriteTillEnv(fs.readFileSync(from.tillEnv, 'utf8'), { edgeData: mapped(till.edgeData), witness: mapped(till.witness), statusFile: to.statusFile }), { encoding: 'utf8', flag: 'wx', mode: 0o600 });
+      made.push(to.tillEnv);
+    }
+    // The settings file LAST, then the record of the new place: until both are there, every command uses the old folder.
+    fs.copyFileSync(from.settings, to.settings, fs.constants?.COPYFILE_EXCL ?? 1);
+    made.push(to.settings);
+    if (sha256File(fs, from.settings) !== sha256File(fs, to.settings)) throw new Error('the copy of the settings file is not the same as the original');
+    writeDataPointer(deps, toRoot, 'migrate-data-folder');
+  } catch (e) {
+    for (const f of made.reverse()) { try { fs.rmSync(f, { force: true }); } catch { /* left; the next try names it */ } }
+    try { writeDataPointer(deps, from.dataRoot, 'migrate-data-folder (put back)'); } catch { /* the note was not changed */ }
+    say(`NOT DONE — ${e instanceof Error ? e.message : String(e)}. Nothing was moved: this copy still uses ${from.dataRoot}, exactly as it was. Send me a photo of this screen.`);
+    return 1;
+  }
+
+  // The till's start scripts, in this release, now read the till's settings from the new place.
+  if (till.installed) {
+    fs.mkdirSync(from.releaseTill, { recursive: true });
+    fs.writeFileSync(p.join(from.releaseTill, 'start-till.cmd'), renderStartScript('win32', { repoRoot: deps.repoRoot, tillEnvPath: to.tillEnv, platformPath: p }));
+    fs.writeFileSync(p.join(from.releaseTill, 'start-till.sh'), renderStartScript('linux', { repoRoot: deps.repoRoot, tillEnvPath: to.tillEnv, platformPath: p }), { mode: 0o755 });
+  }
+  const letter = /^([A-Za-z]):/.exec(toRoot)?.[1]?.toUpperCase();
+  const keptAs = `${from.dataRoot.replace(/[\\/]+$/, '')}.moved-to-${letter ?? 'new-drive'}-${stamp}`;
+  let kept = keptAs;
+  try { fs.renameSync(from.dataRoot, keptAs); } catch { kept = undefined; }
+  say(`MOVED — this copy's data is now in ${toRoot}: ${files.length + 1 + (till.installed ? 1 : 0)} file(s), each copied and checked by its SHA-256 first.`);
+  say(`  Where the data folder is, is recorded in ${deps.dataPointer}: every command finds it there from now on.`);
+  say(kept === undefined
+    ? `  The old folder ${from.dataRoot} could not be renamed (a program has a file in it open). Nothing reads it now; it is kept as it is. Restart the PC and send me a photo of this screen.`
+    : `  The old folder is renamed, not deleted: ${kept}. It still holds this copy's secrets — keep it locked (guide Part 26c) and ask me before you remove it.`);
+  say(`Next: lock the new folder (guide Part 26c, step 1, with ${toRoot}), start the till again, then run: pnpm run store-computer -- status`);
+  return 0;
+}
+
 // ── update ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 const samePath = (platform, a, b) => (platform === 'win32' ? String(a).toLowerCase() === String(b).toLowerCase() : a === b);
@@ -182,6 +289,7 @@ export function releaseProblems(deps, folder) {
 export async function update(deps, opts) {
   const { say } = deps;
   const p = pathFor(deps.platform);
+  if (refusedOnServer(deps)) return 2; // OB-282: nothing is ever installed on the shop's server
   const fromGiven = typeof opts.from === 'string' ? opts.from.trim() : '';
   if (fromGiven === '') { say('REFUSED — name the new release\'s folder: pnpm run store-computer -- update --from C:\\SRE-2026-11  (the ZIP extracted there, nothing else in it)'); return 2; }
   const from = p.resolve(fromGiven);
@@ -198,7 +306,7 @@ export async function update(deps, opts) {
 
   // 1. A backup first, to the drive that stays plugged in (or the one named).
   const to = typeof opts.to === 'string' && opts.to.trim() !== '' ? p.resolve(opts.to.trim()) : readSchedule(deps, L)?.to;
-  if (to === undefined) { say('REFUSED — say where the backup before the update goes: add --to F:\\sre-auto (or set up the automatic backup first). Nothing was changed.'); return 2; }
+  if (to === undefined) { say('REFUSED — say where the backup before the update goes: add --to G:\\sre-auto (or set up the automatic backup first). Nothing was changed.'); return 2; }
   const refusal = folderRefusal(deps, to);
   if (refusal !== undefined) { say(`REFUSED — ${refusal}`); return 2; }
   const key = await ensureBackupKey(deps, L);

@@ -2,8 +2,8 @@
 // The owner's guided store-computer setup (OB-240 · OB-244 · OB-245 · OB-246). A thin shell: everything that decides something is in
 // scripts/lib/store-computer.mjs, where the tests drive it with injected files, programs and network.
 //
-//   pnpm run store-computer -- doctor
-//   pnpm run store-computer -- prepare
+//   pnpm run store-computer -- doctor [--data-drive F:]                 (refuses on a Windows Server, OB-282)
+//   pnpm run store-computer -- prepare [--data-drive F:]                (the shop's data in F:\SRE-data, recorded — OB-283)
 //   pnpm run store-computer -- up
 //   pnpm run store-computer -- check --by "<your name>" [--offline-confirmed] [--demo-fingerprints <file>] [--backup-record <file>] [--out <folder>]
 //   pnpm run store-computer -- fingerprints [--settings <file>] [--out <folder>]     (also on the demo box: node scripts/store-computer.mjs fingerprints)
