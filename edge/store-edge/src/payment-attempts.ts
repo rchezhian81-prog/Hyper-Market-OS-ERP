@@ -17,7 +17,7 @@
 //     is listed as money owed back.
 //
 // OB-271 (owner, 21 Oct 2026) · audit A9: in REAL TRADING, with the shop's own standalone machine, "approved" carries the
-// machine's own APPROVAL / REFERENCE number, typed by the cashier from the slip (`readMachineReference`: 4–12 letters or
+// machine's own APPROVAL / REFERENCE number, typed by the cashier from the slip (`readMachineReference`, OB-274: 4–20 letters or
 // digits, never card data). It is kept on the answer and must be on the sale's tender, so the day can be matched against
 // the machine's settlement slip. Off (the mirror pilot, or not set): an approval number is optional, as before.
 //

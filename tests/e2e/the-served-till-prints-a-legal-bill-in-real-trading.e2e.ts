@@ -266,11 +266,11 @@ describe.skipIf(!HAVE_BROWSER)('OB-271 — the served till in real trading print
     await shows(page, 'pay', 'pay-title', 'What did the card machine say?');
     await page.locator('#pay-kinds button', { hasText: 'Approved' }).click();
     // The approval number from the machine's slip. A card number typed by mistake is refused, and never kept anywhere.
-    await shows(page, 'sheet', 'sheet-title', 'Approval number from the machine');
+    await shows(page, 'sheet', 'sheet-title', 'Approval / Auth code / RRN');
     const card = ['4111', '1111', '1111', '1111'].join(' ');
     await page.fill('#entry-text', card);
     await page.click('#sheet-ok');
-    await shows(page, 'sheet', 'sheet-title', 'Approval number from the machine');
+    await shows(page, 'sheet', 'sheet-title', 'Approval / Auth code / RRN');
     expect(await page.textContent('#entry-hint')).toContain('That looks like a CARD NUMBER');
     await page.fill('#entry-text', 'a1b2c3');
     await page.click('#sheet-ok');

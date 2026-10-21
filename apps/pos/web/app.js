@@ -266,10 +266,10 @@ const WORDS = {
     printFailedTitle: 'The bill did not print',
     printFailed: 'The sale is saved. The bill did not print — check the printer is on and has paper, then press "Print bill" again.',
     invoiceRefusedTitle: 'Not a legal bill — NOT saved',
-    machineRefTitle: 'Approval number from the machine',
-    machineRefHint: 'Type the approval code (usually 6 letters or digits) or the RRN / UPI reference (usually 12 digits) from the machine\'s slip. Never the card number.',
-    machineRefNotValid: 'That is not an approval or reference number: it must be 4 to 12 letters or digits. Check the machine\'s slip and type it again.',
-    machineRefCardLike: 'That looks like a CARD NUMBER. A card number is never typed or kept. Type the approval code or the RRN from the machine\'s slip.',
+    machineRefTitle: 'Approval / Auth code / RRN',
+    machineRefHint: 'Type the approval / auth code or the RRN / UPI reference from the machine\'s slip or the UPI screen (4 to 20 letters or digits). Never the card number.',
+    machineRefNotValid: 'That is not an approval / auth code or RRN: it must be 4 to 20 letters or digits. Check the machine\'s slip and type it again.',
+    machineRefCardLike: 'That looks like a CARD NUMBER. A card number is never typed or kept. Type the approval / auth code or the RRN from the machine\'s slip.',
     machineRefMissing: 'Type the approval or reference number the machine printed for this payment.',
     machineRefStuck: 'The machine said approved, so the money may be taken. Type its approval number from the slip (the machine can reprint its last slip). Do not run the card again.',
     machineRefAgain: 'Type the number again',
@@ -279,7 +279,7 @@ const WORDS = {
     cardRefundDoneOnMachine: 'Done on the machine — type its reference',
     cardRefundNotYet: 'Not done yet',
     cardRefundRefTitle: 'Refund reference from the machine',
-    cardRefundRefHint: 'The reference the machine printed for the refund (4 to 12 letters or digits). Never the card number.',
+    cardRefundRefHint: 'The approval / auth code or RRN the machine printed for the refund (4 to 20 letters or digits). Never the card number.',
     cardRefundCheck: 'What did you check?',
     cardRefundDone: 'Recorded: the refund of {amount} was done on the machine (reference {ref}), checked by {by}.',
     cardRefundLater: 'Not recorded. The refund stays PENDING until it is done on the machine and recorded here — tell the manager.',
@@ -464,9 +464,9 @@ const WORDS = {
     printFailedTitle: 'பில் அச்சாகவில்லை',
     printFailed: 'விற்பனை சேமிக்கப்பட்டது. பில் அச்சாகவில்லை — பிரிண்டர் இயங்குகிறதா, காகிதம் உள்ளதா என்று பார்த்து, மீண்டும் "பில் அச்சிடு" அழுத்தவும்.',
     invoiceRefusedTitle: 'சட்டப்படியான பில் அல்ல — சேமிக்கப்படவில்லை',
-    machineRefTitle: 'இயந்திரத்தின் அனுமதி எண்',
-    machineRefHint: 'இயந்திரச் சீட்டில் உள்ள அனுமதிக் குறியீடு (பொதுவாக 6 எழுத்து/இலக்கம்) அல்லது RRN / UPI குறிப்பு எண்ணை (பொதுவாக 12 இலக்கம்) உள்ளிடவும். கார்டு எண்ணை ஒருபோதும் உள்ளிட வேண்டாம்.',
-    machineRefNotValid: 'இது அனுமதி அல்லது குறிப்பு எண் அல்ல: 4 முதல் 12 எழுத்துகள் அல்லது இலக்கங்கள் இருக்க வேண்டும். இயந்திரச் சீட்டைப் பார்த்து மீண்டும் உள்ளிடவும்.',
+    machineRefTitle: 'அனுமதி / அங்கீகாரக் குறியீடு / RRN',
+    machineRefHint: 'இயந்திரச் சீட்டில் அல்லது UPI திரையில் உள்ள அனுமதி / அங்கீகாரக் குறியீடு அல்லது RRN / UPI குறிப்பு எண்ணை உள்ளிடவும் (4 முதல் 20 எழுத்துகள் அல்லது இலக்கங்கள்). கார்டு எண்ணை ஒருபோதும் உள்ளிட வேண்டாம்.',
+    machineRefNotValid: 'இது அனுமதி / அங்கீகாரக் குறியீடு அல்லது RRN அல்ல: 4 முதல் 20 எழுத்துகள் அல்லது இலக்கங்கள் இருக்க வேண்டும். இயந்திரச் சீட்டைப் பார்த்து மீண்டும் உள்ளிடவும்.',
     machineRefCardLike: 'இது கார்டு எண் போல் உள்ளது. கார்டு எண் ஒருபோதும் உள்ளிடப்படுவதோ சேமிக்கப்படுவதோ இல்லை. சீட்டில் உள்ள அனுமதிக் குறியீடு அல்லது RRN-ஐ உள்ளிடவும்.',
     machineRefMissing: 'இந்தப் பணத்திற்கு இயந்திரம் அச்சிட்ட அனுமதி அல்லது குறிப்பு எண்ணை உள்ளிடவும்.',
     machineRefStuck: 'இயந்திரம் அனுமதித்தது, எனவே பணம் எடுக்கப்பட்டிருக்கலாம். சீட்டிலிருந்து அனுமதி எண்ணை உள்ளிடவும் (இயந்திரம் கடைசிச் சீட்டை மீண்டும் அச்சிடும்). கார்டை மீண்டும் தேய்க்க வேண்டாம்.',
@@ -477,7 +477,7 @@ const WORDS = {
     cardRefundDoneOnMachine: 'இயந்திரத்தில் செய்யப்பட்டது — குறிப்பு எண்ணை உள்ளிடு',
     cardRefundNotYet: 'இன்னும் செய்யவில்லை',
     cardRefundRefTitle: 'இயந்திரத்தின் திரும்பப் பணக் குறிப்பு எண்',
-    cardRefundRefHint: 'திரும்பப் பணத்திற்கு இயந்திரம் அச்சிட்ட குறிப்பு எண் (4 முதல் 12 எழுத்துகள் அல்லது இலக்கங்கள்). கார்டு எண் அல்ல.',
+    cardRefundRefHint: 'திரும்பப் பணத்திற்கு இயந்திரம் அச்சிட்ட அனுமதி / அங்கீகாரக் குறியீடு அல்லது RRN (4 முதல் 20 எழுத்துகள் அல்லது இலக்கங்கள்). கார்டு எண் அல்ல.',
     cardRefundCheck: 'நீங்கள் எதைச் சரிபார்த்தீர்கள்?',
     cardRefundDone: 'பதிவு செய்யப்பட்டது: {amount} திரும்பப் பணம் இயந்திரத்தில் செய்யப்பட்டது (குறிப்பு {ref}), சரிபார்த்தவர் {by}.',
     cardRefundLater: 'பதிவு செய்யப்படவில்லை. இயந்திரத்தில் செய்து இங்கே பதிவு செய்யும் வரை திரும்பப் பணம் நிலுவையில் இருக்கும் — மேலாளரிடம் சொல்லவும்.',
@@ -1635,7 +1635,7 @@ const machineRefs = new Map();
 
 /**
  * OB-271 · audit A9 — in real trading, the approval or reference number the shop's own machine printed, typed from the slip
- * and judged by the same rule the store computer runs (4–12 letters or digits; anything card-like refused, never echoed).
+ * and judged by the same rule the store computer runs (OB-274: 4–20 letters or digits, any machine; anything card-like refused, never echoed).
  * The machine already said approved, so there is no plain Cancel: the cashier types it again, or — if it truly cannot be
  * found — marks the payment as NOT KNOWN (it then holds the day close until the manager settles it). Resolves the kept
  * number, or `null` for "not known".

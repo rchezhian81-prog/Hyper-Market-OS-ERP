@@ -10,7 +10,8 @@
     names) prints as `?`.
 
   The store PC is Windows 11 with the till in a browser (OB-244, OB-251); the roadmap §19 baseline for the POS is a
-  "desktop/PWA shell; sub-second scan; no cloud round trip". The printer model is not yet known (no EX-09 purchase).
+  "desktop/PWA shell; sub-second scan; no cloud round trip". OB-274 (owner, 21 Oct 2026): hardware stays vendor-neutral —
+  any receipt printer Windows can print to, with the paper width (80 mm or 58 mm) a setting; no printer model is given.
 
 ## Decision
 
@@ -28,10 +29,10 @@
 3. **Printing never costs the sale.** The sale is committed before the "Print bill" step exists. A print that fails is
    said ("the sale is saved; print again") and the bill stays printable. The first print of a bill is the original; every
    later print is marked **DUPLICATE** at the top (Rule 46 practice: a copy is never passed off as the original).
-4. **The ESC/POS encoder stays** for a later raw-printer adapter (with print-failure reporting) if the bought printer
-   needs one; it is not used for the bill. It is not extended to Tamil here.
+4. **The ESC/POS encoder stays** in the receipt package but is not used for the bill and is not extended to Tamil. No
+   printer-model code is written (OB-274).
 
-What this does NOT do: it does not choose or buy a printer (EX-09), it does not print silently without the browser's
+What this does NOT do: it names no printer model and has no model-specific code (OB-274), it does not print silently without the browser's
 dialog (that is a browser launch option the owner may choose — see Consequences), and it does not detect paper-out (the
 Windows driver does not tell a web page).
 
@@ -55,12 +56,12 @@ receipt package assumed (raw ESC/POS), so the six axes are recorded:
 
 - Each print shows the browser's print dialog unless the till's browser is started with silent printing (Chrome/Edge
   `--kiosk-printing`, printing to the Windows default printer). The till installer is not changed by this ADR; whether to
-  print silently is the owner's choice once the printer is known.
+  print silently is the owner's choice at the real-trading switch.
 - Paper-out and cover-open are not visible to the page. The cashier sees the paper (or not) and presses Print again; the
   bill is never lost.
 - The Tamil wording of the printed labels has not been checked by a Tamil reader (as for the staff sheets, OB-261).
 
 ## Reconsider-when
 
-The printer is bought and its Windows driver cannot print Tamil or cannot fit the roll; or the shop wants paper-out
-detection or silent printing without a browser flag — then add a raw adapter behind `PrinterPort` rendering the same rows.
+A receipt printer the shop uses cannot print Tamil or fit the roll through its Windows driver; or the shop wants
+paper-out detection — then reopen this with the owner, keeping the device-neutral rule of OB-274.

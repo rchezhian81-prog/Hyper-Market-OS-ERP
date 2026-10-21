@@ -97,7 +97,7 @@ export interface IncomingTender {
   readonly ref?: string;
   /**
    * OB-271 · audit A9: on a card/UPI tender in real trading, the approval / reference number the shop's OWN machine showed
-   * (4–12 letters or digits, typed from the slip; never card data) — what the day is matched against the machine's slip by.
+   * (OB-274: 4–20 letters or digits from any machine, typed from the slip; never card data) — what the day is matched against the machine's slip by.
    */
   readonly machineRef?: string;
   /** On a `loyalty_points` tender: the whole points the store computer took for this amount (PF-09 step 3). */

@@ -133,14 +133,21 @@ describe('OB-271 · audit A9 — the machine\'s approval / reference number: its
     expect(readMachineReference('0042')).toEqual({ ok: true, value: '0042' });
   });
 
+  it('OB-274: one generic field for any machine or bank — "Approval / Auth code / RRN", 4 to 20 letters or digits', () => {
+    expect(MACHINE_REF_WORDS.ask).toBe('Approval / Auth code / RRN');
+    expect(readMachineReference('T2410211234AB567890X')).toEqual({ ok: true, value: 'T2410211234AB567890X' }); // 20
+    expect(readMachineReference('AUTH-0099-XY')).toEqual({ ok: true, value: 'AUTH0099XY' });
+    expect(readMachineReference('T2410211234AB567890XY')).toMatchObject({ ok: false, refusedBecause: 'machine_ref_not_valid' }); // 21
+  });
+
   it('too short, too long, or not letters and digits → refused with what to type', () => {
-    for (const bad of ['123', 'ABCDEFGHIJKLM', 'AB/12', '12.34.56']) expect(readMachineReference(bad)).toMatchObject({ ok: false, refusedBecause: 'machine_ref_not_valid' });
+    for (const bad of ['123', 'ABCDEFGHIJKLMNOPQRSTU', 'AB/12', '12.34.56']) expect(readMachineReference(bad)).toMatchObject({ ok: false, refusedBecause: 'machine_ref_not_valid' });
     for (const none of ['', '   ', undefined, 42]) expect(readMachineReference(none)).toMatchObject({ ok: false, refusedBecause: 'machine_ref_missing' });
   });
 
   it('a card number — bare, spaced or dashed — is refused as card data, and never repeated in the words', () => {
     const card = ['4111', '1111', '1111', '1111'];
-    for (const typed of [card.join(''), card.join(' '), card.join('-'), `5${'0'.repeat(14)}4`]) {
+    for (const typed of [card.join(''), card.join(' '), card.join('-'), ['5555', '5555', '5555', '4444'].join('')]) {
       const r = readMachineReference(typed);
       expect(r).toMatchObject({ ok: false, refusedBecause: 'machine_ref_looks_like_card' });
       if (!r.ok) expect(r.laneMessage).not.toContain(typed.replace(/\D/g, '').slice(0, 6));

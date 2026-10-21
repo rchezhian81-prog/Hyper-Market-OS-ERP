@@ -884,7 +884,8 @@ The new till can already do the three things real trading needs. All three are *
    the printer's own Windows driver on an 80 mm roll (58 mm also works). A second print says **DUPLICATE**. If the
    printer fails, the sale is still saved and the bill can be printed again (More → **Reprint the last bill**).
 3. **Card and UPI approval numbers.** After the shop's own card machine or UPI says "approved", the cashier types the
-   approval number from the machine's slip (never the card number). The day's list (More → **Card and UPI today**, and
+   number from the machine's slip into one field, **Approval / Auth code / RRN** (never the card number). Any card
+   machine and any bank works (OB-274). The day's list (More → **Card and UPI today**, and
    at **Close till**) shows each number, so you can tick it against the machine's settlement slip. A refund to a card
    is done on the machine, its reference typed, and a manager checks it with their own PIN.
 
@@ -896,9 +897,9 @@ switch-over steps are given to you **with** the real-trading GO, not before.
 **Before that GO, these must be true** (each is a question we will ask you then):
 - the shop's address for the bill is recorded with the store (head office's store record);
 - every product the till sells has its real 6-digit (or 8-digit) HSN code in the price list;
-- you have bought the bill printer and told us its make and model, its paper width (80 mm or 58 mm), and how it
-  connects to the PC (USB, network or Bluetooth) — and you have installed its Windows driver and printed a Windows
-  test page in Tamil;
+- the bill printer is installed in Windows with its own driver (any receipt printer Windows can print to works —
+  OB-274), it has printed a Windows test page in Tamil, and you have **set the paper width**: 80 mm (the default) or
+  58 mm;
 - you have decided how items with no GST (fresh vegetables, loose items at 0%) are billed, and what happens with a
   bill of ₹50,000 or more (the law then needs the customer's name and address) — until then the new till refuses both
   and says "bill this on the old system".
