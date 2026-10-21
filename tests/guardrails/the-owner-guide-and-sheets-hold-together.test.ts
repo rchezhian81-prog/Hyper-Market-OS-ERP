@@ -34,10 +34,13 @@ const pkg = JSON.parse(readFileSync('package.json', 'utf8')) as { scripts: Recor
 /** OB-263: the evening check's words the owner reads in Sheet 3 — the migration screen's own, in English and in Tamil. */
 const EVENING_EN = ['Running both', 'Evening check from the old system\'s files', 'Which day', 'Which column is which', 'Save the mapping', 'Change',
   'Columns found — ready to load', 'Load and compare', 'Items that differ', 'Not in the new catalogue', 'Why do they differ', 'Which one was wrong',
-  'Save the reasons', 'What you checked (in your own words)', 'Sign the day', 'Item-wise template', 'Bill-wise template', 'Not known'];
+  'Save the reasons', 'What you checked (in your own words)', 'Sign the day', 'Item-wise template', 'Bill-wise template', 'Not known',
+  // OB-263 A · B (owner, 21 Oct 2026): the department column's pilot value, and the bill lines' tax question.
+  'Which of these is the pilot department?', 'Do the bill lines\' values already include the tax?', 'Not in this report'];
 const EVENING_TA = ['இரண்டையும் இயக்குதல்', 'பழைய அமைப்பின் கோப்புகளிலிருந்து மாலைச் சரிபார்ப்பு', 'எந்த நாள்', 'எந்த நெடுவரிசை எது', 'பொருத்தத்தைச் சேமி', 'மாற்று',
   'நெடுவரிசைகள் கிடைத்தன — ஏற்றத் தயார்', 'ஏற்றி ஒப்பிடு', 'வேறுபடும் பொருட்கள்', 'புதிய பட்டியலில் இல்லை', 'ஏன் வேறுபடுகின்றன', 'எது தவறு',
-  'காரணங்களைச் சேமி', 'நாளில் கையெழுத்திடு', 'பொருள் வாரியான வார்ப்புரு', 'பில் வாரியான வார்ப்புரு', 'தெரியவில்லை'];
+  'காரணங்களைச் சேமி', 'நாளில் கையெழுத்திடு', 'பொருள் வாரியான வார்ப்புரு', 'பில் வாரியான வார்ப்புரு', 'தெரியவில்லை',
+  'இவற்றில் எது பைலட் துறை?', 'பில் வரிகளின் மதிப்பில் ஏற்கனவே வரி அடங்கியுள்ளதா?', 'இந்த அறிக்கையில் இல்லை'];
 
 /** The sheets the owner asked for (OB-255, OB-248 with OB-252, OB-254, and the forgotten PIN). */
 const SHEETS = ['sop-01-pc-down', 'sop-02-mirror-keying', 'sop-03-owner-evening-check', 'sop-04-forgotten-pin'] as const;
@@ -360,6 +363,14 @@ describe('the owner guide and the cashier sheets hold together (OB-244 · OB-248
     expect(guide).toContain('## Part 31 — The evening check from the old ERP\'s two files (OB-263)');
     expect(guide).toMatch(/Copy only the line with the column names — \*\*no line\s+below it\*\*/);
     expect(guide).toMatch(/Never send the whole file/);
+    // OB-263 A · B: the department column and the bill lines' tax question, in the sheet (both languages) and the guide.
+    for (const text of [evening, guide]) {
+      expect(text).toMatch(/Which of these is the\s+pilot department\?/);
+      expect(text).toMatch(/Do the bill lines' values already include the\s+tax\?/);
+    }
+    expect(evening).toMatch(/rows are then left out, and the screen says how many — never silently/);
+    expect(eveningTa).toContain('OB-263 A');
+    expect(eveningTa).toContain('OB-263 B');
   });
 
   it('the guide carries the locked-PC, UPS and memory steps (OB-251 · OB-250 · OB-247)', () => {

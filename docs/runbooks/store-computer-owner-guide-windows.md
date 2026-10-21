@@ -891,9 +891,12 @@ this copy's books afterwards. Sheet 3 has the evening steps; this part is the fi
    files** check that it names the pilot department. If it says the pilot department is not known, the department's
    products have not been applied yet (Part 22).
 5. Pick the item-wise file. On **Which column is which**, choose the old ERP's column for each of our fields; never
-   choose a customer's name or mobile column; answer the date and tax questions; press **Save the mapping**. Do the same
-   for the bill-wise file. The screen shows the mapping with your name and the time; **Change** changes it later, and
-   every earlier one is kept.
+   choose a customer's name or mobile column; answer the date and tax questions. If the report has a department column,
+   choose it for **Department** and pick the pilot department's name in **Which of these is the pilot department?** —
+   the other departments' rows are then left out and counted on the screen (OB-263 A). Press **Save the mapping**. Do
+   the same for the bill-wise file; with its item columns, answer **Do the bill lines' values already include the
+   tax?** — no means each bill is compared without tax on both sides (OB-263 B). The screen shows the mapping with your
+   name and the time; **Change** changes it later, and every earlier one is kept.
 6. Press **Load and compare**, read the differences, write a reason on each, and sign — Sheet 3, steps 9 to 12.
    **Send:** a photo of the screen after loading, before you write the reasons, on the first day.
 

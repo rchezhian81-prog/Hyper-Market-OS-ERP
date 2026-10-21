@@ -39,8 +39,18 @@ loyalty are not compared in the mirror pilot), OB-264 (the old bill number), OB-
    **Which column is which**: for each of our fields (**Item code or barcode**, **Quantity sold**, **Sales value (₹)**,
    **Tax (₹)**, the date if the report has one) choose the old ERP's own column from the list. Never choose a customer's
    name or mobile column. Answer **How does the report write its dates?** and **Does the report's sales value already
-   include the tax?**. Press **Save the mapping**. Then under **2.** pick the bill-wise file and do the same (**Bill
-   number**, **Bill date**, **Bill total (₹)**, and the item columns if the report has them).
+   include the tax?**.
+   - If the report has a department column (OB-263 A): choose it for **Department**, then in
+     **Which of these is the pilot department?** choose the pilot department's own name, from the names the file holds. The other departments'
+     rows are then left out, and the screen says how many — never silently. If the report has no department column,
+     leave **Department** at **Not in this report** and save the report for the pilot department only (step 3).
+   - Press **Save the mapping**.
+
+   Then under **2.** pick the bill-wise file and do the same (**Bill number**, **Bill date**, **Bill total (₹)**, and the
+   item columns if the report has them). With the item columns, answer
+   **Do the bill lines' values already include the tax?** (OB-263 B): look at one bill on the old ERP — if a line's amount is the price the customer paid, choose yes; if
+   it is the amount before tax, choose no. Then each bill is compared without tax on both sides. Press **Save the
+   mapping**.
    - The mapping is kept on the store computer and shown under **Which column is which (saved on this store computer)**,
      with who set it and when. If the old ERP's report ever changes, the screen says a column is missing: press
      **Change** and choose again. Every earlier mapping is kept.

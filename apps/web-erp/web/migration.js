@@ -1077,6 +1077,10 @@ const EC_WORDS = {
     choose: '— choose —', notInReport: 'Not in this report',
     dateOrder: 'How does the report write its dates?', dmy: 'Day first (21/10/2026)', mdy: 'Month first (10/21/2026)', ymd: 'Year first (2026-10-21)',
     tax: 'Does the report\'s sales value already include the tax?', taxYes: 'Yes — the value includes tax', taxNo: 'No — the value is before tax',
+    pilotValue: 'Which of these is the pilot department?', pilotKept: 'Pilot department in the file',
+    linesTax: 'Do the bill lines\' values already include the tax?', linesTaxYes: 'Yes — the line values include tax', linesTaxNo: 'No — the line values are before tax',
+    otherDeptRows: 'rows of other departments in the file, not compared', noDeptRows: 'rows with no department written, not compared',
+    billsWithoutTax: 'The bill lines are before tax, so the pilot items are compared without tax on both sides.', valueNotKnownBills: 'bill(s) in both whose value without tax is not known (a new-till line has no tax rate), not compared',
     mapSave: 'Save the mapping', mapCancel: 'Cancel', mapSaved: 'Mapping saved on this store computer',
     mappingsTitle: 'Which column is which (saved on this store computer)', noMapping: 'Not mapped yet.', change: 'Change',
     setBy: 'set by', changedBefore: 'earlier mappings',
@@ -1127,6 +1131,10 @@ const EC_WORDS = {
     choose: '— தேர்ந்தெடுங்கள் —', notInReport: 'இந்த அறிக்கையில் இல்லை',
     dateOrder: 'அறிக்கை தேதிகளை எப்படி எழுதுகிறது?', dmy: 'நாள் முதலில் (21/10/2026)', mdy: 'மாதம் முதலில் (10/21/2026)', ymd: 'ஆண்டு முதலில் (2026-10-21)',
     tax: 'அறிக்கையின் விற்பனை மதிப்பில் ஏற்கனவே வரி அடங்கியுள்ளதா?', taxYes: 'ஆம் — மதிப்பில் வரி அடங்கும்', taxNo: 'இல்லை — மதிப்பு வரிக்கு முந்தையது',
+    pilotValue: 'இவற்றில் எது பைலட் துறை?', pilotKept: 'கோப்பில் பைலட் துறை',
+    linesTax: 'பில் வரிகளின் மதிப்பில் ஏற்கனவே வரி அடங்கியுள்ளதா?', linesTaxYes: 'ஆம் — வரி மதிப்பில் வரி அடங்கும்', linesTaxNo: 'இல்லை — வரி மதிப்பு வரிக்கு முந்தையது',
+    otherDeptRows: 'கோப்பில் வேறு துறைகளின் வரிகள், ஒப்பிடப்படவில்லை', noDeptRows: 'துறை எழுதப்படாத வரிகள், ஒப்பிடப்படவில்லை',
+    billsWithoutTax: 'பில் வரிகள் வரிக்கு முந்தையவை, எனவே பைலட் பொருட்கள் இரு பக்கமும் வரி இல்லாமல் ஒப்பிடப்படுகின்றன.', valueNotKnownBills: 'இரண்டிலும் உள்ள, வரி இல்லாத மதிப்பு தெரியாத பில்(கள்) (புதிய கல்லா வரியில் வரி விகிதம் இல்லை), ஒப்பிடப்படவில்லை',
     mapSave: 'பொருத்தத்தைச் சேமி', mapCancel: 'ரத்து செய்', mapSaved: 'பொருத்தம் இந்தக் கடைக் கணினியில் சேமிக்கப்பட்டது',
     mappingsTitle: 'எந்த நெடுவரிசை எது (இந்தக் கடைக் கணினியில் சேமிக்கப்பட்டது)', noMapping: 'இன்னும் பொருத்தப்படவில்லை.', change: 'மாற்று',
     setBy: 'அமைத்தவர்', changedBefore: 'முந்தைய பொருத்தங்கள்',
@@ -1341,6 +1349,30 @@ function ecOpenMapping(kind) {
   tax.value = held?.valueIncludesTax === true ? 'yes' : held?.valueIncludesTax === false ? 'no' : '';
   el('ec-map-date-order-label').textContent = ec('dateOrder');
   el('ec-map-includes-tax-label').textContent = ec('tax');
+  // OB-263 B: the bill-wise list's question — do its line values include the tax?
+  el('ec-map-lines-tax-box').hidden = kind !== 'bill_wise';
+  const linesTax = el('ec-map-lines-tax');
+  linesTax.replaceChildren(...[['', ec('choose')], ['yes', ec('linesTaxYes')], ['no', ec('linesTaxNo')]].map(([v, w]) => { const o = document.createElement('option'); o.value = v; o.textContent = w; return o; }));
+  linesTax.value = held?.lineValuesIncludeTax === true ? 'yes' : held?.lineValuesIncludeTax === false ? 'no' : '';
+  el('ec-map-lines-tax-label').textContent = ec('linesTax');
+  // OB-263 A: once the department column is chosen, which of ITS values (read from the file) is the pilot department.
+  el('ec-map-pilot-label').textContent = ec('pilotValue');
+  const paintPilot = () => {
+    const column = kind === 'item_wise' ? el('ec-map-department')?.value ?? '' : '';
+    el('ec-map-pilot-box').hidden = column === '';
+    if (column === '') return;
+    const text = ecState.files[kind]?.text;
+    const values = text ? ecState.kit.columnValuesOf(text, column) : [];
+    const was = held?.pilotDepartmentValue;
+    const list = was !== undefined && !values.some((v) => same(v, was)) ? [was, ...values] : values;
+    const pick = el('ec-map-pilot-value');
+    const before = pick.value;
+    pick.replaceChildren(...['', ...list].map((v) => { const o = document.createElement('option'); o.value = v; o.textContent = v === '' ? ec('choose') : v; return o; }));
+    const keep = list.find((v) => (before !== '' && same(v, before)) || (before === '' && was !== undefined && same(v, was)));
+    pick.value = keep ?? '';
+  };
+  if (kind === 'item_wise') el('ec-map-department').addEventListener('change', paintPilot);
+  paintPilot();
   labelled(el('ec-map-save'), 'list-checks', ec('mapSave'));
   labelled(el('ec-map-cancel'), 'x', ec('mapCancel'));
 }
@@ -1352,7 +1384,13 @@ el('ec-map-save').addEventListener('click', async () => {
   for (const f of ecState.kit.reports[kind].fields) { const v = el(`ec-map-${f.key}`).value; if (v !== '') columns[f.key] = v; }
   const order = el('ec-map-date-order').value;
   const tax = el('ec-map-includes-tax').value;
-  const mapping = { columns, ...(order === '' ? {} : { dateOrder: order }), ...(kind === 'item_wise' && tax !== '' ? { valueIncludesTax: tax === 'yes' } : {}) };
+  const linesTax = el('ec-map-lines-tax').value;
+  const pilotValue = el('ec-map-pilot-value').value;
+  const mapping = {
+    columns, ...(order === '' ? {} : { dateOrder: order }), ...(kind === 'item_wise' && tax !== '' ? { valueIncludesTax: tax === 'yes' } : {}),
+    ...(kind === 'item_wise' && columns.department !== undefined && pilotValue !== '' ? { pilotDepartmentValue: pilotValue } : {}),
+    ...(kind === 'bill_wise' && linesTax !== '' ? { lineValuesIncludeTax: linesTax === 'yes' } : {}),
+  };
   const out = await ecCall('mapping', { report: kind, mapping, ...(ecState.files[kind]?.columns ? { header: ecState.files[kind].columns } : {}) });
   if (!out.ok) { ecTellRefusal(ec('notSaved'), out); return; }
   el('ec-map').hidden = true;
@@ -1381,6 +1419,8 @@ function ecPaintMappings() {
       for (const [k, v] of Object.entries(m.mapping.columns)) what.append(line(`${fieldWord(kind, k)} ← ${v}`));
       if (m.mapping.dateOrder) what.append(line(`${ec('dateOrder')} ${ec(m.mapping.dateOrder)}`));
       if (m.mapping.valueIncludesTax !== undefined) what.append(line(m.mapping.valueIncludesTax ? ec('taxYes') : ec('taxNo')));
+      if (m.mapping.pilotDepartmentValue !== undefined) what.append(line(`${ec('pilotKept')}: ${m.mapping.pilotDepartmentValue}`));
+      if (m.mapping.lineValuesIncludeTax !== undefined) what.append(line(m.mapping.lineValuesIncludeTax ? ec('linesTaxYes') : ec('linesTaxNo')));
       const all = (ecState.mappings.history ?? []).filter((h) => h.report === kind);
       if (all.length > 1) what.append(line(`${ec('changedBefore')}: ${all.slice(0, -1).map((h) => `${h.setBy} · ${h.setAt}`).join('; ')}`));
     }
@@ -1470,9 +1510,11 @@ function ecPaintDay() {
   }
   // Bill by bill, by the old bill number keyed on every mirror sale (OB-264).
   parts.push(ecHeading(ec('billsTitle'), 'ec-bills-title'), ecPara(c.bills.checked === 'lines' ? ec('billsLines') : ec('billsPresence'), 'lead', 'ec-bills-mode'));
+  if (c.bills.valueBasis === 'without_tax') parts.push(ecPara(ec('billsWithoutTax'), 'lead', 'ec-bills-basis'));
+  if (c.bills.valueNotKnown > 0) parts.push(ecPara(`${c.bills.valueNotKnown} ${ec('valueNotKnownBills')}`, 'warn', 'ec-bills-not-known'));
   parts.push(c.bills.differences.length === 0 ? emptyLine(ec('noBillDiff')) : ecTable('ec-bills', [[ec('bill')], [ec('what')], [ec('valueCol'), true], [ec('new')]], c.bills.differences.map((b) => ecRow([
     ecCell(b.billNumber), ecCell(ec(b.kind === 'not_keyed' ? 'bill_not_keyed' : b.kind === 'not_on_old' ? 'bill_not_on_old' : 'bill_value')),
-    ecCell(b.kind === 'value_differs' ? `${money(b.oldValueMinor)} → ${money(b.newValueMinor)}` : money(b.oldValueMinor ?? b.newValueMinor ?? 0), 'num'),
+    ecCell(b.kind === 'value_differs' ? `${money(b.oldValueMinor)} → ${money(b.newValueMinor)}` : (b.oldValueMinor ?? b.newValueMinor) === undefined ? null : money(b.oldValueMinor ?? b.newValueMinor), 'num'),
     ecCell(b.newBill ?? '—'),
   ], true))));
   parts.push(line(`${c.bills.matched} ${ec('billsMatched')}`));
@@ -1486,6 +1528,11 @@ function ecPaintDay() {
   parts.push(ecHeading(ec('readTitle'), 'ec-read-title'));
   parts.push(line(`${ec('report_item_wise')}: ${f.itemWise.rowsRead} ${ec('fileRead')} · ${f.itemWise.totalLines} ${ec('totalLines')} · ${f.itemWise.withoutCode} ${ec('withoutCode')}`));
   if (f.itemWise.dateChecked === false) parts.push(ecPara(ec('dateNotChecked'), 'warn', 'ec-date-not-checked'));
+  // OB-263 A: the rows the file's own department column set aside — counted and said, never silently dropped.
+  if (f.itemWise.department) {
+    const d = f.itemWise.department;
+    parts.push(ecPara(`${ec('pilotKept')}: ${d.pilotValue} · ${d.otherDepartmentRows} ${ec('otherDeptRows')} · ${d.noDepartmentRows} ${ec('noDeptRows')}`, 'lead', 'ec-dept-rows'));
+  }
   parts.push(line(`${ec('report_bill_wise')}: ${f.billWise.rowsRead} ${ec('fileRead')} · ${f.billWise.totalLines} ${ec('totalLines')} · ${f.billWise.withoutCode} ${ec('withoutCode')}${f.billWise.linesUnderBillAbove ? ` · ${f.billWise.linesUnderBillAbove} ${ec('underAbove')}` : ''}`));
   parts.push(line(`${c.otherDepartments.rows} ${ec('otherDepts')} (${money(c.otherDepartments.valueMinor)}) · ${c.newOutsideDepartment.lines} ${ec('outsideNew')}`));
   result.replaceChildren(...parts);

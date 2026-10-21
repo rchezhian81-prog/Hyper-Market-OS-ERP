@@ -26,7 +26,7 @@ import { readOldErpBillNumber } from '../../tender/src/old-erp-bill-number';
 export type OldErpReportKind = 'item_wise' | 'bill_wise';
 export const OLD_ERP_REPORT_KINDS: readonly OldErpReportKind[] = Object.freeze(['item_wise', 'bill_wise']);
 
-export type ItemWiseField = 'item_code' | 'quantity' | 'value' | 'tax' | 'sale_date';
+export type ItemWiseField = 'item_code' | 'quantity' | 'value' | 'tax' | 'sale_date' | 'department';
 export type BillWiseField = 'bill_number' | 'bill_date' | 'bill_total' | 'item_code' | 'quantity' | 'line_value';
 export type ReportField = ItemWiseField | BillWiseField;
 
@@ -55,6 +55,9 @@ export const OLD_ERP_REPORTS: Readonly<Record<OldErpReportKind, OldErpReportSpec
       { key: 'value', required: true, words: { en: 'Sales value (₹)', ta: 'விற்பனை மதிப்பு (₹)' } },
       { key: 'tax', required: true, words: { en: 'Tax (₹)', ta: 'வரி (₹)' } },
       { key: 'sale_date', required: false, words: { en: 'Date (if the report has a date column)', ta: 'தேதி (அறிக்கையில் தேதி நெடுவரிசை இருந்தால்)' } },
+      // OB-263 A (owner, 21 Oct 2026, "Pick dept column"): the report's own department column, and which of its values is
+      // the pilot department — then every other department's rows are set aside, counted.
+      { key: 'department', required: false, words: { en: 'Department (if the report has a department column)', ta: 'துறை (அறிக்கையில் துறை நெடுவரிசை இருந்தால்)' } },
     ],
   },
   bill_wise: {
@@ -169,6 +172,27 @@ export function headerRowOf(text: string): { readonly ok: true; readonly line: n
   return { ok: true, line: row.line, columns };
 }
 
+/**
+ * The distinct values of one column below the header row, as the file writes them — for the mapping step's "which of
+ * these is the pilot department" (OB-263 A). Only that column is read; at most `limit` values.
+ */
+export function columnValuesOf(text: string, column: string, limit = 200): readonly string[] {
+  const read = readCsv(text);
+  if (!read.ok) return [];
+  const want = headerKey(column);
+  const index = read.table.records.slice(0, HEADER_SEARCH_ROWS).findIndex((r) => r.cells.some((c) => headerKey(c) === want));
+  if (index < 0) return [];
+  const at = read.table.records[index]!.cells.findIndex((c) => headerKey(c) === want);
+  const seen = new Map<string, string>();
+  for (const r of read.table.records.slice(index + 1)) {
+    const v = (r.cells[at] ?? '').trim();
+    if (v === '' || isTotalLine(v) || seen.has(headerKey(v))) continue;
+    seen.set(headerKey(v), v.slice(0, 120));
+    if (seen.size >= limit) break;
+  }
+  return [...seen.values()].sort((a, b) => a.localeCompare(b));
+}
+
 // ── Figures ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
 /** Indian (1,23,456) or international (123,456) grouping of the whole-rupee part, or no grouping at all. */
@@ -266,6 +290,16 @@ export interface ColumnMapping {
   readonly dateOrder?: DateOrder;
   /** Item-wise only: does the report's value already include the tax? If not, value + tax is what the customer paid. */
   readonly valueIncludesTax?: boolean;
+  /**
+   * Item-wise, with the department column mapped (OB-263 A): which of that column's values, as the file writes it, is the
+   * pilot department. Rows with any other value are set aside and counted, never compared.
+   */
+  readonly pilotDepartmentValue?: string;
+  /**
+   * Bill-wise, with the item lines mapped (OB-263 B, owner, 21 Oct 2026, "Ask once when mapping"): do the line values
+   * already include the tax? If not, the pilot lines are compared without tax against the new till's lines without tax.
+   */
+  readonly lineValuesIncludeTax?: boolean;
 }
 
 export type MappingJudgement = { readonly ok: true; readonly mapping: ColumnMapping } | { readonly ok: false; readonly problems: readonly string[] };
@@ -305,6 +339,14 @@ export function judgeMapping(kind: OldErpReportKind, raw: unknown, header?: read
     && (columns.item_code === undefined || columns.line_value === undefined)) {
     problems.push('a bill\'s item lines need both the item code and the line value columns (the quantity is optional) — or none of them');
   }
+  const linesMapped = kind === 'bill_wise' && columns.item_code !== undefined && columns.line_value !== undefined;
+  const lineValuesIncludeTax = body['lineValuesIncludeTax'];
+  if (linesMapped && typeof lineValuesIncludeTax !== 'boolean') problems.push('say whether the bill lines\' values already include the tax');
+  const deptValue = body['pilotDepartmentValue'];
+  const deptMapped = kind === 'item_wise' && columns.department !== undefined;
+  if (deptMapped && (typeof deptValue !== 'string' || deptValue.trim() === '' || deptValue.length > 120)) {
+    problems.push('choose which value of the department column is the pilot department');
+  }
   if (header !== undefined) {
     const have = new Set(header.map(headerKey));
     for (const [k, v] of Object.entries(columns)) if (!have.has(headerKey(v!))) problems.push(`the file has no column "${v}" (chosen for "${k}")`);
@@ -316,6 +358,8 @@ export function judgeMapping(kind: OldErpReportKind, raw: unknown, header?: read
       kind, columns,
       ...(dateMapped ? { dateOrder: dateOrder as DateOrder } : {}),
       ...(kind === 'item_wise' ? { valueIncludesTax: valueIncludesTax as boolean } : {}),
+      ...(deptMapped ? { pilotDepartmentValue: (deptValue as string).trim() } : {}),
+      ...(linesMapped ? { lineValuesIncludeTax: lineValuesIncludeTax as boolean } : {}),
     },
   };
 }
@@ -361,6 +405,13 @@ export interface ReadSummary {
   readonly linesUnderBillAbove?: number;
   /** Item-wise: whether the report's own date column was checked against the chosen day. */
   readonly dateChecked?: boolean;
+  /**
+   * Item-wise with the department column mapped (OB-263 A): the pilot department's value it kept, and the rows it set
+   * aside — another department's, and rows with no department written — counted, never compared.
+   */
+  readonly department?: { readonly pilotValue: string; readonly otherDepartmentRows: number; readonly noDepartmentRows: number };
+  /** Bill-wise with item lines (OB-263 B): whether the line values include the tax. */
+  readonly lineValuesIncludeTax?: boolean;
 }
 
 export type ReportRefusal = 'not_csv' | 'too_large' | 'too_many_rows' | 'header_not_found' | 'unreadable_rows' | 'wrong_day' | 'looks_personal' | 'repeated_bill';
@@ -374,7 +425,7 @@ const refuse = (refusedBecause: ReportRefusal, problems: readonly string[]): { r
 
 /** Find the header row that holds every mapped column, and where each one is. */
 function locate(table: CsvTable, mapping: ColumnMapping): { readonly line: number; readonly index: number; readonly at: Partial<Record<ReportField, number>> } | { readonly missing: readonly string[] } {
-  const wanted = Object.entries(mapping.columns) as [ReportField, string][];
+  const wanted = (Object.entries(mapping.columns) as [ReportField, string | undefined][]).filter((e): e is [ReportField, string] => typeof e[1] === 'string');
   let best: { missing: string[] } | undefined;
   for (let i = 0; i < Math.min(table.records.length, HEADER_SEARCH_ROWS); i += 1) {
     const keys = table.records[i]!.cells.map(headerKey);
@@ -417,11 +468,20 @@ export function readItemWiseReport(input: { readonly text: string; readonly mapp
   const wrongDays = new Set<string>();
   let withoutCode = 0;
   let totalLines = 0;
+  let otherDepartmentRows = 0;
+  let noDepartmentRows = 0;
+  const pilot = at.department === undefined || input.mapping.pilotDepartmentValue === undefined ? undefined : headerKey(input.mapping.pilotDepartmentValue);
   for (const r of t.table.records.slice(t.header.index + 1)) {
     const rawCode = cell(r.cells, at.item_code);
     const code = cleanItemCode(rawCode);
-    if (code === '') { withoutCode += 1; continue; }
     if (isTotalLine(code)) { totalLines += 1; continue; }
+    // OB-263 A: another department's row is set aside before it is read at all — counted, never compared.
+    if (pilot !== undefined) {
+      const dept = headerKey(cell(r.cells, at.department));
+      if (dept === '') { if (code !== '') noDepartmentRows += 1; else withoutCode += 1; continue; }
+      if (dept !== pilot) { otherDepartmentRows += 1; continue; }
+    }
+    if (code === '') { withoutCode += 1; continue; }
     const lineProblems: string[] = [];
     if (isScientificNotation(code)) lineProblems.push(`the item code "${code}" was turned into a number by Excel and its digits are lost — format that column as Text in Excel and save again`);
     else if (code.length > 64) lineProblems.push(`the item code "${code.slice(0, 20)}…" is longer than 64 characters`);
@@ -446,7 +506,10 @@ export function readItemWiseReport(input: { readonly text: string; readonly mapp
   if (problems.length > 0) return refuse('unreadable_rows', problems);
   return {
     ok: true, rows,
-    summary: { headerLine: t.header.line, rowsRead: rows.length, withoutCode, totalLines, dateChecked: at.sale_date !== undefined },
+    summary: {
+      headerLine: t.header.line, rowsRead: rows.length, withoutCode, totalLines, dateChecked: at.sale_date !== undefined,
+      ...(pilot === undefined ? {} : { department: { pilotValue: input.mapping.pilotDepartmentValue!, otherDepartmentRows, noDepartmentRows } }),
+    },
   };
 }
 
@@ -532,6 +595,9 @@ export function readBillWiseReport(input: { readonly text: string; readonly mapp
   }));
   return {
     ok: true, bills: out, withLines,
-    summary: { headerLine: t.header.line, rowsRead: out.length, withoutCode, totalLines, ...(withLines ? { linesUnderBillAbove: underAbove } : {}) },
+    summary: {
+      headerLine: t.header.line, rowsRead: out.length, withoutCode, totalLines,
+      ...(withLines ? { linesUnderBillAbove: underAbove, lineValuesIncludeTax: input.mapping.lineValuesIncludeTax !== false } : {}),
+    },
   };
 }

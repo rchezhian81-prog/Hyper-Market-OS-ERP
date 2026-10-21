@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  OLD_ERP_REPORTS, headerRowOf, judgeMapping, oldErpTemplateCsv, quantityToThousandths, readBillWiseReport, readCsv,
+  OLD_ERP_REPORTS, columnValuesOf, headerRowOf, judgeMapping, oldErpTemplateCsv, quantityToThousandths, readBillWiseReport, readCsv,
   readItemWiseReport, readOldErpDate, rupeesToPaise, type ColumnMapping,
 } from '../../packages/migration/src/old-erp-reports';
 
@@ -21,7 +21,7 @@ const ITEM_MAP: ColumnMapping = {
   dateOrder: 'dmy', valueIncludesTax: true,
 };
 const BILL_MAP: ColumnMapping = { kind: 'bill_wise', columns: { bill_number: 'Bill No', bill_date: 'Date', bill_total: 'Bill Amount' }, dateOrder: 'dmy' };
-const BILL_LINES_MAP: ColumnMapping = { kind: 'bill_wise', columns: { bill_number: 'Bill No', bill_date: 'Date', bill_total: 'Bill Amount', item_code: 'Item', quantity: 'Qty', line_value: 'Amount' }, dateOrder: 'dmy' };
+const BILL_LINES_MAP: ColumnMapping = { kind: 'bill_wise', columns: { bill_number: 'Bill No', bill_date: 'Date', bill_total: 'Bill Amount', item_code: 'Item', quantity: 'Qty', line_value: 'Amount' }, dateOrder: 'dmy', lineValuesIncludeTax: true };
 
 describe('the CSV as Excel writes it', () => {
   it('drops the byte-order mark, finds a semicolon separator, reads quoted cells with "" and line breaks inside', () => {
@@ -89,7 +89,7 @@ describe('dates, in the order the mapping says — never guessed', () => {
 
 describe('the mapping: chosen from the file\'s own header row, judged before it is saved', () => {
   it('our templates are header-only files with our own column names', () => {
-    expect(oldErpTemplateCsv('item_wise')).toBe('item_code,quantity,value,tax,sale_date\r\n');
+    expect(oldErpTemplateCsv('item_wise')).toBe('item_code,quantity,value,tax,sale_date,department\r\n');
     expect(oldErpTemplateCsv('bill_wise')).toBe('bill_number,bill_date,bill_total,item_code,quantity,line_value\r\n');
     expect(OLD_ERP_REPORTS.item_wise.fields.filter((f) => f.required).map((f) => f.key)).toEqual(['item_code', 'quantity', 'value', 'tax']);
     for (const f of [...OLD_ERP_REPORTS.item_wise.fields, ...OLD_ERP_REPORTS.bill_wise.fields]) expect(f.words.ta).not.toBe('');
@@ -193,5 +193,44 @@ describe('the bill-wise list, through its mapping', () => {
     expect(readBillWiseReport({ text: phones, mapping: BILL_MAP, day: DAY })).toMatchObject({ ok: false, refusedBecause: 'looks_personal', problems: [expect.stringContaining('look like phone, Aadhaar or card numbers')] });
     expect(readBillWiseReport({ text: 'Bill No,Date,Bill Amount\nOLD/1,20/10/2026,10\n', mapping: BILL_MAP, day: DAY })).toMatchObject({ ok: false, refusedBecause: 'wrong_day' });
     expect(readBillWiseReport({ text: 'Bill No,Date,Bill Amount\nOLD/1,21/10/2026,\n', mapping: BILL_MAP, day: DAY })).toMatchObject({ ok: false, refusedBecause: 'unreadable_rows', problems: [expect.stringContaining('has no total')] });
+  });
+});
+
+describe('OB-263 A and B (owner, 21 Oct 2026): the department column, and bill lines before tax — asked once, in the mapping', () => {
+  const report = [
+    'Item Code,Dept,Customer Mobile,Qty,Net Amount,GST Amt',
+    'P1,GROCERY,9876543210,2,210.00,10.00',
+    'S1,Personal Care,9123456780,1,99.00,15.10',
+    'X9,personal care,,1,not a number,0',
+    'P3, Grocery ,,1,45.00,2.14',
+    'P4,,,1,10.00,0',
+    'Total,,,5,364.00,27.24',
+  ].join('\n');
+  const DEPT_MAP: ColumnMapping = { kind: 'item_wise', columns: { item_code: 'Item Code', department: 'Dept', quantity: 'Qty', value: 'Net Amount', tax: 'GST Amt' }, valueIncludesTax: true, pilotDepartmentValue: 'GROCERY' };
+
+  it('A: the department column needs the pilot department\'s value, picked from the file\'s own values; it is kept with the mapping', () => {
+    expect(columnValuesOf(report, 'dept')).toEqual(['GROCERY', 'Personal Care']);
+    expect(judgeMapping('item_wise', { columns: DEPT_MAP.columns, valueIncludesTax: true })).toMatchObject({ ok: false, problems: [expect.stringContaining('which value of the department column is the pilot department')] });
+    expect(judgeMapping('item_wise', { columns: DEPT_MAP.columns, valueIncludesTax: true, pilotDepartmentValue: ' GROCERY ' })).toEqual({ ok: true, mapping: DEPT_MAP });
+    // Without the column the value means nothing, and is not kept.
+    expect(judgeMapping('item_wise', { columns: { ...ITEM_MAP.columns }, dateOrder: 'dmy', valueIncludesTax: true, pilotDepartmentValue: 'GROCERY' })).toEqual({ ok: true, mapping: ITEM_MAP });
+  });
+
+  it('A: every other department\'s row is set aside before it is read — counted, never compared; a row with no department too', () => {
+    const r = readItemWiseReport({ text: report, mapping: DEPT_MAP, day: DAY });
+    expect(r).toMatchObject({ ok: true, summary: { rowsRead: 2, totalLines: 1, department: { pilotValue: 'GROCERY', otherDepartmentRows: 2, noDepartmentRows: 1 } } });
+    expect(r.ok && r.rows.map((x) => x.code)).toEqual(['P1', 'P3']);
+    // Not set: every row is read as before (and the unreadable figure in another department's row is then refused).
+    expect(readItemWiseReport({ text: report, mapping: { ...DEPT_MAP, columns: { ...DEPT_MAP.columns, department: undefined }, pilotDepartmentValue: undefined }, day: DAY })).toMatchObject({ ok: false, refusedBecause: 'unreadable_rows' });
+  });
+
+  it('B: with item lines the bill-wise mapping asks whether their values include the tax, and keeps the answer', () => {
+    const cols = BILL_LINES_MAP.columns;
+    expect(judgeMapping('bill_wise', { columns: cols, dateOrder: 'dmy' })).toMatchObject({ ok: false, problems: [expect.stringContaining('bill lines\' values already include the tax')] });
+    expect(judgeMapping('bill_wise', { columns: cols, dateOrder: 'dmy', lineValuesIncludeTax: false })).toEqual({ ok: true, mapping: { ...BILL_LINES_MAP, lineValuesIncludeTax: false } });
+    // Without item lines there is nothing to ask, and nothing is kept.
+    expect(judgeMapping('bill_wise', { columns: BILL_MAP.columns, dateOrder: 'dmy', lineValuesIncludeTax: false })).toEqual({ ok: true, mapping: BILL_MAP });
+    const text = 'Bill No,Date,Bill Amount,Item,Qty,Amount\nOLD/7,21/10/2026,105.00,P1,1,100.00\n';
+    expect(readBillWiseReport({ text, mapping: { ...BILL_LINES_MAP, lineValuesIncludeTax: false }, day: DAY })).toMatchObject({ ok: true, summary: { lineValuesIncludeTax: false } });
   });
 });

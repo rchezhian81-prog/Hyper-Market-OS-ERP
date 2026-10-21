@@ -54,7 +54,7 @@ describe('the evening check, item by item and in total', () => {
       quantity: [{ uom: 'ea', old: 2, new: 2 }, { uom: 'kg', old: 1250, new: 1250 }],
       bills: { old: { known: false, why: expect.stringContaining('no item lines') }, new: 2 },
     });
-    expect(c.bills).toEqual({ checked: 'presence_only', matched: 2, differences: [] });
+    expect(c.bills).toEqual({ checked: 'presence_only', valueBasis: 'with_tax', valueNotKnown: 0, matched: 2, differences: [] });
     expect(c.notCompared).toEqual([{ area: 'payments', decision: 'OB-256' }, { area: 'loyalty', decision: 'OB-265' }]);
     // The MG-10 day: the totals only (no bill count: not known — never a 0); nothing beyond tolerance.
     expect(c.comparisons.map((x) => [x.area, x.subject])).toEqual([['sales_value', undefined], ['tax', undefined], ['stock_movement', 'ea'], ['stock_movement', 'kg']]);
@@ -122,7 +122,7 @@ describe('bill by bill, by the old bill number (OB-264)', () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.check.bills).toEqual({
-      checked: 'lines', matched: 1,
+      checked: 'lines', valueBasis: 'with_tax', valueNotKnown: 0, matched: 1,
       differences: [
         { billNumber: 'OLD/2', kind: 'not_keyed', oldValueMinor: 7500 },
         { billNumber: 'OLD/4', kind: 'not_keyed', oldValueMinor: 10_000 },
@@ -141,7 +141,7 @@ describe('bill by bill, by the old bill number (OB-264)', () => {
 
   it('without the item lines only presence is checked, and the result says so', () => {
     const r = eveningCheck({ ...base, sales: [sale(1, 'OLD/1', [dal(2)]), sale(2, 'OLD/99', [rice(1250, 7500)])] });
-    expect(r.ok && r.check.bills).toEqual({ checked: 'presence_only', matched: 1, differences: [{ billNumber: 'OLD/99', kind: 'not_on_old', newValueMinor: 7500, newBill: 'B2' }] });
+    expect(r.ok && r.check.bills).toEqual({ checked: 'presence_only', valueBasis: 'with_tax', valueNotKnown: 0, matched: 1, differences: [{ billNumber: 'OLD/99', kind: 'not_on_old', newValueMinor: 7500, newBill: 'B2' }] });
   });
 
   it('a credit note, a return or an exchange on the old files is listed to EXPLAIN — never matched to anything (OB-269)', () => {
@@ -162,6 +162,48 @@ describe('bill by bill, by the old bill number (OB-264)', () => {
     ]);
     expect(r.check.bills.differences).toEqual([]);
     expect(r.check.comparisons.filter((c) => c.area === 'old_return').map((c) => c.subject)).toEqual(['item:P1@9', 'bill:CN/5']);
+  });
+});
+
+describe('OB-263 A and B (owner, 21 Oct 2026): the file\'s own department, and bill lines before tax', () => {
+  const withLines = (bills: OldBill[], lineValuesIncludeTax?: boolean) => ({ bills, withLines: true, ...(lineValuesIncludeTax === undefined ? {} : { lineValuesIncludeTax }) });
+  const exTax = (incl: number): number => incl - tax5(incl);
+
+  it('B: bill lines before tax are compared without tax against the new till\'s lines without tax — and said', () => {
+    const bills = [
+      { billNumber: 'OLD/1', line: 2, totalMinor: 21_000, lines: [{ line: 2, code: 'P1', valueMinor: exTax(21_000) }] },
+      { billNumber: 'OLD/2', line: 3, totalMinor: 7500, lines: [{ line: 3, code: 'P2', valueMinor: 7000 }] },
+    ];
+    const r = eveningCheck({ ...base, billWise: withLines(bills, false) });
+    expect(r.ok && r.check.bills).toEqual({
+      checked: 'lines', valueBasis: 'without_tax', valueNotKnown: 0, matched: 1,
+      // Rice is 0% tax, so without tax it is still 7500 — the old line's 7000 differs.
+      differences: [{ billNumber: 'OLD/2', kind: 'value_differs', oldValueMinor: 7000, newValueMinor: 7500, newBill: 'B2' }],
+    });
+    // The same before-tax lines read as if they included tax would differ on every bill: the answer matters.
+    const asIfWith = eveningCheck({ ...base, billWise: withLines(bills, true) });
+    expect(asIfWith.ok && asIfWith.check.bills.differences.map((b) => b.billNumber)).toEqual(['OLD/1', 'OLD/2']);
+  });
+
+  it('B: a new-till line with no tax rate leaves that bill\'s value without tax NOT KNOWN — counted, never compared as a zero', () => {
+    const catalogue = CATALOGUE.map((p) => (p.productId === 'P1' ? { ...p, taxBps: undefined } : p)) as CheckProduct[];
+    const r = eveningCheck({
+      ...base, catalogue,
+      sales: [sale(1, 'OLD/1', [{ productId: 'P1', quantityMinor: 2, uom: 'ea', lineTotalMinor: 21_000 }]), sale(2, 'OLD/2', [rice(1250, 7500)])],
+      billWise: withLines([{ billNumber: 'OLD/1', line: 2, totalMinor: 21_000, lines: [{ line: 2, code: 'P1', valueMinor: 20_000 }] }, { billNumber: 'OLD/2', line: 3, totalMinor: 7500, lines: [{ line: 3, code: 'P2', valueMinor: 7500 }] }], false),
+    });
+    expect(r.ok && r.check.bills).toMatchObject({ valueBasis: 'without_tax', valueNotKnown: 1, matched: 1, differences: [] });
+  });
+
+  it('A: a file kept to the pilot department by its own column lists every unmatched code — never refused as "the whole shop"', () => {
+    const many = Array.from({ length: 1001 }, (_, i) => row(i + 2, `X${i}`, 1000, 100, 0));
+    expect(eveningCheck({ ...base, itemWise: many })).toMatchObject({ ok: false, detail: expect.stringContaining('save it again for the pilot department') });
+    const filtered = eveningCheck({ ...base, itemWise: many, departmentFiltered: true });
+    // Still far too many differences for one day (the safety cap) — but said as a wrong mapping, not "the whole shop".
+    expect(filtered).toMatchObject({ ok: false, refusedBecause: 'too_many_differences' });
+    expect(!filtered.ok && filtered.detail).not.toContain('save it again for the pilot department');
+    const few = eveningCheck({ ...base, itemWise: [...base.itemWise, row(9, 'X-1', 1000, 100, 0)], departmentFiltered: true });
+    expect(few.ok && few.check.notInCatalogue.map((n) => n.code)).toEqual(['X-1']);
   });
 });
 

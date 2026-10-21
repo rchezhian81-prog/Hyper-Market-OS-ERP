@@ -49,11 +49,12 @@ const PACK = {
 const tax5 = (incl: number): string => ((incl - Math.round((incl * 10_000) / 10_500)) / 100).toFixed(2);
 const dmy = (iso: string): string => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
 const itemWise = (day: string): Buffer => Buffer.from(['\uFEFFSRE Hyper Market — Item wise sales',
-  'Item Code,Item Name,Customer Mobile,Qty,Net Amount,GST Amt,Bill Date',
-  `P1,Toor dal 1kg,9876543210,2,210.00,${tax5(21_000)},${dmy(day)}`,
-  `8900000000003,Sugar 1kg,9123456780,2,90.00,${tax5(9000)},${dmy(day)}`,
-  `8900000000099,Shampoo,9988776655,1,99.00,15.10,${dmy(day)}`,
-  'Total,,,5,399.00,,'].join('\r\n'), 'utf8');
+  'Item Code,Item Name,Dept,Customer Mobile,Qty,Net Amount,GST Amt,Bill Date',
+  `P1,Toor dal 1kg,GROCERY,9876543210,2,210.00,${tax5(21_000)},${dmy(day)}`,
+  `8900000000003,Sugar 1kg,GROCERY,9123456780,2,90.00,${tax5(9000)},${dmy(day)}`,
+  `8900000000099,Shampoo,Personal Care,9988776655,1,99.00,15.10,${dmy(day)}`,
+  `X-999,Face cream,Personal Care,,1,250.00,38.14,${dmy(day)}`,
+  'Total,,,,6,649.00,,'].join('\r\n'), 'utf8');
 const billWise = (day: string): Buffer => Buffer.from(['Bill No;Date;Customer Name;Bill Amount;Item;Qty;Amount',
   `OLD/101;${dmy(day)};Ravi Kumar;210.00;P1;2;210.00`,
   `OLD/102;${dmy(day)};Meena;45.00;P3;1;45.00`,
@@ -109,6 +110,12 @@ describe.skipIf(!HAVE_BROWSER)('the evening check from the old ERP\'s files, in 
     for (const [field, column] of [['item_code', 'Item Code'], ['quantity', 'Qty'], ['value', 'Net Amount'], ['tax', 'GST Amt'], ['sale_date', 'Bill Date']]) await page.selectOption(`#ec-map-${field}`, column!);
     await page.selectOption('#ec-map-date-order', 'dmy');
     await page.selectOption('#ec-map-includes-tax', 'yes');
+    // OB-263 A: the report's own department column — then which of ITS values is the pilot department, from the file.
+    expect(await page.isVisible('#ec-map-pilot-value')).toBe(false);
+    await page.selectOption('#ec-map-department', 'Dept');
+    await page.waitForSelector('#ec-map-pilot-box:not([hidden])');
+    expect(await page.$$eval('#ec-map-pilot-value option', (o) => o.map((x) => x.textContent))).toEqual(['— choose —', 'GROCERY', 'Personal Care']);
+    await page.selectOption('#ec-map-pilot-value', 'GROCERY');
     await page.click('#ec-map-save');
   };
   const mapBillWise = async (page: Page): Promise<void> => {
@@ -116,6 +123,9 @@ describe.skipIf(!HAVE_BROWSER)('the evening check from the old ERP\'s files, in 
     expect(await page.isVisible('#ec-map-includes-tax')).toBe(false);
     for (const [field, column] of [['bill_number', 'Bill No'], ['bill_date', 'Date'], ['bill_total', 'Bill Amount'], ['item_code', 'Item'], ['quantity', 'Qty'], ['line_value', 'Amount']]) await page.selectOption(`#ec-map-${field}`, column!);
     await page.selectOption('#ec-map-date-order', 'dmy');
+    // OB-263 B: asked once — do the bill lines' values include the tax?
+    expect(await text(page, '#ec-map-lines-tax-label')).toBe('Do the bill lines\' values already include the tax?');
+    await page.selectOption('#ec-map-lines-tax', 'yes');
     await page.click('#ec-map-save');
   };
   const explainAll = async (page: Page, reason: string): Promise<number> => {
@@ -177,6 +187,8 @@ describe.skipIf(!HAVE_BROWSER)('the evening check from the old ERP\'s files, in 
     expect(await text(page, '#ec-mapping-item_wise')).toContain('set by u-owner');
     expect(await text(page, '#ec-mapping-item_wise')).toContain('Item code or barcode ← Item Code');
     expect(await text(page, '#ec-mapping-item_wise')).not.toContain('Customer Mobile');
+    expect(await text(page, '#ec-mapping-item_wise')).toContain('Pilot department in the file: GROCERY');
+    expect(await text(page, '#ec-mapping-bill_wise')).toContain('Yes — the line values include tax');
 
     // ── Load and compare.
     await page.click('#ec-load');
@@ -189,7 +201,10 @@ describe.skipIf(!HAVE_BROWSER)('the evening check from the old ERP\'s files, in 
     expect(await text(page, '#ec-bills')).toContain('OLD/103');
     expect(await text(page, '#ec-bills')).toContain('On the old system with pilot items, not keyed on the new till');
     expect(await text(page, '#ec-explain')).toContain('CN/9');
-    expect(await text(page, '#ec-result')).toContain('1 rows for other departments, not compared');
+    // OB-263 A: the other department's rows (shampoo, and a face cream not even in the catalogue) are set aside, counted.
+    expect(await text(page, '#ec-dept-rows')).toBe('Pilot department in the file: GROCERY · 2 rows of other departments in the file, not compared · 0 rows with no department written, not compared');
+    expect(await text(page, '#ec-result')).not.toContain('X-999');
+    expect(await page.isVisible('#ec-bills-basis')).toBe(false);
 
     // Signing is refused while a difference has no reason.
     await page.fill('#ec-statement', 'compared the old reports with the new till, line by line');
@@ -215,6 +230,15 @@ describe.skipIf(!HAVE_BROWSER)('the evening check from the old ERP\'s files, in 
     expect(await text(page, '#ec-dept')).toBe('பைலட் துறை: Grocery (grocery)');
     expect(await page.$$eval('#ec-totals thead th', (ths) => ths.map((th) => th.textContent))).toEqual(['எது', 'பழைய அமைப்பு', 'புதிய கல்லா', 'வேறுபாடு']);
     expect(await text(page, '#ec-totals')).toContain('மிரர் பைலட்டில் ஒப்பிடப்படுவதில்லை (OB-256, OB-265)');
+    // In Tamil, the bill-wise mapping is changed: its line values are before tax (OB-263 B) — kept, with who changed it.
+    await page.click('#ec-map-change-bill_wise');
+    await page.waitForSelector('#ec-map:not([hidden])');
+    expect(await text(page, '#ec-map-lines-tax-label')).toBe('பில் வரிகளின் மதிப்பில் ஏற்கனவே வரி அடங்கியுள்ளதா?');
+    await page.selectOption('#ec-map-lines-tax', 'no');
+    await page.click('#ec-map-save');
+    expect(await banner(page)).toMatchObject({ title: 'பொருத்தம் இந்தக் கடைக் கணினியில் சேமிக்கப்பட்டது' });
+    expect(await text(page, '#ec-mapping-bill_wise')).toContain('இல்லை — வரி மதிப்பு வரிக்கு முந்தையது');
+    expect(await text(page, '#ec-mapping-bill_wise')).toContain('முந்தைய பொருத்தங்கள்');
     await chooseDay(page, before);
     await says(page, 'ec-result', 'இந்த நாளுக்கு இன்னும் எந்தக் கோப்பும் ஏற்றப்படவில்லை.');
     await page.setInputFiles('#ec-file-item_wise', { name: 'itemwise-before.csv', mimeType: 'text/csv', buffer: itemWise(before) });
@@ -229,6 +253,8 @@ describe.skipIf(!HAVE_BROWSER)('the evening check from the old ERP\'s files, in 
     await page.click('#ec-load');
     expect(await banner(page)).toMatchObject({ title: 'ஏற்றி ஒப்பிடப்பட்டது' });
     expect(await text(page, '#ec-bills')).toContain('பழைய அமைப்பில் பைலட் பொருட்களுடன் உள்ளது, புதிய கல்லாவில் பதிவாகவில்லை');
+    expect(await text(page, '#ec-bills-basis')).toBe('பில் வரிகள் வரிக்கு முந்தையவை, எனவே பைலட் பொருட்கள் இரு பக்கமும் வரி இல்லாமல் ஒப்பிடப்படுகின்றன.');
+    expect(await text(page, '#ec-dept-rows')).toContain('கோப்பில் வேறு துறைகளின் வரிகள், ஒப்பிடப்படவில்லை');
     await page.fill('#ec-statement', 'பழைய அறிக்கைகளைப் புதிய கல்லாவுடன் வரி வரியாக ஒப்பிட்டேன், எல்லாம் சரிபார்த்தேன்');
     await page.click('#ec-sign');
     expect(await banner(page)).toMatchObject({ title: 'இந்த நாளில் இன்னும் கையெழுத்திட முடியாது' });

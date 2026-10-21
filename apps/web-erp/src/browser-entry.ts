@@ -24,7 +24,7 @@ import { openDeviceOutbox, guardedStore } from '../../../packages/sync/src/devic
 import { readReceivingChecklistSetup, type ReceivingChecklistSetup } from '../../../packages/facilities/src/food-safety';
 import { drainToBox, boxStatus } from '../../../packages/sync/src/device-drain';
 import {
-  DATE_ORDERS, OLD_ERP_FILE_MAX_BYTES, OLD_ERP_REPORTS, headerKey, headerRowOf, judgeMapping, oldErpTemplateCsv,
+  DATE_ORDERS, OLD_ERP_FILE_MAX_BYTES, OLD_ERP_REPORTS, columnValuesOf, headerKey, headerRowOf, judgeMapping, oldErpTemplateCsv,
 } from '../../../packages/migration/src/old-erp-reports';
 import type { BoxItemStatus } from '../../../packages/sync/src/device-relay';
 import { makeTradingDayRule } from '../../../packages/calendar/src/trading-day';
@@ -4712,7 +4712,7 @@ export function openMigrationRelay(laneWriteBase: string | undefined, outbox: Sy
 /** OB-263: the evening check's browser kit (see `eveningCheckKit` on the window). */
 export const EVENING_CHECK_KIT = Object.freeze({
   reports: OLD_ERP_REPORTS, dateOrders: DATE_ORDERS, maxBytes: OLD_ERP_FILE_MAX_BYTES,
-  templateCsv: oldErpTemplateCsv, headerRowOf, headerKey, judgeMapping,
+  templateCsv: oldErpTemplateCsv, headerRowOf, headerKey, judgeMapping, columnValuesOf,
 });
 
 /** Build the migration screen, or `null` when the box was told nothing about a cutover. */

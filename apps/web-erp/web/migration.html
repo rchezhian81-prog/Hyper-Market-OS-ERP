@@ -287,6 +287,16 @@
               <label for="ec-map-includes-tax" id="ec-map-includes-tax-label">Does the report's sales value already include the tax?</label>
               <select id="ec-map-includes-tax"></select>
             </div>
+            <!-- OB-263 A: which value of the report's own department column is the pilot department. -->
+            <div id="ec-map-pilot-box" hidden>
+              <label for="ec-map-pilot-value" id="ec-map-pilot-label">Which of these is the pilot department?</label>
+              <select id="ec-map-pilot-value"></select>
+            </div>
+            <!-- OB-263 B: do the bill lines' values include the tax? -->
+            <div id="ec-map-lines-tax-box" hidden>
+              <label for="ec-map-lines-tax" id="ec-map-lines-tax-label">Do the bill lines' values already include the tax?</label>
+              <select id="ec-map-lines-tax"></select>
+            </div>
             <div class="actions">
               <button id="ec-map-save" class="primary" type="button">Save the mapping</button>
               <button id="ec-map-cancel" type="button">Cancel</button>

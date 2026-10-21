@@ -129,6 +129,13 @@ export interface EveningCheck {
   readonly bills: {
     /** "lines": the old list has each bill's item lines; "presence_only": it has not, and only that is checked. */
     readonly checked: 'lines' | 'presence_only';
+    /**
+     * OB-263 B: what a bill's pilot lines are compared on — with the tax (as the customer paid), or without it, when the
+     * owner said the bill-wise list's line values are before tax; the new till's lines are then taken without tax too.
+     */
+    readonly valueBasis: 'with_tax' | 'without_tax';
+    /** Without tax: bills in both whose new-till lines carry no tax rate, so their value is not known and not compared. */
+    readonly valueNotKnown: number;
     readonly matched: number;
     readonly differences: readonly BillCheck[];
   };
@@ -182,7 +189,13 @@ export function eveningCheck(input: {
   readonly department: { readonly categoryId: string; readonly name: string } | undefined;
   readonly catalogue: readonly CheckProduct[] | undefined;
   readonly itemWise: readonly ItemWiseRow[];
-  readonly billWise: { readonly bills: readonly OldBill[]; readonly withLines: boolean };
+  /** `lineValuesIncludeTax: false` (OB-263 B): the bills' line values are before tax. Absent: they include it. */
+  readonly billWise: { readonly bills: readonly OldBill[]; readonly withLines: boolean; readonly lineValuesIncludeTax?: boolean };
+  /**
+   * OB-263 A: the item-wise file was already kept to the pilot department by its own department column, so every code in
+   * it that matches no product is the pilot department's — listed, however many, never refused as "the whole shop".
+   */
+  readonly departmentFiltered?: boolean;
   readonly sales: readonly CheckSale[];
   readonly refunds: readonly CheckRefund[];
   readonly tolerance: CheckTolerance;
@@ -309,7 +322,19 @@ export function eveningCheck(input: {
   };
   const newByOldBill = new Map<string, CheckSale>();
   for (const s of salesOfDay) if (s.oldErpBillNumber !== undefined && !newByOldBill.has(s.oldErpBillNumber)) newByOldBill.set(s.oldErpBillNumber, s);
-  const newPilotValue = (s: CheckSale): number => s.lines.filter((l) => inPilot(byId.get(l.productId))).reduce((a, l) => a + l.lineTotalMinor, 0);
+  const withoutTax = input.billWise.withLines && input.billWise.lineValuesIncludeTax === false;
+  /** A new-till bill's pilot lines in value — with tax, or without it (each line's own rate) when the old lines are before tax. */
+  const newPilotValue = (s: CheckSale): number | undefined => {
+    let total = 0;
+    for (const l of s.lines.filter((x) => inPilot(byId.get(x.productId)))) {
+      if (!withoutTax) { total += l.lineTotalMinor; continue; }
+      const rate = rateOf(l);
+      if (rate === undefined) return undefined;
+      total += l.lineTotalMinor - splitInclusive(l.lineTotalMinor, rate).tax;
+    }
+    return total;
+  };
+  let valueNotKnown = 0;
   const oldByNumber = new Map(input.billWise.bills.map((b) => [b.billNumber, b] as const));
   const billDiffs: BillCheck[] = [];
   let matched = 0;
@@ -327,13 +352,18 @@ export function eveningCheck(input: {
     const keyed = newByOldBill.get(b.billNumber);
     if (keyed === undefined) { billDiffs.push({ billNumber: b.billNumber, kind: 'not_keyed', oldValueMinor: oldValue }); continue; }
     const newValue = newPilotValue(keyed);
+    if (newValue === undefined) { valueNotKnown += 1; continue; }
     if (Math.abs(newValue - oldValue) > tol.valueMinor) billDiffs.push({ billNumber: b.billNumber, kind: 'value_differs', oldValueMinor: oldValue, newValueMinor: newValue, newBill: keyed.number });
     else matched += 1;
   }
   for (const s of salesOfDay) {
     if (s.oldErpBillNumber === undefined) continue;
     const old = oldByNumber.get(s.oldErpBillNumber);
-    if (old === undefined) { billDiffs.push({ billNumber: s.oldErpBillNumber, kind: 'not_on_old', newValueMinor: newPilotValue(s), newBill: s.number }); continue; }
+    if (old === undefined) {
+      const v = newPilotValue(s);
+      billDiffs.push({ billNumber: s.oldErpBillNumber, kind: 'not_on_old', ...(v === undefined ? {} : { newValueMinor: v }), newBill: s.number });
+      continue;
+    }
     if (!input.billWise.withLines && old.totalMinor >= 0) matched += 1;
   }
 
@@ -379,7 +409,7 @@ export function eveningCheck(input: {
   for (const e of explain) comparisons.push({ area: 'old_return', subject: e.subject, legacyValue: 1, newValue: 0, toleranceMinor: 0 });
 
   const differing = comparisons.filter((c) => Math.abs(c.newValue - c.legacyValue) > c.toleranceMinor).length;
-  if (notInCatalogue.size > MAX_DAY_DIFFERENCES) {
+  if (input.departmentFiltered !== true && notInCatalogue.size > MAX_DAY_DIFFERENCES) {
     return { ok: false, refusedBecause: 'too_many_differences', detail: `${notInCatalogue.size} items in the item-wise file are not in the new catalogue. If this is the whole shop's report, save it again for the pilot department (${dept.name}) only, and load that. Nothing was kept.` };
   }
   if (differing > MAX_DAY_DIFFERENCES) {
@@ -397,7 +427,7 @@ export function eveningCheck(input: {
       otherDepartments: { rows: otherRows, valueMinor: otherValue },
       newOutsideDepartment: { lines: outsideLines, valueMinor: outsideValue },
       totals: { value: { old: valueOld, new: valueNew }, tax: { old: taxOld, new: taxNew }, quantity, bills: { old: billsOld, new: newBills } },
-      bills: { checked: input.billWise.withLines ? 'lines' : 'presence_only', matched, differences: billDiffs },
+      bills: { checked: input.billWise.withLines ? 'lines' : 'presence_only', valueBasis: withoutTax ? 'without_tax' : 'with_tax', valueNotKnown, matched, differences: billDiffs },
       explain,
       notCompared: [{ area: 'payments', decision: 'OB-256' }, { area: 'loyalty', decision: 'OB-265' }],
       comparisons,

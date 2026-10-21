@@ -323,7 +323,10 @@ export async function openEveningCheckBox(input: { readonly dataDir: string; rea
       const { sales, refunds } = await newSide();
       const result = eveningCheck({
         businessDate: date, department: src.department(), catalogue: src.catalogue(),
-        itemWise: item.rows, billWise: { bills: bill.bills, withLines: bill.withLines }, sales, refunds,
+        itemWise: item.rows, sales, refunds,
+        // OB-263 A · B: the item-wise file kept to the pilot department by its own column; bill lines with or without tax.
+        billWise: { bills: bill.bills, withLines: bill.withLines, ...(current.bill_wise!.mapping.lineValuesIncludeTax === false ? { lineValuesIncludeTax: false } : {}) },
+        ...(item.summary.department === undefined ? {} : { departmentFiltered: true }),
         tolerance: { valueMinor: valueTol, taxMinor: taxTol },
       });
       if (!result.ok) return refuse(result.refusedBecause, result.detail);
