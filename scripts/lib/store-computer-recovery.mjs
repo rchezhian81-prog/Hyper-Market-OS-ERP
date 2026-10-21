@@ -46,6 +46,7 @@ import {
   sealJson, unlockBackupKey,
 } from './store-computer-crypto.mjs';
 import { checkBundle, tillSummary, writeBundle } from './store-computer-files.mjs';
+import { backupDriveProblem } from './store-computer-windows.mjs';
 
 // ── Encryption (OB-249 · audit rows 2–3, lane B B7 and B6/Q8) ─────────────────────────────────────────────────────
 // Since OB-249 every backup is ENCRYPTED and holds EVERYTHING: the database, the till's own data (edge-data: unsent
@@ -226,8 +227,10 @@ export function writeRecord(deps, file, record, readOnly) {
 
 /** The folder the owner named for a backup drive, checked as check 10 checks it. Returns the problem, or undefined. */
 export function folderRefusal(deps, dir) {
-  const problem = ownDriveProblem(dir, { platform: deps.platform, repoRoot: deps.repoRoot, systemDrive: deps.env.SystemDrive, dataRoot: deps.dataRoot });
-  return problem === undefined ? undefined : `${problem}. A backup goes to your own backup drive only (for example E:\\sre-real) — never onto this computer's own drive, into the shop's data folder or into the system's folder.`;
+  const problem = ownDriveProblem(dir, { platform: deps.platform, repoRoot: deps.repoRoot, systemDrive: deps.env.SystemDrive, dataRoot: deps.dataRoot })
+    // OB-281 · OB-283: then Windows is asked what kind of drive it is — only a USB or removable drive is accepted.
+    ?? backupDriveProblem(deps, dir);
+  return problem === undefined ? undefined : `${problem}. A backup goes to one of your own USB backup drives only (for example E:\\sre-real) — never onto a disk inside this computer (C: or F:), into the shop's data folder or into the system's folder.`;
 }
 
 /** Everything a command needs before it touches Docker: the settings, the refusals, Docker itself. */

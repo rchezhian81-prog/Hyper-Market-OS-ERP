@@ -24,6 +24,8 @@ export * from './rate';
 export * from './cess';
 export * from './hsn';
 export * from './invoice-fields';
+// OB-271: the GST state codes a tax invoice names its place of supply by (A8).
+export * from './gst-states';
 export * from './gstr1';
 export * from './outward-from-sales';
 export * from './gstr1-submission';

@@ -17,6 +17,8 @@ export interface SplitPart {
   readonly amountMinor: number;
   /** A card/UPI part: the store computer's attempt reference it was approved under. */
   readonly ref?: string;
+  /** OB-271: a card/UPI part's approval / reference number from the shop's own machine (real trading). */
+  readonly machineRef?: string;
 }
 import { minimumAgeOf, type CatalogueCache, type ScanBatchContext } from '../../../packages/catalogue/src/catalogue';
 import type { PosSession, SyncBadge } from './session';
@@ -165,6 +167,8 @@ export interface PosView {
     readonly outcome: 'approved' | 'declined' | 'no_answer';
     /** The store computer's attempt reference the machine was asked under (audit PF-06). */
     readonly ref?: string;
+    /** OB-271: the approval / reference number the shop's own machine showed for this payment (real trading). */
+    readonly machineRef?: string;
   }): Promise<string>;
 
   /**
@@ -381,7 +385,10 @@ export function createPosView(
       // `declined` do not, so `commit` refuses and nothing is handed over.
       const status: Tender['status'] = input.outcome === 'approved' ? 'authorized'
         : input.outcome === 'declined' ? 'declined' : 'uncertain';
-      const tenders: Tender[] = [{ kind: input.kind, amount: payable, status, ...(input.ref === undefined ? {} : { ref: input.ref }) }];
+      const tenders: Tender[] = [{
+        kind: input.kind, amount: payable, status, ...(input.ref === undefined ? {} : { ref: input.ref }),
+        ...(input.machineRef === undefined || input.machineRef === '' ? {} : { machineRef: input.machineRef }),
+      }];
       const sale = await session.commit(input.saleId, input.receiptNumber, input.atIsoUtc, tenders);
       return sale.number;
     },
@@ -394,6 +401,7 @@ export function createPosView(
         // A card/UPI part is paid only on the attempt the store computer recorded as approved; without it, not paid.
         status: part.kind === 'card' || part.kind === 'upi' ? (part.ref === undefined || part.ref === '' ? 'uncertain' : 'authorized') : 'settled',
         ...(part.ref === undefined || part.ref === '' ? {} : { ref: part.ref }),
+        ...(part.machineRef === undefined || part.machineRef === '' ? {} : { machineRef: part.machineRef }),
       }));
       const sale = await session.commit(input.saleId, input.receiptNumber, input.atIsoUtc, tenders);
       return sale.number;

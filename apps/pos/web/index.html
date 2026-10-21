@@ -277,6 +277,31 @@
         .refusal { grid-template-columns: 1fr; }
         .refusal button { grid-column: 1; grid-row: auto; }
       }
+
+      /* OB-271 — the paper bill in REAL TRADING. "Print bill" and "Print again (DUPLICATE)" sit under the bill on screen. */
+      .print-actions { grid-column: 1; display: flex; flex-wrap: wrap; gap: var(--space-3); }
+      .print-actions[hidden], .print-actions button[hidden] { display: none; }
+      /* The paper itself is never on screen: the browser prints it through the printer's own Windows driver (ADR-0027), so
+         Tamil prints with the computer's own fonts (the foundation's one stack: "Nirmala UI", "Latha", "Noto Sans Tamil")
+         — nothing is fetched (no web font, no network). 80 mm roll by default (72 mm printable), 58 mm when the bill's
+         paper says so. Ink on paper: the foundation's own ink and panel. */
+      .print-area { display: none; }
+      @media print {
+        @page { margin: 0; }
+        body { background: var(--panel); }
+        body > *:not(#print-area) { display: none !important; }
+        .print-area {
+          display: block; width: 72mm; margin: 0; padding: 2mm 0; color: var(--ink); background: var(--panel);
+          font-family: var(--font); font-size: 11pt; line-height: 1.3;
+        }
+        .print-area.paper-58 { width: 48mm; font-size: 9pt; }
+        .print-area .pr-title { text-align: center; font-weight: 700; font-size: 1.15em; }
+        .print-area .pr-centre { text-align: center; }
+        .print-area .pr-split { display: flex; justify-content: space-between; gap: 2mm; }
+        .print-area .pr-split span:last-child { text-align: right; white-space: nowrap; }
+        .print-area .pr-rule { border-top: 1px dashed var(--ink); margin: 1mm 0; }
+        .print-area [data-field~="duplicate"] { border: 1px solid var(--ink); }
+      }
     </style>
   </head>
   <body>
@@ -300,6 +325,8 @@
     <p class="stale" id="guest-only" hidden role="status"></p>
     <!-- OB-256 · OB-258: the mirror pilot — every sale and refund is "Paid on old system"; said whenever it is on. -->
     <p class="stale" id="mirror-pilot" hidden role="status"></p>
+    <!-- OB-271: real trading — the till's bill is the legal tax invoice, printed on paper; said whenever it is on (never in the mirror pilot). -->
+    <p class="stale" id="real-trading" hidden role="status"></p>
     <main>
       <div class="bill">
         <table id="bill-table">
@@ -400,8 +427,16 @@
       <p id="refusal-text"></p>
       <!-- B13 · M31-FR-02: after a sale, the bill exactly as it prints (from @sre/receipt) — a gold piece's HUID under its line. -->
       <pre class="receipt" id="refusal-receipt" aria-label="The bill" hidden></pre>
+      <!-- OB-271: after a real-trading sale — print the tax invoice; a later print is marked DUPLICATE. -->
+      <div class="print-actions" id="print-actions" hidden>
+        <button id="print-bill" type="button">Print bill</button>
+        <button id="print-duplicate" type="button" hidden>Print again (DUPLICATE)</button>
+      </div>
       <button id="refusal-ok" type="button">I have read this</button>
     </div>
+
+    <!-- OB-271: the paper bill, filled just before the browser prints it; never shown on screen. -->
+    <div class="print-area" id="print-area" aria-hidden="true"></div>
 
     <!--
       A8: a sale or refund whose answer from the store computer was lost. It covers the whole till — nothing else can be

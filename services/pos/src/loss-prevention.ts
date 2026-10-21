@@ -24,6 +24,7 @@ import { buildOpenCaseWorklist } from '../../../packages/loss-prevention/src/wor
 import {
   evaluateLossPrevention, type LpRule, type ActivityEvent, type SignalKind, type LpException,
 } from '../../../packages/loss-prevention/src/loss-prevention';
+import { readMachineReference } from '../../../packages/tender/src/machine-reference';
 
 const KINDS: readonly EvidenceKind[] = ['transaction_record', 'cctv_reference', 'witness_statement', 'stock_count', 'settlement_record', 'note'];
 const OUTCOMES: readonly CaseOutcome[] = ['proven', 'unfounded', 'inconclusive', 'process_failure', 'referred_to_police'];
@@ -260,7 +261,7 @@ export function lpRulesRoutes(deps: LpRulesDeps): readonly Route[] {
  */
 export interface TillActivity {
   readonly activityId: string;
-  readonly kind: 'void' | 'no_sale' | 'price_override';
+  readonly kind: 'void' | 'no_sale' | 'price_override' | 'card_refund_on_machine';
   readonly laneId: string;
   /** OB-80: the store whose till it was — the relaying box's own store (stamped by head office). Absent on older records. */
   readonly storeId?: string;
@@ -287,6 +288,9 @@ export interface TillActivity {
   readonly approverAuthorityHeld?: boolean;
   /** How the box verified the cashier (pin / verified sign-in), when it said. */
   readonly via?: string;
+  /** OB-271 · audit A11: a card/UPI refund done on the shop's own machine — the tender and the machine's refund reference. */
+  readonly refundTender?: 'card' | 'upi';
+  readonly machineRef?: string;
   readonly relayedBy: string;
 }
 
@@ -334,7 +338,9 @@ export function asRuleActivity(a: TillActivity): ActivityEvent {
 
 /** Run the store's rules over the day's authoritative record — and surface any override head office cannot stand behind. */
 async function exceptionsOn(deps: LpActivityDeps, tenantId: string, day: string) {
-  const held = await deps.heldOn(tenantId, day);
+  // OB-271: a card refund done on the machine is evidence that a refund (already judged with the refunds) was paid out — not
+  // a void, a no-sale or a discount, so it is not counted again here.
+  const held = (await deps.heldOn(tenantId, day)).filter((a) => a.kind !== 'card_refund_on_machine');
   const activity = [...held.map(asRuleActivity), ...await deps.refundsOn(tenantId, day)];
   const judged: (LpException | (Omit<LpException, 'breach'> & { readonly breach: 'approver_without_authority' }))[] = evaluateLossPrevention(activity, await deps.rules(tenantId));
   // An override approved by someone head office's grants say may NOT approve one is never a rule question: it is raised
@@ -386,6 +392,13 @@ function readTillActivity(activityId: string, b: Record<string, unknown>): Omit<
       fromUnitMinor: b['fromUnitMinor'] as number, toUnitMinor: b['toUnitMinor'] as number, quantityMinor: b['quantityMinor'] as number,
     };
   }
+  // OB-271 · audit A11: a card/UPI refund DONE on the shop's own machine — the refund it closes (`billRef`), its amount, the
+  // tender, the machine's own refund reference (never card data) and the second person who approved it on the box.
+  if (kind === 'card_refund_on_machine') {
+    const ref = readMachineReference(b['machineRef']);
+    if (!isStr(b['billRef']) || (b['valueMinor'] as number) <= 0 || (b['refundTender'] !== 'card' && b['refundTender'] !== 'upi') || !ref.ok) return undefined;
+    return { ...common, kind, ...approval, billRef: b['billRef'] as string, refundTender: b['refundTender'], machineRef: ref.value };
+  }
   return undefined;
 }
 
@@ -408,7 +421,7 @@ export function lpActivityRoutes(deps: LpActivityDeps): readonly Route[] {
         if (prior !== undefined) return { status: 200, body: { activityId, recorded: true, alreadyRecorded: true } };
         // The approver is checked against head office's OWN grants. One who may not approve is kept as evidence and
         // raised — never dropped (hard rule #6) and never silently believed (P-08).
-        const authority = read!.approvedBy === undefined || deps.mayApproveOverride === undefined
+        const authority = read!.approvedBy === undefined || deps.mayApproveOverride === undefined || read!.kind === 'card_refund_on_machine'
           ? {} : { approverAuthorityHeld: await deps.mayApproveOverride(ctx.tenantId, read!.approvedBy) };
         const a: TillActivity = { ...read!, ...authority, relayedBy: ctx.userId };
         await deps.recordActivity(ctx.tenantId, a);
@@ -440,7 +453,9 @@ export function lpActivityRoutes(deps: LpActivityDeps): readonly Route[] {
         const voids = held.filter((a) => a.kind === 'void').map(asRuleActivity);
         const noSales = held.filter((a) => a.kind === 'no_sale');
         const overrides = held.filter((a) => a.kind === 'price_override');
-        return { status: 200, body: { day, count: held.length, voids, noSales, overrides, asAt: deps.now() } };
+        // OB-271 · audit A11: card/UPI refunds done on the shop's own machine, with the machine's reference and the approver.
+        const cardRefundsOnMachine = held.filter((a) => a.kind === 'card_refund_on_machine');
+        return { status: 200, body: { day, count: held.length, voids, noSales, overrides, cardRefundsOnMachine, asAt: deps.now() } };
       },
     },
     {

@@ -18,7 +18,7 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 
 ## Totals
 
-- Evidence test files scanned: 1488. SP-10 sessions: 0 (0 PASS, 0 on real hardware).
+- Evidence test files scanned: 1504. SP-10 sessions: 0 (0 PASS, 0 on real hardware).
 - Requirements with at least one proof of each kind: Unit 89 · Integration (in-process) 101 · Real PostgreSQL 97 · Browser (stub cloud) 82 · Browser (connected) 48 · Device 0 · Staff UAT 0.
 - Labels: E2E_VERIFIED 41 · INTEGRATION_TESTED 18 · PARTIALLY_WIRED 40 · WIRED 5.
 - Labels that do NOT hold: none.
@@ -86,7 +86,7 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 | A07 | E2E_VERIFIED | 5 | 4 | 3 | 1 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | A08 | E2E_VERIFIED | 6 | 8 | 4 | 4 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | A09 | E2E_VERIFIED | 3 | 4 | 3 | 1 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
-| A10 | E2E_VERIFIED | 9 | 7 | 3 | 3 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
+| A10 | E2E_VERIFIED | 10 | 7 | 3 | 3 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | WF-01 | PARTIALLY_WIRED | · | 9 | 2 | 2 | 1 | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | WF-02 | INTEGRATION_TESTED | · | 8 | 3 | 3 | 1 | · | · | ✓ an integration test cites it |
 | WF-03 | PARTIALLY_WIRED | 1 | 11 | 5 | 2 | 1 | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
@@ -123,12 +123,12 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 | MG-02 | INTEGRATION_TESTED | 5 | 5 | 3 | · | · | · | · | ✓ an integration test cites it |
 | MG-03 | INTEGRATION_TESTED | 3 | 2 | 1 | · | · | · | · | ✓ an integration test cites it |
 | MG-04 | E2E_VERIFIED | 11 | 8 | 3 | 1 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
-| MG-05 | INTEGRATION_TESTED | 7 | 9 | 6 | · | · | · | · | ✓ an integration test cites it |
+| MG-05 | INTEGRATION_TESTED | 8 | 10 | 7 | · | · | · | · | ✓ an integration test cites it |
 | MG-06 | E2E_VERIFIED | 17 | 13 | 4 | 1 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
 | MG-07 | INTEGRATION_TESTED | 2 | 6 | 4 | · | · | · | · | ✓ an integration test cites it |
 | MG-08 | INTEGRATION_TESTED | 2 | 7 | 6 | · | · | · | · | ✓ an integration test cites it |
 | MG-09 | INTEGRATION_TESTED | 3 | 4 | 3 | · | · | · | · | ✓ an integration test cites it |
-| MG-10 | INTEGRATION_TESTED | 7 | 6 | 1 | 2 | · | · | · | ✓ an integration test cites it |
+| MG-10 | INTEGRATION_TESTED | 8 | 6 | 1 | 2 | · | · | · | ✓ an integration test cites it |
 | MG-11 | E2E_VERIFIED | 2 | 4 | 3 | 1 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
 | MG-12 | INTEGRATION_TESTED | 4 | 3 | 1 | · | · | · | · | ✓ an integration test cites it |
 

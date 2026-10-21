@@ -5,12 +5,27 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
-## Mirror-pilot readiness, round 3 (20 October 2026) — gate: 13,238 unit/integration passed (16 skipped); 51 of 52 performance (one older timing test slow under load, passes alone); 468 browser passed
+## Round 5 (21 October 2026) — evening check, office PIN completeness, store-PC fit, real-trading prep — gate: 13,449 unit/integration (16 skipped), 53 performance, 473 of 474 browser (the evening-check e2e read the screen mid-render under load; now waits, passes)
+
+- Merged on the branch: the evening check from the old ERP's two files (OB-263, OB-272, OB-273); office doors on the lane socket need the office PIN, staff type their own new PIN, steadier tests; the store-PC fit for the owner's real PC (data on F:, never on the Windows Server that runs the old ERP, backups only to USB, shared-PC checks; OB-281 to OB-284); real-trading preparation switched OFF (legal Rule 46 bill, Invoice-cum-Bill of Supply, per-tax rounding never above MRP, printing through any Windows printer, generic approval number; OB-271, OB-274, OB-278 to OB-280, OB-285).
+- Owner delegated: vendor-neutral hardware (OB-274), no header rows needed (OB-275), pilot department packaged groceries (OB-276), designation logins (OB-277). OB-243 closed.
+- Store PC Part 1 passed on the Windows 11 Pro PC (21 Oct): i3-14100, 8 GB, virtualisation on, C: 41.9 GB free, F: 357 GB free. The old ERP server (Windows Server 2022) is never used (OB-282).
+- For the CA before real trading: OB-278, OB-279, OB-280, OB-285; rounded tax on the bill vs exact tax booked; where `round_off` posts.
+- Not run on real Windows, a real printer or a card machine. No staff UAT.
+
+## Mirror-pilot readiness, round 4 (21 October 2026) — evening check merged into the branch; two more builders running
+
+- Built: the evening check from the old ERP's item-wise and bill-wise CSV reports (OB-263, OB-272, OB-273) on the migration screen, offline on the store box, with a one-time column mapping; every difference needs a reason before the day is signed (MG-10). Head office now numbers a re-recorded day's differences apart (old reasons never stick to new figures).
+- Still building: office-screen writes behind the office PIN, staff type their own new PIN, steadier tests (round 4B); real-trading preparation, switched off during the pilot (OB-271).
+- Owner delegated four choices (21 Oct): any hardware through Windows drivers and one generic approval-number field (OB-274); no header rows needed, the mapping reads any names (OB-275); pilot department = packaged groceries, barcode only (OB-276); designation logins owner-01, store-manager-01, cashier-01, accountant-01, one person each (OB-277, closes OB-243).
+
+## Mirror-pilot readiness, round 3 (20 October 2026) — gate: 13,238 unit/integration passed (16 skipped); 51 of 52 performance (one older timing test slow under load, passes alone); 468 browser passed; merged (PR #801) and deployed to the demo
 
 - Built: the old ERP bill number on every mirror sale (CGST Rule 46(b) shape, no personal data, refused if keyed twice in a financial year, survives a cold restart); a mirror refund finds its sale by it offline; the day book and a "Bill by bill" list on the evening check show it (OB-264).
 - Built: backup drive red under about 30 days of room, "not known" until it can be worked out (OB-268); the real till is always installed with both mirror settings and `status` shows them; `seal` and `parallel-policy` ask for the person's own PIN; Sheet 2 and Sheet 3 fully written.
 - Owner decisions: exchanges on the old ERP only during the pilot (OB-269, supersedes OB-266 for the pilot); a sheet step to correct a wrongly keyed sale (OB-270).
-- Not run on real Windows. No staff UAT. Still open: OB-263 (which old ERP report), OB-243 names.
+- Not run on real Windows. No staff UAT. Still open: OB-243 names.
+- OB-263 decided (21 Oct): the evening check loads the old ERP's item-wise and bill-wise reports as files, filtered to the pilot department, value/quantity/tax compared and every pilot bill checked as keyed. In build (round 4).
 
 ## Mirror-pilot readiness, round 2 (20 October 2026) — full gate: 13,199 unit/integration passed, 1 timing failure in an older test (passes alone, 19/19), 16 skipped; 52 performance; 465 browser passed, 1 failed on a test-port clash with a parallel builder (passes alone); merged (PR #800) and deployed to the demo
 

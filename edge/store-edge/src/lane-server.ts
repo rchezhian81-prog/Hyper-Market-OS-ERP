@@ -79,6 +79,9 @@ import { withoutCardData, type TenderCardDataRemoval } from '../../../packages/t
 import { PAID_ON_OLD_ERP, PAID_ON_OLD_ERP_WORDS, saleTenderRefusal, refundTenderRefusal, paidOnOldErpRoom } from '../../../packages/tender/src/paid-on-old-erp';
 import { oldErpBillRefusal, readOldErpBillNumber } from '../../../packages/tender/src/old-erp-bill-number';
 import type { OldErpBills } from './old-erp-bills';
+import { OFFICE_ACT_WORDS, OFFICE_LANE, officeTokenOf, type OfficeActRefusal, type OfficeCheck } from './office-sign-in';
+import { realTradingSaleRefusal, REAL_TRADING_AND_MIRROR_BOX_WORDS } from './real-trading';
+import type { TaxInvoiceIdentity } from '../../../packages/receipt/src/tax-invoice';
 
 /** The one address this may listen on. Named so the test can assert on it. */
 export const LANE_HOST = '127.0.0.1';
@@ -226,10 +229,11 @@ export type LaneTillActivityHandler = (input: {
 /** The payment-attempt register this socket asks (`PaymentAttempts`). */
 export interface LanePaymentAttemptsPort {
   ask(input: { readonly laneId: string; readonly by: string; readonly attemptId: unknown; readonly billRef: unknown; readonly kind: unknown; readonly amountMinor: unknown }): Promise<AttemptAnswer>;
-  answer(input: { readonly laneId: string; readonly by: string; readonly attemptId: unknown; readonly outcome: unknown; readonly approvalId?: string }): Promise<AttemptAnswer>;
+  answer(input: { readonly laneId: string; readonly by: string; readonly attemptId: unknown; readonly outcome: unknown; readonly approvalId?: string; readonly machineRef?: unknown }): Promise<AttemptAnswer>;
   recover(input: { readonly laneId: string; readonly attemptId: unknown }): Promise<AttemptAnswer>;
   checkTenders(input: { readonly laneId: string; readonly saleId: string; readonly tenders: unknown }): TenderCheck;
-  status(laneId: string): { readonly unresolved: readonly Attempt[]; readonly paidWithoutSale: readonly Attempt[]; readonly owedToCustomers: readonly Attempt[] };
+  /** OB-271: also today's paid payments with the machine's numbers, and the card refunds done on the machine (the till's list). */
+  status(laneId: string): { readonly unresolved: readonly Attempt[]; readonly paidWithoutSale: readonly Attempt[]; readonly owedToCustomers: readonly Attempt[]; readonly paid?: readonly Attempt[]; readonly refundsOnMachine?: readonly unknown[]; readonly tradingDay?: string };
 }
 
 /** The held-basket register this socket asks (`HeldBills`). */
@@ -402,14 +406,46 @@ export function laneCallRefusal(
   return undefined;
 }
 
+/**
+ * OB-259 completeness (owner, 20 Oct 2026, "Ask PIN for office screens"; round 4): the lane-socket doors an OFFICE screen
+ * uses — never the till. The manager's day close (`/lane/day-close`), the reopen screen (`/lane/day-reopen`) and the office
+ * screens' decisions handed to the box (`/lane/outbox`). On a store PC whose office screens ask for the PIN
+ * (`EDGE_OFFICE_SIGN_IN=pin`), each of these needs the office sign-in itself — the person's own staff ID and PIN, typed on
+ * the office sign-in page, live, for a person who still holds an office role here — and, where named, that person's own
+ * permission in the store setup (the same authority the box's own close and reopen check: `till.dayclose.read`). The
+ * browser's office cookie carries it (HttpOnly, SameSite=Strict, loopback only); the screens send it with
+ * `credentials: 'include'`. No sign-in: 401. A till's own sign-in (a cashier at the till), a role that is not an office
+ * role, or a permission the person does not hold: 403. Every refusal is kept on the office log as who, which door and why.
+ *
+ * The till's own doors (a sale, a refund, cash, its sign-in, its approvals, …) are NOT on this list and are untouched —
+ * the till never needs an office sign-in to take money (hard rule #1).
+ */
+export const OFFICE_LANE_ROUTES: Readonly<Record<string, string | null>> = Object.freeze({
+  '/lane/day-close': 'till.dayclose.read',
+  '/lane/day-reopen': 'till.dayclose.read',
+  [DEVICE_OUTBOX_PATH]: null,
+});
+const isOfficeLaneRoute = (pathname: string): boolean => Object.prototype.hasOwnProperty.call(OFFICE_LANE_ROUTES, pathname);
+
+/** The office sign-in this socket asks for its office doors (`OfficeSessions`, the very gate the screens ask). */
+export interface LaneOfficePort {
+  check(token: string | undefined): Promise<OfficeCheck>;
+  /** The person's permissions in the CURRENT store setup, or null when the box holds no role register. */
+  permissionsOf(userId: string): readonly string[] | null;
+  /** Keep a refused office job on the office log (who, which door, why). */
+  noteRefusedAct?(input: { readonly route: string; readonly userId: string | null; readonly reason: OfficeActRefusal }): Promise<void>;
+}
+
 /** The CORS headers to answer a loopback caller with — or nothing at all for any other origin. */
-function corsHeadersFor(origin: string | undefined): Record<string, string> {
+function corsHeadersFor(origin: string | undefined, withCredentials = false): Record<string, string> {
   if (!isLoopbackOrigin(origin)) return {};
   return {
     'access-control-allow-origin': origin!,
     'access-control-allow-methods': 'GET, POST, OPTIONS',
     'access-control-allow-headers': `content-type, idempotency-key, ${OPERATOR_HEADER}`,
     'access-control-max-age': '600',
+    // OB-259: an office door — the office screen sends its sign-in cookie (loopback origins only, as every allowance here).
+    ...(withCredentials ? { 'access-control-allow-credentials': 'true' } : {}),
     // The allowed origin depends on the request, so caches must key on it.
     vary: 'Origin',
   };
@@ -539,6 +575,19 @@ export function startLaneServer(input: {
    * that keeps none: a mirror sale is then refused (nothing could check it), and a lookup by old bill finds nothing.
    */
   readonly oldErpBills?: OldErpBills;
+  /**
+   * OB-259 completeness: the office sign-in (`EDGE_OFFICE_SIGN_IN=pin`). Present → the office doors (`OFFICE_LANE_ROUTES`)
+   * need it, and the job is done AS that person. Absent → those doors behave as before (a test box, the hosted copy).
+   */
+  readonly officeScreens?: LaneOfficePort;
+  /**
+   * OB-271 (owner, 21 Oct 2026): read live — this box's own `EDGE_REAL_TRADING=1` or the store pack's `policies.realTrading`.
+   * While true, a sale is kept only when its bill is a complete Rule 46 tax invoice (`real-trading.ts`, the till's own check
+   * again, from `taxInvoice`), and never while the mirror pilot is on too. Absent or false: nothing here changes.
+   */
+  readonly realTrading?: () => boolean;
+  /** OB-271: the shop's legal identity for the tax invoice, from the store pack — `null` when it carries none. */
+  readonly taxInvoice?: () => TaxInvoiceIdentity | null;
 }): Promise<LaneServer> {
   const maxBytes = input.maxBytes ?? 256 * 1024;
 
@@ -630,6 +679,42 @@ export function startLaneServer(input: {
       });
     });
 
+  /**
+   * OB-259 completeness: may this office job go on, and as whom? Asked before anything is parsed or written. With no office
+   * gate on this box, the door behaves as before (`person` absent). A refusal is kept on the office log.
+   */
+  type OfficeAnswer =
+    | { readonly ok: true; readonly person?: { readonly userId: string; readonly via: string; readonly laneId: string } }
+    | { readonly ok: false; readonly status: 401 | 403; readonly refusedBecause: OfficeActRefusal };
+  const noteOfficeRefusal = async (route: string, userId: string | null, reason: OfficeActRefusal): Promise<void> => {
+    try { await input.officeScreens?.noteRefusedAct?.({ route, userId, reason }); } catch { /* the refusal stands either way */ }
+  };
+  const officeAnswer = async (req: IncomingMessage, route: string): Promise<OfficeAnswer> => {
+    const office = input.officeScreens;
+    if (office === undefined) return { ok: true };
+    const refuse = async (status: 401 | 403, refusedBecause: OfficeActRefusal, userId: string | null): Promise<OfficeAnswer> => {
+      await noteOfficeRefusal(route, userId, refusedBecause);
+      return { ok: false, status, refusedBecause };
+    };
+    // A gate that cannot answer refuses (fails closed) — never a door left open.
+    const session = await office.check(officeTokenOf(req.headers.cookie)).catch((): OfficeCheck => ({ ok: false, refusedBecause: 'not_signed_in' }));
+    if (!session.ok) {
+      // A till's own sign-in is a person the box knows — but it opens the till only (OB-259): 403, said as such.
+      const ops = input.operators;
+      const till = ops === undefined ? undefined : ops.check(operatorTokenOf(req), ops.laneId);
+      if (till?.ok === true) return refuse(403, 'not_an_office_sign_in', till.userId);
+      if (session.refusedBecause === 'not_an_office_role') return refuse(403, 'not_an_office_sign_in', null);
+      return refuse(401, session.refusedBecause === 'session_ended' ? 'office_sign_in_ended' : 'office_sign_in_needed', null);
+    }
+    const needs = OFFICE_LANE_ROUTES[route] ?? null;
+    if (needs !== null && !(office.permissionsOf(session.userId) ?? []).includes(needs)) return refuse(403, 'lacks_permission', session.userId);
+    const laneId = input.operators?.laneId.trim() ?? '';
+    return { ok: true, person: { userId: session.userId, via: 'office_pin', laneId: laneId === '' ? OFFICE_LANE : laneId } };
+  };
+  /** An office refusal in the route's own answer shape, in both languages. */
+  const officeWords = (refusedBecause: OfficeActRefusal): Record<string, unknown> =>
+    ({ refusedBecause, reason: OFFICE_ACT_WORDS[refusedBecause].en, reasonTa: OFFICE_ACT_WORDS[refusedBecause].ta });
+
   // A refused-durable-write answer, in the words the cashier needs with a customer watching. `noun`
   // is 'sale' or 'refund' so the same shape serves both routes without either lying about the other.
   const refusal = (noun: string, detail?: string): Record<string, unknown> => ({
@@ -640,11 +725,13 @@ export function startLaneServer(input: {
   });
 
   const server: Server = createServer((req, res) => {
-    const cors = corsHeadersFor(req.headers.origin);
     // The path only — the lookup route carries a `?receipt=` query the write routes never do.
     const pathname = ((): string => {
       try { return new URL(req.url ?? '', 'http://lane').pathname; } catch { return req.url ?? ''; }
     })();
+    // An office door says the office screen may send its sign-in cookie — on every box, gate or not, because the screen
+    // always sends it (`credentials: 'include'`) and a browser refuses the answer to such a call that does not say so.
+    const cors = corsHeadersFor(req.headers.origin, isOfficeLaneRoute(pathname));
     const route = LANE_ROUTES.find((r) => r === req.url);
 
     // The READ route: GET /lane/lookup?receipt=… — resolve a bill this lane rang for the refund
@@ -837,7 +924,7 @@ export function startLaneServer(input: {
           const out = pathname === LANE_PAYMENTS_ROUTE
             ? await payments.ask({ laneId: ops.laneId, by: check.userId, attemptId: b['attemptId'], billRef: b['billRef'], kind: b['kind'], amountMinor: b['amountMinor'] })
             : pathname === LANE_PAYMENTS_ANSWER_ROUTE
-              ? await payments.answer({ laneId: ops.laneId, by: check.userId, attemptId: b['attemptId'], outcome: b['outcome'], ...(typeof b['approvalId'] === 'string' ? { approvalId: b['approvalId'] } : {}) })
+              ? await payments.answer({ laneId: ops.laneId, by: check.userId, attemptId: b['attemptId'], outcome: b['outcome'], ...(typeof b['approvalId'] === 'string' ? { approvalId: b['approvalId'] } : {}), ...(b['machineRef'] === undefined ? {} : { machineRef: b['machineRef'] }) })
               : await payments.recover({ laneId: ops.laneId, attemptId: b['attemptId'] });
           send(res, 200, out, { ...cors, 'cache-control': 'no-store' });
         } catch (e) {
@@ -1006,6 +1093,8 @@ export function startLaneServer(input: {
         req.resume();
         return;
       }
+      // OB-259: the office screens' decisions are an office job — asked now, answered before anything is parsed or written.
+      const officeAsked = officeAnswer(req, pathname);
       const chunks: Buffer[] = [];
       let size = 0;
       let tooBig = false;
@@ -1022,6 +1111,11 @@ export function startLaneServer(input: {
       req.on('end', () => {
         if (tooBig) return;
         void (async () => {
+          const office = await officeAsked;
+          if (!office.ok) {
+            send(res, office.status, { acks: [], ...officeWords(office.refusedBecause) }, cors);
+            return;
+          }
           let body: unknown;
           try {
             body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;
@@ -1035,7 +1129,8 @@ export function startLaneServer(input: {
             return;
           }
           try {
-            const verifiedPerson = verifiedPersonOf(req);
+            // OB-259: with the office gate on, the person who signed in to the office screens — never a till's sign-in.
+            const verifiedPerson = office.person ?? verifiedPersonOf(req);
             send(res, 200, await relay({ source: batch.source, items: batch.items, ...(verifiedPerson === undefined ? {} : { verifiedPerson }) }), cors);
           } catch (e) {
             // The box itself failed mid-batch: no verdict on any item. The device keeps them all (a 5xx is a
@@ -1066,6 +1161,8 @@ export function startLaneServer(input: {
         req.resume();
         return;
       }
+      // OB-259: closing the day is an office job — asked now, answered before anything is parsed or written.
+      const officeAsked = officeAnswer(req, pathname);
       const chunks: Buffer[] = [];
       let size = 0;
       let tooBig = false;
@@ -1082,6 +1179,11 @@ export function startLaneServer(input: {
       req.on('end', () => {
         if (tooBig) return;
         void (async () => {
+          const office = await officeAsked;
+          if (!office.ok) {
+            send(res, office.status, { closed: false, ...officeWords(office.refusedBecause) }, cors);
+            return;
+          }
           let body: unknown;
           try {
             body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;
@@ -1096,10 +1198,17 @@ export function startLaneServer(input: {
             send(res, 400, { closed: false, reason: 'closing the day needs a day-close id and who is closing it' }, cors);
             return;
           }
+          // OB-259: the day is closed in the name of the person signed in to the office screens, and nobody else's.
+          if (office.person !== undefined && closedBy.trim() !== office.person.userId) {
+            await noteOfficeRefusal(pathname, office.person.userId, 'not_the_signed_in_person');
+            send(res, 403, { closed: false, ...officeWords('not_the_signed_in_person') }, cors);
+            return;
+          }
           try {
             // Round 4 (P-04, hard rule #4): the close is the closer's OWN act — their till PIN (to the PIN register only,
             // never logged or echoed) or the session this box verified for the request. A typed name alone closes nothing.
-            const verifiedPerson = verifiedPersonOf(req);
+            // OB-259: with the office gate on, that session is the office sign-in — never a till's.
+            const verifiedPerson = office.person ?? verifiedPersonOf(req);
             const closerPin = typeof b['closerPin'] === 'string' && b['closerPin'] !== '' ? (b['closerPin'] as string) : undefined;
             // OB-55: a carry-forward names each pending payment and the second person (their PIN goes to the register only).
             const cfb = b['carryForward'] !== null && typeof b['carryForward'] === 'object' ? (b['carryForward'] as Record<string, unknown>) : undefined;
@@ -1141,6 +1250,8 @@ export function startLaneServer(input: {
         req.resume();
         return;
       }
+      // OB-259: reopening a day is an office job — asked now, answered before anything is parsed or written.
+      const officeAsked = officeAnswer(req, pathname);
       const chunks: Buffer[] = [];
       let size = 0;
       let tooBig = false;
@@ -1157,6 +1268,11 @@ export function startLaneServer(input: {
       req.on('end', () => {
         if (tooBig) return;
         void (async () => {
+          const office = await officeAsked;
+          if (!office.ok) {
+            send(res, office.status, { reopened: false, ...officeWords(office.refusedBecause) }, cors);
+            return;
+          }
           let body: unknown;
           try {
             body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;
@@ -1177,8 +1293,14 @@ export function startLaneServer(input: {
             send(res, 400, { reopened: false, reason: 'a reopen needs a day-close id, who is reopening, a reason, and who approved it' }, cors);
             return;
           }
+          // OB-259: the day is reopened by the person signed in to the office screens; the approver is a second person.
+          if (office.person !== undefined && reopenedBy.trim() !== office.person.userId) {
+            await noteOfficeRefusal(pathname, office.person.userId, 'not_the_signed_in_person');
+            send(res, 403, { reopened: false, ...officeWords('not_the_signed_in_person') }, cors);
+            return;
+          }
           try {
-            const verifiedPerson = verifiedPersonOf(req);
+            const verifiedPerson = office.person ?? verifiedPersonOf(req);
             // The two PINs go to the box's PIN register and nowhere else — never logged, never echoed (ADR-0020).
             const pinOf = (k: string): string | undefined => (typeof b[k] === 'string' && b[k] !== '' ? (b[k] as string) : undefined);
             const reopenerPin = pinOf('reopenerPin');
@@ -1437,6 +1559,15 @@ export function startLaneServer(input: {
           if (oldBill !== undefined) {
             send(res, 200, { committed: false, refusedBecause: oldBill.refusedBecause, laneMessage: oldBill.laneMessage }, cors);
             return;
+          }
+          // OB-271: REAL TRADING — never with the mirror pilot; a sale's bill must be a complete tax invoice (the till's rule).
+          if (input.realTrading?.() === true) {
+            const legal = mirrorOn ? { refusedBecause: 'real_trading_and_mirror', laneMessage: REAL_TRADING_AND_MIRROR_BOX_WORDS }
+              : isReturn ? undefined : realTradingSaleRefusal(r, input.taxInvoice?.() ?? null);
+            if (legal !== undefined) {
+              send(res, 200, { committed: false, refusedBecause: legal.refusedBecause, laneMessage: legal.laneMessage }, cors);
+              return;
+            }
           }
           // A receipted refund to "Paid on old system" stays within its bill: what the bill was paid that way, less every
           // refund already against it — judged from THIS box's own logs, never from numbers the till sent.

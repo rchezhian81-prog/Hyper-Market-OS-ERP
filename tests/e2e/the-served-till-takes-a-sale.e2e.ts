@@ -60,16 +60,17 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and takes 
   it('a sale rung on the served screen lands on this box\'s disk and is queued', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'sre-served-till-'));
     dirs.push(dir);
-    // The edge exactly as a one-PC install runs it: the write socket on the lane port the POS shell
-    // posts to (its built-in default), and the screens server pointed at this repo's app shells.
+    // The edge as a one-PC install runs it — the write socket on a FREE port here (round 4: the served till posts wherever
+    // its box says, window.laneWriteBase; the one-PC default, 8090, is the installer's), and the screens server pointed at
+    // this repo's app shells.
     // The pack names the cashier with till authority and her till PIN is issued on this box (ADR-0020).
     const edge: EdgeProcess = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY,
-      EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '8090', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps',
+      EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '0', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps',
       ...await prepareTillBox({ dir, key: KEY }),
     }, () => {}))!;
     stops.push(() => edge.stop());
-    expect(edge.lane?.port, 'the lane socket must be on the port the POS shell posts to').toBe(8090);
+    expect(edge.lane?.port).toBeGreaterThan(0);
 
     const context = await browser.newContext();
     stops.push(() => context.close());
@@ -77,6 +78,8 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and takes 
     // Open the till the way a cashier does — the screen served by this same box.
     await page.goto(`http://127.0.0.1:${edge.screens!.port}/pos/`, { waitUntil: 'load' });
     await page.waitForFunction(() => (globalThis as unknown as PosWindow).posSession !== undefined, undefined, { timeout: 15_000 });
+    // The box told the till where its lane socket is — the port every write below goes to.
+    expect(await page.evaluate(() => (globalThis as unknown as { laneWriteBase?: string }).laneWriteBase)).toBe(`http://127.0.0.1:${edge.lane!.port}`);
 
     // Ring one item and take cash — the whole of a sale, driven through the shell's own surface.
     const receipt = await page.evaluate(async (pin) => {
@@ -115,7 +118,7 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and takes 
     dirs.push(dir);
     const edge: EdgeProcess = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY,
-      EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '8090', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps',
+      EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '0', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps',
       ...await prepareTillBox({ dir, key: KEY }),
     }, () => {}))!;
     stops.push(() => edge.stop());
@@ -179,7 +182,7 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and takes 
     dirs.push(dir);
     const edge: EdgeProcess = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY,
-      EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '8090', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps',
+      EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '0', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps',
       EDGE_LANE_TRUST_FORWARDED_USER: '1',
       ...await prepareTillBox({ dir, key: KEY }),
     }, () => {}))!;
@@ -190,7 +193,7 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and takes 
     const page = await context.newPage();
     // What the hosted front does (infra/compose/nginx.pilot.conf): it names the person its password sign-in verified on
     // every request to the till's socket. Here the network layer adds it, as the front would — never the page.
-    await page.route('http://127.0.0.1:8090/lane/**', (route) => route.continue({ headers: { ...route.request().headers(), 'x-sre-user': 'u-lanecash' } }));
+    await page.route(`http://127.0.0.1:${edge.lane!.port}/lane/**`, (route) => route.continue({ headers: { ...route.request().headers(), 'x-sre-user': 'u-lanecash' } }));
     await page.goto(`http://127.0.0.1:${edge.screens!.port}/pos/`, { waitUntil: 'load' });
     await page.waitForFunction(() => (globalThis as unknown as PosWindow).posSession !== undefined, undefined, { timeout: 15_000 });
 

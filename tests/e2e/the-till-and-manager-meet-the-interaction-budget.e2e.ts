@@ -118,7 +118,7 @@ describe.skipIf(!HAVE_BROWSER)('the spec\'s interaction budget, counted on the s
   }
 
   it('till: sign in 3 · scan 1 · quantity 3 · tender 1 · cash 3 · hold 1 · recall 1 — and the sale lands on the box', async () => {
-    const edge = await box(TILL_PACK, { EDGE_LANE_PORT: '8090', EDGE_LANE_ID: 'lane-1' });
+    const edge = await box(TILL_PACK, { EDGE_LANE_PORT: '0', EDGE_LANE_ID: 'lane-1' });
     const page = await open('/pos/', 'till', edge.screens!.port);
     const taps = new Tally(page);
 

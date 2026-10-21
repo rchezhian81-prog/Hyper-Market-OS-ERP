@@ -1,8 +1,12 @@
 // The owner's guided store-computer setup — OB-240 (the real-data copy on a computer inside the shop) · OB-244 (the owner
 // does every hands-on step himself, on a Windows 10/11 PC; no AI ever gets admin access to his computers).
 //
-//   doctor   checks the computer: Windows/Linux, memory, free disk, the folder, Docker, Node 22, pnpm, the time zone
-//   prepare  writes infra/compose/.env.real ONCE, with fresh secrets made on this computer (never printed, never returned)
+//   doctor   checks the computer: Windows/Linux, memory, free disk, the folder, Docker, Node 22, pnpm, the time zone; on
+//            Windows also — read-only — the free space on the data drive AND on C:, Docker's disk image, who is an
+//            administrator and who can read the data (OB-283 · OB-284; store-computer-windows.mjs). It refuses on a Windows
+//            Server, and so do prepare, up, autostart and update (OB-282)
+//   prepare  writes .env.real ONCE in the shop's data folder — `--data-drive F:` puts it in F:\SRE-data and records that
+//            place (OB-283) — with fresh secrets made on this computer (never printed, never returned)
 //   up       starts this copy (compose project sre-real: db, migrate, api) and waits for the API to say ready
 //   check    runs the ten isolation checks of pilot gate G4 (runbook Step 6) and writes a dated record — gap G-RD-1
 //   fingerprints  shows a short one-way fingerprint of each secret (never the secret) and writes them to a file that is
@@ -44,6 +48,9 @@ import { backup, drill, restoreCheck } from './store-computer-recovery.mjs';
 import { autostart, backupStatus, scheduleBackup, scheduledBackup, startAtSignIn, unscheduleBackup } from './store-computer-schedule.mjs';
 import { status } from './store-computer-status.mjs';
 import { migrateDataFolder, update } from './store-computer-data.mjs';
+import {
+  administratorsRow, backupDriveProblem, dataDriveProblem, dataLockRow, dockerDiskRow, driveLetterOf, refusedOnServer, windowsEdition,
+} from './store-computer-windows.mjs';
 
 // ── Fixed names ───────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -68,7 +75,16 @@ export const SEEDING_KEYS = Object.freeze(['BOOTSTRAP_OWNER_TENANT_ID', 'BOOTSTR
 /** The doctor's thresholds. An 8 GB computer reports a little under 8 GiB to the operating system, so 7.5 GiB is "8 GB". */
 export const THRESHOLDS = Object.freeze({
   ramBytes: 7.5 * 1024 ** 3,
+  /** Free space where the shop's data lives (and Docker's disk image, OB-283): the 50 GB the setup has always asked. */
   diskBytes: 50 * 1024 ** 3,
+  /**
+   * Free space on the system drive (C:) when the data is on another drive (OB-283): C: then keeps only the programs —
+   * Docker Desktop's program and WSL, Node.js, pnpm's package store and the release folders. A working allowance, NOT a
+   * published figure (Docker publishes no installed size): one release folder measured here is about 0.06 GB of files
+   * plus about 0.13 GB of packages, and three are kept at once during an update (live, previous, new); the rest is room
+   * for Docker Desktop's own program and its updates, and for Windows' updates.
+   */
+  systemDriveBytes: 15 * 1024 ** 3,
   minNodeMajor: 22,
   /** Windows 10 version 2004 — the first that runs WSL 2, which Docker Desktop needs. */
   minWindowsBuild: 19041,
@@ -110,13 +126,111 @@ export const DATA_MARKER_TEXT = [
   '',
 ].join('\r\n');
 
-/** The data folder for this computer: SRE_DATA_DIR, else C:\SRE-data on Windows, else "<release folder>-data". */
-export function defaultDataRoot(repoRoot, platform, env = {}) {
+/** The data folder when nothing records another: SRE_DATA_DIR, else C:\SRE-data on Windows, else "<release folder>-data". */
+export function fallbackDataRoot(repoRoot, platform, env = {}) {
   const p = pathFor(platform);
   const given = String(env.SRE_DATA_DIR ?? '').trim();
   if (given !== '') return p.resolve(given);
   if (platform === 'win32') return p.join(`${String(env.SystemDrive || 'C:').replace(/[\\/]+$/, '')}\\`, DATA_FOLDER_NAME);
   return `${p.resolve(repoRoot).replace(/[\\/]+$/, '')}-data`;
+}
+
+// ── Where the data folder is, recorded (OB-283) ────────────────────────────────────────────────────────────────────
+// The data folder may be on any internal drive (F:\SRE-data on the pilot PC). Where it is, is RECORDED when `prepare
+// --data-drive` makes it (or `migrate-data-folder --data-drive` moves it), in one small note OUTSIDE every release
+// folder — C:\ProgramData\SRE\data-folder.json — so every command of every release, the Windows tasks and till:pin all
+// find the same folder, and nothing guesses. The note holds a folder name only, never a secret; Part 26c locks its
+// folder like the data. A note that cannot be read, or that names a folder that is not there (a drive missing or its
+// letter changed), stops every command with what to do — never a silent fall-back to C:\SRE-data, where a second copy
+// could be made by mistake.
+
+export const DATA_POINTER_KIND = 'sre-data-folder';
+
+/** Where the note is: SRE_DATA_POINTER (tests), else %ProgramData%\SRE\data-folder.json, else beside the release folder. */
+export function dataPointerPath(repoRoot, platform, env = {}) {
+  const p = pathFor(platform);
+  const given = String(env.SRE_DATA_POINTER ?? '').trim();
+  if (given !== '') return p.resolve(given);
+  if (platform === 'win32') {
+    const programData = String(env.ProgramData || env.ALLUSERSPROFILE || `${String(env.SystemDrive || 'C:').replace(/[\\/]+$/, '')}\\ProgramData`);
+    return p.join(programData, 'SRE', 'data-folder.json');
+  }
+  return p.join(p.dirname(p.resolve(repoRoot)), '.sre-data-folder.json');
+}
+
+/** Read the note: undefined (none) · { dataRoot } · { problem }. */
+export function readDataPointer(fs, platform, file) {
+  if (file === undefined || !fs.existsSync(file)) return undefined;
+  let j;
+  try { j = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return { problem: `the note that says where the shop's data folder is (${file}) cannot be read` }; }
+  const root = typeof j?.dataRoot === 'string' ? j.dataRoot.trim() : '';
+  if (j?.kind !== DATA_POINTER_KIND || root === '' || !pathFor(platform).isAbsolute(root)) return { problem: `the note that says where the shop's data folder is (${file}) is not one this tool wrote` };
+  return { dataRoot: root };
+}
+
+/** Record where the data folder is: the note replaced whole (a temporary file, then a rename). */
+export function writeDataPointer(deps, dataRoot, by) {
+  if (deps.dataPointer === undefined) return;
+  const p = pathFor(deps.platform);
+  deps.fs.mkdirSync(p.dirname(deps.dataPointer), { recursive: true });
+  const tmp = `${deps.dataPointer}.tmp`;
+  const note = { kind: DATA_POINTER_KIND, version: 1, dataRoot, setAt: deps.now().toISOString(), setBy: `store-computer ${by}`, note: "Where the shop's data folder is. No secret is in this file. Never edit it: migrate-data-folder --data-drive moves the folder and this note together." };
+  deps.fs.writeFileSync(tmp, `${JSON.stringify(note, null, 2)}\n`, 'utf8');
+  deps.fs.renameSync(tmp, deps.dataPointer);
+}
+
+/** The same folder? (Windows: letters' case does not matter.) */
+export const sameFolder = (platform, a, b) => {
+  const p = pathFor(platform);
+  const n = (x) => p.resolve(String(x)).replace(/[\\/]+$/, '');
+  return platform === 'win32' ? n(a).toLowerCase() === n(b).toLowerCase() : n(a) === n(b);
+};
+
+/**
+ * The data folder for this computer, the way till:pin and every other script find it: SRE_DATA_DIR, else the recorded
+ * note (OB-283), else C:\SRE-data (Windows) or "<release folder>-data". A note that cannot be used gives the fall-back
+ * here — the store-computer tool itself refuses on it (`resolveDataFolder`).
+ */
+export function defaultDataRoot(repoRoot, platform, env = {}, fs = nodeFs) {
+  if (String(env.SRE_DATA_DIR ?? '').trim() !== '') return fallbackDataRoot(repoRoot, platform, env);
+  const note = readDataPointer(fs, platform, dataPointerPath(repoRoot, platform, env));
+  return note?.dataRoot ?? fallbackDataRoot(repoRoot, platform, env);
+}
+
+/**
+ * The deps with the RECORDED data folder in them (OB-283), or { problem }. Without a note, deps are as given. The
+ * window's SRE_DATA_DIR naming another folder than the note is a visible conflict, never a silent choice.
+ */
+export function resolveDataFolder(deps) {
+  if (deps.dataPointer === undefined) return { deps };
+  const note = readDataPointer(deps.fs, deps.platform, deps.dataPointer);
+  if (note === undefined) return { deps };
+  if (note.problem !== undefined) return { problem: `${note.problem}. Nothing was changed. Send me a photo of this screen.` };
+  const given = String(deps.env?.SRE_DATA_DIR ?? '').trim();
+  if (given !== '' && !sameFolder(deps.platform, given, note.dataRoot)) return { problem: `this window names SRE_DATA_DIR=${given}, but this computer's data folder is recorded as ${note.dataRoot} (${deps.dataPointer}). Close this PowerShell window, open a new one, and run the command again.` };
+  if (!deps.fs.existsSync(note.dataRoot)) return { problem: `the shop's data folder is recorded as ${note.dataRoot}, but it is not there. Is drive ${driveLetterOf(note.dataRoot) ?? '?'}: missing, or has its letter changed (File Explorer → This PC)? Nothing was changed. Send me a photo of this screen and of This PC.` };
+  return { deps: { ...deps, dataRoot: note.dataRoot } };
+}
+
+/**
+ * `--data-drive F:` → F:\SRE-data (OB-283). Elsewhere (the tests, a Linux box) the value is the drive's folder, and the
+ * data folder is <that folder>/SRE-data. Returns { dataRoot, note? } or { problem }. Read-only.
+ */
+export function dataRootOnDrive(deps, given) {
+  const v = String(given ?? '').trim();
+  const p = pathFor(deps.platform);
+  if (deps.platform === 'win32') {
+    const m = /^([A-Za-z]):\\?$/.exec(v);
+    if (m === null) return { problem: `--data-drive takes a drive letter, for example --data-drive F:  (it was given "${v}")` };
+    const letter = m[1].toUpperCase();
+    const root = `${letter}:\\`;
+    if (!deps.fs.existsSync(root)) return { problem: `there is no drive ${letter}: on this computer (File Explorer → This PC shows the letters)` };
+    const k = dataDriveProblem(deps, letter);
+    if (k.problem !== undefined) return { problem: k.problem };
+    return { dataRoot: p.join(root, DATA_FOLDER_NAME), note: k.note };
+  }
+  if (v === '' || !deps.fs.existsSync(p.resolve(v))) return { problem: `--data-drive names a drive folder that is not there ("${v}")` };
+  return { dataRoot: p.join(p.resolve(v), DATA_FOLDER_NAME) };
 }
 
 /**
@@ -322,9 +436,27 @@ export const rel = (deps, abs) => {
 /** The clock as a file-name stamp: 2026-10-20T04-30-00-000Z. */
 export const stampOf = (at) => at.toISOString().replace(/[:.]/g, '-');
 
-/** `prepare`: write .env.real once. Never overwrites, never seeds, never shows a secret. */
-export async function prepare(deps) {
-  const { say, fs } = deps;
+/**
+ * `prepare [--data-drive F:]`: write .env.real once, in the shop's data folder — on the drive named (OB-283: F:\SRE-data
+ * on the pilot PC), recorded so every later command finds it. Never overwrites, never seeds, never shows a secret.
+ */
+export async function prepare(given, opts = {}) {
+  const { say, fs } = given;
+  if (refusedOnServer(given)) return 2;
+  let deps = given;
+  let driveNote;
+  if (opts.dataDrive !== undefined) {
+    const t = dataRootOnDrive(given, opts.dataDrive);
+    if (t.problem !== undefined) { say(`REFUSED — ${t.problem}. Nothing was written.`); return 2; }
+    const now = resolveLayout(given);
+    if (fs.existsSync(now.settings) && !sameFolder(given.platform, pathFor(given.platform).dirname(now.settings), t.dataRoot)) {
+      say(`REFUSED — this copy is already set up: its settings are in ${now.settings}. Nothing was written.`);
+      say(`  To move its data to ${t.dataRoot}, close the till window and run: pnpm run store-computer -- migrate-data-folder --data-drive ${opts.dataDrive}`);
+      return 2;
+    }
+    deps = { ...given, dataRoot: t.dataRoot };
+    driveNote = t.note;
+  }
   const L = resolveLayout(deps);
   const shownPath = rel(deps, L.settings);
   if (fs.existsSync(L.settings)) {
@@ -359,6 +491,9 @@ export async function prepare(deps) {
   }
   // 'wx': created only if it does not exist — even a file appearing in the last millisecond is never overwritten.
   ensureDataFolder(deps, L);
+  // OB-283: where the data folder is, recorded BEFORE the settings are written there — so a stop in between leaves a
+  // recorded, empty data folder (prepare again simply fills it), never settings that no command can find.
+  if (L.mode === 'data-folder') writeDataPointer(deps, L.dataRoot, 'prepare');
   fs.writeFileSync(L.settings, text, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
 
   // From here on only names and the tenant id (a UUID, not a secret) are said — never `planned` itself.
@@ -367,6 +502,9 @@ export async function prepare(deps) {
   say(`Settings file written: ${shownPath}`);
   say('  It stays on this computer only. Never photograph it, never send it, never open it on a shared screen.');
   if (L.mode === 'data-folder') say(`  It is in the shop's data folder ${L.dataRoot}, outside the system's own folder, so a new release never touches it.`);
+  if (L.mode === 'data-folder' && deps.dataPointer !== undefined) say(`  Where the data folder is, is recorded in ${deps.dataPointer} (a folder name, no secret): every command finds it there.`);
+  if (driveNote !== undefined) say(`  The data drive: ${driveNote}.`);
+  if (deps.platform === 'win32') say('  This PC is shared (OB-284): lock the data folder NOW, before anyone else signs in — guide Part 26c, step 1.');
   say('Filled in (names only — the values are never shown):');
   for (const key of filledNames) say(`  ${key}${secretNames.includes(key) ? '   (a new secret, made on this computer)' : ''}`);
   say(`This copy's tenant id: ${tenantId}`);
@@ -445,6 +583,7 @@ export async function waitReady(deps, port, waitMs = READY_WAIT_MS) {
 /** `up`: start this copy's database, schema and API, show them, and wait for READY. */
 export async function up(deps) {
   const { say } = deps;
+  if (refusedOnServer(deps)) return 2;
   const { L, settings } = loadSettings(deps);
   if (settings === undefined) { say('REFUSED — this copy has no settings file yet. Run first: pnpm run store-computer -- prepare'); return 2; }
   if (guarded(deps, settings)) return 2;
@@ -824,13 +963,16 @@ export async function runChecks(deps, settings, opts) {
 }
 
 /**
- * Is `dir` on this computer's own drive? On Windows: the system drive (C:) or the drive the repository is on; anywhere:
- * inside the repository folder. Returns the problem in plain words, or undefined. Check 10 and `backup --to` both use it.
+ * Is `dir` on this computer's own drive? On Windows: the system drive (C:), the drive the repository is on, or the drive
+ * the shop's data is on (F: on the pilot PC, OB-283); anywhere: inside the repository or the data folder. Returns the
+ * problem in plain words, or undefined. Check 10 and `backup --to` both use it — and on Windows they then also ask
+ * Windows what KIND of drive it is: every disk inside this PC is refused, only a USB or removable drive is accepted
+ * (OB-281, `backupDriveProblem` in store-computer-windows.mjs).
  */
 export function ownDriveProblem(dir, { platform, repoRoot, systemDrive, dataRoot }) {
   const p = pathFor(platform);
   const drive = (x) => p.parse(p.resolve(x)).root.replace(/[\\/]+$/, '').toLowerCase();
-  const ownDrives = platform === 'win32' ? new Set([drive(repoRoot), String(systemDrive ?? 'C:').toLowerCase()]) : new Set();
+  const ownDrives = platform === 'win32' ? new Set([drive(repoRoot), String(systemDrive ?? 'C:').toLowerCase(), ...(dataRoot === undefined ? [] : [drive(dataRoot)])]) : new Set();
   // On Windows `relative` across drives returns the other drive's absolute path, which is NOT inside the repository.
   const inside = (root) => { const r = p.relative(root, p.resolve(dir)); return r === '' || (!r.startsWith('..') && !p.isAbsolute(r)); };
   if (inside(repoRoot)) return `${dir} is inside the system's own folder (${repoRoot})`;
@@ -843,7 +985,7 @@ export function ownDriveProblem(dir, { platform, repoRoot, systemDrive, dataRoot
  * Check 10 from the backup step's own record: it restored and reconciled, and the copy went to a folder that is not on
  * this computer's own drive (`ownDriveProblem`). Takes the older recovery-rehearsal record, or a `restore-check` record.
  */
-export function backupVerdict(rec, { platform, repoRoot, systemDrive, dataRoot }) {
+export function backupVerdict(rec, { platform, repoRoot, systemDrive, dataRoot, driveProblem }) {
   if (rec === undefined || rec === null || typeof rec !== 'object') return { status: 'FAIL', detail: 'the backup record could not be read. Check the file name you gave after --backup-record.' };
   if (rec.outcome !== 'restored_and_reconciled') return { status: 'FAIL', detail: `the backup record says "${String(rec.outcome)}", not restored_and_reconciled. Take the backup again.` };
   const dir = typeof rec.offsiteDir === 'string' ? rec.offsiteDir.trim() : '';
@@ -851,6 +993,8 @@ export function backupVerdict(rec, { platform, repoRoot, systemDrive, dataRoot }
   if (ownDriveProblem(dir, { platform, repoRoot, systemDrive, dataRoot }) !== undefined) {
     return { status: 'FAIL', detail: `the backup went to ${dir}, which is on this computer's own drive — it must go to your backup drive.` };
   }
+  const kind = driveProblem?.(dir);
+  if (kind !== undefined) return { status: 'FAIL', detail: `the backup went to ${dir}, which is not accepted as a backup drive: ${kind}.` };
   return { status: 'PASS', detail: `the backup record says the copy went to ${dir} and restored and reconciled. Confirm ${dir} is your own backup drive.` };
 }
 
@@ -864,7 +1008,7 @@ export function backupVerdict(rec, { platform, repoRoot, systemDrive, dataRoot }
 export function backupRecordVerdict(deps, file) {
   const { fs } = deps;
   const p = pathFor(deps.platform);
-  const where = { platform: deps.platform, repoRoot: deps.repoRoot, systemDrive: deps.env.SystemDrive, dataRoot: deps.dataRoot };
+  const where = { platform: deps.platform, repoRoot: deps.repoRoot, systemDrive: deps.env.SystemDrive, dataRoot: deps.dataRoot, driveProblem: (dir) => backupDriveProblem(deps, dir) };
   const read = (f) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return undefined; } };
   const rec = read(file);
   const here = p.dirname(p.resolve(file));
@@ -928,8 +1072,8 @@ export async function check(deps, opts) {
 
 const gib = (b) => `${(b / 1024 ** 3).toFixed(1)} GB`;
 
-/** The doctor's rows, each OK or FIX with the plain-English fix. Pure over what `deps` reports. */
-export function doctorRows(deps) {
+/** The doctor's rows, each OK, FIX (with the plain-English fix) or NEEDS-YOU (what to check by eye). Read-only over `deps`. */
+export function doctorRows(deps, extra = {}) {
   const rows = [];
   const row = (name, ok, detail, fix) => rows.push({ name, status: ok ? 'OK' : 'FIX', detail, ...(ok ? {} : { fix }) });
   const win = deps.platform === 'win32';
@@ -947,9 +1091,35 @@ export function doctorRows(deps) {
   const ram = deps.os.totalmem();
   row('Memory', ram >= THRESHOLDS.ramBytes, `${gib(ram)} of memory`, 'This computer needs at least 8 GB of memory (RAM). Use another computer, or have memory added.');
 
-  let free;
-  try { free = deps.freeDiskBytes(deps.repoRoot); } catch { free = undefined; }
-  row('Free disk', free !== undefined && free >= THRESHOLDS.diskBytes, free === undefined ? 'could not read the free space' : `${gib(free)} free on the drive holding ${deps.repoRoot}`, 'Free up space until this drive has at least 50 GB free (empty the Recycle Bin, remove old downloads), then run this again.');
+  // OB-283: the free space is read WHERE THE DATA LIVES (with Docker's disk image beside it), and — when that is another
+  // drive — C: is checked for what stays on it: the release folders and the programs.
+  const p = pathFor(deps.platform);
+  const L0 = resolveLayout(deps);
+  const dataAt = L0.mode === 'data-folder' ? L0.dataRoot : deps.repoRoot;
+  const freeAt = (dir) => { try { return deps.freeDiskBytes(dir); } catch { return undefined; } };
+  const nearest = (dir) => { let d = p.resolve(dir); while (!deps.fs.existsSync(d) && p.dirname(d) !== d) d = p.dirname(d); return d; };
+  if (win) {
+    const dataDrive = (driveLetterOf(dataAt) ?? 'C').toUpperCase();
+    const systemDrive = (driveLetterOf(String(deps.env.SystemDrive || 'C:')) ?? 'C').toUpperCase();
+    const dataFree = freeAt(`${dataDrive}:\\`);
+    const apart = dataDrive !== systemDrive;
+    row(apart ? 'Data drive' : 'Free disk', dataFree !== undefined && dataFree >= THRESHOLDS.diskBytes,
+      dataFree === undefined ? `could not read the free space on ${dataDrive}:` : `${gib(dataFree)} free on ${dataDrive}:, the drive that holds the shop's data (${dataAt})${apart ? " and Docker's disk image" : ''}`,
+      apart
+        ? `Free up space until ${dataDrive}: has at least 50 GB free, then run this again.`
+        : `Free up space until ${dataDrive}: has at least 50 GB free (empty the Recycle Bin, remove old downloads), then run this again. If this PC has another disk inside it with more room (File Explorer → This PC, for example F:), put the shop's data there instead: run  pnpm run store-computer -- doctor --data-drive F:  (guide Part 5).`);
+    if (apart) {
+      const sysFree = freeAt(`${systemDrive}:\\`);
+      row(`${systemDrive}: drive`, sysFree !== undefined && sysFree >= THRESHOLDS.systemDriveBytes,
+        sysFree === undefined ? `could not read the free space on ${systemDrive}:` : `${gib(sysFree)} free on ${systemDrive}:, which keeps the system's folders (${deps.repoRoot}) and the programs (Docker Desktop, Node.js)`,
+        `Free up space until ${systemDrive}: has at least ${THRESHOLDS.systemDriveBytes / 1024 ** 3} GB free (empty the Recycle Bin, remove old downloads), then run this again.`);
+      const k = dataDriveProblem(deps, dataDrive);
+      row('Data disk', k.problem === undefined, k.problem ?? k.note ?? `${dataDrive}: is inside this computer`, "Choose a disk INSIDE this PC for the shop's data (guide Part 5). Send me a photo of this screen and of File Explorer → This PC.");
+    }
+  } else {
+    const free = freeAt(nearest(dataAt));
+    row('Free disk', free !== undefined && free >= THRESHOLDS.diskBytes, free === undefined ? 'could not read the free space' : `${gib(free)} free on the drive holding ${dataAt}`, 'Free up space until this drive has at least 50 GB free (empty the Recycle Bin, remove old downloads), then run this again.');
+  }
 
   const folder = deps.repoRoot;
   const synced = /onedrive|dropbox|google ?drive|icloud/i.test(folder);
@@ -985,19 +1155,43 @@ export function doctorRows(deps) {
     if (L.mode === 'data-folder') row('Data', true, `the shop's data folder is ${L.dataRoot} — apart from the system's own folder`);
     else row('Data', false, `this copy's settings and the till's data are inside the system's own folder (${deps.repoRoot}), where a new release would replace them`, 'Close the till window, then run: pnpm run store-computer -- migrate-data-folder');
   }
+
+  // Windows only, read-only: the edition (OB-282 — a server is refused before this list), Docker's disk image on the
+  // data drive (OB-283), who is an administrator and who can read the data on this shared PC (OB-251 · OB-284). A check
+  // Windows does not answer is NEEDS-YOU with what to look at by eye — never an OK.
+  if (win) {
+    const edition = extra.edition ?? windowsEdition(deps);
+    if (!edition.known) rows.push({ name: 'Edition', status: 'NEEDS-YOU', detail: `Windows did not say its edition (Node reads "${edition.caption || 'nothing'}")`, fix: 'Check by eye: Settings → System → About → Edition must say Windows 10 or 11 — never "Windows Server" (guide Part 1, OB-282).' });
+    else rows.push({ name: 'Edition', status: 'OK', detail: `${edition.caption || 'Windows'} — not a server` });
+    rows.push(dockerDiskRow(deps, dataAt));
+    rows.push(administratorsRow(deps));
+    rows.push(dataLockRow(deps, L0, deps.dataPointer));
+  }
   return rows;
 }
 
-/** `doctor`: the rows, printed. */
-export async function doctor(deps) {
-  const rows = doctorRows(deps);
+/** `doctor [--data-drive F:]`: the rows, printed. Refuses on a Windows Server (OB-282). Changes nothing. */
+export async function doctor(given, opts = {}) {
+  let deps = given;
+  if (opts.dataDrive !== undefined) {
+    const t = dataRootOnDrive(given, opts.dataDrive);
+    if (t.problem !== undefined) { given.say(`REFUSED — ${t.problem}.`); return 2; }
+    deps = { ...given, dataRoot: t.dataRoot };
+  }
+  const edition = windowsEdition(deps);
+  if (refusedOnServer(deps, edition)) return 2;
+  const rows = doctorRows(deps, { edition });
   deps.say('Checking this computer for the store setup:');
   for (const r of rows) {
-    deps.say(`  ${r.status.padEnd(3)}  ${r.name.padEnd(10)} ${r.detail}`);
-    if (r.status === 'FIX') deps.say(`                  What to do: ${r.fix}`);
+    deps.say(`  ${r.status.padEnd(9)}  ${r.name.padEnd(11)} ${r.detail}`);
+    if (r.status !== 'OK') deps.say(`                         What to do: ${r.fix}`);
   }
   const fix = rows.filter((r) => r.status === 'FIX').length;
-  deps.say(fix === 0 ? 'All OK. Next: pnpm run store-computer -- prepare' : `${fix} thing(s) to fix first. Fix them one at a time, then run doctor again.`);
+  const needs = rows.filter((r) => r.status === 'NEEDS-YOU').length;
+  const next = `Next: pnpm run store-computer -- prepare${opts.dataDrive === undefined ? '' : ` --data-drive ${opts.dataDrive}`}`;
+  if (fix > 0) deps.say(`${fix} thing(s) to fix first. Fix them one at a time, then run doctor again.`);
+  else if (needs > 0) deps.say(`No FIX. ${needs} line(s) say NEEDS-YOU: each one says what you do, and when. ${next}`);
+  else deps.say(`All OK. ${next}`);
   return fix === 0 ? 0 : 1;
 }
 
@@ -1005,8 +1199,8 @@ export async function doctor(deps) {
 
 export const USAGE = [
   'Usage: pnpm run store-computer -- <command>',
-  '  doctor                                   check this computer',
-  '  prepare                                  write this copy\'s settings file once (infra/compose/.env.real)',
+  '  doctor [--data-drive F:]                 check this computer (and the drive the shop\'s data will be on)',
+  '  prepare [--data-drive F:]                write this copy\'s settings file once, in the shop\'s data folder (F:\\SRE-data)',
   '  up                                       start this copy and wait until it is ready',
   '  check --by "<name>" [--offline-confirmed] [--demo-fingerprints <file>] [--backup-record <file>] [--out <folder>]',
   '                                           the ten G4 isolation checks, and a dated record',
@@ -1023,7 +1217,8 @@ export const USAGE = [
   '  backup-status                            the automatic backup, the last backup, and the room left on the drive',
   '  status                                   the store computer check: backup, till queue, disk, containers (red banner)',
   '  autostart [--off]                        start everything by itself when you sign in to Windows',
-  '  migrate-data-folder                      move the settings and the till\'s data out of the system\'s folder',
+  '  migrate-data-folder [--data-drive F:]    move the settings and the till\'s data out of the system\'s folder,',
+  '                                           or the whole data folder to another internal drive',
   '  update --from <new release folder> [--to <backup drive folder>]',
   '                                           install a new release, keeping every sale, setting and record',
   '  seal --dir <slice folder> --as <login> --backup-restored-on YYYY-MM-DD [--source <id>]',
@@ -1031,7 +1226,7 @@ export const USAGE = [
   '  parallel-policy --as <login> --cutover <id> --reconciler <login> --clean-days N --max-days M --start YYYY-MM-DD',
   '                                           write the parallel-run policy (MG-10) — asks your OWN till PIN',
   ' Head office\'s own jobs on this computer (OB-257) — each asks for a YES, then each person\'s OWN till PIN:',
-  '  shop --as <login> --company <code> --legal-name "<as on the GST certificate>" --gstin <GSTIN> --store <code> --store-name "<name>"',
+  '  shop --as <login> --company <code> --legal-name "<as on the GST certificate>" --gstin <GSTIN> --store <code> --store-name "<name>" [--place-of-business "<line 1 | line 2>"]',
   '                                           the company, its legal name and GSTIN, and the store, active',
   '  store-settings --as <login> --store <code> --cutoff HH:MM --stale-after-minutes N --count-approval-rupees R',
   '                 --handover-tolerance-rupees R --cash-variance-rupees R',
@@ -1047,7 +1242,7 @@ export const USAGE = [
 /** The owner setup commands (OB-257): scripts/owner-setup.ts → packages/migration/src/owner-steps-command.ts. */
 export const SETUP_COMMANDS = Object.freeze(['shop', 'store-settings', 'bill-prefix', 'grant', 'publish-catalogue']);
 /** Their flags, as typed (each takes a value), handed on as they are. */
-export const SETUP_FLAGS = Object.freeze(['--company', '--legal-name', '--gstin', '--store', '--store-name', '--cutoff', '--stale-after-minutes', '--count-approval-rupees', '--handover-tolerance-rupees', '--cash-variance-rupees', '--till', '--prefix', '--reason', '--approver', '--person', '--role']);
+export const SETUP_FLAGS = Object.freeze(['--company', '--legal-name', '--gstin', '--store', '--store-name', '--place-of-business', '--cutoff', '--stale-after-minutes', '--count-approval-rupees', '--handover-tolerance-rupees', '--cash-variance-rupees', '--till', '--prefix', '--reason', '--approver', '--person', '--role']);
 
 /**
  * An owner setup command (OB-257), run as the people who do it: this copy's settings and the till's are handed to the
@@ -1102,7 +1297,7 @@ export function parseCommandLine(argv) {
     command: undefined, by: undefined, out: undefined, backupRecord: undefined, offlineConfirmed: false, demoFingerprints: undefined,
     settings: undefined, to: undefined, from: undefined, previous: undefined, run: false, every: undefined, off: false, quiet: false,
     dir: undefined, as: undefined, backupRestoredOn: undefined, source: undefined, cutover: undefined, reconciler: undefined,
-    cleanDays: undefined, maxDays: undefined, start: undefined, setup: {}, problems: [],
+    cleanDays: undefined, maxDays: undefined, start: undefined, dataDrive: undefined, setup: {}, problems: [],
   };
   for (let i = 0; i < args.length; i += 1) {
     const a = args[i];
@@ -1134,6 +1329,7 @@ export function parseCommandLine(argv) {
     else if (a === '--clean-days') out.cleanDays = value();
     else if (a === '--max-days') out.maxDays = value();
     else if (a === '--start') out.start = value();
+    else if (a === '--data-drive') out.dataDrive = value();
     else if (SETUP_FLAGS.includes(a)) { const v = value(); if (v !== undefined) out.setup[a] = v; }
     else if (!a.startsWith('--') && out.command === undefined) out.command = a;
     else out.problems.push(`unknown option ${a}`);
@@ -1142,16 +1338,24 @@ export function parseCommandLine(argv) {
 }
 
 /** Run one command. Returns the exit code: 0 done · 1 not done (a check failed, a step did not work) · 2 refused or misused. */
-export async function main(argv, deps) {
+export async function main(argv, given) {
   const cl = parseCommandLine(argv);
   if (cl.problems.length > 0 || cl.command === undefined) {
-    for (const pr of cl.problems) deps.say(`Not understood: ${pr}`);
-    for (const l of USAGE) deps.say(l);
+    for (const pr of cl.problems) given.say(`Not understood: ${pr}`);
+    for (const l of USAGE) given.say(l);
     return 2;
   }
+  if (cl.dataDrive !== undefined && !['doctor', 'prepare', 'migrate-data-folder'].includes(cl.command)) {
+    given.say(`Not understood: --data-drive goes with doctor, prepare and migrate-data-folder only — every other command finds the data folder by itself.`);
+    return 2;
+  }
+  // OB-283: every command finds the shop's data folder the same way — where it is recorded.
+  const found = resolveDataFolder(given);
+  if (found.problem !== undefined) { given.say(`REFUSED — ${found.problem}`); return 2; }
+  const deps = found.deps;
   switch (cl.command) {
-    case 'doctor': return doctor(deps);
-    case 'prepare': return prepare(deps);
+    case 'doctor': return doctor(deps, { dataDrive: cl.dataDrive });
+    case 'prepare': return prepare(deps, { dataDrive: cl.dataDrive });
     case 'up': return up(deps);
     case 'check': return check(deps, { by: cl.by, out: cl.out, backupRecord: cl.backupRecord, offlineConfirmed: cl.offlineConfirmed, demoFingerprints: cl.demoFingerprints });
     case 'fingerprints': return fingerprints(deps, { settings: cl.settings, out: cl.out });
@@ -1163,7 +1367,7 @@ export async function main(argv, deps) {
     case 'backup-status': return backupStatus(deps);
     case 'status': return status(deps, { quiet: cl.quiet });
     case 'autostart': return autostart(deps, { off: cl.off });
-    case 'migrate-data-folder': return migrateDataFolder(deps);
+    case 'migrate-data-folder': return migrateDataFolder(deps, { dataDrive: cl.dataDrive });
     case 'update': return update(deps, { from: cl.from, to: cl.to });
     case 'seal': return ownerStep(deps, 'seal', cl);
     case 'parallel-policy': return ownerStep(deps, 'parallel-policy', cl);
@@ -1244,7 +1448,9 @@ export function defaultDeps() {
   const repoRoot = path.resolve(here, '..', '..');
   return {
     repoRoot,
-    dataRoot: defaultDataRoot(repoRoot, process.platform, process.env),
+    // The fall-back data folder; `main` puts the RECORDED one in its place (OB-283, `resolveDataFolder`).
+    dataRoot: fallbackDataRoot(repoRoot, process.platform, process.env),
+    dataPointer: dataPointerPath(repoRoot, process.platform, process.env),
     platform: process.platform,
     env: process.env,
     fs: nodeFs,

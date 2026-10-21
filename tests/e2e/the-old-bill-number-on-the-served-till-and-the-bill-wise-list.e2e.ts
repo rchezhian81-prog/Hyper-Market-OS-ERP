@@ -18,7 +18,8 @@ import { prepareTillBox, signInThroughScreen } from '../support/till-operator';
  * Typed in small letters it is kept in capitals, on the sale on the box. The same old bill keyed again is refused by the
  * store computer, in words naming the new bill that holds it, and nothing is saved; the basket stays and is saved under its
  * own number. A mirror refund asks for the old bill number and finds the sale by it; a number no sale carries is said.
- * The migration screen's "Running both" lists the day's mirror bills bill by bill — new bill, old bill, amount, refunded.
+ * The migration screen's "Running both" lists the day's mirror bills bill by bill — new bill, old bill, amount, refunded —
+ * and points to the evening check from the old system's files for the comparison itself (OB-263).
  * Then all again in Tamil. Synthetic data only.
  */
 
@@ -60,7 +61,7 @@ describe.skipIf(!HAVE_BROWSER)('the old bill number on the served till and on th
     await writeFile(packFile, JSON.stringify(PACK), 'utf8');
     const edge: EdgeProcess = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY, EDGE_PACK_FILE: packFile,
-      EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '8090', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps',
+      EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '0', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps',
       EDGE_GUEST_SALES_ONLY: '1', EDGE_MIRROR_PILOT: '1',
       ...await prepareTillBox({ dir, key: KEY, pack: PACK }),
     }, () => {}))!;
@@ -192,7 +193,7 @@ describe.skipIf(!HAVE_BROWSER)('the old bill number on the served till and on th
     await office.dispatchEvent('#day-date', 'change');
     await office.waitForSelector('#bills:not([hidden]) #bills-table');
     expect(await office.textContent('#bills-title')).toBe('Bill by bill (mirror pilot)');
-    expect(await office.textContent('#bills-lead')).toContain('waits for your answer on which report the old system can give (OB-263)');
+    expect(await office.textContent('#bills-lead')).toContain('The comparison with the old system\'s own bill list is in the evening check from the old system\'s files, above (OB-263).');
     const rows = await office.$$eval('#bills-table tbody tr', (trs) => trs.map((tr) => [...tr.querySelectorAll('td')].map((td) => (td.textContent ?? '').trim())));
     expect(rows.map((r) => r.slice(0, 2))).toEqual([[first!.number, 'OLD/77'], [(await sales(edge))[1]!.number, 'OLD/78']]);
     expect(rows[0]![2]).toMatch(/480/);

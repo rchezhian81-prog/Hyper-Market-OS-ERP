@@ -162,6 +162,8 @@ export function lpCorrelationAdapter(input: { readonly store: EventStore; readon
         const a = e.event.payload as TillActivity;
         const day = a.tradingDay ?? shopDay(a.at);
         if (day < from || day > to) continue;
+        // OB-271: a card refund done on the machine is the evidence of a refund already listed below — not a till exception.
+        if (a.kind === 'card_refund_on_machine') continue;
         out.push({ ref: `till-activity:${a.activityId}`, kind: a.kind, cashierId: a.cashierId, productIds: a.productId === undefined ? [] : [a.productId], valueMinor: a.valueMinor, day, reason: a.reason });
       }
       for (const e of await store.readStream(t, STREAM.returns, { type: 'ReturnRecorded', from: padFrom(from), to: padTo(to) })) {

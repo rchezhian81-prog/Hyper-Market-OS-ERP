@@ -25,3 +25,5 @@ export * from './legacy-card-purge';
 export * from './tender-card-data';
 export * from './paid-on-old-erp';
 export * from './old-erp-bill-number';
+// OB-271: the shop's own card machine's / UPI's approval or reference number, typed from the slip — never card data.
+export * from './machine-reference';

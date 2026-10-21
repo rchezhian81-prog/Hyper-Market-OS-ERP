@@ -147,7 +147,7 @@ describe('posting the day', () => {
     expect(saleVoucher.narrative).toBe(`Day book ${DAY} — sale: 2 sale(s)`);
     expect(s.journals[1]!.dayBook).toEqual({
       tradingDay: DAY, kind: 'sale', sourceKind: 'sale', sourceIds: ['s1', 's2'],
-      components: { total: 22_300, net: 20_000, tax: 2_300, cgst: 1_150, sgst: 1_150 },
+      components: { total: 22_300, net: 20_000, tax: 2_300, cgst: 1_150, sgst: 1_150, round_off_up: 0, round_off_down: 0 }, // OB-279: no round off on these bills
     });
     expect(body.exceptions).toEqual([]);
     expect(body.counted).toEqual({ sales: 2, returns: 1 });

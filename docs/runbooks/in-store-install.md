@@ -93,8 +93,8 @@ Nobody can take money at a till until the store computer knows them. Two things 
 
 1. **The store pack names them with till authority** — head office's people and role register (a person whose role
    holds `pos.sale.sync`, as every Cashier role does). A pack with no people register signs nobody in.
-2. **They have a till PIN issued on THIS store computer.** You, the administrator, run on the store computer, in your
-   own terminal (never through a chat or a remote-support tool, so the PIN is never copied anywhere):
+2. **They have a till PIN set on THIS store computer.** You, the administrator, run on the store computer, in your
+   own terminal (never through a chat or a remote-support tool), with the person beside you:
 
    - **Mac/Linux:** `till/start-till.sh till-pin --user <their staff id> --by "<your name>"`
    - **Windows:** `till\start-till.cmd till-pin --user <their staff id> --by "<your name>"`
@@ -102,16 +102,20 @@ Nobody can take money at a till until the store computer knows them. Two things 
      <staff id> --by "<your name>"` — only needed if that box ever asks for a PIN; the hosted copy normally signs the
      person in from their password sign-in.
 
-   It prints the six-digit PIN **once**. Give it to the person face to face; it is not stored anywhere, and the screen
-   will not show it again. Only a fingerprint of it is kept, in `till-credentials.json` beside the sales on disk, and
+   It then asks **the person** for their new six-digit PIN, twice, at this keyboard — hidden, a star per key (round 4):
+   hand them the keyboard and look away. The PIN is never shown, printed or logged, so you never see it; if the two do
+   not match (three tries) nothing is changed. A window that cannot hide what is typed (input piped from a file or a
+   program) is refused. Only a fingerprint of the PIN is kept, in `till-credentials.json` beside the sales on disk, and
    that fingerprint is useless on any other computer.
+   - `--generate-and-show` is the old way: the box makes the PIN and **shows it on the screen** to whoever is in front
+     of it, with a warning. Use it only if the person cannot type their own PIN at this keyboard.
 
 - **Reopening a closed day (2b-vi-c-4):** the person who approves a reopen keys their **own** till PIN on the Reopen a
   locked day screen, and so does the person reopening (unless they signed in on the internet copy). So the owner and the
   accountant each need a till PIN on this store computer too — issue them the same way. They do not need till
   authority to have a PIN for this; the store computer checks that the approver holds `till.dayclose.approve` and the
   reopener `till.dayclose.read`.
-- **Forgotten PIN:** run the same command again — the new PIN replaces the old one at once.
+- **Forgotten PIN:** run the same command again and the person types a new one — it replaces the old one at once.
 - **Someone leaves, or a PIN may be known to someone else:** add `--revoke`. Their next sign-in is refused; a till
   they are still signed in at refuses their next sale as soon as head office removes their role from the pack.
 - **At the till:** tap **Sign in**, scan the badge (or key the staff ID), OK, then key the six-digit PIN and OK. The PIN
@@ -254,7 +258,7 @@ screen is served to a device that has not enrolled.
    On success the phone asks **who is holding it** (next step).
 4a. **The person signs in on the phone (OB-30 "A", DF-3-c).** Each person keys their **staff ID** and the **same six-digit
    PIN as the till** — so everyone who uses a phone needs a till PIN issued on the store computer first
-   (`till/start-till.sh till-pin --user <their id> --by <administrator>`, shown once, kept nowhere), and a role in the
+   (`till/start-till.sh till-pin --user <their id> --by <administrator>`, typed by the person themselves, never shown, kept nowhere), and a role in the
    store setup that gives them the job: warehouse `inventory.movement.append`, picking `fulfilment.pack.record`, delivery
    `delivery.attempt.record`. The screen then opens as THAT person and everything they do is recorded as them. The bar
    at the top says **Signed in: <name>** with a **Sign out** button, and under it how long the sign-in has left

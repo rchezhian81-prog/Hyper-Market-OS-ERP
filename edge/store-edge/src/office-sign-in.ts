@@ -66,10 +66,41 @@ export type OfficeCheck =
   | { readonly ok: true; readonly userId: string; readonly displayName: string; readonly expiresAt: string }
   | { readonly ok: false; readonly refusedBecause: OfficeRefusal };
 
+/**
+ * OB-259 completeness (round 4): why the till's LANE socket refused an office job — a write an office screen makes on the
+ * store box (the manager's day close, a reopen, the office screens' decisions), never one the till makes. Said in both
+ * languages, and kept on this log (who, which door, why — never a token or a PIN).
+ */
+export type OfficeActRefusal = 'office_sign_in_needed' | 'office_sign_in_ended' | 'not_an_office_sign_in' | 'lacks_permission' | 'not_the_signed_in_person';
+
+export const OFFICE_ACT_WORDS: Readonly<Record<OfficeActRefusal, { readonly en: string; readonly ta: string }>> = Object.freeze({
+  office_sign_in_needed: {
+    en: 'Sign in to the office screens first, with your own staff ID and PIN. Nothing was done.',
+    ta: 'முதலில் உங்கள் சொந்தப் பணியாளர் எண்ணாலும் PIN-ஆலும் அலுவலகத் திரைகளில் உள்நுழையுங்கள். எதுவும் செய்யப்படவில்லை.',
+  },
+  office_sign_in_ended: {
+    en: 'Your office sign-in has ended. Enter your PIN again. Nothing was done.',
+    ta: 'உங்கள் அலுவலக உள்நுழைவு முடிந்தது. மீண்டும் உங்கள் PIN-ஐ உள்ளிடுங்கள். எதுவும் செய்யப்படவில்லை.',
+  },
+  not_an_office_sign_in: {
+    en: 'A till sign-in opens the till only. This is an office job: the owner, the manager or the accountant does it, signed in to the office screens with their own PIN. Nothing was done.',
+    ta: 'விற்பனை முனைய உள்நுழைவு விற்பனை முனையத்தை மட்டுமே திறக்கும். இது அலுவலக வேலை: உரிமையாளர், மேலாளர் அல்லது கணக்காளர் தங்கள் சொந்த PIN-ஆல் அலுவலகத் திரைகளில் உள்நுழைந்து செய்வார். எதுவும் செய்யப்படவில்லை.',
+  },
+  lacks_permission: {
+    en: 'Your role does not include this. Nothing was done.',
+    ta: 'உங்கள் பணிக்கு இது இல்லை. எதுவும் செய்யப்படவில்லை.',
+  },
+  not_the_signed_in_person: {
+    en: 'This can only be done in the name of the person signed in to the office screens. Nothing was done.',
+    ta: 'அலுவலகத் திரைகளில் உள்நுழைந்தவரின் பெயரில் மட்டுமே இதைச் செய்ய முடியும். எதுவும் செய்யப்படவில்லை.',
+  },
+});
+
 type LogRecord =
   | { readonly kind: 'office_signed_in'; readonly at: string; readonly userId: string; readonly tokenHash: string; readonly expiresAt: string }
   | { readonly kind: 'office_signed_out'; readonly at: string; readonly userId: string; readonly tokenHash: string; readonly why: 'sign_out' | 'no_longer_office' }
-  | { readonly kind: 'office_refused'; readonly at: string; readonly staffId: string; readonly reason: OfficeRefusal };
+  | { readonly kind: 'office_refused'; readonly at: string; readonly staffId: string; readonly reason: OfficeRefusal }
+  | { readonly kind: 'office_act_refused'; readonly at: string; readonly route: string; readonly userId: string; readonly reason: OfficeActRefusal };
 
 const sha256 = (s: string): string => createHash('sha256').update(s, 'utf8').digest('hex');
 const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -189,6 +220,14 @@ export class OfficeSessions {
     if (session === undefined) return false;
     await this.record({ kind: 'office_signed_out', at: this.deps.now(), userId: session.userId, tokenHash: session.tokenHash, why: 'sign_out' });
     return true;
+  }
+
+  /**
+   * An office job the till's lane socket refused (OB-259 completeness): kept on this log — the door, who (the person the
+   * box verified, if anybody) and why — so the owner can see a cashier's attempt at the day close. Never a token or a PIN.
+   */
+  async noteRefusedAct(input: { readonly route: string; readonly userId: string | null; readonly reason: OfficeActRefusal }): Promise<void> {
+    await this.record({ kind: 'office_act_refused', at: this.deps.now(), route: input.route.slice(0, 64), userId: (input.userId ?? '(nobody)').slice(0, 64), reason: input.reason });
   }
 
   /** Who is signed in to the office screens now — who and until when, never a token or its hash. */

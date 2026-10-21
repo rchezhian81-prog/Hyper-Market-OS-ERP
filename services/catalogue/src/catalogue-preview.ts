@@ -95,6 +95,8 @@ export function toMaster(r: ProductRecord, asOf: string): MasterProduct {
     sku: r.sku,
     name: r.name,
     baseUom: r.baseUom,
+    // OB-263: the department rides the pack, so the store computer can keep the pilot department's items (MG-05).
+    ...(r.primaryCategoryId === null || r.primaryCategoryId.trim() === '' ? {} : { categoryId: r.primaryCategoryId }),
     taxClassId: r.taxClass ?? '', // null/absent → no rate resolvable → excluded 'no_tax_class' by the engine
     status: statusOf(r.lifecycle),
     ...(mrp !== undefined ? { mrpMinor: mrp.minor } : {}),

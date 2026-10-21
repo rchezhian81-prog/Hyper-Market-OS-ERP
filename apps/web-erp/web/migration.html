@@ -122,6 +122,33 @@
       .actions button { flex: 1 1 200px; padding: 0 14px; }
       .file-pick { display: inline-flex; align-items: center; gap: 8px; }
       @media (max-width: 420px) { .area .cols { grid-template-columns: 1fr; } .row2 { grid-template-columns: 1fr; } }
+
+      /* OB-263: the evening check from the old system's two files. Tables scroll inside their own box, never the page. */
+      /* A grid item may shrink below its widest table: the tables scroll inside their own box at 360 px. */
+      main > section { min-width: 0; }
+      #bills-list { overflow-x: auto; }
+      .ec { background: var(--panel); border-radius: 14px; padding: 14px 16px; display: grid; gap: 10px; margin: 12px 0; min-width: 0; }
+      .ec > * { min-width: 0; }
+      .ec h3 { margin: 4px 0 0; }
+      .ec h4 { margin: 8px 0 4px; font-size: 16px; }
+      .ec .file { border: 2px dashed var(--line); border-radius: 12px; padding: 10px 12px; }
+      .ec .file.ready { border-style: solid; border-color: var(--good); }
+      .ec .file.needs { border-style: solid; border-color: var(--warn); }
+      .ec .state { margin: 6px 0 0; font-size: 15px; }
+      .ec .scroll { overflow-x: auto; max-width: 100%; }
+      .ec table { border-collapse: collapse; width: 100%; font-size: 14px; font-variant-numeric: tabular-nums; }
+      .ec th, .ec td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+      .ec td.num, .ec th.num { text-align: right; white-space: nowrap; }
+      .ec tr.differs td { background: var(--warn-surface); color: var(--on-warn-surface); }
+      .ec .notknown { color: var(--on-warn-surface); background: var(--warn-surface); border-radius: 6px; padding: 0 6px; }
+      .ec .diff { background: var(--panel-2); border-radius: 12px; padding: 10px 12px; display: grid; gap: 4px; }
+      .ec .diff.open { border-left: 6px solid var(--danger); background: var(--error-surface); }
+      .ec .diff.done { border-left: 6px solid var(--good); }
+      .ec .diff small { color: var(--muted); }
+      .ec .warn { background: var(--warn-surface); color: var(--on-warn-surface); border-radius: 10px; padding: 8px 12px; margin: 0; }
+      .ec input[type=file] { padding: 8px 0; min-height: var(--tap); border: 0; background: transparent; }
+      /* A hidden control stays hidden whatever its own display (a labelled button is a flex box). */
+      .ec [hidden] { display: none !important; }
     </style>
   </head>
   <body>
@@ -225,6 +252,83 @@
         <p class="lead" id="both-lead">Both systems ringing the same sales. Where they disagree, one of them is wrong about your shop, and somebody has to put their name to which. A bad day resets the count — the clean days only count from after the problem was fixed.</p>
         <div class="bill" id="both-summary"></div>
         <div id="both-list"></div>
+
+        <!-- OB-263 (owner, 21 Oct 2026): the evening check from the old ERP's item-wise and bill-wise reports, saved as CSV,
+             read and compared on the store computer (offline), filtered to the pilot department, a reason on every difference,
+             then the day signed. Shown only in the mirror pilot. -->
+        <section class="ec" id="ec" hidden aria-labelledby="ec-title">
+          <h3 id="ec-title">Evening check from the old system's files</h3>
+          <p class="lead" id="ec-lead"></p>
+          <p class="lead" id="ec-dept"></p>
+          <label for="ec-date" id="ec-date-label">Which day</label>
+          <input id="ec-date" type="date" autocomplete="off" />
+          <h4 id="ec-templates-title">Our templates (what each column means)</h4>
+          <div class="actions">
+            <button id="ec-template-item_wise" type="button">Item-wise template</button>
+            <button id="ec-template-bill_wise" type="button">Bill-wise template</button>
+          </div>
+          <div class="file" id="ec-box-item_wise">
+            <label for="ec-file-item_wise" id="ec-file-item_wise-label">1. The old system's item-wise sales report for the day (CSV)</label>
+            <input id="ec-file-item_wise" type="file" accept=".csv,text/csv" />
+            <p class="state" id="ec-state-item_wise" role="status"></p>
+          </div>
+          <div class="file" id="ec-box-bill_wise">
+            <label for="ec-file-bill_wise" id="ec-file-bill_wise-label">2. The old system's bill-wise list for the day (CSV)</label>
+            <input id="ec-file-bill_wise" type="file" accept=".csv,text/csv" />
+            <p class="state" id="ec-state-bill_wise" role="status"></p>
+          </div>
+          <div id="ec-map" hidden>
+            <h4 id="ec-map-title"></h4>
+            <p class="lead" id="ec-map-lead"></p>
+            <div id="ec-map-fields"></div>
+            <label for="ec-map-date-order" id="ec-map-date-order-label">How does the report write its dates?</label>
+            <select id="ec-map-date-order"></select>
+            <div id="ec-map-includes-tax-box">
+              <label for="ec-map-includes-tax" id="ec-map-includes-tax-label">Does the report's sales value already include the tax?</label>
+              <select id="ec-map-includes-tax"></select>
+            </div>
+            <!-- OB-263 A: which value of the report's own department column is the pilot department. -->
+            <div id="ec-map-pilot-box" hidden>
+              <label for="ec-map-pilot-value" id="ec-map-pilot-label">Which of these is the pilot department?</label>
+              <select id="ec-map-pilot-value"></select>
+            </div>
+            <!-- OB-263 B: do the bill lines' values include the tax? -->
+            <div id="ec-map-lines-tax-box" hidden>
+              <label for="ec-map-lines-tax" id="ec-map-lines-tax-label">Do the bill lines' values already include the tax?</label>
+              <select id="ec-map-lines-tax"></select>
+            </div>
+            <div class="actions">
+              <button id="ec-map-save" class="primary" type="button">Save the mapping</button>
+              <button id="ec-map-cancel" type="button">Cancel</button>
+            </div>
+          </div>
+          <h4 id="ec-mappings-title">Which column is which (saved on this store computer)</h4>
+          <div id="ec-mappings"></div>
+          <div class="row2">
+            <div>
+              <label for="ec-tol-value" id="ec-tol-value-label">Allowed difference in value (₹)</label>
+              <input id="ec-tol-value" type="text" inputmode="decimal" autocomplete="off" value="0" />
+            </div>
+            <div>
+              <label for="ec-tol-tax" id="ec-tol-tax-label">Allowed difference in tax (₹)</label>
+              <input id="ec-tol-tax" type="text" inputmode="decimal" autocomplete="off" value="0" />
+            </div>
+          </div>
+          <div class="actions">
+            <button id="ec-load" class="primary" type="button">Load and compare</button>
+          </div>
+          <div id="ec-result"></div>
+          <div id="ec-reasons"></div>
+          <div class="actions">
+            <button id="ec-reasons-save" class="primary" type="button">Save the reasons</button>
+          </div>
+          <label for="ec-statement" id="ec-statement-label">What you checked (in your own words)</label>
+          <textarea id="ec-statement"></textarea>
+          <div class="actions">
+            <button id="ec-sign" class="primary" type="button">Sign the day</button>
+          </div>
+          <div id="ec-history"></div>
+        </section>
 
         <!-- MG-10: the old ERP's daily totals typed or imported beside the new system's, a reason on every difference,
              and the day signed by the named reconciler. Saved on this device first, then sent (hard rule #1). -->

@@ -33,6 +33,12 @@ export interface CatalogueProduct {
   readonly unitPriceMinor: number;
   /** Tax rate in basis points (from the product's tax class / HSN). */
   readonly taxBps: number;
+  /**
+   * The product's department (M03-FR-01 — the product master's primary category), signed with the pack when any product
+   * carries one. The store computer's evening check keeps only the pilot department's items by it (OB-263 · MG-05).
+   * Absent on packs built before it was carried: the department is then not known for the product, never guessed.
+   */
+  readonly categoryId?: string;
   /** HSN / tax-class code, carried from the product master's tax class. Used to assemble the GST return
    *  (GSTR-1) from banked sales without re-keying each product's HSN (A5). Absent on packs built before
    *  this was carried — a sale of such a product simply surfaces as "unmapped" on the return, never wrong. */

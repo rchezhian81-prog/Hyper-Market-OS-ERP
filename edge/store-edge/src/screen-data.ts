@@ -96,6 +96,8 @@ export interface ScreenInput {
    * from the box's own register (`old-erp-bills.ts`) — the bill-wise list the evening check shows. Absent → none kept.
    */
   readonly oldErpBills?: readonly OldErpBillSale[];
+  /** OB-263: the evening check this box keeps — the column mappings for the old ERP's two reports and the days loaded. */
+  readonly eveningCheck?: { readonly mappings: unknown; readonly days: readonly unknown[] };
 }
 
 /**
@@ -154,6 +156,8 @@ export interface TillProduct {
   readonly unitPriceMinor: number;
   readonly uom: string;
   readonly barcodes: readonly { readonly code: string; readonly kind: string }[];
+  /** The department (M03-FR-01), when the source carries it — the evening check keeps the pilot department's items (OB-263). */
+  readonly categoryId?: string;
   readonly taxBps?: number;
   readonly hsnCode?: string;
   readonly mrpMinor?: number;
@@ -221,6 +225,7 @@ export function tillCatalogue(pack: StorePack, cataloguePack: SignedPack | undef
         unitPriceMinor: p.unitPriceMinor,
         uom: p.baseUom,
         barcodes: codesOf(p.productId),
+        ...(p.categoryId === undefined ? {} : { categoryId: p.categoryId }),
         taxBps: p.taxBps,
         ...(p.hsnCode === undefined ? {} : { hsnCode: p.hsnCode }),
         ...(p.mrpMinor === undefined ? {} : { mrpMinor: p.mrpMinor }),
@@ -247,6 +252,7 @@ export function tillCatalogue(pack: StorePack, cataloguePack: SignedPack | undef
       unitPriceMinor: p.unitPriceMinor,
       uom: p.uom,
       barcodes: p.barcodes.map((code) => ({ code, kind: 'ean13' })),
+      ...(typeof p.categoryId === 'string' && p.categoryId !== '' ? { categoryId: p.categoryId } : {}),
       ...(p.taxBps === undefined ? {} : { taxBps: p.taxBps }),
       ...(p.status === undefined ? {} : { status: p.status }),
       ...(p.recallBlock === true ? { recallBlock: true } : {}),
@@ -2474,6 +2480,15 @@ export function migrationPayload(input: ScreenInput): Record<string, unknown> | 
       tradingDay: input.tradingDay,
       truncated: input.oldErpBills.length > kept.length,
       bills: kept.map((b) => ({ number: b.number, oldErpBillNumber: b.oldErpBillNumber, tradingDay: b.tradingDay, totalMinor: b.totalMinor, refundedMinor: b.refundedMinor })),
+    };
+  }
+  // OB-263: the evening check from the old ERP's item-wise and bill-wise files, kept on this box (offline). The pilot
+  // department it filters by (the applied department slice's, MG-05) — absent means not known, and nothing is compared.
+  if (input.mirrorPilot?.on === true && input.eveningCheck !== undefined) {
+    payload['eveningCheck'] = {
+      ...(policy.pilotDepartment === undefined ? {} : { department: { categoryId: policy.pilotDepartment.categoryId, name: policy.pilotDepartment.name } }),
+      mappings: input.eveningCheck.mappings,
+      days: input.eveningCheck.days,
     };
   }
   if (policy.deltaAppliedAt !== undefined) payload['deltaAppliedAt'] = policy.deltaAppliedAt;

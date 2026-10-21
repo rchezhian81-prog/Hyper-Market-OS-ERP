@@ -65,7 +65,7 @@ describe('buildDayBook — the day, summed per posting kind', () => {
     expect(b.aggregates.map((a) => a.kind)).toEqual(['sale', 'tender:card', 'tender:cash', 'tender:upi']);
     expect(byKind(b, 'sale')).toEqual({
       kind: 'sale', sourceKind: 'sale', sourceIds: ['s1', 's2', 's3'],
-      components: { total: 27_300, net: 25_000, tax: 2_300, cgst: 1_150, sgst: 1_150 },
+      components: { total: 27_300, net: 25_000, tax: 2_300, cgst: 1_150, sgst: 1_150, round_off_up: 0, round_off_down: 0 }, // OB-279: no round off on these bills
     });
     expect(byKind(b, 'tender:cash')).toMatchObject({ sourceIds: ['s1', 's3'], components: { amount: 12_500 } });
     expect(byKind(b, 'tender:upi')).toMatchObject({ sourceIds: ['s2'], components: { amount: 11_800 } });

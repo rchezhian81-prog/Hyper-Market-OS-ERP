@@ -136,7 +136,7 @@ export interface CarryForwardInput {
 
 export type BoxCloseOutcome =
   | { readonly closed: true; readonly tradingDay: string }
-  | { readonly closed: false; readonly reason: string };
+  | { readonly closed: false; readonly reason: string; readonly reasonTa?: string };
 
 /** A register that knows nothing, with the reason it knows nothing. */
 export function notKnown(why: string): { readonly known: false; readonly why: string } {

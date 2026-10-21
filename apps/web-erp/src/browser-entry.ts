@@ -23,6 +23,9 @@ import { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { openDeviceOutbox, guardedStore } from '../../../packages/sync/src/device-outbox';
 import { readReceivingChecklistSetup, type ReceivingChecklistSetup } from '../../../packages/facilities/src/food-safety';
 import { drainToBox, boxStatus } from '../../../packages/sync/src/device-drain';
+import {
+  DATE_ORDERS, OLD_ERP_FILE_MAX_BYTES, OLD_ERP_REPORTS, columnValuesOf, headerKey, headerRowOf, judgeMapping, oldErpTemplateCsv,
+} from '../../../packages/migration/src/old-erp-reports';
 import type { BoxItemStatus } from '../../../packages/sync/src/device-relay';
 import { makeTradingDayRule } from '../../../packages/calendar/src/trading-day';
 import {
@@ -2294,6 +2297,8 @@ export function openDayReopenPort(laneWriteBase: string | undefined, reopenedBy:
         const res = await fetchFn(`${laneWriteBase}/lane/day-reopen`, {
           method: 'POST',
           headers: { 'content-type': 'application/json', accept: 'application/json' },
+          // OB-259: the office sign-in travels with it — on the store PC the box reopens only for the person signed in here.
+          credentials: 'include',
           // The reopener is the authenticated user at this screen (bound at boot from `dayReopenData.userId`); the approver
           // is named AND proves it with their own till PIN, keyed here (2b-vi-c-4). The box checks both PINs, enforces §28
           // (approver ≠ reopener) and seals who it verified; the PINs go to the box and nowhere else.
@@ -4706,6 +4711,12 @@ export function openMigrationRelay(laneWriteBase: string | undefined, outbox: Sy
   };
 }
 
+/** OB-263: the evening check's browser kit (see `eveningCheckKit` on the window). */
+export const EVENING_CHECK_KIT = Object.freeze({
+  reports: OLD_ERP_REPORTS, dateOrders: DATE_ORDERS, maxBytes: OLD_ERP_FILE_MAX_BYTES,
+  templateCsv: oldErpTemplateCsv, headerRowOf, headerKey, judgeMapping, columnValuesOf,
+});
+
 /** Build the migration screen, or `null` when the box was told nothing about a cutover. */
 export function bootMigration(data: MigrationData | undefined, outbox: SyncOutbox = new SyncOutbox()): MigrationSession | null {
   if (data === undefined) return null;
@@ -5103,6 +5114,12 @@ interface ManagerWindow {
   /** Hands the migration screen's decisions to the store computer (2b-vi-c-4). Absent when no box is wired. */
   migrationRelay?: MigrationRelay;
   migrationStorageProblem?: string;
+  /**
+   * OB-263: what the migration screen's evening check needs in the browser — our two templates, the file-size cap, and
+   * the reading of a file's own header row for the one-time mapping. The same code the store computer reads files with;
+   * the figures themselves are read and compared on the store computer.
+   */
+  eveningCheckKit?: typeof EVENING_CHECK_KIT;
   warehouseSupervisorData?: SupervisorData;
   warehouseSupervisorSession?: WarehouseSupervisorSession;
   /** Where the supervisor's approval decisions queue for sync — the view passes it to `decide`. */
@@ -5169,15 +5186,18 @@ export function openDayClosePort(
       const res = await fetchFn(`${laneWriteBase}/lane/day-close`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', accept: 'application/json' },
+        // OB-259: the office sign-in travels with it — on the store PC the box closes only for the person signed in here.
+        credentials: 'include',
         // The PIN goes to the store computer's PIN register and nowhere else (round 4 · ADR-0020).
         body: JSON.stringify({ dayCloseId, closedBy, ...(closerPin === undefined ? {} : { closerPin }), ...(carryForward === undefined ? {} : { carryForward }) }),
       });
-      const body = (await res.json().catch(() => ({}))) as { closed?: boolean; tradingDay?: string; reason?: string };
+      const body = (await res.json().catch(() => ({}))) as { closed?: boolean; tradingDay?: string; reason?: string; reasonTa?: string };
       if (res.status >= 200 && res.status < 300 && body.closed === true && typeof body.tradingDay === 'string') {
         return { closed: true, tradingDay: body.tradingDay };
       }
-      // Anything else is the box declining to close — surface its own reason rather than a bare "no".
-      return { closed: false, reason: body.reason ?? 'the store computer did not close the day' };
+      // Anything else is the box declining to close — surface its own reason rather than a bare "no" (and its Tamil, when
+      // the box said it in both languages — OB-259's office sign-in refusals do).
+      return { closed: false, reason: body.reason ?? 'the store computer did not close the day', ...(typeof body.reasonTa === 'string' && body.reasonTa !== '' ? { reasonTa: body.reasonTa } : {}) };
     } catch {
       // A network/timeout is a lost link, not a lock. The day stays open and the screen says why.
       return { closed: false, reason: 'the store computer could not be reached — the day is not closed' };
@@ -6552,6 +6572,7 @@ if (browserWindow !== undefined) {
     const migrationRelay = openMigrationRelay(browserWindow.laneWriteBase, migrationOutbox);
     if (migrationRelay !== undefined) browserWindow.migrationRelay = migrationRelay;
     if (migrationStorageProblem !== undefined) browserWindow.migrationStorageProblem = migrationStorageProblem;
+    browserWindow.eveningCheckKit = EVENING_CHECK_KIT;
   }
   const warehouseSupervisor = bootWarehouseSupervisor(browserWindow.warehouseSupervisorData);
   if (warehouseSupervisor !== null) {

@@ -92,6 +92,25 @@ export async function latestLoadRecords(deps: MigrationDeps, tenantId: string): 
 }
 
 /**
+ * OB-263 · MG-05: the pilot department — the department of the newest department slice that was APPLIED (its products are
+ * the ones the store's catalogue now carries). Absent until one is applied: the evening check then says the department is
+ * not known, and compares nothing, rather than guess one.
+ */
+export async function appliedSliceDepartment(deps: MigrationDeps, tenantId: string): Promise<{ readonly categoryId: string; readonly name: string; readonly loadId: string; readonly appliedAt: string } | undefined> {
+  if (deps.loadsApplied === undefined) return undefined;
+  let best: { readonly categoryId: string; readonly name: string; readonly loadId: string; readonly appliedAt: string } | undefined;
+  for (const { record } of (await latestLoadRecords(deps, tenantId)).values()) {
+    if (record.department === undefined) continue;
+    const applied = (await deps.loadsApplied(tenantId, record.loadId)).filter((a) => a.sliceDigest === record.sliceDigest).at(-1);
+    if (applied === undefined) continue;
+    if (best === undefined || applied.appliedAt > best.appliedAt) {
+      best = { categoryId: record.department.categoryId, name: record.department.name, loadId: record.loadId, appliedAt: applied.appliedAt };
+    }
+  }
+  return best;
+}
+
+/**
  * Who ran the load, for the control-total signature (§28) — read from the STORED load records.
  *
  * When this deployment keeps load records, they are the only answer: no record, no operator, and nothing can be

@@ -225,7 +225,8 @@ export function deltaSaleJournals(c: DeltaChange, map: StoredPostingMap | undefi
   const tradingDay = c.changedAt.slice(0, 10);
   const back = total < 0;
   const vouchers: { kind: string; components: Record<string, number> }[] = [
-    { kind: back ? 'sale_return' : 'sale', components: { total: Math.abs(total), net: Math.abs(net), cgst: Math.abs(cgst), sgst: Math.abs(sgst) } },
+    // A legacy bill carries no OB-279 round off: the sale posting's two round-off components are zero, said, never absent.
+    { kind: back ? 'sale_return' : 'sale', components: { total: Math.abs(total), net: Math.abs(net), cgst: Math.abs(cgst), sgst: Math.abs(sgst), ...(back ? {} : { round_off_up: 0, round_off_down: 0 }) } },
     { kind: `${back ? 'refund' : 'tender'}:${c.tender}`, components: { amount: Math.abs(total) } },
   ];
   const journals: DayBookJournal[] = [];

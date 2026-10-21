@@ -26,7 +26,7 @@ export interface ParallelDaySignature {
   readonly signedAt: string;
   readonly statement: string;
   /** Each difference on the day as it stood when signed — its name, amount and explanation, for the sheet. */
-  readonly differences: readonly { readonly differenceId: string; readonly area: string; readonly difference: number; readonly explanation: string; readonly wrongSide?: string; readonly ownerUserId: string }[];
+  readonly differences: readonly { readonly differenceId: string; readonly area: string; readonly subject?: string; readonly difference: number; readonly explanation: string; readonly wrongSide?: string; readonly ownerUserId: string }[];
 }
 
 export type DaySignRefusal =
@@ -43,7 +43,8 @@ export type DaySignResult =
 /** A stable digest of a day's comparisons (order-independent), so a signature is bound to the figures it saw. */
 export function dayDigestOf(comparisons: readonly DayComparison[]): string {
   const material = [...comparisons]
-    .map((c) => `${c.area}:${c.legacyValue}:${c.newValue}:${c.toleranceMinor}`)
+    // OB-263: a line about one item or bill carries its subject; a day total typed by hand has none, so its digest is unchanged.
+    .map((c) => `${c.area}:${c.legacyValue}:${c.newValue}:${c.toleranceMinor}${c.subject === undefined ? '' : `:${c.subject}`}`)
     .sort()
     .join('|');
   let h1 = 0x811c9dc5;
@@ -86,7 +87,7 @@ export function signParallelDay(input: {
   const unexplained = unexplainedDifferences(input.businessDate, input.differences);
   if (unexplained.length > 0) {
     return refuse('unexplained_material_difference',
-      `${input.businessDate} cannot be signed: ${unexplained.length} difference(s) beyond tolerance still have no reason — ${unexplained.map((d) => `${d.differenceId} (${d.area.replace(/_/g, ' ')}, ${d.difference})`).join(', ')}. Find out why the two systems differ, write it on each one, then sign.`,
+      `${input.businessDate} cannot be signed: ${unexplained.length} difference(s) beyond tolerance still have no reason — ${unexplained.map((d) => `${d.differenceId} (${d.area.replace(/_/g, ' ')}${d.subject === undefined ? '' : ` ${d.subject}`}, ${d.difference})`).join(', ')}. Find out why the two systems differ, write it on each one, then sign.`,
       unexplained);
   }
   if (looksLikeNoReason(input.statement)) {
@@ -102,7 +103,7 @@ export function signParallelDay(input: {
       signedAt: input.now,
       statement: input.statement.trim(),
       differences: todays.map((d) => ({
-        differenceId: d.differenceId, area: d.area, difference: d.difference, explanation: d.explanation!, ownerUserId: d.ownerUserId!,
+        differenceId: d.differenceId, area: d.area, ...(d.subject === undefined ? {} : { subject: d.subject }), difference: d.difference, explanation: d.explanation!, ownerUserId: d.ownerUserId!,
         ...(d.wrongSide === undefined ? {} : { wrongSide: d.wrongSide }),
       })),
     },

@@ -19,13 +19,14 @@ export const PEOPLE = {
 
 /** The roles as the store setup carries them — the permissions the gate and the screens read. */
 const ROLES = [
-  { id: 'owner', name: 'Owner', permissions: ['identity.self.read', 'till.dayclose.read', 'migration.cleaning.read', 'pos.sale.sync'] },
+  { id: 'owner', name: 'Owner', permissions: ['identity.self.read', 'till.dayclose.read', 'till.dayclose.approve', 'migration.cleaning.read', 'pos.sale.sync'] },
   { id: 'store_manager', name: 'Store manager', permissions: ['identity.self.read', 'till.dayclose.read', 'migration.cleaning.read', 'pos.sale.sync'] },
   { id: 'accountant', name: 'Accountant', permissions: ['identity.self.read', 'migration.cleaning.read'] },
   { id: 'cashier', name: 'Cashier', permissions: ['identity.self.read', 'pos.sale.sync', 'migration.screen.read'] },
 ];
 
-export interface OfficeBox { readonly edge: EdgeProcess; readonly base: string; readonly dataDir: string; stop(): Promise<void> }
+/** `base` is the screens' address (the office pages and the till); `lane` the box's lane socket (the till's writes). */
+export interface OfficeBox { readonly edge: EdgeProcess; readonly base: string; readonly lane: string; readonly dataDir: string; stop(): Promise<void> }
 
 /** Start the box (again, over the same folder, for a cold restart). `gate: false` starts it the old way, with no gate. */
 export async function startOfficeBox(opts: { readonly dataDir?: string; readonly gate?: boolean } = {}): Promise<OfficeBox> {
@@ -48,6 +49,6 @@ export async function startOfficeBox(opts: { readonly dataDir?: string; readonly
     EDGE_LANE_PORT: '0', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps', EDGE_PACK_FILE: join(dataDir, 'store-pack.json'),
     ...(opts.gate === false ? {} : { EDGE_OFFICE_SIGN_IN: 'pin' }),
   }, () => {});
-  if (edge === undefined || edge.screens === null || edge.screens === undefined) throw new Error('the box did not start');
-  return { edge, base: `http://127.0.0.1:${edge.screens.port}`, dataDir, stop: () => edge.stop() };
+  if (edge === undefined || edge.screens === null || edge.screens === undefined || edge.lane === null || edge.lane === undefined) throw new Error('the box did not start');
+  return { edge, base: `http://127.0.0.1:${edge.screens.port}`, lane: `http://127.0.0.1:${edge.lane.port}`, dataDir, stop: () => edge.stop() };
 }

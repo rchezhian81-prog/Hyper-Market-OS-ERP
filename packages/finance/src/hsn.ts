@@ -10,6 +10,14 @@
  *  Turnover strictly above this needs 6 digits. */
 export const HSN_SIX_DIGIT_TURNOVER_THRESHOLD_MINOR = 5_000_000_000;
 
+/**
+ * OB-149 (owner, 16 Oct 2026): the owner's annual turnover band is ₹5–10 crore — above ₹5 crore, so every tax invoice
+ * states the HSN to at least 6 digits (A4, Notification 78/2020-CT). The figure the rule is judged at when nobody sends a
+ * turnover: one paisa above ₹5 crore, which says exactly that and no more. Rechecked each April with the turnover; a
+ * change of band is a code change with a test, never a figure typed at a till.
+ */
+export const OWNER_TURNOVER_BAND_FOR_HSN_MINOR = HSN_SIX_DIGIT_TURNOVER_THRESHOLD_MINOR + 1;
+
 export type HsnDigitCount = 4 | 6;
 
 export class InvalidHsnInput extends Error {

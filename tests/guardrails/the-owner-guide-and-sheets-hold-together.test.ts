@@ -19,13 +19,28 @@ import { parseCommandLine, SETUP_COMMANDS } from '../../scripts/lib/store-comput
  *   • no PLACEHOLDER mark is left in any sheet or in the guide (round 3: SOP-02's payment and refund steps are written);
  *     SOP-02 names the till's own buttons — in English from the till's English words, in Tamil from its Tamil words
  *     (apps/pos/web/app.js) — for "Paid on old system", the old bill number (OB-264), the refund and the exchange;
- *     SOP-03 says payments and loyalty are "Not compared in the mirror pilot" (OB-256, OB-265), never "not decided".
+ *     SOP-03 says payments and loyalty are "Not compared in the mirror pilot" (OB-256, OB-265), never "not decided";
+ *   • OB-263: SOP-03 walks the owner through the evening check from the old ERP's two files — export, save as CSV, map
+ *     once, load, read the differences, write reasons, sign — in the migration screen's own words in both languages, with
+ *     generic words for the old ERP's menus (never a menu name we do not know); the guide's Part 31 says to send nothing
+ *     first (OB-275) and never the files themselves.
  */
 
 const GUIDE_PATH = 'docs/runbooks/store-computer-owner-guide-windows.md';
 const SOP_DIR = 'docs/sop';
 const guide = readFileSync(GUIDE_PATH, 'utf8');
 const pkg = JSON.parse(readFileSync('package.json', 'utf8')) as { scripts: Record<string, string> };
+
+/** OB-263: the evening check's words the owner reads in Sheet 3 — the migration screen's own, in English and in Tamil. */
+const EVENING_EN = ['Running both', 'Evening check from the old system\'s files', 'Which day', 'Which column is which', 'Save the mapping', 'Change',
+  'Columns found — ready to load', 'Load and compare', 'Items that differ', 'Not in the new catalogue', 'Why do they differ', 'Which one was wrong',
+  'Save the reasons', 'What you checked (in your own words)', 'Sign the day', 'Item-wise template', 'Bill-wise template', 'Not known',
+  // OB-263 A · B (owner, 21 Oct 2026): the department column's pilot value, and the bill lines' tax question.
+  'Which of these is the pilot department?', 'Do the bill lines\' values already include the tax?', 'Not in this report'];
+const EVENING_TA = ['இரண்டையும் இயக்குதல்', 'பழைய அமைப்பின் கோப்புகளிலிருந்து மாலைச் சரிபார்ப்பு', 'எந்த நாள்', 'எந்த நெடுவரிசை எது', 'பொருத்தத்தைச் சேமி', 'மாற்று',
+  'நெடுவரிசைகள் கிடைத்தன — ஏற்றத் தயார்', 'ஏற்றி ஒப்பிடு', 'வேறுபடும் பொருட்கள்', 'புதிய பட்டியலில் இல்லை', 'ஏன் வேறுபடுகின்றன', 'எது தவறு',
+  'காரணங்களைச் சேமி', 'நாளில் கையெழுத்திடு', 'பொருள் வாரியான வார்ப்புரு', 'பில் வாரியான வார்ப்புரு', 'தெரியவில்லை',
+  'இவற்றில் எது பைலட் துறை?', 'பில் வரிகளின் மதிப்பில் ஏற்கனவே வரி அடங்கியுள்ளதா?', 'இந்த அறிக்கையில் இல்லை'];
 
 /** The sheets the owner asked for (OB-255, OB-248 with OB-252, OB-254, and the forgotten PIN). */
 const SHEETS = ['sop-01-pc-down', 'sop-02-mirror-keying', 'sop-03-owner-evening-check', 'sop-04-forgotten-pin'] as const;
@@ -78,7 +93,7 @@ function flagsReadBy(file: string, pattern: RegExp, extra: readonly string[] = [
 const TOKEN_FLAGS = flagsReadBy('scripts/issue-store-token.mjs', /args\['([a-z-]+)'\]/g, ['--no-store']);
 const BOOTSTRAP_FLAGS = flagsReadBy('scripts/bootstrap-tenant.ts', /flags\['([a-z-]+)'\]/g);
 const SLICE_FLAGS = flagsReadBy('scripts/migration-slice.ts', /flags\['([a-z-]+)'\]/g);
-const TILL_PIN_FLAGS = flagsReadBy('edge/store-edge/src/till-pin-command.ts', /arg\(argv, '([a-z-]+)'\)/g, ['--revoke']);
+const TILL_PIN_FLAGS = flagsReadBy('edge/store-edge/src/till-pin-command.ts', /arg\(argv, '([a-z-]+)'\)/g, ['--revoke', '--generate-and-show']);
 
 /** Why a command the reader is told to type would not be understood — empty when it would be. */
 export function commandProblems(command: string, scripts: Readonly<Record<string, string>>): string[] {
@@ -193,7 +208,7 @@ describe('the owner guide and the cashier sheets hold together (OB-244 · OB-248
       expect(guide, step).toContain(step);
     }
     for (const cmd of SETUP_COMMANDS) expect(guide, cmd).toContain(`pnpm run store-computer -- ${cmd} `);
-    expect(guide).toContain('C:\\SRE-data');
+    expect(guide).toContain('F:\\SRE-data');
     expect(guide).toContain('current-release.json');
     // The data lives in C:\SRE-data now: no settings path inside the release folder is left.
     expect(guide).not.toMatch(/infra\\compose\\\.env\.real|C:\\SRE\\till\\till\.env|C:\\SRE\\infra\\compose\\records/);
@@ -231,7 +246,7 @@ describe('the owner guide and the cashier sheets hold together (OB-244 · OB-248
     expect(statusSource).toContain("`EDGE_MIRROR_PILOT=${said('EDGE_MIRROR_PILOT') || '(not set)'}, EDGE_GUEST_SALES_ONLY=${said('EDGE_GUEST_SALES_ONLY') || '(not set)'}`");
     // OB-257: seal and parallel-policy ask the acting person's own PIN.
     expect(guide).toMatch(/It asks the person sealing for \*\*their own till PIN\*\*/);
-    expect(guide).toMatch(/It asks for \*\*your own till PIN\*\* \(`<your-login>'s till PIN:`\)/);
+    expect(guide).toMatch(/It asks for \*\*your own till PIN\*\* \(`owner-01's till PIN:`\)/);
     // OB-268: red under 30 days; "not known" before the rate can be worked out.
     expect(guide).toMatch(/\*\*Under 30 days left, it turns RED\*\* \(OB-268\)/);
     expect(guide).toMatch(/\*\*NOT KNOWN\*\*/);
@@ -302,9 +317,9 @@ describe('the owner guide and the cashier sheets hold together (OB-244 · OB-248
       expect(till, `the till says "${label}"`).toContain(label);
     }
     const evening = sheetText('sop-03-owner-evening-check', 'en');
-    for (const label of ['Running both', 'Enter a day', 'Save the day', 'Sign the day', 'Which one was wrong']) expect(evening).toContain(label);
+    for (const label of EVENING_EN) expect(evening, label).toContain(label);
     const eveningTa = sheetText('sop-03-owner-evening-check', 'ta');
-    for (const label of ['இரண்டையும் இயக்குதல்', 'ஒரு நாளைப் பதிவு செய்', 'நாளைச் சேமி', 'நாளில் கையெழுத்திடு', 'எது தவறு']) expect(eveningTa).toContain(label);
+    for (const label of EVENING_TA) expect(eveningTa, label).toContain(label);
     // OB-256 · OB-265: payments and loyalty are not compared in the mirror pilot — decided, so never "not decided".
     expect(evening).toMatch(/\*\*Payments taken \(₹\)\*\* and \*\*Loyalty points\*\* say \*\*Not compared in the mirror pilot\*\* \(OB-256, OB-265\)/);
     expect(eveningTa).toContain('**மிரர் பைலட்டில் ஒப்பிடப்படுவதில்லை**');
@@ -324,10 +339,39 @@ describe('the owner guide and the cashier sheets hold together (OB-244 · OB-248
   });
 
   it('the evening sheet uses the migration screen\'s own words, in both languages', () => {
-    const screen = readFileSync('apps/web-erp/web/migration.html', 'utf8');
-    for (const label of ['Running both', 'Enter a day', 'Save the day', 'Sign the day']) expect(screen).toContain(label);
-    const strings = readFileSync('apps/web-erp/web/migration.js', 'utf8');
-    for (const label of ['இரண்டையும் இயக்குதல்', 'ஒரு நாளைப் பதிவு செய்', 'நாளைச் சேமி', 'நாளில் கையெழுத்திடு', 'எது தவறு']) expect(strings).toContain(label);
+    const screen = `${readFileSync('apps/web-erp/web/migration.html', 'utf8')}${readFileSync('apps/web-erp/web/migration.js', 'utf8')}`.replace(/\\'/g, "'");
+    for (const label of [...EVENING_EN, ...EVENING_TA]) expect(screen, `the screen says "${label}"`).toContain(label);
+  });
+
+  it('OB-263: the evening sheet walks through the two old-ERP files — export, CSV, map once, load, reasons, sign — and (OB-275) the guide asks for nothing to be sent first', () => {
+    const evening = sheetText('sop-03-owner-evening-check', 'en');
+    expect(evening).toContain('OB-263');
+    // Generic words for the old ERP's menus: we do not know its menu names, so the sheet says what to look for.
+    expect(evening).toMatch(/The menu names differ from one ERP to another/);
+    expect(evening).toMatch(/CSV UTF-8 \(Comma\s+delimited\)/);
+    expect(evening).toMatch(/Never choose a customer's\s+name or mobile column/);
+    // The order the owner does it in.
+    const at = (label: string): number => evening.indexOf(label);
+    expect(at('item-wise sales report for today')).toBeLessThan(at('Save As'));
+    expect(at('Save As')).toBeLessThan(at('Save the mapping'));
+    expect(at('Save the mapping')).toBeLessThan(at('Load and compare'));
+    expect(at('Load and compare')).toBeLessThan(at('Save the reasons'));
+    expect(at('Save the reasons')).toBeLessThan(at('Sign the day'));
+    const eveningTa = sheetText('sop-03-owner-evening-check', 'ta');
+    expect(eveningTa).toContain('OB-263');
+    expect(eveningTa).toContain('ஒவ்வொரு ERP-யிலும் மெனுவின் பெயர்கள்');
+    expect(guide).toContain('## Part 31 — The evening check from the old ERP\'s two files (OB-263)');
+    expect(guide).toMatch(/No need to send anything first\*\* \(OB-275\)/);
+    expect(guide).toMatch(/Never send\s+these files to anyone/);
+    expect(guide).toContain('## Part 32 — Real trading: after the pilot passes and your written GO only (OB-271)');
+    // OB-263 A · B: the department column and the bill lines' tax question, in the sheet (both languages) and the guide.
+    for (const text of [evening, guide]) {
+      expect(text).toMatch(/Which of these is the\s+pilot department\?/);
+      expect(text).toMatch(/Do the bill lines' values already include the\s+tax\?/);
+    }
+    expect(evening).toMatch(/rows are then left out, and the screen says how many — never silently/);
+    expect(eveningTa).toContain('OB-263 A');
+    expect(eveningTa).toContain('OB-263 B');
   });
 
   it('the guide carries the locked-PC, UPS and memory steps (OB-251 · OB-250 · OB-247)', () => {
@@ -335,9 +379,9 @@ describe('the owner guide and the cashier sheets hold together (OB-244 · OB-248
     expect(guide).toMatch(/net localgroup Administrators/);
     expect(guide).toMatch(/Standard User/);
     expect(guide).toContain('icacls C:\\SRE /inheritance:r /grant:r');
-    expect(guide).toContain('icacls C:\\SRE-data /inheritance:r /grant:r');
-    expect(guide).toContain('icacls C:\\SRE-data\\.env.real');
-    expect(guide).toContain('icacls C:\\SRE-data\\till\\till.env');
+    expect(guide).toContain('icacls F:\\SRE-data /inheritance:r /grant:r');
+    expect(guide).toContain('icacls F:\\SRE-data\\.env.real');
+    expect(guide).toContain('icacls F:\\SRE-data\\till\\till.env');
     expect(guide).toMatch(/BUILTIN\\Users/);
     expect(guide).toMatch(/Print the recovery key/);
     expect(guide).toMatch(/Never photograph the recovery key/);
@@ -350,5 +394,50 @@ describe('the owner guide and the cashier sheets hold together (OB-244 · OB-248
     expect(guide).toMatch(/practice hour/);
     // Names are never invented: the steps that need one say STOP AND ASK.
     expect((guide.match(/STOP AND ASK/g) ?? []).length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('the guide carries the Part 1 results and the F: steps (OB-281 · OB-282 · OB-283 · OB-284)', () => {
+    const part = (n: number): string => {
+      const start = guide.indexOf(`## Part ${n} — `);
+      const end = guide.indexOf('\n## ', start + 1);
+      expect(start, `Part ${n}`).toBeGreaterThan(-1);
+      return guide.slice(start, end === -1 ? undefined : end);
+    };
+    // Part 1: the photos passed, with the facts as photographed; the server is never used.
+    const p1 = part(1);
+    for (const fact of ['21 Oct 2026', 'your photos passed', 'Windows 11 Pro', '25H2', 'i3-14100', '8 GB', 'virtualisation enabled', '41.9 GB free', '115 GB', '357 GB free', 'Windows Server 2022', 'OB-282', 'OB-283', 'OB-284']) {
+      expect(p1, fact).toContain(fact);
+    }
+    expect(p1).toMatch(/If Edition says "Windows Server", STOP/);
+    // Part 2: Docker's disk image on F:, with the exact Settings path.
+    expect(part(2)).toMatch(/Settings\*\* \(the gear, top right\) → \*\*Resources\*\* → \*\*Advanced\*\* → \*\*Disk image location\*\*[\s\S]*`F:\\DockerData`[\s\S]*\*\*Apply & restart\*\*/);
+    // Part 5: doctor and prepare with --data-drive F:, the lock straight after, in the owner's own account.
+    const p5 = part(5);
+    expect(p5).toContain('pnpm run store-computer -- doctor --data-drive F:');
+    expect(p5).toContain('pnpm run store-computer -- prepare --data-drive F:');
+    expect(p5).toContain('C:\\ProgramData\\SRE\\data-folder.json');
+    expect(p5).toMatch(/Part 26c, steps 1 and 2\*\* now/);
+    expect(p5).toMatch(/never in the purchase staff's account \(OB-284\)/);
+    // Part 8: never F: or C:, only USB (OB-281); Part 28: the USB that stays in is not F:.
+    expect(part(8)).toMatch(/Never `F:`, and never `C:`/);
+    expect(part(8)).toMatch(/only a \*\*USB or removable\*\* drive \(OB-281\)/);
+    expect(part(28)).toMatch(/\*\*It is never `F:`\*\*/);
+    expect(guide).not.toMatch(/--to F:\\/);
+    // Part 12: the shared PC's memory, honestly — lane C's figures, the unmeasured extra, the photo with Excel open.
+    const p12 = part(12);
+    for (const fact of ['OB-284', '5.9–6.3 GB', '7.7 GB', '**not measured**', 'Excel']) expect(p12, fact).toContain(fact);
+    // Part 26: the lock covers F:\SRE-data, C:\SRE and the note, for the owner and SYSTEM only; F: encrypted too.
+    const p26 = part(26);
+    for (const folder of ['C:\\SRE', 'F:\\SRE-data', 'C:\\ProgramData\\SRE']) {
+      expect(p26, folder).toContain(`icacls ${folder} /inheritance:r /grant:r "$($env:USERDOMAIN)\\$($env:USERNAME):(OI)(CI)F" "*S-1-5-18:(OI)(CI)F"\n`);
+    }
+    expect(p26).not.toContain('S-1-5-32-544'); // the Administrators group is not given the data (OB-284)
+    expect(p26).toMatch(/purchase staff's account must not be listed\*\* \(OB-284\)/);
+    expect(p26).toContain('manage-bde -status F:');
+    // Part 29: the release folders stay on C:, the data is found by itself.
+    expect(part(29)).toMatch(/at least 15 GB free/);
+    // Every --data-drive the guide types is one the tool reads, on the commands that take it.
+    for (const m of guide.matchAll(/pnpm run store-computer -- ([a-z-]+)[^\n`]*--data-drive F:/g)) expect(['doctor', 'prepare', 'migrate-data-folder']).toContain(m[1]);
+    expect(parseCommandLine(['doctor', '--data-drive', 'F:'])).toMatchObject({ command: 'doctor', dataDrive: 'F:', problems: [] });
   });
 });

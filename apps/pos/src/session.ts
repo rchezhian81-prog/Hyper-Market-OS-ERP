@@ -24,6 +24,8 @@ import { normaliseMobile } from '../../../packages/loyalty/src/mobile';
 import { withoutCardData } from '../../../packages/tender/src/tender-card-data';
 import { saleTenderRefusal } from '../../../packages/tender/src/paid-on-old-erp';
 import { oldErpBillRefusal } from '../../../packages/tender/src/old-erp-bill-number';
+import { readMachineReference } from '../../../packages/tender/src/machine-reference';
+import { buildTaxInvoice, invoiceRoundOff, type TaxInvoiceDocument, type TaxInvoiceIdentity, type TaxInvoiceProblem } from '../../../packages/receipt/src/tax-invoice';
 import {
   tillLineRefusals, tillRuleFlagsOf, scaleEvidence, lineIsWeighed, TillRuleRefusedError, TOBACCO_MINIMUM_AGE,
   type LaneScales, type TillGateContext,
@@ -88,6 +90,29 @@ export interface PosSessionConfig {
    * by its box. Off → that tender is refused; on → every other tender is refused. Both before the disk, in words.
    */
   readonly mirrorPilot?: boolean;
+  /**
+   * OB-271 (owner, 21 Oct 2026): REAL TRADING — the new till's bill is the legal GST tax invoice. Turned on only by the
+   * store computer's own `EDGE_REAL_TRADING=1` or the store pack (`policies.realTrading`), after the pilot passes and the
+   * owner's written GO; never together with the mirror pilot. While on, every sale must make a complete Rule 46 invoice
+   * from the shop's legal identity (`identity`, the store's setup) or it is REFUSED before the disk. Absent = off: the till
+   * behaves exactly as before.
+   */
+  readonly realTrading?: { readonly identity: TaxInvoiceIdentity | null };
+}
+
+/** OB-271: the mirror pilot and real trading are never on together — the till refuses to sell rather than guess which. */
+export const REAL_TRADING_AND_MIRROR_WORDS = 'This till is set for the mirror pilot AND for real trading, which are never on together. Nothing was saved — do not take money. Tell the owner.';
+
+/**
+ * OB-271: a real-trading sale whose bill would not be a complete Rule 46 tax invoice — refused BEFORE the disk, with every
+ * missing field named, so a non-compliant bill is never issued. `problems` lets the screen say it in the cashier's language.
+ */
+export class TaxInvoiceRefusedError extends Error {
+  readonly refusedBecause = 'tax_invoice_incomplete';
+  constructor(public readonly saleId: string, public readonly laneMessage: string, public readonly problems: readonly TaxInvoiceProblem[]) {
+    super(`sale ${saleId} was not committed: ${laneMessage}`);
+    this.name = 'TaxInvoiceRefusedError';
+  }
 }
 
 /** What the till says when a customer number or loyalty is asked for while guest sales only is on (OB-252). */
@@ -205,15 +230,22 @@ export interface CommittedBill {
   readonly netMinor: number;
   readonly taxMinor: number;
   readonly totalMinor: number;
-  readonly tenders: readonly { readonly kind: string; readonly amountMinor: number }[];
+  readonly tenders: readonly { readonly kind: string; readonly amountMinor: number; readonly machineRef?: string }[];
+  /** OB-271: in real trading, the Rule 46 tax invoice this sale was checked against before the disk — what prints. */
+  readonly taxInvoice?: TaxInvoiceDocument;
 }
 
 export interface BasketTotals extends BillTotals {
   /** Promotion discount applied to the basket, on top of any line discounts. */
   readonly promotionDiscount: Money;
-  /** total − promotionDiscount (what the customer pays). */
+  /** total − promotionDiscount (what the customer pays) — in real trading, less what OB-279/OB-285 take off (never more). */
   readonly payable: Money;
   readonly lineCount: number;
+  /**
+   * OB-279 (real trading only): what rounding the bill's CGST and SGST to the rupee adds (+) or takes off (−), already in
+   * `payable`. Absent off real trading — the till charges exactly the lines, as before.
+   */
+  readonly roundOffMinor?: number;
 }
 
 export class EmptyBasketError extends Error {
@@ -771,11 +803,19 @@ export class PosSession {
     const currency = this.config.currency;
     const bill = sumLines(this.pricedLines(), currency);
     const promotionDiscount = this.promotionDiscount();
+    const goods = Math.max(0, bill.total.minor - promotionDiscount.minor);
+    // OB-279 · A10: in real trading the bill's CGST and SGST are each rounded to the rupee and the bill's total is the
+    // rounded total — OB-285: never above the lines' exact MRP-based total — so the customer is asked for exactly what the
+    // tax invoice will say, and never more than the goods. Off real trading: nothing changed.
+    const active = this.activeLines();
+    const roundOff = this.config.realTrading === undefined || goods === 0 ? undefined
+      : invoiceRoundOff(this.replacementLines().map((l, i) => ({ lineTotalMinor: l.lineTotalMinor, taxRateBps: active[i]?.taxRate.bps ?? 0 }))).totalLessGoodsMinor;
     return {
       ...bill,
       promotionDiscount,
-      payable: money(Math.max(0, bill.total.minor - promotionDiscount.minor), currency),
+      payable: money(goods + (roundOff ?? 0), currency),
       lineCount: this.activeLines().length,
+      ...(roundOff === undefined ? {} : { roundOffMinor: roundOff }),
     };
   }
 
@@ -990,7 +1030,9 @@ export class PosSession {
     const negative = recordLines.filter((l) => l.lineTotalMinor < 0);
     if (negative.length > 0) throw new BillArithmeticError(saleId, `line(s) ${negative.map((l) => l.productId).join(', ')} would be charged below zero`);
     const lineSum = recordLines.reduce((t, l) => t + l.lineTotalMinor, 0);
-    if (lineSum !== totals.payable.minor) throw new BillArithmeticError(saleId, `the lines add to ${lineSum} against a payable of ${totals.payable.minor}`);
+    // OB-279 · OB-285: in real trading the payable is the lines less what the rounding takes off — never above the lines.
+    const roundOff = totals.roundOffMinor ?? 0;
+    if (lineSum + roundOff !== totals.payable.minor || roundOff > 0) throw new BillArithmeticError(saleId, `the lines add to ${lineSum} against a payable of ${totals.payable.minor}`);
     const inside = recordLines.reduce(
       (acc, l) => {
         const split = splitInclusive(money(l.lineTotalMinor, totals.payable.currency), rate(l.taxRateBps));
@@ -1029,6 +1071,32 @@ export class PosSession {
     // it. Whether another sale already holds it is the store computer's to say, from its own logs, before ITS disk.
     const oldBill = oldErpBillRefusal({ mirrorOn: this.config.mirrorPilot === true, value: extra.oldErpBillNumber });
     if (oldBill !== undefined) throw new LocalCommitRefusedError(saleId, oldBill.laneMessage);
+    // OB-271: in REAL TRADING the bill is the legal tax invoice — assembled and checked (A1 · Rule 46) HERE, before the disk
+    // and before the money, from the shop's legal identity and the lines exactly as they are about to be saved. A missing
+    // field refuses the sale; nothing is asked of any network (hard rule #1). Off (the mirror pilot, or not set): skipped.
+    let taxInvoice: TaxInvoiceDocument | undefined;
+    if (this.config.realTrading !== undefined) {
+      if (this.config.mirrorPilot === true) throw new LocalCommitRefusedError(saleId, REAL_TRADING_AND_MIRROR_WORDS);
+      // Audit A9: a card or UPI payment on the shop's own machine carries the machine's approval / reference number, so the
+      // day can be matched against the machine's slip. The store computer checks it against its own record again.
+      for (const t of input.tenders) {
+        if (t.kind !== 'card' && t.kind !== 'upi') continue;
+        const ref = readMachineReference(t.machineRef);
+        if (!ref.ok) throw new LocalCommitRefusedError(saleId, `${ref.laneMessage} Nothing was saved.`);
+      }
+      const built = buildTaxInvoice({
+        identity: this.config.realTrading.identity, number, committedAt, laneId, cashierId,
+        lines: recordLines.map((l, i) => ({
+          description: active[i]?.description ?? '', ...(l.hsnCode === undefined ? {} : { hsnCode: l.hsnCode }),
+          quantityMinor: l.quantityMinor, uom: l.uom, unitPriceMinor: l.unitPriceMinor, lineTotalMinor: l.lineTotalMinor, taxRateBps: l.taxRateBps,
+        })),
+        tenders: input.tenders.map((t) => ({ kind: t.kind, amountMinor: t.amount.minor, ...(t.machineRef === undefined ? {} : { machineRef: t.machineRef }) })),
+        // OB-279: the invoice's rounded total must be exactly what the till is about to charge.
+        totalMinor: totals.payable.minor,
+      });
+      if (!built.ok) throw new TaxInvoiceRefusedError(saleId, built.laneMessage, built.problems);
+      taxInvoice = built.doc;
+    }
 
     // **The disk, before anything else is true.**
     //
@@ -1058,6 +1126,8 @@ export class PosSession {
       total: totals.payable.minor,
       netMinor: inside.net,
       taxMinor: inside.tax,
+      // OB-279 · OB-285: what the bill is below its lines (0 or less, never above) — total = lines + round off.
+      ...(roundOff === 0 ? {} : { roundOffMinor: roundOff }),
       currency: totals.payable.currency,
       // OB-264: the old ERP's bill number, on every mirror sale — so a mirror refund finds this sale by it.
       ...(extra.oldErpBillNumber === undefined || this.config.mirrorPilot !== true ? {} : { oldErpBillNumber: extra.oldErpBillNumber }),
@@ -1096,7 +1166,8 @@ export class PosSession {
         })),
         taxBands: [...bands.entries()].sort((a, b) => a[0] - b[0]).map(([rateBps, b]) => ({ rateBps, netMinor: b.net, taxMinor: b.tax })),
         netMinor: inside.net, taxMinor: inside.tax, totalMinor: totals.payable.minor,
-        tenders: input.tenders.map((t) => ({ kind: t.kind, amountMinor: t.amount.minor })),
+        tenders: input.tenders.map((t) => ({ kind: t.kind, amountMinor: t.amount.minor, ...(t.machineRef === undefined ? {} : { machineRef: t.machineRef }) })),
+        ...(taxInvoice === undefined ? {} : { taxInvoice }),
       });
       return sale;
     };

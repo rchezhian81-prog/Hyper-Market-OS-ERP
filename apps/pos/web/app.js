@@ -257,6 +257,41 @@ const WORDS = {
     exchangeCreditOnly: 'The credit for the goods coming back is recorded, but the replacement sale was NOT rung. Do not hand over the new goods — get the manager to complete the exchange.',
     declinedMsg: 'The payment was declined. The sale is NOT complete — do not hand over the goods. Ask for another payment method.',
     noAnswerMsg: 'The card machine has not answered, so we do not know whether the customer has paid. The sale is NOT complete — do not hand over the goods. Check the machine, and if it is unclear, ask the manager before trying again.',
+    // OB-271: real trading — the legal tax invoice on paper, the card machine's approval number, a card refund on the machine.
+    realTradingStrip: 'Real trading: this till\'s bill is the legal GST tax invoice. After each sale press "Print bill" and give the paper to the customer.',
+    printBill: 'Print bill',
+    printDuplicate: 'Print again (DUPLICATE)',
+    reprintOption: 'Reprint the last bill',
+    reprintTitle: 'Last bill {number}',
+    printFailedTitle: 'The bill did not print',
+    printFailed: 'The sale is saved. The bill did not print — check the printer is on and has paper, then press "Print bill" again.',
+    invoiceRefusedTitle: 'Not a legal bill — NOT saved',
+    machineRefTitle: 'Approval / Auth code / RRN',
+    machineRefHint: 'Type the approval / auth code or the RRN / UPI reference from the machine\'s slip or the UPI screen (4 to 20 letters or digits). Never the card number.',
+    machineRefNotValid: 'That is not an approval / auth code or RRN: it must be 4 to 20 letters or digits. Check the machine\'s slip and type it again.',
+    machineRefCardLike: 'That looks like a CARD NUMBER. A card number is never typed or kept. Type the approval / auth code or the RRN from the machine\'s slip.',
+    machineRefMissing: 'Type the approval or reference number the machine printed for this payment.',
+    machineRefStuck: 'The machine said approved, so the money may be taken. Type its approval number from the slip (the machine can reprint its last slip). Do not run the card again.',
+    machineRefAgain: 'Type the number again',
+    machineRefLost: 'I cannot find it — mark the payment as not known',
+    cardRefundTitle: 'Refund on the card machine',
+    cardRefundDo: 'Do this refund of {amount} on the shop\'s card machine (or the UPI app) now. Then type the refund reference it prints; a manager checks it with their own PIN.',
+    cardRefundDoneOnMachine: 'Done on the machine — type its reference',
+    cardRefundNotYet: 'Not done yet',
+    cardRefundRefTitle: 'Refund reference from the machine',
+    cardRefundRefHint: 'The approval / auth code or RRN the machine printed for the refund (4 to 20 letters or digits). Never the card number.',
+    cardRefundCheck: 'What did you check?',
+    cardRefundDone: 'Recorded: the refund of {amount} was done on the machine (reference {ref}), checked by {by}.',
+    cardRefundLater: 'Not recorded. The refund stays PENDING until it is done on the machine and recorded here — tell the manager.',
+    cardListOption: 'Card and UPI today (to match the machine\'s slip)',
+    cardListTitle: 'Card and UPI payments today',
+    cardListEmpty: 'No card or UPI payments on this till today.',
+    cardListNotKnown: 'The store computer did not answer, so the list is not known. Try again.',
+    cardListPaid: 'Paid — match each against the machine\'s settlement slip',
+    cardListRefunds: 'Refunds done on the machine',
+    cardListUnresolved: 'Not known yet (no answer from the machine)',
+    cardListTotal: 'Total',
+    cardListNoRef: 'no number',
   },
   ta: {
     staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. பில் போடுவது வேலை செய்யும். இந்த விலைப் பட்டியல் இந்த லேனுக்குக் கடைசியாகக் கொடுக்கப்பட்டது:',
@@ -421,10 +456,77 @@ const WORDS = {
     exchangeCreditOnly: 'திரும்பும் பொருட்களுக்கான வரவு பதிவு செய்யப்பட்டது, ஆனால் மாற்று விற்பனை பில் செய்யப்படவில்லை. புதிய பொருட்களைக் கொடுக்க வேண்டாம் — பரிமாற்றத்தை முடிக்க மேலாளரை அழைக்கவும்.',
     declinedMsg: 'பணம் மறுக்கப்பட்டது. விற்பனை முடியவில்லை — பொருட்களைக் கொடுக்க வேண்டாம். வேறு முறையில் பணம் கேட்கவும்.',
     noAnswerMsg: 'கார்டு இயந்திரம் பதில் சொல்லவில்லை. வாடிக்கையாளர் பணம் செலுத்தினாரா என்று தெரியவில்லை. விற்பனை முடியவில்லை — பொருட்களைக் கொடுக்க வேண்டாம். இயந்திரத்தைச் சரிபார்க்கவும்; தெளிவில்லை என்றால் மேலாளரிடம் கேட்கவும்.',
+    realTradingStrip: 'உண்மை வியாபாரம்: இந்தக் கல்லாவின் பில் சட்டப்படியான GST வரி விலைப்பட்டியல். ஒவ்வொரு விற்பனைக்குப் பிறகும் "பில் அச்சிடு" அழுத்தி, அச்சிட்ட பில்லை வாடிக்கையாளரிடம் கொடுக்கவும்.',
+    printBill: 'பில் அச்சிடு',
+    printDuplicate: 'மீண்டும் அச்சிடு (நகல்)',
+    reprintOption: 'கடைசி பில்லை மீண்டும் அச்சிடு',
+    reprintTitle: 'கடைசி பில் {number}',
+    printFailedTitle: 'பில் அச்சாகவில்லை',
+    printFailed: 'விற்பனை சேமிக்கப்பட்டது. பில் அச்சாகவில்லை — பிரிண்டர் இயங்குகிறதா, காகிதம் உள்ளதா என்று பார்த்து, மீண்டும் "பில் அச்சிடு" அழுத்தவும்.',
+    invoiceRefusedTitle: 'சட்டப்படியான பில் அல்ல — சேமிக்கப்படவில்லை',
+    machineRefTitle: 'அனுமதி / அங்கீகாரக் குறியீடு / RRN',
+    machineRefHint: 'இயந்திரச் சீட்டில் அல்லது UPI திரையில் உள்ள அனுமதி / அங்கீகாரக் குறியீடு அல்லது RRN / UPI குறிப்பு எண்ணை உள்ளிடவும் (4 முதல் 20 எழுத்துகள் அல்லது இலக்கங்கள்). கார்டு எண்ணை ஒருபோதும் உள்ளிட வேண்டாம்.',
+    machineRefNotValid: 'இது அனுமதி / அங்கீகாரக் குறியீடு அல்லது RRN அல்ல: 4 முதல் 20 எழுத்துகள் அல்லது இலக்கங்கள் இருக்க வேண்டும். இயந்திரச் சீட்டைப் பார்த்து மீண்டும் உள்ளிடவும்.',
+    machineRefCardLike: 'இது கார்டு எண் போல் உள்ளது. கார்டு எண் ஒருபோதும் உள்ளிடப்படுவதோ சேமிக்கப்படுவதோ இல்லை. சீட்டில் உள்ள அனுமதிக் குறியீடு அல்லது RRN-ஐ உள்ளிடவும்.',
+    machineRefMissing: 'இந்தப் பணத்திற்கு இயந்திரம் அச்சிட்ட அனுமதி அல்லது குறிப்பு எண்ணை உள்ளிடவும்.',
+    machineRefStuck: 'இயந்திரம் அனுமதித்தது, எனவே பணம் எடுக்கப்பட்டிருக்கலாம். சீட்டிலிருந்து அனுமதி எண்ணை உள்ளிடவும் (இயந்திரம் கடைசிச் சீட்டை மீண்டும் அச்சிடும்). கார்டை மீண்டும் தேய்க்க வேண்டாம்.',
+    machineRefAgain: 'எண்ணை மீண்டும் உள்ளிடு',
+    machineRefLost: 'எண் கிடைக்கவில்லை — பணத்தைத் தெரியாதது எனக் குறி',
+    cardRefundTitle: 'கார்டு இயந்திரத்தில் திரும்பப் பணம்',
+    cardRefundDo: 'இந்த {amount} திரும்பப் பணத்தை இப்போது கடையின் கார்டு இயந்திரத்தில் (அல்லது UPI செயலியில்) செய்யவும். பிறகு அது அச்சிடும் குறிப்பு எண்ணை உள்ளிடவும்; மேலாளர் தனது PIN-உடன் சரிபார்ப்பார்.',
+    cardRefundDoneOnMachine: 'இயந்திரத்தில் செய்யப்பட்டது — குறிப்பு எண்ணை உள்ளிடு',
+    cardRefundNotYet: 'இன்னும் செய்யவில்லை',
+    cardRefundRefTitle: 'இயந்திரத்தின் திரும்பப் பணக் குறிப்பு எண்',
+    cardRefundRefHint: 'திரும்பப் பணத்திற்கு இயந்திரம் அச்சிட்ட அனுமதி / அங்கீகாரக் குறியீடு அல்லது RRN (4 முதல் 20 எழுத்துகள் அல்லது இலக்கங்கள்). கார்டு எண் அல்ல.',
+    cardRefundCheck: 'நீங்கள் எதைச் சரிபார்த்தீர்கள்?',
+    cardRefundDone: 'பதிவு செய்யப்பட்டது: {amount} திரும்பப் பணம் இயந்திரத்தில் செய்யப்பட்டது (குறிப்பு {ref}), சரிபார்த்தவர் {by}.',
+    cardRefundLater: 'பதிவு செய்யப்படவில்லை. இயந்திரத்தில் செய்து இங்கே பதிவு செய்யும் வரை திரும்பப் பணம் நிலுவையில் இருக்கும் — மேலாளரிடம் சொல்லவும்.',
+    cardListOption: 'இன்றைய கார்டு மற்றும் UPI (இயந்திரச் சீட்டுடன் ஒப்பிட)',
+    cardListTitle: 'இன்றைய கார்டு மற்றும் UPI பணங்கள்',
+    cardListEmpty: 'இன்று இந்தக் கல்லாவில் கார்டு அல்லது UPI பணம் இல்லை.',
+    cardListNotKnown: 'கடை கணினி பதில் தரவில்லை, எனவே பட்டியல் தெரியவில்லை. மீண்டும் முயலவும்.',
+    cardListPaid: 'செலுத்தப்பட்டவை — ஒவ்வொன்றையும் இயந்திரத்தின் தீர்வுச் சீட்டுடன் ஒப்பிடவும்',
+    cardListRefunds: 'இயந்திரத்தில் செய்த திரும்பப் பணம்',
+    cardListUnresolved: 'இன்னும் தெரியாதவை (இயந்திரத்திடமிருந்து பதில் இல்லை)',
+    cardListTotal: 'மொத்தம்',
+    cardListNoRef: 'எண் இல்லை',
   },
 };
 let lang = 'en';
 const t = (key) => WORDS[lang][key] ?? WORDS.en[key];
+
+/**
+ * OB-271: why a real-trading bill is not a legal tax invoice, in Tamil — by the model's problem codes (`TaxInvoiceRefusedError`).
+ * In English the model's own sentence is shown unchanged.
+ */
+const INVOICE_PROBLEM_TA = Object.freeze({
+  lead: 'இந்த பில்லை சட்டப்படியான வரி விலைப்பட்டியலாக வழங்க முடியாது, எனவே சேமிக்கப்படவில்லை — பணம் வாங்க வேண்டாம்.',
+  supplier_legal_name: 'கடையின் சட்டப்பூர்வ பெயர் அமைக்கப்படவில்லை',
+  supplier_address: 'கடையின் முகவரி அமைக்கப்படவில்லை',
+  supplier_gstin: 'கடையின் GSTIN அமைக்கப்படவில்லை அல்லது சரியானதல்ல',
+  place_of_supply: 'GSTIN-இலிருந்து மாநிலத்தைப் படிக்க முடியவில்லை',
+  invoice_number: 'பில் எண் சரியான விலைப்பட்டியல் எண் அல்ல',
+  invoice_date: 'பில்லின் தேதியைப் படிக்க முடியவில்லை',
+  line_description: 'ஒரு பொருளுக்குப் பெயர் இல்லை',
+  line_quantity: 'ஒரு பொருளுக்கு அளவு இல்லை',
+  line_unit: 'ஒரு பொருளுக்கு அலகு இல்லை',
+  line_hsn: 'ஒரு பொருளுக்கு HSN குறியீடு இல்லை',
+  line_hsn_digits: 'ஒரு பொருளின் HSN குறியீடு சிறியது (குறைந்தது 6 இலக்கம் தேவை)',
+  line_rate: 'ஒரு பொருளின் GST விகிதத்தை CGST, SGST எனப் பிரிக்க முடியவில்லை',
+  line_taxable_value: 'ஒரு பொருளுக்கு மதிப்பு இல்லை',
+  recipient_details: 'பில் ₹50,000 அல்லது அதற்கு மேல் — வாடிக்கையாளரின் பெயரும் முகவரியும் தேவை; பழைய அமைப்பில் பில் செய்யவும்',
+  totals: 'GST-யும் மதிப்புகளும் மொத்தத்துடன் பொருந்தவில்லை',
+});
+
+/** A sale the till refused, as the screen says it: a refused tax invoice gets its own heading (and Tamil words). */
+function saleRefusal(e) {
+  if (e && e.name === 'TaxInvoiceRefusedError' && Array.isArray(e.problems)) {
+    if (lang !== 'ta') return { title: t('invoiceRefusedTitle'), words: e.laneMessage };
+    const parts = [...new Set(e.problems.map((p) => INVOICE_PROBLEM_TA[p.code] || p.words))];
+    return { title: t('invoiceRefusedTitle'), words: `${INVOICE_PROBLEM_TA.lead} ${parts.join('; ')}.` };
+  }
+  return { title: e && e.notSavedTitle ? t('notSavedTitle') : t('read'), words: e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e) };
+}
 
 /** Void reasons, preset. Free text at a till is a reason nobody can report on afterwards (M15). */
 const VOID_REASONS = [
@@ -538,6 +640,8 @@ const session = window.posSession ?? demoSession();
 const guestOnly = () => !!(session.guestSalesOnly && session.guestSalesOnly());
 /** OB-256 · OB-258: this till is in the mirror pilot — "Paid on old system" is then its only tender, for sales and refunds. */
 const mirror = () => !!(session.mirrorPilot && session.mirrorPilot());
+// OB-271: real trading — off during the mirror pilot; when off, nothing below changes what the till does.
+const realTradingOn = () => !!(session.realTrading && session.realTrading());
 /** How a refund may be given on this till: in the mirror pilot only "Paid on old system"; never store credit when guest-only. */
 function refundTenders() {
   if (mirror()) return [{ value: 'paid_on_old_erp', label: t('paidOnOld') }];
@@ -669,7 +773,7 @@ const SUCCESS = 'success';
 const STOP = 'stop';
 const TONE_MARK = Object.freeze({ [SUCCESS]: 'circle-check', [STOP]: 'circle-alert' });
 const toneMarks = {};
-function tell(title, message, tone = STOP, bill = null) {
+function tell(title, message, tone = STOP, bill = null, printable = false) {
   const kind = tone === SUCCESS ? SUCCESS : STOP;
   if (!toneMarks[kind]) toneMarks[kind] = mark(TONE_MARK[kind], 28);
   const words = document.createElement('span');
@@ -682,6 +786,14 @@ function tell(title, message, tone = STOP, bill = null) {
   slip.textContent = bill ?? '';
   slip.hidden = bill === null;
   slip.setAttribute('aria-label', t('receiptPreview'));
+  // OB-271: after a real-trading sale, "Print bill" — and, once it has printed, "Print again (DUPLICATE)".
+  const actions = el('print-actions');
+  if (actions) {
+    actions.hidden = !printable;
+    el('print-bill').textContent = t('printBill');
+    el('print-duplicate').textContent = t('printDuplicate');
+    el('print-duplicate').hidden = !printable || !printedBills.has(lastInvoiceNumber());
+  }
   el('refusal').hidden = false;
   el('refusal-ok').textContent = t('ok');
   el('refusal-ok').focus();
@@ -1333,14 +1445,15 @@ el('tender').addEventListener('click', async () => {
     // on this till's disk (hard rule #1). There is nothing to print with before then.
     const sold = huidLines();
     const receipt = await session.tenderCash(`S-${receiptNumber}`, receiptNumber, new Date().toISOString()).catch(lostAnswer);
-    tell(`${t('changeDue')}: ${inr(change)}`, withReceiptNotice(withHuids(receipt, sold)), SUCCESS, printedBill());
+    tell(`${t('changeDue')}: ${inr(change)}`, withReceiptNotice(withHuids(receipt, sold)), SUCCESS, saleBill(), realTradingOn());
     session.newSale();
     void refreshBadge();
     selectedLineId = null;
     render();
   } catch (e) {
-    // The model's words, unchanged.
-    tell(e && e.notSavedTitle ? t('notSavedTitle') : t('read'), e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e), STOP);
+    // The model's words, unchanged (a refused tax invoice gets its own heading, and its Tamil words — OB-271).
+    const said = saleRefusal(e);
+    tell(said.title, said.words, STOP);
   }
 });
 
@@ -1425,6 +1538,73 @@ function printedBill() {
   return made && made.ok ? made.lines.join('\n') : `${t('receiptNotMade')}: ${made && made.why ? made.why : ''}`;
 }
 
+/**
+ * OB-271: the bill shown after a sale. In real trading it is the TAX INVOICE as it prints (every Rule 46 field, checked on
+ * the render); otherwise exactly the bill as before.
+ */
+function saleBill() {
+  if (!realTradingOn() || typeof session.taxInvoice !== 'function') return printedBill();
+  const made = session.taxInvoice({ language: lang });
+  return made && made.ok ? made.lines.join('\n') : `${t('receiptNotMade')}: ${made && made.why ? made.why : ''}`;
+}
+
+/** OB-271: the bill numbers this page has printed at least once — a further print is marked DUPLICATE (Rule 46 practice). */
+const printedBills = new Set();
+function lastInvoiceNumber() {
+  if (typeof session.taxInvoice !== 'function') return null;
+  const made = session.taxInvoice();
+  return made && made.ok ? made.number : null;
+}
+
+/** One printed row of the invoice as a node, tagged with the Rule 46 field(s) it carries. */
+function printRow(row) {
+  const node = document.createElement('div');
+  node.className = `pr-${row.kind}`;
+  if (row.fields.length > 0) node.dataset.field = row.fields.join(' ');
+  if (row.kind === 'pair' || (row.kind === 'title' && row.left !== undefined)) {
+    node.classList.add('pr-split');
+    const left = document.createElement('span');
+    left.textContent = row.left ?? '';
+    const right = document.createElement('span');
+    right.textContent = row.right ?? '';
+    node.append(left, right);
+  } else if (row.kind !== 'rule') {
+    node.textContent = row.text ?? '';
+  }
+  return node;
+}
+
+/**
+ * OB-271 — print the bill on paper: the browser's own print, through the printer's Windows driver, so Tamil prints with
+ * the computer's own fonts (ADR-0027). The sale is already saved: a print that fails never undoes or blocks it, and the
+ * bill stays printable. The first print of a bill is the original; every later one is marked DUPLICATE.
+ */
+function printBill(askedDuplicate) {
+  if (typeof session.taxInvoice !== 'function') return;
+  const number = lastInvoiceNumber();
+  const duplicate = askedDuplicate === true || (number !== null && printedBills.has(number));
+  const made = session.taxInvoice({ language: lang, duplicate });
+  if (!made || !made.ok) { tell(t('read'), `${t('receiptNotMade')}: ${made && made.why ? made.why : ''}`, STOP); return; }
+  const area = el('print-area');
+  area.className = `print-area paper-${made.paperWidthMm}`;
+  area.dataset.copy = duplicate ? 'duplicate' : 'original';
+  area.dataset.number = made.number;
+  area.lang = lang;
+  area.replaceChildren(...made.rows.map(printRow));
+  try {
+    window.print();
+    printedBills.add(made.number);
+    el('print-duplicate').hidden = false;
+  } catch {
+    // The sale stands; the paper did not come. Said, and the bill stays on screen to print again.
+    tell(t('printFailedTitle'), t('printFailed'), STOP, made.lines.join('\n'), true);
+  }
+}
+if (el('print-bill')) {
+  el('print-bill').addEventListener('click', () => { printBill(false); });
+  el('print-duplicate').addEventListener('click', () => { printBill(true); });
+}
+
 function withReceiptNotice(receipt) {
   const notice = session.receiptNotice ? session.receiptNotice() : undefined;
   return notice ? `${receipt}\n\n${notice}` : receipt;
@@ -1449,6 +1629,32 @@ function withReceiptNotice(receipt) {
  * already confirmed for this bill is used, not charged again. Resolves to the payment's reference, or `null` (not paid —
  * the screen has said why). The stand-in shell (no bundle) only asks what the machine said.
  */
+/** OB-271: the machine's approval / reference number typed for each approved attempt on this page, by attempt id. */
+const machineRefs = new Map();
+
+/**
+ * OB-271 · audit A9 — in real trading, the approval or reference number the shop's own machine printed, typed from the slip
+ * and judged by the same rule the store computer runs (OB-274: 4–20 letters or digits, any machine; anything card-like refused, never echoed).
+ * The machine already said approved, so there is no plain Cancel: the cashier types it again, or — if it truly cannot be
+ * found — marks the payment as NOT KNOWN (it then holds the day close until the manager settles it). Resolves the kept
+ * number, or `null` for "not known".
+ */
+async function askMachineRef() {
+  let hint = t('machineRefHint');
+  for (;;) {
+    const typed = await ask({ title: t('machineRefTitle'), mode: 'text', hint, initial: '' });
+    if (typed === null) {
+      const what = await choose(t('machineRefStuck'), [{ value: 'again', label: t('machineRefAgain') }, { value: 'lost', label: t('machineRefLost') }]);
+      if (what === 'lost') return null;
+      hint = t('machineRefHint');
+      continue;
+    }
+    const read = session.readMachineRef(String(typed));
+    if (read.ok) return read.value;
+    hint = t({ machine_ref_looks_like_card: 'machineRefCardLike', machine_ref_missing: 'machineRefMissing' }[read.refusedBecause] || 'machineRefNotValid');
+  }
+}
+
 async function cardAttempt(kind, amountMinor) {
   const machine = () => choose(`${t('tapTerminal')} — ${inr(amountMinor)}`, [
     { value: 'approved', label: t('approved'), icon: 'circle-check' },
@@ -1470,14 +1676,25 @@ async function cardAttempt(kind, amountMinor) {
     if (checked.state === 'recovered_paid') return checked.attemptId;
     started = await session.startCardPayment(kind, amountMinor);
   }
-  if (!started.ok && started.refusedBecause === 'already_paid_on_this_bill' && started.attemptId) return started.attemptId;
+  if (!started.ok && started.refusedBecause === 'already_paid_on_this_bill' && started.attemptId) {
+    if (started.machineRef) machineRefs.set(started.attemptId, started.machineRef);
+    return started.attemptId;
+  }
   if (!started.ok || !started.attemptId) { tell(t('read'), started.laneMessage, STOP); return null; }
   const outcome = await machine();
   if (outcome === null) return null;
-  const answered = await session.answerCardPayment(started.attemptId, outcome);
+  // OB-271: in real trading "approved" carries the machine's own approval number; one that cannot be found is "not known".
+  let machineRef;
+  let said = outcome;
+  if (outcome === 'approved' && realTradingOn() && session.readMachineRef) {
+    machineRef = await askMachineRef();
+    if (machineRef === null) said = 'no_answer';
+  }
+  const answered = said === 'approved' && machineRef ? await session.answerCardPayment(started.attemptId, said, undefined, machineRef) : await session.answerCardPayment(started.attemptId, said);
   if (!answered.ok) { tell(t('read'), answered.laneMessage, STOP); return null; }
   // Said in the cashier's words: an unpaid sale does not commit, and the goods stay on the counter.
-  if (outcome !== 'approved') { tell(t('read'), outcome === 'declined' ? t('declinedMsg') : t('noAnswerMsg'), STOP); return null; }
+  if (said !== 'approved') { tell(t('read'), said === 'declined' ? t('declinedMsg') : t('noAnswerMsg'), STOP); return null; }
+  if (machineRef) machineRefs.set(started.attemptId, machineRef);
   return started.attemptId;
 }
 
@@ -1490,17 +1707,19 @@ async function takeCardOrUpi(kind, payable) {
   if (receiptNumber === null) return;
   try {
     const soldGold = huidLines();
+    const machineRef = ref ? machineRefs.get(ref) : undefined;
     const receipt = await session.tenderCardOrUpi({
       saleId: `S-${receiptNumber}`, receiptNumber,
-      atIsoUtc: new Date().toISOString(), kind, outcome, ...(ref ? { ref } : {}),
+      atIsoUtc: new Date().toISOString(), kind, outcome, ...(ref ? { ref } : {}), ...(machineRef ? { machineRef } : {}),
     }).catch(lostAnswer);
-    tell(`${t('approved')} — ${kind === 'card' ? t('card') : t('upi')}`, withReceiptNotice(withHuids(receipt, soldGold)), SUCCESS, printedBill());
+    tell(`${t('approved')} — ${kind === 'card' ? t('card') : t('upi')}`, withReceiptNotice(withHuids(receipt, soldGold)), SUCCESS, saleBill(), realTradingOn());
     session.newSale();
     void refreshBadge();
     selectedLineId = null;
     render();
   } catch (e) {
-    tell(e && e.notSavedTitle ? t('notSavedTitle') : t('read'), e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e), STOP);
+    const said = saleRefusal(e);
+    tell(said.title, said.words, STOP);
   }
 }
 
@@ -1553,7 +1772,7 @@ async function splitPayment(payable) {
     if (kind === 'card' || kind === 'upi') {
       const ref = await cardAttempt(kind, amountMinor);
       if (ref === null) return;
-      parts.push({ kind, amountMinor, ...(ref ? { ref } : {}) });
+      parts.push({ kind, amountMinor, ...(ref ? { ref } : {}), ...(ref && machineRefs.get(ref) ? { machineRef: machineRefs.get(ref) } : {}) });
     } else if (kind === 'cash') {
       // Cash over what is owed is change: the bill records what it covered, the drawer the change handed back.
       const covered = Math.min(amountMinor, remaining);
@@ -1570,13 +1789,14 @@ async function splitPayment(payable) {
   try {
     const soldGold = huidLines();
     const receipt = await session.tenderSplit({ saleId: `S-${receiptNumber}`, receiptNumber, atIsoUtc: new Date().toISOString(), parts }).catch(lostAnswer);
-    tell(change > 0 ? `${t('changeDue')}: ${inr(change)}` : t('approved'), withReceiptNotice(withHuids(receipt, soldGold)), SUCCESS, printedBill());
+    tell(change > 0 ? `${t('changeDue')}: ${inr(change)}` : t('approved'), withReceiptNotice(withHuids(receipt, soldGold)), SUCCESS, saleBill(), realTradingOn());
     session.newSale();
     void refreshBadge();
     selectedLineId = null;
     render();
   } catch (e) {
-    tell(e && e.notSavedTitle ? t('notSavedTitle') : t('read'), e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e), STOP);
+    const said = saleRefusal(e);
+    tell(said.title, said.words, STOP);
   }
 }
 
@@ -1596,6 +1816,10 @@ el('more').addEventListener('click', async () => {
     // PF-05: a held basket can be given up, with a reason — offered only when the store computer holds one for this till.
     ...(session.abandonAtTill && heldCount > 0 ? [{ value: 'give_up', label: t('giveUp') }] : []),
     ...(cash === null || cash.shiftOpen ? [{ value: 'close', label: t('closeTill') }] : []),
+    // OB-271 · audit A9: today's card/UPI payments with the machine's numbers — real trading only.
+    ...(realTradingOn() && session.cardPayments ? [{ value: 'card_list', label: t('cardListOption') }] : []),
+    // OB-271: the last bill stays printable — a reprint is marked DUPLICATE once it has printed.
+    ...(realTradingOn() && lastInvoiceNumber() !== null ? [{ value: 'reprint', label: t('reprintOption') }] : []),
     // SUPERVISOR OVERRIDES (PF-07 · M12-FR-04): each needs a manager's approval and is recorded on the store computer
     // first. Changing a price needs a selected line.
     ...(session.noSaleAtTill ? [{ value: 'no_sale', label: t('noSale') }] : []),
@@ -1612,6 +1836,8 @@ el('more').addEventListener('click', async () => {
   if (what === 'exchange') return startExchange();
   if (what === 'no_receipt') return startNoReceiptReturn();
   if (what === 'close') return closeTheTill();
+  if (what === 'card_list') { tell(t('cardListTitle'), '', SUCCESS, await cardListText()); return undefined; }
+  if (what === 'reprint') { tell(t('reprintTitle').replace('{number}', lastInvoiceNumber() ?? ''), '', SUCCESS, saleBill(), true); return undefined; }
   if (what === 'give_up') return giveUpHeldBasket();
   if (what === 'member') return nameLoyaltyMember();
   if (what === 'guest_only') { tell(t('guestOnlyTitle'), t('guestOnlyMsg'), STOP); return undefined; }
@@ -1885,7 +2111,7 @@ async function startRefund() {
     tell(t('refundStop'), e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e), STOP);
     return;
   }
-  showRefundOutcome(outcome, refundTender);
+  await afterRefund(outcome, refundTender, returnId);
   render();
 }
 
@@ -1971,6 +2197,7 @@ async function startExchange() {
       if (ref === null) return;
       settlement.topUp.outcome = 'approved';
       if (ref) settlement.topUp.ref = ref;
+      if (ref && machineRefs.get(ref)) settlement.topUp.machineRef = machineRefs.get(ref);
     }
   } else {
     const refundTender = await choose(`${credit} — ${t('exchangeRefunds')}: ${inr(quote.balanceMinor)} — ${t('refundHow')}`, [
@@ -2128,8 +2355,65 @@ async function startNoReceiptReturn() {
     tell(t('refundStop'), e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e), STOP);
     return;
   }
-  showRefundOutcome(outcome, refundTender);
+  await afterRefund(outcome, refundTender, returnId);
   render();
+}
+
+/**
+ * OB-271 · audit A11: a refund's outcome — and in REAL TRADING, a refund to a card or UPI is then DONE on the shop's own
+ * machine: the cashier types the machine's refund reference and a manager checks it with their own PIN; the store computer
+ * records it (once, for exactly that refund and amount) instead of leaving it "pending" forever. Off: exactly as before.
+ */
+const CARD_REFUND_REASONS = [{ code: 'refund_done_on_machine', en: 'Refund seen on the machine\'s slip', ta: 'இயந்திரச் சீட்டில் திரும்பப் பணம் பார்க்கப்பட்டது' }];
+async function afterRefund(outcome, refundTender, returnId) {
+  if (!realTradingOn() || outcome.kind !== 'pending' || (refundTender !== 'card' && refundTender !== 'upi') || !session.recordCardRefundOnMachine) {
+    showRefundOutcome(outcome, refundTender);
+    return;
+  }
+  const amount = inr(outcome.refundMinor);
+  const what = await choose(t('cardRefundDo').replace('{amount}', amount), [
+    { value: 'done', label: t('cardRefundDoneOnMachine') },
+    { value: 'later', label: t('cardRefundNotYet') },
+  ]);
+  if (what !== 'done') { tell(t('refundPending'), t('cardRefundLater'), STOP); return; }
+  let hint = t('cardRefundRefHint');
+  let machineRef = null;
+  for (;;) {
+    const typed = await ask({ title: t('cardRefundRefTitle'), mode: 'text', hint, initial: '' });
+    if (typed === null) { tell(t('refundPending'), t('cardRefundLater'), STOP); return; }
+    const read = session.readMachineRef(String(typed));
+    if (read.ok) { machineRef = read.value; break; }
+    hint = t({ machine_ref_looks_like_card: 'machineRefCardLike', machine_ref_missing: 'machineRefMissing' }[read.refusedBecause] || 'machineRefNotValid');
+  }
+  const approval = await managerApproves({ kind: 'card_refund_on_machine', billRef: returnId, valueMinor: outcome.refundMinor, hint: t('refundManagerHint'), reasons: CARD_REFUND_REASONS, reasonTitle: 'cardRefundCheck' });
+  if (approval === null) { tell(t('refundPending'), t('cardRefundLater'), STOP); return; }
+  const r = await session.recordCardRefundOnMachine({ returnId, refundMinor: outcome.refundMinor, refundTender, machineRef, approval });
+  if (!r.ok) { tell(t('refundPending'), `${r.laneMessage}\n${t('cardRefundLater')}`, STOP); return; }
+  tell(t('refundDone'), t('cardRefundDone').replace('{amount}', amount).replace('{ref}', machineRef).replace('{by}', approval.by), SUCCESS);
+}
+
+/**
+ * OB-271 · audit A9: today's card and UPI payments on this till, each with the machine's approval number, and the card
+ * refunds done on the machine — as the store computer recorded them, to match against the machine's settlement slip.
+ */
+async function cardListText() {
+  if (!session.cardPayments) return null;
+  const list = await session.cardPayments();
+  if (list === null) return t('cardListNotKnown');
+  if (list.paid.length === 0 && list.unresolved.length === 0 && list.refundsOnMachine.length === 0) return t('cardListEmpty');
+  const kindOf = (k) => (k === 'upi' ? t('upi') : t('card'));
+  const out = [t('cardListPaid')];
+  for (const p of list.paid) out.push(`${clock(p.askedAt)}  ${kindOf(p.kind)}  ${inr(p.amountMinor)}  ${p.machineRef || t('cardListNoRef')}${p.saleId ? `  ${p.saleId}` : ''}`);
+  out.push(`${t('cardListTotal')}: ${inr(list.paid.reduce((n, p) => n + p.amountMinor, 0))}`);
+  if (list.unresolved.length > 0) {
+    out.push('', t('cardListUnresolved'));
+    for (const p of list.unresolved) out.push(`${clock(p.askedAt)}  ${kindOf(p.kind)}  ${inr(p.amountMinor)}`);
+  }
+  if (list.refundsOnMachine.length > 0) {
+    out.push('', t('cardListRefunds'));
+    for (const r of list.refundsOnMachine) out.push(`${clock(r.at)}  ${kindOf(r.kind)}  -${inr(r.amountMinor)}  ${r.machineRef}  ${r.returnId}`);
+  }
+  return out.join('\n');
 }
 
 /**
@@ -2184,7 +2468,9 @@ async function closeTheTill() {
         : `${t('short')} ${inr(-variance)}`;
     // A material difference is not a number to note down — it is an instruction to call the manager before the money is
     // put away. The store computer has recorded it and the cash office will see it.
-    tell(headline, result.exceptionRaised ? t('needsReason') : `${t('tillClosed')} — ${t('counted')}: ${inr(counted)}`, variance === 0 && !result.exceptionRaised ? SUCCESS : STOP);
+    // OB-271 · audit A9: in real trading the close also lists today's card/UPI payments with the machine's numbers.
+    const cards = realTradingOn() ? await cardListText() : null;
+    tell(headline, result.exceptionRaised ? t('needsReason') : `${t('tillClosed')} — ${t('counted')}: ${inr(counted)}`, variance === 0 && !result.exceptionRaised ? SUCCESS : STOP, cards);
   } catch (e) {
     // Nobody signed in, or no lane: refused before the store computer is asked, in the model's words (F09).
     tell(t('read'), e && e.laneMessage ? e.laneMessage : t('needsReason'), STOP);
@@ -2364,6 +2650,16 @@ function paintMirror() {
 }
 paintMirror();
 el('lang').addEventListener('click', paintMirror);
+
+// OB-271: real trading is SAID on the till whenever it is on (never during the mirror pilot).
+function paintRealTrading() {
+  const strip = el('real-trading');
+  if (!strip) return;
+  strip.hidden = !realTradingOn();
+  if (!strip.hidden) strip.textContent = t('realTradingStrip');
+}
+paintRealTrading();
+el('lang').addEventListener('click', paintRealTrading);
 
 // A8: a sale or refund that was still being checked when this page was reloaded is asked about before anything else.
 void resolveAfterReload();
