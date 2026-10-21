@@ -9,7 +9,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 - Built: the evening check from the old ERP's item-wise and bill-wise CSV reports (OB-263, OB-272, OB-273) on the migration screen, offline on the store box, with a one-time column mapping; every difference needs a reason before the day is signed (MG-10). Head office now numbers a re-recorded day's differences apart (old reasons never stick to new figures).
 - Still building: office-screen writes behind the office PIN, staff type their own new PIN, steadier tests (round 4B); real-trading preparation, switched off during the pilot (OB-271).
-- Waiting on the owner: the header row of each old ERP report; printer model and paper width; the card-slip approval-number name; OB-243 names.
+- Owner delegated four choices (21 Oct): any hardware through Windows drivers and one generic approval-number field (OB-274); no header rows needed, the mapping reads any names (OB-275); pilot department = packaged groceries, barcode only (OB-276); designation logins owner-01, store-manager-01, cashier-01, accountant-01, one person each (OB-277, closes OB-243).
 
 ## Mirror-pilot readiness, round 3 (20 October 2026) — gate: 13,238 unit/integration passed (16 skipped); 51 of 52 performance (one older timing test slow under load, passes alone); 468 browser passed; merged (PR #801) and deployed to the demo
 
