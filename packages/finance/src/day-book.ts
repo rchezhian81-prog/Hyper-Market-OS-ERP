@@ -207,7 +207,8 @@ function splitSale(sale: DayBookSale, taxRateOf: DayBookInput['taxRateOf']): Spl
     }
   }
   const roundOff = sale.roundOffMinor ?? 0;
-  if (!Number.isSafeInteger(roundOff) || Math.abs(roundOff) > 100 || lineSum + roundOff !== sale.totalMinor) {
+  // OB-285: a bill is never above its lines — a round off above 0 is refused, like one that does not add up.
+  if (!Number.isSafeInteger(roundOff) || roundOff > 0 || roundOff < -100 || lineSum + roundOff !== sale.totalMinor) {
     return refuse('lines_do_not_sum_to_total', `sale ${sale.saleId}: the lines add to ${lineSum}${roundOff === 0 ? '' : ` with a round off of ${roundOff}`} against a total of ${sale.totalMinor}`);
   }
   const tendered = sale.tenders.reduce((t, x) => t + x.amountMinor, 0);

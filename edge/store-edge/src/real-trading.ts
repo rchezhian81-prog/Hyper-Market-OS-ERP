@@ -39,7 +39,7 @@ export function realTradingSaleRefusal(record: Rec, identity: TaxInvoiceIdentity
         unitPriceMinor: num(o['unitPriceMinor']), lineTotalMinor: num(o['lineTotalMinor']), taxRateBps: num(o['taxRateBps']),
       };
     }),
-    // OB-279: the record's total must be the invoice's rounded total (the lines plus the round off), to the paisa.
+    // OB-279 · OB-285: the record's total must be the invoice's total (never above the lines), to the paisa.
     ...(typeof record['total'] === 'number' ? { totalMinor: record['total'] } : typeof record['totalMinor'] === 'number' ? { totalMinor: record['totalMinor'] } : {}),
   });
   return built.ok ? undefined : { refusedBecause: 'tax_invoice_incomplete', laneMessage: built.laneMessage };

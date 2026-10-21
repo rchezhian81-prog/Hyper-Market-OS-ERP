@@ -152,6 +152,19 @@ describe.each(backings)('OB-271 — a real-trading bill is a tax invoice from th
     expect(raw).toMatchObject({ committed: false, refusedBecause: 'tax_invoice_incomplete', laneMessage: expect.stringContaining('an item has no HSN code') });
     expect(await readLog(edge.log.path)).toHaveLength(0);
 
+    // ── OB-285: an older till's ₹106.00 for ₹105 of dal (the round off UP, above the MRP) — refused before the box's disk.
+    const number2 = await receiptNumberAt(edge.lane!.port, token);
+    const above = await (await fetch(`http://127.0.0.1:${edge.lane!.port}/lane/sales`, {
+      method: 'POST', headers: { 'content-type': 'application/json', ...operatorHeader(token) },
+      body: JSON.stringify({
+        id: `S-${number2}`, number: number2, laneId: 'lane-1', cashierId: 'u-mgr', tradingDay: new Date().toISOString().slice(0, 10), committedAt: new Date().toISOString(),
+        lines: [{ productId: 'P1', quantityMinor: 1, uom: 'ea', unitPriceMinor: 10_500, lineTotalMinor: 10_500, taxRateBps: 500, hsnCode: '071360' }],
+        tenders: [{ kind: 'cash', amount: { minor: 10_600, currency: 'INR' }, status: 'settled' }], total: 10_600, roundOffMinor: 100, netMinor: 10_000, taxMinor: 500, currency: 'INR',
+      }),
+    })).json() as { committed: boolean; refusedBecause?: string; laneMessage?: string };
+    expect(above).toMatchObject({ committed: false, refusedBecause: 'tax_invoice_incomplete', laneMessage: expect.stringContaining('do not add up') });
+    expect(await readLog(edge.log.path)).toHaveLength(0);
+
     // ── The till: the shop's GSTIN missing would refuse before the disk (its own check); with it, a card sale.
     const noGstin = bootPos({ laneId: 'lane-1', taxPercent: 5, lanePort: edge.lane!.port, catalogue: CATALOGUE, realTrading: true, taxInvoice: { legalName: LEGAL, gstin: '', placeOfBusiness: ADDRESS } });
     await signInTill(noGstin, 'u-lanecash');
@@ -179,8 +192,10 @@ describe.each(backings)('OB-271 — a real-trading bill is a tax invoice from th
     expect(invoice.lines.join('\n')).toEqual(expect.stringContaining('Paid: Card (approval A1B2C3)'));
     const [onDisk] = (await readLog(edge.log.path)).map((r) => (r.ok ? JSON.parse(r.record) as { tenders: unknown[]; total?: number; roundOffMinor?: number } : { tenders: [] }));
     expect(onDisk!.tenders).toEqual([expect.objectContaining({ kind: 'card', ref: started.attemptId, machineRef: 'A1B2C3' })]);
-    // OB-279: ₹105 at 5% — CGST and SGST ₹2.50 each, rounded up — the bill on the disk is ₹106.00, with its round off.
-    expect(onDisk).toMatchObject({ total: 10_600, roundOffMinor: 100 });
+    // OB-285: ₹105 at 5% — CGST and SGST ₹2.50 each still round up to ₹3, but the bill is never above the MRP: the bill on
+    // the disk is ₹105.00, its line, with nothing on top.
+    expect(onDisk).toMatchObject({ total: 10_500 });
+    expect(onDisk).not.toHaveProperty('roundOffMinor');
     for (const file of [edge.log.path, join(dir, 'payment-attempts.log')]) expect((await readLog(file)).map((r) => (r.ok ? r.record : '')).join('\n')).not.toContain(card);
     expect((await edge.syncOnce!()).dead).toBe(0);
 
@@ -209,15 +224,16 @@ describe.each(backings)('OB-271 — a real-trading bill is a tax invoice from th
     const lane = bootPos({ laneId: 'lane-1', taxPercent: 5, lanePort: edge.lane!.port, catalogue: CATALOGUE, realTrading: true, taxInvoice: PACK.policies.taxInvoice as never });
     await signInTill(lane, 'u-lanecash');
     const day = await lane.cardPayments();
-    expect(day?.paid).toEqual([expect.objectContaining({ kind: 'card', amountMinor: 10_600, machineRef: 'A1B2C3', saleId: `S-${r1}` })]);
+    expect(day?.paid).toEqual([expect.objectContaining({ kind: 'card', amountMinor: 10_500, machineRef: 'A1B2C3', saleId: `S-${r1}` })]);
     expect(day?.refundsOnMachine).toEqual([expect.objectContaining({ returnId: `RT-${rn}`, kind: 'card', amountMinor: 10_500, machineRef: 'R98765', approvedBy: 'u-mgr', by: 'u-lanecash' })]);
 
     // ── Head office has the sale with the machine's number, and the refund done on the machine with its reference.
     expect(await ok(call('GET', `/v1/sales/S-${r1}`, 'u-owner'), 'sale')).toMatchObject({ banked: true });
     const banked = (await h.store.readStream(T, STREAM.sales, { type: 'SaleCommitted' })).map((e) => e.event.payload as { saleId?: string; tenders?: unknown[] });
-    expect(banked.find((s) => s.saleId === `S-${r1}`)?.tenders).toEqual([expect.objectContaining({ kind: 'card', amountMinor: 10_600, machineRef: 'A1B2C3' })]);
-    // OB-279: banked as the rounded total — the line (₹105) plus the stated round off (+₹1) — with no mismatch raised.
-    expect(banked.find((s) => s.saleId === `S-${r1}`)).toMatchObject({ totalMinor: 10_600, roundOffMinor: 100 });
+    expect(banked.find((s) => s.saleId === `S-${r1}`)?.tenders).toEqual([expect.objectContaining({ kind: 'card', amountMinor: 10_500, machineRef: 'A1B2C3' })]);
+    // OB-285: banked at the MRP — the line (₹105), never ₹106 — with no mismatch raised.
+    expect(banked.find((s) => s.saleId === `S-${r1}`)).toMatchObject({ totalMinor: 10_500 });
+    expect(banked.find((s) => s.saleId === `S-${r1}`)).not.toHaveProperty('roundOffMinor');
     const raised = await h.store.readStream(T, STREAM.saleExceptions, { type: 'SaleExceptionRaised' });
     expect(raised.map((e) => (e.event.payload as { kind?: string }).kind)).not.toContain('lines_do_not_sum_to_total');
     const activity = await ok(call('GET', '/v1/loss-prevention/activity', 'u-owner', undefined, { day: new Date().toISOString().slice(0, 10) }), 'activity');

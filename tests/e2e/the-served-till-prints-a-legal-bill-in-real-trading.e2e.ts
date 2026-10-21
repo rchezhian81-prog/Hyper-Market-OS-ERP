@@ -185,11 +185,12 @@ describe.skipIf(!HAVE_BROWSER)('OB-271 — the served till in real trading print
     expect(f['line_quantity']).toEqual([expect.stringContaining('1 Nos × 105.00'), expect.stringContaining('1 Nos × 105.00'), expect.stringContaining('1 Nos × 59.00')]);
     expect(f['cgst']).toEqual(['CGST @ 2.5%5.00', 'CGST @ 9%4.50']);
     expect(f['sgst']).toEqual(['SGST @ 2.5%5.00', 'SGST @ 9%4.50']);
-    // OB-279: CGST ₹9.50 and SGST ₹9.50 each round up to ₹10 — a round off of +₹1.00 — so the bill is ₹270.00.
+    // OB-279: CGST ₹9.50 and SGST ₹9.50 each round up to ₹10 — which would make ₹270.00, above the items' ₹269.00 MRP
+    // total — so OB-285's round off of −₹1.00 brings the bill back to ₹269.00.
     expect(f['cgst_total']).toEqual(['CGST (rounded to ₹)10.00']);
     expect(f['sgst_total']).toEqual(['SGST (rounded to ₹)10.00']);
-    expect(f['round_off']).toEqual(['Round off+1.00']);
-    expect(f['total']).toEqual(['Total (incl. GST)270.00']);
+    expect(f['round_off']).toEqual(['Round off-1.00']);
+    expect(f['total']).toEqual(['Total (incl. GST)269.00']);
     expect(f['signatory']).toEqual([`For ${SHOP.legalName}`, 'Authorised signatory']);
     expect(f['duplicate']).toBeUndefined();
 
@@ -266,8 +267,8 @@ describe.skipIf(!HAVE_BROWSER)('OB-271 — the served till in real trading print
     await scan(page, DAL, 1);
     await page.click('#tender');
     await shows(page, 'pay', 'pay-title', 'How is the customer paying?');
-    // OB-279: ₹105 of dal at 5% is asked as ₹106.00 — its CGST and SGST (₹2.50 each) round up to ₹3.
-    await page.click('#pay-kinds button:text-is("Card — ₹106.00")');
+    // OB-285: ₹105 of dal at 5% is asked as ₹105.00, never ₹106.00 — its CGST and SGST (₹2.50 each) still round up to ₹3.
+    await page.click('#pay-kinds button:text-is("Card — ₹105.00")');
     await shows(page, 'pay', 'pay-title', 'What did the card machine say?');
     await page.locator('#pay-kinds button', { hasText: 'Approved' }).click();
     // The approval number from the machine's slip. A card number typed by mistake is refused, and never kept anywhere.
@@ -297,7 +298,7 @@ describe.skipIf(!HAVE_BROWSER)('OB-271 — the served till in real trading print
     await shows(page, 'refusal', 'refusal-title', 'Card and UPI payments today');
     const list = (await page.textContent('#refusal-receipt')) ?? '';
     expect(list).toContain('A1B2C3');
-    expect(list).toContain('₹106.00');
+    expect(list).toContain('₹105.00');
     await page.click('#refusal-ok');
 
     // A refund to the card: done on the machine, its reference typed, a manager checks with their own PIN — recorded.

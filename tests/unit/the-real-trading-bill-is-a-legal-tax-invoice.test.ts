@@ -43,26 +43,73 @@ describe('OB-271 — the tax invoice is built from the bill and the shop\'s setu
       { rateBps: 500, taxableMinor: 34_286, cgstMinor: 857, sgstMinor: 857 },
       { rateBps: 1_800, taxableMinor: 5_000, cgstMinor: 450, sgstMinor: 450 },
     ]);
-    // OB-279 · A10: the bill's CGST (₹13.07) and SGST (₹13.07) each round to ₹13 — the round off is −14 paise, and the
-    // bill's total is the ROUNDED total, which reconciles both ways.
-    expect(doc).toMatchObject({ cgstExactMinor: 1_307, sgstExactMinor: 1_307, cgstMinor: 1_300, sgstMinor: 1_300, goodsMinor: 41_900, roundOffMinor: -14, totalMinor: 41_886, untaxedMinor: 0 });
-    expect(doc.taxableMinor + doc.untaxedMinor + doc.cgstMinor + doc.sgstMinor).toBe(doc.totalMinor);
-    expect(doc.goodsMinor + doc.roundOffMinor).toBe(doc.totalMinor);
+    // OB-279 · A10: the bill's CGST (₹13.07) and SGST (₹13.07) each round to ₹13 — 14 paise below the goods, so the
+    // bill's total is the ROUNDED total (OB-285 leaves a bill below the goods as it is), and it reconciles both ways.
+    expect(doc).toMatchObject({ cgstExactMinor: 1_307, sgstExactMinor: 1_307, cgstMinor: 1_300, sgstMinor: 1_300, goodsMinor: 41_900, taxRoundingMinor: -14, roundOffMinor: 0, totalMinor: 41_886, untaxedMinor: 0 });
+    expect(doc.taxableMinor + doc.untaxedMinor + doc.cgstMinor + doc.sgstMinor + doc.roundOffMinor).toBe(doc.totalMinor);
+    expect(doc.goodsMinor + doc.taxRoundingMinor + doc.roundOffMinor).toBe(doc.totalMinor);
   });
 
   it('OB-279 · A10: each tax component rounds to the nearest rupee — 50 paise and up rounds UP, below rounds down', () => {
-    const dal = { description: 'Toor dal 1kg', hsnCode: '071360', quantityMinor: 1, uom: 'ea', unitPriceMinor: 10_500, lineTotalMinor: 10_500, taxRateBps: 500 };
-    // ₹105 at 5%: ₹2.50 CGST and ₹2.50 SGST — each 50 paise, so each rounds UP to ₹3; the bill is ₹106.00.
-    expect(built({ ...INPUT, lines: [dal] })).toMatchObject({ cgstMinor: 300, sgstMinor: 300, roundOffMinor: 100, totalMinor: 10_600 });
-    expect(invoiceRoundOff([{ lineTotalMinor: 10_500, taxRateBps: 500 }])).toEqual({ cgstExactMinor: 250, sgstExactMinor: 250, cgstMinor: 300, sgstMinor: 300, roundOffMinor: 100 });
     // ₹1 at 12%: 5 paise CGST and 6 paise SGST — each below 50, so each rounds DOWN to ₹0; the bill is 89 paise.
     const sweet = built({ ...INPUT, lines: [{ description: 'Sweet', hsnCode: '170490', quantityMinor: 1, uom: 'ea', unitPriceMinor: 100, lineTotalMinor: 100, taxRateBps: 1_200 }] });
-    expect(sweet).toMatchObject({ cgstMinor: 0, sgstMinor: 0, roundOffMinor: -11, totalMinor: 89 });
-    // ₹10.99 at 18%: ₹0.84 + ₹0.84 → ₹1 + ₹1; the round off is never more than ₹1 either way.
-    expect(invoiceRoundOff([{ lineTotalMinor: 1_099, taxRateBps: 1_800 }]).roundOffMinor).toBe(32);
-    // What the till is about to charge must be that rounded total, to the paisa.
-    expect(codes({ ...INPUT, lines: [dal], totalMinor: 10_500 })).toEqual(['totals']);
-    expect(codes({ ...INPUT, lines: [dal], totalMinor: 10_600 })).toEqual([]);
+    expect(sweet).toMatchObject({ cgstMinor: 0, sgstMinor: 0, taxRoundingMinor: -11, roundOffMinor: 0, totalMinor: 89 });
+    // ₹10.99 at 18%: ₹0.84 + ₹0.84 → ₹1 + ₹1 — the rounding adds 32 paise, so OB-285 takes them straight back off.
+    expect(invoiceRoundOff([{ lineTotalMinor: 1_099, taxRateBps: 1_800 }])).toMatchObject({ cgstMinor: 100, sgstMinor: 100, taxRoundingMinor: 32, roundOffMinor: -32, totalLessGoodsMinor: 0 });
+  });
+
+  describe('OB-285 · roadmap B1 · Legal Metrology: a bill is NEVER above the goods\' exact MRP total', () => {
+    const dal = { description: 'Toor dal 1kg', hsnCode: '071360', quantityMinor: 1, uom: 'ea', unitPriceMinor: 10_500, lineTotalMinor: 10_500, taxRateBps: 500 };
+
+    it('the ₹105 dal is charged ₹105, not ₹106 — CGST and SGST still round to ₹3 each, and a −₹1.00 round off brings it back', () => {
+      // ₹105 at 5%: ₹2.50 CGST and ₹2.50 SGST — each rounds UP to ₹3 (OB-279 kept), which would make ₹106.00: over the MRP.
+      const doc = built({ ...INPUT, lines: [dal] });
+      expect(doc).toMatchObject({ taxableMinor: 10_000, cgstMinor: 300, sgstMinor: 300, taxRoundingMinor: 100, roundOffMinor: -100, goodsMinor: 10_500, totalMinor: 10_500 });
+      expect(invoiceRoundOff([{ lineTotalMinor: 10_500, taxRateBps: 500 }])).toEqual({ cgstExactMinor: 250, sgstExactMinor: 250, cgstMinor: 300, sgstMinor: 300, taxRoundingMinor: 100, roundOffMinor: -100, totalLessGoodsMinor: 0 });
+      // The paper reconciles: lines + untaxed + rounded taxes + round off = total — ₹100.00 + ₹3 + ₹3 − ₹1.00 = ₹105.00.
+      expect(doc.taxableMinor + doc.untaxedMinor + doc.cgstMinor + doc.sgstMinor + doc.roundOffMinor).toBe(doc.totalMinor);
+      const text = taxInvoiceText(taxInvoiceRows(doc)).join('\n');
+      expect(text).toMatch(/^CGST \(rounded to ₹\) +3\.00$/m);
+      expect(text).toMatch(/^SGST \(rounded to ₹\) +3\.00$/m);
+      expect(text).toMatch(/^Round off +-1\.00$/m);
+      expect(text).toMatch(/^Total \(incl\. GST\) +105\.00$/m);
+      // The contract: that round off must show, and the paper must add up.
+      expect(invoiceRenderProblems(taxInvoiceRows(doc), doc)).toEqual([]);
+      expect(invoiceRenderProblems(taxInvoiceRows(doc).filter((r) => !r.fields.includes('round_off')), doc).length).toBeGreaterThan(0);
+      // What the till is about to charge must be ₹105.00 — ₹106.00 is refused.
+      expect(codes({ ...INPUT, lines: [dal], totalMinor: 10_600 })).toEqual(['totals']);
+      expect(codes({ ...INPUT, lines: [dal], totalMinor: 10_500 })).toEqual([]);
+    });
+
+    it('a bill whose rounding stays within the MRP is unchanged — here SGST rounds UP and the bill is still 1 paisa below the goods', () => {
+      // ₹10.00 at 12%, ₹10.00 at 18%, ₹22.49 at 12%: CGST ₹2.49 → ₹2 (down), SGST ₹2.52 → ₹3 (UP); together 1 paisa below.
+      const basket: TaxInvoiceInput['lines'] = [
+        { description: 'Sweet', hsnCode: '170490', quantityMinor: 1, uom: 'ea', unitPriceMinor: 1_000, lineTotalMinor: 1_000, taxRateBps: 1_200 },
+        { description: 'Bath soap 100g', hsnCode: '34011190', quantityMinor: 1, uom: 'ea', unitPriceMinor: 1_000, lineTotalMinor: 1_000, taxRateBps: 1_800 },
+        { description: 'Biscuits', hsnCode: '190531', quantityMinor: 1, uom: 'ea', unitPriceMinor: 2_249, lineTotalMinor: 2_249, taxRateBps: 1_200 },
+      ];
+      const doc = built({ ...INPUT, lines: basket });
+      // As OB-279 set it: the rounded CGST and SGST, and the total is their rounded total — no round off is needed.
+      expect(doc).toMatchObject({ cgstExactMinor: 249, sgstExactMinor: 252, cgstMinor: 200, sgstMinor: 300, goodsMinor: 4_249, taxRoundingMinor: -1, roundOffMinor: 0, totalMinor: 4_248 });
+      expect(doc.taxableMinor + doc.cgstMinor + doc.sgstMinor).toBe(doc.totalMinor);
+      // The paper prints no round off line, and its rows add to the total.
+      const text = taxInvoiceText(taxInvoiceRows(doc)).join('\n');
+      expect(text).not.toMatch(/Round off/);
+      expect(text).toMatch(/^Total \(incl\. GST\) +42\.48$/m);
+      expect(invoiceRenderProblems(taxInvoiceRows(doc), doc)).toEqual([]);
+      expect(codes({ ...INPUT, lines: basket, totalMinor: 4_248 })).toEqual([]);
+    });
+
+    it('a document that says otherwise fails the contract — the OB-279 ₹106.00 dal bill (round off +₹1.00), or any total above the goods', () => {
+      const doc = built({ ...INPUT, lines: [dal] });
+      // The bill as OB-279 alone printed it: ₹100.00 + ₹3 + ₹3 = ₹106.00, "Round off +1.00" — above the ₹105 MRP.
+      const ob279 = { ...doc, taxRoundingMinor: 100, roundOffMinor: 100, totalMinor: 10_600 };
+      expect(invoiceRenderProblems(taxInvoiceRows(ob279), ob279)).toContain('a total that adds up');
+      // Every row adding up is not enough: a total above what the lines were charged still fails.
+      const over = { ...doc, taxRoundingMinor: 100, roundOffMinor: 0, totalMinor: 10_600 };
+      expect(over.taxableMinor + over.cgstMinor + over.sgstMinor + over.roundOffMinor).toBe(over.totalMinor);
+      expect(invoiceRenderProblems(taxInvoiceRows(over), over)).toContain('a total that adds up');
+    });
   });
 
   it('A9 · A8: an odd paisa of tax lands on SGST, never lost — ₹1 at 12% is 89p + 5p CGST + 6p SGST', () => {
@@ -137,11 +184,12 @@ describe('OB-271 — the tax invoice is built from the bill and the shop\'s setu
 const MANDATORY: readonly InvoiceField[] = [
   'title', 'supplier_legal_name', 'supplier_address', 'supplier_gstin', 'invoice_number', 'invoice_date', 'place_of_supply',
   'reverse_charge', 'line_description', 'line_hsn', 'line_quantity', 'line_taxable_value', 'line_rate', 'cgst', 'sgst',
-  // OB-279: the bill's rounded CGST and SGST, and the round off (this bill's is −14 paise).
-  'cgst_total', 'sgst_total', 'round_off', 'total', 'signatory',
+  // OB-279: the bill's rounded CGST and SGST (OB-285: this bill is below its goods, so it needs no round off — the dal's
+  // round off is checked on its own above).
+  'cgst_total', 'sgst_total', 'total', 'signatory',
 ];
 /** OB-278: a combined bill also shows its untaxed value. */
-const COMBINED_MANDATORY: readonly InvoiceField[] = [...MANDATORY.filter((f) => f !== 'round_off'), 'untaxed_total'];
+const COMBINED_MANDATORY: readonly InvoiceField[] = [...MANDATORY, 'untaxed_total'];
 const CORIANDER = { description: 'Fresh coriander', hsnCode: '070999', quantityMinor: 1, uom: 'ea', unitPriceMinor: 1_000, lineTotalMinor: 1_000, taxRateBps: 0 };
 
 describe('THE CONTRACT (A1): a render that is missing any field fails', () => {
@@ -196,7 +244,7 @@ describe('THE CONTRACT (A1): a render that is missing any field fails', () => {
     expect(text).toMatch(/^ {2}SGST @ 9% +4\.50$/m);
     expect(text).toMatch(/^CGST \(rounded to ₹\) +13\.00$/m);
     expect(text).toMatch(/^SGST \(rounded to ₹\) +13\.00$/m);
-    expect(text).toMatch(/^Round off +-0\.14$/m);
+    expect(text).not.toMatch(/Round off/); // OB-285: 14 paise below the goods — no round off needed
     expect(text).toMatch(/^Total \(incl\. GST\) +418\.86$/m);
     expect(text).toContain('Paid: Card (approval 123456)');
     expect(text).not.toContain('DUPLICATE');

@@ -19,8 +19,11 @@
 //   • OB-278 · Rule 46A: a bill with ANY untaxed (exempt or nil-rated, 0%) line is ONE "Invoice-cum-Bill of Supply"; an
 //     all-taxed bill stays a "Tax Invoice". An untaxed line shows as exempt / nil with no tax;
 //   • OB-279 · addendum A10: each tax component of the bill — CGST and SGST — is rounded to the nearest rupee (50 paise and
-//     up rounds up). The bill's total is the ROUNDED total: taxable value + untaxed value + rounded CGST + rounded SGST,
-//     which is the goods' own total plus a stated "Round off" (never more than ₹1 either way). It reconciles both ways;
+//     up rounds up). The bill's total is the ROUNDED total: taxable value + untaxed value + rounded CGST + rounded SGST;
+//   • OB-285 · roadmap B1 · Legal Metrology: a bill is NEVER above the goods' exact MRP-based total (what the lines were
+//     charged, to the paisa). When the rounded tax would take it above, a stated, negative "Round off" (never more than
+//     ₹1) brings it back to that total. The paper reconciles: taxable + untaxed + rounded CGST + rounded SGST + round
+//     off = total;
 //   • OB-280: a bill of ₹50,000 or more (Rule 46(e) needs the buyer's name and address) is REFUSED — "bill this on the old
 //     system". Business (B2B) bills are not taken at this till at all and also go to the old system.
 
@@ -74,7 +77,7 @@ export interface TaxInvoiceInput {
   readonly changeMinor?: number;
   /** The annual turnover the HSN digit rule is judged at. Absent → the owner's band (OB-149: above ₹5 crore → 6 digits). */
   readonly annualTurnoverMinor?: number;
-  /** OB-279: what the till is about to charge — checked against the invoice's rounded total (they must be the same). */
+  /** OB-279 · OB-285: what the till is about to charge — checked against the invoice's total (they must be the same). */
   readonly totalMinor?: number;
 }
 
@@ -132,11 +135,19 @@ export interface TaxInvoiceDocument {
   readonly cgstMinor: number;
   readonly sgstMinor: number;
   readonly totalTaxMinor: number;
-  /** What the lines were charged, added up — the goods' own total. */
+  /** What the lines were charged, added up — the goods' own total: the exact MRP-based amount, to the paisa (B1). */
   readonly goodsMinor: number;
-  /** OB-279: rounded tax − exact tax — what the rounding adds (+) or takes off (−); at most ₹1 either way. */
+  /** OB-279: rounded tax − exact tax — what rounding CGST and SGST to the rupee moved the tax by; at most ₹1 either way. */
+  readonly taxRoundingMinor: number;
+  /**
+   * OB-285: the printed round off — 0, or below 0 when the rounded tax would have put the bill above the goods' exact
+   * MRP-based total: the bill is then brought back down to it. Never above 0; never more than ₹1.
+   */
   readonly roundOffMinor: number;
-  /** The bill's total: taxable + untaxed + rounded CGST + rounded SGST = goods + round off. What the customer pays. */
+  /**
+   * The bill's total: taxable + untaxed + rounded CGST + rounded SGST + round off — never above the goods' exact MRP-based
+   * total (OB-285). What the customer pays.
+   */
   readonly totalMinor: number;
   readonly tenders: readonly TaxInvoiceTenderInput[];
   readonly changeMinor?: number;
@@ -165,16 +176,23 @@ export type TaxInvoiceBuild =
 /** Rule 46(e) · OB-280: a bill of this total or more needs the buyer's name and address — refused here, old system only. */
 export const UNREGISTERED_RECIPIENT_DETAILS_FROM_MINOR = 50_000_00;
 
-/** OB-279: the round off can never be more than ₹1 either way (two components, each moved by at most 50 paise). */
+/** OB-279: the tax rounding can never be more than ₹1 either way (two components, each moved by at most 50 paise). */
 export const MAX_ROUND_OFF_MINOR = 100;
 
 /**
- * OB-279 · addendum A10 — the bill's CGST and SGST, each rounded to the nearest rupee, and the round off it makes. Pure. The
- * exact components are the sum of each taxed line's own (A9: pulled out of what the line was charged, the odd paisa on
- * SGST); an untaxed line, or one whose rate cannot be split, adds nothing (the invoice itself refuses the latter).
+ * OB-279 · addendum A10 · OB-285 — the bill's CGST and SGST, each rounded to the nearest rupee, and what that does to the
+ * bill. Pure. The exact components are the sum of each taxed line's own (A9: pulled out of what the line was charged, the
+ * odd paisa on SGST); an untaxed line, or one whose rate cannot be split, adds nothing (the invoice itself refuses that).
+ *
+ * OB-285 (owner, 21 Oct 2026): a bill is never above the goods' exact MRP-based total (roadmap B1, Legal Metrology). When
+ * the rounded tax would take it above (`taxRoundingMinor` > 0), the round off goes the other way by the same amount, so
+ * the bill is the exact total and the customer never pays more; otherwise the round off is 0 and the bill is the rounded
+ * total, as OB-279 set it. `totalLessGoodsMinor` is what the bill is below the goods (0 or less): what the till charges
+ * on top of the lines, and what the record carries as its round off.
  */
 export function invoiceRoundOff(lines: readonly { readonly lineTotalMinor: number; readonly taxRateBps: number }[]): {
-  readonly cgstExactMinor: number; readonly sgstExactMinor: number; readonly cgstMinor: number; readonly sgstMinor: number; readonly roundOffMinor: number;
+  readonly cgstExactMinor: number; readonly sgstExactMinor: number; readonly cgstMinor: number; readonly sgstMinor: number;
+  readonly taxRoundingMinor: number; readonly roundOffMinor: number; readonly totalLessGoodsMinor: number;
 } {
   let cgst = 0;
   let sgst = 0;
@@ -190,7 +208,10 @@ export function invoiceRoundOff(lines: readonly { readonly lineTotalMinor: numbe
   }
   const cgstMinor = roundToNearestRupeeMinor(cgst);
   const sgstMinor = roundToNearestRupeeMinor(sgst);
-  return { cgstExactMinor: cgst, sgstExactMinor: sgst, cgstMinor, sgstMinor, roundOffMinor: cgstMinor + sgstMinor - cgst - sgst };
+  const taxRoundingMinor = cgstMinor + sgstMinor - cgst - sgst;
+  // OB-285: above the goods? Then back down to them — never a paisa over what the lines were charged.
+  const roundOffMinor = taxRoundingMinor > 0 ? -taxRoundingMinor : 0;
+  return { cgstExactMinor: cgst, sgstExactMinor: sgst, cgstMinor, sgstMinor, taxRoundingMinor, roundOffMinor, totalLessGoodsMinor: taxRoundingMinor + roundOffMinor };
 }
 
 /** India time is UTC+05:30 all year (no daylight saving). */
@@ -326,16 +347,19 @@ export function buildTaxInvoice(input: TaxInvoiceInput): TaxInvoiceBuild {
   const taxableMinor = lines.filter((l) => !l.untaxed).reduce((s, l) => s + l.taxableMinor, 0);
   const untaxedMinor = lines.filter((l) => l.untaxed).reduce((s, l) => s + l.taxableMinor, 0);
   const goodsMinor = lines.reduce((s, l) => s + l.lineTotalMinor, 0);
-  // OB-279 · A10: each component of the bill rounded to the rupee; the bill's total is the rounded total.
+  // OB-279 · A10: each component of the bill rounded to the rupee; OB-285: the round off keeps the bill within the goods.
   const rounded = invoiceRoundOff(lines.map((l) => ({ lineTotalMinor: l.lineTotalMinor, taxRateBps: l.rateBps })));
   const cgstMinor = rounded.cgstMinor;
   const sgstMinor = rounded.sgstMinor;
-  const totalMinor = taxableMinor + untaxedMinor + cgstMinor + sgstMinor;
-  // A9 · OB-279: the values and the tax reconcile — each line to what it was charged, to the paisa; the bill to the goods
-  // plus the round off (at most ₹1 either way); and to what the till is about to charge, when it says.
+  const roundOffMinor = rounded.roundOffMinor;
+  const totalMinor = taxableMinor + untaxedMinor + cgstMinor + sgstMinor + roundOffMinor;
+  // A9 · OB-279 · OB-285: the values and the tax reconcile — each line to what it was charged, to the paisa; the bill to
+  // the goods plus the tax rounding plus the round off (each at most ₹1), never above the goods; and to what the till is
+  // about to charge, when it says.
   if (lines.some((l) => l.taxableMinor + l.cgstMinor + l.sgstMinor !== l.lineTotalMinor)
     || lines.reduce((s, l) => s + l.cgstMinor, 0) !== rounded.cgstExactMinor || lines.reduce((s, l) => s + l.sgstMinor, 0) !== rounded.sgstExactMinor
-    || goodsMinor + rounded.roundOffMinor !== totalMinor || Math.abs(rounded.roundOffMinor) > MAX_ROUND_OFF_MINOR
+    || goodsMinor + rounded.totalLessGoodsMinor !== totalMinor || totalMinor > goodsMinor
+    || Math.abs(rounded.taxRoundingMinor) > MAX_ROUND_OFF_MINOR || roundOffMinor > 0 || roundOffMinor < -MAX_ROUND_OFF_MINOR
     || (input.totalMinor !== undefined && input.totalMinor !== totalMinor)) add('totals');
   // OB-280: ₹50,000 or more — the buyer's name and address would be needed; refused, old system only.
   if (totalMinor >= UNREGISTERED_RECIPIENT_DETAILS_FROM_MINOR) add('recipient_details');
@@ -362,7 +386,7 @@ export function buildTaxInvoice(input: TaxInvoiceInput): TaxInvoiceBuild {
       placeOfSupply: { kind: 'intra_state' as const, stateCode: state.code, stateName: state.name },
       reverseCharge: false as const,
       lines, bands, taxableMinor, untaxedMinor, cgstExactMinor: rounded.cgstExactMinor, sgstExactMinor: rounded.sgstExactMinor,
-      cgstMinor, sgstMinor, totalTaxMinor: cgstMinor + sgstMinor, goodsMinor, roundOffMinor: rounded.roundOffMinor, totalMinor,
+      cgstMinor, sgstMinor, totalTaxMinor: cgstMinor + sgstMinor, goodsMinor, taxRoundingMinor: rounded.taxRoundingMinor, roundOffMinor, totalMinor,
       tenders: (input.tenders ?? []).map((t) => ({ kind: t.kind, amountMinor: t.amountMinor, ...(t.machineRef === undefined ? {} : { machineRef: t.machineRef }) })),
       ...(input.changeMinor === undefined || input.changeMinor <= 0 ? {} : { changeMinor: input.changeMinor }),
       laneId: input.laneId, cashierId: input.cashierId,
@@ -484,10 +508,11 @@ export function taxInvoiceRows(doc: TaxInvoiceDocument, options: { readonly lang
   rule();
   rows.push({ kind: 'pair', fields: ['taxable_total'], left: w['taxable']!, right: invoiceAmount(doc.taxableMinor) });
   if (doc.untaxedMinor > 0) rows.push({ kind: 'pair', fields: ['untaxed_total'], left: w['untaxedTotal']!, right: invoiceAmount(doc.untaxedMinor) });
-  // OB-279: the bill's CGST and SGST, each rounded to the rupee, and the round off they make — stated, never hidden.
+  // OB-279: the bill's CGST and SGST, each rounded to the rupee; OB-285: the round off that keeps the bill within the
+  // goods' MRP total — stated, never hidden, and the rows above it add up to the total.
   rows.push({ kind: 'pair', fields: ['cgst_total'], left: `CGST ${w['rounded']}`, right: invoiceAmount(doc.cgstMinor) });
   rows.push({ kind: 'pair', fields: ['sgst_total'], left: `SGST ${w['rounded']}`, right: invoiceAmount(doc.sgstMinor) });
-  if (doc.roundOffMinor !== 0) rows.push({ kind: 'pair', fields: ['round_off'], left: w['roundOff']!, right: `${doc.roundOffMinor > 0 ? '+' : ''}${invoiceAmount(doc.roundOffMinor)}` });
+  if (doc.roundOffMinor !== 0) rows.push({ kind: 'pair', fields: ['round_off'], left: w['roundOff']!, right: invoiceAmount(doc.roundOffMinor) });
   rows.push({ kind: 'title', fields: ['total'], left: w['total']!, right: invoiceAmount(doc.totalMinor), text: `${w['total']} ${invoiceAmount(doc.totalMinor)}` });
   rule();
   for (const t of doc.tenders) {
@@ -556,8 +581,10 @@ export function invoiceRenderProblems(rows: readonly InvoiceRow[], doc: TaxInvoi
   need('sgst_total', invoiceAmount(doc.sgstMinor), 'the SGST, rounded to the rupee');
   if (doc.roundOffMinor !== 0) need('round_off', invoiceAmount(doc.roundOffMinor), 'the round off');
   need('total', invoiceAmount(doc.totalMinor), 'the total');
-  // OB-279: what the paper says adds up — the values and the rounded tax are the total; the goods and the round off too.
-  if (doc.taxableMinor + doc.untaxedMinor + doc.cgstMinor + doc.sgstMinor !== doc.totalMinor || doc.goodsMinor + doc.roundOffMinor !== doc.totalMinor) problems.push('a total that adds up');
+  // OB-279 · OB-285: what the paper says adds up — the values, the rounded tax and the round off are the total — and the
+  // total is never above what the lines were charged (the goods' MRP total).
+  if (doc.taxableMinor + doc.untaxedMinor + doc.cgstMinor + doc.sgstMinor + doc.roundOffMinor !== doc.totalMinor || doc.totalMinor > doc.goodsMinor
+    || doc.goodsMinor + doc.taxRoundingMinor + doc.roundOffMinor !== doc.totalMinor) problems.push('a total that adds up');
   need('signatory', doc.supplier.legalName, 'the supplier\'s signatory line');
   return problems;
 }

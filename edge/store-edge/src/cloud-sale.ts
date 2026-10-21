@@ -105,8 +105,9 @@ export function toCloudSale(record: unknown, packVersion: number, storeId?: stri
     ...(isMemberRef(r['customerRef']) ? { customerRef: r['customerRef'] } : {}),
     // Round 29 · OB-108: when the store computer took the bill from the till, by its own clock (stamped as it wrote it).
     ...(isTime(r['storeComputerTakenAt']) ? { storeComputerTakenAt: r['storeComputerTakenAt'] } : {}),
-    // OB-279: a real-trading bill's round off (its CGST and SGST rounded to the rupee) — whole paise, at most ₹1 either way.
-    ...(typeof r['roundOffMinor'] === 'number' && Number.isSafeInteger(r['roundOffMinor']) && r['roundOffMinor'] !== 0 && Math.abs(r['roundOffMinor']) <= 100
+    // OB-279 · OB-285: a real-trading bill's round off — whole paise, below 0 and at most ₹1 (a bill is never above its
+    // lines; a record that says otherwise is sent without it, so head office sees lines that do not add up).
+    ...(typeof r['roundOffMinor'] === 'number' && Number.isSafeInteger(r['roundOffMinor']) && r['roundOffMinor'] < 0 && r['roundOffMinor'] >= -100
       ? { roundOffMinor: r['roundOffMinor'] } : {}),
     // OB-264: the old ERP's bill number keyed on a mirror sale — only in its kept form (Rule 46(b), no personal data).
     ...(isOldErpBillNumber(r['oldErpBillNumber']) ? { oldErpBillNumber: r['oldErpBillNumber'] } : {}),

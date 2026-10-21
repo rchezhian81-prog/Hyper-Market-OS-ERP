@@ -881,9 +881,10 @@ The new till can already do the three things real trading needs. All three are *
    ₹5–10 crore — OB-149), quantity, unit, value and GST rate, CGST and SGST, the place of supply (Tamil Nadu) and the
    total. If anything is missing, the till **refuses the sale** and says what is missing, so a wrong bill is never given.
    A bill with any item that has no GST is headed **"Invoice-cum-Bill of Supply"**, and that item shows "Exempt / nil"
-   (OB-278). The bill's CGST and SGST are each rounded to the rupee, with a **Round off** line, and the customer pays
-   the rounded total (OB-279). A bill of ₹50,000 or more, or a business (B2B) bill, is refused with "bill this on the
-   old system" (OB-280). Your CA confirms these three before the switch.
+   (OB-278). The bill's CGST and SGST are each rounded to the rupee (OB-279), but a bill is **never more than the
+   items' MRP total**: if the rounding would make it more, a minus **Round off** line brings it back down, so a ₹105
+   packet of dal is charged ₹105, never ₹106 (OB-285). A bill of ₹50,000 or more, or a business (B2B) bill, is refused with "bill this on the
+   old system" (OB-280). Your CA confirms these four before the switch.
 2. **The paper bill, in English or Tamil.** After each sale the cashier presses **Print bill**. The bill prints through
    the printer's own Windows driver on an 80 mm roll (58 mm also works). A second print says **DUPLICATE**. If the
    printer fails, the sale is still saved and the bill can be printed again (More → **Reprint the last bill**).

@@ -37,18 +37,26 @@ describe('OB-278 · A1 — the checker takes an Invoice-cum-Bill of Supply, and 
   });
 });
 
-describe('OB-279 — the round off travels to head office, is banked as the rounded total, and posts to its own line', () => {
+describe('OB-279 · OB-285 — the round off travels to head office, is banked as the rounded total, and posts to its own line', () => {
+  // ₹1.00 at 12%: 5p + 6p of GST each round down to ₹0 — the bill is 89 paise, 11 below its line (OB-285: never above).
   const record = {
     id: 'S-R1', number: 'L1-000124', laneId: 'lane-1', cashierId: 'u-cashier', tradingDay: '2026-10-21', committedAt: '2026-10-21T05:00:00.000Z',
-    lines: [{ productId: 'P-DAL', quantityMinor: 1, uom: 'ea', unitPriceMinor: 10_500, lineTotalMinor: 10_500, taxRateBps: 500, hsnCode: '071360' }],
-    tenders: [{ kind: 'cash', amount: { minor: 10_600, currency: 'INR' }, status: 'settled' }],
-    total: 10_600, netMinor: 10_000, taxMinor: 500, roundOffMinor: 100, currency: 'INR',
+    lines: [{ productId: 'P-SWEET', quantityMinor: 1, uom: 'ea', unitPriceMinor: 100, lineTotalMinor: 100, taxRateBps: 1_200, hsnCode: '170490' }],
+    tenders: [{ kind: 'cash', amount: { minor: 89, currency: 'INR' }, status: 'settled' }],
+    total: 89, netMinor: 89, taxMinor: 0, roundOffMinor: -11, currency: 'INR',
   };
 
-  it('the box sends the round off (whole paise, at most ₹1); a round off that cannot be one is not sent', () => {
-    expect(toCloudSale(record, 3)).toMatchObject({ totalMinor: 10_600, roundOffMinor: 100 });
-    expect(toCloudSale({ ...record, roundOffMinor: 250 }, 3)).not.toHaveProperty('roundOffMinor');
+  it('the box sends the round off (whole paise, below 0, at most ₹1); one that cannot be one — or is ABOVE 0 (OB-285) — is not sent', () => {
+    expect(toCloudSale(record, 3)).toMatchObject({ totalMinor: 89, roundOffMinor: -11 });
+    expect(toCloudSale({ ...record, roundOffMinor: -250 }, 3)).not.toHaveProperty('roundOffMinor');
     expect(toCloudSale({ ...record, roundOffMinor: 0 }, 3)).not.toHaveProperty('roundOffMinor');
+    expect(toCloudSale({ ...record, total: 200, roundOffMinor: 100 }, 3)).not.toHaveProperty('roundOffMinor');
+  });
+
+  it('OB-285: head office never takes a bill above its lines — a round off above 0 is not counted, so the bill shows as not adding up', () => {
+    const ctx = { catalogue: new Map(), currentPackVersion: 3, saleHoldingThisReceipt: undefined, alreadyBanked: false, now: '2026-10-21T06:00:00.000Z' };
+    const sent = { ...(toCloudSale(record, 3) as IncomingSale), totalMinor: 200, tenders: [{ kind: 'cash', amountMinor: 200 }], roundOffMinor: 100 } as IncomingSale;
+    expect(acceptSale(sent, ctx).exceptions.map((e) => e.kind)).toContain('lines_do_not_sum_to_total');
   });
 
   it('head office: the lines plus the round off are the total — no "lines do not sum" finding; without it, there is one', () => {
@@ -60,23 +68,25 @@ describe('OB-279 — the round off travels to head office, is banked as the roun
     expect(acceptSale(without as IncomingSale, ctx).exceptions.map((e) => e.kind)).toContain('lines_do_not_sum_to_total');
   });
 
-  it('the day book: the sale voucher takes the rounded total; the round off posts to `round_off`, up or down; every journal balances', () => {
-    const up: DayBookSale = { saleId: 'S-R1', tradingDay: '2026-10-21', totalMinor: 10_600, lines: [{ productId: 'P-DAL', quantityMinor: 1, lineTotalMinor: 10_500, taxRateBps: 500 }], tenders: [{ kind: 'cash', amountMinor: 10_600 }], roundOffMinor: 100 };
+  it('the day book: the sale voucher takes the rounded total; the round off posts to `round_off` (down only — OB-285); every journal balances', () => {
+    const exact: DayBookSale = { saleId: 'S-R1', tradingDay: '2026-10-21', totalMinor: 10_500, lines: [{ productId: 'P-DAL', quantityMinor: 1, lineTotalMinor: 10_500, taxRateBps: 500 }], tenders: [{ kind: 'cash', amountMinor: 10_500 }] };
     const down: DayBookSale = { saleId: 'S-R2', tradingDay: '2026-10-21', totalMinor: 89, lines: [{ productId: 'P-SWEET', quantityMinor: 1, lineTotalMinor: 100, taxRateBps: 1_200 }], tenders: [{ kind: 'cash', amountMinor: 89 }], roundOffMinor: -11 };
-    const book = buildDayBook({ tradingDay: '2026-10-21', sales: [up, down], returns: [], originalSales: new Map(), taxRateOf: () => undefined, alreadyPosted: new Map() });
+    const book = buildDayBook({ tradingDay: '2026-10-21', sales: [exact, down], returns: [], originalSales: new Map(), taxRateOf: () => undefined, alreadyPosted: new Map() });
     expect(book.exceptions).toEqual([]);
-    expect(book.aggregates.find((a) => a.kind === 'sale')?.components).toMatchObject({ total: 10_689, round_off_up: 100, round_off_down: 11 });
+    expect(book.aggregates.find((a) => a.kind === 'sale')?.components).toMatchObject({ total: 10_589, round_off_up: 0, round_off_down: 11 });
     const posted = postDayBook(book, DEFAULT_RETAIL_POSTING_MAP, 'INR');
     expect(posted.exceptions).toEqual([]);
     const sale = posted.journals.find((j) => j.aggregate.kind === 'sale')!.entry;
     expect(sale.lines).toEqual(expect.arrayContaining([
-      expect.objectContaining({ account: 'round_off', side: 'credit', amount: expect.objectContaining({ minor: 100 }) }),
       expect.objectContaining({ account: 'round_off', side: 'debit', amount: expect.objectContaining({ minor: 11 }) }),
     ]));
     for (const j of posted.journals) expect(j.entry.totalDebit.minor).toBe(j.entry.totalCredit.minor);
     // A round off the lines and total do not bear out is an exception, never posted.
-    const wrong = buildDayBook({ tradingDay: '2026-10-21', sales: [{ ...up, roundOffMinor: 50 }], returns: [], originalSales: new Map(), taxRateOf: () => undefined, alreadyPosted: new Map() });
+    const wrong = buildDayBook({ tradingDay: '2026-10-21', sales: [{ ...down, roundOffMinor: -50 }], returns: [], originalSales: new Map(), taxRateOf: () => undefined, alreadyPosted: new Map() });
     expect(wrong.exceptions.map((e) => e.reason)).toEqual(['lines_do_not_sum_to_total']);
+    // OB-285: a bill ABOVE its lines is refused even when it "adds up" — ₹105 of dal booked at ₹106.
+    const above = buildDayBook({ tradingDay: '2026-10-21', sales: [{ ...exact, totalMinor: 10_600, tenders: [{ kind: 'cash', amountMinor: 10_600 }], roundOffMinor: 100 }], returns: [], originalSales: new Map(), taxRateOf: () => undefined, alreadyPosted: new Map() });
+    expect(above.exceptions.map((e) => e.reason)).toEqual(['lines_do_not_sum_to_total']);
   });
 });
 

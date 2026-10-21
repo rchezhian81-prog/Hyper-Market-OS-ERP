@@ -238,7 +238,7 @@ export interface CommittedBill {
 export interface BasketTotals extends BillTotals {
   /** Promotion discount applied to the basket, on top of any line discounts. */
   readonly promotionDiscount: Money;
-  /** total − promotionDiscount (what the customer pays) — in real trading, plus the OB-279 round off. */
+  /** total − promotionDiscount (what the customer pays) — in real trading, less what OB-279/OB-285 take off (never more). */
   readonly payable: Money;
   readonly lineCount: number;
   /**
@@ -805,10 +805,11 @@ export class PosSession {
     const promotionDiscount = this.promotionDiscount();
     const goods = Math.max(0, bill.total.minor - promotionDiscount.minor);
     // OB-279 · A10: in real trading the bill's CGST and SGST are each rounded to the rupee and the bill's total is the
-    // rounded total — so the customer is asked for exactly what the tax invoice will say. Off real trading: nothing added.
+    // rounded total — OB-285: never above the lines' exact MRP-based total — so the customer is asked for exactly what the
+    // tax invoice will say, and never more than the goods. Off real trading: nothing changed.
     const active = this.activeLines();
     const roundOff = this.config.realTrading === undefined || goods === 0 ? undefined
-      : invoiceRoundOff(this.replacementLines().map((l, i) => ({ lineTotalMinor: l.lineTotalMinor, taxRateBps: active[i]?.taxRate.bps ?? 0 }))).roundOffMinor;
+      : invoiceRoundOff(this.replacementLines().map((l, i) => ({ lineTotalMinor: l.lineTotalMinor, taxRateBps: active[i]?.taxRate.bps ?? 0 }))).totalLessGoodsMinor;
     return {
       ...bill,
       promotionDiscount,
@@ -1029,9 +1030,9 @@ export class PosSession {
     const negative = recordLines.filter((l) => l.lineTotalMinor < 0);
     if (negative.length > 0) throw new BillArithmeticError(saleId, `line(s) ${negative.map((l) => l.productId).join(', ')} would be charged below zero`);
     const lineSum = recordLines.reduce((t, l) => t + l.lineTotalMinor, 0);
-    // OB-279: in real trading the payable is the lines plus the stated round off.
+    // OB-279 · OB-285: in real trading the payable is the lines less what the rounding takes off — never above the lines.
     const roundOff = totals.roundOffMinor ?? 0;
-    if (lineSum + roundOff !== totals.payable.minor) throw new BillArithmeticError(saleId, `the lines add to ${lineSum} against a payable of ${totals.payable.minor}`);
+    if (lineSum + roundOff !== totals.payable.minor || roundOff > 0) throw new BillArithmeticError(saleId, `the lines add to ${lineSum} against a payable of ${totals.payable.minor}`);
     const inside = recordLines.reduce(
       (acc, l) => {
         const split = splitInclusive(money(l.lineTotalMinor, totals.payable.currency), rate(l.taxRateBps));
@@ -1125,7 +1126,7 @@ export class PosSession {
       total: totals.payable.minor,
       netMinor: inside.net,
       taxMinor: inside.tax,
-      // OB-279: the round off the rounded CGST and SGST made — total = lines + round off (net + tax + round off).
+      // OB-279 · OB-285: what the bill is below its lines (0 or less, never above) — total = lines + round off.
       ...(roundOff === 0 ? {} : { roundOffMinor: roundOff }),
       currency: totals.payable.currency,
       // OB-264: the old ERP's bill number, on every mirror sale — so a mirror refund finds this sale by it.

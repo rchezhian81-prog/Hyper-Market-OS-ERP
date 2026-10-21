@@ -92,17 +92,26 @@ describe('OB-271 — real trading: the till refuses a bill that is not a tax inv
     expect(inv.lines.join('\n')).toContain('Exempt / nil — no GST');
   });
 
-  it('OB-279: the till asks for the ROUNDED total — ₹105 at 5% is ₹2.50 + ₹2.50 GST, each rounded up, so ₹106.00 — and the record says why', async () => {
+  it('OB-285: the ₹105 dal is charged ₹105, never ₹106 — its ₹2.50 + ₹2.50 GST still round to ₹3 each, with a −₹1.00 round off', async () => {
     const { pos, writes } = till({ realTrading: true });
     pos.scanBarcode('890000000001');
-    expect(pos.payableMinor()).toBe(10_600);
+    expect(pos.payableMinor()).toBe(10_500);
     await pos.tenderCash('S-31', 'L1-0031', NOW);
-    const record = JSON.parse(writes[0]!) as { total: number; roundOffMinor: number; lines: { lineTotalMinor: number }[]; netMinor: number; taxMinor: number };
-    expect(record).toMatchObject({ total: 10_600, roundOffMinor: 100, netMinor: 10_000, taxMinor: 500 });
-    expect(record.lines.reduce((n, l) => n + l.lineTotalMinor, 0) + record.roundOffMinor).toBe(record.total);
+    const record = JSON.parse(writes[0]!) as { total: number; roundOffMinor?: number; lines: { lineTotalMinor: number }[]; netMinor: number; taxMinor: number };
+    expect(record).toMatchObject({ total: 10_500, netMinor: 10_000, taxMinor: 500 });
+    expect(record).not.toHaveProperty('roundOffMinor'); // the bill IS its lines — nothing on top, nothing off
+    expect(record.lines.reduce((n, l) => n + l.lineTotalMinor, 0)).toBe(record.total);
     const inv = pos.taxInvoice();
     if (!inv.ok) throw new Error(inv.why);
-    expect(inv.lines.join('\n')).toMatch(/Round off +\+1\.00/);
+    const paper = inv.lines.join('\n');
+    expect(paper).toMatch(/CGST \(rounded to ₹\) +3\.00/);
+    expect(paper).toMatch(/Round off +-1\.00/);
+    expect(paper).toMatch(/Total \(incl\. GST\) +105\.00/);
+    // Two dal (₹210): ₹5.00 + ₹5.00 GST — nothing to round, nothing taken off.
+    const two = till({ realTrading: true });
+    two.pos.scanBarcode('890000000001');
+    two.pos.scanBarcode('890000000001');
+    expect(two.pos.payableMinor()).toBe(21_000);
     // Off real trading, the same item is charged exactly its line, as before — no round off.
     const off = till();
     off.pos.scanBarcode('890000000001');
@@ -199,10 +208,12 @@ describe('OB-271 — the store computer runs the same invoice rule on the record
     id: 'S-9', number: 'L1-0009', committedAt: NOW, laneId: 'lane-1', cashierId: 'u-cashier',
     lines: [{ productId: 'P-DAL', quantityMinor: 1, uom: 'ea', unitPriceMinor: 10_500, lineTotalMinor: 10_500, taxRateBps: 500, hsnCode: '071360' }],
   };
-  it('a complete record passes; no identity or a short HSN is refused in words; an untaxed line passes (OB-278); a total that is not the rounded total is refused (OB-279)', () => {
+  it('a complete record passes; no identity or a short HSN is refused in words; an untaxed line passes (OB-278); a total that is not the invoice total — or is above the MRP (OB-285) — is refused', () => {
     expect(realTradingSaleRefusal(record, SHOP)).toBeUndefined();
-    expect(realTradingSaleRefusal({ ...record, total: 10_600 }, SHOP)).toBeUndefined();
-    expect(realTradingSaleRefusal({ ...record, total: 10_500 }, SHOP)?.laneMessage).toContain('do not add up');
+    expect(realTradingSaleRefusal({ ...record, total: 10_500 }, SHOP)).toBeUndefined();
+    // OB-285: ₹106 for ₹105 of dal is above its MRP — an older till's ₹106 is refused before the box's disk.
+    expect(realTradingSaleRefusal({ ...record, total: 10_600 }, SHOP)?.laneMessage).toContain('do not add up');
+    expect(realTradingSaleRefusal({ ...record, total: 10_499 }, SHOP)?.laneMessage).toContain('do not add up');
     expect(realTradingSaleRefusal(record, null)).toMatchObject({ refusedBecause: 'tax_invoice_incomplete', laneMessage: expect.stringContaining('legal name') });
     expect(realTradingSaleRefusal({ ...record, lines: [{ ...record.lines[0]!, hsnCode: '0713' }] }, SHOP)?.laneMessage).toContain('HSN code is too short');
     expect(realTradingSaleRefusal({ ...record, lines: [{ ...record.lines[0]!, taxRateBps: 0 }] }, SHOP)).toBeUndefined();

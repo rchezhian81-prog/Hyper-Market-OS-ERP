@@ -351,8 +351,9 @@ export function acceptSale(sale: IncomingSale, ctx: IntakeContext): IntakeResult
       { differenceMinor: tendered - sale.totalMinor });
   }
 
-  // OB-279: a real-trading bill's total is its lines plus the stated round off (at most ₹1 either way, else not counted).
-  const roundOff = Number.isSafeInteger(sale.roundOffMinor) && Math.abs(sale.roundOffMinor as number) <= 100 ? sale.roundOffMinor as number : 0;
+  // OB-279 · OB-285: a real-trading bill's total is its lines plus the stated round off — below 0 and at most ₹1, since a
+  // bill is never above its lines; any other round off is not counted, so the bill shows as not adding up.
+  const roundOff = Number.isSafeInteger(sale.roundOffMinor) && (sale.roundOffMinor as number) <= 0 && (sale.roundOffMinor as number) >= -100 ? sale.roundOffMinor as number : 0;
   const lineSum = sale.lines.reduce((t, l) => t + l.lineTotalMinor, 0) + roundOff;
   if (sale.lines.length > 0 && lineSum !== sale.totalMinor) {
     add('lines_do_not_sum_to_total', 'material',
