@@ -358,7 +358,7 @@ export function startScreenServer(input: {
    */
   readonly realTrading?: () => {
     readonly on: boolean; readonly by: 'store_pack' | 'store_computer_setting' | null;
-    readonly taxInvoice: { readonly legalName: string; readonly gstin: string; readonly address: readonly string[] } | null;
+    readonly taxInvoice: { readonly legalName: string; readonly gstin: string; readonly placeOfBusiness: readonly string[] } | null;
     readonly billPaper?: string;
   };
   /**

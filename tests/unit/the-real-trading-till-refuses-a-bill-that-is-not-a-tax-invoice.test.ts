@@ -13,7 +13,7 @@ import { realTradingSaleRefusal } from '../../edge/store-edge/src/real-trading';
  */
 
 const NOW = new Date().toISOString();
-const SHOP = { legalName: 'SRE Hyper Market Private Limited', gstin: '33ABCDE1234F1Z5', address: ['12 Main Road', 'Tiruppur 641601'] };
+const SHOP = { legalName: 'SRE Hyper Market Private Limited', gstin: '33ABCDE1234F1Z5', placeOfBusiness: ['12 Main Road', 'Tiruppur 641601'] };
 const CAT: CatalogueSnapshot = {
   tenantId: 't-rt', version: 1, builtAt: NOW,
   products: [
@@ -54,6 +54,19 @@ describe('OB-271 — real trading: the till refuses a bill that is not a tax inv
     if (!ta.ok) throw new Error(ta.why);
     expect(ta.lines.join('\n')).toContain('நகல் (DUPLICATE)');
     expect(ta.rows.some((r) => r.fields.includes('duplicate'))).toBe(true);
+  });
+
+  it('58 mm when the box says so (EDGE_BILL_PAPER=thermal-58): every line of the paper fits 32 columns', async () => {
+    const pos = bootPos({
+      laneId: 'lane-1', cashierId: 'u-cashier', tradingDay: NOW.slice(0, 10), catalogue: CAT, taxPercent: 5, realTrading: true, taxInvoice: SHOP, billPaper: 'thermal-58',
+      durable: async () => ({ committed: true, durable: true, detail: 'd', laneMessage: 'ok' }),
+    });
+    pos.scanBarcode('890000000001');
+    await pos.tenderCash('S-58', 'L1-0058', NOW);
+    const inv = pos.taxInvoice();
+    if (!inv.ok) throw new Error(inv.why);
+    expect(inv).toMatchObject({ paper: 'thermal-58', paperWidthMm: 58 });
+    expect(inv.lines.every((l) => l.length <= 32)).toBe(true);
   });
 
   it('no GSTIN in the store\'s setup → REFUSED before the disk, in words; nothing saved, no bill', async () => {

@@ -869,6 +869,40 @@ account when you leave the PC (**Windows key + L**), never sign out.
 3. Your own daily copy (Part 28, step 3), then unplug your drive and take it with you.
 4. If you switch the PC off at night, use the clean shutdown in Part 27, step 2.
 
+## Part 31 — Real trading: after the pilot passes and your written GO only (OB-271)
+
+**Do not do anything in this part during the mirror pilot.** It explains what is built and switched OFF, so nothing
+surprises you later.
+
+The new till can already do the three things real trading needs. All three are **off** while the mirror pilot runs:
+
+1. **The legal GST bill.** The till's bill becomes the shop's tax invoice: the words "Tax Invoice", the shop's legal
+   name, address and GSTIN, the bill number and date, each item's HSN code (6 digits, because the shop's turnover is
+   ₹5–10 crore — OB-149), quantity, unit, value and GST rate, CGST and SGST, the place of supply (Tamil Nadu) and the
+   total. If anything is missing, the till **refuses the sale** and says what is missing, so a wrong bill is never given.
+2. **The paper bill, in English or Tamil.** After each sale the cashier presses **Print bill**. The bill prints through
+   the printer's own Windows driver on an 80 mm roll (58 mm also works). A second print says **DUPLICATE**. If the
+   printer fails, the sale is still saved and the bill can be printed again (More → **Reprint the last bill**).
+3. **Card and UPI approval numbers.** After the shop's own card machine or UPI says "approved", the cashier types the
+   approval number from the machine's slip (never the card number). The day's list (More → **Card and UPI today**, and
+   at **Close till**) shows each number, so you can tick it against the machine's settlement slip. A refund to a card
+   is done on the machine, its reference typed, and a manager checks it with their own PIN.
+
+**The switch.** Real trading is switched on by one setting on the store computer, `EDGE_REAL_TRADING=1`, or by the store
+pack. The installer **never** writes it. The mirror pilot and real trading are **never on together**: a store computer
+set for both refuses to start and says why. Today's install and the `status` check keep the mirror pilot on; the exact
+switch-over steps are given to you **with** the real-trading GO, not before.
+
+**Before that GO, these must be true** (each is a question we will ask you then):
+- the shop's address for the bill is recorded with the store (head office's store record);
+- every product the till sells has its real 6-digit (or 8-digit) HSN code in the price list;
+- you have bought the bill printer and told us its make and model, its paper width (80 mm or 58 mm), and how it
+  connects to the PC (USB, network or Bluetooth) — and you have installed its Windows driver and printed a Windows
+  test page in Tamil;
+- you have decided how items with no GST (fresh vegetables, loose items at 0%) are billed, and what happens with a
+  bill of ₹50,000 or more (the law then needs the customer's name and address) — until then the new till refuses both
+  and says "bill this on the old system".
+
 ---
 
 ## The gaps found while checking this guide, and how each was closed (20 Oct 2026)

@@ -31,7 +31,7 @@ import { prepareTillBox, signInThroughScreen, pinOf } from '../support/till-oper
 const CHROMIUM = process.env['PLAYWRIGHT_CHROMIUM_EXECUTABLE'] ?? '/opt/pw-browsers/chromium';
 const HAVE_BROWSER = existsSync(CHROMIUM);
 const KEY = ['served', 'till', 'real', 'trading', 'key'].join('-').padEnd(48, '0');
-const SHOP = { legalName: 'SRE Hyper Market Private Limited', gstin: '33ABCDE1234F1Z5', address: ['12 Main Road', 'Tiruppur 641601, Tamil Nadu'] };
+const SHOP = { legalName: 'SRE Hyper Market Private Limited', gstin: '33ABCDE1234F1Z5', placeOfBusiness: ['12 Main Road', 'Tiruppur 641601, Tamil Nadu'] };
 const DAL = '8901234567890';
 const PARUPPU = '8901234567891';
 const packWith = (taxInvoice: unknown): Record<string, unknown> => ({
@@ -173,7 +173,7 @@ describe.skipIf(!HAVE_BROWSER)('OB-271 — the served till in real trading print
     const f = first!.fields;
     expect(f['title']).toEqual(['Tax Invoice']);
     expect(f['supplier_legal_name']).toEqual([SHOP.legalName]);
-    expect(f['supplier_address']).toEqual(SHOP.address);
+    expect(f['supplier_address']).toEqual(SHOP.placeOfBusiness);
     expect(f['supplier_gstin']).toEqual([`GSTIN: ${SHOP.gstin}`]);
     expect(f['invoice_number']![0]).toContain(sale!.number);
     expect(f['invoice_date']![0]).toMatch(/^Date:\d{2}-\d{2}-\d{4} \d{2}:\d{2}$/);

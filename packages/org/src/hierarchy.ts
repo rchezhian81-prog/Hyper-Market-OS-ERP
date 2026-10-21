@@ -48,7 +48,7 @@ export interface OrgNode {
    * OB-271 · CGST Rule 46(a): a store's address as its tax invoice prints it (the place of business), one line per entry.
    * Optional: a node without it is valid; a real-trading bill from a store without it is refused at the till.
    */
-  readonly address?: readonly string[];
+  readonly placeOfBusiness?: readonly string[];
   readonly status: OrgNodeStatus;
 }
 

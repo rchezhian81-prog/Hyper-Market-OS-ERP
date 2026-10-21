@@ -13,7 +13,7 @@ import { requiredHsnDigits, OWNER_TURNOVER_BAND_FOR_HSN_MINOR, gstStateOf } from
  * comes out of the MRP to the paisa. THE CONTRACT: a render missing ANY mandatory field fails. Synthetic data only.
  */
 
-const SHOP = { legalName: 'SRE Hyper Market Private Limited', gstin: '33ABCDE1234F1Z5', address: ['12 Main Road', 'Tiruppur 641601, Tamil Nadu'] };
+const SHOP = { legalName: 'SRE Hyper Market Private Limited', gstin: '33ABCDE1234F1Z5', placeOfBusiness: ['12 Main Road', 'Tiruppur 641601, Tamil Nadu'] };
 const LINES: TaxInvoiceInput['lines'] = [
   { description: 'Toor dal 1kg', hsnCode: '071360', quantityMinor: 2, uom: 'ea', unitPriceMinor: 10_500, lineTotalMinor: 21_000, taxRateBps: 500 },
   { description: 'Bath soap 100g', hsnCode: '34011190', quantityMinor: 1, uom: 'ea', unitPriceMinor: 5_900, lineTotalMinor: 5_900, taxRateBps: 1_800 },
@@ -67,7 +67,7 @@ describe('OB-271 — the tax invoice is built from the bill and the shop\'s setu
   it('the shop\'s setup: no legal name, no address, no or a malformed GSTIN — each refused by name, in words, all at once', () => {
     expect(codes({ ...INPUT, identity: null })).toEqual(expect.arrayContaining(['supplier_legal_name', 'supplier_address', 'supplier_gstin']));
     expect(codes({ ...INPUT, identity: { ...SHOP, legalName: '  ' } })).toEqual(['supplier_legal_name']);
-    expect(codes({ ...INPUT, identity: { ...SHOP, address: [] } })).toEqual(['supplier_address']);
+    expect(codes({ ...INPUT, identity: { ...SHOP, placeOfBusiness: [] } })).toEqual(['supplier_address']);
     expect(codes({ ...INPUT, identity: { ...SHOP, gstin: '' } })).toEqual(['supplier_gstin']);
     expect(codes({ ...INPUT, identity: { ...SHOP, gstin: 'NOT-A-GSTIN' } })).toEqual(expect.arrayContaining(['supplier_gstin']));
     const r = buildTaxInvoice({ ...INPUT, identity: { ...SHOP, gstin: '' } });

@@ -33,7 +33,7 @@ export interface TaxInvoiceIdentity {
   /** The 15-character GSTIN the store's sales are filed under. */
   readonly gstin: string;
   /** The store's address (its place of business), one printed line per entry. */
-  readonly address: readonly string[];
+  readonly placeOfBusiness: readonly string[];
 }
 
 /** One bill line, as the till committed it (GST inside the line total — A9). */
@@ -97,7 +97,7 @@ export interface TaxInvoiceBand {
 
 export interface TaxInvoiceDocument {
   readonly title: 'Tax Invoice';
-  readonly supplier: { readonly legalName: string; readonly address: readonly string[]; readonly gstin: string; readonly stateCode: string; readonly stateName: string };
+  readonly supplier: { readonly legalName: string; readonly placeOfBusiness: readonly string[]; readonly gstin: string; readonly stateCode: string; readonly stateName: string };
   readonly number: string;
   /** YYYY-MM-DD, India time. */
   readonly date: string;
@@ -207,7 +207,7 @@ export function buildTaxInvoice(input: TaxInvoiceInput): TaxInvoiceBuild {
   const id = input.identity ?? undefined;
   const legalName = typeof id?.legalName === 'string' ? id.legalName.trim() : '';
   const gstin = typeof id?.gstin === 'string' ? id.gstin.trim().toUpperCase() : '';
-  const address = Array.isArray(id?.address) ? id!.address.filter((l): l is string => typeof l === 'string').map((l) => l.trim()).filter((l) => l !== '') : [];
+  const address = Array.isArray(id?.placeOfBusiness) ? id!.placeOfBusiness.filter((l): l is string => typeof l === 'string').map((l) => l.trim()).filter((l) => l !== '') : [];
   if (legalName === '') add('supplier_legal_name');
   if (address.length === 0) add('supplier_address');
   const state = gstStateOf(gstin);
@@ -298,7 +298,7 @@ export function buildTaxInvoice(input: TaxInvoiceInput): TaxInvoiceBuild {
     ok: true,
     doc: Object.freeze({
       title: 'Tax Invoice' as const,
-      supplier: { legalName, address, gstin, stateCode: state.code, stateName: state.name },
+      supplier: { legalName, placeOfBusiness: address, gstin, stateCode: state.code, stateName: state.name },
       number: input.number, date, time: when.time,
       placeOfSupply: { kind: 'intra_state' as const, stateCode: state.code, stateName: state.name },
       reverseCharge: false as const,
@@ -389,7 +389,7 @@ export function taxInvoiceRows(doc: TaxInvoiceDocument, options: { readonly lang
   rows.push({ kind: 'title', fields: ['title'], text: w['title'] });
   if (options.duplicate === true) rows.push({ kind: 'title', fields: ['duplicate'], text: w['duplicate'] });
   rows.push({ kind: 'centre', fields: ['supplier_legal_name'], text: doc.supplier.legalName });
-  for (const line of doc.supplier.address) rows.push({ kind: 'centre', fields: ['supplier_address'], text: line });
+  for (const line of doc.supplier.placeOfBusiness) rows.push({ kind: 'centre', fields: ['supplier_address'], text: line });
   rows.push({ kind: 'centre', fields: ['supplier_gstin'], text: `${w['gstin']}: ${doc.supplier.gstin}` });
   rule();
   rows.push({ kind: 'pair', fields: ['invoice_number'], left: `${w['invoiceNo']}:`, right: doc.number });
@@ -452,8 +452,8 @@ export function invoiceRenderProblems(rows: readonly InvoiceRow[], doc: TaxInvoi
   };
   need('title', 'Tax Invoice', 'the "Tax Invoice" heading');
   need('supplier_legal_name', doc.supplier.legalName, 'the supplier\'s legal name');
-  if (doc.supplier.address.length === 0) problems.push('the supplier\'s address');
-  for (const line of doc.supplier.address) need('supplier_address', line, 'the supplier\'s address');
+  if (doc.supplier.placeOfBusiness.length === 0) problems.push('the supplier\'s address');
+  for (const line of doc.supplier.placeOfBusiness) need('supplier_address', line, 'the supplier\'s address');
   need('supplier_gstin', doc.supplier.gstin, 'the supplier\'s GSTIN');
   need('invoice_number', doc.number, 'the invoice number');
   need('invoice_date', printedDate(doc), 'the invoice date');

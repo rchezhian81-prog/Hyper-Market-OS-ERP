@@ -780,12 +780,12 @@ export async function startEdge(
   };
   // The shop's legal identity for the tax invoice, from the store pack (head office's GST registration and the store's
   // address) — read live; `null` when the pack does not carry it, and a real-trading sale is then refused in words.
-  const taxInvoiceIdentity = (): { readonly legalName: string; readonly gstin: string; readonly address: readonly string[] } | null => {
+  const taxInvoiceIdentity = (): { readonly legalName: string; readonly gstin: string; readonly placeOfBusiness: readonly string[] } | null => {
     const t = pack.policies.known ? pack.policies.value.taxInvoice : undefined;
     if (t === undefined || t === null || typeof t !== 'object') return null;
     return {
       legalName: typeof t.legalName === 'string' ? t.legalName : '', gstin: typeof t.gstin === 'string' ? t.gstin : '',
-      address: Array.isArray(t.address) ? t.address.filter((l): l is string => typeof l === 'string') : [],
+      placeOfBusiness: Array.isArray(t.placeOfBusiness) ? t.placeOfBusiness.filter((l): l is string => typeof l === 'string') : [],
     };
   };
   // Mirror and real trading are never on together (OB-248 · OB-271): a box set for both does not start — said plainly.

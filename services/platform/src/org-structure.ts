@@ -126,7 +126,7 @@ export function orgStructureRoutes(deps: OrgStructureDeps): readonly Route[] {
           ...(isStr(b['companyId']) ? { companyId: b['companyId'] as string } : {}),
           ...(isStr(b['gstin']) ? { gstin: b['gstin'] as string } : {}),
           // OB-271: a store's address for its tax invoice — lines of text, blank lines dropped, at most 4 of 80 characters.
-          ...(addressOf(b['address']) === undefined ? {} : { address: addressOf(b['address'])! }),
+          ...(addressOf(b['placeOfBusiness']) === undefined ? {} : { placeOfBusiness: addressOf(b['placeOfBusiness'])! }),
         };
         const nodes = await deps.nodes(ctx.tenantId);
         const register = new GstRegister(await deps.registrations(ctx.tenantId));

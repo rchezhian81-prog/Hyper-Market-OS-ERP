@@ -17,8 +17,9 @@
 1. **The till prints with the browser's own print (`window.print()`) of an HTML bill, through the printer's own Windows
    driver.** The bill is laid out for an 80 mm thermal roll (72 mm printable) by default, 58 mm as an option (the
    published receipt template's paper, else the box's `EDGE_BILL_PAPER=thermal-58`). Windows thermal-printer drivers print
-   whatever the page draws, so Tamil prints with the computer's own fonts ("Nirmala UI", which ships with Windows 10/11,
-   then "Latha", "Vijaya"). Nothing is fetched to print: no web font, no network (hard rule #1, strict CSP).
+   whatever the page draws, so Tamil prints with the computer's own fonts — the foundation's one type stack, whose Tamil
+   faces are "Noto Sans Tamil", "Nirmala UI" (it ships with Windows 10/11) and "Latha". Nothing is fetched to print: no
+   web font, no network (hard rule #1, strict CSP).
 2. **The content comes from one tested place.** `packages/receipt/src/tax-invoice.ts` builds the invoice (`buildTaxInvoice`,
    which runs the A1 checker on every line) and lays it out row by row, each row tagged with the Rule 46 field it carries
    (`taxInvoiceRows`). The contract `invoiceRenderProblems` reads a render back; the till hands a render to the printer

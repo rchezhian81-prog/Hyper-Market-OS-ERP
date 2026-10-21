@@ -89,13 +89,13 @@ describe.each(backings)('OB-271 — a real-trading bill is a tax invoice from th
     // ── Head office: the shop's GST registration and the store, WITH its address (what `shop` records, plus the address).
     await ok(call('POST', '/v1/org/nodes/SRE', 'u-owner', { kind: 'company', name: LEGAL }), 'company');
     await ok(call('POST', `/v1/org/gst-registrations/${GSTIN}`, 'u-owner', { companyId: 'SRE', legalName: LEGAL }), 'registration');
-    await ok(call('POST', `/v1/org/nodes/${STORE}`, 'u-owner', { kind: 'branch', name: 'SRE Hyper Market', parentId: 'SRE', companyId: 'SRE', gstin: GSTIN, address: `${ADDRESS[0]}\n\n${ADDRESS[1]}` }), 'store');
+    await ok(call('POST', `/v1/org/nodes/${STORE}`, 'u-owner', { kind: 'branch', name: 'SRE Hyper Market', parentId: 'SRE', companyId: 'SRE', gstin: GSTIN, placeOfBusiness: `${ADDRESS[0]}\n\n${ADDRESS[1]}` }), 'store');
     await ok(call('POST', `/v1/stores/${STORE}/settings`, 'u-owner', { tradingDayCutoff: '00:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 0, handoverToleranceMinor: 0, cashVarianceToleranceMinor: 0, privacySlaDays: 15 }), 'settings');
     h = restart(h); // ── head office COLD ────────────────────────────────────────────────────────────────────────────
     const served = await h.request({ method: 'GET', path: `/v1/store-packs/${STORE}`, userId: 'u-box', tenantId: T, branchId: STORE });
     expect(served.status, JSON.stringify(served.body)).toBe(200);
     const policies = JSON.parse(JSON.stringify(served.body).match(/"policies":(\{[^{}]*"taxInvoice":\{[^{}]*\}[^{}]*\})/)?.[1] ?? '{}') as { taxInvoice?: unknown };
-    expect(policies.taxInvoice).toEqual({ legalName: LEGAL, gstin: GSTIN, address: ADDRESS });
+    expect(policies.taxInvoice).toEqual({ legalName: LEGAL, gstin: GSTIN, placeOfBusiness: ADDRESS });
 
     // ── The store computer, in real trading, with that identity in its pack; head office reached through a stand-in fetch.
     let online = true;
@@ -153,7 +153,7 @@ describe.each(backings)('OB-271 — a real-trading bill is a tax invoice from th
     expect(await readLog(edge.log.path)).toHaveLength(0);
 
     // ── The till: the shop's GSTIN missing would refuse before the disk (its own check); with it, a card sale.
-    const noGstin = bootPos({ laneId: 'lane-1', taxPercent: 5, lanePort: edge.lane!.port, catalogue: CATALOGUE, realTrading: true, taxInvoice: { legalName: LEGAL, gstin: '', address: ADDRESS } });
+    const noGstin = bootPos({ laneId: 'lane-1', taxPercent: 5, lanePort: edge.lane!.port, catalogue: CATALOGUE, realTrading: true, taxInvoice: { legalName: LEGAL, gstin: '', placeOfBusiness: ADDRESS } });
     await signInTill(noGstin, 'u-lanecash');
     noGstin.scanBarcode('8901234567890');
     const n0 = await noGstin.nextReceipt();

@@ -1000,7 +1000,7 @@ export interface PackPolicies {
    * office's GST registration (OB-257 `shop`) and the store's address. Optional: absent → a real-trading sale is refused
    * (the bill would not be a tax invoice), and the till says what is missing.
    */
-  readonly taxInvoice?: { readonly legalName: string; readonly gstin: string; readonly address: readonly string[] };
+  readonly taxInvoice?: { readonly legalName: string; readonly gstin: string; readonly placeOfBusiness: readonly string[] };
 }
 
 /** A storage bin the warehouse handheld can put stock into (M09 / OA-9). */

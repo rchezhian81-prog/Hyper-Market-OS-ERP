@@ -110,7 +110,7 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
     const org = orgStructureAdapter({ store, now });
     const branch = (await org.nodes(tenantId)).find((n) => n.nodeId === storeId);
     const registration = branch?.gstin === undefined ? undefined : (await org.registrations(tenantId)).find((r) => r.gstin === branch.gstin);
-    const taxInvoice = registration === undefined ? undefined : { legalName: registration.legalName, gstin: registration.gstin, address: [...(branch?.address ?? [])] };
+    const taxInvoice = registration === undefined ? undefined : { legalName: registration.legalName, gstin: registration.gstin, placeOfBusiness: [...(branch?.placeOfBusiness ?? [])] };
     sections['policies'] = {
       ...(taxInvoice === undefined ? {} : { taxInvoice }),
       storeId, branchId: storeId, branchName: (await input.storeName(tenantId, storeId)) ?? storeId,
