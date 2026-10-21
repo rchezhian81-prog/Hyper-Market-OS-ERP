@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1488,
+  "testFiles": 1493,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -5122,9 +5122,9 @@
       "id": "MG-05",
       "label": "INTEGRATION_TESTED",
       "counts": {
-        "unit": 7,
-        "integration": 9,
-        "realDb": 6,
+        "unit": 8,
+        "integration": 10,
+        "realDb": 7,
         "browser": 0,
         "connected": 0,
         "device": 0,
@@ -5138,7 +5138,8 @@
           "tests/unit/migration-load.test.ts",
           "tests/unit/migration-slice-import.test.ts",
           "tests/unit/migration-trial-reconcile-route.test.ts",
-          "tests/unit/migration-trial.test.ts"
+          "tests/unit/migration-trial.test.ts",
+          "tests/unit/the-pilot-department-rides-the-catalogue-and-the-register.test.ts"
         ],
         "integration": [
           "tests/integration/a-department-slice-loads-only-after-its-exception-list-is-accepted.test.ts",
@@ -5147,6 +5148,7 @@
           "tests/integration/migration-pipeline.test.ts",
           "tests/integration/opening-load-at-store-volume.test.ts",
           "tests/integration/opening-state-loads.test.ts",
+          "tests/integration/the-evening-check-loads-the-old-erps-files-and-signs-the-day.test.ts",
           "tests/integration/the-load-command-runs.test.ts",
           "tests/integration/the-old-shop-arrives-whole.test.ts",
           "tests/integration/the-whole-load-runs-from-one-command.test.ts"
@@ -5155,6 +5157,7 @@
           "tests/integration/history-and-open-orders-load.test.ts",
           "tests/integration/opening-load-at-store-volume.test.ts",
           "tests/integration/opening-state-loads.test.ts",
+          "tests/integration/the-evening-check-loads-the-old-erps-files-and-signs-the-day.test.ts",
           "tests/integration/the-load-command-runs.test.ts",
           "tests/integration/the-old-shop-arrives-whole.test.ts",
           "tests/integration/the-whole-load-runs-from-one-command.test.ts"
@@ -5352,7 +5355,7 @@
       "id": "MG-10",
       "label": "INTEGRATION_TESTED",
       "counts": {
-        "unit": 7,
+        "unit": 8,
         "integration": 6,
         "realDb": 1,
         "browser": 2,
@@ -5368,7 +5371,8 @@
           "tests/unit/migration-parallel-day-sign.test.ts",
           "tests/unit/migration-parallel-run-route.test.ts",
           "tests/unit/migration-screen-route.test.ts",
-          "tests/unit/paid-on-old-system-is-the-mirror-tender.test.ts"
+          "tests/unit/paid-on-old-system-is-the-mirror-tender.test.ts",
+          "tests/unit/the-evening-check-compares-the-old-erp-with-the-new-till.test.ts"
         ],
         "integration": [
           "tests/integration/a-parallel-day-cannot-be-signed-with-an-unexplained-difference.test.ts",

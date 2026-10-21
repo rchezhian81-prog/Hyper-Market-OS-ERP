@@ -23,6 +23,9 @@ import { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { openDeviceOutbox, guardedStore } from '../../../packages/sync/src/device-outbox';
 import { readReceivingChecklistSetup, type ReceivingChecklistSetup } from '../../../packages/facilities/src/food-safety';
 import { drainToBox, boxStatus } from '../../../packages/sync/src/device-drain';
+import {
+  DATE_ORDERS, OLD_ERP_FILE_MAX_BYTES, OLD_ERP_REPORTS, columnValuesOf, headerKey, headerRowOf, judgeMapping, oldErpTemplateCsv,
+} from '../../../packages/migration/src/old-erp-reports';
 import type { BoxItemStatus } from '../../../packages/sync/src/device-relay';
 import { makeTradingDayRule } from '../../../packages/calendar/src/trading-day';
 import {
@@ -4706,6 +4709,12 @@ export function openMigrationRelay(laneWriteBase: string | undefined, outbox: Sy
   };
 }
 
+/** OB-263: the evening check's browser kit (see `eveningCheckKit` on the window). */
+export const EVENING_CHECK_KIT = Object.freeze({
+  reports: OLD_ERP_REPORTS, dateOrders: DATE_ORDERS, maxBytes: OLD_ERP_FILE_MAX_BYTES,
+  templateCsv: oldErpTemplateCsv, headerRowOf, headerKey, judgeMapping, columnValuesOf,
+});
+
 /** Build the migration screen, or `null` when the box was told nothing about a cutover. */
 export function bootMigration(data: MigrationData | undefined, outbox: SyncOutbox = new SyncOutbox()): MigrationSession | null {
   if (data === undefined) return null;
@@ -5103,6 +5112,12 @@ interface ManagerWindow {
   /** Hands the migration screen's decisions to the store computer (2b-vi-c-4). Absent when no box is wired. */
   migrationRelay?: MigrationRelay;
   migrationStorageProblem?: string;
+  /**
+   * OB-263: what the migration screen's evening check needs in the browser — our two templates, the file-size cap, and
+   * the reading of a file's own header row for the one-time mapping. The same code the store computer reads files with;
+   * the figures themselves are read and compared on the store computer.
+   */
+  eveningCheckKit?: typeof EVENING_CHECK_KIT;
   warehouseSupervisorData?: SupervisorData;
   warehouseSupervisorSession?: WarehouseSupervisorSession;
   /** Where the supervisor's approval decisions queue for sync — the view passes it to `decide`. */
@@ -6552,6 +6567,7 @@ if (browserWindow !== undefined) {
     const migrationRelay = openMigrationRelay(browserWindow.laneWriteBase, migrationOutbox);
     if (migrationRelay !== undefined) browserWindow.migrationRelay = migrationRelay;
     if (migrationStorageProblem !== undefined) browserWindow.migrationStorageProblem = migrationStorageProblem;
+    browserWindow.eveningCheckKit = EVENING_CHECK_KIT;
   }
   const warehouseSupervisor = bootWarehouseSupervisor(browserWindow.warehouseSupervisorData);
   if (warehouseSupervisor !== null) {

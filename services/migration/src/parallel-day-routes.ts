@@ -18,7 +18,10 @@
 
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
-import { compareParallelDay, ownDifference, type ComparisonArea, type DayComparison, type ParallelDifference } from '../../../packages/migration/src/cutover';
+import {
+  COMPARISON_AREAS, compareParallelDay, currentDifferences, differencePrefixFor, isComparisonSubject, ownDifference,
+  type ComparisonArea, type DayComparison, type ParallelDifference,
+} from '../../../packages/migration/src/cutover';
 import { dayDigestOf, signParallelDay, signatureStillApplies, type ParallelDaySignature } from '../../../packages/migration/src/parallel-day-sign';
 import { assertSafeTarget } from './guards';
 import { deciderSealFlags } from '../../pos/src/store-seal';
@@ -26,7 +29,8 @@ import type { RefusedDecision } from './decisions';
 import type { ParallelRunPolicy, RecordedParallelDay } from './parallel-run';
 import type { MigrationDeps } from './index';
 
-const AREAS: readonly ComparisonArea[] = ['sales_value', 'sales_count', 'stock_movement', 'tax', 'payments', 'loyalty'];
+// OB-263: the day totals, and the item and bill lines the evening check from the old ERP's files adds (each with a subject).
+const AREAS: readonly ComparisonArea[] = COMPARISON_AREAS;
 const SIDES = ['legacy', 'new', 'both', 'neither'] as const;
 const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
@@ -34,11 +38,13 @@ const isDate = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 
 export const isComparison = (c: unknown): c is DayComparison =>
-  isObj(c) && (AREAS as readonly string[]).includes(c['area'] as string) && isNum(c['legacyValue']) && isNum(c['newValue']) && isNum(c['toleranceMinor']) && (c['toleranceMinor'] as number) >= 0;
+  isObj(c) && (AREAS as readonly string[]).includes(c['area'] as string) && isNum(c['legacyValue']) && isNum(c['newValue']) && isNum(c['toleranceMinor']) && (c['toleranceMinor'] as number) >= 0
+  && (c['subject'] === undefined || isComparisonSubject(c['subject']));
 
-interface Explanation { readonly area: ComparisonArea; readonly explanation: string; readonly wrongSide?: (typeof SIDES)[number] }
+interface Explanation { readonly area: ComparisonArea; readonly subject?: string; readonly explanation: string; readonly wrongSide?: (typeof SIDES)[number] }
 const isExplanation = (e: unknown): e is Explanation =>
   isObj(e) && (AREAS as readonly string[]).includes(e['area'] as string) && typeof e['explanation'] === 'string'
+  && (e['subject'] === undefined || isComparisonSubject(e['subject']))
   && (e['wrongSide'] === undefined || (SIDES as readonly string[]).includes(e['wrongSide'] as string));
 
 /** A day signature as the ledger keeps it. */
@@ -66,8 +72,11 @@ export function parallelDayRoutes(deps: MigrationDeps): readonly Route[] {
     deps.parallelPolicy === undefined ? undefined : deps.parallelPolicy(tenantId);
   const dayOf = async (tenantId: string, businessDate: string): Promise<RecordedParallelDay | undefined> =>
     (deps.parallelDays === undefined ? [] : await deps.parallelDays(tenantId)).find((d) => d.businessDate === businessDate);
-  const differencesNow = async (tenantId: string): Promise<readonly ParallelDifference[]> =>
-    deps.parallelDifferences === undefined ? [] : deps.parallelDifferences(tenantId);
+  // Only the differences of each date's CURRENT figures: a day recorded again leaves its earlier ones as history (OB-263).
+  const differencesNow = async (tenantId: string): Promise<readonly ParallelDifference[]> => currentDifferences(
+    deps.parallelDays === undefined ? [] : await deps.parallelDays(tenantId),
+    deps.parallelDifferences === undefined ? [] : await deps.parallelDifferences(tenantId),
+  );
   const refuse = async (tenantId: string, d: Omit<RefusedDecision, 'decisionId' | 'relayedAt'>): Promise<RefusedDecision> => {
     const relayedAt = deps.now();
     const refused: RefusedDecision = { ...d, decisionId: `${d.kind}-${d.subjectId}-${relayedAt}`, relayedAt };
@@ -172,7 +181,12 @@ export function parallelDayRoutes(deps: MigrationDeps): readonly Route[] {
         // The same figures again is the same day: it is not re-recorded, only the reasons are applied. New figures are
         // a new, later fact about the day — its differences are raised afresh and need their reasons afresh.
         if (held === undefined || dayDigestOf(held.comparisons) !== dayDigestOf(comparisons as DayComparison[])) {
-          const result = compareParallelDay({ tenantId: ctx.tenantId, businessDate, comparisons: comparisons as DayComparison[] });
+          // Recorded again with other figures: the fresh differences are numbered apart from the ones they replace, so
+          // they never take their ids — or their reasons (OB-263; the store computer numbers them the same way).
+          const result = compareParallelDay({
+            tenantId: ctx.tenantId, businessDate, comparisons: comparisons as DayComparison[],
+            idPrefix: differencePrefixFor(held !== undefined, dayDigestOf(comparisons as DayComparison[])),
+          });
           await deps.recordParallelDay!(ctx.tenantId, { ...result, comparisons: comparisons as DayComparison[], recordedBy: enteredBy, recordedAt: enteredAt });
           for (const d of result.differences) await deps.recordParallelDifference!(ctx.tenantId, d);
         }
@@ -181,7 +195,7 @@ export function parallelDayRoutes(deps: MigrationDeps): readonly Route[] {
         for (const e of explanations as Explanation[]) {
           if (e.explanation.trim() === '') continue;
           const all = await differencesNow(ctx.tenantId);
-          const target = all.find((d) => d.businessDate === businessDate && d.area === e.area && d.status !== 'resolved');
+          const target = all.find((d) => d.businessDate === businessDate && d.area === e.area && d.subject === e.subject && d.status !== 'resolved');
           if (target === undefined) continue;
           const r = ownDifference({ differences: all, differenceId: target.differenceId, ownerUserId: enteredBy, explanation: e.explanation, ...(e.wrongSide === undefined ? {} : { wrongSide: e.wrongSide }) });
           if (!r.ok) { refusedReasons.push(`${target.differenceId}: ${r.detail}`); continue; }

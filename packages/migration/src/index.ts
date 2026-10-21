@@ -49,7 +49,8 @@ export {
 
 export {
   compareParallelDay, ownDifference, parallelRunPosition, decideCutover, performRollback, confirmRollback,
-  type ComparisonArea, type DayComparison, type DifferenceStatus, type ParallelDifference,
+  currentDifferences, differencePrefixFor, isComparisonSubject, COMPARISON_AREAS,
+  type ComparisonArea, type DayTotalArea, type DayLineArea, type DayComparison, type DifferenceStatus, type ParallelDifference,
   type ParallelDayResult, type OwnRefusal, type OwnResult, type ParallelRunPosition,
   type CutoverCheck, type CutoverChecklist, type CutoverDecision, type RollbackTrigger,
   type RollbackResult, type RollbackState, type RollbackExecution, type RollbackConfirmationRefusal,

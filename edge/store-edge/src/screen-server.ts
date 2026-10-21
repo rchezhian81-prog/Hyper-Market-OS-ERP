@@ -37,6 +37,21 @@ import {
 } from './office-sign-in';
 import { asPhoneHolder } from './handheld-sign-in';
 import { isHandheldSource } from '../../../packages/sync/src/device-relay';
+import type { EveningCheckBox } from './evening-check-box';
+
+/**
+ * OB-263: the evening check's doors on the migration screen — the only other writes this socket takes. Each is for the
+ * person signed in with their own PIN (OB-259), from a page this box served, as JSON; the box decides the rest.
+ */
+export const EVENING_CHECK_PATHS = Object.freeze({
+  day: '/migration/evening-check/day',
+  mapping: '/migration/evening-check/mapping',
+  load: '/migration/evening-check/load',
+  reasons: '/migration/evening-check/reasons',
+  sign: '/migration/evening-check/sign',
+});
+/** The two files of a day, with their JSON quoting, fit inside this; anything larger is refused unread. */
+export const EVENING_CHECK_LOAD_MAX_BYTES = 12 * 1024 * 1024;
 
 /**
  * The address this listens on unless told otherwise — loopback, so on a shop PC nothing on the shop network
@@ -364,11 +379,73 @@ export function startScreenServer(input: {
    * Absent: the screens open as before (a test box, or the hosted copy behind its own sign-in front).
    */
   readonly officeSignIn?: OfficeGate;
+  /** OB-263: the evening check kept on this box, and whether it is open (the mirror pilot). Absent: its doors answer 404. */
+  readonly eveningCheck?: { readonly box: EveningCheckBox; readonly on: () => boolean };
 }): Promise<ScreenServer> {
   const office = input.officeSignIn;
   const page = (res: ServerResponse, status: number, html: string, cookie?: string): void => {
     if (cookie !== undefined) res.setHeader('set-cookie', cookie);
     send(res, status, 'text/html; charset=utf-8', html);
+  };
+  const json = (res: ServerResponse, status: number, body: unknown): void => send(res, status, 'application/json; charset=utf-8', JSON.stringify(body));
+  /**
+   * WHO is at the evening check: the person signed in with their own PIN (OB-259), or — on the hosted copy only — the
+   * person the front's sign-in named. Never a name in the request. They must hold the migration screen's own permission.
+   */
+  const eveningPerson = async (req: IncomingMessage): Promise<{ readonly userId: string; readonly via: string } | { readonly status: number; readonly refusedBecause: string; readonly detail: string }> => {
+    const snap = input.snapshot();
+    let person: { userId: string; via: string } | null = null;
+    if (office !== undefined) {
+      const session = await office.check(officeTokenOf(req.headers['cookie']));
+      if (!session.ok) return { status: 401, refusedBecause: session.refusedBecause, detail: 'Your office sign-in has ended. Enter your PIN again (open the migration screen again).' };
+      person = { userId: session.userId, via: 'office_pin' };
+    } else if (input.trustForwardedUser === true) {
+      const user = forwardedUser(req.headers['x-sre-user']);
+      if (user !== null) person = { userId: user, via: 'verified_sign_in' };
+    }
+    if (person === null) {
+      return { status: 403, refusedBecause: 'no_sign_in', detail: 'This store computer does not ask for a PIN on its office screens, so it cannot tell who is loading the evening check. Nothing was saved. Turn the office PIN on (owner guide Part 26e).' };
+    }
+    const needs = permissionForScreen('migration');
+    if (needs !== null && !(permissionsOf(person.userId, snap.pack) ?? []).includes(needs)) {
+      return { status: 403, refusedBecause: 'not_allowed', detail: `${person.userId} may not open the migration screen. Nothing was saved.` };
+    }
+    return person;
+  };
+  const eveningDoor = async (req: IncomingMessage, res: ServerResponse, path: string): Promise<void> => {
+    const ec = input.eveningCheck;
+    if (ec === undefined || !ec.on()) { req.resume(); json(res, 404, { ok: false, refusedBecause: 'not_in_the_mirror_pilot', detail: 'The evening check from the old system\'s files is for the mirror pilot, and this store computer is not set for it.' }); return; }
+    const isRead = path === EVENING_CHECK_PATHS.day;
+    if (isRead ? req.method !== 'GET' : req.method !== 'POST') { req.resume(); json(res, 405, { ok: false, refusedBecause: 'wrong_method', detail: isRead ? 'read with GET' : 'send with POST' }); return; }
+    if (!isRead) {
+      if (!sameOrigin(req)) { req.resume(); json(res, 403, { ok: false, refusedBecause: 'not_from_this_screen', detail: 'refused: not from a page this store computer served' }); return; }
+      if (!/^application\/json\b/.test(String(req.headers['content-type'] ?? ''))) { req.resume(); json(res, 415, { ok: false, refusedBecause: 'not_json', detail: 'send JSON' }); return; }
+    }
+    const person = await eveningPerson(req);
+    if ('status' in person) { req.resume(); json(res, person.status, { ok: false, refusedBecause: person.refusedBecause, detail: person.detail }); return; }
+    if (isRead) {
+      const date = new URL(req.url ?? '', 'http://screens').searchParams.get('date') ?? '';
+      json(res, 200, {
+        ok: true, mappings: ec.box.mappings(), days: ec.box.days(),
+        ...(/^\d{4}-\d{2}-\d{2}$/.test(date) ? { day: await ec.box.day(date) } : {}),
+      });
+      return;
+    }
+    const raw = await readBody(req, path === EVENING_CHECK_PATHS.load ? EVENING_CHECK_LOAD_MAX_BYTES : 256 * 1024);
+    if (raw === null) { json(res, 413, { ok: false, refusedBecause: 'too_large', detail: 'The files are too large to be one day\'s reports. Nothing was saved.' }); return; }
+    let body: Record<string, unknown>;
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      body = parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
+    } catch { json(res, 400, { ok: false, refusedBecause: 'not_readable', detail: 'The request could not be read. Nothing was saved.' }); return; }
+    const at = new Date().toISOString();
+    const who = { by: person.userId, via: person.via, at };
+    const box = ec.box;
+    const out = path === EVENING_CHECK_PATHS.mapping ? await box.setMapping({ report: body['report'], mapping: body['mapping'], header: body['header'], ...who })
+      : path === EVENING_CHECK_PATHS.load ? await box.load({ businessDate: body['businessDate'], itemWise: body['itemWise'], billWise: body['billWise'], tolerance: body['tolerance'], ...who })
+        : path === EVENING_CHECK_PATHS.reasons ? await box.explain({ businessDate: body['businessDate'], reasons: body['reasons'], ...who })
+          : await box.sign({ businessDate: body['businessDate'], statement: body['statement'], ...who });
+    json(res, out.ok ? 200 : out.refusedBecause === 'not_the_named_reconciler' || out.refusedBecause === 'nobody_named_to_reconcile' ? 403 : 422, { ...out, mappings: box.mappings(), days: box.days() });
   };
   const server: Server = createServer((req: IncomingMessage, res: ServerResponse) => {
     void (async () => {
@@ -391,6 +468,11 @@ export function startScreenServer(input: {
         }
         res.writeHead(303, { location: next, 'set-cookie': officeCookie(outcome.token), 'cache-control': 'no-store', 'x-frame-options': 'DENY', 'referrer-policy': 'no-referrer' });
         res.end();
+        return;
+      }
+      // OB-263: the evening check's doors (the day's figures, the mapping, the load, the reasons, the signature).
+      if ((Object.values(EVENING_CHECK_PATHS) as string[]).includes(doorPath ?? '')) {
+        await eveningDoor(req, res, doorPath!);
         return;
       }
       if (req.method !== 'GET') {

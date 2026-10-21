@@ -32,7 +32,7 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import {
-  compareParallelDay, ownDifference, parallelRunPosition, performRollback, confirmRollback, reconcileRollback,
+  compareParallelDay, currentDifferences, ownDifference, parallelRunPosition, performRollback, confirmRollback, reconcileRollback,
   type ComparisonArea, type DayComparison, type ParallelDayResult, type ParallelDifference, type ParallelRunPosition,
   type RollbackResult, type RollbackTrigger, type RollbackReconciliation, type RollbackWindowFacts,
 } from '../../../packages/migration/src/cutover';
@@ -103,7 +103,8 @@ export async function parallelRunView(deps: MigrationDeps, tenantId: string): Pr
   const policy = deps.parallelPolicy === undefined ? undefined : await deps.parallelPolicy(tenantId);
   if (policy === undefined) return undefined;
   const days = deps.parallelDays === undefined ? [] : await deps.parallelDays(tenantId);
-  const differences = deps.parallelDifferences === undefined ? [] : await deps.parallelDifferences(tenantId);
+  // A day recorded again with other figures (an evening check loaded again, OB-263): only its current differences count.
+  const differences = currentDifferences(days, deps.parallelDifferences === undefined ? [] : await deps.parallelDifferences(tenantId));
   const position = parallelRunPosition({ days, differences, requiredCleanDays: policy.requiredCleanDays });
   const latest = [...days].map((d) => d.businessDate).sort().at(-1);
   const elapsedDays = latest === undefined ? 0 : Math.max(0, daysBetween(policy.startedOn, latest));

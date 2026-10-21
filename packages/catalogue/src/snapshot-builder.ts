@@ -32,6 +32,8 @@ export interface MasterProduct {
   readonly sku: string;
   readonly name: string;
   readonly baseUom: string;
+  /** The department (the master's primary category), carried into the pack for the evening check (OB-263). */
+  readonly categoryId?: string;
   readonly taxClassId: string;
   readonly status: ProductStatus;
   readonly mrpMinor?: number;
@@ -140,6 +142,7 @@ export function buildCatalogueSnapshot(input: BuildSnapshotInput): BuildSnapshot
       sku: master.sku,
       name: master.name,
       baseUom: master.baseUom,
+      ...(master.categoryId === undefined || master.categoryId === '' ? {} : { categoryId: master.categoryId }),
       unitPriceMinor,
       taxBps,
       hsnCode: master.taxClassId, // carry the HSN / tax-class code through for GST-return assembly (A5)

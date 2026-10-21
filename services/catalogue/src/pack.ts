@@ -130,11 +130,18 @@ export function canonicalise(snapshot: CatalogueSnapshot): string {
     .filter((p) => (p.blockedBatches?.length ?? 0) > 0 || (p.batchPrices?.length ?? 0) > 0)
     .sort((a, b) => (a.productId < b.productId ? -1 : 1))
     .map((p) => [p.productId, stableJson({ blockedBatches: p.blockedBatches ?? [], batchPrices: p.batchPrices ?? [] })].join(FIELD));
+  // OB-263: each product's department rides under the signature whenever any product carries one — the evening check keeps
+  // only the pilot department's items by it. Only then, so a pack without departments signs to exactly the bytes it did.
+  const categories = [...snapshot.products]
+    .filter((p) => typeof p.categoryId === 'string' && p.categoryId !== '')
+    .sort((a, b) => (a.productId < b.productId ? -1 : 1))
+    .map((p) => [p.productId, p.categoryId].join(FIELD));
   return [snapshot.tenantId, snapshot.version, snapshot.builtAt, ...products, '--', ...barcodes,
     ...(promotions.length === 0 ? [] : ['--promotions', ...promotions]),
     ...(regulated.length === 0 ? [] : ['--regulated', ...regulated]),
     ...units,
-    ...(batches.length === 0 ? [] : ['--batches', ...batches])]
+    ...(batches.length === 0 ? [] : ['--batches', ...batches]),
+    ...(categories.length === 0 ? [] : ['--categories', ...categories])]
     .join(RECORD);
 }
 

@@ -35,6 +35,8 @@ export interface MigrationFeed {
   readonly verification?: Readonly<Record<string, unknown>>;
   /** MG-10: each parallel-run day's signatures, with whether each still applies to the day's figures. */
   readonly parallelDaySignatures?: readonly unknown[];
+  /** OB-263 · MG-05: the department of the newest applied department slice — the pilot department. */
+  readonly pilotDepartment?: { readonly categoryId: string; readonly name: string; readonly loadId?: string };
 }
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
@@ -57,6 +59,9 @@ export function readMigrationFeed(body: unknown): MigrationFeed | undefined {
   for (const s of LIST_SECTIONS) if (body[s] !== undefined && !Array.isArray(body[s])) return undefined;
   for (const s of ['loadOperator', 'rollbackDemonstratedAt'] as const) if (body[s] !== undefined && !isStr(body[s])) return undefined;
   if (body['verification'] !== undefined && !isObj(body['verification'])) return undefined;
+  // OB-263: interpreted (the evening check filters by it), so read strictly.
+  const dept = body['pilotDepartment'];
+  if (dept !== undefined && (!isObj(dept) || !isStr(dept['categoryId']) || !isStr(dept['name']) || (dept['loadId'] !== undefined && !isStr(dept['loadId'])))) return undefined;
   return body as unknown as MigrationFeed;
 }
 

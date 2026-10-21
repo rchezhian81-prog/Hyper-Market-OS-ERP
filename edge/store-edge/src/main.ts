@@ -72,6 +72,8 @@ import { canonicalHash, IdempotencyGuard } from './idempotency';
 import { ReturnEntitlement, type EntitlementLine } from './entitlement';
 import { buildReceiptLookup } from './receipt-lookup';
 import { openOldErpBills } from './old-erp-bills';
+import { openEveningCheckBox } from './evening-check-box';
+import { OFFICE_LANE } from './office-sign-in';
 import { returnIdOf } from './cloud-return';
 import { createEdgeNode, type EdgeNode } from './index';
 import { startLaneServer, LANE_HOST, type LaneServer, type LaneDayCloseHandler, type LaneDayReopenHandler, type LaneDeviceRelayHandler, type LaneDeviceStatusHandler, type LaneTillActivityHandler } from './lane-server';
@@ -1699,6 +1701,35 @@ export async function startEdge(
     say(`document templates as of ${heldTemplates.feed.generatedAt} restored from disk${receipt === undefined ? ' — nothing published for receipts' : ` — receipts print with template v${receipt.version}`}.`);
   }
 
+  // OB-263: the evening check from the old ERP's item-wise and bill-wise files — kept and judged on THIS box, offline, and
+  // each decision relayed to head office as a parallel-run day (sealed for the person this box verified, like the device
+  // relay above). Read only when the office screen asks; never on the sale path.
+  const eveningCheckBox = await openEveningCheckBox({
+    dataDir: settings['EDGE_DATA_DIR']!, capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']),
+    sources: {
+      tenantId,
+      cutoverId: () => (pack.migrationPolicy.known ? pack.migrationPolicy.value.cutoverId : undefined),
+      reconcilerUserId: () => (pack.migrationPolicy.known ? pack.migrationPolicy.value.dailyReconcilerUserId : undefined),
+      department: () => (pack.migrationPolicy.known ? pack.migrationPolicy.value.pilotDepartment : undefined),
+      catalogue: () => tillCatalogue(pack, node.pack(), new Date().toISOString())?.products.map((p) => ({
+        productId: p.productId, name: p.name, barcodes: p.barcodes.map((b) => b.code), uom: p.uom,
+        ...(p.categoryId === undefined ? {} : { categoryId: p.categoryId }), ...(p.taxBps === undefined ? {} : { taxBps: p.taxBps }),
+      })),
+      records: async () => ({ sales: await parsedRecords(log.path), refunds: await parsedRecords(returnsLog.path) }),
+      tradingDayOf: (iso) => tradingDate(wallClockIn(iso), packCutoff(pack)),
+      relay: async (event, by, via = 'office_pin') => {
+        const sealed = withDeciderSeal(sealKey, tenantId, event, { userId: by, via, laneId: OFFICE_LANE });
+        if (deviceEventKeys.has(sealed.idempotencyKey)) return { queued: true, detail: 'already queued' };
+        deviceEventKeys.add(sealed.idempotencyKey);
+        const outcome = await commitLocally({ saleId: sealed.idempotencyKey, record: JSON.stringify(sealed), log: deviceEventsLog });
+        if (!outcome.committed) { deviceEventKeys.delete(sealed.idempotencyKey); return { queued: false, detail: outcome.detail }; }
+        deviceEventsOutbox.enqueue(sealed);
+        return { queued: true };
+      },
+    },
+  });
+  if (eveningCheckBox.unreadableRecords > 0) say(`evening check: ${eveningCheckBox.unreadableRecords} record(s) could not be read whole — kept, not repaired. Raise this.`);
+
   // The screens socket. Built from the CURRENT state on every request, so a screen reloaded at
   // four o'clock shows four o'clock's exceptions rather than the ones this process saw at boot.
   const snapshot = (): ScreenInput => {
@@ -1727,6 +1758,8 @@ export async function startEdge(
       mirrorPilot: mirrorPilot(),
       // OB-264: the mirror sales and their old ERP bill numbers, for the evening check's bill-wise list.
       oldErpBills: oldErpBills.bills(),
+      // OB-263: the evening check kept on this box — its mappings and the days loaded (the figures are read per day).
+      eveningCheck: { mappings: eveningCheckBox.mappings(), days: eveningCheckBox.days() },
     };
   };
 
@@ -1755,6 +1788,8 @@ export async function startEdge(
     ...(lane === null ? {} : { laneWriteBase: `http://${LANE_HOST}:${lane.port}` }),
     // Behind the hosted front's authenticated relay only (OB-16): the ERP screens run as the person who signed in.
     ...(settings['EDGE_SCREEN_TRUST_FORWARDED_USER'] === '1' ? { trustForwardedUser: true } : {}),
+    // OB-263: the evening check's doors on the migration screen — only while the box is in the mirror pilot.
+    eveningCheck: { box: eveningCheckBox, on: () => mirrorPilot().on },
   });
   if (screens !== null) {
     say(screens.host === SCREEN_HOST || screens.host === 'localhost'
@@ -2069,6 +2104,7 @@ export async function startEdge(
         if (heldBills !== null) await heldBills.close();
         if (payments !== null) await payments.close();
         if (peripheralReports !== null) await peripheralReports.close();
+        await eveningCheckBox.close();
         await log.close();
         await returnsLog.close();
         await completionsLog.close();
@@ -2739,6 +2775,7 @@ export async function startEdge(
       if (heldBills !== null) await heldBills.close();
       if (payments !== null) await payments.close();
       if (peripheralReports !== null) await peripheralReports.close();
+      await eveningCheckBox.close();
       await log.close();
       await returnsLog.close();
       await completionsLog.close();
