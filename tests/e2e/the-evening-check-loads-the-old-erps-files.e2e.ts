@@ -177,7 +177,8 @@ describe.skipIf(!HAVE_BROWSER)('the evening check from the old ERP\'s files, in 
 
     // ── Map once, from each file's own header row; saved on the store computer, with who set it.
     await page.setInputFiles('#ec-file-item_wise', { name: 'itemwise.csv', mimeType: 'text/csv', buffer: itemWise(day) });
-    expect(await text(page, '#ec-map-title')).toBe('Which column is which — the item-wise report');
+    // The file is read in the browser first; wait for the mapping panel rather than read it mid-render.
+    await expect.poll(() => text(page, '#ec-map-title'), { timeout: 10_000 }).toBe('Which column is which — the item-wise report');
     await mapItemWise(page);
     expect(await banner(page)).toMatchObject({ title: 'Mapping saved on this store computer', text: expect.stringContaining('set by u-owner') });
     await page.setInputFiles('#ec-file-bill_wise', { name: 'billwise.csv', mimeType: 'text/csv', buffer: billWise(day) });
