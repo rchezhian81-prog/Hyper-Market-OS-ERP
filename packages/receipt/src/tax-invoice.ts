@@ -15,14 +15,18 @@
 //   • `invoiceRenderProblems` is the contract: it reads a rendered invoice back and names every mandatory field the
 //     render does not show. The till prints only a render with none missing.
 //
-// Not decided here (reported, not guessed): a basket with an exempt or nil-rated line (Bill of Supply, Rule 49, or an
-// invoice-cum-bill of supply, Rule 46A) and a bill of ₹50,000 or more to an unregistered buyer (the buyer's name and
-// address, Rule 46(e)) are REFUSED on the new till until the owner decides; the nearest-rupee rounding of each tax
-// component (A10) is not printed until the owner decides where it applies — the bill shows the exact paisa (A9).
+// The owner's decisions (21 Oct 2026, in writing; the CA confirms them before real trading is switched on):
+//   • OB-278 · Rule 46A: a bill with ANY untaxed (exempt or nil-rated, 0%) line is ONE "Invoice-cum-Bill of Supply"; an
+//     all-taxed bill stays a "Tax Invoice". An untaxed line shows as exempt / nil with no tax;
+//   • OB-279 · addendum A10: each tax component of the bill — CGST and SGST — is rounded to the nearest rupee (50 paise and
+//     up rounds up). The bill's total is the ROUNDED total: taxable value + untaxed value + rounded CGST + rounded SGST,
+//     which is the goods' own total plus a stated "Round off" (never more than ₹1 either way). It reconciles both ways;
+//   • OB-280: a bill of ₹50,000 or more (Rule 46(e) needs the buyer's name and address) is REFUSED — "bill this on the old
+//     system". Business (B2B) bills are not taken at this till at all and also go to the old system.
 
-import { checkTaxInvoiceFields } from '../../finance/src/invoice-fields';
+import { checkTaxInvoiceFields, TAX_INVOICE_TITLE, INVOICE_CUM_BILL_OF_SUPPLY_TITLE } from '../../finance/src/invoice-fields';
 import { validateHsnForTurnover, InvalidHsnInput, OWNER_TURNOVER_BAND_FOR_HSN_MINOR } from '../../finance/src/hsn';
-import { extractInclusiveGst, InvalidInclusiveTaxInput } from '../../finance/src/inclusive-tax';
+import { extractInclusiveGst, InvalidInclusiveTaxInput, roundToNearestRupeeMinor } from '../../finance/src/inclusive-tax';
 import { gstStateOf } from '../../finance/src/gst-states';
 import { quantityLabel, normaliseUom } from '../../contracts/src/quantity';
 
@@ -70,6 +74,8 @@ export interface TaxInvoiceInput {
   readonly changeMinor?: number;
   /** The annual turnover the HSN digit rule is judged at. Absent → the owner's band (OB-149: above ₹5 crore → 6 digits). */
   readonly annualTurnoverMinor?: number;
+  /** OB-279: what the till is about to charge — checked against the invoice's rounded total (they must be the same). */
+  readonly totalMinor?: number;
 }
 
 export interface TaxInvoiceLine {
@@ -85,6 +91,8 @@ export interface TaxInvoiceLine {
   readonly sgstMinor: number;
   /** taxable + CGST + SGST — exactly what the line was charged. */
   readonly lineTotalMinor: number;
+  /** OB-278: an untaxed (exempt or nil-rated, 0%) line — its whole value is the value of supply, with no tax. */
+  readonly untaxed: boolean;
 }
 
 /** One GST rate on the bill: what it applied to and the CGST and SGST it gave (half the rate each — A8). */
@@ -95,8 +103,11 @@ export interface TaxInvoiceBand {
   readonly sgstMinor: number;
 }
 
+export type TaxInvoiceTitle = typeof TAX_INVOICE_TITLE | typeof INVOICE_CUM_BILL_OF_SUPPLY_TITLE;
+
 export interface TaxInvoiceDocument {
-  readonly title: 'Tax Invoice';
+  /** OB-278: "Tax Invoice" when every line is taxed; "Invoice-cum-Bill of Supply" (Rule 46A) when any line is untaxed. */
+  readonly title: TaxInvoiceTitle;
   readonly supplier: { readonly legalName: string; readonly placeOfBusiness: readonly string[]; readonly gstin: string; readonly stateCode: string; readonly stateName: string };
   readonly number: string;
   /** YYYY-MM-DD, India time. */
@@ -108,11 +119,24 @@ export interface TaxInvoiceDocument {
   /** Tax is never payable by the buyer on reverse charge for a retail counter sale (Rule 46(p)). */
   readonly reverseCharge: false;
   readonly lines: readonly TaxInvoiceLine[];
+  /** The taxed rates only; their CGST and SGST are the exact paisa (A9). */
   readonly bands: readonly TaxInvoiceBand[];
+  /** The taxed lines' value of supply. */
   readonly taxableMinor: number;
+  /** OB-278: the untaxed (exempt / nil) lines' value — no tax on it. 0 on a plain tax invoice. */
+  readonly untaxedMinor: number;
+  /** The exact CGST and SGST of the bill, to the paisa (A9) — before the OB-279 rounding. */
+  readonly cgstExactMinor: number;
+  readonly sgstExactMinor: number;
+  /** OB-279 · A10: the bill's CGST and SGST, each rounded to the nearest rupee (50 paise and up rounds up). */
   readonly cgstMinor: number;
   readonly sgstMinor: number;
   readonly totalTaxMinor: number;
+  /** What the lines were charged, added up — the goods' own total. */
+  readonly goodsMinor: number;
+  /** OB-279: rounded tax − exact tax — what the rounding adds (+) or takes off (−); at most ₹1 either way. */
+  readonly roundOffMinor: number;
+  /** The bill's total: taxable + untaxed + rounded CGST + rounded SGST = goods + round off. What the customer pays. */
   readonly totalMinor: number;
   readonly tenders: readonly TaxInvoiceTenderInput[];
   readonly changeMinor?: number;
@@ -125,7 +149,7 @@ export type TaxInvoiceProblemCode =
   | 'supplier_legal_name' | 'supplier_address' | 'supplier_gstin' | 'place_of_supply'
   | 'invoice_number' | 'invoice_date'
   | 'line_description' | 'line_quantity' | 'line_unit' | 'line_hsn' | 'line_hsn_digits' | 'line_rate' | 'line_taxable_value'
-  | 'exempt_line' | 'recipient_details' | 'totals';
+  | 'recipient_details' | 'totals';
 
 export interface TaxInvoiceProblem {
   readonly code: TaxInvoiceProblemCode;
@@ -138,8 +162,36 @@ export type TaxInvoiceBuild =
   | { readonly ok: true; readonly doc: TaxInvoiceDocument }
   | { readonly ok: false; readonly problems: readonly TaxInvoiceProblem[]; readonly laneMessage: string };
 
-/** Rule 46(e): a supply to an unregistered buyer of this taxable value or more needs the buyer's name and address. */
+/** Rule 46(e) · OB-280: a bill of this total or more needs the buyer's name and address — refused here, old system only. */
 export const UNREGISTERED_RECIPIENT_DETAILS_FROM_MINOR = 50_000_00;
+
+/** OB-279: the round off can never be more than ₹1 either way (two components, each moved by at most 50 paise). */
+export const MAX_ROUND_OFF_MINOR = 100;
+
+/**
+ * OB-279 · addendum A10 — the bill's CGST and SGST, each rounded to the nearest rupee, and the round off it makes. Pure. The
+ * exact components are the sum of each taxed line's own (A9: pulled out of what the line was charged, the odd paisa on
+ * SGST); an untaxed line, or one whose rate cannot be split, adds nothing (the invoice itself refuses the latter).
+ */
+export function invoiceRoundOff(lines: readonly { readonly lineTotalMinor: number; readonly taxRateBps: number }[]): {
+  readonly cgstExactMinor: number; readonly sgstExactMinor: number; readonly cgstMinor: number; readonly sgstMinor: number; readonly roundOffMinor: number;
+} {
+  let cgst = 0;
+  let sgst = 0;
+  for (const l of lines) {
+    if (!Number.isSafeInteger(l.lineTotalMinor) || l.lineTotalMinor <= 0 || !Number.isSafeInteger(l.taxRateBps) || l.taxRateBps <= 0) continue;
+    try {
+      const b = extractInclusiveGst({ mrpMinor: l.lineTotalMinor, rateBps: l.taxRateBps, placeOfSupply: 'intra_state' });
+      cgst += b.components.find((c) => c.component === 'CGST')?.amountMinor ?? 0;
+      sgst += b.components.find((c) => c.component === 'SGST')?.amountMinor ?? 0;
+    } catch (e) {
+      if (!(e instanceof InvalidInclusiveTaxInput)) throw e;
+    }
+  }
+  const cgstMinor = roundToNearestRupeeMinor(cgst);
+  const sgstMinor = roundToNearestRupeeMinor(sgst);
+  return { cgstExactMinor: cgst, sgstExactMinor: sgst, cgstMinor, sgstMinor, roundOffMinor: cgstMinor + sgstMinor - cgst - sgst };
+}
 
 /** India time is UTC+05:30 all year (no daylight saving). */
 const IST_OFFSET_MINUTES = 330;
@@ -167,8 +219,7 @@ const PROBLEM_WORDS: Readonly<Record<TaxInvoiceProblemCode, string>> = {
   line_hsn_digits: 'an item\'s HSN code is too short (at least 6 digits are needed at this shop\'s turnover)',
   line_rate: 'an item\'s GST rate cannot be split into CGST and SGST',
   line_taxable_value: 'an item has no value',
-  exempt_line: 'an item is exempt or nil-rated (no GST) — the owner has not yet decided how such an item is billed on the new till',
-  recipient_details: 'the bill is ₹50,000 or more, which needs the customer\'s name and address — the new till does not take them yet',
+  recipient_details: 'the bill is ₹50,000 or more, which needs the customer\'s name and address — the new till does not take them, so bill this on the old system',
   totals: 'the GST and the values do not add up to the total',
 };
 
@@ -183,11 +234,9 @@ function refusalWords(problems: readonly TaxInvoiceProblem[], descriptions: read
   }
   const setup = problems.some((p) => p.code.startsWith('supplier_') || p.code === 'place_of_supply');
   const catalogue = problems.some((p) => p.code === 'line_hsn' || p.code === 'line_hsn_digits' || p.code === 'line_rate');
-  const oldSystem = problems.some((p) => p.code === 'exempt_line' || p.code === 'recipient_details');
   const next = [
     ...(setup ? [SETUP_NEXT] : []),
     ...(catalogue ? ['Head office must correct the item in the price list.'] : []),
-    ...(oldSystem ? ['Bill this on the old system for now.'] : []),
   ];
   return `This bill cannot be issued as a legal tax invoice, so it was NOT saved — do not take money. ${parts.join('; ')}.${next.length === 0 ? ' Tell the manager.' : ` ${next.join(' ')}`}`;
 }
@@ -218,6 +267,8 @@ export function buildTaxInvoice(input: TaxInvoiceInput): TaxInvoiceBuild {
   const turnover = input.annualTurnoverMinor ?? OWNER_TURNOVER_BAND_FOR_HSN_MINOR;
 
   if (input.lines.length === 0) add('line_description', 0);
+  // OB-278: the heading follows the basket — any untaxed line makes the whole bill an invoice-cum-bill of supply.
+  const title: TaxInvoiceTitle = input.lines.some((l) => l.taxRateBps === 0) ? INVOICE_CUM_BILL_OF_SUPPLY_TITLE : TAX_INVOICE_TITLE;
   const lines: TaxInvoiceLine[] = [];
   input.lines.forEach((l, i) => {
     const description = typeof l.description === 'string' ? l.description.trim() : '';
@@ -235,11 +286,10 @@ export function buildTaxInvoice(input: TaxInvoiceInput): TaxInvoiceBuild {
     }
     const rateBps = l.taxRateBps;
     if (!isWholeNonNeg(rateBps)) { add('line_rate', i); return; }
-    // An exempt / nil-rated line is not a taxable supply on a tax invoice: Rule 49 / 46A — the owner decides (reported).
-    if (rateBps === 0) { add('exempt_line', i); return; }
     if (!isWholeNonNeg(l.lineTotalMinor) || l.lineTotalMinor === 0) { add('line_taxable_value', i); return; }
     let split;
     try {
+      // OB-278: an untaxed line (0%) is its own value with no tax component — `extractInclusiveGst` says exactly that.
       split = extractInclusiveGst({ mrpMinor: l.lineTotalMinor, rateBps, placeOfSupply: 'intra_state' });
     } catch (e) {
       if (e instanceof InvalidInclusiveTaxInput) { add('line_rate', i); return; } throw e;
@@ -248,7 +298,7 @@ export function buildTaxInvoice(input: TaxInvoiceInput): TaxInvoiceBuild {
     const sgst = split.components.find((c) => c.component === 'SGST')?.amountMinor ?? 0;
     // The A1 checker, on this line, with the invoice's own heading, GSTIN, number, date and place of supply.
     const check = checkTaxInvoiceFields({
-      documentType: 'Tax Invoice', supplierGstin: gstin, invoiceNumber: input.number, invoiceDate: date,
+      documentType: title, supplierGstin: gstin, invoiceNumber: input.number, invoiceDate: date,
       hsnCode: hsn, taxableMinor: split.taxableMinor, rateBps, placeOfSupply: 'intra_state', taxComponents: split.components.map((c) => c.component),
     });
     for (const p of check.problems) {
@@ -262,24 +312,33 @@ export function buildTaxInvoice(input: TaxInvoiceInput): TaxInvoiceBuild {
     }
     lines.push({
       description, hsnCode: hsn, quantityMinor: l.quantityMinor, uom: typeof l.uom === 'string' ? l.uom.trim() : '', unitPriceMinor: l.unitPriceMinor,
-      rateBps, taxableMinor: split.taxableMinor, cgstMinor: cgst, sgstMinor: sgst, lineTotalMinor: l.lineTotalMinor,
+      rateBps, taxableMinor: split.taxableMinor, cgstMinor: cgst, sgstMinor: sgst, lineTotalMinor: l.lineTotalMinor, untaxed: rateBps === 0,
     });
   });
   // The checker sees the GSTIN, number and date on each line; with no line to check them on, they are checked here.
   if (lines.length === 0) {
-    const check = checkTaxInvoiceFields({ documentType: 'Tax Invoice', supplierGstin: gstin, invoiceNumber: input.number, invoiceDate: date });
+    const check = checkTaxInvoiceFields({ documentType: title, supplierGstin: gstin, invoiceNumber: input.number, invoiceDate: date });
     if (check.problems.some((p) => p.startsWith('supplierGstin'))) add('supplier_gstin');
     if (check.problems.some((p) => p.startsWith('invoiceNumber'))) add('invoice_number');
     if (check.problems.some((p) => p.startsWith('invoiceDate'))) add('invoice_date');
   }
 
-  const taxableMinor = lines.reduce((s, l) => s + l.taxableMinor, 0);
-  const cgstMinor = lines.reduce((s, l) => s + l.cgstMinor, 0);
-  const sgstMinor = lines.reduce((s, l) => s + l.sgstMinor, 0);
-  const totalMinor = lines.reduce((s, l) => s + l.lineTotalMinor, 0);
-  // A9: the values and the tax reconcile to what was charged, to the paisa — line by line and in all.
-  if (lines.some((l) => l.taxableMinor + l.cgstMinor + l.sgstMinor !== l.lineTotalMinor) || taxableMinor + cgstMinor + sgstMinor !== totalMinor) add('totals');
-  if (taxableMinor >= UNREGISTERED_RECIPIENT_DETAILS_FROM_MINOR) add('recipient_details');
+  const taxableMinor = lines.filter((l) => !l.untaxed).reduce((s, l) => s + l.taxableMinor, 0);
+  const untaxedMinor = lines.filter((l) => l.untaxed).reduce((s, l) => s + l.taxableMinor, 0);
+  const goodsMinor = lines.reduce((s, l) => s + l.lineTotalMinor, 0);
+  // OB-279 · A10: each component of the bill rounded to the rupee; the bill's total is the rounded total.
+  const rounded = invoiceRoundOff(lines.map((l) => ({ lineTotalMinor: l.lineTotalMinor, taxRateBps: l.rateBps })));
+  const cgstMinor = rounded.cgstMinor;
+  const sgstMinor = rounded.sgstMinor;
+  const totalMinor = taxableMinor + untaxedMinor + cgstMinor + sgstMinor;
+  // A9 · OB-279: the values and the tax reconcile — each line to what it was charged, to the paisa; the bill to the goods
+  // plus the round off (at most ₹1 either way); and to what the till is about to charge, when it says.
+  if (lines.some((l) => l.taxableMinor + l.cgstMinor + l.sgstMinor !== l.lineTotalMinor)
+    || lines.reduce((s, l) => s + l.cgstMinor, 0) !== rounded.cgstExactMinor || lines.reduce((s, l) => s + l.sgstMinor, 0) !== rounded.sgstExactMinor
+    || goodsMinor + rounded.roundOffMinor !== totalMinor || Math.abs(rounded.roundOffMinor) > MAX_ROUND_OFF_MINOR
+    || (input.totalMinor !== undefined && input.totalMinor !== totalMinor)) add('totals');
+  // OB-280: ₹50,000 or more — the buyer's name and address would be needed; refused, old system only.
+  if (totalMinor >= UNREGISTERED_RECIPIENT_DETAILS_FROM_MINOR) add('recipient_details');
 
   if (problems.length > 0 || state === undefined || when === undefined) {
     if (state === undefined && gstin === '') add('supplier_gstin');
@@ -288,7 +347,7 @@ export function buildTaxInvoice(input: TaxInvoiceInput): TaxInvoiceBuild {
   }
 
   const bandMap = new Map<number, { taxable: number; cgst: number; sgst: number }>();
-  for (const l of lines) {
+  for (const l of lines.filter((x) => !x.untaxed)) {
     const b = bandMap.get(l.rateBps) ?? { taxable: 0, cgst: 0, sgst: 0 };
     bandMap.set(l.rateBps, { taxable: b.taxable + l.taxableMinor, cgst: b.cgst + l.cgstMinor, sgst: b.sgst + l.sgstMinor });
   }
@@ -297,12 +356,13 @@ export function buildTaxInvoice(input: TaxInvoiceInput): TaxInvoiceBuild {
   return {
     ok: true,
     doc: Object.freeze({
-      title: 'Tax Invoice' as const,
+      title,
       supplier: { legalName, placeOfBusiness: address, gstin, stateCode: state.code, stateName: state.name },
       number: input.number, date, time: when.time,
       placeOfSupply: { kind: 'intra_state' as const, stateCode: state.code, stateName: state.name },
       reverseCharge: false as const,
-      lines, bands, taxableMinor, cgstMinor, sgstMinor, totalTaxMinor: cgstMinor + sgstMinor, totalMinor,
+      lines, bands, taxableMinor, untaxedMinor, cgstExactMinor: rounded.cgstExactMinor, sgstExactMinor: rounded.sgstExactMinor,
+      cgstMinor, sgstMinor, totalTaxMinor: cgstMinor + sgstMinor, goodsMinor, roundOffMinor: rounded.roundOffMinor, totalMinor,
       tenders: (input.tenders ?? []).map((t) => ({ kind: t.kind, amountMinor: t.amountMinor, ...(t.machineRef === undefined ? {} : { machineRef: t.machineRef }) })),
       ...(input.changeMinor === undefined || input.changeMinor <= 0 ? {} : { changeMinor: input.changeMinor }),
       laneId: input.laneId, cashierId: input.cashierId,
@@ -316,7 +376,8 @@ export function buildTaxInvoice(input: TaxInvoiceInput): TaxInvoiceBuild {
 export type InvoiceField =
   | 'title' | 'duplicate' | 'supplier_legal_name' | 'supplier_address' | 'supplier_gstin' | 'invoice_number' | 'invoice_date'
   | 'place_of_supply' | 'reverse_charge' | 'line_description' | 'line_hsn' | 'line_rate' | 'line_quantity' | 'line_taxable_value'
-  | 'line_amount' | 'band_taxable' | 'cgst' | 'sgst' | 'taxable_total' | 'cgst_total' | 'sgst_total' | 'total' | 'tender' | 'change'
+  | 'line_amount' | 'band_taxable' | 'cgst' | 'sgst' | 'taxable_total' | 'untaxed_total' | 'cgst_total' | 'sgst_total' | 'round_off'
+  | 'total' | 'tender' | 'change'
   | 'signatory' | 'till';
 
 export interface InvoiceRow {
@@ -332,19 +393,25 @@ export interface InvoiceRow {
 
 export type InvoiceLanguage = 'en' | 'ta';
 
-/** The printed words, in English and Tamil. "Tax Invoice" stays in English on a Tamil bill too: it is the legal heading. */
+/** The printed words, in English and Tamil. The legal heading stays in English on a Tamil bill too, beside the Tamil. */
 const LABELS: Readonly<Record<InvoiceLanguage, Readonly<Record<string, string>>>> = {
   en: {
-    title: 'Tax Invoice', duplicate: 'DUPLICATE — reprint', gstin: 'GSTIN', invoiceNo: 'Invoice No', date: 'Date',
+    [TAX_INVOICE_TITLE]: TAX_INVOICE_TITLE, [INVOICE_CUM_BILL_OF_SUPPLY_TITLE]: INVOICE_CUM_BILL_OF_SUPPLY_TITLE, duplicate: 'DUPLICATE — reprint', gstin: 'GSTIN', invoiceNo: 'Invoice No', date: 'Date',
     placeOfSupply: 'Place of supply', reverseCharge: 'Tax payable on reverse charge: No', hsn: 'HSN', gst: 'GST',
     taxable: 'Taxable value', amountsIn: 'Amounts in ₹', taxSummary: 'GST summary', total: 'Total (incl. GST)',
+    untaxedRate: 'Exempt / nil — no GST', untaxedValue: 'Value', untaxedTotal: 'Exempt / nil-rated value (no GST)',
+    rounded: '(rounded to ₹)', roundOff: 'Round off',
     paid: 'Paid', change: 'Change', approval: 'approval', for: 'For', signatory: 'Authorised signatory', till: 'Till', cashier: 'Cashier',
     cash: 'Cash', card: 'Card', upi: 'UPI', loyalty_points: 'Points', store_credit: 'Store credit',
   },
   ta: {
-    title: 'Tax Invoice / வரி விலைப்பட்டியல்', duplicate: 'நகல் (DUPLICATE) — மறு அச்சு', gstin: 'GSTIN', invoiceNo: 'பில் எண்', date: 'தேதி',
+    [TAX_INVOICE_TITLE]: `${TAX_INVOICE_TITLE} / வரி விலைப்பட்டியல்`,
+    [INVOICE_CUM_BILL_OF_SUPPLY_TITLE]: `${INVOICE_CUM_BILL_OF_SUPPLY_TITLE} / விலைப்பட்டியல் மற்றும் வழங்கல் பில்`,
+    duplicate: 'நகல் (DUPLICATE) — மறு அச்சு', gstin: 'GSTIN', invoiceNo: 'பில் எண்', date: 'தேதி',
     placeOfSupply: 'வழங்கல் இடம்', reverseCharge: 'தலைகீழ் கட்டண முறையில் வரி: இல்லை', hsn: 'HSN', gst: 'GST',
     taxable: 'வரி விதிக்கத்தக்க மதிப்பு', amountsIn: 'தொகைகள் ₹ இல்', taxSummary: 'GST சுருக்கம்', total: 'மொத்தம் (GST உட்பட)',
+    untaxedRate: 'Exempt / nil (விலக்கு / பூஜ்யம்) — GST இல்லை', untaxedValue: 'மதிப்பு', untaxedTotal: 'விலக்கு / பூஜ்ய மதிப்பு (GST இல்லை)',
+    rounded: '(₹ க்கு முழுமையாக்கப்பட்டது)', roundOff: 'முழுமையாக்கல் (Round off)',
     paid: 'செலுத்தியது', change: 'மீதி', approval: 'அனுமதி எண்', for: '', signatory: 'அங்கீகரிக்கப்பட்ட கையொப்பம்', till: 'டில்', cashier: 'காசாளர்',
     cash: 'பணம்', card: 'கார்டு', upi: 'UPI', loyalty_points: 'புள்ளிகள்', store_credit: 'கடை வரவு',
   },
@@ -386,7 +453,7 @@ export function taxInvoiceRows(doc: TaxInvoiceDocument, options: { readonly lang
   const w = LABELS[options.language ?? 'en'];
   const rows: InvoiceRow[] = [];
   const rule = (): void => { rows.push({ kind: 'rule', fields: [] }); };
-  rows.push({ kind: 'title', fields: ['title'], text: w['title'] });
+  rows.push({ kind: 'title', fields: ['title'], text: w[doc.title] });
   if (options.duplicate === true) rows.push({ kind: 'title', fields: ['duplicate'], text: w['duplicate'] });
   rows.push({ kind: 'centre', fields: ['supplier_legal_name'], text: doc.supplier.legalName });
   for (const line of doc.supplier.placeOfBusiness) rows.push({ kind: 'centre', fields: ['supplier_address'], text: line });
@@ -400,7 +467,10 @@ export function taxInvoiceRows(doc: TaxInvoiceDocument, options: { readonly lang
   rule();
   doc.lines.forEach((l, i) => {
     rows.push({ kind: 'text', fields: ['line_description'], line: i, text: l.description });
-    rows.push({ kind: 'pair', fields: ['line_hsn', 'line_rate', 'line_taxable_value'], line: i, left: `  ${w['hsn']} ${l.hsnCode} · ${w['gst']} ${invoiceRate(l.rateBps)}`, right: `${w['taxable']} ${invoiceAmount(l.taxableMinor)}` });
+    rows.push(l.untaxed
+      // OB-278: an untaxed line says so, and carries no tax.
+      ? { kind: 'pair', fields: ['line_hsn', 'line_rate', 'line_taxable_value'], line: i, left: `  ${w['hsn']} ${l.hsnCode} · ${w['untaxedRate']}`, right: `${w['untaxedValue']} ${invoiceAmount(l.taxableMinor)}` }
+      : { kind: 'pair', fields: ['line_hsn', 'line_rate', 'line_taxable_value'], line: i, left: `  ${w['hsn']} ${l.hsnCode} · ${w['gst']} ${invoiceRate(l.rateBps)}`, right: `${w['taxable']} ${invoiceAmount(l.taxableMinor)}` });
     rows.push({ kind: 'pair', fields: ['line_quantity', 'line_amount'], line: i, left: `  ${invoiceQuantity(l.quantityMinor, l.uom)} × ${invoiceAmount(l.unitPriceMinor)}`, right: invoiceAmount(l.lineTotalMinor) });
   });
   rule();
@@ -413,8 +483,11 @@ export function taxInvoiceRows(doc: TaxInvoiceDocument, options: { readonly lang
   });
   rule();
   rows.push({ kind: 'pair', fields: ['taxable_total'], left: w['taxable']!, right: invoiceAmount(doc.taxableMinor) });
-  rows.push({ kind: 'pair', fields: ['cgst_total'], left: 'CGST', right: invoiceAmount(doc.cgstMinor) });
-  rows.push({ kind: 'pair', fields: ['sgst_total'], left: 'SGST', right: invoiceAmount(doc.sgstMinor) });
+  if (doc.untaxedMinor > 0) rows.push({ kind: 'pair', fields: ['untaxed_total'], left: w['untaxedTotal']!, right: invoiceAmount(doc.untaxedMinor) });
+  // OB-279: the bill's CGST and SGST, each rounded to the rupee, and the round off they make — stated, never hidden.
+  rows.push({ kind: 'pair', fields: ['cgst_total'], left: `CGST ${w['rounded']}`, right: invoiceAmount(doc.cgstMinor) });
+  rows.push({ kind: 'pair', fields: ['sgst_total'], left: `SGST ${w['rounded']}`, right: invoiceAmount(doc.sgstMinor) });
+  if (doc.roundOffMinor !== 0) rows.push({ kind: 'pair', fields: ['round_off'], left: w['roundOff']!, right: `${doc.roundOffMinor > 0 ? '+' : ''}${invoiceAmount(doc.roundOffMinor)}` });
   rows.push({ kind: 'title', fields: ['total'], left: w['total']!, right: invoiceAmount(doc.totalMinor), text: `${w['total']} ${invoiceAmount(doc.totalMinor)}` });
   rule();
   for (const t of doc.tenders) {
@@ -438,7 +511,7 @@ export function rowText(row: InvoiceRow): string {
 }
 
 /**
- * THE CONTRACT (A1): read a rendered invoice back and name every mandatory field it does not SHOW — the heading, the
+ * THE CONTRACT (A1 · OB-278 · OB-279): read a rendered invoice back and name every mandatory field it does not SHOW — the heading (the one the items call for), the
  * supplier's legal name, address and GSTIN, the number and date, the place of supply, the reverse-charge statement, and
  * for every line its description, HSN, quantity with unit, taxable value and rate; the CGST and SGST of every rate; the
  * total; the signatory. Empty only when every field is on the paper with the value the invoice holds.
@@ -450,7 +523,9 @@ export function invoiceRenderProblems(rows: readonly InvoiceRow[], doc: TaxInvoi
   const need = (field: InvoiceField, value: string, name: string, where: { line?: number; band?: number } = {}): void => {
     if (value === '' || !shows(field, value, where)) problems.push(name);
   };
-  need('title', 'Tax Invoice', 'the "Tax Invoice" heading');
+  need('title', doc.title, `the "${doc.title}" heading`);
+  // OB-278: the heading is the one the basket calls for — never a plain "Tax Invoice" over an untaxed line.
+  if (doc.title !== (doc.lines.some((l) => l.untaxed) ? INVOICE_CUM_BILL_OF_SUPPLY_TITLE : TAX_INVOICE_TITLE)) problems.push('the heading the bill\'s items call for');
   need('supplier_legal_name', doc.supplier.legalName, 'the supplier\'s legal name');
   if (doc.supplier.placeOfBusiness.length === 0) problems.push('the supplier\'s address');
   for (const line of doc.supplier.placeOfBusiness) need('supplier_address', line, 'the supplier\'s address');
@@ -466,7 +541,8 @@ export function invoiceRenderProblems(rows: readonly InvoiceRow[], doc: TaxInvoi
     need('line_hsn', l.hsnCode, `${n}: the HSN code`, { line: i });
     need('line_quantity', invoiceQuantity(l.quantityMinor, l.uom), `${n}: the quantity and unit`, { line: i });
     need('line_taxable_value', invoiceAmount(l.taxableMinor), `${n}: the taxable value`, { line: i });
-    need('line_rate', invoiceRate(l.rateBps), `${n}: the tax rate`, { line: i });
+    if (l.untaxed) need('line_rate', 'Exempt / nil', `${n}: that it is exempt / nil-rated`, { line: i });
+    else need('line_rate', invoiceRate(l.rateBps), `${n}: the tax rate`, { line: i });
   });
   doc.bands.forEach((b, i) => {
     const n = `GST ${invoiceRate(b.rateBps)}`;
@@ -475,7 +551,13 @@ export function invoiceRenderProblems(rows: readonly InvoiceRow[], doc: TaxInvoi
     need('sgst', invoiceAmount(b.sgstMinor), `${n}: the SGST`, { band: i });
     need('sgst', `SGST @ ${invoiceRate(b.rateBps / 2)}`, `${n}: the SGST rate`, { band: i });
   });
+  if (doc.untaxedMinor > 0) need('untaxed_total', invoiceAmount(doc.untaxedMinor), 'the exempt / nil-rated value');
+  need('cgst_total', invoiceAmount(doc.cgstMinor), 'the CGST, rounded to the rupee');
+  need('sgst_total', invoiceAmount(doc.sgstMinor), 'the SGST, rounded to the rupee');
+  if (doc.roundOffMinor !== 0) need('round_off', invoiceAmount(doc.roundOffMinor), 'the round off');
   need('total', invoiceAmount(doc.totalMinor), 'the total');
+  // OB-279: what the paper says adds up — the values and the rounded tax are the total; the goods and the round off too.
+  if (doc.taxableMinor + doc.untaxedMinor + doc.cgstMinor + doc.sgstMinor !== doc.totalMinor || doc.goodsMinor + doc.roundOffMinor !== doc.totalMinor) problems.push('a total that adds up');
   need('signatory', doc.supplier.legalName, 'the supplier\'s signatory line');
   return problems;
 }

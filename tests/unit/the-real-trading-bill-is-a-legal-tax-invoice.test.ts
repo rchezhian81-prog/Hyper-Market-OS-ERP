@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
-  buildTaxInvoice, taxInvoiceRows, invoiceRenderProblems, taxInvoiceText, invoiceAmount, invoiceRate, invoiceQuantity, indiaDateTime,
+  buildTaxInvoice, taxInvoiceRows, invoiceRenderProblems, taxInvoiceText, invoiceAmount, invoiceRate, invoiceQuantity, indiaDateTime, invoiceRoundOff,
   UNREGISTERED_RECIPIENT_DETAILS_FROM_MINOR, type TaxInvoiceInput, type TaxInvoiceDocument, type InvoiceRow, type InvoiceField,
 } from '../../packages/receipt/src/index';
-import { requiredHsnDigits, OWNER_TURNOVER_BAND_FOR_HSN_MINOR, gstStateOf } from '../../packages/finance/src/index';
+import { requiredHsnDigits, OWNER_TURNOVER_BAND_FOR_HSN_MINOR, gstStateOf, INVOICE_CUM_BILL_OF_SUPPLY_TITLE } from '../../packages/finance/src/index';
 
 /**
  * **OB-271 · roadmap v2.1 A1 / A2 / A4 / A8 / A9 · CGST Rule 46 — the real-trading bill is a legal GST tax invoice, or it is
@@ -43,8 +43,26 @@ describe('OB-271 — the tax invoice is built from the bill and the shop\'s setu
       { rateBps: 500, taxableMinor: 34_286, cgstMinor: 857, sgstMinor: 857 },
       { rateBps: 1_800, taxableMinor: 5_000, cgstMinor: 450, sgstMinor: 450 },
     ]);
-    expect(doc.taxableMinor + doc.cgstMinor + doc.sgstMinor).toBe(doc.totalMinor);
-    expect(doc.totalMinor).toBe(41_900);
+    // OB-279 · A10: the bill's CGST (₹13.07) and SGST (₹13.07) each round to ₹13 — the round off is −14 paise, and the
+    // bill's total is the ROUNDED total, which reconciles both ways.
+    expect(doc).toMatchObject({ cgstExactMinor: 1_307, sgstExactMinor: 1_307, cgstMinor: 1_300, sgstMinor: 1_300, goodsMinor: 41_900, roundOffMinor: -14, totalMinor: 41_886, untaxedMinor: 0 });
+    expect(doc.taxableMinor + doc.untaxedMinor + doc.cgstMinor + doc.sgstMinor).toBe(doc.totalMinor);
+    expect(doc.goodsMinor + doc.roundOffMinor).toBe(doc.totalMinor);
+  });
+
+  it('OB-279 · A10: each tax component rounds to the nearest rupee — 50 paise and up rounds UP, below rounds down', () => {
+    const dal = { description: 'Toor dal 1kg', hsnCode: '071360', quantityMinor: 1, uom: 'ea', unitPriceMinor: 10_500, lineTotalMinor: 10_500, taxRateBps: 500 };
+    // ₹105 at 5%: ₹2.50 CGST and ₹2.50 SGST — each 50 paise, so each rounds UP to ₹3; the bill is ₹106.00.
+    expect(built({ ...INPUT, lines: [dal] })).toMatchObject({ cgstMinor: 300, sgstMinor: 300, roundOffMinor: 100, totalMinor: 10_600 });
+    expect(invoiceRoundOff([{ lineTotalMinor: 10_500, taxRateBps: 500 }])).toEqual({ cgstExactMinor: 250, sgstExactMinor: 250, cgstMinor: 300, sgstMinor: 300, roundOffMinor: 100 });
+    // ₹1 at 12%: 5 paise CGST and 6 paise SGST — each below 50, so each rounds DOWN to ₹0; the bill is 89 paise.
+    const sweet = built({ ...INPUT, lines: [{ description: 'Sweet', hsnCode: '170490', quantityMinor: 1, uom: 'ea', unitPriceMinor: 100, lineTotalMinor: 100, taxRateBps: 1_200 }] });
+    expect(sweet).toMatchObject({ cgstMinor: 0, sgstMinor: 0, roundOffMinor: -11, totalMinor: 89 });
+    // ₹10.99 at 18%: ₹0.84 + ₹0.84 → ₹1 + ₹1; the round off is never more than ₹1 either way.
+    expect(invoiceRoundOff([{ lineTotalMinor: 1_099, taxRateBps: 1_800 }]).roundOffMinor).toBe(32);
+    // What the till is about to charge must be that rounded total, to the paisa.
+    expect(codes({ ...INPUT, lines: [dal], totalMinor: 10_500 })).toEqual(['totals']);
+    expect(codes({ ...INPUT, lines: [dal], totalMinor: 10_600 })).toEqual([]);
   });
 
   it('A9 · A8: an odd paisa of tax lands on SGST, never lost — ₹1 at 12% is 89p + 5p CGST + 6p SGST', () => {
@@ -84,13 +102,26 @@ describe('OB-271 — the tax invoice is built from the bill and the shop\'s setu
     expect(codes({ ...INPUT, lines: [] })).toEqual(['line_description']);
   });
 
-  it('not decided by the sources, so refused until the owner decides: an exempt / nil-rated line, and a bill of ₹50,000 or more', () => {
-    expect(codes({ ...INPUT, lines: [{ ...LINES[0]!, taxRateBps: 0 }] })).toEqual(['exempt_line']);
-    const big = UNREGISTERED_RECIPIENT_DETAILS_FROM_MINOR * 105 / 100; // taxable exactly ₹50,000 inside a 5% MRP
-    expect(codes({ ...INPUT, lines: [{ ...LINES[0]!, quantityMinor: 1, unitPriceMinor: big, lineTotalMinor: big }] })).toEqual(['recipient_details']);
-    expect(codes({ ...INPUT, lines: [{ ...LINES[0]!, quantityMinor: 1, unitPriceMinor: big - 2, lineTotalMinor: big - 2 }] })).toEqual([]);
-    const r = buildTaxInvoice({ ...INPUT, lines: [{ ...LINES[0]!, taxRateBps: 0 }] });
-    if (!r.ok) expect(r.laneMessage).toContain('Toor dal 1kg: an item is exempt or nil-rated');
+  it('OB-278 · Rule 46A: any untaxed (exempt / nil) line makes ONE "Invoice-cum-Bill of Supply"; an all-taxed bill stays a "Tax Invoice"', () => {
+    const coriander = { description: 'Fresh coriander', hsnCode: '070999', quantityMinor: 1, uom: 'ea', unitPriceMinor: 1_000, lineTotalMinor: 1_000, taxRateBps: 0 };
+    const doc = built({ ...INPUT, lines: [LINES[0]!, coriander] });
+    expect(doc.title).toBe(INVOICE_CUM_BILL_OF_SUPPLY_TITLE);
+    expect(doc.lines[1]).toMatchObject({ untaxed: true, rateBps: 0, taxableMinor: 1_000, cgstMinor: 0, sgstMinor: 0 });
+    expect(doc).toMatchObject({ taxableMinor: 20_000, untaxedMinor: 1_000, cgstMinor: 500, sgstMinor: 500, roundOffMinor: 0, totalMinor: 22_000 });
+    expect(doc.bands.map((b) => b.rateBps)).toEqual([500]); // the untaxed value is not a GST band
+    expect(built({ ...INPUT, lines: [coriander] }).title).toBe(INVOICE_CUM_BILL_OF_SUPPLY_TITLE);
+    expect(built().title).toBe('Tax Invoice');
+    // An untaxed line still needs its HSN code (Rule 49 / 46A).
+    expect(codes({ ...INPUT, lines: [{ ...coriander, hsnCode: '' }] })).toEqual(['line_hsn']);
+  });
+
+  it('OB-280: a bill of ₹50,000 or more is refused — "bill this on the old system"', () => {
+    const veg = { description: 'Vegetables (bulk)', hsnCode: '070999', quantityMinor: 1, uom: 'ea', unitPriceMinor: 0, lineTotalMinor: 0, taxRateBps: 0 };
+    expect(codes({ ...INPUT, lines: [{ ...veg, unitPriceMinor: UNREGISTERED_RECIPIENT_DETAILS_FROM_MINOR, lineTotalMinor: UNREGISTERED_RECIPIENT_DETAILS_FROM_MINOR }] })).toEqual(['recipient_details']);
+    expect(codes({ ...INPUT, lines: [{ ...veg, unitPriceMinor: UNREGISTERED_RECIPIENT_DETAILS_FROM_MINOR - 1, lineTotalMinor: UNREGISTERED_RECIPIENT_DETAILS_FROM_MINOR - 1 }] })).toEqual([]);
+    const r = buildTaxInvoice({ ...INPUT, lines: [{ ...veg, unitPriceMinor: 60_000_00, lineTotalMinor: 60_000_00 }] });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.laneMessage).toContain('bill this on the old system');
   });
 
   it('A8: the GSTIN\'s first two digits are the State the sale is supplied in', () => {
@@ -105,8 +136,13 @@ describe('OB-271 — the tax invoice is built from the bill and the shop\'s setu
 /** Every mandatory field a render must show, and the rows that carry it. */
 const MANDATORY: readonly InvoiceField[] = [
   'title', 'supplier_legal_name', 'supplier_address', 'supplier_gstin', 'invoice_number', 'invoice_date', 'place_of_supply',
-  'reverse_charge', 'line_description', 'line_hsn', 'line_quantity', 'line_taxable_value', 'line_rate', 'cgst', 'sgst', 'total', 'signatory',
+  'reverse_charge', 'line_description', 'line_hsn', 'line_quantity', 'line_taxable_value', 'line_rate', 'cgst', 'sgst',
+  // OB-279: the bill's rounded CGST and SGST, and the round off (this bill's is −14 paise).
+  'cgst_total', 'sgst_total', 'round_off', 'total', 'signatory',
 ];
+/** OB-278: a combined bill also shows its untaxed value. */
+const COMBINED_MANDATORY: readonly InvoiceField[] = [...MANDATORY.filter((f) => f !== 'round_off'), 'untaxed_total'];
+const CORIANDER = { description: 'Fresh coriander', hsnCode: '070999', quantityMinor: 1, uom: 'ea', unitPriceMinor: 1_000, lineTotalMinor: 1_000, taxRateBps: 0 };
 
 describe('THE CONTRACT (A1): a render that is missing any field fails', () => {
   const doc = built();
@@ -127,6 +163,23 @@ describe('THE CONTRACT (A1): a render that is missing any field fails', () => {
     expect(invoiceRenderProblems(rows, doc).length).toBeGreaterThan(0);
   });
 
+  it.each(COMBINED_MANDATORY)('OB-278: an invoice-cum-bill of supply without "%s" FAILS the contract', (field) => {
+    const combined = built({ ...INPUT, lines: [LINES[0]!, CORIANDER] });
+    expect(invoiceRenderProblems(taxInvoiceRows(combined), combined)).toEqual([]);
+    expect(invoiceRenderProblems(taxInvoiceRows(combined).filter((r) => !r.fields.includes(field)), combined).length).toBeGreaterThan(0);
+  });
+
+  it('OB-278: the wrong heading fails — a plain "Tax Invoice" over an untaxed line, or the combined heading over taxed lines only', () => {
+    const combined = built({ ...INPUT, lines: [LINES[0]!, CORIANDER] });
+    expect(invoiceRenderProblems(taxInvoiceRows({ ...combined, title: 'Tax Invoice' }), { ...combined, title: 'Tax Invoice' }).length).toBeGreaterThan(0);
+    expect(invoiceRenderProblems(taxInvoiceRows({ ...doc, title: INVOICE_CUM_BILL_OF_SUPPLY_TITLE }), { ...doc, title: INVOICE_CUM_BILL_OF_SUPPLY_TITLE }).length).toBeGreaterThan(0);
+  });
+
+  it('OB-279: a render whose figures do not add up FAILS — the rounded tax and the values must be the total', () => {
+    const wrong = { ...doc, cgstMinor: doc.cgstMinor + 100 };
+    expect(invoiceRenderProblems(taxInvoiceRows(wrong), wrong)).toContain('a total that adds up');
+  });
+
   it('a line\'s field printed on ANOTHER line\'s row does not count — each line shows its own', () => {
     const rows = taxInvoiceRows(doc).map((r) => (r.line === 1 && r.fields.includes('line_hsn') ? { ...r, line: 0 } : r));
     expect(invoiceRenderProblems(rows, doc)).toEqual(expect.arrayContaining(['line 2: the HSN code']));
@@ -141,7 +194,10 @@ describe('THE CONTRACT (A1): a render that is missing any field fails', () => {
     expect(text).toMatch(/HSN 071360 · GST 5%/);
     expect(text).toMatch(/^ {2}CGST @ 2\.5% +8\.57$/m);
     expect(text).toMatch(/^ {2}SGST @ 9% +4\.50$/m);
-    expect(text).toMatch(/^Total \(incl\. GST\) +419\.00$/m);
+    expect(text).toMatch(/^CGST \(rounded to ₹\) +13\.00$/m);
+    expect(text).toMatch(/^SGST \(rounded to ₹\) +13\.00$/m);
+    expect(text).toMatch(/^Round off +-0\.14$/m);
+    expect(text).toMatch(/^Total \(incl\. GST\) +418\.86$/m);
     expect(text).toContain('Paid: Card (approval 123456)');
     expect(text).not.toContain('DUPLICATE');
     expect(taxInvoiceText(taxInvoiceRows(doc, { duplicate: true })).join('\n')).toContain('DUPLICATE — reprint');
@@ -150,6 +206,17 @@ describe('THE CONTRACT (A1): a render that is missing any field fails', () => {
     expect(ta).toContain('நகல் (DUPLICATE)');
     expect(ta).toContain('வழங்கல் இடம்: Tamil Nadu (33)');
     expect(ta).toContain('துவரம் பருப்பு (loose)');
+    // OB-278 in both languages: the combined heading, and an untaxed line shown as exempt / nil with no tax.
+    const combined = built({ ...INPUT, lines: [LINES[0]!, CORIANDER] });
+    const en = taxInvoiceText(taxInvoiceRows(combined)).join('\n');
+    expect(en).toContain('Invoice-cum-Bill of Supply');
+    expect(en).toMatch(/HSN 070999 · Exempt \/ nil — no GST +Value 10\.00/);
+    expect(en).toMatch(/^Exempt \/ nil-rated value \(no GST\) +10\.00$/m);
+    const taCombined = taxInvoiceText(taxInvoiceRows(combined, { language: 'ta' })).join('\n');
+    expect(taxInvoiceRows(combined, { language: 'ta' })[0]!.text).toBe('Invoice-cum-Bill of Supply / விலைப்பட்டியல் மற்றும் வழங்கல் பில்');
+    expect(taxInvoiceRows(combined, { language: 'ta' }).find((r) => r.line === 1 && r.fields.includes('line_rate'))?.left).toContain('Exempt / nil (விலக்கு / பூஜ்யம்) — GST இல்லை');
+    expect(taCombined).toContain('விலக்கு / பூஜ்ய மதிப்பு (GST இல்லை)');
+    expect(invoiceRenderProblems(taxInvoiceRows(combined, { language: 'ta' }), combined)).toEqual([]);
     // 58 mm: every line fits 32 columns.
     expect(taxInvoiceText(taxInvoiceRows(doc), 32).every((l) => l.length <= 32)).toBe(true);
   });

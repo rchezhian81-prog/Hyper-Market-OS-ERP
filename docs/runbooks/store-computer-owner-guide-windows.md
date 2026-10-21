@@ -880,6 +880,10 @@ The new till can already do the three things real trading needs. All three are *
    name, address and GSTIN, the bill number and date, each item's HSN code (6 digits, because the shop's turnover is
    ₹5–10 crore — OB-149), quantity, unit, value and GST rate, CGST and SGST, the place of supply (Tamil Nadu) and the
    total. If anything is missing, the till **refuses the sale** and says what is missing, so a wrong bill is never given.
+   A bill with any item that has no GST is headed **"Invoice-cum-Bill of Supply"**, and that item shows "Exempt / nil"
+   (OB-278). The bill's CGST and SGST are each rounded to the rupee, with a **Round off** line, and the customer pays
+   the rounded total (OB-279). A bill of ₹50,000 or more, or a business (B2B) bill, is refused with "bill this on the
+   old system" (OB-280). Your CA confirms these three before the switch.
 2. **The paper bill, in English or Tamil.** After each sale the cashier presses **Print bill**. The bill prints through
    the printer's own Windows driver on an 80 mm roll (58 mm also works). A second print says **DUPLICATE**. If the
    printer fails, the sale is still saved and the bill can be printed again (More → **Reprint the last bill**).
@@ -895,14 +899,14 @@ set for both refuses to start and says why. Today's install and the `status` che
 switch-over steps are given to you **with** the real-trading GO, not before.
 
 **Before that GO, these must be true** (each is a question we will ask you then):
-- the shop's address for the bill is recorded with the store (head office's store record);
+- the shop's address for the bill is recorded with the store: type the Part 17 `shop` command again with
+  `--place-of-business "<line 1 | line 2>"` added at the end (the `|` splits the lines, up to 4);
 - every product the till sells has its real 6-digit (or 8-digit) HSN code in the price list;
 - the bill printer is installed in Windows with its own driver (any receipt printer Windows can print to works —
   OB-274), it has printed a Windows test page in Tamil, and you have **set the paper width**: 80 mm (the default) or
   58 mm;
-- you have decided how items with no GST (fresh vegetables, loose items at 0%) are billed, and what happens with a
-  bill of ₹50,000 or more (the law then needs the customer's name and address) — until then the new till refuses both
-  and says "bill this on the old system".
+- your CA has confirmed the combined bill for items with no GST (OB-278), the rounding (OB-279) and that bills of
+  ₹50,000 or more and business bills stay on the old system (OB-280).
 
 ---
 

@@ -80,8 +80,37 @@ describe('OB-271 — real trading: the till refuses a bill that is not a tax inv
     expect(pos.taxInvoice().ok).toBe(false);
   });
 
-  it('no legal identity at all, a 4-digit HSN, an exempt item — each refused before the disk, naming what is missing', async () => {
-    for (const [taxInvoice, code, expected] of [[null, '890000000001', 'supplier_legal_name'], [SHOP, '890000000002', 'line_hsn_digits'], [SHOP, '890000000003', 'exempt_line']] as const) {
+  it('OB-278: an item with no GST sells on ONE "Invoice-cum-Bill of Supply", shown as exempt / nil with no tax', async () => {
+    const { pos, writes } = till({ realTrading: true });
+    pos.scanBarcode('890000000001');
+    pos.scanBarcode('890000000003');
+    await pos.tenderCash('S-30', 'L1-0030', NOW);
+    expect(writes).toHaveLength(1);
+    const inv = pos.taxInvoice();
+    if (!inv.ok) throw new Error(inv.why);
+    expect(inv.rows[0]!.text).toBe('Invoice-cum-Bill of Supply');
+    expect(inv.lines.join('\n')).toContain('Exempt / nil — no GST');
+  });
+
+  it('OB-279: the till asks for the ROUNDED total — ₹105 at 5% is ₹2.50 + ₹2.50 GST, each rounded up, so ₹106.00 — and the record says why', async () => {
+    const { pos, writes } = till({ realTrading: true });
+    pos.scanBarcode('890000000001');
+    expect(pos.payableMinor()).toBe(10_600);
+    await pos.tenderCash('S-31', 'L1-0031', NOW);
+    const record = JSON.parse(writes[0]!) as { total: number; roundOffMinor: number; lines: { lineTotalMinor: number }[]; netMinor: number; taxMinor: number };
+    expect(record).toMatchObject({ total: 10_600, roundOffMinor: 100, netMinor: 10_000, taxMinor: 500 });
+    expect(record.lines.reduce((n, l) => n + l.lineTotalMinor, 0) + record.roundOffMinor).toBe(record.total);
+    const inv = pos.taxInvoice();
+    if (!inv.ok) throw new Error(inv.why);
+    expect(inv.lines.join('\n')).toMatch(/Round off +\+1\.00/);
+    // Off real trading, the same item is charged exactly its line, as before — no round off.
+    const off = till();
+    off.pos.scanBarcode('890000000001');
+    expect(off.pos.payableMinor()).toBe(10_500);
+  });
+
+  it('no legal identity at all, a 4-digit HSN — each refused before the disk, naming what is missing', async () => {
+    for (const [taxInvoice, code, expected] of [[null, '890000000001', 'supplier_legal_name'], [SHOP, '890000000002', 'line_hsn_digits']] as const) {
       const { pos, writes } = till({ realTrading: true, taxInvoice });
       pos.scanBarcode(code);
       const refused = await pos.tenderCash('S-3', 'L1-0003', NOW).catch((e: unknown) => e) as TaxInvoiceRefusedError;
@@ -170,10 +199,12 @@ describe('OB-271 — the store computer runs the same invoice rule on the record
     id: 'S-9', number: 'L1-0009', committedAt: NOW, laneId: 'lane-1', cashierId: 'u-cashier',
     lines: [{ productId: 'P-DAL', quantityMinor: 1, uom: 'ea', unitPriceMinor: 10_500, lineTotalMinor: 10_500, taxRateBps: 500, hsnCode: '071360' }],
   };
-  it('a complete record passes; no identity, a short HSN or an exempt line is refused in words', () => {
+  it('a complete record passes; no identity or a short HSN is refused in words; an untaxed line passes (OB-278); a total that is not the rounded total is refused (OB-279)', () => {
     expect(realTradingSaleRefusal(record, SHOP)).toBeUndefined();
+    expect(realTradingSaleRefusal({ ...record, total: 10_600 }, SHOP)).toBeUndefined();
+    expect(realTradingSaleRefusal({ ...record, total: 10_500 }, SHOP)?.laneMessage).toContain('do not add up');
     expect(realTradingSaleRefusal(record, null)).toMatchObject({ refusedBecause: 'tax_invoice_incomplete', laneMessage: expect.stringContaining('legal name') });
     expect(realTradingSaleRefusal({ ...record, lines: [{ ...record.lines[0]!, hsnCode: '0713' }] }, SHOP)?.laneMessage).toContain('HSN code is too short');
-    expect(realTradingSaleRefusal({ ...record, lines: [{ ...record.lines[0]!, taxRateBps: 0 }] }, SHOP)?.laneMessage).toContain('exempt or nil-rated');
+    expect(realTradingSaleRefusal({ ...record, lines: [{ ...record.lines[0]!, taxRateBps: 0 }] }, SHOP)).toBeUndefined();
   });
 });

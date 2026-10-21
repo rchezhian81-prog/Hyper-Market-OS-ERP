@@ -1031,7 +1031,7 @@ export const USAGE = [
   '  parallel-policy --as <login> --cutover <id> --reconciler <login> --clean-days N --max-days M --start YYYY-MM-DD',
   '                                           write the parallel-run policy (MG-10) — asks your OWN till PIN',
   ' Head office\'s own jobs on this computer (OB-257) — each asks for a YES, then each person\'s OWN till PIN:',
-  '  shop --as <login> --company <code> --legal-name "<as on the GST certificate>" --gstin <GSTIN> --store <code> --store-name "<name>"',
+  '  shop --as <login> --company <code> --legal-name "<as on the GST certificate>" --gstin <GSTIN> --store <code> --store-name "<name>" [--place-of-business "<line 1 | line 2>"]',
   '                                           the company, its legal name and GSTIN, and the store, active',
   '  store-settings --as <login> --store <code> --cutoff HH:MM --stale-after-minutes N --count-approval-rupees R',
   '                 --handover-tolerance-rupees R --cash-variance-rupees R',
@@ -1047,7 +1047,7 @@ export const USAGE = [
 /** The owner setup commands (OB-257): scripts/owner-setup.ts → packages/migration/src/owner-steps-command.ts. */
 export const SETUP_COMMANDS = Object.freeze(['shop', 'store-settings', 'bill-prefix', 'grant', 'publish-catalogue']);
 /** Their flags, as typed (each takes a value), handed on as they are. */
-export const SETUP_FLAGS = Object.freeze(['--company', '--legal-name', '--gstin', '--store', '--store-name', '--cutoff', '--stale-after-minutes', '--count-approval-rupees', '--handover-tolerance-rupees', '--cash-variance-rupees', '--till', '--prefix', '--reason', '--approver', '--person', '--role']);
+export const SETUP_FLAGS = Object.freeze(['--company', '--legal-name', '--gstin', '--store', '--store-name', '--place-of-business', '--cutoff', '--stale-after-minutes', '--count-approval-rupees', '--handover-tolerance-rupees', '--cash-variance-rupees', '--till', '--prefix', '--reason', '--approver', '--person', '--role']);
 
 /**
  * An owner setup command (OB-257), run as the people who do it: this copy's settings and the till's are handed to the

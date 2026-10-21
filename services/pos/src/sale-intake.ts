@@ -132,6 +132,11 @@ export interface IncomingSale {
   readonly lines: readonly IncomingSaleLine[];
   readonly tenders: readonly IncomingTender[];
   /**
+   * OB-279 (real trading): what rounding the bill's CGST and SGST to the rupee added (+) or took off (−) — at most ₹1 either
+   * way. The total is the lines plus this. Absent on every other bill.
+   */
+  readonly roundOffMinor?: number;
+  /**
    * The store computer's sealed stamp on the cashier it verified at the till (ADR-0023): who, how, which till, and the
    * box's seal over that and this sale. Untrusted as it arrives — head office checks the seal, never takes it on trust.
    */
@@ -346,7 +351,9 @@ export function acceptSale(sale: IncomingSale, ctx: IntakeContext): IntakeResult
       { differenceMinor: tendered - sale.totalMinor });
   }
 
-  const lineSum = sale.lines.reduce((t, l) => t + l.lineTotalMinor, 0);
+  // OB-279: a real-trading bill's total is its lines plus the stated round off (at most ₹1 either way, else not counted).
+  const roundOff = Number.isSafeInteger(sale.roundOffMinor) && Math.abs(sale.roundOffMinor as number) <= 100 ? sale.roundOffMinor as number : 0;
+  const lineSum = sale.lines.reduce((t, l) => t + l.lineTotalMinor, 0) + roundOff;
   if (sale.lines.length > 0 && lineSum !== sale.totalMinor) {
     add('lines_do_not_sum_to_total', 'material',
       `the lines add to ${lineSum} against a total of ${sale.totalMinor}`,

@@ -59,6 +59,11 @@ export interface DayBookSale {
   readonly tenders: readonly DayBookTender[];
   /** OB-264: in the mirror pilot, the old ERP's bill number keyed on this sale — listed on the day book beside it. */
   readonly oldErpBillNumber?: string;
+  /**
+   * OB-279 (real trading): what rounding the bill's CGST and SGST to the rupee added (+) or took off (−). The total is the
+   * lines plus this; it posts to its own components (`round_off_up` / `round_off_down`), never hidden in the GST.
+   */
+  readonly roundOffMinor?: number;
 }
 
 /** A recorded return as the day book needs it — a structural subset of the desk's `ReturnRecord`. */
@@ -201,8 +206,9 @@ function splitSale(sale: DayBookSale, taxRateOf: DayBookInput['taxRateOf']): Spl
       return refuse('tax_split_failed', `sale ${sale.saleId}: ${line.productId} at ${rate} bps — ${err instanceof Error ? err.message : String(err)}`);
     }
   }
-  if (lineSum !== sale.totalMinor) {
-    return refuse('lines_do_not_sum_to_total', `sale ${sale.saleId}: the lines add to ${lineSum} against a total of ${sale.totalMinor}`);
+  const roundOff = sale.roundOffMinor ?? 0;
+  if (!Number.isSafeInteger(roundOff) || Math.abs(roundOff) > 100 || lineSum + roundOff !== sale.totalMinor) {
+    return refuse('lines_do_not_sum_to_total', `sale ${sale.saleId}: the lines add to ${lineSum}${roundOff === 0 ? '' : ` with a round off of ${roundOff}`} against a total of ${sale.totalMinor}`);
   }
   const tendered = sale.tenders.reduce((t, x) => t + x.amountMinor, 0);
   if (tendered !== sale.totalMinor) {
@@ -305,7 +311,9 @@ export function buildDayBook(input: DayBookInput): DayBook {
     const s = splitSale(sale, input.taxRateOf);
     if (!s.ok) { exceptions.push({ sourceKind: 'sale', sourceIds: [sale.saleId], reason: s.reason, detail: s.detail }); continue; }
     touched.push(sale.saleId);
-    if (!covered('sale', sale.saleId)) add('sale', 'sale', sale.saleId, { ...s.split });
+    // OB-279: the sale voucher takes the bill's ROUNDED total; the round off is its own component, up or down.
+    const roundOff = sale.roundOffMinor ?? 0;
+    if (!covered('sale', sale.saleId)) add('sale', 'sale', sale.saleId, { ...s.split, total: s.split.total + roundOff, round_off_up: Math.max(0, roundOff), round_off_down: Math.max(0, -roundOff) });
     for (const t of tenders) {
       if (!covered(`tender:${t.kind}`, sale.saleId)) add(`tender:${t.kind}`, 'sale', sale.saleId, { amount: t.amountMinor });
     }
@@ -469,6 +477,9 @@ export const DEFAULT_RETAIL_POSTING_MAP: PostingMap = {
         { account: 'sales_revenue', side: 'credit', component: 'net' },
         { account: 'gst_output_cgst', side: 'credit', component: 'cgst' },
         { account: 'gst_output_sgst', side: 'credit', component: 'sgst' },
+        // OB-279: a real-trading bill's round off (its rounded CGST and SGST) — the CA confirms where it posts.
+        { account: 'round_off', side: 'credit', component: 'round_off_up' },
+        { account: 'round_off', side: 'debit', component: 'round_off_down' },
       ],
     },
     {

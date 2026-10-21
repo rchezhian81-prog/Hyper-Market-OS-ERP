@@ -25,7 +25,7 @@ import { withoutCardData } from '../../../packages/tender/src/tender-card-data';
 import { saleTenderRefusal } from '../../../packages/tender/src/paid-on-old-erp';
 import { oldErpBillRefusal } from '../../../packages/tender/src/old-erp-bill-number';
 import { readMachineReference } from '../../../packages/tender/src/machine-reference';
-import { buildTaxInvoice, type TaxInvoiceDocument, type TaxInvoiceIdentity, type TaxInvoiceProblem } from '../../../packages/receipt/src/tax-invoice';
+import { buildTaxInvoice, invoiceRoundOff, type TaxInvoiceDocument, type TaxInvoiceIdentity, type TaxInvoiceProblem } from '../../../packages/receipt/src/tax-invoice';
 import {
   tillLineRefusals, tillRuleFlagsOf, scaleEvidence, lineIsWeighed, TillRuleRefusedError, TOBACCO_MINIMUM_AGE,
   type LaneScales, type TillGateContext,
@@ -238,9 +238,14 @@ export interface CommittedBill {
 export interface BasketTotals extends BillTotals {
   /** Promotion discount applied to the basket, on top of any line discounts. */
   readonly promotionDiscount: Money;
-  /** total − promotionDiscount (what the customer pays). */
+  /** total − promotionDiscount (what the customer pays) — in real trading, plus the OB-279 round off. */
   readonly payable: Money;
   readonly lineCount: number;
+  /**
+   * OB-279 (real trading only): what rounding the bill's CGST and SGST to the rupee adds (+) or takes off (−), already in
+   * `payable`. Absent off real trading — the till charges exactly the lines, as before.
+   */
+  readonly roundOffMinor?: number;
 }
 
 export class EmptyBasketError extends Error {
@@ -798,11 +803,18 @@ export class PosSession {
     const currency = this.config.currency;
     const bill = sumLines(this.pricedLines(), currency);
     const promotionDiscount = this.promotionDiscount();
+    const goods = Math.max(0, bill.total.minor - promotionDiscount.minor);
+    // OB-279 · A10: in real trading the bill's CGST and SGST are each rounded to the rupee and the bill's total is the
+    // rounded total — so the customer is asked for exactly what the tax invoice will say. Off real trading: nothing added.
+    const active = this.activeLines();
+    const roundOff = this.config.realTrading === undefined || goods === 0 ? undefined
+      : invoiceRoundOff(this.replacementLines().map((l, i) => ({ lineTotalMinor: l.lineTotalMinor, taxRateBps: active[i]?.taxRate.bps ?? 0 }))).roundOffMinor;
     return {
       ...bill,
       promotionDiscount,
-      payable: money(Math.max(0, bill.total.minor - promotionDiscount.minor), currency),
+      payable: money(goods + (roundOff ?? 0), currency),
       lineCount: this.activeLines().length,
+      ...(roundOff === undefined ? {} : { roundOffMinor: roundOff }),
     };
   }
 
@@ -1017,7 +1029,9 @@ export class PosSession {
     const negative = recordLines.filter((l) => l.lineTotalMinor < 0);
     if (negative.length > 0) throw new BillArithmeticError(saleId, `line(s) ${negative.map((l) => l.productId).join(', ')} would be charged below zero`);
     const lineSum = recordLines.reduce((t, l) => t + l.lineTotalMinor, 0);
-    if (lineSum !== totals.payable.minor) throw new BillArithmeticError(saleId, `the lines add to ${lineSum} against a payable of ${totals.payable.minor}`);
+    // OB-279: in real trading the payable is the lines plus the stated round off.
+    const roundOff = totals.roundOffMinor ?? 0;
+    if (lineSum + roundOff !== totals.payable.minor) throw new BillArithmeticError(saleId, `the lines add to ${lineSum} against a payable of ${totals.payable.minor}`);
     const inside = recordLines.reduce(
       (acc, l) => {
         const split = splitInclusive(money(l.lineTotalMinor, totals.payable.currency), rate(l.taxRateBps));
@@ -1076,6 +1090,8 @@ export class PosSession {
           quantityMinor: l.quantityMinor, uom: l.uom, unitPriceMinor: l.unitPriceMinor, lineTotalMinor: l.lineTotalMinor, taxRateBps: l.taxRateBps,
         })),
         tenders: input.tenders.map((t) => ({ kind: t.kind, amountMinor: t.amount.minor, ...(t.machineRef === undefined ? {} : { machineRef: t.machineRef }) })),
+        // OB-279: the invoice's rounded total must be exactly what the till is about to charge.
+        totalMinor: totals.payable.minor,
       });
       if (!built.ok) throw new TaxInvoiceRefusedError(saleId, built.laneMessage, built.problems);
       taxInvoice = built.doc;
@@ -1109,6 +1125,8 @@ export class PosSession {
       total: totals.payable.minor,
       netMinor: inside.net,
       taxMinor: inside.tax,
+      // OB-279: the round off the rounded CGST and SGST made — total = lines + round off (net + tax + round off).
+      ...(roundOff === 0 ? {} : { roundOffMinor: roundOff }),
       currency: totals.payable.currency,
       // OB-264: the old ERP's bill number, on every mirror sale — so a mirror refund finds this sale by it.
       ...(extra.oldErpBillNumber === undefined || this.config.mirrorPilot !== true ? {} : { oldErpBillNumber: extra.oldErpBillNumber }),
