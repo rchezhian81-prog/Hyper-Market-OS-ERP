@@ -8,7 +8,7 @@ export declare const OTHER_SETTINGS_NAMES: readonly string[];
 export declare const SECRET_KEYS: readonly string[];
 export declare const OWN_KEYS: readonly string[];
 export declare const SEEDING_KEYS: readonly string[];
-export declare const THRESHOLDS: Readonly<{ ramBytes: number; diskBytes: number; minNodeMajor: number; minWindowsBuild: number; timeZones: readonly string[] }>;
+export declare const THRESHOLDS: Readonly<{ ramBytes: number; diskBytes: number; systemDriveBytes: number; minNodeMajor: number; minWindowsBuild: number; timeZones: readonly string[] }>;
 export declare const READY_WAIT_MS: number;
 export declare const COMPOSE_BASE: readonly string[];
 export declare const CHECK_TITLES: readonly string[];
@@ -67,6 +67,8 @@ export interface Deps {
   readonly say: (line: string) => void;
   /** The shop's data folder (audit row 9). Absent: everything stays inside the release folder, as first built. */
   readonly dataRoot?: string;
+  /** OB-283: the note that records where the data folder is (C:\ProgramData\SRE\data-folder.json). Absent: none kept. */
+  readonly dataPointer?: string;
   /** A passphrase typed with nothing shown; undefined when there is no keyboard. */
   readonly askSecret?: (prompt: string) => Promise<string | undefined>;
   readonly diskSpace?: (dir: string) => { free: number; total: number };
@@ -106,14 +108,23 @@ export interface Layout {
 export type CheckStatus = 'PASS' | 'FAIL' | 'NEEDS-YOU';
 export interface CheckResult { readonly n: number; readonly title: string; readonly status: CheckStatus; readonly detail: string }
 export interface CheckOptions { readonly by?: string; readonly out?: string; readonly backupRecord?: string; readonly offlineConfirmed?: boolean; readonly demoFingerprints?: string }
-export interface DoctorRow { readonly name: string; readonly status: 'OK' | 'FIX'; readonly detail: string; readonly fix?: string }
+export interface DoctorRow { readonly name: string; readonly status: 'OK' | 'FIX' | 'NEEDS-YOU'; readonly detail: string; readonly fix?: string }
 
 export declare function pathFor(platform: string): typeof import('node:path').posix;
 export declare function layout(repoRoot: string, platform: string, dataRoot?: string): Layout;
 export declare function resolveLayout(deps: Deps): Layout;
 export declare function bothLayouts(deps: Deps): { legacy: Layout; data: Layout | undefined };
 export declare function ensureDataFolder(deps: Deps, L: Layout): void;
-export declare function defaultDataRoot(repoRoot: string, platform: string, env?: Record<string, string | undefined>): string;
+export declare function defaultDataRoot(repoRoot: string, platform: string, env?: Record<string, string | undefined>, fs?: FsLike): string;
+export declare function fallbackDataRoot(repoRoot: string, platform: string, env?: Record<string, string | undefined>): string;
+/** OB-283: where the data folder is, recorded. */
+export declare const DATA_POINTER_KIND: 'sre-data-folder';
+export declare function dataPointerPath(repoRoot: string, platform: string, env?: Record<string, string | undefined>): string;
+export declare function readDataPointer(fs: FsLike, platform: string, file: string | undefined): { dataRoot: string; problem?: undefined } | { dataRoot?: undefined; problem: string } | undefined;
+export declare function writeDataPointer(deps: Deps, dataRoot: string, by: string): void;
+export declare function sameFolder(platform: string, a: string, b: string): boolean;
+export declare function resolveDataFolder(deps: Deps): { deps: Deps; problem?: undefined } | { deps?: undefined; problem: string };
+export declare function dataRootOnDrive(deps: Deps, given: string): { dataRoot: string; note?: string; problem?: undefined } | { dataRoot?: undefined; problem: string };
 export declare const DATA_FOLDER_NAME: 'SRE-data';
 export declare const DATA_MARKER: string;
 export declare const DATA_MARKER_TEXT: string;
@@ -154,20 +165,20 @@ export declare function guarded(deps: Deps, settings: Settings): boolean;
 export declare function lines(s: unknown): string[];
 export declare function rel(deps: Deps, abs: string): string;
 export declare function stampOf(at: Date): string;
-export declare function backupVerdict(rec: unknown, where: { platform: string; repoRoot: string; systemDrive?: string; dataRoot?: string }): { status: CheckStatus; detail: string };
-export declare function doctorRows(deps: Deps): DoctorRow[];
+export declare function backupVerdict(rec: unknown, where: { platform: string; repoRoot: string; systemDrive?: string; dataRoot?: string; driveProblem?: (dir: string) => string | undefined }): { status: CheckStatus; detail: string };
+export declare function doctorRows(deps: Deps, extra?: { edition?: import('./store-computer-windows.mjs').Edition }): DoctorRow[];
 export declare function parseCommandLine(argv: readonly string[]): {
   command?: string; by?: string; out?: string; backupRecord?: string; offlineConfirmed: boolean; demoFingerprints?: string;
   settings?: string; to?: string; from?: string; previous?: string; run: boolean; every?: string; off: boolean; quiet: boolean;
-  dir?: string; as?: string; backupRestoredOn?: string; source?: string; cutover?: string; reconciler?: string; cleanDays?: string; maxDays?: string; start?: string;
+  dir?: string; as?: string; backupRestoredOn?: string; source?: string; cutover?: string; reconciler?: string; cleanDays?: string; maxDays?: string; start?: string; dataDrive?: string;
   /** OB-257: the owner setup commands' flags, as typed (`--store` → value), handed on to the setup tool. */
   setup: Record<string, string>;
   problems: string[];
 };
-export declare function prepare(deps: Deps): Promise<number>;
+export declare function prepare(deps: Deps, opts?: { dataDrive?: string }): Promise<number>;
 export declare function up(deps: Deps): Promise<number>;
 export declare function check(deps: Deps, opts: CheckOptions): Promise<number>;
-export declare function doctor(deps: Deps): Promise<number>;
+export declare function doctor(deps: Deps, opts?: { dataDrive?: string }): Promise<number>;
 export declare function main(argv: readonly string[], deps: Deps): Promise<number>;
 export declare function portInUse(port: number): Promise<boolean>;
 export declare function defaultDeps(): Deps;

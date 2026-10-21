@@ -22,7 +22,7 @@ screens themselves show English and Tamil, as built.
 
 > **Three rules for the whole guide**
 > 1. **Never send a photo of the file `.env.real` or the file `till.env`, and never open them.** They are in the shop's
->    data folder `C:\SRE-data` and hold this copy's secrets. Every photo this guide asks for is of the blue PowerShell
+>    data folder `F:\SRE-data` and hold this copy's secrets. Every photo this guide asks for is of the blue PowerShell
 >    window or of a Windows screen — never of those files, and never of a window the guide marks "holds a secret" (a till
 >    PIN, the backup passphrase, the BitLocker recovery key).
 > 2. **Nobody else types on this computer for you, and no AI is given control of it.** You type every command yourself.
@@ -33,7 +33,8 @@ screens themselves show English and Tamil, as built.
 
 **What you need before you start:**
 
-- the shop's Windows 10 or 11 computer, switched on, with internet for now (you will unplug it later, on purpose);
+- the shop's Windows 11 Pro PC (never the Windows Server that runs the old ERP, OB-282), switched on, with internet for
+  now (you will unplug it later, on purpose), and signed in to **your own** administrator account (OB-284);
 - your own GitHub sign-in (the account that holds the code);
 - **two** USB backup drives that belong to you: one stays plugged into this PC for the hourly backup, the other is your
   own daily copy that you take home (OB-249) — needed from Part 8;
@@ -45,6 +46,15 @@ screens themselves show English and Tamil, as built.
 ---
 
 ## Part 1 — Check the computer
+
+> **Done on 21 Oct 2026 — your photos passed** (OB-282, OB-283, OB-284). The pilot PC is the **Windows 11 Pro** PC
+> (version 25H2), Intel i3-14100, **8 GB** of memory, **virtualisation enabled**. Its disks: **C:** has **41.9 GB free
+> of 115 GB** — under the 50 GB the setup needs — and **F:**, a second disk **inside** the PC, has **357 GB free**. So
+> the shop's data and Docker's disk go on **F:** (`F:\SRE-data`, `F:\DockerData`), and C: keeps only the programs and
+> `C:\SRE` (OB-283). The PC is a **shared office PC**: the purchase staff use it every day with their own account
+> (OB-284) — Part 26 locks the shop's folders against that account. The shop's **Windows Server 2022**, which runs the
+> old ERP, is **never** used for any step (OB-282). You do not need to do Part 1 again on this PC; the steps stay here
+> for a replacement PC.
 
 1. Press the **Windows key**, type `About`, and open **About your PC**. (Or: **Settings → System → About**.)
    - Look at **Installed RAM**. It must say **8.00 GB** or more.
@@ -60,9 +70,13 @@ screens themselves show English and Tamil, as built.
    - **If it says Disabled:** stop here and send the photo. It is switched on in the computer's start-up settings, and we
      will do that together, step by step.
 3. Open **File Explorer** (the yellow folder on the taskbar) and click **This PC**.
-   - Under **Local Disk (C:)** it says "… GB free of … GB". The free part must be **50 GB** or more. You told me this PC
-     has **433 GB free** on C: (OB-260) — plenty.
-   - **When it worked:** at least 50 GB free. **Send:** a photo of this screen.
+   - Under each **Local Disk** it says "… GB free of … GB". The shop's data needs **50 GB** or more free on one disk
+     **inside** the PC, and C: needs **15 GB** or more for the programs. (Earlier you told me C: had 433 GB free
+     (OB-260); the photo of 21 Oct 2026 showed **41.9 GB free on C:** and **357 GB free on F:** — so the data goes on
+     F:, OB-283.)
+   - A **USB drive** shows here too, but it never counts as a disk inside the PC: USB drives are for the backups only.
+   - **When it worked:** one inside disk with at least 50 GB free, and C: with at least 15 GB. **Send:** a photo of this
+     screen.
 4. Check the clock: **Settings → Time & language → Date & time**. The time zone must be
    **(UTC+05:30) Chennai, Kolkata, Mumbai, New Delhi**, and the time must be right.
    - **When it worked:** the zone and the time are right. **Send:** nothing, unless you had to change it.
@@ -79,6 +93,14 @@ Download each program **only from the site named here**. Never from a link in a 
    - If it says WSL needs to be installed or updated, it shows a command (for example `wsl --update`): open PowerShell
      (step 3 below shows how), type that command, press Enter, and restart the computer.
    - **When it worked:** bottom left of Docker Desktop it says **Engine running** (green). **Send:** a photo of that.
+   - **Put Docker's disk on F: (OB-283)** — before anything else is started. Docker keeps the shop's database inside one
+     big file, its "disk image", and on its own it puts that file on C:, which is too small. In Docker Desktop click
+     **Settings** (the gear, top right) → **Resources** → **Advanced** → **Disk image location** → **Browse** → choose
+     **F:**, make a new folder named `DockerData`, select it so the box says `F:\DockerData` → **Apply & restart**. Wait
+     for **Engine running** again.
+     - **When it worked:** **Disk image location** says `F:\DockerData`. **Send:** a photo of that screen.
+     - `doctor` (Part 5) reads this setting itself where it can; when it cannot, its line says **NEEDS-YOU** and you
+       check this screen by eye.
 2. **Node.js 22 LTS** — on **nodejs.org**, download the **LTS** version whose number starts with **22**, the
    **Windows Installer (.msi)**. Run it and accept the normal choices (Next, Next, Install).
 3. Open **PowerShell**: press the Windows key, type `PowerShell`, open **Windows PowerShell**. A blue window opens.
@@ -116,8 +138,10 @@ Download each program **only from the site named here**. Never from a link in a 
    - **When it worked:** opening `C:\SRE` shows folders such as `apps`, `docs`, `infra`, `scripts` and a file
      `package.json`. **Send:** a photo of that folder.
    - `C:\SRE` holds **the system** (this release). The shop's **data** — this copy's settings, the till's sales, the
-     check records, the backup key — lives in a separate folder, `C:\SRE-data`, which the tool makes in Part 5. A new
-     version of the system goes into a folder of its own beside `C:\SRE` (Part 29); `C:\SRE-data` never moves.
+     check records, the backup key — lives in a separate folder on the other disk, `F:\SRE-data`, which the tool makes
+     in Part 5 (OB-283). The tool writes down where that folder is in one small note, `C:\ProgramData\SRE\data-folder.json`
+     (a folder name only, no secret), so every command and every later version finds it. A new version of the system
+     goes into a folder of its own beside `C:\SRE` (Part 29); `F:\SRE-data` never moves.
 
 ## Part 4 — Open PowerShell in that folder and install
 
@@ -135,25 +159,42 @@ Download each program **only from the site named here**. Never from a link in a 
 
 ## Part 5 — Check, prepare and start this copy
 
-1. Check the computer:
+Do Part 5 in **your own** Windows account (the administrator), never in the purchase staff's account (OB-284).
+
+1. Check the computer, with the shop's data on **F:** (OB-283):
    ```
-   pnpm run store-computer -- doctor
+   pnpm run store-computer -- doctor --data-drive F:
    ```
-   - **When it worked:** every line starts with `OK`, and the last line says `All OK.`
+   - It only looks; it changes nothing. It refuses on a Windows Server (OB-282).
+   - **When it worked:** no line starts with `FIX`, and the last line says `All OK.` — or `No FIX.` followed by the
+     lines that say `NEEDS-YOU`. On this PC, before step 2, one line says `NEEDS-YOU  Data lock … not made yet`: that is
+     expected — step 3 below does it.
+   - It names both disks: `Data drive … free on F:, the drive that holds the shop's data (F:\SRE-data) and Docker's
+     disk image` (at least 50 GB) and `C: drive … free on C:, which keeps the system's folders (C:\SRE) and the
+     programs` (at least 15 GB). `Data disk` says F: is a disk inside this computer.
+   - `Docker disk` must say `F:\DockerData — on F:, the data drive`. If it says `FIX`, do the Disk image location step
+     in Part 2. If it says `NEEDS-YOU`, look at that Docker Desktop screen by eye: it must say `F:\DockerData`.
+   - `Admins` must say `only you (…) are an administrator`. If it names the purchase staff's account, stop and send
+     the photo (Part 26a).
    - A line that starts with `FIX` says what to do on the line under it. Do that one thing, then run `doctor` again.
    - **Send:** a photo of the window.
-2. Make this copy's settings file (once only):
+2. Make this copy's settings file (once only), on F:
    ```
-   pnpm run store-computer -- prepare
+   pnpm run store-computer -- prepare --data-drive F:
    ```
-   - **When it worked:** it says `Settings file written: C:\SRE-data\.env.real`, that it is in the shop's data folder
-     `C:\SRE-data`, lists the names of the settings it filled (never their values), and says `This copy's tenant id:`
-     followed by a long id with dashes.
+   - **When it worked:** it says `Settings file written: F:\SRE-data\.env.real`, that it is in the shop's data folder
+     `F:\SRE-data`, that the place is recorded in `C:\ProgramData\SRE\data-folder.json`, lists the names of the
+     settings it filled (never their values), and says `This copy's tenant id:` followed by a long id with dashes.
    - **Write the tenant id in the workbook**, and the words "compose project sre-real" and today's date. The tenant id
      is a name, not a secret.
    - **Send:** a photo of the window. (This window has no secret in it. The file it made does — never photograph that.)
-   - Run `prepare` only once. If you run it again it refuses on purpose: it never overwrites the file.
-3. Start this copy:
+   - Run `prepare` only once. If you run it again it refuses on purpose: it never overwrites the file. Every later
+     command finds `F:\SRE-data` by itself: you never type `--data-drive` again (only `doctor`, `prepare` and
+     `migrate-data-folder` take it).
+3. **Lock the shop's folders now, before the purchase staff next sign in** (OB-284). This PC is shared, and from step 2
+   on, `F:\SRE-data` holds this copy's secrets. Do **Part 26c, steps 1 and 2** now, then come back here. (Part 26 does
+   the rest of the PC lock later.)
+4. Start this copy:
    ```
    pnpm run store-computer -- up
    ```
@@ -170,7 +211,7 @@ Download each program **only from the site named here**. Never from a link in a 
    pnpm run store-computer -- check --by "Your Name"
    ```
    - **When it worked:** it prints a table of ten checks, each `PASS`, `FAIL` or `NEEDS-YOU`, a line starting with
-     `G4`, and `Record written: C:\SRE-data\records\…`.
+     `G4`, and `Record written: F:\SRE-data\records\…`.
    - The first time, three checks say **NEEDS-YOU**. That is expected:
      - **check 3** (this copy's secrets are not the demo's) waits for Part 9 (the demo's fingerprints);
      - **check 5** waits for Part 7 (the network cable);
@@ -199,6 +240,8 @@ copy's settings. **Nothing is ever deleted** — no backup, no record (OB-262).
 1. **Plug in your own backup drive** (the one you will take home). In File Explorer → **This PC**, find it (for example
    `Backup (E:)`). **The letter after its name is your drive letter.** Write it in the workbook. Everywhere below that
    says `E:`, type **your** letter instead.
+   - **Never `F:`, and never `C:`.** On this PC both are disks **inside** the computer (OB-283): if the PC is stolen,
+     burnt or its power supply fails, they go with it. A backup goes **only** to a USB drive (OB-281).
 2. Open PowerShell in `C:\SRE` (Part 4, step 1) and take the backup:
    ```
    pnpm run store-computer -- backup --to E:\sre-real
@@ -210,8 +253,11 @@ copy's settings. **Nothing is ever deleted** — no backup, no record (OB-262).
      passphrase opens, never the passphrase. It then says `BACKUP PASSPHRASE SET — backup key …`.
    - **When it worked:** it says `BACKUP DONE —` with the backup's name, its size and how long it took, then a line
      `Manifest: E:\sre-real\…manifest.json`. **Write that manifest's file name in the workbook.**
-   - It refuses, on purpose, a folder on `C:`, inside `C:\SRE` or inside `C:\SRE-data`: a backup on the same computer is
-     not a backup.
+   - It refuses, on purpose, every disk inside this PC — `C:`, `F:` and any other — and a network folder: a backup on
+     the same computer is not a backup, and the shop's server is never used (OB-282). It asks Windows itself what kind
+     of drive the letter is (it only reads), and takes only a **USB or removable** drive (OB-281). If Windows does not
+     say, it refuses and says so: unplug the drive, plug it in again and try once more; if it still refuses, send the
+     photo.
    - **Send:** a photo of the window (after the passphrase questions; it shows no secret). The long line of letters and
      digits after "SHA-256" is the file's own fingerprint, not a password.
 3. Prove the backup really comes back. Type the line below with the manifest's name (tip: type the start of the name
@@ -301,7 +347,7 @@ does not write the box's address or any key: use the address you were given, and
      `G4 PASSED — all ten isolation checks pass.`
    - Check 10 passes only when that backup has passed its restore-check (Part 8, step 3) and is on your drive.
    - **Send:** a photo of the table and the `G4` line.
-2. Plug the network cable back in. Keep every record file: they are in `C:\SRE-data\records\`.
+2. Plug the network cable back in. Keep every record file: they are in `F:\SRE-data\records\`.
 
 ## Part 11 — The rollback drill (pilot gate G9)
 
@@ -318,7 +364,7 @@ night. The tool checks that this is safe first, and refuses if it is not.
    the **second** commit from the top, then **Browse files**, then the green **Code** button → **Download ZIP**. Extract
    it to `C:\` (Part 3, step 3) and rename the new folder to `SRE-previous`.
    - **The folder must be exactly `C:\SRE-previous`**, beside `C:\SRE` — never inside it. It needs no `pnpm install`
-     and no settings file: the drill uses this copy's own settings in `C:\SRE-data`.
+     and no settings file: the drill uses this copy's own settings in `F:\SRE-data`.
    - After your first update (Part 29), the previous version is simply the release folder you updated **from** — it is
      already beside the new one, and you name that folder instead.
    - If the drill later says "the same release", go one more commit down the list and do this step again.
@@ -352,6 +398,15 @@ This PC has 8 GB. The shop's own programs need only about half a gigabyte, but W
 most of the rest. Docker may take up to half the memory by default. This step caps it at 3 GB, so Windows and the till
 always have room.
 
+> **This PC is shared, so this step matters even more (OB-284).** The memory audit (lane C) worked out about
+> **5.9–6.3 GB** in use on a normal trading hour — Windows, Docker, the shop system, the till and one browser — out of
+> about **7.7 GB** that an "8 GB" PC really has. That figure did **not** include the purchase staff: their Excel and
+> their browser, open in their own account at the same time, come on top. That extra was **not measured**; if it is
+> around 1–1.5 GB, the PC is at the edge, and Windows starts using the slow disk instead of memory. The 3 GB cap below
+> keeps Docker from taking that last room, and the memory photo in step 6 — taken **while the purchase staff have Excel
+> and their browser open** — decides whether more memory is needed. Nothing is bought without your OK.
+> Docker's disk is on F: (Part 2), but that does not change the memory: the cap is still needed.
+
 1. Open PowerShell (Part 2, step 3) — it does not need to be in `C:\SRE`. First check that no such file exists yet:
    ```
    Test-Path "$env:USERPROFILE\.wslconfig"
@@ -379,7 +434,8 @@ always have room.
    - If Docker Desktop shows a warning about `.wslconfig`, stop and send a photo of it.
 5. In Docker Desktop, open **Settings → Resources** and turn **Resource Saver** on, if your version shows it.
 6. **The memory photo — later, during a practice hour** (not now). When the till is open and staff are practising
-   (Part 24 onwards), press **Ctrl + Shift + Esc** → **Performance** → **Memory**. **Send:** one photo of that screen
+   (Part 24 onwards), **and the purchase staff are signed in with Excel and their browser open as on a normal day**
+   (OB-284), press **Ctrl + Shift + Esc** → **Performance** → **Memory**. **Send:** one photo of that screen
    (it shows "In use" and "Committed"), and one of **Processes** with the **Memory** column clicked so the biggest is at
    the top. We decide about more memory from that photo: only if "In use" stays above about 6.5 GB, and nothing is
    bought without your OK.
@@ -395,14 +451,14 @@ private save socket. No network is used for a sale.
 
 1. Open PowerShell in `C:\SRE` (Part 4, step 1). Type:
    ```
-   pnpm run till:install -- --lane lane-1 --settings C:\SRE-data\.env.real
+   pnpm run till:install -- --lane lane-1 --settings F:\SRE-data\.env.real
    ```
    It takes a few minutes (it builds the till screen, the office screens and the till's own program).
-   - **When it worked:** it says the till's settings and data go in `C:\SRE-data\till`, outside this release; that the
+   - **When it worked:** it says the till's settings and data go in `F:\SRE-data\till`, outside this release; that the
      till takes **guest sales only** (OB-252); that it runs the **mirror pilot** — every sale and refund "Paid on old
      system", with the old bill number (OB-248, OB-256, OB-264); that it starts **OFFLINE-FIRST** (it sells and saves
      every sale on this PC, and sends nothing yet — Part 20 connects it); then `Till installed.`, a line `Settings:`
-     naming `C:\SRE-data\till\till.env`, a line `Start script:` naming `C:\SRE\till\start-till.cmd`, and a list under
+     naming `F:\SRE-data\till\till.env`, a line `Start script:` naming `C:\SRE\till\start-till.cmd`, and a list under
      `Next:`.
    - The installer writes the two mirror-pilot settings into `till.env` **together**: the mirror pilot and guest sales
      only. It refuses to write a till for this copy without both — it then says `The till cannot be installed yet —`
@@ -413,8 +469,10 @@ private save socket. No network is used for a sale.
 2. `till.env` holds this till's keys. **Never open it, never photograph it, never copy it** — the same rule as
    `.env.real`. You never need to open it: every setting in it is written by the tool.
 3. Only if `doctor` (Part 5) ever says **FIX Data** — which happens only on a copy set up before 20 Oct 2026 — close the
-   till and type `pnpm run store-computer -- migrate-data-folder`. It copies the data into `C:\SRE-data`, checks every
-   file, and says `MOVED —`. A copy set up with this guide is already there.
+   till and type `pnpm run store-computer -- migrate-data-folder --data-drive F:`. It copies the data into
+   `F:\SRE-data`, checks every file, records the new place, and says `MOVED —`. A copy set up with this guide is
+   already there. The same command also moves a data folder that was first made on C: (`C:\SRE-data`) whole to F:; it
+   refuses while the till runs or while the automatic backup and autostart are on, and says how to turn them off first.
 
 ## Part 14 — Start the till by itself, and open it
 
@@ -468,7 +526,7 @@ Nobody may invent these (OB-243). Do not type the command below until you have w
 1. First the **dry run** (it changes nothing). Your tenant id is the one you wrote in the workbook in Part 5. Type it as
    one line, putting in your own values (for two people, put a comma between them after `--admin`, no spaces):
    ```
-   pnpm run tenant:bootstrap -- --tenant <tenant-id> --owner <your-login> --admin <their-login>:<their-role>,<manager-login>:store_manager --operator "Your Name" --env-file C:\SRE-data\.env.real --dry-run
+   pnpm run tenant:bootstrap -- --tenant <tenant-id> --owner <your-login> --admin <their-login>:<their-role>,<manager-login>:store_manager --operator "Your Name" --env-file F:\SRE-data\.env.real --dry-run
    ```
    - **When it worked:** it lists each person and their role, then `DRY RUN — nothing was written.`
    - Read the list. If anything is wrong, fix the line and run the dry run again.
@@ -489,7 +547,7 @@ PIN. You never type anybody else's PIN.
    ```
    pnpm run till:pin -- --user <their-login> --by "Your Name"
    ```
-   - It says `Using the till's settings in C:\SRE-data\till\till.env (never shown).`, then
+   - It says `Using the till's settings in F:\SRE-data\till\till.env (never shown).`, then
      `<their-login>: please come to the keyboard. Everyone else, look away.` **Give the keyboard to the person and look
      away.** They type their own new six-digit PIN and press Enter — it shows only as stars — then the same PIN again and
      Enter. They choose six digits nobody could guess (not a birthday, a phone number or 123456).
@@ -570,7 +628,7 @@ sales to this copy's books (for the evening check). Two steps.
 2. **The till's settings.** The installer writes them itself — this copy's own address, the store, and a store token —
    and shows none of them:
    ```
-   pnpm run till:install -- --lane lane-1 --store <store-code> --settings C:\SRE-data\.env.real
+   pnpm run till:install -- --lane lane-1 --store <store-code> --settings F:\SRE-data\.env.real
    ```
    - **When it worked:** a line `connected to this copy's books for store …: a NEW store token … was written into
      till.env — it is never shown`, a line saying which settings it set in `till.env` (names only), and at the end
@@ -618,9 +676,9 @@ When the GO is written and the department is named:
      again (`kept —`).
 3. Then three commands, by two different people (the person who loads can never sign the totals):
    ```
-   pnpm run migration:slice -- --dir C:\SRE-slice --stage --settings C:\SRE-data\.env.real
-   pnpm run migration:slice -- --dir C:\SRE-slice --accept --as <their-login> --statement "<what they read and decided>" --settings C:\SRE-data\.env.real
-   pnpm run migration:slice -- --dir C:\SRE-slice --apply --settings C:\SRE-data\.env.real --out C:\SRE-slice\outcome-1.json
+   pnpm run migration:slice -- --dir C:\SRE-slice --stage --settings F:\SRE-data\.env.real
+   pnpm run migration:slice -- --dir C:\SRE-slice --accept --as <their-login> --statement "<what they read and decided>" --settings F:\SRE-data\.env.real
+   pnpm run migration:slice -- --dir C:\SRE-slice --apply --settings F:\SRE-data\.env.real --out C:\SRE-slice\outcome-1.json
    ```
    - **When it worked:** `RECORDED —`, then `ACCEPTED —`, then `APPLIED — every staged row landed`.
    - Any `REFUSED` line: stop and send a photo. `docs\runbooks\real-data-load.md` explains each message.
@@ -661,7 +719,8 @@ practice figures.
 ## Part 26 — Lock the PC (OB-251)
 
 You decided: only you hold this PC's administrator account, the disk is encrypted, and cashiers get their own standard
-Windows account that opens only the till. Do this part **before** any real data.
+Windows account that opens only the till. Do this part **before** any real data. This PC is also the purchase staff's
+office PC (OB-284): they keep their own **standard** account, and the shop's folders are locked against it (26c).
 
 ### 26a — You keep the only administrator account
 
@@ -671,6 +730,8 @@ Windows account that opens only the till. Do this part **before** any real data.
    ```
    - **When it worked:** under the line of dashes, only **your** account (and possibly a built-in `Administrator`
      account, which Windows keeps switched off). **Send:** a photo.
+   - **The purchase staff's account must not be listed** (OB-284): it stays a **Standard User**. An administrator can
+     open every folder on the PC, whatever Part 26c says. `doctor`'s `Admins` line says the same, read-only.
    - If anyone else is listed, stop and send the photo. Do not remove anyone yet.
 2. Then:
    ```
@@ -692,33 +753,44 @@ Windows account that opens only the till. Do this part **before** any real data.
    programs keep running. **Never "Sign out" of your own account while the shop trades**: that stops Docker and the
    till. In the `Till` account, open only Microsoft Edge with the till favourite (Part 14, step 3).
 
-### 26c — Cashiers cannot open the settings files (folder permissions)
+### 26c — Only you can open the shop's folders (folder permissions, OB-251 · OB-284)
 
-`.env.real` and `till.env` hold this copy's keys, in `C:\SRE-data`. Windows lets every account on the PC read a folder
-unless told otherwise, so this step removes every account except you, Windows itself (SYSTEM) and administrators — on
-**both** folders: `C:\SRE` (the system) and `C:\SRE-data` (the shop's data).
+`.env.real` and `till.env` hold this copy's keys, in `F:\SRE-data`. Windows lets every account on the PC read a folder
+unless told otherwise — and this PC is shared: the **purchase staff's** account is on it every day, and the **Till**
+account at the counter (OB-284). So this step leaves **only your own account and Windows itself (SYSTEM)** on three
+folders: `C:\SRE` (the system), `F:\SRE-data` (the shop's data) and `C:\ProgramData\SRE` (the note that says where the
+data is). Every other account — the purchase staff's, the Till account, "Users", "Administrators" as a group — is taken
+off. **Do steps 1 and 2 straight after Part 5, step 2** (the guide sends you here then), and step 3 once the Till account
+exists (26b).
 
-1. In **your own** account, open PowerShell (no need to be in `C:\SRE`) and type these two lines, each as **one** line:
+1. In **your own** account, open PowerShell (no need to be in `C:\SRE`) and type these three lines, each as **one**
+   line:
    ```
-   icacls C:\SRE /inheritance:r /grant:r "$($env:USERDOMAIN)\$($env:USERNAME):(OI)(CI)F" "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F"
-   icacls C:\SRE-data /inheritance:r /grant:r "$($env:USERDOMAIN)\$($env:USERNAME):(OI)(CI)F" "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F"
+   icacls C:\SRE /inheritance:r /grant:r "$($env:USERDOMAIN)\$($env:USERNAME):(OI)(CI)F" "*S-1-5-18:(OI)(CI)F"
+   icacls F:\SRE-data /inheritance:r /grant:r "$($env:USERDOMAIN)\$($env:USERNAME):(OI)(CI)F" "*S-1-5-18:(OI)(CI)F"
+   icacls C:\ProgramData\SRE /inheritance:r /grant:r "$($env:USERDOMAIN)\$($env:USERNAME):(OI)(CI)F" "*S-1-5-18:(OI)(CI)F"
    ```
    - The first may take a minute (there are many files). **When it worked:** each says `Successfully processed 1
      files; Failed processing 0 files`.
    - After every update (Part 29), run the first line again for the **new** release folder.
 2. Check it on the two settings files themselves:
    ```
-   icacls C:\SRE-data\.env.real
-   icacls C:\SRE-data\till\till.env
+   icacls F:\SRE-data\.env.real
+   icacls F:\SRE-data\till\till.env
    ```
-   - **When it worked:** each shows exactly three lines with `(I)(F)`: your PC's name and your account,
-     `NT AUTHORITY\SYSTEM` and `BUILTIN\Administrators`. **Send:** a photo (it shows names of accounts only, never what
-     is in the file).
-   - **If you also see `BUILTIN\Users` or `NT AUTHORITY\Authenticated Users`:** the lock did not reach that file. Stop
-     and send the photo.
-3. Check from the cashier's side: switch to the `Till` account, open File Explorer and double-click `C:\SRE-data`.
+   - **When it worked:** each shows exactly two lines with `(I)(F)`: your PC's name and your account, and
+     `NT AUTHORITY\SYSTEM`. **Send:** a photo (it shows names of accounts only, never what is in the file).
+   - `till.env` is there only after Part 13. Before that, check `.env.real` only; check `till.env` after Part 13.
+   - **If you also see `BUILTIN\Users`, `NT AUTHORITY\Authenticated Users`, `BUILTIN\Administrators` or the purchase
+     staff's account:** the lock did not reach that file. Stop and send the photo.
+   - `pnpm run store-computer -- doctor` checks the same thing for you, read-only: its `Data lock` line must say `only
+     you and Windows itself (SYSTEM) can read F:\SRE-data, …`. A `FIX` there names who else can read it.
+3. Check from the other accounts' side: switch to the `Till` account, open File Explorer and double-click
+   `F:\SRE-data`.
    - **When it worked:** Windows says **You don't currently have permission to access this folder**. Click
-     **Cancel** — never **Continue**, and never type your own password in the `Till` account. Do the same for `C:\SRE`.
+     **Cancel** — never **Continue**, and never type your own password in another account. Do the same for `C:\SRE`.
+   - Then ask the purchase staff to do the same in **their** account, with you watching: the same message, and they
+     click **Cancel**.
 
 ### 26d — Encrypt the disk (BitLocker)
 
@@ -745,6 +817,16 @@ If the PC is stolen, an encrypted disk cannot be read. BitLocker is part of Wind
    ```
    - **When it worked:** `Percentage Encrypted: 100.0%` and `Protection Status: Protection On`. **Send:** a photo
      (it holds no key). Close this administrator window straight away.
+7. **Now the same for `F:`** — the shop's data and Docker's disk are there (OB-283), so F: must be encrypted too, or
+   the lock in OB-251 does not cover the data. In **Manage BitLocker**, under **Fixed data drives**, next to `F:` click
+   **Turn on BitLocker**. Tick **Automatically unlock this drive on this computer** if it offers it (otherwise, after C:
+   is on, choose **Turn on auto-unlock** next to F:), so the shop system finds F: open after every restart.
+   - F: gets its **own** recovery key: **Print** it too, and keep it with the C: one (step 3 rules).
+   - Choose **Encrypt entire drive** and **New encryption mode**, then **Start encrypting**.
+   - Check it the same way, with `manage-bde -status F:`. **When it worked:** `Percentage Encrypted: 100.0%` and
+     `Protection Status: Protection On`. **Send:** a photo.
+   - If after a restart `status` or `doctor` ever says the data folder `F:\SRE-data` is not there, F: is locked or
+     missing: stop and send the photo — the tool never makes a second copy on C:.
 
 ### 26e — The office screens ask for the person's own PIN (OB-259)
 
@@ -784,11 +866,14 @@ You decided: an automatic, encrypted backup **every hour**, of everything (the d
 settings), onto a second USB drive that **stays plugged in**; and once a day you plug in **your own** drive, take a copy,
 and keep it. **Nothing is ever deleted** — every backup is kept (OB-262).
 
-1. Plug in the drive that will stay in this PC and find its letter (Part 8, step 1). `F:` below stands for it.
+1. Plug in the USB drive that will stay in this PC — the one the shop already has (OB-281) — and find its letter
+   (Part 8, step 1). `G:` below stands for it; type **its** letter instead. **It is never `F:`**: on this PC F: is the
+   disk inside the computer that holds the shop's data (OB-283), and the tool refuses it — and every other disk inside
+   the PC — on purpose. Only a USB or removable drive is taken.
    ```
-   pnpm run store-computer -- schedule-backup --to F:\sre-auto --every 60
+   pnpm run store-computer -- schedule-backup --to G:\sre-auto --every 60
    ```
-   - **When it worked:** `AUTOMATIC BACKUP ON — every 60 minutes to F:\sre-auto, encrypted to backup key …, while you are
+   - **When it worked:** `AUTOMATIC BACKUP ON — every 60 minutes to G:\sre-auto, encrypted to backup key …, while you are
      signed in to Windows.`, the names of two Windows tasks, then `Taking the first backup now…` and `BACKUP DONE —`.
      It uses the backup key you made in Part 8 and never asks for the passphrase (a backup only needs the sealed key;
      opening one needs the passphrase).
@@ -798,7 +883,7 @@ and keep it. **Nothing is ever deleted** — every backup is kept (OB-262).
    ```
    pnpm run store-computer -- backup-status
    ```
-   - It shows the backup key, `Automatic: every 60 minutes to F:\sre-auto`, `Last good:` with how long ago, and **what
+   - It shows the backup key, `Automatic: every 60 minutes to G:\sre-auto`, `Last good:` with how long ago, and **what
      is on the drive: how many backups, how much space they use, how much is free, and about how many more days fit**.
    - **When it worked:** the last line says `OK — the last good backup is less than 2 hours old.`
    - **Because nothing is ever deleted, the drive slowly fills** (OB-262). `backup-status` shows, every morning, how
@@ -821,12 +906,15 @@ and keep it. **Nothing is ever deleted** — every backup is kept (OB-262).
 ## Part 29 — Installing a new version (update)
 
 Never replace or delete `C:\SRE` by hand. Each new version goes into **its own folder** beside the old one; the shop's
-data stays in `C:\SRE-data`; and the file `C:\SRE-data\run\current-release.json` says which folder is the live one — the
+data stays in `F:\SRE-data`; and the file `F:\SRE-data\run\current-release.json` says which folder is the live one — the
 Windows tasks follow it by themselves.
 
 1. Do it only when the shop is closed (it rebuilds the system, Part 12). Plug in the backup drive that stays in the PC.
 2. Download the new version's ZIP (Part 3) and extract it to `C:\`. Rename the new folder with the month, for example
    `SRE-2026-11` — **never** `SRE`, and never inside another folder.
+   - Release folders stay on C:, and up to three are kept at once (the live one, the previous one and the new one).
+     `doctor` checks C: keeps at least 15 GB free for them and the programs (OB-283). The new version finds
+     `F:\SRE-data` by itself, from the note in `C:\ProgramData\SRE` — nothing to type for that.
 3. Open PowerShell in the **current** live folder (the first time: `C:\SRE`) and type:
    ```
    pnpm run store-computer -- update --from C:\SRE-2026-11
@@ -836,7 +924,7 @@ Windows tasks follow it by themselves.
      till.
    - **When it worked:** `1.` … `BACKUP DONE`, `2.` the till stopped, `3.` installing, `READY — the new release runs on
      this copy's own database`, `4. TILL —`, then `UPDATED — the shop system now runs from C:\SRE-2026-11. The shop's
-     data stayed in C:\SRE-data.`
+     data stayed in F:\SRE-data.`
    - If anything fails it says `NOT UPDATED —`, puts the old version back on the same data and starts the till again.
      Send a photo.
 4. From now on open PowerShell in the **new** folder. Keep the old folder: it is now the **previous** release (the
@@ -927,6 +1015,16 @@ test. **None of it has run on real Windows yet.**
 | W-6 | `pnpm run till:pin` did not load the till's settings. | It finds and loads `till.env` itself (Parts 16, 21). |
 | W-7 | A cashier could type an office screen's address. | The office screens ask for the person's own PIN; a cashier's PIN opens only the till (OB-259, Part 26e). |
 | W-8 | No way to seal the old ERP's export files. | `store-computer seal` (Part 22). |
+
+**Found from your Part 1 photos (21 Oct 2026), and how each was closed.** None of these has run on real Windows yet
+either: each is driven by an automated test with a pretend Windows.
+
+| Id | Found | Closed by |
+|---|---|---|
+| P1-1 | The first screenshot was the shop's Windows Server 2022, which runs the old ERP (OB-282). | `doctor`, `prepare`, `up`, `autostart` and `update` ask Windows its edition (read-only) and refuse on a server (Part 1). |
+| P1-2 | C: has 41.9 GB free, under the 50 GB needed; F: inside the PC has 357 GB (OB-283). | The data and Docker's disk on F: (`--data-drive F:`, Parts 2 and 5); the place recorded so every command finds it; `doctor` checks F: (50 GB) and C: (15 GB) and says which is which. |
+| P1-3 | F: is inside the PC, so a backup on it is not a backup (OB-281, OB-283). | Every backup command asks Windows what kind of drive it is and takes only a USB or removable drive (Parts 8, 28). |
+| P1-4 | The PC is the purchase staff's shared office PC (OB-284). | The Part 26c lock covers `F:\SRE-data`, `C:\SRE` and `C:\ProgramData\SRE`, for you and SYSTEM only, straight after Part 5; `doctor` reports the administrators and who can read the data (read-only); F: is encrypted too (26d); the memory photo is taken with the purchase staff's Excel open (Part 12). |
 
 **Still open** (each said where it is used): the header rows of the old ERP's two reports, so the column mapping can be
 checked (Part 31, step 3 — OB-263 is decided: item-wise and bill-wise files); the names OB-243 still waits for (the

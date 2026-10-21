@@ -32,6 +32,7 @@ import {
   recordBackupOutcome, size, takeStoreBackup, tillFolders,
 } from './store-computer-recovery.mjs';
 import { ALERT_RULES, SCHEDULE_FILE, ageWords, backupRoom, readSchedule, status } from './store-computer-status.mjs';
+import { refusedOnServer } from './store-computer-windows.mjs';
 // Kept importable from here, where they were first written (OB-262 · OB-268 moved them beside the status check).
 export { daysOfRoom, driveTally } from './store-computer-status.mjs';
 
@@ -231,7 +232,7 @@ export async function scheduleBackup(deps, opts) {
   const p = pathFor(deps.platform);
   const to = typeof opts.to === 'string' ? opts.to.trim() : '';
   const every = Number(opts.every ?? 60);
-  if (to === '') { say('REFUSED — say which drive folder the automatic backup goes to: pnpm run store-computer -- schedule-backup --to F:\\sre-auto --every 60  (the drive that STAYS plugged in)'); return 2; }
+  if (to === '') { say('REFUSED — say which drive folder the automatic backup goes to: pnpm run store-computer -- schedule-backup --to G:\\sre-auto --every 60  (the drive that STAYS plugged in)'); return 2; }
   if (!Number.isInteger(every) || every < EVERY_LIMITS.min || every > EVERY_LIMITS.max) { say(`REFUSED — --every must be a whole number of minutes from ${EVERY_LIMITS.min} to ${EVERY_LIMITS.max}. OB-249 says hourly (60): a dead disk loses at most about an hour.`); return 2; }
   const s = scheduling(deps);
   if (s.code !== undefined) return s.code;
@@ -324,7 +325,7 @@ export async function backupStatus(deps) {
   const keyLine = key.key === undefined ? 'NOT SET — the first backup asks you to choose the passphrase'
     : `${key.key.keyId} (made ${key.key.createdAt}); the passphrase that opens it is kept nowhere on this computer`;
   say(`  Backup key:     ${keyLine}`);
-  if (schedule === undefined) say('  Automatic:      OFF — set it up: pnpm run store-computer -- schedule-backup --to F:\\sre-auto --every 60');
+  if (schedule === undefined) say('  Automatic:      OFF — set it up: pnpm run store-computer -- schedule-backup --to G:\\sre-auto --every 60');
   else {
     const on = tasks === undefined ? undefined : [TASKS.backup, TASKS.status].every((n) => tasks.exists(n));
     say(`  Automatic:      every ${schedule.everyMinutes} minutes to ${schedule.to}${on === false ? ' — BUT THE WINDOWS TASK IS MISSING: run schedule-backup again' : ''}`);
@@ -393,6 +394,7 @@ export function takeLock(deps, file) {
 /** `autostart [--off]`: the sign-in task that brings the whole shop system back after a restart. */
 export async function autostart(deps, opts = {}) {
   const { say } = deps;
+  if (refusedOnServer(deps)) return 2; // OB-282: nothing is ever set to start on the shop's server
   const s = scheduling(deps);
   if (s.code !== undefined) return s.code;
   const { ctx, tasks } = s;

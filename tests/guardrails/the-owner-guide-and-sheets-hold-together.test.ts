@@ -208,7 +208,7 @@ describe('the owner guide and the cashier sheets hold together (OB-244 · OB-248
       expect(guide, step).toContain(step);
     }
     for (const cmd of SETUP_COMMANDS) expect(guide, cmd).toContain(`pnpm run store-computer -- ${cmd} `);
-    expect(guide).toContain('C:\\SRE-data');
+    expect(guide).toContain('F:\\SRE-data');
     expect(guide).toContain('current-release.json');
     // The data lives in C:\SRE-data now: no settings path inside the release folder is left.
     expect(guide).not.toMatch(/infra\\compose\\\.env\.real|C:\\SRE\\till\\till\.env|C:\\SRE\\infra\\compose\\records/);
@@ -378,9 +378,9 @@ describe('the owner guide and the cashier sheets hold together (OB-244 · OB-248
     expect(guide).toMatch(/net localgroup Administrators/);
     expect(guide).toMatch(/Standard User/);
     expect(guide).toContain('icacls C:\\SRE /inheritance:r /grant:r');
-    expect(guide).toContain('icacls C:\\SRE-data /inheritance:r /grant:r');
-    expect(guide).toContain('icacls C:\\SRE-data\\.env.real');
-    expect(guide).toContain('icacls C:\\SRE-data\\till\\till.env');
+    expect(guide).toContain('icacls F:\\SRE-data /inheritance:r /grant:r');
+    expect(guide).toContain('icacls F:\\SRE-data\\.env.real');
+    expect(guide).toContain('icacls F:\\SRE-data\\till\\till.env');
     expect(guide).toMatch(/BUILTIN\\Users/);
     expect(guide).toMatch(/Print the recovery key/);
     expect(guide).toMatch(/Never photograph the recovery key/);
@@ -393,5 +393,50 @@ describe('the owner guide and the cashier sheets hold together (OB-244 · OB-248
     expect(guide).toMatch(/practice hour/);
     // Names are never invented: the steps that need one say STOP AND ASK.
     expect((guide.match(/STOP AND ASK/g) ?? []).length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('the guide carries the Part 1 results and the F: steps (OB-281 · OB-282 · OB-283 · OB-284)', () => {
+    const part = (n: number): string => {
+      const start = guide.indexOf(`## Part ${n} — `);
+      const end = guide.indexOf('\n## ', start + 1);
+      expect(start, `Part ${n}`).toBeGreaterThan(-1);
+      return guide.slice(start, end === -1 ? undefined : end);
+    };
+    // Part 1: the photos passed, with the facts as photographed; the server is never used.
+    const p1 = part(1);
+    for (const fact of ['21 Oct 2026', 'your photos passed', 'Windows 11 Pro', '25H2', 'i3-14100', '8 GB', 'virtualisation enabled', '41.9 GB free', '115 GB', '357 GB free', 'Windows Server 2022', 'OB-282', 'OB-283', 'OB-284']) {
+      expect(p1, fact).toContain(fact);
+    }
+    expect(p1).toMatch(/If Edition says "Windows Server", STOP/);
+    // Part 2: Docker's disk image on F:, with the exact Settings path.
+    expect(part(2)).toMatch(/Settings\*\* \(the gear, top right\) → \*\*Resources\*\* → \*\*Advanced\*\* → \*\*Disk image location\*\*[\s\S]*`F:\\DockerData`[\s\S]*\*\*Apply & restart\*\*/);
+    // Part 5: doctor and prepare with --data-drive F:, the lock straight after, in the owner's own account.
+    const p5 = part(5);
+    expect(p5).toContain('pnpm run store-computer -- doctor --data-drive F:');
+    expect(p5).toContain('pnpm run store-computer -- prepare --data-drive F:');
+    expect(p5).toContain('C:\\ProgramData\\SRE\\data-folder.json');
+    expect(p5).toMatch(/Part 26c, steps 1 and 2\*\* now/);
+    expect(p5).toMatch(/never in the purchase staff's account \(OB-284\)/);
+    // Part 8: never F: or C:, only USB (OB-281); Part 28: the USB that stays in is not F:.
+    expect(part(8)).toMatch(/Never `F:`, and never `C:`/);
+    expect(part(8)).toMatch(/only a \*\*USB or removable\*\* drive \(OB-281\)/);
+    expect(part(28)).toMatch(/\*\*It is never `F:`\*\*/);
+    expect(guide).not.toMatch(/--to F:\\/);
+    // Part 12: the shared PC's memory, honestly — lane C's figures, the unmeasured extra, the photo with Excel open.
+    const p12 = part(12);
+    for (const fact of ['OB-284', '5.9–6.3 GB', '7.7 GB', '**not measured**', 'Excel']) expect(p12, fact).toContain(fact);
+    // Part 26: the lock covers F:\SRE-data, C:\SRE and the note, for the owner and SYSTEM only; F: encrypted too.
+    const p26 = part(26);
+    for (const folder of ['C:\\SRE', 'F:\\SRE-data', 'C:\\ProgramData\\SRE']) {
+      expect(p26, folder).toContain(`icacls ${folder} /inheritance:r /grant:r "$($env:USERDOMAIN)\\$($env:USERNAME):(OI)(CI)F" "*S-1-5-18:(OI)(CI)F"\n`);
+    }
+    expect(p26).not.toContain('S-1-5-32-544'); // the Administrators group is not given the data (OB-284)
+    expect(p26).toMatch(/purchase staff's account must not be listed\*\* \(OB-284\)/);
+    expect(p26).toContain('manage-bde -status F:');
+    // Part 29: the release folders stay on C:, the data is found by itself.
+    expect(part(29)).toMatch(/at least 15 GB free/);
+    // Every --data-drive the guide types is one the tool reads, on the commands that take it.
+    for (const m of guide.matchAll(/pnpm run store-computer -- ([a-z-]+)[^\n`]*--data-drive F:/g)) expect(['doctor', 'prepare', 'migrate-data-folder']).toContain(m[1]);
+    expect(parseCommandLine(['doctor', '--data-drive', 'F:'])).toMatchObject({ command: 'doctor', dataDrive: 'F:', problems: [] });
   });
 });
