@@ -104,7 +104,7 @@ const WORDS = {
     dayAgrees: 'agrees', dayDiffers: 'differs by', needsReason: 'NEEDS A REASON — the day cannot be signed',
     explainedAs: 'explained', daysTitle: 'Days so far', noDays: 'No day has been entered yet.',
     billsTitle: 'Bill by bill (mirror pilot)',
-    billsLead: 'Every sale keyed on the new till on this day, with the old system\'s bill number typed on it (OB-264). Use it to check a bill by hand. A comparison against the old system\'s own bill list is not built yet: it waits for your answer on which report the old system can give (OB-263).',
+    billsLead: 'Every sale keyed on the new till on this day, with the old system\'s bill number typed on it (OB-264). Use it to check a bill by hand. The comparison with the old system\'s own bill list is in the evening check from the old system\'s files, above (OB-263).',
     billsNone: 'No sale keyed on the new till on this day yet.', billNew: 'New bill', billOld: 'Old bill', billAmount: 'Amount', billRefunded: 'Refunded',
     billsCount: 'bill(s)', billsTotal: 'in all', billsTruncated: 'Only the latest bills are listed here.',
     signedDay: 'signed by', unsignedDay: 'NOT SIGNED', resignNeeded: 'the figures changed after it was signed — sign it again',
@@ -197,7 +197,7 @@ const WORDS = {
     dayAgrees: 'பொருந்துகிறது', dayDiffers: 'வேறுபாடு', needsReason: 'காரணம் தேவை — இந்த நாளில் கையெழுத்திட முடியாது',
     explainedAs: 'விளக்கம்', daysTitle: 'இதுவரையிலான நாட்கள்', noDays: 'இதுவரை எந்த நாளும் பதிவு செய்யப்படவில்லை.',
     billsTitle: 'பில் வாரியாக (மிரர் பைலட்)',
-    billsLead: 'இந்த நாளில் புதிய கல்லாவில் பதிவான ஒவ்வொரு விற்பனையும், அதில் உள்ளிட்ட பழைய அமைப்பின் பில் எண்ணுடன் (OB-264). ஒரு பில்லைக் கையால் சரிபார்க்க இதைப் பயன்படுத்தவும். பழைய அமைப்பின் சொந்தப் பில் பட்டியலுடன் ஒப்பீடு இன்னும் உருவாக்கப்படவில்லை: பழைய அமைப்பு எந்த அறிக்கையைத் தர முடியும் என்ற உங்கள் பதிலுக்காகக் காத்திருக்கிறது (OB-263).',
+    billsLead: 'இந்த நாளில் புதிய கல்லாவில் பதிவான ஒவ்வொரு விற்பனையும், அதில் உள்ளிட்ட பழைய அமைப்பின் பில் எண்ணுடன் (OB-264). ஒரு பில்லைக் கையால் சரிபார்க்க இதைப் பயன்படுத்தவும். பழைய அமைப்பின் சொந்தப் பில் பட்டியலுடன் ஒப்பீடு மேலே, பழைய அமைப்பின் கோப்புகளிலிருந்து மாலைச் சரிபார்ப்பில் உள்ளது (OB-263).',
     billsNone: 'இந்த நாளில் புதிய கல்லாவில் இன்னும் எந்த விற்பனையும் பதிவாகவில்லை.', billNew: 'புதிய பில்', billOld: 'பழைய பில்', billAmount: 'தொகை', billRefunded: 'திருப்பித் தரப்பட்டது',
     billsCount: 'பில்(கள்)', billsTotal: 'மொத்தம்', billsTruncated: 'சமீபத்திய பில்கள் மட்டுமே இங்கே பட்டியலிடப்பட்டுள்ளன.',
     signedDay: 'கையெழுத்திட்டவர்', unsignedDay: 'கையெழுத்து இல்லை', resignNeeded: 'கையெழுத்திட்ட பிறகு கணக்குகள் மாறின — மீண்டும் கையெழுத்திடுங்கள்',
@@ -1051,6 +1051,554 @@ function renderOld() {
   retire.append(emptyLine(t('neverDeleted')));
 }
 
+// ── Running both: the evening check from the old system's two files (OB-263) ─────────────────────────────────
+//
+// The owner saves two reports from the old system for the day — the item-wise sales report and the bill-wise list — as
+// CSV, and picks them here. The page reads only each file's own header row (for the one-time "which column is which"
+// mapping); the store computer reads the figures through the saved mapping, keeps only the pilot department, compares them
+// with its own mirror sales and refunds, and keeps the figures (never the files). Every difference needs a reason; then the
+// day is signed. All of it on the store computer, with no internet; head office hears it the way a day always goes.
+
+const EC_WORDS = {
+  en: {
+    title: 'Evening check from the old system\'s files',
+    lead: 'Save two reports from the old system for the day, as CSV: the item-wise sales report and the bill-wise list. Pick them below. The first time, say which column is which — once. Then load them: the store computer compares them with the new till, for the pilot department only. Write a reason on every difference, then sign the day.',
+    dept: 'Pilot department', deptUnknown: 'The pilot department is not known on this store computer yet — it comes from the department slice once it is applied. Nothing can be compared until then.',
+    date: 'Which day', templates: 'Our templates (what each column means)',
+    tpl_item_wise: 'Item-wise template', tpl_bill_wise: 'Bill-wise template',
+    file_item_wise: '1. The old system\'s item-wise sales report for the day (CSV)', file_bill_wise: '2. The old system\'s bill-wise list for the day (CSV)',
+    report_item_wise: 'the item-wise report', report_bill_wise: 'the bill-wise list',
+    noFile: 'No file chosen yet.', fileReady: 'Columns found — ready to load', fileNeedsMap: 'Say which column is which (below), once',
+    fileMissing: 'The saved mapping names a column this file does not have. If the old system\'s report changed, change the mapping.',
+    notCsv: 'Only a CSV file can be read. In Excel: File, Save As, "CSV UTF-8 (Comma delimited)".',
+    tooBig: 'This file is too large to be one day\'s report.',
+    noHeader: 'No header row was found in this file.',
+    mapTitle: 'Which column is which', mapLead: 'For each of our fields, choose the column of the old system\'s report that holds it. Columns you do not choose are never read or kept — a customer\'s name or phone number in the report goes nowhere.',
+    choose: '— choose —', notInReport: 'Not in this report',
+    dateOrder: 'How does the report write its dates?', dmy: 'Day first (21/10/2026)', mdy: 'Month first (10/21/2026)', ymd: 'Year first (2026-10-21)',
+    tax: 'Does the report\'s sales value already include the tax?', taxYes: 'Yes — the value includes tax', taxNo: 'No — the value is before tax',
+    mapSave: 'Save the mapping', mapCancel: 'Cancel', mapSaved: 'Mapping saved on this store computer',
+    mappingsTitle: 'Which column is which (saved on this store computer)', noMapping: 'Not mapped yet.', change: 'Change',
+    setBy: 'set by', changedBefore: 'earlier mappings',
+    tolValue: 'Allowed difference in value (₹)', tolTax: 'Allowed difference in tax (₹)', tolBad: 'The allowed difference must be rupees, 0 or more.',
+    load: 'Load and compare', loaded: 'Loaded and compared', bothFiles: 'Pick both files first: the item-wise report and the bill-wise list.',
+    notLoaded: 'No files have been loaded for this day yet.',
+    totals: 'The day\'s totals (pilot department)', what: 'What', old: 'Old system', new: 'New till', difference: 'Difference',
+    value: 'Sales value (₹)', taxRow: 'Tax (₹)', bills: 'Number of bills', qty: 'Quantity',
+    notKnown: 'Not known', agrees: 'agrees',
+    payments: 'Payments taken (₹)', loyalty: 'Loyalty points', notComparedShort: 'Not compared in the mirror pilot (OB-256, OB-265)',
+    items: 'Items that differ', itemsAgree: 'items agree', noItemDiff: 'Every pilot item agrees.',
+    item: 'Item', qtyCol: 'Quantity', valueCol: 'Value (₹)', taxCol: 'Tax (₹)',
+    notInCat: 'Not in the new catalogue', notInCatLead: 'Items on the old system\'s report that match no product of the new catalogue. Each is a difference.',
+    billsTitle: 'Bill by bill', billsLines: 'The bill-wise list has each bill\'s items, so every check below was made.',
+    billsPresence: 'The bill-wise list has no item lines. So only this is checked: every bill keyed on the new till is on the old list. Which old bills had pilot items, and their values, cannot be compared.',
+    billsMatched: 'bills match', noBillDiff: 'No bill differs.', bill: 'Bill',
+    bill_not_keyed: 'On the old system with pilot items, not keyed on the new till', bill_not_on_old: 'Keyed on the new till, not on the old list (mistyped, or another day)', bill_value: 'In both, but the pilot items differ in value',
+    explainTitle: 'To explain: returns, credit notes and exchanges on the old system', explainLead: 'The old files show these. They are not matched to anything (exchanges are done on the old system only, OB-269). Write what each one was.',
+    readTitle: 'What was read, and what was not compared', otherDepts: 'rows for other departments, not compared', outsideNew: 'new-till lines outside the pilot department, not compared',
+    fileRead: 'rows read', totalLines: 'total line(s) at the foot, not used', withoutCode: 'line(s) with no code, not used', underAbove: 'item line(s) under the bill above', dateNotChecked: 'The item-wise report has no date column: check yourself that it is for the chosen day.',
+    changed: 'The new till has more sales or refunds for this day since the files were loaded. Load the files again to compare them.',
+    reasonsTitle: 'Differences — each needs a reason before the day can be signed', noDiffs: 'No difference beyond the allowed amount.',
+    why: 'Why do they differ', side: 'Which one was wrong', explained: 'Reason', by: 'by',
+    reasonsSave: 'Save the reasons', reasonsSaved: 'Reasons saved on this store computer', noReasonTyped: 'Write a reason beside at least one difference.',
+    statement: 'What you checked (in your own words)', sign: 'Sign the day', signed: 'Day signed', signedBy: 'Signed by',
+    unsigned: 'Not signed yet', stillNeeds: 'still need a reason',
+    history: 'Loads of this day', current: 'in use now', replaced: 'replaced — kept in the history', voided: 'Signature over replaced figures — no longer applies',
+    notSaved: 'Not saved', cannotSign: 'This day cannot be signed yet', relayLater: 'Saved on this store computer. It goes to head office when the line is back.',
+    sessionEnded: 'Your office sign-in has ended. Open the migration screen again and enter your PIN.',
+    area_sales_value: 'Sales value (₹)', area_tax: 'Tax (₹)', area_sales_count: 'Number of bills', area_stock_movement: 'Quantity',
+    area_item_quantity: 'Quantity of', area_item_value: 'Value of', area_item_tax: 'Tax of', area_item_not_in_catalogue: 'Not in the new catalogue:',
+    area_bill_not_keyed: 'Not keyed on the new till: old bill', area_bill_not_on_old: 'Not on the old list: old bill', area_bill_value: 'Pilot items differ in value: old bill', area_old_return: 'Return, credit note or exchange on the old system:',
+  },
+  ta: {
+    title: 'பழைய அமைப்பின் கோப்புகளிலிருந்து மாலைச் சரிபார்ப்பு',
+    lead: 'அந்த நாளுக்கான இரண்டு அறிக்கைகளைப் பழைய அமைப்பிலிருந்து CSV ஆகச் சேமியுங்கள்: பொருள் வாரியான விற்பனை அறிக்கையும் பில் வாரியான பட்டியலும். கீழே அவற்றைத் தேர்ந்தெடுங்கள். முதல் முறை மட்டும், எந்த நெடுவரிசை எது என்று சொல்லுங்கள். பிறகு ஏற்றுங்கள்: கடைக் கணினி அவற்றைப் புதிய கல்லாவுடன், பைலட் துறைக்கு மட்டும், ஒப்பிடும். ஒவ்வொரு வேறுபாட்டுக்கும் காரணம் எழுதி, பின் நாளில் கையெழுத்திடுங்கள்.',
+    dept: 'பைலட் துறை', deptUnknown: 'பைலட் துறை இந்தக் கடைக் கணினிக்கு இன்னும் தெரியவில்லை — துறைப் பகுதி ஏற்றப்பட்ட பிறகு அது வரும். அதுவரை எதையும் ஒப்பிட முடியாது.',
+    date: 'எந்த நாள்', templates: 'எங்கள் வார்ப்புருக்கள் (ஒவ்வொரு நெடுவரிசையின் பொருள்)',
+    tpl_item_wise: 'பொருள் வாரியான வார்ப்புரு', tpl_bill_wise: 'பில் வாரியான வார்ப்புரு',
+    file_item_wise: '1. அந்த நாளுக்கான பழைய அமைப்பின் பொருள் வாரியான விற்பனை அறிக்கை (CSV)', file_bill_wise: '2. அந்த நாளுக்கான பழைய அமைப்பின் பில் வாரியான பட்டியல் (CSV)',
+    report_item_wise: 'பொருள் வாரியான அறிக்கை', report_bill_wise: 'பில் வாரியான பட்டியல்',
+    noFile: 'இன்னும் கோப்பு தேர்ந்தெடுக்கப்படவில்லை.', fileReady: 'நெடுவரிசைகள் கிடைத்தன — ஏற்றத் தயார்', fileNeedsMap: 'எந்த நெடுவரிசை எது என்று (கீழே) ஒரு முறை சொல்லுங்கள்',
+    fileMissing: 'சேமித்த பொருத்தம் சொல்லும் ஒரு நெடுவரிசை இந்தக் கோப்பில் இல்லை. பழைய அமைப்பின் அறிக்கை மாறியிருந்தால், பொருத்தத்தை மாற்றுங்கள்.',
+    notCsv: 'CSV கோப்பை மட்டுமே படிக்க முடியும். Excel-இல்: File, Save As, "CSV UTF-8 (Comma delimited)".',
+    tooBig: 'இந்தக் கோப்பு ஒரு நாளின் அறிக்கையாக இருக்க மிகப் பெரியது.',
+    noHeader: 'இந்தக் கோப்பில் தலைப்பு வரி கிடைக்கவில்லை.',
+    mapTitle: 'எந்த நெடுவரிசை எது', mapLead: 'எங்கள் ஒவ்வொரு புலத்துக்கும், அதைக் கொண்டுள்ள பழைய அமைப்பின் அறிக்கையின் நெடுவரிசையைத் தேர்ந்தெடுங்கள். நீங்கள் தேர்ந்தெடுக்காத நெடுவரிசைகள் படிக்கப்படுவதோ வைக்கப்படுவதோ இல்லை — அறிக்கையில் உள்ள வாடிக்கையாளரின் பெயரோ தொலைபேசி எண்ணோ எங்கும் செல்லாது.',
+    choose: '— தேர்ந்தெடுங்கள் —', notInReport: 'இந்த அறிக்கையில் இல்லை',
+    dateOrder: 'அறிக்கை தேதிகளை எப்படி எழுதுகிறது?', dmy: 'நாள் முதலில் (21/10/2026)', mdy: 'மாதம் முதலில் (10/21/2026)', ymd: 'ஆண்டு முதலில் (2026-10-21)',
+    tax: 'அறிக்கையின் விற்பனை மதிப்பில் ஏற்கனவே வரி அடங்கியுள்ளதா?', taxYes: 'ஆம் — மதிப்பில் வரி அடங்கும்', taxNo: 'இல்லை — மதிப்பு வரிக்கு முந்தையது',
+    mapSave: 'பொருத்தத்தைச் சேமி', mapCancel: 'ரத்து செய்', mapSaved: 'பொருத்தம் இந்தக் கடைக் கணினியில் சேமிக்கப்பட்டது',
+    mappingsTitle: 'எந்த நெடுவரிசை எது (இந்தக் கடைக் கணினியில் சேமிக்கப்பட்டது)', noMapping: 'இன்னும் பொருத்தப்படவில்லை.', change: 'மாற்று',
+    setBy: 'அமைத்தவர்', changedBefore: 'முந்தைய பொருத்தங்கள்',
+    tolValue: 'மதிப்பில் அனுமதிக்கப்பட்ட வேறுபாடு (₹)', tolTax: 'வரியில் அனுமதிக்கப்பட்ட வேறுபாடு (₹)', tolBad: 'அனுமதிக்கப்பட்ட வேறுபாடு ரூபாயில், 0 அல்லது அதற்கு மேல் இருக்க வேண்டும்.',
+    load: 'ஏற்றி ஒப்பிடு', loaded: 'ஏற்றி ஒப்பிடப்பட்டது', bothFiles: 'முதலில் இரண்டு கோப்புகளையும் தேர்ந்தெடுங்கள்: பொருள் வாரியான அறிக்கையும் பில் வாரியான பட்டியலும்.',
+    notLoaded: 'இந்த நாளுக்கு இன்னும் எந்தக் கோப்பும் ஏற்றப்படவில்லை.',
+    totals: 'நாளின் மொத்தங்கள் (பைலட் துறை)', what: 'எது', old: 'பழைய அமைப்பு', new: 'புதிய கல்லா', difference: 'வேறுபாடு',
+    value: 'விற்பனை மதிப்பு (₹)', taxRow: 'வரி (₹)', bills: 'பில்களின் எண்ணிக்கை', qty: 'அளவு',
+    notKnown: 'தெரியவில்லை', agrees: 'பொருந்துகிறது',
+    payments: 'பெற்ற பணம் (₹)', loyalty: 'விசுவாசப் புள்ளிகள்', notComparedShort: 'மிரர் பைலட்டில் ஒப்பிடப்படுவதில்லை (OB-256, OB-265)',
+    items: 'வேறுபடும் பொருட்கள்', itemsAgree: 'பொருட்கள் பொருந்துகின்றன', noItemDiff: 'ஒவ்வொரு பைலட் பொருளும் பொருந்துகிறது.',
+    item: 'பொருள்', qtyCol: 'அளவு', valueCol: 'மதிப்பு (₹)', taxCol: 'வரி (₹)',
+    notInCat: 'புதிய பட்டியலில் இல்லை', notInCatLead: 'பழைய அமைப்பின் அறிக்கையில் உள்ள, புதிய பட்டியலின் எந்தப் பொருளுடனும் பொருந்தாத பொருட்கள். ஒவ்வொன்றும் ஒரு வேறுபாடு.',
+    billsTitle: 'பில் வாரியாக', billsLines: 'பில் வாரியான பட்டியலில் ஒவ்வொரு பில்லின் பொருட்களும் உள்ளன, எனவே கீழே உள்ள எல்லாச் சரிபார்ப்புகளும் செய்யப்பட்டன.',
+    billsPresence: 'பில் வாரியான பட்டியலில் பொருள் வரிகள் இல்லை. எனவே இது மட்டுமே சரிபார்க்கப்படுகிறது: புதிய கல்லாவில் பதிவான ஒவ்வொரு பில்லும் பழைய பட்டியலில் உள்ளதா. எந்தப் பழைய பில்களில் பைலட் பொருட்கள் இருந்தன, அவற்றின் மதிப்பு என்ன என்பதை ஒப்பிட முடியாது.',
+    billsMatched: 'பில்கள் பொருந்துகின்றன', noBillDiff: 'எந்தப் பில்லும் வேறுபடவில்லை.', bill: 'பில்',
+    bill_not_keyed: 'பழைய அமைப்பில் பைலட் பொருட்களுடன் உள்ளது, புதிய கல்லாவில் பதிவாகவில்லை', bill_not_on_old: 'புதிய கல்லாவில் பதிவானது, பழைய பட்டியலில் இல்லை (தவறாக உள்ளிடப்பட்டது, அல்லது வேறு நாள்)', bill_value: 'இரண்டிலும் உள்ளது, ஆனால் பைலட் பொருட்களின் மதிப்பு வேறுபடுகிறது',
+    explainTitle: 'விளக்க வேண்டியவை: பழைய அமைப்பில் திருப்பங்கள், கடன் குறிப்புகள், பரிமாற்றங்கள்', explainLead: 'பழைய கோப்புகள் இவற்றைக் காட்டுகின்றன. இவை எதனுடனும் பொருத்தப்படுவதில்லை (பரிமாற்றங்கள் பழைய அமைப்பில் மட்டுமே, OB-269). ஒவ்வொன்றும் என்ன என்று எழுதுங்கள்.',
+    readTitle: 'படிக்கப்பட்டவை, ஒப்பிடப்படாதவை', otherDepts: 'வேறு துறைகளின் வரிகள், ஒப்பிடப்படவில்லை', outsideNew: 'பைலட் துறைக்கு வெளியே உள்ள புதிய கல்லா வரிகள், ஒப்பிடப்படவில்லை',
+    fileRead: 'வரிகள் படிக்கப்பட்டன', totalLines: 'கடைசியில் உள்ள மொத்த வரி(கள்), பயன்படுத்தப்படவில்லை', withoutCode: 'குறியீடு இல்லாத வரி(கள்), பயன்படுத்தப்படவில்லை', underAbove: 'மேலே உள்ள பில்லின் கீழ் பொருள் வரி(கள்)', dateNotChecked: 'பொருள் வாரியான அறிக்கையில் தேதி நெடுவரிசை இல்லை: அது தேர்ந்தெடுத்த நாளுக்கானது என்று நீங்களே சரிபாருங்கள்.',
+    changed: 'கோப்புகள் ஏற்றப்பட்ட பிறகு இந்த நாளுக்குப் புதிய கல்லாவில் மேலும் விற்பனைகள் அல்லது திருப்பங்கள் உள்ளன. ஒப்பிட, கோப்புகளை மீண்டும் ஏற்றுங்கள்.',
+    reasonsTitle: 'வேறுபாடுகள் — நாளில் கையெழுத்திடும் முன் ஒவ்வொன்றுக்கும் காரணம் தேவை', noDiffs: 'அனுமதிக்கப்பட்ட அளவுக்கு மேல் எந்த வேறுபாடும் இல்லை.',
+    why: 'ஏன் வேறுபடுகின்றன', side: 'எது தவறு', explained: 'காரணம்', by: '—',
+    reasonsSave: 'காரணங்களைச் சேமி', reasonsSaved: 'காரணங்கள் இந்தக் கடைக் கணினியில் சேமிக்கப்பட்டன', noReasonTyped: 'குறைந்தது ஒரு வேறுபாட்டின் அருகில் காரணம் எழுதுங்கள்.',
+    statement: 'நீங்கள் சரிபார்த்தது (உங்கள் சொந்த வார்த்தைகளில்)', sign: 'நாளில் கையெழுத்திடு', signed: 'நாளில் கையெழுத்திடப்பட்டது', signedBy: 'கையெழுத்திட்டவர்',
+    unsigned: 'இன்னும் கையெழுத்திடப்படவில்லை', stillNeeds: 'இன்னும் காரணம் தேவை',
+    history: 'இந்த நாளின் ஏற்றங்கள்', current: 'இப்போது பயன்பாட்டில்', replaced: 'மாற்றப்பட்டது — வரலாற்றில் வைக்கப்பட்டுள்ளது', voided: 'மாற்றப்பட்ட கணக்குகள் மீதான கையெழுத்து — இனி பொருந்தாது',
+    notSaved: 'சேமிக்கப்படவில்லை', cannotSign: 'இந்த நாளில் இன்னும் கையெழுத்திட முடியாது', relayLater: 'இந்தக் கடைக் கணினியில் சேமிக்கப்பட்டது. இணைப்பு திரும்பியதும் தலைமை அலுவலகத்துக்குச் செல்லும்.',
+    sessionEnded: 'உங்கள் அலுவலக உள்நுழைவு முடிந்தது. இடமாற்றத் திரையை மீண்டும் திறந்து உங்கள் PIN-ஐ உள்ளிடுங்கள்.',
+    area_sales_value: 'விற்பனை மதிப்பு (₹)', area_tax: 'வரி (₹)', area_sales_count: 'பில்களின் எண்ணிக்கை', area_stock_movement: 'அளவு',
+    area_item_quantity: 'அளவு —', area_item_value: 'மதிப்பு —', area_item_tax: 'வரி —', area_item_not_in_catalogue: 'புதிய பட்டியலில் இல்லை:',
+    area_bill_not_keyed: 'புதிய கல்லாவில் பதிவாகவில்லை: பழைய பில்', area_bill_not_on_old: 'பழைய பட்டியலில் இல்லை: பழைய பில்', area_bill_value: 'பைலட் பொருட்களின் மதிப்பு வேறுபடுகிறது: பழைய பில்', area_old_return: 'பழைய அமைப்பில் திருப்பம், கடன் குறிப்பு அல்லது பரிமாற்றம்:',
+  },
+};
+/** Each refusal the store computer can give, in the screen's own words (its detail follows, in English, on the English screen). */
+const EC_REFUSALS = {
+  not_the_named_reconciler: { en: 'Only the person named to reconcile each day can load, explain or sign a day here.', ta: 'ஒவ்வொரு நாளும் சரிபார்க்கப் பெயரிடப்பட்டவர் மட்டுமே இங்கே நாளை ஏற்றவோ, விளக்கவோ, கையெழுத்திடவோ முடியும்.' },
+  nobody_named_to_reconcile: { en: 'Nobody has been named to reconcile each day.', ta: 'ஒவ்வொரு நாளும் சரிபார்க்க யாரும் பெயரிடப்படவில்லை.' },
+  no_mapping: { en: 'Say which column is which first — once for each report.', ta: 'முதலில் எந்த நெடுவரிசை எது என்று சொல்லுங்கள் — ஒவ்வொரு அறிக்கைக்கும் ஒரு முறை.' },
+  mapping_refused: { en: 'The mapping was not saved.', ta: 'பொருத்தம் சேமிக்கப்படவில்லை.' },
+  not_csv: { en: 'This is not a CSV file the store computer can read.', ta: 'இது கடைக் கணினி படிக்கக்கூடிய CSV கோப்பு அல்ல.' },
+  too_large: { en: 'The file is too large to be one day\'s report.', ta: 'கோப்பு ஒரு நாளின் அறிக்கையாக இருக்க மிகப் பெரியது.' },
+  too_many_rows: { en: 'The file has too many rows to be one day\'s report.', ta: 'கோப்பில் ஒரு நாளின் அறிக்கைக்கு மிக அதிக வரிகள் உள்ளன.' },
+  header_not_found: { en: 'A column the mapping names is not in the file.', ta: 'பொருத்தம் சொல்லும் ஒரு நெடுவரிசை கோப்பில் இல்லை.' },
+  unreadable_rows: { en: 'Some lines could not be read. Nothing was kept.', ta: 'சில வரிகளைப் படிக்க முடியவில்லை. எதுவும் வைக்கப்படவில்லை.' },
+  wrong_day: { en: 'The file is for another day. Nothing was kept.', ta: 'கோப்பு வேறு ஒரு நாளுக்கானது. எதுவும் வைக்கப்படவில்லை.' },
+  looks_personal: { en: 'The bill number column holds what look like phone numbers. Check the mapping. Nothing was kept.', ta: 'பில் எண் நெடுவரிசையில் தொலைபேசி எண்கள் போலத் தெரிகின்றன. பொருத்தத்தைச் சரிபாருங்கள். எதுவும் வைக்கப்படவில்லை.' },
+  code_looks_personal: { en: 'The item code column holds what looks like a phone number. Check the mapping. Nothing was kept.', ta: 'பொருள் குறியீட்டு நெடுவரிசையில் தொலைபேசி எண் போலத் தெரிகிறது. பொருத்தத்தைச் சரிபாருங்கள். எதுவும் வைக்கப்படவில்லை.' },
+  repeated_bill: { en: 'A bill is on more than one row.', ta: 'ஒரு பில் ஒன்றுக்கு மேற்பட்ட வரிகளில் உள்ளது.' },
+  quantity_not_whole: { en: 'A quantity is not a whole number for an item sold in whole units.', ta: 'முழு அலகுகளில் விற்கப்படும் பொருளுக்கு அளவு முழு எண் அல்ல.' },
+  too_many_differences: { en: 'Far too many differences — a wrong column or another day\'s file.', ta: 'மிக அதிக வேறுபாடுகள் — தவறான நெடுவரிசை அல்லது வேறு நாளின் கோப்பு.' },
+  no_pilot_department: { en: 'The pilot department is not known yet.', ta: 'பைலட் துறை இன்னும் தெரியவில்லை.' },
+  no_catalogue: { en: 'This store computer holds no catalogue yet.', ta: 'இந்தக் கடைக் கணினியில் இன்னும் பொருள் பட்டியல் இல்லை.' },
+  day_not_loaded: { en: 'Load the files for this day first.', ta: 'முதலில் இந்த நாளுக்கான கோப்புகளை ஏற்றுங்கள்.' },
+  reason_says_nothing: { en: 'Say what really happened, in at least a full sentence.', ta: 'உண்மையில் என்ன நடந்தது என்று குறைந்தது ஒரு முழு வாக்கியத்தில் சொல்லுங்கள்.' },
+  reason_refused: { en: 'A reason was refused: say why the systems differ, not which one you prefer.', ta: 'ஒரு காரணம் மறுக்கப்பட்டது: எதை விரும்புகிறீர்கள் என்று அல்ல, அமைப்புகள் ஏன் வேறுபடுகின்றன என்று சொல்லுங்கள்.' },
+  already_signed: { en: 'This day is already signed over these figures.', ta: 'இந்தக் கணக்குகளின் மீது இந்த நாளில் ஏற்கனவே கையெழுத்திடப்பட்டுள்ளது.' },
+  unexplained_material_difference: { en: 'Some differences still have no reason. Write why for each one, save the reasons, then sign.', ta: 'சில வேறுபாடுகளுக்கு இன்னும் காரணம் இல்லை. ஒவ்வொன்றுக்கும் ஏன் என்று எழுதி, காரணங்களைச் சேமித்து, பின் கையெழுத்திடுங்கள்.' },
+  statement_says_nothing: { en: 'Say in your own words what you checked — at least a full sentence.', ta: 'நீங்கள் எதைச் சரிபார்த்தீர்கள் என்று உங்கள் சொந்த வார்த்தைகளில் சொல்லுங்கள் — குறைந்தது ஒரு முழு வாக்கியம்.' },
+  could_not_write_durably: { en: 'The store computer could not write to its disk. Nothing was saved — try again.', ta: 'கடைக் கணினி அதன் வட்டில் எழுத முடியவில்லை. எதுவும் சேமிக்கப்படவில்லை — மீண்டும் முயலுங்கள்.' },
+  no_sign_in: { en: 'This store computer does not ask for a PIN on office screens, so it cannot tell who you are. Nothing was saved.', ta: 'இந்தக் கடைக் கணினி அலுவலகத் திரைகளில் PIN கேட்பதில்லை, எனவே நீங்கள் யார் என்று அதற்குத் தெரியாது. எதுவும் சேமிக்கப்படவில்லை.' },
+  not_allowed: { en: 'You may not use the migration screen.', ta: 'நீங்கள் இடமாற்றத் திரையைப் பயன்படுத்த முடியாது.' },
+  not_in_the_mirror_pilot: { en: 'This store computer is not set for the mirror pilot.', ta: 'இந்தக் கடைக் கணினி மிரர் பைலட்டுக்கு அமைக்கப்படவில்லை.' },
+  not_readable: { en: 'The store computer could not read the request.', ta: 'கடைக் கணினியால் கோரிக்கையைப் படிக்க முடியவில்லை.' },
+  offline: { en: 'The store computer could not be reached. Nothing was saved — try again.', ta: 'கடைக் கணினியை அடைய முடியவில்லை. எதுவும் சேமிக்கப்படவில்லை — மீண்டும் முயலுங்கள்.' },
+};
+const ec = (key) => EC_WORDS[lang][key] ?? EC_WORDS.en[key] ?? key;
+const ecRefusal = (code) => (EC_REFUSALS[code]?.[lang] ?? EC_REFUSALS[code]?.en ?? String(code).replace(/_/g, ' '));
+const EC_KINDS = ['item_wise', 'bill_wise'];
+const EC_MONEY = new Set(['sales_value', 'tax', 'item_value', 'item_tax', 'bill_value']);
+const ecState = {
+  data: window.migrationData?.eveningCheck,
+  kit: window.eveningCheckKit,
+  files: { item_wise: null, bill_wise: null },
+  mappings: window.migrationData?.eveningCheck?.mappings ?? { current: {}, history: [] },
+  day: undefined,
+  mapping: null,
+};
+
+/** "1,234.50" or "₹ 12" → paise, by its digits (never through a floating-point number); NaN if not rupees. */
+function ecPaise(text) {
+  const v = String(text ?? '').replace(/[₹,\s]/g, '');
+  const m = /^(\d+)(?:\.(\d{1,2}))?$/.exec(v);
+  return m === null ? NaN : Number(m[1]) * 100 + Number(((m[2] ?? '') + '00').slice(0, 2));
+}
+/** A quantity in its unit's smallest step, worded: 1.234 kg, 500 g, a bare count for "each". */
+function ecQty(minor, uom) {
+  if (uom === 'kg' || uom === 'L') { const s = minor < 0 ? '-' : ''; const a = Math.abs(minor); return `${s}${Math.floor(a / 1000)}.${String(a % 1000).padStart(3, '0')} ${uom}`; }
+  return uom === 'ea' || uom === undefined ? Number(minor).toLocaleString('en-IN') : `${Number(minor).toLocaleString('en-IN')} ${uom}`;
+}
+/** A figure that may not be known: shown, or null (drawn as "Not known" — never a zero). */
+const ecKnown = (k, show) => (k && k.known === true ? show(k.minor) : null);
+function ecCell(text, cls) {
+  const td = document.createElement('td');
+  if (cls) td.className = cls;
+  if (text === null) { const s = document.createElement('span'); s.className = 'notknown'; s.textContent = ec('notKnown'); td.append(s); } else td.textContent = text;
+  return td;
+}
+function ecTable(id, heads, rows) {
+  const wrap = document.createElement('div');
+  wrap.className = 'scroll';
+  const table = document.createElement('table');
+  table.id = id;
+  const head = document.createElement('tr');
+  heads.forEach(([word, num]) => { const th = document.createElement('th'); th.scope = 'col'; th.textContent = word; if (num) th.className = 'num'; head.append(th); });
+  const thead = document.createElement('thead');
+  thead.append(head);
+  const body = document.createElement('tbody');
+  for (const r of rows) body.append(r);
+  table.append(thead, body);
+  wrap.append(table);
+  return wrap;
+}
+function ecRow(cells, differs) { const tr = document.createElement('tr'); if (differs) tr.className = 'differs'; tr.append(...cells); return tr; }
+function ecHeading(text, id) { const h = document.createElement('h4'); if (id) h.id = id; h.textContent = text; return h; }
+function ecPara(text, cls = 'lead', id) { const p = document.createElement('p'); p.className = cls; if (id) p.id = id; p.textContent = text; return p; }
+
+/** Ask the store computer (same page, same sign-in). A box that cannot be reached is said, never assumed saved. */
+async function ecCall(path, body) {
+  try {
+    const res = await fetch(`./evening-check/${path}`, body === undefined
+      ? { method: 'GET', credentials: 'same-origin', cache: 'no-store' }
+      : { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    if (res.status === 401) return { ok: false, refusedBecause: 'session', detail: '' };
+    const out = await res.json().catch(() => ({ ok: false, refusedBecause: 'not_readable', detail: '' }));
+    if (out && out.mappings) ecState.mappings = out.mappings;
+    return out;
+  } catch {
+    return { ok: false, refusedBecause: 'offline', detail: '' };
+  }
+}
+function ecTellRefusal(title, out) {
+  const head = out.refusedBecause === 'session' ? ec('sessionEnded') : ecRefusal(out.refusedBecause);
+  const detail = [lang === 'en' && out.detail ? out.detail : '', ...(out.problems ?? [])].filter((x) => x !== '').join(' · ');
+  tell(title, detail === '' ? head : `${head} ${detail}`);
+}
+
+/** Read a picked file in the browser: refuse what is not a CSV or too big; decode UTF-8, else Windows' own code page. */
+async function ecReadFile(kind) {
+  const file = el(`ec-file-${kind}`).files?.[0];
+  ecState.files[kind] = null;
+  if (!file) { ecPaintFiles(); return; }
+  const say = (text) => { ecState.files[kind] = { name: file.name, problem: text }; ecPaintFiles(); };
+  if (!/\.csv$/i.test(file.name)) { say(ec('notCsv')); return; }
+  if (file.size > (ecState.kit?.maxBytes ?? 5 * 1024 * 1024)) { say(ec('tooBig')); return; }
+  let text;
+  try {
+    const bytes = await file.arrayBuffer();
+    try { text = new TextDecoder('utf-8', { fatal: true }).decode(bytes); } catch { text = new TextDecoder('windows-1252').decode(bytes); }
+  } catch { say(ec('notCsv')); return; }
+  const header = ecState.kit ? ecState.kit.headerRowOf(text) : { ok: false };
+  if (!header.ok) { say(ec('noHeader')); return; }
+  ecState.files[kind] = { name: file.name, size: file.size, text, columns: header.columns };
+  ecPaintFiles();
+  if (ecMissing(kind).length > 0) ecOpenMapping(kind);
+}
+/** The mapped columns this file lacks — ['*'] when nothing is mapped yet. */
+function ecMissing(kind) {
+  const f = ecState.files[kind];
+  const m = ecState.mappings.current?.[kind];
+  if (!f || !f.columns) return [];
+  if (!m) return ['*'];
+  const have = new Set(f.columns.map((c) => ecState.kit.headerKey(c)));
+  return Object.values(m.mapping.columns).filter((c) => !have.has(ecState.kit.headerKey(c)));
+}
+function ecPaintFiles() {
+  for (const kind of EC_KINDS) {
+    const f = ecState.files[kind];
+    const box = el(`ec-box-${kind}`);
+    const state = el(`ec-state-${kind}`);
+    if (!f) { box.className = 'file'; state.textContent = ec('noFile'); continue; }
+    if (f.problem) { box.className = 'file needs'; state.textContent = `${f.name}: ${f.problem}`; continue; }
+    const missing = ecMissing(kind);
+    box.className = `file ${missing.length === 0 ? 'ready' : 'needs'}`;
+    state.textContent = `${f.name} · ${missing.length === 0 ? ec('fileReady') : missing[0] === '*' ? ec('fileNeedsMap') : `${ec('fileMissing')} (${missing.join(', ')})`}`;
+  }
+}
+
+/** The one-time "which column is which": a choice per field, from the file's own header row. */
+function ecOpenMapping(kind) {
+  ecState.mapping = kind;
+  const spec = ecState.kit.reports[kind];
+  const held = ecState.mappings.current?.[kind]?.mapping;
+  const columns = ecState.files[kind]?.columns ?? Object.values(held?.columns ?? {});
+  const same = (a, b) => ecState.kit.headerKey(a) === ecState.kit.headerKey(b);
+  el('ec-map').hidden = false;
+  el('ec-map-title').textContent = `${ec('mapTitle')} — ${ec(`report_${kind}`)}`;
+  el('ec-map-lead').textContent = ec('mapLead');
+  el('ec-map-fields').replaceChildren(...spec.fields.map((f) => {
+    const wrap = document.createElement('div');
+    const label = document.createElement('label');
+    label.htmlFor = `ec-map-${f.key}`;
+    label.textContent = `${f.words[lang] ?? f.words.en}${f.required ? ' *' : ''}`;
+    const select = document.createElement('select');
+    select.id = `ec-map-${f.key}`;
+    const first = document.createElement('option');
+    first.value = '';
+    first.textContent = f.required ? ec('choose') : ec('notInReport');
+    select.append(first, ...columns.map((c) => { const o = document.createElement('option'); o.value = c; o.textContent = c; return o; }));
+    const was = held?.columns?.[f.key];
+    const match = was === undefined ? undefined : columns.find((c) => same(c, was));
+    if (match !== undefined) select.value = match;
+    wrap.append(label, select);
+    return wrap;
+  }));
+  const order = el('ec-map-date-order');
+  order.replaceChildren(...['', ...ecState.kit.dateOrders].map((v) => { const o = document.createElement('option'); o.value = v; o.textContent = v === '' ? ec('choose') : ec(v); return o; }));
+  order.value = held?.dateOrder ?? '';
+  el('ec-map-includes-tax-box').hidden = kind !== 'item_wise';
+  const tax = el('ec-map-includes-tax');
+  tax.replaceChildren(...[['', ec('choose')], ['yes', ec('taxYes')], ['no', ec('taxNo')]].map(([v, w]) => { const o = document.createElement('option'); o.value = v; o.textContent = w; return o; }));
+  tax.value = held?.valueIncludesTax === true ? 'yes' : held?.valueIncludesTax === false ? 'no' : '';
+  el('ec-map-date-order-label').textContent = ec('dateOrder');
+  el('ec-map-includes-tax-label').textContent = ec('tax');
+  labelled(el('ec-map-save'), 'list-checks', ec('mapSave'));
+  labelled(el('ec-map-cancel'), 'x', ec('mapCancel'));
+}
+el('ec-map-cancel').addEventListener('click', () => { el('ec-map').hidden = true; ecState.mapping = null; });
+el('ec-map-save').addEventListener('click', async () => {
+  const kind = ecState.mapping;
+  if (!kind) return;
+  const columns = {};
+  for (const f of ecState.kit.reports[kind].fields) { const v = el(`ec-map-${f.key}`).value; if (v !== '') columns[f.key] = v; }
+  const order = el('ec-map-date-order').value;
+  const tax = el('ec-map-includes-tax').value;
+  const mapping = { columns, ...(order === '' ? {} : { dateOrder: order }), ...(kind === 'item_wise' && tax !== '' ? { valueIncludesTax: tax === 'yes' } : {}) };
+  const out = await ecCall('mapping', { report: kind, mapping, ...(ecState.files[kind]?.columns ? { header: ecState.files[kind].columns } : {}) });
+  if (!out.ok) { ecTellRefusal(ec('notSaved'), out); return; }
+  el('ec-map').hidden = true;
+  ecState.mapping = null;
+  tell(ec('mapSaved'), `${ec(`report_${kind}`)} · ${ec('setBy')} ${out.mapping.setBy}`, true);
+  ecPaintFiles();
+  ecPaintMappings();
+});
+
+/** The mapping in force for each report — who set it, when — and every earlier one, kept. */
+function ecPaintMappings() {
+  const fieldWord = (kind, key) => { const f = ecState.kit?.reports[kind].fields.find((x) => x.key === key); return f ? (f.words[lang] ?? f.words.en) : key; };
+  el('ec-mappings').replaceChildren(...EC_KINDS.map((kind) => {
+    const card = document.createElement('div');
+    card.className = 'row held';
+    card.id = `ec-mapping-${kind}`;
+    const what = document.createElement('span');
+    what.className = 'what';
+    const name = document.createElement('strong');
+    name.textContent = ec(`report_${kind}`);
+    what.append(name);
+    const m = ecState.mappings.current?.[kind];
+    if (!m) what.append(line(ec('noMapping')));
+    else {
+      what.append(line(`${ec('setBy')} ${m.setBy} · ${m.setAt}`));
+      for (const [k, v] of Object.entries(m.mapping.columns)) what.append(line(`${fieldWord(kind, k)} ← ${v}`));
+      if (m.mapping.dateOrder) what.append(line(`${ec('dateOrder')} ${ec(m.mapping.dateOrder)}`));
+      if (m.mapping.valueIncludesTax !== undefined) what.append(line(m.mapping.valueIncludesTax ? ec('taxYes') : ec('taxNo')));
+      const all = (ecState.mappings.history ?? []).filter((h) => h.report === kind);
+      if (all.length > 1) what.append(line(`${ec('changedBefore')}: ${all.slice(0, -1).map((h) => `${h.setBy} · ${h.setAt}`).join('; ')}`));
+    }
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.id = `ec-map-change-${kind}`;
+    labelled(button, 'list-checks', ec('change'));
+    button.addEventListener('click', () => ecOpenMapping(kind));
+    card.append(what, button);
+    return card;
+  }));
+}
+
+el('ec-load').addEventListener('click', async () => {
+  if (EC_KINDS.some((k) => !ecState.files[k] || !ecState.files[k].text)) { tell(ec('notSaved'), ec('bothFiles')); return; }
+  const missing = EC_KINDS.find((k) => ecMissing(k).length > 0);
+  if (missing) { ecOpenMapping(missing); tell(ec('notSaved'), ec('fileNeedsMap')); return; }
+  const value = ecPaise(el('ec-tol-value').value);
+  const tax = ecPaise(el('ec-tol-tax').value);
+  if (Number.isNaN(value) || Number.isNaN(tax)) { tell(ec('notSaved'), ec('tolBad')); return; }
+  const out = await ecCall('load', { businessDate: el('ec-date').value, itemWise: ecState.files.item_wise.text, billWise: ecState.files.bill_wise.text, tolerance: { valueMinor: value, taxMinor: tax } });
+  if (!out.ok) { ecTellRefusal(ec('notSaved'), out); return; }
+  ecState.day = out.day;
+  ecPaintDay();
+  tell(ec('loaded'), `${out.day.differences.length} · ${out.day.unexplained.length} ${ec('stillNeeds')}${out.relayed ? '' : ` · ${ec('relayLater')}`}`, out.day.unexplained.length === 0);
+});
+
+/** How one difference reads: its area in words, the item's name or the bill, and the two figures. */
+function ecDifferenceWords(d) {
+  const check = ecState.day?.current?.check;
+  const item = check?.items.find((i) => i.productId === d.subject);
+  const subject = d.area.startsWith('item_') && item ? `${item.name ?? item.productId} (${item.productId})` : (d.subject ?? '');
+  const comparison = ecState.day?.current?.comparisons.find((c) => c.area === d.area && c.subject === d.subject);
+  const uom = d.area === 'stock_movement' ? d.subject : item?.uom;
+  const show = (v) => (EC_MONEY.has(d.area) ? money(v) : d.area === 'item_quantity' || d.area === 'stock_movement' || d.area === 'sales_count' ? ecQty(v, uom) : null);
+  const figures = comparison && show(comparison.legacyValue) !== null ? ` — ${ec('old')} ${show(comparison.legacyValue)}, ${ec('new')} ${show(comparison.newValue)}` : '';
+  return `${ec(`area_${d.area}`)} ${subject}${figures}`.replace(/\s+/g, ' ').trim();
+}
+
+function ecPaintDay() {
+  const day = ecState.day;
+  const result = el('ec-result');
+  const reasons = el('ec-reasons');
+  const history = el('ec-history');
+  const signed = day?.signature !== undefined;
+  if (!day || !day.current) {
+    result.replaceChildren(emptyLine(ec('notLoaded')));
+    reasons.replaceChildren();
+    history.replaceChildren(...(day && day.voidedSignatures?.length ? [ecPara(`${ec('voided')}: ${day.voidedSignatures.map((s) => `${s.signedBy} · ${s.signedAt}`).join('; ')}`, 'warn', 'ec-voided')] : []));
+    for (const id of ['ec-reasons-save', 'ec-sign', 'ec-statement', 'ec-statement-label']) el(id).hidden = true;
+    return;
+  }
+  for (const id of ['ec-sign', 'ec-statement', 'ec-statement-label']) el(id).hidden = signed;
+  const c = day.current.check;
+  const parts = [];
+  if (day.newTillChangedSinceLoad) parts.push(ecPara(ec('changed'), 'warn', 'ec-changed'));
+  parts.push(ecPara(signed ? `${ec('signedBy')} ${day.signature.signedBy} · ${day.signature.signedAt}` : `${ec('unsigned')} · ${day.unexplained.length} ${ec('stillNeeds')}`, 'lead', 'ec-status'));
+  // The day's totals, old against new. "Not known" is said, never a zero (P-08).
+  // New against old, with its sign in front: "-₹45.00" (the new till has less), "+1".
+  const diffCell = (o, n, show) => (n === null || o === null ? ecCell(null, 'num') : ecCell(o === n ? ec('agrees') : `${n < o ? '-' : '+'}${show(Math.abs(n - o))}`, 'num'));
+  const tt = c.totals;
+  const taxNew = ecKnown(tt.tax.new, (v) => v);
+  const billsOld = ecKnown(tt.bills.old, (v) => v);
+  const rows = [
+    ecRow([ecCell(ec('value')), ecCell(money(tt.value.old), 'num'), ecCell(money(tt.value.new), 'num'), diffCell(tt.value.old, tt.value.new, money)], Math.abs(tt.value.new - tt.value.old) > c.tolerance.valueMinor),
+    ecRow([ecCell(ec('taxRow')), ecCell(money(tt.tax.old), 'num'), ecCell(taxNew === null ? null : money(taxNew), 'num'), diffCell(tt.tax.old, taxNew, money)], taxNew !== null && Math.abs(taxNew - tt.tax.old) > c.tolerance.taxMinor),
+    ecRow([ecCell(ec('bills')), ecCell(billsOld === null ? null : String(billsOld), 'num'), ecCell(String(tt.bills.new), 'num'), diffCell(billsOld, tt.bills.new, (v) => String(v))], billsOld !== null && billsOld !== tt.bills.new),
+    ...tt.quantity.map((q) => ecRow([ecCell(`${ec('qty')} (${q.uom})`), ecCell(ecQty(q.old, q.uom), 'num'), ecCell(ecQty(q.new, q.uom), 'num'), diffCell(q.old, q.new, (v) => ecQty(v, q.uom))], q.old !== q.new)),
+    ecRow([ecCell(ec('payments')), ecCell(ec('notComparedShort')), ecCell('—'), ecCell('—')]),
+    ecRow([ecCell(ec('loyalty')), ecCell(ec('notComparedShort')), ecCell('—'), ecCell('—')]),
+  ];
+  parts.push(ecHeading(`${ec('totals')}: ${c.department.name}`, 'ec-totals-title'), ecTable('ec-totals', [[ec('what')], [ec('old'), true], [ec('new'), true], [ec('difference'), true]], rows));
+  // Items that differ.
+  const differing = c.items.filter((i) => i.differs.length > 0);
+  parts.push(ecHeading(ec('items'), 'ec-items-title'));
+  parts.push(differing.length === 0 ? emptyLine(ec('noItemDiff')) : ecTable('ec-items', [[ec('item')], [ec('qtyCol'), true], [ec('valueCol'), true], [ec('taxCol'), true]], differing.map((i) => ecRow([
+    ecCell(`${i.name ?? i.productId} (${i.productId})`),
+    ecCell(`${ecQty(i.old.quantityMinor, i.uom)} → ${ecQty(i.new.quantityMinor, i.uom)}`, 'num'),
+    ecCell(`${money(i.old.valueMinor)} → ${money(i.new.valueMinor)}`, 'num'),
+    ecCell(i.new.tax.known ? `${money(i.old.taxMinor)} → ${money(i.new.tax.minor)}` : null, 'num'),
+  ], true))));
+  parts.push(line(`${c.items.length - differing.length} ${ec('itemsAgree')}`));
+  if (c.notInCatalogue.length > 0) {
+    parts.push(ecHeading(ec('notInCat'), 'ec-notincat-title'), ecPara(ec('notInCatLead')), ecTable('ec-notincat', [[ec('item')], [ec('qtyCol'), true], [ec('valueCol'), true]], c.notInCatalogue.map((n) => ecRow([
+      ecCell(n.code), ecCell(String(n.quantityThousandths / 1000), 'num'), ecCell(money(n.valueMinor), 'num'),
+    ], true))));
+  }
+  // Bill by bill, by the old bill number keyed on every mirror sale (OB-264).
+  parts.push(ecHeading(ec('billsTitle'), 'ec-bills-title'), ecPara(c.bills.checked === 'lines' ? ec('billsLines') : ec('billsPresence'), 'lead', 'ec-bills-mode'));
+  parts.push(c.bills.differences.length === 0 ? emptyLine(ec('noBillDiff')) : ecTable('ec-bills', [[ec('bill')], [ec('what')], [ec('valueCol'), true], [ec('new')]], c.bills.differences.map((b) => ecRow([
+    ecCell(b.billNumber), ecCell(ec(b.kind === 'not_keyed' ? 'bill_not_keyed' : b.kind === 'not_on_old' ? 'bill_not_on_old' : 'bill_value')),
+    ecCell(b.kind === 'value_differs' ? `${money(b.oldValueMinor)} → ${money(b.newValueMinor)}` : money(b.oldValueMinor ?? b.newValueMinor ?? 0), 'num'),
+    ecCell(b.newBill ?? '—'),
+  ], true))));
+  parts.push(line(`${c.bills.matched} ${ec('billsMatched')}`));
+  if (c.explain.length > 0) {
+    parts.push(ecHeading(ec('explainTitle'), 'ec-explain-title'), ecPara(ec('explainLead')), ecTable('ec-explain', [[ec('what')], [ec('valueCol'), true]], c.explain.map((e) => ecRow([
+      ecCell(e.billNumber ? `${ec('bill')} ${e.billNumber}` : `${ec('item')} ${e.code} (${e.line})`), ecCell(money(e.valueMinor), 'num'),
+    ], true))));
+  }
+  // What was read, and what was set aside — counted, never silently dropped.
+  const f = day.current.files;
+  parts.push(ecHeading(ec('readTitle'), 'ec-read-title'));
+  parts.push(line(`${ec('report_item_wise')}: ${f.itemWise.rowsRead} ${ec('fileRead')} · ${f.itemWise.totalLines} ${ec('totalLines')} · ${f.itemWise.withoutCode} ${ec('withoutCode')}`));
+  if (f.itemWise.dateChecked === false) parts.push(ecPara(ec('dateNotChecked'), 'warn', 'ec-date-not-checked'));
+  parts.push(line(`${ec('report_bill_wise')}: ${f.billWise.rowsRead} ${ec('fileRead')} · ${f.billWise.totalLines} ${ec('totalLines')} · ${f.billWise.withoutCode} ${ec('withoutCode')}${f.billWise.linesUnderBillAbove ? ` · ${f.billWise.linesUnderBillAbove} ${ec('underAbove')}` : ''}`));
+  parts.push(line(`${c.otherDepartments.rows} ${ec('otherDepts')} (${money(c.otherDepartments.valueMinor)}) · ${c.newOutsideDepartment.lines} ${ec('outsideNew')}`));
+  result.replaceChildren(...parts);
+
+  // The differences, each with its reason — or the box for one.
+  const cards = day.differences.map((d) => {
+    const card = document.createElement('div');
+    const open = day.unexplained.some((u) => u.differenceId === d.differenceId);
+    card.className = `diff ${open ? 'open' : 'done'}`;
+    card.id = `ec-diff-${d.differenceId}`;
+    const name = document.createElement('strong');
+    name.textContent = ecDifferenceWords(d);
+    const id = document.createElement('small');
+    id.textContent = d.differenceId;
+    card.append(name, id);
+    if (!open) { card.append(line(`${ec('explained')}: ${d.explanation} · ${ec('by')} ${d.ownerUserId}${d.wrongSide ? ` · ${ec('side')}: ${t(`side_${d.wrongSide}`)}` : ''}`)); return card; }
+    const whyLabel = document.createElement('label');
+    whyLabel.htmlFor = `ec-why-${d.differenceId}`;
+    whyLabel.textContent = ec('why');
+    const why = document.createElement('input');
+    why.type = 'text';
+    why.id = `ec-why-${d.differenceId}`;
+    why.autocomplete = 'off';
+    why.dataset.differenceId = d.differenceId;
+    const sideLabel = document.createElement('label');
+    sideLabel.htmlFor = `ec-side-${d.differenceId}`;
+    sideLabel.textContent = ec('side');
+    const side = document.createElement('select');
+    side.id = `ec-side-${d.differenceId}`;
+    side.append(...['', 'legacy', 'new', 'both', 'neither'].map((v) => { const o = document.createElement('option'); o.value = v; o.textContent = v === '' ? '—' : t(`side_${v}`); return o; }));
+    card.append(whyLabel, why, sideLabel, side);
+    return card;
+  });
+  reasons.replaceChildren(ecHeading(ec('reasonsTitle'), 'ec-reasons-title'), ...(cards.length === 0 ? [emptyLine(ec('noDiffs'))] : cards));
+  el('ec-reasons-save').hidden = day.unexplained.length === 0;
+
+  // Every load of the day: the one in use, the ones it replaced (kept), and any signature over replaced figures.
+  history.replaceChildren(ecHeading(ec('history'), 'ec-history-title'),
+    ...day.history.map((h) => line(`${h.loadedAt} · ${h.loadedBy} · ${h.current ? ec('current') : ec('replaced')}${h.signedBy ? ` · ${ec('signedBy')} ${h.signedBy}` : ''}`)),
+    ...(day.voidedSignatures.length > 0 ? [ecPara(`${ec('voided')}: ${day.voidedSignatures.map((s) => `${s.signedBy} · ${s.signedAt}`).join('; ')}`, 'warn', 'ec-voided')] : []));
+}
+
+el('ec-reasons-save').addEventListener('click', async () => {
+  const reasons = [...document.querySelectorAll('#ec-reasons input[data-difference-id]')]
+    .map((input) => ({ differenceId: input.dataset.differenceId, explanation: input.value.trim(), side: el(`ec-side-${input.dataset.differenceId}`).value }))
+    .filter((r) => r.explanation !== '')
+    .map((r) => ({ differenceId: r.differenceId, explanation: r.explanation, ...(r.side === '' ? {} : { wrongSide: r.side }) }));
+  if (reasons.length === 0) { tell(ec('notSaved'), ec('noReasonTyped')); return; }
+  const out = await ecCall('reasons', { businessDate: el('ec-date').value, reasons });
+  if (!out.ok) { ecTellRefusal(ec('notSaved'), out); return; }
+  ecState.day = out.day;
+  ecPaintDay();
+  tell(ec('reasonsSaved'), `${out.day.unexplained.length} ${ec('stillNeeds')}${out.relayed ? '' : ` · ${ec('relayLater')}`}`, out.day.unexplained.length === 0);
+});
+el('ec-sign').addEventListener('click', async () => {
+  const out = await ecCall('sign', { businessDate: el('ec-date').value, statement: el('ec-statement').value });
+  if (!out.ok) { ecTellRefusal(ec('cannotSign'), out); return; }
+  el('ec-statement').value = '';
+  ecState.day = out.day;
+  ecPaintDay();
+  tell(ec('signed'), `${ec('signedBy')} ${out.signature.signedBy}${out.relayed ? '' : ` · ${ec('relayLater')}`}`, true);
+});
+for (const kind of EC_KINDS) {
+  el(`ec-file-${kind}`).addEventListener('change', () => { void ecReadFile(kind); });
+  // Made here, from the bundled template — no network needed (P-01).
+  el(`ec-template-${kind}`).addEventListener('click', () => {
+    if (!ecState.kit) return;
+    const url = URL.createObjectURL(new Blob([ecState.kit.templateCsv(kind)], { type: 'text/csv' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = ecState.kit.reports[kind].file;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  });
+}
+async function ecLoadDay() {
+  const date = el('ec-date').value;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { ecState.day = undefined; ecPaintDay(); return; }
+  const out = await ecCall(`day?date=${encodeURIComponent(date)}`);
+  ecState.day = out.ok ? out.day : undefined;
+  ecPaintDay();
+}
+el('ec-date').addEventListener('change', () => {
+  // The same day below, so the bill-wise list and the typed day follow it.
+  el('day-date').value = el('ec-date').value;
+  renderDay();
+  renderBills();
+  void ecLoadDay();
+});
+
+function renderEvening() {
+  const box = el('ec');
+  box.hidden = ecState.data === undefined || ecState.data === null || ecState.kit === undefined;
+  if (box.hidden) return;
+  for (const [id, key] of [['ec-title', 'title'], ['ec-lead', 'lead'], ['ec-date-label', 'date'], ['ec-templates-title', 'templates'],
+    ['ec-file-item_wise-label', 'file_item_wise'], ['ec-file-bill_wise-label', 'file_bill_wise'], ['ec-mappings-title', 'mappingsTitle'],
+    ['ec-tol-value-label', 'tolValue'], ['ec-tol-tax-label', 'tolTax'], ['ec-statement-label', 'statement']]) el(id).textContent = ec(key);
+  el('ec-dept').textContent = ecState.data.department ? `${ec('dept')}: ${ecState.data.department.name} (${ecState.data.department.categoryId})` : ec('deptUnknown');
+  labelled(el('ec-template-item_wise'), 'file-text', ec('tpl_item_wise'));
+  labelled(el('ec-template-bill_wise'), 'file-text', ec('tpl_bill_wise'));
+  labelled(el('ec-load'), 'git-compare-arrows', ec('load'));
+  labelled(el('ec-reasons-save'), 'clipboard-check', ec('reasonsSave'));
+  labelled(el('ec-sign'), 'badge-check', ec('sign'));
+  if (el('ec-date').value === '') el('ec-date').value = el('day-date').value || today();
+  if (ecState.mapping) ecOpenMapping(ecState.mapping);
+  ecPaintFiles();
+  ecPaintMappings();
+  ecPaintDay();
+}
+if (ecState.data !== undefined && ecState.data !== null) setTimeout(() => { void ecLoadDay(); }, 0);
+
 // ── Language and chrome ─────────────────────────────────────────────────────
 
 function paintChrome() {
@@ -1106,6 +1654,7 @@ function paintChrome() {
   renderBoth();
   buildAreas();
   renderDays();
+  renderEvening();
   renderWitness();
   renderTemplates();
   renderOld();

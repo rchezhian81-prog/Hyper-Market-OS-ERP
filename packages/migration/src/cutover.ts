@@ -24,7 +24,33 @@
 //
 // Pure and deterministic: the clock is injected, no I/O.
 
-export type ComparisonArea = 'sales_value' | 'sales_count' | 'stock_movement' | 'tax' | 'payments' | 'loyalty';
+/** The day's totals, typed by hand or worked out from the old ERP's files. */
+export type DayTotalArea = 'sales_value' | 'sales_count' | 'stock_movement' | 'tax' | 'payments' | 'loyalty';
+
+/**
+ * OB-263 (owner, 21 Oct 2026): the evening check from the old ERP's item-wise and bill-wise files adds a line per item and
+ * per bill that differs, each carrying its `subject` (the product, the old item code or the old bill number) — so each is a
+ * difference with its own reason, exactly like a day total (`packages/migration/src/evening-check.ts`).
+ *   item_quantity / item_value / item_tax — one pilot item, old against new (subject: the product id);
+ *   item_not_in_catalogue — an old-file item that matches no product in the new catalogue (subject: the old code; 1 / 0);
+ *   bill_not_keyed — an old bill with pilot items that no new-till sale carries (subject: the old bill number; 1 / 0);
+ *   bill_not_on_old — a new-till sale whose old bill number is not on the old list (0 / 1);
+ *   bill_value — a bill in both whose pilot lines differ in value (paise);
+ *   old_return — a return, credit note or exchange the old files show, for the owner to explain (1 / 0) — never matched.
+ */
+export type DayLineArea = 'item_quantity' | 'item_value' | 'item_tax' | 'item_not_in_catalogue' | 'bill_not_keyed' | 'bill_not_on_old' | 'bill_value' | 'old_return';
+
+export type ComparisonArea = DayTotalArea | DayLineArea;
+
+/** Every area a day may carry, in the order a sheet lists them. */
+export const COMPARISON_AREAS: readonly ComparisonArea[] = Object.freeze([
+  'sales_value', 'sales_count', 'stock_movement', 'tax', 'payments', 'loyalty',
+  'item_quantity', 'item_value', 'item_tax', 'item_not_in_catalogue', 'bill_not_keyed', 'bill_not_on_old', 'bill_value', 'old_return',
+]);
+
+/** A subject names one item, unit or bill: letters, digits and a few marks, never more than 64 characters. */
+export const isComparisonSubject = (v: unknown): v is string =>
+  typeof v === 'string' && v.length > 0 && v.length <= 64 && /^[A-Za-z0-9][A-Za-z0-9 ._/:@#-]*$/.test(v);
 
 export interface DayComparison {
   readonly area: ComparisonArea;
@@ -32,6 +58,8 @@ export interface DayComparison {
   readonly newValue: number;
   /** Tolerance in the same unit. Rounding differs between systems; fraud does not. */
   readonly toleranceMinor: number;
+  /** OB-263: which item, unit or bill this line is about. Absent on a day total typed by hand. */
+  readonly subject?: string;
 }
 
 export type DifferenceStatus = 'within_tolerance' | 'open' | 'owned' | 'resolved';
@@ -41,6 +69,8 @@ export interface ParallelDifference {
   readonly tenantId: string;
   readonly businessDate: string;
   readonly area: ComparisonArea;
+  /** OB-263: the item, unit or bill, as on its comparison. */
+  readonly subject?: string;
   readonly difference: number;
   readonly status: DifferenceStatus;
   readonly ownerUserId?: string;
@@ -85,6 +115,7 @@ export function compareParallelDay(input: {
       tenantId: input.tenantId,
       businessDate: input.businessDate,
       area: c.area,
+      ...(c.subject === undefined ? {} : { subject: c.subject }),
       difference,
       status: 'open',
     });
@@ -101,6 +132,29 @@ export function compareParallelDay(input: {
       ? `${input.businessDate}: both systems agree across ${input.comparisons.length} areas`
       : `${input.businessDate}: ${differences.length} differences totalling ${totalDifferenceMinor} — each needs an owner today, because by day five nobody can tell a new fault from an old one`,
   };
+}
+
+/**
+ * The prefix a day's differences are numbered under. The first time a date is recorded it is "PD"; a date recorded again
+ * with OTHER figures (an evening check loaded again) gets a prefix from those figures, so the fresh differences never take
+ * the ids — and so the reasons — of the ones they replace. Their reasons are needed afresh (MG-10).
+ */
+export function differencePrefixFor(alreadyRecorded: boolean, dayDigest: string): string {
+  return alreadyRecorded ? `PD-${dayDigest.replace(/^day-/, '').slice(0, 8)}` : 'PD';
+}
+
+/**
+ * The differences that belong to each date's CURRENT figures. A date recorded again with other figures leaves its earlier
+ * differences in the ledger as history (hard rule #6), but they are no longer the day's: only the latest record's count
+ * towards signing it and towards the run's position. A difference on a date with no recorded day is kept.
+ */
+export function currentDifferences(days: readonly Pick<ParallelDayResult, 'businessDate' | 'differences'>[], differences: readonly ParallelDifference[]): readonly ParallelDifference[] {
+  const latest = new Map<string, ReadonlySet<string>>();
+  for (const d of days) latest.set(d.businessDate, new Set(d.differences.map((x) => x.differenceId)));
+  return differences.filter((d) => {
+    const ids = latest.get(d.businessDate);
+    return ids === undefined || ids.has(d.differenceId);
+  });
 }
 
 export type OwnRefusal = 'unknown_difference' | 'already_resolved' | 'no_owner' | 'newer_is_not_a_reason';

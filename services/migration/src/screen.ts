@@ -24,14 +24,14 @@
 import type { Route } from '../../kernel/src/index';
 import type { MigrationException } from '../../../packages/migration/src/cleaning';
 import type { ControlTotal } from '../../../packages/migration/src/reconcile';
-import type { ParallelDifference } from '../../../packages/migration/src/cutover';
+import { currentDifferences, type ParallelDifference } from '../../../packages/migration/src/cutover';
 import type { HistoryExclusion } from '../../../packages/migration/src/history';
 import { assertSafeTarget } from './guards';
 import { ledgerCutoverEvidence, type ParallelRunPolicy, type RecordedParallelDay, type RecordedRollback } from './parallel-run';
 import { ALL_DOMAINS, applicableSignatures, findingsDigest } from './witness';
 import type { RefusedDecision } from './decisions';
 import type { MigrationDeps } from './index';
-import { storedLoadOperators } from './load-records';
+import { appliedSliceDepartment, storedLoadOperators } from './load-records';
 import { signatureStillApplies, type ParallelDaySignature } from '../../../packages/migration/src/parallel-day-sign';
 
 /** The owner's written parallel-run terms as the screen needs them (MG-10, §34.1). */
@@ -69,6 +69,11 @@ export interface MigrationScreenFeed {
   readonly loadOperator?: string;
   /** Where `loadOperator` came from: the stored load record, or (bare stubs only) the extraction-run record. */
   readonly loadOperatorSource?: 'load_record' | 'extraction_run';
+  /**
+   * OB-263 · MG-05: the pilot department — the newest APPLIED department slice's. The evening check keeps only this
+   * department's items. Absent until a slice is applied (never guessed).
+   */
+  readonly pilotDepartment?: { readonly categoryId: string; readonly name: string; readonly loadId: string; readonly appliedAt: string };
   /** MG-10: every signature a parallel-run day has had, and whether it still applies to the day's recorded figures. */
   readonly parallelDaySignatures?: readonly (ParallelDaySignature & { readonly stillApplies: boolean })[];
   /** When a rollback was PERFORMED, the latest. Absent when none has been — a designed one does not count. */
@@ -101,6 +106,7 @@ export async function migrationScreenFeed(deps: MigrationDeps, tenantId: string)
   const refused = deps.refusedDecisions === undefined ? [] : await deps.refusedDecisions(tenantId);
   const rollbacks = deps.rollbacks === undefined ? [] : await deps.rollbacks(tenantId);
   const exclusions = await deps.exclusions(tenantId);
+  const pilotDepartment = await appliedSliceDepartment(deps, tenantId);
 
   // The verification page's position, computed exactly as `GET /v1/migration/verification/progress` does,
   // so the screen and the desk cannot disagree about which domains still have no finding.
@@ -137,6 +143,7 @@ export async function migrationScreenFeed(deps: MigrationDeps, tenantId: string)
       },
     }),
     ...(loadOperator === undefined ? {} : { loadOperator, loadOperatorSource: operator.source as 'load_record' | 'extraction_run' }),
+    ...(pilotDepartment === undefined ? {} : { pilotDepartment }),
     ...(rollbackDemonstratedAt === undefined ? {} : { rollbackDemonstratedAt }),
     ...(exceptions.length === 0 ? {} : { exceptions }),
     ...(totals.length === 0 ? {} : { totals }),
@@ -148,7 +155,8 @@ export async function migrationScreenFeed(deps: MigrationDeps, tenantId: string)
       const signatures = deps.parallelDaySignatures === undefined ? [] : await deps.parallelDaySignatures(tenantId);
       return {
         parallelDays,
-        parallelDifferences: deps.parallelDifferences === undefined ? [] : await deps.parallelDifferences(tenantId),
+        // Each date's CURRENT differences: a day recorded again keeps its earlier ones in the ledger, not on the screen (OB-263).
+        parallelDifferences: currentDifferences(parallelDays, deps.parallelDifferences === undefined ? [] : await deps.parallelDifferences(tenantId)),
         parallelDaySignatures: signatures.map((s) => ({ ...s, stillApplies: signatureStillApplies(s, parallelDays.find((d) => d.businessDate === s.businessDate)?.comparisons) })),
       };
     })()),

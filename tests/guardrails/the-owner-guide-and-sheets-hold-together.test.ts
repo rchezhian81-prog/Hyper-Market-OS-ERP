@@ -19,13 +19,25 @@ import { parseCommandLine, SETUP_COMMANDS } from '../../scripts/lib/store-comput
  *   • no PLACEHOLDER mark is left in any sheet or in the guide (round 3: SOP-02's payment and refund steps are written);
  *     SOP-02 names the till's own buttons — in English from the till's English words, in Tamil from its Tamil words
  *     (apps/pos/web/app.js) — for "Paid on old system", the old bill number (OB-264), the refund and the exchange;
- *     SOP-03 says payments and loyalty are "Not compared in the mirror pilot" (OB-256, OB-265), never "not decided".
+ *     SOP-03 says payments and loyalty are "Not compared in the mirror pilot" (OB-256, OB-265), never "not decided";
+ *   • OB-263: SOP-03 walks the owner through the evening check from the old ERP's two files — export, save as CSV, map
+ *     once, load, read the differences, write reasons, sign — in the migration screen's own words in both languages, with
+ *     generic words for the old ERP's menus (never a menu name we do not know); the guide's Part 31 says to send the
+ *     header rows only, never the data below them.
  */
 
 const GUIDE_PATH = 'docs/runbooks/store-computer-owner-guide-windows.md';
 const SOP_DIR = 'docs/sop';
 const guide = readFileSync(GUIDE_PATH, 'utf8');
 const pkg = JSON.parse(readFileSync('package.json', 'utf8')) as { scripts: Record<string, string> };
+
+/** OB-263: the evening check's words the owner reads in Sheet 3 — the migration screen's own, in English and in Tamil. */
+const EVENING_EN = ['Running both', 'Evening check from the old system\'s files', 'Which day', 'Which column is which', 'Save the mapping', 'Change',
+  'Columns found — ready to load', 'Load and compare', 'Items that differ', 'Not in the new catalogue', 'Why do they differ', 'Which one was wrong',
+  'Save the reasons', 'What you checked (in your own words)', 'Sign the day', 'Item-wise template', 'Bill-wise template', 'Not known'];
+const EVENING_TA = ['இரண்டையும் இயக்குதல்', 'பழைய அமைப்பின் கோப்புகளிலிருந்து மாலைச் சரிபார்ப்பு', 'எந்த நாள்', 'எந்த நெடுவரிசை எது', 'பொருத்தத்தைச் சேமி', 'மாற்று',
+  'நெடுவரிசைகள் கிடைத்தன — ஏற்றத் தயார்', 'ஏற்றி ஒப்பிடு', 'வேறுபடும் பொருட்கள்', 'புதிய பட்டியலில் இல்லை', 'ஏன் வேறுபடுகின்றன', 'எது தவறு',
+  'காரணங்களைச் சேமி', 'நாளில் கையெழுத்திடு', 'பொருள் வாரியான வார்ப்புரு', 'பில் வாரியான வார்ப்புரு', 'தெரியவில்லை'];
 
 /** The sheets the owner asked for (OB-255, OB-248 with OB-252, OB-254, and the forgotten PIN). */
 const SHEETS = ['sop-01-pc-down', 'sop-02-mirror-keying', 'sop-03-owner-evening-check', 'sop-04-forgotten-pin'] as const;
@@ -302,9 +314,9 @@ describe('the owner guide and the cashier sheets hold together (OB-244 · OB-248
       expect(till, `the till says "${label}"`).toContain(label);
     }
     const evening = sheetText('sop-03-owner-evening-check', 'en');
-    for (const label of ['Running both', 'Enter a day', 'Save the day', 'Sign the day', 'Which one was wrong']) expect(evening).toContain(label);
+    for (const label of EVENING_EN) expect(evening, label).toContain(label);
     const eveningTa = sheetText('sop-03-owner-evening-check', 'ta');
-    for (const label of ['இரண்டையும் இயக்குதல்', 'ஒரு நாளைப் பதிவு செய்', 'நாளைச் சேமி', 'நாளில் கையெழுத்திடு', 'எது தவறு']) expect(eveningTa).toContain(label);
+    for (const label of EVENING_TA) expect(eveningTa, label).toContain(label);
     // OB-256 · OB-265: payments and loyalty are not compared in the mirror pilot — decided, so never "not decided".
     expect(evening).toMatch(/\*\*Payments taken \(₹\)\*\* and \*\*Loyalty points\*\* say \*\*Not compared in the mirror pilot\*\* \(OB-256, OB-265\)/);
     expect(eveningTa).toContain('**மிரர் பைலட்டில் ஒப்பிடப்படுவதில்லை**');
@@ -324,10 +336,30 @@ describe('the owner guide and the cashier sheets hold together (OB-244 · OB-248
   });
 
   it('the evening sheet uses the migration screen\'s own words, in both languages', () => {
-    const screen = readFileSync('apps/web-erp/web/migration.html', 'utf8');
-    for (const label of ['Running both', 'Enter a day', 'Save the day', 'Sign the day']) expect(screen).toContain(label);
-    const strings = readFileSync('apps/web-erp/web/migration.js', 'utf8');
-    for (const label of ['இரண்டையும் இயக்குதல்', 'ஒரு நாளைப் பதிவு செய்', 'நாளைச் சேமி', 'நாளில் கையெழுத்திடு', 'எது தவறு']) expect(strings).toContain(label);
+    const screen = `${readFileSync('apps/web-erp/web/migration.html', 'utf8')}${readFileSync('apps/web-erp/web/migration.js', 'utf8')}`.replace(/\\'/g, "'");
+    for (const label of [...EVENING_EN, ...EVENING_TA]) expect(screen, `the screen says "${label}"`).toContain(label);
+  });
+
+  it('OB-263: the evening sheet walks through the two old-ERP files — export, CSV, map once, load, reasons, sign — and the guide asks for the header rows only', () => {
+    const evening = sheetText('sop-03-owner-evening-check', 'en');
+    expect(evening).toContain('OB-263');
+    // Generic words for the old ERP's menus: we do not know its menu names, so the sheet says what to look for.
+    expect(evening).toMatch(/The menu names differ from one ERP to another/);
+    expect(evening).toMatch(/CSV UTF-8 \(Comma\s+delimited\)/);
+    expect(evening).toMatch(/Never choose a customer's\s+name or mobile column/);
+    // The order the owner does it in.
+    const at = (label: string): number => evening.indexOf(label);
+    expect(at('item-wise sales report for today')).toBeLessThan(at('Save As'));
+    expect(at('Save As')).toBeLessThan(at('Save the mapping'));
+    expect(at('Save the mapping')).toBeLessThan(at('Load and compare'));
+    expect(at('Load and compare')).toBeLessThan(at('Save the reasons'));
+    expect(at('Save the reasons')).toBeLessThan(at('Sign the day'));
+    const eveningTa = sheetText('sop-03-owner-evening-check', 'ta');
+    expect(eveningTa).toContain('OB-263');
+    expect(eveningTa).toContain('ஒவ்வொரு ERP-யிலும் மெனுவின் பெயர்கள்');
+    expect(guide).toContain('## Part 31 — The evening check from the old ERP\'s two files (OB-263)');
+    expect(guide).toMatch(/Copy only the line with the column names — \*\*no line\s+below it\*\*/);
+    expect(guide).toMatch(/Never send the whole file/);
   });
 
   it('the guide carries the locked-PC, UPS and memory steps (OB-251 · OB-250 · OB-247)', () => {

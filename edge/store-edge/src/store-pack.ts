@@ -872,6 +872,11 @@ export interface PackMigrationPolicy {
   readonly userId?: string;
   /** MG-10: the ONE person the owner named to reconcile the parallel run daily (R-05) — from the cloud's written terms. */
   readonly dailyReconcilerUserId?: string;
+  /**
+   * OB-263 · MG-05: the pilot department — the department slice's (`{ categoryId, name }`), from head office's register once
+   * the slice is applied (or the store pack file). The evening check keeps only its items. Absent: not known, nothing compared.
+   */
+  readonly pilotDepartment?: { readonly categoryId: string; readonly name: string; readonly loadId?: string };
 }
 
 /**
@@ -1752,6 +1757,8 @@ export function withMigrationFeed(pack: StorePack, feed: MigrationFeed, received
   const cloudFacts = {
     ...(feed.loadOperator === undefined ? {} : { loadOperator: feed.loadOperator }),
     ...(feed.rollbackDemonstratedAt === undefined ? {} : { rollbackDemonstratedAt: feed.rollbackDemonstratedAt }),
+    // OB-263: the applied department slice's department, as head office's register says (absent → the box keeps its own).
+    ...(feed.pilotDepartment === undefined ? {} : { pilotDepartment: { categoryId: feed.pilotDepartment.categoryId, name: feed.pilotDepartment.name, ...(feed.pilotDepartment.loadId === undefined ? {} : { loadId: feed.pilotDepartment.loadId }) } }),
   };
   let migrationPolicy: Register<PackMigrationPolicy> = pack.migrationPolicy;
   if (feed.policy !== undefined) {

@@ -865,9 +865,37 @@ account when you leave the PC (**Windows key + L**), never sign out.
 **Evening (you):**
 1. The till's mirror sales need no cash-up: every one was "Paid on old system", with the old bill number (sheet 2,
    steps 5 to 7), so the new till's drawer holds no money from them.
-2. Sheet 3: enter and sign the day on the migration screen (it asks for your PIN, Part 26e).
+2. Sheet 3: save the old ERP's two reports for the day as CSV, load them on the migration screen, write a reason on every
+   difference and sign the day (it asks for your PIN, Part 26e; the first time, Part 31).
 3. Your own daily copy (Part 28, step 3), then unplug your drive and take it with you.
 4. If you switch the PC off at night, use the clean shutdown in Part 27, step 2.
+
+## Part 31 — The evening check from the old ERP's two files (OB-263)
+
+Each evening the new till's mirror sales are compared with the old ERP's own reports for the day, for the pilot
+department only (OB-263). The store computer does the comparison itself, with no internet, and sends the result to
+this copy's books afterwards. Sheet 3 has the evening steps; this part is the first time.
+
+1. **Find the two reports on the old ERP, once.** The menu names differ from one ERP to another. In the old ERP's
+   reports, look for:
+   - an **item-wise sales report**: each item with its code or barcode, the quantity sold, the value and the tax, for one
+     day — and, if it lets you, for one department;
+   - a **bill-wise list**: each bill with its bill number, date and total — and, if it can, the items on each bill.
+   If you cannot find either, **STOP AND ASK**: send a photo of the reports menu.
+2. **Save each from Excel as CSV**: **File**, **Save As**, type **CSV UTF-8 (Comma delimited) (\*.csv)**, into a folder
+   such as `C:\SRE-evening`. If a barcode column shows `8.90123E+12`, format the column as **Text** and save again.
+3. **Send me the header rows only.** Open each CSV in Notepad. Copy only the line with the column names — **no line
+   below it**: those hold bills, prices and customers' details — and send the two lines. They are used to check that
+   the columns on the screen are chosen right. Never send the whole file.
+4. Open the migration screen (Sheet 3, step 6), click **Running both**, and under **Evening check from the old system's
+   files** check that it names the pilot department. If it says the pilot department is not known, the department's
+   products have not been applied yet (Part 22).
+5. Pick the item-wise file. On **Which column is which**, choose the old ERP's column for each of our fields; never
+   choose a customer's name or mobile column; answer the date and tax questions; press **Save the mapping**. Do the same
+   for the bill-wise file. The screen shows the mapping with your name and the time; **Change** changes it later, and
+   every earlier one is kept.
+6. Press **Load and compare**, read the differences, write a reason on each, and sign — Sheet 3, steps 9 to 12.
+   **Send:** a photo of the screen after loading, before you write the reasons, on the first day.
 
 ---
 
@@ -887,8 +915,8 @@ test. **None of it has run on real Windows yet.**
 | W-7 | A cashier could type an office screen's address. | The office screens ask for the person's own PIN; a cashier's PIN opens only the till (OB-259, Part 26e). |
 | W-8 | No way to seal the old ERP's export files. | `store-computer seal` (Part 22). |
 
-**Still open** (each said where it is used): which day-end report the old ERP can give for the pilot department
-(OB-263 — the evening check's bill-by-bill list is ready if it ends bill-wise); the names OB-243 still waits for (the
+**Still open** (each said where it is used): the header rows of the old ERP's two reports, so the column mapping can be
+checked (Part 31, step 3 — OB-263 is decided: item-wise and bill-wise files); the names OB-243 still waits for (the
 department, the cashier, the store manager); and the production sign-in (OA-4) — until then the PC lock (OB-251) and
 each person's own PIN are what stand behind every name on the records.
 
