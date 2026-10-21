@@ -1224,9 +1224,12 @@ el('do-carry').addEventListener('click', () => {
       return;
     }
     // The store computer refused — its own reason, never a bare "no". Nothing was locked.
-    tell(t('stillOpen'), outcome.reason || t('closedNote'));
+    tell(t('stillOpen'), boxReason(outcome));
   })();
 });
+
+/** The store computer's own reason for not closing, in Tamil when it said it in Tamil too (OB-259's sign-in refusals). */
+const boxReason = (outcome) => (lang === 'ta' && typeof outcome.reasonTa === 'string' && outcome.reasonTa !== '' ? outcome.reasonTa : outcome.reason) || t('closedNote');
 
 el('do-close').addEventListener('click', () => {
   void (async () => {
@@ -1252,7 +1255,7 @@ el('do-close').addEventListener('click', () => {
       // is one, and always carry the box's own reason so a manager is never told a bare "no".
       renderBlockers(session.blockersForClose(localStamp()));
       el('do-close').hidden = true;
-      tell(t('stillOpen'), outcome.reason || t('closedNote'));
+      tell(t('stillOpen'), boxReason(outcome));
       return;
     }
 

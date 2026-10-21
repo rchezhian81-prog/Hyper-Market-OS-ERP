@@ -23,7 +23,11 @@ import {
 /** The slice of `fetch` this needs, so a test can hand in a stub and a browser its own. */
 export type FetchLike = (
   url: string,
-  init: { readonly method: string; readonly headers: Readonly<Record<string, string>>; readonly body?: string },
+  init: {
+    readonly method: string; readonly headers: Readonly<Record<string, string>>; readonly body?: string;
+    /** OB-259: the office sign-in cookie travels with the hand-over (the store PC's office doors need it); same-origin it always did. */
+    readonly credentials?: 'include';
+  },
 ) => Promise<{ readonly status: number; json(): Promise<unknown> }>;
 
 export interface DrainToBoxInput {
@@ -87,6 +91,9 @@ export async function drainToBox(input: DrainToBoxInput): Promise<DrainToBoxResu
       method: 'POST',
       headers: { 'content-type': 'application/json', accept: 'application/json' },
       body: JSON.stringify(body),
+      // OB-259: on the store PC the office screens' hand-over is an office job — the box asks for the office sign-in, which
+      // the browser keeps as a cookie for this PC's loopback. A 401/403 keeps every item (never dead-lettered).
+      credentials: 'include',
     });
     // Anything but 200 is the box declining the BATCH (malformed envelope, wrong origin, too large) — not a
     // verdict on any item, so every item is kept and counted as a failed attempt, never dead-lettered.

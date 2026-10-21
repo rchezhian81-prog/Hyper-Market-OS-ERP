@@ -106,9 +106,16 @@ const findings = async (call: Call, kind?: string): Promise<Finding[]> =>
 const neverReceived = async (call: Call): Promise<[number, number][]> => (await findings(call, 'issued_never_received')).flatMap((f) => f.ranges ?? []);
 const comp = async (call: Call, name: string): Promise<Component | undefined> => (await observed(call)).health.components.find((c) => c.name === `${name}:${S1}`);
 
+/**
+ * Head office's clock, held still at each moment the test names (round 4): `Date` is faked and does NOT run on its own, so
+ * "head office first saw it at t0" is exactly t0 however busy the machine is — before, the clock ran on between
+ * `travel(0)` and the report being received, and under load the two read 20 ms apart. Only `Date` is faked: the server's
+ * own timers and the database still run in real time.
+ */
 function clock(): { travel: (minutes: number) => void; t0: number } {
   const t0 = Date.now();
-  vi.useFakeTimers({ toFake: ['Date'], shouldAdvanceTime: true });
+  vi.useFakeTimers({ toFake: ['Date'], shouldAdvanceTime: false });
+  vi.setSystemTime(t0);
   return { t0, travel: (minutes) => { vi.setSystemTime(t0 + minutes * 60_000); } };
 }
 

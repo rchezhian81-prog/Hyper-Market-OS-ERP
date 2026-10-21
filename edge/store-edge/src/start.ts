@@ -2,11 +2,15 @@
 // `main.ts`, which is exported so a test can start it exactly as the container does.
 
 import { startEdge } from './main';
-import { runTillPinCommand } from './till-pin-command';
+import { readHiddenLine, runTillPinCommand } from './till-pin-command';
 
-// The administrator's till-PIN command shares this entry (ADR-0020 §2): `node start.js till-pin --user … --by "…"`.
+// The till-PIN command shares this entry (ADR-0020 §2): `node start.js till-pin --user … --by "…"` — the person then types
+// their own new PIN at this keyboard, twice, hidden (round 4).
 if (process.argv[2] === 'till-pin') {
-  const result = runTillPinCommand(process.argv.slice(3), process.env);
+  const result = await runTillPinCommand(process.argv.slice(3), process.env, {
+    readSecret: (prompt) => readHiddenLine(process.stdin, process.stdout, prompt),
+    say: (line) => { process.stdout.write(`${line}\n`); },
+  });
   for (const line of result.lines) (result.ok ? process.stdout : process.stderr).write(`${line}\n`);
   process.exit(result.ok ? 0 : 2);
 }

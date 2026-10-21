@@ -19,10 +19,16 @@
    ```
    pnpm run till:pin -- --user <their-staff-id> --by "Your Name"
    ```
-5. The new six-digit PIN appears **once**. **This window holds a secret: never photograph it.** Turn the screen to the
-   cashier and look away while they read it. Do not write it down for them, do not send it by phone or message. Close
-   the window. The old PIN stops working at once — at the till and, for a manager, on the office screens.
+5. The window says `<their-staff-id>: please come to the keyboard. Everyone else, look away.` **Give the keyboard to the
+   cashier and look away.** The cashier types their new six-digit PIN and presses Enter — it shows only as stars — then
+   types the same PIN again and presses Enter. They choose six digits nobody could guess: not a birthday, not a phone
+   number, not 123456.
+   - **When it worked:** `Till PIN for <their-staff-id> set: <their-staff-id> typed it themselves …`. The PIN is never
+     on the screen, so nobody else sees it — not you either. They do not write it down or tell anyone. The old PIN stops
+     working at once — at the till and, for a manager, on the office screens.
+   - **If it says** `The two did not match` or `That was not 6 digits`, the cashier types it again (three tries). After
+     three, nothing was changed: type the same line again.
 6. If the PIN may be known to someone else, or the person is leaving, use the same line with `--revoke` at the end
    instead. Their next sign-in is refused.
-7. Write in the workbook: the date, the staff ID, "new PIN given" or "PIN revoked", and your initials. **Never the PIN
-   itself.**
+7. Write in the workbook: the date, the staff ID, "new PIN set by the person" or "PIN revoked", and your initials.
+   **Never the PIN itself** — you never saw it.

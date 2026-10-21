@@ -83,7 +83,7 @@ describe.skipIf(!HAVE_BROWSER)('OB-173: the served till never discounts a carry 
     // No cloud is configured: the till and its store computer price and judge the bag on their own (P-01).
     const edge = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: TENANT, PACK_SIGNING_KEY: KEY,
-      EDGE_CAPACITY_BYTES: '10485760', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps', EDGE_LANE_PORT: '8090',
+      EDGE_CAPACITY_BYTES: '10485760', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps', EDGE_LANE_PORT: '0',
       ...await prepareTillBox({ dir, key: KEY, pack: { version: 1, policies: { tradingDayCutoff: '02:00', storeId: 'store-1' }, lossPreventionRules: [] } }),
     }, () => {}))!;
     stops.push(() => edge.stop());

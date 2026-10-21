@@ -27,6 +27,10 @@
    (`EDGE_TILL_CREDENTIALS_FILE`, owner-only). Reissuing replaces the PIN; revoking ends it. This is the same pattern
    as the hosted sign-in's `add` command. Head-office issuing from the people screen (the OB-15 M02 flow, with the
    identity server) replaces the command later with the same verifier format.
+   **Amended (mirror-pilot round 4, 21 Oct 2026):** by default the command no longer makes or prints the PIN. The
+   person whose PIN it is types their own new six-digit PIN twice at the store PC's keyboard, hidden (a star per key);
+   the administrator never sees it and nothing prints, logs or keeps it but the verifier. Input that is not a keyboard
+   is refused. The generated-and-printed PIN stays only behind `--generate-and-show`, with a warning.
 3. **Signing in at the till asks two things:** the staff ID (scanned or keyed) and the PIN (keyed, masked). The box
    decides: the person must be known to its store pack and hold till authority (`pos.sale.sync`) in the pack's role
    register; a credential must exist, not revoked; the PIN must match (constant time). A wrong ID and a wrong PIN get

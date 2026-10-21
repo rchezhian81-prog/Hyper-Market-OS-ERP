@@ -114,7 +114,7 @@ describe.skipIf(!HAVE_BROWSER || !DATABASE_URL)('the store trades a day in a rea
     });
     const edge = (await startEdge({
       EDGE_DATA_DIR: dataDir, EDGE_TENANT_ID: cloud.tenantId, PACK_SIGNING_KEY: KEY, EDGE_CAPACITY_BYTES: '10485760',
-      EDGE_LANE_PORT: '8090', EDGE_LANE_ID: LANE, EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps', EDGE_PACK_FILE: packFile,
+      EDGE_LANE_PORT: '0', EDGE_LANE_ID: LANE, EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps', EDGE_PACK_FILE: packFile,
       CLOUD_API_URL: cloud.baseUrl, CLOUD_API_TOKEN: cloud.token(BOX),
     }, () => {}))!;
     stops.push(() => edge.stop());
@@ -143,7 +143,8 @@ describe.skipIf(!HAVE_BROWSER || !DATABASE_URL)('the store trades a day in a rea
   it('publish → pull → the served till sells by barcode → sync → stock falls → refund on the till → stock back → float, pickup, reload, blind close → cash office + day book agree → restart keeps head office\'s pack', async () => {
     expect(await onHandAt(STORE)).toBe(10);
     const edge = await startBox();
-    expect(edge.lane?.port).toBe(8090);
+    // A free port (round 4): the served till posts wherever the box that served it says its lane socket is (window.laneWriteBase).
+    expect(edge.lane?.port).toBeGreaterThan(0);
     expect(await edge.refreshPack!()).toMatchObject({ status: 'updated', heldVersion: 1 });
 
     const context = await browser.newContext();

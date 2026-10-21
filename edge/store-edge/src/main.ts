@@ -1553,10 +1553,24 @@ export async function startEdge(
     }
     return out;
   };
+  // OB-259: on the store PC the office screens ask for the person's own till PIN (edge/store-edge/src/office-sign-in.ts) —
+  // and so do the lane socket's office doors (the day close, a reopen, the office screens' decisions), with the same gate.
+  // Behind the hosted front's own sign-in (EDGE_SCREEN_TRUST_FORWARDED_USER) the front decides instead.
+  const officeGate = settings['EDGE_SCREEN_PORT'] === undefined || settings['EDGE_OFFICE_SIGN_IN'] !== 'pin' || settings['EDGE_SCREEN_TRUST_FORWARDED_USER'] === '1' ? null : await openOfficeGate({
+    dataDir: settings['EDGE_DATA_DIR']!, capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']), pins: staffSignIn, pack: () => pack,
+  });
   const lane = lanePort === undefined ? null : await startLaneServer({
     node,
     port: Number(lanePort),
     syncStatus,
+    // OB-259 completeness: the office doors need the office sign-in and its permission, and are done AS that person.
+    ...(officeGate === null ? {} : {
+      officeScreens: {
+        check: (token) => officeGate.check(token),
+        permissionsOf: (userId) => permissionsOf(userId, pack),
+        noteRefusedAct: (i) => officeGate.noteRefusedAct(i),
+      },
+    }),
     ...(tillOperators === null ? {} : {
       operators: {
         laneId: laneIdOfThisBox() ?? '',
@@ -1732,11 +1746,6 @@ export async function startEdge(
 
   const screenPort = settings['EDGE_SCREEN_PORT'];
   const screenHost = settings['EDGE_SCREEN_HOST'];
-  // OB-259: on the store PC the office screens ask for the person's own till PIN (edge/store-edge/src/office-sign-in.ts).
-  // Behind the hosted front's own sign-in (EDGE_SCREEN_TRUST_FORWARDED_USER) the front decides instead.
-  const officeGate = screenPort === undefined || settings['EDGE_OFFICE_SIGN_IN'] !== 'pin' || settings['EDGE_SCREEN_TRUST_FORWARDED_USER'] === '1' ? null : await openOfficeGate({
-    dataDir: settings['EDGE_DATA_DIR']!, capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']), pins: staffSignIn, pack: () => pack,
-  });
   if (officeGate !== null) say(`office screens: staff ID and own till PIN, checked on this box; a cashier opens only the till (${officeGate.live().length} office sign-in(s) still open).`);
   const screens = screenPort === undefined ? null : await startScreenServer({
     ...(officeGate === null ? {} : { officeSignIn: officeGate }),

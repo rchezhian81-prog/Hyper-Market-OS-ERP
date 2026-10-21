@@ -153,10 +153,25 @@ interface PosWindow {
   /** The refund policy the box's store pack carries — approval threshold + no-receipt cap — injected by the edge before
    *  boot (SP-9b-i · M13-FR-01). Absent when the box holds none: the till then offers NO return without a receipt. */
   posRefundPolicy?: RefundPolicy;
+  /** The box's own lane socket, as the box that served this page names it (`http://127.0.0.1:<port>`). */
+  laneWriteBase?: string;
 }
 
 /** Where this till's edge listens. Loopback only — see ADR-0004 and `edge/store-edge/src/lane-server.ts`. */
 export const DEFAULT_LANE_PORT = 8090;
+
+/**
+ * The lane port the box that served this page names (`window.laneWriteBase`, `http://127.0.0.1:<port>`) — so a till
+ * whose box listens on another port (installed with `--lane-port`, or a test box on a free port) posts where its box
+ * listens. Anything else (absent, not this PC's loopback, not a port) is not a port, and the till keeps its default.
+ */
+export function lanePortFrom(laneWriteBase: unknown): number | undefined {
+  if (typeof laneWriteBase !== 'string') return undefined;
+  const m = /^http:\/\/127\.0\.0\.1:(\d{1,5})$/.exec(laneWriteBase.trim());
+  if (m === null) return undefined;
+  const port = Number(m[1]);
+  return port >= 1 && port <= 65_535 ? port : undefined;
+}
 
 /**
  * The till's SHIFT SESSION on its store computer (ADR-0020 · Wave 2b · audit PF-02): the token the box minted when the
@@ -1588,8 +1603,11 @@ if (browserWindow !== undefined) {
   // Who this till IS comes from the box (SP-4b · F09): the lane it was told it is and the shop's cut-off. Who the CASHIER
   // is never comes from here — the person signs in on the screen. Nothing below invents a lane, a cashier or a day.
   const lane = browserWindow.posLane;
+  const lanePort = lanePortFrom(browserWindow.laneWriteBase);
   browserWindow.posSession = bootPos({
     catalogue: browserWindow.posCatalogue,
+    // The box that served this page says where its lane socket is; without it the till posts to its default port.
+    ...(lanePort === undefined ? {} : { lanePort }),
     ...(lane?.laneId === undefined || lane.laneId === null || lane.laneId === '' ? {} : { laneId: lane.laneId }),
     ...(lane === undefined ? {} : { tradingDayCutoff: lane.tradingDayCutoff }),
     // B6: this lane's scales as the box's store pack names them; a page without them sells nothing by weight.

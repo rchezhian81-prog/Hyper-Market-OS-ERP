@@ -1,13 +1,14 @@
 #!/usr/bin/env node
-// `pnpm run till:pin -- --user <staff id> --by "<your name>" [--revoke]` — issue (or revoke) a person's till PIN on THIS
-// store computer, with the till's own settings loaded (gap W-6, owner guide).
+// `pnpm run till:pin -- --user <staff id> --by "<your name>" [--revoke]` — set (or revoke) a person's till PIN on THIS
+// store computer, with the till's own settings loaded (gap W-6, owner guide). The person whose PIN it is then types their
+// own new PIN twice at this keyboard, hidden (round 4): the owner never sees it, and nothing prints or logs it.
 //
 // The till's PIN command lives in the built store edge (`edge/store-edge/dist/start.js till-pin`) and needs the till's
 // settings — where its data is (EDGE_DATA_DIR) and the key its PIN checks are made with (PACK_SIGNING_KEY). Before this,
 // the package script ran it with none of them, so it could not find the till's data. This finds the till's settings file
 // the way the till itself is started — the shop's data folder first (C:\SRE-data\till\till.env, audit row 9), else this
-// release's own till folder — loads it into the command's environment only, and runs the command. Nothing is printed
-// here but the file's NAME; the PIN command prints the PIN once, to this window, as it always has.
+// release's own till folder — loads it into the command's environment only, and runs the command with this window's own
+// keyboard (`stdio: 'inherit'`, so the PIN command can hide what is typed). Nothing is printed here but the file's NAME.
 //
 // Windows first: Node built-ins only, the program started with an argument array and no shell.
 

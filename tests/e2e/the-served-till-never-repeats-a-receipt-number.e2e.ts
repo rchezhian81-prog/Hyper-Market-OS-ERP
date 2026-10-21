@@ -67,7 +67,7 @@ describe.skipIf(!HAVE_BROWSER)('the served till never repeats a receipt number (
     dirs.push(dir);
     const edge: EdgeProcess = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY,
-      EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '8090', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps',
+      EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '0', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps',
       ...await prepareTillBox({ dir, key: KEY, pack: { receiptSeries: [{ laneId: 'lane-1', prefix: 'L1-', padTo: 6, rangeStart: 1, rangeEnd: 9999, bankedThrough: 0 }] } }),
     }, () => {}))!;
     stops.push(() => edge.stop());
