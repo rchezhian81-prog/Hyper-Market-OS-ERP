@@ -49,6 +49,9 @@ screens themselves show English and Tamil, as built.
 1. Press the **Windows key**, type `About`, and open **About your PC**. (Or: **Settings → System → About**.)
    - Look at **Installed RAM**. It must say **8.00 GB** or more.
    - Look at **Edition** (Windows 10 or Windows 11, Home or Pro — any of them is fine) and **Version**.
+   - **If Edition says "Windows Server", STOP.** That is the shop's server, and it runs the old ERP, your legal
+     billing system during the pilot. Nothing in this guide is ever installed on it (OB-282). Go to the Windows 11 PC
+     and start Part 1 again there.
    - **When it worked:** you can read both lines. **Send:** a photo of this screen.
 2. Press **Ctrl + Shift + Esc** to open **Task Manager**. If it is small, click **More details**. Click **Performance**,
    then **CPU**.
