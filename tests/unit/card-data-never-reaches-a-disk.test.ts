@@ -72,7 +72,7 @@ describe('the rule: a tender keeps a token, the last four and the network — no
   });
 
   it('the allowlist is closed and short', () => {
-    expect([...TENDER_FIELDS]).toEqual(['kind', 'amount', 'amountMinor', 'status', 'ref', 'points', 'card', 'cardDataRemoved']);
+    expect([...TENDER_FIELDS]).toEqual(['kind', 'amount', 'amountMinor', 'status', 'ref', 'machineRef', 'points', 'card', 'cardDataRemoved']);
   });
 });
 

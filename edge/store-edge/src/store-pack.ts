@@ -995,6 +995,17 @@ export interface PackPolicies {
    * also turn it on). Needs guest sales only on too.
    */
   readonly mirrorPilot?: boolean;
+  /**
+   * OB-271 (owner, 21 Oct 2026): `true` → this store's tills are in REAL TRADING — each bill is the legal GST tax invoice.
+   * Optional: absent is off (the box's own `EDGE_REAL_TRADING=1` can also turn it on). Never with `mirrorPilot`.
+   */
+  readonly realTrading?: boolean;
+  /**
+   * OB-271 · CGST Rule 46(a): the shop's legal identity as its tax invoice prints it — the legal name and GSTIN from head
+   * office's GST registration (OB-257 `shop`) and the store's address. Optional: absent → a real-trading sale is refused
+   * (the bill would not be a tax invoice), and the till says what is missing.
+   */
+  readonly taxInvoice?: { readonly legalName: string; readonly gstin: string; readonly placeOfBusiness: readonly string[] };
 }
 
 /** A storage bin the warehouse handheld can put stock into (M09 / OA-9). */

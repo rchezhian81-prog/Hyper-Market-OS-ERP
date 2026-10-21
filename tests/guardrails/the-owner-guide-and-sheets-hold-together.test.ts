@@ -22,8 +22,8 @@ import { parseCommandLine, SETUP_COMMANDS } from '../../scripts/lib/store-comput
  *     SOP-03 says payments and loyalty are "Not compared in the mirror pilot" (OB-256, OB-265), never "not decided";
  *   • OB-263: SOP-03 walks the owner through the evening check from the old ERP's two files — export, save as CSV, map
  *     once, load, read the differences, write reasons, sign — in the migration screen's own words in both languages, with
- *     generic words for the old ERP's menus (never a menu name we do not know); the guide's Part 31 says to send the
- *     header rows only, never the data below them.
+ *     generic words for the old ERP's menus (never a menu name we do not know); the guide's Part 31 says to send nothing
+ *     first (OB-275) and never the files themselves.
  */
 
 const GUIDE_PATH = 'docs/runbooks/store-computer-owner-guide-windows.md';
@@ -246,7 +246,7 @@ describe('the owner guide and the cashier sheets hold together (OB-244 · OB-248
     expect(statusSource).toContain("`EDGE_MIRROR_PILOT=${said('EDGE_MIRROR_PILOT') || '(not set)'}, EDGE_GUEST_SALES_ONLY=${said('EDGE_GUEST_SALES_ONLY') || '(not set)'}`");
     // OB-257: seal and parallel-policy ask the acting person's own PIN.
     expect(guide).toMatch(/It asks the person sealing for \*\*their own till PIN\*\*/);
-    expect(guide).toMatch(/It asks for \*\*your own till PIN\*\* \(`<your-login>'s till PIN:`\)/);
+    expect(guide).toMatch(/It asks for \*\*your own till PIN\*\* \(`owner-01's till PIN:`\)/);
     // OB-268: red under 30 days; "not known" before the rate can be worked out.
     expect(guide).toMatch(/\*\*Under 30 days left, it turns RED\*\* \(OB-268\)/);
     expect(guide).toMatch(/\*\*NOT KNOWN\*\*/);
@@ -343,7 +343,7 @@ describe('the owner guide and the cashier sheets hold together (OB-244 · OB-248
     for (const label of [...EVENING_EN, ...EVENING_TA]) expect(screen, `the screen says "${label}"`).toContain(label);
   });
 
-  it('OB-263: the evening sheet walks through the two old-ERP files — export, CSV, map once, load, reasons, sign — and the guide asks for the header rows only', () => {
+  it('OB-263: the evening sheet walks through the two old-ERP files — export, CSV, map once, load, reasons, sign — and (OB-275) the guide asks for nothing to be sent first', () => {
     const evening = sheetText('sop-03-owner-evening-check', 'en');
     expect(evening).toContain('OB-263');
     // Generic words for the old ERP's menus: we do not know its menu names, so the sheet says what to look for.
@@ -361,8 +361,9 @@ describe('the owner guide and the cashier sheets hold together (OB-244 · OB-248
     expect(eveningTa).toContain('OB-263');
     expect(eveningTa).toContain('ஒவ்வொரு ERP-யிலும் மெனுவின் பெயர்கள்');
     expect(guide).toContain('## Part 31 — The evening check from the old ERP\'s two files (OB-263)');
-    expect(guide).toMatch(/Copy only the line with the column names — \*\*no line\s+below it\*\*/);
-    expect(guide).toMatch(/Never send the whole file/);
+    expect(guide).toMatch(/No need to send anything first\*\* \(OB-275\)/);
+    expect(guide).toMatch(/Never send\s+these files to anyone/);
+    expect(guide).toContain('## Part 32 — Real trading: after the pilot passes and your written GO only (OB-271)');
     // OB-263 A · B: the department column and the bill lines' tax question, in the sheet (both languages) and the guide.
     for (const text of [evening, guide]) {
       expect(text).toMatch(/Which of these is the\s+pilot department\?/);

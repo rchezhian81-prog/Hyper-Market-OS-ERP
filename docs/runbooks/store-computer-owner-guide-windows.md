@@ -515,18 +515,15 @@ The first people in the new system are laid down once, by this command. Every la
 one asks, another approves (Part 19). On this PC the only two people who can do that are the **store manager** (asks)
 and **you** (approve) — the accountant's role cannot give roles. So the store manager must be in this first set.
 
-**STOP AND ASK.** This step needs, in writing:
-- **your own login name** for the new system (a short name, for example your first name; never a shared login);
-- **the accountant**: the shop's accountant (role `accountant`), your chartered accountant (role
-  `chartered_accountant`), or both — each with their own login name;
-- **the store manager** (role `store_manager`) and their login name. Not named yet (OB-243). Without a store manager
-  in this first set, no cashier can be added later.
-Nobody may invent these (OB-243). Do not type the command below until you have written them down.
+**The logins are decided (OB-277):** you are `owner-01`, the accountant is `accountant-01` (role `accountant`), the
+store manager is `store-manager-01` (role `store_manager`). Each login belongs to **one person only**. Write in the
+workbook, on paper, which staff member holds `store-manager-01` and `accountant-01` before you type the command below.
+If your chartered accountant also needs a login, that is `ca-01` (role `chartered_accountant`); add it the same way.
 
 1. First the **dry run** (it changes nothing). Your tenant id is the one you wrote in the workbook in Part 5. Type it as
    one line, putting in your own values (for two people, put a comma between them after `--admin`, no spaces):
    ```
-   pnpm run tenant:bootstrap -- --tenant <tenant-id> --owner <your-login> --admin <their-login>:<their-role>,<manager-login>:store_manager --operator "Your Name" --env-file F:\SRE-data\.env.real --dry-run
+   pnpm run tenant:bootstrap -- --tenant <tenant-id> --owner owner-01 --admin accountant-01:accountant,store-manager-01:store_manager --operator "Your Name" --env-file F:\SRE-data\.env.real --dry-run
    ```
    - **When it worked:** it lists each person and their role, then `DRY RUN — nothing was written.`
    - Read the list. If anything is wrong, fix the line and run the dry run again.
@@ -571,7 +568,7 @@ PIN. You never type anybody else's PIN.
 
 1. In PowerShell in `C:\SRE`, type as one line, with your values:
    ```
-   pnpm run store-computer -- shop --as <your-login> --company <company-code> --legal-name "<legal name as on the GST certificate>" --gstin <GSTIN> --store <store-code> --store-name "<store name>"
+   pnpm run store-computer -- shop --as owner-01 --company <company-code> --legal-name "<legal name as on the GST certificate>" --gstin <GSTIN> --store <store-code> --store-name "<store name>"
    ```
    - It says `This will, at head office on this computer` and lists four steps in plain words. **Read them.** Then
      `Type YES and press Enter to do this`. Type `YES` only if every word is right; anything else stops it and nothing
@@ -592,7 +589,7 @@ PIN. You never type anybody else's PIN.
 
 1. Type as one line, with your values:
    ```
-   pnpm run store-computer -- store-settings --as <your-login> --store <store-code> --cutoff 00:00 --stale-after-minutes <minutes> --count-approval-rupees <rupees> --handover-tolerance-rupees <rupees> --cash-variance-rupees <rupees>
+   pnpm run store-computer -- store-settings --as owner-01 --store <store-code> --cutoff 00:00 --stale-after-minutes <minutes> --count-approval-rupees <rupees> --handover-tolerance-rupees <rupees> --cash-variance-rupees <rupees>
    ```
    - It reads your values back to you in words. Type `YES`, then your PIN.
    - **When it worked:** `done — store … settings saved as version 1.` and `DONE —`. Every later change is a new
@@ -606,7 +603,7 @@ pilot the new bill is never given to a customer (OB-248), but the prefix still k
 
 1. Type:
    ```
-   pnpm run store-computer -- bill-prefix --as <your-login> --store <store-code> --till lane-1 --prefix <prefix> --reason "mirror pilot till"
+   pnpm run store-computer -- bill-prefix --as owner-01 --store <store-code> --till lane-1 --prefix <prefix> --reason "mirror pilot till"
    ```
    - Type `YES`, then your PIN. **When it worked:** `DONE — the bill prefix … is issued to till lane-1`.
 
@@ -618,7 +615,7 @@ sales to this copy's books (for the evening check). Two steps.
 1. **The till's own sign-in gets its role** — the store computer role, at this store only. This is the first act done by
    **two people**: the store manager asks, you approve. Both sit at the PC; each types their own PIN when asked.
    ```
-   pnpm run store-computer -- grant --as <manager-login> --approver <your-login> --person store-edge --role store_computer --store <store-code> --reason "the till on the store PC"
+   pnpm run store-computer -- grant --as store-manager-01 --approver owner-01 --person store-edge --role store_computer --store <store-code> --reason "the till on the store PC"
    ```
    - It lists the two steps: the manager asks, you approve. Type `YES`. Then it asks the **manager** for their PIN (the
      manager types it), then **you** for yours.
@@ -642,16 +639,16 @@ sales to this copy's books (for the evening check). Two steps.
 
 Every cashier signs in at the till with their own staff ID and their own six-digit PIN. **No shared logins.**
 
-**STOP AND ASK.** The pilot cashier(s) are not named yet (OB-243, OB-254). For each cashier, once named:
+**The pilot cashier is `cashier-01` (OB-277)**: the trained mirror keyer. Write in the workbook which staff member holds it. A second cashier, if needed, is `cashier-02`. For each cashier:
 1. **Their role at head office** — the store manager asks, you approve, each with their own PIN:
    ```
-   pnpm run store-computer -- grant --as <manager-login> --approver <your-login> --person <cashier-login> --role cashier --store <store-code> --reason "pilot cashier"
+   pnpm run store-computer -- grant --as store-manager-01 --approver owner-01 --person cashier-01 --role cashier --store <store-code> --reason "pilot cashier"
    ```
    - **When it worked:** `DONE — <cashier> holds "cashier" at store …`. The till learns it the next time it reaches this
      copy's books (within a few minutes).
 2. **Their till PIN**, with the cashier beside you (Part 16, step 1):
    ```
-   pnpm run till:pin -- --user <cashier-login> --by "Your Name"
+   pnpm run till:pin -- --user cashier-01 --by "Your Name"
    ```
    - Give the cashier the keyboard and look away: they type their own new PIN twice. It shows only as stars — you
      never see it.
@@ -659,9 +656,10 @@ Every cashier signs in at the till with their own staff ID and their own six-dig
 ## Part 22 — The pilot department: only after your written GO
 
 **Nothing real is loaded before your written GO (OB-242).** The first load is one department's products, barcodes, tax
-classes and prices (OB-241); the department is not named yet (OB-243). **STOP AND ASK.**
+classes and prices (OB-241); the department is **packaged groceries, barcode only** (OB-276): rice, pulses, flour, oil,
+spices, packed snacks and beverages. Loose or weighed goods stay on the old ERP.
 
-When the GO is written and the department is named:
+When the GO is written:
 1. On the migration screen ("The figures" → "Templates for the first department") download the four templates and
    fill them from the old ERP's export, into one folder, for example `C:\SRE-slice`, with its `slice.json`.
 2. **Seal the exported files** (MG-02). The old ERP's own backup must have been **restored and checked** first; say on
@@ -690,11 +688,11 @@ day, how many clean days in a row are needed, the most days it may last, and the
 are your decisions (you are the daily reconciler for the first two weeks, OB-254). The cutover id is the one on the
 migration screen.
 ```
-pnpm run store-computer -- parallel-policy --as <your-login> --cutover <cutover-id> --reconciler <your-login> --clean-days <N> --max-days <M> --start <YYYY-MM-DD>
+pnpm run store-computer -- parallel-policy --as owner-01 --cutover <cutover-id> --reconciler owner-01 --clean-days <N> --max-days <M> --start <YYYY-MM-DD>
 ```
-- It asks for **your own till PIN** (`<your-login>'s till PIN:`); nothing shows while you type (OB-257). Without the
+- It asks for **your own till PIN** (`owner-01's till PIN:`); nothing shows while you type (OB-257). Without the
   right PIN nothing is written and nothing is sent.
-- **When it worked:** `<your-login>'s PIN matches.`, then `POLICY RECORDED — from …, … reconciles every day; …`.
+- **When it worked:** `owner-01's PIN matches.`, then `POLICY RECORDED — from …, … reconciles every day; …`.
 
 ## Part 24 — The products reach the till (the catalogue pack)
 
@@ -703,7 +701,7 @@ the next time it reaches this copy's books.
 
 1. Type:
    ```
-   pnpm run store-computer -- publish-catalogue --as <your-login> --store <store-code>
+   pnpm run store-computer -- publish-catalogue --as owner-01 --store <store-code>
    ```
    - Type `YES`, then your PIN. **When it worked:** `done — the catalogue pack version … is published.` and `DONE —`.
 2. Within a few minutes the till's Sale screen stops saying it has no price list. Scan three products from the pilot
@@ -982,9 +980,8 @@ this copy's books afterwards. Sheet 3 has the evening steps; this part is the fi
    If you cannot find either, **STOP AND ASK**: send a photo of the reports menu.
 2. **Save each from Excel as CSV**: **File**, **Save As**, type **CSV UTF-8 (Comma delimited) (\*.csv)**, into a folder
    such as `C:\SRE-evening`. If a barcode column shows `8.90123E+12`, format the column as **Text** and save again.
-3. **Send me the header rows only.** Open each CSV in Notepad. Copy only the line with the column names — **no line
-   below it**: those hold bills, prices and customers' details — and send the two lines. They are used to check that
-   the columns on the screen are chosen right. Never send the whole file.
+3. **No need to send anything first** (OB-275): the screen reads whatever column names the old ERP uses. Never send
+   these files to anyone: they hold bills, prices and customers' details.
 4. Open the migration screen (Sheet 3, step 6), click **Running both**, and under **Evening check from the old system's
    files** check that it names the pilot department. If it says the pilot department is not known, the department's
    products have not been applied yet (Part 22).
@@ -997,6 +994,45 @@ this copy's books afterwards. Sheet 3 has the evening steps; this part is the fi
    name and the time; **Change** changes it later, and every earlier one is kept.
 6. Press **Load and compare**, read the differences, write a reason on each, and sign — Sheet 3, steps 9 to 12.
    **Send:** a photo of the screen after loading, before you write the reasons, on the first day.
+## Part 32 — Real trading: after the pilot passes and your written GO only (OB-271)
+
+**Do not do anything in this part during the mirror pilot.** It explains what is built and switched OFF, so nothing
+surprises you later.
+
+The new till can already do the three things real trading needs. All three are **off** while the mirror pilot runs:
+
+1. **The legal GST bill.** The till's bill becomes the shop's tax invoice: the words "Tax Invoice", the shop's legal
+   name, address and GSTIN, the bill number and date, each item's HSN code (6 digits, because the shop's turnover is
+   ₹5–10 crore — OB-149), quantity, unit, value and GST rate, CGST and SGST, the place of supply (Tamil Nadu) and the
+   total. If anything is missing, the till **refuses the sale** and says what is missing, so a wrong bill is never given.
+   A bill with any item that has no GST is headed **"Invoice-cum-Bill of Supply"**, and that item shows "Exempt / nil"
+   (OB-278). The bill's CGST and SGST are each rounded to the rupee (OB-279), but a bill is **never more than the
+   items' MRP total**: if the rounding would make it more, a minus **Round off** line brings it back down, so a ₹105
+   packet of dal is charged ₹105, never ₹106 (OB-285). A bill of ₹50,000 or more, or a business (B2B) bill, is refused with "bill this on the
+   old system" (OB-280). Your CA confirms these four before the switch.
+2. **The paper bill, in English or Tamil.** After each sale the cashier presses **Print bill**. The bill prints through
+   the printer's own Windows driver on an 80 mm roll (58 mm also works). A second print says **DUPLICATE**. If the
+   printer fails, the sale is still saved and the bill can be printed again (More → **Reprint the last bill**).
+3. **Card and UPI approval numbers.** After the shop's own card machine or UPI says "approved", the cashier types the
+   number from the machine's slip into one field, **Approval / Auth code / RRN** (never the card number). Any card
+   machine and any bank works (OB-274). The day's list (More → **Card and UPI today**, and
+   at **Close till**) shows each number, so you can tick it against the machine's settlement slip. A refund to a card
+   is done on the machine, its reference typed, and a manager checks it with their own PIN.
+
+**The switch.** Real trading is switched on by one setting on the store computer, `EDGE_REAL_TRADING=1`, or by the store
+pack. The installer **never** writes it. The mirror pilot and real trading are **never on together**: a store computer
+set for both refuses to start and says why. Today's install and the `status` check keep the mirror pilot on; the exact
+switch-over steps are given to you **with** the real-trading GO, not before.
+
+**Before that GO, these must be true** (each is a question we will ask you then):
+- the shop's address for the bill is recorded with the store: type the Part 17 `shop` command again with
+  `--place-of-business "<line 1 | line 2>"` added at the end (the `|` splits the lines, up to 4);
+- every product the till sells has its real 6-digit (or 8-digit) HSN code in the price list;
+- the bill printer is installed in Windows with its own driver (any receipt printer Windows can print to works —
+  OB-274), it has printed a Windows test page in Tamil, and you have **set the paper width**: 80 mm (the default) or
+  58 mm;
+- your CA has confirmed the combined bill for items with no GST (OB-278), the rounding (OB-279) and that bills of
+  ₹50,000 or more and business bills stay on the old system (OB-280).
 
 ---
 
@@ -1026,10 +1062,9 @@ either: each is driven by an automated test with a pretend Windows.
 | P1-3 | F: is inside the PC, so a backup on it is not a backup (OB-281, OB-283). | Every backup command asks Windows what kind of drive it is and takes only a USB or removable drive (Parts 8, 28). |
 | P1-4 | The PC is the purchase staff's shared office PC (OB-284). | The Part 26c lock covers `F:\SRE-data`, `C:\SRE` and `C:\ProgramData\SRE`, for you and SYSTEM only, straight after Part 5; `doctor` reports the administrators and who can read the data (read-only); F: is encrypted too (26d); the memory photo is taken with the purchase staff's Excel open (Part 12). |
 
-**Still open** (each said where it is used): the header rows of the old ERP's two reports, so the column mapping can be
-checked (Part 31, step 3 — OB-263 is decided: item-wise and bill-wise files); the names OB-243 still waits for (the
-department, the cashier, the store manager); and the production sign-in (OA-4) — until then the PC lock (OB-251) and
-each person's own PIN are what stand behind every name on the records.
+**Still open** (each said where it is used): the production sign-in (OA-4) — until then the PC lock (OB-251) and each
+person's own PIN are what stand behind every name on the records. The department and the logins are decided (OB-276,
+OB-277), and no header rows are needed (OB-275).
 
 ---
 

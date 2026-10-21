@@ -80,6 +80,8 @@ import { PAID_ON_OLD_ERP, PAID_ON_OLD_ERP_WORDS, saleTenderRefusal, refundTender
 import { oldErpBillRefusal, readOldErpBillNumber } from '../../../packages/tender/src/old-erp-bill-number';
 import type { OldErpBills } from './old-erp-bills';
 import { OFFICE_ACT_WORDS, OFFICE_LANE, officeTokenOf, type OfficeActRefusal, type OfficeCheck } from './office-sign-in';
+import { realTradingSaleRefusal, REAL_TRADING_AND_MIRROR_BOX_WORDS } from './real-trading';
+import type { TaxInvoiceIdentity } from '../../../packages/receipt/src/tax-invoice';
 
 /** The one address this may listen on. Named so the test can assert on it. */
 export const LANE_HOST = '127.0.0.1';
@@ -227,10 +229,11 @@ export type LaneTillActivityHandler = (input: {
 /** The payment-attempt register this socket asks (`PaymentAttempts`). */
 export interface LanePaymentAttemptsPort {
   ask(input: { readonly laneId: string; readonly by: string; readonly attemptId: unknown; readonly billRef: unknown; readonly kind: unknown; readonly amountMinor: unknown }): Promise<AttemptAnswer>;
-  answer(input: { readonly laneId: string; readonly by: string; readonly attemptId: unknown; readonly outcome: unknown; readonly approvalId?: string }): Promise<AttemptAnswer>;
+  answer(input: { readonly laneId: string; readonly by: string; readonly attemptId: unknown; readonly outcome: unknown; readonly approvalId?: string; readonly machineRef?: unknown }): Promise<AttemptAnswer>;
   recover(input: { readonly laneId: string; readonly attemptId: unknown }): Promise<AttemptAnswer>;
   checkTenders(input: { readonly laneId: string; readonly saleId: string; readonly tenders: unknown }): TenderCheck;
-  status(laneId: string): { readonly unresolved: readonly Attempt[]; readonly paidWithoutSale: readonly Attempt[]; readonly owedToCustomers: readonly Attempt[] };
+  /** OB-271: also today's paid payments with the machine's numbers, and the card refunds done on the machine (the till's list). */
+  status(laneId: string): { readonly unresolved: readonly Attempt[]; readonly paidWithoutSale: readonly Attempt[]; readonly owedToCustomers: readonly Attempt[]; readonly paid?: readonly Attempt[]; readonly refundsOnMachine?: readonly unknown[]; readonly tradingDay?: string };
 }
 
 /** The held-basket register this socket asks (`HeldBills`). */
@@ -577,6 +580,14 @@ export function startLaneServer(input: {
    * need it, and the job is done AS that person. Absent → those doors behave as before (a test box, the hosted copy).
    */
   readonly officeScreens?: LaneOfficePort;
+  /**
+   * OB-271 (owner, 21 Oct 2026): read live — this box's own `EDGE_REAL_TRADING=1` or the store pack's `policies.realTrading`.
+   * While true, a sale is kept only when its bill is a complete Rule 46 tax invoice (`real-trading.ts`, the till's own check
+   * again, from `taxInvoice`), and never while the mirror pilot is on too. Absent or false: nothing here changes.
+   */
+  readonly realTrading?: () => boolean;
+  /** OB-271: the shop's legal identity for the tax invoice, from the store pack — `null` when it carries none. */
+  readonly taxInvoice?: () => TaxInvoiceIdentity | null;
 }): Promise<LaneServer> {
   const maxBytes = input.maxBytes ?? 256 * 1024;
 
@@ -913,7 +924,7 @@ export function startLaneServer(input: {
           const out = pathname === LANE_PAYMENTS_ROUTE
             ? await payments.ask({ laneId: ops.laneId, by: check.userId, attemptId: b['attemptId'], billRef: b['billRef'], kind: b['kind'], amountMinor: b['amountMinor'] })
             : pathname === LANE_PAYMENTS_ANSWER_ROUTE
-              ? await payments.answer({ laneId: ops.laneId, by: check.userId, attemptId: b['attemptId'], outcome: b['outcome'], ...(typeof b['approvalId'] === 'string' ? { approvalId: b['approvalId'] } : {}) })
+              ? await payments.answer({ laneId: ops.laneId, by: check.userId, attemptId: b['attemptId'], outcome: b['outcome'], ...(typeof b['approvalId'] === 'string' ? { approvalId: b['approvalId'] } : {}), ...(b['machineRef'] === undefined ? {} : { machineRef: b['machineRef'] }) })
               : await payments.recover({ laneId: ops.laneId, attemptId: b['attemptId'] });
           send(res, 200, out, { ...cors, 'cache-control': 'no-store' });
         } catch (e) {
@@ -1548,6 +1559,15 @@ export function startLaneServer(input: {
           if (oldBill !== undefined) {
             send(res, 200, { committed: false, refusedBecause: oldBill.refusedBecause, laneMessage: oldBill.laneMessage }, cors);
             return;
+          }
+          // OB-271: REAL TRADING — never with the mirror pilot; a sale's bill must be a complete tax invoice (the till's rule).
+          if (input.realTrading?.() === true) {
+            const legal = mirrorOn ? { refusedBecause: 'real_trading_and_mirror', laneMessage: REAL_TRADING_AND_MIRROR_BOX_WORDS }
+              : isReturn ? undefined : realTradingSaleRefusal(r, input.taxInvoice?.() ?? null);
+            if (legal !== undefined) {
+              send(res, 200, { committed: false, refusedBecause: legal.refusedBecause, laneMessage: legal.laneMessage }, cors);
+              return;
+            }
           }
           // A receipted refund to "Paid on old system" stays within its bill: what the bill was paid that way, less every
           // refund already against it — judged from THIS box's own logs, never from numbers the till sent.

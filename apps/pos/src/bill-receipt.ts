@@ -14,8 +14,40 @@
 
 import {
   buildReceipt, renderReceipt, paperFormat, DEFAULT_PAPER_FORMAT, type PaperFormat,
+  taxInvoiceRows, taxInvoiceText, invoiceRenderProblems, type InvoiceRow, type InvoiceLanguage,
 } from '../../../packages/receipt/src/index';
 import type { CommittedBill } from './session';
+
+/**
+ * OB-271 — the printed TAX INVOICE of a real-trading sale: its rows for the paper (each tagged with the Rule 46 field it
+ * carries), the same as fixed-width lines for the screen, and the paper it is laid out for. A reprint is marked DUPLICATE.
+ * The render is read back by the contract (`invoiceRenderProblems`) and NOT handed out when a field is missing — a bill
+ * that is not a complete tax invoice is never printed. Pure; never throws; no network.
+ */
+export type BillTaxInvoice =
+  | { readonly ok: true; readonly rows: readonly InvoiceRow[]; readonly lines: readonly string[]; readonly paper: string; readonly paperWidthMm: number; readonly number: string }
+  | { readonly ok: false; readonly why: string };
+
+export function billTaxInvoice(
+  bill: CommittedBill | undefined,
+  options: { readonly template?: BillTemplate | null; readonly language?: InvoiceLanguage; readonly duplicate?: boolean } = {},
+): BillTaxInvoice {
+  if (bill === undefined) return { ok: false, why: 'no sale has been committed on this till yet' };
+  if (bill.taxInvoice === undefined) return { ok: false, why: 'this sale was not taken in real trading, so it has no tax invoice' };
+  let format: PaperFormat = DEFAULT_PAPER_FORMAT;
+  const named = options.template?.paperFormat;
+  if (named !== undefined) {
+    try { format = paperFormat(named); } catch { return { ok: false, why: `the receipt template names a paper format this till does not know (${named})` }; }
+  }
+  const rows = taxInvoiceRows(bill.taxInvoice, {
+    ...(options.language === undefined ? {} : { language: options.language }),
+    ...(options.duplicate === true ? { duplicate: true } : {}),
+    ...(options.template?.footer === undefined ? {} : { footer: options.template.footer }),
+  });
+  const missing = invoiceRenderProblems(rows, bill.taxInvoice);
+  if (missing.length > 0) return { ok: false, why: `the printed invoice would be missing: ${missing.join('; ')}` };
+  return { ok: true, rows, lines: taxInvoiceText(rows, format.widthChars), paper: format.id, paperWidthMm: format.widthMm, number: bill.taxInvoice.number };
+}
 
 /** The published receipt template's parts the bill needs (`PosReceiptTemplate`, as the box served it). */
 export interface BillTemplate {

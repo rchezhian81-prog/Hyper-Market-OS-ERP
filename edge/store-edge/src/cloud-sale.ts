@@ -31,6 +31,7 @@
 import type { IncomingSale, IncomingSaleLine, IncomingTender } from '../../../services/pos/src/index';
 import { readCardTokenReference } from '../../../packages/tender/src/card-token';
 import { isOldErpBillNumber } from '../../../packages/tender/src/old-erp-bill-number';
+import { readMachineReference } from '../../../packages/tender/src/machine-reference';
 
 type Rec = Record<string, unknown>;
 
@@ -50,10 +51,13 @@ function toCloudTender(t: unknown): IncomingTender {
   const removedMark = r['cardDataRemoved'];
   const removedFields = removedMark !== null && typeof removedMark === 'object' && Array.isArray((removedMark as Rec)['fields'])
     ? ((removedMark as Rec)['fields'] as unknown[]).filter((f): f is string => typeof f === 'string') : undefined;
+  // OB-271 · audit A9: the shop's own machine's approval / reference number travels when it reads cleanly (never card data).
+  const machine = r['machineRef'] === undefined ? undefined : readMachineReference(r['machineRef']);
   return {
     kind: str(r['kind']) ?? '',
     ...(amountMinor === undefined ? {} : { amountMinor }),
     ...(ref === undefined ? {} : { ref }),
+    ...(machine?.ok === true ? { machineRef: machine.value } : {}),
     ...(points === undefined ? {} : { points }),
     ...(card?.ok === true ? { card: card.value } : {}),
     ...(removedFields === undefined ? {} : { cardDataRemoved: { fields: removedFields } }),
@@ -101,6 +105,10 @@ export function toCloudSale(record: unknown, packVersion: number, storeId?: stri
     ...(isMemberRef(r['customerRef']) ? { customerRef: r['customerRef'] } : {}),
     // Round 29 · OB-108: when the store computer took the bill from the till, by its own clock (stamped as it wrote it).
     ...(isTime(r['storeComputerTakenAt']) ? { storeComputerTakenAt: r['storeComputerTakenAt'] } : {}),
+    // OB-279 · OB-285: a real-trading bill's round off — whole paise, below 0 and at most ₹1 (a bill is never above its
+    // lines; a record that says otherwise is sent without it, so head office sees lines that do not add up).
+    ...(typeof r['roundOffMinor'] === 'number' && Number.isSafeInteger(r['roundOffMinor']) && r['roundOffMinor'] < 0 && r['roundOffMinor'] >= -100
+      ? { roundOffMinor: r['roundOffMinor'] } : {}),
     // OB-264: the old ERP's bill number keyed on a mirror sale — only in its kept form (Rule 46(b), no personal data).
     ...(isOldErpBillNumber(r['oldErpBillNumber']) ? { oldErpBillNumber: r['oldErpBillNumber'] } : {}),
   };

@@ -368,6 +368,15 @@ export function startScreenServer(input: {
   /** OB-252: whether this box takes guest sales only, and who turned it on — told to the served till, per request. */
   readonly guestSalesOnly?: () => { readonly on: boolean; readonly by: 'store_pack' | 'store_computer_setting' | null };
   /**
+   * OB-271: whether this box's tills are in REAL TRADING, the shop's legal identity for the tax invoice and the bill's paper
+   * — told to the served till with its lane, per request (a later pack may change the identity). Absent: not told (off).
+   */
+  readonly realTrading?: () => {
+    readonly on: boolean; readonly by: 'store_pack' | 'store_computer_setting' | null;
+    readonly taxInvoice: { readonly legalName: string; readonly gstin: string; readonly placeOfBusiness: readonly string[] } | null;
+    readonly billPaper?: string;
+  };
+  /**
    * Run the ERP screens as the person the relay's `X-Sre-User` header names (OB-16). ONLY a deployment whose screens
    * are reached solely through a front that authenticates every request and sets this header itself
    * (`infra/compose/nginx.pilot.conf`, behind the sign-in) may turn this on — `EDGE_SCREEN_TRUST_FORWARDED_USER=1`.
@@ -561,6 +570,10 @@ export function startScreenServer(input: {
           ...posLanePayload(snap, input.laneId), ...(input.soldHuids === undefined ? {} : { soldHuids: input.soldHuids() }),
           // OB-252: guest sales only — the till shows it whenever it is on, and takes no customer number or loyalty.
           ...(input.guestSalesOnly === undefined ? {} : { guestSalesOnly: input.guestSalesOnly() }),
+          // OB-271: real trading (off during the mirror pilot), the shop's legal identity for the tax invoice, the paper.
+          ...(input.realTrading === undefined ? {} : ((rt) => ({
+            realTrading: { on: rt.on, by: rt.by }, taxInvoice: rt.taxInvoice, ...(rt.billPaper === undefined ? {} : { billPaper: rt.billPaper }),
+          }))(input.realTrading())),
         }
         : undefined;
       // And the refund policy its store pack carries (SP-9b-i · M13-FR-01): the approval threshold and the no-receipt

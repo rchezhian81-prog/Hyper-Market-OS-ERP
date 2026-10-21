@@ -36,7 +36,9 @@ import type { ReturnableLine } from '../../../packages/returns/src/return-regist
 import { assessExchange, type ExchangeBalanceKind } from '../../../packages/returns/src/exchange';
 import { refundRequiresApproval, type ExchangeSettlementInput } from '../../../packages/returns/src/returns';
 import { settle, type Tender } from '../../../packages/tender/src/tender';
-import { billReceipt, type BillReceipt } from './bill-receipt';
+import { billReceipt, billTaxInvoice, type BillReceipt, type BillTaxInvoice } from './bill-receipt';
+import type { TaxInvoiceIdentity, InvoiceLanguage } from '../../../packages/receipt/src/tax-invoice';
+import { readMachineReference, type MachineRefReading } from '../../../packages/tender/src/machine-reference';
 
 import { mountDemoBanner, type BannerDocument } from '../../../packages/ui/src/demo-banner';
 
@@ -138,6 +140,15 @@ export interface PosLane {
    * Absent on a page from an older box: off.
    */
   readonly mirrorPilot?: { readonly on: boolean; readonly by: 'store_pack' | 'store_computer_setting' | null };
+  /**
+   * OB-271: whether this till is in REAL TRADING (its bill is the legal tax invoice) and who turned it on — the box's own
+   * `EDGE_REAL_TRADING=1` or the store pack. Absent on a page from an older box: off.
+   */
+  readonly realTrading?: { readonly on: boolean; readonly by: 'store_pack' | 'store_computer_setting' | null };
+  /** OB-271: the shop's legal identity for the tax invoice, from the store's setup in the pack — `null` when not set up. */
+  readonly taxInvoice?: TaxInvoiceIdentity | null;
+  /** OB-271: the bill's paper when no published receipt template names one (`thermal-80` or `thermal-58`). */
+  readonly billPaper?: string;
 }
 
 /** The browser global this bundle attaches to (typed without needing the DOM lib). */
@@ -252,7 +263,7 @@ export function laneOperator(port: number = DEFAULT_LANE_PORT): TillOperatorPort
 }
 
 /** What a manager's approval at the till is for (ADR-0021): the kind, the bill (not for a no-receipt return) and the amount. */
-export type TillApprovalKind = 'refund' | 'no_receipt_return' | 'exchange_refund' | 'no_sale' | 'price_override' | 'late_payment_answer';
+export type TillApprovalKind = 'refund' | 'no_receipt_return' | 'exchange_refund' | 'no_sale' | 'price_override' | 'late_payment_answer' | 'card_refund_on_machine';
 export interface TillApprovalRequest {
   readonly managerId: string;
   readonly pin: string;
@@ -379,12 +390,38 @@ export interface CardAttemptAnswer {
   /** asked · approved · declined · no_answer · recovered_paid · recovered_not_paid */
   readonly state?: string;
   readonly amountMinor?: number;
+  /** OB-271: the machine's approval / reference number the box recorded for an approved payment (real trading). */
+  readonly machineRef?: string;
 }
 /** The card/UPI attempt calls to this till's own store computer. */
 export interface PaymentAttemptsPort {
   ask(body: Record<string, unknown>): Promise<Record<string, unknown>>;
   answer(body: Record<string, unknown>): Promise<Record<string, unknown>>;
   recover(body: Record<string, unknown>): Promise<Record<string, unknown>>;
+  /** OB-271: the box's account of this till's card/UPI payments (GET), with each machine reference. Optional for test doubles. */
+  list?(): Promise<Record<string, unknown>>;
+}
+
+/** OB-271 · audit A9: one card or UPI payment as the box recorded it, with the machine's approval / reference number. */
+export interface CardPaymentRow {
+  readonly attemptId: string;
+  readonly kind: 'card' | 'upi';
+  readonly amountMinor: number;
+  readonly state: string;
+  readonly askedAt: string;
+  readonly askedBy: string;
+  readonly machineRef?: string;
+  readonly saleId?: string;
+}
+/** OB-271 · audit A11: a card/UPI refund done on the shop's own machine, as the box recorded it. */
+export interface CardRefundRow {
+  readonly returnId: string;
+  readonly kind: 'card' | 'upi';
+  readonly amountMinor: number;
+  readonly machineRef: string;
+  readonly at: string;
+  readonly by: string;
+  readonly approvedBy: string;
 }
 const UNREACHABLE_PAYMENT = 'This till cannot reach its store computer, so the payment was not recorded. Do not ask the card machine — take cash or use another lane.';
 
@@ -406,6 +443,10 @@ export function lanePaymentAttempts(port: number = DEFAULT_LANE_PORT): PaymentAt
     ask: (body) => post('/lane/payment-attempts', body),
     answer: (body) => post('/lane/payment-attempts/answer', body),
     recover: (body) => post('/lane/payment-attempts/recover', body),
+    list: async () => {
+      const response = await fetch(`${laneBase(port)}/lane/payment-attempts`, { headers: { ...operatorHeaders() } });
+      return await response.json() as Record<string, unknown>;
+    },
   };
 }
 
@@ -719,7 +760,7 @@ export interface ExchangeDraftInput {
     /** The customer a store-credit balance is issued to (M13-FR-03). */
     readonly customerRef?: string;
     /** How the customer pays the balance, when they owe one. Card/UPI carry what the terminal said (M12-FR-03). */
-    readonly topUp?: { readonly kind: 'cash' | 'card' | 'upi'; readonly outcome?: 'approved' | 'declined' | 'no_answer'; readonly ref?: string };
+    readonly topUp?: { readonly kind: 'cash' | 'card' | 'upi'; readonly outcome?: 'approved' | 'declined' | 'no_answer'; readonly ref?: string; readonly machineRef?: string };
   };
   readonly approval?: { readonly by: string; readonly reason: string; readonly approvalId?: string };
 }
@@ -849,11 +890,38 @@ export function bootPos(config?: {
   guestSalesOnly?: boolean;
   /** OB-256 · OB-258: the mirror pilot — every sale and refund is "Paid on old system" — as the box told the page. Absent = off. */
   mirrorPilot?: boolean;
+  /** OB-271: real trading — every sale's bill is the legal tax invoice, checked before the disk — as the box told the page. Absent = off. */
+  realTrading?: boolean;
+  /** OB-271: the shop's legal identity for the tax invoice (legal name, address, GSTIN) — `null`/absent when not set up. */
+  taxInvoice?: TaxInvoiceIdentity | null;
+  /** OB-271: the bill's paper when no receipt template names one (`thermal-80` default, or `thermal-58`). */
+  billPaper?: string;
 }): PosView & {
   /** OB-252: whether this till takes guest sales only — the screen shows it whenever it is on. */
   readonly guestSalesOnly: () => boolean;
   /** OB-256: whether this till is in the mirror pilot — then "Paid on old system" is its only tender, for sales and refunds. */
   readonly mirrorPilot: () => boolean;
+  /** OB-271: whether this till is in real trading — then each bill is the legal tax invoice, printed on paper. */
+  readonly realTrading: () => boolean;
+  /**
+   * OB-271: the TAX INVOICE of the sale this till last committed (real trading), laid out for paper in English or Tamil —
+   * a reprint marked DUPLICATE — or why there is none. Every Rule 46 field is checked on the render before it is handed out.
+   */
+  readonly taxInvoice: (options?: { readonly language?: InvoiceLanguage; readonly duplicate?: boolean }) => BillTaxInvoice;
+  /** OB-271: what the cashier typed as the card machine's / UPI's approval or reference number — the kept form, or why not. */
+  readonly readMachineRef: (typed: string) => MachineRefReading;
+  /**
+   * OB-271 · audit A9: the card and UPI payments this till's store computer recorded as paid, with the machine's approval /
+   * reference number for each, and the card/UPI refunds done on the machine — the list the day is matched against the
+   * machine's settlement slip with. `null` when the box did not answer.
+   */
+  readonly cardPayments: () => Promise<{ readonly paid: readonly CardPaymentRow[]; readonly unresolved: readonly CardPaymentRow[]; readonly refundsOnMachine: readonly CardRefundRow[] } | null>;
+  /**
+   * OB-271 · audit A11: a refund to a card or UPI, DONE on the shop's own machine — recorded on the store computer with the
+   * machine's own refund reference and a second person's approval (a manager, with their own PIN), instead of staying
+   * "pending" forever.
+   */
+  readonly recordCardRefundOnMachine: (input: { readonly returnId: string; readonly refundMinor: number; readonly refundTender: 'card' | 'upi'; readonly machineRef: string; readonly approval: { readonly approvalId: string } }) => Promise<{ readonly ok: boolean; readonly refusedBecause?: string; readonly laneMessage: string }>;
   /** A8 · RR-F02: the refund whose answer was lost, still waiting for the store computer — or null. */
   readonly pendingRefund: () => { readonly returnId: string; readonly number: string } | null;
   /** A8 · RR-F02: ask the store computer again about that refund (same record, same id) — one screen state, never throws. */
@@ -958,7 +1026,8 @@ export function bootPos(config?: {
   readonly startCardPayment: (kind: 'card' | 'upi', amountMinor?: number) => Promise<CardAttemptAnswer>;
   /** What the machine said, recorded on the store computer. On `approved`, pay with `tenderCardOrUpi({ ..., ref: attemptId })`. */
   /** OB-55: an answer for an attempt of an EARLIER trading day needs a manager's approval at this till (`approvalId`). */
-  readonly answerCardPayment: (attemptId: string, outcome: 'approved' | 'declined' | 'no_answer', approvalId?: string) => Promise<CardAttemptAnswer>;
+  /** OB-271: in real trading an `approved` answer carries the machine's approval / reference number (`machineRef`). */
+  readonly answerCardPayment: (attemptId: string, outcome: 'approved' | 'declined' | 'no_answer', approvalId?: string, machineRef?: string) => Promise<CardAttemptAnswer>;
   /** Settle a payment that got no answer against the PROVIDER's record — never by hand. */
   readonly checkCardPayment: (attemptId: string) => Promise<CardAttemptAnswer>;
   /**
@@ -1029,6 +1098,8 @@ export function bootPos(config?: {
       ...(config?.guestSalesOnly === true ? { guestSalesOnly: true } : {}),
       // OB-256: the mirror pilot — "Paid on old system" is the only tender.
       ...(config?.mirrorPilot === true ? { mirrorPilot: true } : {}),
+      // OB-271: real trading — the bill is the legal tax invoice, checked before the disk.
+      ...(config?.realTrading === true ? { realTrading: { identity: config.taxInvoice ?? null } } : {}),
     },
     new Ledger(new InMemoryLedgerStore()),
     outbox,
@@ -1210,7 +1281,11 @@ export function bootPos(config?: {
               // The terminal did not approve: declined is declined, and silence is NOT approval (M12-FR-03) — nothing is recorded.
               return { kind: 'refused', laneMessage: topUp.outcome === 'declined' ? 'The card/UPI payment was declined. Nothing was recorded — the goods stay on the counter.' : 'The terminal has not answered. Do not hand over the goods — nothing was recorded; try again once the machine answers.' };
             }
-            tenders.push({ kind: topUp.kind, amount: money(q.balanceMinor, 'INR'), status: topUp.kind === 'cash' ? 'settled' : 'authorized', ...(topUp.ref === undefined ? {} : { ref: topUp.ref }) });
+            tenders.push({
+              kind: topUp.kind, amount: money(q.balanceMinor, 'INR'), status: topUp.kind === 'cash' ? 'settled' : 'authorized', ...(topUp.ref === undefined ? {} : { ref: topUp.ref }),
+              // OB-271: the shop's own machine's approval number, in real trading.
+              ...(topUp.machineRef === undefined || topUp.machineRef === '' ? {} : { machineRef: topUp.machineRef }),
+            });
             topUpTenders = [{ kind: topUp.kind, amountMinor: q.balanceMinor }];
           }
           if (!settle(money(q.replacementTotalMinor, 'INR'), tenders).fullyPaid) {
@@ -1294,6 +1369,14 @@ export function bootPos(config?: {
 
   const receiptTemplate = (): PosReceiptTemplate | null => config?.receiptTemplate ?? null;
   const receiptLines = (): BillReceipt => billReceipt(session.lastBill(), receiptTemplate());
+  // OB-271: the tax invoice of the last real-trading sale, on the template's paper, else the box's own paper, else 80 mm.
+  const billPaperTemplate = (): { readonly version: number; readonly header: readonly string[]; readonly footer: readonly string[]; readonly paperFormat?: string } | null => {
+    const t = receiptTemplate();
+    if (t !== null) return t.paperFormat === undefined && config?.billPaper !== undefined ? { ...t, paperFormat: config.billPaper } : t;
+    return config?.billPaper === undefined ? null : { version: 0, header: [], footer: [], paperFormat: config.billPaper };
+  };
+  const taxInvoice = (options: { readonly language?: InvoiceLanguage; readonly duplicate?: boolean } = {}): BillTaxInvoice =>
+    billTaxInvoice(session.lastBill(), { template: billPaperTemplate(), ...options });
 
   // The cashier signs in ONCE for both surfaces — the sale and the till name the same person (SP-4b · F09).
   // D04-FR-05 · P-08: the device re-send runs only while somebody is signed in (it is defined further down).
@@ -1421,10 +1504,26 @@ export function bootPos(config?: {
     return { ok: true, laneMessage: 'Recorded — the drawer may be opened.', activityId };
   };
 
+  // OB-271 · audit A11: a card/UPI refund done on the shop's own machine — a till action on the box with the machine's refund
+  // reference and a manager's approval spent for exactly this refund and amount; recorded before the cashier is told "done".
+  const recordCardRefundOnMachine = async (input: { readonly returnId: string; readonly refundMinor: number; readonly refundTender: 'card' | 'upi'; readonly machineRef: string; readonly approval: { readonly approvalId: string } }): Promise<TillActivityAnswer> => {
+    if (session.operator() === undefined) return { ok: false, refusedBecause: 'operator_not_signed_in', laneMessage: new NoOperatorError('record a card refund').laneMessage };
+    const ref = readMachineReference(input.machineRef);
+    if (!ref.ok) return { ok: false, refusedBecause: ref.refusedBecause, laneMessage: ref.laneMessage };
+    const activityId = `R-${newRequestKey().slice(3)}`;
+    const body = {
+      activityId, kind: 'card_refund_on_machine', billRef: input.returnId, valueMinor: input.refundMinor, refundTender: input.refundTender,
+      machineRef: ref.value, reason: 'refund done on the shop\'s card machine', approvalId: input.approval.approvalId,
+    };
+    const r = await sendTillActivity(body, 'This till cannot reach its store computer, so the card refund was not recorded. It stays pending — try again.');
+    if (r['recorded'] !== true) return refusedActivity(r, 'The card refund was not recorded. It stays pending.');
+    return { ok: true, laneMessage: 'Recorded — the refund was done on the machine.', activityId };
+  };
+
   // CARD AND UPI (audit PF-06): the attempt is on the store computer before the machine is asked.
   const payments = config?.paymentsPort ?? lanePaymentAttempts(config?.lanePort ?? DEFAULT_LANE_PORT);
   const cardAnswer = (r: Record<string, unknown>): CardAttemptAnswer => {
-    const a = (r['attempt'] ?? {}) as { attemptId?: unknown; state?: unknown; amountMinor?: unknown };
+    const a = (r['attempt'] ?? {}) as { attemptId?: unknown; state?: unknown; amountMinor?: unknown; machineRef?: unknown };
     return {
       ok: r['ok'] === true,
       laneMessage: typeof r['laneMessage'] === 'string' ? r['laneMessage'] : UNREACHABLE_PAYMENT,
@@ -1432,6 +1531,8 @@ export function bootPos(config?: {
       ...(typeof a.attemptId === 'string' ? { attemptId: a.attemptId } : {}),
       ...(typeof a.state === 'string' ? { state: a.state } : {}),
       ...(typeof a.amountMinor === 'number' ? { amountMinor: a.amountMinor } : {}),
+      // OB-271: the machine's approval / reference number the box recorded for this payment, when it has one.
+      ...(typeof a.machineRef === 'string' ? { machineRef: a.machineRef } : {}),
     };
   };
   // The amount is the bill's payable, or — for an exchange's top-up — the difference the customer pays.
@@ -1441,9 +1542,36 @@ export function bootPos(config?: {
     if (amountMinor <= 0) return { ok: false, refusedBecause: 'nothing_to_pay', laneMessage: 'There is nothing to pay.' };
     return cardAnswer(await payments.ask({ attemptId: `PAY-${newRequestKey().slice(3)}`, billRef: session.billRef(), kind, amountMinor }));
   };
-  const answerCardPayment = async (attemptId: string, outcome: 'approved' | 'declined' | 'no_answer', approvalId?: string): Promise<CardAttemptAnswer> =>
-    cardAnswer(await payments.answer({ attemptId, outcome, ...(approvalId === undefined ? {} : { approvalId }) }));
+  const answerCardPayment = async (attemptId: string, outcome: 'approved' | 'declined' | 'no_answer', approvalId?: string, machineRef?: string): Promise<CardAttemptAnswer> =>
+    cardAnswer(await payments.answer({ attemptId, outcome, ...(approvalId === undefined ? {} : { approvalId }), ...(machineRef === undefined || machineRef === '' ? {} : { machineRef }) }));
   const checkCardPayment = async (attemptId: string): Promise<CardAttemptAnswer> => cardAnswer(await payments.recover({ attemptId }));
+  // OB-271 · audit A9: the box's list of card/UPI payments with each machine reference, for the day's matching.
+  const cardPayments = async (): Promise<{ readonly paid: readonly CardPaymentRow[]; readonly unresolved: readonly CardPaymentRow[]; readonly refundsOnMachine: readonly CardRefundRow[] } | null> => {
+    if (payments.list === undefined) return null;
+    const r = await payments.list().catch(() => null);
+    if (r === null || !Array.isArray(r['paid'])) return null;
+    const rowOf = (a: unknown): CardPaymentRow => {
+      const o = (a ?? {}) as Record<string, unknown>;
+      return {
+        attemptId: String(o['attemptId'] ?? ''), kind: o['kind'] === 'upi' ? 'upi' : 'card', amountMinor: typeof o['amountMinor'] === 'number' ? o['amountMinor'] : 0,
+        state: String(o['state'] ?? ''), askedAt: String(o['askedAt'] ?? ''), askedBy: String(o['askedBy'] ?? ''),
+        ...(typeof o['machineRef'] === 'string' ? { machineRef: o['machineRef'] } : {}),
+        ...(typeof o['appliedToSaleId'] === 'string' ? { saleId: o['appliedToSaleId'] } : {}),
+      };
+    };
+    const refundOf = (a: unknown): CardRefundRow => {
+      const o = (a ?? {}) as Record<string, unknown>;
+      return {
+        returnId: String(o['returnId'] ?? ''), kind: o['refundTender'] === 'upi' ? 'upi' : 'card', amountMinor: typeof o['refundMinor'] === 'number' ? o['refundMinor'] : 0,
+        machineRef: String(o['machineRef'] ?? ''), at: String(o['at'] ?? ''), by: String(o['by'] ?? ''), approvedBy: String(o['approvedBy'] ?? ''),
+      };
+    };
+    return {
+      paid: (r['paid'] as unknown[]).map(rowOf),
+      unresolved: Array.isArray(r['unresolved']) ? (r['unresolved'] as unknown[]).map(rowOf) : [],
+      refundsOnMachine: Array.isArray(r['refundsOnMachine']) ? (r['refundsOnMachine'] as unknown[]).map(refundOf) : [],
+    };
+  };
 
   const abandonAtTill = async (billId: string, reason: string): Promise<HeldAnswer> => {
     const r = await held.abandon(billId, reason);
@@ -1591,8 +1719,10 @@ export function bootPos(config?: {
   };
   const guestSalesOnly = (): boolean => config?.guestSalesOnly === true;
   const mirrorPilot = (): boolean => config?.mirrorPilot === true;
+  const realTrading = (): boolean => config?.realTrading === true;
+  const readMachineRef = (typed: string): MachineRefReading => readMachineReference(typed);
 
-  return Object.assign(view, { guestSalesOnly, mirrorPilot, pendingRefund, confirmPendingRefund, saleOnBox, refundOnBox, customerDisplay, customerDisplayChannelName, reportDevices, devicesSaid, deviceAdapterClock, deviceHeartbeat, till, nextReceipt, receiptsRemaining, receiptNotice, holdAtTill, heldAtTill, recallAtTill, abandonAtTill, startCardPayment, answerCardPayment, checkCardPayment, voidAtTill, priceChangeValue, priceChangeAtTill, noSaleAtTill, currentBillRef: () => session.billRef(), lookupRefund, lookupRefundByOldBill, readOldBill, noReceiptReturn, receiptTemplate, receiptLines, signIn, signOut, operator, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill, loyaltyWallet, refusedOffers: () => session.refusedOffers() });
+  return Object.assign(view, { guestSalesOnly, mirrorPilot, realTrading, taxInvoice, readMachineRef, cardPayments, recordCardRefundOnMachine, pendingRefund, confirmPendingRefund, saleOnBox, refundOnBox, customerDisplay, customerDisplayChannelName, reportDevices, devicesSaid, deviceAdapterClock, deviceHeartbeat, till, nextReceipt, receiptsRemaining, receiptNotice, holdAtTill, heldAtTill, recallAtTill, abandonAtTill, startCardPayment, answerCardPayment, checkCardPayment, voidAtTill, priceChangeValue, priceChangeAtTill, noSaleAtTill, currentBillRef: () => session.billRef(), lookupRefund, lookupRefundByOldBill, readOldBill, noReceiptReturn, receiptTemplate, receiptLines, signIn, signOut, operator, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill, loyaltyWallet, refusedOffers: () => session.refusedOffers() });
 }
 
 // Attach for the view. `app.js` uses `window.posSession` when present and falls back to its
@@ -1617,6 +1747,9 @@ if (browserWindow !== undefined) {
     ...(lane?.guestSalesOnly?.on === true ? { guestSalesOnly: true } : {}),
     // OB-256: the mirror pilot, when the box says so — "Paid on old system" is then the only tender.
     ...(lane?.mirrorPilot?.on === true ? { mirrorPilot: true } : {}),
+    // OB-271: real trading, when the box says so — each bill is the legal tax invoice, from the shop's setup in the pack.
+    ...(lane?.realTrading?.on === true ? { realTrading: true, taxInvoice: lane.taxInvoice ?? null } : {}),
+    ...(typeof lane?.billPaper === 'string' ? { billPaper: lane.billPaper } : {}),
     ...(browserWindow.posReceiptTemplate === undefined ? {} : { receiptTemplate: browserWindow.posReceiptTemplate }),
     // The refund policy the box was given (SP-9b-i): without it the till offers no return without a receipt.
     ...(browserWindow.posRefundPolicy === undefined ? {} : { refundPolicy: browserWindow.posRefundPolicy }),

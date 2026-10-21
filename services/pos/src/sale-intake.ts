@@ -95,6 +95,11 @@ export interface IncomingTender {
   readonly amountMinor: number;
   /** A provider token or reference. Never a card number (hard rule #3): one shaped like it is removed before banking. */
   readonly ref?: string;
+  /**
+   * OB-271 · audit A9: on a card/UPI tender in real trading, the approval / reference number the shop's OWN machine showed
+   * (OB-274: 4–20 letters or digits from any machine, typed from the slip; never card data) — what the day is matched against the machine's slip by.
+   */
+  readonly machineRef?: string;
   /** On a `loyalty_points` tender: the whole points the store computer took for this amount (PF-09 step 3). */
   readonly points?: number;
   /** C10: on a card tender, the ONLY card facts kept — the network-token reference, the last four digits, the network. */
@@ -126,6 +131,11 @@ export interface IncomingSale {
   readonly packVersion: number;
   readonly lines: readonly IncomingSaleLine[];
   readonly tenders: readonly IncomingTender[];
+  /**
+   * OB-279 (real trading): what rounding the bill's CGST and SGST to the rupee added (+) or took off (−) — at most ₹1 either
+   * way. The total is the lines plus this. Absent on every other bill.
+   */
+  readonly roundOffMinor?: number;
   /**
    * The store computer's sealed stamp on the cashier it verified at the till (ADR-0023): who, how, which till, and the
    * box's seal over that and this sale. Untrusted as it arrives — head office checks the seal, never takes it on trust.
@@ -341,7 +351,10 @@ export function acceptSale(sale: IncomingSale, ctx: IntakeContext): IntakeResult
       { differenceMinor: tendered - sale.totalMinor });
   }
 
-  const lineSum = sale.lines.reduce((t, l) => t + l.lineTotalMinor, 0);
+  // OB-279 · OB-285: a real-trading bill's total is its lines plus the stated round off — below 0 and at most ₹1, since a
+  // bill is never above its lines; any other round off is not counted, so the bill shows as not adding up.
+  const roundOff = Number.isSafeInteger(sale.roundOffMinor) && (sale.roundOffMinor as number) <= 0 && (sale.roundOffMinor as number) >= -100 ? sale.roundOffMinor as number : 0;
+  const lineSum = sale.lines.reduce((t, l) => t + l.lineTotalMinor, 0) + roundOff;
   if (sale.lines.length > 0 && lineSum !== sale.totalMinor) {
     add('lines_do_not_sum_to_total', 'material',
       `the lines add to ${lineSum} against a total of ${sale.totalMinor}`,

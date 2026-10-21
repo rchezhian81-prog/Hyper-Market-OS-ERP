@@ -257,6 +257,13 @@ export interface SetupDeps {
 
 export interface SetupOutcome { readonly exitCode: 0 | 1 | 2; readonly lines: readonly string[] }
 
+/** A short, stable key for a place of business (a request key may not carry the address itself): FNV-1a over its lines. */
+function placeKey(lines: readonly string[]): string {
+  let h = 0x811c9dc5;
+  for (const ch of lines.join('|')) { h ^= ch.codePointAt(0)!; h = Math.imul(h, 0x01000193) >>> 0; }
+  return h.toString(16).padStart(8, '0');
+}
+
 /** The privacy reply time every store promises — fixed by OB-195; the settings route refuses any other value. */
 export const PRIVACY_REPLY_DAYS = 15;
 /** The login the store PC's till syncs as: its store token is made for this name (scripts/install-till.mjs, W-5). */
@@ -306,6 +313,14 @@ function planStep(step: SetupStep, v: Readonly<Record<string, string | undefined
       const gstin = need('gstin', GSTIN_SHAPE, 'the 15-character GSTIN, in capital letters and digits');
       const store = need('store', CODE, 'a short code for this store, e.g. SRE-MAIN');
       const storeName = named('store-name', 2, "the store's name");
+      // OB-271 · OB-278: the store's PLACE OF BUSINESS as its tax invoice prints it (CGST Rule 46(a)) — optional (the mirror
+      // pilot needs none; a real-trading bill without it is refused at the till). Lines split by "|", blank ones dropped,
+      // at most 4 lines of at most 80 characters, so the owner types it on one PowerShell line.
+      const placeRaw = (v['place-of-business'] ?? '').trim();
+      const place = placeRaw === '' ? [] : placeRaw.split('|').map((l) => l.trim()).filter((l) => l !== '');
+      if (placeRaw !== '' && (place.length === 0 || place.length > 4 || place.some((l) => l.length > 80))) {
+        problems.push('--place-of-business "<the store\'s address as the bill prints it: up to 4 lines of up to 80 characters, split by |>"');
+      }
       if (problems.length > 0) return { problems };
       return {
         planned: {
@@ -313,13 +328,19 @@ function planStep(step: SetupStep, v: Readonly<Record<string, string | undefined
           plan: [
             `1. Record the company ${company} under its legal name "${legalName}".`,
             `2. Record the GST registration ${gstin} for "${legalName}" (head office checks the GSTIN's check digit).`,
-            `3. Record the store ${store} ("${storeName}") under the company, filed under GSTIN ${gstin}.`,
+            `3. Record the store ${store} ("${storeName}") under the company, filed under GSTIN ${gstin}${place.length === 0 ? '' : `, its place of business for the bill: ${place.join(', ')}`}.`,
             `4. Make the store ${store} active.`,
           ],
           calls: [
             { as, method: 'POST', path: `/v1/org/nodes/${encodeURIComponent(company)}`, body: { kind: 'company', name: legalName }, key: `owner-setup-company-${company}`, ok: [200, 201], said: () => `company ${company} recorded` },
             { as, method: 'POST', path: `/v1/org/gst-registrations/${encodeURIComponent(gstin)}`, body: { companyId: company, legalName }, key: `owner-setup-gstin-${gstin}`, ok: [200, 201], said: () => `GST registration ${gstin} recorded for "${legalName}"` },
-            { as, method: 'POST', path: `/v1/org/nodes/${encodeURIComponent(store)}`, body: { kind: 'branch', name: storeName, parentId: company, companyId: company, gstin }, key: `owner-setup-store-${store}`, ok: [200, 201], said: () => `store ${store} ("${storeName}") recorded under ${company}` },
+            {
+              as, method: 'POST', path: `/v1/org/nodes/${encodeURIComponent(store)}`,
+              body: { kind: 'branch', name: storeName, parentId: company, companyId: company, gstin, ...(place.length === 0 ? {} : { placeOfBusiness: place }) },
+              // A place of business is its own request: the same store typed again with a new address is a new, named fact.
+              key: place.length === 0 ? `owner-setup-store-${store}` : `owner-setup-store-${store}-place-${placeKey(place)}`, ok: [200, 201],
+              said: () => `store ${store} ("${storeName}") recorded under ${company}${place.length === 0 ? '' : ', with its place of business'}`,
+            },
             { as, method: 'POST', path: `/v1/org/nodes/${encodeURIComponent(store)}/activation`, body: {}, key: `owner-setup-store-${store}-activation`, ok: [200, 201], said: () => `store ${store} is active` },
           ],
           done: `DONE — the shop is set up at head office on this computer: company ${company} ("${legalName}"), GSTIN ${gstin}, store ${store} active. Done as ${as}.`,

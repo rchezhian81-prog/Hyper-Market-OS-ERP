@@ -40,12 +40,15 @@ export type ApprovalKind = 'refund' | 'no_receipt_return' | 'exchange_refund' | 
   /** OB-55 / PF-06: the machine's answer for a card/UPI attempt of an EARLIER trading day, typed in late — a manager's
    *  approval for exactly that attempt (`billRef` = the attempt id) and its amount. */
   | 'late_payment_answer'
+  /** OB-271 · audit A11: a card/UPI refund DONE on the shop's own machine (`billRef` = the refund's id), for its amount — a
+   *  second person confirms it with their own PIN before it is recorded as paid out. */
+  | 'card_refund_on_machine'
   /** OB-55: a second person's approval to close the day with named card/UPI payments carried forward. Issued and spent
    *  only by `approveDayCloseException` — never through `grant` (it is not in KINDS). */
   | 'day_close_exception';
 /** OB-55: who may approve closing the day with pending payments carried forward — the day-close approval authority. */
 export const DAY_CLOSE_EXCEPTION_AUTHORITY = 'till.dayclose.approve';
-const KINDS: readonly ApprovalKind[] = ['refund', 'no_receipt_return', 'exchange_refund', 'no_sale', 'price_override', 'late_payment_answer'];
+const KINDS: readonly ApprovalKind[] = ['refund', 'no_receipt_return', 'exchange_refund', 'no_sale', 'price_override', 'late_payment_answer', 'card_refund_on_machine'];
 /** The overrides (PF-07): approved by `OVERRIDE_AUTHORITY`, spent by the till action they were given for. */
 export const OVERRIDE_KINDS: readonly ApprovalKind[] = ['no_sale', 'price_override'];
 
@@ -283,7 +286,7 @@ export class TillApprovals {
    * override always needs one: there is no threshold below which a cashier overrides alone (§28).
    */
   async spendOverride(input: {
-    readonly approvalId: unknown; readonly kind: 'no_sale' | 'price_override' | 'late_payment_answer'; readonly billRef: string | null; readonly valueMinor: number;
+    readonly approvalId: unknown; readonly kind: 'no_sale' | 'price_override' | 'late_payment_answer' | 'card_refund_on_machine'; readonly billRef: string | null; readonly valueMinor: number;
     readonly requestedBy: string; readonly laneId: string; readonly activityId: string;
   }): Promise<ReturnCheck> {
     const say: Record<'approval_required' | 'approval_unknown' | 'approval_expired' | 'approval_already_used' | 'approval_does_not_match', string> = {
