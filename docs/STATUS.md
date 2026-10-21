@@ -5,7 +5,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
-## Round 5 (21 October 2026) — evening check, office PIN completeness, store-PC fit, real-trading prep — gate: 13,449 unit/integration (16 skipped), 53 performance, 473 of 474 browser (the evening-check e2e read the screen mid-render under load; now waits, passes)
+## Round 5 (21 October 2026) — evening check, office PIN completeness, store-PC fit, real-trading prep — gate: 13,449 unit/integration (16 skipped), 53 performance, 473 of 474 browser (the evening-check e2e read the screen mid-render under load; now waits, passes); merged (PR #802) and deployed to the demo
 
 - Merged on the branch: the evening check from the old ERP's two files (OB-263, OB-272, OB-273); office doors on the lane socket need the office PIN, staff type their own new PIN, steadier tests; the store-PC fit for the owner's real PC (data on F:, never on the Windows Server that runs the old ERP, backups only to USB, shared-PC checks; OB-281 to OB-284); real-trading preparation switched OFF (legal Rule 46 bill, Invoice-cum-Bill of Supply, per-tax rounding never above MRP, printing through any Windows printer, generic approval number; OB-271, OB-274, OB-278 to OB-280, OB-285).
 - Owner delegated: vendor-neutral hardware (OB-274), no header rows needed (OB-275), pilot department packaged groceries (OB-276), designation logins (OB-277). OB-243 closed.
