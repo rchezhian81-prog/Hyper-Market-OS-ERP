@@ -19,6 +19,12 @@ export interface Tender {
    */
   readonly ref?: string;
   /**
+   * OB-271 (audit A9): the approval code or reference number the shop's OWN card machine or UPI showed for this payment,
+   * typed by the cashier from the machine's slip (`readMachineReference` — 4 to 12 letters or digits, never card data), so
+   * the day can be matched against the machine's settlement slip. Absent in the mirror pilot and on older records.
+   */
+  readonly machineRef?: string;
+  /**
    * C10: on a card tender, the ONLY card facts kept — the network-token reference, the last four digits and the network.
    * Read through `readCardTokenReference`, which refuses any other field and any value shaped like a card number.
    */

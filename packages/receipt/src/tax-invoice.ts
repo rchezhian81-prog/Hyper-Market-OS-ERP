@@ -1,0 +1,502 @@
+// The LEGAL GST tax invoice on the till's bill (OB-271 · roadmap v2.1 A1, A2, A4, A8, A9 · CGST Rule 46 · hard rule #1).
+//
+// During the mirror pilot (OB-248) the old ERP's bill is the legal record and the new till's bill is never handed over.
+// For real trading the new till's bill IS the tax invoice, so it must carry every field Rule 46 requires — or not be
+// issued at all. This file is that rule, pure and local (no network, no clock):
+//
+//   • `buildTaxInvoice` assembles the invoice from the committed bill and the shop's legal identity (its legal name,
+//     address and GSTIN, from the store's setup) and runs the A1 checker (`checkTaxInvoiceFields`) on every line, with the
+//     HSN digit rule for the owner's turnover band (A4, OB-149: 6 digits), the CGST + SGST split for an over-the-counter
+//     sale with the store's State as the place of supply (A8), and the tax pulled out of the MRP to the paisa (A9). Any
+//     missing field is a REFUSAL with the plain words for it — the till refuses the sale before the disk, so a
+//     non-compliant bill can never be issued;
+//   • `taxInvoiceRows` lays the invoice out for paper (80 mm, or 58 mm), in English or Tamil, every field row tagged with
+//     the field it carries, and a reprint marked DUPLICATE;
+//   • `invoiceRenderProblems` is the contract: it reads a rendered invoice back and names every mandatory field the
+//     render does not show. The till prints only a render with none missing.
+//
+// Not decided here (reported, not guessed): a basket with an exempt or nil-rated line (Bill of Supply, Rule 49, or an
+// invoice-cum-bill of supply, Rule 46A) and a bill of ₹50,000 or more to an unregistered buyer (the buyer's name and
+// address, Rule 46(e)) are REFUSED on the new till until the owner decides; the nearest-rupee rounding of each tax
+// component (A10) is not printed until the owner decides where it applies — the bill shows the exact paisa (A9).
+
+import { checkTaxInvoiceFields } from '../../finance/src/invoice-fields';
+import { validateHsnForTurnover, InvalidHsnInput, OWNER_TURNOVER_BAND_FOR_HSN_MINOR } from '../../finance/src/hsn';
+import { extractInclusiveGst, InvalidInclusiveTaxInput } from '../../finance/src/inclusive-tax';
+import { gstStateOf } from '../../finance/src/gst-states';
+import { quantityLabel, normaliseUom } from '../../contracts/src/quantity';
+
+/** The shop's legal identity as a tax invoice prints it — from the store's setup (OB-257 `shop`), never typed at a till. */
+export interface TaxInvoiceIdentity {
+  /** The legal name exactly as on the GST registration certificate. */
+  readonly legalName: string;
+  /** The 15-character GSTIN the store's sales are filed under. */
+  readonly gstin: string;
+  /** The store's address (its place of business), one printed line per entry. */
+  readonly address: readonly string[];
+}
+
+/** One bill line, as the till committed it (GST inside the line total — A9). */
+export interface TaxInvoiceLineInput {
+  readonly description: string;
+  readonly hsnCode?: string;
+  /** Quantity in the unit's smallest step (2 ea, 1234 g). */
+  readonly quantityMinor: number;
+  readonly uom: string;
+  readonly unitPriceMinor: number;
+  /** What the line was charged, GST inside, after any discount attributed to it. */
+  readonly lineTotalMinor: number;
+  readonly taxRateBps: number;
+}
+
+export interface TaxInvoiceTenderInput {
+  readonly kind: string;
+  readonly amountMinor: number;
+  /** OB-271: the card machine's or UPI's approval / reference number the cashier typed (never card data). */
+  readonly machineRef?: string;
+}
+
+export interface TaxInvoiceInput {
+  readonly identity: TaxInvoiceIdentity | null | undefined;
+  /** The gap-free bill number the store computer issued (A2/A3) — the invoice's serial number. */
+  readonly number: string;
+  /** When the sale was committed (ISO-8601 UTC) — the invoice's date and time of issue, in India time. */
+  readonly committedAt: string;
+  readonly laneId: string;
+  readonly cashierId: string;
+  readonly lines: readonly TaxInvoiceLineInput[];
+  /** What the customer paid with — printed, never part of the legal check. */
+  readonly tenders?: readonly TaxInvoiceTenderInput[];
+  readonly changeMinor?: number;
+  /** The annual turnover the HSN digit rule is judged at. Absent → the owner's band (OB-149: above ₹5 crore → 6 digits). */
+  readonly annualTurnoverMinor?: number;
+}
+
+export interface TaxInvoiceLine {
+  readonly description: string;
+  readonly hsnCode: string;
+  readonly quantityMinor: number;
+  readonly uom: string;
+  readonly unitPriceMinor: number;
+  readonly rateBps: number;
+  /** The value of supply (A9): the line total with the GST pulled out, to the paisa. */
+  readonly taxableMinor: number;
+  readonly cgstMinor: number;
+  readonly sgstMinor: number;
+  /** taxable + CGST + SGST — exactly what the line was charged. */
+  readonly lineTotalMinor: number;
+}
+
+/** One GST rate on the bill: what it applied to and the CGST and SGST it gave (half the rate each — A8). */
+export interface TaxInvoiceBand {
+  readonly rateBps: number;
+  readonly taxableMinor: number;
+  readonly cgstMinor: number;
+  readonly sgstMinor: number;
+}
+
+export interface TaxInvoiceDocument {
+  readonly title: 'Tax Invoice';
+  readonly supplier: { readonly legalName: string; readonly address: readonly string[]; readonly gstin: string; readonly stateCode: string; readonly stateName: string };
+  readonly number: string;
+  /** YYYY-MM-DD, India time. */
+  readonly date: string;
+  /** HH:MM, India time. */
+  readonly time: string;
+  /** An over-the-counter sale: supplied in the store's own State (A8). */
+  readonly placeOfSupply: { readonly kind: 'intra_state'; readonly stateCode: string; readonly stateName: string };
+  /** Tax is never payable by the buyer on reverse charge for a retail counter sale (Rule 46(p)). */
+  readonly reverseCharge: false;
+  readonly lines: readonly TaxInvoiceLine[];
+  readonly bands: readonly TaxInvoiceBand[];
+  readonly taxableMinor: number;
+  readonly cgstMinor: number;
+  readonly sgstMinor: number;
+  readonly totalTaxMinor: number;
+  readonly totalMinor: number;
+  readonly tenders: readonly TaxInvoiceTenderInput[];
+  readonly changeMinor?: number;
+  readonly laneId: string;
+  readonly cashierId: string;
+}
+
+/** What is missing or wrong, by field, with the words for a cashier. Several may come back at once. */
+export type TaxInvoiceProblemCode =
+  | 'supplier_legal_name' | 'supplier_address' | 'supplier_gstin' | 'place_of_supply'
+  | 'invoice_number' | 'invoice_date'
+  | 'line_description' | 'line_quantity' | 'line_unit' | 'line_hsn' | 'line_hsn_digits' | 'line_rate' | 'line_taxable_value'
+  | 'exempt_line' | 'recipient_details' | 'totals';
+
+export interface TaxInvoiceProblem {
+  readonly code: TaxInvoiceProblemCode;
+  /** The line (0-based) a line problem is about. */
+  readonly line?: number;
+  readonly words: string;
+}
+
+export type TaxInvoiceBuild =
+  | { readonly ok: true; readonly doc: TaxInvoiceDocument }
+  | { readonly ok: false; readonly problems: readonly TaxInvoiceProblem[]; readonly laneMessage: string };
+
+/** Rule 46(e): a supply to an unregistered buyer of this taxable value or more needs the buyer's name and address. */
+export const UNREGISTERED_RECIPIENT_DETAILS_FROM_MINOR = 50_000_00;
+
+/** India time is UTC+05:30 all year (no daylight saving). */
+const IST_OFFSET_MINUTES = 330;
+
+/** The date and time of issue in India time, from an ISO-8601 instant — or `undefined` when it is not one. */
+export function indiaDateTime(iso: string): { readonly date: string; readonly time: string } | undefined {
+  const ms = Date.parse(iso);
+  if (Number.isNaN(ms)) return undefined;
+  const local = new Date(ms + IST_OFFSET_MINUTES * 60_000).toISOString();
+  return { date: local.slice(0, 10), time: local.slice(11, 16) };
+}
+
+const SETUP_NEXT = 'The shop\'s setup must be completed by the owner before real trading.';
+const PROBLEM_WORDS: Readonly<Record<TaxInvoiceProblemCode, string>> = {
+  supplier_legal_name: 'the shop\'s legal name is not set up',
+  supplier_address: 'the shop\'s address is not set up',
+  supplier_gstin: 'the shop\'s GSTIN is not set up or is not a valid GSTIN',
+  place_of_supply: 'the State the shop is registered in cannot be read from its GSTIN',
+  invoice_number: 'the bill number is not a valid invoice number (up to 16 letters, digits, - or /)',
+  invoice_date: 'the date of the bill cannot be read',
+  line_description: 'an item has no name',
+  line_quantity: 'an item has no quantity',
+  line_unit: 'an item has no unit',
+  line_hsn: 'an item has no HSN code (or not a code of digits)',
+  line_hsn_digits: 'an item\'s HSN code is too short (at least 6 digits are needed at this shop\'s turnover)',
+  line_rate: 'an item\'s GST rate cannot be split into CGST and SGST',
+  line_taxable_value: 'an item has no value',
+  exempt_line: 'an item is exempt or nil-rated (no GST) — the owner has not yet decided how such an item is billed on the new till',
+  recipient_details: 'the bill is ₹50,000 or more, which needs the customer\'s name and address — the new till does not take them yet',
+  totals: 'the GST and the values do not add up to the total',
+};
+
+/** Plain words for a refusal: what is missing, and what to do. Never repeats a value that was not readable. */
+function refusalWords(problems: readonly TaxInvoiceProblem[], descriptions: readonly string[]): string {
+  const seen = new Set<string>();
+  const parts: string[] = [];
+  for (const p of problems) {
+    const item = p.line === undefined ? '' : `${descriptions[p.line] || `item ${p.line + 1}`}: `;
+    const words = `${item}${p.words}`;
+    if (!seen.has(words)) { seen.add(words); parts.push(words); }
+  }
+  const setup = problems.some((p) => p.code.startsWith('supplier_') || p.code === 'place_of_supply');
+  const catalogue = problems.some((p) => p.code === 'line_hsn' || p.code === 'line_hsn_digits' || p.code === 'line_rate');
+  const oldSystem = problems.some((p) => p.code === 'exempt_line' || p.code === 'recipient_details');
+  const next = [
+    ...(setup ? [SETUP_NEXT] : []),
+    ...(catalogue ? ['Head office must correct the item in the price list.'] : []),
+    ...(oldSystem ? ['Bill this on the old system for now.'] : []),
+  ];
+  return `This bill cannot be issued as a legal tax invoice, so it was NOT saved — do not take money. ${parts.join('; ')}.${next.length === 0 ? ' Tell the manager.' : ` ${next.join(' ')}`}`;
+}
+
+const isWholeNonNeg = (n: unknown): n is number => typeof n === 'number' && Number.isSafeInteger(n) && n >= 0;
+
+/**
+ * Assemble the Rule 46 tax invoice for a committed bill, or refuse with every missing field named. Pure; never throws.
+ * The A1 checker runs on every line with the invoice's own number, date, GSTIN and place of supply.
+ */
+export function buildTaxInvoice(input: TaxInvoiceInput): TaxInvoiceBuild {
+  const problems: TaxInvoiceProblem[] = [];
+  const add = (code: TaxInvoiceProblemCode, line?: number): void => {
+    if (!problems.some((p) => p.code === code && p.line === line)) problems.push({ code, ...(line === undefined ? {} : { line }), words: PROBLEM_WORDS[code] });
+  };
+
+  const id = input.identity ?? undefined;
+  const legalName = typeof id?.legalName === 'string' ? id.legalName.trim() : '';
+  const gstin = typeof id?.gstin === 'string' ? id.gstin.trim().toUpperCase() : '';
+  const address = Array.isArray(id?.address) ? id!.address.filter((l): l is string => typeof l === 'string').map((l) => l.trim()).filter((l) => l !== '') : [];
+  if (legalName === '') add('supplier_legal_name');
+  if (address.length === 0) add('supplier_address');
+  const state = gstStateOf(gstin);
+  if (gstin !== '' && state === undefined) add('place_of_supply');
+
+  const when = indiaDateTime(input.committedAt);
+  const date = when?.date ?? '';
+  const turnover = input.annualTurnoverMinor ?? OWNER_TURNOVER_BAND_FOR_HSN_MINOR;
+
+  if (input.lines.length === 0) add('line_description', 0);
+  const lines: TaxInvoiceLine[] = [];
+  input.lines.forEach((l, i) => {
+    const description = typeof l.description === 'string' ? l.description.trim() : '';
+    if (description === '') add('line_description', i);
+    if (!isWholeNonNeg(l.quantityMinor) || l.quantityMinor === 0) add('line_quantity', i);
+    if (typeof l.uom !== 'string' || l.uom.trim() === '') add('line_unit', i);
+    const hsn = typeof l.hsnCode === 'string' ? l.hsnCode.trim() : '';
+    if (hsn === '') add('line_hsn', i);
+    else {
+      try {
+        if (!validateHsnForTurnover({ hsnCode: hsn, annualTurnoverMinor: turnover }).valid) add('line_hsn_digits', i);
+      } catch (e) {
+        if (e instanceof InvalidHsnInput) add('line_hsn', i); else throw e;
+      }
+    }
+    const rateBps = l.taxRateBps;
+    if (!isWholeNonNeg(rateBps)) { add('line_rate', i); return; }
+    // An exempt / nil-rated line is not a taxable supply on a tax invoice: Rule 49 / 46A — the owner decides (reported).
+    if (rateBps === 0) { add('exempt_line', i); return; }
+    if (!isWholeNonNeg(l.lineTotalMinor) || l.lineTotalMinor === 0) { add('line_taxable_value', i); return; }
+    let split;
+    try {
+      split = extractInclusiveGst({ mrpMinor: l.lineTotalMinor, rateBps, placeOfSupply: 'intra_state' });
+    } catch (e) {
+      if (e instanceof InvalidInclusiveTaxInput) { add('line_rate', i); return; } throw e;
+    }
+    const cgst = split.components.find((c) => c.component === 'CGST')?.amountMinor ?? 0;
+    const sgst = split.components.find((c) => c.component === 'SGST')?.amountMinor ?? 0;
+    // The A1 checker, on this line, with the invoice's own heading, GSTIN, number, date and place of supply.
+    const check = checkTaxInvoiceFields({
+      documentType: 'Tax Invoice', supplierGstin: gstin, invoiceNumber: input.number, invoiceDate: date,
+      hsnCode: hsn, taxableMinor: split.taxableMinor, rateBps, placeOfSupply: 'intra_state', taxComponents: split.components.map((c) => c.component),
+    });
+    for (const p of check.problems) {
+      if (p.startsWith('supplierGstin')) add('supplier_gstin');
+      else if (p.startsWith('invoiceNumber')) add('invoice_number');
+      else if (p.startsWith('invoiceDate')) add('invoice_date');
+      else if (p.startsWith('hsnCode')) add('line_hsn', i);
+      else if (p.startsWith('taxableMinor')) add('line_taxable_value', i);
+      else if (p.startsWith('rateBps')) add('line_rate', i);
+      else add('place_of_supply');
+    }
+    lines.push({
+      description, hsnCode: hsn, quantityMinor: l.quantityMinor, uom: typeof l.uom === 'string' ? l.uom.trim() : '', unitPriceMinor: l.unitPriceMinor,
+      rateBps, taxableMinor: split.taxableMinor, cgstMinor: cgst, sgstMinor: sgst, lineTotalMinor: l.lineTotalMinor,
+    });
+  });
+  // The checker sees the GSTIN, number and date on each line; with no line to check them on, they are checked here.
+  if (lines.length === 0) {
+    const check = checkTaxInvoiceFields({ documentType: 'Tax Invoice', supplierGstin: gstin, invoiceNumber: input.number, invoiceDate: date });
+    if (check.problems.some((p) => p.startsWith('supplierGstin'))) add('supplier_gstin');
+    if (check.problems.some((p) => p.startsWith('invoiceNumber'))) add('invoice_number');
+    if (check.problems.some((p) => p.startsWith('invoiceDate'))) add('invoice_date');
+  }
+
+  const taxableMinor = lines.reduce((s, l) => s + l.taxableMinor, 0);
+  const cgstMinor = lines.reduce((s, l) => s + l.cgstMinor, 0);
+  const sgstMinor = lines.reduce((s, l) => s + l.sgstMinor, 0);
+  const totalMinor = lines.reduce((s, l) => s + l.lineTotalMinor, 0);
+  // A9: the values and the tax reconcile to what was charged, to the paisa — line by line and in all.
+  if (lines.some((l) => l.taxableMinor + l.cgstMinor + l.sgstMinor !== l.lineTotalMinor) || taxableMinor + cgstMinor + sgstMinor !== totalMinor) add('totals');
+  if (taxableMinor >= UNREGISTERED_RECIPIENT_DETAILS_FROM_MINOR) add('recipient_details');
+
+  if (problems.length > 0 || state === undefined || when === undefined) {
+    if (state === undefined && gstin === '') add('supplier_gstin');
+    if (when === undefined) add('invoice_date');
+    return { ok: false, problems, laneMessage: refusalWords(problems, input.lines.map((l) => (typeof l.description === 'string' ? l.description.trim() : ''))) };
+  }
+
+  const bandMap = new Map<number, { taxable: number; cgst: number; sgst: number }>();
+  for (const l of lines) {
+    const b = bandMap.get(l.rateBps) ?? { taxable: 0, cgst: 0, sgst: 0 };
+    bandMap.set(l.rateBps, { taxable: b.taxable + l.taxableMinor, cgst: b.cgst + l.cgstMinor, sgst: b.sgst + l.sgstMinor });
+  }
+  const bands = [...bandMap.entries()].sort((a, b) => a[0] - b[0]).map(([rateBps, b]) => ({ rateBps, taxableMinor: b.taxable, cgstMinor: b.cgst, sgstMinor: b.sgst }));
+
+  return {
+    ok: true,
+    doc: Object.freeze({
+      title: 'Tax Invoice' as const,
+      supplier: { legalName, address, gstin, stateCode: state.code, stateName: state.name },
+      number: input.number, date, time: when.time,
+      placeOfSupply: { kind: 'intra_state' as const, stateCode: state.code, stateName: state.name },
+      reverseCharge: false as const,
+      lines, bands, taxableMinor, cgstMinor, sgstMinor, totalTaxMinor: cgstMinor + sgstMinor, totalMinor,
+      tenders: (input.tenders ?? []).map((t) => ({ kind: t.kind, amountMinor: t.amountMinor, ...(t.machineRef === undefined ? {} : { machineRef: t.machineRef }) })),
+      ...(input.changeMinor === undefined || input.changeMinor <= 0 ? {} : { changeMinor: input.changeMinor }),
+      laneId: input.laneId, cashierId: input.cashierId,
+    }),
+  };
+}
+
+// ── The printed invoice ─────────────────────────────────────────────────────────────────────────────────────────────
+
+/** The fields a printed row carries — what the contract reads back. */
+export type InvoiceField =
+  | 'title' | 'duplicate' | 'supplier_legal_name' | 'supplier_address' | 'supplier_gstin' | 'invoice_number' | 'invoice_date'
+  | 'place_of_supply' | 'reverse_charge' | 'line_description' | 'line_hsn' | 'line_rate' | 'line_quantity' | 'line_taxable_value'
+  | 'line_amount' | 'band_taxable' | 'cgst' | 'sgst' | 'taxable_total' | 'cgst_total' | 'sgst_total' | 'total' | 'tender' | 'change'
+  | 'signatory' | 'till';
+
+export interface InvoiceRow {
+  readonly kind: 'title' | 'centre' | 'pair' | 'text' | 'rule';
+  readonly fields: readonly InvoiceField[];
+  /** The line (0-based) a line row belongs to; the band (0-based) a band row belongs to. */
+  readonly line?: number;
+  readonly band?: number;
+  readonly text?: string;
+  readonly left?: string;
+  readonly right?: string;
+}
+
+export type InvoiceLanguage = 'en' | 'ta';
+
+/** The printed words, in English and Tamil. "Tax Invoice" stays in English on a Tamil bill too: it is the legal heading. */
+const LABELS: Readonly<Record<InvoiceLanguage, Readonly<Record<string, string>>>> = {
+  en: {
+    title: 'Tax Invoice', duplicate: 'DUPLICATE — reprint', gstin: 'GSTIN', invoiceNo: 'Invoice No', date: 'Date',
+    placeOfSupply: 'Place of supply', reverseCharge: 'Tax payable on reverse charge: No', hsn: 'HSN', gst: 'GST',
+    taxable: 'Taxable value', amountsIn: 'Amounts in ₹', taxSummary: 'GST summary', total: 'Total (incl. GST)',
+    paid: 'Paid', change: 'Change', approval: 'approval', for: 'For', signatory: 'Authorised signatory', till: 'Till', cashier: 'Cashier',
+    cash: 'Cash', card: 'Card', upi: 'UPI', loyalty_points: 'Points', store_credit: 'Store credit',
+  },
+  ta: {
+    title: 'Tax Invoice / வரி விலைப்பட்டியல்', duplicate: 'நகல் (DUPLICATE) — மறு அச்சு', gstin: 'GSTIN', invoiceNo: 'பில் எண்', date: 'தேதி',
+    placeOfSupply: 'வழங்கல் இடம்', reverseCharge: 'தலைகீழ் கட்டண முறையில் வரி: இல்லை', hsn: 'HSN', gst: 'GST',
+    taxable: 'வரி விதிக்கத்தக்க மதிப்பு', amountsIn: 'தொகைகள் ₹ இல்', taxSummary: 'GST சுருக்கம்', total: 'மொத்தம் (GST உட்பட)',
+    paid: 'செலுத்தியது', change: 'மீதி', approval: 'அனுமதி எண்', for: '', signatory: 'அங்கீகரிக்கப்பட்ட கையொப்பம்', till: 'டில்', cashier: 'காசாளர்',
+    cash: 'பணம்', card: 'கார்டு', upi: 'UPI', loyalty_points: 'புள்ளிகள்', store_credit: 'கடை வரவு',
+  },
+};
+
+/** A paisa amount as printed: 1234.50 (the "Amounts in ₹" row says the currency once). */
+export function invoiceAmount(minor: number): string {
+  const sign = minor < 0 ? '-' : '';
+  const abs = Math.abs(minor);
+  return `${sign}${Math.trunc(abs / 100)}.${String(abs % 100).padStart(2, '0')}`;
+}
+
+/** A rate in basis points as printed: 500 → "5%", 250 → "2.5%", 1800 → "18%". */
+export function invoiceRate(bps: number): string {
+  const s = (bps / 100).toFixed(2).replace(/\.?0+$/, '');
+  return `${s}%`;
+}
+
+/** Quantity and unit as printed (Rule 46(h)): "2 Nos", "1.234 kg", "500 g". */
+export function invoiceQuantity(quantityMinor: number, uom: string): string {
+  const u = normaliseUom(uom);
+  if (u === 'ea') return `${quantityMinor} Nos`;
+  const label = quantityLabel(quantityMinor, uom);
+  return u === undefined && !label.includes(' ') ? `${label} ${uom}` : label;
+}
+
+/** DD-MM-YYYY HH:MM — the date and time of issue as a shopper in Tamil Nadu reads it. */
+function printedDate(doc: TaxInvoiceDocument): string {
+  const [y, m, d] = doc.date.split('-');
+  return `${d}-${m}-${y} ${doc.time}`;
+}
+
+/**
+ * The invoice laid out for paper, row by row, each row naming the fields it carries. `duplicate`: a reprint, marked
+ * DUPLICATE at the top (Rule 46 practice — a copy is never passed off as the original). `footer`: the shop's own
+ * closing lines from its published receipt template, printed after the legal part.
+ */
+export function taxInvoiceRows(doc: TaxInvoiceDocument, options: { readonly language?: InvoiceLanguage; readonly duplicate?: boolean; readonly footer?: readonly string[] } = {}): readonly InvoiceRow[] {
+  const w = LABELS[options.language ?? 'en'];
+  const rows: InvoiceRow[] = [];
+  const rule = (): void => { rows.push({ kind: 'rule', fields: [] }); };
+  rows.push({ kind: 'title', fields: ['title'], text: w['title'] });
+  if (options.duplicate === true) rows.push({ kind: 'title', fields: ['duplicate'], text: w['duplicate'] });
+  rows.push({ kind: 'centre', fields: ['supplier_legal_name'], text: doc.supplier.legalName });
+  for (const line of doc.supplier.address) rows.push({ kind: 'centre', fields: ['supplier_address'], text: line });
+  rows.push({ kind: 'centre', fields: ['supplier_gstin'], text: `${w['gstin']}: ${doc.supplier.gstin}` });
+  rule();
+  rows.push({ kind: 'pair', fields: ['invoice_number'], left: `${w['invoiceNo']}:`, right: doc.number });
+  rows.push({ kind: 'pair', fields: ['invoice_date'], left: `${w['date']}:`, right: printedDate(doc) });
+  rows.push({ kind: 'text', fields: ['place_of_supply'], text: `${w['placeOfSupply']}: ${doc.placeOfSupply.stateName} (${doc.placeOfSupply.stateCode})` });
+  rows.push({ kind: 'text', fields: ['reverse_charge'], text: w['reverseCharge'] });
+  rows.push({ kind: 'text', fields: [], text: w['amountsIn'] });
+  rule();
+  doc.lines.forEach((l, i) => {
+    rows.push({ kind: 'text', fields: ['line_description'], line: i, text: l.description });
+    rows.push({ kind: 'pair', fields: ['line_hsn', 'line_rate', 'line_taxable_value'], line: i, left: `  ${w['hsn']} ${l.hsnCode} · ${w['gst']} ${invoiceRate(l.rateBps)}`, right: `${w['taxable']} ${invoiceAmount(l.taxableMinor)}` });
+    rows.push({ kind: 'pair', fields: ['line_quantity', 'line_amount'], line: i, left: `  ${invoiceQuantity(l.quantityMinor, l.uom)} × ${invoiceAmount(l.unitPriceMinor)}`, right: invoiceAmount(l.lineTotalMinor) });
+  });
+  rule();
+  rows.push({ kind: 'text', fields: [], text: w['taxSummary'] });
+  doc.bands.forEach((b, i) => {
+    const half = invoiceRate(b.rateBps / 2);
+    rows.push({ kind: 'pair', fields: ['band_taxable'], band: i, left: `${w['taxable']} @ ${invoiceRate(b.rateBps)}`, right: invoiceAmount(b.taxableMinor) });
+    rows.push({ kind: 'pair', fields: ['cgst'], band: i, left: `  CGST @ ${half}`, right: invoiceAmount(b.cgstMinor) });
+    rows.push({ kind: 'pair', fields: ['sgst'], band: i, left: `  SGST @ ${half}`, right: invoiceAmount(b.sgstMinor) });
+  });
+  rule();
+  rows.push({ kind: 'pair', fields: ['taxable_total'], left: w['taxable']!, right: invoiceAmount(doc.taxableMinor) });
+  rows.push({ kind: 'pair', fields: ['cgst_total'], left: 'CGST', right: invoiceAmount(doc.cgstMinor) });
+  rows.push({ kind: 'pair', fields: ['sgst_total'], left: 'SGST', right: invoiceAmount(doc.sgstMinor) });
+  rows.push({ kind: 'title', fields: ['total'], left: w['total']!, right: invoiceAmount(doc.totalMinor), text: `${w['total']} ${invoiceAmount(doc.totalMinor)}` });
+  rule();
+  for (const t of doc.tenders) {
+    const kind = w[t.kind] ?? t.kind;
+    rows.push({ kind: 'pair', fields: ['tender'], left: `${w['paid']}: ${kind}${t.machineRef === undefined ? '' : ` (${w['approval']} ${t.machineRef})`}`, right: invoiceAmount(t.amountMinor) });
+  }
+  if (doc.changeMinor !== undefined) rows.push({ kind: 'pair', fields: ['change'], left: w['change']!, right: invoiceAmount(doc.changeMinor) });
+  rows.push({ kind: 'text', fields: ['till'], text: `${w['till']} ${doc.laneId} · ${w['cashier']} ${doc.cashierId}` });
+  rule();
+  rows.push({ kind: 'centre', fields: ['signatory'], text: `${w['for'] === '' ? '' : `${w['for']} `}${doc.supplier.legalName}` });
+  rows.push({ kind: 'centre', fields: ['signatory'], text: w['signatory'] });
+  for (const line of options.footer ?? []) if (line.trim() !== '') rows.push({ kind: 'centre', fields: [], text: line.trim() });
+  return rows;
+}
+
+/** A row's printed words, whatever its kind. */
+export function rowText(row: InvoiceRow): string {
+  if (row.kind === 'rule') return '';
+  if (row.kind === 'pair') return `${row.left ?? ''} ${row.right ?? ''}`.trim();
+  return row.text ?? `${row.left ?? ''} ${row.right ?? ''}`.trim();
+}
+
+/**
+ * THE CONTRACT (A1): read a rendered invoice back and name every mandatory field it does not SHOW — the heading, the
+ * supplier's legal name, address and GSTIN, the number and date, the place of supply, the reverse-charge statement, and
+ * for every line its description, HSN, quantity with unit, taxable value and rate; the CGST and SGST of every rate; the
+ * total; the signatory. Empty only when every field is on the paper with the value the invoice holds.
+ */
+export function invoiceRenderProblems(rows: readonly InvoiceRow[], doc: TaxInvoiceDocument): readonly string[] {
+  const problems: string[] = [];
+  const shows = (field: InvoiceField, value: string, where: { line?: number; band?: number } = {}): boolean => rows.some((r) => r.fields.includes(field)
+    && (where.line === undefined || r.line === where.line) && (where.band === undefined || r.band === where.band) && rowText(r).includes(value));
+  const need = (field: InvoiceField, value: string, name: string, where: { line?: number; band?: number } = {}): void => {
+    if (value === '' || !shows(field, value, where)) problems.push(name);
+  };
+  need('title', 'Tax Invoice', 'the "Tax Invoice" heading');
+  need('supplier_legal_name', doc.supplier.legalName, 'the supplier\'s legal name');
+  if (doc.supplier.address.length === 0) problems.push('the supplier\'s address');
+  for (const line of doc.supplier.address) need('supplier_address', line, 'the supplier\'s address');
+  need('supplier_gstin', doc.supplier.gstin, 'the supplier\'s GSTIN');
+  need('invoice_number', doc.number, 'the invoice number');
+  need('invoice_date', printedDate(doc), 'the invoice date');
+  need('place_of_supply', `${doc.placeOfSupply.stateName} (${doc.placeOfSupply.stateCode})`, 'the place of supply (the State and its code)');
+  need('reverse_charge', ':', 'whether tax is payable on reverse charge');
+  if (doc.lines.length === 0) problems.push('the lines');
+  doc.lines.forEach((l, i) => {
+    const n = `line ${i + 1}`;
+    need('line_description', l.description, `${n}: the description`, { line: i });
+    need('line_hsn', l.hsnCode, `${n}: the HSN code`, { line: i });
+    need('line_quantity', invoiceQuantity(l.quantityMinor, l.uom), `${n}: the quantity and unit`, { line: i });
+    need('line_taxable_value', invoiceAmount(l.taxableMinor), `${n}: the taxable value`, { line: i });
+    need('line_rate', invoiceRate(l.rateBps), `${n}: the tax rate`, { line: i });
+  });
+  doc.bands.forEach((b, i) => {
+    const n = `GST ${invoiceRate(b.rateBps)}`;
+    need('cgst', invoiceAmount(b.cgstMinor), `${n}: the CGST`, { band: i });
+    need('cgst', `CGST @ ${invoiceRate(b.rateBps / 2)}`, `${n}: the CGST rate`, { band: i });
+    need('sgst', invoiceAmount(b.sgstMinor), `${n}: the SGST`, { band: i });
+    need('sgst', `SGST @ ${invoiceRate(b.rateBps / 2)}`, `${n}: the SGST rate`, { band: i });
+  });
+  need('total', invoiceAmount(doc.totalMinor), 'the total');
+  need('signatory', doc.supplier.legalName, 'the supplier\'s signatory line');
+  return problems;
+}
+
+/** The invoice as fixed-width text lines (the on-screen copy of the paper): `width` columns, 48 for 80 mm, 32 for 58 mm. */
+export function taxInvoiceText(rows: readonly InvoiceRow[], width = 48): readonly string[] {
+  const out: string[] = [];
+  const centre = (s: string): string => (s.length >= width ? s : `${' '.repeat(Math.floor((width - s.length) / 2))}${s}`);
+  const wrap = (s: string): string[] => { const parts: string[] = []; let rest = s; while (rest.length > width) { parts.push(rest.slice(0, width)); rest = rest.slice(width); } parts.push(rest); return parts; };
+  for (const r of rows) {
+    if (r.kind === 'rule') { out.push('-'.repeat(width)); continue; }
+    if (r.kind === 'pair' || (r.kind === 'title' && r.left !== undefined)) {
+      const left = r.left ?? ''; const right = r.right ?? '';
+      const gap = width - left.length - right.length;
+      if (gap >= 1) out.push(`${left}${' '.repeat(gap)}${right}`);
+      else { out.push(...wrap(left)); out.push(`${' '.repeat(Math.max(0, width - right.length))}${right}`); }
+      continue;
+    }
+    const text = r.text ?? '';
+    if (r.kind === 'title' || r.kind === 'centre') for (const p of wrap(text)) out.push(centre(p));
+    else out.push(...wrap(text));
+  }
+  return out;
+}

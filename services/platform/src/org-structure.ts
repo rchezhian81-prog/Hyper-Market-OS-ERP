@@ -28,6 +28,11 @@ export type { OrgNode, GstRegistration } from '../../../packages/org/src/index';
 const KINDS: readonly OrgNodeKind[] = ['company', 'branch', 'warehouse', 'department'];
 const STATUSES: readonly OrgNodeStatus[] = ['draft', 'active', 'suspended', 'closed'];
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
+/** OB-271: an address as lines (an array of text, or one text with line breaks); blank lines dropped; ≤ 4 lines of ≤ 80. */
+const addressOf = (v: unknown): readonly string[] | undefined => {
+  const lines = (Array.isArray(v) ? v : typeof v === 'string' ? v.split(/\r?\n/) : []).filter((l): l is string => typeof l === 'string').map((l) => l.trim()).filter((l) => l !== '');
+  return lines.length === 0 ? undefined : lines.slice(0, 4).map((l) => l.slice(0, 80));
+};
 
 export interface OrgStructureDeps {
   readonly nodes: (tenantId: string) => Promise<readonly OrgNode[]> | readonly OrgNode[];
@@ -120,6 +125,8 @@ export function orgStructureRoutes(deps: OrgStructureDeps): readonly Route[] {
           status: (b['status'] as OrgNodeStatus | undefined) ?? 'draft',
           ...(isStr(b['companyId']) ? { companyId: b['companyId'] as string } : {}),
           ...(isStr(b['gstin']) ? { gstin: b['gstin'] as string } : {}),
+          // OB-271: a store's address for its tax invoice — lines of text, blank lines dropped, at most 4 of 80 characters.
+          ...(addressOf(b['address']) === undefined ? {} : { address: addressOf(b['address'])! }),
         };
         const nodes = await deps.nodes(ctx.tenantId);
         const register = new GstRegister(await deps.registrations(ctx.tenantId));

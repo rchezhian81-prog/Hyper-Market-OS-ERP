@@ -294,6 +294,15 @@ export const STORE_EDGE_CONFIG: readonly Spec[] = [
    */
   { key: 'EDGE_MIRROR_PILOT', optional: true, oneOf: ['0', '1'] },
   /**
+   * OB-271 (owner, 21 Oct 2026): `1` → REAL TRADING — the new till's bill is the legal GST tax invoice (Rule 46), printed on
+   * paper, card/UPI payments carry the machine's approval number (the store pack's `policies.realTrading` can also turn it
+   * on). Set by the owner himself only after the mirror pilot passes and his written GO; the installer never writes it.
+   * Never together with the mirror pilot: a box set for both refuses to start.
+   */
+  { key: 'EDGE_REAL_TRADING', optional: true, oneOf: ['0', '1'] },
+  /** OB-271: the bill's paper when no published receipt template names one — `thermal-80` (the default) or `thermal-58`. */
+  { key: 'EDGE_BILL_PAPER', optional: true, oneOf: ['thermal-80', 'thermal-58'] },
+  /**
    * OB-259: `pin` — every screen this box serves but the till asks for the person's own till PIN, and opens only for an
    * office role (edge/store-edge/src/office-sign-in.ts). The installer writes it; absent, the screens open as before.
    */

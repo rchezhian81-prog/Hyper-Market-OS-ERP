@@ -31,6 +31,7 @@
 import type { IncomingSale, IncomingSaleLine, IncomingTender } from '../../../services/pos/src/index';
 import { readCardTokenReference } from '../../../packages/tender/src/card-token';
 import { isOldErpBillNumber } from '../../../packages/tender/src/old-erp-bill-number';
+import { readMachineReference } from '../../../packages/tender/src/machine-reference';
 
 type Rec = Record<string, unknown>;
 
@@ -50,10 +51,13 @@ function toCloudTender(t: unknown): IncomingTender {
   const removedMark = r['cardDataRemoved'];
   const removedFields = removedMark !== null && typeof removedMark === 'object' && Array.isArray((removedMark as Rec)['fields'])
     ? ((removedMark as Rec)['fields'] as unknown[]).filter((f): f is string => typeof f === 'string') : undefined;
+  // OB-271 · audit A9: the shop's own machine's approval / reference number travels when it reads cleanly (never card data).
+  const machine = r['machineRef'] === undefined ? undefined : readMachineReference(r['machineRef']);
   return {
     kind: str(r['kind']) ?? '',
     ...(amountMinor === undefined ? {} : { amountMinor }),
     ...(ref === undefined ? {} : { ref }),
+    ...(machine?.ok === true ? { machineRef: machine.value } : {}),
     ...(points === undefined ? {} : { points }),
     ...(card?.ok === true ? { card: card.value } : {}),
     ...(removedFields === undefined ? {} : { cardDataRemoved: { fields: removedFields } }),

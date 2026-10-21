@@ -16,12 +16,18 @@
 //     this till — and each paid attempt pays ONE sale. A recovered payment the customer made with no sale to show for it
 //     is listed as money owed back.
 //
+// OB-271 (owner, 21 Oct 2026) · audit A9: in REAL TRADING, with the shop's own standalone machine, "approved" carries the
+// machine's own APPROVAL / REFERENCE number, typed by the cashier from the slip (`readMachineReference`: 4–12 letters or
+// digits, never card data). It is kept on the answer and must be on the sale's tender, so the day can be matched against
+// the machine's settlement slip. Off (the mirror pilot, or not set): an approval number is optional, as before.
+//
 // Every line is appended, never rewritten (hard rule #2); nothing is deleted (hard rule #6).
 
 import type { OpenFileLog } from './file-log';
 import { openFileLog, readLog } from './file-log';
 import { recoverPendingTender, type ProviderAuthorisation } from '../../../packages/tender/src/pending-recovery';
 import { looksLikeCardNumber } from '../../../packages/ops/src/index';
+import { readMachineReference, MACHINE_REF_WORDS } from '../../../packages/tender/src/machine-reference';
 
 export type AttemptKind = 'card' | 'upi';
 export type AttemptState = 'asked' | 'approved' | 'declined' | 'no_answer' | 'recovered_paid' | 'recovered_not_paid';
@@ -46,6 +52,8 @@ export interface Attempt {
   readonly state: AttemptState;
   readonly answeredBy?: string;
   readonly answeredAt?: string;
+  /** OB-271: the approval / reference number the shop's own machine showed for an approved payment. */
+  readonly machineRef?: string;
   readonly recoveredAt?: string;
   readonly recoveryDetail?: string;
   /** What the customer is owed back when the provider took more than the bill. */
@@ -55,7 +63,7 @@ export interface Attempt {
 
 type LogRecord =
   | { readonly kind: 'asked'; readonly attemptId: string; readonly laneId: string; readonly billRef: string; readonly tender: AttemptKind; readonly amountMinor: number; readonly by: string; readonly at: string }
-  | { readonly kind: 'answered'; readonly attemptId: string; readonly outcome: 'approved' | 'declined' | 'no_answer'; readonly by: string; readonly at: string }
+  | { readonly kind: 'answered'; readonly attemptId: string; readonly outcome: 'approved' | 'declined' | 'no_answer'; readonly by: string; readonly at: string; readonly machineRef?: string }
   | { readonly kind: 'recovered'; readonly attemptId: string; readonly paid: boolean; readonly owedToCustomerMinor: number; readonly detail: string; readonly at: string }
   | { readonly kind: 'applied'; readonly attemptId: string; readonly saleId: string; readonly at: string };
 
@@ -81,7 +89,7 @@ export class PaymentAttempts {
 
   private constructor(
     private readonly log: OpenFileLog,
-    private readonly deps: { readonly provider: PaymentProviderPort | undefined; readonly now: () => string },
+    private readonly deps: { readonly provider: PaymentProviderPort | undefined; readonly now: () => string; readonly requireMachineRef: () => boolean },
     restored: readonly LogRecord[],
     unreadable: number,
   ) {
@@ -94,6 +102,8 @@ export class PaymentAttempts {
     readonly capacityBytes: number;
     readonly provider?: PaymentProviderPort;
     readonly now?: () => string;
+    /** OB-271: read live — true in real trading, when an approved answer must carry the machine's number. Absent: never. */
+    readonly requireMachineRef?: () => boolean;
   }): Promise<PaymentAttempts> {
     const log = await openFileLog({ dataDir: input.dataDir, capacityBytes: input.capacityBytes, fileName: 'payment-attempts.log' });
     const restored: LogRecord[] = [];
@@ -106,7 +116,7 @@ export class PaymentAttempts {
         else unreadable += 1;
       } catch { unreadable += 1; }
     }
-    return new PaymentAttempts(log, { provider: input.provider, now: input.now ?? (() => new Date().toISOString()) }, restored, unreadable);
+    return new PaymentAttempts(log, { provider: input.provider, now: input.now ?? (() => new Date().toISOString()), requireMachineRef: input.requireMachineRef ?? (() => false) }, restored, unreadable);
   }
 
   private fold(r: LogRecord): void {
@@ -118,7 +128,7 @@ export class PaymentAttempts {
     const cur = this.attempts.get(r.attemptId);
     if (cur === undefined) return;
     if (r.kind === 'answered') {
-      this.attempts.set(r.attemptId, { ...cur, state: r.outcome, answeredBy: r.by, answeredAt: r.at });
+      this.attempts.set(r.attemptId, { ...cur, state: r.outcome, answeredBy: r.by, answeredAt: r.at, ...(r.machineRef === undefined ? {} : { machineRef: r.machineRef }) });
     } else if (r.kind === 'recovered') {
       this.attempts.set(r.attemptId, {
         ...cur, state: r.paid ? 'recovered_paid' : 'recovered_not_paid', recoveredAt: r.at, recoveryDetail: r.detail,
@@ -174,20 +184,28 @@ export class PaymentAttempts {
   }
 
   /** What the machine said. Recorded once; a different second answer is refused (the first is the evidence). */
-  answer(input: { readonly laneId: string; readonly by: string; readonly attemptId: unknown; readonly outcome: unknown }): Promise<AttemptAnswer> {
+  answer(input: { readonly laneId: string; readonly by: string; readonly attemptId: unknown; readonly outcome: unknown; readonly machineRef?: unknown }): Promise<AttemptAnswer> {
     return this.serial(async () => {
       const a = isStr(input.attemptId) ? this.attempts.get(input.attemptId) : undefined;
       if (a === undefined || a.laneId !== input.laneId) return { ok: false, refusedBecause: 'attempt_unknown', laneMessage: 'This store computer has no record of asking the machine for that payment.' };
       if (input.outcome !== 'approved' && input.outcome !== 'declined' && input.outcome !== 'no_answer') {
         return { ok: false, refusedBecause: 'outcome_not_readable', laneMessage: 'Say what the machine said: approved, declined, or no answer.' };
       }
+      // OB-271 · audit A9: an approved payment's number from the machine — required in real trading, read (never card data,
+      // never repeated back) whenever it is given. Declined and no-answer keep none.
+      let machineRef: string | undefined;
+      if (input.outcome === 'approved' && (this.deps.requireMachineRef() || (input.machineRef !== undefined && input.machineRef !== ''))) {
+        const read = readMachineReference(input.machineRef);
+        if (!read.ok) return { ok: false, refusedBecause: read.refusedBecause, laneMessage: `${read.laneMessage} Nothing was recorded yet — the payment is still waiting for its answer.` };
+        machineRef = read.value;
+      }
       if (a.state !== 'asked') {
-        return a.state === input.outcome
+        return a.state === input.outcome && (machineRef === undefined || a.machineRef === machineRef)
           ? { ok: true, attempt: a, laneMessage: 'Already recorded.' }
           : { ok: false, refusedBecause: 'already_answered', laneMessage: `This payment was already recorded as ${a.state.replace(/_/g, ' ')}. That record stands.`, attempt: a };
       }
       try {
-        await this.record({ kind: 'answered', attemptId: a.attemptId, outcome: input.outcome, by: input.by, at: this.deps.now() });
+        await this.record({ kind: 'answered', attemptId: a.attemptId, outcome: input.outcome, by: input.by, at: this.deps.now(), ...(machineRef === undefined ? {} : { machineRef }) });
       } catch (e) {
         return { ok: false, refusedBecause: 'could_not_write_durably', laneMessage: `The store computer could not record what the machine said. ${e instanceof Error ? e.message : String(e)}` };
       }
@@ -256,6 +274,15 @@ export class PaymentAttempts {
       if (a.appliedToSaleId !== undefined && a.appliedToSaleId !== input.saleId) {
         return { ok: false, refusedBecause: 'card_payment_already_used', laneMessage: 'That card or UPI payment already paid another bill. Nothing was saved — one payment pays one bill.' };
       }
+      // OB-271 · audit A9: the sale's tender carries the SAME machine number this box recorded for the payment — and in real
+      // trading an approved payment has one.
+      const tenderRef = t['machineRef'];
+      if (a.machineRef !== undefined ? tenderRef !== a.machineRef : tenderRef !== undefined) {
+        return { ok: false, refusedBecause: 'card_payment_reference_differs', laneMessage: 'The approval number on the bill is not the one recorded for this payment. Nothing was saved — take the payment again through the till.' };
+      }
+      if (this.deps.requireMachineRef() && a.state === 'approved' && a.machineRef === undefined) {
+        return { ok: false, refusedBecause: 'machine_ref_missing', laneMessage: `${MACHINE_REF_WORDS.missing} Nothing was saved.` };
+      }
       uses.push(a);
     }
     return {
@@ -277,6 +304,11 @@ export class PaymentAttempts {
       paidWithoutSale: mine.filter((a) => PAID.includes(a.state) && a.appliedToSaleId === undefined),
       owedToCustomers: mine.filter((a) => a.owedToCustomerMinor !== undefined),
     };
+  }
+
+  /** OB-271 · audit A9: this till's payments recorded as paid (approved, or confirmed by the provider), oldest first. */
+  paid(laneId: string): readonly Attempt[] {
+    return [...this.attempts.values()].filter((a) => a.laneId === laneId && PAID.includes(a.state)).sort((x, y) => x.askedAt.localeCompare(y.askedAt));
   }
 
   /**

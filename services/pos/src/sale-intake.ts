@@ -95,6 +95,11 @@ export interface IncomingTender {
   readonly amountMinor: number;
   /** A provider token or reference. Never a card number (hard rule #3): one shaped like it is removed before banking. */
   readonly ref?: string;
+  /**
+   * OB-271 · audit A9: on a card/UPI tender in real trading, the approval / reference number the shop's OWN machine showed
+   * (4–12 letters or digits, typed from the slip; never card data) — what the day is matched against the machine's slip by.
+   */
+  readonly machineRef?: string;
   /** On a `loyalty_points` tender: the whole points the store computer took for this amount (PF-09 step 3). */
   readonly points?: number;
   /** C10: on a card tender, the ONLY card facts kept — the network-token reference, the last four digits, the network. */

@@ -73,6 +73,7 @@ import { ReturnEntitlement, type EntitlementLine } from './entitlement';
 import { buildReceiptLookup } from './receipt-lookup';
 import { openOldErpBills } from './old-erp-bills';
 import { returnIdOf } from './cloud-return';
+import { readMachineReference } from '../../../packages/tender/src/machine-reference';
 import { createEdgeNode, type EdgeNode } from './index';
 import { startLaneServer, LANE_HOST, type LaneServer, type LaneDayCloseHandler, type LaneDayReopenHandler, type LaneDeviceRelayHandler, type LaneDeviceStatusHandler, type LaneTillActivityHandler } from './lane-server';
 import { commitLocally } from './durability';
@@ -769,6 +770,34 @@ export async function startEdge(
       concessionTagsLog, concessionTagsDeadLetterLog, deviceEventsLog, deviceEventsDeadLetterLog, tillCashLog, tillCashDeadLetterLog]) await l.close();
     return undefined;
   }
+  // OB-271 (owner, 21 Oct 2026): REAL TRADING — this box's own `EDGE_REAL_TRADING=1`, or the store pack's, read live like the
+  // mirror pilot. Off unless one of them says so; the installer never writes it (the owner sets it after the pilot passes
+  // and his written GO). While on, each bill is the legal tax invoice and card/UPI payments carry the machine's number.
+  const realTrading = (): { readonly on: boolean; readonly by: 'store_pack' | 'store_computer_setting' | null } => {
+    if (settings['EDGE_REAL_TRADING'] === '1') return { on: true, by: 'store_computer_setting' };
+    if (pack.policies.known && pack.policies.value.realTrading === true) return { on: true, by: 'store_pack' };
+    return { on: false, by: null };
+  };
+  // The shop's legal identity for the tax invoice, from the store pack (head office's GST registration and the store's
+  // address) — read live; `null` when the pack does not carry it, and a real-trading sale is then refused in words.
+  const taxInvoiceIdentity = (): { readonly legalName: string; readonly gstin: string; readonly address: readonly string[] } | null => {
+    const t = pack.policies.known ? pack.policies.value.taxInvoice : undefined;
+    if (t === undefined || t === null || typeof t !== 'object') return null;
+    return {
+      legalName: typeof t.legalName === 'string' ? t.legalName : '', gstin: typeof t.gstin === 'string' ? t.gstin : '',
+      address: Array.isArray(t.address) ? t.address.filter((l): l is string => typeof l === 'string') : [],
+    };
+  };
+  // Mirror and real trading are never on together (OB-248 · OB-271): a box set for both does not start — said plainly.
+  if (mirrorPilot().on && realTrading().on) {
+    process.stderr.write(`\nThis store computer is set for the mirror pilot (${mirrorPilot().by === 'store_pack' ? 'the store pack says so' : 'EDGE_MIRROR_PILOT=1'}) AND for real trading (${realTrading().by === 'store_pack' ? 'the store pack says so' : 'EDGE_REAL_TRADING=1'}). `
+      + 'They are never on together: during the mirror pilot the old system bills the customer; in real trading this system does. Turn one of them off, then start again. Nothing was started.\n\n');
+    process.exitCode = 78; // EX_CONFIG
+    for (const l of [log, returnsLog, completionsLog, dayCloseLog, deadLetterLog, returnsDeadLetterLog, completionsDeadLetterLog, dayCloseDeadLetterLog,
+      concessionTagsLog, concessionTagsDeadLetterLog, deviceEventsLog, deviceEventsDeadLetterLog, tillCashLog, tillCashDeadLetterLog]) await l.close();
+    return undefined;
+  }
+  if (realTrading().on) say(`REAL TRADING (OB-271, ${realTrading().by === 'store_pack' ? 'store pack' : 'EDGE_REAL_TRADING=1'}): each bill the tills print is the legal GST tax invoice; a sale whose bill would miss a required field is refused.${taxInvoiceIdentity() === null ? ' The store pack carries no legal name, address and GSTIN yet, so every sale will be refused until it does.' : ''}`);
   if (mirrorPilot().on) say(`mirror pilot (OB-256, ${mirrorPilot().by === 'store_pack' ? 'store pack' : 'EDGE_MIRROR_PILOT=1'}): the tills this box serves record every sale and refund as "Paid on old system" — the old ERP bills and takes the money; no money goes in or out of the drawer here.`);
   say(laneOfBox === undefined
     ? 'no EDGE_LANE_ID is set: the till this box serves will refuse to take payment until this box is told which lane it is.'
@@ -936,11 +965,15 @@ export async function startEdge(
   // which after a restart holds only the unfinished tail. A device that lost the box's reply and retries a key
   // the box acknowledged and cursored past weeks ago must still hear `duplicate`, never `accepted` twice (§31.1).
   const deviceEventKeys = new Set<string>();
+  // OB-271 · audit A11: the card/UPI refunds done on the shop's own machine, as recorded here (the till's day list reads them).
+  const cardRefundsOnMachine: Record<string, unknown>[] = [];
   for (const entry of await readLog(deviceEventsLog.path)) {
     if (!entry.ok) continue;
     try {
-      const key = (JSON.parse(entry.record) as { idempotencyKey?: unknown }).idempotencyKey;
+      const event = JSON.parse(entry.record) as { idempotencyKey?: unknown; type?: unknown; payload?: Record<string, unknown> };
+      const key = event.idempotencyKey;
       if (typeof key === 'string' && key !== '') deviceEventKeys.add(key);
+      if (event.type === 'TillActivityRecorded' && event.payload?.['kind'] === 'card_refund_on_machine') cardRefundsOnMachine.push(event.payload);
     } catch { /* the pipeline already surfaced it as malformed */ }
   }
 
@@ -1028,7 +1061,10 @@ export async function startEdge(
       || (kind === 'no_sale' && (value === undefined || value === 0) && (body['billRef'] === undefined || str(body['billRef'])))
       || (kind === 'price_override' && str(body['billRef']) && str(body['lineId']) && str(body['productId']) && typeof body['description'] === 'string'
         && whole(body['fromUnitMinor']) && whole(body['toUnitMinor']) && (body['toUnitMinor'] as number) < (body['fromUnitMinor'] as number)
-        && whole(body['quantityMinor']) && (body['quantityMinor'] as number) > 0 && whole(value) && (value as number) > 0));
+        && whole(body['quantityMinor']) && (body['quantityMinor'] as number) > 0 && whole(value) && (value as number) > 0)
+      // OB-271 · audit A11: a card/UPI refund done on the shop's own machine — the refund (billRef), its amount, its tender,
+      // and the machine's refund reference (read below, never card data).
+      || (kind === 'card_refund_on_machine' && str(body['billRef']) && whole(value) && (value as number) > 0 && (body['refundTender'] === 'card' || body['refundTender'] === 'upi')));
     if (!readable) {
       return { recorded: false, refusedBecause: 'not_readable', laneMessage: kind === 'void'
         ? 'The till did not say which line, how much and why. Nothing was removed — try again.'
@@ -1036,11 +1072,34 @@ export async function startEdge(
     }
     const key = `till-activity-${tenantId}-${body['activityId']}`;
     if (deviceEventKeys.has(key)) return { recorded: true, laneMessage: 'Already recorded.' };
+    // OB-271 · audit A11: only in real trading (off during the mirror pilot), for a card/UPI refund THIS box holds as pending,
+    // for exactly its amount and tender, once — with the machine's own refund reference.
+    let machineRef: string | undefined;
+    if (kind === 'card_refund_on_machine') {
+      if (!realTrading().on) return { recorded: false, refusedBecause: 'not_in_real_trading', laneMessage: 'A card refund on the machine is recorded only in real trading. Nothing was done.' };
+      const ref = readMachineReference(body['machineRef']);
+      if (!ref.ok) return { recorded: false, refusedBecause: ref.refusedBecause, laneMessage: ref.laneMessage };
+      machineRef = ref.value;
+      const returnId = body['billRef'] as string;
+      if (cardRefundsOnMachine.some((r) => r['billRef'] === returnId)) {
+        return { recorded: false, refusedBecause: 'card_refund_already_recorded', laneMessage: 'This refund was already recorded as done on the machine. Do not refund it again.' };
+      }
+      let held: Record<string, unknown> | undefined;
+      for (const entry of await readLog(returnsLog.path)) {
+        if (!entry.ok) continue;
+        try { const r = JSON.parse(entry.record) as Record<string, unknown>; if (returnIdOf(r) === returnId) { held = r; break; } } catch { /* not a refund */ }
+      }
+      const refundMinor = held === undefined ? undefined : typeof held['refundMinor'] === 'number' ? held['refundMinor']
+        : typeof (held['refund'] as { minor?: unknown } | undefined)?.minor === 'number' ? (held['refund'] as { minor: number }).minor : undefined;
+      if (held === undefined || held['laneId'] !== laneId || held['refundTender'] !== body['refundTender'] || refundMinor !== value) {
+        return { recorded: false, refusedBecause: 'card_refund_not_here', laneMessage: 'This store computer holds no card or UPI refund on this till for that amount. Nothing was recorded — check the refund number.' };
+      }
+    }
     // A SUPERVISOR OVERRIDE (no-sale, price change) needs a manager's approval issued on THIS box for exactly this — the
     // one-use approval refunds use (PF-02) — spent by this action before anything is written. Offline: nothing here asks
     // head office.
     let approval: { readonly approvalId: string; readonly approvedBy: string } | undefined;
-    if (kind === 'no_sale' || kind === 'price_override') {
+    if (kind === 'no_sale' || kind === 'price_override' || kind === 'card_refund_on_machine') {
       if (tillApprovals === null) return { recorded: false, refusedBecause: 'not_served', laneMessage: 'This store computer does not approve overrides. Nothing was done.' };
       const spent = await tillApprovals.spendOverride({
         approvalId: body['approvalId'], kind, billRef: kind === 'no_sale' ? null : body['billRef'] as string, valueMinor: kind === 'no_sale' ? 0 : value as number,
@@ -1057,7 +1116,9 @@ export async function startEdge(
       ? { ...common, billRef: body['billRef'], lineId: body['lineId'], productId: body['productId'], description: body['description'], valueMinor: value }
       : kind === 'no_sale'
         ? { ...common, ...(str(body['billRef']) ? { billRef: body['billRef'] } : {}), valueMinor: 0, approvalId: approval!.approvalId, approvedBy: approval!.approvedBy }
-        : {
+        : kind === 'card_refund_on_machine'
+          ? { ...common, billRef: body['billRef'], valueMinor: value, refundTender: body['refundTender'], machineRef, approvalId: approval!.approvalId, approvedBy: approval!.approvedBy }
+          : {
           ...common, billRef: body['billRef'], lineId: body['lineId'], productId: body['productId'], description: body['description'],
           fromUnitMinor: body['fromUnitMinor'], toUnitMinor: body['toUnitMinor'], quantityMinor: body['quantityMinor'], valueMinor: value,
           approvalId: approval!.approvalId, approvedBy: approval!.approvedBy,
@@ -1075,6 +1136,7 @@ export async function startEdge(
         : 'The store computer could not record this, so nothing was done. Tell the manager.' };
     }
     deviceEventsOutbox.enqueue(event);
+    if (kind === 'card_refund_on_machine') cardRefundsOnMachine.push(payload as Record<string, unknown>);
     return { recorded: true, laneMessage: 'Recorded.', ...(approval === undefined ? {} : { approvedBy: approval.approvedBy }) };
   };
 
@@ -1448,6 +1510,8 @@ export async function startEdge(
   const payments = tillOperators === null ? null : await PaymentAttempts.open({
     dataDir: settings['EDGE_DATA_DIR']!, capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']),
     ...(ports.paymentProvider === undefined ? {} : { provider: ports.paymentProvider }),
+    // OB-271 · audit A9: in real trading an approved card/UPI payment carries the machine's approval / reference number.
+    requireMachineRef: () => realTrading().on,
   });
   // D04-FR-05: what the till's devices last said, kept on this box's disk for the manager's Today screen.
   const peripheralReports = tillOperators === null ? null : await PeripheralReports.open({
@@ -1531,7 +1595,7 @@ export async function startEdge(
   // hold, so it is not one cashier's act: it needs a manager's one-use approval at this till for exactly that attempt and
   // amount (spent here), and it is relayed to head office as a person's answer — never mistaken for the provider's. An
   // answer on the same trading day keeps today's flow.
-  const answerGuarded = async (pa: PaymentAttempts, i: { readonly laneId: string; readonly by: string; readonly attemptId: unknown; readonly outcome: unknown; readonly approvalId?: string }): ReturnType<PaymentAttempts['answer']> => {
+  const answerGuarded = async (pa: PaymentAttempts, i: { readonly laneId: string; readonly by: string; readonly attemptId: unknown; readonly outcome: unknown; readonly approvalId?: string; readonly machineRef?: unknown }): ReturnType<PaymentAttempts['answer']> => {
     const a = pa.get(i.attemptId);
     const rule = packCutoff(pack);
     const late = a !== undefined && a.state === 'asked' && a.laneId === i.laneId && (i.outcome === 'approved' || i.outcome === 'declined')
@@ -1584,7 +1648,20 @@ export async function startEdge(
         },
         recover: (i) => recoverCarrying(payments, i),
         checkTenders: (i) => payments.checkTenders(i),
-        status: (laneId) => payments.status(laneId),
+        // OB-271 · audit A9 / A11: today's paid card/UPI payments with the machine's numbers, and the card refunds done on the
+        // machine — the till's list for matching the day against the machine's settlement slip.
+        status: (laneId) => {
+          const rule = packCutoff(pack);
+          const today = tradingDate(wallClockIn(new Date().toISOString()), rule);
+          const onToday = (at: unknown): boolean => typeof at === 'string' && tradingDate(wallClockIn(at), rule) === today;
+          const s = payments.status(laneId);
+          return {
+            ...s, tradingDay: today, paid: payments.paid(laneId).filter((a) => onToday(a.askedAt)),
+            refundsOnMachine: cardRefundsOnMachine.filter((r) => r['laneId'] === laneId && onToday(r['at'])).map((r) => ({
+              returnId: r['billRef'], refundTender: r['refundTender'], refundMinor: r['valueMinor'], machineRef: r['machineRef'], at: r['at'], by: r['cashierId'], approvedBy: r['approvedBy'],
+            })),
+          };
+        },
       },
     }),
     ...(heldBills === null ? {} : {
@@ -1623,6 +1700,9 @@ export async function startEdge(
     guestSalesOnly: () => guestSalesOnly().on,
     // OB-256 · OB-258: while the mirror pilot is on, "Paid on old system" is the only tender, for sales and refunds.
     mirrorPilot: () => mirrorPilot().on,
+    // OB-271: while real trading is on, a sale is kept only when its bill is a complete tax invoice (never with the mirror).
+    realTrading: () => realTrading().on,
+    taxInvoice: taxInvoiceIdentity,
     // OB-264: every mirror sale's old ERP bill number, never keyed twice; a mirror refund looks its sale up by it.
     oldErpBills,
     // PF-09 step 3: a sale paying with points or store credit is decided against this box's copy, one at a time.
@@ -1750,6 +1830,11 @@ export async function startEdge(
     soldHuids: () => soldHuids.list(),
     // OB-252: the till is told whether it takes guest sales only, per request.
     guestSalesOnly,
+    // OB-271: real trading (off unless set), the shop's legal identity for the tax invoice, and the bill's paper.
+    realTrading: () => {
+      const rt = realTrading();
+      return { ...rt, taxInvoice: rt.on ? taxInvoiceIdentity() : null, ...(settings['EDGE_BILL_PAPER'] === undefined ? {} : { billPaper: settings['EDGE_BILL_PAPER'] }) };
+    },
     // The manager's day close (M14-FR-04) posts to this box's lane socket — tell the screen where it is.
     // Only when this box actually serves a lane; otherwise the screen stays read-only (a local preview).
     ...(lane === null ? {} : { laneWriteBase: `http://${LANE_HOST}:${lane.port}` }),

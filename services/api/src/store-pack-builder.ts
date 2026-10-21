@@ -104,7 +104,15 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
   // ── the store itself ────────────────────────────────────────────────────────────────────────────────────────────
   const settings = await input.settings(tenantId, storeId);
   if (settings !== undefined) {
+    // OB-271 · CGST Rule 46(a): the shop's legal identity as the real-trading tax invoice prints it — the GST registration
+    // the store's sales are filed under (its legal name and GSTIN, OB-257 `shop`) and the store's own address. Left out when
+    // the store has no registration on record: the till then refuses a real-trading sale and says what is missing.
+    const org = orgStructureAdapter({ store, now });
+    const branch = (await org.nodes(tenantId)).find((n) => n.nodeId === storeId);
+    const registration = branch?.gstin === undefined ? undefined : (await org.registrations(tenantId)).find((r) => r.gstin === branch.gstin);
+    const taxInvoice = registration === undefined ? undefined : { legalName: registration.legalName, gstin: registration.gstin, address: [...(branch?.address ?? [])] };
     sections['policies'] = {
+      ...(taxInvoice === undefined ? {} : { taxInvoice }),
       storeId, branchId: storeId, branchName: (await input.storeName(tenantId, storeId)) ?? storeId,
       tradingDayCutoff: settings.tradingDayCutoff, staleAfterSeconds: settings.staleAfterSeconds,
       countApprovalThresholdMinor: settings.countApprovalThresholdMinor, handoverToleranceMinor: settings.handoverToleranceMinor,

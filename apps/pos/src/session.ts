@@ -24,6 +24,8 @@ import { normaliseMobile } from '../../../packages/loyalty/src/mobile';
 import { withoutCardData } from '../../../packages/tender/src/tender-card-data';
 import { saleTenderRefusal } from '../../../packages/tender/src/paid-on-old-erp';
 import { oldErpBillRefusal } from '../../../packages/tender/src/old-erp-bill-number';
+import { readMachineReference } from '../../../packages/tender/src/machine-reference';
+import { buildTaxInvoice, type TaxInvoiceDocument, type TaxInvoiceIdentity, type TaxInvoiceProblem } from '../../../packages/receipt/src/tax-invoice';
 import {
   tillLineRefusals, tillRuleFlagsOf, scaleEvidence, lineIsWeighed, TillRuleRefusedError, TOBACCO_MINIMUM_AGE,
   type LaneScales, type TillGateContext,
@@ -88,6 +90,29 @@ export interface PosSessionConfig {
    * by its box. Off → that tender is refused; on → every other tender is refused. Both before the disk, in words.
    */
   readonly mirrorPilot?: boolean;
+  /**
+   * OB-271 (owner, 21 Oct 2026): REAL TRADING — the new till's bill is the legal GST tax invoice. Turned on only by the
+   * store computer's own `EDGE_REAL_TRADING=1` or the store pack (`policies.realTrading`), after the pilot passes and the
+   * owner's written GO; never together with the mirror pilot. While on, every sale must make a complete Rule 46 invoice
+   * from the shop's legal identity (`identity`, the store's setup) or it is REFUSED before the disk. Absent = off: the till
+   * behaves exactly as before.
+   */
+  readonly realTrading?: { readonly identity: TaxInvoiceIdentity | null };
+}
+
+/** OB-271: the mirror pilot and real trading are never on together — the till refuses to sell rather than guess which. */
+export const REAL_TRADING_AND_MIRROR_WORDS = 'This till is set for the mirror pilot AND for real trading, which are never on together. Nothing was saved — do not take money. Tell the owner.';
+
+/**
+ * OB-271: a real-trading sale whose bill would not be a complete Rule 46 tax invoice — refused BEFORE the disk, with every
+ * missing field named, so a non-compliant bill is never issued. `problems` lets the screen say it in the cashier's language.
+ */
+export class TaxInvoiceRefusedError extends Error {
+  readonly refusedBecause = 'tax_invoice_incomplete';
+  constructor(public readonly saleId: string, public readonly laneMessage: string, public readonly problems: readonly TaxInvoiceProblem[]) {
+    super(`sale ${saleId} was not committed: ${laneMessage}`);
+    this.name = 'TaxInvoiceRefusedError';
+  }
 }
 
 /** What the till says when a customer number or loyalty is asked for while guest sales only is on (OB-252). */
@@ -205,7 +230,9 @@ export interface CommittedBill {
   readonly netMinor: number;
   readonly taxMinor: number;
   readonly totalMinor: number;
-  readonly tenders: readonly { readonly kind: string; readonly amountMinor: number }[];
+  readonly tenders: readonly { readonly kind: string; readonly amountMinor: number; readonly machineRef?: string }[];
+  /** OB-271: in real trading, the Rule 46 tax invoice this sale was checked against before the disk — what prints. */
+  readonly taxInvoice?: TaxInvoiceDocument;
 }
 
 export interface BasketTotals extends BillTotals {
@@ -1029,6 +1056,30 @@ export class PosSession {
     // it. Whether another sale already holds it is the store computer's to say, from its own logs, before ITS disk.
     const oldBill = oldErpBillRefusal({ mirrorOn: this.config.mirrorPilot === true, value: extra.oldErpBillNumber });
     if (oldBill !== undefined) throw new LocalCommitRefusedError(saleId, oldBill.laneMessage);
+    // OB-271: in REAL TRADING the bill is the legal tax invoice — assembled and checked (A1 · Rule 46) HERE, before the disk
+    // and before the money, from the shop's legal identity and the lines exactly as they are about to be saved. A missing
+    // field refuses the sale; nothing is asked of any network (hard rule #1). Off (the mirror pilot, or not set): skipped.
+    let taxInvoice: TaxInvoiceDocument | undefined;
+    if (this.config.realTrading !== undefined) {
+      if (this.config.mirrorPilot === true) throw new LocalCommitRefusedError(saleId, REAL_TRADING_AND_MIRROR_WORDS);
+      // Audit A9: a card or UPI payment on the shop's own machine carries the machine's approval / reference number, so the
+      // day can be matched against the machine's slip. The store computer checks it against its own record again.
+      for (const t of input.tenders) {
+        if (t.kind !== 'card' && t.kind !== 'upi') continue;
+        const ref = readMachineReference(t.machineRef);
+        if (!ref.ok) throw new LocalCommitRefusedError(saleId, `${ref.laneMessage} Nothing was saved.`);
+      }
+      const built = buildTaxInvoice({
+        identity: this.config.realTrading.identity, number, committedAt, laneId, cashierId,
+        lines: recordLines.map((l, i) => ({
+          description: active[i]?.description ?? '', ...(l.hsnCode === undefined ? {} : { hsnCode: l.hsnCode }),
+          quantityMinor: l.quantityMinor, uom: l.uom, unitPriceMinor: l.unitPriceMinor, lineTotalMinor: l.lineTotalMinor, taxRateBps: l.taxRateBps,
+        })),
+        tenders: input.tenders.map((t) => ({ kind: t.kind, amountMinor: t.amount.minor, ...(t.machineRef === undefined ? {} : { machineRef: t.machineRef }) })),
+      });
+      if (!built.ok) throw new TaxInvoiceRefusedError(saleId, built.laneMessage, built.problems);
+      taxInvoice = built.doc;
+    }
 
     // **The disk, before anything else is true.**
     //
@@ -1096,7 +1147,8 @@ export class PosSession {
         })),
         taxBands: [...bands.entries()].sort((a, b) => a[0] - b[0]).map(([rateBps, b]) => ({ rateBps, netMinor: b.net, taxMinor: b.tax })),
         netMinor: inside.net, taxMinor: inside.tax, totalMinor: totals.payable.minor,
-        tenders: input.tenders.map((t) => ({ kind: t.kind, amountMinor: t.amount.minor })),
+        tenders: input.tenders.map((t) => ({ kind: t.kind, amountMinor: t.amount.minor, ...(t.machineRef === undefined ? {} : { machineRef: t.machineRef }) })),
+        ...(taxInvoice === undefined ? {} : { taxInvoice }),
       });
       return sale;
     };

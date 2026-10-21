@@ -6,3 +6,5 @@
 export * from './receipt';
 export * from './escpos';
 export * from './presets';
+// OB-271: the legal GST tax invoice (Rule 46) — built, checked and laid out for paper; off during the mirror pilot.
+export * from './tax-invoice';
