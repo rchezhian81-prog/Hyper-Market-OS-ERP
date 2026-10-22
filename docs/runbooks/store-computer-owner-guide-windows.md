@@ -1016,8 +1016,11 @@ The new till can already do the three things real trading needs. All three are *
 3. **Card and UPI approval numbers.** After the shop's own card machine or UPI says "approved", the cashier types the
    number from the machine's slip into one field, **Approval / Auth code / RRN** (never the card number). Any card
    machine and any bank works (OB-274). The day's list (More → **Card and UPI today**, and
-   at **Close till**) shows each number, so you can tick it against the machine's settlement slip. A refund to a card
-   is done on the machine, its reference typed, and a manager checks it with their own PIN.
+   at **Close till**) shows each number, so you can tick it against the machine's settlement slip. The manager sees the
+   same list for every till on the store computer at **Close the day**, after typing their own PIN (OB-259). A refund to
+   a card — and the difference of an exchange given back to a card — is done on the machine, its reference typed, and a
+   manager checks it with their own PIN. Head office's settlement review matches each payment by the same number;
+   one the slip does not show stays on the list of things to check.
 
 **The switch.** Real trading is switched on by one setting on the store computer, `EDGE_REAL_TRADING=1`, or by the store
 pack. The installer **never** writes it. The mirror pilot and real trading are **never on together**: a store computer

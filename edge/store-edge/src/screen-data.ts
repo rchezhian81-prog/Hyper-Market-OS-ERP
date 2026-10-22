@@ -54,6 +54,7 @@ import {
   type LoggedSale,
 } from './read-model';
 import type { OldErpBillSale } from '../../../packages/tender/src/old-erp-bill-number';
+import { readMachineReference } from '../../../packages/tender/src/machine-reference';
 import type { StorePack, PackRoutingPolicy, PackSlot, PackGstReconciliationPolicy, PackCategoryPolicyPolicy, PackGstReturnsPolicy, PackWastePolicy, PackWriteOffCapturePolicy, PackCountsPolicy, PackFleetPolicy, PackProductPublishReviewPolicy, PackDataQualityPolicy, PackOperationsInboxPolicy, PackLossPreventionPolicy, PackSubstitutionExceptionPolicy, PackDayBookPolicy, PackDocumentTemplatePolicy, PackReturnGovernancePolicy, PackCashOfficePolicy, PackRiskAcceptancePolicy, PackDayReopenPolicy, PackStockHealthPolicy, PackStoredValuePolicy, PackIntegrationHealthPolicy, PackGoodsReceiptPolicy, PackSuppliersPolicy, PackIndentsPolicy, PackDataIoPolicy, PackWorkforceInboxPolicy, PackEssPolicy, PackRosteringPolicy, PackChecklistPolicy, PackProductionPolicy, PackFacilitiesPolicy } from './store-pack';
 import { DEFAULT_WRITE_OFF_THRESHOLD_MINOR } from '../../../packages/waste/src/waste';
 import { packFreshness, type SignedPack } from '../../../services/catalogue/src/pack';
@@ -89,6 +90,18 @@ export interface ScreenInput {
   /** D04-FR-05: the latest device report from each till on this box; absent on a box with no till. */
   readonly peripheralReports?: readonly { readonly laneId: string; readonly reportedBy: string; readonly reportedAt: string; readonly devices: readonly { readonly kind: string; readonly state: string; readonly detail?: string }[] }[];
   readonly pendingPayments?: readonly { readonly attemptId: string; readonly laneId: string; readonly billRef: string; readonly kind: 'card' | 'upi'; readonly amountMinor: number; readonly askedAt: string; readonly state: string }[];
+  /**
+   * OB-271 · OB-274 · audit A9 — REAL TRADING only (absent during the mirror pilot, or on a box that takes no card
+   * payments): today's card and UPI payments on every till of this box with the machine's approval number, those still
+   * with no answer, and the card/UPI refunds done on the machine with their reference — for the manager's day close, to
+   * match against the machine's settlement slip.
+   */
+  readonly cardPayments?: {
+    readonly tradingDay: string;
+    readonly paid: readonly { readonly attemptId: string; readonly laneId: string; readonly kind: string; readonly amountMinor: number; readonly askedAt: string; readonly machineRef?: string; readonly appliedToSaleId?: string }[];
+    readonly unresolved: readonly { readonly attemptId: string; readonly laneId: string; readonly kind: string; readonly amountMinor: number; readonly askedAt: string; readonly billRef: string }[];
+    readonly refundsOnMachine: readonly Readonly<Record<string, unknown>>[];
+  };
   /** OB-256 · OB-258: whether this box is in the mirror pilot, and who turned it on. Absent → off. */
   readonly mirrorPilot?: { readonly on: boolean; readonly by: 'store_pack' | 'store_computer_setting' | null };
   /**
@@ -254,6 +267,9 @@ export function tillCatalogue(pack: StorePack, cataloguePack: SignedPack | undef
       barcodes: p.barcodes.map((code) => ({ code, kind: 'ean13' })),
       ...(typeof p.categoryId === 'string' && p.categoryId !== '' ? { categoryId: p.categoryId } : {}),
       ...(p.taxBps === undefined ? {} : { taxBps: p.taxBps }),
+      // OB-271 · A1: the HSN code rides from the pack file too, so a real-trading bill from it can be a tax invoice. Only a
+      // code that is there is carried — an absent or blank one stays absent, and the A1 checker refuses that bill by name.
+      ...(typeof p.hsnCode === 'string' && p.hsnCode.trim() !== '' ? { hsnCode: p.hsnCode.trim() } : {}),
       ...(p.status === undefined ? {} : { status: p.status }),
       ...(p.recallBlock === true ? { recallBlock: true } : {}),
       ...(p.recallBlock === true && Array.isArray(p.blockedBatches) && p.blockedBatches.length > 0 && p.blockedBatches.every((b) => typeof b === 'string' && b !== '')
@@ -560,6 +576,8 @@ export function managerPayload(input: ScreenInput): Record<string, unknown> {
       what: `${p.kind === 'upi' ? 'UPI' : 'Card'} payment of Rs ${(p.amountMinor / 100).toFixed(2)} on till ${p.laneId}, bill ${p.billRef}, asked ${p.askedAt} — ${p.state === 'asked' ? 'no answer was recorded from the machine' : 'no answer; not yet settled by the provider'}`,
     }));
   }
+  // OB-271 · audit A9: in real trading, the day's card/UPI list with each "Approval / Auth code / RRN" (absent otherwise).
+  if (input.cardPayments !== undefined) payload['cardPayments'] = cardPaymentsList(input.cardPayments);
   // Every pending item, whatever it is. The manager's screen lists them, so a sale and a stock
   // adjustment both belong here — "3 things have not reached the cloud" is the honest count.
   payload['unsentItems'] = input.outbox.pending().map((item) => ({
@@ -667,6 +685,42 @@ export function managerPayload(input: ScreenInput): Record<string, unknown> {
   Object.assign(payload, receivingChecklistFor(input));
 
   return payload;
+}
+
+/**
+ * OB-271 · OB-274 · audit A9 — the day's card and UPI list for the manager's day close, in the shape the screen shows: each
+ * payment with the machine's "Approval / Auth code / RRN", those still with no answer, and the refunds done on the machine
+ * with their reference, oldest first, with the paid and refunded totals. Pure.
+ *
+ * Hard rule #3: only a number that IS an approval / reference number in its checked form is shown — the same reader the
+ * till and the box keep it by (`readMachineReference`: 4–20 capitals or digits, never shaped like a card's number). Anything else on
+ * a record (a log written by hand, an older box) is shown as `null` — "no number kept" — and its value is never repeated.
+ */
+export function cardPaymentsList(day: NonNullable<ScreenInput['cardPayments']>): Record<string, unknown> {
+  const kept = (v: unknown): string | null => {
+    if (typeof v !== 'string') return null;
+    const read = readMachineReference(v);
+    return read.ok && read.value === v ? v : null;
+  };
+  const kindOf = (v: unknown): 'card' | 'upi' => (v === 'upi' ? 'upi' : 'card');
+  const whole = (v: unknown): number => (typeof v === 'number' && Number.isSafeInteger(v) && v > 0 ? v : 0);
+  const byTime = <T extends { at: string }>(rows: T[]): T[] => rows.sort((a, b) => a.at.localeCompare(b.at));
+  const paid = byTime(day.paid.map((p) => ({
+    at: p.askedAt, laneId: p.laneId, kind: kindOf(p.kind), amountMinor: whole(p.amountMinor), machineRef: kept(p.machineRef),
+    saleId: typeof p.appliedToSaleId === 'string' && p.appliedToSaleId !== '' ? p.appliedToSaleId : null,
+  })));
+  const unresolved = byTime(day.unresolved.map((p) => ({ at: p.askedAt, laneId: p.laneId, kind: kindOf(p.kind), amountMinor: whole(p.amountMinor), billRef: p.billRef })));
+  const refundsOnMachine = byTime(day.refundsOnMachine.map((r) => ({
+    at: typeof r['at'] === 'string' ? r['at'] : '', laneId: typeof r['laneId'] === 'string' ? r['laneId'] : '',
+    kind: kindOf(r['refundTender']), amountMinor: whole(r['valueMinor']), machineRef: kept(r['machineRef']),
+    returnId: typeof r['billRef'] === 'string' ? r['billRef'] : '',
+    approvedBy: typeof r['approvedBy'] === 'string' ? r['approvedBy'] : null,
+  })));
+  return {
+    tradingDay: day.tradingDay, paid, unresolved, refundsOnMachine,
+    paidTotalMinor: paid.reduce((n, p) => n + p.amountMinor, 0),
+    refundedTotalMinor: refundsOnMachine.reduce((n, r) => n + r.amountMinor, 0),
+  };
 }
 
 /**

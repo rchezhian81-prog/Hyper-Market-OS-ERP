@@ -320,6 +320,11 @@ export class PaymentAttempts {
     return [...this.attempts.values()].filter((a) => a.state === 'asked' || a.state === 'no_answer');
   }
 
+  /** OB-271 · audit A9: every attempt this box holds, on every till (the manager's day-close list reads the tills from it). */
+  all(): readonly Attempt[] {
+    return [...this.attempts.values()];
+  }
+
   /** One attempt as this box holds it (OB-55: the late-answer guard reads when it was asked). */
   get(attemptId: unknown): Attempt | undefined {
     return isStr(attemptId) ? this.attempts.get(attemptId) : undefined;

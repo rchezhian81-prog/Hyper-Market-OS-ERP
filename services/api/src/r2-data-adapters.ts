@@ -15,7 +15,7 @@ import type { PiiFieldDeclaration, SealedFieldsByEvent } from '../../../packages
 import type { AdapterCategory, AdapterConfig } from '../../../packages/integration/src/adapters';
 import type { PosRefund } from '../../../packages/settlement/src/settlement';
 import type { ProcessorRegisterDeps } from '../../customer/src/processor-register';
-import { STREAM, streamName, PERSONAL_DATA_POLICY } from './adapters';
+import { STREAM, streamName, PERSONAL_DATA_POLICY, settlementKeyOf } from './adapters';
 
 const all = async <T>(store: EventStore, tenantId: string, stream: string, type: string): Promise<T[]> =>
   (await store.readStream(tenantId, stream, { type })).map((e) => e.event.payload as T);
@@ -163,8 +163,12 @@ export function settlementRefundsAdapter(input: { readonly store: EventStore }) 
         let originalRef = r.originalSaleId === null ? `bill:none:${r.returnId}` : `bill:${r.originalSaleId}`;
         if (r.originalSaleId !== null) {
           const held = await input.store.findByIdempotencyKey(tenantId, `sale-${tenantId}-${r.originalSaleId}`);
-          const tenders = (held?.event.payload as { readonly tenders?: readonly { readonly kind: string; readonly ref?: string }[] } | undefined)?.tenders ?? [];
-          const ref = tenders.find((t) => t.kind === tenderKind && typeof t.ref === 'string' && t.ref.trim() !== '')?.ref;
+          const tenders = (held?.event.payload as { readonly tenders?: readonly { readonly kind: string; readonly ref?: string; readonly machineRef?: string }[] } | undefined)?.tenders ?? [];
+          // OB-271 · audit A9: the original payment by the key the review reads it by — its machine approval number when it
+          // was taken on the shop's own machine, else its provider reference — so a refund line naming the original
+          // payment's approval number on the machine's slip finds it.
+          const original = tenders.find((t) => t.kind === tenderKind && settlementKeyOf(t) !== undefined);
+          const ref = original === undefined ? undefined : settlementKeyOf(original);
           if (ref !== undefined) originalRef = ref;
         }
         out.push({ id: r.returnId, originalRef, amountMinor, refundedOn: r.processedAt.slice(0, 10) });

@@ -1178,6 +1178,12 @@ export function bootPos(config?: {
   const nobodyAtTheTill = (): { readonly kind: 'refused'; readonly laneMessage: string } => ({ kind: 'refused', laneMessage: new NoOperatorError('take a refund').laneMessage });
   // The two outcomes that mean the return IS on the disk (settled at the lane, or a reversal pending) — everything else is a refusal.
   const creditRecorded = (o: RefundScreenOutcome): o is Extract<RefundScreenOutcome, { kind: 'settled' | 'pending' }> => o.kind === 'settled' || o.kind === 'pending';
+  // OB-279 · OB-285 (real trading): an exchange's replacement is charged its tax invoice's rounded total — the till's own
+  // payable for the goods on the bill now (its lines plus a round off of 0 down to −₹1). Off real trading: nothing.
+  const replacementRoundOff = (): { readonly replacementRoundOffMinor?: number } => {
+    const roundOff = session.totals().roundOffMinor;
+    return roundOff === undefined || roundOff === 0 ? {} : { replacementRoundOffMinor: roundOff };
+  };
 
   const lookupByOldBill = config?.laneLookupByOldBill ?? laneLookupByOldBill(config?.lanePort ?? DEFAULT_LANE_PORT);
   const lookupRefundByOldBill = async (oldBill: string): Promise<RefundLookup | null> => {
@@ -1225,6 +1231,8 @@ export function bootPos(config?: {
         });
       },
       exchange: {
+        // OB-279 · OB-285 (real trading): the replacement's round off as the till's own payable has it — the bill the
+        // customer is charged for the new goods. Off real trading the till charges the lines, and nothing is passed.
         // The arithmetic is the tested engine's (`assessExchange`), run over the bill's own history and the goods on
         // the bill NOW: the credit at the bill's own price, the replacement as rung (promotions attributed per line, as
         // the sale record carries them), the balance and whether a refunded balance needs a manager. Nothing recorded.
@@ -1235,6 +1243,8 @@ export function bootPos(config?: {
               exchangeId: '',
               returnLines: returnLines.map((l) => ({ productId: l.productId, uom: l.uom, quantityMinor: l.quantityMinor, disposition: l.disposition })),
               replacementLines: session.replacementLines(),
+              // OB-279 · OB-285: in real trading the replacement is charged its tax invoice's rounded total (never above it).
+              ...replacementRoundOff(),
             },
           });
           return {
@@ -1258,6 +1268,7 @@ export function bootPos(config?: {
               exchangeId: draft.exchangeId,
               returnLines: draft.returnLines.map((l) => ({ productId: l.productId, uom: l.uom, quantityMinor: l.quantityMinor, disposition: l.disposition })),
               replacementLines: session.replacementLines(),
+              ...replacementRoundOff(),
             },
           }))();
           if (!q.ok) return { kind: 'invalid', laneMessage: `${q.detail} Nothing was recorded.` };

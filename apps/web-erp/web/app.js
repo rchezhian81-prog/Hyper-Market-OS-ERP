@@ -96,6 +96,17 @@ const WORDS = {
     closedNote: 'A closed day is locked. Anything found afterwards is a correction, not a change.',
     dayClosed: 'The day is closed and locked.', stillOpen: 'The day cannot close yet',
     andMore: 'and more', whatToDo: 'What to do',
+    // OB-271 · audit A9: the day's card and UPI list (real trading only).
+    cardDayTitle: 'Card and UPI today — match against the machine\'s settlement slip',
+    cardDayLead: 'Every card and UPI payment on this store computer\'s tills today, with the number the shop\'s machine printed. Tick each one against the machine\'s settlement slip before you close. A card number is never kept or shown.',
+    cardColTime: 'Time', cardColTill: 'Till', cardColKind: 'Card / UPI', cardColAmount: 'Amount', cardColRef: 'Approval / Auth code / RRN', cardColBill: 'Bill',
+    cardColRefundRef: 'Refund reference', cardColCheckedBy: 'Checked by', cardColRefund: 'Refund',
+    cardKindCard: 'Card', cardKindUpi: 'UPI',
+    cardNoRef: 'no number kept — check the machine\'s slip', cardNoBill: 'no bill yet',
+    cardPaidTotal: 'Paid by card and UPI today', cardRefundedTotal: 'Refunded on the machine today',
+    cardNone: 'No card or UPI payment on this store computer today.',
+    cardUnresolvedTitle: 'Still no answer from the machine — check the machine before closing',
+    cardRefundsTitle: 'Refunds done on the machine',
     sampleData: 'Sample data — this is not your store.',
     countedSoFar: 'Counted', item: 'Item',
     // OB-172: the receiving checklist for chilled, frozen or raw-meat goods, done at the door and saved with the delivery.
@@ -163,6 +174,16 @@ const WORDS = {
     carried: 'நாள் முடிக்கப்பட்டு பூட்டப்பட்டது. வழங்குநர் பதில் தரும் வரை இந்தக் கட்டணங்கள் தலைமை அலுவலகப் பட்டியலில் இருக்கும்',
     dayClosed: 'நாள் முடிக்கப்பட்டு பூட்டப்பட்டது.', stillOpen: 'நாளை இன்னும் முடிக்க முடியாது',
     andMore: 'மேலும்', whatToDo: 'என்ன செய்ய வேண்டும்',
+    cardDayTitle: 'இன்றைய கார்டு மற்றும் UPI — இயந்திரத்தின் செட்டில்மென்ட் சீட்டுடன் சரிபார்க்கவும்',
+    cardDayLead: 'இன்று இந்தக் கடை கணினியின் கல்லாக்களில் நடந்த ஒவ்வொரு கார்டு மற்றும் UPI கட்டணமும், கடையின் இயந்திரம் அச்சிட்ட எண்ணுடன். நாளை முடிக்கும் முன் ஒவ்வொன்றையும் இயந்திரத்தின் செட்டில்மென்ட் சீட்டுடன் சரிபார்க்கவும். கார்டு எண் ஒருபோதும் சேமிக்கப்படுவதோ காட்டப்படுவதோ இல்லை.',
+    cardColTime: 'நேரம்', cardColTill: 'கல்லா', cardColKind: 'கார்டு / UPI', cardColAmount: 'தொகை', cardColRef: 'அனுமதி / அங்கீகாரக் குறியீடு / RRN', cardColBill: 'பில்',
+    cardColRefundRef: 'திரும்பப் பணக் குறிப்பு எண்', cardColCheckedBy: 'சரிபார்த்தவர்', cardColRefund: 'திரும்பப் பணம்',
+    cardKindCard: 'கார்டு', cardKindUpi: 'UPI',
+    cardNoRef: 'எண் சேமிக்கப்படவில்லை — இயந்திரச் சீட்டைப் பார்க்கவும்', cardNoBill: 'இன்னும் பில் இல்லை',
+    cardPaidTotal: 'இன்று கார்டு மற்றும் UPI மூலம் செலுத்தியது', cardRefundedTotal: 'இன்று இயந்திரத்தில் திரும்பத் தந்தது',
+    cardNone: 'இன்று இந்தக் கடை கணினியில் கார்டு அல்லது UPI கட்டணம் எதுவும் இல்லை.',
+    cardUnresolvedTitle: 'இயந்திரத்திடமிருந்து இன்னும் பதில் இல்லை — முடிக்கும் முன் இயந்திரத்தைப் பார்க்கவும்',
+    cardRefundsTitle: 'இயந்திரத்தில் செய்யப்பட்ட திரும்பப் பணங்கள்',
     sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.',
     countedSoFar: 'எண்ணப்பட்டது', item: 'பொருள்',
     rcTitle: 'பெறுதல் சரிபார்ப்பு — குளிர் மற்றும் உறைந்த பொருட்கள்',
@@ -1107,6 +1128,71 @@ function resetClose() {
   el('do-close').hidden = true;
   el('close-pin-row').hidden = true;
   el('carry-row').hidden = true;
+  renderCardDay();
+}
+
+/**
+ * OB-271 · audit A9 — REAL TRADING only: today's card and UPI payments on this store computer's tills, each with the number
+ * the shop's machine printed ("Approval / Auth code / RRN"), those still with no answer, and the refunds done on the
+ * machine — exactly as the store computer listed them (`window.managerData.cardPayments`), to tick against the machine's
+ * settlement slip. Absent from the payload (the mirror pilot, or no card payments on this box): the section stays hidden.
+ * Only what the store computer checked is shown; a number it did not keep reads "no number kept" — never a card number.
+ */
+function renderCardDay() {
+  const day = window.managerData && window.managerData.cardPayments;
+  const section = el('card-day');
+  if (!day || typeof day !== 'object' || !Array.isArray(day.paid)) { section.hidden = true; return; }
+  section.hidden = false;
+  el('card-day-title').textContent = t('cardDayTitle');
+  el('card-day-lead').textContent = t('cardDayLead');
+  const clock = (iso) => { const d = new Date(iso); return Number.isNaN(d.getTime()) ? '—' : `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+  const kindOf = (k) => (k === 'upi' ? t('cardKindUpi') : t('cardKindCard'));
+  const cell = (tag, text, className) => {
+    const c = document.createElement(tag);
+    c.textContent = text;
+    if (className) c.className = className;
+    if (tag === 'th') c.scope = 'col';
+    return c;
+  };
+  const table = (id, heads, rows) => {
+    const wrap = document.createElement('div');
+    wrap.className = 'table-wrap';
+    const tbl = document.createElement('table');
+    tbl.id = id;
+    const head = document.createElement('thead');
+    const hr = document.createElement('tr');
+    for (const h of heads) hr.appendChild(cell('th', h));
+    head.appendChild(hr);
+    const body = document.createElement('tbody');
+    for (const r of rows) { const tr = document.createElement('tr'); for (const c of r) tr.appendChild(c); body.appendChild(tr); }
+    tbl.append(head, body);
+    wrap.appendChild(tbl);
+    return wrap;
+  };
+  const refCell = (ref) => (typeof ref === 'string' && ref !== '' ? cell('td', ref, 'ref') : cell('td', t('cardNoRef'), 'ref none'));
+  const line = (id, text, className) => { const p = document.createElement('p'); p.id = id; p.textContent = text; if (className) p.className = className; return p; };
+  const heading = (text) => { const h = document.createElement('h4'); h.textContent = text; return h; };
+  const unresolved = Array.isArray(day.unresolved) ? day.unresolved : [];
+  const refunds = Array.isArray(day.refundsOnMachine) ? day.refundsOnMachine : [];
+  const parts = [];
+  if (day.paid.length === 0 && unresolved.length === 0 && refunds.length === 0) parts.push(line('card-day-none', t('cardNone')));
+  if (day.paid.length > 0) {
+    parts.push(table('card-day-paid', [t('cardColTime'), t('cardColTill'), t('cardColKind'), t('cardColAmount'), t('cardColRef'), t('cardColBill')],
+      day.paid.map((p) => [cell('td', clock(p.at)), cell('td', String(p.laneId ?? '')), cell('td', kindOf(p.kind)), cell('td', inr(p.amountMinor), 'n'), refCell(p.machineRef), cell('td', p.saleId || t('cardNoBill'))])));
+    parts.push(line('card-day-paid-total', `${t('cardPaidTotal')}: ${inr(day.paidTotalMinor ?? 0)}`, 'total'));
+  }
+  if (unresolved.length > 0) {
+    parts.push(heading(t('cardUnresolvedTitle')));
+    parts.push(table('card-day-unresolved', [t('cardColTime'), t('cardColTill'), t('cardColKind'), t('cardColAmount'), t('cardColBill')],
+      unresolved.map((p) => [cell('td', clock(p.at)), cell('td', String(p.laneId ?? '')), cell('td', kindOf(p.kind)), cell('td', inr(p.amountMinor), 'n'), cell('td', String(p.billRef ?? ''))])));
+  }
+  if (refunds.length > 0) {
+    parts.push(heading(t('cardRefundsTitle')));
+    parts.push(table('card-day-refunds', [t('cardColTime'), t('cardColTill'), t('cardColKind'), t('cardColRefund'), t('cardColRefundRef'), t('cardColBill'), t('cardColCheckedBy')],
+      refunds.map((r) => [cell('td', clock(r.at)), cell('td', String(r.laneId ?? '')), cell('td', kindOf(r.kind)), cell('td', `-${inr(r.amountMinor)}`, 'n'), refCell(r.machineRef), cell('td', String(r.returnId ?? '')), cell('td', r.approvedBy || '—')])));
+    parts.push(line('card-day-refunded-total', `${t('cardRefundedTotal')}: ${inr(day.refundedTotalMinor ?? 0)}`, 'total'));
+  }
+  el('card-day-body').replaceChildren(...parts);
 }
 
 /**

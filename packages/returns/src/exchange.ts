@@ -38,7 +38,14 @@ export type ExchangeRefusal =
   | 'product_not_on_this_bill'
   | 'more_than_was_sold'
   | 'refund_exceeds_what_is_left'
-  | 'replacement_lines_do_not_sum';
+  | 'replacement_lines_do_not_sum'
+  | 'round_off_not_readable';
+
+/**
+ * OB-279 · OB-285: a real-trading bill is charged its rounded total — never above its lines (the exact MRP-based total),
+ * and below them by at most ₹1 (two tax components, each moved by at most 50 paise).
+ */
+export const MAX_BILL_ROUND_OFF_MINOR = 100;
 
 /** Which way the balance goes, and how much. `even` is the zero-value exchange the roadmap names. */
 export type ExchangeBalanceKind = 'even' | 'refund' | 'top_up';
@@ -49,7 +56,10 @@ export interface ExchangeAssessment {
   readonly detail: string;
   /** The value credited for the goods coming back, at the ORIGINAL bill's prices (minor units). */
   readonly returnedValueMinor: number;
-  /** What the replacement goods cost, as rung (minor units). */
+  /**
+   * What the replacement goods cost, as rung (minor units) — in real trading the replacement bill's own rounded total
+   * (its lines plus its round off, OB-279 · OB-285), which is what the customer is charged for them.
+   */
   readonly replacementTotalMinor: number;
   /** replacement − returned: positive → the customer pays the difference; negative → the shop refunds it. */
   readonly netMinor: number;
@@ -123,6 +133,13 @@ export function assessExchange(input: {
     readonly exchangeId: string;
     readonly returnLines: readonly ReturnRequestLine[];
     readonly replacementLines: readonly ReplacementLine[];
+    /**
+     * OB-279 · OB-285 (real trading): what the replacement BILL is below its lines — 0, or down to −₹1 — as the till's own
+     * tax invoice rounds it. The replacement is then charged its rounded total, exactly as any real-trading sale: the
+     * customer never pays above the bill (nor the MRP), and the balance is worked out against what the bill says. Absent
+     * or 0: the replacement is its lines, as before.
+     */
+    readonly replacementRoundOffMinor?: number;
   };
 }): ExchangeAssessment {
   const { sale, exchange } = input;
@@ -130,8 +147,19 @@ export function assessExchange(input: {
   const priorReturns = input.priorReturns.filter((r) => r.returnId !== exchange.exchangeId);
   const priorRefunds = input.priorRefunds.filter((r) => r.returnId !== exchange.exchangeId);
 
-  const replacementTotalMinor = exchange.replacementLines.reduce((s, l) => s + l.lineTotalMinor, 0);
-  const returnedValueMinor = returnedValueAtOriginalPrices(sale, exchange.returnLines, priorReturns.flatMap((r) => r.lines));
+  const roundOff = exchange.replacementRoundOffMinor ?? 0;
+  const roundOffReadable = Number.isSafeInteger(roundOff) && roundOff <= 0 && roundOff >= -MAX_BILL_ROUND_OFF_MINOR;
+  const linesMinor = exchange.replacementLines.reduce((s, l) => s + l.lineTotalMinor, 0);
+  const replacementTotalMinor = Math.max(0, linesMinor + (roundOffReadable ? roundOff : 0));
+  const atBillPrices = returnedValueAtOriginalPrices(sale, exchange.returnLines, priorReturns.flatMap((r) => r.lines));
+  // OB-285 · M13-FR-03: a real-trading bill was charged BELOW its lines by its round off (at most ₹1). The goods coming
+  // back are valued at the bill's own line prices — but the credit never takes the bill past what it was paid, so the
+  // last of a bill's goods are credited what is left of it: the exchange is never refused for those paise, and the
+  // customer is never given back more than they paid. Any other excess is refused below, as before.
+  const billRoundDown = sale.lines.reduce((s, l) => s + (l.lineTotalMinor ?? 0), 0) - sale.totalMinor;
+  const leftOnBill = sale.totalMinor - alreadyRefundedMinor(sale.saleId, priorRefunds);
+  const returnedValueMinor = billRoundDown > 0 && billRoundDown <= MAX_BILL_ROUND_OFF_MINOR && atBillPrices > leftOnBill && atBillPrices - leftOnBill <= billRoundDown
+    ? Math.max(0, leftOnBill) : atBillPrices;
   const netMinor = replacementTotalMinor - returnedValueMinor;
   const balance: ExchangeBalanceKind = netMinor === 0 ? 'even' : netMinor > 0 ? 'top_up' : 'refund';
   const base = {
@@ -142,6 +170,7 @@ export function assessExchange(input: {
   const refuse = (refusedBecause: ExchangeRefusal, detail: string): ExchangeAssessment =>
     ({ ok: false, refusedBecause, detail, ...base, remaining: [] });
 
+  if (!roundOffReadable) return refuse('round_off_not_readable', `The replacement bill's round off must be a whole number of paise from 0 down to −${MAX_BILL_ROUND_OFF_MINOR} (never above its lines), not ${String(exchange.replacementRoundOffMinor)}.`);
   if (exchange.returnLines.length === 0) return refuse('no_return_lines', 'An exchange must have at least one line coming back — with nothing returned it is a sale, not an exchange.');
   if (exchange.replacementLines.length === 0) return refuse('no_replacement_lines', 'An exchange must have at least one line going out — with nothing replacing the goods it is a return, not an exchange.');
   for (const l of exchange.returnLines) {
