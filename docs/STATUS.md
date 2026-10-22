@@ -5,7 +5,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
-## Round 6 (22 October 2026) — real-trading follow-ups, switched off — full gate green: 13,463 unit/integration (16 skipped), 53 performance, 476 browser; merged (PR #803)
+## Round 6 (22 October 2026) — real-trading follow-ups, switched off — full gate green: 13,463 unit/integration (16 skipped), 53 performance, 476 browser; merged (PR #803) and deployed to the demo
 
 - Built (off during the mirror pilot): the manager's day close lists card/UPI payments with each approval number behind the office PIN; HSN reaches the till from the pack file; head office's settlement review matches by approval number, unmatched and doubled numbers stay exceptions; real-trading exchanges charge the rounded bill and a card difference is done on the machine with a manager's PIN.
 - Owner decision OB-286: a refund gives each item its own price and the last item absorbs the round-off; the CA confirms the credit-note tax.
