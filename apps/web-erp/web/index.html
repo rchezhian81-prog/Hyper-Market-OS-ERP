@@ -295,6 +295,19 @@
       .close-form { display: grid; gap: var(--space-3); margin: var(--space-4) 0; padding: var(--space-4) var(--space-5); background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); }
       .close-form .field { margin: 0; }
       .close-form p.lead { margin: 0; }
+      /* OB-271: the day's card and UPI list — each payment with the machine's approval number, to tick against its slip. */
+      .card-day { margin: var(--space-4) 0; padding: var(--space-4) var(--space-5); background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); }
+      .card-day h3 { margin: 0 0 4px; font-size: var(--fs-md); }
+      .card-day h4 { margin: var(--space-4) 0 4px; font-size: 16px; }
+      .card-day p { margin: 0 0 8px; color: var(--ink-2); font-size: 15px; }
+      .card-day .table-wrap { overflow-x: auto; }
+      .card-day table { width: 100%; border-collapse: collapse; font-size: 15px; }
+      .card-day th, .card-day td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+      .card-day th { color: var(--ink-2); font-weight: 600; }
+      .card-day td.n { text-align: right; font-variant-numeric: var(--numbers); white-space: nowrap; }
+      .card-day td.ref { font-family: ui-monospace, Consolas, monospace; font-weight: 700; letter-spacing: 0.04em; }
+      .card-day td.ref.none { font-family: inherit; font-weight: 600; color: var(--danger-text); letter-spacing: 0; }
+      .card-day .total { font-weight: 700; margin-top: 8px; color: var(--ink); }
 
       /* The sheet — a record drawer at a desk: a heading on its own hairline, choices you can read, a close that says so. */
       .sheet h2 { font-size: var(--fs-lg); padding-bottom: 12px; border-bottom: 1px solid var(--line-soft); }
@@ -451,6 +464,13 @@
       <section id="view-close" hidden>
         <h2 id="close-title">Close the day</h2>
         <p class="lead" id="close-lead">Check what is still open before you close. A closed day is locked.</p>
+        <!-- OB-271 · audit A9 (REAL TRADING only): today's card and UPI payments with the machine's approval numbers, and the
+             refunds done on the machine — to tick against the machine's settlement slip. Never a card number. -->
+        <section id="card-day" class="card-day" aria-labelledby="card-day-title" hidden>
+          <h3 id="card-day-title">Card and UPI today</h3>
+          <p id="card-day-lead"></p>
+          <div id="card-day-body"></div>
+        </section>
         <button id="check-close" type="button" class="wide sre-btn">Check what is still open</button>
         <div class="blockers" id="blockers"></div>
         <!-- Round 4: the close is the manager's own act — they key their own till PIN; the store computer checks it. -->

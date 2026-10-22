@@ -195,6 +195,7 @@ import type { DrillAudit } from '../../../packages/owner-control/src/index';
 import type { Hasher } from '../../../packages/audit/src/audit-trail';
 import { AuditTrail, InMemoryAuditStore, type AuditEntry, type AuditRecord } from '../../../packages/audit/src/index';
 import type { SettlementRoutesDeps, SettlementBatch, SettlementLine, CapturedTender } from '../../finance/src/settlement';
+import { readMachineReference } from '../../../packages/tender/src/machine-reference';
 import { attachEvidence, type Investigation } from '../../../packages/settlement/src/settlement';
 import { project, projectBatches, fefoBatchesAt, EFFECT_ON_HAND, movesValueOnward } from '../../inventory/src/index';
 import { minorPerUnitOf, normaliseUom, valueAtCost } from '../../../packages/contracts/src/quantity';
@@ -6771,6 +6772,13 @@ export function settlementAdapter(input: {
     // Electronic tenders captured in the window, from the day's sales. Cash carries no provider
     // reference and is not part of settlement — only ref-bearing (card/UPI) tenders are projected.
     // The read is windowed at the store on `occurredAt`, so it costs a window, not the whole history.
+    //
+    // OB-271 · OB-274 · audit A9: a card/UPI tender taken on the shop's OWN machine carries the machine's approval / auth
+    // code or RRN (`machineRef`) — the number printed on the machine's settlement slip. The tender's `ref` there is the
+    // store computer's own attempt id, a number the machine never saw, so nothing on the slip could ever match it. Such a
+    // tender is reviewed BY ITS APPROVAL NUMBER: the slip's line ticks it, and one with no line on the slip stays an
+    // unmatched exception (hard rule #10, P-08). Two payments with the same approval number are never silently paired —
+    // the matcher reports the number as ambiguous. A tender with no machine number is reviewed by its `ref`, as before.
     electronicTenders: async (tenantId, fromIso, toIso) => {
       const sales = await input.store.readStream(tenantId, STREAM.sales, { type: 'SaleCommitted', from: fromIso, to: toIso });
       const out: CapturedTender[] = [];
@@ -6778,14 +6786,26 @@ export function settlementAdapter(input: {
         const sale = e.event.payload as IncomingSale;
         const capturedOn = sale.committedAt.slice(0, 10);
         sale.tenders.forEach((t, i) => {
-          if (typeof t.ref === 'string' && t.ref.trim() !== '') {
-            out.push({ id: `${sale.saleId}:t${i}`, ref: t.ref, amountMinor: t.amountMinor, capturedOn });
-          }
+          const key = settlementKeyOf(t);
+          if (key !== undefined) out.push({ id: `${sale.saleId}:t${i}`, ref: key, amountMinor: t.amountMinor, capturedOn });
         });
       }
       return out;
     },
   };
+}
+
+/**
+ * OB-271 · audit A9: the reference a card/UPI tender is reconciled against the provider's settlement file by — the shop's
+ * own machine's approval number (`machineRef`, kept only in its checked form: 4–20 capitals or digits, never card data)
+ * when the tender carries one, else its provider reference. `undefined` for a tender with neither (cash).
+ */
+export function settlementKeyOf(t: { readonly ref?: unknown; readonly machineRef?: unknown }): string | undefined {
+  if (typeof t.machineRef === 'string') {
+    const read = readMachineReference(t.machineRef);
+    if (read.ok) return read.value;
+  }
+  return typeof t.ref === 'string' && t.ref.trim() !== '' ? t.ref : undefined;
 }
 
 /**

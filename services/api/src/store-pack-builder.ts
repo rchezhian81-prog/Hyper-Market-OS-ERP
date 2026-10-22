@@ -149,6 +149,8 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
         categoryId: typeof m?.primaryCategoryId === 'string' && m.primaryCategoryId !== '' ? m.primaryCategoryId : 'uncategorised',
         unitPriceMinor: p.unitPriceMinor, ...(unitCostMinor === undefined ? {} : { unitCostMinor }),
         uom: unitCode(p.baseUom), taxBps: p.taxBps, status: p.status, recallBlock: p.recallBlock === true,
+        // OB-271 · A1: the HSN code head office published, so a box trading from this pack file can issue a tax invoice.
+        ...(typeof p.hsnCode === 'string' && p.hsnCode.trim() !== '' ? { hsnCode: p.hsnCode } : {}),
         // SF-08 · OB-139 "A" (R3): the batches the block comes from, for the store's own screens.
         ...(p.recallBlock === true && p.blockedBatches !== undefined ? { blockedBatches: p.blockedBatches } : {}),
         barcodes: barcodes.get(p.productId) ?? [],

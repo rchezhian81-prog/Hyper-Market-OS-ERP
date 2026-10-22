@@ -2263,11 +2263,17 @@ async function startExchange() {
     return;
   }
   if (outcome.kind === 'done') {
-    tell(t('exchangeDone'), `${outcome.laneMessage} ${outcome.number} · ${outcome.replacementReceipt}`, SUCCESS);
+    // OB-271 · audit A11: in REAL TRADING a difference refunded to a card or UPI is then DONE on the shop's own machine,
+    // exactly as a card refund: its reference typed, a manager checks it with their own PIN, the store computer records it
+    // (once, for exactly that difference) — instead of staying "pending". Off: exactly as before.
+    const onMachine = outcome.balance === 'refund' && outcome.refundStatus === 'pending' && realTradingOn()
+      && (settlement.refundTender === 'card' || settlement.refundTender === 'upi') && session.recordCardRefundOnMachine;
+    if (!onMachine) tell(t('exchangeDone'), `${outcome.laneMessage} ${outcome.number} · ${outcome.replacementReceipt}`, SUCCESS);
     session.newSale();
     void refreshBadge();
     selectedLineId = null;
     render();
+    if (onMachine) await afterRefund({ kind: 'pending', refundMinor: outcome.balanceMinor }, settlement.refundTender, `RT-${number}`);
     return;
   }
   if (outcome.kind === 'half_done') { tell(t('exchangeStop'), outcome.laneMessage, STOP); return; }

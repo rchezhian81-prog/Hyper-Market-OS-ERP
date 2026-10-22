@@ -1091,9 +1091,16 @@ export async function startEdge(
         if (!entry.ok) continue;
         try { const r = JSON.parse(entry.record) as Record<string, unknown>; if (returnIdOf(r) === returnId) { held = r; break; } } catch { /* not a refund */ }
       }
-      const refundMinor = held === undefined ? undefined : typeof held['refundMinor'] === 'number' ? held['refundMinor']
-        : typeof (held['refund'] as { minor?: unknown } | undefined)?.minor === 'number' ? (held['refund'] as { minor: number }).minor : undefined;
-      if (held === undefined || held['laneId'] !== laneId || held['refundTender'] !== body['refundTender'] || refundMinor !== value) {
+      // What left the shop on a card or UPI: a refund's own amount and tender — or, for an EXCHANGE whose difference the shop
+      // owed the customer, that difference and the tender it went back on (OB-271: done on the machine exactly the same way).
+      const exchange = held !== undefined && held['refundTender'] === 'exchange' && held['exchange'] !== null && typeof held['exchange'] === 'object'
+        ? held['exchange'] as Record<string, unknown> : undefined;
+      const refundMinor = held === undefined ? undefined
+        : held['refundTender'] === 'exchange' ? (exchange?.['balance'] === 'refund' && typeof exchange['balanceMinor'] === 'number' ? exchange['balanceMinor'] : undefined)
+          : typeof held['refundMinor'] === 'number' ? held['refundMinor']
+            : typeof (held['refund'] as { minor?: unknown } | undefined)?.minor === 'number' ? (held['refund'] as { minor: number }).minor : undefined;
+      const heldTender = held === undefined ? undefined : held['refundTender'] === 'exchange' ? (exchange?.['balance'] === 'refund' ? exchange['balanceTender'] : undefined) : held['refundTender'];
+      if (held === undefined || held['laneId'] !== laneId || heldTender !== body['refundTender'] || refundMinor !== value) {
         return { recorded: false, refusedBecause: 'card_refund_not_here', laneMessage: 'This store computer holds no card or UPI refund on this till for that amount. Nothing was recorded — check the refund number.' };
       }
     }
@@ -1824,6 +1831,24 @@ export async function startEdge(
   });
   if (eveningCheckBox.unreadableRecords > 0) say(`evening check: ${eveningCheckBox.unreadableRecords} record(s) could not be read whole — kept, not repaired. Raise this.`);
 
+  /**
+   * OB-271 · audit A9: the box's card/UPI day — every till's payments recorded as paid today (approved, or confirmed by the
+   * provider), those still with no answer, and the card/UPI refunds done on the machine today — by the shop's own trading
+   * day (the pack's cut-off), the same day the till's own list uses.
+   */
+  const cardDayOf = (pa: PaymentAttempts, nowIso: string): NonNullable<ScreenInput['cardPayments']> => {
+    const rule = packCutoff(pack);
+    const today = tradingDate(wallClockIn(nowIso), rule);
+    const onToday = (at: unknown): boolean => typeof at === 'string' && tradingDate(wallClockIn(at), rule) === today;
+    const lanes = [...new Set(pa.all().map((a) => a.laneId))];
+    return {
+      tradingDay: today,
+      paid: lanes.flatMap((l) => pa.paid(l)).filter((a) => onToday(a.askedAt)),
+      unresolved: pa.pending().filter((a) => onToday(a.askedAt)),
+      refundsOnMachine: cardRefundsOnMachine.filter((r) => onToday(r['at'])),
+    };
+  };
+
   // The screens socket. Built from the CURRENT state on every request, so a screen reloaded at
   // four o'clock shows four o'clock's exceptions rather than the ones this process saw at boot.
   const snapshot = (): ScreenInput => {
@@ -1847,6 +1872,9 @@ export async function startEdge(
       tradingDay: tradingDate(wallClockIn(now), packCutoff(pack)),
       ...(heldCatalogue === undefined ? {} : { cataloguePack: heldCatalogue }),
       ...(payments === null ? {} : { pendingPayments: payments.pending() }),
+      // OB-271 · audit A9: REAL TRADING only — today's card/UPI payments on every till of this box with the machine's
+      // approval numbers, and the refunds done on the machine, for the manager's day close. Absent in the mirror pilot.
+      ...(payments === null || !realTrading().on ? {} : { cardPayments: cardDayOf(payments, now) }),
       ...(peripheralReports === null ? {} : { peripheralReports: peripheralReports.latest() }),
       // OB-256: the till is told it is in the mirror pilot, and who turned it on.
       mirrorPilot: mirrorPilot(),

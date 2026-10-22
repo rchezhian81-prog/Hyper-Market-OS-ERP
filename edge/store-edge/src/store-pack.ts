@@ -89,6 +89,12 @@ export interface PackProduct {
    * catalogue the till is given, counted rather than shipped at a guessed rate.
    */
   readonly taxBps?: number;
+  /**
+   * OB-271 · addendum A1: the item's HSN code, as head office's catalogue carries it — what a real-trading tax invoice
+   * prints on the line. Absent means the till's bill for this item cannot be a tax invoice, and in real trading the sale is
+   * refused by the A1 checker (never a guessed code). It changes nothing during the mirror pilot.
+   */
+  readonly hsnCode?: string;
   /** `active`, `clearance`, `discontinued`… Absent means the lane cannot judge it sellable. */
   readonly status?: string;
   /**
