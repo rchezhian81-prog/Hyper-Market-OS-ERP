@@ -13,6 +13,8 @@
 //     (its own route, found on the surface), on the ops timer and on demand.
 //   • M20-FR-04 · M20-FR-02 · A05 — saved addresses (minimised), the "no saved payment" stand-in, consent-safe
 //     recommendations, and the customer's help answers (A05 through its own staff-side engine, own orders only).
+//   • M21-FR-02 — journeys worked out from facts (a held basket, an occasion given with consent, the last purchase), sent
+//     only when switched on, each through the campaign send's own route; on the ops timer and on demand.
 //   • M17-FR-01 (OB-295) — the loyalty programme's tiers and points expiry: owner settings kept as facts, OFF and "not set"
 //     until entered; the tier multiplier applied when a bill earns (`withLoyaltyTiers`, one wrap in main.ts); the expiry
 //     run on the ops worker's timer (`customerCommerceSweep`) and on demand.
@@ -30,6 +32,8 @@ import { ApiError } from '../../kernel/src/index';
 import { storefrontAccountRoutes, type StorefrontAccountDeps, type SavedAddress } from '../../orders/src/storefront-account';
 import { basketAffinityAdapter } from './r4-insight-adapters';
 import { resolveServiceabilityPolicy } from '../../../packages/storefront/src/index';
+import { journeyRoutes, runJourneys, type JourneyDeps, type CartFact, type JourneySwitch, type JourneyOutcome } from '../../customer/src/journeys';
+import type { Occasion } from '../../../packages/service-desk/src/journey-facts';
 import { orderNoticeRoutes, runOrderNotices, type OrderNoticeDeps, type OrderNoticeFact } from '../../orders/src/order-notices';
 import { paymentPosition, foldRefunds } from '../../../packages/orders/src/payment-refunds';
 import type { PlacedOrder } from '../../orders/src/index';
@@ -73,7 +77,7 @@ async function invoke(route: Route, ctx: Omit<RequestContext, 'branchId' | 'trac
  * What the timed sweep needs from the surface it cannot see from `startApi` — the storefront's own placement route —
  * registered here by `customerCommerceSurface` for the store it was built over.
  */
-const RUNNERS = new WeakMap<EventStore, { readonly subscriptions: SubscriptionDeps; readonly notices: OrderNoticeDeps }>();
+const RUNNERS = new WeakMap<EventStore, { readonly subscriptions: SubscriptionDeps; readonly notices: OrderNoticeDeps; readonly journeys: JourneyDeps }>();
 
 const unwiredProgramme = (now: () => string): LoyaltyProgrammeDeps => ({
   now, tiers: async () => undefined, recordTiers: async () => {}, expiry: async () => undefined, recordExpiry: async () => {},
@@ -286,6 +290,57 @@ export function storefrontAccountAdapter(input: Base & { readonly a05: Route | u
   };
 }
 
+// ── M21-FR-02 · journeys from facts ─────────────────────────────────────────────────────────────────────────────────
+
+const JOURNEYS = streamName(STREAM.customer, 'journeys');
+
+export function journeyAdapter(input: Base & { readonly quote: Route | undefined; readonly send: Route | undefined; readonly timeZone: (tenantId: string) => Promise<string> }): JourneyDeps {
+  const { store, now } = input;
+  const carts = factList<CartFact>(store, JOURNEYS, 'CartHeld');
+  const occasions = factList<Occasion & { readonly at: string }>(store, JOURNEYS, 'OccasionGiven');
+  const switches = factList<JourneySwitch>(store, JOURNEYS, 'JourneySwitched');
+  const outcomes = factList<JourneyOutcome>(store, JOURNEYS, 'JourneyOutcome');
+  return {
+    now,
+    carts: (t) => carts.all(t),
+    recordCart: (t, c) => carts.append(t, `${c.customerRef}|${c.updatedAt}`, c, c.updatedAt),
+    // What the basket is worth at the shop's own prices — the storefront's own quote, as the customer.
+    valueOf: async (t, lines) => {
+      if (input.quote === undefined) return 0;
+      const r = await invoke(input.quote, { tenantId: t, userId: 'system:journeys', params: {}, query: {}, idempotencyKey: `cart-value-${now()}`, body: { lines } });
+      return 'refused' in r ? 0 : ((r.body as { goodsMinor?: number }).goodsMinor ?? 0);
+    },
+    occasions: (t) => occasions.all(t),
+    recordOccasion: (t, o) => occasions.append(t, `${o.occasionId}|${o.at}|${o.removed === true}`, o, o.at),
+    purchases: async (t) => {
+      const sales = (await store.readStream(t, STREAM.sales, { type: 'SaleCommitted' })).map((e) => e.event.payload as { customerRef?: unknown; committedAt: string; totalMinor: number })
+        .filter((x) => typeof x.customerRef === 'string' && x.customerRef !== '')
+        .map((x) => ({ customerRef: x.customerRef as string, at: x.committedAt, valueMinor: x.totalMinor }));
+      const online = (await store.readStream(t, ORDER_INDEX, { type: 'OrderPlaced' })).map((e) => e.event.payload as PlacedOrder)
+        .filter((o) => typeof o.customerRef === 'string' && o.customerRef !== '')
+        .map((o) => ({ customerRef: o.customerRef as string, at: o.placedAt, valueMinor: 0 }));
+      return [...sales, ...online];
+    },
+    lapsingAfterDays: async (t) => (await segmentDataAdapter(input).policy(t))?.lapsingAfterDays ?? 60,
+    switches: (t) => switches.all(t),
+    recordSwitch: (t, sw) => switches.append(t, `${sw.kind}|${sw.at}`, sw, sw.at),
+    outcomes: (t) => outcomes.all(t),
+    recordOutcome: (t, o) => outcomes.append(t, `${o.ref}|${o.outcome}|${o.code ?? ''}|${o.at}`, o, o.at),
+    send: async (t, m) => {
+      if (input.send === undefined) return { queued: false, code: 'no_campaign_send', detail: 'This head office has no campaign send.' };
+      const r = await invoke(input.send, {
+        tenantId: t, userId: 'system:journeys', params: { campaignId: m.campaignId }, query: {}, idempotencyKey: m.campaignId,
+        body: { purpose: 'marketing', channel: m.channel, templateId: m.templateId, containsPromotion: true, audience: [m.customerRef], values: m.values },
+      });
+      if ('refused' in r) return { queued: false, code: r.refused.body.code, detail: r.refused.body.whatHappened };
+      const b = r.body as { queued?: number; alreadyQueued?: number; excludedByReason?: Record<string, number>; detail?: string };
+      if ((b.queued ?? 0) > 0 || (b.alreadyQueued ?? 0) > 0) return { queued: true };
+      return { queued: false, code: Object.keys(b.excludedByReason ?? {})[0] ?? 'not_queued', detail: b.detail ?? 'not queued' };
+    },
+    today: async (t) => dayIn(now(), await input.timeZone(t)),
+  };
+}
+
 // ── M17-FR-01 · OB-295 · tiers and points expiry ─────────────────────────────────────────────────────────────────────
 
 const PROGRAMME = streamName(STREAM.loyalty, 'programme');
@@ -376,7 +431,8 @@ export function customerCommerceSweep(input: Base): (tenantId: string, at: strin
     const runner = RUNNERS.get(input.store);
     const repeat = runner === undefined ? { placed: 0, notPlaced: 0, missed: 0 } : await runSubscriptions(runner.subscriptions, tenantId);
     const told = runner === undefined ? { queued: 0, notQueued: 0 } : await runOrderNotices(runner.notices, tenantId);
-    return expired.expired.length + repeat.placed + repeat.notPlaced + repeat.missed + told.queued + told.notQueued;
+    const journeys = runner === undefined ? { queued: 0, notQueued: 0 } : await runJourneys(runner.journeys, tenantId);
+    return expired.expired.length + repeat.placed + repeat.notPlaced + repeat.missed + told.queued + told.notQueued + journeys.queued + journeys.notQueued;
   };
 }
 
@@ -403,7 +459,18 @@ export function customerCommerceSurface(surface: Route[], input: CustomerCommerc
   });
   // M20-FR-03: order notices through the service-message queue's own enqueue route.
   const notices = store === undefined ? undefined : orderNoticeAdapter({ store, now, queue: surface.find((r) => r.method === 'POST' && r.path === '/v1/notifications/queue/:id') });
-  if (store !== undefined && subs !== undefined && notices !== undefined) RUNNERS.set(store, { subscriptions: subs, notices });
+  // M21-FR-02: journeys from facts, sent through the campaign send's own route.
+  const journeys = store === undefined ? undefined : journeyAdapter({
+    store, now, timeZone,
+    quote: surface.find((r) => r.method === 'POST' && r.path === '/v1/storefront/cart/quote'),
+    send: surface.find((r) => r.method === 'POST' && r.path === '/v1/service/campaigns/:campaignId/send'),
+  });
+  if (store !== undefined && subs !== undefined && notices !== undefined && journeys !== undefined) RUNNERS.set(store, { subscriptions: subs, notices, journeys });
+  surface.push(...journeyRoutes(journeys ?? {
+    now, carts: async () => [], recordCart: async () => {}, valueOf: async () => 0, occasions: async () => [], recordOccasion: async () => {}, purchases: async () => [],
+    lapsingAfterDays: async () => 60, switches: async () => [], recordSwitch: async () => {}, outcomes: async () => [], recordOutcome: async () => {},
+    send: async () => ({ queued: false, code: 'no_store', detail: 'no store' }), today: async () => dayIn(now(), 'Asia/Kolkata'),
+  }));
   surface.push(...orderNoticeRoutes(notices ?? { now, onlineOrders: async () => [], facts: async () => undefined, enqueue: async () => ({ queued: false, code: 'no_store', detail: 'no store' }), notices: async () => [], recordNotice: async () => {} }));
   surface.push(...subscriptionRoutes(subs ?? {
     plans: async () => [], recordPlan: async () => {}, changes: async () => [], recordChange: async () => {}, occurrences: async () => [], recordOccurrence: async () => {},
