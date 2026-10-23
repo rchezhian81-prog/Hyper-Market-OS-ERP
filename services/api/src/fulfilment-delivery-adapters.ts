@@ -11,7 +11,7 @@
 import { createHash, randomInt } from 'node:crypto';
 import { makeEvent } from '../../../packages/contracts/src/event';
 import { valueAtUnitCost } from '../../../packages/contracts/src/quantity';
-import type { EventStore } from '../../../packages/persistence/src/event-store';
+import { InMemoryEventStore, type EventStore } from '../../../packages/persistence/src/event-store';
 import type { Route } from '../../kernel/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import type { CatalogueDeps } from '../../catalogue/src/index';
@@ -339,10 +339,10 @@ export function fulDelDeps(input: { readonly store: EventStore; readonly now: ()
   return { controls, proof, judgeDoorProof, waveBuilder, board, routing, fleet, latestStops };
 }
 
-/** The package's routes. With no store (a bare composition) nothing is registered — every route needs the registers. */
+/** The package's routes. A bare composition (no store) is given an in-memory one, as the other packages are, so the route
+ *  table — and the documents and guardrails read from it — is the same either way. */
 export function fulfilmentDeliveryRoutes(input: FulDelInput): readonly Route[] {
-  if (input.store === undefined) return [];
-  const d = fulDelDeps({ ...input, store: input.store });
+  const d = fulDelDeps({ ...input, store: input.store ?? new InMemoryEventStore() });
   return [
     ...waveBuilderRoutes(d.waveBuilder),
     ...deliveryControlsRoutes(d.controls),

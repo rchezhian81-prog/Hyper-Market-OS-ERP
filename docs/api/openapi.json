@@ -13462,6 +13462,308 @@
         }
       }
     },
+    "/v1/delivery/contribution": {
+      "get": {
+        "operationId": "getDeliveryContribution",
+        "tags": [
+          "API-08 Fulfilment / Delivery"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "delivery.run.read",
+        "x-entitlement": "delivery",
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"delivery.run.read\", or the plan lacks \"delivery\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/delivery/contribution/{orderId}/decision": {
+      "post": {
+        "operationId": "postDeliveryContributionByOrderIdDecision",
+        "tags": [
+          "API-08 Fulfilment / Delivery"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "delivery.contribution.approve",
+        "x-entitlement": "delivery",
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "orderId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"delivery.contribution.approve\", or the plan lacks \"delivery\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/delivery/controls": {
+      "get": {
+        "operationId": "getDeliveryControls",
+        "tags": [
+          "API-08 Fulfilment / Delivery"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "delivery.run.read",
+        "x-entitlement": "delivery",
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"delivery.run.read\", or the plan lacks \"delivery\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      },
+      "post": {
+        "operationId": "postDeliveryControls",
+        "tags": [
+          "API-08 Fulfilment / Delivery"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "delivery.controls.set",
+        "x-entitlement": "delivery",
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"delivery.controls.set\", or the plan lacks \"delivery\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/delivery/courier-link": {
+      "get": {
+        "operationId": "getDeliveryCourierLink",
+        "tags": [
+          "API-08 Fulfilment / Delivery"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "delivery.run.read",
+        "x-entitlement": "delivery",
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"delivery.run.read\", or the plan lacks \"delivery\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/delivery/courier/{orderId}/hand-off": {
+      "post": {
+        "operationId": "postDeliveryCourierByOrderIdHandOff",
+        "tags": [
+          "API-08 Fulfilment / Delivery"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "delivery.dispatch.manage",
+        "x-entitlement": "delivery",
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "orderId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"delivery.dispatch.manage\", or the plan lacks \"delivery\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
     "/v1/delivery/dispatch/{runDate}": {
       "get": {
         "operationId": "getDeliveryDispatchByRunDate",
@@ -13511,9 +13813,127 @@
         }
       }
     },
+    "/v1/delivery/dispatch/{runDate}/board": {
+      "get": {
+        "operationId": "getDeliveryDispatchByRunDateBoard",
+        "tags": [
+          "API-08 Fulfilment / Delivery"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "delivery.run.read",
+        "x-entitlement": "delivery",
+        "parameters": [
+          {
+            "name": "runDate",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"delivery.run.read\", or the plan lacks \"delivery\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
     "/v1/delivery/dispatch/{runDate}/plan": {
       "post": {
         "operationId": "postDeliveryDispatchByRunDatePlan",
+        "tags": [
+          "API-08 Fulfilment / Delivery"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "delivery.dispatch.manage",
+        "x-entitlement": "delivery",
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "runDate",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"delivery.dispatch.manage\", or the plan lacks \"delivery\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/delivery/dispatch/{runDate}/plan-from-orders": {
+      "post": {
+        "operationId": "postDeliveryDispatchByRunDatePlanFromOrders",
         "tags": [
           "API-08 Fulfilment / Delivery"
         ],
@@ -13649,9 +14069,563 @@
         }
       }
     },
+    "/v1/delivery/dispatch/{runDate}/reassign-driver": {
+      "post": {
+        "operationId": "postDeliveryDispatchByRunDateReassignDriver",
+        "tags": [
+          "API-08 Fulfilment / Delivery"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "delivery.dispatch.manage",
+        "x-entitlement": "delivery",
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "runDate",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"delivery.dispatch.manage\", or the plan lacks \"delivery\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/delivery/dispatch/{runDate}/routes/{routeId}/assign": {
+      "post": {
+        "operationId": "postDeliveryDispatchByRunDateRoutesByRouteIdAssign",
+        "tags": [
+          "API-08 Fulfilment / Delivery"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "delivery.dispatch.manage",
+        "x-entitlement": "delivery",
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "runDate",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "routeId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"delivery.dispatch.manage\", or the plan lacks \"delivery\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/delivery/fleet-settlements/{routeId}": {
+      "get": {
+        "operationId": "getDeliveryFleetSettlementsByRouteId",
+        "tags": [
+          "API-08 Fulfilment / Delivery"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "delivery.run.read",
+        "x-entitlement": "delivery",
+        "parameters": [
+          {
+            "name": "routeId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"delivery.run.read\", or the plan lacks \"delivery\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      },
+      "post": {
+        "operationId": "postDeliveryFleetSettlementsByRouteId",
+        "tags": [
+          "API-08 Fulfilment / Delivery"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "delivery.dispatch.manage",
+        "x-entitlement": "delivery",
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "routeId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"delivery.dispatch.manage\", or the plan lacks \"delivery\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/delivery/fleet-settlements/{routeId}/approve": {
+      "post": {
+        "operationId": "postDeliveryFleetSettlementsByRouteIdApprove",
+        "tags": [
+          "API-08 Fulfilment / Delivery"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "delivery.settlement.approve",
+        "x-entitlement": "delivery",
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "routeId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"delivery.settlement.approve\", or the plan lacks \"delivery\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/delivery/fleet-settlements/{routeId}/paid": {
+      "post": {
+        "operationId": "postDeliveryFleetSettlementsByRouteIdPaid",
+        "tags": [
+          "API-08 Fulfilment / Delivery"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "delivery.settlement.approve",
+        "x-entitlement": "delivery",
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "routeId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"delivery.settlement.approve\", or the plan lacks \"delivery\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/delivery/locations": {
+      "get": {
+        "operationId": "getDeliveryLocations",
+        "tags": [
+          "API-08 Fulfilment / Delivery"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "delivery.serviceability.read",
+        "x-entitlement": null,
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"delivery.serviceability.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/delivery/locations/{locationId}": {
+      "post": {
+        "operationId": "postDeliveryLocationsByLocationId",
+        "tags": [
+          "API-08 Fulfilment / Delivery"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "delivery.serviceability.manage",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "locationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"delivery.serviceability.manage\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
     "/v1/delivery/orders/{orderId}": {
       "get": {
         "operationId": "getDeliveryOrdersByOrderId",
+        "tags": [
+          "API-08 Fulfilment / Delivery"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "delivery.run.read",
+        "x-entitlement": "delivery",
+        "parameters": [
+          {
+            "name": "orderId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"delivery.run.read\", or the plan lacks \"delivery\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/delivery/orders/{orderId}/proof": {
+      "get": {
+        "operationId": "getDeliveryOrdersByOrderIdProof",
         "tags": [
           "API-08 Fulfilment / Delivery"
         ],
@@ -13757,6 +14731,55 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/delivery/proof-images/{imageId}": {
+      "get": {
+        "operationId": "getDeliveryProofImagesByImageId",
+        "tags": [
+          "API-08 Fulfilment / Delivery"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "delivery.run.read",
+        "x-entitlement": "delivery",
+        "parameters": [
+          {
+            "name": "imageId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"delivery.run.read\", or the plan lacks \"delivery\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
@@ -13971,6 +14994,83 @@
         "parameters": [
           {
             "name": "routeId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"delivery.stop.sync\", or the plan lacks \"delivery\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/delivery/routes/{routeId}/stops/{stopId}/proof/synced": {
+      "post": {
+        "operationId": "postDeliveryRoutesByRouteIdStopsByStopIdProofSynced",
+        "tags": [
+          "API-08 Fulfilment / Delivery"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "delivery.stop.sync",
+        "x-entitlement": "delivery",
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "routeId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "stopId",
             "in": "path",
             "required": true,
             "schema": {
@@ -25998,6 +27098,127 @@
         }
       }
     },
+    "/v1/fulfilment/orders/{orderId}/routing": {
+      "get": {
+        "operationId": "getFulfilmentOrdersByOrderIdRouting",
+        "tags": [
+          "API-08 Fulfilment / Delivery"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "order.read",
+        "x-entitlement": null,
+        "parameters": [
+          {
+            "name": "orderId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"order.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/fulfilment/wave-board": {
+      "get": {
+        "operationId": "getFulfilmentWaveBoard",
+        "tags": [
+          "API-08 Fulfilment / Delivery"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "fulfilment.wave.assign",
+        "x-entitlement": null,
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"fulfilment.wave.assign\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/fulfilment/wave-candidates": {
+      "get": {
+        "operationId": "getFulfilmentWaveCandidates",
+        "tags": [
+          "API-08 Fulfilment / Delivery"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "fulfilment.wave.assign",
+        "x-entitlement": null,
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"fulfilment.wave.assign\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
     "/v1/fulfilment/waves/{waveId}": {
       "get": {
         "operationId": "getFulfilmentWavesByWaveId",
@@ -26050,6 +27271,75 @@
     "/v1/fulfilment/waves/{waveId}/assignment": {
       "post": {
         "operationId": "postFulfilmentWavesByWaveIdAssignment",
+        "tags": [
+          "API-08 Fulfilment / Delivery"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "fulfilment.wave.assign",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "waveId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"fulfilment.wave.assign\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/fulfilment/waves/{waveId}/build": {
+      "post": {
+        "operationId": "postFulfilmentWavesByWaveIdBuild",
         "tags": [
           "API-08 Fulfilment / Delivery"
         ],
@@ -71946,6 +73236,104 @@
         }
       }
     },
+    "/v1/storefront/orders/{orderId}/delivery-code": {
+      "get": {
+        "operationId": "getStorefrontOrdersByOrderIdDeliveryCode",
+        "tags": [
+          "API-07 OMS"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "storefront.order.read",
+        "x-entitlement": "customer_app",
+        "parameters": [
+          {
+            "name": "orderId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"storefront.order.read\", or the plan lacks \"customer_app\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/storefront/orders/{orderId}/delivery-eta": {
+      "get": {
+        "operationId": "getStorefrontOrdersByOrderIdDeliveryEta",
+        "tags": [
+          "API-07 OMS"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "storefront.order.read",
+        "x-entitlement": "customer_app",
+        "parameters": [
+          {
+            "name": "orderId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"storefront.order.read\", or the plan lacks \"customer_app\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
     "/v1/storefront/orders/{orderId}/payment": {
       "post": {
         "operationId": "postStorefrontOrdersByOrderIdPayment",
@@ -72236,6 +73624,75 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/storefront/route-order/{orderId}": {
+      "post": {
+        "operationId": "postStorefrontRouteOrderByOrderId",
+        "tags": [
+          "API-07 OMS"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "storefront.order.place",
+        "x-entitlement": "customer_app",
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "orderId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"storefront.order.place\", or the plan lacks \"customer_app\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"

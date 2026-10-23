@@ -69,7 +69,7 @@ describe.each(backings)('delivery proof is captured and checked (M19-FR-03 · OB
     expect(await shop.ok('GET', '/v1/storefront/orders/ORD-2/delivery-eta', 'c-2')).toMatchObject({ state: 'not_started', stopsBeforeYou: 1, stopsOnRun: 2, estimateIs: 'straight_line_estimate' });
 
     // ── The door, as the store computer relays the phone's records. Stop 1: the customer's code, the phone at the door.
-    const [s1, s2] = r1.stops as [{ stopId: string }, { stopId: string }];
+    const [s1, s2] = r1.stops as unknown as [{ stopId: string }, { stopId: string }];
     const relay = (stopId: string, body: unknown) => shop.call('POST', `/v1/delivery/routes/${encodeURIComponent(r1.routeId)}/stops/${encodeURIComponent(stopId)}/synced`, OWNER, body);
     expect((await relay(s1.stopId, stopUpdate(r1.routeId, s1.stopId, 'ORD-1', 'out_for_delivery'))).status).toBe(202);
     const d1 = await relay(s1.stopId, stopUpdate(r1.routeId, s1.stopId, 'ORD-1', 'delivered', { proofKind: 'otp', proofCode: code1, deviceFix: { lat: DOORS.near.lat + 0.0001, lon: DOORS.near.lon, accuracyMetres: 10 } }));
