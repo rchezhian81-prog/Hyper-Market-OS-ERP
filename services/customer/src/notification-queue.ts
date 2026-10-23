@@ -40,6 +40,8 @@ import {
 import { verifyDeliveryReport } from './provider-reports';
 import { ERASED_TEXT, KEY_MISSING_TEXT } from '../../../packages/persistence/src/personal-data';
 import { mayWeSend, type ConsentRecord, type ConsentPurpose, type Channel as ConsentChannel } from './index';
+import { isSuppressed, type SuppressionFact } from './suppression-register';
+import { sentInWindow, type CampaignFrequencyPolicy } from './campaign-send';
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
 const isInt = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v);
@@ -135,6 +137,16 @@ export interface NotificationQueueDeps {
    *  failure is believed only when signed by the provider and relayed by the provider relay's machine identity. */
   readonly deliveryReportSecrets?: ReadonlyMap<string, string>;
   readonly isProviderRelay?: (tenantId: string, userId: string) => Promise<boolean> | boolean;
+  /**
+   * OB-288 P5 · M31-FR-04: the stored do-not-contact register (`suppression-register.ts`). A suppressed contact is never
+   * queued, and a message already waiting for them is WITHHELD at send — kept, visible. Absent on a bare stub.
+   */
+  readonly suppressions?: (tenantId: string) => Promise<readonly SuppressionFact[]> | readonly SuppressionFact[];
+  /**
+   * OB-288 P5 · M31-FR-03: the owner's frequency cap (the same policy the campaign send reads — one rule): at most N
+   * marketing messages to one customer on one channel in a window of days, checked at ENQUEUE and again at SEND.
+   */
+  readonly frequencyPolicy?: (tenantId: string) => Promise<CampaignFrequencyPolicy | undefined> | CampaignFrequencyPolicy | undefined;
   readonly now: () => string;
 }
 
@@ -177,7 +189,10 @@ export async function drainNotificationQueue(deps: NotificationQueueDeps, tenant
   const period = budgetPeriodOf(now);
   const budget = deps.budget === undefined ? undefined : await deps.budget(tenantId);
   let spent = spentInPeriod(events, period);
+  const suppressions = deps.suppressions === undefined ? undefined : await deps.suppressions(tenantId);
+  const frequency = deps.frequencyPolicy === undefined ? undefined : await deps.frequencyPolicy(tenantId);
   const outcome: { id: string; result: string; detail: string }[] = [];
+  const deliveredThisPass = new Map<string, number>();
   for (const item of queue.pending()) {
     if (item.lastAttemptAt !== undefined && Date.parse(now) - Date.parse(item.lastAttemptAt) < retryDelayMs(item.attempts)) {
       outcome.push({ id: item.id, result: 'not_yet_due', detail: `waiting ${Math.round(retryDelayMs(item.attempts) / 60_000)} minute(s) after attempt ${item.attempts}` });
@@ -221,6 +236,29 @@ export async function drainNotificationQueue(deps: NotificationQueueDeps, tenant
       outcome.push({ id: item.id, result: 'withheld', detail: consent.detail });
       continue;
     }
+    // OB-288 P5 · M31-FR-04: a contact on the do-not-contact register since it was queued is WITHHELD — never sent.
+    const sup = suppressions === undefined ? { suppressed: false } : isSuppressed(suppressions, queued.intent.customerId, queued.channel);
+    if (sup.suppressed) {
+      const why = `suppressed: ${queued.intent.customerId} is on the do-not-contact register for ${sup.by?.channel ?? queued.channel}${sup.by === undefined ? '' : ` since ${sup.by.at} (${sup.by.reason})`}`;
+      await deps.record(tenantId, { id: item.id, change: 'withheld', by, at: now, reason: why }, `notif-withheld-${item.id}`);
+      outcome.push({ id: item.id, result: 'withheld', detail: why });
+      continue;
+    }
+    // OB-288 P5 · M31-FR-03: a marketing message past the owner's cap NOW (a lower cap, or others sent since) is HELD —
+    // kept pending with the reason until the window allows; never sent past the cap. No cap set: held, said.
+    if (queued.intent.purpose === 'marketing' && deps.frequencyPolicy !== undefined) {
+      const cap = frequency;
+      // At SEND only what actually reached them counts (delivered before, or earlier in this pass) — a message still
+      // waiting beside this one must not hold both.
+      const key = `${queued.intent.customerId}|${queued.channel}`;
+      const sentNow = cap === undefined ? 0 : deliveredMarketingInWindow(events, intents, queued.intent.customerId, queued.channel, now, cap.windowDays) + (deliveredThisPass.get(key) ?? 0);
+      if (cap === undefined || sentNow >= cap.capPerWindow) {
+        const why = cap === undefined ? 'frequency_cap_not_set: the owner has not set the frequency cap, so no marketing message is sent' : `frequency_cap: ${queued.intent.customerId} already has ${sentNow} marketing message(s) on ${queued.channel} in ${cap.windowDays} day(s), against a cap of ${cap.capPerWindow}`;
+        await deps.record(tenantId, { id: item.id, change: 'held', by, at: now, reason: why }, `notif-held-${item.id}-${now.slice(0, 10)}-${cap === undefined ? 'nocap' : `cap${cap.capPerWindow}-${sentNow}`}`);
+        outcome.push({ id: item.id, result: 'held', detail: why });
+        continue;
+      }
+    }
     const money = budgetDecision({ budget, spentMinor: spent, channel: queued.channel });
     if (!money.ok) {
       // Held, not failed: the provider did nothing wrong. One fact per item per month and reason — said once, kept.
@@ -231,6 +269,7 @@ export async function drainNotificationQueue(deps: NotificationQueueDeps, tenant
     const sent = await deps.transport.send({ messageId: item.id, channel: queued.channel, customerId: queued.intent.customerId, text: queued.intent.text });
     if (sent.ok) {
       spent += money.costMinor;
+      if (queued.intent.purpose === 'marketing') deliveredThisPass.set(`${queued.intent.customerId}|${queued.channel}`, (deliveredThisPass.get(`${queued.intent.customerId}|${queued.channel}`) ?? 0) + 1);
       await deps.record(tenantId, { id: item.id, change: 'delivered', by, at: now, providerRef: sent.providerRef, transport: deps.transport.name, costMinor: money.costMinor }, `notif-delivered-${item.id}`);
       outcome.push({ id: item.id, result: 'delivered', detail: sent.providerRef });
     } else if (sent.permanent === true) {
@@ -509,6 +548,27 @@ export function notificationQueueRoutes(deps: NotificationQueueDeps): readonly R
             nextSafeAction: 'Nothing was queued. Only a customer who said yes, and has not withdrawn, is messaged.',
           });
         }
+        // OB-288 P5 · M31-FR-04: the stored do-not-contact register — absolute, whatever the purpose.
+        const sup = deps.suppressions === undefined ? { suppressed: false } : isSuppressed(await deps.suppressions(ctx.tenantId), customerId, channel);
+        if (sup.suppressed) {
+          throw apiError(409, {
+            code: 'customer_suppressed',
+            whatHappened: `${customerId} is on the do-not-contact register for ${sup.by?.channel ?? channel}${sup.by === undefined ? '' : ` (since ${sup.by.at}: ${sup.by.reason})`} — nothing is sent to them.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing was queued. Only a person lifting the entry, with a reason, allows messages again.',
+          });
+        }
+        // OB-288 P5 · M31-FR-03: the owner's frequency cap for marketing, checked at enqueue (and again at send).
+        if (purpose === 'marketing' && deps.frequencyPolicy !== undefined) {
+          const cap = await deps.frequencyPolicy(ctx.tenantId);
+          if (cap === undefined) {
+            throw apiError(409, { code: 'frequency_cap_not_set', whatHappened: 'No frequency cap is set, so a marketing message cannot be sent within the frequency rules (M31-FR-03).', wasItSaved: 'not_saved', nextSafeAction: 'Nothing was queued. The owner sets the cap first (PUT /v1/service/campaigns/frequency-policy).' });
+          }
+          const sent = sentInWindow({ events: deps.events === undefined ? [] : await deps.events(ctx.tenantId), queue: await deps.queue(ctx.tenantId), customerRef: customerId, channel, now: deps.now(), windowDays: cap.windowDays, except: id });
+          if (sent >= cap.capPerWindow) {
+            throw apiError(409, { code: 'frequency_cap_reached', whatHappened: `${customerId} already has ${sent} marketing message(s) on ${channel} in the last ${cap.windowDays} day(s); the owner's cap is ${cap.capPerWindow}.`, wasItSaved: 'not_saved', nextSafeAction: 'Nothing was queued. Wait until the window allows, or ask the owner to change the cap.' });
+          }
+        }
         // The month's messaging budget, checked now — and again just before the send (PA-08 round 4).
         const money = budgetDecision({
           budget: deps.budget === undefined ? undefined : await deps.budget(ctx.tenantId),
@@ -632,3 +692,15 @@ export function replayNotificationQueue(events: readonly NotificationQueueEvent[
 }
 
 export type { NotificationItem };
+
+/** OB-288 P5 · M31-FR-03: marketing messages DELIVERED to this customer on this channel within the window (the send-time count). */
+function deliveredMarketingInWindow(events: readonly NotificationQueueEvent[], intents: ReadonlyMap<string, { channel: string; intent?: NotificationIntent }>, customerId: string, channel: string, now: string, windowDays: number): number {
+  const from = Date.parse(now) - windowDays * 86_400_000;
+  let n = 0;
+  for (const e of events) {
+    if (e.change !== 'delivered' || Date.parse(e.at) < from) continue;
+    const q = intents.get(e.id);
+    if (q?.intent?.customerId === customerId && q.intent.purpose === 'marketing' && q.channel === channel) n += 1;
+  }
+  return n;
+}

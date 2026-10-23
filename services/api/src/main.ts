@@ -339,8 +339,12 @@ import { lane2RecallSurface } from './lane2-recall-adapters'; // Lane 2 · P1
 import { lane2OfflineRoutes } from './lane2-offline-adapters'; // OB-288 lane 2 · P2 — store-box offline queues, expiry move
 // OB-288 P3 (procure-to-pay completion): M06-FR-02/03/04 · M07-FR-01/04 · WF-03 · WF-05 (p3-procure-adapters).
 import { p3ProcureRoutes, p3PurchaseOrderHooks, p3ReceiptHooks, p3PurchaseHooks, p3Segregation, p3RebateHooks } from './p3-procure-adapters';
+import { financeBridgeRoutes, finBridgeJournalHooks, finBridgeEvidenceHooks, finBridgeSweep } from './finance-bridge-adapters'; // OB-288 P5 — Tally daily file outbox, trial balance, centres, advances, rebate accruals
+import { migrationControlsAdapter } from './migration-controls-adapters'; // OB-288 P5 — MG-09 export diff, MG-10 books side, MG-11 backup and rollback limits
+import { opsMessagingRoutes, notificationGuardHooks, opsMessagingSweep } from './ops-messaging-adapters'; // OB-288 P5 — do-not-contact register, CERT-In clock, capacity report
 import { p1IdentitySurface, approvalAgeSweep } from './p1-identity-adapters'; // OB-288 lane 1 · P1 — identity, authority, configuration
 import { poAuthorityHooks, expirySweepThatPublishes, followupsSurface } from './followups-adapters'; // OB-288 integration follow-ups
+import { aiGovernanceSurface } from './ai-adapters'; // OB-288 lane 4 · P1 — AI governance and agents (R7)
 import { alsoEachPassOf } from './ops-alert-sweeps'; // R3 lane 1 — GST liability and returns
 import { itcPortForStore } from './r3-itc-bridge'; // R3 seam — GSTR-3B Table 4 reads the A17 reconciliation
 import { r4PayEprRoutes, r4PayslipHooks, payslipLateSweep } from './r4-pay-epr-adapters';
@@ -1493,7 +1497,7 @@ export function buildSurface(deps: {
       periodStates: empty(new Map()), nextOpenPeriod: empty(now().slice(0, 7)),
       appendJournal: () => {}, controlTotals: empty([]), postersIn: empty([]),
       markClosed: () => {}, markReopened: () => {}, now,
-    } : { ...financeAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }) }),
+    } : { ...financeAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }), ...finBridgeJournalHooks({ store, now }) }), // OB-288 P5: centre names checked
     // The day book (M23-FR-01): a trading day's synced sales + returns → balanced journals through the accountant's
     // mapping; unmapped kinds and unsplittable receipts are visible exceptions, never silently unposted (P-08).
     ...dayBookRoutes(store === undefined ? {
@@ -1516,7 +1520,7 @@ export function buildSurface(deps: {
     // Period-close evidence pack + control-total validation (M23-FR-04 / QG-07) — reconcile both sides of
     // every total (the ledger vs an independent second source the caller supplies) and produce the CA's
     // signable pack; a non-reconciling pack is still produced but marked not signable. Stateless reads.
-    ...periodEvidenceRoutes({ now }),
+    ...periodEvidenceRoutes({ now, ...(store === undefined ? {} : finBridgeEvidenceHooks({ store, now })) }), // OB-288 P5: the dead letters are the Tally outbox's
     ...creditNoteRoutes(store === undefined ? {
       alreadyCredited: empty(0), appendCreditNote: () => {}, notes: empty([]), now,
     } : financeNotesAdapter({ store, now, ...(deps.snapshots === undefined ? {} : { snapshots: deps.snapshots }) })),
@@ -1672,7 +1676,7 @@ export function buildSurface(deps: {
       ? { audits: empty([]), recordAudit: () => {}, now }
       : { ...drillThroughAdapter({ store, now }), produce: producers!.produce }),
     // Notification send guard (M31-FR-03) — consent/template/suppression/budget gate; stateless ruling.
-    ...notificationGuardRoutes(),
+    ...notificationGuardRoutes(notificationGuardHooks({ store })), // OB-288 P5: suppression read from the stored register
     // Backup verification & restore reconciliation (M35-FR-01/02, P-04) — stateless recovery rulings.
     ...backupVerificationRoutes(),
     // DR-drill scoring & backup-retention eligibility (M35-FR-02, QG-08, §32, hard rule #6) — stateless.
@@ -1755,6 +1759,8 @@ export function buildSurface(deps: {
     ...r4SupplyLpRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // R4 Lane 4
     ...lane2OfflineRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // OB-288 lane 2 · P2
     ...p3ProcureRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // OB-288 P3
+    ...financeBridgeRoutes({ store, now }), // OB-288 P5
+    ...opsMessagingRoutes({ store, now }), // OB-288 P5
     // GST government-portal switch — the feature flag + kill switch keeping LIVE e-invoice/e-way-bill portal
     // calls OFF by default and killable; the gate a deployment consults before the real connector. Sandbox
     // routes are exempt.
@@ -2089,6 +2095,7 @@ export function buildSurface(deps: {
       recordAudit: auditTrail?.recordAudit,
       // 2b-vi-c-3: a decision relayed from the store's migration screen is checked against the store computer's seal.
       tillSealKey: sealKey,
+      controls: migrationControlsAdapter({ store, now }), // OB-288 P5 — MG-09 / MG-10 / MG-11
     }),
     // GT-05 (MG-07): the old system's history and document files — kept under their legacy ids, read-only, hash-checked.
     ...legacyHistoryRoutes(store === undefined ? {
@@ -2149,6 +2156,7 @@ export function buildSurface(deps: {
   lane2RecallSurface(surface, { store, now, signer, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }), ...(deps.notificationTransport === undefined ? {} : { messageTransport: deps.notificationTransport }) }); // Lane 2 · P1 recall and trace (M10-FR-03/04)
   p1IdentitySurface(surface, { store, now, settings, applyDecision, tillSealKey: sealKey, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // OB-288 lane 1 · P1 (M01-FR-01/02/03 · M02-FR-01/02/03 · OB-290/291/292)
   followupsSurface(surface, { store, now, signer, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // OB-288 integration follow-ups (the seams between the five lanes)
+  aiGovernanceSurface(surface, { store, now, orderFacts: orderFactsFor, ...(governedAiDeps === undefined ? {} : { governedAi: governedAiDeps }), ...(deps.modelTransport === undefined ? {} : { modelTransport: deps.modelTransport }), ...(deps.modelPricing === undefined ? {} : { modelPricing: deps.modelPricing }) }); // OB-288 lane 4 · P1 (AI-SCREEN · AI-INCIDENTS · AI-NFR-01/04/06/09/10/11 · A01/A02/A03/A05/A09 · OB-296/314)
   // The versioned API surface as a manifest (M36-FR-04, P-06): reads THIS table at request time, so it lists
   // every endpoint registered — itself included — and `docs/api/surface.md` is generated from the same fold.
   surface.push(...apiManifestRoutes({ routes: () => surface, now }));
@@ -2621,6 +2629,7 @@ export async function startApi(
       payslipLate: payslipLateSweep({ store, now }),
       expiryMove: expirySweepThatPublishes({ store, now, signer: hmacSigner(settings['PACK_SIGNING_KEY']!) }), // OB-288 lane 2 · M10-FR-01, and the expired batches onto the tills' pack
       approvalAge: approvalAgeSweep({ store, now, settings: new DurableTenantSettings(new SqlConfigVersionStore(pgPoolClient(db))) }), // OB-288 lane 1 · P1 — OB-292 escalation by age
+      financeBridge: async (t: string, at: string) => (await finBridgeSweep({ store, now })(t, at)) + (await opsMessagingSweep({ store, now })(t, at)), // OB-288 P5 — the daily Tally file outbox; an overdue CERT-In report
       say: (line) => { out(`${line}\n`); },
     }),
   });

@@ -54,6 +54,12 @@ const badTotals = () => apiError(400, {
 
 export interface PeriodEvidenceDeps {
   readonly now: () => string;
+  /**
+   * OB-293 (M23-FR-04): how many of the month's daily Tally files the accounts never received — read from the stored
+   * Tally outbox (`tally-outbox.ts`, dead-lettered and not yet carried by a requeue). When this is wired the count is
+   * the outbox's, and a number typed into the request is refused by name: the pack is signed on what the outbox holds.
+   */
+  readonly deadLetteredInPeriod?: (tenantId: string, period: string) => Promise<number> | number;
 }
 
 export function periodEvidenceRoutes(deps: PeriodEvidenceDeps): readonly Route[] {
@@ -86,19 +92,35 @@ export function periodEvidenceRoutes(deps: PeriodEvidenceDeps): readonly Route[]
             nextSafeAction: 'Send the trading-day cut-off for the period.',
           });
         }
+        if (deps.deadLetteredInPeriod !== undefined && b['deadLetteredCount'] !== undefined) {
+          throw apiError(400, {
+            code: 'dead_lettered_count_is_read_not_typed',
+            whatHappened: 'How many postings the accounts never received is read from the stored Tally outbox for this month, not typed into the request.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Leave deadLetteredCount out; the pack reads the real count (GET /v1/finance/tally/outbox shows each day). Nothing was changed.',
+          });
+        }
         if (b['deadLetteredCount'] !== undefined && (!isInt(b['deadLetteredCount']) || (b['deadLetteredCount'] as number) < 0)) {
           throw apiError(400, { code: 'dead_lettered_count_not_a_count', whatHappened: 'deadLetteredCount must be a whole number when given.', wasItSaved: 'not_saved', nextSafeAction: 'Send how many postings the accounts never received, or leave it out.' });
         }
+        const period = ctx.params['period'] ?? '';
+        const outboxCount = deps.deadLetteredInPeriod === undefined ? undefined : await deps.deadLetteredInPeriod(ctx.tenantId, period);
         const pack = buildEvidencePack({
-          period: ctx.params['period'] ?? '',
+          period,
           tenantId: ctx.tenantId,
           totals,
           tradingDayCutoff: b['tradingDayCutoff'] as string,
           preparedBy: ctx.userId,
           at: deps.now(),
-          ...(isInt(b['deadLetteredCount']) ? { deadLetteredCount: b['deadLetteredCount'] as number } : {}),
+          ...(outboxCount !== undefined ? { deadLetteredCount: outboxCount } : isInt(b['deadLetteredCount']) ? { deadLetteredCount: b['deadLetteredCount'] as number } : {}),
         });
-        return { status: 200, body: pack };
+        return {
+          status: 200,
+          body: {
+            ...pack,
+            deadLetteredFrom: outboxCount !== undefined ? 'the stored Tally outbox (daily files dead-lettered in this month)' : isInt(b['deadLetteredCount']) ? 'typed by the caller' : 'not known — no Tally outbox is wired here',
+          },
+        };
       },
     },
   ];

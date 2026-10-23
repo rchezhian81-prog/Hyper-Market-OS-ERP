@@ -89,6 +89,8 @@ async function seed(h: ApiHarness, T: string): Promise<void> {
   await ok(h, T, OWNER, '/v1/notifications/templates/thanks', { purpose: 'marketing', channel: 'whatsapp', body: 'Hello {name}, thank you for shopping with us.' }, 't1');
   await ok(h, T, CHECKER, '/v1/notifications/templates/thanks/approval', { version: 1 }, 't1a');
   await ok(h, T, OWNER, '/v1/notifications/budget', { capMinor: 100_000, costMinorByChannel: { whatsapp: 50 } }, 'b1');
+  // M31-FR-03 (OB-288 P5): marketing waits for the owner's frequency cap — set here, as the owner would.
+  expect((await h.request({ method: 'PUT', path: '/v1/service/campaigns/frequency-policy', userId: OWNER, tenantId: T, idempotencyKey: 'fp1', body: { capPerWindow: 10, windowDays: 7 } })).status).toBe(200);
   await ok(h, T, OWNER, '/v1/notifications/queue/n-1', { customerId: C, purpose: 'marketing', channel: 'whatsapp', templateId: 'thanks', values: { name: 'Meena' } }, 'n-1');
   // A loss-prevention case naming the customer (retained: a fraud investigation).
   await ok(h, T, OWNER, '/v1/loss-prevention/cases/lp-1', { raisedFromRef: 'signal-1', subjectRef: C, summary: 'suspected shoplifting near aisle 7', valueMinor: 450_00, assignedTo: CHECKER }, 'lp-1');

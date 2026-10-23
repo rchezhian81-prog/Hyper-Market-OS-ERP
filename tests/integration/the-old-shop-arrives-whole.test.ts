@@ -587,6 +587,8 @@ describe.skipIf(!DATABASE_URL)('Stage 11 — the old shop arrives whole (real Po
       deltaApplied: true,
       namedTeam: [{ userId: 'u-operator', role: 'load' }, { userId: 'u-manager', role: 'floor' }, { userId: 'u-ca', role: 'totals' }],
       ownerGoBy: 'u-owner',
+      // OB-288 P5 · MG-11: a verified backup and the owner's rollback limits agreed before the night.
+      backupVerified: true, rollbackLimitsAgreed: true,
     };
 
     const designed = decideCutover({ ...base, rollbackDemonstratedAt: undefined });
@@ -597,8 +599,9 @@ describe.skipIf(!DATABASE_URL)('Stage 11 — the old shop arrives whole (real Po
     const everythingWrong = decideCutover({
       ...base, qg07Passed: false, rollbackDemonstratedAt: undefined, parallelRunSufficient: false,
       edgeUnsyncedItems: 4, blockingExceptionsOpen: 22, deltaApplied: false, namedTeam: [], ownerGoBy: undefined,
+      backupVerified: false, rollbackLimitsAgreed: false,
     });
-    expect(everythingWrong.failed).toHaveLength(8);
+    expect(everythingWrong.failed).toHaveLength(10);
 
     const go = decideCutover({ ...base, rollbackDemonstratedAt: '2026-09-10T22:00:00Z' });
     expect(go.go).toBe(true);

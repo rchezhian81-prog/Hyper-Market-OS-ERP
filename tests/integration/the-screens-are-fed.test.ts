@@ -2415,13 +2415,15 @@ describe('finance, fed by the box', () => {
  * and the weaker was wired, and the expiry was never checked by anything.
  */
 describe('migration, fed by the box', () => {
-  it('DERIVES the eight checks rather than being told them', async () => {
-    // `decideCutover` has refused GO on eight checks since it was written, and every call site in
-    // this codebase had always handed it a literal with the answers typed in.
+  it('DERIVES the ten checks rather than being told them', async () => {
+    // `decideCutover` has refused GO on eight checks since it was written (ten since OB-288 P5 · MG-11 added the backup
+    // and the owner's rollback limits), and every call site in this codebase had always handed it a literal.
     const base = await serve(snapshotOf());
     const view = bootMigration((await payloadFromScreen(base, 'migration'))! as never)!.cutover();
     expect(view.decision.go).toBe(false);
-    expect(view.derived.checks).toHaveLength(8);
+    expect(view.derived.checks).toHaveLength(10);
+    // The store box is not told the backup or the limits: both stay NOT KNOWN on its screen, never passed.
+    expect(view.derived.notKnown).toEqual(expect.arrayContaining(['backup_verified', 'rollback_limits_agreed']));
     // Every one of them says where its answer came from.
     for (const check of view.derived.checks) {
       expect(check.evidence.length, `${check.check} says nothing`).toBeGreaterThan(20);

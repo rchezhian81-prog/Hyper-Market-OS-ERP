@@ -157,6 +157,10 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // stock adjustment, the budget and the fixed assets — a thin client over head office's own finance routes. A head-office
   // page: the store computer does not serve it. Gated on the same read the routes check (`finance.period.read`).
   { id: 'finance-close', label: 'Month-end', labelTa: 'மாத இறுதி', path: '/finance-close', requires: 'finance.period.read', group: 'Finance', served: 'unserved' },
+  // OB-288 P5 (OB-293 · M23-FR-01/04 · M32-FR-04): the accountant's daily Tally import files, the dead letter and the trial
+  // balance — a head-office page (the store computer does not serve it). Gated on the read the routes check (`finance.period.read`);
+  // making and requeueing check `finance.posting.configure` on the server.
+  { id: 'tally-files', label: 'Tally files', labelTa: 'டேலி கோப்புகள்', path: '/tally-files', requires: 'finance.period.read', group: 'Finance', served: 'unserved' },
   { id: 'reconciliation', label: 'Reconciliation', labelTa: 'சரிக்கட்டல்', path: '/reconciliation', requires: 'reconciliation.view', group: 'Finance', served: 'unbuilt' },
   // GST e-invoice / e-way-bill reconciliation — gated on the SAME permission the queue route checks
   // (`finance.einvoice.read`), so the menu can never offer a screen the server would refuse (item 3 inc2).

@@ -59,6 +59,7 @@ import {
   type MigrationException, type OutstandingExceptions, type ParallelDayResult,
   type ParallelDifference, type ParallelRunPosition, type ReconciliationReport,
   type RetirementAssessment, type RollbackResult, type RollbackTrigger, type TeamMember,
+  type BackupStanding, type RollbackLimits,
 } from '../../../packages/migration/src/index';
 import { compareParallelDay, ownDifference, type ComparisonArea, type DayComparison } from '../../../packages/migration/src/cutover';
 import { dayDigestOf, signParallelDay, unexplainedDifferences, type DaySignRefusal } from '../../../packages/migration/src/parallel-day-sign';
@@ -101,6 +102,12 @@ export interface MigrationPorts {
   namedTeam(): readonly TeamMember[] | undefined;
   /** When the owner gave GO. */
   ownerGoBy(): string | undefined;
+  /**
+   * OB-288 P5 · MG-11: the backup judged against the owner's limit, and the owner's rollback limits — head office's records.
+   * Optional: a store box not sent them leaves both NOT KNOWN (each fails its check), never passed.
+   */
+  backup?(): BackupStanding | undefined;
+  rollbackLimits?(): RollbackLimits | undefined;
   /** Assessments still open that could need the legacy records (MG-12). */
   openAssessments(): number | undefined;
   /**
@@ -368,6 +375,8 @@ export function createMigrationSession(config: MigrationConfig, ports: Migration
           ...(ports.rollbackDemonstratedAt() === undefined ? {} : { rollbackDemonstratedAt: ports.rollbackDemonstratedAt()! }),
           ...(ports.namedTeam() === undefined ? {} : { namedTeam: ports.namedTeam()! }),
           ...(ports.ownerGoBy() === undefined ? {} : { ownerGoBy: ports.ownerGoBy()! }),
+          ...(ports.backup?.() === undefined ? {} : { backup: ports.backup!()! }),
+          ...(ports.rollbackLimits?.() === undefined ? {} : { rollbackLimits: ports.rollbackLimits!()! }),
         },
       });
       return { derived, decision: decideCutover(derived.checklist) };

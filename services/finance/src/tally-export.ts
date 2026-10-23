@@ -15,13 +15,18 @@
 
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
-import { buildTallyVouchers, validateTallyImport, type TallyJournal } from '../../../packages/tally-export/src/index';
+import { buildTallyVouchers, validateTallyImport, TALLY_FAMILIES, type TallyJournal, type TallyFamily } from '../../../packages/tally-export/src/index';
 import type { JournalEntry } from './index';
 
 /** The accountant's map from our account codes to Tally ledger names — one version of it. */
 export interface TallyLedgerNames {
   readonly companyName: string;
   readonly names: Readonly<Record<string, string>>;
+  /**
+   * OB-293 (optional): which Tally voucher type each family of journal imports as in the daily file (`sales`, `cash`,
+   * `payables` …, see `@sre/tally-export` TALLY_FAMILIES). A family not named imports as "Journal". The accountant's map.
+   */
+  readonly voucherTypes?: Readonly<Partial<Record<TallyFamily, string>>>;
   readonly version: number;
   readonly setBy: string;
   readonly setAt: string;
@@ -67,10 +72,21 @@ export function tallyExportRoutes(deps: TallyExportDeps): readonly Route[] {
             nextSafeAction: 'Send the Tally company and the ledger name for each account code. Nothing was changed.',
           });
         }
+        // OB-293: an optional { voucherTypes: { <family>: "<Tally voucher type>" } } — only families the daily file knows.
+        const vt = b['voucherTypes'];
+        if (vt !== undefined && (!isObj(vt) || !Object.entries(vt).every(([f, t]) => (TALLY_FAMILIES as readonly string[]).includes(f) && isStr(t) && t.length <= 100))) {
+          throw apiError(400, {
+            code: 'not_readable_as_tally_voucher_types',
+            whatHappened: `voucherTypes, when sent, is { "<family>": "<Tally voucher type>" } for the families ${TALLY_FAMILIES.join(', ')}.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send only known families with the Tally voucher type each imports as, or leave voucherTypes out (every family then imports as "Journal"). Nothing was changed.',
+          });
+        }
         const prior = await deps.ledgerNames(ctx.tenantId);
         const record: TallyLedgerNames = {
           companyName: (b['companyName'] as string).trim(),
           names: Object.fromEntries(Object.entries(names as Record<string, string>).map(([c, n]) => [c.trim(), n.trim()])),
+          ...(vt === undefined ? {} : { voucherTypes: Object.fromEntries(Object.entries(vt as Record<string, string>).map(([f, t]) => [f, t.trim()])) as Partial<Record<TallyFamily, string>> }),
           version: (prior?.version ?? 0) + 1, setBy: ctx.userId, setAt: deps.now(),
         };
         await deps.recordLedgerNames(ctx.tenantId, record);

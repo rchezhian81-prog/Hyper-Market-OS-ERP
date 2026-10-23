@@ -180,6 +180,11 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // gate GO / HOLD / REWORK for a release (§36: the owner is accountable for GO/HOLD/REWORK), and read the register.
       'compliance.finding.record', 'compliance.finding.read', 'compliance.gate.decide', 'compliance.gate.read',
       // ── OB-288 gates lane — end
+      // ── OB-288 P5 (finance bridge, migration controls, integration contracts) — begin
+      // M31-FR-04: add or lift a do-not-contact entry (with a reason; append-only). M35-FR-04: classify a security incident
+      // for CERT-In (reportable or not, and why) and record the report — the owner answers for both.
+      'notification.suppression.manage', 'platform.certin.manage',
+      // ── OB-288 P5 — end
       'audit.hold.manage', 'audit.retention.read',
       'quality.coldchain.assess', 'quality.lottrace.read',
       'quality.recall.initiate', 'quality.recall.read',
@@ -317,6 +322,12 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // grants and re-runs head office's rules, so these grant no dispatch, receipt, production or check of their own.
       'inventory.transfer.sync', 'production.sync', 'facilities.foodsafety.sync',
       // ── OB-288 lane 2 · P2 — end
+      // ── OB-288 lane 4 · P1 (AI governance and agents) — begin
+      // A person's approve/reject on an AI proposal (it commits nothing — the ordinary route still does); the AI-incident
+      // register (raise, own, close); the approved-model register (AI-NFR-01: only a model that passed the evaluation); and
+      // running the evaluation set (AI-NFR-09). The owner holds all four.
+      'ai.proposal.decide', 'ai.incident.manage', 'ai.model.approve', 'ai.evaluation.run',
+      // ── OB-288 lane 4 · P1 — end
     ],
   },
   {
@@ -333,6 +344,10 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'catalogue.category.propose',
       'store.pack.read',
       'ai.proposal.read', 'ai.suggestion.dismiss',
+      // ── OB-288 lane 4 · P1 — begin: the manager approves or rejects A03's (and the buyer's A02) drafts — a decision on
+      // record that commits nothing; the transfer, markdown or order still goes through its own route and approvals.
+      'ai.proposal.decide',
+      // ── OB-288 lane 4 · P1 — end
       'price.change.propose',
       'promotion.simulate', 'promotion.launch', 'promotion.read',
       'b2b.credit.check', 'b2b.account.read', 'b2b.commission.read', 'b2b.document.issue', 'b2b.document.read',
@@ -387,6 +402,10 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // Record and read security findings, and read the gate register. Deciding a gate is the owner's (§36) — absent here.
       'compliance.finding.record', 'compliance.finding.read', 'compliance.gate.read',
       // ── OB-288 gates lane — end
+      // ── OB-288 P5 (finance bridge, migration controls, integration contracts) — begin
+      // M31-FR-04: the store manager records a customer's "do not contact me" at the desk (with a reason), or lifts it.
+      'notification.suppression.manage',
+      // ── OB-288 P5 — end
       'quality.coldchain.assess', 'quality.lottrace.read',
       'quality.recall.initiate', 'quality.recall.read',
       'quality.hold.manage', 'quality.hold.release',

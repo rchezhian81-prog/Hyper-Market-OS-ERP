@@ -5,6 +5,11 @@ import {
   type ControlTotal, type CutoverEvidence, type MigrationException, type ParallelDayResult,
   type ParallelDifference,
 } from '../../packages/migration/src/index';
+import { backupStanding, type RollbackLimits } from '../../packages/migration/src/rollback-limits';
+
+// OB-288 P5 · MG-11: the gate now holds TEN checks — the eight below, plus a verified backup within the owner's agreed
+// age and every numeric rollback limit agreed before the night.
+const LIMITS: RollbackLimits = { controlTotalDifferenceMinor: 100_000, edgeOutageMinutes: 30, windowMinutes: 360, backupMaxAgeHours: 6, version: 1, setBy: 'u-owner', setAt: '2026-09-09T10:00:00.000Z' };
 
 /**
  * **The cutover checklist, derived — MG-11 (QG-07, P-01, P-08).**
@@ -79,6 +84,8 @@ const READY: CutoverEvidence = {
   rollbackDemonstratedAt: '2026-09-08T22:00:00.000Z',
   namedTeam: [{ userId: 'u-owner', role: 'decision' }, { userId: 'u-eng', role: 'load' }],
   ownerGoBy: 'u-owner',
+  backup: backupStanding([{ backupId: 'bk-1', at: '2026-09-10T18:00:00.000Z', ok: true, encrypted: true, offsite: true }], 6, '2026-09-10T21:30:00.000Z'),
+  rollbackLimits: LIMITS,
 };
 
 const build = (evidence: CutoverEvidence) => buildCutoverChecklist({ ...CUTOVER, evidence });
@@ -86,8 +93,8 @@ const decide = (evidence: CutoverEvidence) => decideCutover(build(evidence).chec
 
 // ── The producer that never existed ─────────────────────────────────────────
 
-describe('every one of the eight is derived, not asserted', () => {
-  it('reaches GO when all eight are answered from evidence and all eight are good', () => {
+describe('every one of the ten is derived, not asserted', () => {
+  it('reaches GO when all ten are answered from evidence and all ten are good', () => {
     const decision = decide(READY);
     expect(decision.go, decision.detail).toBe(true);
     expect(build(READY).notKnown).toEqual([]);
@@ -142,6 +149,19 @@ describe('every one of the eight is derived, not asserted', () => {
     expect(decide({ ...READY, namedTeam: [] }).failed).toContain('team_named');
   });
 
+  it('MG-11: a backup too old, not off-site or not judged, and a limit not set, each fail by name', () => {
+    const old = backupStanding([{ backupId: 'bk-1', at: '2026-09-10T08:00:00.000Z', ok: true, encrypted: true, offsite: true }], 6, '2026-09-10T21:30:00.000Z');
+    expect(old.state).toBe('failed');
+    expect(decide({ ...READY, backup: old }).failed).toEqual(['backup_verified']);
+    const local = backupStanding([{ backupId: 'bk-2', at: '2026-09-10T20:00:00.000Z', ok: true, encrypted: true, offsite: false }], 6, '2026-09-10T21:30:00.000Z');
+    expect(local.evidence).toMatch(/no off-site copy/);
+    expect(backupStanding([], null, '2026-09-10T21:30:00.000Z').state).toBe('not_known');
+    const unset = build({ ...READY, rollbackLimits: { ...LIMITS, edgeOutageMinutes: null } });
+    expect(decideCutover(unset.checklist).failed).toEqual(['rollback_limits_agreed']);
+    expect(unset.checks.find((c) => c.check === 'rollback_limits_agreed')?.evidence).toMatch(/not set yet: Longest the store may be cut off/);
+    expect(build({ ...READY, rollbackLimits: undefined }).notKnown).toEqual(['rollback_limits_agreed']);
+  });
+
   it('waits on the owner when every technical check has passed', () => {
     const decision = decide({ ...READY, ownerGoBy: undefined });
     expect(decision.failed).toEqual(['owner_go']);
@@ -156,11 +176,11 @@ describe('what nobody could answer is never answered comfortably', () => {
     const derived = build({});
     const decision = decideCutover(derived.checklist);
     expect(decision.go).toBe(false);
-    expect(decision.failed).toHaveLength(8);
-    // Four of the eight are genuinely unanswerable rather than answered badly.
+    expect(decision.failed).toHaveLength(10);
+    // Seven of the ten are genuinely unanswerable rather than answered badly.
     expect([...derived.notKnown].sort()).toEqual([
-      'blocking_exceptions_cleared', 'control_totals_signed', 'edge_fully_synced',
-      'parallel_run_sufficient', 'team_named',
+      'backup_verified', 'blocking_exceptions_cleared', 'control_totals_signed', 'edge_fully_synced',
+      'parallel_run_sufficient', 'rollback_limits_agreed', 'team_named',
     ].sort());
   });
 
@@ -205,9 +225,9 @@ describe('what nobody could answer is never answered comfortably', () => {
 // ── Every check says where its answer came from ─────────────────────────────
 
 describe('nobody has to take a tick on trust', () => {
-  it('gives every one of the eight a sentence of evidence', () => {
+  it('gives every one of the ten a sentence of evidence', () => {
     const derived = build(READY);
-    expect(derived.checks).toHaveLength(8);
+    expect(derived.checks).toHaveLength(10);
     for (const check of derived.checks) {
       expect(check.evidence.length, `${check.check} says nothing`).toBeGreaterThan(20);
     }

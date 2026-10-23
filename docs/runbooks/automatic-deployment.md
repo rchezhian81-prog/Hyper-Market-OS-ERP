@@ -175,6 +175,24 @@ computers' saved history. The administrator adds it to the box's settings file O
   backup and exits 0 only when it worked (the demo: `sudo /bin/systemctl start --wait sre-pilot-backup.service`, with a
   sudoers line allowing the `deploy` user exactly that). A failed backup stops the release before anything changes.
 
+## Signed releases (WF-20, AID-08 "sign releases")
+
+- **What is signed:** three lines that pin a merged commit exactly — `sre-release-v1`, `commit=<sha>`, `tree=<tree id>`
+  (git's digest of every file). `scripts/release-signing.mjs sign <sha>` signs them with Ed25519.
+- **The private key** is held by the release-signing custodian (an owner decision: who) and lives ONLY as the GitHub
+  secret `RELEASE_SIGNING_KEY` (a PEM made with `openssl genpkey -algorithm ed25519`). Never in the repository, a
+  settings file, an image or a log. With no secret, the build says *NOT SIGNED* on every merge.
+- **The build:** every run self-tests the signer with a throwaway key; on a merge to main it signs the commit and keeps
+  `manifest.txt` and `signature.txt` as the `release-signature` artefact. If the public key is committed at
+  `infra/deploy/release-signing.pub`, the build also checks its own signature against it.
+- **The box:** put the PUBLIC key on the box and set `SRE_RELEASE_PUBKEY=/opt/sre/release-signing.pub` in
+  `/opt/sre/deploy.conf`. From then on `release.sh` deploys only `release <sha> <actor> <run> <signature>` whose
+  signature verifies, checked with `openssl` over the lines the box rebuilds from its own fetch, before the backup or
+  anything else: unsigned or not verifying → exit **77**, the box untouched. A box without the setting says *release
+  signature NOT CHECKED* on every run.
+- **Not yet wired:** the canary and full-rollout jobs do not yet pass the signature as the fourth word, so do NOT set
+  `SRE_RELEASE_PUBKEY` on a box until they do (every release would be refused, safely, with 77).
+
 ## When something went wrong — the incident record (WF-20, M35-FR-04)
 
 A person with the alerts permission (the owner, a store manager, the platform administrator) records it at head office:

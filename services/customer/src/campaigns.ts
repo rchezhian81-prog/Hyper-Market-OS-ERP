@@ -23,8 +23,8 @@
 // actual message transports (WhatsApp/SMS/email/push) are deployment steps (EX-04/05).
 //
 // Held as named follow-ons: journeys + honest attribution with a control group (FR-02, `measureCampaign`/
-// `findJourneyCandidates`), the do-not-contact and frequency-cap signals (the ledger does not yet carry
-// them), template approval sourced from the M31 document register (here it is asserted on the request),
+// `findJourneyCandidates`), [the do-not-contact signal is now the stored register — OB-288 P5, M31-FR-04 — and the
+// frequency cap is the owner's policy, applied at the send and at the queue], template approval sourced from the M31 document register (here it is asserted on the request),
 // and a `service`-purpose campaign (the consent ledger models transactional/marketing/profiling/
 // third_party, so this wires the two that map cleanly: marketing and transactional).
 
@@ -36,6 +36,7 @@ import {
 } from '../../../packages/service-desk/src/index';
 import { mayWeSend, type ConsentRecord, type ConsentPurpose, type Channel as ConsentChannel } from './index';
 import { approvedTemplate, type MessageTemplateVersion } from './notification-queue';
+import { isSuppressed, type SuppressionFact } from './suppression-register';
 
 /** The append-only record of a campaign-send decision — who ran which campaign, to how many, excluding
  *  how many and why, and whether it was blocked outright. Counts only: the recipient lists are not
@@ -93,6 +94,8 @@ export interface CampaignDeps {
    * approved — for THIS purpose and channel — is read from it, and the caller's `templateApproved` is ignored and said.
    */
   readonly templates?: (tenantId: string) => Promise<readonly MessageTemplateVersion[]> | readonly MessageTemplateVersion[];
+  /** OB-288 P5 · M31-FR-04: the stored do-not-contact register — a suppressed recipient is excluded by name. */
+  readonly suppressions?: (tenantId: string) => Promise<readonly SuppressionFact[]> | readonly SuppressionFact[];
   readonly now: () => string;
 }
 
@@ -128,12 +131,15 @@ export function campaignRoutes(deps: CampaignDeps): readonly Route[] {
         // always clears) rides the contract for everyone. An entry is produced for every audience member
         // so the engine can still surface the whole-campaign blocks (unapproved template, promotion in a
         // transactional message) rather than an unexplained empty list.
+        const register = deps.suppressions === undefined ? [] : await deps.suppressions(ctx.tenantId);
         const consents = await Promise.all(audience.map(async (customerRef) => {
           const records = await deps.consentRecords(ctx.tenantId, customerRef);
           const d = mayWeSend({ customerId: customerRef, purpose: purpose as ConsentPurpose, channel: channel as ConsentChannel, records, now });
-          if (d.verdict === 'may_send') return { customerRef, granted: [{ purpose, channel }] };
-          if (d.verdict === 'must_not_send') return { customerRef, granted: [], withdrawnAt: d.basis?.recordedAt ?? d.decidedAt };
-          return { customerRef, granted: [] }; // no_consent_on_record — silence is not agreement
+          // OB-288 P5 · M31-FR-04: the do-not-contact register, read for every recipient (absolute).
+          const dnc = isSuppressed(register, customerRef, channel).suppressed ? { doNotContact: true } : {};
+          if (d.verdict === 'may_send') return { customerRef, granted: [{ purpose, channel }], ...dnc };
+          if (d.verdict === 'must_not_send') return { customerRef, granted: [], withdrawnAt: d.basis?.recordedAt ?? d.decidedAt, ...dnc };
+          return { customerRef, granted: [], ...dnc }; // no_consent_on_record — silence is not agreement
         }));
 
         // PF-10: the template's approval is head office's record when it keeps one — never the caller's say-so.

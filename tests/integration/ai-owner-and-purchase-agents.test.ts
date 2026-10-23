@@ -78,7 +78,7 @@ describe('A01 and A02 run on governed records, are recorded and metered, and com
     expect((listed.proposals ?? []).map((p) => p.agent)).toEqual(expect.arrayContaining(['A01', 'A02']));
     expect(((await h.request({ method: 'GET', path: '/v1/ai/budget', userId: 'u-owner', tenantId: A })).body as { spentMinor: number }).spentMinor).toBe(0);
 
-    expect((await put(h, '/v1/ai/kill-switch', { on: true }, 'k1')).status).toBe(200);
+    expect((await put(h, '/v1/ai/kill-switch', { on: true, reason: 'test: stop the assistants' }, 'k1')).status).toBe(200);
     expect((await run(h, 'A01', 'a01-killed')).status).toBe(503);
     expect(await h.store.readStream(A, 'ai', { type: 'AiRunRecorded' })).toHaveLength(2);
   });

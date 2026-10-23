@@ -61,6 +61,30 @@ export async function prepareCutoverEvidence(h: ApiHarness, input: CutoverGoInpu
   });
   ok(delta, 200);
   expect(delta.body).toMatchObject({ applied: 1 });
+  // OB-288 P5 · MG-11: the owner agrees the four rollback limits before the night (his numbers, synthetic here), and the
+  // backup job — its own machine identity, never a person — reports a good backup (completed, encrypted, off-site).
+  await agreeRollbackLimits(h, t, input.ownerId);
+  const job = 'u-cg-backup-job';
+  await h.provisionRole(t, job, 'backup_job');
+  const taken = await h.request({
+    method: 'POST', path: `/v1/platform/backups/bk-cutover-${Math.random().toString(36).slice(2)}/taken`, userId: job, tenantId: t, amr: null, authTimeFromNowSeconds: null,
+    idempotencyKey: `cg-bk-${Math.random()}`, body: { at: new Date().toISOString(), ok: true, encrypted: true, offsite: true },
+  });
+  ok(taken, 201);
+}
+
+/**
+ * OB-288 P5 · MG-11: the owner's four rollback limits, agreed before the night — once (a GO freezes them). Synthetic
+ * numbers; the backup age is generous because some suites move the clock two days past the GO.
+ */
+export async function agreeRollbackLimits(h: ApiHarness, tenantId: string, ownerId: string): Promise<void> {
+  const held = await h.request({ method: 'GET', path: '/v1/migration/cutover/rollback-limits', userId: ownerId, tenantId });
+  if ((held.body as { limits: unknown }).limits !== null) return;
+  const r = await h.request({
+    method: 'PUT', path: '/v1/migration/cutover/rollback-limits', userId: ownerId, tenantId, idempotencyKey: `cg-limits-${Math.random()}`,
+    body: { controlTotalDifferenceMinor: 0, edgeOutageMinutes: 30, windowMinutes: 480, backupMaxAgeHours: 96 },
+  });
+  expect(r.status, JSON.stringify(r.body)).toBe(200);
 }
 
 export interface GateReply {

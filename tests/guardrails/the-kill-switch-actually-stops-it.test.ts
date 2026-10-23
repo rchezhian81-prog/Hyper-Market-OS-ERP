@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { PULL_REFUSAL_KINDS, DECIDE_REFUSAL_KINDS } from '../../apps/web-erp/src/ai-session';
+import { ACT_REFUSAL_KINDS } from '../../apps/web-erp/src/ai-control';
 import {
   callModel, FORBIDDEN_TOOLS, grantTools, AGENTS,
   type AgentId, type ModelRequest, type ModelTransport,
@@ -39,6 +39,11 @@ const MODEL = readFileSync('apps/web-erp/src/ai-session.ts', 'utf8');
 const VIEW = readFileSync('apps/web-erp/web/ai.js', 'utf8');
 const HTML = readFileSync('apps/web-erp/web/ai.html', 'utf8');
 const ENTRY = readFileSync('apps/web-erp/src/browser-entry.ts', 'utf8');
+// OB-288 lane 4 · P1: the screen is fed by head office's LIVE read and sends every act there. Its view model is
+// ai-control.ts (CONTROL); the box's payload session (ai-session.ts, MODEL) is what `bootAi` still builds for a store box.
+const CONTROL = readFileSync('apps/web-erp/src/ai-control.ts', 'utf8');
+const SERVER_CONTROL = readFileSync('services/ai/src/control.ts', 'utf8');
+const SERVER_GOVERNANCE = readFileSync('services/ai/src/governance.ts', 'utf8');
 const SCREEN_DATA = readFileSync('edge/store-edge/src/screen-data.ts', 'utf8');
 
 const code = (source: string): string => source
@@ -148,49 +153,64 @@ describe('no agent may ever be granted a forbidden tool (AI-NFR-12)', () => {
 
   it('the screen SHOWS the list — a rule nobody can see is a rule nobody trusts', () => {
     expect(code(MODEL)).toMatch(/forbidden: \(\) => FORBIDDEN_TOOLS/);
-    expect(code(VIEW)).toMatch(/session\.forbidden\(\)/);
+    expect(code(SERVER_CONTROL)).toMatch(/forbidden: FORBIDDEN_TOOLS/);
+    expect(code(CONTROL)).toMatch(/control\.forbidden\.length > 0 \? control\.forbidden : FORBIDDEN_TOOLS/);
+    expect(code(VIEW)).toMatch(/view\?\.forbidden/);
     expect(HTML).toMatch(/id="forbidden-box"/);
   });
 
   it('the screen grants through the SAME function the runtime uses', () => {
-    // A screen with its own idea of an agent's tools shows a list the runtime would refuse.
+    // A screen with its own idea of an agent's tools shows a list the runtime would refuse. The live screen's tool list
+    // is head office's, from the same `grantTools`; the page and its view model build none.
     const agents = code(MODEL).slice(code(MODEL).indexOf('agents: () =>'));
     expect(agents).toMatch(/grantTools\(\{ agentId, tenantEnabled: true, agentEnabled: budget\?\.enabled !== false \}\)/);
-    expect(agents, 'the screen builds its own tool list').not.toMatch(/allowedTools/);
+    expect(code(SERVER_CONTROL)).toMatch(/tools: grantTools\(\{ agentId, tenantEnabled: true, agentEnabled: true \}\)\.tools/);
+    expect(code(CONTROL), 'the screen builds its own tool list').not.toMatch(/allowedTools/);
+    expect(code(VIEW), 'the screen builds its own tool list').not.toMatch(/allowedTools/);
   });
 
-  it('reviews a draft through the same function too, against VERIFIED citations', () => {
-    const queue = code(MODEL).slice(code(MODEL).indexOf('queue: () =>'));
-    expect(queue).toMatch(/reviewProposals\(\{/);
-    expect(queue).toMatch(/verifiedCitations: pending\.verifiedCitations/);
-    // Never what the model claimed to have cited.
-    expect(queue, 'the screen trusts the model’s own citation list').not.toMatch(/citedEvidenceIds/);
+  it('every suggestion on the screen carries its confidence, what it cannot know and what it rests on (AI-NFR-04)', () => {
+    expect(code(VIEW)).toMatch(/p\.confidence\.band/);
+    expect(code(VIEW)).toMatch(/p\.confidence\.uncertainty/);
+    expect(code(VIEW)).toMatch(/p\.evidence\.map/);
+    // Never what a model claimed to have cited.
+    expect(code(VIEW), 'the screen trusts a model’s own citation list').not.toMatch(/citedEvidenceIds/);
   });
 });
 
 // ── 4. AI drafts; a named person commits ────────────────────────────────────
 
 describe('nothing here commits, and nothing commits under a name nobody holds', () => {
-  it('the screen has no way to execute anything itself', () => {
+  it('the screen has no way to execute anything itself — every act goes to head office\'s AI routes', () => {
     for (const forbidden of FORBIDDEN_TOOLS) {
       expect(code(VIEW), `the view calls ${forbidden}`).not.toMatch(new RegExp(`\\b${forbidden}\\s*\\(`));
     }
     expect(code(MODEL), 'the session executes a proposal').not.toMatch(/\bexecute\s*\(/);
+    // Every path the page or its view model names is an AI route — never a price, stock, money or privilege route.
+    const found = [...code(VIEW).matchAll(/path: `([^`]+)`|path: '([^']+)'|fetch\('([^']+)'/g), ...code(CONTROL).matchAll(/path: `([^`]+)`|path: '([^']+)'/g)]
+      .map((m) => m[1] ?? m[2] ?? m[3] ?? '');
+    expect(found.length).toBeGreaterThan(5);
+    for (const p of found) expect(p, p).toMatch(/^\/v1\/ai\//);
+    // A decision commits nothing — head office says so on the outcome it records.
+    expect(code(SERVER_GOVERNANCE)).toMatch(/wouldRequire: proposal\.wouldRequire, committedAnything: false/);
   });
 
-  it('records the PERSON as the actor and the agent as the drafter', () => {
+  it('records the PERSON as the one who decided — and the box session still names the person the actor', () => {
     expect(code(MODEL)).toMatch(/approvedBy: config\.userId/);
     expect(code(MODEL)).toMatch(/agentIdentities: ALL/);
-    expect(code(VIEW)).toMatch(/outcome\.record\.actor/);
-    expect(code(VIEW)).toMatch(/outcome\.record\.draftedBy/);
+    expect(code(SERVER_GOVERNANCE)).toMatch(/by: ctx\.userId, at: deps\.now\(\), wouldRequire/);
+    expect(code(VIEW)).toMatch(/p\.outcome\.by/);
   });
 
-  it('stops and accepts nothing under a name nobody holds', () => {
+  it('stops and decides nothing under a name nobody holds', () => {
     expect(code(MODEL)).toMatch(/readonly userId: string \| null/);
     for (const fn of ['pull: (input)', 'lift: (input)', 'decide: (input)']) {
       const body = code(MODEL).slice(code(MODEL).indexOf(fn));
-      expect(body.indexOf('config.userId === null'), `${fn} does not check who is asking`)
-        .toBeGreaterThan(-1);
+      expect(body.indexOf('config.userId === null'), `${fn} does not check who is asking`).toBeGreaterThan(-1);
+    }
+    for (const fn of ['export function pullRequest', 'export function liftRequest', 'export function decisionRequest']) {
+      const body = code(CONTROL).slice(code(CONTROL).indexOf(fn));
+      expect(body.indexOf('viewer.userId === null'), `${fn} does not check who is asking`).toBeGreaterThan(-1);
     }
     expect(code(ENTRY)).toMatch(/userId: data\.userId === undefined \? null : data\.userId/);
     expect(HTML).toMatch(/id="nobody"/);
@@ -198,22 +218,29 @@ describe('nothing here commits, and nothing commits under a name nobody holds', 
 
   it('never lets the same person pull a switch and decide the problem is over', () => {
     expect(code(MODEL)).toMatch(/liftKillSwitch\(\{ killSwitch, liftedBy: config\.userId/);
+    expect(code(CONTROL)).toMatch(/viewer\.userId === killSwitch\.activatedBy/);
+    // …and head office decides it with the tested engine, whatever the page sent.
+    expect(code(SERVER_GOVERNANCE)).toMatch(/liftKillSwitch\(\{ killSwitch: found, liftedBy: ctx\.userId, at \}\)/);
   });
 
-  it('offers stopping ON THE SCREEN, so the control is not worked around', () => {
-    // A capability the session has and the screen does not is the fault this codebase keeps
-    // finding — twelve times now.
+  it('offers stopping ON THE SCREEN, and the screen\'s switch reaches head office', () => {
+    // A capability the session has and the screen does not is the fault this codebase keeps finding. And a switch that
+    // changes a list in the tab is no switch at all: the page SENDS it.
     expect(HTML).toMatch(/id="pull"/);
     expect(HTML).toMatch(/id="pull-reason"/);
-    expect(code(VIEW)).toMatch(/session\.pull\(/);
-    expect(code(VIEW)).toMatch(/session\.lift\(/);
-    expect(code(VIEW)).toMatch(/session\.decide\(/);
+    expect(code(VIEW)).toMatch(/kit\.pull\(/);
+    expect(code(VIEW)).toMatch(/kit\.lift\(/);
+    expect(code(VIEW)).toMatch(/kit\.decide\(/);
+    expect(code(VIEW)).toMatch(/fetch\(check\.path/);
+    expect(code(CONTROL)).toMatch(/path: '\/v1\/ai\/kill-switches'/);
+    expect(code(VIEW), 'the page still shows sample data').not.toMatch(/sampleSession|sampleData/);
   });
 
   it('shows what the shop does without each agent, beside the switch', () => {
     // "What breaks if I do this?" is the only question anybody will ask before pulling it.
     expect(code(MODEL)).toMatch(/export function fallbackFor/);
-    expect(code(VIEW)).toMatch(/agent\.fallback/);
+    expect(code(CONTROL)).toMatch(/export function withoutIt/);
+    expect(code(VIEW)).toMatch(/kit\.withoutIt\(agent\)/);
   });
 });
 
@@ -237,16 +264,20 @@ describe('what has never been set is never served as a zero', () => {
     expect(code(ENTRY)).not.toMatch(/platformCeilingMinor: \(\) => data\?\.platformCeilingMinor \?\?/);
     // No ceiling means no summary. A share of a limit nobody agreed is not reassurance.
     expect(code(MODEL)).toMatch(/if \(ceiling === undefined\) return undefined;/);
-    expect(code(VIEW)).toMatch(/noPlatformCeiling/);
+    // On the live screen: a shop AI cap of nought is "nothing that costs may run", never a comfortable 0% used.
+    expect(code(CONTROL)).toMatch(/control\.budget\.capMinor === 0\s*\? \{ known: false, why: 'no_cap_set' \}/);
+    expect(code(VIEW)).toMatch(/if \(!view\.cost\.known\)/);
+    expect(code(VIEW)).toMatch(/t\('noCap'\)/);
   });
 
   it('an agent with no ceiling, and one never metered, are told apart', () => {
     // Two different absences with two different fixes. A single `undefined` would have somebody
     // setting a ceiling that was already set, while the meter stayed broken.
     expect(code(MODEL)).toMatch(/'no_ceiling_set' \| 'spend_not_known'/);
-    expect(code(VIEW)).toMatch(/agent\.budget\.why === 'no_ceiling_set'/);
-    expect(code(VIEW)).toMatch(/noBudget/);
-    expect(code(VIEW)).toMatch(/spendNotKnown/);
+    // On the live screen: no ceiling of its own is said (only the shop cap applies) — never drawn as a limit of nought.
+    expect(code(VIEW)).toMatch(/agent\.ceilingMinor === null/);
+    expect(code(VIEW)).toMatch(/t\('noCeiling'\)/);
+    expect(code(VIEW)).toMatch(/t\('noRate'\)/);
   });
 
   it('there is exactly ONE source for what an agent has spent', () => {
@@ -257,6 +288,9 @@ describe('what has never been set is never served as a zero', () => {
     const spentBy = code(MODEL).slice(code(MODEL).indexOf('const spentBy'));
     expect(spentBy, 'spend is not filtered to the period').toMatch(/u\.period === ports\.period\(\)/);
     expect(spentBy, 'spend is not filtered to the tenant').toMatch(/u\.tenantId === config\.tenantId/);
+    // On the live screen every spend figure is head office's metered one — the view model sums nothing of its own.
+    expect(code(CONTROL)).toMatch(/spentMinor: control\.budget\.spentMinor/);
+    expect(code(CONTROL), 'the view model adds up spend itself').not.toMatch(/\.reduce\(/);
   });
 
   it('never converts "never metered" into "has spent nothing"', () => {
@@ -269,10 +303,11 @@ describe('what has never been set is never served as a zero', () => {
       .toBeLessThan(admission.indexOf('admitCall('));
   });
 
-  it('an agent never evaluated says so, rather than scoring nought', () => {
+  it('an agent never evaluated says so, rather than scoring nought — and a run that reached no model proves nothing', () => {
     expect(code(MODEL)).toMatch(/readonly evaluation: \{ readonly passed: number; readonly total: number; readonly at: string \} \| undefined/);
-    expect(code(VIEW)).toMatch(/agent\.evaluation === undefined/);
-    expect(code(VIEW)).toMatch(/noEvaluation/);
+    expect(code(VIEW)).toMatch(/if \(e === null\) return t\('noEvaluation'\)/);
+    expect(code(VIEW)).toMatch(/if \(!e\.complete\)/);
+    expect(code(VIEW)).toMatch(/t\('incomplete'\)/);
   });
 });
 
@@ -287,15 +322,12 @@ describe('the screen a duty manager reaches for in a hurry', () => {
   it('lists stopped assistants FIRST', () => {
     const agents = code(MODEL).slice(code(MODEL).indexOf('agents: () =>'));
     expect(agents).toMatch(/\.sort\(\(a, b\) => \(a\.stopped === b\.stopped \? 0 : a\.stopped \? -1 : 1\)\)/);
+    expect(code(CONTROL)).toMatch(/\.sort\(\(a, b\) => Number\(b\.stopped\) - Number\(a\.stopped\)/);
   });
 
-  it('has words for every refusal it can produce, in both languages', () => {
-    expectWordsFor(PULL_REFUSAL_KINDS, 'PULL_REFUSAL_WORDS');
-    expectWordsFor(DECIDE_REFUSAL_KINDS, 'DECIDE_REFUSAL_WORDS');
-    expectWordsFor(
-      ['accepted_for_approval', 'forbidden_tool', 'tool_not_granted', 'read_only_agent', 'no_evidence', 'no_rationale'],
-      'VERDICT_WORDS',
-    );
+  it('has words for every refusal it can produce, and every confidence band, in both languages', () => {
+    expectWordsFor(ACT_REFUSAL_KINDS, 'ACT_REFUSAL_WORDS');
+    expectWordsFor(['high', 'medium', 'low'], 'BAND_WORDS');
   });
 
   it('opens with no network and says where the page came from', () => {

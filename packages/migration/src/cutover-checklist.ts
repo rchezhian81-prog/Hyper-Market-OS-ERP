@@ -39,6 +39,7 @@
 import type { OutstandingExceptions } from './cleaning';
 import type { ReconciliationReport } from './reconcile';
 import type { CutoverCheck, CutoverChecklist, ParallelRunPosition } from './cutover';
+import { limitsNotSet, ROLLBACK_LIMIT_WORDS, type BackupStanding, type RollbackLimits } from './rollback-limits';
 
 /** A named person on the night, with a role each. "The team" is not a team at 2am. */
 export interface TeamMember {
@@ -73,6 +74,10 @@ export interface CutoverEvidence {
   readonly namedTeam?: readonly TeamMember[];
   /** When the owner gave GO. Absent means they have not. */
   readonly ownerGoBy?: string;
+  /** MG-11 (OB-288 P5): the backup judged against the owner's limit (`backupStanding`). Absent means nobody answered. */
+  readonly backup?: BackupStanding;
+  /** MG-11 (OB-288 P5): the rollback limits the owner set. Absent means none has been recorded. */
+  readonly rollbackLimits?: RollbackLimits;
 }
 
 /** Whether a check passed, and — the part that matters — whether it was answerable at all. */
@@ -184,6 +189,20 @@ export function buildCutoverChecklist(input: {
       ? 'the owner has not given GO — the last of the eight, and the only one that is theirs'
       : `the owner gave GO in the name of ${e.ownerGoBy}`);
 
+  // 9. MG-11 — a good backup within the owner's agreed age. Nobody answered: not known (a failure).
+  record('backup_verified', e.backup === undefined ? 'not_known' : e.backup.state,
+    e.backup === undefined ? 'nothing has told this screen about the backup — a night with nothing whole to go back to is not a cutover' : e.backup.evidence);
+
+  // 10. MG-11 — every numeric rollback limit set before the night (the owner's numbers; "not set" is never invented).
+  const unset = limitsNotSet(e.rollbackLimits);
+  record('rollback_limits_agreed',
+    e.rollbackLimits === undefined ? 'not_known' : unset.length === 0 ? 'passed' : 'failed',
+    e.rollbackLimits === undefined
+      ? 'no rollback limits have been recorded — the owner sets them before the night'
+      : unset.length === 0
+        ? `agreed by ${e.rollbackLimits.setBy} on ${e.rollbackLimits.setAt}: ${e.rollbackLimits.controlTotalDifferenceMinor} paise, ${e.rollbackLimits.edgeOutageMinutes} minute(s) cut off, ${e.rollbackLimits.windowMinutes} minute(s) from GO, a backup at most ${e.rollbackLimits.backupMaxAgeHours} hour(s) old`
+        : `not set yet: ${unset.map((n) => ROLLBACK_LIMIT_WORDS[n].en).join('; ')}`);
+
   const notKnown = checks.filter((c) => c.state === 'not_known').map((c) => c.check);
 
   // **Every "not known" arrives at `decideCutover` as a failure.** The booleans below are the
@@ -201,6 +220,8 @@ export function buildCutoverChecklist(input: {
     deltaApplied: e.deltaAppliedAt !== undefined,
     namedTeam: team,
     ...(e.ownerGoBy === undefined ? {} : { ownerGoBy: e.ownerGoBy }),
+    backupVerified: e.backup?.state === 'passed',
+    rollbackLimitsAgreed: e.rollbackLimits !== undefined && unset.length === 0,
   };
 
   const failed = checks.filter((c) => c.state !== 'passed');
@@ -209,9 +230,9 @@ export function buildCutoverChecklist(input: {
     checks,
     notKnown,
     detail: failed.length === 0
-      ? 'all eight checks answered from evidence and all eight passed'
+      ? `all ${checks.length} checks answered from evidence and all ${checks.length} passed`
       : notKnown.length === 0
-        ? `${failed.length} of eight checks failed, every one answered from evidence`
-        : `${failed.length} of eight checks failed, and ${notKnown.length} of those could not be answered at all — an unanswerable check is a producer that is not connected, not a shop that is ready`,
+        ? `${failed.length} of ${checks.length} checks failed, every one answered from evidence`
+        : `${failed.length} of ${checks.length} checks failed, and ${notKnown.length} of those could not be answered at all — an unanswerable check is a producer that is not connected, not a shop that is ready`,
   };
 }

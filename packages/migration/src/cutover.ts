@@ -40,12 +40,24 @@ export type DayTotalArea = 'sales_value' | 'sales_count' | 'stock_movement' | 't
  */
 export type DayLineArea = 'item_quantity' | 'item_value' | 'item_tax' | 'item_not_in_catalogue' | 'bill_not_keyed' | 'bill_not_on_old' | 'bill_value' | 'old_return';
 
-export type ComparisonArea = DayTotalArea | DayLineArea;
+/**
+ * OB-288 P5 · MG-10: the books side of the day (`books-comparison.ts`) — purchases, supplier and customer balances, stock
+ * and margin, old against head office's registers; each line carries its subject (a bill, a supplier, a customer, an item).
+ */
+export type BooksDayArea =
+  | 'purchases_value' | 'purchase_bill_value' | 'purchase_bill_not_on_new' | 'purchase_bill_not_on_old'
+  | 'supplier_balance' | 'supplier_balance_total' | 'customer_balance' | 'customer_balance_total'
+  | 'stock_quantity' | 'stock_value_total' | 'margin_sales_net' | 'margin_cost';
+
+export type ComparisonArea = DayTotalArea | DayLineArea | BooksDayArea;
 
 /** Every area a day may carry, in the order a sheet lists them. */
 export const COMPARISON_AREAS: readonly ComparisonArea[] = Object.freeze([
   'sales_value', 'sales_count', 'stock_movement', 'tax', 'payments', 'loyalty',
   'item_quantity', 'item_value', 'item_tax', 'item_not_in_catalogue', 'bill_not_keyed', 'bill_not_on_old', 'bill_value', 'old_return',
+  'purchases_value', 'purchase_bill_value', 'purchase_bill_not_on_new', 'purchase_bill_not_on_old',
+  'supplier_balance', 'supplier_balance_total', 'customer_balance', 'customer_balance_total',
+  'stock_quantity', 'stock_value_total', 'margin_sales_net', 'margin_cost',
 ]);
 
 /** A subject names one item, unit or bill: letters, digits and a few marks, never more than 64 characters. */
@@ -275,7 +287,11 @@ export type CutoverCheck =
   | 'blocking_exceptions_cleared'
   | 'delta_applied'
   | 'team_named'
-  | 'owner_go';
+  | 'owner_go'
+  // OB-288 P5 · MG-11 "rehearsed checklist with BACKUP, go/no-go, ROLLBACK THRESHOLDS": a verified backup recent enough by
+  // the owner's own limit, and every numeric rollback limit agreed before the night. Absent is a failure, never a pass.
+  | 'backup_verified'
+  | 'rollback_limits_agreed';
 
 export interface CutoverChecklist {
   readonly cutoverId: string;
@@ -291,6 +307,13 @@ export interface CutoverChecklist {
   /** Named people on the night, with a role each. "The team" is not a team. */
   readonly namedTeam: readonly { readonly userId: string; readonly role: string }[];
   readonly ownerGoBy?: string;
+  /**
+   * MG-11: a good backup (completed, encrypted, off-site) was taken within the owner's agreed age before the decision.
+   * Only `true` passes — absent (nobody answered) fails, exactly as `false` does.
+   */
+  readonly backupVerified?: boolean;
+  /** MG-11: every numeric rollback limit is set and agreed before the night. Only `true` passes. */
+  readonly rollbackLimitsAgreed?: boolean;
 }
 
 export interface CutoverDecision {
@@ -303,6 +326,9 @@ export interface CutoverDecision {
   readonly ownerAction: string;
 }
 
+/** How many checks the gate holds (MG-11: eight, plus the backup and the agreed rollback limits). */
+export const CUTOVER_CHECK_COUNT = 10;
+
 const CHECK_REASON: Readonly<Record<CutoverCheck, string>> = {
   control_totals_signed: 'control totals are not all signed — QG-07 blocks the cutover, and this is the last point a wrong opening balance can be stopped',
   rollback_demonstrated: 'no rollback has been DEMONSTRATED — a designed rollback and a performed one differ on exactly the night it matters, and the decision gets made at 6am by a tired person',
@@ -312,6 +338,8 @@ const CHECK_REASON: Readonly<Record<CutoverCheck, string>> = {
   delta_applied: 'the delta since the final extract has not been applied — the shop kept trading, so a delta always exists',
   team_named: 'nobody is named for the night — "the team" is not a team at 2am',
   owner_go: 'the owner has not given GO',
+  backup_verified: 'no good backup (completed, encrypted and copied off-site) is on record within the agreed age — if the night goes wrong there must be something whole to go back to',
+  rollback_limits_agreed: 'the rollback limits are not all set — at 6am the decision to go back must be a number crossed, not an argument',
 };
 
 /**
@@ -333,6 +361,8 @@ export function decideCutover(checklist: CutoverChecklist): CutoverDecision {
   if (!c.deltaApplied) failed.push('delta_applied');
   if (c.namedTeam.length === 0) failed.push('team_named');
   if (c.ownerGoBy === undefined) failed.push('owner_go');
+  if (c.backupVerified !== true) failed.push('backup_verified');
+  if (c.rollbackLimitsAgreed !== true) failed.push('rollback_limits_agreed');
 
   const go = failed.length === 0;
   return {
@@ -341,13 +371,15 @@ export function decideCutover(checklist: CutoverChecklist): CutoverDecision {
     failed,
     shopKeepsTrading: true,
     detail: go
-      ? `GO: all eight checks passed, ${c.namedTeam.length} named on the night, rollback demonstrated ${c.rollbackDemonstratedAt}`
+      ? `GO: all ${CUTOVER_CHECK_COUNT} checks passed, ${c.namedTeam.length} named on the night, rollback demonstrated ${c.rollbackDemonstratedAt}`
       : `NO GO — ${failed.length} checks failed: ${failed.map((f) => CHECK_REASON[f]).join('; ')}`,
     ownerAction: go
       ? 'nothing further — the checklist is complete and the cutover may proceed'
       : failed.includes('owner_go') && failed.length === 1
         ? 'every technical check has passed; the cutover waits on your GO'
-        : 'no decision is needed from you yet — the failed checks above are ours to clear first',
+        : failed.includes('rollback_limits_agreed')
+          ? 'you set the rollback limits (how big a difference, how long the store may be cut off, how long the night may run, how old the backup may be) — they are your numbers; the other failed checks above are ours to clear'
+          : 'no decision is needed from you yet — the failed checks above are ours to clear first',
   };
 }
 

@@ -28,19 +28,26 @@
 # Exit codes (BSD sysexits, so a pipeline can tell them apart):
 #   0 deployed · 64 usage · 65 refused (not on main) · 69 refused (the pre-release backup failed) ·
 #   70 rolled back to the previous release (it did not come up, or failed its canary bake) ·
-#   71 rollback failed too · 75 another deployment is running · 78 the box is not set up for this (round 32: or its
+#   71 rollback failed too · 75 another deployment is running · 77 refused (this box checks release signatures and the
+#   release is unsigned or its signature does not verify) · 78 the box is not set up for this (round 32: or its
 #   settings file lacks a setting this release requires — refused before anything is rebuilt, the box untouched).
 #
 # WF-20 (ADR-0026): before anything changes, the box's pre-release backup runs (SRE_PREDEPLOY_BACKUP_CMD); after the
 # release is up and GREEN, a canary box WATCHES it for SRE_BAKE_SECONDS (READY throughout, no growth in server errors)
 # before calling it deployed. The pipeline deploys to the canary box first and to the full rollout only after that.
+#
+# WF-20 · AID-08 "sign releases" (OB-288 P5): a box given the release-signing PUBLIC key (SRE_RELEASE_PUBKEY) deploys
+# only a commit whose signature verifies — the 4th argument, the base64 Ed25519 signature `scripts/release-signing.mjs
+# sign` made over "sre-release-v1 / commit=<sha> / tree=<tree id>". The box rebuilds those lines from its own fetch and
+# checks them with openssl BEFORE the backup or anything else; unsigned or not verifying → 77, the box untouched. A box
+# without the key says on every run that the signature was not checked (never silently).
 
 set -euo pipefail
 
 say() { printf 'release: %s\n' "$*"; }
 usage() {
-  echo "usage: release.sh <40-hex commit sha> [actor] [run-id]" >&2
-  echo "   or, as an SSH forced command:  release <sha> [actor] [run-id]" >&2
+  echo "usage: release.sh <40-hex commit sha> [actor] [run-id] [signature]" >&2
+  echo "   or, as an SSH forced command:  release <sha> [actor] [run-id] [signature]" >&2
   exit 64
 }
 
@@ -74,6 +81,8 @@ if [ -f "$CONF" ]; then . "$CONF"; fi
 : "${SRE_BAKE_SECONDS:=0}"
 : "${SRE_BAKE_POLL:=15}"
 : "${SRE_BAKE_MAX_5XX:=0}"
+# WF-20 · AID-08: the path of the release-signing PUBLIC key (PEM). Empty = signatures are not checked here (said).
+: "${SRE_RELEASE_PUBKEY:=}"
 
 COMPOSE_FILE_ARGS=()
 for f in $SRE_COMPOSE_FILES; do COMPOSE_FILE_ARGS+=(-f "$f"); done
@@ -88,7 +97,9 @@ if [ $# -eq 0 ] && [ -n "${SSH_ORIGINAL_COMMAND:-}" ]; then
   set -- "${WORDS[@]:1}"
 fi
 SHA="${1:-}"; ACTOR="${2:-unknown}"; RUN="${3:-manual}"
+SIGNATURE=""; if [ "$PHASE" = 1 ]; then SIGNATURE="${4:-}"; fi
 [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || usage
+if [ -n "$SIGNATURE" ] && ! [[ "$SIGNATURE" =~ ^[A-Za-z0-9+/]{86}==$ ]]; then SIGNATURE="unreadable"; fi
 [[ "$ACTOR" =~ ^[A-Za-z0-9._@-]{1,64}$ ]] || ACTOR=unknown
 [[ "$RUN" =~ ^[A-Za-z0-9._:/-]{1,80}$ ]] || RUN=manual
 
@@ -120,6 +131,33 @@ if [ "$PHASE" = 1 ]; then
   if ! git merge-base --is-ancestor "$SHA" "origin/$SRE_RELEASE_BRANCH" 2>/dev/null; then
     echo "REFUSED — commit $SHA is not on origin/$SRE_RELEASE_BRANCH. Only a merged, CI-green commit deploys (hard rule #8, AID-08). Nothing was changed; the box is still on $PREVIOUS." >&2
     exit 65
+  fi
+  # WF-20 · AID-08: on a box that checks signatures, only a release whose signature verifies goes any further.
+  if [ -n "$SRE_RELEASE_PUBKEY" ]; then
+    if [ ! -r "$SRE_RELEASE_PUBKEY" ]; then
+      record signature_key_missing
+      echo "NOT SET UP — this box is told to check release signatures (SRE_RELEASE_PUBKEY=$SRE_RELEASE_PUBKEY) but cannot read that public key. Nothing was changed; the box is still on $PREVIOUS." >&2
+      exit 78
+    fi
+    if [ -z "$SIGNATURE" ]; then
+      record unsigned_refused
+      echo "REFUSED — $SHA arrived unsigned, and this box deploys only signed releases (WF-20, AID-08). Nothing was changed; the box is still on $PREVIOUS." >&2
+      exit 77
+    fi
+    SIG_DIR="$(mktemp -d)"
+    TREE="$(git rev-parse "$SHA^{tree}")"
+    printf 'sre-release-v1\ncommit=%s\ntree=%s\n' "$SHA" "$TREE" > "$SIG_DIR/manifest"
+    if [ "$SIGNATURE" = "unreadable" ] || ! printf '%s' "$SIGNATURE" | base64 -d > "$SIG_DIR/signature" 2>/dev/null \
+       || ! openssl pkeyutl -verify -pubin -inkey "$SRE_RELEASE_PUBKEY" -rawin -in "$SIG_DIR/manifest" -sigfile "$SIG_DIR/signature" >/dev/null 2>&1; then
+      rm -rf "$SIG_DIR"
+      record signature_refused
+      echo "REFUSED — the release signature does not verify for $SHA (tree $TREE) against this box's release key. It was not signed by the release-signing key, or it was changed. Nothing was changed; the box is still on $PREVIOUS." >&2
+      exit 77
+    fi
+    rm -rf "$SIG_DIR"
+    say "release signature verified for $SHA (tree $TREE)."
+  else
+    say "release signature NOT CHECKED on this box (SRE_RELEASE_PUBKEY is not set) — see docs/runbooks/automatic-deployment.md."
   fi
   # WF-20: back up BEFORE anything changes. A backup that fails stops the release here, with the box untouched.
   if [ -n "$SRE_PREDEPLOY_BACKUP_CMD" ]; then

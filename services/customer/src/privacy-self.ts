@@ -27,7 +27,8 @@ import {
 } from '../../../packages/customer/src/index';
 import { mayWeSend, type ConsentRecord, type ConsentPurpose, type Channel } from './index';
 
-const PURPOSES: readonly ConsentPurpose[] = ['transactional', 'marketing', 'profiling', 'third_party'];
+// OB-314 (AI-NFR-11): the customer opts in to — or out of — purchase-based AI suggestions here, like any other purpose.
+const PURPOSES: readonly ConsentPurpose[] = ['transactional', 'marketing', 'profiling', 'third_party', 'ai_personalisation'];
 const CHANNELS: readonly Channel[] = ['whatsapp', 'sms', 'email', 'push', 'post'];
 // R3 · C5: a complaint about how the shop handled the customer's data is raised the same way (a `grievance`).
 const KINDS: readonly RightKind[] = RIGHT_KINDS;
@@ -152,9 +153,14 @@ export function privacySelfRoutes(deps: PrivacySelfDeps): readonly Route[] {
           status: 201,
           body: {
             saved: true, purpose, channel, granted: now?.granted ?? false, recordedAt: record.recordedAt, consent,
-            tellTheCustomer: now?.granted === true
-              ? `Saved: we may send you ${purpose} messages by ${channel}. You can switch this off at any time, the same way.`
-              : `Saved: we will not send you ${purpose} messages by ${channel}. This took effect now.`,
+            tellTheCustomer: purpose === 'ai_personalisation'
+              // OB-314: this purpose is about suggestions in the app, not messages.
+              ? (now?.granted === true
+                ? 'Saved: AI suggestions may now use what you bought before. You can switch this off at any time, the same way.'
+                : 'Saved: AI suggestions will not use what you bought before. This took effect now.')
+              : now?.granted === true
+                ? `Saved: we may send you ${purpose} messages by ${channel}. You can switch this off at any time, the same way.`
+                : `Saved: we will not send you ${purpose} messages by ${channel}. This took effect now.`,
           },
         };
       },

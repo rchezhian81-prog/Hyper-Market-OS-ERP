@@ -503,6 +503,38 @@ jobs:
           if [ -n "$failed" ]; then echo "::error::security scans not green:$failed (each step above names its findings)"; exit 1; fi
           echo "security scans green: SAST, IaC, container images"
 
+      # WF-20 · AID-08 "sign releases" (OB-288 P5). Steps ADDED to this job; the verdict above is unchanged.
+      - name: Release signing — the signing tooling signs and verifies (throwaway key, every run)
+        if: always()
+        run: node scripts/release-signing.mjs selftest "$GITHUB_SHA"
+
+      - name: Release signing — sign this merged commit (main only; needs the RELEASE_SIGNING_KEY secret)
+        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+        run: |
+          mkdir -p release-signature
+          node scripts/release-signing.mjs manifest "$GITHUB_SHA" > release-signature/manifest.txt
+          if [ -z "$RELEASE_SIGNING_KEY" ]; then
+            echo "::notice::NOT SIGNED — no RELEASE_SIGNING_KEY secret is configured, so $GITHUB_SHA is not signed. A box with SRE_RELEASE_PUBKEY set will refuse it (docs/runbooks/automatic-deployment.md)."
+            exit 0
+          fi
+          node scripts/release-signing.mjs sign "$GITHUB_SHA" > release-signature/signature.txt
+          if [ -f infra/deploy/release-signing.pub ]; then
+            node scripts/release-signing.mjs verify "$GITHUB_SHA" infra/deploy/release-signing.pub "$(cat release-signature/signature.txt)"
+          else
+            echo "::notice::Signed, but no public key is committed at infra/deploy/release-signing.pub, so CI could not check the signature against it."
+          fi
+          echo "Release $GITHUB_SHA signed (manifest and signature kept as the release-signature artefact)." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the release manifest and signature
+        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-signature
+          path: release-signature/
+          if-no-files-found: warn
+
   browser:
     name: Browser suites (real Chromium) — required, never skip
     # GT-01 (independent audit, 4 Oct 2026): until this job existed the automatic build ran no browser suite at

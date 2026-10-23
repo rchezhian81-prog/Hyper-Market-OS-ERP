@@ -34,6 +34,8 @@ async function shop(transport = recordingTransport(), store = new InMemoryEventS
   expect((await req(h, 'POST', '/v1/notifications/templates/diwali/approval', 'u-mgr', { version: 1 }, 't1a')).status).toBe(200);
   // PA-08 round 4: the owner's messaging budget — off until set; room for plenty here.
   expect((await req(h, 'POST', '/v1/notifications/budget', 'u-owner', { capMinor: 100_000, costMinorByChannel: { whatsapp: 50, sms: 25 } }, 'b1')).status).toBe(201);
+  // OB-288 P5 · M31-FR-03: the owner's frequency cap — marketing is queued and sent only within it; room for these tests.
+  expect((await h.request({ method: 'PUT', path: '/v1/service/campaigns/frequency-policy', userId: 'u-owner', tenantId: A, idempotencyKey: 'fp1', body: { capPerWindow: 10, windowDays: 7 } })).status).toBe(200);
   return { h, transport };
 }
 

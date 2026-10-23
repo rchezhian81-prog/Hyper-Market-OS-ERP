@@ -192,3 +192,21 @@ export {
   planAccountOpenings, executeAccountOpenings, readBackAccountOpenings,
   type ExtractTrialBalance, type ExtractTrialBalanceLine, type AccountOpeningsRequest, type AccountOpeningsPlan, type AccountOpeningsReport, type AccountOpeningCheckLine,
 } from './account-openings';
+
+// OB-288 P5 · MG-11: the backup check and the owner's numeric rollback limits (each "not set" until he enters it).
+export {
+  ROLLBACK_LIMIT_NAMES, ROLLBACK_LIMIT_WORDS, isLimitValue, limitsNotSet, backupStanding, crossedLimits,
+  type RollbackLimits, type RollbackLimitName, type BackupReport, type BackupStanding, type NightObservations, type CrossedLimit,
+} from './rollback-limits';
+
+// OB-288 P5 · MG-09 (OB-309): the delta as the difference of two full exports — every difference a blocking exception.
+export {
+  EXPORT_DOMAINS, EXPORT_DOMAIN_SPECS, judgeExportMapping, readExport, diffExports, diffExceptions, fingerprint,
+  type ExportDomain, type ExportMapping, type ExportDiff, type ExportRead, type FieldChange,
+} from './export-diff';
+
+// OB-288 P5 · MG-10: the books side of a parallel day — purchases, balances, stock and margin, old against head office.
+export {
+  BOOKS_REPORTS, BOOKS_AREAS, BOOKS_REPORT_SPECS, booksTemplateCsv, readBooksReport, compareBooksDay,
+  type BooksReport, type BooksArea, type HeadOfficeBooksDay, type BooksComparison, type BooksTolerance,
+} from './books-comparison';

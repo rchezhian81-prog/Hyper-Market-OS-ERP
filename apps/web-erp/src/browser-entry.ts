@@ -288,6 +288,7 @@ import type { Device, SupportAccessRequest, SupportAction, SupportSession, Versi
 import {
   createAiSession, type AiPorts, type AiSession, type PendingProposal,
 } from './ai-session';
+import { aiControlView, pullRequest, liftRequest, decisionRequest, withoutIt, type AiViewer } from './ai-control';
 import type { AgentBudget, KillSwitch, UsageEntry } from '../../../packages/ai/src/index';
 import {
   createMigrationSession, type MigrationPorts, type MigrationSession, type DaySignatureView, type WitnessView,
@@ -320,6 +321,8 @@ import { createGatesSession, gatesWords, gatesOutcomeWords, stateView as gateSta
 // OB-288 lane 1 · P1: the Approval rules page — the owner's money limits, escalation waits and price-check size.
 // OB-288 lane 1 · P1: the Access review page — who holds what, where, up to how much; the permission matrix as CSV.
 import { createAccessReviewSession, accessReviewWords, accessReviewOutcomeWords, whereWords as accessWhereWords, ordered as accessOrdered, type AccessReviewSession } from './access-review-session';
+// OB-288 P5 (OB-293): the Tally files page — the accountant's daily Tally import file, the dead letter and the trial balance.
+import { createTallyFilesSession, tallyFilesWords, tallyFilesOutcomeWords, rupees as tallyRupees, familyWords as tallyFamilyWords, type TallyFilesSession } from './tally-files-session';
 import { createApprovalRulesSession, approvalRulesWords, approvalRulesOutcomeWords, limitWords as approvalLimitWords, waitWords as approvalWaitWords, limitsFromForm as approvalLimitsFromForm, paiseFromRupees as approvalPaiseFromRupees, KINDS as APPROVAL_LIMIT_KINDS, ROLES_SHOWN as APPROVAL_ROLES_SHOWN, type ApprovalRulesSession } from './approval-rules-session';
 // ── end R4 Lane 3 ──
 // ── R4 Lane 4 (supply, pricing and loss prevention) — begin
@@ -4735,6 +4738,15 @@ export function aiPortsFromData(data: AiData | undefined): AiPorts {
   };
 }
 
+/** Who is looking at the AI control screen — the user id and, when given, the permission words. Nothing else is kept. */
+export function aiViewerFrom(raw: unknown): AiViewer {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return { userId: null, permissions: null };
+  const r = raw as Record<string, unknown>;
+  const userId = typeof r['userId'] === 'string' && r['userId'].trim() !== '' ? r['userId'] : null;
+  const permissions = Array.isArray(r['permissions']) && r['permissions'].every((p) => typeof p === 'string') ? [...(r['permissions'] as string[])] : null;
+  return { userId, permissions };
+}
+
 /** Build the AI control screen, or `null` when the box was told nothing about the agents. */
 export function bootAi(data: AiData | undefined): AiSession | null {
   if (data === undefined) return null;
@@ -5076,6 +5088,9 @@ interface ManagerWindow {
   approvalRulesData?: ViewerIdentity;
   accessReviewData?: ViewerIdentity;
   accessReview?: { readonly session: AccessReviewSession; readonly words: typeof accessReviewWords; readonly outcomeWords: typeof accessReviewOutcomeWords; readonly whereWords: typeof accessWhereWords; readonly ordered: typeof accessOrdered };
+  // OB-288 P5 (OB-293): the Tally files page.
+  tallyFilesData?: ViewerIdentity;
+  tallyFiles?: { readonly session: TallyFilesSession; readonly words: typeof tallyFilesWords; readonly outcomeWords: typeof tallyFilesOutcomeWords; readonly rupees: typeof tallyRupees; readonly familyWords: typeof tallyFamilyWords };
   approvalRules?: {
     readonly session: ApprovalRulesSession; readonly words: typeof approvalRulesWords; readonly outcomeWords: typeof approvalRulesOutcomeWords;
     readonly limitWords: typeof approvalLimitWords; readonly waitWords: typeof approvalWaitWords; readonly limitsFromForm: typeof approvalLimitsFromForm;
@@ -5281,6 +5296,9 @@ interface ManagerWindow {
   receiptPrefixSession?: ReceiptPrefixSession;
   aiData?: AiData;
   aiSession?: AiSession;
+  /** OB-288 lane 4 · P1: the AI control screen's view model over head office's live read, and who is looking. */
+  aiControl?: { readonly view: typeof aiControlView; readonly pull: typeof pullRequest; readonly lift: typeof liftRequest; readonly decide: typeof decisionRequest; readonly withoutIt: typeof withoutIt };
+  aiViewer?: AiViewer;
   migrationData?: MigrationData;
   migrationSession?: MigrationSession;
   /** Hands the migration screen's decisions to the store computer (2b-vi-c-4). Absent when no box is wired. */
@@ -6770,6 +6788,11 @@ if (browserWindow !== undefined) {
   if (prefixes !== null) browserWindow.receiptPrefixSession = prefixes;
   const ai = bootAi(browserWindow.aiData);
   if (ai !== null) browserWindow.aiSession = ai;
+  // OB-288 lane 4 · P1: the AI control screen reads head office LIVE (GET /v1/ai/control) in the person's own session and
+  // sends every act there. From the injected payload it keeps ONLY who is looking (and the permission words when given —
+  // they decide what the page offers, never what the server allows).
+  browserWindow.aiControl = { view: aiControlView, pull: pullRequest, lift: liftRequest, decide: decisionRequest, withoutIt };
+  browserWindow.aiViewer = aiViewerFrom(browserWindow.aiData as unknown);
   // The migration screen's DURABLE device queue (2b-vi-c-4): its decisions are handed to the store computer, never left in
   // the tab — before, they lived in a queue nothing drained.
   const migrationOutbox = browserWindow.migrationData === undefined ? undefined : openMigrationOutbox(browserWindow.migrationData.storeId ?? 'store-1');
@@ -6888,6 +6911,9 @@ if (browserWindow !== undefined) {
   // OB-288 lane 1 · P1: the Approval rules page — reads on a click; asks and applies only on a person's explicit click.
   browserWindow.accessReviewData = viewerIdentity(browserWindow.accessReviewData);
   browserWindow.accessReview = { session: createAccessReviewSession({ viewer: browserWindow.accessReviewData }), words: accessReviewWords, outcomeWords: accessReviewOutcomeWords, whereWords: accessWhereWords, ordered: accessOrdered };
+  // OB-288 P5 (OB-293): the Tally files page — reads on a click; makes, requeues and downloads only on a person's explicit click.
+  browserWindow.tallyFilesData = viewerIdentity(browserWindow.tallyFilesData);
+  browserWindow.tallyFiles = { session: createTallyFilesSession({ viewer: browserWindow.tallyFilesData }), words: tallyFilesWords, outcomeWords: tallyFilesOutcomeWords, rupees: tallyRupees, familyWords: tallyFamilyWords };
   browserWindow.approvalRulesData = viewerIdentity(browserWindow.approvalRulesData);
   browserWindow.approvalRules = {
     session: createApprovalRulesSession({ viewer: browserWindow.approvalRulesData }), words: approvalRulesWords, outcomeWords: approvalRulesOutcomeWords,

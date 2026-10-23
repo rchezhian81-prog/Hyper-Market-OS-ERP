@@ -40,7 +40,9 @@ export interface RecordedPointsMovement {
   readonly at: string;
 }
 
-export type ConsentPurpose = 'transactional' | 'marketing' | 'profiling' | 'third_party';
+// OB-314 (AI-NFR-11): `ai_personalisation` — the customer's explicit opt-in to suggestions built from what they bought
+// before. Absent or withdrawn means NO purchase-based personalisation; the plain "Suggested by AI" notice is shown either way.
+export type ConsentPurpose = 'transactional' | 'marketing' | 'profiling' | 'third_party' | 'ai_personalisation';
 export type Channel = 'whatsapp' | 'sms' | 'email' | 'push' | 'post';
 
 export interface ConsentRecord {
