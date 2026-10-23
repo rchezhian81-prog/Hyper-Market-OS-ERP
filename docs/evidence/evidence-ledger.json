@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1507,
+  "testFiles": 1520,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -639,10 +639,10 @@
       "id": "M09",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 13,
-        "integration": 29,
-        "realDb": 10,
-        "browser": 8,
+        "unit": 14,
+        "integration": 30,
+        "realDb": 11,
+        "browser": 9,
         "connected": 2,
         "device": 0,
         "uat": 0
@@ -660,6 +660,7 @@
           "tests/unit/transfers-session.test.ts",
           "tests/unit/warehouse-handheld-count-and-adjust.test.ts",
           "tests/unit/warehouse-handheld-issues-to-floor.test.ts",
+          "tests/unit/warehouse-handheld-transfers.test.ts",
           "tests/unit/warehouse-movements.test.ts",
           "tests/unit/warehouse-transfers.test.ts"
         ],
@@ -667,6 +668,7 @@
           "tests/integration/a-phone-receipt-is-counted-costed-and-put-away.test.ts",
           "tests/integration/a-planned-count-on-the-phone-reaches-head-office-through-the-box.test.ts",
           "tests/integration/a-stock-count-is-planned-frozen-recounted-approved-and-booked.test.ts",
+          "tests/integration/a-transfer-is-cancelled-before-it-leaves-and-relayed-offline.test.ts",
           "tests/integration/a-transfer-is-valued-at-head-offices-own-cost.test.ts",
           "tests/integration/a-transfer-sends-only-what-the-batch-holds.test.ts",
           "tests/integration/ai-inventory-agent-suggests-transfers.test.ts",
@@ -697,6 +699,7 @@
         "realDb": [
           "tests/integration/a-planned-count-on-the-phone-reaches-head-office-through-the-box.test.ts",
           "tests/integration/a-stock-count-is-planned-frozen-recounted-approved-and-booked.test.ts",
+          "tests/integration/a-transfer-is-cancelled-before-it-leaves-and-relayed-offline.test.ts",
           "tests/integration/a-transfer-is-valued-at-head-offices-own-cost.test.ts",
           "tests/integration/ai-inventory-agent-suggests-transfers.test.ts",
           "tests/integration/concurrent-stock-cannot-be-spent-twice.test.ts",
@@ -714,6 +717,7 @@
           "tests/e2e/warehouse-handheld-delivery.e2e.ts",
           "tests/e2e/warehouse-handheld-issues-to-floor.e2e.ts",
           "tests/e2e/warehouse-handheld-syncs-through-the-box.e2e.ts",
+          "tests/e2e/warehouse-handheld-transfers-with-the-line-down.e2e.ts",
           "tests/e2e/warehouse-supervisor-delivery.e2e.ts"
         ],
         "connected": [
@@ -730,10 +734,10 @@
       "id": "M10",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 20,
-        "integration": 23,
-        "realDb": 5,
-        "browser": 3,
+        "unit": 21,
+        "integration": 24,
+        "realDb": 6,
+        "browser": 4,
         "connected": 0,
         "device": 0,
         "uat": 0
@@ -744,6 +748,7 @@
           "tests/unit/catalogue.test.ts",
           "tests/unit/edge-feeds-the-screens.test.ts",
           "tests/unit/erp-expiry-session.test.ts",
+          "tests/unit/erp-food-safety-queue.test.ts",
           "tests/unit/erp-unsellable-session.test.ts",
           "tests/unit/fefo-assign-batches.test.ts",
           "tests/unit/fefo-attribute-sales.test.ts",
@@ -781,6 +786,7 @@
           "tests/integration/quality-cold-chain.test.ts",
           "tests/integration/quality-hold.test.ts",
           "tests/integration/recall.test.ts",
+          "tests/integration/store-work-done-offline-is-booked-once-at-head-office.test.ts",
           "tests/integration/supplier-to-shelf-journey.test.ts",
           "tests/integration/the-screens-are-fed.test.ts",
           "tests/integration/the-store-buys-what-it-sells.test.ts",
@@ -790,11 +796,13 @@
           "tests/integration/a-lot-trace-reaches-supplier-to-customer-from-stored-facts.test.ts",
           "tests/integration/a-recall-runs-its-whole-lifecycle-on-postgresql.test.ts",
           "tests/integration/fulfilment-packing.test.ts",
+          "tests/integration/store-work-done-offline-is-booked-once-at-head-office.test.ts",
           "tests/integration/supplier-to-shelf-journey.test.ts",
           "tests/integration/the-store-buys-what-it-sells.test.ts"
         ],
         "browser": [
           "tests/e2e/expiry-recall-delivery.e2e.ts",
+          "tests/e2e/food-safety-checks-are-saved-with-the-line-down.e2e.ts",
           "tests/e2e/unsellable-screen.e2e.ts",
           "tests/e2e/warehouse-handheld-delivery.e2e.ts"
         ],
@@ -809,10 +817,10 @@
       "id": "M11",
       "label": "INTEGRATION_TESTED",
       "counts": {
-        "unit": 4,
-        "integration": 6,
-        "realDb": 2,
-        "browser": 1,
+        "unit": 6,
+        "integration": 7,
+        "realDb": 3,
+        "browser": 2,
         "connected": 0,
         "device": 0,
         "uat": 0
@@ -820,24 +828,29 @@
       "files": {
         "unit": [
           "tests/unit/edge-feeds-the-screens.test.ts",
+          "tests/unit/erp-production-queue.test.ts",
           "tests/unit/erp-production-session.test.ts",
           "tests/unit/production-weighed.test.ts",
-          "tests/unit/production.test.ts"
+          "tests/unit/production.test.ts",
+          "tests/unit/the-box-works-from-what-it-holds.test.ts"
         ],
         "integration": [
           "tests/integration/goods-made-in-the-store-are-valued-at-their-production-run-cost.test.ts",
           "tests/integration/production-durability.test.ts",
           "tests/integration/production-moves-ordinary-stock.test.ts",
           "tests/integration/production.test.ts",
+          "tests/integration/store-work-done-offline-is-booked-once-at-head-office.test.ts",
           "tests/integration/the-screens-are-fed.test.ts",
           "tests/integration/weighed-costing.test.ts"
         ],
         "realDb": [
           "tests/integration/goods-made-in-the-store-are-valued-at-their-production-run-cost.test.ts",
-          "tests/integration/production-moves-ordinary-stock.test.ts"
+          "tests/integration/production-moves-ordinary-stock.test.ts",
+          "tests/integration/store-work-done-offline-is-booked-once-at-head-office.test.ts"
         ],
         "browser": [
-          "tests/e2e/production-delivery.e2e.ts"
+          "tests/e2e/production-delivery.e2e.ts",
+          "tests/e2e/production-works-at-the-counter-with-the-line-down.e2e.ts"
         ],
         "connected": [],
         "device": [],
@@ -3947,10 +3960,10 @@
       "id": "WF-07",
       "label": "INTEGRATION_TESTED",
       "counts": {
-        "unit": 4,
-        "integration": 7,
-        "realDb": 4,
-        "browser": 3,
+        "unit": 5,
+        "integration": 8,
+        "realDb": 5,
+        "browser": 4,
         "connected": 1,
         "device": 0,
         "uat": 0
@@ -3960,9 +3973,11 @@
           "tests/unit/erp-indents-session.test.ts",
           "tests/unit/erp-navigation-catalogue.test.ts",
           "tests/unit/floor-indents-engine.test.ts",
-          "tests/unit/transfers-session.test.ts"
+          "tests/unit/transfers-session.test.ts",
+          "tests/unit/warehouse-handheld-transfers.test.ts"
         ],
         "integration": [
+          "tests/integration/a-transfer-is-cancelled-before-it-leaves-and-relayed-offline.test.ts",
           "tests/integration/a-transfer-sends-only-what-the-batch-holds.test.ts",
           "tests/integration/confirmed-lost-stock-is-posted-once.test.ts",
           "tests/integration/floor-indents-handheld-issue.test.ts",
@@ -3972,6 +3987,7 @@
           "tests/integration/warehouse-transfers.test.ts"
         ],
         "realDb": [
+          "tests/integration/a-transfer-is-cancelled-before-it-leaves-and-relayed-offline.test.ts",
           "tests/integration/confirmed-lost-stock-is-posted-once.test.ts",
           "tests/integration/floor-indents-handheld-issue.test.ts",
           "tests/integration/store-acceptance-journey.test.ts",
@@ -3980,6 +3996,7 @@
         "browser": [
           "tests/e2e/indents-delivery.e2e.ts",
           "tests/e2e/transfers-on-the-production-api.e2e.ts",
+          "tests/e2e/warehouse-handheld-transfers-with-the-line-down.e2e.ts",
           "tests/e2e/warehouse-supervisor-delivery.e2e.ts"
         ],
         "connected": [
