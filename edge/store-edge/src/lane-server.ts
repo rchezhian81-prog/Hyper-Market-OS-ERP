@@ -81,6 +81,7 @@ import { oldErpBillRefusal, readOldErpBillNumber } from '../../../packages/tende
 import type { OldErpBills } from './old-erp-bills';
 import { OFFICE_ACT_WORDS, OFFICE_LANE, officeTokenOf, type OfficeActRefusal, type OfficeCheck } from './office-sign-in';
 import { realTradingSaleRefusal, REAL_TRADING_AND_MIRROR_BOX_WORDS } from './real-trading';
+import { holdRecalledReturnLines } from './return-recall';
 import type { TaxInvoiceIdentity } from '../../../packages/receipt/src/tax-invoice';
 
 /** The one address this may listen on. Named so the test can assert on it. */
@@ -1648,6 +1649,12 @@ export function startLaneServer(input: {
               return;
             }
           }
+        }
+
+        // M13-FR-02 · M10-FR-04: a returned unit to be resold whose product THIS box's signed catalogue pack says is recalled
+        // is held (quarantine), never put back for sale — the till's rule again, from the box's own pack. The refund stands.
+        if (isReturn && parsed !== null && typeof parsed === 'object') {
+          parsed = holdRecalledReturnLines(parsed as Record<string, unknown>, input.node.pack()?.snapshot.products ?? []).record;
         }
 
         // THE LAW, before anything else is spent (B6 · B14 · B19): a line the till must never sell is refused before the

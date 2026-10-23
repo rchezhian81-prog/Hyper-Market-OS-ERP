@@ -1125,6 +1125,8 @@ export function bootPos(config?: {
       ...(config?.guestSalesOnly === true ? { guestSalesOnly: true } : {}),
       // OB-258: a mirror-pilot refund goes back to "Paid on old system".
       ...(config?.mirrorPilot === true ? { mirrorPilot: true } : {}),
+      // M13-FR-02: a recalled unit coming back is held, never put back for sale — from this lane's own signed pack.
+      recallOf: (productId: string) => catalogueRef.cache?.findByProductId(productId),
     },
     new Ledger(new InMemoryLedgerStore()),
     outbox,

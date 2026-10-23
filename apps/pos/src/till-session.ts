@@ -39,7 +39,9 @@
 
 import type { Ledger } from '../../../packages/ledger/src/ledger';
 import type { CashMovementKind } from '../../../packages/cash/src/cash';
-import { assertReturnValid, commitReturn, type CommitReturnInput, type CommittedReturn } from '../../../packages/returns/src/returns';
+import {
+  assertReturnValid, commitReturn, recallOfProduct, returnLineRecallHeld, type CommitReturnInput, type CommittedReturn, type ReturnRecallCheck,
+} from '../../../packages/returns/src/returns';
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
 import type { CommitOutcome } from '../../../edge/store-edge/src/durability';
 import {
@@ -166,6 +168,13 @@ export interface TillConfig {
    * refused. Before anything is written, in words.
    */
   readonly mirrorPilot?: boolean;
+  /**
+   * M13-FR-02 · M10-FR-04: the lane's cached recall set — each product's `recallBlock` and named `blockedBatches` from the
+   * signed catalogue pack the till already holds (no network). A returned unit the cashier chose to RESELL whose product is
+   * recalled is held instead (quarantine) on the record the box keeps and on the till's own stock movement; the refund
+   * itself goes ahead. Absent → nothing is known to be recalled here (the store computer checks its own pack again).
+   */
+  readonly recallOf?: (productId: string) => { readonly recallBlock?: boolean; readonly blockedBatches?: readonly string[] } | undefined;
 }
 
 /** What the till says when a refund would name a customer while guest sales only is on (OB-252). */
@@ -277,6 +286,10 @@ export function createTillSession(
 
   /** The refund record posted to the edge — exactly the fields the synced-return route + `toCloudReturn`
    * read (the bill it is against, who processed it, the §28 approver, and the lines). */
+  // M13-FR-02: the recall check from the lane's own pack (offline), applied BEFORE the record is made, so the box, head
+  // office and the till's own stock all see the held disposition — never a recalled unit back on the shelf.
+  const isRecalled: ReturnRecallCheck = config.recallOf === undefined ? () => false : recallOfProduct(config.recallOf);
+
   const toReturnRecord = (full: CommitReturnInput): string => JSON.stringify({
     returnId: full.id,
     number: full.number,
@@ -298,9 +311,16 @@ export function createTillSession(
     // `toCloudReturn` relays it; the box's cash figures read only a cash balance refund as cash out of the drawer.
     ...(full.exchange === undefined ? {} : { exchange: full.exchange }),
     processedAt: full.processedAt,
-    lines: full.lines.map((l) => ({
-      productId: l.productId, uom: l.uom, quantityMinor: Math.abs(l.quantityMinor), disposition: l.disposition,
-    })),
+    lines: full.lines.map((l) => {
+      const held = returnLineRecallHeld(l, isRecalled);
+      return {
+        productId: l.productId, uom: l.uom, quantityMinor: Math.abs(l.quantityMinor),
+        disposition: held ? 'quarantine' : l.disposition,
+        ...(typeof l.batchId === 'string' && l.batchId !== '' ? { batchId: l.batchId } : {}),
+        // What the cashier chose, kept beside what the recall made of it (evidence, M15 · P-08).
+        ...(held ? { recallHeld: true, chosenDisposition: l.disposition } : {}),
+      };
+    }),
   });
 
   // The refund sent to the box whose answer was lost (RR-F02 · A8): the exact record sent, so a re-send hashes the same.
@@ -326,7 +346,7 @@ export function createTillSession(
     if (!outcome.committed && outcome.unconfirmed === true) throw new RefundUncertainError(pending.full.id, outcome.laneMessage);
     awaiting = undefined;
     if (!outcome.committed) throwRefusal(pending.full.id, outcome);
-    return commitReturn(pending.full, stockLedger, outbox);
+    return commitReturn(pending.full, stockLedger, outbox, isRecalled);
   };
 
   return {
@@ -403,7 +423,7 @@ export function createTillSession(
       // Then account for it locally: stock back in the right state, the refund result for the screen.
       // `commitReturn` re-runs the same validation (it passes) and enqueues to the local outbox for
       // the sync badge; the edge's own outbox is what actually carries the refund to the cloud.
-      return commitReturn(full, stockLedger, outbox);
+      return commitReturn(full, stockLedger, outbox, isRecalled);
     },
 
     close: async (input) => {
