@@ -13,7 +13,7 @@
 // and cannot post the backup's outcome.
 
 /** Roles that only a machine identity may hold — and that identity holds nothing else. */
-export const MACHINE_ONLY_ROLES: readonly string[] = Object.freeze(['backup_job']);
+export const MACHINE_ONLY_ROLES: readonly string[] = Object.freeze(['backup_job', 'findings_push']); // OB-331: the CI scanner's push
 
 /**
  * Grant-time rule. `roleId` is the role being granted; `heldRoleIds` the roles the user holds now (from the ledger, never

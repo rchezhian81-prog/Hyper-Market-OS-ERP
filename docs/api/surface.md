@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1285 | 767 | 767 | 109 | 368 |
+| 13 | 1286 | 768 | 768 | 109 | 369 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -1048,6 +1048,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/compliance/evidence-gaps` | `compliance.obligation.read` | core | — |
 | GET | `/v1/compliance/finding-scans` | `compliance.finding.read` | core | — |
 | POST | `/v1/compliance/finding-scans` | `compliance.finding.record` | core | yes |
+| POST | `/v1/compliance/finding-scans/pushed` | `compliance.finding.push` | core | yes |
 | GET | `/v1/compliance/findings` | `compliance.finding.read` | core | — |
 | POST | `/v1/compliance/findings/:findingId` | `compliance.finding.record` | core | yes |
 | POST | `/v1/compliance/findings/:findingId/fixed` | `compliance.finding.record` | core | yes |

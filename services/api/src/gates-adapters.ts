@@ -21,6 +21,8 @@ import type { TwoSignatureDeps } from '../../compliance/src/risk';
 import type { SecurityReviewer, RiskAcceptanceSignature } from '../../../packages/compliance/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import { rolesHeldNow, permissionsHeldBy } from './adapters';
+import { isMachineCredential } from '../../identity/src/machine-identities';
+import { FINDINGS_PUSH_ROLE_ID } from './roles';
 import { gateDecisionRoutes, type GateDecisionDeps } from '../../compliance/src/gate-decisions';
 import type { OtherGateBlocker } from '../../compliance/src/risk';
 import { STREAM, streamName, riskRegisterAdapter, drReadinessAdapter } from './adapters';
@@ -63,6 +65,13 @@ export function findingsAdapter(input: { readonly store: EventStore; readonly no
     },
     recordScan: async (tenantId, scan) => {
       await put(store, tenantId, FINDING_SCANS_STREAM, 'SecurityScanImported', `${scan.tool}|${scan.runId}`, scan.importedAt, scan);
+    },
+    // OB-331: a push is believed only from the CI scanner's machine identity — a machine credential, holding the
+    // findings-push role and nothing else NOW (a live emergency grant of anything else included), never a person.
+    isFindingsPush: async (tenantId, userId, evidence) => {
+      if (!isMachineCredential(evidence)) return false;
+      const held = await rolesHeldNow(store, tenantId, userId, now());
+      return held.includes(FINDINGS_PUSH_ROLE_ID) && held.every((r) => r === FINDINGS_PUSH_ROLE_ID);
     },
   };
 }

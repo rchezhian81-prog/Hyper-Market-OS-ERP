@@ -5,6 +5,7 @@
 // (`packages/compliance/src/findings.ts`). A person's finding (a penetration test, a review) is recorded on its own.
 //
 //   POST /v1/compliance/finding-scans                 import one scanner run                    compliance.finding.record
+//   POST /v1/compliance/finding-scans/pushed          the CI scanner's own push of one run      compliance.finding.push
 //   GET  /v1/compliance/finding-scans                 every imported run, newest first          compliance.finding.read
 //   POST /v1/compliance/findings/:findingId           record a person's finding (pentest/review) compliance.finding.record
 //   POST /v1/compliance/findings/:findingId/owner     name the person answerable for a finding  compliance.finding.record
@@ -32,6 +33,8 @@ export interface ScanRunRecord extends ScanImportSummary {
   readonly importedAt: string;
   /** How many critical/high things the run reported — the number that fails CI. */
   readonly blockingObserved: number;
+  /** OB-331: pushed by the CI scanner's own machine identity (absent: imported by a person). */
+  readonly pushedByCi?: boolean;
 }
 
 export interface FindingsDeps {
@@ -41,6 +44,11 @@ export interface FindingsDeps {
   readonly recordFindings: (tenantId: string, changes: readonly SecurityFinding[]) => Promise<void> | void;
   readonly recordScan: (tenantId: string, scan: ScanRunRecord) => Promise<void> | void;
   readonly now: () => string;
+  /**
+   * OB-331: is this caller the CI scanner's machine identity — a MACHINE credential (no interactive sign-in evidence),
+   * holding the findings-push role and nothing else? Absent on a bare stub: then no push is believed.
+   */
+  readonly isFindingsPush?: (tenantId: string, userId: string, evidence: { readonly authTime?: number; readonly amr?: readonly string[] } | undefined) => Promise<boolean>;
 }
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
@@ -52,16 +60,7 @@ const refuse = (status: number, code: string, whatHappened: string, nextSafeActi
 export function findingsRoutes(deps: FindingsDeps): readonly Route[] {
   const findingOf = async (tenantId: string, findingId: string): Promise<SecurityFinding | undefined> =>
     (await deps.findings(tenantId)).find((f) => f.findingId === findingId);
-
-  return [
-    {
-      // Import one scanner run. Body: { report: ScanReport } — tool, source, runId, scannedAt, commit?, complete,
-      // incompleteBecause?, observations[]. Opens new findings, reopens returned ones, and — only when the run is
-      // complete — closes the tool's open findings it no longer reports. A run already imported is refused (409),
-      // and so is a run older than the tool's newest one (it could reopen or close what a newer run saw).
-      api: 'API-11', method: 'POST', path: '/v1/compliance/finding-scans',
-      permission: 'compliance.finding.record', idempotent: true,
-      handler: async (ctx) => {
+  const importRun = async (ctx: Parameters<Route['handler']>[0], pushedByCi: boolean) => {
         const body = (ctx.body ?? {}) as Record<string, unknown>;
         let report;
         try {
@@ -90,11 +89,33 @@ export function findingsRoutes(deps: FindingsDeps): readonly Route[] {
         const scan: ScanRunRecord = {
           ...imported.summary, source: report.source, ...(report.commit === undefined ? {} : { commit: report.commit }),
           ...(report.incompleteBecause === undefined ? {} : { incompleteBecause: report.incompleteBecause }),
-          importedBy: ctx.userId, importedAt: deps.now(), blockingObserved,
+          importedBy: ctx.userId, importedAt: deps.now(), blockingObserved, ...(pushedByCi ? { pushedByCi: true } : {}),
         };
         await deps.recordScan(ctx.tenantId, scan);
         return { status: 201, body: { scan, changed: imported.changes.length } };
+  };
+
+  return [
+    {
+      // OB-331 (owner, 23 Oct 2026): the CI scanner's automatic, authenticated push of one run's findings report — the same
+      // import as a person's, believed only from the scanner's own MACHINE identity (never a person, never anything else).
+      api: 'API-11', method: 'POST', path: '/v1/compliance/finding-scans/pushed',
+      permission: 'compliance.finding.push', idempotent: true,
+      handler: async (ctx) => {
+        if (deps.isFindingsPush === undefined || !(await deps.isFindingsPush(ctx.tenantId, ctx.userId, ctx.reauth))) {
+          throw refuse(403, 'not_the_ci_scanner_identity', `${ctx.userId} is not the CI scanner's machine identity (a machine credential holding only the findings-push role), so this push is not believed.`, 'A person imports a report on POST /v1/compliance/finding-scans. Nothing was recorded.');
+        }
+        return importRun(ctx, true);
       },
+    },
+    {
+      // Import one scanner run. Body: { report: ScanReport } — tool, source, runId, scannedAt, commit?, complete,
+      // incompleteBecause?, observations[]. Opens new findings, reopens returned ones, and — only when the run is
+      // complete — closes the tool's open findings it no longer reports. A run already imported is refused (409),
+      // and so is a run older than the tool's newest one (it could reopen or close what a newer run saw).
+      api: 'API-11', method: 'POST', path: '/v1/compliance/finding-scans',
+      permission: 'compliance.finding.record', idempotent: true,
+      handler: (ctx) => importRun(ctx, false),
     },
     {
       api: 'API-11', method: 'GET', path: '/v1/compliance/finding-scans',
