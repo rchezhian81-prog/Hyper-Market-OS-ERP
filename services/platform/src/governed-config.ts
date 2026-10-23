@@ -23,17 +23,15 @@ import type { AuditEntry } from '../../../packages/audit/src/index';
 import { actionDetails, openApproval, type ApprovalPort } from '../../identity/src/approval-requests';
 
 /**
- * Settings whose change needs the owner's approval: the trading day, currency and time zone (M01-FR-02), and the settings
- * that move prices, tax, customer money or an offline limit (M01-FR-03 "payments, pricing, offline limits").
+ * Settings whose change needs the owner's approval: the trading day, currency and time zone (M01-FR-02 names them), the
+ * pricing control on bulk price publishes and the offline spend limit (M01-FR-03 "payments, pricing, offline limits").
+ * Payments have no setting here yet (no provider is connected); a switch named `payments.*` is high-impact.
  */
 export const HIGH_IMPACT_SETTINGS: Readonly<Record<string, string>> = Object.freeze({
   'trading_day.cutoff': 'decides which day every sale, day close and tax period falls in',
   'locale.currency': 'the currency every amount is held in',
   'locale.time_zone': 'the shop\'s clock — which day "today" is',
-  'tax.default_bps': 'the GST rate a product without its own rate is charged (pricing)',
   'catalogue.bulk_publish_threshold': 'how many price and product changes one publish may make before it needs a fresh second-factor sign-in (pricing)',
-  'loyalty.points_per_100_inr': 'what every sale gives back in points (customer money)',
-  'loyalty.point_value_paise': 'what one point is worth when spent (customer money)',
   'loyalty.till_spend_cap_paise': 'the most a member may spend at the till offline per day (an offline limit)',
 });
 

@@ -56,7 +56,12 @@ describe.skipIf(!DATABASE_URL)('M01 — org hierarchy, configuration and documen
     expect(codeOf(await post(OWNER, '/v1/org/nodes/B2/activation', {}))).toBe('cannot_activate');
     expect((await post(OWNER, '/v1/org/nodes/B1', { kind: 'branch', name: 'Main store', parentId: 'C1', companyId: 'C1', gstin: G1 }, 'n-b1')).status).toBe(201);
     expect((await post(OWNER, '/v1/org/nodes/W1', { kind: 'warehouse', name: 'Back store', parentId: 'B1', companyId: 'C1' }, 'n-w1')).status).toBeLessThan(300);
-    expect((await post(OWNER, '/v1/org/nodes/B1/activation', {}, 'act-b1')).status).toBe(200);
+    // OB-288 P1 (M01-FR-01 "structural changes are owner-approved"): activation waits for another owner's approval.
+    expect(codeOf(await post(OWNER, '/v1/org/nodes/B1/activation', {}))).toBe('structural_change_needs_owner_approval');
+    const ask = (await post(OWNER, '/v1/approvals/requests', { kind: 'org_structure_change', subjectRef: 'B1', details: { nodeId: 'B1', action: 'activate' }, summary: 'open the main store', reason: 'ready to trade' })).body as { requestId: string };
+    expect(codeOf(await post(OWNER, `/v1/approvals/requests/${ask.requestId}/decide`, { decision: 'approved', reason: 'mine' }))).toBe('self_approval');
+    expect((await post(PADMIN, `/v1/approvals/requests/${ask.requestId}/decide`, { decision: 'approved', reason: 'checked GST and address' })).status).toBe(201);
+    expect((await post(OWNER, '/v1/org/nodes/B1/activation', { approvalId: ask.requestId }, 'act-b1')).status).toBe(200);
     expect(codeOf(await post(OWNER, '/v1/org/nodes/D1', { kind: 'department', name: 'Grocery', parentId: 'C1' }))).toBe('hierarchy_violation');
 
     // M01-FR-02/03 configuration
