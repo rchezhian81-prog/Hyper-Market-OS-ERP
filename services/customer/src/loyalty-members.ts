@@ -11,6 +11,11 @@
 //     means loyalty is off, and every answer here says so rather than inventing a rate.
 //
 // Looking a member up takes the number in the BODY of a POST, never a URL — a URL ends up in logs (hard rule #4).
+//
+//   • THE NAME IS OPTIONAL (owner decision OB-329, 23 Oct 2026, "Ask name at enrolment"). The desk asks for it; the
+//     customer may skip it. A name given is kept SEALED to the member (it is erased with them), read back by the recall
+//     call list and the member's own receipts. A skipped name stays "not on record" — never a made-up value. The
+//     enrolment notice the desk reads out says the name is kept (`LOYALTY_ENROLMENT_NOTICE`, English and Tamil).
 
 import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
@@ -26,6 +31,10 @@ export interface MemberRecord {
   readonly enrolledBy: string;
   /** How the number was checked (OB-29 "A"): seen on the customer's own phone. An SMS code is R4. */
   readonly verifiedHow: 'seen_on_phone';
+  /** OB-329: the name the customer chose to give at enrolment — absent when they skipped it. Sealed per member. */
+  readonly fullName?: string;
+  /** OB-329: which version of the enrolment notice was read out when they joined. */
+  readonly noticeVersion?: string;
   readonly leftAt?: string;
   readonly leftBy?: string;
   readonly leftReason?: string;
@@ -60,6 +69,37 @@ export function wasMemberAt(history: readonly MemberRecord[], at: string): boole
 }
 
 const current = (history: readonly MemberRecord[]): MemberRecord | undefined => history[history.length - 1];
+
+/**
+ * OB-329: the notice the service desk reads out (and shows) before enrolling — it says the name is kept. A DRAFT for the
+ * owner's signature, like the C21 notice (OB-197 "we draft, you sign"); the Tamil wants a native speaker's check.
+ */
+export const LOYALTY_ENROLMENT_NOTICE = Object.freeze({
+  version: '2026-10-23',
+  status: 'draft_for_owner_signature' as const,
+  en: 'Joining SRE Hyper Market loyalty: we keep a member code made from your mobile number (not the number itself), the last four digits of the number, and your name only if you choose to give it. We use them to give you points, to find your bills, and to call you if something you bought is recalled for your safety. Giving your name is your choice. You can leave at any time at the service desk.',
+  ta: 'SRE ஹைப்பர் மார்க்கெட் லாயல்டியில் சேருதல்: உங்கள் கைபேசி எண்ணிலிருந்து உருவாக்கப்பட்ட உறுப்பினர் குறியீட்டையும் (எண்ணையே அல்ல), எண்ணின் கடைசி நான்கு இலக்கங்களையும், நீங்கள் கொடுக்க விரும்பினால் மட்டும் உங்கள் பெயரையும் நாங்கள் வைத்திருக்கிறோம். புள்ளிகள் வழங்கவும், உங்கள் பில்களைக் கண்டறியவும், நீங்கள் வாங்கிய பொருள் உங்கள் பாதுகாப்புக்காகத் திரும்பப் பெறப்பட்டால் உங்களை அழைக்கவும் இவற்றைப் பயன்படுத்துகிறோம். பெயர் கொடுப்பது உங்கள் விருப்பம். சேவை மேசையில் எப்போது வேண்டுமானாலும் விலகலாம்.',
+});
+
+/** OB-329: a name as the desk keyed it — trimmed, 2–80 letters (any script), spaces, dots, apostrophes or hyphens. */
+export function readableMemberName(raw: unknown): string | undefined | 'unreadable' {
+  if (raw === undefined || raw === null) return undefined;
+  if (typeof raw !== 'string') return 'unreadable';
+  const name = raw.trim().replace(/\s+/g, ' ');
+  if (name === '') return undefined; // skipped: not on record
+  if (name.length < 2 || name.length > 80 || !/^[\p{L}\p{M}][\p{L}\p{M} .'-]*$/u.test(name)) return 'unreadable';
+  return name;
+}
+
+/** The member's name on record now, or undefined — a skipped or erased name is not on record (never a made-up value). */
+export function memberNameOf(history: readonly MemberRecord[]): string | undefined {
+  for (let i = history.length - 1; i >= 0; i -= 1) {
+    const n = history[i]!.fullName;
+    if (typeof n === 'string' && n.trim() !== '' && n !== '[erased]') return n;
+    if (n === '[erased]') return undefined;
+  }
+  return undefined;
+}
 
 const ruleDetail = (rule: LoyaltyRule): string => rule.pointsPer100Inr > 0
   ? `A member earns ${rule.pointsPer100Inr} point(s) for every ₹100 spent${rule.pointValuePaise > 0 ? `; one point is worth ₹${(rule.pointValuePaise / 100).toFixed(2)}` : '; the value of a point is not set yet'}.`
@@ -102,6 +142,12 @@ export function loyaltyMemberRoutes(deps: LoyaltyMemberDeps): readonly Route[] {
       },
     },
     {
+      // OB-329: the enrolment notice the desk reads out before enrolling, in English and Tamil — it says the name is kept.
+      api: 'API-06', method: 'GET', path: '/v1/loyalty/enrolment-notice',
+      permission: 'loyalty.member.enrol',
+      handler: () => ({ status: 200, body: LOYALTY_ENROLMENT_NOTICE }),
+    },
+    {
       // Enrol a member at the service desk: the number, the customer's yes, and how the number was checked.
       api: 'API-06', method: 'POST', path: '/v1/loyalty/members',
       permission: 'loyalty.member.enrol', idempotent: true,
@@ -125,6 +171,16 @@ export function loyaltyMemberRoutes(deps: LoyaltyMemberDeps): readonly Route[] {
             nextSafeAction: 'Look at the number on the customer\'s phone, then enrol with verifiedHow "seen_on_phone".',
           });
         }
+        // OB-329: the name is optional — skipped stays not on record; one that is not a name is refused, never kept.
+        const name = readableMemberName(b['name']);
+        if (name === 'unreadable') {
+          throw apiError(400, {
+            code: 'name_not_readable',
+            whatHappened: 'The name is not readable as a person\'s name (2 to 80 letters, spaces, dots, apostrophes or hyphens).',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Key the name as the customer gives it, or leave it empty if they would rather not say. Nothing was changed.',
+          });
+        }
         const memberRef = memberRefFor(key, mobile)!;
         const history = await deps.memberHistory(ctx.tenantId, memberRef);
         const now = current(history);
@@ -133,10 +189,18 @@ export function loyaltyMemberRoutes(deps: LoyaltyMemberDeps): readonly Route[] {
         }
         const record: MemberRecord = {
           memberRef, mobileLast4: mobile.slice(-4), status: 'member', consentGivenAt: deps.now(),
-          enrolledBy: ctx.userId, verifiedHow: 'seen_on_phone',
+          enrolledBy: ctx.userId, verifiedHow: 'seen_on_phone', noticeVersion: LOYALTY_ENROLMENT_NOTICE.version,
+          ...(name === undefined ? {} : { fullName: name }),
         };
         await deps.recordMember(ctx.tenantId, record, `${memberRef}:joined:${history.length}`);
-        return { status: 201, body: { memberRef, mobileLast4: record.mobileLast4, enrolled: true, rule: ruleDetail(await deps.rule(ctx.tenantId)) } };
+        return {
+          status: 201,
+          body: {
+            memberRef, mobileLast4: record.mobileLast4, enrolled: true, rule: ruleDetail(await deps.rule(ctx.tenantId)),
+            name: name ?? null, nameSaid: name === undefined ? 'Name not on record — the customer chose not to give one.' : 'Name kept with the membership.',
+            noticeVersion: LOYALTY_ENROLMENT_NOTICE.version,
+          },
+        };
       },
     },
     {

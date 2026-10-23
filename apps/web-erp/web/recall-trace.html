@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Recalls and trace</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Recalls and trace (M10-FR-03 · M10-FR-04 · WF-09 · P-07 · owner decisions OB-297, OB-328, OB-329). A THIN CLIENT over
+      head office's recall and trace routes. A person starts a recall (or opens one) and sees what head office did by
+      itself: the tills' block published, the owners alerted, the purchase orders still open. They trace a batch forward
+      (supplier → customers) or a bill or customer backward (→ lots → suppliers). They read the recall's call list —
+      every customer the shop knows bought the lots, with the name on record, only the last four digits of the phone,
+      the lot and date, and what each said no to — and the owner switches recall SMS on or off. Every rule is head
+      office's; the page shows its words and never its own guess. Nothing is written on open. No prompt/confirm/alert.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; }
+      h3 { margin: 0; font-size: 16px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      input, select, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; }
+      textarea { min-height: 72px; resize: vertical; }
+      .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; align-items: end; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; gap: 8px; align-items: center; justify-content: center; }
+      button.quiet { background: var(--line); color: var(--ink); }
+      button[disabled] { opacity: .5; cursor: not-allowed; }
+      button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      #tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+      .table-wrap { overflow-x: auto; max-width: 100%; }
+      table { width: 100%; border-collapse: collapse; }
+      td, th { text-align: left; vertical-align: top; }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+      ul.rows li { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--bg); display: grid; gap: 4px; overflow-wrap: anywhere; }
+      ul.rows li.tone-degraded { border-left: 6px solid var(--degraded); }
+      .facts { font-size: 14px; color: var(--muted); display: flex; gap: 14px; flex-wrap: wrap; }
+      .note { font-size: 14px; font-weight: 600; color: var(--danger-text); }
+      .basis { margin: 0; padding: 10px 14px; border-radius: 10px; background: var(--warn); color: var(--on-warn); font-weight: 600; }
+      .status { font-size: 15px; min-height: 22px; margin: 0; }
+      .status.good { color: var(--good); } .status.err { color: var(--danger-text); }
+      p.result { margin: 0; padding: 12px 16px; border-radius: 12px; background: var(--bg); font-weight: 600; white-space: pre-line; }
+      p.result.tone-error { background: var(--danger-surface); color: var(--danger-text); } p.result.tone-ok { background: var(--ok-surface); color: var(--on-ok-surface); }
+      .muted { color: var(--muted); font-size: 14px; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title">Recalls and trace <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <main>
+      <section aria-labelledby="page-h">
+        <h2 id="page-h">Recalls and trace</h2>
+        <p class="lead" id="lead"></p>
+        <p class="result" id="result" role="status" aria-live="polite" hidden></p>
+      </section>
+
+      <nav id="tabs" aria-label="Sections">
+        <button id="tab-recalls" type="button" aria-current="page"></button>
+        <button id="tab-trace" type="button"></button>
+        <button id="tab-calls" type="button"></button>
+        <button id="tab-messages" type="button"></button>
+      </nav>
+
+      <section id="view-recalls" aria-labelledby="recalls-h">
+        <h3 id="recalls-h"></h3>
+        <div class="row">
+          <label for="r-batch"><span id="l-r-batch"></span><input id="r-batch" autocomplete="off" /></label>
+          <label for="r-reason"><span id="l-r-reason"></span><input id="r-reason" autocomplete="off" /></label>
+          <button id="r-start" type="button"></button>
+          <button id="r-open" type="button" class="quiet"></button>
+        </div>
+        <div id="r-detail" hidden>
+          <h3 id="r-detail-h"></h3>
+          <div class="facts" id="r-facts"></div>
+          <div class="row" id="r-close-row">
+            <label for="r-evidence"><span id="l-r-evidence"></span><input id="r-evidence" autocomplete="off" /></label>
+            <button id="r-close" type="button" class="quiet"></button>
+          </div>
+        </div>
+        <h3 id="r-list-h"></h3>
+        <ul class="rows" id="r-rows" aria-labelledby="r-list-h"></ul>
+        <p class="muted" id="r-none" hidden></p>
+      </section>
+
+      <section id="view-trace" aria-labelledby="trace-h" hidden>
+        <h3 id="trace-h"></h3>
+        <div class="row">
+          <label for="t-kind"><span id="l-t-kind"></span><select id="t-kind"></select></label>
+          <label for="t-ref"><span id="l-t-ref"></span><input id="t-ref" autocomplete="off" /></label>
+          <button id="t-run" type="button"></button>
+        </div>
+        <p class="status" id="t-summary" role="status" aria-live="polite"></p>
+        <div class="table-wrap"><table aria-labelledby="trace-h">
+          <thead id="t-head"></thead>
+          <tbody id="t-rows"></tbody>
+        </table></div>
+        <h3 id="t-gaps-h" hidden></h3>
+        <ul class="rows" id="t-gaps"></ul>
+      </section>
+
+      <section id="view-calls" aria-labelledby="calls-h" hidden>
+        <h3 id="calls-h"></h3>
+        <p class="basis" id="c-basis"></p>
+        <div class="row">
+          <label for="c-batch"><span id="l-c-batch"></span><input id="c-batch" autocomplete="off" /></label>
+          <button id="c-load" type="button"></button>
+        </div>
+        <p class="status" id="c-summary" role="status" aria-live="polite"></p>
+        <ul class="rows" id="c-rows" aria-labelledby="calls-h"></ul>
+      </section>
+
+      <section id="view-messages" aria-labelledby="messages-h" hidden>
+        <h3 id="messages-h"></h3>
+        <p class="status" id="m-state" role="status" aria-live="polite"></p>
+        <div id="m-switch-box" hidden>
+          <div class="row">
+            <label for="m-reason"><span id="l-m-reason"></span><input id="m-reason" autocomplete="off" /></label>
+            <button id="m-on" type="button"></button>
+            <button id="m-off" type="button" class="quiet"></button>
+          </div>
+        </div>
+        <h3 id="m-send-h"></h3>
+        <div class="row">
+          <label for="m-batch"><span id="l-m-batch"></span><input id="m-batch" autocomplete="off" /></label>
+          <label for="m-text"><span id="l-m-text"></span><textarea id="m-text"></textarea></label>
+          <button id="m-send" type="button"></button>
+        </div>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./recall-trace.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

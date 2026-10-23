@@ -6,6 +6,7 @@ import { hmacSigner, verifyAsLane } from '../../services/catalogue/src/index';
 import { publishPack, type SignedPack } from '../../services/catalogue/src/pack';
 import { buildRecallNoticeList, type RecallBuyer } from '../../services/customer/src/recall-notices';
 import type { ConsentRecord } from '../../services/customer/src/index';
+import { readableMemberName, memberNameOf, LOYALTY_ENROLMENT_NOTICE } from '../../services/customer/src/loyalty-members';
 import { withRecallOrderGuard, RECALL_GUARDED_ORDER_ROUTES, type RecallOrderGuardDeps } from '../../services/purchase/src/recall-order-guard';
 import { lane2RecallSurface, customersNamedIn, AUDITED_TRACE_READS } from '../../services/api/src/lane2-recall-adapters';
 import { buildSurface } from '../../services/api/src/main';
@@ -132,25 +133,52 @@ const buyer = (saleId: string, customerRef?: string, over: Partial<RecallBuyer> 
   ({ saleId, soldDate: '2030-06-10', quantityMinor: 1, source: 'captured', ...(customerRef === undefined ? {} : { customerRef }), via: { kind: 'this_batch' }, ...over });
 const recall = { batchId: 'M-9', status: 'open' as const, reason: 'r', initiatedAt: '2030-06-11T00:00:00Z', closedAt: null };
 
-describe('the recall call list (services/customer/src/recall-notices.ts, OB-297)', () => {
-  it('lists only a yes to service messages; a later no wins; marketing is not service; walk-ins and estimates counted', () => {
+describe('the recall call list (services/customer/src/recall-notices.ts, OB-297 · OB-328 · OB-329)', () => {
+  it('OB-328: everyone known is on it, with notes for what they said no to; SMS only on a yes to service messages by SMS', () => {
     const list = buildRecallNoticeList({
       recall,
-      buyers: [buyer('S1', 'a'), buyer('S2', 'b'), buyer('S3', 'c'), buyer('S4'), buyer('S5', 'd', { source: 'fifo_receipt_estimate', via: { kind: 'made_from_it', productId: 'BUN', batchId: 'BUN-1', runId: 'r1' } })],
+      buyers: [buyer('S1', 'a'), buyer('S2', 'b'), buyer('S3', 'c'), buyer('S4'), buyer('S5', 'd', { source: 'fifo_receipt_estimate', via: { kind: 'made_from_it', productId: 'BUN', batchId: 'BUN-1', runId: 'r1' } }), buyer('S6', 'e')],
       consentOf: new Map([
         ['a', [consent('a', 'sms', true, '2030-01-01')]],
         ['b', [consent('b', 'sms', true, '2030-01-01'), consent('b', 'sms', false, '2030-02-01')]],
         ['c', [consent('c', 'sms', true, '2030-01-01', 'marketing')]],
         ['d', [consent('d', 'email', true, '2030-01-01')]],
+        ['e', [consent('e', 'sms', true, '2030-01-01'), consent('e', 'sms', false, '2030-01-02', 'marketing')]],
       ]),
       nameOf: new Map([['a', 'Anitha']]),
       phoneLast4Of: new Map([['a', '+91 98765 43210'], ['d', '12']]),
       now: '2030-06-12T00:00:00Z',
     });
-    expect(list.callList.map((c) => [c.customerRef, c.name, c.phoneLast4, c.consentedOn])).toEqual([['a', 'Anitha', '3210', ['sms']], ['d', null, '12', ['email']]]);
-    expect(list.callList[1]!.bought).toEqual([{ lot: 'BUN-1', date: '2030-06-10', saleId: 'S5', quantityMinor: 1, madeFromLot: 'M-9', estimate: true }]);
-    expect(list.notContactable).toEqual([{ customerRef: 'b', why: 'withdrawn', purchases: 1 }, { customerRef: 'c', why: 'no_consent_on_record', purchases: 1 }]);
-    expect(list).toMatchObject({ anonymousSales: 1, estimatedSales: 1, smsConsented: 1, decision: 'OB-297' });
+    expect(list.callList.map((c) => [c.customerRef, c.name, c.phoneLast4, c.serviceMessagesOn, c.smsAllowed, c.notes])).toEqual([
+      ['a', 'Anitha', '3210', ['sms'], true, []],
+      ['b', null, null, [], false, ['said_no_to_service_messages']],
+      ['c', null, null, [], false, ['no_answer_on_service_messages']],
+      ['d', null, '12', ['email'], false, []],
+      ['e', null, null, ['sms'], true, ['said_no_to_promotions']],
+    ]);
+    expect(list.callList[4]!.noteSay).toEqual(['said no to promotions — safety call only']);
+    expect(list.callList[3]!.bought).toEqual([{ lot: 'BUN-1', date: '2030-06-10', saleId: 'S5', quantityMinor: 1, madeFromLot: 'M-9', estimate: true }]);
+    expect(list).toMatchObject({ anonymousSales: 1, estimatedSales: 1, smsConsented: 2, decisions: ['OB-297', 'OB-328', 'OB-329'] });
+    expect(list.dataLawBasis.en).toBe('Data-law basis to be confirmed by your CA or lawyer.');
+    expect(list.detail).toMatch(/Data-law basis to be confirmed by your CA or lawyer\./);
+  });
+});
+
+describe('the optional name at enrolment (services/customer/src/loyalty-members.ts, OB-329)', () => {
+  it('a skipped name is not on record; a non-name is refused; an erased name is not on record', () => {
+    expect(readableMemberName(undefined)).toBeUndefined();
+    expect(readableMemberName('   ')).toBeUndefined();
+    expect(readableMemberName('  Anitha   Raman ')).toBe('Anitha Raman');
+    expect(readableMemberName('அனிதா')).toBe('அனிதா');
+    expect(readableMemberName('9876543210')).toBe('unreadable');
+    expect(readableMemberName('x')).toBe('unreadable');
+    expect(readableMemberName(42)).toBe('unreadable');
+    const rec = (fullName?: string) => ({ memberRef: 'm', mobileLast4: '1234', status: 'member' as const, consentGivenAt: 'a', enrolledBy: 'u', verifiedHow: 'seen_on_phone' as const, ...(fullName === undefined ? {} : { fullName }) });
+    expect(memberNameOf([rec()])).toBeUndefined();
+    expect(memberNameOf([rec('Anitha'), rec()])).toBe('Anitha');
+    expect(memberNameOf([rec('[erased]')])).toBeUndefined();
+    expect(LOYALTY_ENROLMENT_NOTICE.en).toMatch(/your name only if you choose to give it/);
+    expect(LOYALTY_ENROLMENT_NOTICE.ta).toMatch(/பெயர்/);
   });
 });
 

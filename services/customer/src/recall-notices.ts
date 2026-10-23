@@ -1,20 +1,23 @@
 // API-06 Telling the customers a recall must reach (M10-FR-04: "identify affected … customers (notify per consent)";
-// "affected customer contact respects consent (M16)"; WF-09 "identify stock/sales/customers"; the recall runbook, Part 3:
-// "contact each per their consent"). Owner decision OB-297 (D8, 23 Oct 2026, in writing): **"Call list now, SMS later."**
+// "affected customer contact respects consent (M16)"; WF-09 "identify stock/sales/customers"; the recall runbook, Part 3).
+// Owner decisions, in writing, 23 Oct 2026:
+//   • OB-297 (D8) "Call list now, SMS later";
+//   • OB-328 "Everyone known — safety first": the call list holds EVERY identified customer who bought the affected
+//     lots, whatever their marketing consent — a safety recall is a service notice about goods already bought. A customer
+//     who said no to promotions is still on it, noted "said no to promotions — safety call only". The list carries the
+//     line "Data-law basis to be confirmed by your CA or lawyer.";
+//   • OB-329 "Ask name at enrolment": the list shows the name the member gave, or "not on record".
 //
-//   • THE CALL LIST — GET /v1/quality/recalls/:batchId/notice-list. For one recall: who bought the batch (the bills the
-//     till recorded it on, head office's FIFO estimate for bills that recorded no batch — labelled — and the bills for
-//     anything the kitchen MADE from it, D-25), and of those, who may be contacted. Each entry on the call list shows the
-//     customer's name (where the shop holds one), ONLY the last four digits of their phone, and what they bought: the
-//     lot and the date. A customer is on the list only when their OWN latest record says yes to service messages about
-//     what they bought (consent purpose `transactional`) on at least one channel, exactly as their privacy centre shows it
-//     (`consentPositions`). A "no", or nothing on record, is not a yes: those customers are named by reference only, as
-//     not to be contacted, never dropped. Walk-ins are counted — the notice at the shop entrance is for them.
-//   • THE MESSAGE NOTICE PORT — POST /v1/quality/recalls/:batchId/notices. SMS, and **switched OFF**: it sends nothing
-//     unless a message provider is connected (none is — production composes no transport; tests hand in a stand-in) AND
-//     the owner has switched recall messages on, in writing (POST /v1/quality/recall-notices/switch). When both hold, it
-//     sends one SMS per customer whose consent to service messages on SMS stands AT THE MOMENT OF SENDING, each once
-//     (a resend skips who was already told), and keeps every attempt — sent or failed — on the record.
+//   • THE CALL LIST — GET /v1/quality/recalls/:batchId/notice-list. Who bought the batch (the bills the till recorded it
+//     on, head office's FIFO estimate for bills that recorded no batch — labelled — and the bills for anything the kitchen
+//     MADE from it, D-25). Each entry: the customer's name where one is recorded, ONLY the last four digits of their
+//     phone, what they bought (the lot and the date), and notes on what they have said no to. Walk-ins are counted — the
+//     notice at the shop entrance is for them.
+//   • THE MESSAGE NOTICE PORT — POST /v1/quality/recalls/:batchId/notices. SMS, **switched OFF**: it sends nothing unless
+//     a message provider is connected (none is — production composes no transport; tests hand in a stand-in) AND the owner
+//     has switched recall messages on, in writing (POST /v1/quality/recall-notices/switch). Its rule did NOT change with
+//     OB-328: it messages only customers whose own consent to SERVICE messages (purpose `transactional`) on SMS stands at
+//     the moment of sending, each once, and keeps every attempt — sent or failed — on the record.
 //
 // The list and the port exist only for a recalled batch (purpose limitation, PRV-03): this is not a way to find out who
 // bought what. Reading the list is sealed on the audit trail by the composition root, like every trace read.
@@ -67,51 +70,67 @@ export interface BoughtLot {
   readonly estimate?: true;
 }
 
+/** Something the customer has said no to, shown beside their entry so the caller knows how to treat them (OB-328). */
+export type CallNote = 'said_no_to_promotions' | 'said_no_to_service_messages' | 'no_answer_on_service_messages';
+
+export const CALL_NOTE_SAY: Readonly<Record<CallNote, string>> = Object.freeze({
+  said_no_to_promotions: 'said no to promotions — safety call only',
+  said_no_to_service_messages: 'said no to service messages — safety call only; no message is sent',
+  no_answer_on_service_messages: 'no answer on service messages — call only; no message is sent',
+});
+
+/** OB-328: the line every call list carries. */
+export const DATA_LAW_BASIS = Object.freeze({
+  en: 'Data-law basis to be confirmed by your CA or lawyer.',
+  ta: 'தரவுச் சட்ட அடிப்படையை உங்கள் பட்டயக் கணக்காளர் அல்லது வழக்கறிஞர் உறுதிப்படுத்த வேண்டும்.',
+});
+
 export interface CallListEntry {
   readonly customerRef: string;
-  /** The customer's name as the shop holds it; null when none is on record (the desk asks). */
+  /** The customer's name as recorded (OB-329); null when none is on record (the desk asks — never a made-up value). */
   readonly name: string | null;
   /** ONLY the last four digits of the customer's phone (OB-297); null when no number is on record. */
   readonly phoneLast4: string | null;
-  /** The channels the customer's own latest record says "yes" on, for service messages about what they bought. */
-  readonly consentedOn: readonly Channel[];
-  /** When each "yes" was recorded — the record the entry rests on, so it can be defended later. */
-  readonly consentRecordedAt: Readonly<Partial<Record<Channel, string>>>;
+  /** The channels the customer's own latest record says "yes" on, for SERVICE messages about what they bought. */
+  readonly serviceMessagesOn: readonly Channel[];
+  /** Whether the SMS port may message them (a "yes" to service messages by SMS). */
+  readonly smsAllowed: boolean;
+  /** What they have said no to (OB-328) — codes, with the words in `noteSay`. */
+  readonly notes: readonly CallNote[];
+  readonly noteSay: readonly string[];
   readonly bought: readonly BoughtLot[];
-}
-
-export interface NotContactableCustomer {
-  readonly customerRef: string;
-  readonly why: 'withdrawn' | 'no_consent_on_record';
-  readonly purchases: number;
 }
 
 export interface RecallNoticeList {
   readonly batchId: string;
   readonly recall: NoticeRecall;
-  readonly decision: 'OB-297';
-  readonly consentPurpose: typeof RECALL_NOTICE_PURPOSE;
+  readonly decisions: readonly ['OB-297', 'OB-328', 'OB-329'];
+  /** OB-328: "Data-law basis to be confirmed by your CA or lawyer." — in English and Tamil. */
+  readonly dataLawBasis: typeof DATA_LAW_BASIS;
+  /** The consent purpose the SMS port is judged under (service messages). */
+  readonly smsConsentPurpose: typeof RECALL_NOTICE_PURPOSE;
   readonly callList: readonly CallListEntry[];
-  readonly notContactable: readonly NotContactableCustomer[];
   /** Sales that named no customer — nobody to contact by name; the shop-entrance notice is for them. */
   readonly anonymousSales: number;
   /** Sales on the list only by head office's FIFO estimate (not a till record of the batch). */
   readonly estimatedSales: number;
-  /** Of the call list, who a message notice would reach (consent on SMS). */
+  /** Of the call list, who a message notice would reach (service-message consent on SMS). */
   readonly smsConsented: number;
   readonly detail: string;
 }
 
 /** The customer's consent for service messages about what they bought, on every channel they have answered on. */
-function transactionalStanding(customerRef: string, records: readonly ConsentRecord[], now: string): { readonly yes: Map<Channel, string>; readonly anyNo: boolean } {
+function standingOf(customerRef: string, records: readonly ConsentRecord[], now: string): { readonly yes: Map<Channel, string>; readonly serviceNo: boolean; readonly promotionsNo: boolean } {
   const yes = new Map<Channel, string>();
-  let anyNo = false;
+  let serviceNo = false;
+  let promotionsNo = false;
   for (const p of consentPositions(customerRef, records, now)) {
+    if (p.purpose === 'marketing' && !p.granted) promotionsNo = true;
     if (p.purpose !== RECALL_NOTICE_PURPOSE) continue;
     if (p.granted) yes.set(p.channel, p.recordedAt);
-    else anyNo = true;
+    else serviceNo = true;
   }
-  return { yes, anyNo };
+  return { yes, serviceNo, promotionsNo };
 }
 
 const lotOf = (recallBatch: string, b: RecallBuyer): BoughtLot => ({
@@ -139,38 +158,38 @@ export function buildRecallNoticeList(input: {
     list.push(b);
     byCustomer.set(ref, list);
   }
+  // OB-328 "Everyone known — safety first": every identified buyer is on the call list; what they said no to is noted.
   const callList: CallListEntry[] = [];
-  const notContactable: NotContactableCustomer[] = [];
   for (const [customerRef, bought] of [...byCustomer.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1))) {
-    const standing = transactionalStanding(customerRef, input.consentOf.get(customerRef) ?? [], input.now);
-    if (standing.yes.size === 0) {
-      notContactable.push({ customerRef, why: standing.anyNo ? 'withdrawn' : 'no_consent_on_record', purchases: bought.length });
-      continue;
-    }
+    const standing = standingOf(customerRef, input.consentOf.get(customerRef) ?? [], input.now);
     const channels = [...standing.yes.keys()].sort();
+    const notes: CallNote[] = [];
+    if (standing.promotionsNo) notes.push('said_no_to_promotions');
+    if (channels.length === 0) notes.push(standing.serviceNo ? 'said_no_to_service_messages' : 'no_answer_on_service_messages');
     const last4 = input.phoneLast4Of.get(customerRef);
     callList.push({
       customerRef,
       name: input.nameOf.get(customerRef) ?? null,
       // Only ever four digits, whatever the source handed in (OB-297).
       phoneLast4: last4 === undefined ? null : last4.replace(/\D/g, '').slice(-4) || null,
-      consentedOn: channels,
-      consentRecordedAt: Object.fromEntries(channels.map((c) => [c, standing.yes.get(c)!])),
+      serviceMessagesOn: channels,
+      smsAllowed: channels.includes(RECALL_NOTICE_CHANNEL),
+      notes, noteSay: notes.map((n) => CALL_NOTE_SAY[n]),
       bought: [...bought].sort((a, b) => (a.soldDate < b.soldDate ? -1 : a.soldDate > b.soldDate ? 1 : a.saleId < b.saleId ? -1 : 1)).map((b) => lotOf(input.recall.batchId, b)),
     });
   }
   const estimatedSales = input.buyers.filter((b) => b.source === 'fifo_receipt_estimate').length;
-  const smsConsented = callList.filter((c) => c.consentedOn.includes(RECALL_NOTICE_CHANNEL)).length;
+  const smsConsented = callList.filter((c) => c.smsAllowed).length;
   const parts = [
-    `${callList.length} customer(s) to call: they bought from batch ${input.recall.batchId} and said yes to service messages`,
-    `${notContactable.length} customer(s) bought it but must not be contacted (withdrawn, or no answer on record)`,
+    `${callList.length} customer(s) to call: everyone the shop knows bought from batch ${input.recall.batchId} (a safety recall)`,
+    `${smsConsented} of them said yes to service messages by SMS`,
     `${anonymousSales} sale(s) named no customer`,
   ];
   if (estimatedSales > 0) parts.push(`${estimatedSales} sale(s) are on this list by head office's FIFO estimate, not a till record of the batch`);
   return {
-    batchId: input.recall.batchId, recall: input.recall, decision: 'OB-297', consentPurpose: RECALL_NOTICE_PURPOSE,
-    callList, notContactable, anonymousSales, estimatedSales, smsConsented,
-    detail: `${parts.join('; ')}.`,
+    batchId: input.recall.batchId, recall: input.recall, decisions: ['OB-297', 'OB-328', 'OB-329'], dataLawBasis: DATA_LAW_BASIS,
+    smsConsentPurpose: RECALL_NOTICE_PURPOSE, callList, anonymousSales, estimatedSales, smsConsented,
+    detail: `${parts.join('; ')}. ${DATA_LAW_BASIS.en}`,
   };
 }
 
@@ -274,6 +293,15 @@ export function recallNoticeRoutes(deps: RecallNoticeDeps): readonly Route[] {
       },
     },
     {
+      // Where recall messages stand: switched on or off (and by whom, why), and whether a provider is connected.
+      api: 'API-06', method: 'GET', path: '/v1/quality/recall-notices/switch',
+      permission: 'quality.recall.notice.read',
+      handler: async (ctx) => {
+        const s = await deps.switchState(ctx.tenantId);
+        return { status: 200, body: { switch: s ?? null, messages: sendingSaid(deps, s) } };
+      },
+    },
+    {
       // The owner switches recall messages on or off, in writing. Off until he does (OB-297 "SMS later").
       api: 'API-06', method: 'POST', path: '/v1/quality/recall-notices/switch',
       permission: 'quality.recall.notice.switch', idempotent: true,
@@ -343,7 +371,7 @@ export function recallNoticeRoutes(deps: RecallNoticeDeps): readonly Route[] {
         const notOnSms: string[] = [];
         for (const c of list.callList) {
           // Consent is checked HERE, at the moment of sending (the list was folded from the ledger just now).
-          if (!c.consentedOn.includes(RECALL_NOTICE_CHANNEL)) { notOnSms.push(c.customerRef); continue; }
+          if (!c.smsAllowed) { notOnSms.push(c.customerRef); continue; }
           if (already.has(c.customerRef)) { alreadyTold.push(c.customerRef); continue; }
           const messageId = `recall-${batchId}-${c.customerRef}-${RECALL_NOTICE_CHANNEL}`;
           const outcome = await transport.send({ messageId, channel: RECALL_NOTICE_CHANNEL, customerId: c.customerRef, text });
@@ -364,8 +392,7 @@ export function recallNoticeRoutes(deps: RecallNoticeDeps): readonly Route[] {
           status: 200,
           body: {
             batchId, channel: RECALL_NOTICE_CHANNEL, transport: transport.name, sent, failed, alreadyTold, notOnSms,
-            notContactable: list.notContactable.map((n) => n.customerRef),
-            detail: `${sent.length} message(s) sent, ${failed.length} failed (kept on the record — call them), ${alreadyTold.length} already told, ${notOnSms.length} on the call list without SMS consent (call them).`,
+            detail: `${sent.length} message(s) sent, ${failed.length} failed (kept on the record — call them), ${alreadyTold.length} already told, ${notOnSms.length} on the call list without service-message consent by SMS (call them).`,
           },
         };
       },

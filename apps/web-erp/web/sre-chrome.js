@@ -462,6 +462,7 @@
     'unsellable': 'search-x',
     'merchandising': 'layout-grid',
     'expiry': 'calendar-clock',
+    'recall-trace': 'shield-alert',
     'production': 'chef-hat',
     'warehouse-supervisor': 'warehouse',
     'finance': 'landmark',

@@ -86,6 +86,8 @@ export const SEALED_FIELDS: SealedFieldsByEvent = PERSONAL_DATA_POLICY;
 export const PII_FIELD_INVENTORY: readonly PiiFieldDeclaration[] = Object.freeze([
   // Customers
   { file: 'services/customer/src/loyalty-members.ts', field: 'mobileLast4', whose: 'customer', protection: 'sealed_per_subject', evidence: 'LoyaltyMember' },
+  // OB-329 (Lane 2 · P1): the optional name a member gives at enrolment — sealed with the member, erased with them.
+  { file: 'services/customer/src/loyalty-members.ts', field: 'fullName', whose: 'customer', protection: 'sealed_per_subject', evidence: 'LoyaltyMember' },
   { file: 'services/customer/src/customer-360.ts', field: 'mobileLast4', whose: 'customer', protection: 'sealed_per_subject', evidence: 'LoyaltyMember' },
   { file: 'services/purchase/src/data-export.ts', field: 'mobileLast4', whose: 'customer', protection: 'sealed_per_subject', evidence: 'LoyaltyMember' },
   { file: 'services/customer/src/duplicates.ts', field: 'phone', whose: 'customer', protection: 'not_kept', evidence: 'the duplicate-detection route reads the candidates in the request and keeps only the match it proposes' },

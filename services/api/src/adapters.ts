@@ -14183,7 +14183,7 @@ export const PERSONAL_DATA_POLICY: PersonalDataPolicy = {
   // The words of a message queued to a customer (PA-08).
   NotificationQueue: [{ category: 'notification_intents', at: ['intent'], fields: ['text'], subject: (h) => nonEmpty(h['customerId']) }],
   // The loyalty member record: the last four digits of the number.
-  LoyaltyMember: [{ category: 'loyalty_member', fields: ['mobileLast4'], subject: (h) => nonEmpty(h['memberRef']) }],
+  LoyaltyMember: [{ category: 'loyalty_member', fields: ['mobileLast4', 'fullName' /* OB-329 (Lane 2 · P1) */], subject: (h) => nonEmpty(h['memberRef']) }],
   // The driver's notes at the door (both copies: the run's and the order's index) and the stop's area label.
   DeliveryAttempted: [{ category: 'delivery_records', fields: ['notes'], subject: (h, _p, ctx) => orderCustomer(ctx, h['orderId']) }],
   DeliveryAttemptIndexed: [{ category: 'delivery_records', fields: ['notes'], subject: (h, _p, ctx) => orderCustomer(ctx, h['orderId']) }],
