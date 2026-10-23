@@ -22,8 +22,8 @@ const styleOf = (html: string): string => html.slice(html.indexOf('<style>'), ht
 const code = (source: string): string => source.replace(/\/\*[\s\S]*?\*\//g, '').split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
 
 describe('every page carries the one chrome', () => {
-  it('finds the sixty pages (round 8: Returned goods to decide, Customer cases, Assistant drafts; round 10: Organisation, Delegation; round 12: Month-end, Supplier bills, Count plans, Transfers, Incidents and recovery drills; round 26: Store computers; R2 C20: Committee annual report; R3 A17: Input tax credit; R3 D-9: Staff schedule; R4 B20–B22: EPR registers; R4 Lane 3: Customers, Bought together, Store events, Morning brief; R4 Lane 2: Online store, App content; R4 D-10: Supplier scorecard; R4 D-13: Shelf compliance by bay)', () => {
-    expect(PAGES.length).toBe(79);
+  it('finds the sixty pages (round 8: Returned goods to decide, Customer cases, Assistant drafts; round 10: Organisation, Delegation; round 12: Month-end, Supplier bills, Count plans, Transfers, Incidents and recovery drills; round 26: Store computers; R2 C20: Committee annual report; R3 A17: Input tax credit; R3 D-9: Staff schedule; R4 B20–B22: EPR registers; R4 Lane 3: Customers, Bought together, Store events, Morning brief; R4 Lane 2: Online store, App content; R4 D-10: Supplier scorecard; R4 D-13: Shelf compliance by bay; P3: Requisitions and quotes)', () => {
+    expect(PAGES.length).toBe(80);
   });
 
   it('loads sre-chrome.js AFTER its own script, so the page\'s words come first and the chrome finishes the frame', () => {
@@ -229,6 +229,8 @@ describe('every word on every page has a Tamil twin (design system §1 rule 6 ·
     'demand-events.js': 'apps/web-erp/src/demand-events-session.ts',
     'morning-brief.js': 'apps/web-erp/src/morning-brief-session.ts',    // R4 D-10: the Supplier scorecard page's words are in its tested session model.
     'supplier-scorecard.js': 'apps/web-erp/src/supplier-scorecard-session.ts',
+    // P3: the Requisitions and quotes page's words are in its tested session model.
+    'requisitions.js': 'apps/web-erp/src/requisitions-session.ts',
     // R4 D-13: the Shelf compliance by bay page's words are in its tested session model.
     'planogram-compliance.js': 'apps/web-erp/src/planogram-bays-session.ts',
   };
