@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1539,
+  "testFiles": 1543,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -22,7 +22,7 @@
     "integration": 102,
     "realDb": 100,
     "browser": 86,
-    "connected": 55,
+    "connected": 56,
     "device": 0,
     "uat": 0
   },
@@ -1051,11 +1051,11 @@
       "id": "M14",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 18,
-        "integration": 18,
-        "realDb": 6,
-        "browser": 5,
-        "connected": 0,
+        "unit": 20,
+        "integration": 19,
+        "realDb": 7,
+        "browser": 6,
+        "connected": 1,
         "device": 0,
         "uat": 0
       },
@@ -1074,6 +1074,8 @@
           "tests/unit/lane-server-day-close.test.ts",
           "tests/unit/lane-server-day-reopen.test.ts",
           "tests/unit/lane-server-till-cash.test.ts",
+          "tests/unit/m14-fr-04-the-closed-day-evidence-pack.test.ts",
+          "tests/unit/m14-fr-04-the-day-book-offers-the-evidence-pack.test.ts",
           "tests/unit/over-short-review.test.ts",
           "tests/unit/pos-till-session.test.ts",
           "tests/unit/settlement-t-plus-one-reversals.test.ts",
@@ -1088,6 +1090,7 @@
           "tests/integration/day-close-reaches-the-cloud-through-the-edge.test.ts",
           "tests/integration/day-close-reaches-the-cloud.test.ts",
           "tests/integration/day-close-reconcile-on-sync.test.ts",
+          "tests/integration/m14-fr-04-a-closed-day-has-a-sealed-evidence-pack.test.ts",
           "tests/integration/manager-decisions-reach-the-cloud-through-the-edge.test.ts",
           "tests/integration/refund-approval-is-the-approvers-own-act.test.ts",
           "tests/integration/refund-exceptions.test.ts",
@@ -1105,6 +1108,7 @@
           "tests/integration/a-day-closes-with-a-pending-payment-carried-to-head-office.test.ts",
           "tests/integration/a-t-plus-one-settlement-file-surfaces-shortfalls-chargebacks-and-refunds.test.ts",
           "tests/integration/day-close-honestly.test.ts",
+          "tests/integration/m14-fr-04-a-closed-day-has-a-sealed-evidence-pack.test.ts",
           "tests/integration/refund-approval-is-the-approvers-own-act.test.ts",
           "tests/integration/sale-to-shift-close-journey.test.ts"
         ],
@@ -1113,14 +1117,17 @@
           "tests/e2e/day-reopen-delivery.e2e.ts",
           "tests/e2e/manager-day-close-delivery.e2e.ts",
           "tests/e2e/screens-open-offline.e2e.ts",
+          "tests/e2e/the-day-book-downloads-the-closed-day-evidence-pack.e2e.ts",
           "tests/e2e/the-served-till-closes.e2e.ts"
         ],
-        "connected": [],
+        "connected": [
+          "tests/e2e/the-day-book-downloads-the-closed-day-evidence-pack.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },
       "holds": true,
-      "why": "browser boundary and cloud effect proven in separate runs (no connected browser test yet)"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "M15",
