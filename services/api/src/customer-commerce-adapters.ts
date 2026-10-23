@@ -383,13 +383,13 @@ const ORDER_PRICING = streamName(STREAM.orders, 'online-pricing');
 
 /** The membership an app account is tied to now, if any (and still a member). */
 export function appMemberOf(input: Base) {
-  return async (tenantId: string, customerRef: string): Promise<{ readonly memberRef: string; readonly mobileLast4?: string } | undefined> => {
+  return async (tenantId: string, customerRef: string): Promise<{ readonly memberRef: string } | undefined> => {
     const links = (await input.store.readStream(tenantId, MEMBER_LINKS, { type: 'MemberAppLinked' })).map((e) => e.event.payload as MemberAppLink);
     const link = currentMemberLink(links, customerRef);
     if (link === undefined) return undefined;
     const history = (await input.store.readStream(tenantId, MEMBERS, { type: 'LoyaltyMember' })).map((e) => e.event.payload as MemberRecord).filter((m) => m.memberRef === link.memberRef);
     const now = history[history.length - 1];
-    return now?.status === 'member' ? { memberRef: link.memberRef, mobileLast4: now.mobileLast4 } : undefined;
+    return now?.status === 'member' ? { memberRef: link.memberRef } : undefined;
   };
 }
 

@@ -56,7 +56,7 @@ export interface OnlinePricingDeps {
   /** Which of these products are carry bags (never discounted, OB-173). */
   readonly carryBagsAmong?: (tenantId: string, productIds: readonly string[]) => Promise<readonly string[]>;
   /** The loyalty membership this app account is tied to (at the desk), if any — member prices and the points balance. */
-  readonly memberOf: (tenantId: string, customerRef: string) => Promise<{ readonly memberRef: string; readonly mobileLast4?: string } | undefined>;
+  readonly memberOf: (tenantId: string, customerRef: string) => Promise<{ readonly memberRef: string } | undefined>;
   readonly pointsOf: (tenantId: string, memberRef: string) => Promise<number | undefined>;
   readonly pointValuePaise: (tenantId: string) => Promise<number>;
   readonly coupon: (tenantId: string, code: string) => Promise<Coupon | undefined>;

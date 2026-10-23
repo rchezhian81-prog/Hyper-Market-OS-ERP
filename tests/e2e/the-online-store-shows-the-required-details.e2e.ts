@@ -14,7 +14,7 @@ import { startCustomerShop, type CustomerShop } from './lib/customer-shop';
  *
  *   • the privacy and terms pages open from every page of the store WITHOUT signing in, in English and Tamil;
  *   • before paying, every detail the shop must show is on the basket — "not set" for the grievance officer (OB-223), and
- *     the product said to be not sold online yet, by name; the microphone button is not shown (voice is off, OB-222);
+ *     the product said to be not sold online yet, by name; the microphone button shows only where the phone can listen (OB-322);
  *   • My receipts: OFF until the customer switches it on (one switch, both ways), sending by SMS/WhatsApp said to be off;
  *     after the desk ties the app to the member and the till banks a bill, the copy shows "Card ending 4242" only;
  *   • My order: a return is refused "return window not set" until the owner sets the windows; then it is raised, and
@@ -65,7 +65,9 @@ describe.skipIf(!existsSync(CHROMIUM))('the online store shows the required deta
       // ── Privacy and terms: from every page, no sign-in ──
       await page.goto(`${store.base}/`, { waitUntil: 'load' });
       await page.waitForFunction(() => (globalThis as unknown as { document: Doc }).document.getElementById('sample')?.hidden === true, undefined, { timeout: 10_000 });
-      expect(await page.isHidden('#voice')).toBe(true); // D08: voice is switched off — no microphone button
+      // OB-322: voice search is the phone's own recogniser — the microphone button shows only where the phone has one.
+      const canListen = await page.evaluate(() => 'SpeechRecognition' in globalThis || 'webkitSpeechRecognition' in globalThis);
+      expect(await page.isHidden('#voice')).toBe(!canListen);
       await page.click('#link-terms');
       await page.waitForURL(/terms\.html$/);
       expect(await page.textContent('[data-lang="en"] h1')).toBe('Terms, returns and refunds');
