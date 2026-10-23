@@ -522,6 +522,7 @@
     'return-governance': 'circle-dollar-sign',
     'cash-office': 'calculator',
     'risk-acceptance': 'hand',
+    'gates': 'badge-check', // OB-288 gates lane (QG-12) — an icon already in the set
     'day-reopen': 'lock',
     'data-io': 'arrow-up-down',
     'workforce': 'users',

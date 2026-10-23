@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Quality gates</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Quality gates (QG-12 · roadmap §22 "every gate ends GO, HOLD or REWORK with evidence; silence is not approval"
+      · §36 the owner decides · OB-288 gates lane). A THIN CLIENT over head office's GET /v1/compliance/gate-register and
+      POST /v1/compliance/gate-decisions/:gate/:release. Its session is apps/web-erp/src/gates-session.ts. A gate nobody
+      decided reads "Not decided — silence is not approval". Nothing is read before the person chooses a release, and
+      nothing is written except the decision they record by name. No prompt/confirm/alert; nothing on a timer.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      input, select, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; }
+      button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+      .row-form > label { flex: 1 1 200px; }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+      li.row { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 6px; border-left: 6px solid var(--idle); overflow-wrap: anywhere; }
+      li.row.tone-ok { border-left-color: var(--ok); } li.row.tone-degraded { border-left-color: var(--degraded); }
+      li.row.tone-error { border-left-color: var(--error); } li.row.tone-idle { border-left-color: var(--idle); }
+      .row .head { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; align-items: baseline; }
+      .row .gate { font-weight: 700; }
+      .state { display: inline-flex; gap: 8px; align-items: center; font-weight: 600; font-size: 14px; }
+      .state .icon { font-size: 18px; width: 1.4em; text-align: center; }
+      .facts { font-size: 13px; color: var(--muted); display: grid; gap: 2px; }
+      .blockers { margin: 0; padding-left: 18px; font-size: 14px; }
+      .decisions { display: flex; gap: 8px; flex-wrap: wrap; }
+      .decisions label { display: inline-flex; gap: 6px; align-items: center; min-height: var(--tap); padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; font-weight: 600; }
+      .decisions input { min-height: 0; }
+      .counts { display: flex; gap: 16px; flex-wrap: wrap; font-size: 15px; }
+      .counts span { font-weight: 700; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Quality gates</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section aria-labelledby="page-h">
+        <h2 id="page-h">Quality gates</h2>
+        <p class="lead" id="lead"></p>
+        <div class="row-form">
+          <label for="release"><span id="release-label">Release</span>
+            <select id="release"><option value="" id="choose-release">Choose a release</option></select>
+          </label>
+          <button id="show" type="button"><span id="show-text">Show the gates</span></button>
+        </div>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section aria-labelledby="summary-h" id="summary-section" hidden>
+        <h3 id="summary-h">This release</h3>
+        <div class="counts" id="counts"></div>
+      </section>
+
+      <section aria-labelledby="gates-h" id="gates-section" hidden>
+        <h3 id="gates-h">The twelve gates</h3>
+        <ul class="rows" id="gates"></ul>
+      </section>
+
+      <section aria-labelledby="decide-h" id="decide-section" hidden>
+        <h3 id="decide-h">Record a decision</h3>
+        <p class="status" id="decide-not"></p>
+        <div id="decide-form">
+          <div class="row-form">
+            <label for="decide-gate"><span id="gate-label">Gate</span><select id="decide-gate"></select></label>
+          </div>
+          <fieldset class="decisions" id="decision-choices">
+            <legend id="decision-label">Decision</legend>
+            <label><input type="radio" name="decision" value="GO" /> <span aria-hidden="true">✓</span> GO</label>
+            <label><input type="radio" name="decision" value="HOLD" /> <span aria-hidden="true">⏸</span> HOLD</label>
+            <label><input type="radio" name="decision" value="REWORK" /> <span aria-hidden="true">↺</span> REWORK</label>
+          </fieldset>
+          <label for="evidence-label"><span id="evidence-label-label">Evidence — what it is</span><input id="evidence-label" type="text" autocomplete="off" /></label>
+          <label for="evidence-ref"><span id="evidence-ref-label">Evidence — where to find it</span><input id="evidence-ref" type="text" autocomplete="off" /></label>
+          <label for="rationale"><span id="reason-label">Why</span><textarea id="rationale" rows="3"></textarea></label>
+          <button id="record" type="button"><span id="record-text">Record the decision</span></button>
+          <p class="status" id="decide-status" role="status" aria-live="polite"></p>
+        </div>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./gates.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>
