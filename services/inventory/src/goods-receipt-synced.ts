@@ -214,7 +214,7 @@ export function syncedGoodsReceiptRoutes(deps: SyncedGoodsReceiptDeps): readonly
           grnId, locationId: record.warehouseId, lines: captured.lines, quantityOf: (l) => l.sellableMinor,
           occurredAt: r.receivedAt, enteredBy: r.receivedBy, unitCostMinorOf: (l) => costByProduct.get(l.productId),
         });
-        await commitAgainstOrder(deps, ctx.tenantId, record, movements, ctx.idempotencyKey ?? grnId, poReceipt, order);
+        const committed = await commitAgainstOrder(deps, ctx.tenantId, record, movements, ctx.idempotencyKey ?? grnId, poReceipt, order, isStr((ctx.body as Record<string, unknown> | null)?.['asnId']) ? { asnId: (ctx.body as Record<string, string>)['asnId']! } : {});
         await deps.recordAudit?.(ctx.tenantId, {
           actorId: r.receivedBy, action: 'receipt.record', objectType: 'goods_receipt', objectId: grnId,
           at: deps.now(), origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
@@ -227,7 +227,7 @@ export function syncedGoodsReceiptRoutes(deps: SyncedGoodsReceiptDeps): readonly
           correlationId: grnId,
         });
         // 202, not 201: the goods were booked in at the store and this records that it happened.
-        return { status: 202, body: { grn: record, flags, poReceipt: record.poReceipt } };
+        return { status: 202, body: { grn: committed, flags: committed.governanceFlags ?? flags, poReceipt: committed.poReceipt } };
       },
     },
   ];

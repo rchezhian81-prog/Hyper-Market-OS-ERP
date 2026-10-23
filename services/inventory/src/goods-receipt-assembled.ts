@@ -155,6 +155,8 @@ export async function assembleReceipt(deps: AssembledGoodsReceiptDeps, input: {
   readonly via: 'direct' | 'relayed'; readonly branchId: string | null; readonly idempotencyKey: string;
   /** OB-172: the relayed completion as the box carried it — its receiving checklist inside, sealed with it. */
   readonly relayedBody?: unknown;
+  /** OB-288 P3 (M07-FR-01): the advance ship notice the handheld received against (cached on it, offline). */
+  readonly asnId?: string;
 }): Promise<AssembleOutcome> {
   const existing = await deps.grn(input.tenantId, input.grnId);
   if (existing !== undefined) return { ok: true, record: existing, alreadyReceived: true };
@@ -248,7 +250,7 @@ export async function assembleReceipt(deps: AssembledGoodsReceiptDeps, input: {
     },
   };
   // NO movements: the scans posted the stock (hard rule #2). The GRN and its posting against the order are one append.
-  await commitAgainstOrder(deps, input.tenantId, record, [], input.idempotencyKey, poReceipt, order);
+  const committed = await commitAgainstOrder(deps, input.tenantId, record, [], input.idempotencyKey, poReceipt, order, input.asnId === undefined ? {} : { asnId: input.asnId });
   await deps.recordAudit?.(input.tenantId, {
     actorId: input.completedBy, action: 'receipt.assemble', objectType: 'goods_receipt', objectId: input.grnId,
     at: deps.now(), origin: { tenantId: input.tenantId, branchId: input.branchId },
@@ -260,12 +262,14 @@ export async function assembleReceipt(deps: AssembledGoodsReceiptDeps, input: {
     },
     correlationId: input.grnId,
   });
-  return { ok: true, record, alreadyReceived: false };
+  return { ok: true, record: committed, alreadyReceived: false };
 }
 
 /** The completion as the handheld queued it (`ReceivingCompleted`, SP-6b shape). */
 interface RelayedCompletion {
   readonly grnId: string; readonly poId: string | null; readonly completedBy: string; readonly storeId: string | null; readonly at: string; readonly source: string;
+  /** OB-288 P3: the advance ship notice the handheld received against, when it had one cached. */
+  readonly asnId?: string;
 }
 function readRelayedCompletion(body: unknown, grnId: string): RelayedCompletion | undefined {
   if (!isObj(body) || !isStr(body['grnId']) || body['grnId'] !== grnId || !isStr(body['completedBy']) || !isIso(body['at'])) return undefined;
@@ -274,6 +278,7 @@ function readRelayedCompletion(body: unknown, grnId: string): RelayedCompletion 
   return {
     grnId, poId: isStr(poId) ? poId : null, completedBy: body['completedBy'], storeId: isStr(body['storeId']) ? body['storeId'] : null,
     at: body['at'], source: isStr(body['source']) ? body['source'] : 'warehouse-handheld',
+    ...(isStr(body['asnId']) ? { asnId: body['asnId'] } : {}),
   };
 }
 
@@ -309,6 +314,7 @@ export function assembledGoodsReceiptRoutes(deps: AssembledGoodsReceiptDeps): re
         const out = await assembleReceipt(deps, {
           tenantId: ctx.tenantId, grnId, poId: c.poId, completedBy: c.completedBy, completedAt: c.at, relayedBy: ctx.userId, storeId: c.storeId,
           source: c.source, via: 'relayed', branchId: ctx.branchId ?? null, idempotencyKey: ctx.idempotencyKey ?? grnId, relayedBody: ctx.body,
+          ...(c.asnId === undefined ? {} : { asnId: c.asnId }),
         });
         if (!out.ok) throw refusal(out, true);
         // 202, not 201: the delivery was completed at the store and this records that it happened.

@@ -51,7 +51,7 @@ const onHandAt = async (h: ApiHarness, productId: string, locationId = 'store-1'
 const movementIds = async (h: ApiHarness) => (await h.store.readStream(A, STREAM.inventory, { type: 'InventoryMoved' })).map((e) => (e.event.payload as { movementId: string }).movementId);
 const orderOf = async (h: ApiHarness, poId: string) => (await get(h, `/v1/purchase/orders/${poId}`, 'u-owner')).body as { order: { receivedByProduct: Record<string, number> }; openCommitment: { fullyReceived: boolean; lines: { productId: string; orderedQty: number; receivedQty: number; openQty: number }[] } };
 const issue = async (h: ApiHarness, poId: string, lines: { productId: string; orderedQty: number }[]) => {
-  expect((await post(h, `/v1/purchase/orders/${poId}`, 'u-worker', { supplierId: 's-1', deliverToLocationId: 'store-1', lines: lines.map((l) => ({ ...l, unitCost: { minor: 100, currency: 'INR' } })) }, `${poId}-propose`)).status).toBe(201);
+  expect((await post(h, `/v1/purchase/orders/${poId}`, 'u-po-buyer', { supplierId: 's-1', deliverToLocationId: 'store-1', lines: lines.map((l) => ({ ...l, unitCost: { minor: 100, currency: 'INR' } })) }, `${poId}-propose`)).status).toBe(201);
   expect((await post(h, `/v1/purchase/orders/${poId}/approval`, 'u-owner', { reason: 'fixture' }, `${poId}-approve`)).status).toBe(200);
 };
 
@@ -61,6 +61,7 @@ async function seeded(): Promise<ApiHarness> {
   await h.seedOwner(A, 'u-owner');
   await approvedSuppliers(h, A, 's-1'); // OB-32: an order needs an approved supplier
   await deliveryPlaces(h, A, 'store-1'); // OB-37: an order names the store it is delivered to
+  await h.provisionRole(A, 'u-po-buyer', 'store_manager'); // OB-288 P3 (§28): the buyer who raises the order is never the one who books it in
   await h.provisionRole(A, 'u-worker', 'store_manager'); // scans and completes deliveries; holds approve too — never on their own
   await h.provisionRole(A, 'u-boss', 'store_manager');   // the second person
   await h.provisionRole(A, 'u-box', 'store_computer', ['store-1']);          // the store box's sync identity

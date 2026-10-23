@@ -216,6 +216,7 @@ import type { DisplayFundingDeps, DisplayFundingJournal } from '../../finance/sr
 import type { PayablesDeps, PayablesJournal, PayablesExceptionRecord } from '../../finance/src/payables';
 import type { PurchaseOrderDeps, StoredPurchaseOrder } from '../../purchase/src/purchase-orders';
 import { openDeliveriesFor } from '../../purchase/src/purchase-orders';
+import { withLandedCost, type StockCostAdjustment } from '../../inventory/src/landed-cost'; // OB-288 P3 (M07-FR-04)
 import type { StoreReplenishmentFacts } from '../../inventory/src/replenishment';
 import type { SupplierScorecardDeps } from '../../purchase/src/supplier-scorecard';
 import type { RebateDeps } from '../../purchase/src/rebates';
@@ -4050,6 +4051,7 @@ export function concessionAdapter(input: {
         .map((e) => payloadOf<Movement>(e))
         .sort((a, b) => (a.occurredAt < b.occurredAt ? -1 : a.occurredAt > b.occurredAt ? 1 : 0));
 
+      const adjustments = await stockCostAdjustments(input.store, tenantId); // OB-288 P3: the store's own stock carries its landed cost
       const groups = new Map<string, Movement[]>();
       for (const m of movements) {
         const ownership: StockOwnership = m.ownership ?? 'own';
@@ -4062,7 +4064,7 @@ export function concessionAdapter(input: {
       for (const [key, ms] of groups) {
         const [ownership, ownerId] = key.split('\u001f') as [StockOwnership, string];
         const valued = weightedAverageValuation(
-          ms.map((m): ValuationMovement => ({
+          withLandedCost(ms, ownership === 'own' ? adjustments : [], (m): ValuationMovement => ({
             productId: m.productId, locationId: m.locationId,
             effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
             isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind), minorPerUnit: minorPerUnitOf(m.uom), ...(m.unitCostPer === undefined ? {} : { costPerUnits: m.unitCostPer }), ...(m.kind === 'opening_reversed' ? { isReceiptReversal: true, ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }) } : {}),
@@ -5119,7 +5121,7 @@ async function unitCostHeldFor(store: EventStore, tenantId: string, productId: s
     .filter((m) => m.productId === productId)
     .sort((a, b) => (a.occurredAt < b.occurredAt ? -1 : a.occurredAt > b.occurredAt ? 1 : 0));
   const rows = weightedAverageValuation(
-    moves.map((m): ValuationMovement => ({
+    withLandedCost(moves, (await stockCostAdjustments(store, tenantId)).filter((a) => a.productId === productId), (m): ValuationMovement => ({
       productId: m.productId, locationId: m.locationId, effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
       isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind), minorPerUnit: minorPerUnitOf(m.uom), ...(m.unitCostPer === undefined ? {} : { costPerUnits: m.unitCostPer }), ...(m.kind === 'opening_reversed' ? { isReceiptReversal: true, ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }) } : {}),
       ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
@@ -7193,8 +7195,9 @@ export function inventoryAdapter(input: {
       const movements = events
         .map((e) => payloadOf<Movement>(e))
         .sort((a, b) => (a.occurredAt < b.occurredAt ? -1 : a.occurredAt > b.occurredAt ? 1 : 0));
+      // OB-288 P3 (M07-FR-04): the landed-cost adjustments fold in beside the movements (value only).
       const rows = weightedAverageValuation(
-        movements.map((m): ValuationMovement => ({
+        withLandedCost(movements, await stockCostAdjustments(input.store, tenantId), (m): ValuationMovement => ({
           productId: m.productId, locationId: m.locationId,
           effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
           isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind), minorPerUnit: minorPerUnitOf(m.uom), ...(m.unitCostPer === undefined ? {} : { costPerUnits: m.unitCostPer }), ...(m.kind === 'opening_reversed' ? { isReceiptReversal: true, ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }) } : {}),
@@ -7249,11 +7252,11 @@ export function inventoryAdapter(input: {
         .filter((m) => placed(m.locationId))
         .sort((a, b) => (a.occurredAt < b.occurredAt ? -1 : a.occurredAt > b.occurredAt ? 1 : 0));
       // Cumulative WAC cogs and stock value PER PRODUCT at a cut point (summed across locations).
+      const adjustments = await stockCostAdjustments(input.store, tenantId);
       const foldTo = (cutoff: string): Map<string, { cogs: number; value: number; onHand: number }> => {
         const rows = weightedAverageValuation(
-          movements
-            .filter((m) => m.occurredAt <= cutoff)
-            .map((m): ValuationMovement => ({
+          // OB-288 P3 (M07-FR-04): COGS and stock value include the landed-cost adjustments up to the cut point.
+          withLandedCost(movements.filter((m) => m.occurredAt <= cutoff), adjustments.filter((a) => placed(a.locationId) && a.occurredAt <= cutoff), (m): ValuationMovement => ({
               productId: m.productId, locationId: m.locationId,
               effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
               isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind), minorPerUnit: minorPerUnitOf(m.uom), ...(m.unitCostPer === undefined ? {} : { costPerUnits: m.unitCostPer }), ...(m.kind === 'opening_reversed' ? { isReceiptReversal: true, ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }) } : {}),
@@ -14083,6 +14086,12 @@ export interface AverageBuyingCost {
   readonly receivedMinor: number;
   readonly receivedValueMinor: number;
 }
+/** OB-288 P3 (M07-FR-04): the landed-cost adjustments matched bills posted into stock value — value only, append-only. */
+export const STOCK_COST_ADJUSTMENTS_STREAM = streamName(STREAM.inventory, 'cost-adjustments');
+export async function stockCostAdjustments(store: EventStore, tenantId: string): Promise<readonly StockCostAdjustment[]> {
+  return allOf<StockCostAdjustment>(store, tenantId, STOCK_COST_ADJUSTMENTS_STREAM, 'StockCostAdjusted');
+}
+
 export async function averageBuyingCosts(input: { readonly store: EventStore; readonly now: () => string }, tenantId: string, opts?: {
   /** OB-56: only receipts of this month (YYYY-MM) or earlier — the average as it stood at that month's close. */
   readonly throughPeriod?: string;
@@ -14111,6 +14120,12 @@ export async function averageBuyingCosts(input: { readonly store: EventStore; re
     a.qty += m.quantityMinor;
     a.value += valueAtCost(m.quantityMinor, m.uom ?? 'ea', { minor: m.unitCostMinor, ...(m.unitCostPer === undefined ? {} : { per: m.unitCostPer }) }); // OB-46
     acc.set(key, a);
+  }
+  // OB-288 P3 (M07-FR-04): a matched bill's freight/duty raises what those receipts cost (value, never quantity).
+  for (const adj of await stockCostAdjustments(input.store, tenantId)) {
+    if (opts?.throughPeriod !== undefined && adj.occurredAt.slice(0, 7) > opts.throughPeriod) continue;
+    const a = acc.get(`${adj.productId}\u001f${branchOf(adj.locationId)}`);
+    if (a !== undefined) a.value += adj.valueMinor;
   }
   const rows = [...acc.values()].map((a): AverageBuyingCost => ({
     productId: a.productId, storeId: a.storeId, unitCostMinor: Math.round((a.value * a.scale) / a.qty), receivedMinor: a.qty, receivedValueMinor: a.value,

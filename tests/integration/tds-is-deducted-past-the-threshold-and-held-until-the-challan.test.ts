@@ -40,6 +40,8 @@ if (DATABASE_URL !== undefined) {
 type Res = { status: number; body: unknown };
 const codeOf = (r: Res): string | undefined => (r.body as { error?: { code?: string } }).error?.code;
 const CA = 'u-ca';
+const PAYER = 'u-acct-pay';
+const PAY_APPROVER = 'u-acct-ok'; // OB-288 P3 (§28): the owner booked the goods in, so a different person approves paying for them
 /** The CA's list — SYNTHETIC figures: 194C at 1%, single over ₹3,000 or the year over ₹10,000, catching the year up. */
 const CA_LIST = {
   sections: [{ section: '194C', label: 'Contractors (synthetic)', rateBps: 100, singleThresholdMinor: 300_000, aggregateThresholdMinor: 1_000_000, onCrossing: 'whole_aggregate' }],
@@ -55,13 +57,15 @@ describe.each(backings)('TDS is deducted past the threshold and held until the c
     const T = randomUUID();
     await h.seedOwner(T, 'u-owner');
     await h.provisionRole(T, CA, 'chartered_accountant');
+    await h.provisionRole(T, PAY_APPROVER, 'accountant');
+    await h.provisionRole(T, PAYER, 'accountant'); // OB-288 P3 (§28): the accountant who matched the bills does not also pay them
     const call = (method: 'GET' | 'POST', path: string, userId: string, body?: unknown, idempotencyKey?: string): Promise<Res> =>
       h.request({ method, path, userId, tenantId: T, ...(method === 'POST' ? { idempotencyKey: idempotencyKey ?? `k-${randomUUID()}` } : {}), ...(body === undefined ? {} : { body }) });
     await seedItcShop({ call, owner: 'u-owner', grant: (u, r) => h.provisionRole(T, u, r), store: 'st-tds', createStore: true });
     const pay = (supplierId: string, paymentId: string, amountMinor: number, paidOn: string) => {
       const body = { amountMinor, paidOn, method: 'cash', reference: `CASH-${paymentId}` };
-      return sentWithApproval(h, T, ACCOUNTANT, 'u-owner', { kind: 'supplier_payment', subjectRef: `${supplierId}/${paymentId}`, pathIds: { supplierId, paymentId }, valueMinor: amountMinor }, body,
-        (b) => h.request({ method: 'POST', path: `/v1/purchase/suppliers/${supplierId}/payments/${paymentId}`, userId: ACCOUNTANT, tenantId: T, idempotencyKey: `pay-${paymentId}`, body: b }));
+      return sentWithApproval(h, T, PAYER, PAY_APPROVER, { kind: 'supplier_payment', subjectRef: `${supplierId}/${paymentId}`, pathIds: { supplierId, paymentId }, valueMinor: amountMinor }, body,
+        (b) => h.request({ method: 'POST', path: `/v1/purchase/suppliers/${supplierId}/payments/${paymentId}`, userId: PAYER, tenantId: T, idempotencyKey: `pay-${paymentId}`, body: b }));
     };
     const register = async () => (await call('GET', '/v1/finance/tds', ACCOUNTANT)).body as {
       enabled: boolean; state: string; config: { version: number; sections: unknown[] }; payeesWithoutSection: string[];

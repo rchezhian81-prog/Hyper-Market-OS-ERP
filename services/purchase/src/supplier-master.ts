@@ -30,6 +30,8 @@ import { isPayable, detectDuplicateBankAccounts, holdersBlockedForDuplicate, typ
 import type { PartnerDocumentKind } from '../../../packages/supplier-portal/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import type { TdsAssessment } from '../../../packages/withholding/src/index';
+import { firstSegregationConflict } from '../../../packages/purchasing/src/segregation';
+import { segregationRefusal, type SegregationPort } from './segregation-of-duties';
 import {
   accountRegisters, foldSupplierAccount, needsAttention,
   type SupplierAccountDeps, type SupplierAccountStatement, type SupplierPayment, type DebitNoteIssue,
@@ -124,6 +126,8 @@ export interface SupplierMasterDeps extends SupplierAccountDeps {
    * Absent on a bare stub (then nothing is withheld). A refusal stops the payment before anything is recorded.
    */
   readonly withholding?: (tenantId: string, input: { readonly supplierId: string; readonly paymentId: string; readonly grossMinor: number; readonly paidOn: string }) => Promise<TdsAssessment> | TdsAssessment;
+  /** OB-288 P3 (M06-FR-02 · §28): the orders a payment to this supplier pays, and who did each step of each. */
+  readonly segregation?: Pick<SegregationPort, 'ordersPaidBy'>;
 }
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
@@ -399,6 +403,13 @@ export function supplierMasterRoutes(deps: SupplierMasterDeps): readonly Route[]
             wasItSaved: 'not_saved',
             nextSafeAction: 'Pay up to the balance owed, or match the invoice that justifies the rest first. Nothing was recorded.',
           });
+        }
+        // OB-288 P3 (M06-FR-02 · §28 "cannot receive, match and pay same transaction"): neither the person recording this
+        // payment nor its approver may have raised, received or matched an order whose bill it pays — refused by name, before
+        // the approval is spent.
+        if (deps.segregation !== undefined) {
+          const conflict = firstSegregationConflict(await deps.segregation.ordersPaidBy(t, supplierId), 'payment', [ctx.userId, approvedBy]);
+          if (conflict !== undefined) throw segregationRefusal(conflict);
         }
         // R3 · A24: the TDS this payment carries. A payee flagged "TDS applicable" with no section (or a section not on the
         // list) is refused here — before the approval is spent, so nothing is recorded and the approval stays usable.

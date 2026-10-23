@@ -21,7 +21,8 @@
 // and cancellation-netting of the open figure is the next increment — the engine already takes both.
 
 import type { Route } from '../../kernel/src/index';
-import { apiError, notFound, concurrentChange } from '../../kernel/src/index';
+import { apiError, notFound, concurrentChange, scopeOf } from '../../kernel/src/index';
+import { judgeBuyingScope, type BuyingScope } from '../../../packages/purchasing/src/buying-scope';
 import {
   issuePurchaseOrder, computeOpenCommitment, BlockedSupplierError,
   type PurchaseOrderLineInput, type OpenCommitment,
@@ -34,6 +35,8 @@ import { assertLocationInScope, stockReadScope, locationIsItsOwnBranch, type Loc
 import { normaliseUom, valueAtCost, minorPerUnitOf } from '../../../packages/contracts/src/quantity';
 import { checkOrderAgainstBudget, judgeApprovalOnBudget, openToBuyGuardKey, valueByCategory, type OpenToBuyDeps, type BudgetCheck } from './open-to-buy';
 import { ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
+import { segregationConflict } from '../../../packages/purchasing/src/segregation';
+import { segregationRefusal, type SegregationPort } from './segregation-of-duties';
 
 /** A durable purchase order — proposed by a buyer, and (once a second person approves) issued. */
 export interface StoredPurchaseOrder {
@@ -67,6 +70,13 @@ export interface StoredPurchaseOrder {
   readonly blanketAgreementId?: string;
   /** WF-03 (OB-288 P3): the requisition this order was raised from, when the buyer named one (its raiser is on record). */
   readonly requisitionId?: string;
+  /**
+   * M06-FR-04 · OB-289 (D-6 "Both, per order"): central via the warehouse, central direct to the store, or local — named by
+   * the buyer or derived from who raised it and where it goes (`buyingScopeSource`). Absent only on an order raised before
+   * the rule; it is then reported as "scope not recorded", never guessed.
+   */
+  readonly buyingScope?: BuyingScope;
+  readonly buyingScopeSource?: 'named' | 'derived';
 }
 
 /**
@@ -162,6 +172,13 @@ export interface PurchaseOrderDeps {
   readonly authorityOf?: AuthorityOf;
   /** WF-03 (OB-288 P3): a requisition the buyer names, so the order carries it (its raiser is the requisition act, §28). */
   readonly requisitionExists?: (tenantId: string, requisitionId: string) => Promise<boolean> | boolean;
+  /** OB-288 P3 (M06-FR-02 · §28): who did each step of the order — a receipt posted by its buyer, matcher or payer is refused. */
+  readonly segregation?: Pick<SegregationPort, 'actorsOf'>;
+  /**
+   * OB-290 (D-3) seam for package P1: the person's LOCAL purchase-order limit in paise — `null` unlimited, `undefined` none
+   * held (a local order is then refused). Today the config default: store manager ₹25,000, owner unlimited.
+   */
+  readonly localPoLimitOf?: (tenantId: string, userId: string) => Promise<number | null | undefined> | number | null | undefined;
   readonly now: () => string;
 }
 
@@ -364,6 +381,32 @@ export async function requireDeliverTo(deps: Pick<PurchaseOrderDeps, 'orgLocatio
   return locationId;
 }
 
+/**
+ * M06-FR-04 · OB-289 / OB-290: judge (or derive) the order's buying scope with the tested `judgeBuyingScope` — who raised it
+ * (company-wide = head office), where it goes (a warehouse that belongs to no store, or a store), and the raiser's local
+ * limit through the seam. Refused by name.
+ */
+async function buyingScopeFor(deps: PurchaseOrderDeps, ctx: Parameters<Route['handler']>[0], named: unknown, deliverTo: string, valueMinor: number): Promise<{ readonly scope: BuyingScope; readonly source: 'named' | 'derived' }> {
+  const node = deps.orgLocation === undefined ? undefined : await deps.orgLocation(ctx.tenantId, deliverTo);
+  const branchOf = deps.locationBranches === undefined ? undefined : await deps.locationBranches(ctx.tenantId);
+  const standaloneWarehouse = node?.kind === 'warehouse' && (branchOf === undefined || branchOf(deliverTo) === deliverTo);
+  const companyWide = scopeOf(ctx) === 'all';
+  const needsLimit = named === 'local' || ((named === undefined || named === null) && !companyWide);
+  const limit = !needsLimit || deps.localPoLimitOf === undefined ? undefined : await deps.localPoLimitOf(ctx.tenantId, ctx.userId);
+  const judged = judgeBuyingScope({ named, raiserCompanyWide: companyWide, destination: standaloneWarehouse ? 'central_warehouse' : 'store', valueMinor, localLimitMinor: limit });
+  if (!judged.ok) {
+    throw apiError(judged.refusal === 'unknown_buying_scope' ? 400 : 422, {
+      code: judged.refusal,
+      whatHappened: `${judged.detail} (M06-FR-04 · OB-289/OB-290).`,
+      wasItSaved: 'not_saved',
+      nextSafeAction: judged.refusal === 'local_limit_exceeded'
+        ? 'Keep the local order within the limit, or ask head office to raise a central order. Nothing was ordered.'
+        : 'Choose the buying scope that fits who is buying and where the goods go. Nothing was ordered.',
+    });
+  }
+  return { scope: judged.scope, source: judged.source };
+}
+
 /** A release's lines as sent: { productId, orderedQty } only — a price, a pack or a unit cost on a release is refused. */
 const isReleaseLine = (v: unknown): v is { productId: string; orderedQty: number } =>
   isObj(v) && isStr(v['productId']) && isPosInt(v['orderedQty']) && v['unitCost'] === undefined && v['pack'] === undefined && v['packCost'] === undefined;
@@ -521,6 +564,8 @@ export function purchaseOrderRoutes(deps: PurchaseOrderDeps): readonly Route[] {
           });
         }
         const totalMinor = poLines.reduce((s, l) => s + valueAtCost(l.orderedQty, l.uom ?? 'ea', l.unitCost), 0);
+        // M06-FR-04 · OB-289 / OB-290: the order's buying scope — central (head office only) or local (within the raiser's limit).
+        const scope = await buyingScopeFor(deps, ctx, b['buyingScope'], deliverToLocationId, totalMinor);
         const proposed: StoredPurchaseOrder = {
           poId,
           number: isStr(b['number']) ? b['number'] : poId,
@@ -539,6 +584,7 @@ export function purchaseOrderRoutes(deps: PurchaseOrderDeps): readonly Route[] {
           amendmentCount: 0,
           ...(release === undefined ? {} : { blanketAgreementId: release.agreementId }),
           ...(requisitionId === undefined ? {} : { requisitionId }),
+          buyingScope: scope.scope, buyingScopeSource: scope.source,
         };
         // WF-03 (round 8): the open-to-buy check rides on the order — never a refusal here; the approval escalates if over.
         const po: StoredPurchaseOrder = deps.openToBuy === undefined ? proposed : { ...proposed, budgetCheck: await checkOrderAgainstBudget(deps.openToBuy, ctx.tenantId, proposed) };
@@ -562,6 +608,7 @@ export function purchaseOrderRoutes(deps: PurchaseOrderDeps): readonly Route[] {
             lineCount: String(po.lines.length), status: po.status, deliverTo: deliverToLocationId,
             ...(po.blanketAgreementId === undefined ? {} : { blanketAgreementId: po.blanketAgreementId }),
             ...(po.requisitionId === undefined ? {} : { requisitionId: po.requisitionId }),
+            buyingScope: scope.scope,
           },
           correlationId: poId,
         });
@@ -733,11 +780,26 @@ export function purchaseOrderRoutes(deps: PurchaseOrderDeps): readonly Route[] {
           });
         }
         // OB-31: each amended line in the product's own unit, as at ordering (an amended kg line is valued per kg, never per item).
+        // (OB-290: a LOCAL order amended above its raiser's limit is refused below, once the amended value is known.)
         const lines: PurchaseOrderLineInput[] = [];
         for (const l of rawLines as RawLine[]) {
           const master = deps.productUom === undefined ? undefined : await deps.productUom(ctx.tenantId, l.productId);
           const uom = master === undefined ? undefined : normaliseUom(master) ?? master;
           lines.push({ productId: l.productId, orderedQty: l.orderedQty, ...(uom === undefined ? {} : { uom }), unitCost: money(l.unitCost.minor, po.currency) });
+        }
+        if (po.buyingScope === 'local') {
+          const amendedMinor = lines.reduce((s, l) => s + valueAtCost(l.orderedQty, l.uom ?? 'ea', l.unitCost), 0);
+          const limit = deps.localPoLimitOf === undefined ? undefined : await deps.localPoLimitOf(ctx.tenantId, po.requisitionedBy);
+          if (limit === undefined || (limit !== null && amendedMinor > limit)) {
+            throw apiError(422, {
+              code: limit === undefined ? 'local_limit_unknown' : 'local_limit_exceeded',
+              whatHappened: limit === undefined
+                ? `No local purchase-order limit is held for ${po.requisitionedBy}, who raised local order ${poId}, so it cannot be raised by amendment (OB-290).`
+                : `Local order ${poId} would be ${amendedMinor} paise after this amendment; ${po.requisitionedBy}, who raised it, may buy locally up to ${limit} per order (OB-290).`,
+              wasItSaved: 'not_saved',
+              nextSafeAction: 'Keep the local order within the limit, or have head office raise a central order for the rest. Nothing was changed.',
+            });
+          }
         }
         // OB-63 · WF-03: an amendment that RAISES the order's value (in any category) is judged against open-to-buy exactly as
         // an approval is — over budget it escalates to a person allowed to exceed it (the owner) with a reason, recorded — and
@@ -817,6 +879,15 @@ export function purchaseOrderRoutes(deps: PurchaseOrderDeps): readonly Route[] {
         const po = await deps.order(ctx.tenantId, poId);
         if (po === undefined) throw notFound(`purchase order ${poId}`);
         if (po.status !== 'issued') throw poNotIssued(poId, 'received against');
+        // OB-288 P3 (§28): this route RECONCILES a receipt recorded outside head office (an opening position carried over at
+        // cutover, a migration) — it books no stock. Its poster counts as a receiver of the order (so they may never match or
+        // pay it), and a person who already matched or paid the order may not post one. Raising the order and carrying what
+        // the old system already received is the cutover operator's one job, so that pair alone is not refused here; real
+        // receiving (the goods-receipt routes) refuses it.
+        if (deps.segregation !== undefined) {
+          const conflict = segregationConflict({ ...(await deps.segregation.actorsOf(ctx.tenantId, poId)), requisition: [] }, 'receipt', ctx.userId);
+          if (conflict !== undefined) throw segregationRefusal(conflict);
+        }
         await deps.postReceipt(ctx.tenantId, poId, receiptId, b['receivedByProduct'], ctx.userId, deps.now());
         const updated = await deps.order(ctx.tenantId, poId);
         return { status: 200, body: { order: updated, openCommitment: updated ? openOf(updated) : null } };

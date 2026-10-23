@@ -47,6 +47,7 @@ async function shop(h: ApiHarness) {
     h.request({ method, path, userId, tenantId: t, ...(userId === 'u-mgr-a' ? { branchId: 'S-A' } : {}), ...(method === 'GET' ? {} : { idempotencyKey: key ?? `k-${n += 1}` }), ...(body === undefined ? {} : { body }), ...(query === undefined ? {} : { query }) });
   await h.seedOwner(t, 'u-owner');
   await h.provisionRole(t, 'u-mgr', 'store_manager');
+  await h.provisionRole(t, 'u-po-buyer', 'store_manager'); // OB-288 P3 (§28): the buyer who raises the order is never the one who books it in
   await h.provisionRole(t, 'u-mgr-a', 'store_manager', ['S-A']);
   await h.provisionRole(t, 'u-cash', 'cashier');
   for (const [id, body] of [
@@ -116,7 +117,7 @@ describe.each(backings)('FUL-11 replenishment runs on head office\'s facts for o
     expect((first.body as { stockFacts: unknown[] }).stockFacts).toEqual([{ productId: 'p1', onHand: 5, onOrder: 0, inTransit: 0, reserved: 0 }]);
 
     // An issued order for 10 to S-A: on order, so only 85 more is proposed.
-    expect((await s.call('POST', '/v1/purchase/orders/po-a', 'u-mgr', { supplierId: 'sup-1', deliverToLocationId: 'S-A', lines: [{ productId: 'p1', orderedQty: 10, unitCost: cost }] })).status).toBe(201);
+    expect((await s.call('POST', '/v1/purchase/orders/po-a', 'u-po-buyer', { supplierId: 'sup-1', deliverToLocationId: 'S-A', lines: [{ productId: 'p1', orderedQty: 10, unitCost: cost }] })).status).toBe(201);
     expect((await s.propose('u-mgr', [item], { storeId: 'S-A' })).body).toMatchObject({ proposals: [{ position: 5, suggestedQty: 95 }] }); // a proposed (unapproved) order is not on order
     expect((await s.call('POST', '/v1/purchase/orders/po-a/approval', 'u-owner', { reason: 'ok' })).status).toBe(200);
     expect(proposals(await s.propose('u-mgr', [item], { storeId: 'S-A' }))[0]).toMatchObject({ position: 15, suggestedQty: 85 });
