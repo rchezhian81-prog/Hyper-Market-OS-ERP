@@ -15,13 +15,13 @@ import type { Route } from '../../kernel/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import { makeEvent } from '../../../packages/contracts/src/event';
 import {
-  STREAM, streamName, foldPurchaseOrders, purchaseOrdersAdapter, orgStructureAdapter, goodsReceiptAdapter, liveSupplierInvoices, effectiveGrants,
+  STREAM, streamName, foldPurchaseOrders, purchaseOrdersAdapter, orgStructureAdapter, goodsReceiptAdapter, liveSupplierInvoices,
   financeAdapter, rebatesAdapter, stockCostAdjustments, STOCK_COST_ADJUSTMENTS_STREAM, rfqAdapter, replenishmentFactsAdapter, assortmentAdapter,
 } from './adapters';
 import { masterLifecycleOf } from './r3-ops-adapters';
 import { branchOfLocationIn, type LocationBranches } from '../../inventory/src/location-scope';
 import {
-  judgeCallOff, ordersAPaymentPays, localLimitFromRoles, type BlanketAgreement, type BlanketRelease, type PurchaseActors,
+  judgeCallOff, ordersAPaymentPays, type BlanketAgreement, type BlanketRelease, type PurchaseActors,
 } from '../../../packages/purchasing/src/index';
 import type { SegregationPort } from '../../purchase/src/segregation-of-duties';
 import type { StoredRequisition } from '../../purchase/src/rfq';
@@ -240,15 +240,6 @@ export function segregationAdapter(input: Base): SegregationPort {
 
 // ── M06-FR-04 · OB-289 / OB-290 — buying scope, the local limit seam, the open-commitment report ─────────────────────
 
-/**
- * OB-290 (D-3) — the person's LOCAL purchase-order limit from the roles they hold NOW, read from the config default
- * (`LOCAL_PO_LIMIT_DEFAULTS`: store manager ₹25,000, owner unlimited). The seam package P1 replaces with server-held,
- * versioned per-role limits.
- */
-export function localPoLimitOf(input: Base): (tenantId: string, userId: string) => Promise<number | null | undefined> {
-  return async (tenantId, userId) => localLimitFromRoles((await effectiveGrants(input.store, tenantId)).filter((g) => g.userId === userId).map((g) => g.roleId));
-}
-
 export function commitmentReportAdapter(input: Base): CommitmentReportDeps {
   return {
     now: input.now,
@@ -383,10 +374,9 @@ export function p3ProcureRoutes(input: { readonly store: EventStore | undefined;
 }
 
 /** The hooks the existing purchase-order routes take (spread into their deps in main.ts). */
-export function p3PurchaseOrderHooks(input: { readonly store: EventStore; readonly now: () => string }): Pick<import('../../purchase/src/purchase-orders').PurchaseOrderDeps, 'blanket' | 'segregation' | 'requisitionExists' | 'localPoLimitOf' | 'asnOf'> {
+export function p3PurchaseOrderHooks(input: { readonly store: EventStore; readonly now: () => string }): Pick<import('../../purchase/src/purchase-orders').PurchaseOrderDeps, 'blanket' | 'segregation' | 'requisitionExists' | 'asnOf'> {
   return {
     asnOf: (tenantId, poId) => deliveryAsnOf(input.store, tenantId, poId),
-    localPoLimitOf: localPoLimitOf(input),
     blanket: blanketReleaseHooks(input),
     segregation: segregationAdapter(input),
     requisitionExists: async (tenantId, requisitionId) => (await payloads<StoredRequisition>(input.store, tenantId, REQUISITIONS, 'RequisitionRaised')).some((r) => r.requisitionId === requisitionId),

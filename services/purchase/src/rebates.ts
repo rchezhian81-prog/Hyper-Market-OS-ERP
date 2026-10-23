@@ -187,7 +187,7 @@ export function rebateRoutes(deps: RebateDeps): readonly Route[] {
         const basis: { amountMinor: number; invoices: readonly string[]; notValued?: readonly { invoiceId: string; why: string }[] } = volume
           ? await deps.volumeBasisFor!(ctx.tenantId, scheme.supplierId, from, to)
           : await deps.basisFor!(ctx.tenantId, scheme.supplierId, from, to);
-        const baseline = scheme.basis === 'growth_over_baseline' ? await deps.basisFor(ctx.tenantId, scheme.supplierId, b['baselineFrom'] as string, b['baselineTo'] as string) : undefined;
+        const baseline = scheme.basis === 'growth_over_baseline' ? await deps.basisFor!(ctx.tenantId, scheme.supplierId, b['baselineFrom'] as string, b['baselineTo'] as string) : undefined;
         const accrual = accrueRebate({
           scheme,
           basisAmount: { minor: basis.amountMinor, currency: 'INR' },

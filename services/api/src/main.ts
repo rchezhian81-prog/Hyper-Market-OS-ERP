@@ -340,6 +340,7 @@ import { lane2OfflineRoutes, lane2ExpirySweep } from './lane2-offline-adapters';
 // OB-288 P3 (procure-to-pay completion): M06-FR-02/03/04 · M07-FR-01/04 · WF-03 · WF-05 (p3-procure-adapters).
 import { p3ProcureRoutes, p3PurchaseOrderHooks, p3ReceiptHooks, p3PurchaseHooks, p3Segregation, p3RebateHooks } from './p3-procure-adapters';
 import { p1IdentitySurface, approvalAgeSweep } from './p1-identity-adapters'; // OB-288 lane 1 · P1 — identity, authority, configuration
+import { poAuthorityHooks } from './followups-adapters'; // OB-288 integration follow-ups
 import { alsoEachPassOf } from './ops-alert-sweeps'; // R3 lane 1 — GST liability and returns
 import { itcPortForStore } from './r3-itc-bridge'; // R3 seam — GSTR-3B Table 4 reads the A17 reconciliation
 import { r4PayEprRoutes, r4PayslipHooks, payslipLateSweep } from './r4-pay-epr-adapters';
@@ -888,7 +889,7 @@ export function buildSurface(deps: {
       propose: () => {}, issue: () => {}, setSupplierBlocked: () => {},
       amend: () => {}, cancel: () => {}, postReceipt: () => {}, now,
     } : { ...purchaseOrdersAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now), packOf: packHierarchyAdapter({ store, now }).pack, masterLifecycle: masterLifecycleOf({ store, now }), // D-16 (R3)
-      openToBuy: { ...openToBuyAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, storeOf: locationBranchesOf(store, now) }, ...p3PurchaseOrderHooks({ store, now }) /* OB-288 P3 */ }),
+      openToBuy: { ...openToBuyAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, storeOf: locationBranchesOf(store, now) }, ...p3PurchaseOrderHooks({ store, now }) /* OB-288 P3 */, ...poAuthorityHooks({ store, now, settings }) /* OB-290 follow-up */ }),
     // WF-03 · D02-FR-01 (round 8): category purchase budgets and open-to-buy — checked on every order, over budget escalates.
     ...openToBuyRoutes(store === undefined ? {
       budgets: empty([]), recordBudget: () => {}, orders: empty([]), categoryOf: empty(null), overrides: empty([]), recordOverride: () => {}, permissionsOfUser: empty(undefined), now,
