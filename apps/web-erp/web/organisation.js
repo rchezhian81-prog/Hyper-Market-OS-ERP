@@ -21,6 +21,8 @@ const WORDS = {
     gstin: 'GST registration', noGstin: 'no GST registration yet', code_: 'code', under: 'under',
     rename: 'Rename', newName: 'New name', activate: 'Activate',
     added: 'Added — head office kept it.', renamed: 'Renamed — head office kept the new name.', activated: 'Activated.',
+    askedOwner: 'Asked — making a place active is the owner\'s approval (M01-FR-01). When the owner has approved it on the Approvals page, press Activate again.',
+    waitingOwner: 'Still waiting for the owner\'s approval on the Approvals page.',
     needName: 'Write a name and a short code first.', refused: 'Head office refused:', unreachable: 'Head office cannot be reached — nothing was changed.',
     empty: 'No places yet. Start with the company.', reading: 'Reading the hierarchy from head office…', cannotRead: 'Your role cannot read the organisation.',
     readOnly: 'You can read the hierarchy; changing it needs setup rights.',
@@ -36,6 +38,8 @@ const WORDS = {
     gstin: 'ஜிஎஸ்டி பதிவு', noGstin: 'இன்னும் ஜிஎஸ்டி பதிவு இல்லை', code_: 'குறியீடு', under: 'இதன் கீழ்',
     rename: 'பெயர் மாற்று', newName: 'புதிய பெயர்', activate: 'செயல்படுத்து',
     added: 'சேர்க்கப்பட்டது — தலைமை அலுவலகம் வைத்துக்கொண்டது.', renamed: 'பெயர் மாற்றப்பட்டது — தலைமை அலுவலகம் புதிய பெயரை வைத்துக்கொண்டது.', activated: 'செயல்படுத்தப்பட்டது.',
+    askedOwner: 'கேட்கப்பட்டது — ஒரு இடத்தைச் செயல்படுத்துவது உரிமையாளரின் ஒப்புதல் (M01-FR-01). உரிமையாளர் ஒப்புதல்கள் பக்கத்தில் ஒப்புதல் தந்ததும், மீண்டும் செயல்படுத்து அழுத்தவும்.',
+    waitingOwner: 'ஒப்புதல்கள் பக்கத்தில் உரிமையாளரின் ஒப்புதலுக்காக இன்னும் காத்திருக்கிறது.',
     needName: 'முதலில் ஒரு பெயரும் சுருக்கக் குறியீடும் எழுதுங்கள்.', refused: 'தலைமை அலுவலகம் மறுத்தது:', unreachable: 'தலைமை அலுவலகத்தை அடைய முடியவில்லை — எதுவும் மாற்றப்படவில்லை.',
     empty: 'இன்னும் இடங்கள் இல்லை. நிறுவனத்துடன் தொடங்குங்கள்.', reading: 'தலைமை அலுவலகத்திலிருந்து அமைப்பைப் படிக்கிறது…', cannotRead: 'உங்கள் பங்கால் அமைப்பைப் படிக்க முடியாது.',
     readOnly: 'நீங்கள் அமைப்பைப் படிக்கலாம்; மாற்ற அமைப்பு உரிமை தேவை.',
@@ -56,6 +60,18 @@ async function post(path, body) {
   } catch {
     return { ok: false, status: 0, body: null };
   }
+}
+/** OB-288 P1 (M01-FR-01): the activation this person already asked for — approved (its id), still waiting, or none. */
+async function askedActivation(nodeId) {
+  try {
+    const res = await fetch('/v1/approvals/requests', { method: 'GET', credentials: 'same-origin', headers: { accept: 'application/json' } });
+    const body = await res.json().catch(() => ({}));
+    const mine = Array.isArray(body.mine) ? body.mine : [];
+    const asked = mine.filter((r) => r.kind === 'org_structure_change' && r.subjectRef === nodeId && r.details?.action === 'activate');
+    const approved = asked.find((r) => r.status === 'approved');
+    if (approved !== undefined) return { approvalId: approved.requestId };
+    return asked.some((r) => r.status === 'waiting') ? { waiting: true } : {};
+  } catch { return {}; }
 }
 function say(el, out, good) {
   el.className = `status ${out.ok ? 'good' : 'err'}`;
@@ -129,7 +145,15 @@ function placeNode(entry) {
     if (n.status === 'draft') {
       const activate = document.createElement('button'); activate.type = 'button'; activate.textContent = t('activate'); activate.dataset.act = 'activate';
       activate.addEventListener('click', async () => {
-        const out = await post(`/v1/org/nodes/${encodeURIComponent(n.nodeId)}/activation`, {});
+        // A structural change is the owner's approval: send the one already approved; else ask for it, once.
+        const asked = await askedActivation(n.nodeId);
+        if (asked.waiting === true) { $('tree-status').className = 'status err'; $('tree-status').textContent = `⏳ ${t('waitingOwner')}`; return; }
+        const out = await post(`/v1/org/nodes/${encodeURIComponent(n.nodeId)}/activation`, asked.approvalId === undefined ? {} : { approvalId: asked.approvalId });
+        if (!out.ok && out.body?.error?.code === 'structural_change_needs_owner_approval') {
+          const ask = await post('/v1/approvals/requests', { kind: 'org_structure_change', subjectRef: n.nodeId, details: { nodeId: n.nodeId, action: 'activate' }, valueMinor: null, summary: `Activate ${n.name}`, reason: 'ready to trade' });
+          if (ask.ok) { $('tree-status').className = 'status good'; $('tree-status').textContent = `⏳ ${t('askedOwner')}`; } else say($('tree-status'), ask, '');
+          return;
+        }
         say($('tree-status'), out, t('activated'));
         await load();
       });

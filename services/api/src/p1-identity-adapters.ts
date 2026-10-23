@@ -42,12 +42,14 @@ import { accessReviewRoutes } from '../../identity/src/access-review';
 import { departmentScopeRoutes, departmentScopeFor, foldDepartmentScopes, type DepartmentScopeRecord } from '../../identity/src/department-scope';
 import { MACHINE_ROLE_IDS, isPlatformAdministrationRole } from '../../identity/src/separation-of-duties';
 import { orgStructureRoutes } from '../../platform/src/org-structure';
+import { pricingRoutes } from '../../pricing/src/index';
 import { orgDepartmentRoutes, currentLinks, type DepartmentLinkRecord, type DepartmentSaleLine } from '../../platform/src/org-departments';
 import { governedFlagRoutes, governSetupWrite, governConfigRollback, type GovernedFlagChange } from '../../platform/src/governed-config';
 import {
   STREAM, streamName, effectiveGrants, rolesHeldNow, liveEmergencyRoles, peopleAdapter, emergencyAccessAdapter,
   delegationAdapter, approvalDecisionAdapter, approvalRequestsAdapter, orgStructureAdapter, purchaseOrdersAdapter,
   adjustmentRequestAdapter, countsAdapter, productMasterAdapter, categoryRegisterAdapter, alertLifecycleAdapter,
+  pricingAdapter, storeRulesAdapter,
 } from './adapters';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from './roles';
 
@@ -315,30 +317,27 @@ export function p1IdentitySurface(surface: Route[], input: {
   narrowRead('/v1/merchandising/assortment/:storeId', 'merchandising.range.read', 'listed', (r) => String(r));
   narrowRead('/v1/inventory/adjustment-requests', 'inventory.availability.read', 'requests', (r) => String((r as { productId?: unknown }).productId ?? ''));
 
-  // 3. OB-291: a price change larger than the set size needs a second person (the margin floor is judged as before).
-  wrap(surface, 'POST', '/v1/prices/changes', (inner) => async (ctx) => {
-    const b = bodyOf(ctx);
-    if (isStr(b['approvalId']) || !isStr(b['productId']) || typeof b['priceMinor'] !== 'number' || !Number.isSafeInteger(b['priceMinor'])) return inner(ctx);
-    const productId = b['productId'].trim();
-    const entries = await payloads<PriceEntry>(store, ctx.tenantId, streamName(STREAM.pricing, 'list', productId), 'PriceListEntryPublished');
-    const at = now();
-    const stores = isStr(b['storeId']) ? [b['storeId'].trim()] : [...new Set(entries.filter((e) => e.scope === 'store').map((e) => e.scopeRef))].sort();
-    const t = (await priceCheckOf(rulesStoreOf(base), ctx.tenantId)).value;
-    for (const storeId of stores) {
-      const current = resolvePrice(entries, { productId, at, storeId });
-      if (current === null) continue; // a first price is not a change; the margin floor still judges it
-      const size = priceChangeSize(current.price.minor, b['priceMinor'], t);
-      if (size.needsSecondPerson) {
-        throw apiError(422, {
-          code: 'price_change_needs_second_person',
-          whatHappened: `${productId} at ${storeId} would move from ₹${(current.price.minor / 100).toFixed(2)} to ₹${((b['priceMinor'] as number) / 100).toFixed(2)} — a change of ₹${(size.changeMinor / 100).toFixed(2)} (${(size.changeBps / 100).toFixed(2)}%), more than the ${(t.percentBps / 100).toFixed(2)}% or ₹${(t.amountMinor / 100).toFixed(2)} a single person may make (OB-291).`,
-          wasItSaved: 'not_saved',
-          nextSafeAction: 'Ask for approval (POST /v1/approvals/requests, kind price_change, with exactly this change); once someone who may approve prices approves it, send the approvalId. Nothing was changed.',
-        });
+  // 3. OB-291: a price change larger than the set size needs a second person — judged by the price route after the MRP
+  //    ceiling and the margin floor, so those still speak first.
+  swapIn(surface, pricingRoutes({
+    ...pricingAdapter({ store, now }), ...audit, approvals,
+    // The same composition as main.ts (M05: the floor is the store's own rules) — plus the owner's size rule.
+    marginFloorFor: async (t: string, storeId: string) => (await storeRulesAdapter({ store }).rules(t, storeId))?.marginFloorBps,
+    changeNeedsSecondPerson: async (tenantId, productId, priceMinor, storeIds) => {
+      const entries = await payloads<PriceEntry>(store, tenantId, streamName(STREAM.pricing, 'list', productId), 'PriceListEntryPublished');
+      const at = now();
+      const t = (await priceCheckOf(rulesStoreOf(base), tenantId)).value;
+      for (const storeId of storeIds) {
+        const current = resolvePrice(entries, { productId, at, storeId });
+        if (current === null) continue; // a first price is not a change; the margin floor still judged it
+        const size = priceChangeSize(current.price.minor, priceMinor, t);
+        if (size.needsSecondPerson) {
+          return `${productId} at ${storeId} would move from ₹${(current.price.minor / 100).toFixed(2)} to ₹${(priceMinor / 100).toFixed(2)} — a change of ₹${(size.changeMinor / 100).toFixed(2)} (${(size.changeBps / 100).toFixed(2)}%), more than the ${(t.percentBps / 100).toFixed(2)}% or ₹${(t.amountMinor / 100).toFixed(2)} a single person may make (OB-291).`;
+        }
       }
-    }
-    return inner(ctx);
-  });
+      return undefined;
+    },
+  }));
 
   // 4. Governed configuration: switches (reason, version, preview, rollback, owner approval when high-impact); high-impact
   //    settings; and the approval rules' keys kept off the generic rollback.
