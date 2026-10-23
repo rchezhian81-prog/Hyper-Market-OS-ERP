@@ -11,3 +11,4 @@
 export * from './approvals';
 export * from './delegation';
 export * from './reasons';
+export * from './authority-rules';

@@ -28,6 +28,7 @@ import {
   type ApprovalRequest, type Decision, type DelegatedRefusal,
 } from '../../../packages/approvals/src/index';
 import type { Money, CurrencyCode } from '../../../packages/contracts/src/money';
+import type { Authority } from '../../../packages/approvals/src/authority-rules';
 
 const CURRENCIES: readonly CurrencyCode[] = ['INR', 'USD', 'EUR', 'GBP'];
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
@@ -92,7 +93,25 @@ export interface DelegationDeps {
   readonly recordDelegation: (tenantId: string, delegation: Delegation, key: string) => Promise<void> | void;
   /** WHERE a person holds a permission (Wave 2b · PA-03): the server's branch scope for an approver record; undefined when unknown. Optional on a stub. */
   readonly branchScopeOfUser?: (tenantId: string, userId: string, permission: string) => Promise<readonly string[] | 'all' | undefined> | readonly string[] | 'all' | undefined;
+  /**
+   * OB-290 (owner, 23 Oct 2026 · audit M02-FR-02): a person's money limit for a kind of decision, held on the SERVER. When
+   * wired, every approver record's `authorityLimit` is the server's figure — a limit sent in the body is ignored (the audit
+   * found `/v1/access/approvals/decide` taking the decider's own limit from the body). Optional on a bare stub.
+   */
+  readonly authorityOf?: (tenantId: string, userId: string, subjectType: string) => Promise<Authority>;
   readonly now: () => string;
+}
+
+/** The server's limit as an approver record carries it: null = no money cap; not set = nothing (₹0). */
+export function limitAsMoney(a: Authority, currency: CurrencyCode = 'INR'): Money | null {
+  if (a.state === 'not_value_limited' || a.state === 'unlimited') return null;
+  return { minor: a.state === 'limit' ? a.limitMinor ?? 0 : 0, currency };
+}
+
+/** An approver record with the SERVER's limit for this kind in place of whatever the body said. */
+async function withServerLimit(deps: Pick<DelegationDeps, 'authorityOf'>, tenantId: string, approver: Approver, subjectType: string): Promise<Approver> {
+  if (deps.authorityOf === undefined) return approver;
+  return { ...approver, authorityLimit: limitAsMoney(await deps.authorityOf(tenantId, approver.userId, subjectType)) };
 }
 
 /**
@@ -129,13 +148,15 @@ export function delegationRoutes(deps: DelegationDeps): readonly Route[] {
           || (b['onDate'] !== undefined && !isDate(b['onDate']))) {
           throw apiError(400, { code: 'not_readable_as_an_authority_query', whatHappened: 'An effective-authority query needs { userId, subjectType, own? (the person\'s own approver record), onDate? }.', wasItSaved: 'not_saved', nextSafeAction: 'Send who and which kind of decision.' });
         }
+        // OB-290: the person's own limit is the server's, never the body's.
+        const ownServer = own === undefined ? undefined : await withServerLimit(deps, ctx.tenantId, own, b['subjectType'] as string);
         const result = effectiveAuthority({
           userId: b['userId'] as string, subjectType: b['subjectType'] as string,
           delegations: await deps.delegations(ctx.tenantId),
           today: isDate(b['onDate']) ? b['onDate'] as string : deps.now().slice(0, 10),
-          ...(own !== undefined ? { own } : {}),
+          ...(ownServer !== undefined ? { own: ownServer } : {}),
         });
-        return { status: 200, body: result };
+        return { status: 200, body: { ...result, ...(deps.authorityOf === undefined ? {} : { limitFrom: 'server' }) } };
       },
     },
     {
@@ -179,18 +200,21 @@ export function delegationRoutes(deps: DelegationDeps): readonly Route[] {
         // Judged per subject type against the lender's authority for THAT type: the cap, and a named scope never widened.
         const existing = await deps.delegations(ctx.tenantId);
         const today = deps.now().slice(0, 10);
-        const judge = (scope: readonly string[] | 'all') => grantDelegation({
-          delegation, granter: { ...granter, branchScope: scope }, existing, today,
+        // OB-290: the lender's limit is the server's for EACH lent kind — a cap above what they may approve is refused.
+        const limitFor = async (t: string): Promise<Money | null> => (await withServerLimit(deps, ctx.tenantId, granter, t)).authorityLimit;
+        const judge = (scope: readonly string[] | 'all', limit: Money | null = granter.authorityLimit) => grantDelegation({
+          delegation, granter: { ...granter, branchScope: scope, authorityLimit: limit }, existing, today,
           ...(isInt(b['maximumDays']) ? { maximumDays: b['maximumDays'] as number } : {}),
         });
-        let result = judge(bySubject === undefined ? granter.branchScope : 'all');
+        let result = judge(bySubject === undefined ? granter.branchScope : 'all', deps.authorityOf === undefined || subjectTypes.length === 0 ? granter.authorityLimit : await limitFor(subjectTypes[0]!));
         for (const t of subjectTypes) {
-          if (!result.created || bySubject === undefined) break;
-          const where = bySubject[t]!;
-          if (where !== 'all' && where.length === 0) {
+          if (!result.created) break;
+          const where = bySubject === undefined ? granter.branchScope : bySubject[t]!;
+          if (bySubject !== undefined && where !== 'all' && where.length === 0) {
             throw apiError(422, { code: 'exceeds_granter_authority', whatHappened: `${b['fromUserId'] as string} does not hold the authority for ${t} anywhere, so it cannot be lent — nobody can hand out authority they do not have.`, wasItSaved: 'not_saved', nextSafeAction: 'Lend only what the lender holds. Nothing was saved.' });
           }
-          result = judge(where);
+          if (bySubject === undefined && deps.authorityOf === undefined) break;
+          result = judge(where, deps.authorityOf === undefined ? granter.authorityLimit : await limitFor(t));
         }
         if (!result.created) {
           throw apiError(REFUSAL_STATUS[result.refusal!], { code: result.refusal!, whatHappened: result.detail, wasItSaved: 'not_saved', nextSafeAction: 'Correct the delegation and send it again. Nothing was saved.' });
@@ -258,9 +282,11 @@ export function delegationRoutes(deps: DelegationDeps): readonly Route[] {
         if (own !== undefined && own.userId !== ctx.userId) throw actorIsTheCaller('own.userId', own.userId, ctx.userId);
         const ownWhere = own === undefined || deps.branchScopeOfUser === undefined || SUBJECT_AUTHORITY[request.subjectType] === undefined ? undefined
           : await deps.branchScopeOfUser(ctx.tenantId, own.userId, SUBJECT_AUTHORITY[request.subjectType]!);
-        const ownScoped = own === undefined ? undefined
+        const ownScopedRaw = own === undefined ? undefined
           : deps.branchScopeOfUser === undefined || SUBJECT_AUTHORITY[request.subjectType] === undefined ? own
           : { ...own, branchScope: ownWhere === 'all' ? 'all' as const : [...new Set(ownWhere ?? [])].sort() };
+        // OB-290 (the audit's finding): the decider's limit is the SERVER's — `own.authorityLimit` in the body is ignored.
+        const ownScoped = ownScopedRaw === undefined ? undefined : await withServerLimit(deps, ctx.tenantId, ownScopedRaw, request.subjectType);
         const authority = effectiveAuthority({
           userId: ctx.userId, subjectType: request.subjectType,
           delegations: await deps.delegations(ctx.tenantId),
@@ -274,7 +300,7 @@ export function delegationRoutes(deps: DelegationDeps): readonly Route[] {
         if (!outcome.ok) {
           throw apiError(DECISION_REFUSAL_STATUS[outcome.refusal], { code: outcome.refusal, whatHappened: outcome.detail, wasItSaved: 'not_saved', nextSafeAction: 'The decision was not permitted and nothing was recorded. Escalate to someone who holds the authority, or correct the request.' });
         }
-        return { status: 200, body: { ok: true, decision: outcome.request } };
+        return { status: 200, body: { ok: true, decision: outcome.request, ...(deps.authorityOf === undefined || ownScoped === undefined ? {} : { limitFrom: 'server', limitApplied: ownScoped.authorityLimit }) } };
       },
     },
   ];

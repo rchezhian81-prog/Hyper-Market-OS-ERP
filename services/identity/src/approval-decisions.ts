@@ -40,6 +40,7 @@ import type { DecidedRequest, Decision } from '../../../packages/approvals/src/a
 import type { Money, CurrencyCode } from '../../../packages/contracts/src/money';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import { deciderSealFlags } from '../../pos/src/store-seal';
+import { limitedSubjectOf, mayApproveValue, type Authority } from '../../../packages/approvals/src/authority-rules';
 
 /** The permission a decider must hold to decide each subject type — the §28 authority, looked up from grants. */
 export const SUBJECT_AUTHORITY: Readonly<Record<string, string>> = Object.freeze({
@@ -63,6 +64,8 @@ export const DECISION_FLAGS = Object.freeze([
   'decider_outside_branch',
   // 2b-vi-c-3 (ADR-0023 amended): the store computer did not vouch for the decider — no seal, or one that does not match.
   'decider_not_verified_at_store', 'decider_seal_does_not_match',
+  // OB-290 (owner, 23 Oct 2026): the decider approved more than their money limit allows — it goes to the owner.
+  'decider_over_limit',
 ] as const);
 export type DecisionFlag = (typeof DECISION_FLAGS)[number];
 
@@ -111,6 +114,8 @@ export interface ApprovalDecisionDeps {
   /** The store computer's seal key (ADR-0023, amended 2b-vi-c-3): a relayed decision's decider is checked against the
    *  box's seal. Absent on a bare stub — then nothing is checked and nothing is claimed. */
   readonly tillSealKey?: Buffer;
+  /** OB-290: the decider's money limit for the subject, held on the server. Optional on a bare stub (then not checked). */
+  readonly authorityOf?: (tenantId: string, userId: string, subjectType: string) => Promise<Authority>;
   readonly now: () => string;
 }
 
@@ -205,6 +210,10 @@ export function approvalDecisionRoutes(deps: ApprovalDecisionDeps): readonly Rou
           const where = await deps.branchScopeOfUser(ctx.tenantId, d.decidedBy, required);
           if (where !== undefined && where !== 'all' && !where.includes(d.branchId)) flags.push('decider_outside_branch');
         }
+        // OB-290: an approval above the decider's money limit (the server's figure, never the screen's) is recorded and
+        // flagged — it waits for the owner, never applied.
+        if (d.status === 'approved' && d.value !== null && deps.authorityOf !== undefined && limitedSubjectOf(d.subjectType) !== undefined
+          && !mayApproveValue(await deps.authorityOf(ctx.tenantId, d.decidedBy, d.subjectType), d.value.minor)) flags.push('decider_over_limit');
 
         const record: ApprovalDecisionRecord = {
           ...d, relayedBy: ctx.userId, recordedAt: deps.now(), governanceFlags: flags,
