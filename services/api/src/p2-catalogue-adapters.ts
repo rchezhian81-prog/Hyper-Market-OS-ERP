@@ -14,7 +14,7 @@ import type { Route } from '../../kernel/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import { makeEvent } from '../../../packages/contracts/src/event';
 import { money } from '../../../packages/contracts/src/money';
-import { valueAtCost } from '../../../packages/contracts/src/quantity';
+import { valueAtCost, normaliseUom } from '../../../packages/contracts/src/quantity';
 import {
   STREAM, streamName, productMasterAdapter, categoryRegisterAdapter, planogramStoreAdapter, assortmentAdapter, averageBuyingCosts,
   registeredStores, orgStructureAdapter, financeAdapter, approvalRequestsAdapter,
@@ -78,7 +78,8 @@ async function bankedSales(input: Base, tenantId: string, fromIso: string, toIso
 }
 
 /** One bill line's whole units: an each line counts its pieces; a weighed line counts as one. */
-const unitsOf = (l: BankedLine): number => (l.uom === 'ea' ? l.quantityMinor : 1);
+const isEach = (uom: string): boolean => (normaliseUom(uom) ?? uom) === 'ea';
+const unitsOf = (l: BankedLine): number => (isEach(l.uom) ? l.quantityMinor : 1);
 const deGross = (grossMinor: number, taxBps: number): number => Number((BigInt(grossMinor) * 10_000n) / BigInt(10_000 + taxBps));
 
 interface Taken { units: number; salesMinor: number; netSalesMinor: number; costMinor: number; costKnown: boolean; bills: Set<string> }
@@ -142,7 +143,7 @@ export async function unitsUnderOffer(input: Base, tenantId: string, promotion: 
   for (const s of sales) {
     const basket: BasketLine[] = (s.lines ?? []).map((l, i) => ({
       lineId: `${i}`, productId: l.productId, unitPrice: money(l.unitPriceMinor, 'INR'), qty: unitsOf(l),
-      ...(l.uom === 'ea' ? {} : { lineTotal: money(l.lineTotalMinor + (l.discountMinor ?? 0), 'INR') }),
+      ...(isEach(l.uom) ? {} : { lineTotal: money(l.lineTotalMinor + (l.discountMinor ?? 0), 'INR') }),
       ...(products.get(l.productId)?.safety?.carryBag === true ? { carryBag: true } : {}),
       ...(products.get(l.productId)?.safety?.tobacco === true ? { tobacco: true } : {}),
     }));
