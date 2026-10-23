@@ -201,6 +201,9 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // OB-331: held ONLY so the owner can approve granting the CI scanner's machine identity its role (no-escalation rule);
       // the push route believes a push only from that machine identity itself, never a person.
       'compliance.finding.push',
+      // OB-333: held ONLY so the owner can approve granting the store computer its release relay (no escalation, OB-36);
+      // the synced route re-checks the PERSON named from their own grants, so this releases nothing by itself.
+      'quality.hold.release.sync',
       // ── OB-288 integration follow-ups — end
       'price.integrity.audit', 'selfcheckout.operate',
       'owner.alert.read', 'owner.kpi.read', 'owner.brief.manage',
