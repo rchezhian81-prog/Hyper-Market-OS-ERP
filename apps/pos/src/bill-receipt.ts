@@ -30,7 +30,7 @@ export type BillTaxInvoice =
 
 export function billTaxInvoice(
   bill: CommittedBill | undefined,
-  options: { readonly template?: BillTemplate | null; readonly language?: InvoiceLanguage; readonly duplicate?: boolean } = {},
+  options: { readonly template?: BillTemplate | null; readonly language?: InvoiceLanguage; readonly duplicate?: boolean; readonly fssaiLicenceNo?: string } = {},
 ): BillTaxInvoice {
   if (bill === undefined) return { ok: false, why: 'no sale has been committed on this till yet' };
   if (bill.taxInvoice === undefined) return { ok: false, why: 'this sale was not taken in real trading, so it has no tax invoice' };
@@ -43,6 +43,7 @@ export function billTaxInvoice(
     ...(options.language === undefined ? {} : { language: options.language }),
     ...(options.duplicate === true ? { duplicate: true } : {}),
     ...(options.template?.footer === undefined ? {} : { footer: options.template.footer }),
+    ...(options.fssaiLicenceNo === undefined ? {} : { fssaiLicenceNo: options.fssaiLicenceNo }),
   });
   const missing = invoiceRenderProblems(rows, bill.taxInvoice);
   if (missing.length > 0) return { ok: false, why: `the printed invoice would be missing: ${missing.join('; ')}` };
@@ -62,7 +63,7 @@ export type BillReceipt =
   | { readonly ok: false; readonly why: string };
 
 /** The printed lines of a committed sale's bill, or why there are none. Pure; never throws. */
-export function billReceipt(bill: CommittedBill | undefined, template: BillTemplate | null = null): BillReceipt {
+export function billReceipt(bill: CommittedBill | undefined, template: BillTemplate | null = null, extras: { readonly fssaiLicenceNo?: string } = {}): BillReceipt {
   if (bill === undefined) return { ok: false, why: 'no sale has been committed on this till yet' };
   let format: PaperFormat = DEFAULT_PAPER_FORMAT;
   if (template?.paperFormat !== undefined) {
@@ -76,6 +77,8 @@ export function billReceipt(bill: CommittedBill | undefined, template: BillTempl
       netMinor: bill.netMinor, taxMinor: bill.taxMinor, ...(bill.cessMinor === undefined ? {} : { cessMinor: bill.cessMinor }), totalMinor: bill.totalMinor,
       tenders: bill.tenders, pricesIncludeTax: true,
       header: template?.header ?? [], footer: template?.footer ?? [],
+      // B10: the store's current FSSAI licence number, printed on every bill.
+      ...(extras.fssaiLicenceNo === undefined ? {} : { fssaiLicenceNo: extras.fssaiLicenceNo }),
       ...(template === null ? {} : { templateVersion: template.version }),
     });
     return { ok: true, lines: renderReceipt(doc, format), paper: format.id };

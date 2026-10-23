@@ -248,3 +248,12 @@ export function renderText(doc: ReceiptDocument, width = 42): string[] {
 
   return out;
 }
+
+/** B10: the FSSAI licence number a bill prints on `day` (YYYY-MM-DD) — undefined when none is held or it has run out. */
+export function fssaiLicenceNumberOn(licence: unknown, day: string): string | undefined {
+  if (licence === null || typeof licence !== 'object') return undefined;
+  const l = licence as Record<string, unknown>;
+  if (typeof l['number'] !== 'string' || l['number'].trim() === '') return undefined;
+  if (typeof l['validUntil'] === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(l['validUntil']) && l['validUntil'] < day) return undefined;
+  return l['number'].trim();
+}

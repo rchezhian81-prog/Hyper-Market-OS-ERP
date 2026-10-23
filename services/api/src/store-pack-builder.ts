@@ -35,8 +35,9 @@ import {
   catalogueAdapter, productMasterAdapter, inventoryAdapter, effectiveGrants, peopleAdapter, warehouseAdapter, orgStructureAdapter, deviceRegistryAdapter,
   foldPurchaseOrders, purchaseAdapter, lpRulesAdapter, allCountReconciliations, adjustmentRequestAdapter, goodsReceiptAdapter,
   planogramStoreAdapter, shelfCountAdapter, assortmentAdapter, spacePerformanceAdapter, displayFundingAdapter, averageBuyingCosts,
-  issuedReceiptSeries, bankedReceiptCounts,
+  issuedReceiptSeries, bankedReceiptCounts, complianceAdapter,
 } from './adapters';
+import { currentFoodLicence } from '../../../packages/compliance/src/obligations';
 import { inForcePlanogram } from '../../inventory/src/planograms';
 import { ROLE_CATALOGUE } from './roles';
 import { DEFAULT_MATCH_POLICY } from '../../purchase/src/index';
@@ -111,8 +112,12 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
     const branch = (await org.nodes(tenantId)).find((n) => n.nodeId === storeId);
     const registration = branch?.gstin === undefined ? undefined : (await org.registrations(tenantId)).find((r) => r.gstin === branch.gstin);
     const taxInvoice = registration === undefined ? undefined : { legalName: registration.legalName, gstin: registration.gstin, placeOfBusiness: [...(branch?.placeOfBusiness ?? [])] };
+    // B10: the store's current FSSAI licence from the compliance register — printed on every bill. Absent when none is in
+    // force (the till prints no number rather than a wrong one).
+    const fssaiLicence = currentFoodLicence(await complianceAdapter({ store, now }).obligations(tenantId), { branchId: storeId, day: now().slice(0, 10) });
     sections['policies'] = {
       ...(taxInvoice === undefined ? {} : { taxInvoice }),
+      ...(fssaiLicence === undefined ? {} : { fssaiLicence: { number: fssaiLicence.number, ...(fssaiLicence.validUntil === undefined ? {} : { validUntil: fssaiLicence.validUntil }) } }),
       storeId, branchId: storeId, branchName: (await input.storeName(tenantId, storeId)) ?? storeId,
       tradingDayCutoff: settings.tradingDayCutoff, staleAfterSeconds: settings.staleAfterSeconds,
       countApprovalThresholdMinor: settings.countApprovalThresholdMinor, handoverToleranceMinor: settings.handoverToleranceMinor,

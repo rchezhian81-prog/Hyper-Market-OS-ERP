@@ -475,7 +475,7 @@ export type InvoiceField =
   | 'title' | 'duplicate' | 'supplier_legal_name' | 'supplier_address' | 'supplier_gstin' | 'invoice_number' | 'invoice_date'
   | 'place_of_supply' | 'reverse_charge' | 'line_description' | 'line_hsn' | 'line_rate' | 'line_quantity' | 'line_taxable_value'
   | 'line_amount' | 'band_taxable' | 'cgst' | 'sgst' | 'igst' | 'taxable_total' | 'untaxed_total' | 'cgst_total' | 'sgst_total' | 'igst_total'
-  | 'line_cess' | 'cess_total' | 'round_off'
+  | 'line_cess' | 'cess_total' | 'round_off' | 'fssai'
   | 'total' | 'tender' | 'change'
   | 'signatory' | 'till';
 
@@ -502,7 +502,7 @@ const LABELS: Readonly<Record<InvoiceLanguage, Readonly<Record<string, string>>>
     rounded: '(rounded to ₹)', roundOff: 'Round off',
     paid: 'Paid', change: 'Change', approval: 'approval', for: 'For', signatory: 'Authorised signatory', till: 'Till', cashier: 'Cashier',
     cash: 'Cash', card: 'Card', upi: 'UPI', loyalty_points: 'Points', store_credit: 'Store credit',
-    cess: 'Compensation cess', interState: 'inter-State supply',
+    cess: 'Compensation cess', interState: 'inter-State supply', fssai: 'FSSAI Lic. No.',
   },
   ta: {
     [TAX_INVOICE_TITLE]: `${TAX_INVOICE_TITLE} / வரி விலைப்பட்டியல்`,
@@ -514,7 +514,7 @@ const LABELS: Readonly<Record<InvoiceLanguage, Readonly<Record<string, string>>>
     rounded: '(₹ க்கு முழுமையாக்கப்பட்டது)', roundOff: 'முழுமையாக்கல் (Round off)',
     paid: 'செலுத்தியது', change: 'மீதி', approval: 'அனுமதி எண்', for: '', signatory: 'அங்கீகரிக்கப்பட்ட கையொப்பம்', till: 'டில்', cashier: 'காசாளர்',
     cash: 'பணம்', card: 'கார்டு', upi: 'UPI', loyalty_points: 'புள்ளிகள்', store_credit: 'கடை வரவு',
-    cess: 'இழப்பீட்டு செஸ் (Compensation cess)', interState: 'மாநிலங்களுக்கு இடையிலான வழங்கல்',
+    cess: 'இழப்பீட்டு செஸ் (Compensation cess)', interState: 'மாநிலங்களுக்கு இடையிலான வழங்கல்', fssai: 'FSSAI உரிம எண் (Lic. No.)',
   },
 };
 
@@ -550,7 +550,11 @@ function printedDate(doc: TaxInvoiceDocument): string {
  * DUPLICATE at the top (Rule 46 practice — a copy is never passed off as the original). `footer`: the shop's own
  * closing lines from its published receipt template, printed after the legal part.
  */
-export function taxInvoiceRows(doc: TaxInvoiceDocument, options: { readonly language?: InvoiceLanguage; readonly duplicate?: boolean; readonly footer?: readonly string[] } = {}): readonly InvoiceRow[] {
+export function taxInvoiceRows(doc: TaxInvoiceDocument, options: {
+  readonly language?: InvoiceLanguage; readonly duplicate?: boolean; readonly footer?: readonly string[];
+  /** B10: the store's current FSSAI licence number — printed under the supplier on every bill. */
+  readonly fssaiLicenceNo?: string;
+} = {}): readonly InvoiceRow[] {
   const w = LABELS[options.language ?? 'en'];
   const rows: InvoiceRow[] = [];
   const rule = (): void => { rows.push({ kind: 'rule', fields: [] }); };
@@ -559,6 +563,7 @@ export function taxInvoiceRows(doc: TaxInvoiceDocument, options: { readonly lang
   rows.push({ kind: 'centre', fields: ['supplier_legal_name'], text: doc.supplier.legalName });
   for (const line of doc.supplier.placeOfBusiness) rows.push({ kind: 'centre', fields: ['supplier_address'], text: line });
   rows.push({ kind: 'centre', fields: ['supplier_gstin'], text: `${w['gstin']}: ${doc.supplier.gstin}` });
+  if (options.fssaiLicenceNo !== undefined && options.fssaiLicenceNo.trim() !== '') rows.push({ kind: 'centre', fields: ['fssai'], text: `${w['fssai']} ${options.fssaiLicenceNo.trim()}` });
   rule();
   rows.push({ kind: 'pair', fields: ['invoice_number'], left: `${w['invoiceNo']}:`, right: doc.number });
   rows.push({ kind: 'pair', fields: ['invoice_date'], left: `${w['date']}:`, right: printedDate(doc) });

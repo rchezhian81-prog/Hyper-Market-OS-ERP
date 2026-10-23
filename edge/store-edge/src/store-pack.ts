@@ -1012,6 +1012,11 @@ export interface PackPolicies {
    * (the bill would not be a tax invoice), and the till says what is missing.
    */
   readonly taxInvoice?: { readonly legalName: string; readonly gstin: string; readonly placeOfBusiness: readonly string[] };
+  /**
+   * B10 (FSSAI): the store's current food licence from head office's compliance register — its number is printed on every
+   * bill, while `validUntil` (YYYY-MM-DD) has not passed by the till's own clock. Absent → no number is printed.
+   */
+  readonly fssaiLicence?: { readonly number: string; readonly validUntil?: string };
 }
 
 /** A storage bin the warehouse handheld can put stock into (M09 / OA-9). */

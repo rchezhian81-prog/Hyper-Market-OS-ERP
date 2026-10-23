@@ -38,6 +38,7 @@ import { refundRequiresApproval, type ExchangeSettlementInput } from '../../../p
 import { settle, type Tender } from '../../../packages/tender/src/tender';
 import { billReceipt, billTaxInvoice, type BillReceipt, type BillTaxInvoice } from './bill-receipt';
 import type { TaxInvoiceIdentity, InvoiceLanguage } from '../../../packages/receipt/src/tax-invoice';
+import { fssaiLicenceNumberOn } from '../../../packages/receipt/src/receipt';
 import { readMachineReference, type MachineRefReading } from '../../../packages/tender/src/machine-reference';
 
 import { mountDemoBanner, type BannerDocument } from '../../../packages/ui/src/demo-banner';
@@ -149,6 +150,11 @@ export interface PosLane {
   readonly taxInvoice?: TaxInvoiceIdentity | null;
   /** OB-271: the bill's paper when no published receipt template names one (`thermal-80` or `thermal-58`). */
   readonly billPaper?: string;
+  /**
+   * B10: the store's current FSSAI licence (number, last valid day) from the store pack — printed on every bill while it
+   * is in force by this till's clock. Absent / null → no number is printed (never a made-up or expired one).
+   */
+  readonly fssaiLicence?: { readonly number: string; readonly validUntil?: string } | null;
 }
 
 /** The browser global this bundle attaches to (typed without needing the DOM lib). */
@@ -896,6 +902,8 @@ export function bootPos(config?: {
   taxInvoice?: TaxInvoiceIdentity | null;
   /** OB-271: the bill's paper when no receipt template names one (`thermal-80` default, or `thermal-58`). */
   billPaper?: string;
+  /** B10: the store's current FSSAI licence from the store pack — its number printed on every bill while in force. */
+  fssaiLicence?: { readonly number: string; readonly validUntil?: string } | null;
 }): PosView & {
   /** OB-252: whether this till takes guest sales only — the screen shows it whenever it is on. */
   readonly guestSalesOnly: () => boolean;
@@ -1383,7 +1391,12 @@ export function bootPos(config?: {
   };
 
   const receiptTemplate = (): PosReceiptTemplate | null => config?.receiptTemplate ?? null;
-  const receiptLines = (): BillReceipt => billReceipt(session.lastBill(), receiptTemplate());
+  // B10: the store's FSSAI licence number on every bill — while it is in force by this till's own clock (offline).
+  const fssaiLicenceNo = (): string | undefined => {
+    const day = session.laneToday();
+    return day === undefined ? undefined : fssaiLicenceNumberOn(config?.fssaiLicence, day);
+  };
+  const receiptLines = (): BillReceipt => billReceipt(session.lastBill(), receiptTemplate(), ((n) => (n === undefined ? {} : { fssaiLicenceNo: n }))(fssaiLicenceNo()));
   // OB-271: the tax invoice of the last real-trading sale, on the template's paper, else the box's own paper, else 80 mm.
   const billPaperTemplate = (): { readonly version: number; readonly header: readonly string[]; readonly footer: readonly string[]; readonly paperFormat?: string } | null => {
     const t = receiptTemplate();
@@ -1391,7 +1404,7 @@ export function bootPos(config?: {
     return config?.billPaper === undefined ? null : { version: 0, header: [], footer: [], paperFormat: config.billPaper };
   };
   const taxInvoice = (options: { readonly language?: InvoiceLanguage; readonly duplicate?: boolean } = {}): BillTaxInvoice =>
-    billTaxInvoice(session.lastBill(), { template: billPaperTemplate(), ...options });
+    billTaxInvoice(session.lastBill(), { template: billPaperTemplate(), ...((n) => (n === undefined ? {} : { fssaiLicenceNo: n }))(fssaiLicenceNo()), ...options });
 
   // The cashier signs in ONCE for both surfaces — the sale and the till name the same person (SP-4b · F09).
   // D04-FR-05 · P-08: the device re-send runs only while somebody is signed in (it is defined further down).
@@ -1765,6 +1778,8 @@ if (browserWindow !== undefined) {
     // OB-271: real trading, when the box says so — each bill is the legal tax invoice, from the shop's setup in the pack.
     ...(lane?.realTrading?.on === true ? { realTrading: true, taxInvoice: lane.taxInvoice ?? null } : {}),
     ...(typeof lane?.billPaper === 'string' ? { billPaper: lane.billPaper } : {}),
+    // B10: the store's FSSAI licence, from the box's store pack.
+    ...(lane?.fssaiLicence === undefined || lane.fssaiLicence === null ? {} : { fssaiLicence: lane.fssaiLicence }),
     ...(browserWindow.posReceiptTemplate === undefined ? {} : { receiptTemplate: browserWindow.posReceiptTemplate }),
     // The refund policy the box was given (SP-9b-i): without it the till offers no return without a receipt.
     ...(browserWindow.posRefundPolicy === undefined ? {} : { refundPolicy: browserWindow.posRefundPolicy }),
