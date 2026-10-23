@@ -571,7 +571,7 @@ jobs:
             grep -E 'FAIL|Error|×|expected|took' /tmp/perf.log | grep -v '✓' | tail -40 | while IFS= read -r line; do echo "::error::${line:0:300}"; done
             exit 1
           }
-          node scripts/assert-suite-ran.mjs /tmp/perf.json --min-files 10 --min-tests 47
+          node scripts/assert-suite-ran.mjs /tmp/perf.json --min-files 12 --min-tests 56
 
   identity:
     name: Identity server suites (real Keycloak)
