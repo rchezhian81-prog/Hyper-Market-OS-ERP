@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1616,
+  "testFiles": 1624,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -22,7 +22,7 @@
     "integration": 102,
     "realDb": 100,
     "browser": 87,
-    "connected": 59,
+    "connected": 60,
     "device": 0,
     "uat": 0
   },
@@ -232,9 +232,9 @@
       "id": "M03",
       "label": "INTEGRATION_TESTED",
       "counts": {
-        "unit": 16,
-        "integration": 15,
-        "realDb": 1,
+        "unit": 17,
+        "integration": 16,
+        "realDb": 2,
         "browser": 3,
         "connected": 1,
         "device": 0,
@@ -251,6 +251,7 @@
           "tests/unit/erp-product-publish-review-session.test.ts",
           "tests/unit/erp-unsellable-session.test.ts",
           "tests/unit/import.test.ts",
+          "tests/unit/p2-product-master-rules.test.ts",
           "tests/unit/product-data-quality.test.ts",
           "tests/unit/product-duplicates.test.ts",
           "tests/unit/product-master.test.ts",
@@ -267,6 +268,7 @@
           "tests/integration/catalogue-pack-publish.test.ts",
           "tests/integration/catalogue-product-duplicates.test.ts",
           "tests/integration/categories-and-product-files-are-head-offices.test.ts",
+          "tests/integration/p2-the-product-master-keeps-variants-bundles-substitutes-and-nutrition.test.ts",
           "tests/integration/pack-chain-case-to-base.test.ts",
           "tests/integration/pack-hierarchy.test.ts",
           "tests/integration/product-master-durability.test.ts",
@@ -277,6 +279,7 @@
           "tests/integration/the-screens-are-fed.test.ts"
         ],
         "realDb": [
+          "tests/integration/p2-the-product-master-keeps-variants-bundles-substitutes-and-nutrition.test.ts",
           "tests/integration/pack-chain-case-to-base.test.ts"
         ],
         "browser": [
@@ -298,10 +301,10 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 7,
-        "integration": 8,
-        "realDb": 1,
-        "browser": 1,
-        "connected": 0,
+        "integration": 9,
+        "realDb": 2,
+        "browser": 2,
+        "connected": 1,
         "device": 0,
         "uat": 0
       },
@@ -319,6 +322,7 @@
           "tests/integration/assortment.test.ts",
           "tests/integration/floor-indents.test.ts",
           "tests/integration/merchandising-reads-head-office-facts.test.ts",
+          "tests/integration/p2-the-floor-heat-map-clusters-seasons-and-range-gaps-are-head-offices.test.ts",
           "tests/integration/planogram-compliance.test.ts",
           "tests/integration/planogram-store.test.ts",
           "tests/integration/shelf-count.test.ts",
@@ -326,25 +330,29 @@
           "tests/integration/the-screens-are-fed.test.ts"
         ],
         "realDb": [
-          "tests/integration/merchandising-reads-head-office-facts.test.ts"
+          "tests/integration/merchandising-reads-head-office-facts.test.ts",
+          "tests/integration/p2-the-floor-heat-map-clusters-seasons-and-range-gaps-are-head-offices.test.ts"
         ],
         "browser": [
-          "tests/e2e/merchandising-count-and-refill.e2e.ts"
+          "tests/e2e/merchandising-count-and-refill.e2e.ts",
+          "tests/e2e/the-floor-heat-map-colours-each-area-by-what-it-earns.e2e.ts"
         ],
-        "connected": [],
+        "connected": [
+          "tests/e2e/the-floor-heat-map-colours-each-area-by-what-it-earns.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },
       "holds": true,
-      "why": "browser boundary and cloud effect proven in separate runs (no connected browser test yet)"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "M05",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 13,
-        "integration": 20,
-        "realDb": 6,
+        "unit": 14,
+        "integration": 21,
+        "realDb": 7,
         "browser": 5,
         "connected": 1,
         "device": 0,
@@ -357,6 +365,7 @@
           "tests/unit/erp-catalogue-boot.test.ts",
           "tests/unit/erp-catalogue-session.test.ts",
           "tests/unit/migration-load-command.test.ts",
+          "tests/unit/p2-offers-are-deterministic-and-never-reach-tobacco.test.ts",
           "tests/unit/price-guard.test.ts",
           "tests/unit/price-list.test.ts",
           "tests/unit/promotion-simulation.test.ts",
@@ -376,6 +385,7 @@
           "tests/integration/one-customer.test.ts",
           "tests/integration/opening-state-loads.test.ts",
           "tests/integration/p1-money-limits-escalation-and-price-check.test.ts",
+          "tests/integration/p2-offers-funding-and-results-are-folded-from-the-bills.test.ts",
           "tests/integration/pack-chain-case-to-base.test.ts",
           "tests/integration/price-change.test.ts",
           "tests/integration/price-list-effective-dating.test.ts",
@@ -392,6 +402,7 @@
           "tests/integration/one-customer.test.ts",
           "tests/integration/opening-state-loads.test.ts",
           "tests/integration/p1-money-limits-escalation-and-price-check.test.ts",
+          "tests/integration/p2-offers-funding-and-results-are-folded-from-the-bills.test.ts",
           "tests/integration/pack-chain-case-to-base.test.ts",
           "tests/integration/the-load-command-runs.test.ts",
           "tests/integration/the-store-trades-a-day.test.ts"
@@ -2714,8 +2725,8 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 4,
-        "integration": 8,
-        "realDb": 2,
+        "integration": 9,
+        "realDb": 3,
         "browser": 2,
         "connected": 1,
         "device": 0,
@@ -2732,6 +2743,7 @@
           "tests/integration/a-purchase-order-is-checked-against-open-to-buy.test.ts",
           "tests/integration/assortment.test.ts",
           "tests/integration/merchandising-reads-head-office-facts.test.ts",
+          "tests/integration/p2-the-floor-heat-map-clusters-seasons-and-range-gaps-are-head-offices.test.ts",
           "tests/integration/planogram-compliance.test.ts",
           "tests/integration/planogram-store.test.ts",
           "tests/integration/promotion-effectiveness.test.ts",
@@ -2740,7 +2752,8 @@
         ],
         "realDb": [
           "tests/integration/a-purchase-order-is-checked-against-open-to-buy.test.ts",
-          "tests/integration/merchandising-reads-head-office-facts.test.ts"
+          "tests/integration/merchandising-reads-head-office-facts.test.ts",
+          "tests/integration/p2-the-floor-heat-map-clusters-seasons-and-range-gaps-are-head-offices.test.ts"
         ],
         "browser": [
           "tests/e2e/merchandising-count-and-refill.e2e.ts",
@@ -2940,7 +2953,7 @@
       "id": "D06",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 4,
+        "unit": 5,
         "integration": 8,
         "realDb": 1,
         "browser": 3,
@@ -2953,6 +2966,7 @@
           "tests/unit/customer-app.test.ts",
           "tests/unit/erp-catalogue-session.test.ts",
           "tests/unit/finance-close-session.test.ts",
+          "tests/unit/p2-offers-are-deterministic-and-never-reach-tobacco.test.ts",
           "tests/unit/self-checkout.test.ts"
         ],
         "integration": [
