@@ -354,10 +354,10 @@ function planStep(step: SetupStep, v: Readonly<Record<string, string | undefined
               key: `owner-setup-store-${store}-activation-ask`, ok: [200, 201], said: () => `${as} asked for the store to be made active; it waits for ${approver}`,
             },
             {
-              as: approver, method: 'POST', path: (a) => `/v1/approvals/requests/${encodeURIComponent(requestOf(a))}/decide`, body: { decision: 'approved', reason: 'owner setup on the store PC' },
+              as: approver, method: 'POST', path: (a: readonly unknown[]) => `/v1/approvals/requests/${encodeURIComponent(requestOf(a))}/decide`, body: { decision: 'approved', reason: 'owner setup on the store PC' },
               key: `owner-setup-store-${store}-activation-approve`, ok: [200, 201], said: () => `${approver} approved it`,
             },
-            { as, method: 'POST', path: `/v1/org/nodes/${encodeURIComponent(store)}/activation`, body: (a) => ({ approvalId: requestOf(a) }), key: `owner-setup-store-${store}-activation`, ok: [200, 201], said: () => `store ${store} is active` },
+            { as, method: 'POST', path: `/v1/org/nodes/${encodeURIComponent(store)}/activation`, body: (a: readonly unknown[]) => ({ approvalId: requestOf(a) }), key: `owner-setup-store-${store}-activation`, ok: [200, 201], said: () => `store ${store} is active` },
           ],
           done: `DONE — the shop is set up at head office on this computer: company ${company} ("${legalName}"), GSTIN ${gstin}, store ${store} active. Done as ${as}, approved by ${approver}.`,
         },
