@@ -9,6 +9,8 @@
 //     (`onlinePricingAdapter`, one deps line on the storefront routes in main.ts).
 //   • M17-FR-02 (OB-303) — repeat online orders: the customer's plan, each day's order placed through the storefront's
 //     OWN placement route (found on the surface, invoked as the customer), on the ops timer and on demand.
+//   • M20-FR-03 — order-status notices worked out from the orders' own facts and handed to the service-message queue
+//     (its own route, found on the surface), on the ops timer and on demand.
 //   • M17-FR-01 (OB-295) — the loyalty programme's tiers and points expiry: owner settings kept as facts, OFF and "not set"
 //     until entered; the tier multiplier applied when a bill earns (`withLoyaltyTiers`, one wrap in main.ts); the expiry
 //     run on the ops worker's timer (`customerCommerceSweep`) and on demand.
@@ -23,12 +25,16 @@ import type { MemberRecord } from '../../customer/src/loyalty-members';
 import type { RecordedPointsMovement } from '../../customer/src/index';
 import type { Route, RequestContext } from '../../kernel/src/index';
 import { ApiError } from '../../kernel/src/index';
+import { orderNoticeRoutes, runOrderNotices, type OrderNoticeDeps, type OrderNoticeFact } from '../../orders/src/order-notices';
+import { paymentPosition, foldRefunds } from '../../../packages/orders/src/payment-refunds';
+import type { PlacedOrder } from '../../orders/src/index';
+import { approvedTemplate } from '../../customer/src/notification-queue';
 import { subscriptionRoutes, runSubscriptions, type SubscriptionDeps, type SubscriptionOccurrence, type PlaceAttempt } from '../../orders/src/storefront-subscriptions';
 import type { SubscriptionPlan, SubscriptionChange } from '../../../packages/storefront/src/subscriptions';
 import { customer360Routes, complaintFactsOf, type ServiceCaseFact } from '../../customer/src/customer-360';
 import { segmentRoutes } from '../../customer/src/segments';
 import type { ComplaintFact } from '../../../packages/customer/src/index';
-import { customer360Adapter, segmentDataAdapter, serviceCaseAdapter, customerAdapter, couponAdapter, promotionCatalogueAdapter, productMasterAdapter, STREAM, streamName } from './adapters';
+import { customer360Adapter, segmentDataAdapter, serviceCaseAdapter, customerAdapter, couponAdapter, promotionCatalogueAdapter, productMasterAdapter, ordersAdapter, fulfilmentAdapter, notificationQueueAdapter, STREAM, streamName } from './adapters';
 import type { OnlinePricingDeps, OrderPricingFact } from '../../orders/src/storefront';
 import { currentMemberLink, type MemberAppLink } from '../../customer/src/digital-receipts';
 import { customerOverviewRoutes } from '../../customer/src/customer-overview';
@@ -62,7 +68,7 @@ async function invoke(route: Route, ctx: Omit<RequestContext, 'branchId' | 'trac
  * What the timed sweep needs from the surface it cannot see from `startApi` — the storefront's own placement route —
  * registered here by `customerCommerceSurface` for the store it was built over.
  */
-const RUNNERS = new WeakMap<EventStore, { readonly subscriptions: SubscriptionDeps }>();
+const RUNNERS = new WeakMap<EventStore, { readonly subscriptions: SubscriptionDeps; readonly notices: OrderNoticeDeps }>();
 
 const unwiredProgramme = (now: () => string): LoyaltyProgrammeDeps => ({
   now, tiers: async () => undefined, recordTiers: async () => {}, expiry: async () => undefined, recordExpiry: async () => {},
@@ -177,6 +183,45 @@ export function subscriptionAdapter(input: Base & { readonly placement: Route | 
   };
 }
 
+// ── M20-FR-03 · order-status notices ────────────────────────────────────────────────────────────────────────────────
+
+const ORDER_INDEX = streamName(STREAM.orders, 'index');
+const ORDER_NOTICES = streamName(STREAM.orders, 'customer-notices');
+
+export function orderNoticeAdapter(input: Base & { readonly queue: Route | undefined }): OrderNoticeDeps {
+  const { store, now } = input;
+  const orders = ordersAdapter({ store, now, holdMinutes: 60 });
+  const notices = factList<OrderNoticeFact>(store, ORDER_NOTICES, 'OrderNoticeRecorded');
+  return {
+    now,
+    onlineOrders: async (t) => (await store.readStream(t, ORDER_INDEX, { type: 'OrderPlaced' }))
+      .map((e) => e.event.payload as PlacedOrder)
+      .filter((o): o is PlacedOrder & { customerRef: string } => typeof o.customerRef === 'string' && o.customerRef !== '')
+      .map((o) => ({ orderId: o.orderId, customerRef: o.customerRef })),
+    facts: async (t, o) => {
+      const state = await orders.orderState(t, o.orderId);
+      if (state === undefined) return undefined;
+      const payment = paymentPosition(await orders.orderPayment(t, o.orderId), await orders.paymentResolution(t, o.orderId));
+      const refunds = foldRefunds(await orders.orderRefunds(t, o.orderId), await orders.refundOutcomes(t, o.orderId));
+      const delivery = await fulfilmentAdapter({ store, now }).deliveryState(t, o.orderId);
+      return { orderId: o.orderId, customerRef: o.customerRef, state: state.state, paymentState: payment.state, delivery: delivery.map((d) => ({ to: d.to, at: d.at })), refunds: refunds.map((r) => ({ refundId: r.refundId, amountMinor: r.amountMinor, effectiveState: r.effectiveState })) };
+    },
+    enqueue: async (t, notice) => {
+      if (input.queue === undefined) return { queued: false, code: 'no_message_queue', detail: 'This head office has no message queue, so nothing can be sent.' };
+      const template = approvedTemplate(await notificationQueueAdapter({ store, now }).templates!(t), notice.templateId);
+      if (template === undefined) return { queued: false, code: 'template_not_approved', detail: `No approved template "${notice.templateId}" — the words are drafted by one person and approved by another before anything is sent.` };
+      const r = await invoke(input.queue, {
+        tenantId: t, userId: 'system:order-notices', params: { id: notice.noticeId }, query: {}, idempotencyKey: notice.noticeId,
+        body: { customerId: notice.customerRef, purpose: 'transactional', channel: template.channel, templateId: notice.templateId, values: notice.values },
+      });
+      if ('refused' in r) return { queued: false, code: r.refused.body.code, detail: r.refused.body.whatHappened };
+      return { queued: true, channel: template.channel };
+    },
+    notices: (t) => notices.all(t),
+    recordNotice: (t, f) => notices.append(t, `${f.noticeId}|${f.outcome}|${f.code ?? ''}|${f.at}`, f, f.at),
+  };
+}
+
 // ── M17-FR-01 · OB-295 · tiers and points expiry ─────────────────────────────────────────────────────────────────────
 
 const PROGRAMME = streamName(STREAM.loyalty, 'programme');
@@ -266,7 +311,8 @@ export function customerCommerceSweep(input: Base): (tenantId: string, at: strin
     const expired = await runPointsExpiry(loyaltyProgrammeAdapter(input), tenantId);
     const runner = RUNNERS.get(input.store);
     const repeat = runner === undefined ? { placed: 0, notPlaced: 0, missed: 0 } : await runSubscriptions(runner.subscriptions, tenantId);
-    return expired.expired.length + repeat.placed + repeat.notPlaced + repeat.missed;
+    const told = runner === undefined ? { queued: 0, notQueued: 0 } : await runOrderNotices(runner.notices, tenantId);
+    return expired.expired.length + repeat.placed + repeat.notPlaced + repeat.missed + told.queued + told.notQueued;
   };
 }
 
@@ -291,7 +337,10 @@ export function customerCommerceSurface(surface: Route[], input: CustomerCommerc
     placement: surface.find((r) => r.method === 'POST' && r.path === '/v1/storefront/orders/:orderId'),
     slots: surface.find((r) => r.method === 'GET' && r.path === '/v1/serviceability/delivery-service'),
   });
-  if (store !== undefined && subs !== undefined) RUNNERS.set(store, { subscriptions: subs });
+  // M20-FR-03: order notices through the service-message queue's own enqueue route.
+  const notices = store === undefined ? undefined : orderNoticeAdapter({ store, now, queue: surface.find((r) => r.method === 'POST' && r.path === '/v1/notifications/queue/:id') });
+  if (store !== undefined && subs !== undefined && notices !== undefined) RUNNERS.set(store, { subscriptions: subs, notices });
+  surface.push(...orderNoticeRoutes(notices ?? { now, onlineOrders: async () => [], facts: async () => undefined, enqueue: async () => ({ queued: false, code: 'no_store', detail: 'no store' }), notices: async () => [], recordNotice: async () => {} }));
   surface.push(...subscriptionRoutes(subs ?? {
     plans: async () => [], recordPlan: async () => {}, changes: async () => [], recordChange: async () => {}, occurrences: async () => [], recordOccurrence: async () => {},
     placeOrder: async () => ({ placed: false, why: 'no store' }), today: async () => dayIn(now(), 'Asia/Kolkata'), now,
