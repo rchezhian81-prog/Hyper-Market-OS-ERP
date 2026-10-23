@@ -1592,6 +1592,16 @@ function printRow(row) {
   const node = document.createElement('div');
   node.className = `pr-${row.kind}`;
   if (row.fields.length > 0) node.dataset.field = row.fields.join(' ');
+  if (row.kind === 'qr' && row.qr && typeof row.qr.svg === 'string') {
+    // A22: the B2C dynamic QR, drawn from the SVG the invoice carries (no network, no library), with its caption under it.
+    const img = document.createElement('img');
+    img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(row.qr.svg)}`;
+    img.alt = row.text ?? '';
+    const caption = document.createElement('span');
+    caption.textContent = row.text ?? '';
+    node.append(img, caption);
+    return node;
+  }
   if (row.kind === 'pair' || (row.kind === 'title' && row.left !== undefined)) {
     node.classList.add('pr-split');
     const left = document.createElement('span');

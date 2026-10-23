@@ -60,6 +60,8 @@ export interface StorePackBuildInput {
   readonly rules?: (tenantId: string, storeId: string) => Promise<StoreRules | undefined>;
   /** Verifier r18 OB85-2: where the bill-number high-water snapshot lives (production: `projection_snapshot`). Absent → per process. */
   readonly snapshots?: SnapshotStore;
+  /** A22 (OB-326, switched off): the shop's B2C dynamic QR switch and details from store setup. Absent → never sent. */
+  readonly b2cDynamicQr?: (tenantId: string) => Promise<{ readonly on: boolean; readonly upiId?: string; readonly bankAccountNo?: string; readonly ifsc?: string }>;
 }
 
 /**
@@ -116,7 +118,10 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
     // B10: the store's current FSSAI licence from the compliance register — printed on every bill. Absent when none is in
     // force (the till prints no number rather than a wrong one).
     const fssaiLicence = currentFoodLicence(await complianceAdapter({ store, now }).obligations(tenantId), { branchId: storeId, day: now().slice(0, 10) });
+    // A22 (OB-326): the B2C dynamic QR rides only when the shop switched it on — with the details it has given.
+    const b2cQr = input.b2cDynamicQr === undefined ? undefined : await input.b2cDynamicQr(tenantId);
     sections['policies'] = {
+      ...(b2cQr === undefined || !b2cQr.on ? {} : { b2cDynamicQr: b2cQr }),
       ...(taxInvoice === undefined ? {} : { taxInvoice }),
       ...(fssaiLicence === undefined ? {} : { fssaiLicence: { number: fssaiLicence.number, ...(fssaiLicence.validUntil === undefined ? {} : { validUntil: fssaiLicence.validUntil }) } }),
       storeId, branchId: storeId, branchName: (await input.storeName(tenantId, storeId)) ?? storeId,

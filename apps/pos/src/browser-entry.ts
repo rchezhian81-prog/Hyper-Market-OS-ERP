@@ -39,6 +39,7 @@ import { settle, type Tender } from '../../../packages/tender/src/tender';
 import { billReceipt, billTaxInvoice, type BillReceipt, type BillTaxInvoice } from './bill-receipt';
 import type { TaxInvoiceIdentity, InvoiceLanguage } from '../../../packages/receipt/src/tax-invoice';
 import { fssaiLicenceNumberOn } from '../../../packages/receipt/src/receipt';
+import type { B2cDynamicQrSetting } from '../../../packages/receipt/src/b2c-dynamic-qr';
 import { readMachineReference, type MachineRefReading } from '../../../packages/tender/src/machine-reference';
 
 import { mountDemoBanner, type BannerDocument } from '../../../packages/ui/src/demo-banner';
@@ -155,6 +156,8 @@ export interface PosLane {
    * is in force by this till's clock. Absent / null → no number is printed (never a made-up or expired one).
    */
   readonly fssaiLicence?: { readonly number: string; readonly validUntil?: string } | null;
+  /** A22 (OB-326, switched off): the B2C dynamic QR switch and the shop's UPI ID, bank account and IFSC, from the store pack. */
+  readonly b2cDynamicQr?: B2cDynamicQrSetting | null;
 }
 
 /** The browser global this bundle attaches to (typed without needing the DOM lib). */
@@ -913,6 +916,8 @@ export function bootPos(config?: {
   billPaper?: string;
   /** B10: the store's current FSSAI licence from the store pack — its number printed on every bill while in force. */
   fssaiLicence?: { readonly number: string; readonly validUntil?: string } | null;
+  /** A22 (OB-326): the B2C dynamic QR — printed on the tax invoice only when switched on and every detail is set. */
+  b2cDynamicQr?: B2cDynamicQrSetting | null;
 }): PosView & {
   /** OB-252: whether this till takes guest sales only — the screen shows it whenever it is on. */
   readonly guestSalesOnly: () => boolean;
@@ -1425,7 +1430,10 @@ export function bootPos(config?: {
     return config?.billPaper === undefined ? null : { version: 0, header: [], footer: [], paperFormat: config.billPaper };
   };
   const taxInvoice = (options: { readonly language?: InvoiceLanguage; readonly duplicate?: boolean } = {}): BillTaxInvoice =>
-    billTaxInvoice(session.lastBill(), { template: billPaperTemplate(), ...((n) => (n === undefined ? {} : { fssaiLicenceNo: n }))(fssaiLicenceNo()), ...options });
+    billTaxInvoice(session.lastBill(), {
+      template: billPaperTemplate(), ...((n) => (n === undefined ? {} : { fssaiLicenceNo: n }))(fssaiLicenceNo()),
+      ...(config?.b2cDynamicQr === undefined || config.b2cDynamicQr === null ? {} : { b2cDynamicQr: config.b2cDynamicQr }), ...options,
+    });
 
   // The cashier signs in ONCE for both surfaces — the sale and the till name the same person (SP-4b · F09).
   // D04-FR-05 · P-08: the device re-send runs only while somebody is signed in (it is defined further down).
@@ -1848,6 +1856,8 @@ if (browserWindow !== undefined) {
     ...(typeof lane?.billPaper === 'string' ? { billPaper: lane.billPaper } : {}),
     // B10: the store's FSSAI licence, from the box's store pack.
     ...(lane?.fssaiLicence === undefined || lane.fssaiLicence === null ? {} : { fssaiLicence: lane.fssaiLicence }),
+    // A22: the B2C dynamic QR switch and details, from the box's store pack (absent → off).
+    ...(lane?.b2cDynamicQr === undefined || lane.b2cDynamicQr === null ? {} : { b2cDynamicQr: lane.b2cDynamicQr }),
     ...(browserWindow.posReceiptTemplate === undefined ? {} : { receiptTemplate: browserWindow.posReceiptTemplate }),
     // The refund policy the box was given (SP-9b-i): without it the till offers no return without a receipt.
     ...(browserWindow.posRefundPolicy === undefined ? {} : { refundPolicy: browserWindow.posRefundPolicy }),

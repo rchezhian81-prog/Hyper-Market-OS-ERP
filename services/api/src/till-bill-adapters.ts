@@ -18,6 +18,7 @@ import type { IncomingSale, SaleException } from '../../pos/src/sale-intake';
 import type { ReturnRecord } from '../../pos/src/returns';
 import type { ClosedShiftRecord, OverShortReview } from '../../pos/src/shift';
 import { makeTradingDayRule, tradingDateOf } from '../../../packages/calendar/src/index';
+import { SETTINGS, type TenantSetting } from '../../../packages/tenant/src/settings';
 
 /**
  * A8: the supplier's own GST State for a B2B order — the State of the GSTIN of the store the order is dispatched from (its
@@ -143,4 +144,23 @@ export function tillBillSurface(surface: Route[], input: { readonly store: Event
       },
     }));
   }
+}
+
+/**
+ * A22 (OB-326, switched off): the shop's B2C dynamic QR from store setup, for the store pack — on only when the owner
+ * switched it on; each detail only when given (an empty answer is "not set", and the till then prints no QR and says so).
+ */
+export function b2cDynamicQrSettingOf(settings: { value<T>(tenantId: string, setting: TenantSetting<T>): Promise<T> }) {
+  return async (tenantId: string): Promise<{ readonly on: boolean; readonly upiId?: string; readonly bankAccountNo?: string; readonly ifsc?: string }> => {
+    const on = (await settings.value(tenantId, SETTINGS.INVOICE_B2C_DYNAMIC_QR_ON)) === true;
+    if (!on) return { on: false };
+    const given = async (s: TenantSetting<string>): Promise<string | undefined> => {
+      const v = await settings.value(tenantId, s);
+      return typeof v === 'string' && v.trim() !== '' ? v.trim() : undefined;
+    };
+    const upiId = await given(SETTINGS.INVOICE_B2C_DYNAMIC_QR_UPI_ID);
+    const bankAccountNo = await given(SETTINGS.INVOICE_B2C_DYNAMIC_QR_BANK_ACCOUNT);
+    const ifsc = await given(SETTINGS.INVOICE_B2C_DYNAMIC_QR_IFSC);
+    return { on: true, ...(upiId === undefined ? {} : { upiId }), ...(bankAccountNo === undefined ? {} : { bankAccountNo }), ...(ifsc === undefined ? {} : { ifsc: ifsc.toUpperCase() }) };
+  };
 }

@@ -16,6 +16,8 @@ import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { runMigrations } from '../../packages/persistence/src/migrations';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
 import { prepareTillBox, type TillPerson } from './till-operator';
+import { InMemoryConfigVersionStore, SqlConfigVersionStore } from '../../packages/persistence/src/config-store';
+import { DurableTenantSettings } from '../../packages/tenant/src/durable-settings';
 
 export { TEST_PACK_KEY };
 
@@ -32,9 +34,19 @@ export interface Backing {
  */
 export function backingsFor(databaseUrl: string | undefined): { readonly backings: Backing[]; readonly open: () => Promise<void>; readonly close: () => Promise<void> } {
   let pool: Pool | undefined;
-  const backings: Backing[] = [{ name: 'the in-memory event store', harness: () => apiHarness(), restart: (h) => apiHarness({ store: h.store }) }];
+  // The owner's store-setup answers survive a cold restart too (A22): one settings store per head office, kept across it.
+  const settingsOf = new WeakMap<ApiHarness, DurableTenantSettings>();
+  const inMemory = (store?: ApiHarness['store'], settings = new DurableTenantSettings(new InMemoryConfigVersionStore())): ApiHarness => {
+    const h = apiHarness({ ...(store === undefined ? {} : { store }), settings });
+    settingsOf.set(h, settings);
+    return h;
+  };
+  const backings: Backing[] = [{ name: 'the in-memory event store', harness: () => inMemory(), restart: (h) => inMemory(h.store, settingsOf.get(h)) }];
   if (databaseUrl !== undefined) {
-    const onPg = (): ApiHarness => { const sql = pgPoolClient(pool!); return apiHarness({ store: new SqlEventStore(sql), idempotency: new SqlIdempotencyStore(sql) }); };
+    const onPg = (): ApiHarness => {
+      const sql = pgPoolClient(pool!);
+      return apiHarness({ store: new SqlEventStore(sql), idempotency: new SqlIdempotencyStore(sql), settings: new DurableTenantSettings(new SqlConfigVersionStore(sql)) });
+    };
     backings.push({ name: 'real PostgreSQL, head office restarted cold', harness: onPg, restart: () => onPg() });
   }
   return {

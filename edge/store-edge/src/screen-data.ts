@@ -2117,7 +2117,33 @@ export function posLanePayload(input: ScreenInput, laneId: string | undefined): 
     scales: laneScalesFor(input.pack, laneId),
     // OB-256: the mirror pilot — "Paid on old system" is then the till's only tender, for sales and refunds.
     mirrorPilot: input.mirrorPilot ?? { on: false, by: null },
+    // B10: the store's FSSAI licence for the bill (the till prints its number while in force by its own clock). Before this
+    // the served till was never told it, so only a till booted with it by hand printed the number.
+    ...((l) => (l === undefined ? {} : { fssaiLicence: l }))(fssaiLicenceOf(policies?.fssaiLicence)),
+    // A22 (OB-326): the B2C dynamic QR — only when switched on; each detail only when it is text.
+    ...((q) => (q === undefined ? {} : { b2cDynamicQr: q }))(b2cDynamicQrOf(policies?.b2cDynamicQr)),
   };
+}
+
+const textOf = (v: unknown): string | undefined => (typeof v === 'string' && v.trim() !== '' ? v.trim() : undefined);
+
+/** The pack's FSSAI licence as the till reads it — a number that is text, and its last day when given. */
+function fssaiLicenceOf(v: unknown): { readonly number: string; readonly validUntil?: string } | undefined {
+  if (v === null || typeof v !== 'object') return undefined;
+  const r = v as Record<string, unknown>;
+  const number = textOf(r['number']);
+  const validUntil = textOf(r['validUntil']);
+  return number === undefined ? undefined : { number, ...(validUntil === undefined ? {} : { validUntil }) };
+}
+
+/** The pack's B2C dynamic QR switch as the till reads it: on only when it says `on: true`. Off → not sent at all. */
+function b2cDynamicQrOf(v: unknown): { readonly on: true; readonly upiId?: string; readonly bankAccountNo?: string; readonly ifsc?: string } | undefined {
+  if (v === null || typeof v !== 'object' || (v as Record<string, unknown>)['on'] !== true) return undefined;
+  const r = v as Record<string, unknown>;
+  const upiId = textOf(r['upiId']);
+  const bankAccountNo = textOf(r['bankAccountNo']);
+  const ifsc = textOf(r['ifsc']);
+  return { on: true, ...(upiId === undefined ? {} : { upiId }), ...(bankAccountNo === undefined ? {} : { bankAccountNo }), ...(ifsc === undefined ? {} : { ifsc }) };
 }
 
 /**

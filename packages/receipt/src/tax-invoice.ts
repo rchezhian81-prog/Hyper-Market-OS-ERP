@@ -41,6 +41,7 @@ import { InvalidInclusiveTaxInput, roundToNearestRupeeMinor, type PlaceOfSupply 
 import { splitInclusiveWithCess, InvalidCessInput, type CessRate } from '../../finance/src/cess';
 import { gstStateOf, GST_STATE_NAMES } from '../../finance/src/gst-states';
 import { quantityLabel, normaliseUom } from '../../contracts/src/quantity';
+import type { B2cQrPlan } from './b2c-dynamic-qr';
 
 /** The shop's legal identity as a tax invoice prints it — from the store's setup (OB-257 `shop`), never typed at a till. */
 export interface TaxInvoiceIdentity {
@@ -475,12 +476,12 @@ export type InvoiceField =
   | 'title' | 'duplicate' | 'supplier_legal_name' | 'supplier_address' | 'supplier_gstin' | 'invoice_number' | 'invoice_date'
   | 'place_of_supply' | 'reverse_charge' | 'line_description' | 'line_hsn' | 'line_rate' | 'line_quantity' | 'line_taxable_value'
   | 'line_amount' | 'band_taxable' | 'cgst' | 'sgst' | 'igst' | 'taxable_total' | 'untaxed_total' | 'cgst_total' | 'sgst_total' | 'igst_total'
-  | 'line_cess' | 'cess_total' | 'round_off' | 'fssai'
+  | 'line_cess' | 'cess_total' | 'round_off' | 'fssai' | 'b2c_qr'
   | 'total' | 'tender' | 'change'
   | 'signatory' | 'till';
 
 export interface InvoiceRow {
-  readonly kind: 'title' | 'centre' | 'pair' | 'text' | 'rule';
+  readonly kind: 'title' | 'centre' | 'pair' | 'text' | 'rule' | 'qr';
   readonly fields: readonly InvoiceField[];
   /** The line (0-based) a line row belongs to; the band (0-based) a band row belongs to. */
   readonly line?: number;
@@ -488,6 +489,8 @@ export interface InvoiceRow {
   readonly text?: string;
   readonly left?: string;
   readonly right?: string;
+  /** A22: on a `qr` row, the symbol to print (SVG, black on white) and the text it encodes. `text` is its caption. */
+  readonly qr?: { readonly svg: string; readonly payload: string };
 }
 
 export type InvoiceLanguage = 'en' | 'ta';
@@ -502,7 +505,7 @@ const LABELS: Readonly<Record<InvoiceLanguage, Readonly<Record<string, string>>>
     rounded: '(rounded to ₹)', roundOff: 'Round off',
     paid: 'Paid', change: 'Change', approval: 'approval', for: 'For', signatory: 'Authorised signatory', till: 'Till', cashier: 'Cashier',
     cash: 'Cash', card: 'Card', upi: 'UPI', loyalty_points: 'Points', store_credit: 'Store credit',
-    cess: 'Compensation cess', interState: 'inter-State supply', fssai: 'FSSAI Lic. No.',
+    cess: 'Compensation cess', interState: 'inter-State supply', fssai: 'FSSAI Lic. No.', b2cQr: 'Scan to pay this bill by UPI',
   },
   ta: {
     [TAX_INVOICE_TITLE]: `${TAX_INVOICE_TITLE} / வரி விலைப்பட்டியல்`,
@@ -514,7 +517,7 @@ const LABELS: Readonly<Record<InvoiceLanguage, Readonly<Record<string, string>>>
     rounded: '(₹ க்கு முழுமையாக்கப்பட்டது)', roundOff: 'முழுமையாக்கல் (Round off)',
     paid: 'செலுத்தியது', change: 'மீதி', approval: 'அனுமதி எண்', for: '', signatory: 'அங்கீகரிக்கப்பட்ட கையொப்பம்', till: 'டில்', cashier: 'காசாளர்',
     cash: 'பணம்', card: 'கார்டு', upi: 'UPI', loyalty_points: 'புள்ளிகள்', store_credit: 'கடை வரவு',
-    cess: 'இழப்பீட்டு செஸ் (Compensation cess)', interState: 'மாநிலங்களுக்கு இடையிலான வழங்கல்', fssai: 'FSSAI உரிம எண் (Lic. No.)',
+    cess: 'இழப்பீட்டு செஸ் (Compensation cess)', interState: 'மாநிலங்களுக்கு இடையிலான வழங்கல்', fssai: 'FSSAI உரிம எண் (Lic. No.)', b2cQr: 'இந்த பில்லை UPI மூலம் செலுத்த ஸ்கேன் செய்யவும்',
   },
 };
 
@@ -554,6 +557,8 @@ export function taxInvoiceRows(doc: TaxInvoiceDocument, options: {
   readonly language?: InvoiceLanguage; readonly duplicate?: boolean; readonly footer?: readonly string[];
   /** B10: the store's current FSSAI licence number — printed under the supplier on every bill. */
   readonly fssaiLicenceNo?: string;
+  /** A22 (OB-326, switched off): the B2C dynamic QR for this bill — printed after the payments only when it is ready. */
+  readonly b2cQr?: B2cQrPlan;
 } = {}): readonly InvoiceRow[] {
   const w = LABELS[options.language ?? 'en'];
   const rows: InvoiceRow[] = [];
@@ -614,6 +619,8 @@ export function taxInvoiceRows(doc: TaxInvoiceDocument, options: {
   }
   if (doc.changeMinor !== undefined) rows.push({ kind: 'pair', fields: ['change'], left: w['change']!, right: invoiceAmount(doc.changeMinor) });
   rows.push({ kind: 'text', fields: ['till'], text: `${w['till']} ${doc.laneId} · ${w['cashier']} ${doc.cashierId}` });
+  // A22: the B2C dynamic QR — only when switched on AND every detail is set; never a QR with a guessed part.
+  if (options.b2cQr?.state === 'ready') rows.push({ kind: 'qr', fields: ['b2c_qr'], text: w['b2cQr']!, qr: { svg: options.b2cQr.svg, payload: options.b2cQr.payload } });
   rule();
   rows.push({ kind: 'centre', fields: ['signatory'], text: `${w['for'] === '' ? '' : `${w['for']} `}${doc.supplier.legalName}` });
   rows.push({ kind: 'centre', fields: ['signatory'], text: w['signatory'] });
@@ -707,7 +714,7 @@ export function taxInvoiceText(rows: readonly InvoiceRow[], width = 48): readonl
       continue;
     }
     const text = r.text ?? '';
-    if (r.kind === 'title' || r.kind === 'centre') for (const p of wrap(text)) out.push(centre(p));
+    if (r.kind === 'title' || r.kind === 'centre' || r.kind === 'qr') for (const p of wrap(r.kind === 'qr' ? `[QR] ${text}` : text)) out.push(centre(p));
     else out.push(...wrap(text));
   }
   return out;
