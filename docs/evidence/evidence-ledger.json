@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1507,
+  "testFiles": 1521,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -395,11 +395,11 @@
       "id": "M06",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 11,
-        "integration": 18,
-        "realDb": 8,
-        "browser": 4,
-        "connected": 2,
+        "unit": 14,
+        "integration": 22,
+        "realDb": 13,
+        "browser": 5,
+        "connected": 3,
         "device": 0,
         "uat": 0
       },
@@ -407,6 +407,8 @@
         "unit": [
           "tests/unit/approval-requests.test.ts",
           "tests/unit/bank-controls.test.ts",
+          "tests/unit/blanket-po-and-segregation.test.ts",
+          "tests/unit/buying-scope.test.ts",
           "tests/unit/edge-feeds-the-screens.test.ts",
           "tests/unit/erp-buying-boot.test.ts",
           "tests/unit/erp-buying-session.test.ts",
@@ -414,16 +416,20 @@
           "tests/unit/erp-suppliers-session.test.ts",
           "tests/unit/goods-receipt-order-fold.test.ts",
           "tests/unit/purchasing.test.ts",
+          "tests/unit/requisitions-session.test.ts",
           "tests/unit/rfq.test.ts",
           "tests/unit/supplier-performance.test.ts"
         ],
         "integration": [
+          "tests/integration/a-blanket-po-releases-only-what-its-agreement-allows.test.ts",
           "tests/integration/a-purchase-order-is-checked-against-open-to-buy.test.ts",
           "tests/integration/a-receipt-is-judged-against-what-is-left-on-the-order.test.ts",
           "tests/integration/an-order-names-its-store.test.ts",
           "tests/integration/duplicate-bank.test.ts",
+          "tests/integration/every-order-carries-its-buying-scope-and-the-open-commitment-reports-by-it.test.ts",
           "tests/integration/goods-receipt-assembled.test.ts",
           "tests/integration/maker-checker-is-two-people.test.ts",
+          "tests/integration/one-person-never-completes-two-steps-of-one-purchase.test.ts",
           "tests/integration/pack-chain-case-to-base.test.ts",
           "tests/integration/purchase-capture-match.test.ts",
           "tests/integration/purchase-orders.test.ts",
@@ -435,27 +441,35 @@
           "tests/integration/supplier-scorecard.test.ts",
           "tests/integration/supplier-to-shelf-journey.test.ts",
           "tests/integration/the-screens-are-fed.test.ts",
-          "tests/integration/the-store-buys-what-it-sells.test.ts"
+          "tests/integration/the-store-buys-what-it-sells.test.ts",
+          "tests/integration/wf03-from-below-reorder-to-an-issued-order.test.ts"
         ],
         "realDb": [
+          "tests/integration/a-blanket-po-releases-only-what-its-agreement-allows.test.ts",
           "tests/integration/a-purchase-order-is-checked-against-open-to-buy.test.ts",
           "tests/integration/a-receipt-is-judged-against-what-is-left-on-the-order.test.ts",
           "tests/integration/an-order-names-its-store.test.ts",
+          "tests/integration/every-order-carries-its-buying-scope-and-the-open-commitment-reports-by-it.test.ts",
           "tests/integration/maker-checker-is-two-people.test.ts",
+          "tests/integration/one-person-never-completes-two-steps-of-one-purchase.test.ts",
           "tests/integration/pack-chain-case-to-base.test.ts",
+          "tests/integration/rebates.test.ts",
           "tests/integration/supplier-onboarding-on-postgresql.test.ts",
           "tests/integration/supplier-to-shelf-journey.test.ts",
-          "tests/integration/the-store-buys-what-it-sells.test.ts"
+          "tests/integration/the-store-buys-what-it-sells.test.ts",
+          "tests/integration/wf03-from-below-reorder-to-an-issued-order.test.ts"
         ],
         "browser": [
           "tests/e2e/buying-po-delivery.e2e.ts",
           "tests/e2e/open-to-buy-on-the-production-api.e2e.ts",
           "tests/e2e/suppliers-delivery.e2e.ts",
-          "tests/e2e/suppliers-on-the-production-api.e2e.ts"
+          "tests/e2e/suppliers-on-the-production-api.e2e.ts",
+          "tests/e2e/the-requisitions-page-raises-quotes-compares-and-proposes.e2e.ts"
         ],
         "connected": [
           "tests/e2e/open-to-buy-on-the-production-api.e2e.ts",
-          "tests/e2e/suppliers-on-the-production-api.e2e.ts"
+          "tests/e2e/suppliers-on-the-production-api.e2e.ts",
+          "tests/e2e/the-requisitions-page-raises-quotes-compares-and-proposes.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -467,9 +481,9 @@
       "id": "M07",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 9,
-        "integration": 25,
-        "realDb": 6,
+        "unit": 11,
+        "integration": 28,
+        "realDb": 9,
         "browser": 4,
         "connected": 0,
         "device": 0,
@@ -483,9 +497,11 @@
           "tests/unit/goods-in.test.ts",
           "tests/unit/goods-receipt-assembly.test.ts",
           "tests/unit/goods-receipt-order-fold.test.ts",
+          "tests/unit/landed-cost.test.ts",
           "tests/unit/purchase-match-lines.test.ts",
           "tests/unit/receiving-asn.test.ts",
-          "tests/unit/supplier-account-fold.test.ts"
+          "tests/unit/supplier-account-fold.test.ts",
+          "tests/unit/warehouse-handheld-receives-against-the-cached-asn.test.ts"
         ],
         "integration": [
           "tests/integration/a-phone-receipt-is-counted-costed-and-put-away.test.ts",
@@ -499,7 +515,9 @@
           "tests/integration/goods-receipt-synced-route.test.ts",
           "tests/integration/goods-receipt.test.ts",
           "tests/integration/inventory-asn-dock.test.ts",
+          "tests/integration/landed-cost-reaches-stock-value-to-the-paisa.test.ts",
           "tests/integration/manager-receipts-and-counts-reach-the-cloud-through-the-edge.test.ts",
+          "tests/integration/one-person-never-completes-two-steps-of-one-purchase.test.ts",
           "tests/integration/pack-chain-case-to-base.test.ts",
           "tests/integration/purchase-capture-match.test.ts",
           "tests/integration/purchase-invoice-reconcile.test.ts",
@@ -509,6 +527,7 @@
           "tests/integration/supplier-master.test.ts",
           "tests/integration/supplier-portal.test.ts",
           "tests/integration/supplier-to-shelf-journey.test.ts",
+          "tests/integration/the-dock-diary-and-the-asn-are-head-offices-own-record.test.ts",
           "tests/integration/the-screens-are-fed.test.ts",
           "tests/integration/the-store-buys-what-it-sells.test.ts",
           "tests/integration/warehouse-handheld-reaches-the-cloud-through-the-edge.test.ts",
@@ -517,9 +536,12 @@
         "realDb": [
           "tests/integration/a-receipt-is-judged-against-what-is-left-on-the-order.test.ts",
           "tests/integration/an-order-names-its-store.test.ts",
+          "tests/integration/landed-cost-reaches-stock-value-to-the-paisa.test.ts",
+          "tests/integration/one-person-never-completes-two-steps-of-one-purchase.test.ts",
           "tests/integration/pack-chain-case-to-base.test.ts",
           "tests/integration/store-acceptance-journey.test.ts",
           "tests/integration/supplier-to-shelf-journey.test.ts",
+          "tests/integration/the-dock-diary-and-the-asn-are-head-offices-own-record.test.ts",
           "tests/integration/the-store-buys-what-it-sells.test.ts"
         ],
         "browser": [
@@ -640,8 +662,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 13,
-        "integration": 29,
-        "realDb": 10,
+        "integration": 30,
+        "realDb": 11,
         "browser": 8,
         "connected": 2,
         "device": 0,
@@ -692,7 +714,8 @@
           "tests/integration/warehouse-screen-fed.test.ts",
           "tests/integration/warehouse-supervisor-fed.test.ts",
           "tests/integration/warehouse-synced-routes.test.ts",
-          "tests/integration/warehouse-transfers.test.ts"
+          "tests/integration/warehouse-transfers.test.ts",
+          "tests/integration/wf03-from-below-reorder-to-an-issued-order.test.ts"
         ],
         "realDb": [
           "tests/integration/a-planned-count-on-the-phone-reaches-head-office-through-the-box.test.ts",
@@ -704,7 +727,8 @@
           "tests/integration/floor-restocking-asks-an-explicit-transfer-freeze.test.ts",
           "tests/integration/replenishment.test.ts",
           "tests/integration/supplier-to-shelf-journey.test.ts",
-          "tests/integration/the-store-buys-what-it-sells.test.ts"
+          "tests/integration/the-store-buys-what-it-sells.test.ts",
+          "tests/integration/wf03-from-below-reorder-to-an-issued-order.test.ts"
         ],
         "browser": [
           "tests/e2e/count-plans-on-the-production-api.e2e.ts",
@@ -1618,9 +1642,9 @@
       "id": "M23",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 24,
-        "integration": 30,
-        "realDb": 16,
+        "unit": 25,
+        "integration": 31,
+        "realDb": 18,
         "browser": 5,
         "connected": 1,
         "device": 0,
@@ -1651,7 +1675,8 @@
           "tests/unit/rate.test.ts",
           "tests/unit/reconciliation.test.ts",
           "tests/unit/settlement-t-plus-one-reversals.test.ts",
-          "tests/unit/supplier-account-fold.test.ts"
+          "tests/unit/supplier-account-fold.test.ts",
+          "tests/unit/tally-export.test.ts"
         ],
         "integration": [
           "tests/integration/a-b2b-invoice-and-its-collection-reach-the-books.test.ts",
@@ -1668,6 +1693,7 @@
           "tests/integration/goods-made-in-the-store-are-valued-at-their-production-run-cost.test.ts",
           "tests/integration/loyalty-liability-reconciles-to-the-books.test.ts",
           "tests/integration/merchandising-reads-head-office-facts.test.ts",
+          "tests/integration/payables-reach-tally-as-an-importable-voucher-file.test.ts",
           "tests/integration/period-evidence.test.ts",
           "tests/integration/period-reopen.test.ts",
           "tests/integration/rebates.test.ts",
@@ -1695,6 +1721,8 @@
           "tests/integration/credit-note-reconciliation.test.ts",
           "tests/integration/goods-made-in-the-store-are-valued-at-their-production-run-cost.test.ts",
           "tests/integration/merchandising-reads-head-office-facts.test.ts",
+          "tests/integration/payables-reach-tally-as-an-importable-voucher-file.test.ts",
+          "tests/integration/rebates.test.ts",
           "tests/integration/sale-to-shift-close-journey.test.ts",
           "tests/integration/store-acceptance-journey.test.ts",
           "tests/integration/stored-value-liability.test.ts",
@@ -2633,9 +2661,9 @@
       "id": "D03",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 4,
-        "integration": 13,
-        "realDb": 6,
+        "unit": 5,
+        "integration": 14,
+        "realDb": 8,
         "browser": 3,
         "connected": 2,
         "device": 0,
@@ -2646,6 +2674,7 @@
           "tests/unit/erp-buying-session.test.ts",
           "tests/unit/erp-navigation-catalogue.test.ts",
           "tests/unit/goods-in.test.ts",
+          "tests/unit/landed-cost.test.ts",
           "tests/unit/supplier-bills-and-open-to-buy-sessions.test.ts"
         ],
         "integration": [
@@ -2654,6 +2683,7 @@
           "tests/integration/a-typed-scan-is-linked-to-its-invoice.test.ts",
           "tests/integration/duplicate-bank.test.ts",
           "tests/integration/goods-receipt.test.ts",
+          "tests/integration/landed-cost-reaches-stock-value-to-the-paisa.test.ts",
           "tests/integration/purchase-invoice-reconcile.test.ts",
           "tests/integration/purchase-orders.test.ts",
           "tests/integration/rebates.test.ts",
@@ -2667,6 +2697,8 @@
           "tests/integration/a-purchase-order-is-checked-against-open-to-buy.test.ts",
           "tests/integration/a-supplier-bill-read-by-e-invoice-or-ocr-reaches-the-match.test.ts",
           "tests/integration/a-typed-scan-is-linked-to-its-invoice.test.ts",
+          "tests/integration/landed-cost-reaches-stock-value-to-the-paisa.test.ts",
+          "tests/integration/rebates.test.ts",
           "tests/integration/store-acceptance-journey.test.ts",
           "tests/integration/supplier-portal-feeds-purchasing.test.ts",
           "tests/integration/supplier-to-shelf-journey.test.ts"
@@ -3280,8 +3312,8 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 6,
-        "integration": 6,
-        "realDb": 2,
+        "integration": 7,
+        "realDb": 3,
         "browser": 0,
         "connected": 0,
         "device": 0,
@@ -3302,11 +3334,13 @@
           "tests/integration/ai-owner-and-purchase-agents.test.ts",
           "tests/integration/ai-proposes-people-decide.test.ts",
           "tests/integration/the-screens-are-fed.test.ts",
+          "tests/integration/wf03-from-below-reorder-to-an-issued-order.test.ts",
           "tests/security/separation-of-duties.test.ts"
         ],
         "realDb": [
           "tests/integration/ai-inventory-agent-suggests-transfers.test.ts",
-          "tests/integration/ai-proposes-people-decide.test.ts"
+          "tests/integration/ai-proposes-people-decide.test.ts",
+          "tests/integration/wf03-from-below-reorder-to-an-issued-order.test.ts"
         ],
         "browser": [],
         "connected": [],
@@ -3727,7 +3761,7 @@
       "counts": {
         "unit": 0,
         "integration": 8,
-        "realDb": 3,
+        "realDb": 4,
         "browser": 3,
         "connected": 1,
         "device": 0,
@@ -3746,6 +3780,7 @@
           "tests/integration/supplier-portal-feeds-purchasing.test.ts"
         ],
         "realDb": [
+          "tests/integration/rebates.test.ts",
           "tests/integration/store-acceptance-journey.test.ts",
           "tests/integration/supplier-onboarding-on-postgresql.test.ts",
           "tests/integration/supplier-portal-feeds-purchasing.test.ts"
@@ -3768,16 +3803,17 @@
       "id": "WF-03",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 1,
-        "integration": 11,
-        "realDb": 5,
-        "browser": 2,
-        "connected": 1,
+        "unit": 2,
+        "integration": 12,
+        "realDb": 6,
+        "browser": 3,
+        "connected": 2,
         "device": 0,
         "uat": 0
       },
       "files": {
         "unit": [
+          "tests/unit/requisitions-session.test.ts",
           "tests/unit/supplier-bills-and-open-to-buy-sessions.test.ts"
         ],
         "integration": [
@@ -3791,21 +3827,25 @@
           "tests/integration/rfq.test.ts",
           "tests/integration/store-acceptance-journey.test.ts",
           "tests/integration/supplier-to-shelf-journey.test.ts",
-          "tests/integration/the-screens-are-fed.test.ts"
+          "tests/integration/the-screens-are-fed.test.ts",
+          "tests/integration/wf03-from-below-reorder-to-an-issued-order.test.ts"
         ],
         "realDb": [
           "tests/integration/a-purchase-order-is-checked-against-open-to-buy.test.ts",
           "tests/integration/an-amendment-is-judged-on-the-order-as-it-stands.test.ts",
           "tests/integration/replenishment.test.ts",
           "tests/integration/store-acceptance-journey.test.ts",
-          "tests/integration/supplier-to-shelf-journey.test.ts"
+          "tests/integration/supplier-to-shelf-journey.test.ts",
+          "tests/integration/wf03-from-below-reorder-to-an-issued-order.test.ts"
         ],
         "browser": [
           "tests/e2e/buying-po-delivery.e2e.ts",
-          "tests/e2e/open-to-buy-on-the-production-api.e2e.ts"
+          "tests/e2e/open-to-buy-on-the-production-api.e2e.ts",
+          "tests/e2e/the-requisitions-page-raises-quotes-compares-and-proposes.e2e.ts"
         ],
         "connected": [
-          "tests/e2e/open-to-buy-on-the-production-api.e2e.ts"
+          "tests/e2e/open-to-buy-on-the-production-api.e2e.ts",
+          "tests/e2e/the-requisitions-page-raises-quotes-compares-and-proposes.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -3818,8 +3858,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 0,
-        "integration": 8,
-        "realDb": 2,
+        "integration": 9,
+        "realDb": 3,
         "browser": 2,
         "connected": 0,
         "device": 0,
@@ -3835,11 +3875,13 @@
           "tests/integration/inventory-asn-dock.test.ts",
           "tests/integration/receipt-excess-held.test.ts",
           "tests/integration/store-acceptance-journey.test.ts",
-          "tests/integration/supplier-to-shelf-journey.test.ts"
+          "tests/integration/supplier-to-shelf-journey.test.ts",
+          "tests/integration/the-dock-diary-and-the-asn-are-head-offices-own-record.test.ts"
         ],
         "realDb": [
           "tests/integration/store-acceptance-journey.test.ts",
-          "tests/integration/supplier-to-shelf-journey.test.ts"
+          "tests/integration/supplier-to-shelf-journey.test.ts",
+          "tests/integration/the-dock-diary-and-the-asn-are-head-offices-own-record.test.ts"
         ],
         "browser": [
           "tests/e2e/goods-receipt-delivery.e2e.ts",
@@ -3856,9 +3898,9 @@
       "id": "WF-05",
       "label": "INTEGRATION_TESTED",
       "counts": {
-        "unit": 2,
-        "integration": 8,
-        "realDb": 3,
+        "unit": 3,
+        "integration": 9,
+        "realDb": 4,
         "browser": 2,
         "connected": 1,
         "device": 0,
@@ -3867,12 +3909,14 @@
       "files": {
         "unit": [
           "tests/unit/erp-navigation-catalogue.test.ts",
-          "tests/unit/supplier-bills-and-open-to-buy-sessions.test.ts"
+          "tests/unit/supplier-bills-and-open-to-buy-sessions.test.ts",
+          "tests/unit/tally-export.test.ts"
         ],
         "integration": [
           "tests/integration/a-supplier-bill-read-by-e-invoice-or-ocr-reaches-the-match.test.ts",
           "tests/integration/an-imported-invoice-file-is-a-real-invoice.test.ts",
           "tests/integration/connector-delivery.test.ts",
+          "tests/integration/payables-reach-tally-as-an-importable-voucher-file.test.ts",
           "tests/integration/purchase-capture-match.test.ts",
           "tests/integration/purchase-invoice-reconcile.test.ts",
           "tests/integration/purchase-to-payment.test.ts",
@@ -3881,6 +3925,7 @@
         ],
         "realDb": [
           "tests/integration/a-supplier-bill-read-by-e-invoice-or-ocr-reaches-the-match.test.ts",
+          "tests/integration/payables-reach-tally-as-an-importable-voucher-file.test.ts",
           "tests/integration/purchase-to-payment.test.ts",
           "tests/integration/store-acceptance-journey.test.ts"
         ],
