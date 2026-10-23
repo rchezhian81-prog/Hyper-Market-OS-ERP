@@ -174,6 +174,7 @@ import {
   type ProductionTasksSession, type RunCommitPort, type LabelPort, type TaskPostResult, type WeighPort, type SavedWorkRow,
 } from './production-tasks-session';
 import { createProductionQueue, openBoxLabelPort, type ProductionQueue } from './production-queue';
+import { boxClockView } from './box-clock-view';
 import { createFoodSafetyQueue, FOOD_SAFETY_COPY, type FoodSafetyQueue, type HeldFoodSafety } from './food-safety-queue';
 import {
   createFacilitiesSession,
@@ -4806,6 +4807,8 @@ export function bootMigration(data: MigrationData | undefined, outbox: SyncOutbo
 interface ManagerWindow {
   managerSession?: ManagerSession;
   managerData?: ManagerData;
+  /** OB-288 lane 2 · OB-327: this store computer's clock against head office's, and the bills marked while it was out. */
+  boxClockView?: typeof boxClockView;
   /**
    * The store computer's own write address (M14-FR-04), injected by the edge screen-server only when
    * this box serves a lane socket. The manager's day close posts here — cross-port on 127.0.0.1, not
@@ -6030,6 +6033,7 @@ if (browserWindow !== undefined) {
   // drains the same one. Per store, on this device's storage; a storage fault is surfaced for the shell to show.
   const managerOutbox = openManagerOutbox(browserWindow.managerData?.storeId ?? 'store-1');
   browserWindow.managerOutbox = managerOutbox;
+  browserWindow.boxClockView = boxClockView;
   browserWindow.managerSession = bootManager({
     data: browserWindow.managerData,
     laneWriteBase: browserWindow.laneWriteBase,

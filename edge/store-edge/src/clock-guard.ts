@@ -181,7 +181,9 @@ export class ClockGuard {
         staffMessage: restored === undefined || restored.verdict === 'in_step'
           ? 'This store computer has not compared its clock with head office since it started.'
           : `This store computer's clock was ${words(restored.offsetSeconds)} away from head office when last checked (${restored.at}), and has not been checked again since it started.`,
-        staffMessageTa: 'இந்தக் கடைக் கணினி தொடங்கியதிலிருந்து தலைமை அலுவலகக் கடிகாரத்துடன் மீண்டும் ஒப்பிடவில்லை.',
+        staffMessageTa: restored === undefined || restored.verdict === 'in_step'
+          ? 'இந்தக் கடைக் கணினி தொடங்கியதிலிருந்து தலைமை அலுவலகக் கடிகாரத்துடன் மீண்டும் ஒப்பிடவில்லை.'
+          : `கடைசியாகச் சரிபார்த்தபோது (${restored.at}) இந்தக் கடைக் கணினியின் கடிகாரம் தலைமை அலுவலகத்திலிருந்து ${wordsTa(restored.offsetSeconds)} விலகியிருந்தது; தொடங்கியதிலிருந்து மீண்டும் சரிபார்க்கப்படவில்லை.`,
       };
     }
     const offsetSeconds = Math.round(this.last.offsetMs / 1000);
