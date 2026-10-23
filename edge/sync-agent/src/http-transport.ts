@@ -253,6 +253,8 @@ export const EVENT_ROUTES: Readonly<Record<string, EventRoute>> = {
   FoodSafetyCheckRecorded: '/v1/facilities/food-safety/checks/:checkId/records/:recordId/synced',
   TransferDispatchRecorded: '/v1/warehouse/transfers/:transferId/dispatch/synced',
   TransferReceiptRecorded: '/v1/warehouse/transfers/:transferId/receive/synced',
+  // OB-333: a quality-hold release decided at the store (release only — the box never places a hold).
+  QualityHoldReleaseDecided: '/v1/quality/holds/:batchId/release/synced',
 };
 
 /** Fill `:name` segments from the payload, or run a resolver, so a route can address a thing. */

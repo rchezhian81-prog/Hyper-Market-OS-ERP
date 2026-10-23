@@ -109,6 +109,10 @@ export const RELAYABLE_DEVICE_EVENTS: Readonly<Record<string, { readonly surface
   // the warehouse handheld. Head office runs the same dispatch / receipt engines on its own stock and refuses a conflict.
   TransferDispatchRecorded: { surfaces: ['warehouse'] },
   TransferReceiptRecorded: { surfaces: ['warehouse'] },
+  // OB-333 (owner, 23 Oct 2026): a quality-hold RELEASE decided on the facilities screen with the line down — the box's
+  // narrow release-only right. Head office re-checks the person and re-runs its release engine; a refusal is kept,
+  // visible. There is deliberately NO hold-placing event: the store computer can never put a batch on hold.
+  QualityHoldReleaseDecided: { surfaces: ['manager'] },
 });
 
 /**

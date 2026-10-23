@@ -762,6 +762,11 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // checks in force for its store, and the transfers with an end at its store (reads only).
       'production.read', 'facilities.overdue.read', 'inventory.availability.read',
       // ── OB-288 lane 2 · P2 — end
+      // ── OB-288 integration follow-ups — begin
+      // OB-333: a NARROW release-only right — relay a quality-hold RELEASE a person decided at the store (head office
+      // re-checks that person's own quality.hold.release), and read which batches are held. Never place a hold.
+      'quality.hold.release.sync',
+      // ── OB-288 integration follow-ups — end
       // the GST portal's poll/verify, relayed for the operator (no maker-checker decision; re-authorised on this permission)
       'finance.einvoice.generate',
     ],

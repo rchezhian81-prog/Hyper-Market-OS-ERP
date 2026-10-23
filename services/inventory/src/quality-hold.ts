@@ -22,6 +22,7 @@
 // anything else, and the person who holds and the person who releases can differ (SoD, P-04).
 
 import type { Route } from '../../kernel/src/index';
+import type { AuditEntry } from '../../../packages/audit/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
 import {
   releaseFromQualityHold,
@@ -155,6 +156,114 @@ export function qualityHoldRoutes(deps: QualityHoldDeps): readonly Route[] {
         const hold = await deps.hold(ctx.tenantId, batchId);
         if (hold === undefined) throw notFound(`quality hold for batch ${batchId}`);
         return { status: 200, body: { hold } };
+      },
+    },
+  ];
+}
+
+// ── OB-333 (owner, 23 Oct 2026, in writing): a quality-hold RELEASE decided at the store with the line down ──────────────
+//
+// The store computer gets a narrow RELEASE-ONLY right (`quality.hold.release.sync`) and this synced route: the facilities
+// screen it serves keeps the release on its durable device queue before it says "saved", and the box relays it here
+// under the store's credential. Head office trusts the FACT (who released which batch, when) and re-checks everything
+// else on its own records: the hold must be one head office placed and still holds; the PERSON named is re-checked from
+// THEIR grants (`quality.hold.release`, the §28 "authorized QC" right); the tested `releaseFromQualityHold` engine re-runs
+// on the samples, cold-chain verdict and expiry sent. A refusal is by name (422), so the box keeps it as a visible
+// exception (hard rules #6, #10). The box can NEVER place a hold: there is no synced hold route, and the store computer
+// holds neither `quality.hold.manage` nor `quality.hold.release`. A re-sent release by the same person is ONE release.
+
+export interface SyncedQualityHoldDeps extends QualityHoldDeps {
+  /** The permissions a person holds now, from their own grants — undefined for someone head office does not know. */
+  readonly permissionsOfUser: (tenantId: string, userId: string) => Promise<readonly string[] | undefined> | readonly string[] | undefined;
+  readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
+}
+
+const isIsoTime = (v: unknown): v is string => isStr(v) && !Number.isNaN(Date.parse(v));
+const asObj = (v: unknown): Record<string, unknown> => (v !== null && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : {});
+
+export function syncedQualityHoldRoutes(deps: SyncedQualityHoldDeps): readonly Route[] {
+  return [
+    {
+      // Body: { batchId (= path), storeId, releasedBy, at, samples?, coldChain?, expiresOn?, notes?, source? }. Idempotent:
+      // the same release again is 200, one release.
+      api: 'API-04', method: 'POST', path: '/v1/quality/holds/:batchId/release/synced',
+      permission: 'quality.hold.release.sync', idempotent: true,
+      handler: async (ctx) => {
+        const batchId = (ctx.params['batchId'] ?? '').trim();
+        const b = asObj(ctx.body);
+        if (batchId === '' || b['batchId'] !== batchId || !isStr(b['releasedBy']) || !isIsoTime(b['at'])
+          || (b['samples'] !== undefined && !Array.isArray(b['samples'])) || (b['expiresOn'] !== undefined && !isStr(b['expiresOn']))
+          || (b['notes'] !== undefined && typeof b['notes'] !== 'string')) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_relayed_release',
+            whatHappened: 'This could not be read as a quality-hold release from the store — it needs the batchId matching the path, who released it (releasedBy) and when (at).',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Do not discard it at the store. Keep it in the queue and raise it.',
+          });
+        }
+        const releasedBy = (b['releasedBy'] as string).trim();
+        const at = new Date(Date.parse(b['at'] as string)).toISOString();
+        const hold = await deps.hold(ctx.tenantId, batchId);
+        if (hold === undefined) {
+          // Holds are placed only at head office: a release of a batch it never held is not a release of anything.
+          throw apiError(422, {
+            code: 'no_hold_on_record',
+            whatHappened: `Head office holds no quality hold on batch ${batchId}, so there is nothing to release.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Kept at the store for a person to look at. A hold is placed only at head office.',
+          });
+        }
+        if (hold.status === 'released') {
+          if (hold.releasedBy === releasedBy) return { status: 200, body: { batchId, released: true, releasedBy, alreadyReleased: true } };
+          throw apiError(422, {
+            code: 'batch_released_by_another',
+            whatHappened: `Batch ${batchId} was already released by ${hold.releasedBy ?? 'someone'}${hold.releasedAt === undefined ? '' : ` at ${hold.releasedAt}`}; this store says ${releasedBy} released it.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Kept at the store for a person to compare. Nothing was changed.',
+          });
+        }
+        // OB-333: the person releasing is re-checked HERE, from their own grants — the box's word is never their authority.
+        const held = await deps.permissionsOfUser(ctx.tenantId, releasedBy);
+        if (held === undefined || !held.includes('quality.hold.release')) {
+          throw apiError(422, {
+            code: held === undefined ? 'releaser_unknown_at_head_office' : 'releaser_lacks_authority',
+            whatHappened: `${releasedBy} ${held === undefined ? 'is not anyone head office knows' : 'does not hold the quality-release right (quality.hold.release)'}, so batch ${batchId} is not released in their name.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'The batch stays held and is not sold. Someone who may release for sale must look at it.',
+          });
+        }
+        const result: QualityReleaseResult = releaseFromQualityHold({
+          hold,
+          samples: Array.isArray(b['samples']) ? (b['samples'] as QualitySample[]) : [],
+          coldChain: (b['coldChain'] ?? undefined) as ColdChainAssessment | undefined,
+          expiresOn: isStr(b['expiresOn']) ? (b['expiresOn'] as string) : undefined,
+          releasedBy, at,
+        });
+        if (!result.released) {
+          const map = REFUSAL[result.outcome as Exclude<ReleaseRefusal, 'released'>];
+          throw apiError(422, {
+            code: result.outcome, whatHappened: usable(result.detail) ? result.detail : map.what, wasItSaved: 'not_saved',
+            nextSafeAction: `${map.next} (Kept at the store as a visible exception.)`,
+          });
+        }
+        await deps.recordReleased(ctx.tenantId, result.hold, `synced:${batchId}:${releasedBy}`);
+        await deps.recordAudit?.(ctx.tenantId, {
+          actorId: releasedBy, action: 'quality.hold.release', objectType: 'quality_hold', objectId: batchId, at,
+          origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null, capturedOffline: true },
+          before: { status: hold.status }, after: { status: 'released', relayedBy: ctx.userId, source: isStr(b['source']) ? b['source'] : 'unknown', storeId: isStr(b['storeId']) ? b['storeId'] : '' },
+          ...(typeof b['notes'] === 'string' && b['notes'].trim() !== '' ? { reason: b['notes'] } : {}), correlationId: `quality-hold:${batchId}`,
+        });
+        return { status: 202, body: { batchId, released: true, releasedBy, alreadyReleased: false, relayedBy: ctx.userId } };
+      },
+    },
+    {
+      // What the store computer may release with the line down: the batches head office holds NOW (a read; the box's feed).
+      api: 'API-04', method: 'GET', path: '/v1/quality/holds-for-release',
+      permission: 'quality.hold.release.sync',
+      handler: async (ctx) => {
+        const held = [...(await deps.holds(ctx.tenantId))].filter((h) => h.status !== 'released').sort(byUrgency)
+          .map((h) => ({ batchId: h.batchId, productId: h.productId, reason: h.reason, heldAt: h.heldAt, heldBy: h.heldBy }));
+        return { status: 200, body: { holds: held, count: held.length, asAt: deps.now() } };
       },
     },
   ];

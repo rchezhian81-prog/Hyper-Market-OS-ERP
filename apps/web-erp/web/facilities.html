@@ -98,6 +98,16 @@
         <p class="fs-result" id="fs-result" hidden role="status" aria-live="polite"><span class="icon" id="fs-result-icon" aria-hidden="true"></span><span id="fs-result-text"></span></p>
       </section>
 
+      <!-- OB-333: batches on quality hold, released here (with the line down too) by a person with the quality-release right. -->
+      <section class="fs" id="qh" hidden aria-label="Batches on quality hold">
+        <h3 id="qh-heading"></h3>
+        <p class="lead" id="qh-lead"></p>
+        <p class="lead" id="qh-asof"></p>
+        <ul class="rows" id="qh-rows"></ul>
+        <p class="lead" id="qh-none" hidden></p>
+        <p class="fs-result" id="qh-result" hidden role="status" aria-live="polite"><span class="icon" id="qh-result-icon" aria-hidden="true"></span><span id="qh-result-text"></span></p>
+      </section>
+
       <p class="result" id="result" hidden role="status" aria-live="polite"><span class="icon" id="result-icon" aria-hidden="true"></span><span id="result-text"></span></p>
       <p class="state" id="state" hidden><span class="icon" id="state-icon" aria-hidden="true"></span><span id="state-text"></span></p>
     </main>

@@ -8,15 +8,18 @@
 //   • food-safety — the food-safety checks in force for this store (kind, schedule, limits, items) and the slots head office
 //     last knew (so the slots due while the line is down are worked out on the box with the same engine);
 //   • transfers — the transfers with either end at this store (what is waiting to be sent, what is on the road to be
-//     counted in), each with the store at each end so a handheld offers only this store's end.
+//     counted in), each with the store at each end so a handheld offers only this store's end;
+//   • quality-holds (OB-333) — the batches head office holds on quality hold NOW, so a person who may release one can do so
+//     at the store with the line down (the box relays the release; head office re-checks the person). Read under the box's
+//     narrow release-only right; the box never places a hold.
 // Each is pulled on the box's sync loop under its own credential, shaped like the floor-indents pull (`indents-feed.ts`):
 //   • Never put the token in a message (#4).
 //   • Unreachable is not rejected: the box keeps the feed it holds and says how old it is (P-08), tries again next pass.
 //   • Never go backwards: a feed assembled earlier than the one held is kept out.
 //   • Carried whole: the box interprets only what it needs; the screens read the rest as head office wrote it.
 
-export type WorkFeedName = 'production' | 'food-safety' | 'transfers';
-export const WORK_FEED_NAMES: readonly WorkFeedName[] = Object.freeze(['production', 'food-safety', 'transfers']);
+export type WorkFeedName = 'production' | 'food-safety' | 'transfers' | 'quality-holds';
+export const WORK_FEED_NAMES: readonly WorkFeedName[] = Object.freeze(['production', 'food-safety', 'transfers', 'quality-holds']);
 
 /** One feed as the box holds it: head office's clock and the body (or bodies) it read. */
 export interface WorkFeed {
@@ -91,6 +94,13 @@ export function readTransfersFeed(body: unknown): WorkFeed | undefined {
   return { name: 'transfers', asAt: body['asAt'] as string, body: { transfers: body['transfers'] } };
 }
 
+/** OB-333: read head office's held batches (GET /v1/quality/holds-for-release) as the quality-holds feed. */
+export function readQualityHoldsFeed(body: unknown): WorkFeed | undefined {
+  if (!isObj(body) || !isTime(body['asAt']) || !Array.isArray(body['holds'])) return undefined;
+  for (const h of body['holds']) if (!isObj(h) || !isStr(h['batchId']) || !isStr(h['productId']) || !isStr(h['reason']) || !isTime(h['heldAt'])) return undefined;
+  return { name: 'quality-holds', asAt: body['asAt'] as string, body: { holds: body['holds'] } };
+}
+
 /** Read a held feed back (from the box's disk), by its own name. */
 export function readWorkFeed(v: unknown): WorkFeed | undefined {
   if (!isObj(v) || !isStr(v['name']) || !(WORK_FEED_NAMES as readonly string[]).includes(v['name']) || !isTime(v['asAt']) || !isObj(v['body'])) return undefined;
@@ -98,7 +108,8 @@ export function readWorkFeed(v: unknown): WorkFeed | undefined {
   const b = v['body'];
   const again = name === 'production'
     ? readProductionFeed({ asAt: v['asAt'], runs: b['runs'] }, { recipes: b['recipes'], enabledDepartments: b['enabledDepartments'] })
-    : name === 'food-safety' ? readFoodSafetyFeed({ ...b, asAt: v['asAt'] }, v['asAt'] as string) : readTransfersFeed({ asAt: v['asAt'], transfers: b['transfers'] });
+    : name === 'food-safety' ? readFoodSafetyFeed({ ...b, asAt: v['asAt'] }, v['asAt'] as string)
+      : name === 'quality-holds' ? readQualityHoldsFeed({ asAt: v['asAt'], holds: b['holds'] }) : readTransfersFeed({ asAt: v['asAt'], transfers: b['transfers'] });
   return again === undefined ? undefined : { ...again, asAt: v['asAt'] as string };
 }
 
@@ -129,9 +140,10 @@ export const WORK_FEED_PATHS: Readonly<Record<WorkFeedName, (storeId: string | u
   production: () => ['/v1/production/runs', '/v1/production/recipes'],
   'food-safety': (storeId) => [storeId === undefined ? '/v1/facilities/food-safety/status' : `/v1/facilities/food-safety/status?branchId=${encodeURIComponent(storeId)}`],
   transfers: () => ['/v1/warehouse/transfers'],
+  'quality-holds': () => ['/v1/quality/holds-for-release'],
 });
 
-const WHAT: Readonly<Record<WorkFeedName, string>> = Object.freeze({ production: 'the production board', 'food-safety': 'the food-safety checks', transfers: 'the transfers' });
+const WHAT: Readonly<Record<WorkFeedName, string>> = Object.freeze({ production: 'the production board', 'food-safety': 'the food-safety checks', transfers: 'the transfers', 'quality-holds': 'the batches on quality hold' });
 
 /** Reach the real endpoints for one feed. Anything but a clean 200 for every read is "could not get it" (the status, never the body). */
 export function httpWorkFeedSource(name: WorkFeedName, options: HttpWorkFeedOptions): WorkFeedSource {
@@ -157,7 +169,8 @@ export function httpWorkFeedSource(name: WorkFeedName, options: HttpWorkFeedOpti
         }
       }
       const feed = name === 'production' ? readProductionFeed(bodies[0], bodies[1])
-        : name === 'food-safety' ? readFoodSafetyFeed(bodies[0], now()) : readTransfersFeed(bodies[0]);
+        : name === 'food-safety' ? readFoodSafetyFeed(bodies[0], now())
+          : name === 'quality-holds' ? readQualityHoldsFeed(bodies[0]) : readTransfersFeed(bodies[0]);
       return feed === undefined ? { status: 'unreachable', reason: `the cloud returned something that is not ${WHAT[name]}` } : { status: 'fetched', feed };
     },
   };

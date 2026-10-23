@@ -176,6 +176,7 @@ import {
 import { createProductionQueue, openBoxLabelPort, type ProductionQueue } from './production-queue';
 import { boxClockView } from './box-clock-view';
 import { createFoodSafetyQueue, FOOD_SAFETY_COPY, type FoodSafetyQueue, type HeldFoodSafety } from './food-safety-queue';
+import { createQualityReleaseQueue, QUALITY_RELEASE_COPY, type QualityReleaseQueue, type HeldQualityHolds } from './quality-release-queue';
 import {
   createFacilitiesSession,
   type FacilitiesPorts, type FacilitiesSession, type FacilitiesData, type OverdueTask,
@@ -2014,6 +2015,8 @@ export interface FacilitiesScreenData {
   /** OB-288 lane 2: the store this box is, and head office's food-safety checks as the box last heard them (null: never told). */
   readonly storeId?: string;
   readonly foodSafety?: HeldFoodSafety | null;
+  /** OB-333: head office's held batches as the box last heard them (null: never told). */
+  readonly qualityHolds?: HeldQualityHolds | null;
 }
 
 /** OB-288 lane 2: open the facilities screen's durable device queue (food-safety checks), keyed per store. */
@@ -2025,6 +2028,21 @@ export function openFacilitiesOutbox(storeId: string, storage?: DeviceStorage): 
 
 /** OB-288 lane 2: the food-safety checks' leg of the shared device → box path. */
 export function openFoodSafetyRelay(laneWriteBase: string | undefined, queue: FoodSafetyQueue, outbox: SyncOutbox): ManagerRelay | undefined {
+  if (laneWriteBase === undefined) return undefined;
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return undefined;
+  return {
+    syncNow: async () => {
+      const result = await drainToBox({ outbox, boxBase: laneWriteBase, source: 'manager', fetch: fetchFn });
+      const statuses = await boxStatus({ boxBase: laneWriteBase, keys: queue.handedKeys(), fetch: fetchFn });
+      if (statuses !== undefined) queue.noteBoxStatus(statuses);
+      return { handed: result.handed, refused: result.refused, failed: result.failed, offline: result.offline };
+    },
+  };
+}
+
+/** OB-333: the quality-hold releases' leg of the shared device → box path (the same facilities queue on this device). */
+export function openQualityReleaseRelay(laneWriteBase: string | undefined, queue: QualityReleaseQueue, outbox: SyncOutbox): ManagerRelay | undefined {
   if (laneWriteBase === undefined) return undefined;
   const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
   if (fetchFn === undefined) return undefined;
@@ -5131,6 +5149,9 @@ interface ManagerWindow {
   foodSafetyQueue?: FoodSafetyQueue;
   foodSafetyRelay?: ManagerRelay;
   foodSafetyWords?: typeof FOOD_SAFETY_COPY;
+  qualityReleaseQueue?: QualityReleaseQueue;
+  qualityReleaseRelay?: ManagerRelay;
+  qualityReleaseWords?: typeof QUALITY_RELEASE_COPY;
   /** The shell reads the live overdue board through this and re-presents it — a GET read, never a write. */
   facilities?: {
     refresh(): Promise<FacilitiesData | null>;
@@ -6402,12 +6423,19 @@ if (browserWindow !== undefined) {
   const facilitiesData = browserWindow.facilitiesData;
   // OB-288 lane 2 · M10-FR-02 offline: served by the store computer, today's food-safety checks are worked out here from
   // head office's checks in force and saved through the box, timed by when they were done.
-  if (browserWindow.laneWriteBase !== undefined && facilitiesData?.storeId !== undefined && facilitiesData.foodSafety !== undefined) {
-    const fsOutbox = openFacilitiesOutbox(facilitiesData.storeId);
-    const fsQueue = createFoodSafetyQueue({ userId: facilitiesData.userId ?? null, storeId: facilitiesData.storeId, now: () => new Date().toISOString() }, facilitiesData.foodSafety, fsOutbox);
+  const facilitiesOutbox = browserWindow.laneWriteBase !== undefined && facilitiesData?.storeId !== undefined ? openFacilitiesOutbox(facilitiesData.storeId) : undefined;
+  if (facilitiesOutbox !== undefined && facilitiesData?.storeId !== undefined && facilitiesData.foodSafety !== undefined) {
+    const fsQueue = createFoodSafetyQueue({ userId: facilitiesData.userId ?? null, storeId: facilitiesData.storeId, now: () => new Date().toISOString() }, facilitiesData.foodSafety, facilitiesOutbox);
     browserWindow.foodSafetyQueue = fsQueue;
-    browserWindow.foodSafetyRelay = openFoodSafetyRelay(browserWindow.laneWriteBase, fsQueue, fsOutbox);
+    browserWindow.foodSafetyRelay = openFoodSafetyRelay(browserWindow.laneWriteBase, fsQueue, facilitiesOutbox);
     browserWindow.foodSafetyWords = FOOD_SAFETY_COPY;
+  }
+  // OB-333: the batches on quality hold, released here by a person with the quality-release right — through the box.
+  if (facilitiesOutbox !== undefined && facilitiesData?.storeId !== undefined && facilitiesData.qualityHolds !== undefined) {
+    const qhQueue = createQualityReleaseQueue({ userId: facilitiesData.userId ?? null, storeId: facilitiesData.storeId, permissions: facilitiesData.permissions ?? [], now: () => new Date().toISOString() }, facilitiesData.qualityHolds, facilitiesOutbox);
+    browserWindow.qualityReleaseQueue = qhQueue;
+    browserWindow.qualityReleaseRelay = openQualityReleaseRelay(browserWindow.laneWriteBase, qhQueue, facilitiesOutbox);
+    browserWindow.qualityReleaseWords = QUALITY_RELEASE_COPY;
   }
   const completePort = openCompletePort();
   const facilitiesVerifyPort = openFacilitiesVerifyPort();

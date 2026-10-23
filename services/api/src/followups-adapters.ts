@@ -10,7 +10,9 @@ import type { PurchaseOrderDeps } from '../../purchase/src/purchase-orders';
 import { authorityOfAdapter } from './p1-identity-adapters';
 import type { PackSigner } from '../../catalogue/src/pack';
 import { republishWithExpired } from '../../catalogue/src/recall-republish';
-import { catalogueAdapter, saleBlocksAdapter } from './adapters';
+import { catalogueAdapter, saleBlocksAdapter, qualityHoldAdapter, permissionsHeldBy } from './adapters';
+import { syncedQualityHoldRoutes } from '../../inventory/src/quality-hold';
+import type { AuditEntry } from '../../../packages/audit/src/index';
 import { lane2ExpirySweep, shopDayOf } from './lane2-offline-adapters';
 
 /**
@@ -78,8 +80,17 @@ function wrapRoute(surface: Route[], method: string, path: string, around: (inne
 }
 
 /** The follow-up wiring that changes routes already on the surface (one line in main.ts, after the lanes' own). */
-export function followupsSurface(surface: Route[], input: { readonly store: EventStore | undefined; readonly now: () => string; readonly signer: PackSigner }): void {
+export function followupsSurface(surface: Route[], input: {
+  readonly store: EventStore | undefined; readonly now: () => string; readonly signer: PackSigner;
+  readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
+}): void {
   const store = input.store ?? new InMemoryEventStore();
+  // OB-333: the store computer's release-only relay of a quality-hold release, and the held batches it may release.
+  surface.push(...syncedQualityHoldRoutes({
+    ...qualityHoldAdapter({ store, now: input.now }),
+    permissionsOfUser: (tenantId, userId) => permissionsHeldBy(store, tenantId, userId),
+    ...(input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit }),
+  }));
   const base = { store, now: input.now, signer: input.signer };
   // M10-FR-01: a person running the expiry move by hand puts the expired batches on the tills' pack too, and is told.
   wrapRoute(surface, 'POST', '/v1/inventory/expiry-sweep', (inner) => async (ctx) => {
