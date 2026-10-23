@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1507,
+  "testFiles": 1512,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -18,7 +18,7 @@
     "PARTIALLY_WIRED": 40
   },
   "totals": {
-    "unit": 89,
+    "unit": 90,
     "integration": 101,
     "realDb": 97,
     "browser": 82,
@@ -730,9 +730,9 @@
       "id": "M10",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 20,
-        "integration": 23,
-        "realDb": 5,
+        "unit": 21,
+        "integration": 28,
+        "realDb": 9,
         "browser": 3,
         "connected": 0,
         "device": 0,
@@ -751,6 +751,7 @@
           "tests/unit/fefo.test.ts",
           "tests/unit/fulfilment-packing.test.ts",
           "tests/unit/goods-in.test.ts",
+          "tests/unit/lane2-recall-and-trace-engines.test.ts",
           "tests/unit/product-master.test.ts",
           "tests/unit/quality-cold-chain.test.ts",
           "tests/unit/quality-hold.test.ts",
@@ -763,8 +764,12 @@
         ],
         "integration": [
           "tests/integration/a-lot-trace-reaches-supplier-to-customer-from-stored-facts.test.ts",
+          "tests/integration/a-recall-blocks-the-offline-till-and-tells-the-owner-at-once.test.ts",
           "tests/integration/a-recall-runs-its-whole-lifecycle-on-postgresql.test.ts",
+          "tests/integration/a-recall-tells-the-customers-who-consented.test.ts",
+          "tests/integration/a-recalled-product-cannot-be-ordered.test.ts",
           "tests/integration/a-returned-item-keeps-its-lot.test.ts",
+          "tests/integration/a-trace-runs-backwards-from-a-sale.test.ts",
           "tests/integration/a-transfer-sends-only-what-the-batch-holds.test.ts",
           "tests/integration/ai-inventory-agent.test.ts",
           "tests/integration/cold-chain-at-receiving.test.ts",
@@ -781,6 +786,7 @@
           "tests/integration/quality-cold-chain.test.ts",
           "tests/integration/quality-hold.test.ts",
           "tests/integration/recall.test.ts",
+          "tests/integration/recalls-reach-the-offline-till.test.ts",
           "tests/integration/supplier-to-shelf-journey.test.ts",
           "tests/integration/the-screens-are-fed.test.ts",
           "tests/integration/the-store-buys-what-it-sells.test.ts",
@@ -788,7 +794,11 @@
         ],
         "realDb": [
           "tests/integration/a-lot-trace-reaches-supplier-to-customer-from-stored-facts.test.ts",
+          "tests/integration/a-recall-blocks-the-offline-till-and-tells-the-owner-at-once.test.ts",
           "tests/integration/a-recall-runs-its-whole-lifecycle-on-postgresql.test.ts",
+          "tests/integration/a-recall-tells-the-customers-who-consented.test.ts",
+          "tests/integration/a-recalled-product-cannot-be-ordered.test.ts",
+          "tests/integration/a-trace-runs-backwards-from-a-sale.test.ts",
           "tests/integration/fulfilment-packing.test.ts",
           "tests/integration/supplier-to-shelf-journey.test.ts",
           "tests/integration/the-store-buys-what-it-sells.test.ts"
@@ -1169,8 +1179,8 @@
       "label": "WIRED",
       "counts": {
         "unit": 11,
-        "integration": 17,
-        "realDb": 8,
+        "integration": 18,
+        "realDb": 9,
         "browser": 2,
         "connected": 1,
         "device": 0,
@@ -1191,6 +1201,7 @@
           "tests/unit/voice-and-sms-links-are-switched-off.test.ts"
         ],
         "integration": [
+          "tests/integration/a-recall-tells-the-customers-who-consented.test.ts",
           "tests/integration/ai-marketing-agent.test.ts",
           "tests/integration/an-erasure-reaches-the-real-domain-stores.test.ts",
           "tests/integration/an-erasure-shreds-the-personal-text-in-the-ledger.test.ts",
@@ -1210,6 +1221,7 @@
           "tests/integration/till-names-a-loyalty-member.test.ts"
         ],
         "realDb": [
+          "tests/integration/a-recall-tells-the-customers-who-consented.test.ts",
           "tests/integration/an-erasure-reaches-the-real-domain-stores.test.ts",
           "tests/integration/an-erasure-shreds-the-personal-text-in-the-ledger.test.ts",
           "tests/integration/one-customer.test.ts",
@@ -4051,7 +4063,7 @@
       "id": "WF-09",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 0,
+        "unit": 1,
         "integration": 9,
         "realDb": 1,
         "browser": 1,
@@ -4060,7 +4072,9 @@
         "uat": 0
       },
       "files": {
-        "unit": [],
+        "unit": [
+          "tests/unit/lane2-recall-and-trace-engines.test.ts"
+        ],
         "integration": [
           "tests/integration/a-recall-runs-its-whole-lifecycle-on-postgresql.test.ts",
           "tests/integration/cold-room-breach-holds-stock.test.ts",

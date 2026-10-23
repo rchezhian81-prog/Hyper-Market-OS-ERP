@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1221 | 735 | 735 | 109 | 354 |
+| 13 | 1226 | 737 | 737 | 109 | 357 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -386,6 +386,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/quality/holds/:batchId/release` | `quality.hold.release` | core | yes |
 | GET | `/v1/quality/lot-trace/:batchId/chain` | `quality.lottrace.read` | core | — |
 | GET | `/v1/quality/lot-trace/:batchId/sold` | `quality.lottrace.read` | core | — |
+| GET | `/v1/quality/lot-trace/backward/customers/:customerRef` | `quality.lottrace.read` | core | — |
+| GET | `/v1/quality/lot-trace/backward/sales/:saleId` | `quality.lottrace.read` | core | — |
 | POST | `/v1/quality/lot-trace/export` | `quality.lottrace.read` | core | yes |
 | GET | `/v1/quality/lot-trace/requests` | `quality.lottrace.read` | core | — |
 | POST | `/v1/quality/lot-trace/requests/:requestId` | `quality.lottrace.request` | core | yes |
@@ -573,6 +575,9 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/privacy/processor-contracts` | `privacy.request.manage` | core | — |
 | POST | `/v1/privacy/processor-contracts` | `privacy.request.manage` | core | yes |
 | POST | `/v1/privacy/retention/sweep` | `customer.consent.write` | core | yes |
+| POST | `/v1/quality/recall-notices/switch` | `quality.recall.notice.switch` | core | yes |
+| GET | `/v1/quality/recalls/:batchId/notice-list` | `quality.recall.notice.read` | core | — |
+| POST | `/v1/quality/recalls/:batchId/notices` | `quality.recall.notice.send` | core | yes |
 | POST | `/v1/service/campaigns/:campaignId/attribution` | `customer.campaign.read` | core | yes |
 | POST | `/v1/service/campaigns/:campaignId/messages/:messageId/status` | `notification.delivery.report` | core | yes |
 | POST | `/v1/service/campaigns/:campaignId/plan` | `customer.campaign.send` | core | yes |
