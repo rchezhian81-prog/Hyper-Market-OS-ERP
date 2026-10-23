@@ -115,6 +115,8 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // R4 Lane 4 · D-13 (OB-219): each bay's shelf against the planogram in force, from the staff counts, every gap named; a
   // photo with a shelf check, kept on the shop's own server; image recognition switched off. Gated on the read the bay route
   // checks (`planogram.compliance.read`). A head-office page (the box does not serve it).
+  // OB-288 P2 (M04-FR-04 · OB-308): the shop floor seen from above, each shelf area coloured by sales or margin per sq ft.
+  { id: 'floor-heat-map', label: 'Floor heat map', labelTa: 'தள வெப்ப வரைபடம்', path: '/floor-heat-map', requires: 'merchandising.space.read', group: 'Inventory', served: 'unserved' },
   { id: 'planogram-compliance', label: 'Shelf compliance by bay', labelTa: 'அலமாரி இணக்கம் — பகுதி வாரியாக', path: '/planogram-compliance', requires: 'planogram.compliance.read', group: 'Inventory', served: 'unserved' },
   { id: 'count-plans', label: 'Count plans', labelTa: 'எண்ணிக்கைத் திட்டங்கள்', path: '/count-plans', requires: 'inventory.count.plan', group: 'Inventory', served: 'unserved' },
   // Round 12 (WF-07 · M09-FR-03): send and count in transfers, settle a shortfall — gated on the read the register checks.

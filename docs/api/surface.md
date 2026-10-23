@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1336 | 795 | 795 | 109 | 376 |
+| 13 | 1358 | 805 | 805 | 109 | 378 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -112,6 +112,9 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | Method | Path | Permission | Feature | Idempotent |
 |---|---|---|---|---|
 | GET | `/v1/catalogue/barcodes/:code` | `catalogue.pack.read` | core | — |
+| GET | `/v1/catalogue/bundles` | `catalogue.pack.read` | core | — |
+| GET | `/v1/catalogue/bundles/:bundleProductId` | `catalogue.pack.read` | core | — |
+| POST | `/v1/catalogue/bundles/:bundleProductId` | `catalogue.pack.publish` | core | yes |
 | GET | `/v1/catalogue/categories` | `catalogue.pack.read` | core | — |
 | POST | `/v1/catalogue/categories/:categoryId` | `catalogue.category.propose` | core | yes |
 | POST | `/v1/catalogue/category-policy/resolve` | `catalogue.pack.read` | core | yes |
@@ -140,8 +143,12 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/catalogue/products/:productId/pack` | `catalogue.pack.publish` | core | yes |
 | GET | `/v1/catalogue/products/:productId/pack/convert` | `catalogue.pack.read` | core | — |
 | POST | `/v1/catalogue/products/:productId/publish` | `catalogue.pack.publish` | core | yes |
+| GET | `/v1/catalogue/products/:productId/substitutes` | `catalogue.pack.read` | core | — |
+| POST | `/v1/catalogue/products/:productId/substitutes` | `catalogue.pack.publish` | core | yes |
 | POST | `/v1/catalogue/products/:productId/tobacco-warning-confirmation` | `catalogue.tobacco.warning.confirm` | core | yes |
 | POST | `/v1/catalogue/products/duplicates` | `catalogue.pack.read` | core | yes |
+| GET | `/v1/catalogue/reports/variants` | `catalogue.pack.read` | core | — |
+| POST | `/v1/catalogue/search-misses` | `catalogue.search.miss.record` | core | yes |
 | GET | `/v1/catalogue/tax-classes/:hsnCode/rate` | `catalogue.pack.read` | core | — |
 | GET | `/v1/catalogue/tax-classes/:hsnCode/rates` | `catalogue.pack.read` | core | — |
 | POST | `/v1/catalogue/tax-classes/:hsnCode/rates/:effectiveFrom` | `catalogue.pack.publish` | core | yes |
@@ -172,7 +179,9 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/promotions/:promotionId/definition` | `promotion.read` | core | — |
 | POST | `/v1/promotions/:promotionId/definition` | `promotion.launch` | core | yes |
 | POST | `/v1/promotions/:promotionId/effectiveness` | `promotion.read` | core | yes |
+| POST | `/v1/promotions/:promotionId/funding/:supplierId` | `promotion.launch` | core | yes |
 | POST | `/v1/promotions/:promotionId/launch` | `promotion.launch` | core | yes |
+| GET | `/v1/promotions/:promotionId/results` | `promotion.read` | core | — |
 | POST | `/v1/promotions/:promotionId/simulate` | `promotion.simulate` | core | yes |
 | POST | `/v1/promotions/:promotionId/stop` | `promotion.launch` | core | yes |
 | POST | `/v1/promotions/:promotionId/vendor-funding` | `promotion.read` | core | yes |
@@ -180,6 +189,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/self-checkout/assess` | `selfcheckout.operate` | core | yes |
 | POST | `/v1/self-checkout/kiosk-quote` | `selfcheckout.operate` | core | yes |
 | POST | `/v1/self-checkout/scan-and-go` | `selfcheckout.operate` | core | yes |
+| GET | `/v1/storefront/products/:productId/substitutes` | `catalogue.substitutes.read` | core | — |
 
 ## API-03 — Purchase (M06–M07, M30)
 
@@ -370,10 +380,17 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/merchandising/assortment/:storeId/:productId/drop` | `merchandising.range.manage` | core | yes |
 | POST | `/v1/merchandising/assortment/:storeId/:productId/list` | `merchandising.range.manage` | core | yes |
 | POST | `/v1/merchandising/assortment/:storeId/integrity` | `merchandising.range.read` | core | yes |
+| GET | `/v1/merchandising/clusters` | `merchandising.range.read` | core | — |
+| POST | `/v1/merchandising/clusters/:zoneId/:productId/drop` | `merchandising.range.manage` | core | yes |
+| POST | `/v1/merchandising/clusters/:zoneId/:productId/list` | `merchandising.range.manage` | core | yes |
 | POST | `/v1/merchandising/display-contracts/:contractId` | `merchandising.display.manage` | core | yes |
 | POST | `/v1/merchandising/display-contracts/review` | `merchandising.space.read` | core | yes |
 | POST | `/v1/merchandising/planogram-compliance` | `planogram.compliance.read` | core | yes |
 | GET | `/v1/merchandising/planogram-compliance/bays` | `planogram.compliance.read` | core | — |
+| GET | `/v1/merchandising/range-gaps` | `merchandising.range.read` | core | — |
+| GET | `/v1/merchandising/season-plans` | `merchandising.range.read` | core | — |
+| POST | `/v1/merchandising/season-plans/:planId` | `merchandising.range.manage` | core | yes |
+| POST | `/v1/merchandising/season-plans/sweep` | `merchandising.range.manage` | core | yes |
 | GET | `/v1/merchandising/shelf-counts` | `shelf.count.read` | core | — |
 | POST | `/v1/merchandising/shelf-counts/:countId` | `shelf.count.record` | core | yes |
 | POST | `/v1/merchandising/shelf-counts/:countId/synced` | `shelf.count.sync` | core | yes |
@@ -382,6 +399,9 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/merchandising/shelf-photos/:photoId` | `shelf.count.read` | core | — |
 | POST | `/v1/merchandising/shelf-photos/:photoId` | `shelf.count.record` | core | yes |
 | POST | `/v1/merchandising/space/performance` | `merchandising.space.read` | core | yes |
+| GET | `/v1/merchandising/stores/:storeId/floor-plan` | `merchandising.space.read` | core | — |
+| POST | `/v1/merchandising/stores/:storeId/floor-plan` | `planogram.publish` | core | yes |
+| GET | `/v1/merchandising/stores/:storeId/heat-map` | `merchandising.space.read` | core | — |
 | GET | `/v1/merchandising/stores/:storeId/planograms` | `planogram.compliance.read` | core | — |
 | GET | `/v1/merchandising/stores/:storeId/planograms/:planogramId` | `planogram.compliance.read` | core | — |
 | PUT | `/v1/merchandising/stores/:storeId/planograms/:planogramId` | `planogram.publish` | core | yes |
@@ -924,6 +944,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/finance/periods/:period/trial-balance` | `finance.period.read` | core | — |
 | GET | `/v1/finance/posting-map` | `finance.period.read` | core | — |
 | PUT | `/v1/finance/posting-map` | `finance.posting.configure` | core | yes |
+| GET | `/v1/finance/promotion-funding` | `finance.period.read` | core | — |
+| POST | `/v1/finance/promotion-funding/:promotionId/:supplierId/receipts/:receiptId` | `finance.journal.post` | core | yes |
 | GET | `/v1/finance/rcm/heads` | `finance.rcm.read` | core | — |
 | POST | `/v1/finance/rcm/heads/:headCode` | `finance.rcm.configure` | core | yes |
 | POST | `/v1/finance/rcm/heads/:headCode/retire` | `finance.rcm.configure` | core | yes |

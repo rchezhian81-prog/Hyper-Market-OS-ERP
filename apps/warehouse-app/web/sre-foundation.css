@@ -163,6 +163,11 @@
   --dur-slow: 200ms;
   --ease-out: cubic-bezier(.2, .8, .2, 1);
   --ease-in-out: cubic-bezier(.4, 0, .2, 1);
+  /* A magnitude scale for a heat map (OB-288 P2 · OB-308): ONE hue, light → dark, five steps — the more, the darker; never a
+     rainbow. Each step has its words' colour beside it. "Not known" is its own neutral, never a step of the scale. */
+  --heat-0: #86b6ef; --heat-1: #5598e7; --heat-2: #2a78d6; --heat-3: #1c5cab; --heat-4: #0d366b;
+  --on-heat-0: #0d1b2a; --on-heat-1: #0d1b2a; --on-heat-2: #ffffff; --on-heat-3: #ffffff; --on-heat-4: #ffffff;
+  --heat-unknown: #e9ece9; --on-heat-unknown: #3b4741;
 }
 
 /* ── The dark set — every screen's look before OB-13, kept for the shells UX-1b has not brought over yet ── */
@@ -222,6 +227,10 @@
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, .3), 0 1px 3px rgba(0, 0, 0, .2);
   --shadow-md: 0 2px 4px rgba(0, 0, 0, .3), 0 6px 16px rgba(0, 0, 0, .3);
   --shadow-lg: 0 4px 8px rgba(0, 0, 0, .35), 0 16px 40px rgba(0, 0, 0, .45);
+  /* The heat-map scale on the dark surface: near nothing recedes into the dark, the most is the lightest. */
+  --heat-0: #184f95; --heat-1: #256abf; --heat-2: #3987e5; --heat-3: #6da7ec; --heat-4: #9ec5f4;
+  --on-heat-0: #ffffff; --on-heat-1: #ffffff; --on-heat-2: #ffffff; --on-heat-3: #0d1b2a; --on-heat-4: #0d1b2a;
+  --heat-unknown: #2b3646; --on-heat-unknown: #d6dde6;
 }
 
 /* ── Base ─────────────────────────────────────────────────────────────────────────────────────────── */

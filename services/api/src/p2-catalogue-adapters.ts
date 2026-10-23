@@ -17,8 +17,9 @@ import { money } from '../../../packages/contracts/src/money';
 import { valueAtCost, normaliseUom } from '../../../packages/contracts/src/quantity';
 import {
   STREAM, streamName, productMasterAdapter, categoryRegisterAdapter, planogramStoreAdapter, assortmentAdapter, averageBuyingCosts,
-  registeredStores, orgStructureAdapter, financeAdapter, approvalRequestsAdapter,
+  registeredStores, orgStructureAdapter, financeAdapter, approvalRequestsAdapter, taxClassAdapter,
 } from './adapters';
+import { resolveGstRate } from '../../../packages/finance/src/rate';
 import { channelPricingAdapter } from './r3-ops-adapters';
 import { eprAdapter } from './r4-pay-epr-adapters';
 import { branchOfLocationIn } from '../../inventory/src/location-scope';
@@ -87,7 +88,19 @@ interface Taken { units: number; salesMinor: number; netSalesMinor: number; cost
 /** What each product took in the window (optionally at one store / among some products): as charged, ex-tax, at cost. */
 async function takingsByProduct(input: Base, tenantId: string, fromIso: string, toIso: string, opts: { readonly storeId?: string; readonly productIds?: readonly string[] } = {}): Promise<Map<string, Taken>> {
   const [sales, pack, costs] = await Promise.all([bankedSales(input, tenantId, fromIso, toIso), latestPack(input.store, tenantId), averageBuyingCosts(input, tenantId)]);
-  const taxOf = new Map((pack?.snapshot.products ?? []).map((p) => [p.productId, p.taxBps] as const));
+  const packTax = new Map((pack?.snapshot.products ?? []).map((p) => [p.productId, p.taxBps] as const));
+  // A product not in the latest pack is de-taxed at its HSN's rate in force on the bill's day (the effective-dated schedule);
+  // a class with no rate on that day leaves the line's net — and so its margin — not known, never guessed.
+  const hsnOf = new Map((await productMasterAdapter(input).products(tenantId)).map((p) => [p.productId, p.taxClass] as const));
+  const schedules = new Map<string, Awaited<ReturnType<ReturnType<typeof taxClassAdapter>['schedule']>>>();
+  const taxOn = async (productId: string, day: string): Promise<number | undefined> => {
+    const fromPack = packTax.get(productId);
+    if (fromPack !== undefined) return fromPack;
+    const hsn = hsnOf.get(productId);
+    if (hsn === undefined || hsn === null || hsn === '') return undefined;
+    if (!schedules.has(hsn)) schedules.set(hsn, await taxClassAdapter(input).schedule(tenantId, hsn));
+    try { return resolveGstRate({ schedule: schedules.get(hsn)!, supplyDate: day }).rateBps; } catch { return undefined; }
+  };
   const only = opts.productIds === undefined ? undefined : new Set(opts.productIds);
   const out = new Map<string, Taken>();
   for (const s of sales) {
@@ -98,7 +111,7 @@ async function takingsByProduct(input: Base, tenantId: string, fromIso: string, 
       t.units += unitsOf(l);
       t.salesMinor += l.lineTotalMinor;
       t.bills.add(s.saleId);
-      const taxBps = taxOf.get(l.productId);
+      const taxBps = await taxOn(l.productId, s.committedAt.slice(0, 10));
       const unitCost = s.storeId === undefined ? undefined : costs.costOf(l.productId, s.storeId);
       if (taxBps === undefined || unitCost === undefined) t.costKnown = false;
       else {

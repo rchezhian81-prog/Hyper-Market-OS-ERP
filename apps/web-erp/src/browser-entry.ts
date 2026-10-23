@@ -321,6 +321,8 @@ import { createGatesSession, gatesWords, gatesOutcomeWords, stateView as gateSta
 // OB-288 lane 1 · P1: the Approval rules page — the owner's money limits, escalation waits and price-check size.
 // OB-288 lane 1 · P1: the Access review page — who holds what, where, up to how much; the permission matrix as CSV.
 import { createAccessReviewSession, accessReviewWords, accessReviewOutcomeWords, whereWords as accessWhereWords, ordered as accessOrdered, type AccessReviewSession } from './access-review-session';
+// OB-288 P2 (M04-FR-04 · OB-308): the Floor heat map page.
+import { createHeatMapSession, heatMapWords, heatMapOutcomeWords, heatBand, areaName, figureWords, areaNotes, rupees as heatRupees, type HeatMapSession } from './floor-heat-map-session';
 // OB-288 P5 (OB-293): the Tally files page — the accountant's daily Tally import file, the dead letter and the trial balance.
 import { createTallyFilesSession, tallyFilesWords, tallyFilesOutcomeWords, rupees as tallyRupees, familyWords as tallyFamilyWords, type TallyFilesSession } from './tally-files-session';
 import { createApprovalRulesSession, approvalRulesWords, approvalRulesOutcomeWords, limitWords as approvalLimitWords, waitWords as approvalWaitWords, limitsFromForm as approvalLimitsFromForm, paiseFromRupees as approvalPaiseFromRupees, KINDS as APPROVAL_LIMIT_KINDS, ROLES_SHOWN as APPROVAL_ROLES_SHOWN, type ApprovalRulesSession } from './approval-rules-session';
@@ -5086,6 +5088,12 @@ interface ManagerWindow {
   gates?: { readonly session: GatesSession; readonly words: typeof gatesWords; readonly outcomeWords: typeof gatesOutcomeWords; readonly stateView: typeof gateStateView; readonly names: typeof GATE_NAMES; readonly releases: typeof GATE_RELEASES };
   // OB-288 lane 1 · P1: the Approval rules page — who is looking; head office answers the rest.
   approvalRulesData?: ViewerIdentity;
+  // OB-288 P2: the Floor heat map page — who is looking; head office answers the rest.
+  floorHeatMapData?: ViewerIdentity;
+  floorHeatMap?: {
+    readonly session: HeatMapSession; readonly words: typeof heatMapWords; readonly outcomeWords: typeof heatMapOutcomeWords; readonly heatBand: typeof heatBand;
+    readonly areaName: typeof areaName; readonly figureWords: typeof figureWords; readonly areaNotes: typeof areaNotes; readonly rupees: typeof heatRupees;
+  };
   accessReviewData?: ViewerIdentity;
   accessReview?: { readonly session: AccessReviewSession; readonly words: typeof accessReviewWords; readonly outcomeWords: typeof accessReviewOutcomeWords; readonly whereWords: typeof accessWhereWords; readonly ordered: typeof accessOrdered };
   // OB-288 P5 (OB-293): the Tally files page.
@@ -6909,6 +6917,9 @@ if (browserWindow !== undefined) {
   browserWindow.gatesData = viewerIdentity(browserWindow.gatesData);
   browserWindow.gates = { session: createGatesSession({ viewer: browserWindow.gatesData }), words: gatesWords, outcomeWords: gatesOutcomeWords, stateView: gateStateView, names: GATE_NAMES, releases: GATE_RELEASES };
   // OB-288 lane 1 · P1: the Approval rules page — reads on a click; asks and applies only on a person's explicit click.
+  // OB-288 P2 (OB-308): the Floor heat map page — reads on a click; changes nothing.
+  browserWindow.floorHeatMapData = viewerIdentity(browserWindow.floorHeatMapData);
+  browserWindow.floorHeatMap = { session: createHeatMapSession({ viewer: browserWindow.floorHeatMapData }), words: heatMapWords, outcomeWords: heatMapOutcomeWords, heatBand, areaName, figureWords, areaNotes, rupees: heatRupees };
   browserWindow.accessReviewData = viewerIdentity(browserWindow.accessReviewData);
   browserWindow.accessReview = { session: createAccessReviewSession({ viewer: browserWindow.accessReviewData }), words: accessReviewWords, outcomeWords: accessReviewOutcomeWords, whereWords: accessWhereWords, ordered: accessOrdered };
   // OB-288 P5 (OB-293): the Tally files page — reads on a click; makes, requeues and downloads only on a person's explicit click.

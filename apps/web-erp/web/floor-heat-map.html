@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Floor heat map</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Floor heat map (M04-FR-04 · D02-FR-05 · OB-308). A THIN CLIENT over head office's
+      GET /v1/merchandising/stores/:storeId/heat-map. Its session is apps/web-erp/src/floor-heat-map-session.ts. Read-only:
+      nothing is read before the person asks. Every figure is head office's own fold of the bills, the buying cost and the
+      shelf plans; an area whose margin is not known is shown as "not known" with a dashed edge, never a colour of the scale.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; box-sizing: border-box; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      input { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; box-sizing: border-box; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; }
+      button.toggle { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
+      button.toggle[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+      button:focus-visible, input:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+      .row-form > label { flex: 1 1 160px; }
+      .measures { display: flex; gap: 8px; flex-wrap: wrap; }
+      .meta { font-size: 13px; color: var(--muted); }
+      /* The floor, seen from above: each area a box at its own coordinates (percent of the floor), its colour the
+         foundation's one-hue heat scale (--heat-0 … --heat-4), its words in the colour paired with that step. */
+      .floor { position: relative; width: 100%; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+      .floor .area { position: absolute; box-sizing: border-box; border: 2px solid var(--panel); border-radius: 6px; display: block; text-align: center; padding: 4px 2px; font-size: 12px; font-weight: 600; line-height: 1.3; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; cursor: default; }
+      .floor .area:hover, .floor .area:focus-visible { border-color: var(--ink); }
+      .floor .area[data-band="unknown"] { background: var(--heat-unknown); color: var(--on-heat-unknown); border-style: dashed; border-color: var(--line-strong); }
+      .floor .area[data-band="0"] { background: var(--heat-0); color: var(--on-heat-0); }
+      .floor .area[data-band="1"] { background: var(--heat-1); color: var(--on-heat-1); }
+      .floor .area[data-band="2"] { background: var(--heat-2); color: var(--on-heat-2); }
+      .floor .area[data-band="3"] { background: var(--heat-3); color: var(--on-heat-3); }
+      .floor .area[data-band="4"] { background: var(--heat-4); color: var(--on-heat-4); }
+      .floor .front { position: absolute; left: 0; right: 0; bottom: 0; text-align: center; font-size: 12px; color: var(--muted); }
+      .legend { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 13px; color: var(--muted); }
+      .legend .sw { width: 28px; height: 14px; border-radius: 3px; display: inline-block; }
+      .legend .sw[data-band="0"] { background: var(--heat-0); } .legend .sw[data-band="1"] { background: var(--heat-1); } .legend .sw[data-band="2"] { background: var(--heat-2); }
+      .legend .sw[data-band="3"] { background: var(--heat-3); } .legend .sw[data-band="4"] { background: var(--heat-4); }
+      .legend .sw[data-band="unknown"] { background: var(--heat-unknown); border: 1px dashed var(--line-strong); }
+      .table-wrap { overflow-x: auto; }
+      table { border-collapse: collapse; width: 100%; font-size: 15px; }
+      th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+      td.num { font-variant-numeric: tabular-nums; }
+      .tip { position: fixed; pointer-events: none; background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; font-size: 13px; box-shadow: var(--shadow-md); max-width: 260px; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Floor heat map</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section aria-labelledby="page-h">
+        <h2 id="page-h">Floor heat map</h2>
+        <p class="lead" id="lead"></p>
+        <div class="row-form">
+          <label for="store"><span id="store-l">Store</span><input id="store" autocomplete="off" /></label>
+          <label for="from"><span id="from-l">From</span><input id="from" type="date" /></label>
+          <label for="to"><span id="to-l">To</span><input id="to" type="date" /></label>
+        </div>
+        <div class="measures" role="group" aria-label="Measure">
+          <button class="toggle" id="m-sales" type="button" aria-pressed="true"><span id="m-sales-text">Sales per sq ft</span></button>
+          <button class="toggle" id="m-margin" type="button" aria-pressed="false"><span id="m-margin-text">Margin per sq ft</span></button>
+          <button id="show" type="button"><span id="show-text">Show the heat map</span></button>
+        </div>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+      <section aria-labelledby="map-h" id="map-section" hidden>
+        <h3 id="map-h"></h3>
+        <div class="floor" id="floor" role="group"></div>
+        <div class="legend" id="legend"></div>
+        <p class="meta" id="map-meta"></p>
+        <div class="table-wrap"><table id="areas"><thead><tr><th id="th-area">Area</th><th id="th-sqft">Sq ft</th><th id="th-fig">Sales per sq ft</th><th id="th-heat">Heat</th><th id="th-note">Note</th></tr></thead><tbody></tbody></table></div>
+        <p id="off-plan"></p>
+      </section>
+    </main>
+    <div class="tip" id="tip" hidden></div>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./floor-heat-map.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

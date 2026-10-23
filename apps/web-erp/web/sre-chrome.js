@@ -489,6 +489,7 @@
     // R4 Lane 4 — begin: the two new pages' menu icons, from icons already in the set (no restyle).
     'supplier-scorecard': 'list-checks',
     'planogram-compliance': 'layout-grid',
+    'floor-heat-map': 'layout-dashboard', // OB-288 P2 (OB-308) — an icon already in the set
     'requisitions': 'clipboard-list',
     // R4 Lane 4 — end
     'checklist': 'clipboard-check',
