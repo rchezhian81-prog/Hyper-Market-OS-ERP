@@ -336,7 +336,7 @@ import { r3GstRoutes, eInvoiceReportingGuardFor, gstTimeBarSweep } from './r3-gs
 // R4 Lane 4 (supply, pricing and loss prevention): D-10 · D-18 · D-21 · D-13 (r4-supply-lp-adapters).
 import { r4SupplyLpRoutes, supplierFactsFor } from './r4-supply-lp-adapters';
 import { lane2RecallSurface } from './lane2-recall-adapters'; // Lane 2 · P1
-import { tillBillSurface } from './till-bill-adapters'; // Till bill and GST (audit-1 P5 · audit-2 P3)
+import { tillBillSurface, supplierStateCodeOf } from './till-bill-adapters'; // Till bill and GST (audit-1 P5 · audit-2 P3)
 import { alsoEachPassOf } from './ops-alert-sweeps'; // R3 lane 1 — GST liability and returns
 import { itcPortForStore } from './r3-itc-bridge'; // R3 seam — GSTR-3B Table 4 reads the A17 reconciliation
 import { r4PayEprRoutes, r4PayslipHooks, payslipLateSweep } from './r4-pay-epr-adapters';
@@ -511,6 +511,7 @@ export function buildSurface(deps: {
     ...b2bDocumentsAdapter({ store: st, now, numberSeries: deps.numberSeries }),
     afterTaxInvoice: b2bMoneyEffectsAdapter({ store: st, now }).afterTaxInvoice,
     stock: b2bStockAdapter({ store: st, now }),
+    supplierStateCode: supplierStateCodeOf({ store: st, now }), // Till bill and GST (A8): CGST + SGST or IGST by place of supply
     commissionOnInvoice: (tenantId, i) => accrueFromInvoice(commissionRuleAdapter({ store: st, now }), tenantId, {
       salespersonId: i.salespersonId, invoiceId: i.invoice.documentId, invoiceNumber: i.invoice.number, netMinor: i.invoice.netMinor,
     }),
