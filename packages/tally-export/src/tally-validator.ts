@@ -52,7 +52,7 @@ function decode(s: string, problems: string[], where: string): string {
 
 /** A deliberately small XML reader for the subset a Tally import uses: elements, attributes, text; no DTDs, no CDATA. */
 function parseXml(xml: string, problems: string[]): XmlNode | undefined {
-  const body = xml.replace(/^﻿?\s*<\?xml[^?]*\?>/, '');
+  const body = xml.replace(/^\uFEFF?\s*<\?xml[^?]*\?>/, '');
   const root: XmlNode = { name: '#root', attrs: {}, children: [], text: '' };
   const stack: XmlNode[] = [root];
   const tag = /<(\/?)([A-Za-z_][\w.:-]*)((?:\s+[\w.:-]+="[^"<]*")*)\s*(\/?)>|([^<]+)|(<)/g;

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { useRestartableBackings } from '../support/p3-backings';
-import { P3, p3Shop, caller, issuedOrder, received, capturedAndMatched, payInCash } from '../support/p3-purchase';
+import { P3, p3Shop, caller, issuedOrder, received, payInCash } from '../support/p3-purchase';
 
 // M06-FR-02 acceptance "SoD prevents one person completing requisition-to-pay"; §28 Purchase User "cannot receive, match
 // and pay same transaction"; M07-FR-04 "receiver ≠ approver of payment" (OB-288 P3). For ONE purchase order the same person

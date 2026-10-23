@@ -32,6 +32,8 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Suppli
         await cloud.grant(SUPPLIER_MAKER, 'store_manager');
         await cloud.grant(SUPPLIER_CHECKER, 'accountant');
         await cloud.grant('u-buyer', 'store_manager');
+        // OB-288 P3 (§28): the person who booked the goods in (the owner) never also matches the bill — finance matches it.
+        await cloud.grant('u-match', 'accountant');
         const call = (method: 'POST', path: string, userId: string, body: unknown, idempotencyKey: string) => cloud.request({ method, path, userId, idempotencyKey, body });
         await approveSupplierWith(call, 's-rice');
         await approveSupplierWith(call, 's-idle');
@@ -51,7 +53,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Suppli
         }, 'grn-rice');
         const lines = [{ productId: 'p-rice', quantity: 10, unitPriceMinor: 500, lineTotalMinor: 5000 }, { productId: 'p-dal', quantity: 5, unitPriceMinor: 1100, lineTotalMinor: 5500 }];
         await post('/v1/purchase/invoices/inv-rice/capture', { supplierId: 's-rice', poId: 'po-rice', declaredTotalMinor: 10_500, lines }, 'inv-capture', 'u-buyer');
-        await post('/v1/purchase/invoices/inv-rice/match', {}, 'inv-match');
+        await post('/v1/purchase/invoices/inv-rice/match', {}, 'inv-match', 'u-match');
       },
     });
     browser = await chromium.launch({ headless: true, executablePath: CHROMIUM });

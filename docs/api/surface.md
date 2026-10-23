@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1221 | 735 | 735 | 109 | 354 |
+| 13 | 1236 | 743 | 743 | 109 | 354 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -181,9 +181,14 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/import/commits/:jobId/rollback` | `purchase.import.record` | core | yes |
 | GET | `/v1/import/templates` | `purchase.import.read` | core | — |
 | POST | `/v1/import/validate` | `purchase.import.read` | core | yes |
+| GET | `/v1/purchase/blanket-orders` | `purchase.commitment.read` | core | — |
+| GET | `/v1/purchase/blanket-orders/:agreementId` | `purchase.commitment.read` | core | — |
+| POST | `/v1/purchase/blanket-orders/:agreementId` | `purchase.order.propose` | core | yes |
+| POST | `/v1/purchase/blanket-orders/:agreementId/approval` | `purchase.order.approve` | core | yes |
 | GET | `/v1/purchase/budgets` | `purchase.commitment.read` | core | — |
 | POST | `/v1/purchase/budgets` | `purchase.budget.set` | core | yes |
 | GET | `/v1/purchase/commitments` | `purchase.commitment.read` | core | — |
+| GET | `/v1/purchase/commitments/report` | `purchase.commitment.read` | core | — |
 | POST | `/v1/purchase/contracts/:contractId` | `purchase.contract.manage` | core | yes |
 | GET | `/v1/purchase/contracts/alerts` | `purchase.commitment.read` | core | — |
 | GET | `/v1/purchase/deliveries/open` | `purchase.commitment.read` | core | — |
@@ -220,6 +225,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/purchase/requisitions` | `purchase.commitment.read` | core | — |
 | POST | `/v1/purchase/requisitions/:requisitionId` | `purchase.order.propose` | core | yes |
 | GET | `/v1/purchase/requisitions/:requisitionId/comparison` | `purchase.commitment.read` | core | — |
+| POST | `/v1/purchase/requisitions/:requisitionId/from-drafts` | `purchase.order.propose` | core | yes |
+| POST | `/v1/purchase/requisitions/:requisitionId/from-replenishment` | `purchase.order.propose` | core | yes |
 | POST | `/v1/purchase/requisitions/:requisitionId/quotes/:quoteId` | `purchase.order.propose` | core | yes |
 | GET | `/v1/purchase/suppliers` | `supplier.view` | core | — |
 | GET | `/v1/purchase/suppliers/:supplierId` | `supplier.view` | core | — |
@@ -292,6 +299,9 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/inventory/demand-events/:eventId/withdraw` | `inventory.calendar.manage` | core | yes |
 | GET | `/v1/inventory/demand-events/weather` | `inventory.availability.read` | core | — |
 | GET | `/v1/inventory/demand-forecast` | `inventory.availability.read` | core | — |
+| GET | `/v1/inventory/dock-diary` | `inventory.availability.read` | core | — |
+| POST | `/v1/inventory/dock-diary/:slotId` | `inventory.movement.append` | core | yes |
+| POST | `/v1/inventory/dock-diary/:slotId/status` | `inventory.movement.append` | core | yes |
 | POST | `/v1/inventory/dock-slots/book` | `inventory.movement.append` | core | yes |
 | GET | `/v1/inventory/dsd-checkins` | `inventory.availability.read` | core | — |
 | GET | `/v1/inventory/dsd-checkins/:checkInId` | `inventory.availability.read` | core | — |
@@ -883,6 +893,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/finance/rcm/purchases/:purchaseId` | `finance.rcm.record` | core | yes |
 | POST | `/v1/finance/rcm/purchases/:purchaseId/paid` | `finance.rcm.pay` | core | yes |
 | GET | `/v1/finance/rcm/register` | `finance.rcm.read` | core | — |
+| GET | `/v1/finance/rebate-receipts` | `finance.period.read` | core | — |
+| POST | `/v1/finance/rebate-receipts/:schemeId/receipts/:receiptId` | `finance.journal.post` | core | yes |
 | GET | `/v1/finance/referral-liability` | `finance.period.read` | core | — |
 | POST | `/v1/finance/referral-liability/post` | `finance.journal.post` | core | yes |
 | POST | `/v1/finance/refunds/day-totals` | `refund.exception.read` | core | yes |
@@ -891,6 +903,9 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/finance/returns/:returnType/:period/filed` | `finance.gstr.submit` | core | yes |
 | GET | `/v1/finance/stock-losses` | `finance.period.read` | core | — |
 | POST | `/v1/finance/stock-losses/post` | `finance.journal.post` | core | yes |
+| GET | `/v1/finance/tally/ap-vouchers` | `finance.period.read` | core | — |
+| GET | `/v1/finance/tally/ledger-names` | `finance.period.read` | core | — |
+| POST | `/v1/finance/tally/ledger-names` | `finance.posting.configure` | core | yes |
 | GET | `/v1/finance/tax/bogo` | `finance.period.read` | core | — |
 | GET | `/v1/finance/tax/cess` | `finance.period.read` | core | — |
 | GET | `/v1/finance/tax/discount-eligibility` | `finance.period.read` | core | — |

@@ -58,6 +58,8 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('OB-204 · 
         const req = (method: 'GET' | 'POST', path: string, body: unknown, userId = OWNER) => cloud.request({ method, path, userId, idempotencyKey: `${method}-${path}-${userId}`, body });
         await cloud.grant(RECV, 'store_manager');
         await cloud.grant('u-boss', 'store_manager');
+        // OB-288 P3 (§28): the person who raises the order never also books its goods in — a separate buyer raises it.
+        await cloud.grant('u-po-buyer', 'store_manager');
         await cloud.grant('u-till', 'cashier');
         await cloud.grant(SUPPLIER_MAKER, 'store_manager');
         await cloud.grant(SUPPLIER_CHECKER, 'accountant');
@@ -68,7 +70,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('OB-204 · 
         await ok(req('POST', '/v1/purchase/suppliers/sup-tn', { name: 'Synthetic Rice Mills', gstin: TN_SUPPLIER }, SUPPLIER_MAKER), 'propose supplier');
         await ok(req('POST', '/v1/purchase/suppliers/sup-tn/approval', { reason: 'synthetic, documents checked' }, SUPPLIER_CHECKER), 'approve supplier');
         await ok(req('POST', '/v1/inventory/receipt-policy', { excessToleranceBp: 0, shortageToleranceBp: 0, nearExpiryDays: 7 }), 'policy');
-        await ok(req('POST', '/v1/purchase/orders/po-rice', { supplierId: 'sup-tn', deliverToLocationId: 'WH', lines: [{ productId: 'p-rice', orderedQty: 5_000, unitCost: RICE }] }, RECV), 'po');
+        await ok(req('POST', '/v1/purchase/orders/po-rice', { supplierId: 'sup-tn', deliverToLocationId: 'WH', lines: [{ productId: 'p-rice', orderedQty: 5_000, unitCost: RICE }] }, 'u-po-buyer'), 'po');
         await ok(req('POST', '/v1/purchase/orders/po-rice/approval', { reason: 'fixture' }), 'issue po');
         // 1,001 damaged bags, sent back by a second person: ₹1,00,100 — above the ₹1,00,000 threshold.
         await ok(req('POST', '/v1/inventory/goods-receipt/grn-big', { warehouseId: 'WH', receivedOnDate: '2026-10-18', currency: 'INR', poId: 'po-rice', lines: [{ lineId: 'L1', productId: 'p-rice', orderedMinor: 1_001, countedMinor: 1_001, uom: 'ea', unitCost: RICE, condition: 'damaged' }] }, RECV), 'grn');

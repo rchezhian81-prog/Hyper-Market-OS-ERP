@@ -30,7 +30,7 @@ import {
   accrueRebate,
   type RebateScheme, type RebateBasis, type RebateAccrual,
 } from '../../../packages/purchasing/src/index';
-import { isCurrencyCode, type Money } from '../../../packages/contracts/src/money';
+import type { Money } from '../../../packages/contracts/src/money';
 
 export interface RebateDeps {
   /** Head office's maker-checker engine (ADR-0024): a scheme's approver gave it in their own session. Optional on a
@@ -67,11 +67,8 @@ export interface StoredRebateAccrual extends RebateAccrual {
 
 const BASES: readonly RebateBasis[] = ['volume_units', 'purchase_value', 'growth_over_baseline'];
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
-const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
 const isDate = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(`${v}T00:00:00Z`));
 const isNonNegInt = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
-const isMoney = (v: unknown): v is Money =>
-  isObj(v) && typeof v['minor'] === 'number' && Number.isSafeInteger(v['minor']) && typeof v['currency'] === 'string' && isCurrencyCode(v['currency']);
 
 /** Sum a money field across accruals in the scheme's currency (defaulting to INR when empty). */
 const sumMinor = (accruals: readonly RebateAccrual[], pick: (a: RebateAccrual) => Money): number =>

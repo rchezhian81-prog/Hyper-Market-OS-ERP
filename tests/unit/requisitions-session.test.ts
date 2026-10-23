@@ -52,7 +52,7 @@ describe('the Requisitions page session', () => {
   });
 
   it('raises a requisition with whole quantities only, and reads the list from head office', async () => {
-    const ho = fakeHeadOffice((m, p) => m === 'GET' ? { status: 200, body: { requisitions: [{ requisitionId: 'rq-1', currency: 'INR', lines: [] }] } } : { status: 201, body: { requisition: { requisitionId: 'rq-1', currency: 'INR', lines: [{ productId: 'rice', quantity: 10 }] } } });
+    const ho = fakeHeadOffice((m) => m === 'GET' ? { status: 200, body: { requisitions: [{ requisitionId: 'rq-1', currency: 'INR', lines: [] }] } } : { status: 201, body: { requisition: { requisitionId: 'rq-1', currency: 'INR', lines: [{ productId: 'rice', quantity: 10 }] } } });
     const s = createRequisitionsSession({ viewer: BUYER, fetch: ho.fetch, newKey: () => 'k-1' });
     expect(await s.raise(' ', [{ productId: 'rice', quantity: '10' }])).toEqual({ result: 'invalid', why: 'needId' });
     for (const q of ['0', '1.5', 'ten', '']) expect(await s.raise('rq-1', [{ productId: 'rice', quantity: q }])).toEqual({ result: 'invalid', why: 'needLine' });
