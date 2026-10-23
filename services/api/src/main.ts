@@ -335,7 +335,7 @@ import type { EventStore } from '../../../packages/persistence/src/event-store';
 import { r3GstRoutes, eInvoiceReportingGuardFor, gstTimeBarSweep } from './r3-gst-adapters';
 // R4 Lane 4 (supply, pricing and loss prevention): D-10 · D-18 · D-21 · D-13 (r4-supply-lp-adapters).
 import { r4SupplyLpRoutes, supplierFactsFor } from './r4-supply-lp-adapters';
-import { lane2OfflineRoutes } from './lane2-offline-adapters'; // OB-288 lane 2 · P2 — store-box offline queues, expiry move
+import { lane2OfflineRoutes, lane2ExpirySweep } from './lane2-offline-adapters'; // OB-288 lane 2 · P2 — store-box offline queues, expiry move
 import { alsoEachPassOf } from './ops-alert-sweeps'; // R3 lane 1 — GST liability and returns
 import { itcPortForStore } from './r3-itc-bridge'; // R3 seam — GSTR-3B Table 4 reads the A17 reconciliation
 import { r4PayEprRoutes, r4PayslipHooks, payslipLateSweep } from './r4-pay-epr-adapters'; // R4 Lane 1 — pay (C19 · C15 · C16) and EPR registers (B20 · B21 · B22)
@@ -2607,6 +2607,7 @@ export async function startApi(
       gstTimeBar: gstTimeBarSweep({ store, now, timeZone: (t: string) => new DurableTenantSettings(new SqlConfigVersionStore(pgPoolClient(db))).value(t, SETTINGS.STORE_TIME_ZONE) }),
       // R4 · C15: a payslip not issued by its pay date is raised to every owner on the same timer.
       payslipLate: payslipLateSweep({ store, now }),
+      expiryMove: lane2ExpirySweep({ store, now }), // OB-288 lane 2 · M10-FR-01
       say: (line) => { out(`${line}\n`); },
     }),
   });

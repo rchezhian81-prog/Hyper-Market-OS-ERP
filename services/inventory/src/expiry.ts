@@ -19,7 +19,10 @@
 
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
-import { expiryActions, allocateFefo, InvalidFefoRequestError, type Batch } from '../../../packages/fefo/src/index';
+import { expiryActions, allocateFefo, isExpired, InvalidFefoRequestError, type Batch } from '../../../packages/fefo/src/index';
+import type { AuditEntry } from '../../../packages/audit/src/index';
+import type { BatchBalance } from './index';
+import { locationInScope, type LocationBranches } from './location-scope';
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
 const isWholeNonNeg = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0;
@@ -101,6 +104,128 @@ export function expiryRoutes(): readonly Route[] {
           }
           throw err;
         }
+      },
+    },
+  ];
+}
+
+// ── OB-288 lane 2 · P2: an expired batch MOVES to the expired state by itself (M10-FR-01 · M08-FR-02) ─────────────────
+//
+// M10-FR-01: "expired stock auto-moves to expired state (not sellable, M08-FR-02)". Until now nothing wrote that move: a
+// batch past its date was excluded only where a reader looked at the date itself. Now a DAILY sweep (the ops-alert worker's
+// pass, once per shop day, and a "run it now" route for a person) appends ONE `BatchExpired` fact per batch the day its
+// date has passed — append-only (hard rule #2): the stock ledger's quantities are not touched (the units are still on the
+// shelf until somebody bins them), the batch's STATE is recorded as expired from that moment, with the on-hand it had. The
+// dispose action stays the M28 write-off of that batch, which the expired register shows beside the move (what is still
+// there to bin, and the write-offs that binned it). "Expired" uses the FEFO engine's own rule (the date strictly before the
+// shop's day), so the expiry list, the FEFO allocation and this move can never disagree. A batch moved once is never moved
+// again; a correction of a wrongly-recorded date is a person's compensating act, never an overwrite.
+
+
+/** One batch's move into the expired state — the fact the sweep appends, once. */
+export interface ExpiredBatchMove {
+  readonly productId: string;
+  readonly locationId: string;
+  /** null for stock received with an expiry but no batch id — still stock past its date. */
+  readonly batchId: string | null;
+  /** YYYY-MM-DD, the batch's own date. */
+  readonly expiry: string;
+  /** The on-hand the batch had when it was moved (it is still on the shelf until it is written off). */
+  readonly onHandMinor: number;
+  /** The shop day the move belongs to (the first day the date had passed). */
+  readonly shopDay: string;
+  readonly movedAt: string;
+  /** Never a person: the sweep moved it (a person who runs it now is named on the trail). */
+  readonly movedBy: 'expiry-sweep';
+}
+
+/** The key that makes a batch's move once-only, whoever or whatever runs the sweep. */
+export const expiryMoveKey = (m: Pick<ExpiredBatchMove, 'productId' | 'locationId' | 'batchId'>): string =>
+  `${m.locationId}\u001f${m.productId}\u001f${m.batchId ?? ''}`;
+
+/**
+ * The batches to move today (pure): every batch with stock on hand, a recorded expiry, and that expiry strictly before the
+ * shop's day by the FEFO engine's own rule — and not already moved. Earliest expiry first. A batch with no recorded date is
+ * never guessed into "expired" (P-08).
+ */
+export function expiredBatchesToMove(input: {
+  readonly batches: readonly BatchBalance[]; readonly alreadyMoved: ReadonlySet<string>; readonly shopDay: string; readonly at: string;
+}): readonly ExpiredBatchMove[] {
+  return input.batches
+    .filter((b) => b.expiry !== undefined && b.onHandMinor > 0 && !input.alreadyMoved.has(expiryMoveKey(b))
+      && isExpired({ batchId: b.batchId ?? '', productId: b.productId, qty: b.onHandMinor, expiry: b.expiry }, input.shopDay))
+    .sort((a, b) => (a.expiry! < b.expiry! ? -1 : a.expiry! > b.expiry! ? 1 : expiryMoveKey(a) < expiryMoveKey(b) ? -1 : 1))
+    .map((b): ExpiredBatchMove => ({
+      productId: b.productId, locationId: b.locationId, batchId: b.batchId, expiry: b.expiry!, onHandMinor: b.onHandMinor,
+      shopDay: input.shopDay, movedAt: input.at, movedBy: 'expiry-sweep',
+    }));
+}
+
+/** A write-off that binned stock of a batch (M28), as the expired register shows it beside the move. */
+export interface BatchWriteOff { readonly id: string; readonly productId: string; readonly locationId: string; readonly batchId?: string | null; readonly qtyRemoved: number; readonly at: string }
+
+export interface ExpiryStateDeps {
+  /** Every move already recorded (append-only), oldest first. */
+  readonly moves: (tenantId: string) => Promise<readonly ExpiredBatchMove[]> | readonly ExpiredBatchMove[];
+  /** Head office's batch balances (the M08 projection). */
+  readonly batches: (tenantId: string) => Promise<readonly BatchBalance[]> | readonly BatchBalance[];
+  /** Append the day's moves — each idempotent on its own key, so a second sweep the same day records nothing new. */
+  readonly recordMoves: (tenantId: string, moves: readonly ExpiredBatchMove[]) => Promise<void> | void;
+  /** The write-offs (M28) — the dispose action the register links to each moved batch. Absent → none shown. */
+  readonly writeOffs?: (tenantId: string) => Promise<readonly BatchWriteOff[]> | readonly BatchWriteOff[];
+  readonly locationBranches?: LocationBranches;
+  /** The shop's day for a moment (India Standard Time for this store). */
+  readonly shopDayOf: (at: string) => string;
+  readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
+  readonly now: () => string;
+}
+
+/** Run the sweep for one shop: append today's moves; answer how many batches moved. */
+export async function sweepExpiredBatches(deps: ExpiryStateDeps, tenantId: string, at: string): Promise<readonly ExpiredBatchMove[]> {
+  const already = new Set((await deps.moves(tenantId)).map(expiryMoveKey));
+  const moves = expiredBatchesToMove({ batches: await deps.batches(tenantId), alreadyMoved: already, shopDay: deps.shopDayOf(at), at });
+  if (moves.length > 0) await deps.recordMoves(tenantId, moves);
+  return moves;
+}
+
+export function expiryStateRoutes(deps: ExpiryStateDeps): readonly Route[] {
+  return [
+    {
+      // The expired register: every batch the sweep moved, newest first, with what is still on the shelf to bin and the
+      // write-offs that binned it. Scoped to the reader's branches (PA-01-r1). ?locationId= narrows. A read.
+      api: 'API-04', method: 'GET', path: '/v1/inventory/expired-batches',
+      permission: 'inventory.availability.read',
+      handler: async (ctx) => {
+        const only = ctx.query['locationId'];
+        const balances = await deps.batches(ctx.tenantId);
+        const writeOffs = deps.writeOffs === undefined ? [] : await deps.writeOffs(ctx.tenantId);
+        const rows = [];
+        for (const m of [...(await deps.moves(ctx.tenantId))].reverse()) {
+          if (isStr(only) && m.locationId !== only) continue;
+          if (!(await locationInScope(ctx, m.locationId, deps.locationBranches))) continue;
+          const now = balances.find((b) => expiryMoveKey(b) === expiryMoveKey(m));
+          const binned = writeOffs.filter((w) => w.productId === m.productId && w.locationId === m.locationId && (w.batchId ?? null) === m.batchId);
+          const remainingMinor = Math.max(0, now?.onHandMinor ?? 0);
+          rows.push({ ...m, remainingMinor, toBin: remainingMinor > 0, writeOffs: binned.map((w) => ({ id: w.id, qtyRemoved: w.qtyRemoved, at: w.at })) });
+        }
+        return { status: 200, body: { batches: rows, count: rows.length, toBinCount: rows.filter((r) => r.toBin).length, asAt: deps.now() } };
+      },
+    },
+    {
+      // Run today's sweep now (the worker runs it on its own each shop day). Idempotent: a batch already moved is not
+      // moved again, so a second run the same day moves nothing. The person who ran it is on the trail; the moves are the
+      // sweep's own.
+      api: 'API-04', method: 'POST', path: '/v1/inventory/expiry-sweep',
+      permission: 'inventory.movement.append', idempotent: true,
+      handler: async (ctx) => {
+        const at = deps.now();
+        const moved = await sweepExpiredBatches(deps, ctx.tenantId, at);
+        await deps.recordAudit?.(ctx.tenantId, {
+          actorId: ctx.userId, action: 'inventory.expiry_sweep.run', objectType: 'expiry_sweep', objectId: deps.shopDayOf(at), at,
+          origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
+          before: null, after: { moved: String(moved.length) }, correlationId: deps.shopDayOf(at),
+        });
+        return { status: 200, body: { moved, count: moved.length, shopDay: deps.shopDayOf(at) } };
       },
     },
   ];
