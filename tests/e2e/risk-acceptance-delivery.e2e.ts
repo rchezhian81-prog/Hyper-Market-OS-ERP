@@ -48,6 +48,9 @@ interface Recorder {
   acceptStatus: number;
   accepted: boolean;
   readonly requests: { method: string; path: string; body: unknown }[];
+  /** OB-330: the security reviewer head office holds (undefined: the read is refused, so "not known"). */
+  reviewer?: { userId: string; displayName: string } | null;
+  ownerSigned?: boolean;
 }
 
 /** A server that BOTH serves the shell (GET, owner context injected) AND answers the two routes the desk
@@ -58,14 +61,36 @@ async function startShellAndCloud(rec: Recorder): Promise<{ base: string; stop: 
   const server: Server = createServer((req: IncomingMessage, res: ServerResponse) => {
     void (async () => {
       const [path = '/'] = (req.url ?? '/').split('?');
+      // OB-330: the two-signature reads and writes.
+      if (req.method === 'GET' && path === '/v1/compliance/risk-acceptances') {
+        rec.requests.push({ method: 'GET', path, body: undefined });
+        if (rec.reviewer === undefined) { res.writeHead(503, { 'content-type': 'application/json' }); res.end('{}'); return; }
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ reviewer: rec.reviewer, mustBeFixed: rec.reviewer === null, risks: [{ riskId: ONE_BLOCK.riskId, owner: rec.ownerSigned === true ? { signedBy: 'u-compliance' } : null, securityReviewer: null }] }));
+        return;
+      }
+      if ((req.method === 'PUT' && path === '/v1/compliance/security-reviewer') || (req.method === 'POST' && path.endsWith('/acceptance/review'))) {
+        const chunks: Buffer[] = [];
+        for await (const c of req) chunks.push(c as Buffer);
+        const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, string>;
+        rec.requests.push({ method: req.method, path, body });
+        if (req.method === 'PUT') rec.reviewer = { userId: body['userId']!, displayName: body['displayName']! };
+        else rec.accepted = true;
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify(req.method === 'PUT' ? { reviewer: rec.reviewer } : { status: 'accepted' }));
+        return;
+      }
       if (req.method === 'POST' && path.startsWith('/v1/compliance/risks/') && path.endsWith('/acceptance')) {
         const chunks: Buffer[] = [];
         for await (const c of req) chunks.push(c as Buffer);
         const raw = Buffer.concat(chunks).toString('utf8');
         rec.requests.push({ method: 'POST', path, body: raw === '' ? undefined : JSON.parse(raw) });
-        if (rec.acceptStatus >= 200 && rec.acceptStatus < 300) rec.accepted = true;
+        if (rec.acceptStatus === 202) rec.ownerSigned = true;
+        else if (rec.acceptStatus >= 200 && rec.acceptStatus < 300) rec.accepted = true;
         res.writeHead(rec.acceptStatus, { 'content-type': 'application/json' });
-        res.end(JSON.stringify({ riskId: ONE_BLOCK.riskId, status: rec.acceptStatus < 400 ? 'accepted' : 'open' }));
+        res.end(JSON.stringify(rec.acceptStatus === 422
+          ? { error: { code: 'must_be_fixed_no_security_reviewer', whatHappened: 'no reviewer', wasItSaved: 'not_saved', nextSafeAction: 'fix it' } }
+          : { riskId: ONE_BLOCK.riskId, status: rec.acceptStatus === 202 ? 'awaiting_second_signature' : rec.acceptStatus < 400 ? 'accepted' : 'open' }));
         return;
       }
       if (req.method === 'GET' && path === '/v1/compliance/gates/blocked') {
@@ -179,6 +204,59 @@ describe.skipIf(!HAVE_BROWSER)('the compliance owner accepts a risk, end to end 
       await page.waitForSelector('#result:not([hidden])', { timeout: 10_000 });
       expect(rec.requests.some((r) => r.method === 'POST')).toBe(false);
       expect(await page.locator('#rows .row').count()).toBe(1);
+    } finally {
+      await teardown();
+    }
+  });
+
+  // ── OB-330 (owner, 23 Oct 2026): two signatures — the owner and the named security reviewer ─────────────────────────
+
+  it('OB-330: with no reviewer named the screen says the risk must be fixed; the owner names the reviewer on screen; his signature then waits for the reviewer', async () => {
+    const rec: Recorder = { riskAcceptanceData: owner(['compliance.risk.read', 'compliance.risk.manage', 'compliance.reviewer.name']), acceptStatus: 422, accepted: false, requests: [], reviewer: null };
+    const { page, teardown } = await openScreen(rec);
+    try {
+      await page.waitForFunction(() => /must be fixed/.test((globalThis as unknown as { document: { getElementById(i: string): { textContent: string | null } | null } }).document.getElementById('reviewer-words')?.textContent ?? ''), undefined, { timeout: 10_000 });
+      // Signing now is refused by head office: must be fixed.
+      await page.selectOption('#accept-risk', 'risk-unencrypted-backups');
+      expect((await page.locator('#accept').textContent())?.trim()).toBe('Sign as owner');
+      await page.fill('#accept-rationale', 'offsite encrypted copy until Q3');
+      await page.click('#accept');
+      await page.waitForFunction(() => /must be fixed/.test((globalThis as unknown as { document: { getElementById(i: string): { textContent: string | null } | null } }).document.getElementById('result-text')?.textContent ?? ''), undefined, { timeout: 10_000 });
+      // The owner names the reviewer — entered on screen, sent as entered.
+      expect(await page.locator('#namer').getAttribute('hidden')).toBeNull();
+      await page.fill('#reviewer-id', 'u-rev');
+      await page.fill('#reviewer-name', 'R. Reviewer');
+      await page.fill('#reviewer-reason', 'external security reviewer for the pilot');
+      await page.click('#name-reviewer');
+      await page.waitForFunction(() => /R\. Reviewer \(u-rev\)/.test((globalThis as unknown as { document: { getElementById(i: string): { textContent: string | null } | null } }).document.getElementById('reviewer-words')?.textContent ?? ''), undefined, { timeout: 10_000 });
+      expect(rec.requests.find((r) => r.method === 'PUT')?.body).toEqual({ userId: 'u-rev', displayName: 'R. Reviewer', reason: 'external security reviewer for the pilot' });
+      // Now the owner's signature is recorded and waits for the second person; the gate stays blocked.
+      rec.acceptStatus = 202;
+      await page.fill('#accept-rationale', 'offsite encrypted copy until Q3');
+      await page.click('#accept');
+      await page.waitForFunction(() => /second person/.test((globalThis as unknown as { document: { getElementById(i: string): { textContent: string | null } | null } }).document.getElementById('result-text')?.textContent ?? ''), undefined, { timeout: 10_000 });
+      expect(await page.locator('#rows .row').count()).toBe(1);
+      await page.waitForFunction(() => /Owner signed: u-compliance/.test((globalThis as unknown as { document: { getElementById(i: string): { textContent: string | null } | null } }).document.getElementById('rows')?.textContent ?? ''), undefined, { timeout: 10_000 });
+      // In Tamil the reviewer panel and the button speak Tamil, with the icon beside the word.
+      await page.click('#lang');
+      expect(await page.locator('#accept').textContent()).toContain('உரிமையாளராகக் கையொப்பமிடு');
+      expect(await page.locator('#accept svg').count()).toBe(1);
+    } finally {
+      await teardown();
+    }
+  });
+
+  it('OB-330: the named reviewer signs as security reviewer, to the review route, and the gate drops off', async () => {
+    const rec: Recorder = { riskAcceptanceData: { userId: 'u-rev', tenantId: 't1', permissions: ['compliance.risk.read'] }, acceptStatus: 200, accepted: false, requests: [], reviewer: { userId: 'u-rev', displayName: 'R. Reviewer' }, ownerSigned: true };
+    const { page, teardown } = await openScreen(rec);
+    try {
+      await page.waitForFunction(() => /Sign as security reviewer/.test((globalThis as unknown as { document: { getElementById(i: string): { textContent: string | null } | null } }).document.getElementById('accept')?.textContent ?? ''), undefined, { timeout: 10_000 });
+      expect(await page.locator('#namer').getAttribute('hidden')).not.toBeNull(); // only the owner names
+      await page.selectOption('#accept-risk', 'risk-unencrypted-backups');
+      await page.fill('#accept-rationale', 'offsite copy and restore test verified');
+      await page.click('#accept');
+      await page.waitForFunction(() => (globalThis as unknown as BrowserGlobals).document.querySelectorAll('#rows .row').length === 0, undefined, { timeout: 10_000 });
+      expect(rec.requests.find((r) => r.method === 'POST')?.path).toBe('/v1/compliance/risks/risk-unencrypted-backups/acceptance/review');
     } finally {
       await teardown();
     }

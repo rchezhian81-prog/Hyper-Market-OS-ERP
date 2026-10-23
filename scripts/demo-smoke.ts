@@ -42,12 +42,15 @@ import { pgPoolClient } from '../packages/persistence/src/pg-client';
 import { databaseUrlFromTheHost } from './lib/database-url-from-the-host';
 import { seedInitialAdmins } from '../services/api/src/access';
 import { OWNER_ROLE_ID, ROLE_CATALOGUE } from '../services/api/src/roles';
+import { actionDetails } from '../services/identity/src/approval-requests';
 import { planTenantBootstrap } from '../packages/migration/src/tenant-bootstrap';
 import { parseEnvText, parseFlags, demoTenantIds, tokenPolicyFromEnv, type TokenPolicy } from './lib/operator-env';
 
 export interface SmokeCast {
   readonly owner: string; readonly buyer: string; readonly receiver: string; readonly checker: string; readonly manager: string;
   readonly backstore: string; readonly shelf: string; readonly cashier: string; readonly acct: string; readonly box: string;
+  /** OB-336: the second person (a co-owner) who asks for a high-impact setting (the time zone); the owner approves it. */
+  readonly coOwner: string;
 }
 
 /** The synthetic people of one run — every id carries the run label, so two runs in one tenant never meet. */
@@ -55,7 +58,7 @@ export function castFor(run: string): SmokeCast {
   const p = `smoke-${run}`;
   return {
     owner: `${p}-owner`, buyer: `${p}-buyer`, receiver: `${p}-receiver`, checker: `${p}-checker`, manager: `${p}-manager`,
-    backstore: `${p}-backstore`, shelf: `${p}-shelf`, cashier: `${p}-cashier`, acct: `${p}-accountant`, box: `${p}-box`,
+    backstore: `${p}-backstore`, shelf: `${p}-shelf`, cashier: `${p}-cashier`, acct: `${p}-accountant`, box: `${p}-box`, coOwner: `${p}-co-owner`,
   };
 }
 
@@ -64,6 +67,7 @@ export function rolesFor(cast: SmokeCast): readonly { readonly userId: string; r
   return [
     ...[cast.buyer, cast.receiver, cast.checker, cast.manager, cast.backstore, cast.shelf].map((userId) => ({ userId, roleId: 'store_manager' })),
     { userId: cast.cashier, roleId: 'cashier' }, { userId: cast.box, roleId: 'cashier' }, { userId: cast.acct, roleId: 'accountant' },
+    { userId: cast.coOwner, roleId: OWNER_ROLE_ID },
   ];
 }
 
@@ -217,7 +221,12 @@ export async function runSmoke(input: SmokeInput): Promise<SmokeReport> {
       return `ready at ${input.apiBaseUrl}`;
     });
     await step('store setup: the shop\'s time zone and the receiving tolerances', async () => {
-      expectStatus(await call('PUT', '/v1/platform/setup/locale.time_zone', cast.owner, { value: zone }, 'setup-tz'), [200, 201], 'time zone');
+      // OB-336: the time zone is high-impact — the co-owner asks for exactly this answer, the owner approves it in his own
+      // session, and the co-owner saves it naming the approval (never one person alone).
+      const tzAnswer = { value: zone };
+      const asked = expectStatus(await call('POST', '/v1/approvals/requests', cast.coOwner, { kind: 'config_change', subjectRef: 'setting:locale.time_zone', details: actionDetails(tzAnswer, { key: 'locale.time_zone' }), valueMinor: null, summary: 'Set the shop time zone', reason: 'demo smoke store setup' }, 'setup-tz-ask'), [201], 'time zone ask') as { requestId: string };
+      expectStatus(await call('POST', `/v1/approvals/requests/${asked.requestId}/decide`, cast.owner, { decision: 'approved', reason: 'the shop keeps this clock' }, 'setup-tz-approve'), [201], 'time zone approval');
+      expectStatus(await call('PUT', '/v1/platform/setup/locale.time_zone', cast.coOwner, { ...tzAnswer, approvalId: asked.requestId }, 'setup-tz'), [200, 201], 'time zone');
       expectStatus(await call('POST', '/v1/inventory/receipt-policy', cast.owner, { excessToleranceBp: 0, shortageToleranceBp: 0, nearExpiryDays: 7 }, 'receipt-policy'), [200, 201], 'receipt policy');
       return `zone ${zone}; nothing short or over is waved through`;
     });

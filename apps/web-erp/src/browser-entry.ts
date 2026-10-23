@@ -176,6 +176,7 @@ import {
 import { createProductionQueue, openBoxLabelPort, type ProductionQueue } from './production-queue';
 import { boxClockView } from './box-clock-view';
 import { createFoodSafetyQueue, FOOD_SAFETY_COPY, type FoodSafetyQueue, type HeldFoodSafety } from './food-safety-queue';
+import { createQualityReleaseQueue, QUALITY_RELEASE_COPY, type QualityReleaseQueue, type HeldQualityHolds } from './quality-release-queue';
 import {
   createFacilitiesSession,
   type FacilitiesPorts, type FacilitiesSession, type FacilitiesData, type OverdueTask,
@@ -190,7 +191,7 @@ import {
 import {
   createRiskAcceptanceSession,
   type RiskAcceptancePorts, type RiskAcceptanceSession, type BlockedGatesData, type GateBlockView,
-  type RiskAcceptPort, type AcceptResult,
+  type RiskAcceptPort, type AcceptResult, type AcceptanceState, type ReviewerNamePort, type NameResult,
 } from './risk-acceptance-session';
 import {
   createDayReopenSession,
@@ -2014,6 +2015,8 @@ export interface FacilitiesScreenData {
   /** OB-288 lane 2: the store this box is, and head office's food-safety checks as the box last heard them (null: never told). */
   readonly storeId?: string;
   readonly foodSafety?: HeldFoodSafety | null;
+  /** OB-333: head office's held batches as the box last heard them (null: never told). */
+  readonly qualityHolds?: HeldQualityHolds | null;
 }
 
 /** OB-288 lane 2: open the facilities screen's durable device queue (food-safety checks), keyed per store. */
@@ -2025,6 +2028,21 @@ export function openFacilitiesOutbox(storeId: string, storage?: DeviceStorage): 
 
 /** OB-288 lane 2: the food-safety checks' leg of the shared device → box path. */
 export function openFoodSafetyRelay(laneWriteBase: string | undefined, queue: FoodSafetyQueue, outbox: SyncOutbox): ManagerRelay | undefined {
+  if (laneWriteBase === undefined) return undefined;
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return undefined;
+  return {
+    syncNow: async () => {
+      const result = await drainToBox({ outbox, boxBase: laneWriteBase, source: 'manager', fetch: fetchFn });
+      const statuses = await boxStatus({ boxBase: laneWriteBase, keys: queue.handedKeys(), fetch: fetchFn });
+      if (statuses !== undefined) queue.noteBoxStatus(statuses);
+      return { handed: result.handed, refused: result.refused, failed: result.failed, offline: result.offline };
+    },
+  };
+}
+
+/** OB-333: the quality-hold releases' leg of the shared device → box path (the same facilities queue on this device). */
+export function openQualityReleaseRelay(laneWriteBase: string | undefined, queue: QualityReleaseQueue, outbox: SyncOutbox): ManagerRelay | undefined {
   if (laneWriteBase === undefined) return undefined;
   const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
   if (fetchFn === undefined) return undefined;
@@ -3192,6 +3210,7 @@ export interface RiskAcceptanceData {
 
 const RISK_READ_PERMISSION = 'compliance.risk.read';
 const RISK_MANAGE_PERMISSION = 'compliance.risk.manage';
+const REVIEWER_NAME_PERMISSION = 'compliance.reviewer.name';
 const EMPTY_BLOCKED_GATES: BlockedGatesData = Object.freeze({ count: 0, blocked: [] });
 const NOOP_ACCEPT_PORT: RiskAcceptPort = { post: async () => 'lost_link' };
 
@@ -3199,6 +3218,10 @@ export function riskAcceptancePortsFromData(
   data: RiskAcceptanceData | undefined,
   worklist?: BlockedGatesData,
   acceptPort: RiskAcceptPort = NOOP_ACCEPT_PORT,
+  /** OB-330: where acceptance stands, as last read live (undefined: not known); and the reviewer's / naming ports. */
+  acceptances?: AcceptanceState,
+  reviewPort: RiskAcceptPort = NOOP_ACCEPT_PORT,
+  namePort: ReviewerNamePort = { put: async () => 'lost_link' },
 ): RiskAcceptancePorts {
   const held = new Set(data?.permissions ?? []);
   return {
@@ -3207,6 +3230,10 @@ export function riskAcceptancePortsFromData(
     mayRead: () => held.has(RISK_READ_PERMISSION),
     mayManage: () => held.has(RISK_MANAGE_PERMISSION),
     acceptPort: () => acceptPort,
+    acceptances: () => acceptances,
+    mayNameReviewer: () => held.has(REVIEWER_NAME_PERMISSION),
+    reviewPort: () => reviewPort,
+    namePort: () => namePort,
   };
 }
 
@@ -3227,25 +3254,66 @@ export function bootRiskAcceptance(
  *  (`credentials: 'same-origin'`), never a service token. A network/timeout is a retryable lost link, not a
  *  refusal. The riskId rides in the URL; the server records the acceptance in the caller's own name and enforces
  *  the name+rationale rule (§28). */
-function openRiskAcceptPort(): RiskAcceptPort {
+function openRiskAcceptPort(as: 'owner' | 'security_reviewer' = 'owner'): RiskAcceptPort {
   return {
     post: async ({ riskId, rationale }): Promise<AcceptResult> => {
       const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
       if (fetchFn === undefined) return 'lost_link';
       const key = globalThis.crypto?.randomUUID?.() ?? `risk-accept-${riskId}`;
       try {
-        const res = await fetchFn(`/v1/compliance/risks/${encodeURIComponent(riskId)}/acceptance`, {
+        const res = await fetchFn(`/v1/compliance/risks/${encodeURIComponent(riskId)}/acceptance${as === 'security_reviewer' ? '/review' : ''}`, {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'idempotency-key': key, accept: 'application/json' },
           credentials: 'same-origin',
           body: JSON.stringify({ rationale }),
         });
-        return res.status >= 200 && res.status < 300 ? 'accepted' : 'refused';
+        // OB-330: 202 is a first signature waiting for the second; a refusal naming "must be fixed" is said as such.
+        if (res.status === 202) return 'awaiting_second_signature';
+        if (res.status >= 200 && res.status < 300) return 'accepted';
+        const body = await res.json().catch(() => null) as { error?: { code?: string } } | null;
+        return body?.error?.code === 'must_be_fixed_no_security_reviewer' ? 'must_be_fixed' : 'refused';
       } catch {
         return 'lost_link';
       }
     },
   };
+}
+
+/** OB-330: the owner names the security reviewer — under his own session cookie; head office checks who may be named. */
+function openReviewerNamePort(): ReviewerNamePort {
+  return {
+    put: async (input): Promise<NameResult> => {
+      const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+      if (fetchFn === undefined) return 'lost_link';
+      try {
+        const res = await fetchFn('/v1/compliance/security-reviewer', {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json', 'idempotency-key': globalThis.crypto?.randomUUID?.() ?? `name-${input.userId}`, accept: 'application/json' },
+          credentials: 'same-origin', body: JSON.stringify(input),
+        });
+        return res.status >= 200 && res.status < 300 ? 'named' : 'refused';
+      } catch {
+        return 'lost_link';
+      }
+    },
+  };
+}
+
+/** OB-330: where acceptance stands (a GET — read-only). Undefined offline/refused: the screen says it is not known. */
+export async function fetchRiskAcceptances(): Promise<AcceptanceState | undefined> {
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return undefined;
+  try {
+    const res = await fetchFn('/v1/compliance/risk-acceptances', { method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin' });
+    if (res.status >= 400) return undefined;
+    const body = (await res.json()) as { reviewer?: { userId: string; displayName: string } | null; risks?: readonly { riskId: string; owner: { signedBy: string } | null; securityReviewer: { signedBy: string } | null }[] };
+    return {
+      reviewer: body.reviewer == null ? null : { userId: body.reviewer.userId, displayName: body.reviewer.displayName },
+      risks: (body.risks ?? []).map((r) => ({ riskId: r.riskId, owner: r.owner?.signedBy ?? null, securityReviewer: r.securityReviewer?.signedBy ?? null })),
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 /** Read the live blocked-gates worklist (a GET — read-only). Returns null offline/refused so the shell keeps
@@ -5081,6 +5149,9 @@ interface ManagerWindow {
   foodSafetyQueue?: FoodSafetyQueue;
   foodSafetyRelay?: ManagerRelay;
   foodSafetyWords?: typeof FOOD_SAFETY_COPY;
+  qualityReleaseQueue?: QualityReleaseQueue;
+  qualityReleaseRelay?: ManagerRelay;
+  qualityReleaseWords?: typeof QUALITY_RELEASE_COPY;
   /** The shell reads the live overdue board through this and re-presents it — a GET read, never a write. */
   facilities?: {
     refresh(): Promise<FacilitiesData | null>;
@@ -5094,11 +5165,16 @@ interface ManagerWindow {
     present(worklist: CashOverShortData): CashOfficeSession;
   };
   riskAcceptanceData?: RiskAcceptanceData;
+  /** OB-288 integration follow-up: the Recalls and trace page served from the store box — who is looking, their permissions,
+   *  and what this store's tills refuse now from the catalogue the box holds. recall-trace.js reads `recallTraceData`. */
+  recallTraceData?: { readonly userId?: string; readonly permissions?: readonly string[]; readonly storeId?: string | null; readonly tillBlocks?: unknown };
   riskAcceptanceSession?: RiskAcceptanceSession;
   /** The shell reads the live blocked-gates worklist through this and re-presents it — a GET read, never a write. */
   riskAcceptance?: {
     refresh(): Promise<BlockedGatesData | null>;
-    present(worklist: BlockedGatesData): RiskAcceptanceSession;
+    present(worklist: BlockedGatesData, acceptances?: AcceptanceState): RiskAcceptanceSession;
+    /** OB-330: where acceptance stands (reviewer, signatures) — a GET; undefined when not known. */
+    acceptances(): Promise<AcceptanceState | undefined>;
   };
   dayReopenData?: DayReopenScreenData;
   dayReopenSession?: DayReopenSession;
@@ -6350,12 +6426,19 @@ if (browserWindow !== undefined) {
   const facilitiesData = browserWindow.facilitiesData;
   // OB-288 lane 2 · M10-FR-02 offline: served by the store computer, today's food-safety checks are worked out here from
   // head office's checks in force and saved through the box, timed by when they were done.
-  if (browserWindow.laneWriteBase !== undefined && facilitiesData?.storeId !== undefined && facilitiesData.foodSafety !== undefined) {
-    const fsOutbox = openFacilitiesOutbox(facilitiesData.storeId);
-    const fsQueue = createFoodSafetyQueue({ userId: facilitiesData.userId ?? null, storeId: facilitiesData.storeId, now: () => new Date().toISOString() }, facilitiesData.foodSafety, fsOutbox);
+  const facilitiesOutbox = browserWindow.laneWriteBase !== undefined && facilitiesData?.storeId !== undefined ? openFacilitiesOutbox(facilitiesData.storeId) : undefined;
+  if (facilitiesOutbox !== undefined && facilitiesData?.storeId !== undefined && facilitiesData.foodSafety !== undefined) {
+    const fsQueue = createFoodSafetyQueue({ userId: facilitiesData.userId ?? null, storeId: facilitiesData.storeId, now: () => new Date().toISOString() }, facilitiesData.foodSafety, facilitiesOutbox);
     browserWindow.foodSafetyQueue = fsQueue;
-    browserWindow.foodSafetyRelay = openFoodSafetyRelay(browserWindow.laneWriteBase, fsQueue, fsOutbox);
+    browserWindow.foodSafetyRelay = openFoodSafetyRelay(browserWindow.laneWriteBase, fsQueue, facilitiesOutbox);
     browserWindow.foodSafetyWords = FOOD_SAFETY_COPY;
+  }
+  // OB-333: the batches on quality hold, released here by a person with the quality-release right — through the box.
+  if (facilitiesOutbox !== undefined && facilitiesData?.storeId !== undefined && facilitiesData.qualityHolds !== undefined) {
+    const qhQueue = createQualityReleaseQueue({ userId: facilitiesData.userId ?? null, storeId: facilitiesData.storeId, permissions: facilitiesData.permissions ?? [], now: () => new Date().toISOString() }, facilitiesData.qualityHolds, facilitiesOutbox);
+    browserWindow.qualityReleaseQueue = qhQueue;
+    browserWindow.qualityReleaseRelay = openQualityReleaseRelay(browserWindow.laneWriteBase, qhQueue, facilitiesOutbox);
+    browserWindow.qualityReleaseWords = QUALITY_RELEASE_COPY;
   }
   const completePort = openCompletePort();
   const facilitiesVerifyPort = openFacilitiesVerifyPort();
@@ -6414,11 +6497,14 @@ if (browserWindow !== undefined) {
   const riskAcceptance = bootRiskAcceptance(riskAcceptanceData, undefined, riskAcceptPort);
   if (riskAcceptance !== null) {
     browserWindow.riskAcceptanceSession = riskAcceptance;
+    const reviewPort = openRiskAcceptPort('security_reviewer');
+    const namePort = openReviewerNamePort();
     browserWindow.riskAcceptance = {
       refresh: fetchBlockedGates,
-      present: (worklist) => createRiskAcceptanceSession(
+      acceptances: fetchRiskAcceptances,
+      present: (worklist, acceptances) => createRiskAcceptanceSession(
         { userId: riskAcceptanceData?.userId === undefined ? null : riskAcceptanceData.userId },
-        riskAcceptancePortsFromData(riskAcceptanceData, worklist, riskAcceptPort),
+        riskAcceptancePortsFromData(riskAcceptanceData, worklist, riskAcceptPort, acceptances, reviewPort, namePort),
       ),
     };
   }

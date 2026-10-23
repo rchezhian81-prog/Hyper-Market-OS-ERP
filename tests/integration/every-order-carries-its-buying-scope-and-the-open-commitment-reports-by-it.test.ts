@@ -6,7 +6,7 @@ import { P3, p3Shop, caller, received } from '../support/p3-purchase';
 // M06-FR-04 "Central/local procurement … open-commitment tracking" (OB-288 P3). OB-289 (owner, 23 Oct 2026, D-6 "Both, per
 // order"): every purchase order carries central-via-warehouse, central-direct-to-store or local; a central order is head
 // office's, a local one a store's. OB-290 (D-3): a local order is capped by the raiser's role limit — store manager ₹25,000,
-// owner unlimited (the config default behind package P1's seam). The open-commitment report groups by scope, supplier and
+// owner unlimited (the owner's server-held rule, package P1's `authorityOf`); above it the order goes to the owner. The open-commitment report groups by scope, supplier and
 // store, and reconciles to the receipts. In memory and — with DATABASE_URL — on real PostgreSQL, with a cold restart.
 
 const backings = useRestartableBackings();
@@ -44,14 +44,13 @@ describe.each(backings)('buying scope per order and the open-commitment report (
 
     // A store-scoped manager buys LOCALLY only, within ₹25,000 an order.
     expect(codeOf(await propose('po-l0', LOCAL, { buyingScope: 'central_direct_to_store', deliverToLocationId: P3.STORE, lines: line(1, 1) }))).toBe('central_buying_is_head_offices');
-    expect(codeOf(await propose('po-l1', LOCAL, { deliverToLocationId: P3.STORE, lines: line(1, 2_500_001) }))).toBe('local_limit_exceeded');
+    // Above his ₹25,000 (the owner's server-held rule, OB-290) it is not refused: it goes to the owner to decide.
+    expect(((await propose('po-l1', LOCAL, { deliverToLocationId: P3.STORE, lines: line(1, 2_500_001) })).body as { approval?: { routedTo: string } }).approval?.routedTo).toBe('owner');
     expect((await propose('po-l2', LOCAL, { deliverToLocationId: P3.STORE, lines: line(250, 10_000) })).status).toBe(201); // exactly ₹25,000
     expect(await order('po-l2')).toMatchObject({ buyingScope: 'local', buyingScopeSource: 'derived' });
 
     await h.provisionRole(T, 'u-owner2', 'owner'); // the second person for the owner's own orders (§28)
     for (const poId of ['po-direct', 'po-wh', 'po-own-local', 'po-l2']) expect((await call('POST', `/v1/purchase/orders/${poId}/approval`, 'u-owner2', { reason: 'synthetic' })).status).toBe(200);
-    // Raising a local order past its raiser's limit by amendment is refused.
-    expect(codeOf(await call('POST', '/v1/purchase/orders/po-l2/amendments', P3.OWNER, { amendmentId: 'a1', reason: 'more', lines: line(251, 10_000) }))).toBe('local_limit_exceeded');
 
     // Movement on the commitments: 60 of the 100 for the warehouse arrive (booked there by head office's receiver); 50 of the
     // local 250 are cancelled.

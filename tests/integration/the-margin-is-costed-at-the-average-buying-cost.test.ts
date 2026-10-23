@@ -12,6 +12,7 @@ import type { CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
 import { DEFAULT_RETAIL_POSTING_MAP } from '../../packages/finance/src/index';
 import { makeTradingDayRule, tradingDateOf } from '../../packages/calendar/src/trading-day';
 import { startRealCloud, type RealCloud } from '../support/real-store';
+import { ownerApprovedSettingOn } from '../support/owner-approved-setting';
 
 /**
  * **OB-39 "B" (owner, 11 Oct 2026) — the margin is costed at head office's AVERAGE BUYING COST per product and store, on the
@@ -82,7 +83,7 @@ describeOrSkip('OB-39 — the margin is costed at the average buying cost (real 
     await cloud.grant(BOX, 'store_computer', undefined, [STORE]); // OB-54: the box is granted for its ONE store
     await cloud.grant(CASHIER, 'cashier');
     await cloud.grant(ACCT, 'accountant');
-    await ok(call('PUT', '/v1/platform/setup/locale.time_zone', OWNER, { value: 'UTC' }, 'tz'), 'time zone');
+    await ok(ownerApprovedSettingOn(cloud, 'locale.time_zone', { value: 'UTC' }, OWNER), 'time zone');
     await ok(call('POST', `/v1/org/nodes/${COMPANY}`, OWNER, { kind: 'company', name: 'SRE Retail' }, 'org-c'), 'company');
     await ok(call('POST', `/v1/org/nodes/${STORE}`, OWNER, { kind: 'branch', name: 'SRE Hyper Market', parentId: COMPANY, companyId: COMPANY }, 'org-s'), 'store');
     await ok(call('POST', `/v1/org/nodes/${BACK}`, OWNER, { kind: 'warehouse', name: 'Back store', parentId: STORE, companyId: COMPANY }, 'org-b'), 'back store');

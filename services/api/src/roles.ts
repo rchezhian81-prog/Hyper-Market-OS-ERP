@@ -44,6 +44,12 @@ export const STORE_COMPUTER_ROLE_ID = 'store_computer';
 export const PROVIDER_RELAY_ROLE_ID = 'message_provider_relay';
 /** PA-12 round 7: the backup job's own machine identity — the only caller whose backup report is believed. */
 export const BACKUP_JOB_ROLE_ID = 'backup_job';
+/**
+ * OB-331 (owner, 23 Oct 2026): the CI scanner's OWN machine identity — it pushes each scan's findings report to head
+ * office's findings register and does nothing else. Machine-only (never also a person); its credential is issued out of
+ * band by the administrator (scripts/issue-store-token.mjs --no-store) and kept only in the GitHub secret store.
+ */
+export const FINDINGS_PUSH_ROLE_ID = 'findings_push';
 /** R2 C20: the POSH Act Internal Committee — the only role that may read the confidential complaints register. */
 export const INTERNAL_COMMITTEE_ROLE_ID = 'internal_committee';
 
@@ -189,6 +195,16 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'approvals.rules.read', 'approvals.rules.propose', 'approvals.rules.approve',
       'org.structure.approve', 'platform.config.approve', 'identity.access.review',
       // ── OB-288 lane 1 · P1 — end
+      // ── OB-288 integration follow-ups — begin
+      // OB-330: the owner names the security reviewer whose signature, beside his own, accepts a critical or high risk.
+      'compliance.reviewer.name',
+      // OB-331: held ONLY so the owner can approve granting the CI scanner's machine identity its role (no-escalation rule);
+      // the push route believes a push only from that machine identity itself, never a person.
+      'compliance.finding.push',
+      // OB-333: held ONLY so the owner can approve granting the store computer its release relay (no escalation, OB-36);
+      // the synced route re-checks the PERSON named from their own grants, so this releases nothing by itself.
+      'quality.hold.release.sync',
+      // ── OB-288 integration follow-ups — end
       'price.integrity.audit', 'selfcheckout.operate',
       'owner.alert.read', 'owner.kpi.read', 'owner.brief.manage',
       'refund.exception.read',
@@ -713,6 +729,14 @@ export const ROLE_CATALOGUE: readonly Role[] = [
     name: 'Backup job (machine)',
     permissions: ['platform.backup.record'],
   },
+  // ── OB-288 integration follow-ups — begin
+  {
+    // OB-331: the CI scanner's OWN machine identity — pushes a scan's findings report to the register, and nothing else.
+    id: FINDINGS_PUSH_ROLE_ID,
+    name: 'CI findings push (machine)',
+    permissions: ['compliance.finding.push'],
+  },
+  // ── OB-288 integration follow-ups — end
   {
     id: STORE_COMPUTER_ROLE_ID,
     name: 'Store computer',
@@ -741,6 +765,11 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // checks in force for its store, and the transfers with an end at its store (reads only).
       'production.read', 'facilities.overdue.read', 'inventory.availability.read',
       // ── OB-288 lane 2 · P2 — end
+      // ── OB-288 integration follow-ups — begin
+      // OB-333: a NARROW release-only right — relay a quality-hold RELEASE a person decided at the store (head office
+      // re-checks that person's own quality.hold.release), and read which batches are held. Never place a hold.
+      'quality.hold.release.sync',
+      // ── OB-288 integration follow-ups — end
       // the GST portal's poll/verify, relayed for the operator (no maker-checker decision; re-authorised on this permission)
       'finance.einvoice.generate',
     ],

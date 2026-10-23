@@ -9,6 +9,7 @@ import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { makeEvent } from '../../packages/contracts/src/event';
 import { STREAM, streamName } from '../../services/api/src/adapters';
 import { UNRECEIVED_GRACE_MINUTES } from '../../services/platform/src/box-health';
+import { ownerApprovedSetting } from '../support/owner-approved-setting';
 
 /**
  * **Round 26 · owner decisions OB-97 "B" and OB-98 "B" (13 Oct 2026, in writing) — through head office's production routes
@@ -54,7 +55,7 @@ async function shop(h: ApiHarness): Promise<{ T: string; call: Call }> {
     ...(method === 'GET' ? {} : { idempotencyKey: key ?? `k-${randomUUID()}` }), ...(body === undefined ? {} : { body }),
   });
   // Records here are dated by the UTC clock: the shop's own time zone is set to UTC so a trading day never shifts under them.
-  expect((await call('PUT', '/v1/platform/setup/locale.time_zone', OWNER, { value: 'UTC' })).status).toBe(200);
+  expect((await ownerApprovedSetting(h, T, 'locale.time_zone', { value: 'UTC' }, OWNER)).status).toBe(200);
   for (const [id, body] of [
     ['C1', { kind: 'company', name: 'SRE Retail' }],
     [S1, { kind: 'branch', name: 'Store One', parentId: 'C1', companyId: 'C1' }],

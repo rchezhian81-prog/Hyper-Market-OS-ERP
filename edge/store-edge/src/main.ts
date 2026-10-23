@@ -1808,6 +1808,14 @@ export async function startEdge(
   const clockSetting = readClockThresholds(settings['EDGE_CLOCK_WARN_SECONDS'], settings['EDGE_CLOCK_FLAG_SECONDS']);
   if (clockSetting.problem !== undefined) say(clockSetting.problem);
   const clockGuard = await ClockGuard.open(clockSetting.thresholds, settings['EDGE_DATA_DIR']!);
+  /** OB-333: the quality-hold releases this box's facilities screen took and still holds (the device-events queue). */
+  const boxQualityReleases = (): readonly { batchId: string; releasedBy: string; at: string; state: string; reason: string | null }[] => deviceEventsOutbox.all()
+    .filter((i) => i.event.type === 'QualityHoldReleaseDecided')
+    .flatMap((i) => {
+      const p = i.event.payload as Record<string, unknown>;
+      return typeof p['batchId'] === 'string' && typeof p['releasedBy'] === 'string' && typeof p['at'] === 'string'
+        ? [{ batchId: p['batchId'], releasedBy: p['releasedBy'], at: p['at'], state: String(i.state), reason: i.reason }] : [];
+    });
   /** The production runs this box's screen captured and still holds (the device-events queue) — labelled before head office has them. */
   const boxCapturedRuns = (): readonly BoxCapturedRun[] => deviceEventsOutbox.all()
     .filter((i) => i.event.type === 'ProductionRunCaptured')
@@ -1919,6 +1927,7 @@ export async function startEdge(
       // OB-288 lane 2 · P2: the store's work feeds, the runs captured on this box, and the clock check (OB-327).
       workFeeds,
       boxCapturedRuns: boxCapturedRuns(),
+      boxQualityReleases: boxQualityReleases(), // OB-333
       clock: clockGuard.check(),
       clockFlaggedBills: clockGuard.flaggedBills(recordsNow.sales),
     };

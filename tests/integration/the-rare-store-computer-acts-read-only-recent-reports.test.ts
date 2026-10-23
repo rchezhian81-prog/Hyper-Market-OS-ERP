@@ -8,6 +8,7 @@ import { SqlEventStore, InMemoryEventStore, type EventStore, type ReadOptions } 
 import { makeEvent } from '../../packages/contracts/src/event';
 import { STREAM, streamName } from '../../services/api/src/adapters';
 import type { BoxHealthRecord } from '../../services/platform/src/box-health';
+import { ownerApprovedSetting } from '../support/owner-approved-setting';
 
 /**
  * **Round 34 · M35-FR-03 · owner decision OB-124 (4) "A" (15 Oct 2026, in writing, "Build all five before pilot"), finishing
@@ -64,7 +65,7 @@ async function theRareActsReadOnlyRecentReports(base: EventStore, idempotency?: 
     method, path, userId: user, tenantId: T, ...(branchId === undefined ? {} : { branchId }),
     ...(method === 'GET' ? {} : { idempotencyKey: `k-${randomUUID()}` }), ...(body === undefined ? {} : { body }),
   });
-  expect((await call('PUT', '/v1/platform/setup/locale.time_zone', OWNER, { value: 'UTC' })).status).toBe(200);
+  expect((await ownerApprovedSetting(h, T, 'locale.time_zone', { value: 'UTC' }, OWNER)).status).toBe(200);
   for (const [id, body] of [['C1', { kind: 'company', name: 'SRE Retail' }], [S1, { kind: 'branch', name: 'Store One', parentId: 'C1', companyId: 'C1' }]] as const) {
     expect((await call('POST', `/v1/org/nodes/${id}`, OWNER, body)).status).toBeLessThan(300);
   }

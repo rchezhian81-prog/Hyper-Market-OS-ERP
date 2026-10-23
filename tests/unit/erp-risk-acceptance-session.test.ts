@@ -155,3 +155,51 @@ describe('result presentation is bilingual and glanceable', () => {
     }
   });
 });
+
+describe('OB-330: two signatures — the owner and the named security reviewer', () => {
+  const one = worklist([block({ gate: 'QG-06', riskId: 'RISK-1' })]);
+  const named = { reviewer: { userId: 'u-rev', displayName: 'R. Reviewer' }, risks: [{ riskId: 'RISK-1', owner: 'u-owner', securityReviewer: null }] };
+
+  it('says who the reviewer is, that nobody is named (must be fixed), or that it is not known — in both languages', () => {
+    expect(session(one, { acceptances: () => named }).view('en').reviewer).toMatchObject({ state: 'named' });
+    expect(session(one, { acceptances: () => named }).view('en').reviewer.words).toContain('R. Reviewer (u-rev)');
+    const none = session(one, { acceptances: () => ({ reviewer: null, risks: [] }) }).view('ta').reviewer;
+    expect(none.state).toBe('not_named');
+    expect(none.words).toMatch(/சரிசெய்ய வேண்டும்/);
+    expect(none.status.tone).toBe('error');
+    expect(session(one).view('en').reviewer.state).toBe('not_known');
+    expect(session(one, { acceptances: () => named }).view('en').blocked[0]!.signatures).toBe('Owner signed: u-owner · Security reviewer signed: not yet');
+  });
+
+  it('the named reviewer signs as reviewer (to the review route); a compliance manager signs as owner', async () => {
+    const owner: string[] = []; const reviewer: string[] = [];
+    const ports = {
+      acceptances: () => named,
+      acceptPort: () => ({ post: async (i: { riskId: string }) => { owner.push(i.riskId); return 'awaiting_second_signature' as AcceptResult; } }),
+      reviewPort: () => ({ post: async (i: { riskId: string }) => { reviewer.push(i.riskId); return 'accepted' as AcceptResult; } }),
+    };
+    const asReviewer = session(one, { ...ports, mayManage: () => false }, 'u-rev');
+    expect(asReviewer.view('en')).toMatchObject({ actingAs: 'security_reviewer', acceptLabel: 'Sign as security reviewer' });
+    expect(await asReviewer.accept('RISK-1', 'controls checked')).toBe('accepted');
+    const asOwner = session(one, ports, 'u-owner');
+    expect(asOwner.view('ta').acceptLabel).toBe('உரிமையாளராகக் கையொப்பமிடு');
+    expect(await asOwner.accept('RISK-1', 'carried with controls')).toBe('awaiting_second_signature');
+    expect([owner, reviewer]).toEqual([['RISK-1'], ['RISK-1']]);
+    expect(session(one, { ...ports, mayManage: () => false }, 'u-other').view('en').actingAs).toBe('none');
+    expect(asOwner.presentAcceptResult('en', 'awaiting_second_signature').label).toContain('second person');
+    expect(asOwner.presentAcceptResult('en', 'must_be_fixed')).toMatchObject({ tone: 'error' });
+  });
+
+  it('only the owner names the reviewer — refused locally without the right or a field, else sent', async () => {
+    const sent: unknown[] = [];
+    const namePort = () => ({ put: async (i: unknown) => { sent.push(i); return 'named' as const; } });
+    expect(await session(one, { mayNameReviewer: () => false, namePort }).nameReviewer('u-rev', 'R', 'why')).toBe('refused');
+    expect(await session(one, { mayNameReviewer: () => true, namePort }).nameReviewer('u-rev', ' ', 'why')).toBe('refused');
+    expect(sent).toEqual([]);
+    const s = session(one, { mayNameReviewer: () => true, namePort });
+    expect(s.view('en').mayNameReviewer).toBe(true);
+    expect(await s.nameReviewer(' u-rev ', 'R. Reviewer', 'pilot reviewer')).toBe('named');
+    expect(sent).toEqual([{ userId: 'u-rev', displayName: 'R. Reviewer', reason: 'pilot reviewer' }]);
+    expect(s.presentNameResult('ta', 'refused').label.trim()).not.toBe('');
+  });
+});

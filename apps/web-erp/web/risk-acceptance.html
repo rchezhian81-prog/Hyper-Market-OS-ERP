@@ -72,6 +72,19 @@
       <h3 id="open-heading" hidden></h3>
       <ul class="rows" id="rows" aria-label="Gates blocked by an open risk"></ul>
 
+      <!-- OB-330: the security reviewer — named by the owner on screen; with nobody named a critical/high risk must be fixed. -->
+      <section class="accepter" id="reviewer-panel" aria-label="Security reviewer">
+        <h3 id="reviewer-heading"></h3>
+        <p class="status" id="reviewer-state"><span class="icon" id="reviewer-icon" aria-hidden="true"></span><span id="reviewer-words"></span></p>
+        <div id="namer" hidden>
+          <h3 id="name-heading"></h3>
+          <div><label for="reviewer-id" id="reviewer-id-label"></label><input id="reviewer-id" type="text" autocomplete="off" /></div>
+          <div><label for="reviewer-name" id="reviewer-name-label"></label><input id="reviewer-name" type="text" autocomplete="off" /></div>
+          <div><label for="reviewer-reason" id="reviewer-reason-label"></label><input id="reviewer-reason" type="text" autocomplete="off" /></div>
+          <button id="name-reviewer" class="act" type="button"></button>
+        </div>
+      </section>
+
       <section class="accepter" id="accepter" hidden aria-label="Accept a risk">
         <h3 id="accept-heading"></h3>
         <div>

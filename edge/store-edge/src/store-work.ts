@@ -59,6 +59,30 @@ export function foodSafetyWork(input: ScreenInput): Record<string, unknown> {
   return { foodSafety: { ...asOf(held, input.now), checks: b['checks'], slots: b['slots'], receiving: b['receiving'] } };
 }
 
+/** OB-333: a quality-hold release this box's facilities screen took (the device-events queue) — known here first. */
+export interface BoxQualityRelease {
+  readonly batchId: string; readonly releasedBy: string; readonly at: string;
+  /** The device queue's state — pending (waiting to send), posted, or refused by head office (then the batch stays held). */
+  readonly state?: string;
+  readonly reason?: string | null;
+}
+
+/**
+ * OB-333: the batches head office holds on quality hold, as it last said (with how old), each marked when a person
+ * released it on this box since (`releasedOnThisBox` — those releases are also listed apart, with where they have got
+ * to) — or null when the box was never told. A release head office refused leaves its batch held, unmarked.
+ */
+export function qualityHoldWork(input: ScreenInput): Record<string, unknown> {
+  const held = input.workFeeds?.['quality-holds'];
+  const releasedHere = input.boxQualityReleases ?? [];
+  if (held === undefined) return { qualityHolds: null, qualityReleasesHere: releasedHere };
+  // A release refused by head office leaves its batch HELD (it is listed apart, with the refusal); any other is done here.
+  const done = new Set(releasedHere.filter((r) => r.state === undefined || !/refused|dead/.test(r.state)).map((r) => r.batchId));
+  const holds = (held.feed.body['holds'] as readonly Record<string, unknown>[]).filter(isObj)
+    .map((h) => (done.has(String(h['batchId'])) ? { ...h, releasedOnThisBox: true } : h));
+  return { qualityHolds: { ...asOf(held, input.now), holds }, qualityReleasesHere: releasedHere };
+}
+
 /**
  * The transfers the warehouse handheld may work: waiting to be SENT from this store, and on the road to be COUNTED IN at
  * this store — only this store's own end (head office names the store at each end). Null when the box was never told.

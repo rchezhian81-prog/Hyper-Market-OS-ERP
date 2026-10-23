@@ -139,6 +139,7 @@ export const APP_SHELL: Readonly<Record<ScreenName, AppShell>> = Object.freeze({
   'warehouse-supervisor': { dir: 'web-erp', file: 'warehouse.html' },
   approvals: { dir: 'web-erp', file: 'approvals.html' },
   'held-returns': { dir: 'web-erp', file: 'held-returns.html' },
+  'recall-trace': { dir: 'web-erp', file: 'recall-trace.html' }, // OB-288 integration follow-up
   'service-desk': { dir: 'web-erp', file: 'service-desk.html' },
   'ai-drafts': { dir: 'web-erp', file: 'ai-drafts.html' },
 });

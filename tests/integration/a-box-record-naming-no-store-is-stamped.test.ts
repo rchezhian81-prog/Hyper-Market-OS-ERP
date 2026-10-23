@@ -4,6 +4,7 @@ import { apiHarness, TEST_IDP, type ApiHarness } from '../support/api-harness';
 import { startRealCloud, type RealCloud } from '../support/real-store';
 import type { HttpRequest } from '../../services/kernel/src/index';
 import { storeStampFor, classifyReferences } from '../../services/platform/src/store-computer-identity';
+import { ownerApprovedSettingBy, SETUP_ASKER, CO_OWNER } from '../support/owner-approved-setting';
 
 /**
  * **OB-54 round 10 (hard rule #10): a record a store computer relays that names NO store is stamped with the store its
@@ -57,11 +58,12 @@ const scan = (commandId: string, over: Record<string, unknown> = {}) => ({
   commandId, grnId: 'GRN-R10', productId: 'MILK', quantityMinor: 6, uom: 'ea', receivedBy: 'u-mgr-a', source: 'handheld', at: AT, ...over,
 });
 
-async function setup(api: Api): Promise<void> {
+async function setup(api: Api, maker: string): Promise<void> {
   const owner = as(api, OWNER);
   // The records here are dated by the test machine's clock (UTC); the shop is set to UTC so head office's trading day
   // agrees at every hour (the India day differs from 18:30 to 24:00 UTC).
-  const tz = await api.raw('PUT', '/v1/platform/setup/locale.time_zone', TEST_IDP.issue({ sub: OWNER, tenantId: api.tenant }), { value: 'UTC' }, 'tz');
+  // OB-336: the time zone is high-impact — the administrator asks, the owner approves, the administrator saves.
+  const tz = await ownerApprovedSettingBy((m, p, u, b, k) => api.raw(m, p, TEST_IDP.issue({ sub: u, tenantId: api.tenant }), b, k), 'locale.time_zone', { value: 'UTC' }, OWNER, maker);
   expect(tz.status).toBe(200);
   for (const [id, body] of [
     ['C-R10', { kind: 'company', name: 'Synthetic Retail' }],
@@ -182,8 +184,9 @@ describe('OB-54 round 10 — a box record naming no store lands at the credentia
     h = apiHarness();
     await h.seedOwner(tenant, OWNER);
     await h.provisionRole(tenant, ASKER, 'store_manager');
+    await h.provisionRole(tenant, SETUP_ASKER, 'platform_admin');
     api = { tenant, raw: (method, path, token, body, key, query) => h.raw({ method, path, token, ...(body === undefined ? {} : { body }), ...(key === undefined ? {} : { idempotencyKey: key }), ...(query === undefined ? {} : { query }) }) };
-    await setup(api);
+    await setup(api, SETUP_ASKER);
   });
   it('sales, returns, the day close and phone work with no store land at SA, stamped and listed; an unknown store code is refused and listed', async () => {
     await recordsNamingNoStoreLandAtTheCredentialsStore(api);
@@ -198,6 +201,7 @@ describeOrSkip('OB-54 round 10 — on real PostgreSQL through the production API
   let api: Api;
   beforeAll(async () => {
     cloud = await startRealCloud({ databaseUrl: DATABASE_URL!, tenantId: randomUUID(), owner: OWNER, packSigningKey: ['r10', 'stamp', 'pack', 'key'].join('-').padEnd(48, '0') });
+    await cloud.grant(CO_OWNER, 'owner'); // OB-336: the second person who asks for the time zone (the owner approves)
     api = {
       tenant: cloud.tenantId,
       raw: async (method, path, token, body, key, query) => {
@@ -215,7 +219,7 @@ describeOrSkip('OB-54 round 10 — on real PostgreSQL through the production API
         return { status: res.status, body: text === '' ? null : JSON.parse(text) as unknown };
       },
     };
-    await setup(api);
+    await setup(api, CO_OWNER);
   }, 120_000);
   afterAll(async () => { await cloud?.stop(); });
   it('sales, returns, the day close and phone work with no store land at SA, stamped and listed; an unknown store code is refused and listed', async () => {

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { ownerApprovedSetting } from '../support/owner-approved-setting';
 
 // Audit EA-08 (A01 · A02 · AI-NFR-01/04/08/10): the Owner Intelligence (A01) and Purchase (A02) agents had no run
 // implementation, and no run was ever recorded or metered. Now, through the real API:
@@ -22,7 +23,7 @@ async function shop(): Promise<ApiHarness> {
   const h = apiHarness();
   await h.seedOwner(A, 'u-owner');
   await h.provisionRole(A, 'u-till', 'cashier');
-  expect((await put(h, '/v1/platform/setup/locale.time_zone', { value: 'UTC' }, 'tz')).status).toBe(200);
+  expect((await ownerApprovedSetting(h, A, 'locale.time_zone', { value: 'UTC' })).status).toBe(200);
   // Two of a product received at S1, then three sold — it is out of stock with demand.
   expect((await h.request({ method: 'POST', path: '/v1/inventory/movements', userId: 'u-owner', tenantId: A, idempotencyKey: 'mv-1', body: {
     movementId: 'mv-1', productId: 'P-OIL', locationId: 'S1', kind: 'received', quantityMinor: 2, uom: 'ea', occurredAt: new Date(Date.now() - 3_600_000).toISOString(), enteredBy: 'u-owner', unitCostMinor: 15_000,

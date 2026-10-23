@@ -22,6 +22,7 @@ import {
   type BlanketAgreement, type BlanketLine, type BlanketRelease,
 } from '../../../packages/purchasing/src/index';
 import { requestApproval, decide, type Approver } from '../../../packages/approvals/src/index';
+import { mayApproveValue, authorityWords } from '../../../packages/approvals/src/authority-rules';
 import { money, isCurrencyCode, type CurrencyCode } from '../../../packages/contracts/src/money';
 import { normaliseUom } from '../../../packages/contracts/src/quantity';
 import type { AuditEntry } from '../../../packages/audit/src/index';
@@ -159,8 +160,14 @@ export function blanketOrderRoutes(deps: BlanketOrderDeps): readonly Route[] {
         if (reason === '') {
           throw apiError(422, { code: 'reason_required', whatHappened: 'Approving a standing agreement needs a reason for the audit trail.', wasItSaved: 'not_saved', nextSafeAction: 'Send { "reason": "…" }. Nothing was approved.' });
         }
-        const limit = deps.authorityOf === undefined ? null : await deps.authorityOf(ctx.tenantId, ctx.userId, 'blanket_agreement');
-        const approver: Approver = { userId: ctx.userId, branchScope: 'all', authorityLimit: limit === null ? null : money(limit, a.currency) };
+        // M02-FR-02 · OB-290: the approver's server-held authority for a standing agreement. The owner's rules hold money limits
+        // for refunds, purchase orders and stock adjustments only, so an agreement is not money-limited there (each release
+        // is a purchase order, judged against the issuer's PO limit when it is issued).
+        const authority = deps.authorityOf === undefined ? undefined : await deps.authorityOf(ctx.tenantId, ctx.userId, 'blanket_agreement');
+        if (authority !== undefined && ctx.userId !== a.proposedBy && !mayApproveValue(authority, a.ceilingMinor)) {
+          throw apiError(422, { code: 'above_your_limit_goes_to_owner', whatHappened: `This standing agreement's ceiling is above ${ctx.userId}'s limit (${authorityWords(authority)}).`, wasItSaved: 'not_saved', nextSafeAction: 'The owner approves it. Nothing was approved.' });
+        }
+        const approver: Approver = { userId: ctx.userId, branchScope: 'all', authorityLimit: null };
         const outcome = decide(requestApproval({ id: agreementId, subjectType: 'blanket_agreement', subjectRef: agreementId, requestedBy: a.proposedBy, value: money(a.ceilingMinor, a.currency) }), approver, 'approved', reason, deps.now());
         if (!outcome.ok) {
           throw apiError(outcome.refusal === 'self_approval_forbidden' ? 409 : 422, {

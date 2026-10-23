@@ -7,6 +7,7 @@ import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { runMigrations } from '../../packages/persistence/src/migrations';
 import { SqlIdempotencyStore, MemoryIdempotencyStore } from '../../services/kernel/src/index';
+import { ownerApprovedSetting } from '../support/owner-approved-setting';
 
 /**
  * **The governed drill reaches the bills of the day asked for, and only the branches the reader's grant covers (audit
@@ -45,7 +46,7 @@ async function seed(h: ApiHarness, T: string): Promise<void> {
     const r = await h.request({ method, path, userId, tenantId: T, idempotencyKey: key, body });
     expect(r.status, `${path} ${JSON.stringify(r.body)}`).toBeLessThan(300);
   };
-  await ok('PUT', '/v1/platform/setup/locale.time_zone', OWNER, { value: 'UTC' }, 'tz');
+  expect((await ownerApprovedSetting(h, T, 'locale.time_zone', { value: 'UTC' }, OWNER)).status).toBe(200);
   for (const b of BILLS) {
     const total = b.tenders.reduce((t, [, a]) => t + a, 0);
     await ok('POST', '/v1/sales', CASHIER, {

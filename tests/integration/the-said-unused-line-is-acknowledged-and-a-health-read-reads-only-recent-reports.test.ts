@@ -13,6 +13,7 @@ import { STREAM, streamName, storeComputerReading, storeComputerHistory, boxHeal
 import { judgeBoxes, UNRECEIVED_GRACE_MINUTES, UNUSED_RECEIVED_STAYS_WORDS, type BoxHealthRecord } from '../../services/platform/src/box-health';
 import { DEFAULT_THRESHOLDS } from '../../packages/ops/src/index';
 import { history, rng, iso, TEST_BOX_HISTORY_KEY } from '../support/box-history';
+import { ownerApprovedSetting } from '../support/owner-approved-setting';
 
 /**
  * **Round 28 · owner decisions OB-103 "A" and OB-104 "A" (13 Oct 2026, in writing) — through head office's production routes
@@ -53,7 +54,7 @@ async function shop(h: ApiHarness): Promise<{ T: string; call: Call }> {
     method, path, userId: user, tenantId: T, ...(branchId === undefined ? {} : { branchId }),
     ...(method === 'GET' ? {} : { idempotencyKey: key ?? `k-${randomUUID()}` }), ...(body === undefined ? {} : { body }),
   });
-  expect((await call('PUT', '/v1/platform/setup/locale.time_zone', OWNER, { value: 'UTC' })).status).toBe(200);
+  expect((await ownerApprovedSetting(h, T, 'locale.time_zone', { value: 'UTC' }, OWNER)).status).toBe(200);
   for (const [id, body] of [
     ['C1', { kind: 'company', name: 'SRE Retail' }],
     [S1, { kind: 'branch', name: 'Store One', parentId: 'C1', companyId: 'C1' }],

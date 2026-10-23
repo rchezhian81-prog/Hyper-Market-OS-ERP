@@ -481,6 +481,18 @@ jobs:
           path: scan-reports/
           if-no-files-found: warn
 
+      # OB-331 (owner, 23 Oct 2026): every findings report goes to head office's findings register automatically, under
+      # the CI scanner's OWN machine identity (role findings_push — it may do nothing else). The key is read only from the
+      # GitHub secret FINDINGS_PUSH_TOKEN (set by the owner or administrator; issued out of band, never by production
+      # code); the register's address is the repository variable FINDINGS_REGISTER_URL. With no key set the step says
+      # "findings not sent: no key set" as a visible warning and does not fail the build — the verdict below is the gate.
+      - name: Send the findings to head office's register (OB-331)
+        if: always()
+        env:
+          FINDINGS_PUSH_TOKEN: ${{ secrets.FINDINGS_PUSH_TOKEN }}
+          FINDINGS_REGISTER_URL: ${{ vars.FINDINGS_REGISTER_URL }}
+        run: node scripts/push-findings.mjs scan-reports
+
       - name: Verdict — every scan ran and none found anything critical or high
         if: always()
         run: |

@@ -10,6 +10,7 @@ import { readLog } from '../../edge/store-edge/src/file-log';
 import { bootPos } from '../../apps/pos/src/browser-entry';
 import { prepareTillBox, signInTill, pinOf, type TillPerson } from '../support/till-operator';
 import { startRealCloud, type RealCloud } from '../support/real-store';
+import { ownerApprovedSetting, ownerApprovedSettingOn } from '../support/owner-approved-setting';
 
 /**
  * **PF-07 (rest) — a NO-SALE and a PRICE OVERRIDE at the till are kept as evidence, approved by a manager on the store
@@ -79,7 +80,7 @@ describe(`PF-07 — no-sale and price override: on the box first, approved, rela
       await cloud.grant(CASHIER, 'cashier');
       await cloud.grant(MANAGER, 'store_manager');
       await cloud.grant(NOT_A_MANAGER, 'cashier');
-      expect((await call('PUT', '/v1/platform/setup/locale.time_zone', OWNER, { value: 'UTC' })).status).toBe(200);
+      expect((await ownerApprovedSettingOn(cloud, 'locale.time_zone', { value: 'UTC' }, OWNER)).status).toBe(200);
     } else {
       h = apiHarness();
       await h.seedOwner(tenant, OWNER);
@@ -247,7 +248,7 @@ describe(`PF-07 — no-sale and price override: on the box first, approved, rela
 
   it('a day is the SHOP\'s trading day: an action relayed without the box\'s date is judged by head office\'s own time zone and cut-off', async () => {
     // 20:00 UTC on 7 Oct is 01:30 on 8 Oct in the shop (IST, cut-off midnight) — the shop's 8 Oct, not the server's 7 Oct.
-    expect((await call('PUT', '/v1/platform/setup/locale.time_zone', OWNER, { value: 'Asia/Kolkata' })).status).toBe(200);
+    expect((cloud !== undefined ? await ownerApprovedSettingOn(cloud, 'locale.time_zone', { value: 'Asia/Kolkata' }, OWNER) : await ownerApprovedSetting(h!, tenant, 'locale.time_zone', { value: 'Asia/Kolkata' }, OWNER)).status).toBe(200);
     const at = '2026-10-07T20:00:00.000Z';
     const r = await call('POST', '/v1/loss-prevention/activity/N-tz1/synced', BOX, {
       activityId: 'N-tz1', kind: 'no_sale', laneId: 'lane-1', cashierId: 'u-night', reason: 'check_drawer', at, valueMinor: 0, approvedBy: MANAGER, approvalId: 'apr-tz',

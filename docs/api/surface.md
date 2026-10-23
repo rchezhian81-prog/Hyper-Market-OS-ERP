@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1281 | 765 | 765 | 109 | 367 |
+| 13 | 1288 | 769 | 769 | 109 | 370 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -411,9 +411,11 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/production/weighed-runs/:runId/synced` | `production.sync` | core | yes |
 | POST | `/v1/quality/cold-chain/assess` | `quality.coldchain.assess` | core | yes |
 | GET | `/v1/quality/holds` | `quality.hold.manage` | core | — |
+| GET | `/v1/quality/holds-for-release` | `quality.hold.release.sync` | core | — |
 | GET | `/v1/quality/holds/:batchId` | `quality.hold.manage` | core | — |
 | POST | `/v1/quality/holds/:batchId` | `quality.hold.manage` | core | yes |
 | POST | `/v1/quality/holds/:batchId/release` | `quality.hold.release` | core | yes |
+| POST | `/v1/quality/holds/:batchId/release/synced` | `quality.hold.release.sync` | core | yes |
 | GET | `/v1/quality/lot-trace/:batchId/chain` | `quality.lottrace.read` | core | — |
 | GET | `/v1/quality/lot-trace/:batchId/sold` | `quality.lottrace.read` | core | — |
 | GET | `/v1/quality/lot-trace/backward/customers/:customerRef` | `quality.lottrace.read` | core | — |
@@ -1048,6 +1050,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/compliance/evidence-gaps` | `compliance.obligation.read` | core | — |
 | GET | `/v1/compliance/finding-scans` | `compliance.finding.read` | core | — |
 | POST | `/v1/compliance/finding-scans` | `compliance.finding.record` | core | yes |
+| POST | `/v1/compliance/finding-scans/pushed` | `compliance.finding.push` | core | yes |
 | GET | `/v1/compliance/findings` | `compliance.finding.read` | core | — |
 | POST | `/v1/compliance/findings/:findingId` | `compliance.finding.record` | core | yes |
 | POST | `/v1/compliance/findings/:findingId/fixed` | `compliance.finding.record` | core | yes |
@@ -1063,9 +1066,13 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/compliance/obligations/:obligationId/evidence` | `compliance.obligation.manage` | core | yes |
 | POST | `/v1/compliance/remediations/:remediationId` | `compliance.risk.manage` | core | yes |
 | GET | `/v1/compliance/remediations/overdue` | `compliance.risk.read` | core | — |
+| GET | `/v1/compliance/risk-acceptances` | `compliance.risk.read` | core | — |
 | GET | `/v1/compliance/risks` | `compliance.risk.read` | core | — |
 | POST | `/v1/compliance/risks/:riskId` | `compliance.risk.manage` | core | yes |
 | POST | `/v1/compliance/risks/:riskId/acceptance` | `compliance.risk.manage` | core | yes |
+| POST | `/v1/compliance/risks/:riskId/acceptance/review` | `compliance.risk.read` | core | yes |
+| GET | `/v1/compliance/security-reviewer` | `compliance.risk.read` | core | — |
+| PUT | `/v1/compliance/security-reviewer` | `compliance.reviewer.name` | core | yes |
 | GET | `/v1/compliance/status` | `compliance.obligation.read` | core | — |
 | POST | `/v1/documents/:documentId/disposal` | `document.retention.dispose` | core | yes |
 | GET | `/v1/documents/issued/:documentId` | `document.template.read` | core | — |

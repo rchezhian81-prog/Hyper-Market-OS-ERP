@@ -68,7 +68,7 @@ import type { ControlTotalCheck } from '../../finance/src/index';
 import { stockAdjustmentSources, stockAdjustmentCheck, type PeriodBooksDeps, type CountForBooks, type WriteOffForBooks, type StockAdjustmentJournal, type AccountClass } from '../../finance/src/period-books';
 import { reconcilePayables, PAYABLES_LEFT_DERIVATION, PAYABLES_RIGHT_DERIVATION } from '../../../packages/finance/src/payables';
 import type { LoyaltyEffectsDeps, SaleEarn, ReturnTakeBack, ReturnGiveBack } from '../../customer/src/loyalty-effects';
-import { blockedProductIds, type SaleBlock, type SaleBlockDeps } from '../../inventory/src/sale-blocks';
+import { blockedProductIds, expiredBatchesByProduct, type SaleBlock, type SaleBlockDeps, type ExpiredBatchFact } from '../../inventory/src/sale-blocks';
 import type { QualityHold } from '../../../packages/quality/src/index';
 import type { SalesHistoryDeps } from '../../inventory/src/sales-history';
 import type { SoldLine } from '../../../packages/demand/src/sales-history';
@@ -2501,6 +2501,7 @@ export function cataloguePreviewAdapter(input: {
     promotions: promotionCatalogueAdapter(input).promotions,
     // SF-08: recalled and held batches' products go in the pack blocked, so every till refuses them offline.
     blockedProducts: saleBlocksAdapter(input).blockedProducts,
+    expiredBatches: saleBlocksAdapter(input).expiredBatches, // M10-FR-01 follow-up: expired batches refused on a batch-bearing code
     ...(input.pricing === undefined ? {} : { pricing: input.pricing }),
     now: input.now,
   };
@@ -2930,7 +2931,10 @@ export function qualityHoldAdapter(input: {
  */
 export function saleBlocksAdapter(input: { readonly store: EventStore; readonly now: () => string }): SaleBlockDeps & {
   readonly blockedProducts: (tenantId: string) => Promise<ReadonlySet<string>>;
+  readonly expiredBatches: (tenantId: string) => Promise<ReadonlyMap<string, readonly { readonly batchId: string; readonly expiry: string }[]>>;
 } {
+  // M10-FR-01 follow-up: the expired-state register the daily expiry move appends (lane 2 · P2's `BatchExpired`).
+  const expired = (tenantId: string): Promise<readonly ExpiredBatchFact[]> => allOf<ExpiredBatchFact>(input.store, tenantId, streamName(STREAM.inventory, 'expiry-states'), 'BatchExpired');
   const recalls = recallAdapter(input);
   const holds = qualityHoldAdapter(input);
   const inv = inventoryAdapter(input);
@@ -2961,6 +2965,8 @@ export function saleBlocksAdapter(input: { readonly store: EventStore; readonly 
   return {
     blocks,
     blockedProducts: async (tenantId) => blockedProductIds(await blocks(tenantId)),
+    expired,
+    expiredBatches: async (tenantId) => expiredBatchesByProduct(await expired(tenantId)),
     currentPack: (tenantId) => latest<SignedPack>(input.store, tenantId, STREAM.catalogue, 'CataloguePublished'),
   };
 }

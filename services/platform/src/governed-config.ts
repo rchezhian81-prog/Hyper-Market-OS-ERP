@@ -23,14 +23,17 @@ import type { AuditEntry } from '../../../packages/audit/src/index';
 import { actionDetails, openApproval, type ApprovalPort } from '../../identity/src/approval-requests';
 
 /**
- * Settings whose change needs the owner's approval — the ones M01-FR-02 names: "owner approval for currency/precision and
- * trading-day changes". (M01-FR-03's high-impact list is of SWITCHES — payments, pricing, offline limits — below.) Whether
- * the time zone, the till's offline spend cap or the bulk-publish threshold should join this list is the owner's decision,
- * asked in the P1 report; until then they change with one person, as before.
+ * Settings whose change needs the owner's approval. M01-FR-02 names "owner approval for currency/precision and trading-day
+ * changes"; OB-336 (owner, 23 Oct 2026, in writing) adds the time zone, the till's offline loyalty spend cap and the
+ * bulk-publish threshold. Each needs the OWNER's approval of exactly the answer being saved — never the maker's own.
+ * (M01-FR-03's high-impact list of SWITCHES — payments, pricing, offline limits — is below.)
  */
 export const HIGH_IMPACT_SETTINGS: Readonly<Record<string, string>> = Object.freeze({
   'trading_day.cutoff': 'decides which day every sale, day close and tax period falls in',
   'locale.currency': 'the currency every amount is held in',
+  'locale.time_zone': 'the shop\'s clock — which day "today" is for every report, close and alert (OB-336)',
+  'loyalty.till_spend_cap_paise': 'the most a member may spend at the till per day, offline too — an offline limit (OB-336)',
+  'catalogue.bulk_publish_threshold': 'how many products one catalogue publish may change before it needs a fresh second-factor sign-in (OB-336)',
 });
 
 /** Switches whose name begins with one of these are high-impact (M01-FR-03: payments, pricing, offline limits). */
