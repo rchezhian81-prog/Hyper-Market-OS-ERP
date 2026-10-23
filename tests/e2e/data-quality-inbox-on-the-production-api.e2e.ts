@@ -42,7 +42,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Data Q
         const publish = (id: string, product: unknown) => ok(cloud.request({ method: 'POST', path: `/v1/catalogue/products/${id}/publish`, userId: OWNER, idempotencyKey: `pub-${id}`, body: { product, categories: [GROCERY] } }), id);
         await publish('p-noscan', { ...base, sku: 'SKU-NOSCAN', name: 'Loose Poha', brand: 'Local', mrpHistory: MRP });
         await publish('p-nomrp', { ...base, sku: 'SKU-NOMRP', name: 'Sugar 1kg', brand: 'Local' });
-        await ok(cloud.request({ method: 'POST', path: '/v1/catalogue/products/p-nomrp/barcodes/8901000000004', userId: OWNER, idempotencyKey: 'bc-nomrp', body: { kind: 'ean' } }), 'barcode');
+        await ok(cloud.request({ method: 'POST', path: '/v1/catalogue/products/p-nomrp/barcodes/8901000000002', userId: OWNER, idempotencyKey: 'bc-nomrp', body: { kind: 'ean' } }), 'barcode');
       },
     });
     browser = await chromium.launch({ headless: true, executablePath: CHROMIUM });
@@ -93,7 +93,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Data Q
 
   it('refreshed data, the kill switch, and a restart — each read from head office', async () => {
     // A steward fixes the barcode gap the ordinary way: the suggestion drops off on reload.
-    await ok(shop.cloud().request({ method: 'POST', path: '/v1/catalogue/products/p-noscan/barcodes/8901000000005', userId: OWNER, idempotencyKey: 'bc-noscan', body: { kind: 'ean' } }), 'fix');
+    await ok(shop.cloud().request({ method: 'POST', path: '/v1/catalogue/products/p-noscan/barcodes/8901000000019', userId: OWNER, idempotencyKey: 'bc-noscan', body: { kind: 'ean' } }), 'fix');
     let s = await open(MGR, 'br-1');
     try {
       await s.page.locator('#dismissed-rows .row', { hasText: 'Sugar 1kg' }).waitFor({ timeout: 15_000 });
