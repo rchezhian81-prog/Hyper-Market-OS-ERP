@@ -76,6 +76,12 @@ describe('each scanner\'s own JSON becomes findings, with the tool\'s severity w
     ]);
   });
 
+  it('Semgrep: a rule loaded from a local folder is named by its own id, the same on every machine', () => {
+    const local = (folder: string) => parseSemgrepJson({ results: [{ ...semgrep.results[0]!, check_id: `${folder}.sast-rules.javascript.express.xss` }] }).observations[0]!;
+    expect(local('home.runner.work._temp').ruleId).toBe('javascript.express.xss');
+    expect(local('tmp.scratch').fingerprint).toBe(local('home.runner.work._temp').fingerprint);
+  });
+
   it('Semgrep: the same problem moved down the file keeps its fingerprint (its 72-hour clock is not reset by an edit)', () => {
     const moved = { results: [{ ...semgrep.results[2]!, start: { line: 300 } }] };
     expect(parseSemgrepJson(moved).observations[0]!.fingerprint).toBe(parseSemgrepJson({ results: [semgrep.results[2]] }).observations[0]!.fingerprint);

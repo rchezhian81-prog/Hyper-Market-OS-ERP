@@ -198,14 +198,17 @@ export function parseSemgrepJson(raw: unknown): { readonly observations: readonl
     const extra = isObj(r['extra']) ? r['extra'] : {};
     const start = isObj(r['start']) ? r['start'] : {};
     const toolSeverity = isStr(extra['severity']) ? extra['severity'] : 'UNKNOWN';
+    // Rules loaded from a local folder carry that folder's path in their id ("home.runner.work._temp.sast-rules.
+    // javascript.…"). The id is cut back to the rule's own name, so it is the same on every machine and in every run.
+    const ruleId = r['check_id'].replace(/^(?:.*\.)?sast-rules\./, '');
     // Keyed on the rule, the file and WHICH occurrence in that file — not the line — so an edit above it does not
     // turn one old problem into a "new" one with a fresh clock.
-    const slot = `${r['check_id']}|${r['path']}`;
+    const slot = `${ruleId}|${r['path']}`;
     const n = (ordinal.get(slot) ?? 0) + 1;
     ordinal.set(slot, n);
     observations.push(observation({
-      key: `${slot}|#${n}`, source: 'sast', tool: 'semgrep', ruleId: r['check_id'],
-      title: (isStr(extra['message']) ? extra['message'] : r['check_id']).split('\n')[0]!.slice(0, 300),
+      key: `${slot}|#${n}`, source: 'sast', tool: 'semgrep', ruleId,
+      title: (isStr(extra['message']) ? extra['message'] : ruleId).split('\n')[0]!.slice(0, 300),
       severity: sev[toolSeverity] ?? 'medium', toolSeverity,
       location: `${r['path']}:${typeof start['line'] === 'number' ? start['line'] : '?'}`,
     }));
