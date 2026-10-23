@@ -61,8 +61,8 @@ async function build() {
   if (out.result !== 'ok') { say('waves-status', out); return; }
   const w = out.value;
   const kept = w.refused.length === 0 ? '' : ` · ⚠ ${t('refusedK')}: ${w.refused.map((r) => `${r.orderId} (${r.detail})`).join('; ')}`;
-  good('waves-status', `${t('built')} ${w.waveId} · ${w.pickerId} · ${w.lineCount} ${t('lines')}${kept}`);
   await showOrders();
+  good('waves-status', `${t('built')} ${w.waveId} · ${w.pickerId} · ${w.lineCount} ${t('lines')}${kept}`);
 }
 async function showWaves() {
   const out = await session.waves(store());
@@ -172,8 +172,8 @@ async function showHeld() {
 async function decide(orderId, decision, reason) {
   const out = await session.decide(orderId, decision, reason);
   if (out.result !== 'ok') { say('contribution-status', out); return; }
-  good('contribution-status', `${t('decided')} ${orderId} — ${t(`st_${out.value.standing}`)}`);
   await showHeld();
+  good('contribution-status', `${t('decided')} ${orderId} — ${t(`st_${out.value.standing}`)}`);
 }
 
 // ── The owner's numbers ──────────────────────────────────────────────────────
