@@ -173,6 +173,10 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'quality.coldchain.assess', 'quality.lottrace.read',
       'quality.recall.initiate', 'quality.recall.read',
       'quality.hold.manage', 'quality.hold.release',
+      // ── Lane 2 · P1 (recall and trace) — begin
+      // M10-FR-04: the consent-checked list of the customers a recall must reach (names customers — owner / store manager only).
+      'quality.recall.notice.read',
+      // ── Lane 2 · P1 — end
       'price.integrity.audit', 'selfcheckout.operate',
       'owner.alert.read', 'owner.kpi.read', 'owner.brief.manage',
       'refund.exception.read',
@@ -348,6 +352,10 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'quality.coldchain.assess', 'quality.lottrace.read',
       'quality.recall.initiate', 'quality.recall.read',
       'quality.hold.manage', 'quality.hold.release',
+      // ── Lane 2 · P1 (recall and trace) — begin
+      // M10-FR-04: the consent-checked list of the customers a recall must reach (names customers — owner / store manager only).
+      'quality.recall.notice.read',
+      // ── Lane 2 · P1 — end
       // R3 lane 3: B16 — confirm a tobacco product's packs carry the warning picture; D-26 — record and answer a lot-trace request.
       'catalogue.tobacco.warning.confirm', 'quality.lottrace.request',
       'price.integrity.audit', 'selfcheckout.operate',

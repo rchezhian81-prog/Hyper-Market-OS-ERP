@@ -96,7 +96,8 @@ describe.each(backings)('SF-08 · D-20: a recalled batch is refused and its sibl
     // The recall is initiated on B-1 only.
     await ok(req('POST', '/v1/quality/recalls/B-1', { reason: 'supplier contamination notice' }), 'recall B-1');
     const blocks = (await req('GET', '/v1/quality/sale-blocks')).body as { blocks: { batchId: string; state: string }[]; blockedBatches: Record<string, string[]> };
-    expect(blocks.blocks).toEqual([expect.objectContaining({ productId: 'p-paneer', batchId: 'B-1', state: 'not_yet_on_pack', atTheTill: 'plain_barcode_blocks_whole_product_2d_barcode_blocks_this_batch' })]);
+    // Lane 2 · P1: starting the recall published the tills' pack itself, so the block is already on it.
+    expect(blocks.blocks).toEqual([expect.objectContaining({ productId: 'p-paneer', batchId: 'B-1', state: 'on_pack', atTheTill: 'plain_barcode_blocks_whole_product_2d_barcode_blocks_this_batch' })]);
     expect(blocks.blockedBatches).toEqual({ 'p-paneer': ['B-1'] });
 
     // A cold restart: the next pack is built from what the store kept.

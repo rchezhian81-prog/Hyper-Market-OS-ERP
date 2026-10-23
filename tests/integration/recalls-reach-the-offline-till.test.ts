@@ -81,14 +81,14 @@ describe('SF-08: a recalled or held batch reaches the offline till on the next s
     // The recall is initiated on ONE batch of paneer.
     expect((await req(h, 'POST', '/v1/quality/recalls/B-0412', 'rc-1', { reason: 'supplier contamination notice' })).status).toBeLessThan(300);
 
-    // Not yet published: head office says so — no till refuses it yet (P-08), and the lane still sells on v1.
+    // Lane 2 · P1 (M10-FR-04 "recall block propagates as priority sync"): starting the recall published the tills' pack
+    // itself — nobody pressed publish. Head office says the block is on the pack the tills trust.
     const before = await saleBlocks(h);
-    expect(before.blocks).toEqual([expect.objectContaining({ productId: 'p-paneer', batchId: 'B-0412', kind: 'recall', state: 'not_yet_on_pack' })]);
-    expect(before.notYetOnPack).toBe(1);
-    expect(before.detail).toMatch(/publish/);
+    expect(before.blocks).toEqual([expect.objectContaining({ productId: 'p-paneer', batchId: 'B-0412', kind: 'recall', state: 'on_pack' })]);
+    expect(before.notYetOnPack).toBe(0);
 
-    // The next signed pack carries the block; the lane accepts it and refuses the scan by name — offline.
-    const v2 = laneTrading(await publish(h), v1.pack);
+    // That signed pack carries the block; the lane accepts it and refuses the scan by name — offline.
+    const v2 = laneTrading((await req(h, 'GET', '/v1/catalogue/pack')).body as SignedPack, v1.pack);
     expect(() => v2.cache.scan('8901000000011')).toThrow(RecalledItemError);
     expect(() => v2.cache.scan('8901000000011')).toThrow(/Paneer 200g/);
     // Decision "C": the whole product, every batch, until R3. Curd is untouched.

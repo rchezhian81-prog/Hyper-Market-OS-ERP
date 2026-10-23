@@ -106,7 +106,8 @@ describe.each(backings)('a recall runs its whole lifecycle — on $name (WF-09)'
     await ok(req('POST', '/v1/quality/holds/B-0412', { productId: 'p-paneer', reason: 'supplier contamination notice — set aside' }), 'hold');
     await ok(req('POST', '/v1/quality/recalls/B-0412', { reason: 'supplier contamination notice SN-2030-17' }), 'recall');
     const blocks = async () => (await req('GET', '/v1/quality/sale-blocks')).body as { blocks: { productId: string | null; batchId: string; kind: string; state: string }[]; blockedProducts: string[]; notYetOnPack: number };
-    expect((await blocks()).notYetOnPack).toBe(2); // the hold and the recall — neither on any till yet, and said
+    // Lane 2 · P1: starting the recall published the tills' pack itself — the hold and the recall are both on it already.
+    expect((await blocks()).notYetOnPack).toBe(0);
     expect((await blocks()).blockedProducts).toEqual(['p-paneer']);
 
     // ── A COLD RESTART: everything above is rebuilt from the store ──────────────────────────────────────────────────
