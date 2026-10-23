@@ -171,8 +171,9 @@ import {
 } from './production-session';
 import {
   createProductionTasksSession,
-  type ProductionTasksSession, type RunCommitPort, type LabelPort, type TaskPostResult,
+  type ProductionTasksSession, type RunCommitPort, type LabelPort, type TaskPostResult, type WeighPort, type SavedWorkRow,
 } from './production-tasks-session';
+import { createProductionQueue, openBoxLabelPort, type ProductionQueue } from './production-queue';
 import {
   createFacilitiesSession,
   type FacilitiesPorts, type FacilitiesSession, type FacilitiesData, type OverdueTask,
@@ -1802,6 +1803,35 @@ export interface ProductionScreenData {
   readonly worklist?: ProductionData;
   /** FUL-13: where this store's production is made (the kitchen location), when the store computer knows it. */
   readonly productionLocationId?: string;
+  /** OB-288 lane 2: the store this box is — what a run saved through the store computer names. */
+  readonly storeId?: string;
+  /** OB-288 lane 2: head office's board and recipes as the store computer last heard them (null: never told). */
+  readonly board?: { readonly asAt: string; readonly ageMinutes: number; readonly runs: readonly ProductionRun[]; readonly recipes: readonly unknown[]; readonly enabledDepartments: readonly string[] } | null;
+}
+
+/** The last problem the production screen's device queue hit with this device's storage — shown, never silent (P-08). */
+export let productionStorageProblem: string | undefined;
+
+/** OB-288 lane 2: open the production screen's durable device queue, keyed per store like the other served screens'. */
+export function openProductionOutbox(storeId: string, storage?: DeviceStorage): SyncOutbox {
+  const store = storage ?? (globalThis as { localStorage?: DeviceStorage }).localStorage;
+  const onProblem = (why: string): void => { productionStorageProblem = why; };
+  return openDeviceOutbox(guardedStore(`sre.production.outbox.${storeId}`, store, onProblem), onProblem);
+}
+
+/** OB-288 lane 2: the production screen's leg of the shared device → box path, as the same ERP surface. */
+export function openProductionRelay(laneWriteBase: string | undefined, queue: ProductionQueue, outbox: SyncOutbox): ManagerRelay | undefined {
+  if (laneWriteBase === undefined) return undefined;
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return undefined;
+  return {
+    syncNow: async () => {
+      const result = await drainToBox({ outbox, boxBase: laneWriteBase, source: 'manager', fetch: fetchFn });
+      const statuses = await boxStatus({ boxBase: laneWriteBase, keys: queue.handedKeys(), fetch: fetchFn });
+      if (statuses !== undefined) queue.noteBoxStatus(statuses);
+      return { handed: result.handed, refused: result.refused, failed: result.failed, offline: result.offline };
+    },
+  };
 }
 
 /** FUL-13 — the production staff's task paths (record a run, print a label) over the existing APIs, each under the
@@ -1859,11 +1889,15 @@ export function openLabelPort(): LabelPort {
   };
 }
 
-/** Build the production staff's task paths over a board (the runs a label may be printed for). */
-export function bootProductionTasks(data: ProductionScreenData | undefined, worklist?: ProductionData, ports?: { commit?: RunCommitPort; label?: LabelPort }): ProductionTasksSession | null {
+/** Build the production staff's task paths over a board (the runs a label may be printed for). OB-288 lane 2: on the store
+ *  computer the run, the weigh and the release are SAVED through it and the box prints the label. */
+export function bootProductionTasks(
+  data: ProductionScreenData | undefined, worklist?: ProductionData,
+  ports?: { commit?: RunCommitPort; label?: LabelPort; weigh?: WeighPort; savedWork?: () => readonly SavedWorkRow[]; queued?: boolean },
+): ProductionTasksSession | null {
   if (data === undefined) return null;
   const held = new Set(data.permissions ?? []);
-  const board = (): ProductionData => worklist ?? data.worklist ?? EMPTY_PRODUCTION;
+  const board = (): ProductionData => worklist ?? data.worklist ?? (data.board === undefined || data.board === null ? undefined : { runs: data.board.runs }) ?? EMPTY_PRODUCTION;
   return createProductionTasksSession(
     { userId: data.userId === undefined ? null : data.userId, defaultLocationId: data.productionLocationId ?? null },
     {
@@ -1872,6 +1906,10 @@ export function bootProductionTasks(data: ProductionScreenData | undefined, work
       commitPort: () => ports?.commit ?? null,
       labelPort: () => ports?.label ?? null,
       runs: () => board().runs,
+      queued: () => ports?.queued === true,
+      labelFromBox: () => ports?.queued === true,
+      weighPort: () => ports?.weigh ?? null,
+      savedWork: () => ports?.savedWork?.() ?? [],
     },
   );
 }
@@ -4978,6 +5016,8 @@ interface ManagerWindow {
   /** FUL-13: the production staff's task paths (record a run, print a label). */
   productionTasks?: ProductionTasksSession;
   productionTasksFor?: (worklist: ProductionData) => ProductionTasksSession | null;
+  /** OB-288 lane 2: move this screen's saved production work to the store computer and learn where each piece is. */
+  productionRelay?: ManagerRelay;
   /** The shell reads the live production board through this and re-presents it — a GET read, never a write. */
   production?: {
     refresh(): Promise<ProductionData | null>;
@@ -6211,10 +6251,25 @@ if (browserWindow !== undefined) {
   // click — and the server re-checks `production.release` and refuses an expired batch, which the screen never
   // fakes (hard rule #5: no AI releases food for sale).
   const productionData = browserWindow.productionData;
-  const releasePort = openReleasePort();
-  const production = bootProduction(productionData, undefined, releasePort);
+  // OB-288 lane 2 · P2 (§31): served by the STORE COMPUTER, a run, a weigh and a release decision are saved on this device's
+  // durable queue and carried by the box (it keeps them on its own disk until head office has them); the box prints the
+  // label from what it holds. Anywhere else (the hosted copy) the page writes to head office directly, as before.
+  const productionBoxServed = browserWindow.laneWriteBase !== undefined && productionData?.storeId !== undefined;
+  const productionOutbox = productionBoxServed ? openProductionOutbox(productionData!.storeId!) : undefined;
+  const productionQueue = productionOutbox === undefined ? undefined : createProductionQueue(
+    { userId: productionData?.userId ?? null, storeId: productionData?.storeId ?? null, now: () => new Date().toISOString() }, productionOutbox,
+  );
+  const releasePort = productionQueue?.releasePort() ?? openReleasePort();
+  const production = bootProduction(productionData, productionData?.board === undefined || productionData.board === null ? undefined : { runs: productionData.board.runs }, releasePort);
   // FUL-13: the staff's task paths ride the same page, over the same board, under the person's own session.
-  const productionTaskPorts = { commit: openRunCommitPort(), label: openLabelPort() };
+  const productionTaskPorts = productionQueue === undefined ? { commit: openRunCommitPort(), label: openLabelPort() } : {
+    commit: productionQueue.runPort(), label: openBoxLabelPort((globalThis as { fetch?: typeof fetch }).fetch), queued: true,
+    weigh: { record: (input: Parameters<WeighPort['record']>[0]) => productionQueue.recordWeighed(input) },
+    savedWork: () => productionQueue.savedWork(),
+  };
+  if (productionQueue !== undefined && productionOutbox !== undefined) {
+    browserWindow.productionRelay = openProductionRelay(browserWindow.laneWriteBase, productionQueue, productionOutbox);
+  }
   const productionTasks = bootProductionTasks(productionData, undefined, productionTaskPorts);
   if (productionTasks !== null) {
     browserWindow.productionTasks = productionTasks;

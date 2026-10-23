@@ -171,12 +171,58 @@ function paintTasks() {
   for (const [id, key] of [['label-run-label', 'labelRunLabel'], ['label-name-label', 'labelNameLabel'], ['label-net-label', 'labelNetLabel'], ['label-packer-label', 'labelPackerLabel'], ['label-price-label', 'labelPriceLabel'], ['label-allergens-label', 'labelAllergensLabel']]) el(id).textContent = tt(key);
   el('label-allergens').placeholder = tt('labelAllergensHint');
   el('label').textContent = tt('labelBtn');
+  // OB-288 lane 2: on the store computer the box prints the label — the name and price are its catalogue's (not typed), a
+  // weighed pack gives its weight, and a run saved on this screen may be labelled before head office has it.
+  const fromBox = v.labelFromBox === true;
+  for (const id of ['label-name', 'label-price']) el(id).closest('div').hidden = fromBox;
+  el('label-weight-box').hidden = !fromBox; el('label-weight-label').textContent = tt('labelWeightLabel');
+  el('label-box-hint').hidden = !fromBox; el('label-box-hint').textContent = fromBox ? tt('labelFromBoxHint') : '';
+  const savedRuns = fromBox ? (v.saved ?? []).filter((w) => w.kind === 'run' && w.state !== 'refused' && !v.labelRuns.some((r) => r.runId === w.id)).map((w) => ({ runId: w.id, label: `${w.detail} · ${w.stateWord}` })) : [];
+  const runsToLabel = [...v.labelRuns, ...savedRuns];
   const select = el('label-run'); const chosen = select.value;
-  select.replaceChildren(...v.labelRuns.map((r) => { const o = document.createElement('option'); o.value = r.runId; o.textContent = r.label; return o; }));
-  if (chosen && v.labelRuns.some((r) => r.runId === chosen)) select.value = chosen;
-  const none = v.labelRuns.length === 0;
+  select.replaceChildren(...runsToLabel.map((r) => { const o = document.createElement('option'); o.value = r.runId; o.textContent = r.label; return o; }));
+  if (chosen && runsToLabel.some((r) => r.runId === chosen)) select.value = chosen;
+  const none = runsToLabel.length === 0;
   el('label-none').hidden = !none; el('label-none').textContent = none ? tt('labelNoRuns') : '';
   el('label-fields').hidden = none;
+  paintWeighAndSaved(v);
+  paintBoardAge();
+}
+
+/** OB-288 lane 2: the weigh-in / weigh-out form and the list of what this screen saved (each with where it has got to). */
+function paintWeighAndSaved(v) {
+  el('weigher').hidden = v.canWeigh !== true;
+  el('weigh-heading').textContent = tt('weighHeading'); el('weigh-hint').textContent = tt('weighHint');
+  for (const [id, key] of [['weigh-dept-label', 'weighDeptLabel'], ['weigh-in-label', 'weighInLabel'], ['weigh-in-g-label', 'weighInGramsLabel'], ['weigh-out-label', 'weighOutLabel'], ['weigh-out-g-label', 'weighOutGramsLabel'], ['weigh-by-label', 'weighByLabel'], ['weigh-by-g-label', 'weighByGramsLabel']]) el(id).textContent = tt(key);
+  el('weigh').textContent = tt('weighBtn');
+  const saved = v.saved ?? [];
+  const queued = tasks !== null && window.productionRelay !== undefined;
+  el('saved').hidden = !queued;
+  el('saved-heading').textContent = tt('savedHeading');
+  el('saved-none').hidden = saved.length > 0; el('saved-none').textContent = tt('savedNone');
+  el('saved-rows').replaceChildren(...saved.map((w) => {
+    const li = document.createElement('li');
+    li.className = `row tone-${w.state === 'posted' ? 'ok' : w.state === 'refused' ? 'error' : 'idle'}`;
+    li.dataset.key = w.key; li.dataset.state = w.state;
+    const head = document.createElement('div'); head.className = 'head';
+    const name = document.createElement('span'); name.className = 'headline'; name.textContent = `${w.kindWord} · ${w.detail}`;
+    const st = document.createElement('span'); st.className = 'status';
+    const icon = document.createElement('span'); icon.className = 'icon'; icon.setAttribute('aria-hidden', 'true'); icon.textContent = w.icon;
+    const word = document.createElement('span'); word.textContent = w.stateWord;
+    st.append(icon, word); st.setAttribute('aria-label', w.stateWord);
+    head.append(name, st);
+    li.append(head);
+    if (w.reason) { const ex = document.createElement('div'); ex.className = 'exc'; ex.textContent = w.reason; li.append(ex); }
+    return li;
+  }));
+}
+
+/** OB-288 lane 2: hand what this screen saved to the store computer and learn where each piece is; never throws. */
+async function syncSaved() {
+  const relay = window.productionRelay;
+  if (!relay) return;
+  try { await relay.syncNow(); } catch { /* the queue keeps it; the next pass tries again */ }
+  paintTasks();
 }
 
 // RECORD A RUN — a human write on this click only; head office takes the ingredients off the shelf and holds the batch.
@@ -185,15 +231,25 @@ el('run').addEventListener('click', () => {
     if (tasks === null) return;
     const o = await tasks.recordRun({ recipeId: el('run-recipe').value, batches: el('run-batches').value, actualOutput: el('run-output').value, batchId: el('run-batch').value, locationId: el('run-location').value });
     paintResult(tasks.presentRun(lang, o));
-    if (o.outcome === 'recorded') { for (const id of ['run-recipe', 'run-batches', 'run-output', 'run-batch']) el(id).value = ''; await refresh(); }
+    if (o.outcome === 'recorded') { for (const id of ['run-recipe', 'run-batches', 'run-output', 'run-batch']) el(id).value = ''; await refresh(); await syncSaved(); }
   })();
+});
+
+// WEIGH IN, WEIGH OUT (OB-288 lane 2) — the grams only, saved through the store computer; head office costs them.
+el('weigh').addEventListener('click', () => {
+  if (tasks === null) return;
+  const o = tasks.recordWeighed({ departmentId: el('weigh-dept').value, inputProductId: el('weigh-in').value, inputGrams: el('weigh-in-g').value, outputProductId: el('weigh-out').value, outputGrams: el('weigh-out-g').value, byproductProductId: el('weigh-by').value, byproductGrams: el('weigh-by-g').value });
+  paintResult(tasks.presentWeighed(lang, o));
+  if (o.outcome === 'saved') { for (const id of ['weigh-in-g', 'weigh-out-g', 'weigh-by-g']) el(id).value = ''; }
+  paintTasks();
+  void syncSaved();
 });
 
 // PRINT THE LABEL — the use-by and batch are the run's own; head office refuses a label missing a required field.
 el('label').addEventListener('click', () => {
   void (async () => {
     if (tasks === null) return;
-    const o = await tasks.printLabel({ runId: el('label-run').value, productName: el('label-name').value, netQuantity: el('label-net').value, packerDetails: el('label-packer').value, price: el('label-price').value, allergens: el('label-allergens').value });
+    const o = await tasks.printLabel({ runId: el('label-run').value, productName: el('label-name').value, netQuantity: el('label-net').value, packerDetails: el('label-packer').value, price: el('label-price').value, allergens: el('label-allergens').value, weightGrams: el('label-weight').value });
     paintResult(tasks.presentLabel(lang, o));
     const out = el('label-out');
     out.hidden = o.outcome !== 'printed';
@@ -223,13 +279,24 @@ el('rows').addEventListener('click', (ev) => {
     const result = await session.release(runId, qcPassed);
     paintResult(session.presentReleaseResult(lang, result));
     if (result === 'released' || result === 'held') { await refresh(); }
+    if (result === 'saved') await syncSaved();
   })();
 });
 el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
 
 el('sample').hidden = window.productionSession !== undefined;
 el('sample').textContent = t('sampleData');
+// OB-288 lane 2: on the store computer, how old head office's board is (P-08) — never a silent "nothing waiting".
+function paintBoardAge() {
+  const board = window.productionData?.board;
+  const note = el('board-asof');
+  if (board === undefined || window.productionSession === undefined) { note.hidden = true; return; }
+  note.hidden = false;
+  note.textContent = board === null ? t('boardNotKnown') : `${t('boardAsOf')} ${new Date(board.asAt).toLocaleString()}`;
+}
 paint();
+void syncSaved();
+setInterval(() => { void syncSaved(); }, 15_000);
 
 // Read the live production board (a GET — read-only). Offline or refused, the screen keeps its current view and
 // the stale strip already says the page is what the box last told it.
