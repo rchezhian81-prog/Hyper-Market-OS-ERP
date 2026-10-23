@@ -36,7 +36,7 @@ import { ConcurrencyConflictError } from '../../../packages/persistence/src/even
 import {
   dispatchTransfer, receiveTransfer, proposeAllocation, TransferRefusedError, judgeShortfallResolution, costedResolution,
   type Transfer, type TransferLine, type TransferApproval, type AvailableLot, type AllocationNeed,
-  type FoundLine, type ShortfallLine, type ShortfallResolution, type ShortfallRefusal,
+  type FoundLine, type ShortfallLine, type ShortfallResolution, type ShortfallRefusal, type TransferRelay,
 } from '../../../packages/warehouse/src/transfers';
 import { isAdjustmentReason, ADJUSTMENT_REASON_CODES } from '../../../packages/adjustment/src/adjustment';
 import type { StockMovement } from '../../../packages/stock/src/position';
@@ -47,6 +47,7 @@ import { assertLocationInScope, locationInScope, type LocationBranches } from '.
 import { assertNotFrozenByCount, type CountFreezeCheck } from './count-freeze';
 import { outsideBranchScope, type RequestContext } from '../../kernel/src/index';
 import type { DispatchEwbVerdict } from '../../../packages/e-way-bill/src/index';
+import type { AuditEntry } from '../../../packages/audit/src/index';
 
 /**
  * PA-01-r1: a transfer is the business of the branches at its two ends. Proposing or reading one needs either end in the
@@ -235,6 +236,105 @@ const refused = (why: string): never => {
   throw apiError(422, { code: 'transfer_refused', whatHappened: why, wasItSaved: 'not_saved', nextSafeAction: 'Nothing was moved.' });
 };
 
+/** OB-288 lane 2: the refusal for any step on a transfer that was cancelled before it left (WF-07 cancellation). */
+function cancelledRefusal(transfer: Transfer): ReturnType<typeof apiError> {
+  return apiError(422, {
+    code: 'transfer_cancelled',
+    whatHappened: `Transfer ${transfer.transferId} was cancelled${transfer.cancelledBy === undefined ? '' : ` by ${transfer.cancelledBy}`}${transfer.cancelledAt === undefined ? '' : ` at ${transfer.cancelledAt}`} before it left${transfer.cancelReason === undefined ? '' : ` ("${transfer.cancelReason}")`}. Nothing can be sent or counted in on it.`,
+    wasItSaved: 'not_saved',
+    nextSafeAction: 'If the goods really moved, a person must look at this: propose a new transfer for what moved. Nothing was moved.',
+  });
+}
+
+/**
+ * The DISPATCH itself (M09-FR-03 · §28 · SP-4/SP-5): the approver is `dispatcher`, the stock is head office's own at the
+ * source, the value that leaves is the source's own average, an e-way bill is required above the threshold, a count freeze
+ * holds it, and the aggregate and its M08 movements are ONE atomic write under the source's stock guard. Shared by the
+ * direct route (the authenticated dispatcher, head office's clock) and the synced route (the person the store computer
+ * verified, the time it was done at the store) — one engine, one set of refusals (OB-288 lane 2, WF-07 offline).
+ */
+export async function dispatchCore(deps: TransfersDeps, tenantId: string, transfer: Transfer, dispatcher: string, at: string, relay?: TransferRelay): Promise<Record<string, unknown>> {
+  const transferId = transfer.transferId;
+  // SF-03: a transfer proposed before the unit check is checked again before anything moves.
+  await assertUnitsAreTheProducts(deps, tenantId, transfer.lines);
+  const approval: TransferApproval = { subjectRef: transferId, status: 'approved', decidedBy: dispatcher };
+  // The guard version first, then the stock it protects (Wave 2a · SF-04).
+  const expectedVersion = deps.stockVersion === undefined ? undefined : await Promise.resolve(deps.stockVersion(tenantId, transfer.fromLocationId));
+  const available = await deps.availableAt(tenantId, transfer.fromLocationId, transfer.lines);
+  try {
+    const result = dispatchTransfer({ transfer, approval, available, at });
+    // SP-5 (F05): the value that leaves is head office's own average at the source, recorded per line on the
+    // aggregate so the receipt re-enters it at the destination — never the proposer's figure.
+    const lineCostsMinor: (number | null)[] = [];
+    for (const line of transfer.lines) lineCostsMinor.push((await deps.unitCostAt(tenantId, transfer.fromLocationId, line.productId)) ?? null);
+    // R3 · A23: above the e-way-bill threshold the goods leave only under a GENERATED e-way bill — refused by name
+    // otherwise, before anything moves; with one, the transfer carries its number.
+    const ewb = deps.ewayBillGate === undefined ? undefined : await Promise.resolve(deps.ewayBillGate(tenantId, transfer, lineCostsMinor));
+    if (ewb?.outcome === 'refused') {
+      throw apiError(409, {
+        code: ewb.code,
+        whatHappened: `Transfer ${transferId} cannot leave without an e-way bill: ${ewb.detail}.`,
+        wasItSaved: 'not_saved',
+        nextSafeAction: `Generate the e-way bill for movement ${ewb.movementId} (POST /v1/finance/e-way-bill/movements/${ewb.movementId}/submit, then the portal's answer), then dispatch again. Nothing was moved.`,
+      });
+    }
+    const dispatched: Transfer = {
+      ...result.transfer, lineCostsMinor,
+      ...(ewb?.outcome === 'covered' ? { ewayBill: { movementId: ewb.movementId, ewbNo: ewb.ewbNo } } : {}),
+      ...(relay === undefined ? {} : { dispatchRelay: relay }),
+    };
+    const posted = dispatchPostings(dispatched, result.movements, dispatcher);
+    // WF-08 / OB-59: stock leaving a place where an open count froze `transferred_out` for the product is refused by
+    // name, like every other direct head-office movement (the default freeze — adjustments and write-offs — leaves a
+    // dispatch alone). Nothing moves; a relayed record would be kept and shown instead.
+    await assertNotFrozenByCount(deps.countFreeze, tenantId, posted, 'transfer dispatch');
+    await deps.recordDispatched(tenantId, dispatched, result.movements, posted, expectedVersion);
+    return { transferId, state: dispatched.state, approvedBy: dispatched.approvedBy, movements: result.movements.length, posted: posted.map((m) => m.movementId), lineCostsMinor, ...(ewb === undefined ? {} : { ewayBill: ewb }), availableChecked: available.map((l) => ({ productId: l.productId, batchId: l.batchId, quantityMinor: l.quantityMinor, state: l.state, recalled: l.recalled === true })) };
+  } catch (e) {
+    if (e instanceof TransferRefusedError) refused(e.why);
+    // Another movement out of this stock landed first (Wave 2a · SF-04): this dispatch was decided on a figure that
+    // is no longer true — nothing moved; the approver re-reads. Never two transfers of the same stock.
+    if (e instanceof ConcurrencyConflictError) throw concurrentChange(`the stock at ${transfer.fromLocationId}`);
+    throw e;
+  }
+}
+
+/**
+ * The RECEIPT itself (M09-FR-03 · §28 · SP-5): the dispatcher cannot count it in, what arrived goes on-hand at the
+ * destination at the cost it left with, a shortfall is a valued exception, a count freeze holds it. Shared by the direct
+ * and the synced route (OB-288 lane 2).
+ */
+export async function receiveCore(
+  deps: TransfersDeps, tenantId: string, transfer: Transfer,
+  counted: readonly { productId: string; batchId: string | null; quantityMinor: number }[], receivedBy: string, at: string, currency: CurrencyCode, relay?: TransferRelay,
+): Promise<Record<string, unknown>> {
+  const transferId = transfer.transferId;
+  // Round 2 (like indents — M09-FR-03 "receiver at destination confirms" · §28): the person who dispatched the transfer
+  // cannot also count it in. The destination's count is independent, or it is not a check.
+  if (transfer.state === 'in_transit' && transfer.approvedBy !== undefined && transfer.approvedBy === receivedBy) {
+    throw apiError(422, {
+      code: 'dispatcher_cannot_receive',
+      whatHappened: `${receivedBy} dispatched transfer ${transferId} and cannot also count it in at ${transfer.toLocationId} (§28) — the receiving count must be a different person's.`,
+      wasItSaved: 'not_saved',
+      nextSafeAction: 'Have someone at the destination count it in. Nothing was received.',
+    });
+  }
+  try {
+    const result = receiveTransfer({ transfer, counted: [...counted], receivedBy, at, currency });
+    const received: Transfer = relay === undefined ? result.transfer : { ...result.transfer, receiptRelay: relay };
+    // SP-5 (F05): what arrived becomes on-hand at the destination on the M08 ledger, at the cost it left with.
+    const posted = receivePostings(received, result.movements, receivedBy);
+    // WF-08 / OB-59: stock arriving at a place where an open count froze `transferred_in` for the product is refused by
+    // name (nothing received; the transfer stays in transit) — before, it was accepted and only shown as a breach.
+    await assertNotFrozenByCount(deps.countFreeze, tenantId, posted, 'transfer receipt');
+    await deps.recordReceived(tenantId, received, result.movements, result.discrepancies, posted);
+    return { transferId, state: received.state, received: result.movements.length, posted: posted.map((m) => m.movementId), discrepancies: result.discrepancies };
+  } catch (e) {
+    if (e instanceof TransferRefusedError) refused(e.why);
+    throw e;
+  }
+}
+
 export function transfersRoutes(deps: TransfersDeps): readonly Route[] {
   return [
     {
@@ -300,44 +400,9 @@ export function transfersRoutes(deps: TransfersDeps): readonly Route[] {
         const transfer = await deps.transfer(ctx.tenantId, transferId);
         if (transfer === undefined) throw notFound(`transfer ${transferId}`);
         await assertLocationInScope(ctx, transfer.fromLocationId, deps.locationBranches); // the stock leaves the caller's branch
-        // SF-03: a transfer proposed before the unit check is checked again before anything moves.
-        await assertUnitsAreTheProducts(deps, ctx.tenantId, transfer.lines);
-        const approval: TransferApproval = { subjectRef: transferId, status: 'approved', decidedBy: ctx.userId };
-        // The guard version first, then the stock it protects (Wave 2a · SF-04).
-        const expectedVersion = deps.stockVersion === undefined ? undefined : await Promise.resolve(deps.stockVersion(ctx.tenantId, transfer.fromLocationId));
-        const available = await deps.availableAt(ctx.tenantId, transfer.fromLocationId, transfer.lines);
-        try {
-          const result = dispatchTransfer({ transfer, approval, available, at: deps.now() });
-          // SP-5 (F05): the value that leaves is head office's own average at the source, recorded per line on the
-          // aggregate so the receipt re-enters it at the destination — never the proposer's figure.
-          const lineCostsMinor: (number | null)[] = [];
-          for (const line of transfer.lines) lineCostsMinor.push((await deps.unitCostAt(ctx.tenantId, transfer.fromLocationId, line.productId)) ?? null);
-          // R3 · A23: above the e-way-bill threshold the goods leave only under a GENERATED e-way bill — refused by name
-          // otherwise, before anything moves; with one, the transfer carries its number.
-          const ewb = deps.ewayBillGate === undefined ? undefined : await Promise.resolve(deps.ewayBillGate(ctx.tenantId, transfer, lineCostsMinor));
-          if (ewb?.outcome === 'refused') {
-            throw apiError(409, {
-              code: ewb.code,
-              whatHappened: `Transfer ${transferId} cannot leave without an e-way bill: ${ewb.detail}.`,
-              wasItSaved: 'not_saved',
-              nextSafeAction: `Generate the e-way bill for movement ${ewb.movementId} (POST /v1/finance/e-way-bill/movements/${ewb.movementId}/submit, then the portal's answer), then dispatch again. Nothing was moved.`,
-            });
-          }
-          const dispatched: Transfer = { ...result.transfer, lineCostsMinor, ...(ewb?.outcome === 'covered' ? { ewayBill: { movementId: ewb.movementId, ewbNo: ewb.ewbNo } } : {}) };
-          const posted = dispatchPostings(dispatched, result.movements, ctx.userId);
-          // WF-08 / OB-59: stock leaving a place where an open count froze `transferred_out` for the product is refused by
-          // name, like every other direct head-office movement (the default freeze — adjustments and write-offs — leaves a
-          // dispatch alone). Nothing moves; a relayed record would be kept and shown instead.
-          await assertNotFrozenByCount(deps.countFreeze, ctx.tenantId, posted, 'transfer dispatch');
-          await deps.recordDispatched(ctx.tenantId, dispatched, result.movements, posted, expectedVersion);
-          return { status: 200, body: { transferId, state: dispatched.state, approvedBy: dispatched.approvedBy, movements: result.movements.length, posted: posted.map((m) => m.movementId), lineCostsMinor, ...(ewb === undefined ? {} : { ewayBill: ewb }), availableChecked: available.map((l) => ({ productId: l.productId, batchId: l.batchId, quantityMinor: l.quantityMinor, state: l.state, recalled: l.recalled === true })) } };
-        } catch (e) {
-          if (e instanceof TransferRefusedError) refused(e.why);
-          // Another movement out of this stock landed first (Wave 2a · SF-04): this dispatch was decided on a figure that
-          // is no longer true — nothing moved; the approver re-reads. Never two transfers of the same stock.
-          if (e instanceof ConcurrencyConflictError) throw concurrentChange(`the stock at ${transfer.fromLocationId}`);
-          throw e;
-        }
+        // OB-288 lane 2 (WF-07 cancellation): a cancelled transfer never leaves — said by name, nothing moves.
+        if (transfer.state === 'cancelled') throw cancelledRefusal(transfer);
+        return { status: 200, body: await dispatchCore(deps, ctx.tenantId, transfer, ctx.userId, deps.now()) };
       },
     },
     {
@@ -362,29 +427,8 @@ export function transfersRoutes(deps: TransfersDeps): readonly Route[] {
         const transfer = await deps.transfer(ctx.tenantId, transferId);
         if (transfer === undefined) throw notFound(`transfer ${transferId}`);
         await assertLocationInScope(ctx, transfer.toLocationId, deps.locationBranches); // it arrives in the caller's branch
-        // Round 2 (like indents — M09-FR-03 "receiver at destination confirms" · §28): the person who dispatched the transfer
-        // cannot also count it in. The destination's count is independent, or it is not a check.
-        if (transfer.state === 'in_transit' && transfer.approvedBy !== undefined && transfer.approvedBy === ctx.userId) {
-          throw apiError(422, {
-            code: 'dispatcher_cannot_receive',
-            whatHappened: `${ctx.userId} dispatched transfer ${transferId} and cannot also count it in at ${transfer.toLocationId} (§28) — the receiving count must be a different person's.`,
-            wasItSaved: 'not_saved',
-            nextSafeAction: 'Have someone at the destination count it in. Nothing was received.',
-          });
-        }
-        try {
-          const result = receiveTransfer({ transfer, counted, receivedBy: ctx.userId, at: deps.now(), currency: (b.currency as CurrencyCode) ?? 'INR' });
-          // SP-5 (F05): what arrived becomes on-hand at the destination on the M08 ledger, at the cost it left with.
-          const posted = receivePostings(result.transfer, result.movements, ctx.userId);
-          // WF-08 / OB-59: stock arriving at a place where an open count froze `transferred_in` for the product is refused by
-          // name (nothing received; the transfer stays in transit) — before, it was accepted and only shown as a breach.
-          await assertNotFrozenByCount(deps.countFreeze, ctx.tenantId, posted, 'transfer receipt');
-          await deps.recordReceived(ctx.tenantId, result.transfer, result.movements, result.discrepancies, posted);
-          return { status: 200, body: { transferId, state: result.transfer.state, received: result.movements.length, posted: posted.map((m) => m.movementId), discrepancies: result.discrepancies } };
-        } catch (e) {
-          if (e instanceof TransferRefusedError) refused(e.why);
-          throw e;
-        }
+        if (transfer.state === 'cancelled') throw cancelledRefusal(transfer);
+        return { status: 200, body: await receiveCore(deps, ctx.tenantId, transfer, counted, ctx.userId, deps.now(), (b.currency as CurrencyCode) ?? 'INR') };
       },
     },
     {
@@ -494,6 +538,233 @@ export function transfersRoutes(deps: TransfersDeps): readonly Route[] {
         }
         const proposals = proposeAllocation({ productId: b.productId, fromLocationId: b.fromLocationId, availableMinor: b.availableMinor as number, needs });
         return { status: 200, body: { proposals } };
+      },
+    },
+  ];
+}
+
+// ── OB-288 lane 2 · WF-07: cancellation before dispatch, and the offline dispatch / receipt the store computer relays ──
+//
+// CANCEL (WF-07 "cancellation" scenario): a transfer that has NOT left can be withdrawn by a person at either end — a
+// compensating `TransferCancelled` event carrying who, when and why; the proposal stays on the record (hard rules #2, #6).
+// Once dispatched it cannot be cancelled (the stock is on the van: the receipt and its shortfall path settle it). The cancel
+// is written under the SOURCE's stock guard, the same guard a dispatch writes under, so a dispatch and a cancel racing each
+// other cannot both land — the second is refused by name.
+//
+// SYNCED DISPATCH / RECEIPT (§31 "Receiving/count/transfer: queue-capable", P-01): the warehouse handheld at the store keeps
+// a dispatch or a receipt count on its durable queue with the line down; the store computer holds it on its fsync'd log and
+// relays it here under its own store credential. Head office trusts the FACT (who, when — the person the box verified) and
+// re-runs every JUDGEMENT on its own records with the SAME cores the direct routes run (`dispatchCore`, `receiveCore`):
+// the stock at the source, the proposer ≠ dispatcher rule, the dispatcher ≠ receiver rule, the e-way bill, the count freeze.
+// The person is re-verified from THEIR grants. What cannot be accepted is REFUSED by name (422) — the box keeps it as a
+// visible dead-letter for a person (hard rules #6, #10), never last-write-wins:
+//   • the transfer was cancelled at head office while the van was being loaded (`transfer_cancelled`);
+//   • somebody else already dispatched / received it, or the same person counted different figures (`…_differently`);
+//   • a receipt that arrives before head office has heard the dispatch is answered 425 (`transfer_not_dispatched_yet`) — the
+//     box keeps it and sends it again; its attempt budget bounds the wait and then shows it to a person.
+// The same step again (a re-sent queue item) is 200, one effect (§31.1).
+
+export interface TransferLifecycleDeps extends TransfersDeps {
+  /** Append the cancelled aggregate — a compensating event — under the source's stock guard read before the decision. */
+  readonly recordCancelled: (tenantId: string, transfer: Transfer, expectedStockVersion?: number) => Promise<void> | void;
+  /** The named person's own grants, to re-verify a RELAYED dispatcher / receiver (§28). Absent → every relayed person is unknown. */
+  readonly permissionsOfUser?: (tenantId: string, userId: string) => Promise<readonly string[] | undefined> | readonly string[] | undefined;
+  /** The durable domain audit trail (M34), when composed. */
+  readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
+}
+
+/** The permission a person must hold to have dispatched or counted in a transfer in their own name (the direct routes'). */
+const MOVE_PERMISSION = 'inventory.movement.append';
+const isIsoTime = (v: unknown): v is string => isStr(v) && !Number.isNaN(Date.parse(v));
+type CountedLine = { productId: string; batchId: string | null; quantityMinor: number };
+const sameCounts = (a: readonly CountedLine[], b: readonly CountedLine[]): boolean => {
+  const key = (l: CountedLine): string => `${l.productId}\u001f${l.batchId ?? ''}\u001f${l.quantityMinor}`;
+  return a.map(key).sort().join('|') === b.map(key).sort().join('|');
+};
+
+function readCounted(v: unknown): CountedLine[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out: CountedLine[] = [];
+  for (const raw of v) {
+    const c = rec(raw);
+    if (c === null || !isStr(c['productId']) || !isInt(c['quantityMinor']) || (c['quantityMinor'] as number) < 0 || (c['batchId'] !== null && c['batchId'] !== undefined && !isStr(c['batchId']))) return undefined;
+    out.push({ productId: c['productId'] as string, batchId: isStr(c['batchId']) ? (c['batchId'] as string) : null, quantityMinor: c['quantityMinor'] as number });
+  }
+  return out;
+}
+
+export function transferLifecycleRoutes(deps: TransferLifecycleDeps): readonly Route[] {
+  const relayOf = (ctx: RequestContext, b: Record<string, unknown>): TransferRelay => ({
+    relayedBy: ctx.userId, source: isStr(b['source']) ? b['source'] : 'unknown', storeId: isStr(b['storeId']) ? b['storeId'] : null,
+  });
+  /** Re-verify the person a relayed step names, from THEIR grants — refused by name when unknown or not allowed (§28). */
+  const assertPersonMayMove = async (tenantId: string, userId: string, what: string): Promise<void> => {
+    const held = await deps.permissionsOfUser?.(tenantId, userId);
+    if (held === undefined || !held.includes(MOVE_PERMISSION)) {
+      throw apiError(422, {
+        code: held === undefined ? 'person_unknown_at_head_office' : 'person_lacks_authority',
+        whatHappened: held === undefined
+          ? `${userId}, named as the person who ${what}, is not anyone head office knows, so the step cannot be booked in their name.`
+          : `${userId}, named as the person who ${what}, does not hold stock-movement authority at head office (${MOVE_PERMISSION}), so it is not booked in their name.`,
+        wasItSaved: 'not_saved',
+        nextSafeAction: 'Kept at the store for a person: check who did it and whose sign-in was used. Nothing was moved.',
+      });
+    }
+  };
+  const audit = async (tenantId: string, entry: AuditEntry): Promise<void> => { await deps.recordAudit?.(tenantId, entry); };
+
+  return [
+    {
+      // WF-07 cancellation: withdraw a transfer that has not left. Body: { reason } (a few words). Either end may cancel.
+      api: 'API-04', method: 'POST', path: '/v1/warehouse/transfers/:transferId/cancel',
+      permission: MOVE_PERMISSION, idempotent: true,
+      handler: async (ctx) => {
+        const transferId = (ctx.params['transferId'] ?? '').trim();
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        if (transferId === '' || !isStr(b['reason']) || (b['reason'] as string).trim().length < 4) {
+          throw apiError(400, { code: 'not_readable_as_a_cancellation', whatHappened: 'Cancelling a transfer needs { reason } — a few words a person can read later.', wasItSaved: 'not_saved', nextSafeAction: 'Say why it is being cancelled. Nothing was changed.' });
+        }
+        const reason = (b['reason'] as string).trim();
+        const transfer = await deps.transfer(ctx.tenantId, transferId);
+        if (transfer === undefined) throw notFound(`transfer ${transferId}`);
+        await assertEitherEndInScope(ctx, deps.locationBranches, transfer.fromLocationId, transfer.toLocationId); // PA-01-r1
+        if (transfer.state === 'cancelled') return { status: 200, body: { transferId, state: 'cancelled', cancelledBy: transfer.cancelledBy, cancelledAt: transfer.cancelledAt, alreadyCancelled: true } };
+        if (deps.belongsToIndent !== undefined && await deps.belongsToIndent(ctx.tenantId, transferId)) {
+          throw apiError(409, { code: 'cancel_on_the_indent', whatHappened: `Transfer ${transferId} carries a floor indent issue; the indent is cancelled on its own screen.`, wasItSaved: 'not_saved', nextSafeAction: 'Cancel the indent instead. Nothing was changed.' });
+        }
+        if (transfer.state !== 'proposed' && transfer.state !== 'approved') {
+          throw apiError(409, {
+            code: 'transfer_already_dispatched',
+            whatHappened: `Transfer ${transferId} is ${transfer.state} — it has already left ${transfer.fromLocationId}, so it can no longer be cancelled.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Count it in at the other end; anything that did not arrive becomes a valued shortfall to settle. Nothing was changed.',
+          });
+        }
+        // The source's stock guard first — the guard a dispatch writes under, so the two can never both land.
+        const expected = deps.stockVersion === undefined ? undefined : await Promise.resolve(deps.stockVersion(ctx.tenantId, transfer.fromLocationId));
+        const at = deps.now();
+        const cancelled: Transfer = { ...transfer, state: 'cancelled', cancelledBy: ctx.userId, cancelledAt: at, cancelReason: reason };
+        try {
+          await deps.recordCancelled(ctx.tenantId, cancelled, expected);
+        } catch (e) {
+          if (e instanceof ConcurrencyConflictError) throw concurrentChange(`transfer ${transferId}`);
+          throw e;
+        }
+        await audit(ctx.tenantId, {
+          actorId: ctx.userId, action: 'transfer.cancel', objectType: 'stock_transfer', objectId: transferId, at,
+          origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
+          before: { state: transfer.state }, after: { state: 'cancelled' }, reason, correlationId: transferId,
+        });
+        return { status: 200, body: { transferId, state: 'cancelled', cancelledBy: ctx.userId, cancelledAt: at, reason, alreadyCancelled: false } };
+      },
+    },
+    {
+      // §31 offline: a dispatch made on the store's handheld, relayed by the box. Body: { transferId (= path), storeId,
+      // dispatchedBy, at, source? }. No stock, cost or approver beyond the person — head office's own, as on the direct route.
+      api: 'API-04', method: 'POST', path: '/v1/warehouse/transfers/:transferId/dispatch/synced',
+      permission: 'inventory.transfer.sync', idempotent: true,
+      handler: async (ctx) => {
+        const transferId = (ctx.params['transferId'] ?? '').trim();
+        const b = rec(ctx.body) ?? {};
+        if (transferId === '' || b['transferId'] !== transferId || !isStr(b['dispatchedBy']) || !isIsoTime(b['at'])
+          || b['available'] !== undefined || b['approvedBy'] !== undefined || b['lines'] !== undefined) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_relayed_dispatch',
+            whatHappened: 'A relayed dispatch names the transfer (matching the path), who sent it (dispatchedBy) and when (at) — and nothing else: the lines, the stock and the cost are head office\'s own.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Do not discard it at the store. Keep it in the queue and raise it.',
+          });
+        }
+        const dispatchedBy = (b['dispatchedBy'] as string).trim();
+        const at = new Date(Date.parse(b['at'] as string)).toISOString();
+        const transfer = await deps.transfer(ctx.tenantId, transferId);
+        if (transfer === undefined) {
+          throw apiError(422, { code: 'transfer_not_known_at_head_office', whatHappened: `Head office holds no transfer ${transferId}, so a dispatch of it cannot be booked.`, wasItSaved: 'not_saved', nextSafeAction: 'Kept at the store for a person: check the transfer note\'s number. Nothing was moved.' });
+        }
+        await assertLocationInScope(ctx, transfer.fromLocationId, deps.locationBranches); // only the sending store's own computer
+        if (transfer.state === 'cancelled') throw cancelledRefusal(transfer);
+        if (transfer.state === 'in_transit' || transfer.state === 'received') {
+          if (transfer.approvedBy === dispatchedBy) return { status: 200, body: { transferId, state: transfer.state, approvedBy: transfer.approvedBy, alreadyDispatched: true } };
+          throw apiError(422, {
+            code: 'transfer_dispatched_by_another',
+            whatHappened: `Transfer ${transferId} was already sent by ${transfer.approvedBy ?? 'someone else'}; this store says ${dispatchedBy} sent it. The two cannot both be right.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Kept at the store for a person to compare and settle. Nothing was moved twice.',
+          });
+        }
+        await assertPersonMayMove(ctx.tenantId, dispatchedBy, `sent transfer ${transferId}`);
+        const relay = relayOf(ctx, b);
+        const body = await dispatchCore(deps, ctx.tenantId, transfer, dispatchedBy, at, relay);
+        await audit(ctx.tenantId, {
+          actorId: dispatchedBy, action: 'transfer.dispatch', objectType: 'stock_transfer', objectId: transferId, at,
+          origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null, capturedOffline: true },
+          before: { state: transfer.state }, after: { state: 'in_transit', relayedBy: ctx.userId, source: relay.source }, correlationId: transferId,
+        });
+        return { status: 202, body: { ...body, alreadyDispatched: false, relayed: relay } };
+      },
+    },
+    {
+      // §31 offline: a receipt counted on the store's handheld, relayed by the box. Body: { transferId (= path), storeId,
+      // receivedBy, at, counted: [{ productId, batchId?, quantityMinor }], currency?, source? }.
+      api: 'API-04', method: 'POST', path: '/v1/warehouse/transfers/:transferId/receive/synced',
+      permission: 'inventory.transfer.sync', idempotent: true,
+      handler: async (ctx) => {
+        const transferId = (ctx.params['transferId'] ?? '').trim();
+        const b = rec(ctx.body) ?? {};
+        const counted = readCounted(b['counted']);
+        if (transferId === '' || b['transferId'] !== transferId || !isStr(b['receivedBy']) || !isIsoTime(b['at']) || counted === undefined
+          || (b['currency'] !== undefined && !isCurrencyCode(b['currency'] as string))) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_relayed_receipt',
+            whatHappened: 'A relayed receipt names the transfer (matching the path), who counted it in (receivedBy), when (at) and what arrived (counted: [{ productId, batchId?, quantityMinor ≥ 0 }]).',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Do not discard it at the store. Keep it in the queue and raise it.',
+          });
+        }
+        const receivedBy = (b['receivedBy'] as string).trim();
+        const at = new Date(Date.parse(b['at'] as string)).toISOString();
+        const transfer = await deps.transfer(ctx.tenantId, transferId);
+        if (transfer === undefined) {
+          throw apiError(422, { code: 'transfer_not_known_at_head_office', whatHappened: `Head office holds no transfer ${transferId}, so a receipt against it cannot be booked.`, wasItSaved: 'not_saved', nextSafeAction: 'Kept at the store for a person: check the transfer note\'s number. Nothing was received.' });
+        }
+        await assertLocationInScope(ctx, transfer.toLocationId, deps.locationBranches); // only the receiving store's own computer
+        if (transfer.state === 'cancelled') throw cancelledRefusal(transfer);
+        if (transfer.state === 'proposed' || transfer.state === 'approved') {
+          // The sending end's dispatch has not reached head office yet (the other store's line may be down too): not a
+          // refusal — 425, so the box keeps the count and sends it again; its attempt budget then shows it to a person.
+          throw apiError(425, {
+            code: 'transfer_not_dispatched_yet',
+            whatHappened: `Head office has not yet heard that transfer ${transferId} left ${transfer.fromLocationId}, so this count cannot be booked against it yet.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing to do: the store computer keeps the count and sends it again once the dispatch has arrived.',
+          });
+        }
+        if (transfer.state === 'received') {
+          if (transfer.receivedBy === receivedBy) {
+            // The same person's count again — a re-sent queue item — is the same receipt; a different figure is a conflict.
+            const shortfall = deps.shortfallOf === undefined ? [] : await deps.shortfallOf(ctx.tenantId, transferId);
+            const arrived = transfer.lines.map((l): CountedLine => ({
+              productId: l.productId, batchId: l.batchId,
+              quantityMinor: l.quantityMinor - (shortfall.find((s) => s.productId === l.productId && s.batchId === l.batchId)?.quantityMinor ?? 0),
+            }));
+            if (sameCounts(arrived, counted)) return { status: 200, body: { transferId, state: 'received', receivedBy, alreadyReceived: true } };
+          }
+          throw apiError(422, {
+            code: 'transfer_received_differently',
+            whatHappened: `Transfer ${transferId} was already counted in by ${transfer.receivedBy ?? 'someone'}${transfer.receivedBy === receivedBy ? ' with different figures' : ''}; this store's count (by ${receivedBy}) cannot also be booked.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Kept at the store for a person to compare the two counts. Nothing was received twice.',
+          });
+        }
+        await assertPersonMayMove(ctx.tenantId, receivedBy, `counted in transfer ${transferId}`);
+        const relay = relayOf(ctx, b);
+        const body = await receiveCore(deps, ctx.tenantId, transfer, counted, receivedBy, at, (b['currency'] as CurrencyCode) ?? 'INR', relay);
+        await audit(ctx.tenantId, {
+          actorId: receivedBy, action: 'transfer.receive', objectType: 'stock_transfer', objectId: transferId, at,
+          origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null, capturedOffline: true },
+          before: { state: transfer.state }, after: { state: 'received', relayedBy: ctx.userId, source: relay.source }, correlationId: transferId,
+        });
+        return { status: 202, body: { ...body, alreadyReceived: false, relayed: relay } };
       },
     },
   ];

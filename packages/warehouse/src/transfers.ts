@@ -72,6 +72,26 @@ export interface Transfer {
    * movement it was generated for and the portal's 12-digit number. Set by the dispatching surface; absent below it.
    */
   readonly ewayBill?: { readonly movementId: string; readonly ewbNo: string };
+  /**
+   * OB-288 lane 2 · WF-07 cancellation: a transfer withdrawn BEFORE it left — who, when and why. The proposal stays on the
+   * record (a compensating event, never a delete); a transfer that has been dispatched can no longer be cancelled.
+   */
+  readonly cancelledBy?: string;
+  readonly cancelledAt?: string;
+  readonly cancelReason?: string;
+  /**
+   * OB-288 lane 2 · WF-07 offline (§31): a dispatch or a receipt made on the store's handheld with the line down and relayed
+   * by the store computer — who carried it (the box's own identity, never the person) and from which surface.
+   */
+  readonly dispatchRelay?: TransferRelay;
+  readonly receiptRelay?: TransferRelay;
+}
+
+/** Who relayed an offline transfer step to head office, beside the person who did it (never as them). */
+export interface TransferRelay {
+  readonly relayedBy: string;
+  readonly source: string;
+  readonly storeId: string | null;
 }
 
 // ── Batch 2: resolving a receipt shortfall (shared by plain transfers and floor-indent issues) ─────────────────
