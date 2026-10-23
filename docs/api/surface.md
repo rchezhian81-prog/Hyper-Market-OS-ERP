@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1226 | 737 | 737 | 109 | 357 |
+| 13 | 1228 | 737 | 737 | 109 | 357 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -514,6 +514,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/loyalty/coupons/:code` | `loyalty.coupon.read` | `loyalty` | — |
 | POST | `/v1/loyalty/coupons/:code` | `loyalty.coupon.issue` | `loyalty` | yes |
 | POST | `/v1/loyalty/coupons/:code/redemptions/:redemptionId` | `loyalty.coupon.redeem` | `loyalty` | yes |
+| GET | `/v1/loyalty/enrolment-notice` | `loyalty.member.enrol` | core | — |
 | POST | `/v1/loyalty/members` | `loyalty.member.enrol` | core | yes |
 | POST | `/v1/loyalty/members/:memberRef/leave` | `loyalty.member.enrol` | core | yes |
 | POST | `/v1/loyalty/members/app-link` | `loyalty.member.enrol` | core | yes |
@@ -575,6 +576,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/privacy/processor-contracts` | `privacy.request.manage` | core | — |
 | POST | `/v1/privacy/processor-contracts` | `privacy.request.manage` | core | yes |
 | POST | `/v1/privacy/retention/sweep` | `customer.consent.write` | core | yes |
+| GET | `/v1/quality/recall-notices/switch` | `quality.recall.notice.read` | core | — |
 | POST | `/v1/quality/recall-notices/switch` | `quality.recall.notice.switch` | core | yes |
 | GET | `/v1/quality/recalls/:batchId/notice-list` | `quality.recall.notice.read` | core | — |
 | POST | `/v1/quality/recalls/:batchId/notices` | `quality.recall.notice.send` | core | yes |

@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1512,
+  "testFiles": 1513,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -22,7 +22,7 @@
     "integration": 101,
     "realDb": 97,
     "browser": 82,
-    "connected": 48,
+    "connected": 50,
     "device": 0,
     "uat": 0
   },
@@ -733,8 +733,8 @@
         "unit": 21,
         "integration": 28,
         "realDb": 9,
-        "browser": 3,
-        "connected": 0,
+        "browser": 4,
+        "connected": 1,
         "device": 0,
         "uat": 0
       },
@@ -805,15 +805,18 @@
         ],
         "browser": [
           "tests/e2e/expiry-recall-delivery.e2e.ts",
+          "tests/e2e/recalls-and-trace-on-the-production-api.e2e.ts",
           "tests/e2e/unsellable-screen.e2e.ts",
           "tests/e2e/warehouse-handheld-delivery.e2e.ts"
         ],
-        "connected": [],
+        "connected": [
+          "tests/e2e/recalls-and-trace-on-the-production-api.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },
       "holds": true,
-      "why": "browser boundary and cloud effect proven in separate runs (no connected browser test yet)"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "M11",
@@ -4066,8 +4069,8 @@
         "unit": 1,
         "integration": 9,
         "realDb": 1,
-        "browser": 1,
-        "connected": 0,
+        "browser": 2,
+        "connected": 1,
         "device": 0,
         "uat": 0
       },
@@ -4090,14 +4093,17 @@
           "tests/integration/a-recall-runs-its-whole-lifecycle-on-postgresql.test.ts"
         ],
         "browser": [
-          "tests/e2e/expiry-recall-delivery.e2e.ts"
+          "tests/e2e/expiry-recall-delivery.e2e.ts",
+          "tests/e2e/recalls-and-trace-on-the-production-api.e2e.ts"
         ],
-        "connected": [],
+        "connected": [
+          "tests/e2e/recalls-and-trace-on-the-production-api.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },
       "holds": true,
-      "why": "browser boundary and cloud effect proven in separate runs (no connected browser test yet)"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "WF-10",

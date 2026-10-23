@@ -293,6 +293,15 @@ export function recallNoticeRoutes(deps: RecallNoticeDeps): readonly Route[] {
       },
     },
     {
+      // Where recall messages stand: switched on or off (and by whom, why), and whether a provider is connected.
+      api: 'API-06', method: 'GET', path: '/v1/quality/recall-notices/switch',
+      permission: 'quality.recall.notice.read',
+      handler: async (ctx) => {
+        const s = await deps.switchState(ctx.tenantId);
+        return { status: 200, body: { switch: s ?? null, messages: sendingSaid(deps, s) } };
+      },
+    },
+    {
       // The owner switches recall messages on or off, in writing. Off until he does (OB-297 "SMS later").
       api: 'API-06', method: 'POST', path: '/v1/quality/recall-notices/switch',
       permission: 'quality.recall.notice.switch', idempotent: true,
