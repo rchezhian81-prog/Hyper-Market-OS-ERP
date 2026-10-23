@@ -64,8 +64,8 @@ const LEGAL = 'SRE Hyper Market Private Limited';
 const ADDRESS = ['12 Main Road', 'Tiruppur 641601, Tamil Nadu'];
 const PEOPLE = [{ userId: 'u-lanecash', displayName: 'Lane Cashier' }, { userId: 'u-mgr', displayName: 'Manager', manager: true }];
 const DAL = { productId: 'P1', sku: 'DAL', name: 'Toor dal 1kg', barcode: '8901234567890', price: 10_500, hsn: '071360' };
-const SUGAR = { productId: 'P3', sku: 'SUGAR', name: 'Sugar 500g', barcode: '8901234567892', price: 5_000, hsn: '170199' };
-const OLD = { productId: 'P2', name: 'Old pack item', barcode: '8901234567891' };
+const SUGAR = { productId: 'P3', sku: 'SUGAR', name: 'Sugar 500g', barcode: '8901234567814', price: 5_000, hsn: '170199' };
+const OLD = { productId: 'P2', name: 'Old pack item', barcode: '8901234567807' };
 
 const dirs: string[] = [];
 const stops: (() => Promise<void>)[] = [];

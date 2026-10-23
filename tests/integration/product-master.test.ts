@@ -53,24 +53,45 @@ describe('product master authoring (M03-FR-01/03)', () => {
   it('an age-restricted category needs a minimum age (422); a minimum age the till cannot read — text, zero, a fraction — is refused as unreadable (400), never published unflagged (E1b · M12-FR-04)', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
-    const LIQUOR = { categoryId: 'liquor', name: 'Liquor', parentId: null, regulated: ['age_restricted'] };
-    const beer = (safety?: unknown) =>
-      ({ sku: 'SKU-BEER', name: 'Beer 650ml', baseUom: 'each', primaryCategoryId: 'liquor', taxClass: '22030000', lifecycle: 'draft', ...(safety === undefined ? {} : { safety }) });
+    // OB-288 P2 · B17: the age-gate fixture is no longer beer (SRE sells no liquor — TASMAC); an energy drink (HSN 2202,
+    // non-alcoholic) in a synthetic age-restricted category carries the same rule.
+    const RESTRICTED = { categoryId: 'restricted', name: 'Age-restricted drinks', parentId: null, regulated: ['age_restricted'] };
+    const drink = (safety?: unknown) =>
+      ({ sku: 'SKU-ENERGY', name: 'Energy drink 250ml', baseUom: 'each', primaryCategoryId: 'restricted', taxClass: '22029920', lifecycle: 'draft', ...(safety === undefined ? {} : { safety }) });
 
-    const missing = await publish(h, 'u-owner', 'p-beer', beer(), [LIQUOR], 'k-beer-missing');
+    const missing = await publish(h, 'u-owner', 'p-energy', drink(), [RESTRICTED], 'k-energy-missing');
     expect(missing.status).toBe(422);
     expect(codeOf(missing)).toBe('product_not_publishable');
 
     for (const bad of ['21', 0, 18.5, -1]) {
-      const res = await publish(h, 'u-owner', 'p-beer', beer({ minimumAge: bad }), [LIQUOR], `k-beer-${String(bad)}`);
+      const res = await publish(h, 'u-owner', 'p-energy', drink({ minimumAge: bad }), [RESTRICTED], `k-energy-${String(bad)}`);
       expect(res.status, `minimumAge ${JSON.stringify(bad)}`).toBe(400);
       expect(codeOf(res)).toBe('not_readable_as_a_product');
     }
     expect((await list(h, 'u-owner')).body).toMatchObject({ count: 0 }); // none of those landed
 
-    const ok = await publish(h, 'u-owner', 'p-beer', beer({ minimumAge: 21 }), [LIQUOR], 'k-beer-ok');
+    const ok = await publish(h, 'u-owner', 'p-energy', drink({ minimumAge: 21 }), [RESTRICTED], 'k-energy-ok');
     expect(ok.status).toBe(201);
-    expect((await get(h, 'u-owner', 'p-beer')).body).toMatchObject({ product: { safety: { minimumAge: 21 } } });
+    expect((await get(h, 'u-owner', 'p-energy')).body).toMatchObject({ product: { safety: { minimumAge: 21 } } });
+  });
+
+  it('B17 — liquor is never published, by its mark, its category or its HSN, with the age right or not (TASMAC)', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    const LIQUOR = { categoryId: 'liquor', name: 'Liquor', parentId: null, regulated: ['liquor'] };
+    const DRINKS = { categoryId: 'drinks', name: 'Drinks', parentId: null };
+    const beer = { sku: 'SKU-BEER', name: 'Beer 650ml', baseUom: 'each', primaryCategoryId: 'drinks', taxClass: '22030000', lifecycle: 'active', safety: { minimumAge: 21 } };
+    for (const [why, product, cats] of [
+      ['its HSN', beer, [DRINKS]],
+      ['its mark', { ...beer, taxClass: '22029920', safety: { minimumAge: 21, liquor: true } }, [DRINKS]],
+      ['its category', { ...beer, taxClass: '22029920', primaryCategoryId: 'liquor' }, [LIQUOR]],
+    ] as const) {
+      const res = await publish(h, 'u-owner', 'p-beer', product, cats, `k-liquor-${why}`);
+      expect(res.status, why).toBe(422);
+      expect(codeOf(res), why).toBe('liquor_not_sold');
+      expect((res.body as { error: { whatHappened: string } }).error.whatHappened).toMatch(/TASMAC/);
+    }
+    expect((await get(h, 'u-owner', 'p-beer')).status).toBe(404); // nothing was kept
   });
 
   it('refuses a product whose category is not in the hierarchy supplied', async () => {

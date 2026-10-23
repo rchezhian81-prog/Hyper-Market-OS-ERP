@@ -65,9 +65,9 @@ async function seedGaps(h: ApiHarness): Promise<void> {
   await publish(h, 'u-owner', 'p-atta-1', { ...base, sku: 'SKU-ATTA-1', name: 'Aashirvaad Atta 5kg', brand: 'Aashirvaad', mrpHistory: MRP }, 'k2');
   await assignBarcode(h, 'u-owner', 'p-atta-1', '8901000000002', 'bc2');
   await publish(h, 'u-owner', 'p-atta-2', { ...base, sku: 'SKU-ATTA-2', name: 'AASHIRVAAD ATTA 5 KG', brand: 'aashirvaad', mrpHistory: MRP }, 'k3');
-  await assignBarcode(h, 'u-owner', 'p-atta-2', '8901000000003', 'bc3');
+  await assignBarcode(h, 'u-owner', 'p-atta-2', '8901000000026', 'bc3');
   await publish(h, 'u-owner', 'p-nomrp', { ...base, sku: 'SKU-NOMRP', name: 'Sugar 1kg', brand: 'Local' }, 'k5');
-  await assignBarcode(h, 'u-owner', 'p-nomrp', '8901000000004', 'bc5');
+  await assignBarcode(h, 'u-owner', 'p-nomrp', '8901000000033', 'bc5');
 }
 async function armA08(h: ApiHarness): Promise<void> {
   await put(h, 'u-owner', '/v1/ai/kill-switch', { on: false }, 'k');
@@ -134,7 +134,7 @@ describe('the Data Quality steward inbox (A08) on the live surface', () => {
     expect(((await worklist(h, 'u-owner')).body as WorklistBody).open.some((i) => i.finding.findingId === 'dq-missing-barcode:p-noscan')).toBe(true);
 
     // The steward assigns the missing barcode — the ordinary catalogue action, not a dismissal.
-    expect((await assignBarcode(h, 'u-owner', 'p-noscan', '8901000000001', 'fix1')).status).toBe(201);
+    expect((await assignBarcode(h, 'u-owner', 'p-noscan', '8901000000019', 'fix1')).status).toBe(201);
 
     const after = (await worklist(h, 'u-owner')).body as WorklistBody;
     expect(after.open.some((i) => i.finding.findingId === 'dq-missing-barcode:p-noscan')).toBe(false);

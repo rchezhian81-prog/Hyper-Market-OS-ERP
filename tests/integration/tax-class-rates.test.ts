@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { approvedBody, askForApproval, decide } from '../support/approval-request';
+import { actionDetails } from '../../services/identity/src/approval-requests';
 
 // M03-FR-03 (tax) / A6: the per-HSN, effective-dated GST rate a product is taxed at, on the live API. A tax
 // class is not one rate but a SCHEDULE — the rate that applies is the one in force on the supply date. A
@@ -21,11 +23,43 @@ describe('tax-class GST-rate schedule (M03-FR-03 / A6)', () => {
   it('resolves the rate in force on the supply date across a mid-period change', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await h.provisionRole(A, 'u-acct', 'accountant');
     await setRate(h, 'u-owner', '1905', '2017-07-01', { rateBps: 1800 }, 'k1'); // 18% from 2017
-    await setRate(h, 'u-owner', '1905', '2025-09-22', { rateBps: 500 }, 'k2'); // cut to 5% from GST 2.0
+    // OB-288 P2 (M03 §28): a change to a class that has a rate needs a Finance approver.
+    const body = await approvedBody(h, A, 'u-owner', 'u-acct', 'tax_rate_change', '1905', { rateBps: 500 }, { hsnCode: '1905', effectiveFrom: '2025-09-22' });
+    expect((await setRate(h, 'u-owner', '1905', '2025-09-22', body, 'k2')).status).toBe(201); // cut to 5% from GST 2.0
     // A supply the day BEFORE the change gets the old rate; on/after the change gets the new one.
     expect((await resolve(h, 'u-owner', '1905', '2025-09-21')).body as { rate: { rateBps: number } }).toMatchObject({ rate: { rateBps: 1800 } });
     expect((await resolve(h, 'u-owner', '1905', '2025-09-22')).body as { rate: { rateBps: number } }).toMatchObject({ rate: { rateBps: 500 } });
+  });
+
+  it('OB-288 P2 — a rate CHANGE needs a Finance approver: none, a typed name, or the asker\'s own approval is refused; nothing is kept', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await h.provisionRole(A, 'u-owner2', 'owner');
+    await h.provisionRole(A, 'u-acct', 'accountant');
+    await h.provisionRole(A, 'u-mgr', 'store_manager');
+    expect((await setRate(h, 'u-owner', '2106', '2017-07-01', { rateBps: 1800 }, 's1')).status).toBe(201); // the first rate is set-up
+    const none = await setRate(h, 'u-owner', '2106', '2026-11-01', { rateBps: 1200 }, 's2');
+    expect(none.status).toBe(422);
+    expect(codeOf(none)).toBe('tax_change_needs_finance_approval');
+    expect(codeOf(await setRate(h, 'u-owner', '2106', '2026-11-01', { rateBps: 1200, approvedBy: 'u-acct' }, 's3'))).toBe('approver_named_without_approval');
+    // The asker cannot approve their own change; a store manager holds no tax-approval authority.
+    const details = actionDetails({ rateBps: 1200 }, { hsnCode: '2106', effectiveFrom: '2026-11-01' });
+    const asked = await askForApproval(h, A, 'u-owner', { kind: 'tax_rate_change', subjectRef: '2106', details });
+    expect(asked.status).toBe(201);
+    const requestId = (asked.body as { requestId: string }).requestId;
+    expect((await decide(h, A, 'u-owner', requestId)).status).not.toBe(201);
+    expect((await decide(h, A, 'u-mgr', requestId)).status).not.toBe(201);
+    expect((await listRates(h, 'u-owner', '2106')).body).toMatchObject({ count: 1 });
+    // A second owner approves; the change lands, and says who approved it.
+    expect((await decide(h, A, 'u-owner2', requestId)).status).toBe(201);
+    const landed = await setRate(h, 'u-owner', '2106', '2026-11-01', { rateBps: 1200, approvalId: requestId }, 's4');
+    expect(landed.status).toBe(201);
+    expect(landed.body).toMatchObject({ rate: { rateBps: 1200 }, approvedBy: 'u-owner2' });
+    // An approval is spent once: the same approval cannot carry a second change.
+    expect((await setRate(h, 'u-owner', '2106', '2027-01-01', { rateBps: 1200, approvalId: requestId }, 's5')).status).toBe(422);
+    expect((await listRates(h, 'u-owner', '2106')).body).toMatchObject({ count: 2 });
   });
 
   it('refuses a DIFFERENT rate on the same date, but an identical re-send is a no-op', async () => {

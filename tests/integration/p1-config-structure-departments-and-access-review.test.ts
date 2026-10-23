@@ -126,7 +126,7 @@ describe.each(backings)('configuration, structure, departments and access on $na
     await ok(req('POST', '/v1/org/nodes/store-01', 'u-owner', { kind: 'branch', name: 'Main store', parentId: 'C1', companyId: 'C1' }), 'branch');
     for (const [id, name] of [['D-dairy', 'Dairy'], ['D-grocery', 'Grocery']]) await ok(req('POST', `/v1/org/nodes/${id}`, 'u-owner', { kind: 'department', name, parentId: 'store-01' }), id!);
     await ok(req('POST', '/v1/catalogue/tax-classes/04061000/rates/2017-07-01', 'u-owner', { rateBps: 500 }), 'tax');
-    for (const [id, cat, code] of [['p-milk', 'dairy-cat', '8901000000011'], ['p-rice', 'grocery-cat', '8901000000028']] as const) {
+    for (const [id, cat, code] of [['p-milk', 'dairy-cat', '8901000000019'], ['p-rice', 'grocery-cat', '8901000000026']] as const) {
       await ok(req('POST', `/v1/catalogue/products/${id}/publish`, 'u-owner', { product: { sku: `SKU-${id}`, name: id, baseUom: 'ea', primaryCategoryId: cat, taxClass: '04061000', lifecycle: 'draft' }, categories: [{ categoryId: cat, name: cat, parentId: null }] }), `publish ${id}`);
       await ok(req('POST', `/v1/prices/list/${id}/entries/e1`, 'u-owner', { scope: 'store', scopeRef: 'store-01', priceMinor: 5_000, mrpMinor: 6_000, costMinor: 1, marginFloorBps: 0, currency: 'INR', effectiveFrom: '2030-01-01' }), `price ${id}`);
       await ok(req('POST', `/v1/catalogue/products/${id}/barcodes/${code}`, 'u-owner', { kind: 'ean' }), `barcode ${id}`);

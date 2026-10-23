@@ -169,7 +169,7 @@ describe('pilot seed — catalogue (Phase 4b)', () => {
 
   it('a barcode resolves to exactly its product', async () => {
     const { h } = await seed();
-    const res = await h.request({ method: 'GET', path: '/v1/catalogue/barcodes/8900000000123', userId: OWNER, tenantId: PILOT_DEMO_TENANT });
+    const res = await h.request({ method: 'GET', path: '/v1/catalogue/barcodes/8900000000128', userId: OWNER, tenantId: PILOT_DEMO_TENANT });
     expect(res.status).toBe(200);
     expect((res.body as { barcode: { productId: string } }).barcode.productId).toBe('prod-rice');
   });

@@ -20,9 +20,10 @@ import { apiError, notFound } from '../../kernel/src/index';
 import { ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
 import { settlePublishCategories, type CategoryRegisterDeps } from './categories';
 import {
-  publishProduct, NotPublishableError, CategoryNotFoundError, isTobacco, warningStanding,
+  publishProduct, NotPublishableError, CategoryNotFoundError, isTobacco, warningStanding, checkVariant,
   type ProductRecord, type ProductLifecycle, type HandlingClass,
 } from '../../../packages/product/src/index';
+import { liquorReason, LIQUOR_NOT_SOLD } from '../../../packages/restricted-sales/src/liquor';
 
 export interface ProductMasterDeps {
   /**
@@ -121,6 +122,28 @@ export function productMasterRoutes(deps: ProductMasterDeps): readonly Route[] {
         // The categories are head office's OWN list (SF-06-b · OB-24 "A") — never the sender's. An expected category that
         // differs from the list is refused; a missing one is defined only by someone who may define categories, and said.
         const { categories, defined } = await settlePublishCategories(deps.categoryRegister, ctx, b['categories']);
+        // B17 (TASMAC · OWNER_DECISIONS D3): liquor is NOT SOLD — refused by name before anything else is judged, so nobody
+        // fixes a field on a product that can never be published. Flag, category or HSN; never the product's name.
+        const category = categories.find((c) => c.categoryId === record.primaryCategoryId);
+        const liquor = liquorReason({ declaredLiquor: record.safety?.liquor === true, categoryKinds: category?.regulated ?? [], hsn: record.taxClass });
+        if (liquor !== undefined) {
+          throw apiError(422, {
+            code: 'liquor_not_sold',
+            whatHappened: `${LIQUOR_NOT_SOLD} "${record.name}" cannot be published: ${liquor}.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Do not list it. If it is a non-alcoholic drink, correct its HSN (non-alcoholic beer is 2202) and take the liquor mark off. Nothing was saved.',
+          });
+        }
+        // M03-FR-01 (OB-288 P2): a variant names a one-level parent head office holds and differs from its siblings.
+        if ((record.parentProductId ?? '').trim() !== '') {
+          const variant = checkVariant(record, await deps.products(ctx.tenantId));
+          if (!variant.ok) {
+            throw apiError(422, {
+              code: variant.refusal!, whatHappened: `The product cannot be published as it stands: ${variant.detail}.`, wasItSaved: 'not_saved',
+              nextSafeAction: 'Correct parentProductId (or the attributes that make this variant different) and publish again. Nothing was saved.',
+            });
+          }
+        }
         // The per-product compliance gate — the SAME tested rule the screen ran, re-run here because a
         // central boundary trusts no client verdict (ADR-0013 control 9): mandatory fields, category, HSN/tax
         // class, MRP/UOM, and a regulated item's safety content (allergen/country-of-origin/min-age).

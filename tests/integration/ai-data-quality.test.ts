@@ -59,21 +59,21 @@ describe('the Data Quality agent (A08) drafts evidence-backed suggestions on the
 
     // A clean, well-formed product: barcode + MRP + a unique name → nothing to say about it.
     expect((await publish(h, 'p-salt', { ...base, sku: 'SKU-SALT', name: 'Tata Salt 1kg', brand: 'Tata', mrpHistory: MRP }, 'k1')).status).toBe(201);
-    expect((await assignBarcode(h, 'p-salt', '8901000000001', 'bc1')).status).toBe(201);
+    expect((await assignBarcode(h, 'p-salt', '8901000000019', 'bc1')).status).toBe(201);
 
     // Two look-alike records (same name + brand, different SKUs) → a suspected duplicate. Both are
     // otherwise complete, so the ONLY thing said about them is that they may be the same item.
     expect((await publish(h, 'p-atta-1', { ...base, sku: 'SKU-ATTA-1', name: 'Aashirvaad Atta 5kg', brand: 'Aashirvaad', mrpHistory: MRP }, 'k2')).status).toBe(201);
     expect((await assignBarcode(h, 'p-atta-1', '8901000000002', 'bc2')).status).toBe(201);
     expect((await publish(h, 'p-atta-2', { ...base, sku: 'SKU-ATTA-2', name: 'AASHIRVAAD ATTA 5 KG', brand: 'aashirvaad', mrpHistory: MRP }, 'k3')).status).toBe(201);
-    expect((await assignBarcode(h, 'p-atta-2', '8901000000003', 'bc3')).status).toBe(201);
+    expect((await assignBarcode(h, 'p-atta-2', '8901000000026', 'bc3')).status).toBe(201);
 
     // A product on sale with NO barcode → it cannot be scanned. (MRP present, so only that one gap.)
     expect((await publish(h, 'p-noscan', { ...base, sku: 'SKU-NOSCAN', name: 'Loose Poha', brand: 'Local', mrpHistory: MRP }, 'k4')).status).toBe(201);
 
     // A product on sale with NO printed MRP → a Legal Metrology gap. (Barcode present, so only that.)
     expect((await publish(h, 'p-nomrp', { ...base, sku: 'SKU-NOMRP', name: 'Sugar 1kg', brand: 'Local' }, 'k5')).status).toBe(201);
-    expect((await assignBarcode(h, 'p-nomrp', '8901000000004', 'bc5')).status).toBe(201);
+    expect((await assignBarcode(h, 'p-nomrp', '8901000000033', 'bc5')).status).toBe(201);
 
     // Kill switch off and funded, but A08 not yet enabled → the enable gate refuses it (429).
     expect((await put(h, '/v1/ai/kill-switch', { on: false }, 'k')).status).toBe(200);
@@ -118,7 +118,7 @@ describe('the Data Quality agent (A08) drafts evidence-backed suggestions on the
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
     expect((await publish(h, 'p-salt', { ...base, sku: 'SKU-SALT', name: 'Tata Salt 1kg', brand: 'Tata', mrpHistory: MRP }, 'k1')).status).toBe(201);
-    expect((await assignBarcode(h, 'p-salt', '8901000000001', 'bc1')).status).toBe(201);
+    expect((await assignBarcode(h, 'p-salt', '8901000000019', 'bc1')).status).toBe(201);
     expect((await publish(h, 'p-sugar', { ...base, sku: 'SKU-SUGAR', name: 'Sugar 1kg', brand: 'Local', mrpHistory: MRP }, 'k2')).status).toBe(201);
     expect((await assignBarcode(h, 'p-sugar', '8901000000002', 'bc2')).status).toBe(201);
 

@@ -25,6 +25,7 @@ import {
   BarcodeRegistry, DuplicateBarcodeError,
   type BarcodeAssignment, type BarcodeKind,
 } from '../../../packages/product/src/index';
+import { hasValidCheckDigit } from '../../../packages/gs1/src/gs1';
 
 export interface BarcodeRegistryDeps {
   /**
@@ -42,6 +43,22 @@ export interface BarcodeRegistryDeps {
 }
 
 const KINDS: readonly BarcodeKind[] = ['gtin', 'ean', 'upc', 'internal', 'case', 'embedded'];
+
+/** The lengths each GS1 kind is printed in: a GTIN any of 8/12/13/14 digits, an EAN 8 or 13, a UPC-A 12. */
+const GS1_LENGTHS: Readonly<Partial<Record<BarcodeKind, readonly number[]>>> = Object.freeze({ gtin: [8, 12, 13, 14], ean: [8, 13], upc: [12] });
+
+/** Why a GS1-kind code is not a valid GS1 number (the shape, then the mod-10 check digit), or undefined when it is. */
+export function gs1Problem(kind: BarcodeKind, code: string): { readonly code: 'barcode_not_gs1_digits' | 'barcode_check_digit_wrong'; readonly detail: string } | undefined {
+  const lengths = GS1_LENGTHS[kind];
+  if (lengths === undefined) return undefined;
+  if (!/^\d+$/.test(code) || !lengths.includes(code.length)) {
+    return { code: 'barcode_not_gs1_digits', detail: `a ${kind.toUpperCase()} is ${lengths.join(', ')} digits and nothing else; this is ${code.length} characters${/^\d+$/.test(code) ? '' : ' and not all digits'}.` };
+  }
+  if (!hasValidCheckDigit(code)) {
+    return { code: 'barcode_check_digit_wrong', detail: 'its last digit (the GS1 check digit) does not match the digits before it, so it is mistyped or not a real GS1 number.' };
+  }
+  return undefined;
+}
 const isKind = (v: unknown): v is BarcodeKind => typeof v === 'string' && (KINDS as readonly string[]).includes(v);
 
 /** Build the tested register from what has been assigned before. Safe to replay: a different-product clash
@@ -84,6 +101,17 @@ export function barcodeRoutes(deps: BarcodeRegistryDeps): readonly Route[] {
             whatHappened: 'Assigning a barcode needs a product id and a non-empty code in the path, and a barcode kind (gtin, ean, upc, internal, case or embedded) in the body.',
             wasItSaved: 'not_saved',
             nextSafeAction: 'Send { kind: "ean" } (optionally { level }) with the product id and code in the URL.',
+          });
+        }
+        // OB-288 P2 (M03-FR-02 · WF-01 "duplicate/GS1 check"): a GS1 code is refused at registration when it is not a GS1
+        // number at all, or its check digit is wrong — a mistyped EAN would otherwise be "assigned" and never scan.
+        const gs1 = gs1Problem(b['kind'], code);
+        if (gs1 !== undefined) {
+          throw apiError(422, {
+            code: gs1.code,
+            whatHappened: `Barcode "${code}" cannot be registered as ${b['kind'].toUpperCase()}: ${gs1.detail}`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Copy the digits again from the pack (all of them, including the last one), or register a shop-made code as kind "internal". Nothing was changed.',
           });
         }
         const assignment: BarcodeAssignment = {

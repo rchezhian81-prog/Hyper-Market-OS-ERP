@@ -67,7 +67,7 @@ describe.each(backings)('a recall runs its whole lifecycle — on $name (WF-09)'
       h.request({ method, path, userId, tenantId: T, ...(method === 'POST' ? { idempotencyKey: `k-${randomUUID()}` } : {}), ...(body === undefined ? {} : { body }) });
     const ok = async (p: Promise<Res>, what: string): Promise<Res> => { const r = await p; expect(r.status, `${what}: ${JSON.stringify(r.body)}`).toBeLessThan(300); return r; };
     await ok(req('POST', '/v1/catalogue/tax-classes/04061000/rates/2017-07-01', { rateBps: 500 }), 'tax');
-    for (const [id, sku, name, code] of [['p-paneer', 'SKU-PANEER', 'Paneer 200g', '8901000000011'], ['p-curd', 'SKU-CURD', 'Curd 400g', '8901000000028']] as const) {
+    for (const [id, sku, name, code] of [['p-paneer', 'SKU-PANEER', 'Paneer 200g', '8901000000019'], ['p-curd', 'SKU-CURD', 'Curd 400g', '8901000000026']] as const) {
       await ok(req('POST', `/v1/catalogue/products/${id}/publish`, { product: { sku, name, baseUom: 'ea', primaryCategoryId: 'grocery', taxClass: '04061000', lifecycle: 'draft' }, categories: [GROCERY] }), `publish ${id}`);
       await ok(req('POST', `/v1/prices/list/${id}/entries/e1`, { scope: 'store', scopeRef: STORE, priceMinor: 9_000, mrpMinor: 9_500, costMinor: 1, marginFloorBps: 0, currency: 'INR', effectiveFrom: '2030-01-01' }), `price ${id}`);
       await ok(req('POST', `/v1/catalogue/products/${id}/barcodes/${code}`, { kind: 'ean' }), `barcode ${id}`);
@@ -99,7 +99,7 @@ describe.each(backings)('a recall runs its whole lifecycle — on $name (WF-09)'
       return { cache: new CatalogueCache(accepted.tradingOn!.snapshot), pack: accepted.tradingOn! };
     };
     const v1 = lane(await publish());
-    expect(v1.cache.scan('8901000000011').product.productId).toBe('p-paneer');
+    expect(v1.cache.scan('8901000000019').product.productId).toBe('p-paneer');
 
     // ── DETECT → QUARANTINE + RECALL ─────────────────────────────────────────────────────────────────────────────────
     expect((await req('POST', '/v1/quality/recalls/B-0412', { reason: 'x' }, 'u-till')).status).toBe(403);
@@ -116,9 +116,9 @@ describe.each(backings)('a recall runs its whole lifecycle — on $name (WF-09)'
 
     // ── BLOCK: the next signed pack carries it; the lane refuses paneer by name, offline; curd sells on ───────────────
     const v2 = lane(await publish(), v1.pack);
-    expect(() => v2.cache.scan('8901000000011')).toThrow(RecalledItemError);
-    expect(() => v2.cache.scan('8901000000011')).toThrow(/Paneer 200g/);
-    expect(v2.cache.scan('8901000000028').product.productId).toBe('p-curd');
+    expect(() => v2.cache.scan('8901000000019')).toThrow(RecalledItemError);
+    expect(() => v2.cache.scan('8901000000019')).toThrow(/Paneer 200g/);
+    expect(v2.cache.scan('8901000000026').product.productId).toBe('p-curd');
     expect((await blocks()).blocks.every((b) => b.state === 'on_pack')).toBe(true);
 
     // ── IDENTIFY: what is still on hand of the batch, and who bought it ─────────────────────────────────────────────
@@ -153,7 +153,7 @@ describe.each(backings)('a recall runs its whole lifecycle — on $name (WF-09)'
     await ok(req('POST', '/v1/quality/holds/B-0412/release', {}, 'u-qc'), 'hold released');
     expect((await blocks()).blockedProducts).toEqual([]);
     const v3 = lane(await publish(), v2.pack);
-    expect(v3.cache.scan('8901000000011').product.productId).toBe('p-paneer');
+    expect(v3.cache.scan('8901000000019').product.productId).toBe('p-paneer');
     // The recall stays on the record, closed (hard rule #6) — the list still has it.
     expect(((await req('GET', '/v1/quality/recalls')).body as { recalls: { batchId: string; status: string }[] }).recalls).toEqual([expect.objectContaining({ batchId: 'B-0412', status: 'closed' })]);
   }, 60_000);

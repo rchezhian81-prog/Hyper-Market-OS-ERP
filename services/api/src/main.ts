@@ -339,6 +339,8 @@ import { lane2RecallSurface } from './lane2-recall-adapters'; // Lane 2 · P1
 import { lane2OfflineRoutes } from './lane2-offline-adapters'; // OB-288 lane 2 · P2 — store-box offline queues, expiry move
 // OB-288 P3 (procure-to-pay completion): M06-FR-02/03/04 · M07-FR-01/04 · WF-03 · WF-05 (p3-procure-adapters).
 import { p3ProcureRoutes, p3PurchaseOrderHooks, p3ReceiptHooks, p3PurchaseHooks, p3Segregation, p3RebateHooks } from './p3-procure-adapters';
+// OB-288 P2 (catalogue, pricing and product legal guards): M03-FR-01–04 · M04-FR-04 · M05-FR-03/04 · D02-FR-02/04 · B15 · B17.
+import { p2CatalogueRoutes, p2TaxClassHooks, p2PromotionHooks, p2SeasonSweep } from './p2-catalogue-adapters';
 import { financeBridgeRoutes, finBridgeJournalHooks, finBridgeEvidenceHooks, finBridgeSweep } from './finance-bridge-adapters'; // OB-288 P5 — Tally daily file outbox, trial balance, centres, advances, rebate accruals
 import { migrationControlsAdapter } from './migration-controls-adapters'; // OB-288 P5 — MG-09 export diff, MG-10 books side, MG-11 backup and rollback limits
 import { opsMessagingRoutes, notificationGuardHooks, opsMessagingSweep } from './ops-messaging-adapters'; // OB-288 P5 — do-not-contact register, CERT-In clock, capacity report
@@ -796,7 +798,7 @@ export function buildSurface(deps: {
     // Tax-class GST-rate schedule (M03-FR-03 / A6) — per-HSN effective-dated rate; set/resolve/list.
     ...taxClassRoutes(store === undefined
       ? { setRate: () => {}, schedule: empty([]) }
-      : taxClassAdapter({ store, now })),
+      : { ...taxClassAdapter({ store, now }), ...p2TaxClassHooks({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }) /* OB-288 P2 */ }),
     // Catalogue pack ASSEMBLY/preview (slice 2) — fold master + prices + barcodes + tax rates for a store.
     ...cataloguePreviewRoutes(store === undefined
       ? { products: empty([]), priceEntries: empty([]), barcodes: empty([]), taxSchedule: empty([]), now }
@@ -831,6 +833,7 @@ export function buildSurface(deps: {
           const bags = new Set((await productMasterAdapter({ store, now }).products(t)).filter((p) => wanted.has(p.productId) && p.safety?.carryBag === true).map((p) => p.productId));
           return ids.filter((id) => bags.has(id));
         },
+        ...p2PromotionHooks({ store, now }), // OB-288 P2 · B15: an offer never names tobacco; a tobacco line takes no discount
       }),
     // Supplier invoices (SP-7a · F02 · F04): the invoice is a durable record; the match joins it to the STORED order and receipts.
     ...purchaseRoutes(store === undefined ? {
@@ -1759,6 +1762,7 @@ export function buildSurface(deps: {
     ...r4SupplyLpRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // R4 Lane 4
     ...lane2OfflineRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // OB-288 lane 2 · P2
     ...p3ProcureRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // OB-288 P3
+    ...p2CatalogueRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // OB-288 P2
     ...financeBridgeRoutes({ store, now }), // OB-288 P5
     ...opsMessagingRoutes({ store, now }), // OB-288 P5
     // GST government-portal switch — the feature flag + kill switch keeping LIVE e-invoice/e-way-bill portal
@@ -2630,6 +2634,7 @@ export async function startApi(
       expiryMove: expirySweepThatPublishes({ store, now, signer: hmacSigner(settings['PACK_SIGNING_KEY']!) }), // OB-288 lane 2 · M10-FR-01, and the expired batches onto the tills' pack
       approvalAge: approvalAgeSweep({ store, now, settings: new DurableTenantSettings(new SqlConfigVersionStore(pgPoolClient(db))) }), // OB-288 lane 1 · P1 — OB-292 escalation by age
       financeBridge: async (t: string, at: string) => (await finBridgeSweep({ store, now })(t, at)) + (await opsMessagingSweep({ store, now })(t, at)), // OB-288 P5 — the daily Tally file outbox; an overdue CERT-In report
+      seasonEnd: p2SeasonSweep({ store, now }), // OB-288 P2 · D02-FR-02 — a season whose last day has passed ends into clearance
       say: (line) => { out(`${line}\n`); },
     }),
   });

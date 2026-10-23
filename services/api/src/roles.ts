@@ -200,6 +200,10 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'approvals.rules.read', 'approvals.rules.propose', 'approvals.rules.approve',
       'org.structure.approve', 'platform.config.approve', 'identity.access.review',
       // ── OB-288 lane 1 · P1 — end
+      // ── OB-288 P2 (catalogue, pricing and product legal guards) — begin
+      // M03-FR-03 §28: the owner may approve a GST rate change someone else asked for (never their own).
+      'catalogue.tax.approve',
+      // ── OB-288 P2 — end
       // ── OB-288 integration follow-ups — begin
       // OB-330: the owner names the security reviewer whose signature, beside his own, accepts a critical or high risk.
       'compliance.reviewer.name',
@@ -645,6 +649,10 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // ── OB-288 lane 1 · P1 — begin: the accountant reads the approval rules, may ask for a change, and reviews access.
       'approvals.rules.read', 'approvals.rules.propose', 'identity.access.review',
       // ── OB-288 lane 1 · P1 — end
+      // ── OB-288 P2 (catalogue, pricing and product legal guards) — begin
+      // M03-FR-03 §28 "tax change with Finance approval": the accountant approves a GST rate change the catalogue keeper asked for.
+      'catalogue.tax.approve',
+      // ── OB-288 P2 — end
     ],
   },
   {
@@ -700,6 +708,11 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'storefront.order.place', 'storefront.order.read',
       // FUL-06: the customer's OWN consent and data-subject requests, scoped from the session (never an id sent).
       'customer.privacy.self',
+      // ── OB-288 P2 (catalogue, pricing and product legal guards) — begin
+      // M03-FR-04: the shop's approved substitutes for a product, shown in the app; D02-FR-04: a search that found nothing
+      // (the words only — never who searched).
+      'catalogue.substitutes.read', 'catalogue.search.miss.record',
+      // ── OB-288 P2 — end
     ],
   },
   {

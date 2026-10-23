@@ -223,6 +223,19 @@ export const APPROVAL_KINDS: Readonly<Record<string, ApprovalKind>> = Object.fre
     makerPermission: 'identity.role.request', checkerPermission: 'identity.role.grant', validForMinutes: 24 * 60,
   },
   // ── OB-288 lane 1 · P1 — end
+  // ── OB-288 P2 (catalogue, pricing and product legal guards) — begin
+  // M03.md "Permissions (§28): tax change with Finance approval": a new GST rate on an HSN class that already has one is
+  // asked by the person who keeps the catalogue and approved by Finance (`catalogue.tax.approve`: the accountant, the owner).
+  tax_rate_change: {
+    kind: 'tax_rate_change', label: 'Change the GST rate of an HSN class',
+    makerPermission: 'catalogue.pack.publish', checkerPermission: 'catalogue.tax.approve', validForMinutes: 24 * 60,
+  },
+  // M05-FR-04 · D02-FR-06 pattern: a supplier's funding of a promotion is approved by Finance, like a display contract.
+  promotion_funding: {
+    kind: 'promotion_funding', label: 'Approve a supplier\'s funding of a promotion',
+    makerPermission: 'promotion.launch', checkerPermission: 'purchase.supplier.approve', validForMinutes: 24 * 60,
+  },
+  // ── OB-288 P2 — end
 });
 
 /** A maker's request, as recorded. */

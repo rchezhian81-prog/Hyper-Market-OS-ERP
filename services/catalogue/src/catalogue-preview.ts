@@ -25,6 +25,7 @@ import type { PriceEntry } from '../../../packages/price-list/src/price-list';
 import type { Promotion } from '../../../packages/promotions/src/promotions';
 import { resolveGstRate, InvalidRateSchedule, type GstRatePeriod } from '../../../packages/finance/src/rate';
 import { TOBACCO_MINIMUM_AGE } from '../../../packages/restricted-sales/src/till-gate';
+import { liquorReason } from '../../../packages/restricted-sales/src/liquor';
 import { knowsBlockedBatches } from '../../inventory/src/sale-blocks';
 
 export interface CataloguePreviewDeps {
@@ -118,12 +119,27 @@ export function toMaster(r: ProductRecord, asOf: string): MasterProduct {
  * (`catalogueAdapter.buildSnapshot`), so there is ONE fold path: the same products reach a preview and a
  * published pack. `version` is the version the snapshot will carry (0 for a preview; previous+1 when publishing).
  */
+/** B17 (OB-288 P2): a product left out of every pack because it is never sold — liquor (TASMAC). */
+export interface NotSoldProduct {
+  readonly productId: string;
+  readonly sku: string;
+  readonly reason: 'liquor_not_sold';
+  readonly detail: string;
+}
+
 export async function assembleCatalogueSnapshot(
   deps: CataloguePreviewDeps,
   opts: { readonly tenantId: string; readonly storeId: string; readonly asOf: string; readonly version: number },
-): Promise<BuildSnapshotResult> {
+): Promise<BuildSnapshotResult & { readonly notSold?: readonly NotSoldProduct[] }> {
   const asOfDate = opts.asOf.slice(0, 10); // date part, for the effective-dated tax + MRP lookups
-  const all = await deps.products(opts.tenantId);
+  // B17 (TASMAC · OB-288 P2): liquor never reaches a pack — a product master published before the rule (by its flag or its
+  // HSN) is LEFT OUT and said, so no till is ever handed one to sell, offline or not.
+  const everything = await deps.products(opts.tenantId);
+  const notSold: NotSoldProduct[] = everything.flatMap((r) => {
+    const why = liquorReason({ declaredLiquor: r.safety?.liquor === true, hsn: r.taxClass });
+    return why === undefined ? [] : [{ productId: r.productId, sku: r.sku, reason: 'liquor_not_sold' as const, detail: why }];
+  });
+  const all = notSold.length === 0 ? everything : everything.filter((r) => !notSold.some((n) => n.productId === r.productId));
   // B16 (COTPA s.7 · OB-140 "A"): a tobacco product reaches the pack only with a named person's confirmation for the
   // warning picture in force on the build date. One never confirmed, or confirmed only for an earlier picture, is LEFT
   // OUT and said — so a new picture coming into force takes it off sale on the next pack. One that is confirmed carries
@@ -205,7 +221,8 @@ export async function assembleCatalogueSnapshot(
     ...built,
     excluded: [...built.excluded, ...unconfirmed.map((r) => ({ productId: r.productId, sku: r.sku, reason: 'tobacco_warning_not_confirmed' as const }))],
   };
-  return promotions.length === 0 ? withTobacco : { ...withTobacco, snapshot: { ...withTobacco.snapshot, promotions } };
+  const withOffers = promotions.length === 0 ? withTobacco : { ...withTobacco, snapshot: { ...withTobacco.snapshot, promotions } };
+  return notSold.length === 0 ? withOffers : { ...withOffers, notSold };
 }
 
 export function cataloguePreviewRoutes(deps: CataloguePreviewDeps): readonly Route[] {
@@ -245,6 +262,8 @@ export function cataloguePreviewRoutes(deps: CataloguePreviewDeps): readonly Rou
             includedCount: result.includedCount,
             excluded: result.excluded, // each with productId + sku + reason (no_price / no_tax_class / price_above_mrp)
             droppedBarcodes: result.droppedBarcodes,
+            // B17: what is never sold and so never in any pack — said, never silently missing.
+            ...(result.notSold === undefined ? {} : { notSold: result.notSold }),
           },
         };
       },
