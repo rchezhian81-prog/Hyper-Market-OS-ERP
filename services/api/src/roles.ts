@@ -174,8 +174,9 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'quality.recall.initiate', 'quality.recall.read',
       'quality.hold.manage', 'quality.hold.release',
       // ── Lane 2 · P1 (recall and trace) — begin
-      // M10-FR-04: the consent-checked list of the customers a recall must reach (names customers — owner / store manager only).
-      'quality.recall.notice.read',
+      // M10-FR-04 · OB-297: the consent-checked call list of the customers a recall must reach (names customers — owner /
+      // store manager only), and sending its SMS notice once switched on. Switching recall messages on is the owner's alone.
+      'quality.recall.notice.read', 'quality.recall.notice.send', 'quality.recall.notice.switch',
       // ── Lane 2 · P1 — end
       'price.integrity.audit', 'selfcheckout.operate',
       'owner.alert.read', 'owner.kpi.read', 'owner.brief.manage',
@@ -353,8 +354,9 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'quality.recall.initiate', 'quality.recall.read',
       'quality.hold.manage', 'quality.hold.release',
       // ── Lane 2 · P1 (recall and trace) — begin
-      // M10-FR-04: the consent-checked list of the customers a recall must reach (names customers — owner / store manager only).
-      'quality.recall.notice.read',
+      // M10-FR-04 · OB-297: the consent-checked call list of the customers a recall must reach, and sending its SMS notice
+      // once the owner has switched recall messages on.
+      'quality.recall.notice.read', 'quality.recall.notice.send',
       // ── Lane 2 · P1 — end
       // R3 lane 3: B16 — confirm a tobacco product's packs carry the warning picture; D-26 — record and answer a lot-trace request.
       'catalogue.tobacco.warning.confirm', 'quality.lottrace.request',

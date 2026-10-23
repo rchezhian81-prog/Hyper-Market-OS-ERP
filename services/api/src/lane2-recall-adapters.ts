@@ -13,8 +13,11 @@
 //      the bill (the sale's member), not only a stored-value link — so "who bought it" is the same answer both ways.
 //   5. TRACE READS LOGGED — every lot-trace read that can name customers is sealed on the audit trail: who, when, what
 //      (M10-FR-03 "trace queries logged"). If the seal cannot be written the trace is not handed out (fail closed).
-//   6. RECALL NOTICE LIST — the customers who bought the recalled batch and whose own consent allows a message about it
-//      (`services/customer/src/recall-notices.ts`). Nothing is sent: how they are told is owner decision D8.
+//   6. RECALL CALL LIST and MESSAGE PORT (owner decision OB-297, D8: "call list now, SMS later") — the customers who
+//      bought the recalled batch and whose own consent allows service messages, each with their name, the last four
+//      digits of their phone and the lot and date they bought; and an SMS notice port, switched OFF (no provider is
+//      connected in production, and the owner's switch is off until he sets it), sending only to SMS-consented customers
+//      (`services/customer/src/recall-notices.ts`).
 //
 // Composition: `lane2RecallSurface(surface, …)` is the one line in `main.ts`. It adds the new routes and wraps four
 // existing ones in place (recall start, recall close, the purchase-order steps, the lot-trace reads) — each wrapped
@@ -35,10 +38,12 @@ import { republishWithBlocks } from '../../catalogue/src/recall-republish';
 import { blockedProductIds } from '../../inventory/src/sale-blocks';
 import { lotTraceBackwardRoutes, type LotTraceBackwardDeps } from '../../inventory/src/lot-trace-backward';
 import { withRecallOrderGuard, type ProductUnderRecall, type RecallOrderGuardDeps } from '../../purchase/src/recall-order-guard';
-import { recallNoticeRoutes, type RecallBuyer, type RecallNoticeDeps } from '../../customer/src/recall-notices';
+import { recallNoticeRoutes, type RecallBuyer, type RecallNoticeDeps, type RecallNoticeSwitch, type RecallNoticeAttempt } from '../../customer/src/recall-notices';
+import type { NotificationTransport } from '../../../packages/notifications/src/transport';
+import { makeEvent } from '../../../packages/contracts/src/event';
 import {
   STREAM, streamName, recallAdapter, saleBlocksAdapter, catalogueAdapter, productMasterAdapter, purchaseOrdersAdapter,
-  lotTraceAdapter, customerAdapter, customer360Adapter, alertLifecycleAdapter, effectiveGrants,
+  lotTraceAdapter, customerAdapter, customer360Adapter, alertLifecycleAdapter, effectiveGrants, outsidePartyLoginAdapter,
 } from './adapters';
 import { lotTraceRoutes } from '../../inventory/src/lot-trace';
 import { lotTraceChainRoutes, type LotTraceFacts } from '../../inventory/src/lot-trace-chain';
@@ -164,7 +169,7 @@ export function lotTraceBackwardAdapter(input: Input): LotTraceBackwardDeps {
 
 // ── 6. the recall notice list ────────────────────────────────────────────────────────────────────────────────────────
 
-export function recallNoticeAdapter(input: Input): RecallNoticeDeps {
+export function recallNoticeAdapter(input: Input & { readonly transport?: NotificationTransport; readonly recordAudit?: Recorder }): RecallNoticeDeps {
   const { store, now } = input;
   const recalls = recallAdapter(input);
   const sold = lotTraceAdapter({ store });
@@ -199,9 +204,39 @@ export function recallNoticeAdapter(input: Input): RecallNoticeDeps {
       return out;
     },
     consentRecords: (tenantId, customerRef) => customers.consentRecords(tenantId, customerRef),
-    mobileLast4: async (tenantId, customerRef) => (await c360.loyaltyOf(tenantId, customerRef)).member?.mobileLast4,
+    // The only customer names the shop holds are an app customer's login names (the login IS the customer record, M20).
+    // A member enrolled at the desk has no name on record — the call list says so (null), never invents one.
+    name: async (tenantId, customerRef) => {
+      const logins = (await outsidePartyLoginAdapter(input).invites(tenantId)).filter((r) => r.role === 'customer' && r.partyId === customerRef && r.state !== 'rejected');
+      return ref(logins[logins.length - 1]?.displayName);
+    },
+    phoneLast4: async (tenantId, customerRef) => (await c360.loyaltyOf(tenantId, customerRef)).member?.mobileLast4,
+    switchState: async (tenantId) =>
+      (await store.latestOfType(tenantId, RECALL_NOTICE_STREAM, 'RecallNoticeSwitchSet'))?.event.payload as RecallNoticeSwitch | undefined,
+    recordSwitch: async (tenantId, s) => {
+      await store.append(tenantId, RECALL_NOTICE_STREAM, makeEvent({
+        id: `recall-notice-switch-${s.at}-${s.by}`, type: 'RecallNoticeSwitchSet', occurredAt: s.at,
+        idempotencyKey: `recall-notice-switch-${tenantId}-${s.at}-${s.by}-${s.on}`, source: 'api/customer', payload: s,
+      }));
+    },
+    attempts: async (tenantId, batchId) =>
+      (await store.readStream(tenantId, RECALL_NOTICE_STREAM, { type: 'RecallNoticeAttempted' }))
+        .map((e) => e.event.payload as RecallNoticeAttempt).filter((a) => a.batchId === batchId),
+    recordAttempt: async (tenantId, a) => {
+      await store.append(tenantId, RECALL_NOTICE_STREAM, makeEvent({
+        id: `recall-notice-${a.messageId}-${a.at}`, type: 'RecallNoticeAttempted', occurredAt: a.at,
+        // One sent message per customer and recall: a second "sent" for the same message id collapses onto the first.
+        idempotencyKey: a.outcome === 'sent' ? `recall-notice-${tenantId}-${a.messageId}-sent` : `recall-notice-${tenantId}-${a.messageId}-failed-${a.at}`,
+        source: 'api/customer', payload: a,
+      }));
+    },
+    ...(input.transport === undefined ? {} : { transport: input.transport }),
+    ...(input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit }),
   };
 }
+
+/** OB-297: the owner's switch for recall messages and every message attempt, append-only. */
+const RECALL_NOTICE_STREAM = streamName(STREAM.customer, 'recall-notices');
 
 // ── 1. what is under recall, for the ordering guard ──────────────────────────────────────────────────────────────────
 
@@ -231,31 +266,44 @@ export function underRecallOf(input: Input): (tenantId: string, productIds: read
 // ── 2 & 3. what starting (and closing) a recall does by itself ────────────────────────────────────────────────────────
 
 export type TillPackOutcome =
-  | { readonly published: true; readonly version: number; readonly newlyBlocked: readonly string[]; readonly detail: string }
-  | { readonly published: false; readonly onPack: boolean; readonly version: number | null; readonly why: string; readonly detail: string };
+  | { readonly published: true; readonly version: number; readonly newlyBlocked: readonly string[]; readonly notCarried: readonly string[]; readonly detail: string }
+  | { readonly published: false; readonly onPack: boolean; readonly version: number | null; readonly why: string; readonly notCarried: readonly string[]; readonly detail: string };
 
-/** Publish the tills' pack with every product that must not be sold blocked — at once, prices untouched. */
-export async function publishRecallPack(input: Input & { readonly signer: PackSigner }, tenantId: string, startedBy: string): Promise<TillPackOutcome> {
+/**
+ * Publish the tills' pack with every product that must not be sold blocked — at once, prices untouched — and say, for
+ * THIS recall's products, whether the tills now refuse them. A product no till carries (not on the pack at all) cannot be
+ * sold at a till and is named as such; a batch head office cannot name to any product cannot be refused, and is said.
+ */
+export async function publishRecallPack(input: Input & { readonly signer: PackSigner }, tenantId: string, startedBy: string, products: readonly string[]): Promise<TillPackOutcome> {
   const catalogue = catalogueAdapter({ store: input.store, signer: input.signer, now: input.now });
   const blocks = saleBlocksAdapter(input);
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const previous = await catalogue.currentPack(tenantId);
     if (previous === undefined) {
-      return { published: false, onPack: false, version: null, why: 'no_pack_published_yet', detail: 'No catalogue has been published to the tills yet, so no till is selling anything from head office. The first publish will carry this block.' };
+      return { published: false, onPack: false, version: null, why: 'no_pack_published_yet', notCarried: [], detail: 'No catalogue has been published to the tills yet, so no till is selling anything from head office. The first publish will carry this block.' };
+    }
+    const version = previous.snapshot.version;
+    const carried = new Set(previous.snapshot.products.map((p) => p.productId));
+    const notCarried = products.filter((p) => !carried.has(p));
+    if (products.length === 0) {
+      return { published: false, onPack: false, version, why: 'product_unknown', notCarried, detail: 'Head office cannot name this batch to a product (no receipt or stock movement carried it), so no till can refuse it. Record the batch\'s receipt; the block follows.' };
+    }
+    if (notCarried.length === products.length) {
+      return { published: false, onPack: false, version, why: 'not_carried_by_any_till', notCarried, detail: `No till carries ${notCarried.join(', ')} (it is not on catalogue v${version}), so none can sell it.` };
     }
     const blocked = blockedProductIds(await blocks.blocks(tenantId));
     const r = republishWithBlocks({
       previous, blocked, batchesOf: (p) => blocked.batchesOf(p), signer: input.signer,
       publishedBy: `recall-block:${startedBy}`, publishedAt: input.now(),
     });
-    if (r.outcome === 'already_on_pack') return { published: false, onPack: true, version: previous.snapshot.version, why: 'already_on_pack', detail: r.detail };
-    if (r.outcome === 'refused') return { published: false, onPack: false, version: previous.snapshot.version, why: r.because, detail: `The recall pack was refused: ${r.detail}. Publish the catalogue by hand now.` };
+    if (r.outcome === 'already_on_pack') return { published: false, onPack: true, version, why: 'already_on_pack', notCarried, detail: r.detail };
+    if (r.outcome === 'refused') return { published: false, onPack: false, version, why: r.because, notCarried, detail: `The recall pack was refused: ${r.detail}. Publish the catalogue by hand now.` };
     await catalogue.storePack(tenantId, r.pack);
     const held = await catalogue.currentPack(tenantId);
-    if (held?.signature === r.pack.signature) return { published: true, version: r.pack.snapshot.version, newlyBlocked: r.newlyBlocked, detail: r.detail };
+    if (held?.signature === r.pack.signature) return { published: true, version: r.pack.snapshot.version, newlyBlocked: r.newlyBlocked, notCarried, detail: r.detail };
     // Somebody published the same version a moment earlier — read the pack again and block on top of theirs.
   }
-  return { published: false, onPack: false, version: null, why: 'publish_raced', detail: 'Three publishes landed while the recall pack was being signed. Publish the catalogue by hand now.' };
+  return { published: false, onPack: false, version: null, why: 'publish_raced', notCarried: [], detail: 'Three publishes landed while the recall pack was being signed. Publish the catalogue by hand now.' };
 }
 
 export type OwnerAlertOutcome =
@@ -322,15 +370,17 @@ function onRecallStart(input: Input & { readonly signer: PackSigner }, inner: Ro
     const res = await inner(ctx);
     if (res.status !== 201) return res; // already open (one effect), or the route's own refusal
     const record = (res.body as { recall: RecallRecord }).recall;
-    // 3 first: the tills are what stop the next sale.
-    const tillPack = await reported(() => publishRecallPack(input, ctx.tenantId, ctx.userId));
     const products = (await saleBlocksAdapter(input).blocks(ctx.tenantId))
       .filter((b) => b.kind === 'recall' && b.batchId === record.batchId)
       .flatMap((b) => (b.productId === null ? [] : [b.productId])).sort();
+    // 3 first: the tills are what stop the next sale.
+    const tillPack = await reported(() => publishRecallPack(input, ctx.tenantId, ctx.userId, products));
     const openPurchaseOrders = await reported(() => openOrdersFor(input, ctx.tenantId, products));
-    const tills = 'published' in tillPack && tillPack.published ? `the tills' catalogue v${tillPack.version} now refuses it`
-      : 'published' in tillPack && tillPack.onPack ? 'the tills already refuse it'
-        : 'it is NOT yet blocked at the tills — publish the catalogue now';
+    const tills = !('published' in tillPack) ? `it is NOT yet blocked at the tills (${tillPack.detail}) — publish the catalogue now`
+      : tillPack.published ? `the tills' catalogue v${tillPack.version} now refuses it`
+        : tillPack.onPack ? 'the tills already refuse it'
+          : tillPack.why === 'not_carried_by_any_till' ? 'no till carries it'
+            : `it is NOT yet blocked at the tills — ${tillPack.detail}`;
     const orders = Array.isArray(openPurchaseOrders) && openPurchaseOrders.length > 0
       ? ` Open purchase orders for it: ${openPurchaseOrders.map((o) => o.poId).join(', ')}.` : '';
     const detail = `Batch ${record.batchId} was recalled by ${record.initiatedBy}: ${record.reason}. `
@@ -363,12 +413,17 @@ export const AUDITED_TRACE_READS: readonly { readonly method: 'GET' | 'POST'; re
   { method: 'GET', path: '/v1/quality/recalls/:batchId/notice-list', object: (c) => `recall-notice:${c.params['batchId'] ?? ''}` },
 ];
 
-/** How many distinct customers a reply names (any `customerId` / `customerRef` string anywhere in it). */
+/**
+ * How many distinct customers a reply names: any `customerId` / `customerRef` string anywhere in it, and the recipient
+ * of a sale row on a D-26 chain (`hop: 'sale'`, `to` other than "walk-in").
+ */
 export function customersNamedIn(body: unknown): number {
   const seen = new Set<string>();
   const walk = (v: unknown): void => {
     if (Array.isArray(v)) { for (const x of v) walk(x); return; }
     if (v === null || typeof v !== 'object') return;
+    const row = v as { hop?: unknown; to?: unknown };
+    if (row.hop === 'sale' && typeof row.to === 'string' && row.to.trim() !== '' && row.to !== 'walk-in') seen.add(row.to.trim());
     for (const [k, x] of Object.entries(v as Record<string, unknown>)) {
       if ((k === 'customerId' || k === 'customerRef') && typeof x === 'string' && x.trim() !== '') seen.add(x.trim());
       else walk(x);
@@ -465,6 +520,8 @@ export function lane2RecallSurface(surface: Route[], input: {
   readonly now: () => string;
   readonly signer: PackSigner;
   readonly recordAudit?: Recorder;
+  /** OB-297 "SMS later": the message provider for recall notices. NEVER set by `startApi` — tests hand in a stand-in. */
+  readonly messageTransport?: NotificationTransport;
 }): void {
   const { store, now } = input;
   const none = async <T>(): Promise<T[]> => [];
@@ -495,8 +552,15 @@ export function lane2RecallSurface(surface: Route[], input: {
       ? { now, sale: async () => undefined, salesOfCustomer: none, origins: async () => new Map(), salesBankedUpTo: async () => null }
       : lotTraceBackwardAdapter({ store, now })),
     ...recallNoticeRoutes(store === undefined
-      ? { now, recall: async () => undefined, buyers: none, consentRecords: () => [], mobileLast4: async () => undefined }
-      : recallNoticeAdapter({ store, now })),
+      ? {
+          now, recall: async () => undefined, buyers: none, consentRecords: () => [], name: async () => undefined, phoneLast4: async () => undefined,
+          switchState: async () => undefined, recordSwitch: async () => {}, attempts: none, recordAttempt: async () => {},
+        }
+      : recallNoticeAdapter({
+          store, now,
+          ...(input.messageTransport === undefined ? {} : { transport: input.messageTransport }),
+          ...(input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit }),
+        })),
   );
 
   // 5. Every trace read that can name customers, sealed — the new ones and the ones already served.
