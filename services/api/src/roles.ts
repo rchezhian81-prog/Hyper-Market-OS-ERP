@@ -289,6 +289,12 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // dispositions (the refund itself stays order.refund.issue, approved by a second person).
       'online.store.read', 'online.store.manage', 'online.return.manage', 'online.return.collect',
       // ── R4 Lane 2 — end
+      // ── OB-288 lane 2 · P2 (store-box offline queues) — begin
+      // The box's relay hops for work done at the store with the line down — held by the owner only so he may approve
+      // granting them to the store computer (no escalation, OB-36). Each route re-verifies the PERSON named from their own
+      // grants and re-runs head office's rules, so these grant no dispatch, receipt, production or check of their own.
+      'inventory.transfer.sync', 'production.sync', 'facilities.foodsafety.sync',
+      // ── OB-288 lane 2 · P2 — end
     ],
   },
   {
@@ -714,6 +720,14 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // A return collection recorded on the driver's phone (head office re-verifies the driver, the booking and the quantities).
       'online.return.collect.sync',
       // ── R4 gap lane "driver" — end
+      // ── OB-288 lane 2 · P2 (store-box offline queues) — begin
+      // A transfer sent or counted in, a production or weighed run, a batch released for sale, and a food-safety check
+      // recorded with the line down (§31) — head office re-verifies each person and re-runs its own rules.
+      'inventory.transfer.sync', 'production.sync', 'facilities.foodsafety.sync',
+      // What the box PULLS so that work can be done with the line down: the production board and recipes, the food-safety
+      // checks in force for its store, and the transfers with an end at its store (reads only).
+      'production.read', 'facilities.overdue.read', 'inventory.availability.read',
+      // ── OB-288 lane 2 · P2 — end
       // the GST portal's poll/verify, relayed for the operator (no maker-checker decision; re-authorised on this permission)
       'finance.einvoice.generate',
     ],

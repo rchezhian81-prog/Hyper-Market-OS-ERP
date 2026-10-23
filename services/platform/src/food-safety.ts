@@ -255,3 +255,128 @@ export function foodSafetyRoutes(deps: FoodSafetyDeps): readonly Route[] {
     },
   ];
 }
+
+// ── OB-288 lane 2 · P2: a food-safety / temperature check recorded with the line down (M10-FR-02 · D-6 · §31) ───────
+//
+// "Offline (§31): evidence captured offline; queued." The check is done at the chiller when it is due, whatever the line
+// is doing: the screen keeps the record on its durable device queue, the store computer holds it on its fsync'd log and
+// relays it here under the store's credential. Head office judges it with the SAME engine as the direct route — against the
+// version of the check in force when the slot fell due, the limits, the items, the corrective action a failure needs — and
+// times it by WHEN IT WAS DONE at the store (`at`), so a check done on time is not made "late" by a slow line. The person is
+// re-verified from their own grants and a breach is FLAGGED on the record (the reading was taken; it is evidence). What
+// cannot stand is refused by name and kept at the store as a visible exception (hard rules #6, #10): a slot somebody else
+// already recorded (`check_already_recorded` — 422 here, so the box never mistakes it for its own copy), a different record
+// under the same id, a failure with no corrective action. The same record again is 200 — one record (§31.1). Sealed into the
+// tamper-evident trail in the doer's name, the relay beside them.
+
+export interface SyncedFoodSafetyDeps extends FoodSafetyDeps {
+  readonly permissionsOfUser?: (tenantId: string, userId: string) => Promise<readonly string[] | undefined> | readonly string[] | undefined;
+}
+
+const sameRecordAs = (prior: FoodSafetyCheckRecord, draft: { performedBy: string; slotDueAt?: string; subjectRef?: string; readingTenthsC?: number; itemResults?: Record<string, ItemResult>; correctiveAction?: string }): boolean =>
+  prior.performedBy === draft.performedBy && prior.slotDueAt === draft.slotDueAt && prior.subjectRef === draft.subjectRef
+  && prior.readingTenthsC === draft.readingTenthsC && (prior.correctiveAction ?? '') === (draft.correctiveAction ?? '')
+  && JSON.stringify(Object.entries(prior.itemResults ?? {}).sort()) === JSON.stringify(Object.entries(draft.itemResults ?? {}).sort());
+
+export function syncedFoodSafetyRoutes(deps: SyncedFoodSafetyDeps): readonly Route[] {
+  const versionsOf = async (tenantId: string): Promise<readonly FoodSafetyCheck[]> =>
+    deps.checkVersions === undefined ? deps.checks(tenantId) : deps.checkVersions(tenantId);
+  return [
+    {
+      // Body: { recordId (= path), checkId (= path), storeId, performedBy, at, slotDueAt | subjectRef, readingTenthsC?,
+      // itemResults?, correctiveAction?, evidenceRefs?, source? }.
+      api: 'API-11', method: 'POST', path: '/v1/facilities/food-safety/checks/:checkId/records/:recordId/synced',
+      permission: 'facilities.foodsafety.sync', idempotent: true,
+      handler: async (ctx) => {
+        const checkId = (ctx.params['checkId'] ?? '').trim();
+        const recordId = (ctx.params['recordId'] ?? '').trim();
+        const b = (ctx.body !== null && typeof ctx.body === 'object' && !Array.isArray(ctx.body) ? ctx.body : {}) as Record<string, unknown>;
+        const itemResults = readItemResults(b['itemResults']);
+        if (checkId === '' || recordId === '' || b['checkId'] !== checkId || b['recordId'] !== recordId || !isStr(b['performedBy']) || !isTime(b['at'])
+          || itemResults === 'bad' || (b['readingTenthsC'] !== undefined && !isInt(b['readingTenthsC']))
+          || (b['slotDueAt'] !== undefined && !isTime(b['slotDueAt'])) || (b['subjectRef'] !== undefined && !isStr(b['subjectRef']))
+          || (b['correctiveAction'] !== undefined && typeof b['correctiveAction'] !== 'string')
+          || (b['evidenceRefs'] !== undefined && (!Array.isArray(b['evidenceRefs']) || !(b['evidenceRefs'] as unknown[]).every(isStr)))) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_relayed_check_record',
+            whatHappened: 'This could not be read as a food-safety check from the store — it needs the checkId and recordId matching the path, who did it (performedBy), when (at), the slot (slotDueAt) or the delivery (subjectRef), and what was found.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Do not discard it at the store. Keep it in the queue and raise it.',
+          });
+        }
+        const performedBy = (b['performedBy'] as string).trim();
+        const at = iso(b['at'] as string);
+        const slotDueAt = isTime(b['slotDueAt']) ? iso(b['slotDueAt']) : undefined;
+        const latest = (await deps.checks(ctx.tenantId)).find((c) => c.checkId === checkId);
+        const check = latest === undefined ? undefined
+          : checkInForceAt(await versionsOf(ctx.tenantId), checkId, latest.kind !== 'receiving' && slotDueAt !== undefined ? slotDueAt : at) ?? latest;
+        if (check === undefined || !check.active) {
+          throw apiError(422, { code: 'check_not_known_at_head_office', whatHappened: `Head office holds no food-safety check "${checkId}" in force, so this record cannot be filed against it.`, wasItSaved: 'not_saved', nextSafeAction: 'Kept at the store for a person: the check may have been withdrawn. Nothing was recorded.' });
+        }
+        assertBranchInScope(ctx, check.branchId); // only the store's own computer files the store's checks
+        const draft = {
+          performedBy,
+          ...(slotDueAt === undefined ? {} : { slotDueAt }),
+          ...(isStr(b['subjectRef']) ? { subjectRef: b['subjectRef'].trim() } : {}),
+          ...(isInt(b['readingTenthsC']) ? { readingTenthsC: b['readingTenthsC'] } : {}),
+          ...(itemResults === undefined ? {} : { itemResults }),
+          ...(typeof b['correctiveAction'] === 'string' && b['correctiveAction'].trim() !== '' ? { correctiveAction: b['correctiveAction'] } : {}),
+        };
+        const all = await deps.records(ctx.tenantId);
+        const existing = all.find((r) => r.recordId === recordId);
+        if (existing !== undefined) {
+          if (existing.checkId === checkId && sameRecordAs(existing, draft)) return { status: 200, body: { record: existing, alreadyRecorded: true } };
+          throw apiError(422, {
+            code: 'check_record_conflicts_with_record',
+            whatHappened: `Head office already holds check record ${recordId} (by ${existing.performedBy}); this store's record under the same id says something different. A record is never overwritten.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Kept at the store for a person to compare. Nothing was changed.',
+          });
+        }
+        const held = await deps.permissionsOfUser?.(ctx.tenantId, performedBy);
+        const flags = held === undefined ? ['performer_unknown'] : held.includes('facilities.task.record') ? [] : ['performer_lacks_authority'];
+        const assessed = assessCheckRecord(check, {
+          recordId, checkId, performedAt: at, ...draft,
+          ...(Array.isArray(b['evidenceRefs']) ? { evidenceRefs: b['evidenceRefs'] as string[] } : {}),
+        });
+        if (!assessed.ok) {
+          throw apiError(422, {
+            code: assessed.refusal, whatHappened: assessed.detail, wasItSaved: 'not_saved',
+            nextSafeAction: 'Kept at the store for a person: record the check again with what was done about it. Nothing was recorded.',
+          });
+        }
+        const rec: FoodSafetyCheckRecord = {
+          ...assessed.record,
+          offline: { relayedBy: ctx.userId, source: isStr(b['source']) ? b['source'] : 'unknown', storeId: isStr(b['storeId']) ? b['storeId'] : null, flags },
+        };
+        const slotTaken = (): ReturnType<typeof apiError> => apiError(422, {
+          code: 'check_already_recorded',
+          whatHappened: `"${check.title}" at ${rec.slotDueAt ?? ''} is already recorded by someone else. A record is never overwritten.`,
+          wasItSaved: 'not_saved',
+          nextSafeAction: 'Kept at the store for a person: if something more was found, record it as a corrective action on the next check or as an incident. Nothing was changed.',
+        });
+        if (rec.slotDueAt !== undefined && all.some((r) => r.checkId === checkId && r.slotDueAt === rec.slotDueAt)) throw slotTaken();
+        try {
+          await deps.recordRecord(ctx.tenantId, rec);
+        } catch (e) {
+          if (e instanceof SlotAlreadyRecordedError) throw slotTaken();
+          throw e;
+        }
+        await deps.recordAudit?.(ctx.tenantId, {
+          actorId: performedBy, action: rec.outcome === 'fail' ? 'food_safety.check.failed' : 'food_safety.check.passed',
+          objectType: 'food_safety_check', objectId: checkId, at,
+          origin: { tenantId: ctx.tenantId, branchId: check.branchId, capturedOffline: true },
+          before: null,
+          after: {
+            recordId, slotDueAt: rec.slotDueAt ?? '', subjectRef: rec.subjectRef ?? '', outcome: rec.outcome, late: String(rec.late),
+            reading: rec.readingTenthsC === undefined ? '' : String(rec.readingTenthsC), failures: rec.failures.join('; '),
+            correctiveAction: rec.correctiveAction ?? '', relayedBy: ctx.userId, flags: flags.join(','),
+          },
+          ...(rec.correctiveAction === undefined ? {} : { reason: rec.correctiveAction }),
+          correlationId: recordId,
+        });
+        return { status: 202, body: { record: rec, alreadyRecorded: false, flags } };
+      },
+    },
+  ];
+}

@@ -95,6 +95,14 @@
           <p class="lede" id="d-dispatch-note"></p>
           <button id="d-dispatch" type="button">Send it</button>
         </div>
+        <!-- OB-288 lane 2 · WF-07: withdraw a transfer before it leaves — a compensating event with a reason; refused after dispatch. -->
+        <div id="d-cancel-box" hidden>
+          <h3 id="d-cancel-h">Cancel it</h3>
+          <p class="lede" id="d-cancel-note"></p>
+          <label for="d-cancel-reason" id="l-d-cancel-reason">Why it is being cancelled</label>
+          <input id="d-cancel-reason" type="text" autocomplete="off">
+          <button id="d-cancel" type="button">Cancel this transfer</button>
+        </div>
         <div id="d-receive-box" hidden>
           <h3 id="d-receive-h">Count it in</h3>
           <p class="lede" id="d-receive-note"></p>

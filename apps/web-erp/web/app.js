@@ -1364,7 +1364,25 @@ el('do-close').addEventListener('click', () => {
 
 // ── Language ────────────────────────────────────────────────────────────────
 
+/**
+ * OB-288 lane 2 · OB-327: this store computer's clock against head office's, said in words beside its shape, and the bills
+ * marked while it was 5+ minutes out listed by number for a person to check. The tested view decides what shows.
+ */
+function paintBoxClock() {
+  const md = window.managerData;
+  const v = typeof window.boxClockView === 'function' ? window.boxClockView(lang, md && md.clock, md && md.clockFlaggedBills) : null;
+  const strip = el('box-clock');
+  if (v === null || !v.show) { strip.hidden = true; return; }
+  strip.hidden = false;
+  strip.dataset.tone = v.tone;
+  worded(el('box-clock-words'), v.icon, v.words);
+  el('box-clock-bills-h').hidden = v.bills.length === 0;
+  el('box-clock-bills-h').textContent = v.billsHeading;
+  el('box-clock-bills').replaceChildren(...v.bills.map((b) => { const li = document.createElement('li'); li.dataset.sale = b.saleId; li.textContent = b.label; return li; }));
+}
+
 function paintChrome() {
+  paintBoxClock();
   el('who').firstChild.textContent = `${t('manager')} `;
   el('tab-home').textContent = t('today');
   el('tab-approvals').textContent = t('approvals');
@@ -1437,7 +1455,7 @@ paintChrome();
 renderLines();
 show('home');
 // The chrome (sre-chrome.js) loads after this script; once it is there, the Today page takes its icons.
-document.addEventListener('sre:chrome', () => { if (view === 'home') renderHome(); });
+document.addEventListener('sre:chrome', () => { paintBoxClock(); if (view === 'home') renderHome(); });
 
 // The device queue's own honesty (SP-2a · P-08): if this browser's storage refused, the manager is told so
 // before deciding anything — a decision that will not survive a reload is not "saved".

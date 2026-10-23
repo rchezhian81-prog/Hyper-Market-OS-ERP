@@ -82,6 +82,12 @@ export interface FoodSafetyCheckRecord {
   readonly failures: readonly string[];
   /** Set by the engine: recorded after its slot's grace ran out. */
   readonly late: boolean;
+  /**
+   * OB-288 lane 2 · P2 (M10-FR-02 "evidence captured offline; queued"): a check recorded at the store with the line down and
+   * relayed by the store computer — who carried it (never as the person who did it), from which surface, and what head
+   * office found about the person (`performer_unknown` / `performer_lacks_authority`), said on the record.
+   */
+  readonly offline?: { readonly relayedBy: string; readonly source: string; readonly storeId: string | null; readonly flags: readonly string[] };
 }
 
 const MINUTE_MS = 60_000;

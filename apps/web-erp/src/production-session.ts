@@ -59,7 +59,9 @@ export interface ProductionData {
 
 /** The outcome of a release — recorded (released or held), refused by the server (permission / expired /
  *  qc-failed at the server), or a lost link. */
-export type ReleaseResult = 'released' | 'held' | 'refused' | 'lost_link';
+export type ReleaseResult = 'released' | 'held' | 'refused' | 'lost_link'
+  /** OB-288 lane 2: saved on this screen through the store computer — head office applies it (or refuses it by name) later. */
+  | 'saved';
 
 /** The authenticated POST of a QC operator's release decision. Injected, so the model never opens a socket
  *  itself; the server records it in the caller's own name (`POST /v1/production/runs/:runId/release`), re-checks
@@ -95,7 +97,8 @@ export type CopyKey =
   | 'releaseBtn' | 'holdBtn' | 'releaseHint'
   | 'releaseRecorded' | 'releaseHeld' | 'releaseRefused' | 'releaseLostLink'
   | 'scrReady' | 'scrEmpty' | 'stateNotPermitted' | 'noRelease'
-  | 'nobodyNamed' | 'staleShell' | 'sampleData';
+  | 'nobodyNamed' | 'staleShell' | 'sampleData'
+  | 'releaseSaved' | 'boardAsOf' | 'boardNotKnown';
 
 export const PRODUCTION_COPY: BilingualCopy<CopyKey> = {
   en: {
@@ -115,6 +118,8 @@ export const PRODUCTION_COPY: BilingualCopy<CopyKey> = {
     noRelease: 'You can see the batches, but releasing one for sale needs quality-release permission.',
     nobodyNamed: 'This store computer has not been told who is using this screen.',
     staleShell: 'No connection to the store computer. This page is what it was last told, at', sampleData: 'Sample data — this is not your shop.',
+    releaseSaved: 'Decision saved on this screen — the store computer carries it to head office, which applies it (or refuses it with its reason, shown below).',
+    boardAsOf: 'Head office\'s board as the store computer last heard it, at', boardNotKnown: 'The store computer has not been told the production board yet.',
   },
   ta: {
     title: 'விற்பனைக்கு விடுவி', langName: 'English',
@@ -133,6 +138,8 @@ export const PRODUCTION_COPY: BilingualCopy<CopyKey> = {
     noRelease: 'தொகுதிகளைப் பார்க்கலாம், ஆனால் விற்பனைக்கு விடுவிக்க தரக் கட்டுப்பாட்டு அனுமதி தேவை.',
     nobodyNamed: 'இந்தத் திரையை யார் பயன்படுத்துகிறார்கள் என்று கடைக் கணினிக்குத் தெரியவில்லை.',
     staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:', sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.',
+    releaseSaved: 'முடிவு இந்தத் திரையில் சேமிக்கப்பட்டது — கடைக் கணினி அதைத் தலைமை அலுவலகத்திற்குக் கொண்டு செல்லும்; அது செயல்படுத்தும் (அல்லது காரணத்துடன் மறுக்கும், கீழே காட்டப்படும்).',
+    boardAsOf: 'கடைக் கணினி கடைசியாகக் கேட்ட தலைமை அலுவலகப் பலகை, நேரம்', boardNotKnown: 'உற்பத்திப் பலகை இன்னும் கடைக் கணினிக்குச் சொல்லப்படவில்லை.',
   },
 };
 
@@ -274,6 +281,7 @@ export function createProductionSession(config: ProductionConfig, ports: Product
     presentReleaseResult: (lang, result) => {
       const t = translator(PRODUCTION_COPY, lang);
       if (result === 'released') return presentStatus({ tone: 'ok', icon: '✓', label: t('releaseRecorded'), needsAttention: false });
+      if (result === 'saved') return presentStatus({ tone: 'ok', icon: '✓', label: t('releaseSaved'), needsAttention: false });
       if (result === 'held') return presentStatus({ tone: 'degraded', icon: '⚠', label: t('releaseHeld'), needsAttention: true });
       if (result === 'lost_link') return presentStatus({ tone: 'degraded', icon: '⚠', label: t('releaseLostLink'), needsAttention: true });
       return presentStatus({ tone: 'error', icon: '✕', label: t('releaseRefused'), needsAttention: true });

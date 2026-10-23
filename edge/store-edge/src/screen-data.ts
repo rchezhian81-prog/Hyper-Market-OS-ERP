@@ -58,6 +58,9 @@ import { readMachineReference } from '../../../packages/tender/src/machine-refer
 import type { StorePack, PackRoutingPolicy, PackSlot, PackGstReconciliationPolicy, PackCategoryPolicyPolicy, PackGstReturnsPolicy, PackWastePolicy, PackWriteOffCapturePolicy, PackCountsPolicy, PackFleetPolicy, PackProductPublishReviewPolicy, PackDataQualityPolicy, PackOperationsInboxPolicy, PackLossPreventionPolicy, PackSubstitutionExceptionPolicy, PackDayBookPolicy, PackDocumentTemplatePolicy, PackReturnGovernancePolicy, PackCashOfficePolicy, PackRiskAcceptancePolicy, PackDayReopenPolicy, PackStockHealthPolicy, PackStoredValuePolicy, PackIntegrationHealthPolicy, PackGoodsReceiptPolicy, PackSuppliersPolicy, PackIndentsPolicy, PackDataIoPolicy, PackWorkforceInboxPolicy, PackEssPolicy, PackRosteringPolicy, PackChecklistPolicy, PackProductionPolicy, PackFacilitiesPolicy } from './store-pack';
 import { DEFAULT_WRITE_OFF_THRESHOLD_MINOR } from '../../../packages/waste/src/waste';
 import { packFreshness, type SignedPack } from '../../../services/catalogue/src/pack';
+import { productionWork, foodSafetyWork, transferWork, type BoxCapturedRun } from './store-work';
+import type { HeldWorkFeeds } from './work-feeds-file';
+import type { ClockCheck, ClockFlaggedBill } from './clock-guard';
 
 /** The screens this box serves. Named so a route, a test and a payload cannot drift apart. */
 export const SCREENS = Object.freeze([
@@ -111,6 +114,17 @@ export interface ScreenInput {
   readonly oldErpBills?: readonly OldErpBillSale[];
   /** OB-263: the evening check this box keeps — the column mappings for the old ERP's two reports and the days loaded. */
   readonly eveningCheck?: { readonly mappings: unknown; readonly days: readonly unknown[] };
+  /**
+   * OB-288 lane 2 · P2: head office's last word on the store's production board and recipes, its food-safety checks and its
+   * transfers, as this box last took it (`work-feeds-file.ts`). Absent → the box was never told (the screens say so).
+   */
+  readonly workFeeds?: HeldWorkFeeds;
+  /** OB-288 lane 2 · P2: production runs this box's screen captured (the device-events queue) — known here before head office. */
+  readonly boxCapturedRuns?: readonly BoxCapturedRun[];
+  /** OB-288 lane 2 · §31.1: this box's clock against head office's, as last measured (`clock-guard.ts`). */
+  readonly clock?: ClockCheck;
+  /** OB-327: the bills this box took while its clock was 5+ minutes out — committed, listed for the manager to check. */
+  readonly clockFlaggedBills?: readonly ClockFlaggedBill[];
 }
 
 /**
@@ -683,6 +697,10 @@ export function managerPayload(input: ScreenInput): Record<string, unknown> {
   }
   // OB-172: the receiving checklist the Receive form offers, offline. Absent stays absent (the screen says it was not told).
   Object.assign(payload, receivingChecklistFor(input));
+  // OB-288 lane 2 · §31.1: this box's clock against head office's, in words (P-08). Absent when the box has no clock check.
+  if (input.clock !== undefined) payload['clock'] = input.clock;
+  // OB-327: bills still commit when the clock is 5+ minutes out (hard rule #1) — and are listed here to be checked.
+  if (input.clockFlaggedBills !== undefined) payload['clockFlaggedBills'] = input.clockFlaggedBills;
 
   return payload;
 }
@@ -963,6 +981,8 @@ export function warehousePayload(input: ScreenInput): Record<string, unknown> | 
     ...indentLinesFor(input),
     // OB-172: the receiving checklist "Delivery complete" asks for a chilled/frozen delivery, offline.
     ...receivingChecklistFor(input),
+    // OB-288 lane 2 · WF-07 offline: the transfers to send from this store and to count in at it, as head office last said.
+    ...transferWork(input),
   };
 }
 
@@ -2383,6 +2403,12 @@ export function productionPayload(input: ScreenInput): Record<string, unknown> |
 
   const payload: Record<string, unknown> = { permissions: policy.permissions };
   if (policy.userId !== undefined) payload['userId'] = policy.userId;
+  // OB-288 lane 2 · M11-FR-01/02/03 offline: the board and recipes as head office last said (with how old), and the runs this
+  // screen captured on this box, so a run can be recorded, released and labelled with the line down.
+  Object.assign(payload, productionWork(input));
+  const store = input.pack.policies.known ? (input.pack.policies.value.storeId ?? input.pack.policies.value.branchId) : undefined;
+  if (store !== undefined) payload['storeId'] = store;
+  if (input.clock !== undefined) payload['clock'] = input.clock;
 
   return payload;
 }
@@ -2397,6 +2423,10 @@ export function facilitiesPayload(input: ScreenInput): Record<string, unknown> |
 
   const payload: Record<string, unknown> = { permissions: policy.permissions };
   if (policy.userId !== undefined) payload['userId'] = policy.userId;
+  // OB-288 lane 2 · M10-FR-02 offline: the food-safety checks in force for this store and the slots head office last knew.
+  Object.assign(payload, foodSafetyWork(input));
+  const fsStore = input.pack.policies.known ? (input.pack.policies.value.storeId ?? input.pack.policies.value.branchId) : undefined;
+  if (fsStore !== undefined) payload['storeId'] = fsStore;
 
   return payload;
 }

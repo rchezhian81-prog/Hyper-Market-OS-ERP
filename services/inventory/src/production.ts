@@ -47,7 +47,7 @@ export interface RecipeRegistration {
   readonly changed: boolean;
 }
 import {
-  produceBatch, validateRecipe, InvalidRecipeError, InsufficientMaterialError,
+  produceBatch, validateRecipe, planProduction, InvalidRecipeError, InsufficientMaterialError,
   type Recipe, type RecipeInput, type ProductionException,
 } from '../../../packages/production/src/recipe';
 import { releaseForSale, buildPackLabel, renderLabel, IncompleteLabelError, type PackLabel } from '../../../packages/production/src/packing';
@@ -60,6 +60,7 @@ import type { StockMovement } from '../../../packages/stock/src/position';
 import { isCurrencyCode, money, type CurrencyCode, type Money } from '../../../packages/contracts/src/money';
 import { valueAtUnitCost, minorPerUnitOf } from '../../../packages/contracts/src/quantity';
 import { assertLocationInScope, locationInScope, type LocationBranches } from './location-scope';
+import type { AuditEntry } from '../../../packages/audit/src/index';
 
 /** A committed production run, recorded as the evidence a later report reads. */
 export interface StoredRun {
@@ -111,6 +112,15 @@ export interface StoredRun {
   readonly released?: boolean;
   readonly releasedBy?: string | null;
   readonly releasedAt?: string | null;
+  /** OB-288 lane 2 · P2: a run captured at the store with the line down and RELAYED by the store computer — who carried it. */
+  readonly relayed?: RunRelay;
+  /** What head office found about a relayed run's producer and stock — said on the record, never hidden. */
+  readonly syncFlags?: readonly RunSyncFlag[];
+  /** A relayed run's own figures, so a re-sent run is judged the same run (and a different one a conflict). */
+  readonly batches?: number;
+  readonly actualOutputMinor?: number;
+  /** A relayed run made with more of an ingredient than head office's books held — by ingredient, never hidden. */
+  readonly shortAtHeadOffice?: readonly { readonly productId: string; readonly shortMinor: number; readonly uom: string }[];
 }
 
 /** D-25: one ingredient batch consumed by a run. */
@@ -229,6 +239,8 @@ export interface StoredRelease {
 export interface ProductionDeps {
   /** PA-01-r1: which branch a stock location belongs to — a run moves stock there, so it is the caller's branch business. */
   readonly locationBranches?: LocationBranches;
+  /** OB-288 lane 2: every registered recipe (latest version each) — the read the production screen and the store computer use. */
+  readonly recipes?: (tenantId: string) => Promise<readonly Recipe[]> | readonly Recipe[];
   /** The registered recipe, or nothing when the box has never been told it. */
   readonly recipe: (tenantId: string, recipeId: string) => Promise<Recipe | undefined> | Recipe | undefined;
   /** Record a recipe VERSION (FUL-08): a recipe identical to the current one is no new version; any change is the next
@@ -371,112 +383,11 @@ export function productionRoutes(deps: ProductionDeps): readonly Route[] {
             nextSafeAction: 'Use a new run id. Nothing was changed.',
           });
         }
-        const recipe = await deps.recipe(ctx.tenantId, b.recipeId);
-        if (recipe === undefined) {
-          throw apiError(404, {
-            code: 'recipe_not_found',
-            whatHappened: `No recipe "${b.recipeId}" is registered — a run must reference one.`,
-            wasItSaved: 'not_saved',
-            nextSafeAction: 'Register the recipe first, then commit the run.',
-          });
-        }
-
-        // The store's PLAN must include this department (M36-FR-01), and the store must actually operate it
-        // (M11-FR-04 / §2.2) — you cannot produce for a meat counter you did not buy, nor for one you have
-        // not switched on; the compliance obligations that come with it would apply to a department that
-        // does not exist. Plan first, so a shop without the module hears "your plan", not "not operated".
-        await requirePlanForDepartment(deps, ctx.tenantId, recipe.departmentId);
-        const departmentRefusal = refuseDepartment(recipe.departmentId, await deps.enabledDepartments(ctx.tenantId));
-        if (departmentRefusal !== null) throw departmentRefusal;
-
-        const currency = (b.currency as CurrencyCode) ?? 'INR';
-        const at = deps.now();
-        // The location's stock guard first, then the stock it protects (FUL-01 · SF-04's pattern).
-        const stockVersion = deps.stockVersion === undefined ? undefined : await deps.stockVersion(ctx.tenantId, b.locationId);
-        // Available = the authoritative M08 on-hand for each ingredient (which now carries every FUL-01 run's consumption),
-        // MINUS what runs recorded before FUL-01 consumed privately, so no flour is counted twice.
-        const prior = await deps.priorConsumption(ctx.tenantId, b.locationId);
-        const available: Record<string, number> = {};
-        for (const input of recipe.inputs) {
-          const base = await deps.onHand(ctx.tenantId, input.productId, b.locationId);
-          available[input.productId] = base - (prior[input.productId] ?? 0);
-        }
-        // Ingredient costs come from the registered cost register (M11-FR-02), never the request —
-        // a run cannot value its own margin. An ingredient with no registered cost is NOT costed at
-        // zero (that reports a 100% margin, a lie that reads as good news); it is listed as uncosted
-        // and the run's cost is marked not-authoritative, while the physical run still proceeds (a
-        // missing cost must not stop the cafe making coffee).
-        const unitCosts: Record<string, Money> = {};
-        for (const input of recipe.inputs) {
-          const cost = await deps.ingredientCost(ctx.tenantId, input.productId);
-          if (cost !== undefined) unitCosts[input.productId] = cost;
-        }
-
-        let result;
-        try {
-          result = produceBatch({
-            run: {
-              runId, recipe, batches: b.batches, locationId: b.locationId, producedBy: ctx.userId,
-              at, outputBatchId: b.outputBatchId, actualOutputMinor: b.actualOutputMinor,
-            },
-            available, unitCosts, currency,
-          });
-        } catch (e) {
-          if (e instanceof InsufficientMaterialError) {
-            throw apiError(422, { code: 'production_short', whatHappened: e.message, wasItSaved: 'not_saved', nextSafeAction: 'Receive or transfer in the short ingredient, then re-send. Nothing was consumed.' });
-          }
-          if (e instanceof InvalidRecipeError) {
-            throw apiError(400, { code: 'invalid_recipe', whatHappened: e.message, wasItSaved: 'not_saved', nextSafeAction: 'Correct the recipe and re-send. Nothing was recorded.' });
-          }
-          throw e;
-        }
-
-        const consumed = consumedInputs(result.movements);
-        // D-25: which ingredient batches the run used — named, else earliest expiry first; uncovered → not known.
-        const held: Record<string, readonly IngredientBatchOnHand[]> = {};
-        if (deps.ingredientBatchesAt !== undefined) for (const c of consumed) held[c.productId] = await deps.ingredientBatchesAt(ctx.tenantId, b.locationId, c.productId);
-        const assigned = assignInputBatches(consumed, namedBatches, (p) => (deps.ingredientBatchesAt === undefined ? undefined : held[p] ?? []));
-        if (!assigned.ok) throw apiError(422, { code: assigned.code, whatHappened: assigned.detail, wasItSaved: 'not_saved', nextSafeAction: 'Name the batches actually used, or leave them out. Nothing was consumed.' });
-        // OB-68: the run's own cost — the ingredients it consumed at the OB-39 average at this moment (the registered cost
-        // only where head office holds no average); an ingredient with neither is named and the output is not valued.
-        const averages: Record<string, number | undefined> = {};
-        for (const c of consumed) averages[c.productId] = deps.averageCostAt === undefined ? undefined : await deps.averageCostAt(ctx.tenantId, b.locationId, c.productId);
-        const runCost = runCostOf(consumed, (p) => averages[p], (p) => unitCosts[p], result.outputQuantityMinor, recipe.outputUom);
-        const run: StoredRun = {
-          runId, recipeId: recipe.recipeId, departmentId: recipe.departmentId, locationId: b.locationId,
-          outputProductId: result.outputProductId, outputBatchId: result.outputBatchId,
-          outputQuantityMinor: result.outputQuantityMinor, outputUom: recipe.outputUom, expiresAt: result.expiresAt,
-          inputCostMinor: runCost.inputCostMinor ?? result.inputCost.minor,
-          outputUnitCostMinor: runCost.inputCostMinor !== null && result.outputQuantityMinor > 0 ? Math.round(runCost.inputCostMinor / result.outputQuantityMinor) : result.outputUnitCost.minor,
-          currency, costKnown: runCost.notValuedBecause.length === 0, uncostedProducts: [...runCost.notValuedBecause], runCost,
-          yieldBp: result.yieldBp, yieldVerdict: result.yieldVerdict, exceptions: result.exceptions,
-          consumed, recipeDigest: recipeDigest(recipe), producedBy: ctx.userId, at,
-          inputBatches: assigned.batches, planRef: isStr(b.planRef) ? b.planRef : null,
-        };
-        // FUL-01: the ingredients leave ordinary stock in the SAME write as the run record.
-        // D-25: one movement per ingredient batch, so the batch's own on-hand falls with it (one truth, SF-03).
-        const movements: Movement[] = consumed.flatMap((c, i): Movement[] => assigned.batches.filter((x) => x.productId === c.productId).map((x, j): Movement => ({
-          movementId: j === 0 ? `prod-run:${runId}:in-${i + 1}` : `prod-run:${runId}:in-${i + 1}-${j + 1}`, productId: c.productId, locationId: b.locationId as string, kind: 'consumed_in_production',
-          quantityMinor: x.quantityMinor, uom: c.uom, occurredAt: at, enteredBy: ctx.userId, ...(x.batchId === null ? {} : { batchId: x.batchId }),
-          reason: `production run ${runId} (${recipe.recipeId}) → ${result.outputQuantityMinor} ${recipe.outputUom} of ${result.outputProductId} batch ${result.outputBatchId}`,
-        })));
-        try {
-          await deps.recordRun(ctx.tenantId, { ...run, ledgerMovementIds: movements.map((m) => m.movementId) }, movements, stockVersion);
-        } catch (e) {
-          if (e instanceof ConcurrencyConflictError) throw concurrentChange(`the stock at ${b.locationId}`);
-          throw e;
-        }
-        return {
-          status: 201,
-          body: {
-            runId, outputProductId: run.outputProductId, outputBatchId: run.outputBatchId,
-            outputQuantityMinor: run.outputQuantityMinor, expiresAt: run.expiresAt,
-            inputCostMinor: run.inputCostMinor, outputUnitCostMinor: run.outputUnitCostMinor,
-            costKnown: run.costKnown, uncostedProducts: run.uncostedProducts, runCost,
-            yieldBp: run.yieldBp, yieldVerdict: run.yieldVerdict, exceptions: run.exceptions,
-            inputBatches: run.inputBatches, planRef: run.planRef,
-          },
-        };
+        const { body } = await commitRunCore(deps, ctx.tenantId, {
+          runId, recipeId: b.recipeId, batches: b.batches, actualOutputMinor: b.actualOutputMinor, outputBatchId: b.outputBatchId,
+          locationId: b.locationId, currency: (b.currency as CurrencyCode) ?? 'INR', namedBatches, planRef: isStr(b.planRef) ? b.planRef : null,
+        }, ctx.userId, deps.now(), { onShortfall: 'refuse' });
+        return { status: 201, body };
       },
     },
     {
@@ -505,30 +416,7 @@ export function productionRoutes(deps: ProductionDeps): readonly Route[] {
         if (run.released === true) {
           throw apiError(409, { code: 'batch_already_released', whatHappened: `Run ${runId}'s batch has already been released.`, wasItSaved: 'not_saved', nextSafeAction: 'Nothing was changed — the batch is already sellable.' });
         }
-        const at = deps.now();
-        const result = releaseForSale({
-          release: { batchId: run.outputBatchId, releasedBy: ctx.userId, qcPassed: b.qcPassed, at, ...(isStr(b.notes) ? { notes: b.notes } : {}) },
-          productId: run.outputProductId, locationId: run.locationId, quantityMinor: run.outputQuantityMinor, uom: run.outputUom, expiresAt: run.expiresAt,
-        });
-        if (!result.released) {
-          // qc_failed / already_expired / no_releaser / nothing_to_release — all keep the batch in
-          // quarantine. Reported with the engine's own reason so the audit trail can act on it.
-          throw apiError(422, { code: result.outcome, whatHappened: result.detail, wasItSaved: 'not_saved', nextSafeAction: 'The batch stays in quarantine. Fix the cause and, where the batch is still good, release it again.' });
-        }
-        // FUL-01: the released batch becomes ORDINARY on-hand stock — batch and expiry carried — at the run's own output unit
-        // cost when every ingredient was costed; otherwise it enters unvalued (said on the valuation read, never priced at 0).
-        const produced: Movement = {
-          movementId: `prod-run:${runId}:out`, productId: run.outputProductId, locationId: run.locationId, kind: 'produced',
-          quantityMinor: run.outputQuantityMinor, uom: run.outputUom, occurredAt: at, enteredBy: ctx.userId,
-          batchId: run.outputBatchId, expiry: run.expiresAt.slice(0, 10),
-          reason: `production run ${runId} batch ${run.outputBatchId} released by ${ctx.userId}`,
-          // OB-68: a run with its own cost carries it (the store's average cost and the month-end valuation read it); a run
-          // whose ingredients had no cost carries none — "not valued" by name, never zero. (Pre-OB-68 runs: as recorded.)
-          ...(run.runCost !== undefined ? (producedCostOf(run.runCost, run.outputQuantityMinor, run.outputUom) ?? {})
-            : run.costKnown ? { unitCostMinor: run.outputUnitCostMinor } : {}),
-        };
-        await deps.recordRelease(ctx.tenantId, { runId, batchId: run.outputBatchId, releasedBy: ctx.userId, quantityMinor: run.outputQuantityMinor, releasedAt: at, ledgerMovementIds: [produced.movementId] }, [produced]);
-        return { status: 200, body: { runId, batchId: run.outputBatchId, released: true, releasedBy: ctx.userId, releasedAt: at, movements: result.movements } };
+        return { status: 200, body: await releaseRunCore(deps, ctx.tenantId, run, ctx.userId, b.qcPassed, isStr(b.notes) ? b.notes : undefined, deps.now()) };
       },
     },
     {
@@ -698,3 +586,364 @@ function consumedInputs(movements: readonly StockMovement[]): readonly RecipeInp
     .map((m) => ({ productId: m.productId, quantityMinor: m.quantityMinor, uom: m.uom }));
 }
 
+
+// ── OB-288 lane 2 · P2: one commit for a run, whoever carries it ─────────────────────────────────────────────────────
+
+/** What a person captured about a run (the direct route's body, or the store computer's relayed record). */
+export interface RunCapture {
+  readonly runId: string;
+  readonly recipeId: string;
+  readonly batches: number;
+  readonly actualOutputMinor: number;
+  readonly outputBatchId: string;
+  readonly locationId: string;
+  readonly currency: CurrencyCode;
+  readonly namedBatches: readonly { readonly productId: string; readonly batchId: string; readonly quantityMinor: number }[];
+  readonly planRef: string | null;
+}
+
+/** What head office found about a RELAYED run — flagged on the record, never a silent trust (hard rule #10). */
+export const RUN_SYNC_FLAGS = Object.freeze([
+  'producer_unknown', 'producer_lacks_authority',
+  // The kitchen used more of an ingredient than head office's books say it had: the food exists, so the run is recorded and
+  // its ingredients leave the books (they may go below zero, where the stock exceptions read shows them) — and it is said.
+  'ingredient_short_at_head_office',
+] as const);
+export type RunSyncFlag = (typeof RUN_SYNC_FLAGS)[number];
+
+/** Who relayed a run, and from which surface — recorded BESIDE the producer, never as them. */
+export interface RunRelay { readonly relayedBy: string; readonly source: string; readonly storeId: string | null }
+
+export interface RunCommitOptions {
+  /** The direct route refuses a short run before anything is consumed; a relayed run happened, so it is recorded and flagged. */
+  readonly onShortfall: 'refuse' | 'record_and_flag';
+  readonly syncFlags?: readonly RunSyncFlag[];
+  readonly relayed?: RunRelay;
+}
+
+/**
+ * Commit one production run (M11-FR-01/02): the recipe and its department, head office's own stock and costs, the tested
+ * `produceBatch` engine, the input batches, the run's own cost, and the run record with its ingredients'
+ * `consumed_in_production` movements in ONE write under the location's stock guard. Shared by the direct route (the signed-in
+ * producer, head office's clock) and the synced route (the producer the store computer verified, the time it was made).
+ */
+export async function commitRunCore(
+  deps: ProductionDeps, tenantId: string, c: RunCapture, producedBy: string, at: string, opts: RunCommitOptions,
+): Promise<{ readonly run: StoredRun; readonly body: Record<string, unknown> }> {
+  const { runId } = c;
+  const recipe = await deps.recipe(tenantId, c.recipeId);
+  if (recipe === undefined) {
+    throw apiError(404, {
+      code: 'recipe_not_found',
+      whatHappened: `No recipe "${c.recipeId}" is registered — a run must reference one.`,
+      wasItSaved: 'not_saved',
+      nextSafeAction: 'Register the recipe first, then commit the run.',
+    });
+  }
+
+  // The store's PLAN must include this department (M36-FR-01), and the store must actually operate it
+  // (M11-FR-04 / §2.2) — you cannot produce for a meat counter you did not buy, nor for one you have
+  // not switched on; the compliance obligations that come with it would apply to a department that
+  // does not exist. Plan first, so a shop without the module hears "your plan", not "not operated".
+  await requirePlanForDepartment(deps, tenantId, recipe.departmentId);
+  const departmentRefusal = refuseDepartment(recipe.departmentId, await deps.enabledDepartments(tenantId));
+  if (departmentRefusal !== null) throw departmentRefusal;
+
+  const currency = c.currency;
+  // The location's stock guard first, then the stock it protects (FUL-01 · SF-04's pattern).
+  const stockVersion = deps.stockVersion === undefined ? undefined : await deps.stockVersion(tenantId, c.locationId);
+  // Available = the authoritative M08 on-hand for each ingredient (which now carries every FUL-01 run's consumption),
+  // MINUS what runs recorded before FUL-01 consumed privately, so no flour is counted twice.
+  const prior = await deps.priorConsumption(tenantId, c.locationId);
+  const available: Record<string, number> = {};
+  for (const input of recipe.inputs) {
+    const base = await deps.onHand(tenantId, input.productId, c.locationId);
+    available[input.productId] = base - (prior[input.productId] ?? 0);
+  }
+  // Ingredient costs come from the registered cost register (M11-FR-02), never the request —
+  // a run cannot value its own margin. An ingredient with no registered cost is NOT costed at
+  // zero (that reports a 100% margin, a lie that reads as good news); it is listed as uncosted
+  // and the run's cost is marked not-authoritative, while the physical run still proceeds (a
+  // missing cost must not stop the cafe making coffee).
+  const unitCosts: Record<string, Money> = {};
+  for (const input of recipe.inputs) {
+    const cost = await deps.ingredientCost(tenantId, input.productId);
+    if (cost !== undefined) unitCosts[input.productId] = cost;
+  }
+
+  const flags: RunSyncFlag[] = [...(opts.syncFlags ?? [])];
+  const shortAtHeadOffice: { productId: string; shortMinor: number; uom: string }[] = [];
+  const produce = (stock: Readonly<Record<string, number>>) => produceBatch({
+    run: { runId, recipe, batches: c.batches, locationId: c.locationId, producedBy, at, outputBatchId: c.outputBatchId, actualOutputMinor: c.actualOutputMinor },
+    available: stock, unitCosts, currency,
+  });
+  let result;
+  try {
+    result = produce(available);
+  } catch (e) {
+    if (e instanceof InsufficientMaterialError && opts.onShortfall === 'record_and_flag') {
+      // The run happened at the store: what head office's books lack is said, by ingredient, and the run is recorded.
+      const enough: Record<string, number> = { ...available };
+      for (const need of planProduction(recipe, c.batches).requiredInputs) {
+        const have = available[need.productId] ?? 0;
+        if (have < need.quantityMinor) {
+          shortAtHeadOffice.push({ productId: need.productId, shortMinor: need.quantityMinor - Math.max(0, have), uom: need.uom });
+          enough[need.productId] = need.quantityMinor;
+        }
+      }
+      flags.push('ingredient_short_at_head_office');
+      result = produce(enough);
+    } else if (e instanceof InsufficientMaterialError) {
+      throw apiError(422, { code: 'production_short', whatHappened: e.message, wasItSaved: 'not_saved', nextSafeAction: 'Receive or transfer in the short ingredient, then re-send. Nothing was consumed.' });
+    } else if (e instanceof InvalidRecipeError) {
+      throw apiError(400, { code: 'invalid_recipe', whatHappened: e.message, wasItSaved: 'not_saved', nextSafeAction: 'Correct the recipe and re-send. Nothing was recorded.' });
+    } else {
+      throw e;
+    }
+  }
+
+  const consumed = consumedInputs(result.movements);
+  // D-25: which ingredient batches the run used — named, else earliest expiry first; uncovered → not known.
+  const held: Record<string, readonly IngredientBatchOnHand[]> = {};
+  if (deps.ingredientBatchesAt !== undefined) for (const x of consumed) held[x.productId] = await deps.ingredientBatchesAt(tenantId, c.locationId, x.productId);
+  const assigned = assignInputBatches(consumed, c.namedBatches, (p) => (deps.ingredientBatchesAt === undefined ? undefined : held[p] ?? []));
+  if (!assigned.ok) throw apiError(422, { code: assigned.code, whatHappened: assigned.detail, wasItSaved: 'not_saved', nextSafeAction: 'Name the batches actually used, or leave them out. Nothing was consumed.' });
+  // OB-68: the run's own cost — the ingredients it consumed at the OB-39 average at this moment (the registered cost
+  // only where head office holds no average); an ingredient with neither is named and the output is not valued.
+  const averages: Record<string, number | undefined> = {};
+  for (const x of consumed) averages[x.productId] = deps.averageCostAt === undefined ? undefined : await deps.averageCostAt(tenantId, c.locationId, x.productId);
+  const runCost = runCostOf(consumed, (p) => averages[p], (p) => unitCosts[p], result.outputQuantityMinor, recipe.outputUom);
+  const run: StoredRun = {
+    runId, recipeId: recipe.recipeId, departmentId: recipe.departmentId, locationId: c.locationId,
+    outputProductId: result.outputProductId, outputBatchId: result.outputBatchId,
+    outputQuantityMinor: result.outputQuantityMinor, outputUom: recipe.outputUom, expiresAt: result.expiresAt,
+    inputCostMinor: runCost.inputCostMinor ?? result.inputCost.minor,
+    outputUnitCostMinor: runCost.inputCostMinor !== null && result.outputQuantityMinor > 0 ? Math.round(runCost.inputCostMinor / result.outputQuantityMinor) : result.outputUnitCost.minor,
+    currency, costKnown: runCost.notValuedBecause.length === 0, uncostedProducts: [...runCost.notValuedBecause], runCost,
+    yieldBp: result.yieldBp, yieldVerdict: result.yieldVerdict, exceptions: result.exceptions,
+    consumed, recipeDigest: recipeDigest(recipe), producedBy, at,
+    inputBatches: assigned.batches, planRef: c.planRef,
+    ...(opts.relayed === undefined ? {} : { relayed: opts.relayed, syncFlags: flags, batches: c.batches, actualOutputMinor: c.actualOutputMinor }),
+    ...(shortAtHeadOffice.length === 0 ? {} : { shortAtHeadOffice }),
+  };
+  // FUL-01: the ingredients leave ordinary stock in the SAME write as the run record.
+  // D-25: one movement per ingredient batch, so the batch's own on-hand falls with it (one truth, SF-03).
+  const movements: Movement[] = consumed.flatMap((x, i): Movement[] => assigned.batches.filter((y) => y.productId === x.productId).map((y, j): Movement => ({
+    movementId: j === 0 ? `prod-run:${runId}:in-${i + 1}` : `prod-run:${runId}:in-${i + 1}-${j + 1}`, productId: x.productId, locationId: c.locationId, kind: 'consumed_in_production',
+    quantityMinor: y.quantityMinor, uom: x.uom, occurredAt: at, enteredBy: producedBy, ...(y.batchId === null ? {} : { batchId: y.batchId }),
+    reason: `production run ${runId} (${recipe.recipeId}) → ${result.outputQuantityMinor} ${recipe.outputUom} of ${result.outputProductId} batch ${result.outputBatchId}`,
+  })));
+  try {
+    await deps.recordRun(tenantId, { ...run, ledgerMovementIds: movements.map((m) => m.movementId) }, movements, stockVersion);
+  } catch (e) {
+    if (e instanceof ConcurrencyConflictError) throw concurrentChange(`the stock at ${c.locationId}`);
+    throw e;
+  }
+  return {
+    run,
+    body: {
+      runId, outputProductId: run.outputProductId, outputBatchId: run.outputBatchId,
+      outputQuantityMinor: run.outputQuantityMinor, expiresAt: run.expiresAt,
+      inputCostMinor: run.inputCostMinor, outputUnitCostMinor: run.outputUnitCostMinor,
+      costKnown: run.costKnown, uncostedProducts: run.uncostedProducts, runCost,
+      yieldBp: run.yieldBp, yieldVerdict: run.yieldVerdict, exceptions: run.exceptions,
+      inputBatches: run.inputBatches, planRef: run.planRef,
+      ...(opts.relayed === undefined ? {} : { flags, relayed: opts.relayed }),
+      ...(shortAtHeadOffice.length === 0 ? {} : { shortAtHeadOffice }),
+    },
+  };
+}
+
+/**
+ * The quality release itself (M11-FR-03): the engine refuses a failed check, an expired batch or an unnamed releaser; a
+ * release appends the batch's `produced` movement in the same write. Shared by the direct and the synced route.
+ */
+export async function releaseRunCore(deps: ProductionDeps, tenantId: string, run: StoredRun, releasedBy: string, qcPassed: boolean, notes: string | undefined, at: string): Promise<Record<string, unknown>> {
+  const runId = run.runId;
+  const result = releaseForSale({
+    release: { batchId: run.outputBatchId, releasedBy, qcPassed, at, ...(notes === undefined ? {} : { notes }) },
+    productId: run.outputProductId, locationId: run.locationId, quantityMinor: run.outputQuantityMinor, uom: run.outputUom, expiresAt: run.expiresAt,
+  });
+  if (!result.released) {
+    // qc_failed / already_expired / no_releaser / nothing_to_release — all keep the batch in
+    // quarantine. Reported with the engine's own reason so the audit trail can act on it.
+    throw apiError(422, { code: result.outcome, whatHappened: result.detail, wasItSaved: 'not_saved', nextSafeAction: 'The batch stays in quarantine. Fix the cause and, where the batch is still good, release it again.' });
+  }
+  // FUL-01: the released batch becomes ORDINARY on-hand stock — batch and expiry carried — at the run's own output unit
+  // cost when every ingredient was costed; otherwise it enters unvalued (said on the valuation read, never priced at 0).
+  const produced: Movement = {
+    movementId: `prod-run:${runId}:out`, productId: run.outputProductId, locationId: run.locationId, kind: 'produced',
+    quantityMinor: run.outputQuantityMinor, uom: run.outputUom, occurredAt: at, enteredBy: releasedBy,
+    batchId: run.outputBatchId, expiry: run.expiresAt.slice(0, 10),
+    reason: `production run ${runId} batch ${run.outputBatchId} released by ${releasedBy}`,
+    // OB-68: a run with its own cost carries it (the store's average cost and the month-end valuation read it); a run
+    // whose ingredients had no cost carries none — "not valued" by name, never zero. (Pre-OB-68 runs: as recorded.)
+    ...(run.runCost !== undefined ? (producedCostOf(run.runCost, run.outputQuantityMinor, run.outputUom) ?? {})
+      : run.costKnown ? { unitCostMinor: run.outputUnitCostMinor } : {}),
+  };
+  await deps.recordRelease(tenantId, { runId, batchId: run.outputBatchId, releasedBy, quantityMinor: run.outputQuantityMinor, releasedAt: at, ledgerMovementIds: [produced.movementId] }, [produced]);
+  return { runId, batchId: run.outputBatchId, released: true, releasedBy, releasedAt: at, movements: result.movements };
+}
+
+// ── OB-288 lane 2 · P2: production captured at the counter with the line down, relayed by the store computer ─────────
+//
+// M11-FR-01 "Offline (§31): production capture queue-capable; reconciled on sync" and M11-FR-03 quality release. The
+// production screen the store computer serves keeps a run (or a release decision) on its DURABLE device queue before it
+// says "saved"; the box holds it on its fsync'd log and relays it here under the store's credential. Head office trusts
+// the FACT (who made it, when, how much came out — the run id is the device's own, so a re-sent item is ONE run, §31.1)
+// and re-runs every JUDGEMENT on its own records through `commitRunCore` / `releaseRunCore`: the recipe, the department,
+// the stock, the costs, the expiry. The PRODUCER is re-verified from their own grants and a breach is FLAGGED on the run,
+// never silently trusted; a shortfall on head office's books is recorded and FLAGGED (the food exists). A RELEASE is a
+// governance decision, so a releaser without `production.release` is REFUSED by name (the batch stays in quarantine and
+// the box shows the refusal), as is a release that conflicts with the one head office already holds. A "hold — check
+// failed" decision is recorded in the trail and changes nothing (the batch stays in quarantine).
+
+export interface SyncedProductionDeps extends ProductionDeps {
+  readonly permissionsOfUser?: (tenantId: string, userId: string) => Promise<readonly string[] | undefined> | readonly string[] | undefined;
+  readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
+}
+
+const isIsoTime = (v: unknown): v is string => isStr(v) && !Number.isNaN(Date.parse(v));
+const asObj = (v: unknown): Record<string, unknown> => (v !== null && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : {});
+
+export function syncedProductionRoutes(deps: SyncedProductionDeps): readonly Route[] {
+  const relayOf = (ctx: { readonly userId: string }, b: Record<string, unknown>): RunRelay => ({
+    relayedBy: ctx.userId, source: isStr(b['source']) ? b['source'] : 'unknown', storeId: isStr(b['storeId']) ? b['storeId'] : null,
+  });
+  return [
+    {
+      // Body: { runId (= path), storeId, recipeId, batches, actualOutputMinor, outputBatchId, locationId, producedBy, at,
+      // inputBatches?, planRef?, currency?, source? }. Idempotent per runId: the same run again is 200, one run.
+      api: 'API-04', method: 'POST', path: '/v1/production/runs/:runId/synced',
+      permission: 'production.sync', idempotent: true,
+      handler: async (ctx) => {
+        const runId = (ctx.params['runId'] ?? '').trim();
+        const b = asObj(ctx.body);
+        const named = b['inputBatches'] === undefined ? [] : Array.isArray(b['inputBatches']) && (b['inputBatches'] as unknown[]).every((x) => isStr(asObj(x)['productId']) && isStr(asObj(x)['batchId']) && isPosInt(asObj(x)['quantityMinor']))
+          ? (b['inputBatches'] as { productId: string; batchId: string; quantityMinor: number }[]) : null;
+        if (runId === '' || b['runId'] !== runId || !isStr(b['recipeId']) || !isPosInt(b['batches']) || !isNonNegInt(b['actualOutputMinor'])
+          || !isStr(b['outputBatchId']) || !isStr(b['locationId']) || !isStr(b['producedBy']) || !isIsoTime(b['at']) || named === null
+          || (b['currency'] !== undefined && !isCurrencyCode(b['currency'] as string)) || (b['planRef'] !== undefined && b['planRef'] !== null && !isStr(b['planRef']))) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_relayed_run',
+            whatHappened: 'This could not be read as a production run from the store — it needs the runId matching the path, recipeId, whole batches and actualOutputMinor, outputBatchId, locationId, who made it (producedBy) and when (at).',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Do not discard it at the store. Keep it in the queue and raise it.',
+          });
+        }
+        const locationId = b['locationId'] as string;
+        await assertLocationInScope(ctx, locationId, deps.locationBranches); // only the store's own kitchen
+        const producedBy = (b['producedBy'] as string).trim();
+        const capture: RunCapture = {
+          runId, recipeId: b['recipeId'] as string, batches: b['batches'] as number, actualOutputMinor: b['actualOutputMinor'] as number,
+          outputBatchId: b['outputBatchId'] as string, locationId, currency: (b['currency'] as CurrencyCode | undefined) ?? 'INR',
+          namedBatches: named, planRef: isStr(b['planRef']) ? b['planRef'] : null,
+        };
+        const prior = await deps.run(ctx.tenantId, runId);
+        if (prior !== undefined) {
+          // The same run again — a re-sent queue item — is the same run; a DIFFERENT run under the same id is a conflict.
+          const same = prior.recipeId === capture.recipeId && prior.outputBatchId === capture.outputBatchId && prior.locationId === capture.locationId
+            && prior.producedBy === producedBy && (prior.batches === undefined || prior.batches === capture.batches)
+            && (prior.actualOutputMinor === undefined || prior.actualOutputMinor === capture.actualOutputMinor);
+          if (same) return { status: 200, body: { runId, recorded: true, alreadyRecorded: true, flags: prior.syncFlags ?? [], outputBatchId: prior.outputBatchId, expiresAt: prior.expiresAt } };
+          throw apiError(422, {
+            code: 'run_conflicts_with_record',
+            whatHappened: `Head office already holds run ${runId} (${prior.recipeId}, batch ${prior.outputBatchId}, by ${prior.producedBy}); this store's run under the same id says something different. The two cannot both be right.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Kept at the store for a person to compare. Nothing was consumed twice.',
+          });
+        }
+        // The PRODUCER is re-verified from THEIR grants (§28) — flagged, never a silent trust of the relay's word.
+        const held = await deps.permissionsOfUser?.(ctx.tenantId, producedBy);
+        const flags: RunSyncFlag[] = held === undefined ? ['producer_unknown'] : held.includes('production.plan.commit') ? [] : ['producer_lacks_authority'];
+        const relayed = relayOf(ctx, b);
+        const at = new Date(Date.parse(b['at'] as string)).toISOString();
+        const { run, body } = await commitRunCore(deps, ctx.tenantId, capture, producedBy, at, { onShortfall: 'record_and_flag', syncFlags: flags, relayed });
+        await deps.recordAudit?.(ctx.tenantId, {
+          actorId: producedBy, action: 'production.run.record', objectType: 'production_run', objectId: runId, at,
+          origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null, capturedOffline: true },
+          before: null,
+          after: { recipeId: run.recipeId, outputBatchId: run.outputBatchId, outputQuantityMinor: String(run.outputQuantityMinor), expiresAt: run.expiresAt, relayedBy: ctx.userId, source: relayed.source, flags: (run.syncFlags ?? []).join(',') },
+          correlationId: runId,
+        });
+        return { status: 202, body: { ...body, recorded: true, alreadyRecorded: false } };
+      },
+    },
+    {
+      // Body: { runId (= path), storeId, qcPassed, releasedBy, at, notes?, source? }.
+      api: 'API-04', method: 'POST', path: '/v1/production/runs/:runId/release/synced',
+      permission: 'production.sync', idempotent: true,
+      handler: async (ctx) => {
+        const runId = (ctx.params['runId'] ?? '').trim();
+        const b = asObj(ctx.body);
+        if (runId === '' || b['runId'] !== runId || typeof b['qcPassed'] !== 'boolean' || !isStr(b['releasedBy']) || !isIsoTime(b['at'])
+          || (b['notes'] !== undefined && typeof b['notes'] !== 'string')) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_relayed_release',
+            whatHappened: 'This could not be read as a release decision from the store — it needs the runId matching the path, qcPassed (true or false), who decided (releasedBy) and when (at).',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Do not discard it at the store. Keep it in the queue and raise it.',
+          });
+        }
+        const releasedBy = (b['releasedBy'] as string).trim();
+        const qcPassed = b['qcPassed'] as boolean;
+        const at = new Date(Date.parse(b['at'] as string)).toISOString();
+        const run = await deps.run(ctx.tenantId, runId);
+        if (run === undefined) {
+          // The run captured on the same screen travels first on the same queue; until it is here, keep the decision and try again.
+          throw apiError(425, { code: 'run_not_known_yet', whatHappened: `Head office does not hold run ${runId} yet, so a release of it cannot be booked.`, wasItSaved: 'not_saved', nextSafeAction: 'Nothing to do: the store computer keeps the decision and sends it again once the run has arrived.' });
+        }
+        await assertLocationInScope(ctx, run.locationId, deps.locationBranches);
+        if (run.released === true) {
+          if (qcPassed && run.releasedBy === releasedBy) return { status: 200, body: { runId, batchId: run.outputBatchId, released: true, releasedBy, alreadyReleased: true } };
+          throw apiError(422, {
+            code: 'batch_released_by_another',
+            whatHappened: `Run ${runId}'s batch was already released for sale by ${run.releasedBy ?? 'someone'}${run.releasedAt === undefined || run.releasedAt === null ? '' : ` at ${run.releasedAt}`}; this store says ${releasedBy} ${qcPassed ? 'released it' : 'held it — check failed'}.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Kept at the store for a person to look at: if the check failed, take the batch off sale and record it. Nothing was changed.',
+          });
+        }
+        // A release is a governance decision (§28): a person without the release right is refused — never booked.
+        const held = await deps.permissionsOfUser?.(ctx.tenantId, releasedBy);
+        if (held === undefined || !held.includes('production.release')) {
+          throw apiError(422, {
+            code: held === undefined ? 'releaser_unknown_at_head_office' : 'releaser_lacks_authority',
+            whatHappened: `${releasedBy} ${held === undefined ? 'is not anyone head office knows' : 'does not hold the quality-release right (production.release)'}, so the batch is not released in their name.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'The batch stays in quarantine. Someone who may release for sale must look at it.',
+          });
+        }
+        const relayed = relayOf(ctx, b);
+        const notes = typeof b['notes'] === 'string' && b['notes'].trim() !== '' ? b['notes'] : undefined;
+        if (!qcPassed) {
+          // A failed check keeps the batch in quarantine — nothing moves; the decision is kept in the sealed trail.
+          await deps.recordAudit?.(ctx.tenantId, {
+            actorId: releasedBy, action: 'production.release.held', objectType: 'production_run', objectId: runId, at,
+            origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null, capturedOffline: true },
+            before: null, after: { batchId: run.outputBatchId, qcPassed: 'false', relayedBy: ctx.userId, source: relayed.source },
+            ...(notes === undefined ? {} : { reason: notes }), correlationId: runId,
+          });
+          return { status: 200, body: { runId, batchId: run.outputBatchId, released: false, held: true, decidedBy: releasedBy } };
+        }
+        const body = await releaseRunCore(deps, ctx.tenantId, run, releasedBy, true, notes, at);
+        await deps.recordAudit?.(ctx.tenantId, {
+          actorId: releasedBy, action: 'production.release', objectType: 'production_run', objectId: runId, at,
+          origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null, capturedOffline: true },
+          before: null, after: { batchId: run.outputBatchId, qcPassed: 'true', relayedBy: ctx.userId, source: relayed.source },
+          correlationId: runId,
+        });
+        return { status: 202, body: { ...body, alreadyReleased: false, relayed } };
+      },
+    },
+    {
+      // The registered recipes (M11-FR-01) — what the production screen and the store computer read so a run captured with
+      // the line down names a real recipe, and a counter label can carry its use-by. A read; it changes nothing.
+      api: 'API-04', method: 'GET', path: '/v1/production/recipes',
+      permission: 'production.read',
+      handler: async (ctx) => {
+        const recipes = deps.recipes === undefined ? [] : await deps.recipes(ctx.tenantId);
+        return { status: 200, body: { recipes, enabledDepartments: await deps.enabledDepartments(ctx.tenantId), asAt: deps.now() } };
+      },
+    },
+  ];
+}

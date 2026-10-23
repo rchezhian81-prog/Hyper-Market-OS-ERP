@@ -47,6 +47,11 @@ const PULLS: readonly [Method, string][] = [
   ['POST', '/v1/stores/S1/sync-watermarks'],
   // M35-FR-03: the box reports its disk, queue and tills' devices (edge/sync-agent/src/box-health-report.ts).
   ['POST', '/v1/store-computers/health-reports'],
+  // OB-288 lane 2 · P2: the store's work feeds (edge/sync-agent/src/store-work-feeds.ts).
+  ['GET', '/v1/production/runs'],
+  ['GET', '/v1/production/recipes'],
+  ['GET', '/v1/facilities/food-safety/status'],
+  ['GET', '/v1/warehouse/transfers'],
 ];
 
 describe('the store computer role (OB-36 "A")', () => {
