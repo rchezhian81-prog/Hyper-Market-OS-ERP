@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Loyalty</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Loyalty (OB-329 · OB-295 · OB-29 · M16-FR-01/02 · M17-FR-01). A THIN CLIENT over head office's GET
+      /v1/loyalty/enrolment-notice, POST /v1/loyalty/members, POST /v1/loyalty/members/lookup, GET
+      /v1/loyalty/members/:memberRef/standing, POST /v1/loyalty/members/app-link, GET /v1/loyalty/programme, PUT
+      /v1/loyalty/programme/tiers, PUT /v1/loyalty/programme/expiry and POST /v1/loyalty/points-expiry/run. Its session is
+      apps/web-erp/src/loyalty-desk-session.ts. The phone number goes in a request body only, never a URL; the name is the
+      customer's choice; tiers and expiry read "not set" until the owner enters them, with the CA's note beside expiry.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      label.tick { display: flex; gap: 10px; align-items: center; min-height: var(--tap); }
+      label.tick input { width: 24px; height: 24px; }
+      input, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; gap: 8px; align-items: center; }
+      button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
+      button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+      .row-form > label { flex: 1 1 200px; }
+      .notice { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 6px; }
+      .draft { font-weight: 700; color: var(--on-warn-surface, var(--ink)); }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+      li.row { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 6px; border-left: 6px solid var(--idle); overflow-wrap: anywhere; }
+      li.row.tone-ok { border-left-color: var(--ok); } li.row.tone-degraded { border-left-color: var(--degraded); }
+      .tier-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; }
+      .tier-row > label { flex: 1 1 160px; }
+      .facts { font-size: 14px; color: var(--muted); display: grid; gap: 2px; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Loyalty</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section aria-labelledby="page-h">
+        <h2 id="page-h">Loyalty</h2>
+        <p class="lead" id="lead"></p>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <!-- OB-329: enrolment at the service desk, with an optional name. -->
+      <section aria-labelledby="enrol-h">
+        <h3 id="enrol-h">Enrol a customer</h3>
+        <div class="notice" id="notice" aria-labelledby="notice-h">
+          <strong id="notice-h">Read this to the customer first</strong>
+          <span class="draft" id="notice-draft" hidden></span>
+          <p id="notice-text"></p>
+          <span class="facts" id="notice-version"></span>
+        </div>
+        <form id="enrol-form" class="row-form">
+          <label for="enrol-mobile"><span id="l-enrol-mobile">Mobile number</span><input id="enrol-mobile" inputmode="tel" autocomplete="off" /></label>
+          <label for="enrol-name"><span id="l-enrol-name">Name (optional)</span><input id="enrol-name" autocomplete="off" maxlength="80" /></label>
+        </form>
+        <label class="tick" for="enrol-yes"><input id="enrol-yes" type="checkbox" /><span id="l-enrol-yes">The customer said yes to joining</span></label>
+        <label class="tick" for="enrol-seen"><input id="enrol-seen" type="checkbox" /><span id="l-enrol-seen">I saw this number on the customer's own phone</span></label>
+        <div><button id="enrol" type="button"><span id="enrol-text">Enrol</span></button></div>
+        <p class="status" id="enrol-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section aria-labelledby="find-h">
+        <h3 id="find-h">Find a member</h3>
+        <div class="row-form">
+          <label for="find-mobile"><span id="l-find-mobile">Mobile number</span><input id="find-mobile" inputmode="tel" autocomplete="off" /></label>
+          <button id="find" type="button"><span id="find-text">Find</span></button>
+        </div>
+        <p class="status" id="find-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="found"></ul>
+      </section>
+
+      <section aria-labelledby="link-h">
+        <h3 id="link-h">Tie the customer's app to their membership</h3>
+        <div class="row-form">
+          <label for="link-mobile"><span id="l-link-mobile">Mobile number</span><input id="link-mobile" inputmode="tel" autocomplete="off" /></label>
+          <label for="link-ref"><span id="l-link-ref">App reference</span><input id="link-ref" autocomplete="off" /></label>
+        </div>
+        <label class="tick" for="link-seen"><input id="link-seen" type="checkbox" /><span id="l-link-seen">I saw this number on the customer's own phone</span></label>
+        <div><button id="link" type="button"><span id="link-text">Tie the app</span></button></div>
+        <p class="status" id="link-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <!-- OB-295: tiers and points expiry, "not set" until the owner enters them; the CA's note beside expiry. -->
+      <section aria-labelledby="programme-h">
+        <h3 id="programme-h">The loyalty programme</h3>
+        <p class="status" id="owner-only" hidden></p>
+        <h3 id="tiers-h">Tiers by 12-month spend</h3>
+        <p class="status" id="tiers-say"></p>
+        <div id="tier-rows"></div>
+        <div class="row-form">
+          <button id="add-tier" type="button" class="quiet"><span id="add-tier-text">Add a tier</span></button>
+          <label for="tiers-reason"><span id="l-tiers-reason">Why</span><input id="tiers-reason" autocomplete="off" maxlength="300" /></label>
+          <button id="save-tiers" type="button"><span id="save-tiers-text">Save the tiers</span></button>
+        </div>
+        <p class="status" id="tiers-status" role="status" aria-live="polite"></p>
+        <h3 id="expiry-h">Points expiry</h3>
+        <p class="status" id="expiry-say"></p>
+        <div class="notice" id="ca-note" aria-labelledby="ca-h"><strong id="ca-h">For the Chartered Accountant</strong><p id="ca-text"></p></div>
+        <div class="row-form">
+          <label for="expiry-months"><span id="l-expiry-months">Months after earning</span><input id="expiry-months" inputmode="numeric" autocomplete="off" /></label>
+          <label for="expiry-reason"><span id="l-expiry-reason">Why</span><input id="expiry-reason" autocomplete="off" maxlength="300" /></label>
+          <button id="save-expiry" type="button"><span id="save-expiry-text">Save expiry</span></button>
+          <button id="run-expiry" type="button" class="quiet"><span id="run-expiry-text">Run expiry now</span></button>
+        </div>
+        <p class="status" id="expiry-status" role="status" aria-live="polite"></p>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./loyalty.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

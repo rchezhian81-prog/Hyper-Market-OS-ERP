@@ -323,6 +323,9 @@ import { createGatesSession, gatesWords, gatesOutcomeWords, stateView as gateSta
 import { createAccessReviewSession, accessReviewWords, accessReviewOutcomeWords, whereWords as accessWhereWords, ordered as accessOrdered, type AccessReviewSession } from './access-review-session';
 // OB-288 P5 (OB-293): the Tally files page — the accountant's daily Tally import file, the dead letter and the trial balance.
 import { createTallyFilesSession, tallyFilesWords, tallyFilesOutcomeWords, rupees as tallyRupees, familyWords as tallyFamilyWords, type TallyFilesSession } from './tally-files-session';
+// OB-288 wave 3 (customer, loyalty, CRM and the online cart) — begin
+import { createLoyaltyDeskSession, loyaltyDeskWords, loyaltyDeskOutcomeWords, rupees as loyaltyRupees, multiplierWords as loyaltyMultiplierWords, type LoyaltyDeskSession } from './loyalty-desk-session';
+// OB-288 wave 3 — end
 import { createApprovalRulesSession, approvalRulesWords, approvalRulesOutcomeWords, limitWords as approvalLimitWords, waitWords as approvalWaitWords, limitsFromForm as approvalLimitsFromForm, paiseFromRupees as approvalPaiseFromRupees, KINDS as APPROVAL_LIMIT_KINDS, ROLES_SHOWN as APPROVAL_ROLES_SHOWN, type ApprovalRulesSession } from './approval-rules-session';
 // ── end R4 Lane 3 ──
 // ── R4 Lane 4 (supply, pricing and loss prevention) — begin
@@ -5088,6 +5091,9 @@ interface ManagerWindow {
   approvalRulesData?: ViewerIdentity;
   accessReviewData?: ViewerIdentity;
   accessReview?: { readonly session: AccessReviewSession; readonly words: typeof accessReviewWords; readonly outcomeWords: typeof accessReviewOutcomeWords; readonly whereWords: typeof accessWhereWords; readonly ordered: typeof accessOrdered };
+  // OB-288 wave 3 (OB-329 · OB-295): the Loyalty page.
+  loyaltyDeskData?: ViewerIdentity;
+  loyaltyDesk?: { readonly session: LoyaltyDeskSession; readonly words: typeof loyaltyDeskWords; readonly outcomeWords: typeof loyaltyDeskOutcomeWords; readonly rupees: typeof loyaltyRupees; readonly multiplierWords: typeof loyaltyMultiplierWords };
   // OB-288 P5 (OB-293): the Tally files page.
   tallyFilesData?: ViewerIdentity;
   tallyFiles?: { readonly session: TallyFilesSession; readonly words: typeof tallyFilesWords; readonly outcomeWords: typeof tallyFilesOutcomeWords; readonly rupees: typeof tallyRupees; readonly familyWords: typeof tallyFamilyWords };
@@ -6912,6 +6918,9 @@ if (browserWindow !== undefined) {
   browserWindow.accessReviewData = viewerIdentity(browserWindow.accessReviewData);
   browserWindow.accessReview = { session: createAccessReviewSession({ viewer: browserWindow.accessReviewData }), words: accessReviewWords, outcomeWords: accessReviewOutcomeWords, whereWords: accessWhereWords, ordered: accessOrdered };
   // OB-288 P5 (OB-293): the Tally files page — reads on a click; makes, requeues and downloads only on a person's explicit click.
+  // OB-288 wave 3 (OB-329 · OB-295): the Loyalty page — the notice and the programme are reads; every write is a person's click.
+  browserWindow.loyaltyDeskData = viewerIdentity(browserWindow.loyaltyDeskData);
+  browserWindow.loyaltyDesk = { session: createLoyaltyDeskSession({ viewer: browserWindow.loyaltyDeskData }), words: loyaltyDeskWords, outcomeWords: loyaltyDeskOutcomeWords, rupees: loyaltyRupees, multiplierWords: loyaltyMultiplierWords };
   browserWindow.tallyFilesData = viewerIdentity(browserWindow.tallyFilesData);
   browserWindow.tallyFiles = { session: createTallyFilesSession({ viewer: browserWindow.tallyFilesData }), words: tallyFilesWords, outcomeWords: tallyFilesOutcomeWords, rupees: tallyRupees, familyWords: tallyFamilyWords };
   browserWindow.approvalRulesData = viewerIdentity(browserWindow.approvalRulesData);

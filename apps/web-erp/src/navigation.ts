@@ -221,6 +221,10 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   { id: 'schedule', label: 'Staff schedule', labelTa: 'பணியாளர் அட்டவணை', path: '/schedule', requires: 'workforce.roster.read', group: 'People', served: 'unserved' },
   // ── R4 Lane 3 (customer insight, offers and demand): head-office pages over their own routes ──
   { id: 'customers', label: 'Customers', labelTa: 'வாடிக்கையாளர்கள்', path: '/customers', requires: 'customer.segment.read', group: 'Customers', served: 'unserved' },
+  // OB-288 wave 3 (OB-329 · OB-295 · M16-FR-01 · M17-FR-01): enrol a customer at the desk (the name optional), find a member,
+  // tie the app, and the owner's tiers and points expiry — a head-office page over its own routes (the store computer does
+  // not serve it). Gated on the member read (`loyalty.points.read`); each write's route checks its own word.
+  { id: 'loyalty-desk', label: 'Loyalty', labelTa: 'லாயல்டி', path: '/loyalty', requires: 'loyalty.points.read', group: 'Customers', served: 'unserved' },
   { id: 'basket-affinity', label: 'Bought together', labelTa: 'சேர்ந்து வாங்கப்பட்டவை', path: '/basket-affinity', requires: 'reporting.report.read', group: 'Reports', served: 'unserved' },
   { id: 'demand-events', label: 'Store events', labelTa: 'கடை நிகழ்வுகள்', path: '/demand-events', requires: 'inventory.availability.read', group: 'Inventory', served: 'unserved' },
   { id: 'morning-brief', label: 'Morning brief', labelTa: 'காலைச் சுருக்கம்', path: '/morning-brief', requires: 'owner.kpi.read', group: 'Reports', served: 'unserved' },
