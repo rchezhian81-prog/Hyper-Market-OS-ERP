@@ -122,7 +122,7 @@
     },
     {
       "alias": "sre privileged second factor",
-      "description": "A second factor, required when the person holds sre-privileged: a one-time code, or a passkey the person has registered.",
+      "description": "A one-time code, required when the person holds sre-privileged.",
       "providerId": "basic-flow",
       "topLevel": false,
       "builtIn": false,
@@ -136,36 +136,12 @@
           "userSetupAllowed": false
         },
         {
-          "flowAlias": "sre second factor choice",
+          "authenticator": "auth-otp-form",
           "requirement": "REQUIRED",
           "priority": 20,
-          "autheticatorFlow": true,
-          "userSetupAllowed": false
-        }
-      ]
-    },
-    {
-      "alias": "sre second factor choice",
-      "description": "Either second factor: a one-time code (set up at first sign-in) or a passkey (optional, registered by the person).",
-      "providerId": "basic-flow",
-      "topLevel": false,
-      "builtIn": false,
-      "authenticationExecutions": [
-        {
-          "authenticator": "auth-otp-form",
-          "requirement": "ALTERNATIVE",
-          "priority": 10,
           "autheticatorFlow": false,
           "userSetupAllowed": true,
           "authenticatorConfig": "sre amr otp"
-        },
-        {
-          "authenticator": "webauthn-authenticator",
-          "requirement": "ALTERNATIVE",
-          "priority": 20,
-          "autheticatorFlow": false,
-          "userSetupAllowed": false,
-          "authenticatorConfig": "sre amr hwk"
         }
       ]
     }
@@ -189,13 +165,6 @@
       "alias": "sre amr otp",
       "config": {
         "default.reference.value": "otp",
-        "default.reference.maxAge": "36000"
-      }
-    },
-    {
-      "alias": "sre amr hwk",
-      "config": {
-        "default.reference.value": "hwk",
         "default.reference.maxAge": "36000"
       }
     }
