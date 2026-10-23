@@ -337,7 +337,8 @@ import { r3GstRoutes, eInvoiceReportingGuardFor, gstTimeBarSweep } from './r3-gs
 import { r4SupplyLpRoutes, supplierFactsFor } from './r4-supply-lp-adapters';
 import { alsoEachPassOf } from './ops-alert-sweeps'; // R3 lane 1 — GST liability and returns
 import { itcPortForStore } from './r3-itc-bridge'; // R3 seam — GSTR-3B Table 4 reads the A17 reconciliation
-import { r4PayEprRoutes, r4PayslipHooks, payslipLateSweep } from './r4-pay-epr-adapters'; // R4 Lane 1 — pay (C19 · C15 · C16) and EPR registers (B20 · B21 · B22)
+import { r4PayEprRoutes, r4PayslipHooks, payslipLateSweep } from './r4-pay-epr-adapters';
+import { gatesRoutes, gateBlockersBeyondRisks } from './gates-adapters'; // OB-288 gates lane — findings register (QG-03/QG-06) and gate decisions (QG-12) // R4 Lane 1 — pay (C19 · C15 · C16) and EPR registers (B20 · B21 · B22)
 
 const now = (): string => new Date().toISOString();
 
@@ -1872,7 +1873,9 @@ export function buildSurface(deps: {
           controls: empty([]), saveControl: () => {}, incidents: empty([]), saveIncident: () => {},
           remediations: empty([]), saveRemediation: () => {}, attestations: empty([]), saveAttestation: () => {}, now,
         }
-      : riskRegisterAdapter({ store, now })),
+      : { ...riskRegisterAdapter({ store, now }), otherBlockers: (t: string) => gateBlockersBeyondRisks(store, now, t) }),
+    // OB-288 gates lane: the security findings register (QG-03/QG-06) and the gate-decision register (QG-12).
+    ...gatesRoutes({ store, now }),
     ...reportingRoutes(store === undefined
       ? { figures: empty([]), now }
       : reportingAdapter({

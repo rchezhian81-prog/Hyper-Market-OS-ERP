@@ -7,3 +7,4 @@ export * from './health';
 export * from './operations-advisor';
 export * from './logging';
 export * from './backup';
+export * from './recovery-gate';
