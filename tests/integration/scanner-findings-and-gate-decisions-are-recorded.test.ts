@@ -34,7 +34,7 @@ const IMAGE_SCAN = {
   ] }],
 };
 const report = (observations: readonly FindingObservation[], runId: string, scannedAt: string, complete = true) =>
-  ({ tool: 'trivy', source: 'container', runId, scannedAt, complete, commit: 'a'.repeat(40), observations });
+  ({ tool: 'trivy-image', source: 'container', runId, scannedAt, complete, commit: 'a'.repeat(40), observations });
 
 const DATABASE_URL = process.env['DATABASE_URL'];
 let pool: Pool | undefined;

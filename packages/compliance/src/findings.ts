@@ -89,38 +89,54 @@ export interface SecurityFinding {
   readonly fixedBy?: string;
 }
 
+// The error classes declare their fields explicitly (no constructor parameter properties) so this file runs under
+// Node's type stripping, which the CI wrapper uses.
+
 export class NotAScanReportError extends Error {
-  constructor(public readonly problems: readonly string[]) {
+  readonly problems: readonly string[];
+  constructor(problems: readonly string[]) {
     super(`Not a scan report: ${problems.join('; ')}`);
     this.name = 'NotAScanReportError';
+    this.problems = problems;
   }
 }
 
 export class StaleScanError extends Error {
-  constructor(public readonly tool: string, public readonly scannedAt: string, public readonly latestAt: string) {
+  readonly tool: string;
+  readonly scannedAt: string;
+  readonly latestAt: string;
+  constructor(tool: string, scannedAt: string, latestAt: string) {
     super(`The ${tool} scan of ${scannedAt} is older than the ${tool} scan already on the register (${latestAt}) — an older scan cannot reopen or close what a newer one saw`);
     this.name = 'StaleScanError';
+    this.tool = tool; this.scannedAt = scannedAt; this.latestAt = latestAt;
   }
 }
 
 export class ScannerFindingCloseError extends Error {
-  constructor(public readonly findingId: string, public readonly tool: string) {
+  readonly findingId: string;
+  readonly tool: string;
+  constructor(findingId: string, tool: string) {
     super(`Finding "${findingId}" was raised by the ${tool} scanner — it closes only when a complete ${tool} scan no longer reports it, never by hand`);
     this.name = 'ScannerFindingCloseError';
+    this.findingId = findingId; this.tool = tool;
   }
 }
 
 export class FixNeedsEvidenceError extends Error {
-  constructor(public readonly findingId: string) {
+  readonly findingId: string;
+  constructor(findingId: string) {
     super(`Finding "${findingId}" cannot be marked fixed without a named person and written evidence of the fix`);
     this.name = 'FixNeedsEvidenceError';
+    this.findingId = findingId;
   }
 }
 
 export class NotAPersonFindingError extends Error {
-  constructor(public readonly problems: readonly string[]) {
+  readonly problems: readonly string[];
+  constructor(problems: readonly string[]) {
     super(`Not a finding a person can record: ${problems.join('; ')}`);
     this.name = 'NotAPersonFindingError';
+    this.problems = problems;
   }
 }
 
@@ -194,24 +210,30 @@ export function parseSemgrepJson(raw: unknown): { readonly observations: readonl
       location: `${r['path']}:${typeof start['line'] === 'number' ? start['line'] : '?'}`,
     }));
   }
-  const incompleteBecause: string[] = [];
+  // Every error Semgrep reports — a file it could not parse, a rule that timed out on a file — means part of the code
+  // was NOT looked at. Even at "warn" level that is a gap, so the run is recorded as incomplete (it then closes nothing).
+  const gaps = new Set<string>();
   for (const e of Array.isArray(raw['errors']) ? (raw['errors'] as unknown[]) : []) {
     if (!isObj(e)) continue;
-    const level = isStr(e['level']) ? e['level'] : 'error';
-    if (level !== 'error') continue;
     const where = isStr(e['path']) ? e['path'] : Array.isArray(e['spans']) && isObj(e['spans'][0]) && isStr((e['spans'][0] as Record<string, unknown>)['file']) ? (e['spans'][0] as Record<string, string>)['file'] : 'unknown file';
-    incompleteBecause.push(`semgrep could not scan ${where}: ${isStr(e['type']) ? e['type'] : 'error'}`);
+    const kind = isStr(e['type']) ? e['type'] : Array.isArray(e['type']) && isStr(e['type'][0]) ? e['type'][0] : 'error';
+    gaps.add(`semgrep could not fully scan ${where}: ${kind}`);
   }
-  return { observations, incompleteBecause };
+  return { observations, incompleteBecause: [...gaps] };
 }
 
 const TRIVY_SEVERITY: Record<string, FindingSeverity> = { CRITICAL: 'critical', HIGH: 'high', MEDIUM: 'medium', LOW: 'low' };
 
-/** Trivy `--format json` — image vulnerabilities and secrets (`container`), or configuration checks (`iac`). */
+/**
+ * Trivy `--format json` — image vulnerabilities and secrets (`container`, tool `trivy-image`), or configuration checks
+ * (`iac`, tool `trivy-config`). Two tool names, because a complete run closes only its OWN tool's findings: a config
+ * run must never close an image vulnerability it never looked for.
+ */
 export function parseTrivyJson(raw: unknown, source: 'container' | 'iac'): readonly FindingObservation[] {
   if (!isObj(raw) || !('Results' in raw)) throw new NotAScanReportError(['a Trivy report has a "Results" field']);
   const results = Array.isArray(raw['Results']) ? (raw['Results'] as unknown[]) : [];
   const artifact = isStr(raw['ArtifactName']) ? raw['ArtifactName'] : '';
+  const tool = source === 'container' ? 'trivy-image' : 'trivy-config';
   const out: FindingObservation[] = [];
   for (const res of results) {
     if (!isObj(res)) continue;
@@ -221,7 +243,7 @@ export function parseTrivyJson(raw: unknown, source: 'container' | 'iac'): reado
       const toolSeverity = isStr(v['Severity']) ? v['Severity'] : 'UNKNOWN';
       const fixed = isStr(v['FixedVersion']) ? ` (fixed in ${v['FixedVersion']})` : ' (no fix released yet)';
       out.push(observation({
-        key: `${artifact}|${target}|${v['PkgName']}|${v['VulnerabilityID']}`, source, tool: 'trivy', ruleId: v['VulnerabilityID'],
+        key: `${artifact}|${target}|${v['PkgName']}|${v['VulnerabilityID']}`, source, tool, ruleId: v['VulnerabilityID'],
         title: `${v['PkgName']} ${isStr(v['InstalledVersion']) ? v['InstalledVersion'] : ''}: ${isStr(v['Title']) ? v['Title'] : v['VulnerabilityID']}${fixed}`.slice(0, 300),
         severity: TRIVY_SEVERITY[toolSeverity] ?? 'medium', toolSeverity, location: `${artifact === '' ? '' : `${artifact} `}${target}`.trim(),
       }));
@@ -233,7 +255,7 @@ export function parseTrivyJson(raw: unknown, source: 'container' | 'iac'): reado
       const cause = isObj(m['CauseMetadata']) ? m['CauseMetadata'] : {};
       const line = typeof cause['StartLine'] === 'number' && cause['StartLine'] > 0 ? `:${cause['StartLine']}` : '';
       out.push(observation({
-        key: `${target}|${m['ID']}|${isStr(m['Message']) ? m['Message'] : ''}`, source, tool: 'trivy', ruleId: m['ID'],
+        key: `${target}|${m['ID']}|${isStr(m['Message']) ? m['Message'] : ''}`, source, tool, ruleId: m['ID'],
         title: `${isStr(m['Title']) ? m['Title'] : m['ID']}${isStr(m['Message']) ? ` — ${m['Message']}` : ''}`.slice(0, 300),
         severity: TRIVY_SEVERITY[toolSeverity] ?? 'medium', toolSeverity, location: `${target}${line}`,
       }));
@@ -242,7 +264,7 @@ export function parseTrivyJson(raw: unknown, source: 'container' | 'iac'): reado
       if (!isObj(s) || !isStr(s['RuleID'])) continue;
       const toolSeverity = isStr(s['Severity']) ? s['Severity'] : 'UNKNOWN';
       out.push(observation({
-        key: `${artifact}|${target}|secret|${s['RuleID']}|${typeof s['StartLine'] === 'number' ? s['StartLine'] : ''}`, source, tool: 'trivy', ruleId: s['RuleID'],
+        key: `${artifact}|${target}|secret|${s['RuleID']}|${typeof s['StartLine'] === 'number' ? s['StartLine'] : ''}`, source, tool, ruleId: s['RuleID'],
         // The matched text is NEVER copied onto the register — only that a secret-shaped thing is there (hard rule #4).
         title: `${isStr(s['Title']) ? s['Title'] : s['RuleID']} (the matched text is not copied here)`.slice(0, 300),
         severity: TRIVY_SEVERITY[toolSeverity] ?? 'high', toolSeverity, location: target,

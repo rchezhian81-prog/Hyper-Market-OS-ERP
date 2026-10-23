@@ -21,7 +21,10 @@ const semgrep = {
     { check_id: 'javascript.lang.correctness.useless-eqeq', path: 'services/b.ts', start: { line: 3 }, extra: { message: 'useless', severity: 'WARNING' } },
     { check_id: 'x.info', path: 'services/c.ts', start: { line: 1 }, extra: { message: 'fyi', severity: 'INFO' } },
   ],
-  errors: [{ level: 'warn', type: 'Timeout', path: 'big.ts' }, { level: 'error', type: 'Syntax error', path: 'broken.ts' }],
+  errors: [
+    { level: 'warn', type: 'Timeout', path: 'big.ts' }, { level: 'warn', type: 'Timeout', path: 'big.ts' },
+    { level: 'error', type: 'Syntax error', path: 'broken.ts' }, { level: 'warn', type: ['PartialParsing', []], spans: [{ file: 'part.ts' }] },
+  ],
 };
 
 const trivyImage = {
@@ -61,13 +64,16 @@ const report = (observations: readonly FindingObservation[], over: Partial<ScanR
 });
 
 describe('each scanner\'s own JSON becomes findings, with the tool\'s severity word kept (§35)', () => {
-  it('Semgrep: ERROR → high, WARNING → medium, INFO → low; a file it could not read makes the run incomplete', () => {
+  it('Semgrep: ERROR → high, WARNING → medium, INFO → low; any file it could not fully scan makes the run incomplete', () => {
     const { observations, incompleteBecause } = parseSemgrepJson(semgrep);
     expect(observations.map((o) => [o.severity, o.toolSeverity])).toEqual([['high', 'ERROR'], ['high', 'ERROR'], ['medium', 'WARNING'], ['low', 'INFO']]);
     expect(observations[0]).toMatchObject({ source: 'sast', tool: 'semgrep', location: 'services/a.ts:10', title: 'Direct response write' });
     // Two hits of one rule in one file are two findings, keyed by which occurrence — not by the line number.
     expect(new Set(observations.map((o) => o.fingerprint)).size).toBe(4);
-    expect(incompleteBecause).toEqual(['semgrep could not scan broken.ts: Syntax error']);
+    // A rule that timed out is a gap even at "warn" level — each gap named once.
+    expect(incompleteBecause).toEqual([
+      'semgrep could not fully scan big.ts: Timeout', 'semgrep could not fully scan broken.ts: Syntax error', 'semgrep could not fully scan part.ts: PartialParsing',
+    ]);
   });
 
   it('Semgrep: the same problem moved down the file keeps its fingerprint (its 72-hour clock is not reset by an edit)', () => {
@@ -88,7 +94,11 @@ describe('each scanner\'s own JSON becomes findings, with the tool\'s severity w
   it('Trivy config: only FAILED checks, with the file and line', () => {
     const obs = parseTrivyJson(trivyConfig, 'iac');
     expect(obs).toHaveLength(1);
-    expect(obs[0]).toMatchObject({ source: 'iac', ruleId: 'DS002', severity: 'high', location: 'docker/api.Dockerfile' });
+    expect(obs[0]).toMatchObject({ source: 'iac', tool: 'trivy-config', ruleId: 'DS002', severity: 'high', location: 'docker/api.Dockerfile' });
+    // A config run is its own tool: it never closes an image vulnerability it did not look for.
+    const image = importScan([], report(parseTrivyJson(trivyImage, 'container'))).changes;
+    expect(image.every((f) => f.tool === 'trivy-image')).toBe(true);
+    expect(importScan(image, report(obs, { scannedAt: T1 })).summary.fixed).toBe(0);
   });
 
   it('ZAP: riskcode 3 → high, 2 → medium, 0 → info; one finding per alert × URL (query dropped) × parameter', () => {
@@ -163,12 +173,12 @@ describe('importing runs: open, still open, fixed by a clean complete scan, reop
     const second = importScan(first, report(obsA.slice(1), { runId: 'run-2', scannedAt: T1, commit: 'c0ffee' }), T0);
     expect(second.summary.fixed).toBe(1);
     expect(second.changes[0]).toMatchObject({ ruleId: 'CVE-2026-0001', status: 'fixed', fixedAt: T1, fixedBy: 'scan:run-2' });
-    expect(second.changes[0]!.fixedEvidence).toContain('complete trivy scan run-2 of commit c0ffee');
+    expect(second.changes[0]!.fixedEvidence).toContain('complete trivy-image scan run-2 of commit c0ffee');
   });
 
   it('a PARTIAL run closes nothing — a scan that did not look is not evidence the problem is gone', () => {
     const first = importScan([], report(obsA)).changes;
-    const partial = importScan(first, report([], { tool: 'trivy', source: 'container', runId: 'run-2', scannedAt: T1, complete: false }), T0);
+    const partial = importScan(first, report([], { tool: 'trivy-image', source: 'container', runId: 'run-2', scannedAt: T1, complete: false }), T0);
     expect(partial.changes).toEqual([]);
     expect(partial.summary).toMatchObject({ fixed: 0, closedNothingBecausePartial: true });
   });

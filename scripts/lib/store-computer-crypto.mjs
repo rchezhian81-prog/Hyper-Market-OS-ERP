@@ -111,7 +111,8 @@ export function unlockBackupKey(keyFile, passphrase) {
   let der;
   try {
     const kek = scryptSync(normal(passphrase), unb64(s.salt), 32, { ...cost, maxmem: maxmemFor(cost) });
-    const d = createDecipheriv('aes-256-gcm', kek, unb64(s.iv));
+    // QG-03 SAST (gcm-no-tag-length): only a full 16-byte tag is accepted — a truncated tag is easier to forge.
+    const d = createDecipheriv('aes-256-gcm', kek, unb64(s.iv), { authTagLength: 16 });
     d.setAAD(Buffer.from(`${KEY_FILE_KIND}/v1|${keyFile.keyId}`, 'utf8'));
     d.setAuthTag(unb64(s.tag));
     der = Buffer.concat([d.update(unb64(s.ct)), d.final()]);
@@ -253,7 +254,7 @@ export function decryptFile(fs, encPath, outPath, privateKeyObject, { expectPurp
       at += 5 + len + 16;
       let pt;
       try {
-        const d = createDecipheriv('aes-256-gcm', key, nonceFor(prefix, index));
+        const d = createDecipheriv('aes-256-gcm', key, nonceFor(prefix, index), { authTagLength: 16 });
         d.setAAD(aadFor(headerHash, index, last));
         d.setAuthTag(tag);
         pt = Buffer.concat([d.update(ct), d.final()]);
@@ -289,7 +290,7 @@ export function openJson(sealed, privateKeyObject) {
   try {
     const epk = createPublicKey({ key: unb64(sealed.epk), format: 'der', type: 'spki' });
     const key = fileKey(privateKeyObject, epk, unb64(sealed.salt), 'sealed-json');
-    const d = createDecipheriv('aes-256-gcm', key, unb64(sealed.iv));
+    const d = createDecipheriv('aes-256-gcm', key, unb64(sealed.iv), { authTagLength: 16 });
     d.setAuthTag(unb64(sealed.tag));
     return { ok: true, value: JSON.parse(Buffer.concat([d.update(unb64(sealed.ct)), d.final()]).toString('utf8')) };
   } catch { return { ok: false, problem: 'the sealed totals do not open with this key, or were changed' }; }

@@ -16,6 +16,15 @@ FROM node:22-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 
+# QG-03 container-image scan (OB-288 gates lane): the base image ships the npm, corepack and yarn package managers.
+# Nothing in this image runs them — the service starts with `node`, and the build below uses node_modules copied from
+# the deps stage — yet the npm CLI's own bundled dependencies carry HIGH vulnerabilities the image scan reports
+# (brace-expansion, ip-address, pacote, picomatch, sigstore, http-cache-semantics). A tool that is never run is
+# attack surface, not function, so it is removed rather than its findings silenced.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+      /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
+      /usr/local/bin/yarn /usr/local/bin/yarnpkg /opt/yarn-v*
+
 # A named, unprivileged user. Root in a container is root on the host if anything escapes.
 RUN addgroup -S sre && adduser -S -G sre sre
 
