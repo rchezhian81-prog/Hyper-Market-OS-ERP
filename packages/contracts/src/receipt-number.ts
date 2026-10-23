@@ -88,12 +88,55 @@ export function isStoreComputerDefaultReceipt(receiptNumber: unknown): boolean {
   return typeof receiptNumber === 'string' && /^ZZ[A-Z2-7]{6}-\d{6}$/.test(receiptNumber);
 }
 
+// ── A2 (roadmap v2.1 addendum · CGST Rule 46(b)): the series is per FINANCIAL YEAR ───────────────────────────────────────
+//
+// Rule 46(b) asks for a consecutive serial number "unique for a financial year", and the addendum's A2 that the series
+// resets on the financial-year boundary. Head office issues each till a prefix FOR a financial year (India's: 1 April to
+// 31 March, by the bill's date in India time); the store computer numbers each bill under the prefix of the year the bill
+// is dated in, so the count starts again at 000001 on 1 April under that year's prefix. Uniqueness across years is the
+// same argument as across tills: head office never issues a prefix any till held in ANY year (its own earlier year
+// included), so two bills — and two `S-<receipt>` sale ids — can never be equal, and every number is still ≤ 16 characters.
+
+/** A financial year as written here: "2026-27" (1 April 2026 – 31 March 2027). */
+export const FINANCIAL_YEAR_PATTERN = /^(\d{4})-(\d{2})$/;
+
+/** Whether `v` is a financial year written "YYYY-YY" whose second part is the year after the first. */
+export function isFinancialYear(v: unknown): v is string {
+  if (typeof v !== 'string') return false;
+  const m = FINANCIAL_YEAR_PATTERN.exec(v);
+  return m !== null && (Number(m[1]) + 1) % 100 === Number(m[2]);
+}
+
+/** India time is UTC+05:30 all year. */
+const IST_OFFSET_MS = 330 * 60_000;
+
+/**
+ * The financial year an instant falls in, by its date in India time (the date the tax invoice carries): 31 March 23:59 IST
+ * is still the old year, 1 April 00:00 IST the new one. Undefined when the instant cannot be read.
+ */
+export function financialYearOf(isoUtc: string): string | undefined {
+  const ms = Date.parse(isoUtc);
+  if (Number.isNaN(ms)) return undefined;
+  const local = new Date(ms + IST_OFFSET_MS);
+  const y = local.getUTCFullYear();
+  const start = local.getUTCMonth() >= 3 ? y : y - 1; // April is month 3
+  return `${start}-${String((start + 1) % 100).padStart(2, '0')}`;
+}
+
+/** The financial year after one ("2026-27" → "2027-28"). */
+export function nextFinancialYear(fy: string): string {
+  const start = Number(fy.slice(0, 4)) + 1;
+  return `${start}-${String((start + 1) % 100).padStart(2, '0')}`;
+}
+
 /** A published series line (the store pack's `receiptSeries`), as the box receives it. */
 export interface PublishedSeriesLine {
   readonly prefix: unknown;
   readonly padTo: unknown;
   readonly rangeStart: unknown;
   readonly rangeEnd: unknown;
+  /** A2: the financial year this series numbers ("2026-27"). Absent → a series with no year (it never resets). */
+  readonly financialYear?: unknown;
 }
 
 /**
@@ -108,6 +151,9 @@ export function readPublishedSeries(s: PublishedSeriesLine): { readonly ok: true
   const a = s.rangeStart; const b = s.rangeEnd;
   if (typeof a !== 'number' || typeof b !== 'number' || !Number.isSafeInteger(a) || !Number.isSafeInteger(b) || a < 1 || b > RECEIPT_COUNTER_MAX || a > b) {
     return { ok: false, words: `its range ${JSON.stringify(a)}…${JSON.stringify(b)} is not inside 1…${RECEIPT_COUNTER_MAX}` };
+  }
+  if (s.financialYear !== undefined && !isFinancialYear(s.financialYear)) {
+    return { ok: false, words: `its financial year ${JSON.stringify(s.financialYear)} is not one written like 2026-27` };
   }
   return { ok: true };
 }
