@@ -5,6 +5,8 @@
 //
 //   • M16-FR-04 — the customer's record shows the service desk's own cases (complaints first), and segmentation counts
 //     the complaints the desk actually recorded, not only ones typed in by hand.
+//   • WF-13 · M20-FR-02 — the online basket priced by the till's promotions and coupon engines, with the points balance
+//     (`onlinePricingAdapter`, one deps line on the storefront routes in main.ts).
 //   • M17-FR-01 (OB-295) — the loyalty programme's tiers and points expiry: owner settings kept as facts, OFF and "not set"
 //     until entered; the tier multiplier applied when a bill earns (`withLoyaltyTiers`, one wrap in main.ts); the expiry
 //     run on the ops worker's timer (`customerCommerceSweep`) and on demand.
@@ -21,7 +23,9 @@ import type { Route } from '../../kernel/src/index';
 import { customer360Routes, complaintFactsOf, type ServiceCaseFact } from '../../customer/src/customer-360';
 import { segmentRoutes } from '../../customer/src/segments';
 import type { ComplaintFact } from '../../../packages/customer/src/index';
-import { customer360Adapter, segmentDataAdapter, serviceCaseAdapter, customerAdapter, STREAM, streamName } from './adapters';
+import { customer360Adapter, segmentDataAdapter, serviceCaseAdapter, customerAdapter, couponAdapter, promotionCatalogueAdapter, productMasterAdapter, STREAM, streamName } from './adapters';
+import type { OnlinePricingDeps, OrderPricingFact } from '../../orders/src/storefront';
+import { currentMemberLink, type MemberAppLink } from '../../customer/src/digital-receipts';
 import { customerOverviewRoutes } from '../../customer/src/customer-overview';
 import { customerOverviewAdapter } from './r4-insight-adapters';
 
@@ -120,6 +124,46 @@ export function loyaltyProgrammeAdapter(input: Base): LoyaltyProgrammeDeps {
       .map((m): LedgerMovement => ({ movementId: m.movementId, delta: m.delta, reason: m.reason, at: m.at, sourceRef: m.sourceRef })),
     pointsVersion: (t, memberRef) => store.guardVersion(t, `points:${memberRef}`),
     recordExpiryMovement: async (t, memberRef, m, version) => customers.recordPointsMovement(t, memberRef, { movementId: m.movementId, customerId: memberRef, delta: m.delta, reason: 'expiry', sourceRef: m.sourceRef, at: m.at }, version),
+  };
+}
+
+// ── WF-13 · M20-FR-02 · the online basket's offers and points ───────────────────────────────────────────────────────
+
+/** The desk's app ↔ membership links (D-28, r4-online-adapters keeps them on this stream). */
+const MEMBER_LINKS = streamName(STREAM.customer, 'digital-receipts', 'member-links');
+const ORDER_PRICING = streamName(STREAM.orders, 'online-pricing');
+
+/** The membership an app account is tied to now, if any (and still a member). */
+export function appMemberOf(input: Base) {
+  return async (tenantId: string, customerRef: string): Promise<{ readonly memberRef: string; readonly mobileLast4?: string } | undefined> => {
+    const links = (await input.store.readStream(tenantId, MEMBER_LINKS, { type: 'MemberAppLinked' })).map((e) => e.event.payload as MemberAppLink);
+    const link = currentMemberLink(links, customerRef);
+    if (link === undefined) return undefined;
+    const history = (await input.store.readStream(tenantId, MEMBERS, { type: 'LoyaltyMember' })).map((e) => e.event.payload as MemberRecord).filter((m) => m.memberRef === link.memberRef);
+    const now = history[history.length - 1];
+    return now?.status === 'member' ? { memberRef: link.memberRef, mobileLast4: now.mobileLast4 } : undefined;
+  };
+}
+
+export function onlinePricingAdapter(input: Base & { readonly pointValuePaise: (tenantId: string) => Promise<number> }): OnlinePricingDeps {
+  const { store, now } = input;
+  const coupons = couponAdapter(input);
+  const pricing = factList<OrderPricingFact>(store, ORDER_PRICING, 'OnlineOrderPriced');
+  return {
+    promotions: async (t) => promotionCatalogueAdapter(input).promotions(t),
+    carryBagsAmong: async (t, ids) => {
+      const wanted = new Set(ids);
+      const bags = new Set((await productMasterAdapter({ store, now }).products(t)).filter((p) => wanted.has(p.productId) && p.safety?.carryBag === true).map((p) => p.productId));
+      return ids.filter((id) => bags.has(id));
+    },
+    memberOf: appMemberOf(input),
+    pointsOf: async (t, memberRef) => customerAdapter(input).pointsBalance(t, memberRef),
+    pointValuePaise: input.pointValuePaise,
+    coupon: async (t, code) => coupons.coupon(t, code),
+    couponRedemptions: async (t, code) => coupons.redemptions(t, code),
+    recordCouponRedemption: async (t, r, key) => { await coupons.recordRedemption(t, r, key); },
+    orderPricing: async (t, orderId) => (await pricing.all(t)).filter((f) => f.orderId === orderId)[0],
+    recordOrderPricing: (t, f) => pricing.append(t, f.orderId, f, f.at),
   };
 }
 

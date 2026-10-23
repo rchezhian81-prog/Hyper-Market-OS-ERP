@@ -345,7 +345,7 @@ import { opsMessagingRoutes, notificationGuardHooks, opsMessagingSweep } from '.
 import { p1IdentitySurface, approvalAgeSweep } from './p1-identity-adapters'; // OB-288 lane 1 · P1 — identity, authority, configuration
 import { poAuthorityHooks, expirySweepThatPublishes, followupsSurface } from './followups-adapters'; // OB-288 integration follow-ups
 import { aiGovernanceSurface } from './ai-adapters'; // OB-288 lane 4 · P1 — AI governance and agents (R7)
-import { customerCommerceSurface, withLoyaltyTiers, customerCommerceSweep } from './customer-commerce-adapters'; // OB-288 wave 3 — customer, loyalty, CRM and the online cart
+import { customerCommerceSurface, withLoyaltyTiers, customerCommerceSweep, onlinePricingAdapter } from './customer-commerce-adapters'; // OB-288 wave 3 — customer, loyalty, CRM and the online cart
 import { alsoEachPassOf } from './ops-alert-sweeps'; // R3 lane 1 — GST liability and returns
 import { itcPortForStore } from './r3-itc-bridge'; // R3 seam — GSTR-3B Table 4 reads the A17 reconciliation
 import { r4PayEprRoutes, r4PayslipHooks, payslipLateSweep } from './r4-pay-epr-adapters';
@@ -1439,6 +1439,7 @@ export function buildSurface(deps: {
       // R4 · OB-234: only a product published online (and still carrying every display duty) is sold online — the same
       // answer the customer's listing gives (B23 · A26, r4-online-adapters).
       ...(store === undefined ? {} : { onlineListed: onlineListedAdapter({ store, now, signer }) }),
+      ...(store === undefined ? {} : { pricing: onlinePricingAdapter({ store, now, pointValuePaise: async (t: string) => (await loyaltyRule(t)).pointValuePaise }) }), // OB-288 wave 3 · WF-13
     }),
     // FUL-03: how the store delivers, as head office holds it — set by the owner/manager, read by staff.
     ...deliveryServiceRoutes(store === undefined
