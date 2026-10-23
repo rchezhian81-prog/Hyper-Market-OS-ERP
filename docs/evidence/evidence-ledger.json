@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1555,
+  "testFiles": 1568,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -126,8 +126,8 @@
       "id": "M02",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 27,
-        "integration": 25,
+        "unit": 28,
+        "integration": 26,
         "realDb": 12,
         "browser": 8,
         "connected": 3,
@@ -136,6 +136,7 @@
       },
       "files": {
         "unit": [
+          "tests/unit/a-po-above-the-approvers-limit-goes-to-the-owner.test.ts",
           "tests/unit/approval-requests.test.ts",
           "tests/unit/approvals-delegation.test.ts",
           "tests/unit/approvals.test.ts",
@@ -168,6 +169,7 @@
           "tests/integration/access-durability.test.ts",
           "tests/integration/access-lifecycle.test.ts",
           "tests/integration/an-outside-party-login-is-invited-and-approved-by-two-people.test.ts",
+          "tests/integration/an-over-limit-purchase-order-goes-to-the-owner.test.ts",
           "tests/integration/approval-decide.test.ts",
           "tests/integration/approval-decision-synced-route.test.ts",
           "tests/integration/approval-delegation.test.ts",
@@ -415,7 +417,7 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 14,
-        "integration": 22,
+        "integration": 23,
         "realDb": 13,
         "browser": 5,
         "connected": 3,
@@ -444,6 +446,7 @@
           "tests/integration/a-purchase-order-is-checked-against-open-to-buy.test.ts",
           "tests/integration/a-receipt-is-judged-against-what-is-left-on-the-order.test.ts",
           "tests/integration/an-order-names-its-store.test.ts",
+          "tests/integration/an-over-limit-purchase-order-goes-to-the-owner.test.ts",
           "tests/integration/duplicate-bank.test.ts",
           "tests/integration/every-order-carries-its-buying-scope-and-the-open-commitment-reports-by-it.test.ts",
           "tests/integration/goods-receipt-assembled.test.ts",
@@ -778,10 +781,10 @@
       "id": "M10",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 22,
-        "integration": 29,
+        "unit": 24,
+        "integration": 30,
         "realDb": 10,
-        "browser": 5,
+        "browser": 6,
         "connected": 1,
         "device": 0,
         "uat": 0
@@ -809,6 +812,8 @@
           "tests/unit/returns.test.ts",
           "tests/unit/service-catalogue.test.ts",
           "tests/unit/service-pos.test.ts",
+          "tests/unit/the-box-serves-the-recall-trace-page.test.ts",
+          "tests/unit/the-pack-carries-the-expired-batches.test.ts",
           "tests/unit/traceability.test.ts"
         ],
         "integration": [
@@ -821,6 +826,7 @@
           "tests/integration/a-trace-runs-backwards-from-a-sale.test.ts",
           "tests/integration/a-transfer-sends-only-what-the-batch-holds.test.ts",
           "tests/integration/ai-inventory-agent.test.ts",
+          "tests/integration/an-expired-batch-is-refused-on-its-batch-barcode-offline.test.ts",
           "tests/integration/cold-chain-at-receiving.test.ts",
           "tests/integration/cold-room-breach-holds-stock.test.ts",
           "tests/integration/facilities-monitoring.test.ts",
@@ -858,6 +864,7 @@
           "tests/e2e/expiry-recall-delivery.e2e.ts",
           "tests/e2e/food-safety-checks-are-saved-with-the-line-down.e2e.ts",
           "tests/e2e/recalls-and-trace-on-the-production-api.e2e.ts",
+          "tests/e2e/the-recall-trace-page-is-served-from-the-store-box.e2e.ts",
           "tests/e2e/unsellable-screen.e2e.ts",
           "tests/e2e/warehouse-handheld-delivery.e2e.ts"
         ],
@@ -4841,8 +4848,8 @@
       "id": "QG-06",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 5,
-        "integration": 2,
+        "unit": 6,
+        "integration": 3,
         "realDb": 1,
         "browser": 1,
         "connected": 1,
@@ -4855,9 +4862,11 @@
           "tests/unit/compliance-gate-decisions.test.ts",
           "tests/unit/compliance-risk.test.ts",
           "tests/unit/erp-gates-session.test.ts",
-          "tests/unit/erp-risk-acceptance-session.test.ts"
+          "tests/unit/erp-risk-acceptance-session.test.ts",
+          "tests/unit/two-signatures-accept-a-critical-risk.test.ts"
         ],
         "integration": [
+          "tests/integration/a-critical-risk-is-accepted-only-by-the-owner-and-the-named-reviewer.test.ts",
           "tests/integration/risk-register.test.ts",
           "tests/integration/scanner-findings-and-gate-decisions-are-recorded.test.ts"
         ],
@@ -4946,7 +4955,7 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 3,
-        "integration": 6,
+        "integration": 7,
         "realDb": 4,
         "browser": 0,
         "connected": 0,
@@ -4960,6 +4969,7 @@
           "tests/unit/ops-recovery-gate.test.ts"
         ],
         "integration": [
+          "tests/integration/a-recovery-rehearsal-pass-expires-after-a-quarter.test.ts",
           "tests/integration/a-rehearsed-rollback-reconciles.test.ts",
           "tests/integration/backup-is-one-moment.test.ts",
           "tests/integration/recovery-rehearsal.test.ts",
