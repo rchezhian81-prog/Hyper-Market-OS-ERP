@@ -33,6 +33,9 @@ export interface Risk {
   /** Required to ACCEPT a risk — someone must say why, in their own name. */
   readonly acceptedBy?: string;
   readonly acceptanceRationale?: string;
+  /** OB-330: a critical or high risk's acceptance also carries the named security reviewer's signature. */
+  readonly securityReviewedBy?: string;
+  readonly securityReviewRationale?: string;
   /** The quality gates this risk blocks while it is open and critical or high (§22 QG-06, §35.1). */
   readonly blocksGates?: readonly string[];
 }
@@ -234,4 +237,108 @@ export function overdueRemediations(
   asOfDate: string,
 ): readonly Remediation[] {
   return remediations.filter((r) => r.completedAt === undefined && r.dueOn < asOfDate);
+}
+
+// ── OB-330 (owner, 23 Oct 2026, in writing · roadmap §35.1): accepting a critical or high risk takes TWO signatures ──────
+//
+// The owner AND a named security reviewer. Until the owner names a reviewer (entered on screen, never in code), no critical
+// or high risk can be accepted at all — it must be fixed. The two signatures are two different people; each is for the
+// risk as it stood when they signed (a risk re-stated since is a new decision); the reviewer who signs must be the one
+// named NOW. A medium or low risk is accepted by one compliance manager, as before.
+
+/** The severities whose acceptance needs both signatures. */
+export const TWO_SIGNATURE_SEVERITIES: readonly RiskSeverity[] = GATE_BLOCKING_SEVERITIES;
+export const needsTwoSignatures = (risk: Pick<Risk, 'severity'>): boolean => TWO_SIGNATURE_SEVERITIES.includes(risk.severity);
+
+/** The security reviewer the owner named — a person head office knows, never the owner naming them. */
+export interface SecurityReviewer {
+  readonly userId: string;
+  readonly displayName: string;
+  readonly namedBy: string;
+  readonly namedAt: string;
+  readonly reason: string;
+}
+
+export type AcceptanceSignatureRole = 'owner' | 'security_reviewer';
+
+/** One signature on a critical/high risk's acceptance — append-only; it counts only for the risk state it was given for. */
+export interface RiskAcceptanceSignature {
+  readonly riskId: string;
+  readonly as: AcceptanceSignatureRole;
+  readonly signedBy: string;
+  readonly rationale: string;
+  readonly signedAt: string;
+  /** The risk as it stood when signed (title, severity, gates…) — a re-stated risk needs signing again. */
+  readonly riskDigest: string;
+}
+
+/** The risk state a signature is bound to. */
+export const riskStateDigest = (r: Risk): string =>
+  [r.riskId, r.title, r.severity, r.status, r.ownerUserId, [...r.controlIds].join('.'), [...(r.blocksGates ?? [])].join('.')].join('|');
+
+export type TwoSignatureRefusal =
+  | 'not_a_two_signature_risk' | 'risk_not_open' | 'must_be_fixed_no_security_reviewer' | 'owner_signs_as_owner'
+  | 'not_the_named_security_reviewer' | 'one_person_cannot_sign_twice' | 'acceptance_needs_a_rationale';
+
+export type TwoSignatureJudgement =
+  | { readonly ok: false; readonly refusal: TwoSignatureRefusal; readonly detail: string }
+  /** The signature is good. `accepted` is the risk, accepted in the owner's name with the reviewer's, when both are now in. */
+  | { readonly ok: true; readonly signature: RiskAcceptanceSignature; readonly accepted?: Risk; readonly waitingFor?: AcceptanceSignatureRole };
+
+/**
+ * Judge one signature on a critical or high risk's acceptance. `signerIsOwner` is from the signer's own grants (never the
+ * request); `reviewer` is the one named now (undefined: nobody); `prior` is every signature already recorded on this risk.
+ */
+export function judgeAcceptanceSignature(input: {
+  readonly risk: Risk;
+  readonly as: AcceptanceSignatureRole;
+  readonly signer: string;
+  readonly signerIsOwner: boolean;
+  readonly rationale: string;
+  readonly reviewer: SecurityReviewer | undefined;
+  readonly prior: readonly RiskAcceptanceSignature[];
+  readonly at: string;
+}): TwoSignatureJudgement {
+  const { risk } = input;
+  const refuse = (refusal: TwoSignatureRefusal, detail: string): TwoSignatureJudgement => ({ ok: false, refusal, detail });
+  if (!needsTwoSignatures(risk)) return refuse('not_a_two_signature_risk', `risk ${risk.riskId} is ${risk.severity}; one compliance manager accepts it`);
+  if (risk.status !== 'open') return refuse('risk_not_open', `risk ${risk.riskId} is ${risk.status}, not open — there is nothing to accept`);
+  if (input.reviewer === undefined) {
+    return refuse('must_be_fixed_no_security_reviewer', `no security reviewer is named, so a ${risk.severity} risk cannot be accepted — it must be fixed (OB-330). The owner names the reviewer on the Risk acceptance screen`);
+  }
+  if (input.rationale.trim() === '') return refuse('acceptance_needs_a_rationale', 'a signature on an acceptance needs a written reason');
+  if (input.as === 'owner' && !input.signerIsOwner) return refuse('owner_signs_as_owner', `${input.signer} does not hold the owner's role — the first signature on a ${risk.severity} risk is the owner's`);
+  if (input.as === 'security_reviewer' && input.signer !== input.reviewer.userId) {
+    return refuse('not_the_named_security_reviewer', `${input.signer} is not the named security reviewer (${input.reviewer.displayName}, ${input.reviewer.userId})`);
+  }
+  const digest = riskStateDigest(risk);
+  const live = input.prior.filter((s) => s.riskId === risk.riskId && s.riskDigest === digest && (s.as === 'owner' || s.signedBy === input.reviewer!.userId));
+  const other = live.filter((s) => s.as !== input.as).at(-1);
+  if (other !== undefined && other.signedBy === input.signer) {
+    return refuse('one_person_cannot_sign_twice', `${input.signer} already signed this acceptance as the ${other.as === 'owner' ? 'owner' : 'security reviewer'} — the second signature is another person's`);
+  }
+  const signature: RiskAcceptanceSignature = { riskId: risk.riskId, as: input.as, signedBy: input.signer, rationale: input.rationale.trim(), signedAt: input.at, riskDigest: digest };
+  if (other === undefined) return { ok: true, signature, waitingFor: input.as === 'owner' ? 'security_reviewer' : 'owner' };
+  const ownerSig = input.as === 'owner' ? signature : other;
+  const reviewerSig = input.as === 'owner' ? other : signature;
+  const accepted: Risk = {
+    ...acceptRisk(risk, ownerSig.signedBy, ownerSig.rationale),
+    securityReviewedBy: reviewerSig.signedBy, securityReviewRationale: reviewerSig.rationale,
+  };
+  return { ok: true, signature, accepted };
+}
+
+/** Where a critical/high risk's acceptance stands — for the screen and the register. */
+export function acceptanceSignatures(risk: Risk, prior: readonly RiskAcceptanceSignature[], reviewer: SecurityReviewer | undefined): {
+  readonly needsTwo: boolean; readonly owner: RiskAcceptanceSignature | null; readonly securityReviewer: RiskAcceptanceSignature | null;
+  readonly mustBeFixed: boolean;
+} {
+  const digest = riskStateDigest(risk);
+  const live = prior.filter((s) => s.riskId === risk.riskId && s.riskDigest === digest);
+  return {
+    needsTwo: needsTwoSignatures(risk),
+    owner: live.filter((s) => s.as === 'owner').at(-1) ?? null,
+    securityReviewer: reviewer === undefined ? null : live.filter((s) => s.as === 'security_reviewer' && s.signedBy === reviewer.userId).at(-1) ?? null,
+    mustBeFixed: needsTwoSignatures(risk) && reviewer === undefined,
+  };
 }

@@ -190,7 +190,7 @@ import {
 import {
   createRiskAcceptanceSession,
   type RiskAcceptancePorts, type RiskAcceptanceSession, type BlockedGatesData, type GateBlockView,
-  type RiskAcceptPort, type AcceptResult,
+  type RiskAcceptPort, type AcceptResult, type AcceptanceState, type ReviewerNamePort, type NameResult,
 } from './risk-acceptance-session';
 import {
   createDayReopenSession,
@@ -3192,6 +3192,7 @@ export interface RiskAcceptanceData {
 
 const RISK_READ_PERMISSION = 'compliance.risk.read';
 const RISK_MANAGE_PERMISSION = 'compliance.risk.manage';
+const REVIEWER_NAME_PERMISSION = 'compliance.reviewer.name';
 const EMPTY_BLOCKED_GATES: BlockedGatesData = Object.freeze({ count: 0, blocked: [] });
 const NOOP_ACCEPT_PORT: RiskAcceptPort = { post: async () => 'lost_link' };
 
@@ -3199,6 +3200,10 @@ export function riskAcceptancePortsFromData(
   data: RiskAcceptanceData | undefined,
   worklist?: BlockedGatesData,
   acceptPort: RiskAcceptPort = NOOP_ACCEPT_PORT,
+  /** OB-330: where acceptance stands, as last read live (undefined: not known); and the reviewer's / naming ports. */
+  acceptances?: AcceptanceState,
+  reviewPort: RiskAcceptPort = NOOP_ACCEPT_PORT,
+  namePort: ReviewerNamePort = { put: async () => 'lost_link' },
 ): RiskAcceptancePorts {
   const held = new Set(data?.permissions ?? []);
   return {
@@ -3207,6 +3212,10 @@ export function riskAcceptancePortsFromData(
     mayRead: () => held.has(RISK_READ_PERMISSION),
     mayManage: () => held.has(RISK_MANAGE_PERMISSION),
     acceptPort: () => acceptPort,
+    acceptances: () => acceptances,
+    mayNameReviewer: () => held.has(REVIEWER_NAME_PERMISSION),
+    reviewPort: () => reviewPort,
+    namePort: () => namePort,
   };
 }
 
@@ -3227,25 +3236,66 @@ export function bootRiskAcceptance(
  *  (`credentials: 'same-origin'`), never a service token. A network/timeout is a retryable lost link, not a
  *  refusal. The riskId rides in the URL; the server records the acceptance in the caller's own name and enforces
  *  the name+rationale rule (§28). */
-function openRiskAcceptPort(): RiskAcceptPort {
+function openRiskAcceptPort(as: 'owner' | 'security_reviewer' = 'owner'): RiskAcceptPort {
   return {
     post: async ({ riskId, rationale }): Promise<AcceptResult> => {
       const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
       if (fetchFn === undefined) return 'lost_link';
       const key = globalThis.crypto?.randomUUID?.() ?? `risk-accept-${riskId}`;
       try {
-        const res = await fetchFn(`/v1/compliance/risks/${encodeURIComponent(riskId)}/acceptance`, {
+        const res = await fetchFn(`/v1/compliance/risks/${encodeURIComponent(riskId)}/acceptance${as === 'security_reviewer' ? '/review' : ''}`, {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'idempotency-key': key, accept: 'application/json' },
           credentials: 'same-origin',
           body: JSON.stringify({ rationale }),
         });
-        return res.status >= 200 && res.status < 300 ? 'accepted' : 'refused';
+        // OB-330: 202 is a first signature waiting for the second; a refusal naming "must be fixed" is said as such.
+        if (res.status === 202) return 'awaiting_second_signature';
+        if (res.status >= 200 && res.status < 300) return 'accepted';
+        const body = await res.json().catch(() => null) as { error?: { code?: string } } | null;
+        return body?.error?.code === 'must_be_fixed_no_security_reviewer' ? 'must_be_fixed' : 'refused';
       } catch {
         return 'lost_link';
       }
     },
   };
+}
+
+/** OB-330: the owner names the security reviewer — under his own session cookie; head office checks who may be named. */
+function openReviewerNamePort(): ReviewerNamePort {
+  return {
+    put: async (input): Promise<NameResult> => {
+      const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+      if (fetchFn === undefined) return 'lost_link';
+      try {
+        const res = await fetchFn('/v1/compliance/security-reviewer', {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json', 'idempotency-key': globalThis.crypto?.randomUUID?.() ?? `name-${input.userId}`, accept: 'application/json' },
+          credentials: 'same-origin', body: JSON.stringify(input),
+        });
+        return res.status >= 200 && res.status < 300 ? 'named' : 'refused';
+      } catch {
+        return 'lost_link';
+      }
+    },
+  };
+}
+
+/** OB-330: where acceptance stands (a GET — read-only). Undefined offline/refused: the screen says it is not known. */
+export async function fetchRiskAcceptances(): Promise<AcceptanceState | undefined> {
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return undefined;
+  try {
+    const res = await fetchFn('/v1/compliance/risk-acceptances', { method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin' });
+    if (res.status >= 400) return undefined;
+    const body = (await res.json()) as { reviewer?: { userId: string; displayName: string } | null; risks?: readonly { riskId: string; owner: { signedBy: string } | null; securityReviewer: { signedBy: string } | null }[] };
+    return {
+      reviewer: body.reviewer == null ? null : { userId: body.reviewer.userId, displayName: body.reviewer.displayName },
+      risks: (body.risks ?? []).map((r) => ({ riskId: r.riskId, owner: r.owner?.signedBy ?? null, securityReviewer: r.securityReviewer?.signedBy ?? null })),
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 /** Read the live blocked-gates worklist (a GET — read-only). Returns null offline/refused so the shell keeps
@@ -5098,7 +5148,9 @@ interface ManagerWindow {
   /** The shell reads the live blocked-gates worklist through this and re-presents it — a GET read, never a write. */
   riskAcceptance?: {
     refresh(): Promise<BlockedGatesData | null>;
-    present(worklist: BlockedGatesData): RiskAcceptanceSession;
+    present(worklist: BlockedGatesData, acceptances?: AcceptanceState): RiskAcceptanceSession;
+    /** OB-330: where acceptance stands (reviewer, signatures) — a GET; undefined when not known. */
+    acceptances(): Promise<AcceptanceState | undefined>;
   };
   dayReopenData?: DayReopenScreenData;
   dayReopenSession?: DayReopenSession;
@@ -6414,11 +6466,14 @@ if (browserWindow !== undefined) {
   const riskAcceptance = bootRiskAcceptance(riskAcceptanceData, undefined, riskAcceptPort);
   if (riskAcceptance !== null) {
     browserWindow.riskAcceptanceSession = riskAcceptance;
+    const reviewPort = openRiskAcceptPort('security_reviewer');
+    const namePort = openReviewerNamePort();
     browserWindow.riskAcceptance = {
       refresh: fetchBlockedGates,
-      present: (worklist) => createRiskAcceptanceSession(
+      acceptances: fetchRiskAcceptances,
+      present: (worklist, acceptances) => createRiskAcceptanceSession(
         { userId: riskAcceptanceData?.userId === undefined ? null : riskAcceptanceData.userId },
-        riskAcceptancePortsFromData(riskAcceptanceData, worklist, riskAcceptPort),
+        riskAcceptancePortsFromData(riskAcceptanceData, worklist, riskAcceptPort, acceptances, reviewPort, namePort),
       ),
     };
   }

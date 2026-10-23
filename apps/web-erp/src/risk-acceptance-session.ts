@@ -15,6 +15,12 @@
 //     empty rationale locally, and the engine refuses a blank name or reason server-side.
 //   • **Nothing is overwritten.** Acceptance is a new append-only fact on the risk; the register is not edited.
 //
+// OB-330 (owner, 23 Oct 2026 · §35.1): a critical or high risk is accepted only with TWO signatures — the owner's and the
+// named security reviewer's, each in their own session. The screen says who the reviewer is (or that nobody is named, so
+// a critical or high risk must be FIXED, not accepted); lets the owner name the reviewer on screen (never in code); and
+// offers the one signature the viewer may give: "Sign as owner" or "Sign as security reviewer". A first signature is
+// said as waiting for the second; only both together accept the risk (the server decides; the screen shows its answer).
+//
 // Like every ERP screen the rules live here in a tested, DOM-free session model on the shared packages/ui
 // primitives (colour is never the only signal — an icon and a word ride with every tone); the shell only
 // renders what this hands over. No AI accepts a risk (hard rule #5).
@@ -42,7 +48,19 @@ export interface BlockedGatesData {
 
 /** The outcome of an acceptance — recorded, refused by the server (blank name/reason, permission), or a lost
  *  link. */
-export type AcceptResult = 'accepted' | 'refused' | 'lost_link';
+export type AcceptResult = 'accepted' | 'awaiting_second_signature' | 'must_be_fixed' | 'refused' | 'lost_link';
+
+/** OB-330: where acceptance stands (`GET /v1/compliance/risk-acceptances`) — the reviewer named, and each risk's signatures. */
+export interface AcceptanceState {
+  readonly reviewer: { readonly userId: string; readonly displayName: string } | null;
+  readonly risks: readonly { readonly riskId: string; readonly owner: string | null; readonly securityReviewer: string | null }[];
+}
+
+/** OB-330: the owner's naming of the security reviewer (`PUT /v1/compliance/security-reviewer`). */
+export type NameResult = 'named' | 'refused' | 'lost_link';
+export interface ReviewerNamePort {
+  put(input: { readonly userId: string; readonly displayName: string; readonly reason: string }): Promise<NameResult>;
+}
 
 /** The authenticated POST of an acceptance decision. Injected, so the model never opens a socket itself; the
  *  server records the acceptance in the caller's own name and enforces the name+rationale rule. */
@@ -59,6 +77,14 @@ export interface RiskAcceptancePorts {
   mayManage(): boolean;
   /** Records an acceptance. Only reached from the explicit action, never on render. */
   acceptPort(): RiskAcceptPort;
+  /** OB-330: where acceptance stands, as last read live — undefined when it could not be read (said as "not known"). */
+  acceptances?(): AcceptanceState | undefined;
+  /** OB-330: may this user name the security reviewer (`compliance.reviewer.name`, the owner's)? */
+  mayNameReviewer?(): boolean;
+  /** OB-330: the reviewer's own signature (`POST …/acceptance/review`). */
+  reviewPort?(): RiskAcceptPort;
+  /** OB-330: the owner's naming of the reviewer. */
+  namePort?(): ReviewerNamePort;
 }
 
 export interface RiskAcceptanceConfig {
@@ -77,7 +103,10 @@ export type CopyKey =
   | 'acceptHeading' | 'riskChoiceLabel' | 'rationaleLabel' | 'rationalePlaceholder' | 'acceptBtn'
   | 'acceptRecorded' | 'acceptRefused' | 'acceptLostLink'
   | 'scrReady' | 'scrEmpty' | 'stateNotPermitted' | 'noManage'
-  | 'nobodyNamed' | 'staleShell' | 'sampleData';
+  | 'nobodyNamed' | 'staleShell' | 'sampleData'
+  | 'reviewerHeading' | 'reviewerNamed' | 'reviewerNotNamed' | 'reviewerNotKnown' | 'signOwnerBtn' | 'signReviewerBtn'
+  | 'awaitingSecond' | 'mustBeFixed' | 'signedOwner' | 'signedReviewer' | 'notSignedYet'
+  | 'nameHeading' | 'reviewerIdLabel' | 'reviewerNameLabel' | 'reviewerReasonLabel' | 'nameBtn' | 'nameRecorded' | 'nameRefused';
 
 export const RISK_ACCEPTANCE_COPY: BilingualCopy<CopyKey> = {
   en: {
@@ -98,6 +127,17 @@ export const RISK_ACCEPTANCE_COPY: BilingualCopy<CopyKey> = {
     noManage: 'You can see the blocked gates, but accepting a risk needs compliance permission.',
     nobodyNamed: 'This store computer has not been told who is using this screen.',
     staleShell: 'No connection to the store computer. This page is what it was last told, at', sampleData: 'Sample data — this is not your shop.',
+    reviewerHeading: 'Security reviewer',
+    reviewerNamed: 'A critical or high risk is accepted only when the owner AND the security reviewer both sign. Security reviewer:',
+    reviewerNotNamed: 'No security reviewer is named. A critical or high risk cannot be accepted — it must be fixed. The owner names the reviewer below.',
+    reviewerNotKnown: 'Head office could not be read, so who the security reviewer is, and what is signed, is not known here.',
+    signOwnerBtn: 'Sign as owner', signReviewerBtn: 'Sign as security reviewer',
+    awaitingSecond: 'Your signature is recorded. The risk is not accepted until the second person signs.',
+    mustBeFixed: 'Not accepted — no security reviewer is named, so this risk must be fixed.',
+    signedOwner: 'Owner signed', signedReviewer: 'Security reviewer signed', notSignedYet: 'not yet',
+    nameHeading: 'Name the security reviewer', reviewerIdLabel: 'Their sign-in (user id)', reviewerNameLabel: 'Their name, as you know them',
+    reviewerReasonLabel: 'Why this person (kept on the record)', nameBtn: 'Name the reviewer',
+    nameRecorded: 'The security reviewer is named.', nameRefused: 'Not named — head office refused it (they need their own sign-in that may read the risk register, and cannot be you).',
   },
   ta: {
     title: 'இடர் ஏற்பு', langName: 'English',
@@ -117,6 +157,17 @@ export const RISK_ACCEPTANCE_COPY: BilingualCopy<CopyKey> = {
     noManage: 'தடுக்கப்பட்ட வாயில்களைப் பார்க்கலாம், ஆனால் இடரை ஏற்க இணக்க அனுமதி தேவை.',
     nobodyNamed: 'இந்தத் திரையை யார் பயன்படுத்துகிறார்கள் என்று கடைக் கணினிக்குத் தெரியவில்லை.',
     staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:', sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.',
+    reviewerHeading: 'பாதுகாப்புச் சரிபார்ப்பாளர்',
+    reviewerNamed: 'உரிமையாளரும் பாதுகாப்புச் சரிபார்ப்பாளரும் இருவரும் கையொப்பமிட்டால் மட்டுமே தீவிர அல்லது உயர் இடர் ஏற்கப்படும். பாதுகாப்புச் சரிபார்ப்பாளர்:',
+    reviewerNotNamed: 'பாதுகாப்புச் சரிபார்ப்பாளர் யாரும் பெயரிடப்படவில்லை. தீவிர அல்லது உயர் இடரை ஏற்க முடியாது — அதைச் சரிசெய்ய வேண்டும். உரிமையாளர் கீழே சரிபார்ப்பாளரைப் பெயரிடுவார்.',
+    reviewerNotKnown: 'தலைமை அலுவலகத்திலிருந்து படிக்க முடியவில்லை, எனவே பாதுகாப்புச் சரிபார்ப்பாளர் யார், எது கையொப்பமிடப்பட்டது என்பது இங்கே தெரியவில்லை.',
+    signOwnerBtn: 'உரிமையாளராகக் கையொப்பமிடு', signReviewerBtn: 'பாதுகாப்புச் சரிபார்ப்பாளராகக் கையொப்பமிடு',
+    awaitingSecond: 'உங்கள் கையொப்பம் பதிவாகியது. இரண்டாவது நபர் கையொப்பமிடும் வரை இடர் ஏற்கப்படாது.',
+    mustBeFixed: 'ஏற்கப்படவில்லை — பாதுகாப்புச் சரிபார்ப்பாளர் பெயரிடப்படவில்லை, எனவே இந்த இடரைச் சரிசெய்ய வேண்டும்.',
+    signedOwner: 'உரிமையாளர் கையொப்பமிட்டார்', signedReviewer: 'பாதுகாப்புச் சரிபார்ப்பாளர் கையொப்பமிட்டார்', notSignedYet: 'இன்னும் இல்லை',
+    nameHeading: 'பாதுகாப்புச் சரிபார்ப்பாளரைப் பெயரிடு', reviewerIdLabel: 'அவருடைய உள்நுழைவு (பயனர் அடையாளம்)', reviewerNameLabel: 'உங்களுக்குத் தெரிந்த அவருடைய பெயர்',
+    reviewerReasonLabel: 'ஏன் இவர் (பதிவில் வைக்கப்படும்)', nameBtn: 'சரிபார்ப்பாளரைப் பெயரிடு',
+    nameRecorded: 'பாதுகாப்புச் சரிபார்ப்பாளர் பெயரிடப்பட்டார்.', nameRefused: 'பெயரிடப்படவில்லை — தலைமை அலுவலகம் மறுத்தது (அவருக்கு இடர் பதிவேட்டைப் படிக்கக்கூடிய சொந்த உள்நுழைவு வேண்டும், அவர் நீங்களாக இருக்கக் கூடாது).',
   },
 };
 
@@ -134,6 +185,8 @@ export interface PresentedBlock {
   /** Every blocked gate needs attention (P-03) — a degraded tone with an icon and word, never colour alone. */
   readonly status: StatusPresentation;
   readonly needsAttention: boolean;
+  /** OB-330: the two signatures on this risk's acceptance, in words (null when not known). */
+  readonly signatures: string | null;
 }
 
 /** One distinct risk the accepter can pick, for the dropdown (a risk may block several gates — one entry). */
@@ -151,6 +204,14 @@ export interface RiskAcceptanceView {
   readonly nobodyNamed: boolean;
   /** Whether to offer the accept action — this user holds `compliance.risk.manage`. */
   readonly mayManage: boolean;
+  /** OB-330: the security reviewer, in words, with its state (named / not named → must be fixed / not known). */
+  readonly reviewer: { readonly state: 'named' | 'not_named' | 'not_known'; readonly words: string; readonly status: StatusPresentation };
+  /** OB-330: the one signature this viewer may give — the named reviewer signs as reviewer, a compliance manager as owner. */
+  readonly actingAs: 'owner' | 'security_reviewer' | 'none';
+  /** The accept button's words for that signature. */
+  readonly acceptLabel: string;
+  /** OB-330: whether to offer the naming form (the owner's). */
+  readonly mayNameReviewer: boolean;
 }
 
 export interface RiskAcceptanceSession {
@@ -162,16 +223,45 @@ export interface RiskAcceptanceSession {
   accept(riskId: string, rationale: string): Promise<AcceptResult>;
   /** Present an acceptance outcome as one glanceable status the shell shows after the action. */
   presentAcceptResult(lang: Lang, result: AcceptResult): StatusPresentation;
+  /** OB-330: the owner names the security reviewer — refused locally without the right or any field; then the port. */
+  nameReviewer(userId: string, displayName: string, reason: string): Promise<NameResult>;
+  presentNameResult(lang: Lang, result: NameResult): StatusPresentation;
 }
 
-const EMPTY_VIEW = (screenState: StatusPresentation, nobodyNamed: boolean, mayManage: boolean): RiskAcceptanceView => ({
-  screenState, blocked: [], blockedCount: 0, risks: [], nobodyNamed, mayManage,
+type ViewExtras = Pick<RiskAcceptanceView, 'reviewer' | 'actingAs' | 'acceptLabel' | 'mayNameReviewer'>;
+const EMPTY_VIEW = (screenState: StatusPresentation, nobodyNamed: boolean, mayManage: boolean, extras: ViewExtras): RiskAcceptanceView => ({
+  screenState, blocked: [], blockedCount: 0, risks: [], nobodyNamed, mayManage, ...extras,
 });
 
 const SEVERITY_COPY: Readonly<Record<string, CopyKey>> = { critical: 'severityCritical', high: 'severityHigh' };
 
 export function createRiskAcceptanceSession(config: RiskAcceptanceConfig, ports: RiskAcceptancePorts): RiskAcceptanceSession {
   const text = (lang: Lang, key: CopyKey): string => translator(RISK_ACCEPTANCE_COPY, lang)(key);
+
+  /** OB-330: who the viewer signs as — the named reviewer as reviewer; a compliance manager as owner (the server checks). */
+  const actingAs = (): 'owner' | 'security_reviewer' | 'none' => {
+    const reviewer = ports.acceptances?.()?.reviewer;
+    if (reviewer != null && config.userId !== null && reviewer.userId === config.userId) return 'security_reviewer';
+    return ports.mayManage() ? 'owner' : 'none';
+  };
+  const extras = (lang: Lang): ViewExtras => {
+    const t = translator(RISK_ACCEPTANCE_COPY, lang);
+    const state = ports.acceptances?.();
+    const as = actingAs();
+    const reviewer = state === undefined
+      ? { state: 'not_known' as const, words: t('reviewerNotKnown'), status: presentStatus({ tone: 'idle', icon: '?', label: t('reviewerNotKnown'), needsAttention: true }) }
+      : state.reviewer === null
+        ? { state: 'not_named' as const, words: t('reviewerNotNamed'), status: presentStatus({ tone: 'error', icon: '✕', label: t('reviewerNotNamed'), needsAttention: true }) }
+        : { state: 'named' as const, words: `${t('reviewerNamed')} ${state.reviewer.displayName} (${state.reviewer.userId})`, status: presentStatus({ tone: 'ok', icon: '✓', label: `${t('reviewerHeading')}: ${state.reviewer.displayName}`, needsAttention: false }) };
+    return { reviewer, actingAs: as, acceptLabel: as === 'security_reviewer' ? t('signReviewerBtn') : t('signOwnerBtn'), mayNameReviewer: ports.mayNameReviewer?.() ?? false };
+  };
+  const signaturesOf = (lang: Lang, riskId: string): string | null => {
+    const state = ports.acceptances?.();
+    if (state === undefined) return null;
+    const t = translator(RISK_ACCEPTANCE_COPY, lang);
+    const r = state.risks.find((x) => x.riskId === riskId);
+    return `${t('signedOwner')}: ${r?.owner ?? t('notSignedYet')} · ${t('signedReviewer')}: ${r?.securityReviewer ?? t('notSignedYet')}`;
+  };
 
   const present = (lang: Lang, b: GateBlockView): PresentedBlock => {
     const t = translator(RISK_ACCEPTANCE_COPY, lang);
@@ -189,6 +279,7 @@ export function createRiskAcceptanceSession(config: RiskAcceptanceConfig, ports:
       // signal: an icon and the severity word ride with it.
       status: presentStatus({ tone: 'degraded', icon: '⚠', label: severityWord, announcement: `${severityWord}: ${b.title} — ${b.gate}`, needsAttention: true }),
       needsAttention: true,
+      signatures: signaturesOf(lang, b.riskId),
     };
   };
 
@@ -200,7 +291,7 @@ export function createRiskAcceptanceSession(config: RiskAcceptanceConfig, ports:
       const mayManage = ports.mayManage();
 
       if (!ports.mayRead()) {
-        return EMPTY_VIEW(presentScreenState({ state: 'error', label: t('stateNotPermitted') }), nobodyNamed, mayManage);
+        return EMPTY_VIEW(presentScreenState({ state: 'error', label: t('stateNotPermitted') }), nobodyNamed, mayManage, extras(lang));
       }
 
       const worklist = ports.worklist();
@@ -219,6 +310,7 @@ export function createRiskAcceptanceSession(config: RiskAcceptanceConfig, ports:
         risks,
         nobodyNamed,
         mayManage,
+        ...extras(lang),
       };
     },
 
@@ -226,13 +318,31 @@ export function createRiskAcceptanceSession(config: RiskAcceptanceConfig, ports:
     // round trip. The server still records the acceptance in the accepter's own name and enforces the
     // name+reason rule; the screen never fabricates the reason.
     accept: async (riskId, rationale) => {
-      if (!ports.mayManage() || riskId.trim() === '' || rationale.trim() === '') return 'refused';
+      const as = actingAs();
+      if (as === 'none' || riskId.trim() === '' || rationale.trim() === '') return 'refused';
+      // OB-330: the named reviewer's signature goes to the reviewer's route; anyone else's is the owner's signature.
+      if (as === 'security_reviewer') return ports.reviewPort === undefined ? 'refused' : ports.reviewPort().post({ riskId, rationale: rationale.trim() });
       return ports.acceptPort().post({ riskId, rationale: rationale.trim() });
+    },
+
+    nameReviewer: async (userId, displayName, reason) => {
+      if (!(ports.mayNameReviewer?.() ?? false) || ports.namePort === undefined) return 'refused';
+      if (userId.trim() === '' || displayName.trim() === '' || reason.trim() === '') return 'refused';
+      return ports.namePort().put({ userId: userId.trim(), displayName: displayName.trim(), reason: reason.trim() });
+    },
+
+    presentNameResult: (lang, result) => {
+      const t = translator(RISK_ACCEPTANCE_COPY, lang);
+      if (result === 'named') return presentStatus({ tone: 'ok', icon: '✓', label: t('nameRecorded'), needsAttention: false });
+      if (result === 'lost_link') return presentStatus({ tone: 'degraded', icon: '⚠', label: t('acceptLostLink'), needsAttention: true });
+      return presentStatus({ tone: 'error', icon: '✕', label: t('nameRefused'), needsAttention: true });
     },
 
     presentAcceptResult: (lang, result) => {
       const t = translator(RISK_ACCEPTANCE_COPY, lang);
       if (result === 'accepted') return presentStatus({ tone: 'ok', icon: '✓', label: t('acceptRecorded'), needsAttention: false });
+      if (result === 'awaiting_second_signature') return presentStatus({ tone: 'degraded', icon: '✍', label: t('awaitingSecond'), needsAttention: true });
+      if (result === 'must_be_fixed') return presentStatus({ tone: 'error', icon: '✕', label: t('mustBeFixed'), needsAttention: true });
       if (result === 'lost_link') return presentStatus({ tone: 'degraded', icon: '⚠', label: t('acceptLostLink'), needsAttention: true });
       return presentStatus({ tone: 'error', icon: '✕', label: t('acceptRefused'), needsAttention: true });
     },

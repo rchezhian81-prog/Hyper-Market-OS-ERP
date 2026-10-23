@@ -189,6 +189,10 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'approvals.rules.read', 'approvals.rules.propose', 'approvals.rules.approve',
       'org.structure.approve', 'platform.config.approve', 'identity.access.review',
       // ── OB-288 lane 1 · P1 — end
+      // ── OB-288 integration follow-ups — begin
+      // OB-330: the owner names the security reviewer whose signature, beside his own, accepts a critical or high risk.
+      'compliance.reviewer.name',
+      // ── OB-288 integration follow-ups — end
       'price.integrity.audit', 'selfcheckout.operate',
       'owner.alert.read', 'owner.kpi.read', 'owner.brief.manage',
       'refund.exception.read',

@@ -18,9 +18,11 @@
 // name (a tick with no date, or nobody's name, is not evidence).
 
 import type { Route } from '../../kernel/src/index';
+import type { AuditEntry } from '../../../packages/audit/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
 import {
-  acceptRisk, blockedGates, gateCanPass,
+  acceptRisk, blockedGates, gateCanPass, needsTwoSignatures, judgeAcceptanceSignature, acceptanceSignatures, GATE_BLOCKING_SEVERITIES,
+  type SecurityReviewer, type RiskAcceptanceSignature, type AcceptanceSignatureRole,
   recordIncident, recordRemediation, controlHealth, overdueRemediations,
   UnlinkedIncidentError, UnownedRemediationError,
   type Risk, type RiskSeverity, type RiskStatus,
@@ -69,7 +71,32 @@ export interface RiskRegisterDeps {
    * gate register would refuse a GO. Optional so a surface without the findings register still answers on risks.
    */
   readonly otherBlockers?: (tenantId: string) => Promise<readonly OtherGateBlocker[]> | readonly OtherGateBlocker[];
+  /**
+   * OB-330 (owner, 23 Oct 2026 · §35.1): the two-signature acceptance of a critical or high risk — the owner and the named
+   * security reviewer. Absent on a bare stub: then a critical or high risk cannot be accepted at all (it must be fixed),
+   * never accepted by one person.
+   */
+  readonly twoSignature?: TwoSignatureDeps;
 }
+
+/** OB-330: the named security reviewer and the signatures, on head office's append-only streams. */
+export interface TwoSignatureDeps {
+  /** The reviewer named NOW (latest naming), or undefined when nobody has been named. */
+  readonly reviewer: (tenantId: string) => Promise<SecurityReviewer | undefined>;
+  readonly recordReviewer: (tenantId: string, reviewer: SecurityReviewer) => Promise<void>;
+  readonly signatures: (tenantId: string) => Promise<readonly RiskAcceptanceSignature[]>;
+  readonly recordSignature: (tenantId: string, signature: RiskAcceptanceSignature) => Promise<void>;
+  /** From the person's own grants, never the request: do they hold the owner's role? */
+  readonly isOwner: (tenantId: string, userId: string) => Promise<boolean>;
+  /** May this person sign here at all — a person head office knows who may read the risk register? */
+  readonly mayReview: (tenantId: string, userId: string) => Promise<boolean>;
+  readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
+}
+
+const TWO_SIG_STATUS: Readonly<Record<string, number>> = {
+  not_a_two_signature_risk: 409, risk_not_open: 409, must_be_fixed_no_security_reviewer: 422, owner_signs_as_owner: 422,
+  not_the_named_security_reviewer: 422, one_person_cannot_sign_twice: 422, acceptance_needs_a_rationale: 400,
+};
 
 /** A non-risk blocker as `can-pass` reports it (a finding or a gate check). */
 export interface OtherGateBlocker {
@@ -81,7 +108,7 @@ export interface OtherGateBlocker {
 
 // A stable digest so any real change to a risk is a new append-only fact, but an exact re-send collapses.
 const digestOf = (r: Risk): string =>
-  [r.title, r.severity, r.status, r.ownerUserId, (r.controlIds ?? []).join('.'), (r.blocksGates ?? []).join('.'), r.acceptedBy ?? '', r.acceptanceRationale ?? ''].join('|');
+  [r.title, r.severity, r.status, r.ownerUserId, (r.controlIds ?? []).join('.'), (r.blocksGates ?? []).join('.'), r.acceptedBy ?? '', r.acceptanceRationale ?? '', r.securityReviewedBy ?? ''].join('|');
 const controlDigest = (c: Control): string => [c.title, c.implements, c.ownerUserId].join('|');
 const incidentDigest = (i: Incident): string =>
   [i.title, i.severity, i.occurredAt, i.detectedAt, i.controlId, (i.remediationIds ?? []).join('.'), i.closedAt ?? ''].join('|');
@@ -90,7 +117,121 @@ const remediationDigest = (r: Remediation): string =>
 const attestationDigest = (a: Attestation): string => [a.controlId, a.attestedBy, a.attestedAt, a.statement].join('|');
 
 export function riskRegisterRoutes(deps: RiskRegisterDeps): readonly Route[] {
+  /** OB-330: one signature on a critical/high acceptance — judged by the tested engine, recorded, completing it when both are in. */
+  const sign = async (ctx: Parameters<Route['handler']>[0], risk: Risk, as: AcceptanceSignatureRole, rationale: string) => {
+    const two = deps.twoSignature;
+    if (two === undefined) {
+      throw apiError(422, {
+        code: 'must_be_fixed_no_security_reviewer',
+        whatHappened: `Risk ${risk.riskId} is ${risk.severity}. Its acceptance needs the owner and a named security reviewer (OB-330), and that register is not wired here — so it cannot be accepted; it must be fixed.`,
+        wasItSaved: 'not_saved', nextSafeAction: 'Fix the risk, or record the acceptance on head office. Nothing was accepted.',
+      });
+    }
+    const [reviewer, prior, signerIsOwner] = await Promise.all([two.reviewer(ctx.tenantId), two.signatures(ctx.tenantId), two.isOwner(ctx.tenantId, ctx.userId)]);
+    const at = deps.now();
+    const judged = judgeAcceptanceSignature({ risk, as, signer: ctx.userId, signerIsOwner, rationale, reviewer, prior, at });
+    if (!judged.ok) {
+      throw apiError(TWO_SIG_STATUS[judged.refusal] ?? 422, {
+        code: judged.refusal, whatHappened: `${judged.detail}.`, wasItSaved: 'not_saved',
+        nextSafeAction: judged.refusal === 'must_be_fixed_no_security_reviewer'
+          ? 'Fix the risk — or the owner names a security reviewer on the Risk acceptance screen, and both sign. Nothing was accepted.'
+          : 'The owner signs as the owner and the named security reviewer signs as the reviewer, each in their own session. Nothing was accepted.',
+      });
+    }
+    // A re-sent signature (the same person, the same role, the same risk state) is the same signature — recorded once.
+    const already = prior.some((s) => s.riskId === risk.riskId && s.as === as && s.signedBy === ctx.userId && s.riskDigest === judged.signature.riskDigest);
+    if (!already) await two.recordSignature(ctx.tenantId, judged.signature);
+    await two.recordAudit?.(ctx.tenantId, {
+      actorId: ctx.userId, action: as === 'owner' ? 'compliance.risk.accept.owner_signed' : 'compliance.risk.accept.reviewer_signed', objectType: 'risk', objectId: risk.riskId,
+      at, origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null }, before: { status: risk.status },
+      after: { status: judged.accepted === undefined ? 'awaiting_second_signature' : 'accepted', severity: risk.severity, reviewer: reviewer?.userId ?? '' },
+      reason: rationale, correlationId: `risk-acceptance:${risk.riskId}`,
+    });
+    if (judged.accepted === undefined) {
+      return {
+        status: 202,
+        body: { riskId: risk.riskId, status: 'awaiting_second_signature', signedAs: as, signedBy: ctx.userId, waitingFor: judged.waitingFor, ...(judged.waitingFor === 'security_reviewer' ? { reviewer: reviewer!.userId } : {}) },
+      };
+    }
+    await deps.recordRisk(ctx.tenantId, risk.riskId, judged.accepted, digestOf(judged.accepted));
+    return { status: 200, body: { riskId: risk.riskId, status: judged.accepted.status, acceptedBy: judged.accepted.acceptedBy, securityReviewedBy: judged.accepted.securityReviewedBy } };
+  };
+  const reviewerOf = async (tenantId: string): Promise<SecurityReviewer | undefined> => deps.twoSignature?.reviewer(tenantId);
   return [
+    {
+      // OB-330: the named security reviewer signs a critical/high risk's acceptance — in their OWN session; the authority is
+      // the owner's naming of them (checked here), so the route asks only that they may read the risk register. Body: { rationale }.
+      api: 'API-11', method: 'POST', path: '/v1/compliance/risks/:riskId/acceptance/review',
+      permission: 'compliance.risk.read', idempotent: true,
+      handler: async (ctx) => {
+        const riskId = ctx.params['riskId'] ?? '';
+        const rationale = (ctx.body as { rationale?: unknown } | null)?.rationale;
+        if (!isStr(rationale)) {
+          throw apiError(400, { code: 'acceptance_needs_a_rationale', whatHappened: 'A reviewer\'s signature needs { rationale } — why, as the security reviewer, you agree this risk may be carried.', wasItSaved: 'not_saved', nextSafeAction: 'Write the reason and sign again.' });
+        }
+        const existing = await deps.risk(ctx.tenantId, riskId);
+        if (existing === undefined) throw notFound(`risk ${riskId}`);
+        return sign(ctx, existing, 'security_reviewer', rationale);
+      },
+    },
+    {
+      // OB-330: where each open critical/high risk's acceptance stands — the reviewer named (or not: then they must be fixed),
+      // and each risk's two signatures.
+      api: 'API-11', method: 'GET', path: '/v1/compliance/risk-acceptances',
+      permission: 'compliance.risk.read',
+      handler: async (ctx) => {
+        const reviewer = await reviewerOf(ctx.tenantId);
+        const prior = deps.twoSignature === undefined ? [] : await deps.twoSignature.signatures(ctx.tenantId);
+        const risks = (await deps.risks(ctx.tenantId)).filter((r) => r.status === 'open' && GATE_BLOCKING_SEVERITIES.includes(r.severity));
+        return {
+          status: 200,
+          body: {
+            reviewer: reviewer ?? null, mustBeFixed: reviewer === undefined, rule: 'OB-330: the owner and the named security reviewer both sign; with no reviewer named a critical or high risk must be fixed',
+            risks: risks.map((r) => ({ riskId: r.riskId, title: r.title, severity: r.severity, ...acceptanceSignatures(r, prior, reviewer) })),
+            asAt: deps.now(),
+          },
+        };
+      },
+    },
+    {
+      // OB-330: the owner names the security reviewer, on screen — a person head office knows who may read the risk register,
+      // never the owner himself. Body: { userId, displayName, reason }. Append-only: a new naming supersedes; the old stays.
+      api: 'API-11', method: 'PUT', path: '/v1/compliance/security-reviewer',
+      permission: 'compliance.reviewer.name', idempotent: true,
+      handler: async (ctx) => {
+        const two = deps.twoSignature;
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        if (!isStr(b['userId']) || !isStr(b['displayName']) || !isStr(b['reason'])) {
+          throw apiError(400, { code: 'not_readable_as_a_reviewer', whatHappened: 'Naming the security reviewer needs { userId (their sign-in), displayName (as you know them), reason }.', wasItSaved: 'not_saved', nextSafeAction: 'Enter the reviewer\'s sign-in, name and why. Nothing was saved.' });
+        }
+        if (two === undefined) throw apiError(503, { code: 'reviewer_register_unavailable', whatHappened: 'The security-reviewer register is not wired here.', wasItSaved: 'not_saved', nextSafeAction: 'Name the reviewer on head office. Nothing was saved.' });
+        const userId = (b['userId'] as string).trim();
+        if (userId === ctx.userId) {
+          throw apiError(422, { code: 'owner_cannot_be_their_own_reviewer', whatHappened: 'The security reviewer is the SECOND signature on a critical or high risk — it cannot be the owner who names them.', wasItSaved: 'not_saved', nextSafeAction: 'Name another person. Nothing was saved.' });
+        }
+        if (!(await two.mayReview(ctx.tenantId, userId))) {
+          throw apiError(422, { code: 'reviewer_cannot_sign_here', whatHappened: `${userId} is not a person head office knows who may read the risk register, so they could never sign.`, wasItSaved: 'not_saved', nextSafeAction: 'Give them their own sign-in and a role that may read the risk register first, then name them. Nothing was saved.' });
+        }
+        const reviewer: SecurityReviewer = { userId, displayName: (b['displayName'] as string).trim(), namedBy: ctx.userId, namedAt: deps.now(), reason: (b['reason'] as string).trim() };
+        const current = await two.reviewer(ctx.tenantId);
+        if (current !== undefined && current.userId === reviewer.userId && current.displayName === reviewer.displayName) return { status: 200, body: { reviewer: current, alreadyNamed: true } };
+        await two.recordReviewer(ctx.tenantId, reviewer);
+        await two.recordAudit?.(ctx.tenantId, {
+          actorId: ctx.userId, action: 'compliance.security_reviewer.name', objectType: 'security_reviewer', objectId: userId, at: reviewer.namedAt,
+          origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null }, before: current === undefined ? null : { userId: current.userId },
+          after: { userId, displayName: reviewer.displayName }, reason: reviewer.reason, correlationId: 'security-reviewer',
+        });
+        return { status: 200, body: { reviewer, alreadyNamed: false } };
+      },
+    },
+    {
+      api: 'API-11', method: 'GET', path: '/v1/compliance/security-reviewer',
+      permission: 'compliance.risk.read',
+      handler: async (ctx) => {
+        const reviewer = await reviewerOf(ctx.tenantId);
+        return { status: 200, body: { reviewer: reviewer ?? null, mustBeFixed: reviewer === undefined } };
+      },
+    },
     {
       // Register (or re-state) a risk. Body: { title, severity, status?, ownerUserId, controlIds?,
       // blocksGates? }. `status` may not be `accepted` — that goes through the acceptance route.
@@ -140,6 +281,8 @@ export function riskRegisterRoutes(deps: RiskRegisterDeps): readonly Route[] {
         }
         const existing = await deps.risk(ctx.tenantId, riskId);
         if (existing === undefined) throw notFound(`risk ${riskId}`);
+        // OB-330: a critical or high risk is accepted only with two signatures — this is the OWNER's.
+        if (needsTwoSignatures(existing)) return sign(ctx, existing, 'owner', rationale);
         // acceptedBy is the authenticated caller — you accept in your own name (§28). The engine enforces
         // that neither the name nor the reason is blank.
         const accepted = acceptRisk(existing, ctx.userId, rationale);

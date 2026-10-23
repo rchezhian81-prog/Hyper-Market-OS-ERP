@@ -28,8 +28,13 @@ async function cast(): Promise<ApiHarness> {
   await h.seedOwner(A, 'u-owner');
   await h.provisionRole(A, 'u-mgr', 'store_manager'); // compliance.risk.manage + read
   await h.provisionRole(A, 'u-cash', 'cashier');       // neither
+  await h.provisionRole(A, 'u-rev', 'store_manager');  // the security reviewer the owner names (OB-330)
   return h;
 }
+const nameReviewer = (h: ApiHarness, u = 'u-owner') =>
+  h.request({ method: 'PUT', path: '/v1/compliance/security-reviewer', userId: u, tenantId: A, idempotencyKey: `rev-${u}`, body: { userId: 'u-rev', displayName: 'R. Reviewer (security)', reason: 'external security reviewer for the pilot' } });
+const review = (h: ApiHarness, u: string, id: string, rationale: string) =>
+  h.request({ method: 'POST', path: `/v1/compliance/risks/${id}/acceptance/review`, userId: u, tenantId: A, idempotencyKey: `rv-${id}-${u}`, body: { rationale } });
 
 describe('risk register: an open critical risk blocks its gate until accepted (M34-FR-04)', () => {
   it('blocks a gate on an open critical risk, and unblocks it only on a named, reasoned acceptance', async () => {
@@ -42,10 +47,22 @@ describe('risk register: an open critical risk blocks its gate until accepted (M
     expect(b1.blocked[0]?.reason).toContain('u-sec'); // names the owner
     expect((await canPass(h, 'u-owner', 'QG-06')).body).toMatchObject({ canPass: false });
 
-    // Accepting is a decision — recorded in the caller's own name, with a reason.
-    const acc = await accept(h, 'u-mgr', 'r1', 'residual risk accepted pending external pentest; compensating controls in place');
-    expect(acc.status).toBe(200);
-    expect(acc.body).toMatchObject({ status: 'accepted', acceptedBy: 'u-mgr' });
+    // OB-330: a critical risk is accepted only with two signatures — the owner and the named security reviewer. With no
+    // reviewer named it cannot be accepted at all: it must be fixed.
+    const why = 'residual risk accepted pending external pentest; compensating controls in place';
+    expect(codeOf(await accept(h, 'u-owner', 'r1', why))).toBe('must_be_fixed_no_security_reviewer');
+    expect((await nameReviewer(h)).status).toBe(200);
+    // A store manager cannot give the owner's signature; the owner's alone does not accept it.
+    expect(codeOf(await accept(h, 'u-mgr', 'r1', why, 'acc-r1-mgr'))).toBe('owner_signs_as_owner');
+    const first = await accept(h, 'u-owner', 'r1', why, 'acc-r1-owner');
+    expect(first.status).toBe(202);
+    expect(first.body).toMatchObject({ status: 'awaiting_second_signature', waitingFor: 'security_reviewer', reviewer: 'u-rev' });
+    expect(((await blocked(h, 'u-owner')).body as Blocked).count).toBe(1); // still blocks
+    // Only the named reviewer gives the second signature.
+    expect(codeOf(await review(h, 'u-mgr', 'r1', 'looks fine'))).toBe('not_the_named_security_reviewer');
+    const acc = await review(h, 'u-rev', 'r1', 'compensating controls verified; pentest booked');
+    expect(acc.status, JSON.stringify(acc.body)).toBe(200);
+    expect(acc.body).toMatchObject({ status: 'accepted', acceptedBy: 'u-owner', securityReviewedBy: 'u-rev' });
 
     // Accepted no longer blocks (P-08: a recorded decision, not silence).
     expect(((await blocked(h, 'u-owner')).body as Blocked).count).toBe(0);
@@ -90,7 +107,9 @@ describe('risk register: an open critical risk blocks its gate until accepted (M
     expect((await blocked(h, 'u-cash')).status).toBe(403);
 
     await register(h, 'u-mgr', 'r3', { title: 'db backup gap', severity: 'critical', ownerUserId: 'u-sec', blocksGates: ['QG-03'] });
-    await accept(h, 'u-mgr', 'r3', 'accepted for the pilot window with daily manual snapshots');
+    await nameReviewer(h);
+    await accept(h, 'u-owner', 'r3', 'accepted for the pilot window with daily manual snapshots');
+    await review(h, 'u-rev', 'r3', 'daily manual snapshots verified');
 
     const restarted = apiHarness({ store: h.store });
     expect((await canPass(restarted, 'u-owner', 'QG-03')).body).toMatchObject({ canPass: true });
