@@ -335,6 +335,8 @@ import type { EventStore } from '../../../packages/persistence/src/event-store';
 import { r3GstRoutes, eInvoiceReportingGuardFor, gstTimeBarSweep } from './r3-gst-adapters';
 // R4 Lane 4 (supply, pricing and loss prevention): D-10 · D-18 · D-21 · D-13 (r4-supply-lp-adapters).
 import { r4SupplyLpRoutes, supplierFactsFor } from './r4-supply-lp-adapters';
+// OB-288 P3 (procure-to-pay completion): M06-FR-02/03/04 · M07-FR-01/04 · WF-03 · WF-05 (p3-procure-adapters).
+import { p3ProcureRoutes, p3PurchaseOrderHooks } from './p3-procure-adapters';
 import { alsoEachPassOf } from './ops-alert-sweeps'; // R3 lane 1 — GST liability and returns
 import { itcPortForStore } from './r3-itc-bridge'; // R3 seam — GSTR-3B Table 4 reads the A17 reconciliation
 import { r4PayEprRoutes, r4PayslipHooks, payslipLateSweep } from './r4-pay-epr-adapters'; // R4 Lane 1 — pay (C19 · C15 · C16) and EPR registers (B20 · B21 · B22)
@@ -882,7 +884,7 @@ export function buildSurface(deps: {
       propose: () => {}, issue: () => {}, setSupplierBlocked: () => {},
       amend: () => {}, cancel: () => {}, postReceipt: () => {}, now,
     } : { ...purchaseOrdersAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now), packOf: packHierarchyAdapter({ store, now }).pack, masterLifecycle: masterLifecycleOf({ store, now }), // D-16 (R3)
-      openToBuy: { ...openToBuyAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, storeOf: locationBranchesOf(store, now) } }),
+      openToBuy: { ...openToBuyAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, storeOf: locationBranchesOf(store, now) }, ...p3PurchaseOrderHooks({ store, now }) /* OB-288 P3 */ }),
     // WF-03 · D02-FR-01 (round 8): category purchase budgets and open-to-buy — checked on every order, over budget escalates.
     ...openToBuyRoutes(store === undefined ? {
       budgets: empty([]), recordBudget: () => {}, orders: empty([]), categoryOf: empty(null), overrides: empty([]), recordOverride: () => {}, permissionsOfUser: empty(undefined), now,
@@ -1746,6 +1748,7 @@ export function buildSurface(deps: {
     // R3 lane 2 (A17 ITC via GSTR-2B + IMS · A24 TDS · C14 payment disputes · C5 nomination): r3-tax-pay-adapters.
     ...r3TaxPayRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
     ...r4SupplyLpRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // R4 Lane 4
+    ...p3ProcureRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // OB-288 P3
     // GST government-portal switch — the feature flag + kill switch keeping LIVE e-invoice/e-way-bill portal
     // calls OFF by default and killable; the gate a deployment consults before the real connector. Sandbox
     // routes are exempt.

@@ -8,3 +8,5 @@ export * from './three-way-match';
 export * from './supplier-performance';
 export * from './supplier-scorecard-derived'; // D-10 (R4)
 export * from './rfq';
+export * from './blanket-po'; // M06-FR-02 (OB-288 P3): standing agreements and their call-off releases
+export * from './segregation'; // M06-FR-02 · §28 (OB-288 P3): one person never completes two steps of one purchase
