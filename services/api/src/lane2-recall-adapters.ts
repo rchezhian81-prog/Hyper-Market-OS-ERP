@@ -44,7 +44,9 @@ import { makeEvent } from '../../../packages/contracts/src/event';
 import {
   STREAM, streamName, recallAdapter, saleBlocksAdapter, catalogueAdapter, productMasterAdapter, purchaseOrdersAdapter,
   lotTraceAdapter, customerAdapter, customer360Adapter, alertLifecycleAdapter, effectiveGrants, outsidePartyLoginAdapter,
+  loyaltyMembersAdapter,
 } from './adapters';
+import { memberNameOf } from '../../customer/src/loyalty-members';
 import { lotTraceRoutes } from '../../inventory/src/lot-trace';
 import { lotTraceChainRoutes, type LotTraceFacts } from '../../inventory/src/lot-trace-chain';
 import { lotTraceFactsAdapter, lotTraceRequestsAdapter, productionUseOf } from './r3-till-trace-adapters';
@@ -175,6 +177,7 @@ export function recallNoticeAdapter(input: Input & { readonly transport?: Notifi
   const sold = lotTraceAdapter({ store });
   const customers = customerAdapter(input);
   const c360 = customer360Adapter(input);
+  const members = loyaltyMembersAdapter({ store, now, rule: () => ({ pointsPer100Inr: 0, pointValuePaise: 0 }) });
   return {
     now,
     recall: async (tenantId, batchId) => {
@@ -204,9 +207,11 @@ export function recallNoticeAdapter(input: Input & { readonly transport?: Notifi
       return out;
     },
     consentRecords: (tenantId, customerRef) => customers.consentRecords(tenantId, customerRef),
-    // The only customer names the shop holds are an app customer's login names (the login IS the customer record, M20).
-    // A member enrolled at the desk has no name on record — the call list says so (null), never invents one.
+    // OB-329: the name the member gave at enrolment (sealed with the member); else an app customer's login name (the login
+    // IS the customer record, M20). A skipped or erased name is not on record — the call list says so, never invents one.
     name: async (tenantId, customerRef) => {
+      const given = memberNameOf(await members.memberHistory(tenantId, customerRef));
+      if (given !== undefined) return given;
       const logins = (await outsidePartyLoginAdapter(input).invites(tenantId)).filter((r) => r.role === 'customer' && r.partyId === customerRef && r.state !== 'rejected');
       return ref(logins[logins.length - 1]?.displayName);
     },

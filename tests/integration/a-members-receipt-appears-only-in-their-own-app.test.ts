@@ -51,8 +51,9 @@ describe.each(backings)('D-28 — a member\'s receipt appears only in their own 
     const c = callsFor(() => h, T);
     const { req, ok } = c;
     await seedOnlineShop(h, T, c);
-    const enrol = async (mobile: string) => ((await ok(req('POST', '/v1/loyalty/members', { mobile, consent: true, verifiedHow: 'seen_on_phone' }), `enrol ${mobile}`)).body as { memberRef: string }).memberRef;
-    const memberA = await enrol(MOBILE_A);
+    const enrol = async (mobile: string, name?: string) => ((await ok(req('POST', '/v1/loyalty/members', { mobile, consent: true, verifiedHow: 'seen_on_phone', ...(name === undefined ? {} : { name }) }), `enrol ${mobile}`)).body as { memberRef: string }).memberRef;
+    // OB-329: A gives her name at the desk; it is on her own receipts.
+    const memberA = await enrol(MOBILE_A, 'Kavitha Raj');
     const memberB = await enrol(MOBILE_B);
     const today = new Date().toISOString().slice(0, 10);
     let n = 0;
@@ -99,6 +100,7 @@ describe.each(backings)('D-28 — a member\'s receipt appears only in their own 
     expect(mine).toMatchObject({ on: true, linked: true, count: 1 });
     const copy = mine.receipts[0]!;
     expect(copy.receiptNumber).toBe(billed);
+    expect((copy as unknown as { billedTo: string | null }).billedTo).toBe('Kavitha Raj'); // OB-329
     expect(copy.lines.map((l) => [l.productId, l.name, l.quantityMinor, l.lineTotalMinor])).toEqual([['MILK', 'Synthetic Milk 1L', 2, 120_00], ['BROOM', 'Synthetic Broom', 1, 150_00]]);
     // The same tax as the printed bill: GST inside each line's price, per rate.
     expect(copy.taxBands).toEqual([{ rateBps: 500, netMinor: 11_429, taxMinor: 571 }, { rateBps: 1_800, netMinor: 12_712, taxMinor: 2_288 }]);
