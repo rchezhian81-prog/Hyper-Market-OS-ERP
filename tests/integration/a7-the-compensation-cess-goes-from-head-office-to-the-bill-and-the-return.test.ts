@@ -48,7 +48,7 @@ describe.each(backings)('A7 — the cess goes from head office to the bill and t
       categories: [{ categoryId: 'pan', name: 'Pan masala', parentId: null }],
     });
     await ho.ok('POST', '/v1/prices/list/p-pan/entries/e1', 'u-owner', { scope: 'store', scopeRef: STORE, priceMinor: 1_000, mrpMinor: 1_000, costMinor: 600, marginFloorBps: 0, currency: 'INR', effectiveFrom: TODAY });
-    await ho.ok('POST', '/v1/catalogue/products/p-pan/barcodes/8903000000016', 'u-owner', { kind: 'ean' });
+    await ho.ok('POST', '/v1/catalogue/products/p-pan/barcodes/8903000000013', 'u-owner', { kind: 'ean' });
     await ho.ok('POST', '/v1/catalogue/pack', 'u-owner', { storeId: STORE, asOf: TODAY });
     ho.restartCold(); // ── head office COLD ─────────────────────────────────────────────────────────────────────────────
 
@@ -65,7 +65,7 @@ describe.each(backings)('A7 — the cess goes from head office to the bill and t
     const served = JSON.parse(/<script>window\.posCatalogue = ([\s\S]*?);<\/script>/.exec(html)![1]!) as CatalogueSnapshot;
     const till = bootPos({ laneId: 'lane-1', lanePort: box.edge.lane!.port, catalogue: served });
     await signInTill(till, 'u-meena');
-    for (let i = 0; i < 3; i += 1) till.scanBarcode('8903000000016');
+    for (let i = 0; i < 3; i += 1) till.scanBarcode('8903000000013');
     const n = await till.nextReceipt();
     await till.tenderCash(`S-${n}`, n, new Date().toISOString());
     // Three scans, three lines of one packet each — every line splits on its own.

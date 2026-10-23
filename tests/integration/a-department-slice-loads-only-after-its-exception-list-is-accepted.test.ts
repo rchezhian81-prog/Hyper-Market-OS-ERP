@@ -41,7 +41,7 @@ const FILES: Record<SliceFile, string> = {
     `R-004,,Synthetic sugar 1kg,each,staples,1006,,active,,India,1 kg,Synthetic Packers,,,`,
   ].join('\n'),
   'prices.csv': ['item_code,mrp,selling_price,cost_price,margin_floor_percent', 'R-001,60.00,55.00,48.00,', 'R-002,140.00,130.00,120.00,', 'R-003,200.00,190.00,170.00,'].join('\n'),
-  'barcodes.csv': ['item_code,barcode,kind', 'R-001,8900000000011,', 'R-002,8900000000028,', 'R-003,8900000000035,'].join('\n'),
+  'barcodes.csv': ['item_code,barcode,kind', 'R-001,8900000000012,', 'R-002,8900000000029,', 'R-003,8900000000036,'].join('\n'),
 };
 const rows = (text: string): number => text.split('\n').slice(1).filter((l) => l.trim() !== '').length;
 const seal = (t: string, name: string, text: string): SealedExtract => {

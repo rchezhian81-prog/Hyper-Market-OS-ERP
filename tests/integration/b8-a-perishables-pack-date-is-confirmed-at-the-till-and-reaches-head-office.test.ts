@@ -23,7 +23,7 @@ afterAll(close);
 
 const STORE = 'store-1';
 const TODAY = new Date().toISOString().slice(0, 10);
-const MILK_CODE = '8902000000017';
+const MILK_CODE = '8902000000016';
 const boxes: Box[] = [];
 let link: Link | undefined;
 afterEach(async () => {

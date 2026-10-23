@@ -46,7 +46,7 @@ describe.each(backings)('B12 — BIS goods need a current licence, refused offli
     expect(JSON.stringify(none.body)).toContain('no BIS licence number');
     expect((await publish('p-good', { bisLicenceNo: 'CM/L-7654321098', bisLicenceValidUntil: '2099-12-31' })).status).toBe(201);
     expect((await publish('p-lapsed', { bisLicenceNo: 'CM/L-1111111111', bisLicenceValidUntil: '2020-03-31' })).status).toBe(201);
-    for (const [id, code] of [['p-good', '8901000000011'], ['p-lapsed', '8901000000028']] as const) {
+    for (const [id, code] of [['p-good', '8901000000019'], ['p-lapsed', '8901000000026']] as const) {
       await ho.ok('POST', `/v1/prices/list/${id}/entries/e1`, 'u-owner', { scope: 'store', scopeRef: STORE, priceMinor: 2_000, mrpMinor: 2_000, costMinor: 1_000, marginFloorBps: 0, currency: 'INR', effectiveFrom: TODAY });
       await ho.ok('POST', `/v1/catalogue/products/${id}/barcodes/${code}`, 'u-owner', { kind: 'ean' });
     }
@@ -65,8 +65,8 @@ describe.each(backings)('B12 — BIS goods need a current licence, refused offli
     const ring = async (): Promise<void> => {
       const till = bootPos({ laneId: 'lane-1', lanePort: box.edge.lane!.port, catalogue: box.edge.node.pack()!.snapshot });
       await signInTill(till, 'u-lanecash');
-      expect(() => till.scanBarcode('8901000000028')).toThrow(TillRuleRefusedError);
-      try { till.scanBarcode('8901000000028'); } catch (e) { expect((e as TillRuleRefusedError).laneMessage).toMatch(/BIS \(ISI mark\) licence CM\/L-1111111111 ran out on 2020-03-31/); }
+      expect(() => till.scanBarcode('8901000000026')).toThrow(TillRuleRefusedError);
+      try { till.scanBarcode('8901000000026'); } catch (e) { expect((e as TillRuleRefusedError).laneMessage).toMatch(/BIS \(ISI mark\) licence CM\/L-1111111111 ran out on 2020-03-31/); }
       expect(till.basket()).toHaveLength(0);
       // A record from an older till, posted straight to the socket: refused before the box's disk.
       const token = await signInAtLane(box.edge.lane!.port, 'u-lanecash');
@@ -85,7 +85,7 @@ describe.each(backings)('B12 — BIS goods need a current licence, refused offli
     // The current one sells, offline.
     const till = bootPos({ laneId: 'lane-1', lanePort: box.edge.lane!.port, catalogue: box.edge.node.pack()!.snapshot });
     await signInTill(till, 'u-lanecash');
-    till.scanBarcode('8901000000011');
+    till.scanBarcode('8901000000019');
     const n = await till.nextReceipt();
     await till.tenderCash(`S-${n}`, n, new Date().toISOString());
     expect(await readLog(box.edge.log.path)).toHaveLength(1);
