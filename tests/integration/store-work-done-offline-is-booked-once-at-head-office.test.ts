@@ -43,12 +43,11 @@ async function shop(h: ApiHarness) {
   return { T, call };
 }
 
-const onHand = async (call: ReturnType<typeof shopCall>, productId: string, locationId: string): Promise<number> => {
+const onHand = async (call: Call, productId: string, locationId: string): Promise<number> => {
   const rows = ((await call('GET', '/v1/inventory/availability', 'u-owner')).body as { rows: { productId: string; locationId: string; onHandMinor: number }[] }).rows;
   return rows.find((r) => r.productId === productId && r.locationId === locationId)?.onHandMinor ?? 0;
 };
 type Call = Awaited<ReturnType<typeof shop>>['call'];
-const shopCall = (c: Call): Call => c;
 
 async function kitchen(call: Call): Promise<void> {
   expect((await call('POST', '/v1/production/departments/cafe', 'u-owner', {}, 'dept-cafe')).status).toBeLessThan(300);

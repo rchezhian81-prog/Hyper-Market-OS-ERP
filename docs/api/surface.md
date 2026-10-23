@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1221 | 735 | 735 | 109 | 354 |
+| 13 | 1231 | 743 | 743 | 109 | 357 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -304,7 +304,9 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/inventory/dsd-routes` | `inventory.availability.read` | core | — |
 | POST | `/v1/inventory/dsd-routes/:routeId` | `inventory.dsd.route.manage` | core | yes |
 | GET | `/v1/inventory/exceptions` | `inventory.availability.read` | core | — |
+| GET | `/v1/inventory/expired-batches` | `inventory.availability.read` | core | — |
 | POST | `/v1/inventory/expiry-actions` | `inventory.availability.read` | core | yes |
+| POST | `/v1/inventory/expiry-sweep` | `inventory.movement.append` | core | yes |
 | POST | `/v1/inventory/fefo-allocation` | `inventory.availability.read` | core | yes |
 | GET | `/v1/inventory/goods-receipt` | `inventory.availability.read` | core | — |
 | GET | `/v1/inventory/goods-receipt/:grnId` | `inventory.availability.read` | core | — |
@@ -372,13 +374,17 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/production/input-batches/:batchId/trace` | `quality.lottrace.read` | core | — |
 | GET | `/v1/production/plan` | `production.read` | core | — |
 | POST | `/v1/production/price-by-weight` | `production.read` | core | yes |
+| GET | `/v1/production/recipes` | `production.read` | core | — |
 | POST | `/v1/production/recipes/:recipeId` | `production.recipe.manage` | core | yes |
 | GET | `/v1/production/runs` | `production.read` | core | — |
 | POST | `/v1/production/runs/:runId` | `production.plan.commit` | core | yes |
 | POST | `/v1/production/runs/:runId/label` | `production.recipe.manage` | core | yes |
 | POST | `/v1/production/runs/:runId/release` | `production.release` | core | yes |
+| POST | `/v1/production/runs/:runId/release/synced` | `production.sync` | core | yes |
+| POST | `/v1/production/runs/:runId/synced` | `production.sync` | core | yes |
 | GET | `/v1/production/weighed-runs` | `production.read` | core | — |
 | POST | `/v1/production/weighed-runs/:runId` | `production.plan.commit` | core | yes |
+| POST | `/v1/production/weighed-runs/:runId/synced` | `production.sync` | core | yes |
 | POST | `/v1/quality/cold-chain/assess` | `quality.coldchain.assess` | core | yes |
 | GET | `/v1/quality/holds` | `quality.hold.manage` | core | — |
 | GET | `/v1/quality/holds/:batchId` | `quality.hold.manage` | core | — |
@@ -406,8 +412,11 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/warehouse/transfers` | `inventory.availability.read` | core | — |
 | GET | `/v1/warehouse/transfers/:transferId` | `inventory.availability.read` | core | — |
 | POST | `/v1/warehouse/transfers/:transferId` | `inventory.movement.append` | core | yes |
+| POST | `/v1/warehouse/transfers/:transferId/cancel` | `inventory.movement.append` | core | yes |
 | POST | `/v1/warehouse/transfers/:transferId/dispatch` | `inventory.movement.append` | core | yes |
+| POST | `/v1/warehouse/transfers/:transferId/dispatch/synced` | `inventory.transfer.sync` | core | yes |
 | POST | `/v1/warehouse/transfers/:transferId/receive` | `inventory.movement.append` | core | yes |
+| POST | `/v1/warehouse/transfers/:transferId/receive/synced` | `inventory.transfer.sync` | core | yes |
 | POST | `/v1/warehouse/transfers/:transferId/shortfall/resolution` | `inventory.adjustment.approve` | core | yes |
 | GET | `/v1/waste/analytics` | `waste.view` | core | — |
 | GET | `/v1/waste/compare` | `reporting.report.read` | core | — |
@@ -1036,6 +1045,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/facilities/evidence` | `facilities.overdue.read` | core | — |
 | POST | `/v1/facilities/food-safety/checks/:checkId` | `facilities.schedule.manage` | core | yes |
 | POST | `/v1/facilities/food-safety/checks/:checkId/records/:recordId` | `facilities.task.record` | core | yes |
+| POST | `/v1/facilities/food-safety/checks/:checkId/records/:recordId/synced` | `facilities.foodsafety.sync` | core | yes |
 | GET | `/v1/facilities/food-safety/status` | `facilities.overdue.read` | core | — |
 | POST | `/v1/facilities/incidents/:incidentId` | `facilities.incident.record` | core | yes |
 | POST | `/v1/facilities/incidents/:incidentId/close` | `facilities.incident.record` | core | yes |
