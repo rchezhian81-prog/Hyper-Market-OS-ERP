@@ -7,6 +7,8 @@
 //     the complaints the desk actually recorded, not only ones typed in by hand.
 //   • WF-13 · M20-FR-02 — the online basket priced by the till's promotions and coupon engines, with the points balance
 //     (`onlinePricingAdapter`, one deps line on the storefront routes in main.ts).
+//   • M17-FR-02 (OB-303) — repeat online orders: the customer's plan, each day's order placed through the storefront's
+//     OWN placement route (found on the surface, invoked as the customer), on the ops timer and on demand.
 //   • M17-FR-01 (OB-295) — the loyalty programme's tiers and points expiry: owner settings kept as facts, OFF and "not set"
 //     until entered; the tier multiplier applied when a bill earns (`withLoyaltyTiers`, one wrap in main.ts); the expiry
 //     run on the ops worker's timer (`customerCommerceSweep`) and on demand.
@@ -19,7 +21,10 @@ import { loyaltyProgrammeRoutes, runPointsExpiry, tierMultiplierAt, type Loyalty
 import type { LoyaltyEffectsDeps } from '../../customer/src/loyalty-effects';
 import type { MemberRecord } from '../../customer/src/loyalty-members';
 import type { RecordedPointsMovement } from '../../customer/src/index';
-import type { Route } from '../../kernel/src/index';
+import type { Route, RequestContext } from '../../kernel/src/index';
+import { ApiError } from '../../kernel/src/index';
+import { subscriptionRoutes, runSubscriptions, type SubscriptionDeps, type SubscriptionOccurrence, type PlaceAttempt } from '../../orders/src/storefront-subscriptions';
+import type { SubscriptionPlan, SubscriptionChange } from '../../../packages/storefront/src/subscriptions';
 import { customer360Routes, complaintFactsOf, type ServiceCaseFact } from '../../customer/src/customer-360';
 import { segmentRoutes } from '../../customer/src/segments';
 import type { ComplaintFact } from '../../../packages/customer/src/index';
@@ -32,7 +37,32 @@ import { customerOverviewAdapter } from './r4-insight-adapters';
 export interface CustomerCommerceInput {
   readonly store: EventStore | undefined;
   readonly now: () => string;
+  /** The shop's time zone (store setup) — its calendar decides which day a repeat order is for. */
+  readonly timeZone?: (tenantId: string) => Promise<string> | string;
 }
+
+/** The day an instant falls on in a time zone (YYYY-MM-DD). */
+export function dayIn(at: string, timeZone: string): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(at));
+}
+const timeIn = (at: string, timeZone: string): string =>
+  new Intl.DateTimeFormat('en-GB', { timeZone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(at));
+
+/** A route's handler run as an internal caller (no HTTP, no permission check: head office acting for the customer). */
+async function invoke(route: Route, ctx: Omit<RequestContext, 'branchId' | 'traceId'>): Promise<{ readonly status: number; readonly body: unknown } | { readonly refused: ApiError }> {
+  try {
+    return await route.handler({ ...ctx, branchId: null, traceId: 'customer-commerce' });
+  } catch (e) {
+    if (e instanceof ApiError) return { refused: e };
+    throw e;
+  }
+}
+
+/**
+ * What the timed sweep needs from the surface it cannot see from `startApi` — the storefront's own placement route —
+ * registered here by `customerCommerceSurface` for the store it was built over.
+ */
+const RUNNERS = new WeakMap<EventStore, { readonly subscriptions: SubscriptionDeps }>();
 
 const unwiredProgramme = (now: () => string): LoyaltyProgrammeDeps => ({
   now, tiers: async () => undefined, recordTiers: async () => {}, expiry: async () => undefined, recordExpiry: async () => {},
@@ -89,6 +119,60 @@ function factList<T>(store: EventStore, stream: string, type: string) {
     all: async (tenantId: string): Promise<readonly T[]> => (await store.readStream(tenantId, stream, { type })).map((e) => e.event.payload as T),
     append: async (tenantId: string, key: string, payload: T, at: string): Promise<void> => {
       await store.append(tenantId, stream, makeEvent({ id: keyed(type, `${tenantId}|${key}`), type, occurredAt: at, idempotencyKey: `${type}-${tenantId}-${key}`, source: 'api/customer-commerce', payload }));
+    },
+  };
+}
+
+// ── M17-FR-02 · OB-303 · repeat online orders ───────────────────────────────────────────────────────────────────────
+
+const SUBSCRIPTIONS = streamName(STREAM.orders, 'subscriptions');
+
+export function subscriptionAdapter(input: Base & { readonly placement: Route | undefined; readonly slots: Route | undefined; readonly timeZone: (tenantId: string) => Promise<string> }): SubscriptionDeps {
+  const { store, now } = input;
+  const plans = factList<SubscriptionPlan>(store, SUBSCRIPTIONS, 'SubscriptionStarted');
+  const changes = factList<SubscriptionChange>(store, SUBSCRIPTIONS, 'SubscriptionChanged');
+  const occurrences = factList<SubscriptionOccurrence>(store, SUBSCRIPTIONS, 'SubscriptionOccurrence');
+  /** The delivery slot on that day at (or after) the customer's preferred time, from the shop's own delivery service. */
+  const slotFor = async (tenantId: string, plan: SubscriptionPlan, day: string): Promise<{ readonly startsAt: string; readonly endsAt: string } | string> => {
+    if (input.slots === undefined) return 'the shop\'s delivery service is not set up here';
+    const r = await invoke(input.slots, { tenantId, userId: plan.customerRef, params: {}, query: { day }, body: undefined });
+    if ('refused' in r) return r.refused.body.whatHappened;
+    const tz = await input.timeZone(tenantId);
+    const offered = ((r.body as { slots?: { startsAt: string; endsAt: string; capacity: number; taken: number }[] }).slots ?? [])
+      .filter((sl) => sl.taken < sl.capacity && timeIn(sl.startsAt, tz) >= (plan.delivery?.slotTime ?? '00:00'))
+      .sort((a, b) => a.startsAt.localeCompare(b.startsAt));
+    return offered[0] ?? `no delivery slot is open on ${day} at or after ${plan.delivery?.slotTime ?? ''}`;
+  };
+  return {
+    now,
+    plans: (t) => plans.all(t),
+    recordPlan: (t, p) => plans.append(t, p.subscriptionId, p, p.createdAt),
+    changes: (t) => changes.all(t),
+    recordChange: (t, c) => changes.append(t, `${c.subscriptionId}|${c.change}|${c.at}`, c, c.at),
+    occurrences: (t) => occurrences.all(t),
+    recordOccurrence: (t, o) => occurrences.append(t, `${o.subscriptionId}|${o.day}`, o, o.at),
+    today: async (t) => dayIn(now(), await input.timeZone(t)),
+    placeOrder: async (tenantId, { orderId, plan, day }): Promise<PlaceAttempt> => {
+      if (input.placement === undefined) return { placed: false, why: 'the storefront is not part of this head office, so no order can be placed' };
+      let delivery: Record<string, unknown> = {};
+      if (plan.fulfilment === 'delivery' && plan.delivery !== undefined) {
+        const slot = await slotFor(tenantId, plan, day);
+        if (typeof slot === 'string') return { placed: false, why: `Not placed: ${slot}. Nothing was charged.` };
+        delivery = { deliverySlot: { startsAt: slot.startsAt, endsAt: slot.endsAt }, deliveryLocation: plan.delivery.location };
+      }
+      const r = await invoke(input.placement, {
+        tenantId, userId: plan.customerRef, params: { orderId }, query: {}, idempotencyKey: `subscription-${orderId}`,
+        body: { lines: plan.lines, locationId: plan.locationId, fulfilment: plan.fulfilment, ...delivery },
+      });
+      if ('refused' in r) return { placed: false, why: `Not placed: ${r.refused.body.whatHappened} Nothing was charged.` };
+      const b = r.body as { quote?: { itemsMinor?: number }; shortages?: SubscriptionOccurrence['shortages']; alreadyPlaced?: boolean };
+      const pay = b.quote?.itemsMinor;
+      return {
+        placed: true, ...(pay === undefined ? {} : { payableMinor: pay }), ...(b.shortages === undefined ? {} : { shortages: b.shortages }),
+        detail: b.shortages !== undefined && b.shortages.length > 0
+          ? `Placed for ${day}, but the shop cannot send everything — look in the app at what it can send, then pay or cancel. Nothing has been charged.`
+          : `Placed for ${day}${pay === undefined ? '' : ` — ₹${(pay / 100).toFixed(2)} to pay in the app`}. Nothing has been charged yet.`,
+      };
     },
   };
 }
@@ -180,7 +264,9 @@ export function withLoyaltyTiers<D extends LoyaltyEffectsDeps>(effects: D, input
 export function customerCommerceSweep(input: Base): (tenantId: string, at: string) => Promise<number> {
   return async (tenantId) => {
     const expired = await runPointsExpiry(loyaltyProgrammeAdapter(input), tenantId);
-    return expired.expired.length;
+    const runner = RUNNERS.get(input.store);
+    const repeat = runner === undefined ? { placed: 0, notPlaced: 0, missed: 0 } : await runSubscriptions(runner.subscriptions, tenantId);
+    return expired.expired.length + repeat.placed + repeat.notPlaced + repeat.missed;
   };
 }
 
@@ -198,6 +284,18 @@ export function customerCommerceSurface(surface: Route[], input: CustomerCommerc
     }), (r) => r.method === 'GET');
     rebuildInPlace(surface, customerOverviewRoutes({ ...customerOverviewAdapter(base), complaintFacts: complaintFactsWithCases(base) }));
   }
+  // M17-FR-02 · OB-303: repeat online orders, placed through the storefront's own placement route.
+  const timeZone = async (t: string): Promise<string> => (input.timeZone === undefined ? 'Asia/Kolkata' : await input.timeZone(t));
+  const subs = store === undefined ? undefined : subscriptionAdapter({
+    store, now, timeZone,
+    placement: surface.find((r) => r.method === 'POST' && r.path === '/v1/storefront/orders/:orderId'),
+    slots: surface.find((r) => r.method === 'GET' && r.path === '/v1/serviceability/delivery-service'),
+  });
+  if (store !== undefined && subs !== undefined) RUNNERS.set(store, { subscriptions: subs });
+  surface.push(...subscriptionRoutes(subs ?? {
+    plans: async () => [], recordPlan: async () => {}, changes: async () => [], recordChange: async () => {}, occurrences: async () => [], recordOccurrence: async () => {},
+    placeOrder: async () => ({ placed: false, why: 'no store' }), today: async () => dayIn(now(), 'Asia/Kolkata'), now,
+  }));
   // M17-FR-01 · OB-295: the programme's two owner settings, a member's standing, and the expiry run.
   surface.push(...loyaltyProgrammeRoutes(store === undefined ? unwiredProgramme(now) : loyaltyProgrammeAdapter({ store, now })));
 }

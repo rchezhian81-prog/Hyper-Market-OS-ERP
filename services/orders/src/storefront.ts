@@ -270,7 +270,10 @@ export function storefrontRoutes(deps: OrdersDeps & PaymentRefundDeps & Storefro
       state: state?.state ?? order.state,
       payment,
       position: { paidMinor: refunds.paidMinor, refundedMinor: refunds.refundedMinor, pendingMinor: refunds.pendingMinor, refundableMinor: refunds.refundableMinor },
-      tellTheCustomer: payment.state === 'none' && (state?.state ?? order.state) === 'placed'
+      tellTheCustomer: payment.state === 'none' && (state?.state ?? order.state) === 'placed' && order.orderId.startsWith('SUB-')
+        // OB-303: a repeat order the shop placed from the customer's plan waits for them to pay — no card is kept.
+        ? 'Your repeat order is placed and waiting for you to pay in the app. If anything was short, you will see what we can send. Nothing has been charged.'
+        : payment.state === 'none' && (state?.state ?? order.state) === 'placed'
         ? 'Some of what you asked for is not in stock. Please look at what we can send, then pay for that or cancel — nothing has been charged.'
         : payment.state === 'pending'
         ? 'We are waiting for your bank to confirm the payment. Your order is not placed yet and we will not pick it until we know.'
