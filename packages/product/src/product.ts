@@ -32,6 +32,8 @@
 
 import type { Money } from '../../contracts/src/money';
 import type { TobaccoWarningRecord } from './tobacco-warning';
+import { nutritionProblems, nutritionRequired, type NutritionFacts } from './nutrition';
+import { liquorReason, LIQUOR_NOT_SOLD } from '../../restricted-sales/src/liquor';
 
 export type ProductLifecycle = 'draft' | 'new' | 'active' | 'clearance' | 'discontinued';
 
@@ -61,7 +63,9 @@ export interface Category {
   readonly regulated?: readonly RegulatedKind[];
 }
 
-export type RegulatedKind = 'food' | 'packed' | 'weighed' | 'age_restricted' | 'drug' | 'hazardous';
+export type RegulatedKind = 'food' | 'packed' | 'weighed' | 'age_restricted' | 'drug' | 'hazardous'
+  /** B17: a liquor category — nothing in it can be published or sold (TASMAC state monopoly). */
+  | 'liquor';
 
 /**
  * How a product travels and what it may share a crate with (M19-FR-02 / M10-FR-02) — owned HERE as master data, in the
@@ -123,6 +127,15 @@ export interface SafetyContent {
   readonly gold?: boolean;
   /** B13: the piece's 6-character Hallmark Unique ID (letters and digits), exactly as hallmarked. */
   readonly huid?: string;
+  /**
+   * B17 (TASMAC state monopoly · OWNER_DECISIONS D3): the product is an alcoholic drink. Such a product is never published
+   * or sold — the flag exists so it can be REFUSED by name, not so it can be age-checked.
+   */
+  readonly liquor?: boolean;
+  /** OB-307: SRE itself packs or labels this product (a counter pack, a repack, an own label) — then food needs `nutrition`. */
+  readonly packedBySre?: boolean;
+  /** M03-FR-03 · D01-FR-04: the nutrition panel, per 100 g or 100 ml (FSSAI 2020 list). Recorded when known (OB-307). */
+  readonly nutrition?: NutritionFacts;
 }
 
 /** B13: a Hallmark Unique ID — six characters, capital letters and digits (BIS). */
@@ -440,6 +453,29 @@ export function validateProduct(
       field: 'safety.storageConditions',
       severity: 'advisory',
       message: 'no storage conditions — worth adding for a food item',
+    });
+  }
+
+  // B17 (TASMAC · OWNER_DECISIONS D3): liquor is never published, whatever else is right about the record. No override.
+  const liquor = liquorReason({ declaredLiquor: safety?.liquor === true, categoryKinds: regulated, hsn: product.taxClass });
+  if (liquor !== undefined) {
+    issues.push({ field: 'safety.liquor', severity: 'blocks_publish', message: `${LIQUOR_NOT_SOLD} This product cannot be published: ${liquor}` });
+  }
+  if (safety?.liquor !== undefined && typeof safety.liquor !== 'boolean') {
+    issues.push({ field: 'safety.liquor', severity: 'blocks_publish', message: `liquor must be true or false — "${String(safety.liquor)}" cannot be read` });
+  }
+
+  // OB-307 (M03-FR-03 · D01-FR-04): nutrition is required only for food SRE packs or labels itself; recorded when known
+  // otherwise — and a panel that is given must be readable and add up, whoever packed the product.
+  if (safety?.packedBySre !== undefined && typeof safety.packedBySre !== 'boolean') {
+    issues.push({ field: 'safety.packedBySre', severity: 'blocks_publish', message: 'packedBySre must be true or false' });
+  }
+  if (safety?.nutrition !== undefined) {
+    for (const message of nutritionProblems(safety.nutrition)) issues.push({ field: 'safety.nutrition', severity: 'blocks_publish', message });
+  } else if (nutritionRequired({ food: regulated.includes('food'), packedBySre: safety?.packedBySre === true })) {
+    issues.push({
+      field: 'safety.nutrition', severity: 'blocks_publish',
+      message: 'no nutrition panel — SRE packs or labels this food itself, so its label must carry the nutrition information (energy, protein, carbohydrate and sugars, fat, cholesterol, sodium)',
     });
   }
 

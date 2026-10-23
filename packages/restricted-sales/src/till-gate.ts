@@ -22,6 +22,7 @@
 import { checkSingleUsePlastic } from './single-use-plastic';
 import { checkRestrictedSale } from './restricted-sales';
 import { weighingScaleVerification, InvalidScaleVerification } from '../../facilities/src/weighing-verification';
+import { isLiquorHsn, LIQUOR_NOT_SOLD } from './liquor';
 
 /** The age a tobacco product needs at the very least (COTPA 2003 s.6 · B14). */
 export const TOBACCO_MINIMUM_AGE = 18;
@@ -36,6 +37,8 @@ export const TILL_RULE_FLAG_KEYS = [
   'tobacco', 'packMinimumMinor', 'carryBag', 'plasticMaterial', 'plasticThicknessMicrons', 'bannedSingleUsePlastic',
   // R3: B16 — the last day a tobacco product's health-warning confirmation stays good; B13 — a gold piece and its HUID.
   'tobaccoWarningConfirmedUntil', 'gold', 'huid',
+  // OB-288 P2 · B17: liquor is not sold at all (TASMAC). A pack never carries one; a line flagged so is refused.
+  'liquor',
 ] as const;
 
 /** B13: a Hallmark Unique ID as the till reads it — six capital letters and digits (BIS). */
@@ -56,6 +59,8 @@ export interface TillRuleFlags {
   readonly gold?: boolean;
   /** B13: its hallmark HUID, when well-formed. A gold piece without one is not sold. */
   readonly huid?: string;
+  /** B17: the product is liquor — never sold (TASMAC monopoly). */
+  readonly liquor?: boolean;
 }
 
 const posInt = (v: unknown): number | undefined => (typeof v === 'number' && Number.isSafeInteger(v) && v > 0 ? v : undefined);
@@ -76,6 +81,7 @@ export function tillRuleFlagsOf(flags: Readonly<Record<string, unknown>> | undef
     ...(typeof flags['tobaccoWarningConfirmedUntil'] === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(flags['tobaccoWarningConfirmedUntil']) ? { tobaccoWarningConfirmedUntil: flags['tobaccoWarningConfirmedUntil'] } : {}),
     ...(flags['gold'] === true ? { gold: true } : {}),
     ...(typeof flags['huid'] === 'string' && HUID.test(flags['huid']) ? { huid: flags['huid'] } : {}),
+    ...(flags['liquor'] === true ? { liquor: true } : {}),
   };
 }
 
@@ -123,6 +129,8 @@ export type TillRefusalReason =
   | 'gold_without_huid'
   /** B13: this HUID has already been sold — a hallmarked piece is sold once. */
   | 'gold_huid_already_sold'
+  /** B17: liquor — never sold (TASMAC state monopoly), whatever the customer's age. */
+  | 'liquor_not_sold'
   /** B13: one HUID is one piece — a gold line is exactly one. */
   | 'gold_huid_more_than_one_piece';
 
@@ -157,6 +165,11 @@ export interface TillGateLine {
    */
   readonly catalogueUom?: string;
   readonly regulatedFlags?: Readonly<Record<string, unknown>>;
+  /**
+   * B17: the HSN the line is sold under (from the pack). An alcoholic-drink heading is refused even when the product carries
+   * no flag — a pack built before the liquor rule, or a product whose flag was never set. Absent: only the flag is judged.
+   */
+  readonly hsnCode?: string;
 }
 
 /** Whether a line is sold by WEIGHT (B6): its own unit, or its product's unit in the judging side's catalogue. */
@@ -226,6 +239,14 @@ export function productRuleRefusals(line: TillGateLine): readonly TillRefusal[] 
   const flags = tillRuleFlagsOf(line.regulatedFlags);
   const out: TillRefusal[] = [];
   const name = typeof line.description === 'string' && line.description.trim() !== '' ? line.description : line.productId;
+
+  // ── B17 · liquor is not sold at all (TASMAC) — refused before anything else, with no override ──────────────────
+  if (flags.liquor === true || isLiquorHsn(line.hsnCode)) {
+    out.push({ reason: 'liquor_not_sold', productId: line.productId,
+      detail: `${line.productId}: ${flags.liquor === true ? 'flagged liquor' : `HSN ${String(line.hsnCode)} is an alcoholic-drink heading`} — ${LIQUOR_NOT_SOLD}`,
+      laneMessage: `${name} is liquor. SRE does not sell liquor — in Tamil Nadu only TASMAC may. Keep it off the bill and tell the manager.` });
+    return out;
+  }
 
   // ── B19 · single-use plastic and carry bags (the tested engine decides) ────────────────────────────────────────
   if (flags.bannedSingleUsePlastic === true || flags.carryBag === true) {

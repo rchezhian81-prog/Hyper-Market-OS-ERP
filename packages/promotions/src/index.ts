@@ -6,3 +6,5 @@
 
 export * from './promotions';
 export * from './simulation';
+// OB-305: bank-card offers built and switched off until an integrated card machine.
+export * from './bank-offers';
