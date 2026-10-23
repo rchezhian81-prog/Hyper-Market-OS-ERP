@@ -209,6 +209,8 @@ const WORDS = {
     managerPinTitle: 'Manager: your till PIN', managerPinHint: 'The manager keys their own six-digit till PIN. It is never shown, and approves this refund only.',
     approvalRefused: 'Not approved',
     refundDone: 'Refund recorded',
+    refundHeldRecall: '{n} item(s) are under RECALL. Do not put them back on the shelf — put them in the held (quarantine) bin.',
+    refundHeldExpired: '{n} item(s) are from a batch past its date. Do not put them back on the shelf — put them in the held (quarantine) bin.',
     refundPending: 'Refund pending',
     refundStop: 'Do not hand over cash',
     noReceipt: 'Return without receipt',
@@ -424,6 +426,8 @@ const WORDS = {
     managerPinTitle: 'மேலாளர்: உங்கள் கல்லா PIN', managerPinHint: 'மேலாளர் தனது ஆறு இலக்க கல்லா PIN-ஐ உள்ளிடுகிறார். அது ஒருபோதும் காட்டப்படாது; இந்த ஒரு திரும்பப் பணத்திற்கு மட்டுமே அனுமதி.',
     approvalRefused: 'அனுமதிக்கப்படவில்லை',
     refundDone: 'திரும்பப் பணம் பதிவு செய்யப்பட்டது',
+    refundHeldRecall: '{n} பொருள்(கள்) திரும்பப்பெறுதலில் (RECALL) உள்ளன. அலமாரியில் திரும்ப வைக்க வேண்டாம் — நிறுத்தி வைக்கும் (தனிமைப்படுத்தல்) தொட்டியில் வையுங்கள்.',
+    refundHeldExpired: '{n} பொருள்(கள்) காலாவதியான தொகுதியைச் சேர்ந்தவை. அலமாரியில் திரும்ப வைக்க வேண்டாம் — நிறுத்தி வைக்கும் (தனிமைப்படுத்தல்) தொட்டியில் வையுங்கள்.',
     refundPending: 'திரும்பப் பணம் நிலுவையில்',
     refundStop: 'பணத்தைக் கொடுக்க வேண்டாம்',
     noReceipt: 'ரசீது இல்லாமல் திரும்பப் பெறல்',
@@ -2482,7 +2486,12 @@ function showRefundOutcome(outcome, refundTender) {
   // OB-258: a refund to "Paid on old system" was given on the old system — said in the till's language, so nobody opens
   // this drawer for it.
   const words = outcome.kind === 'settled' && refundTender === 'paid_on_old_erp' ? t('mirrorRefundDone') : outcome.laneMessage;
-  tell(title, words, outcome.kind === 'settled' ? SUCCESS : STOP);
+  // M13-FR-02: a unit the till held (under recall, or of an expired batch) is said, so it goes in the held bin, not the shelf.
+  const held = outcome.held
+    ? [outcome.held.recall > 0 ? t('refundHeldRecall').replace('{n}', String(outcome.held.recall)) : null,
+      outcome.held.expired > 0 ? t('refundHeldExpired').replace('{n}', String(outcome.held.expired)) : null].filter(Boolean)
+    : [];
+  tell(title, [words, ...held].join('\n'), outcome.kind === 'settled' && held.length === 0 ? SUCCESS : STOP);
 }
 
 /**

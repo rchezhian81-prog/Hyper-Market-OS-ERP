@@ -199,6 +199,10 @@ export interface TillProduct {
   readonly blockedBatches?: readonly string[];
   /** D-20: batches under an approved markdown and the price each is charged at. */
   readonly batchPrices?: readonly { readonly batchId: string; readonly unitPriceMinor: number }[];
+  /** M10-FR-01 · M13-FR-02: the batches head office moved to EXPIRED — a 2D scan of one is refused, a return of one is held. */
+  readonly expiredBatches?: SignedPack['snapshot']['products'][number]['expiredBatches'];
+  /** A7: the compensation cess on the product's HSN, from head office's signed schedule — the till charges it inside the MRP. */
+  readonly cess?: SignedPack['snapshot']['products'][number]['cess'];
   readonly batchTracked?: boolean;
   /** `ageRestricted` on the pack file; the master's minimum age fills the number where it knows one. */
   readonly ageRestricted?: boolean;
@@ -265,6 +269,9 @@ export function tillCatalogue(pack: StorePack, cataloguePack: SignedPack | undef
         ...(p.recallBlock === true ? { recallBlock: true } : {}),
         ...(p.recallBlock === true && p.blockedBatches !== undefined && p.blockedBatches.length > 0 ? { blockedBatches: p.blockedBatches } : {}),
         ...(p.batchPrices === undefined || p.batchPrices.length === 0 ? {} : { batchPrices: p.batchPrices }),
+        // M10-FR-01 · M13-FR-02 and A7: the expired batches and the cess ride from the signed pack to the till as signed.
+        ...(p.expiredBatches === undefined || p.expiredBatches.length === 0 ? {} : { expiredBatches: p.expiredBatches }),
+        ...(p.cess === undefined ? {} : { cess: p.cess }),
         ...(p.batchTracked === true ? { batchTracked: true } : {}),
         ...(p.regulatedFlags === undefined ? {} : { regulatedFlags: p.regulatedFlags }),
       })),
@@ -421,6 +428,10 @@ export function posPayload(input: ScreenInput): Record<string, unknown> | null {
         ? { blockedBatches: p.blockedBatches } : {}),
       // D-20: a batch under an approved markdown is charged its markdown price when its 2D code is scanned.
       ...(p.batchPrices === undefined ? {} : { batchPrices: p.batchPrices }),
+      // M10-FR-01 · M13-FR-02: an expired batch's 2D code is refused at the scan, and a returned unit of it is held.
+      ...(p.expiredBatches === undefined ? {} : { expiredBatches: p.expiredBatches }),
+      // A7: the cess the bill charges inside the MRP and prints (before this the served till never received it).
+      ...(p.cess === undefined ? {} : { cess: p.cess }),
       ...(p.batchTracked === true ? { batchTracked: true } : {}),
       // Head office's flags ride as published; the pack file's `ageRestricted` becomes the lane's age prompt.
       ...(p.regulatedFlags !== undefined ? { regulatedFlags: p.regulatedFlags }

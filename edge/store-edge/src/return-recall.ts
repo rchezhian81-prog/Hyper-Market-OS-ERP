@@ -3,13 +3,14 @@
 //
 // The till holds a recalled unit coming back (`apps/pos/src/till-session.ts`, from its own copy of the signed catalogue
 // pack). The store computer runs the same rule on the refund record it is about to keep, from ITS signed pack: a line the
-// cashier chose to RESELL whose product is recalled becomes `quarantine`, marked `recallHeld` with what was chosen — so a
+// cashier chose to RESELL whose product is recalled becomes `quarantine`, marked `recallHeld` with what was chosen (and a
+// unit of a batch head office moved to EXPIRED, M13-FR-02 · M10-FR-01, the same, marked `expiredHeld`) — so a
 // page from an older till, or a record posted straight to the socket, cannot put a recalled unit back on the shelf. The
 // refund itself is never refused: a recall wants the goods back (hard rule #1 — the box decides from its own disk).
 //
 // Pure and deterministic: the same record and pack always give the same result, so a re-sent refund hashes the same.
 
-import { recallOfProduct, returnLineRecallHeld, type Disposition } from '../../../packages/returns/src/returns';
+import { expiredOfProduct, recallOfProduct, returnLineHoldReason, type Disposition } from '../../../packages/returns/src/returns';
 
 type Rec = Record<string, unknown>;
 const isObj = (v: unknown): v is Rec => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -19,6 +20,8 @@ export interface PackRecallFacts {
   readonly productId: string;
   readonly recallBlock?: boolean;
   readonly blockedBatches?: readonly string[];
+  /** M13-FR-02 · M10-FR-01: the batches head office moved to EXPIRED — a returned unit of one is held the same way. */
+  readonly expiredBatches?: readonly { readonly batchId: string }[];
 }
 
 /** The refund record with every recalled RESELL line held, and how many were. Untouched when none is. */
@@ -27,15 +30,17 @@ export function holdRecalledReturnLines(record: Rec, products: readonly PackReca
   if (!Array.isArray(lines) || products.length === 0) return { record, held: 0 };
   const byId = new Map(products.map((p) => [p.productId, p] as const));
   const check = recallOfProduct((id) => byId.get(id));
+  const expired = expiredOfProduct((id) => byId.get(id));
   let held = 0;
   const next = lines.map((l) => {
     if (!isObj(l) || typeof l['productId'] !== 'string') return l;
     const disposition = l['disposition'];
     if (disposition !== 'resell') return l;
     const batchId = typeof l['batchId'] === 'string' && l['batchId'] !== '' ? l['batchId'] : null;
-    if (!returnLineRecallHeld({ productId: l['productId'], disposition: disposition as Disposition, batchId }, check)) return l;
+    const hold = returnLineHoldReason({ productId: l['productId'], disposition: disposition as Disposition, batchId }, check, expired);
+    if (hold === null) return l;
     held += 1;
-    return { ...l, disposition: 'quarantine', recallHeld: true, chosenDisposition: 'resell' };
+    return { ...l, disposition: 'quarantine', ...(hold === 'recall' ? { recallHeld: true } : { expiredHeld: true }), chosenDisposition: 'resell' };
   });
   return held === 0 ? { record, held } : { record: { ...record, lines: next }, held };
 }
