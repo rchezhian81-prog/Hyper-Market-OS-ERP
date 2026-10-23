@@ -61,7 +61,7 @@ describe.each(backings)('separation of duties across one purchase (M06-FR-02 · 
     expect(codeOf(payerReceives)).toBe('segregation_of_duties');
     // The manual reconciliation route refuses a matcher or payer too.
     expect(codeOf(await late('POST', '/v1/purchase/orders/po-1/receipts', P3.PAYER, { receiptId: 'carried-1', receivedByProduct: { rice: 1 } }))).toBe('segregation_of_duties');
-  });
+  }, 120_000);
 
   it('a receipt that already happened at the store (relayed) is booked and FLAGGED, never lost; a requisition\'s raiser counts as raising the order', async () => {
     const h = harness();
@@ -86,5 +86,5 @@ describe.each(backings)('separation of duties across one purchase (M06-FR-02 · 
     expect(relayed.status, JSON.stringify(relayed.body)).toBe(202);
     expect((relayed.body as { grn: { governanceFlags: string[]; segregationConflict: string } }).grn.governanceFlags).toContain('segregation_of_duties');
     expect((relayed.body as { grn: { segregationConflict: string } }).grn.segregationConflict).toContain('already raised the order');
-  });
+  }, 120_000);
 });

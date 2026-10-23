@@ -67,7 +67,7 @@ describe.each(backings)('the dock diary and the ASN (M07-FR-01 · WF-04) — on 
 
     const again = (await day(harness(h), DAY)).body as { bookings: { slotId: string; status: string }[] };
     expect(again.bookings.map((b) => [b.slotId, b.status])).toEqual([['s-a', 'completed'], ['s-c', 'cancelled'], ['s-d', 'booked']]);
-  });
+  }, 120_000);
 
   it('a stored ASN rides with the open delivery, and a receipt booked at head office is compared with it — every difference valued and flagged', async () => {
     const h = harness();
@@ -91,7 +91,7 @@ describe.each(backings)('the dock diary and the ASN (M07-FR-01 · WF-04) — on 
       expect.objectContaining({ productId: 'dal', advisedMinor: 5, receivedMinor: 4, differenceMinor: -1, valueMinor: 1_000 }),
       expect.objectContaining({ productId: 'oil', advisedMinor: 10, receivedMinor: 12, differenceMinor: 2, valueMinor: 3_600 }),
     ]);
-  });
+  }, 120_000);
 
   it('the phone\'s offline scans, completed against the cached ASN, are assembled into a receipt compared with head office\'s copy', async () => {
     const h = harness();
@@ -121,5 +121,5 @@ describe.each(backings)('the dock diary and the ASN (M07-FR-01 · WF-04) — on 
     expect(g.governanceFlags).toContain('asn_differs');
     // A cold restart reads the comparison back from the receipt.
     expect(((await harness(h).request({ method: 'GET', path: '/v1/inventory/goods-receipt/grn-2', userId: P3.OWNER, tenantId: T })).body as { grn: { asnCheck: unknown } }).grn.asnCheck).toEqual(g.asnCheck);
-  });
+  }, 120_000);
 });

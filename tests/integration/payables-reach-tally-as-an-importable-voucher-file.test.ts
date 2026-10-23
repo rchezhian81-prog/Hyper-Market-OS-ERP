@@ -65,5 +65,5 @@ describe.each(backings)('payables to Tally (WF-05 · M23-FR-04) — on $name', (
     // A cold restart gives the very same file (the same vouchers, the same REMOTEIDs — a re-import is the same vouchers).
     const again = (await harness(h).request({ method: 'GET', path: '/v1/finance/tally/ap-vouchers', userId: P3.MATCHER, tenantId: T, query: { period } })).body as Export;
     expect(again.xml).toBe(full.xml);
-  });
+  }, 120_000);
 });

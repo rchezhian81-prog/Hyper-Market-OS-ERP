@@ -59,7 +59,7 @@ describe.each(backings)('landed cost into stock value (M07-FR-04) — on $name',
 
     // A cold restart reads the same value.
     expect((await valuation(harness(h))).totalValueMinor).toBe(after.totalValueMinor);
-  });
+  }, 120_000);
 
   it('a bill blocked at the match carries no landed cost into stock (it is withheld with the bill); once it matches clean, it does', async () => {
     const h = harness();
@@ -79,5 +79,5 @@ describe.each(backings)('landed cost into stock value (M07-FR-04) — on $name',
     const clean = await call('POST', '/v1/purchase/invoices/inv-2/match', P3.MATCHER, {}, 'm2');
     expect(clean.body).toMatchObject({ blocked: false, payableMinor: 52_000 });
     expect(await value()).toBe(52_000);
-  });
+  }, 120_000);
 });

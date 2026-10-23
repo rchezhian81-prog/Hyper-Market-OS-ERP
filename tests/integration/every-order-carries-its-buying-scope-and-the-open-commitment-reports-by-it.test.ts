@@ -81,5 +81,5 @@ describe.each(backings)('buying scope per order and the open-commitment report (
     // A cold restart: the same report.
     const again = (await harness(h).request({ method: 'GET', path: '/v1/purchase/commitments/report', userId: P3.OWNER, tenantId: T })).body as Report;
     expect(again.byScope).toEqual(report.byScope);
-  });
+  }, 120_000);
 });

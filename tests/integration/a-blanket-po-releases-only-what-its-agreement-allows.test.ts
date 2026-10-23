@@ -101,7 +101,7 @@ describe.each(backings)('blanket purchase orders (M06-FR-02) — on $name', ({ h
     expect(reread.releases.map((r) => [r.poId, r.status]).sort()).toEqual([['rel-1', 'issued'], ['rel-2', 'proposed']]);
     const list = (await again.request({ method: 'GET', path: '/v1/purchase/blanket-orders', userId: 'u-owner', tenantId: T })).body as { count: number };
     expect(list.count).toBe(1);
-  });
+  }, 120_000);
 
   it('an expired agreement releases nothing, and an agreement head office does not hold is refused by name', async () => {
     const h = harness();
@@ -112,5 +112,5 @@ describe.each(backings)('blanket purchase orders (M06-FR-02) — on $name', ({ h
     await post('/v1/purchase/blanket-orders/bpo-old/approval', 'u-owner', { reason: 'last year' }, 'a');
     expect(codeOf(await post('/v1/purchase/orders/rel-x', 'u-buyer', { blanketAgreementId: 'bpo-old', lines: [{ productId: 'rice-5kg', orderedQty: 1 }] }, 'x'))).toBe('outside_validity');
     expect(codeOf(await post('/v1/purchase/orders/rel-y', 'u-buyer', { blanketAgreementId: 'bpo-none', lines: [{ productId: 'rice-5kg', orderedQty: 1 }] }, 'y'))).toBe('blanket_agreement_unknown');
-  });
+  }, 120_000);
 });

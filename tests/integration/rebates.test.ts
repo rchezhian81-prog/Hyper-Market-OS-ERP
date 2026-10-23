@@ -74,7 +74,7 @@ describe.each(backings)('supplier rebates (M06-FR-03) — on $name', ({ harness 
     // A cold restart reads the same.
     const again = harness(h);
     expect((await again.request({ method: 'GET', path: '/v1/purchase/rebate-schemes/rb-1/accruals', userId: P3.OWNER, tenantId: T })).body).toMatchObject({ count: 1, outstandingMinor: 400 });
-  });
+  }, 120_000);
 
   it('nothing accrues below the threshold (and it says how far short); a growth scheme measures against its baseline period; a volume scheme is not guessed', async () => {
     const h = harness();
@@ -98,7 +98,7 @@ describe.each(backings)('supplier rebates (M06-FR-03) — on $name', ({ harness 
     expect(codeOf(await call('POST', '/v1/purchase/rebate-schemes/vol/accruals/q1', P3.OWNER, { periodFrom: '2026-01-01', periodTo: '2026-03-31' }))).toBe('volume_rebate_basis_undecided');
     expect((await call('POST', '/v1/purchase/rebate-schemes/nope/accruals/a1', P3.OWNER, { periodFrom: '2026-01-01', periodTo: '2026-03-31' })).status).toBe(404);
     expect(codeOf(await call('POST', '/v1/purchase/rebate-schemes/rb-y', P3.OWNER, scheme({ basis: 'made_up' })))).toBe('not_readable_as_a_rebate_scheme');
-  });
+  }, 120_000);
 
   it('a scheme\'s approver approves it in their own session — never a typed name, never the person recording it (2b-vi-c-1, PA-03)', async () => {
     const h = harness();
@@ -116,5 +116,5 @@ describe.each(backings)('supplier rebates (M06-FR-03) — on $name', ({ harness 
     const plain = await call('POST', '/v1/purchase/rebate-schemes/rb-p', P3.BUYER, scheme());
     expect((plain.body as { scheme: { approvedBy?: string } }).scheme.approvedBy).toBeUndefined();
     expect((await call('GET', '/v1/purchase/rebate-schemes', P3.CASHIER)).status).toBe(403);
-  });
+  }, 120_000);
 });

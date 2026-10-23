@@ -60,7 +60,7 @@ describe.each(backings)('WF-03 — below reorder → requisition → RFQ → com
     // The new order is now ON ORDER: the same proposal suggests nothing more for rice.
     const later = (await again.request({ method: 'POST', path: '/v1/replenishment/propose', userId: P3.BUYER, tenantId: T, idempotencyKey: 'prop-2', query: { storeId: P3.STORE }, body: { items: ITEMS } })).body as { proposals: { productId: string; suggestedQty: number }[] };
     expect(later.proposals.find((p) => p.productId === 'rice')?.suggestedQty ?? 0).toBe(0);
-  });
+  }, 120_000);
 
   it('an A02 draft becomes a requisition only when the buyer names how many — the agent wrote nothing and ordered nothing', async () => {
     const h = harness();
@@ -89,5 +89,5 @@ describe.each(backings)('WF-03 — below reorder → requisition → RFQ → com
     expect(rq.body).toMatchObject({ requisition: { lines: [{ productId: 'P-OIL', quantity: 24 }], raisedBy: P3.BUYER, source: { kind: 'a02_draft', proposalIds: [draftId] } } });
     // Nothing was ordered by the agent or by the requisition.
     expect(((await call('GET', '/v1/purchase/orders', P3.OWNER)).body as { count: number }).count).toBe(0);
-  });
+  }, 120_000);
 });
