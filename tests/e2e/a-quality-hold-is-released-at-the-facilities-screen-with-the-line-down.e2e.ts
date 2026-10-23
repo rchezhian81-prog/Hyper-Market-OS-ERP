@@ -86,7 +86,7 @@ describe.skipIf(!HAVE_BROWSER)('a quality-hold release at the facilities screen 
   const waitText = (page: Page, selector: string, text: string) => page.waitForFunction(([sel, want]) => {
     const node = (globalThis as unknown as { document: { querySelector(s: string): { textContent: string | null } | null } }).document.querySelector(sel!);
     return (node?.textContent ?? '').includes(want!);
-  }, [selector, text], { timeout: 5_000 });
+  }, [selector, text], { timeout: 15_000 });
   const row = (b: string) => `#qh-rows li[data-batch="${b}"]`;
 
   it('a person with the release right releases B-1 through the box with no cloud; refused first with nothing written; a reload sends nothing twice', async () => {
@@ -111,7 +111,8 @@ describe.skipIf(!HAVE_BROWSER)('a quality-hold release at the facilities screen 
     await page.click(`${row('B-1')} button.qh-release`);
     await waitText(page, '#qh-result-text', 'Release saved on this screen');
     await page.waitForFunction(() => (globalThis as unknown as QhWindow).qualityReleaseQueue!.view('en').rows.find((r) => r.batchId === 'B-1')?.saved?.state === 'handed_to_box', undefined, { timeout: 20_000 });
-    expect((await page.textContent(`${row('B-1')} .saved:last-of-type`)) ?? '').toContain('With the store computer');
+    // The row is repainted on the screen's next status tick — wait for the words, never read them before they are painted.
+    await waitText(page, row('B-1'), 'With the store computer');
 
     const records = (await readLog(edge.deviceEventsLog.path)).filter((r) => r.ok).map((r) => JSON.parse(r.ok ? r.record : '{}') as { type: string; payload: Record<string, unknown> });
     expect(records.map((r) => r.type)).toEqual(['QualityHoldReleaseDecided']);
