@@ -53,6 +53,25 @@ jobs:
       - name: Dependency vulnerability scan
         run: pnpm audit --audit-level=high
 
+      - name: Dependency scan as recorded findings (QG-06) — every advisory, any severity, in the findings report
+        # The step above is the gate (it fails on high). This one keeps EVERY advisory, medium and low included, as a
+        # findings report for the security register (POST /v1/compliance/finding-scans). `pnpm audit` exits 1 whenever
+        # it lists anything, so its exit is not the verdict; the judge is — and it refuses an empty or unreadable file.
+        if: always()
+        run: |
+          mkdir -p scan-reports
+          pnpm audit --json > scan-reports/pnpm-audit.raw.json || true
+          node --experimental-strip-types scripts/scan-findings.mts --format pnpm-audit \
+            --in scan-reports/pnpm-audit.raw.json --out scan-reports/pnpm-audit.findings.json
+
+      - name: Keep the dependency findings report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: scan-reports-dependencies
+          path: scan-reports/
+          if-no-files-found: warn
+
       - name: Software bill of materials (QG-03)
         # Regenerated from the installed tree on every run. The check below fails if
         # the committed SBOM has drifted from what is actually installed — an SBOM
@@ -262,12 +281,44 @@ jobs:
           if curl -skI https://127.0.0.1/customer/ | grep -qi '^server:'; then fail "the Server header is exposed"; fi
           echo "public origin: API, customer app and sign-in refusal on one https address; staff screens refused"
 
+      - name: DAST baseline — OWASP ZAP passive scan of the public origin (QG-03 · §35 "DAST"; the software side of SEC-09)
+        # The composed stack is up; ZAP's baseline spiders the public origin a customer's browser reaches and reports what
+        # it sees (headers, cookies, disclosures, reflected input) without attacking anything. The image is pinned by
+        # digest. `-I` keeps ZAP's own WARN verdicts from deciding the run: the judge below does that, on the report —
+        # fail on high, every finding kept. A ZAP that did not finish, or wrote no report, fails here (P-08).
+        env:
+          ZAP_IMAGE: zaproxy/zap-stable:2.16.1@sha256:7840969c7c9fead565bf9734b12f49f6886db90b1d35b1f74d79710bbd081dab
+        run: |
+          mkdir -p "$RUNNER_TEMP/zap" && chmod 777 "$RUNNER_TEMP/zap"
+          set +e
+          docker run --rm --network host -v "$RUNNER_TEMP/zap:/zap/wrk:rw" "$ZAP_IMAGE" \
+            zap-baseline.py -t https://127.0.0.1/customer/ -m 2 -I -J zap.raw.json
+          code=$?
+          set -e
+          test "$code" = "0" || (echo "::error::the ZAP baseline did not finish (exit $code) — a scan that did not run is not a clean scan" && exit 1)
+          test -s "$RUNNER_TEMP/zap/zap.raw.json" || (echo "::error::ZAP wrote no report" && exit 1)
+
       - name: Set up pnpm (the pilot overlay runs the demo sign-in from a bundle built here)
         uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
+
+      - name: DAST baseline — the judge (fails on high; every finding written to the findings report)
+        run: |
+          mkdir -p scan-reports
+          cp "$RUNNER_TEMP/zap/zap.raw.json" scan-reports/zap.raw.json
+          node --experimental-strip-types scripts/scan-findings.mts --format zap \
+            --in scan-reports/zap.raw.json --out scan-reports/zap.findings.json
+
+      - name: Keep the DAST findings report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: scan-reports-dast
+          path: scan-reports/
+          if-no-files-found: warn
 
       - name: The hosted-demo overlay puts the staff screens behind the demo sign-in — and nowhere else (ADR-0016 on ADR-0018)
         # The same stack with the pilot overlay on top: the proxy now forwards the staff shells, /login and the demo
@@ -353,6 +404,93 @@ jobs:
         if: always()
         run: cd infra/compose && docker compose -f docker-compose.yml -f docker-compose.pilot.yml down -v --remove-orphans && rm -f .env
 
+  security-scans:
+    name: Security scans — SAST, container images, infrastructure (QG-03 / QG-06) — fail on critical or high
+    # Roadmap §22 QG-03 "security scans … green", QG-06 "zero open critical/high findings", §35 "SAST/DAST/SCA/
+    # container/IaC/secret scans" (secret and SCA run in `verify`, DAST in `deploy`). Free, open-source tools only, no
+    # account and no secret: Semgrep OSS with the open rules repository, and Trivy. Every engine and rule set is PINNED
+    # (a version, a commit, an image digest) so a run can be repeated exactly. Each tool writes its own JSON and exits 0
+    # on findings; scripts/scan-findings.mts is the one judge: it fails on critical or high, keeps every finding in a
+    # findings report for the security register, and refuses a missing report (P-08). Every scan runs even when an
+    # earlier one fails, so one red scanner never hides another; the last step gives the verdict.
+    runs-on: ubuntu-latest
+    env:
+      SEMGREP_VERSION: '1.178.0'
+      SEMGREP_RULES_COMMIT: a84ff9cc2453ca91d581380de4b8b3f272f6f4be
+      TRIVY_IMAGE: aquasec/trivy:0.67.2@sha256:e2b22eac59c02003d8749f5b8d9bd073b62e30fefaef5b7c8371204e0a4b0c08
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: SAST — Semgrep OSS, the security rules for JavaScript and TypeScript
+        id: sast
+        continue-on-error: true
+        run: |
+          mkdir -p scan-reports
+          python3 -m venv "$RUNNER_TEMP/semgrep"
+          "$RUNNER_TEMP/semgrep/bin/pip" install --quiet "semgrep==$SEMGREP_VERSION"
+          git clone --quiet --filter=blob:none https://github.com/semgrep/semgrep-rules "$RUNNER_TEMP/semgrep-rules"
+          git -C "$RUNNER_TEMP/semgrep-rules" checkout --quiet "$SEMGREP_RULES_COMMIT"
+          node scripts/select-sast-rules.mjs "$RUNNER_TEMP/semgrep-rules" "$RUNNER_TEMP/sast-rules"
+          "$RUNNER_TEMP/semgrep/bin/semgrep" scan --metrics=off --disable-version-check \
+            --config "$RUNNER_TEMP/sast-rules" --timeout 30 \
+            --exclude node_modules --exclude dist --exclude '*.bundle.js' \
+            --json --output scan-reports/semgrep.raw.json \
+            apps packages services edge scripts infra
+          node --experimental-strip-types scripts/scan-findings.mts --format semgrep \
+            --in scan-reports/semgrep.raw.json --out scan-reports/semgrep.findings.json
+
+      - name: IaC — Trivy configuration scan of the whole repository (the Dockerfiles today; any infrastructure file added later)
+        id: iac
+        continue-on-error: true
+        run: |
+          mkdir -p scan-reports "$RUNNER_TEMP/trivy-cache"
+          docker run --rm -v "$PWD:/src:ro" -v "$PWD/scan-reports:/out" -v "$RUNNER_TEMP/trivy-cache:/root/.cache/trivy" \
+            "$TRIVY_IMAGE" config --format json --output /out/trivy-config.raw.json /src
+          node --experimental-strip-types scripts/scan-findings.mts --format trivy-config \
+            --in scan-reports/trivy-config.raw.json --out scan-reports/trivy-config.findings.json
+
+      - name: Build the two images the stack runs (API and store edge)
+        id: build
+        continue-on-error: true
+        run: |
+          docker build -f infra/docker/api.Dockerfile -t sre-api:scan .
+          docker build -f infra/docker/edge.Dockerfile -t sre-edge:scan .
+
+      - name: Container images — Trivy vulnerability and secret scan of both images
+        id: images
+        continue-on-error: true
+        run: |
+          test "${{ steps.build.outcome }}" = "success" || (echo "::error::the images did not build, so they were not scanned" && exit 1)
+          for img in api edge; do
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD/scan-reports:/out" \
+              -v "$RUNNER_TEMP/trivy-cache:/root/.cache/trivy" \
+              "$TRIVY_IMAGE" image --scanners vuln,secret --format json --output "/out/trivy-image-$img.raw.json" "sre-$img:scan"
+          done
+          node --experimental-strip-types scripts/scan-findings.mts --format trivy-image \
+            --in scan-reports/trivy-image-api.raw.json --in scan-reports/trivy-image-edge.raw.json \
+            --out scan-reports/trivy-image.findings.json
+
+      - name: Keep every findings report (for the security register — POST /v1/compliance/finding-scans)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: scan-reports-security
+          path: scan-reports/
+          if-no-files-found: warn
+
+      - name: Verdict — every scan ran and none found anything critical or high
+        if: always()
+        run: |
+          failed=""
+          for s in "SAST:${{ steps.sast.outcome }}" "IaC:${{ steps.iac.outcome }}" "image build:${{ steps.build.outcome }}" "container images:${{ steps.images.outcome }}"; do
+            case "$s" in *:success) ;; *) failed="$failed ${s%%:*}";; esac
+          done
+          if [ -n "$failed" ]; then echo "::error::security scans not green:$failed (each step above names its findings)"; exit 1; fi
+          echo "security scans green: SAST, IaC, container images"
+
   browser:
     name: Browser suites (real Chromium) — required, never skip
     # GT-01 (independent audit, 4 Oct 2026): until this job existed the automatic build ran no browser suite at
@@ -433,7 +571,7 @@ jobs:
             grep -E 'FAIL|Error|×|expected|took' /tmp/perf.log | grep -v '✓' | tail -40 | while IFS= read -r line; do echo "::error::${line:0:300}"; done
             exit 1
           }
-          node scripts/assert-suite-ran.mjs /tmp/perf.json --min-files 10 --min-tests 47
+          node scripts/assert-suite-ran.mjs /tmp/perf.json --min-files 12 --min-tests 56
 
   identity:
     name: Identity server suites (real Keycloak)
@@ -507,7 +645,7 @@ jobs:
     # (SRE_BAKE_SECONDS): the release must stay READY with no growth in server errors for that long, or the box rolls
     # back and this job goes red — and the full rollout below never runs. With no canary box configured the job says
     # so and the full rollout proceeds as before (synthetic demo only; ADR-0026 requires a canary for real data).
-    needs: [verify, integration, deploy, browser, performance, identity]
+    needs: [verify, integration, deploy, security-scans, browser, performance, identity]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: canary
@@ -566,7 +704,7 @@ jobs:
     # When the 'demo' environment carries no deploy secrets, the job says so and deploys nothing — a
     # fork or a fresh clone cannot deploy anywhere by accident. docs/runbooks/automatic-deployment.md.
     # WF-20 (ADR-0026): the full rollout runs only after the canary stage passed (a red canary stops it here).
-    needs: [verify, integration, deploy, browser, performance, identity, canary]
+    needs: [verify, integration, deploy, security-scans, browser, performance, identity, canary]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.canary.result == 'success'
     runs-on: ubuntu-latest
     environment: demo

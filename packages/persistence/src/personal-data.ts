@@ -84,7 +84,9 @@ function gcmSeal(key: Buffer, plain: Buffer, aad: Buffer): Buffer {
 }
 
 function gcmOpen(key: Buffer, sealed: Buffer, aad: Buffer): Buffer {
-  const d = createDecipheriv('aes-256-gcm', key, sealed.subarray(0, 12));
+  // QG-03 SAST (gcm-no-tag-length): the tag length is pinned to the full 16 bytes, so a sealed value cut short can
+  // never be opened against a truncated — and so far easier to forge — authentication tag.
+  const d = createDecipheriv('aes-256-gcm', key, sealed.subarray(0, 12), { authTagLength: 16 });
   d.setAAD(aad);
   d.setAuthTag(sealed.subarray(12, 28));
   return Buffer.concat([d.update(sealed.subarray(28)), d.final()]);

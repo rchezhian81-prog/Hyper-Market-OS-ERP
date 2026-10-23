@@ -169,6 +169,11 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'facilities.asset.manage', 'facilities.asset.read', 'facilities.reading.record', 'facilities.incident.record',
       'compliance.obligation.manage', 'compliance.obligation.read',
       'compliance.risk.manage', 'compliance.risk.read',
+      // ── OB-288 gates lane (QG-03 · QG-06 · QG-12) — begin
+      // Record scanner runs and people's findings on the security findings register, and read it; decide each quality
+      // gate GO / HOLD / REWORK for a release (§36: the owner is accountable for GO/HOLD/REWORK), and read the register.
+      'compliance.finding.record', 'compliance.finding.read', 'compliance.gate.decide', 'compliance.gate.read',
+      // ── OB-288 gates lane — end
       'audit.hold.manage', 'audit.retention.read',
       'quality.coldchain.assess', 'quality.lottrace.read',
       'quality.recall.initiate', 'quality.recall.read',
@@ -350,6 +355,10 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'facilities.asset.manage', 'facilities.asset.read', 'facilities.reading.record', 'facilities.incident.record',
       'compliance.obligation.manage', 'compliance.obligation.read',
       'compliance.risk.manage', 'compliance.risk.read',
+      // ── OB-288 gates lane (QG-03 · QG-06 · QG-12) — begin
+      // Record and read security findings, and read the gate register. Deciding a gate is the owner's (§36) — absent here.
+      'compliance.finding.record', 'compliance.finding.read', 'compliance.gate.read',
+      // ── OB-288 gates lane — end
       'quality.coldchain.assess', 'quality.lottrace.read',
       'quality.recall.initiate', 'quality.recall.read',
       'quality.hold.manage', 'quality.hold.release',

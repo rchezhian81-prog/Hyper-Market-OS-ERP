@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1226 | 737 | 737 | 109 | 357 |
+| 13 | 1236 | 742 | 742 | 109 | 361 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -1005,6 +1005,15 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/compliance/epr/take-back-stock/counts/:countId` | `epr.register.record` | core | yes |
 | POST | `/v1/compliance/epr/take-backs/:takeBackId` | `epr.register.record` | core | yes |
 | GET | `/v1/compliance/evidence-gaps` | `compliance.obligation.read` | core | — |
+| GET | `/v1/compliance/finding-scans` | `compliance.finding.read` | core | — |
+| POST | `/v1/compliance/finding-scans` | `compliance.finding.record` | core | yes |
+| GET | `/v1/compliance/findings` | `compliance.finding.read` | core | — |
+| POST | `/v1/compliance/findings/:findingId` | `compliance.finding.record` | core | yes |
+| POST | `/v1/compliance/findings/:findingId/fixed` | `compliance.finding.record` | core | yes |
+| POST | `/v1/compliance/findings/:findingId/owner` | `compliance.finding.record` | core | yes |
+| GET | `/v1/compliance/gate-decisions/:gate/:release` | `compliance.gate.read` | core | — |
+| POST | `/v1/compliance/gate-decisions/:gate/:release` | `compliance.gate.decide` | core | yes |
+| GET | `/v1/compliance/gate-register` | `compliance.gate.read` | core | — |
 | GET | `/v1/compliance/gates/:gate/can-pass` | `compliance.risk.read` | core | — |
 | GET | `/v1/compliance/gates/blocked` | `compliance.risk.read` | core | — |
 | POST | `/v1/compliance/incidents/:incidentId` | `compliance.risk.manage` | core | yes |
@@ -1192,6 +1201,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/platform/partners/sandboxes/:sandboxId` | `platform.partner.manage` | core | yes |
 | POST | `/v1/platform/partners/sandboxes/:sandboxId/seed` | `platform.partner.manage` | core | yes |
 | GET | `/v1/platform/plans` | `platform.plan.read` | core | — |
+| GET | `/v1/platform/recovery-gate` | `backup.verify.read` | core | — |
 | GET | `/v1/platform/recovery-targets` | `backup.verify.read` | core | — |
 | GET | `/v1/platform/remote-sessions` | `platform.health.read` | core | — |
 | POST | `/v1/platform/remote-sessions` | `platform.device.manage` | core | yes |

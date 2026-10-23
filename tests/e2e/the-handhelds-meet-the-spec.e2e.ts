@@ -337,6 +337,21 @@ describe.skipIf(!HAVE_BROWSER)('the handhelds on a low-spec phone: audited, and 
     expect(await page.textContent('.item.pick .qty')).toBe('12 units · EA');
   });
 
+  it('warehouse budget — receive a line 2 (tap Receive a delivery → scan the item), saved on the handheld at once (QG-02 · M07 · OB-288 gates lane)', async () => {
+    const page = await open(WAREHOUSE);
+    const taps = new Tally(page);
+    await taps.tap('#receive');
+    await page.waitForSelector('#scan:not([hidden])');
+    await taps.scan('890RICE');
+    await page.waitForSelector('#banner.good:not([hidden])');
+    expect(taps.reset(), 'receive a line').toBeLessThanOrEqual(3);
+    // The line is on the handheld's own queue before anything else happens — receiving works with the cable out (§31).
+    expect(await page.evaluate('globalThis.warehouseOutbox.unsentCount()')).toBe(1);
+    const queued = await page.evaluate('globalThis.warehouseOutbox.pending().map((i) => [i.event.type, i.event.payload.productId ?? null])');
+    expect(queued).toHaveLength(1);
+    expect(JSON.stringify(queued)).toContain('p-rice');
+  });
+
   it('warehouse budget — pick a line 3 (scan the bin from the list → scan the item → confirm), W1', async () => {
     const page = await open(WAREHOUSE);
     const taps = new Tally(page);

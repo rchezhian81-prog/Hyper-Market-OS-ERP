@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1512,
+  "testFiles": 1519,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -18,11 +18,11 @@
     "PARTIALLY_WIRED": 40
   },
   "totals": {
-    "unit": 90,
+    "unit": 93,
     "integration": 101,
-    "realDb": 97,
-    "browser": 82,
-    "connected": 48,
+    "realDb": 100,
+    "browser": 86,
+    "connected": 53,
     "device": 0,
     "uat": 0
   },
@@ -470,7 +470,7 @@
         "unit": 9,
         "integration": 25,
         "realDb": 6,
-        "browser": 4,
+        "browser": 5,
         "connected": 0,
         "device": 0,
         "uat": 0
@@ -525,6 +525,7 @@
         "browser": [
           "tests/e2e/goods-receipt-delivery.e2e.ts",
           "tests/e2e/screens-open-offline.e2e.ts",
+          "tests/e2e/the-handhelds-meet-the-spec.e2e.ts",
           "tests/e2e/warehouse-handheld-delivery.e2e.ts",
           "tests/e2e/warehouse-handheld-syncs-through-the-box.e2e.ts"
         ],
@@ -4586,22 +4587,31 @@
       "id": "QG-01",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 0,
-        "integration": 1,
-        "realDb": 0,
-        "browser": 0,
-        "connected": 0,
+        "unit": 1,
+        "integration": 2,
+        "realDb": 1,
+        "browser": 1,
+        "connected": 1,
         "device": 0,
         "uat": 0
       },
       "files": {
-        "unit": [],
-        "integration": [
-          "tests/integration/risk-register.test.ts"
+        "unit": [
+          "tests/unit/compliance-gate-decisions.test.ts"
         ],
-        "realDb": [],
-        "browser": [],
-        "connected": [],
+        "integration": [
+          "tests/integration/risk-register.test.ts",
+          "tests/integration/scanner-findings-and-gate-decisions-are-recorded.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/scanner-findings-and-gate-decisions-are-recorded.test.ts"
+        ],
+        "browser": [
+          "tests/e2e/the-quality-gates-page-records-the-owners-decision.e2e.ts"
+        ],
+        "connected": [
+          "tests/e2e/the-quality-gates-page-records-the-owners-decision.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },
@@ -4612,16 +4622,17 @@
       "id": "QG-02",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 3,
+        "unit": 4,
         "integration": 1,
         "realDb": 0,
-        "browser": 1,
-        "connected": 0,
+        "browser": 3,
+        "connected": 1,
         "device": 0,
         "uat": 0
       },
       "files": {
         "unit": [
+          "tests/unit/compliance-gate-decisions.test.ts",
           "tests/unit/customer-app-boot.test.ts",
           "tests/unit/owner-session.test.ts",
           "tests/unit/ui-foundation.test.ts"
@@ -4631,9 +4642,13 @@
         ],
         "realDb": [],
         "browser": [
+          "tests/e2e/open-to-buy-on-the-production-api.e2e.ts",
+          "tests/e2e/the-handhelds-meet-the-spec.e2e.ts",
           "tests/e2e/the-till-and-manager-meet-the-interaction-budget.e2e.ts"
         ],
-        "connected": [],
+        "connected": [
+          "tests/e2e/open-to-buy-on-the-production-api.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },
@@ -4644,22 +4659,33 @@
       "id": "QG-03",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 0,
-        "integration": 1,
-        "realDb": 0,
-        "browser": 0,
-        "connected": 0,
+        "unit": 3,
+        "integration": 2,
+        "realDb": 1,
+        "browser": 1,
+        "connected": 1,
         "device": 0,
         "uat": 0
       },
       "files": {
-        "unit": [],
-        "integration": [
-          "tests/integration/risk-register.test.ts"
+        "unit": [
+          "tests/unit/a-cut-short-encryption-tag-is-refused.test.ts",
+          "tests/unit/compliance-findings.test.ts",
+          "tests/unit/compliance-gate-decisions.test.ts"
         ],
-        "realDb": [],
-        "browser": [],
-        "connected": [],
+        "integration": [
+          "tests/integration/risk-register.test.ts",
+          "tests/integration/scanner-findings-and-gate-decisions-are-recorded.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/scanner-findings-and-gate-decisions-are-recorded.test.ts"
+        ],
+        "browser": [
+          "tests/e2e/the-quality-gates-page-records-the-owners-decision.e2e.ts"
+        ],
+        "connected": [
+          "tests/e2e/the-quality-gates-page-records-the-owners-decision.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },
@@ -4728,24 +4754,35 @@
       "id": "QG-06",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 1,
-        "integration": 1,
-        "realDb": 0,
-        "browser": 0,
-        "connected": 0,
+        "unit": 5,
+        "integration": 2,
+        "realDb": 1,
+        "browser": 1,
+        "connected": 1,
         "device": 0,
         "uat": 0
       },
       "files": {
         "unit": [
-          "tests/unit/compliance-risk.test.ts"
+          "tests/unit/compliance-findings.test.ts",
+          "tests/unit/compliance-gate-decisions.test.ts",
+          "tests/unit/compliance-risk.test.ts",
+          "tests/unit/erp-gates-session.test.ts",
+          "tests/unit/erp-risk-acceptance-session.test.ts"
         ],
         "integration": [
-          "tests/integration/risk-register.test.ts"
+          "tests/integration/risk-register.test.ts",
+          "tests/integration/scanner-findings-and-gate-decisions-are-recorded.test.ts"
         ],
-        "realDb": [],
-        "browser": [],
-        "connected": [],
+        "realDb": [
+          "tests/integration/scanner-findings-and-gate-decisions-are-recorded.test.ts"
+        ],
+        "browser": [
+          "tests/e2e/the-quality-gates-page-records-the-owners-decision.e2e.ts"
+        ],
+        "connected": [
+          "tests/e2e/the-quality-gates-page-records-the-owners-decision.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },
@@ -4821,9 +4858,9 @@
       "id": "QG-08",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 1,
-        "integration": 5,
-        "realDb": 3,
+        "unit": 3,
+        "integration": 6,
+        "realDb": 4,
         "browser": 0,
         "connected": 0,
         "device": 0,
@@ -4831,19 +4868,23 @@
       },
       "files": {
         "unit": [
-          "tests/unit/compliance-risk.test.ts"
+          "tests/unit/compliance-gate-decisions.test.ts",
+          "tests/unit/compliance-risk.test.ts",
+          "tests/unit/ops-recovery-gate.test.ts"
         ],
         "integration": [
           "tests/integration/a-rehearsed-rollback-reconciles.test.ts",
           "tests/integration/backup-is-one-moment.test.ts",
           "tests/integration/recovery-rehearsal.test.ts",
           "tests/integration/risk-followthrough.test.ts",
-          "tests/integration/risk-register.test.ts"
+          "tests/integration/risk-register.test.ts",
+          "tests/integration/scanner-findings-and-gate-decisions-are-recorded.test.ts"
         ],
         "realDb": [
           "tests/integration/a-rehearsed-rollback-reconciles.test.ts",
           "tests/integration/backup-is-one-moment.test.ts",
-          "tests/integration/recovery-rehearsal.test.ts"
+          "tests/integration/recovery-rehearsal.test.ts",
+          "tests/integration/scanner-findings-and-gate-decisions-are-recorded.test.ts"
         ],
         "browser": [],
         "connected": [],
@@ -4947,24 +4988,33 @@
       "id": "QG-12",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 0,
-        "integration": 1,
-        "realDb": 1,
-        "browser": 0,
-        "connected": 0,
+        "unit": 2,
+        "integration": 2,
+        "realDb": 2,
+        "browser": 1,
+        "connected": 1,
         "device": 0,
         "uat": 0
       },
       "files": {
-        "unit": [],
+        "unit": [
+          "tests/unit/compliance-gate-decisions.test.ts",
+          "tests/unit/erp-gates-session.test.ts"
+        ],
         "integration": [
-          "tests/integration/a-rehearsed-rollback-reconciles.test.ts"
+          "tests/integration/a-rehearsed-rollback-reconciles.test.ts",
+          "tests/integration/scanner-findings-and-gate-decisions-are-recorded.test.ts"
         ],
         "realDb": [
-          "tests/integration/a-rehearsed-rollback-reconciles.test.ts"
+          "tests/integration/a-rehearsed-rollback-reconciles.test.ts",
+          "tests/integration/scanner-findings-and-gate-decisions-are-recorded.test.ts"
         ],
-        "browser": [],
-        "connected": [],
+        "browser": [
+          "tests/e2e/the-quality-gates-page-records-the-owners-decision.e2e.ts"
+        ],
+        "connected": [
+          "tests/e2e/the-quality-gates-page-records-the-owners-decision.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },

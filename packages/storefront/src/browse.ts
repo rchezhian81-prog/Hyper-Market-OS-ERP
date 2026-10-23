@@ -143,6 +143,22 @@ function normalise(text: string): string {
     .trim();
 }
 
+/**
+ * A product's searchable text, normalised once per product object and kept beside it (a product here is an immutable
+ * snapshot of the published catalogue, so its text cannot change under the cache). Before this, every search
+ * re-normalised every product's name, Tamil name, brand and synonyms — 50,000 Unicode normalisations per keystroke.
+ */
+const SEARCH_TEXT = new WeakMap<StorefrontProduct, { readonly haystack: string; readonly words: readonly string[] }>();
+function searchTextOf(p: StorefrontProduct): { readonly haystack: string; readonly words: readonly string[] } {
+  let text = SEARCH_TEXT.get(p);
+  if (text === undefined) {
+    const haystack = normalise([p.name, p.nameTa ?? '', p.brand ?? '', ...(p.synonyms ?? [])].join(' '));
+    text = { haystack, words: haystack.split(' ') };
+    SEARCH_TEXT.set(p, text);
+  }
+  return text;
+}
+
 /** Edit distance, capped — we only care whether it is small. */
 function withinDistance(a: string, b: string, max: number): boolean {
   if (Math.abs(a.length - b.length) > max) return false;
@@ -199,11 +215,23 @@ export function searchCatalogue(input: {
   const q = normalise(raw);
   const terms = q.split(' ').filter((t) => t.length > 0);
   const hits: SearchHit[] = [];
+  // §32 "catalogue search p95 ≤1 s" (NFR-02 · QG-05; OB-288 gates lane — tests/performance/catalogue-search-p95.test.ts):
+  // at 50,000 SKUs the typo pass re-ran the same edit distance for the same (term, word) pair tens of thousands of
+  // times — a catalogue repeats its brands and words. Each pair is now worked out once per search. Same answers.
+  const typoMemo = new Map<string, boolean>();
+  const closeEnough = (t: string, w: string): boolean => {
+    const key = `${t}\u0000${w}`;
+    let near = typoMemo.get(key);
+    if (near === undefined) {
+      near = withinDistance(t, w, t.length <= 4 ? 1 : 2);
+      typoMemo.set(key, near);
+    }
+    return near;
+  };
 
   for (const p of sellable) {
     // D01-FR-06 (round 8): a customer's word for it (a synonym from the product master) finds it like its name does.
-    const haystack = normalise([p.name, p.nameTa ?? '', p.brand ?? '', ...(p.synonyms ?? [])].join(' '));
-    const words = haystack.split(' ');
+    const { haystack, words } = searchTextOf(p);
 
     if (haystack === q) {
       hits.push({ product: viewProduct(p, language, input.staleAfterMinutes), match: 'exact' });
@@ -215,7 +243,7 @@ export function searchCatalogue(input: {
     }
     // The typo pass: one edit for a short word, two for a longer one.
     const fuzzy = terms.every((t) =>
-      words.some((w) => withinDistance(t, w, t.length <= 4 ? 1 : 2)),
+      words.some((w) => closeEnough(t, w)),
     );
     if (fuzzy) {
       hits.push({ product: viewProduct(p, language, input.staleAfterMinutes), match: 'fuzzy' });

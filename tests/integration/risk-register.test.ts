@@ -52,11 +52,17 @@ describe('risk register: an open critical risk blocks its gate until accepted (M
     expect((await canPass(h, 'u-owner', 'QG-06')).body).toMatchObject({ canPass: true });
   });
 
-  it('blocks only on open AND critical, and refuses an unjustified or back-door acceptance', async () => {
+  it('blocks only on open AND critical-or-high, and refuses an unjustified or back-door acceptance', async () => {
     const h = await cast();
-    await register(h, 'u-mgr', 'r-high', { title: 'high but not critical', severity: 'high', ownerUserId: 'u-sec', blocksGates: ['QG-06'] });
+    await register(h, 'u-mgr', 'r-med', { title: 'medium only', severity: 'medium', ownerUserId: 'u-sec', blocksGates: ['QG-06'] });
     await register(h, 'u-mgr', 'r-mit', { title: 'critical but mitigated', severity: 'critical', status: 'mitigated', ownerUserId: 'u-sec', blocksGates: ['QG-07'] });
     expect(((await blocked(h, 'u-owner')).body as Blocked).count).toBe(0); // neither blocks
+    // §22 QG-06 "zero open critical/high findings": an open HIGH blocks exactly as a critical does.
+    await register(h, 'u-mgr', 'r-high', { title: 'high but not critical', severity: 'high', ownerUserId: 'u-sec', blocksGates: ['QG-06'] });
+    const withHigh = (await blocked(h, 'u-owner')).body as Blocked;
+    expect(withHigh.count).toBe(1);
+    expect(withHigh.blocked[0]).toMatchObject({ gate: 'QG-06', riskId: 'r-high' });
+    expect((await canPass(h, 'u-owner', 'QG-06')).body).toMatchObject({ canPass: false });
 
     // Acceptance without a written reason is refused; a missing risk is a 404.
     await register(h, 'u-mgr', 'r-c', { title: 'critical', severity: 'critical', ownerUserId: 'u-sec', blocksGates: ['QG-08'] });

@@ -92,6 +92,9 @@ export function assortmentRoutes(deps: AssortmentDeps): readonly Route[] {
         if (b['onHandMinor'] !== undefined) {
           throw apiError(400, {
             code: 'drop_carries_caller_stock',
+            // QG-03 SAST triage (OB-288): a false positive of tainted-sql-string — this is an error message about a range DROP
+            // (a product leaving the range), not SQL; the service builds no SQL from text. The scanner stays on everywhere else.
+            // nosemgrep: javascript.express.security.injection.tainted-sql-string
             whatHappened: `The drop of ${productId} at ${storeId} says how much is on hand. That is head office's to say, from the stock position — a figure in the request could delete a range line with stock still on the shelf.`,
             wasItSaved: 'not_saved',
             nextSafeAction: 'Send { reason, effectiveFrom, reasonNote?, replacedByProductId? } — the stock is read here. Nothing was changed.',
@@ -120,6 +123,9 @@ export function assortmentRoutes(deps: AssortmentDeps): readonly Route[] {
           }
           throw e;
         }
+        // QG-03 SAST triage (OB-288): a false positive of tainted-sql-string — an idempotency key for a range DROP, not SQL;
+        // nothing here reaches a query as text.
+        // nosemgrep: javascript.express.security.injection.tainted-sql-string
         await deps.recordEntry(ctx.tenantId, storeId, decision.entry, ctx.idempotencyKey ?? `drop-${storeId}-${productId}-${decision.entry.effectiveFrom}`);
         return { status: 201, body: { storeId, productId, outcome: decision.outcome, status: decision.entry.status, effectiveFrom: decision.entry.effectiveFrom, detail: decision.detail, onHandMinor: await deps.storeOnHand(ctx.tenantId, storeId, productId) } };
       },

@@ -107,9 +107,19 @@ describe('risk acceptance and the quality gates', () => {
     expect(gateCanPass('QG-08', [risk()])).toBe(true);
   });
 
-  it('a non-critical or already-mitigated risk does not block anything', () => {
-    expect(blockedGates([risk({ severity: 'high' })])).toEqual([]);
+  it('an open HIGH risk blocks its gate too — §22 QG-06 "zero open critical/high findings" (OB-288 gates lane)', () => {
+    const blocks = blockedGates([risk({ severity: 'high' })]);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({ gate: 'QG-06', severity: 'high' });
+    expect(blocks[0]?.reason).toContain('open high risk');
+    expect(gateCanPass('QG-06', [risk({ severity: 'high' })])).toBe(false);
+  });
+
+  it('a medium, low or already-mitigated risk does not block anything', () => {
+    expect(blockedGates([risk({ severity: 'medium' })])).toEqual([]);
+    expect(blockedGates([risk({ severity: 'low' })])).toEqual([]);
     expect(blockedGates([risk({ status: 'mitigated' })])).toEqual([]);
+    expect(blockedGates([risk({ severity: 'high', status: 'closed' })])).toEqual([]);
   });
 
   it('an accepted risk stops blocking — because acceptance is a signed decision', () => {

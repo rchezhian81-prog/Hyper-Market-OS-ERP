@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startInboxShop, ok, OWNER, MGR, type InboxShop } from './lib/ai-inbox-shop';
+import { Tally } from './lib/tally';
 import type { RealCloud } from '../support/real-store';
 
 /**
@@ -62,6 +63,11 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the open-t
           product: { sku: 'SKU-RICE', name: 'Ponni rice (synthetic)', baseUom: 'ea', primaryCategoryId: 'grocery', taxClass: '1006', lifecycle: 'active' },
           categories: [{ categoryId: 'grocery', name: 'Grocery', parentId: null }],
         }, 'pub-rice'), 'publish rice');
+        // QG-02 (OB-288 gates lane): a second category, so an order WITHIN budget can be approved and its taps counted.
+        await ok(as(c, OWNER, '/v1/catalogue/products/SOAP/publish', {
+          product: { sku: 'SKU-SOAP', name: 'Bath soap (synthetic)', baseUom: 'ea', primaryCategoryId: 'household', taxClass: '1006', lifecycle: 'active' },
+          categories: [{ categoryId: 'household', name: 'Household', parentId: null }],
+        }, 'pub-soap'), 'publish soap');
       },
     });
     browser = await chromium.launch({ headless: true, executablePath: CHROMIUM });
@@ -182,6 +188,43 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the open-t
       expect(await s.page.textContent('#budget-title')).toBe('பட்ஜெட் (வாங்க மீதம்)');
       expect(await row(s.page, 'grocery').innerText()).toMatch(/பட்ஜெட்டை மீறியது/);
       expect(s.writes, 'reading back writes nothing').toEqual([]);
+      expect(s.errors).toEqual([]);
+    } finally { await s.close(); }
+  }, 180_000);
+
+  it('QG-02 — approve a purchase order within budget in 3 (Budget tab → why it is approved → Issue); head office records the owner as approver', async () => {
+    // The manager raises a small household order (no household budget is over).
+    let s = await open(MGR);
+    let poId = '';
+    try {
+      await s.page.click('#tab-po');
+      await s.page.fill('#po-supplier', 'sup-1');
+      await s.page.fill('#po-store', 'br-1');
+      await s.page.fill('#po-product', 'SOAP');
+      await s.page.fill('#po-qty', '2');
+      await s.page.fill('#po-cost', '50');
+      await s.page.click('#add-po-line');
+      await s.page.click('#raise-po');
+      await says(s.page, 'banner-title', /^Order proposed/);
+      await s.page.click('#banner-ok');
+      poId = (await ordersAtHeadOffice()).find((o) => o.status === 'proposed' && o.totalMinor === 10_000)?.poId ?? '';
+      expect(poId).toMatch(/^PO-/);
+      expect(s.errors).toEqual([]);
+    } finally { await s.close(); }
+
+    // The owner approves (issues) it — every interaction counted with the same Tally as the till and the handhelds.
+    s = await open(OWNER);
+    try {
+      const taps = new Tally(s.page);
+      await taps.tap('#tab-budget');
+      const box = s.page.locator(`#waiting-orders [data-po="${poId}"]`);
+      await box.waitFor({ timeout: 15_000 });
+      expect(await box.locator('.over-reason').isHidden(), 'within budget: no over-budget reason is asked for').toBe(true);
+      await taps.type(`#waiting-orders [data-po="${poId}"] .issue-reason`, 'weekly household top-up');
+      await taps.tap(`#waiting-orders [data-po="${poId}"] button[data-act="issue"]`);
+      await says(s.page, 'budget-status', new RegExp(`^${poId}: `));
+      expect(taps.reset(), 'approve a PO').toBeLessThanOrEqual(3);
+      expect(((await ordersAtHeadOffice()).find((o) => o.poId === poId))).toMatchObject({ status: 'issued', requisitionedBy: MGR, approvedBy: OWNER });
       expect(s.errors).toEqual([]);
     } finally { await s.close(); }
   }, 180_000);

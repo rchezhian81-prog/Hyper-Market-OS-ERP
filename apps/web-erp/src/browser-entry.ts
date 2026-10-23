@@ -311,6 +311,8 @@ import { createCustomersSession, customersWords, customersOutcomeWords, type Cus
 import { createAffinitySession, affinityWords, affinityOutcomeWords, type AffinitySession } from './basket-affinity-session';
 import { createEventsSession, eventsWords, eventsOutcomeWords, effectWords, type EventsSession } from './demand-events-session';
 import { createBriefSession, briefWords, briefOutcomeWords, type BriefSession } from './morning-brief-session';
+// OB-288 gates lane (QG-12): the Quality gates page — the owner's GO / HOLD / REWORK register.
+import { createGatesSession, gatesWords, gatesOutcomeWords, stateView as gateStateView, GATE_NAMES, RELEASES as GATE_RELEASES, type GatesSession } from './gates-session';
 // ── end R4 Lane 3 ──
 // ── R4 Lane 4 (supply, pricing and loss prevention) — begin
 import { createScorecardSession, scorecardWords, scorecardOutcomeWords, ratingWords as scorecardRatingWords, SCORECARD_FIGURES, type ScorecardSession } from './supplier-scorecard-session';
@@ -4926,6 +4928,9 @@ interface ManagerWindow {
   morningBriefData?: ViewerIdentity;
   morningBrief?: { readonly session: BriefSession; readonly words: typeof briefWords; readonly outcomeWords: typeof briefOutcomeWords };
   // ── end R4 Lane 3 ──
+  // OB-288 gates lane (QG-12): the Quality gates page — who is looking; head office answers the rest.
+  gatesData?: ViewerIdentity;
+  gates?: { readonly session: GatesSession; readonly words: typeof gatesWords; readonly outcomeWords: typeof gatesOutcomeWords; readonly stateView: typeof gateStateView; readonly names: typeof GATE_NAMES; readonly releases: typeof GATE_RELEASES };
   schedule?: { readonly session: ScheduleSession; readonly words: typeof scheduleWords; readonly outcomeWords: typeof scheduleOutcomeWords; readonly rupees: typeof scheduleRupees };
   // ── R4 Lane 4 — begin
   /** R4 D-10: the Supplier scorecard page — who is looking; head office answers the rest. */
@@ -6675,6 +6680,9 @@ if (browserWindow !== undefined) {
   browserWindow.morningBriefData = viewerIdentity(browserWindow.morningBriefData);
   browserWindow.morningBrief = { session: createBriefSession({ viewer: browserWindow.morningBriefData }), words: briefWords, outcomeWords: briefOutcomeWords };
   // ── end R4 Lane 3 ──
+  // OB-288 gates lane (QG-12): the Quality gates page — reads on a click, writes only the owner's explicit decision.
+  browserWindow.gatesData = viewerIdentity(browserWindow.gatesData);
+  browserWindow.gates = { session: createGatesSession({ viewer: browserWindow.gatesData }), words: gatesWords, outcomeWords: gatesOutcomeWords, stateView: gateStateView, names: GATE_NAMES, releases: GATE_RELEASES };
   // ── R4 Lane 4 — begin
   // R4 D-10: the Supplier scorecard page — a read of figures built from the registers; nothing is typed, nothing written.
   browserWindow.supplierScorecardData = viewerIdentity(browserWindow.supplierScorecardData);
