@@ -58,6 +58,23 @@
         <button id="refresh" type="button">Show customers</button>
         <p class="status" id="page-status" role="status" aria-live="polite"></p>
       </section>
+      <!-- M16-FR-04: one customer's record — what they bought and their history with the service desk, complaints first. -->
+      <section aria-labelledby="record-h">
+        <h3 id="record-h">A customer's record</h3>
+        <form id="record-form" class="row-form">
+          <label for="record-ref"><span id="l-record-ref">Customer code</span><input id="record-ref" autocomplete="off" /></label>
+          <button id="record-open" type="submit"><span id="record-open-text">Open the record</span></button>
+        </form>
+        <p class="status" id="record-status" role="status" aria-live="polite"></p>
+        <div id="record" hidden>
+          <p id="record-summary"></p>
+          <p class="status" id="record-say"></p>
+          <h4 id="complaints-h">Complaints</h4>
+          <ul class="rows" id="record-complaints"></ul>
+          <h4 id="othercases-h">Other questions and requests</h4>
+          <ul class="rows" id="record-other"></ul>
+        </div>
+      </section>
       <section aria-labelledby="segments-h">
         <h3 id="segments-h">Customers and segments</h3>
         <div class="panels" id="counts"></div>

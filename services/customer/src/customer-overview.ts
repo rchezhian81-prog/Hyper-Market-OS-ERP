@@ -50,6 +50,8 @@ export function customerOverviewRoutes(deps: CustomerOverviewDeps): readonly Rou
           return {
             customerRef: ref, segment, profiled: segment !== 'not_profiled',
             orders: p?.orderCount ?? 0, lastOrderAt: p?.lastOrderAt ?? null,
+            // M16-FR-04: complaints the desk still has open for them — service history, shown whatever the consent.
+            openComplaints: p?.openComplaints ?? complaints.filter((c) => c.customerRef === ref && !c.resolved).length,
             detail: p?.detail ?? 'this customer has not consented to profiling, so they are not segmented',
           };
         });
