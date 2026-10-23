@@ -275,6 +275,10 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   { id: 'risk-acceptance', label: 'Risk acceptance', labelTa: 'இடர் ஏற்பு', path: '/risk-acceptance', requires: 'compliance.risk.read', group: 'Operations' },
   // OB-288 gates lane (QG-12): every quality gate's GO / HOLD / REWORK for a release, decided by the owner with evidence.
   { id: 'gates', label: 'Quality gates', labelTa: 'தர வாயில்கள்', path: '/gates', requires: 'compliance.gate.read', group: 'Operations', served: 'unserved' },
+  // OB-288 lane 1 · P1 (OB-290/291/292): the owner's money limits, escalation waits and price-check size — two people change them.
+  // OB-288 lane 1 · P1 (M02-FR-01/02): who holds which role, where and up to how much — read-only, with the permission matrix as CSV.
+  { id: 'access-review', label: 'Access review', labelTa: 'அணுகல் மீளாய்வு', path: '/access-review', requires: 'identity.access.review', group: 'Administration', served: 'unserved' },
+  { id: 'approval-rules', label: 'Approval rules', labelTa: 'ஒப்புதல் விதிகள்', path: '/approval-rules', requires: 'approvals.rules.read', group: 'Administration', served: 'unserved' },
   // Reopen a locked day — the controlled, audited unlock (M14-FR-04 / §28). Gated on `till.dayclose.read` (the
   // permission the locked-day list checks); the reopen itself needs `till.dayclose.approve`, which the box and
   // cloud enforce, and the screen offers the form only to a holder. Accountant/owner work.

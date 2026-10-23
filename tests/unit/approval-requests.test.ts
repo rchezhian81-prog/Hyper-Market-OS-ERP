@@ -248,6 +248,6 @@ describe('what an action asks approval FOR, and the common typed-name rule (2b-v
       expect(spec.label.length).toBeGreaterThan(0);
       expect(spec.validForMinutes).toBe(24 * 60);
     }
-    expect(Object.keys(APPROVAL_KINDS)).toHaveLength(29); // FUL-14 substitution_above_cap + PA-04 branch_transition + D14 r10 partner_webhook_subscription + r26 OB-97 store_computer_replaced + R2 C20 OB-165 posh_committee_change + F1 L2 scale_stamp_change
+    expect(Object.keys(APPROVAL_KINDS)).toHaveLength(34); // OB-288 lane 1 · P1: approval_rule_change, org_structure_change, config_change, flag_change, department_scope_change + FUL-14 substitution_above_cap + PA-04 branch_transition + D14 r10 partner_webhook_subscription + r26 OB-97 store_computer_replaced + R2 C20 OB-165 posh_committee_change + F1 L2 scale_stamp_change
   });
 });

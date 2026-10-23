@@ -22,6 +22,7 @@ import {
   InvalidGstinError, DuplicateGstinError, HierarchyError,
   type OrgNode, type OrgNodeKind, type OrgNodeStatus, type GstRegistration,
 } from '../../../packages/org/src/index';
+import { actionDetails, fingerprintOf, openApproval, type ApprovalPort } from '../../identity/src/approval-requests';
 
 export type { OrgNode, GstRegistration } from '../../../packages/org/src/index';
 
@@ -40,8 +41,28 @@ export interface OrgStructureDeps {
   /** Append a node's state. `requestKey` (the request's idempotency key) makes each asked-for edit its own fact (PA-05). */
   readonly recordNode: (tenantId: string, node: OrgNode, requestKey?: string) => Promise<void> | void;
   readonly recordRegistration: (tenantId: string, registration: GstRegistration) => Promise<void> | void;
+  /**
+   * M01-FR-01 "structural changes are owner-approved (maker-checker, §28)" (OB-288 P1). When wired, activating a node,
+   * suspending or closing it, or changing one that is no longer a draft, needs an approval the OWNER gave in his own
+   * session for exactly this change (kind `org_structure_change`) — the maker never activates their own node. Drafts are
+   * free to create and edit. Optional on a bare stub (then no approval is asked, as before).
+   */
+  readonly approvals?: ApprovalPort;
   readonly now: () => string;
 }
+
+/** Does this write change the live structure (and so need the owner's approval)? */
+export function isStructuralChange(before: OrgNode | undefined, after: OrgNode): boolean {
+  if (after.status !== 'draft') return before === undefined || fingerprintOf(before) !== fingerprintOf(after);
+  return before !== undefined && before.status !== 'draft';
+}
+
+const structuralApprovalNeeded = (nodeId: string): Error => apiError(422, {
+  code: 'structural_change_needs_owner_approval',
+  whatHappened: `Activating, suspending or closing ${nodeId}, or changing it once it is live, is a structural change: the owner approves it first (M01-FR-01).`,
+  wasItSaved: 'not_saved',
+  nextSafeAction: `Ask for approval (POST /v1/approvals/requests, kind org_structure_change, subjectRef ${nodeId}, with exactly this change); once the owner approves it, send it again with the approvalId. Nothing was changed.`,
+});
 
 /** The node view a read returns — the node plus its computed scope and activation readiness. */
 function nodeView(node: OrgNode, nodes: readonly OrgNode[], register: GstRegister) {
@@ -149,6 +170,14 @@ export function orgStructureRoutes(deps: OrgStructureDeps): readonly Route[] {
             nextSafeAction: 'Record it as a draft, complete the missing details, then activate it.',
           });
         }
+        if (deps.approvals !== undefined && isStructuralChange(nodes.find((n) => n.nodeId === nodeId), node)) {
+          if (typeof b['approvalId'] !== 'string' || b['approvalId'].trim() === '') throw structuralApprovalNeeded(nodeId);
+          const approval = await openApproval(deps.approvals, {
+            tenantId: ctx.tenantId, approvalId: b['approvalId'].trim(), kind: 'org_structure_change', subjectRef: nodeId,
+            details: actionDetails(ctx.body, { nodeId }), valueMinor: null, maker: ctx.userId, usedBy: `org-node:${nodeId}:${ctx.idempotencyKey ?? deps.now()}`, now: deps.now(),
+          });
+          await approval.spend();
+        }
         await deps.recordNode(ctx.tenantId, node, ctx.idempotencyKey);
         // PA-05: answer with what was PERSISTED, read back — never with what was asked for. A save that did not take
         // cannot say it did.
@@ -190,6 +219,16 @@ export function orgStructureRoutes(deps: OrgStructureDeps): readonly Route[] {
             wasItSaved: 'not_saved',
             nextSafeAction: 'Resolve the blockers above (a company and a valid GST registration for a branch), then activate.',
           });
+        }
+        if (node.status === 'active') return { status: 200, body: { ...nodeView(node, nodes, register), alreadyActive: true } };
+        if (deps.approvals !== undefined) {
+          const b = (ctx.body ?? {}) as Record<string, unknown>;
+          if (typeof b['approvalId'] !== 'string' || b['approvalId'].trim() === '') throw structuralApprovalNeeded(nodeId);
+          const approval = await openApproval(deps.approvals, {
+            tenantId: ctx.tenantId, approvalId: b['approvalId'].trim(), kind: 'org_structure_change', subjectRef: nodeId,
+            details: actionDetails(ctx.body, { nodeId, action: 'activate' }), valueMinor: null, maker: ctx.userId, usedBy: `org-node:${nodeId}:activate`, now: deps.now(),
+          });
+          await approval.spend();
         }
         const activated: OrgNode = { ...node, status: 'active' };
         await deps.recordNode(ctx.tenantId, activated, ctx.idempotencyKey);

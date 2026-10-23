@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { approvedActivationBody } from '../support/approved-org-change';
 
 // M01-FR-01 org hierarchy on the live API — the skeleton every transaction, permission and report is
 // scoped to. A GSTIN is checksum-valid and unique; the parent/kind rules hold; an incomplete node is a
@@ -19,6 +20,9 @@ const registerGst = (h: ApiHarness, u: string, gstin: string, body: Record<strin
   h.request({ method: 'POST', path: `/v1/org/gst-registrations/${gstin}`, userId: u, tenantId: A, idempotencyKey: key, body });
 const activate = (h: ApiHarness, u: string, id: string, key: string) =>
   h.request({ method: 'POST', path: `/v1/org/nodes/${id}/activation`, userId: u, tenantId: A, idempotencyKey: key, body: {} });
+/** OB-288 P1 (M01-FR-01): activation is owner-approved, never the maker's own — a second owner approves it. */
+const activateApproved = async (h: ApiHarness, u: string, id: string, key: string) =>
+  h.request({ method: 'POST', path: `/v1/org/nodes/${id}/activation`, userId: u, tenantId: A, idempotencyKey: key, body: await approvedActivationBody(h, A, u, 'u-owner-2', id) });
 const getNode = (h: ApiHarness, u: string, id: string) =>
   h.request({ method: 'GET', path: `/v1/org/nodes/${id}`, userId: u, tenantId: A });
 const listNodes = (h: ApiHarness, u: string) =>
@@ -29,6 +33,7 @@ type View = { node: { status: string }; canActivate: boolean; ancestry: string[]
 async function cast(): Promise<ApiHarness> {
   const h = apiHarness();
   await h.seedOwner(A, 'u-owner');            // platform.setup.write + org.branch.read
+  await h.provisionOwner(A, 'u-owner-2');      // OB-288 P1: the second person who approves a structural change
   await h.provisionRole(A, 'u-mgr', 'store_manager'); // org.branch.read, NOT platform.setup.write
   await h.provisionRole(A, 'u-cash', 'cashier');       // neither
   return h;
@@ -42,7 +47,8 @@ describe('org hierarchy: company → GST → branch, validated as a whole (M01-F
     // A complete branch is activatable straight away.
     const b = (await putNode(h, 'u-owner', 'B1', { kind: 'branch', name: 'Main store', parentId: 'C1', companyId: 'C1', gstin: G1 }, 'k3')).body as View;
     expect(b.canActivate).toBe(true);
-    expect((await activate(h, 'u-owner', 'B1', 'k4')).status).toBe(200);
+    expect(codeOf(await activate(h, 'u-owner', 'B1', 'k4-alone'))).toBe('structural_change_needs_owner_approval');
+    expect((await activateApproved(h, 'u-owner', 'B1', 'k4')).status).toBe(200);
     // Its scope reads back: filed under G1, ancestry up to the company.
     const view = (await getNode(h, 'u-owner', 'B1')).body as View;
     expect(view.node.status).toBe('active');
@@ -94,7 +100,7 @@ describe('org hierarchy: company → GST → branch, validated as a whole (M01-F
     await putNode(h, 'u-owner', 'C1', { kind: 'company', name: 'One' }, 'k2');
     await registerGst(h, 'u-owner', G2, { companyId: 'C1', legalName: 'One Ltd' }, 'k3');
     await putNode(h, 'u-owner', 'B1', { kind: 'branch', name: 'Main', parentId: 'C1', companyId: 'C1', gstin: G2 }, 'k4');
-    await activate(h, 'u-owner', 'B1', 'k5');
+    await activateApproved(h, 'u-owner', 'B1', 'k5');
     expect((await listNodes(h, 'u-mgr')).status).toBe(200);
     expect((await listNodes(h, 'u-cash')).status).toBe(403);
 

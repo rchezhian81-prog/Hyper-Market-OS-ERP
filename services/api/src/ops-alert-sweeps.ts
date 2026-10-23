@@ -17,6 +17,8 @@ export interface EachPassSweeps {
   readonly payslipLate?: (tenantId: string, at: string) => Promise<number>;
   /** OB-288 lane 2 · M10-FR-01: how many batches moved to the expired state on this pass (absent → not run). */
   readonly expiryMove?: (tenantId: string, at: string) => Promise<number>;
+  /** OB-292 (OB-288 lane 1 · P1): how many aged approvals it newly escalated to the owner (absent → not run). */
+  readonly approvalAge?: (tenantId: string, at: string) => Promise<number>;
   readonly say: (line: string) => void;
 }
 
@@ -42,6 +44,7 @@ export function alsoEachPassOf(sweeps: EachPassSweeps): (tenantId: string, at: s
         if (moved > 0) sweeps.say(`expiry: ${moved} batch(es) past their date moved to the expired state for shop ${tenantId}`);
       } catch (e) { errors.push(e); }
     }
+    if (sweeps.approvalAge !== undefined) { try { const n = await sweeps.approvalAge(tenantId, at); if (n > 0) sweeps.say(`alerts: ${n} aged approval(s) escalated to the owners of shop ${tenantId}`); } catch (e) { errors.push(e); } }
     if (errors.length > 0) {
       const words = errors.map((e) => (e instanceof Error ? e.message : String(e))).join('; ');
       throw new Error(`a per-shop sweep failed: ${words}`);

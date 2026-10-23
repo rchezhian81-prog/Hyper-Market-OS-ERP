@@ -33,6 +33,32 @@
   "otpPolicyAlgorithm": "HmacSHA1",
   "otpPolicyDigits": 6,
   "otpPolicyPeriod": 30,
+  "webAuthnPolicyRpEntityName": "SRE Hyper Market",
+  "webAuthnPolicySignatureAlgorithms": [
+    "ES256",
+    "RS256"
+  ],
+  "webAuthnPolicyRpId": "",
+  "webAuthnPolicyAttestationConveyancePreference": "not specified",
+  "webAuthnPolicyAuthenticatorAttachment": "not specified",
+  "webAuthnPolicyRequireResidentKey": "not specified",
+  "webAuthnPolicyUserVerificationRequirement": "preferred",
+  "webAuthnPolicyCreateTimeout": 0,
+  "webAuthnPolicyAvoidSameAuthenticatorRegister": false,
+  "webAuthnPolicyAcceptableAaguids": [],
+  "webAuthnPolicyPasswordlessRpEntityName": "SRE Hyper Market",
+  "webAuthnPolicyPasswordlessSignatureAlgorithms": [
+    "ES256",
+    "RS256"
+  ],
+  "webAuthnPolicyPasswordlessRpId": "",
+  "webAuthnPolicyPasswordlessAttestationConveyancePreference": "not specified",
+  "webAuthnPolicyPasswordlessAuthenticatorAttachment": "not specified",
+  "webAuthnPolicyPasswordlessRequireResidentKey": "Yes",
+  "webAuthnPolicyPasswordlessUserVerificationRequirement": "required",
+  "webAuthnPolicyPasswordlessCreateTimeout": 0,
+  "webAuthnPolicyPasswordlessAvoidSameAuthenticatorRegister": false,
+  "webAuthnPolicyPasswordlessAcceptableAaguids": [],
   "eventsEnabled": true,
   "eventsExpiration": 31622400,
   "adminEventsEnabled": true,
@@ -96,7 +122,7 @@
     },
     {
       "alias": "sre privileged second factor",
-      "description": "A one-time code, required when the person holds sre-privileged.",
+      "description": "A second factor, required when the person holds sre-privileged: a one-time code, or a passkey the person has registered.",
       "providerId": "basic-flow",
       "topLevel": false,
       "builtIn": false,
@@ -110,12 +136,36 @@
           "userSetupAllowed": false
         },
         {
-          "authenticator": "auth-otp-form",
+          "flowAlias": "sre second factor choice",
           "requirement": "REQUIRED",
           "priority": 20,
+          "autheticatorFlow": true,
+          "userSetupAllowed": false
+        }
+      ]
+    },
+    {
+      "alias": "sre second factor choice",
+      "description": "Either second factor: a one-time code (set up at first sign-in) or a passkey (optional, registered by the person).",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "authenticator": "auth-otp-form",
+          "requirement": "ALTERNATIVE",
+          "priority": 10,
           "autheticatorFlow": false,
           "userSetupAllowed": true,
           "authenticatorConfig": "sre amr otp"
+        },
+        {
+          "authenticator": "webauthn-authenticator",
+          "requirement": "ALTERNATIVE",
+          "priority": 20,
+          "autheticatorFlow": false,
+          "userSetupAllowed": false,
+          "authenticatorConfig": "sre amr hwk"
         }
       ]
     }
@@ -139,6 +189,13 @@
       "alias": "sre amr otp",
       "config": {
         "default.reference.value": "otp",
+        "default.reference.maxAge": "36000"
+      }
+    },
+    {
+      "alias": "sre amr hwk",
+      "config": {
+        "default.reference.value": "hwk",
         "default.reference.maxAge": "36000"
       }
     }

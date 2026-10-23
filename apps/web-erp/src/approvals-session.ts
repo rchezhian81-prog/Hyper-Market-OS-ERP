@@ -106,7 +106,8 @@ export type CopyKey =
   | 'kindSupplierInvoiceCheck' | 'kindSupplierPayment'
   | 'kindDisplayContract' | 'kindRebateScheme' | 'kindPurchaseContract'
   | 'kindEmergencyAccess' | 'kindAccessChange' | 'kindSubstitutionAboveCap' | 'kindBranchTransition' | 'kindPartnerWebhookSubscription'
-  | 'kindStoreComputerReplaced' | 'kindPoshCommitteeChange' | 'kindScaleStampChange' | 'detailPrefix' | 'detailFromComputer' | 'detailToComputer'
+  | 'kindStoreComputerReplaced' | 'kindPoshCommitteeChange' | 'kindScaleStampChange'
+  | 'kindApprovalRuleChange' | 'kindOrgStructureChange' | 'kindConfigChange' | 'kindFlagChange' | 'kindDepartmentScopeChange' | 'detailPrefix' | 'detailFromComputer' | 'detailToComputer'
   | 'detailJobId' | 'detailContentFingerprint'
   | 'detailProductId' | 'detailPriceMinor' | 'detailMrpMinor' | 'detailCostMinor' | 'detailCurrency' | 'detailMarginFloorBps'
   | 'detailPromotionId' | 'detailDescription' | 'detailNormalPrice' | 'detailPromoPrice' | 'detailUnitCost'
@@ -139,7 +140,7 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     reasonLabel: 'Your reason (the person who asked will read it)', reasonPlaceholder: 'For example: checked the prices against the supplier\'s letter.',
     approveBtn: 'Approve', rejectBtn: 'Reject',
     kindDataImport: 'Apply a bulk import', kindDataImportRollback: 'Undo a bulk import', kindCategoryDefine: 'Add or change a product category', kindSupplierBank: 'Change where a supplier is paid',
-    kindPriceChange: 'Set a price below cost or below the margin floor', kindPriceListEntry: 'Add a price-list entry below cost or below the margin floor',
+    kindPriceChange: 'Change a price by more than the set size, or below cost or the margin floor', kindPriceListEntry: 'Add a price-list entry below cost or below the margin floor',
     kindPromotionLaunch: 'Launch a promotion that loses margin', kindQuotationBelowFloor: 'Quote a customer below the margin floor',
     kindPeriodClose: 'Close and sign an accounting month', kindPeriodReopen: 'Reopen a signed accounting month',
     kindConcessionContract: 'Approve a concession contract', kindConcessionDepositForfeit: 'Forfeit a concessionaire\'s deposit',
@@ -155,6 +156,11 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     kindStoreComputerReplaced: 'Move a till\'s bill numbers to a replacement store computer',
     kindPoshCommitteeChange: 'Add or remove an Internal Committee member',
     kindScaleStampChange: 'Change a weighing scale\'s stamp date',
+    // OB-288 lane 1 · P1: the owner's approval rules, structural, high-impact and department-scope changes.
+    kindApprovalRuleChange: 'Change an approval rule (money limits, escalation waits or the price-check size)',
+    kindOrgStructureChange: 'Activate, change or close a company, branch, warehouse or department',
+    kindConfigChange: 'Change a high-impact setting', kindFlagChange: 'Turn a high-impact switch on or off',
+    kindDepartmentScopeChange: 'Limit a person\'s role to some departments',
     detailPrefix: 'Till bill-number prefix', detailFromComputer: 'Old store computer (sign-in)', detailToComputer: 'New store computer (sign-in)',
     detailJobId: 'Load name', detailContentFingerprint: 'File check code',
     detailProductId: 'Item', detailPriceMinor: 'New price', detailMrpMinor: 'MRP', detailCostMinor: 'What it costs us', detailCurrency: 'Currency',
@@ -204,7 +210,7 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     reasonLabel: 'உங்கள் காரணம் (கேட்டவர் இதைப் படிப்பார்)', reasonPlaceholder: 'உதாரணம்: விநியோகஸ்தரின் கடிதத்துடன் விலைகளைச் சரிபார்த்தேன்.',
     approveBtn: 'அனுமதி', rejectBtn: 'மறு',
     kindDataImport: 'மொத்த இறக்குமதியைப் பயன்படுத்துதல்', kindDataImportRollback: 'மொத்த இறக்குமதியைத் திரும்பப் பெறுதல்', kindCategoryDefine: 'பொருள் வகையைச் சேர்த்தல் அல்லது மாற்றுதல்', kindSupplierBank: 'விநியோகஸ்தருக்குப் பணம் செல்லும் கணக்கை மாற்றுதல்',
-    kindPriceChange: 'அடக்க விலைக்கு அல்லது குறைந்தபட்ச லாப வரம்புக்குக் கீழே விலை வைத்தல்', kindPriceListEntry: 'அடக்க விலைக்கு அல்லது குறைந்தபட்ச லாப வரம்புக்குக் கீழே விலைப்பட்டியல் பதிவு',
+    kindPriceChange: 'அமைத்த அளவை விட அதிகமாக, அல்லது அடக்க விலைக்கு அல்லது குறைந்தபட்ச லாப வரம்புக்குக் கீழே விலையை மாற்றுதல்', kindPriceListEntry: 'அடக்க விலைக்கு அல்லது குறைந்தபட்ச லாப வரம்புக்குக் கீழே விலைப்பட்டியல் பதிவு',
     kindPromotionLaunch: 'லாபத்தை இழக்கும் சலுகையைத் தொடங்குதல்', kindQuotationBelowFloor: 'குறைந்தபட்ச லாப வரம்புக்குக் கீழே வாடிக்கையாளருக்கு விலை மேற்கோள்',
     kindPeriodClose: 'கணக்கு மாதத்தை மூடி கையெழுத்திடுதல்', kindPeriodReopen: 'கையெழுத்திட்ட கணக்கு மாதத்தை மீண்டும் திறத்தல்',
     kindConcessionContract: 'கூட்டாளர் கவுண்டர் ஒப்பந்தத்தை அனுமதித்தல்', kindConcessionDepositForfeit: 'கூட்டாளரின் வைப்புத் தொகையைப் பறிமுதல் செய்தல்',
@@ -220,6 +226,10 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     kindStoreComputerReplaced: 'கவுண்டரின் பில் எண்களை மாற்றுக் கடை கணினிக்கு நகர்த்துதல்',
     kindPoshCommitteeChange: 'உள் குழு உறுப்பினரைச் சேர்த்தல் அல்லது நீக்குதல்',
     kindScaleStampChange: 'எடைத் தராசின் முத்திரைத் தேதியை மாற்றுதல்',
+    kindApprovalRuleChange: 'ஒப்புதல் விதியை மாற்றுதல் (பண வரம்புகள், காத்திருப்பு நேரம் அல்லது விலைச் சோதனை அளவு)',
+    kindOrgStructureChange: 'நிறுவனம், கிளை, கிடங்கு அல்லது துறையைச் செயல்படுத்துதல், மாற்றுதல் அல்லது மூடுதல்',
+    kindConfigChange: 'அதிக தாக்கமுள்ள அமைப்பை மாற்றுதல்', kindFlagChange: 'அதிக தாக்கமுள்ள சுவிட்சை இயக்குதல் அல்லது நிறுத்துதல்',
+    kindDepartmentScopeChange: 'ஒருவரின் பங்கைச் சில துறைகளுக்கு மட்டும் வரம்பிடுதல்',
     detailPrefix: 'கவுண்டர் பில் எண் முன்னொட்டு', detailFromComputer: 'பழைய கடை கணினி (உள்நுழைவு)', detailToComputer: 'புதிய கடை கணினி (உள்நுழைவு)',
     detailJobId: 'ஏற்றத்தின் பெயர்', detailContentFingerprint: 'கோப்புச் சரிபார்ப்புக் குறியீடு',
     detailProductId: 'பொருள்', detailPriceMinor: 'புதிய விலை', detailMrpMinor: 'அதிகபட்ச சில்லறை விலை (MRP)', detailCostMinor: 'நமக்கு ஆகும் அடக்க விலை', detailCurrency: 'நாணயம்',
@@ -296,6 +306,9 @@ const KIND_COPY: Readonly<Record<string, CopyKey>> = {
   posh_committee_change: 'kindPoshCommitteeChange',
   // F1 · L2 (B6): a later stamp date on a weighing scale is approved by a second person who manages scales.
   scale_stamp_change: 'kindScaleStampChange',
+  // OB-288 lane 1 · P1.
+  approval_rule_change: 'kindApprovalRuleChange', org_structure_change: 'kindOrgStructureChange', config_change: 'kindConfigChange',
+  flag_change: 'kindFlagChange', department_scope_change: 'kindDepartmentScopeChange',
 };
 /** Detail keys this screen can name in both languages; any other key is spelt out from its own name. */
 const DETAIL_COPY: Readonly<Record<string, CopyKey>> = {

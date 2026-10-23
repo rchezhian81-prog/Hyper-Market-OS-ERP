@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Access review</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Access review (M02-FR-01 · M02-FR-02 · SEC-11 · §28). A THIN CLIENT over head office's GET /v1/identity/access-review
+      and GET /v1/identity/permission-matrix?format=csv. Its session is apps/web-erp/src/access-review-session.ts. Read-only:
+      it changes nobody's access. Nothing is read before the person asks; the last sign-in is said to be kept by the
+      identity server, never shown as a blank.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      input, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; }
+      button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .table-wrap { overflow-x: auto; }
+      table { border-collapse: collapse; width: 100%; font-size: 15px; }
+      th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+      td input { width: 9em; }
+      .now { display: block; font-size: 13px; color: var(--muted); }
+      .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+      .row-form > label { flex: 1 1 200px; }
+      .meta { font-size: 13px; color: var(--muted); }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+      li.row { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 6px; border-left: 6px solid var(--idle); overflow-wrap: anywhere; }
+      li.row.tone-ok { border-left-color: var(--ok); } li.row.tone-degraded { border-left-color: var(--degraded); } li.row.tone-error { border-left-color: var(--error); }
+      label.check { display: inline-flex; gap: 8px; align-items: center; min-height: var(--tap); flex: 0 0 auto; }
+      label.check input { min-height: 0; width: 22px; height: 22px; }
+      .facts { font-size: 13px; color: var(--muted); display: grid; gap: 2px; }
+      .flags { margin: 0; padding-left: 18px; font-size: 14px; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Access review</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section aria-labelledby="page-h">
+        <h2 id="page-h">Access review</h2>
+        <p class="lead" id="lead"></p>
+        <div class="row-form">
+          <label class="check" for="only-flagged"><input id="only-flagged" type="checkbox" /> <span id="only-flagged-l">Only the ones that need a look</span></label>
+          <button id="read" type="button"><span id="read-text">Show who holds what</span></button>
+          <button id="export" type="button"><span id="export-text">Save the permission matrix (CSV)</span></button>
+        </div>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+        <p class="meta" id="last-sign-in"></p>
+      </section>
+      <section aria-labelledby="rows-h" id="rows-section" hidden>
+        <h3 id="rows-h"></h3>
+        <ul class="rows" id="rows"></ul>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./access-review.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

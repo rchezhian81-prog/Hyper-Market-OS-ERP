@@ -17,12 +17,14 @@
 //      spends it under its own guard, once, BEFORE the action is written: never an action without an approval, never
 //      two actions with one. If the action then fails, nothing changed and the maker asks again.
 //
-// Escalation, delegation and value-limit routing (the rest of M02-FR-03) are not in this slice — recorded as not yet.
+// Value-limit routing (OB-290) and escalation by age (OB-292) are wired through `authorityOf` and `escalations` — the
+// owner's money limits and waits, held on the server (`authority-limits.ts`, `approval-escalation.ts`).
 
 import { createHash, randomUUID } from 'node:crypto';
 import type { Route } from '../../kernel/src/index';
 import { apiError, concurrentChange } from '../../kernel/src/index';
 import { ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
+import { limitedSubjectOf, mayApproveValue, authorityWords, type Authority } from '../../../packages/approvals/src/authority-rules';
 
 /** One kind of action that needs a second person: who may ask, who may approve, how long an approval lasts. */
 export interface ApprovalKind {
@@ -61,8 +63,9 @@ export const APPROVAL_KINDS: Readonly<Record<string, ApprovalKind>> = Object.fre
   },
   // Pricing (2b-vi-b · M05-FR-02/04 · M12-FR-02): a loss-making price, list entry, promotion or quotation is approved by
   // someone holding the pricing-approval authority (`price.change.approve`) — "above the setter's authority".
+  // OB-291 (owner, 23 Oct 2026): also a change larger than the set size — more than 10% or more than ₹50 a unit.
   price_change: {
-    kind: 'price_change', label: 'Set a price below cost or below the margin floor',
+    kind: 'price_change', label: 'Change a price by more than the set size, or below cost or the margin floor',
     makerPermission: 'price.change.propose', checkerPermission: 'price.change.approve', validForMinutes: 24 * 60,
   },
   price_list_entry: {
@@ -192,6 +195,34 @@ export const APPROVAL_KINDS: Readonly<Record<string, ApprovalKind>> = Object.fre
     kind: 'posh_committee_change', label: 'Add or remove an Internal Committee member',
     makerPermission: 'posh.committee.manage', checkerPermission: 'identity.role.request', validForMinutes: 24 * 60,
   },
+  // ── OB-288 lane 1 · P1 (identity, authority and configuration governance) — begin
+  // OB-290/291/292: the owner's money limits, escalation waits and price-check size change only through a second person —
+  // the OWNER approves (`approvals.rules.approve`); §28 "Store Manager … cannot modify … own approval limits".
+  approval_rule_change: {
+    kind: 'approval_rule_change', label: 'Change an approval rule (money limits, escalation waits or the price-check size)',
+    makerPermission: 'approvals.rules.propose', checkerPermission: 'approvals.rules.approve', validForMinutes: 24 * 60,
+  },
+  // M01-FR-01 "structural changes are owner-approved (maker-checker)": activating, suspending or closing a place in the
+  // business, or changing one that is already live.
+  org_structure_change: {
+    kind: 'org_structure_change', label: 'Activate, change or close a company, branch, warehouse or department',
+    makerPermission: 'platform.setup.write', checkerPermission: 'org.structure.approve', validForMinutes: 24 * 60,
+  },
+  // M01-FR-02/03: a high-impact setting (trading day, currency, time zone, payments, pricing, offline limits) or switch.
+  config_change: {
+    kind: 'config_change', label: 'Change a high-impact setting',
+    makerPermission: 'platform.setup.write', checkerPermission: 'platform.config.approve', validForMinutes: 24 * 60,
+  },
+  flag_change: {
+    kind: 'flag_change', label: 'Turn a high-impact switch on or off',
+    makerPermission: 'platform.flag.write', checkerPermission: 'platform.config.approve', validForMinutes: 24 * 60,
+  },
+  // M02-FR-02 · §28 "Department Manager — assigned departments": limiting a person's role to some departments.
+  department_scope_change: {
+    kind: 'department_scope_change', label: 'Limit a person\'s role to some departments',
+    makerPermission: 'identity.role.request', checkerPermission: 'identity.role.grant', validForMinutes: 24 * 60,
+  },
+  // ── OB-288 lane 1 · P1 — end
 });
 
 /** A maker's request, as recorded. */
@@ -239,7 +270,23 @@ export interface ApprovalRequestDeps {
   readonly allRequests: (tenantId: string) => Promise<readonly ApprovalState[]> | readonly ApprovalState[];
   /** The permissions a person holds; `undefined` when head office does not know them. */
   readonly permissionsOfUser: (tenantId: string, userId: string) => Promise<readonly string[] | undefined> | readonly string[] | undefined;
+  /**
+   * OB-290 (owner, 23 Oct 2026): the CHECKER's money authority for a kind, held on the server — a refund, purchase order or
+   * stock adjustment above it is not theirs to approve and goes to the owner. Optional on a bare stub (then no money limit
+   * is applied, as before).
+   */
+  readonly authorityOf?: (tenantId: string, userId: string, subjectType: string) => Promise<Authority>;
+  /** OB-292: the requests escalated to the owner by age — when, and after how long. Optional on a bare stub. */
+  readonly escalations?: (tenantId: string) => Promise<ReadonlyMap<string, ApprovalEscalationView>>;
   readonly now: () => string;
+}
+
+/** An age escalation as the inbox shows it (OB-292). */
+export interface ApprovalEscalationView {
+  readonly escalatedAt: string;
+  readonly waitedMinutes: number;
+  readonly waitMinutes: number;
+  readonly escalatedTo: 'owner';
 }
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
@@ -308,16 +355,28 @@ export function approvalRequestRoutes(deps: ApprovalRequestDeps): readonly Route
         const held = (await deps.permissionsOfUser(ctx.tenantId, ctx.userId)) ?? [];
         const now = Date.parse(deps.now());
         const all = await deps.allRequests(ctx.tenantId);
+        const escalated = (await deps.escalations?.(ctx.tenantId)) ?? new Map<string, ApprovalEscalationView>();
         const view = (s: ApprovalState) => ({
           ...s.request, status: statusOf(s, now),
           ...(s.decision === undefined ? {} : { decidedBy: s.decision.decidedBy, decisionReason: s.decision.reason, decidedAt: s.decision.decidedAt, expiresAt: s.decision.expiresAt }),
           ...(s.usedBy === undefined ? {} : { usedBy: s.usedBy }),
           label: APPROVAL_KINDS[s.request.kind]?.label ?? s.request.kind,
+          // OB-292: an approval that waited past its kind's time has gone to the owner — said on the row, never silent.
+          ...(escalated.has(s.request.requestId) ? { escalation: escalated.get(s.request.requestId)! } : {}),
         });
-        const waitingForMe = all.filter((s) => s.decision === undefined && s.request.requestedBy !== ctx.userId
-          && held.includes(APPROVAL_KINDS[s.request.kind]?.checkerPermission ?? '\u0000')).map(view);
+        const open = all.filter((s) => s.decision === undefined && s.request.requestedBy !== ctx.userId
+          && held.includes(APPROVAL_KINDS[s.request.kind]?.checkerPermission ?? '\u0000'));
+        // OB-290: a request above the caller's money limit is not theirs to approve — it is routed to the owner, and the
+        // caller is told how many went there (never a silently shorter list, P-08).
+        const mineToDecide: ApprovalState[] = []; let routedToOwner = 0;
+        for (const s of open) {
+          const subject = limitedSubjectOf(s.request.kind);
+          if (deps.authorityOf !== undefined && subject !== undefined && s.request.valueMinor !== null
+            && !mayApproveValue(await deps.authorityOf(ctx.tenantId, ctx.userId, s.request.kind), s.request.valueMinor)) { routedToOwner += 1; continue; }
+          mineToDecide.push(s);
+        }
         const mine = all.filter((s) => s.request.requestedBy === ctx.userId).map(view);
-        return { status: 200, body: { waitingForMe, mine, asAt: deps.now() } };
+        return { status: 200, body: { waitingForMe: mineToDecide.map(view), mine, routedToOwnerAboveYourLimit: routedToOwner, asAt: deps.now() } };
       },
     },
     {
@@ -358,6 +417,18 @@ export function approvalRequestRoutes(deps: ApprovalRequestDeps): readonly Route
             code: 'already_decided', whatHappened: `This request was already ${state.decision.decision} by ${state.decision.decidedBy}.`,
             wasItSaved: 'not_saved', nextSafeAction: 'A decision is final. A change is a new request.',
           });
+        }
+        // OB-290: approving money is bounded by the checker's own limit, read on the server (rejecting needs no budget).
+        if (decision === 'approved' && deps.authorityOf !== undefined && state.request.valueMinor !== null && limitedSubjectOf(state.request.kind) !== undefined) {
+          const authority = await deps.authorityOf(ctx.tenantId, ctx.userId, state.request.kind);
+          if (!mayApproveValue(authority, state.request.valueMinor)) {
+            throw apiError(422, {
+              code: 'exceeds_your_limit',
+              whatHappened: `This is for ₹${(state.request.valueMinor / 100).toFixed(2)}; ${ctx.userId}'s ${authority.limitedAs?.replace('_', ' ') ?? 'approval'} limit is ${authorityWords(authority)}. A decision above a person's limit goes to the owner.`,
+              wasItSaved: 'not_saved',
+              nextSafeAction: 'The owner decides it (it is in the owner\'s inbox). You may still reject it with a reason. Nothing was approved.',
+            });
+          }
         }
         const decidedAt = deps.now();
         const record: ApprovalDecision = {

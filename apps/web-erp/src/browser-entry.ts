@@ -316,6 +316,10 @@ import { createEventsSession, eventsWords, eventsOutcomeWords, effectWords, type
 import { createBriefSession, briefWords, briefOutcomeWords, type BriefSession } from './morning-brief-session';
 // OB-288 gates lane (QG-12): the Quality gates page — the owner's GO / HOLD / REWORK register.
 import { createGatesSession, gatesWords, gatesOutcomeWords, stateView as gateStateView, GATE_NAMES, RELEASES as GATE_RELEASES, type GatesSession } from './gates-session';
+// OB-288 lane 1 · P1: the Approval rules page — the owner's money limits, escalation waits and price-check size.
+// OB-288 lane 1 · P1: the Access review page — who holds what, where, up to how much; the permission matrix as CSV.
+import { createAccessReviewSession, accessReviewWords, accessReviewOutcomeWords, whereWords as accessWhereWords, ordered as accessOrdered, type AccessReviewSession } from './access-review-session';
+import { createApprovalRulesSession, approvalRulesWords, approvalRulesOutcomeWords, limitWords as approvalLimitWords, waitWords as approvalWaitWords, limitsFromForm as approvalLimitsFromForm, paiseFromRupees as approvalPaiseFromRupees, KINDS as APPROVAL_LIMIT_KINDS, ROLES_SHOWN as APPROVAL_ROLES_SHOWN, type ApprovalRulesSession } from './approval-rules-session';
 // ── end R4 Lane 3 ──
 // ── R4 Lane 4 (supply, pricing and loss prevention) — begin
 // ── P3 procure-to-pay (OB-288) — the Requisitions and quotes page's session.
@@ -5000,6 +5004,15 @@ interface ManagerWindow {
   // OB-288 gates lane (QG-12): the Quality gates page — who is looking; head office answers the rest.
   gatesData?: ViewerIdentity;
   gates?: { readonly session: GatesSession; readonly words: typeof gatesWords; readonly outcomeWords: typeof gatesOutcomeWords; readonly stateView: typeof gateStateView; readonly names: typeof GATE_NAMES; readonly releases: typeof GATE_RELEASES };
+  // OB-288 lane 1 · P1: the Approval rules page — who is looking; head office answers the rest.
+  approvalRulesData?: ViewerIdentity;
+  accessReviewData?: ViewerIdentity;
+  accessReview?: { readonly session: AccessReviewSession; readonly words: typeof accessReviewWords; readonly outcomeWords: typeof accessReviewOutcomeWords; readonly whereWords: typeof accessWhereWords; readonly ordered: typeof accessOrdered };
+  approvalRules?: {
+    readonly session: ApprovalRulesSession; readonly words: typeof approvalRulesWords; readonly outcomeWords: typeof approvalRulesOutcomeWords;
+    readonly limitWords: typeof approvalLimitWords; readonly waitWords: typeof approvalWaitWords; readonly limitsFromForm: typeof approvalLimitsFromForm;
+    readonly paiseFromRupees: typeof approvalPaiseFromRupees; readonly kinds: typeof APPROVAL_LIMIT_KINDS; readonly rolesShown: typeof APPROVAL_ROLES_SHOWN;
+  };
   schedule?: { readonly session: ScheduleSession; readonly words: typeof scheduleWords; readonly outcomeWords: typeof scheduleOutcomeWords; readonly rupees: typeof scheduleRupees };
   // ── R4 Lane 4 — begin
   /** P3 (OB-288) M06-FR-02 / WF-03: the Requisitions and quotes page — who is looking; head office answers the rest. */
@@ -6786,6 +6799,15 @@ if (browserWindow !== undefined) {
   // OB-288 gates lane (QG-12): the Quality gates page — reads on a click, writes only the owner's explicit decision.
   browserWindow.gatesData = viewerIdentity(browserWindow.gatesData);
   browserWindow.gates = { session: createGatesSession({ viewer: browserWindow.gatesData }), words: gatesWords, outcomeWords: gatesOutcomeWords, stateView: gateStateView, names: GATE_NAMES, releases: GATE_RELEASES };
+  // OB-288 lane 1 · P1: the Approval rules page — reads on a click; asks and applies only on a person's explicit click.
+  browserWindow.accessReviewData = viewerIdentity(browserWindow.accessReviewData);
+  browserWindow.accessReview = { session: createAccessReviewSession({ viewer: browserWindow.accessReviewData }), words: accessReviewWords, outcomeWords: accessReviewOutcomeWords, whereWords: accessWhereWords, ordered: accessOrdered };
+  browserWindow.approvalRulesData = viewerIdentity(browserWindow.approvalRulesData);
+  browserWindow.approvalRules = {
+    session: createApprovalRulesSession({ viewer: browserWindow.approvalRulesData }), words: approvalRulesWords, outcomeWords: approvalRulesOutcomeWords,
+    limitWords: approvalLimitWords, waitWords: approvalWaitWords, limitsFromForm: approvalLimitsFromForm, paiseFromRupees: approvalPaiseFromRupees,
+    kinds: APPROVAL_LIMIT_KINDS, rolesShown: APPROVAL_ROLES_SHOWN,
+  };
   // ── R4 Lane 4 — begin
   // R4 D-10: the Supplier scorecard page — a read of figures built from the registers; nothing is typed, nothing written.
   browserWindow.supplierScorecardData = viewerIdentity(browserWindow.supplierScorecardData);

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness } from '../support/api-harness';
+import { approvedSettingBody } from '../support/approved-setting';
 import { packCutoff } from '../../edge/store-edge/src/main';
 import { tradingDate } from '../../packages/calendar/src/trading-day';
 
@@ -33,10 +34,18 @@ describe('the tenant’s configured trading-day cut-off drives trading-day datin
   it('once the owner sets a 02:00 cut-off, a 00:30 sale dates to the PRIOR trading day', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await h.provisionRole(A, 'u-it', 'platform_admin');
 
-    const put = await h.request({
+    // OB-288 P1 (M01-FR-02 "owner approval for … trading-day changes"): one person alone is refused; with the owner's
+    // approval of exactly this answer, it lands.
+    const alone = await h.request({
       method: 'PUT', path: '/v1/platform/setup/trading_day.cutoff', userId: 'u-owner', tenantId: A,
-      idempotencyKey: 'set-cutoff', body: { value: '02:00', ifVersion: 0 },
+      idempotencyKey: 'set-cutoff-alone', body: { value: '02:00', ifVersion: 0 },
+    });
+    expect((alone.body as { error: { code: string } }).error.code).toBe('high_impact_change_needs_owner_approval');
+    const put = await h.request({
+      method: 'PUT', path: '/v1/platform/setup/trading_day.cutoff', userId: 'u-it', tenantId: A,
+      idempotencyKey: 'set-cutoff', body: await approvedSettingBody(h, A, 'u-it', 'u-owner', 'trading_day.cutoff', { value: '02:00', ifVersion: 0 }),
     });
     expect(put.status).toBe(200);
 
@@ -56,9 +65,10 @@ describe('the tenant’s configured trading-day cut-off drives trading-day datin
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
     await h.provisionRole(A, 'u-cash', 'cashier');
+    await h.provisionRole(A, 'u-it', 'platform_admin');
     await h.request({
-      method: 'PUT', path: '/v1/platform/setup/trading_day.cutoff', userId: 'u-owner', tenantId: A,
-      idempotencyKey: 'set-cutoff-2', body: { value: '02:00', ifVersion: 0 },
+      method: 'PUT', path: '/v1/platform/setup/trading_day.cutoff', userId: 'u-it', tenantId: A,
+      idempotencyKey: 'set-cutoff-2', body: await approvedSettingBody(h, A, 'u-it', 'u-owner', 'trading_day.cutoff', { value: '02:00', ifVersion: 0 }),
     });
 
     // Tenant B never set a cut-off → still the 00:00 default (no cross-tenant bleed).
