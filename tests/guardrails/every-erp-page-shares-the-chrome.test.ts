@@ -23,7 +23,7 @@ const code = (source: string): string => source.replace(/\/\*[\s\S]*?\*\//g, '')
 
 describe('every page carries the one chrome', () => {
   it('finds the sixty pages (round 8: Returned goods to decide, Customer cases, Assistant drafts; round 10: Organisation, Delegation; round 12: Month-end, Supplier bills, Count plans, Transfers, Incidents and recovery drills; round 26: Store computers; R2 C20: Committee annual report; R3 A17: Input tax credit; R3 D-9: Staff schedule; R4 B20–B22: EPR registers; R4 Lane 3: Customers, Bought together, Store events, Morning brief; R4 Lane 2: Online store, App content; R4 D-10: Supplier scorecard; R4 D-13: Shelf compliance by bay; OB-288 gates lane: Quality gates; Lane 2 P1: Recalls and trace; P3: Requisitions and quotes; OB-288 lane 1 · P1: Approval rules, Access review)', () => {
-    expect(PAGES.length).toBe(86); // OB-288 P5: + Tally files; wave 3: + Loyalty
+    expect(PAGES.length).toBe(87); // OB-288 P5: + Tally files; wave 3: + Loyalty, Order refunds
   });
 
   it('loads sre-chrome.js AFTER its own script, so the page\'s words come first and the chrome finishes the frame', () => {
@@ -242,6 +242,7 @@ describe('every word on every page has a Tamil twin (design system §1 rule 6 ·
     'tally-files.js': 'apps/web-erp/src/tally-files-session.ts',
     // OB-288 wave 3 (OB-329 · OB-295): the Loyalty page's words are in its tested session model.
     'loyalty.js': 'apps/web-erp/src/loyalty-desk-session.ts',
+    'order-refunds.js': 'apps/web-erp/src/order-refunds-session.ts',
   };
   // No page is English-only any more: the erasure console and the company report joined the toggle in slice 5c.
   for (const script of SCRIPTS) {

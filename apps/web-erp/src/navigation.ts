@@ -274,6 +274,10 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // template and asking for a summary are re-checked by the cloud on their own permissions.
   { id: 'ai-drafts', label: 'Assistant drafts', labelTa: 'உதவியாளர் வரைவுகள்', path: '/ai-drafts', requires: 'ai.proposal.read', group: 'Operations' },
   { id: 'substitution-exceptions', label: 'Delivery exceptions', labelTa: 'டெலிவரி விதிவிலக்குகள்', path: '/substitution-exceptions', requires: 'order.read', group: 'Orders' },
+  // OB-288 wave 3 (M18-FR-04): refund an online order to its own payment token after a second person approves, and the
+  // worklist of payments and refunds still waiting on the bank — a head-office page (the store computer does not serve it).
+  // Gated on the read the worklist checks (`order.read`); issuing checks `order.refund.issue` on the server.
+  { id: 'order-refunds', label: 'Order refunds', labelTa: 'ஆர்டர் பணத் திருப்பம்', path: '/order-refunds', requires: 'order.read', group: 'Orders', served: 'unserved' },
   // Refund exceptions — the M13/M17 governance surface: refunds that reconciled with a rule broken (store credit
   // over the owner's cap, a credit with no customer, a §28 approval breach, more sent back than the bill sold or
   // was paid). Gated on the SAME permission the exceptions route checks (`lp.case.read`), so the menu never offers
