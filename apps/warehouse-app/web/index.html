@@ -97,6 +97,9 @@
       /* A pick line: the bin is the biggest thing, because the bin is where the worker must walk to. */
       .item.pick { border-left-color: var(--accent); }
       .item.issue { border-left-color: var(--accent); }
+      .item.transfer { border-left-color: var(--accent); }
+      .item.transfer[disabled] { border-left-color: var(--ok, var(--line-strong)); cursor: default; }
+      .item .flag.done { background: var(--mint); color: var(--ink); }
       .item .where { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: .02em; line-height: 1.2; }
       .item .what { font-size: 19px; font-weight: 700; line-height: 1.3; }
       .item .where + .what { font-size: 16px; font-weight: 600; color: var(--ink-2); }
@@ -289,6 +292,12 @@
       <!-- SP-8c: floor indents the back store owes — issue against the indent: tap the line → scan the bin you take from → scan the item → confirm. -->
       <h2 class="section" id="issue-heading" hidden>—</h2>
       <div id="issue-lines"></div>
+      <!-- OB-288 lane 2 · WF-07 offline: transfers this store sends (one tap, then confirm) and counts in (a keypad count per line). -->
+      <h2 class="section" id="xfer-send-heading" hidden>—</h2>
+      <div id="xfer-send"></div>
+      <h2 class="section" id="xfer-in-heading" hidden>—</h2>
+      <div id="xfer-in"></div>
+      <p class="stale" id="xfer-asof" hidden></p>
       <!-- OB-37: the deliveries this store is waiting for; the receiver chooses which one is at the door. -->
       <h2 class="section" id="deliveries-heading" hidden>—</h2>
       <div id="deliveries"></div>

@@ -75,6 +75,8 @@ export const FEEDBACK_CODES = Object.freeze([
   'checklist_required', 'checklist_incomplete',
   // SP-8c: the back store ISSUES against a floor indent (tap the line → scan the bin you take from → scan the item → confirm)
   'issued', 'not_on_indent', 'indent_line_done', 'requester_cannot_issue', 'bin_has_none',
+  // OB-288 lane 2 · WF-07 offline: a transfer SENT from this store, and one COUNTED IN at it, on the handheld
+  'transfer_sent', 'transfer_counted_in', 'not_a_transfer_here', 'transfer_already_done', 'count_incomplete',
 ] as const);
 export type FeedbackCode = (typeof FEEDBACK_CODES)[number];
 
@@ -273,9 +275,49 @@ export const HANDHELD_COUNT_REASON = 'cycle_count';
 export const RECEIVING_COMPLETED = 'ReceivingCompleted';
 /** SP-8c: the event a back-store ISSUE against a floor indent travels under — the cloud re-runs the indent + transfer engines on it. */
 export const FLOOR_INDENT_ISSUED = 'FloorIndentIssued';
+/** OB-288 lane 2 · WF-07 offline: a transfer sent from this store (the cloud re-runs the transfer engine on head office's own stock). */
+export const TRANSFER_DISPATCH_RECORDED = 'TransferDispatchRecorded';
+/** OB-288 lane 2 · WF-07 offline: a transfer counted in at this store — what arrived, as counted; head office books any shortfall. */
+export const TRANSFER_RECEIPT_RECORDED = 'TransferReceiptRecorded';
+export const transferDispatchKey = (transferId: string): string => `transfer-dispatch:${transferId}`;
+export const transferReceiptKey = (transferId: string): string => `transfer-receipt:${transferId}`;
+
+/** One transfer as the store computer last heard it from head office (`warehouseData.transfers`). */
+export interface HeldTransfer {
+  readonly transferId: string;
+  readonly state: string;
+  readonly fromLocationId: string;
+  readonly toLocationId: string;
+  readonly requestedBy: string | null;
+  readonly lines: readonly { readonly productId: string; readonly batchId: string | null; readonly quantityMinor: number; readonly uom: string }[];
+}
+/** Head office's transfers for this store's two ends, as the box last pulled them. `null` on the assignment: never told. */
+export interface HeldTransfers {
+  readonly asAt: string;
+  readonly ageMinutes: number;
+  readonly storeId: string | null;
+  readonly toSend: readonly HeldTransfer[];
+  readonly toCountIn: readonly HeldTransfer[];
+}
+/** What the handheld shows of a transfer: head office's row plus whether THIS handheld already did its step. */
+export interface TransferRow extends HeldTransfer {
+  readonly doneHere: boolean;
+}
+export interface TransferWorkView {
+  readonly known: boolean;
+  readonly asAt?: string;
+  readonly ageMinutes?: number;
+  readonly toSend: readonly TransferRow[];
+  readonly toCountIn: readonly TransferRow[];
+}
+export interface TransferStepResult {
+  readonly accepted: boolean;
+  readonly transferId: string;
+  readonly signal: FeedbackSignal;
+}
 
 /** The kinds of work this handheld hands to the store computer — a value, so the shell must have words for each. */
-export const SENT_WORK_KINDS = Object.freeze(['receipt', 'receipt_done', 'put_away', 'pick', 'count', 'adjustment', 'issue'] as const);
+export const SENT_WORK_KINDS = Object.freeze(['receipt', 'receipt_done', 'put_away', 'pick', 'count', 'adjustment', 'issue', 'transfer_out', 'transfer_in'] as const);
 export type SentWorkKind = (typeof SENT_WORK_KINDS)[number];
 
 /** "Delivery complete" (SP-6b): the GRN this handheld has been receiving, and the order it was delivered against when known. */
@@ -410,6 +452,8 @@ export interface WarehouseAssignment {
    * office books such a delivery flagged `receiving_checklist_missing`.
    */
   readonly receivingChecklist?: unknown;
+  /** OB-288 lane 2 · WF-07 offline: the transfers to send from / count in at this store (absent or null: never told). */
+  readonly transfers?: HeldTransfers | null;
 }
 
 const gKey = (productId: string, batchId: string | null): string => `${productId}|${batchId ?? ''}`;
@@ -463,6 +507,70 @@ export class WarehouseSession {
     for (const item of assignment.goodsIn ?? []) this.goods.set(gKey(item.productId, item.batchId), { ...item });
     for (const line of assignment.pickLines ?? []) this.picks.set(line.lineId, { line: { ...line, batchId: line.batchId ?? null }, pickedMinor: 0 });
     for (const line of assignment.indentLines ?? []) this.indents.set(`${line.indentId}|${line.productId}`, { line, issuedMinor: 0 });
+  }
+
+  /**
+   * OB-288 lane 2 · WF-07 offline: the transfers this store sends and counts in, as head office last said — each marked
+   * when THIS handheld has already done its step (from the durable device queue, so it holds after a restart).
+   */
+  transferWork(): TransferWorkView {
+    const held = this.assignment.transfers;
+    if (held === undefined || held === null) return { known: false, toSend: [], toCountIn: [] };
+    const row = (t: HeldTransfer, key: string): TransferRow => ({ ...t, doneHere: this.outbox.find(key) !== undefined });
+    return {
+      known: true, asAt: held.asAt, ageMinutes: held.ageMinutes,
+      toSend: held.toSend.map((t) => row(t, transferDispatchKey(t.transferId))),
+      toCountIn: held.toCountIn.map((t) => row(t, transferReceiptKey(t.transferId))),
+    };
+  }
+
+  /**
+   * WF-07 offline: SEND a transfer from this store — one tap after the goods are loaded. Saved on this handheld in the
+   * signed-in worker's name and timed when it was done; head office re-runs its own transfer engine on its own stock (the
+   * proposer may not send their own, stock must be there, a count freeze or an e-way bill can still refuse it — and that
+   * refusal comes back here, by name). Nothing about lines, stock or cost travels: they are head office's own.
+   */
+  sendTransfer(input: { readonly transferId: string; readonly at: string }): TransferStepResult {
+    const held = this.assignment.transfers?.toSend.find((t) => t.transferId === input.transferId);
+    const refused = (code: string, detail: string, feedback: ScanFeedback = 'reject'): TransferStepResult => ({ accepted: false, transferId: input.transferId, signal: signalFor(feedback, code, detail) });
+    if (held === undefined) return refused('not_a_transfer_here', `transfer ${input.transferId} is not one this store sends, as the store computer last heard`);
+    const key = transferDispatchKey(held.transferId);
+    if (this.outbox.find(key) !== undefined) return refused('transfer_already_done', `transfer ${held.transferId} has already been sent from this handheld — sending again changes nothing`, 'warn');
+    this.outbox.enqueue(makeEvent({
+      id: key, type: TRANSFER_DISPATCH_RECORDED, occurredAt: input.at, idempotencyKey: key, source: this.assignment.assignmentId,
+      payload: { transferId: held.transferId, storeId: this.assignment.transfers?.storeId ?? this.assignment.storeId, dispatchedBy: this.assignment.workerId, at: input.at, source: 'warehouse-handheld' },
+    }));
+    return { accepted: true, transferId: held.transferId, signal: signalFor('accept', 'transfer_sent', `transfer ${held.transferId} sent to ${held.toLocationId} — ${held.lines.length} line(s)`) };
+  }
+
+  /**
+   * WF-07 offline: COUNT IN a transfer at this store — what actually arrived, one count per line the transfer carries
+   * (0 is a real count). Saved in the signed-in worker's name; head office books what arrived and any shortfall as its
+   * valued exception, and refuses the dispatcher counting in their own (§28).
+   */
+  countInTransfer(input: { readonly transferId: string; readonly counted: readonly { readonly productId: string; readonly batchId: string | null; readonly quantityMinor: number }[]; readonly at: string }): TransferStepResult {
+    const held = this.assignment.transfers?.toCountIn.find((t) => t.transferId === input.transferId);
+    const refused = (code: string, detail: string, feedback: ScanFeedback = 'reject'): TransferStepResult => ({ accepted: false, transferId: input.transferId, signal: signalFor(feedback, code, detail) });
+    if (held === undefined) return refused('not_a_transfer_here', `transfer ${input.transferId} is not one on its way to this store, as the store computer last heard`);
+    const key = transferReceiptKey(held.transferId);
+    if (this.outbox.find(key) !== undefined) return refused('transfer_already_done', `transfer ${held.transferId} has already been counted in on this handheld — counting again changes nothing`, 'warn');
+    const lineKey = (productId: string, batchId: string | null): string => `${productId}|${batchId ?? ''}`;
+    const counts = new Map<string, number>();
+    for (const c of input.counted) {
+      if (!Number.isSafeInteger(c.quantityMinor) || c.quantityMinor < 0) return refused('not_a_quantity', `${String(c.quantityMinor)} is not a count of ${c.productId}`);
+      counts.set(lineKey(c.productId, c.batchId), c.quantityMinor);
+    }
+    const missing = held.lines.filter((l) => !counts.has(lineKey(l.productId, l.batchId)));
+    if (missing.length > 0 || counts.size !== held.lines.length) {
+      return refused('count_incomplete', `every line of transfer ${held.transferId} needs its count — not counted: ${missing.map((l) => l.productId).join(', ') || 'a line it does not carry'}`);
+    }
+    const counted = held.lines.map((l) => ({ productId: l.productId, batchId: l.batchId, quantityMinor: counts.get(lineKey(l.productId, l.batchId))! }));
+    this.outbox.enqueue(makeEvent({
+      id: key, type: TRANSFER_RECEIPT_RECORDED, occurredAt: input.at, idempotencyKey: key, source: this.assignment.assignmentId,
+      payload: { transferId: held.transferId, storeId: this.assignment.transfers?.storeId ?? this.assignment.storeId, receivedBy: this.assignment.workerId, at: input.at, counted, source: 'warehouse-handheld' },
+    }));
+    const short = held.lines.reduce((n, l) => n + Math.max(0, l.quantityMinor - counts.get(lineKey(l.productId, l.batchId))!), 0);
+    return { accepted: true, transferId: held.transferId, signal: signalFor(short > 0 ? 'warn' : 'accept', 'transfer_counted_in', `transfer ${held.transferId} counted in${short > 0 ? ` — ${short} fewer than were sent; head office books the shortfall` : ''}`) };
   }
 
   /** The put-away worklist: goods received and not yet binned. */
@@ -541,6 +649,15 @@ export class WarehouseSession {
           const p = item.event.payload as { indentId: string; issueId: string; lines: readonly { productId: string; batchId: string | null; quantityMinor: number; binId: string; uom: string }[] };
           const l = p.lines[0];
           return [{ kind: 'issue', id: p.issueId, what: `${l?.productId ?? ''}${l?.batchId ? ` · ${l.batchId}` : ''} · ${l?.binId ?? ''}`, detail: `${l?.quantityMinor ?? 0} ${l?.uom ?? ''} · ${p.indentId}`, ...common, ...withReason }];
+        }
+        if (item.event.type === TRANSFER_DISPATCH_RECORDED) {
+          const p = item.event.payload as { transferId: string };
+          const t = this.assignment.transfers?.toSend.find((x) => x.transferId === p.transferId);
+          return [{ kind: 'transfer_out', id: p.transferId, what: p.transferId, detail: t === undefined ? '' : `→ ${t.toLocationId} · ${t.lines.length}`, ...common, ...withReason }];
+        }
+        if (item.event.type === TRANSFER_RECEIPT_RECORDED) {
+          const p = item.event.payload as { transferId: string; counted: readonly { productId: string; quantityMinor: number }[] };
+          return [{ kind: 'transfer_in', id: p.transferId, what: p.transferId, detail: p.counted.map((c) => `${c.productId} ${c.quantityMinor}`).join(' · '), ...common, ...withReason }];
         }
         return [];
       })

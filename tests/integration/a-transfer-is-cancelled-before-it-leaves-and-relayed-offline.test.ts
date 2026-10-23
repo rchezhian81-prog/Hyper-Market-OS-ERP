@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
 import { useBackings } from '../support/backings';
+import { classify } from '../../edge/sync-agent/src/http-transport';
 
 // OB-288 lane 2 · P2 · WF-07 (M09-FR-03 · §31 · §28 · hard rules #2 #6 #10) — on the REAL API with REAL RBAC, in memory
 // and (with DATABASE_URL) on real PostgreSQL:
@@ -136,5 +137,20 @@ describe.each(backings)('WF-07 offline: a dispatch and a receipt made with the l
     // The shortfall is head office's valued exception, as for a receipt typed at head office.
     const ex = (await call('GET', '/v1/inventory/exceptions', 'u-owner')).body as { transferShortfalls: { transferId: string }[] };
     expect(ex.transferShortfalls.map((s) => s.transferId)).toContain('t-o1');
+  });
+  it('a relayed dispatch head office refuses by its own rule (an open count froze the stock) is a refusal the box keeps for a person — never "already on file"', async () => {
+    const h = harness();
+    const { call, propose, onHandAt, read } = await shop(h);
+    await propose('t-f1');
+    expect((await call('POST', '/v1/inventory/count-plans/cp-1', 'u-owner', { locationId: S1_BACK, productIds: ['P1'], recountThresholdMinor: 1_000_000, note: 'back store', frozenKinds: ['transferred_out'] })).status).toBeLessThan(300);
+    expect((await call('POST', '/v1/inventory/count-plans/cp-1/open', 'u-owner', {})).status).toBeLessThan(300);
+    const r = await call('POST', '/v1/warehouse/transfers/t-f1/dispatch/synced', 'u-box-a', dispatchBody('t-f1'));
+    // Said as 422 — the store computer's sender reads a 409 carrying a code as "already booked" and would drop it.
+    expect([r.status, codeOf(r)]).toEqual([422, 'frozen_by_a_stock_count']);
+    expect(classify(r.status, codeOf(r))).toBe('rejected');
+    expect(await read('t-f1')).toMatchObject({ state: 'proposed' });
+    expect(await onHandAt(S1_BACK)).toBe(40);
+    // Typed at head office, the same refusal keeps its own 409 (unchanged for the direct route).
+    expect((await call('POST', '/v1/warehouse/transfers/t-f1/dispatch', 'u-wh1', {})).status).toBe(409);
   });
 });

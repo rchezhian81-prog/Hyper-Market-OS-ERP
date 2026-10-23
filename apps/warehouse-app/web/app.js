@@ -157,6 +157,13 @@ const WORDS = {
     stepIssue: 'Tap an indent line to issue it to the floor', stepIssueScanBin: 'Scan the bin you are taking it from',
     issued: 'Issued to the floor', not_on_indent: 'Not on an indent this handheld holds', indent_line_done: 'This line is already fully issued',
     requester_cannot_issue: 'You raised this indent — a different person must issue it', bin_has_none: 'This bin holds none of that item — scan the bin the stock is in',
+    // OB-288 lane 2 · WF-07 offline: transfers SENT from this store and COUNTED IN at it — one tap to send; a keypad count per line
+    toSendHeading: 'Transfers to send', toCountInHeading: 'Transfers to count in',
+    transfersAsOf: "Head office's transfers as the store computer last heard them, at",
+    transferTo: 'to', transferFrom: 'from', transferLines: 'line(s)', transferDoneHere: 'Done on this handheld',
+    confirmSend: 'Send this transfer — the goods are loaded', countInLine: 'Count in', sentWas: 'sent',
+    transfer_sent: 'Transfer sent', transfer_counted_in: 'Transfer counted in', not_a_transfer_here: 'Not a transfer for this store',
+    transfer_already_done: 'Already done on this handheld — nothing changed', count_incomplete: 'Every line needs its count',
   },
   ta: {
     noBoxLink: 'கடை கணினியுடன் இணைக்கப்படவில்லை', checkingBox: 'கடை கணினியைச் சரிபார்க்கிறது…',
@@ -234,6 +241,13 @@ const WORDS = {
     stepIssue: 'தளத்திற்கு வழங்க ஒரு கோரிக்கை வரியைத் தட்டவும்', stepIssueScanBin: 'எடுக்கும் இடத்தை ஸ்கேன் செய்யவும்',
     issued: 'தளத்திற்கு வழங்கப்பட்டது', not_on_indent: 'இந்தக் கருவியில் உள்ள கோரிக்கையில் இல்லை', indent_line_done: 'இந்த வரி முழுமையாக வழங்கப்பட்டது',
     requester_cannot_issue: 'இந்தக் கோரிக்கையை நீங்கள் எழுப்பினீர்கள் — வேறு ஒருவர் வழங்க வேண்டும்', bin_has_none: 'இந்த இடத்தில் அந்தப் பொருள் இல்லை — பொருள் உள்ள இடத்தை ஸ்கேன் செய்யவும்',
+    // OB-288 lane 2 · WF-07
+    toSendHeading: 'அனுப்ப வேண்டிய மாற்றல்கள்', toCountInHeading: 'எண்ணிப் பெற வேண்டிய மாற்றல்கள்',
+    transfersAsOf: 'கடைக் கணினி கடைசியாகக் கேட்ட தலைமை அலுவலக மாற்றல்கள், நேரம்',
+    transferTo: 'க்கு', transferFrom: 'இருந்து', transferLines: 'வரி(கள்)', transferDoneHere: 'இந்தக் கருவியில் செய்யப்பட்டது',
+    confirmSend: 'இந்த மாற்றலை அனுப்பு — பொருட்கள் ஏற்றப்பட்டன', countInLine: 'எண்ணிப் பெறு', sentWas: 'அனுப்பியது',
+    transfer_sent: 'மாற்றல் அனுப்பப்பட்டது', transfer_counted_in: 'மாற்றல் எண்ணிப் பெறப்பட்டது', not_a_transfer_here: 'இந்தக் கடைக்கான மாற்றல் அல்ல',
+    transfer_already_done: 'இந்தக் கருவியில் ஏற்கெனவே செய்யப்பட்டது — எதுவும் மாறவில்லை', count_incomplete: 'ஒவ்வொரு வரிக்கும் எண்ணிக்கை தேவை',
   },
 };
 let lang = 'en';
@@ -267,6 +281,8 @@ const KIND_WORDS = {
   issue: { en: 'Issued to the floor', ta: 'தளத்திற்கு வழங்கப்பட்டது' },
   count: { en: 'Counted', ta: 'எண்ணப்பட்டது' },
   adjustment: { en: 'Adjustment requested', ta: 'திருத்தக் கோரிக்கை' },
+  transfer_out: { en: 'Transfer sent', ta: 'மாற்றல் அனுப்பப்பட்டது' },
+  transfer_in: { en: 'Transfer counted in', ta: 'மாற்றல் எண்ணிப் பெறப்பட்டது' },
 };
 /** The reasons an adjustment may be raised for (`packages/adjustment` ADJUSTMENT_REASON_CODES) — the buttons on the adjust sheet. */
 const REASON_WORDS = {
@@ -555,6 +571,7 @@ function render() {
   // Where each accepted scan is — rendered BEFORE the worklists, because an emptied worklist returns early below and a
   // put-away that just emptied it must still show as "with the store computer".
   renderSent();
+  const transfersHeld = renderTransfers();
 
   // The pick list: the bin is the biggest thing on the row, because the bin is where the worker walks to.
   const pickHost = el('pick-lines');
@@ -606,8 +623,8 @@ function render() {
   const host = el('goods-in');
   host.textContent = '';
   // With pick work but nothing to put away, the goods-in heading would sit over nothing.
-  el('goods-in-heading').hidden = items.length === 0 && (lines.length > 0 || issues.length > 0);
-  if (items.length === 0 && lines.length === 0 && issues.length === 0) {
+  el('goods-in-heading').hidden = items.length === 0 && (lines.length > 0 || issues.length > 0 || transfersHeld > 0);
+  if (items.length === 0 && lines.length === 0 && issues.length === 0 && transfersHeld === 0) {
     el('empty').hidden = false;
     el('empty').textContent = `${t('noWork')} ${t('noWorkBody')}`;
     return;
@@ -674,6 +691,80 @@ function renderSent() {
  * socket. Called after every accepted scan and on a slow timer; never blocks a scan, and a box that cannot be
  * reached leaves everything saved here and says so through the state words.
  */
+/**
+ * OB-288 lane 2 · WF-07 offline: the transfers this store SENDS and COUNTS IN, as head office last said (and when — P-08).
+ * A row to send: one tap → the confirm sheet → sent. A row to count in: the keypad once per line (0 is a real count) →
+ * counted in. Either is saved on this handheld in the signed-in worker's name and handed to the store computer; what head
+ * office refuses comes back in the sent-work list with its reason. Returns how many transfer rows are shown.
+ */
+function renderTransfers() {
+  const work = real && typeof real.transferWork === 'function' ? real.transferWork() : { known: false, toSend: [], toCountIn: [] };
+  const shown = work.toSend.length + work.toCountIn.length;
+  say(el('xfer-send-heading'), t('toSendHeading'), 'send');
+  el('xfer-send-heading').dataset.count = String(work.toSend.filter((r) => !r.doneHere).length);
+  el('xfer-send-heading').hidden = work.toSend.length === 0;
+  say(el('xfer-in-heading'), t('toCountInHeading'), 'package-check');
+  el('xfer-in-heading').dataset.count = String(work.toCountIn.filter((r) => !r.doneHere).length);
+  el('xfer-in-heading').hidden = work.toCountIn.length === 0;
+  el('xfer-asof').hidden = !work.known || shown === 0;
+  if (work.known) el('xfer-asof').textContent = `${t('transfersAsOf')} ${new Date(work.asAt).toLocaleString()}`;
+  el('xfer-send').replaceChildren(...work.toSend.map((r) => transferRow(r, 'send')));
+  el('xfer-in').replaceChildren(...work.toCountIn.map((r) => transferRow(r, 'in')));
+  return shown;
+}
+function transferRow(r, end) {
+  const row = document.createElement('button');
+  row.type = 'button';
+  row.className = 'item transfer';
+  row.dataset.transfer = r.transferId;
+  row.dataset.end = end;
+  const where = document.createElement('div');
+  where.className = 'where';
+  where.textContent = r.transferId;
+  const what = document.createElement('div');
+  what.className = 'what';
+  what.textContent = `${end === 'send' ? t('transferTo') : t('transferFrom')} ${end === 'send' ? r.toLocationId : r.fromLocationId} · ${r.lines.length} ${t('transferLines')}`;
+  const qty = document.createElement('div');
+  qty.className = 'qty';
+  sayQty(qty, r.lines.reduce((n, l) => n + l.quantityMinor, 0), ` ${t('units')}`);
+  row.append(where, what, qty);
+  if (r.doneHere) {
+    const f = document.createElement('div');
+    f.className = 'flag done';
+    say(f, t('transferDoneHere'), 'circle-check');
+    row.append(f);
+    row.disabled = true;
+  }
+  row.addEventListener('click', () => { void (end === 'send' ? startSendTransfer(r) : startCountInTransfer(r)); });
+  return row;
+}
+async function startSendTransfer(r) {
+  say(el('confirm-title'), `${t('confirmSend')} — ${r.transferId}`, 'send');
+  sayQty(el('confirm-qty'), r.lines.reduce((n, l) => n + l.quantityMinor, 0), ` ${t('units')} · ${r.lines.length} ${t('transferLines')}`);
+  el('confirm-hint').textContent = `${t('transferTo')} ${r.toLocationId} · ${r.lines.map((l) => `${l.productId} ${l.quantityMinor} ${l.uom}`).join(' · ')}`;
+  el('confirm-cancel').textContent = t('cancel');
+  el('confirm-ok').textContent = t('confirm');
+  el('confirm').hidden = false;
+  const yes = await new Promise((resolve) => { confirmResolve = resolve; });
+  if (!yes) return;
+  const out = real.sendTransfer({ transferId: r.transferId, at: new Date().toISOString() });
+  feltResult(out.signal);
+  render();
+  if (out.accepted) void syncToBox();
+}
+async function startCountInTransfer(r) {
+  const counted = [];
+  for (const l of r.lines) {
+    const q = await awaitQty(`${t('countInLine')} — ${l.productId}${l.batchId ? ` · ${l.batchId}` : ''}`, `${r.transferId} · ${t('sentWas')} ${l.quantityMinor} ${l.uom}`, '0');
+    if (q === null) return;
+    counted.push({ productId: l.productId, batchId: l.batchId, quantityMinor: q });
+  }
+  const out = real.countInTransfer({ transferId: r.transferId, counted, at: new Date().toISOString() });
+  feltResult(out.signal);
+  render();
+  if (out.accepted) void syncToBox();
+}
+
 async function syncToBox() {
   const relay = window.warehouseRelay;
   if (!relay) return;

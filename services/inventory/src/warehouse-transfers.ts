@@ -31,7 +31,7 @@
 // draw the same stock twice. A destination head office has no record of is refused by name (`unknown_location`).
 
 import type { Route } from '../../kernel/src/index';
-import { apiError, concurrentChange, notFound } from '../../kernel/src/index';
+import { ApiError, apiError, concurrentChange, notFound } from '../../kernel/src/index';
 import { ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
 import {
   dispatchTransfer, receiveTransfer, proposeAllocation, TransferRefusedError, judgeShortfallResolution, costedResolution,
@@ -598,6 +598,21 @@ function readCounted(v: unknown): CountedLine[] | undefined {
   return out;
 }
 
+/**
+ * OB-288 lane 2: a RELAYED step refused by head office's own rule is a refusal a person must see — never "already on file".
+ * The store computer's sender reads a 409 carrying a business code as a duplicate already booked (F12), so a 409 the shared
+ * core raises for a REFUSAL (a count freeze, an e-way bill still needed) is said as 422 on the synced routes, its words
+ * unchanged, and the box keeps it for a person (hard rules #6 #10). A concurrent change stays 409 — it is retried.
+ */
+async function asRelayedRefusal<T>(step: () => Promise<T>): Promise<T> {
+  try {
+    return await step();
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 409 && e.body.code !== 'concurrent_change') throw new ApiError(422, e.body);
+    throw e;
+  }
+}
+
 export function transferLifecycleRoutes(deps: TransferLifecycleDeps): readonly Route[] {
   const relayOf = (ctx: RequestContext, b: Record<string, unknown>): TransferRelay => ({
     relayedBy: ctx.userId, source: isStr(b['source']) ? b['source'] : 'unknown', storeId: isStr(b['storeId']) ? b['storeId'] : null,
@@ -699,7 +714,7 @@ export function transferLifecycleRoutes(deps: TransferLifecycleDeps): readonly R
         }
         await assertPersonMayMove(ctx.tenantId, dispatchedBy, `sent transfer ${transferId}`);
         const relay = relayOf(ctx, b);
-        const body = await dispatchCore(deps, ctx.tenantId, transfer, dispatchedBy, at, relay);
+        const body = await asRelayedRefusal(() => dispatchCore(deps, ctx.tenantId, transfer, dispatchedBy, at, relay));
         await audit(ctx.tenantId, {
           actorId: dispatchedBy, action: 'transfer.dispatch', objectType: 'stock_transfer', objectId: transferId, at,
           origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null, capturedOffline: true },
@@ -763,7 +778,7 @@ export function transferLifecycleRoutes(deps: TransferLifecycleDeps): readonly R
         }
         await assertPersonMayMove(ctx.tenantId, receivedBy, `counted in transfer ${transferId}`);
         const relay = relayOf(ctx, b);
-        const body = await receiveCore(deps, ctx.tenantId, transfer, counted, receivedBy, at, (b['currency'] as CurrencyCode) ?? 'INR', relay);
+        const body = await asRelayedRefusal(() => receiveCore(deps, ctx.tenantId, transfer, counted, receivedBy, at, (b['currency'] as CurrencyCode) ?? 'INR', relay));
         await audit(ctx.tenantId, {
           actorId: receivedBy, action: 'transfer.receive', objectType: 'stock_transfer', objectId: transferId, at,
           origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null, capturedOffline: true },
