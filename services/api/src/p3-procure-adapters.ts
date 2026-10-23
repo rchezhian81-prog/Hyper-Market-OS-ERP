@@ -16,7 +16,7 @@ import type { AuditEntry } from '../../../packages/audit/src/index';
 import { makeEvent } from '../../../packages/contracts/src/event';
 import {
   STREAM, streamName, foldPurchaseOrders, purchaseOrdersAdapter, orgStructureAdapter, goodsReceiptAdapter, liveSupplierInvoices, effectiveGrants,
-  financeAdapter, rebatesAdapter, stockCostAdjustments, STOCK_COST_ADJUSTMENTS_STREAM,
+  financeAdapter, rebatesAdapter, stockCostAdjustments, STOCK_COST_ADJUSTMENTS_STREAM, rfqAdapter, replenishmentFactsAdapter, assortmentAdapter,
 } from './adapters';
 import { masterLifecycleOf } from './r3-ops-adapters';
 import { branchOfLocationIn, type LocationBranches } from '../../inventory/src/location-scope';
@@ -32,6 +32,8 @@ import type { Asn } from '../../../packages/receiving/src/asn';
 import { apportionLandedCharges, landedCostDeltas, type LandedCostTarget } from '../../../packages/stock/src/landed-cost';
 import { chargesTotal, type PurchaseDeps } from '../../purchase/src/index';
 import type { StockCostAdjustment } from '../../inventory/src/landed-cost';
+import { replenishmentRoutes } from '../../inventory/src/replenishment';
+import { requisitionSourceRoutes, type RequisitionSourceDeps, type ProposedLine } from '../../purchase/src/requisition-sources';
 import { dockDiaryRoutes, type DockDiaryDeps, type DiaryBooking, dockGuardKey } from '../../inventory/src/dock-diary';
 import type { DockSlot } from '../../../packages/receiving/src/asn';
 import type { BlanketReleaseHooks, StoredPurchaseOrder, DeliveryAsn } from '../../purchase/src/purchase-orders';
@@ -338,6 +340,7 @@ export function p3ProcureRoutes(input: { readonly store: EventStore | undefined;
     ...tallyExportRoutes(tallyExportAdapter(base)),
     ...rebateReceiptRoutes(rebateReceiptAdapter(base)),
     ...dockDiaryRoutes(dockDiaryAdapter(base)),
+    ...requisitionSourceRoutes(requisitionSourceAdapter(base)),
   ];
 }
 
@@ -355,6 +358,32 @@ export function p3PurchaseOrderHooks(input: { readonly store: EventStore; readon
 /** The separation-of-duties port the receipt, match and payment routes take (spread into their deps in main.ts). */
 export function p3Segregation(input: { readonly store: EventStore; readonly now: () => string }): { readonly segregation: SegregationPort } {
   return { segregation: segregationAdapter(input) };
+}
+
+// ── WF-03 — a proposal or an A02 draft becomes a requisition by a buyer's own act ──────────────────────────────────
+
+export function requisitionSourceAdapter(input: Base): RequisitionSourceDeps {
+  const rfq = rfqAdapter(input);
+  const branches = locationBranches(input);
+  // The SAME replenishment route the proposal screen reads, on head office's own stock, orders, sales, range and lifecycle.
+  const propose = replenishmentRoutes({
+    now: input.now, ...replenishmentFactsAdapter({ store: input.store, now: input.now, branchOf: branches }),
+    rangeOf: assortmentAdapter(input).entries, locationBranches: branches, masterLifecycle: masterLifecycleOf(input),
+  }).find((r) => r.method === 'POST' && r.path === '/v1/replenishment/propose')!;
+  return {
+    now: input.now,
+    requisition: rfq.requisition,
+    recordRequisition: rfq.recordRequisition,
+    proposalFor: async (ctx, storeId, items) => {
+      const res = await propose.handler({ ...ctx, body: { items }, query: { storeId } });
+      return res.body as { proposals: readonly ProposedLine[]; asAt: string };
+    },
+    a02Draft: async (tenantId, proposalId) => {
+      const p = (await payloads<{ proposalId: string; agent: string; evidence: readonly { reference: string }[] }>(input.store, tenantId, STREAM.ai, 'AiProposalRaised'))
+        .find((x) => x.proposalId === proposalId && x.agent === 'A02');
+      return p === undefined ? undefined : { proposalId: p.proposalId, references: p.evidence.map((e) => e.reference) };
+    },
+  };
 }
 
 // ── M07-FR-01 — the durable dock diary ───────────────────────────────────────────────────────────────────────────────
