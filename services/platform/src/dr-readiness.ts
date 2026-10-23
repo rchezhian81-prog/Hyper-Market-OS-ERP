@@ -11,6 +11,10 @@
 //     the RPO (data loss) AND the RTO (time to be back)? A miss is NAMED (how much was lost / how long it
 //     took against the target) — M35-FR-02: a drill that misses raises a remediation, it is not quietly
 //     repeated until it passes and then reported as a pass.
+//   - `GET  /v1/platform/recovery-gate` — the QG-08 reading (§22 "backup restore, store recovery, rollback and
+//     incident escalation rehearsed"): GO only when the latest rehearsal of each of the four kinds exists and
+//     passed, each against its FIXED §32 target (`packages/ops/src/recovery-gate.ts`). Evidence for the owner's
+//     gate decision (QG-12), not the decision itself. A drill recorded with `{ rehearsal }` names its kind.
 //   - `POST /v1/platform/backups/eligible-for-removal` — which aged backups MAY be removed under a
 //     retention policy, and — the point — which never may: the newest `keepAtLeast` are kept however old,
 //     so a retention sweep can never empty the shelf (hard rule #6). This REPORTS candidates; it never
@@ -25,7 +29,8 @@ import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import {
   scoreDrill, backupsEligibleForRemoval, DEFAULT_RECOVERY_TARGETS,
-  type RecoveryTarget, type BackupManifest, type DrillResult,
+  REHEARSAL_KINDS, REHEARSAL_TARGETS, recoveryGateReading,
+  type RecoveryTarget, type BackupManifest, type DrillResult, type RehearsalKind,
 } from '../../../packages/ops/src/index';
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -86,6 +91,8 @@ function resolveTarget(b: Record<string, unknown>): RecoveryTarget {
  */
 export interface DrDrillRecord {
   readonly drillId: string;
+  /** QG-08: which of the four §22 rehearsals this drill was. Absent on drills recorded before the gate read. */
+  readonly rehearsal?: RehearsalKind;
   readonly result: DrillResult;
   readonly drilledBy: string;
   readonly drilledAt: string;
@@ -153,7 +160,32 @@ export function drReadinessRoutes(deps: DrReadinessDeps): readonly Route[] {
             nextSafeAction: 'Send a drillId (e.g. the quarter and service being rehearsed).',
           });
         }
-        const target = resolveTarget(b);
+        // QG-08: a drill that names its rehearsal kind is scored against that kind's FIXED §32 target — it cannot
+        // also name an easier one. A drill without a kind keeps the old behaviour (and does not count for QG-08).
+        let rehearsal: RehearsalKind | undefined;
+        let target: RecoveryTarget;
+        if (b['rehearsal'] !== undefined) {
+          if (!REHEARSAL_KINDS.includes(b['rehearsal'] as RehearsalKind)) {
+            throw apiError(400, {
+              code: 'unknown_rehearsal_kind',
+              whatHappened: `A rehearsal is one of: ${REHEARSAL_KINDS.join(', ')} (roadmap §22 QG-08).`,
+              wasItSaved: 'not_saved',
+              nextSafeAction: 'Name which of the four QG-08 rehearsals this drill was.',
+            });
+          }
+          if (b['target'] !== undefined || b['service'] !== undefined) {
+            throw apiError(400, {
+              code: 'rehearsal_target_is_fixed',
+              whatHappened: 'A named rehearsal is scored against its own fixed §32 target, so it cannot also carry a { target } or { service }.',
+              wasItSaved: 'not_saved',
+              nextSafeAction: 'Send the rehearsal kind and the measured seconds only.',
+            });
+          }
+          rehearsal = b['rehearsal'] as RehearsalKind;
+          target = REHEARSAL_TARGETS[rehearsal];
+        } else {
+          target = resolveTarget(b);
+        }
         if (!isNonNegNum(b['dataLossSeconds']) || !isNonNegNum(b['recoverySeconds'])) {
           throw apiError(400, {
             code: 'drill_needs_measured_seconds',
@@ -163,7 +195,7 @@ export function drReadinessRoutes(deps: DrReadinessDeps): readonly Route[] {
           });
         }
         const result = scoreDrill({ target, dataLossSeconds: b['dataLossSeconds'], recoverySeconds: b['recoverySeconds'] });
-        const record: DrDrillRecord = { drillId: b['drillId'].trim(), result, drilledBy: ctx.userId, drilledAt: deps.now() };
+        const record: DrDrillRecord = { drillId: b['drillId'].trim(), ...(rehearsal === undefined ? {} : { rehearsal }), result, drilledBy: ctx.userId, drilledAt: deps.now() };
         await deps.recordDrill(ctx.tenantId, record);
         return { status: 201, body: { recorded: record, committedAnything: true } };
       },
@@ -192,6 +224,24 @@ export function drReadinessRoutes(deps: DrReadinessDeps): readonly Route[] {
             posture,
             summary: { recorded: all.length, passed, missed: all.length - passed, servicesCovered: latestByService.size },
             note: 'the register keeps every drill, a miss included (hard rule #6); `posture` is the latest drill per service — its current recovery readiness',
+          },
+        };
+      },
+    },
+    {
+      // QG-08 (§22): "Backup restore, store recovery, rollback and incident escalation rehearsed." GO only when the
+      // LATEST rehearsal of each of the four kinds exists and passed against its fixed §32 target; otherwise HOLD,
+      // naming each missing or failed rehearsal. Evidence for the owner's gate decision (QG-12) — never the decision.
+      api: 'API-11', method: 'GET', path: '/v1/platform/recovery-gate',
+      permission: 'backup.verify.read',
+      handler: async (ctx) => {
+        const reading = recoveryGateReading(await deps.drills(ctx.tenantId));
+        return {
+          status: 200,
+          body: {
+            ...reading,
+            targets: REHEARSAL_TARGETS,
+            note: 'This is the evidence reading for QG-08. The gate itself is decided by the owner on the gate register (QG-12).',
           },
         };
       },

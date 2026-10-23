@@ -63,6 +63,20 @@ export interface RiskRegisterDeps {
   readonly attestations: (tenantId: string) => Promise<readonly Attestation[]> | readonly Attestation[];
   readonly saveAttestation: (tenantId: string, attestationId: string, attestation: Attestation, key: string) => Promise<void> | void;
   readonly now: () => string;
+  /**
+   * QG-03 / QG-06 / QG-08 (OB-288 gates lane): what ELSE blocks a gate besides the risk register — open critical/high
+   * security findings and gate checks such as the QG-08 rehearsal reading — so `can-pass` never answers yes while the
+   * gate register would refuse a GO. Optional so a surface without the findings register still answers on risks.
+   */
+  readonly otherBlockers?: (tenantId: string) => Promise<readonly OtherGateBlocker[]> | readonly OtherGateBlocker[];
+}
+
+/** A non-risk blocker as `can-pass` reports it (a finding or a gate check). */
+export interface OtherGateBlocker {
+  readonly gate: string;
+  readonly kind: 'finding' | 'check';
+  readonly ref: string;
+  readonly reason: string;
 }
 
 // A stable digest so any real change to a risk is a new append-only fact, but an exact re-send collapses.
@@ -143,13 +157,23 @@ export function riskRegisterRoutes(deps: RiskRegisterDeps): readonly Route[] {
       },
     },
     {
-      // Can this named gate pass? True when nothing open-and-critical is registered against it.
+      // Can this named gate pass? True when no open critical/high risk is registered against it AND no open
+      // critical/high finding or failing gate check stands against it (`otherBlockers`).
       api: 'API-11', method: 'GET', path: '/v1/compliance/gates/:gate/can-pass',
       permission: 'compliance.risk.read',
       handler: async (ctx) => {
         const gate = ctx.params['gate'] ?? '';
         const risks = await deps.risks(ctx.tenantId);
-        return { status: 200, body: { gate, canPass: gateCanPass(gate, risks), blockedBy: blockedGates(risks).filter((b) => b.gate === gate) } };
+        const others = (deps.otherBlockers === undefined ? [] : await deps.otherBlockers(ctx.tenantId)).filter((b) => b.gate === gate);
+        return {
+          status: 200,
+          body: {
+            gate, canPass: gateCanPass(gate, risks) && others.length === 0,
+            blockedBy: blockedGates(risks).filter((b) => b.gate === gate),
+            // Findings and gate checks that also stand against this gate (QG-03/QG-06 findings, the QG-08 rehearsals).
+            alsoBlockedBy: others,
+          },
+        };
       },
     },
     {

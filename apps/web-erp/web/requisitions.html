@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Requisitions and quotes</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Requisitions and quotes (M06-FR-02 · WF-03 · OB-288 P3). A THIN CLIENT over head office's routes: raise a requisition,
+      record each supplier's quote, read head office's like-for-like comparison (cheapest and fastest per line and overall;
+      a quote missing a line is named, never ranked), and PROPOSE the order from the chosen quote — a second person issues it
+      on the Buying page (§28). Its session is the tested model in apps/web-erp/src/requisitions-session.ts. No
+      prompt/confirm/alert; every word has a Tamil twin; icons sit beside their words.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      @media (max-width: 640px) { :root { --tap: 56px; } } /* a buyer on a handheld: 56px targets */
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      input { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; }
+      select { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; }
+      button.quiet { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+      button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      table { border-collapse: collapse; width: 100%; } th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); font-size: 15px; vertical-align: top; }
+      .form-row { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); align-items: end; }
+      .chip { display: inline-flex; align-items: center; gap: 4px; font-size: 14px; font-weight: 600; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); }
+      .chip.best { border-color: var(--ok); }
+      .status { font-size: 14px; min-height: 20px; margin: 0; } .status.err { color: var(--danger-text); }
+      .nobody { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
+      .muted { color: var(--muted); font-size: 14px; margin: 0; }
+      .wrap { overflow-x: auto; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Requisitions and quotes</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section aria-labelledby="page-h">
+        <h2 id="page-h">Requisitions and quotes</h2>
+        <p class="muted" id="lead"></p>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+      <section aria-labelledby="list-h">
+        <h3 id="list-h">Requisitions</h3>
+        <p class="muted" id="none" hidden></p>
+        <div class="wrap"><table id="list-table"><thead><tr><th id="th-id">Requisition</th><th id="th-lines">Lines</th><th id="th-by">Raised by</th><th id="th-from">From</th><th></th></tr></thead><tbody id="list"></tbody></table></div>
+      </section>
+      <section aria-labelledby="raise-h" id="raise-section">
+        <h3 id="raise-h">Raise a requisition</h3>
+        <form id="raise-form" class="form-row">
+          <label for="new-id"><span id="l-new-id">Requisition number</span><input id="new-id" autocomplete="off" /></label>
+        </form>
+        <div id="new-lines" class="form-row"></div>
+        <div class="form-row"><button class="quiet" id="add-line" type="button">Add a line</button><button id="raise" type="button">Raise the requisition</button></div>
+      </section>
+      <section aria-labelledby="open-h" id="open-section" hidden>
+        <h3 id="open-h"></h3>
+        <h3 id="quote-h">Record a supplier's quote</h3>
+        <div class="form-row">
+          <label for="quote-id"><span id="l-quote-id">Quote number</span><input id="quote-id" autocomplete="off" /></label>
+          <label for="quote-supplier"><span id="l-quote-supplier">Supplier code</span><input id="quote-supplier" autocomplete="off" /></label>
+        </div>
+        <div id="quote-lines" class="form-row"></div>
+        <div class="form-row"><button id="record-quote" type="button">Record the quote</button></div>
+        <h3 id="cmp-h">Comparison</h3>
+        <p class="muted" id="no-quotes" hidden></p>
+        <div class="wrap"><table id="cmp-table"><thead><tr><th id="th-product">Product code</th><th id="th-supplier">Supplier code</th><th id="th-unit">Price each (₹)</th><th id="th-line">Total</th><th id="th-lead">Lead time (days)</th><th></th></tr></thead><tbody id="cmp"></tbody></table></div>
+        <p id="overall"></p>
+        <p class="muted" id="incomplete" hidden></p>
+        <h3 id="order-h">Raise the order from a quote</h3>
+        <div class="form-row">
+          <label for="order-quote"><span id="l-order-quote">Quote</span><select id="order-quote"></select></label>
+          <label for="order-store"><span id="l-order-store">Deliver to (store code)</span><input id="order-store" autocomplete="off" /></label>
+          <label for="order-id"><span id="l-order-id">Order number</span><input id="order-id" autocomplete="off" /></label>
+          <button id="raise-order" type="button">Propose the order</button>
+        </div>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./requisitions.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

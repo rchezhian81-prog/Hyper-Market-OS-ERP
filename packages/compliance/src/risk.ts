@@ -12,8 +12,10 @@
 // date, and an attestation is immutable and dated — a tick with no date is not
 // evidence that anything was checked.
 //
-// The quality gates read this (QG-06 security, QG-08 recovery): an OPEN CRITICAL RISK
-// BLOCKS ITS GATE. That is the whole reason risks are tracked rather than discussed.
+// The quality gates read this (QG-06 security, QG-08 recovery): an OPEN CRITICAL OR HIGH RISK
+// BLOCKS ITS GATE. That is the whole reason risks are tracked rather than discussed. Roadmap §22
+// QG-06 says "zero open critical/high findings at go-live" and §35.1 "zero unresolved
+// critical/high findings", so a high blocks exactly as a critical does (OB-288 lane gates, QG-06).
 //
 // Pure and deterministic: no clock, no I/O.
 
@@ -31,7 +33,7 @@ export interface Risk {
   /** Required to ACCEPT a risk — someone must say why, in their own name. */
   readonly acceptedBy?: string;
   readonly acceptanceRationale?: string;
-  /** The quality gates this risk blocks while it is open and critical. */
+  /** The quality gates this risk blocks while it is open and critical or high (§22 QG-06, §35.1). */
   readonly blocksGates?: readonly string[];
 }
 
@@ -139,8 +141,11 @@ export interface GateBlock {
   readonly reason: string;
 }
 
+/** The severities that block a gate while open: §22 QG-06 "zero open critical/high findings". */
+export const GATE_BLOCKING_SEVERITIES: readonly RiskSeverity[] = Object.freeze(['critical', 'high']);
+
 /**
- * Which quality gates cannot pass right now, and why. An OPEN CRITICAL risk blocks
+ * Which quality gates cannot pass right now, and why. An OPEN CRITICAL OR HIGH risk blocks
  * the gates it is registered against — an accepted one does not, because acceptance
  * is a recorded decision by a named person, not silence (M34-FR-04 acceptance).
  */
@@ -148,7 +153,7 @@ export function blockedGates(risks: readonly Risk[]): readonly GateBlock[] {
   const blocks: GateBlock[] = [];
   for (const risk of risks) {
     if (risk.status !== 'open') continue;
-    if (risk.severity !== 'critical') continue;
+    if (!GATE_BLOCKING_SEVERITIES.includes(risk.severity)) continue;
     for (const gate of risk.blocksGates ?? []) {
       blocks.push({
         gate,
@@ -156,7 +161,7 @@ export function blockedGates(risks: readonly Risk[]): readonly GateBlock[] {
         title: risk.title,
         severity: risk.severity,
         ownerUserId: risk.ownerUserId,
-        reason: `open critical risk "${risk.title}" — ${risk.ownerUserId} owns it`,
+        reason: `open ${risk.severity} risk "${risk.title}" — ${risk.ownerUserId} owns it`,
       });
     }
   }

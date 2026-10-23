@@ -26,6 +26,11 @@ export interface RoleAssignment {
   readonly roleId: string;
   /** Branches this assignment applies to, or "all" for company-wide authority. */
   readonly branchScope: readonly string[] | 'all';
+  /**
+   * M02-FR-02 · §28 "Department Manager — assigned departments": the departments (org department nodes) this assignment
+   * reaches, or "all". Absent = every department (an assignment is department-limited only when it says so).
+   */
+  readonly departmentScope?: readonly string[] | 'all';
 }
 
 export interface AccessQuery {
@@ -72,7 +77,8 @@ export class AccessControl {
     this.assignmentsByUser = new Map();
     for (const a of assignments) {
       const list = this.assignmentsByUser.get(a.userId) ?? [];
-      list.push(a);
+      // Department scopes are copied too: a scope widened after construction must not widen the grant.
+      list.push(a.departmentScope === undefined || a.departmentScope === 'all' ? a : { ...a, departmentScope: Object.freeze([...a.departmentScope]) });
       this.assignmentsByUser.set(a.userId, list);
     }
   }
@@ -106,11 +112,31 @@ export class AccessControl {
   }
 
   /**
+   * WHICH DEPARTMENTS this user may exercise `permission` in (M02-FR-02): 'all' when any grant carrying it is not
+   * department-limited, otherwise the union of the departments those grants name — [] when none carries it. Like the
+   * branch scope, the server's answer from the grants, never the request's.
+   */
+  departmentScopeOf(userId: string, permission: Permission): readonly string[] | 'all' {
+    const departments = new Set<string>();
+    for (const assignment of this.assignmentsByUser.get(userId) ?? []) {
+      const role = this.rolesById.get(assignment.roleId);
+      if (!role || !role.permissions.includes(permission)) continue;
+      const scope = assignment.departmentScope ?? 'all';
+      if (scope === 'all') return 'all';
+      for (const d of scope) departments.add(d);
+    }
+    return [...departments].sort();
+  }
+
+  /**
    * The grants this user holds, copied (OB-54): the store-computer binding asks which store a box's `store_computer`
    * grant names without reading the ledger a second time on every request.
    */
   assignmentsOf(userId: string): readonly RoleAssignment[] {
-    return (this.assignmentsByUser.get(userId) ?? []).map((a) => ({ ...a, branchScope: a.branchScope === 'all' ? 'all' : [...a.branchScope] }));
+    return (this.assignmentsByUser.get(userId) ?? []).map((a) => ({
+      ...a, branchScope: a.branchScope === 'all' ? 'all' : [...a.branchScope],
+      ...(a.departmentScope === undefined ? {} : { departmentScope: a.departmentScope === 'all' ? 'all' as const : [...a.departmentScope] }),
+    }));
   }
 
   /** Throws AccessDeniedError if the user may not perform the action. */

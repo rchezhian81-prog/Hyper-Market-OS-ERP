@@ -32,7 +32,8 @@ import { sentWithApproval } from '../support/approval-request';
  */
 
 const OWNER = 'u-owner';   // issues the order (purchase.order.approve)
-const BUYER = 'u-buyer';   // store_manager: proposes the supplier and the order, receives the delivery
+const BUYER = 'u-buyer';   // store_manager: proposes the supplier and the order
+const RECEIVER = 'u-receiver'; // store_manager: receives the delivery (OB-288 P3, §28: never the buyer)
 const FINANCE = 'u-fin';   // accountant: approves the supplier (OB-32)
 const STORE = 'S1';
 const today = new Date().toISOString().slice(0, 10);
@@ -81,6 +82,7 @@ const codeOf = (r: Reply): string | undefined => (r.body as { error?: { code?: s
 async function setUp(h: ApiHarness, t: string): Promise<(method: 'GET' | 'POST', path: string, userId: string, body?: unknown, key?: string, query?: Record<string, string>) => Promise<Reply>> {
   await h.seedOwner(t, OWNER);
   await h.provisionRole(t, BUYER, 'store_manager');
+  await h.provisionRole(t, RECEIVER, 'store_manager'); // OB-288 P3 (§28): the goods are booked in by someone other than their buyer
   await h.provisionRole(t, FINANCE, 'accountant');
   await aStoreWithRules(h, t, OWNER, STORE, 0); // the store the order is delivered to (OB-37), with its margin floor (M05)
   const plan = planLoad(catalogue, {
@@ -138,7 +140,7 @@ describe.each(backings)('SF-11 the pack chain, case → inner → base, through 
         { lineId: 'L5', productId: 'P-RICE', orderedMinor: 100_000, countedMinor: 12_500, uom: 'kg', unitCost: { minor: 6_200, currency: 'INR' }, condition: 'good' },
       ],
     };
-    const grn = await call('POST', '/v1/inventory/goods-receipt/grn-pack-1', BUYER, grnBody, 'grn-pack-1');
+    const grn = await call('POST', '/v1/inventory/goods-receipt/grn-pack-1', RECEIVER, grnBody, 'grn-pack-1');
     expect(grn.status).toBe(201);
     const lines = (grn.body as { grn: { captured: { lines: { productId: string; sellableMinor: number; uom: string }[] } } }).grn.captured.lines;
     const sellable = (p: string): number => lines.filter((l) => l.productId === p).reduce((s, l) => s + l.sellableMinor, 0);
@@ -176,7 +178,7 @@ describe.each(backings)('SF-11 the pack chain, case → inner → base, through 
     expect(await valued()).toEqual({ 'P-OIL': { value: 113 * 12_000, cogs: 36_000 }, 'P-RICE': { value: 542_500 - 7_750, cogs: 7_750 } });
 
     // 4. Re-sent receipt and re-sent sale: nothing doubles. And a fresh process on the same database reads the same.
-    const again = await call('POST', '/v1/inventory/goods-receipt/grn-pack-1', BUYER, grnBody, 'grn-pack-1-again');
+    const again = await call('POST', '/v1/inventory/goods-receipt/grn-pack-1', RECEIVER, grnBody, 'grn-pack-1-again');
     expect((again.body as { alreadyReceived: boolean }).alreadyReceived).toBe(true);
     await call('POST', '/v1/sales', OWNER, sale, 'sale-pack-1-again');
     const restarted = apiHarness(b);
@@ -201,13 +203,13 @@ describe.each(backings)('SF-11 the pack chain, case → inner → base, through 
     expect((await order([{ productId: 'P-OIL', pack: { level: 'case', quantity: 1 }, packCost: { minor: 288_000, currency: 'INR' } }], 'po-cash', 'u-cash')).status).toBe(403);
 
     // A kilo product counted in "g" (or anything but its base unit) is refused — the shelf would be a thousand times out.
-    const wrongUnit = await call('POST', '/v1/inventory/goods-receipt/grn-wrong', BUYER, {
+    const wrongUnit = await call('POST', '/v1/inventory/goods-receipt/grn-wrong', RECEIVER, {
       warehouseId: STORE, receivedOnDate: today, currency: 'INR',
       lines: [{ lineId: 'L1', productId: 'P-RICE', orderedMinor: 5, countedMinor: 5, uom: 'g', unitCost: { minor: 6_200, currency: 'INR' }, condition: 'good' }],
     }, 'grn-wrong');
     expect(wrongUnit.status).toBe(422);
     expect(codeOf(wrongUnit)).toBe('unit_not_the_products');
-    const badLevel = await call('POST', '/v1/inventory/goods-receipt/grn-bad-level', BUYER, {
+    const badLevel = await call('POST', '/v1/inventory/goods-receipt/grn-bad-level', RECEIVER, {
       warehouseId: STORE, receivedOnDate: today, currency: 'INR',
       lines: [{ lineId: 'L1', productId: 'P-OIL', orderedMinor: 1, countedMinor: 1, uom: 'crate', unitCost: { minor: 12_000, currency: 'INR' }, condition: 'good' }],
     }, 'grn-bad-level');
@@ -242,7 +244,7 @@ describe.each(backings)('SF-11 the pack chain, case → inner → base, through 
         { lineId: 'L2', productId: 'P-OIL', orderedMinor: 72, countedMinor: 5, uom: 'each', unitCost: { minor: 25_000, currency: 'INR', per: 24 }, condition: 'good' },
       ],
     };
-    const grn = await call('POST', '/v1/inventory/goods-receipt/grn-odd', BUYER, oddReceipt, 'grn-odd');
+    const grn = await call('POST', '/v1/inventory/goods-receipt/grn-odd', RECEIVER, oddReceipt, 'grn-odd');
     expect(grn.status).toBe(201);
     const value = async (): Promise<{ onHandMinor: number; value: { minor: number }; cogs: { minor: number } }> =>
       ((await call('GET', '/v1/inventory/valuation', OWNER)).body as { rows: { productId: string; onHandMinor: number; value: { minor: number }; cogs: { minor: number } }[] }).rows.find((r) => r.productId === 'P-OIL')!;
@@ -280,14 +282,14 @@ describe.each(backings)('SF-11 the pack chain, case → inner → base, through 
     expect((typed.body as { order: { totalMinor: number; lines: { unitCost: { per?: number } }[] } }).order).toMatchObject({ totalMinor: 120_000 });
     expect((typed.body as { order: { lines: { unitCost: { per?: number } }[] } }).order.lines[0]!.unitCost.per).toBeUndefined();
     // A receipt line whose "per" is not a whole number above 1 is not readable.
-    const badPer = await call('POST', '/v1/inventory/goods-receipt/grn-bad-per', BUYER, {
+    const badPer = await call('POST', '/v1/inventory/goods-receipt/grn-bad-per', RECEIVER, {
       warehouseId: STORE, receivedOnDate: today, currency: 'INR',
       lines: [{ lineId: 'L1', productId: 'P-OIL', orderedMinor: 1, countedMinor: 1, uom: 'each', unitCost: { minor: 25_000, currency: 'INR', per: 0.5 }, condition: 'good' }],
     }, 'grn-bad-per');
     expect(badPer.status).toBe(400);
 
     // 5. A restart reads the same value; a re-sent receipt changes nothing.
-    expect(((await call('POST', '/v1/inventory/goods-receipt/grn-odd', BUYER, oddReceipt, 'grn-odd-again')).body as { alreadyReceived: boolean }).alreadyReceived).toBe(true);
+    expect(((await call('POST', '/v1/inventory/goods-receipt/grn-odd', RECEIVER, oddReceipt, 'grn-odd-again')).body as { alreadyReceived: boolean }).alreadyReceived).toBe(true);
     const restarted = apiHarness(b);
     const rows = ((await restarted.request({ method: 'GET', path: '/v1/inventory/valuation', userId: OWNER, tenantId: t })).body as { rows: { productId: string; value: { minor: number } }[] }).rows;
     expect(rows.find((r) => r.productId === 'P-OIL')!.value.minor).toBe(54_166);

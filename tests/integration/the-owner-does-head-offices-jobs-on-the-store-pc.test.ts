@@ -47,12 +47,14 @@ describe.each(backings)('the owner does head office\'s jobs on the store PC — 
     const T = randomUUID();
     await h.seedOwner(T, OWNER);
     await h.provisionRole(T, MANAGER, 'store_manager'); // laid down with the owner by tenant:bootstrap
+    // OB-288 P1 (M01-FR-01): the person who sets the shop up (platform administration) asks; the owner approves the activation.
+    await h.provisionRole(T, 'u-it', 'platform_admin');
     const client = personClient(() => h);
     const deps = { client, confirm: async () => true, askPin: async () => '123456', verifyPin: () => 'ok' as const };
     const run = (step: string, values: Record<string, string>) => runOwnerSetup({ step, tenantId: T, targetKind: 'rehearsal', demoTenantIds: ['pilot-demo'], values, today: new Date().toISOString().slice(0, 10), now: () => new Date().toISOString() }, deps);
     const expectDone = async (p: ReturnType<typeof run>): Promise<void> => { const o = await p; expect(o.exitCode, o.lines.join('\n')).toBe(0); };
 
-    await expectDone(run('shop', { as: OWNER, company: 'SRE', 'legal-name': 'SRE Hyper Market Private Limited', gstin: GSTIN, store: STORE, 'store-name': 'SRE Hyper Market' }));
+    await expectDone(run('shop', { as: 'u-it', approver: OWNER, company: 'SRE', 'legal-name': 'SRE Hyper Market Private Limited', gstin: GSTIN, store: STORE, 'store-name': 'SRE Hyper Market' }));
     await expectDone(run('store-settings', { as: OWNER, store: STORE, cutoff: '00:00', 'stale-after-minutes': '15', 'count-approval-rupees': '0', 'handover-tolerance-rupees': '0', 'cash-variance-rupees': '0' }));
     await expectDone(run('bill-prefix', { as: OWNER, store: STORE, till: 'lane-1', prefix: 'S1L1-', reason: 'mirror pilot till' }));
     await expectDone(run('grant', { as: MANAGER, approver: OWNER, person: CASHIER, role: 'cashier', store: STORE, reason: 'pilot cashier' }));

@@ -122,6 +122,11 @@ import { loyaltyMemberKey, memberRefFor } from '../../../packages/loyalty/src/ea
 import { makeTradingDayRule, tradingDate, wallClockIn, type TradingDayRule } from '../../../packages/calendar/src/trading-day';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+// OB-288 lane 2 · P2: the store's work feeds (production, food safety, transfers) and the clock check (§31.1 · OB-327).
+import { httpWorkFeedSource, pullWorkFeed, WORK_FEED_NAMES, type WorkFeedName, type WorkFeedPullOutcome } from '../../sync-agent/src/store-work-feeds';
+import { readHeldWorkFeeds, writeHeldWorkFeeds, type HeldWorkFeeds } from './work-feeds-file';
+import { ClockGuard, clockObservingFetch, readClockThresholds, type ClockCheck } from './clock-guard';
+import type { BoxCapturedRun } from './store-work';
 
 /** The returns pipeline's own cursor file, so the sale and refund logs advance independently. */
 const RETURNS_CURSOR = 'sync-cursor-returns';
@@ -498,6 +503,13 @@ export interface EdgeProcess {
    * fact the box knows instead of a constant the shell assumed. Always present — a box with no cloud says so.
    */
   readonly syncStatus: () => LaneSyncStatus;
+  /**
+   * OB-288 lane 2 · P2: pull head office's production board and recipes, food-safety checks and transfers now, and keep them
+   * on disk, so the screens and handhelds work with the cable out. Null without a cloud. Rides the sync loop.
+   */
+  readonly refreshWorkFeeds: (() => Promise<readonly WorkFeedPullOutcome[]>) | null;
+  /** OB-288 lane 2 · §31.1 · OB-327: this box's clock against head office's, as last measured. */
+  readonly clockCheck: () => ClockCheck;
   /**
    * Where the six screens are served from, or null when `EDGE_SCREEN_PORT` is unset.
    *
@@ -1784,6 +1796,28 @@ export async function startEdge(
     say(`floor indents as of ${heldIndents.feed.asAt} restored from disk — the last register this box pulled.`);
   }
 
+  // OB-288 lane 2 · P2: the production board and recipes, the food-safety checks and the transfers this box last pulled,
+  // restored from disk — so a reboot with the cable out still gives the counter, the chiller and the back door their work.
+  let workFeeds: HeldWorkFeeds = await readHeldWorkFeeds(settings['EDGE_DATA_DIR']!, tenantId);
+  for (const name of WORK_FEED_NAMES) {
+    const h = workFeeds[name];
+    if (h !== undefined) say(`${name} work as of ${h.feed.asAt} restored from disk — the last one this box pulled.`);
+  }
+  // §31.1 · OB-327: the clock check — a warning at 2 minutes from head office's clock, bills flagged at 5 (both changeable
+  // in this store computer's settings). Its log is restored, so a bill taken while the clock was out stays flagged.
+  const clockSetting = readClockThresholds(settings['EDGE_CLOCK_WARN_SECONDS'], settings['EDGE_CLOCK_FLAG_SECONDS']);
+  if (clockSetting.problem !== undefined) say(clockSetting.problem);
+  const clockGuard = await ClockGuard.open(clockSetting.thresholds, settings['EDGE_DATA_DIR']!);
+  /** The production runs this box's screen captured and still holds (the device-events queue) — labelled before head office has them. */
+  const boxCapturedRuns = (): readonly BoxCapturedRun[] => deviceEventsOutbox.all()
+    .filter((i) => i.event.type === 'ProductionRunCaptured')
+    .flatMap((i) => {
+      const p = i.event.payload as Record<string, unknown>;
+      return typeof p['runId'] === 'string' && typeof p['recipeId'] === 'string' && typeof p['outputBatchId'] === 'string' && typeof p['at'] === 'string'
+        ? [{ runId: p['runId'], recipeId: p['recipeId'], outputBatchId: p['outputBatchId'], actualOutputMinor: Number(p['actualOutputMinor'] ?? 0), producedBy: String(p['producedBy'] ?? ''), at: p['at'] }]
+        : [];
+    });
+
   // Head office's open wave / route assignments as this box last pulled them (HA-1), restored from disk and laid into the
   // pack — so a reboot with the cable out still gives the picker and the driver their work, under the cloud's own clock.
   let heldAssignments: HeldAssignmentsFeed | undefined = await readHeldAssignmentsFeed(settings['EDGE_DATA_DIR']!, tenantId);
@@ -1882,6 +1916,11 @@ export async function startEdge(
       oldErpBills: oldErpBills.bills(),
       // OB-263: the evening check kept on this box — its mappings and the days loaded (the figures are read per day).
       eveningCheck: { mappings: eveningCheckBox.mappings(), days: eveningCheckBox.days() },
+      // OB-288 lane 2 · P2: the store's work feeds, the runs captured on this box, and the clock check (OB-327).
+      workFeeds,
+      boxCapturedRuns: boxCapturedRuns(),
+      clock: clockGuard.check(),
+      clockFlaggedBills: clockGuard.flaggedBills(recordsNow.sales),
     };
   };
 
@@ -2209,6 +2248,7 @@ export async function startEdge(
     return {
       log, returnsLog, completionsLog, dayCloseLog, concessionTagsLog, deviceEventsLog, tillCashLog, outbox, returnsOutbox, completionsOutbox, dayCloseOutbox, concessionTagsOutbox, deviceEventsOutbox, tillCashOutbox, node, lane, screens, devices, enrolments, syncStatus,
       agent: null, returnsAgent: null, completionsAgent: null, dayCloseAgent: null, concessionTagsAgent: null, deviceEventsAgent: null, tillCashAgent: null, refreshPack: null, refreshMigrationFeed: null, refreshPublishedTemplates: null, refreshIndentsFeed: null, refreshAssignmentsFeed: null, refreshStorePack: null, refreshLoyaltyWallets: null, loyaltyWallets, refreshConcessionTrading: null, storeSetup: storeSetupStatus, reportHeldVersions: null, syncOnce: null,
+      refreshWorkFeeds: null, clockCheck: () => clockGuard.check(),
       // The day still locks with no cloud — that is the point of P-01. It queues durably and goes up when
       // a cloud is configured and reachable; nothing is told a lie in the meantime. Reopen is the same.
       closeDay,
@@ -2245,52 +2285,54 @@ export async function startEdge(
     };
   }
 
+  // §31.1 · OB-327: every answer from head office has its clock measured against this box's (the call itself unchanged).
+  const cloudFetch = clockObservingFetch(globalThis.fetch, clockGuard);
   const agent = new SyncAgent(outbox, httpTransport({
-    baseUrl: cloudUrl, token: cloudToken, fetch: globalThis.fetch,
+    baseUrl: cloudUrl, token: cloudToken, fetch: cloudFetch,
   }));
   // The return pipeline's own agent — same transport, its own outbox. A second agent is simpler and
   // safer than teaching one agent about two queues: the sale drain and its cursor stay exactly as they
   // were, and the refund drain sits beside them without ever crossing into the sale path.
   const returnsAgent = new SyncAgent(returnsOutbox, httpTransport({
-    baseUrl: cloudUrl, token: cloudToken, fetch: globalThis.fetch,
+    baseUrl: cloudUrl, token: cloudToken, fetch: cloudFetch,
   }));
   // The completion pipeline's own agent (M25-FR-02) — same transport, its own outbox, for the same
   // reason a refund has its own: three small agents beside one another keep each drain and each cursor
   // exactly its own, so a completion that cannot get through never holds a sale or a refund, and none
   // of the three can ever be re-queued as another.
   const completionsAgent = new SyncAgent(completionsOutbox, httpTransport({
-    baseUrl: cloudUrl, token: cloudToken, fetch: globalThis.fetch,
+    baseUrl: cloudUrl, token: cloudToken, fetch: cloudFetch,
   }));
   // The day-close pipeline's own agent (M14-FR-04) — same transport, its own outbox, for the same
   // reason each of the others has its own: a day close that cannot get through never holds a sale, a
   // refund or a completion, and none of the four can ever be re-queued as another.
   const dayCloseAgent = new SyncAgent(dayCloseOutbox, httpTransport({
-    baseUrl: cloudUrl, token: cloudToken, fetch: globalThis.fetch,
+    baseUrl: cloudUrl, token: cloudToken, fetch: cloudFetch,
   }));
   // The concession-tag pipeline's own agent (M27-FR-03) — same transport, its own outbox, for the same reason
   // each of the others has its own: a partner-counter line that cannot get through never holds a sale, a
   // refund, a completion or a day close, and none of the five can ever be re-queued as another.
   const concessionTagsAgent = new SyncAgent(concessionTagsOutbox, httpTransport({
-    baseUrl: cloudUrl, token: cloudToken, fetch: globalThis.fetch,
+    baseUrl: cloudUrl, token: cloudToken, fetch: cloudFetch,
   }));
   // The device-events pipeline's own agent (SP-2a · F11) — same transport, its own outbox, for the same reason each
   // of the others has its own: a decision head office refuses never holds a sale, and none of the six can ever be
   // re-queued as another. The transport's route table addresses each device event type to its re-verifying synced
   // route; a type with no route is dead-lettered by name (visible on the manager's screen as refused, hard rule #6).
   const deviceEventsAgent = new SyncAgent(deviceEventsOutbox, httpTransport({
-    baseUrl: cloudUrl, token: cloudToken, fetch: globalThis.fetch,
+    baseUrl: cloudUrl, token: cloudToken, fetch: cloudFetch,
   }));
   // The till-cash pipeline's own agent (SP-4c · F10) — same transport, its own outbox, for the same reason each of the
   // others has its own: a float or a close head office refuses never holds a sale, and none of the seven can ever be
   // re-queued as another. Routed to the cash and shift SYNCED routes, which re-verify the cashier and record-and-flag.
   const tillCashAgent = new SyncAgent(tillCashOutbox, httpTransport({
-    baseUrl: cloudUrl, token: cloudToken, fetch: globalThis.fetch,
+    baseUrl: cloudUrl, token: cloudToken, fetch: cloudFetch,
   }));
 
   // The INBOUND mirror of the agent: the same cloud, the other direction (SYNC-01). It fetches the
   // signed catalogue pack; the lane decides whether to trust it (via `node.takePack`); a newer,
   // verified pack is adopted and persisted atomically so it survives a reboot.
-  const packSource = httpPackSource({ baseUrl: cloudUrl, token: cloudToken, fetch: globalThis.fetch });
+  const packSource = httpPackSource({ baseUrl: cloudUrl, token: cloudToken, fetch: cloudFetch });
   let lastPackStatus: PackPullStatus | undefined;
   /** When head office last answered a catalogue pull — the box's record of contact beyond what the drains send. */
   let lastContactAt: string | null = null;
@@ -2331,7 +2373,7 @@ export async function startEdge(
   // the cloud's register is fetched, taken only if it is this shop's and not older than what is held, laid
   // over the pack's migration sections, and persisted so a reboot keeps it. A section the cloud did not send
   // stays exactly as it was — never filled in (the cutover gate reads absence as an unanswered question).
-  const feedSource = httpMigrationFeedSource({ baseUrl: cloudUrl, token: cloudToken, fetch: globalThis.fetch });
+  const feedSource = httpMigrationFeedSource({ baseUrl: cloudUrl, token: cloudToken, fetch: cloudFetch });
   const feedReceiver: MigrationFeedReceiver = {
     tenantId,
     heldFeed: () => heldFeed?.feed,
@@ -2364,7 +2406,7 @@ export async function startEdge(
   // The published document templates ride the same loop (M01-FR-02): fetched, taken only if this shop's and not
   // older than what is held, laid into the lane's pack, persisted so a reboot keeps them. A kind the cloud no
   // longer lists as published leaves the pack — the lane must not keep printing wording nobody has in force.
-  const templatesSource = httpPublishedTemplatesSource({ baseUrl: cloudUrl, token: cloudToken, fetch: globalThis.fetch });
+  const templatesSource = httpPublishedTemplatesSource({ baseUrl: cloudUrl, token: cloudToken, fetch: cloudFetch });
   const templatesReceiver: PublishedTemplatesReceiver = {
     tenantId,
     heldTemplates: () => heldTemplates?.feed,
@@ -2396,7 +2438,7 @@ export async function startEdge(
   // than what is held, laid into the pack for the warehouse handheld (what the back store owes) and the Indents screen
   // (the register offline), persisted so a reboot keeps them. The whole register replaces what was held, so a closed or
   // cancelled indent leaves the handheld's list.
-  const indentsSource = httpIndentsFeedSource({ baseUrl: cloudUrl, token: cloudToken, fetch: globalThis.fetch });
+  const indentsSource = httpIndentsFeedSource({ baseUrl: cloudUrl, token: cloudToken, fetch: cloudFetch });
   const indentsReceiver: IndentsFeedReceiver = {
     heldFeed: () => heldIndents?.feed,
     takeFeed: (feed, receivedAt) => {
@@ -2411,7 +2453,7 @@ export async function startEdge(
   // them. The whole feed replaces what was held, so a packed wave or a settled route leaves the phones by itself. A box whose
   // pack names no store cannot ask, and says so once.
   const storeIdOfBox = pack.policies.known ? pack.policies.value.storeId : undefined;
-  const assignmentsSource = storeIdOfBox === undefined ? null : httpAssignmentsFeedSource({ baseUrl: cloudUrl, token: cloudToken, storeId: storeIdOfBox, fetch: globalThis.fetch });
+  const assignmentsSource = storeIdOfBox === undefined ? null : httpAssignmentsFeedSource({ baseUrl: cloudUrl, token: cloudToken, storeId: storeIdOfBox, fetch: cloudFetch });
   if (assignmentsSource === null) say('this box\'s pack names no store, so head office cannot be asked for assignments — the phones use the pack file\'s wave and route.');
   const assignmentsReceiver: AssignmentsFeedReceiver = {
     heldFeed: () => heldAssignments?.feed,
@@ -2439,7 +2481,7 @@ export async function startEdge(
 
   // PF-09 step 3: the loyalty balances ride the same loop — taken when newer and this shop's, written to disk before they are
   // believed; on a failure the till keeps the copy this box holds and says how old it is.
-  const walletsSource = httpWalletFeedSource({ baseUrl: cloudUrl, token: cloudToken, fetch: globalThis.fetch });
+  const walletsSource = httpWalletFeedSource({ baseUrl: cloudUrl, token: cloudToken, fetch: cloudFetch });
   let lastWalletsStatus: WalletFeedPullOutcome['status'] | undefined;
   const refreshLoyaltyWallets = async (): Promise<WalletFeedPullOutcome> => {
     const outcome = await pullWalletFeed({
@@ -2455,9 +2497,35 @@ export async function startEdge(
 
   // PF-13: the counters' agreement terms ride the same loop; a failure keeps what this box holds.
   const refreshConcessionTrading = async (): Promise<ConcessionTradingPullOutcome> => pullConcessionTradingFeed({
-    baseUrl: cloudUrl, token: cloudToken, fetch: globalThis.fetch, now: new Date().toISOString(),
+    baseUrl: cloudUrl, token: cloudToken, fetch: cloudFetch, now: new Date().toISOString(),
     receiver: { tenantId, heldFeed: () => concessionTrading.heldFeed(), takeFeed: (feed, receivedAt) => concessionTrading.takeFeed(feed, receivedAt) },
   });
+
+  // OB-288 lane 2 · P2: the work feeds ride the same loop; each that changed is written to disk (one atomic file) and shown on
+  // the next page load. An unreachable cloud keeps what this box holds and says how old it is (P-08).
+  const workSources = WORK_FEED_NAMES.map((name) => httpWorkFeedSource(name, { baseUrl: cloudUrl, token: cloudToken, fetch: cloudFetch, ...(storeIdOfThisBox() === undefined ? {} : { storeId: storeIdOfThisBox()! }) }));
+  const lastWorkStatus = new Map<WorkFeedName, string>();
+  const refreshWorkFeeds = async (): Promise<readonly WorkFeedPullOutcome[]> => {
+    const outcomes: WorkFeedPullOutcome[] = [];
+    let changed = false;
+    for (const source of workSources) {
+      const outcome = await pullWorkFeed({
+        source, now: new Date().toISOString(),
+        held: () => workFeeds[source.name]?.feed,
+        take: (feed, receivedAt) => { workFeeds = { ...workFeeds, [source.name]: { feed, receivedAt } }; },
+      });
+      if (outcome.status === 'updated') { changed = true; say(outcome.staffMessage); }
+      else if (outcome.status !== 'unchanged' && lastWorkStatus.get(source.name) !== outcome.status) say(outcome.staffMessage);
+      lastWorkStatus.set(source.name, outcome.status);
+      outcomes.push(outcome);
+    }
+    if (changed) {
+      try { await writeHeldWorkFeeds(settings['EDGE_DATA_DIR']!, tenantId, workFeeds); } catch (e) {
+        say(`the store's work (production, food safety, transfers) could not be saved to disk (${e instanceof Error ? e.message : String(e)}). It is live now and will be pulled again next time.`);
+      }
+    }
+    return outcomes;
+  };
 
   const refreshIndentsFeed = async (): Promise<IndentsFeedPullOutcome> => {
     const outcome = await pullIndentsFeed({ source: indentsSource, receiver: indentsReceiver, now: new Date().toISOString() });
@@ -2486,7 +2554,7 @@ export async function startEdge(
     if (heldTemplates !== undefined) p = withPublishedTemplates(p, heldTemplates.feed, heldTemplates.receivedAt);
     return p;
   };
-  const storePackSource = headOfficeStoreId === undefined ? null : httpStorePackSource({ baseUrl: cloudUrl, token: cloudToken, storeId: headOfficeStoreId, fetch: globalThis.fetch });
+  const storePackSource = headOfficeStoreId === undefined ? null : httpStorePackSource({ baseUrl: cloudUrl, token: cloudToken, storeId: headOfficeStoreId, fetch: cloudFetch });
   let lastStorePackStatus: StorePackPullStatus | undefined;
   const refreshStorePack = storePackSource === null || headOfficeStoreId === undefined ? null : async (): Promise<StorePackPullOutcome> => {
     const outcome = await pullStorePack({
@@ -2534,7 +2602,7 @@ export async function startEdge(
   }
 
   // DF-3-b-2 (SF-08 hand-over): tell head office which catalogue and which setup this box trades on, whenever that changes.
-  const reportHeld = headOfficeStoreId === undefined ? null : httpHeldVersionsReporter({ baseUrl: cloudUrl, token: cloudToken, storeId: headOfficeStoreId, fetch: globalThis.fetch });
+  const reportHeld = headOfficeStoreId === undefined ? null : httpHeldVersionsReporter({ baseUrl: cloudUrl, token: cloudToken, storeId: headOfficeStoreId, fetch: cloudFetch });
   // PA-04: with how many records it still holds unsent — head office will not let the branch close permanently over them,
   // and will not take an OLD count as current: it is re-said, unchanged, at least every half of the store's own
   // staleness limit (the setting head office judges it by), so a box that is online never reads as stale.
@@ -2553,7 +2621,7 @@ export async function startEdge(
 
   // EA-01: after each pass, each queue's watermark goes to head office — the owner's freshness, from the box's own word.
   const watermarkStoreId = (settings['EDGE_STORE_ID'] ?? '').trim() || undefined;
-  const reportWatermarks = watermarkStoreId === undefined ? null : httpSyncWatermarkReporter({ baseUrl: cloudUrl, token: cloudToken, storeId: watermarkStoreId, fetch: globalThis.fetch });
+  const reportWatermarks = watermarkStoreId === undefined ? null : httpSyncWatermarkReporter({ baseUrl: cloudUrl, token: cloudToken, storeId: watermarkStoreId, fetch: cloudFetch });
   const reportSyncWatermarks = reportWatermarks === null ? null : async (): Promise<boolean> => {
     const named: readonly (readonly [string, SyncAgent])[] = [
       ['sales', agent], ['refunds', returnsAgent], ['completions', completionsAgent], ['day_close', dayCloseAgent],
@@ -2570,7 +2638,7 @@ export async function startEdge(
   };
   // M35-FR-03: after each pass the box's own health goes to head office too — its disk (can it record the next sale, by
   // its own rule), its queues' depth and its tills' latest device reports. The store is the credential's (OB-54).
-  const boxHealthReporter = watermarkStoreId === undefined ? null : httpBoxHealthReporter({ baseUrl: cloudUrl, token: cloudToken, storeId: watermarkStoreId, fetch: globalThis.fetch });
+  const boxHealthReporter = watermarkStoreId === undefined ? null : httpBoxHealthReporter({ baseUrl: cloudUrl, token: cloudToken, storeId: watermarkStoreId, fetch: cloudFetch });
   const reportBoxHealth = boxHealthReporter === null ? null : async (): Promise<boolean> => {
     // Round 25 · OB-93 (verifier r24 NEW-1): every await first (the filesystem, the sales log's size, the witness folder),
     // then the queues' counts and the per-prefix lists in ONE synchronous step (`boxHealthReportOf`) — a sale committed while
@@ -2754,6 +2822,12 @@ export async function startEdge(
     } catch (e) {
       say(`floor indents refresh failed: ${e instanceof Error ? e.message : String(e)}. The handheld keeps the indents this box holds.`);
     }
+    // OB-288 lane 2 · P2: the store's work feeds too — the screens keep what this box holds on a failure.
+    try {
+      await refreshWorkFeeds();
+    } catch (e) {
+      say(`the store's work refresh failed: ${e instanceof Error ? e.message : String(e)}. The screens keep what this box holds.`);
+    }
     // PF-13: the counters' agreement terms too — the counters keep what this box holds on a failure.
     try {
       await refreshConcessionTrading();
@@ -2815,6 +2889,8 @@ export async function startEdge(
     refreshMigrationFeed,
     refreshPublishedTemplates,
     refreshIndentsFeed,
+    refreshWorkFeeds,
+    clockCheck: () => clockGuard.check(),
     refreshAssignmentsFeed,
     refreshLoyaltyWallets,
     loyaltyWallets,

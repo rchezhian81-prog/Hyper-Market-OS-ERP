@@ -80,6 +80,7 @@
       <div class="summary" role="status" aria-live="polite">
         <span class="count attention" id="release-count"></span>
       </div>
+      <p class="note" id="board-asof" hidden></p>
 
       <h3 id="list-heading" hidden></h3>
       <ul class="rows" id="rows" aria-label="Finished batches to release"></ul>
@@ -109,12 +110,35 @@
             <div><label for="label-packer" id="label-packer-label"></label><input id="label-packer" type="text" autocomplete="off" /></div>
             <div><label for="label-price" id="label-price-label"></label><input id="label-price" type="text" inputmode="decimal" autocomplete="off" /></div>
             <div><label for="label-allergens" id="label-allergens-label"></label><input id="label-allergens" type="text" autocomplete="off" /></div>
+            <div id="label-weight-box" hidden><label for="label-weight" id="label-weight-label"></label><input id="label-weight" type="text" inputmode="numeric" autocomplete="off" /></div>
           </div>
+          <p class="note" id="label-box-hint" hidden></p>
           <button id="label" class="act" type="button"></button>
         </div>
         <pre class="label" id="label-out" hidden aria-label="The label"></pre>
       </section>
       <p class="note" id="no-label" hidden></p>
+
+      <section class="form" id="weigher" hidden aria-label="Weigh in, weigh out">
+        <h3 id="weigh-heading"></h3>
+        <p class="note" id="weigh-hint"></p>
+        <div class="grid">
+          <div><label for="weigh-dept" id="weigh-dept-label"></label><input id="weigh-dept" type="text" autocomplete="off" /></div>
+          <div><label for="weigh-in" id="weigh-in-label"></label><input id="weigh-in" type="text" autocomplete="off" /></div>
+          <div><label for="weigh-in-g" id="weigh-in-g-label"></label><input id="weigh-in-g" type="text" inputmode="numeric" autocomplete="off" /></div>
+          <div><label for="weigh-out" id="weigh-out-label"></label><input id="weigh-out" type="text" autocomplete="off" /></div>
+          <div><label for="weigh-out-g" id="weigh-out-g-label"></label><input id="weigh-out-g" type="text" inputmode="numeric" autocomplete="off" /></div>
+          <div><label for="weigh-by" id="weigh-by-label"></label><input id="weigh-by" type="text" autocomplete="off" /></div>
+          <div><label for="weigh-by-g" id="weigh-by-g-label"></label><input id="weigh-by-g" type="text" inputmode="numeric" autocomplete="off" /></div>
+        </div>
+        <button id="weigh" class="act" type="button"></button>
+      </section>
+
+      <section class="form" id="saved" hidden aria-label="Saved on this screen">
+        <h3 id="saved-heading"></h3>
+        <p class="note" id="saved-none" hidden></p>
+        <ul class="rows" id="saved-rows"></ul>
+      </section>
 
       <p class="result" id="result" hidden role="status" aria-live="polite"><span class="icon" id="result-icon" aria-hidden="true"></span><span id="result-text"></span></p>
       <p class="state" id="state" hidden><span class="icon" id="state-icon" aria-hidden="true"></span><span id="state-text"></span></p>

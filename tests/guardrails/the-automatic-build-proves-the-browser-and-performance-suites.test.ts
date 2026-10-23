@@ -117,9 +117,9 @@ describe('the no-skip script', () => {
 describe('the release waits for them', () => {
   it('needs the browser and performance jobs', () => {
     const release = job('release');
-    expect(release).toMatch(/needs: \[verify, integration, deploy, browser, performance, identity, canary\]/);
-    // WF-20 (ADR-0026): the canary stage itself waits for the same six.
-    expect(job('canary')).toMatch(/needs: \[verify, integration, deploy, browser, performance, identity\]/);
+    expect(release).toMatch(/needs: \[verify, integration, deploy, security-scans, browser, performance, identity, canary\]/);
+    // WF-20 (ADR-0026): the canary stage itself waits for the same seven (the security scans included, QG-03).
+    expect(job('canary')).toMatch(/needs: \[verify, integration, deploy, security-scans, browser, performance, identity\]/);
   });
 
   it('the branch-protection runbook names all six checks', () => {

@@ -24,6 +24,10 @@
 //     cost (the sender's stock was unvalued) re-enters at the destination's average, or is unvalued.
 //   • Any other increase (a return, a positive count/adjustment) re-enters at the current average — it
 //     carries no new purchase cost, so it must not change the average.
+//   • A COST ADJUSTMENT (OB-288 P3 · M07-FR-04: a matched bill's freight/duty apportioned to a receipt) moves VALUE, never
+//     quantity: of the `quantityMinor` units it belongs to, the share still on hand (valued) takes its part of the value
+//     (and so the average rises); the share already sold goes to cost of goods sold. Value + COGS move by exactly the
+//     adjustment, to the paisa. A negative adjustment (a compensating correction) is split the same way.
 //
 // Exact integer minor units throughout; the average is derived (value ÷ quantity), never rounded and
 // stored, so it cannot drift. Order matters and is the caller's: movements are folded as given.
@@ -65,6 +69,12 @@ export interface ValuationMovement {
    * not at the average, and is never cost of goods sold: the opening is undone, nothing was sold.
    */
   readonly isReceiptReversal?: boolean;
+  /**
+   * OB-288 P3 (M07-FR-04): a value-only cost adjustment — `adjustmentMinor` (signed paise) for the `quantityMinor` units it
+   * belongs to. `effect` and `isPurchaseReceipt` are ignored for it; on-hand does not move.
+   */
+  readonly isCostAdjustment?: boolean;
+  readonly adjustmentMinor?: number;
 }
 
 export interface ProductValuation {
@@ -127,6 +137,18 @@ export function weightedAverageValuation(
     const acc = byKey.get(key)
       ?? { productId: m.productId, locationId: m.locationId, qty: 0, valuedQty: 0, valueMinor: 0, cogsMinor: 0, transferredOutMinor: 0, unvaluedMinor: 0, scale: m.minorPerUnit ?? 1 };
 
+    if (m.isCostAdjustment === true) {
+      // Value only: the on-hand (valued) share of the units it belongs to carries it; the rest was sold — to COGS.
+      const v = m.adjustmentMinor ?? 0;
+      const base = Math.max(1, m.quantityMinor);
+      const held = Math.min(acc.valuedQty, base);
+      const toStock = held <= 0 ? 0 : (v < 0 ? -share(-v, held, base) : share(v, held, base));
+      acc.valueMinor += toStock;
+      acc.cogsMinor += v - toStock;
+      if (acc.valueMinor < 0) { acc.cogsMinor += acc.valueMinor; acc.valueMinor = 0; }
+      byKey.set(key, acc);
+      continue;
+    }
     if (m.effect === 1) {
       if (m.isPurchaseReceipt && m.unitCostMinor !== undefined) {
         // OB-31: per-whole-unit cost over smallest-step quantity, rounded once (exact for items).

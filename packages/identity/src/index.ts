@@ -10,3 +10,4 @@ export * from './otp';
 export * from './org-membership';
 export * from './access-binding';
 export * from './session-revocation';
+export * from './access-review';

@@ -6,3 +6,4 @@ export * from './position';
 export * from './metrics';
 export * from './valuation';
 export * from './ageing-source';
+export * from './landed-cost'; // OB-288 P3 (M07-FR-04): freight/duty into stock value

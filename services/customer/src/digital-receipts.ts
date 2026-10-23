@@ -11,12 +11,13 @@
 //     till never waits for it and it never changes a sale (hard rule #1); the paper bill prints with the network off.
 //   • ANOTHER CUSTOMER'S receipt is refused ("not your receipt") — and the attempt is kept (hard rule #6).
 //   • SENDING by SMS or WhatsApp is built switched OFF: nothing is sent, and the app says so (OB-222).
+//   • BILLED TO (OB-329): each copy names the member by the name they gave at enrolment; a skipped name is null.
 
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import { memberRefFor, normaliseMobile } from '../../../packages/loyalty/src/index';
 import { digitalCopyOf, switchedOnAt, RECEIPT_SENDING, type BankedSaleForCopy, type DigitalReceiptChoice, type DigitalReceiptCopy } from '../../../packages/receipt/src/digital-copy';
-import type { MemberRecord } from './loyalty-members';
+import { memberNameOf, type MemberRecord } from './loyalty-members';
 
 /** The desk's tie between an app account and a loyalty member code — append-only; the latest for the account stands. */
 export interface MemberAppLink {
@@ -54,7 +55,7 @@ const currentLink = (links: readonly MemberAppLink[], customerRef: string): Memb
 
 export function digitalReceiptRoutes(deps: DigitalReceiptDeps): readonly Route[] {
   /** My copies: every bill banked for MY member code while I had receipts switched on — newest first. */
-  const myCopies = async (tenantId: string, customerRef: string): Promise<{ readonly link?: MemberAppLink; readonly copies: readonly DigitalReceiptCopy[] }> => {
+  const myCopies = async (tenantId: string, customerRef: string): Promise<{ readonly link?: MemberAppLink; readonly copies: readonly (DigitalReceiptCopy & { readonly billedTo: string | null })[] }> => {
     const links = await deps.links(tenantId);
     const link = currentLink(links, customerRef);
     if (link === undefined) return { copies: [] };
@@ -62,11 +63,13 @@ export function digitalReceiptRoutes(deps: DigitalReceiptDeps): readonly Route[]
     const takenOverAt = links.filter((l) => l.memberRef === link.memberRef && l.customerRef !== customerRef && l.linked && l.at > link.at).map((l) => l.at).sort()[0];
     const choices = await deps.choices(tenantId, customerRef);
     const names = new Map<string, string | undefined>();
-    const copies: DigitalReceiptCopy[] = [];
+    // OB-329: the copy is billed to the name the member gave at enrolment — or to nobody by name (never a made-up one).
+    const billedTo = memberNameOf(await deps.memberHistory(tenantId, link.memberRef)) ?? null;
+    const copies: (DigitalReceiptCopy & { readonly billedTo: string | null })[] = [];
     for (const sale of await deps.bankedSalesOf(tenantId, link.memberRef)) {
       if (sale.customerRef !== link.memberRef || sale.committedAt < link.at || (takenOverAt !== undefined && sale.committedAt >= takenOverAt) || !switchedOnAt(choices, sale.committedAt)) continue;
       for (const l of sale.lines) if (!names.has(l.productId)) names.set(l.productId, await deps.productName(tenantId, l.productId));
-      copies.push(digitalCopyOf(sale, (id) => names.get(id)));
+      copies.push({ ...digitalCopyOf(sale, (id) => names.get(id)), billedTo });
     }
     return { link, copies: copies.sort((a, b) => b.committedAt.localeCompare(a.committedAt)) };
   };

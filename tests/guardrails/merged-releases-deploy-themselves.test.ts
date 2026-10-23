@@ -21,9 +21,9 @@ const RUNBOOK = readFileSync('docs/runbooks/automatic-deployment.md', 'utf8');
 const releaseJob = CI.slice(CI.indexOf('\n  release:\n'));
 
 describe('the release job deploys only a merged, verified main commit', () => {
-  it('exists, needs all five verification jobs — including the browser and performance suites (GT-01) — and runs only for a push to main', () => {
+  it('exists, needs every verification job — including the browser and performance suites (GT-01) and the security scans (QG-03) — and runs only for a push to main', () => {
     expect(CI.indexOf('\n  release:\n')).toBeGreaterThan(0);
-    expect(releaseJob).toMatch(/needs:\s*\[verify, integration, deploy, browser, performance, identity, canary\]/);
+    expect(releaseJob).toMatch(/needs:\s*\[verify, integration, deploy, security-scans, browser, performance, identity, canary\]/);
     expect(releaseJob).toMatch(/if: github\.event_name == 'push' && github\.ref == 'refs\/heads\/main' && needs\.canary\.result == 'success'/);
     expect(releaseJob).toMatch(/environment: demo/);
   });
@@ -32,7 +32,7 @@ describe('the release job deploys only a merged, verified main commit', () => {
     const canaryJob = CI.slice(CI.indexOf('\n  canary:\n'), CI.indexOf('\n  release:\n'));
     expect(CI.indexOf('\n  canary:\n')).toBeGreaterThan(0);
     expect(CI.indexOf('\n  canary:\n')).toBeLessThan(CI.indexOf('\n  release:\n'));
-    expect(canaryJob).toMatch(/needs:\s*\[verify, integration, deploy, browser, performance, identity\]/);
+    expect(canaryJob).toMatch(/needs:\s*\[verify, integration, deploy, security-scans, browser, performance, identity\]/);
     expect(canaryJob).toMatch(/if: github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'/);
     expect(canaryJob).toMatch(/environment: canary/);
     expect(canaryJob).toMatch(/group: deploy-canary/);

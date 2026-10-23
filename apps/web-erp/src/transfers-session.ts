@@ -23,6 +23,8 @@ export interface TransferRecord {
   readonly state: 'proposed' | 'in_transit' | 'received' | string;
   readonly requestedBy: string; readonly approvedBy?: string; readonly receivedBy?: string;
   readonly dispatchedAt?: string; readonly receivedAt?: string;
+  /** OB-288 lane 2 · WF-07: a transfer withdrawn before it left — by whom, when and why (a compensating event). */
+  readonly cancelledBy?: string; readonly cancelledAt?: string; readonly cancelReason?: string;
   readonly lineCostsMinor?: readonly (number | null)[];
   readonly shortfallResolution?: { readonly resolvedBy: string; readonly reasonCode: string; readonly note: string; readonly lines: readonly { readonly productId: string; readonly missingMinor: number; readonly foundMinor: number; readonly lostMinor: number; readonly lostValueMinor: number }[] };
 }
@@ -50,6 +52,8 @@ const WORDS: Readonly<Record<Lang, Readonly<Record<string, string>>>> = Object.f
     needCounts: 'Write each arrived quantity as a whole number (0 if none arrived).', needResolution: 'Choose why, write what was done (a few words), and whole numbers for what turned up.',
     colTransfer: 'Transfer', colRoute: 'From → to', colLines: 'Lines', colState: 'Where it stands', view: 'Look at it', close: 'Close', linesH: 'Lines', shortH: 'Shortfall', arrived: 'Arrived',
     cannotRead: 'Your role cannot read transfers.', nobody: 'Nobody is signed in on this screen — you can read nothing and change nothing.', reading: 'Reading from head office…',
+    cancelled: 'Cancelled before it left — nothing moved', cancelH: 'Cancel it', cancelNote: 'Only before it leaves. The proposal stays on the record with your name and reason; nothing moves.',
+    cancelReason: 'Why it is being cancelled', cancel: 'Cancel this transfer', needCancelReason: 'Say why it is being cancelled (a few words).', cancelledBy: 'cancelled by',
   },
   ta: {
     title: 'இடமாற்றங்கள்', lede: 'ஒப்புதலான இடமாற்றத்தை அனுப்புங்கள், மறுமுனையில் எண்ணி வரவு வையுங்கள், வராதவற்றைத் தீர்த்து வையுங்கள். தலைமை அலுவலகம் தன் சொந்த விலையில் சரக்கை மதிப்பிடும் — இங்கே விலை எதுவும் உள்ளிடப்படாது.',
@@ -66,6 +70,8 @@ const WORDS: Readonly<Record<Lang, Readonly<Record<string, string>>>> = Object.f
     needCounts: 'வந்த ஒவ்வொரு அளவையும் முழு எண்ணாக எழுதுங்கள் (எதுவும் வரவில்லையெனில் 0).', needResolution: 'காரணத்தைத் தேர்ந்தெடுங்கள், என்ன செய்யப்பட்டது என்று எழுதுங்கள், கிடைத்தவற்றை முழு எண்ணாக எழுதுங்கள்.',
     colTransfer: 'இடமாற்றம்', colRoute: 'எங்கிருந்து → எங்கே', colLines: 'வரிகள்', colState: 'நிலை', view: 'பார்', close: 'மூடு', linesH: 'வரிகள்', shortH: 'குறைபாடு', arrived: 'வந்தது',
     cannotRead: 'உங்கள் பங்கால் இடமாற்றங்களைப் படிக்க முடியாது.', nobody: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை — எதையும் படிக்கவோ மாற்றவோ முடியாது.', reading: 'தலைமை அலுவலகத்திலிருந்து படிக்கிறது…',
+    cancelled: 'புறப்படும் முன் ரத்து செய்யப்பட்டது — எதுவும் நகரவில்லை', cancelH: 'ரத்து செய்', cancelNote: 'புறப்படும் முன் மட்டும். முன்மொழிவு உங்கள் பெயர் மற்றும் காரணத்துடன் பதிவில் இருக்கும்; எதுவும் நகராது.',
+    cancelReason: 'ஏன் ரத்து செய்யப்படுகிறது', cancel: 'இந்த இடமாற்றத்தை ரத்து செய்', needCancelReason: 'ஏன் ரத்து செய்யப்படுகிறது என்று சொல்லுங்கள் (சில வார்த்தைகள்).', cancelledBy: 'ரத்து செய்தவர்',
   },
 });
 
@@ -95,10 +101,13 @@ export function rowView(lang: Lang, row: TransferRow) {
       ...(t.approvedBy === undefined ? [] : [`${text(lang, 'sentBy')} ${t.approvedBy}`]),
       ...(t.receivedBy === undefined ? [] : [`${text(lang, 'countedBy')} ${t.receivedBy}`]),
       ...(t.shortfallResolution === undefined ? [] : [`${text(lang, 'settledBy')} ${t.shortfallResolution.resolvedBy} (${text(lang, t.shortfallResolution.reasonCode)})`]),
+      ...(t.cancelledBy === undefined ? [] : [`${text(lang, 'cancelledBy')} ${t.cancelledBy}${t.cancelReason === undefined ? '' : ` — "${t.cancelReason}"`}`]),
     ],
     lines,
     shortfall: row.shortfall.map((s) => ({ ...s, worth: rupees(s.valueMinor) })),
     canDispatch: t.state === 'proposed', canReceive: t.state === 'in_transit',
+    // WF-07: only before it leaves, and never a floor-indent transfer (that is withdrawn on its indent).
+    canCancel: t.state === 'proposed' && !row.forIndent,
     canResolve: t.state === 'received' && row.shortfallOpen && !row.forIndent,
   };
 }
@@ -127,6 +136,11 @@ export function createTransfersSession(viewer: TransferViewer | undefined, http:
     },
     /** Send it: an EMPTY body — the approver is the signed-in person and the stock is head office's. */
     dispatch: (transferId: string) => post(`/v1/warehouse/transfers/${enc(transferId)}/dispatch`, {}),
+    /** WF-07: withdraw it before it leaves, with a reason a person can read later (head office refuses it after dispatch). */
+    async cancel(transferId: string, reason: string): Promise<Outcome<{ readonly body: unknown }>> {
+      if (reason.trim().length < 4) return { result: 'invalid', key: 'needCancelReason' };
+      return post(`/v1/warehouse/transfers/${enc(transferId)}/cancel`, { reason: reason.trim() });
+    },
     /** What arrived, per line (index-aligned with the transfer's lines). */
     async receive(transfer: TransferRecord, arrivedText: readonly string[]): Promise<Outcome<{ readonly body: unknown }>> {
       const counted: { productId: string; batchId: string | null; quantityMinor: number }[] = [];

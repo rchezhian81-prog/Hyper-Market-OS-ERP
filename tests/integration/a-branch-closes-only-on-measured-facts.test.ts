@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool } from 'pg';
 import { readdirSync, readFileSync } from 'node:fs';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { approvedActivationBody } from '../support/approved-org-change';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { runMigrations } from '../../packages/persistence/src/migrations';
@@ -34,6 +35,7 @@ const as = (h: ApiHarness, t: string, userId: string, branchId?: string) => ({
 
 async function cast(h: ApiHarness, t: string): Promise<void> {
   await h.seedOwner(t, 'u-owner');
+  await h.provisionOwner(t, 'u-owner-2'); // OB-288 P1: activating a branch is approved by a second owner (M01-FR-01)
   await h.provisionRole(t, 'u-mgr', 'store_manager', ['B1', 'B2']);
   await h.provisionRole(t, 'u-cash1', 'cashier', ['B1']);
   await h.provisionRole(t, 'u-cash2', 'cashier', ['B2']);
@@ -44,7 +46,7 @@ async function cast(h: ApiHarness, t: string): Promise<void> {
   expect((await owner.post(`/v1/org/gst-registrations/${G1}`, { companyId: 'C1', legalName: 'SRE Retail Pvt Ltd' }, 'g1')).status).toBe(201);
   for (const b of ['B1', 'B2']) {
     expect((await owner.post(`/v1/org/nodes/${b}`, { kind: 'branch', name: `Store ${b}`, parentId: 'C1', companyId: 'C1', gstin: G1 }, `n-${b}`)).status).toBe(201);
-    expect((await owner.post(`/v1/org/nodes/${b}/activation`, {}, `a-${b}`)).status).toBe(200);
+    expect((await owner.post(`/v1/org/nodes/${b}/activation`, await approvedActivationBody(h, t, 'u-owner', 'u-owner-2', b), `a-${b}`)).status).toBe(200);
     expect((await owner.post(`/v1/stores/${b}/settings`, { tradingDayCutoff: '02:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 100000, handoverToleranceMinor: 5000, cashVarianceToleranceMinor: 5000, privacySlaDays: 15, warehouseId: null }, `s-${b}`)).status).toBe(201);
   }
   // B1 is trading: a till, stock on the shelf, a cashier holding a float — and its computer still has 3 records to send.

@@ -171,8 +171,11 @@ import {
 } from './production-session';
 import {
   createProductionTasksSession,
-  type ProductionTasksSession, type RunCommitPort, type LabelPort, type TaskPostResult,
+  type ProductionTasksSession, type RunCommitPort, type LabelPort, type TaskPostResult, type WeighPort, type SavedWorkRow,
 } from './production-tasks-session';
+import { createProductionQueue, openBoxLabelPort, type ProductionQueue } from './production-queue';
+import { boxClockView } from './box-clock-view';
+import { createFoodSafetyQueue, FOOD_SAFETY_COPY, type FoodSafetyQueue, type HeldFoodSafety } from './food-safety-queue';
 import {
   createFacilitiesSession,
   type FacilitiesPorts, type FacilitiesSession, type FacilitiesData, type OverdueTask,
@@ -311,8 +314,16 @@ import { createCustomersSession, customersWords, customersOutcomeWords, type Cus
 import { createAffinitySession, affinityWords, affinityOutcomeWords, type AffinitySession } from './basket-affinity-session';
 import { createEventsSession, eventsWords, eventsOutcomeWords, effectWords, type EventsSession } from './demand-events-session';
 import { createBriefSession, briefWords, briefOutcomeWords, type BriefSession } from './morning-brief-session';
+// OB-288 gates lane (QG-12): the Quality gates page — the owner's GO / HOLD / REWORK register.
+import { createGatesSession, gatesWords, gatesOutcomeWords, stateView as gateStateView, GATE_NAMES, RELEASES as GATE_RELEASES, type GatesSession } from './gates-session';
+// OB-288 lane 1 · P1: the Approval rules page — the owner's money limits, escalation waits and price-check size.
+// OB-288 lane 1 · P1: the Access review page — who holds what, where, up to how much; the permission matrix as CSV.
+import { createAccessReviewSession, accessReviewWords, accessReviewOutcomeWords, whereWords as accessWhereWords, ordered as accessOrdered, type AccessReviewSession } from './access-review-session';
+import { createApprovalRulesSession, approvalRulesWords, approvalRulesOutcomeWords, limitWords as approvalLimitWords, waitWords as approvalWaitWords, limitsFromForm as approvalLimitsFromForm, paiseFromRupees as approvalPaiseFromRupees, KINDS as APPROVAL_LIMIT_KINDS, ROLES_SHOWN as APPROVAL_ROLES_SHOWN, type ApprovalRulesSession } from './approval-rules-session';
 // ── end R4 Lane 3 ──
 // ── R4 Lane 4 (supply, pricing and loss prevention) — begin
+// ── P3 procure-to-pay (OB-288) — the Requisitions and quotes page's session.
+import { createRequisitionsSession, requisitionsWords, requisitionsOutcomeWords, offerRows as requisitionOfferRows, rupees as requisitionRupees, type RequisitionsSession } from './requisitions-session';
 import { createScorecardSession, scorecardWords, scorecardOutcomeWords, ratingWords as scorecardRatingWords, SCORECARD_FIGURES, type ScorecardSession } from './supplier-scorecard-session';
 import { createCorrelationSession, correlationWords, correlationOutcomeWords, correlationRupees, type CorrelationSession } from './lp-correlation-session';
 import { createBaysSession, baysWords, baysOutcomeWords, bayScoreWords, type BaysSession } from './planogram-bays-session';
@@ -1802,6 +1813,35 @@ export interface ProductionScreenData {
   readonly worklist?: ProductionData;
   /** FUL-13: where this store's production is made (the kitchen location), when the store computer knows it. */
   readonly productionLocationId?: string;
+  /** OB-288 lane 2: the store this box is — what a run saved through the store computer names. */
+  readonly storeId?: string;
+  /** OB-288 lane 2: head office's board and recipes as the store computer last heard them (null: never told). */
+  readonly board?: { readonly asAt: string; readonly ageMinutes: number; readonly runs: readonly ProductionRun[]; readonly recipes: readonly unknown[]; readonly enabledDepartments: readonly string[] } | null;
+}
+
+/** The last problem the production screen's device queue hit with this device's storage — shown, never silent (P-08). */
+export let productionStorageProblem: string | undefined;
+
+/** OB-288 lane 2: open the production screen's durable device queue, keyed per store like the other served screens'. */
+export function openProductionOutbox(storeId: string, storage?: DeviceStorage): SyncOutbox {
+  const store = storage ?? (globalThis as { localStorage?: DeviceStorage }).localStorage;
+  const onProblem = (why: string): void => { productionStorageProblem = why; };
+  return openDeviceOutbox(guardedStore(`sre.production.outbox.${storeId}`, store, onProblem), onProblem);
+}
+
+/** OB-288 lane 2: the production screen's leg of the shared device → box path, as the same ERP surface. */
+export function openProductionRelay(laneWriteBase: string | undefined, queue: ProductionQueue, outbox: SyncOutbox): ManagerRelay | undefined {
+  if (laneWriteBase === undefined) return undefined;
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return undefined;
+  return {
+    syncNow: async () => {
+      const result = await drainToBox({ outbox, boxBase: laneWriteBase, source: 'manager', fetch: fetchFn });
+      const statuses = await boxStatus({ boxBase: laneWriteBase, keys: queue.handedKeys(), fetch: fetchFn });
+      if (statuses !== undefined) queue.noteBoxStatus(statuses);
+      return { handed: result.handed, refused: result.refused, failed: result.failed, offline: result.offline };
+    },
+  };
 }
 
 /** FUL-13 — the production staff's task paths (record a run, print a label) over the existing APIs, each under the
@@ -1859,11 +1899,15 @@ export function openLabelPort(): LabelPort {
   };
 }
 
-/** Build the production staff's task paths over a board (the runs a label may be printed for). */
-export function bootProductionTasks(data: ProductionScreenData | undefined, worklist?: ProductionData, ports?: { commit?: RunCommitPort; label?: LabelPort }): ProductionTasksSession | null {
+/** Build the production staff's task paths over a board (the runs a label may be printed for). OB-288 lane 2: on the store
+ *  computer the run, the weigh and the release are SAVED through it and the box prints the label. */
+export function bootProductionTasks(
+  data: ProductionScreenData | undefined, worklist?: ProductionData,
+  ports?: { commit?: RunCommitPort; label?: LabelPort; weigh?: WeighPort; savedWork?: () => readonly SavedWorkRow[]; queued?: boolean },
+): ProductionTasksSession | null {
   if (data === undefined) return null;
   const held = new Set(data.permissions ?? []);
-  const board = (): ProductionData => worklist ?? data.worklist ?? EMPTY_PRODUCTION;
+  const board = (): ProductionData => worklist ?? data.worklist ?? (data.board === undefined || data.board === null ? undefined : { runs: data.board.runs }) ?? EMPTY_PRODUCTION;
   return createProductionTasksSession(
     { userId: data.userId === undefined ? null : data.userId, defaultLocationId: data.productionLocationId ?? null },
     {
@@ -1872,6 +1916,10 @@ export function bootProductionTasks(data: ProductionScreenData | undefined, work
       commitPort: () => ports?.commit ?? null,
       labelPort: () => ports?.label ?? null,
       runs: () => board().runs,
+      queued: () => ports?.queued === true,
+      labelFromBox: () => ports?.queued === true,
+      weighPort: () => ports?.weigh ?? null,
+      savedWork: () => ports?.savedWork?.() ?? [],
     },
   );
 }
@@ -1963,6 +2011,31 @@ export interface FacilitiesScreenData {
   readonly userId?: string;
   readonly permissions?: readonly string[];
   readonly worklist?: FacilitiesData;
+  /** OB-288 lane 2: the store this box is, and head office's food-safety checks as the box last heard them (null: never told). */
+  readonly storeId?: string;
+  readonly foodSafety?: HeldFoodSafety | null;
+}
+
+/** OB-288 lane 2: open the facilities screen's durable device queue (food-safety checks), keyed per store. */
+export function openFacilitiesOutbox(storeId: string, storage?: DeviceStorage): SyncOutbox {
+  const store = storage ?? (globalThis as { localStorage?: DeviceStorage }).localStorage;
+  const onProblem = (why: string): void => { productionStorageProblem = why; };
+  return openDeviceOutbox(guardedStore(`sre.facilities.outbox.${storeId}`, store, onProblem), onProblem);
+}
+
+/** OB-288 lane 2: the food-safety checks' leg of the shared device → box path. */
+export function openFoodSafetyRelay(laneWriteBase: string | undefined, queue: FoodSafetyQueue, outbox: SyncOutbox): ManagerRelay | undefined {
+  if (laneWriteBase === undefined) return undefined;
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return undefined;
+  return {
+    syncNow: async () => {
+      const result = await drainToBox({ outbox, boxBase: laneWriteBase, source: 'manager', fetch: fetchFn });
+      const statuses = await boxStatus({ boxBase: laneWriteBase, keys: queue.handedKeys(), fetch: fetchFn });
+      if (statuses !== undefined) queue.noteBoxStatus(statuses);
+      return { handed: result.handed, refused: result.refused, failed: result.failed, offline: result.offline };
+    },
+  };
 }
 
 const FACILITIES_READ_PERMISSION = 'facilities.overdue.read';
@@ -4742,6 +4815,8 @@ export function bootMigration(data: MigrationData | undefined, outbox: SyncOutbo
 interface ManagerWindow {
   managerSession?: ManagerSession;
   managerData?: ManagerData;
+  /** OB-288 lane 2 · OB-327: this store computer's clock against head office's, and the bills marked while it was out. */
+  boxClockView?: typeof boxClockView;
   /**
    * The store computer's own write address (M14-FR-04), injected by the edge screen-server only when
    * this box serves a lane socket. The manager's day close posts here — cross-port on 127.0.0.1, not
@@ -4926,8 +5001,23 @@ interface ManagerWindow {
   morningBriefData?: ViewerIdentity;
   morningBrief?: { readonly session: BriefSession; readonly words: typeof briefWords; readonly outcomeWords: typeof briefOutcomeWords };
   // ── end R4 Lane 3 ──
+  // OB-288 gates lane (QG-12): the Quality gates page — who is looking; head office answers the rest.
+  gatesData?: ViewerIdentity;
+  gates?: { readonly session: GatesSession; readonly words: typeof gatesWords; readonly outcomeWords: typeof gatesOutcomeWords; readonly stateView: typeof gateStateView; readonly names: typeof GATE_NAMES; readonly releases: typeof GATE_RELEASES };
+  // OB-288 lane 1 · P1: the Approval rules page — who is looking; head office answers the rest.
+  approvalRulesData?: ViewerIdentity;
+  accessReviewData?: ViewerIdentity;
+  accessReview?: { readonly session: AccessReviewSession; readonly words: typeof accessReviewWords; readonly outcomeWords: typeof accessReviewOutcomeWords; readonly whereWords: typeof accessWhereWords; readonly ordered: typeof accessOrdered };
+  approvalRules?: {
+    readonly session: ApprovalRulesSession; readonly words: typeof approvalRulesWords; readonly outcomeWords: typeof approvalRulesOutcomeWords;
+    readonly limitWords: typeof approvalLimitWords; readonly waitWords: typeof approvalWaitWords; readonly limitsFromForm: typeof approvalLimitsFromForm;
+    readonly paiseFromRupees: typeof approvalPaiseFromRupees; readonly kinds: typeof APPROVAL_LIMIT_KINDS; readonly rolesShown: typeof APPROVAL_ROLES_SHOWN;
+  };
   schedule?: { readonly session: ScheduleSession; readonly words: typeof scheduleWords; readonly outcomeWords: typeof scheduleOutcomeWords; readonly rupees: typeof scheduleRupees };
   // ── R4 Lane 4 — begin
+  /** P3 (OB-288) M06-FR-02 / WF-03: the Requisitions and quotes page — who is looking; head office answers the rest. */
+  requisitionsData?: ViewerIdentity;
+  requisitions?: { readonly session: RequisitionsSession; readonly words: typeof requisitionsWords; readonly outcomeWords: typeof requisitionsOutcomeWords; readonly offerRows: typeof requisitionOfferRows; readonly rupees: typeof requisitionRupees };
   /** R4 D-10: the Supplier scorecard page — who is looking; head office answers the rest. */
   supplierScorecardData?: ViewerIdentity;
   supplierScorecard?: { readonly session: ScorecardSession; readonly words: typeof scorecardWords; readonly outcomeWords: typeof scorecardOutcomeWords; readonly ratingWords: typeof scorecardRatingWords; readonly figures: typeof SCORECARD_FIGURES };
@@ -4978,6 +5068,8 @@ interface ManagerWindow {
   /** FUL-13: the production staff's task paths (record a run, print a label). */
   productionTasks?: ProductionTasksSession;
   productionTasksFor?: (worklist: ProductionData) => ProductionTasksSession | null;
+  /** OB-288 lane 2: move this screen's saved production work to the store computer and learn where each piece is. */
+  productionRelay?: ManagerRelay;
   /** The shell reads the live production board through this and re-presents it — a GET read, never a write. */
   production?: {
     refresh(): Promise<ProductionData | null>;
@@ -4985,6 +5077,10 @@ interface ManagerWindow {
   };
   facilitiesData?: FacilitiesScreenData;
   facilitiesSession?: FacilitiesSession;
+  /** OB-288 lane 2: today's food-safety checks through the store computer, and their leg of the device → box path. */
+  foodSafetyQueue?: FoodSafetyQueue;
+  foodSafetyRelay?: ManagerRelay;
+  foodSafetyWords?: typeof FOOD_SAFETY_COPY;
   /** The shell reads the live overdue board through this and re-presents it — a GET read, never a write. */
   facilities?: {
     refresh(): Promise<FacilitiesData | null>;
@@ -5960,6 +6056,7 @@ if (browserWindow !== undefined) {
   // drains the same one. Per store, on this device's storage; a storage fault is surfaced for the shell to show.
   const managerOutbox = openManagerOutbox(browserWindow.managerData?.storeId ?? 'store-1');
   browserWindow.managerOutbox = managerOutbox;
+  browserWindow.boxClockView = boxClockView;
   browserWindow.managerSession = bootManager({
     data: browserWindow.managerData,
     laneWriteBase: browserWindow.laneWriteBase,
@@ -6211,10 +6308,25 @@ if (browserWindow !== undefined) {
   // click — and the server re-checks `production.release` and refuses an expired batch, which the screen never
   // fakes (hard rule #5: no AI releases food for sale).
   const productionData = browserWindow.productionData;
-  const releasePort = openReleasePort();
-  const production = bootProduction(productionData, undefined, releasePort);
+  // OB-288 lane 2 · P2 (§31): served by the STORE COMPUTER, a run, a weigh and a release decision are saved on this device's
+  // durable queue and carried by the box (it keeps them on its own disk until head office has them); the box prints the
+  // label from what it holds. Anywhere else (the hosted copy) the page writes to head office directly, as before.
+  const productionBoxServed = browserWindow.laneWriteBase !== undefined && productionData?.storeId !== undefined;
+  const productionOutbox = productionBoxServed ? openProductionOutbox(productionData!.storeId!) : undefined;
+  const productionQueue = productionOutbox === undefined ? undefined : createProductionQueue(
+    { userId: productionData?.userId ?? null, storeId: productionData?.storeId ?? null, now: () => new Date().toISOString() }, productionOutbox,
+  );
+  const releasePort = productionQueue?.releasePort() ?? openReleasePort();
+  const production = bootProduction(productionData, productionData?.board === undefined || productionData.board === null ? undefined : { runs: productionData.board.runs }, releasePort);
   // FUL-13: the staff's task paths ride the same page, over the same board, under the person's own session.
-  const productionTaskPorts = { commit: openRunCommitPort(), label: openLabelPort() };
+  const productionTaskPorts = productionQueue === undefined ? { commit: openRunCommitPort(), label: openLabelPort() } : {
+    commit: productionQueue.runPort(), label: openBoxLabelPort((globalThis as { fetch?: typeof fetch }).fetch), queued: true,
+    weigh: { record: (input: Parameters<WeighPort['record']>[0]) => productionQueue.recordWeighed(input) },
+    savedWork: () => productionQueue.savedWork(),
+  };
+  if (productionQueue !== undefined && productionOutbox !== undefined) {
+    browserWindow.productionRelay = openProductionRelay(browserWindow.laneWriteBase, productionQueue, productionOutbox);
+  }
   const productionTasks = bootProductionTasks(productionData, undefined, productionTaskPorts);
   if (productionTasks !== null) {
     browserWindow.productionTasks = productionTasks;
@@ -6236,6 +6348,15 @@ if (browserWindow !== undefined) {
   // an explicit click — and the server re-checks `facilities.task.record` and refuses a completion with no
   // required evidence or a self-verified safety check (§28), which the screen never fakes (P-08).
   const facilitiesData = browserWindow.facilitiesData;
+  // OB-288 lane 2 · M10-FR-02 offline: served by the store computer, today's food-safety checks are worked out here from
+  // head office's checks in force and saved through the box, timed by when they were done.
+  if (browserWindow.laneWriteBase !== undefined && facilitiesData?.storeId !== undefined && facilitiesData.foodSafety !== undefined) {
+    const fsOutbox = openFacilitiesOutbox(facilitiesData.storeId);
+    const fsQueue = createFoodSafetyQueue({ userId: facilitiesData.userId ?? null, storeId: facilitiesData.storeId, now: () => new Date().toISOString() }, facilitiesData.foodSafety, fsOutbox);
+    browserWindow.foodSafetyQueue = fsQueue;
+    browserWindow.foodSafetyRelay = openFoodSafetyRelay(browserWindow.laneWriteBase, fsQueue, fsOutbox);
+    browserWindow.foodSafetyWords = FOOD_SAFETY_COPY;
+  }
   const completePort = openCompletePort();
   const facilitiesVerifyPort = openFacilitiesVerifyPort();
   const facilities = bootFacilities(facilitiesData, undefined, completePort, facilitiesVerifyPort);
@@ -6675,6 +6796,18 @@ if (browserWindow !== undefined) {
   browserWindow.morningBriefData = viewerIdentity(browserWindow.morningBriefData);
   browserWindow.morningBrief = { session: createBriefSession({ viewer: browserWindow.morningBriefData }), words: briefWords, outcomeWords: briefOutcomeWords };
   // ── end R4 Lane 3 ──
+  // OB-288 gates lane (QG-12): the Quality gates page — reads on a click, writes only the owner's explicit decision.
+  browserWindow.gatesData = viewerIdentity(browserWindow.gatesData);
+  browserWindow.gates = { session: createGatesSession({ viewer: browserWindow.gatesData }), words: gatesWords, outcomeWords: gatesOutcomeWords, stateView: gateStateView, names: GATE_NAMES, releases: GATE_RELEASES };
+  // OB-288 lane 1 · P1: the Approval rules page — reads on a click; asks and applies only on a person's explicit click.
+  browserWindow.accessReviewData = viewerIdentity(browserWindow.accessReviewData);
+  browserWindow.accessReview = { session: createAccessReviewSession({ viewer: browserWindow.accessReviewData }), words: accessReviewWords, outcomeWords: accessReviewOutcomeWords, whereWords: accessWhereWords, ordered: accessOrdered };
+  browserWindow.approvalRulesData = viewerIdentity(browserWindow.approvalRulesData);
+  browserWindow.approvalRules = {
+    session: createApprovalRulesSession({ viewer: browserWindow.approvalRulesData }), words: approvalRulesWords, outcomeWords: approvalRulesOutcomeWords,
+    limitWords: approvalLimitWords, waitWords: approvalWaitWords, limitsFromForm: approvalLimitsFromForm, paiseFromRupees: approvalPaiseFromRupees,
+    kinds: APPROVAL_LIMIT_KINDS, rolesShown: APPROVAL_ROLES_SHOWN,
+  };
   // ── R4 Lane 4 — begin
   // R4 D-10: the Supplier scorecard page — a read of figures built from the registers; nothing is typed, nothing written.
   browserWindow.supplierScorecardData = viewerIdentity(browserWindow.supplierScorecardData);
@@ -6687,4 +6820,9 @@ if (browserWindow !== undefined) {
   browserWindow.planogramBaysData = viewerIdentity(browserWindow.planogramBaysData);
   browserWindow.planogramBays = { session: createBaysSession({ viewer: browserWindow.planogramBaysData }), words: baysWords, outcomeWords: baysOutcomeWords, scoreWords: bayScoreWords };
   // ── R4 Lane 4 — end
+  // ── P3 procure-to-pay (OB-288): the Requisitions and quotes page — a requisition, its quotes, head office's comparison,
+  // and an order PROPOSED from the chosen quote (a second person issues it on the Buying page).
+  browserWindow.requisitionsData = viewerIdentity(browserWindow.requisitionsData);
+  browserWindow.requisitions = { session: createRequisitionsSession({ viewer: browserWindow.requisitionsData }), words: requisitionsWords, outcomeWords: requisitionsOutcomeWords, offerRows: requisitionOfferRows, rupees: requisitionRupees };
+  // ── P3 procure-to-pay — end
 }

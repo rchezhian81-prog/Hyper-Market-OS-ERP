@@ -60,7 +60,7 @@ describe.each(backings)('D-26: a lot trace reaches supplier to customer from sto
     await h.seedOwner(T, 'u-owner');
     await approvedSuppliers(h, T, 'sup-dairy');
     await deliveryPlaces(h, T, 'S1', 'WH');
-    for (const u of ['u-mgr', 'u-boss', 'u-store']) await h.provisionRole(T, u, 'store_manager');
+    for (const u of ['u-mgr', 'u-boss', 'u-store', 'u-po-buyer']) await h.provisionRole(T, u, 'store_manager'); // OB-288 P3 (§28): the buyer who raises the order is never the one who books it in
     await h.provisionRole(T, 'u-cash', 'cashier');
     const req = (method: 'GET' | 'POST', path: string, body?: unknown, userId = 'u-owner', query?: Record<string, string>): Promise<Res> =>
       h.request({ method, path, userId, tenantId: T, ...(method === 'POST' ? { idempotencyKey: `k-${randomUUID()}` } : {}), ...(body === undefined ? {} : { body }), ...(query === undefined ? {} : { query }) });
@@ -71,7 +71,7 @@ describe.each(backings)('D-26: a lot trace reaches supplier to customer from sto
         products: [{ productId: 'p-paneer', sku: 'PANEER', name: 'Ghee 500ml', baseUom: 'ea', unitPriceMinor: 9_000, taxBps: 500, status: 'active', batchTracked: true, handling: 'ambient' }] } },
     }));
     await ok(req('POST', '/v1/inventory/receipt-policy', { excessToleranceBp: 500, shortageToleranceBp: 200, nearExpiryDays: 2, coldChainMaxC: 8 }), 'policy');
-    await ok(req('POST', '/v1/purchase/orders/po-1', { supplierId: 'sup-dairy', deliverToLocationId: 'WH', lines: [{ productId: 'p-paneer', orderedQty: 30, unitCost: cost(6_000) }] }, 'u-mgr'), 'order');
+    await ok(req('POST', '/v1/purchase/orders/po-1', { supplierId: 'sup-dairy', deliverToLocationId: 'WH', lines: [{ productId: 'p-paneer', orderedQty: 30, unitCost: cost(6_000) }] }, 'u-po-buyer'), 'order');
     await ok(req('POST', '/v1/purchase/orders/po-1/approval', { reason: 'weekly dairy' }), 'approve order');
     // The goods receipt of batch B-7 against the order.
     await ok(req('POST', '/v1/inventory/goods-receipt/grn-1', {

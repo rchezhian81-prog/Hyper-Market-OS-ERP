@@ -1,121 +1,120 @@
 import { describe, it, expect } from 'vitest';
-import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { randomUUID } from 'node:crypto';
+import type { ApiHarness } from '../support/api-harness';
 import { sentWithApproval } from '../support/approval-request';
+import { useRestartableBackings } from '../support/p3-backings';
+import { P3, p3Shop, caller, issuedOrder, received, capturedAndMatched, type Call } from '../support/p3-purchase';
+import { DEFAULT_RETAIL_POSTING_MAP } from '../../packages/finance/src/index';
 
-// M06-FR-03 (D03-FR-03 · M23): supplier rebates on the live API — the money the shop has already EARNED
-// and not yet collected. A scheme is recorded; an accrual for a measured period runs the tested
-// accrueRebate — nothing accrues below the threshold (and it says how far short), a growth scheme
-// measures against its baseline (never the raw total), and the OUTSTANDING (accrued − received) is the
-// earned-not-claimed headline. Recording gated purchase.contract.manage; reads purchase.commitment.read.
+// M06-FR-03 (D03-FR-03 · M23) — supplier rebates, the money the shop has EARNED and not yet collected, with nothing typed
+// (OB-288 P3): the basis of an accrual is FOLDED from the supplier's matched invoices for the period it names; finance
+// records each rebate receipt as a journal through the accountant's mapping; the outstanding figure is accrued − what the
+// LEDGER holds, and finance's reconciliation reads both sides. Recording gated purchase.contract.manage (receipts
+// finance.journal.post); reads purchase.commitment.read / finance.period.read. In memory and — with DATABASE_URL — on
+// real PostgreSQL, with a cold restart.
 
-const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
-const INR = 'INR';
-const money = (minor: number) => ({ minor, currency: INR });
-
+const backings = useRestartableBackings();
 const codeOf = (res: { body: unknown }): string | undefined => (res.body as { error?: { code?: string } }).error?.code;
-type Accrual = { accrued: { minor: number }; received: { minor: number }; outstanding: { minor: number }; thresholdMet: boolean; detail: string };
+type Accrual = { accrued: { minor: number }; basisAmount: { minor: number }; thresholdMet: boolean; detail: string; basisSources: { invoices: string[] } };
 const accrualOf = (res: { body: unknown }): Accrual => (res.body as { accrual: Accrual }).accrual;
 
 const scheme = (over: Record<string, unknown> = {}) =>
-  ({ supplierId: 'sup-1', basis: 'purchase_value', rateBp: 300, thresholdMinor: 1_000_000, startsOn: '2026-01-01', endsOn: '2026-12-31', ...over });
+  ({ supplierId: 'sup-1', basis: 'purchase_value', rateBp: 300, thresholdMinor: 60_000, startsOn: '2026-01-01', endsOn: '2026-12-31', ...over });
+const MAP = { rules: [...DEFAULT_RETAIL_POSTING_MAP.rules, { kind: 'supplier_rebate', legs: [{ account: 'bank_clearing', side: 'debit', component: 'amount' }, { account: 'supplier_rebate_income', side: 'credit', component: 'amount' }] }] };
 
-const putScheme = (h: ApiHarness, u: string, id: string, b: unknown, key: string) =>
-  h.request({ method: 'POST', path: `/v1/purchase/rebate-schemes/${id}`, userId: u, tenantId: A, idempotencyKey: key, body: b });
-const postAccrual = (h: ApiHarness, u: string, schemeId: string, accrualId: string, b: unknown, key: string) =>
-  h.request({ method: 'POST', path: `/v1/purchase/rebate-schemes/${schemeId}/accruals/${accrualId}`, userId: u, tenantId: A, idempotencyKey: key, body: b });
-const listSchemes = (h: ApiHarness, u: string) =>
-  h.request({ method: 'GET', path: '/v1/purchase/rebate-schemes', userId: u, tenantId: A });
-const listAccruals = (h: ApiHarness, u: string, schemeId: string) =>
-  h.request({ method: 'GET', path: `/v1/purchase/rebate-schemes/${schemeId}/accruals`, userId: u, tenantId: A });
-
-async function cast(): Promise<ApiHarness> {
-  const h = apiHarness();
-  await h.seedOwner(A, 'u-owner');
-  await h.provisionRole(A, 'u-mgr', 'store_manager'); // holds contract.manage + commitment.read
-  await h.provisionRole(A, 'u-cash', 'cashier');       // holds neither
-  return h;
+/** Four bills from sup-1: ₹500 (10 Mar) and ₹300 (20 Mar) matched clean; ₹1,000 (25 Mar) BLOCKED (only 4 of 10 arrived); ₹400 (1 May). */
+async function bills(h: ApiHarness, T: string): Promise<Call> {
+  await p3Shop(h, T);
+  const call = caller(h, T);
+  const plan: [string, number, number, string][] = [['a', 10, 5_000, '2026-03-10'], ['b', 6, 5_000, '2026-03-20'], ['c', 10, 10_000, '2026-03-25'], ['d', 8, 5_000, '2026-05-01']];
+  for (const [id, qty, unit, date] of plan) {
+    const lines = [{ productId: 'rice', qty, unitMinor: unit }];
+    await issuedOrder(call, `po-${id}`, lines);
+    await received(call, `grn-${id}`, `po-${id}`, id === 'c' ? [{ productId: 'rice', qty: 4, unitMinor: unit }] : lines);
+    await capturedAndMatched(call, `inv-${id}`, `po-${id}`, lines, undefined, 'sup-1', date);
+  }
+  return call;
 }
 
-describe('supplier rebates (M06-FR-03)', () => {
-  it('accrues nothing below the threshold, and says how far short', async () => {
-    const h = await cast();
-    await putScheme(h, 'u-owner', 'rb-1', scheme(), 'k1');
-    const res = await postAccrual(h, 'u-mgr', 'rb-1', 'a1', { basisAmount: money(800_000) }, 'k2');
-    expect(res.status).toBe(201);
-    expect(accrualOf(res).thresholdMet).toBe(false);
-    expect(accrualOf(res).accrued).toEqual(money(0));
-    expect(accrualOf(res).detail).toContain('200000 more to earn anything');
-  });
+describe.each(backings)('supplier rebates (M06-FR-03) — on $name', ({ harness }) => {
+  it('accrues on the matched invoices of the period only — never a typed basis — and finance\'s receipts, journaled, are the received side; a restart reads the same', async () => {
+    const h = harness();
+    const T = randomUUID();
+    const call = await bills(h, T);
+    expect((await call('POST', '/v1/purchase/rebate-schemes/rb-1', P3.OWNER, scheme())).status).toBe(201);
 
-  it('accrues above the threshold and shows the money earned and NOT yet claimed', async () => {
-    const h = await cast();
-    await putScheme(h, 'u-owner', 'rb-1', scheme(), 'k1');
-    const res = await postAccrual(h, 'u-mgr', 'rb-1', 'a1', { basisAmount: money(2_000_000) }, 'k2');
-    expect(accrualOf(res).accrued).toEqual(money(60_000)); // 3% of ₹20,000
-    expect(accrualOf(res).outstanding).toEqual(money(60_000));
-    expect(accrualOf(res).detail).toContain('NOT YET CLAIMED');
-    // The scheme's outstanding headline totals it.
-    const list = await listAccruals(h, 'u-owner', 'rb-1');
-    expect((list.body as { outstandingMinor: number }).outstandingMinor).toBe(60_000);
-  });
+    // A typed basis, baseline or "received" is refused by name; a period outside the scheme too.
+    expect(codeOf(await call('POST', '/v1/purchase/rebate-schemes/rb-1/accruals/q1', P3.OWNER, { periodFrom: '2026-01-01', periodTo: '2026-03-31', basisAmount: { minor: 9_000_000, currency: 'INR' } }))).toBe('accrual_carries_caller_claims');
+    expect(codeOf(await call('POST', '/v1/purchase/rebate-schemes/rb-1/accruals/q1', P3.OWNER, { periodFrom: '2025-12-01', periodTo: '2026-03-31' }))).toBe('period_outside_the_scheme');
+    expect((await call('POST', '/v1/purchase/rebate-schemes/rb-1/accruals/q1', P3.CASHIER, { periodFrom: '2026-01-01', periodTo: '2026-03-31' })).status).toBe(403);
 
-  it('reconciles against what finance actually received (a re-measure supersedes)', async () => {
-    const h = await cast();
-    await putScheme(h, 'u-owner', 'rb-1', scheme(), 'k1');
-    await postAccrual(h, 'u-mgr', 'rb-1', 'a1', { basisAmount: money(2_000_000) }, 'k2'); // outstanding 60000
-    // Finance later pays it — same accrual id, now with received.
-    const paid = await postAccrual(h, 'u-mgr', 'rb-1', 'a1', { basisAmount: money(2_000_000), received: money(60_000) }, 'k3');
-    expect(accrualOf(paid).outstanding).toEqual(money(0));
-    expect(accrualOf(paid).detail).toBe('fully claimed and received');
-    // The accrual superseded rather than doubling — one accrual, zero outstanding.
-    const list = await listAccruals(h, 'u-owner', 'rb-1');
-    expect((list.body as { count: number; outstandingMinor: number }).count).toBe(1);
-    expect((list.body as { outstandingMinor: number }).outstandingMinor).toBe(0);
-  });
+    // Q1: the two clean bills (₹800) — the blocked one is not paid for, the May one is outside. 3% = ₹24.
+    const q1 = await call('POST', '/v1/purchase/rebate-schemes/rb-1/accruals/q1', P3.OWNER, { periodFrom: '2026-01-01', periodTo: '2026-03-31' });
+    expect(q1.status).toBe(201);
+    expect(accrualOf(q1)).toMatchObject({ basisAmount: { minor: 80_000 }, accrued: { minor: 2_400 }, thresholdMet: true });
+    expect(accrualOf(q1).basisSources.invoices.sort()).toEqual(['inv-a', 'inv-b']);
 
-  it('measures a growth scheme against its baseline, never the raw total', async () => {
-    const h = await cast();
-    await putScheme(h, 'u-owner', 'grow', scheme({ basis: 'growth_over_baseline', thresholdMinor: 0 }), 'k1');
-    const res = await postAccrual(h, 'u-mgr', 'grow', 'a1', { basisAmount: money(2_000_000), baselineAmount: money(1_500_000) }, 'k2');
-    expect(accrualOf(res).accrued).toEqual(money(15_000)); // 3% of the ₹5,000 of growth
-  });
+    // FINANCE records what the supplier paid, as a journal: refused until the accountant maps it; never above what was earned.
+    expect(codeOf(await call('POST', '/v1/finance/rebate-receipts/rb-1/receipts/r1', P3.MATCHER, { amountMinor: 2_000, receivedOn: '2026-04-05', reference: 'NEFT-1' }))).toBe('supplier_rebate_not_mapped');
+    expect((await h.request({ method: 'PUT', path: '/v1/finance/posting-map', userId: P3.MATCHER, tenantId: T, idempotencyKey: 'map', body: MAP })).status).toBeLessThan(300);
+    expect(codeOf(await call('POST', '/v1/finance/rebate-receipts/rb-1/receipts/r9', P3.MATCHER, { amountMinor: 2_401, receivedOn: '2026-04-05', reference: 'NEFT-9' }))).toBe('receipt_exceeds_accrued');
+    expect((await call('POST', '/v1/finance/rebate-receipts/rb-1/receipts/r1', P3.BUYER, { amountMinor: 2_000, receivedOn: '2026-04-05', reference: 'NEFT-1' })).status).toBe(403);
+    const r1 = await call('POST', '/v1/finance/rebate-receipts/rb-1/receipts/r1', P3.MATCHER, { amountMinor: 2_000, receivedOn: '2026-04-05', reference: 'NEFT-1' });
+    expect(r1.status).toBe(201);
+    expect(r1.body).toMatchObject({ outstandingMinor: 400, alreadyRecorded: false });
+    expect(((await call('POST', '/v1/finance/rebate-receipts/rb-1/receipts/r1', P3.MATCHER, { amountMinor: 2_000, receivedOn: '2026-04-05', reference: 'NEFT-1' })).body as { alreadyRecorded: boolean }).alreadyRecorded).toBe(true);
 
-  it('gates recording and reading, and refuses a malformed scheme / an accrual on an unknown scheme', async () => {
-    const h = await cast();
-    // A cashier can neither record a scheme nor read the register.
-    expect((await putScheme(h, 'u-cash', 'rb-x', scheme(), 'k1')).status).toBe(403);
-    expect((await listSchemes(h, 'u-cash')).status).toBe(403);
-    // A bad basis is refused.
-    expect(codeOf(await putScheme(h, 'u-owner', 'rb-y', scheme({ basis: 'made_up' }), 'k2'))).toBe('not_readable_as_a_rebate_scheme');
-    // An accrual against a scheme that was never recorded is a 404.
-    expect((await postAccrual(h, 'u-mgr', 'nope', 'a1', { basisAmount: money(2_000_000) }, 'k3')).status).toBe(404);
-  });
+    // The purchase side reads its "received" from the ledger.
+    expect((await call('GET', '/v1/purchase/rebate-schemes/rb-1/accruals', P3.OWNER)).body).toMatchObject({ totalAccruedMinor: 2_400, totalReceivedMinor: 2_000, receivedFrom: 'finance_ledger', outstandingMinor: 400 });
+    // Finance's reconciliation: accrued, received, outstanding, and the income the ledger holds — they agree to the paisa.
+    const rec = (await call('GET', '/v1/finance/rebate-receipts', P3.MATCHER)).body as { agrees: boolean; lines: { schemeId: string; accruedMinor: number; receivedMinor: number; ledgerMinor: number; outstandingMinor: number }[] };
+    expect(rec.agrees).toBe(true);
+    expect(rec.lines.find((l) => l.schemeId === 'rb-1')).toMatchObject({ accruedMinor: 2_400, receivedMinor: 2_000, ledgerMinor: 2_000, outstandingMinor: 400 });
+
+    // A cold restart reads the same.
+    const again = harness(h);
+    expect((await again.request({ method: 'GET', path: '/v1/purchase/rebate-schemes/rb-1/accruals', userId: P3.OWNER, tenantId: T })).body).toMatchObject({ count: 1, outstandingMinor: 400 });
+  }, 120_000);
+
+  it('nothing accrues below the threshold (and it says how far short); a growth scheme measures against its baseline period; a volume scheme is not guessed', async () => {
+    const h = harness();
+    const T = randomUUID();
+    const call = await bills(h, T);
+    await call('POST', '/v1/purchase/rebate-schemes/rb-hi', P3.OWNER, scheme({ thresholdMinor: 100_000 }));
+    const low = await call('POST', '/v1/purchase/rebate-schemes/rb-hi/accruals/q1', P3.OWNER, { periodFrom: '2026-01-01', periodTo: '2026-03-31' });
+    expect(accrualOf(low)).toMatchObject({ thresholdMet: false, accrued: { minor: 0 } });
+    expect(accrualOf(low).detail).toContain('20000 more to earn anything');
+
+    await call('POST', '/v1/purchase/rebate-schemes/grow', P3.OWNER, scheme({ basis: 'growth_over_baseline', thresholdMinor: 0 }));
+    expect(codeOf(await call('POST', '/v1/purchase/rebate-schemes/grow/accruals/q2', P3.OWNER, { periodFrom: '2026-04-01', periodTo: '2026-06-30' }))).toBe('baseline_period_required');
+    // Q2 (₹400) against the March baseline (₹800): no growth, nothing earned.
+    const grow = await call('POST', '/v1/purchase/rebate-schemes/grow/accruals/q2', P3.OWNER, { periodFrom: '2026-04-01', periodTo: '2026-06-30', baselineFrom: '2026-03-01', baselineTo: '2026-03-31' });
+    expect(accrualOf(grow)).toMatchObject({ basisAmount: { minor: 40_000 }, accrued: { minor: 0 } });
+    // March against an empty February baseline: all ₹800 is growth → ₹24.
+    const growMar = await call('POST', '/v1/purchase/rebate-schemes/grow/accruals/mar', P3.OWNER, { periodFrom: '2026-03-01', periodTo: '2026-03-31', baselineFrom: '2026-02-01', baselineTo: '2026-02-28' });
+    expect(accrualOf(growMar).accrued).toEqual({ minor: 2_400, currency: 'INR' });
+
+    await call('POST', '/v1/purchase/rebate-schemes/vol', P3.OWNER, scheme({ basis: 'volume_units' }));
+    expect(codeOf(await call('POST', '/v1/purchase/rebate-schemes/vol/accruals/q1', P3.OWNER, { periodFrom: '2026-01-01', periodTo: '2026-03-31' }))).toBe('volume_rebate_basis_undecided');
+    expect((await call('POST', '/v1/purchase/rebate-schemes/nope/accruals/a1', P3.OWNER, { periodFrom: '2026-01-01', periodTo: '2026-03-31' })).status).toBe(404);
+    expect(codeOf(await call('POST', '/v1/purchase/rebate-schemes/rb-y', P3.OWNER, scheme({ basis: 'made_up' })))).toBe('not_readable_as_a_rebate_scheme');
+  }, 120_000);
 
   it('a scheme\'s approver approves it in their own session — never a typed name, never the person recording it (2b-vi-c-1, PA-03)', async () => {
-    const h = await cast();
+    const h = harness();
+    const T = randomUUID();
+    await p3Shop(h, T);
+    const call = caller(h, T);
     const approved = (u: string, checker: string, id: string, b: Record<string, unknown>) =>
-      sentWithApproval(h, A, u, checker, { kind: 'rebate_scheme', subjectRef: id, pathIds: { schemeId: id } }, b, (body) => putScheme(h, u, id, body, `put-${id}`));
-    // A name typed as the approver is refused by name; before, any name was stored as the scheme's approver.
-    expect(codeOf(await putScheme(h, 'u-mgr', 'rb-t', scheme({ approvedBy: 'u-owner' }), 'k-t'))).toBe('approver_named_without_approval');
-    // The store manager records it; the owner (who may approve suppliers) approves it in their own session.
-    const ok = await approved('u-mgr', 'u-owner', 'rb-a', scheme());
+      sentWithApproval(h, T, u, checker, { kind: 'rebate_scheme', subjectRef: id, pathIds: { schemeId: id } }, b, (body) => call('POST', `/v1/purchase/rebate-schemes/${id}`, u, body) as never);
+    expect(codeOf(await call('POST', '/v1/purchase/rebate-schemes/rb-t', P3.BUYER, scheme({ approvedBy: P3.OWNER })))).toBe('approver_named_without_approval');
+    const ok = await approved(P3.BUYER, P3.OWNER, 'rb-a', scheme());
     expect(ok.status, JSON.stringify(ok.body)).toBe(201);
-    expect((ok.body as { scheme: { approvedBy?: string } }).scheme.approvedBy).toBe('u-owner');
-    // The owner cannot approve the owner's own scheme, and the store manager may not approve one at all.
-    expect(codeOf(await approved('u-owner', 'u-owner', 'rb-s', scheme()))).toBe('self_approval');
-    expect((await approved('u-owner', 'u-mgr', 'rb-m', scheme())).status).toBe(403);
-    // Recorded with no approval: stored, and it says so.
-    const plain = await putScheme(h, 'u-mgr', 'rb-p', scheme(), 'k-p');
-    expect(plain.status).toBe(201);
+    expect((ok.body as { scheme: { approvedBy?: string } }).scheme.approvedBy).toBe(P3.OWNER);
+    expect(codeOf(await approved(P3.OWNER, P3.OWNER, 'rb-s', scheme()))).toBe('self_approval');
+    expect((await approved(P3.OWNER, P3.BUYER, 'rb-m', scheme())).status).toBe(403);
+    const plain = await call('POST', '/v1/purchase/rebate-schemes/rb-p', P3.BUYER, scheme());
     expect((plain.body as { scheme: { approvedBy?: string } }).scheme.approvedBy).toBeUndefined();
-  });
-
-  it('survives a restart: the scheme and its accruals rebuild from the event store', async () => {
-    const h = await cast();
-    await putScheme(h, 'u-owner', 'rb-1', scheme(), 'k1');
-    await postAccrual(h, 'u-mgr', 'rb-1', 'a1', { basisAmount: money(2_000_000) }, 'k2');
-    const restarted = apiHarness({ store: h.store });
-    expect((await listSchemes(restarted, 'u-owner')).body as { count: number }).toMatchObject({ count: 1 });
-    expect((await listAccruals(restarted, 'u-owner', 'rb-1')).body as { outstandingMinor: number }).toMatchObject({ outstandingMinor: 60_000 });
-  });
+    expect((await call('GET', '/v1/purchase/rebate-schemes', P3.CASHIER)).status).toBe(403);
+  }, 120_000);
 });

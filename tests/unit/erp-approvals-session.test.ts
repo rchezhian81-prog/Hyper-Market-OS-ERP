@@ -177,6 +177,12 @@ describe('"Waiting for you" — what others asked for, in plain words, with what
       posh_committee_change: { en: 'Add or remove an Internal Committee member', ta: 'உள் குழு உறுப்பினரைச் சேர்த்தல் அல்லது நீக்குதல்' },
       // F1 · L2 (B6): a later stamp date on a weighing scale takes a second person who manages scales.
       scale_stamp_change: { en: 'Change a weighing scale\'s stamp date', ta: 'எடைத் தராசின் முத்திரைத் தேதியை மாற்றுதல்' },
+      // OB-288 lane 1 · P1: the owner's approval rules, structural, high-impact and department-scope changes.
+      approval_rule_change: { en: APPROVALS_COPY.en.kindApprovalRuleChange, ta: APPROVALS_COPY.ta.kindApprovalRuleChange },
+      org_structure_change: { en: APPROVALS_COPY.en.kindOrgStructureChange, ta: APPROVALS_COPY.ta.kindOrgStructureChange },
+      config_change: { en: APPROVALS_COPY.en.kindConfigChange, ta: APPROVALS_COPY.ta.kindConfigChange },
+      flag_change: { en: APPROVALS_COPY.en.kindFlagChange, ta: APPROVALS_COPY.ta.kindFlagChange },
+      department_scope_change: { en: APPROVALS_COPY.en.kindDepartmentScopeChange, ta: APPROVALS_COPY.ta.kindDepartmentScopeChange },
     };
     // Every kind the engine knows is named here — a kind added to the engine without its words fails this test.
     expect(Object.keys(named).sort()).toEqual(Object.keys(APPROVAL_KINDS).sort());

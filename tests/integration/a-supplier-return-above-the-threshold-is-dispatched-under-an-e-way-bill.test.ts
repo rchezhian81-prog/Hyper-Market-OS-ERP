@@ -27,6 +27,7 @@ describe.each(backings)('a supplier return above the threshold is dispatched und
     const T = randomUUID();
     await h.seedOwner(T, 'u-owner');
     await h.provisionRole(T, 'u-recv', 'store_manager');
+    await h.provisionRole(T, 'u-po-buyer', 'store_manager'); // OB-288 P3 (§28): the buyer who raises the order is never the one who books it in
     await h.provisionRole(T, 'u-boss', 'store_manager');
     await h.provisionRole(T, 'u-till', 'cashier');
     await h.provisionRole(T, SUPPLIER_MAKER, 'store_manager');
@@ -39,7 +40,7 @@ describe.each(backings)('a supplier return above the threshold is dispatched und
     await ok(req('POST', '/v1/purchase/suppliers/sup-tn', { name: 'Synthetic Rice Mills', gstin: TN_SUPPLIER }, SUPPLIER_MAKER), 'propose supplier');
     await ok(req('POST', '/v1/purchase/suppliers/sup-tn/approval', { reason: 'synthetic, documents checked' }, SUPPLIER_CHECKER), 'approve supplier');
     await ok(req('POST', '/v1/inventory/receipt-policy', { excessToleranceBp: 0, shortageToleranceBp: 0, nearExpiryDays: 7 }), 'policy');
-    await ok(req('POST', '/v1/purchase/orders/po-rice', { supplierId: 'sup-tn', deliverToLocationId: 'WH', lines: [{ productId: 'p-rice', orderedQty: 5_000, unitCost: RICE }] }, 'u-recv'), 'po');
+    await ok(req('POST', '/v1/purchase/orders/po-rice', { supplierId: 'sup-tn', deliverToLocationId: 'WH', lines: [{ productId: 'p-rice', orderedQty: 5_000, unitCost: RICE }] }, 'u-po-buyer'), 'po');
     await ok(req('POST', '/v1/purchase/orders/po-rice/approval', { reason: 'fixture' }), 'issue po');
     // Two deliveries, each with a damaged line a second person sends back: exactly ₹1,00,000, and ₹1,00,100.
     for (const [grnId, qty] of [['grn-small', 1_000], ['grn-big', 1_001]] as const) {

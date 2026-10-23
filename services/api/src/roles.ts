@@ -169,10 +169,26 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'facilities.asset.manage', 'facilities.asset.read', 'facilities.reading.record', 'facilities.incident.record',
       'compliance.obligation.manage', 'compliance.obligation.read',
       'compliance.risk.manage', 'compliance.risk.read',
+      // ── OB-288 gates lane (QG-03 · QG-06 · QG-12) — begin
+      // Record scanner runs and people's findings on the security findings register, and read it; decide each quality
+      // gate GO / HOLD / REWORK for a release (§36: the owner is accountable for GO/HOLD/REWORK), and read the register.
+      'compliance.finding.record', 'compliance.finding.read', 'compliance.gate.decide', 'compliance.gate.read',
+      // ── OB-288 gates lane — end
       'audit.hold.manage', 'audit.retention.read',
       'quality.coldchain.assess', 'quality.lottrace.read',
       'quality.recall.initiate', 'quality.recall.read',
       'quality.hold.manage', 'quality.hold.release',
+      // ── Lane 2 · P1 (recall and trace) — begin
+      // M10-FR-04 · OB-297: the consent-checked call list of the customers a recall must reach (names customers — owner /
+      // store manager only), and sending its SMS notice once switched on. Switching recall messages on is the owner's alone.
+      'quality.recall.notice.read', 'quality.recall.notice.send', 'quality.recall.notice.switch',
+      // ── Lane 2 · P1 — end
+      // ── OB-288 lane 1 · P1 (identity, authority, configuration) — begin
+      // OB-290/291/292: the owner reads, proposes and alone APPROVES the approval rules; approves structural and
+      // high-impact configuration changes; reviews who holds what (M02-FR-01/02).
+      'approvals.rules.read', 'approvals.rules.propose', 'approvals.rules.approve',
+      'org.structure.approve', 'platform.config.approve', 'identity.access.review',
+      // ── OB-288 lane 1 · P1 — end
       'price.integrity.audit', 'selfcheckout.operate',
       'owner.alert.read', 'owner.kpi.read', 'owner.brief.manage',
       'refund.exception.read',
@@ -279,6 +295,12 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // dispositions (the refund itself stays order.refund.issue, approved by a second person).
       'online.store.read', 'online.store.manage', 'online.return.manage', 'online.return.collect',
       // ── R4 Lane 2 — end
+      // ── OB-288 lane 2 · P2 (store-box offline queues) — begin
+      // The box's relay hops for work done at the store with the line down — held by the owner only so he may approve
+      // granting them to the store computer (no escalation, OB-36). Each route re-verifies the PERSON named from their own
+      // grants and re-runs head office's rules, so these grant no dispatch, receipt, production or check of their own.
+      'inventory.transfer.sync', 'production.sync', 'facilities.foodsafety.sync',
+      // ── OB-288 lane 2 · P2 — end
     ],
   },
   {
@@ -345,9 +367,22 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'facilities.asset.manage', 'facilities.asset.read', 'facilities.reading.record', 'facilities.incident.record',
       'compliance.obligation.manage', 'compliance.obligation.read',
       'compliance.risk.manage', 'compliance.risk.read',
+      // ── OB-288 gates lane (QG-03 · QG-06 · QG-12) — begin
+      // Record and read security findings, and read the gate register. Deciding a gate is the owner's (§36) — absent here.
+      'compliance.finding.record', 'compliance.finding.read', 'compliance.gate.read',
+      // ── OB-288 gates lane — end
       'quality.coldchain.assess', 'quality.lottrace.read',
       'quality.recall.initiate', 'quality.recall.read',
       'quality.hold.manage', 'quality.hold.release',
+      // ── Lane 2 · P1 (recall and trace) — begin
+      // M10-FR-04 · OB-297: the consent-checked call list of the customers a recall must reach, and sending its SMS notice
+      // once the owner has switched recall messages on.
+      'quality.recall.notice.read', 'quality.recall.notice.send',
+      // ── Lane 2 · P1 — end
+      // ── OB-288 lane 1 · P1 (identity, authority, configuration) — begin
+      // The store manager reads the approval rules and may ask for a change — never to their own role's limits (§28).
+      'approvals.rules.read', 'approvals.rules.propose',
+      // ── OB-288 lane 1 · P1 — end
       // R3 lane 3: B16 — confirm a tobacco product's packs carry the warning picture; D-26 — record and answer a lot-trace request.
       'catalogue.tobacco.warning.confirm', 'quality.lottrace.request',
       'price.integrity.audit', 'selfcheckout.operate',
@@ -572,6 +607,9 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'finance.tds.read', 'finance.tds.challan.record',
       'payment.dispute.record', 'payment.dispute.read',
       // ── end R3 lane 2 ──
+      // ── OB-288 lane 1 · P1 — begin: the accountant reads the approval rules, may ask for a change, and reviews access.
+      'approvals.rules.read', 'approvals.rules.propose', 'identity.access.review',
+      // ── OB-288 lane 1 · P1 — end
     ],
   },
   {
@@ -695,6 +733,14 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // A return collection recorded on the driver's phone (head office re-verifies the driver, the booking and the quantities).
       'online.return.collect.sync',
       // ── R4 gap lane "driver" — end
+      // ── OB-288 lane 2 · P2 (store-box offline queues) — begin
+      // A transfer sent or counted in, a production or weighed run, a batch released for sale, and a food-safety check
+      // recorded with the line down (§31) — head office re-verifies each person and re-runs its own rules.
+      'inventory.transfer.sync', 'production.sync', 'facilities.foodsafety.sync',
+      // What the box PULLS so that work can be done with the line down: the production board and recipes, the food-safety
+      // checks in force for its store, and the transfers with an end at its store (reads only).
+      'production.read', 'facilities.overdue.read', 'inventory.availability.read',
+      // ── OB-288 lane 2 · P2 — end
       // the GST portal's poll/verify, relayed for the operator (no maker-checker decision; re-authorised on this permission)
       'finance.einvoice.generate',
     ],

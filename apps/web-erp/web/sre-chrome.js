@@ -462,6 +462,7 @@
     'unsellable': 'search-x',
     'merchandising': 'layout-grid',
     'expiry': 'calendar-clock',
+    'recall-trace': 'shield-alert',
     'production': 'chef-hat',
     'warehouse-supervisor': 'warehouse',
     'finance': 'landmark',
@@ -488,6 +489,7 @@
     // R4 Lane 4 — begin: the two new pages' menu icons, from icons already in the set (no restyle).
     'supplier-scorecard': 'list-checks',
     'planogram-compliance': 'layout-grid',
+    'requisitions': 'clipboard-list',
     // R4 Lane 4 — end
     'checklist': 'clipboard-check',
     'users': 'users-round',
@@ -522,6 +524,9 @@
     'return-governance': 'circle-dollar-sign',
     'cash-office': 'calculator',
     'risk-acceptance': 'hand',
+    'gates': 'badge-check', // OB-288 gates lane (QG-12) — an icon already in the set
+    'access-review': 'users-round', // OB-288 lane 1 · P1 — an icon already in the set
+    'approval-rules': 'sliders', // OB-288 lane 1 · P1 — an icon already in the set
     'day-reopen': 'lock',
     'data-io': 'arrow-up-down',
     'workforce': 'users',

@@ -283,8 +283,9 @@ const rupeesText = (v: string): string => `₹${Number(v).toFixed(2)}`;
 interface PlannedCall {
   readonly as: string;
   readonly method: 'POST';
-  readonly path: string;
-  readonly body: unknown;
+  /** A path, or one made from the answers of the calls before it (e.g. the approval asked for one step earlier). */
+  readonly path: string | ((answers: readonly unknown[]) => string);
+  readonly body: unknown | ((answers: readonly unknown[]) => unknown);
   readonly key: string;
   readonly ok: readonly number[];
   readonly said: (body: unknown) => string;
@@ -321,15 +322,21 @@ function planStep(step: SetupStep, v: Readonly<Record<string, string | undefined
       if (placeRaw !== '' && (place.length === 0 || place.length > 4 || place.some((l) => l.length > 80))) {
         problems.push('--place-of-business "<the store\'s address as the bill prints it: up to 4 lines of up to 80 characters, split by |>"');
       }
+      // OB-288 P1 (M01-FR-01 "structural changes are owner-approved (maker-checker, §28)"): making the store active is
+      // asked for by the person setting the shop up and approved by a second person, the owner, with their own PIN.
+      const approver = need('approver', LOGIN, 'the login of the SECOND person, the owner, who approves making the store active');
+      if (as !== '' && approver !== '' && as === approver) problems.push('--as and --approver must be two different people: one sets the shop up and asks, the owner approves (§28, M01-FR-01)');
       if (problems.length > 0) return { problems };
+      const requestOf = (answers: readonly unknown[]): string => String((answers[3] as { requestId?: unknown } | undefined)?.requestId ?? '');
       return {
         planned: {
-          actors: [as],
+          actors: [as, approver],
           plan: [
             `1. Record the company ${company} under its legal name "${legalName}".`,
             `2. Record the GST registration ${gstin} for "${legalName}" (head office checks the GSTIN's check digit).`,
             `3. Record the store ${store} ("${storeName}") under the company, filed under GSTIN ${gstin}${place.length === 0 ? '' : `, its place of business for the bill: ${place.join(', ')}`}.`,
-            `4. Make the store ${store} active.`,
+            `4. ${as} asks for the store ${store} to be made active; ${approver} approves it — a second person, with their own PIN.`,
+            `5. Make the store ${store} active, naming that approval.`,
           ],
           calls: [
             { as, method: 'POST', path: `/v1/org/nodes/${encodeURIComponent(company)}`, body: { kind: 'company', name: legalName }, key: `owner-setup-company-${company}`, ok: [200, 201], said: () => `company ${company} recorded` },
@@ -341,9 +348,18 @@ function planStep(step: SetupStep, v: Readonly<Record<string, string | undefined
               key: place.length === 0 ? `owner-setup-store-${store}` : `owner-setup-store-${store}-place-${placeKey(place)}`, ok: [200, 201],
               said: () => `store ${store} ("${storeName}") recorded under ${company}${place.length === 0 ? '' : ', with its place of business'}`,
             },
-            { as, method: 'POST', path: `/v1/org/nodes/${encodeURIComponent(store)}/activation`, body: {}, key: `owner-setup-store-${store}-activation`, ok: [200, 201], said: () => `store ${store} is active` },
+            {
+              as, method: 'POST', path: '/v1/approvals/requests',
+              body: { kind: 'org_structure_change', subjectRef: store, details: { nodeId: store, action: 'activate' }, valueMinor: null, summary: `Make the store ${store} ("${storeName}") active`, reason: 'owner setup on the store PC' },
+              key: `owner-setup-store-${store}-activation-ask`, ok: [200, 201], said: () => `${as} asked for the store to be made active; it waits for ${approver}`,
+            },
+            {
+              as: approver, method: 'POST', path: (a: readonly unknown[]) => `/v1/approvals/requests/${encodeURIComponent(requestOf(a))}/decide`, body: { decision: 'approved', reason: 'owner setup on the store PC' },
+              key: `owner-setup-store-${store}-activation-approve`, ok: [200, 201], said: () => `${approver} approved it`,
+            },
+            { as, method: 'POST', path: `/v1/org/nodes/${encodeURIComponent(store)}/activation`, body: (a: readonly unknown[]) => ({ approvalId: requestOf(a) }), key: `owner-setup-store-${store}-activation`, ok: [200, 201], said: () => `store ${store} is active` },
           ],
-          done: `DONE — the shop is set up at head office on this computer: company ${company} ("${legalName}"), GSTIN ${gstin}, store ${store} active. Done as ${as}.`,
+          done: `DONE — the shop is set up at head office on this computer: company ${company} ("${legalName}"), GSTIN ${gstin}, store ${store} active. Done as ${as}, approved by ${approver}.`,
         },
       };
     }
@@ -478,8 +494,12 @@ export async function runOwnerSetup(input: SetupInput, deps: SetupDeps): Promise
     signedIn.set(who, checked.signedInAt);
   }
 
+  const answers: unknown[] = [];
   for (const call of p.calls) {
-    const res = await deps.client.request({ method: call.method, path: call.path, userId: call.as, tenantId: input.tenantId, body: call.body, idempotencyKey: call.key, signedInAt: signedIn.get(call.as)! });
+    const path = typeof call.path === 'function' ? call.path(answers) : call.path;
+    const body = typeof call.body === 'function' ? (call.body as (a: readonly unknown[]) => unknown)(answers) : call.body;
+    const res = await deps.client.request({ method: call.method, path, userId: call.as, tenantId: input.tenantId, body, idempotencyKey: call.key, signedInAt: signedIn.get(call.as)! });
+    answers.push(res.body);
     if (!call.ok.includes(res.status)) {
       say(`NOT DONE — head office refused: ${errorOf(res.body, res.status)}`);
       say('  What was done before this line stays done (it is recorded, never undone); the same command again carries on from here.');

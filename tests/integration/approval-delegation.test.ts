@@ -130,8 +130,10 @@ describe.each(backings)('approval delegation — the honest alternative to the s
     const h = await seeded(harness);
     // Delegating to yourself changes nothing and hides that it changed nothing.
     expect(codeOf(await grant(h, 'u-owner', 'd-self', validGrant({ toUserId: 'u-boss' }), 'g-self'))).toBe('self_delegation');
-    // You cannot lend more than you hold.
-    expect(codeOf(await grant(h, 'u-owner', 'd-over', validGrant({ valueCap: inr(80000) }), 'g-over'))).toBe('exceeds_granter_authority');
+    // You cannot lend more than you hold — and what you hold is the SERVER's figure (OB-290: a store manager's ₹5,000
+    // refund limit), never the `authorityLimit` the body claims for the lender.
+    expect(codeOf(await grant(h, 'u-owner', 'd-over', validGrant({ valueCap: inr(600_000) }), 'g-over'))).toBe('exceeds_granter_authority');
+    expect(codeOf(await grant(h, 'u-owner', 'd-over-body', validGrant({ valueCap: inr(600_000), granter: { ...boss, authorityLimit: null } }), 'g-over-body'))).toBe('exceeds_granter_authority');
     // A separate person must authorise it — the caller cannot be the one lending their own authority away.
     expect(codeOf(await grant(h, 'u-owner', 'd-selfauth', validGrant({ fromUserId: 'u-owner', granter: { userId: 'u-owner', branchScope: 'all', authorityLimit: null } }), 'g-selfauth'))).toBe('not_authorised');
     // A delegation that outlasts the absence it covers is a permanent change of who holds authority.
@@ -140,9 +142,10 @@ describe.each(backings)('approval delegation — the honest alternative to the s
 
   it('forbids chains, allows early revocation, and is gated', async () => {
     const h = await seeded(harness);
-    await grant(h, 'u-owner', 'd-base', { fromUserId: 'u-a', toUserId: 'u-b', fromDate: day(0), untilDate: day(10), subjectTypes: ['refund'], reason: 'cover', granter: { userId: 'u-a', branchScope: 'all', authorityLimit: null } });
+    // OB-290: a store manager's refund authority is capped at ₹5,000 on the server, so what they lend is capped too.
+    expect((await grant(h, 'u-owner', 'd-base', { fromUserId: 'u-a', toUserId: 'u-b', fromDate: day(0), untilDate: day(10), subjectTypes: ['refund'], reason: 'cover', granter: { userId: 'u-a', branchScope: 'all', authorityLimit: null }, valueCap: inr(100_000) })).status).toBe(201);
     // u-b is now acting under a delegation and cannot pass it on — two hops in, nobody is accountable.
-    expect(codeOf(await grant(h, 'u-owner', 'd-chain', { fromUserId: 'u-b', toUserId: 'u-c', fromDate: day(0), untilDate: day(5), subjectTypes: ['refund'], reason: 'chain', granter: { userId: 'u-b', branchScope: 'all', authorityLimit: null } }, 'g-chain'))).toBe('chain_forbidden');
+    expect(codeOf(await grant(h, 'u-owner', 'd-chain', { fromUserId: 'u-b', toUserId: 'u-c', fromDate: day(0), untilDate: day(5), subjectTypes: ['refund'], reason: 'chain', granter: { userId: 'u-b', branchScope: 'all', authorityLimit: null }, valueCap: inr(50_000) }, 'g-chain'))).toBe('chain_forbidden');
 
     // Revoke early — the counterpart to the March grant nobody remembered in August.
     expect((await revoke(h, 'u-owner', 'd-base')).status).toBe(200);

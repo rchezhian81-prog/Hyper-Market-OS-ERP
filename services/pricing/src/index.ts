@@ -56,6 +56,13 @@ export interface PricingDeps {
    * recorded in full — the "who moved this price, to what, approved by whom (§28)" record.
    */
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
+  /**
+   * OB-291 (owner, 23 Oct 2026): a change larger than the set size (more than N% or more than ₹N a unit, the owner's
+   * changeable rule) needs a second person even when it is above the floor. Resolves the words of why, or undefined when
+   * one person may make it (a first price is not a change). Judged AFTER the MRP ceiling and the floor, so those speak
+   * first. Optional on a bare stub (then no size rule, as before).
+   */
+  readonly changeNeedsSecondPerson?: (tenantId: string, productId: string, priceMinor: number, storeIds: readonly string[]) => Promise<string | undefined>;
   readonly now: () => string;
 }
 
@@ -156,6 +163,16 @@ export function pricingRoutes(deps: PricingDeps): readonly Route[] {
           });
         }
 
+        // OB-291: a change larger than the owner's set size needs a second person too.
+        if (approval === undefined && deps.changeNeedsSecondPerson !== undefined) {
+          const why = await deps.changeNeedsSecondPerson(ctx.tenantId, b.productId!, b.priceMinor!, storeIds);
+          if (why !== undefined) {
+            throw apiError(422, {
+              code: 'price_change_needs_second_person', whatHappened: why, wasItSaved: 'not_saved',
+              nextSafeAction: 'Ask for approval (POST /v1/approvals/requests, kind price_change, with exactly this change); once someone who may approve prices approves it, send the approvalId. Nothing was changed.',
+            });
+          }
+        }
         // Every rule passed: the approval is spent — once — and only then is the price recorded.
         await opened?.spend();
         const record: PriceChangeRecord = {

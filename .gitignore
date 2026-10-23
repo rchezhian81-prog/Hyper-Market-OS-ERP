@@ -73,3 +73,6 @@ till/
 # The store computer's G4 check records (pnpm run store-computer -- check): kept beside the setup workbook on that
 # computer, never committed — they name the real tenant.
 infra/compose/records/
+
+# Security scan reports written by CI (scripts/scan-findings.mts) — uploaded as artifacts, never committed
+scan-reports/

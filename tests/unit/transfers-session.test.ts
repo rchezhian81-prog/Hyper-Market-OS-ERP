@@ -71,6 +71,22 @@ describe('the transfers session', () => {
     expect(createTransfersSession({ userId: 'u-x', permissions: ['inventory.availability.read'] }, http).may).toEqual({ read: true, move: false, resolve: false });
   });
 
+  it('WF-07: a transfer is cancelled only before it leaves, with a reason a person can read; the cancelled one says so and who did it', async () => {
+    const { http, sent } = fakeHttp();
+    const s = createTransfersSession(MGR, http);
+    expect(await s.cancel('t1', '  no ')).toEqual({ result: 'invalid', key: 'needCancelReason' });
+    expect(sent).toEqual([]);
+    await s.cancel('t1', ' store 2 no longer needs it ');
+    expect(sent).toEqual([{ method: 'POST', path: '/v1/warehouse/transfers/t1/cancel', body: { reason: 'store 2 no longer needs it' } }]);
+    const row = (state: string, forIndent = false, extra: Record<string, unknown> = {}): TransferRow => ({ transfer: { ...T, state, approvedBy: undefined, ...extra } as never, shortfall: [], shortfallOpen: false, forIndent });
+    expect(rowView('en', row('proposed')).canCancel).toBe(true);
+    expect(rowView('en', row('proposed', true)).canCancel).toBe(false); // a floor-indent transfer is withdrawn on its indent
+    for (const state of ['in_transit', 'received', 'cancelled']) expect(rowView('en', row(state)).canCancel, state).toBe(false);
+    const gone = rowView('ta', row('cancelled', false, { cancelledBy: 'u-mgr', cancelReason: 'not needed' }));
+    expect(gone).toMatchObject({ stateWord: text('ta', 'cancelled'), canDispatch: false, canReceive: false, tone: 'idle' });
+    expect(gone.people).toContain(`${text('ta', 'cancelledBy')} u-mgr — "not needed"`);
+  });
+
   it('has a Tamil word for every English one', () => {
     for (const k of TRANSFER_WORD_KEYS) expect(text('ta', k), k).not.toBe(text('en', k));
   });
