@@ -71,7 +71,7 @@ export interface RiskAcceptanceConfig {
 
 export type CopyKey =
   | 'title' | 'lead' | 'langName'
-  | 'severityCritical'
+  | 'severityCritical' | 'severityHigh'
   | 'openHeading' | 'blockedCount' | 'gatesLabel' | 'allClear'
   | 'gateLabel' | 'riskLabel' | 'ownerLabel' | 'reasonLabel'
   | 'acceptHeading' | 'riskChoiceLabel' | 'rationaleLabel' | 'rationalePlaceholder' | 'acceptBtn'
@@ -83,7 +83,7 @@ export const RISK_ACCEPTANCE_COPY: BilingualCopy<CopyKey> = {
   en: {
     title: 'Risk acceptance', langName: 'தமிழ்',
     lead: 'Quality gates that cannot pass right now because an open, serious risk is registered against them. Nothing here is deleted: accepting a risk records — in your name and with a written reason — that the business is knowingly carrying it, which lets its gate pass. If a risk should not be carried, fix or close it instead; do not accept it.',
-    severityCritical: 'Critical',
+    severityCritical: 'Critical', severityHigh: 'High',
     openHeading: 'Blocking a gate', blockedCount: 'gates blocked', gatesLabel: 'Blocked gates',
     allClear: 'No gates blocked — every gate can pass.',
     gateLabel: 'Gate', riskLabel: 'Risk', ownerLabel: 'Risk owner', reasonLabel: 'Why it blocks',
@@ -102,7 +102,7 @@ export const RISK_ACCEPTANCE_COPY: BilingualCopy<CopyKey> = {
   ta: {
     title: 'இடர் ஏற்பு', langName: 'English',
     lead: 'ஒரு திறந்த, தீவிர இடர் பதிவு செய்யப்பட்டிருப்பதால் இப்போது கடக்க முடியாத தர வாயில்கள். இங்கு எதுவும் அழிக்கப்படாது: ஒரு இடரை ஏற்பது — உங்கள் பெயரிலும் எழுத்துப்பூர்வக் காரணத்துடனும் — வணிகம் அதை அறிந்தே சுமக்கிறது என்பதைப் பதிவு செய்து அதன் வாயிலைக் கடக்க அனுமதிக்கிறது. ஒரு இடரைச் சுமக்கக் கூடாது என்றால், அதை ஏற்காமல் சரிசெய்யவும் அல்லது மூடவும்.',
-    severityCritical: 'தீவிரம்',
+    severityCritical: 'தீவிரம்', severityHigh: 'உயர்',
     openHeading: 'ஒரு வாயிலைத் தடுக்கிறது', blockedCount: 'வாயில்கள் தடுக்கப்பட்டன', gatesLabel: 'தடுக்கப்பட்ட வாயில்கள்',
     allClear: 'தடுக்கப்பட்ட வாயில்கள் இல்லை — எல்லா வாயில்களும் கடக்கலாம்.',
     gateLabel: 'வாயில்', riskLabel: 'இடர்', ownerLabel: 'இடர் உரிமையாளர்', reasonLabel: 'ஏன் தடுக்கிறது',
@@ -168,14 +168,14 @@ const EMPTY_VIEW = (screenState: StatusPresentation, nobodyNamed: boolean, mayMa
   screenState, blocked: [], blockedCount: 0, risks: [], nobodyNamed, mayManage,
 });
 
-const SEVERITY_COPY: Readonly<Record<string, CopyKey>> = { critical: 'severityCritical' };
+const SEVERITY_COPY: Readonly<Record<string, CopyKey>> = { critical: 'severityCritical', high: 'severityHigh' };
 
 export function createRiskAcceptanceSession(config: RiskAcceptanceConfig, ports: RiskAcceptancePorts): RiskAcceptanceSession {
   const text = (lang: Lang, key: CopyKey): string => translator(RISK_ACCEPTANCE_COPY, lang)(key);
 
   const present = (lang: Lang, b: GateBlockView): PresentedBlock => {
     const t = translator(RISK_ACCEPTANCE_COPY, lang);
-    // The blocked gates are, by the route's definition, open + critical — so the severity word is "critical".
+    // The blocked gates are, by the route's definition, open + critical or high (§22 QG-06) — so the word is one of those two.
     // Fall back to the raw code if a future severity ever appears, so nothing renders blank.
     const severityWord = SEVERITY_COPY[b.severity] ? t(SEVERITY_COPY[b.severity]!) : b.severity;
     return {

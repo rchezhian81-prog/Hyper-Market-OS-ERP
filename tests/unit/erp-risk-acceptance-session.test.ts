@@ -67,6 +67,12 @@ describe('the view lists blocked gates as attention, with the distinct risks beh
     expect(view.risks[0]!.label).toContain('Unencrypted backups');
   });
 
+  it('a gate blocked by an open HIGH risk (§22 QG-06) reads "High" / "உயர்", never a blank or a raw code', () => {
+    const w = worklist([block({ gate: 'QG-06', riskId: 'RISK-H', severity: 'high', title: 'Outdated TLS library' })]);
+    expect(session(w).view('en').blocked[0]!.severity).toBe('High');
+    expect(session(w).view('ta').blocked[0]!.severity).toBe('உயர்');
+  });
+
   it('an empty worklist is a calm "every gate can pass", not an error', () => {
     const view = session(worklist([])).view('en');
     expect(view.blockedCount).toBe(0);
