@@ -22,7 +22,7 @@ import { apiError } from '../../kernel/src/index';
 import { openApproval, type ApprovalPort, NO_APPROVALS } from '../../identity/src/approval-requests';
 import type { Category, RegulatedKind, AttributeDefinition } from '../../../packages/product/src/index';
 
-export const REGULATED_KINDS: readonly RegulatedKind[] = Object.freeze(['food', 'packed', 'weighed', 'age_restricted', 'drug', 'hazardous']);
+export const REGULATED_KINDS: readonly RegulatedKind[] = Object.freeze(['food', 'packed', 'weighed', 'age_restricted', 'drug', 'hazardous', 'bis_controlled']);
 const ATTRIBUTE_TYPES = ['text', 'number', 'boolean', 'enum', 'date'] as const;
 
 /** One version of a category on head office's list. */

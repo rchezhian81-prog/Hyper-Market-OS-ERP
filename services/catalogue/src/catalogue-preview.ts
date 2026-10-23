@@ -83,6 +83,15 @@ export function regulatedFlagsFor(r: Pick<ProductRecord, 'safety'>): Readonly<Re
     ...(s?.bannedSingleUsePlastic === true ? { bannedSingleUsePlastic: true } : {}),
     // B13 (OB-138): a gold piece and its hallmark HUID — the till refuses a gold line with none, or with one already sold.
     ...(s?.gold === true ? { gold: true, ...(typeof s.huid === 'string' && s.huid !== '' ? { huid: s.huid } : {}) } : {}),
+    // B12 (OB-325): a BIS-controlled product, its BIS licence number and the licence's last valid day — the till refuses it
+    // offline when either is missing or the licence has run out by its own clock.
+    ...(s?.bisControlled === true ? {
+      bisControlled: true,
+      ...(typeof s.bisLicenceNo === 'string' && s.bisLicenceNo.trim() !== '' ? { bisLicenceNo: s.bisLicenceNo.trim() } : {}),
+      ...(typeof s.bisLicenceValidUntil === 'string' && s.bisLicenceValidUntil !== '' ? { bisLicenceValidUntil: s.bisLicenceValidUntil } : {}),
+    } : {}),
+    // B8 (OB-298): a perishable — the cashier confirms the date printed on the pack before the line is added.
+    ...(s?.perishable === true ? { perishable: true } : {}),
   };
   return Object.keys(flags).length === 0 ? undefined : flags;
 }
