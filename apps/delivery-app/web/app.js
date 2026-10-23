@@ -85,7 +85,7 @@ const WORDS = {
     codeTitle: 'Ask the customer for the 4 numbers in their app', codeHint: 'Type the 4 numbers the customer reads out.',
     codeFormat: 'The code is 4 numbers. Ask the customer to read it again.',
     codeLater: 'The code is checked at head office when this phone is back on the shop wifi.',
-    takePhoto: 'Take a photo of the parcel at the door', openCamera: 'Open the camera', usePhoto: 'Use this photo', retake: 'Take it again',
+    takePhoto: 'Take a photo of the parcel at the door', openCamera: 'Open the camera', retake: 'Take it again',
     photoHint: 'Only the parcel and the door — not the customer’s face.',
     signHere: 'Ask the customer to sign with a finger', clear: 'Clear', done: 'Done',
     imageError: 'The picture could not be kept. Take it again.',
@@ -138,7 +138,7 @@ const WORDS = {
     codeTitle: 'வாடிக்கையாளரின் செயலியில் உள்ள 4 எண்களைக் கேளுங்கள்', codeHint: 'வாடிக்கையாளர் படிக்கும் 4 எண்களைத் தட்டச்சு செய்யவும்.',
     codeFormat: 'குறியீடு 4 எண்கள். வாடிக்கையாளரை மீண்டும் படிக்கச் சொல்லுங்கள்.',
     codeLater: 'இந்த ஃபோன் கடை வைஃபைக்குத் திரும்பியதும் குறியீடு தலைமை அலுவலகத்தில் சரிபார்க்கப்படும்.',
-    takePhoto: 'வாசலில் பொதியைப் புகைப்படம் எடுக்கவும்', openCamera: 'கேமராவைத் திற', usePhoto: 'இந்தப் புகைப்படத்தைப் பயன்படுத்து', retake: 'மீண்டும் எடு',
+    takePhoto: 'வாசலில் பொதியைப் புகைப்படம் எடுக்கவும்', openCamera: 'கேமராவைத் திற', retake: 'மீண்டும் எடு',
     photoHint: 'பொதியும் வாசலும் மட்டும் — வாடிக்கையாளரின் முகம் வேண்டாம்.',
     signHere: 'வாடிக்கையாளரை விரலால் கையொப்பமிடச் சொல்லுங்கள்', clear: 'அழி', done: 'முடிந்தது',
     imageError: 'படத்தை வைத்திருக்க முடியவில்லை. மீண்டும் எடுக்கவும்.',
@@ -704,32 +704,26 @@ async function shrinkPhoto(file) {
   }
 }
 
-/** The photo panel: open the camera, see the picture, use it or take it again. Resolves the image, or null on Cancel. */
+/** The photo panel: open the camera; the picture it hands back is used (or refused — take it again). Null on Cancel. */
 function capturePhoto() {
   let image = null;
   say(el('photo-title'), t('takePhoto'), 'scan-line');
   el('photo-hint').textContent = t('photoHint');
   say(el('photo-open'), t('openCamera'), 'scan-line');
-  el('photo-use').textContent = t('usePhoto');
   el('photo-cancel').textContent = t('cancel');
-  el('photo-use').disabled = true;
-  el('photo-preview').hidden = true;
   el('photo-input').value = '';
   el('photo').hidden = false;
   return new Promise((resolve) => {
-    const finish = (answer) => { el('photo').hidden = true; el('photo-input').onchange = null; el('photo-use').onclick = null; el('photo-cancel').onclick = null; resolve(answer); };
+    const finish = (answer) => { el('photo').hidden = true; el('photo-input').onchange = null; el('photo-cancel').onclick = null; resolve(answer); };
     el('photo-input').onchange = async () => {
       const file = el('photo-input').files?.[0];
       if (!file) return;
       image = await shrinkPhoto(file);
-      if (image === null) { el('photo-hint').textContent = t('imageError'); el('photo-use').disabled = true; return; }
-      el('photo-preview').src = `data:${image.mediaType};base64,${image.contentBase64}`;
-      el('photo-preview').hidden = false;
-      say(el('photo-open'), t('retake'), 'refresh-cw');
-      el('photo-hint').textContent = t('photoHint');
-      el('photo-use').disabled = false;
+      if (image === null) { el('photo-hint').textContent = t('imageError'); say(el('photo-open'), t('retake'), 'refresh-cw'); return; }
+      // The phone's own camera already asked "use this photo?" — so the picture it hands back is used at once, keeping the
+      // doorstep to three taps (delivery.md budget). "Take it again" stays offered while a bad picture is refused.
+      finish(image);
     };
-    el('photo-use').onclick = () => { if (image !== null) finish(image); };
     el('photo-cancel').onclick = () => finish(null);
   });
 }

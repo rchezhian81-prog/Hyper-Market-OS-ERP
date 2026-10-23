@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
 import { join } from 'node:path';
 import { chromium, type Browser, type Page } from 'playwright-core';
+import { takeThePhoto } from './lib/proof-photo';
 
 /**
  * **The driver's phone records a PARTIAL delivery, in a real browser (M19-FR-01/FR-03 / A3).**
@@ -108,9 +109,10 @@ describe.skipIf(!HAVE_BROWSER)('driver partial delivery, end to end in a real br
       expect(await unsent(page)).toBe(0);
       await page.locator('.stop').first().click(); // select the stop
       await page.click('#delivered-partial');
-      // The proof-kind chooser opens; pick "Photo at the door" (needs no reference, prepaid needs no cash).
+      // The proof-kind chooser opens; pick "Photo at the door" — a real capture through the camera (OB-294); prepaid needs no cash.
       await page.waitForSelector('#sheet:not([hidden])', { timeout: 10_000 });
       await page.locator('#choices button', { hasText: 'Photo at the door' }).click();
+      await takeThePhoto(page);
       await page.waitForSelector('.stop.partially_delivered', { timeout: 10_000 });
       // An assigned stop auto-departs first, so the queue holds the depart AND the partial — both are
       // real state changes, each durably recorded (§31/P-01). The invariant that matters: the partial

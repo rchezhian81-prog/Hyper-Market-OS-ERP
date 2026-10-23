@@ -243,8 +243,6 @@
       }
       .capture-open:focus-within { outline: 3px solid var(--focus); outline-offset: 2px; }
       #photo-input { position: absolute; width: 1px; height: 1px; opacity: 0; }
-      #photo-preview { width: 100%; max-height: 40dvh; object-fit: contain; border-radius: var(--radius-lg); border: 1px solid var(--line); background: var(--panel-2); }
-      #photo-preview[hidden] { display: none; }
       #sign-pad { width: 100%; aspect-ratio: 16 / 9; border-radius: var(--radius-lg); border: 2px dashed var(--line-strong); background: var(--panel); touch-action: none; }
       .sign-actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
       .sign-actions button { min-height: var(--tap); font-size: 18px; }
@@ -334,11 +332,9 @@
       <div class="sheet-inner">
         <h2 id="photo-title">Take a photo of the parcel at the door</h2>
         <label class="capture-open" for="photo-input"><span id="photo-open">Open the camera</span><input id="photo-input" type="file" accept="image/*" capture="environment" /></label>
-        <img id="photo-preview" alt="" hidden />
         <div class="hint" id="photo-hint"></div>
         <div class="sheet-actions">
-          <button id="photo-cancel" type="button">Cancel</button>
-          <button id="photo-use" class="primary" type="button" disabled>Use this photo</button>
+          <button id="photo-cancel" class="wide" type="button">Cancel</button>
         </div>
       </div>
     </div>

@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium, type Browser, type Page } from 'playwright-core';
+import { takeThePhoto } from './lib/proof-photo';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
 import { readLog } from '../../edge/store-edge/src/file-log';
 import { enrolmentCodeHash } from '../../packages/platform-admin/src/device-enrolment';
@@ -145,6 +146,7 @@ describe.skipIf(!HAVE_BROWSER)('the driver\'s phone enrols on the box\'s device 
     await page.click('#deliver');
     await page.waitForSelector('#choices:not([hidden])');
     await page.click('#choices button:has-text("Photo")');
+    await takeThePhoto(page); // OB-294: a real capture through the camera input
     await page.waitForSelector('#choices button:has-text("Cash")');
     await page.click('#choices button:has-text("Cash")');
     await page.waitForSelector('#keypad:not([hidden])');
@@ -188,30 +190,31 @@ describe.skipIf(!HAVE_BROWSER)('the driver\'s phone enrols on the box\'s device 
     await page.waitForSelector('#sent-work .sent[data-kind="handover"][data-state="handed_to_box"]');
     expect(await page.textContent('#sent-work .sent[data-kind="settlement"] .what')).toBe('Shift settled · R-1 — 25000 of 25000 INR · 0 exceptions');
     expect(await page.textContent('#sent-work .sent[data-kind="handover"] .what')).toBe('Cash handed over · R-1 — counted 25000 INR · balanced');
-    expect(await queueText(page)).toBe('7 with the store computer');
+    expect(await queueText(page)).toBe('8 with the store computer');
 
-    // The BOX has all seven, on its fsync'd log and queued for head office — each naming the driver, none naming a customer.
+    // The BOX has all eight (the captured photo is its own record, before the stop it proves), on its fsync'd log and queued for head office — each naming the driver, none naming a customer.
     expect(edge.deviceEventsOutbox.pending().map((i) => i.event.type)).toEqual([
-      'DeliveryStopUpdated', 'DeliveryStopUpdated', 'DeliveryStopUpdated', 'DeliveryStopUpdated', 'DeliveryStopUpdated', 'RouteSettled', 'DriverCashHandedOver',
+      'DeliveryStopUpdated', 'DeliveryProofCaptured', 'DeliveryStopUpdated', 'DeliveryStopUpdated', 'DeliveryStopUpdated', 'DeliveryStopUpdated', 'RouteSettled', 'DriverCashHandedOver',
     ]);
     const records = (await readLog(edge.deviceEventsLog.path)).filter((r) => r.ok).map((r) => JSON.parse(r.ok ? r.record : '{}') as { idempotencyKey: string; payload: Record<string, unknown> });
     expect(records.map((r) => r.idempotencyKey)).toEqual([
-      'stop:R-1:s1:out_for_delivery', 'stop:R-1:s1:delivered', 'stop:R-1:s2:out_for_delivery', 'stop:R-1:s2:failed', 'stop:R-1:s2:returned_to_origin', 'settle:R-1', 'handover:R-1',
+      'stop:R-1:s1:out_for_delivery', expect.stringMatching(/^proof:R-1:s1:[0-9a-f]{24}$/), 'stop:R-1:s1:delivered', 'stop:R-1:s2:out_for_delivery', 'stop:R-1:s2:failed', 'stop:R-1:s2:returned_to_origin', 'settle:R-1', 'handover:R-1',
     ]);
-    expect(records[1]?.payload).toMatchObject({ routeId: 'R-1', driverId: 'u-driver', stopId: 's1', orderRef: 'ORD-1041', state: 'delivered', codExpectedMinor: 250_00, codCollectedMinor: 250_00, codMethod: 'cash', proofKind: 'photo' });
-    expect(records[3]?.payload).toMatchObject({ stopId: 's2', state: 'failed', failureReason: 'nobody_home', codCollectedMinor: 0 });
-    expect(records[5]?.payload).toMatchObject({ routeId: 'R-1', driverId: 'u-driver', expectedMinor: 250_00, collectedMinor: 250_00, cashHeldMinor: 250_00, matchedCount: 1, exceptionCount: 0 });
-    expect(records[6]?.payload).toMatchObject({ routeId: 'R-1', driverId: 'u-driver', countedMinor: 250_00, recordedMinor: 250_00, varianceMinor: 0, material: false });
-    expect(JSON.stringify(records)).not.toMatch(/customer|phone number|address/i);
-    expect((await sent(page)).map((w) => w[2])).toEqual(Array(7).fill('handed_to_box'));
+    expect(records[1]?.payload).toMatchObject({ routeId: 'R-1', driverId: 'u-driver', stopId: 's1', orderRef: 'ORD-1041', kind: 'photo', mediaType: 'image/jpeg', sha256: expect.stringMatching(/^[0-9a-f]{64}$/) });
+    expect(records[2]?.payload).toMatchObject({ routeId: 'R-1', driverId: 'u-driver', stopId: 's1', orderRef: 'ORD-1041', state: 'delivered', codExpectedMinor: 250_00, codCollectedMinor: 250_00, codMethod: 'cash', proofKind: 'photo', proofSha256: (records[1]?.payload as { sha256: string }).sha256 });
+    expect(records[4]?.payload).toMatchObject({ stopId: 's2', state: 'failed', failureReason: 'nobody_home', codCollectedMinor: 0 });
+    expect(records[6]?.payload).toMatchObject({ routeId: 'R-1', driverId: 'u-driver', expectedMinor: 250_00, collectedMinor: 250_00, cashHeldMinor: 250_00, matchedCount: 1, exceptionCount: 0 });
+    expect(records[7]?.payload).toMatchObject({ routeId: 'R-1', driverId: 'u-driver', countedMinor: 250_00, recordedMinor: 250_00, varianceMinor: 0, material: false });
+    expect(JSON.stringify(records.map((r) => ({ ...r, payload: { ...r.payload, contentBase64: undefined } })))).not.toMatch(/customer|phone number|address/i);
+    expect((await sent(page)).map((w) => w[2])).toEqual(Array(8).fill('handed_to_box'));
 
     // RELOAD: the durable device queue is the authority — all listed, all with the store computer, box unchanged.
     await page.reload({ waitUntil: 'load' });
     await ready(page);
     await page.waitForSelector('#sent-work .sent[data-kind="handover"][data-state="handed_to_box"]');
-    await page.waitForFunction(() => ((globalThis as unknown as PhoneWindow).document.querySelector('#queue-text')?.textContent ?? '').includes('7 with the store computer'), undefined, { timeout: 10_000 });
+    await page.waitForFunction(() => ((globalThis as unknown as PhoneWindow).document.querySelector('#queue-text')?.textContent ?? '').includes('8 with the store computer'), undefined, { timeout: 10_000 });
     expect(await page.evaluate(() => (globalThis as unknown as PhoneWindow).driverOutbox!.unsentCount())).toBe(0);
-    expect(edge.deviceEventsOutbox.all()).toHaveLength(7);
-    expect((await readLog(edge.deviceEventsLog.path)).filter((r) => r.ok)).toHaveLength(7);
+    expect(edge.deviceEventsOutbox.all()).toHaveLength(8);
+    expect((await readLog(edge.deviceEventsLog.path)).filter((r) => r.ok)).toHaveLength(8);
   }, 60_000);
 });
