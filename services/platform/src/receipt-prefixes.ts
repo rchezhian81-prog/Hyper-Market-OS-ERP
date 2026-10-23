@@ -20,12 +20,20 @@
 //
 // Maker-checker: the store pack's receipt range had no head-office publish path before this, so there is no existing
 // approval to inherit; the issue is a single audited act of the setup permission, as every other store setting is.
+//
+// A2 (roadmap v2.1 addendum · CGST Rule 46(b): the series resets on the financial-year boundary): a prefix may be issued FOR
+// a financial year (`financialYear: "2026-27"`). A till then holds one prefix per year; the store computer numbers each
+// bill under the prefix of the year the bill is dated in, so the count restarts at 000001 on 1 April. A prefix is never
+// issued twice — not to another till, and not to the same till for another year — so numbers never repeat across years.
+// Head office issues next year's prefix before 1 April; `GET /v1/receipt-prefixes` names every year-scoped till that has
+// no prefix yet for the current or the coming year.
 
 import type { Route } from '../../kernel/src/index';
 import { apiError, assertBranchInScope, notFound } from '../../kernel/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import {
   readReceiptPrefix, receiptNumberFor, GST_INVOICE_NUMBER_MAX, RECEIPT_COUNTER_DIGITS, RECEIPT_COUNTER_MAX, RECEIPT_PREFIX_MAX,
+  isFinancialYear, financialYearOf, nextFinancialYear,
 } from '../../../packages/contracts/src/receipt-number';
 
 /** One issue of a prefix to a (store, till) — append-only. */
@@ -38,6 +46,8 @@ export interface ReceiptPrefixIssue {
   readonly reason?: string;
   readonly setBy: string;
   readonly setAt: string;
+  /** A2: the financial year this prefix numbers ("2026-27"). Absent → the till's one prefix, for every year. */
+  readonly financialYear?: string;
 }
 
 /** A till's current prefix and everything it held before. */
@@ -52,6 +62,8 @@ export interface TillPrefix {
   readonly firstNumber: string;
   readonly lastNumber: string;
   readonly history: readonly ReceiptPrefixIssue[];
+  /** A2: the financial year this prefix numbers, when it is year-scoped. */
+  readonly financialYear?: string;
 }
 
 /** The pack's `receiptSeries` line for a till (edge/store-edge/src/receipt-numbers.ts `PackReceiptSeries`). */
@@ -61,6 +73,8 @@ export interface IssuedSeries {
   readonly padTo: number;
   readonly rangeStart: number;
   readonly rangeEnd: number;
+  /** A2: the financial year this series numbers, when it is year-scoped. */
+  readonly financialYear?: string;
 }
 
 /** Thrown by `recordIssue` when another issue landed since `expectedVersion` was read: read again and re-judge. */
@@ -92,7 +106,8 @@ const RETRIES = 16;
 export function foldTillPrefixes(issues: readonly ReceiptPrefixIssue[]): readonly TillPrefix[] {
   const by = new Map<string, ReceiptPrefixIssue[]>();
   for (const i of issues) {
-    const k = `${i.storeId}\u0000${i.tillId}`;
+    // A2: a year-scoped prefix is the till's for ONE year — its own line, beside the till's other years.
+    const k = `${i.storeId}\u0000${i.tillId}\u0000${i.financialYear ?? ''}`;
     by.set(k, [...(by.get(k) ?? []), i]);
   }
   return [...by.values()].map((h) => {
@@ -100,14 +115,23 @@ export function foldTillPrefixes(issues: readonly ReceiptPrefixIssue[]): readonl
     return {
       storeId: cur.storeId, tillId: cur.tillId, prefix: cur.prefix, version: cur.version, setBy: cur.setBy, setAt: cur.setAt,
       firstNumber: receiptNumberFor(cur.prefix, 1), lastNumber: receiptNumberFor(cur.prefix, RECEIPT_COUNTER_MAX), history: h,
+      ...(cur.financialYear === undefined ? {} : { financialYear: cur.financialYear }),
     };
-  }).sort((a, b) => (a.storeId === b.storeId ? (a.tillId < b.tillId ? -1 : 1) : a.storeId < b.storeId ? -1 : 1));
+  }).sort((a, b) => (a.storeId === b.storeId
+    ? (a.tillId === b.tillId ? ((a.financialYear ?? '') < (b.financialYear ?? '') ? -1 : 1) : a.tillId < b.tillId ? -1 : 1)
+    : a.storeId < b.storeId ? -1 : 1));
 }
 
 /** The store pack's `receiptSeries` for one store: each till's CURRENT prefix, 1…999 999, 6 digits. Pure. */
 export function issuedSeriesFor(issues: readonly ReceiptPrefixIssue[], storeId: string): readonly IssuedSeries[] {
-  return foldTillPrefixes(issues).filter((t) => t.storeId === storeId)
-    .map((t) => ({ laneId: t.tillId, prefix: t.prefix, padTo: RECEIPT_COUNTER_DIGITS, rangeStart: 1, rangeEnd: RECEIPT_COUNTER_MAX }));
+  const tills = foldTillPrefixes(issues).filter((t) => t.storeId === storeId);
+  // A2: a till with ANY year-scoped prefix numbers by year — its yearless prefix (from before) is no longer sent.
+  const yearScoped = new Set(tills.filter((t) => t.financialYear !== undefined).map((t) => t.tillId));
+  return tills.filter((t) => t.financialYear !== undefined || !yearScoped.has(t.tillId))
+    .map((t) => ({
+      laneId: t.tillId, prefix: t.prefix, padTo: RECEIPT_COUNTER_DIGITS, rangeStart: 1, rangeEnd: RECEIPT_COUNTER_MAX,
+      ...(t.financialYear === undefined ? {} : { financialYear: t.financialYear }),
+    }));
 }
 
 export function receiptPrefixRoutes(deps: ReceiptPrefixDeps): readonly Route[] {
@@ -131,6 +155,11 @@ export function receiptPrefixRoutes(deps: ReceiptPrefixDeps): readonly Route[] {
         if (!read.ok) {
           throw apiError(400, { code: 'receipt_prefix_not_allowed', whatHappened: `${read.words}`, wasItSaved: 'not_saved', nextSafeAction: `Choose a prefix of ${RECEIPT_PREFIX_MAX} characters or fewer, for example S2L1-. Nothing was saved.` });
         }
+        // A2: a prefix FOR a financial year ("2026-27"), or — absent — the till's one prefix for every year.
+        const financialYear = b['financialYear'];
+        if (financialYear !== undefined && !isFinancialYear(financialYear)) {
+          throw apiError(400, { code: 'not_a_financial_year', whatHappened: `The financial year ${JSON.stringify(financialYear)} is not one written like 2026-27 (1 April 2026 to 31 March 2027).`, wasItSaved: 'not_saved', nextSafeAction: 'Send the year as YYYY-YY, or leave it out. Nothing was saved.' });
+        }
         if (b['reason'] !== undefined && (typeof b['reason'] !== 'string' || b['reason'].length > 500)) {
           throw apiError(400, { code: 'receipt_prefix_not_allowed', whatHappened: 'The reason, when given, is text of up to 500 characters.', wasItSaved: 'not_saved', nextSafeAction: 'Send a short reason, or none. Nothing was saved.' });
         }
@@ -138,25 +167,31 @@ export function receiptPrefixRoutes(deps: ReceiptPrefixDeps): readonly Route[] {
         for (let attempt = 0; ; attempt += 1) {
           const guard = await deps.guardVersion(ctx.tenantId);
           const all = await deps.issues(ctx.tenantId);
-          // Any OTHER till that ever held this prefix — its bills exist, so it is never issued again elsewhere.
-          const holder = all.find((i) => i.prefix === prefix && !(i.storeId === storeId && i.tillId === tillId));
+          // Any OTHER till that ever held this prefix — its bills exist, so it is never issued again elsewhere. A2: nor to this
+          // till for ANOTHER year — the count restarts each year, so a prefix used in one year can never number another.
+          const holder = all.find((i) => i.prefix === prefix && !(i.storeId === storeId && i.tillId === tillId && i.financialYear === financialYear));
           if (holder !== undefined) {
             const holderName = stores.get(holder.storeId) ?? holder.storeId;
+            const sameTill = holder.storeId === storeId && holder.tillId === tillId;
             throw apiError(409, {
               code: 'receipt_prefix_taken',
-              whatHappened: `The prefix ${prefix} was issued to till ${holder.tillId} at ${holderName} (${holder.storeId}) on ${holder.setAt.slice(0, 10)}. Two tills must never share a prefix, or their bill numbers would clash.`,
+              whatHappened: sameTill
+                ? `The prefix ${prefix} was this till's for ${holder.financialYear ?? 'every year'} (issued ${holder.setAt.slice(0, 10)}). Bill numbers start again each financial year, so a prefix used in one year can never number another, or the numbers would repeat.`
+                : `The prefix ${prefix} was issued to till ${holder.tillId} at ${holderName} (${holder.storeId}) on ${holder.setAt.slice(0, 10)}. Two tills must never share a prefix, or their bill numbers would clash.`,
               wasItSaved: 'not_saved',
               nextSafeAction: 'Choose a prefix no other till has used, for example the store and till numbers (S2L1-). Nothing was saved.',
             });
           }
-          const mine = all.filter((i) => i.storeId === storeId && i.tillId === tillId);
+          const mine = all.filter((i) => i.storeId === storeId && i.tillId === tillId && i.financialYear === financialYear);
           const current = mine.reduce<ReceiptPrefixIssue | undefined>((a, x) => (a === undefined || x.version >= a.version ? x : a), undefined);
           if (current !== undefined && current.prefix === prefix) {
             return { status: 200, body: { prefix: foldTillPrefixes(mine)[0], unchanged: true } };
           }
           const issue: ReceiptPrefixIssue = {
-            storeId, tillId, prefix, version: (current?.version ?? 0) + 1, setBy: ctx.userId, setAt: deps.now(),
+            // The version counts every issue to this till, whatever its year — each issue is its own entry on the log.
+            storeId, tillId, prefix, version: all.filter((i) => i.storeId === storeId && i.tillId === tillId).reduce((v, i) => Math.max(v, i.version), 0) + 1, setBy: ctx.userId, setAt: deps.now(),
             ...(typeof b['reason'] === 'string' && b['reason'].trim() !== '' ? { reason: b['reason'].trim() } : {}),
+            ...(typeof financialYear === 'string' ? { financialYear } : {}),
           };
           let written: void | { readonly kept: ReceiptPrefixIssue };
           try {
@@ -182,7 +217,7 @@ export function receiptPrefixRoutes(deps: ReceiptPrefixDeps): readonly Route[] {
             actorId: ctx.userId, action: 'receipt.prefix.issue', objectType: 'till', objectId: `${storeId}/${tillId}`,
             at: issue.setAt, origin: { tenantId: ctx.tenantId, branchId: storeId },
             before: current === undefined ? null : { prefix: current.prefix, version: String(current.version) },
-            after: { prefix, version: String(issue.version), ...(issue.reason === undefined ? {} : { reason: issue.reason }) },
+            after: { prefix, version: String(issue.version), ...(issue.reason === undefined ? {} : { reason: issue.reason }), ...(issue.financialYear === undefined ? {} : { financialYear: issue.financialYear }) },
             correlationId: `${storeId}/${tillId}`,
           });
           return { status: current === undefined ? 201 : 200, body: { prefix: foldTillPrefixes([...mine, issue])[0] } };
@@ -209,10 +244,30 @@ export function receiptPrefixRoutes(deps: ReceiptPrefixDeps): readonly Route[] {
               ? `Till ${r.tillId} at ${stores.get(r.storeId) ?? r.storeId} has no bill-number prefix and the business has more than one store: its store computer numbers its bills under its own store prefix (ZZ…) until one is issued.`
               : 'No prefix issued yet. With one store a till that already numbers R-<till>- carries on; a new or replaced till numbers under its store computer\'s own store prefix (ZZ…), and each such bill is flagged (OB-85). Issue one before a second store opens.',
           }));
+        // A2: every year-scoped till with no prefix for the current year, or (from 1 March) for the coming one — the store
+        // computer would otherwise number under a fallback on 1 April. Said, by name, ahead of the day.
+        const now = deps.now();
+        const thisYear = financialYearOf(now) ?? '';
+        const comingYear = thisYear === '' ? '' : nextFinancialYear(thisYear);
+        const march = now.slice(5, 7) === '03';
+        const yearScoped = new Map<string, Set<string>>();
+        for (const t of tills) {
+          if (t.financialYear === undefined) continue;
+          const k = `${t.storeId}\u0000${t.tillId}`;
+          yearScoped.set(k, (yearScoped.get(k) ?? new Set()).add(t.financialYear));
+        }
+        const needsYearPrefix = [...yearScoped.entries()].flatMap(([k, years]) => {
+          const [storeId, tillId] = k.split('\u0000') as [string, string];
+          return [thisYear, ...(march ? [comingYear] : [])].filter((y) => y !== '' && !years.has(y)).map((financialYear) => ({
+            storeId, storeName: stores.get(storeId) ?? storeId, tillId, financialYear,
+            why: `Till ${tillId} at ${stores.get(storeId) ?? storeId} has no bill-number prefix for ${financialYear}. Bill numbers start again each financial year: on 1 April its store computer numbers under its own store prefix (ZZ…) until one is issued.`,
+          }));
+        });
         return {
           status: 200,
           body: {
             storesInBusiness: stores.size, multiStore, tills, needsPrefix,
+            currentFinancialYear: thisYear, needsYearPrefix,
             rule: { maxNumberLength: GST_INVOICE_NUMBER_MAX, counterDigits: RECEIPT_COUNTER_DIGITS, maxPrefixLength: RECEIPT_PREFIX_MAX, reservedStarts: ['R-', 'ZZ'] },
             asAt: deps.now(),
           },

@@ -22,7 +22,7 @@ import { apiError } from '../../kernel/src/index';
 import { openApproval, type ApprovalPort, NO_APPROVALS } from '../../identity/src/approval-requests';
 import type { Category, RegulatedKind, AttributeDefinition } from '../../../packages/product/src/index';
 
-export const REGULATED_KINDS: readonly RegulatedKind[] = Object.freeze(['food', 'packed', 'weighed', 'age_restricted', 'drug', 'hazardous',
+export const REGULATED_KINDS: readonly RegulatedKind[] = Object.freeze(['food', 'packed', 'weighed', 'age_restricted', 'drug', 'hazardous', 'bis_controlled',
   // OB-288 P2 · B17: a category marked liquor holds nothing that can be published or sold (TASMAC).
   'liquor']);
 const ATTRIBUTE_TYPES = ['text', 'number', 'boolean', 'enum', 'date'] as const;

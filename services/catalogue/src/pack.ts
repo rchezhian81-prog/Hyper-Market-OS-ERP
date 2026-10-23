@@ -143,13 +143,20 @@ export function canonicalise(snapshot: CatalogueSnapshot): string {
     .filter((p) => typeof p.categoryId === 'string' && p.categoryId !== '')
     .sort((a, b) => (a.productId < b.productId ? -1 : 1))
     .map((p) => [p.productId, p.categoryId].join(FIELD));
+  // A7: each product's compensation cess rides under the signature whenever any product carries one — a pack edited after
+  // signing to drop or cut a cess fails to verify. Only then, so a pack without cess signs to exactly the bytes it did.
+  const cess = [...snapshot.products]
+    .filter((p) => p.cess !== undefined)
+    .sort((a, b) => (a.productId < b.productId ? -1 : 1))
+    .map((p) => [p.productId, stableJson(p.cess)].join(FIELD));
   return [snapshot.tenantId, snapshot.version, snapshot.builtAt, ...products, '--', ...barcodes,
     ...(promotions.length === 0 ? [] : ['--promotions', ...promotions]),
     ...(regulated.length === 0 ? [] : ['--regulated', ...regulated]),
     ...units,
     ...(batches.length === 0 ? [] : ['--batches', ...batches]),
     ...(expired.length === 0 ? [] : ['--expired', ...expired]),
-    ...(categories.length === 0 ? [] : ['--categories', ...categories])]
+    ...(categories.length === 0 ? [] : ['--categories', ...categories]),
+    ...(cess.length === 0 ? [] : ['--cess', ...cess])]
     .join(RECORD);
 }
 

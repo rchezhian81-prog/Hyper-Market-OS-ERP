@@ -49,6 +49,7 @@ import type { PackHierarchyDeps } from '../../catalogue/src/pack-hierarchy';
 import type { TaxClassRateDeps } from '../../catalogue/src/tax-classes';
 import type { CataloguePreviewDeps } from '../../catalogue/src/catalogue-preview';
 import { assembleCatalogueSnapshot } from '../../catalogue/src/catalogue-preview';
+import { cessRateStore, frozenCessOf } from './till-bill-stores'; // Till bill and GST (A7)
 import { apiError } from '../../kernel/src/index';
 import type { GstRatePeriod } from '../../../packages/finance/src/rate';
 import type { ProductRecord, BarcodeAssignment, MergeRequest, MergeLink, PackHierarchy } from '../../../packages/product/src/index';
@@ -1259,6 +1260,7 @@ export function gstReturnsAdapter(input: {
             // Frozen tax facts, when the lane stamped them — the return prefers these over the catalogue.
             ...(typeof line.hsnCode === 'string' ? { hsnCode: line.hsnCode } : {}),
             ...(Number.isInteger(line.taxRateBps) ? { rateBps: line.taxRateBps } : {}),
+            ...frozenCessOf(line), // Till bill and GST (A7)
           });
         }
       }
@@ -1305,6 +1307,7 @@ export function gstReturnsAdapter(input: {
             lineTotalMinor: lineRefund, tradingDay: day,
             ...(typeof o?.hsnCode === 'string' ? { hsnCode: o.hsnCode } : {}),
             ...(Number.isInteger(o?.taxRateBps) ? { rateBps: o!.taxRateBps } : {}),
+            ...frozenCessOf(o), // Till bill and GST (A7): a return reverses the cess it was sold with
           });
         });
       }
@@ -2496,6 +2499,7 @@ export function cataloguePreviewAdapter(input: {
     // SF-08: recalled and held batches' products go in the pack blocked, so every till refuses them offline.
     blockedProducts: saleBlocksAdapter(input).blockedProducts,
     expiredBatches: saleBlocksAdapter(input).expiredBatches, // M10-FR-01 follow-up: expired batches refused on a batch-bearing code
+    cessSchedule: cessRateStore(input).schedule, // Till bill and GST (A7): the cess in force rides the pack
     ...(input.pricing === undefined ? {} : { pricing: input.pricing }),
     now: input.now,
   };

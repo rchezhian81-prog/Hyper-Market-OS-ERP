@@ -362,7 +362,7 @@ function render() {
 
 const prefixes = window.receiptPrefixSession || null;
 const pw = (key) => (prefixes ? prefixes.words(lang)[key] : '');
-const rowKey = (r) => `${r.storeId}__${r.tillId}`;
+const rowKey = (r) => `${r.storeId}__${r.tillId}${r.financialYear ? `__${r.financialYear}` : ''}`;
 
 function prefixMessage(msgEl, text, tone) {
   msgEl.textContent = text;
@@ -370,7 +370,7 @@ function prefixMessage(msgEl, text, tone) {
 }
 
 /** Wire one prefix editor: check as typed (head office's rule), show the numbers it would make, save to head office. */
-function wirePrefix(input, button, msgEl, target) {
+function wirePrefix(input, button, msgEl, target, done) {
   const paint = () => {
     const v = input.value;
     if (v === '') { prefixMessage(msgEl, '', ''); button.disabled = true; return; }
@@ -381,15 +381,17 @@ function wirePrefix(input, button, msgEl, target) {
   };
   input.addEventListener('input', paint);
   button.addEventListener('click', async () => {
-    const { storeId, tillId } = target();
+    const { storeId, tillId, financialYear } = target();
     if (!storeId || !tillId) return;
     button.disabled = true;
     prefixMessage(msgEl, pw('saving'), '');
-    const result = await prefixes.save(storeId, tillId, input.value);
+    // A2: a prefix FOR a financial year when one is chosen; '' is the till's one prefix for every year.
+    const result = await prefixes.save(storeId, tillId, input.value, financialYear || undefined);
     if (result.kind === 'saved') {
       renderPrefixes();
-      const m = el(`pm-${storeId}__${tillId}`);
+      const m = el(`pm-${rowKey({ storeId, tillId, financialYear })}`);
       if (m) prefixMessage(m, pw('saved'), 'good');
+      if (done) done();
       return;
     }
     prefixMessage(msgEl, `${result.kind === 'refused' ? pw('refused') : pw('failed')} ${result.words}`, 'bad');
@@ -405,7 +407,7 @@ function prefixRow(r) {
   const what = document.createElement('div');
   what.className = 'what';
   const title = document.createElement('strong');
-  title.textContent = `${pw('store')} ${r.storeId} · ${pw('till')} ${r.tillId}`;
+  title.textContent = `${pw('store')} ${r.storeId} · ${pw('till')} ${r.tillId}${r.financialYear ? ` · ${pw('year')} ${r.financialYear}` : ''}`;
   const now = document.createElement('small');
   now.id = `pv-${rowKey(r)}`;
   now.textContent = r.prefix ? `${pw('prefix')}: ${r.prefix} — ${pw('numbers')} ${r.range}` : pw('none');
@@ -441,7 +443,7 @@ function prefixRow(r) {
     msg.setAttribute('aria-live', 'polite');
     edit.append(input, button, msg);
     what.append(edit);
-    wirePrefix(input, button, msg, () => ({ storeId: r.storeId, tillId: r.tillId }));
+    wirePrefix(input, button, msg, () => ({ storeId: r.storeId, tillId: r.tillId, financialYear: r.financialYear }));
   } else {
     const ro = document.createElement('small');
     ro.className = 'fieldmsg';
@@ -465,6 +467,7 @@ function renderPrefixes() {
   el('prefixes-title').textContent = pw('heading');
   el('prefixes-lead').textContent = pw('lead');
   el('prefixes-stores').textContent = prefixes.multiStore() ? pw('manyStores') : pw('oneStore');
+  el('prefixes-years').textContent = pw('yearLead');
   const rows = prefixes.rows();
   el('prefixes-rows').replaceChildren(...(rows.length === 0 ? [emptyLine(pw('noTills'))] : rows.map(prefixRow)));
   const add = el('prefixes-new');
@@ -474,10 +477,21 @@ function renderPrefixes() {
   el('pn-till').placeholder = pw('till');
   el('pn-prefix').placeholder = 'S2L1-';
   el('pn-save').textContent = pw('issue');
+  // A2: the year a new prefix is for — every year, this year or next year.
+  const year = el('pn-year');
+  const chosen = year.value;
+  year.setAttribute('aria-label', pw('year'));
+  year.replaceChildren(...prefixes.yearChoices().map((y) => {
+    const o = document.createElement('option');
+    o.value = y;
+    o.textContent = y === '' ? pw('everyYear') : `${pw('year')} ${y}`;
+    return o;
+  }));
+  if ([...year.options].some((o) => o.value === chosen)) year.value = chosen;
 }
 
 if (prefixes && prefixes.canEdit) {
-  wirePrefix(el('pn-prefix'), el('pn-save'), el('pn-msg'), () => ({ storeId: el('pn-store').value.trim(), tillId: el('pn-till').value.trim() }));
+  wirePrefix(el('pn-prefix'), el('pn-save'), el('pn-msg'), () => ({ storeId: el('pn-store').value.trim(), tillId: el('pn-till').value.trim(), financialYear: el('pn-year').value }));
 }
 
 function paintChrome() {

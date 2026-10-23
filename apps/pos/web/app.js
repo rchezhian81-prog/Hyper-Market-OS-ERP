@@ -92,6 +92,20 @@ const WORDS = {
     ageNotSoldTitle: 'Item not sold',
     cannotSellTitle: 'Cannot be sold',
     ageNotSold: 'The customer could not show they are {age} or over, so {item} was not added to the bill. Nothing else changes.',
+    // B8 (OB-298): a perishable whose barcode carries no date — the cashier looks at the date printed on the pack, one tap.
+    packDateCheck: 'Date check — look at the pack',
+    packDateQuestion: '{item} is perishable. Look at the use-by / expiry date printed on the pack. Is it still in date today?',
+    packDateYes: 'Yes — date is good', packDateNo: 'No — past its date, do not sell',
+    packDateNotSoldTitle: 'Item not sold',
+    packDateNotSold: 'The date on the pack of {item} has passed, so it was not added to the bill. Put it aside for the manager.',
+    // M12-FR-01 (QG-05): how fast this till puts a scanned item on the bill, today, as the store computer keeps it.
+    scanSpeed: 'Scan speed', scanSpeedTitle: 'Scan speed today — this till',
+    scanSpeedSaid: '{samples} scans timed today. 95 in every 100 reached the bill within {p95} ms (the target is {target} ms). Middle {median} ms, slowest {max} ms; {over} over the target.',
+    scanSpeedSlow: 'This till is slower than the target — tell the manager.',
+    scanSpeedGood: 'Within the target.',
+    scanSpeedDropped: '{dropped} timings could not be kept while the store computer was out of reach.',
+    scanSpeedWaiting: '{waiting} more are waiting on this till to be sent.',
+    scanSpeedUnknown: 'Not measured yet',
     // Who is on the till (SP-4b · F09): the lane the box said it is, and the cashier who signed in — or nobody.
     lane: 'Lane', noLane: 'No lane set on this till', notSignedIn: 'Nobody signed in',
     signIn: 'Sign in', signOut: 'Sign out', signInTitle: 'Your staff ID',
@@ -195,6 +209,8 @@ const WORDS = {
     managerPinTitle: 'Manager: your till PIN', managerPinHint: 'The manager keys their own six-digit till PIN. It is never shown, and approves this refund only.',
     approvalRefused: 'Not approved',
     refundDone: 'Refund recorded',
+    refundHeldRecall: '{n} item(s) are under RECALL. Do not put them back on the shelf — put them in the held (quarantine) bin.',
+    refundHeldExpired: '{n} item(s) are from a batch past its date. Do not put them back on the shelf — put them in the held (quarantine) bin.',
     refundPending: 'Refund pending',
     refundStop: 'Do not hand over cash',
     noReceipt: 'Return without receipt',
@@ -304,6 +320,18 @@ const WORDS = {
     ageNotSoldTitle: 'பொருள் விற்கப்படவில்லை',
     cannotSellTitle: 'இதை விற்க முடியாது',
     ageNotSold: 'வாடிக்கையாளர் {age} வயது அல்லது அதற்கு மேல் என்று காட்ட முடியவில்லை, எனவே {item} பில்லில் சேர்க்கப்படவில்லை. வேறு எதுவும் மாறவில்லை.',
+    packDateCheck: 'தேதி சரிபார்ப்பு — பொதியைப் பாருங்கள்',
+    packDateQuestion: '{item} விரைவில் கெடும் பொருள். பொதியில் அச்சிடப்பட்ட பயன்பாட்டு / காலாவதி தேதியைப் பாருங்கள். இன்று அது இன்னும் செல்லுபடியாகுமா?',
+    packDateYes: 'ஆம் — தேதி சரி', packDateNo: 'இல்லை — தேதி கடந்துவிட்டது, விற்க வேண்டாம்',
+    packDateNotSoldTitle: 'பொருள் விற்கப்படவில்லை',
+    packDateNotSold: '{item} பொதியில் உள்ள தேதி கடந்துவிட்டது, எனவே அது பில்லில் சேர்க்கப்படவில்லை. மேலாளருக்காக தனியாக வையுங்கள்.',
+    scanSpeed: 'ஸ்கேன் வேகம்', scanSpeedTitle: 'இன்றைய ஸ்கேன் வேகம் — இந்த கவுண்டர்',
+    scanSpeedSaid: 'இன்று {samples} ஸ்கேன்கள் நேரம் அளக்கப்பட்டன. 100-ல் 95 ஸ்கேன்கள் {p95} மி.வி.க்குள் பில்லில் வந்தன (இலக்கு {target} மி.வி.). நடு {median} மி.வி., மிக மெதுவானது {max} மி.வி.; {over} இலக்கை மீறின.',
+    scanSpeedSlow: 'இந்த கவுண்டர் இலக்கை விட மெதுவாக உள்ளது — மேலாளரிடம் சொல்லுங்கள்.',
+    scanSpeedGood: 'இலக்குக்குள் உள்ளது.',
+    scanSpeedDropped: 'கடை கணினியை அடைய முடியாதபோது {dropped} நேர அளவுகளை வைத்திருக்க முடியவில்லை.',
+    scanSpeedWaiting: 'இன்னும் {waiting} இந்த கவுண்டரில் அனுப்பக் காத்திருக்கின்றன.',
+    scanSpeedUnknown: 'இன்னும் அளக்கப்படவில்லை',
     lane: 'லேன்', noLane: 'இந்த கவுண்டருக்கு லேன் அமைக்கப்படவில்லை', notSignedIn: 'யாரும் உள்நுழையவில்லை',
     signIn: 'உள்நுழை', signOut: 'வெளியேறு', signInTitle: 'உங்கள் பணியாளர் குறியீடு',
     signInHint: 'உங்கள் பேட்ஜை ஸ்கேன் செய்யவும் அல்லது பணியாளர் எண்ணை உள்ளிட்டு சரி அழுத்தவும். அடுத்து உங்கள் கல்லா PIN-ஐ உள்ளிடுவீர்கள்.',
@@ -398,6 +426,8 @@ const WORDS = {
     managerPinTitle: 'மேலாளர்: உங்கள் கல்லா PIN', managerPinHint: 'மேலாளர் தனது ஆறு இலக்க கல்லா PIN-ஐ உள்ளிடுகிறார். அது ஒருபோதும் காட்டப்படாது; இந்த ஒரு திரும்பப் பணத்திற்கு மட்டுமே அனுமதி.',
     approvalRefused: 'அனுமதிக்கப்படவில்லை',
     refundDone: 'திரும்பப் பணம் பதிவு செய்யப்பட்டது',
+    refundHeldRecall: '{n} பொருள்(கள்) திரும்பப்பெறுதலில் (RECALL) உள்ளன. அலமாரியில் திரும்ப வைக்க வேண்டாம் — நிறுத்தி வைக்கும் (தனிமைப்படுத்தல்) தொட்டியில் வையுங்கள்.',
+    refundHeldExpired: '{n} பொருள்(கள்) காலாவதியான தொகுதியைச் சேர்ந்தவை. அலமாரியில் திரும்ப வைக்க வேண்டாம் — நிறுத்தி வைக்கும் (தனிமைப்படுத்தல்) தொட்டியில் வையுங்கள்.',
     refundPending: 'திரும்பப் பணம் நிலுவையில்',
     refundStop: 'பணத்தைக் கொடுக்க வேண்டாம்',
     noReceipt: 'ரசீது இல்லாமல் திரும்பப் பெறல்',
@@ -606,6 +636,7 @@ function demoSession() {
     hasCatalogue: () => false,
     // No catalogue, so nothing restricted can be scanned; the age answers exist so the shell never calls a missing method.
     confirmAge() { throw new Error('No price list on this lane.'); }, refuseAge() { throw new Error('No price list on this lane.'); },
+    confirmPackDate() { throw new Error('No price list on this lane.'); }, refusePackDate() { throw new Error('No price list on this lane.'); },
     ageConfirmedAtLeast: () => 0,
     // No identity without the bundle either — the stand-in says so rather than inventing a lane or a cashier.
     signIn() {}, signOut() {}, operator: () => undefined,
@@ -1561,6 +1592,16 @@ function printRow(row) {
   const node = document.createElement('div');
   node.className = `pr-${row.kind}`;
   if (row.fields.length > 0) node.dataset.field = row.fields.join(' ');
+  if (row.kind === 'qr' && row.qr && typeof row.qr.svg === 'string') {
+    // A22: the B2C dynamic QR, drawn from the SVG the invoice carries (no network, no library), with its caption under it.
+    const img = document.createElement('img');
+    img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(row.qr.svg)}`;
+    img.alt = row.text ?? '';
+    const caption = document.createElement('span');
+    caption.textContent = row.text ?? '';
+    node.append(img, caption);
+    return node;
+  }
   if (row.kind === 'pair' || (row.kind === 'title' && row.left !== undefined)) {
     node.classList.add('pr-split');
     const left = document.createElement('span');
@@ -1823,6 +1864,8 @@ el('more').addEventListener('click', async () => {
     // SUPERVISOR OVERRIDES (PF-07 · M12-FR-04): each needs a manager's approval and is recorded on the store computer
     // first. Changing a price needs a selected line.
     ...(session.noSaleAtTill ? [{ value: 'no_sale', label: t('noSale') }] : []),
+    // M12-FR-01: this till's scan-to-line speed today, as the store computer keeps it.
+    ...(typeof session.scanSpeed === 'function' ? [{ value: 'scan_speed', label: t('scanSpeed'), icon: 'activity' }] : []),
     ...(session.priceChangeAtTill && selectedLineId ? [{ value: 'price_change', label: t('priceChange') }] : []),
     // The customer's loyalty membership, by the mobile number they joined with (PF-09 step 2 · OB-28 "1").
     ...(guestOnly() ? [{ value: 'guest_only', label: t('guestOnlyOption') }] : session.setLoyaltyMobile === undefined ? [] : session.loyaltyMemberLast4() === null
@@ -1842,9 +1885,24 @@ el('more').addEventListener('click', async () => {
   if (what === 'member') return nameLoyaltyMember();
   if (what === 'guest_only') { tell(t('guestOnlyTitle'), t('guestOnlyMsg'), STOP); return undefined; }
   if (what === 'no_sale') return openDrawerNoSale();
+  if (what === 'scan_speed') return showScanSpeed();
   if (what === 'price_change') return changeLinePrice();
   if (what === 'member_remove') { session.setLoyaltyMobile(null); tell(t('member'), t('memberRemoved'), SUCCESS); return undefined; }
 });
+
+/**
+ * M12-FR-01 (QG-05 · §32): this till's scan-to-line figures for today, read from the store computer (which keeps every
+ * timed scan). Not measured yet, or the box out of reach, is said — never a made-up figure (P-08).
+ */
+async function showScanSpeed() {
+  const s = await session.scanSpeed();
+  const waiting = s.waiting > 0 ? ` ${t('scanSpeedWaiting').replace('{waiting}', String(s.waiting))}` : '';
+  if (!s.known) { tell(`${t('scanSpeedTitle')}: ${t('scanSpeedUnknown')}`, `${s.why}${waiting}`, STOP); return; }
+  const said = t('scanSpeedSaid').replace('{samples}', String(s.samples)).replace('{p95}', String(s.p95Ms)).replace('{target}', String(s.targetMs))
+    .replace('{median}', String(s.medianMs)).replace('{max}', String(s.maxMs)).replace('{over}', String(s.overTargetCount));
+  const dropped = s.droppedSamples > 0 ? ` ${t('scanSpeedDropped').replace('{dropped}', String(s.droppedSamples))}` : '';
+  tell(t('scanSpeedTitle'), `${said} ${s.withinTarget ? t('scanSpeedGood') : t('scanSpeedSlow')}${dropped}${waiting}`, s.withinTarget ? SUCCESS : STOP);
+}
 
 /**
  * Open the drawer with NO SALE (PF-07 · M15-FR-01): a manager approves with their own PIN, the store computer records it
@@ -2438,7 +2496,12 @@ function showRefundOutcome(outcome, refundTender) {
   // OB-258: a refund to "Paid on old system" was given on the old system — said in the till's language, so nobody opens
   // this drawer for it.
   const words = outcome.kind === 'settled' && refundTender === 'paid_on_old_erp' ? t('mirrorRefundDone') : outcome.laneMessage;
-  tell(title, words, outcome.kind === 'settled' ? SUCCESS : STOP);
+  // M13-FR-02: a unit the till held (under recall, or of an expired batch) is said, so it goes in the held bin, not the shelf.
+  const held = outcome.held
+    ? [outcome.held.recall > 0 ? t('refundHeldRecall').replace('{n}', String(outcome.held.recall)) : null,
+      outcome.held.expired > 0 ? t('refundHeldExpired').replace('{n}', String(outcome.held.expired)) : null].filter(Boolean)
+    : [];
+  tell(title, [words, ...held].join('\n'), outcome.kind === 'settled' && held.length === 0 ? SUCCESS : STOP);
 }
 
 /**
@@ -2537,6 +2600,13 @@ el('unsent').addEventListener('click', () => {
 // or the raw code with group separators (sent as Ctrl+]). Every character is collected; at Enter a code shaped like a
 // GS1 code goes to the catalogue whole, and anything else keeps ONLY its digits — exactly what a 1D scan did before.
 let scanBuffer = '';
+// M12-FR-01: when the scan's first character arrived — the scan-to-line time runs from here to the line on the screen.
+let scanStartedAt = null;
+/** M12-FR-01: time one scan to the next painted frame (the line is on the screen), and hand it to the till. */
+function noteScanToLine(startedAt) {
+  if (startedAt === null || typeof session.noteScanTime !== 'function' || typeof requestAnimationFrame !== 'function') return;
+  requestAnimationFrame(() => { try { session.noteScanTime(performance.now() - startedAt); } catch { /* timing never stops a sale */ } });
+}
 const GS = String.fromCharCode(29);
 /** A GS1 2D code by its shape alone (the tested reader in packages/gs1 decides the rest). */
 function gs1Shaped(code) {
@@ -2566,11 +2636,44 @@ async function askAge(refusal, retry) {
     }
     session.refuseAge(refusal.minimumAge, at, refusal.productId);
   } catch (e) {
+    // B8: an age-restricted perishable asks its pack date next, then scans again.
+    if (e && e.name === 'PackDateCheckRequiredError') { void askPackDate(e, retry); return; }
     tell(t('read'), e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e), STOP);
     return;
   }
   render();
   tell(t('ageNotSoldTitle'), fill(t('ageNotSold')), STOP);
+}
+/**
+ * B8 (OB-298, owner 23 Oct 2026): a perishable whose barcode carries no date — the cashier looks at the date printed on the
+ * pack and answers with ONE tap before the line is added. "Yes" records the confirmation in the signed-in cashier's name
+ * and scans the item again (the line carries it); "No" records that it was out of date and says it was not sold; Cancel
+ * adds nothing and records nothing. The commit checks every perishable line again before the money is taken.
+ */
+async function askPackDate(refusal, retry) {
+  const fill = (words) => words.replace('{item}', refusal.description);
+  const answer = await choose(fill(t('packDateQuestion')), [
+    { label: t('packDateYes'), value: 'yes', icon: 'check' },
+    { label: t('packDateNo'), value: 'no', icon: 'x' },
+  ], { words: t('packDateCheck'), icon: 'calendar-check' });
+  if (answer === null) return; // backed out: nothing added, nothing recorded
+  const at = new Date().toISOString();
+  try {
+    if (answer === 'yes') {
+      session.confirmPackDate(refusal.productId, at);
+      retry();
+      render();
+      return;
+    }
+    session.refusePackDate(refusal.productId, at);
+  } catch (e) {
+    // A retry can meet another question (an age check) or a refusal — each in its own words.
+    if (e && e.name === 'AgeCheckRequiredError') { void askAge(e, retry); return; }
+    tell(t('read'), e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e), STOP);
+    return;
+  }
+  render();
+  tell(t('packDateNotSoldTitle'), fill(t('packDateNotSold')), STOP);
 }
 window.addEventListener('keydown', (event) => {
   // A panel is open; the scan is not for us.
@@ -2578,6 +2681,8 @@ window.addEventListener('keydown', (event) => {
   if (event.key === 'Enter') {
     const raw = scanBuffer;
     scanBuffer = '';
+    const startedAt = scanStartedAt;
+    scanStartedAt = null;
     const code = gs1Shaped(raw) ? raw : raw.replace(/[^0-9]/g, '');
     if (code.length < 6) return; // a person pressing Enter, not a scanner
     // A scanner ends every code with Enter, and Enter on a FOCUSED button presses it: the button last tapped — the
@@ -2587,10 +2692,13 @@ window.addEventListener('keydown', (event) => {
     try {
       session.scanBarcode(code);
       render();
+      noteScanToLine(startedAt);
     } catch (e) {
       // An age-restricted item with no confirmed answer in this basket: the session refused to add it (PF-03). Ask, and
       // scan again only on a yes.
       if (e && e.name === 'AgeCheckRequiredError') { void askAge(e, () => session.scanBarcode(code)); return; }
+      // B8 (OB-298): a perishable with no date in its barcode — one tap on the date printed on the pack, then scanned again.
+      if (e && e.name === 'PackDateCheckRequiredError') { void askPackDate(e, () => session.scanBarcode(code)); return; }
       // A line the law forbids (B6 · B14 · B19 — a banned plastic, a thin or free bag, a loose cigarette, weight on a
       // scale whose stamp ran out) is refused in the gate's own words; there is no override to offer.
       if (e && e.name === 'TillRuleRefusedError') { tell(t('cannotSellTitle'), e.laneMessage, STOP); return; }
@@ -2601,7 +2709,10 @@ window.addEventListener('keydown', (event) => {
   // A 2D scanner sends FNC1 as Ctrl+] (the group separator); every other printable character is kept as typed.
   if (event.ctrlKey && event.key === ']') { scanBuffer += GS; return; }
   if (event.ctrlKey || event.metaKey || event.altKey) return;
-  if (event.key.length === 1) scanBuffer += event.key;
+  if (event.key.length === 1) {
+    if (scanBuffer === '') scanStartedAt = event.timeStamp;
+    scanBuffer += event.key;
+  }
 });
 
 render();

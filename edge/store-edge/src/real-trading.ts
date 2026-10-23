@@ -8,7 +8,8 @@
 //
 // Off unless real trading is on, and never together with the mirror pilot (the box also refuses to start with both).
 
-import { buildTaxInvoice, type TaxInvoiceIdentity } from '../../../packages/receipt/src/tax-invoice';
+import { buildTaxInvoice, lineTaxSplit, type TaxInvoiceIdentity } from '../../../packages/receipt/src/tax-invoice';
+import { readCessRate, type CessRate } from '../../../packages/finance/src/cess';
 
 /** The box's words when the mirror pilot and real trading are both on (a later store pack could set both). */
 export const REAL_TRADING_AND_MIRROR_BOX_WORDS = 'This store computer is set for the mirror pilot AND for real trading, which are never on together. Nothing was saved — do not take money. Tell the owner.';
@@ -21,8 +22,24 @@ const num = (v: unknown): number => (typeof v === 'number' ? v : Number.NaN);
  * A real-trading SALE record judged as a tax invoice: `undefined` when its bill is a complete Rule 46 invoice, else the
  * refusal in the cashier's words (every missing field named).
  */
-export function realTradingSaleRefusal(record: Rec, identity: TaxInvoiceIdentity | null): { readonly refusedBecause: 'tax_invoice_incomplete'; readonly laneMessage: string } | undefined {
+export function realTradingSaleRefusal(
+  record: Rec, identity: TaxInvoiceIdentity | null,
+  /** A7: the compensation cess THIS box's signed pack says each product carries — the bill is judged by it, not the record's. */
+  cessOf?: (productId: string) => CessRate | undefined,
+): { readonly refusedBecause: 'tax_invoice_incomplete'; readonly laneMessage: string } | undefined {
   const lines = Array.isArray(record['lines']) ? record['lines'] : [];
+  // A7: a line's cess as recorded must be what this box's pack says — dropping or cutting it under-declares the tax.
+  for (const l of lines) {
+    const o = isObj(l) ? l : {};
+    const productId = typeof o['productId'] === 'string' ? o['productId'] : '';
+    const packCess = cessOf === undefined ? readCessRate(o['cess']) : readCessRate(cessOf(productId));
+    const expected = packCess === undefined ? 0
+      : lineTaxSplit({ lineTotalMinor: num(o['lineTotalMinor']), taxRateBps: num(o['taxRateBps']), cess: packCess, quantityMinor: num(o['quantityMinor']) })?.cessMinor;
+    const recorded = typeof o['cessMinor'] === 'number' ? o['cessMinor'] : 0;
+    if (expected === undefined || expected !== recorded) {
+      return { refusedBecause: 'tax_invoice_incomplete', laneMessage: `This bill cannot be issued as a legal tax invoice, so it was NOT saved — do not take money. ${productId}: the compensation cess on the bill is not the cess the price list gives this item. Head office must correct the item in the price list.` };
+    }
+  }
   const number = typeof record['number'] === 'string' ? record['number'] : typeof record['receiptNumber'] === 'string' ? record['receiptNumber'] : '';
   const built = buildTaxInvoice({
     identity, number,
@@ -37,6 +54,10 @@ export function realTradingSaleRefusal(record: Rec, identity: TaxInvoiceIdentity
         ...(typeof o['hsnCode'] === 'string' ? { hsnCode: o['hsnCode'] } : {}),
         quantityMinor: num(o['quantityMinor']), uom: typeof o['uom'] === 'string' ? o['uom'] : '',
         unitPriceMinor: num(o['unitPriceMinor']), lineTotalMinor: num(o['lineTotalMinor']), taxRateBps: num(o['taxRateBps']),
+        ...((): { cess?: CessRate } => {
+          const c = cessOf === undefined ? readCessRate(o['cess']) : readCessRate(cessOf(typeof o['productId'] === 'string' ? o['productId'] : ''));
+          return c === undefined ? {} : { cess: c };
+        })(),
       };
     }),
     // OB-279 · OB-285: the record's total must be the invoice's total (never above the lines), to the paisa.

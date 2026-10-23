@@ -57,6 +57,12 @@ function lineOf(v: unknown): SuspendedLine | undefined {
     ...(isStr(v['hsnCode']) ? { hsnCode: v['hsnCode'] } : {}),
     ...(int(v['minimumAge']) && v['minimumAge'] > 0 ? { minimumAge: v['minimumAge'] } : {}),
     ...(isStr(v['voidReason']) ? { voidReason: v['voidReason'] } : {}),
+    // D-20: the batch the barcode carried and its use-by date — a recalled perishable that carried its date needs no tap (B8).
+    ...(isStr(v['batchId']) ? { batchId: v['batchId'] } : {}),
+    ...(isStr(v['batchExpiry']) && /^\d{4}-\d{2}-\d{2}$/.test(v['batchExpiry']) ? { batchExpiry: v['batchExpiry'] } : {}),
+    // B8 (OB-298): a perishable line's pack-date check comes back with it, read strictly.
+    ...(isObj(v['packDateCheck']) && isStr(v['packDateCheck']['confirmedBy']) && isStr(v['packDateCheck']['confirmedAt'])
+      ? { packDateCheck: { confirmedBy: v['packDateCheck']['confirmedBy'], confirmedAt: v['packDateCheck']['confirmedAt'] } } : {}),
   };
 }
 function answerOf(v: unknown): SuspendedAgeAnswer | undefined {

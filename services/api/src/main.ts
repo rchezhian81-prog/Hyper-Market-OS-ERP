@@ -347,6 +347,7 @@ import { opsMessagingRoutes, notificationGuardHooks, opsMessagingSweep } from '.
 import { p1IdentitySurface, approvalAgeSweep } from './p1-identity-adapters'; // OB-288 lane 1 · P1 — identity, authority, configuration
 import { poAuthorityHooks, expirySweepThatPublishes, followupsSurface } from './followups-adapters'; // OB-288 integration follow-ups
 import { aiGovernanceSurface } from './ai-adapters'; // OB-288 lane 4 · P1 — AI governance and agents (R7)
+import { tillBillSurface, supplierStateCodeOf, b2cDynamicQrSettingOf } from './till-bill-adapters'; // Till bill and GST (audit-1 P5 · audit-2 P3)
 import { alsoEachPassOf } from './ops-alert-sweeps'; // R3 lane 1 — GST liability and returns
 import { itcPortForStore } from './r3-itc-bridge'; // R3 seam — GSTR-3B Table 4 reads the A17 reconciliation
 import { r4PayEprRoutes, r4PayslipHooks, payslipLateSweep } from './r4-pay-epr-adapters';
@@ -521,6 +522,7 @@ export function buildSurface(deps: {
     ...b2bDocumentsAdapter({ store: st, now, numberSeries: deps.numberSeries }),
     afterTaxInvoice: b2bMoneyEffectsAdapter({ store: st, now }).afterTaxInvoice,
     stock: b2bStockAdapter({ store: st, now }),
+    supplierStateCode: supplierStateCodeOf({ store: st, now }), // Till bill and GST (A8): CGST + SGST or IGST by place of supply
     commissionOnInvoice: (tenantId, i) => accrueFromInvoice(commissionRuleAdapter({ store: st, now }), tenantId, {
       salespersonId: i.salespersonId, invoiceId: i.invoice.documentId, invoiceNumber: i.invoice.number, netMinor: i.invoice.netMinor,
     }),
@@ -1182,6 +1184,7 @@ export function buildSurface(deps: {
         storeName: async (tt, sid) => (await orgStructureAdapter({ store, now }).nodes(tt)).find((n) => n.nodeId === sid)?.name,
         // Verifier r18 OB85-2: the bill-number high-water resumes from its persisted snapshot (O(prefixes) per pack build).
         ...(deps.snapshots === undefined ? {} : { snapshots: deps.snapshots }),
+        b2cDynamicQr: b2cDynamicQrSettingOf(settings), // A22 (OB-326, switched off)
       }, t, storeId),
     }),
     // OB-81 "A": head office issues each till its bill-number prefix per (store, till) — unique across the business, ≤ 16
@@ -2161,6 +2164,7 @@ export function buildSurface(deps: {
   p1IdentitySurface(surface, { store, now, settings, applyDecision, tillSealKey: sealKey, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // OB-288 lane 1 · P1 (M01-FR-01/02/03 · M02-FR-01/02/03 · OB-290/291/292)
   followupsSurface(surface, { store, now, signer, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // OB-288 integration follow-ups (the seams between the five lanes)
   aiGovernanceSurface(surface, { store, now, orderFacts: orderFactsFor, ...(governedAiDeps === undefined ? {} : { governedAi: governedAiDeps }), ...(deps.modelTransport === undefined ? {} : { modelTransport: deps.modelTransport }), ...(deps.modelPricing === undefined ? {} : { modelPricing: deps.modelPricing }) }); // OB-288 lane 4 · P1 (AI-SCREEN · AI-INCIDENTS · AI-NFR-01/04/06/09/10/11 · A01/A02/A03/A05/A09 · OB-296/314)
+  tillBillSurface(surface, { store, now }); // Till bill and GST (audit-1 P5 · audit-2 P3)
   // The versioned API surface as a manifest (M36-FR-04, P-06): reads THIS table at request time, so it lists
   // every endpoint registered — itself included — and `docs/api/surface.md` is generated from the same fold.
   surface.push(...apiManifestRoutes({ routes: () => surface, now }));

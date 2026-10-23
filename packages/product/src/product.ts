@@ -63,7 +63,13 @@ export interface Category {
   readonly regulated?: readonly RegulatedKind[];
 }
 
-export type RegulatedKind = 'food' | 'packed' | 'weighed' | 'age_restricted' | 'drug' | 'hazardous'
+/**
+ * `bis_controlled` (B12 · OB-325): goods under a BIS Quality Control Order — packaged drinking water and the other QCO
+ * goods — sold only with the ISI mark under a current BIS licence. A product in such a category must carry its BIS
+ * licence number and the licence's expiry date to publish, and the till refuses it offline when either is missing or the
+ * licence has run out.
+ */
+export type RegulatedKind = 'food' | 'packed' | 'weighed' | 'age_restricted' | 'drug' | 'hazardous' | 'bis_controlled'
   /** B17: a liquor category — nothing in it can be published or sold (TASMAC state monopoly). */
   | 'liquor';
 
@@ -128,6 +134,20 @@ export interface SafetyContent {
   /** B13: the piece's 6-character Hallmark Unique ID (letters and digits), exactly as hallmarked. */
   readonly huid?: string;
   /**
+   * B12 (OB-325): the product is under a BIS Quality Control Order. Set on publish from its category (`bis_controlled`);
+   * may also be set on the product itself. The pack carries it to the till with the two fields below.
+   */
+  readonly bisControlled?: boolean;
+  /** B12: the BIS licence number (for example "CM/L-1234567890") the ISI mark on the product is used under. */
+  readonly bisLicenceNo?: string;
+  /** B12: the last day (YYYY-MM-DD) that BIS licence is valid — the till stops selling the product after it. */
+  readonly bisLicenceValidUntil?: string;
+  /**
+   * B8 (OB-298, owner 23 Oct 2026): a perishable whose barcode does not carry its date — the cashier confirms the date
+   * printed on the pack with one tap before the line is added, and the confirmation is kept on the sale line.
+   */
+  readonly perishable?: boolean;
+  /**
    * B17 (TASMAC state monopoly · OWNER_DECISIONS D3): the product is an alcoholic drink. Such a product is never published
    * or sold — the flag exists so it can be REFUSED by name, not so it can be age-checked.
    */
@@ -136,6 +156,18 @@ export interface SafetyContent {
   readonly packedBySre?: boolean;
   /** M03-FR-03 · D01-FR-04: the nutrition panel, per 100 g or 100 ml (FSSAI 2020 list). Recorded when known (OB-307). */
   readonly nutrition?: NutritionFacts;
+}
+
+/** A real calendar date written YYYY-MM-DD. */
+const isCalendarDay = (v: unknown): v is string => {
+  if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+  const d = new Date(`${v}T00:00:00.000Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
+};
+
+/** B12: whether a product is BIS-controlled — flagged itself, or in a `bis_controlled` category. */
+export function isBisControlled(product: Pick<ProductRecord, 'safety'>, category: Pick<Category, 'regulated'> | undefined): boolean {
+  return product.safety?.bisControlled === true || (category?.regulated ?? []).includes('bis_controlled');
 }
 
 /** B13: a Hallmark Unique ID — six characters, capital letters and digits (BIS). */
@@ -385,7 +417,19 @@ export function validateProduct(
   // B14 · B19 (roadmap v2.1): the till's legal gates read these from the pack, so a value the till cannot read is refused
   // HERE rather than published as a product the till would then refuse at the counter for a reason nobody can fix there.
   const wholePositive = (v: unknown): boolean => typeof v === 'number' && Number.isSafeInteger(v) && v > 0;
-  for (const key of ['tobacco', 'carryBag', 'bannedSingleUsePlastic', 'gold'] as const) {
+  // B12 (OB-325): a BIS-controlled product needs its BIS licence number and the licence's expiry date before it publishes.
+  if (isBisControlled(product, category)) {
+    if (typeof safety?.bisLicenceNo !== 'string' || safety.bisLicenceNo.trim() === '') {
+      issues.push({ field: 'safety.bisLicenceNo', severity: 'blocks_publish', message: 'this product is under a BIS Quality Control Order and has no BIS licence number — the till cannot sell it without one' });
+    }
+    if (!isCalendarDay(safety?.bisLicenceValidUntil)) {
+      issues.push({ field: 'safety.bisLicenceValidUntil', severity: 'blocks_publish', message: 'this product is under a BIS Quality Control Order and has no BIS licence expiry date (YYYY-MM-DD) — the till cannot judge the licence current without one' });
+    }
+  } else if (safety?.bisLicenceValidUntil !== undefined && !isCalendarDay(safety.bisLicenceValidUntil)) {
+    issues.push({ field: 'safety.bisLicenceValidUntil', severity: 'blocks_publish', message: `the BIS licence expiry "${String(safety.bisLicenceValidUntil)}" is not a date written YYYY-MM-DD` });
+  }
+
+  for (const key of ['tobacco', 'carryBag', 'bannedSingleUsePlastic', 'gold', 'bisControlled', 'perishable'] as const) {
     const v: unknown = safety?.[key];
     if (v !== undefined && typeof v !== 'boolean') {
       issues.push({ field: `safety.${key}`, severity: 'blocks_publish', message: `${key} must be true or false — the till cannot read "${String(v)}"` });
@@ -521,7 +565,12 @@ export function publishProduct(
       result.issues.filter((i) => i.severity === 'blocks_publish'),
     );
   }
-  return { ...product, lifecycle: product.lifecycle === 'draft' ? 'new' : product.lifecycle };
+  // B12: a product in a BIS-controlled category carries the flag itself, so the pack tells the till without the category.
+  const category = categories.find((c) => c.categoryId === product.primaryCategoryId);
+  const stamped = isBisControlled(product, category) && product.safety?.bisControlled !== true
+    ? { ...product, safety: { ...(product.safety ?? {}), bisControlled: true } }
+    : product;
+  return { ...stamped, lifecycle: product.lifecycle === 'draft' ? 'new' : product.lifecycle };
 }
 
 export type SellRefusal = 'recall_blocked' | 'not_published' | 'discontinued' | 'sellable';

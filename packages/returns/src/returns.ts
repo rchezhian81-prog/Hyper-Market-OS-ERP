@@ -148,6 +148,8 @@ export interface CommittedReturn {
   /** Lines whose batch was under recall, so their resell was forced to quarantine (M13-FR-02 / M10).
    *  Visible so the desk/report can show a returned unit was HELD, not resold (P-08), never silent. */
   readonly recallHeldLines: number;
+  /** Lines of an EXPIRED batch whose resell was forced to quarantine (M13-FR-02 · M10-FR-01) — visible, never silent. */
+  readonly expiredHeldLines: number;
   readonly processedAt: string;
 }
 
@@ -342,13 +344,73 @@ export function assertReturnValid(input: CommitReturnInput): ReturnValidity {
  * resold) and flagged `recallHeld`. The return itself is still accepted and refunded — recalled goods
  * are exactly what a recall wants back — only their disposition is overridden.
  */
+/**
+ * Whether a returned unit is under recall (M10-FR-04 · M13-FR-02). Called for every line the desk chose to RESELL, with the
+ * batch the unit carries (undefined when the return does not know it) and its product — so a product-wide block (a recall
+ * flag on the product, or a recalled batch of a unit whose batch is not known) holds the unit too, never only a known batch.
+ */
+export type ReturnRecallCheck = (batchId: string | undefined, productId: string) => boolean;
+
+/** True when a returned line the desk chose to resell must be HELD (quarantine) because it is under recall. */
+export function returnLineRecallHeld(line: Pick<ReturnLineInput, 'disposition' | 'batchId' | 'productId'>, isRecalled: ReturnRecallCheck): boolean {
+  if (line.disposition !== 'resell') return false;
+  const batch = typeof line.batchId === 'string' && line.batchId.trim() !== '' ? line.batchId : undefined;
+  return isRecalled(batch, line.productId);
+}
+
+/**
+ * The recall check a lane runs from its own cached catalogue pack (M13-FR-02 · SF-08 · OB-139 "A"), offline: a product
+ * whose pack says `recallBlock` with no batch list is recalled whatever unit comes back; with a batch list, a unit of a
+ * named batch is recalled, and a unit whose batch is NOT known is treated as recalled too — the same rule a plain barcode
+ * meets at the scan (OB-139 "A"), because the unit could be from the recalled batch. A held unit is still refunded; it is
+ * only kept off the shelf.
+ */
+export function recallOfProduct(
+  productOf: (productId: string) => { readonly recallBlock?: boolean; readonly blockedBatches?: readonly string[] } | undefined,
+): ReturnRecallCheck {
+  return (batchId, productId) => {
+    const p = productOf(productId);
+    if (p === undefined || p.recallBlock !== true) return false;
+    const named = p.blockedBatches;
+    if (named === undefined || named.length === 0) return true;
+    return batchId === undefined ? true : named.includes(batchId);
+  };
+}
+
+/**
+ * The expired-batch check a lane runs from its own cached catalogue pack (M13-FR-02 · M10-FR-01 · B8), offline: a returned
+ * unit whose batch head office has moved to EXPIRED (the pack's `expiredBatches`) is never put back for sale. Only a unit
+ * whose batch is KNOWN can be matched — the same rule the scan applies (`scanGs1`: a plain barcode is not refused by this
+ * list, OB-298); a unit with no batch is judged by the desk's own disposition. A held unit is still refunded.
+ */
+export function expiredOfProduct(
+  productOf: (productId: string) => { readonly expiredBatches?: readonly { readonly batchId: string }[] } | undefined,
+): ReturnRecallCheck {
+  return (batchId, productId) => {
+    if (batchId === undefined) return false;
+    return productOf(productId)?.expiredBatches?.some((b) => b.batchId === batchId) === true;
+  };
+}
+
+/** Why a returned line the desk chose to resell is HELD (quarantine) instead: under recall first, else an expired batch. */
+export function returnLineHoldReason(
+  line: Pick<ReturnLineInput, 'disposition' | 'batchId' | 'productId'>, isRecalled: ReturnRecallCheck, isExpired: ReturnRecallCheck = () => false,
+): 'recall' | 'expired' | null {
+  if (returnLineRecallHeld(line, isRecalled)) return 'recall';
+  return returnLineRecallHeld(line, isExpired) ? 'expired' : null;
+}
+
 export function commitReturn(
   input: CommitReturnInput,
   stockLedger: Ledger,
   outbox: SyncOutbox,
   /** Whether a batch is under an OPEN recall (M10-FR-04). Injected — pure and offline-safe (a cached
-   *  recall set), the same division as the POS sale block. Defaults to "nothing recalled". */
-  isRecalled: (batchId: string) => boolean = () => false,
+   *  recall set), the same division as the POS sale block. Defaults to "nothing recalled". Use
+   *  `recallOfProduct` for a lane's cached catalogue, which also knows a product-wide block. */
+  isRecalled: ReturnRecallCheck = () => false,
+  /** Whether a returned unit's batch is EXPIRED (M13-FR-02 · M10-FR-01) — `expiredOfProduct` over the lane's cached pack.
+   *  A resell line of an expired batch is forced to quarantine and marked `expiredHeld`. Defaults to "nothing expired". */
+  isExpired: ReturnRecallCheck = () => false,
 ): CommittedReturn {
   const { noReceipt, requiredApproval } = assertReturnValid(input);
 
@@ -356,19 +418,20 @@ export function commitReturn(
   // must never go back on the shelf, whatever the desk chose: force resell → quarantine so it is HELD,
   // not resold (M13-FR-02 "recall-blocked item handled per M10"). We WANT recalled goods back, so the
   // return is accepted and refunded normally — only its disposition is overridden, and visibly so.
+  // An EXPIRED batch coming back (M13-FR-02 · M10-FR-01) is held the same way — it may never be sold again.
   const resolved = input.lines.map((line) => {
-    const recallHeld = line.disposition === 'resell'
-      && typeof line.batchId === 'string' && line.batchId.trim() !== ''
-      && isRecalled(line.batchId);
-    return { line, disposition: (recallHeld ? 'quarantine' : line.disposition) as Disposition, recallHeld };
+    const hold = returnLineHoldReason(line, isRecalled, isExpired);
+    return { line, disposition: (hold === null ? line.disposition : 'quarantine') as Disposition, recallHeld: hold === 'recall', expiredHeld: hold === 'expired' };
   });
 
   // Append one stock movement per kept line (resell/quarantine/damaged); a scrapped
   // unit is destroyed and keeps no stock. Only resell re-enters sellable stock.
   let restockedLines = 0;
   let recallHeldLines = 0;
-  for (const { line, disposition, recallHeld } of resolved) {
+  let expiredHeldLines = 0;
+  for (const { line, disposition, recallHeld, expiredHeld } of resolved) {
     if (recallHeld) recallHeldLines += 1;
+    if (expiredHeld) expiredHeldLines += 1;
     const state = DISPOSITION_STATE[disposition];
     if (state === null) {
       continue; // scrap: destroyed, no stock kept
@@ -395,6 +458,7 @@ export function commitReturn(
           // A recalled unit held off the shelf is marked so the movement is not read as an ordinary
           // quarantine — the return system overrode the desk's resell (P-08, never silent).
           ...(recallHeld ? { recallHeld: true } : {}),
+          ...(expiredHeld ? { expiredHeld: true } : {}),
         },
       }),
     );
@@ -440,7 +504,7 @@ export function commitReturn(
         //
         // The stock movements above carry a quantity, but they are keyed by product and carry no
         // original sale, so a returned unit cannot be attributed to the bill it came off.
-        lines: resolved.map(({ line, disposition, recallHeld }) => ({
+        lines: resolved.map(({ line, disposition, recallHeld, expiredHeld }) => ({
           productId: line.productId,
           uom: line.uom,
           quantityMinor: Math.abs(line.quantityMinor),
@@ -450,6 +514,7 @@ export function commitReturn(
           ...(line.condition === undefined ? {} : { condition: line.condition }),
           ...(line.batchId === undefined || line.batchId === null ? {} : { batchId: line.batchId }),
           ...(recallHeld ? { recallHeld: true } : {}),
+          ...(expiredHeld ? { expiredHeld: true } : {}),
         })),
       },
     }),
@@ -466,6 +531,7 @@ export function commitReturn(
     requiredApproval,
     restockedLines,
     recallHeldLines,
+    expiredHeldLines,
     processedAt: input.processedAt,
   });
 }

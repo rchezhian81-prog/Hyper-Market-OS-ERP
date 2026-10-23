@@ -84,6 +84,11 @@ export interface IncomingSaleLine {
   readonly scaleCheck?: { readonly checkedOn?: string; readonly scales?: readonly { readonly assetId?: string; readonly reverificationDueOn?: string }[] };
   /** B13 (OB-138): the hallmark HUID of the gold piece sold on this line, as the till printed it on the bill. A record. */
   readonly huid?: string;
+  /** A7: the compensation cess the line was charged under (frozen from the lane's pack), and what it came to. A record. */
+  readonly cess?: { readonly advaloremBps?: number; readonly specificPerQuantityMinor?: number; readonly perQuantity?: number };
+  readonly cessMinor?: number;
+  /** B8 (OB-298): who confirmed the date printed on a perishable's pack at the till, and when. A record. */
+  readonly packDateCheck?: { readonly confirmedBy?: string; readonly confirmedAt?: string };
   /** B14: the pack size a tobacco line was judged against at the till. A record. */
   readonly packCheck?: { readonly packMinimumMinor?: number };
   /** B19: a carry-bag line's material and thickness as the till judged them. A record. */
@@ -182,6 +187,16 @@ export type SaleExceptionKind =
   | 'batch_tracked_sold_without_batch'
   /** A line's captured batch was PAST its use-by date on the day it sold. **Critical**: a food-safety breach. */
   | 'sold_expired_batch'
+  /**
+   * B8 (OB-298): a perishable sold with neither a date in its barcode nor the cashier's pack-date confirmation on the line —
+   * an older till, or a product made perishable after the lane's pack was built. Material: nobody looked at the date.
+   */
+  | 'perishable_sold_without_date_check'
+  /**
+   * A7: head office's own catalogue says the product carries a GST Compensation Cess, and the line arrived with none — an
+   * older till, or a pack from before the cess. Material: the cess is under-declared on the return until it is corrected.
+   */
+  | 'cess_not_on_the_line'
   /** An age-restricted product was sold with no confirmed age check covering it (PF-03). **Critical**: possibly a minor. */
   | 'age_restricted_sold_without_check'
   /** B19: a banned single-use plastic, a carry bag below 120 µm, or a carry bag given free — or (OB-173) charged below its
@@ -466,6 +481,25 @@ export function acceptSale(sale: IncomingSale, ctx: IntakeContext): IntakeResult
       add('batch_tracked_sold_without_batch', 'material',
         `${product.sku} is lot/batch-tracked and was sold with no batch captured`,
         'This unit cannot be traced to a batch, so a recall could not tell whether it was affected. Check that the lane is capturing the batch for this product.',
+        { productId: line.productId });
+    }
+
+    // A7: the cess head office's catalogue gives the product, missing from the line — a finding (the sale stands).
+    if (product.cess !== undefined && (product.cess.advaloremBps > 0 || product.cess.specificPerQuantityMinor > 0)
+      && !(typeof line.cessMinor === 'number' && line.cessMinor > 0)) {
+      add('cess_not_on_the_line', 'material',
+        `${product.sku} carries a compensation cess in head office's price list and was sold with none on the line`,
+        'The GST return would under-declare the cess on this sale. Check which till sold it and that it has the current price list; the accountant corrects the return.',
+        { productId: line.productId });
+    }
+
+    // B8 (OB-298): a perishable sold with no date in its barcode AND no pack-date confirmation on the line. The till asks
+    // for one tap before the line is added and checks again at payment; this is head office's backstop for an older till.
+    if (product.regulatedFlags?.['perishable'] === true && !/^\d{4}-\d{2}-\d{2}$/.test(line.batchExpiry ?? '')
+      && !(typeof line.packDateCheck?.confirmedBy === 'string' && line.packDateCheck.confirmedBy.trim() !== '')) {
+      add('perishable_sold_without_date_check', 'material',
+        `${product.sku} is perishable and was sold with no date in its barcode and no pack-date check by the cashier`,
+        'Nobody looked at the date on this pack at the till. Check the shelf for out-of-date stock of this item, and find why the till did not ask (an older till, or a pack from before the product was marked perishable).',
         { productId: line.productId });
     }
 

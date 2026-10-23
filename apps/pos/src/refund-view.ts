@@ -52,6 +52,12 @@ export interface RefundLineChoice {
   /** How many to return now, in the UOM's smallest unit (> 0). */
   readonly quantityMinor: number;
   readonly disposition: Disposition;
+  /**
+   * M13-FR-02: the batch of the unit coming back, where the screen knows it. On a receipted return it is trusted only when
+   * the bill sold that product from that batch; with no choice, the bill's own batch is used when the bill sold the product
+   * from exactly one. On a no-receipt return it is the batch read off the unit. The recall and expired-batch checks read it.
+   */
+  readonly batchId?: string;
 }
 
 /** A refund as the screen has assembled it, before it is submitted. */
@@ -87,14 +93,20 @@ export interface RefundDraft {
  * confusing "a reply was lost" with "it failed" is what causes a second refund (RR-F02).
  */
 export type RefundScreenOutcome =
-  | { readonly kind: 'settled'; readonly refundMinor: number; readonly number: string; readonly laneMessage: string }
-  | { readonly kind: 'pending'; readonly refundMinor: number; readonly number: string; readonly laneMessage: string }
+  | { readonly kind: 'settled'; readonly refundMinor: number; readonly number: string; readonly laneMessage: string; readonly held?: HeldReturnLines }
+  | { readonly kind: 'pending'; readonly refundMinor: number; readonly number: string; readonly laneMessage: string; readonly held?: HeldReturnLines }
   | { readonly kind: 'refused'; readonly laneMessage: string }
   | { readonly kind: 'uncertain'; readonly laneMessage: string }
   | { readonly kind: 'conflict'; readonly laneMessage: string }
   | { readonly kind: 'not_entitled'; readonly laneMessage: string }
   | { readonly kind: 'approval_required'; readonly laneMessage: string }
   | { readonly kind: 'invalid'; readonly laneMessage: string };
+
+/**
+ * M13-FR-02: how many returned lines the till HELD (quarantine) instead of the cashier's "resell" — under recall, or of an
+ * expired batch. Present only when any was, so the screen tells the cashier to keep the unit off the shelf (P-08).
+ */
+export interface HeldReturnLines { readonly recall: number; readonly expired: number }
 
 /** The refund call this surface drives — `till.refund` (or a test stand-in). */
 export type RefundCall = (input: Omit<CommitReturnInput, 'laneId' | 'processedBy'>) => Promise<CommittedReturn>;
@@ -170,8 +182,25 @@ export function createRefundView(deps: RefundViewDeps): RefundView {
     const returnableByProduct = new Map(
       draft.originalSale === undefined ? [] : returnable(draft.originalSale).map((l) => [l.productId, l] as const),
     );
+    // M13-FR-02: the batch each returned unit came from — from the BILL where it can be (never a batch the bill did not sell).
+    const billBatches = new Map<string, Set<string>>();
+    for (const l of draft.originalSale?.lines ?? []) {
+      if (typeof l.batchId !== 'string' || l.batchId === '') continue;
+      const set = billBatches.get(l.productId) ?? new Set<string>();
+      set.add(l.batchId);
+      billBatches.set(l.productId, set);
+    }
+    const batchOf = (choice: RefundLineChoice): string | undefined => {
+      const chosen = typeof choice.batchId === 'string' && choice.batchId.trim() !== '' ? choice.batchId.trim() : undefined;
+      if (draft.originalSale === undefined) return chosen;
+      const sold = billBatches.get(choice.productId);
+      if (sold === undefined) return undefined;
+      if (chosen !== undefined) return sold.has(chosen) ? chosen : undefined;
+      return sold.size === 1 ? [...sold][0] : undefined;
+    };
     const lines = draft.lines.map((choice) => {
       const known = returnableByProduct.get(choice.productId);
+      const batchId = batchOf(choice);
       return {
         productId: choice.productId,
         uom: choice.uom,
@@ -181,6 +210,7 @@ export function createRefundView(deps: RefundViewDeps): RefundView {
         originalQtyMinor: known?.soldMinor ?? choice.quantityMinor,
         alreadyReturnedMinor: known?.alreadyReturnedMinor ?? 0,
         disposition: choice.disposition,
+        ...(batchId === undefined ? {} : { batchId }),
       };
     });
 
@@ -222,18 +252,22 @@ export function createRefundView(deps: RefundViewDeps): RefundView {
 export async function refundOutcomeOf(run: () => Promise<CommittedReturn>): Promise<RefundScreenOutcome> {
   try {
     const committed = await run();
+    const expiredHeld = committed.expiredHeldLines;
+    const held: { held?: HeldReturnLines } = committed.recallHeldLines > 0 || expiredHeld > 0 ? { held: { recall: committed.recallHeldLines, expired: expiredHeld } } : {};
     // Cash/store credit settled at the lane → hand it over. Card/UPI is a reversal the provider has
     // not performed → pending, and the customer is told that, not shown a completed refund (M13-FR-04).
     if (committed.refundStatus === 'pending') {
       return {
         kind: 'pending', refundMinor: committed.refund.minor, number: committed.number,
         laneMessage: 'Refund sent for reversal. It is PENDING — do not hand over cash; the money returns to the card/UPI.',
+        ...held,
       };
     }
     // OB-258: a refund to "Paid on old system" was given on the old ERP — say so, so nobody opens this drawer for it.
     return {
       kind: 'settled', refundMinor: committed.refund.minor, number: committed.number,
       laneMessage: committed.refundTender === PAID_ON_OLD_ERP ? PAID_ON_OLD_ERP_WORDS.refundDone : 'Refund recorded. Hand over the refund.',
+      ...held,
     };
   } catch (e) {
     return mapError(e);

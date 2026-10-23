@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1358 | 805 | 805 | 109 | 378 |
+| 13 | 1362 | 806 | 806 | 109 | 378 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -149,6 +149,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/catalogue/products/duplicates` | `catalogue.pack.read` | core | yes |
 | GET | `/v1/catalogue/reports/variants` | `catalogue.pack.read` | core | — |
 | POST | `/v1/catalogue/search-misses` | `catalogue.search.miss.record` | core | yes |
+| GET | `/v1/catalogue/tax-classes/:hsnCode/cess` | `catalogue.pack.read` | core | — |
+| POST | `/v1/catalogue/tax-classes/:hsnCode/cess/:effectiveFrom` | `catalogue.pack.publish` | core | yes |
 | GET | `/v1/catalogue/tax-classes/:hsnCode/rate` | `catalogue.pack.read` | core | — |
 | GET | `/v1/catalogue/tax-classes/:hsnCode/rates` | `catalogue.pack.read` | core | — |
 | POST | `/v1/catalogue/tax-classes/:hsnCode/rates/:effectiveFrom` | `catalogue.pack.publish` | core | yes |
@@ -495,6 +497,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/loss-prevention/rules` | `lp.case.read` | core | — |
 | POST | `/v1/loss-prevention/rules/:kind` | `lp.rule.manage` | core | yes |
 | GET | `/v1/pos/day-close` | `till.dayclose.read` | core | — |
+| GET | `/v1/pos/day-close/:dayCloseId/evidence-pack` | `till.dayclose.read` | core | — |
 | POST | `/v1/pos/day-close/:dayCloseId/reopen/synced` | `till.dayclose.sync` | core | yes |
 | POST | `/v1/pos/day-close/:dayCloseId/synced` | `till.dayclose.sync` | core | yes |
 | GET | `/v1/pos/no-receipt-cap` | `pos.return.record` | core | — |
@@ -1092,6 +1095,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/compliance/findings/:findingId` | `compliance.finding.record` | core | yes |
 | POST | `/v1/compliance/findings/:findingId/fixed` | `compliance.finding.record` | core | yes |
 | POST | `/v1/compliance/findings/:findingId/owner` | `compliance.finding.record` | core | yes |
+| GET | `/v1/compliance/fssai-licence` | `compliance.obligation.read` | core | — |
 | GET | `/v1/compliance/gate-decisions/:gate/:release` | `compliance.gate.read` | core | — |
 | POST | `/v1/compliance/gate-decisions/:gate/:release` | `compliance.gate.decide` | core | yes |
 | GET | `/v1/compliance/gate-register` | `compliance.gate.read` | core | — |

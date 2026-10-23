@@ -27,11 +27,70 @@
 //     5 minutes) refreshes it; the history keeps every checkpoint.
 //   • the device adapter's own last-observed time (`adapterObservedAt`), when the till sends it, is kept with the report,
 //     so head office judges the lane's freshness by the adapter's clock (a hung adapter reads stale).
+//
+// M12-FR-01 (QG-05 · §32 "scan-to-line p95 ≤ 300 ms on certified pilot hardware — measured and shown"; "scan-performance
+// telemetry"): the till times every scan from the scanner's last key to the line on its screen and sends the samples here
+// with its device report — or on their own (`{ scanTimings: [ms, …] }`), fire-and-forget, never on the sale path. Every
+// sample is kept on this box's disk (append-only, one file per calendar day: `scan-timings-<YYYY-MM-DD>.log`), and the
+// box answers each till with ITS lane's figures for the day — how many scans, the p95, the median, the slowest, how many
+// were over the 300 ms target. A day with no samples is "not measured yet", never a fake 0 ms (P-08). The box reads only
+// today's file at start (bounded by a day); older days stay on the disk, never deleted.
 
 import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { OpenFileLog } from './file-log';
 import { openFileLog, readLog } from './file-log';
+import { makeTradingDayRule, tradingDateOf } from '../../../packages/calendar/src/index';
+
+/** QG-05 · §32: the scan-to-line target. */
+export const SCAN_TO_LINE_TARGET_MS = 300;
+/** The most samples one report may carry (a till sends every 25 scans, or when asked). */
+export const MAX_SCAN_SAMPLES_PER_REPORT = 1_000;
+/** A sample above this is not a scan time (the till was asleep, a dialog was open): refused, said. */
+export const MAX_SCAN_SAMPLE_MS = 60_000;
+export const scanTimingsFile = (day: string): string => `scan-timings-${day}.log`;
+
+/** One lane's scan-to-line figures for a day, from every sample on this box's disk. */
+export interface ScanSpeed {
+  readonly laneId: string;
+  readonly day: string;
+  readonly samples: number;
+  readonly p95Ms: number;
+  readonly medianMs: number;
+  readonly maxMs: number;
+  readonly overTargetCount: number;
+  readonly targetMs: number;
+  /** Whether the day's p95 is within the target. */
+  readonly withinTarget: boolean;
+  /** Samples the till could not keep (its buffer was full while it could not reach this box) — said, never hidden. */
+  readonly droppedSamples: number;
+  readonly lastAt: string;
+}
+
+/**
+ * The scan timings in a report body: undefined when none were sent, null when they cannot be read (not a list of whole
+ * milliseconds 0 … 60 000, or too many), else the samples. `droppedSamples` is how many the till had to let go.
+ */
+export function readScanTimings(body: unknown): { readonly samples: readonly number[]; readonly dropped: number } | null | undefined {
+  if (!isObj(body) || body['scanTimings'] === undefined) return undefined;
+  const list = body['scanTimings'];
+  if (!Array.isArray(list) || list.length > MAX_SCAN_SAMPLES_PER_REPORT) return null;
+  if (!list.every((n) => typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= MAX_SCAN_SAMPLE_MS)) return null;
+  const d = body['droppedScanTimings'];
+  const dropped = typeof d === 'number' && Number.isInteger(d) && d > 0 ? d : 0;
+  return { samples: (list as number[]).map((n) => Math.round(n)), dropped };
+}
+
+/** p95 (nearest rank), median and slowest of a set of samples; undefined for none — never a fake zero. */
+export function scanSpeedOf(samples: readonly number[], targetMs: number = SCAN_TO_LINE_TARGET_MS): { readonly p95Ms: number; readonly medianMs: number; readonly maxMs: number; readonly overTargetCount: number } | undefined {
+  if (samples.length === 0) return undefined;
+  const sorted = [...samples].sort((a, b) => a - b);
+  const rank = (p: number): number => sorted[Math.max(0, Math.ceil(p * sorted.length) - 1)]!;
+  return { p95Ms: rank(0.95), medianMs: rank(0.5), maxMs: sorted[sorted.length - 1]!, overTargetCount: sorted.filter((n) => n > targetMs).length };
+}
+
+// The store's calendar day in India time (the shop is in Tamil Nadu), whatever zone this machine is set to.
+const calendarDay = (iso: string): string => tradingDateOf(iso, makeTradingDayRule('00:00'), 'Asia/Kolkata');
 
 export const PERIPHERAL_KINDS = ['scanner', 'printer', 'scale', 'cash_drawer', 'card_terminal'] as const;
 export type PeripheralKindHere = (typeof PERIPHERAL_KINDS)[number];
@@ -53,8 +112,12 @@ export interface PeripheralReport {
 }
 
 export type ReportAnswer =
-  /** `written`: false when the report only refreshed an unchanged till's latest (that state is already on the disk). */
-  | { readonly recorded: true; readonly report: PeripheralReport; readonly written?: boolean }
+  /**
+   * `written`: false when the report only refreshed an unchanged till's latest (that state is already on the disk).
+   * `report` is null when the till sent only scan timings (M12-FR-01) and no devices. `scanSpeed`: the lane's figures for
+   * today after this report's samples — null when no scan has been timed today ("not measured yet").
+   */
+  | { readonly recorded: true; readonly report: PeripheralReport | null; readonly written?: boolean; readonly scanSpeed?: ScanSpeed | null }
   | { readonly recorded: false; readonly refusedBecause: string; readonly laneMessage: string };
 
 const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -88,6 +151,8 @@ export class PeripheralReports {
   private readonly latestByLane = new Map<string, PeripheralReport>();
   /** When each till's report was last WRITTEN (its checkpoint clock). */
   private readonly writtenAt = new Map<string, number>();
+  /** M12-FR-01: today's scan samples per lane (from today's file at start), and the open file for that day. */
+  private scanDay: { day: string; log: OpenFileLog; byLane: Map<string, { samples: number[]; dropped: number; lastAt: string }> } | undefined;
   readonly unreadableRecords: number;
   /** Where the box started from: the index generation (0 = none), and how many history / index records it read. */
   readonly startedFrom: { readonly generation: number; readonly historyRecordsRead: number; readonly indexRecordsRead: number };
@@ -149,10 +214,25 @@ export class PeripheralReports {
 
   /** Record what the till's devices say now — a change (or a due checkpoint) is on the disk before it is answered. */
   async report(input: { readonly laneId: string; readonly by: string; readonly body: unknown }): Promise<ReportAnswer> {
+    // M12-FR-01: the till's scan timings, on the disk before the answer — with or without a device report.
+    const timings = readScanTimings(input.body);
+    if (timings === null) {
+      return { recorded: false, refusedBecause: 'scan_timings_not_readable', laneMessage: `The till's scan timings were not a list of up to ${MAX_SCAN_SAMPLES_PER_REPORT} times in milliseconds (0 to ${MAX_SCAN_SAMPLE_MS}). Nothing was recorded.` };
+    }
+    const sentDevices = isObj(input.body) && input.body['devices'] !== undefined;
+    if (timings !== undefined && !sentDevices) {
+      return { recorded: true, report: null, written: timings.samples.length > 0 || timings.dropped > 0, scanSpeed: await this.recordScanTimings(input.laneId, input.by, timings) };
+    }
     const devices = readDevices(input.body);
     if (devices === null) {
       return { recorded: false, refusedBecause: 'devices_not_readable', laneMessage: 'The till did not say which devices and how each one is (ok, not working properly, or failed). Nothing was recorded.' };
     }
+    const scanSpeed = timings === undefined ? undefined : await this.recordScanTimings(input.laneId, input.by, timings);
+    const answer = await this.reportDevices(input, devices);
+    return scanSpeed === undefined || !answer.recorded ? answer : { ...answer, scanSpeed };
+  }
+
+  private async reportDevices(input: { readonly laneId: string; readonly by: string; readonly body: unknown }, devices: readonly DeviceState[]): Promise<ReportAnswer> {
     const said = isObj(input.body) ? input.body['adapterObservedAt'] : undefined;
     const adapterObservedAt = typeof said === 'string' && !Number.isNaN(Date.parse(said)) ? new Date(Date.parse(said)).toISOString() : undefined;
     const report: PeripheralReport = { laneId: input.laneId, reportedBy: input.by, reportedAt: this.now(), devices, ...(adapterObservedAt === undefined ? {} : { adapterObservedAt }) };
@@ -186,6 +266,58 @@ export class PeripheralReports {
     await old.close();
   }
 
+  /** M12-FR-01: today's open scan-timings file and samples — today's file read back after a restart. */
+  private async scanDayFor(day: string): Promise<NonNullable<PeripheralReports['scanDay']>> {
+    if (this.scanDay?.day === day) return this.scanDay;
+    const byLane = new Map<string, { samples: number[]; dropped: number; lastAt: string }>();
+    const log = await openFileLog({ dataDir: this.dataDir, capacityBytes: this.capacityBytes, fileName: scanTimingsFile(day) });
+    for (const v of await readLog(log.path)) {
+      if (!v.ok) continue;
+      try {
+        const r = JSON.parse(v.record) as { laneId?: unknown; at?: unknown; ms?: unknown; dropped?: unknown };
+        if (typeof r.laneId !== 'string' || typeof r.at !== 'string' || !Array.isArray(r.ms)) continue;
+        const lane = byLane.get(r.laneId) ?? { samples: [], dropped: 0, lastAt: r.at };
+        lane.samples.push(...r.ms.filter((n): n is number => typeof n === 'number'));
+        lane.dropped += typeof r.dropped === 'number' ? r.dropped : 0;
+        lane.lastAt = r.at;
+        byLane.set(r.laneId, lane);
+      } catch { /* an unreadable line is skipped; it stays on the disk */ }
+    }
+    const old = this.scanDay;
+    this.scanDay = { day, log, byLane };
+    if (old !== undefined) await old.log.close();
+    return this.scanDay;
+  }
+
+  private async recordScanTimings(laneId: string, by: string, timings: { readonly samples: readonly number[]; readonly dropped: number }): Promise<ScanSpeed | null> {
+    const at = this.now();
+    const day = await this.scanDayFor(calendarDay(at));
+    if (timings.samples.length > 0 || timings.dropped > 0) {
+      await day.log.append(JSON.stringify({ laneId, by, at, ms: timings.samples, ...(timings.dropped > 0 ? { dropped: timings.dropped } : {}) }));
+      const lane = day.byLane.get(laneId) ?? { samples: [], dropped: 0, lastAt: at };
+      lane.samples.push(...timings.samples);
+      lane.dropped += timings.dropped;
+      lane.lastAt = at;
+      day.byLane.set(laneId, lane);
+    }
+    return this.scanSpeedFor(laneId, day.day) ?? null;
+  }
+
+  /** M12-FR-01: one lane's scan-to-line figures for today (by this box's clock) — undefined when none was timed. */
+  scanSpeedFor(laneId: string, day: string = calendarDay(this.now())): ScanSpeed | undefined {
+    if (this.scanDay?.day !== day) return undefined;
+    const lane = this.scanDay.byLane.get(laneId);
+    const s = lane === undefined ? undefined : scanSpeedOf(lane.samples);
+    if (lane === undefined || s === undefined) return undefined;
+    return { laneId, day, samples: lane.samples.length, ...s, targetMs: SCAN_TO_LINE_TARGET_MS, withinTarget: s.p95Ms <= SCAN_TO_LINE_TARGET_MS, droppedSamples: lane.dropped, lastAt: lane.lastAt };
+  }
+
+  /** M12-FR-01: every lane's scan-to-line figures for today, in lane order (for the manager's screen). */
+  async scanSpeedToday(): Promise<readonly ScanSpeed[]> {
+    const day = await this.scanDayFor(calendarDay(this.now()));
+    return [...day.byLane.keys()].sort().flatMap((l) => { const s = this.scanSpeedFor(l, day.day); return s === undefined ? [] : [s]; });
+  }
+
   /** The latest report from each till, in lane order. */
   latest(): readonly PeripheralReport[] {
     return [...this.latestByLane.values()].sort((a, b) => a.laneId.localeCompare(b.laneId));
@@ -194,5 +326,6 @@ export class PeripheralReports {
   async close(): Promise<void> {
     await this.history.close();
     await this.index.close();
+    if (this.scanDay !== undefined) await this.scanDay.log.close();
   }
 }
