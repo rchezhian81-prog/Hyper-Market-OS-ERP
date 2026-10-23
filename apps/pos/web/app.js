@@ -92,6 +92,12 @@ const WORDS = {
     ageNotSoldTitle: 'Item not sold',
     cannotSellTitle: 'Cannot be sold',
     ageNotSold: 'The customer could not show they are {age} or over, so {item} was not added to the bill. Nothing else changes.',
+    // B8 (OB-298): a perishable whose barcode carries no date — the cashier looks at the date printed on the pack, one tap.
+    packDateCheck: 'Date check — look at the pack',
+    packDateQuestion: '{item} is perishable. Look at the use-by / expiry date printed on the pack. Is it still in date today?',
+    packDateYes: 'Yes — date is good', packDateNo: 'No — past its date, do not sell',
+    packDateNotSoldTitle: 'Item not sold',
+    packDateNotSold: 'The date on the pack of {item} has passed, so it was not added to the bill. Put it aside for the manager.',
     // Who is on the till (SP-4b · F09): the lane the box said it is, and the cashier who signed in — or nobody.
     lane: 'Lane', noLane: 'No lane set on this till', notSignedIn: 'Nobody signed in',
     signIn: 'Sign in', signOut: 'Sign out', signInTitle: 'Your staff ID',
@@ -304,6 +310,11 @@ const WORDS = {
     ageNotSoldTitle: 'பொருள் விற்கப்படவில்லை',
     cannotSellTitle: 'இதை விற்க முடியாது',
     ageNotSold: 'வாடிக்கையாளர் {age} வயது அல்லது அதற்கு மேல் என்று காட்ட முடியவில்லை, எனவே {item} பில்லில் சேர்க்கப்படவில்லை. வேறு எதுவும் மாறவில்லை.',
+    packDateCheck: 'தேதி சரிபார்ப்பு — பொதியைப் பாருங்கள்',
+    packDateQuestion: '{item} விரைவில் கெடும் பொருள். பொதியில் அச்சிடப்பட்ட பயன்பாட்டு / காலாவதி தேதியைப் பாருங்கள். இன்று அது இன்னும் செல்லுபடியாகுமா?',
+    packDateYes: 'ஆம் — தேதி சரி', packDateNo: 'இல்லை — தேதி கடந்துவிட்டது, விற்க வேண்டாம்',
+    packDateNotSoldTitle: 'பொருள் விற்கப்படவில்லை',
+    packDateNotSold: '{item} பொதியில் உள்ள தேதி கடந்துவிட்டது, எனவே அது பில்லில் சேர்க்கப்படவில்லை. மேலாளருக்காக தனியாக வையுங்கள்.',
     lane: 'லேன்', noLane: 'இந்த கவுண்டருக்கு லேன் அமைக்கப்படவில்லை', notSignedIn: 'யாரும் உள்நுழையவில்லை',
     signIn: 'உள்நுழை', signOut: 'வெளியேறு', signInTitle: 'உங்கள் பணியாளர் குறியீடு',
     signInHint: 'உங்கள் பேட்ஜை ஸ்கேன் செய்யவும் அல்லது பணியாளர் எண்ணை உள்ளிட்டு சரி அழுத்தவும். அடுத்து உங்கள் கல்லா PIN-ஐ உள்ளிடுவீர்கள்.',
@@ -606,6 +617,7 @@ function demoSession() {
     hasCatalogue: () => false,
     // No catalogue, so nothing restricted can be scanned; the age answers exist so the shell never calls a missing method.
     confirmAge() { throw new Error('No price list on this lane.'); }, refuseAge() { throw new Error('No price list on this lane.'); },
+    confirmPackDate() { throw new Error('No price list on this lane.'); }, refusePackDate() { throw new Error('No price list on this lane.'); },
     ageConfirmedAtLeast: () => 0,
     // No identity without the bundle either — the stand-in says so rather than inventing a lane or a cashier.
     signIn() {}, signOut() {}, operator: () => undefined,
@@ -2566,11 +2578,44 @@ async function askAge(refusal, retry) {
     }
     session.refuseAge(refusal.minimumAge, at, refusal.productId);
   } catch (e) {
+    // B8: an age-restricted perishable asks its pack date next, then scans again.
+    if (e && e.name === 'PackDateCheckRequiredError') { void askPackDate(e, retry); return; }
     tell(t('read'), e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e), STOP);
     return;
   }
   render();
   tell(t('ageNotSoldTitle'), fill(t('ageNotSold')), STOP);
+}
+/**
+ * B8 (OB-298, owner 23 Oct 2026): a perishable whose barcode carries no date — the cashier looks at the date printed on the
+ * pack and answers with ONE tap before the line is added. "Yes" records the confirmation in the signed-in cashier's name
+ * and scans the item again (the line carries it); "No" records that it was out of date and says it was not sold; Cancel
+ * adds nothing and records nothing. The commit checks every perishable line again before the money is taken.
+ */
+async function askPackDate(refusal, retry) {
+  const fill = (words) => words.replace('{item}', refusal.description);
+  const answer = await choose(fill(t('packDateQuestion')), [
+    { label: t('packDateYes'), value: 'yes', icon: 'check' },
+    { label: t('packDateNo'), value: 'no', icon: 'x' },
+  ], { words: t('packDateCheck'), icon: 'calendar-check' });
+  if (answer === null) return; // backed out: nothing added, nothing recorded
+  const at = new Date().toISOString();
+  try {
+    if (answer === 'yes') {
+      session.confirmPackDate(refusal.productId, at);
+      retry();
+      render();
+      return;
+    }
+    session.refusePackDate(refusal.productId, at);
+  } catch (e) {
+    // A retry can meet another question (an age check) or a refusal — each in its own words.
+    if (e && e.name === 'AgeCheckRequiredError') { void askAge(e, retry); return; }
+    tell(t('read'), e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e), STOP);
+    return;
+  }
+  render();
+  tell(t('packDateNotSoldTitle'), fill(t('packDateNotSold')), STOP);
 }
 window.addEventListener('keydown', (event) => {
   // A panel is open; the scan is not for us.
@@ -2591,6 +2636,8 @@ window.addEventListener('keydown', (event) => {
       // An age-restricted item with no confirmed answer in this basket: the session refused to add it (PF-03). Ask, and
       // scan again only on a yes.
       if (e && e.name === 'AgeCheckRequiredError') { void askAge(e, () => session.scanBarcode(code)); return; }
+      // B8 (OB-298): a perishable with no date in its barcode — one tap on the date printed on the pack, then scanned again.
+      if (e && e.name === 'PackDateCheckRequiredError') { void askPackDate(e, () => session.scanBarcode(code)); return; }
       // A line the law forbids (B6 · B14 · B19 — a banned plastic, a thin or free bag, a loose cigarette, weight on a
       // scale whose stamp ran out) is refused in the gate's own words; there is no override to offer.
       if (e && e.name === 'TillRuleRefusedError') { tell(t('cannotSellTitle'), e.laneMessage, STOP); return; }

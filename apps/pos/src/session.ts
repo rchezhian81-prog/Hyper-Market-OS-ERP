@@ -173,6 +173,11 @@ export interface BasketEntry {
   /** D-20 — the batch the barcode carried, and its use-by date. */
   readonly batchId?: string;
   readonly batchExpiry?: string;
+  /**
+   * B8 (OB-298): a perishable whose barcode carried no date — the signed-in cashier looked at the date printed on the pack
+   * and confirmed it, with one tap, before this line was added. Kept on the sale line as the evidence.
+   */
+  readonly packDateCheck?: PackDateCheck;
   readonly voided: boolean;
   readonly voidReason?: string;
   /**
@@ -195,6 +200,47 @@ export interface AgeAnswer {
   readonly at: string;
   /** The item the question was asked for. */
   readonly productId?: string;
+}
+
+/** B8 (OB-298): who confirmed a perishable's printed date on the pack, and when — the evidence a sale line carries. */
+export interface PackDateCheck {
+  readonly confirmedBy: string;
+  readonly confirmedAt: string;
+}
+
+/**
+ * B8 (OB-298): one answer to "is the date printed on this pack still good?", kept for the basket — a "no" is kept too:
+ * "looked, out of date, not sold" is the evidence loss prevention and the expiry list read.
+ */
+export interface PackDateAnswer {
+  readonly productId: string;
+  readonly outcome: 'in_date' | 'out_of_date';
+  readonly by: string;
+  readonly at: string;
+}
+
+/**
+ * B8 (OB-298, owner 23 Oct 2026): a PERISHABLE was scanned whose barcode carries no date, and the cashier has not yet
+ * confirmed the date printed on the pack. The line is NOT added; the till asks (one tap) and, on a yes, scans again. Thrown,
+ * not returned, so a screen that has not learned to ask still refuses rather than sells.
+ */
+export class PackDateCheckRequiredError extends Error {
+  readonly laneMessage: string;
+  constructor(public readonly productId: string, public readonly description: string) {
+    super(`${description} is perishable and its printed date has not been confirmed.`);
+    this.name = 'PackDateCheckRequiredError';
+    this.laneMessage = `${description} is perishable. Look at the date printed on the pack before adding it.`;
+  }
+}
+
+/** B8: the commit found a perishable line with no date confirmation (a recalled held basket, an older screen). Before the disk. */
+export class PackDateCheckNotDoneError extends Error {
+  readonly laneMessage: string;
+  constructor(public readonly saleId: string, public readonly unchecked: readonly { readonly productId: string; readonly description: string }[]) {
+    super(`sale ${saleId}: ${unchecked.length} perishable line(s) have no confirmed pack date.`);
+    this.name = 'PackDateCheckNotDoneError';
+    this.laneMessage = `Do not take payment. ${unchecked[0]?.description ?? 'A perishable item'} has not had the date on its pack checked. Remove it and scan it again to check the date.`;
+  }
 }
 
 /**
@@ -399,6 +445,10 @@ export class PosSession {
   private operatorId: string | undefined;
   /** Every answer to the age question for THIS basket, in order (PF-03). Cleared with the basket, kept across hold/recall. */
   private readonly ageAnswerLog: AgeAnswer[] = [];
+  /** B8: every answer to the pack-date question for THIS basket, in order — refusals included (evidence). */
+  private readonly packDateLog: PackDateAnswer[] = [];
+  /** B8: a confirmed pack date waiting for its line — used by the next scan of that product, then gone (one tap, one line). */
+  private readonly packDatePending = new Map<string, PackDateAnswer>();
   /** The loyalty member's mobile number for THIS bill (PF-09 step 2 · OB-28 "1"). Held in memory only and handed to the
    *  store computer with the sale, which turns it into the member code before anything is written — never on a disk here. */
   private loyaltyMobile: string | undefined;
@@ -533,6 +583,15 @@ export class PosSession {
     if (minimumAge !== undefined && this.ageConfirmedAtLeast() < minimumAge) {
       throw new AgeCheckRequiredError(input.productId, input.description, minimumAge);
     }
+    // B8 (OB-298): a perishable whose barcode carried no date joins the bill only after the cashier confirmed the date on
+    // the pack — one tap for this line. A barcode that carried its date was judged by the catalogue already (no tap).
+    let packDateCheck: PackDateCheck | undefined;
+    if (tillRuleFlagsOf(regulatedFlags).perishable === true && input.batchExpiry === undefined) {
+      const pending = this.packDatePending.get(input.productId);
+      if (pending === undefined) throw new PackDateCheckRequiredError(input.productId, input.description);
+      this.packDatePending.delete(input.productId);
+      packDateCheck = { confirmedBy: pending.by, confirmedAt: pending.at };
+    }
     this.seq += 1;
     const entry: BasketEntry = Object.freeze({
       lineId: `L${this.seq}`,
@@ -548,6 +607,7 @@ export class PosSession {
       ...(regulatedFlags === undefined ? {} : { regulatedFlags }),
       ...(input.batchId === undefined ? {} : { batchId: input.batchId }),
       ...(input.batchExpiry === undefined ? {} : { batchExpiry: input.batchExpiry }),
+      ...(packDateCheck === undefined ? {} : { packDateCheck }),
       voided: false,
     });
     this.lines.push(entry);
@@ -568,6 +628,38 @@ export class PosSession {
   refuseAge(minimumAge: number, atIsoUtc: string, productId?: string): AgeAnswer {
     this.notWhileAwaiting();
     return this.answerAge('refused', minimumAge, atIsoUtc, productId);
+  }
+
+  /**
+   * B8 (OB-298): the cashier looked at the date printed on this perishable's pack and it is still good — one tap. Recorded
+   * in the signed-in person's name; the next scan of the product adds its line with this confirmation on it.
+   */
+  confirmPackDate(productId: string, atIsoUtc: string): PackDateAnswer {
+    this.notWhileAwaiting();
+    return this.answerPackDate('in_date', productId, atIsoUtc);
+  }
+
+  /** B8: the date on the pack has passed — the item is NOT sold, and that is kept as evidence. */
+  refusePackDate(productId: string, atIsoUtc: string): PackDateAnswer {
+    this.notWhileAwaiting();
+    return this.answerPackDate('out_of_date', productId, atIsoUtc);
+  }
+
+  /** Every answer to the pack-date question for this basket, in order (B8). */
+  packDateAnswers(): readonly PackDateAnswer[] {
+    return this.packDateLog.slice();
+  }
+
+  private answerPackDate(outcome: PackDateAnswer['outcome'], productId: string, atIsoUtc: string): PackDateAnswer {
+    if (this.state === 'committed' || this.state === 'suspended') throw new SessionStateError('answer the pack-date check', this.state);
+    if (productId.trim() === '') throw new RangeError('The pack-date check needs the product it is for.');
+    const by = this.operator();
+    if (by === undefined) throw new NoOperatorError('answer the pack-date check');
+    const answer: PackDateAnswer = Object.freeze({ productId, outcome, by, at: atIsoUtc });
+    this.packDateLog.push(answer);
+    if (outcome === 'in_date') this.packDatePending.set(productId, answer);
+    else this.packDatePending.delete(productId);
+    return answer;
   }
 
   private answerAge(outcome: AgeAnswer['outcome'], minimumAge: number, atIsoUtc: string, productId?: string): AgeAnswer {
@@ -963,6 +1055,12 @@ export class PosSession {
       .filter((l) => { const age = tobaccoAge(l.minimumAge, this.flagsOf(l)); return age !== undefined && this.confirmationFor(age) === undefined; })
       .map((l) => ({ productId: l.productId, description: l.description, minimumAge: tobaccoAge(l.minimumAge, this.flagsOf(l)) as number }));
     if (tobaccoUnchecked.length > 0) throw new AgeCheckNotDoneError(saleId, tobaccoUnchecked);
+    // B8 (OB-298), again at the moment it matters: every perishable line whose barcode carried no date has its pack date
+    // confirmed — a recalled held basket or an older screen cannot put one on the bill unchecked.
+    const datesUnchecked = active
+      .filter((l) => tillRuleFlagsOf(this.flagsOf(l)).perishable === true && l.batchExpiry === undefined && l.packDateCheck === undefined)
+      .map((l) => ({ productId: l.productId, description: l.description }));
+    if (datesUnchecked.length > 0) throw new PackDateCheckNotDoneError(saleId, datesUnchecked);
     const input = {
         id: saleId,
         number,
@@ -1012,6 +1110,8 @@ export class PosSession {
         // D-20: the batch the barcode carried and its use-by date — the one-step-forward half of the recall trace (M10-FR-03).
         ...(l.batchId === undefined ? {} : { batchId: l.batchId }),
         ...(l.batchExpiry === undefined ? {} : { batchExpiry: l.batchExpiry }),
+        // B8 (OB-298): who looked at the date printed on a perishable's pack, and when.
+        ...(l.packDateCheck === undefined ? {} : { packDateCheck: l.packDateCheck }),
         // The evidence for a restricted line: what age it needed, and who confirmed it when (PF-03) — so head office can
         // see the check was made, and flag any restricted line that arrives without one.
         ...(requiredAge === undefined ? {} : { ageCheck: ageEvidence(requiredAge, this.confirmationFor(requiredAge)) }),
@@ -1133,6 +1233,8 @@ export class PosSession {
       ...(extra.oldErpBillNumber === undefined || this.config.mirrorPilot !== true ? {} : { oldErpBillNumber: extra.oldErpBillNumber }),
       // Every answer to the age question on this bill, refusals included (PF-03 · M15 loss prevention).
       ...(this.ageAnswerLog.length === 0 ? {} : { ageAnswers: this.ageAnswerLog.slice() }),
+      // B8: every answer to the pack-date question on this bill, "out of date — not sold" included.
+      ...(this.packDateLog.length === 0 ? {} : { packDateAnswers: this.packDateLog.slice() }),
       // The member's number, for the STORE COMPUTER to turn into a member code before the disk (PF-09 step 2 · P-04).
       ...(this.loyaltyMobile === undefined || this.config.guestSalesOnly === true ? {} : { customerMobile: this.loyaltyMobile }),
     });
@@ -1207,6 +1309,7 @@ export class PosSession {
         ...(l.minimumAge === undefined ? {} : { minimumAge: l.minimumAge }),
         ...(l.batchId === undefined ? {} : { batchId: l.batchId }),
         ...(l.batchExpiry === undefined ? {} : { batchExpiry: l.batchExpiry }),
+        ...(l.packDateCheck === undefined ? {} : { packDateCheck: l.packDateCheck }),
       })),
       ageAnswers: this.ageAnswerLog.map((a) => ({ minimumAge: a.minimumAge, outcome: a.outcome, by: a.by, at: a.at, ...(a.productId === undefined ? {} : { productId: a.productId }) })),
     };
@@ -1235,6 +1338,7 @@ export class PosSession {
         ...(l.minimumAge === undefined ? {} : { minimumAge: l.minimumAge }),
         ...(l.batchId === undefined ? {} : { batchId: l.batchId }),
         ...(l.batchExpiry === undefined ? {} : { batchExpiry: l.batchExpiry }),
+        ...(l.packDateCheck === undefined ? {} : { packDateCheck: l.packDateCheck }),
         // The pack's flags come back with the line (B14 · B19), so the commit judges a recalled line like a scanned one.
         ...(this.config.regulatedFlagsOf?.(l.productId) === undefined ? {} : { regulatedFlags: this.config.regulatedFlagsOf(l.productId) }),
       }));
@@ -1299,6 +1403,9 @@ export class PosSession {
     this.seq = 0;
     // A new basket is a new customer: no age answer carries over (PF-03).
     this.ageAnswerLog.length = 0;
+    // Nor a pack-date answer (B8).
+    this.packDateLog.length = 0;
+    this.packDatePending.clear();
     this.state = 'idle';
   }
 }

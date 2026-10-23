@@ -193,6 +193,13 @@ export interface PosView {
   confirmAge(minimumAge: number, atIsoUtc: string, productId?: string): ViewAgeAnswer;
   /** The customer could not show they are old enough: the item is not sold, and the refusal is kept as evidence. */
   refuseAge(minimumAge: number, atIsoUtc: string, productId?: string): ViewAgeAnswer;
+  /**
+   * B8 (OB-298): the cashier looked at the date printed on a perishable's pack and it is good — one tap; the next scan of
+   * that product adds its line with the confirmation. Throws when nobody is signed in (`NoOperatorError`).
+   */
+  confirmPackDate(productId: string, atIsoUtc: string): { readonly productId: string; readonly outcome: string; readonly by: string; readonly at: string };
+  /** B8: the date on the pack has passed — not sold, and kept as evidence. */
+  refusePackDate(productId: string, atIsoUtc: string): { readonly productId: string; readonly outcome: string; readonly by: string; readonly at: string };
   /** Name (or clear, with null) the loyalty member on this bill by mobile number (PF-09 step 2). */
   setLoyaltyMobile(raw: string | null): { readonly ok: boolean; readonly last4?: string; readonly laneMessage?: string };
   /** The last four digits of the member on this bill, or null. */
@@ -296,6 +303,14 @@ export function createPosView(
 
     refuseAge(minimumAge: number, atIsoUtc: string, productId?: string): ViewAgeAnswer {
       return session.refuseAge(minimumAge, atIsoUtc, productId);
+    },
+
+    confirmPackDate(productId: string, atIsoUtc: string) {
+      return session.confirmPackDate(productId, atIsoUtc);
+    },
+
+    refusePackDate(productId: string, atIsoUtc: string) {
+      return session.refusePackDate(productId, atIsoUtc);
     },
 
     setLoyaltyMobile(raw: string | null) {
