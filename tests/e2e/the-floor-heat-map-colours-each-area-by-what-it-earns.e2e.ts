@@ -87,7 +87,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Floor 
     expect(Math.round(((sBox!.x - floor!.x) * 40) / floor!.width)).toBe(0);
     expect(Math.round(((dBox!.x - floor!.x) * 40) / floor!.width)).toBe(20);
     // The page fits a phone: no sideways scroll.
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    expect(await page.evaluate('document.documentElement.scrollWidth <= window.innerWidth')).toBe(true);
 
     // Margin: dairy's milk has no buying cost — not known, no colour of the scale, the product named.
     await page.click('#m-margin');
