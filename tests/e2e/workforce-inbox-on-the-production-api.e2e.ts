@@ -97,7 +97,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Workfo
     } finally { await s.close(); }
 
     // The kill switch: the inbox is emptied and says why.
-    await ok(shop.cloud().request({ method: 'PUT', path: '/v1/ai/kill-switch', userId: OWNER, idempotencyKey: 'kill', body: { on: true } }), 'kill');
+    await ok(shop.cloud().request({ method: 'PUT', path: '/v1/ai/kill-switch', userId: OWNER, idempotencyKey: 'kill', body: { on: true, reason: 'e2e: stop the assistants' } }), 'kill');
     s = await open(MGR, 'br-1');
     try {
       await s.page.locator('#state-text', { hasText: /kill switch/i }).waitFor({ timeout: 15_000 });

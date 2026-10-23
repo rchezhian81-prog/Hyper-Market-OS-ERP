@@ -148,10 +148,10 @@ describe('the rollback is the deliverable, not the cutover', () => {
     rollbackDemonstratedAt: '2026-09-10T22:00:00Z', parallelRunSufficient: true,
     edgeUnsyncedItems: 0, blockingExceptionsOpen: 0, deltaApplied: true,
     namedTeam: [{ userId: 'u-operator', role: 'load' }, { userId: 'u-manager', role: 'floor' }],
-    ownerGoBy: 'u-owner', ...over,
+    ownerGoBy: 'u-owner', backupVerified: true, rollbackLimitsAgreed: true, ...over,
   });
 
-  it('gives GO when all eight checks pass', () => {
+  it('gives GO when all ten checks pass', () => {
     const d = decideCutover(checklist());
     expect(d.go).toBe(true);
     expect(d.failed).toHaveLength(0);
@@ -174,12 +174,19 @@ describe('the rollback is the deliverable, not the cutover', () => {
     const d = decideCutover(checklist({
       qg07Passed: false, rollbackDemonstratedAt: undefined, parallelRunSufficient: false,
       edgeUnsyncedItems: 2, blockingExceptionsOpen: 5, deltaApplied: false, namedTeam: [], ownerGoBy: undefined,
+      backupVerified: false, rollbackLimitsAgreed: false,
     }));
-    expect(d.failed).toHaveLength(8);
+    expect(d.failed).toHaveLength(10);
     expect([...d.failed].sort()).toEqual([
-      'blocking_exceptions_cleared', 'control_totals_signed', 'delta_applied', 'edge_fully_synced',
-      'owner_go', 'parallel_run_sufficient', 'rollback_demonstrated', 'team_named',
+      'backup_verified', 'blocking_exceptions_cleared', 'control_totals_signed', 'delta_applied', 'edge_fully_synced',
+      'owner_go', 'parallel_run_sufficient', 'rollback_demonstrated', 'rollback_limits_agreed', 'team_named',
     ]);
+  });
+
+  it('MG-11: refuses GO without a verified backup or the agreed rollback limits — absent fails, never passes', () => {
+    expect(decideCutover(checklist({ backupVerified: undefined })).failed).toEqual(['backup_verified']);
+    expect(decideCutover(checklist({ rollbackLimitsAgreed: undefined })).failed).toEqual(['rollback_limits_agreed']);
+    expect(decideCutover(checklist({ rollbackLimitsAgreed: false })).ownerAction).toContain('you set the rollback limits');
   });
 
   it('tells the owner plainly when the decision is his and when it is not', () => {

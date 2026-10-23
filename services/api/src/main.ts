@@ -336,11 +336,20 @@ import { r3GstRoutes, eInvoiceReportingGuardFor, gstTimeBarSweep } from './r3-gs
 // R4 Lane 4 (supply, pricing and loss prevention): D-10 · D-18 · D-21 · D-13 (r4-supply-lp-adapters).
 import { r4SupplyLpRoutes, supplierFactsFor } from './r4-supply-lp-adapters';
 import { lane2RecallSurface } from './lane2-recall-adapters'; // Lane 2 · P1
+import { lane2OfflineRoutes } from './lane2-offline-adapters'; // OB-288 lane 2 · P2 — store-box offline queues, expiry move
+// OB-288 P3 (procure-to-pay completion): M06-FR-02/03/04 · M07-FR-01/04 · WF-03 · WF-05 (p3-procure-adapters).
+import { p3ProcureRoutes, p3PurchaseOrderHooks, p3ReceiptHooks, p3PurchaseHooks, p3Segregation, p3RebateHooks } from './p3-procure-adapters';
+import { financeBridgeRoutes, finBridgeJournalHooks, finBridgeEvidenceHooks, finBridgeSweep } from './finance-bridge-adapters'; // OB-288 P5 — Tally daily file outbox, trial balance, centres, advances, rebate accruals
+import { migrationControlsAdapter } from './migration-controls-adapters'; // OB-288 P5 — MG-09 export diff, MG-10 books side, MG-11 backup and rollback limits
+import { opsMessagingRoutes, notificationGuardHooks, opsMessagingSweep } from './ops-messaging-adapters'; // OB-288 P5 — do-not-contact register, CERT-In clock, capacity report
+import { p1IdentitySurface, approvalAgeSweep } from './p1-identity-adapters'; // OB-288 lane 1 · P1 — identity, authority, configuration
+import { poAuthorityHooks, expirySweepThatPublishes, followupsSurface } from './followups-adapters'; // OB-288 integration follow-ups
+import { aiGovernanceSurface } from './ai-adapters'; // OB-288 lane 4 · P1 — AI governance and agents (R7)
 import { tillBillSurface, supplierStateCodeOf } from './till-bill-adapters'; // Till bill and GST (audit-1 P5 · audit-2 P3)
 import { alsoEachPassOf } from './ops-alert-sweeps'; // R3 lane 1 — GST liability and returns
 import { itcPortForStore } from './r3-itc-bridge'; // R3 seam — GSTR-3B Table 4 reads the A17 reconciliation
 import { r4PayEprRoutes, r4PayslipHooks, payslipLateSweep } from './r4-pay-epr-adapters';
-import { gatesRoutes, gateBlockersBeyondRisks } from './gates-adapters'; // OB-288 gates lane — findings register (QG-03/QG-06) and gate decisions (QG-12) // R4 Lane 1 — pay (C19 · C15 · C16) and EPR registers (B20 · B21 · B22)
+import { gatesRoutes, gateBlockersBeyondRisks, twoSignatureAdapter } from './gates-adapters'; // OB-288 gates lane — findings register (QG-03/QG-06) and gate decisions (QG-12) // R4 Lane 1 — pay (C19 · C15 · C16) and EPR registers (B20 · B21 · B22)
 
 const now = (): string => new Date().toISOString();
 
@@ -604,18 +613,18 @@ export function buildSurface(deps: {
     grn: empty(undefined), all: empty([]), commit: () => {}, now,
     productRule: empty(undefined), receiptPolicy: empty(undefined), recordReceiptPolicy: () => {}, commitExcessDecision: () => {},
     purchaseOrder: empty(undefined), commitDisposition: () => {}, commitExcessReturn: () => {}, commitLineReturn: () => {},
-  } : { ...goodsReceiptAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now), packOf: packHierarchyAdapter({ store, now }).pack, receivingChecklistFor: receivingChecklistLookup({ store }), ...supplierReturnDispatchHooks({ store, now }) /* R3 OB-194 */ };
+  } : { ...goodsReceiptAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now), packOf: packHierarchyAdapter({ store, now }).pack, receivingChecklistFor: receivingChecklistLookup({ store }), ...supplierReturnDispatchHooks({ store, now }) /* R3 OB-194 */, ...p3ReceiptHooks({ store, now }) /* OB-288 P3 */ };
   const syncedGoodsReceiptDeps = store === undefined ? {
     ...goodsReceiptDeps, permissionsOfUser: empty(undefined), unitCostMinor: empty(undefined),
   } : { ...syncedGoodsReceiptAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now), receivingChecklistFor: receivingChecklistLookup({ store }),
     // OB-172: a checklist done at the dock, carried inside the relayed receipt and sealed with it by the store computer.
-    ...carriedChecklistAdapter({ store, now }), tillSealKey: sealKey };
+    ...carriedChecklistAdapter({ store, now }), tillSealKey: sealKey, ...p3ReceiptHooks({ store, now }) /* OB-288 P3 */ };
   // SP-6b: the handheld's receiving scans assembled into ONE GRN against the order — the relayed receipt's deps plus the
   // SP-3a scan register; the assembly appends no stock movement of its own (the scans did).
   const assembledGoodsReceiptDeps = store === undefined ? {
     ...syncedGoodsReceiptDeps, scansOf: empty([]),
   } : { ...assembledGoodsReceiptAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now), receivingChecklistFor: receivingChecklistLookup({ store }),
-    ...carriedChecklistAdapter({ store, now }), tillSealKey: sealKey };
+    ...carriedChecklistAdapter({ store, now }), tillSealKey: sealKey, ...p3ReceiptHooks({ store, now }) /* OB-288 P3 */ };
   // Approve-then-apply (SP-4): a CLEAN decision relayed from the manager's screen reaches its subject — a held blind count,
   // a pending adjustment request or a held receipt excess — through that subject's own decide step (the same code the
   // direct routes run).
@@ -830,7 +839,7 @@ export function buildSurface(deps: {
       invoice: empty(undefined), invoices: empty([]), recordInvoice: () => {}, purchaseOrder: empty(undefined), permissionsOfUser: empty(undefined),
       latestMatch: empty(undefined), recordMatch: () => {}, matchPolicy: empty(undefined), recordMatchPolicy: () => {},
       applyBankChange: () => {}, openCommitments: empty(undefined), now,
-    } : { ...purchaseAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, approvals: approvalRequestsAdapter({ store, now }), tillSealKey: sealKey }),
+    } : { ...purchaseAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, approvals: approvalRequestsAdapter({ store, now }), tillSealKey: sealKey, ...p3PurchaseHooks({ store, now }) /* OB-288 P3 */ }),
     // D03-FR-02 (round 8): bills handed in as a GST e-invoice or a scan → a draft a person confirms → the same register.
     ...invoiceIngestionRoutes(store === undefined ? {
       document: empty(undefined), documents: empty([]), recordDocument: () => {}, supplierByGstin: empty(undefined), mappings: empty([]), recordMappings: () => {}, now,
@@ -849,7 +858,7 @@ export function buildSurface(deps: {
       invoices: empty([]), latestMatches: empty(new Map()), purchaseOrders: empty([]), receipts: empty([]), payments: empty([]), debitNoteIssues: empty([]), now,
       record: empty(undefined), records: empty([]), recordSupplier: () => {}, supplierBlocked: empty(false), bankState: empty(undefined), bankHolders: empty([]),
       permissionsOfUser: empty(undefined), recordPayment: () => {}, allocateNumber: () => Promise.resolve(1), recordDebitNoteIssue: () => {},
-    } : { ...supplierMasterAdapter({ store, now, numberSeries: debitNoteSeries /* R3 OB-196 */ }), recordAudit: auditTrail?.recordAudit, approvals: approvalRequestsAdapter({ store, now }), ...supplierPaymentHooks({ store, now }) /* R3 A24 TDS */ }),
+    } : { ...supplierMasterAdapter({ store, now, numberSeries: debitNoteSeries /* R3 OB-196 */ }), recordAudit: auditTrail?.recordAudit, approvals: approvalRequestsAdapter({ store, now }), ...supplierPaymentHooks({ store, now }) /* R3 A24 TDS */, ...p3Segregation({ store, now }) /* OB-288 P3 */ }),
     // GT-05 (MG-08): opening supplier balances from the old system — recorded per legacy bill, signed off by a second person
     // against the old system's control total, then owed, payable and posted like any other balance.
     ...supplierOpeningRoutes(store === undefined ? {
@@ -886,7 +895,7 @@ export function buildSurface(deps: {
       propose: () => {}, issue: () => {}, setSupplierBlocked: () => {},
       amend: () => {}, cancel: () => {}, postReceipt: () => {}, now,
     } : { ...purchaseOrdersAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now), packOf: packHierarchyAdapter({ store, now }).pack, masterLifecycle: masterLifecycleOf({ store, now }), // D-16 (R3)
-      openToBuy: { ...openToBuyAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, storeOf: locationBranchesOf(store, now) } }),
+      openToBuy: { ...openToBuyAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, storeOf: locationBranchesOf(store, now) }, ...p3PurchaseOrderHooks({ store, now }) /* OB-288 P3 */, ...poAuthorityHooks({ store, now, settings }) /* OB-290 follow-up */ }),
     // WF-03 · D02-FR-01 (round 8): category purchase budgets and open-to-buy — checked on every order, over budget escalates.
     ...openToBuyRoutes(store === undefined ? {
       budgets: empty([]), recordBudget: () => {}, orders: empty([]), categoryOf: empty(null), overrides: empty([]), recordOverride: () => {}, permissionsOfUser: empty(undefined), now,
@@ -900,7 +909,7 @@ export function buildSurface(deps: {
     ...rebateRoutes(store === undefined ? {
       scheme: empty(undefined), schemes: empty([]), accruals: empty([]),
       recordScheme: () => {}, recordAccrual: () => {}, now,
-    } : { ...rebatesAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }) }),
+    } : { ...rebatesAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }), ...p3RebateHooks({ store, now }) /* OB-288 P3 */ }),
     // Requisition / RFQ / quotation comparison (M06-FR-02) — like-for-like cheapest + fastest.
     ...rfqRoutes(store === undefined ? {
       requisition: empty(undefined), requisitions: empty([]), quotes: empty([]),
@@ -1490,7 +1499,7 @@ export function buildSurface(deps: {
       periodStates: empty(new Map()), nextOpenPeriod: empty(now().slice(0, 7)),
       appendJournal: () => {}, controlTotals: empty([]), postersIn: empty([]),
       markClosed: () => {}, markReopened: () => {}, now,
-    } : { ...financeAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }) }),
+    } : { ...financeAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }), ...finBridgeJournalHooks({ store, now }) }), // OB-288 P5: centre names checked
     // The day book (M23-FR-01): a trading day's synced sales + returns → balanced journals through the accountant's
     // mapping; unmapped kinds and unsplittable receipts are visible exceptions, never silently unposted (P-08).
     ...dayBookRoutes(store === undefined ? {
@@ -1513,7 +1522,7 @@ export function buildSurface(deps: {
     // Period-close evidence pack + control-total validation (M23-FR-04 / QG-07) — reconcile both sides of
     // every total (the ledger vs an independent second source the caller supplies) and produce the CA's
     // signable pack; a non-reconciling pack is still produced but marked not signable. Stateless reads.
-    ...periodEvidenceRoutes({ now }),
+    ...periodEvidenceRoutes({ now, ...(store === undefined ? {} : finBridgeEvidenceHooks({ store, now })) }), // OB-288 P5: the dead letters are the Tally outbox's
     ...creditNoteRoutes(store === undefined ? {
       alreadyCredited: empty(0), appendCreditNote: () => {}, notes: empty([]), now,
     } : financeNotesAdapter({ store, now, ...(deps.snapshots === undefined ? {} : { snapshots: deps.snapshots }) })),
@@ -1669,7 +1678,7 @@ export function buildSurface(deps: {
       ? { audits: empty([]), recordAudit: () => {}, now }
       : { ...drillThroughAdapter({ store, now }), produce: producers!.produce }),
     // Notification send guard (M31-FR-03) — consent/template/suppression/budget gate; stateless ruling.
-    ...notificationGuardRoutes(),
+    ...notificationGuardRoutes(notificationGuardHooks({ store })), // OB-288 P5: suppression read from the stored register
     // Backup verification & restore reconciliation (M35-FR-01/02, P-04) — stateless recovery rulings.
     ...backupVerificationRoutes(),
     // DR-drill scoring & backup-retention eligibility (M35-FR-02, QG-08, §32, hard rule #6) — stateless.
@@ -1750,6 +1759,10 @@ export function buildSurface(deps: {
     // R3 lane 2 (A17 ITC via GSTR-2B + IMS · A24 TDS · C14 payment disputes · C5 nomination): r3-tax-pay-adapters.
     ...r3TaxPayRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }),
     ...r4SupplyLpRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // R4 Lane 4
+    ...lane2OfflineRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // OB-288 lane 2 · P2
+    ...p3ProcureRoutes({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }), // OB-288 P3
+    ...financeBridgeRoutes({ store, now }), // OB-288 P5
+    ...opsMessagingRoutes({ store, now }), // OB-288 P5
     // GST government-portal switch — the feature flag + kill switch keeping LIVE e-invoice/e-way-bill portal
     // calls OFF by default and killable; the gate a deployment consults before the real connector. Sandbox
     // routes are exempt.
@@ -1876,7 +1889,7 @@ export function buildSurface(deps: {
           controls: empty([]), saveControl: () => {}, incidents: empty([]), saveIncident: () => {},
           remediations: empty([]), saveRemediation: () => {}, attestations: empty([]), saveAttestation: () => {}, now,
         }
-      : { ...riskRegisterAdapter({ store, now }), otherBlockers: (t: string) => gateBlockersBeyondRisks(store, now, t) }),
+      : { ...riskRegisterAdapter({ store, now }), otherBlockers: (t: string) => gateBlockersBeyondRisks(store, now, t), ...twoSignatureAdapter({ store, now, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }) /* OB-330 */ }),
     // OB-288 gates lane: the security findings register (QG-03/QG-06) and the gate-decision register (QG-12).
     ...gatesRoutes({ store, now }),
     ...reportingRoutes(store === undefined
@@ -2084,6 +2097,7 @@ export function buildSurface(deps: {
       recordAudit: auditTrail?.recordAudit,
       // 2b-vi-c-3: a decision relayed from the store's migration screen is checked against the store computer's seal.
       tillSealKey: sealKey,
+      controls: migrationControlsAdapter({ store, now }), // OB-288 P5 — MG-09 / MG-10 / MG-11
     }),
     // GT-05 (MG-07): the old system's history and document files — kept under their legacy ids, read-only, hash-checked.
     ...legacyHistoryRoutes(store === undefined ? {
@@ -2142,6 +2156,9 @@ export function buildSurface(deps: {
     })),
   ];
   lane2RecallSurface(surface, { store, now, signer, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }), ...(deps.notificationTransport === undefined ? {} : { messageTransport: deps.notificationTransport }) }); // Lane 2 · P1 recall and trace (M10-FR-03/04)
+  p1IdentitySurface(surface, { store, now, settings, applyDecision, tillSealKey: sealKey, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // OB-288 lane 1 · P1 (M01-FR-01/02/03 · M02-FR-01/02/03 · OB-290/291/292)
+  followupsSurface(surface, { store, now, signer, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // OB-288 integration follow-ups (the seams between the five lanes)
+  aiGovernanceSurface(surface, { store, now, orderFacts: orderFactsFor, ...(governedAiDeps === undefined ? {} : { governedAi: governedAiDeps }), ...(deps.modelTransport === undefined ? {} : { modelTransport: deps.modelTransport }), ...(deps.modelPricing === undefined ? {} : { modelPricing: deps.modelPricing }) }); // OB-288 lane 4 · P1 (AI-SCREEN · AI-INCIDENTS · AI-NFR-01/04/06/09/10/11 · A01/A02/A03/A05/A09 · OB-296/314)
   tillBillSurface(surface, { store, now }); // Till bill and GST (audit-1 P5 · audit-2 P3)
   // The versioned API surface as a manifest (M36-FR-04, P-06): reads THIS table at request time, so it lists
   // every endpoint registered — itself included — and `docs/api/surface.md` is generated from the same fold.
@@ -2613,6 +2630,9 @@ export async function startApi(
       gstTimeBar: gstTimeBarSweep({ store, now, timeZone: (t: string) => new DurableTenantSettings(new SqlConfigVersionStore(pgPoolClient(db))).value(t, SETTINGS.STORE_TIME_ZONE) }),
       // R4 · C15: a payslip not issued by its pay date is raised to every owner on the same timer.
       payslipLate: payslipLateSweep({ store, now }),
+      expiryMove: expirySweepThatPublishes({ store, now, signer: hmacSigner(settings['PACK_SIGNING_KEY']!) }), // OB-288 lane 2 · M10-FR-01, and the expired batches onto the tills' pack
+      approvalAge: approvalAgeSweep({ store, now, settings: new DurableTenantSettings(new SqlConfigVersionStore(pgPoolClient(db))) }), // OB-288 lane 1 · P1 — OB-292 escalation by age
+      financeBridge: async (t: string, at: string) => (await finBridgeSweep({ store, now })(t, at)) + (await opsMessagingSweep({ store, now })(t, at)), // OB-288 P5 — the daily Tally file outbox; an overdue CERT-In report
       say: (line) => { out(`${line}\n`); },
     }),
   });

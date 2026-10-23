@@ -96,9 +96,10 @@ export function withChosenDelivery(data: WarehouseAssignment | undefined, chosen
   const list = data?.openDeliveries;
   if (data === undefined || list === undefined) return data;
   const pick = list.find((d) => d.poId === chosen) ?? (list.length === 1 ? list[0] : undefined);
-  const { grnId: _g, poId: _p, ordered: _o, ...rest } = data;
-  void _g; void _p; void _o;
-  return pick === undefined ? rest : { ...rest, grnId: pick.grnId, poId: pick.poId, ordered: pick.ordered };
+  const { grnId: _g, poId: _p, ordered: _o, asn: _a, ...rest } = data;
+  void _g; void _p; void _o; void _a;
+  // OB-288 P3 (M07-FR-01): the chosen delivery's advance ship notice comes with it, cached for offline receiving.
+  return pick === undefined ? rest : { ...rest, grnId: pick.grnId, poId: pick.poId, ordered: pick.ordered, ...(pick.asn === undefined ? {} : { asn: pick.asn }) };
 }
 
 export function bootWarehouse(

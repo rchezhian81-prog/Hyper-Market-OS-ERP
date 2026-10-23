@@ -56,6 +56,7 @@ async function cast(): Promise<ApiHarness> {
   await approvedSuppliers(h, A, 'sup-1', 'sup-9'); // OB-32: an order needs an approved supplier
   await deliveryPlaces(h, A, 'store-1'); // OB-37: an order names the store it is delivered to
   await h.provisionRole(A, 'u-mgr', 'store_manager'); // holds propose + supplier.block, NOT approve
+  await h.provisionRole(A, 'u-po-buyer', 'store_manager'); // OB-288 P3: raises the orders whose receipts u-mgr posts
   await h.provisionRole(A, 'u-cash', 'cashier');       // holds neither
   return h;
 }
@@ -185,7 +186,7 @@ function commitmentsBody(res: { body: unknown }): { known: boolean; valueMinor?:
 // cancellation reduces the open figure correctly; an amended PO keeps its history.
 describe('open-commitment netting: amend / cancel / receive (M06-FR-04)', () => {
   async function issued(h: ApiHarness, poId: string): Promise<void> {
-    await propose(h, 'u-mgr', poId, body(), `${poId}-p`);
+    await propose(h, 'u-po-buyer', poId, body(), `${poId}-p`); // OB-288 P3 (§28): the buyer is not the one who posts its receipts
     await approve(h, 'u-owner', poId, 'budgeted', `${poId}-a`);
   }
 

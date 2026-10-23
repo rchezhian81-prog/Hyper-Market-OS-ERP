@@ -62,11 +62,13 @@ describe('period-close evidence pack & control totals: the CA signs something re
     expect(pack.verdict).toContain('NOT signable');
     expect(pack.statement.some((line) => line.includes('Do not sign'))).toBe(true);
 
-    // A reconciling set with a dead-lettered posting is also not signable — the posting is named, never dropped.
-    const withDead = await evidencePack(h, 'u-owner', { totals: reconcilingTotals, tradingDayCutoff: CUTOFF, deadLetteredCount: 2 }, 'ep-3');
-    const dp = withDead.body as { signable: boolean; statement: string[] };
-    expect(dp.signable).toBe(false);
-    expect(dp.statement.some((line) => line.includes('dead-letter'))).toBe(true);
+    // OB-293: how many postings the accounts never received is READ from the stored Tally outbox — a typed number is
+    // refused by name. (A real dead-lettered day blocking the pack: the-daily-tally-file-carries-every-journal… test.)
+    const typed = await evidencePack(h, 'u-owner', { totals: reconcilingTotals, tradingDayCutoff: CUTOFF, deadLetteredCount: 2 }, 'ep-3');
+    expect(typed.status).toBe(400);
+    expect(codeOf(typed)).toBe('dead_lettered_count_is_read_not_typed');
+    const read = (await evidencePack(h, 'u-owner', { totals: reconcilingTotals, tradingDayCutoff: CUTOFF }, 'ep-4')).body as { deadLetteredFrom: string };
+    expect(read.deadLetteredFrom).toMatch(/Tally outbox/);
   });
 
   it('rejects malformed totals / a missing cut-off (400) and gates on finance.period.read', async () => {

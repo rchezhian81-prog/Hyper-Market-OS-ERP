@@ -94,7 +94,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Transf
       expect(await s.page.locator('#register tbody tr[data-transfer="t-3"]').count(), 'another store\'s transfer is not listed').toBe(0);
       await look(s.page, 't-1');
       expect(await s.page.locator('#d-lines').innerText()).toMatch(/P1 — 10 EA[\s\S]*head office cost ₹2\.00[\s\S]*P2 — 4 EA[\s\S]*head office cost ₹5\.00/);
-      expect(await s.page.locator('#drawer input:visible').count(), 'no cost or approver is typed').toBe(0);
+      expect(await s.page.locator('#drawer input:visible:not(#d-cancel-reason)').count(), 'no cost or approver is typed (the only box is a cancel reason)').toBe(0);
       const answered = s.page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith('/t-1/dispatch'));
       await s.page.click('#d-dispatch');
       expect(await (await answered).json()).toMatchObject({ state: 'in_transit', approvedBy: MGR, lineCostsMinor: [200, 500] });
@@ -158,6 +158,33 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Transf
     } finally { await s.close(); }
     expect((await transfer('t-1')).shortfallResolution).toMatchObject({ resolvedBy: OWNER, lines: [{ productId: 'P1', foundMinor: 1, lostMinor: 1, lostValueMinor: 200 }] });
     expect([await onHand('P1', 'br-1'), await onHand('P1', 'br-1-back')]).toEqual([9, 40]);
+  }, 120_000);
+
+  it('WF-07: the br-1 manager cancels the transfer that never left, with a reason — head office keeps the proposal and his name; a sent one offers no cancel', async () => {
+    const s = await open(MGR);
+    try {
+      await s.page.locator('#register tbody tr[data-transfer="t-2"][data-state="proposed"]').waitFor({ timeout: 15_000 });
+      await look(s.page, 't-1');
+      expect(await s.page.locator('#d-cancel-box').isHidden(), 'a transfer that has left cannot be cancelled').toBe(true);
+      await s.page.click('#d-close');
+      await look(s.page, 't-2');
+      expect(await s.page.locator('#d-cancel-box').isHidden()).toBe(false);
+      // No reason: refused on the page, nothing sent.
+      await s.page.click('#d-cancel');
+      await says(s.page, 'd-status', /^Say why it is being cancelled/);
+      await s.page.fill('#d-cancel-reason', 'over-asked: the back store never held 500');
+      await s.page.click('#d-cancel');
+      await says(s.page, 'd-state', /^Cancelled before it left — nothing moved/);
+      expect(await s.page.locator('#d-people').innerText()).toContain(`cancelled by ${MGR} — "over-asked: the back store never held 500"`);
+      expect(await s.page.locator('#d-dispatch-box').isHidden()).toBe(true);
+      expect(await s.page.locator('#d-cancel-box').isHidden()).toBe(true);
+      expect(s.writes).toEqual(['POST /v1/warehouse/transfers/t-2/cancel {"reason":"over-asked: the back store never held 500"}']);
+      await s.page.click('#lang');
+      await says(s.page, 'd-state', /^புறப்படும் முன் ரத்து செய்யப்பட்டது/);
+      expect(s.errors).toEqual([]);
+    } finally { await s.close(); }
+    expect(await transfer('t-2')).toMatchObject({ state: 'cancelled', cancelledBy: MGR });
+    expect(await onHand('P1', 'br-1-back')).toBe(40);
   }, 120_000);
 
   it('a cashier, who may not read stock, is told so (head office refuses them too), offered nothing, and the page speaks Tamil', async () => {

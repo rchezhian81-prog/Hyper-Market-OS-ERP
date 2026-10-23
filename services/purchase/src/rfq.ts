@@ -20,6 +20,21 @@ import {
 } from '../../../packages/purchasing/src/index';
 import { money, isCurrencyCode, type CurrencyCode } from '../../../packages/contracts/src/money';
 
+/**
+ * OB-288 P3: a requisition as head office keeps it — who raised it (server-attributed, §28) and, for WF-03, what it was
+ * raised FROM (a replenishment proposal or an A02 draft, turned into a requisition by a buyer's own act).
+ */
+export interface StoredRequisition extends Requisition {
+  readonly raisedBy?: string;
+  readonly raisedAt?: string;
+  readonly source?: RequisitionSource;
+}
+
+/** WF-03: where a requisition came from. Absent = typed by the buyer. */
+export type RequisitionSource =
+  | { readonly kind: 'replenishment'; readonly storeId: string; readonly proposedAt: string; readonly proposed: Readonly<Record<string, number>> }
+  | { readonly kind: 'a02_draft'; readonly proposalIds: readonly string[] };
+
 export interface RfqDeps {
   /** One requisition by id (latest version), or undefined. */
   readonly requisition: (tenantId: string, requisitionId: string) => Promise<Requisition | undefined> | Requisition | undefined;
@@ -68,10 +83,12 @@ export function rfqRoutes(deps: RfqDeps): readonly Route[] {
             nextSafeAction: 'Send the comparison currency and at least one product with a quantity.',
           });
         }
-        const req: Requisition = {
+        const req: StoredRequisition = {
           requisitionId,
           currency: b['currency'] as CurrencyCode,
           lines: (lines as RawReqLine[]).map((l): RequisitionLine => ({ productId: l.productId, quantity: l.quantity })),
+          // OB-288 P3 (§28): who raised it — the signed-in buyer, never a field — is the requisition step of every order it leads to.
+          raisedBy: ctx.userId, raisedAt: deps.now(),
         };
         await deps.recordRequisition(ctx.tenantId, req);
         return { status: 201, body: { requisition: req } };

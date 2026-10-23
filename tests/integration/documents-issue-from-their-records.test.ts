@@ -37,6 +37,7 @@ async function shop(h: ApiHarness, t: string) {
     h.request({ method, path, userId, tenantId: t, ...(branchId === undefined ? {} : { branchId }), ...(body === undefined ? {} : { body }), ...(key === undefined ? {} : { idempotencyKey: key }) });
   await h.seedOwner(t, 'u-owner');
   await h.provisionRole(t, 'u-buyer', 'store_manager');
+  await h.provisionRole(t, 'u-po-buyer', 'store_manager'); // OB-288 P3 (§28): the buyer who raises the order is never the one who books it in
   await h.provisionRole(t, 'u-checker', 'store_manager');
   await h.provisionRole(t, 'u-mgr-b', 'store_manager', ['S-B']); // runs store B only
   await approvedSuppliers(h, t, 'sup-1');
@@ -58,7 +59,7 @@ async function shop(h: ApiHarness, t: string) {
   await template('inv', 'tax_invoice', 'TAX INVOICE {{documentNumber}}: {{lines}} — taxable {{taxable}}, GST {{tax}}, total {{total}}', 't-inv');
   await template('stm', 'statement', 'STATEMENT {{documentNumber}} as at {{asAt}} — owed {{owed}}{{outstanding}}', 't-stm');
 
-  const order = (poId: string, store = 'S-A', qty = 10) => call('POST', `/v1/purchase/orders/${poId}`, 'u-buyer', { supplierId: 'sup-1', deliverToLocationId: store, lines: [{ productId: 'p1', orderedQty: qty, unitCost: cost }] }, `po-${poId}`);
+  const order = (poId: string, store = 'S-A', qty = 10) => call('POST', `/v1/purchase/orders/${poId}`, 'u-po-buyer', { supplierId: 'sup-1', deliverToLocationId: store, lines: [{ productId: 'p1', orderedQty: qty, unitCost: cost }] }, `po-${poId}`);
   const approve = async (poId: string) => expect((await call('POST', `/v1/purchase/orders/${poId}/approval`, 'u-owner', { reason: 'ok' }, `po-${poId}-ok`)).status).toBe(200);
   const receive = (grnId: string, poId: string, warehouseId: string, counted: number) => call('POST', `/v1/inventory/goods-receipt/${grnId}`, 'u-buyer', {
     warehouseId, receivedOnDate: '2026-10-10', currency: 'INR', poId,

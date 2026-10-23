@@ -47,13 +47,14 @@ describe.each(backings)('a DSD hand-back gets a numbered debit note — on $name
     const T = randomUUID();
     await h.seedOwner(T, 'u-owner');
     await h.provisionRole(T, 'u-recv', 'store_manager');
+    await h.provisionRole(T, 'u-po-buyer', 'store_manager'); // OB-288 P3 (§28): the buyer who raises the order is never the one who books it in
     await h.provisionRole(T, 'u-mgr2', 'store_manager');
     await h.provisionRole(T, 'u-till', 'cashier');
     await approvedSuppliers(h, T, 'sup-dairy');
     const { req, ok, code } = tenantClient(() => h, T);
     await ok(req('POST', '/v1/org/nodes/C1', { kind: 'company', name: 'SRE Retail' }), 'company');
     await ok(req('POST', '/v1/org/nodes/S-A', { kind: 'branch', name: 'Store A', parentId: 'C1', companyId: 'C1' }), 'store');
-    await ok(req('POST', '/v1/purchase/orders/po-dairy', { supplierId: 'sup-dairy', deliverToLocationId: 'S-A', lines: [{ productId: 'p-milk', orderedQty: 40, unitCost: cost }] }, 'u-recv'), 'po');
+    await ok(req('POST', '/v1/purchase/orders/po-dairy', { supplierId: 'sup-dairy', deliverToLocationId: 'S-A', lines: [{ productId: 'p-milk', orderedQty: 40, unitCost: cost }] }, 'u-po-buyer'), 'po');
     await ok(req('POST', '/v1/purchase/orders/po-dairy/approval', { reason: 'weekly dairy' }), 'issue po');
     const open = (id: string, arrivedAt: string) => ok(req('POST', `/v1/inventory/dsd-checkins/${id}`, { supplierId: 'sup-dairy', storeId: 'S-A', poId: 'po-dairy', driverName: 'Ravi', arrivedAt }, 'u-recv'), `open ${id}`);
     const scan = (id: string, scanId: string, q: number) => ok(req('POST', `/v1/inventory/dsd-checkins/${id}/scans/${scanId}`, { productId: 'p-milk', quantityMinor: q }, 'u-recv'), `scan ${scanId}`);

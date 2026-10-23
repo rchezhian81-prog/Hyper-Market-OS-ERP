@@ -172,8 +172,12 @@ import {
 } from './production-session';
 import {
   createProductionTasksSession,
-  type ProductionTasksSession, type RunCommitPort, type LabelPort, type TaskPostResult,
+  type ProductionTasksSession, type RunCommitPort, type LabelPort, type TaskPostResult, type WeighPort, type SavedWorkRow,
 } from './production-tasks-session';
+import { createProductionQueue, openBoxLabelPort, type ProductionQueue } from './production-queue';
+import { boxClockView } from './box-clock-view';
+import { createFoodSafetyQueue, FOOD_SAFETY_COPY, type FoodSafetyQueue, type HeldFoodSafety } from './food-safety-queue';
+import { createQualityReleaseQueue, QUALITY_RELEASE_COPY, type QualityReleaseQueue, type HeldQualityHolds } from './quality-release-queue';
 import {
   createFacilitiesSession,
   type FacilitiesPorts, type FacilitiesSession, type FacilitiesData, type OverdueTask,
@@ -188,7 +192,7 @@ import {
 import {
   createRiskAcceptanceSession,
   type RiskAcceptancePorts, type RiskAcceptanceSession, type BlockedGatesData, type GateBlockView,
-  type RiskAcceptPort, type AcceptResult,
+  type RiskAcceptPort, type AcceptResult, type AcceptanceState, type ReviewerNamePort, type NameResult,
 } from './risk-acceptance-session';
 import {
   createDayReopenSession,
@@ -285,6 +289,7 @@ import type { Device, SupportAccessRequest, SupportAction, SupportSession, Versi
 import {
   createAiSession, type AiPorts, type AiSession, type PendingProposal,
 } from './ai-session';
+import { aiControlView, pullRequest, liftRequest, decisionRequest, withoutIt, type AiViewer } from './ai-control';
 import type { AgentBudget, KillSwitch, UsageEntry } from '../../../packages/ai/src/index';
 import {
   createMigrationSession, type MigrationPorts, type MigrationSession, type DaySignatureView, type WitnessView,
@@ -314,8 +319,16 @@ import { createEventsSession, eventsWords, eventsOutcomeWords, effectWords, type
 import { createBriefSession, briefWords, briefOutcomeWords, type BriefSession } from './morning-brief-session';
 // OB-288 gates lane (QG-12): the Quality gates page — the owner's GO / HOLD / REWORK register.
 import { createGatesSession, gatesWords, gatesOutcomeWords, stateView as gateStateView, GATE_NAMES, RELEASES as GATE_RELEASES, type GatesSession } from './gates-session';
+// OB-288 lane 1 · P1: the Approval rules page — the owner's money limits, escalation waits and price-check size.
+// OB-288 lane 1 · P1: the Access review page — who holds what, where, up to how much; the permission matrix as CSV.
+import { createAccessReviewSession, accessReviewWords, accessReviewOutcomeWords, whereWords as accessWhereWords, ordered as accessOrdered, type AccessReviewSession } from './access-review-session';
+// OB-288 P5 (OB-293): the Tally files page — the accountant's daily Tally import file, the dead letter and the trial balance.
+import { createTallyFilesSession, tallyFilesWords, tallyFilesOutcomeWords, rupees as tallyRupees, familyWords as tallyFamilyWords, type TallyFilesSession } from './tally-files-session';
+import { createApprovalRulesSession, approvalRulesWords, approvalRulesOutcomeWords, limitWords as approvalLimitWords, waitWords as approvalWaitWords, limitsFromForm as approvalLimitsFromForm, paiseFromRupees as approvalPaiseFromRupees, KINDS as APPROVAL_LIMIT_KINDS, ROLES_SHOWN as APPROVAL_ROLES_SHOWN, type ApprovalRulesSession } from './approval-rules-session';
 // ── end R4 Lane 3 ──
 // ── R4 Lane 4 (supply, pricing and loss prevention) — begin
+// ── P3 procure-to-pay (OB-288) — the Requisitions and quotes page's session.
+import { createRequisitionsSession, requisitionsWords, requisitionsOutcomeWords, offerRows as requisitionOfferRows, rupees as requisitionRupees, type RequisitionsSession } from './requisitions-session';
 import { createScorecardSession, scorecardWords, scorecardOutcomeWords, ratingWords as scorecardRatingWords, SCORECARD_FIGURES, type ScorecardSession } from './supplier-scorecard-session';
 import { createCorrelationSession, correlationWords, correlationOutcomeWords, correlationRupees, type CorrelationSession } from './lp-correlation-session';
 import { createBaysSession, baysWords, baysOutcomeWords, bayScoreWords, type BaysSession } from './planogram-bays-session';
@@ -1805,6 +1818,35 @@ export interface ProductionScreenData {
   readonly worklist?: ProductionData;
   /** FUL-13: where this store's production is made (the kitchen location), when the store computer knows it. */
   readonly productionLocationId?: string;
+  /** OB-288 lane 2: the store this box is — what a run saved through the store computer names. */
+  readonly storeId?: string;
+  /** OB-288 lane 2: head office's board and recipes as the store computer last heard them (null: never told). */
+  readonly board?: { readonly asAt: string; readonly ageMinutes: number; readonly runs: readonly ProductionRun[]; readonly recipes: readonly unknown[]; readonly enabledDepartments: readonly string[] } | null;
+}
+
+/** The last problem the production screen's device queue hit with this device's storage — shown, never silent (P-08). */
+export let productionStorageProblem: string | undefined;
+
+/** OB-288 lane 2: open the production screen's durable device queue, keyed per store like the other served screens'. */
+export function openProductionOutbox(storeId: string, storage?: DeviceStorage): SyncOutbox {
+  const store = storage ?? (globalThis as { localStorage?: DeviceStorage }).localStorage;
+  const onProblem = (why: string): void => { productionStorageProblem = why; };
+  return openDeviceOutbox(guardedStore(`sre.production.outbox.${storeId}`, store, onProblem), onProblem);
+}
+
+/** OB-288 lane 2: the production screen's leg of the shared device → box path, as the same ERP surface. */
+export function openProductionRelay(laneWriteBase: string | undefined, queue: ProductionQueue, outbox: SyncOutbox): ManagerRelay | undefined {
+  if (laneWriteBase === undefined) return undefined;
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return undefined;
+  return {
+    syncNow: async () => {
+      const result = await drainToBox({ outbox, boxBase: laneWriteBase, source: 'manager', fetch: fetchFn });
+      const statuses = await boxStatus({ boxBase: laneWriteBase, keys: queue.handedKeys(), fetch: fetchFn });
+      if (statuses !== undefined) queue.noteBoxStatus(statuses);
+      return { handed: result.handed, refused: result.refused, failed: result.failed, offline: result.offline };
+    },
+  };
 }
 
 /** FUL-13 — the production staff's task paths (record a run, print a label) over the existing APIs, each under the
@@ -1862,11 +1904,15 @@ export function openLabelPort(): LabelPort {
   };
 }
 
-/** Build the production staff's task paths over a board (the runs a label may be printed for). */
-export function bootProductionTasks(data: ProductionScreenData | undefined, worklist?: ProductionData, ports?: { commit?: RunCommitPort; label?: LabelPort }): ProductionTasksSession | null {
+/** Build the production staff's task paths over a board (the runs a label may be printed for). OB-288 lane 2: on the store
+ *  computer the run, the weigh and the release are SAVED through it and the box prints the label. */
+export function bootProductionTasks(
+  data: ProductionScreenData | undefined, worklist?: ProductionData,
+  ports?: { commit?: RunCommitPort; label?: LabelPort; weigh?: WeighPort; savedWork?: () => readonly SavedWorkRow[]; queued?: boolean },
+): ProductionTasksSession | null {
   if (data === undefined) return null;
   const held = new Set(data.permissions ?? []);
-  const board = (): ProductionData => worklist ?? data.worklist ?? EMPTY_PRODUCTION;
+  const board = (): ProductionData => worklist ?? data.worklist ?? (data.board === undefined || data.board === null ? undefined : { runs: data.board.runs }) ?? EMPTY_PRODUCTION;
   return createProductionTasksSession(
     { userId: data.userId === undefined ? null : data.userId, defaultLocationId: data.productionLocationId ?? null },
     {
@@ -1875,6 +1921,10 @@ export function bootProductionTasks(data: ProductionScreenData | undefined, work
       commitPort: () => ports?.commit ?? null,
       labelPort: () => ports?.label ?? null,
       runs: () => board().runs,
+      queued: () => ports?.queued === true,
+      labelFromBox: () => ports?.queued === true,
+      weighPort: () => ports?.weigh ?? null,
+      savedWork: () => ports?.savedWork?.() ?? [],
     },
   );
 }
@@ -1966,6 +2016,48 @@ export interface FacilitiesScreenData {
   readonly userId?: string;
   readonly permissions?: readonly string[];
   readonly worklist?: FacilitiesData;
+  /** OB-288 lane 2: the store this box is, and head office's food-safety checks as the box last heard them (null: never told). */
+  readonly storeId?: string;
+  readonly foodSafety?: HeldFoodSafety | null;
+  /** OB-333: head office's held batches as the box last heard them (null: never told). */
+  readonly qualityHolds?: HeldQualityHolds | null;
+}
+
+/** OB-288 lane 2: open the facilities screen's durable device queue (food-safety checks), keyed per store. */
+export function openFacilitiesOutbox(storeId: string, storage?: DeviceStorage): SyncOutbox {
+  const store = storage ?? (globalThis as { localStorage?: DeviceStorage }).localStorage;
+  const onProblem = (why: string): void => { productionStorageProblem = why; };
+  return openDeviceOutbox(guardedStore(`sre.facilities.outbox.${storeId}`, store, onProblem), onProblem);
+}
+
+/** OB-288 lane 2: the food-safety checks' leg of the shared device → box path. */
+export function openFoodSafetyRelay(laneWriteBase: string | undefined, queue: FoodSafetyQueue, outbox: SyncOutbox): ManagerRelay | undefined {
+  if (laneWriteBase === undefined) return undefined;
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return undefined;
+  return {
+    syncNow: async () => {
+      const result = await drainToBox({ outbox, boxBase: laneWriteBase, source: 'manager', fetch: fetchFn });
+      const statuses = await boxStatus({ boxBase: laneWriteBase, keys: queue.handedKeys(), fetch: fetchFn });
+      if (statuses !== undefined) queue.noteBoxStatus(statuses);
+      return { handed: result.handed, refused: result.refused, failed: result.failed, offline: result.offline };
+    },
+  };
+}
+
+/** OB-333: the quality-hold releases' leg of the shared device → box path (the same facilities queue on this device). */
+export function openQualityReleaseRelay(laneWriteBase: string | undefined, queue: QualityReleaseQueue, outbox: SyncOutbox): ManagerRelay | undefined {
+  if (laneWriteBase === undefined) return undefined;
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return undefined;
+  return {
+    syncNow: async () => {
+      const result = await drainToBox({ outbox, boxBase: laneWriteBase, source: 'manager', fetch: fetchFn });
+      const statuses = await boxStatus({ boxBase: laneWriteBase, keys: queue.handedKeys(), fetch: fetchFn });
+      if (statuses !== undefined) queue.noteBoxStatus(statuses);
+      return { handed: result.handed, refused: result.refused, failed: result.failed, offline: result.offline };
+    },
+  };
 }
 
 const FACILITIES_READ_PERMISSION = 'facilities.overdue.read';
@@ -3122,6 +3214,7 @@ export interface RiskAcceptanceData {
 
 const RISK_READ_PERMISSION = 'compliance.risk.read';
 const RISK_MANAGE_PERMISSION = 'compliance.risk.manage';
+const REVIEWER_NAME_PERMISSION = 'compliance.reviewer.name';
 const EMPTY_BLOCKED_GATES: BlockedGatesData = Object.freeze({ count: 0, blocked: [] });
 const NOOP_ACCEPT_PORT: RiskAcceptPort = { post: async () => 'lost_link' };
 
@@ -3129,6 +3222,10 @@ export function riskAcceptancePortsFromData(
   data: RiskAcceptanceData | undefined,
   worklist?: BlockedGatesData,
   acceptPort: RiskAcceptPort = NOOP_ACCEPT_PORT,
+  /** OB-330: where acceptance stands, as last read live (undefined: not known); and the reviewer's / naming ports. */
+  acceptances?: AcceptanceState,
+  reviewPort: RiskAcceptPort = NOOP_ACCEPT_PORT,
+  namePort: ReviewerNamePort = { put: async () => 'lost_link' },
 ): RiskAcceptancePorts {
   const held = new Set(data?.permissions ?? []);
   return {
@@ -3137,6 +3234,10 @@ export function riskAcceptancePortsFromData(
     mayRead: () => held.has(RISK_READ_PERMISSION),
     mayManage: () => held.has(RISK_MANAGE_PERMISSION),
     acceptPort: () => acceptPort,
+    acceptances: () => acceptances,
+    mayNameReviewer: () => held.has(REVIEWER_NAME_PERMISSION),
+    reviewPort: () => reviewPort,
+    namePort: () => namePort,
   };
 }
 
@@ -3157,25 +3258,66 @@ export function bootRiskAcceptance(
  *  (`credentials: 'same-origin'`), never a service token. A network/timeout is a retryable lost link, not a
  *  refusal. The riskId rides in the URL; the server records the acceptance in the caller's own name and enforces
  *  the name+rationale rule (§28). */
-function openRiskAcceptPort(): RiskAcceptPort {
+function openRiskAcceptPort(as: 'owner' | 'security_reviewer' = 'owner'): RiskAcceptPort {
   return {
     post: async ({ riskId, rationale }): Promise<AcceptResult> => {
       const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
       if (fetchFn === undefined) return 'lost_link';
       const key = globalThis.crypto?.randomUUID?.() ?? `risk-accept-${riskId}`;
       try {
-        const res = await fetchFn(`/v1/compliance/risks/${encodeURIComponent(riskId)}/acceptance`, {
+        const res = await fetchFn(`/v1/compliance/risks/${encodeURIComponent(riskId)}/acceptance${as === 'security_reviewer' ? '/review' : ''}`, {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'idempotency-key': key, accept: 'application/json' },
           credentials: 'same-origin',
           body: JSON.stringify({ rationale }),
         });
-        return res.status >= 200 && res.status < 300 ? 'accepted' : 'refused';
+        // OB-330: 202 is a first signature waiting for the second; a refusal naming "must be fixed" is said as such.
+        if (res.status === 202) return 'awaiting_second_signature';
+        if (res.status >= 200 && res.status < 300) return 'accepted';
+        const body = await res.json().catch(() => null) as { error?: { code?: string } } | null;
+        return body?.error?.code === 'must_be_fixed_no_security_reviewer' ? 'must_be_fixed' : 'refused';
       } catch {
         return 'lost_link';
       }
     },
   };
+}
+
+/** OB-330: the owner names the security reviewer — under his own session cookie; head office checks who may be named. */
+function openReviewerNamePort(): ReviewerNamePort {
+  return {
+    put: async (input): Promise<NameResult> => {
+      const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+      if (fetchFn === undefined) return 'lost_link';
+      try {
+        const res = await fetchFn('/v1/compliance/security-reviewer', {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json', 'idempotency-key': globalThis.crypto?.randomUUID?.() ?? `name-${input.userId}`, accept: 'application/json' },
+          credentials: 'same-origin', body: JSON.stringify(input),
+        });
+        return res.status >= 200 && res.status < 300 ? 'named' : 'refused';
+      } catch {
+        return 'lost_link';
+      }
+    },
+  };
+}
+
+/** OB-330: where acceptance stands (a GET — read-only). Undefined offline/refused: the screen says it is not known. */
+export async function fetchRiskAcceptances(): Promise<AcceptanceState | undefined> {
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return undefined;
+  try {
+    const res = await fetchFn('/v1/compliance/risk-acceptances', { method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin' });
+    if (res.status >= 400) return undefined;
+    const body = (await res.json()) as { reviewer?: { userId: string; displayName: string } | null; risks?: readonly { riskId: string; owner: { signedBy: string } | null; securityReviewer: { signedBy: string } | null }[] };
+    return {
+      reviewer: body.reviewer == null ? null : { userId: body.reviewer.userId, displayName: body.reviewer.displayName },
+      risks: (body.risks ?? []).map((r) => ({ riskId: r.riskId, owner: r.owner?.signedBy ?? null, securityReviewer: r.securityReviewer?.signedBy ?? null })),
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 /** Read the live blocked-gates worklist (a GET — read-only). Returns null offline/refused so the shell keeps
@@ -4597,6 +4739,15 @@ export function aiPortsFromData(data: AiData | undefined): AiPorts {
   };
 }
 
+/** Who is looking at the AI control screen — the user id and, when given, the permission words. Nothing else is kept. */
+export function aiViewerFrom(raw: unknown): AiViewer {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return { userId: null, permissions: null };
+  const r = raw as Record<string, unknown>;
+  const userId = typeof r['userId'] === 'string' && r['userId'].trim() !== '' ? r['userId'] : null;
+  const permissions = Array.isArray(r['permissions']) && r['permissions'].every((p) => typeof p === 'string') ? [...(r['permissions'] as string[])] : null;
+  return { userId, permissions };
+}
+
 /** Build the AI control screen, or `null` when the box was told nothing about the agents. */
 export function bootAi(data: AiData | undefined): AiSession | null {
   if (data === undefined) return null;
@@ -4745,6 +4896,8 @@ export function bootMigration(data: MigrationData | undefined, outbox: SyncOutbo
 interface ManagerWindow {
   managerSession?: ManagerSession;
   managerData?: ManagerData;
+  /** OB-288 lane 2 · OB-327: this store computer's clock against head office's, and the bills marked while it was out. */
+  boxClockView?: typeof boxClockView;
   /**
    * The store computer's own write address (M14-FR-04), injected by the edge screen-server only when
    * this box serves a lane socket. The manager's day close posts here — cross-port on 127.0.0.1, not
@@ -4932,8 +5085,23 @@ interface ManagerWindow {
   // OB-288 gates lane (QG-12): the Quality gates page — who is looking; head office answers the rest.
   gatesData?: ViewerIdentity;
   gates?: { readonly session: GatesSession; readonly words: typeof gatesWords; readonly outcomeWords: typeof gatesOutcomeWords; readonly stateView: typeof gateStateView; readonly names: typeof GATE_NAMES; readonly releases: typeof GATE_RELEASES };
+  // OB-288 lane 1 · P1: the Approval rules page — who is looking; head office answers the rest.
+  approvalRulesData?: ViewerIdentity;
+  accessReviewData?: ViewerIdentity;
+  accessReview?: { readonly session: AccessReviewSession; readonly words: typeof accessReviewWords; readonly outcomeWords: typeof accessReviewOutcomeWords; readonly whereWords: typeof accessWhereWords; readonly ordered: typeof accessOrdered };
+  // OB-288 P5 (OB-293): the Tally files page.
+  tallyFilesData?: ViewerIdentity;
+  tallyFiles?: { readonly session: TallyFilesSession; readonly words: typeof tallyFilesWords; readonly outcomeWords: typeof tallyFilesOutcomeWords; readonly rupees: typeof tallyRupees; readonly familyWords: typeof tallyFamilyWords };
+  approvalRules?: {
+    readonly session: ApprovalRulesSession; readonly words: typeof approvalRulesWords; readonly outcomeWords: typeof approvalRulesOutcomeWords;
+    readonly limitWords: typeof approvalLimitWords; readonly waitWords: typeof approvalWaitWords; readonly limitsFromForm: typeof approvalLimitsFromForm;
+    readonly paiseFromRupees: typeof approvalPaiseFromRupees; readonly kinds: typeof APPROVAL_LIMIT_KINDS; readonly rolesShown: typeof APPROVAL_ROLES_SHOWN;
+  };
   schedule?: { readonly session: ScheduleSession; readonly words: typeof scheduleWords; readonly outcomeWords: typeof scheduleOutcomeWords; readonly rupees: typeof scheduleRupees };
   // ── R4 Lane 4 — begin
+  /** P3 (OB-288) M06-FR-02 / WF-03: the Requisitions and quotes page — who is looking; head office answers the rest. */
+  requisitionsData?: ViewerIdentity;
+  requisitions?: { readonly session: RequisitionsSession; readonly words: typeof requisitionsWords; readonly outcomeWords: typeof requisitionsOutcomeWords; readonly offerRows: typeof requisitionOfferRows; readonly rupees: typeof requisitionRupees };
   /** R4 D-10: the Supplier scorecard page — who is looking; head office answers the rest. */
   supplierScorecardData?: ViewerIdentity;
   supplierScorecard?: { readonly session: ScorecardSession; readonly words: typeof scorecardWords; readonly outcomeWords: typeof scorecardOutcomeWords; readonly ratingWords: typeof scorecardRatingWords; readonly figures: typeof SCORECARD_FIGURES };
@@ -4986,6 +5154,8 @@ interface ManagerWindow {
   /** FUL-13: the production staff's task paths (record a run, print a label). */
   productionTasks?: ProductionTasksSession;
   productionTasksFor?: (worklist: ProductionData) => ProductionTasksSession | null;
+  /** OB-288 lane 2: move this screen's saved production work to the store computer and learn where each piece is. */
+  productionRelay?: ManagerRelay;
   /** The shell reads the live production board through this and re-presents it — a GET read, never a write. */
   production?: {
     refresh(): Promise<ProductionData | null>;
@@ -4993,6 +5163,13 @@ interface ManagerWindow {
   };
   facilitiesData?: FacilitiesScreenData;
   facilitiesSession?: FacilitiesSession;
+  /** OB-288 lane 2: today's food-safety checks through the store computer, and their leg of the device → box path. */
+  foodSafetyQueue?: FoodSafetyQueue;
+  foodSafetyRelay?: ManagerRelay;
+  foodSafetyWords?: typeof FOOD_SAFETY_COPY;
+  qualityReleaseQueue?: QualityReleaseQueue;
+  qualityReleaseRelay?: ManagerRelay;
+  qualityReleaseWords?: typeof QUALITY_RELEASE_COPY;
   /** The shell reads the live overdue board through this and re-presents it — a GET read, never a write. */
   facilities?: {
     refresh(): Promise<FacilitiesData | null>;
@@ -5006,11 +5183,16 @@ interface ManagerWindow {
     present(worklist: CashOverShortData): CashOfficeSession;
   };
   riskAcceptanceData?: RiskAcceptanceData;
+  /** OB-288 integration follow-up: the Recalls and trace page served from the store box — who is looking, their permissions,
+   *  and what this store's tills refuse now from the catalogue the box holds. recall-trace.js reads `recallTraceData`. */
+  recallTraceData?: { readonly userId?: string; readonly permissions?: readonly string[]; readonly storeId?: string | null; readonly tillBlocks?: unknown };
   riskAcceptanceSession?: RiskAcceptanceSession;
   /** The shell reads the live blocked-gates worklist through this and re-presents it — a GET read, never a write. */
   riskAcceptance?: {
     refresh(): Promise<BlockedGatesData | null>;
-    present(worklist: BlockedGatesData): RiskAcceptanceSession;
+    present(worklist: BlockedGatesData, acceptances?: AcceptanceState): RiskAcceptanceSession;
+    /** OB-330: where acceptance stands (reviewer, signatures) — a GET; undefined when not known. */
+    acceptances(): Promise<AcceptanceState | undefined>;
   };
   dayReopenData?: DayReopenScreenData;
   dayReopenSession?: DayReopenSession;
@@ -5117,6 +5299,9 @@ interface ManagerWindow {
   receiptPrefixSession?: ReceiptPrefixSession;
   aiData?: AiData;
   aiSession?: AiSession;
+  /** OB-288 lane 4 · P1: the AI control screen's view model over head office's live read, and who is looking. */
+  aiControl?: { readonly view: typeof aiControlView; readonly pull: typeof pullRequest; readonly lift: typeof liftRequest; readonly decide: typeof decisionRequest; readonly withoutIt: typeof withoutIt };
+  aiViewer?: AiViewer;
   migrationData?: MigrationData;
   migrationSession?: MigrationSession;
   /** Hands the migration screen's decisions to the store computer (2b-vi-c-4). Absent when no box is wired. */
@@ -5968,6 +6153,7 @@ if (browserWindow !== undefined) {
   // drains the same one. Per store, on this device's storage; a storage fault is surfaced for the shell to show.
   const managerOutbox = openManagerOutbox(browserWindow.managerData?.storeId ?? 'store-1');
   browserWindow.managerOutbox = managerOutbox;
+  browserWindow.boxClockView = boxClockView;
   browserWindow.managerSession = bootManager({
     data: browserWindow.managerData,
     laneWriteBase: browserWindow.laneWriteBase,
@@ -6221,10 +6407,25 @@ if (browserWindow !== undefined) {
   // click — and the server re-checks `production.release` and refuses an expired batch, which the screen never
   // fakes (hard rule #5: no AI releases food for sale).
   const productionData = browserWindow.productionData;
-  const releasePort = openReleasePort();
-  const production = bootProduction(productionData, undefined, releasePort);
+  // OB-288 lane 2 · P2 (§31): served by the STORE COMPUTER, a run, a weigh and a release decision are saved on this device's
+  // durable queue and carried by the box (it keeps them on its own disk until head office has them); the box prints the
+  // label from what it holds. Anywhere else (the hosted copy) the page writes to head office directly, as before.
+  const productionBoxServed = browserWindow.laneWriteBase !== undefined && productionData?.storeId !== undefined;
+  const productionOutbox = productionBoxServed ? openProductionOutbox(productionData!.storeId!) : undefined;
+  const productionQueue = productionOutbox === undefined ? undefined : createProductionQueue(
+    { userId: productionData?.userId ?? null, storeId: productionData?.storeId ?? null, now: () => new Date().toISOString() }, productionOutbox,
+  );
+  const releasePort = productionQueue?.releasePort() ?? openReleasePort();
+  const production = bootProduction(productionData, productionData?.board === undefined || productionData.board === null ? undefined : { runs: productionData.board.runs }, releasePort);
   // FUL-13: the staff's task paths ride the same page, over the same board, under the person's own session.
-  const productionTaskPorts = { commit: openRunCommitPort(), label: openLabelPort() };
+  const productionTaskPorts = productionQueue === undefined ? { commit: openRunCommitPort(), label: openLabelPort() } : {
+    commit: productionQueue.runPort(), label: openBoxLabelPort((globalThis as { fetch?: typeof fetch }).fetch), queued: true,
+    weigh: { record: (input: Parameters<WeighPort['record']>[0]) => productionQueue.recordWeighed(input) },
+    savedWork: () => productionQueue.savedWork(),
+  };
+  if (productionQueue !== undefined && productionOutbox !== undefined) {
+    browserWindow.productionRelay = openProductionRelay(browserWindow.laneWriteBase, productionQueue, productionOutbox);
+  }
   const productionTasks = bootProductionTasks(productionData, undefined, productionTaskPorts);
   if (productionTasks !== null) {
     browserWindow.productionTasks = productionTasks;
@@ -6246,6 +6447,22 @@ if (browserWindow !== undefined) {
   // an explicit click — and the server re-checks `facilities.task.record` and refuses a completion with no
   // required evidence or a self-verified safety check (§28), which the screen never fakes (P-08).
   const facilitiesData = browserWindow.facilitiesData;
+  // OB-288 lane 2 · M10-FR-02 offline: served by the store computer, today's food-safety checks are worked out here from
+  // head office's checks in force and saved through the box, timed by when they were done.
+  const facilitiesOutbox = browserWindow.laneWriteBase !== undefined && facilitiesData?.storeId !== undefined ? openFacilitiesOutbox(facilitiesData.storeId) : undefined;
+  if (facilitiesOutbox !== undefined && facilitiesData?.storeId !== undefined && facilitiesData.foodSafety !== undefined) {
+    const fsQueue = createFoodSafetyQueue({ userId: facilitiesData.userId ?? null, storeId: facilitiesData.storeId, now: () => new Date().toISOString() }, facilitiesData.foodSafety, facilitiesOutbox);
+    browserWindow.foodSafetyQueue = fsQueue;
+    browserWindow.foodSafetyRelay = openFoodSafetyRelay(browserWindow.laneWriteBase, fsQueue, facilitiesOutbox);
+    browserWindow.foodSafetyWords = FOOD_SAFETY_COPY;
+  }
+  // OB-333: the batches on quality hold, released here by a person with the quality-release right — through the box.
+  if (facilitiesOutbox !== undefined && facilitiesData?.storeId !== undefined && facilitiesData.qualityHolds !== undefined) {
+    const qhQueue = createQualityReleaseQueue({ userId: facilitiesData.userId ?? null, storeId: facilitiesData.storeId, permissions: facilitiesData.permissions ?? [], now: () => new Date().toISOString() }, facilitiesData.qualityHolds, facilitiesOutbox);
+    browserWindow.qualityReleaseQueue = qhQueue;
+    browserWindow.qualityReleaseRelay = openQualityReleaseRelay(browserWindow.laneWriteBase, qhQueue, facilitiesOutbox);
+    browserWindow.qualityReleaseWords = QUALITY_RELEASE_COPY;
+  }
   const completePort = openCompletePort();
   const facilitiesVerifyPort = openFacilitiesVerifyPort();
   const facilities = bootFacilities(facilitiesData, undefined, completePort, facilitiesVerifyPort);
@@ -6303,11 +6520,14 @@ if (browserWindow !== undefined) {
   const riskAcceptance = bootRiskAcceptance(riskAcceptanceData, undefined, riskAcceptPort);
   if (riskAcceptance !== null) {
     browserWindow.riskAcceptanceSession = riskAcceptance;
+    const reviewPort = openRiskAcceptPort('security_reviewer');
+    const namePort = openReviewerNamePort();
     browserWindow.riskAcceptance = {
       refresh: fetchBlockedGates,
-      present: (worklist) => createRiskAcceptanceSession(
+      acceptances: fetchRiskAcceptances,
+      present: (worklist, acceptances) => createRiskAcceptanceSession(
         { userId: riskAcceptanceData?.userId === undefined ? null : riskAcceptanceData.userId },
-        riskAcceptancePortsFromData(riskAcceptanceData, worklist, riskAcceptPort),
+        riskAcceptancePortsFromData(riskAcceptanceData, worklist, riskAcceptPort, acceptances, reviewPort, namePort),
       ),
     };
   }
@@ -6573,6 +6793,11 @@ if (browserWindow !== undefined) {
   if (prefixes !== null) browserWindow.receiptPrefixSession = prefixes;
   const ai = bootAi(browserWindow.aiData);
   if (ai !== null) browserWindow.aiSession = ai;
+  // OB-288 lane 4 · P1: the AI control screen reads head office LIVE (GET /v1/ai/control) in the person's own session and
+  // sends every act there. From the injected payload it keeps ONLY who is looking (and the permission words when given —
+  // they decide what the page offers, never what the server allows).
+  browserWindow.aiControl = { view: aiControlView, pull: pullRequest, lift: liftRequest, decide: decisionRequest, withoutIt };
+  browserWindow.aiViewer = aiViewerFrom(browserWindow.aiData as unknown);
   // The migration screen's DURABLE device queue (2b-vi-c-4): its decisions are handed to the store computer, never left in
   // the tab — before, they lived in a queue nothing drained.
   const migrationOutbox = browserWindow.migrationData === undefined ? undefined : openMigrationOutbox(browserWindow.migrationData.storeId ?? 'store-1');
@@ -6688,6 +6913,18 @@ if (browserWindow !== undefined) {
   // OB-288 gates lane (QG-12): the Quality gates page — reads on a click, writes only the owner's explicit decision.
   browserWindow.gatesData = viewerIdentity(browserWindow.gatesData);
   browserWindow.gates = { session: createGatesSession({ viewer: browserWindow.gatesData }), words: gatesWords, outcomeWords: gatesOutcomeWords, stateView: gateStateView, names: GATE_NAMES, releases: GATE_RELEASES };
+  // OB-288 lane 1 · P1: the Approval rules page — reads on a click; asks and applies only on a person's explicit click.
+  browserWindow.accessReviewData = viewerIdentity(browserWindow.accessReviewData);
+  browserWindow.accessReview = { session: createAccessReviewSession({ viewer: browserWindow.accessReviewData }), words: accessReviewWords, outcomeWords: accessReviewOutcomeWords, whereWords: accessWhereWords, ordered: accessOrdered };
+  // OB-288 P5 (OB-293): the Tally files page — reads on a click; makes, requeues and downloads only on a person's explicit click.
+  browserWindow.tallyFilesData = viewerIdentity(browserWindow.tallyFilesData);
+  browserWindow.tallyFiles = { session: createTallyFilesSession({ viewer: browserWindow.tallyFilesData }), words: tallyFilesWords, outcomeWords: tallyFilesOutcomeWords, rupees: tallyRupees, familyWords: tallyFamilyWords };
+  browserWindow.approvalRulesData = viewerIdentity(browserWindow.approvalRulesData);
+  browserWindow.approvalRules = {
+    session: createApprovalRulesSession({ viewer: browserWindow.approvalRulesData }), words: approvalRulesWords, outcomeWords: approvalRulesOutcomeWords,
+    limitWords: approvalLimitWords, waitWords: approvalWaitWords, limitsFromForm: approvalLimitsFromForm, paiseFromRupees: approvalPaiseFromRupees,
+    kinds: APPROVAL_LIMIT_KINDS, rolesShown: APPROVAL_ROLES_SHOWN,
+  };
   // ── R4 Lane 4 — begin
   // R4 D-10: the Supplier scorecard page — a read of figures built from the registers; nothing is typed, nothing written.
   browserWindow.supplierScorecardData = viewerIdentity(browserWindow.supplierScorecardData);
@@ -6700,4 +6937,9 @@ if (browserWindow !== undefined) {
   browserWindow.planogramBaysData = viewerIdentity(browserWindow.planogramBaysData);
   browserWindow.planogramBays = { session: createBaysSession({ viewer: browserWindow.planogramBaysData }), words: baysWords, outcomeWords: baysOutcomeWords, scoreWords: bayScoreWords };
   // ── R4 Lane 4 — end
+  // ── P3 procure-to-pay (OB-288): the Requisitions and quotes page — a requisition, its quotes, head office's comparison,
+  // and an order PROPOSED from the chosen quote (a second person issues it on the Buying page).
+  browserWindow.requisitionsData = viewerIdentity(browserWindow.requisitionsData);
+  browserWindow.requisitions = { session: createRequisitionsSession({ viewer: browserWindow.requisitionsData }), words: requisitionsWords, outcomeWords: requisitionsOutcomeWords, offerRows: requisitionOfferRows, rupees: requisitionRupees };
+  // ── P3 procure-to-pay — end
 }

@@ -22,6 +22,12 @@ export interface JournalLine {
   readonly accountCode: string;
   readonly debitMinor: number;
   readonly creditMinor: number;
+  /**
+   * M23-FR-01 (OB-288 P5): the cost / profit centre this line belongs to — a branch or department of the organisation —
+   * when the posting knows it. Optional: a journal without it is placed by its own facts in the centre report, or listed
+   * there as unassigned (never guessed).
+   */
+  readonly centre?: string;
 }
 
 export interface JournalEntry {
@@ -169,6 +175,8 @@ export interface FinanceDeps {
   /** Head office's maker-checker engine (ADR-0024): the signer of a close and the approver of a reopen act in their
    *  own session, holding `finance.period.sign`. Optional on a bare stub (then every approval is unknown). */
   readonly approvals?: ApprovalPort;
+  /** M23-FR-01: the centres head office knows (branches and departments). When given, a line naming any other is refused. */
+  readonly knownCentres?: (tenantId: string) => Promise<ReadonlySet<string>> | ReadonlySet<string>;
   readonly now: () => string;
 }
 
@@ -179,6 +187,20 @@ export function financeRoutes(deps: FinanceDeps): readonly Route[] {
       permission: 'finance.journal.post', idempotent: true,
       handler: async (ctx) => {
         const entry = ctx.body as JournalEntry;
+        // M23-FR-01: a line that names a centre must name one the organisation has — a typo is not a new centre.
+        const named = Array.isArray(entry?.lines) ? entry.lines.map((l) => (l as { centre?: unknown }).centre).filter((c) => c !== undefined) : [];
+        if (named.length > 0 && deps.knownCentres !== undefined) {
+          const known = await deps.knownCentres(ctx.tenantId);
+          const unknown = named.filter((c) => typeof c !== 'string' || !known.has(c));
+          if (unknown.length > 0) {
+            throw apiError(422, {
+              code: 'unknown_centre',
+              whatHappened: `A journal line names a centre the organisation does not have: ${unknown.map(String).join(', ')}. A centre is a branch or department set up in the organisation.`,
+              wasItSaved: 'not_saved',
+              nextSafeAction: 'Name a branch or department that exists (or leave the centre out). Nothing was posted.',
+            });
+          }
+        }
         const result = postJournal({
           entry,
           periodStates: await deps.periodStates(ctx.tenantId),

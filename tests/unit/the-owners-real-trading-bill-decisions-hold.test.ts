@@ -91,7 +91,7 @@ describe('OB-279 · OB-285 — the round off travels to head office, is banked a
 });
 
 describe('OB-271 · Rule 46(a) — the owner\'s `shop` command records the store\'s place of business for the bill', () => {
-  const SHOP = { as: 'u-owner', company: 'SRE', 'legal-name': 'SRE Hyper Market Private Limited', gstin: '33AABCS1429B1Z1', store: 'SRE-MAIN', 'store-name': 'SRE Hyper Market' };
+  const SHOP = { as: 'u-it', approver: 'u-owner', company: 'SRE', 'legal-name': 'SRE Hyper Market Private Limited', gstin: '33AABCS1429B1Z1', store: 'SRE-MAIN', 'store-name': 'SRE Hyper Market' };
   const world = () => {
     const calls: SetupRequest[] = [];
     const client: SetupClient = { request: async (r) => { calls.push(r); return { status: 201, body: {} }; } };

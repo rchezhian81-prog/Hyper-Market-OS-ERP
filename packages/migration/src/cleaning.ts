@@ -39,7 +39,12 @@ export type ExceptionKind =
   | 'document_total_mismatch'
   | 'orphan_line'
   | 'unmapped_tax_code'
-  | 'pre_revision_tax_document';
+  | 'pre_revision_tax_document'
+  // OB-288 P5 · MG-09 (OB-309): a record added, changed or removed between the export that was loaded and the latest one
+  // (`export-diff.ts`). Each is a blocking decision — nothing in a delta is applied silently.
+  | 'delta_added'
+  | 'delta_changed'
+  | 'delta_removed';
 
 /**
  * How sure the detector is — and it is a real distinction, not a hedge.
@@ -98,6 +103,10 @@ const SEVERITY: Readonly<Record<ExceptionKind, Severity>> = {
   shared_barcode: 'high',
   document_total_mismatch: 'high',
   pre_revision_tax_document: 'high',
+  // MG-09: a change after the export that was loaded must be decided before the night — never inherited by accident.
+  delta_added: 'blocking',
+  delta_changed: 'blocking',
+  delta_removed: 'blocking',
   duplicate_supplier_gstin: 'high',
   orphan_line: 'medium',
   duplicate_customer: 'medium',

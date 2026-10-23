@@ -1104,6 +1104,8 @@ export interface PackOpenDelivery {
   /** The goods-receipt id this delivery is received under (head office's next one for the order). */
   readonly grnId: string;
   readonly ordered: readonly PackWarehouseOrdered[];
+  /** OB-288 P3 (M07-FR-01): the supplier's advance ship notice a buyer accepted for this order, when there is one. */
+  readonly asn?: { readonly asnId: string; readonly expectedAt: string; readonly lines: readonly { readonly productId: string; readonly quantityMinor: number; readonly uom: string }[] };
 }
 
 /**

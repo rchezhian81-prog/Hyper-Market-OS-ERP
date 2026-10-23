@@ -63,12 +63,14 @@ const expectWordsFor = (vocabulary: readonly string[], mapName: string): void =>
 const CHECKS = [
   'control_totals_signed', 'rollback_demonstrated', 'parallel_run_sufficient',
   'edge_fully_synced', 'blocking_exceptions_cleared', 'delta_applied', 'team_named', 'owner_go',
+  // OB-288 P5 · MG-11: the backup and the owner's agreed rollback limits.
+  'backup_verified', 'rollback_limits_agreed',
 ] as const;
 
 // ── 1 & 2. Derived, and absent fails ────────────────────────────────────────
 
 describe('the eight checks are computed, never asserted', () => {
-  it('a checklist built from nothing is NO GO on all eight', () => {
+  it('a checklist built from nothing is NO GO on all ten', () => {
     const derived = buildCutoverChecklist({ cutoverId: 'c', tenantId: 't', evidence: {} });
     const decision = decideCutover(derived.checklist);
     expect(decision.go).toBe(false);
@@ -83,7 +85,7 @@ describe('the eight checks are computed, never asserted', () => {
       cutoverId: 'c', tenantId: 't', qg07Passed: true,
       rollbackDemonstratedAt: '2026-09-10T22:00:00Z', parallelRunSufficient: true,
       edgeUnsyncedItems: 0, blockingExceptionsOpen: 0, deltaApplied: true,
-      namedTeam: [{ userId: 'u', role: 'r' }], ownerGoBy: 'u-owner',
+      namedTeam: [{ userId: 'u', role: 'r' }], ownerGoBy: 'u-owner', backupVerified: true, rollbackLimitsAgreed: true,
     });
     expect(asserted.go, 'decideCutover no longer accepts an asserted checklist — update this guard')
       .toBe(true);

@@ -87,6 +87,15 @@ describe('R3 lane 2: no override exists', () => {
     const src = read('services/inventory/src/warehouse-transfers.ts');
     const route = src.slice(src.indexOf("path: '/v1/warehouse/transfers/:transferId/dispatch'"), src.indexOf("path: '/v1/warehouse/transfers/:transferId/receive'"));
     expect(route).toMatch(/const b = \(ctx\.body \?\? \{\}\) as \{ approvedBy\?: unknown; available\?: unknown \};/);
-    expect(route.indexOf("if (ewb?.outcome === 'refused')")).toBeLessThan(route.indexOf('await deps.recordDispatched('));
+    // OB-288 lane 2: the dispatch itself is ONE shared core (the direct route and the store computer's relayed one both
+    // call it), so the gate is held there: asked before anything moves, and no route moves stock around it.
+    const core = src.slice(src.indexOf('export async function dispatchCore('), src.indexOf('export async function receiveCore('));
+    expect(core.indexOf("if (ewb?.outcome === 'refused')")).toBeGreaterThan(-1);
+    expect(core.indexOf("if (ewb?.outcome === 'refused')")).toBeLessThan(core.indexOf('await deps.recordDispatched('));
+    expect(route).toMatch(/await dispatchCore\(deps, ctx\.tenantId, transfer, ctx\.userId, deps\.now\(\)\)/);
+    expect(src.match(/await deps\.recordDispatched\(/g)).toHaveLength(1);
+    const relayed = src.slice(src.indexOf("path: '/v1/warehouse/transfers/:transferId/dispatch/synced'"), src.indexOf("path: '/v1/warehouse/transfers/:transferId/receive/synced'"));
+    expect(relayed).toMatch(/b\['available'\] !== undefined \|\| b\['approvedBy'\] !== undefined/);
+    expect(relayed).toMatch(/dispatchCore\(deps, ctx\.tenantId, transfer, dispatchedBy, at, relay\)/);
   });
 });

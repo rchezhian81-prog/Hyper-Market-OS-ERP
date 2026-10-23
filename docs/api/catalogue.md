@@ -3,8 +3,13 @@
 - **Roadmap:** §30 (API design), §30.2 (domain events), §31 (offline/sync). **API-01…API-13.** Principle **P-06** (open & portable). Contracts live in `../../packages/contracts/`.
 - **Purpose:** The versioned contract surface between clients, edge and cloud, and the durable business events that are the integration backbone. **Store-Core (R2)** domains are detailed; later domains are named and expanded at their release.
 
-> No endpoint code or OpenAPI/event schemas yet — those are produced per domain from
-> Stage 5. This catalogue fixes the conventions and the domain/event map.
+> The machine-readable contracts are generated from the running code (M32-FR-01, OB-288 P5):
+> [`openapi.json`](openapi.json) (OpenAPI 3.1 — every endpoint, its permission, feature, step-up and
+> Idempotency-Key header, and the shared error shape) and [`asyncapi.json`](asyncapi.json) (AsyncAPI 3.0 —
+> the §30.2 events and the signed webhooks published to partners), kept equal to the router by
+> `tests/guardrails/the-openapi-and-asyncapi-documents-equal-the-router.test.ts`. Per-endpoint request and
+> reply body schemas are **not yet declared** and are marked `x-body-schema: "not declared"`. This catalogue
+> fixes the conventions and the domain/event map.
 
 ## 1. Conventions — all APIs
 - **Versioned (P-06):** major version in the path (`/v1/…`); additive-only within a major;
@@ -397,6 +402,6 @@ build; it is not invented ahead of the roadmap.)*
   versioned, idempotent adapters with retry + dead-letter.
 
 ## 6. Deferred
-Full endpoint specs and OpenAPI/event schemas are produced per domain as each release is
-built. R4/R5/R7 domains (Customer/CRM, OMS/Fulfilment, AI) are named at family level here
+Per-endpoint request/reply body schemas (and per-event payload schemas) are declared per domain as each
+release is built; until then the generated OpenAPI/AsyncAPI documents mark each body `not declared`. R4/R5/R7 domains (Customer/CRM, OMS/Fulfilment, AI) are named at family level here
 and expanded when their release is reached.

@@ -100,7 +100,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Data Q
       expect(await s.page.locator('#rows .row').count()).toBe(0);
     } finally { await s.close(); }
 
-    await ok(shop.cloud().request({ method: 'PUT', path: '/v1/ai/kill-switch', userId: OWNER, idempotencyKey: 'kill', body: { on: true } }), 'kill');
+    await ok(shop.cloud().request({ method: 'PUT', path: '/v1/ai/kill-switch', userId: OWNER, idempotencyKey: 'kill', body: { on: true, reason: 'e2e: stop the assistants' } }), 'kill');
     s = await open(MGR, 'br-1');
     try {
       await s.page.locator('#state-text', { hasText: /kill switch/i }).waitFor({ timeout: 15_000 });

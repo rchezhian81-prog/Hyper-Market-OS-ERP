@@ -61,6 +61,13 @@ export interface CatalogueProduct {
    * batch is charged it; a plain barcode is charged the product's price. Signed with the rest of the pack.
    */
   readonly batchPrices?: readonly { readonly batchId: string; readonly unitPriceMinor: number }[];
+  /**
+   * M10-FR-01 · B8 (integration follow-up): the batches of this product head office has moved to the EXPIRED state (the
+   * daily expiry move, `BatchExpired`), with each batch's own date. A scan whose barcode CARRIES its batch (a GS1 2D code)
+   * is refused for one of these, offline, whatever the lane's clock says; a plain barcode is not refused by this list (the
+   * cashier confirms a flagged perishable's printed date — OB-298). Signed with the rest of the pack. Absent: none known.
+   */
+  readonly expiredBatches?: readonly { readonly batchId: string; readonly expiry: string }[];
   /** This product is lot/batch-tracked (perishable, pharma, regulated): the lane should capture the
    *  batch on each sale line so it can be traced in a recall (M10-FR-03). A sale of a batch-tracked
    *  product with no batch is banked but flagged, never refused (hard rule #1/#10). */
@@ -484,6 +491,9 @@ export class CatalogueCache {
     const product = hit === undefined ? undefined : this.byProductId.get(hit.productId);
     if (product === undefined) throw new UnknownBarcodeError(read.gtin);
     this.assertSellable(product, read.batch);
+    // M10-FR-01: head office already moved this very batch to EXPIRED — refused offline, whatever the lane's clock reads.
+    const expired = read.batch === undefined ? undefined : product.expiredBatches?.find((b) => b.batchId === read.batch);
+    if (expired !== undefined) throw new ExpiredItemError(product.name, expired.expiry);
     // A weight or a price inside the code would make this line wrong if sold as one unit — refused by name instead.
     const measured = Object.keys(read.elements).find((ai) => /^3[1-6]\d\d$/.test(ai) || /^39[0-3]\d$/.test(ai));
     if (measured !== undefined) throw new UnsupportedGs1ContentError(product.name, `a ${measured.startsWith('39') ? 'price' : 'weight or measure'} (AI ${measured})`);

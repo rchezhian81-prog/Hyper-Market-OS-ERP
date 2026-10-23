@@ -78,6 +78,7 @@ function paintDrawer() {
     node('span', { className: 'muted', textContent: l.cost === null ? t('costUnknown') : `${t('costEach')} ${l.cost}` }))));
 
   $('d-dispatch-box').hidden = !(v.canDispatch && session.may.move);
+  $('d-cancel-box').hidden = !(v.canCancel && session.may.move);
   $('d-receive-box').hidden = !(v.canReceive && session.may.move);
   $('d-receive-lines').replaceChildren(...v.lines.map((l, i) => node('li', { dataset: { product: l.productId } },
     node('b', { textContent: `${l.productId} — ${t('sent')} ${l.quantityMinor} ${l.uom}` }),
@@ -117,7 +118,8 @@ const currentRow = () => rows?.find((r) => r.transfer.transferId === currentId);
 function paintWords() {
   document.title = `SRE ${t('title')}`;
   const map = [['who', 'title'], ['title', 'title'], ['lede', 'lede'], ['reg-h', 'registerH'], ['reg-lede', 'registerLede'], ['c-transfer', 'colTransfer'], ['c-route', 'colRoute'], ['c-lines', 'colLines'], ['c-state', 'colState'],
-    ['d-lines-h', 'linesH'], ['d-dispatch-note', 'dispatchNote'], ['d-dispatch', 'dispatch'], ['d-receive-h', 'receiveH'], ['d-receive-note', 'receiveNote'], ['d-receive', 'receive'],
+    ['d-lines-h', 'linesH'], ['d-dispatch-note', 'dispatchNote'], ['d-dispatch', 'dispatch'],
+    ['d-cancel-h', 'cancelH'], ['d-cancel-note', 'cancelNote'], ['l-d-cancel-reason', 'cancelReason'], ['d-cancel', 'cancel'], ['d-receive-h', 'receiveH'], ['d-receive-note', 'receiveNote'], ['d-receive', 'receive'],
     ['d-short-h', 'shortH'], ['d-resolve-h', 'resolveH'], ['d-resolve-note', 'resolveNote'], ['l-d-reason-code', 'reasonCode'], ['l-d-note', 'note'], ['d-resolve', 'resolve']];
   for (const [id, k] of map) { const el = $(id); if (el) el.textContent = t(k); }
   $('d-close').setAttribute('aria-label', t('close'));
@@ -134,6 +136,12 @@ function paintWords() {
 if (session !== null) {
   $('d-dispatch').addEventListener('click', async () => {
     $('d-status').textContent = ''; $('d-status').className = 'status'; const out = await session.dispatch(currentId); await loadList(); say($('d-status'), out); });
+  $('d-cancel').addEventListener('click', async () => {
+    $('d-status').textContent = ''; $('d-status').className = 'status';
+    const out = await session.cancel(currentId, $('d-cancel-reason').value);
+    if (out.result !== 'invalid') { $('d-cancel-reason').value = ''; await loadList(); }
+    say($('d-status'), out);
+  });
   $('d-receive').addEventListener('click', async () => {
     $('d-status').textContent = ''; $('d-status').className = 'status';
     const row = currentRow();

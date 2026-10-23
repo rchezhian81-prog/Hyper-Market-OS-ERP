@@ -130,6 +130,13 @@ export function canonicalise(snapshot: CatalogueSnapshot): string {
     .filter((p) => (p.blockedBatches?.length ?? 0) > 0 || (p.batchPrices?.length ?? 0) > 0)
     .sort((a, b) => (a.productId < b.productId ? -1 : 1))
     .map((p) => [p.productId, stableJson({ blockedBatches: p.blockedBatches ?? [], batchPrices: p.batchPrices ?? [] })].join(FIELD));
+  // M10-FR-01 (integration follow-up): the batches head office moved to EXPIRED ride under the signature — a pack edited to
+  // let an expired batch sell again fails to verify. Only when some product carries any, so a pack without them signs to
+  // exactly the bytes it always did (a box's held pack still verifies).
+  const expired = [...snapshot.products]
+    .filter((p) => (p.expiredBatches?.length ?? 0) > 0)
+    .sort((a, b) => (a.productId < b.productId ? -1 : 1))
+    .map((p) => [p.productId, stableJson(p.expiredBatches)].join(FIELD));
   // OB-263: each product's department rides under the signature whenever any product carries one — the evening check keeps
   // only the pilot department's items by it. Only then, so a pack without departments signs to exactly the bytes it did.
   const categories = [...snapshot.products]
@@ -147,6 +154,7 @@ export function canonicalise(snapshot: CatalogueSnapshot): string {
     ...(regulated.length === 0 ? [] : ['--regulated', ...regulated]),
     ...units,
     ...(batches.length === 0 ? [] : ['--batches', ...batches]),
+    ...(expired.length === 0 ? [] : ['--expired', ...expired]),
     ...(categories.length === 0 ? [] : ['--categories', ...categories]),
     ...(cess.length === 0 ? [] : ['--cess', ...cess])]
     .join(RECORD);

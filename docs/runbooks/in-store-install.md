@@ -31,7 +31,9 @@ the books. One command installs it; one script starts it.
 4. The PC's **clock right and set to the shop's time zone** (Asia/Kolkata). The till dates every sale by this clock
    and the shop's cut-off; head office dates "today" on the dashboard by the time zone you answer in store setup
    (`locale.time_zone`, default Asia/Kolkata — SP-9-i-c). If the PC keeps a different zone, the two will disagree
-   about which day a late sale belongs to.
+   about which day a late sale belongs to. Changing the time zone in store setup — like the trading-day cut-off, the
+   currency, the till's loyalty spend cap and the bulk-publish threshold — needs **the owner's approval** of exactly
+   that answer, asked by someone else (OB-336); the default needs nothing.
 
 ---
 

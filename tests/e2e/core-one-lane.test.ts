@@ -12,6 +12,7 @@ import { httpTransport } from '../../edge/sync-agent/src/http-transport';
 import { apiHarness, TEST_PACK_KEY, type ApiHarness } from '../support/api-harness';
 import { STREAM } from '../../services/api/src/adapters';
 import type { HttpResponse } from '../../services/kernel/src/index';
+import { ownerApprovedSetting } from '../support/owner-approved-setting';
 
 /**
  * **Prove the core on one lane: a sale rung with no internet reaches the books, exactly once.**
@@ -98,7 +99,8 @@ describe('the core, on one lane, end to end', () => {
     await h.seedOwner(TENANT, TILL);
     // This test dates its sale by the UTC calendar date, so the owner tells head office the shop's clocks keep UTC —
     // "Sales today" is the SHOP's trading day, read from tenant settings, never the server's date (F14, SP-9-i-c).
-    const tz = await h.request({ method: 'PUT', path: '/v1/platform/setup/locale.time_zone', userId: TILL, tenantId: TENANT, idempotencyKey: 'setup-tz-utc', body: { value: 'UTC' } });
+    // OB-336: the time zone is high-impact — the administrator asks, the owner (here the one principal) approves.
+    const tz = await ownerApprovedSetting(h, TENANT, 'locale.time_zone', { value: 'UTC' }, TILL);
     expect(tz.status).toBe(200);
 
     // Ring one sale on the lane, through the loopback socket to this till's own disk — no cloud call.

@@ -46,6 +46,21 @@ describe('the realm file', () => {
     expect(cond.config).toMatchObject({ condUserRole: 'sre-privileged', negate: 'false' });
   });
 
+  it('passkeys are ready (M02-FR-01): a WebAuthn policy for a passkey and a passwordless key, without loosening the required one-time code', () => {
+    expect(realm['webAuthnPolicyRpEntityName']).toBe('SRE Hyper Market');
+    expect(realm['webAuthnPolicySignatureAlgorithms']).toEqual(expect.arrayContaining(['ES256']));
+    expect(realm['webAuthnPolicyUserVerificationRequirement']).not.toBe('discouraged');
+    expect(realm['webAuthnPolicyAvoidSameAuthenticatorRegister']).toBe(false);
+    // Passwordless readiness: a resident key with the person verified on the device.
+    expect(realm['webAuthnPolicyPasswordlessRequireResidentKey']).toBe('Yes');
+    expect(realm['webAuthnPolicyPasswordlessUserVerificationRequirement']).toBe('required');
+    expect(realm['webAuthnPolicyPasswordlessSignatureAlgorithms']).toEqual(expect.arrayContaining(['ES256']));
+    // Readiness only: a passkey is never an ALTERNATIVE to the one-time code. Two alternatives with neither set up let a
+    // privileged person through with the password alone — the real-Keycloak proof caught exactly that on 23 Oct 2026.
+    const flows = realm['authenticationFlows'] as { alias: string; authenticationExecutions: Record<string, unknown>[] }[];
+    expect(flows.flatMap((f) => f.authenticationExecutions).filter((e) => e['authenticator'] === 'webauthn-authenticator')).toHaveLength(0);
+  });
+
   it('tokens carry the product person, the shop, our audience and how the person proved it', () => {
     const mappers = (client['protocolMappers'] as { protocolMapper: string; config: Record<string, string> }[]);
     expect(mappers.map((m) => m.protocolMapper).sort()).toEqual(['oidc-amr-mapper', 'oidc-audience-mapper', 'oidc-hardcoded-claim-mapper', 'oidc-usermodel-attribute-mapper']);

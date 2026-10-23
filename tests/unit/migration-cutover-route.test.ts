@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { migrationRoutes, type MigrationDeps } from '../../services/migration/src/index';
+import type { MigrationControlsDeps } from '../../services/migration/src/migration-controls';
+import type { RollbackLimits, BackupReport } from '../../packages/migration/src/rollback-limits';
 import type { RequestContext, Route } from '../../services/kernel/src/index';
 import type { LoadTarget, TargetKind } from '../../packages/migration/src/trial';
 import type { ControlTotal } from '../../packages/migration/src/reconcile';
@@ -23,7 +25,17 @@ const T = 't-sre';
 interface Records {
   totals: ControlTotal[]; exceptions: MigrationException[]; days: RecordedParallelDay[]; rollbacks: RecordedRollback[];
   policy?: ParallelRunPolicy; deltaAt?: string; people: Record<string, string[]>;
+  /** OB-288 P5 · MG-11: the owner's rollback limits and the backup job's reports, as head office holds them. */
+  limits?: RollbackLimits; backups?: BackupReport[];
 }
+
+/** MG-11: the controls' ledger, over plain records (only the two the gate reads carry anything). */
+const controlsOf = (r: Records): MigrationControlsDeps => ({
+  rollbackLimits: async () => r.limits, recordRollbackLimits: async () => {}, backups: async () => r.backups ?? [],
+  cutoverGo: async () => undefined, triggers: async () => [], recordTrigger: async () => {},
+  exportDiffs: async () => [], recordExportDiff: async () => {}, booksDays: async () => [], recordBooksDay: async () => {},
+  headOfficeBooks: async () => ({ purchases: [], supplierBalances: [], customerBalances: [], stock: [], margin: { salesNetMinor: null, costMinor: null } }),
+});
 
 const signed = (id: string): ControlTotal => ({
   totalId: id, tenantId: T, kind: 'stock', name: `Total ${id}`, unit: 'quantity', legacyValue: 100, loadedValue: 100,
@@ -49,6 +61,8 @@ const complete = (): Records => ({
   policy: { cutoverId: 'cut-1', dailyReconcilerUserId: 'u-recon', requiredCleanDays: 3, maxParallelDays: 14, startedOn: '2026-10-01', setBy: 'u-owner', setAt: NOW },
   days: ['2026-10-01', '2026-10-02', '2026-10-03'].map(cleanDay), rollbacks: [performed], deltaAt: '2026-10-04T02:00:00Z',
   people: { 'u-owner': ['owner'], 'u-op': ['migration_operator'] },
+  limits: { controlTotalDifferenceMinor: 0, edgeOutageMinutes: 30, windowMinutes: 360, backupMaxAgeHours: 12, version: 1, setBy: 'u-owner', setAt: NOW },
+  backups: [{ backupId: 'bk-1', at: NOW, ok: true, encrypted: true, offsite: true }],
 });
 
 const deps = (r: Records, targetKind: TargetKind = 'rehearsal'): MigrationDeps => ({
@@ -60,6 +74,7 @@ const deps = (r: Records, targetKind: TargetKind = 'rehearsal'): MigrationDeps =
   parallelPolicy: () => r.policy, parallelDays: () => r.days, parallelDifferences: () => [], rollbacks: () => r.rollbacks, rollbackReconciliations: () => r.rollbacks.filter((x) => x.performed).map(reconciledFor),
   deltaAppliedAt: () => r.deltaAt,
   rolesOf: (_t, userId) => r.people[userId] ?? [],
+  controls: controlsOf(r),
 });
 
 const ctx = (over: Partial<RequestContext>): RequestContext =>
@@ -91,7 +106,7 @@ const forged = () => ({
 });
 
 describe('POST /v1/migration/cutover/decision (MG-10/11) — on head office\'s evidence (GT-03)', () => {
-  it('says GO when head office\'s own records pass all eight checks and the OWNER, signed in, gives GO', async () => {
+  it('says GO when head office\'s own records pass all ten checks and the OWNER, signed in, gives GO', async () => {
     const res = await route(complete()).handler(ctx({ body: { cutoverId: 'cut-1', ownerGo: true, evidence: { edgeUnsyncedItems: 0, namedTeam: team } } }));
     expect(res.status).toBe(200);
     const r = res.body as Body;
@@ -99,6 +114,15 @@ describe('POST /v1/migration/cutover/decision (MG-10/11) — on head office\'s e
     expect(r.decision.go).toBe(true);
     expect(r.decision.shopKeepsTrading).toBe(true);
     expect(r.callerSupplied).toEqual(['edgeUnsyncedItems']);
+  });
+
+  it('MG-11: no GO while a rollback limit is not set or the last good backup is past the agreed age — a body cannot stand in for either', async () => {
+    const unset = (await route({ ...complete(), limits: { ...complete().limits!, windowMinutes: null } }).handler(ctx({ body: { cutoverId: 'cut-1', ownerGo: true, evidence: { edgeUnsyncedItems: 0, namedTeam: team, rollbackLimits: { forged: true } } } }))).body as Body;
+    expect(unset.decision.failed).toEqual(['rollback_limits_agreed']);
+    expect(unset.ignoredFromCaller).toContain('rollbackLimits');
+    const stale = (await route({ ...complete(), backups: [{ backupId: 'bk-0', at: '2026-10-01T00:00:00Z', ok: true, encrypted: true, offsite: true }] }).handler(ctx({ body: { cutoverId: 'cut-1', ownerGo: true, evidence: { edgeUnsyncedItems: 0, namedTeam: team, backup: { state: 'passed' } } } }))).body as Body;
+    expect(stale.decision.failed).toEqual(['backup_verified']);
+    expect(stale.ignoredFromCaller).toContain('backup');
   });
 
   it('a forged all-green body cannot override OPEN totals, blocking exceptions, an unclean run, no performed rollback or no delta', async () => {

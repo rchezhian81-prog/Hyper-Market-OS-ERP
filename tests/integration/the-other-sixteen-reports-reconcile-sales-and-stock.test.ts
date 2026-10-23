@@ -10,6 +10,7 @@ import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { runMigrations } from '../../packages/persistence/src/migrations';
 import { splitInclusive } from '../../packages/finance/src/day-book';
 import { shiftDate } from '../../packages/calendar/src/index';
+import { ownerApprovedSetting } from '../support/owner-approved-setting';
 
 /**
  * **D13 round 8 — the sales and stock reports that had no head-office producer now reconcile to their source records,
@@ -84,7 +85,7 @@ describe.each(backings)('D13 — the other sales and stock reports reconcile to 
     await h.provisionRole(T, 'u-mgr', 'store_manager');
     await h.provisionRole(T, 'u-mgr-s2', 'store_manager', ['S2']); // a manager of ONE branch
     await h.provisionRole(T, 'u-box', 'store_computer', ['S1']); // OB-54: the box's credential names its own store
-    await ok(call('PUT', '/v1/platform/setup/locale.time_zone', 'u-owner', { value: 'UTC' }), 200);
+    await ok(ownerApprovedSetting(h, T, 'locale.time_zone', { value: 'UTC' }), 200);
     // Receipts at cost on the stock ledger (the average buying cost OB-39 reads), and batches with expiries.
     const recv = (mv: string, productId: string, loc: string, qty: number, cost: number | undefined, extra: Record<string, unknown> = {}) =>
       ok(call('POST', '/v1/inventory/movements', 'u-owner', { movementId: mv, productId, locationId: loc, kind: 'received', quantityMinor: qty, uom: 'ea', occurredAt: `${shiftDate(DAY, -10)}T08:00:00.000Z`, enteredBy: 'u-owner', ...(cost === undefined ? {} : { unitCostMinor: cost }), ...extra }), 202);

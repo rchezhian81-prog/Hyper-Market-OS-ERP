@@ -21,11 +21,14 @@ import { createHash } from 'node:crypto';
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import {
-  AGENTS, admitCall, callModel, costOf, redactSecrets,
+  AGENTS, FORBIDDEN_TOOLS, admitCall, callModel, costOf, redactSecrets,
   type AgentId, type ModelTier, type ModelTransport, type TierPricing, type EvidenceItem, type ModelResponse, type ToolProposal,
 } from '../../../packages/ai/src/index';
-import type { Budget, Proposal } from './index';
+import { modelConfidence, type Budget, type Proposal } from './index';
 import { EVALUATION_EVIDENCE, EVALUATION_SET, EVALUATION_SET_VERSION } from './evaluation-set';
+import { minimiseForModel, type MinimisedCall } from './minimise';
+import { FREE_TEXT_AGENTS } from './governance';
+import type { AiIncidentRaised, AiToolCallBlocked } from './ai-incidents';
 
 export interface ModelCallAudit {
   readonly callId: string;
@@ -42,7 +45,13 @@ export interface ModelCallAudit {
      *  as evidence (its id is not in `evidenceIds`, and a citation of it does not count). */
     readonly untrustedInput?: { readonly id: string; readonly chars: number; readonly hash: string };
     readonly tier: ModelTier; readonly maxOutputTokens: number; readonly timeoutMs: number; readonly hash: string;
+    /** AI-NFR-06 (OB-288 lane 4 · P1): what was removed, redacted and fenced before the evidence reached a model. */
+    readonly minimisation?: MinimisedCall['facts'];
   };
+  /** AI-NFR-01: the approved model the call was allowed on ('evaluation_run' when an evaluation ran it to approve it). */
+  readonly modelId?: string;
+  /** §30.2 AIToolCallBlocked: tools the model asked for that the agent was never granted — dropped, never offered. */
+  readonly blockedTools?: readonly string[];
   readonly result: {
     readonly outcome: string; readonly text?: string; readonly proposals: readonly ToolProposal[]; readonly citedEvidenceIds: readonly string[];
     readonly inputTokens: number; readonly outputTokens: number; readonly detail: string; readonly hash: string;
@@ -56,7 +65,8 @@ export interface ModelCallAudit {
 }
 
 export interface ModelGatewayDeps {
-  readonly killSwitchOn: (tenantId: string) => Promise<boolean> | boolean;
+  /** With an agent: whether THAT agent is stopped (the shop-wide switch, or a scoped one — AI-NFR-10). */
+  readonly killSwitchOn: (tenantId: string, agent?: AgentId) => Promise<boolean> | boolean;
   readonly enabledAgents: (tenantId: string) => Promise<readonly AgentId[]> | readonly AgentId[];
   /** The tenant budget; `spentMinor` is the sum of settled costs. */
   readonly budget: (tenantId: string) => Promise<Budget> | Budget;
@@ -77,6 +87,20 @@ export interface ModelGatewayDeps {
    * says it does not know).
    */
   readonly evidenceFor?: (tenantId: string, agent: AgentId) => Promise<readonly EvidenceItem[]> | readonly EvidenceItem[];
+  /**
+   * AI-NFR-01 (OB-288 lane 4 · P1): the APPROVED model serving a tier now. When wired, a call whose admitted tier has no
+   * approved model is refused before any reservation or transport. Absent → the register is not consulted (a bare stub).
+   */
+  readonly approvedModel?: (tenantId: string, tier: ModelTier) => Promise<{ readonly modelId: string } | undefined> | { readonly modelId: string } | undefined;
+  /** AI-NFR-10: the agent's own ceiling and call-rate limit, what it has spent and what its calls in flight reserve. */
+  readonly agentLimit?: (tenantId: string, agent: AgentId) => Promise<{ readonly ceilingMinor: number; readonly callsPerHour?: number } | undefined> | { readonly ceilingMinor: number; readonly callsPerHour?: number } | undefined;
+  readonly agentSpentMinor?: (tenantId: string, agent: AgentId) => Promise<number> | number;
+  readonly agentOpenReservedMinor?: (tenantId: string, agent: AgentId) => Promise<number> | number;
+  /** §30.2 AIToolCallBlocked + the AI-incident register: a dropped tool is recorded, and (outside an evaluation) raised. */
+  readonly recordBlockedTools?: (tenantId: string, blocked: readonly AiToolCallBlocked[]) => Promise<void> | void;
+  readonly raiseIncident?: (tenantId: string, incident: AiIncidentRaised) => Promise<void> | void;
+  /** OB-296: whether free text (A01 questions, A05 answers) is switched on. Absent → off. */
+  readonly freeTextEnabled?: (tenantId: string) => Promise<boolean> | boolean;
   readonly now: () => string;
 }
 
@@ -120,6 +144,11 @@ export async function governedModelCall(deps: ModelGatewayDeps, input: {
   readonly evidenceFrom?: string;
   /** The caller's own free text — fenced as untrusted input, recorded, never evidence. */
   readonly callerText?: string;
+  /**
+   * True only for the evaluation route's own calls: the run that decides whether a model may be APPROVED cannot need the
+   * approval first. Its output reaches nobody (it is scored), and its dropped tools are judged by the run, not raised.
+   */
+  readonly evaluation?: boolean;
 }): Promise<{ readonly response: ModelResponse; readonly audit: ModelCallAudit }> {
   const at = deps.now();
   const definition = AGENTS[input.agent];
@@ -131,41 +160,87 @@ export async function governedModelCall(deps: ModelGatewayDeps, input: {
     ? input.evidence.filter((e) => e.evidenceId !== CALLER_TEXT_ID)
     : [...input.evidence.filter((e) => e.evidenceId !== CALLER_TEXT_ID), { evidenceId: CALLER_TEXT_ID, source: 'the caller\'s own text (untrusted input, not evidence)', content: caller, untrusted: true }];
   const evidenceIds = new Set(input.evidence.filter((e) => e.evidenceId !== CALLER_TEXT_ID).map((e) => e.evidenceId));
+  // AI-NFR-05/06: minimise (customer personal data a purpose may not see), redact, fence the untrusted items, scan —
+  // BEFORE anything is estimated, admitted or sent. What the model is shown is this, and the audit says what was removed.
+  const minimised = minimiseForModel(input.agent, redacted.text, modelEvidence);
   const requestFacts = {
     instruction: redacted.text, redactions: redacted.findings.length, evidenceIds: [...evidenceIds], offeredTools,
     tier: input.tier, maxOutputTokens: input.maxOutputTokens, timeoutMs: input.timeoutMs,
     ...(input.evidenceFrom === undefined ? {} : { evidenceFrom: input.evidenceFrom }),
     ...(caller === undefined ? {} : { untrustedInput: { id: CALLER_TEXT_ID, chars: caller.length, hash: createHash('sha256').update(caller).digest('hex') } }),
+    minimisation: minimised.facts,
   };
 
   // ADMISSION — before anything is reserved or any transport touched.
   const pricing = await deps.pricing?.(input.tenantId);
   const budget = await deps.budget(input.tenantId);
   const inFlight = await deps.openReservedMinor(input.tenantId);
-  const estimatedInputTokens = Math.ceil((redacted.text.length + modelEvidence.reduce((n, e) => n + e.content.length, 0)) / 4);
-  const admission = pricing === undefined
+  const estimatedInputTokens = Math.ceil((minimised.instruction.length + minimised.evidence.reduce((n, e) => n + e.content.length, 0)) / 4);
+  const previous = await deps.audits(input.tenantId);
+  const shopAdmission = pricing === undefined
     ? { allowed: false, outcome: 'no_pricing', tier: input.tier, estimatedCostMinor: 0, detail: 'no model pricing is configured for this shop, so no call can be admitted — an unknown cost is not admitted' }
     : admitCall({
       budget: { agentId: input.agent, tenantId: input.tenantId, monthlyCeilingMinor: budget.capMinor, defaultTier: 'small', permittedTiers: TIERS, enabled: (await deps.enabledAgents(input.tenantId)).includes(input.agent) },
       requestedTier: input.tier, estimatedInputTokens, estimatedOutputTokens: input.maxOutputTokens, pricing,
-      spentThisPeriodMinor: budget.spentMinor + inFlight, killed: await deps.killSwitchOn(input.tenantId),
+      spentThisPeriodMinor: budget.spentMinor + inFlight, killed: await deps.killSwitchOn(input.tenantId, input.agent),
       fallback: 'the agent carries on with its deterministic leg; no part of the shop depends on a model',
     });
+  // AI-NFR-10: the agent's OWN ceiling, then its call-rate limit, then (AI-NFR-01) an approved model for the tier — each
+  // decided BEFORE any reservation or transport, each refusal audited like any other.
+  const limit = shopAdmission.allowed ? await deps.agentLimit?.(input.tenantId, input.agent) : undefined;
+  let admission: { readonly allowed: boolean; readonly outcome: string; readonly tier: ModelTier; readonly estimatedCostMinor: number; readonly detail: string } = shopAdmission;
+  if (admission.allowed && limit !== undefined && pricing !== undefined) {
+    const agentSpent = (await deps.agentSpentMinor?.(input.tenantId, input.agent)) ?? 0;
+    const agentInFlight = (await deps.agentOpenReservedMinor?.(input.tenantId, input.agent)) ?? 0;
+    const own = admitCall({
+      budget: { agentId: input.agent, tenantId: input.tenantId, monthlyCeilingMinor: limit.ceilingMinor, defaultTier: 'small', permittedTiers: TIERS, enabled: true },
+      requestedTier: admission.tier, estimatedInputTokens, estimatedOutputTokens: input.maxOutputTokens, pricing,
+      spentThisPeriodMinor: agentSpent + agentInFlight, killed: false,
+      fallback: 'the agent carries on with its deterministic leg; no part of the shop depends on a model',
+    });
+    admission = own.allowed ? own : { ...own, outcome: 'agent_budget_exhausted', detail: `${input.agent}'s own ceiling: ${own.detail}` };
+  }
+  if (admission.allowed && limit?.callsPerHour !== undefined) {
+    const since = Date.parse(at) - 3_600_000;
+    const lastHour = previous.filter((a) => a.agent === input.agent && a.calledAModel && Date.parse(a.at) > since).length;
+    if (lastHour >= limit.callsPerHour) {
+      admission = { allowed: false, outcome: 'rate_limited', tier: admission.tier, estimatedCostMinor: 0, detail: `${input.agent} has made ${lastHour} model call(s) in the last hour, its limit is ${limit.callsPerHour} — refused before the call; the agent carries on with its deterministic leg` };
+    }
+  }
+  let modelId: string | undefined;
+  if (admission.allowed && deps.transport !== undefined) {
+    if (input.evaluation === true) modelId = 'evaluation_run';
+    else if (deps.approvedModel !== undefined) {
+      const approved = await deps.approvedModel(input.tenantId, admission.tier);
+      if (approved === undefined) {
+        admission = { allowed: false, outcome: 'model_not_approved', tier: admission.tier, estimatedCostMinor: 0, detail: `no model is on the approved-model register for the ${admission.tier} tier, so no model may be called (AI-NFR-01) — the agent carries on with its deterministic leg` };
+      } else modelId = approved.modelId;
+    }
+  }
 
   let response: ModelResponse;
   // A citation counts only when it names the shop's own evidence — the caller's text is never a source.
   const onlyEvidence = (r: ModelResponse): ModelResponse => ({ ...r, citedEvidenceIds: r.citedEvidenceIds.filter((id) => evidenceIds.has(id)) });
   let actual = 0;
+  let blockedTools: string[] = [];
   const reservedMinor = admission.allowed ? admission.estimatedCostMinor : 0;
   if (admission.allowed && deps.transport !== undefined) {
     await deps.reserve(input.tenantId, { callId: input.callId, agent: input.agent, amountMinor: reservedMinor, at });
+    // The provider's raw reply is watched for the tools it ASKED for, so a dropped one is a recorded fact (§30.2), not
+    // a phrase in a detail string.
+    const provider = deps.transport;
+    const watched: ModelTransport = (req) => {
+      const raw = provider(req);
+      blockedTools = [...new Set((raw.proposals ?? []).map((p) => p.tool).filter((t): t is string => typeof t === 'string' && t.trim() !== '' && !offeredTools.includes(t)))];
+      return raw;
+    };
     response = callModel({
       request: {
         requestId: input.callId,
         context: { tenantId: input.tenantId, agentId: input.agent, requestedBy: input.requestedBy, correlationId: input.callId, at },
-        instruction: redacted.text, evidence: modelEvidence, offeredTools, maxOutputTokens: input.maxOutputTokens, timeoutMs: input.timeoutMs, tier: admission.tier,
+        instruction: minimised.instruction, evidence: minimised.evidence, offeredTools, maxOutputTokens: input.maxOutputTokens, timeoutMs: input.timeoutMs, tier: admission.tier,
       },
-      transport: deps.transport,
+      transport: watched,
       admission: { allowed: true, detail: admission.detail },
     });
     response = onlyEvidence(response);
@@ -177,13 +252,12 @@ export async function governedModelCall(deps: ModelGatewayDeps, input: {
       request: {
         requestId: input.callId,
         context: { tenantId: input.tenantId, agentId: input.agent, requestedBy: input.requestedBy, correlationId: input.callId, at },
-        instruction: redacted.text, evidence: modelEvidence, offeredTools, maxOutputTokens: input.maxOutputTokens, timeoutMs: input.timeoutMs, tier: admission.tier,
+        instruction: minimised.instruction, evidence: minimised.evidence, offeredTools, maxOutputTokens: input.maxOutputTokens, timeoutMs: input.timeoutMs, tier: admission.tier,
       },
       admission: { allowed: admission.allowed, detail: admission.detail },
     });
   }
 
-  const previous = await deps.audits(input.tenantId);
   const body: Omit<ModelCallAudit, 'hash'> = {
     callId: input.callId, agent: input.agent, requestedBy: input.requestedBy, at,
     admission: { allowed: admission.allowed, outcome: admission.outcome, tier: admission.tier, reservedMinor, detail: admission.detail },
@@ -197,11 +271,25 @@ export async function governedModelCall(deps: ModelGatewayDeps, input: {
     })(),
     actualCostMinor: actual,
     calledAModel: admission.allowed && deps.transport !== undefined,
+    ...(modelId === undefined ? {} : { modelId }),
+    ...(blockedTools.length === 0 ? {} : { blockedTools }),
     prevHash: previous.at(-1)?.hash ?? 'genesis',
     committedAnything: false,
   };
   const audit: ModelCallAudit = { ...body, hash: sha(body) };
   await deps.appendAudit(input.tenantId, audit);
+  if (blockedTools.length > 0) {
+    await deps.recordBlockedTools?.(input.tenantId, blockedTools.map((tool) => ({ callId: input.callId, agent: input.agent, tool, forbidden: FORBIDDEN_TOOLS.includes(tool), at })));
+    // An evaluation's over-reach cases are MEANT to reach for tools; the run's own verdict judges them. Anywhere else a
+    // model reaching beyond its grant is an AI incident a named person looks at — the defence held, and somebody hears.
+    if (input.evaluation !== true) {
+      await deps.raiseIncident?.(input.tenantId, {
+        incidentId: `aii-blocked-${input.callId}`, kind: 'tool_call_blocked', agent: input.agent,
+        summary: `${AGENTS[input.agent].name} asked for ${blockedTools.join(', ')}, which it was never granted. The gateway dropped ${blockedTools.length === 1 ? 'it' : 'them'}; nothing was done.`,
+        raisedBy: 'gateway', raisedAt: at, evidence: { callId: input.callId, tools: blockedTools },
+      });
+    }
+  }
   return { response, audit };
 }
 
@@ -249,6 +337,10 @@ export function modelGatewayRoutes(deps: ModelGatewayDeps): readonly Route[] {
           evidence = focus === undefined ? all : all.filter((e) => `${e.evidenceId} ${e.content}`.toLowerCase().includes(focus));
           evidenceFrom = 'domain_readers';
         }
+        // OB-296: free-text questions to A01 and free-text answers from A05 stay OFF until the owner switches them on.
+        if (b['callerText'] !== undefined && FREE_TEXT_AGENTS.includes(agent) && !((await deps.freeTextEnabled?.(ctx.tenantId)) ?? false)) {
+          throw apiError(409, { code: 'free_text_is_off', whatHappened: `Free-text questions and answers for ${agent} are switched off (OB-296: the agents work on rules).`, wasItSaved: 'not_saved', nextSafeAction: 'Ask without callerText, or the owner switches free text on (PUT /v1/ai/free-text). Nothing was called or spent.' });
+        }
         const callId = `call-${agent}-${ctx.idempotencyKey ?? deps.now()}`;
         const { response, audit } = await governedModelCall(deps, {
           tenantId: ctx.tenantId, agent, requestedBy: ctx.userId, callId, instruction: b['instruction'] as string,
@@ -256,12 +348,15 @@ export function modelGatewayRoutes(deps: ModelGatewayDeps): readonly Route[] {
           tier: (b['tier'] as ModelTier | undefined) ?? 'small', maxOutputTokens: 1_200, timeoutMs: 4_000,
         });
         if (!audit.admission.allowed) {
-          throw apiError(audit.admission.outcome === 'killed' ? 503 : 429, {
+          throw apiError(audit.admission.outcome === 'killed' ? 503 : audit.admission.outcome === 'model_not_approved' ? 409 : 429, {
             code: audit.admission.outcome, whatHappened: audit.admission.detail, wasItSaved: 'saved',
             nextSafeAction: 'Nothing was called and nothing was spent; the refusal itself is on the audit record.',
           });
         }
-        return { status: 200, body: { callId, evidenceFrom, evidenceIds: audit.request.evidenceIds, outcome: response.outcome, text: response.text ?? null, proposals: response.proposals, citedEvidenceIds: response.citedEvidenceIds, costMinor: audit.actualCostMinor, auditHash: audit.hash, committedAnything: false } };
+        return { status: 200, body: { callId, evidenceFrom, evidenceIds: audit.request.evidenceIds, outcome: response.outcome, text: response.text ?? null, proposals: response.proposals, citedEvidenceIds: response.citedEvidenceIds, costMinor: audit.actualCostMinor, auditHash: audit.hash,
+          // AI-NFR-04: how far this answer can be trusted, said with it; AI-NFR-01: the approved model it ran on.
+          confidence: modelConfidence(response.citedEvidenceIds.length, response.outcome === 'answered'), modelId: audit.modelId ?? null,
+          minimisation: audit.request.minimisation ?? null, committedAnything: false } };
       },
     },
     {

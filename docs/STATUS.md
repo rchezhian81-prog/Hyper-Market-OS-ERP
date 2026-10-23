@@ -5,6 +5,63 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## OB-288 wave 1 (23 October 2026): five lanes combined (recall and trace, gates and scans, store-box offline queues, procure-to-pay, identity and authority)
+
+**What changed**
+- **Full-roadmap gap audit.** 391 rows were checked against the code. Result: 206 done, 148 partial, 7 missing, 15 decision, 15 external (`docs/audit/FULL-ROADMAP-GAP-AUDIT-2026-10-23.md`).
+- **Owner decisions.** The owner answered every open choice (OB-289 to OB-337).
+- **Recall and trace (M10-FR-03/04, WF-09):**
+  - a recall stops ordering, publishes the till block at once (the till refuses offline), and alerts the owner;
+  - backward trace from a bill or a customer, with every trace read audited;
+  - a call list of everyone known (OB-328), with an SMS port switched off;
+  - a Recalls and trace page.
+- **Gates (QG-02/03/05/06/08/12):**
+  - SAST, image, IaC and DAST scans fail the build on critical or high;
+  - two real findings fixed (the AES-GCM tag length; npm left in the runtime images);
+  - a findings register;
+  - an open high now blocks its gate;
+  - the Quality gates page, with no default decision;
+  - load tests at 50,000 SKUs; customer search sped up to meet 1 s.
+- **Store-box offline (M10-FR-01/02, M11-FR-01–03, WF-07):**
+  - food-safety, production, weighed runs, batch release, labels, and transfer send and receive work offline and book once;
+  - transfer cancel before dispatch;
+  - a daily expiry state move;
+  - the OB-327 clock guard: warning at 2 minutes; at 5 minutes, bills commit marked for checking.
+- **Procure-to-pay (M06-FR-02–04, M07-FR-01/04, WF-03, WF-05):**
+  - blanket POs;
+  - separation of duties across one purchase;
+  - requisition and quote page;
+  - buying scope per order (OB-289);
+  - dock diary and ASN receiving;
+  - landed cost in stock value;
+  - rebates from matched bills;
+  - Tally AP voucher export.
+- **Identity and authority (M01-FR-01–03, M02-FR-01–03, M05-FR-01):**
+  - money limits held on the server (OB-290); the audit's bug of taking the limit from the request body is fixed;
+  - escalation by age (OB-292);
+  - the price-change size check (OB-291);
+  - department scope;
+  - governed high-impact settings;
+  - passkey readiness;
+  - Approval rules and Access review pages.
+- **Record fix.** WF-08 now reads E2E VERIFIED, as its proof shows.
+
+**Tested.** Each lane ran its own unit, integration (in memory and on real PostgreSQL, with cold restarts), browser, guardrail and fail-before checks. The combined branch passes tsc and all guardrails. The full combined gate runs before the pull request. Nothing here was run on real Windows, a real printer, a real card machine or a real Tally, and there was no staff UAT.
+
+**Next (wave 2, running):**
+- the till bill and GST (financial-year series, cess, IGST, delivery sale, recall check on returns, day evidence pack, FSSAI on the bill, expiry tap, BIS gate);
+- AI governance;
+- the finance bridge (Tally daily file) and API contracts;
+- integration follow-ups: PO limit through the identity rules, volume rebate (OB-334), extra high-impact settings (OB-336), offline hold release (OB-333), recall page on the store computer, risk acceptance needing two signatures (OB-330), CI findings push (OB-331), rehearsal expiry (OB-332), expired batches into the till.
+
+**Owner inputs still needed:**
+- the security reviewer's name;
+- approval of the loyalty enrolment notice wording, plus a native Tamil check;
+- the numbers shown "not set": return windows, delivery fee, staff discount cap, loyalty tiers and expiry, related-party list, alert thresholds, delivery-contribution threshold, C9 threshold;
+- the GitHub secret `FINDINGS_PUSH_TOKEN`, set by the owner or administrator, never written in the repository.
+
+**Blocked:** nothing in software.
+
 ## Strategy change: complete the whole roadmap before the store install (OB-288, 23 October 2026)
 
 - Owner: complete 100% of the requirements in software first, in four parallel lanes; no pilot focus. Pilot-first (OB-239) reversed; R5 no longer waits for the pilot; the practice-day kit (OB-287) stopped.

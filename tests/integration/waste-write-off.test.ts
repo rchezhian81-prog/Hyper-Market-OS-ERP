@@ -63,25 +63,25 @@ describe('write-off routes are the single governed door for a stock loss (M28-FR
   it('refuses a MATERIAL loss without captured evidence (M28-FR-01)', async () => {
     const h = await cast();
     // Material: value ≥ the ₹500 threshold, but no evidenceRef (the evidence check precedes the approver).
-    const res = await approvedPost(h, 'u-owner', 'u-mgr', 'wo-2', base({ qty: 100, valueMinor: 500_000, lossType: 'damage' }));
+    const res = await approvedPost(h, 'u-owner', 'u-mgr', 'wo-2', base({ qty: 30, valueMinor: 150_000, lossType: 'damage' }));
     expect(res.status).toBe(422);
     expect(codeOf(res)).toBe('write_off_needs_evidence');
   });
 
   it('refuses a MATERIAL loss without a separate approver, and one the raiser approves themselves (§28)', async () => {
     const h = await cast();
-    const noApproval = await post(h, 'u-owner', 'wo-3', base({ qty: 100, valueMinor: 500_000, lossType: 'damage', evidenceRef: 'photo-1' }));
+    const noApproval = await post(h, 'u-owner', 'wo-3', base({ qty: 30, valueMinor: 150_000, lossType: 'damage', evidenceRef: 'photo-1' }));
     expect(noApproval.status).toBe(422);
     expect(codeOf(noApproval)).toBe('write_off_needs_approval');
     // Self-approval: the raiser (u-owner) cannot approve their own loss — the engine refuses the decision (§28).
-    const selfApproved = await approvedPost(h, 'u-owner', 'u-owner', 'wo-4', base({ qty: 100, valueMinor: 500_000, lossType: 'damage', evidenceRef: 'photo-1' }));
+    const selfApproved = await approvedPost(h, 'u-owner', 'u-owner', 'wo-4', base({ qty: 30, valueMinor: 150_000, lossType: 'damage', evidenceRef: 'photo-1' }));
     expect(selfApproved.status).toBe(422);
     expect(codeOf(selfApproved)).toBe('self_approval');
   });
 
   it('refuses a MATERIAL loss approved by someone without the authority, or by a typed name — a name is not an approval', async () => {
     const h = await cast();
-    const LOSS = base({ qty: 100, valueMinor: 500_000, lossType: 'damage', evidenceRef: 'photo-1' });
+    const LOSS = base({ qty: 30, valueMinor: 150_000, lossType: 'damage', evidenceRef: 'photo-1' });
     // A cashier (no authority) cannot approve a material loss, nor can an unprovisioned person — refused at the decision.
     expect((await approvedPost(h, 'u-owner', 'u-cash', 'wo-5a', LOSS)).status).toBe(403);
     expect((await approvedPost(h, 'u-owner', 'u-nobody', 'wo-5b', LOSS)).status).toBe(403);
@@ -93,9 +93,20 @@ describe('write-off routes are the single governed door for a stock loss (M28-FR
     expect(((await h.request({ method: 'GET', path: '/v1/inventory/write-offs', userId: 'u-owner', tenantId: A })).body as { count: number }).count).toBe(0);
   });
 
+  it('OB-290: a loss above the manager\'s ₹2,000 adjustment limit is not theirs to approve — it goes to the owner', async () => {
+    const h = await cast();
+    const BIG = base({ qty: 100, valueMinor: 500_000, lossType: 'damage', evidenceRef: 'photo-1' }); // ₹5,000
+    const byManager = await approvedPost(h, 'u-owner', 'u-mgr', 'wo-big', BIG);
+    expect(byManager.status).toBe(422);
+    expect(codeOf(byManager)).toBe('exceeds_your_limit');
+    // The manager raises it; the owner (unlimited) approves it in his own session.
+    const byOwner = await approvedPost(h, 'u-mgr', 'u-owner', 'wo-big-2', BIG);
+    expect(byOwner.status).toBe(201);
+  });
+
   it('commits a MATERIAL loss with evidence AND a genuine Manager/Owner approval, used once', async () => {
     const h = await cast();
-    const res = await approvedPost(h, 'u-owner', 'u-mgr', 'wo-6', base({ qty: 100, valueMinor: 500_000, lossType: 'damage', evidenceRef: 'photo-1' }));
+    const res = await approvedPost(h, 'u-owner', 'u-mgr', 'wo-6', base({ qty: 30, valueMinor: 150_000, lossType: 'damage', evidenceRef: 'photo-1' }));
     expect(res.status).toBe(201);
     expect(res.body).toMatchObject({ requiredApproval: true, evidenceRef: 'photo-1' });
     // The record names the person who approved it in their own session — the manager, not the raiser.

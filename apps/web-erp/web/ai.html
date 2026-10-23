@@ -8,7 +8,9 @@
     <meta name="theme-color" content="#192f27" />
     <!--
       AI control (M32 / M36 / A01-A10 / AI-NFR-01..12 / API-13 / P-05 / hard rule 5).
-      A tenth shell in this folder, sharing the one bundle.
+      A tenth shell in this folder, sharing the one bundle. OB-288 lane 4 P1: every figure here is head office's live read
+      (GET /v1/ai/control) in the person's own session, and every act - stop, start again, decide, run the checks, an
+      incident - is sent to head office, which decides. No sample data, ever.
 
       AI recommends or drafts; deterministic rules and authorised humans commit — and a kill
       switch that always works.
@@ -93,6 +95,13 @@
       .bar i.over { background: var(--danger); }
 
       .empty { color: var(--muted); padding: 20px 4px; }
+      .chip.band-high { background: var(--ok-surface); color: var(--on-ok-surface); }
+      .chip.band-medium { background: var(--info-surface); color: var(--on-info-surface); }
+      .chip.band-low { background: var(--error-surface); color: var(--danger-text); }
+      .acts { display: grid; gap: 8px; min-width: 220px; }
+      .acts textarea { min-height: 56px; }
+      .row.closed { border-left: 5px solid var(--line); opacity: 0.85; }
+      .row .what .where { color: var(--ink); font-size: 14px; }
 
       .banner {
         position: fixed; inset: 0 0 auto 0; z-index: 30; padding: 18px 16px;
@@ -112,7 +121,7 @@
       <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
     </header>
 
-    <p class="sample" id="sample" hidden role="status">Sample data — this is not your shop.</p>
+    <p class="sample" id="unreachable" hidden role="alert">Head office cannot be reached — nothing on this screen is current, and nothing can be stopped from here until it can.</p>
     <p class="stale" id="stale" hidden role="status"></p>
     <p class="nobody" id="nobody" hidden role="alert"></p>
 
@@ -121,6 +130,8 @@
       <button id="tab-agents" type="button">The assistants</button>
       <button id="tab-queue" type="button">Waiting for you</button>
       <button id="tab-cost" type="button">What it costs</button>
+      <button id="tab-models" type="button">Models and checks</button>
+      <button id="tab-incidents" type="button">Incidents</button>
     </nav>
 
     <main>
@@ -155,6 +166,7 @@
       <section id="view-queue" hidden>
         <h2 id="queue-title">Waiting for you</h2>
         <p class="lead" id="queue-lead">Things an assistant has drafted. Nothing here has happened. It happens when you accept it, and the record carries your name, not the assistant's.</p>
+        <div class="bill" id="actions-box"></div>
         <div id="queue-list"></div>
       </section>
 
@@ -163,6 +175,30 @@
         <p class="lead" id="cost-lead">What the assistants have cost this month, each against its own limit and all of them against your monthly platform limit. When one runs out it stops and the shop does not.</p>
         <div class="bill" id="cost-summary"></div>
         <div id="cost-list"></div>
+      </section>
+
+      <section id="view-models" hidden>
+        <h2 id="models-title">Models and checks</h2>
+        <p class="lead" id="models-lead">Which model may be used, if any, and how each assistant did on its accuracy and safety checks. A model is used only after it passed every check, and only through the one governed door.</p>
+        <div class="bill" id="provider-box"></div>
+        <h3 id="register-title">Approved models</h3>
+        <div id="model-list"></div>
+        <h3 id="checks-title">Accuracy and safety checks</h3>
+        <div id="check-list"></div>
+        <h3 id="calls-title">What was asked, and from which records</h3>
+        <div id="call-list"></div>
+      </section>
+
+      <section id="view-incidents" hidden>
+        <h2 id="incidents-title">Incidents</h2>
+        <p class="lead" id="incidents-lead">Times an assistant reached for something it is not allowed, failed a safety check, or somebody saw it say something wrong. Each one needs a named person to look into it and close it with a reason.</p>
+        <div id="incident-list"></div>
+        <h3 id="raise-title">Report something an assistant did</h3>
+        <label for="raise-agent" id="raise-agent-label">Which assistant</label>
+        <select id="raise-agent"></select>
+        <label for="raise-summary" id="raise-summary-label">What happened</label>
+        <textarea id="raise-summary"></textarea>
+        <button id="raise" class="wide" type="button">Report it</button>
       </section>
     </main>
 

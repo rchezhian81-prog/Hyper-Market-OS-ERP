@@ -10,6 +10,7 @@ import { STREAM, streamName } from '../../services/api/src/adapters';
 import {
   UNRECEIVED_GRACE_MINUTES, billNumberFindingsFor, sparseSlack, weighSparseClaim, type BoxHealthRecord, type RefusalAcknowledgement,
 } from '../../services/platform/src/box-health';
+import { ownerApprovedSetting } from '../support/owner-approved-setting';
 
 /**
  * **Verifier r22 D2–D5 · owner decisions OB-88 and OB-89 (13 Oct 2026, in writing) — a faulty or tampered store computer
@@ -62,7 +63,7 @@ async function shop(h: ApiHarness): Promise<{ T: string; call: Call }> {
     ...(method === 'GET' ? {} : { idempotencyKey: `k-${randomUUID()}` }), ...(body === undefined ? {} : { body }),
   });
   // Records here are dated by the UTC clock: the shop's own time zone is set to UTC so a trading day never shifts under them.
-  expect((await call('PUT', '/v1/platform/setup/locale.time_zone', OWNER, { value: 'UTC' })).status).toBe(200);
+  expect((await ownerApprovedSetting(h, T, 'locale.time_zone', { value: 'UTC' }, OWNER)).status).toBe(200);
   for (const [id, body] of [
     ['C1', { kind: 'company', name: 'SRE Retail' }],
     [S1, { kind: 'branch', name: 'Store One', parentId: 'C1', companyId: 'C1' }],

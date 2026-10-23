@@ -242,6 +242,19 @@ export const EVENT_ROUTES: Readonly<Record<string, EventRoute>> = {
   // loss-prevention evidence on head office's own stream, where the store's rules run on it. `activityId` is a plain
   // top-level payload field matching the param; a payload head office cannot read is 400 → dead-lettered here by name.
   TillActivityRecorded: '/v1/loss-prevention/activity/:activityId/synced',
+  // OB-288 lane 2 · P2 (§31 · P-01): work done at the store with the line down, carried by the box to the dedicated SYNCED
+  // routes, which re-run head office's own engines over its own records and re-verify the person named. The ids are plain
+  // top-level payload fields matching the path params (an absent id yields no path → dead-lettered by name, hard rule #6).
+  // A record head office cannot accept is 422 → dead-lettered here, visible, for a person (hard rule #10); a release or a
+  // receipt that arrives before the run or the dispatch it depends on is 425 → kept and sent again.
+  ProductionRunCaptured: '/v1/production/runs/:runId/synced',
+  ProductionReleaseDecided: '/v1/production/runs/:runId/release/synced',
+  WeighedRunCaptured: '/v1/production/weighed-runs/:runId/synced',
+  FoodSafetyCheckRecorded: '/v1/facilities/food-safety/checks/:checkId/records/:recordId/synced',
+  TransferDispatchRecorded: '/v1/warehouse/transfers/:transferId/dispatch/synced',
+  TransferReceiptRecorded: '/v1/warehouse/transfers/:transferId/receive/synced',
+  // OB-333: a quality-hold release decided at the store (release only — the box never places a hold).
+  QualityHoldReleaseDecided: '/v1/quality/holds/:batchId/release/synced',
 };
 
 /** Fill `:name` segments from the payload, or run a resolver, so a route can address a thing. */

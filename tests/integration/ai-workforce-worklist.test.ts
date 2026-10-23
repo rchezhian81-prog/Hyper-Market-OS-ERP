@@ -93,7 +93,7 @@ describe('the Workforce guidance manager inbox (A10 worklist)', () => {
     // Enabled → active; then kill switch on → hidden again.
     await armA10(h);
     expect(((await worklist(h)).body as WL).agentActive).toBe(true);
-    expect((await put(h, '/v1/ai/kill-switch', { on: true }, 'k2')).status).toBe(200);
+    expect((await put(h, '/v1/ai/kill-switch', { on: true, reason: 'test: stop the assistants' }, 'k2')).status).toBe(200);
     const killed = (await worklist(h)).body as WL;
     expect(killed.agentActive).toBe(false);
     expect(killed.openCount).toBe(0);

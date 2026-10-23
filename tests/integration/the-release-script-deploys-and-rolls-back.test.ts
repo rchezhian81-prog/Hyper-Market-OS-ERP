@@ -3,6 +3,7 @@ import { execFileSync, spawnSync, spawn } from 'node:child_process';
 import { mkdtemp, rm, readFile, writeFile, mkdir, chmod, copyFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { generateKeyPairSync } from 'node:crypto';
 
 /**
  * **A merged release deploys itself, and a broken one puts the previous release back (Stage F slice 1 · §20 ·
@@ -341,4 +342,70 @@ describe('the release script deploys a merged commit and rolls a broken one back
     expect(head()).toBe(V2);
     expect(await lastLogLine()).toContain('result=rolled_back_in_canary_bake');
   }, 30_000);
+
+  // ── WF-20 · AID-08 "sign releases" (OB-288 P5): a box with the release key deploys only a signed release ────────────
+  const SIGNER = join(process.cwd(), 'scripts/release-signing.mjs');
+  const keyPair = () => {
+    const k = generateKeyPairSync('ed25519');
+    return { pem: k.privateKey.export({ type: 'pkcs8', format: 'pem' }) as string, pub: k.publicKey.export({ type: 'spki', format: 'pem' }) as string };
+  };
+  // The CI half: the real signing script, run against the origin's objects with a key held only in this process's memory.
+  const signed = (sha: string, pem: string): string => {
+    const r = spawnSync('node', [SIGNER, 'sign', sha], { cwd: join(sandbox, 'origin.git'), encoding: 'utf8', env: { ...process.env, ['RELEASE_SIGNING' + '_KEY']: pem } });
+    expect(r.status, r.stderr).toBe(0);
+    return r.stdout.trim();
+  };
+
+  it('signing: a box with the release key refuses an unsigned release, another key\'s signature, another commit\'s signature and garbage (77) — before the backup, the box untouched', async () => {
+    const release = keyPair(); const stranger = keyPair();
+    const pubPath = join(sandbox, 'release-signing.pub'); await writeFile(pubPath, release.pub);
+    const env = { SRE_RELEASE_PUBKEY: pubPath, SRE_PREDEPLOY_BACKUP_CMD: BACKUP_OK };
+    const before = head();
+    const cases: [string, string[], string][] = [
+      ['unsigned', [V3, 'octocat', '301'], 'unsigned_refused'],
+      ['another key', [V3, 'octocat', '302', signed(V3, stranger.pem)], 'signature_refused'],
+      ['another commit', [V3, 'octocat', '303', signed(V1, release.pem)], 'signature_refused'],
+      ['garbage', [V3, 'octocat', '304', 'not-a-signature'], 'signature_refused'],
+    ];
+    for (const [name, args, result] of cases) {
+      const r = run(args, env);
+      expect(r.code, `${name}: ${r.out}`).toBe(77);
+      expect(r.out).toContain('REFUSED');
+      expect(await lastLogLine()).toContain(`result=${result} sha=${V3} previous=${before}`);
+    }
+    expect(head()).toBe(before);
+    const log = await callLog();
+    expect(log.some((l) => l.startsWith('docker') || l.startsWith('pnpm') || l === 'backup-taken')).toBe(false);
+  }, 60_000);
+
+  it('signing: the release key\'s signature over THIS commit deploys — also through the forced SSH command; a box without the key says it did not check', async () => {
+    const release = keyPair();
+    const pubPath = join(sandbox, 'release-signing.pub'); await writeFile(pubPath, release.pub);
+    await writeFile(upResults, 'ok\n');
+    const r = run([], { SRE_RELEASE_PUBKEY: pubPath, SSH_ORIGINAL_COMMAND: `release ${V3} octocat 305 ${signed(V3, release.pem)}` });
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain(`release signature verified for ${V3}`);
+    expect(head()).toBe(V3);
+    expect(await lastLogLine()).toMatch(new RegExp(`result=deployed sha=${V3} previous=[0-9a-f]{40} by=octocat run=305$`));
+    // The key path set but unreadable: NOT SET UP (78), never "skip the check".
+    const missing = run([V2, 'octocat', '306'], { SRE_RELEASE_PUBKEY: join(sandbox, 'no-such.pub') });
+    expect(missing.code, missing.out).toBe(78);
+    expect(await lastLogLine()).toContain('result=signature_key_missing');
+    // No key on the box: deployed, and said out loud that the signature was not checked.
+    await writeFile(upResults, 'ok\n');
+    const unchecked = run([V2, 'octocat', '307']);
+    expect(unchecked.code, unchecked.out).toBe(0);
+    expect(unchecked.out).toContain('release signature NOT CHECKED on this box');
+    expect(head()).toBe(V2);
+  }, 60_000);
+
+  it('signing: the script never signs without a key, and its self-test refuses tampering and another key', () => {
+    const none = spawnSync('node', [SIGNER, 'sign', V2], { cwd: join(sandbox, 'origin.git'), encoding: 'utf8', env: { ...process.env, ['RELEASE_SIGNING' + '_KEY']: '' } });
+    expect(none.status).toBe(2);
+    expect(none.stderr).toContain('NOT SIGNED');
+    const selftest = spawnSync('node', [SIGNER, 'selftest', V2], { cwd: join(sandbox, 'origin.git'), encoding: 'utf8' });
+    expect(selftest.status, selftest.stdout + selftest.stderr).toBe(0);
+    expect(selftest.stdout).toContain('GREEN — release signing self-test');
+    expect(selftest.stdout).toContain('tamperedRefused=true otherKeyRefused=true garbageRefused=true');
+  });
 });

@@ -44,6 +44,12 @@ export const STORE_COMPUTER_ROLE_ID = 'store_computer';
 export const PROVIDER_RELAY_ROLE_ID = 'message_provider_relay';
 /** PA-12 round 7: the backup job's own machine identity — the only caller whose backup report is believed. */
 export const BACKUP_JOB_ROLE_ID = 'backup_job';
+/**
+ * OB-331 (owner, 23 Oct 2026): the CI scanner's OWN machine identity — it pushes each scan's findings report to head
+ * office's findings register and does nothing else. Machine-only (never also a person); its credential is issued out of
+ * band by the administrator (scripts/issue-store-token.mjs --no-store) and kept only in the GitHub secret store.
+ */
+export const FINDINGS_PUSH_ROLE_ID = 'findings_push';
 /** R2 C20: the POSH Act Internal Committee — the only role that may read the confidential complaints register. */
 export const INTERNAL_COMMITTEE_ROLE_ID = 'internal_committee';
 
@@ -174,6 +180,11 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // gate GO / HOLD / REWORK for a release (§36: the owner is accountable for GO/HOLD/REWORK), and read the register.
       'compliance.finding.record', 'compliance.finding.read', 'compliance.gate.decide', 'compliance.gate.read',
       // ── OB-288 gates lane — end
+      // ── OB-288 P5 (finance bridge, migration controls, integration contracts) — begin
+      // M31-FR-04: add or lift a do-not-contact entry (with a reason; append-only). M35-FR-04: classify a security incident
+      // for CERT-In (reportable or not, and why) and record the report — the owner answers for both.
+      'notification.suppression.manage', 'platform.certin.manage',
+      // ── OB-288 P5 — end
       'audit.hold.manage', 'audit.retention.read',
       'quality.coldchain.assess', 'quality.lottrace.read',
       'quality.recall.initiate', 'quality.recall.read',
@@ -183,6 +194,22 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // store manager only), and sending its SMS notice once switched on. Switching recall messages on is the owner's alone.
       'quality.recall.notice.read', 'quality.recall.notice.send', 'quality.recall.notice.switch',
       // ── Lane 2 · P1 — end
+      // ── OB-288 lane 1 · P1 (identity, authority, configuration) — begin
+      // OB-290/291/292: the owner reads, proposes and alone APPROVES the approval rules; approves structural and
+      // high-impact configuration changes; reviews who holds what (M02-FR-01/02).
+      'approvals.rules.read', 'approvals.rules.propose', 'approvals.rules.approve',
+      'org.structure.approve', 'platform.config.approve', 'identity.access.review',
+      // ── OB-288 lane 1 · P1 — end
+      // ── OB-288 integration follow-ups — begin
+      // OB-330: the owner names the security reviewer whose signature, beside his own, accepts a critical or high risk.
+      'compliance.reviewer.name',
+      // OB-331: held ONLY so the owner can approve granting the CI scanner's machine identity its role (no-escalation rule);
+      // the push route believes a push only from that machine identity itself, never a person.
+      'compliance.finding.push',
+      // OB-333: held ONLY so the owner can approve granting the store computer its release relay (no escalation, OB-36);
+      // the synced route re-checks the PERSON named from their own grants, so this releases nothing by itself.
+      'quality.hold.release.sync',
+      // ── OB-288 integration follow-ups — end
       'price.integrity.audit', 'selfcheckout.operate',
       'owner.alert.read', 'owner.kpi.read', 'owner.brief.manage',
       'refund.exception.read',
@@ -289,6 +316,18 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // dispositions (the refund itself stays order.refund.issue, approved by a second person).
       'online.store.read', 'online.store.manage', 'online.return.manage', 'online.return.collect',
       // ── R4 Lane 2 — end
+      // ── OB-288 lane 2 · P2 (store-box offline queues) — begin
+      // The box's relay hops for work done at the store with the line down — held by the owner only so he may approve
+      // granting them to the store computer (no escalation, OB-36). Each route re-verifies the PERSON named from their own
+      // grants and re-runs head office's rules, so these grant no dispatch, receipt, production or check of their own.
+      'inventory.transfer.sync', 'production.sync', 'facilities.foodsafety.sync',
+      // ── OB-288 lane 2 · P2 — end
+      // ── OB-288 lane 4 · P1 (AI governance and agents) — begin
+      // A person's approve/reject on an AI proposal (it commits nothing — the ordinary route still does); the AI-incident
+      // register (raise, own, close); the approved-model register (AI-NFR-01: only a model that passed the evaluation); and
+      // running the evaluation set (AI-NFR-09). The owner holds all four.
+      'ai.proposal.decide', 'ai.incident.manage', 'ai.model.approve', 'ai.evaluation.run',
+      // ── OB-288 lane 4 · P1 — end
     ],
   },
   {
@@ -305,6 +344,10 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'catalogue.category.propose',
       'store.pack.read',
       'ai.proposal.read', 'ai.suggestion.dismiss',
+      // ── OB-288 lane 4 · P1 — begin: the manager approves or rejects A03's (and the buyer's A02) drafts — a decision on
+      // record that commits nothing; the transfer, markdown or order still goes through its own route and approvals.
+      'ai.proposal.decide',
+      // ── OB-288 lane 4 · P1 — end
       'price.change.propose',
       'promotion.simulate', 'promotion.launch', 'promotion.read',
       'b2b.credit.check', 'b2b.account.read', 'b2b.commission.read', 'b2b.document.issue', 'b2b.document.read',
@@ -359,6 +402,10 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // Record and read security findings, and read the gate register. Deciding a gate is the owner's (§36) — absent here.
       'compliance.finding.record', 'compliance.finding.read', 'compliance.gate.read',
       // ── OB-288 gates lane — end
+      // ── OB-288 P5 (finance bridge, migration controls, integration contracts) — begin
+      // M31-FR-04: the store manager records a customer's "do not contact me" at the desk (with a reason), or lifts it.
+      'notification.suppression.manage',
+      // ── OB-288 P5 — end
       'quality.coldchain.assess', 'quality.lottrace.read',
       'quality.recall.initiate', 'quality.recall.read',
       'quality.hold.manage', 'quality.hold.release',
@@ -367,6 +414,10 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // once the owner has switched recall messages on.
       'quality.recall.notice.read', 'quality.recall.notice.send',
       // ── Lane 2 · P1 — end
+      // ── OB-288 lane 1 · P1 (identity, authority, configuration) — begin
+      // The store manager reads the approval rules and may ask for a change — never to their own role's limits (§28).
+      'approvals.rules.read', 'approvals.rules.propose',
+      // ── OB-288 lane 1 · P1 — end
       // R3 lane 3: B16 — confirm a tobacco product's packs carry the warning picture; D-26 — record and answer a lot-trace request.
       'catalogue.tobacco.warning.confirm', 'quality.lottrace.request',
       'price.integrity.audit', 'selfcheckout.operate',
@@ -591,6 +642,9 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'finance.tds.read', 'finance.tds.challan.record',
       'payment.dispute.record', 'payment.dispute.read',
       // ── end R3 lane 2 ──
+      // ── OB-288 lane 1 · P1 — begin: the accountant reads the approval rules, may ask for a change, and reviews access.
+      'approvals.rules.read', 'approvals.rules.propose', 'identity.access.review',
+      // ── OB-288 lane 1 · P1 — end
     ],
   },
   {
@@ -694,6 +748,14 @@ export const ROLE_CATALOGUE: readonly Role[] = [
     name: 'Backup job (machine)',
     permissions: ['platform.backup.record'],
   },
+  // ── OB-288 integration follow-ups — begin
+  {
+    // OB-331: the CI scanner's OWN machine identity — pushes a scan's findings report to the register, and nothing else.
+    id: FINDINGS_PUSH_ROLE_ID,
+    name: 'CI findings push (machine)',
+    permissions: ['compliance.finding.push'],
+  },
+  // ── OB-288 integration follow-ups — end
   {
     id: STORE_COMPUTER_ROLE_ID,
     name: 'Store computer',
@@ -714,6 +776,19 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // A return collection recorded on the driver's phone (head office re-verifies the driver, the booking and the quantities).
       'online.return.collect.sync',
       // ── R4 gap lane "driver" — end
+      // ── OB-288 lane 2 · P2 (store-box offline queues) — begin
+      // A transfer sent or counted in, a production or weighed run, a batch released for sale, and a food-safety check
+      // recorded with the line down (§31) — head office re-verifies each person and re-runs its own rules.
+      'inventory.transfer.sync', 'production.sync', 'facilities.foodsafety.sync',
+      // What the box PULLS so that work can be done with the line down: the production board and recipes, the food-safety
+      // checks in force for its store, and the transfers with an end at its store (reads only).
+      'production.read', 'facilities.overdue.read', 'inventory.availability.read',
+      // ── OB-288 lane 2 · P2 — end
+      // ── OB-288 integration follow-ups — begin
+      // OB-333: a NARROW release-only right — relay a quality-hold RELEASE a person decided at the store (head office
+      // re-checks that person's own quality.hold.release), and read which batches are held. Never place a hold.
+      'quality.hold.release.sync',
+      // ── OB-288 integration follow-ups — end
       // the GST portal's poll/verify, relayed for the operator (no maker-checker decision; re-authorised on this permission)
       'finance.einvoice.generate',
     ],

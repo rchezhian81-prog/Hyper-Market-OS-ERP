@@ -105,6 +105,7 @@ async function cloud(): Promise<{
   await approvedSuppliers(h, A, 'sup-1'); // OB-32: an order needs an approved supplier
   await deliveryPlaces(h, A, 'wh-store'); // OB-37: an order names the store it is delivered to
   await h.provisionRole(A, 'u-mgr', 'store_manager');
+  await h.provisionRole(A, 'u-po-buyer', 'store_manager'); // OB-288 P3 (§28): the buyer who raises the order is never the one who books it in
   await h.provisionRole(A, 'u-box', 'store_computer', [WH]);
   await h.store.append(A, STREAM.catalogue, makeEvent({
     id: `pack-${A}-1`, type: 'CataloguePublished', occurredAt: AT, idempotencyKey: `catalogue-${A}-v1`, source: 'test/catalogue',
@@ -126,7 +127,7 @@ async function cloud(): Promise<{
   })).status).toBe(201);
   // The order the manager's delivery is booked in against — ISSUED by a second person, so the receipt folds into it (SP-6 · F01).
   expect((await h.request({
-    method: 'POST', path: '/v1/purchase/orders/po-1', userId: 'u-mgr', tenantId: A, idempotencyKey: 'k-po-1',
+    method: 'POST', path: '/v1/purchase/orders/po-1', userId: 'u-po-buyer', tenantId: A, idempotencyKey: 'k-po-1',
     body: { supplierId: 'sup-1', deliverToLocationId: 'wh-store', lines: [{ productId: 'p1', orderedQty: 10, unitCost: { minor: 5000, currency: 'INR' } }] },
   })).status).toBe(201);
   expect((await h.request({ method: 'POST', path: '/v1/purchase/orders/po-1/approval', userId: 'u-owner', tenantId: A, idempotencyKey: 'k-po-1-ok', body: { reason: 'within budget' } })).status).toBe(200);

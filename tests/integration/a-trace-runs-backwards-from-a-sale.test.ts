@@ -73,6 +73,7 @@ describe.each(backings)('M10-FR-03: the trace runs backwards from a sale or a cu
     await approvedSuppliers(h, T, 'sup-dairy');
     await deliveryPlaces(h, T, 'S1', 'WH');
     await h.provisionRole(T, 'u-mgr', 'store_manager');
+    await h.provisionRole(T, 'u-recv', 'store_manager'); // books the goods in: not the one who raised the order (§28)
     await h.provisionRole(T, 'u-cash', 'cashier');
     const req = (method: 'GET' | 'POST', path: string, body?: unknown, userId = 'u-owner'): Promise<Res> =>
       h.request({ method, path, userId, tenantId: T, ...(method === 'POST' ? { idempotencyKey: `k-${randomUUID()}` } : {}), ...(body === undefined ? {} : { body }) });
@@ -89,7 +90,7 @@ describe.each(backings)('M10-FR-03: the trace runs backwards from a sale or a cu
     await ok(req('POST', '/v1/inventory/goods-receipt/grn-1', {
       warehouseId: 'WH', receivedOnDate: '2026-10-09', currency: 'INR', poId: 'po-1',
       lines: [{ lineId: 'L1', productId: 'p-paneer', orderedMinor: 30, countedMinor: 30, uom: 'ea', unitCost: cost(6_000), condition: 'good', batchId: 'B-7', expiry: '2030-12-31' }],
-    }, 'u-mgr'), 'goods receipt');
+    }, 'u-recv'), 'goods receipt');
     // Three bills: the member's with the batch on it, the member's with no batch recorded, and a walk-in's.
     await ok(req('POST', '/v1/sales', sale('S-77', 'p-paneer', 2, { batchId: 'B-7', customerRef: 'cust-7' })), 'S-77');
     await ok(req('POST', '/v1/sales', sale('S-78', 'p-paneer', 1, { customerRef: 'cust-7', tradingDay: '2026-10-11' })), 'S-78');
@@ -171,7 +172,7 @@ describe.each(backings)('M10-FR-03: the trace runs backwards from a sale or a cu
     await ok(req('POST', '/v1/inventory/goods-receipt/grn-flour', {
       warehouseId: 'S1', receivedOnDate: '2030-04-01', currency: 'INR', poId: 'po-flour',
       lines: [{ lineId: 'L1', productId: 'FLOUR', orderedMinor: 2_000, countedMinor: 2_000, uom: 'kg', unitCost: cost(4_000), condition: 'good', batchId: 'F-1', expiry: '2030-07-01' }],
-    }, 'u-baker'), 'flour receipt');
+    }, 'u-qc'), 'flour receipt'); // the order was raised by u-baker; one person never does two steps (§28)
     await ok(req('POST', '/v1/inventory/movements', { movementId: 'rx-sugar', productId: 'SUGAR', locationId: 'S1', kind: 'received', quantityMinor: 1_000, uom: 'kg', occurredAt: '2030-04-01T01:00:00.000Z', enteredBy: 'u-owner', unitCostMinor: 4_000, batchId: 'SG-1', expiry: '2030-12-01' }), 'sugar');
     await ok(req('POST', '/v1/production/recipes/bun', { departmentId: 'bakery', outputProductId: 'BUN', outputQuantityMinor: 10, outputUom: 'ea', shelfLifeHours: 48, expectedYieldBp: 9_000, yieldToleranceBp: 2_000, inputs: [{ productId: 'FLOUR', quantityMinor: 500, uom: 'kg' }, { productId: 'SUGAR', quantityMinor: 100, uom: 'kg' }] }), 'bun recipe');
     await ok(req('POST', '/v1/production/runs/run-1', { recipeId: 'bun', batches: 2, actualOutputMinor: 18, outputBatchId: 'BUN-A', locationId: 'S1' }, 'u-baker'), 'run 1');

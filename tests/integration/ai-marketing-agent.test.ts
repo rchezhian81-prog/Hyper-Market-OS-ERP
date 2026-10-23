@@ -76,6 +76,16 @@ describe('the Marketing agent (A09) drafts campaign audiences within consent and
     expect(loyal!.wouldRequire).toContain('marketing approver');
     expect(loyal!.evidence[0]!.source).toBe('customer segments');
     expect(loyal!.evidence[0]!.reference).toBe('loyal');
+
+    // OB-288 lane 4 · P1 — the draft_offer leg: an offer IDEA for the same consented audience, sent to the promotion route's
+    // margin simulation and a marketing approver. No discount is invented and nothing is launched (hard rule #5).
+    const offer = body.proposals.find((p) => p.proposalId === 'mkt-offer:loyal');
+    expect(offer).toBeDefined();
+    expect(offer!.summary).toContain('1 consented customer');
+    expect(offer!.summary).toMatch(/simulate its margin/);
+    expect(offer!.summary).not.toMatch(/\d+\s*%|₹/);
+    expect(offer!.wouldRequire).toMatch(/\/v1\/promotions\/:promotionId\/simulate.*\/launch.*marketing approver/);
+    expect((offer as unknown as { confidence: { band: string } }).confidence.band).toBe('medium');
   });
 
   it('drafts NOTHING when no consenting customer can be contacted — no campaign to a list of nobody', async () => {

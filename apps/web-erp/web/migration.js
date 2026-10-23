@@ -248,6 +248,15 @@ const CHECK_WORDS = {
     en: 'The people who will be here on the night are named, with a job each',
     ta: 'அன்றிரவு இருப்பவர்கள் பெயருடன் குறிக்கப்பட்டுள்ளனர், ஒவ்வொருவருக்கும் ஒரு வேலை',
   },
+  // OB-288 P5 · MG-11: the backup and the owner's rollback limits.
+  backup_verified: {
+    en: 'A good backup, copied off-site, is recent enough by the owner\'s limit',
+    ta: 'வெளியிடத்திற்கு நகலெடுக்கப்பட்ட ஒரு நல்ல காப்புப்பிரதி உரிமையாளரின் வரம்புக்குள் புதியதாக உள்ளது',
+  },
+  rollback_limits_agreed: {
+    en: 'The owner has set every rollback limit before the night',
+    ta: 'இரவுக்கு முன் ஒவ்வொரு திரும்பும் வரம்பையும் உரிமையாளர் அமைத்துள்ளார்',
+  },
   owner_go: {
     en: 'You have said go',
     ta: 'நீங்கள் சரி என்று சொல்லிவிட்டீர்கள்',
@@ -310,6 +319,10 @@ const EXCEPTION_WORDS = {
   orphan_line: { en: 'a line belonging to no bill', ta: 'எந்தப் பில்லுக்கும் சொந்தமில்லாத வரி' },
   unmapped_tax_code: { en: 'a tax code nothing here understands', ta: 'இங்கே புரியாத ஒரு வரிக் குறியீடு' },
   pre_revision_tax_document: { en: 'a bill from before the tax rates changed', ta: 'வரி விகிதங்கள் மாறுவதற்கு முந்தைய பில்' },
+  // OB-288 P5 · MG-09: what changed in the old system after the copy that was loaded.
+  delta_added: { en: 'added in the old system after the copy was loaded', ta: 'நகல் ஏற்றப்பட்ட பிறகு பழைய அமைப்பில் சேர்க்கப்பட்டது' },
+  delta_changed: { en: 'changed in the old system after the copy was loaded', ta: 'நகல் ஏற்றப்பட்ட பிறகு பழைய அமைப்பில் மாற்றப்பட்டது' },
+  delta_removed: { en: 'removed from the old system after the copy was loaded', ta: 'நகல் ஏற்றப்பட்ட பிறகு பழைய அமைப்பிலிருந்து நீக்கப்பட்டது' },
 };
 
 const words = (map, key) => (map[key]?.[lang] ?? map[key]?.en ?? String(key).replace(/_/g, ' '));

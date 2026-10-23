@@ -568,13 +568,15 @@ PIN. You never type anybody else's PIN.
 
 1. In PowerShell in `C:\SRE`, type as one line, with your values:
    ```
-   pnpm run store-computer -- shop --as owner-01 --company <company-code> --legal-name "<legal name as on the GST certificate>" --gstin <GSTIN> --store <store-code> --store-name "<store name>"
+   pnpm run store-computer -- shop --as <setup-person-login> --approver owner-01 --company <company-code> --legal-name "<legal name as on the GST certificate>" --gstin <GSTIN> --store <store-code> --store-name "<store name>"
    ```
-   - It says `This will, at head office on this computer` and lists four steps in plain words. **Read them.** Then
+   - Two people: the person setting the shop up (`--as`, the computer administrator) asks for the store to be made
+     active, and you, the owner (`--approver`), approve it — a structural change always takes a second person (M01-FR-01).
+   - It says `This will, at head office on this computer` and lists five steps in plain words. **Read them.** Then
      `Type YES and press Enter to do this`. Type `YES` only if every word is right; anything else stops it and nothing
      is done.
-   - It then asks for **your** till PIN (nothing shows as you type) and says `your-login's PIN matches.`
-   - **When it worked:** four lines starting `done —`, then `DONE — the shop is set up at head office on this
+   - It then asks each person for **their own** till PIN (nothing shows as you type) and says `<login>'s PIN matches.`
+   - **When it worked:** six lines starting `done —`, then `DONE — the shop is set up at head office on this
      computer`. Head office checks the GSTIN's check digit: a mistyped GSTIN is refused with `gstin_invalid`.
    - **Send:** a photo of the window.
 

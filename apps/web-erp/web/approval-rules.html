@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Approval rules</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Approval rules (OB-290 money limits · OB-292 escalation waits · OB-291 price-check size · M02-FR-02/03 · §28). A THIN
+      CLIENT over head office's GET /v1/approvals/rules, POST /v1/approvals/requests (kind approval_rule_change) and
+      PUT /v1/approvals/rules/:rule. Its session is apps/web-erp/src/approval-rules-session.ts. Nobody changes a rule alone:
+      the person asks here, the owner approves on the Approvals page, the person applies here. A role with no figure reads
+      "Not set". Nothing is read before the person asks to see the rules; nothing is written except on an explicit click.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      input, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; }
+      button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .table-wrap { overflow-x: auto; }
+      table { border-collapse: collapse; width: 100%; font-size: 15px; }
+      th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+      td input { width: 9em; }
+      .now { display: block; font-size: 13px; color: var(--muted); }
+      .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+      .row-form > label { flex: 1 1 200px; }
+      .meta { font-size: 13px; color: var(--muted); }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+      li.row { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 6px; border-left: 6px solid var(--idle); overflow-wrap: anywhere; }
+      li.row.tone-ok { border-left-color: var(--ok); } li.row.tone-degraded { border-left-color: var(--degraded); } li.row.tone-error { border-left-color: var(--error); }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Approval rules</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section aria-labelledby="page-h">
+        <h2 id="page-h">Approval rules</h2>
+        <p class="lead" id="lead"></p>
+        <button id="read" type="button"><span id="read-text">Show the rules</span></button>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section aria-labelledby="limits-h" id="limits-section" hidden>
+        <h3 id="limits-h">Money limits</h3>
+        <p id="limits-lead"></p>
+        <p class="meta" id="limits-meta"></p>
+        <div class="table-wrap"><table><thead><tr id="limits-head"></tr></thead><tbody id="limits-body"></tbody></table></div>
+        <label for="limits-reason"><span id="limits-reason-l">Why this change</span><textarea id="limits-reason" rows="2"></textarea></label>
+        <button id="limits-ask" type="button" data-propose><span id="limits-ask-text">Ask the owner to approve this change</span></button>
+        <p class="status" id="limits-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section aria-labelledby="waits-h" id="waits-section" hidden>
+        <h3 id="waits-h">Escalation waits</h3>
+        <p id="waits-lead"></p>
+        <p class="meta" id="waits-meta"></p>
+        <div class="row-form" id="waits-form"></div>
+        <label for="waits-reason"><span id="waits-reason-l">Why this change</span><textarea id="waits-reason" rows="2"></textarea></label>
+        <button id="waits-ask" type="button" data-propose><span id="waits-ask-text">Ask the owner to approve this change</span></button>
+        <p class="status" id="waits-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section aria-labelledby="price-h" id="price-section" hidden>
+        <h3 id="price-h">Price-check size</h3>
+        <p id="price-lead"></p>
+        <p class="meta" id="price-meta"></p>
+        <div class="row-form">
+          <label for="price-percent"><span id="price-percent-l">More than (per cent)</span><input id="price-percent" inputmode="decimal" autocomplete="off" /></label>
+          <label for="price-amount"><span id="price-amount-l">More than (rupees a unit)</span><input id="price-amount" inputmode="decimal" autocomplete="off" /></label>
+        </div>
+        <label for="price-reason"><span id="price-reason-l">Why this change</span><textarea id="price-reason" rows="2"></textarea></label>
+        <button id="price-ask" type="button" data-propose><span id="price-ask-text">Ask the owner to approve this change</span></button>
+        <p class="status" id="price-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section aria-labelledby="asked-h" id="asked-section" hidden>
+        <h3 id="asked-h">Changes you asked for</h3>
+        <ul class="rows" id="asked"></ul>
+        <p class="status" id="asked-status" role="status" aria-live="polite"></p>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./approval-rules.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

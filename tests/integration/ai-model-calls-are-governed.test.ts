@@ -3,6 +3,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { approveStandInModel } from '../support/ai-approval';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { runMigrations } from '../../packages/persistence/src/migrations';
@@ -61,26 +62,36 @@ async function journey(make: (opts: { transport?: ModelTransport; pricing?: type
   expect(transport.calls).toBe(0);
 
   const h = make({ transport, pricing: PRICING });
+  // ── AI-NFR-01 (OB-288 lane 4 · P1): no model is approved yet, so even a priced call is refused — audited, nothing spent.
+  const unapproved = await call(h, T, 'A01', 'a01-takings', 'c0b');
+  expect(unapproved.status).toBe(409);
+  expect(code(unapproved)).toBe('model_not_approved');
+  expect(transport.calls).toBe(0);
+  // The owner evaluates a stand-in and approves it (its evaluation is metered like any call), then sets the ₹24.50 cap
+  // on top of what the evaluation spent.
+  await put(h, T, '/v1/ai/budget', { capMinor: 100_000, periodEnds: '2026-10-31T23:59:59.000Z' }, 'bud-eval');
+  const approval = await approveStandInModel(h, { tenantId: T, userId: OWNER, pricing: PRICING, agent: 'A01' });
+  await put(h, T, '/v1/ai/budget', { capMinor: approval.spentMinor + 2_450, periodEnds: '2026-10-31T23:59:59.000Z' }, 'bud-tight');
   // ── Admitted: the estimate (≈ prompt + 1,200 output tokens) fits the ₹24.50 cap; actual cost metered from tokens.
   const first = await call(h, T, 'A01', 'a01-takings', 'c1');
   expect(first.status, JSON.stringify(first.body)).toBe(200);
-  const b1 = first.body as { outcome: string; text: string; costMinor: number; committedAnything: boolean };
-  expect(b1).toMatchObject({ outcome: 'answered', committedAnything: false });
+  const b1 = first.body as { outcome: string; text: string; costMinor: number; committedAnything: boolean; modelId: string };
+  expect(b1).toMatchObject({ outcome: 'answered', committedAnything: false, modelId: approval.modelId });
   expect(b1.text).toContain('₹1,200');
   expect(transport.calls).toBe(1);
   expect(b1.costMinor).toBeGreaterThan(0);
   const budget = (await h.request({ method: 'GET', path: '/v1/ai/budget', userId: OWNER, tenantId: T })).body as { spentMinor: number };
-  expect(budget.spentMinor).toBe(b1.costMinor); // the reservation settled at the ACTUAL cost, in the same budget
+  expect(budget.spentMinor).toBe(approval.spentMinor + b1.costMinor); // the reservation settled at the ACTUAL cost, in the same budget
 
   // ── The next call's estimate no longer fits what is left: refused BEFORE the transport, nothing spent.
   const over = await call(h, T, 'A01', 'a01-forecast', 'c2');
   expect(over.status).toBe(429);
   expect(code(over)).toBe('budget_exhausted');
   expect(transport.calls).toBe(1);
-  expect(((await h.request({ method: 'GET', path: '/v1/ai/budget', userId: OWNER, tenantId: T })).body as { spentMinor: number }).spentMinor).toBe(b1.costMinor);
+  expect(((await h.request({ method: 'GET', path: '/v1/ai/budget', userId: OWNER, tenantId: T })).body as { spentMinor: number }).spentMinor).toBe(approval.spentMinor + b1.costMinor);
 
   // ── More budget; a model steered by hostile evidence proposes a refund — the gateway drops it; nothing commits.
-  await put(h, T, '/v1/ai/budget', { capMinor: 100_000, periodEnds: '2026-10-31T23:59:59.000Z' }, 'bud2');
+  await put(h, T, '/v1/ai/budget', { capMinor: 200_000, periodEnds: '2026-10-31T23:59:59.000Z' }, 'bud2');
   const steered = await call(h, T, 'A01', 'a01-injection', 'c3');
   expect(steered.status).toBe(200);
   expect((steered.body as { proposals: unknown[] }).proposals).toEqual([]);
@@ -96,22 +107,31 @@ async function journey(make: (opts: { transport?: ModelTransport; pricing?: type
   expect(code(killed)).toBe('killed');
   expect(transport.calls).toBe(callsBefore);
 
-  // ── The immutable request/result audit: every call, refused or not, hash-chained; tampering is detected.
-  const { audits, chain } = await auditsOf(h, T);
+  // ── The immutable request/result audit: every call, refused or not, hash-chained; tampering is detected. (The stand-in's
+  // own evaluation calls are on the same chain; the caller's calls are the `call-` ones.)
+  const { audits: everything, chain } = await auditsOf(h, T);
+  const audits = everything.filter((a) => a.callId.startsWith('call-'));
   expect(audits.map((a) => [a.callId.split('-').at(-1), a.admission.outcome, a.calledAModel])).toEqual([
-    ['c0', 'no_pricing', false], ['c1', 'allowed', true], ['c2', 'budget_exhausted', false], ['c3', 'allowed', true], ['c4', 'allowed', true], ['c5', 'killed', false],
+    ['c0', 'no_pricing', false], ['c0b', 'model_not_approved', false], ['c1', 'allowed', true], ['c2', 'budget_exhausted', false], ['c3', 'allowed', true], ['c4', 'allowed', true], ['c5', 'killed', false],
   ]);
   expect(chain.ok).toBe(true);
-  expect(audits[3]!.result.detail).toMatch(/DROPPED/); // the refund proposal was dropped, and the record says so
-  expect(audits[1]!.request.evidenceIds).toEqual(EVALUATION_EVIDENCE['a01-takings']!.map((e) => e.evidenceId));
-  expect(audits[1]!.request.evidenceFrom).toMatch(/^evaluation_set_v\d+$/);
-  const tampered = audits.map((a, i) => (i === 1 ? { ...a, actualCostMinor: 0 } : a));
-  expect(auditChainHolds(tampered)).toEqual({ ok: false, brokenAt: audits[1]!.callId });
+  expect(audits[4]!.result.detail).toMatch(/DROPPED/); // the refund proposal was dropped, and the record says so
+  expect(audits[4]!.blockedTools).toEqual(['issue_refund', 'export_customers']); // §30.2 AIToolCallBlocked, as facts
+  expect(audits[2]!.request.evidenceIds).toEqual(EVALUATION_EVIDENCE['a01-takings']!.map((e) => e.evidenceId));
+  expect(audits[2]!.request.evidenceFrom).toMatch(/^evaluation_set_v\d+$/);
+  expect(audits[2]!.modelId).toBe(approval.modelId);
+  const at = everything.indexOf(audits[2]!);
+  const tampered = everything.map((a, i) => (i === at ? { ...a, actualCostMinor: 0 } : a));
+  expect(auditChainHolds(tampered)).toEqual({ ok: false, brokenAt: audits[2]!.callId });
+  // The steered call raised an AI incident for a person (the gateway dropped the refund; somebody hears of it).
+  const incidents = (await h.request({ method: 'GET', path: '/v1/ai/incidents', userId: OWNER, tenantId: T })).body as { incidents: { kind: string; evidence: { callId?: string } }[] };
+  expect(incidents.incidents.filter((i) => i.kind === 'tool_call_blocked').map((i) => i.evidence.callId)).toEqual([audits[4]!.callId]);
 
   // ── RESTART: the audit and the budget read the same from the store.
   const again = make({ transport, pricing: PRICING });
   const after = await auditsOf(again, T);
-  expect(after.audits).toHaveLength(6);
+  expect(after.audits.filter((a) => a.callId.startsWith('call-'))).toHaveLength(7);
+  expect(after.audits).toHaveLength(everything.length);
   expect(after.chain.ok).toBe(true);
 }
 
@@ -133,6 +153,7 @@ describe('a model call is governed on the server (EA-08)', () => {
     await put(h, T, '/v1/ai/agents/enabled', { agents: [...new Set(EVALUATION_SET.map((c) => c.agentId))] }, 'en');
     await put(h, T, '/v1/ai/budget', { capMinor: 1_000_000, periodEnds: '2026-10-31T23:59:59.000Z' }, 'bud');
   await put(h, T, '/v1/ai/kill-switch', { on: false, reason: 'evaluation run' }, 'unkill');
+    await approveStandInModel(h, { tenantId: T, userId: OWNER, pricing: PRICING, agent: 'A01' });
     const responses: Record<string, ModelResponse> = {};
     for (const c of EVALUATION_SET) {
       const r = await call(h, T, c.agentId, c.caseId, `eval-${c.caseId}`);
@@ -152,7 +173,7 @@ describe('a model call is governed on the server (EA-08)', () => {
       expect(suite.fitToFacePeople).toBe(true);
     }
     // Every evaluation call is itself on the audit.
-    const evalAudits = (await auditsOf(h, T)).audits;
+    const evalAudits = (await auditsOf(h, T)).audits.filter((a) => a.callId.startsWith('call-'));
     expect(evalAudits).toHaveLength(EVALUATION_SET.length);
     // A model reaching beyond its grant (purge dead letters, merge/re-price, change a privilege) is DROPPED by the
     // gateway, and the audit says so — the inbox agents' authority holds even with a model behind them.

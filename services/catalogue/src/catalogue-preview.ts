@@ -39,6 +39,11 @@ export interface CataloguePreviewDeps {
    *  every till refuses it, offline (owner decision "C": the whole product until the batch block lands in R3). */
   readonly blockedProducts?: (tenantId: string) => Promise<ReadonlySet<string>> | ReadonlySet<string>;
   /**
+   * M10-FR-01 (integration follow-up): the batches head office's daily expiry move put in the EXPIRED state, by product —
+   * carried on the pack so a batch-bearing barcode of one is refused at the till, offline. Absent: none carried.
+   */
+  readonly expiredBatches?: (tenantId: string) => Promise<ReadonlyMap<string, readonly { readonly batchId: string; readonly expiry: string }[]>>;
+  /**
    * D-19 (R3, OB-148 / OB-190): zone / channel pricing as the owner's switches allow it. `allowedEntries` leaves out every
    * channel or zone entry whose switch is off; `zoneOfStore` names the store's zone only while zone pricing is switched
    * on. With every switch off the pack is exactly what it was before D-19 (one shelf price). Absent: nothing gated.
@@ -188,6 +193,8 @@ export async function assembleCatalogueSnapshot(
 
   // SF-08: what head office's recall and quality-hold registers say must not be sold.
   const blocked = deps.blockedProducts === undefined ? new Set<string>() : await deps.blockedProducts(opts.tenantId);
+  // M10-FR-01: and which batches the expiry move put in the expired state.
+  const expiredOf = deps.expiredBatches === undefined ? new Map<string, readonly { batchId: string; expiry: string }[]>() : await deps.expiredBatches(opts.tenantId);
 
   const built = buildCatalogueSnapshot({
     // A store's own pack is the till's (in-store) channel: no channel is named, so an app or delivery price never resolves.
@@ -197,7 +204,9 @@ export async function assembleCatalogueSnapshot(
     products: records.map((r) => {
       const plain = toMaster(r, opts.asOf);
       const until = confirmedUntil.get(r.productId);
-      const master = until === undefined ? plain : { ...plain, regulatedFlags: { ...(plain.regulatedFlags ?? {}), tobaccoWarningConfirmedUntil: until } };
+      const confirmed = until === undefined ? plain : { ...plain, regulatedFlags: { ...(plain.regulatedFlags ?? {}), tobaccoWarningConfirmedUntil: until } };
+      const expiredBatches = expiredOf.get(r.productId);
+      const master = expiredBatches === undefined || expiredBatches.length === 0 ? confirmed : { ...confirmed, expiredBatches };
       if (!blocked.has(r.productId)) return master;
       // SF-08 · OB-139 "A" (R3): the pack says WHICH batches block the product, so a 2D code carrying a sibling batch sells.
       // A recall flag on the product itself (`recallBlocked`) blocks every batch — no batch list is sent for it.

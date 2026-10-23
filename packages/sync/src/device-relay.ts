@@ -97,6 +97,22 @@ export const RELAYABLE_DEVICE_EVENTS: Readonly<Record<string, { readonly surface
   // that the person is the named reconciler or the owner and re-runs the same engines; a refusal is kept, visible.
   MigrationParallelDayEntered: { surfaces: ['manager'] },
   MigrationParallelDaySigned: { surfaces: ['manager'] },
+  // OB-288 lane 2 · P2 (§31 "production capture queue-capable"; "weight capture offline"; "evidence captured offline;
+  // queued"): the production screen's run, weigh-in/weigh-out and release decision, and the facilities screen's food-safety
+  // check — ERP surfaces the box serves, so they ride as `manager`. Head office re-runs its own engines and re-verifies each
+  // person; a release by someone without the right is refused, a conflict is refused by name — kept visible at the store.
+  ProductionRunCaptured: { surfaces: ['manager'] },
+  WeighedRunCaptured: { surfaces: ['manager'] },
+  ProductionReleaseDecided: { surfaces: ['manager'] },
+  FoodSafetyCheckRecorded: { surfaces: ['manager'] },
+  // OB-288 lane 2 · P2 (WF-07 · §31 "Receiving/count/transfer: queue-capable"): a transfer SENT and a transfer COUNTED IN on
+  // the warehouse handheld. Head office runs the same dispatch / receipt engines on its own stock and refuses a conflict.
+  TransferDispatchRecorded: { surfaces: ['warehouse'] },
+  TransferReceiptRecorded: { surfaces: ['warehouse'] },
+  // OB-333 (owner, 23 Oct 2026): a quality-hold RELEASE decided on the facilities screen with the line down — the box's
+  // narrow release-only right. Head office re-checks the person and re-runs its release engine; a refusal is kept,
+  // visible. There is deliberately NO hold-placing event: the store computer can never put a batch on hold.
+  QualityHoldReleaseDecided: { surfaces: ['manager'] },
 });
 
 /**

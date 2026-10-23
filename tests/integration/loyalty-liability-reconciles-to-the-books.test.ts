@@ -3,6 +3,7 @@ import { apiHarness, TEST_PACK_KEY, type ApiHarness } from '../support/api-harne
 import { withApprovals } from '../support/refund-approval';
 import { loyaltyMemberKey, memberRefFor } from '../../packages/loyalty/src/index';
 import { DEFAULT_RETAIL_POSTING_MAP } from '../../packages/finance/src/index';
+import { ownerApprovedSetting } from '../support/owner-approved-setting';
 
 // PF-09 step 3 · M17-FR-01 ("points earned/burned reconcile to the liability"), M17-FR-03 ("balances reconcile to
 // finance"), M23: the loyalty liability is in the books, and reconciles exactly to what the members hold.
@@ -24,8 +25,9 @@ async function shop(): Promise<ApiHarness> {
   await h.provisionRole(A, 'u-mgr', 'store_manager');
   await h.provisionRole(A, 'u-cash', 'cashier');
   await h.provisionRole(A, 'u-acct', 'accountant');
+  // OB-336: the till's spend cap is high-impact — the owner approves the administrator's answer; the others one person sets.
   const set = async (key: string, value: number) =>
-    expect((await h.request({ method: 'PUT', path: `/v1/platform/setup/${key}`, userId: 'u-owner', tenantId: A, idempotencyKey: `set-${key}`, body: { value } })).status).toBeLessThan(300);
+    expect((key === 'loyalty.till_spend_cap_paise' ? await ownerApprovedSetting(h, A, key, { value }) : await h.request({ method: 'PUT', path: `/v1/platform/setup/${key}`, userId: 'u-owner', tenantId: A, idempotencyKey: `set-${key}`, body: { value } })).status).toBeLessThan(300);
   await set('loyalty.points_per_100_inr', 2);
   await set('loyalty.point_value_paise', 50);
   await set('loyalty.till_spend_cap_paise', 100_000);

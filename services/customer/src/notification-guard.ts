@@ -15,8 +15,17 @@ import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import { canNotify } from '../../../packages/notifications/src/index';
 import type { ConsentState } from '../../../packages/customer/src/consent';
+import { isSuppressed, type SuppressionFact } from './suppression-register';
 
-export function notificationGuardRoutes(): readonly Route[] {
+export interface NotificationGuardDeps {
+  /**
+   * OB-288 P5 · M31-FR-04: the stored do-not-contact register. When the check names a `customerId`, suppression is READ
+   * from it — a caller's `suppressed: false` can never clear a stored entry (a caller's `true` still blocks).
+   */
+  readonly suppressions?: (tenantId: string) => Promise<readonly SuppressionFact[]> | readonly SuppressionFact[];
+}
+
+export function notificationGuardRoutes(deps: NotificationGuardDeps = {}): readonly Route[] {
   return [
     {
       // A read/ruling modelled as POST (a consent object in the body) — idempotent, writes nothing.
@@ -33,18 +42,27 @@ export function notificationGuardRoutes(): readonly Route[] {
             nextSafeAction: 'Send the purpose, channel, whether the template is approved and the contact’s consent state.',
           });
         }
+        const customerId = typeof b['customerId'] === 'string' && b['customerId'].trim() !== '' ? b['customerId'].trim() : undefined;
+        const stored = customerId === undefined || deps.suppressions === undefined ? undefined : isSuppressed(await deps.suppressions(ctx.tenantId), customerId, b['channel']);
+        const suppressed = stored?.suppressed === true || b['suppressed'] === true;
         const decision = canNotify({
           consent,
           purpose: b['purpose'],
           channel: b['channel'],
           templateApproved: b['templateApproved'],
-          ...(typeof b['suppressed'] === 'boolean' ? { suppressed: b['suppressed'] } : {}),
+          ...(stored !== undefined || typeof b['suppressed'] === 'boolean' ? { suppressed } : {}),
           ...(typeof b['sentInWindow'] === 'number' ? { sentInWindow: b['sentInWindow'] } : {}),
           ...(typeof b['frequencyCap'] === 'number' ? { frequencyCap: b['frequencyCap'] } : {}),
           ...(typeof b['costMinor'] === 'number' ? { costMinor: b['costMinor'] } : {}),
           ...(typeof b['budgetRemainingMinor'] === 'number' ? { budgetRemainingMinor: b['budgetRemainingMinor'] } : {}),
         });
-        return { status: 200, body: decision };
+        return {
+          status: 200,
+          body: {
+            ...decision,
+            suppressionFrom: stored !== undefined ? 'the do-not-contact register' : customerId === undefined ? 'not checked against the register: no customerId was named' : 'not checked: no register here',
+          },
+        };
       },
     },
   ];

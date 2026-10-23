@@ -31,6 +31,10 @@ const OWNER2 = 'u-owner-2'; const CASHIER = 'u-cash-setup';
 
 interface Item { key: string; value: unknown; version: number; isDefault: boolean }
 
+/** OB-288 P1 · OB-336: the settings that need the owner's approval (M01-FR-02's two, and the three the owner added on 23 Oct
+ *  2026 — the time zone, the till's spend cap and the bulk-publish threshold) — one person's save is refused. */
+const HIGH_IMPACT: readonly string[] = ['trading_day.cutoff', 'locale.currency', 'locale.time_zone', 'loyalty.till_spend_cap_paise', 'catalogue.bulk_publish_threshold'];
+
 describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('store setup on the production API, in a real browser (M01-FR-02/03)', () => {
   let browser: Browser;
   let shop: InboxShop;
@@ -307,10 +311,16 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('store setu
         await page.waitForFunction((k) => /Saved/.test((globalThis as unknown as { document: { getElementById(i: string): { textContent: string | null } | null } }).document.getElementById(`m-${k}`)?.textContent ?? ''), key, { timeout: 15_000 })
           .catch(async () => { notSaved.push(`${key}: ${await text(page, `m-${key}`)}`); });
       }
-      expect(notSaved).toEqual([]);
+      // OB-288 P1 (M01-FR-02 "owner approval for currency/precision and trading-day changes") and OB-336 (time zone, till spend
+      // cap, bulk-publish threshold): those are refused for one person, in head office's own words on the screen, and nothing
+      // of them is kept.
+      expect(notSaved.filter((n) => !HIGH_IMPACT.some((k) => n.startsWith(`${k}:`)))).toEqual([]);
+      for (const k of HIGH_IMPACT) expect(notSaved.find((n) => n.startsWith(`${k}:`))).toMatch(/is high-impact: the owner approves it first/);
       expect(errors).toEqual([]);
     } finally { await close(); }
-    const want = Object.entries(TABLE).map(([key, row]) => ({ key, value: row.stored, version: 1, isDefault: false })).sort((a, b) => a.key.localeCompare(b.key));
+    const want = Object.entries(TABLE).map(([key, row]) => (HIGH_IMPACT.includes(key)
+      ? { key, value: setupItem(key)!.setting.defaultValue, version: 0, isDefault: true }
+      : { key, value: row.stored, version: 1, isDefault: false })).sort((a, b) => a.key.localeCompare(b.key));
     const held = async () => (await items()).map((i) => ({ key: i.key, value: i.value, version: i.version, isDefault: i.isDefault })).sort((a, b) => a.key.localeCompare(b.key));
     expect(await held()).toEqual(want);
     await shop.restart();
@@ -319,7 +329,8 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('store setu
     const again = await open();
     try {
       expect(await again.page.locator('[id="f-loyalty.points_per_100_inr"]').inputValue()).toBe('2');
-      expect(await again.page.locator('[id="f-loyalty.till_spend_cap_paise"]').inputValue()).toBe('75000');
+      // OB-336: the till's spend cap was refused for one person, so the editor still shows the owner's ₹500 default.
+      expect(await again.page.locator('[id="f-loyalty.till_spend_cap_paise"]').inputValue()).toBe('50000');
       expect(await again.page.locator('[id="f-pos.licence_hours.enabled"]').isChecked()).toBe(true);
       expect(again.errors).toEqual([]);
     } finally { await again.close(); }

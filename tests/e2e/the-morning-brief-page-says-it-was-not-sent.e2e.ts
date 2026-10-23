@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { chromium, type Browser } from 'playwright-core';
 import { startInboxShop, ok, OWNER, MGR, type InboxShop } from './lib/ai-inbox-shop';
+import { ownerApprovedSettingOn } from '../support/owner-approved-setting';
 
 /**
  * EA-07 (R4, signed OB-227 · OB-222) — the Morning brief page, in a real browser, on the PRODUCTION API over real
@@ -27,7 +28,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('the Mornin
       page: { path: '/morning-brief', html: 'morning-brief.html', dataGlobal: 'morningBriefData' },
       seed: async (cloud) => {
         const req = (method: 'POST' | 'PUT', path: string, body: unknown, key: string) => ok(cloud.request({ method, path, userId: OWNER, idempotencyKey: key, body }), key);
-        await req('PUT', '/v1/platform/setup/locale.time_zone', { value: 'UTC' }, 'tz');
+        await ok(ownerApprovedSettingOn(cloud, 'locale.time_zone', { value: 'UTC' }, OWNER), 'tz'); // OB-336: the owner approves
         const today = new Date().toISOString().slice(0, 10);
         await req('POST', '/v1/sales', {
           saleId: 'S-brief', receiptNumber: 'R-1', laneId: 'lane-1', locationId: 'br-1', cashierId: OWNER, tradingDay: today,

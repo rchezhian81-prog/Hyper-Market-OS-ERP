@@ -11,6 +11,7 @@ import type { CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
 import { DEFAULT_RETAIL_POSTING_MAP } from '../../packages/finance/src/index';
 import { makeTradingDayRule, tradingDateOf } from '../../packages/calendar/src/trading-day';
 import { startRealCloud, type RealCloud } from '../support/real-store';
+import { ownerApprovedSettingOn } from '../support/owner-approved-setting';
 
 /**
  * **The store trades a day, connected — on the REAL cloud, over REAL PostgreSQL, through the REAL box (SP-9-i · W10 · F13).**
@@ -78,7 +79,7 @@ describeOrSkip('the store trades a day, connected: real API · real PostgreSQL �
     await cloud.grant(ACCT, 'accountant');
     // The box in this run keeps this machine's clock (UTC) with a midnight cut-off; the owner tells head office so,
     // through store setup — "Sales today" is then the SHOP's trading day at head office too (F14 fixed, SP-9-i-c).
-    expect((await call('PUT', '/v1/platform/setup/locale.time_zone', OWNER, { value: 'UTC' }, 'setup-tz-utc')).status).toBe(200);
+    expect((await ownerApprovedSettingOn(cloud, 'locale.time_zone', { value: 'UTC' }, OWNER)).status).toBe(200);
     await publishCatalogueAndStock();
   }, 60_000);
   afterAll(async () => { await cloud?.stop(); });

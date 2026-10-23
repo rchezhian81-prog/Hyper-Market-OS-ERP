@@ -98,6 +98,9 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   { id: 'suppliers', label: 'Suppliers', labelTa: 'விநியோகஸ்தர்கள்', path: '/suppliers', requires: 'supplier.view', group: 'Purchase' },
   // R4 Lane 4 · D-10: a supplier's scorecard built from its orders, receipts and matched invoices (nothing typed). Gated on
   // the read the scorecard route checks (`purchase.commitment.read`). A head-office page (the box does not serve it).
+  // P3 (OB-288) M06-FR-02 / WF-03: requisitions, the suppliers' quotes and the like-for-like comparison; an order is only
+  // PROPOSED here. Gated on the read the requisition routes check (`purchase.commitment.read`). A head-office page.
+  { id: 'requisitions', label: 'Requisitions and quotes', labelTa: 'கோரிக்கைகளும் விலைப்புள்ளிகளும்', path: '/requisitions', requires: 'purchase.commitment.read', group: 'Purchase', served: 'unserved' },
   { id: 'supplier-scorecard', label: 'Supplier scorecard', labelTa: 'விநியோகஸ்தர் மதிப்பெண் அட்டை', path: '/supplier-scorecard', requires: 'purchase.commitment.read', group: 'Purchase', served: 'unserved' },
   // Round 12 (D03-FR-02 · WF-05): supplier bills handed in as a GST e-invoice or a scan, confirmed by a person, then checked
   // against the order — a head-office page over `/v1/purchase/invoice-documents/*` (the box does not serve it). Gated on the
@@ -137,7 +140,7 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // Lane 2 · P1 (P-07 · M10-FR-03/04 · OB-297/328/329): start or open a recall, trace forward and backward, the recall's call
   // list and the owner's SMS switch. A head-office page — it reads live traces from head office's API, so the store
   // computer does not serve it. Gated on the trace read (`quality.lottrace.read`); each action's route checks its own word.
-  { id: 'recall-trace', label: 'Recalls & trace', labelTa: 'திரும்பப்பெறலும் தடமறிதலும்', path: '/recall-trace', requires: 'quality.lottrace.read', group: 'Inventory', served: 'unserved' },
+  { id: 'recall-trace', label: 'Recalls & trace', labelTa: 'திரும்பப்பெறலும் தடமறிதலும்', path: '/recall-trace', requires: 'quality.lottrace.read', group: 'Inventory' },
   // Production runs and QC release (M11) — gated on `production.read`; release needs `production.release`.
   { id: 'production', label: 'Production', labelTa: 'உற்பத்தி', path: '/production/', requires: 'production.read', group: 'Production' },
   // Warehouse oversight — occupancy, stock, §28 approvals, transfers, tasks (M09). Gated on the availability read
@@ -154,6 +157,10 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // stock adjustment, the budget and the fixed assets — a thin client over head office's own finance routes. A head-office
   // page: the store computer does not serve it. Gated on the same read the routes check (`finance.period.read`).
   { id: 'finance-close', label: 'Month-end', labelTa: 'மாத இறுதி', path: '/finance-close', requires: 'finance.period.read', group: 'Finance', served: 'unserved' },
+  // OB-288 P5 (OB-293 · M23-FR-01/04 · M32-FR-04): the accountant's daily Tally import files, the dead letter and the trial
+  // balance — a head-office page (the store computer does not serve it). Gated on the read the routes check (`finance.period.read`);
+  // making and requeueing check `finance.posting.configure` on the server.
+  { id: 'tally-files', label: 'Tally files', labelTa: 'டேலி கோப்புகள்', path: '/tally-files', requires: 'finance.period.read', group: 'Finance', served: 'unserved' },
   { id: 'reconciliation', label: 'Reconciliation', labelTa: 'சரிக்கட்டல்', path: '/reconciliation', requires: 'reconciliation.view', group: 'Finance', served: 'unbuilt' },
   // GST e-invoice / e-way-bill reconciliation — gated on the SAME permission the queue route checks
   // (`finance.einvoice.read`), so the menu can never offer a screen the server would refuse (item 3 inc2).
@@ -272,6 +279,10 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   { id: 'risk-acceptance', label: 'Risk acceptance', labelTa: 'இடர் ஏற்பு', path: '/risk-acceptance', requires: 'compliance.risk.read', group: 'Operations' },
   // OB-288 gates lane (QG-12): every quality gate's GO / HOLD / REWORK for a release, decided by the owner with evidence.
   { id: 'gates', label: 'Quality gates', labelTa: 'தர வாயில்கள்', path: '/gates', requires: 'compliance.gate.read', group: 'Operations', served: 'unserved' },
+  // OB-288 lane 1 · P1 (OB-290/291/292): the owner's money limits, escalation waits and price-check size — two people change them.
+  // OB-288 lane 1 · P1 (M02-FR-01/02): who holds which role, where and up to how much — read-only, with the permission matrix as CSV.
+  { id: 'access-review', label: 'Access review', labelTa: 'அணுகல் மீளாய்வு', path: '/access-review', requires: 'identity.access.review', group: 'Administration', served: 'unserved' },
+  { id: 'approval-rules', label: 'Approval rules', labelTa: 'ஒப்புதல் விதிகள்', path: '/approval-rules', requires: 'approvals.rules.read', group: 'Administration', served: 'unserved' },
   // Reopen a locked day — the controlled, audited unlock (M14-FR-04 / §28). Gated on `till.dayclose.read` (the
   // permission the locked-day list checks); the reopen itself needs `till.dayclose.approve`, which the box and
   // cloud enforce, and the screen offers the form only to a holder. Accountant/owner work.

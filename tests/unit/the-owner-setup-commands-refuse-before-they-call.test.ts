@@ -17,12 +17,13 @@ import { TEST_IDP } from '../support/api-harness';
 
 const KEY = ['owner', 'setup', 'pin', 'key'].join('-').padEnd(64, '0');
 const T = 'ab000000-0000-4000-8000-000000000257';
-const SHOP = { as: 'u-owner', company: 'SRE', 'legal-name': 'SRE Hyper Market Private Limited', gstin: '33AABCS1429B1Z1', store: 'SRE-MAIN', 'store-name': 'SRE Hyper Market' };
+// OB-288 P1 (M01-FR-01): the person setting the shop up asks, the owner approves making the store active.
+const SHOP = { as: 'u-it', approver: 'u-owner', company: 'SRE', 'legal-name': 'SRE Hyper Market Private Limited', gstin: '33AABCS1429B1Z1', store: 'SRE-MAIN', 'store-name': 'SRE Hyper Market' };
 
 function world(over: { pins?: Record<string, string>; yes?: boolean; typed?: Record<string, string | undefined> } = {}) {
   const calls: SetupRequest[] = [];
   const client: SetupClient = { request: async (r) => { calls.push(r); return { status: r.path.endsWith('/approve') ? 201 : r.path === '/v1/identity/grants' ? 202 : 201, body: {} }; } };
-  const pins = over.pins ?? { 'u-owner': '135790', 'u-manager': '246801' };
+  const pins = over.pins ?? { 'u-owner': '135790', 'u-manager': '246801', 'u-it': '112233' };
   const deps = {
     client,
     confirm: async () => over.yes ?? true,

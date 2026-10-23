@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { approveStandInModel } from '../support/ai-approval';
 import { SqlIdempotencyStore } from '../../services/kernel/src/index';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
@@ -90,6 +91,8 @@ describe.each(backings)('the assistant drafts, a person decides and sends — on
     expect((await call('PUT', '/v1/ai/kill-switch', OWNER, { on: false, reason: 'test' })).status).toBe(200);
     expect((await call('PUT', '/v1/ai/budget', OWNER, { capMinor: 1_000_000, periodEnds: '2099-01-01T00:00:00.000Z' })).status).toBe(200);
     expect((await call('PUT', '/v1/ai/agents/enabled', OWNER, { agents: ['A05', 'A07', 'A09'] })).status).toBe(200);
+    // AI-NFR-01 (OB-288 lane 4 · P1): only a model on the approved register may be called — evaluate and approve one.
+    await approveStandInModel(h, { tenantId: T, userId: OWNER, pricing: PRICING, agent: 'A05' });
   }, 120_000);
 
   it('WF-17: A05 drafts a reply over the case; it is sent only after a named person approves it, by a person; the root cause closes the loop', async () => {

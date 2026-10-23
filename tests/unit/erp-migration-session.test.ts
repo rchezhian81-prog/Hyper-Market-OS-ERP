@@ -109,6 +109,9 @@ function ports(over: Partial<MigrationPorts> = {}): MigrationPorts {
     rollbackDemonstratedAt: () => '2026-09-08T22:00:00.000Z',
     namedTeam: () => [{ userId: 'u-owner', role: 'decision' }, { userId: 'u-eng', role: 'load' }],
     ownerGoBy: () => 'u-owner',
+    // OB-288 P5 · MG-11: the backup and the owner's rollback limits, as head office would send them.
+    backup: () => ({ state: 'passed', evidence: 'a good backup (bk-1: completed, encrypted, off-site) was taken within the 6 hour(s) agreed', at: '2026-09-10T18:00:00.000Z', backupId: 'bk-1' }),
+    rollbackLimits: () => ({ controlTotalDifferenceMinor: 0, edgeOutageMinutes: 30, windowMinutes: 360, backupMaxAgeHours: 6, version: 1, setBy: 'u-owner', setAt: '2026-09-09T10:00:00.000Z' }),
     openAssessments: () => 0,
     outbox: () => outbox,
     ...over,
@@ -125,8 +128,8 @@ const migration = (over: Partial<MigrationPorts> = {}, config: Partial<Migration
 
 // ── The gate that had only ever been told ───────────────────────────────────
 
-describe('the eight checks are derived from the real state, never asserted', () => {
-  it('reaches GO when every one of the eight is answered and good', () => {
+describe('the ten checks are derived from the real state, never asserted', () => {
+  it('reaches GO when every one of the ten is answered and good', () => {
     const view = migration().cutover();
     expect(view.decision.go, view.decision.detail).toBe(true);
     expect(view.derived.notKnown).toEqual([]);
@@ -153,10 +156,10 @@ describe('the eight checks are derived from the real state, never asserted', () 
       exclusions: () => undefined, archive: () => undefined,
       edgeUnsyncedItems: () => undefined, deltaAppliedAt: () => undefined,
       rollbackDemonstratedAt: () => undefined, namedTeam: () => undefined,
-      ownerGoBy: () => undefined, openAssessments: () => undefined,
+      ownerGoBy: () => undefined, openAssessments: () => undefined, backup: () => undefined, rollbackLimits: () => undefined,
     }).cutover();
     expect(blank.decision.go).toBe(false);
-    expect(blank.decision.failed).toHaveLength(8);
+    expect(blank.decision.failed).toHaveLength(10);
     expect(blank.derived.notKnown.length).toBeGreaterThan(0);
   });
 

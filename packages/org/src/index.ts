@@ -5,3 +5,4 @@
 export * from './hierarchy';
 export * from './branch-lifecycle';
 export * from './document-templates';
+export * from './departments';

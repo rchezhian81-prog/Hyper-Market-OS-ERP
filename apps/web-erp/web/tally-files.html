@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Tally files</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Tally files (OB-293 · M23-FR-01/04 · M32-FR-04 · D10-FR-06 · D14-FR-03). A THIN CLIENT over head office's GET
+      /v1/finance/tally/outbox, GET /v1/finance/tally/files/:postingId, POST /v1/finance/tally/outbox/run, POST
+      /v1/finance/tally/outbox/:postingId/requeue and GET /v1/finance/periods/:period/trial-balance. Its session is
+      apps/web-erp/src/tally-files-session.ts. Nothing is read before the person asks; the dead letter is shown first and
+      never hidden; a requeue needs the words of what was fixed.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      input, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; }
+      button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
+      button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .table-wrap { overflow-x: auto; }
+      table { border-collapse: collapse; width: 100%; font-size: 15px; }
+      th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+      td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+      .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+      .row-form > label { flex: 1 1 200px; }
+      .meta { font-size: 13px; color: var(--muted); }
+      .tiles { display: flex; gap: 10px; flex-wrap: wrap; }
+      .tile { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 8px 14px; min-width: 120px; }
+      .tile b { display: block; font-size: 20px; }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+      li.row { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 6px; border-left: 6px solid var(--idle); overflow-wrap: anywhere; }
+      li.row.tone-ok { border-left-color: var(--ok); } li.row.tone-degraded { border-left-color: var(--degraded); } li.row.tone-error { border-left-color: var(--error); }
+      .facts { font-size: 13px; color: var(--muted); display: grid; gap: 2px; }
+      .actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; }
+      .actions > label { flex: 1 1 220px; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Tally files</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section aria-labelledby="page-h">
+        <h2 id="page-h">Tally files</h2>
+        <p class="lead" id="lead"></p>
+        <div class="row-form">
+          <button id="read" type="button"><span id="read-text">Show the daily files</span></button>
+          <button id="run" type="button" class="quiet"><span id="run-text">Make the files now</span></button>
+        </div>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+        <div class="tiles" id="tiles" hidden>
+          <div class="tile"><span id="posted-k">Ready</span><b id="posted-n"></b></div>
+          <div class="tile"><span id="queued-k">Waiting</span><b id="queued-n"></b></div>
+          <div class="tile"><span id="dead-k">Dead letter</span><b id="dead-n"></b></div>
+          <div class="tile"><span id="company-k">Tally company</span><b id="company-n"></b></div>
+        </div>
+        <p class="status err" id="no-names" hidden></p>
+      </section>
+      <section aria-labelledby="dead-h" id="dead-section" hidden>
+        <h3 id="dead-h"></h3>
+        <ul class="rows" id="dead"></ul>
+      </section>
+      <section aria-labelledby="files-h" id="files-section" hidden>
+        <h3 id="files-h"></h3>
+        <ul class="rows" id="files"></ul>
+      </section>
+      <section aria-labelledby="tb-h">
+        <h3 id="tb-h">Trial balance for a month</h3>
+        <div class="row-form">
+          <label for="tb-month"><span id="tb-month-l">Month (YYYY-MM)</span><input id="tb-month" inputmode="numeric" autocomplete="off" placeholder="2026-10" /></label>
+          <button id="tb-read" type="button"><span id="tb-read-text">Show the trial balance</span></button>
+        </div>
+        <p class="status" id="tb-status" role="status" aria-live="polite"></p>
+        <div class="table-wrap" id="tb-wrap" hidden>
+          <table>
+            <thead><tr><th id="tb-account-h">Account</th><th id="tb-class-h">Class</th><th class="num" id="tb-debit-h">Debit</th><th class="num" id="tb-credit-h">Credit</th><th class="num" id="tb-closing-h">Closing</th></tr></thead>
+            <tbody id="tb-rows"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./tally-files.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

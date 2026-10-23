@@ -35,6 +35,8 @@ import type { Movement } from '../../inventory/src/index';
 import type { DayBookJournal, StoredPostingMap } from '../../finance/src/day-book';
 import { postJournal as postJournalLines } from '../../../packages/finance/src/posting';
 import { buildCutoverChecklist, type CutoverEvidence, type TeamMember } from '../../../packages/migration/src/cutover-checklist';
+import { backupStanding } from '../../../packages/migration/src/rollback-limits'; // OB-288 P5 · MG-11
+import { migrationControlRoutes, type MigrationControlsDeps } from './migration-controls'; // OB-288 P5
 import {
   buildVerificationReport, renderVerificationReport,
   type DomainFinding, type Acceptance, type Signature,
@@ -436,6 +438,11 @@ export interface MigrationDeps {
   /** MG-10 — every signature a parallel-run day has had (`parallel-day-routes.ts`). Append-only. */
   readonly parallelDaySignatures?: (tenantId: string) => Promise<readonly ParallelDaySignature[]> | readonly ParallelDaySignature[];
   readonly recordParallelDaySignature?: (tenantId: string, signature: ParallelDaySignature) => Promise<void> | void;
+  /**
+   * OB-288 P5 — the MG-09 export diff, the MG-10 books side of the day and the MG-11 backup check and rollback limits
+   * (`migration-controls.ts`). Optional so existing stubs compile; a route whose controls are absent refuses 503.
+   */
+  readonly controls?: MigrationControlsDeps;
   readonly now: () => string;
 }
 
@@ -1053,6 +1060,10 @@ export function migrationRoutes(deps: MigrationDeps): readonly Route[] {
         for (const [part, present] of [['reconciliation', recon], ['parallel', parallel], ['exceptions', exceptions], ['deltaAppliedAt', deltaAppliedAt], ['rollbackDemonstratedAt', rollbackDemonstratedAt], ['ownerGoBy', ownerGoBy]] as const) {
           if (present !== undefined) ignoredFromCaller.push(part);
         }
+        // OB-288 P5 · MG-11: the backup and the owner's rollback limits are head office's records too — never the caller's.
+        for (const part of ['backup', 'rollbackLimits'] as const) if (ev[part] !== undefined) ignoredFromCaller.push(part);
+        const limits = deps.controls === undefined ? undefined : await deps.controls.rollbackLimits(ctx.tenantId);
+        const backup = deps.controls === undefined ? undefined : backupStanding(await deps.controls.backups(ctx.tenantId), limits?.backupMaxAgeHours ?? null, deps.now());
         const ledger = await ledgerCutoverEvidence(deps, ctx.tenantId);
         const totals = deps.controlTotals === undefined ? [] : await deps.controlTotals(ctx.tenantId);
         const serverReconciliation = totals.length === 0 ? undefined : assessReconciliation({ tenantId: ctx.tenantId, totals });
@@ -1087,6 +1098,8 @@ export function migrationRoutes(deps: MigrationDeps): readonly Route[] {
           ...(ledger.rollbackDemonstratedAt === undefined ? {} : { rollbackDemonstratedAt: ledger.rollbackDemonstratedAt }),
           ...(ownerGo === undefined ? {} : { ownerGoBy: ownerGo }),
           ...(verifiedTeam === undefined ? {} : { namedTeam: verifiedTeam }),
+          ...(backup === undefined ? {} : { backup }),
+          ...(limits === undefined ? {} : { rollbackLimits: limits }),
         };
         const derived = buildCutoverChecklist({ cutoverId, tenantId: ctx.tenantId, evidence });
         const decision = decideCutover(derived.checklist);
@@ -1348,6 +1361,7 @@ export function migrationRoutes(deps: MigrationDeps): readonly Route[] {
     ...witnessRoutes(deps),
     ...parallelRunRoutes(deps),
     ...parallelDayRoutes(deps),
+    ...migrationControlRoutes(deps), // OB-288 P5 — MG-09 export diff, MG-10 books side, MG-11 backup and rollback limits
     ...decisionRoutes(deps),
     ...loadRecordRoutes(deps),
     ...screenRoutes(deps),

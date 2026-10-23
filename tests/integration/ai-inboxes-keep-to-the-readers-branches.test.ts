@@ -156,7 +156,7 @@ async function journey(make: () => ApiHarness, T: string): Promise<void> {
   expect((await inbox(h, T, OWNER, 'workforce')).body.dismissed).toHaveLength(1);
 
   // ── The kill switch hides all three at once; off again, they are back exactly as they were.
-  await ok(req(h, T, OWNER, 'PUT', '/v1/ai/kill-switch', { on: true }), 'kill');
+  await ok(req(h, T, OWNER, 'PUT', '/v1/ai/kill-switch', { on: true, reason: 'test: stop the assistants' }), 'kill');
   for (const name of INBOXES) {
     const b = (await inbox(h, T, MGR, name)).body as Inbox & { note?: string };
     expect(b.agentActive, name).toBe(false);

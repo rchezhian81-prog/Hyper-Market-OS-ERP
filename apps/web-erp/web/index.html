@@ -324,6 +324,12 @@
       .banner > strong .sre-icon { width: 24px; height: 24px; }
       .banner button, .banner.good button { justify-self: start; min-width: 180px; padding: 0 20px; border-radius: var(--radius); background: var(--on-danger); color: var(--danger-surface); }
       .banner.good button { background: var(--on-accent); color: var(--accent); }
+      /* OB-327: the clock strip — never colour alone: the shape and the words carry it. */
+      .box-clock { margin: 0; padding: 10px 16px; border-bottom: 3px solid var(--degraded); background: var(--nobody-surface); color: var(--on-nobody-surface); }
+      .box-clock[data-tone='error'] { background: var(--danger-surface); color: var(--on-danger); border-bottom-color: var(--on-danger); }
+      .box-clock[hidden] { display: none; }
+      .box-clock p { margin: 0; font-weight: 600; display: flex; gap: 8px; align-items: center; }
+      .box-clock ul { margin: 6px 0 0; padding-left: 20px; }
     </style>
   </head>
   <body>
@@ -349,6 +355,14 @@
     <!-- Said when the store named nobody for this screen: what is waiting still shows; nothing can be decided (hard rule #4). -->
     <p class="nobody" id="nobody" hidden role="status"></p>
     <p class="stale" id="stale" hidden role="status" data-en="No connection to the store computer. This page is what it was last told — do not close the day on it. Last told at" data-ta="கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது — இதை வைத்து நாளை மூட வேண்டாம். கடைசியாகச் சொல்லப்பட்டது:"></p>
+
+    <!-- OB-288 lane 2 · OB-327: this store computer's clock against head office's — a warning at 2 minutes; at 5, bills still
+         go through but each is marked for checking and listed here. Hidden while the clock agrees (control by exception). -->
+    <section class="box-clock" id="box-clock" hidden role="alert" aria-live="polite">
+      <p class="box-clock-words" id="box-clock-words"></p>
+      <p class="box-clock-bills-h" id="box-clock-bills-h" hidden></p>
+      <ul class="box-clock-bills" id="box-clock-bills"></ul>
+    </section>
 
     <nav id="tabs" aria-label="Sections">
       <button id="tab-home" type="button" aria-current="page">Today</button>

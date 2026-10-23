@@ -41,6 +41,9 @@ const WORDS = {
     stateOn: 'Recall SMS is ON (by {by}: {why}).', stateOff: 'Recall SMS is OFF. Call the customers on the list.', noProvider: 'No SMS provider is connected, so nothing can be sent.',
     sendH: 'Send the recall SMS', textLabel: 'The message (10 to 480 characters)', send: 'Send to customers who said yes',
     sentSay: 'Sent: {s}. Failed: {f}. Already told: {a}. Without SMS consent (call them): {n}.', switched: 'Recorded.',
+    boxH: 'What this store\'s tills refuse now', boxAsOf: 'From catalogue v{v} on this store computer, built {at} — the tills refuse these even with the line down.',
+    boxNotKnown: 'This store computer holds no catalogue yet, so what the tills refuse is not known here.', boxNone: 'The tills refuse nothing for a recall or a quality hold now.',
+    boxEvery: 'every batch', boxBatches: 'batches {list}',
   },
   ta: {
     title: 'திரும்பப்பெறலும் தடமறிதலும்', langName: 'English',
@@ -73,6 +76,9 @@ const WORDS = {
     stateOn: 'திரும்பப்பெறல் SMS இயக்கத்தில் உள்ளது ({by}: {why}).', stateOff: 'திரும்பப்பெறல் SMS நிறுத்தப்பட்டுள்ளது. பட்டியலில் உள்ள வாடிக்கையாளர்களை அழைக்கவும்.', noProvider: 'SMS வழங்குநர் இணைக்கப்படவில்லை, எனவே எதையும் அனுப்ப முடியாது.',
     sendH: 'திரும்பப்பெறல் SMS அனுப்பு', textLabel: 'செய்தி (10 முதல் 480 எழுத்துகள்)', send: 'ஒப்புதல் அளித்தவர்களுக்கு அனுப்பு',
     sentSay: 'அனுப்பப்பட்டது: {s}. தோல்வி: {f}. ஏற்கனவே தெரிவிக்கப்பட்டது: {a}. SMS ஒப்புதல் இல்லாதவர்கள் (அழைக்கவும்): {n}.', switched: 'பதிவு செய்யப்பட்டது.',
+    boxH: 'இந்தக் கடையின் பில் கவுண்டர்கள் இப்போது மறுப்பவை', boxAsOf: 'இந்தக் கடைக் கணினியில் உள்ள பட்டியல் v{v}, உருவாக்கப்பட்டது {at} — இணைப்பு இல்லாவிட்டாலும் பில் கவுண்டர்கள் இவற்றை மறுக்கும்.',
+    boxNotKnown: 'இந்தக் கடைக் கணினியில் இன்னும் பட்டியல் இல்லை, எனவே பில் கவுண்டர்கள் எதை மறுக்கின்றன என்பது இங்கே தெரியவில்லை.', boxNone: 'திரும்பப்பெறல் அல்லது தரத் தடைக்காக பில் கவுண்டர்கள் இப்போது எதையும் மறுக்கவில்லை.',
+    boxEvery: 'எல்லாத் தொகுதிகளும்', boxBatches: 'தொகுதிகள் {list}',
   },
 };
 const t = (key, vars = {}) => String(WORDS[lang]?.[key] ?? WORDS.en[key] ?? key).replace(/\{(\w+)\}/g, (_m, k) => String(vars[k] ?? ''));
@@ -345,6 +351,19 @@ function paint() {
     el('r-close-row').hidden = r.status !== 'open';
     el('l-r-evidence').textContent = t('evidenceLabel');
     label(el('r-close'), 'check', 'close');
+  }
+  // Served from the store box: what this store's tills refuse now, from the catalogue the box holds (no network needed).
+  const box = el('r-box');
+  box.hidden = DATA.tillBlocks === undefined;
+  if (DATA.tillBlocks !== undefined) {
+    el('r-box-h').textContent = t('boxH');
+    const tb = DATA.tillBlocks;
+    el('r-box-asof').textContent = tb === null ? t('boxNotKnown') : tb.products.length === 0 ? t('boxNone') : t('boxAsOf', { v: tb.packVersion, at: new Date(tb.builtAt).toLocaleString() });
+    el('r-box-rows').replaceChildren(...(tb === null ? [] : tb.products).map((p) => {
+      const li = document.createElement('li'); li.className = 'row'; li.dataset.product = p.productId;
+      li.textContent = `⛔ ${p.name} (${p.productId}) — ${p.batches === null ? t('boxEvery') : t('boxBatches', { list: p.batches.join(', ') })}`;
+      return li;
+    }));
   }
   // trace
   el('trace-h').textContent = t('traceH');

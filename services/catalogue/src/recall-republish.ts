@@ -86,3 +86,40 @@ export function republishWithBlocks(input: {
     detail: `catalogue v${result.pack.snapshot.version} blocks ${newlyBlocked.length} more product(s); prices are unchanged from v${previous.snapshot.version}`,
   };
 }
+
+/**
+ * M10-FR-01 (integration follow-up): the pack the tills already trust, re-signed one version on with each product's EXPIRED
+ * batches added (`expiredBatches`, from the daily expiry move) — so a batch-bearing barcode of one is refused at every till,
+ * offline, the day it expires, without waiting for a person to publish. The same discipline as the recall pack: prices,
+ * barcodes, tax and offers are byte-for-byte the previous pack's; a batch is only ever ADDED, never lifted; a product no
+ * till carries is not added.
+ */
+export function republishWithExpired(input: {
+  readonly previous: SignedPack;
+  readonly expired: ReadonlyMap<string, readonly { readonly batchId: string; readonly expiry: string }[]>;
+  readonly signer: PackSigner;
+  readonly publishedBy: string;
+  readonly publishedAt: string;
+}): RecallRepublishResult {
+  const { previous } = input;
+  const newly: string[] = [];
+  const products = previous.snapshot.products.map((p) => {
+    const add = input.expired.get(p.productId);
+    if (add === undefined || add.length === 0) return p;
+    const held = new Map((p.expiredBatches ?? []).map((b) => [b.batchId, b.expiry] as const));
+    const before = held.size;
+    for (const b of add) if (!held.has(b.batchId)) held.set(b.batchId, b.expiry);
+    if (held.size === before) return p;
+    newly.push(p.productId);
+    return { ...p, expiredBatches: [...held].sort(([a], [b]) => (a < b ? -1 : 1)).map(([batchId, expiry]) => ({ batchId, expiry })) };
+  });
+  if (newly.length === 0) {
+    return { outcome: 'already_on_pack', detail: `catalogue v${previous.snapshot.version} already carries every expired batch the tills sell — they have it` };
+  }
+  const result = publishPack({ snapshot: { ...previous.snapshot, version: previous.snapshot.version + 1, products }, previous, approvals: [], signer: input.signer, publishedBy: input.publishedBy, publishedAt: input.publishedAt });
+  if (!result.ok || result.pack === undefined) return { outcome: 'refused', because: result.refusedBecause ?? 'empty_pack', detail: result.detail };
+  return {
+    outcome: 'published', pack: result.pack, newlyBlocked: newly.sort(),
+    detail: `catalogue v${result.pack.snapshot.version} refuses the expired batches of ${newly.length} more product(s) on a batch barcode; prices are unchanged from v${previous.snapshot.version}`,
+  };
+}

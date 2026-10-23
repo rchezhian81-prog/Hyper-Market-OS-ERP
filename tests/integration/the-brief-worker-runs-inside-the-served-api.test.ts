@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { recordingTransport } from '../../packages/notifications/src/index';
 import { startRealCloud } from '../support/real-store';
+import { ownerApprovedSettingOn } from '../support/owner-approved-setting';
 
 /**
  * **Production's own wiring runs the owner's brief: `startApi` starts the brief worker for the shops the operator names,
@@ -47,7 +48,7 @@ describe.skipIf(!DATABASE_URL)('the brief worker runs inside the served API (EA-
         expect(r.status, `${path} ${JSON.stringify(r.body)}`).toBeLessThan(300);
       };
       await cloud.grant('u-cash', 'cashier');
-      await ok('PUT', '/v1/platform/setup/locale.time_zone', 'u-owner', { value: 'UTC' }, 'tz');
+      expect((await ownerApprovedSettingOn(cloud, 'locale.time_zone', { value: 'UTC' }, 'u-owner')).status).toBe(200);
       const today = new Date().toISOString().slice(0, 10);
       await ok('POST', '/v1/sales', 'u-cash', {
         saleId: `S-${T.slice(0, 8)}`, receiptNumber: 'R-1', laneId: 'lane-1', locationId: 'S1', cashierId: 'u-cash', tradingDay: today,

@@ -181,14 +181,29 @@ export async function applyPilotFoundation(
     );
   }
 
-  // 6. … then activate the ones that should be tradeable, through the real activation guard.
+  // 6. … then activate the ones that should be tradeable, through the real activation guard. M01-FR-01 (OB-288 P1): a
+  //    structural change is owner-approved and never the maker's own — the platform administrator asks, the owner
+  //    approves in his own session, and the administrator activates naming the approval.
+  const maker = foundation.users.find((u) => u.role === 'platform_admin')?.userId;
   for (const node of foundation.org) {
     if (!node.activate) continue;
+    if (maker === undefined) {
+      record({ what: `activate ${node.nodeId}`, ok: false, detail: 'no platform administrator in the cast to ask for the owner\'s approval of the activation' });
+      continue;
+    }
+    const asked = await post(
+      `ask to activate ${node.nodeId}`, '/v1/approvals/requests',
+      { kind: 'org_structure_change', subjectRef: node.nodeId, details: { nodeId: node.nodeId, action: 'activate' }, summary: `Activate ${node.name}`, reason: 'pilot foundation', valueMinor: null },
+      `seed-activate-ask-${node.nodeId}`, maker,
+    );
+    const requestId = (asked.body as { requestId?: string } | undefined)?.requestId;
+    if (requestId === undefined) continue;
+    await post(`owner approves activating ${node.nodeId}`, `/v1/approvals/requests/${encodeURIComponent(requestId)}/decide`, { decision: 'approved', reason: 'pilot foundation' }, `seed-activate-decide-${node.nodeId}`);
     await post(
       `activate ${node.nodeId}`,
       `/v1/org/nodes/${encodeURIComponent(node.nodeId)}/activation`,
-      {},
-      `seed-activate-${node.nodeId}`,
+      { approvalId: requestId },
+      `seed-activate-${node.nodeId}`, maker,
     );
   }
 
