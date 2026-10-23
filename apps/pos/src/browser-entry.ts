@@ -38,6 +38,8 @@ import { refundRequiresApproval, type ExchangeSettlementInput } from '../../../p
 import { settle, type Tender } from '../../../packages/tender/src/tender';
 import { billReceipt, billTaxInvoice, type BillReceipt, type BillTaxInvoice } from './bill-receipt';
 import type { TaxInvoiceIdentity, InvoiceLanguage } from '../../../packages/receipt/src/tax-invoice';
+import { fssaiLicenceNumberOn } from '../../../packages/receipt/src/receipt';
+import type { B2cDynamicQrSetting } from '../../../packages/receipt/src/b2c-dynamic-qr';
 import { readMachineReference, type MachineRefReading } from '../../../packages/tender/src/machine-reference';
 
 import { mountDemoBanner, type BannerDocument } from '../../../packages/ui/src/demo-banner';
@@ -149,6 +151,13 @@ export interface PosLane {
   readonly taxInvoice?: TaxInvoiceIdentity | null;
   /** OB-271: the bill's paper when no published receipt template names one (`thermal-80` or `thermal-58`). */
   readonly billPaper?: string;
+  /**
+   * B10: the store's current FSSAI licence (number, last valid day) from the store pack — printed on every bill while it
+   * is in force by this till's clock. Absent / null → no number is printed (never a made-up or expired one).
+   */
+  readonly fssaiLicence?: { readonly number: string; readonly validUntil?: string } | null;
+  /** A22 (OB-326, switched off): the B2C dynamic QR switch and the shop's UPI ID, bank account and IFSC, from the store pack. */
+  readonly b2cDynamicQr?: B2cDynamicQrSetting | null;
 }
 
 /** The browser global this bundle attaches to (typed without needing the DOM lib). */
@@ -629,6 +638,15 @@ function laneDurableTo(
  */
 export type LaneLookup = (receipt: string) => Promise<SaleLookupResult | null>;
 
+/** M12-FR-01: a till's scan-to-line figures for today as the store computer keeps them, or why there are none. */
+export type ScanSpeedRead =
+  | { readonly known: true; readonly day: string; readonly samples: number; readonly p95Ms: number; readonly medianMs: number; readonly maxMs: number; readonly overTargetCount: number; readonly targetMs: number; readonly withinTarget: boolean; readonly droppedSamples: number; readonly waiting: number }
+  | { readonly known: false; readonly why: string; readonly waiting: number };
+
+/** M12-FR-01: how many timed scans the till holds for the box at most, and after how many it sends them. */
+export const SCAN_TIMES_HELD = 1_000;
+export const SCAN_TIMES_SEND_EVERY = 25;
+
 /**
  * OB-264: look up the mirror sale that carries this OLD ERP bill number, over the same loopback READ route — the box finds
  * it in its own register (offline on the box). Resolves `null` when no sale carries it.
@@ -896,6 +914,10 @@ export function bootPos(config?: {
   taxInvoice?: TaxInvoiceIdentity | null;
   /** OB-271: the bill's paper when no receipt template names one (`thermal-80` default, or `thermal-58`). */
   billPaper?: string;
+  /** B10: the store's current FSSAI licence from the store pack — its number printed on every bill while in force. */
+  fssaiLicence?: { readonly number: string; readonly validUntil?: string } | null;
+  /** A22 (OB-326): the B2C dynamic QR — printed on the tax invoice only when switched on and every detail is set. */
+  b2cDynamicQr?: B2cDynamicQrSetting | null;
 }): PosView & {
   /** OB-252: whether this till takes guest sales only — the screen shows it whenever it is on. */
   readonly guestSalesOnly: () => boolean;
@@ -952,6 +974,18 @@ export function bootPos(config?: {
    * Fire-and-forget: never awaited, never on the sale path, nothing sent while a sale is being written.
    */
   readonly devicesSaid: (devices: readonly { readonly kind: string; readonly state: string; readonly detail?: string }[], adapterObservedAt?: string) => void;
+  /**
+   * M12-FR-01 (QG-05 · §32 "scan-to-line p95 ≤ 300 ms — measured and shown"): the screen tells the till how long one scan
+   * took, from the scanner's last key to the line on the screen. Kept here (at most 1 000 waiting), sent to the store
+   * computer every 25 scans — after the scan, never on it, and never while a sale is being saved (hard rule #1).
+   */
+  readonly noteScanTime: (ms: number) => void;
+  /**
+   * M12-FR-01: send what is waiting and read THIS till's scan-to-line figures for today from the store computer — scans
+   * timed, p95, median, slowest, how many over the 300 ms target. `known: false` with the reason when none was timed today
+   * or the box cannot be reached — never a made-up figure (P-08).
+   */
+  readonly scanSpeed: () => Promise<ScanSpeedRead>;
   /** The device re-send itself — for the page and the tests (`running`, `tick`, `lastKnown`). */
   readonly deviceHeartbeat: DeviceHeartbeat;
   readonly till: ReturnType<typeof createTillSession>;
@@ -1092,6 +1126,8 @@ export function bootPos(config?: {
       ...(config?.soldHuids === undefined ? {} : { soldHuids: ((sold) => () => sold)(new Set(config.soldHuids)) }),
       // B14 · B19: the commit's second gate reads each product's flags from the lane's own signed catalogue.
       regulatedFlagsOf: (productId: string) => catalogueRef.cache?.findByProductId(productId)?.regulatedFlags,
+      // A7: the compensation cess each product's HSN carries, from the lane's own signed pack.
+      cessOf: (productId: string) => catalogueRef.cache?.findByProductId(productId)?.cess,
       // B6 · NEW-2: whether a line is weighed comes from the lane's own signed catalogue, not only the line's unit.
       baseUomOf: (productId: string) => catalogueRef.cache?.findByProductId(productId)?.baseUom,
       // OB-252: guest sales only — no customer number, no points or store credit.
@@ -1125,6 +1161,8 @@ export function bootPos(config?: {
       ...(config?.guestSalesOnly === true ? { guestSalesOnly: true } : {}),
       // OB-258: a mirror-pilot refund goes back to "Paid on old system".
       ...(config?.mirrorPilot === true ? { mirrorPilot: true } : {}),
+      // M13-FR-02: a recalled unit coming back is held, never put back for sale — from this lane's own signed pack.
+      recallOf: (productId: string) => catalogueRef.cache?.findByProductId(productId),
     },
     new Ledger(new InMemoryLedgerStore()),
     outbox,
@@ -1379,7 +1417,12 @@ export function bootPos(config?: {
   };
 
   const receiptTemplate = (): PosReceiptTemplate | null => config?.receiptTemplate ?? null;
-  const receiptLines = (): BillReceipt => billReceipt(session.lastBill(), receiptTemplate());
+  // B10: the store's FSSAI licence number on every bill — while it is in force by this till's own clock (offline).
+  const fssaiLicenceNo = (): string | undefined => {
+    const day = session.laneToday();
+    return day === undefined ? undefined : fssaiLicenceNumberOn(config?.fssaiLicence, day);
+  };
+  const receiptLines = (): BillReceipt => billReceipt(session.lastBill(), receiptTemplate(), ((n) => (n === undefined ? {} : { fssaiLicenceNo: n }))(fssaiLicenceNo()));
   // OB-271: the tax invoice of the last real-trading sale, on the template's paper, else the box's own paper, else 80 mm.
   const billPaperTemplate = (): { readonly version: number; readonly header: readonly string[]; readonly footer: readonly string[]; readonly paperFormat?: string } | null => {
     const t = receiptTemplate();
@@ -1387,7 +1430,10 @@ export function bootPos(config?: {
     return config?.billPaper === undefined ? null : { version: 0, header: [], footer: [], paperFormat: config.billPaper };
   };
   const taxInvoice = (options: { readonly language?: InvoiceLanguage; readonly duplicate?: boolean } = {}): BillTaxInvoice =>
-    billTaxInvoice(session.lastBill(), { template: billPaperTemplate(), ...options });
+    billTaxInvoice(session.lastBill(), {
+      template: billPaperTemplate(), ...((n) => (n === undefined ? {} : { fssaiLicenceNo: n }))(fssaiLicenceNo()),
+      ...(config?.b2cDynamicQr === undefined || config.b2cDynamicQr === null ? {} : { b2cDynamicQr: config.b2cDynamicQr }), ...options,
+    });
 
   // The cashier signs in ONCE for both surfaces — the sale and the till name the same person (SP-4b · F09).
   // D04-FR-05 · P-08: the device re-send runs only while somebody is signed in (it is defined further down).
@@ -1700,6 +1746,53 @@ export function bootPos(config?: {
     if (Array.isArray(devices) && devices.length > 0) deviceHeartbeat.update(devices, adapterObservedAt);
   };
 
+  // M12-FR-01: scan-to-line timings, kept here and sent to the box after the scan — never on it (hard rule #1).
+  const scanTimes: number[] = [];
+  let droppedScanTimes = 0;
+  let sendingScanTimes = false;
+  const sendScanTimes = async (): Promise<ScanSpeedRead> => {
+    const waiting = (): number => scanTimes.length;
+    if (session.operator() === undefined) return { known: false, why: 'Sign in to read this till\'s scan speed.', waiting: waiting() };
+    const batch = scanTimes.splice(0, scanTimes.length);
+    const dropped = droppedScanTimes;
+    droppedScanTimes = 0;
+    const putBack = (): void => {
+      // Not sent: the samples wait for the next try (oldest let go past the limit — counted, never hidden).
+      scanTimes.unshift(...batch);
+      const over = scanTimes.length - SCAN_TIMES_HELD;
+      if (over > 0) { scanTimes.splice(0, over); droppedScanTimes += over; }
+      droppedScanTimes += dropped;
+    };
+    try {
+      const base = laneBase(config?.lanePort ?? DEFAULT_LANE_PORT);
+      const response = await fetch(`${base}/lane/peripherals`, { method: 'POST', headers: { 'content-type': 'application/json', ...operatorHeaders() }, body: JSON.stringify({ scanTimings: batch, ...(dropped > 0 ? { droppedScanTimings: dropped } : {}) }) });
+      const front = FRONT_REFUSED[response.status];
+      if (front !== undefined) { putBack(); return { known: false, why: front.laneMessage, waiting: waiting() }; }
+      const r = await response.json() as Record<string, unknown>;
+      if (r['recorded'] !== true) { putBack(); return { known: false, why: typeof r['laneMessage'] === 'string' ? r['laneMessage'] : 'The store computer did not keep the scan timings.', waiting: waiting() }; }
+      const s = r['scanSpeed'] as Record<string, unknown> | null | undefined;
+      if (s === null || s === undefined || typeof s['p95Ms'] !== 'number') return { known: false, why: 'No scan has been timed on this till today yet.', waiting: waiting() };
+      return {
+        known: true, day: String(s['day']), samples: Number(s['samples']), p95Ms: s['p95Ms'], medianMs: Number(s['medianMs']), maxMs: Number(s['maxMs']),
+        overTargetCount: Number(s['overTargetCount']), targetMs: Number(s['targetMs']), withinTarget: s['withinTarget'] === true, droppedSamples: Number(s['droppedSamples'] ?? 0), waiting: waiting(),
+      };
+    } catch {
+      putBack();
+      return { known: false, why: 'This till cannot reach its store computer, so its scan speed cannot be read now. The timings wait here and go when it can.', waiting: waiting() };
+    }
+  };
+  const noteScanTime = (ms: number): void => {
+    if (typeof ms !== 'number' || !Number.isFinite(ms) || ms < 0 || ms > 60_000) return;
+    scanTimes.push(Math.round(ms));
+    if (scanTimes.length > SCAN_TIMES_HELD) { scanTimes.shift(); droppedScanTimes += 1; }
+    if (scanTimes.length >= SCAN_TIMES_SEND_EVERY && !sendingScanTimes && commitsInFlight === 0 && session.operator() !== undefined) {
+      sendingScanTimes = true;
+      // After the scan: a later turn of the event loop, so the line is already on the screen.
+      setTimeout(() => { void sendScanTimes().finally(() => { sendingScanTimes = false; }); }, 0);
+    }
+  };
+  const scanSpeed = (): Promise<ScanSpeedRead> => sendScanTimes();
+
   // D04-FR-05 · M12-FR-01: the customer display's frame, from the till's own basket — no network (see customer-display.ts).
   let displaySeq = 0;
   const customerDisplay = (): CustomerDisplayFrame => {
@@ -1733,7 +1826,7 @@ export function bootPos(config?: {
   const realTrading = (): boolean => config?.realTrading === true;
   const readMachineRef = (typed: string): MachineRefReading => readMachineReference(typed);
 
-  return Object.assign(view, { guestSalesOnly, mirrorPilot, realTrading, taxInvoice, readMachineRef, cardPayments, recordCardRefundOnMachine, pendingRefund, confirmPendingRefund, saleOnBox, refundOnBox, customerDisplay, customerDisplayChannelName, reportDevices, devicesSaid, deviceAdapterClock, deviceHeartbeat, till, nextReceipt, receiptsRemaining, receiptNotice, holdAtTill, heldAtTill, recallAtTill, abandonAtTill, startCardPayment, answerCardPayment, checkCardPayment, voidAtTill, priceChangeValue, priceChangeAtTill, noSaleAtTill, currentBillRef: () => session.billRef(), lookupRefund, lookupRefundByOldBill, readOldBill, noReceiptReturn, receiptTemplate, receiptLines, signIn, signOut, operator, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill, loyaltyWallet, refusedOffers: () => session.refusedOffers() });
+  return Object.assign(view, { guestSalesOnly, mirrorPilot, realTrading, taxInvoice, readMachineRef, cardPayments, recordCardRefundOnMachine, pendingRefund, confirmPendingRefund, saleOnBox, refundOnBox, customerDisplay, customerDisplayChannelName, reportDevices, devicesSaid, noteScanTime, scanSpeed, deviceAdapterClock, deviceHeartbeat, till, nextReceipt, receiptsRemaining, receiptNotice, holdAtTill, heldAtTill, recallAtTill, abandonAtTill, startCardPayment, answerCardPayment, checkCardPayment, voidAtTill, priceChangeValue, priceChangeAtTill, noSaleAtTill, currentBillRef: () => session.billRef(), lookupRefund, lookupRefundByOldBill, readOldBill, noReceiptReturn, receiptTemplate, receiptLines, signIn, signOut, operator, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill, loyaltyWallet, refusedOffers: () => session.refusedOffers() });
 }
 
 // Attach for the view. `app.js` uses `window.posSession` when present and falls back to its
@@ -1761,6 +1854,10 @@ if (browserWindow !== undefined) {
     // OB-271: real trading, when the box says so — each bill is the legal tax invoice, from the shop's setup in the pack.
     ...(lane?.realTrading?.on === true ? { realTrading: true, taxInvoice: lane.taxInvoice ?? null } : {}),
     ...(typeof lane?.billPaper === 'string' ? { billPaper: lane.billPaper } : {}),
+    // B10: the store's FSSAI licence, from the box's store pack.
+    ...(lane?.fssaiLicence === undefined || lane.fssaiLicence === null ? {} : { fssaiLicence: lane.fssaiLicence }),
+    // A22: the B2C dynamic QR switch and details, from the box's store pack (absent → off).
+    ...(lane?.b2cDynamicQr === undefined || lane.b2cDynamicQr === null ? {} : { b2cDynamicQr: lane.b2cDynamicQr }),
     ...(browserWindow.posReceiptTemplate === undefined ? {} : { receiptTemplate: browserWindow.posReceiptTemplate }),
     // The refund policy the box was given (SP-9b-i): without it the till offers no return without a receipt.
     ...(browserWindow.posRefundPolicy === undefined ? {} : { refundPolicy: browserWindow.posRefundPolicy }),

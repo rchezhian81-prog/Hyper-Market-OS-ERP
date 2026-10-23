@@ -146,6 +146,7 @@ import {
   type DayBookSession, type DayBookPorts, type DayBookReadData, type DayBookPostPort, type DayBookPostBody,
   type PostResult as DayBookPostResult,
 } from './day-book-session';
+import { createDayEvidenceSession, openDayEvidencePorts, type DayEvidenceSession } from './day-evidence-session'; // M14-FR-04
 import {
   createDocumentTemplatesSession,
   type DocumentTemplatesSession, type DocumentTemplatePorts, type DocumentTemplateActPort, type TemplateRegisterData, type TemplateKindData,
@@ -5137,6 +5138,8 @@ interface ManagerWindow {
     refresh(tradingDay: string): Promise<DayBookReadData | null>;
     present(data: DayBookReadData): DayBookSession;
   };
+  /** M14-FR-04: the closed-day evidence pack on the day-book screen — live GET reads, never a write. */
+  dayEvidenceSession?: DayEvidenceSession;
   rosteringData?: RosteringScreenData;
   rosteringSession?: RosteringSession;
   /** The shell reads the live roster worklist through this and re-presents it — GET reads, never a write. */
@@ -6339,6 +6342,8 @@ if (browserWindow !== undefined) {
   const dayBookSession = bootDayBook(dayBookData, null, dayBookPostPort);
   if (dayBookSession !== null) {
     browserWindow.dayBookSession = dayBookSession;
+    // M14-FR-04: each close of the chosen day and its sealed evidence pack for the CA (reads only).
+    browserWindow.dayEvidenceSession = createDayEvidenceSession(openDayEvidencePorts(dayBookData?.permissions));
     browserWindow.dayBook = {
       refresh: fetchDayBook,
       present: (data) => createDayBookSession(

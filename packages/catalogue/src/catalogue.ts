@@ -18,6 +18,7 @@
 import { isUom, normaliseUom } from '../../contracts/src/quantity';
 import type { Promotion } from '../../promotions/src/promotions';
 import { TOBACCO_MINIMUM_AGE } from '../../restricted-sales/src/till-gate';
+import type { CessRate } from '../../finance/src/cess';
 import { parseGs1, parseGs1Date, looksLikeGs1, gtinCandidates, type Gs1Read } from '../../gs1/src/gs1';
 
 export type ProductStatus = 'draft' | 'active' | 'discontinued' | 'clearance';
@@ -77,6 +78,13 @@ export interface CatalogueProduct {
    *  class in the pack engine's words (ambient / chilled / frozen / raw_meat / ready_to_eat / fragile / hazardous). Absent
    *  when nobody has said; never defaulted here or anywhere downstream (HA-2). */
   readonly handling?: string;
+  /**
+   * A7 (roadmap v2.1 · Compensation Cess Act 2017): the GST Compensation Cess the product's HSN carries on the pack's build
+   * date — an ad-valorem part and a specific part — from head office's per-HSN cess schedule (CA-confirmed rates, never
+   * code). The till charges it INSIDE the MRP (A9) beside the GST, the bill prints it, and the sale line freezes it for the
+   * GST return. Absent = not cess-liable. Signed with the pack whenever any product carries one.
+   */
+  readonly cess?: CessRate;
 }
 
 export interface CatalogueBarcode {

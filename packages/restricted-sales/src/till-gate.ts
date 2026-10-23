@@ -36,6 +36,10 @@ export const TILL_RULE_FLAG_KEYS = [
   'tobacco', 'packMinimumMinor', 'carryBag', 'plasticMaterial', 'plasticThicknessMicrons', 'bannedSingleUsePlastic',
   // R3: B16 — the last day a tobacco product's health-warning confirmation stays good; B13 — a gold piece and its HUID.
   'tobaccoWarningConfirmedUntil', 'gold', 'huid',
+  // B12 (OB-325): a product under a BIS Quality Control Order, its BIS licence number and the last day that licence is valid.
+  'bisControlled', 'bisLicenceNo', 'bisLicenceValidUntil',
+  // B8 (OB-298): a perishable whose printed date the cashier confirms on the pack before the line is added.
+  'perishable',
 ] as const;
 
 /** B13: a Hallmark Unique ID as the till reads it — six capital letters and digits (BIS). */
@@ -56,6 +60,14 @@ export interface TillRuleFlags {
   readonly gold?: boolean;
   /** B13: its hallmark HUID, when well-formed. A gold piece without one is not sold. */
   readonly huid?: string;
+  /** B12 (OB-325): the product is under a BIS Quality Control Order (packaged drinking water and other QCO goods). */
+  readonly bisControlled?: boolean;
+  /** B12: the BIS licence number its ISI mark is used under, when recorded (non-empty text). */
+  readonly bisLicenceNo?: string;
+  /** B12: the last day (YYYY-MM-DD) that BIS licence is valid. */
+  readonly bisLicenceValidUntil?: string;
+  /** B8 (OB-298): a perishable — the cashier confirms the date printed on the pack before the line is added. */
+  readonly perishable?: boolean;
 }
 
 const posInt = (v: unknown): number | undefined => (typeof v === 'number' && Number.isSafeInteger(v) && v > 0 ? v : undefined);
@@ -76,7 +88,18 @@ export function tillRuleFlagsOf(flags: Readonly<Record<string, unknown>> | undef
     ...(typeof flags['tobaccoWarningConfirmedUntil'] === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(flags['tobaccoWarningConfirmedUntil']) ? { tobaccoWarningConfirmedUntil: flags['tobaccoWarningConfirmedUntil'] } : {}),
     ...(flags['gold'] === true ? { gold: true } : {}),
     ...(typeof flags['huid'] === 'string' && HUID.test(flags['huid']) ? { huid: flags['huid'] } : {}),
+    ...(flags['bisControlled'] === true ? { bisControlled: true } : {}),
+    ...(typeof flags['bisLicenceNo'] === 'string' && flags['bisLicenceNo'].trim() !== '' ? { bisLicenceNo: flags['bisLicenceNo'].trim() } : {}),
+    ...(isCalendarDate(flags['bisLicenceValidUntil']) ? { bisLicenceValidUntil: flags['bisLicenceValidUntil'] } : {}),
+    ...(flags['perishable'] === true ? { perishable: true } : {}),
   };
+}
+
+/** A real calendar date written YYYY-MM-DD (not 2026-02-30). */
+function isCalendarDate(v: unknown): v is string {
+  if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+  const d = new Date(`${v}T00:00:00.000Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
 }
 
 /** True when a product's flags carry anything this gate reads. */
@@ -124,7 +147,13 @@ export type TillRefusalReason =
   /** B13: this HUID has already been sold — a hallmarked piece is sold once. */
   | 'gold_huid_already_sold'
   /** B13: one HUID is one piece — a gold line is exactly one. */
-  | 'gold_huid_more_than_one_piece';
+  | 'gold_huid_more_than_one_piece'
+  /** B12 (OB-325): a BIS-controlled product with no BIS licence number, or no licence expiry date, on record. */
+  | 'bis_licence_missing'
+  /** B12 (OB-325): the product's BIS licence ran out (today is after its last valid day). */
+  | 'bis_licence_expired'
+  /** B12: the lane does not know today's date, so the licence cannot be shown to be current. */
+  | 'bis_licence_not_judged';
 
 export interface TillRefusal {
   readonly reason: TillRefusalReason;
@@ -218,7 +247,37 @@ export function datedAndOnceOnlyRefusals(line: TillGateLine, name: string, ctx: 
         laneMessage: `${name} (HUID ${flags.huid}) is one hallmarked piece — it is sold as exactly one.` });
     }
   }
+  out.push(...bisMarkRefusals(line, name, ctx));
   return out;
+}
+
+/**
+ * B12 (roadmap v2.1 · OB-325, owner 23 Oct 2026, "build, switched ON"): a product under a BIS Quality Control Order —
+ * packaged drinking water and other QCO goods — is sold only with its BIS licence number AND that licence's expiry date on
+ * record, and only while the licence is current by the lane's own clock. Refused at the till offline otherwise; no
+ * override. On by construction: a shop with no BIS-controlled category is simply unaffected.
+ */
+export function bisMarkRefusals(line: TillGateLine, name: string, ctx: TillGateContext): readonly TillRefusal[] {
+  const flags = tillRuleFlagsOf(line.regulatedFlags);
+  // The raw flag too: a malformed licence on a flagged product is a missing one, never a pass.
+  if (flags.bisControlled !== true && line.regulatedFlags?.['bisControlled'] !== true) return [];
+  if (flags.bisLicenceNo === undefined || flags.bisLicenceValidUntil === undefined) {
+    const missing = [flags.bisLicenceNo === undefined ? 'licence number' : null, flags.bisLicenceValidUntil === undefined ? 'licence expiry date' : null].filter((x) => x !== null).join(' and ');
+    return [{ reason: 'bis_licence_missing', productId: line.productId,
+      detail: `${line.productId}: BIS-controlled with no BIS ${missing} on record`,
+      laneMessage: `${name} needs the BIS (ISI mark) licence by law, and its BIS ${missing} is not on record. It cannot be sold — keep it off the bill and ask head office to record the BIS licence.` }];
+  }
+  if (ctx.today === undefined) {
+    return [{ reason: 'bis_licence_not_judged', productId: line.productId,
+      detail: `${line.productId}: the lane does not know today's date, so BIS licence ${flags.bisLicenceNo} cannot be judged current`,
+      laneMessage: `${name} needs a current BIS (ISI mark) licence, and this till does not know today's date to check it. It cannot be sold here — tell the manager.` }];
+  }
+  if (ctx.today > flags.bisLicenceValidUntil) {
+    return [{ reason: 'bis_licence_expired', productId: line.productId,
+      detail: `${line.productId}: BIS licence ${flags.bisLicenceNo} valid until ${flags.bisLicenceValidUntil}; today is ${ctx.today}`,
+      laneMessage: `${name}: its BIS (ISI mark) licence ${flags.bisLicenceNo} ran out on ${flags.bisLicenceValidUntil}. It cannot be sold — keep it off the bill and tell the manager.` }];
+  }
+  return [];
 }
 
 /** The product's own rules (B14 · B19) — what the line is, not where it is weighed. Head office's intake re-asks these. */

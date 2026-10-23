@@ -87,7 +87,22 @@ import { readdir, stat } from 'node:fs/promises';
 import { join, relative, resolve, isAbsolute } from 'node:path';
 import type { OpenFileLog } from './file-log';
 import { openFileLog, readLog } from './file-log';
-import { RECEIPT_COUNTER_DIGITS, RECEIPT_COUNTER_MAX, RECEIPT_PREFIX_MAX, readPublishedSeries, storeComputerDefaultPrefix } from '../../../packages/contracts/src/receipt-number';
+import { RECEIPT_COUNTER_DIGITS, RECEIPT_COUNTER_MAX, RECEIPT_PREFIX_MAX, readPublishedSeries, storeComputerDefaultPrefix, financialYearOf } from '../../../packages/contracts/src/receipt-number';
+
+// A2 (roadmap v2.1 addendum · CGST Rule 46(b)) — THE SERIES RESETS ON THE FINANCIAL-YEAR BOUNDARY. When head office issues a
+// till its prefix FOR a financial year (the pack's series line carries `financialYear`), this register numbers each bill
+// under the prefix of the year the bill is dated in (India time — `financialYearOf`): on 1 April the count starts again at
+// 000001 under the new year's prefix, offline, with no head-office call (P-01). Head office issues next year's prefix
+// before 1 April; a lane whose year has come with no prefix for it numbers under a store-coded fallback made FOR that year
+// (`financial_year_series_not_issued`, said on every answer and flagged at head office) — never the old year's prefix
+// carried on. A lane whose pack carries no year on its series numbers exactly as before, and its status says it is not
+// year-scoped (P-08).
+//
+// THE CLOCK (§31.1 · OB-327). Which year a bill is in comes from this box's clock. The clock guard (owned by the store
+// computer's offline-queues work) tells this register, through `seriesClock`, whether the clock can be trusted: while it
+// cannot, a lane keeps numbering under the year it last numbered in (last-known-good) rather than switching on a clock
+// that may be wrong — the switch happens once the clock is trusted again. Until that guard is wired, the box's own clock
+// is used and is trusted (the seam: `ReceiptNumbers.open({ seriesClock })`).
 
 /** A lane's reserved range, as head office publishes it in the store pack (M01-FR-02). */
 export interface PackReceiptSeries {
@@ -103,6 +118,14 @@ export interface PackReceiptSeries {
    * above it. Absent (a pack file, an older pack) → this box uses the prefix only once its own disk has numbered under it.
    */
   readonly bankedThrough?: number;
+  /** A2: the financial year this prefix numbers ("2026-27"). Absent → a series with no year (it never resets). */
+  readonly financialYear?: string;
+}
+
+/** A2 · §31.1: this box's clock as the clock guard judges it — the instant, and whether it can be trusted for a switch. */
+export interface SeriesClock {
+  readonly nowIso: string;
+  readonly trusted: boolean;
 }
 
 /**
@@ -116,7 +139,9 @@ export type FallbackReason =
   | 'more_than_one_store' | 'store_count_not_said' | 'no_numbering_history' | 'own_numbering_too_long'
   | 'published_series_breaks_rule' | 'published_count_not_known'
   /** OB-87: this box's data folder was restored from a backup (or may have been) — a fresh prefix until head office answers. */
-  | 'restored_from_backup';
+  | 'restored_from_backup'
+  /** A2: the till's prefixes are per financial year, and head office has issued none for the year this bill is dated in. */
+  | 'financial_year_series_not_issued';
 
 /** OB-87: why the box judged its data folder restored (said on the status read and kept on the log). */
 export type RestoreSign = 'witness_ahead_of_log' | 'witness_missing' | 'witness_of_another_box' | 'witness_unavailable';
@@ -145,6 +170,8 @@ export type IssueOutcome =
   | {
     readonly issued: true; readonly receiptNumber: string; readonly remaining: number; readonly runningLow: boolean;
     readonly source: SeriesSource; readonly laneMessage?: string; readonly fallbackBecause?: FallbackReason;
+    /** A2: the financial year the number is in, when the till's series is year-scoped. */
+    readonly financialYear?: string;
   }
   | { readonly issued: false; readonly refusedBecause: IssueRefusal; readonly laneMessage: string };
 
@@ -169,6 +196,11 @@ export interface ReceiptNumberStatus {
   readonly fallbackBecause?: FallbackReason;
   /** OB-87: a held restore (and why), or a witness fault — said on the status read (P-08). */
   readonly restore?: RestoreState;
+  /** A2: whether this till's series resets on the financial-year boundary (head office issued it per year), and the year. */
+  readonly financialYearScoped: boolean;
+  readonly financialYear?: string;
+  /** A2 · §31.1: false while the clock guard does not trust this box's clock — the year in use is then last-known-good. */
+  readonly clockTrusted: boolean;
 }
 
 /** OB-87: whether this box numbers under a fresh prefix after a (possible) restore, and why; and any witness fault. */
@@ -201,6 +233,8 @@ export interface WitnessHealth {
 interface Issued {
   readonly laneId: string; readonly seriesKey: string; readonly seq: number; readonly receiptNumber: string;
   readonly requestKey: string; readonly issuedTo: string; readonly at: string;
+  /** A2: the financial year the number was given in (a year-scoped series only). */
+  readonly financialYear?: string;
 }
 type LogRecord =
   | ({ readonly kind: 'issued' } & Issued)
@@ -271,6 +305,8 @@ const fallbackWords = (because: FallbackReason, prefix: string, detail: string):
       return `The bill-number range in this store computer's setup for this till breaks the bill-number rule (${detail}), so it is not used: ${own} Tell the manager to issue this till's prefix from head office.`;
     case 'published_count_not_known':
       return `Head office's prefix ${detail} for this till is in this store computer's setup, but head office has not said how far that prefix has been used and this store computer has never numbered under it (it may be a replacement), so to never repeat a bill number ${own} It moves to ${detail} once head office's setup arrives. Tell the manager.`;
+    case 'financial_year_series_not_issued':
+      return `Bill numbers start again every financial year, and head office has not issued this till its prefix for ${detail}, so ${own} Tell the manager to issue this till's prefix for ${detail}.`;
     case 'restored_from_backup':
       return `This store computer's data was restored from a backup, or may have been (${detail}), so a bill number it gave after that backup could be given again. To never repeat one, this store computer numbers its bills under a brand-new store prefix ${prefix} that has never been used, so they never clash with another bill. It goes back to the till's own prefix, above the last bill head office holds, as soon as head office's latest setup arrives. Tell the manager.`;
   }
@@ -319,6 +355,8 @@ export class ReceiptNumbers {
       readonly published: () => readonly PackReceiptSeries[] | null;
       readonly numbering: () => ReceiptNumberingContext;
       readonly now: () => string;
+      /** A2 · §31.1: the clock the financial year is judged by (the clock guard's seam); absent → `now`, trusted. */
+      readonly seriesClock?: () => SeriesClock;
     },
     /** OB-85: this box's own identity, from the first line of its log — the fallback prefix is never another box's. */
     readonly boxIdentity: string,
@@ -357,6 +395,11 @@ export class ReceiptNumbers {
      * `<data folder>-witness`). Absent or `null` → no witness is kept (a unit test of the numbering alone): no detection.
      */
     readonly witnessDir?: string | null;
+    /**
+     * A2 · §31.1 · OB-327 — THE SEAM for the clock guard: this box's clock and whether it is trusted. While it is not, a
+     * year-scoped lane keeps the year it last numbered in. Absent → the box's own clock (`now`), trusted.
+     */
+    readonly seriesClock?: () => SeriesClock;
   }): Promise<ReceiptNumbers> {
     const log = await openFileLog({ dataDir: input.dataDir, capacityBytes: input.capacityBytes, fileName: 'receipt-numbers.log' });
     const now = input.now ?? (() => new Date().toISOString());
@@ -401,7 +444,7 @@ export class ReceiptNumbers {
         diskIdentity: diskIdentity ?? identity, lineage, freshDisk, now,
       });
     if (witness?.restore !== undefined) { identity = witness.restore.identity; hold = { because: witness.restore.because, at: witness.restore.at }; }
-    return new ReceiptNumbers(log, { published: input.published, numbering: input.numbering ?? (() => ({ storeId: null, storesInBusiness: null })), now }, identity, restored, input.committed ?? [], unreadable, hold, witness);
+    return new ReceiptNumbers(log, { published: input.published, numbering: input.numbering ?? (() => ({ storeId: null, storesInBusiness: null })), now, ...(input.seriesClock === undefined ? {} : { seriesClock: input.seriesClock }) }, identity, restored, input.committed ?? [], unreadable, hold, witness);
   }
 
   /**
@@ -662,6 +705,22 @@ export class ReceiptNumbers {
     const hasHistory = (prefix: string): boolean => this.cursor.has(`${laneId}|${prefix}`);
     // 1. Head office's prefix — only one that obeys the OB-81 rule, and only once this box knows where its count stands.
     const mine = (this.deps.published() ?? []).filter((s) => isObj(s) && s.laneId === laneId);
+    // A2: a year-scoped till numbers under the prefix of the year the bill is dated in — or a fallback made FOR that year.
+    const yearly = mine.filter((s) => s.financialYear !== undefined);
+    if (yearly.length > 0) {
+      const fy = this.yearFor(laneId);
+      const p = yearly.find((s) => s.financialYear === fy && readPublishedSeries(s).ok);
+      if (p === undefined) {
+        const prefix = storeComputerDefaultPrefix(ctx.storeId ?? '', laneId, `${this.boxIdentity}\u0000FY${fy}`);
+        return {
+          laneId, prefix, padTo: BOX_SERIES_PAD, rangeStart: 1, rangeEnd: BOX_SERIES_END, source: 'store_default', floor: 0, financialYear: fy,
+          fallbackBecause: 'financial_year_series_not_issued', words: fallbackWords('financial_year_series_not_issued', prefix, fy),
+        };
+      }
+      const banked = countOrUndefined(p.bankedThrough, 0);
+      if (banked === undefined && !hasHistory(p.prefix)) return { ...fallback('published_count_not_known', p.prefix), financialYear: fy };
+      return { ...p, padTo: RECEIPT_COUNTER_DIGITS, source: 'published', floor: banked ?? 0, financialYear: fy };
+    }
     if (mine.length > 0) {
       const p = mine.find((s) => readPublishedSeries(s).ok);
       if (p === undefined) {
@@ -680,6 +739,23 @@ export class ReceiptNumbers {
     const bankedOwn = countOrUndefined(ctx.boxSeriesBankedThrough?.[laneId], 1);
     if (bankedOwn === undefined && !hasHistory(own)) return fallback('no_numbering_history');
     return { laneId, prefix: own, padTo: BOX_SERIES_PAD, rangeStart: 1, rangeEnd: BOX_SERIES_END, source: 'this_box', floor: bankedOwn ?? 0, words: NOT_PUBLISHED };
+  }
+
+  /** A2: the clock this register judges the year by (the clock guard's, else the box's own — trusted). */
+  private clockNow(): SeriesClock {
+    try { return this.deps.seriesClock?.() ?? { nowIso: this.deps.now(), trusted: true }; } catch { return { nowIso: this.deps.now(), trusted: false }; }
+  }
+
+  /**
+   * A2 · §31.1: the financial year a lane's next bill is in — by the clock, or, while the clock guard does not trust it, the
+   * year this lane last numbered in (last-known-good; nothing switches on a doubtful clock).
+   */
+  private yearFor(laneId: string): string {
+    const clock = this.clockNow();
+    const byClock = financialYearOf(clock.nowIso) ?? financialYearOf(this.deps.now()) ?? '';
+    if (clock.trusted) return byClock;
+    const last = [...this.issued.values()].filter((i) => i.laneId === laneId && typeof i.financialYear === 'string').sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0)).at(-1);
+    return last?.financialYear ?? byClock;
   }
 
   /** The next count under a series: above this box's own highest under the prefix and above head office's banked count. */
@@ -715,6 +791,7 @@ export class ReceiptNumbers {
         issued: true, receiptNumber, remaining, runningLow, source: s.source,
         ...(words.length === 0 ? {} : { laneMessage: words.join(' ') }),
         ...(s.fallbackBecause === undefined ? {} : { fallbackBecause: s.fallbackBecause }),
+        ...(s.financialYear === undefined ? {} : { financialYear: s.financialYear }),
       };
     };
     // A lost reply, re-asked: the same number, never a second one.
@@ -729,6 +806,7 @@ export class ReceiptNumbers {
     }
     const record: LogRecord = {
       kind: 'issued', laneId, seriesKey: keyOf(s), seq, receiptNumber: format(s, seq), requestKey: input.requestKey, issuedTo: input.issuedTo, at: this.deps.now(),
+      ...(s.financialYear === undefined ? {} : { financialYear: s.financialYear }),
     };
     try {
       await this.log.append(JSON.stringify(record));
@@ -792,6 +870,9 @@ export class ReceiptNumbers {
       ...(s.words === undefined ? {} : { laneMessage: s.words }),
       ...(s.fallbackBecause === undefined ? {} : { fallbackBecause: s.fallbackBecause }),
       ...(this.restoreHold === undefined && this.witnessFault === undefined ? {} : { restore: this.restoreState() }),
+      financialYearScoped: s.financialYear !== undefined,
+      ...(s.financialYear === undefined ? {} : { financialYear: s.financialYear }),
+      clockTrusted: this.clockNow().trusted,
     };
   }
 

@@ -17,6 +17,7 @@
 // silently dropped from the return. Pure and deterministic; the aggregation reuses `gstr1Table12`.
 
 import { extractInclusiveGst, InvalidInclusiveTaxInput, type PlaceOfSupply } from './inclusive-tax';
+import { splitInclusiveWithCess, readCessRate, InvalidCessInput, type CessRate } from './cess';
 import { validateHsnForTurnover, InvalidHsnInput } from './hsn';
 import { gstr1Table12, type OutwardSupplyLine, type ClassifiedLine, type Gstr1Table12, type HsnSummaryRow } from './gstr1';
 
@@ -33,6 +34,11 @@ export interface SoldTaxLine {
   readonly hsnCode?: string;
   /** The GST rate (bps) the till charged, frozen at the time of supply. Used with `hsnCode` above. */
   readonly rateBps?: number;
+  /**
+   * A7: the compensation cess the till charged the line under, frozen at the time of supply (from its signed pack). The
+   * line's value of supply then comes out with the GST AND the cess pulled back — the same arithmetic the till ran.
+   */
+  readonly cess?: CessRate;
 }
 
 /** The filer's product→tax mapping for the period: the HSN and rate this product is filed under. */
@@ -131,21 +137,33 @@ export function salesToOutwardSupplies(input: {
       addUnmapped(l, 'invalid_hsn', e instanceof InvalidHsnInput ? e.message : 'HSN malformed'); continue;
     }
     const pos = info.placeOfSupply ?? defaultPos;
-    let taxableMinor: number, cgstMinor = 0, sgstMinor = 0, igstMinor = 0;
+    let taxableMinor: number, cgstMinor = 0, sgstMinor = 0, igstMinor = 0, cessMinor = 0;
+    const cess = readCessRate(l.cess);
     try {
-      const gst = extractInclusiveGst({ mrpMinor: l.lineTotalMinor, rateBps: info.rateBps, placeOfSupply: pos });
-      taxableMinor = gst.taxableMinor;
-      for (const c of gst.components) {
-        if (c.component === 'CGST') cgstMinor = c.amountMinor;
-        else if (c.component === 'SGST') sgstMinor = c.amountMinor;
-        else igstMinor = c.amountMinor;
+      if (cess !== undefined) {
+        // A7: GST and the compensation cess both come out of the price, exactly as the till split them.
+        if (pos === 'intra_state' && info.rateBps % 2 !== 0) throw new InvalidInclusiveTaxInput(`an intra-State rate must be even to split into equal CGST + SGST halves (got ${info.rateBps} bps)`);
+        const s = splitInclusiveWithCess({ grossMinor: l.lineTotalMinor, gstRateBps: info.rateBps, cess, quantity: l.quantityMinor });
+        taxableMinor = s.taxableMinor;
+        cessMinor = s.cessMinor;
+        if (pos === 'inter_state') igstMinor = s.gstMinor;
+        else { cgstMinor = Math.floor(s.gstMinor / 2); sgstMinor = s.gstMinor - cgstMinor; }
+      } else {
+        const gst = extractInclusiveGst({ mrpMinor: l.lineTotalMinor, rateBps: info.rateBps, placeOfSupply: pos });
+        taxableMinor = gst.taxableMinor;
+        for (const c of gst.components) {
+          if (c.component === 'CGST') cgstMinor = c.amountMinor;
+          else if (c.component === 'SGST') sgstMinor = c.amountMinor;
+          else igstMinor = c.amountMinor;
+        }
       }
     } catch (e) {
-      addUnmapped(l, 'cannot_split_tax', e instanceof InvalidInclusiveTaxInput ? e.message : 'tax could not be split'); continue;
+      addUnmapped(l, 'cannot_split_tax', e instanceof InvalidInclusiveTaxInput || e instanceof InvalidCessInput ? e.message : 'tax could not be split'); continue;
     }
     const line: OutwardSupplyLine = {
       hsnCode: info.hsnCode, quantityMinor: l.quantityMinor, uom: l.uom,
       taxableMinor, rateBps: info.rateBps, cgstMinor, sgstMinor, igstMinor,
+      ...(cessMinor === 0 ? {} : { cessMinor }),
     };
     lines.push({ ...line, supplyKind: 'b2c' });
   }
@@ -189,6 +207,8 @@ export interface NetHsnRow {
   readonly netIgstMinor: number;
   /** Net quantity (sales − returns), for the HSN summary. */
   readonly netQuantityMinor: number;
+  /** A7: the netted compensation cess (GSTN `csamt`) — present only when either side carries one. */
+  readonly netCessMinor?: number;
 }
 
 export interface NetGstr1Table12 {
@@ -208,6 +228,7 @@ interface NetAcc {
   hsnCode: string; rateBps: number;
   salesTaxableMinor: number; salesTaxMinor: number; salesCgstMinor: number; salesSgstMinor: number; salesIgstMinor: number; salesQtyMinor: number;
   returnsTaxableMinor: number; returnsTaxMinor: number; returnsCgstMinor: number; returnsSgstMinor: number; returnsIgstMinor: number; returnsQtyMinor: number;
+  salesCessMinor?: number; returnsCessMinor?: number;
 }
 
 /**
@@ -227,12 +248,14 @@ export function netTable12(sales: Gstr1Table12, returns: Gstr1Table12): NetGstr1
     const row = seed(r);
     row.salesTaxableMinor += r.taxableMinor; row.salesTaxMinor += rowTax(r);
     row.salesCgstMinor += r.cgstMinor; row.salesSgstMinor += r.sgstMinor; row.salesIgstMinor += r.igstMinor; row.salesQtyMinor += r.quantityMinor;
+    if (r.cessMinor !== undefined) row.salesCessMinor = (row.salesCessMinor ?? 0) + r.cessMinor;
     acc.set(key(r), row);
   }
   for (const r of returns.rows) {
     const row = seed(r);
     row.returnsTaxableMinor += r.taxableMinor; row.returnsTaxMinor += rowTax(r);
     row.returnsCgstMinor += r.cgstMinor; row.returnsSgstMinor += r.sgstMinor; row.returnsIgstMinor += r.igstMinor; row.returnsQtyMinor += r.quantityMinor;
+    if (r.cessMinor !== undefined) row.returnsCessMinor = (row.returnsCessMinor ?? 0) + r.cessMinor;
     acc.set(key(r), row);
   }
   const rows: NetHsnRow[] = [...acc.values()]
@@ -247,6 +270,7 @@ export function netTable12(sales: Gstr1Table12, returns: Gstr1Table12): NetGstr1
       netSgstMinor: r.salesSgstMinor - r.returnsSgstMinor,
       netIgstMinor: r.salesIgstMinor - r.returnsIgstMinor,
       netQuantityMinor: r.salesQtyMinor - r.returnsQtyMinor,
+      ...(r.salesCessMinor === undefined && r.returnsCessMinor === undefined ? {} : { netCessMinor: (r.salesCessMinor ?? 0) - (r.returnsCessMinor ?? 0) }),
     }));
   const salesTaxableMinor = sales.totalTaxableMinor;
   const salesTaxMinor = sales.totalTaxMinor;
@@ -270,8 +294,8 @@ export function netTable12(sales: Gstr1Table12, returns: Gstr1Table12): NetGstr1
 // check the document-path export already carries. Faithful to the documented schema; the portal's offline
 // tool is the authority.
 
-export interface GstnB2csLine { readonly sply_ty: 'INTRA' | 'INTER'; readonly typ: 'OE'; readonly rt: number; readonly txval: number; readonly camt: number; readonly samt: number; readonly iamt: number; }
-export interface GstnHsnLine { readonly num: number; readonly hsn_sc: string; readonly rt: number; readonly qty: number; readonly txval: number; readonly camt: number; readonly samt: number; readonly iamt: number; }
+export interface GstnB2csLine { readonly sply_ty: 'INTRA' | 'INTER'; readonly typ: 'OE'; readonly rt: number; readonly txval: number; readonly camt: number; readonly samt: number; readonly iamt: number; readonly csamt?: number; }
+export interface GstnHsnLine { readonly num: number; readonly hsn_sc: string; readonly rt: number; readonly qty: number; readonly txval: number; readonly camt: number; readonly samt: number; readonly iamt: number; readonly csamt?: number; }
 export interface GstnB2cGstr1 {
   readonly gstin: string;
   readonly fp: string;
@@ -287,20 +311,23 @@ const rupees2 = (minor: number): number => Math.round(minor) / 100;
  * HSN summary. Intra vs inter is read per row from where the tax fell (IGST ⇒ inter). Pure.
  */
 export function toGstnB2cFromSales(net: NetGstr1Table12, meta: { readonly gstin: string; readonly fp: string }): GstnB2cGstr1 {
-  const byRate = new Map<string, { sply_ty: 'INTRA' | 'INTER'; rt: number; txval: number; camt: number; samt: number; iamt: number }>();
+  const byRate = new Map<string, { sply_ty: 'INTRA' | 'INTER'; rt: number; txval: number; camt: number; samt: number; iamt: number; csamt?: number }>();
   for (const r of net.rows) {
     const inter = r.netIgstMinor !== 0 && r.netCgstMinor === 0 && r.netSgstMinor === 0;
     const k = `${inter ? 'INTER' : 'INTRA'}|${r.rateBps}`;
     const row = byRate.get(k) ?? { sply_ty: inter ? 'INTER' as const : 'INTRA' as const, rt: r.rateBps / 100, txval: 0, camt: 0, samt: 0, iamt: 0 };
     row.txval += r.netTaxableMinor; row.camt += r.netCgstMinor; row.samt += r.netSgstMinor; row.iamt += r.netIgstMinor;
+    // A7: the compensation cess goes in `csamt`, beside the GST it was charged with.
+    if (r.netCessMinor !== undefined) row.csamt = (row.csamt ?? 0) + r.netCessMinor;
     byRate.set(k, row);
   }
   const b2cs: GstnB2csLine[] = [...byRate.values()]
     .sort((a, b) => a.sply_ty.localeCompare(b.sply_ty) || a.rt - b.rt)
-    .map((r) => ({ sply_ty: r.sply_ty, typ: 'OE', rt: r.rt, txval: rupees2(r.txval), camt: rupees2(r.camt), samt: rupees2(r.samt), iamt: rupees2(r.iamt) }));
+    .map((r) => ({ sply_ty: r.sply_ty, typ: 'OE', rt: r.rt, txval: rupees2(r.txval), camt: rupees2(r.camt), samt: rupees2(r.samt), iamt: rupees2(r.iamt), ...(r.csamt === undefined ? {} : { csamt: rupees2(r.csamt) }) }));
   const data: GstnHsnLine[] = net.rows.map((r, i) => ({
     num: i + 1, hsn_sc: r.hsnCode, rt: r.rateBps / 100, qty: r.netQuantityMinor / 1000,
     txval: rupees2(r.netTaxableMinor), camt: rupees2(r.netCgstMinor), samt: rupees2(r.netSgstMinor), iamt: rupees2(r.netIgstMinor),
+    ...(r.netCessMinor === undefined ? {} : { csamt: rupees2(r.netCessMinor) }),
   }));
   return { gstin: meta.gstin, fp: meta.fp, b2cs, hsn: { data } };
 }

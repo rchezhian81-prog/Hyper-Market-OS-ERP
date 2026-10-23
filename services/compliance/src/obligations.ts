@@ -15,7 +15,7 @@ import type { Route } from '../../kernel/src/index';
 import { apiError, assertRecordBranchInScope, recordsInScope, assertBranchInScope } from '../../kernel/src/index';
 import {
   registerObligation, expiryAlerts, isCompliant, closeObligation, missingEvidence, attachEvidence,
-  MissingResponsiblePersonError,
+  MissingResponsiblePersonError, currentFoodLicence,
   type Obligation, type ObligationKind, type EvidenceRef,
 } from '../../../packages/compliance/src/index';
 
@@ -87,6 +87,26 @@ export function complianceRoutes(deps: ComplianceDeps): readonly Route[] {
         if (onFile !== undefined) assertRecordBranchInScope(ctx, onFile.branchId);
         await deps.recordRegister(ctx.tenantId, obligation);
         return { status: 201, body: { obligationId, kind, authority: obligation.authority, expiresOn: obligation.expiresOn ?? null } };
+      },
+    },
+    {
+      // B10: the store's current FSSAI licence number for display — on its bills (via the store pack) and display board.
+      // None in force → `licence: null`, said: the bill then prints no number rather than a wrong or expired one.
+      api: 'API-11', method: 'GET', path: '/v1/compliance/fssai-licence',
+      permission: 'compliance.obligation.read',
+      handler: async (ctx) => {
+        const storeId = ctx.query['storeId'];
+        if (typeof storeId !== 'string' || storeId.trim() === '') {
+          throw apiError(400, { code: 'fssai_licence_needs_a_store', whatHappened: 'Say which store: ?storeId=…', wasItSaved: 'not_saved', nextSafeAction: 'Send the store id.' });
+        }
+        assertRecordBranchInScope(ctx, storeId);
+        const licence = currentFoodLicence(await deps.obligations(ctx.tenantId), { branchId: storeId, day: today(deps) });
+        return { status: 200, body: {
+          storeId, licence: licence ?? null,
+          said: licence === undefined
+            ? 'No FSSAI licence with its number is in force for this store on the register today, so the bills print no licence number. Register the licence (authority FSSAI, its number as the reference) with its dates.'
+            : `FSSAI Lic. No. ${licence.number}${licence.validUntil === undefined ? '' : `, valid until ${licence.validUntil}`}.`,
+        } };
       },
     },
     {

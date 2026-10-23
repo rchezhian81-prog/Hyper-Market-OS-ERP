@@ -1485,7 +1485,13 @@ export async function startEdge(
   // RECEIPT NUMBERS (audit PF-04 · M01-FR-02): issued by this box from the lane's published range (else its own sequence,
   // said aloud), on its disk before the till hears them, and bound to the record that used them. The numbers already on
   // the sales and refunds logs count as used, so a crash between a record and its "used" line frees nothing.
+  // A2 · §31.1 · OB-327: the financial year a bill is numbered in is judged by this box's clock — trusted unless the clock
+  // check (opened below) has found it far enough out that bills are being flagged (OB-327's 5 minutes, or this store
+  // computer's own setting). While it is that far out, a till keeps the year it last numbered in (last-known-good) and
+  // moves to the new year's prefix once the clock is back in step. Never blocks a sale (hard rule #1).
+  const seriesClockRef: { guard?: ClockGuard } = {};
   const receiptNumbers = tillOperators === null ? null : await ReceiptNumbers.open({
+    seriesClock: () => ({ nowIso: new Date().toISOString(), trusted: seriesClockRef.guard?.check().verdict !== 'flag_bills' }),
     dataDir: settings['EDGE_DATA_DIR']!, capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']),
     // OB-87 "A": the witness log lives OUTSIDE the data folder, so a backup of the data folder never carries it and a
     // restored (older) folder is told apart from an ordinary restart (receipt-numbers.ts header).
@@ -1808,6 +1814,7 @@ export async function startEdge(
   const clockSetting = readClockThresholds(settings['EDGE_CLOCK_WARN_SECONDS'], settings['EDGE_CLOCK_FLAG_SECONDS']);
   if (clockSetting.problem !== undefined) say(clockSetting.problem);
   const clockGuard = await ClockGuard.open(clockSetting.thresholds, settings['EDGE_DATA_DIR']!);
+  seriesClockRef.guard = clockGuard; // A2: the bill series' year switch now follows the clock check
   /** OB-333: the quality-hold releases this box's facilities screen took and still holds (the device-events queue). */
   const boxQualityReleases = (): readonly { batchId: string; releasedBy: string; at: string; state: string; reason: string | null }[] => deviceEventsOutbox.all()
     .filter((i) => i.event.type === 'QualityHoldReleaseDecided')

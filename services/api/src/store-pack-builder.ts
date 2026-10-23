@@ -35,8 +35,9 @@ import {
   catalogueAdapter, productMasterAdapter, inventoryAdapter, effectiveGrants, peopleAdapter, warehouseAdapter, orgStructureAdapter, deviceRegistryAdapter,
   foldPurchaseOrders, purchaseAdapter, lpRulesAdapter, allCountReconciliations, adjustmentRequestAdapter, goodsReceiptAdapter,
   planogramStoreAdapter, shelfCountAdapter, assortmentAdapter, spacePerformanceAdapter, displayFundingAdapter, averageBuyingCosts,
-  issuedReceiptSeries, bankedReceiptCounts,
+  issuedReceiptSeries, bankedReceiptCounts, complianceAdapter,
 } from './adapters';
+import { currentFoodLicence } from '../../../packages/compliance/src/obligations';
 import { inForcePlanogram } from '../../inventory/src/planograms';
 import { ROLE_CATALOGUE } from './roles';
 import { DEFAULT_MATCH_POLICY } from '../../purchase/src/index';
@@ -59,6 +60,8 @@ export interface StorePackBuildInput {
   readonly rules?: (tenantId: string, storeId: string) => Promise<StoreRules | undefined>;
   /** Verifier r18 OB85-2: where the bill-number high-water snapshot lives (production: `projection_snapshot`). Absent → per process. */
   readonly snapshots?: SnapshotStore;
+  /** A22 (OB-326, switched off): the shop's B2C dynamic QR switch and details from store setup. Absent → never sent. */
+  readonly b2cDynamicQr?: (tenantId: string) => Promise<{ readonly on: boolean; readonly upiId?: string; readonly bankAccountNo?: string; readonly bankIfsc?: string }>;
 }
 
 /**
@@ -112,8 +115,15 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
     const branch = (await org.nodes(tenantId)).find((n) => n.nodeId === storeId);
     const registration = branch?.gstin === undefined ? undefined : (await org.registrations(tenantId)).find((r) => r.gstin === branch.gstin);
     const taxInvoice = registration === undefined ? undefined : { legalName: registration.legalName, gstin: registration.gstin, placeOfBusiness: [...(branch?.placeOfBusiness ?? [])] };
+    // B10: the store's current FSSAI licence from the compliance register — printed on every bill. Absent when none is in
+    // force (the till prints no number rather than a wrong one).
+    const fssaiLicence = currentFoodLicence(await complianceAdapter({ store, now }).obligations(tenantId), { branchId: storeId, day: now().slice(0, 10) });
+    // A22 (OB-326): the B2C dynamic QR rides only when the shop switched it on — with the details it has given.
+    const b2cQr = input.b2cDynamicQr === undefined ? undefined : await input.b2cDynamicQr(tenantId);
     sections['policies'] = {
+      ...(b2cQr === undefined || !b2cQr.on ? {} : { b2cDynamicQr: b2cQr }),
       ...(taxInvoice === undefined ? {} : { taxInvoice }),
+      ...(fssaiLicence === undefined ? {} : { fssaiLicence: { number: fssaiLicence.number, ...(fssaiLicence.validUntil === undefined ? {} : { validUntil: fssaiLicence.validUntil }) } }),
       storeId, branchId: storeId, branchName: (await input.storeName(tenantId, storeId)) ?? storeId,
       tradingDayCutoff: settings.tradingDayCutoff, staleAfterSeconds: settings.staleAfterSeconds,
       countApprovalThresholdMinor: settings.countApprovalThresholdMinor, handoverToleranceMinor: settings.handoverToleranceMinor,

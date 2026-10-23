@@ -187,7 +187,69 @@ el('post').addEventListener('click', () => {
   })();
 });
 el('load').addEventListener('click', () => { el('result').hidden = true; void refresh(); });
-el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
+el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); void paintEvidence(); });
+
+// ── M14-FR-04: the closed-day evidence pack for the CA — each close of the chosen day, and its download ──────────
+function evidenceStatus(status) {
+  const p = el('evidence-state');
+  p.hidden = status === null;
+  if (status === null) return;
+  p.className = `result tone-${status.tone}`;
+  el('evidence-state-icon').textContent = status.icon;
+  el('evidence-state-text').textContent = status.label;
+  p.setAttribute('aria-label', status.announcement || status.label);
+}
+function iconButton(icon, word, id) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'quiet';
+  b.id = id;
+  if (window.sreIcon && typeof window.sreIcon.withWord === 'function') b.append(window.sreIcon.withWord(icon, word));
+  else b.textContent = word;
+  return b;
+}
+function saveFile(file) {
+  const blob = new Blob([file.content], { type: file.mime });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = file.fileName;
+  document.body.append(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 0);
+}
+async function paintEvidence() {
+  const ev = window.dayEvidenceSession;
+  const section = el('evidence');
+  if (!ev) { section.hidden = true; return; }
+  section.hidden = false;
+  el('evidence-heading').textContent = ev.text(lang, 'heading');
+  el('evidence-lead').textContent = ev.text(lang, 'lead');
+  const { rows, status } = await ev.rows(lang, el('day').value);
+  el('evidence-rows').replaceChildren(...rows.map((r) => {
+    const li = document.createElement('li');
+    li.className = `row tone-${r.status.tone}`;
+    li.id = `ev-${r.dayCloseId}`;
+    const head = document.createElement('div'); head.className = 'head';
+    const headline = document.createElement('span'); headline.className = 'headline'; headline.textContent = r.storeLabel;
+    head.append(headline);
+    const actions = document.createElement('div'); actions.className = 'facts';
+    for (const [format, icon, key] of [['csv', 'file-text', 'csvBtn'], ['json', 'files', 'jsonBtn']]) {
+      const b = iconButton(icon, ev.text(lang, key), `ev-${format}-${r.dayCloseId}`);
+      b.addEventListener('click', () => {
+        void (async () => {
+          const out = await ev.download(lang, r.dayCloseId, format);
+          if (out.file) saveFile(out.file);
+          evidenceStatus(out.status);
+        })();
+      });
+      actions.append(b);
+    }
+    li.append(head, statusNode(r.status), actions);
+    return li;
+  }));
+  evidenceStatus(status);
+}
+el('day').addEventListener('change', () => { void paintEvidence(); });
 
 el('day').value = defaultDay();
 el('sample').hidden = window.dayBookSession !== undefined;
@@ -201,6 +263,7 @@ async function refresh() {
   if (!api || typeof api.refresh !== 'function') return;
   const data = await api.refresh(el('day').value);
   if (data) { session = api.present(data); paint(); }
+  await paintEvidence();
 }
 refresh();
 

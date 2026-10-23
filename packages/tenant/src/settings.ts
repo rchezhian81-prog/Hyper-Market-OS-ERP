@@ -220,6 +220,32 @@ export const SETTINGS = {
     label: 'Receipt paper size',
     defaultValue: 'thermal-80',
   } as TenantSetting<string>,
+  /**
+   * A22 (roadmap v2.1 · CGST Notification 14/2020-CT · owner OB-326 "build, switched OFF"): the dynamic QR code on every
+   * B2C invoice, required only above ₹500 crore aggregate turnover. OFF by default — SRE is far below it. With it on, the
+   * QR prints only once the UPI ID, bank account number and IFSC below are all given; until then the till prints none and
+   * says which is "not set" (never a made-up detail).
+   */
+  INVOICE_B2C_DYNAMIC_QR_ON: {
+    key: 'invoice.b2c_dynamic_qr.on',
+    label: 'Print the B2C dynamic QR on every bill (only required above ₹500 crore turnover)',
+    defaultValue: false,
+  } as TenantSetting<boolean>,
+  INVOICE_B2C_DYNAMIC_QR_UPI_ID: {
+    key: 'invoice.b2c_dynamic_qr.upi_id',
+    label: 'The shop\'s UPI ID for the B2C dynamic QR (empty = not set)',
+    defaultValue: '',
+  } as TenantSetting<string>,
+  INVOICE_B2C_DYNAMIC_QR_BANK_ACCOUNT: {
+    key: 'invoice.b2c_dynamic_qr.bank_account',
+    label: 'The bank account number that UPI ID pays into (empty = not set)',
+    defaultValue: '',
+  } as TenantSetting<string>,
+  INVOICE_B2C_DYNAMIC_QR_IFSC: {
+    key: 'invoice.b2c_dynamic_qr.ifsc',
+    label: 'That bank account\'s IFSC (empty = not set)',
+    defaultValue: '',
+  } as TenantSetting<string>,
 };
 
 /**
