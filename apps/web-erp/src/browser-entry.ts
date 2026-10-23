@@ -5165,6 +5165,9 @@ interface ManagerWindow {
     present(worklist: CashOverShortData): CashOfficeSession;
   };
   riskAcceptanceData?: RiskAcceptanceData;
+  /** OB-288 integration follow-up: the Recalls and trace page served from the store box — who is looking, their permissions,
+   *  and what this store's tills refuse now from the catalogue the box holds. recall-trace.js reads `recallTraceData`. */
+  recallTraceData?: { readonly userId?: string; readonly permissions?: readonly string[]; readonly storeId?: string | null; readonly tillBlocks?: unknown };
   riskAcceptanceSession?: RiskAcceptanceSession;
   /** The shell reads the live blocked-gates worklist through this and re-presents it — a GET read, never a write. */
   riskAcceptance?: {

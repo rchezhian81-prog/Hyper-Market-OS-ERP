@@ -140,7 +140,7 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // Lane 2 · P1 (P-07 · M10-FR-03/04 · OB-297/328/329): start or open a recall, trace forward and backward, the recall's call
   // list and the owner's SMS switch. A head-office page — it reads live traces from head office's API, so the store
   // computer does not serve it. Gated on the trace read (`quality.lottrace.read`); each action's route checks its own word.
-  { id: 'recall-trace', label: 'Recalls & trace', labelTa: 'திரும்பப்பெறலும் தடமறிதலும்', path: '/recall-trace', requires: 'quality.lottrace.read', group: 'Inventory', served: 'unserved' },
+  { id: 'recall-trace', label: 'Recalls & trace', labelTa: 'திரும்பப்பெறலும் தடமறிதலும்', path: '/recall-trace', requires: 'quality.lottrace.read', group: 'Inventory' },
   // Production runs and QC release (M11) — gated on `production.read`; release needs `production.release`.
   { id: 'production', label: 'Production', labelTa: 'உற்பத்தி', path: '/production/', requires: 'production.read', group: 'Production' },
   // Warehouse oversight — occupancy, stock, §28 approvals, transfers, tasks (M09). Gated on the availability read
