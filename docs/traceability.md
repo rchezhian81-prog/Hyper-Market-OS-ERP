@@ -395,7 +395,7 @@ per-item evidence and any external blocker live in the ledger. Names are from `d
 | WF-05 | Supplier invoice | INTEGRATION TESTED |
 | WF-06 | Replenishment | E2E VERIFIED |
 | WF-07 | Stock transfer | INTEGRATION TESTED |
-| WF-08 | Stock count | PARTIALLY WIRED |
+| WF-08 | Stock count | E2E VERIFIED |
 | WF-09 | Expiry/recall | E2E VERIFIED |
 | WF-10 | POS sale | E2E VERIFIED |
 | WF-11 | POS return | E2E VERIFIED |

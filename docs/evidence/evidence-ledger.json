@@ -12,10 +12,10 @@
     "onDevice": 0
   },
   "labels": {
-    "E2E_VERIFIED": 41,
+    "E2E_VERIFIED": 42,
     "INTEGRATION_TESTED": 18,
     "WIRED": 5,
-    "PARTIALLY_WIRED": 40
+    "PARTIALLY_WIRED": 39
   },
   "totals": {
     "unit": 93,
@@ -4006,7 +4006,7 @@
     },
     {
       "id": "WF-08",
-      "label": "PARTIALLY_WIRED",
+      "label": "E2E_VERIFIED",
       "counts": {
         "unit": 2,
         "integration": 14,
@@ -4058,7 +4058,7 @@
         "uat": []
       },
       "holds": true,
-      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "WF-09",
