@@ -63,9 +63,13 @@ describe.skipIf(!HAVE_BROWSER)('the manager\'s day close needs the office sign-i
     await page.click('#check-close');
     await page.waitForSelector('#do-close:not([hidden])', { timeout: 10_000 });
     // Signed out in another tab of the same browser: the page still shows, but the sign-in is over.
+    // Every step has its own time limit, so a slow runner fails at the step it stalled on, never as one silent 120 s wait.
     const other = await page.context().newPage();
-    await other.goto(`${box.base}/migration/`, { waitUntil: 'load' });
-    await Promise.all([other.waitForLoadState('load'), other.click('#sre-office-sign-out')]);
+    await other.goto(`${box.base}/migration/`, { waitUntil: 'load', timeout: 30_000 });
+    const signOut = other.locator('#sre-office-sign-out');
+    await signOut.waitFor({ state: 'visible', timeout: 15_000 });
+    // The sign-out button submits a form: wait for that navigation to land before the tab is closed.
+    await Promise.all([other.waitForNavigation({ waitUntil: 'load', timeout: 30_000 }), signOut.click({ timeout: 15_000 })]);
     await other.close();
 
     await page.fill('#close-pin', PEOPLE.manager.pin);
