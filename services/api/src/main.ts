@@ -336,6 +336,7 @@ import { r3GstRoutes, eInvoiceReportingGuardFor, gstTimeBarSweep } from './r3-gs
 // R4 Lane 4 (supply, pricing and loss prevention): D-10 · D-18 · D-21 · D-13 (r4-supply-lp-adapters).
 import { r4SupplyLpRoutes, supplierFactsFor } from './r4-supply-lp-adapters';
 import { lane2RecallSurface } from './lane2-recall-adapters'; // Lane 2 · P1
+import { p1IdentitySurface, approvalAgeSweep } from './p1-identity-adapters'; // OB-288 lane 1 · P1 — identity, authority, configuration
 import { alsoEachPassOf } from './ops-alert-sweeps'; // R3 lane 1 — GST liability and returns
 import { itcPortForStore } from './r3-itc-bridge'; // R3 seam — GSTR-3B Table 4 reads the A17 reconciliation
 import { r4PayEprRoutes, r4PayslipHooks, payslipLateSweep } from './r4-pay-epr-adapters';
@@ -2140,6 +2141,7 @@ export function buildSurface(deps: {
     })),
   ];
   lane2RecallSurface(surface, { store, now, signer, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }), ...(deps.notificationTransport === undefined ? {} : { messageTransport: deps.notificationTransport }) }); // Lane 2 · P1 recall and trace (M10-FR-03/04)
+  p1IdentitySurface(surface, { store, now, settings, applyDecision, tillSealKey: sealKey, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }) }); // OB-288 lane 1 · P1 (M01-FR-01/02/03 · M02-FR-01/02/03 · OB-290/291/292)
   // The versioned API surface as a manifest (M36-FR-04, P-06): reads THIS table at request time, so it lists
   // every endpoint registered — itself included — and `docs/api/surface.md` is generated from the same fold.
   surface.push(...apiManifestRoutes({ routes: () => surface, now }));
@@ -2610,6 +2612,7 @@ export async function startApi(
       gstTimeBar: gstTimeBarSweep({ store, now, timeZone: (t: string) => new DurableTenantSettings(new SqlConfigVersionStore(pgPoolClient(db))).value(t, SETTINGS.STORE_TIME_ZONE) }),
       // R4 · C15: a payslip not issued by its pay date is raised to every owner on the same timer.
       payslipLate: payslipLateSweep({ store, now }),
+      approvalAge: approvalAgeSweep({ store, now, settings: new DurableTenantSettings(new SqlConfigVersionStore(pgPoolClient(db))) }), // OB-288 lane 1 · P1 — OB-292 escalation by age
       say: (line) => { out(`${line}\n`); },
     }),
   });

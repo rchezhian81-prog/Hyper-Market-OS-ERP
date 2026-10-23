@@ -39,11 +39,38 @@ describe('the realm file', () => {
     expect(realm['browserFlow']).toBe('sre browser');
     const flows = realm['authenticationFlows'] as { alias: string; authenticationExecutions: Record<string, unknown>[] }[];
     const second = flows.find((f) => f.alias === 'sre privileged second factor')!;
-    expect(second.authenticationExecutions.map((e) => [e['authenticator'], e['requirement']])).toEqual([
-      ['conditional-user-role', 'REQUIRED'], ['auth-otp-form', 'REQUIRED'],
+    // M02-FR-01 (OB-288 P1): the role condition, then a REQUIRED choice of second factor — never optional for them.
+    expect(second.authenticationExecutions.map((e) => [e['authenticator'] ?? e['flowAlias'], e['requirement']])).toEqual([
+      ['conditional-user-role', 'REQUIRED'], ['sre second factor choice', 'REQUIRED'],
     ]);
+    const choice = flows.find((f) => f.alias === 'sre second factor choice')!;
+    // A one-time code (set up at first sign-in if the person has none) OR a passkey — at least one is always demanded.
+    expect(choice.authenticationExecutions.map((e) => [e['authenticator'], e['requirement'], e['authenticatorConfig']])).toEqual([
+      ['auth-otp-form', 'ALTERNATIVE', 'sre amr otp'], ['webauthn-authenticator', 'ALTERNATIVE', 'sre amr hwk'],
+    ]);
+    expect(choice.authenticationExecutions.find((e) => e['authenticator'] === 'auth-otp-form')!['userSetupAllowed']).toBe(true);
     const cond = (realm['authenticatorConfig'] as { alias: string; config: Record<string, string> }[]).find((c) => c.alias === 'sre privileged')!;
     expect(cond.config).toMatchObject({ condUserRole: 'sre-privileged', negate: 'false' });
+  });
+
+  it('passkeys are ready (M02-FR-01): a WebAuthn policy for a passkey as an optional second factor, and as a passwordless key', () => {
+    // The passkey proves "something the person has" — the token says `hwk`, which head office counts with the password as mfa.
+    const configs = realm['authenticatorConfig'] as { alias: string; config: Record<string, string> }[];
+    expect(configs.find((c) => c.alias === 'sre amr hwk')?.config).toMatchObject({ 'default.reference.value': 'hwk' });
+    expect(realm['webAuthnPolicyRpEntityName']).toBe('SRE Hyper Market');
+    expect(realm['webAuthnPolicySignatureAlgorithms']).toEqual(expect.arrayContaining(['ES256']));
+    expect(realm['webAuthnPolicyUserVerificationRequirement']).not.toBe('discouraged');
+    expect(realm['webAuthnPolicyAvoidSameAuthenticatorRegister']).toBe(false);
+    // Passwordless readiness: a resident key with the person verified on the device.
+    expect(realm['webAuthnPolicyPasswordlessRequireResidentKey']).toBe('Yes');
+    expect(realm['webAuthnPolicyPasswordlessUserVerificationRequirement']).toBe('required');
+    expect(realm['webAuthnPolicyPasswordlessSignatureAlgorithms']).toEqual(expect.arrayContaining(['ES256']));
+    // Optional: nobody is forced to register a passkey at sign-in — the one-time code stays the default way in.
+    const flows = realm['authenticationFlows'] as { alias: string; authenticationExecutions: Record<string, unknown>[] }[];
+    const webauthn = flows.flatMap((f) => f.authenticationExecutions).filter((e) => e['authenticator'] === 'webauthn-authenticator');
+    expect(webauthn).toHaveLength(1);
+    expect(webauthn[0]!['requirement']).toBe('ALTERNATIVE');
+    expect(webauthn[0]!['userSetupAllowed']).toBe(false);
   });
 
   it('tokens carry the product person, the shop, our audience and how the person proved it', () => {

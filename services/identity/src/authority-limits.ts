@@ -207,7 +207,7 @@ export function authorityRulesRoutes(deps: AuthorityRulesDeps): readonly Route[]
     {
       // Preview a change before asking for it: is it a valid rule, and exactly what would it change? Writes nothing.
       api: 'API-01', method: 'POST', path: '/v1/approvals/rules/:rule/preview',
-      permission: 'approvals.rules.read',
+      permission: 'approvals.rules.read', idempotent: true,
       handler: async (ctx) => {
         const rule = ctx.params['rule'] ?? '';
         if (!isAuthorityRule(rule)) throw unknownRule(rule);
