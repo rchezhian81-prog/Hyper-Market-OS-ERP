@@ -27,7 +27,8 @@
 import { makeEvent } from '../../../packages/contracts/src/event';
 import { money, type CurrencyCode } from '../../../packages/contracts/src/money';
 import {
-  receiveScan, DEFAULT_RECEIVING_POLICY,
+  receiveScan, DEFAULT_RECEIVING_POLICY, compareAgainstAsn,
+  type AsnComparison,
   type ReceiveResult, type ReceiveSource, type ReceivingPolicy, type ReceiveApproval,
   type BarcodeResolution, type OrderedProduct,
 } from '../../../packages/receiving/src/asn';
@@ -391,7 +392,9 @@ export interface WarehouseAssignment {
   readonly grnId?: string;
   readonly ordered?: readonly OrderedProduct[];
   /** OB-37: every delivery this store is waiting for (the phone's chooser); the chosen one fills grnId/poId/ordered. */
-  readonly openDeliveries?: readonly { readonly poId: string; readonly number: string; readonly supplierId: string; readonly grnId: string; readonly ordered: readonly OrderedProduct[] }[];
+  readonly openDeliveries?: readonly { readonly poId: string; readonly number: string; readonly supplierId: string; readonly grnId: string; readonly ordered: readonly OrderedProduct[]; readonly asn?: HandheldAsn }[];
+  /** OB-288 P3 (M07-FR-01): the chosen delivery's advance ship notice, cached here — the receipt is compared with it offline. */
+  readonly asn?: HandheldAsn;
   /** SP-6b: the purchase order the delivery is against, named on "delivery complete" so head office folds the GRN into it. */
   readonly poId?: string;
   /** Goods already received and awaiting put-away when the assignment was served. */
@@ -410,6 +413,13 @@ export interface WarehouseAssignment {
    * office books such a delivery flagged `receiving_checklist_missing`.
    */
   readonly receivingChecklist?: unknown;
+}
+
+/** OB-288 P3 (M07-FR-01): the supplier's advance ship notice as the box served it with the open delivery. */
+export interface HandheldAsn {
+  readonly asnId: string;
+  readonly expectedAt: string;
+  readonly lines: readonly { readonly productId: string; readonly quantityMinor: number; readonly uom: string }[];
 }
 
 const gKey = (productId: string, batchId: string | null): string => `${productId}|${batchId ?? ''}`;
@@ -655,6 +665,17 @@ export class WarehouseSession {
     return { known: this.receivingSetup !== undefined, ...(check === undefined ? {} : { check }), coldChain: coldChainAmong(this.receivingSetup, scanned) };
   }
 
+  /**
+   * OB-288 P3 (M07-FR-01): what has been received on this phone against the supplier's advance ship notice — every product
+   * that differs (short or over), worked out HERE with the tested `compareAgainstAsn`, so the receiver sees it with no
+   * signal. `undefined` when the delivery came with no ASN. Head office compares again when the receipt reaches it.
+   */
+  asnDifferences(): readonly AsnComparison[] | undefined {
+    const asn = this.assignment.asn;
+    if (asn === undefined) return undefined;
+    return compareAgainstAsn({ asnId: asn.asnId, supplierId: '', expectedAt: asn.expectedAt, lines: asn.lines.map((l, i) => ({ lineId: `A${i + 1}`, ...l })) }, this.receivedSoFar);
+  }
+
   completeReceiving(input: CompleteReceivingInput): CompleteReceivingResult {
     const grnId = input.grnId.trim();
     const scans = this.receiptScansOf(grnId);
@@ -687,6 +708,8 @@ export class WarehouseSession {
         grnId, poId, completedBy: this.assignment.workerId, storeId: this.assignment.storeId, at,
         scanCount: scans.length, commandIds: scans.map((i) => (i.event.payload as { commandId: string }).commandId), source: 'warehouse-handheld',
         ...(verdict.carried === undefined ? {} : { receivingChecklist: verdict.carried }),
+        // OB-288 P3: the ASN this delivery was received against (head office compares its own copy with what was booked).
+        ...(this.assignment.asn === undefined ? {} : { asnId: this.assignment.asn.asnId }),
       },
     }));
     const detail = `delivery ${grnId} sent as one receipt of ${scans.length} ${scans.length === 1 ? 'scan' : 'scans'} — head office assembles it against ${poId ?? 'no order'}`;

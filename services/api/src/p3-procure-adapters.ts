@@ -32,7 +32,9 @@ import type { Asn } from '../../../packages/receiving/src/asn';
 import { apportionLandedCharges, landedCostDeltas, type LandedCostTarget } from '../../../packages/stock/src/landed-cost';
 import { chargesTotal, type PurchaseDeps } from '../../purchase/src/index';
 import type { StockCostAdjustment } from '../../inventory/src/landed-cost';
-import type { BlanketReleaseHooks, StoredPurchaseOrder } from '../../purchase/src/purchase-orders';
+import { dockDiaryRoutes, type DockDiaryDeps, type DiaryBooking, dockGuardKey } from '../../inventory/src/dock-diary';
+import type { DockSlot } from '../../../packages/receiving/src/asn';
+import type { BlanketReleaseHooks, StoredPurchaseOrder, DeliveryAsn } from '../../purchase/src/purchase-orders';
 import { blanketOrderRoutes, type BlanketOrderDeps } from '../../purchase/src/blanket-orders';
 import { commitmentReportRoutes, type CommitmentReportDeps, type ReceiptPosting } from '../../purchase/src/commitment-report';
 import { tallyExportRoutes, type TallyExportDeps, type TallyLedgerNames, type ExportableJournal } from '../../finance/src/tally-export';
@@ -335,12 +337,14 @@ export function p3ProcureRoutes(input: { readonly store: EventStore | undefined;
     ...commitmentReportRoutes(commitmentReportAdapter(base)),
     ...tallyExportRoutes(tallyExportAdapter(base)),
     ...rebateReceiptRoutes(rebateReceiptAdapter(base)),
+    ...dockDiaryRoutes(dockDiaryAdapter(base)),
   ];
 }
 
 /** The hooks the existing purchase-order routes take (spread into their deps in main.ts). */
-export function p3PurchaseOrderHooks(input: { readonly store: EventStore; readonly now: () => string }): Pick<import('../../purchase/src/purchase-orders').PurchaseOrderDeps, 'blanket' | 'segregation' | 'requisitionExists' | 'localPoLimitOf'> {
+export function p3PurchaseOrderHooks(input: { readonly store: EventStore; readonly now: () => string }): Pick<import('../../purchase/src/purchase-orders').PurchaseOrderDeps, 'blanket' | 'segregation' | 'requisitionExists' | 'localPoLimitOf' | 'asnOf'> {
   return {
+    asnOf: (tenantId, poId) => deliveryAsnOf(input.store, tenantId, poId),
     localPoLimitOf: localPoLimitOf(input),
     blanket: blanketReleaseHooks(input),
     segregation: segregationAdapter(input),
@@ -351,6 +355,49 @@ export function p3PurchaseOrderHooks(input: { readonly store: EventStore; readon
 /** The separation-of-duties port the receipt, match and payment routes take (spread into their deps in main.ts). */
 export function p3Segregation(input: { readonly store: EventStore; readonly now: () => string }): { readonly segregation: SegregationPort } {
   return { segregation: segregationAdapter(input) };
+}
+
+// ── M07-FR-01 — the durable dock diary ───────────────────────────────────────────────────────────────────────────────
+
+const DOCK_DIARY = streamName(STREAM.inventory, 'dock-diary');
+
+/** Each booking at its latest status, every status change kept in its history. */
+export async function foldDockDiary(store: EventStore, tenantId: string): Promise<readonly DiaryBooking[]> {
+  const byId = new Map<string, DiaryBooking>();
+  for (const e of await store.readStream(tenantId, DOCK_DIARY)) {
+    if (e.event.type === 'DockSlotBooked') {
+      const b = e.event.payload as unknown as DiaryBooking;
+      if (!byId.has(b.slotId)) byId.set(b.slotId, b);
+    } else if (e.event.type === 'DockSlotStatusSet') {
+      const p = e.event.payload as { slotId: string; status: DockSlot['status']; by: string; at: string; reason?: string };
+      const cur = byId.get(p.slotId);
+      if (cur !== undefined) byId.set(p.slotId, { ...cur, status: p.status, history: [...cur.history, { status: p.status, by: p.by, at: p.at, ...(p.reason === undefined ? {} : { reason: p.reason }) }] });
+    }
+  }
+  return [...byId.values()];
+}
+
+export function dockDiaryAdapter(input: Base): DockDiaryDeps {
+  return {
+    now: input.now,
+    ...(input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit }),
+    locationBranches: locationBranches(input),
+    bookings: (tenantId) => foldDockDiary(input.store, tenantId),
+    doorVersion: (tenantId, storeId, dockId) => input.store.guardVersion(tenantId, dockGuardKey(storeId, dockId)),
+    recordBooking: async (tenantId, booking, guard) => {
+      await input.store.appendBatch(tenantId, [{ stream: DOCK_DIARY, event: makeEvent({
+        id: `dock-${booking.slotId}-booked`, type: 'DockSlotBooked', occurredAt: booking.bookedAt,
+        idempotencyKey: `dock-${tenantId}-${booking.slotId}-booked`, source: 'api/inventory', payload: booking as unknown as Record<string, unknown>,
+      }) }], { guard });
+    },
+    recordStatus: async (tenantId, slotId, status, by, at, reason) => {
+      await input.store.append(tenantId, DOCK_DIARY, makeEvent({
+        id: `dock-${slotId}-${status}`, type: 'DockSlotStatusSet', occurredAt: at,
+        // Once per status: a slot is arrived once, completed once — a re-send collapses.
+        idempotencyKey: `dock-${tenantId}-${slotId}-${status}`, source: 'api/inventory', payload: { slotId, status, by, at, ...(reason === undefined ? {} : { reason }) },
+      }));
+    },
+  };
 }
 
 // ── M07-FR-01 — receiving against the advance ship notice on file ────────────────────────────────────────────────────
@@ -368,6 +415,12 @@ export async function asnForOrder(store: EventStore, tenantId: string, poId: str
     if (named !== undefined) return named;
   }
   return forOrder.at(-1);
+}
+
+/** The ASN as the receiving phone carries it (the box caches it with the open delivery). */
+export async function deliveryAsnOf(store: EventStore, tenantId: string, poId: string): Promise<DeliveryAsn | undefined> {
+  const a = await asnForOrder(store, tenantId, poId);
+  return a === undefined ? undefined : { asnId: a.asnId, expectedAt: a.expectedAt, lines: a.lines.map((l) => ({ productId: l.productId, quantityMinor: l.quantityMinor, uom: l.uom })) };
 }
 
 /** The checks every goods receipt takes (spread into the GRN routes' deps in main.ts): §28 and the ASN comparison. */

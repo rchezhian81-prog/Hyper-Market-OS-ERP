@@ -174,6 +174,8 @@ export interface PurchaseOrderDeps {
   readonly requisitionExists?: (tenantId: string, requisitionId: string) => Promise<boolean> | boolean;
   /** OB-288 P3 (M06-FR-02 · §28): who did each step of the order — a receipt posted by its buyer, matcher or payer is refused. */
   readonly segregation?: Pick<SegregationPort, 'actorsOf'>;
+  /** OB-288 P3 (M07-FR-01): the accepted advance ship notice for an order, offered with its open delivery. */
+  readonly asnOf?: (tenantId: string, poId: string) => Promise<DeliveryAsn | undefined>;
   /**
    * OB-290 (D-3) seam for package P1: the person's LOCAL purchase-order limit in paise — `null` unlimited, `undefined` none
    * held (a local order is then refused). Today the config default: store manager ₹25,000, owner unlimited.
@@ -329,6 +331,15 @@ export interface OpenDelivery {
   readonly deliverToLocationId: string;
   readonly issuedAt: string | null;
   readonly lines: readonly { readonly productId: string; readonly orderedQty: number; readonly receivedQty: number; readonly cancelledQty: number; readonly openQty: number }[];
+  /** OB-288 P3 (M07-FR-01): the supplier's advance ship notice a buyer accepted for this order — offered to the receiver. */
+  readonly asn?: DeliveryAsn;
+}
+
+/** OB-288 P3: an advance ship notice as the receiving phone carries it (cached, so it can be received against offline). */
+export interface DeliveryAsn {
+  readonly asnId: string;
+  readonly expectedAt: string;
+  readonly lines: readonly { readonly productId: string; readonly quantityMinor: number; readonly uom: string }[];
 }
 
 /**
@@ -929,7 +940,12 @@ export function purchaseOrderRoutes(deps: PurchaseOrderDeps): readonly Route[] {
         await assertLocationInScope(ctx, storeId, deps.locationBranches);
         const branchOf = await (deps.locationBranches ?? locationIsItsOwnBranch)(ctx.tenantId);
         const orders = await deps.all(ctx.tenantId);
-        const open = openDeliveriesFor(orders, storeId, branchOf);
+        const listed = openDeliveriesFor(orders, storeId, branchOf);
+        // OB-288 P3 (M07-FR-01): each delivery with the supplier's advance ship notice, when a buyer accepted one.
+        const open = deps.asnOf === undefined ? listed : await Promise.all(listed.map(async (d) => {
+          const asn = await deps.asnOf!(ctx.tenantId, d.poId);
+          return asn === undefined ? d : { ...d, asn };
+        }));
         const scope = await stockReadScope(ctx, deps.locationBranches);
         const storeNotNamed = orders
           .filter((p) => p.status === 'issued' && p.deliverToLocationId === undefined && scope.everything)

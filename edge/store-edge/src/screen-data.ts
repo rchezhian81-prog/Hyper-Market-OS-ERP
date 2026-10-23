@@ -943,6 +943,7 @@ export function warehousePayload(input: ScreenInput): Record<string, unknown> | 
     ...(w.openDeliveries === undefined ? {} : { openDeliveries: w.openDeliveries.map((d) => ({
       poId: d.poId, number: d.number, supplierId: d.supplierId, grnId: d.grnId,
       ordered: d.ordered.map((o) => ({ productId: o.productId, quantityMinor: o.quantityMinor, unitCost: { minor: o.unitCostMinor, currency: o.currency } })),
+      ...(d.asn === undefined ? {} : { asn: d.asn }), // OB-288 P3: the ASN the phone receives against, offline
     })) }),
     // R3 D-11: the vendors' route sheets for this store, so the door check-in can be made against a route offline as well as
     // against an order (each sheet names the place it is for). Absent stays absent: the phone then offers orders only.
