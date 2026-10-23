@@ -11,6 +11,8 @@
 //     OWN placement route (found on the surface, invoked as the customer), on the ops timer and on demand.
 //   • M20-FR-03 — order-status notices worked out from the orders' own facts and handed to the service-message queue
 //     (its own route, found on the surface), on the ops timer and on demand.
+//   • M20-FR-04 · M20-FR-02 · A05 — saved addresses (minimised), the "no saved payment" stand-in, consent-safe
+//     recommendations, and the customer's help answers (A05 through its own staff-side engine, own orders only).
 //   • M17-FR-01 (OB-295) — the loyalty programme's tiers and points expiry: owner settings kept as facts, OFF and "not set"
 //     until entered; the tier multiplier applied when a bill earns (`withLoyaltyTiers`, one wrap in main.ts); the expiry
 //     run on the ops worker's timer (`customerCommerceSweep`) and on demand.
@@ -25,6 +27,9 @@ import type { MemberRecord } from '../../customer/src/loyalty-members';
 import type { RecordedPointsMovement } from '../../customer/src/index';
 import type { Route, RequestContext } from '../../kernel/src/index';
 import { ApiError } from '../../kernel/src/index';
+import { storefrontAccountRoutes, type StorefrontAccountDeps, type SavedAddress } from '../../orders/src/storefront-account';
+import { basketAffinityAdapter } from './r4-insight-adapters';
+import { resolveServiceabilityPolicy } from '../../../packages/storefront/src/index';
 import { orderNoticeRoutes, runOrderNotices, type OrderNoticeDeps, type OrderNoticeFact } from '../../orders/src/order-notices';
 import { paymentPosition, foldRefunds } from '../../../packages/orders/src/payment-refunds';
 import type { PlacedOrder } from '../../orders/src/index';
@@ -34,7 +39,7 @@ import type { SubscriptionPlan, SubscriptionChange } from '../../../packages/sto
 import { customer360Routes, complaintFactsOf, type ServiceCaseFact } from '../../customer/src/customer-360';
 import { segmentRoutes } from '../../customer/src/segments';
 import type { ComplaintFact } from '../../../packages/customer/src/index';
-import { customer360Adapter, segmentDataAdapter, serviceCaseAdapter, customerAdapter, couponAdapter, promotionCatalogueAdapter, productMasterAdapter, ordersAdapter, fulfilmentAdapter, notificationQueueAdapter, STREAM, streamName } from './adapters';
+import { customer360Adapter, segmentDataAdapter, serviceCaseAdapter, customerAdapter, couponAdapter, promotionCatalogueAdapter, productMasterAdapter, ordersAdapter, fulfilmentAdapter, notificationQueueAdapter, serviceabilityAdapter, STREAM, streamName } from './adapters';
 import type { OnlinePricingDeps, OrderPricingFact } from '../../orders/src/storefront';
 import { currentMemberLink, type MemberAppLink } from '../../customer/src/digital-receipts';
 import { customerOverviewRoutes } from '../../customer/src/customer-overview';
@@ -222,6 +227,65 @@ export function orderNoticeAdapter(input: Base & { readonly queue: Route | undef
   };
 }
 
+// ── M20-FR-04 · M20-FR-02 · A05 · the customer's account controls, suggestions and help ──────────────────────────────
+
+const ADDRESSES = streamName(STREAM.customer, 'saved-addresses');
+const rupeesOf = (minor: number): string => `₹${(minor / 100).toFixed(2)}`;
+
+export function storefrontAccountAdapter(input: Base & { readonly a05: Route | undefined; readonly returnPolicy: Route | undefined }): StorefrontAccountDeps {
+  const { store, now } = input;
+  const addresses = factList<SavedAddress>(store, ADDRESSES, 'AddressSaved');
+  const orders = ordersAdapter({ store, now, holdMinutes: 60 });
+  return {
+    now,
+    addresses: async (t, c) => (await addresses.all(t)).filter((a) => a.customerRef === c),
+    recordAddress: (t, a) => addresses.append(t, `${a.customerRef}|${a.addressId}|${a.change}|${a.at}`, a, a.at),
+    consentRecords: async (t, c) => (await customerAdapter(input).consentRecords(t, c)).map((r) => ({ purpose: r.purpose, given: r.given, recordedAt: r.recordedAt })),
+    alsoBought: async (t, productId) => {
+      const to = now().slice(0, 10);
+      const from = new Date(Date.parse(now()) - 90 * 86_400_000).toISOString().slice(0, 10);
+      const counts = new Map<string, number>();
+      for (const b of await basketAffinityAdapter(input).baskets(t, from, to)) {
+        const ids = new Set(b.lines.map((l) => l.productId));
+        if (!ids.has(productId)) continue;
+        for (const id of ids) if (id !== productId) counts.set(id, (counts.get(id) ?? 0) + 1);
+      }
+      return [...counts.entries()].map(([id, count]) => ({ productId: id, count }));
+    },
+    boughtBefore: async (t, c) => {
+      const latest = new Map<string, string>();
+      for (const o of await orders.ordersForCustomer(t, c)) for (const l of o.lines) if ((latest.get(l.productId) ?? '') < o.placedAt) latest.set(l.productId, o.placedAt);
+      return [...latest.entries()].map(([productId, lastBoughtAt]) => ({ productId, lastBoughtAt }));
+    },
+    sellable: async (t, productId) => {
+      const p = await productMasterAdapter({ store, now }).product(t, productId);
+      return p !== undefined && p.lifecycle === 'active';
+    },
+    orderOwner: async (t, orderId) => (await orders.placedOrder(t, orderId))?.customerRef,
+    a05OrderAnswer: async (t, orderId) => {
+      if (input.a05 === undefined) return { answered: false, agentActive: false, text: '' };
+      const r = await invoke(input.a05, { tenantId: t, userId: 'system:customer-help', params: {}, query: {}, idempotencyKey: `help-${orderId}-${now()}`, body: { topic: 'order_status', orderId } });
+      if ('refused' in r) return { answered: false, agentActive: false, text: '' };
+      const b = r.body as { answered?: boolean; agentActive?: boolean; text?: string };
+      return { answered: b.answered === true, agentActive: b.agentActive === true, text: b.text ?? '' };
+    },
+    returnPolicyWords: async (t) => {
+      if (input.returnPolicy === undefined) return 'The shop\'s return windows are not set yet ("not set"). Ask a person and the shop will help.';
+      const r = await invoke(input.returnPolicy, { tenantId: t, userId: 'system:customer-help', params: {}, query: {}, body: undefined });
+      const p = 'refused' in r ? undefined : (r.body as { policy?: { windowDaysByCategory?: Record<string, number>; nonReturnable?: unknown } }).policy;
+      const w = p?.windowDaysByCategory ?? {};
+      if (Object.keys(w).length === 0) return 'The shop has not set its return windows yet ("not set"), so a return cannot be judged automatically. Ask a person and the shop will help.';
+      const list = p?.nonReturnable === 'not set' ? 'The list of things that cannot be returned is not set yet.' : Array.isArray(p?.nonReturnable) && p!.nonReturnable.length > 0 ? `Not returnable: ${(p!.nonReturnable as string[]).join(', ')}.` : 'Everything may be returned within its window.';
+      return `You can return within these days after delivery: ${Object.entries(w).map(([c, d]) => `${c} ${d}`).join(', ')}. ${list}`;
+    },
+    deliveryWords: async (t) => {
+      const { policy } = resolveServiceabilityPolicy({ schedule: await serviceabilityAdapter({ store, now }).schedule(t), on: now().slice(0, 10) });
+      const fee = policy.deliveryFeeMinor ?? 0;
+      return `We deliver within ${((policy.radiusMetres ?? 10_000) / 1000).toFixed(0)} km. Delivery costs ${fee === 0 ? 'nothing' : rupeesOf(fee)}${policy.freeDeliveryAboveMinor === undefined ? '' : `, and is free on orders of ${rupeesOf(policy.freeDeliveryAboveMinor)} or more`}${policy.minimumOrderMinor === undefined ? '' : `. The smallest order we deliver is ${rupeesOf(policy.minimumOrderMinor)}`}. You can also collect from the store at no charge.`;
+    },
+  };
+}
+
 // ── M17-FR-01 · OB-295 · tiers and points expiry ─────────────────────────────────────────────────────────────────────
 
 const PROGRAMME = streamName(STREAM.loyalty, 'programme');
@@ -345,6 +409,15 @@ export function customerCommerceSurface(surface: Route[], input: CustomerCommerc
     plans: async () => [], recordPlan: async () => {}, changes: async () => [], recordChange: async () => {}, occurrences: async () => [], recordOccurrence: async () => {},
     placeOrder: async () => ({ placed: false, why: 'no store' }), today: async () => dayIn(now(), 'Asia/Kolkata'), now,
   }));
+  // M20-FR-04 · M20-FR-02 · A05: the customer's own addresses, suggestions and help.
+  surface.push(...storefrontAccountRoutes(store === undefined ? {
+    now, addresses: async () => [], recordAddress: async () => {}, consentRecords: async () => [], alsoBought: async () => [], boughtBefore: async () => [], sellable: async () => false,
+    orderOwner: async () => undefined, a05OrderAnswer: async () => ({ answered: false, agentActive: false, text: '' }), returnPolicyWords: async () => 'not set', deliveryWords: async () => 'not set',
+  } : storefrontAccountAdapter({
+    store, now,
+    a05: surface.find((r) => r.method === 'POST' && r.path === '/v1/ai/service/answers'),
+    returnPolicy: surface.find((r) => r.method === 'GET' && r.path === '/v1/me/return-policy'),
+  })));
   // M17-FR-01 · OB-295: the programme's two owner settings, a member's standing, and the expiry run.
   surface.push(...loyaltyProgrammeRoutes(store === undefined ? unwiredProgramme(now) : loyaltyProgrammeAdapter({ store, now })));
 }

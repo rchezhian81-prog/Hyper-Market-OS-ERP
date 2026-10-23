@@ -64,7 +64,7 @@ describe.each(backings)('the customer is told where their order is (M20-FR-03) â
     for (const event of ['confirm', 'pick', 'pack', 'dispatch', 'deliver']) await ok(req('POST', '/v1/orders/ORD-N1/transition', { event }), `ORD-N1 ${event}`);
     const refundBody = { refundId: 'rf-n1', amountMinor: 10_00, basis: 'goodwill', reason: 'late (synthetic)' };
     const refunded = await sentWithApproval(h, T, MANAGER, OWNER, { kind: 'order_refund', subjectRef: 'ORD-N1/rf-n1', pathIds: { orderId: 'ORD-N1' }, valueMinor: 10_00 }, refundBody,
-      (b) => req('POST', '/v1/orders/ORD-N1/refunds', b, MANAGER));
+      (b) => h.request({ method: 'POST', path: '/v1/orders/ORD-N1/refunds', userId: MANAGER, tenantId: T, idempotencyKey: 'refund-rf-n1', body: b }));
     expect(refunded.status, JSON.stringify(refunded.body)).toBe(201);
 
     expect(await run()).toEqual({ queued: 3, notQueued: 0 });
