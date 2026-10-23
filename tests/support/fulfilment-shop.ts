@@ -25,9 +25,9 @@ export const DOORS = {
   far: { lat: 11.0500, lon: 76.9900 },
 } as const;
 export const PRODUCTS = [
-  { productId: 'RICE', priceMinor: 80_00 },
-  { productId: 'DAL', priceMinor: 75_00 },
-  { productId: 'OIL', priceMinor: 190_00 },
+  { productId: 'RICE', priceMinor: 80_00, costMinor: 60_00 },
+  { productId: 'DAL', priceMinor: 75_00, costMinor: 55_00 },
+  { productId: 'OIL', priceMinor: 190_00, costMinor: 150_00 },
 ] as const;
 
 export const codeOf = (r: { body: unknown }): string | undefined => (r.body as { error?: { code?: string } }).error?.code;
@@ -67,7 +67,7 @@ export async function fulfilmentShop(h: ApiHarness, opts: { readonly oilUnbinned
   for (const p of PRODUCTS) await listableProduct(post, { productId: p.productId, storeId: STORE_ID, priceMinor: p.priceMinor });
   const now = new Date().toISOString();
   for (const p of PRODUCTS) {
-    await ok('POST', '/v1/inventory/movements', OWNER, { movementId: `rcv-${p.productId}`, productId: p.productId, locationId: STORE_ID, kind: 'received', quantityMinor: 50, uom: 'each', occurredAt: now, enteredBy: OWNER });
+    await ok('POST', '/v1/inventory/movements', OWNER, { movementId: `rcv-${p.productId}`, productId: p.productId, locationId: STORE_ID, kind: 'received', quantityMinor: 50, uom: 'each', unitCostMinor: p.costMinor, occurredAt: now, enteredBy: OWNER });
   }
   // The store's bins: two pickable, one holding.
   for (const [binId, pickable] of [['A-01', true], ['A-02', true], ['H-01', false]] as const) {
