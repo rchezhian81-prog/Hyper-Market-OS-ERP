@@ -45,6 +45,21 @@ export interface ValueMovement {
   /** True when captured on a lane that could not reach the cloud (§31). */
   readonly capturedOffline?: boolean;
   readonly reason?: string;
+  /**
+   * A12 (roadmap v2.1 · CGST s.12(4)): on a gift card's redemption, the voucher's time of supply as `voucherTimeOfSupply`
+   * decided it — the redemption date for a card whose supply was not identifiable when it was issued, else the issue date.
+   */
+  readonly timeOfSupply?: VoucherTimeOfSupplyRecord;
+}
+
+/** A12: a gift voucher's time of supply as recorded — when GST on the supply it buys is due, and on what basis. */
+export interface VoucherTimeOfSupplyRecord {
+  /** YYYY-MM-DD; absent at issue while the time of supply waits for the redemption (`pending`). */
+  readonly timeOfSupply?: string;
+  readonly basis: 'issue' | 'redemption';
+  /** True at issue for a card whose supply is not identifiable then: GST falls due only when it is redeemed. */
+  readonly pending?: true;
+  readonly detail: string;
 }
 
 export interface Instrument {
@@ -56,6 +71,8 @@ export interface Instrument {
   readonly expiresOn?: string;
   /** Provider token where a physical card is involved — never a card number (#3). */
   readonly providerRef?: string;
+  /** A12: a gift card's time of supply as decided at issue (s.12(4)) — store credit is a refund, not a voucher. */
+  readonly timeOfSupply?: VoucherTimeOfSupplyRecord;
 }
 
 /** Balance is PROJECTED from movements. There is deliberately no stored balance field. */

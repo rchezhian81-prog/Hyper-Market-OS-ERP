@@ -199,6 +199,11 @@ const TABLE: Readonly<Record<string, Row>> = {
   'platform.box_unsent_warn_hours': { enter: '4', stored: 4, bad: { enter: '73', value: 73 } },
   'platform.box_claim_slack_numbers': { enter: '0', stored: 0, bad: { enter: '101', value: 101 } },
   'platform.box_claim_slack_percent': { enter: '2', stored: 2, bad: { enter: '51', value: 51 } },
+  // A22 (OB-326): the B2C dynamic QR — switched off by default; each detail empty (not set) or well formed.
+  'invoice.b2c_dynamic_qr.on': { enter: true, stored: true },
+  'invoice.b2c_dynamic_qr.upi_id': { enter: 'srehyper@okaxis', stored: 'srehyper@okaxis', control: 'text', bad: { enter: 'srehyper', value: 'srehyper' } },
+  'invoice.b2c_dynamic_qr.bank_account': { enter: '123456789012', stored: '123456789012', control: 'text', bad: { enter: '1234', value: '1234' } },
+  'invoice.b2c_dynamic_qr.ifsc': { enter: 'HDFC0001234', stored: 'HDFC0001234', control: 'text', bad: { enter: 'HDFC1234', value: 'HDFC1234' } },
 };
 
 /** The control a setting must be edited with: derived from its default's type for numbers, on/off and lists. */

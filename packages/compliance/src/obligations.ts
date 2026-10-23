@@ -86,6 +86,30 @@ export class CannotDeleteObligationError extends Error {
   }
 }
 
+/**
+ * B10 (roadmap v2.1 · FSSAI Licensing and Registration Regulations — the licence number on every cash memo and bill): the
+ * store's CURRENT food licence for display — an active licence obligation from the FSSAI with its number (`reference`),
+ * for this store (or the whole business), in force on `day`. The latest in force wins. Undefined when there is none: the
+ * bill then carries no number rather than a wrong or expired one, and the register's expiry alerts already say why.
+ */
+export function currentFoodLicence(
+  obligations: readonly Obligation[],
+  where: { readonly branchId: string; readonly day: string },
+): { readonly number: string; readonly validUntil?: string; readonly obligationId: string } | undefined {
+  const inForce = obligations
+    .filter((o) => o.status === 'active' && o.kind === 'licence' && o.authority.trim().toUpperCase() === 'FSSAI'
+      && typeof o.reference === 'string' && o.reference.trim() !== ''
+      && (o.branchId === where.branchId || o.branchId === null)
+      && o.validFrom <= where.day && (o.expiresOn === undefined || o.expiresOn >= where.day))
+    // The store's own before the business-wide one; then the latest to take effect.
+    .sort((a, b) => (a.branchId === b.branchId ? (a.validFrom < b.validFrom ? -1 : a.validFrom > b.validFrom ? 1 : 0) : a.branchId === null ? -1 : 1))
+    .at(-1);
+  return inForce === undefined ? undefined : {
+    number: inForce.reference!.trim(), obligationId: inForce.obligationId,
+    ...(inForce.expiresOn === undefined ? {} : { validUntil: inForce.expiresOn }),
+  };
+}
+
 /** How urgently an obligation needs attention. */
 export type AlertLevel = 'expired' | 'critical' | 'warning' | 'notice';
 

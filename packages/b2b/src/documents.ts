@@ -61,6 +61,44 @@ export interface B2BDocument {
   /** True only for a tax invoice. A proforma carries no tax claim. */
   readonly taxClaimable: boolean;
   readonly detail: string;
+  /** A8: a tax invoice's GST split by its place of supply — CGST + SGST within the State, IGST across States. */
+  readonly gst?: B2BGstSplit;
+}
+
+/**
+ * A8 (roadmap v2.1 · IGST Act s.10(1)(a)): where goods are DELIVERED decides the tax — within the supplier's own State the
+ * line's GST is CGST + SGST (half each, the odd paisa on SGST); delivered to another State it is one IGST. `basis` says
+ * where the delivery State came from: `delivery_state` when the invoice named it, `store_state_assumed` when it did not
+ * (a local delivery, said on the document — never silent).
+ */
+export interface B2BGstSplit {
+  readonly placeOfSupply: 'intra_state' | 'inter_state';
+  readonly supplierStateCode: string;
+  readonly deliveryStateCode: string;
+  readonly basis: 'delivery_state' | 'store_state_assumed';
+  readonly cgstMinor: number;
+  readonly sgstMinor: number;
+  readonly igstMinor: number;
+  readonly lines: readonly { readonly lineId: string; readonly taxableMinor: number; readonly rateBps: number; readonly cgstMinor: number; readonly sgstMinor: number; readonly igstMinor: number }[];
+}
+
+/** A8: split each line's GST by the place of supply. Pure; the line tax is exactly what `totals` charges. */
+export function gstSplitOf(lines: readonly B2BLine[], where: { readonly supplierStateCode: string; readonly deliveryStateCode?: string }): B2BGstSplit {
+  const delivery = where.deliveryStateCode ?? where.supplierStateCode;
+  const inter = delivery !== where.supplierStateCode;
+  const out = lines.map((line) => {
+    const net = line.unitPriceMinor * line.qty;
+    const tax = Number((BigInt(net) * BigInt(line.taxRateBps) + 5_000n) / 10_000n);
+    const cgst = inter ? 0 : Math.floor(tax / 2);
+    return { lineId: line.lineId, taxableMinor: net, rateBps: line.taxRateBps, cgstMinor: cgst, sgstMinor: inter ? 0 : tax - cgst, igstMinor: inter ? tax : 0 };
+  });
+  return {
+    placeOfSupply: inter ? 'inter_state' : 'intra_state',
+    supplierStateCode: where.supplierStateCode, deliveryStateCode: delivery,
+    basis: where.deliveryStateCode === undefined ? 'store_state_assumed' : 'delivery_state',
+    cgstMinor: out.reduce((s, l) => s + l.cgstMinor, 0), sgstMinor: out.reduce((s, l) => s + l.sgstMinor, 0), igstMinor: out.reduce((s, l) => s + l.igstMinor, 0),
+    lines: out,
+  };
 }
 
 /** Exact per-line tax, rounded at the line and summed — never a percentage of the total. */
@@ -377,6 +415,8 @@ export function issueTaxInvoice(input: {
   readonly format: NumberFormat;
   readonly seq: number;
   readonly at: string;
+  /** A8: the supplier's own GST State and where the goods are delivered — the invoice then carries its GST split. */
+  readonly placeOfSupply?: { readonly supplierStateCode: string; readonly deliveryStateCode?: string };
 }): InvoiceResult {
   const foreign = input.challans.find((c) => c.derivedFrom !== input.order.documentId);
   if (foreign !== undefined) {
@@ -450,6 +490,7 @@ export function issueTaxInvoice(input: {
       ...sums,
       taxClaimable: true,
       detail,
+      ...(input.placeOfSupply === undefined ? {} : { gst: gstSplitOf(lines, input.placeOfSupply) }),
     },
   };
 }

@@ -14,8 +14,37 @@ import {
   redeemValue, balanceOf, householdBalance, findDoubleSpends, reconcileLiability, flagVelocity,
   type Instrument, type ValueMovement, type ValueKind, type DoubleSpend,
 } from '../../../packages/loyalty/src/stored-value';
+import { voucherTimeOfSupply, InvalidPromoTaxInput } from '../../../packages/finance/src/promo-tax';
+import type { VoucherTimeOfSupplyRecord } from '../../../packages/loyalty/src/stored-value';
 
 export type { Instrument, ValueMovement } from '../../../packages/loyalty/src/stored-value';
+
+/**
+ * A12 (roadmap v2.1 · CGST s.12(4) · the tested `voucherTimeOfSupply`): a gift card's time of supply at ISSUE. A card that
+ * buys anything in the shop is not for a supply identifiable when it is issued, so its time of supply is the REDEMPTION —
+ * recorded at issue as pending; one issued for an identified supply (`supplyIdentifiableAtIssue: true`) is the issue date.
+ */
+export function giftCardTimeOfSupplyAtIssue(input: { readonly supplyIdentifiableAtIssue: boolean; readonly issueDate: string }): VoucherTimeOfSupplyRecord {
+  if (input.supplyIdentifiableAtIssue) {
+    const t = voucherTimeOfSupply({ supplyIdentifiableAtIssue: true, issueDate: input.issueDate });
+    return { timeOfSupply: t.timeOfSupply, basis: t.basis, detail: t.detail };
+  }
+  try {
+    voucherTimeOfSupply({ supplyIdentifiableAtIssue: false, issueDate: input.issueDate });
+  } catch (e) {
+    if (!(e instanceof InvalidPromoTaxInput)) throw e;
+  }
+  return { basis: 'redemption', pending: true, detail: 'the supply is not identifiable at issue — GST is due on the redemption date (s.12(4)(b)), recorded when the card is redeemed' };
+}
+
+/** A12: the time of supply a gift card's redemption records — the issue date, or this redemption's date. */
+export function giftCardTimeOfSupplyAtRedemption(instrument: Instrument, redemptionDate: string): VoucherTimeOfSupplyRecord | undefined {
+  if (instrument.kind !== 'gift_card') return undefined;
+  const issueDate = instrument.issuedAt.slice(0, 10);
+  const identifiable = instrument.timeOfSupply?.basis === 'issue';
+  const t = voucherTimeOfSupply({ supplyIdentifiableAtIssue: identifiable, issueDate, redemptionDate });
+  return { timeOfSupply: t.timeOfSupply, basis: t.basis, detail: t.detail };
+}
 
 type Channel = ValueMovement['channel'];
 const KINDS: readonly ValueKind[] = ['gift_card', 'store_credit'];
@@ -57,7 +86,10 @@ export function storedValueRoutes(deps: StoredValueDeps): readonly Route[] {
       api: 'API-06', method: 'POST', path: '/v1/stored-value/instruments',
       permission: 'loyalty.value.issue', idempotent: true,
       handler: async (ctx) => {
-        const b = (ctx.body ?? {}) as { instrumentId?: unknown; kind?: unknown; ownerRef?: unknown; faceValueMinor?: unknown; expiresOn?: unknown; providerRef?: unknown; channel?: unknown; openingLoadId?: unknown };
+        const b = (ctx.body ?? {}) as { instrumentId?: unknown; kind?: unknown; ownerRef?: unknown; faceValueMinor?: unknown; expiresOn?: unknown; providerRef?: unknown; channel?: unknown; openingLoadId?: unknown; supplyIdentifiableAtIssue?: unknown };
+        if (b.supplyIdentifiableAtIssue !== undefined && typeof b.supplyIdentifiableAtIssue !== 'boolean') {
+          throw apiError(400, { code: 'not_readable_as_an_instrument', whatHappened: 'supplyIdentifiableAtIssue, when sent, is true (the card buys one identified supply) or false (it buys anything in the shop).', wasItSaved: 'not_saved', nextSafeAction: 'Send true or false, or leave it out for an ordinary gift card. Nothing was issued.' });
+        }
         if (b.openingLoadId !== undefined && (typeof b.openingLoadId !== 'string' || b.openingLoadId.trim() === '')) {
           throw apiError(400, { code: 'not_readable_as_an_instrument', whatHappened: 'openingLoadId, when sent, names the migration load opening this card.', wasItSaved: 'not_saved', nextSafeAction: 'Send the load id, or leave it out. Nothing was issued.' });
         }
@@ -87,10 +119,12 @@ export function storedValueRoutes(deps: StoredValueDeps): readonly Route[] {
           instrumentId: b.instrumentId, kind: b.kind as ValueKind, ownerRef: b.ownerRef, issuedAt: now,
           ...(typeof b.expiresOn === 'string' ? { expiresOn: b.expiresOn } : {}),
           ...(typeof b.providerRef === 'string' ? { providerRef: b.providerRef } : {}),
+          // A12: a gift card's time of supply, decided at issue by the tested rule (store credit is a refund, not a voucher).
+          ...(b.kind === 'gift_card' ? { timeOfSupply: giftCardTimeOfSupplyAtIssue({ supplyIdentifiableAtIssue: b.supplyIdentifiableAtIssue === true, issueDate: now.slice(0, 10) }) } : {}),
         };
         const opening: ValueMovement = { movementId: `${b.instrumentId}:issue`, instrumentId: b.instrumentId, kind: 'issue', deltaMinor: b.faceValueMinor as number, at: now, channel };
         await deps.recordIssue(ctx.tenantId, instrument, opening, typeof b.openingLoadId === 'string' ? b.openingLoadId.trim() : undefined);
-        return { status: 201, body: { instrumentId: instrument.instrumentId, kind: instrument.kind, balanceMinor: opening.deltaMinor } };
+        return { status: 201, body: { instrumentId: instrument.instrumentId, kind: instrument.kind, balanceMinor: opening.deltaMinor, ...(instrument.timeOfSupply === undefined ? {} : { timeOfSupply: instrument.timeOfSupply }) } };
       },
     },
     {
@@ -115,9 +149,13 @@ export function storedValueRoutes(deps: StoredValueDeps): readonly Route[] {
         const instrument = await deps.instrument(ctx.tenantId, instrumentId);
         if (instrument === undefined) throw notFound(`stored-value instrument ${instrumentId}`);
 
+        const at = deps.now();
+        const timeOfSupply = giftCardTimeOfSupplyAtRedemption(instrument, at.slice(0, 10));
         const movement: ValueMovement = {
           movementId: b.movementId, instrumentId, kind: 'redeem', deltaMinor: -(b.amountMinor as number),
-          at: deps.now(), channel: b.channel as Channel,
+          at, channel: b.channel as Channel,
+          // A12: when GST on what this redemption buys is due — the voucher's time of supply (s.12(4)).
+          ...(timeOfSupply === undefined ? {} : { timeOfSupply }),
           ...(b.capturedOffline === true ? { capturedOffline: true } : {}),
           ...(typeof b.saleId === 'string' ? { saleId: b.saleId } : {}),
           ...(typeof b.customerRef === 'string' ? { customerRef: b.customerRef } : {}),
@@ -147,7 +185,7 @@ export function storedValueRoutes(deps: StoredValueDeps): readonly Route[] {
           if (err instanceof ConcurrencyConflictError) throw concurrentChange(`stored-value instrument ${instrumentId}`);
           throw err;
         }
-        return { status: 200, body: { instrumentId, amountMinor: result.amountMinor, balanceMinor: result.balanceAfterMinor } };
+        return { status: 200, body: { instrumentId, amountMinor: result.amountMinor, balanceMinor: result.balanceAfterMinor, ...(timeOfSupply === undefined ? {} : { timeOfSupply }) } };
       },
     },
     {
@@ -163,6 +201,10 @@ export function storedValueRoutes(deps: StoredValueDeps): readonly Route[] {
           body: {
             instrumentId, kind: instrument.kind, ownerRef: instrument.ownerRef, balanceMinor,
             ...(instrument.expiresOn === undefined ? {} : { expiresOn: instrument.expiresOn }),
+            ...(instrument.timeOfSupply === undefined ? {} : { timeOfSupply: instrument.timeOfSupply }),
+            // A12: each redemption's time of supply, as it was recorded.
+            redemptions: (await deps.movements(ctx.tenantId, instrumentId)).filter((m) => m.kind === 'redeem')
+              .map((m) => ({ movementId: m.movementId, amountMinor: -m.deltaMinor, at: m.at, ...(m.timeOfSupply === undefined ? {} : { timeOfSupply: m.timeOfSupply }) })),
             asAt: deps.now(),
           },
         };

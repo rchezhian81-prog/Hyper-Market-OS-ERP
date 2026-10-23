@@ -8,3 +8,6 @@ export * from './escpos';
 export * from './presets';
 // OB-271: the legal GST tax invoice (Rule 46) — built, checked and laid out for paper; off during the mirror pilot.
 export * from './tax-invoice';
+// A22 (OB-326, switched off): the B2C dynamic QR, and the QR encoder it prints with (offline, no library).
+export * from './qr-code';
+export * from './b2c-dynamic-qr';

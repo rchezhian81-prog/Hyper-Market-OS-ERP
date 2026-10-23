@@ -24,6 +24,8 @@ export interface OutwardSupplyLine {
   readonly cgstMinor: number;
   readonly sgstMinor: number;
   readonly igstMinor: number;
+  /** A7: the GST Compensation Cess on the line (GSTN `csamt`). Absent = none. */
+  readonly cessMinor?: number;
 }
 
 export interface ClassifiedLine extends OutwardSupplyLine {
@@ -71,6 +73,8 @@ export interface HsnSummaryRow {
   readonly igstMinor: number;
   readonly b2bTaxableMinor: number;
   readonly b2cTaxableMinor: number;
+  /** A7: the compensation cess in this HSN/rate row — present only when a line in it carries one. */
+  readonly cessMinor?: number;
 }
 
 export interface Gstr1Table12 {
@@ -79,6 +83,8 @@ export interface Gstr1Table12 {
   readonly totalTaxMinor: number;
   readonly b2bTaxableMinor: number;
   readonly b2cTaxableMinor: number;
+  /** A7: the cess across the table — present only when any row carries one. */
+  readonly totalCessMinor?: number;
   readonly detail: string;
 }
 
@@ -90,11 +96,12 @@ export interface Gstr1Table12 {
 export function gstr1Table12(lines: readonly ClassifiedLine[]): Gstr1Table12 {
   const acc = new Map<string, {
     hsnCode: string; rateBps: number; quantityMinor: number; taxableMinor: number;
-    cgstMinor: number; sgstMinor: number; igstMinor: number; b2bTaxableMinor: number; b2cTaxableMinor: number;
+    cgstMinor: number; sgstMinor: number; igstMinor: number; b2bTaxableMinor: number; b2cTaxableMinor: number; cessMinor?: number;
   }>();
   for (const l of lines) {
     const key = `${l.hsnCode}|${l.rateBps}`;
     const row = acc.get(key) ?? { hsnCode: l.hsnCode, rateBps: l.rateBps, quantityMinor: 0, taxableMinor: 0, cgstMinor: 0, sgstMinor: 0, igstMinor: 0, b2bTaxableMinor: 0, b2cTaxableMinor: 0 };
+    if (l.cessMinor !== undefined && l.cessMinor !== 0) row.cessMinor = (row.cessMinor ?? 0) + l.cessMinor;
     row.quantityMinor += l.quantityMinor;
     row.taxableMinor += l.taxableMinor;
     row.cgstMinor += l.cgstMinor;
@@ -108,13 +115,15 @@ export function gstr1Table12(lines: readonly ClassifiedLine[]): Gstr1Table12 {
   const totalTaxMinor = rows.reduce((s, r) => s + r.cgstMinor + r.sgstMinor + r.igstMinor, 0);
   const b2bTaxableMinor = rows.reduce((s, r) => s + r.b2bTaxableMinor, 0);
   const b2cTaxableMinor = rows.reduce((s, r) => s + r.b2cTaxableMinor, 0);
+  const totalCessMinor = rows.reduce((s, r) => s + (r.cessMinor ?? 0), 0);
   return {
     rows,
     totalTaxableMinor,
     totalTaxMinor,
     b2bTaxableMinor,
     b2cTaxableMinor,
-    detail: `${rows.length} HSN/rate row(s); taxable ${totalTaxableMinor} (B2B ${b2bTaxableMinor}, B2C ${b2cTaxableMinor}), tax ${totalTaxMinor}`,
+    ...(rows.some((r) => r.cessMinor !== undefined) ? { totalCessMinor } : {}),
+    detail: `${rows.length} HSN/rate row(s); taxable ${totalTaxableMinor} (B2B ${b2bTaxableMinor}, B2C ${b2cTaxableMinor}), tax ${totalTaxMinor}${totalCessMinor !== 0 ? `, compensation cess ${totalCessMinor}` : ''}`,
   };
 }
 

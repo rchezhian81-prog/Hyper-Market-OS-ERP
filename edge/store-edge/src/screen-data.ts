@@ -199,6 +199,10 @@ export interface TillProduct {
   readonly blockedBatches?: readonly string[];
   /** D-20: batches under an approved markdown and the price each is charged at. */
   readonly batchPrices?: readonly { readonly batchId: string; readonly unitPriceMinor: number }[];
+  /** M10-FR-01 · M13-FR-02: the batches head office moved to EXPIRED — a 2D scan of one is refused, a return of one is held. */
+  readonly expiredBatches?: SignedPack['snapshot']['products'][number]['expiredBatches'];
+  /** A7: the compensation cess on the product's HSN, from head office's signed schedule — the till charges it inside the MRP. */
+  readonly cess?: SignedPack['snapshot']['products'][number]['cess'];
   readonly batchTracked?: boolean;
   /** `ageRestricted` on the pack file; the master's minimum age fills the number where it knows one. */
   readonly ageRestricted?: boolean;
@@ -265,6 +269,9 @@ export function tillCatalogue(pack: StorePack, cataloguePack: SignedPack | undef
         ...(p.recallBlock === true ? { recallBlock: true } : {}),
         ...(p.recallBlock === true && p.blockedBatches !== undefined && p.blockedBatches.length > 0 ? { blockedBatches: p.blockedBatches } : {}),
         ...(p.batchPrices === undefined || p.batchPrices.length === 0 ? {} : { batchPrices: p.batchPrices }),
+        // M10-FR-01 · M13-FR-02 and A7: the expired batches and the cess ride from the signed pack to the till as signed.
+        ...(p.expiredBatches === undefined || p.expiredBatches.length === 0 ? {} : { expiredBatches: p.expiredBatches }),
+        ...(p.cess === undefined ? {} : { cess: p.cess }),
         ...(p.batchTracked === true ? { batchTracked: true } : {}),
         ...(p.regulatedFlags === undefined ? {} : { regulatedFlags: p.regulatedFlags }),
       })),
@@ -421,6 +428,10 @@ export function posPayload(input: ScreenInput): Record<string, unknown> | null {
         ? { blockedBatches: p.blockedBatches } : {}),
       // D-20: a batch under an approved markdown is charged its markdown price when its 2D code is scanned.
       ...(p.batchPrices === undefined ? {} : { batchPrices: p.batchPrices }),
+      // M10-FR-01 · M13-FR-02: an expired batch's 2D code is refused at the scan, and a returned unit of it is held.
+      ...(p.expiredBatches === undefined ? {} : { expiredBatches: p.expiredBatches }),
+      // A7: the cess the bill charges inside the MRP and prints (before this the served till never received it).
+      ...(p.cess === undefined ? {} : { cess: p.cess }),
       ...(p.batchTracked === true ? { batchTracked: true } : {}),
       // Head office's flags ride as published; the pack file's `ageRestricted` becomes the lane's age prompt.
       ...(p.regulatedFlags !== undefined ? { regulatedFlags: p.regulatedFlags }
@@ -2106,7 +2117,33 @@ export function posLanePayload(input: ScreenInput, laneId: string | undefined): 
     scales: laneScalesFor(input.pack, laneId),
     // OB-256: the mirror pilot — "Paid on old system" is then the till's only tender, for sales and refunds.
     mirrorPilot: input.mirrorPilot ?? { on: false, by: null },
+    // B10: the store's FSSAI licence for the bill (the till prints its number while in force by its own clock). Before this
+    // the served till was never told it, so only a till booted with it by hand printed the number.
+    ...((l) => (l === undefined ? {} : { fssaiLicence: l }))(fssaiLicenceOf(policies?.fssaiLicence)),
+    // A22 (OB-326): the B2C dynamic QR — only when switched on; each detail only when it is text.
+    ...((q) => (q === undefined ? {} : { b2cDynamicQr: q }))(b2cDynamicQrOf(policies?.b2cDynamicQr)),
   };
+}
+
+const textOf = (v: unknown): string | undefined => (typeof v === 'string' && v.trim() !== '' ? v.trim() : undefined);
+
+/** The pack's FSSAI licence as the till reads it — a number that is text, and its last day when given. */
+function fssaiLicenceOf(v: unknown): { readonly number: string; readonly validUntil?: string } | undefined {
+  if (v === null || typeof v !== 'object') return undefined;
+  const r = v as Record<string, unknown>;
+  const number = textOf(r['number']);
+  const validUntil = textOf(r['validUntil']);
+  return number === undefined ? undefined : { number, ...(validUntil === undefined ? {} : { validUntil }) };
+}
+
+/** The pack's B2C dynamic QR switch as the till reads it: on only when it says `on: true`. Off → not sent at all. */
+function b2cDynamicQrOf(v: unknown): { readonly on: true; readonly upiId?: string; readonly bankAccountNo?: string; readonly bankIfsc?: string } | undefined {
+  if (v === null || typeof v !== 'object' || (v as Record<string, unknown>)['on'] !== true) return undefined;
+  const r = v as Record<string, unknown>;
+  const upiId = textOf(r['upiId']);
+  const bankAccountNo = textOf(r['bankAccountNo']);
+  const ifsc = textOf(r['bankIfsc']);
+  return { on: true, ...(upiId === undefined ? {} : { upiId }), ...(bankAccountNo === undefined ? {} : { bankAccountNo }), ...(ifsc === undefined ? {} : { bankIfsc: ifsc }) };
 }
 
 /**

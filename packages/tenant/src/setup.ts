@@ -11,6 +11,7 @@
 // facts.
 
 import { PAPER_FORMATS } from '../../receipt/src/presets';
+import { isUpiId, isBankAccountNo, isIfsc } from '../../receipt/src/b2c-dynamic-qr';
 import { SETTINGS, TenantSettings, type TenantSetting } from './settings';
 
 /** How much attention a setting usually needs — advisory, for grouping in the UI. */
@@ -91,6 +92,12 @@ const WARN_HOURS = numberRule({ min: 1, max: 720, whole: true }, 'Give a whole n
 const UNSENT_WARN_HOURS = numberRule({ min: 1, max: 72, whole: true }, 'Give a whole number of hours, from 1 to 72.');
 const CLAIM_SLACK_NUMBERS = numberRule({ min: 0, max: 100, whole: true }, 'Give a whole number of bill numbers, from 0 to 100.');
 const CLAIM_SLACK_PERCENT = numberRule({ min: 0, max: 50, whole: true }, 'Give a whole percentage, from 0 to 50.');
+/** A22: a QR detail is empty (not set) or one this check accepts — never half a detail. */
+const emptyOr = (check: (v: string) => boolean, message: string): SetupValidator => (v) =>
+  (isString(v) && (v.trim() === '' || check(v.trim())) ? null : message);
+const validateUpiId = emptyOr(isUpiId, 'Give the UPI ID as the bank gave it, like shopname@bank — or leave it empty (not set).');
+const validateBankAccount = emptyOr(isBankAccountNo, 'Give the bank account number as digits only (9 to 18) — or leave it empty (not set).');
+const validateIfsc = emptyOr((v) => isIfsc(v.toUpperCase()), 'Give the 11-character IFSC, like SBIN0001234 — or leave it empty (not set).');
 const validatePaperFormat: SetupValidator = (v) =>
   isString(v) && PAPER_FORMATS.some((f) => f.id === v)
     ? null : `Choose a paper size: ${PAPER_FORMATS.map((f) => f.id).join(', ')}.`;
@@ -251,6 +258,35 @@ export const SETUP_CATALOGUE: readonly SetupItem[] = [
     required: false,
     question: '…or what percentage of N, when that is more? (5 by default; 0 is strictest.)',
     ...CLAIM_SLACK_PERCENT,
+  },
+  {
+    // A22 · OB-326: built switched off. Only a shop above ₹500 crore aggregate turnover must print it.
+    setting: SETTINGS.INVOICE_B2C_DYNAMIC_QR_ON,
+    group: 'check_default',
+    required: false,
+    question: 'Print the GST dynamic QR on every customer bill? The law asks for it only above ₹500 crore turnover a year (off by default).',
+    validate: validateBool,
+  },
+  {
+    setting: SETTINGS.INVOICE_B2C_DYNAMIC_QR_UPI_ID,
+    group: 'check_default',
+    required: false,
+    question: 'For the dynamic QR: the shop\'s UPI ID the customer pays to. (Empty = not set; no QR prints until it is.)',
+    validate: validateUpiId,
+  },
+  {
+    setting: SETTINGS.INVOICE_B2C_DYNAMIC_QR_BANK_ACCOUNT,
+    group: 'check_default',
+    required: false,
+    question: 'For the dynamic QR: the bank account number that UPI ID pays into. (Empty = not set.)',
+    validate: validateBankAccount,
+  },
+  {
+    setting: SETTINGS.INVOICE_B2C_DYNAMIC_QR_IFSC,
+    group: 'check_default',
+    required: false,
+    question: 'For the dynamic QR: that bank account\'s IFSC. (Empty = not set.)',
+    validate: validateIfsc,
   },
 ];
 

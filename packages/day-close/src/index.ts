@@ -4,3 +4,4 @@
 // separate approver. Grows one reviewed, tested unit at a time.
 
 export * from './day-close';
+export * from './evidence-pack';
