@@ -98,6 +98,14 @@ const WORDS = {
     packDateYes: 'Yes — date is good', packDateNo: 'No — past its date, do not sell',
     packDateNotSoldTitle: 'Item not sold',
     packDateNotSold: 'The date on the pack of {item} has passed, so it was not added to the bill. Put it aside for the manager.',
+    // M12-FR-01 (QG-05): how fast this till puts a scanned item on the bill, today, as the store computer keeps it.
+    scanSpeed: 'Scan speed', scanSpeedTitle: 'Scan speed today — this till',
+    scanSpeedSaid: '{samples} scans timed today. 95 in every 100 reached the bill within {p95} ms (the target is {target} ms). Middle {median} ms, slowest {max} ms; {over} over the target.',
+    scanSpeedSlow: 'This till is slower than the target — tell the manager.',
+    scanSpeedGood: 'Within the target.',
+    scanSpeedDropped: '{dropped} timings could not be kept while the store computer was out of reach.',
+    scanSpeedWaiting: '{waiting} more are waiting on this till to be sent.',
+    scanSpeedUnknown: 'Not measured yet',
     // Who is on the till (SP-4b · F09): the lane the box said it is, and the cashier who signed in — or nobody.
     lane: 'Lane', noLane: 'No lane set on this till', notSignedIn: 'Nobody signed in',
     signIn: 'Sign in', signOut: 'Sign out', signInTitle: 'Your staff ID',
@@ -315,6 +323,13 @@ const WORDS = {
     packDateYes: 'ஆம் — தேதி சரி', packDateNo: 'இல்லை — தேதி கடந்துவிட்டது, விற்க வேண்டாம்',
     packDateNotSoldTitle: 'பொருள் விற்கப்படவில்லை',
     packDateNotSold: '{item} பொதியில் உள்ள தேதி கடந்துவிட்டது, எனவே அது பில்லில் சேர்க்கப்படவில்லை. மேலாளருக்காக தனியாக வையுங்கள்.',
+    scanSpeed: 'ஸ்கேன் வேகம்', scanSpeedTitle: 'இன்றைய ஸ்கேன் வேகம் — இந்த கவுண்டர்',
+    scanSpeedSaid: 'இன்று {samples} ஸ்கேன்கள் நேரம் அளக்கப்பட்டன. 100-ல் 95 ஸ்கேன்கள் {p95} மி.வி.க்குள் பில்லில் வந்தன (இலக்கு {target} மி.வி.). நடு {median} மி.வி., மிக மெதுவானது {max} மி.வி.; {over} இலக்கை மீறின.',
+    scanSpeedSlow: 'இந்த கவுண்டர் இலக்கை விட மெதுவாக உள்ளது — மேலாளரிடம் சொல்லுங்கள்.',
+    scanSpeedGood: 'இலக்குக்குள் உள்ளது.',
+    scanSpeedDropped: 'கடை கணினியை அடைய முடியாதபோது {dropped} நேர அளவுகளை வைத்திருக்க முடியவில்லை.',
+    scanSpeedWaiting: 'இன்னும் {waiting} இந்த கவுண்டரில் அனுப்பக் காத்திருக்கின்றன.',
+    scanSpeedUnknown: 'இன்னும் அளக்கப்படவில்லை',
     lane: 'லேன்', noLane: 'இந்த கவுண்டருக்கு லேன் அமைக்கப்படவில்லை', notSignedIn: 'யாரும் உள்நுழையவில்லை',
     signIn: 'உள்நுழை', signOut: 'வெளியேறு', signInTitle: 'உங்கள் பணியாளர் குறியீடு',
     signInHint: 'உங்கள் பேட்ஜை ஸ்கேன் செய்யவும் அல்லது பணியாளர் எண்ணை உள்ளிட்டு சரி அழுத்தவும். அடுத்து உங்கள் கல்லா PIN-ஐ உள்ளிடுவீர்கள்.',
@@ -1835,6 +1850,8 @@ el('more').addEventListener('click', async () => {
     // SUPERVISOR OVERRIDES (PF-07 · M12-FR-04): each needs a manager's approval and is recorded on the store computer
     // first. Changing a price needs a selected line.
     ...(session.noSaleAtTill ? [{ value: 'no_sale', label: t('noSale') }] : []),
+    // M12-FR-01: this till's scan-to-line speed today, as the store computer keeps it.
+    ...(typeof session.scanSpeed === 'function' ? [{ value: 'scan_speed', label: t('scanSpeed'), icon: 'activity' }] : []),
     ...(session.priceChangeAtTill && selectedLineId ? [{ value: 'price_change', label: t('priceChange') }] : []),
     // The customer's loyalty membership, by the mobile number they joined with (PF-09 step 2 · OB-28 "1").
     ...(guestOnly() ? [{ value: 'guest_only', label: t('guestOnlyOption') }] : session.setLoyaltyMobile === undefined ? [] : session.loyaltyMemberLast4() === null
@@ -1854,9 +1871,24 @@ el('more').addEventListener('click', async () => {
   if (what === 'member') return nameLoyaltyMember();
   if (what === 'guest_only') { tell(t('guestOnlyTitle'), t('guestOnlyMsg'), STOP); return undefined; }
   if (what === 'no_sale') return openDrawerNoSale();
+  if (what === 'scan_speed') return showScanSpeed();
   if (what === 'price_change') return changeLinePrice();
   if (what === 'member_remove') { session.setLoyaltyMobile(null); tell(t('member'), t('memberRemoved'), SUCCESS); return undefined; }
 });
+
+/**
+ * M12-FR-01 (QG-05 · §32): this till's scan-to-line figures for today, read from the store computer (which keeps every
+ * timed scan). Not measured yet, or the box out of reach, is said — never a made-up figure (P-08).
+ */
+async function showScanSpeed() {
+  const s = await session.scanSpeed();
+  const waiting = s.waiting > 0 ? ` ${t('scanSpeedWaiting').replace('{waiting}', String(s.waiting))}` : '';
+  if (!s.known) { tell(`${t('scanSpeedTitle')}: ${t('scanSpeedUnknown')}`, `${s.why}${waiting}`, STOP); return; }
+  const said = t('scanSpeedSaid').replace('{samples}', String(s.samples)).replace('{p95}', String(s.p95Ms)).replace('{target}', String(s.targetMs))
+    .replace('{median}', String(s.medianMs)).replace('{max}', String(s.maxMs)).replace('{over}', String(s.overTargetCount));
+  const dropped = s.droppedSamples > 0 ? ` ${t('scanSpeedDropped').replace('{dropped}', String(s.droppedSamples))}` : '';
+  tell(t('scanSpeedTitle'), `${said} ${s.withinTarget ? t('scanSpeedGood') : t('scanSpeedSlow')}${dropped}${waiting}`, s.withinTarget ? SUCCESS : STOP);
+}
 
 /**
  * Open the drawer with NO SALE (PF-07 · M15-FR-01): a manager approves with their own PIN, the store computer records it
@@ -2549,6 +2581,13 @@ el('unsent').addEventListener('click', () => {
 // or the raw code with group separators (sent as Ctrl+]). Every character is collected; at Enter a code shaped like a
 // GS1 code goes to the catalogue whole, and anything else keeps ONLY its digits — exactly what a 1D scan did before.
 let scanBuffer = '';
+// M12-FR-01: when the scan's first character arrived — the scan-to-line time runs from here to the line on the screen.
+let scanStartedAt = null;
+/** M12-FR-01: time one scan to the next painted frame (the line is on the screen), and hand it to the till. */
+function noteScanToLine(startedAt) {
+  if (startedAt === null || typeof session.noteScanTime !== 'function' || typeof requestAnimationFrame !== 'function') return;
+  requestAnimationFrame(() => { try { session.noteScanTime(performance.now() - startedAt); } catch { /* timing never stops a sale */ } });
+}
 const GS = String.fromCharCode(29);
 /** A GS1 2D code by its shape alone (the tested reader in packages/gs1 decides the rest). */
 function gs1Shaped(code) {
@@ -2623,6 +2662,8 @@ window.addEventListener('keydown', (event) => {
   if (event.key === 'Enter') {
     const raw = scanBuffer;
     scanBuffer = '';
+    const startedAt = scanStartedAt;
+    scanStartedAt = null;
     const code = gs1Shaped(raw) ? raw : raw.replace(/[^0-9]/g, '');
     if (code.length < 6) return; // a person pressing Enter, not a scanner
     // A scanner ends every code with Enter, and Enter on a FOCUSED button presses it: the button last tapped — the
@@ -2632,6 +2673,7 @@ window.addEventListener('keydown', (event) => {
     try {
       session.scanBarcode(code);
       render();
+      noteScanToLine(startedAt);
     } catch (e) {
       // An age-restricted item with no confirmed answer in this basket: the session refused to add it (PF-03). Ask, and
       // scan again only on a yes.
@@ -2648,7 +2690,10 @@ window.addEventListener('keydown', (event) => {
   // A 2D scanner sends FNC1 as Ctrl+] (the group separator); every other printable character is kept as typed.
   if (event.ctrlKey && event.key === ']') { scanBuffer += GS; return; }
   if (event.ctrlKey || event.metaKey || event.altKey) return;
-  if (event.key.length === 1) scanBuffer += event.key;
+  if (event.key.length === 1) {
+    if (scanBuffer === '') scanStartedAt = event.timeStamp;
+    scanBuffer += event.key;
+  }
 });
 
 render();

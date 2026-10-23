@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1537,
+  "testFiles": 1539,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -19,7 +19,7 @@
   },
   "totals": {
     "unit": 93,
-    "integration": 101,
+    "integration": 102,
     "realDb": 100,
     "browser": 86,
     "connected": 55,
@@ -865,10 +865,10 @@
       "id": "M12",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 18,
-        "integration": 24,
+        "unit": 19,
+        "integration": 25,
         "realDb": 5,
-        "browser": 13,
+        "browser": 14,
         "connected": 1,
         "device": 0,
         "uat": 0
@@ -881,6 +881,7 @@
           "tests/unit/edge-cloud-sale.test.ts",
           "tests/unit/evidence-ledger.test.ts",
           "tests/unit/held-bills.test.ts",
+          "tests/unit/m12-fr-01-the-box-keeps-every-scan-time-and-reads-the-p95.test.ts",
           "tests/unit/pending-recovery.test.ts",
           "tests/unit/pos-age-check-is-enforced-at-commit.test.ts",
           "tests/unit/pos-lane-guards.test.ts",
@@ -901,6 +902,7 @@
           "tests/integration/a-void-is-kept-and-judged-on-the-shops-record.test.ts",
           "tests/integration/an-age-restricted-sale-reaches-head-office-with-its-check.test.ts",
           "tests/integration/catalogue-pack-preview.test.ts",
+          "tests/integration/m12-fr-01-the-till-times-every-scan-and-the-box-keeps-it.test.ts",
           "tests/integration/no-sale-and-price-override-are-kept-and-judged.test.ts",
           "tests/integration/pending-tender-recovery.test.ts",
           "tests/integration/product-master.test.ts",
@@ -929,6 +931,7 @@
         ],
         "browser": [
           "tests/e2e/core-one-lane.test.ts",
+          "tests/e2e/the-served-till-checks-pack-dates-bis-licences-and-recalled-returns.e2e.ts",
           "tests/e2e/the-served-till-closes.e2e.ts",
           "tests/e2e/the-served-till-drives-the-customer-display.e2e.ts",
           "tests/e2e/the-served-till-keeps-a-held-basket.e2e.ts",
@@ -4741,8 +4744,8 @@
       "id": "QG-05",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 1,
-        "integration": 0,
+        "unit": 2,
+        "integration": 1,
         "realDb": 0,
         "browser": 0,
         "connected": 0,
@@ -4751,9 +4754,12 @@
       },
       "files": {
         "unit": [
-          "tests/unit/evidence-ledger.test.ts"
+          "tests/unit/evidence-ledger.test.ts",
+          "tests/unit/m12-fr-01-the-box-keeps-every-scan-time-and-reads-the-p95.test.ts"
         ],
-        "integration": [],
+        "integration": [
+          "tests/integration/m12-fr-01-the-till-times-every-scan-and-the-box-keeps-it.test.ts"
+        ],
         "realDb": [],
         "browser": [],
         "connected": [],
