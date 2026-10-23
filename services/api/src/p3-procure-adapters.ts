@@ -30,7 +30,8 @@ import type { SupplierPayment } from '../../purchase/src/supplier-account';
 import type { SupplierOpeningBalance, SupplierOpeningReversal } from '../../purchase/src/supplier-openings';
 import type { Asn } from '../../../packages/receiving/src/asn';
 import { apportionLandedCharges, landedCostDeltas, type LandedCostTarget } from '../../../packages/stock/src/landed-cost';
-import { chargesTotal, type PurchaseDeps } from '../../purchase/src/index';
+import { chargesTotal, matchLinesFrom, type PurchaseDeps } from '../../purchase/src/index';
+import { lineValueMinor } from '../../../packages/purchasing/src/three-way-match';
 import type { StockCostAdjustment } from '../../inventory/src/landed-cost';
 import { replenishmentRoutes } from '../../inventory/src/replenishment';
 import { requisitionSourceRoutes, type RequisitionSourceDeps, type ProposedLine } from '../../purchase/src/requisition-sources';
@@ -288,10 +289,47 @@ export async function rebateBasisFor(store: EventStore, tenantId: string, suppli
   return { amountMinor, invoices };
 }
 
-/** The hooks the rebate routes take (spread into their deps in main.ts): the folded basis and the ledger's "received". */
-export function p3RebateHooks(input: { readonly store: EventStore; readonly now: () => string }): Pick<RebateDeps, 'basisFor' | 'receivedFor'> {
+/**
+ * OB-334 (owner, 23 Oct 2026): the basis of a VOLUME rebate — the value RECEIVED at ORDER cost, from the supplier's MATCHED
+ * bills dated in the period (the same bills, dates and "latest match lets it be paid" rule as the purchase-value basis).
+ * For each line of such a bill: the quantity received against its order that this bill accounts for (after what earlier
+ * bills on the same order claimed — the match's own SP-7c figure), never more than the bill charges or the order asked
+ * for, valued at the ORDER's unit price (before GST, before landed charges; OB-31 / OB-46 units and case prices exactly as
+ * the match values them). A matched bill whose order head office cannot read is listed as not valued — never a nought.
+ */
+export async function volumeRebateBasisFor(store: EventStore, tenantId: string, supplierId: string, from: string, to: string) {
+  const latest = new Map<string, StoredMatch>();
+  for (const m of await payloads<StoredMatch>(store, tenantId, STREAM.purchase, 'InvoiceMatched')) latest.set(m.invoiceId, m);
+  const orders = await foldPurchaseOrders(store, tenantId);
+  let amountMinor = 0;
+  const invoices: string[] = [];
+  const notValued: { invoiceId: string; why: string }[] = [];
+  for (const i of await liveSupplierInvoices(store, tenantId)) {
+    if (i.supplierId !== supplierId) continue;
+    const m = latest.get(i.invoiceId);
+    if (m === undefined || m.blocked) continue;
+    const day = i.supplierInvoiceDate ?? i.capturedAt.slice(0, 10);
+    if (day < from || day > to) continue;
+    const order = m.poId === null ? undefined : orders.get(m.poId);
+    if (order === undefined || order.status !== 'issued') {
+      notValued.push({ invoiceId: i.invoiceId, why: m.poId === null ? 'the bill names no purchase order, so there is no order cost' : `purchase order ${m.poId} is not an issued order head office holds` });
+      continue;
+    }
+    for (const l of matchLinesFrom(order, i, m.sources.invoicedBefore ?? {})) {
+      const qty = Math.min(l.receivedQty, l.invoicedQty, l.orderedQty);
+      if (qty <= 0) continue;
+      amountMinor += lineValueMinor(qty, l.orderedUnitMinor, l.minorPerUnit ?? 1, l.orderedPer ?? 1);
+    }
+    invoices.push(i.invoiceId);
+  }
+  return { amountMinor, invoices, notValued };
+}
+
+/** The hooks the rebate routes take (spread into their deps in main.ts): the folded bases and the ledger's "received". */
+export function p3RebateHooks(input: { readonly store: EventStore; readonly now: () => string }): Pick<RebateDeps, 'basisFor' | 'volumeBasisFor' | 'receivedFor'> {
   return {
     basisFor: (tenantId, supplierId, from, to) => rebateBasisFor(input.store, tenantId, supplierId, from, to),
+    volumeBasisFor: (tenantId, supplierId, from, to) => volumeRebateBasisFor(input.store, tenantId, supplierId, from, to),
     receivedFor: async (tenantId, schemeId) => (await rebateJournals(input.store, tenantId)).filter((j) => j.rebateReceipt.schemeId === schemeId).reduce((s, j) => s + j.rebateReceipt.amountMinor, 0),
   };
 }

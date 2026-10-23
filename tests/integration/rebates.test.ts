@@ -15,7 +15,7 @@ import { DEFAULT_RETAIL_POSTING_MAP } from '../../packages/finance/src/index';
 
 const backings = useRestartableBackings();
 const codeOf = (res: { body: unknown }): string | undefined => (res.body as { error?: { code?: string } }).error?.code;
-type Accrual = { accrued: { minor: number }; basisAmount: { minor: number }; thresholdMet: boolean; detail: string; basisSources: { invoices: string[] } };
+type Accrual = { accrued: { minor: number }; basisAmount: { minor: number }; thresholdMet: boolean; detail: string; basisMeasure?: string; basisSources: { invoices: string[] } };
 const accrualOf = (res: { body: unknown }): Accrual => (res.body as { accrual: Accrual }).accrual;
 
 const scheme = (over: Record<string, unknown> = {}) =>
@@ -76,7 +76,40 @@ describe.each(backings)('supplier rebates (M06-FR-03) — on $name', ({ harness 
     expect((await again.request({ method: 'GET', path: '/v1/purchase/rebate-schemes/rb-1/accruals', userId: P3.OWNER, tenantId: T })).body).toMatchObject({ count: 1, outstandingMinor: 400 });
   }, 120_000);
 
-  it('nothing accrues below the threshold (and it says how far short); a growth scheme measures against its baseline period; a volume scheme is not guessed', async () => {
+  it('a volume scheme earns its percentage on the value RECEIVED at ORDER cost, from the matched bills of the period (OB-334); a restart reads the same', async () => {
+    const h = harness();
+    const T = randomUUID();
+    await p3Shop(h, T);
+    const call = caller(h, T);
+    // Ordered 10 at ₹50; 8 arrived; the bill charges the 8 at ₹49.60 (within the price tolerance — the lower price is paid).
+    await issuedOrder(call, 'po-v1', [{ productId: 'rice', qty: 10, unitMinor: 5_000 }]);
+    await received(call, 'grn-v1', 'po-v1', [{ productId: 'rice', qty: 8, unitMinor: 5_000 }]);
+    await capturedAndMatched(call, 'inv-v1', 'po-v1', [{ productId: 'rice', qty: 8, unitMinor: 4_960 }], undefined, 'sup-1', '2026-03-05');
+    // A bill for goods that never arrived is blocked by the match — it earns nothing.
+    await issuedOrder(call, 'po-v2', [{ productId: 'rice', qty: 5, unitMinor: 5_000 }]);
+    await capturedAndMatched(call, 'inv-v2', 'po-v2', [{ productId: 'rice', qty: 5, unitMinor: 5_000 }], undefined, 'sup-1', '2026-03-07');
+    // A matched bill outside the period does not count.
+    await issuedOrder(call, 'po-v3', [{ productId: 'rice', qty: 2, unitMinor: 5_000 }]);
+    await received(call, 'grn-v3', 'po-v3', [{ productId: 'rice', qty: 2, unitMinor: 5_000 }]);
+    await capturedAndMatched(call, 'inv-v3', 'po-v3', [{ productId: 'rice', qty: 2, unitMinor: 5_000 }], undefined, 'sup-1', '2026-04-02');
+
+    await call('POST', '/v1/purchase/rebate-schemes/vol', P3.OWNER, scheme({ basis: 'volume_units', rateBp: 500, thresholdMinor: 0 }));
+    await call('POST', '/v1/purchase/rebate-schemes/val', P3.OWNER, scheme({ basis: 'purchase_value', rateBp: 500, thresholdMinor: 0 }));
+    const vol = await call('POST', '/v1/purchase/rebate-schemes/vol/accruals/q1', P3.OWNER, { periodFrom: '2026-01-01', periodTo: '2026-03-31' });
+    expect(vol.status, JSON.stringify(vol.body)).toBe(201);
+    // 8 received × ₹50 order cost = ₹400 → 5% = ₹20 — not the ₹396.80 the bill is paid at.
+    expect(accrualOf(vol)).toMatchObject({ basisAmount: { minor: 40_000 }, accrued: { minor: 2_000 }, thresholdMet: true, basisMeasure: 'value_received_at_order_cost' });
+    expect(accrualOf(vol).basisSources.invoices).toEqual(['inv-v1']);
+    const val = await call('POST', '/v1/purchase/rebate-schemes/val/accruals/q1', P3.OWNER, { periodFrom: '2026-01-01', periodTo: '2026-03-31' });
+    expect(accrualOf(val)).toMatchObject({ basisAmount: { minor: 39_680 }, basisMeasure: 'taxable_value_of_matched_bills' });
+    // A typed basis is refused on a volume scheme too.
+    expect(codeOf(await call('POST', '/v1/purchase/rebate-schemes/vol/accruals/q9', P3.OWNER, { periodFrom: '2026-01-01', periodTo: '2026-03-31', basisAmount: { minor: 1, currency: 'INR' } }))).toBe('accrual_carries_caller_claims');
+    expect((await call('POST', '/v1/purchase/rebate-schemes/vol/accruals/q2', P3.CASHIER, { periodFrom: '2026-04-01', periodTo: '2026-06-30' })).status).toBe(403);
+    const again = harness(h);
+    expect((await again.request({ method: 'GET', path: '/v1/purchase/rebate-schemes/vol/accruals', userId: P3.OWNER, tenantId: T })).body).toMatchObject({ count: 1, totalAccruedMinor: 2_000 });
+  }, 120_000);
+
+  it('nothing accrues below the threshold (and it says how far short); a growth scheme measures against its baseline period', async () => {
     const h = harness();
     const T = randomUUID();
     const call = await bills(h, T);
@@ -94,8 +127,6 @@ describe.each(backings)('supplier rebates (M06-FR-03) — on $name', ({ harness 
     const growMar = await call('POST', '/v1/purchase/rebate-schemes/grow/accruals/mar', P3.OWNER, { periodFrom: '2026-03-01', periodTo: '2026-03-31', baselineFrom: '2026-02-01', baselineTo: '2026-02-28' });
     expect(accrualOf(growMar).accrued).toEqual({ minor: 2_400, currency: 'INR' });
 
-    await call('POST', '/v1/purchase/rebate-schemes/vol', P3.OWNER, scheme({ basis: 'volume_units' }));
-    expect(codeOf(await call('POST', '/v1/purchase/rebate-schemes/vol/accruals/q1', P3.OWNER, { periodFrom: '2026-01-01', periodTo: '2026-03-31' }))).toBe('volume_rebate_basis_undecided');
     expect((await call('POST', '/v1/purchase/rebate-schemes/nope/accruals/a1', P3.OWNER, { periodFrom: '2026-01-01', periodTo: '2026-03-31' })).status).toBe(404);
     expect(codeOf(await call('POST', '/v1/purchase/rebate-schemes/rb-y', P3.OWNER, scheme({ basis: 'made_up' })))).toBe('not_readable_as_a_rebate_scheme');
   }, 120_000);
