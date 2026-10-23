@@ -235,7 +235,8 @@ export function drReadinessRoutes(deps: DrReadinessDeps): readonly Route[] {
       api: 'API-11', method: 'GET', path: '/v1/platform/recovery-gate',
       permission: 'backup.verify.read',
       handler: async (ctx) => {
-        const reading = recoveryGateReading(await deps.drills(ctx.tenantId));
+        // OB-332: read at head office's clock — a pass older than one quarter reads "not proven".
+        const reading = recoveryGateReading(await deps.drills(ctx.tenantId), deps.now());
         return {
           status: 200,
           body: {

@@ -67,7 +67,7 @@ export function findingsAdapter(input: { readonly store: EventStore; readonly no
 export async function gateBlockersBeyondRisks(store: EventStore, now: () => string, tenantId: string): Promise<readonly OtherGateBlocker[]> {
   const fromFindings: OtherGateBlocker[] = findingBlocks(await foldFindings(store, tenantId))
     .map((b) => ({ gate: b.gate, kind: 'finding' as const, ref: b.findingId, reason: b.reason }));
-  const recovery = recoveryGateReading(await drReadinessAdapter({ store, now }).drills(tenantId));
+  const recovery = recoveryGateReading(await drReadinessAdapter({ store, now }).drills(tenantId), now()); // OB-332: a pass counts one quarter
   const fromRecovery: OtherGateBlocker[] = recovery.verdict === 'GO' ? [] : [{
     gate: 'QG-08', kind: 'check', ref: 'recovery-gate', reason: `QG-08 rehearsals not all passed — ${recovery.why}`,
   }];
