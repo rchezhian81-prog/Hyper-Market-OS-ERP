@@ -21,6 +21,8 @@ export interface EachPassSweeps {
   readonly approvalAge?: (tenantId: string, at: string) => Promise<number>;
   /** OB-288 P5 (OB-293): the daily Tally file outbox's pass — files made ready or dead-lettered (absent → not run). */
   readonly financeBridge?: (tenantId: string, at: string) => Promise<number>;
+  /** OB-288 wave 3: the customer package's timed work — points expiry, repeat orders, order notices, journeys (absent → not run). */
+  readonly customerCommerce?: (tenantId: string, at: string) => Promise<number>;
   readonly say: (line: string) => void;
 }
 
@@ -48,6 +50,7 @@ export function alsoEachPassOf(sweeps: EachPassSweeps): (tenantId: string, at: s
     }
     if (sweeps.approvalAge !== undefined) { try { const n = await sweeps.approvalAge(tenantId, at); if (n > 0) sweeps.say(`alerts: ${n} aged approval(s) escalated to the owners of shop ${tenantId}`); } catch (e) { errors.push(e); } }
     if (sweeps.financeBridge !== undefined) { try { const n = await sweeps.financeBridge(tenantId, at); if (n > 0) sweeps.say(`tally: ${n} daily file(s) made ready or dead-lettered for shop ${tenantId}`); } catch (e) { errors.push(e); } }
+    if (sweeps.customerCommerce !== undefined) { try { const n = await sweeps.customerCommerce(tenantId, at); if (n > 0) sweeps.say(`customers: ${n} timed step(s) done for shop ${tenantId}`); } catch (e) { errors.push(e); } }
     if (errors.length > 0) {
       const words = errors.map((e) => (e instanceof Error ? e.message : String(e))).join('; ');
       throw new Error(`a per-shop sweep failed: ${words}`);

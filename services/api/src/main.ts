@@ -345,7 +345,7 @@ import { opsMessagingRoutes, notificationGuardHooks, opsMessagingSweep } from '.
 import { p1IdentitySurface, approvalAgeSweep } from './p1-identity-adapters'; // OB-288 lane 1 · P1 — identity, authority, configuration
 import { poAuthorityHooks, expirySweepThatPublishes, followupsSurface } from './followups-adapters'; // OB-288 integration follow-ups
 import { aiGovernanceSurface } from './ai-adapters'; // OB-288 lane 4 · P1 — AI governance and agents (R7)
-import { customerCommerceSurface } from './customer-commerce-adapters'; // OB-288 wave 3 — customer, loyalty, CRM and the online cart
+import { customerCommerceSurface, withLoyaltyTiers, customerCommerceSweep } from './customer-commerce-adapters'; // OB-288 wave 3 — customer, loyalty, CRM and the online cart
 import { alsoEachPassOf } from './ops-alert-sweeps'; // R3 lane 1 — GST liability and returns
 import { itcPortForStore } from './r3-itc-bridge'; // R3 seam — GSTR-3B Table 4 reads the A17 reconciliation
 import { r4PayEprRoutes, r4PayslipHooks, payslipLateSweep } from './r4-pay-epr-adapters';
@@ -566,7 +566,7 @@ export function buildSurface(deps: {
     tillSpendCapPaise: await settings.value(tenantId, SETTINGS.LOYALTY_TILL_SPEND_CAP_PAISE),
   });
   // What a sale and a return do to a member's points (PF-09-a) — one composition shared by the sale and return routes.
-  const loyaltyEffects = store === undefined ? undefined : loyaltyEffectsAdapter({ store, now, rule: loyaltyRule });
+  const loyaltyEffects = store === undefined ? undefined : withLoyaltyTiers(loyaltyEffectsAdapter({ store, now, rule: loyaltyRule }), { store, now }); // OB-295 tiers
   // What the store computers may let a member spend, and what a till spend does when its sale arrives (PF-09 step 3).
   const loyaltyWallets = store === undefined ? undefined : loyaltyWalletsAdapter({ store, now, rule: loyaltyRule });
   // The named-report producers over governed source records (EA-06) — shared by the report route and the governed drill
@@ -2632,6 +2632,7 @@ export async function startApi(
       expiryMove: expirySweepThatPublishes({ store, now, signer: hmacSigner(settings['PACK_SIGNING_KEY']!) }), // OB-288 lane 2 · M10-FR-01, and the expired batches onto the tills' pack
       approvalAge: approvalAgeSweep({ store, now, settings: new DurableTenantSettings(new SqlConfigVersionStore(pgPoolClient(db))) }), // OB-288 lane 1 · P1 — OB-292 escalation by age
       financeBridge: async (t: string, at: string) => (await finBridgeSweep({ store, now })(t, at)) + (await opsMessagingSweep({ store, now })(t, at)), // OB-288 P5 — the daily Tally file outbox; an overdue CERT-In report
+      customerCommerce: customerCommerceSweep({ store, now }), // OB-288 wave 3 — points expiry (OB-295), repeat orders (OB-303), order notices, journeys
       say: (line) => { out(`${line}\n`); },
     }),
   });
