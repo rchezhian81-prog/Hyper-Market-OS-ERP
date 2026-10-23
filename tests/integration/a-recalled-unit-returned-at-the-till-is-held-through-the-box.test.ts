@@ -12,6 +12,7 @@ import { bootPos } from '../../apps/pos/src/browser-entry';
 import type { CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
 import { addTillPeople, signInTill, managerApprovesOn, signInAtLane, receiptNumberAt, approvalFromLane, operatorHeader } from '../support/till-operator';
 import { startRealCloud, type RealCloud } from '../support/real-store';
+import { ownerApprovedSettingOn } from '../support/owner-approved-setting';
 
 /**
  * **M13-FR-02 — a recalled unit returned AT THE TILL is held, never put back for sale: through a REAL store computer, offline
@@ -155,7 +156,7 @@ describe.skipIf(!DATABASE_URL)('M13-FR-02 — on the REAL stack: head office kee
     await cloud.grant(MANAGER, 'store_manager');
     await cloud.grant(CASHIER, 'cashier');
     await cloud.grant(BOX, 'store_computer', undefined, [STORE]);
-    expect((await call('PUT', '/v1/platform/setup/locale.time_zone', OWNER, { value: 'UTC' }, 'tz')).status).toBe(200);
+    expect((await ownerApprovedSettingOn(cloud, 'locale.time_zone', { value: 'UTC' }, OWNER)).status).toBe(200); // OB-336
     await ok(call('POST', '/v1/org/nodes/C1', OWNER, { kind: 'company', name: 'SRE Retail' }, 'org-c1'), 201);
     await ok(call('POST', `/v1/org/nodes/${STORE}`, OWNER, { kind: 'branch', name: 'SRE Hyper Market', parentId: 'C1', companyId: 'C1' }, 'org-s1'), 201);
     await ok(call('POST', '/v1/catalogue/tax-classes/0405/rates/2017-07-01', OWNER, { rateBps: 1200 }, 'tax-0405'), 201);
