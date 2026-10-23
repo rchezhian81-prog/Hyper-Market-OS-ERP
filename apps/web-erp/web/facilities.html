@@ -21,6 +21,13 @@
     <script src="./sre-icons.js" defer></script>
     <style>
       :root { --tap:48px; }
+      section.fs { background:var(--panel); border-radius:12px; padding:14px; display:grid; gap:10px; }
+      section.fs h3 { margin:0; } section.fs form { display:grid; gap:8px; }
+      section.fs label { display:grid; gap:4px; font-size:13px; color:var(--muted); }
+      section.fs input, section.fs select, section.fs textarea { min-height:var(--tap); box-sizing:border-box; padding:0 12px; border:1px solid var(--line); border-radius:10px; background:var(--bg); color:var(--ink); font:inherit; }
+      section.fs button { min-height:var(--tap); padding:0 16px; border:0; border-radius:10px; font-size:15px; font-weight:700; background:var(--ok); color:var(--on-accent); }
+      section.fs .saved { font-size:13px; color:var(--muted); } section.fs .exc { font-size:13px; color:var(--danger-text); }
+      p.fs-result { margin:0; padding:10px 12px; border-radius:10px; background:var(--bg); display:inline-flex; gap:8px; align-items:center; }
       body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.5 var(--font); min-height:100dvh; display:flex; flex-direction:column; }
       main { flex:1; padding:16px; display:grid; gap:16px; align-content:start; max-width:900px; width:100%; }
       h2 { margin:0 0 4px; font-size:20px; } p.lead { margin:0 0 4px; color:var(--muted); font-size:15px; }
@@ -81,6 +88,15 @@
 
       <h3 id="list-heading" hidden></h3>
       <ul class="rows" id="rows" aria-label="Overdue maintenance and compliance checks"></ul>
+
+      <section class="fs" id="fs" hidden aria-label="Food-safety checks today">
+        <h3 id="fs-heading"></h3>
+        <p class="lead" id="fs-lead"></p>
+        <p class="lead" id="fs-asof"></p>
+        <ul class="rows" id="fs-rows"></ul>
+        <p class="lead" id="fs-none" hidden></p>
+        <p class="fs-result" id="fs-result" hidden role="status" aria-live="polite"><span class="icon" id="fs-result-icon" aria-hidden="true"></span><span id="fs-result-text"></span></p>
+      </section>
 
       <p class="result" id="result" hidden role="status" aria-live="polite"><span class="icon" id="result-icon" aria-hidden="true"></span><span id="result-text"></span></p>
       <p class="state" id="state" hidden><span class="icon" id="state-icon" aria-hidden="true"></span><span id="state-text"></span></p>

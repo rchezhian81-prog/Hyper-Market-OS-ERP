@@ -233,6 +233,71 @@ el('sample').hidden = window.facilitiesSession !== undefined;
 el('sample').textContent = t('sampleData');
 paint();
 
+// ── OB-288 lane 2 · M10-FR-02: today's food-safety checks, saved through the store computer (works with the line down) ──
+const fsq = window.foodSafetyQueue ?? null;
+const ft = (key) => (fsq === null ? key : fsq.text(lang, key));
+function fsField(text, control) { const l = document.createElement('label'); const s = document.createElement('span'); s.textContent = text; l.append(s, control); return l; }
+function fsForm(row) {
+  const form = document.createElement('form');
+  const parts = [];
+  const reading = document.createElement('input'); reading.className = 'fs-reading'; reading.inputMode = 'decimal'; reading.autocomplete = 'off';
+  if (row.limits !== undefined || row.kind === 'temperature') parts.push(fsField(ft('fsReading'), reading));
+  const selects = {};
+  for (const item of row.items) {
+    const sel = document.createElement('select'); sel.className = 'fs-item'; sel.dataset.item = item.itemId;
+    for (const [v, k] of [['', null], ['pass', 'fsPass'], ['fail', 'fsFail']]) { const o = document.createElement('option'); o.value = v; o.textContent = k === null ? '—' : ft(k); sel.append(o); }
+    selects[item.itemId] = sel; parts.push(fsField(item.label, sel));
+  }
+  const action = document.createElement('textarea'); action.className = 'fs-action'; parts.push(fsField(ft('fsAction'), action));
+  const save = document.createElement('button'); save.type = 'submit'; save.className = 'fs-save'; save.textContent = `✓ ${ft('fsSave')}`;
+  form.append(...parts, save);
+  form.addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    const itemResults = {}; for (const [id, sel] of Object.entries(selects)) itemResults[id] = sel.value;
+    const out = fsq.record(lang, { checkId: row.checkId, slotDueAt: row.slotDueAt, readingC: reading.value, itemResults, correctiveAction: action.value });
+    const box = el('fs-result'); box.hidden = false;
+    el('fs-result-icon').textContent = out.ok ? '✓' : '✕';
+    el('fs-result-text').textContent = out.ok ? ft('fsSaved') : out.words;
+    paintFoodSafety();
+    void syncFoodSafety();
+  });
+  return form;
+}
+function paintFoodSafety() {
+  if (fsq === null) { el('fs').hidden = true; return; }
+  const v = fsq.view(lang);
+  el('fs').hidden = false;
+  el('fs-heading').textContent = ft('fsHeading'); el('fs-lead').textContent = ft('fsLead'); el('fs-asof').textContent = v.asAtWords;
+  el('fs-none').hidden = !v.known || v.rows.length > 0; el('fs-none').textContent = ft('fsNone');
+  el('fs-rows').replaceChildren(...v.rows.map((row) => {
+    const li = document.createElement('li');
+    li.className = `row tone-${row.state === 'missed' ? 'error' : row.state === 'due' ? 'degraded' : 'ok'}`;
+    li.dataset.check = row.checkId; li.dataset.slot = row.slotDueAt; li.dataset.state = row.state;
+    const head = document.createElement('div'); head.className = 'head';
+    const name = document.createElement('span'); name.className = 'headline'; name.textContent = `${row.title} — ${new Date(row.slotDueAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    const st = document.createElement('span'); st.className = 'status';
+    const icon = document.createElement('span'); icon.className = 'icon'; icon.setAttribute('aria-hidden', 'true'); icon.textContent = row.icon;
+    const word = document.createElement('span'); word.textContent = row.stateWord;
+    st.append(icon, word); st.setAttribute('aria-label', row.stateWord); head.append(name, st); li.append(head);
+    if (row.saved !== undefined) {
+      const s = document.createElement('div'); s.className = 'saved'; s.textContent = row.saved.stateWord; li.append(s);
+      if (row.saved.reason) { const ex = document.createElement('div'); ex.className = 'exc'; ex.textContent = row.saved.reason; li.append(ex); }
+    }
+    if (row.canRecord) li.append(fsForm(row));
+    return li;
+  }));
+}
+async function syncFoodSafety() {
+  const relay = window.foodSafetyRelay;
+  if (!relay) return;
+  try { await relay.syncNow(); } catch { /* kept on this device; the next pass tries again */ }
+  paintFoodSafety();
+}
+el('lang').addEventListener('click', () => { paintFoodSafety(); });
+paintFoodSafety();
+void syncFoodSafety();
+setInterval(() => { void syncFoodSafety(); }, 15_000);
+
 // Read the live overdue board (a GET — read-only). Offline or refused, the screen keeps its current view and the
 // stale strip already says the page is what the box last told it.
 async function refresh() {

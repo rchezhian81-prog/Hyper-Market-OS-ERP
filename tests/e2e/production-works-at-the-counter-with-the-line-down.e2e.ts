@@ -89,6 +89,10 @@ describe.skipIf(!HAVE_BROWSER)('the production screen at the counter with the li
   });
 
   const ready = (page: Page) => page.waitForFunction(() => (globalThis as unknown as ProdWindow).productionTasks !== undefined && (globalThis as unknown as ProdWindow).productionRelay !== undefined, undefined, { timeout: 15_000 });
+  const waitText = (page: Page, selector: string, text: string) => page.waitForFunction(([sel, want]) => {
+    const node = (globalThis as unknown as { document: { querySelector(s: string): { textContent: string | null } | null } }).document.querySelector(sel!);
+    return (node?.textContent ?? '').includes(want!);
+  }, [selector, text], { timeout: 5_000 });
   const saved = (page: Page) => page.evaluate(() => (globalThis as unknown as ProdWindow).productionTasks!.view('en').saved);
 
   it('a run, a weigh and a release are saved through the box with no cloud; labels come from the box; a reload sends nothing twice', async () => {
@@ -123,7 +127,7 @@ describe.skipIf(!HAVE_BROWSER)('the production screen at the counter with the li
     expect((await page.textContent('#saved-rows')) ?? '').toContain('With the store computer');
 
     // WEIGH — more out than in is refused before it is saved; then a good weigh is saved.
-    for (const [id, v] of [['#weigh-dept', 'meat_fish'], ['#weigh-in', 'CHICKEN'], ['#weigh-in-g', '1000'], ['#weigh-out', 'CUTS'], ['#weigh-out-g', '1200']]) await page.fill(id, v);
+    for (const [id, v] of [['#weigh-dept', 'meat_fish'], ['#weigh-in', 'CHICKEN'], ['#weigh-in-g', '1000'], ['#weigh-out', 'CUTS'], ['#weigh-out-g', '1200']] as const) await page.fill(id, v);
     await page.click('#weigh');
     expect((await page.textContent('#result-text')) ?? '').toContain('More came out than went in');
     await page.fill('#weigh-out-g', '800');
@@ -132,7 +136,7 @@ describe.skipIf(!HAVE_BROWSER)('the production screen at the counter with the li
 
     // RELEASE head office's waiting batch — a decision saved the same way.
     await page.click('li.row[data-run-id="run-ho"] button.release');
-    await page.waitForFunction(() => ((document.getElementById('result-text')?.textContent) ?? '').includes('Decision saved on this screen'), undefined, { timeout: 5_000 });
+    await waitText(page, '#result-text', 'Decision saved on this screen');
     await page.waitForFunction(() => (globalThis as unknown as ProdWindow).productionTasks!.view('en').saved.filter((w) => w.state === 'handed_to_box').length === 3, undefined, { timeout: 10_000 });
 
     // On the box's own disk, in the cook's name, in order.
@@ -156,11 +160,11 @@ describe.skipIf(!HAVE_BROWSER)('the production screen at the counter with the li
     const runId = (await saved(page)).find((w) => w.kind === 'run')!.id;
     await page.selectOption('#label-run', runId);
     await page.click('#label');
-    await page.waitForFunction(() => ((document.getElementById('label-out')?.textContent) ?? '').includes('Batch CAKE-77'), undefined, { timeout: 5_000 });
+    await waitText(page, '#label-out', 'Batch CAKE-77');
     // A label with no allergen declaration is refused in words; nothing printed.
     await page.fill('#label-allergens', '');
     await page.click('#label');
-    await page.waitForFunction(() => ((document.getElementById('result-text')?.textContent) ?? '').includes('allergen declaration'), undefined, { timeout: 5_000 });
+    await waitText(page, '#result-text', 'allergen declaration');
     expect(await page.isHidden('#label-out')).toBe(true);
 
     // RELOAD: all three still listed with the box's word; nothing re-sent to the box.

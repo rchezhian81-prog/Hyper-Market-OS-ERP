@@ -174,6 +174,7 @@ import {
   type ProductionTasksSession, type RunCommitPort, type LabelPort, type TaskPostResult, type WeighPort, type SavedWorkRow,
 } from './production-tasks-session';
 import { createProductionQueue, openBoxLabelPort, type ProductionQueue } from './production-queue';
+import { createFoodSafetyQueue, FOOD_SAFETY_COPY, type FoodSafetyQueue, type HeldFoodSafety } from './food-safety-queue';
 import {
   createFacilitiesSession,
   type FacilitiesPorts, type FacilitiesSession, type FacilitiesData, type OverdueTask,
@@ -2001,6 +2002,31 @@ export interface FacilitiesScreenData {
   readonly userId?: string;
   readonly permissions?: readonly string[];
   readonly worklist?: FacilitiesData;
+  /** OB-288 lane 2: the store this box is, and head office's food-safety checks as the box last heard them (null: never told). */
+  readonly storeId?: string;
+  readonly foodSafety?: HeldFoodSafety | null;
+}
+
+/** OB-288 lane 2: open the facilities screen's durable device queue (food-safety checks), keyed per store. */
+export function openFacilitiesOutbox(storeId: string, storage?: DeviceStorage): SyncOutbox {
+  const store = storage ?? (globalThis as { localStorage?: DeviceStorage }).localStorage;
+  const onProblem = (why: string): void => { productionStorageProblem = why; };
+  return openDeviceOutbox(guardedStore(`sre.facilities.outbox.${storeId}`, store, onProblem), onProblem);
+}
+
+/** OB-288 lane 2: the food-safety checks' leg of the shared device → box path. */
+export function openFoodSafetyRelay(laneWriteBase: string | undefined, queue: FoodSafetyQueue, outbox: SyncOutbox): ManagerRelay | undefined {
+  if (laneWriteBase === undefined) return undefined;
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return undefined;
+  return {
+    syncNow: async () => {
+      const result = await drainToBox({ outbox, boxBase: laneWriteBase, source: 'manager', fetch: fetchFn });
+      const statuses = await boxStatus({ boxBase: laneWriteBase, keys: queue.handedKeys(), fetch: fetchFn });
+      if (statuses !== undefined) queue.noteBoxStatus(statuses);
+      return { handed: result.handed, refused: result.refused, failed: result.failed, offline: result.offline };
+    },
+  };
 }
 
 const FACILITIES_READ_PERMISSION = 'facilities.overdue.read';
@@ -5025,6 +5051,10 @@ interface ManagerWindow {
   };
   facilitiesData?: FacilitiesScreenData;
   facilitiesSession?: FacilitiesSession;
+  /** OB-288 lane 2: today's food-safety checks through the store computer, and their leg of the device → box path. */
+  foodSafetyQueue?: FoodSafetyQueue;
+  foodSafetyRelay?: ManagerRelay;
+  foodSafetyWords?: typeof FOOD_SAFETY_COPY;
   /** The shell reads the live overdue board through this and re-presents it — a GET read, never a write. */
   facilities?: {
     refresh(): Promise<FacilitiesData | null>;
@@ -6291,6 +6321,15 @@ if (browserWindow !== undefined) {
   // an explicit click — and the server re-checks `facilities.task.record` and refuses a completion with no
   // required evidence or a self-verified safety check (§28), which the screen never fakes (P-08).
   const facilitiesData = browserWindow.facilitiesData;
+  // OB-288 lane 2 · M10-FR-02 offline: served by the store computer, today's food-safety checks are worked out here from
+  // head office's checks in force and saved through the box, timed by when they were done.
+  if (browserWindow.laneWriteBase !== undefined && facilitiesData?.storeId !== undefined && facilitiesData.foodSafety !== undefined) {
+    const fsOutbox = openFacilitiesOutbox(facilitiesData.storeId);
+    const fsQueue = createFoodSafetyQueue({ userId: facilitiesData.userId ?? null, storeId: facilitiesData.storeId, now: () => new Date().toISOString() }, facilitiesData.foodSafety, fsOutbox);
+    browserWindow.foodSafetyQueue = fsQueue;
+    browserWindow.foodSafetyRelay = openFoodSafetyRelay(browserWindow.laneWriteBase, fsQueue, fsOutbox);
+    browserWindow.foodSafetyWords = FOOD_SAFETY_COPY;
+  }
   const completePort = openCompletePort();
   const facilitiesVerifyPort = openFacilitiesVerifyPort();
   const facilities = bootFacilities(facilitiesData, undefined, completePort, facilitiesVerifyPort);
