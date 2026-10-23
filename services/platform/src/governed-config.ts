@@ -23,16 +23,14 @@ import type { AuditEntry } from '../../../packages/audit/src/index';
 import { actionDetails, openApproval, type ApprovalPort } from '../../identity/src/approval-requests';
 
 /**
- * Settings whose change needs the owner's approval: the trading day, currency and time zone (M01-FR-02 names them), the
- * pricing control on bulk price publishes and the offline spend limit (M01-FR-03 "payments, pricing, offline limits").
- * Payments have no setting here yet (no provider is connected); a switch named `payments.*` is high-impact.
+ * Settings whose change needs the owner's approval — the ones M01-FR-02 names: "owner approval for currency/precision and
+ * trading-day changes". (M01-FR-03's high-impact list is of SWITCHES — payments, pricing, offline limits — below.) Whether
+ * the time zone, the till's offline spend cap or the bulk-publish threshold should join this list is the owner's decision,
+ * asked in the P1 report; until then they change with one person, as before.
  */
 export const HIGH_IMPACT_SETTINGS: Readonly<Record<string, string>> = Object.freeze({
   'trading_day.cutoff': 'decides which day every sale, day close and tax period falls in',
   'locale.currency': 'the currency every amount is held in',
-  'locale.time_zone': 'the shop\'s clock — which day "today" is',
-  'catalogue.bulk_publish_threshold': 'how many price and product changes one publish may make before it needs a fresh second-factor sign-in (pricing)',
-  'loyalty.till_spend_cap_paise': 'the most a member may spend at the till offline per day (an offline limit)',
 });
 
 /** Switches whose name begins with one of these are high-impact (M01-FR-03: payments, pricing, offline limits). */

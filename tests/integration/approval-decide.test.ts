@@ -72,14 +72,18 @@ describe('deciding an approval under §28 (M02-FR-03)', () => {
     expect(codeOf(loophole)).toBe('delegation_to_maker_forbidden');
   });
 
-  it('refuses a decision beyond the decider’s own cap — escalate, never widen', async () => {
+  it('refuses a decision beyond the decider’s own cap — escalate, never widen; the cap is the SERVER\'s, not the body\'s (OB-290)', async () => {
     const h = await seeded();
+    // A store manager's refund limit is ₹5,000 on the server: ₹6,000 is refused even when the body claims no limit…
     const res = await decide(h, 'u-mgr', {
-      request: refundBy('u-clerk', inr(50_000)), decision: 'approved', reason: 'big refund',
-      own: ownAuthority(inr(10_000)),
+      request: refundBy('u-clerk', inr(600_000)), decision: 'approved', reason: 'big refund',
+      own: ownAuthority(null),
     }, 'dec-over');
     expect(res.status).toBe(422);
     expect(codeOf(res)).toBe('exceeds_authority');
+    // …and ₹500 is approved even when the body claims a ₹100 limit — a body figure is never believed either way.
+    const within = await decide(h, 'u-mgr', { request: refundBy('u-clerk', inr(50_000)), decision: 'approved', reason: 'small refund', own: ownAuthority(inr(10_000)) }, 'dec-within');
+    expect(within.status).toBe(200);
   });
 
   it('refuses an unreadable decision without changing anything', async () => {

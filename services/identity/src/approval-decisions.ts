@@ -212,7 +212,8 @@ export function approvalDecisionRoutes(deps: ApprovalDecisionDeps): readonly Rou
         }
         // OB-290: an approval above the decider's money limit (the server's figure, never the screen's) is recorded and
         // flagged — it waits for the owner, never applied.
-        if (d.status === 'approved' && d.value !== null && deps.authorityOf !== undefined && limitedSubjectOf(d.subjectType) !== undefined
+        const holdsTheAuthority = !flags.some((f) => f === 'decider_unknown' || f === 'decider_lacks_authority' || f === 'authority_unverified');
+        if (holdsTheAuthority && d.status === 'approved' && d.value !== null && deps.authorityOf !== undefined && limitedSubjectOf(d.subjectType) !== undefined
           && !mayApproveValue(await deps.authorityOf(ctx.tenantId, d.decidedBy, d.subjectType), d.value.minor)) flags.push('decider_over_limit');
 
         const record: ApprovalDecisionRecord = {

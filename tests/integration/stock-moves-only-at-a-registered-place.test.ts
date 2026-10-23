@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { approvedNodeBody } from '../support/approved-org-change';
 import { SqlIdempotencyStore } from '../../services/kernel/src/index';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
@@ -82,6 +83,8 @@ async function onlyRegisteredPlaces(h: ApiHarness): Promise<void> {
 async function strandedStockIsListed(h: ApiHarness): Promise<void> {
   const T = randomUUID();
   await h.seedOwner(T, 'u-owner');
+  // OB-288 P1 (M01-FR-01): closing or reopening a place is structural — a second owner approves it.
+  await h.provisionOwner(T, 'u-owner-2');
   const call = (method: 'GET' | 'POST', path: string, body?: unknown): Promise<Res> =>
     h.request({ method, path, userId: 'u-owner', tenantId: T, ...(method === 'GET' ? {} : { idempotencyKey: `k-${randomUUID()}` }), ...(body === undefined ? {} : { body }) });
   const move = (movementId: string, locationId: string, kind = 'received', quantityMinor = 5) => call('POST', '/v1/inventory/movements', {
@@ -94,7 +97,7 @@ async function strandedStockIsListed(h: ApiHarness): Promise<void> {
   // 6b: a department with stock, then CLOSED.
   expect((await call('POST', '/v1/org/nodes/D-DAIRY', { kind: 'department', name: 'Dairy', parentId: 'store-1' })).status).toBeLessThan(300);
   expect((await move('mv-dairy', 'D-DAIRY', 'received', 7)).status).toBe(202);
-  expect((await call('POST', '/v1/org/nodes/D-DAIRY', { kind: 'department', name: 'Dairy', parentId: 'store-1', status: 'closed' })).status).toBeLessThan(300);
+  expect((await call('POST', '/v1/org/nodes/D-DAIRY', await approvedNodeBody(h, T, 'u-owner', 'u-owner-2', 'D-DAIRY', { kind: 'department', name: 'Dairy', parentId: 'store-1', status: 'closed' }))).status).toBeLessThan(300);
 
   const stranded = async (): Promise<{ locationId: string; onHandMinor: number; why: string; says: string }[]> =>
     ((await call('GET', '/v1/inventory/exceptions')).body as { strandedStock: { locationId: string; onHandMinor: number; why: string; says: string }[] }).strandedStock;
@@ -108,7 +111,7 @@ async function strandedStockIsListed(h: ApiHarness): Promise<void> {
   expect((await call('POST', '/v1/org/nodes/store-2', { kind: 'branch', name: 's2', parentId: 'C1', companyId: 'C1' })).status).toBeLessThan(300);
   expect((await call('POST', '/v1/org/nodes/D-S2', { kind: 'department', name: 'S2 dairy', parentId: 'store-2' })).status).toBeLessThan(300);
   expect((await move('mv-s2', 'D-S2', 'received', 3)).status).toBe(202);
-  expect((await call('POST', '/v1/org/nodes/D-S2', { kind: 'department', name: 'S2 dairy', parentId: 'store-2', status: 'closed' })).status).toBeLessThan(300);
+  expect((await call('POST', '/v1/org/nodes/D-S2', await approvedNodeBody(h, T, 'u-owner', 'u-owner-2', 'D-S2', { kind: 'department', name: 'S2 dairy', parentId: 'store-2', status: 'closed' }))).status).toBeLessThan(300);
   await h.provisionRole(T, 'u-mgr1', 'store_manager', ['store-1']);
   await h.provisionRole(T, 'u-mgr2', 'store_manager', ['store-2']);
   const strandedAs = async (user: string, branchId: string): Promise<string[]> => {
@@ -119,7 +122,7 @@ async function strandedStockIsListed(h: ApiHarness): Promise<void> {
   expect(await strandedAs('u-mgr1', 'store-1')).toEqual(['D-DAIRY']);
   expect(await strandedAs('u-mgr2', 'store-2')).toEqual(['D-S2']);
   expect((await stranded()).map((x) => x.locationId).sort()).toEqual(['D-DAIRY', 'D-S2', 'old-shelf']);
-  expect((await call('POST', '/v1/org/nodes/D-S2', { kind: 'department', name: 'S2 dairy', parentId: 'store-2', status: 'draft' })).status).toBeLessThan(300);
+  expect((await call('POST', '/v1/org/nodes/D-S2', await approvedNodeBody(h, T, 'u-owner', 'u-owner-2', 'D-S2', { kind: 'department', name: 'S2 dairy', parentId: 'store-2', status: 'draft' }))).status).toBeLessThan(300);
   expect((await move('mv-s2-out', 'D-S2', 'transferred_out', 3)).status).toBe(202);
   // The refusals say which it is, and where the stock is listed.
   const closedMove = await move('mv-out-1', 'D-DAIRY', 'transferred_out', 7);
@@ -130,7 +133,7 @@ async function strandedStockIsListed(h: ApiHarness): Promise<void> {
   expect(codeOf(preMove)).toBe('unknown_location');
   expect((preMove.body as { error: { nextSafeAction: string } }).error.nextSafeAction).toMatch(/strandedStock/);
   // The way out works: reopen the department / register the old id, move the stock out, and it leaves the list.
-  expect((await call('POST', '/v1/org/nodes/D-DAIRY', { kind: 'department', name: 'Dairy', parentId: 'store-1', status: 'draft' })).status).toBeLessThan(300);
+  expect((await call('POST', '/v1/org/nodes/D-DAIRY', await approvedNodeBody(h, T, 'u-owner', 'u-owner-2', 'D-DAIRY', { kind: 'department', name: 'Dairy', parentId: 'store-1', status: 'draft' }))).status).toBeLessThan(300);
   expect((await move('mv-out-1', 'D-DAIRY', 'transferred_out', 7)).status).toBe(202);
   expect((await call('POST', '/v1/org/nodes/old-shelf', { kind: 'department', name: 'Old shelf', parentId: 'store-1' })).status).toBeLessThan(300);
   expect((await move('mv-out-2', 'old-shelf', 'transferred_out', 5)).status).toBe(202);

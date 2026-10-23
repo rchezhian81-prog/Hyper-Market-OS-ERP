@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 1236 | 742 | 742 | 109 | 361 |
+| 13 | 1254 | 749 | 749 | 109 | 364 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -33,12 +33,23 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/access/emergency/:grantId` | `identity.role.request` | core | yes |
 | POST | `/v1/access/emergency/:grantId/revoke` | `identity.role.grant` | core | yes |
 | POST | `/v1/access/lifecycle/:requestId` | `identity.role.request` | core | yes |
+| GET | `/v1/approvals/authority/:userId` | `approvals.rules.read` | core | — |
+| GET | `/v1/approvals/authority/me` | `identity.self.read` | core | — |
 | GET | `/v1/approvals/decisions` | `approvals.delegation.read` | core | — |
 | POST | `/v1/approvals/decisions/:id/synced` | `approvals.decision.sync` | core | yes |
+| GET | `/v1/approvals/escalations` | `approvals.rules.read` | core | — |
 | GET | `/v1/approvals/requests` | `identity.self.read` | core | — |
 | POST | `/v1/approvals/requests` | `identity.self.read` | core | yes |
 | POST | `/v1/approvals/requests/:requestId/decide` | `identity.self.read` | core | yes |
+| GET | `/v1/approvals/rules` | `approvals.rules.read` | core | — |
+| PUT | `/v1/approvals/rules/:rule` | `approvals.rules.propose` | core | yes |
+| GET | `/v1/approvals/rules/:rule/history` | `approvals.rules.read` | core | — |
+| POST | `/v1/approvals/rules/:rule/preview` | `approvals.rules.read` | core | yes |
+| POST | `/v1/approvals/rules/:rule/rollback` | `approvals.rules.propose` | core | yes |
 | GET | `/v1/idempotency-conflicts` | `platform.health.read` | core | — |
+| GET | `/v1/identity/access-review` | `identity.access.review` | core | — |
+| GET | `/v1/identity/department-scopes` | `identity.role.read` | core | — |
+| POST | `/v1/identity/department-scopes/:userId/:roleId` | `identity.role.request` | core | yes |
 | POST | `/v1/identity/grants` | `identity.role.request` | core | yes |
 | POST | `/v1/identity/grants/:grantId/approve` | `identity.role.grant` | core | yes |
 | POST | `/v1/identity/grants/:grantId/reject` | `identity.role.grant` | core | yes |
@@ -65,10 +76,13 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/identity/outside-logins/suppliers/invites/:inviteId/sign-in` | `supplier.portal.manage` | core | yes |
 | GET | `/v1/identity/people` | `platform.person.read` | core | — |
 | POST | `/v1/identity/people` | `platform.person.provision` | core | yes |
+| GET | `/v1/identity/permission-matrix` | `identity.access.review` | core | — |
 | GET | `/v1/identity/roles` | `identity.role.read` | core | — |
 | GET | `/v1/identity/token-revocations` | `identity.session.revoke` | core | — |
 | POST | `/v1/identity/token-revocations` | `identity.session.revoke` | core | yes |
 | GET | `/v1/org/branches` | `org.branch.read` | core | — |
+| GET | `/v1/org/departments` | `org.branch.read` | core | — |
+| POST | `/v1/org/departments/:departmentId/categories` | `platform.setup.write` | core | yes |
 | GET | `/v1/org/document-templates` | `platform.setup.read` | core | — |
 | GET | `/v1/org/document-templates/:kind` | `platform.setup.read` | core | — |
 | POST | `/v1/org/document-templates/:kind/versions` | `platform.setup.write` | core | yes |
@@ -954,6 +968,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/consolidation/contributions` | `reporting.consolidation.manage` | core | yes |
 | POST | `/v1/consolidation/export` | `reporting.report.read` | core | yes |
 | POST | `/v1/consolidation/memberships` | `reporting.consolidation.manage` | core | yes |
+| GET | `/v1/org/departments/:departmentId/report` | `reporting.report.read` | core | — |
 | GET | `/v1/platform/devices` | `platform.health.read` | core | — |
 | POST | `/v1/platform/devices/:deviceId/enrolment` | `platform.device.manage` | core | yes |
 | POST | `/v1/platform/devices/:deviceId/register` | `platform.device.manage` | core | yes |
@@ -1171,6 +1186,9 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/platform/export` | `platform.tenant.export` | core | — |
 | GET | `/v1/platform/flags` | `platform.flag.read` | core | — |
 | PUT | `/v1/platform/flags/:key` | `platform.flag.write` | core | yes |
+| GET | `/v1/platform/flags/:key/history` | `platform.flag.read` | core | — |
+| POST | `/v1/platform/flags/:key/preview` | `platform.flag.read` | core | yes |
+| POST | `/v1/platform/flags/:key/rollback` | `platform.flag.write` | core | yes |
 | GET | `/v1/platform/health` | `platform.health.read` | core | — |
 | GET | `/v1/platform/incidents` | `platform.health.read` | core | — |
 | GET | `/v1/platform/incidents/:incidentId` | `platform.health.read` | core | — |

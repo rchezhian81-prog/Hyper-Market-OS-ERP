@@ -19,7 +19,7 @@
 // routes. A target route that is missing throws at start-up: a control that silently guards nothing is the failure P-08
 // forbids.
 
-import type { EventStore } from '../../../packages/persistence/src/event-store';
+import { InMemoryEventStore, type EventStore } from '../../../packages/persistence/src/event-store';
 import type { Route, RequestContext, HandlerResult } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
@@ -224,8 +224,10 @@ export function p1IdentitySurface(surface: Route[], input: {
   readonly applyDecision?: (tenantId: string, record: ApprovalDecisionRecord) => Promise<AppliedDecision>;
   readonly tillSealKey?: Buffer;
 }): void {
-  const { store, now, settings } = input;
-  if (store === undefined) return; // a bare composition has nothing to govern and no store to read the rules from
+  const { now, settings } = input;
+  // A bare composition (no store: the API-surface document, a stub) still serves the same routes, over a store that keeps
+  // nothing between processes — the surface a partner reads is the one production serves.
+  const store = input.store ?? new InMemoryEventStore();
   const base: Base = { store, now, settings };
   const authorityOf = authorityOfAdapter(base);
   const approvals = approvalRequestsAdapter({ store, now });

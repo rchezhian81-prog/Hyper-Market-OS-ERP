@@ -213,10 +213,10 @@ describe('structural and high-impact changes (M01-FR-01/02/03)', () => {
     expect(isStructuralChange(live, { ...live, status: 'draft' })).toBe(true);
   });
 
-  it('payments, pricing and offline-limit switches, and the trading day, currency and time zone, are high-impact', () => {
+  it('payments, pricing and offline-limit switches, and the trading-day cut-off and currency, are high-impact', () => {
     expect(['payments.upi', 'pricing.auto_markdown', 'offline.refund_cap'].every(isHighImpactFlag)).toBe(true);
     expect(isHighImpactFlag('screens.dark_mode')).toBe(false);
-    expect(Object.keys(HIGH_IMPACT_SETTINGS)).toEqual(expect.arrayContaining(['trading_day.cutoff', 'locale.currency', 'locale.time_zone', 'loyalty.till_spend_cap_paise']));
+    expect(Object.keys(HIGH_IMPACT_SETTINGS).sort()).toEqual(['locale.currency', 'trading_day.cutoff']);
     expect(flagHistory([{ key: 'a', enabled: true, changedBy: 'u', changedAt: 'x' }, { key: 'b', enabled: true, changedBy: 'u', changedAt: 'x' }, { key: 'a', enabled: false, changedBy: 'u', changedAt: 'y' }], 'a').map((c) => [c.version, c.enabled])).toEqual([[1, true], [2, false]]);
   });
 });
