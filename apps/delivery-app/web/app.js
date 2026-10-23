@@ -80,8 +80,15 @@ const WORDS = {
     sentHeading: 'Sent from this phone', nothingSent: 'nothing sent yet',
     cancel: 'Cancel', ok: 'OK', read: 'Please read this',
     tapStopFirst: 'Tap the stop you are at first.',
-    howProved: 'How did you prove the delivery?', photo: 'Photo at the door', otp: 'Customer’s OTP',
-    signature: 'Customer signed', proofRef: 'Enter the OTP or reference',
+    howProved: 'How did you prove the delivery?', photo: 'Photo at the door', otp: 'Customer’s 4-digit code',
+    signature: 'Customer signs on the screen',
+    codeTitle: 'Ask the customer for the 4 numbers in their app', codeHint: 'Type the 4 numbers the customer reads out.',
+    codeFormat: 'The code is 4 numbers. Ask the customer to read it again.',
+    codeLater: 'The code is checked at head office when this phone is back on the shop wifi.',
+    takePhoto: 'Take a photo of the parcel at the door', openCamera: 'Open the camera', usePhoto: 'Use this photo', retake: 'Take it again',
+    photoHint: 'Only the parcel and the door — not the customer’s face.',
+    signHere: 'Ask the customer to sign with a finger', clear: 'Clear', done: 'Done',
+    imageError: 'The picture could not be kept. Take it again.',
     howPaid: 'How did the customer pay?', cash: 'Cash', upi: 'UPI',
     howMuchCollected: 'How much did you collect?', expected: 'Order says',
     collectedLess: 'That is less than the order says. It will be reported as short — that is fine if it is what happened.',
@@ -126,8 +133,15 @@ const WORDS = {
     sentHeading: 'இந்த ஃபோனிலிருந்து அனுப்பப்பட்டவை', nothingSent: 'இன்னும் எதுவும் அனுப்பப்படவில்லை',
     cancel: 'ரத்து', ok: 'சரி', read: 'இதைப் படிக்கவும்',
     tapStopFirst: 'முதலில் நீங்கள் இருக்கும் நிறுத்தத்தைத் தொடவும்.',
-    howProved: 'கொடுத்ததை எப்படி நிரூபித்தீர்கள்?', photo: 'வாசலில் புகைப்படம்', otp: 'வாடிக்கையாளரின் OTP',
-    signature: 'வாடிக்கையாளர் கையொப்பம்', proofRef: 'OTP அல்லது குறிப்பை உள்ளிடவும்',
+    howProved: 'கொடுத்ததை எப்படி நிரூபித்தீர்கள்?', photo: 'வாசலில் புகைப்படம்', otp: 'வாடிக்கையாளரின் 4 இலக்கக் குறியீடு',
+    signature: 'வாடிக்கையாளர் திரையில் கையொப்பம்',
+    codeTitle: 'வாடிக்கையாளரின் செயலியில் உள்ள 4 எண்களைக் கேளுங்கள்', codeHint: 'வாடிக்கையாளர் படிக்கும் 4 எண்களைத் தட்டச்சு செய்யவும்.',
+    codeFormat: 'குறியீடு 4 எண்கள். வாடிக்கையாளரை மீண்டும் படிக்கச் சொல்லுங்கள்.',
+    codeLater: 'இந்த ஃபோன் கடை வைஃபைக்குத் திரும்பியதும் குறியீடு தலைமை அலுவலகத்தில் சரிபார்க்கப்படும்.',
+    takePhoto: 'வாசலில் பொதியைப் புகைப்படம் எடுக்கவும்', openCamera: 'கேமராவைத் திற', usePhoto: 'இந்தப் புகைப்படத்தைப் பயன்படுத்து', retake: 'மீண்டும் எடு',
+    photoHint: 'பொதியும் வாசலும் மட்டும் — வாடிக்கையாளரின் முகம் வேண்டாம்.',
+    signHere: 'வாடிக்கையாளரை விரலால் கையொப்பமிடச் சொல்லுங்கள்', clear: 'அழி', done: 'முடிந்தது',
+    imageError: 'படத்தை வைத்திருக்க முடியவில்லை. மீண்டும் எடுக்கவும்.',
     howPaid: 'வாடிக்கையாளர் எப்படி பணம் தந்தார்?', cash: 'ரொக்கம்', upi: 'UPI',
     howMuchCollected: 'எவ்வளவு வாங்கினீர்கள்?', expected: 'ஆர்டரில் உள்ளது',
     collectedLess: 'இது ஆர்டரில் உள்ளதை விடக் குறைவு. குறைவாகப் பதிவு செய்யப்படும் — நடந்தது அதுவென்றால் பரவாயில்லை.',
@@ -204,6 +218,7 @@ const KIND_WORDS = {
   settlement: { en: 'Shift settled', ta: 'ஷிப்ட் கணக்கு' },
   handover: { en: 'Cash handed over', ta: 'பணம் ஒப்படைப்பு' },
   collection: { en: 'Return collection', ta: 'திருப்பல் சேகரிப்பு' },
+  proof: { en: 'Proof picture', ta: 'நிரூபணப் படம்' },
 };
 
 /** WF-16 (driver): a return collection's state, in both languages, and the shape it wears beside the words. */
@@ -234,10 +249,13 @@ const FAILURE_REASONS = [
  * (hard rule #3), and a method the screen cannot offer is a refusal a driver cannot walk into.
  */
 const PROOF_KINDS = [
-  { kind: 'photo', word: 'photo', needsRef: false },
-  { kind: 'otp', word: 'otp', needsRef: true },
-  { kind: 'signature', word: 'signature', needsRef: false },
+  { kind: 'otp', word: 'otp' },
+  { kind: 'photo', word: 'photo' },
+  { kind: 'signature', word: 'signature' },
 ];
+
+/** The largest proof picture the session keeps, in base64 characters (the package's PROOF_IMAGE_MAX_BASE64 is 60,000). */
+const IMAGE_LIMIT = 58_000;
 
 const PAY_METHODS = [{ method: 'cash', word: 'cash' }, { method: 'upi', word: 'upi' }];
 
@@ -267,14 +285,14 @@ function sampleRoute() {
     },
     depart: (id) => { const s = find(id); s.state = 'out_for_delivery'; return s; },
     deliver: (id, proof, o) => {
-      if (!proof) { const e = new Error('proof'); e.name = 'ProofRequiredError'; throw e; }
+      if (!proof || (proof.kind !== 'otp' && !proof.image)) { const e = new Error('proof'); e.name = 'ProofRequiredError'; throw e; }
       const s = find(id);
       s.state = 'delivered';
       s.codCollectedMinor = o?.codCollectedMinor ?? 0;
       return s;
     },
     deliverPartial: (id, proof, o) => {
-      if (!proof) { const e = new Error('proof'); e.name = 'ProofRequiredError'; throw e; }
+      if (!proof || (proof.kind !== 'otp' && !proof.image)) { const e = new Error('proof'); e.name = 'ProofRequiredError'; throw e; }
       const s = find(id);
       s.state = 'partially_delivered';
       s.codCollectedMinor = o?.codCollectedMinor ?? 0;
@@ -313,15 +331,19 @@ el('banner-ok').addEventListener('click', () => { el('banner').hidden = true; })
 
 let sheetResolve = null;
 let onEntryChange = null;
+/** 'number' (an amount: a leading zero is dropped) or 'code' (the customer's four digits: every digit counts). */
+let entryMode = 'number';
 
 function ask({ title, mode, hint = '', initial = '0', options = [], onChange = null }) {
-  say(el('sheet-title'), title, mode === 'number' ? 'calculator' : 'list');
+  const keyed = mode === 'number' || mode === 'code';
+  entryMode = mode;
+  say(el('sheet-title'), title, mode === 'code' ? 'key-round' : mode === 'number' ? 'calculator' : 'list');
   el('entry-hint').textContent = hint;
-  el('entry').textContent = initial;
-  el('entry').hidden = mode !== 'number';
-  el('keypad').hidden = mode !== 'number';
+  el('entry').textContent = mode === 'code' ? '' : initial;
+  el('entry').hidden = !keyed;
+  el('keypad').hidden = !keyed;
   el('choices').hidden = mode !== 'choice';
-  el('sheet-ok').hidden = mode !== 'number';
+  el('sheet-ok').hidden = !keyed;
   el('sheet-cancel').textContent = t('cancel');
   el('sheet-ok').textContent = t('ok');
   onEntryChange = onChange;
@@ -353,6 +375,11 @@ el('keypad').replaceChildren(...['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C
   button.textContent = key;
   button.addEventListener('click', () => {
     const current = el('entry').textContent;
+    if (entryMode === 'code') {
+      // Four digits, each one counted — "0042" is a code, not forty-two.
+      el('entry').textContent = key === 'C' ? '' : key === '⌫' ? current.slice(0, -1) : (current.length < 4 ? current + key : current);
+      return;
+    }
     const next = key === 'C' ? '0'
       : key === '⌫' ? (current.length > 1 ? current.slice(0, -1) : '0')
         : (current === '0' ? key : current + key);
@@ -642,6 +669,143 @@ function render() {
   renderQueue();
 }
 
+// ── Capturing the proof (OB-294 · M19-FR-03: captured, never typed) ─────────
+//
+// A photo is the phone camera's own picture, made small on the phone (a cheap phone's storage, the shop wifi) and handed to
+// the session, which fingerprints it and queues it as its own record. A signature is the customer's finger on the screen.
+// The code is the four digits the customer reads out of their app. Nothing here is a rule — the session decides.
+
+/** Shrink a picture to a proof image: at most 640 px on its longest side, JPEG, under the session's limit. */
+async function shrinkPhoto(file) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((resolve, reject) => { const i = new Image(); i.onload = () => resolve(i); i.onerror = reject; i.src = url; });
+    let max = 640;
+    let quality = 0.6;
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const scale = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight, 1));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+      const g = canvas.getContext('2d');
+      g.fillStyle = '#ffffff';
+      g.fillRect(0, 0, canvas.width, canvas.height);
+      g.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const data = canvas.toDataURL('image/jpeg', quality).split(',')[1] ?? '';
+      if (data.length > 0 && data.length <= IMAGE_LIMIT) return { mediaType: 'image/jpeg', contentBase64: data };
+      max = Math.round(max * 0.75);
+      quality = Math.max(0.3, quality - 0.1);
+    }
+    return null;
+  } catch {
+    return null;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+/** The photo panel: open the camera, see the picture, use it or take it again. Resolves the image, or null on Cancel. */
+function capturePhoto() {
+  let image = null;
+  say(el('photo-title'), t('takePhoto'), 'scan-line');
+  el('photo-hint').textContent = t('photoHint');
+  say(el('photo-open'), t('openCamera'), 'scan-line');
+  el('photo-use').textContent = t('usePhoto');
+  el('photo-cancel').textContent = t('cancel');
+  el('photo-use').disabled = true;
+  el('photo-preview').hidden = true;
+  el('photo-input').value = '';
+  el('photo').hidden = false;
+  return new Promise((resolve) => {
+    const finish = (answer) => { el('photo').hidden = true; el('photo-input').onchange = null; el('photo-use').onclick = null; el('photo-cancel').onclick = null; resolve(answer); };
+    el('photo-input').onchange = async () => {
+      const file = el('photo-input').files?.[0];
+      if (!file) return;
+      image = await shrinkPhoto(file);
+      if (image === null) { el('photo-hint').textContent = t('imageError'); el('photo-use').disabled = true; return; }
+      el('photo-preview').src = `data:${image.mediaType};base64,${image.contentBase64}`;
+      el('photo-preview').hidden = false;
+      say(el('photo-open'), t('retake'), 'refresh-cw');
+      el('photo-hint').textContent = t('photoHint');
+      el('photo-use').disabled = false;
+    };
+    el('photo-use').onclick = () => { if (image !== null) finish(image); };
+    el('photo-cancel').onclick = () => finish(null);
+  });
+}
+
+/** The signature panel: the customer signs with a finger; Done is offered once there is a stroke. */
+function captureSignature() {
+  const pad = el('sign-pad');
+  const g = pad.getContext('2d');
+  g.fillStyle = '#ffffff';
+  g.fillRect(0, 0, pad.width, pad.height);
+  g.strokeStyle = '#111111';
+  g.lineWidth = 3;
+  g.lineCap = 'round';
+  let drawing = false;
+  let strokes = 0;
+  const at = (e) => { const r = pad.getBoundingClientRect(); return [((e.clientX - r.left) * pad.width) / r.width, ((e.clientY - r.top) * pad.height) / r.height]; };
+  say(el('sign-title'), t('signHere'), 'hand');
+  el('sign-clear').textContent = t('clear');
+  el('sign-done').textContent = t('done');
+  el('sign-cancel').textContent = t('cancel');
+  el('sign-done').disabled = true;
+  el('sign').hidden = false;
+  pad.onpointerdown = (e) => { drawing = true; const [x, y] = at(e); g.beginPath(); g.moveTo(x, y); pad.setPointerCapture?.(e.pointerId); };
+  pad.onpointermove = (e) => { if (!drawing) return; const [x, y] = at(e); g.lineTo(x, y); g.stroke(); };
+  pad.onpointerup = () => { if (drawing) { strokes += 1; el('sign-done').disabled = false; } drawing = false; };
+  return new Promise((resolve) => {
+    const finish = (answer) => { el('sign').hidden = true; pad.onpointerdown = null; pad.onpointermove = null; pad.onpointerup = null; resolve(answer); };
+    el('sign-clear').onclick = () => { g.fillStyle = '#ffffff'; g.fillRect(0, 0, pad.width, pad.height); strokes = 0; el('sign-done').disabled = true; };
+    el('sign-done').onclick = () => {
+      if (strokes === 0) return;
+      let data = pad.toDataURL('image/png').split(',')[1] ?? '';
+      let mediaType = 'image/png';
+      if (data.length > IMAGE_LIMIT) { data = pad.toDataURL('image/jpeg', 0.6).split(',')[1] ?? ''; mediaType = 'image/jpeg'; }
+      finish(data.length > 0 && data.length <= IMAGE_LIMIT ? { mediaType, contentBase64: data } : null);
+    };
+    el('sign-cancel').onclick = () => finish(null);
+  });
+}
+
+/** Where the phone is, at the hand-over only — or nothing. Never a block: no permission or no fix is simply "no location". */
+function whereAmI() {
+  const geo = navigator.geolocation;
+  if (!geo || typeof geo.getCurrentPosition !== 'function') return Promise.resolve(undefined);
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(undefined), 8_000);
+    geo.getCurrentPosition(
+      (p) => { clearTimeout(timer); resolve({ lat: p.coords.latitude, lon: p.coords.longitude, accuracyMetres: Math.round(p.coords.accuracy ?? 0) }); },
+      () => { clearTimeout(timer); resolve(undefined); },
+      { enableHighAccuracy: true, timeout: 7_000, maximumAge: 60_000 },
+    );
+  });
+}
+
+/** Ask how the delivery was proved, then CAPTURE it. Resolves the proof the session takes, or null when the driver cancels. */
+async function askProof() {
+  const kind = await ask({ title: t('howProved'), mode: 'choice', options: PROOF_KINDS.map((p) => ({ value: p.kind, label: t(p.word) })) });
+  if (kind === null) return null;
+  if (kind === 'otp') {
+    const code = await ask({ title: t('codeTitle'), mode: 'code', hint: t('codeHint') });
+    if (code === null) return null;
+    return { kind: 'otp', code: String(code) };
+  }
+  const image = kind === 'photo' ? await capturePhoto() : await captureSignature();
+  if (image === null) return null;
+  return { kind, image };
+}
+
+/** The words for a refusal the session raised at capture, in the reader's language. */
+function proofRefusal(e) {
+  const name = e && e.name;
+  if (name === 'ProofRequiredError' || name === 'ProofNotCapturedError') return t('noProof');
+  if (name === 'DeliveryCodeFormatError') return t('codeFormat');
+  if (name === 'ProofImageError') return t('imageError');
+  return String(e && e.message ? e.message : e);
+}
+
 // ── At the doorstep ─────────────────────────────────────────────────────────
 
 /**
@@ -656,19 +820,8 @@ el('deliver').addEventListener('click', async () => {
   if (stop === null) { tell(t('read'), t('tapStopFirst')); return; }
   if (stop.state === 'delivered' || stop.state === 'returned_to_origin') { tell(t('read'), t('stopDone')); return; }
 
-  const kind = await ask({
-    title: t('howProved'),
-    mode: 'choice',
-    options: PROOF_KINDS.map((p) => ({ value: p.kind, label: t(p.word) })),
-  });
-  if (kind === null) return;
-
-  let ref = kind;
-  if (PROOF_KINDS.find((p) => p.kind === kind)?.needsRef) {
-    const entered = await ask({ title: t('proofRef'), mode: 'number' });
-    if (entered === null) return;
-    ref = String(entered);
-  }
+  const proof = await askProof();
+  if (proof === null) { tell(t('read'), t('noProof')); return; }
 
   let collected = 0;
   let method;
@@ -700,13 +853,16 @@ el('deliver').addEventListener('click', async () => {
     collected = Math.round(Number(answer) * 100);
   }
 
+  // Where the phone is, at the hand-over only (D09-FR-05): head office compares it with the stored address and keeps only
+  // the verdict. No permission or no fix is "no location" — it never stops a delivery.
+  const deviceFix = await whereAmI();
   try {
     if (stop.state === 'assigned') session.depart(stop.stopId);
-    session.deliver(stop.stopId, { kind, ref }, { codCollectedMinor: collected, codMethod: method });
-    tell(t('deliveredOk'), `${stop.area}${collected > 0 ? ` · ${inr(collected)}` : ''}`, true);
+    session.deliver(stop.stopId, proof, { codCollectedMinor: collected, codMethod: method, ...(deviceFix === undefined ? {} : { deviceFix }) });
+    tell(t('deliveredOk'), `${stop.area}${collected > 0 ? ` · ${inr(collected)}` : ''}${proof.kind === 'otp' ? ` — ${t('codeLater')}` : ''}`, true);
     void syncToBox();
   } catch (e) {
-    tell(t('read'), e && e.name === 'ProofRequiredError' ? t('noProof') : String(e && e.message ? e.message : e));
+    tell(t('read'), proofRefusal(e));
   }
   render();
 });
@@ -727,19 +883,8 @@ el('delivered-partial').addEventListener('click', async () => {
     tell(t('read'), t('stopDone')); return;
   }
 
-  const kind = await ask({
-    title: t('howProved'),
-    mode: 'choice',
-    options: PROOF_KINDS.map((p) => ({ value: p.kind, label: t(p.word) })),
-  });
-  if (kind === null) return;
-
-  let ref = kind;
-  if (PROOF_KINDS.find((p) => p.kind === kind)?.needsRef) {
-    const entered = await ask({ title: t('proofRef'), mode: 'number' });
-    if (entered === null) return;
-    ref = String(entered);
-  }
+  const proof = await askProof();
+  if (proof === null) { tell(t('read'), t('noProof')); return; }
 
   let collected = 0;
   let method;
@@ -767,13 +912,14 @@ el('delivered-partial').addEventListener('click', async () => {
     collected = Math.round(Number(answer) * 100);
   }
 
+  const deviceFix = await whereAmI();
   try {
     if (stop.state === 'assigned') session.depart(stop.stopId);
-    session.deliverPartial(stop.stopId, { kind, ref }, { codCollectedMinor: collected, codMethod: method });
-    tell(t('partialOk'), `${stop.area}${collected > 0 ? ` · ${inr(collected)}` : ''}`, true);
+    session.deliverPartial(stop.stopId, proof, { codCollectedMinor: collected, codMethod: method, ...(deviceFix === undefined ? {} : { deviceFix }) });
+    tell(t('partialOk'), `${stop.area}${collected > 0 ? ` · ${inr(collected)}` : ''}${proof.kind === 'otp' ? ` — ${t('codeLater')}` : ''}`, true);
     void syncToBox();
   } catch (e) {
-    tell(t('read'), e && e.name === 'ProofRequiredError' ? t('noProof') : String(e && e.message ? e.message : e));
+    tell(t('read'), proofRefusal(e));
   }
   render();
 });

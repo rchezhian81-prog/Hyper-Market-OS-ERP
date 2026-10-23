@@ -234,6 +234,20 @@
       .banner p:empty { display: none; }
       .banner button { background: var(--panel); color: var(--ink); border-color: var(--panel); font-weight: 700; }
       .banner.good button { background: var(--on-accent); color: var(--ink); }
+
+      /* OB-294 · M19-FR-03: the proof is CAPTURED — the camera's own picture, or the customer's finger on the screen. */
+      .capture-open {
+        min-height: var(--tap); border-radius: var(--radius-xl); border: 1px solid var(--accent); font-size: 18px; font-weight: 700;
+        background: var(--accent); color: var(--on-accent); display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);
+        cursor: pointer;
+      }
+      .capture-open:focus-within { outline: 3px solid var(--focus); outline-offset: 2px; }
+      #photo-input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+      #photo-preview { width: 100%; max-height: 40dvh; object-fit: contain; border-radius: var(--radius-lg); border: 1px solid var(--line); background: var(--panel-2); }
+      #photo-preview[hidden] { display: none; }
+      #sign-pad { width: 100%; aspect-ratio: 16 / 9; border-radius: var(--radius-lg); border: 2px dashed var(--line-strong); background: #ffffff; touch-action: none; }
+      .sign-actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+      .sign-actions button { min-height: var(--tap); font-size: 18px; }
     </style>
   </head>
   <body>
@@ -311,6 +325,33 @@
         <div class="sheet-actions">
           <button id="count-cancel" type="button">Cancel</button>
           <button id="count-ok" class="primary" type="button">Hand over</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- OB-294 · M19-FR-03: the photo at the door — the phone camera's own picture, made small on the phone, never a typed reference. -->
+    <div class="sheet" id="photo" hidden role="dialog" aria-modal="true" aria-labelledby="photo-title">
+      <div class="sheet-inner">
+        <h2 id="photo-title">Take a photo of the parcel at the door</h2>
+        <label class="capture-open" for="photo-input"><span id="photo-open">Open the camera</span><input id="photo-input" type="file" accept="image/*" capture="environment" /></label>
+        <img id="photo-preview" alt="" hidden />
+        <div class="hint" id="photo-hint"></div>
+        <div class="sheet-actions">
+          <button id="photo-cancel" type="button">Cancel</button>
+          <button id="photo-use" class="primary" type="button" disabled>Use this photo</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- OB-294 · M19-FR-03: the customer signs with a finger on the screen — captured as an image. -->
+    <div class="sheet" id="sign" hidden role="dialog" aria-modal="true" aria-labelledby="sign-title">
+      <div class="sheet-inner">
+        <h2 id="sign-title">Ask the customer to sign with a finger</h2>
+        <canvas id="sign-pad" width="480" height="270" aria-label="Signature"></canvas>
+        <div class="sign-actions">
+          <button id="sign-cancel" type="button">Cancel</button>
+          <button id="sign-clear" type="button">Clear</button>
+          <button id="sign-done" class="primary" type="button" disabled>Done</button>
         </div>
       </div>
     </div>

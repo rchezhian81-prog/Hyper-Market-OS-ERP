@@ -207,6 +207,10 @@ export const EVENT_ROUTES: Readonly<Record<string, EventRoute>> = {
   DeliveryStopUpdated: '/v1/delivery/routes/:routeId/stops/:stopId/synced',
   RouteSettled: '/v1/delivery/routes/:routeId/settled/synced',
   DriverCashHandedOver: '/v1/delivery/routes/:routeId/handover/synced',
+  // OB-288 fulfilment & delivery (M19-FR-03 · OB-294): a photo / signature captured on the driver's phone, with its SHA-256.
+  // Head office checks the bytes against the hash and keeps it as a document; a payload it cannot read is 400 → dead-lettered
+  // here by name for a person (hard rule #6). `routeId` / `stopId` are plain top-level payload fields matching the params.
+  DeliveryProofCaptured: '/v1/delivery/routes/:routeId/stops/:stopId/proof/synced',
   // R4 gap lane "driver" (WF-16): an online return collected at the door — or not, with the reason — recorded on the driver's
   // phone. Head office re-verifies the DRIVER's own grant, that the return is booked for collection and that no line is more
   // than was booked (403 / 422 by name → dead-lettered here for a person), then records "collected" as its button does.

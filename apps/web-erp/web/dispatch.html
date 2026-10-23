@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Dispatch</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Dispatch office (M19-FR-01/03/04 · WF-14 · WF-15 · D09-FR-05/06 · OB-294 · OB-300 · OB-313). A THIN CLIENT over head
+      office's GET /v1/fulfilment/wave-candidates, POST /v1/fulfilment/waves/:waveId/build, GET /v1/fulfilment/wave-board,
+      POST /v1/delivery/dispatch/:runDate/plan-from-orders, POST …/routes/:routeId/assign, POST …/reassign-driver,
+      GET …/board, GET /v1/delivery/contribution, POST /v1/delivery/contribution/:orderId/decision, GET/POST
+      /v1/delivery/controls and /v1/delivery/fleet-settlements/:routeId. Its session is apps/web-erp/src/dispatch-session.ts.
+      Nothing is read before the person asks; a number the owner has not entered says "not set".
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1180px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      input, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; }
+      textarea { min-height: 96px; }
+      input[type="checkbox"] { min-height: 24px; width: 24px; height: 24px; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; }
+      button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
+      button:disabled { opacity: 0.55; cursor: not-allowed; }
+      button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+      .row-form > label { flex: 1 1 200px; }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+      li.row { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 6px; border-left: 6px solid var(--idle); overflow-wrap: anywhere; }
+      li.row.tone-ok { border-left-color: var(--ok); } li.row.tone-degraded { border-left-color: var(--degraded); } li.row.tone-error { border-left-color: var(--error); }
+      li.row label.pick { display: flex; gap: 10px; align-items: center; font-weight: 600; min-height: var(--tap); }
+      .facts { font-size: 13px; color: var(--muted); display: grid; gap: 2px; }
+      .actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; }
+      .actions > label { flex: 1 1 220px; }
+      .stops { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 14px; }
+      .stops li { padding: 6px 8px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); }
+      .stops li.flagged { border-color: var(--error); }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Dispatch</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section aria-labelledby="page-h">
+        <h2 id="page-h">Dispatch</h2>
+        <p class="lead" id="lead"></p>
+        <div class="row-form">
+          <label for="store"><span id="store-l">Store</span><input id="store" autocomplete="off" placeholder="store-1" /></label>
+          <label for="run-date"><span id="date-l">Run date (YYYY-MM-DD)</span><input id="run-date" inputmode="numeric" autocomplete="off" placeholder="2026-10-24" /></label>
+        </div>
+      </section>
+
+      <section aria-labelledby="waves-h">
+        <h3 id="waves-h">Waves from confirmed orders</h3>
+        <div class="row-form">
+          <button id="show-orders" type="button"><span id="show-orders-text">Show orders waiting</span></button>
+          <button id="show-waves" type="button" class="quiet"><span id="show-waves-text">Show the waves</span></button>
+        </div>
+        <p class="status" id="waves-status" role="status" aria-live="polite"></p>
+        <div id="candidates" hidden>
+          <h3 id="ready-h">Ready to pick</h3>
+          <ul class="rows" id="ready"></ul>
+          <h3 id="held-orders-h">Held for a manager</h3>
+          <ul class="rows" id="held-orders"></ul>
+          <h3 id="on-wave-h">Already on a wave</h3>
+          <ul class="rows" id="on-wave"></ul>
+          <div class="row-form">
+            <label for="wave-id"><span id="wave-id-l">Wave id</span><input id="wave-id" autocomplete="off" /></label>
+            <label for="picker"><span id="picker-l">Picker</span><input id="picker" autocomplete="off" /></label>
+            <button id="build" type="button"><span id="build-text">Build the wave and give it to the picker</span></button>
+          </div>
+        </div>
+        <ul class="rows" id="waves" hidden></ul>
+      </section>
+
+      <section aria-labelledby="routes-h">
+        <h3 id="routes-h">Routes</h3>
+        <label for="drivers"><span id="drivers-l">Drivers on shift</span><textarea id="drivers" autocomplete="off" placeholder="u-driver, 12, 09:00, 18:00"></textarea></label>
+        <div class="row-form">
+          <label for="speed"><span id="speed-l">Average speed (km/h)</span><input id="speed" inputmode="decimal" autocomplete="off" /></label>
+          <label for="minutes"><span id="minutes-l">Minutes at each door</span><input id="minutes" inputmode="numeric" autocomplete="off" /></label>
+          <button id="plan" type="button"><span id="plan-text">Plan the day</span></button>
+        </div>
+        <p class="status" id="plan-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="planned" hidden></ul>
+        <ul class="rows" id="unplanned" hidden></ul>
+        <div class="row-form">
+          <label for="off-driver"><span id="off-driver-l">Driver</span><input id="off-driver" autocomplete="off" /></label>
+          <label for="off-reason"><span id="off-reason-l">Why?</span><input id="off-reason" autocomplete="off" /></label>
+          <button id="off-road" type="button" class="quiet"><span id="off-road-text">Driver off the road — take their routes back</span></button>
+        </div>
+      </section>
+
+      <section aria-labelledby="board-h">
+        <h3 id="board-h">The day’s routes</h3>
+        <div class="row-form"><button id="show-board" type="button"><span id="show-board-text">Show the routes</span></button></div>
+        <p class="status" id="board-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="board" hidden></ul>
+      </section>
+
+      <section aria-labelledby="contribution-h">
+        <h3 id="contribution-h">Orders held under the contribution rule</h3>
+        <div class="row-form"><button id="show-held" type="button"><span id="show-held-text">Show the contribution rule</span></button></div>
+        <p class="status" id="contribution-status" role="status" aria-live="polite"></p>
+        <p id="threshold" hidden></p>
+        <ul class="rows" id="contribution" hidden></ul>
+      </section>
+
+      <section aria-labelledby="controls-h">
+        <h3 id="controls-h">The owner’s numbers</h3>
+        <div class="row-form"><button id="show-controls" type="button"><span id="show-controls-text">Show the numbers</span></button></div>
+        <p class="status" id="controls-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="controls" hidden></ul>
+      </section>
+
+      <section aria-labelledby="settle-h">
+        <h3 id="settle-h">Own-fleet settlement</h3>
+        <div class="row-form">
+          <label for="settle-route"><span id="settle-route-l">Route</span><input id="settle-route" autocomplete="off" /></label>
+          <button id="propose" type="button"><span id="propose-text">Propose the settlement</span></button>
+          <button id="approve-settle" type="button" class="quiet"><span id="approve-settle-text">Approve the settlement</span></button>
+        </div>
+        <div class="row-form">
+          <label for="paid-amount"><span id="paid-amount-l">Amount paid (₹)</span><input id="paid-amount" inputmode="decimal" autocomplete="off" /></label>
+          <label for="voucher"><span id="voucher-l">Voucher</span><input id="voucher" autocomplete="off" /></label>
+          <button id="paid" type="button" class="quiet"><span id="paid-text">Record the payment</span></button>
+        </div>
+        <p class="status" id="settle-status" role="status" aria-live="polite"></p>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./dispatch.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

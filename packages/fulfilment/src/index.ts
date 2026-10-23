@@ -18,3 +18,15 @@ export * from './packing';
 export * from './cod';
 export * from './routing';
 export * from './serviceability-simulator';
+// OB-288 fulfilment & delivery package (M19-FR-01/03 · WF-14/15 · D08-FR-05 · D09-FR-05/06 · OB-294 · OB-300 · OB-313):
+//   • `wave-plan.ts`        — a picker's wave built from confirmed orders (bins from the register, prices from the pack),
+//                              an order never split;
+//   • `proof-capture.ts`    — the 4-digit delivery code, the proof location judged against the stored address, captured images;
+//   • `delivery-eta.ts`     — the customer's last-stop count and ETA from the route (an estimate, said so);
+//   • `delivery-economics.ts` — the contribution rule (threshold "not set" → flag only), fleet settlement, the courier link (off);
+//   • `sha256.ts`           — a synchronous digest for the phone's offline fingerprint of a captured image.
+export * from './wave-plan';
+export * from './proof-capture';
+export * from './delivery-eta';
+export * from './delivery-economics';
+export * from './sha256';

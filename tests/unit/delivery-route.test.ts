@@ -52,7 +52,8 @@ describe('RouteSession — the driver’s day', () => {
     route.depart('s1');
     const stop = route.deliver('s1', OTP, { codCollectedMinor: 250_00, codMethod: 'cash' });
     expect(stop.state).toBe('delivered');
-    expect(stop.proof).toEqual(OTP);
+    // OB-294: the four digits are the proof; the phone keeps a reference that is not the code, and head office checks it.
+    expect(stop.proof).toEqual({ kind: 'otp', ref: 'otp:code-entered' });
     expect(route.codHeld()).toEqual(money(250_00, 'INR'));
   });
 
@@ -191,7 +192,7 @@ describe('RouteSession — picked-up, arrived and partial delivery (M19-FR-01/FR
 
     const stop = route.deliverPartial('s1', OTP, { codCollectedMinor: 100_00, codMethod: 'cash' });
     expect(stop.state).toBe('partially_delivered');
-    expect(stop.proof).toEqual(OTP);
+    expect(stop.proof).toEqual({ kind: 'otp', ref: 'otp:code-entered' });
     expect(route.codHeld()).toEqual(money(100_00, 'INR')); // cash taken on a partial is not off the books
     // Terminal: the undelivered remainder is a downstream compensating event, not a re-delivery here.
     expect(() => route.deliver('s1', OTP)).toThrow(InvalidDeliveryTransitionError);
@@ -253,7 +254,8 @@ describe('where each piece of work is — the five shared device states (SP-3c-i
     expect(before[1]).toMatchObject({ what: 'route-1', detail: '25000 of 25000 INR · 0 exceptions' });
     expect(before[0]).toMatchObject({ what: 'route-1', detail: 'counted 24000 INR · short 1000' });
     // A return collection (WF-16, driver) is its own flow: tests/unit/the-driver-collects-an-online-return.test.ts.
-    for (const kind of SENT_WORK_KINDS.filter((k) => k !== 'collection')) expect(before.some((w) => w.kind === kind)).toBe(true);
+    // A captured proof picture (OB-294) is its own record: tests/unit/the-driver-captures-proof-at-the-door.test.ts.
+    for (const kind of SENT_WORK_KINDS.filter((k) => k !== 'collection' && k !== 'proof')) expect(before.some((w) => w.kind === kind)).toBe(true);
     // Never a customer on the list (§31).
     expect(JSON.stringify(before)).not.toMatch(/customer|phone|address/i);
 
