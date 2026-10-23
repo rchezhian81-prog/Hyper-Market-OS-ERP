@@ -498,12 +498,17 @@ export function transfersRoutes(deps: TransfersDeps): readonly Route[] {
       permission: 'inventory.availability.read',
       handler: async (ctx) => {
         const all = deps.transfers === undefined ? [] : [...(await deps.transfers(ctx.tenantId))].reverse();
+        // OB-288 lane 2: the STORE at each end, so the store computer's handheld offers only its own end of a transfer.
+        const branchOf = deps.locationBranches === undefined ? undefined : await deps.locationBranches(ctx.tenantId);
         const rows = [];
         for (const t of all) {
           if (!(await locationInScope(ctx, t.fromLocationId, deps.locationBranches)) && !(await locationInScope(ctx, t.toLocationId, deps.locationBranches))) continue;
           const shortfall = t.state === 'received' && deps.shortfallOf !== undefined ? await deps.shortfallOf(ctx.tenantId, t.transferId) : [];
           const forIndent = deps.belongsToIndent === undefined ? false : await deps.belongsToIndent(ctx.tenantId, t.transferId);
-          rows.push({ transfer: t, shortfall, shortfallOpen: shortfall.length > 0 && t.shortfallResolution === undefined, forIndent });
+          rows.push({
+            transfer: t, shortfall, shortfallOpen: shortfall.length > 0 && t.shortfallResolution === undefined, forIndent,
+            ...(branchOf === undefined ? {} : { fromStoreId: branchOf(t.fromLocationId), toStoreId: branchOf(t.toLocationId) }),
+          });
         }
         return { status: 200, body: { transfers: rows, asAt: deps.now() } };
       },

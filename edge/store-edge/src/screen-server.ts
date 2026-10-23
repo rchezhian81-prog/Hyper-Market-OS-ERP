@@ -38,6 +38,7 @@ import {
 import { asPhoneHolder } from './handheld-sign-in';
 import { isHandheldSource } from '../../../packages/sync/src/device-relay';
 import type { EveningCheckBox } from './evening-check-box';
+import { counterLabelFor, readCounterLabelRequest } from './store-work';
 
 /**
  * OB-263: the evening check's doors on the migration screen — the only other writes this socket takes. Each is for the
@@ -52,6 +53,14 @@ export const EVENING_CHECK_PATHS = Object.freeze({
 });
 /** The two files of a day, with their JSON quoting, fit inside this; anything larger is refused unread. */
 export const EVENING_CHECK_LOAD_MAX_BYTES = 12 * 1024 * 1024;
+
+/**
+ * OB-288 lane 2 · M11-FR-03 ("labelling/packing works at the counter offline"): the production screen's counter-label door.
+ * The box renders the label from what IT holds — the run (head office's board, or a run captured on this screen), the
+ * recipe's shelf life, the catalogue's name and price, the shop's barcode rule — and refuses, by name, anything it cannot
+ * vouch for. It records nothing and asks head office nothing, so it works with the cable out.
+ */
+export const PRODUCTION_LABEL_PATH = '/production/label';
 
 /**
  * The address this listens on unless told otherwise — loopback, so on a shop PC nothing on the shop network
@@ -456,6 +465,37 @@ export function startScreenServer(input: {
           : await box.sign({ businessDate: body['businessDate'], statement: body['statement'], ...who });
     json(res, out.ok ? 200 : out.refusedBecause === 'not_the_named_reconciler' || out.refusedBecause === 'nobody_named_to_reconcile' ? 403 : 422, { ...out, mappings: box.mappings(), days: box.days() });
   };
+  /**
+   * The counter-label door (OB-288 lane 2). From a page this box served, as JSON. With the office PIN on, only a person
+   * signed in who may open the production screen; behind the hosted front, the person it signed in. A box serving its
+   * screens openly (no PIN, nobody in front) renders for its own production screen, as it serves that screen openly.
+   */
+  const labelDoor = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+    if (req.method !== 'POST') { req.resume(); json(res, 405, { ok: false, refusedBecause: 'wrong_method', detail: 'send with POST' }); return; }
+    if (!sameOrigin(req)) { req.resume(); json(res, 403, { ok: false, refusedBecause: 'not_from_this_screen', detail: 'refused: not from a page this store computer served' }); return; }
+    if (!/^application\/json\b/.test(String(req.headers['content-type'] ?? ''))) { req.resume(); json(res, 415, { ok: false, refusedBecause: 'not_json', detail: 'send JSON' }); return; }
+    const snap = input.snapshot();
+    let userId: string | null = null;
+    if (office !== undefined) {
+      const session = await office.check(officeTokenOf(req.headers['cookie']));
+      if (!session.ok) { req.resume(); json(res, 401, { ok: false, refusedBecause: session.refusedBecause, detail: 'Your office sign-in has ended. Enter your PIN again (open the production screen again). Nothing was printed.' }); return; }
+      userId = session.userId;
+    } else if (input.trustForwardedUser === true) {
+      userId = forwardedUser(req.headers['x-sre-user']);
+      if (userId === null) { req.resume(); json(res, 403, { ok: false, refusedBecause: 'no_sign_in', detail: 'Nobody is signed in on this screen. Nothing was printed.' }); return; }
+    }
+    if (userId !== null) {
+      const needs = permissionForScreen('production');
+      if (needs !== null && !(permissionsOf(userId, snap.pack) ?? []).includes(needs)) { req.resume(); json(res, 403, { ok: false, refusedBecause: 'not_allowed', detail: `${userId} may not open the production screen. Nothing was printed.` }); return; }
+    }
+    const raw = await readBody(req, 16 * 1024);
+    let parsed: unknown;
+    try { parsed = raw === null ? undefined : JSON.parse(raw) as unknown; } catch { parsed = undefined; }
+    const request = readCounterLabelRequest(parsed);
+    if (request === undefined) { json(res, 400, { ok: false, refusedBecause: 'not_readable_as_a_label', detail: 'A label needs the run, and for a weighed pack its weight in whole grams. Nothing was printed.' }); return; }
+    const label = counterLabelFor(snap, request);
+    json(res, label.ok ? 200 : 422, label);
+  };
   const server: Server = createServer((req: IncomingMessage, res: ServerResponse) => {
     void (async () => {
       // OB-259: the office's two doors — the only writes this socket takes, and only when the gate is on.
@@ -482,6 +522,11 @@ export function startScreenServer(input: {
       // OB-263: the evening check's doors (the day's figures, the mapping, the load, the reasons, the signature).
       if ((Object.values(EVENING_CHECK_PATHS) as string[]).includes(doorPath ?? '')) {
         await eveningDoor(req, res, doorPath!);
+        return;
+      }
+      // OB-288 lane 2 · M11-FR-03: the counter label, rendered here from what this box holds (works offline).
+      if (doorPath === PRODUCTION_LABEL_PATH) {
+        await labelDoor(req, res);
         return;
       }
       if (req.method !== 'GET') {

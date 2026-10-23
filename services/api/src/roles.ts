@@ -705,6 +705,9 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // A transfer sent or counted in, a production or weighed run, a batch released for sale, and a food-safety check
       // recorded with the line down (§31) — head office re-verifies each person and re-runs its own rules.
       'inventory.transfer.sync', 'production.sync', 'facilities.foodsafety.sync',
+      // What the box PULLS so that work can be done with the line down: the production board and recipes, the food-safety
+      // checks in force for its store, and the transfers with an end at its store (reads only).
+      'production.read', 'facilities.overdue.read', 'inventory.availability.read',
       // ── OB-288 lane 2 · P2 — end
       // the GST portal's poll/verify, relayed for the operator (no maker-checker decision; re-authorised on this permission)
       'finance.einvoice.generate',
