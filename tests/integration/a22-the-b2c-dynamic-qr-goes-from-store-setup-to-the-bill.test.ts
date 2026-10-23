@@ -96,7 +96,7 @@ describe.each(backings)('A22 — the B2C dynamic QR goes from store setup to the
     expect((await set('ifsc', 'hdfc0001234')).status).toBe(200);
     ho.restartCold(); // ── head office COLD ─────────────────────────────────────────────────────────────────────────────
     const full = await policies();
-    expect(full['b2cDynamicQr']).toEqual({ on: true, upiId: 'srehyper@okaxis', bankAccountNo: '123456789012', ifsc: 'HDFC0001234' });
+    expect(full['b2cDynamicQr']).toEqual({ on: true, upiId: 'srehyper@okaxis', bankAccountNo: '123456789012', bankIfsc: 'HDFC0001234' });
 
     const box = await boxWith(full);
     await box.restartCold(); // ── the store computer COLD, no head office anywhere ───────────────────────────────────────

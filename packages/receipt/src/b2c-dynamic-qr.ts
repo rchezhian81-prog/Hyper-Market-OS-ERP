@@ -23,7 +23,7 @@ export interface B2cDynamicQrSetting {
   /** The payee's bank account number the UPI ID settles to. */
   readonly bankAccountNo?: string;
   /** That account's IFSC. */
-  readonly ifsc?: string;
+  readonly bankIfsc?: string;
 }
 
 export type B2cQrDetail = 'upi_id' | 'bank_account' | 'ifsc';
@@ -33,7 +33,7 @@ export interface B2cQrFields {
   readonly supplierGstin: string;
   readonly upiId: string;
   readonly bankAccountNo: string;
-  readonly ifsc: string;
+  readonly bankIfsc: string;
   readonly invoiceNo: string;
   readonly invoiceDate: string;
   readonly totalMinor: number;
@@ -64,7 +64,7 @@ export function b2cQrMissing(setting: B2cDynamicQrSetting): readonly B2cQrDetail
   const missing: B2cQrDetail[] = [];
   if (setting.upiId === undefined || !isUpiId(setting.upiId.trim())) missing.push('upi_id');
   if (setting.bankAccountNo === undefined || !isBankAccountNo(setting.bankAccountNo.trim())) missing.push('bank_account');
-  if (setting.ifsc === undefined || !isIfsc(setting.ifsc.trim().toUpperCase())) missing.push('ifsc');
+  if (setting.bankIfsc === undefined || !isIfsc(setting.bankIfsc.trim().toUpperCase())) missing.push('ifsc');
   return missing;
 }
 
@@ -78,7 +78,7 @@ export function b2cDynamicQrFor(setting: B2cDynamicQrSetting | undefined, doc: T
   const missing = b2cQrMissing(setting);
   if (missing.length > 0) return { state: 'not_set', missing };
   const fields: B2cQrFields = {
-    supplierGstin: doc.supplier.gstin, upiId: setting.upiId!.trim(), bankAccountNo: setting.bankAccountNo!.trim(), ifsc: setting.ifsc!.trim().toUpperCase(),
+    supplierGstin: doc.supplier.gstin, upiId: setting.upiId!.trim(), bankAccountNo: setting.bankAccountNo!.trim(), bankIfsc: setting.bankIfsc!.trim().toUpperCase(),
     invoiceNo: doc.number, invoiceDate: doc.date, totalMinor: doc.totalMinor,
     cgstMinor: doc.cgstMinor, sgstMinor: doc.sgstMinor, igstMinor: doc.igstMinor, cessMinor: doc.cessMinor,
   };
@@ -87,7 +87,7 @@ export function b2cDynamicQrFor(setting: B2cDynamicQrSetting | undefined, doc: T
     ['tr', fields.invoiceNo], ['tn', `Invoice ${fields.invoiceNo}`],
     ['gstIn', fields.supplierGstin], ['invoiceNo', fields.invoiceNo], ['invoiceDate', fields.invoiceDate],
     ['gstBrkUp', `CGST:${rupees(fields.cgstMinor)}|SGST:${rupees(fields.sgstMinor)}|IGST:${rupees(fields.igstMinor)}|CESS:${rupees(fields.cessMinor)}`],
-    ['bankAcc', fields.bankAccountNo], ['ifsc', fields.ifsc],
+    ['bankAcc', fields.bankAccountNo], ['ifsc', fields.bankIfsc],
   ];
   const payload = `upi://pay?${params.map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&')}`;
   return { state: 'ready', payload, fields, svg: qrSvg(encodeQr(payload, { ecl: 'M' }), { moduleSize: 3, title: `Invoice ${fields.invoiceNo}` }) };

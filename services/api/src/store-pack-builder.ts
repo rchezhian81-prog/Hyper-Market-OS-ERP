@@ -61,7 +61,7 @@ export interface StorePackBuildInput {
   /** Verifier r18 OB85-2: where the bill-number high-water snapshot lives (production: `projection_snapshot`). Absent → per process. */
   readonly snapshots?: SnapshotStore;
   /** A22 (OB-326, switched off): the shop's B2C dynamic QR switch and details from store setup. Absent → never sent. */
-  readonly b2cDynamicQr?: (tenantId: string) => Promise<{ readonly on: boolean; readonly upiId?: string; readonly bankAccountNo?: string; readonly ifsc?: string }>;
+  readonly b2cDynamicQr?: (tenantId: string) => Promise<{ readonly on: boolean; readonly upiId?: string; readonly bankAccountNo?: string; readonly bankIfsc?: string }>;
 }
 
 /**

@@ -29,7 +29,7 @@ const SHOTS = process.env['SRE_SHOTS'];
 const KEY = ['served', 'till', 'b2c', 'qr', 'key'].join('-').padEnd(48, '0');
 const SHOP = { legalName: 'SRE Hyper Market Private Limited', gstin: '33ABCDE1234F1Z5', placeOfBusiness: ['12 Main Road', 'Tiruppur 641601, Tamil Nadu'] };
 const DAL = '8901234567890';
-const QR_ON = { on: true, upiId: 'srehyper@okaxis', bankAccountNo: '123456789012', ifsc: 'HDFC0001234' };
+const QR_ON = { on: true, upiId: 'srehyper@okaxis', bankAccountNo: '123456789012', bankIfsc: 'HDFC0001234' };
 const packWith = (extra: Record<string, unknown>): Record<string, unknown> => ({
   version: 1,
   policies: {
@@ -154,7 +154,7 @@ describe.skipIf(!HAVE_BROWSER)('A22 — the served till prints the B2C dynamic Q
   });
 
   it('ON with the bank account missing: no QR on the paper; the screen\'s bill names what is not set', async () => {
-    const { page } = await till({ b2cDynamicQr: { on: true, upiId: 'srehyper@okaxis', ifsc: 'HDFC0001234' } });
+    const { page } = await till({ b2cDynamicQr: { on: true, upiId: 'srehyper@okaxis', bankIfsc: 'HDFC0001234' } });
     await sellOne(page);
     expect(await page.textContent('#refusal-receipt')).toContain('UPI QR switched on but NOT SET: bank account number — no QR printed. Tell the manager.');
     await page.click('#print-bill');

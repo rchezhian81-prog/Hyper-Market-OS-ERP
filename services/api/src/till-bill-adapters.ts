@@ -151,7 +151,7 @@ export function tillBillSurface(surface: Route[], input: { readonly store: Event
  * switched it on; each detail only when given (an empty answer is "not set", and the till then prints no QR and says so).
  */
 export function b2cDynamicQrSettingOf(settings: { value<T>(tenantId: string, setting: TenantSetting<T>): Promise<T> }) {
-  return async (tenantId: string): Promise<{ readonly on: boolean; readonly upiId?: string; readonly bankAccountNo?: string; readonly ifsc?: string }> => {
+  return async (tenantId: string): Promise<{ readonly on: boolean; readonly upiId?: string; readonly bankAccountNo?: string; readonly bankIfsc?: string }> => {
     const on = (await settings.value(tenantId, SETTINGS.INVOICE_B2C_DYNAMIC_QR_ON)) === true;
     if (!on) return { on: false };
     const given = async (s: TenantSetting<string>): Promise<string | undefined> => {
@@ -161,6 +161,6 @@ export function b2cDynamicQrSettingOf(settings: { value<T>(tenantId: string, set
     const upiId = await given(SETTINGS.INVOICE_B2C_DYNAMIC_QR_UPI_ID);
     const bankAccountNo = await given(SETTINGS.INVOICE_B2C_DYNAMIC_QR_BANK_ACCOUNT);
     const ifsc = await given(SETTINGS.INVOICE_B2C_DYNAMIC_QR_IFSC);
-    return { on: true, ...(upiId === undefined ? {} : { upiId }), ...(bankAccountNo === undefined ? {} : { bankAccountNo }), ...(ifsc === undefined ? {} : { ifsc: ifsc.toUpperCase() }) };
+    return { on: true, ...(upiId === undefined ? {} : { upiId }), ...(bankAccountNo === undefined ? {} : { bankAccountNo }), ...(ifsc === undefined ? {} : { bankIfsc: ifsc.toUpperCase() }) };
   };
 }

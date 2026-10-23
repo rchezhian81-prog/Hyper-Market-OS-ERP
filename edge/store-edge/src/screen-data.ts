@@ -2137,13 +2137,13 @@ function fssaiLicenceOf(v: unknown): { readonly number: string; readonly validUn
 }
 
 /** The pack's B2C dynamic QR switch as the till reads it: on only when it says `on: true`. Off → not sent at all. */
-function b2cDynamicQrOf(v: unknown): { readonly on: true; readonly upiId?: string; readonly bankAccountNo?: string; readonly ifsc?: string } | undefined {
+function b2cDynamicQrOf(v: unknown): { readonly on: true; readonly upiId?: string; readonly bankAccountNo?: string; readonly bankIfsc?: string } | undefined {
   if (v === null || typeof v !== 'object' || (v as Record<string, unknown>)['on'] !== true) return undefined;
   const r = v as Record<string, unknown>;
   const upiId = textOf(r['upiId']);
   const bankAccountNo = textOf(r['bankAccountNo']);
-  const ifsc = textOf(r['ifsc']);
-  return { on: true, ...(upiId === undefined ? {} : { upiId }), ...(bankAccountNo === undefined ? {} : { bankAccountNo }), ...(ifsc === undefined ? {} : { ifsc }) };
+  const ifsc = textOf(r['bankIfsc']);
+  return { on: true, ...(upiId === undefined ? {} : { upiId }), ...(bankAccountNo === undefined ? {} : { bankAccountNo }), ...(ifsc === undefined ? {} : { bankIfsc: ifsc }) };
 }
 
 /**

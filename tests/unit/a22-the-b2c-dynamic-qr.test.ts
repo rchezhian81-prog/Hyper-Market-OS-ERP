@@ -54,7 +54,7 @@ describe('A22 — the QR encoder (ISO/IEC 18004, byte mode)', () => {
 });
 
 const SHOP = { legalName: 'SRE Hyper Market Private Limited', gstin: '33ABCDE1234F1Z5', placeOfBusiness: ['12 Main Road', 'Tiruppur 641601'] };
-const QR_ON = { on: true, upiId: 'srehyper@okaxis', bankAccountNo: '123456789012', ifsc: 'HDFC0001234' } as const;
+const QR_ON = { on: true, upiId: 'srehyper@okaxis', bankAccountNo: '123456789012', bankIfsc: 'HDFC0001234' } as const;
 const NOW = new Date().toISOString();
 const CAT: CatalogueSnapshot = {
   tenantId: 't-a22', version: 1, builtAt: NOW,
@@ -113,7 +113,7 @@ describe('A22 — the QR on the till\'s tax invoice, switched off by default', (
     expect(inv.rows.some((r) => r.kind === 'qr')).toBe(false);
     expect(inv.qrNotSet).toEqual(['bank_account', 'ifsc']);
     expect(inv.lines[inv.lines.length - 1]).toBe('UPI QR switched on but NOT SET: bank account number, IFSC — no QR printed. Tell the manager.');
-    expect(b2cQrMissing({ on: true, upiId: 'no-at-sign', bankAccountNo: '12', ifsc: 'hdfc0001234' })).toEqual(['upi_id', 'bank_account']);
+    expect(b2cQrMissing({ on: true, upiId: 'no-at-sign', bankAccountNo: '12', bankIfsc: 'hdfc0001234' })).toEqual(['upi_id', 'bank_account']);
   });
 
   it('the same invoice and setting give the same QR (a reprint is the same symbol)', async () => {

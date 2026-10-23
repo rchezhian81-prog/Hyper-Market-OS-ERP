@@ -1021,7 +1021,7 @@ export interface PackPolicies {
    * A22 (OB-326, switched off): the B2C dynamic QR — sent only when the shop switched it on, with the UPI ID, bank account
    * number and IFSC it has given (a missing one is absent, and the till then prints no QR and says which is not set).
    */
-  readonly b2cDynamicQr?: { readonly on: boolean; readonly upiId?: string; readonly bankAccountNo?: string; readonly ifsc?: string };
+  readonly b2cDynamicQr?: { readonly on: boolean; readonly upiId?: string; readonly bankAccountNo?: string; readonly bankIfsc?: string };
 }
 
 /** A storage bin the warehouse handheld can put stock into (M09 / OA-9). */
