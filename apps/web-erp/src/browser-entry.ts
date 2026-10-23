@@ -318,6 +318,8 @@ import { createBriefSession, briefWords, briefOutcomeWords, type BriefSession } 
 import { createGatesSession, gatesWords, gatesOutcomeWords, stateView as gateStateView, GATE_NAMES, RELEASES as GATE_RELEASES, type GatesSession } from './gates-session';
 // ── end R4 Lane 3 ──
 // ── R4 Lane 4 (supply, pricing and loss prevention) — begin
+// ── P3 procure-to-pay (OB-288) — the Requisitions and quotes page's session.
+import { createRequisitionsSession, requisitionsWords, requisitionsOutcomeWords, offerRows as requisitionOfferRows, rupees as requisitionRupees, type RequisitionsSession } from './requisitions-session';
 import { createScorecardSession, scorecardWords, scorecardOutcomeWords, ratingWords as scorecardRatingWords, SCORECARD_FIGURES, type ScorecardSession } from './supplier-scorecard-session';
 import { createCorrelationSession, correlationWords, correlationOutcomeWords, correlationRupees, type CorrelationSession } from './lp-correlation-session';
 import { createBaysSession, baysWords, baysOutcomeWords, bayScoreWords, type BaysSession } from './planogram-bays-session';
@@ -5000,6 +5002,9 @@ interface ManagerWindow {
   gates?: { readonly session: GatesSession; readonly words: typeof gatesWords; readonly outcomeWords: typeof gatesOutcomeWords; readonly stateView: typeof gateStateView; readonly names: typeof GATE_NAMES; readonly releases: typeof GATE_RELEASES };
   schedule?: { readonly session: ScheduleSession; readonly words: typeof scheduleWords; readonly outcomeWords: typeof scheduleOutcomeWords; readonly rupees: typeof scheduleRupees };
   // ── R4 Lane 4 — begin
+  /** P3 (OB-288) M06-FR-02 / WF-03: the Requisitions and quotes page — who is looking; head office answers the rest. */
+  requisitionsData?: ViewerIdentity;
+  requisitions?: { readonly session: RequisitionsSession; readonly words: typeof requisitionsWords; readonly outcomeWords: typeof requisitionsOutcomeWords; readonly offerRows: typeof requisitionOfferRows; readonly rupees: typeof requisitionRupees };
   /** R4 D-10: the Supplier scorecard page — who is looking; head office answers the rest. */
   supplierScorecardData?: ViewerIdentity;
   supplierScorecard?: { readonly session: ScorecardSession; readonly words: typeof scorecardWords; readonly outcomeWords: typeof scorecardOutcomeWords; readonly ratingWords: typeof scorecardRatingWords; readonly figures: typeof SCORECARD_FIGURES };
@@ -6793,4 +6798,9 @@ if (browserWindow !== undefined) {
   browserWindow.planogramBaysData = viewerIdentity(browserWindow.planogramBaysData);
   browserWindow.planogramBays = { session: createBaysSession({ viewer: browserWindow.planogramBaysData }), words: baysWords, outcomeWords: baysOutcomeWords, scoreWords: bayScoreWords };
   // ── R4 Lane 4 — end
+  // ── P3 procure-to-pay (OB-288): the Requisitions and quotes page — a requisition, its quotes, head office's comparison,
+  // and an order PROPOSED from the chosen quote (a second person issues it on the Buying page).
+  browserWindow.requisitionsData = viewerIdentity(browserWindow.requisitionsData);
+  browserWindow.requisitions = { session: createRequisitionsSession({ viewer: browserWindow.requisitionsData }), words: requisitionsWords, outcomeWords: requisitionsOutcomeWords, offerRows: requisitionOfferRows, rupees: requisitionRupees };
+  // ── P3 procure-to-pay — end
 }

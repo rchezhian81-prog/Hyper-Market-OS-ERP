@@ -45,13 +45,14 @@ function lab(h: ApiHarness, t: string) {
       await approvedSuppliers(h, t, 'sup-1'); // OB-32: an order needs an approved supplier
       await deliveryPlaces(h, t, 'wh1'); // OB-37: an order names the store it is delivered to
       await h.provisionRole(t, 'u-mgr', 'store_manager');
+      await h.provisionRole(t, 'u-po-buyer', 'store_manager'); // OB-288 P3 (§28): the buyer who raises the order is never the one who books it in
       await h.store.append(t, STREAM.catalogue, makeEvent({
         id: `pack-${t}-1`, type: 'CataloguePublished', occurredAt: AT, idempotencyKey: `catalogue-${t}-v1`, source: 'test/catalogue',
         payload: { snapshot: { tenantId: t, version: 1, builtAt: AT, scope: { tenantId: t, storeId: 'store-1' }, barcodes: [],
           products: [{ productId: 'p1', sku: 'p1', name: 'Toor dal 1kg', unitPriceMinor: 16_000, taxBps: 0, status: 'active', uom: 'each', batchTracked: false, handling: 'ambient' }] } },
       }));
       expect((await req('POST', '/v1/inventory/receipt-policy', 'u-owner', 'k-policy', POLICY)).status).toBe(201);
-      expect((await req('POST', `/v1/purchase/orders/${poId}`, 'u-mgr', `po-${poId}`, { supplierId: 'sup-1', deliverToLocationId: 'wh1', lines: [{ productId: 'p1', orderedQty: ordered, unitCost: cost(5000) }] })).status).toBe(201);
+      expect((await req('POST', `/v1/purchase/orders/${poId}`, 'u-po-buyer', `po-${poId}`, { supplierId: 'sup-1', deliverToLocationId: 'wh1', lines: [{ productId: 'p1', orderedQty: ordered, unitCost: cost(5000) }] })).status).toBe(201);
       expect((await req('POST', `/v1/purchase/orders/${poId}/approval`, 'u-owner', `po-${poId}-ok`, { reason: 'within budget' })).status).toBe(200);
     },
     receive: (grnId: string, poId: string, counted: number, key = `k-${grnId}`) => req('POST', `/v1/inventory/goods-receipt/${grnId}`, 'u-mgr', key, {

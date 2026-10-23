@@ -38,6 +38,8 @@ describe('audit observations: disconnected procurement flow', () => {
     await approvedSuppliers(h, TENANT, 'supplier-audit'); // OB-32: an order needs an approved supplier
     await deliveryPlaces(h, TENANT, 'wh-audit'); // OB-37: an order names the store it is delivered to
     await h.provisionRole(TENANT, 'buyer', 'store_manager');
+    // OB-288 P3 (§28): the person who raised the order never also books its goods in — a second person receives.
+    await h.provisionRole(TENANT, 'goods-in', 'store_manager');
     const proposed = await h.request({ method: 'POST', path: '/v1/purchase/orders/PO-AUDIT',
       tenantId: TENANT, userId: 'buyer', idempotencyKey: 'po-propose',
       body: { supplierId: 'supplier-audit', deliverToLocationId: 'wh-audit', lines: [{ productId: 'p-audit', orderedQty: 10,
@@ -50,7 +52,7 @@ describe('audit observations: disconnected procurement flow', () => {
     expect((await h.request({ method: 'GET', path: '/v1/purchase/orders/PO-AUDIT', tenantId: TENANT, userId: 'owner' })).body)
       .toMatchObject({ order: { receivedByProduct: {} }, openCommitment: { totalOpenValue: { minor: 1000 } } });
     const grn = await h.request({ method: 'POST', path: '/v1/inventory/goods-receipt/GRN-AUDIT',
-      tenantId: TENANT, userId: 'buyer', idempotencyKey: 'grn-receive',
+      tenantId: TENANT, userId: 'goods-in', idempotencyKey: 'grn-receive',
       body: { ...receipt(10, 4), poId: 'PO-AUDIT' } });
     expect(grn.status).toBe(201);
     // The GRN says what it folded into the order: 4 of p-audit under its own id.
@@ -68,14 +70,14 @@ describe('audit observations: disconnected procurement flow', () => {
       openCommitment: { totalOpenValue: { minor: 600 }, fullyReceived: false, lines: [{ productId: 'p-audit', orderedQty: 10, receivedQty: 4, openQty: 6 }] },
     });
     // The same GRN again — same key, or a re-minted key — is one receipt: the order is not folded twice.
-    expect((await h.request({ method: 'POST', path: '/v1/inventory/goods-receipt/GRN-AUDIT', tenantId: TENANT, userId: 'buyer', idempotencyKey: 'grn-receive',
+    expect((await h.request({ method: 'POST', path: '/v1/inventory/goods-receipt/GRN-AUDIT', tenantId: TENANT, userId: 'goods-in', idempotencyKey: 'grn-receive',
       body: { ...receipt(10, 4), poId: 'PO-AUDIT' } })).status).toBe(201);
-    expect((await h.request({ method: 'POST', path: '/v1/inventory/goods-receipt/GRN-AUDIT', tenantId: TENANT, userId: 'buyer', idempotencyKey: 'grn-receive-again',
+    expect((await h.request({ method: 'POST', path: '/v1/inventory/goods-receipt/GRN-AUDIT', tenantId: TENANT, userId: 'goods-in', idempotencyKey: 'grn-receive-again',
       body: { ...receipt(10, 4), poId: 'PO-AUDIT' } })).body).toMatchObject({ alreadyReceived: true });
     expect((await h.request({ method: 'GET', path: '/v1/purchase/orders/PO-AUDIT', tenantId: TENANT, userId: 'owner' })).body)
       .toMatchObject({ order: { receivedByProduct: { 'p-audit': 4 } }, openCommitment: { totalOpenValue: { minor: 600 } } });
     // The rest arrives on a second GRN: nothing is left open.
-    expect((await h.request({ method: 'POST', path: '/v1/inventory/goods-receipt/GRN-AUDIT-2', tenantId: TENANT, userId: 'buyer', idempotencyKey: 'grn-receive-2',
+    expect((await h.request({ method: 'POST', path: '/v1/inventory/goods-receipt/GRN-AUDIT-2', tenantId: TENANT, userId: 'goods-in', idempotencyKey: 'grn-receive-2',
       body: { ...receipt(10, 6), poId: 'PO-AUDIT' } })).status).toBe(201);
     expect((await h.request({ method: 'GET', path: '/v1/purchase/orders/PO-AUDIT', tenantId: TENANT, userId: 'owner' })).body)
       .toMatchObject({ order: { receivedByProduct: { 'p-audit': 10 } }, openCommitment: { totalOpenValue: { minor: 0 }, fullyReceived: true } });

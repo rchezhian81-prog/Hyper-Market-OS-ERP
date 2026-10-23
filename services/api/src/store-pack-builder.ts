@@ -41,6 +41,7 @@ import { inForcePlanogram } from '../../inventory/src/planograms';
 import { ROLE_CATALOGUE } from './roles';
 import { DEFAULT_MATCH_POLICY } from '../../purchase/src/index';
 import { openDeliveriesFor } from '../../purchase/src/purchase-orders';
+import { deliveryAsnOf } from './p3-procure-adapters'; // OB-288 P3 (M07-FR-01): the ASN rides with its open delivery
 import { branchOfLocationIn } from '../../inventory/src/location-scope';
 import { normaliseUom } from '../../../packages/contracts/src/quantity';
 import type { PackSigner } from '../../catalogue/src/pack';
@@ -252,6 +253,8 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
   const binIds = new Set(bins.map((b) => b.binId));
   const contents = Object.fromEntries(Object.entries(await wh.contents(tenantId)).filter(([key, qty]) => binIds.has(key.split('|')[0]!) && qty !== 0));
   const receipts = await goodsReceiptAdapter({ store, now }).all(tenantId);
+  const asns = new Map<string, Awaited<ReturnType<typeof deliveryAsnOf>>>();
+  for (const d of openDeliveriesFor(orders, storeId, branchOf)) asns.set(d.poId, await deliveryAsnOf(store, tenantId, d.poId));
   const deliveries = openDeliveriesFor(orders, storeId, branchOf).map((d) => {
     const po = orders.find((o) => o.poId === d.poId)!;
     const costOf = new Map(po.lines.map((l) => [l.productId, l.unitCost] as const));
@@ -268,6 +271,8 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
         productId: l.productId, quantityMinor: l.openQty,
         unitCostMinor: costOf.get(l.productId)?.minor ?? 0, currency: costOf.get(l.productId)?.currency ?? 'INR',
       })),
+      // OB-288 P3 (M07-FR-01): the supplier's advance ship notice, cached on the phone so it can be received against offline.
+      ...(asns.get(d.poId) === undefined ? {} : { asn: asns.get(d.poId)! }),
     };
   });
   const only = deliveries.length === 1 ? deliveries[0]! : undefined;

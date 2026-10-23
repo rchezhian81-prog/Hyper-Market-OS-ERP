@@ -10,6 +10,7 @@ import type { EventStore } from '../../../packages/persistence/src/event-store';
 import type { DayCloseRecord, CarriedPaymentIn } from '../../pos/src/day-close';
 import type { PaymentException, PaymentExceptionResolution, PaymentExceptionConflict, PaymentExceptionDeps, LatePaymentAnswer, LateAnswerConflict, RaisedNoAnswer } from '../../finance/src/payment-exceptions';
 import { mergeRaisedAndCarried } from '../../finance/src/payment-exceptions';
+import { stockCostAdjustments } from './adapters'; // OB-288 P3
 import { STREAM, streamName, permissionsHeldBy, productMasterAdapter, periodBooksAdapter, stockLossAdapter, storeOfLocationResolver, averageBuyingCosts, unappliedHeldWriteOffs } from './adapters';
 import { project, ownershipOf, EFFECT_ON_HAND, type Movement } from '../../inventory/src/index';
 import { valueAtCost } from '../../../packages/contracts/src/quantity';
@@ -188,6 +189,8 @@ export async function stockValuationFor(input: { readonly store: EventStore; rea
   let openingLoadsMinor = 0;
   const unvaluedPurchases: string[] = [];
   const isOpening = (m: Movement): boolean => m.movementId.startsWith('opening-');
+  // OB-288 P3 (M07-FR-04): a matched bill's landed charges posted into stock this month are part of the month's purchases.
+  for (const adj of await stockCostAdjustments(input.store, tenantId)) if (adj.occurredAt.slice(0, 7) === period) receivedMinor += adj.valueMinor;
   for (const m of movements.filter((x) => x.occurredAt.slice(0, 7) === period)) {
     const storeId = storeOf(m.locationId);
     const atAverage = (): number | undefined => { const u = avg.costOf(m.productId, storeId); return u === undefined ? undefined : valueAtCost(m.quantityMinor, m.uom, { minor: u }); };

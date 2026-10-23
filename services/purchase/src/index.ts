@@ -25,6 +25,8 @@ import { isCurrencyCode, type Money, type CurrencyCode } from '../../../packages
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import type { StoredPurchaseOrder } from './purchase-orders';
 import type { InvoiceDocumentRecord, ScanTypedLink } from './invoice-ingestion';
+import { segregationConflict } from '../../../packages/purchasing/src/segregation';
+import { segregationRefusal, type SegregationPort } from './segregation-of-duties';
 
 // The rule itself lives in `packages/purchasing` so the buyer's screen can use the SAME one — a
 // browser cannot import this file, which imports the HTTP kernel. Re-exported so every existing
@@ -255,6 +257,41 @@ export interface SupplierInvoiceRecord {
    */
   readonly supplierInvoiceNo?: string;
   readonly supplierInvoiceDate?: string;
+  /**
+   * OB-288 P3 (M07-FR-04 · D03-FR-05): the freight, duty and other charges the paper bills beside its lines, in paise. Part of
+   * the bill's total; apportioned into the stock's cost when the bill is matched. Absent ⇒ the paper charges none.
+   */
+  readonly landedCharges?: LandedChargesOnBill;
+}
+
+/** OB-288 P3: charges on a supplier's bill that belong to the goods but to no one line (D03-FR-05). */
+export interface LandedChargesOnBill { readonly freightMinor: number; readonly dutyMinor: number; readonly otherMinor: number }
+export const chargesTotal = (c: LandedChargesOnBill | undefined): number => c === undefined ? 0 : c.freightMinor + c.dutyMinor + c.otherMinor;
+
+/** OB-288 P3: `charges` off a capture body — whole, non-negative paise; undefined when none; 'invalid' when unreadable. */
+export function readLandedCharges(v: unknown): LandedChargesOnBill | undefined | 'invalid' {
+  if (v === undefined || v === null) return undefined;
+  if (!isObj(v) || Object.keys(v).some((k) => !['freightMinor', 'dutyMinor', 'otherMinor'].includes(k))) return 'invalid';
+  const take = (k: string): number | undefined => (v[k] === undefined ? 0 : isNonNegInt(v[k]) ? v[k] as number : undefined);
+  const freightMinor = take('freightMinor'); const dutyMinor = take('dutyMinor'); const otherMinor = take('otherMinor');
+  if (freightMinor === undefined || dutyMinor === undefined || otherMinor === undefined) return 'invalid';
+  return freightMinor + dutyMinor + otherMinor === 0 ? undefined : { freightMinor, dutyMinor, otherMinor };
+}
+
+/**
+ * OB-288 P3: a bill's landed charges carried into its match verdict. They are part of what the supplier invoiced; when the
+ * bill may be paid they are payable with it, and while it is blocked they are withheld with it. Pure.
+ */
+export function withLandedCharges<T extends MatchResult>(result: T, invoice: SupplierInvoiceRecord): T & { readonly landedCharges?: LandedChargesOnBill & { readonly totalMinor: number } } {
+  const total = chargesTotal(invoice.landedCharges);
+  if (total === 0 || invoice.landedCharges === undefined) return result;
+  return {
+    ...result,
+    invoicedMinor: result.invoicedMinor + total,
+    payableMinor: result.blocked ? result.payableMinor : result.payableMinor + total,
+    withheldMinor: result.blocked ? result.withheldMinor + total : result.withheldMinor,
+    landedCharges: { ...invoice.landedCharges, totalMinor: total },
+  };
 }
 
 /** R3 · A17: the supplier's own invoice number and date from a capture body — both optional, the date a real YYYY-MM-DD. */
@@ -292,6 +329,8 @@ export interface StoredMatch extends MatchResult {
    * withheld quantity withholds its tax too. `payableMinor` / `invoicedMinor` / `withheldMinor` above then INCLUDE the tax.
    */
   readonly tax?: MatchTax;
+  /** OB-288 P3: the bill's freight/duty/other — inside `invoicedMinor`, and inside `payableMinor` when not blocked. */
+  readonly landedCharges?: LandedChargesOnBill & { readonly totalMinor: number };
 }
 
 export interface MatchTax {
@@ -570,6 +609,10 @@ export interface PurchaseDeps {
   readonly tillSealKey?: Buffer;
   readonly now: () => string;
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
+  /** OB-288 P3 (M06-FR-02 · §28): who did each step of the order — a matcher who raised, received or paid it is refused. */
+  readonly segregation?: Pick<SegregationPort, 'actorsOf'>;
+  /** OB-288 P3 (M07-FR-04): post the landed-cost apportionment of a matched bill's freight/duty into stock value. */
+  readonly postLandedCost?: (tenantId: string, input: { readonly invoice: SupplierInvoiceRecord; readonly order: StoredPurchaseOrder | undefined; readonly match: StoredMatch; readonly by: string }) => Promise<unknown>;
 }
 
 export interface Commitments {
@@ -675,7 +718,12 @@ export function purchaseRoutes(deps: PurchaseDeps): readonly Route[] {
             nextSafeAction: 'Send the invoice as the paper says it. Nothing was saved.',
           });
         }
-        const totalMinor = sumOf(read.lines);
+        // OB-288 P3 (M07-FR-04): the freight / duty / other the paper bills beside its lines — part of the bill's total.
+        const charges = readLandedCharges(b['charges']);
+        if (charges === 'invalid') {
+          throw apiError(400, { code: 'not_readable_as_a_supplier_invoice', whatHappened: 'charges, when given, is { freightMinor?, dutyMinor?, otherMinor? } in whole, non-negative paise.', wasItSaved: 'not_saved', nextSafeAction: 'Send the charges as the paper prints them. Nothing was saved.' });
+        }
+        const totalMinor = sumOf(read.lines) + chargesTotal(charges);
         if (totalMinor !== b['declaredTotalMinor']) throw refuseTotal(totalMinor, b['declaredTotalMinor'], false);
         // D03-FR-02 (round 12): the scan this bill was typed from, when the capture names one. It must be a scan head office
         // holds for THIS tenant, still waiting to be typed (or already typed as this same invoice — a re-send); anything
@@ -712,7 +760,7 @@ export function purchaseRoutes(deps: PurchaseDeps): readonly Route[] {
         const record: SupplierInvoiceRecord = {
           invoiceId, supplierId: b['supplierId'], poId: isStr(poId) ? poId : null, lines: read.lines, declaredTotalMinor: b['declaredTotalMinor'], totalMinor, currency: 'INR',
           capturedBy: ctx.userId, capturedAt, approvedBy: checkedBy ?? null, approvedAt: checkedBy === undefined ? null : opened!.decision.decidedAt,
-          source: 'head-office', governanceFlags: flags, ...supplierRef,
+          source: 'head-office', governanceFlags: flags, ...supplierRef, ...(charges === undefined ? {} : { landedCharges: charges }),
         };
         // Round 13 (verifier B3 · P-08): the scan's link and the invoice are ONE atomic write — a crash or refusal can no
         // longer leave the scan "captured" as an invoice that was never saved. The approval is spent first (a refused spend
@@ -724,7 +772,7 @@ export function purchaseRoutes(deps: PurchaseDeps): readonly Route[] {
           actorId: ctx.userId, action: 'invoice.capture', objectType: 'supplier_invoice', objectId: invoiceId,
           at: capturedAt, origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
           before: null,
-          after: { supplierId: record.supplierId, poId: record.poId ?? '', lines: String(record.lines.length), totalMinor: String(totalMinor), approvedBy: record.approvedBy ?? '', flags: flags.join(','), documentId: scanDocumentId ?? '' },
+          after: { supplierId: record.supplierId, poId: record.poId ?? '', lines: String(record.lines.length), totalMinor: String(totalMinor), approvedBy: record.approvedBy ?? '', flags: flags.join(','), documentId: scanDocumentId ?? '', landedChargesMinor: String(chargesTotal(charges)) },
           correlationId: invoiceId,
         });
         return { status: 201, body: { invoice: record, alreadyCaptured: false, flags, ...(scanDocumentId === undefined ? {} : { documentId: scanDocumentId }) } };
@@ -754,7 +802,9 @@ export function purchaseRoutes(deps: PurchaseDeps): readonly Route[] {
             nextSafeAction: 'Do not discard it at the store. Keep it in the queue and raise it — the paper invoice exists.',
           });
         }
-        const totalMinor = sumOf(read.lines);
+        const charges = readLandedCharges(b['charges']); // OB-288 P3: the paper's freight / duty / other
+        if (charges === 'invalid') throw refuseLines({ ok: false, code: 'not_readable', detail: 'charges is { freightMinor?, dutyMinor?, otherMinor? } in whole, non-negative paise' }, true);
+        const totalMinor = sumOf(read.lines) + chargesTotal(charges);
         if (totalMinor !== b['declaredTotalMinor']) throw refuseTotal(totalMinor, b['declaredTotalMinor'], true);
         const existing = await deps.invoice(ctx.tenantId, invoiceId);
         if (existing !== undefined) return { status: 200, body: { invoice: existing, alreadyCaptured: true, flags: existing.governanceFlags } };
@@ -778,7 +828,7 @@ export function purchaseRoutes(deps: PurchaseDeps): readonly Route[] {
           approvedBy: null, approvedAt: null,
           ...(isStr(approvedBy) ? { approvalClaimedBy: approvedBy } : {}),
           relayedBy: ctx.userId, source: isStr(b['source']) ? b['source'] : 'buyer-screen', storeId: isStr(b['storeId']) ? b['storeId'] : null,
-          governanceFlags: flags,
+          governanceFlags: flags, ...(charges === undefined ? {} : { landedCharges: charges }),
         };
         await deps.recordInvoice(ctx.tenantId, record);
         await deps.recordAudit?.(ctx.tenantId, {
@@ -838,7 +888,12 @@ export function purchaseRoutes(deps: PurchaseDeps): readonly Route[] {
             for (const l of invoice.lines) claimed[l.productId] = (claimed[l.productId] ?? 0) + l.quantity;
             if (Object.entries(claimed).some(([productId, qty]) => qty > (orderedByProduct[productId] ?? 0))) flags.push('order_over_invoiced');
           }
-          result = withInvoiceTax(threeWayMatch({ lines: matchLinesFrom(order, invoice, invoicedBefore), ...policy }), invoice);
+          result = withLandedCharges(withInvoiceTax(threeWayMatch({ lines: matchLinesFrom(order, invoice, invoicedBefore), ...policy }), invoice), invoice);
+          // OB-288 P3 (M06-FR-02 · §28): the person matching the bill may not be the one who raised, received or paid the order.
+          if (deps.segregation !== undefined && poId !== null) {
+            const conflict = segregationConflict(await deps.segregation.actorsOf(ctx.tenantId, poId), 'match', ctx.userId);
+            if (conflict !== undefined) throw segregationRefusal(conflict);
+          }
         }
         const stored: StoredMatch = {
           ...result, invoiceId, poId, matchedBy: ctx.userId, matchedAt,
@@ -852,6 +907,9 @@ export function purchaseRoutes(deps: PurchaseDeps): readonly Route[] {
           flags,
         };
         await deps.recordMatch(ctx.tenantId, invoiceId, stored);
+        // OB-288 P3 (M07-FR-04): the bill's landed charges into the stock's cost — only the difference from what an earlier
+        // match already posted (compensating, append-only); a blocked bill takes back whatever was posted.
+        const landed = invoice === undefined ? undefined : await deps.postLandedCost?.(ctx.tenantId, { invoice, order, match: stored, by: ctx.userId });
         await deps.recordAudit?.(ctx.tenantId, {
           actorId: ctx.userId, action: 'invoice.match', objectType: 'supplier_invoice', objectId: invoiceId,
           at: matchedAt, origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
@@ -859,7 +917,7 @@ export function purchaseRoutes(deps: PurchaseDeps): readonly Route[] {
           after: { poId: poId ?? '', blocked: String(stored.blocked), payableMinor: String(stored.payableMinor), invoicedMinor: String(stored.invoicedMinor), withheldMinor: String(stored.withheldMinor), flags: flags.join(',') },
           correlationId: invoiceId,
         });
-        return { status: 200, body: stored };
+        return { status: 200, body: landed === undefined ? stored : { ...stored, landedCost: landed } };
       },
     },
     {

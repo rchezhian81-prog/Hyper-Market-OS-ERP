@@ -67,6 +67,9 @@ import {
   type FoodSafetyCheck, type FoodSafetyCheckRecord,
 } from '../../../packages/facilities/src/food-safety';
 import type { DispatchEwbVerdict } from '../../../packages/e-way-bill/src/index';
+import { compareAgainstAsn, type Asn, type AsnComparison } from '../../../packages/receiving/src/asn';
+import { segregationConflict } from '../../../packages/purchasing/src/segregation';
+import { segregationRefusal, type SegregationPort } from '../../purchase/src/segregation-of-duties';
 
 // ── R3 · A23 · OB-194 — a supplier return above the e-way-bill threshold is dispatched under a generated e-way bill ──
 
@@ -142,6 +145,11 @@ export const RECEIPT_FLAGS = Object.freeze([
   // store computer for the person who booked it, changed after the seal, done by someone else, unreadable, a checklist head
   // office does not hold, or one that does not pass the D-6 rules. The reason is on the receipt; the checklist is not on file.
   'receiving_checklist_not_accepted',
+  // OB-288 P3 (M06-FR-02 · §28): a receipt relayed from the store whose receiver already did another step of the same
+  // purchase (raised the order, matched its bill or paid it). It already happened at the door, so it is booked — and SAID.
+  'segregation_of_duties',
+  // OB-288 P3 (M07-FR-01): what arrived differs from the supplier's advance ship notice for this order (`asnCheck`).
+  'asn_differs',
 ] as const);
 export type ReceiptFlag = (typeof RECEIPT_FLAGS)[number];
 
@@ -249,10 +257,46 @@ export interface GrnRecord {
   readonly assembledFrom?: AssembledFromScans;
   /** What head office's own records could not confirm about this receipt (a `ReceiptFlag` each). */
   readonly governanceFlags?: readonly string[];
+  /** OB-288 P3 (§28): why a relayed receipt carries `segregation_of_duties` — the other step its receiver already did. */
+  readonly segregationConflict?: string;
+  /**
+   * OB-288 P3 (M07-FR-01): the receipt compared with the supplier's advance ship notice on head office's register for this
+   * order — every product that differs, valued at the delivered cost. Absent when the order has no ASN on file.
+   */
+  readonly asnCheck?: AsnCheck;
   /** SP-2b — the identity that relayed it (the store box), the surface, and the store, when relayed. */
   readonly relayedBy?: string;
   readonly source?: string;
   readonly storeId?: string | null;
+}
+
+/** OB-288 P3 (M07-FR-01): a receipt against the advance ship notice — the ASN is a promise, the receipt is what came. */
+export interface AsnCheck {
+  readonly asnId: string;
+  readonly expectedAt: string;
+  /** Every product whose count differs from the notice (a match is not a row), with its value at the delivered cost. */
+  readonly differences: readonly (AsnComparison & { readonly valueMinor: number })[];
+  readonly matched: boolean;
+}
+
+/**
+ * What PHYSICALLY arrived per product on a checked receipt — sellable, quarantined, refused at the dock and held alike: the
+ * figure an advance ship notice promised. Pure.
+ */
+export function arrivedByProduct(captured: CapturedReceipt): Readonly<Record<string, number>> {
+  const out: Record<string, number> = {};
+  for (const l of captured.lines) out[l.productId] = (out[l.productId] ?? 0) + l.sellableMinor + l.quarantinedMinor + l.rejectedMinor + l.heldMinor;
+  return out;
+}
+
+/** OB-288 P3: the tested `compareAgainstAsn` over what arrived, each difference valued at the line's delivered cost. Pure. */
+export function checkAgainstAsn(asn: Asn, captured: CapturedReceipt): AsnCheck {
+  const costOf = new Map(captured.lines.map((l) => [l.productId, l] as const));
+  const differences = compareAgainstAsn(asn, arrivedByProduct(captured)).map((d) => {
+    const line = costOf.get(d.productId);
+    return { ...d, valueMinor: line === undefined ? 0 : valueAtCost(Math.abs(d.differenceMinor), line.uom, line.unitCost as CostBasis) };
+  });
+  return { asnId: asn.asnId, expectedAt: asn.expectedAt, differences, matched: differences.length === 0 };
 }
 
 /** The three things a second person may do with quarantined or refused stock (M07-FR-03). */
@@ -497,6 +541,10 @@ export interface GoodsReceiptDeps {
     readonly recordDispatch: (tenantId: string, d: SupplierReturnDispatch) => Promise<void> | void;
   };
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
+  /** OB-288 P3 (M06-FR-02 · §28): who did each step of the order — a receiver who did another step is refused (or flagged). */
+  readonly segregation?: Pick<SegregationPort, 'actorsOf'>;
+  /** OB-288 P3 (M07-FR-01): the advance ship notice a buyer accepted for this order (the one named, else the latest). */
+  readonly asnFor?: (tenantId: string, poId: string, asnId?: string) => Promise<Asn | undefined> | Asn | undefined;
 }
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
@@ -724,17 +772,49 @@ export async function orderForReceipt(
  * nothing is saved and the receiver books it again against what is left now.
  */
 export async function commitAgainstOrder(
-  deps: Pick<GoodsReceiptDeps, 'commit'>, tenantId: string, record: GrnRecord, movements: readonly Movement[], key: string,
+  deps: Pick<GoodsReceiptDeps, 'commit' | 'segregation' | 'asnFor'>, tenantId: string, record: GrnRecord, movements: readonly Movement[], key: string,
   poReceipt: PoReceiptPosting | undefined, order: OrderForReceipt,
-): Promise<void> {
+  /** OB-288 P3: the advance ship notice the receiver received against, when the delivery named one. */
+  opts: { readonly asnId?: string } = {},
+): Promise<GrnRecord> {
+  const final = await withProcureChecks(deps, tenantId, record, opts.asnId);
   const guard = poReceipt !== undefined && order.poId !== null && order.expectedVersion !== undefined
     ? { poId: order.poId, expectedVersion: order.expectedVersion } : undefined;
   try {
-    await deps.commit(tenantId, record, movements, key, poReceipt, guard);
+    await deps.commit(tenantId, final, movements, key, poReceipt, guard);
   } catch (e) {
     if (e instanceof ConcurrencyConflictError) throw concurrentChange(`purchase order ${order.poId ?? ''}`);
     throw e;
   }
+  return final;
+}
+
+/**
+ * OB-288 P3 — the two procure-to-pay checks every receipt against an order takes before it is committed:
+ *   • §28: a receiver who already raised, matched or paid the same order. Booked at head office it is REFUSED by name; a
+ *     receipt that already happened at the store (relayed, or assembled from the handheld's scans) is booked and FLAGGED;
+ *   • M07-FR-01: the delivery compared with the supplier's advance ship notice on file for the order, every difference on
+ *     the record with its value, flagged `asn_differs` for the review list (the discrepancy path, M07-FR-03).
+ */
+export async function withProcureChecks(deps: Pick<GoodsReceiptDeps, 'segregation' | 'asnFor'>, tenantId: string, record: GrnRecord, asnId?: string): Promise<GrnRecord> {
+  if (record.poId === null) return record;
+  let out = record;
+  const flags = [...(record.governanceFlags ?? [])];
+  if (deps.segregation !== undefined) {
+    const conflict = segregationConflict(await deps.segregation.actorsOf(tenantId, record.poId), 'receipt', record.receivedBy);
+    if (conflict !== undefined) {
+      if (record.relayedBy === undefined && record.assembledFrom === undefined) throw segregationRefusal(conflict);
+      if (!flags.includes('segregation_of_duties')) flags.push('segregation_of_duties');
+      out = { ...out, segregationConflict: conflict.detail };
+    }
+  }
+  const asn = deps.asnFor === undefined ? undefined : await deps.asnFor(tenantId, record.poId, asnId);
+  if (asn !== undefined) {
+    const asnCheck = checkAgainstAsn(asn, record.captured);
+    if (!asnCheck.matched && !flags.includes('asn_differs')) flags.push('asn_differs');
+    out = { ...out, asnCheck };
+  }
+  return out === record && flags.length === (record.governanceFlags ?? []).length ? record : { ...out, governanceFlags: flags };
 }
 
 /**
@@ -1360,8 +1440,8 @@ export function goodsReceiptRoutes(deps: GoodsReceiptDeps): readonly Route[] {
           grnId, locationId: record.warehouseId, lines: captured.lines, quantityOf: (l) => l.sellableMinor,
           occurredAt: receivedAt, enteredBy: ctx.userId, unitCostMinorOf: (l) => l.unitCost.minor,
         });
-        await commitAgainstOrder(deps, ctx.tenantId, record, movements, ctx.idempotencyKey ?? grnId, poReceipt, order);
-        return { status: 201, body: { grn: record, flags, poReceipt: record.poReceipt } };
+        const committed = await commitAgainstOrder(deps, ctx.tenantId, record, movements, ctx.idempotencyKey ?? grnId, poReceipt, order, isStr(b['asnId']) ? { asnId: b['asnId'] } : {});
+        return { status: 201, body: { grn: committed, flags: committed.governanceFlags ?? flags, poReceipt: committed.poReceipt } };
       },
     },
     {

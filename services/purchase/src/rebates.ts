@@ -12,8 +12,16 @@
 //
 // The rule is the tested `accrueRebate` in `@sre/purchasing` (the `services-run-on-their-tested-engine`
 // guardrail); this file is the persistence + HTTP skin. Recording is gated `purchase.contract.manage`;
-// reads are `purchase.commitment.read`. The finance-side claim APPROVAL of a rebate payment (FR-03 /
-// M23) is a separate flow — this surface records what is earned and what has been received against it.
+// reads are `purchase.commitment.read`.
+//
+// OB-288 P3 (M06-FR-03 acceptance "a rebate accrues and reconciles to finance"): nothing about the money is typed any more.
+//   • The BASIS of an accrual is FOLDED from head office's registers for the period the accrual names — a purchase-value
+//     (or growth) scheme from the supplier's MATCHED invoices (the taxable value the match let be paid), never a figure in
+//     the body. A body that carries a basis, a baseline or a "received" is refused by name.
+//   • What has been RECEIVED is finance's: each rebate receipt is a journal (services/finance/src/rebate-receipts.ts), and
+//     the outstanding figure here is accrued − what the LEDGER holds.
+//   • A volume (units) scheme is not folded: the scheme states its rate in basis points, which does not say what one unit
+//     earns — that is an open owner question (reported), so such an accrual is refused by name rather than guessed.
 
 import type { Route } from '../../kernel/src/index';
 import { actionDetails, approvalNamedIn, type ApprovalPort } from '../../identity/src/approval-requests';
@@ -22,7 +30,7 @@ import {
   accrueRebate,
   type RebateScheme, type RebateBasis, type RebateAccrual,
 } from '../../../packages/purchasing/src/index';
-import { isCurrencyCode, type Money } from '../../../packages/contracts/src/money';
+import type { Money } from '../../../packages/contracts/src/money';
 
 export interface RebateDeps {
   /** Head office's maker-checker engine (ADR-0024): a scheme's approver gave it in their own session. Optional on a
@@ -38,16 +46,29 @@ export interface RebateDeps {
   readonly recordScheme: (tenantId: string, scheme: RebateScheme) => Promise<void> | void;
   /** Record a posted accrual. Latest per accrual id (a re-measure supersedes). */
   readonly recordAccrual: (tenantId: string, schemeId: string, accrualId: string, accrual: RebateAccrual) => Promise<void> | void;
+  /**
+   * OB-288 P3: the basis FOLDED from the registers for a period (YYYY-MM-DD, inclusive): the taxable value of the supplier's
+   * matched, payable invoices dated in it, and how many bills that is. Absent on a bare stub (then nothing can accrue).
+   */
+  readonly basisFor?: (tenantId: string, supplierId: string, from: string, to: string) => Promise<{ readonly amountMinor: number; readonly invoices: readonly string[] }>;
+  /** OB-288 P3: what finance has RECEIVED for the scheme — from the rebate-receipt journals on the ledger. */
+  readonly receivedFor?: (tenantId: string, schemeId: string) => Promise<number>;
   readonly now: () => string;
+}
+
+/** A posted accrual as kept: the engine's verdict plus the period it measures and the bills the basis came from. */
+export interface StoredRebateAccrual extends RebateAccrual {
+  readonly accrualId?: string;
+  readonly periodFrom?: string;
+  readonly periodTo?: string;
+  readonly basisSources?: { readonly invoices: readonly string[]; readonly baselineInvoices?: readonly string[] };
+  readonly postedBy?: string;
 }
 
 const BASES: readonly RebateBasis[] = ['volume_units', 'purchase_value', 'growth_over_baseline'];
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
-const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
 const isDate = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(`${v}T00:00:00Z`));
 const isNonNegInt = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
-const isMoney = (v: unknown): v is Money =>
-  isObj(v) && typeof v['minor'] === 'number' && Number.isSafeInteger(v['minor']) && typeof v['currency'] === 'string' && isCurrencyCode(v['currency']);
 
 /** Sum a money field across accruals in the scheme's currency (defaulting to INR when empty). */
 const sumMinor = (accruals: readonly RebateAccrual[], pick: (a: RebateAccrual) => Money): number =>
@@ -107,34 +128,72 @@ export function rebateRoutes(deps: RebateDeps): readonly Route[] {
       },
     },
     {
-      // Post an accrual for a measured period. Body: { basisAmount { minor, currency }, baselineAmount?,
-      // received? }. Runs the tested accrueRebate. Idempotent on the accrual id — a re-measure supersedes.
+      // Post an accrual for a measured period. Body: { periodFrom, periodTo (YYYY-MM-DD, inside the scheme's term),
+      // baselineFrom?, baselineTo? (a growth scheme's comparison period) }. The basis is FOLDED from the supplier's matched
+      // invoices (OB-288 P3); a typed basis, baseline or "received" is refused. Idempotent on the accrual id — a re-measure supersedes.
       api: 'API-03', method: 'POST', path: '/v1/purchase/rebate-schemes/:schemeId/accruals/:accrualId',
       permission: 'purchase.contract.manage', idempotent: true,
       handler: async (ctx) => {
         const schemeId = (ctx.params['schemeId'] ?? '').trim();
         const accrualId = (ctx.params['accrualId'] ?? '').trim();
         const b = (ctx.body ?? {}) as Record<string, unknown>;
-        if (accrualId === '' || !isMoney(b['basisAmount'])
-          || (b['baselineAmount'] !== undefined && !isMoney(b['baselineAmount']))
-          || (b['received'] !== undefined && !isMoney(b['received']))) {
+        const typed = ['basisAmount', 'baselineAmount', 'received'].filter((k) => b[k] !== undefined);
+        if (typed.length > 0) {
+          throw apiError(400, {
+            code: 'accrual_carries_caller_claims',
+            whatHappened: `This accrual says its own ${typed.join(', ')}. What the supplier was paid for is head office's matched invoices, and what finance received is finance's ledger — never a figure in the request.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send only the period to measure: { periodFrom, periodTo } (and, for a growth scheme, { baselineFrom, baselineTo }). Nothing was saved.',
+          });
+        }
+        if (accrualId === '' || !isDate(b['periodFrom']) || !isDate(b['periodTo'])
+          || (b['baselineFrom'] !== undefined && !isDate(b['baselineFrom'])) || (b['baselineTo'] !== undefined && !isDate(b['baselineTo']))) {
           throw apiError(400, {
             code: 'not_readable_as_an_accrual',
-            whatHappened: 'An accrual needs an accrualId in the path and { basisAmount { minor, currency }, baselineAmount?, received? } in the body.',
+            whatHappened: 'An accrual needs an accrualId in the path and { periodFrom, periodTo } (YYYY-MM-DD) in the body; a growth scheme also { baselineFrom, baselineTo }.',
             wasItSaved: 'not_saved',
-            nextSafeAction: 'Send the measured basis amount (and, for a growth scheme, the baseline).',
+            nextSafeAction: 'Send the period the accrual measures. Nothing was saved.',
           });
         }
         const scheme = await deps.scheme(ctx.tenantId, schemeId);
         if (scheme === undefined) throw notFound(`rebate scheme ${schemeId}`);
+        const from = b['periodFrom'] as string;
+        const to = b['periodTo'] as string;
+        if (to < from || from < scheme.startsOn || to > scheme.endsOn) {
+          throw apiError(422, {
+            code: 'period_outside_the_scheme',
+            whatHappened: `Scheme ${schemeId} runs ${scheme.startsOn} to ${scheme.endsOn}; the period ${from} to ${to} is not inside it (or ends before it starts).`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Measure a period inside the scheme\'s term. Nothing was saved.',
+          });
+        }
+        if (scheme.basis === 'volume_units') {
+          throw apiError(422, {
+            code: 'volume_rebate_basis_undecided',
+            whatHappened: `Scheme ${schemeId} is a volume scheme, and its rate is in basis points — which does not say what one unit received earns. That is the owner's decision; until it is made a volume rebate is not folded or guessed.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Record the scheme on purchase value for now, or wait for the owner\'s decision on volume rebates. Nothing was saved.',
+          });
+        }
+        if (scheme.basis === 'growth_over_baseline' && (!isDate(b['baselineFrom']) || !isDate(b['baselineTo']))) {
+          throw apiError(422, { code: 'baseline_period_required', whatHappened: 'A growth scheme is measured against a baseline period — send { baselineFrom, baselineTo }.', wasItSaved: 'not_saved', nextSafeAction: 'Send the comparison period. Nothing was saved.' });
+        }
+        if (deps.basisFor === undefined) {
+          throw apiError(503, { code: 'rebate_basis_unavailable', whatHappened: 'The matched-invoice register is not wired here, so the basis cannot be folded.', wasItSaved: 'not_saved', nextSafeAction: 'Try again later. Nothing was saved.' });
+        }
+        const basis = await deps.basisFor(ctx.tenantId, scheme.supplierId, from, to);
+        const baseline = scheme.basis === 'growth_over_baseline' ? await deps.basisFor(ctx.tenantId, scheme.supplierId, b['baselineFrom'] as string, b['baselineTo'] as string) : undefined;
         const accrual = accrueRebate({
           scheme,
-          basisAmount: b['basisAmount'] as Money,
-          ...(isMoney(b['received']) ? { received: b['received'] as Money } : {}),
-          ...(isMoney(b['baselineAmount']) ? { baselineAmount: b['baselineAmount'] as Money } : {}),
+          basisAmount: { minor: basis.amountMinor, currency: 'INR' },
+          ...(baseline === undefined ? {} : { baselineAmount: { minor: baseline.amountMinor, currency: 'INR' } }),
         });
-        await deps.recordAccrual(ctx.tenantId, schemeId, accrualId, accrual);
-        return { status: 201, body: { accrual } };
+        const stored: StoredRebateAccrual = {
+          ...accrual, accrualId, periodFrom: from, periodTo: to, postedBy: ctx.userId,
+          basisSources: { invoices: basis.invoices, ...(baseline === undefined ? {} : { baselineInvoices: baseline.invoices }) },
+        };
+        await deps.recordAccrual(ctx.tenantId, schemeId, accrualId, stored);
+        return { status: 201, body: { accrual: stored } };
       },
     },
     {
@@ -155,15 +214,19 @@ export function rebateRoutes(deps: RebateDeps): readonly Route[] {
         const scheme = await deps.scheme(ctx.tenantId, schemeId);
         if (scheme === undefined) throw notFound(`rebate scheme ${schemeId}`);
         const accruals = await deps.accruals(ctx.tenantId, schemeId);
+        const accrued = sumMinor(accruals, (a) => a.accrued);
+        // OB-288 P3: what finance RECEIVED is the ledger's (rebate-receipt journals), never a figure typed on an accrual.
+        const received = deps.receivedFor === undefined ? undefined : await deps.receivedFor(ctx.tenantId, schemeId);
         return {
           status: 200,
           body: {
             accruals,
             count: accruals.length,
-            totalAccruedMinor: sumMinor(accruals, (a) => a.accrued),
-            totalReceivedMinor: sumMinor(accruals, (a) => a.received),
-            // The headline: earned and not yet collected (M06-FR-03 / M23).
-            outstandingMinor: sumMinor(accruals, (a) => a.outstanding),
+            totalAccruedMinor: accrued,
+            totalReceivedMinor: received ?? null,
+            receivedFrom: received === undefined ? 'not_known' : 'finance_ledger',
+            // The headline: earned and not yet collected (M06-FR-03 / M23) — not known when the ledger cannot be read.
+            outstandingMinor: received === undefined ? null : accrued - received,
           },
         };
       },

@@ -61,6 +61,7 @@ async function seeded(): Promise<ApiHarness> {
   await approvedSuppliers(h, A, 'sup-1'); // OB-32: an order needs an approved supplier
   await deliveryPlaces(h, A, 'wh-store'); // OB-37: an order names the store it is delivered to
   await h.provisionRole(A, 'u-mgr', 'store_manager'); // holds inventory.movement.append — may receive goods
+  await h.provisionRole(A, 'u-po-buyer', 'store_manager'); // OB-288 P3 (§28): the buyer who raises the order is never the one who books it in
   await h.provisionRole(A, 'u-box', 'store_computer', [WH]);       // the store box's sync identity: inventory.receipt.sync
   await h.provisionRole(A, 'u-cust', 'customer');     // no inventory authority at all
   await h.store.append(A, STREAM.catalogue, makeEvent({
@@ -88,7 +89,7 @@ async function seeded(): Promise<ApiHarness> {
   // What the buyer ORDERED — the figure the route compares the delivery against, never the body's — ISSUED by a second
   // person (the manager proposes, the owner approves), so the receipt folds into it (SP-6 · F01).
   const po = await h.request({
-    method: 'POST', path: '/v1/purchase/orders/po-1', userId: 'u-mgr', tenantId: A, idempotencyKey: 'k-po-1',
+    method: 'POST', path: '/v1/purchase/orders/po-1', userId: 'u-po-buyer', tenantId: A, idempotencyKey: 'k-po-1',
     body: { supplierId: 'sup-1', deliverToLocationId: 'wh-store', lines: [{ productId: 'p1', orderedQty: 100, unitCost: { minor: 5000, currency: 'INR' } }] },
   });
   expect(po.status).toBe(201);
@@ -156,7 +157,7 @@ describe('a receipt relayed from the store becomes a cloud GRN, with the receive
     expect((badOrder.body as GrnBody).grn.captured.discrepancies).toEqual([]);
     expect((badOrder.body as { poReceipt: unknown }).poReceipt).toBeNull(); // and it folds into nothing (SP-6)
     // An order that is only PROPOSED is not a commitment yet: said, and folded into nothing.
-    await h.request({ method: 'POST', path: '/v1/purchase/orders/po-draft', userId: 'u-mgr', tenantId: A, idempotencyKey: 'k-po-draft',
+    await h.request({ method: 'POST', path: '/v1/purchase/orders/po-draft', userId: 'u-po-buyer', tenantId: A, idempotencyKey: 'k-po-draft',
       body: { supplierId: 'sup-1', deliverToLocationId: 'wh-store', lines: [{ productId: 'p1', orderedQty: 100, unitCost: { minor: 5000, currency: 'INR' } }] } });
     const draft = await relay(h, receipt({ grnId: 'g3b', poId: 'po-draft' }), 'k-g3b');
     expect((draft.body as GrnBody).flags).toEqual(['order_not_issued', 'default_policy']);

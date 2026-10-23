@@ -98,6 +98,9 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   { id: 'suppliers', label: 'Suppliers', labelTa: 'விநியோகஸ்தர்கள்', path: '/suppliers', requires: 'supplier.view', group: 'Purchase' },
   // R4 Lane 4 · D-10: a supplier's scorecard built from its orders, receipts and matched invoices (nothing typed). Gated on
   // the read the scorecard route checks (`purchase.commitment.read`). A head-office page (the box does not serve it).
+  // P3 (OB-288) M06-FR-02 / WF-03: requisitions, the suppliers' quotes and the like-for-like comparison; an order is only
+  // PROPOSED here. Gated on the read the requisition routes check (`purchase.commitment.read`). A head-office page.
+  { id: 'requisitions', label: 'Requisitions and quotes', labelTa: 'கோரிக்கைகளும் விலைப்புள்ளிகளும்', path: '/requisitions', requires: 'purchase.commitment.read', group: 'Purchase', served: 'unserved' },
   { id: 'supplier-scorecard', label: 'Supplier scorecard', labelTa: 'விநியோகஸ்தர் மதிப்பெண் அட்டை', path: '/supplier-scorecard', requires: 'purchase.commitment.read', group: 'Purchase', served: 'unserved' },
   // Round 12 (D03-FR-02 · WF-05): supplier bills handed in as a GST e-invoice or a scan, confirmed by a person, then checked
   // against the order — a head-office page over `/v1/purchase/invoice-documents/*` (the box does not serve it). Gated on the
