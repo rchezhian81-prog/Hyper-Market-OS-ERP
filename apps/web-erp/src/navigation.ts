@@ -225,6 +225,10 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // tie the app, and the owner's tiers and points expiry — a head-office page over its own routes (the store computer does
   // not serve it). Gated on the member read (`loyalty.points.read`); each write's route checks its own word.
   { id: 'loyalty-desk', label: 'Loyalty', labelTa: 'லாயல்டி', path: '/loyalty', requires: 'loyalty.points.read', group: 'Customers', served: 'unserved' },
+  // OB-288 wave 3 (M21-FR-01 · M21-FR-02): plan, approve, send and follow a campaign, and switch the journeys on or off — a
+  // head-office page (the store computer does not serve it). Gated on the campaign read (`customer.campaign.read`); each
+  // write's route checks its own word (template manage, campaign send).
+  { id: 'campaigns', label: 'Campaigns', labelTa: 'பிரச்சாரங்கள்', path: '/campaigns', requires: 'customer.campaign.read', group: 'Customers', served: 'unserved' },
   { id: 'basket-affinity', label: 'Bought together', labelTa: 'சேர்ந்து வாங்கப்பட்டவை', path: '/basket-affinity', requires: 'reporting.report.read', group: 'Reports', served: 'unserved' },
   { id: 'demand-events', label: 'Store events', labelTa: 'கடை நிகழ்வுகள்', path: '/demand-events', requires: 'inventory.availability.read', group: 'Inventory', served: 'unserved' },
   { id: 'morning-brief', label: 'Morning brief', labelTa: 'காலைச் சுருக்கம்', path: '/morning-brief', requires: 'owner.kpi.read', group: 'Reports', served: 'unserved' },
