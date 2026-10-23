@@ -5,6 +5,12 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Strategy change: complete the whole roadmap before the store install (OB-288, 23 October 2026)
+
+- Owner: complete 100% of the requirements in software first, in four parallel lanes; no pilot focus. Pilot-first (OB-239) reversed; R5 no longer waits for the pilot; the practice-day kit (OB-287) stopped.
+- Step 1: a full-roadmap gap audit in four lanes against the roadmap text, the requirement files and the code. Step 2: four builder lanes in waves, each item to the Definition of Done. Owner decisions are asked in batches; nothing the roadmap leaves open is invented.
+- Honest limit: items that need outside parties, real devices or staff are built and tested with stand-ins and marked so.
+
 ## Round 6 (22 October 2026) — real-trading follow-ups, switched off — full gate green: 13,463 unit/integration (16 skipped), 53 performance, 476 browser; merged (PR #803) and deployed to the demo
 
 - Built (off during the mirror pilot): the manager's day close lists card/UPI payments with each approval number behind the office PIN; HSN reaches the till from the pack file; head office's settlement review matches by approval number, unmatched and doubled numbers stay exceptions; real-trading exchanges charge the rounded bill and a card difference is done on the machine with a manager's PIN.
