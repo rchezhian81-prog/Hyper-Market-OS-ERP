@@ -18,6 +18,7 @@
 // so the same inputs always build the same snapshot (rebuildable, auditable).
 
 import { resolvePrice, type PriceEntry } from '../../price-list/src/price-list';
+import { checkDemeritHoldover, readCessRate, type CessRate } from '../../finance/src/cess';
 import type {
   CatalogueBarcode,
   CatalogueProduct,
@@ -48,6 +49,9 @@ export interface MasterProduct {
 }
 
 /** Tax classes (HSN/GST) keyed by id, in basis points. */
+/** A7: the compensation cess in force for each cess-liable HSN on the build date (absent HSN = not cess-liable). */
+export type TaxClassCess = Readonly<Record<string, CessRate>>;
+
 export type TaxClassRates = Readonly<Record<string, number>>;
 
 /** Where this snapshot is for — drives price precedence (M05-FR-01). Declared with the snapshot it scopes. */
@@ -65,9 +69,13 @@ export interface BuildSnapshotInput {
   readonly priceEntries: readonly PriceEntry[];
   readonly taxClasses: TaxClassRates;
   readonly embeddedRules?: readonly EmbeddedBarcodeRule[];
+  /** A7: the cess per HSN on the build date. Absent → no product carries a cess (every pack built before A7). */
+  readonly taxClassCess?: TaxClassCess;
 }
 
 export type ExclusionReason = 'no_price' | 'no_tax_class' | 'price_above_mrp'
+  /** A7 · GST 2.0: a cess-liable good on the 40% demerit slab would be taxed twice — never shipped to a lane. */
+  | 'cess_on_demerit_slab'
   /** B16 (COTPA s.7 · OB-140 "A"): a tobacco product with no named person's confirmation for the warning picture in force. */
   | 'tobacco_warning_not_confirmed';
 
@@ -101,6 +109,14 @@ export function buildCatalogueSnapshot(input: BuildSnapshotInput): BuildSnapshot
     const taxBps = input.taxClasses[master.taxClassId];
     if (taxBps === undefined) {
       excluded.push({ productId: master.productId, sku: master.sku, reason: 'no_tax_class' });
+      continue;
+    }
+
+    // A7: the cess the HSN carries today, and the GST 2.0 holdover guard — a cess-liable good on the 40% demerit slab
+    // would be taxed twice, so it is left out and said (P-08) rather than billed wrong.
+    const cess = readCessRate(input.taxClassCess?.[master.taxClassId]);
+    if (cess !== undefined && !checkDemeritHoldover({ cessLiable: true, gstRateBps: taxBps }).ok) {
+      excluded.push({ productId: master.productId, sku: master.sku, reason: 'cess_on_demerit_slab' });
       continue;
     }
 
@@ -155,6 +171,7 @@ export function buildCatalogueSnapshot(input: BuildSnapshotInput): BuildSnapshot
       batchTracked: master.batchTracked,
       regulatedFlags: master.regulatedFlags,
       ...(master.handling === undefined ? {} : { handling: master.handling }),
+      ...(cess === undefined ? {} : { cess }),
     });
   }
 

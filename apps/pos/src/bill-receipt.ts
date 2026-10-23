@@ -73,7 +73,7 @@ export function billReceipt(bill: CommittedBill | undefined, template: BillTempl
       number: bill.number, saleId: bill.saleId, tradingDay: bill.tradingDay, committedAt: bill.committedAt,
       laneId: bill.laneId, cashierId: bill.cashierId, currency: bill.currency,
       lines: bill.lines, taxBands: bill.taxBands,
-      netMinor: bill.netMinor, taxMinor: bill.taxMinor, totalMinor: bill.totalMinor,
+      netMinor: bill.netMinor, taxMinor: bill.taxMinor, ...(bill.cessMinor === undefined ? {} : { cessMinor: bill.cessMinor }), totalMinor: bill.totalMinor,
       tenders: bill.tenders, pricesIncludeTax: true,
       header: template?.header ?? [], footer: template?.footer ?? [],
       ...(template === null ? {} : { templateVersion: template.version }),

@@ -26,6 +26,7 @@ import { saleTenderRefusal } from '../../../packages/tender/src/paid-on-old-erp'
 import { oldErpBillRefusal } from '../../../packages/tender/src/old-erp-bill-number';
 import { readMachineReference } from '../../../packages/tender/src/machine-reference';
 import { buildTaxInvoice, invoiceRoundOff, type TaxInvoiceDocument, type TaxInvoiceIdentity, type TaxInvoiceProblem } from '../../../packages/receipt/src/tax-invoice';
+import { splitInclusiveWithCess, readCessRate, type CessRate } from '../../../packages/finance/src/cess';
 import {
   tillLineRefusals, tillRuleFlagsOf, scaleEvidence, lineIsWeighed, TillRuleRefusedError, TOBACCO_MINIMUM_AGE,
   type LaneScales, type TillGateContext,
@@ -76,6 +77,11 @@ export interface PosSessionConfig {
    * decided from the pack, not only from the unit a scan or a recalled basket wrote on the line. Absent → the line's unit.
    */
   readonly baseUomOf?: (productId: string) => string | undefined;
+  /**
+   * A7: a product's GST Compensation Cess as the lane's signed catalogue pack carries it, by id. The commit reads the PACK
+   * (a recalled held line included), not only what the scan said. Absent → only the scan's own cess.
+   */
+  readonly cessOf?: (productId: string) => CessRate | undefined;
   /**
    * OB-252 (owner, 20 Oct 2026, "Guest sales only"): during the mirror pilot this till takes no customer mobile number and
    * no loyalty — no member on the bill, no points or store credit spent. Turned on by the store pack
@@ -152,6 +158,8 @@ export interface ScanInput {
   readonly batchId?: string;
   /** D-20 — that batch's use-by date (YYYY-MM-DD), as the code carried it. */
   readonly batchExpiry?: string;
+  /** A7: the product's compensation cess from the pack (tobacco / pan-masala). Absent = not cess-liable. */
+  readonly cess?: CessRate;
 }
 
 /** A basket line as the cashier sees it. */
@@ -178,6 +186,8 @@ export interface BasketEntry {
    * and confirmed it, with one tap, before this line was added. Kept on the sale line as the evidence.
    */
   readonly packDateCheck?: PackDateCheck;
+  /** A7: the compensation cess charged inside the line's price (from the pack). */
+  readonly cess?: CessRate;
   readonly voided: boolean;
   readonly voidReason?: string;
   /**
@@ -271,10 +281,14 @@ export interface CommittedBill {
   readonly lines: readonly {
     readonly description: string; readonly quantityMinor: number; readonly uom: string;
     readonly unitPriceMinor: number; readonly lineTotalMinor: number; readonly huid?: string; readonly batchId?: string;
+    /** A7: the compensation cess inside the line. */
+    readonly cessMinor?: number;
   }[];
   readonly taxBands: readonly { readonly rateBps: number; readonly netMinor: number; readonly taxMinor: number }[];
   readonly netMinor: number;
   readonly taxMinor: number;
+  /** A7: the bill's compensation cess (net + GST + cess = total). Absent when no line carries one. */
+  readonly cessMinor?: number;
   readonly totalMinor: number;
   readonly tenders: readonly { readonly kind: string; readonly amountMinor: number; readonly machineRef?: string }[];
   /** OB-271: in real trading, the Rule 46 tax invoice this sale was checked against before the disk — what prints. */
@@ -608,6 +622,7 @@ export class PosSession {
       ...(input.batchId === undefined ? {} : { batchId: input.batchId }),
       ...(input.batchExpiry === undefined ? {} : { batchExpiry: input.batchExpiry }),
       ...(packDateCheck === undefined ? {} : { packDateCheck }),
+      ...((): { cess?: CessRate } => { const c = readCessRate(this.config.cessOf?.(input.productId) ?? input.cess); return c === undefined ? {} : { cess: c }; })(),
       voided: false,
     });
     this.lines.push(entry);
@@ -847,6 +862,11 @@ export class PosSession {
     return this.config.regulatedFlagsOf?.(l.productId) ?? l.regulatedFlags;
   }
 
+  /** A7: the cess a line is charged — the lane's signed pack first, else what the scan carried. */
+  private cessOfLine(l: Pick<BasketEntry, 'productId' | 'cess'>): CessRate | undefined {
+    return readCessRate(this.config.cessOf?.(l.productId) ?? l.cess);
+  }
+
   private lineRefusals(l: BasketEntry, atIsoUtc: string, chargedMinor?: number, listUnitMinor?: number): ReturnType<typeof tillLineRefusals> {
     const regulatedFlags = this.flagsOf(l);
     const catalogueUom = this.config.baseUomOf?.(l.productId);
@@ -901,7 +921,10 @@ export class PosSession {
     // tax invoice will say, and never more than the goods. Off real trading: nothing changed.
     const active = this.activeLines();
     const roundOff = this.config.realTrading === undefined || goods === 0 ? undefined
-      : invoiceRoundOff(this.replacementLines().map((l, i) => ({ lineTotalMinor: l.lineTotalMinor, taxRateBps: active[i]?.taxRate.bps ?? 0 }))).totalLessGoodsMinor;
+      : invoiceRoundOff(this.replacementLines().map((l, i) => {
+        const cess = active[i] === undefined ? undefined : this.cessOfLine(active[i]);
+        return { lineTotalMinor: l.lineTotalMinor, taxRateBps: active[i]?.taxRate.bps ?? 0, quantityMinor: l.quantityMinor, ...(cess === undefined ? {} : { cess }) };
+      })).totalLessGoodsMinor;
     return {
       ...bill,
       promotionDiscount,
@@ -1105,6 +1128,18 @@ export class PosSession {
         lineTotalMinor: lineTotalMinor - (perLineDiscount.get(l.lineId) ?? 0),
         taxRateBps: l.taxRate.bps,
         ...(l.hsnCode !== undefined ? { hsnCode: l.hsnCode } : {}),
+        // A7: the compensation cess the line was charged under (frozen for the GST return) and what it came to.
+        ...((): { cess?: CessRate; cessMinor?: number } => {
+          const cess = this.cessOfLine(l);
+          if (cess === undefined) return {};
+          try {
+            const split = splitInclusiveWithCess({ grossMinor: Math.max(0, lineTotalMinor - (perLineDiscount.get(l.lineId) ?? 0)), gstRateBps: l.taxRate.bps, cess, quantity: l.quantityMinor });
+            return { cess, cessMinor: split.cessMinor };
+          } catch (e) {
+            // An offer that takes a line below its own fixed cess cannot be billed — refused before the disk, in words.
+            throw new BillArithmeticError(saleId, `line ${l.productId}: ${e instanceof Error ? e.message : String(e)}`);
+          }
+        })(),
         // B13: the hallmark HUID of a gold piece, kept with the sale (and printed on the bill).
         ...(huidOf(this.flagsOf(l)) === undefined ? {} : { huid: huidOf(this.flagsOf(l)) }),
         // D-20: the batch the barcode carried and its use-by date — the one-step-forward half of the recall trace (M10-FR-03).
@@ -1135,10 +1170,15 @@ export class PosSession {
     if (lineSum + roundOff !== totals.payable.minor || roundOff > 0) throw new BillArithmeticError(saleId, `the lines add to ${lineSum} against a payable of ${totals.payable.minor}`);
     const inside = recordLines.reduce(
       (acc, l) => {
+        // A7: a cess-liable line's value of supply comes out of its price with the GST AND the cess pulled back.
+        if (l.cess !== undefined) {
+          const s = splitInclusiveWithCess({ grossMinor: l.lineTotalMinor, gstRateBps: l.taxRateBps, cess: l.cess, quantity: l.quantityMinor });
+          return { net: acc.net + s.taxableMinor, tax: acc.tax + s.gstMinor, cess: acc.cess + s.cessMinor };
+        }
         const split = splitInclusive(money(l.lineTotalMinor, totals.payable.currency), rate(l.taxRateBps));
-        return { net: acc.net + split.net.minor, tax: acc.tax + split.tax.minor };
+        return { net: acc.net + split.net.minor, tax: acc.tax + split.tax.minor, cess: acc.cess };
       },
-      { net: 0, tax: 0 },
+      { net: 0, tax: 0, cess: 0 },
     );
 
     // **Is this a sale at all? Ask before the disk, not after.**
@@ -1189,6 +1229,7 @@ export class PosSession {
         lines: recordLines.map((l, i) => ({
           description: active[i]?.description ?? '', ...(l.hsnCode === undefined ? {} : { hsnCode: l.hsnCode }),
           quantityMinor: l.quantityMinor, uom: l.uom, unitPriceMinor: l.unitPriceMinor, lineTotalMinor: l.lineTotalMinor, taxRateBps: l.taxRateBps,
+          ...(l.cess === undefined ? {} : { cess: l.cess }),
         })),
         tenders: input.tenders.map((t) => ({ kind: t.kind, amountMinor: t.amount.minor, ...(t.machineRef === undefined ? {} : { machineRef: t.machineRef }) })),
         // OB-279: the invoice's rounded total must be exactly what the till is about to charge.
@@ -1226,6 +1267,8 @@ export class PosSession {
       total: totals.payable.minor,
       netMinor: inside.net,
       taxMinor: inside.tax,
+      // A7: the compensation cess inside the bill (net + GST + cess = the lines).
+      ...(inside.cess === 0 ? {} : { cessMinor: inside.cess }),
       // OB-279 · OB-285: what the bill is below its lines (0 or less, never above) — total = lines + round off.
       ...(roundOff === 0 ? {} : { roundOffMinor: roundOff }),
       currency: totals.payable.currency,
@@ -1254,9 +1297,12 @@ export class PosSession {
       // can add no way for the sale to fail (hard rule #1), and nothing here is sent anywhere.
       const bands = new Map<number, { net: number; tax: number }>();
       for (const l of recordLines) {
+        const cessSplit = l.cess === undefined ? undefined : splitInclusiveWithCess({ grossMinor: l.lineTotalMinor, gstRateBps: l.taxRateBps, cess: l.cess, quantity: l.quantityMinor });
         const split = splitInclusive(money(l.lineTotalMinor, totals.payable.currency), rate(l.taxRateBps));
         const band = bands.get(l.taxRateBps) ?? { net: 0, tax: 0 };
-        bands.set(l.taxRateBps, { net: band.net + split.net.minor, tax: band.tax + split.tax.minor });
+        bands.set(l.taxRateBps, cessSplit === undefined
+          ? { net: band.net + split.net.minor, tax: band.tax + split.tax.minor }
+          : { net: band.net + cessSplit.taxableMinor, tax: band.tax + cessSplit.gstMinor });
       }
       this.lastBillValue = Object.freeze({
         number, saleId, tradingDay: input.tradingDay, committedAt, laneId, cashierId, currency: totals.payable.currency,
@@ -1265,9 +1311,10 @@ export class PosSession {
           quantityMinor: l.quantityMinor, uom: l.uom, unitPriceMinor: l.unitPriceMinor, lineTotalMinor: l.lineTotalMinor,
           ...(l.huid === undefined ? {} : { huid: l.huid }),
           ...(l.batchId === undefined ? {} : { batchId: l.batchId }),
+          ...(l.cessMinor === undefined ? {} : { cessMinor: l.cessMinor }),
         })),
         taxBands: [...bands.entries()].sort((a, b) => a[0] - b[0]).map(([rateBps, b]) => ({ rateBps, netMinor: b.net, taxMinor: b.tax })),
-        netMinor: inside.net, taxMinor: inside.tax, totalMinor: totals.payable.minor,
+        netMinor: inside.net, taxMinor: inside.tax, ...(inside.cess === 0 ? {} : { cessMinor: inside.cess }), totalMinor: totals.payable.minor,
         tenders: input.tenders.map((t) => ({ kind: t.kind, amountMinor: t.amount.minor, ...(t.machineRef === undefined ? {} : { machineRef: t.machineRef }) })),
         ...(taxInvoice === undefined ? {} : { taxInvoice }),
       });

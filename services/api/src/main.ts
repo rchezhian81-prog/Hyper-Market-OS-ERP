@@ -336,6 +336,7 @@ import { r3GstRoutes, eInvoiceReportingGuardFor, gstTimeBarSweep } from './r3-gs
 // R4 Lane 4 (supply, pricing and loss prevention): D-10 · D-18 · D-21 · D-13 (r4-supply-lp-adapters).
 import { r4SupplyLpRoutes, supplierFactsFor } from './r4-supply-lp-adapters';
 import { lane2RecallSurface } from './lane2-recall-adapters'; // Lane 2 · P1
+import { tillBillSurface } from './till-bill-adapters'; // Till bill and GST (audit-1 P5 · audit-2 P3)
 import { alsoEachPassOf } from './ops-alert-sweeps'; // R3 lane 1 — GST liability and returns
 import { itcPortForStore } from './r3-itc-bridge'; // R3 seam — GSTR-3B Table 4 reads the A17 reconciliation
 import { r4PayEprRoutes, r4PayslipHooks, payslipLateSweep } from './r4-pay-epr-adapters';
@@ -2140,6 +2141,7 @@ export function buildSurface(deps: {
     })),
   ];
   lane2RecallSurface(surface, { store, now, signer, ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }), ...(deps.notificationTransport === undefined ? {} : { messageTransport: deps.notificationTransport }) }); // Lane 2 · P1 recall and trace (M10-FR-03/04)
+  tillBillSurface(surface, { store, now }); // Till bill and GST (audit-1 P5 · audit-2 P3)
   // The versioned API surface as a manifest (M36-FR-04, P-06): reads THIS table at request time, so it lists
   // every endpoint registered — itself included — and `docs/api/surface.md` is generated from the same fold.
   surface.push(...apiManifestRoutes({ routes: () => surface, now }));

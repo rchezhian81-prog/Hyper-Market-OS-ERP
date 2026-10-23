@@ -242,6 +242,7 @@ export function createPosView(
         ...(minimumAge === undefined ? {} : { minimumAge }),
         // B14 · B19: the pack's flags ride with a line added by id too — no way onto the bill skips the gate.
         ...(known?.regulatedFlags === undefined ? {} : { regulatedFlags: known.regulatedFlags }),
+        ...(known?.cess === undefined ? {} : { cess: known.cess }),
       });
     },
 
@@ -283,6 +284,8 @@ export function createPosView(
         // D-20: the batch the barcode carried rides on the line — never a guessed one.
         ...(hit.batch?.batchId === undefined ? {} : { batchId: hit.batch.batchId }),
         ...(hit.batch?.expiry === undefined ? {} : { batchExpiry: hit.batch.expiry }),
+        // A7: the compensation cess the product's HSN carries, from the signed pack.
+        ...(hit.product.cess === undefined ? {} : { cess: hit.product.cess }),
       });
       return {
         lineId: entry.lineId,

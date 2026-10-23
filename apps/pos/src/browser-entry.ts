@@ -1092,6 +1092,8 @@ export function bootPos(config?: {
       ...(config?.soldHuids === undefined ? {} : { soldHuids: ((sold) => () => sold)(new Set(config.soldHuids)) }),
       // B14 · B19: the commit's second gate reads each product's flags from the lane's own signed catalogue.
       regulatedFlagsOf: (productId: string) => catalogueRef.cache?.findByProductId(productId)?.regulatedFlags,
+      // A7: the compensation cess each product's HSN carries, from the lane's own signed pack.
+      cessOf: (productId: string) => catalogueRef.cache?.findByProductId(productId)?.cess,
       // B6 · NEW-2: whether a line is weighed comes from the lane's own signed catalogue, not only the line's unit.
       baseUomOf: (productId: string) => catalogueRef.cache?.findByProductId(productId)?.baseUom,
       // OB-252: guest sales only — no customer number, no points or store credit.

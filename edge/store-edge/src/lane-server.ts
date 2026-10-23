@@ -1564,7 +1564,7 @@ export function startLaneServer(input: {
           // OB-271: REAL TRADING — never with the mirror pilot; a sale's bill must be a complete tax invoice (the till's rule).
           if (input.realTrading?.() === true) {
             const legal = mirrorOn ? { refusedBecause: 'real_trading_and_mirror', laneMessage: REAL_TRADING_AND_MIRROR_BOX_WORDS }
-              : isReturn ? undefined : realTradingSaleRefusal(r, input.taxInvoice?.() ?? null);
+              : isReturn ? undefined : realTradingSaleRefusal(r, input.taxInvoice?.() ?? null, (id) => input.node.pack()?.snapshot.products.find((p) => p.productId === id)?.cess);
             if (legal !== undefined) {
               send(res, 200, { committed: false, refusedBecause: legal.refusedBecause, laneMessage: legal.laneMessage }, cors);
               return;

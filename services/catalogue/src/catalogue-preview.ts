@@ -26,6 +26,7 @@ import type { Promotion } from '../../../packages/promotions/src/promotions';
 import { resolveGstRate, InvalidRateSchedule, type GstRatePeriod } from '../../../packages/finance/src/rate';
 import { TOBACCO_MINIMUM_AGE } from '../../../packages/restricted-sales/src/till-gate';
 import { knowsBlockedBatches } from '../../inventory/src/sale-blocks';
+import { cessRateOn, type CessRate, type CessRatePeriod } from '../../../packages/finance/src/cess';
 
 export interface CataloguePreviewDeps {
   readonly products: (tenantId: string) => Promise<readonly ProductRecord[]> | readonly ProductRecord[];
@@ -46,6 +47,11 @@ export interface CataloguePreviewDeps {
     readonly allowedEntries: (tenantId: string, entries: readonly PriceEntry[]) => Promise<readonly PriceEntry[]>;
     readonly zoneOfStore: (tenantId: string, storeId: string) => Promise<string | undefined>;
   };
+  /**
+   * A7: the compensation-cess schedule per HSN (`cess-rates.ts`). The cess in force on the build date rides the pack on each
+   * product of that HSN, signed. Absent → no product carries a cess (a deployment that has not wired it).
+   */
+  readonly cessSchedule?: (tenantId: string, hsnCode: string) => Promise<readonly CessRatePeriod[]> | readonly CessRatePeriod[];
   readonly now: () => string;
 }
 
@@ -162,6 +168,15 @@ export async function assembleCatalogueSnapshot(
     }
   }
 
+  // A7: the compensation cess each HSN carries on the build date — none when no schedule says so.
+  const taxClassCess: Record<string, CessRate> = {};
+  if (deps.cessSchedule !== undefined) {
+    for (const hsn of new Set(records.map((r) => r.taxClass).filter((c): c is string => isStr(c)))) {
+      const cess = cessRateOn(await deps.cessSchedule(opts.tenantId, hsn), asOfDate);
+      if (cess !== undefined) taxClassCess[hsn] = cess;
+    }
+  }
+
   // Barcodes: the register, mapped to the snapshot shape (the engine drops any whose product is excluded).
   // The register records SYMBOLOGY (gtin/ean/upc/internal/case/embedded); the catalogue `kind` is how the
   // LANE reads the code, where a plain product code is 'standard'. Embedded weight/price barcodes are driven
@@ -194,6 +209,7 @@ export async function assembleCatalogueSnapshot(
     barcodes,
     priceEntries,
     taxClasses,
+    ...(Object.keys(taxClassCess).length === 0 ? {} : { taxClassCess }),
   });
   // SF-01: the launched offers the lanes apply — active and not yet ended at build time (one starting later rides along:
   // the lane checks each offer's window against its own clock). A draft or stopped offer never reaches a lane.

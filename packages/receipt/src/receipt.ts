@@ -31,6 +31,8 @@ export interface ReceiptLineInput {
   readonly huid?: string;
   /** D-20: the batch a 2D code carried — printed under its line, for the customer's own recall record. */
   readonly batchId?: string;
+  /** A7: the GST Compensation Cess inside the line (tobacco / pan-masala) — printed under its line. */
+  readonly cessMinor?: number;
 }
 
 export interface ReceiptTenderInput {
@@ -61,6 +63,8 @@ export interface BuildReceiptInput {
   readonly taxBands: readonly TaxBandInput[];
   readonly netMinor: number;
   readonly taxMinor: number;
+  /** A7: the bill's compensation cess — net + GST + cess = total. Absent = none. */
+  readonly cessMinor?: number;
   readonly totalMinor: number;
   readonly tenders: readonly ReceiptTenderInput[];
   readonly changeMinor?: number;
@@ -77,6 +81,11 @@ export interface BuildReceiptInput {
   readonly templateVersion?: number;
   /** Set on a reprint; the receipt is then marked and the reason recorded. */
   readonly reprintOf?: { readonly reason: string; readonly by: string; readonly at: string };
+  /**
+   * B10 (roadmap v2.1 · FSSAI Licensing Regulations): the store's current FSSAI licence number, from head office's licence
+   * register via the store pack — printed on every bill. Absent when the store pack carries none; never invented.
+   */
+  readonly fssaiLicenceNo?: string;
 }
 
 export interface ReceiptDocument extends BuildReceiptInput {
@@ -131,9 +140,13 @@ export function buildReceipt(input: BuildReceiptInput): ReceiptDocument {
   if (bandTax !== input.taxMinor) {
     throw new ReceiptTotalsError(`tax bands ${bandTax} ≠ tax ${input.taxMinor}`);
   }
-  if (input.netMinor + input.taxMinor !== input.totalMinor) {
-    throw new ReceiptTotalsError(`net + tax ≠ total ${input.totalMinor}`);
+  const cess = input.cessMinor ?? 0;
+  if (!Number.isInteger(cess) || cess < 0) throw new ReceiptTotalsError(`cess ${String(input.cessMinor)} is not a whole amount`);
+  if (input.netMinor + input.taxMinor + cess !== input.totalMinor) {
+    throw new ReceiptTotalsError(cess === 0 ? `net + tax ≠ total ${input.totalMinor}` : `net + tax + cess ≠ total ${input.totalMinor}`);
   }
+  const lineCess = input.lines.reduce((sum, l) => sum + (l.cessMinor ?? 0), 0);
+  if (lineCess !== cess) throw new ReceiptTotalsError(`line cess ${lineCess} ≠ cess ${cess}`);
 
   if (input.reprintOf !== undefined && input.reprintOf.reason.trim() === '') {
     throw new ReprintReasonRequiredError();
@@ -206,6 +219,8 @@ export function renderText(doc: ReceiptDocument, width = 42): string[] {
     // B13: the HUID sold is printed on the bill (BIS hallmarking); D-20: the batch, when the code carried one.
     if (line.huid !== undefined && line.huid !== '') out.push(`  HUID: ${line.huid}`);
     if (line.batchId !== undefined && line.batchId !== '') out.push(`  Batch: ${line.batchId}`);
+    // A7: the compensation cess inside a tobacco / pan-masala line.
+    if (line.cessMinor !== undefined && line.cessMinor > 0) out.push(pair('  Comp. cess', amount(line.cessMinor), width));
   }
 
   out.push(rule);
@@ -213,6 +228,7 @@ export function renderText(doc: ReceiptDocument, width = 42): string[] {
   for (const band of doc.taxBands) {
     out.push(pair(`GST ${(band.rateBps / 100).toFixed(band.rateBps % 100 === 0 ? 0 : 2)}%`, amount(band.taxMinor), width));
   }
+  if (doc.cessMinor !== undefined && doc.cessMinor > 0) out.push(pair('Compensation cess', amount(doc.cessMinor), width));
   out.push(pair('TOTAL', amount(doc.totalMinor), width));
   out.push(rule);
 
@@ -225,6 +241,8 @@ export function renderText(doc: ReceiptDocument, width = 42): string[] {
   }
 
   out.push(rule);
+  // B10: the store's FSSAI licence number, on every bill the store prints.
+  if (doc.fssaiLicenceNo !== undefined && doc.fssaiLicenceNo.trim() !== '') out.push(centre(`FSSAI Lic. No. ${doc.fssaiLicenceNo.trim()}`, width));
   for (const line of doc.footer) out.push(centre(line, width));
   if (doc.templateVersion !== undefined) out.push(centre(`template v${doc.templateVersion}`, width));
 
