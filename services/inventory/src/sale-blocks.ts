@@ -28,9 +28,38 @@ export interface SaleBlock {
   readonly reason: string;
 }
 
+/** M10-FR-01: one batch head office's daily expiry move put in the EXPIRED state (`BatchExpired`), at one place. */
+export interface ExpiredBatchFact {
+  readonly productId: string;
+  readonly locationId: string;
+  /** null for stock received with an expiry but no batch id — it cannot be named on a barcode. */
+  readonly batchId: string | null;
+  readonly expiry: string;
+  readonly movedAt: string;
+}
+
+/**
+ * M10-FR-01 (integration follow-up): the EXPIRED batches by product, for the signed pack — each batch once (its date is the
+ * batch's own, whichever place it was moved at), sorted. A batch with no id cannot be named on a barcode and is left out
+ * here (the till's date check for a plain barcode, OB-298, is the cashier's tap). Pure.
+ */
+export function expiredBatchesByProduct(facts: readonly ExpiredBatchFact[]): ReadonlyMap<string, readonly { readonly batchId: string; readonly expiry: string }[]> {
+  const out = new Map<string, Map<string, string>>();
+  for (const f of facts) {
+    if (f.batchId === null || f.batchId === '') continue;
+    const byBatch = out.get(f.productId) ?? new Map<string, string>();
+    const known = byBatch.get(f.batchId);
+    if (known === undefined || f.expiry < known) byBatch.set(f.batchId, f.expiry);
+    out.set(f.productId, byBatch);
+  }
+  return new Map([...out].sort(([a], [b]) => (a < b ? -1 : 1)).map(([p, m]) => [p, [...m].sort(([a], [b]) => (a < b ? -1 : 1)).map(([batchId, expiry]) => ({ batchId, expiry }))]));
+}
+
 export interface SaleBlockDeps {
   /** Every open recall and every held batch, each named to its product where head office can. */
   readonly blocks: (tenantId: string) => Promise<readonly SaleBlock[]> | readonly SaleBlock[];
+  /** M10-FR-01: every `BatchExpired` fact (the daily expiry move). Absent: the register is not wired here (said). */
+  readonly expired?: (tenantId: string) => Promise<readonly ExpiredBatchFact[]> | readonly ExpiredBatchFact[];
   readonly currentPack: (tenantId: string) => Promise<SignedPack | undefined> | SignedPack | undefined;
 }
 
@@ -94,6 +123,17 @@ export function saleBlockRoutes(deps: SaleBlockDeps): readonly Route[] {
           // refuses only this batch, and sells its sibling batches.
           ...(b.productId === null ? {} : { atTheTill: 'plain_barcode_blocks_whole_product_2d_barcode_blocks_this_batch' as const }),
         }));
+        // M10-FR-01: the batches the expiry move put in the EXPIRED state — refused at the till on a barcode that carries the
+        // batch (offline, from the pack); a plain barcode is the cashier's printed-date tap (OB-298). Each says whether the
+        // current pack carries it, so an expired batch not yet at any till is visible (P-08).
+        const facts = deps.expired === undefined ? undefined : await deps.expired(ctx.tenantId);
+        const packedExpired = new Map((pack?.snapshot.products ?? []).map((p) => [p.productId, new Set((p.expiredBatches ?? []).map((b) => b.batchId))] as const));
+        const expiredRows = facts === undefined ? null : [...expiredBatchesByProduct(facts)].flatMap(([productId, batches]) => batches.map((b) => ({
+          productId, batchId: b.batchId, expiry: b.expiry,
+          state: packedExpired.get(productId)?.has(b.batchId) === true ? 'on_pack' as const : packedExpired.has(productId) ? 'not_yet_on_pack' as const : 'product_not_on_pack' as const,
+          atTheTill: 'batch_barcode_refused_plain_barcode_cashier_confirms_date' as const,
+        })));
+        const unnamedExpired = facts === undefined ? 0 : facts.filter((f) => f.batchId === null || f.batchId === '').length;
         const waiting = rows.filter((r) => r.state === 'not_yet_on_pack').length;
         const unknown = rows.filter((r) => r.state === 'product_unknown').length;
         return {
@@ -103,6 +143,10 @@ export function saleBlockRoutes(deps: SaleBlockDeps): readonly Route[] {
             blockedProducts: [...blockedProductIds(blocks)].sort(),
             // SF-08 · R3: each blocked product's blocked batches.
             blockedBatches: Object.fromEntries([...blockedProductIds(blocks)].sort().map((p) => [p, blockedProductIds(blocks).batchesOf(p)])),
+            // null: the expired-state register is not wired here — never an empty list that reads as "nothing expired".
+            expiredBatches: expiredRows,
+            expiredNotYetOnPack: expiredRows === null ? null : expiredRows.filter((r) => r.state === 'not_yet_on_pack').length,
+            expiredWithNoBatchId: unnamedExpired,
             packVersion: pack?.snapshot.version ?? null,
             packPublishedAt: pack?.publishedAt ?? null,
             notYetOnPack: waiting,

@@ -40,6 +40,8 @@ export interface MasterProduct {
   readonly recallBlock?: boolean;
   /** SF-08 · OB-139 "A": the named batches the recall block comes from (absent = the whole product, whatever the code). */
   readonly blockedBatches?: readonly string[];
+  /** M10-FR-01: the batches head office moved to the expired state, with their dates (refused on a batch-bearing code). */
+  readonly expiredBatches?: readonly { readonly batchId: string; readonly expiry: string }[];
   /** Lot/batch-tracked — the lane captures the batch on each sale line for recall traceability (M10-FR-03). */
   readonly batchTracked?: boolean;
   readonly regulatedFlags?: Readonly<Record<string, unknown>>;
@@ -152,6 +154,8 @@ export function buildCatalogueSnapshot(input: BuildSnapshotInput): BuildSnapshot
       ...(master.recallBlock === true && master.blockedBatches !== undefined && master.blockedBatches.length > 0
         ? { blockedBatches: [...master.blockedBatches].sort() } : {}),
       ...(batchPrices.length === 0 ? {} : { batchPrices }),
+      ...(master.expiredBatches === undefined || master.expiredBatches.length === 0 ? {}
+        : { expiredBatches: [...master.expiredBatches].sort((a, b) => (a.batchId < b.batchId ? -1 : a.batchId > b.batchId ? 1 : 0)) }),
       batchTracked: master.batchTracked,
       regulatedFlags: master.regulatedFlags,
       ...(master.handling === undefined ? {} : { handling: master.handling }),
