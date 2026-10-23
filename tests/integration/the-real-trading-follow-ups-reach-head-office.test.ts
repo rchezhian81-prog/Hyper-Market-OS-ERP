@@ -19,6 +19,7 @@ import { TaxInvoiceRefusedError } from '../../apps/pos/src/session';
 import type { CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
 import { STREAM } from '../../services/api/src/adapters';
 import { prepareTillBox, signInTill, pinOf } from '../support/till-operator';
+import { ownerApprovedSetting } from '../support/owner-approved-setting';
 
 /**
  * **OB-271 follow-ups — real trading (switched OFF during the mirror pilot, OB-248), from head office's catalogue through a
@@ -100,7 +101,7 @@ describe.each(backings)('OB-271 follow-ups — HSN from the pack file, the card 
     const ok = async (p: ReturnType<typeof call>, what: string): Promise<Record<string, unknown>> => { const r = await p; expect(r.status, `${what}: ${JSON.stringify(r.body)}`).toBeLessThan(300); return r.body as Record<string, unknown>; };
 
     // ── Head office: the shop, and two items published with their HSN codes (the tax class is the HSN).
-    await ok(call('PUT', '/v1/platform/setup/locale.time_zone', 'u-owner', { value: 'UTC' }), 'time zone');
+    await ok(ownerApprovedSetting(h, T, 'locale.time_zone', { value: 'UTC' }), 'time zone');
     await ok(call('POST', '/v1/org/nodes/SRE', 'u-owner', { kind: 'company', name: LEGAL }), 'company');
     await ok(call('POST', `/v1/org/gst-registrations/${GSTIN}`, 'u-owner', { companyId: 'SRE', legalName: LEGAL }), 'registration');
     await ok(call('POST', `/v1/org/nodes/${STORE}`, 'u-owner', { kind: 'branch', name: 'SRE Hyper Market', parentId: 'SRE', companyId: 'SRE', gstin: GSTIN, placeOfBusiness: `${ADDRESS[0]}\n\n${ADDRESS[1]}` }), 'store');

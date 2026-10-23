@@ -10,6 +10,7 @@ import type { CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
 import { DEFAULT_RETAIL_POSTING_MAP } from '../../packages/finance/src/index';
 import { makeTradingDayRule, tradingDateOf } from '../../packages/calendar/src/trading-day';
 import { startRealCloud, type RealCloud } from '../support/real-store';
+import { ownerApprovedSettingOn } from '../support/owner-approved-setting';
 
 /**
  * **The store buys what it sells, connected — the PURCHASING half of the loop on the REAL cloud, over REAL PostgreSQL,
@@ -76,7 +77,7 @@ describeOrSkip('the store buys what it sells — purchase → receipt / quaranti
     await cloud.grant(BOX, 'store_computer', undefined, [STORE]); // OB-54: the box is granted for its ONE store // OB-36 "A": the store computer's own role
     await cloud.grant(ACCT, 'accountant');
     // The box in this run keeps this machine's clock (UTC); the owner tells head office so (F14 fixed).
-    expect((await call('PUT', '/v1/platform/setup/locale.time_zone', OWNER, { value: 'UTC' }, 'setup-tz-utc')).status).toBe(200);
+    expect((await ownerApprovedSettingOn(cloud, 'locale.time_zone', { value: 'UTC' }, OWNER)).status).toBe(200);
     // The owner's receiving tolerances (M07): nothing short or over is waved through unsaid.
     expect((await call('POST', '/v1/inventory/receipt-policy', OWNER, { excessToleranceBp: 0, shortageToleranceBp: 0, nearExpiryDays: 7 }, 'receipt-policy')).status).toBe(201);
     await places();

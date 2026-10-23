@@ -6,6 +6,7 @@ import { SqlIdempotencyStore } from '../../services/kernel/src/index';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { loyaltyMemberKey, memberRefFor, readWalletFeed, spendRefFor } from '../../packages/loyalty/src/index';
+import { ownerApprovedSetting } from '../support/owner-approved-setting';
 
 // PF-09 step 3 (audit PF-09, HIGH · M17-FR-01/03/04 · OB-28 "C and 1"): the till spends a member's points and store
 // credit, and head office is where that spend becomes true. Proved through the real API, RBAC and append-only store:
@@ -26,8 +27,9 @@ async function shop(h: ApiHarness = apiHarness()): Promise<ApiHarness> {
   await h.seedOwner(A, 'u-owner');
   await h.provisionRole(A, 'u-mgr', 'store_manager');
   await h.provisionRole(A, 'u-cash', 'cashier');
+  // OB-336: the till's spend cap is high-impact — the owner approves the administrator's answer; the others one person sets.
   const set = async (key: string, value: number) =>
-    expect((await h.request({ method: 'PUT', path: `/v1/platform/setup/${key}`, userId: 'u-owner', tenantId: A, idempotencyKey: `set-${key}`, body: { value } })).status).toBeLessThan(300);
+    expect((key === 'loyalty.till_spend_cap_paise' ? await ownerApprovedSetting(h, A, key, { value }) : await h.request({ method: 'PUT', path: `/v1/platform/setup/${key}`, userId: 'u-owner', tenantId: A, idempotencyKey: `set-${key}`, body: { value } })).status).toBeLessThan(300);
   await set('loyalty.points_per_100_inr', 2);   // 2 points per ₹100
   await set('loyalty.point_value_paise', 50);   // one point = ₹0.50
   await set('loyalty.till_spend_cap_paise', 100_000);
@@ -124,7 +126,9 @@ describe('PF-09 step 3: points and store credit spent at the till are spent once
     await h.seedOwner(A, 'u-owner');
     await h.provisionRole(A, 'u-cash', 'cashier');
     expect((await feed(h)).rule.tillSpendCapPaise).toBe(50_000);
-    expect((await h.request({ method: 'PUT', path: '/v1/platform/setup/loyalty.till_spend_cap_paise', userId: 'u-owner', tenantId: A, idempotencyKey: 'off', body: { value: 0 } })).status).toBeLessThan(300);
+    // OB-336: switching it off is a change to a high-impact setting too — one person alone cannot.
+    expect((await h.request({ method: 'PUT', path: '/v1/platform/setup/loyalty.till_spend_cap_paise', userId: 'u-owner', tenantId: A, idempotencyKey: 'off', body: { value: 0 } })).status).toBe(422);
+    expect((await ownerApprovedSetting(h, A, 'loyalty.till_spend_cap_paise', { value: 0 })).status).toBeLessThan(300);
     expect((await feed(h)).rule.tillSpendCapPaise).toBe(0);
   });
 

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { useRestartableBackings } from '../support/p3-backings';
 import { P3, p3Shop, caller } from '../support/p3-purchase';
+import { ownerApprovedSetting } from '../support/owner-approved-setting';
 
 // WF-03 Purchase planning — "Demand/min-max/budget → requisition → RFQ → comparison → approval → PO" (M06, M09, A02;
 // OB-288 P3), as ONE journey through the real routes: an item below its reorder point is proposed by the replenishment
@@ -68,7 +69,7 @@ describe.each(backings)('WF-03 — below reorder → requisition → RFQ → com
     await p3Shop(h, T);
     const call = caller(h, T);
     const today = new Date().toISOString().slice(0, 10);
-    await h.request({ method: 'PUT', path: '/v1/platform/setup/locale.time_zone', userId: P3.OWNER, tenantId: T, idempotencyKey: 'tz', body: { value: 'UTC' } });
+    expect((await ownerApprovedSetting(h, T, 'locale.time_zone', { value: 'UTC' }, P3.OWNER)).status).toBe(200);
     await h.provisionRole(T, 'u-till', 'cashier');
     expect((await call('POST', '/v1/inventory/movements', P3.OWNER, { movementId: 'mv-1', productId: 'P-OIL', locationId: P3.STORE, kind: 'received', quantityMinor: 2, uom: 'ea', occurredAt: new Date(Date.now() - 3_600_000).toISOString(), enteredBy: P3.OWNER, unitCostMinor: 15_000 })).status).toBeLessThan(300);
     expect((await call('POST', '/v1/sales', 'u-till', {

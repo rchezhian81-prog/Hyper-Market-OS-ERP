@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
 import { recordedPayRun, switchPayReleaseOn } from '../support/pay-run';
+import { ownerApprovedSetting } from '../support/owner-approved-setting';
 
 /**
  * **API-tier step-up for payroll release and bulk product publish (Stage E slice 1 · SEC-03 · §28 · closes the
@@ -148,8 +149,11 @@ const packVersion = async (h: ApiHarness) => {
   const res = await h.request({ method: 'GET', path: '/v1/catalogue/pack', userId: OWNER, tenantId: A });
   return res.status === 200 ? (res.body as { snapshot: { version: number } }).snapshot.version : undefined;
 };
-const setThreshold = (h: ApiHarness, value: unknown, key: string) =>
-  h.request({ method: 'PUT', path: '/v1/platform/setup/catalogue.bulk_publish_threshold', userId: OWNER, tenantId: A, idempotencyKey: key, body: { value } });
+// OB-336: the bulk-publish threshold is high-impact — a valid answer is the administrator's, approved by the owner; an
+// invalid one is refused before any approval is spent.
+const setThreshold = (h: ApiHarness, value: unknown, key: string) => typeof value === 'number' && Number.isInteger(value) && value >= 1
+  ? ownerApprovedSetting(h, A, 'catalogue.bulk_publish_threshold', { value }, OWNER)
+  : h.request({ method: 'PUT', path: '/v1/platform/setup/catalogue.bulk_publish_threshold', userId: OWNER, tenantId: A, idempotencyKey: key, body: { value } });
 
 describe('a BULK catalogue publish needs a fresh MFA re-auth; the owner draws the line', () => {
   it('below the default threshold (50) a password-only publish is routine; once the owner sets the threshold to 2, a 2-line re-price is bulk and is refused with nothing published; fresh MFA publishes it; a 1-line change is routine again', async () => {

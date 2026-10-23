@@ -12,6 +12,7 @@ import { DEFAULT_RETAIL_POSTING_MAP } from '../../packages/finance/src/index';
 import { makeTradingDayRule, tradingDateOf } from '../../packages/calendar/src/trading-day';
 import { loyaltyMemberKey, memberRefFor } from '../../packages/loyalty/src/index';
 import { startRealCloud, type RealCloud } from '../support/real-store';
+import { ownerApprovedSettingOn } from '../support/owner-approved-setting';
 
 /**
  * **Batch 3 acceptance — a sale to a closed shift and a closed day, reconciled independently (Wave 5 · PF-06, PF-08,
@@ -90,7 +91,7 @@ describeOrSkip('Batch 3 acceptance: sale → split tender → loyalty → return
     await cloud.grant(CASHIER, 'cashier');
     await cloud.grant(MANAGER, 'store_manager');
     await cloud.grant(ACCT, 'accountant');
-    expect((await call('PUT', '/v1/platform/setup/locale.time_zone', OWNER, { value: 'UTC' }, 'tz')).status).toBe(200);
+    expect((await ownerApprovedSettingOn(cloud, 'locale.time_zone', { value: 'UTC' }, OWNER)).status).toBe(200);
     await setUpHeadOffice();
   }, 90_000);
   afterAll(async () => {
@@ -135,7 +136,8 @@ describeOrSkip('Batch 3 acceptance: sale → split tender → loyalty → return
     // The owner's loyalty rule (OB-28 "C"): 1 point per ₹100, a point is worth ₹1, at most ₹1,000 spent at a till a day;
     // and the store-credit cap. A member joins at the desk with their consent, the number seen on their phone (OB-29 "A").
     for (const [key, value] of [['loyalty.points_per_100_inr', 1], ['loyalty.point_value_paise', 100], ['loyalty.till_spend_cap_paise', 100_000]] as const) {
-      await ok(call('PUT', `/v1/platform/setup/${key}`, OWNER, { value }, `set-${key}`), key);
+      // OB-336: the till's spend cap is high-impact — the owner approves the administrator's answer.
+      await ok(key === 'loyalty.till_spend_cap_paise' ? ownerApprovedSettingOn(cloud, key, { value }, OWNER) : call('PUT', `/v1/platform/setup/${key}`, OWNER, { value }, `set-${key}`), key);
     }
     await ok(call('POST', '/v1/pos/store-credit-cap', OWNER, { capMinor: 100_000 }, 'sc-cap'), 'store-credit cap');
     await ok(call('POST', '/v1/loyalty/members', MANAGER, { mobile: MOBILE, consent: true, verifiedHow: 'seen_on_phone' }, 'join'), 'member joins');

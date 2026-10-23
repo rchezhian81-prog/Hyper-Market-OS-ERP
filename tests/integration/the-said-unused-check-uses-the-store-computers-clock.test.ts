@@ -8,6 +8,7 @@ import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { makeEvent } from '../../packages/contracts/src/event';
 import { STREAM } from '../../services/api/src/adapters';
 import { UNRECEIVED_CHECK_CAP, UNUSED_HELD_TIMED_MAX } from '../../services/platform/src/box-health';
+import { ownerApprovedSetting } from '../support/owner-approved-setting';
 
 /**
  * **Round 29 · owner decision OB-108 "A" (14 Oct 2026, in writing, "Use store computer time"; verifier r28 NEW-4, probe U5) and
@@ -40,7 +41,7 @@ async function shop(h: ApiHarness): Promise<{ T: string; call: Call }> {
     method, path, userId: user, tenantId: T, ...(branchId === undefined ? {} : { branchId }),
     ...(method === 'GET' ? {} : { idempotencyKey: `k-${randomUUID()}` }), ...(body === undefined ? {} : { body }),
   });
-  expect((await call('PUT', '/v1/platform/setup/locale.time_zone', OWNER, { value: 'UTC' })).status).toBe(200);
+  expect((await ownerApprovedSetting(h, T, 'locale.time_zone', { value: 'UTC' }, OWNER)).status).toBe(200);
   for (const [id, body] of [['C1', { kind: 'company', name: 'SRE Retail' }], [S1, { kind: 'branch', name: 'Store One', parentId: 'C1', companyId: 'C1' }]] as const) {
     expect((await call('POST', `/v1/org/nodes/${id}`, OWNER, body)).status).toBeLessThan(300);
   }

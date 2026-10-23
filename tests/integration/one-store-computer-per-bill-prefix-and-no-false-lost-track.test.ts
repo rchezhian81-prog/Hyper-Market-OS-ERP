@@ -6,6 +6,7 @@ import { SqlIdempotencyStore } from '../../services/kernel/src/index';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { UNRECEIVED_GRACE_MINUTES, UNRECEIVED_CHECK_CAP } from '../../services/platform/src/box-health';
+import { ownerApprovedSetting } from '../support/owner-approved-setting';
 
 /**
  * **Round 25 · owner decisions OB-93, OB-94 and OB-96 (13 Oct 2026, in writing) — through head office's production routes
@@ -52,7 +53,7 @@ async function shop(h: ApiHarness): Promise<{ T: string; call: Call }> {
     ...(method === 'GET' ? {} : { idempotencyKey: `k-${randomUUID()}` }), ...(body === undefined ? {} : { body }),
   });
   // Records here are dated by the UTC clock: the shop's own time zone is set to UTC so a trading day never shifts under them.
-  expect((await call('PUT', '/v1/platform/setup/locale.time_zone', OWNER, { value: 'UTC' })).status).toBe(200);
+  expect((await ownerApprovedSetting(h, T, 'locale.time_zone', { value: 'UTC' }, OWNER)).status).toBe(200);
   for (const [id, body] of [
     ['C1', { kind: 'company', name: 'SRE Retail' }],
     [S1, { kind: 'branch', name: 'Store One', parentId: 'C1', companyId: 'C1' }],
