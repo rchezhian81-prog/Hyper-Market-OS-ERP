@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
 import { readLog } from '../../edge/store-edge/src/file-log';
 import { bootPos } from '../../apps/pos/src/browser-entry';
+import type { CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
 import { splitInclusiveWithCess } from '../../packages/finance/src/cess';
 import { signInTill } from '../support/till-operator';
 import { backingsFor, headOffice, linkBoxTo, startBox, storePack, type Box, type Link } from '../support/till-bill-world';
@@ -52,13 +53,17 @@ describe.each(backings)('A7 — the cess goes from head office to the bill and t
     ho.restartCold(); // ── head office COLD ─────────────────────────────────────────────────────────────────────────────
 
     link = linkBoxTo(ho, 'u-box', STORE);
-    const box = await startBox({ tenantId: ho.tenantId, people: [{ userId: 'u-meena', displayName: 'Meena' }], pack: storePack(STORE), cloud: { boxUser: 'u-box', storeId: STORE } });
+    const box = await startBox({ tenantId: ho.tenantId, people: [{ userId: 'u-meena', displayName: 'Meena' }], pack: storePack(STORE), cloud: { boxUser: 'u-box', storeId: STORE }, env: { EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps' } });
     boxes.push(box);
     expect(await box.edge.refreshPack!()).toMatchObject({ status: 'updated' });
     expect(box.edge.node.pack()!.snapshot.products[0]?.cess).toEqual(PAN);
     link.online = false; // ── the line is cut ────────────────────────────────────────────────────────────────────────────
 
-    const till = bootPos({ laneId: 'lane-1', lanePort: box.edge.lane!.port, catalogue: box.edge.node.pack()!.snapshot });
+    // The till boots from the page the box SERVES it — the real lane's catalogue, as the box builds it from its signed pack
+    // (before the integration fix the served catalogue dropped the cess, and the served till charged none).
+    const html = await (await fetch(`http://127.0.0.1:${box.edge.screens!.port}/pos/`)).text();
+    const served = JSON.parse(/<script>window\.posCatalogue = ([\s\S]*?);<\/script>/.exec(html)![1]!) as CatalogueSnapshot;
+    const till = bootPos({ laneId: 'lane-1', lanePort: box.edge.lane!.port, catalogue: served });
     await signInTill(till, 'u-meena');
     for (let i = 0; i < 3; i += 1) till.scanBarcode('8903000000016');
     const n = await till.nextReceipt();
