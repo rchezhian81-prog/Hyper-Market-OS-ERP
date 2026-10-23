@@ -86,13 +86,14 @@ export const isFix = (v: unknown): v is DeviceFix => {
 /** Compare where the phone was at the proof with the stop's stored address. The coordinates are not part of the answer. */
 export function judgeProofLocation(input: {
   readonly device: DeviceFix | undefined;
-  readonly address: { readonly lat: number; readonly lon: number } | undefined;
+  /** The stop's stored coordinates (the booking's delivery location) — read for this one judgement, never kept. */
+  readonly stopAt: { readonly lat: number; readonly lon: number } | undefined;
   /** The owner's radius in whole metres; undefined while he has not entered it. */
   readonly radiusMetres: number | undefined;
 }): FenceVerdict {
-  if (input.address === undefined) return { result: 'no_address_location' };
+  if (input.stopAt === undefined) return { result: 'no_address_location' };
   if (input.device === undefined) return { result: 'no_device_location' };
-  const distanceMetres = metresBetween(input.device, input.address);
+  const distanceMetres = metresBetween(input.device, input.stopAt);
   const acc = input.device.accuracyMetres === undefined ? {} : { accuracyMetres: Math.round(input.device.accuracyMetres) };
   if (input.radiusMetres === undefined) return { result: 'radius_not_set', distanceMetres, ...acc };
   return { result: distanceMetres <= input.radiusMetres ? 'inside' : 'outside', distanceMetres, radiusMetres: input.radiusMetres, ...acc };

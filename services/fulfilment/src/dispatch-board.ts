@@ -223,8 +223,9 @@ export function dispatchBoardRoutes(deps: DispatchBoardDeps): readonly Route[] {
             await deps.issueCode(ctx.tenantId, s.orderId);
             await deps.recordOrderStop(ctx.tenantId, {
               orderId: s.orderId, routeId, stopId: s.stopId, runDate, sequence: s.sequence, plannedArrivalAt: s.estimatedArrivalAt,
-              slotStartsAt: booking?.slotStartsAt ?? planned.startsAt, slotEndsAt: booking?.slotEndsAt ?? planned.estimatedReturnAt,
-              ...(booking?.deliveryLocation === undefined ? {} : { address: booking.deliveryLocation }), assignedAt: now,
+              // The address coordinates are NOT copied here: the proof-location check reads them from the booking, where they
+              // are sealed under the customer's key and erased with them (ADR-0025).
+              slotStartsAt: booking?.slotStartsAt ?? planned.startsAt, slotEndsAt: booking?.slotEndsAt ?? planned.estimatedReturnAt, assignedAt: now,
             });
           }
         };

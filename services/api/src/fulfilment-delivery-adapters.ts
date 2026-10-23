@@ -97,7 +97,10 @@ export function fulDelDeps(input: { readonly store: EventStore; readonly now: ()
     const found = await store.findByIdempotencyKey(tenantId, `slot-booking-${tenantId}-${orderId}`);
     if (found === undefined) return undefined;
     const b = found.event.payload as SlotBooking;
-    return { slotStartsAt: b.slotStartsAt, slotEndsAt: b.slotEndsAt, ...(b.deliveryLocation === undefined ? {} : { deliveryLocation: b.deliveryLocation }) };
+    // Sealed under the customer's key (ADR-0025): after an erasure the coordinates read back empty — then there is none.
+    const at = b.deliveryLocation as { lat?: unknown; lon?: unknown } | null | undefined;
+    const known = at !== null && at !== undefined && typeof at.lat === 'number' && typeof at.lon === 'number';
+    return { slotStartsAt: b.slotStartsAt, slotEndsAt: b.slotEndsAt, ...(known ? { deliveryLocation: { lat: at.lat as number, lon: at.lon as number } } : {}) };
   };
   const packProducts = async (tenantId: string): Promise<readonly WaveProduct[] | undefined> =>
     (await catalogue.currentPack(tenantId))?.snapshot.products.map((p) => ({ productId: p.productId, name: p.name, baseUom: p.baseUom, unitPriceMinor: p.unitPriceMinor }));
@@ -209,10 +212,10 @@ export function fulDelDeps(input: { readonly store: EventStore; readonly now: ()
   // ── The proof judged at head office when the phone's stop reaches it (the driver-run relay's hook) ─────────────
   const judgeDoorProof = async (t: string, i: DoorProofInput) => {
     const issued = await issuedCode(t, i.orderRef);
-    const address = (await orderStop(t, i.orderRef))?.address ?? (await bookingOf(t, i.orderRef))?.deliveryLocation;
+    const dropPoint = (await bookingOf(t, i.orderRef))?.deliveryLocation;
     return {
       code: judgeCode(issued?.code, i.proofKind === 'otp' ? (i.proofCode ?? undefined) : undefined),
-      fence: judgeProofLocation({ device: i.deviceFix, address, radiusMetres: (await controlValues(t)).geofenceRadiusMetres }),
+      fence: judgeProofLocation({ device: i.deviceFix, stopAt: dropPoint, radiusMetres: (await controlValues(t)).geofenceRadiusMetres }),
     };
   };
 
@@ -263,7 +266,7 @@ export function fulDelDeps(input: { readonly store: EventStore; readonly now: ()
     recordOrderStop: async (t, s) => {
       const storeId = (await assignedStoresOf({ store }, t, 'route', s.routeId, []))[0];
       const record = { ...s, ...(storeId === undefined ? {} : { storeId }) };
-      const key = `${s.orderId}|${s.routeId}|${s.stopId}|${s.plannedArrivalAt}|${s.address === undefined ? '' : `${s.address.lat},${s.address.lon}`}`;
+      const key = `${s.orderId}|${s.routeId}|${s.stopId}|${s.plannedArrivalAt}`;
       const d = digest(key);
       await store.appendBatch(t, [
         { stream: S.orderStop(s.orderId), event: makeEvent({ id: `order-stop-${d}`, type: 'OrderStopIndexed', occurredAt: s.assignedAt, idempotencyKey: `order-stop-${t}-${d}`, source: 'api/fulfilment', payload: record }) },

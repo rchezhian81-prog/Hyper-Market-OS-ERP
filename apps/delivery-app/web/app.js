@@ -784,8 +784,8 @@ function whereAmI() {
 }
 
 /** Ask how the delivery was proved, then CAPTURE it. Resolves the proof the session takes, or null when the driver cancels. */
-async function askProof() {
-  const kind = await ask({ title: t('howProved'), mode: 'choice', options: PROOF_KINDS.map((p) => ({ value: p.kind, label: t(p.word) })) });
+async function askProof(title) {
+  const kind = await ask({ title, mode: 'choice', options: PROOF_KINDS.map((p) => ({ value: p.kind, label: t(p.word) })) });
   if (kind === null) return null;
   if (kind === 'otp') {
     const code = await ask({ title: t('codeTitle'), mode: 'code', hint: t('codeHint') });
@@ -820,7 +820,8 @@ el('deliver').addEventListener('click', async () => {
   if (stop === null) { tell(t('read'), t('tapStopFirst')); return; }
   if (stop.state === 'delivered' || stop.state === 'returned_to_origin') { tell(t('read'), t('stopDone')); return; }
 
-  const proof = await askProof();
+  // Proof FIRST — the order it happens at the door, and the session refuses a hand-over without it.
+  const proof = await askProof(t('howProved'));
   if (proof === null) { tell(t('read'), t('noProof')); return; }
 
   let collected = 0;
@@ -883,7 +884,8 @@ el('delivered-partial').addEventListener('click', async () => {
     tell(t('read'), t('stopDone')); return;
   }
 
-  const proof = await askProof();
+  // Proof FIRST — the order it happens at the door, and the session refuses a hand-over without it.
+  const proof = await askProof(t('howProved'));
   if (proof === null) { tell(t('read'), t('noProof')); return; }
 
   let collected = 0;

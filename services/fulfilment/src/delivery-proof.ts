@@ -50,8 +50,6 @@ export interface OrderStop {
   readonly plannedArrivalAt: string;
   readonly slotStartsAt: string;
   readonly slotEndsAt: string;
-  /** The stored address coordinates the proof location is judged against. Never sent to a phone. */
-  readonly address?: { readonly lat: number; readonly lon: number };
   readonly assignedAt: string;
 }
 

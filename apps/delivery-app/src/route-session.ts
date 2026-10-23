@@ -454,7 +454,7 @@ export class RouteSession {
           proofKind: next.proof?.kind ?? null,
           // OB-294 · M19-FR-03: the four digits the customer read out (checked at head office), the captured image's
           // fingerprint (the image itself travels as its own record), and — only at a hand-over — where the phone was,
-          // which head office compares with the stored address and does not keep.
+          // which head office compares with what it holds for the stop and does not keep.
           proofCode: door.code ?? null,
           proofSha256: next.proofSha256 ?? null,
           deviceFix: door.deviceFix ?? null,
