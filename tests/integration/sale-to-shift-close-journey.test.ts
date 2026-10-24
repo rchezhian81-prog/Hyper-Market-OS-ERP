@@ -60,8 +60,8 @@ const MANAGER = 'u-manager';
 const ACCT = 'u-acct';
 const MOBILE = '98400 24680';
 const MEMBER = memberRefFor(loyaltyMemberKey(KEY), MOBILE)!;
-const RICE = { productId: 'p-rice', barcode: '8901234560011', price: 48_000, mrp: 50_000, cost: 40_000 };
-const OIL = { productId: 'p-oil', barcode: '8901234560028', price: 20_000, mrp: 22_000, cost: 12_000 };
+const RICE = { productId: 'p-rice', barcode: '8901234560013', price: 48_000, mrp: 50_000, cost: 40_000 };
+const OIL = { productId: 'p-oil', barcode: '8901234560020', price: 20_000, mrp: 22_000, cost: 12_000 };
 const OIL_OFFER = 18_000; // 10% off ₹200
 
 interface Reply { status: number; body: unknown }

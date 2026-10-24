@@ -43,7 +43,7 @@ const ACCT = 'u-acct';
 const BOX = 'u-box';
 const GHEE = { productId: 'p-ghee', barcode: '8901234567890', price: 64_000, name: 'Amul Ghee Gold 1L' };          // ₹640
 const PREMIUM = { productId: 'p-premium', barcode: '8901234500002', price: 70_000, name: 'Amul Ghee Gold 1L premium' }; // ₹700 — dearer
-const SMALL = { productId: 'p-small', barcode: '8901234500003', price: 60_000, name: 'Amul Ghee Gold 900ml' };     // ₹600 — cheaper
+const SMALL = { productId: 'p-small', barcode: '8901234500019', price: 60_000, name: 'Amul Ghee Gold 900ml' };     // ₹600 — cheaper
 const OPENING = 5;
 
 interface Reply { readonly status: number; readonly body: unknown }

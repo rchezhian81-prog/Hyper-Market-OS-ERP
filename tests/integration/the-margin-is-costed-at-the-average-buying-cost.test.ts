@@ -40,9 +40,9 @@ const OWNER = 'u-owner';
 const BOX = 'u-box';
 const CASHIER = 'u-cash';
 const ACCT = 'u-acct';
-const RICE = { productId: 'p-rice', barcode: '8901234560011', sku: 'RICE-5KG', name: 'Ponni rice 5kg', uom: 'ea', price: 48_000, mrp: 50_000, listCost: 39_000 };
-const TOMATO = { productId: 'p-tomato', barcode: '2100001000007', sku: 'TOM-LOOSE', name: 'Tomato (loose)', uom: 'kg', price: 4_000, mrp: 5_000, listCost: 2_000 };
-const SALT = { productId: 'p-salt', barcode: '8901234560035', sku: 'SALT-1KG', name: 'Salt 1kg', uom: 'ea', price: 2_500, mrp: 2_800, listCost: 2_000 };
+const RICE = { productId: 'p-rice', barcode: '8901234560013', sku: 'RICE-5KG', name: 'Ponni rice 5kg', uom: 'ea', price: 48_000, mrp: 50_000, listCost: 39_000 };
+const TOMATO = { productId: 'p-tomato', barcode: '2100001000004', sku: 'TOM-LOOSE', name: 'Tomato (loose)', uom: 'kg', price: 4_000, mrp: 5_000, listCost: 2_000 };
+const SALT = { productId: 'p-salt', barcode: '8901234560037', sku: 'SALT-1KG', name: 'Salt 1kg', uom: 'ea', price: 2_500, mrp: 2_800, listCost: 2_000 };
 
 // The PRICE LIST carries its own cost (option A, not chosen) — deliberately different, so a margin costed from it is caught.
 // Two receipts each, at different costs (rice per bag; tomato per kg, counted in grams). Salt arrives with no cost at all.

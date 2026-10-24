@@ -4506,7 +4506,7 @@
       "id": "WF-13",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 2,
+        "unit": 3,
         "integration": 7,
         "realDb": 1,
         "browser": 2,
@@ -4516,6 +4516,7 @@
       },
       "files": {
         "unit": [
+          "tests/unit/storefront-scope.test.ts",
           "tests/unit/the-customer-apps-commerce-rules.test.ts",
           "tests/unit/the-online-basket-is-priced-by-the-tills-engines.test.ts"
         ],
