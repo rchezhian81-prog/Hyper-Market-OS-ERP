@@ -99,7 +99,7 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 | WF-10 | E2E_VERIFIED | 1 | 5 | 3 | 2 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | WF-11 | E2E_VERIFIED | · | 9 | 5 | 3 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | WF-12 | E2E_VERIFIED | · | 10 | 5 | 3 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
-| WF-13 | E2E_VERIFIED | 2 | 7 | 1 | 2 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
+| WF-13 | E2E_VERIFIED | 3 | 7 | 1 | 2 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | WF-14 | E2E_VERIFIED | 2 | 6 | 4 | 3 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | WF-15 | INTEGRATION_TESTED | · | 8 | 3 | 3 | 1 | · | · | ✓ an integration test cites it |
 | WF-16 | PARTIALLY_WIRED | 3 | 7 | 4 | 3 | 1 | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
