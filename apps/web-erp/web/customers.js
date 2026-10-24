@@ -7,12 +7,13 @@
 const $ = (id) => document.getElementById(id);
 const api = window.customers ?? null;
 const session = api?.session ?? null;
-const may = session?.may ?? { named: false, read: false, propose: false, approve: false };
+const may = session?.may ?? { named: false, read: false, record: false, propose: false, approve: false };
 
 let lang = 'en';
 const t = (k) => (api === null ? k : api.words(lang, k));
 let overview = null;
 let matches = null;
+let record = null;
 
 function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
 function row(cells, attrs = {}) {
@@ -33,6 +34,7 @@ function paint() {
   $('whoami').textContent = window.customersData?.userId ?? '';
   $('nobody').hidden = may.named; $('nobody').textContent = t('nobody');
   $('check').disabled = !may.read; $('refresh').disabled = !may.read;
+  paintRecord();
 
   const counts = overview?.counts ?? {};
   $('counts').replaceChildren(...Object.entries(counts).map(([s, n]) => {
@@ -86,6 +88,51 @@ function paint() {
     return li;
   })));
 }
+
+// ── M16-FR-04 · one customer's record, complaints first ──────────────────────────────────────────────────────────────
+const MARK = { open: '⚠', waiting_on_customer: '⏱', resolved: '✓', closed: '✓' };
+function caseItem(c) {
+  const li = el('li', `row ${c.state === 'open' || c.state === 'waiting_on_customer' ? 'tone-degraded' : 'tone-ok'}`);
+  li.dataset.case = c.caseId; li.dataset.state = c.state; li.dataset.kind = c.kind;
+  li.append(el('strong', '', `${MARK[c.state] ?? '○'} ${c.caseId} — ${t(`state_${c.state}`)} · ${c.openedAt.slice(0, 10)}`));
+  li.append(el('span', 'summary', c.summary));
+  if (c.orderRef) li.append(el('span', 'muted', `${t('order')} ${c.orderRef}`));
+  if (c.resolution) li.append(el('span', 'muted', `✓ ${t('answered')}: ${c.resolution}`));
+  return li;
+}
+function paintRecord() {
+  for (const [id, k] of [['record-h', 'recordH'], ['l-record-ref', 'recordRef'], ['record-open-text', 'open'], ['complaints-h', 'complaintsH'], ['othercases-h', 'otherCasesH']]) $(id).textContent = t(k);
+  $('record-open').disabled = !may.record;
+  $('record').hidden = record === null;
+  if (record === null) return;
+  $('record').dataset.customer = record.customerRef;
+  if (record.mergedInto !== undefined) {
+    $('record-summary').textContent = `${t('mergedInto')} ${record.mergedInto}`;
+    $('record-say').textContent = ''; $('record-complaints').replaceChildren(); $('record-other').replaceChildren();
+    return;
+  }
+  const p = record.purchases ?? { count: 0, grossMinor: 0 };
+  $('record-summary').textContent = `${t('bought')}: ${p.count} ${t('orders')} · ${t('netSpend')} ₹${((record.netSpendMinor ?? 0) / 100).toFixed(2)}${record.lastPurchaseAt ? ` · ${t('lastBill')} ${record.lastPurchaseAt.slice(0, 10)}` : ''}`;
+  const sh = record.serviceHistory;
+  if (sh === undefined || sh.read !== true) {
+    $('record-say').className = 'status err'; $('record-say').textContent = `⚠ ${sh?.say ?? ''}`;
+    $('record-complaints').replaceChildren(); $('record-other').replaceChildren();
+    return;
+  }
+  $('record-say').className = `status ${sh.complaints.open > 0 ? 'err' : 'good'}`;
+  $('record-say').textContent = sh.complaints.count === 0 ? `✓ ${t('noComplaints')}` : `${sh.complaints.open > 0 ? '⚠' : '✓'} ${sh.complaints.count} — ${sh.complaints.open} ${t('openComplaintsK')}`;
+  $('record-say').dataset.open = String(sh.complaints.open);
+  $('record-complaints').replaceChildren(...(sh.complaints.recent.length === 0 ? [el('li', 'row', t('noComplaints'))] : sh.complaints.recent.map(caseItem)));
+  $('record-other').replaceChildren(...(sh.otherCases.recent.length === 0 ? [el('li', 'row', t('none'))] : sh.otherCases.recent.map(caseItem)));
+}
+async function openRecord(event) {
+  event?.preventDefault();
+  const out = await session.record($('record-ref').value);
+  if (out.result === 'ok') { record = out.value; $('record-status').className = 'status'; $('record-status').textContent = ''; } else { record = null; say('record-status', out, false); }
+  paint();
+}
+$('record-form').addEventListener('submit', (e) => { void openRecord(e); });
+{ const i = typeof window.sreIcon === 'function' ? window.sreIcon('user-round', 18) : null; if (i !== null) $('record-open').prepend(i, ' '); }
 
 async function load() {
   const out = await session.overview();

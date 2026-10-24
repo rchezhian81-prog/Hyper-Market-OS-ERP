@@ -47,6 +47,8 @@ export interface DigitalReceiptDeps {
   readonly now: () => string;
 }
 
+/** The membership an app account is tied to now — the latest link the desk recorded for it, if it still links. */
+export const currentMemberLink = (links: readonly MemberAppLink[], customerRef: string): MemberAppLink | undefined => currentLink(links, customerRef);
 const currentLink = (links: readonly MemberAppLink[], customerRef: string): MemberAppLink | undefined => {
   const mine = links.filter((l) => l.customerRef === customerRef).sort((a, b) => a.at.localeCompare(b.at));
   const last = mine[mine.length - 1];

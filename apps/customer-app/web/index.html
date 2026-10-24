@@ -133,6 +133,19 @@
       .stars button[aria-pressed='true'] { background: var(--good); color: var(--on-accent); }
       footer.legal { padding: 8px 16px 16px; display: flex; gap: 16px; flex-wrap: wrap; font-size: 15px; }
       footer.legal a { color: var(--ink); min-height: var(--tap); display: inline-flex; align-items: center; }
+      /* ── OB-288 wave 3: offers, repeat orders, addresses, occasions, help, suggestions, barcode ── */
+      .quote { display: grid; gap: 4px; margin: 0; }
+      .quote div { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+      .quote dd { margin: 0; font-variant-numeric: tabular-nums; font-weight: 600; }
+      .quote div.payable dd, .quote div.payable dt { font-size: 18px; font-weight: 700; color: var(--ink); }
+      .quote dt { color: var(--muted); }
+      .ai-notice { border-left: 5px solid var(--info); }
+      .pick { display: flex; gap: 8px; flex-wrap: wrap; }
+      .pick label { display: flex; gap: 8px; align-items: center; min-height: var(--tap); color: var(--ink); margin: 0; }
+      .pick input { width: 24px; height: 24px; }
+      #scan-video { width: 100%; max-height: 240px; background: var(--panel-2); border-radius: 12px; }
+      input[type='date'], input[type='time'], input[type='number'], select { min-height: var(--tap); font-size: 17px; background: var(--panel-2); color: var(--ink); border: 1px solid var(--line); border-radius: 10px; padding: 0 10px; }
+      .row button { min-width: var(--tap); padding: 0 12px; }
     </style>
   </head>
   <body>
@@ -162,6 +175,7 @@
       <button id="tab-shop" type="button" aria-current="page">Shop</button>
       <button id="tab-basket" type="button">Basket</button>
       <button id="tab-order" type="button">My order</button>
+      <button id="tab-account" type="button">My account</button>
       <button id="tab-privacy" type="button">My information</button>
     </nav>
 
@@ -174,6 +188,21 @@
         <!-- D08-FR-02: shown only when this device has a speech engine (none is chosen yet — the owner's decision). -->
         <button id="voice" class="wide" type="button" hidden>Search by voice</button>
         <p class="note" id="voice-say" role="status" aria-live="polite"></p>
+        <!-- OB-322: the customer's own voice switch, kept on this phone; shown only where the phone has a recogniser. -->
+        <div class="consent" id="voice-box" hidden>
+          <div class="consent-row">
+            <span id="voice-switch-label">Voice search</span>
+            <button id="voice-switch" class="switch" type="button" role="switch" aria-checked="true" aria-labelledby="voice-switch-label">ON</button>
+            <span class="why" id="voice-why"></span>
+          </div>
+        </div>
+        <!-- D08-FR-02: the camera reads the barcode on the phone; without a reader, type the number under the barcode. -->
+        <button id="scan" class="wide" type="button" hidden>Scan a barcode</button>
+        <div id="scan-box" hidden>
+          <video id="scan-video" playsinline muted></video>
+          <button id="scan-stop" class="wide" type="button">Stop scanning</button>
+        </div>
+        <p class="note" id="scan-say" role="status" aria-live="polite"></p>
         <div class="rows" id="results"></div>
         <p class="empty" id="results-empty" hidden>—</p>
 
@@ -202,6 +231,27 @@
           <div class="rows" id="problem-lines"></div>
           <button id="accept" class="wide" type="button">Take what you have</button>
         </div>
+        <!-- WF-13 · M20-FR-02: the shop's own price — the till's offers, my coupon, the delivery fee, what I pay, my points. -->
+        <h2 id="offers-title">Offers and your price</h2>
+        <label for="coupon" id="coupon-label">Coupon code (if you have one)</label>
+        <input id="coupon" type="text" autocomplete="off" maxlength="40" autocapitalize="characters" />
+        <button id="quote-btn" class="wide" type="button">See the shop's price</button>
+        <div class="say" id="quote-box" role="status" aria-live="polite" hidden>
+          <dl class="quote" id="quote"></dl>
+          <p class="note" id="points-say"></p>
+        </div>
+        <p class="note" id="quote-say" role="status" aria-live="polite"></p>
+        <!-- D08-FR-03 · FUL-14: what the shop does when something I ordered is out. -->
+        <h2 id="subs-title">If something is out of stock</h2>
+        <div class="pick" id="subs" role="radiogroup" aria-labelledby="subs-title"></div>
+        <button id="subs-save" class="wide" type="button">Save my choice</button>
+        <p class="note" id="subs-say" role="status" aria-live="polite"></p>
+        <!-- M20-FR-02 · A04 · AI-NFR-11: ideas for the basket — "goes well with", and in-stock alternatives marked as AI. -->
+        <h2 id="ideas-title">Ideas for your basket</h2>
+        <button id="ideas" class="wide" type="button">Show ideas</button>
+        <p class="say ai-notice" id="ai-notice" hidden></p>
+        <div class="rows" id="ideas-list"></div>
+        <p class="note" id="ideas-say" role="status" aria-live="polite"></p>
         <label for="list-name" id="list-name-label">Save this basket as a list</label>
         <input id="list-name" type="text" autocomplete="off" maxlength="60" />
         <button id="save-list" class="wide" type="button">Save as a list</button>
@@ -258,6 +308,21 @@
         <!-- OB-77: where the driver says my delivery is, and as of when — read back from the shop, never guessed. -->
         <button id="track-order" class="wide" type="button" hidden>Where is my order?</button>
         <p class="say" id="delivery-say" role="status" aria-live="polite" hidden></p>
+        <!-- The delivery code and the arrival time — "not given yet" until the shop's delivery record carries them. -->
+        <dl class="say duties" id="handover" hidden>
+          <div><dt id="handover-code-label">Delivery code</dt><dd id="handover-code">—</dd></div>
+          <div><dt id="handover-eta-label">Arriving</dt><dd id="handover-eta">—</dd></div>
+        </dl>
+        <!-- A05: answers from the shop's own records, marked as automatic; anything else goes to a person. -->
+        <h2 id="ask-title">Ask the shop's assistant</h2>
+        <div class="pick" id="ask-topics" role="radiogroup" aria-labelledby="ask-title"></div>
+        <button id="ask" class="wide" type="button">Ask</button>
+        <div class="say ai-notice" id="ask-answer" role="status" aria-live="polite" hidden>
+          <p id="ask-text"></p>
+          <p class="note" id="ask-notice"></p>
+        </div>
+        <button id="ask-person" class="wide" type="button">Ask a person instead</button>
+        <p class="note" id="ask-say" role="status" aria-live="polite"></p>
 
         <!-- D08-FR-05 · WF-16 · WF-17: a complaint, or a return of something received, goes to the shop's service desk. -->
         <h2 id="help-title">Something wrong?</h2>
@@ -281,6 +346,65 @@
         <h2 id="rate-title">Rate what you bought</h2>
         <div class="rows" id="rate-lines"></div>
         <p class="note" id="rate-say" role="status" aria-live="polite"></p>
+      </section>
+
+      <!-- OB-288 wave 3: my repeat orders (OB-303), addresses and paying (M20-FR-04), occasions (M21-FR-02), AI suggestions (OB-314). -->
+      <section id="view-account" hidden>
+        <h1 id="account-title">My account</h1>
+        <p class="note" id="account-say" role="status" aria-live="polite"></p>
+
+        <h2 id="repeat-orders-title">My repeat orders</h2>
+        <p class="lead" id="repeat-orders-lead">The basket you have now, placed again on the days you choose. You pay in the app each time; pause or cancel whenever you like.</p>
+        <div class="rows" id="repeat-orders"></div>
+        <p class="empty" id="repeat-orders-empty" hidden>—</p>
+        <div class="pick" id="repeat-every" role="radiogroup" aria-labelledby="repeat-orders-title"></div>
+        <label for="repeat-days" id="repeat-days-label">Every how many days</label>
+        <input id="repeat-days" type="number" min="1" max="31" value="7" inputmode="numeric" />
+        <div class="pick" id="repeat-weekdays" hidden></div>
+        <label for="repeat-start" id="repeat-start-label">First day</label>
+        <input id="repeat-start" type="date" />
+        <div class="pick" id="repeat-how"></div>
+        <label for="repeat-time" id="repeat-time-label">Delivery time</label>
+        <input id="repeat-time" type="time" value="10:00" />
+        <button id="repeat-save" class="primary wide" type="button">Repeat this basket</button>
+        <p class="note" id="repeat-say" role="status" aria-live="polite"></p>
+
+        <h2 id="addresses-title">My addresses</h2>
+        <p class="lead" id="addresses-lead">A label and where it is, to about 100 metres. Nothing more.</p>
+        <div class="rows" id="addresses"></div>
+        <p class="empty" id="addresses-empty" hidden>—</p>
+        <label for="address-label" id="address-label-label">Name this place (for example, Home)</label>
+        <input id="address-label" type="text" maxlength="30" autocomplete="off" />
+        <label for="address-landmark" id="address-landmark-label">A landmark (optional)</label>
+        <input id="address-landmark" type="text" maxlength="80" autocomplete="off" />
+        <button id="address-save" class="wide" type="button">Save where I am now</button>
+        <p class="note" id="address-say" role="status" aria-live="polite"></p>
+
+        <h2 id="paying-title">Paying</h2>
+        <p class="say" id="paying-say">—</p>
+        <button id="paying-remove" class="wide" type="button">Remove a saved payment</button>
+
+        <h2 id="occasions-title">My birthday or anniversary</h2>
+        <p class="lead" id="occasions-lead">Only if you want a greeting or an offer near the day. Remove it in one tap.</p>
+        <div class="rows" id="occasions"></div>
+        <div class="pick" id="occasion-kind" role="radiogroup" aria-labelledby="occasions-title"></div>
+        <label for="occasion-day" id="occasion-day-label">The day</label>
+        <input id="occasion-day" type="date" />
+        <div class="pick"><input type="checkbox" id="occasion-yes" /> <label for="occasion-yes" id="occasion-yes-label">Yes, the shop may keep this day to greet me</label></div>
+        <button id="occasion-save" class="wide" type="button">Save the day</button>
+        <p class="note" id="occasion-say" role="status" aria-live="polite"></p>
+
+        <h2 id="ai-title">Suggestions</h2>
+        <p class="say ai-notice" id="ai-lead"></p>
+        <div class="consent">
+          <div class="consent-row">
+            <span id="ai-switch-label">Use what I bought before for suggestions</span>
+            <button id="ai-switch" class="switch" type="button" role="switch" aria-checked="false" aria-labelledby="ai-switch-label">OFF</button>
+            <span class="why" id="ai-why"></span>
+          </div>
+        </div>
+        <div class="rows" id="bought-before"></div>
+        <p class="note" id="ai-say" role="status" aria-live="polite"></p>
       </section>
 
       <!--
@@ -338,5 +462,6 @@
     <script type="module" src="./customer-app.bundle.js"></script>
     <script type="module" src="./app.js"></script>
     <script type="module" src="./online-store.js"></script>
+    <script type="module" src="./customer-commerce.js"></script>
   </body>
 </html>

@@ -40,7 +40,8 @@ export async function startCustomerShop(input: {
   };
   const server: Server = createServer((req, res) => {
     void (async () => {
-      const [path = '/'] = (req.url ?? '/').split('?');
+      const [path = '/', search = ''] = (req.url ?? '/').split('?');
+      const query = Object.fromEntries(new URLSearchParams(search));
       if (req.method === 'POST' && path === '/auth/otp/begin') {
         const body = await readBody(req);
         const challengeId = `c-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -66,9 +67,9 @@ export async function startCustomerShop(input: {
         const auth = req.headers['authorization'] ?? '';
         const token = auth.startsWith('Bearer ') ? auth.slice(7) : undefined;
         const key = req.headers['idempotency-key'];
-        const body = req.method === 'POST' ? await readBody(req) : undefined;
+        const body = req.method === 'POST' || req.method === 'PUT' ? await readBody(req) : undefined;
         if (req.method !== 'GET') writes.push({ method: req.method ?? '?', path });
-        const out = await h.raw({ method: (req.method ?? 'GET') as 'GET' | 'POST', path, ...(token === undefined ? {} : { token }), ...(body === undefined ? {} : { body }), ...(typeof key === 'string' ? { idempotencyKey: key } : {}) });
+        const out = await h.raw({ method: (req.method ?? 'GET') as 'GET' | 'POST' | 'PUT', path, query, ...(token === undefined ? {} : { token }), ...(body === undefined ? {} : { body }), ...(typeof key === 'string' ? { idempotencyKey: key } : {}) });
         sendJson(res, out.status, out.body);
         return;
       }

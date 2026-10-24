@@ -15,8 +15,9 @@ import { noProviderRefundProcessor } from '../../services/orders/src/storefront-
  *   • A return refund goes to the ORDER's own payment token — never one in the request — and only the online-return route
  *     records the `return` basis; the desk's generic refund route cannot.
  *   • With no provider connected the product's refund processor answers "unknown": the refund WAITS (never shown done).
- *   • SMS, WhatsApp and voice are switched off (OB-222): no sender is wired, no speech engine exists in the app, and the
- *     receipt-sending route refuses unconditionally.
+ *   • SMS and WhatsApp are switched off (OB-222): no sender is wired and the receipt-sending route refuses
+ *     unconditionally. Voice is ON through the phone's built-in recogniser only (OB-322, which replaces OB-222 for voice),
+ *     with the customer's own switch; the camera is opened only by the barcode screen and no picture is sent anywhere.
  *   • Nothing here deletes a record, and no AI agent is reached from these paths (hard rules #2, #5, #6).
  */
 
@@ -54,17 +55,25 @@ describe('guardrail: the online store holds its lines (R4 Lane 2)', () => {
     expect(code('services/api/src/main.ts')).not.toMatch(/r4OnlineRoutes\(\{[^}]*refundProcessor/);
   });
 
-  it('SMS, WhatsApp and voice are switched off: nothing can be sent', () => {
-    expect([RECEIPT_SENDING.switchedOn, SIGNUP_SMS_CODE_SWITCHED_ON, VOICE_SEARCH_SWITCHED_ON]).toEqual([false, false, false]);
+  it('SMS and WhatsApp are switched off: nothing can be sent; voice is the phone\'s own recogniser only (OB-322)', () => {
+    expect([RECEIPT_SENDING.switchedOn, SIGNUP_SMS_CODE_SWITCHED_ON]).toEqual([false, false]);
+    expect(VOICE_SEARCH_SWITCHED_ON).toBe(true); // OB-322 (owner, 23 Oct 2026)
     // No sender is wired to the sign-up code; the receipt send route has no path that sends.
     expect(code('services/api/src/r4-online-adapters.ts')).toMatch(/\.\.\.signupSmsCodeRoutes\(\{ now \}\)/);
     const receipts = code('services/customer/src/digital-receipts.ts');
     const send = receipts.slice(receipts.indexOf("path: '/v1/me/receipts/:receiptNumber/send'"), receipts.indexOf("path: '/v1/loyalty/members/app-link'"));
     expect(send).toMatch(/handler: async \(\) => \{\s*throw apiError\(409, \{ code: 'sending_switched_off'/);
-    // No speech engine in the customer app: no browser recogniser is ever constructed.
-    for (const f of readdirSync('apps/customer-app/src').map((x) => join('apps/customer-app/src', x)).concat(['apps/customer-app/web/app.js'])) {
-      expect(code(f), f).not.toMatch(/SpeechRecognition|getUserMedia/);
+    // OB-322: the only speech engine is the phone's own recogniser — picked in the bundle's entry, driven in voice-search.ts;
+    // no other file names it. The camera is asked for only by the barcode screen, which sends nothing anywhere.
+    const SPEECH_OK = ['apps/customer-app/src/voice-search.ts', 'apps/customer-app/src/browser-entry.ts'];
+    const CAMERA_OK = ['apps/customer-app/web/customer-commerce.js', 'apps/customer-app/src/barcode-scan.ts', 'apps/customer-app/src/browser-entry.ts'];
+    const files = readdirSync('apps/customer-app/src').map((x) => join('apps/customer-app/src', x)).concat(readdirSync('apps/customer-app/web').filter((x) => x.endsWith('.js') && !x.endsWith('.bundle.js')).map((x) => join('apps/customer-app/web', x))); // the bundle is built from src
+    for (const f of files) {
+      if (!SPEECH_OK.includes(f)) expect(code(f), f).not.toMatch(/SpeechRecognition/);
+      if (!CAMERA_OK.includes(f)) expect(code(f), f).not.toMatch(/getUserMedia/);
     }
+    expect(code('apps/customer-app/src/voice-search.ts')).not.toMatch(/\bfetch\(|https?:\/\//);
+    expect(code('apps/customer-app/src/barcode-scan.ts')).not.toMatch(/\bfetch\(|https?:\/\//);
     // None of the lane's files makes a network call of its own.
     for (const f of LANE_FILES) expect(code(f), f).not.toMatch(/\bfetch\(|https?:\/\//);
   });

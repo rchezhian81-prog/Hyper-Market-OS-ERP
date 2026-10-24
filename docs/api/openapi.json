@@ -41725,6 +41725,55 @@
         }
       }
     },
+    "/v1/loyalty/members/{memberRef}/standing": {
+      "get": {
+        "operationId": "getLoyaltyMembersByMemberRefStanding",
+        "tags": [
+          "API-06 Customer / Loyalty"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "loyalty.points.read",
+        "x-entitlement": null,
+        "parameters": [
+          {
+            "name": "memberRef",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"loyalty.points.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
     "/v1/loyalty/offer-batches": {
       "get": {
         "operationId": "getLoyaltyOfferBatches",
@@ -42053,6 +42102,216 @@
           },
           "403": {
             "description": "Not \"loyalty.coupon.issue\", or the plan lacks \"loyalty\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/loyalty/points-expiry/run": {
+      "post": {
+        "operationId": "postLoyaltyPointsExpiryRun",
+        "tags": [
+          "API-06 Customer / Loyalty"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "loyalty.points.write",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"loyalty.points.write\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/loyalty/programme": {
+      "get": {
+        "operationId": "getLoyaltyProgramme",
+        "tags": [
+          "API-06 Customer / Loyalty"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "loyalty.points.read",
+        "x-entitlement": null,
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"loyalty.points.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/loyalty/programme/expiry": {
+      "put": {
+        "operationId": "putLoyaltyProgrammeExpiry",
+        "tags": [
+          "API-06 Customer / Loyalty"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "loyalty.programme.configure",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"loyalty.programme.configure\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/loyalty/programme/tiers": {
+      "put": {
+        "operationId": "putLoyaltyProgrammeTiers",
+        "tags": [
+          "API-06 Customer / Loyalty"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "loyalty.programme.configure",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"loyalty.programme.configure\".",
             "content": {
               "application/json": {
                 "schema": {
@@ -42526,6 +42785,180 @@
         }
       }
     },
+    "/v1/me/addresses": {
+      "get": {
+        "operationId": "getMeAddresses",
+        "tags": [
+          "API-07 OMS"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "storefront.order.read",
+        "x-entitlement": "customer_app",
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"storefront.order.read\", or the plan lacks \"customer_app\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/me/addresses/{addressId}": {
+      "post": {
+        "operationId": "postMeAddressesByAddressId",
+        "tags": [
+          "API-07 OMS"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "storefront.order.place",
+        "x-entitlement": "customer_app",
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "addressId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"storefront.order.place\", or the plan lacks \"customer_app\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/me/addresses/{addressId}/remove": {
+      "post": {
+        "operationId": "postMeAddressesByAddressIdRemove",
+        "tags": [
+          "API-07 OMS"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "storefront.order.place",
+        "x-entitlement": "customer_app",
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "addressId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"storefront.order.place\", or the plan lacks \"customer_app\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
     "/v1/me/ai-suggestions": {
       "get": {
         "operationId": "getMeAiSuggestions",
@@ -42552,6 +42985,330 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/me/cart": {
+      "get": {
+        "operationId": "getMeCart",
+        "tags": [
+          "API-06 Customer / Loyalty"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "storefront.order.read",
+        "x-entitlement": "customer_app",
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"storefront.order.read\", or the plan lacks \"customer_app\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      },
+      "put": {
+        "operationId": "putMeCart",
+        "tags": [
+          "API-06 Customer / Loyalty"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "storefront.order.place",
+        "x-entitlement": "customer_app",
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"storefront.order.place\", or the plan lacks \"customer_app\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/me/help/answers": {
+      "post": {
+        "operationId": "postMeHelpAnswers",
+        "tags": [
+          "API-07 OMS"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "storefront.order.read",
+        "x-entitlement": "customer_app",
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"storefront.order.read\", or the plan lacks \"customer_app\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/me/occasions": {
+      "get": {
+        "operationId": "getMeOccasions",
+        "tags": [
+          "API-06 Customer / Loyalty"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "storefront.order.read",
+        "x-entitlement": "customer_app",
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"storefront.order.read\", or the plan lacks \"customer_app\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/me/occasions/{occasionId}": {
+      "post": {
+        "operationId": "postMeOccasionsByOccasionId",
+        "tags": [
+          "API-06 Customer / Loyalty"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "storefront.order.place",
+        "x-entitlement": "customer_app",
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "occasionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"storefront.order.place\", or the plan lacks \"customer_app\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/me/occasions/{occasionId}/remove": {
+      "post": {
+        "operationId": "postMeOccasionsByOccasionIdRemove",
+        "tags": [
+          "API-06 Customer / Loyalty"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "storefront.order.place",
+        "x-entitlement": "customer_app",
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "occasionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"storefront.order.place\", or the plan lacks \"customer_app\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
@@ -42623,6 +43380,111 @@
           },
           {
             "name": "returnId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"storefront.order.place\", or the plan lacks \"customer_app\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/me/payment-methods": {
+      "get": {
+        "operationId": "getMePaymentMethods",
+        "tags": [
+          "API-07 OMS"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "storefront.order.read",
+        "x-entitlement": "customer_app",
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"storefront.order.read\", or the plan lacks \"customer_app\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/me/payment-methods/{methodRef}/remove": {
+      "post": {
+        "operationId": "postMePaymentMethodsByMethodRefRemove",
+        "tags": [
+          "API-07 OMS"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "storefront.order.place",
+        "x-entitlement": "customer_app",
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "methodRef",
             "in": "path",
             "required": true,
             "schema": {
@@ -43331,6 +44193,318 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/me/subscriptions": {
+      "get": {
+        "operationId": "getMeSubscriptions",
+        "tags": [
+          "API-07 OMS"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "storefront.order.read",
+        "x-entitlement": "customer_app",
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"storefront.order.read\", or the plan lacks \"customer_app\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/me/subscriptions/{subscriptionId}": {
+      "post": {
+        "operationId": "postMeSubscriptionsBySubscriptionId",
+        "tags": [
+          "API-07 OMS"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "storefront.order.place",
+        "x-entitlement": "customer_app",
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "subscriptionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"storefront.order.place\", or the plan lacks \"customer_app\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/me/subscriptions/{subscriptionId}/cancel": {
+      "post": {
+        "operationId": "postMeSubscriptionsBySubscriptionIdCancel",
+        "tags": [
+          "API-07 OMS"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "storefront.order.place",
+        "x-entitlement": "customer_app",
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "subscriptionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"storefront.order.place\", or the plan lacks \"customer_app\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/me/subscriptions/{subscriptionId}/pause": {
+      "post": {
+        "operationId": "postMeSubscriptionsBySubscriptionIdPause",
+        "tags": [
+          "API-07 OMS"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "storefront.order.place",
+        "x-entitlement": "customer_app",
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "subscriptionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"storefront.order.place\", or the plan lacks \"customer_app\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/me/subscriptions/{subscriptionId}/resume": {
+      "post": {
+        "operationId": "postMeSubscriptionsBySubscriptionIdResume",
+        "tags": [
+          "API-07 OMS"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "storefront.order.place",
+        "x-entitlement": "customer_app",
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "subscriptionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"storefront.order.place\", or the plan lacks \"customer_app\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
@@ -68879,6 +70053,100 @@
         }
       }
     },
+    "/v1/repeat-orders": {
+      "get": {
+        "operationId": "getRepeatOrders",
+        "tags": [
+          "API-07 OMS"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "order.read",
+        "x-entitlement": "customer_app",
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"order.read\", or the plan lacks \"customer_app\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/repeat-orders/run": {
+      "post": {
+        "operationId": "postRepeatOrdersRun",
+        "tags": [
+          "API-07 OMS"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "order.exception.manage",
+        "x-entitlement": "customer_app",
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"order.exception.manage\", or the plan lacks \"customer_app\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
     "/v1/replenishment/order-proposal": {
       "post": {
         "operationId": "postReplenishmentOrderProposal",
@@ -72244,6 +73512,169 @@
         }
       }
     },
+    "/v1/service/journeys": {
+      "get": {
+        "operationId": "getServiceJourneys",
+        "tags": [
+          "API-06 Customer / Loyalty"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "customer.campaign.read",
+        "x-entitlement": null,
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"customer.campaign.read\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/service/journeys/run": {
+      "post": {
+        "operationId": "postServiceJourneysRun",
+        "tags": [
+          "API-06 Customer / Loyalty"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "customer.campaign.send",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"customer.campaign.send\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/service/journeys/{kind}": {
+      "put": {
+        "operationId": "putServiceJourneysByKind",
+        "tags": [
+          "API-06 Customer / Loyalty"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "customer.campaign.send",
+        "x-entitlement": null,
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"customer.campaign.send\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
     "/v1/service/report": {
       "get": {
         "operationId": "getServiceReport",
@@ -74142,6 +75573,64 @@
         }
       }
     },
+    "/v1/storefront/cart/quote": {
+      "post": {
+        "operationId": "postStorefrontCartQuote",
+        "tags": [
+          "API-07 OMS"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "storefront.order.read",
+        "x-entitlement": "customer_app",
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"storefront.order.read\", or the plan lacks \"customer_app\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
     "/v1/storefront/listing": {
       "get": {
         "operationId": "getStorefrontListing",
@@ -74168,6 +75657,100 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/storefront/order-notices": {
+      "get": {
+        "operationId": "getStorefrontOrderNotices",
+        "tags": [
+          "API-07 OMS"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "order.read",
+        "x-entitlement": "customer_app",
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"order.read\", or the plan lacks \"customer_app\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/storefront/order-notices/run": {
+      "post": {
+        "operationId": "postStorefrontOrderNoticesRun",
+        "tags": [
+          "API-07 OMS"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "order.exception.manage",
+        "x-entitlement": "customer_app",
+        "x-idempotent": true,
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "A replay with the same key and body returns the first answer; the same key with a different body is refused (409)."
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/Body"
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Unreadable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"order.exception.manage\", or the plan lacks \"customer_app\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
@@ -74813,6 +76396,42 @@
     "/v1/storefront/ratings": {
       "get": {
         "operationId": "getStorefrontRatings",
+        "tags": [
+          "API-07 OMS"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-permission": "storefront.order.read",
+        "x-entitlement": "customer_app",
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorised"
+          },
+          "403": {
+            "description": "Not \"storefront.order.read\", or the plan lacks \"customer_app\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorReply"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/Reply"
+          }
+        }
+      }
+    },
+    "/v1/storefront/recommendations": {
+      "get": {
+        "operationId": "getStorefrontRecommendations",
         "tags": [
           "API-07 OMS"
         ],

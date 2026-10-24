@@ -1,10 +1,8 @@
-// Voice search (round 8 · D08-FR-02 "voice/barcode search") — the PORT and a FAKE, nothing more.
+// Voice search (round 8 · D08-FR-02 "voice/barcode search") — the PORT, a FAKE, and (OB-322) the phone's own recogniser.
 //
-// Turning speech into words needs a speech engine: a phone's own recogniser, a browser service (which in most browsers
-// sends the customer's voice to a third party) or a provider the shop contracts. Which one is the owner's decision —
-// it moves a customer's voice out of the shop — so no engine is built here. What is built is the shape every engine
-// must fit and the one rule the app keeps whichever is chosen: what was HEARD is shown and becomes an ordinary search
-// the customer can see and change; nothing is ever added to the basket by voice.
+// Turning speech into words needs a speech engine. The owner chose the phone's built-in recogniser, switchable off
+// (OB-322, below). The one rule the app keeps: what was HEARD is shown and becomes an ordinary search the customer can
+// see and change; nothing is ever added to the basket by voice.
 //
 // The fake stands in for an engine in tests and in the browser test, deterministically.
 
@@ -65,16 +63,17 @@ export function fakeVoiceSearch(script: readonly VoiceResult[], available = true
   };
 }
 
-// ── R4 · D08 · OB-222: the voice link, built SWITCHED OFF ───────────────────────────────────────────────────────────
+// ── OB-322 (owner, 23 Oct 2026): the phone's built-in recogniser, switchable off ──────────────────────────────────────
 //
-// The owner has not chosen a speech engine and has switched voice off (OB-222). So the app is given a LINK that is off:
-// it says it cannot listen (the microphone button is therefore not shown), and `listen` never starts an engine — no
-// customer's voice leaves the phone. The test stand-in is the only engine that can be put behind the link, and only
-// when the link is switched on in a test; whatever it hears becomes an ordinary search the customer can change, and
-// nothing is ever added to the basket by voice (the link has no basket at all).
+// The owner chose the phone's OWN speech recogniser (the browser's standard speech recognition — on many phones that
+// service turns the voice into words online, run by the phone's or the browser's maker, never by this shop), and that it
+// can be switched off. The customer switches it off (or back on) on their own phone, one tap, both ways; the choice stays
+// on that phone. Off, or on a phone with no recogniser, the microphone button is not shown and nothing listens. Whatever
+// is heard becomes an ordinary search the customer can see and change; nothing is ever added to the basket by voice.
+// (OB-222 switched voice off for R4; OB-322 replaces that for voice only — the SMS code stays off.)
 
-/** OB-222: voice search is switched off. There is no setting that turns it on in this build. */
-export const VOICE_SEARCH_SWITCHED_ON = false;
+/** OB-322: voice search is on, through the phone's built-in recogniser, where the phone has one. */
+export const VOICE_SEARCH_SWITCHED_ON = true;
 
 export interface VoiceSearchLink extends VoiceSearchPort {
   readonly switchedOn: boolean;
@@ -82,19 +81,78 @@ export interface VoiceSearchLink extends VoiceSearchPort {
   readonly listensSent: () => number;
 }
 
-/** The link the app is given. Off: never available, never listens. On (tests only): the stand-in engine behind it. */
-export function voiceSearchLink(input: { readonly switchedOn: boolean; readonly engine?: VoiceSearchPort }): VoiceSearchLink {
+/**
+ * The link the app is given. Off (the shop's build switch, or the customer's own switch): never available, never
+ * listens. On: the engine behind it — the phone's recogniser, or a test's stand-in.
+ */
+export function voiceSearchLink(input: { readonly switchedOn: boolean; readonly engine?: VoiceSearchPort; readonly offByCustomer?: () => boolean }): VoiceSearchLink {
   let sent = 0;
-  const on = input.switchedOn && input.engine !== undefined;
+  const on = (): boolean => input.switchedOn && input.engine !== undefined && input.offByCustomer?.() !== true;
   return {
-    name: on ? input.engine!.name : 'voice search (switched off)',
-    switchedOn: on,
+    name: input.switchedOn && input.engine !== undefined ? input.engine.name : 'voice search (switched off)',
+    get switchedOn() { return on(); },
     listensSent: () => sent,
-    available: () => on && input.engine!.available(),
+    available: () => on() && input.engine!.available(),
     listen: async (language) => {
-      if (!on) return { heard: false, why: 'not_supported' };
+      if (!on()) return { heard: false, why: 'not_supported' };
       sent += 1;
       return input.engine!.listen(language);
+    },
+  };
+}
+
+/** The browser's speech recognition, as far as this app uses it (typed without the DOM lib). */
+interface Recognition {
+  lang: string; interimResults: boolean; maxAlternatives: number; continuous: boolean;
+  onresult: ((e: { readonly results: ArrayLike<ArrayLike<{ readonly transcript: string }>> }) => void) | null;
+  onerror: ((e: { readonly error: string }) => void) | null;
+  onend: (() => void) | null;
+  start(): void;
+}
+export type RecognitionConstructor = new () => Recognition;
+
+/** What a recogniser's error means for the customer. */
+export function recognitionError(error: string): 'permission_denied' | 'nothing_heard' | 'engine_failed' {
+  if (error === 'not-allowed' || error === 'service-not-allowed') return 'permission_denied';
+  if (error === 'no-speech' || error === 'aborted') return 'nothing_heard';
+  return 'engine_failed';
+}
+
+/** OB-322: the phone's built-in recogniser, listening once, in Indian English or Tamil. */
+export function builtInRecogniser(ctor: RecognitionConstructor | undefined): VoiceSearchPort {
+  return {
+    name: 'the phone\'s built-in speech recogniser',
+    available: () => ctor !== undefined,
+    listen: (language) => new Promise<VoiceResult>((resolve) => {
+      if (ctor === undefined) { resolve({ heard: false, why: 'not_supported' }); return; }
+      let settled = false;
+      const done = (r: VoiceResult): void => { if (!settled) { settled = true; resolve(r); } };
+      try {
+        const r = new ctor();
+        r.lang = language === 'ta' ? 'ta-IN' : 'en-IN';
+        r.interimResults = false; r.maxAlternatives = 1; r.continuous = false;
+        r.onresult = (e) => { const t = e.results[0]?.[0]?.transcript ?? ''; done(t.trim() === '' ? { heard: false, why: 'nothing_heard' } : { heard: true, transcript: t }); };
+        r.onerror = (e) => { done({ heard: false, why: recognitionError(e.error) }); };
+        r.onend = () => { done({ heard: false, why: 'nothing_heard' }); };
+        r.start();
+      } catch { done({ heard: false, why: 'engine_failed' }); }
+    }),
+  };
+}
+
+/** The customer's own switch, kept on their phone only. Default ON (OB-322); unreadable storage reads as ON. */
+export const VOICE_SWITCH_KEY = 'sre.shop.voice';
+export function customerVoiceSwitch(storage: { getItem(k: string): string | null; setItem(k: string, v: string): void } | undefined): { readonly off: () => boolean; readonly set: (on: boolean) => boolean } {
+  let memory: boolean | undefined;
+  return {
+    off: () => {
+      if (memory !== undefined) return !memory;
+      try { return storage?.getItem(VOICE_SWITCH_KEY) === 'off'; } catch { return false; }
+    },
+    set: (on) => {
+      memory = on;
+      try { storage?.setItem(VOICE_SWITCH_KEY, on ? 'on' : 'off'); } catch { /* kept for this visit only */ }
+      return on;
     },
   };
 }

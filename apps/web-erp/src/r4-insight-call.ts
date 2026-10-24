@@ -8,19 +8,19 @@ export type Outcome<T, K extends string = string> =
   | { readonly result: 'invalid'; readonly why: K }
   | { readonly result: 'lost_link' };
 
-export type Caller = <T>(method: 'GET' | 'POST', path: string, body?: unknown) => Promise<Outcome<T, never>>;
+export type Caller = <T>(method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown) => Promise<Outcome<T, never>>;
 
 const rand = (): string => (globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`);
 
 export function makeCaller(input: { readonly fetch?: typeof globalThis.fetch; readonly newKey?: () => string; readonly keyPrefix: string }): Caller {
   const http = input.fetch ?? ((...a: Parameters<typeof globalThis.fetch>) => globalThis.fetch(...a));
   const newKey = input.newKey ?? (() => `${input.keyPrefix}-${rand()}`);
-  return async <T>(method: 'GET' | 'POST', path: string, body?: unknown): Promise<Outcome<T, never>> => {
+  return async <T>(method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown): Promise<Outcome<T, never>> => {
     try {
       const res = await http(path, {
         method, credentials: 'same-origin',
-        headers: { accept: 'application/json', ...(method === 'POST' ? { 'content-type': 'application/json', 'idempotency-key': newKey() } : {}) },
-        ...(method === 'POST' ? { body: JSON.stringify(body ?? {}) } : {}),
+        headers: { accept: 'application/json', ...(method !== 'GET' ? { 'content-type': 'application/json', 'idempotency-key': newKey() } : {}) },
+        ...(method !== 'GET' ? { body: JSON.stringify(body ?? {}) } : {}),
       });
       const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
       if (!res.ok) {

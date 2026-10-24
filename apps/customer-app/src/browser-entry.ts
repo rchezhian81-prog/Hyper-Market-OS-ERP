@@ -47,8 +47,10 @@ import {
   RIGHTS_OFFERED,
   type ConsentPurposeSpec,
 } from './privacy-centre';
-import { httpShopTransport, readShopAnswer, type ShopTransport, type ShopPaymentResult, type ShopMineRequest } from './shop-transport';
-import { voiceQuery, voiceSearchLink, VOICE_SEARCH_SWITCHED_ON, type VoiceSearchPort } from './voice-search';
+import { httpShopTransport, readShopAnswer, type ShopTransport, type ShopPaymentResult, type ShopMineRequest, type ShopCommerceRequest } from './shop-transport';
+import { voiceQuery, voiceSearchLink, builtInRecogniser, customerVoiceSwitch, VOICE_SEARCH_SWITCHED_ON, type VoiceSearchPort, type RecognitionConstructor } from './voice-search';
+import { basketKey, COUPON_CODE, repeatOrderBody, quoteRows, deliveryHandover, HELP_TOPICS, SUBSTITUTION_CHOICES, type RepeatOrderForm, type RepeatOrderWhy, type ShopQuote } from './customer-commerce';
+import { readScan, scanFrames, scanSupported, type BarcodeReader } from './barcode-scan';
 
 import { mountDemoBanner, type BannerDocument } from '../../../packages/ui/src/demo-banner';
 
@@ -271,6 +273,47 @@ export interface Shop {
   mine: MyShop;
   /** R4 Lane 2: the online store as the signed-in customer reads it — duties, stars, images, receipts, returns. */
   online: OnlineShop;
+  /** OB-288 wave 3: the shop's price with offers, repeat orders, addresses, occasions, help, suggestions, substitutions. */
+  commerce: CommerceShop;
+}
+
+/**
+ * OB-288 wave 3 (WF-13 · M20-FR-02/03/04 · M21-FR-02 · OB-303 · OB-314 · D08-FR-03 · A04 · A05): the customer's own commerce
+ * on the shop — each answered only by the shop's 2xx; signed out, offline or refused, nothing changes and the answer says which.
+ */
+export interface CommerceShop {
+  /** WF-13: the coupon the customer typed (checked on the phone first); '' clears it. */
+  setCoupon(code: string): { readonly ok: boolean };
+  coupon(): string | undefined;
+  /** WF-13: the shop's price for the basket as it stands — the till's offers and the coupon, the fee, what to pay, the points. */
+  quote(): Promise<MineOutcome<ShopQuote>>;
+  /** M21-FR-02: keep the basket on the shop while signed in (the abandoned-basket journey reads it — sent only if switched on). */
+  holdCart(): Promise<MineOutcome<unknown>>;
+  /** OB-303: my repeat orders; start one from the basket; pause, resume or cancel one. */
+  repeatOrders(): Promise<MineOutcome<unknown>>;
+  startRepeatOrder(form: Omit<RepeatOrderForm, 'lines' | 'locationId' | 'location'>): Promise<MineOutcome<unknown> | { readonly ok: false; readonly refusal: 'form'; readonly why: RepeatOrderWhy }>;
+  changeRepeatOrder(subscriptionId: string, change: 'pause' | 'resume' | 'cancel'): Promise<MineOutcome<unknown>>;
+  /** M20-FR-04: my saved addresses (a label and the location to about 100 m), and "remove saved payment" (nothing is saved). */
+  addresses(): Promise<MineOutcome<unknown>>;
+  saveAddress(label: string, landmark: string): Promise<MineOutcome<unknown> | { readonly ok: false; readonly refusal: 'no_location' }>;
+  useAddress(location: { readonly lat: number; readonly lon: number }): void;
+  removeAddress(addressId: string): Promise<MineOutcome<unknown>>;
+  paymentMethods(): Promise<MineOutcome<unknown>>;
+  /** M21-FR-02: an occasion I give with my yes, and remove in one tap. */
+  occasions(): Promise<MineOutcome<unknown>>;
+  giveOccasion(kind: 'birthday' | 'anniversary', monthDay: string, consent: boolean): Promise<MineOutcome<unknown>>;
+  removeOccasion(occasionId: string): Promise<MineOutcome<unknown>>;
+  /** A05: an answer to a chosen question, from the shop's own records, with the notice; typed questions go to a person. */
+  help(topic: string, orderId?: string): Promise<MineOutcome<unknown>>;
+  /** A04 · AI-NFR-11 (OB-314): in-stock alternatives with the AI notice; "bought before" only with my opt-in. */
+  suggestions(productId?: string): Promise<MineOutcome<unknown>>;
+  setAiPersonalisation(on: boolean): Promise<PrivacyOutcome>;
+  /** M20-FR-02: "goes well with" — from what customers bought together; my history only with my yes. */
+  recommendations(productId: string): Promise<MineOutcome<unknown>>;
+  /** D08-FR-03 · FUL-14: what the shop does when something I ordered is out. */
+  setSubstitution(preference: string): Promise<MineOutcome<unknown>>;
+  /** The order the shop holds for this basket, if any. */
+  heldOrderId(): string | undefined;
 }
 
 /**
@@ -390,6 +433,8 @@ export function bootShop(
   // The customer's OWN delivery location. Undefined until captured from the device — never guessed,
   // so the distance check refuses honestly rather than measuring from {0,0}.
   let deliveryLocation = data?.deliveryLocation;
+  // WF-13: the coupon the customer typed, and the shop's last quote (good only for the basket it was asked for).
+  let couponCode: string | undefined;
 
   const keep = (next: SessionState): SessionState => {
     state = next;
@@ -601,7 +646,114 @@ export function bootShop(
       returnPolicy: async () => { const a = await mineCall({ method: 'GET', path: 'return-policy' }); return a.ok ? { ok: true, value: a.body } : a; },
     },
     // ── R4 Lane 2 (end) ──
+
+    // ── OB-288 wave 3 (begin) ──
+    commerce: {
+      setCoupon: (code) => {
+        const c = code.trim();
+        if (c === '') { couponCode = undefined; return { ok: true }; }
+        if (!COUPON_CODE.test(c)) return { ok: false };
+        couponCode = c;
+        return { ok: true };
+      },
+      coupon: () => couponCode,
+      quote: async () => {
+        const a = await shopQuote();
+        return a.ok ? { ok: true, value: a.body as ShopQuote } : a;
+      },
+      holdCart: async () => {
+        const lines = state.lines.filter((l) => l.quantityMinor > 0).map((l) => ({ productId: l.productId, quantityMinor: l.quantityMinor }));
+        const a = await commerceCall({ method: 'PUT', path: 'me/cart', body: { lines }, idempotencyKey: `cart-${nextId()}` });
+        return a.ok ? { ok: true, value: a.body } : a;
+      },
+      repeatOrders: async () => { const a = await commerceCall({ method: 'GET', path: 'me/subscriptions' }); return a.ok ? { ok: true, value: a.body } : a; },
+      startRepeatOrder: async (form) => {
+        const built = repeatOrderBody({ ...form, lines: state.lines, locationId: data?.locationId, ...(deliveryLocation === undefined ? {} : { location: deliveryLocation }) });
+        if (!built.ok) return { ok: false, refusal: 'form', why: built.why };
+        const id = `sub-${nextId()}`.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40);
+        const a = await commerceCall({ method: 'POST', path: `me/subscriptions/${id}`, body: built.body, idempotencyKey: `subscription-${id}` });
+        return a.ok ? { ok: true, value: a.body } : a;
+      },
+      changeRepeatOrder: async (subscriptionId, change) => {
+        const a = await commerceCall({ method: 'POST', path: `me/subscriptions/${encodeURIComponent(subscriptionId)}/${change}`, body: {}, idempotencyKey: `subscription-${subscriptionId}-${change}-${nextId()}` });
+        return a.ok ? { ok: true, value: a.body } : a;
+      },
+      addresses: async () => { const a = await commerceCall({ method: 'GET', path: 'me/addresses' }); return a.ok ? { ok: true, value: a.body } : a; },
+      saveAddress: async (label, landmark) => {
+        if (deliveryLocation === undefined) return { ok: false, refusal: 'no_location' };
+        const id = `a-${nextId()}`.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40);
+        const a = await commerceCall({ method: 'POST', path: `me/addresses/${id}`, body: { label, location: deliveryLocation, ...(landmark.trim() === '' ? {} : { landmark }) }, idempotencyKey: `address-${id}` });
+        return a.ok ? { ok: true, value: a.body } : a;
+      },
+      useAddress: (location) => { deliveryLocation = { lat: location.lat, lon: location.lon }; },
+      removeAddress: async (addressId) => {
+        const a = await commerceCall({ method: 'POST', path: `me/addresses/${encodeURIComponent(addressId)}/remove`, body: {}, idempotencyKey: `address-remove-${addressId}` });
+        return a.ok ? { ok: true, value: a.body } : a;
+      },
+      paymentMethods: async () => { const a = await commerceCall({ method: 'GET', path: 'me/payment-methods' }); return a.ok ? { ok: true, value: a.body } : a; },
+      occasions: async () => { const a = await commerceCall({ method: 'GET', path: 'me/occasions' }); return a.ok ? { ok: true, value: a.body } : a; },
+      giveOccasion: async (kind, monthDay, consent) => {
+        const a = await commerceCall({ method: 'POST', path: `me/occasions/${kind}`, body: { kind, monthDay, consent }, idempotencyKey: `occasion-${kind}-${monthDay}-${nextId()}` });
+        return a.ok ? { ok: true, value: a.body } : a;
+      },
+      removeOccasion: async (occasionId) => {
+        const a = await commerceCall({ method: 'POST', path: `me/occasions/${encodeURIComponent(occasionId)}/remove`, body: {}, idempotencyKey: `occasion-remove-${occasionId}-${nextId()}` });
+        return a.ok ? { ok: true, value: a.body } : a;
+      },
+      help: async (topic, orderId) => {
+        const a = await commerceCall({ method: 'POST', path: 'me/help/answers', body: { topic, ...(orderId === undefined ? {} : { orderId }) }, idempotencyKey: `help-${topic}-${nextId()}` });
+        return a.ok ? { ok: true, value: a.body } : a;
+      },
+      suggestions: async (productId) => {
+        const q = `locationId=${encodeURIComponent(data?.locationId ?? '')}${productId === undefined ? '' : `&productId=${encodeURIComponent(productId)}`}`;
+        const a = await commerceCall({ method: 'GET', path: `me/ai-suggestions?${q}` });
+        return a.ok ? { ok: true, value: a.body } : a;
+      },
+      setAiPersonalisation: async (on) => {
+        // OB-314: an explicit opt-in, the same one switch both ways — the purpose is suggestions in the app, not messages.
+        const answer = await privacyCall({ method: 'POST', path: '/consent', body: { purpose: 'ai_personalisation', channel: 'push', given: on }, idempotencyKey: `consent-ai-${on ? 'on' : 'off'}-${nextId()}` });
+        if (!answer.ok) return answer;
+        const b = answer.body as { tellTheCustomer?: unknown };
+        return { ok: true, tellTheCustomer: typeof b.tellTheCustomer === 'string' ? b.tellTheCustomer : 'Saved.' };
+      },
+      recommendations: async (productId) => {
+        const a = await commerceCall({ method: 'GET', path: `storefront/recommendations?productId=${encodeURIComponent(productId)}` });
+        return a.ok ? { ok: true, value: a.body } : a;
+      },
+      setSubstitution: async (preference) => {
+        const a = await commerceCall({ method: 'PUT', path: 'storefront/substitution-preferences', body: { rules: { preference } }, idempotencyKey: `substitution-${preference}-${nextId()}` });
+        return a.ok ? { ok: true, value: a.body } : a;
+      },
+      heldOrderId: () => held?.orderId,
+    },
+    // ── OB-288 wave 3 (end) ──
   };
+
+  // ── OB-288 wave 3 (begin) ──
+  /** The fulfilment the chosen slot implies (FUL-03). */
+  function chosenFulfilment(): 'delivery' | 'pickup' | undefined {
+    return (data?.slots ?? []).find((sl) => sl.slotId === state.slotId)?.kind;
+  }
+  /** WF-13: the shop's own price for the basket as it stands now, with the coupon. */
+  async function shopQuote(): Promise<{ ok: true; body: unknown } | { ok: false; refusal: MineRefusal; shopSaid?: string }> {
+    const lines = state.lines.filter((l) => l.quantityMinor > 0).map((l) => ({ productId: l.productId, quantityMinor: l.quantityMinor }));
+    if (lines.length === 0) return { ok: false, refusal: 'the_shop_refused', shopSaid: 'Your basket is empty.' };
+    const fulfilment = chosenFulfilment();
+    return commerceCall({ method: 'POST', path: 'storefront/cart/quote', body: { lines, ...(fulfilment === undefined ? {} : { fulfilment }), ...(couponCode === undefined ? {} : { couponCode }) }, idempotencyKey: `quote-${basketKey(lines, fulfilment, couponCode).length}-${nextId()}` });
+  }
+  /** One commerce call as me, read honestly — saved only on the shop's 2xx, and why not otherwise. */
+  async function commerceCall(call: Omit<ShopCommerceRequest, 'token'>): Promise<{ ok: true; body: unknown } | { ok: false; refusal: MineRefusal; shopSaid?: string }> {
+    if (token === undefined) return { ok: false, refusal: 'not_signed_in' };
+    if (transport?.commerce === undefined) return { ok: false, refusal: 'no_road_to_the_shop' };
+    const answer = await transport.commerce({ token, ...call });
+    if (!answer.reached) return { ok: false, refusal: 'not_saved_no_connection' };
+    if (answer.status === 200 || answer.status === 201) return { ok: true, body: answer.body };
+    if (answer.status === 401) { token = undefined; return { ok: false, refusal: 'signed_out' }; }
+    if (answer.status >= 500) return { ok: false, refusal: 'the_shop_could_not_answer' };
+    const err = (answer.body as { error?: { whatHappened?: unknown } } | undefined)?.error;
+    return { ok: false, refusal: 'the_shop_refused', ...(typeof err?.whatHappened === 'string' ? { shopSaid: err.whatHappened } : {}) };
+  }
+  // ── OB-288 wave 3 (end) ──
 
   // ── R4 Lane 2 (begin) ──
   /** A read of the online store as me — the same honest answers as `mineCall`. */
@@ -736,9 +888,15 @@ export function bootShop(
       return refuse('no_road_to_the_shop', 'This app has no connection to the shop set up, so it cannot send an order. Nothing has been charged.', 'no transport was given to bootShop');
     }
 
-    // 2. The real thing. The amount is the session's own payable (items + fee) — the shop records
-    //    it as the checkout's answer and invents nothing.
-    const payable = dry.state.order?.payableMinor ?? 0;
+    // 2. The real thing. The amount is the SHOP's price for this basket (WF-13: the till's offers and the coupon, then
+    //    the fee), asked for now; with no answer it is the session's own payable (items + fee) — and a difference is the
+    //    shop's to flag ("not taken as paid; a person must look"), never silently taken.
+    let payable = dry.state.order?.payableMinor ?? 0;
+    if (transport.commerce !== undefined) {
+      const q = await shopQuote();
+      const body = q.ok ? (q.body as ShopQuote) : undefined;
+      if (body?.priced === true && typeof body.payableMinor === 'number') payable = body.payableMinor;
+    }
     const chosen = (data?.slots ?? []).find((sl) => sl.slotId === state.slotId);
     const slotKind = chosen?.kind;
     const answer = await transport.placeOrder({
@@ -750,6 +908,7 @@ export function bootShop(
       // …and checks the slot and the address against its own record (FUL-03) — what the app saw is only a view.
       ...(chosen === undefined || slotKind !== 'delivery' ? {} : { deliverySlot: { startsAt: chosen.startsAt, endsAt: chosen.endsAt } }),
       ...(slotKind !== 'delivery' || deliveryLocation === undefined ? {} : { deliveryLocation }),
+      ...(couponCode === undefined ? {} : { couponCode }),
     });
 
     if (!answer.reached) {
@@ -816,6 +975,18 @@ interface ShopWindow {
   shopVoiceQuery?: typeof voiceQuery;
   /** R4 · D08: a browser test's stand-in engine (never set by the product). */
   shopVoiceStandIn?: VoiceSearchPort;
+  /** OB-322: the customer's own voice switch, kept on this phone. */
+  shopVoiceSwitch?: { readonly off: () => boolean; readonly set: (on: boolean) => boolean; readonly phoneCanListen: () => boolean };
+  /** OB-288 wave 3: the tested rules the commerce screens show (customer-commerce.ts). */
+  shopCommerceRules?: { readonly quoteRows: typeof quoteRows; readonly deliveryHandover: typeof deliveryHandover; readonly helpTopics: typeof HELP_TOPICS; readonly substitutionChoices: typeof SUBSTITUTION_CHOICES };
+  /** D08-FR-02: the camera barcode rule (the page owns the camera; these decide what was read). */
+  shopBarcode?: { readonly readScan: typeof readScan; readonly scanFrames: typeof scanFrames; readonly supported: () => Promise<boolean> };
+  /** A browser test's stand-in barcode reader (never set by the product). */
+  shopBarcodeStandIn?: BarcodeReader;
+  SpeechRecognition?: RecognitionConstructor;
+  webkitSpeechRecognition?: RecognitionConstructor;
+  BarcodeDetector?: { getSupportedFormats?: () => Promise<readonly string[]> };
+  navigator?: { readonly mediaDevices?: { readonly getUserMedia?: unknown } };
 }
 
 // In the browser `globalThis.window` IS the window, so this needs no DOM types.
@@ -836,9 +1007,17 @@ if (browserWindow !== undefined) {
   const shop = bootShop(browserWindow.shopData, basket, randomRequestId, transport);
   if (shop !== null) browserWindow.shop = shop;
   browserWindow.shopVoiceQuery = voiceQuery;
-  // R4 · D08 · OB-222: the voice link is switched OFF — it cannot listen, so the microphone button is not shown, and no
-  // customer's voice leaves the phone. Only a browser TEST puts its stand-in engine behind the link (`shopVoiceStandIn`,
-  // set before this bundle runs); nothing in the product ever sets it, and no real engine exists in this build.
+  // OB-322: voice search through the phone's built-in recogniser, where it has one, and the customer's own switch to turn
+  // it off (kept on this phone). A browser TEST may put its stand-in engine behind the link (`shopVoiceStandIn`, set
+  // before this bundle runs); nothing in the product ever sets it.
   const standIn = browserWindow.shopVoiceStandIn;
-  browserWindow.shopVoice = voiceSearchLink(standIn === undefined ? { switchedOn: VOICE_SEARCH_SWITCHED_ON } : { switchedOn: true, engine: standIn });
+  const voiceSwitch = customerVoiceSwitch(storage);
+  const recogniser = browserWindow.SpeechRecognition ?? browserWindow.webkitSpeechRecognition;
+  const engine = standIn ?? builtInRecogniser(recogniser);
+  browserWindow.shopVoiceSwitch = { ...voiceSwitch, phoneCanListen: () => VOICE_SEARCH_SWITCHED_ON && engine.available() };
+  browserWindow.shopVoice = voiceSearchLink({ switchedOn: VOICE_SEARCH_SWITCHED_ON, engine, offByCustomer: voiceSwitch.off });
+  browserWindow.shopCommerceRules = { quoteRows, deliveryHandover, helpTopics: HELP_TOPICS, substitutionChoices: SUBSTITUTION_CHOICES };
+  // D08-FR-02: the camera barcode — the phone's own reader; without one, the typed number always works.
+  const win = browserWindow;
+  browserWindow.shopBarcode = { readScan, scanFrames, supported: async () => (win.shopBarcodeStandIn !== undefined ? true : scanSupported(win)) };
 }

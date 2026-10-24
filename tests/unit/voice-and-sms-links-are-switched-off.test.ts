@@ -1,24 +1,63 @@
 import { describe, it, expect } from 'vitest';
-import { voiceSearchLink, voiceQuery, fakeVoiceSearch, VOICE_SEARCH_SWITCHED_ON } from '../../apps/customer-app/src/voice-search';
+import { voiceSearchLink, voiceQuery, fakeVoiceSearch, builtInRecogniser, customerVoiceSwitch, recognitionError, VOICE_SEARCH_SWITCHED_ON, VOICE_SWITCH_KEY, type RecognitionConstructor } from '../../apps/customer-app/src/voice-search';
 import { signupSmsCodeRoutes, SIGNUP_SMS_CODE_SWITCHED_ON, type SignupSmsSender } from '../../services/customer/src/signup-sms-code';
 import { ApiError, type Route } from '../../services/kernel/src/index';
 
 /**
- * R4 · D08 voice search and M16-FR-01 SMS code at sign-up — both built as SWITCHED-OFF links with a test stand-in
- * (OB-222). Off: nothing is sent — no voice leaves the phone, no code leaves the shop. With the stand-in (tests only):
- * the words heard become an ordinary search, and a code is checked once.
+ * D08 voice search (OB-322: the phone's built-in recogniser, switchable off — replacing OB-222 for voice) and M16-FR-01
+ * SMS code at sign-up (still a SWITCHED-OFF link, OB-222). Voice: off by the customer's own switch, nothing listens; on,
+ * the words heard become an ordinary search. SMS: nothing leaves the shop; with the stand-in (tests only) a code is
+ * checked once.
  */
 
-describe('D08 — voice search is switched off (OB-222)', () => {
-  it('the product\'s link is off: it cannot listen (so the microphone is not shown) and never starts an engine', async () => {
-    expect(VOICE_SEARCH_SWITCHED_ON).toBe(false);
+describe('D08 — voice search is the phone\'s own recogniser, switchable off (OB-322)', () => {
+  it('a switched-off link (the build switch, or the customer\'s own switch) cannot listen and never starts an engine', async () => {
+    expect(VOICE_SEARCH_SWITCHED_ON).toBe(true);
     const engine = fakeVoiceSearch([{ heard: true, transcript: 'milk' }]);
-    // Even handed an engine, a switched-off link does not use it.
-    const link = voiceSearchLink({ switchedOn: VOICE_SEARCH_SWITCHED_ON, engine });
+    const offBuild = voiceSearchLink({ switchedOn: false, engine });
+    expect(offBuild.available()).toBe(false);
+    expect(await offBuild.listen('en')).toEqual({ heard: false, why: 'not_supported' });
+    // The customer's switch: off → nothing listens; back on → it listens. Kept on the phone.
+    const kept = new Map<string, string>();
+    const sw = customerVoiceSwitch({ getItem: (k) => kept.get(k) ?? null, setItem: (k, v) => { kept.set(k, v); } });
+    const link = voiceSearchLink({ switchedOn: VOICE_SEARCH_SWITCHED_ON, engine, offByCustomer: sw.off });
+    expect(link.available()).toBe(true);
+    sw.set(false);
+    expect(kept.get(VOICE_SWITCH_KEY)).toBe('off');
     expect(link.available()).toBe(false);
     expect(await link.listen('en')).toEqual({ heard: false, why: 'not_supported' });
     expect(link.listensSent()).toBe(0);
     expect(engine.asked).toEqual([]);
+    sw.set(true);
+    expect(link.available()).toBe(true);
+    // Storage that throws reads as ON (the default) and the switch still works for the visit.
+    const broken = customerVoiceSwitch({ getItem: () => { throw new Error('blocked'); }, setItem: () => { throw new Error('blocked'); } });
+    expect(broken.off()).toBe(false);
+    broken.set(false);
+    expect(broken.off()).toBe(true);
+  });
+
+  it('the built-in recogniser listens once in Indian English or Tamil, and says why when it hears nothing', async () => {
+    const made: { lang: string }[] = [];
+    const script: ((r: { onresult: ((e: unknown) => void) | null; onerror: ((e: unknown) => void) | null; onend: (() => void) | null }) => void)[] = [
+      (r) => r.onresult?.({ results: [[{ transcript: 'Aavin milk' }]] }),
+      (r) => r.onerror?.({ error: 'not-allowed' }),
+      (r) => r.onend?.(),
+    ];
+    class FakeRecognition {
+      lang = ''; interimResults = true; maxAlternatives = 5; continuous = true;
+      onresult: ((e: unknown) => void) | null = null; onerror: ((e: unknown) => void) | null = null; onend: (() => void) | null = null;
+      start(): void { made.push({ lang: this.lang }); const next = script.shift()!; queueMicrotask(() => next(this)); }
+    }
+    const engine = builtInRecogniser(FakeRecognition as unknown as RecognitionConstructor);
+    expect(engine.available()).toBe(true);
+    expect(await engine.listen('ta')).toEqual({ heard: true, transcript: 'Aavin milk' });
+    expect(await engine.listen('en')).toEqual({ heard: false, why: 'permission_denied' });
+    expect(await engine.listen('en')).toEqual({ heard: false, why: 'nothing_heard' });
+    expect(made.map((m) => m.lang)).toEqual(['ta-IN', 'en-IN', 'en-IN']);
+    expect(builtInRecogniser(undefined).available()).toBe(false);
+    expect(await builtInRecogniser(undefined).listen('en')).toEqual({ heard: false, why: 'not_supported' });
+    expect([recognitionError('no-speech'), recognitionError('network'), recognitionError('service-not-allowed')]).toEqual(['nothing_heard', 'engine_failed', 'permission_denied']);
   });
 
   it('with the test stand-in behind it, what is heard becomes an ordinary search — nothing reaches a basket', async () => {

@@ -8,7 +8,7 @@
 // Neither ever refuses: the sale and the refund already happened (hard rule #1). Every outcome — earned, not a member,
 // rule not set, or points the member had already spent so could not all be taken back — is SAID in the reply (P-08).
 
-import { pointsEarned, pointsToTakeBack, pointsToGiveBack, isMemberRef } from '../../../packages/loyalty/src/index';
+import { pointsEarned, pointsToTakeBack, pointsToGiveBack, isMemberRef, withMultiplier } from '../../../packages/loyalty/src/index';
 import { ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
 import { wasMemberAt, type LoyaltyRule, type MemberRecord } from './loyalty-members';
 
@@ -28,6 +28,11 @@ export interface SaleEarn {
   readonly memberRef: string; readonly points: number; readonly saleTotalMinor: number;
   /** The point value in force when the points were earned — what the liability is booked at (PF-09 step 3). */
   readonly pointValuePaise?: number;
+  /** OB-295: the tier the member's 12-month spend reached at this bill and its multiplier — absent when tiers are not set. */
+  readonly tierId?: string | null;
+  readonly multiplierBps?: number;
+  /** The points the base rule alone would have given (before the tier's multiplier). */
+  readonly basePoints?: number;
 }
 export interface ReturnTakeBack {
   readonly returnId: string; readonly memberRef: string; readonly refundMinor: number;
@@ -71,6 +76,11 @@ export interface LoyaltyEffectsDeps {
   /** OB-34: the give-back movement (when any points move) and the return's give-back fact, in one write, under the
    *  member's points guard. Idempotent on the return. */
   readonly recordGiveBack?: (tenantId: string, saleId: string, giveBack: ReturnGiveBack, at: string, expectedVersion: number) => Promise<void>;
+  /**
+   * OB-295 (M17-FR-01): the tier a member's 12-month spend reaches at a bill, and its points multiplier. Absent, or
+   * answering undefined (tiers not set), → the base rule alone.
+   */
+  readonly tierAt?: (tenantId: string, memberRef: string, at: string) => Promise<{ readonly tierId: string | null; readonly tierName: string | null; readonly multiplierBps: number } | undefined>;
   readonly now: () => string;
 }
 
@@ -97,10 +107,17 @@ export async function earnOnSale(
   // Points are earned on what the member PAID, not on what they paid with points (PF-09 step 3): spending points does not
   // earn new ones. Store credit is the customer's own money held by the shop, so it earns like cash.
   const paidWithPoints = (sale.tenders ?? []).filter((t) => t.kind === 'loyalty_points').reduce((n, t) => n + (Number.isSafeInteger(t.amountMinor) ? t.amountMinor : 0), 0);
-  const points = pointsEarned(Math.max(0, sale.totalMinor - paidWithPoints), rule.pointsPer100Inr);
-  if (points === 0) return { outcome: 'nothing_to_earn', points: 0, detail: 'The sale was too small to earn a whole point.' };
-  await deps.recordEarn(tenantId, sale.saleId, { memberRef: sale.customerRef, points, saleTotalMinor: sale.totalMinor, pointValuePaise: rule.pointValuePaise }, deps.now());
-  return { outcome: 'earned', points, detail: `${points} point(s) earned.` };
+  const basePoints = pointsEarned(Math.max(0, sale.totalMinor - paidWithPoints), rule.pointsPer100Inr);
+  if (basePoints === 0) return { outcome: 'nothing_to_earn', points: 0, detail: 'The sale was too small to earn a whole point.' };
+  // OB-295: the tier the member's own 12-month spend reached before this bill multiplies the base points (whole points).
+  const tier = deps.tierAt === undefined ? undefined : await deps.tierAt(tenantId, sale.customerRef, sale.committedAt);
+  const points = tier === undefined ? basePoints : withMultiplier(basePoints, tier.multiplierBps);
+  await deps.recordEarn(tenantId, sale.saleId, {
+    memberRef: sale.customerRef, points, saleTotalMinor: sale.totalMinor, pointValuePaise: rule.pointValuePaise,
+    ...(tier === undefined ? {} : { tierId: tier.tierId, multiplierBps: tier.multiplierBps, basePoints }),
+  }, deps.now());
+  const tierSaid = tier === undefined ? '' : tier.tierId === null ? ' (no tier yet — base points)' : ` (${tier.tierName ?? tier.tierId} tier, ×${(tier.multiplierBps / 10_000).toFixed(2).replace(/\.?0+$/, '')})`;
+  return { outcome: 'earned', points, detail: `${points} point(s) earned${tierSaid}.` };
 }
 
 export async function takeBackOnReturn(

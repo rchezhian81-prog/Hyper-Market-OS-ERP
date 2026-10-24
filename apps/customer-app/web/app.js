@@ -35,7 +35,7 @@ const inr = (minor) =>
 const WORDS = {
   en: {
     staleShell: 'No connection. These prices are what this app was last given — check the basket again before you pay. Last given at',
-    shop: 'Shop', basket: 'Basket', myOrder: 'My order', myInformation: 'My information',
+    shop: 'Shop', basket: 'Basket', myOrder: 'My order', myInformation: 'My information', myAccount: 'My account',
     online: 'Online', offline: 'No connection — you can fill your basket, but not order yet',
     searchFor: 'Search for something', buyAgain: 'Buy again', noLists: 'Nothing to buy again yet.',
     nothingFound: 'Nothing matched that. Try a shorter word.',
@@ -82,7 +82,7 @@ const WORDS = {
   },
   ta: {
     staleShell: 'இணைப்பு இல்லை. இந்த விலைகள் கடைசியாகக் கொடுக்கப்பட்டவை — பணம் செலுத்தும் முன் கூடையை மீண்டும் பாருங்கள். கடைசியாகக் கொடுக்கப்பட்டது:',
-    shop: 'கடை', basket: 'கூடை', myOrder: 'என் ஆர்டர்', myInformation: 'என் தகவல்',
+    shop: 'கடை', basket: 'கூடை', myOrder: 'என் ஆர்டர்', myInformation: 'என் தகவல்', myAccount: 'என் கணக்கு',
     online: 'இணைப்பில்', offline: 'இணைப்பு இல்லை — கூடையை நிரப்பலாம், ஆனால் இன்னும் ஆர்டர் செய்ய முடியாது',
     searchFor: 'ஏதாவது தேடுங்கள்', buyAgain: 'மீண்டும் வாங்கு', noLists: 'மீண்டும் வாங்க இன்னும் எதுவும் இல்லை.',
     nothingFound: 'அது எதுவும் கிடைக்கவில்லை. சிறிய வார்த்தையை முயற்சிக்கவும்.',
@@ -299,7 +299,7 @@ window.addEventListener('offline', () => { renderConnection(); });
 
 // ── Navigation ──────────────────────────────────────────────────────────────
 
-const VIEWS = ['shop', 'basket', 'order', 'privacy'];
+const VIEWS = ['shop', 'basket', 'order', 'account', 'privacy'];
 let view = 'shop';
 
 function show(next) {
@@ -692,6 +692,8 @@ el('check-payment').addEventListener('click', () => followUpAnd(() => shop.check
 /** OB-77: the last tracking the shop gave for my order — repainted in the other language without asking again. */
 let tracked = null;
 function paintTracking() {
+  // OB-288 wave 3: the delivery code and arrival time come from this same read (customer-commerce.js) — no read of its own.
+  window.shopCommerce?.tracked(tracked);
   const say = el('delivery-say');
   if (tracked === null) { say.hidden = true; return; }
   say.hidden = false;
@@ -837,6 +839,7 @@ function paintChrome() {
   el('tab-basket').textContent = t('basket');
   el('tab-order').textContent = t('myOrder');
   el('tab-privacy').textContent = t('myInformation');
+  el('tab-account').textContent = t('myAccount');
   el('shop-title').textContent = t('shop');
   el('search-label').textContent = t('searchFor');
   el('repeat-title').textContent = t('buyAgain');
@@ -865,6 +868,8 @@ function render() {
   if (view === 'privacy') { renderConsent(); renderRights(); }
   // R4 Lane 2 (B23 · D-28 · WF-16 · M20-FR-04): the online store's sections, drawn by online-store.js.
   window.shopR4?.render(view);
+  // OB-288 wave 3 (WF-13 · M20 · M21 · D08 · A04 · A05): offers, repeat orders, addresses, help — customer-commerce.js.
+  window.shopCommerce?.render(view);
 }
 
 el('lang').addEventListener('click', () => {

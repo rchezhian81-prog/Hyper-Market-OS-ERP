@@ -26,7 +26,48 @@ import { transitionOrder } from '../../../packages/orders/src/index';
 import type { PaymentRefundDeps } from './payments';
 import { bindDelivery, readDeliveryRequest, type DeliveryServiceDeps } from './delivery-service';
 import { trackDelivery, DELIVERY_STATUS_VALUES, type DeliveryStatus } from '../../../packages/storefront/src/checkout';
+import { priceOnlineBasket, type OnlineBasketPrice } from '../../../packages/storefront/src/online-pricing';
+import type { Promotion } from '../../../packages/promotions/src/promotions';
+import type { Coupon, Redemption } from '../../../packages/loyalty/src/coupons';
 const DELIVERY_STATUSES: ReadonlySet<DeliveryStatus> = new Set(DELIVERY_STATUS_VALUES);
+
+/** What the shop priced one online order at, when it was placed (WF-13) — kept, so a later payment prices it the same way. */
+export interface OrderPricingFact {
+  readonly orderId: string;
+  readonly customerRef: string;
+  readonly couponCode: string | null;
+  readonly at: string;
+  readonly goodsMinor: number;
+  readonly promotionDiscountMinor: number;
+  readonly couponDiscountMinor: number;
+  readonly deliveryFeeMinor: number;
+  readonly payableMinor: number;
+  readonly promotions: OnlineBasketPrice['promotions'];
+  readonly couponOutcome: string | null;
+}
+
+/**
+ * WF-13 · M20-FR-02 · P-02: the online basket is priced by the SAME promotions engine and coupon engine as the till, from
+ * the shop's own registers. Absent (a bare composition) → the published prices alone, as before.
+ */
+export interface OnlinePricingDeps {
+  /** The shop's promotion register — the engine applies only the active, in-window, eligible ones. */
+  readonly promotions: (tenantId: string) => Promise<readonly Promotion[]>;
+  /** Which of these products are carry bags (never discounted, OB-173). */
+  readonly carryBagsAmong?: (tenantId: string, productIds: readonly string[]) => Promise<readonly string[]>;
+  /** The loyalty membership this app account is tied to (at the desk), if any — member prices and the points balance. */
+  readonly memberOf: (tenantId: string, customerRef: string) => Promise<{ readonly memberRef: string } | undefined>;
+  readonly pointsOf: (tenantId: string, memberRef: string) => Promise<number | undefined>;
+  readonly pointValuePaise: (tenantId: string) => Promise<number>;
+  readonly coupon: (tenantId: string, code: string) => Promise<Coupon | undefined>;
+  readonly couponRedemptions: (tenantId: string, code: string) => Promise<readonly Redemption[]>;
+  /** The coupon spent on an order, once (idempotent on the redemption id). */
+  readonly recordCouponRedemption: (tenantId: string, r: Redemption, key: string) => Promise<void>;
+  readonly orderPricing: (tenantId: string, orderId: string) => Promise<OrderPricingFact | undefined>;
+  readonly recordOrderPricing: (tenantId: string, f: OrderPricingFact) => Promise<void>;
+}
+
+export const COUPON_CODE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$/;
 
 export interface StorefrontDeps {
   /** Every order this customer placed through the storefront — a fold of the per-customer index. */
@@ -64,6 +105,8 @@ export interface StorefrontDeps {
    * (`online_listing_incomplete` / `not_sold_online`, in Lane 2's words). Absent (a bare composition) → not checked.
    */
   readonly onlineListed?: (tenantId: string, productId: string) => Promise<{ readonly soldOnline: true } | { readonly soldOnline: false; readonly refusal: string }>;
+  /** WF-13 (OB-288 wave 3): promotions, a coupon and the points balance in the online basket. */
+  readonly pricing?: OnlinePricingDeps;
 }
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
@@ -103,17 +146,56 @@ export function storefrontRoutes(deps: OrdersDeps & PaymentRefundDeps & Storefro
     const refunds = refundPosition({ payment, refunds: await deps.orderRefunds(tenantId, orderId), outcomes: await deps.refundOutcomes(tenantId, orderId) });
     return { payment, refunds };
   };
-  /** The shop's quote for what is promised on this order (FUL-03) — or why there is none. */
-  const quoteFor = async (tenantId: string, lines: readonly { readonly productId: string; readonly quantityMinor: number }[], fulfilment?: 'delivery' | 'pickup') => {
+  /**
+   * The shop's quote for what is promised on this order (FUL-03) — or why there is none. WF-13: with the pricing deps the
+   * goods are priced by the promotions engine and the coupon engine first (the same as the till), then the fee.
+   */
+  const quoteFor = async (
+    tenantId: string, lines: readonly { readonly productId: string; readonly quantityMinor: number }[], fulfilment?: 'delivery' | 'pickup',
+    offers?: { readonly customerRef: string; readonly orderRef: string; readonly couponCode?: string | null },
+  ) => {
     if (deps.unitPriceOf === undefined) return { ok: false as const, unpriced: lines.map((l) => l.productId) };
     const prices = new Map<string, number | undefined>();
     for (const l of lines) prices.set(l.productId, await deps.unitPriceOf(tenantId, l.productId));
     const items = quoteOrder({ lines, priceOf: (id) => prices.get(id) });
     if (!items.ok) return items;
-    const deliveryFeeMinor = fulfilment === 'delivery' && deps.deliveryFeeFor !== undefined ? await deps.deliveryFeeFor(tenantId, items.itemsMinor) : 0;
-    // `itemsMinor` names the whole amount to pay below; the items alone and the fee are kept beside it.
-    return { ok: true as const, itemsMinor: items.itemsMinor + deliveryFeeMinor, goodsMinor: items.itemsMinor, deliveryFeeMinor, lines: items.lines };
+    const feeFor = async (goods: number): Promise<number> => (fulfilment === 'delivery' && deps.deliveryFeeFor !== undefined ? deps.deliveryFeeFor(tenantId, goods) : 0);
+    if (deps.pricing === undefined || offers === undefined) {
+      const deliveryFeeMinor = await feeFor(items.itemsMinor);
+      // `itemsMinor` names the whole amount to pay below; the items alone and the fee are kept beside it.
+      return { ok: true as const, itemsMinor: items.itemsMinor + deliveryFeeMinor, goodsMinor: items.itemsMinor, deliveryFeeMinor, lines: items.lines };
+    }
+    const p = deps.pricing;
+    const bags = new Set(p.carryBagsAmong === undefined ? [] : await p.carryBagsAmong(tenantId, [...new Set(items.lines.map((l) => l.productId))]));
+    const member = await p.memberOf(tenantId, offers.customerRef);
+    const code = typeof offers.couponCode === 'string' && offers.couponCode.trim() !== '' ? offers.couponCode.trim() : undefined;
+    const coupon = code === undefined ? undefined : await p.coupon(tenantId, code);
+    // The order's OWN earlier redemption is not a second use of the coupon (a re-price for the same order).
+    const redemptions = code === undefined ? [] : (await p.couponRedemptions(tenantId, code)).filter((r) => r.redemptionId !== `online-${offers.orderRef}`);
+    const promotions = await p.promotions(tenantId);
+    const at = deps.now();
+    const priced = (fee: number) => priceOnlineBasket({
+      lines: items.lines.map((l) => ({ productId: l.productId, quantityMinor: l.quantityMinor, unitPriceMinor: l.unitPriceMinor, ...(bags.has(l.productId) ? { carryBag: true } : {}) })),
+      promotions, at, isMember: member !== undefined, ...(code === undefined ? {} : { couponCode: code }), ...(coupon === undefined ? {} : { coupon }), couponRedemptions: redemptions,
+      customerRef: offers.customerRef, orderRef: offers.orderRef, customerSegments: member === undefined ? [] : ['member'], deliveryFeeFor: () => fee,
+    });
+    const fee = await feeFor(priced(0).goodsAfterOffersMinor);
+    const price = priced(fee);
+    return {
+      ok: true as const, itemsMinor: price.payableMinor, goodsMinor: price.goodsMinor, deliveryFeeMinor: price.deliveryFeeMinor,
+      lines: price.lines.map((l) => ({ productId: l.productId, quantityMinor: l.quantityMinor, unitPriceMinor: l.unitPriceMinor, lineMinor: l.lineMinor, discountMinor: l.discountMinor })),
+      offers: { promotionDiscountMinor: price.promotionDiscountMinor, promotions: price.promotions, coupon: price.coupon, goodsAfterOffersMinor: price.goodsAfterOffersMinor },
+      member,
+    };
   };
+  /** WF-13: the coupon the shop applied on this order's quote is spent — once, on the order (hard rule #10). */
+  const spendCoupon = async (tenantId: string, orderId: string, customerRef: string, quote: Awaited<ReturnType<typeof quoteFor>>) => {
+    const offers = quote.ok && 'offers' in quote ? quote.offers : undefined;
+    if (deps.pricing === undefined || offers === undefined || offers.coupon === null || !offers.coupon.applied) return;
+    const r: Redemption = { redemptionId: `online-${orderId}`, code: offers.coupon.code, customerRef, at: deps.now(), saleId: orderId };
+    await deps.pricing.recordCouponRedemption(tenantId, r, `online-${orderId}`);
+  };
+  const couponOf = async (tenantId: string, orderId: string): Promise<string | null> => (deps.pricing === undefined ? null : (await deps.pricing.orderPricing(tenantId, orderId))?.couponCode ?? null);
   /** What the shop promised on an order — the quantities the reservations hold. */
   const promisedLines = async (tenantId: string, order: PlacedOrder) =>
     (await deps.orderReservations(tenantId, order.orderId, order.locationId)).map((r) => ({ productId: r.productId, quantityMinor: r.quantityMinor }));
@@ -143,6 +225,9 @@ export function storefrontRoutes(deps: OrdersDeps & PaymentRefundDeps & Storefro
       reason, recordedBy: userId, recordedAt: at,
     };
     await deps.recordPayment(tenantId, record);
+    // WF-13: a coupon the shop's quote applied is spent the moment a payment for that quote is claimed (never on a decline,
+    // never on a mismatch) — so it cannot be used twice while the bank decides.
+    if (record.result === 'unknown' && !mismatch && !unpriced) await spendCoupon(tenantId, orderId, userId, quote);
     if (record.result === 'unknown' && !mismatch && !unpriced && deps.paymentVerifier !== undefined) {
       await checkWithProvider(tenantId, orderId, record, quote.ok ? quote.itemsMinor : claim.amountMinor);
     }
@@ -185,7 +270,10 @@ export function storefrontRoutes(deps: OrdersDeps & PaymentRefundDeps & Storefro
       state: state?.state ?? order.state,
       payment,
       position: { paidMinor: refunds.paidMinor, refundedMinor: refunds.refundedMinor, pendingMinor: refunds.pendingMinor, refundableMinor: refunds.refundableMinor },
-      tellTheCustomer: payment.state === 'none' && (state?.state ?? order.state) === 'placed'
+      tellTheCustomer: payment.state === 'none' && (state?.state ?? order.state) === 'placed' && order.orderId.startsWith('SUB-')
+        // OB-303: a repeat order the shop placed from the customer's plan waits for them to pay — no card is kept.
+        ? 'Your repeat order is placed and waiting for you to pay in the app. If anything was short, you will see what we can send. Nothing has been charged.'
+        : payment.state === 'none' && (state?.state ?? order.state) === 'placed'
         ? 'Some of what you asked for is not in stock. Please look at what we can send, then pay for that or cancel — nothing has been charged.'
         : payment.state === 'pending'
         ? 'We are waiting for your bank to confirm the payment. Your order is not placed yet and we will not pick it until we know.'
@@ -196,6 +284,53 @@ export function storefrontRoutes(deps: OrdersDeps & PaymentRefundDeps & Storefro
   };
 
   return [
+    {
+      // WF-13 · M20-FR-02 · P-02: the shop's price for MY basket before I pay — the published prices through the same
+      // promotions engine and coupon engine as the till, a coupon's answer by name, the delivery fee, what I would pay,
+      // and my loyalty points balance (when my app is tied to a membership). A what-if: nothing is reserved or spent.
+      // Body: { lines: [{ productId, quantityMinor }], fulfilment?: delivery | pickup, couponCode? }.
+      api: 'API-07', method: 'POST', path: '/v1/storefront/cart/quote',
+      permission: 'storefront.order.read', entitlement: 'customer_app', idempotent: true,
+      handler: async (ctx) => {
+        const b = ctx.body;
+        const code = isObj(b) && typeof b['couponCode'] === 'string' ? b['couponCode'].trim() : '';
+        if (!isObj(b) || !Array.isArray(b['lines']) || b['lines'].length === 0 || b['lines'].length > 200 || !b['lines'].every(isLine)
+          || (b['fulfilment'] !== undefined && b['fulfilment'] !== 'delivery' && b['fulfilment'] !== 'pickup')
+          || (code !== '' && !COUPON_CODE.test(code))) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_basket',
+            whatHappened: 'A basket to price needs { lines: [{ productId, quantityMinor > 0 }], fulfilment?: delivery | pickup, couponCode? (letters and digits) }.',
+            wasItSaved: 'not_saved', nextSafeAction: 'Nothing was reserved or spent. Send the basket as the app holds it.',
+          });
+        }
+        const fulfilment = b['fulfilment'] === 'delivery' || b['fulfilment'] === 'pickup' ? b['fulfilment'] : undefined;
+        const lines = (b['lines'] as { productId: string; quantityMinor: number }[]).map((l) => ({ productId: l.productId, quantityMinor: l.quantityMinor }));
+        const quote = await quoteFor(ctx.tenantId, lines, fulfilment, { customerRef: ctx.userId, orderRef: 'quote', couponCode: code === '' ? null : code });
+        const member = quote.ok && 'member' in quote ? quote.member : undefined;
+        let points: { readonly member: boolean; readonly pointsBalance?: number; readonly pointValuePaise?: number; readonly worthMinor?: number; readonly say: string } = {
+          member: false, say: 'Your app is not tied to a loyalty membership. Show your app reference at the service desk to see your points here.',
+        };
+        if (deps.pricing !== undefined && member !== undefined) {
+          const balance = Math.max(0, (await deps.pricing.pointsOf(ctx.tenantId, member.memberRef)) ?? 0);
+          const value = await deps.pricing.pointValuePaise(ctx.tenantId);
+          points = {
+            member: true, pointsBalance: balance, pointValuePaise: value, ...(value > 0 ? { worthMinor: balance * value } : {}),
+            say: value > 0 ? `You have ${balance} point(s), worth ₹${((balance * value) / 100).toFixed(2)} at the till.` : `You have ${balance} point(s). The shop has not set what a point is worth yet.`,
+          };
+        }
+        if (!quote.ok) return { status: 200, body: { priced: false, unpriced: quote.unpriced, points, committedAnything: false, detail: `The shop has no published price for ${quote.unpriced.join(', ')}, so it cannot price this basket.` } };
+        const offers = 'offers' in quote ? quote.offers : undefined;
+        return {
+          status: 200,
+          body: {
+            priced: true, goodsMinor: quote.goodsMinor, deliveryFeeMinor: quote.deliveryFeeMinor, payableMinor: quote.itemsMinor, lines: quote.lines,
+            promotions: offers === undefined ? { discountMinor: 0, applied: [] } : { discountMinor: offers.promotionDiscountMinor, applied: offers.promotions },
+            coupon: offers?.coupon ?? null,
+            points, committedAnything: false, asAt: deps.now(),
+          },
+        };
+      },
+    },
     // FUL-14: the signed-in customer's own standing substitution rules — what every one of their orders is swapped by.
     {
       api: 'API-07', method: 'PUT', path: '/v1/storefront/substitution-preferences',
@@ -308,7 +443,17 @@ export function storefrontRoutes(deps: OrdersDeps & PaymentRefundDeps & Storefro
         const promised = result.lines.filter((l) => l.promisedMinor > 0).map((l) => ({ productId: l.productId, quantityMinor: l.promisedMinor }));
         const shortages = result.lines.filter((l) => l.promisedMinor < l.requestedMinor)
           .map((l) => ({ productId: l.productId, requestedMinor: l.requestedMinor, promisedMinor: l.promisedMinor }));
-        const quote = await quoteFor(ctx.tenantId, promised, fulfilment);
+        const couponCode = typeof b['couponCode'] === 'string' && COUPON_CODE.test(b['couponCode'].trim()) ? b['couponCode'].trim() : null;
+        const quote = await quoteFor(ctx.tenantId, promised, fulfilment, { customerRef: ctx.userId, orderRef: orderId, couponCode });
+        // WF-13: what the shop priced this order at — kept, so a later payment for it prices it the same way.
+        const offers = quote.ok && 'offers' in quote ? quote.offers : undefined;
+        if (deps.pricing !== undefined && quote.ok && offers !== undefined) {
+          await deps.pricing.recordOrderPricing(ctx.tenantId, {
+            orderId, customerRef: ctx.userId, couponCode, at: deps.now(), goodsMinor: quote.goodsMinor, promotionDiscountMinor: offers.promotionDiscountMinor,
+            couponDiscountMinor: offers.coupon?.discountMinor ?? 0, deliveryFeeMinor: quote.deliveryFeeMinor, payableMinor: quote.itemsMinor,
+            promotions: offers.promotions, couponOutcome: offers.coupon?.outcome ?? null,
+          });
+        }
         let taken: { readonly mismatch: boolean; readonly unpriced: boolean } | undefined;
         if (payment !== undefined && shortages.length === 0) {
           taken = await takePayment(ctx.tenantId, orderId, ctx.userId, payment, quote);
@@ -319,7 +464,7 @@ export function storefrontRoutes(deps: OrdersDeps & PaymentRefundDeps & Storefro
           body: {
             ...(await view(ctx.tenantId, placed)),
             promise: { outcome: result.outcome, lines: result.lines.map((l) => ({ productId: l.productId, requestedMinor: l.requestedMinor, promisedMinor: l.promisedMinor, outcome: l.outcome })) },
-            quote: quote.ok ? { itemsMinor: quote.itemsMinor, goodsMinor: quote.goodsMinor, deliveryFeeMinor: quote.deliveryFeeMinor, lines: quote.lines } : { unpriced: quote.unpriced },
+            quote: quote.ok ? { itemsMinor: quote.itemsMinor, goodsMinor: quote.goodsMinor, deliveryFeeMinor: quote.deliveryFeeMinor, lines: quote.lines, ...('offers' in quote ? { offers: quote.offers } : {}) } : { unpriced: quote.unpriced },
             ...(shortages.length === 0 ? {} : { needsCustomerDecision: true, shortages }),
             ...(delivery === undefined ? {} : { delivery: { slot: { startsAt: delivery.slot.startsAt, endsAt: delivery.slot.endsAt, remaining: delivery.slot.remaining }, distanceMetres: delivery.distanceMetres, radiusMetres: delivery.radiusMetres } }),
             ...(taken?.mismatch === true ? { amountMismatch: true } : {}),
@@ -349,7 +494,7 @@ export function storefrontRoutes(deps: OrdersDeps & PaymentRefundDeps & Storefro
         if (state !== 'placed') {
           throw apiError(409, { code: 'order_not_awaiting_payment', whatHappened: `This order is ${state}; it is not waiting for a payment.`, wasItSaved: 'not_saved', nextSafeAction: 'Nothing was charged.' });
         }
-        const quote = await quoteFor(ctx.tenantId, await promisedLines(ctx.tenantId, own), own.fulfilment);
+        const quote = await quoteFor(ctx.tenantId, await promisedLines(ctx.tenantId, own), own.fulfilment, { customerRef: ctx.userId, orderRef: orderId, couponCode: await couponOf(ctx.tenantId, orderId) });
         const taken = await takePayment(ctx.tenantId, orderId, ctx.userId, b as { providerRef: string; amountMinor: number; result: PaymentResult }, quote);
         return {
           status: 201,
@@ -367,7 +512,8 @@ export function storefrontRoutes(deps: OrdersDeps & PaymentRefundDeps & Storefro
         const payment = await deps.orderPayment(ctx.tenantId, orderId);
         const resolution = await deps.paymentResolution(ctx.tenantId, orderId);
         if (payment !== undefined && payment.result === 'unknown' && resolution === undefined) {
-          const quote = await quoteFor(ctx.tenantId, await promisedLines(ctx.tenantId, own), own.fulfilment);
+          // WF-13: re-priced with the coupon kept for this order (its own redemption is not a second use).
+          const quote = await quoteFor(ctx.tenantId, await promisedLines(ctx.tenantId, own), own.fulfilment, { customerRef: ctx.userId, orderRef: orderId, couponCode: await couponOf(ctx.tenantId, orderId) });
           if (quote.ok && quote.itemsMinor === payment.amountMinor) await checkWithProvider(ctx.tenantId, orderId, payment, quote.itemsMinor);
         }
         return { status: 200, body: await view(ctx.tenantId, own) };

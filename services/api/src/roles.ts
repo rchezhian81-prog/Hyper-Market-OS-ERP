@@ -219,6 +219,10 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // the synced route re-checks the PERSON named from their own grants, so this releases nothing by itself.
       'quality.hold.release.sync',
       // ── OB-288 integration follow-ups — end
+      // ── OB-288 wave 3 (customer, loyalty, CRM and the online cart) — begin
+      // OB-295: the loyalty programme's tiers and points expiry are the owner's numbers alone.
+      'loyalty.programme.configure',
+      // ── OB-288 wave 3 — end
       'price.integrity.audit', 'selfcheckout.operate',
       'owner.alert.read', 'owner.kpi.read', 'owner.brief.manage',
       'refund.exception.read',
