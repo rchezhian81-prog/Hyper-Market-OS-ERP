@@ -62,7 +62,7 @@ describe('M13-FR-02 — the till and the box hold a recalled unit coming back (o
       { productId: RECALLED, sku: 'GHEE', name: 'Ghee 1L', baseUom: 'ea', unitPriceMinor: 64_000, taxBps: 1_200, status: 'active', recallBlock: true },
       { productId: FINE, sku: 'DAL', name: 'Toor dal 1kg', baseUom: 'ea', unitPriceMinor: 10_500, taxBps: 500, status: 'active' },
     ],
-    barcodes: [{ code: '8901234567890', productId: RECALLED, kind: 'standard' }, { code: '8901234567891', productId: FINE, kind: 'standard' }],
+    barcodes: [{ code: '8901234567890', productId: RECALLED, kind: 'standard' }, { code: '8901234567883', productId: FINE, kind: 'standard' }],
   });
 
   const startBox = async (dir: string): Promise<EdgeProcess> => {
@@ -172,7 +172,7 @@ describe.skipIf(!DATABASE_URL)('M13-FR-02 — on the REAL stack: head office kee
       await ok(call('POST', `/v1/catalogue/products/${id}/barcodes/${code}`, OWNER, { kind: 'ean' }, `barcode-${id}`), 201);
     };
     await product(RECALLED, 'GHEE', 'Ghee 1L', '0405', 64_000, '8901234567890', true);
-    await product(FINE, 'DAL', 'Toor dal 1kg', '0713', 10_500, '8901234567891', false);
+    await product(FINE, 'DAL', 'Toor dal 1kg', '0713', 10_500, '8901234567883', false);
     await ok(call('POST', '/v1/catalogue/pack', OWNER, { storeId: STORE, asOf: today }, 'pack-1'), 201);
   }, 60_000);
   afterAll(async () => { await cloud?.stop(); });

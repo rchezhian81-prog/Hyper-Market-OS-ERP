@@ -118,8 +118,10 @@ export async function runSmoke(input: SmokeInput): Promise<SmokeReport> {
   const run = input.run;
   const STORE = `${run}-S1`; const BACK = `${run}-S1-BACK`; const COMPANY = `${run}-C1`; const LANE = `${run}-lane-1`;
   const SUPPLIER = `${run}-s-amma`; const PO = `${run}-po-1`; const GRN = `${run}-grn-1`; const INDENT = `${run}-ind-1`; const PRODUCT = `${run}-p-rice`;
-  // A 13-digit numeric barcode unique to the run (the scanner-shaped code the till expects).
-  const BARCODE = `890${Math.abs([...run].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7)).toString().padStart(10, '0').slice(0, 10)}`;
+  // A 13-digit EAN unique to the run (the scanner-shaped code the till expects), ending in its real GS1 check digit, so
+  // head office's barcode register (M03-FR-02) accepts it as a genuine EAN.
+  const body12 = `890${Math.abs([...run].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7)).toString().padStart(9, '0').slice(0, 9)}`;
+  const BARCODE = `${body12}${(10 - ([...body12].reduce((s, d, i) => s + Number(d) * (i % 2 === 0 ? 1 : 3), 0) % 10)) % 10}`;
   const zone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata';
   const steps: SmokeStep[] = [];
   const edges: EdgeProcess[] = [];

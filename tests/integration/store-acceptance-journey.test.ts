@@ -84,8 +84,8 @@ const MOBILE = '98400 13579';
 const MEMBER = memberRefFor(loyaltyMemberKey(KEY), MOBILE)!;
 
 /** Rice by the bag; tomatoes loose, by the kilogram, counted in GRAMS (OB-31). Prices GST-inclusive; costs per whole unit. */
-const RICE = { productId: 'p-rice', barcode: '8901234560011', sku: 'RICE-5KG', name: 'Ponni rice 5kg', uom: 'ea', price: 48_000, mrp: 50_000, cost: 40_000 };
-const TOMATO = { productId: 'p-tomato', barcode: '2100001000007', sku: 'TOM-LOOSE', name: 'Tomato (loose)', uom: 'kg', price: 4_000, mrp: 5_000, cost: 2_500 };
+const RICE = { productId: 'p-rice', barcode: '8901234560013', sku: 'RICE-5KG', name: 'Ponni rice 5kg', uom: 'ea', price: 48_000, mrp: 50_000, cost: 40_000 };
+const TOMATO = { productId: 'p-tomato', barcode: '2100001000004', sku: 'TOM-LOOSE', name: 'Tomato (loose)', uom: 'kg', price: 4_000, mrp: 5_000, cost: 2_500 };
 
 /** Grams × price per kg ÷ 1000, rounded once — the OB-31 rule, written out so the expectation is independent. */
 const perKg = (grams: number, perKgMinor: number): number => Math.round((grams * perKgMinor) / 1000);
@@ -654,7 +654,7 @@ describeOrSkip('FINAL INTEGRATED STORE ACCEPTANCE — supplier to owner report, 
     expect(stockPeriod.status, JSON.stringify(stockPeriod.body)).toBe(201);
     const evidence = (await call('GET', `/v1/finance/periods/${month}/independent-evidence`, FINANCE)).body as { agrees: boolean; checks: { name: string; leftMinor: number; rightMinor: number }[] };
     const liability = (await call('GET', '/v1/finance/loyalty-liability', FINANCE)).body as { reconciles: boolean; points: { outstandingPoints: number; heldValueMinor: number; postedMinor: number } };
-    expect(evidence.agrees).toBe(true);
+    expect(evidence.agrees, JSON.stringify(evidence.checks.filter((c) => c.leftMinor !== c.rightMinor))).toBe(true);
     expect(evidence.checks.slice(0, 2).map((c) => [c.leftMinor, c.rightMinor])).toEqual([[electronic, electronic], [electronic - fees, electronic - fees]]);
     // WF-18 (Batch 3 r8): the close also reconciles the books to their registers — every such check agrees here too.
     for (const c of evidence.checks.slice(2)) expect([c.name, c.leftMinor], c.name).toEqual([c.name, c.rightMinor]);
