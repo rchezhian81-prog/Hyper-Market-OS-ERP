@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { createServer, type Server } from 'node:http';
 import { join } from 'node:path';
 import { chromium, type Browser, type Page } from 'playwright-core';
+import { takeThePhoto } from './lib/proof-photo';
 import { auditPage, type A11yFinding } from './lib/a11y-audit';
 import { Tally } from './lib/tally';
 
@@ -196,7 +197,8 @@ describe.skipIf(!HAVE_BROWSER)('the handhelds on a low-spec phone: audited, and 
     await page.click('#deliver');
     await page.waitForSelector('#choices:not([hidden])');
     found['proof-list'] = await audit(page);
-    await page.locator('#choices button', { hasText: 'OTP' }).click();
+    // OB-294: the customer's 4-digit code, on the keypad.
+    await page.locator('#choices button', { hasText: '4-digit code' }).click();
     await page.waitForSelector('#keypad:not([hidden])');
     found['otp-keypad'] = await audit(page);
     await page.click('#sheet-cancel');
@@ -208,6 +210,7 @@ describe.skipIf(!HAVE_BROWSER)('the handhelds on a low-spec phone: audited, and 
     await page.locator('.stop', { hasText: 'Gandhipuram' }).click();
     await page.click('#deliver');
     await page.locator('#choices button', { hasText: 'Photo' }).click();
+    await takeThePhoto(page); // OB-294: a real capture through the camera input
     await page.waitForSelector('#banner.good:not([hidden])');
     found['green-banner'] = await audit(page);
     await page.click('#banner-ok');
@@ -295,6 +298,9 @@ describe.skipIf(!HAVE_BROWSER)('the handhelds on a low-spec phone: audited, and 
     await taps.tap('#deliver');
     await page.waitForSelector('#choices:not([hidden])');
     await taps.tap('#choices button:has-text("Photo")');
+    // OB-294: the camera — one tap to take the picture (the camera hands it over, and it is used).
+    taps.count += 1;
+    await takeThePhoto(page);
     expect(taps.reset(), 'capture proof').toBeLessThanOrEqual(3);
 
     // Then the money, on its own panel: how it was paid, and the amount the order says is already on the keypad.

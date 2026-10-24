@@ -63,7 +63,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('products t
         await ok(cloud.request({ method: 'POST', path: '/v1/catalogue/tax-classes/25010020/rates/2017-07-01', userId: OWNER, idempotencyKey: 'tax', body: { rateBps: 500 } }), 'tax rate');
         // Another product already holds the code the second command will ask for.
         await ok(cloud.request({ method: 'POST', path: '/v1/catalogue/products/p-rock/publish', userId: OWNER, idempotencyKey: 'pub-rock', body: { product: { sku: 'SKU-ROCK', name: 'Rock salt 1kg', baseUom: 'each', primaryCategoryId: 'grocery', taxClass: '25010020', lifecycle: 'active' }, categories: [GROCERY] } }), 'publish rock salt');
-        await ok(cloud.request({ method: 'POST', path: '/v1/catalogue/products/p-rock/barcodes/8901058000999', userId: OWNER, idempotencyKey: 'bc-rock', body: { kind: 'ean' } }), 'rock salt barcode');
+        await ok(cloud.request({ method: 'POST', path: '/v1/catalogue/products/p-rock/barcodes/8901058000993', userId: OWNER, idempotencyKey: 'bc-rock', body: { kind: 'ean' } }), 'rock salt barcode');
         const gid = `grant-${CASHIER}`;
         await ok(cloud.request({ method: 'POST', path: '/v1/identity/grants', userId: 'u-hr', idempotencyKey: `${gid}-ask`, body: { grantId: gid, userId: CASHIER, roleId: 'cashier', branchScope: ['br-1'], reason: 'till at br-1' } }), 'ask cashier grant');
         await ok(cloud.request({ method: 'POST', path: `/v1/identity/grants/${gid}/approve`, userId: OWNER, idempotencyKey: `${gid}-approve`, body: {} }), 'approve cashier grant');
@@ -106,20 +106,20 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('products t
   }, 120_000);
 
   it('a barcode head office holds for another product is refused there: the command dead-letters, visible; the other product keeps its code', async () => {
-    const s = await open(OWNER, outboxWith(product('p-salt-2', 'SKU-SALT-2', 'Salt 500g'), { code: '8901058000999', kind: 'ean' }));
+    const s = await open(OWNER, outboxWith(product('p-salt-2', 'SKU-SALT-2', 'Salt 500g'), { code: '8901058000993', kind: 'ean' }));
     try {
       await s.page.click('#deliver');
       await s.page.waitForSelector('#result:not([hidden])', { timeout: 15_000 });
-      expect(s.writes).toContain('POST /v1/catalogue/products/p-salt-2/barcodes/8901058000999');
+      expect(s.writes).toContain('POST /v1/catalogue/products/p-salt-2/barcodes/8901058000993');
       expect((await stored(s.page))[0]?.state).toBe('dead_letter');
       expect(((await s.page.textContent('#result-text')) ?? '').length).toBeGreaterThan(0);
       expect(s.errors).toEqual([]);
     } finally { await s.close(); }
-    expect((await atHeadOffice('/v1/catalogue/barcodes/8901058000999')).body).toMatchObject({ barcode: { productId: 'p-rock' } });
+    expect((await atHeadOffice('/v1/catalogue/barcodes/8901058000993')).body).toMatchObject({ barcode: { productId: 'p-rock' } });
   }, 60_000);
 
   it('a cashier is offered no Publish and sends nothing; the page reads in Tamil', async () => {
-    const s = await open(CASHIER, outboxWith(product('p-salt-3', 'SKU-SALT-3', 'Salt 250g'), { code: '8901058000555', kind: 'ean' }), 'br-1');
+    const s = await open(CASHIER, outboxWith(product('p-salt-3', 'SKU-SALT-3', 'Salt 250g'), { code: '8901058000559', kind: 'ean' }), 'br-1');
     try {
       expect(await s.page.evaluate(() => Boolean((globalThis as unknown as BrowserGlobals).document.getElementById('deliver')?.disabled))).toBe(true);
       expect(s.writes).toEqual([]);

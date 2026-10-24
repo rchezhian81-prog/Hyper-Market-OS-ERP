@@ -1,0 +1,1337 @@
+{
+  "asyncapi": "3.0.0",
+  "info": {
+    "title": "SRE Retail OS events",
+    "version": "v1-1.0.0",
+    "description": "Generated from packages/contracts KNOWN_EVENT_TYPES and the partner-publication map (services/platform/src/api-contracts.ts); kept equal to them by tests/guardrails/the-openapi-and-asyncapi-documents-equal-the-router.test.ts."
+  },
+  "defaultContentType": "application/json",
+  "channels": {
+    "events.CashMovement": {
+      "address": "events/CashMovement",
+      "description": "CashMovement — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "CashMovement": {
+          "$ref": "#/components/messages/event.CashMovement"
+        }
+      }
+    },
+    "events.ChecklistCompleted": {
+      "address": "events/ChecklistCompleted",
+      "description": "ChecklistCompleted — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "ChecklistCompleted": {
+          "$ref": "#/components/messages/event.ChecklistCompleted"
+        }
+      }
+    },
+    "events.GoodsReceived": {
+      "address": "events/GoodsReceived",
+      "description": "GoodsReceived — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "GoodsReceived": {
+          "$ref": "#/components/messages/event.GoodsReceived"
+        }
+      }
+    },
+    "events.InventoryAdjusted": {
+      "address": "events/InventoryAdjusted",
+      "description": "InventoryAdjusted — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "InventoryAdjusted": {
+          "$ref": "#/components/messages/event.InventoryAdjusted"
+        }
+      }
+    },
+    "events.InventoryMoved": {
+      "address": "events/InventoryMoved",
+      "description": "InventoryMoved — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1). Also published to partners (webhooks.InventoryMoved).",
+      "messages": {
+        "InventoryMoved": {
+          "$ref": "#/components/messages/event.InventoryMoved"
+        }
+      }
+    },
+    "events.MigrationExceptionResolved": {
+      "address": "events/MigrationExceptionResolved",
+      "description": "MigrationExceptionResolved — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "MigrationExceptionResolved": {
+          "$ref": "#/components/messages/event.MigrationExceptionResolved"
+        }
+      }
+    },
+    "events.MigrationTotalSigned": {
+      "address": "events/MigrationTotalSigned",
+      "description": "MigrationTotalSigned — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "MigrationTotalSigned": {
+          "$ref": "#/components/messages/event.MigrationTotalSigned"
+        }
+      }
+    },
+    "events.PeriodClosed": {
+      "address": "events/PeriodClosed",
+      "description": "PeriodClosed — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "PeriodClosed": {
+          "$ref": "#/components/messages/event.PeriodClosed"
+        }
+      }
+    },
+    "events.PeriodReopened": {
+      "address": "events/PeriodReopened",
+      "description": "PeriodReopened — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "PeriodReopened": {
+          "$ref": "#/components/messages/event.PeriodReopened"
+        }
+      }
+    },
+    "events.PointsMovement": {
+      "address": "events/PointsMovement",
+      "description": "PointsMovement — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "PointsMovement": {
+          "$ref": "#/components/messages/event.PointsMovement"
+        }
+      }
+    },
+    "events.ReconciliationExceptionRaised": {
+      "address": "events/ReconciliationExceptionRaised",
+      "description": "ReconciliationExceptionRaised — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "ReconciliationExceptionRaised": {
+          "$ref": "#/components/messages/event.ReconciliationExceptionRaised"
+        }
+      }
+    },
+    "events.ReconciliationExceptionResolved": {
+      "address": "events/ReconciliationExceptionResolved",
+      "description": "ReconciliationExceptionResolved — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "ReconciliationExceptionResolved": {
+          "$ref": "#/components/messages/event.ReconciliationExceptionResolved"
+        }
+      }
+    },
+    "events.RefundCompleted": {
+      "address": "events/RefundCompleted",
+      "description": "RefundCompleted — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "RefundCompleted": {
+          "$ref": "#/components/messages/event.RefundCompleted"
+        }
+      }
+    },
+    "events.RefundFailed": {
+      "address": "events/RefundFailed",
+      "description": "RefundFailed — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "RefundFailed": {
+          "$ref": "#/components/messages/event.RefundFailed"
+        }
+      }
+    },
+    "events.ReservationReleased": {
+      "address": "events/ReservationReleased",
+      "description": "ReservationReleased — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "ReservationReleased": {
+          "$ref": "#/components/messages/event.ReservationReleased"
+        }
+      }
+    },
+    "events.ReturnAccepted": {
+      "address": "events/ReturnAccepted",
+      "description": "ReturnAccepted — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "ReturnAccepted": {
+          "$ref": "#/components/messages/event.ReturnAccepted"
+        }
+      }
+    },
+    "events.SaleCommitted": {
+      "address": "events/SaleCommitted",
+      "description": "SaleCommitted — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1). Also published to partners (webhooks.SaleCommitted).",
+      "messages": {
+        "SaleCommitted": {
+          "$ref": "#/components/messages/event.SaleCommitted"
+        }
+      }
+    },
+    "events.StockReserved": {
+      "address": "events/StockReserved",
+      "description": "StockReserved — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "StockReserved": {
+          "$ref": "#/components/messages/event.StockReserved"
+        }
+      }
+    },
+    "events.StoreDayClosed": {
+      "address": "events/StoreDayClosed",
+      "description": "StoreDayClosed — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "StoreDayClosed": {
+          "$ref": "#/components/messages/event.StoreDayClosed"
+        }
+      }
+    },
+    "events.StoreDayReopened": {
+      "address": "events/StoreDayReopened",
+      "description": "StoreDayReopened — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "StoreDayReopened": {
+          "$ref": "#/components/messages/event.StoreDayReopened"
+        }
+      }
+    },
+    "events.TaskCompleted": {
+      "address": "events/TaskCompleted",
+      "description": "TaskCompleted — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "TaskCompleted": {
+          "$ref": "#/components/messages/event.TaskCompleted"
+        }
+      }
+    },
+    "events.TenderAuthorized": {
+      "address": "events/TenderAuthorized",
+      "description": "TenderAuthorized — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "TenderAuthorized": {
+          "$ref": "#/components/messages/event.TenderAuthorized"
+        }
+      }
+    },
+    "events.TenderSettled": {
+      "address": "events/TenderSettled",
+      "description": "TenderSettled — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "TenderSettled": {
+          "$ref": "#/components/messages/event.TenderSettled"
+        }
+      }
+    },
+    "events.TenderUncertain": {
+      "address": "events/TenderUncertain",
+      "description": "TenderUncertain — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "TenderUncertain": {
+          "$ref": "#/components/messages/event.TenderUncertain"
+        }
+      }
+    },
+    "events.TillClosed": {
+      "address": "events/TillClosed",
+      "description": "TillClosed — appended to the tenant's ledger and carried store→cloud by the sync outbox; replay collapses to one effect on idempotencyKey (§31.1).",
+      "messages": {
+        "TillClosed": {
+          "$ref": "#/components/messages/event.TillClosed"
+        }
+      }
+    },
+    "webhooks.InventoryMoved": {
+      "address": "{partnerUrl}",
+      "parameters": {
+        "partnerUrl": {
+          "description": "The HTTPS address approved on the subscription (POST /v1/integration/outbound-webhooks/{subscriptionId}); judged again before every attempt."
+        }
+      },
+      "description": "InventoryMoved, read from the inventory ledger and POSTed to each active subscription. A 408, 429 or 5xx is retried with back-off; anything else, or the last retry, is dead-lettered and kept.",
+      "messages": {
+        "InventoryMoved": {
+          "$ref": "#/components/messages/webhook.InventoryMoved"
+        }
+      }
+    },
+    "webhooks.SaleCommitted": {
+      "address": "{partnerUrl}",
+      "parameters": {
+        "partnerUrl": {
+          "description": "The HTTPS address approved on the subscription (POST /v1/integration/outbound-webhooks/{subscriptionId}); judged again before every attempt."
+        }
+      },
+      "description": "SaleCommitted, read from the sales ledger and POSTed to each active subscription. A 408, 429 or 5xx is retried with back-off; anything else, or the last retry, is dead-lettered and kept.",
+      "messages": {
+        "SaleCommitted": {
+          "$ref": "#/components/messages/webhook.SaleCommitted"
+        }
+      }
+    }
+  },
+  "operations": {
+    "publish.CashMovement": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.CashMovement"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.CashMovement/messages/CashMovement"
+        }
+      ]
+    },
+    "publish.ChecklistCompleted": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.ChecklistCompleted"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.ChecklistCompleted/messages/ChecklistCompleted"
+        }
+      ]
+    },
+    "publish.GoodsReceived": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.GoodsReceived"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.GoodsReceived/messages/GoodsReceived"
+        }
+      ]
+    },
+    "publish.InventoryAdjusted": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.InventoryAdjusted"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.InventoryAdjusted/messages/InventoryAdjusted"
+        }
+      ]
+    },
+    "publish.InventoryMoved": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.InventoryMoved"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.InventoryMoved/messages/InventoryMoved"
+        }
+      ]
+    },
+    "publish.MigrationExceptionResolved": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.MigrationExceptionResolved"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.MigrationExceptionResolved/messages/MigrationExceptionResolved"
+        }
+      ]
+    },
+    "publish.MigrationTotalSigned": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.MigrationTotalSigned"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.MigrationTotalSigned/messages/MigrationTotalSigned"
+        }
+      ]
+    },
+    "publish.PeriodClosed": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.PeriodClosed"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.PeriodClosed/messages/PeriodClosed"
+        }
+      ]
+    },
+    "publish.PeriodReopened": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.PeriodReopened"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.PeriodReopened/messages/PeriodReopened"
+        }
+      ]
+    },
+    "publish.PointsMovement": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.PointsMovement"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.PointsMovement/messages/PointsMovement"
+        }
+      ]
+    },
+    "publish.ReconciliationExceptionRaised": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.ReconciliationExceptionRaised"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.ReconciliationExceptionRaised/messages/ReconciliationExceptionRaised"
+        }
+      ]
+    },
+    "publish.ReconciliationExceptionResolved": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.ReconciliationExceptionResolved"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.ReconciliationExceptionResolved/messages/ReconciliationExceptionResolved"
+        }
+      ]
+    },
+    "publish.RefundCompleted": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.RefundCompleted"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.RefundCompleted/messages/RefundCompleted"
+        }
+      ]
+    },
+    "publish.RefundFailed": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.RefundFailed"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.RefundFailed/messages/RefundFailed"
+        }
+      ]
+    },
+    "publish.ReservationReleased": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.ReservationReleased"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.ReservationReleased/messages/ReservationReleased"
+        }
+      ]
+    },
+    "publish.ReturnAccepted": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.ReturnAccepted"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.ReturnAccepted/messages/ReturnAccepted"
+        }
+      ]
+    },
+    "publish.SaleCommitted": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.SaleCommitted"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.SaleCommitted/messages/SaleCommitted"
+        }
+      ]
+    },
+    "publish.StockReserved": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.StockReserved"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.StockReserved/messages/StockReserved"
+        }
+      ]
+    },
+    "publish.StoreDayClosed": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.StoreDayClosed"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.StoreDayClosed/messages/StoreDayClosed"
+        }
+      ]
+    },
+    "publish.StoreDayReopened": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.StoreDayReopened"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.StoreDayReopened/messages/StoreDayReopened"
+        }
+      ]
+    },
+    "publish.TaskCompleted": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.TaskCompleted"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.TaskCompleted/messages/TaskCompleted"
+        }
+      ]
+    },
+    "publish.TenderAuthorized": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.TenderAuthorized"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.TenderAuthorized/messages/TenderAuthorized"
+        }
+      ]
+    },
+    "publish.TenderSettled": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.TenderSettled"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.TenderSettled/messages/TenderSettled"
+        }
+      ]
+    },
+    "publish.TenderUncertain": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.TenderUncertain"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.TenderUncertain/messages/TenderUncertain"
+        }
+      ]
+    },
+    "publish.TillClosed": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/events.TillClosed"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/events.TillClosed/messages/TillClosed"
+        }
+      ]
+    },
+    "deliver.InventoryMoved": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/webhooks.InventoryMoved"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/webhooks.InventoryMoved/messages/InventoryMoved"
+        }
+      ]
+    },
+    "deliver.SaleCommitted": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/webhooks.SaleCommitted"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/webhooks.SaleCommitted/messages/SaleCommitted"
+        }
+      ]
+    }
+  },
+  "components": {
+    "messages": {
+      "event.CashMovement": {
+        "name": "CashMovement",
+        "title": "CashMovement",
+        "contentType": "application/json",
+        "summary": "The CashMovement domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "CashMovement"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.ChecklistCompleted": {
+        "name": "ChecklistCompleted",
+        "title": "ChecklistCompleted",
+        "contentType": "application/json",
+        "summary": "The ChecklistCompleted domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "ChecklistCompleted"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.GoodsReceived": {
+        "name": "GoodsReceived",
+        "title": "GoodsReceived",
+        "contentType": "application/json",
+        "summary": "The GoodsReceived domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "GoodsReceived"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.InventoryAdjusted": {
+        "name": "InventoryAdjusted",
+        "title": "InventoryAdjusted",
+        "contentType": "application/json",
+        "summary": "The InventoryAdjusted domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "InventoryAdjusted"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.InventoryMoved": {
+        "name": "InventoryMoved",
+        "title": "InventoryMoved",
+        "contentType": "application/json",
+        "summary": "The InventoryMoved domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "InventoryMoved"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.MigrationExceptionResolved": {
+        "name": "MigrationExceptionResolved",
+        "title": "MigrationExceptionResolved",
+        "contentType": "application/json",
+        "summary": "The MigrationExceptionResolved domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "MigrationExceptionResolved"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.MigrationTotalSigned": {
+        "name": "MigrationTotalSigned",
+        "title": "MigrationTotalSigned",
+        "contentType": "application/json",
+        "summary": "The MigrationTotalSigned domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "MigrationTotalSigned"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.PeriodClosed": {
+        "name": "PeriodClosed",
+        "title": "PeriodClosed",
+        "contentType": "application/json",
+        "summary": "The PeriodClosed domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "PeriodClosed"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.PeriodReopened": {
+        "name": "PeriodReopened",
+        "title": "PeriodReopened",
+        "contentType": "application/json",
+        "summary": "The PeriodReopened domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "PeriodReopened"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.PointsMovement": {
+        "name": "PointsMovement",
+        "title": "PointsMovement",
+        "contentType": "application/json",
+        "summary": "The PointsMovement domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "PointsMovement"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.ReconciliationExceptionRaised": {
+        "name": "ReconciliationExceptionRaised",
+        "title": "ReconciliationExceptionRaised",
+        "contentType": "application/json",
+        "summary": "The ReconciliationExceptionRaised domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "ReconciliationExceptionRaised"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.ReconciliationExceptionResolved": {
+        "name": "ReconciliationExceptionResolved",
+        "title": "ReconciliationExceptionResolved",
+        "contentType": "application/json",
+        "summary": "The ReconciliationExceptionResolved domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "ReconciliationExceptionResolved"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.RefundCompleted": {
+        "name": "RefundCompleted",
+        "title": "RefundCompleted",
+        "contentType": "application/json",
+        "summary": "The RefundCompleted domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "RefundCompleted"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.RefundFailed": {
+        "name": "RefundFailed",
+        "title": "RefundFailed",
+        "contentType": "application/json",
+        "summary": "The RefundFailed domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "RefundFailed"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.ReservationReleased": {
+        "name": "ReservationReleased",
+        "title": "ReservationReleased",
+        "contentType": "application/json",
+        "summary": "The ReservationReleased domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "ReservationReleased"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.ReturnAccepted": {
+        "name": "ReturnAccepted",
+        "title": "ReturnAccepted",
+        "contentType": "application/json",
+        "summary": "The ReturnAccepted domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "ReturnAccepted"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.SaleCommitted": {
+        "name": "SaleCommitted",
+        "title": "SaleCommitted",
+        "contentType": "application/json",
+        "summary": "The SaleCommitted domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "SaleCommitted"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.StockReserved": {
+        "name": "StockReserved",
+        "title": "StockReserved",
+        "contentType": "application/json",
+        "summary": "The StockReserved domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "StockReserved"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.StoreDayClosed": {
+        "name": "StoreDayClosed",
+        "title": "StoreDayClosed",
+        "contentType": "application/json",
+        "summary": "The StoreDayClosed domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "StoreDayClosed"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.StoreDayReopened": {
+        "name": "StoreDayReopened",
+        "title": "StoreDayReopened",
+        "contentType": "application/json",
+        "summary": "The StoreDayReopened domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "StoreDayReopened"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.TaskCompleted": {
+        "name": "TaskCompleted",
+        "title": "TaskCompleted",
+        "contentType": "application/json",
+        "summary": "The TaskCompleted domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "TaskCompleted"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.TenderAuthorized": {
+        "name": "TenderAuthorized",
+        "title": "TenderAuthorized",
+        "contentType": "application/json",
+        "summary": "The TenderAuthorized domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "TenderAuthorized"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.TenderSettled": {
+        "name": "TenderSettled",
+        "title": "TenderSettled",
+        "contentType": "application/json",
+        "summary": "The TenderSettled domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "TenderSettled"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.TenderUncertain": {
+        "name": "TenderUncertain",
+        "title": "TenderUncertain",
+        "contentType": "application/json",
+        "summary": "The TenderUncertain domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "TenderUncertain"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "event.TillClosed": {
+        "name": "TillClosed",
+        "title": "TillClosed",
+        "contentType": "application/json",
+        "summary": "The TillClosed domain event, in the §30.2 envelope.",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/DomainEvent"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "TillClosed"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "webhook.InventoryMoved": {
+        "name": "webhook.InventoryMoved",
+        "title": "InventoryMoved webhook",
+        "contentType": "application/json",
+        "summary": "The signed webhook a subscribed partner receives for each InventoryMoved.",
+        "headers": {
+          "type": "object",
+          "required": [
+            "x-sre-webhook-id",
+            "x-sre-webhook-timestamp",
+            "x-sre-webhook-signature",
+            "x-sre-api-version"
+          ],
+          "properties": {
+            "x-sre-webhook-id": {
+              "type": "string",
+              "description": "<subscriptionId>.<eventId> — the partner dedupes on it."
+            },
+            "x-sre-webhook-timestamp": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "x-sre-webhook-signature": {
+              "type": "string",
+              "pattern": "^v1=[0-9a-f]{64}$",
+              "description": "v1= HMAC-SHA256 (hex) of \"<timestamp>.<body>\" with the subscription's signing secret. Reject a stale timestamp."
+            },
+            "x-sre-api-version": {
+              "type": "string",
+              "const": "v1"
+            }
+          }
+        },
+        "payload": {
+          "type": "object",
+          "required": [
+            "id",
+            "apiVersion",
+            "type",
+            "occurredAt",
+            "tenantId",
+            "subscriptionId",
+            "data"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "apiVersion": {
+              "type": "string",
+              "const": "v1"
+            },
+            "type": {
+              "type": "string",
+              "const": "InventoryMoved"
+            },
+            "occurredAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "tenantId": {
+              "type": "string"
+            },
+            "subscriptionId": {
+              "type": "string"
+            },
+            "data": {
+              "type": "object",
+              "additionalProperties": true,
+              "x-body-schema": "not declared",
+              "description": "The InventoryMoved event payload as recorded."
+            }
+          }
+        }
+      },
+      "webhook.SaleCommitted": {
+        "name": "webhook.SaleCommitted",
+        "title": "SaleCommitted webhook",
+        "contentType": "application/json",
+        "summary": "The signed webhook a subscribed partner receives for each SaleCommitted.",
+        "headers": {
+          "type": "object",
+          "required": [
+            "x-sre-webhook-id",
+            "x-sre-webhook-timestamp",
+            "x-sre-webhook-signature",
+            "x-sre-api-version"
+          ],
+          "properties": {
+            "x-sre-webhook-id": {
+              "type": "string",
+              "description": "<subscriptionId>.<eventId> — the partner dedupes on it."
+            },
+            "x-sre-webhook-timestamp": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "x-sre-webhook-signature": {
+              "type": "string",
+              "pattern": "^v1=[0-9a-f]{64}$",
+              "description": "v1= HMAC-SHA256 (hex) of \"<timestamp>.<body>\" with the subscription's signing secret. Reject a stale timestamp."
+            },
+            "x-sre-api-version": {
+              "type": "string",
+              "const": "v1"
+            }
+          }
+        },
+        "payload": {
+          "type": "object",
+          "required": [
+            "id",
+            "apiVersion",
+            "type",
+            "occurredAt",
+            "tenantId",
+            "subscriptionId",
+            "data"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "apiVersion": {
+              "type": "string",
+              "const": "v1"
+            },
+            "type": {
+              "type": "string",
+              "const": "SaleCommitted"
+            },
+            "occurredAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "tenantId": {
+              "type": "string"
+            },
+            "subscriptionId": {
+              "type": "string"
+            },
+            "data": {
+              "type": "object",
+              "additionalProperties": true,
+              "x-body-schema": "not declared",
+              "description": "The SaleCommitted event payload as recorded."
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "DomainEvent": {
+        "type": "object",
+        "required": [
+          "id",
+          "type",
+          "occurredAt",
+          "idempotencyKey",
+          "source",
+          "version",
+          "payload"
+        ],
+        "description": "The §30.2 event envelope (packages/contracts/src/event.ts). Consumers dedupe on idempotencyKey (§31.1).",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "type": {
+            "type": "string",
+            "minLength": 1
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO-8601 UTC (\"Z\")."
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "minLength": 1
+          },
+          "source": {
+            "type": "string",
+            "minLength": 1
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "The payload schema version."
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": true,
+            "x-body-schema": "not declared"
+          }
+        }
+      },
+      "Money": {
+        "type": "object",
+        "required": [
+          "minor",
+          "currency"
+        ],
+        "additionalProperties": false,
+        "description": "An amount in whole minor units (e.g. 1050 = ₹10.50) — never a float (packages/contracts/src/money.ts).",
+        "properties": {
+          "minor": {
+            "type": "integer"
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "EUR",
+              "GBP",
+              "INR",
+              "USD"
+            ]
+          }
+        }
+      },
+      "Quantity": {
+        "type": "object",
+        "required": [
+          "minor",
+          "uom"
+        ],
+        "additionalProperties": false,
+        "description": "A quantity in the unit's smallest step (e.g. 1234 = 1.234 kg) (packages/contracts/src/quantity.ts).",
+        "properties": {
+          "minor": {
+            "type": "integer"
+          },
+          "uom": {
+            "type": "string",
+            "enum": [
+              "L",
+              "ea",
+              "g",
+              "kg",
+              "ml"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

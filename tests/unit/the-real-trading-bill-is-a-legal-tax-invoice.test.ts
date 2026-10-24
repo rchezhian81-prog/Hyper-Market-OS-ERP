@@ -40,8 +40,8 @@ describe('OB-271 — the tax invoice is built from the bill and the shop\'s setu
     expect(doc.lines.map((l) => [l.taxableMinor, l.cgstMinor, l.sgstMinor])).toEqual([[20_000, 500, 500], [5_000, 450, 450], [14_286, 357, 357]]);
     for (const l of doc.lines) expect(l.taxableMinor + l.cgstMinor + l.sgstMinor).toBe(l.lineTotalMinor);
     expect(doc.bands).toEqual([
-      { rateBps: 500, taxableMinor: 34_286, cgstMinor: 857, sgstMinor: 857 },
-      { rateBps: 1_800, taxableMinor: 5_000, cgstMinor: 450, sgstMinor: 450 },
+      { rateBps: 500, taxableMinor: 34_286, cgstMinor: 857, sgstMinor: 857, igstMinor: 0 },
+      { rateBps: 1_800, taxableMinor: 5_000, cgstMinor: 450, sgstMinor: 450, igstMinor: 0 },
     ]);
     // OB-279 · A10: the bill's CGST (₹13.07) and SGST (₹13.07) each round to ₹13 — 14 paise below the goods, so the
     // bill's total is the ROUNDED total (OB-285 leaves a bill below the goods as it is), and it reconciles both ways.
@@ -65,7 +65,7 @@ describe('OB-271 — the tax invoice is built from the bill and the shop\'s setu
       // ₹105 at 5%: ₹2.50 CGST and ₹2.50 SGST — each rounds UP to ₹3 (OB-279 kept), which would make ₹106.00: over the MRP.
       const doc = built({ ...INPUT, lines: [dal] });
       expect(doc).toMatchObject({ taxableMinor: 10_000, cgstMinor: 300, sgstMinor: 300, taxRoundingMinor: 100, roundOffMinor: -100, goodsMinor: 10_500, totalMinor: 10_500 });
-      expect(invoiceRoundOff([{ lineTotalMinor: 10_500, taxRateBps: 500 }])).toEqual({ cgstExactMinor: 250, sgstExactMinor: 250, cgstMinor: 300, sgstMinor: 300, taxRoundingMinor: 100, roundOffMinor: -100, totalLessGoodsMinor: 0 });
+      expect(invoiceRoundOff([{ lineTotalMinor: 10_500, taxRateBps: 500 }])).toEqual({ cgstExactMinor: 250, sgstExactMinor: 250, cgstMinor: 300, sgstMinor: 300, igstExactMinor: 0, igstMinor: 0, cessExactMinor: 0, cessMinor: 0, taxRoundingMinor: 100, roundOffMinor: -100, totalLessGoodsMinor: 0 });
       // The paper reconciles: lines + untaxed + rounded taxes + round off = total — ₹100.00 + ₹3 + ₹3 − ₹1.00 = ₹105.00.
       expect(doc.taxableMinor + doc.untaxedMinor + doc.cgstMinor + doc.sgstMinor + doc.roundOffMinor).toBe(doc.totalMinor);
       const text = taxInvoiceText(taxInvoiceRows(doc)).join('\n');

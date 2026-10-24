@@ -52,7 +52,7 @@ const caller = (h: ApiHarness, t: string) => {
   const post = (path: string, body: unknown): Promise<Reply> => h.request({ method: 'POST', path, userId: OWNER, tenantId: t, idempotencyKey: randomUUID(), body });
   return {
     publish: (productId: string, product: unknown) => post(`/v1/catalogue/products/${productId}/publish`, { product, categories: [GROCERY] }),
-    assign: (productId: string, code: string) => post(`/v1/catalogue/products/${productId}/barcodes/${code}`, { kind: 'ean' }),
+    assign: (productId: string, code: string) => post(`/v1/catalogue/products/${productId}/barcodes/${code}`, { kind: 'internal' }),
     lookup: async (code: string) => (await h.request({ method: 'GET', path: `/v1/catalogue/barcodes/${code}`, userId: OWNER, tenantId: t })).body as { barcode?: { productId: string } },
     products: async () => ((await h.request({ method: 'GET', path: '/v1/catalogue/products', userId: OWNER, tenantId: t })).body as { products: { productId: string; sku: string }[] }).products,
   };

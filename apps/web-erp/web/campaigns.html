@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Campaigns</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Campaigns (M21-FR-01 · M21-FR-02 · M31-FR-03/04 · M16-FR-02). A THIN CLIENT over head office's GET/POST
+      /v1/notifications/templates (a second person approves the words), GET /v1/service/campaigns/frequency-policy,
+      GET /v1/customer/segments/audience, POST /v1/service/campaigns/:id/plan and /send, GET /v1/service/campaigns/:id/status,
+      and GET/PUT /v1/service/journeys, POST /v1/service/journeys/run. Its session is apps/web-erp/src/campaigns-session.ts.
+      Who matches but has not said yes is counted, never hidden; nothing is sent until a person clicks Send.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      label.tick { display: flex; gap: 10px; align-items: center; min-height: var(--tap); }
+      label.tick input { width: 24px; height: 24px; }
+      input, textarea, select { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; gap: 8px; align-items: center; }
+      button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
+      button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+      .row-form > label { flex: 1 1 200px; }
+      .notice { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 6px; }
+      .draft { font-weight: 700; color: var(--on-warn-surface, var(--ink)); }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+      li.row { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 6px; border-left: 6px solid var(--idle); overflow-wrap: anywhere; }
+      li.row.tone-ok { border-left-color: var(--ok); } li.row.tone-degraded { border-left-color: var(--degraded); }
+      .tier-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; }
+      .tier-row > label { flex: 1 1 160px; }
+      .facts { font-size: 14px; color: var(--muted); display: grid; gap: 2px; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Campaigns</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section aria-labelledby="page-h">
+        <h2 id="page-h">Campaigns</h2>
+        <p class="lead" id="lead"></p>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+      <section aria-labelledby="words-h">
+        <h3 id="words-h">The words (message templates)</h3>
+        <div><button id="show-words" type="button"><span id="show-words-text">Show the templates</span></button></div>
+        <ul class="rows" id="words"></ul>
+        <div class="row-form">
+          <label for="template-id"><span id="l-template-id">Template name</span><input id="template-id" autocomplete="off" maxlength="48" /></label>
+          <label for="template-channel"><span id="l-template-channel">Channel</span><select id="template-channel"></select></label>
+        </div>
+        <label for="template-body"><span id="l-template-body">The words</span><textarea id="template-body" rows="3" maxlength="500"></textarea></label>
+        <div><button id="draft" type="button" class="quiet"><span id="draft-text">Draft these words</span></button></div>
+        <p class="status" id="words-status" role="status" aria-live="polite"></p>
+      </section>
+      <section aria-labelledby="cap-h">
+        <h3 id="cap-h">Frequency cap</h3>
+        <p class="facts" id="cap"></p>
+      </section>
+      <section aria-labelledby="plan-h">
+        <h3 id="plan-h">Plan a campaign</h3>
+        <div class="row-form">
+          <label for="campaign-id"><span id="l-campaign-id">Campaign</span><input id="campaign-id" autocomplete="off" maxlength="48" /></label>
+          <label for="segment"><span id="l-segment">Customers</span><select id="segment"></select></label>
+          <label for="template"><span id="l-template">Template</span><select id="template"></select></label>
+        </div>
+        <label class="tick"><input type="checkbox" id="promotion" checked /> <span id="l-promotion">It contains an offer or a price</span></label>
+        <div class="row-form">
+          <button id="find-audience" type="button" class="quiet"><span id="find-audience-text">Who can we reach?</span></button>
+          <button id="plan" type="button" class="quiet"><span id="plan-text">Check consent and plan</span></button>
+        </div>
+        <p class="facts" id="audience"></p>
+        <ul class="rows" id="plan-out"></ul>
+        <div class="row-form">
+          <label for="value"><span id="l-value">What goes in {value}</span><input id="value" autocomplete="off" maxlength="80" /></label>
+          <button id="send" type="button"><span id="send-text">Send</span></button>
+        </div>
+        <p class="status" id="plan-status" role="status" aria-live="polite"></p>
+      </section>
+      <section aria-labelledby="status-h">
+        <h3 id="status-h">Where the messages are</h3>
+        <div class="row-form">
+          <label for="status-id"><span id="l-status-id">Campaign</span><input id="status-id" autocomplete="off" maxlength="48" /></label>
+          <button id="show-status" type="button" class="quiet"><span id="show-status-text">Show the status</span></button>
+        </div>
+        <ul class="rows" id="status-out"></ul>
+        <p class="status" id="status-status" role="status" aria-live="polite"></p>
+      </section>
+      <section aria-labelledby="journeys-h">
+        <h3 id="journeys-h">Journeys</h3>
+        <div class="row-form">
+          <button id="show-journeys" type="button" class="quiet"><span id="show-journeys-text">Show the journeys</span></button>
+          <button id="run-journeys" type="button" class="quiet"><span id="run-journeys-text">Run the journeys now</span></button>
+        </div>
+        <ul class="rows" id="journeys"></ul>
+        <p class="status" id="journeys-status" role="status" aria-live="polite"></p>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./campaigns.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

@@ -12,10 +12,13 @@
 
 import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
-import { bestPrice, type Promotion, type PromotionKind, type BasketLine, type PromoContext } from '../../../packages/promotions/src/promotions';
+import { bestPrice, promotionProductIds, PROMOTION_KINDS, type Promotion, type PromotionKind, type BasketLine, type PromoContext, type BundleItem } from '../../../packages/promotions/src/promotions';
+import { BANK_OFFERS } from '../../../packages/promotions/src/bank-offers';
+import { tobaccoAdvertisingRefusal } from '../../../packages/restricted-sales/src/advertising';
 import { isCurrencyCode, type CurrencyCode, type Money } from '../../../packages/contracts/src/money';
 
-const KINDS: readonly PromotionKind[] = ['percent_off', 'amount_off', 'buy_x_get_y', 'member_price'];
+// OB-288 P2 (M05-FR-03): the engine's whole list — multibuy, the price-offer bundle, mix-match and the bank offer too.
+const KINDS: readonly PromotionKind[] = PROMOTION_KINDS;
 const isKind = (v: unknown): v is PromotionKind => typeof v === 'string' && (KINDS as readonly string[]).includes(v);
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
 const isInt = (v: unknown): v is number => Number.isInteger(v);
@@ -40,7 +43,27 @@ export interface PromotionCatalogueDeps {
    * separate priced line and is never given away, by an offer or otherwise. Optional on a bare stub (then not checked).
    */
   readonly carryBagsAmong?: (tenantId: string, productIds: readonly string[]) => Promise<readonly string[]> | readonly string[];
+  /**
+   * B15 (COTPA s.5 · OB-288 P2): which of these products are tobacco in the product master. An offer naming one is refused —
+   * tobacco may not be promoted — and at evaluation a tobacco line takes no discount. Optional on a bare stub.
+   */
+  readonly tobaccoAmong?: (tenantId: string, productIds: readonly string[]) => Promise<readonly string[]> | readonly string[];
   readonly now: () => string;
+}
+
+/** B15: the refusal for an offer that names tobacco. */
+const tobaccoRefusal = (words: string) => apiError(422, {
+  code: 'tobacco_may_not_be_promoted', whatHappened: words, wasItSaved: 'not_saved',
+  nextSafeAction: 'Take the tobacco product off the offer. Nothing was recorded.',
+});
+
+/** B15: refuse an offer naming tobacco (by the product master), or pass. */
+async function refuseTobacco(deps: PromotionCatalogueDeps, tenantId: string, promo: Promotion): Promise<void> {
+  const named = promotionProductIds(promo);
+  if (deps.tobaccoAmong === undefined || named.length === 0) return;
+  const tobacco = new Set(await deps.tobaccoAmong(tenantId, named));
+  const refusal = tobaccoAdvertisingRefusal('promotion', named, (id) => tobacco.has(id));
+  if (refusal !== undefined) throw tobaccoRefusal(refusal.whatHappened);
 }
 
 /** NEW-1 (B19): the refusal for an offer that names a carry bag. */
@@ -64,6 +87,22 @@ function readDefinition(promotionId: string, body: unknown): Promotion | null {
   if (kind === 'amount_off' && !isPosInt(b['amountOffMinor'])) return null;
   if (kind === 'buy_x_get_y' && !(isPosInt(b['buyQty']) && isPosInt(b['getQty']))) return null;
   if (kind === 'member_price' && !isMoney(b['memberUnitPrice'])) return null;
+  // OB-288 P2: "N for ₹X"; a named set at one price; buy from one set, get from another; a bank offer (refused below while off).
+  if (kind === 'multibuy' && !(isPosInt(b['multibuyQty']) && (b['multibuyQty'] as number) >= 2 && isInt(b['multibuyPriceMinor']) && (b['multibuyPriceMinor'] as number) >= 0)) return null;
+  const items = b['bundleItems'];
+  const itemsOk = Array.isArray(items) && items.length >= 2 && items.every((i) => i !== null && typeof i === 'object' && isStr((i as Record<string, unknown>)['productId']) && isPosInt((i as Record<string, unknown>)['qty']))
+    && new Set((items as Record<string, unknown>[]).map((i) => i['productId'])).size === items.length;
+  if (kind === 'bundle_price' && !(itemsOk && isInt(b['bundlePriceMinor']) && (b['bundlePriceMinor'] as number) >= 0)) return null;
+  if (kind === 'mix_match') {
+    const buyOk = (strArray(b['buyProductIds']) && (b['buyProductIds'] as string[]).length > 0) || isStr(b['buyGroup']);
+    const getOk = (strArray(b['getProductIds']) && (b['getProductIds'] as string[]).length > 0) || isStr(b['getGroup']);
+    const bps = b['getPercentBps'];
+    if (!buyOk || !getOk || !isPosInt(b['buyQty']) || !isPosInt(b['getQty']) || !(isInt(bps) && (bps as number) > 0 && (bps as number) <= 10_000)) return null;
+    // One product on both sides would be bought and given at once — refused rather than resolved by a rule nobody reads.
+    const buy = new Set(strArray(b['buyProductIds']) ? b['buyProductIds'] as string[] : []);
+    if ((strArray(b['getProductIds']) ? b['getProductIds'] as string[] : []).some((id) => buy.has(id))) return null;
+  }
+  if (kind === 'bank_offer' && !(isStr(b['bankIssuer']) && ((isInt(b['percentBps']) && (b['percentBps'] as number) > 0 && (b['percentBps'] as number) <= 10_000) || isPosInt(b['amountOffMinor'])))) return null;
 
   // Optional fields, validated when present.
   if (b['productIds'] !== undefined && !strArray(b['productIds'])) return null;
@@ -88,6 +127,17 @@ function readDefinition(promotionId: string, body: unknown): Promotion | null {
     ...(isInt(b['buyQty']) ? { buyQty: b['buyQty'] as number } : {}),
     ...(isInt(b['getQty']) ? { getQty: b['getQty'] as number } : {}),
     ...(isMoney(b['memberUnitPrice']) ? { memberUnitPrice: b['memberUnitPrice'] } : {}),
+    ...(kind === 'multibuy' ? { multibuyQty: b['multibuyQty'] as number, multibuyPriceMinor: b['multibuyPriceMinor'] as number } : {}),
+    ...(kind === 'bundle_price' ? {
+      bundleItems: (items as Record<string, unknown>[]).map((i): BundleItem => ({ productId: (i['productId'] as string).trim(), qty: i['qty'] as number })),
+      bundlePriceMinor: b['bundlePriceMinor'] as number,
+    } : {}),
+    ...(kind === 'mix_match' ? {
+      ...(strArray(b['buyProductIds']) ? { buyProductIds: b['buyProductIds'] } : {}), ...(isStr(b['buyGroup']) ? { buyGroup: b['buyGroup'] } : {}),
+      ...(strArray(b['getProductIds']) ? { getProductIds: b['getProductIds'] } : {}), ...(isStr(b['getGroup']) ? { getGroup: b['getGroup'] } : {}),
+      getPercentBps: b['getPercentBps'] as number,
+    } : {}),
+    ...(kind === 'bank_offer' ? { bankIssuer: (b['bankIssuer'] as string).trim() } : {}),
   };
 }
 
@@ -122,13 +172,22 @@ export function promotionCatalogueRoutes(deps: PromotionCatalogueDeps): readonly
         if (promo === null) {
           throw apiError(400, {
             code: 'not_readable_as_a_promotion',
-            whatHappened: 'A promotion needs a kind (percent_off/amount_off/buy_x_get_y/member_price), an effective window, and the parameters that kind requires.',
+            whatHappened: `A promotion needs a kind (${KINDS.join('/')}), an effective window, and the parameters that kind requires — multibuy: multibuyQty (2 or more) and multibuyPriceMinor; bundle_price: bundleItems (two or more different products, each with a whole qty) and bundlePriceMinor; mix_match: a buy side and a get side (products or a group, never the same product on both), buyQty, getQty and getPercentBps (10000 = free).`,
             wasItSaved: 'not_saved',
             nextSafeAction: 'Send a valid definition. Nothing was recorded.',
           });
         }
-        const bags = deps.carryBagsAmong === undefined || promo.productIds === undefined ? [] : await deps.carryBagsAmong(ctx.tenantId, promo.productIds);
+        // OB-305: a bank-card offer is built and switched OFF until an integrated card machine — none can be defined yet.
+        if (promo.kind === 'bank_offer' && !BANK_OFFERS.on) {
+          throw apiError(422, {
+            code: 'bank_offers_switched_off', whatHappened: `${BANK_OFFERS.why} They come on with release ${BANK_OFFERS.release}, which brings integrated card terminals.`,
+            wasItSaved: 'not_saved', nextSafeAction: 'Use another kind of offer for now. Nothing was recorded.',
+          });
+        }
+        const named = promotionProductIds(promo);
+        const bags = deps.carryBagsAmong === undefined || named.length === 0 ? [] : await deps.carryBagsAmong(ctx.tenantId, named);
         if (bags.length > 0) throw carryBagRefusal(promotionId, bags);
+        await refuseTobacco(deps, ctx.tenantId, promo); // B15
         if ((await deps.promotion(ctx.tenantId, promotionId)) !== undefined) {
           throw apiError(409, {
             code: 'promotion_already_defined',
@@ -166,8 +225,14 @@ export function promotionCatalogueRoutes(deps: PromotionCatalogueDeps): readonly
           });
         }
         // NEW-1 (B19): a product may have become a carry bag since the offer was defined — asked again before it goes live.
-        const bags = deps.carryBagsAmong === undefined || promo.productIds === undefined ? [] : await deps.carryBagsAmong(ctx.tenantId, promo.productIds);
+        const named = promotionProductIds(promo);
+        const bags = deps.carryBagsAmong === undefined || named.length === 0 ? [] : await deps.carryBagsAmong(ctx.tenantId, named);
         if (promo.status !== 'active' && bags.length > 0) throw carryBagRefusal(promotionId, bags);
+        // B15: a product may have become tobacco since the offer was defined; OB-305: bank offers stay off.
+        if (promo.status !== 'active') await refuseTobacco(deps, ctx.tenantId, promo);
+        if (promo.status !== 'active' && promo.kind === 'bank_offer' && !BANK_OFFERS.on) {
+          throw apiError(422, { code: 'bank_offers_switched_off', whatHappened: BANK_OFFERS.why, wasItSaved: 'not_saved', nextSafeAction: 'Nothing was changed.' });
+        }
         if (promo.status !== 'active') await deps.recordStatus(ctx.tenantId, promotionId, 'active', deps.now());
         return { status: 200, body: { promotionId, status: 'active' } };
       },
@@ -220,8 +285,11 @@ export function promotionCatalogueRoutes(deps: PromotionCatalogueDeps): readonly
         };
         const all = await deps.promotions(ctx.tenantId);
         // OB-173: a carry bag is never discounted — head office's own product master says which lines are bags, never the body.
-        const bags = deps.carryBagsAmong === undefined ? [] : await deps.carryBagsAmong(ctx.tenantId, [...new Set(lines.map((l) => l.productId))]);
-        const priced = lines.map((l) => (bags.includes(l.productId) ? { ...l, carryBag: true } : l));
+        const ids = [...new Set(lines.map((l) => l.productId))];
+        const bags = deps.carryBagsAmong === undefined ? [] : await deps.carryBagsAmong(ctx.tenantId, ids);
+        // B15: tobacco takes no discount — head office's own product master says which lines are tobacco, never the body.
+        const tobacco = new Set(deps.tobaccoAmong === undefined ? [] : await deps.tobaccoAmong(ctx.tenantId, ids));
+        const priced = lines.map((l) => ({ ...l, ...(bags.includes(l.productId) ? { carryBag: true } : {}), ...(tobacco.has(l.productId) ? { tobacco: true } : {}) }));
         return { status: 200, body: bestPrice(priced, all, promoCtx) };
       },
     },

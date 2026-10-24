@@ -35,12 +35,14 @@ export interface RecordedPointsMovement {
   readonly delta: number;
   /** `earn_reversal`: points a return took back from what its sale earned (PF-09-a) — a negative delta.
    *  `burn_reversal`: points the member PAID WITH on a bill that a return gave back (OB-34 "A") — a positive delta. */
-  readonly reason: PointsKind | 'earn_reversal' | 'burn_reversal';
+  readonly reason: PointsKind | 'earn_reversal' | 'burn_reversal' | 'expiry';
   readonly sourceRef: string | null;
   readonly at: string;
 }
 
-export type ConsentPurpose = 'transactional' | 'marketing' | 'profiling' | 'third_party';
+// OB-314 (AI-NFR-11): `ai_personalisation` — the customer's explicit opt-in to suggestions built from what they bought
+// before. Absent or withdrawn means NO purchase-based personalisation; the plain "Suggested by AI" notice is shown either way.
+export type ConsentPurpose = 'transactional' | 'marketing' | 'profiling' | 'third_party' | 'ai_personalisation';
 export type Channel = 'whatsapp' | 'sms' | 'email' | 'push' | 'post';
 
 export interface ConsentRecord {

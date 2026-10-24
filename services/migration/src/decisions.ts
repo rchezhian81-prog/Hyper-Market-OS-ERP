@@ -68,6 +68,8 @@ const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFin
 const EXCEPTION_KINDS: ReadonlySet<string> = new Set([
   'duplicate_product', 'shared_barcode', 'negative_stock', 'unmapped_tax_code', 'document_total_mismatch',
   'pre_revision_tax_document', 'duplicate_supplier_gstin', 'orphan_line', 'duplicate_customer', 'batch_without_expiry',
+  // OB-288 P5 · MG-09: the differences between two full exports of the old ERP (`export-diff.ts`).
+  'delta_added', 'delta_changed', 'delta_removed',
 ]);
 const SEVERITIES: ReadonlySet<string> = new Set(['blocking', 'high', 'medium', 'low']);
 const CONFIDENCES: ReadonlySet<string> = new Set(['certain', 'probable']);

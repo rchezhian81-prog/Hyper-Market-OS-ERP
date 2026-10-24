@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { judgeBuyingScope, localLimitFromRoles, LOCAL_PO_LIMIT_DEFAULTS, BUYING_SCOPES } from '../../packages/purchasing/src/index';
+import { judgeBuyingScope, BUYING_SCOPES } from '../../packages/purchasing/src/index';
+import * as purchasing from '../../packages/purchasing/src/index';
+import { poLimitOf } from '../../services/purchase/src/purchase-orders';
+import { authorityFrom, DECIDED_AUTHORITY_LIMITS } from '../../packages/approvals/src/authority-rules';
 
 // M06-FR-04 · OB-289 (D-6 "Both, per order") · OB-290 (D-3 local limits): the buying-scope engine. Pure.
 
@@ -23,21 +26,25 @@ describe('buying scope per purchase order (M06-FR-04 · OB-289)', () => {
     expect(judgeBuyingScope({ ...base, named: 'zonal' })).toMatchObject({ ok: false, refusal: 'unknown_buying_scope' });
   });
 
-  it('caps a local order at the raiser\'s limit — never unlimited by default when no limit is known', () => {
-    expect(judgeBuyingScope({ ...base, named: 'local', localLimitMinor: 2_500_000, valueMinor: 2_500_000 }).ok).toBe(true);
-    expect(judgeBuyingScope({ ...base, named: 'local', localLimitMinor: 2_500_000, valueMinor: 2_500_001 })).toMatchObject({ ok: false, refusal: 'local_limit_exceeded' });
+  it('a local order above the raiser\'s limit goes to the owner — never unlimited by default when no limit is known', () => {
+    expect(judgeBuyingScope({ ...base, named: 'local', localLimitMinor: 2_500_000, valueMinor: 2_500_000 })).toEqual({ ok: true, scope: 'local', source: 'named' });
+    expect(judgeBuyingScope({ ...base, named: 'local', localLimitMinor: 2_500_000, valueMinor: 2_500_001 })).toEqual({ ok: true, scope: 'local', source: 'named', ownerDecides: { raiserLimitMinor: 2_500_000, valueMinor: 2_500_001 } });
     expect(judgeBuyingScope({ ...base, named: 'local', localLimitMinor: null, valueMinor: 99_999_999 }).ok).toBe(true);
     expect(judgeBuyingScope({ ...base, named: 'local', localLimitMinor: undefined })).toMatchObject({ ok: false, refusal: 'local_limit_unknown' });
   });
 });
 
-describe('the local PO limit from the roles held (OB-290 config default, the seam package P1 replaces)', () => {
-  it('holds exactly the owner\'s numbers: store manager ₹25,000, owner unlimited', () => {
-    expect(LOCAL_PO_LIMIT_DEFAULTS).toEqual({ owner: null, store_manager: 2_500_000 });
-    expect(localLimitFromRoles(['store_manager'])).toBe(2_500_000);
-    expect(localLimitFromRoles(['store_manager', 'owner'])).toBeNull();
-    expect(localLimitFromRoles(['cashier'])).toBeUndefined();
-    expect(localLimitFromRoles([])).toBeUndefined();
-    expect(localLimitFromRoles(['a', 'b'], { a: 100, b: 300 })).toBe(300);
+describe('the local PO limit is the owner\'s server-held OB-290 rule, not a default in the purchasing code', () => {
+  it('the procure lane\'s config default is gone', () => {
+    expect('LOCAL_PO_LIMIT_DEFAULTS' in purchasing).toBe(false);
+    expect('localLimitFromRoles' in purchasing).toBe(false);
+  });
+  it('reads the limit from the authority identity works out: store manager ₹25,000, owner unlimited, a cashier ₹0, no role none', () => {
+    const of = (roleIds: string[]) => poLimitOf(authorityFrom({ limits: DECIDED_AUTHORITY_LIMITS, rulesVersion: 0, userId: 'u', roleIds, subjectType: 'purchase_order' }));
+    expect(of(['store_manager'])).toBe(2_500_000);
+    expect(of(['store_manager', 'owner'])).toBeNull();
+    expect(of(['cashier'])).toBe(0);
+    expect(of(['accountant'])).toBeUndefined();
+    expect(of([])).toBeUndefined();
   });
 });

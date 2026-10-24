@@ -88,6 +88,8 @@ describeOrSkip('PA-08 — the notification worker drains the queue by itself —
     expect((await call('POST', '/v1/notifications/templates/ready/approval', 'u-hr', { version: 1 }, 't1a')).status).toBe(200);
     expect((await call('POST', '/v1/notifications/templates/offer', OWNER, { purpose: 'marketing', channel: 'sms', body: 'Hello {name}, this week\'s offers are in store.' }, 't2')).status).toBe(201);
     expect((await call('POST', '/v1/notifications/templates/offer/approval', 'u-hr', { version: 1 }, 't2a')).status).toBe(200);
+    // M31-FR-03 (OB-288 P5): marketing waits for the owner's frequency cap — set here, as the owner would.
+    expect((await cloud.request({ method: 'PUT', path: '/v1/service/campaigns/frequency-policy', userId: OWNER, idempotencyKey: 'fp1', body: { capPerWindow: 10, windowDays: 7 } })).status).toBe(200);
     for (const c of ['C-1', 'C-2', 'C-3', 'C-4', 'C-5']) expect((await consent(c, true)).status).toBeLessThan(300);
     expect((await consent('C-4', true, 'marketing')).status).toBeLessThan(300);
 

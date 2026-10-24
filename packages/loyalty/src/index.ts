@@ -15,3 +15,5 @@ export * from './stored-value';
 export * from './assess-points';
 export * from './earn-rule';
 export * from './wallet';
+export * from './tiers';
+export * from './points-expiry';

@@ -57,6 +57,8 @@ export interface InboxAnnotation {
   readonly branchId: string | null;
   readonly evidence: readonly EvidenceItem[];
   readonly wouldRequire: string;
+  /** AI-NFR-04: how far the finding can be trusted, and what it cannot know — shown on every inbox entry. */
+  readonly confidence?: Confidence;
 }
 export type InboxEntry<E> = E & InboxAnnotation;
 
@@ -102,6 +104,42 @@ export interface EvidenceItem {
   readonly summary: string;
 }
 
+/**
+ * AI-NFR-04 (OB-288 lane 4 · P1): how far a suggestion can be trusted, said on every one of them.
+ *
+ * A band, the kind of reasoning behind it, and the one sentence a person most needs before acting: what it CANNOT
+ * know. The deterministic legs give a RULE-BASED band — a recorded fact (a batch's expiry date, an alert that is
+ * open) is `high`; an inference a rule drew from the records (two products that look alike, a stock-out from last
+ * week's sales) is `medium`; a forecast is `medium` with the forecast's own limits said; a model's answer is `medium`
+ * only when it cites the shop's records and `low` when it cites none. Never a percentage nobody measured.
+ */
+export type ConfidenceBand = 'high' | 'medium' | 'low';
+export type ConfidenceBasis = 'recorded_fact' | 'rule_inference' | 'forecast' | 'model_answer';
+export interface Confidence {
+  readonly band: ConfidenceBand;
+  readonly basis: ConfidenceBasis;
+  /** What the suggestion cannot know — never empty. */
+  readonly uncertainty: string;
+}
+
+/** The band a deterministic rule earns when its builder says nothing more specific (AI-NFR-04). */
+export const RULE_CONFIDENCE: Confidence = {
+  band: 'medium', basis: 'rule_inference',
+  uncertainty: 'A tested rule over the shop\'s own records found this. It is a suggestion: the records may be out of date or incomplete, so check the evidence before acting.',
+};
+/** A recorded fact the rule only reports (an expiry date, an open alert, an overdue task). */
+export const FACT_CONFIDENCE: Confidence = {
+  band: 'high', basis: 'recorded_fact',
+  uncertainty: 'This reports what the records say. It cannot know about anything that happened in the shop and was not recorded.',
+};
+/** A model's answer: grounded on cited records, or not grounded at all. */
+export function modelConfidence(citedCount: number, answered: boolean): Confidence {
+  if (!answered) return { band: 'low', basis: 'model_answer', uncertainty: 'No answer was given, so there is nothing to rely on.' };
+  return citedCount > 0
+    ? { band: 'medium', basis: 'model_answer', uncertainty: `A model wrote this from ${citedCount} cited record(s). Models can misread what they cite — check each cited record before relying on it.` }
+    : { band: 'low', basis: 'model_answer', uncertainty: 'A model wrote this and cited none of the shop\'s records, so nothing in it has been checked against them.' };
+}
+
 export interface Proposal {
   readonly proposalId: string;
   readonly agent: AgentId;
@@ -110,6 +148,8 @@ export interface Proposal {
   readonly wouldRequire: string;
   readonly evidence: readonly EvidenceItem[];
   readonly createdAt: string;
+  /** AI-NFR-04: always present on a proposal the run route accepts (a builder may set a more specific one). */
+  readonly confidence?: Confidence;
   /**
    * Typed as the literal `false`. A proposal has committed nothing and can commit nothing —
    * hard rule #5 in the type system rather than in a comment.
@@ -153,6 +193,9 @@ export function serverRunCost(agent: AgentId): { readonly costMinor: number; rea
   void agent; // every agent in this build is deterministic; a model-backed one gets its own line here
   return { costMinor: 0, calledAModel: false };
 }
+
+/** D3 (owner, 4 Aug 2026): ₹15,000 a month for the WHOLE platform runtime, in paise. No AI cap may exceed it. */
+export const D3_PLATFORM_CEILING_MINOR = 1_500_000;
 
 export interface Budget {
   readonly capMinor: number;
@@ -205,14 +248,20 @@ export function acceptProposal(p: Omit<Proposal, 'committed'>): RunResult {
   }
   return {
     ok: true,
-    proposals: [{ ...p, committed: false }],
+    // AI-NFR-04: every accepted proposal carries a confidence band — the builder's own, or the rule-based default.
+    proposals: [{ ...p, confidence: p.confidence ?? RULE_CONFIDENCE, committed: false }],
     detail: `${p.agent}: ${p.summary} — ${p.evidence.length} piece(s) of evidence, requires ${p.wouldRequire} by a person`,
   };
 }
 
 export interface AiDeps {
-  readonly killSwitchOn: (tenantId: string) => Promise<boolean> | boolean;
-  readonly setKillSwitch: (tenantId: string, on: boolean, by: string, at: string) => Promise<void> | void;
+  /**
+   * Whether the AI is stopped. With an `agent`, whether THAT agent is stopped — by the shop-wide switch or by a scoped
+   * switch (all AI, the customer-facing ones, or that one agent; AI-NFR-10). Without one, the shop-wide switch alone.
+   */
+  readonly killSwitchOn: (tenantId: string, agent?: AgentId) => Promise<boolean> | boolean;
+  /** The shop-wide switch. Pulling it (`on: true`) carries the reason, so it can be reviewed afterwards (AI-NFR-10). */
+  readonly setKillSwitch: (tenantId: string, on: boolean, by: string, at: string, reason?: string) => Promise<void> | void;
   readonly budget: (tenantId: string) => Promise<Budget> | Budget;
   /** Set the spend cap and period for the tenant. Enforced BEFORE each run, never after. */
   readonly setBudget: (tenantId: string, budget: { readonly capMinor: number; readonly periodEnds: string }, by: string, at: string) => Promise<void> | void;
@@ -277,6 +326,15 @@ export interface AiDeps {
    * way; the inbox says which, so nobody reads a rule's output as a model's. Absent → none configured.
    */
   readonly modelProviderConfigured?: () => boolean;
+  /**
+   * AI-NFR-10 (OB-288 lane 4 · P1): an agent's own monthly ceiling and what it has spent (the server's metered figure).
+   * Absent → only the shop-wide cap applies. A run that would take an agent past its own ceiling is refused before it runs.
+   */
+  readonly agentCeiling?: (tenantId: string, agent: AgentId) => Promise<{ readonly ceilingMinor: number; readonly spentMinor: number } | undefined> | { readonly ceilingMinor: number; readonly spentMinor: number } | undefined;
+  /** AIRecommendationApproved/Rejected: a person's decision on each proposal, folded onto the register's reply. */
+  /** The sum of every agent's own ceiling — the shop's cap may not be set below it. */
+  readonly agentCeilingsTotal?: (tenantId: string) => Promise<number> | number;
+  readonly proposalOutcomes?: (tenantId: string) => Promise<readonly { readonly proposalId: string; readonly decision: 'approved' | 'rejected'; readonly by: string; readonly at: string; readonly reason?: string }[]>;
   readonly now: () => string;
 }
 
@@ -385,7 +443,7 @@ export function aiRoutes(deps: AiDeps): readonly Route[] {
         const callerEstimate = (ctx.body as { estimatedCostMinor?: unknown } | undefined)?.estimatedCostMinor;
         const gate = mayRun({
           agent,
-          killSwitchOn: await deps.killSwitchOn(ctx.tenantId),
+          killSwitchOn: await deps.killSwitchOn(ctx.tenantId, agent),
           budget: await deps.budget(ctx.tenantId),
           estimatedCostMinor: cost.costMinor,
           enabledAgents: await deps.enabledAgents(ctx.tenantId),
@@ -396,6 +454,16 @@ export function aiRoutes(deps: AiDeps): readonly Route[] {
             whatHappened: gate.detail,
             wasItSaved: 'not_saved',
             nextSafeAction: 'Nothing ran and nothing was spent. The shop is unaffected — no part of it depends on an agent running.',
+          });
+        }
+        // AI-NFR-10: the agent's OWN ceiling, checked before the run exactly as the shop-wide cap is.
+        const own = await deps.agentCeiling?.(ctx.tenantId, agent);
+        if (own !== undefined && own.spentMinor + cost.costMinor > own.ceilingMinor) {
+          throw apiError(429, {
+            code: 'agent_budget_exhausted',
+            whatHappened: `${agent} has spent ${own.spentMinor} of its own ${own.ceilingMinor} ceiling this period and this run would cost ${cost.costMinor}. Checked before the run — the AI stops, the shop does not.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing ran and nothing was spent. Raise this agent\'s ceiling (within the shop\'s AI cap) if the owner agrees.',
           });
         }
 
@@ -422,10 +490,15 @@ export function aiRoutes(deps: AiDeps): readonly Route[] {
     {
       api: 'API-13', method: 'GET', path: '/v1/ai/proposals',
       permission: 'ai.proposal.read',
-      handler: async (ctx) => ({
-        status: 200,
-        body: { proposals: await deps.openProposals(ctx.tenantId), committedAnything: false },
-      }),
+      handler: async (ctx) => {
+        // AI-NFR-04 + AIRecommendationApproved/Rejected: every proposal with its confidence (an older record without one
+        // is shown the rule-based default, said) and the person's decision on it, if any. Nothing here commits.
+        const outcomes = new Map(((await deps.proposalOutcomes?.(ctx.tenantId)) ?? []).map((o) => [o.proposalId, o]));
+        const proposals = (await deps.openProposals(ctx.tenantId)).map((p) => ({
+          ...p, confidence: p.confidence ?? RULE_CONFIDENCE, outcome: outcomes.get(p.proposalId) ?? null,
+        }));
+        return { status: 200, body: { proposals, awaitingDecision: proposals.filter((p) => p.outcome === null).length, committedAnything: false } };
+      },
     },
     {
       // The Data Quality steward's INBOX (A08). The live A08 findings folded with the stewards'
@@ -438,7 +511,7 @@ export function aiRoutes(deps: AiDeps): readonly Route[] {
       api: 'API-13', method: 'GET', path: '/v1/ai/data-quality/worklist',
       permission: 'ai.proposal.read',
       handler: async (ctx) => {
-        const killed = await deps.killSwitchOn(ctx.tenantId);
+        const killed = await deps.killSwitchOn(ctx.tenantId, 'A08');
         const enabled = (await deps.enabledAgents(ctx.tenantId)).includes('A08');
         const scope = checkAskedScope(ctx); // EA-09: a branch not held is refused whether or not the agent is on
         if (killed || !enabled) {
@@ -504,7 +577,7 @@ export function aiRoutes(deps: AiDeps): readonly Route[] {
       api: 'API-13', method: 'GET', path: '/v1/ai/operations/worklist',
       permission: 'ai.proposal.read',
       handler: async (ctx) => {
-        const killed = await deps.killSwitchOn(ctx.tenantId);
+        const killed = await deps.killSwitchOn(ctx.tenantId, 'A06');
         const enabled = (await deps.enabledAgents(ctx.tenantId)).includes('A06');
         const scope = checkAskedScope(ctx); // EA-09: a branch not held is refused whether or not the agent is on
         if (killed || !enabled) {
@@ -570,7 +643,7 @@ export function aiRoutes(deps: AiDeps): readonly Route[] {
       api: 'API-13', method: 'GET', path: '/v1/ai/workforce/worklist',
       permission: 'ai.proposal.read',
       handler: async (ctx) => {
-        const killed = await deps.killSwitchOn(ctx.tenantId);
+        const killed = await deps.killSwitchOn(ctx.tenantId, 'A10');
         const enabled = (await deps.enabledAgents(ctx.tenantId)).includes('A10');
         const scope = checkAskedScope(ctx); // EA-09: a branch not held is refused whether or not the agent is on
         if (killed || !enabled) {
@@ -670,6 +743,26 @@ export function aiRoutes(deps: AiDeps): readonly Route[] {
             nextSafeAction: 'Send { "capMinor": <integer>, "periodEnds": "<iso timestamp>" }. Nothing was changed.',
           });
         }
+        // D3 (owner, 4 Aug 2026): the WHOLE platform runtime — hosting, storage, backups, messaging and normal AI use — is
+        // ₹15,000 a month. An AI cap above that is a cap the platform cannot honour, so it is refused by name, never trimmed.
+        if ((b['capMinor'] as number) > D3_PLATFORM_CEILING_MINOR) {
+          throw apiError(409, {
+            code: 'over_the_platform_ceiling',
+            whatHappened: `An AI cap of ${b['capMinor'] as number} paise is above the ₹15,000-a-month ceiling the owner set for the whole platform (D3), which also has to pay for hosting, backups and messaging.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: `Send a cap of at most ${D3_PLATFORM_CEILING_MINOR} paise. Nothing was changed.`,
+          });
+        }
+        // Every agent's own ceiling must still fit inside the shop's cap — lowering the cap below them is refused.
+        const ceilings = (await deps.agentCeilingsTotal?.(ctx.tenantId)) ?? 0;
+        if ((b['capMinor'] as number) < ceilings) {
+          throw apiError(409, {
+            code: 'below_the_agent_ceilings',
+            whatHappened: `The agents' own ceilings add up to ${ceilings} paise, more than the ${b['capMinor'] as number} asked for the shop.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Lower the agents\' ceilings first, or send a larger cap. Nothing was changed.',
+          });
+        }
         await deps.setBudget(ctx.tenantId, { capMinor: b['capMinor'] as number, periodEnds: b['periodEnds'] as string }, ctx.userId, deps.now());
         return { status: 200, body: { capMinor: b['capMinor'], periodEnds: b['periodEnds'], by: ctx.userId, at: deps.now() } };
       },
@@ -689,7 +782,20 @@ export function aiRoutes(deps: AiDeps): readonly Route[] {
             nextSafeAction: 'Send the intended state. The switch is unchanged.',
           });
         }
-        await deps.setKillSwitch(ctx.tenantId, on, ctx.userId, deps.now());
+        // AI-NFR-10 (OB-288 lane 4 · P1): stopping the AI is instant and needs no approval — but it needs a reason, so it
+        // can be reviewed afterwards (act now, account later). Turning it back on is the owner's setting; the reason is kept
+        // when given.
+        const rawReason = (ctx.body as { reason?: unknown })?.reason;
+        const reason = typeof rawReason === 'string' ? rawReason.trim() : '';
+        if (on && reason === '') {
+          throw apiError(400, {
+            code: 'kill_switch_needs_a_reason',
+            whatHappened: 'Stopping the AI needs a short reason, so whoever reviews it afterwards knows why.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send { "on": true, "reason": "…" }. The switch is unchanged.',
+          });
+        }
+        await deps.setKillSwitch(ctx.tenantId, on, ctx.userId, deps.now(), reason === '' ? undefined : reason);
         return {
           status: 200,
           body: {

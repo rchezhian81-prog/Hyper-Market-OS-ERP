@@ -25,7 +25,9 @@ import type { PriceEntry } from '../../../packages/price-list/src/price-list';
 import type { Promotion } from '../../../packages/promotions/src/promotions';
 import { resolveGstRate, InvalidRateSchedule, type GstRatePeriod } from '../../../packages/finance/src/rate';
 import { TOBACCO_MINIMUM_AGE } from '../../../packages/restricted-sales/src/till-gate';
+import { liquorReason } from '../../../packages/restricted-sales/src/liquor';
 import { knowsBlockedBatches } from '../../inventory/src/sale-blocks';
+import { cessRateOn, type CessRate, type CessRatePeriod } from '../../../packages/finance/src/cess';
 
 export interface CataloguePreviewDeps {
   readonly products: (tenantId: string) => Promise<readonly ProductRecord[]> | readonly ProductRecord[];
@@ -38,6 +40,11 @@ export interface CataloguePreviewDeps {
    *  every till refuses it, offline (owner decision "C": the whole product until the batch block lands in R3). */
   readonly blockedProducts?: (tenantId: string) => Promise<ReadonlySet<string>> | ReadonlySet<string>;
   /**
+   * M10-FR-01 (integration follow-up): the batches head office's daily expiry move put in the EXPIRED state, by product —
+   * carried on the pack so a batch-bearing barcode of one is refused at the till, offline. Absent: none carried.
+   */
+  readonly expiredBatches?: (tenantId: string) => Promise<ReadonlyMap<string, readonly { readonly batchId: string; readonly expiry: string }[]>>;
+  /**
    * D-19 (R3, OB-148 / OB-190): zone / channel pricing as the owner's switches allow it. `allowedEntries` leaves out every
    * channel or zone entry whose switch is off; `zoneOfStore` names the store's zone only while zone pricing is switched
    * on. With every switch off the pack is exactly what it was before D-19 (one shelf price). Absent: nothing gated.
@@ -46,6 +53,11 @@ export interface CataloguePreviewDeps {
     readonly allowedEntries: (tenantId: string, entries: readonly PriceEntry[]) => Promise<readonly PriceEntry[]>;
     readonly zoneOfStore: (tenantId: string, storeId: string) => Promise<string | undefined>;
   };
+  /**
+   * A7: the compensation-cess schedule per HSN (`cess-rates.ts`). The cess in force on the build date rides the pack on each
+   * product of that HSN, signed. Absent → no product carries a cess (a deployment that has not wired it).
+   */
+  readonly cessSchedule?: (tenantId: string, hsnCode: string) => Promise<readonly CessRatePeriod[]> | readonly CessRatePeriod[];
   readonly now: () => string;
 }
 
@@ -83,6 +95,15 @@ export function regulatedFlagsFor(r: Pick<ProductRecord, 'safety'>): Readonly<Re
     ...(s?.bannedSingleUsePlastic === true ? { bannedSingleUsePlastic: true } : {}),
     // B13 (OB-138): a gold piece and its hallmark HUID — the till refuses a gold line with none, or with one already sold.
     ...(s?.gold === true ? { gold: true, ...(typeof s.huid === 'string' && s.huid !== '' ? { huid: s.huid } : {}) } : {}),
+    // B12 (OB-325): a BIS-controlled product, its BIS licence number and the licence's last valid day — the till refuses it
+    // offline when either is missing or the licence has run out by its own clock.
+    ...(s?.bisControlled === true ? {
+      bisControlled: true,
+      ...(typeof s.bisLicenceNo === 'string' && s.bisLicenceNo.trim() !== '' ? { bisLicenceNo: s.bisLicenceNo.trim() } : {}),
+      ...(typeof s.bisLicenceValidUntil === 'string' && s.bisLicenceValidUntil !== '' ? { bisLicenceValidUntil: s.bisLicenceValidUntil } : {}),
+    } : {}),
+    // B8 (OB-298): a perishable — the cashier confirms the date printed on the pack before the line is added.
+    ...(s?.perishable === true ? { perishable: true } : {}),
   };
   return Object.keys(flags).length === 0 ? undefined : flags;
 }
@@ -113,12 +134,27 @@ export function toMaster(r: ProductRecord, asOf: string): MasterProduct {
  * (`catalogueAdapter.buildSnapshot`), so there is ONE fold path: the same products reach a preview and a
  * published pack. `version` is the version the snapshot will carry (0 for a preview; previous+1 when publishing).
  */
+/** B17 (OB-288 P2): a product left out of every pack because it is never sold — liquor (TASMAC). */
+export interface NotSoldProduct {
+  readonly productId: string;
+  readonly sku: string;
+  readonly reason: 'liquor_not_sold';
+  readonly detail: string;
+}
+
 export async function assembleCatalogueSnapshot(
   deps: CataloguePreviewDeps,
   opts: { readonly tenantId: string; readonly storeId: string; readonly asOf: string; readonly version: number },
-): Promise<BuildSnapshotResult> {
+): Promise<BuildSnapshotResult & { readonly notSold?: readonly NotSoldProduct[] }> {
   const asOfDate = opts.asOf.slice(0, 10); // date part, for the effective-dated tax + MRP lookups
-  const all = await deps.products(opts.tenantId);
+  // B17 (TASMAC · OB-288 P2): liquor never reaches a pack — a product master published before the rule (by its flag or its
+  // HSN) is LEFT OUT and said, so no till is ever handed one to sell, offline or not.
+  const everything = await deps.products(opts.tenantId);
+  const notSold: NotSoldProduct[] = everything.flatMap((r) => {
+    const why = liquorReason({ declaredLiquor: r.safety?.liquor === true, hsn: r.taxClass });
+    return why === undefined ? [] : [{ productId: r.productId, sku: r.sku, reason: 'liquor_not_sold' as const, detail: why }];
+  });
+  const all = notSold.length === 0 ? everything : everything.filter((r) => !notSold.some((n) => n.productId === r.productId));
   // B16 (COTPA s.7 · OB-140 "A"): a tobacco product reaches the pack only with a named person's confirmation for the
   // warning picture in force on the build date. One never confirmed, or confirmed only for an earlier picture, is LEFT
   // OUT and said — so a new picture coming into force takes it off sale on the next pack. One that is confirmed carries
@@ -153,6 +189,15 @@ export async function assembleCatalogueSnapshot(
     }
   }
 
+  // A7: the compensation cess each HSN carries on the build date — none when no schedule says so.
+  const taxClassCess: Record<string, CessRate> = {};
+  if (deps.cessSchedule !== undefined) {
+    for (const hsn of new Set(records.map((r) => r.taxClass).filter((c): c is string => isStr(c)))) {
+      const cess = cessRateOn(await deps.cessSchedule(opts.tenantId, hsn), asOfDate);
+      if (cess !== undefined) taxClassCess[hsn] = cess;
+    }
+  }
+
   // Barcodes: the register, mapped to the snapshot shape (the engine drops any whose product is excluded).
   // The register records SYMBOLOGY (gtin/ean/upc/internal/case/embedded); the catalogue `kind` is how the
   // LANE reads the code, where a plain product code is 'standard'. Embedded weight/price barcodes are driven
@@ -164,6 +209,8 @@ export async function assembleCatalogueSnapshot(
 
   // SF-08: what head office's recall and quality-hold registers say must not be sold.
   const blocked = deps.blockedProducts === undefined ? new Set<string>() : await deps.blockedProducts(opts.tenantId);
+  // M10-FR-01: and which batches the expiry move put in the expired state.
+  const expiredOf = deps.expiredBatches === undefined ? new Map<string, readonly { batchId: string; expiry: string }[]>() : await deps.expiredBatches(opts.tenantId);
 
   const built = buildCatalogueSnapshot({
     // A store's own pack is the till's (in-store) channel: no channel is named, so an app or delivery price never resolves.
@@ -173,7 +220,9 @@ export async function assembleCatalogueSnapshot(
     products: records.map((r) => {
       const plain = toMaster(r, opts.asOf);
       const until = confirmedUntil.get(r.productId);
-      const master = until === undefined ? plain : { ...plain, regulatedFlags: { ...(plain.regulatedFlags ?? {}), tobaccoWarningConfirmedUntil: until } };
+      const confirmed = until === undefined ? plain : { ...plain, regulatedFlags: { ...(plain.regulatedFlags ?? {}), tobaccoWarningConfirmedUntil: until } };
+      const expiredBatches = expiredOf.get(r.productId);
+      const master = expiredBatches === undefined || expiredBatches.length === 0 ? confirmed : { ...confirmed, expiredBatches };
       if (!blocked.has(r.productId)) return master;
       // SF-08 · OB-139 "A" (R3): the pack says WHICH batches block the product, so a 2D code carrying a sibling batch sells.
       // A recall flag on the product itself (`recallBlocked`) blocks every batch — no batch list is sent for it.
@@ -185,6 +234,7 @@ export async function assembleCatalogueSnapshot(
     barcodes,
     priceEntries,
     taxClasses,
+    ...(Object.keys(taxClassCess).length === 0 ? {} : { taxClassCess }),
   });
   // SF-01: the launched offers the lanes apply — active and not yet ended at build time (one starting later rides along:
   // the lane checks each offer's window against its own clock). A draft or stopped offer never reaches a lane.
@@ -196,7 +246,8 @@ export async function assembleCatalogueSnapshot(
     ...built,
     excluded: [...built.excluded, ...unconfirmed.map((r) => ({ productId: r.productId, sku: r.sku, reason: 'tobacco_warning_not_confirmed' as const }))],
   };
-  return promotions.length === 0 ? withTobacco : { ...withTobacco, snapshot: { ...withTobacco.snapshot, promotions } };
+  const withOffers = promotions.length === 0 ? withTobacco : { ...withTobacco, snapshot: { ...withTobacco.snapshot, promotions } };
+  return notSold.length === 0 ? withOffers : { ...withOffers, notSold };
 }
 
 export function cataloguePreviewRoutes(deps: CataloguePreviewDeps): readonly Route[] {
@@ -236,6 +287,8 @@ export function cataloguePreviewRoutes(deps: CataloguePreviewDeps): readonly Rou
             includedCount: result.includedCount,
             excluded: result.excluded, // each with productId + sku + reason (no_price / no_tax_class / price_above_mrp)
             droppedBarcodes: result.droppedBarcodes,
+            // B17: what is never sold and so never in any pack — said, never silently missing.
+            ...(result.notSold === undefined ? {} : { notSold: result.notSold }),
           },
         };
       },

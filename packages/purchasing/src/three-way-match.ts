@@ -40,6 +40,9 @@ const valueOf = (qty: number, unitMinor: number, scale = 1, per = 1): number => 
   return Math.sign(n) * Math.floor((Math.abs(n) * 2 + d) / (2 * d));
 };
 
+/** OB-334: the same one rounding, for a value worked out beside the match (a volume rebate's value received at order cost). */
+export const lineValueMinor = valueOf;
+
 export type MatchStatus = 'matched' | 'within_tolerance' | 'blocked';
 
 export interface LineMatch {

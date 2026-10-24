@@ -260,12 +260,19 @@ export function serviceCaseRoutes(deps: ServiceCaseDeps): readonly Route[] {
       permission: 'service.case.read',
       handler: async (ctx) => {
         const now = deps.now();
-        const all = await deps.serviceCases(ctx.tenantId);
-        const withSla = all.map((c) => ({ caseId: c.caseId, kind: c.kind, priority: c.priority, state: c.state, assignedTo: c.assignedTo, ...slaOf(c, now) }));
+        // OB-288 · M16-FR-04 ("complaint history is visible to service"): `?customerRef=` narrows to ONE customer's cases,
+        // each with what it was about, so the desk sees the history before it answers. Without it, every case as before.
+        const customerRef = (ctx.query['customerRef'] ?? '').trim();
+        const all = (await deps.serviceCases(ctx.tenantId)).filter((c) => customerRef === '' || c.customerRef === customerRef);
+        const withSla = all.map((c) => ({
+          caseId: c.caseId, kind: c.kind, priority: c.priority, state: c.state, assignedTo: c.assignedTo, customerRef: c.customerRef, openedAt: c.openedAt,
+          ...(customerRef === '' ? {} : { summary: c.summary, ...(c.orderRef === undefined ? {} : { orderRef: c.orderRef }), ...(c.resolvedAt === undefined ? {} : { resolvedAt: c.resolvedAt }), ...(c.resolution === undefined ? {} : { resolution: c.resolution }) }),
+          ...slaOf(c, now),
+        }));
         const rows = ctx.query['breached'] === 'true'
           ? withSla.filter((r) => r.firstResponse.status === 'breached' || r.resolution.status === 'breached')
           : withSla;
-        return { status: 200, body: { cases: rows, count: rows.length, asAt: now } };
+        return { status: 200, body: { cases: rows, count: rows.length, ...(customerRef === '' ? {} : { customerRef }), asAt: now } };
       },
     },
     {

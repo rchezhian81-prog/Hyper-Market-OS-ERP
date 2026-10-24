@@ -15,7 +15,7 @@
 import type { Route, RequestContext } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import {
-  buildDayBook, postDayBook, validatePostingMap, DEFAULT_RETAIL_POSTING_MAP,
+  buildDayBook, postDayBook, validatePostingMap, dayBookLedgerLines, DEFAULT_RETAIL_POSTING_MAP,
   type DayBookSale, type DayBookReturn, type DayBookException, type DayBookSourceKind, type PostingMap, type DayBookLoyalty,
 } from '../../../packages/finance/src/index';
 import { postJournal, type FinanceDeps, type JournalEntry } from './index';
@@ -42,6 +42,14 @@ export interface DayBookJournal extends JournalEntry {
      * the sale it came off — so the day book reads bill by bill against the old ERP. Absent when no source has one.
      */
     readonly oldErpBills?: readonly { readonly sourceId: string; readonly oldErpBillNumber: string }[];
+    /**
+     * OB-340: on a sale or sale-return voucher, each department's exact net (its lines' taxable value after their
+     * discounts), as the department owned the products when the voucher posted. The revenue line is carried split the same
+     * way, each part naming its department as its centre. Absent when no line was in a department.
+     */
+    readonly netByDepartment?: Readonly<Record<string, number>>;
+    /** OB-340: returns whose net could not be told apart by department (left with the store, said by id). */
+    readonly departmentNotKnown?: readonly string[];
   };
 }
 
@@ -70,6 +78,11 @@ export interface DayBookDeps extends Pick<FinanceDeps, 'periodStates' | 'nextOpe
    * on a composition without loyalty: nothing loyalty posts.
    */
   readonly loyaltyOn?: (tenantId: string, sales: readonly DayBookSale[], returns: readonly DayBookReturn[]) => Promise<readonly DayBookLoyalty[]>;
+  /**
+   * OB-340 (owner, 24 Oct 2026): which department owns each product now (through its category — the organisation's
+   * department ownership). Absent on a composition without departments: the day book does not split by department.
+   */
+  readonly departmentOf?: (tenantId: string) => Promise<(productId: string) => string | undefined>;
 }
 
 const TRADING_DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -125,6 +138,8 @@ const summarise = (j: DayBookJournal) => ({
   period: j.period, documentDate: j.documentDate, ...(j.dayBook.belongsTo === undefined ? {} : { belongsTo: j.dayBook.belongsTo }),
   components: j.dayBook.components, lines: j.lines, postedBy: j.postedBy, narrative: j.narrative,
   ...(j.dayBook.oldErpBills === undefined ? {} : { oldErpBills: j.dayBook.oldErpBills }),
+  ...(j.dayBook.netByDepartment === undefined ? {} : { netByDepartment: j.dayBook.netByDepartment }),
+  ...(j.dayBook.departmentNotKnown === undefined ? {} : { departmentNotKnown: j.dayBook.departmentNotKnown }),
 });
 
 /**
@@ -200,9 +215,11 @@ export function dayBookRoutes(deps: DayBookDeps): readonly Route[] {
         );
         const alreadyPosted = coveredByKind(posted);
         const loyalty = deps.loyaltyOn === undefined ? undefined : await deps.loyaltyOn(t, sales, returns);
+        const departmentOf = deps.departmentOf === undefined ? undefined : await deps.departmentOf(t);
         const book = buildDayBook({
           tradingDay, sales, returns, originalSales: originals, taxRateOf: (p) => rates.get(p), alreadyPosted,
           ...(loyalty === undefined ? {} : { loyalty }),
+          ...(departmentOf === undefined ? {} : { departmentOf }),
         });
         const outcome = postDayBook(book, map, 'INR');
 
@@ -222,15 +239,14 @@ export function dayBookRoutes(deps: DayBookDeps): readonly Route[] {
             period, documentDate: tradingDay,
             narrative: `Day book ${tradingDay} — ${aggregate.kind}: ${aggregate.sourceIds.length} ${aggregate.sourceKind}(s)`
               + (closed ? ` (posted to ${period}: ${belongsTo} is closed)` : ''),
-            lines: entry.lines.map((l) => ({
-              accountCode: l.account,
-              debitMinor: l.side === 'debit' ? l.amount.minor : 0,
-              creditMinor: l.side === 'credit' ? l.amount.minor : 0,
-            })),
+            // OB-340: the revenue line carried per department (each part naming its department); every other line as posted.
+            lines: dayBookLedgerLines(aggregate, entry, map),
             postedBy: ctx.userId,
             dayBook: {
               tradingDay, kind: aggregate.kind, sourceKind: aggregate.sourceKind, sourceIds: aggregate.sourceIds,
               components: aggregate.components, ...(closed ? { belongsTo } : {}),
+              ...(aggregate.netByDepartment === undefined ? {} : { netByDepartment: aggregate.netByDepartment }),
+              ...(aggregate.departmentNotKnown === undefined ? {} : { departmentNotKnown: aggregate.departmentNotKnown }),
               ...((): { oldErpBills?: NonNullable<DayBookJournal['dayBook']['oldErpBills']> } => {
                 const old = oldErpBillsOf(aggregate.sourceKind, aggregate.sourceIds, sales, returns, originals);
                 return old === undefined ? {} : { oldErpBills: old };

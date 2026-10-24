@@ -49,8 +49,8 @@ if (DATABASE_URL !== undefined) {
 const STORE = 'store-01';
 const AS_OF = '2030-06-01';
 const GROCERY = { categoryId: 'grocery', name: 'Grocery', parentId: null };
-const PANEER = '8901000000011';
-const CURD = '8901000000028';
+const PANEER = '8901000000019';
+const CURD = '8901000000026';
 const signer = hmacSigner(TEST_PACK_KEY);
 const TOKEN = ['edge', 'cloud', 'token'].join('-').padEnd(40, 'w');
 type Res = { status: number; body: unknown };

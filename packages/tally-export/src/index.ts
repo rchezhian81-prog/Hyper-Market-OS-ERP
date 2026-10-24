@@ -3,3 +3,5 @@
 
 export * from './tally-xml';
 export * from './tally-validator';
+// OB-293: every journal the general ledger posts, as one daily file per day, with a family and voucher type per journal.
+export * from './gl-journals';

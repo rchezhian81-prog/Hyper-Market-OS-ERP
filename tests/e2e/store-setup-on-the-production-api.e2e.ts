@@ -31,8 +31,9 @@ const OWNER2 = 'u-owner-2'; const CASHIER = 'u-cash-setup';
 
 interface Item { key: string; value: unknown; version: number; isDefault: boolean }
 
-/** OB-288 P1: the settings M01-FR-02 names for the owner's approval — one person's save is refused. */
-const HIGH_IMPACT: readonly string[] = ['trading_day.cutoff', 'locale.currency'];
+/** OB-288 P1 · OB-336: the settings that need the owner's approval (M01-FR-02's two, and the three the owner added on 23 Oct
+ *  2026 — the time zone, the till's spend cap and the bulk-publish threshold) — one person's save is refused. */
+const HIGH_IMPACT: readonly string[] = ['trading_day.cutoff', 'locale.currency', 'locale.time_zone', 'loyalty.till_spend_cap_paise', 'catalogue.bulk_publish_threshold'];
 
 describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('store setup on the production API, in a real browser (M01-FR-02/03)', () => {
   let browser: Browser;
@@ -198,6 +199,11 @@ const TABLE: Readonly<Record<string, Row>> = {
   'platform.box_unsent_warn_hours': { enter: '4', stored: 4, bad: { enter: '73', value: 73 } },
   'platform.box_claim_slack_numbers': { enter: '0', stored: 0, bad: { enter: '101', value: 101 } },
   'platform.box_claim_slack_percent': { enter: '2', stored: 2, bad: { enter: '51', value: 51 } },
+  // A22 (OB-326): the B2C dynamic QR — switched off by default; each detail empty (not set) or well formed.
+  'invoice.b2c_dynamic_qr.on': { enter: true, stored: true },
+  'invoice.b2c_dynamic_qr.upi_id': { enter: 'srehyper@okaxis', stored: 'srehyper@okaxis', control: 'text', bad: { enter: 'srehyper', value: 'srehyper' } },
+  'invoice.b2c_dynamic_qr.bank_account': { enter: '123456789012', stored: '123456789012', control: 'text', bad: { enter: '1234', value: '1234' } },
+  'invoice.b2c_dynamic_qr.ifsc': { enter: 'HDFC0001234', stored: 'HDFC0001234', control: 'text', bad: { enter: 'HDFC1234', value: 'HDFC1234' } },
 };
 
 /** The control a setting must be edited with: derived from its default's type for numbers, on/off and lists. */
@@ -310,8 +316,9 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('store setu
         await page.waitForFunction((k) => /Saved/.test((globalThis as unknown as { document: { getElementById(i: string): { textContent: string | null } | null } }).document.getElementById(`m-${k}`)?.textContent ?? ''), key, { timeout: 15_000 })
           .catch(async () => { notSaved.push(`${key}: ${await text(page, `m-${key}`)}`); });
       }
-      // OB-288 P1 (M01-FR-02 "owner approval for currency/precision and trading-day changes"): those two are refused for one
-      // person, in head office's own words on the screen, and nothing of them is kept.
+      // OB-288 P1 (M01-FR-02 "owner approval for currency/precision and trading-day changes") and OB-336 (time zone, till spend
+      // cap, bulk-publish threshold): those are refused for one person, in head office's own words on the screen, and nothing
+      // of them is kept.
       expect(notSaved.filter((n) => !HIGH_IMPACT.some((k) => n.startsWith(`${k}:`)))).toEqual([]);
       for (const k of HIGH_IMPACT) expect(notSaved.find((n) => n.startsWith(`${k}:`))).toMatch(/is high-impact: the owner approves it first/);
       expect(errors).toEqual([]);
@@ -327,7 +334,8 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('store setu
     const again = await open();
     try {
       expect(await again.page.locator('[id="f-loyalty.points_per_100_inr"]').inputValue()).toBe('2');
-      expect(await again.page.locator('[id="f-loyalty.till_spend_cap_paise"]').inputValue()).toBe('75000');
+      // OB-336: the till's spend cap was refused for one person, so the editor still shows the owner's ₹500 default.
+      expect(await again.page.locator('[id="f-loyalty.till_spend_cap_paise"]').inputValue()).toBe('50000');
       expect(await again.page.locator('[id="f-pos.licence_hours.enabled"]').isChecked()).toBe(true);
       expect(again.errors).toEqual([]);
     } finally { await again.close(); }

@@ -58,7 +58,8 @@ import { readMachineReference } from '../../../packages/tender/src/machine-refer
 import type { StorePack, PackRoutingPolicy, PackSlot, PackGstReconciliationPolicy, PackCategoryPolicyPolicy, PackGstReturnsPolicy, PackWastePolicy, PackWriteOffCapturePolicy, PackCountsPolicy, PackFleetPolicy, PackProductPublishReviewPolicy, PackDataQualityPolicy, PackOperationsInboxPolicy, PackLossPreventionPolicy, PackSubstitutionExceptionPolicy, PackDayBookPolicy, PackDocumentTemplatePolicy, PackReturnGovernancePolicy, PackCashOfficePolicy, PackRiskAcceptancePolicy, PackDayReopenPolicy, PackStockHealthPolicy, PackStoredValuePolicy, PackIntegrationHealthPolicy, PackGoodsReceiptPolicy, PackSuppliersPolicy, PackIndentsPolicy, PackDataIoPolicy, PackWorkforceInboxPolicy, PackEssPolicy, PackRosteringPolicy, PackChecklistPolicy, PackProductionPolicy, PackFacilitiesPolicy } from './store-pack';
 import { DEFAULT_WRITE_OFF_THRESHOLD_MINOR } from '../../../packages/waste/src/waste';
 import { packFreshness, type SignedPack } from '../../../services/catalogue/src/pack';
-import { productionWork, foodSafetyWork, transferWork, type BoxCapturedRun } from './store-work';
+import { permissionsOf } from './screen-navigation';
+import { productionWork, foodSafetyWork, transferWork, qualityHoldWork, type BoxCapturedRun, type BoxQualityRelease } from './store-work';
 import type { HeldWorkFeeds } from './work-feeds-file';
 import type { ClockCheck, ClockFlaggedBill } from './clock-guard';
 
@@ -68,6 +69,8 @@ export const SCREENS = Object.freeze([
   'reporting', 'service', 'expiry', 'finance', 'gst-reconciliation', 'category-policy', 'gst-returns', 'waste', 'write-off-capture', 'counts', 'product-publish-review', 'data-quality', 'operations', 'loss-prevention', 'substitution-exceptions', 'day-book', 'document-templates', 'return-governance', 'cash-office', 'risk-acceptance', 'day-reopen', 'stock-health', 'stored-value', 'integration-health', 'goods-receipt', 'suppliers', 'indents', 'unsellable', 'data-io', 'workforce', 'ess', 'rostering', 'checklist', 'production', 'facilities', 'fleet', 'admin', 'ai', 'migration', 'warehouse', 'warehouse-supervisor', 'approvals', 'service-desk', 'ai-drafts',
   // WF-11 (Batch 3 r8): returned goods held off the shelf, each waiting for a person's decision.
   'held-returns',
+  // OB-288 integration follow-up: the Recalls and trace page (M10-FR-03/04 · lane 2 · P1), served from the store box too.
+  'recall-trace',
 ] as const);
 export type ScreenName = (typeof SCREENS)[number];
 
@@ -121,6 +124,8 @@ export interface ScreenInput {
   readonly workFeeds?: HeldWorkFeeds;
   /** OB-288 lane 2 · P2: production runs this box's screen captured (the device-events queue) — known here before head office. */
   readonly boxCapturedRuns?: readonly BoxCapturedRun[];
+  /** OB-333: quality-hold releases this box's facilities screen took (the device-events queue), not yet at head office's. */
+  readonly boxQualityReleases?: readonly BoxQualityRelease[];
   /** OB-288 lane 2 · §31.1: this box's clock against head office's, as last measured (`clock-guard.ts`). */
   readonly clock?: ClockCheck;
   /** OB-327: the bills this box took while its clock was 5+ minutes out — committed, listed for the manager to check. */
@@ -194,6 +199,10 @@ export interface TillProduct {
   readonly blockedBatches?: readonly string[];
   /** D-20: batches under an approved markdown and the price each is charged at. */
   readonly batchPrices?: readonly { readonly batchId: string; readonly unitPriceMinor: number }[];
+  /** M10-FR-01 · M13-FR-02: the batches head office moved to EXPIRED — a 2D scan of one is refused, a return of one is held. */
+  readonly expiredBatches?: SignedPack['snapshot']['products'][number]['expiredBatches'];
+  /** A7: the compensation cess on the product's HSN, from head office's signed schedule — the till charges it inside the MRP. */
+  readonly cess?: SignedPack['snapshot']['products'][number]['cess'];
   readonly batchTracked?: boolean;
   /** `ageRestricted` on the pack file; the master's minimum age fills the number where it knows one. */
   readonly ageRestricted?: boolean;
@@ -260,6 +269,9 @@ export function tillCatalogue(pack: StorePack, cataloguePack: SignedPack | undef
         ...(p.recallBlock === true ? { recallBlock: true } : {}),
         ...(p.recallBlock === true && p.blockedBatches !== undefined && p.blockedBatches.length > 0 ? { blockedBatches: p.blockedBatches } : {}),
         ...(p.batchPrices === undefined || p.batchPrices.length === 0 ? {} : { batchPrices: p.batchPrices }),
+        // M10-FR-01 · M13-FR-02 and A7: the expired batches and the cess ride from the signed pack to the till as signed.
+        ...(p.expiredBatches === undefined || p.expiredBatches.length === 0 ? {} : { expiredBatches: p.expiredBatches }),
+        ...(p.cess === undefined ? {} : { cess: p.cess }),
         ...(p.batchTracked === true ? { batchTracked: true } : {}),
         ...(p.regulatedFlags === undefined ? {} : { regulatedFlags: p.regulatedFlags }),
       })),
@@ -416,6 +428,10 @@ export function posPayload(input: ScreenInput): Record<string, unknown> | null {
         ? { blockedBatches: p.blockedBatches } : {}),
       // D-20: a batch under an approved markdown is charged its markdown price when its 2D code is scanned.
       ...(p.batchPrices === undefined ? {} : { batchPrices: p.batchPrices }),
+      // M10-FR-01 · M13-FR-02: an expired batch's 2D code is refused at the scan, and a returned unit of it is held.
+      ...(p.expiredBatches === undefined ? {} : { expiredBatches: p.expiredBatches }),
+      // A7: the cess the bill charges inside the MRP and prints (before this the served till never received it).
+      ...(p.cess === undefined ? {} : { cess: p.cess }),
       ...(p.batchTracked === true ? { batchTracked: true } : {}),
       // Head office's flags ride as published; the pack file's `ageRestricted` becomes the lane's age prompt.
       ...(p.regulatedFlags !== undefined ? { regulatedFlags: p.regulatedFlags }
@@ -2101,7 +2117,33 @@ export function posLanePayload(input: ScreenInput, laneId: string | undefined): 
     scales: laneScalesFor(input.pack, laneId),
     // OB-256: the mirror pilot — "Paid on old system" is then the till's only tender, for sales and refunds.
     mirrorPilot: input.mirrorPilot ?? { on: false, by: null },
+    // B10: the store's FSSAI licence for the bill (the till prints its number while in force by its own clock). Before this
+    // the served till was never told it, so only a till booted with it by hand printed the number.
+    ...((l) => (l === undefined ? {} : { fssaiLicence: l }))(fssaiLicenceOf(policies?.fssaiLicence)),
+    // A22 (OB-326): the B2C dynamic QR — only when switched on; each detail only when it is text.
+    ...((q) => (q === undefined ? {} : { b2cDynamicQr: q }))(b2cDynamicQrOf(policies?.b2cDynamicQr)),
   };
+}
+
+const textOf = (v: unknown): string | undefined => (typeof v === 'string' && v.trim() !== '' ? v.trim() : undefined);
+
+/** The pack's FSSAI licence as the till reads it — a number that is text, and its last day when given. */
+function fssaiLicenceOf(v: unknown): { readonly number: string; readonly validUntil?: string } | undefined {
+  if (v === null || typeof v !== 'object') return undefined;
+  const r = v as Record<string, unknown>;
+  const number = textOf(r['number']);
+  const validUntil = textOf(r['validUntil']);
+  return number === undefined ? undefined : { number, ...(validUntil === undefined ? {} : { validUntil }) };
+}
+
+/** The pack's B2C dynamic QR switch as the till reads it: on only when it says `on: true`. Off → not sent at all. */
+function b2cDynamicQrOf(v: unknown): { readonly on: true; readonly upiId?: string; readonly bankAccountNo?: string; readonly bankIfsc?: string } | undefined {
+  if (v === null || typeof v !== 'object' || (v as Record<string, unknown>)['on'] !== true) return undefined;
+  const r = v as Record<string, unknown>;
+  const upiId = textOf(r['upiId']);
+  const bankAccountNo = textOf(r['bankAccountNo']);
+  const ifsc = textOf(r['bankIfsc']);
+  return { on: true, ...(upiId === undefined ? {} : { upiId }), ...(bankAccountNo === undefined ? {} : { bankAccountNo }), ...(ifsc === undefined ? {} : { bankIfsc: ifsc }) };
 }
 
 /**
@@ -2151,6 +2193,37 @@ export function returnGovernancePayload(input: ScreenInput): Record<string, unkn
   const payload: Record<string, unknown> = { permissions: policy.permissions };
   if (policy.userId !== undefined) payload['userId'] = policy.userId;
 
+  return payload;
+}
+
+/**
+ * The Recalls and trace page served from the store box (OB-288 integration follow-up · M10-FR-03/04 · P-01 · P-08).
+ *
+ * Starting a recall, tracing, the call list and the SMS switch are head office's: the page asks head office for each, and
+ * says so when it cannot be reached. What the BOX can say on its own, with the line down, is what this store's tills
+ * refuse right now for a recall or a quality hold — the products the signed catalogue pack it holds marks blocked, and
+ * which batches (or every batch) — with the pack's version and age, never a guess. The person is the quality/recall
+ * screen's (the expiry policy); a person signed in at the office screens replaces them, with their own permissions.
+ * `null` when the box has not been told who is on that screen.
+ */
+export function recallTracePayload(input: ScreenInput): Record<string, unknown> | null {
+  if (!input.pack.expiryPolicy.known) return null;
+  const policy = input.pack.expiryPolicy.value;
+  const policies = input.pack.policies.known ? input.pack.policies.value : undefined;
+  // The person's permissions from this box's role register — said only when the box KNOWS them (the page then hides what
+  // they may not do); unknown is left out, and head office decides each action (never an empty list read as "none").
+  const permissions = policy.userId === undefined ? null : permissionsOf(policy.userId, input.pack);
+  const payload: Record<string, unknown> = {
+    ...(permissions === null ? {} : { permissions }),
+    storeId: policies?.storeId ?? policies?.branchId ?? null,
+  };
+  if (policy.userId !== undefined) payload['userId'] = policy.userId;
+  const snapshot = input.cataloguePack?.snapshot;
+  payload['tillBlocks'] = snapshot === undefined ? null : {
+    packVersion: snapshot.version, builtAt: snapshot.builtAt,
+    products: snapshot.products.filter((p) => p.recallBlock === true)
+      .map((p) => ({ productId: p.productId, name: p.name, batches: p.blockedBatches === undefined || p.blockedBatches.length === 0 ? null : [...p.blockedBatches] })),
+  };
   return payload;
 }
 
@@ -2426,6 +2499,8 @@ export function facilitiesPayload(input: ScreenInput): Record<string, unknown> |
   if (policy.userId !== undefined) payload['userId'] = policy.userId;
   // OB-288 lane 2 · M10-FR-02 offline: the food-safety checks in force for this store and the slots head office last knew.
   Object.assign(payload, foodSafetyWork(input));
+  // OB-333: the batches on quality hold a person may release here with the line down, and those released here already.
+  Object.assign(payload, qualityHoldWork(input));
   const fsStore = input.pack.policies.known ? (input.pack.policies.value.storeId ?? input.pack.policies.value.branchId) : undefined;
   if (fsStore !== undefined) payload['storeId'] = fsStore;
 
@@ -2653,6 +2728,7 @@ export const GLOBAL_FOR: Readonly<Record<ScreenName, string>> = Object.freeze({
   'document-templates': 'documentTemplatesData',
   'return-governance': 'returnGovernanceData',
   'held-returns': 'heldReturnsData',
+  'recall-trace': 'recallTraceData',
   'cash-office': 'cashOfficeData',
   'risk-acceptance': 'riskAcceptanceData',
   'day-reopen': 'dayReopenData',
@@ -2711,6 +2787,7 @@ const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<strin
   'return-governance': returnGovernancePayload,
   // WF-11: the same reviewer identity as the refund exceptions; the worklist and every decision are head office's.
   'held-returns': returnGovernancePayload,
+  'recall-trace': recallTracePayload,
   'cash-office': cashOfficePayload,
   'risk-acceptance': riskAcceptancePayload,
   'day-reopen': dayReopenPayload,

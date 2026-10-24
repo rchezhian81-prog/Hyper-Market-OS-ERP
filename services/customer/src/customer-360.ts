@@ -106,7 +106,68 @@ export interface Customer360Deps {
   readonly loyaltyOf: (tenantId: string, customerRef: string) => Promise<{ readonly pointsBalance?: number; readonly member?: { readonly status: string; readonly mobileLast4: string } }>;
   readonly recordView: (tenantId: string, v: ProfileView) => Promise<void> | void;
   readonly views: (tenantId: string, customerRef: string) => Promise<readonly ProfileView[]> | readonly ProfileView[];
+  /**
+   * OB-288 · M16-FR-04 ("complaint history is visible to service"): the service desk's own cases that name this customer
+   * (M21) — the complaints and the rest. Absent on a bare stub: the record then says the history was NOT read, never "none".
+   */
+  readonly casesOf?: (tenantId: string, customerRef: string) => Promise<readonly ServiceCaseFact[]> | readonly ServiceCaseFact[];
   readonly now: () => string;
+}
+
+/** One service-desk case as the customer's record shows it (M21's own register, never typed onto the record). */
+export interface ServiceCaseFact {
+  readonly caseId: string;
+  readonly customerRef: string;
+  readonly kind: string;
+  readonly state: string;
+  readonly priority?: string;
+  readonly summary: string;
+  readonly openedAt: string;
+  readonly orderRef?: string;
+  readonly resolvedAt?: string;
+  readonly resolution?: string;
+}
+
+/** What the service desk sees of a customer's history with it: complaints first, open ones counted, newest first. */
+export interface ServiceHistory {
+  readonly read: true;
+  readonly complaints: { readonly count: number; readonly open: number; readonly recent: readonly ServiceCaseFact[] };
+  readonly otherCases: { readonly count: number; readonly open: number; readonly recent: readonly ServiceCaseFact[] };
+  readonly lastComplaintAt: string | null;
+  readonly say: string;
+}
+
+const OPEN_STATES: ReadonlySet<string> = new Set(['open', 'waiting_on_customer']);
+
+/**
+ * M16-FR-04: the complaint facts segmentation reads, DERIVED from the desk's complaint cases — one per case, dated when it
+ * was opened, resolved once the desk resolved or closed it. Never typed in.
+ */
+export function complaintFactsOf(cases: readonly { readonly caseId: string; readonly customerRef: string; readonly kind: string; readonly state: string; readonly openedAt: string }[]): readonly { readonly caseId: string; readonly customerRef: string; readonly at: string; readonly resolved: boolean }[] {
+  const latest = new Map<string, (typeof cases)[number]>();
+  for (const c of cases) if (c.kind === 'complaint' && c.customerRef.trim() !== '') latest.set(c.caseId, c);
+  return [...latest.values()].map((c) => ({ caseId: c.caseId, customerRef: c.customerRef, at: c.openedAt, resolved: !OPEN_STATES.has(c.state) }));
+}
+
+/**
+ * M16-FR-04: fold the desk's cases for a customer (and every record merged into them) into the history the record shows.
+ * A complaint is a case of kind `complaint`; everything else (enquiry, warranty, lost and found) is shown beside it.
+ */
+export function serviceHistoryOf(cases: readonly ServiceCaseFact[]): ServiceHistory {
+  const newest = [...new Map(cases.map((c) => [c.caseId, c])).values()].sort((a, b) => b.openedAt.localeCompare(a.openedAt) || a.caseId.localeCompare(b.caseId));
+  const complaints = newest.filter((c) => c.kind === 'complaint');
+  const other = newest.filter((c) => c.kind !== 'complaint');
+  const openOf = (xs: readonly ServiceCaseFact[]): number => xs.filter((c) => OPEN_STATES.has(c.state)).length;
+  const openComplaints = openOf(complaints);
+  return {
+    read: true,
+    complaints: { count: complaints.length, open: openComplaints, recent: complaints.slice(0, 20) },
+    otherCases: { count: other.length, open: openOf(other), recent: other.slice(0, 20) },
+    lastComplaintAt: complaints[0]?.openedAt ?? null,
+    say: complaints.length === 0
+      ? 'No complaint has been raised by this customer.'
+      : `${complaints.length} complaint(s) on record${openComplaints > 0 ? `, ${openComplaints} still open — answer those first` : ', all dealt with'}.`,
+  };
 }
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
@@ -154,7 +215,8 @@ export function customer360Routes(deps: Customer360Deps): readonly Route[] {
         }
         if (purchases.length === 0 && returns.length === 0 && refs.length === 1) {
           const loyalty = await deps.loyaltyOf(ctx.tenantId, customerRef);
-          if (loyalty.member === undefined && loyalty.pointsBalance === undefined) throw notFound(`a customer record for ${customerRef}`);
+          const hasCases = deps.casesOf !== undefined && (await deps.casesOf(ctx.tenantId, customerRef)).length > 0;
+          if (loyalty.member === undefined && loyalty.pointsBalance === undefined && !hasCases) throw notFound(`a customer record for ${customerRef}`);
         }
         purchases.sort((a, b) => b.at.localeCompare(a.at));
         returns.sort((a, b) => b.at.localeCompare(a.at));
@@ -167,6 +229,15 @@ export function customer360Routes(deps: Customer360Deps): readonly Route[] {
         const debitedMinor = counted.filter((c) => c.kind === 'debit_note').reduce((s, c) => s + c.grossMinor, 0);
         corrections.sort((a, b) => b.at.localeCompare(a.at));
         const loyalty = await deps.loyaltyOf(ctx.tenantId, customerRef);
+        // M16-FR-04: the desk's cases for every identity on this record — read from M21's register, never typed in.
+        let serviceHistory: ServiceHistory | { readonly read: false; readonly say: string };
+        if (deps.casesOf === undefined) {
+          serviceHistory = { read: false, say: 'The service desk\'s cases were not read here, so complaints are not shown — this is not "no complaints".' };
+        } else {
+          const cases: ServiceCaseFact[] = [];
+          for (const r of refs) cases.push(...await deps.casesOf(ctx.tenantId, r));
+          serviceHistory = serviceHistoryOf(cases);
+        }
         const links = (await deps.households(ctx.tenantId));
         const latestLink = new Map<string, HouseholdLink>();
         for (const l of links) latestLink.set(l.customerRef, l);
@@ -186,7 +257,8 @@ export function customer360Routes(deps: Customer360Deps): readonly Route[] {
             lastPurchaseAt: purchases[0]?.at ?? null,
             loyalty,
             household,
-            source: 'derived from the sales and returns head office banked — never typed in',
+            serviceHistory,
+            source: 'derived from the sales and returns head office banked, and the service desk\'s own cases — never typed in',
             factsRead: read,
             asAt: deps.now(),
           },

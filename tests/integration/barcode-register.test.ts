@@ -33,14 +33,14 @@ describe('barcode register (M03-FR-02)', () => {
   it('refuses the same code for a DIFFERENT product (owner named); the same product is idempotent', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
-    await assign(h, 'u-owner', 'p-salt', '890111', { kind: 'ean' }, 'k1');
+    await assign(h, 'u-owner', 'p-salt', '890111', { kind: 'internal' }, 'k1');
     // A second product cannot take a code that already names one — one code, one item.
-    const clash = await assign(h, 'u-owner', 'p-sugar', '890111', { kind: 'ean' }, 'k2');
+    const clash = await assign(h, 'u-owner', 'p-sugar', '890111', { kind: 'internal' }, 'k2');
     expect(clash.status).toBe(409);
     expect(codeOf(clash)).toBe('barcode_already_assigned');
     expect((clash.body as { error: { whatHappened: string } }).error.whatHappened).toContain('p-salt'); // the current owner is named
     // The same product re-assigning its own code is a no-op, not an error (an import re-run).
-    expect((await assign(h, 'u-owner', 'p-salt', '890111', { kind: 'ean' }, 'k3')).status).toBe(201);
+    expect((await assign(h, 'u-owner', 'p-salt', '890111', { kind: 'internal' }, 'k3')).status).toBe(201);
     // The code still names the original product — the clash changed nothing.
     expect((await lookup(h, 'u-owner', '890111')).body as { barcode: { productId: string } }).toMatchObject({ barcode: { productId: 'p-salt' } });
   });
@@ -48,7 +48,7 @@ describe('barcode register (M03-FR-02)', () => {
   it('lists every code for one product, and an unknown code is a 404 (an unknown scan)', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
-    await assign(h, 'u-owner', 'p-milk', '111', { kind: 'ean' }, 'k1');
+    await assign(h, 'u-owner', 'p-milk', '111', { kind: 'internal' }, 'k1');
     await assign(h, 'u-owner', 'p-milk', '222', { kind: 'internal' }, 'k2');
     const list = await forProduct(h, 'u-owner', 'p-milk');
     expect(list.status).toBe(200);
@@ -60,7 +60,7 @@ describe('barcode register (M03-FR-02)', () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
     await h.provisionRole(A, 'u-mgr', 'store_manager'); // has catalogue.pack.read, NOT catalogue.pack.publish
-    await assign(h, 'u-owner', 'p-salt', '333', { kind: 'ean' }, 'k-seed');
+    await assign(h, 'u-owner', 'p-salt', '333', { kind: 'internal' }, 'k-seed');
     expect((await assign(h, 'u-mgr', 'p-x', '444', { kind: 'ean' }, 'k-mgr')).status).toBe(403); // cannot assign
     expect((await lookup(h, 'u-mgr', '333')).status).toBe(200); // can read
     expect((await forProduct(h, 'u-mgr', 'p-salt')).status).toBe(200);
@@ -69,5 +69,22 @@ describe('barcode register (M03-FR-02)', () => {
     const bad2 = await assign(h, 'u-owner', 'p-bad', '555', { kind: 'qr-code' }, 'k-bad2');
     expect(bad2.status).toBe(400);
     expect(codeOf(bad2)).toBe('not_readable_as_a_barcode');
+  });
+
+  // OB-288 P2 (M03-FR-02 · WF-01 "duplicate/GS1 check"): a GS1 code is a GS1 number with a right check digit, or it is refused.
+  it('refuses a GTIN/EAN/UPC whose GS1 check digit is wrong or whose shape is not GS1; an internal code is not judged', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    const wrong = await assign(h, 'u-owner', 'p-salt', '8901058000109', { kind: 'ean' }, 'w1'); // the right check digit is 8
+    expect(wrong.status).toBe(422);
+    expect(codeOf(wrong)).toBe('barcode_check_digit_wrong');
+    expect(codeOf(await assign(h, 'u-owner', 'p-salt', '890105800010', { kind: 'ean' }, 'w2'))).toBe('barcode_not_gs1_digits'); // 12 digits is not an EAN
+    expect(codeOf(await assign(h, 'u-owner', 'p-salt', '89010580001A8', { kind: 'gtin' }, 'w3'))).toBe('barcode_not_gs1_digits');
+    expect(codeOf(await assign(h, 'u-owner', 'p-salt', '036000291453', { kind: 'upc' }, 'w4'))).toBe('barcode_check_digit_wrong');
+    expect((await assign(h, 'u-owner', 'p-salt', '036000291452', { kind: 'upc' }, 'ok-upc')).status).toBe(201);
+    expect((await assign(h, 'u-owner', 'p-salt', '96385074', { kind: 'gtin' }, 'ok-gtin8')).status).toBe(201);
+    expect((await assign(h, 'u-owner', 'p-salt', 'SRE-0001', { kind: 'internal' }, 'ok-int')).status).toBe(201);
+    // Nothing refused was kept: the mistyped code names no product.
+    expect((await lookup(h, 'u-owner', '8901058000109')).status).toBe(404);
   });
 });

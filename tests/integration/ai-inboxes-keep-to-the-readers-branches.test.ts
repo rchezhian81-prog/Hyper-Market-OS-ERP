@@ -80,7 +80,7 @@ async function seed(h: ApiHarness, T: string): Promise<void> {
   }
   // A08 — one product with no MRP (the product master is the whole shop's, P-02).
   await ok(req(h, T, OWNER, 'POST', '/v1/catalogue/products/p-nomrp/publish', { product: { ...base, sku: 'SKU-NOMRP', name: 'Sugar 1kg', brand: 'Local' }, categories: [GROCERY] }), 'publish');
-  await ok(req(h, T, OWNER, 'POST', '/v1/catalogue/products/p-nomrp/barcodes/8901000000004', { kind: 'ean' }), 'barcode');
+  await ok(req(h, T, OWNER, 'POST', '/v1/catalogue/products/p-nomrp/barcodes/8901000000002', { kind: 'ean' }), 'barcode');
   // Switch on the three agents by name, the kill switch off (AI starts stopped).
   await ok(req(h, T, OWNER, 'PUT', '/v1/ai/kill-switch', { on: false }), 'unkill');
   await ok(req(h, T, OWNER, 'PUT', '/v1/ai/agents/enabled', { agents: ['A06', 'A08', 'A10'] }), 'enable');
@@ -156,7 +156,7 @@ async function journey(make: () => ApiHarness, T: string): Promise<void> {
   expect((await inbox(h, T, OWNER, 'workforce')).body.dismissed).toHaveLength(1);
 
   // ── The kill switch hides all three at once; off again, they are back exactly as they were.
-  await ok(req(h, T, OWNER, 'PUT', '/v1/ai/kill-switch', { on: true }), 'kill');
+  await ok(req(h, T, OWNER, 'PUT', '/v1/ai/kill-switch', { on: true, reason: 'test: stop the assistants' }), 'kill');
   for (const name of INBOXES) {
     const b = (await inbox(h, T, MGR, name)).body as Inbox & { note?: string };
     expect(b.agentActive, name).toBe(false);

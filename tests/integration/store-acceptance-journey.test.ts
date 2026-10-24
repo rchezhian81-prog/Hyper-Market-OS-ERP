@@ -18,6 +18,7 @@ import { DEFAULT_RETAIL_POSTING_MAP } from '../../packages/finance/src/index';
 import { makeTradingDayRule, tradingDateOf } from '../../packages/calendar/src/trading-day';
 import { loyaltyMemberKey, memberRefFor } from '../../packages/loyalty/src/index';
 import { startRealCloud, type RealCloud } from '../support/real-store';
+import { ownerApprovedSettingOn } from '../support/owner-approved-setting';
 
 /**
  * **THE FINAL INTEGRATED STORE ACCEPTANCE — one synthetic store, one journey, twelve steps, every one through a served
@@ -83,8 +84,8 @@ const MOBILE = '98400 13579';
 const MEMBER = memberRefFor(loyaltyMemberKey(KEY), MOBILE)!;
 
 /** Rice by the bag; tomatoes loose, by the kilogram, counted in GRAMS (OB-31). Prices GST-inclusive; costs per whole unit. */
-const RICE = { productId: 'p-rice', barcode: '8901234560011', sku: 'RICE-5KG', name: 'Ponni rice 5kg', uom: 'ea', price: 48_000, mrp: 50_000, cost: 40_000 };
-const TOMATO = { productId: 'p-tomato', barcode: '2100001000007', sku: 'TOM-LOOSE', name: 'Tomato (loose)', uom: 'kg', price: 4_000, mrp: 5_000, cost: 2_500 };
+const RICE = { productId: 'p-rice', barcode: '8901234560013', sku: 'RICE-5KG', name: 'Ponni rice 5kg', uom: 'ea', price: 48_000, mrp: 50_000, cost: 40_000 };
+const TOMATO = { productId: 'p-tomato', barcode: '2100001000004', sku: 'TOM-LOOSE', name: 'Tomato (loose)', uom: 'kg', price: 4_000, mrp: 5_000, cost: 2_500 };
 
 /** Grams × price per kg ÷ 1000, rounded once — the OB-31 rule, written out so the expectation is independent. */
 const perKg = (grams: number, perKgMinor: number): number => Math.round((grams * perKgMinor) / 1000);
@@ -240,7 +241,7 @@ describeOrSkip('FINAL INTEGRATED STORE ACCEPTANCE — supplier to owner report, 
     for (const u of [BUYER, RECEIVER, BACKSTORE, FLOOR, MANAGER]) await cloud.grant(u, 'store_manager');
     await cloud.grant(FINANCE, 'accountant');
     await cloud.grant(CASHIER, 'cashier');
-    await ok(call('PUT', '/v1/platform/setup/locale.time_zone', OWNER, { value: 'UTC' }, 'tz'), 'time zone');
+    await ok(ownerApprovedSettingOn(cloud, 'locale.time_zone', { value: 'UTC' }, OWNER), 'time zone');
     await ok(call('POST', `/v1/org/nodes/${COMPANY}`, OWNER, { kind: 'company', name: 'SRE Retail' }, 'org-c'), 'company');
     await ok(call('POST', `/v1/org/nodes/${STORE}`, OWNER, { kind: 'branch', name: 'SRE Hyper Market', parentId: COMPANY, companyId: COMPANY }, 'org-s'), 'store');
     await ok(call('POST', `/v1/org/nodes/${BACK}`, OWNER, { kind: 'warehouse', name: 'Back store', parentId: STORE, companyId: COMPANY }, 'org-b'), 'back store');
@@ -264,7 +265,8 @@ describeOrSkip('FINAL INTEGRATED STORE ACCEPTANCE — supplier to owner report, 
       await ok(call('POST', `/v1/catalogue/products/${p.productId}/barcodes/${p.barcode}`, OWNER, { kind: p.uom === 'kg' ? 'internal' : 'ean' }, `barcode-${p.productId}`), `barcode ${p.productId}`);
     }
     for (const [key, value] of [['loyalty.points_per_100_inr', 1], ['loyalty.point_value_paise', 100], ['loyalty.till_spend_cap_paise', 50_000]] as const) {
-      await ok(call('PUT', `/v1/platform/setup/${key}`, OWNER, { value }, `set-${key}`), key);
+      // OB-336: the till's spend cap is high-impact — the owner approves the administrator's answer.
+      await ok(key === 'loyalty.till_spend_cap_paise' ? ownerApprovedSettingOn(cloud, key, { value }, OWNER) : call('PUT', `/v1/platform/setup/${key}`, OWNER, { value }, `set-${key}`), key);
     }
     await ok(call('POST', '/v1/loyalty/members', MANAGER, { mobile: MOBILE, consent: true, verifiedHow: 'seen_on_phone' }, 'join'), 'member joins');
     // The back-store bins at head office, and the warehouse phone in head office's fleet register with a one-time code.
@@ -652,7 +654,7 @@ describeOrSkip('FINAL INTEGRATED STORE ACCEPTANCE — supplier to owner report, 
     expect(stockPeriod.status, JSON.stringify(stockPeriod.body)).toBe(201);
     const evidence = (await call('GET', `/v1/finance/periods/${month}/independent-evidence`, FINANCE)).body as { agrees: boolean; checks: { name: string; leftMinor: number; rightMinor: number }[] };
     const liability = (await call('GET', '/v1/finance/loyalty-liability', FINANCE)).body as { reconciles: boolean; points: { outstandingPoints: number; heldValueMinor: number; postedMinor: number } };
-    expect(evidence.agrees).toBe(true);
+    expect(evidence.agrees, JSON.stringify(evidence.checks.filter((c) => c.leftMinor !== c.rightMinor))).toBe(true);
     expect(evidence.checks.slice(0, 2).map((c) => [c.leftMinor, c.rightMinor])).toEqual([[electronic, electronic], [electronic - fees, electronic - fees]]);
     // WF-18 (Batch 3 r8): the close also reconciles the books to their registers — every such check agrees here too.
     for (const c of evidence.checks.slice(2)) expect([c.name, c.leftMinor], c.name).toEqual([c.name, c.rightMinor]);

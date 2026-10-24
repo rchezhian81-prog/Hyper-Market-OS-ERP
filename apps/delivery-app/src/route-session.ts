@@ -42,7 +42,17 @@ import {
   transitionDelivery,
   assertProofOfDelivery,
   reconcileCod,
+  isDeliveryCode,
+  isFix,
+  bytesOfBase64,
+  sha256Hex,
+  proofRefOf,
+  ProofRequiredError,
+  IMAGE_PROOF_KINDS,
+  PROOF_IMAGE_MAX_BASE64,
   type DeliveryState,
+  type DeviceFix,
+  type ProofKind,
   type ProofOfDelivery,
   type CodExpectation,
   type CodCollection,
@@ -66,6 +76,8 @@ export interface StopInput {
 export interface Stop extends StopInput {
   readonly state: DeliveryState;
   readonly proof?: ProofOfDelivery;
+  /** The fingerprint of the photo / signature captured at the door (OB-288 · M19-FR-03). */
+  readonly proofSha256?: string;
   readonly codCollectedMinor?: number;
   readonly codMethod?: string;
   readonly failureReason?: string;
@@ -92,15 +104,59 @@ export interface RouteProgress {
   readonly complete: boolean;
 }
 
+/**
+ * The proof a driver gives at the door — CAPTURED, never typed (OB-294 · M19-FR-03, owner, 23 Oct 2026):
+ *   • `otp` — the customer's 4-digit delivery code, read out from their app (`code`; an older caller's `ref` is read as it);
+ *   • `photo` — the phone camera's picture of the hand-over; `signature` — the customer's finger on the screen. Each carries
+ *     the captured `image` (a JPEG / PNG / WebP, base64), which the phone fingerprints and queues as its own record.
+ */
+export interface CapturedImage {
+  readonly mediaType: string;
+  readonly contentBase64: string;
+}
+export interface CapturedProof {
+  readonly kind: ProofKind;
+  readonly ref?: string;
+  readonly code?: string;
+  readonly image?: CapturedImage;
+}
+
+/** A photo / signature proof with no captured image: a typed reference is not proof (OB-294). */
+export class ProofNotCapturedError extends ProofRequiredError {
+  constructor(kind: string) {
+    super();
+    this.message = `A ${kind} proof must be captured on the phone — a typed reference is not proof.`;
+    this.name = 'ProofNotCapturedError';
+  }
+}
+
+/** The customer's code is four digits (OB-294) — anything else is refused before anything is queued. */
+export class DeliveryCodeFormatError extends Error {
+  constructor() {
+    super('The delivery code is the four numbers in the customer\'s app.');
+    this.name = 'DeliveryCodeFormatError';
+  }
+}
+
+/** A captured image that cannot be kept: not an image the phone can read, or larger than a proof image may be. */
+export class ProofImageError extends Error {
+  constructor(readonly code: 'not_an_image' | 'too_large') {
+    super(code === 'too_large' ? `The picture is larger than the ${PROOF_IMAGE_MAX_BASE64} characters a proof image may be — take it again.` : 'The picture could not be read — take it again.');
+    this.name = 'ProofImageError';
+  }
+}
+
 /** The event types this phone queues — named once, for the session, the box's allow-list and the cloud routes. */
 export const DELIVERY_STOP_UPDATED = 'DeliveryStopUpdated';
+/** OB-288 · M19-FR-03: a photo / signature captured at the door, queued BEFORE the stop it proves. */
+export const DELIVERY_PROOF_CAPTURED = 'DeliveryProofCaptured';
 export const ROUTE_SETTLED = 'RouteSettled';
 export const DRIVER_CASH_HANDED_OVER = 'DriverCashHandedOver';
 /** R4 gap lane "driver" (WF-16): an online return collected at the door — or not, with the reason. No money moves. */
 export const RETURN_COLLECTION_RECORDED = 'ReturnCollectionRecorded';
 
 /** The kinds of work this phone sends: a stop's outcome, the route's settlement, the cash handover, a return collection. A guardrail binds the shell's words to this. */
-export const SENT_WORK_KINDS = Object.freeze(['stop', 'settlement', 'handover', 'collection'] as const);
+export const SENT_WORK_KINDS = Object.freeze(['stop', 'settlement', 'handover', 'collection', 'proof'] as const);
 export type SentWorkKind = (typeof SENT_WORK_KINDS)[number];
 
 /**
@@ -371,11 +427,12 @@ export class RouteSession {
    * each of those is a separate thing that happened to somebody's order.
    *
    * **What travels is deliberately thin** (§31 PII minimisation): the order reference, the state,
-   * the money and the proof KIND. Never the customer's name, never their phone number, and never
-   * the photograph itself — a route's worth of doorstep photographs on a queue is a privacy
-   * problem being synced rather than a delivery being proved.
+   * the money, the proof KIND and its fingerprint. Never the customer's name or phone number. The
+   * photograph (OB-294: the owner chose a real capture, kept as a document at head office) travels
+   * as its OWN record, small, once — never inside every stop step — and the phone's location rides
+   * only on a hand-over, for head office to compare with the stored address and then discard.
    */
-  private replace(next: Stop): void {
+  private replace(next: Stop, door: { readonly code?: string; readonly deviceFix?: DeviceFix } = {}): void {
     const index = this.stops.findIndex((s) => s.stopId === next.stopId);
     this.stops[index] = next;
     this.outbox.enqueue(
@@ -395,6 +452,12 @@ export class RouteSession {
           codCollectedMinor: next.codCollectedMinor ?? 0,
           codMethod: next.codMethod ?? null,
           proofKind: next.proof?.kind ?? null,
+          // OB-294 · M19-FR-03: the four digits the customer read out (checked at head office), the captured image's
+          // fingerprint (the image itself travels as its own record), and — only at a hand-over — where the phone was,
+          // which head office compares with what it holds for the stop and does not keep.
+          proofCode: door.code ?? null,
+          proofSha256: next.proofSha256 ?? null,
+          deviceFix: door.deviceFix ?? null,
           geofenceMismatch: next.geofenceMismatch === true,
           failureReason: next.failureReason ?? null,
           contributionFlag: next.contributionFlag ?? null,
@@ -456,12 +519,12 @@ export class RouteSession {
    */
   deliver(
     stopId: string,
-    proof: ProofOfDelivery | undefined,
-    options: { codCollectedMinor?: number; codMethod?: string; withinGeofence?: boolean } = {},
+    proof: CapturedProof | undefined,
+    options: { codCollectedMinor?: number; codMethod?: string; withinGeofence?: boolean; deviceFix?: DeviceFix } = {},
   ): Stop {
     const stop = this.stopOrThrow(stopId);
-    // Throws ProofRequiredError when proof is missing or empty.
-    assertProofOfDelivery(proof);
+    // Throws ProofRequiredError when proof is missing; the capture rules (OB-294) before anything is queued.
+    const captured = this.capture(proof);
 
     const collected = options.codCollectedMinor ?? 0;
     if (!Number.isSafeInteger(collected) || collected < 0) {
@@ -471,13 +534,15 @@ export class RouteSession {
     const delivered: Stop = {
       ...stop,
       state: transitionDelivery(stop.state, 'deliver'),
-      proof,
+      proof: captured.proof,
+      ...(captured.sha256 === undefined ? {} : { proofSha256: captured.sha256 }),
       codCollectedMinor: collected,
       codMethod: options.codMethod,
       geofenceMismatch: options.withinGeofence === false ? true : undefined,
     };
     const next: Stop = { ...delivered, contributionFlag: this.contributionFlagFor(delivered) };
-    this.replace(next);
+    this.queueImage(next, captured);
+    this.replace(next, this.doorFacts(captured, options.deviceFix));
     return next;
   }
 
@@ -492,12 +557,12 @@ export class RouteSession {
    */
   deliverPartial(
     stopId: string,
-    proof: ProofOfDelivery | undefined,
-    options: { codCollectedMinor?: number; codMethod?: string; withinGeofence?: boolean } = {},
+    proof: CapturedProof | undefined,
+    options: { codCollectedMinor?: number; codMethod?: string; withinGeofence?: boolean; deviceFix?: DeviceFix } = {},
   ): Stop {
     const stop = this.stopOrThrow(stopId);
-    // Throws ProofRequiredError when proof is missing or empty — some goods were handed over.
-    assertProofOfDelivery(proof);
+    // Throws ProofRequiredError when proof is missing — some goods were handed over; the capture rules before anything is queued.
+    const captured = this.capture(proof);
 
     const collected = options.codCollectedMinor ?? 0;
     if (!Number.isSafeInteger(collected) || collected < 0) {
@@ -507,14 +572,58 @@ export class RouteSession {
     const partial: Stop = {
       ...stop,
       state: transitionDelivery(stop.state, 'deliver_partial'),
-      proof,
+      proof: captured.proof,
+      ...(captured.sha256 === undefined ? {} : { proofSha256: captured.sha256 }),
       codCollectedMinor: collected,
       codMethod: options.codMethod,
       geofenceMismatch: options.withinGeofence === false ? true : undefined,
     };
     const next: Stop = { ...partial, contributionFlag: this.contributionFlagFor(partial) };
-    this.replace(next);
+    this.queueImage(next, captured);
+    this.replace(next, this.doorFacts(captured, options.deviceFix));
     return next;
+  }
+
+  /**
+   * The capture rules (OB-294 · M19-FR-03), checked before ANYTHING is queued: a code proof is the four digits the customer
+   * read out; a photo or signature is an image the phone captured, small enough to keep, fingerprinted here. A typed
+   * reference for a photo or a signature is refused — it proves nothing.
+   */
+  private capture(proof: CapturedProof | undefined): { readonly proof: ProofOfDelivery; readonly code?: string; readonly sha256?: string; readonly image?: CapturedImage } {
+    if (proof === undefined) assertProofOfDelivery(undefined);
+    const p = proof!;
+    if (p.kind === 'otp') {
+      const code = p.code ?? p.ref;
+      if (!isDeliveryCode(code)) throw new DeliveryCodeFormatError();
+      return { proof: { kind: 'otp', ref: proofRefOf('otp', code) }, code };
+    }
+    if (!IMAGE_PROOF_KINDS.has(p.kind)) assertProofOfDelivery(undefined);
+    if (p.image === undefined || typeof p.image.contentBase64 !== 'string' || typeof p.image.mediaType !== 'string') throw new ProofNotCapturedError(p.kind);
+    if (p.image.contentBase64.length > PROOF_IMAGE_MAX_BASE64) throw new ProofImageError('too_large');
+    const bytes = bytesOfBase64(p.image.contentBase64);
+    if (bytes === undefined || bytes.length < 8) throw new ProofImageError('not_an_image');
+    const sha256 = sha256Hex(bytes);
+    return { proof: { kind: p.kind, ref: proofRefOf(p.kind, sha256) }, sha256, image: p.image };
+  }
+
+  /** What the stop record carries about the door: the code, and the phone's location (only a readable one). */
+  private doorFacts(captured: { readonly code?: string }, deviceFix: DeviceFix | undefined): { code?: string; deviceFix?: DeviceFix } {
+    return { ...(captured.code === undefined ? {} : { code: captured.code }), ...(isFix(deviceFix) ? { deviceFix } : {}) };
+  }
+
+  /** Queue the captured image as its own record, before the stop it proves — keyed on the image, so a retry is one record. */
+  private queueImage(stop: Stop, captured: { readonly sha256?: string; readonly image?: CapturedImage }): void {
+    if (captured.sha256 === undefined || captured.image === undefined || stop.proof === undefined) return;
+    const occurredAt = this.at();
+    const key = `proof:${this.routeId}:${stop.stopId}:${captured.sha256.slice(0, 24)}`;
+    this.outbox.enqueue(makeEvent({
+      id: key, type: DELIVERY_PROOF_CAPTURED, occurredAt, idempotencyKey: key, source: this.routeId,
+      // The order reference, the kind, the image and its fingerprint — never a customer's name, number or address.
+      payload: {
+        routeId: this.routeId, stopId: stop.stopId, driverId: this.driverId, orderRef: stop.orderRef, kind: stop.proof.kind,
+        mediaType: captured.image.mediaType, contentBase64: captured.image.contentBase64, sha256: captured.sha256, capturedAt: occurredAt,
+      },
+    }));
   }
 
   /** Record a failed delivery with a reason — never quietly dropped (M19-FR-04). */
@@ -708,6 +817,11 @@ export class RouteSession {
             ? `collected ${(p.lines ?? []).filter((l) => l.collectedMinor > 0).map((l) => `${l.collectedMinor} × ${l.productId}`).join(', ')}`
             : `not collected · ${p.reason ?? ''}`;
           return [{ kind: 'collection', id: p.returnId, what: `${area} · ${p.returnId}`, detail, ...common, ...withReason }];
+        }
+        if (item.event.type === DELIVERY_PROOF_CAPTURED) {
+          const p = item.event.payload as { stopId: string; orderRef: string; kind: string; contentBase64: string };
+          const area = this.stops.find((s) => s.stopId === p.stopId)?.area ?? p.stopId;
+          return [{ kind: 'proof', id: p.stopId, what: `${area} · ${p.orderRef}`, detail: `${p.kind} · ${Math.round((p.contentBase64.length * 3) / 4 / 1024)} KB`, ...common, ...withReason }];
         }
         if (item.event.type === DRIVER_CASH_HANDED_OVER) {
           const p = item.event.payload as CashHandover;

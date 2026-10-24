@@ -167,3 +167,100 @@ export function checkDemeritHoldover(input: {
   }
   return { ok: true, band: 'standard', detail: `standard good on ${gstRateBps / 100}% GST, no compensation cess` };
 }
+
+// ── A7 at the till: the cess INSIDE the MRP, on a line, from the signed pack ──────────────────────────────────────────
+//
+// A shelf price is the MRP with every tax inside it (A9). For a cess-liable good the MRP carries the GST AND the
+// compensation cess, so the line's value of supply comes out of the MRP with both pulled back:
+//
+//   specific = specificPerQuantityMinor × quantity / perQuantity            (rounded half-up)
+//   taxable  = (gross − specific) × 10000 / (10000 + gstBps + advaloremBps) (rounded half-up)
+//   advalorem cess = taxable × advaloremBps / 10000                         (rounded half-up)
+//   GST      = gross − specific − taxable − advalorem cess                  (the REMAINDER)
+//
+// so taxable + GST + cess == gross to the paisa, by construction — the same exactness A9 gives an ordinary line, and an
+// ordinary line (no cess) splits to exactly what `extractInclusiveGst` gives. The rates are DATA from head office (per
+// HSN, effective-dated, CA-confirmed); none is written here.
+
+/** A good's compensation-cess rate as it rides the signed pack: the ad-valorem part and the specific part. */
+export interface CessRate {
+  readonly advaloremBps: number;
+  readonly specificPerQuantityMinor: number;
+  /** The quantity block the specific rate is quoted per, in the line's own quantity steps (e.g. 1000 sticks). */
+  readonly perQuantity: number;
+}
+
+/** One effective-dated cess rate for an HSN (append-only; a change is a later period). */
+export interface CessRatePeriod extends CessRate {
+  readonly effectiveFrom: string;
+}
+
+/** A cess rate read strictly from untrusted data (a pack, a sale line) — undefined when it is not one, or carries no cess. */
+export function readCessRate(v: unknown): CessRate | undefined {
+  if (v === null || typeof v !== 'object' || Array.isArray(v)) return undefined;
+  const r = v as Record<string, unknown>;
+  const a = r['advaloremBps'];
+  const s = r['specificPerQuantityMinor'];
+  const p = r['perQuantity'];
+  if (!isNonNegInt(a) || !isNonNegInt(s)) return undefined;
+  const block = Number.isInteger(p) && (p as number) > 0 ? (p as number) : undefined;
+  if (s > 0 && block === undefined) return undefined;
+  if (a === 0 && s === 0) return undefined;
+  return { advaloremBps: a, specificPerQuantityMinor: s, perQuantity: block ?? 1 };
+}
+
+/** The cess rate in force on a day (YYYY-MM-DD): the latest period on or before it; undefined = not cess-liable that day. */
+export function cessRateOn(schedule: readonly CessRatePeriod[], day: string): CessRate | undefined {
+  const inForce = [...schedule]
+    .filter((p) => typeof p.effectiveFrom === 'string' && p.effectiveFrom <= day)
+    .sort((a, b) => (a.effectiveFrom < b.effectiveFrom ? -1 : a.effectiveFrom > b.effectiveFrom ? 1 : 0))
+    .at(-1);
+  return inForce === undefined ? undefined : readCessRate(inForce);
+}
+
+export interface InclusiveCessSplit {
+  readonly grossMinor: number;
+  readonly taxableMinor: number;
+  /** The GST inside the line (CGST + SGST, or IGST). */
+  readonly gstMinor: number;
+  readonly advaloremCessMinor: number;
+  readonly specificCessMinor: number;
+  readonly cessMinor: number;
+}
+
+/**
+ * Pull the GST AND the compensation cess out of a tax-inclusive line amount (A7 inside A9). With no cess the result is the
+ * ordinary inclusive split. Pure; integer maths.
+ *
+ * @throws InvalidCessInput when an amount is not a whole non-negative number, the cess rate is unreadable, or the
+ *   specific cess alone is above the price.
+ */
+export function splitInclusiveWithCess(input: {
+  readonly grossMinor: number;
+  readonly gstRateBps: number;
+  readonly cess?: CessRate;
+  /** The line's quantity, in the steps the specific rate is quoted in. */
+  readonly quantity: number;
+}): InclusiveCessSplit {
+  const { grossMinor, gstRateBps, quantity } = input;
+  if (!isNonNegInt(grossMinor)) throw new InvalidCessInput('the line amount must be a whole, non-negative number of paisa');
+  if (!isNonNegInt(gstRateBps)) throw new InvalidCessInput('the GST rate must be a whole, non-negative number of basis points');
+  if (!isNonNegInt(quantity)) throw new InvalidCessInput('the quantity must be a whole, non-negative number');
+  const cess = input.cess === undefined ? undefined : readCessRate(input.cess);
+  if (input.cess !== undefined && cess === undefined && (input.cess.advaloremBps !== 0 || input.cess.specificPerQuantityMinor !== 0)) {
+    throw new InvalidCessInput('the cess rate is not readable (whole basis points, whole paisa, and a positive quantity block for a specific rate)');
+  }
+  const advBps = cess?.advaloremBps ?? 0;
+  const specificCessMinor = cess !== undefined && cess.specificPerQuantityMinor > 0
+    ? Number(roundHalfUpDiv(BigInt(cess.specificPerQuantityMinor) * BigInt(quantity), BigInt(cess.perQuantity)))
+    : 0;
+  const remaining = grossMinor - specificCessMinor;
+  if (remaining < 0) throw new InvalidCessInput(`the specific cess (${specificCessMinor} paisa) is above the price charged (${grossMinor} paisa)`);
+  const taxableMinor = Number(roundHalfUpDiv(BigInt(remaining) * 10_000n, BigInt(10_000 + gstRateBps + advBps)));
+  let advaloremCessMinor = advBps === 0 ? 0 : Number(roundHalfUpDiv(BigInt(taxableMinor) * BigInt(advBps), 10_000n));
+  let gstMinor = remaining - taxableMinor - advaloremCessMinor;
+  // With no GST the remainder belongs to the cess (there is no GST to carry an odd paisa).
+  if (gstRateBps === 0) { advaloremCessMinor += gstMinor; gstMinor = 0; }
+  if (gstMinor < 0 || advaloremCessMinor < 0) throw new InvalidCessInput('the amount is too small to carry this GST and cess');
+  return { grossMinor, taxableMinor, gstMinor, advaloremCessMinor, specificCessMinor, cessMinor: advaloremCessMinor + specificCessMinor };
+}

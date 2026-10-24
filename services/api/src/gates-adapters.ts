@@ -17,6 +17,12 @@ import {
 } from '../../../packages/compliance/src/index';
 import { recoveryGateReading } from '../../../packages/ops/src/index';
 import { findingsRoutes, type FindingsDeps, type ScanRunRecord } from '../../compliance/src/findings';
+import type { TwoSignatureDeps } from '../../compliance/src/risk';
+import type { SecurityReviewer, RiskAcceptanceSignature } from '../../../packages/compliance/src/index';
+import type { AuditEntry } from '../../../packages/audit/src/index';
+import { rolesHeldNow, permissionsHeldBy } from './adapters';
+import { isMachineCredential } from '../../identity/src/machine-identities';
+import { FINDINGS_PUSH_ROLE_ID } from './roles';
 import { gateDecisionRoutes, type GateDecisionDeps } from '../../compliance/src/gate-decisions';
 import type { OtherGateBlocker } from '../../compliance/src/risk';
 import { STREAM, streamName, riskRegisterAdapter, drReadinessAdapter } from './adapters';
@@ -24,6 +30,9 @@ import { STREAM, streamName, riskRegisterAdapter, drReadinessAdapter } from './a
 export const FINDINGS_STREAM = streamName(STREAM.compliance, 'findings');
 export const FINDING_SCANS_STREAM = streamName(STREAM.compliance, 'finding-scans');
 export const GATE_DECISIONS_STREAM = streamName(STREAM.compliance, 'gate-decisions');
+/** OB-330: the security reviewer the owner names, and the two signatures on a critical/high risk's acceptance. */
+export const SECURITY_REVIEWER_STREAM = streamName(STREAM.compliance, 'security-reviewer');
+export const RISK_ACCEPTANCE_SIGNATURES_STREAM = streamName(STREAM.compliance, 'risk-acceptance-signatures');
 
 const digest = (s: string): string => createHash('sha256').update(s).digest('hex').slice(0, 24);
 const all = async <T>(store: EventStore, tenantId: string, stream: string, type: string): Promise<T[]> =>
@@ -57,6 +66,13 @@ export function findingsAdapter(input: { readonly store: EventStore; readonly no
     recordScan: async (tenantId, scan) => {
       await put(store, tenantId, FINDING_SCANS_STREAM, 'SecurityScanImported', `${scan.tool}|${scan.runId}`, scan.importedAt, scan);
     },
+    // OB-331: a push is believed only from the CI scanner's machine identity — a machine credential, holding the
+    // findings-push role and nothing else NOW (a live emergency grant of anything else included), never a person.
+    isFindingsPush: async (tenantId, userId, evidence) => {
+      if (!isMachineCredential(evidence)) return false;
+      const held = await rolesHeldNow(store, tenantId, userId, now());
+      return held.includes(FINDINGS_PUSH_ROLE_ID) && held.every((r) => r === FINDINGS_PUSH_ROLE_ID);
+    },
   };
 }
 
@@ -67,7 +83,7 @@ export function findingsAdapter(input: { readonly store: EventStore; readonly no
 export async function gateBlockersBeyondRisks(store: EventStore, now: () => string, tenantId: string): Promise<readonly OtherGateBlocker[]> {
   const fromFindings: OtherGateBlocker[] = findingBlocks(await foldFindings(store, tenantId))
     .map((b) => ({ gate: b.gate, kind: 'finding' as const, ref: b.findingId, reason: b.reason }));
-  const recovery = recoveryGateReading(await drReadinessAdapter({ store, now }).drills(tenantId));
+  const recovery = recoveryGateReading(await drReadinessAdapter({ store, now }).drills(tenantId), now()); // OB-332: a pass counts one quarter
   const fromRecovery: OtherGateBlocker[] = recovery.verdict === 'GO' ? [] : [{
     gate: 'QG-08', kind: 'check', ref: 'recovery-gate', reason: `QG-08 rehearsals not all passed — ${recovery.why}`,
   }];
@@ -104,4 +120,25 @@ export function gatesRoutes(input: { readonly store: EventStore | undefined; rea
     return [...findingsRoutes(absent<FindingsDeps>()), ...gateDecisionRoutes(absent<GateDecisionDeps>())];
   }
   return [...findingsRoutes(findingsAdapter({ store, now })), ...gateDecisionRoutes(gateDecisionAdapter({ store, now }))];
+}
+
+/**
+ * OB-330 (owner, 23 Oct 2026 · §35.1): the two-signature acceptance of a critical or high risk, on head office's own
+ * append-only streams. The reviewer named NOW is the latest naming (the old ones stay); each signature is its own fact.
+ * Whether the signer holds the owner's role, and whether a named person may read the risk register, come from their own
+ * grants — never the request.
+ */
+export function twoSignatureAdapter(input: { readonly store: EventStore; readonly now: () => string; readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void }): { readonly twoSignature: TwoSignatureDeps } {
+  const { store, now } = input;
+  return {
+    twoSignature: {
+      reviewer: async (tenantId) => (await all<SecurityReviewer>(store, tenantId, SECURITY_REVIEWER_STREAM, 'SecurityReviewerNamed')).at(-1),
+      recordReviewer: (tenantId, r) => put(store, tenantId, SECURITY_REVIEWER_STREAM, 'SecurityReviewerNamed', `${r.userId}|${r.displayName}|${r.namedAt}`, r.namedAt, r),
+      signatures: (tenantId) => all<RiskAcceptanceSignature>(store, tenantId, RISK_ACCEPTANCE_SIGNATURES_STREAM, 'RiskAcceptanceSigned'),
+      recordSignature: (tenantId, sig) => put(store, tenantId, RISK_ACCEPTANCE_SIGNATURES_STREAM, 'RiskAcceptanceSigned', `${sig.riskId}|${sig.as}|${sig.signedBy}|${sig.riskDigest}`, sig.signedAt, sig),
+      isOwner: async (tenantId, userId) => (await rolesHeldNow(store, tenantId, userId, now())).includes('owner'),
+      mayReview: async (tenantId, userId) => ((await permissionsHeldBy(store, tenantId, userId)) ?? []).includes('compliance.risk.read'),
+      ...(input.recordAudit === undefined ? {} : { recordAudit: input.recordAudit }),
+    },
+  };
 }

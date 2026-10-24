@@ -183,6 +183,9 @@ describe('"Waiting for you" — what others asked for, in plain words, with what
       config_change: { en: APPROVALS_COPY.en.kindConfigChange, ta: APPROVALS_COPY.ta.kindConfigChange },
       flag_change: { en: APPROVALS_COPY.en.kindFlagChange, ta: APPROVALS_COPY.ta.kindFlagChange },
       department_scope_change: { en: APPROVALS_COPY.en.kindDepartmentScopeChange, ta: APPROVALS_COPY.ta.kindDepartmentScopeChange },
+      // OB-288 P2: a GST rate change (Finance approves) and a supplier's funding of an offer.
+      tax_rate_change: { en: APPROVALS_COPY.en.kindTaxRateChange, ta: APPROVALS_COPY.ta.kindTaxRateChange },
+      promotion_funding: { en: APPROVALS_COPY.en.kindPromotionFunding, ta: APPROVALS_COPY.ta.kindPromotionFunding },
     };
     // Every kind the engine knows is named here — a kind added to the engine without its words fails this test.
     expect(Object.keys(named).sort()).toEqual(Object.keys(APPROVAL_KINDS).sort());

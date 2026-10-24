@@ -310,14 +310,14 @@ export const PILOT_CATALOGUE: PilotCatalogue = {
       // Units are the engine's codes (packages/contracts/src/quantity.ts): `ea` for discrete items, `kg`, `g`, `L`, `ml`. A product
       // whose unit the engine does not know is NOT shipped to the till — it is named on the "Products nobody can sell" screen.
       baseUom: 'ea', primaryCategoryId: 'cat-household', taxClass: '34011190', lifecycle: 'active',
-      brand: 'DemoBrand', barcode: { code: '8900000000017', kind: 'ean' },
+      brand: 'DemoBrand', barcode: { code: '8900000000012', kind: 'ean' },
       pack: { baseUom: 'ea', levels: [{ level: 'ea', containsMinor: 1 }, { level: 'case', containsMinor: 48 }] },
       price: { priceMinor: 3500, mrpMinor: 4000, costMinor: 2000, currency: INR, marginFloorBps: 0 },
     },
     {
       productId: 'prod-brush', sku: 'DEMO-BRUSH-1', name: 'Demo Toothbrush (demo)',
       baseUom: 'ea', primaryCategoryId: 'cat-household', taxClass: '34011190', lifecycle: 'active',
-      brand: 'DemoBrand', barcode: { code: '8900000000116', kind: 'ean' },
+      brand: 'DemoBrand', barcode: { code: '8900000000111', kind: 'ean' },
       price: { priceMinor: 2500, mrpMinor: 3000, costMinor: 1500, currency: INR, marginFloorBps: 0 },
     },
     {
@@ -325,7 +325,7 @@ export const PILOT_CATALOGUE: PilotCatalogue = {
       baseUom: 'kg', primaryCategoryId: 'cat-food', taxClass: '10063020', lifecycle: 'active',
       brand: 'DemoBrand',
       safety: { allergens: [], countryOfOrigin: 'India', storageConditions: 'Store in a cool, dry place' },
-      barcode: { code: '8900000000123', kind: 'ean' },
+      barcode: { code: '8900000000128', kind: 'ean' },
       price: { priceMinor: 6800, mrpMinor: 7500, costMinor: 5000, currency: INR, marginFloorBps: 0 },
     },
     {
@@ -333,7 +333,7 @@ export const PILOT_CATALOGUE: PilotCatalogue = {
       baseUom: 'ea', primaryCategoryId: 'cat-food', taxClass: '19053100', lifecycle: 'active',
       brand: 'DemoBrand',
       safety: { allergens: ['wheat', 'milk'], countryOfOrigin: 'India', storageConditions: 'Store in a cool, dry place' },
-      barcode: { code: '8900000000130', kind: 'ean' },
+      barcode: { code: '8900000000135', kind: 'ean' },
       pack: { baseUom: 'ea', levels: [{ level: 'ea', containsMinor: 1 }, { level: 'case', containsMinor: 24 }] },
       price: { priceMinor: 3000, mrpMinor: 3500, costMinor: 1800, currency: INR, marginFloorBps: 0 },
     },
@@ -342,7 +342,7 @@ export const PILOT_CATALOGUE: PilotCatalogue = {
       baseUom: 'L', primaryCategoryId: 'cat-food', taxClass: '15079010', lifecycle: 'active',
       brand: 'DemoBrand',
       safety: { allergens: [], countryOfOrigin: 'India', storageConditions: 'Store away from direct sunlight' },
-      barcode: { code: '8900000000147', kind: 'ean' },
+      barcode: { code: '8900000000142', kind: 'ean' },
       price: { priceMinor: 12000, mrpMinor: 13500, costMinor: 9000, currency: INR, marginFloorBps: 0 },
     },
   ],

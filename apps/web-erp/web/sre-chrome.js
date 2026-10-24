@@ -489,6 +489,7 @@
     // R4 Lane 4 — begin: the two new pages' menu icons, from icons already in the set (no restyle).
     'supplier-scorecard': 'list-checks',
     'planogram-compliance': 'layout-grid',
+    'floor-heat-map': 'layout-dashboard', // OB-288 P2 (OB-308) — an icon already in the set
     'requisitions': 'clipboard-list',
     // R4 Lane 4 — end
     'checklist': 'clipboard-check',
@@ -526,6 +527,11 @@
     'risk-acceptance': 'hand',
     'gates': 'badge-check', // OB-288 gates lane (QG-12) — an icon already in the set
     'access-review': 'users-round', // OB-288 lane 1 · P1 — an icon already in the set
+    'tally-files': 'book-open', // OB-288 P5 (OB-293) — an icon already in the set
+    'dispatch': 'truck', // OB-288 fulfilment & delivery — an icon already in the set
+    'loyalty-desk': 'badge-check', // OB-288 wave 3 (OB-329 · OB-295) — an icon already in the set
+    'order-refunds': 'indian-rupee', // OB-288 wave 3 (M18-FR-04) — an icon already in the set
+    'campaigns': 'send', // OB-288 wave 3 (M21-FR-01) — an icon already in the set
     'approval-rules': 'sliders', // OB-288 lane 1 · P1 — an icon already in the set
     'day-reopen': 'lock',
     'data-io': 'arrow-up-down',

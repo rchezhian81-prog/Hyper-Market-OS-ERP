@@ -43,6 +43,12 @@ export interface SlotBooking {
   readonly slotEndsAt: string;
   readonly customerRef: string;
   readonly bookedAt: string;
+  /**
+   * OB-288 (M19-FR-03 · D09-FR-05): the delivery location the order was judged inside the radius on — kept with the booking
+   * so dispatch can sequence the stop and the proof location can be compared with it at the door. Head office's record
+   * only: it is never sent to a driver's phone. Absent on bookings made before it was kept.
+   */
+  readonly deliveryLocation?: { readonly lat: number; readonly lon: number };
 }
 
 export interface DeliveryServiceDeps {
@@ -165,7 +171,7 @@ export async function bindDelivery(
       refuse(409, 'slot_full', `That delivery slot is full (${offered!.capacity} orders).`, 'Choose one of the open slots. Nothing was reserved or charged.', { alternatives });
     }
     try {
-      await deps.recordBooking(tenantId, { orderId: input.orderId, slotStartsAt: offered!.startsAt, slotEndsAt: offered!.endsAt, customerRef: input.customerRef, bookedAt: deps.now() }, version);
+      await deps.recordBooking(tenantId, { orderId: input.orderId, slotStartsAt: offered!.startsAt, slotEndsAt: offered!.endsAt, customerRef: input.customerRef, bookedAt: deps.now(), deliveryLocation: { lat: request!.deliveryLocation.lat, lon: request!.deliveryLocation.lon } }, version);
       return { slot: { slotId: offered!.slotId, startsAt: offered!.startsAt, endsAt: offered!.endsAt, kind: 'delivery', remaining: offered!.capacity - taken - 1 }, distanceMetres: metres, radiusMetres: radius };
     } catch (err) {
       if (!(err instanceof Error) || err.name !== 'ConcurrencyConflictError') throw err;

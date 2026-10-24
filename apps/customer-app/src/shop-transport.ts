@@ -45,6 +45,8 @@ export interface ShopOrderRequest {
    */
   readonly deliverySlot?: { readonly startsAt: string; readonly endsAt: string };
   readonly deliveryLocation?: { readonly lat: number; readonly lon: number };
+  /** WF-13: the coupon the customer typed — the shop prices it with its own coupon engine and spends it once, on the order. */
+  readonly couponCode?: string;
 }
 
 /** A follow-up on an order the shop already holds (FUL-03 / FUL-07): pay for what it promised, ask again, or cancel. */
@@ -71,6 +73,25 @@ export interface ShopTransport {
   readOrder?(request: { readonly orderId: string; readonly token: string }): Promise<ShopAnswer>;
   /** R4 Lane 2 (B23 · M20-FR-04 · D01-FR-06): a READ of the online store as the signed-in customer (`GET /v1/storefront/…`). */
   storefront?(request: { readonly token: string; readonly path: 'listing' | 'ratings' | `products/${string}/image` }): Promise<ShopAnswer>;
+  /** OB-288 wave 3 (WF-13 · M20 · M21 · D08 · A04 · A05): the customer's own commerce calls under `/v1/` — see `ShopCommercePath`. */
+  commerce?(request: ShopCommerceRequest): Promise<ShopAnswer>;
+}
+
+/**
+ * OB-288 wave 3: the paths the customer app may call for its basket price, repeat orders, addresses, occasions, help,
+ * suggestions and substitution choice — each the shop's own route, as the signed-in customer. Nothing else.
+ */
+export type ShopCommercePath =
+  | 'storefront/cart/quote' | `storefront/recommendations?${string}` | 'storefront/substitution-preferences'
+  | 'me/cart' | `me/subscriptions${string}` | `me/addresses${string}` | `me/payment-methods${string}`
+  | `me/occasions${string}` | 'me/help/answers' | `me/ai-suggestions?${string}`;
+
+export interface ShopCommerceRequest {
+  readonly token: string;
+  readonly method: 'GET' | 'POST' | 'PUT';
+  readonly path: ShopCommercePath;
+  readonly body?: unknown;
+  readonly idempotencyKey?: string;
 }
 
 /** One call about the signed-in customer's own records. The path is under `/v1/me/`. */
@@ -193,6 +214,7 @@ export function httpShopTransport(options: HttpShopTransportOptions): ShopTransp
             ...(request.fulfilment === undefined ? {} : { fulfilment: request.fulfilment }),
             ...(request.deliverySlot === undefined ? {} : { deliverySlot: request.deliverySlot }),
             ...(request.deliveryLocation === undefined ? {} : { deliveryLocation: request.deliveryLocation }),
+            ...(request.couponCode === undefined ? {} : { couponCode: request.couponCode }),
           }),
           signal: controller.signal,
         });
@@ -248,6 +270,35 @@ export function httpShopTransport(options: HttpShopTransportOptions): ShopTransp
       }
     },
     // ── R4 Lane 2 (end) ──
+    // ── OB-288 wave 3 (begin) ──
+    commerce: async (request) => {
+      if (options.isOnline !== undefined && !options.isOnline()) {
+        return { reached: false, why: 'no_connection', detail: 'this device reports no connection, so nothing was sent' };
+      }
+      const controller = new AbortController();
+      const timer = setTimeout(() => { controller.abort(); }, timeoutMs);
+      try {
+        const res = await options.fetch(`${base}/v1/${request.path}`, {
+          method: request.method,
+          headers: {
+            'content-type': 'application/json',
+            authorization: `Bearer ${request.token}`,
+            ...(request.idempotencyKey === undefined ? {} : { 'idempotency-key': request.idempotencyKey }),
+          },
+          ...(request.method === 'GET' ? {} : { body: JSON.stringify(request.body ?? {}) }),
+          signal: controller.signal,
+        });
+        let body: unknown = undefined;
+        try { body = await res.json(); } catch { body = undefined; }
+        return { reached: true, status: res.status, body };
+      } catch (e) {
+        const aborted = e instanceof Error && e.name === 'AbortError';
+        return { reached: false, why: aborted ? 'timed_out' : 'network_error', detail: 'the request could not reach the shop — nothing was saved' };
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+    // ── OB-288 wave 3 (end) ──
     mine: async (request) => {
       if (options.isOnline !== undefined && !options.isOnline()) {
         return { reached: false, why: 'no_connection', detail: 'this device reports no connection, so nothing was sent' };

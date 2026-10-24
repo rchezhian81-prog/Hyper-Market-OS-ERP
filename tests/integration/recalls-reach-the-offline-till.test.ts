@@ -44,8 +44,8 @@ async function shop(): Promise<ApiHarness> {
   const h = apiHarness();
   await h.seedOwner(A, 'u-owner');
   expect((await req(h, 'POST', '/v1/catalogue/tax-classes/04061000/rates/2017-07-01', 'k-tax', { rateBps: 500 })).status).toBeLessThan(300);
-  await product(h, 'p-paneer', 'SKU-PANEER', 'Paneer 200g', '8901000000011');
-  await product(h, 'p-curd', 'SKU-CURD', 'Curd 400g', '8901000000028');
+  await product(h, 'p-paneer', 'SKU-PANEER', 'Paneer 200g', '8901000000019');
+  await product(h, 'p-curd', 'SKU-CURD', 'Curd 400g', '8901000000026');
   await receive(h, 'p-paneer', 'B-0412');
   await receive(h, 'p-paneer', 'B-0413');
   await receive(h, 'p-curd', 'C-0001');
@@ -76,7 +76,7 @@ describe('SF-08: a recalled or held batch reaches the offline till on the next s
   it('recall initiated → next signed pack → the lane refuses the product with no network; closed → sellable again', async () => {
     const h = await shop();
     const v1 = laneTrading(await publish(h));
-    expect(v1.cache.scan('8901000000011').product.productId).toBe('p-paneer'); // sells before the recall
+    expect(v1.cache.scan('8901000000019').product.productId).toBe('p-paneer'); // sells before the recall
 
     // The recall is initiated on ONE batch of paneer.
     expect((await req(h, 'POST', '/v1/quality/recalls/B-0412', 'rc-1', { reason: 'supplier contamination notice' })).status).toBeLessThan(300);
@@ -89,10 +89,10 @@ describe('SF-08: a recalled or held batch reaches the offline till on the next s
 
     // That signed pack carries the block; the lane accepts it and refuses the scan by name — offline.
     const v2 = laneTrading((await req(h, 'GET', '/v1/catalogue/pack')).body as SignedPack, v1.pack);
-    expect(() => v2.cache.scan('8901000000011')).toThrow(RecalledItemError);
-    expect(() => v2.cache.scan('8901000000011')).toThrow(/Paneer 200g/);
+    expect(() => v2.cache.scan('8901000000019')).toThrow(RecalledItemError);
+    expect(() => v2.cache.scan('8901000000019')).toThrow(/Paneer 200g/);
     // Decision "C": the whole product, every batch, until R3. Curd is untouched.
-    expect(v2.cache.scan('8901000000028').product.productId).toBe('p-curd');
+    expect(v2.cache.scan('8901000000026').product.productId).toBe('p-curd');
     const after = await saleBlocks(h);
     expect(after.blocks[0]!.state).toBe('on_pack');
     expect(after.notYetOnPack).toBe(0);
@@ -102,7 +102,7 @@ describe('SF-08: a recalled or held batch reaches the offline till on the next s
     expect((await req(h, 'POST', '/v1/quality/recalls/B-0412/closure', 'rc-close', { evidenceRef: 'DOC-recall-B-0412' })).status).toBeLessThan(300);
     expect((await saleBlocks(h)).blocks).toEqual([]);
     const v3 = laneTrading(await publish(h), v2.pack);
-    expect(v3.cache.scan('8901000000011').product.productId).toBe('p-paneer');
+    expect(v3.cache.scan('8901000000019').product.productId).toBe('p-paneer');
   });
 
   it('a batch on quality hold blocks its product at the till until it is released', async () => {
@@ -112,13 +112,13 @@ describe('SF-08: a recalled or held batch reaches the offline till on the next s
     expect((await saleBlocks(h)).blocks).toEqual([expect.objectContaining({ productId: 'p-curd', batchId: 'C-0001', kind: 'quality_hold', state: 'not_yet_on_pack' })]);
 
     const v2 = laneTrading(await publish(h), v1.pack);
-    expect(() => v2.cache.scan('8901000000028')).toThrow(RecalledItemError);
-    expect(v2.cache.scan('8901000000011').product.productId).toBe('p-paneer');
+    expect(() => v2.cache.scan('8901000000026')).toThrow(RecalledItemError);
+    expect(v2.cache.scan('8901000000019').product.productId).toBe('p-paneer');
 
     await h.provisionRole(A, 'u-qc', 'store_manager');
     expect((await h.request({ method: 'POST', path: '/v1/quality/holds/C-0001/release', userId: 'u-qc', tenantId: A, idempotencyKey: 'rel-1', body: {} })).status).toBe(200);
     const v3 = laneTrading(await publish(h), v2.pack);
-    expect(v3.cache.scan('8901000000028').product.productId).toBe('p-curd');
+    expect(v3.cache.scan('8901000000026').product.productId).toBe('p-curd');
   });
 
   it('R3 (OB-139 "A"): a 2D code carrying the recalled batch is refused by name, its sibling batch sells; a plain barcode still blocks the product', async () => {
@@ -144,7 +144,7 @@ describe('SF-08: a recalled or held batch reaches the offline till on the next s
     await req(h, 'POST', '/v1/quality/recalls/B-0412/closure', 'rc-c1', { evidenceRef: 'DOC-1' });
     expect((await saleBlocks(h)).blockedProducts).toEqual(['p-paneer']); // B-0413 still open
     const v1 = laneTrading(await publish(h));
-    expect(() => v1.cache.scan('8901000000011')).toThrow(RecalledItemError);
+    expect(() => v1.cache.scan('8901000000019')).toThrow(RecalledItemError);
   });
 
   it('a recalled batch head office cannot name to a product is said, not hidden', async () => {

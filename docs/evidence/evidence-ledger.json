@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1555,
+  "testFiles": 1664,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -18,11 +18,11 @@
     "PARTIALLY_WIRED": 39
   },
   "totals": {
-    "unit": 93,
-    "integration": 101,
+    "unit": 95,
+    "integration": 102,
     "realDb": 100,
-    "browser": 86,
-    "connected": 55,
+    "browser": 88,
+    "connected": 64,
     "device": 0,
     "uat": 0
   },
@@ -126,8 +126,8 @@
       "id": "M02",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 27,
-        "integration": 25,
+        "unit": 28,
+        "integration": 26,
         "realDb": 12,
         "browser": 8,
         "connected": 3,
@@ -136,6 +136,7 @@
       },
       "files": {
         "unit": [
+          "tests/unit/a-po-above-the-approvers-limit-goes-to-the-owner.test.ts",
           "tests/unit/approval-requests.test.ts",
           "tests/unit/approvals-delegation.test.ts",
           "tests/unit/approvals.test.ts",
@@ -168,6 +169,7 @@
           "tests/integration/access-durability.test.ts",
           "tests/integration/access-lifecycle.test.ts",
           "tests/integration/an-outside-party-login-is-invited-and-approved-by-two-people.test.ts",
+          "tests/integration/an-over-limit-purchase-order-goes-to-the-owner.test.ts",
           "tests/integration/approval-decide.test.ts",
           "tests/integration/approval-decision-synced-route.test.ts",
           "tests/integration/approval-delegation.test.ts",
@@ -230,9 +232,9 @@
       "id": "M03",
       "label": "INTEGRATION_TESTED",
       "counts": {
-        "unit": 16,
-        "integration": 15,
-        "realDb": 1,
+        "unit": 17,
+        "integration": 16,
+        "realDb": 2,
         "browser": 3,
         "connected": 1,
         "device": 0,
@@ -249,6 +251,7 @@
           "tests/unit/erp-product-publish-review-session.test.ts",
           "tests/unit/erp-unsellable-session.test.ts",
           "tests/unit/import.test.ts",
+          "tests/unit/p2-product-master-rules.test.ts",
           "tests/unit/product-data-quality.test.ts",
           "tests/unit/product-duplicates.test.ts",
           "tests/unit/product-master.test.ts",
@@ -265,6 +268,7 @@
           "tests/integration/catalogue-pack-publish.test.ts",
           "tests/integration/catalogue-product-duplicates.test.ts",
           "tests/integration/categories-and-product-files-are-head-offices.test.ts",
+          "tests/integration/p2-the-product-master-keeps-variants-bundles-substitutes-and-nutrition.test.ts",
           "tests/integration/pack-chain-case-to-base.test.ts",
           "tests/integration/pack-hierarchy.test.ts",
           "tests/integration/product-master-durability.test.ts",
@@ -275,6 +279,7 @@
           "tests/integration/the-screens-are-fed.test.ts"
         ],
         "realDb": [
+          "tests/integration/p2-the-product-master-keeps-variants-bundles-substitutes-and-nutrition.test.ts",
           "tests/integration/pack-chain-case-to-base.test.ts"
         ],
         "browser": [
@@ -296,10 +301,10 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 7,
-        "integration": 8,
-        "realDb": 1,
-        "browser": 1,
-        "connected": 0,
+        "integration": 9,
+        "realDb": 2,
+        "browser": 2,
+        "connected": 1,
         "device": 0,
         "uat": 0
       },
@@ -317,6 +322,7 @@
           "tests/integration/assortment.test.ts",
           "tests/integration/floor-indents.test.ts",
           "tests/integration/merchandising-reads-head-office-facts.test.ts",
+          "tests/integration/p2-the-floor-heat-map-clusters-seasons-and-range-gaps-are-head-offices.test.ts",
           "tests/integration/planogram-compliance.test.ts",
           "tests/integration/planogram-store.test.ts",
           "tests/integration/shelf-count.test.ts",
@@ -324,25 +330,29 @@
           "tests/integration/the-screens-are-fed.test.ts"
         ],
         "realDb": [
-          "tests/integration/merchandising-reads-head-office-facts.test.ts"
+          "tests/integration/merchandising-reads-head-office-facts.test.ts",
+          "tests/integration/p2-the-floor-heat-map-clusters-seasons-and-range-gaps-are-head-offices.test.ts"
         ],
         "browser": [
-          "tests/e2e/merchandising-count-and-refill.e2e.ts"
+          "tests/e2e/merchandising-count-and-refill.e2e.ts",
+          "tests/e2e/the-floor-heat-map-colours-each-area-by-what-it-earns.e2e.ts"
         ],
-        "connected": [],
+        "connected": [
+          "tests/e2e/the-floor-heat-map-colours-each-area-by-what-it-earns.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },
       "holds": true,
-      "why": "browser boundary and cloud effect proven in separate runs (no connected browser test yet)"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "M05",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 13,
-        "integration": 20,
-        "realDb": 6,
+        "unit": 14,
+        "integration": 21,
+        "realDb": 7,
         "browser": 5,
         "connected": 1,
         "device": 0,
@@ -355,6 +365,7 @@
           "tests/unit/erp-catalogue-boot.test.ts",
           "tests/unit/erp-catalogue-session.test.ts",
           "tests/unit/migration-load-command.test.ts",
+          "tests/unit/p2-offers-are-deterministic-and-never-reach-tobacco.test.ts",
           "tests/unit/price-guard.test.ts",
           "tests/unit/price-list.test.ts",
           "tests/unit/promotion-simulation.test.ts",
@@ -374,6 +385,7 @@
           "tests/integration/one-customer.test.ts",
           "tests/integration/opening-state-loads.test.ts",
           "tests/integration/p1-money-limits-escalation-and-price-check.test.ts",
+          "tests/integration/p2-offers-funding-and-results-are-folded-from-the-bills.test.ts",
           "tests/integration/pack-chain-case-to-base.test.ts",
           "tests/integration/price-change.test.ts",
           "tests/integration/price-list-effective-dating.test.ts",
@@ -390,6 +402,7 @@
           "tests/integration/one-customer.test.ts",
           "tests/integration/opening-state-loads.test.ts",
           "tests/integration/p1-money-limits-escalation-and-price-check.test.ts",
+          "tests/integration/p2-offers-funding-and-results-are-folded-from-the-bills.test.ts",
           "tests/integration/pack-chain-case-to-base.test.ts",
           "tests/integration/the-load-command-runs.test.ts",
           "tests/integration/the-store-trades-a-day.test.ts"
@@ -415,7 +428,7 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 14,
-        "integration": 22,
+        "integration": 23,
         "realDb": 13,
         "browser": 5,
         "connected": 3,
@@ -444,6 +457,7 @@
           "tests/integration/a-purchase-order-is-checked-against-open-to-buy.test.ts",
           "tests/integration/a-receipt-is-judged-against-what-is-left-on-the-order.test.ts",
           "tests/integration/an-order-names-its-store.test.ts",
+          "tests/integration/an-over-limit-purchase-order-goes-to-the-owner.test.ts",
           "tests/integration/duplicate-bank.test.ts",
           "tests/integration/every-order-carries-its-buying-scope-and-the-open-commitment-reports-by-it.test.ts",
           "tests/integration/goods-receipt-assembled.test.ts",
@@ -778,16 +792,17 @@
       "id": "M10",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 22,
-        "integration": 29,
-        "realDb": 10,
-        "browser": 5,
+        "unit": 27,
+        "integration": 31,
+        "realDb": 11,
+        "browser": 6,
         "connected": 1,
         "device": 0,
         "uat": 0
       },
       "files": {
         "unit": [
+          "tests/unit/a-recalled-unit-returned-at-the-till-is-held.test.ts",
           "tests/unit/catalogue-snapshot-builder.test.ts",
           "tests/unit/catalogue.test.ts",
           "tests/unit/edge-feeds-the-screens.test.ts",
@@ -801,6 +816,7 @@
           "tests/unit/fulfilment-packing.test.ts",
           "tests/unit/goods-in.test.ts",
           "tests/unit/lane2-recall-and-trace-engines.test.ts",
+          "tests/unit/m13-fr-02-an-expired-batch-returned-at-the-till-is-held.test.ts",
           "tests/unit/product-master.test.ts",
           "tests/unit/quality-cold-chain.test.ts",
           "tests/unit/quality-hold.test.ts",
@@ -809,6 +825,9 @@
           "tests/unit/returns.test.ts",
           "tests/unit/service-catalogue.test.ts",
           "tests/unit/service-pos.test.ts",
+          "tests/unit/the-box-serves-the-recall-trace-page.test.ts",
+          "tests/unit/the-pack-carries-the-expired-batches.test.ts",
+          "tests/unit/the-served-till-receives-the-expired-batches-and-the-cess.test.ts",
           "tests/unit/traceability.test.ts"
         ],
         "integration": [
@@ -821,6 +840,7 @@
           "tests/integration/a-trace-runs-backwards-from-a-sale.test.ts",
           "tests/integration/a-transfer-sends-only-what-the-batch-holds.test.ts",
           "tests/integration/ai-inventory-agent.test.ts",
+          "tests/integration/an-expired-batch-is-refused-on-its-batch-barcode-offline.test.ts",
           "tests/integration/cold-chain-at-receiving.test.ts",
           "tests/integration/cold-room-breach-holds-stock.test.ts",
           "tests/integration/facilities-monitoring.test.ts",
@@ -831,6 +851,7 @@
           "tests/integration/inventory-fefo-allocation.test.ts",
           "tests/integration/inventory-near-expiry.test.ts",
           "tests/integration/lot-trace.test.ts",
+          "tests/integration/m13-fr-02-an-expired-batch-returned-at-the-till-is-held-through-the-box.test.ts",
           "tests/integration/production.test.ts",
           "tests/integration/quality-cold-chain.test.ts",
           "tests/integration/quality-hold.test.ts",
@@ -850,6 +871,7 @@
           "tests/integration/a-recalled-product-cannot-be-ordered.test.ts",
           "tests/integration/a-trace-runs-backwards-from-a-sale.test.ts",
           "tests/integration/fulfilment-packing.test.ts",
+          "tests/integration/m13-fr-02-an-expired-batch-returned-at-the-till-is-held-through-the-box.test.ts",
           "tests/integration/store-work-done-offline-is-booked-once-at-head-office.test.ts",
           "tests/integration/supplier-to-shelf-journey.test.ts",
           "tests/integration/the-store-buys-what-it-sells.test.ts"
@@ -858,6 +880,7 @@
           "tests/e2e/expiry-recall-delivery.e2e.ts",
           "tests/e2e/food-safety-checks-are-saved-with-the-line-down.e2e.ts",
           "tests/e2e/recalls-and-trace-on-the-production-api.e2e.ts",
+          "tests/e2e/the-recall-trace-page-is-served-from-the-store-box.e2e.ts",
           "tests/e2e/unsellable-screen.e2e.ts",
           "tests/e2e/warehouse-handheld-delivery.e2e.ts"
         ],
@@ -920,10 +943,10 @@
       "id": "M12",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 18,
-        "integration": 24,
+        "unit": 19,
+        "integration": 25,
         "realDb": 5,
-        "browser": 13,
+        "browser": 14,
         "connected": 1,
         "device": 0,
         "uat": 0
@@ -936,6 +959,7 @@
           "tests/unit/edge-cloud-sale.test.ts",
           "tests/unit/evidence-ledger.test.ts",
           "tests/unit/held-bills.test.ts",
+          "tests/unit/m12-fr-01-the-box-keeps-every-scan-time-and-reads-the-p95.test.ts",
           "tests/unit/pending-recovery.test.ts",
           "tests/unit/pos-age-check-is-enforced-at-commit.test.ts",
           "tests/unit/pos-lane-guards.test.ts",
@@ -956,6 +980,7 @@
           "tests/integration/a-void-is-kept-and-judged-on-the-shops-record.test.ts",
           "tests/integration/an-age-restricted-sale-reaches-head-office-with-its-check.test.ts",
           "tests/integration/catalogue-pack-preview.test.ts",
+          "tests/integration/m12-fr-01-the-till-times-every-scan-and-the-box-keeps-it.test.ts",
           "tests/integration/no-sale-and-price-override-are-kept-and-judged.test.ts",
           "tests/integration/pending-tender-recovery.test.ts",
           "tests/integration/product-master.test.ts",
@@ -984,6 +1009,7 @@
         ],
         "browser": [
           "tests/e2e/core-one-lane.test.ts",
+          "tests/e2e/the-served-till-checks-pack-dates-bis-licences-and-recalled-returns.e2e.ts",
           "tests/e2e/the-served-till-closes.e2e.ts",
           "tests/e2e/the-served-till-drives-the-customer-display.e2e.ts",
           "tests/e2e/the-served-till-keeps-a-held-basket.e2e.ts",
@@ -1010,16 +1036,17 @@
       "id": "M13",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 24,
-        "integration": 24,
-        "realDb": 7,
-        "browser": 4,
+        "unit": 27,
+        "integration": 26,
+        "realDb": 9,
+        "browser": 6,
         "connected": 1,
         "device": 0,
         "uat": 0
       },
       "files": {
         "unit": [
+          "tests/unit/a-recalled-unit-returned-at-the-till-is-held.test.ts",
           "tests/unit/assess-return.test.ts",
           "tests/unit/catalogue.test.ts",
           "tests/unit/edge-cloud-return.test.ts",
@@ -1032,6 +1059,7 @@
           "tests/unit/lane-lookup-route.test.ts",
           "tests/unit/lane-server-cors.test.ts",
           "tests/unit/loyalty-stored-value.test.ts",
+          "tests/unit/m13-fr-02-an-expired-batch-returned-at-the-till-is-held.test.ts",
           "tests/unit/no-receipt-returns-route.test.ts",
           "tests/unit/pos-refund-view.test.ts",
           "tests/unit/pos-refund-wiring.test.ts",
@@ -1043,14 +1071,17 @@
           "tests/unit/returns.test.ts",
           "tests/unit/reversal.test.ts",
           "tests/unit/sync-http-transport.test.ts",
+          "tests/unit/the-served-till-receives-the-expired-batches-and-the-cess.test.ts",
           "tests/unit/write-guards.test.ts"
         ],
         "integration": [
           "tests/integration/a-held-returned-unit-gets-a-persons-decision.test.ts",
+          "tests/integration/a-recalled-unit-returned-at-the-till-is-held-through-the-box.test.ts",
           "tests/integration/a-returned-item-keeps-its-lot.test.ts",
           "tests/integration/concurrent-refunds-cannot-double-spend.test.ts",
           "tests/integration/exchanges.test.ts",
           "tests/integration/lane-receipt-lookup.test.ts",
+          "tests/integration/m13-fr-02-an-expired-batch-returned-at-the-till-is-held-through-the-box.test.ts",
           "tests/integration/no-receipt-returns.test.ts",
           "tests/integration/offline-returns-reach-the-cloud-through-the-edge.test.ts",
           "tests/integration/offline-returns-reach-the-cloud.test.ts",
@@ -1073,6 +1104,8 @@
         ],
         "realDb": [
           "tests/integration/a-held-returned-unit-gets-a-persons-decision.test.ts",
+          "tests/integration/a-recalled-unit-returned-at-the-till-is-held-through-the-box.test.ts",
+          "tests/integration/m13-fr-02-an-expired-batch-returned-at-the-till-is-held-through-the-box.test.ts",
           "tests/integration/refund-approval-is-the-approvers-own-act.test.ts",
           "tests/integration/returns-guard-the-refund.test.ts",
           "tests/integration/sale-to-shift-close-journey.test.ts",
@@ -1084,6 +1117,8 @@
           "tests/e2e/held-returns-decided-on-the-production-api.e2e.ts",
           "tests/e2e/return-governance-delivery.e2e.ts",
           "tests/e2e/screens-open-offline.e2e.ts",
+          "tests/e2e/the-served-till-checks-pack-dates-bis-licences-and-recalled-returns.e2e.ts",
+          "tests/e2e/the-served-till-holds-an-expired-batch-coming-back.e2e.ts",
           "tests/e2e/the-served-till-takes-a-refund.e2e.ts"
         ],
         "connected": [
@@ -1099,11 +1134,11 @@
       "id": "M14",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 18,
-        "integration": 18,
-        "realDb": 6,
-        "browser": 5,
-        "connected": 0,
+        "unit": 20,
+        "integration": 19,
+        "realDb": 7,
+        "browser": 6,
+        "connected": 1,
         "device": 0,
         "uat": 0
       },
@@ -1122,6 +1157,8 @@
           "tests/unit/lane-server-day-close.test.ts",
           "tests/unit/lane-server-day-reopen.test.ts",
           "tests/unit/lane-server-till-cash.test.ts",
+          "tests/unit/m14-fr-04-the-closed-day-evidence-pack.test.ts",
+          "tests/unit/m14-fr-04-the-day-book-offers-the-evidence-pack.test.ts",
           "tests/unit/over-short-review.test.ts",
           "tests/unit/pos-till-session.test.ts",
           "tests/unit/settlement-t-plus-one-reversals.test.ts",
@@ -1136,6 +1173,7 @@
           "tests/integration/day-close-reaches-the-cloud-through-the-edge.test.ts",
           "tests/integration/day-close-reaches-the-cloud.test.ts",
           "tests/integration/day-close-reconcile-on-sync.test.ts",
+          "tests/integration/m14-fr-04-a-closed-day-has-a-sealed-evidence-pack.test.ts",
           "tests/integration/manager-decisions-reach-the-cloud-through-the-edge.test.ts",
           "tests/integration/refund-approval-is-the-approvers-own-act.test.ts",
           "tests/integration/refund-exceptions.test.ts",
@@ -1153,6 +1191,7 @@
           "tests/integration/a-day-closes-with-a-pending-payment-carried-to-head-office.test.ts",
           "tests/integration/a-t-plus-one-settlement-file-surfaces-shortfalls-chargebacks-and-refunds.test.ts",
           "tests/integration/day-close-honestly.test.ts",
+          "tests/integration/m14-fr-04-a-closed-day-has-a-sealed-evidence-pack.test.ts",
           "tests/integration/refund-approval-is-the-approvers-own-act.test.ts",
           "tests/integration/sale-to-shift-close-journey.test.ts"
         ],
@@ -1161,14 +1200,17 @@
           "tests/e2e/day-reopen-delivery.e2e.ts",
           "tests/e2e/manager-day-close-delivery.e2e.ts",
           "tests/e2e/screens-open-offline.e2e.ts",
+          "tests/e2e/the-day-book-downloads-the-closed-day-evidence-pack.e2e.ts",
           "tests/e2e/the-served-till-closes.e2e.ts"
         ],
-        "connected": [],
+        "connected": [
+          "tests/e2e/the-day-book-downloads-the-closed-day-evidence-pack.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },
       "holds": true,
-      "why": "browser boundary and cloud effect proven in separate runs (no connected browser test yet)"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "M15",
@@ -1238,11 +1280,11 @@
       "id": "M16",
       "label": "WIRED",
       "counts": {
-        "unit": 11,
-        "integration": 18,
+        "unit": 12,
+        "integration": 19,
         "realDb": 9,
-        "browser": 2,
-        "connected": 1,
+        "browser": 3,
+        "connected": 2,
         "device": 0,
         "uat": 0
       },
@@ -1258,6 +1300,7 @@
           "tests/unit/loyalty-coupons.test.ts",
           "tests/unit/r4-insight-sessions.test.ts",
           "tests/unit/storefront-browse.test.ts",
+          "tests/unit/the-customer-record-folds-the-desks-cases.test.ts",
           "tests/unit/voice-and-sms-links-are-switched-off.test.ts"
         ],
         "integration": [
@@ -1276,6 +1319,7 @@
           "tests/integration/the-assistant-drafts-and-a-person-decides.test.ts",
           "tests/integration/the-customer-privacy-centre-saves-on-the-shop.test.ts",
           "tests/integration/the-customer-record-is-built-from-what-they-bought.test.ts",
+          "tests/integration/the-customer-record-shows-the-complaints-the-desk-holds.test.ts",
           "tests/integration/the-customers-overview-lists-every-customer.test.ts",
           "tests/integration/the-processor-register-flags-processing-without-a-contract.test.ts",
           "tests/integration/till-names-a-loyalty-member.test.ts"
@@ -1293,9 +1337,11 @@
         ],
         "browser": [
           "tests/e2e/customer-privacy-centre.e2e.ts",
+          "tests/e2e/the-customer-record-shows-the-desks-complaints.e2e.ts",
           "tests/e2e/the-customers-page-meets-the-spec.e2e.ts"
         ],
         "connected": [
+          "tests/e2e/the-customer-record-shows-the-desks-complaints.e2e.ts",
           "tests/e2e/the-customers-page-meets-the-spec.e2e.ts"
         ],
         "device": [],
@@ -1308,8 +1354,8 @@
       "id": "M17",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 8,
-        "integration": 16,
+        "unit": 10,
+        "integration": 18,
         "realDb": 6,
         "browser": 5,
         "connected": 0,
@@ -1323,17 +1369,21 @@
           "tests/unit/erp-stored-value-session.test.ts",
           "tests/unit/loyalty-coupons.test.ts",
           "tests/unit/loyalty-stored-value.test.ts",
+          "tests/unit/loyalty-tiers-and-points-expiry.test.ts",
           "tests/unit/loyalty-wallet.test.ts",
           "tests/unit/loyalty.test.ts",
+          "tests/unit/repeat-orders-engine.test.ts",
           "tests/unit/write-guards.test.ts"
         ],
         "integration": [
+          "tests/integration/a-repeat-order-is-placed-on-its-days-and-paused-or-cancelled-by-the-customer.test.ts",
           "tests/integration/concurrent-refunds-cannot-double-spend.test.ts",
           "tests/integration/coupons.test.ts",
           "tests/integration/household-pooling.test.ts",
           "tests/integration/loyalty-durability.test.ts",
           "tests/integration/loyalty-liability-reconciles-to-the-books.test.ts",
           "tests/integration/loyalty-points.test.ts",
+          "tests/integration/loyalty-tiers-and-expiry-stay-off-until-the-owner-sets-them.test.ts",
           "tests/integration/loyalty-value-is-spent-once.test.ts",
           "tests/integration/referral-liability-reconciles-to-the-books.test.ts",
           "tests/integration/sale-to-shift-close-journey.test.ts",
@@ -1371,11 +1421,11 @@
       "id": "M18",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 11,
-        "integration": 12,
+        "unit": 12,
+        "integration": 14,
         "realDb": 5,
-        "browser": 0,
-        "connected": 0,
+        "browser": 1,
+        "connected": 1,
         "device": 0,
         "uat": 0
       },
@@ -1391,10 +1441,13 @@
           "tests/unit/orders-substitution-exceptions.test.ts",
           "tests/unit/orders.test.ts",
           "tests/unit/storefront-serviceability-schedule.test.ts",
+          "tests/unit/the-order-refunds-session.test.ts",
           "tests/unit/write-guards.test.ts"
         ],
         "integration": [
           "tests/integration/a-delivery-slot-and-address-are-the-shops-to-judge.test.ts",
+          "tests/integration/a-repeat-order-is-placed-on-its-days-and-paused-or-cancelled-by-the-customer.test.ts",
+          "tests/integration/an-online-order-is-routed-to-one-branch.test.ts",
           "tests/integration/concurrent-stock-cannot-be-spent-twice.test.ts",
           "tests/integration/one-fulfilment-command.test.ts",
           "tests/integration/order-channel-reconcile.test.ts",
@@ -1414,8 +1467,12 @@
           "tests/integration/the-app-keeps-an-online-buffer-for-shoppers-in-the-store.test.ts",
           "tests/integration/write-guards-on-postgresql.test.ts"
         ],
-        "browser": [],
-        "connected": [],
+        "browser": [
+          "tests/e2e/the-order-refunds-page-refunds-to-the-token-after-a-second-person.e2e.ts"
+        ],
+        "connected": [
+          "tests/e2e/the-order-refunds-page-refunds-to-the-token-after-a-second-person.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },
@@ -1426,11 +1483,11 @@
       "id": "M19",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 18,
-        "integration": 13,
-        "realDb": 4,
-        "browser": 5,
-        "connected": 0,
+        "unit": 22,
+        "integration": 16,
+        "realDb": 5,
+        "browser": 8,
+        "connected": 1,
         "device": 0,
         "uat": 0
       },
@@ -1439,10 +1496,13 @@
           "tests/unit/assignments-feed-pull.test.ts",
           "tests/unit/delivery-route.test.ts",
           "tests/unit/dispatch-routing.test.ts",
+          "tests/unit/erp-dispatch-session.test.ts",
           "tests/unit/erp-substitution-exception-inbox-session.test.ts",
           "tests/unit/fulfilment-assignments.test.ts",
           "tests/unit/fulfilment-driver-runs-synced.test.ts",
           "tests/unit/fulfilment-packing.test.ts",
+          "tests/unit/fulfilment-proof-capture.test.ts",
+          "tests/unit/fulfilment-wave-plan.test.ts",
           "tests/unit/fulfilment-waves-synced.test.ts",
           "tests/unit/fulfilment.test.ts",
           "tests/unit/handheld-work-queues.test.ts",
@@ -1453,7 +1513,8 @@
           "tests/unit/orders-substitution-policy.test.ts",
           "tests/unit/picker-session.test.ts",
           "tests/unit/product-master.test.ts",
-          "tests/unit/substitution-exception-ownership-routes.test.ts"
+          "tests/unit/substitution-exception-ownership-routes.test.ts",
+          "tests/unit/the-driver-captures-proof-at-the-door.test.ts"
         ],
         "integration": [
           "tests/integration/a-customer-reads-a-delivery-in-progress.test.ts",
@@ -1468,22 +1529,31 @@
           "tests/integration/picker-handheld-reaches-the-cloud-through-the-edge.test.ts",
           "tests/integration/substitution-exception-ownership.test.ts",
           "tests/integration/substitution-exceptions.test.ts",
+          "tests/integration/the-contribution-rule-holds-and-the-fleet-is-settled.test.ts",
+          "tests/integration/the-delivery-proof-is-captured-and-checked.test.ts",
+          "tests/integration/the-dispatcher-builds-a-wave-from-confirmed-orders.test.ts",
           "tests/integration/the-screens-are-fed.test.ts"
         ],
         "realDb": [
           "tests/integration/a-customer-reads-a-delivery-in-progress.test.ts",
           "tests/integration/a-late-delivery-exception-is-told-to-its-queue.test.ts",
           "tests/integration/fulfilment-packing.test.ts",
-          "tests/integration/one-fulfilment-command.test.ts"
+          "tests/integration/one-fulfilment-command.test.ts",
+          "tests/integration/the-dispatcher-builds-a-wave-from-confirmed-orders.test.ts"
         ],
         "browser": [
           "tests/e2e/delivery-route-partial-delivery.e2e.ts",
           "tests/e2e/driver-handheld-syncs-through-the-box.e2e.ts",
+          "tests/e2e/lib/proof-photo.ts",
           "tests/e2e/picker-handheld-syncs-through-the-box.e2e.ts",
           "tests/e2e/picker-substitution-delivery.e2e.ts",
-          "tests/e2e/substitution-exception-claim-resolve.e2e.ts"
+          "tests/e2e/substitution-exception-claim-resolve.e2e.ts",
+          "tests/e2e/the-dispatch-page-runs-the-day.e2e.ts",
+          "tests/e2e/the-driver-captures-proof-at-the-door.e2e.ts"
         ],
-        "connected": [],
+        "connected": [
+          "tests/e2e/the-dispatch-page-runs-the-day.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },
@@ -1494,10 +1564,10 @@
       "id": "M20",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 19,
-        "integration": 17,
+        "unit": 21,
+        "integration": 20,
         "realDb": 10,
-        "browser": 5,
+        "browser": 6,
         "connected": 1,
         "device": 0,
         "uat": 0
@@ -1516,13 +1586,15 @@
           "tests/unit/identity-otp.test.ts",
           "tests/unit/identity-session-revocation.test.ts",
           "tests/unit/identity-test-idp.test.ts",
+          "tests/unit/order-notices-are-worked-out-from-the-order.test.ts",
           "tests/unit/order-payment-refund-routes.test.ts",
           "tests/unit/order-payment-refunds.test.ts",
           "tests/unit/ratings-receipts-and-images.test.ts",
           "tests/unit/shop-transport.test.ts",
           "tests/unit/storefront-browse.test.ts",
           "tests/unit/storefront-checkout.test.ts",
-          "tests/unit/storefront-scope.test.ts"
+          "tests/unit/storefront-scope.test.ts",
+          "tests/unit/the-online-basket-is-priced-by-the-tills-engines.test.ts"
         ],
         "integration": [
           "tests/integration/a-customer-reads-a-delivery-in-progress.test.ts",
@@ -1541,7 +1613,10 @@
           "tests/integration/promotion-governance.test.ts",
           "tests/integration/storefront-orders.test.ts",
           "tests/integration/the-app-orders-through-the-cloud.test.ts",
-          "tests/integration/the-customer-privacy-centre-saves-on-the-shop.test.ts"
+          "tests/integration/the-customer-is-told-where-their-order-is.test.ts",
+          "tests/integration/the-customer-privacy-centre-saves-on-the-shop.test.ts",
+          "tests/integration/the-customers-own-account-suggestions-and-help.test.ts",
+          "tests/integration/the-online-basket-gets-the-tills-offers.test.ts"
         ],
         "realDb": [
           "tests/integration/a-customer-reads-a-delivery-in-progress.test.ts",
@@ -1560,6 +1635,7 @@
           "tests/e2e/customer-order-delivery.e2e.ts",
           "tests/e2e/customer-privacy-centre.e2e.ts",
           "tests/e2e/erasure-console.e2e.ts",
+          "tests/e2e/the-customer-app-prices-with-offers-and-keeps-my-account.e2e.ts",
           "tests/e2e/the-online-store-shows-the-required-details.e2e.ts"
         ],
         "connected": [
@@ -1575,11 +1651,11 @@
       "id": "M21",
       "label": "INTEGRATION_TESTED",
       "counts": {
-        "unit": 5,
-        "integration": 16,
+        "unit": 7,
+        "integration": 18,
         "realDb": 4,
-        "browser": 1,
-        "connected": 1,
+        "browser": 3,
+        "connected": 3,
         "device": 0,
         "uat": 0
       },
@@ -1588,8 +1664,10 @@
           "tests/unit/approval-requests.test.ts",
           "tests/unit/edge-feeds-the-screens.test.ts",
           "tests/unit/erp-service-session.test.ts",
+          "tests/unit/journey-triggers-come-from-facts.test.ts",
           "tests/unit/service-desk-campaigns.test.ts",
-          "tests/unit/service-desk-cases.test.ts"
+          "tests/unit/service-desk-cases.test.ts",
+          "tests/unit/the-campaigns-session.test.ts"
         ],
         "integration": [
           "tests/integration/a-campaign-goes-through-the-queue-within-the-cap.test.ts",
@@ -1599,6 +1677,7 @@
           "tests/integration/campaign-journeys.test.ts",
           "tests/integration/delivery-reports-are-the-providers.test.ts",
           "tests/integration/exchanges.test.ts",
+          "tests/integration/journeys-are-worked-out-from-the-shops-own-facts.test.ts",
           "tests/integration/no-receipt-returns.test.ts",
           "tests/integration/notification-queue.test.ts",
           "tests/integration/returns-guard-the-refund.test.ts",
@@ -1606,6 +1685,7 @@
           "tests/integration/service-cases.test.ts",
           "tests/integration/service-compensation.test.ts",
           "tests/integration/service-csat.test.ts",
+          "tests/integration/the-customer-record-shows-the-complaints-the-desk-holds.test.ts",
           "tests/integration/the-screens-are-fed.test.ts",
           "tests/integration/the-sender-rechecks-template-and-recipient.test.ts"
         ],
@@ -1616,10 +1696,14 @@
           "tests/integration/the-sender-rechecks-template-and-recipient.test.ts"
         ],
         "browser": [
-          "tests/e2e/service-desk-and-assistant-drafts.e2e.ts"
+          "tests/e2e/service-desk-and-assistant-drafts.e2e.ts",
+          "tests/e2e/the-campaigns-page-sends-only-to-who-said-yes.e2e.ts",
+          "tests/e2e/the-customer-record-shows-the-desks-complaints.e2e.ts"
         ],
         "connected": [
-          "tests/e2e/service-desk-and-assistant-drafts.e2e.ts"
+          "tests/e2e/service-desk-and-assistant-drafts.e2e.ts",
+          "tests/e2e/the-campaigns-page-sends-only-to-who-said-yes.e2e.ts",
+          "tests/e2e/the-customer-record-shows-the-desks-complaints.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -1690,11 +1774,11 @@
       "id": "M23",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 25,
-        "integration": 31,
-        "realDb": 18,
-        "browser": 5,
-        "connected": 1,
+        "unit": 27,
+        "integration": 35,
+        "realDb": 21,
+        "browser": 6,
+        "connected": 2,
         "device": 0,
         "uat": 0
       },
@@ -1724,12 +1808,15 @@
           "tests/unit/reconciliation.test.ts",
           "tests/unit/settlement-t-plus-one-reversals.test.ts",
           "tests/unit/supplier-account-fold.test.ts",
-          "tests/unit/tally-export.test.ts"
+          "tests/unit/tally-daily-outbox.test.ts",
+          "tests/unit/tally-export.test.ts",
+          "tests/unit/trial-balance-and-centres.test.ts"
         ],
         "integration": [
           "tests/integration/a-b2b-invoice-and-its-collection-reach-the-books.test.ts",
           "tests/integration/a-damaged-arrival-under-an-open-count-is-received-good-and-written-off-at-the-close.test.ts",
           "tests/integration/a-damaged-arrival-with-no-count-open-is-its-own-write-off-line.test.ts",
+          "tests/integration/a-supplier-payment-pays-only-what-advances-left.test.ts",
           "tests/integration/a-t-plus-one-settlement-file-surfaces-shortfalls-chargebacks-and-refunds.test.ts",
           "tests/integration/b2b-reconcile-ar.test.ts",
           "tests/integration/cod-reconciliation.test.ts",
@@ -1737,6 +1824,7 @@
           "tests/integration/credit-note-reconciliation.test.ts",
           "tests/integration/day-book-posts-the-day.test.ts",
           "tests/integration/day-close-reconcile-on-sync.test.ts",
+          "tests/integration/department-sales-and-margin-tie-to-the-ledger.test.ts",
           "tests/integration/driver-handheld-reaches-the-cloud-through-the-edge.test.ts",
           "tests/integration/goods-made-in-the-store-are-valued-at-their-production-run-cost.test.ts",
           "tests/integration/loyalty-liability-reconciles-to-the-books.test.ts",
@@ -1751,22 +1839,26 @@
           "tests/integration/stored-value-liability.test.ts",
           "tests/integration/supplier-account.test.ts",
           "tests/integration/supplier-master.test.ts",
+          "tests/integration/the-daily-tally-file-carries-every-journal-and-keeps-a-dead-letter.test.ts",
           "tests/integration/the-month-closes-on-independent-evidence.test.ts",
           "tests/integration/the-month-end-stock-adjustment-books-cost-of-goods-sold.test.ts",
           "tests/integration/the-period-books-reconcile-and-show-profit.test.ts",
           "tests/integration/the-screens-are-fed.test.ts",
           "tests/integration/the-store-buys-what-it-sells.test.ts",
           "tests/integration/the-till-exchanges.test.ts",
+          "tests/integration/the-trial-balance-and-centres-tie-to-the-ledger-and-the-close-checks-gst.test.ts",
           "tests/security/separation-of-duties.test.ts"
         ],
         "realDb": [
           "tests/integration/a-b2b-invoice-and-its-collection-reach-the-books.test.ts",
           "tests/integration/a-damaged-arrival-under-an-open-count-is-received-good-and-written-off-at-the-close.test.ts",
           "tests/integration/a-damaged-arrival-with-no-count-open-is-its-own-write-off-line.test.ts",
+          "tests/integration/a-supplier-payment-pays-only-what-advances-left.test.ts",
           "tests/integration/a-t-plus-one-settlement-file-surfaces-shortfalls-chargebacks-and-refunds.test.ts",
           "tests/integration/b2b-reconcile-ar.test.ts",
           "tests/integration/confirmed-lost-stock-is-posted-once.test.ts",
           "tests/integration/credit-note-reconciliation.test.ts",
+          "tests/integration/department-sales-and-margin-tie-to-the-ledger.test.ts",
           "tests/integration/goods-made-in-the-store-are-valued-at-their-production-run-cost.test.ts",
           "tests/integration/merchandising-reads-head-office-facts.test.ts",
           "tests/integration/payables-reach-tally-as-an-importable-voucher-file.test.ts",
@@ -1777,17 +1869,20 @@
           "tests/integration/the-month-end-stock-adjustment-books-cost-of-goods-sold.test.ts",
           "tests/integration/the-period-books-reconcile-and-show-profit.test.ts",
           "tests/integration/the-store-buys-what-it-sells.test.ts",
-          "tests/integration/the-till-exchanges.test.ts"
+          "tests/integration/the-till-exchanges.test.ts",
+          "tests/integration/the-trial-balance-and-centres-tie-to-the-ledger-and-the-close-checks-gst.test.ts"
         ],
         "browser": [
           "tests/e2e/day-book-post-delivery.e2e.ts",
           "tests/e2e/finance-close-on-the-production-api.e2e.ts",
           "tests/e2e/finance-month-close-delivery.e2e.ts",
           "tests/e2e/screens-open-offline.e2e.ts",
-          "tests/e2e/suppliers-delivery.e2e.ts"
+          "tests/e2e/suppliers-delivery.e2e.ts",
+          "tests/e2e/the-tally-files-page-hands-the-accountant-each-day.e2e.ts"
         ],
         "connected": [
-          "tests/e2e/finance-close-on-the-production-api.e2e.ts"
+          "tests/e2e/finance-close-on-the-production-api.e2e.ts",
+          "tests/e2e/the-tally-files-page-hands-the-accountant-each-day.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -2182,9 +2277,9 @@
       "id": "M31",
       "label": "WIRED",
       "counts": {
-        "unit": 5,
-        "integration": 11,
-        "realDb": 5,
+        "unit": 6,
+        "integration": 14,
+        "realDb": 7,
         "browser": 1,
         "connected": 0,
         "device": 0,
@@ -2192,6 +2287,7 @@
       },
       "files": {
         "unit": [
+          "tests/unit/cert-in-capacity-and-suppression.test.ts",
           "tests/unit/documents-templates.test.ts",
           "tests/unit/messaging-budget.test.ts",
           "tests/unit/notifications.test.ts",
@@ -2200,7 +2296,9 @@
         ],
         "integration": [
           "tests/integration/a-campaign-goes-through-the-queue-within-the-cap.test.ts",
+          "tests/integration/an-erasure-shreds-the-personal-text-in-the-ledger.test.ts",
           "tests/integration/delivery-reports-are-the-providers.test.ts",
+          "tests/integration/do-not-contact-frequency-cert-in-and-capacity.test.ts",
           "tests/integration/document-issue.test.ts",
           "tests/integration/documents-issue-from-their-records.test.ts",
           "tests/integration/documents-retention.test.ts",
@@ -2209,11 +2307,14 @@
           "tests/integration/notification-queue.test.ts",
           "tests/integration/notifications-send-themselves.test.ts",
           "tests/integration/second-person-is-a-separate-act.test.ts",
+          "tests/integration/the-customer-is-told-where-their-order-is.test.ts",
           "tests/integration/the-sender-rechecks-template-and-recipient.test.ts"
         ],
         "realDb": [
           "tests/integration/a-campaign-goes-through-the-queue-within-the-cap.test.ts",
+          "tests/integration/an-erasure-shreds-the-personal-text-in-the-ledger.test.ts",
           "tests/integration/delivery-reports-are-the-providers.test.ts",
+          "tests/integration/do-not-contact-frequency-cert-in-and-capacity.test.ts",
           "tests/integration/documents-issue-from-their-records.test.ts",
           "tests/integration/notifications-send-themselves.test.ts",
           "tests/integration/the-sender-rechecks-template-and-recipient.test.ts"
@@ -2233,10 +2334,10 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 10,
-        "integration": 16,
+        "integration": 18,
         "realDb": 8,
-        "browser": 1,
-        "connected": 0,
+        "browser": 2,
+        "connected": 1,
         "device": 0,
         "uat": 0
       },
@@ -2259,12 +2360,14 @@
           "tests/integration/integration-gateway.test.ts",
           "tests/integration/managed-secrets-tenant-isolation.test.ts",
           "tests/integration/managed-secrets.test.ts",
+          "tests/integration/money-route-schemas-match-the-handlers.test.ts",
           "tests/integration/notifications-send-themselves.test.ts",
           "tests/integration/observed-health.test.ts",
           "tests/integration/outbound-webhooks-are-signed-retried-and-reconciled.test.ts",
           "tests/integration/outbound-webhooks-go-over-pinned-https.test.ts",
           "tests/integration/outbound-webhooks-refuse-private-destinations.test.ts",
           "tests/integration/payment-data-is-pinned-to-india.test.ts",
+          "tests/integration/the-daily-tally-file-carries-every-journal-and-keeps-a-dead-letter.test.ts",
           "tests/integration/the-processor-register-flags-processing-without-a-contract.test.ts",
           "tests/integration/the-screens-are-fed.test.ts",
           "tests/integration/the-seams-hold.test.ts",
@@ -2282,14 +2385,17 @@
           "tests/integration/the-sender-rechecks-template-and-recipient.test.ts"
         ],
         "browser": [
-          "tests/e2e/integration-health-delivery.e2e.ts"
+          "tests/e2e/integration-health-delivery.e2e.ts",
+          "tests/e2e/the-tally-files-page-hands-the-accountant-each-day.e2e.ts"
         ],
-        "connected": [],
+        "connected": [
+          "tests/e2e/the-tally-files-page-hands-the-accountant-each-day.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },
       "holds": true,
-      "why": "browser boundary and cloud effect proven in separate runs (no connected browser test yet)"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "M33",
@@ -2427,9 +2533,9 @@
       "id": "M35",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 16,
-        "integration": 38,
-        "realDb": 30,
+        "unit": 17,
+        "integration": 39,
+        "realDb": 31,
         "browser": 3,
         "connected": 2,
         "device": 0,
@@ -2442,6 +2548,7 @@
           "tests/unit/a-lease-session-cut-off-here-is-ended-on-the-server.test.ts",
           "tests/unit/a-lease-session-end-is-bounded-and-connects-without-the-check-off-linux.test.ts",
           "tests/unit/alert-lifecycle.test.ts",
+          "tests/unit/cert-in-capacity-and-suppression.test.ts",
           "tests/unit/customer-pii-safeguards.test.ts",
           "tests/unit/erp-navigation-catalogue.test.ts",
           "tests/unit/incidents-session.test.ts",
@@ -2474,6 +2581,7 @@
           "tests/integration/an-owner-edit-of-the-built-in-alert-still-reaches-every-owner.test.ts",
           "tests/integration/backup-is-one-moment.test.ts",
           "tests/integration/backup-verification.test.ts",
+          "tests/integration/do-not-contact-frequency-cert-in-and-capacity.test.ts",
           "tests/integration/dr-readiness.test.ts",
           "tests/integration/many-shops-rebuilding-at-once-never-use-up-head-offices-connections.test.ts",
           "tests/integration/observed-health.test.ts",
@@ -2509,6 +2617,7 @@
           "tests/integration/an-old-edit-of-the-built-in-alert-never-turns-into-a-redirect-to-an-ex-owner.test.ts",
           "tests/integration/an-owner-edit-of-the-built-in-alert-still-reaches-every-owner.test.ts",
           "tests/integration/backup-is-one-moment.test.ts",
+          "tests/integration/do-not-contact-frequency-cert-in-and-capacity.test.ts",
           "tests/integration/dr-readiness.test.ts",
           "tests/integration/many-shops-rebuilding-at-once-never-use-up-head-offices-connections.test.ts",
           "tests/integration/only-the-store-computer-says-when-it-took-a-bill-or-a-refund.test.ts",
@@ -2664,8 +2773,8 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 4,
-        "integration": 8,
-        "realDb": 2,
+        "integration": 9,
+        "realDb": 3,
         "browser": 2,
         "connected": 1,
         "device": 0,
@@ -2682,6 +2791,7 @@
           "tests/integration/a-purchase-order-is-checked-against-open-to-buy.test.ts",
           "tests/integration/assortment.test.ts",
           "tests/integration/merchandising-reads-head-office-facts.test.ts",
+          "tests/integration/p2-the-floor-heat-map-clusters-seasons-and-range-gaps-are-head-offices.test.ts",
           "tests/integration/planogram-compliance.test.ts",
           "tests/integration/planogram-store.test.ts",
           "tests/integration/promotion-effectiveness.test.ts",
@@ -2690,7 +2800,8 @@
         ],
         "realDb": [
           "tests/integration/a-purchase-order-is-checked-against-open-to-buy.test.ts",
-          "tests/integration/merchandising-reads-head-office-facts.test.ts"
+          "tests/integration/merchandising-reads-head-office-facts.test.ts",
+          "tests/integration/p2-the-floor-heat-map-clusters-seasons-and-range-gaps-are-head-offices.test.ts"
         ],
         "browser": [
           "tests/e2e/merchandising-count-and-refill.e2e.ts",
@@ -2890,7 +3001,7 @@
       "id": "D06",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 4,
+        "unit": 5,
         "integration": 8,
         "realDb": 1,
         "browser": 3,
@@ -2903,6 +3014,7 @@
           "tests/unit/customer-app.test.ts",
           "tests/unit/erp-catalogue-session.test.ts",
           "tests/unit/finance-close-session.test.ts",
+          "tests/unit/p2-offers-are-deterministic-and-never-reach-tobacco.test.ts",
           "tests/unit/self-checkout.test.ts"
         ],
         "integration": [
@@ -2937,8 +3049,8 @@
       "id": "D07",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 1,
-        "integration": 10,
+        "unit": 2,
+        "integration": 11,
         "realDb": 6,
         "browser": 1,
         "connected": 0,
@@ -2947,7 +3059,8 @@
       },
       "files": {
         "unit": [
-          "tests/unit/customer-privacy-centre.test.ts"
+          "tests/unit/customer-privacy-centre.test.ts",
+          "tests/unit/loyalty-tiers-and-points-expiry.test.ts"
         ],
         "integration": [
           "tests/integration/a-campaign-goes-through-the-queue-within-the-cap.test.ts",
@@ -2955,6 +3068,7 @@
           "tests/integration/coupons.test.ts",
           "tests/integration/loyalty-earns-on-a-sale.test.ts",
           "tests/integration/loyalty-liability-reconciles-to-the-books.test.ts",
+          "tests/integration/loyalty-tiers-and-expiry-stay-off-until-the-owner-sets-them.test.ts",
           "tests/integration/loyalty-value-is-spent-once.test.ts",
           "tests/integration/referral-liability-reconciles-to-the-books.test.ts",
           "tests/integration/service-cases.test.ts",
@@ -2983,10 +3097,10 @@
       "id": "D08",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 7,
-        "integration": 6,
+        "unit": 9,
+        "integration": 7,
         "realDb": 3,
-        "browser": 3,
+        "browser": 4,
         "connected": 1,
         "device": 0,
         "uat": 0
@@ -2996,9 +3110,11 @@
           "tests/unit/customer-app.test.ts",
           "tests/unit/customer-voice-search.test.ts",
           "tests/unit/dispatch-routing.test.ts",
+          "tests/unit/fulfilment-proof-capture.test.ts",
           "tests/unit/fulfilment-serviceability-simulator.test.ts",
           "tests/unit/storefront-checkout.test.ts",
           "tests/unit/storefront-serviceability-schedule.test.ts",
+          "tests/unit/the-customer-apps-commerce-rules.test.ts",
           "tests/unit/voice-and-sms-links-are-switched-off.test.ts"
         ],
         "integration": [
@@ -3007,7 +3123,8 @@
           "tests/integration/storefront-orders.test.ts",
           "tests/integration/the-app-orders-through-the-cloud.test.ts",
           "tests/integration/the-customer-keeps-lists-and-raises-returns-and-complaints.test.ts",
-          "tests/integration/the-customer-privacy-centre-saves-on-the-shop.test.ts"
+          "tests/integration/the-customer-privacy-centre-saves-on-the-shop.test.ts",
+          "tests/integration/the-delivery-proof-is-captured-and-checked.test.ts"
         ],
         "realDb": [
           "tests/integration/a-delivery-slot-and-address-are-the-shops-to-judge.test.ts",
@@ -3017,6 +3134,7 @@
         "browser": [
           "tests/e2e/customer-order-delivery.e2e.ts",
           "tests/e2e/the-customer-app-meets-wcag-aa.e2e.ts",
+          "tests/e2e/the-customer-app-prices-with-offers-and-keeps-my-account.e2e.ts",
           "tests/e2e/the-online-store-shows-the-required-details.e2e.ts"
         ],
         "connected": [
@@ -3032,10 +3150,10 @@
       "id": "D09",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 8,
-        "integration": 8,
+        "unit": 11,
+        "integration": 11,
         "realDb": 3,
-        "browser": 2,
+        "browser": 3,
         "connected": 0,
         "device": 0,
         "uat": 0
@@ -3044,14 +3162,18 @@
         "unit": [
           "tests/unit/delivery-route.test.ts",
           "tests/unit/dispatch-routing.test.ts",
+          "tests/unit/fulfilment-delivery-economics.test.ts",
           "tests/unit/fulfilment-packing.test.ts",
+          "tests/unit/fulfilment-proof-capture.test.ts",
           "tests/unit/fulfilment-serviceability-simulator.test.ts",
           "tests/unit/fulfilment-waves-synced.test.ts",
           "tests/unit/orders-fulfilment-plan.test.ts",
           "tests/unit/orders-substitution-exception-ownership.test.ts",
-          "tests/unit/picker-session.test.ts"
+          "tests/unit/picker-session.test.ts",
+          "tests/unit/the-driver-captures-proof-at-the-door.test.ts"
         ],
         "integration": [
+          "tests/integration/an-online-order-is-routed-to-one-branch.test.ts",
           "tests/integration/cod-reconciliation.test.ts",
           "tests/integration/dispatch.test.ts",
           "tests/integration/fulfilment-packing.test.ts",
@@ -3059,7 +3181,9 @@
           "tests/integration/order-substitution.test.ts",
           "tests/integration/orders-lifecycle.test.ts",
           "tests/integration/pick-to-doorstep.test.ts",
-          "tests/integration/picker-handheld-reaches-the-cloud-through-the-edge.test.ts"
+          "tests/integration/picker-handheld-reaches-the-cloud-through-the-edge.test.ts",
+          "tests/integration/the-contribution-rule-holds-and-the-fleet-is-settled.test.ts",
+          "tests/integration/the-delivery-proof-is-captured-and-checked.test.ts"
         ],
         "realDb": [
           "tests/integration/fulfilment-packing.test.ts",
@@ -3068,7 +3192,8 @@
         ],
         "browser": [
           "tests/e2e/driver-handheld-syncs-through-the-box.e2e.ts",
-          "tests/e2e/picker-handheld-syncs-through-the-box.e2e.ts"
+          "tests/e2e/picker-handheld-syncs-through-the-box.e2e.ts",
+          "tests/e2e/the-driver-captures-proof-at-the-door.e2e.ts"
         ],
         "connected": [],
         "device": [],
@@ -3081,9 +3206,9 @@
       "id": "D10",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 1,
-        "integration": 10,
-        "realDb": 6,
+        "unit": 2,
+        "integration": 13,
+        "realDb": 8,
         "browser": 2,
         "connected": 1,
         "device": 0,
@@ -3091,24 +3216,30 @@
       },
       "files": {
         "unit": [
-          "tests/unit/finance-close-session.test.ts"
+          "tests/unit/finance-close-session.test.ts",
+          "tests/unit/trial-balance-and-centres.test.ts"
         ],
         "integration": [
+          "tests/integration/a-supplier-payment-pays-only-what-advances-left.test.ts",
           "tests/integration/books-reconcile.test.ts",
           "tests/integration/budgets-and-the-fixed-asset-register.test.ts",
           "tests/integration/day-book-posts-the-day.test.ts",
           "tests/integration/gstr1-from-sales.test.ts",
           "tests/integration/loyalty-liability-reconciles-to-the-books.test.ts",
           "tests/integration/store-acceptance-journey.test.ts",
+          "tests/integration/supplier-advances-and-earned-rebates-reach-the-books.test.ts",
           "tests/integration/the-books-open-from-the-old-trial-balance.test.ts",
+          "tests/integration/the-daily-tally-file-carries-every-journal-and-keeps-a-dead-letter.test.ts",
           "tests/integration/the-month-closes-on-independent-evidence.test.ts",
           "tests/integration/the-month-end-stock-adjustment-books-cost-of-goods-sold.test.ts",
           "tests/integration/the-period-books-reconcile-and-show-profit.test.ts"
         ],
         "realDb": [
+          "tests/integration/a-supplier-payment-pays-only-what-advances-left.test.ts",
           "tests/integration/books-reconcile.test.ts",
           "tests/integration/budgets-and-the-fixed-asset-register.test.ts",
           "tests/integration/store-acceptance-journey.test.ts",
+          "tests/integration/supplier-advances-and-earned-rebates-reach-the-books.test.ts",
           "tests/integration/the-books-open-from-the-old-trial-balance.test.ts",
           "tests/integration/the-month-end-stock-adjustment-books-cost-of-goods-sold.test.ts",
           "tests/integration/the-period-books-reconcile-and-show-profit.test.ts"
@@ -3267,7 +3398,7 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 4,
-        "integration": 9,
+        "integration": 10,
         "realDb": 4,
         "browser": 0,
         "connected": 0,
@@ -3290,6 +3421,7 @@
           "tests/integration/outbound-webhooks-refuse-private-destinations.test.ts",
           "tests/integration/partner-sandbox.test.ts",
           "tests/integration/price-integrity.test.ts",
+          "tests/integration/the-daily-tally-file-carries-every-journal-and-keeps-a-dead-letter.test.ts",
           "tests/integration/webhooks.test.ts"
         ],
         "realDb": [
@@ -3310,7 +3442,66 @@
       "id": "A01",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 8,
+        "unit": 10,
+        "integration": 11,
+        "realDb": 7,
+        "browser": 1,
+        "connected": 1,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/ai-agents-catalogue-route.test.ts",
+          "tests/unit/ai-authority.test.ts",
+          "tests/unit/ai-budget.test.ts",
+          "tests/unit/ai-evaluation.test.ts",
+          "tests/unit/ai-gateway.test.ts",
+          "tests/unit/ai-governance-rules.test.ts",
+          "tests/unit/api-manifest.test.ts",
+          "tests/unit/edge-feeds-the-screens.test.ts",
+          "tests/unit/erp-ai-control.test.ts",
+          "tests/unit/erp-ai-session.test.ts"
+        ],
+        "integration": [
+          "tests/integration/ai-agents-draft-for-people.test.ts",
+          "tests/integration/ai-governance-controls.test.ts",
+          "tests/integration/ai-model-calls-are-governed.test.ts",
+          "tests/integration/ai-owner-and-purchase-agents.test.ts",
+          "tests/integration/ai-proposes-people-decide.test.ts",
+          "tests/integration/it-remembers.test.ts",
+          "tests/integration/scheduled-brief.test.ts",
+          "tests/integration/the-brief-worker-runs-inside-the-served-api.test.ts",
+          "tests/integration/the-brief-worker-sends-through-the-outbox.test.ts",
+          "tests/integration/the-screens-are-fed.test.ts",
+          "tests/security/separation-of-duties.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/ai-agents-draft-for-people.test.ts",
+          "tests/integration/ai-governance-controls.test.ts",
+          "tests/integration/ai-model-calls-are-governed.test.ts",
+          "tests/integration/ai-proposes-people-decide.test.ts",
+          "tests/integration/it-remembers.test.ts",
+          "tests/integration/the-brief-worker-runs-inside-the-served-api.test.ts",
+          "tests/integration/the-brief-worker-sends-through-the-outbox.test.ts"
+        ],
+        "browser": [
+          "tests/e2e/the-ai-control-screen-reaches-head-office.e2e.ts"
+        ],
+        "connected": [
+          "tests/e2e/the-ai-control-screen-reaches-head-office.e2e.ts"
+        ],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "A02",
+      "label": "PARTIALLY_WIRED",
+      "counts": {
+        "unit": 7,
         "integration": 9,
         "realDb": 5,
         "browser": 0,
@@ -3323,60 +3514,14 @@
           "tests/unit/ai-agents-catalogue-route.test.ts",
           "tests/unit/ai-authority.test.ts",
           "tests/unit/ai-budget.test.ts",
-          "tests/unit/ai-evaluation.test.ts",
-          "tests/unit/ai-gateway.test.ts",
-          "tests/unit/api-manifest.test.ts",
-          "tests/unit/edge-feeds-the-screens.test.ts",
-          "tests/unit/erp-ai-session.test.ts"
-        ],
-        "integration": [
-          "tests/integration/ai-model-calls-are-governed.test.ts",
-          "tests/integration/ai-owner-and-purchase-agents.test.ts",
-          "tests/integration/ai-proposes-people-decide.test.ts",
-          "tests/integration/it-remembers.test.ts",
-          "tests/integration/scheduled-brief.test.ts",
-          "tests/integration/the-brief-worker-runs-inside-the-served-api.test.ts",
-          "tests/integration/the-brief-worker-sends-through-the-outbox.test.ts",
-          "tests/integration/the-screens-are-fed.test.ts",
-          "tests/security/separation-of-duties.test.ts"
-        ],
-        "realDb": [
-          "tests/integration/ai-model-calls-are-governed.test.ts",
-          "tests/integration/ai-proposes-people-decide.test.ts",
-          "tests/integration/it-remembers.test.ts",
-          "tests/integration/the-brief-worker-runs-inside-the-served-api.test.ts",
-          "tests/integration/the-brief-worker-sends-through-the-outbox.test.ts"
-        ],
-        "browser": [],
-        "connected": [],
-        "device": [],
-        "uat": []
-      },
-      "holds": true,
-      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
-    },
-    {
-      "id": "A02",
-      "label": "PARTIALLY_WIRED",
-      "counts": {
-        "unit": 6,
-        "integration": 7,
-        "realDb": 3,
-        "browser": 0,
-        "connected": 0,
-        "device": 0,
-        "uat": 0
-      },
-      "files": {
-        "unit": [
-          "tests/unit/ai-agents-catalogue-route.test.ts",
-          "tests/unit/ai-authority.test.ts",
-          "tests/unit/ai-budget.test.ts",
+          "tests/unit/ai-governance-rules.test.ts",
           "tests/unit/edge-feeds-the-screens.test.ts",
           "tests/unit/erp-ai-session.test.ts",
           "tests/unit/service-governance.test.ts"
         ],
         "integration": [
+          "tests/integration/ai-agents-draft-for-people.test.ts",
+          "tests/integration/ai-governance-controls.test.ts",
           "tests/integration/ai-governance.test.ts",
           "tests/integration/ai-inventory-agent-suggests-transfers.test.ts",
           "tests/integration/ai-owner-and-purchase-agents.test.ts",
@@ -3386,6 +3531,8 @@
           "tests/security/separation-of-duties.test.ts"
         ],
         "realDb": [
+          "tests/integration/ai-agents-draft-for-people.test.ts",
+          "tests/integration/ai-governance-controls.test.ts",
           "tests/integration/ai-inventory-agent-suggests-transfers.test.ts",
           "tests/integration/ai-proposes-people-decide.test.ts",
           "tests/integration/wf03-from-below-reorder-to-an-issued-order.test.ts"
@@ -3402,9 +3549,9 @@
       "id": "A03",
       "label": "WIRED",
       "counts": {
-        "unit": 5,
-        "integration": 7,
-        "realDb": 3,
+        "unit": 7,
+        "integration": 10,
+        "realDb": 5,
         "browser": 0,
         "connected": 0,
         "device": 0,
@@ -3415,13 +3562,18 @@
           "tests/unit/ai-authority.test.ts",
           "tests/unit/ai-budget.test.ts",
           "tests/unit/ai-gateway.test.ts",
+          "tests/unit/ai-governance-rules.test.ts",
+          "tests/unit/erp-ai-control.test.ts",
           "tests/unit/erp-ai-session.test.ts",
           "tests/unit/fefo-near-expiry.test.ts"
         ],
         "integration": [
           "tests/integration/a-transfer-is-valued-at-head-offices-own-cost.test.ts",
+          "tests/integration/ai-agents-draft-for-people.test.ts",
+          "tests/integration/ai-governance-controls.test.ts",
           "tests/integration/ai-inventory-agent-suggests-transfers.test.ts",
           "tests/integration/ai-inventory-agent.test.ts",
+          "tests/integration/ai-inventory-predicts-expiry-and-overstock.test.ts",
           "tests/integration/ai-proposes-people-decide.test.ts",
           "tests/integration/inventory-near-expiry.test.ts",
           "tests/integration/the-screens-are-fed.test.ts",
@@ -3429,6 +3581,8 @@
         ],
         "realDb": [
           "tests/integration/a-transfer-is-valued-at-head-offices-own-cost.test.ts",
+          "tests/integration/ai-agents-draft-for-people.test.ts",
+          "tests/integration/ai-governance-controls.test.ts",
           "tests/integration/ai-inventory-agent-suggests-transfers.test.ts",
           "tests/integration/ai-proposes-people-decide.test.ts"
         ],
@@ -3444,11 +3598,11 @@
       "id": "A04",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 7,
-        "integration": 5,
-        "realDb": 3,
-        "browser": 1,
-        "connected": 0,
+        "unit": 9,
+        "integration": 7,
+        "realDb": 5,
+        "browser": 3,
+        "connected": 1,
         "device": 0,
         "uat": 0
       },
@@ -3456,6 +3610,8 @@
         "unit": [
           "tests/unit/ai-authority.test.ts",
           "tests/unit/ai-budget.test.ts",
+          "tests/unit/ai-governance-rules.test.ts",
+          "tests/unit/erp-ai-control.test.ts",
           "tests/unit/erp-ai-session.test.ts",
           "tests/unit/fulfilment.test.ts",
           "tests/unit/orders-amendments.test.ts",
@@ -3463,6 +3619,8 @@
           "tests/unit/picker-session.test.ts"
         ],
         "integration": [
+          "tests/integration/ai-agents-draft-for-people.test.ts",
+          "tests/integration/ai-governance-controls.test.ts",
           "tests/integration/ai-model-calls-are-governed.test.ts",
           "tests/integration/ai-proposes-people-decide.test.ts",
           "tests/integration/ai-shopping-agent-offers-in-stock-alternatives.test.ts",
@@ -3470,14 +3628,20 @@
           "tests/security/separation-of-duties.test.ts"
         ],
         "realDb": [
+          "tests/integration/ai-agents-draft-for-people.test.ts",
+          "tests/integration/ai-governance-controls.test.ts",
           "tests/integration/ai-model-calls-are-governed.test.ts",
           "tests/integration/ai-proposes-people-decide.test.ts",
           "tests/integration/ai-shopping-agent-offers-in-stock-alternatives.test.ts"
         ],
         "browser": [
-          "tests/e2e/picker-substitution-delivery.e2e.ts"
+          "tests/e2e/picker-substitution-delivery.e2e.ts",
+          "tests/e2e/the-ai-control-screen-reaches-head-office.e2e.ts",
+          "tests/e2e/the-customer-app-prices-with-offers-and-keeps-my-account.e2e.ts"
         ],
-        "connected": [],
+        "connected": [
+          "tests/e2e/the-ai-control-screen-reaches-head-office.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },
@@ -3488,10 +3652,10 @@
       "id": "A05",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 2,
-        "integration": 5,
-        "realDb": 3,
-        "browser": 1,
+        "unit": 3,
+        "integration": 8,
+        "realDb": 5,
+        "browser": 2,
         "connected": 1,
         "device": 0,
         "uat": 0
@@ -3499,22 +3663,29 @@
       "files": {
         "unit": [
           "tests/unit/ai-authority.test.ts",
-          "tests/unit/ai-budget.test.ts"
+          "tests/unit/ai-budget.test.ts",
+          "tests/unit/ai-governance-rules.test.ts"
         ],
         "integration": [
+          "tests/integration/ai-agents-draft-for-people.test.ts",
+          "tests/integration/ai-governance-controls.test.ts",
           "tests/integration/ai-model-calls-are-governed.test.ts",
           "tests/integration/ai-proposes-people-decide.test.ts",
           "tests/integration/ai-service-agent.test.ts",
           "tests/integration/the-assistant-drafts-and-a-person-decides.test.ts",
+          "tests/integration/the-customers-own-account-suggestions-and-help.test.ts",
           "tests/security/separation-of-duties.test.ts"
         ],
         "realDb": [
+          "tests/integration/ai-agents-draft-for-people.test.ts",
+          "tests/integration/ai-governance-controls.test.ts",
           "tests/integration/ai-model-calls-are-governed.test.ts",
           "tests/integration/ai-proposes-people-decide.test.ts",
           "tests/integration/the-assistant-drafts-and-a-person-decides.test.ts"
         ],
         "browser": [
-          "tests/e2e/service-desk-and-assistant-drafts.e2e.ts"
+          "tests/e2e/service-desk-and-assistant-drafts.e2e.ts",
+          "tests/e2e/the-customer-app-prices-with-offers-and-keeps-my-account.e2e.ts"
         ],
         "connected": [
           "tests/e2e/service-desk-and-assistant-drafts.e2e.ts"
@@ -3529,9 +3700,9 @@
       "id": "A06",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 6,
-        "integration": 5,
-        "realDb": 3,
+        "unit": 7,
+        "integration": 6,
+        "realDb": 4,
         "browser": 3,
         "connected": 1,
         "device": 0,
@@ -3541,12 +3712,14 @@
         "unit": [
           "tests/unit/ai-authority.test.ts",
           "tests/unit/ai-budget.test.ts",
+          "tests/unit/ai-governance-rules.test.ts",
           "tests/unit/ai-inbox-withholds-findings-without-evidence.test.ts",
           "tests/unit/erp-operations-inbox-session.test.ts",
           "tests/unit/evidence-ledger.test.ts",
           "tests/unit/ops-operations-advisor.test.ts"
         ],
         "integration": [
+          "tests/integration/ai-governance-controls.test.ts",
           "tests/integration/ai-inboxes-keep-to-the-readers-branches.test.ts",
           "tests/integration/ai-model-calls-are-governed.test.ts",
           "tests/integration/ai-operations-agent.test.ts",
@@ -3554,6 +3727,7 @@
           "tests/integration/ai-proposes-people-decide.test.ts"
         ],
         "realDb": [
+          "tests/integration/ai-governance-controls.test.ts",
           "tests/integration/ai-inboxes-keep-to-the-readers-branches.test.ts",
           "tests/integration/ai-model-calls-are-governed.test.ts",
           "tests/integration/ai-proposes-people-decide.test.ts"
@@ -3576,7 +3750,7 @@
       "id": "A07",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 5,
+        "unit": 6,
         "integration": 4,
         "realDb": 3,
         "browser": 1,
@@ -3588,6 +3762,7 @@
         "unit": [
           "tests/unit/ai-authority.test.ts",
           "tests/unit/ai-budget.test.ts",
+          "tests/unit/ai-governance-rules.test.ts",
           "tests/unit/erp-ai-session.test.ts",
           "tests/unit/lp-worklist.test.ts",
           "tests/unit/service-governance.test.ts"
@@ -3619,11 +3794,11 @@
       "id": "A08",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 6,
+        "unit": 8,
         "integration": 8,
         "realDb": 4,
-        "browser": 4,
-        "connected": 1,
+        "browser": 5,
+        "connected": 2,
         "device": 0,
         "uat": 0
       },
@@ -3631,7 +3806,9 @@
         "unit": [
           "tests/unit/ai-authority.test.ts",
           "tests/unit/ai-budget.test.ts",
+          "tests/unit/ai-governance-rules.test.ts",
           "tests/unit/data-quality-worklist.test.ts",
+          "tests/unit/erp-ai-control.test.ts",
           "tests/unit/erp-data-quality-inbox-session.test.ts",
           "tests/unit/import-mapping-quality.test.ts",
           "tests/unit/product-data-quality.test.ts"
@@ -3656,10 +3833,12 @@
           "tests/e2e/data-quality-dismiss-delivery.e2e.ts",
           "tests/e2e/data-quality-inbox-on-the-production-api.e2e.ts",
           "tests/e2e/lib/ai-inbox-shop.ts",
-          "tests/e2e/screens-open-offline.e2e.ts"
+          "tests/e2e/screens-open-offline.e2e.ts",
+          "tests/e2e/the-ai-control-screen-reaches-head-office.e2e.ts"
         ],
         "connected": [
-          "tests/e2e/data-quality-inbox-on-the-production-api.e2e.ts"
+          "tests/e2e/data-quality-inbox-on-the-production-api.e2e.ts",
+          "tests/e2e/the-ai-control-screen-reaches-head-office.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -3671,7 +3850,7 @@
       "id": "A09",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 3,
+        "unit": 4,
         "integration": 4,
         "realDb": 3,
         "browser": 1,
@@ -3683,6 +3862,7 @@
         "unit": [
           "tests/unit/ai-authority.test.ts",
           "tests/unit/ai-budget.test.ts",
+          "tests/unit/ai-governance-rules.test.ts",
           "tests/unit/customer-segments.test.ts"
         ],
         "integration": [
@@ -3712,7 +3892,7 @@
       "id": "A10",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 10,
+        "unit": 13,
         "integration": 7,
         "realDb": 3,
         "browser": 3,
@@ -3722,8 +3902,11 @@
       },
       "files": {
         "unit": [
+          "tests/unit/a7-compensation-cess-on-the-till-and-the-return.test.ts",
+          "tests/unit/a8-a-delivery-to-another-state-carries-igst.test.ts",
           "tests/unit/ai-authority.test.ts",
           "tests/unit/ai-budget.test.ts",
+          "tests/unit/ai-governance-rules.test.ts",
           "tests/unit/api-manifest.test.ts",
           "tests/unit/edge-feeds-the-screens.test.ts",
           "tests/unit/erp-ai-session.test.ts",
@@ -4323,29 +4506,35 @@
       "id": "WF-13",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 0,
-        "integration": 6,
+        "unit": 3,
+        "integration": 7,
         "realDb": 1,
-        "browser": 1,
+        "browser": 2,
         "connected": 1,
         "device": 0,
         "uat": 0
       },
       "files": {
-        "unit": [],
+        "unit": [
+          "tests/unit/storefront-scope.test.ts",
+          "tests/unit/the-customer-apps-commerce-rules.test.ts",
+          "tests/unit/the-online-basket-is-priced-by-the-tills-engines.test.ts"
+        ],
         "integration": [
           "tests/integration/a-delivery-slot-and-address-are-the-shops-to-judge.test.ts",
           "tests/integration/order-payments-and-refunds.test.ts",
           "tests/integration/orders-lifecycle.test.ts",
           "tests/integration/serviceability-config.test.ts",
           "tests/integration/storefront-orders.test.ts",
-          "tests/integration/the-app-orders-through-the-cloud.test.ts"
+          "tests/integration/the-app-orders-through-the-cloud.test.ts",
+          "tests/integration/the-online-basket-gets-the-tills-offers.test.ts"
         ],
         "realDb": [
           "tests/integration/a-delivery-slot-and-address-are-the-shops-to-judge.test.ts"
         ],
         "browser": [
-          "tests/e2e/customer-order-delivery.e2e.ts"
+          "tests/e2e/customer-order-delivery.e2e.ts",
+          "tests/e2e/the-customer-app-prices-with-offers-and-keeps-my-account.e2e.ts"
         ],
         "connected": [
           "tests/e2e/customer-order-delivery.e2e.ts"
@@ -4360,48 +4549,56 @@
       "id": "WF-14",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 0,
-        "integration": 5,
-        "realDb": 3,
-        "browser": 2,
-        "connected": 0,
+        "unit": 2,
+        "integration": 6,
+        "realDb": 4,
+        "browser": 3,
+        "connected": 1,
         "device": 0,
         "uat": 0
       },
       "files": {
-        "unit": [],
+        "unit": [
+          "tests/unit/erp-dispatch-session.test.ts",
+          "tests/unit/fulfilment-wave-plan.test.ts"
+        ],
         "integration": [
           "tests/integration/fulfilment-packing.test.ts",
           "tests/integration/one-fulfilment-command.test.ts",
           "tests/integration/order-substitution.test.ts",
           "tests/integration/pick-to-doorstep.test.ts",
-          "tests/integration/picker-handheld-reaches-the-cloud-through-the-edge.test.ts"
+          "tests/integration/picker-handheld-reaches-the-cloud-through-the-edge.test.ts",
+          "tests/integration/the-dispatcher-builds-a-wave-from-confirmed-orders.test.ts"
         ],
         "realDb": [
           "tests/integration/fulfilment-packing.test.ts",
           "tests/integration/one-fulfilment-command.test.ts",
-          "tests/integration/pick-to-doorstep.test.ts"
+          "tests/integration/pick-to-doorstep.test.ts",
+          "tests/integration/the-dispatcher-builds-a-wave-from-confirmed-orders.test.ts"
         ],
         "browser": [
           "tests/e2e/picker-handheld-syncs-through-the-box.e2e.ts",
-          "tests/e2e/picker-substitution-delivery.e2e.ts"
+          "tests/e2e/picker-substitution-delivery.e2e.ts",
+          "tests/e2e/the-dispatch-page-runs-the-day.e2e.ts"
         ],
-        "connected": [],
+        "connected": [
+          "tests/e2e/the-dispatch-page-runs-the-day.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },
       "holds": true,
-      "why": "browser boundary and cloud effect proven in separate runs (no connected browser test yet)"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "WF-15",
       "label": "INTEGRATION_TESTED",
       "counts": {
         "unit": 0,
-        "integration": 7,
+        "integration": 8,
         "realDb": 3,
-        "browser": 2,
-        "connected": 0,
+        "browser": 3,
+        "connected": 1,
         "device": 0,
         "uat": 0
       },
@@ -4414,7 +4611,8 @@
           "tests/integration/dispatch.test.ts",
           "tests/integration/driver-handheld-reaches-the-cloud-through-the-edge.test.ts",
           "tests/integration/one-fulfilment-command.test.ts",
-          "tests/integration/pick-to-doorstep.test.ts"
+          "tests/integration/pick-to-doorstep.test.ts",
+          "tests/integration/the-delivery-proof-is-captured-and-checked.test.ts"
         ],
         "realDb": [
           "tests/integration/a-customer-reads-a-delivery-in-progress.test.ts",
@@ -4423,9 +4621,12 @@
         ],
         "browser": [
           "tests/e2e/delivery-route-partial-delivery.e2e.ts",
-          "tests/e2e/driver-handheld-syncs-through-the-box.e2e.ts"
+          "tests/e2e/driver-handheld-syncs-through-the-box.e2e.ts",
+          "tests/e2e/the-dispatch-page-runs-the-day.e2e.ts"
         ],
-        "connected": [],
+        "connected": [
+          "tests/e2e/the-dispatch-page-runs-the-day.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },
@@ -4524,8 +4725,8 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 1,
-        "integration": 11,
-        "realDb": 7,
+        "integration": 15,
+        "realDb": 10,
         "browser": 3,
         "connected": 1,
         "device": 0,
@@ -4537,25 +4738,32 @@
         ],
         "integration": [
           "tests/integration/a-damaged-arrival-with-no-count-open-is-its-own-write-off-line.test.ts",
+          "tests/integration/a-return-reverses-the-same-gst-in-the-books-and-the-gst-return.test.ts",
+          "tests/integration/a-supplier-payment-pays-only-what-advances-left.test.ts",
           "tests/integration/books-reconcile.test.ts",
           "tests/integration/day-book-posts-the-day.test.ts",
           "tests/integration/goods-made-in-the-store-are-valued-at-their-production-run-cost.test.ts",
           "tests/integration/period-evidence.test.ts",
           "tests/integration/period-reopen.test.ts",
           "tests/integration/store-acceptance-journey.test.ts",
+          "tests/integration/supplier-advances-and-earned-rebates-reach-the-books.test.ts",
           "tests/integration/the-margin-is-costed-at-the-average-buying-cost.test.ts",
           "tests/integration/the-month-closes-on-independent-evidence.test.ts",
           "tests/integration/the-month-end-stock-adjustment-books-cost-of-goods-sold.test.ts",
-          "tests/integration/the-period-books-reconcile-and-show-profit.test.ts"
+          "tests/integration/the-period-books-reconcile-and-show-profit.test.ts",
+          "tests/integration/the-trial-balance-and-centres-tie-to-the-ledger-and-the-close-checks-gst.test.ts"
         ],
         "realDb": [
           "tests/integration/a-damaged-arrival-with-no-count-open-is-its-own-write-off-line.test.ts",
+          "tests/integration/a-supplier-payment-pays-only-what-advances-left.test.ts",
           "tests/integration/books-reconcile.test.ts",
           "tests/integration/goods-made-in-the-store-are-valued-at-their-production-run-cost.test.ts",
           "tests/integration/store-acceptance-journey.test.ts",
+          "tests/integration/supplier-advances-and-earned-rebates-reach-the-books.test.ts",
           "tests/integration/the-margin-is-costed-at-the-average-buying-cost.test.ts",
           "tests/integration/the-month-end-stock-adjustment-books-cost-of-goods-sold.test.ts",
-          "tests/integration/the-period-books-reconcile-and-show-profit.test.ts"
+          "tests/integration/the-period-books-reconcile-and-show-profit.test.ts",
+          "tests/integration/the-trial-balance-and-centres-tie-to-the-ledger-and-the-close-checks-gst.test.ts"
         ],
         "browser": [
           "tests/e2e/day-book-post-delivery.e2e.ts",
@@ -4815,8 +5023,8 @@
       "id": "QG-05",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 1,
-        "integration": 0,
+        "unit": 2,
+        "integration": 1,
         "realDb": 0,
         "browser": 0,
         "connected": 0,
@@ -4825,9 +5033,12 @@
       },
       "files": {
         "unit": [
-          "tests/unit/evidence-ledger.test.ts"
+          "tests/unit/evidence-ledger.test.ts",
+          "tests/unit/m12-fr-01-the-box-keeps-every-scan-time-and-reads-the-p95.test.ts"
         ],
-        "integration": [],
+        "integration": [
+          "tests/integration/m12-fr-01-the-till-times-every-scan-and-the-box-keeps-it.test.ts"
+        ],
         "realDb": [],
         "browser": [],
         "connected": [],
@@ -4841,8 +5052,8 @@
       "id": "QG-06",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 5,
-        "integration": 2,
+        "unit": 6,
+        "integration": 3,
         "realDb": 1,
         "browser": 1,
         "connected": 1,
@@ -4855,9 +5066,11 @@
           "tests/unit/compliance-gate-decisions.test.ts",
           "tests/unit/compliance-risk.test.ts",
           "tests/unit/erp-gates-session.test.ts",
-          "tests/unit/erp-risk-acceptance-session.test.ts"
+          "tests/unit/erp-risk-acceptance-session.test.ts",
+          "tests/unit/two-signatures-accept-a-critical-risk.test.ts"
         ],
         "integration": [
+          "tests/integration/a-critical-risk-is-accepted-only-by-the-owner-and-the-named-reviewer.test.ts",
           "tests/integration/risk-register.test.ts",
           "tests/integration/scanner-findings-and-gate-decisions-are-recorded.test.ts"
         ],
@@ -4946,7 +5159,7 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 3,
-        "integration": 6,
+        "integration": 7,
         "realDb": 4,
         "browser": 0,
         "connected": 0,
@@ -4960,6 +5173,7 @@
           "tests/unit/ops-recovery-gate.test.ts"
         ],
         "integration": [
+          "tests/integration/a-recovery-rehearsal-pass-expires-after-a-quarter.test.ts",
           "tests/integration/a-rehearsed-rollback-reconciles.test.ts",
           "tests/integration/backup-is-one-moment.test.ts",
           "tests/integration/recovery-rehearsal.test.ts",
@@ -5470,9 +5684,9 @@
       "id": "MG-09",
       "label": "INTEGRATION_TESTED",
       "counts": {
-        "unit": 3,
-        "integration": 4,
-        "realDb": 3,
+        "unit": 4,
+        "integration": 5,
+        "realDb": 4,
         "browser": 0,
         "connected": 0,
         "device": 0,
@@ -5480,6 +5694,7 @@
       },
       "files": {
         "unit": [
+          "tests/unit/migration-delta-books-and-limits.test.ts",
           "tests/unit/migration-extraction.test.ts",
           "tests/unit/migration-opening-delta-route.test.ts",
           "tests/unit/migration-trial.test.ts"
@@ -5487,12 +5702,14 @@
         "integration": [
           "tests/integration/a-delta-lands-once.test.ts",
           "tests/integration/a-sale-delta-lands-once.test.ts",
+          "tests/integration/migration-delta-books-day-and-rollback-limits.test.ts",
           "tests/integration/migration-pipeline.test.ts",
           "tests/integration/the-old-shop-arrives-whole.test.ts"
         ],
         "realDb": [
           "tests/integration/a-delta-lands-once.test.ts",
           "tests/integration/a-sale-delta-lands-once.test.ts",
+          "tests/integration/migration-delta-books-day-and-rollback-limits.test.ts",
           "tests/integration/the-old-shop-arrives-whole.test.ts"
         ],
         "browser": [],
@@ -5507,9 +5724,9 @@
       "id": "MG-10",
       "label": "INTEGRATION_TESTED",
       "counts": {
-        "unit": 8,
-        "integration": 6,
-        "realDb": 1,
+        "unit": 9,
+        "integration": 7,
+        "realDb": 2,
         "browser": 2,
         "connected": 0,
         "device": 0,
@@ -5519,6 +5736,7 @@
         "unit": [
           "tests/unit/migration-cutover-route.test.ts",
           "tests/unit/migration-cutover.test.ts",
+          "tests/unit/migration-delta-books-and-limits.test.ts",
           "tests/unit/migration-feed-pull.test.ts",
           "tests/unit/migration-parallel-day-sign.test.ts",
           "tests/unit/migration-parallel-run-route.test.ts",
@@ -5528,6 +5746,7 @@
         ],
         "integration": [
           "tests/integration/a-parallel-day-cannot-be-signed-with-an-unexplained-difference.test.ts",
+          "tests/integration/migration-delta-books-day-and-rollback-limits.test.ts",
           "tests/integration/migration-screen-through-the-api.test.ts",
           "tests/integration/parallel-run-through-the-api.test.ts",
           "tests/integration/the-box-pulls-its-migration-register.test.ts",
@@ -5535,6 +5754,7 @@
           "tests/integration/the-owner-seals-the-export-and-writes-the-parallel-run-terms.test.ts"
         ],
         "realDb": [
+          "tests/integration/migration-delta-books-day-and-rollback-limits.test.ts",
           "tests/integration/the-old-shop-arrives-whole.test.ts"
         ],
         "browser": [
@@ -5552,9 +5772,9 @@
       "id": "MG-11",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 2,
-        "integration": 4,
-        "realDb": 3,
+        "unit": 5,
+        "integration": 6,
+        "realDb": 4,
         "browser": 1,
         "connected": 0,
         "device": 0,
@@ -5562,18 +5782,24 @@
       },
       "files": {
         "unit": [
+          "tests/unit/erp-migration-session.test.ts",
           "tests/unit/migration-cutover-checklist.test.ts",
-          "tests/unit/migration-cutover.test.ts"
+          "tests/unit/migration-cutover-route.test.ts",
+          "tests/unit/migration-cutover.test.ts",
+          "tests/unit/migration-delta-books-and-limits.test.ts"
         ],
         "integration": [
           "tests/integration/a-rehearsed-rollback-reconciles.test.ts",
           "tests/integration/an-opening-load-is-reversed-only-in-the-cutover-window.test.ts",
+          "tests/integration/migration-delta-books-day-and-rollback-limits.test.ts",
           "tests/integration/migration-pipeline.test.ts",
-          "tests/integration/the-old-shop-arrives-whole.test.ts"
+          "tests/integration/the-old-shop-arrives-whole.test.ts",
+          "tests/integration/the-screens-are-fed.test.ts"
         ],
         "realDb": [
           "tests/integration/a-rehearsed-rollback-reconciles.test.ts",
           "tests/integration/an-opening-load-is-reversed-only-in-the-cutover-window.test.ts",
+          "tests/integration/migration-delta-books-day-and-rollback-limits.test.ts",
           "tests/integration/the-old-shop-arrives-whole.test.ts"
         ],
         "browser": [

@@ -7,3 +7,6 @@ export * from './restricted-sales';
 export * from './single-use-plastic';
 // The same rules on one till line, from the signed packs — the scan, the commit and the store computer (B6 · B14 · B19).
 export * from './till-gate';
+// OB-288 P2: B17 liquor is not sold at all (TASMAC); B15 tobacco is never promoted (COTPA s.5).
+export * from './liquor';
+export * from './advertising';

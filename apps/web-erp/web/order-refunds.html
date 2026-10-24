@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Order refunds</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Order refunds (M18-FR-04 · §28 · hard rules #3, #10). A THIN CLIENT over head office's GET /v1/orders/refunds/pending,
+      GET /v1/orders/:orderId/refunds, POST /v1/approvals/requests (kind order_refund), POST /v1/orders/:orderId/refunds and
+      POST /v1/orders/:orderId/refunds/:refundId/outcome. Its session is apps/web-erp/src/order-refunds-session.ts. A refund
+      always goes back to the order's own payment token; the page never asks for or holds a card number. A refund the bank
+      has not confirmed reads "waiting", never done.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-icons.js" defer></script>
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h2 { margin: 0; font-size: 17px; } h3 { margin: 0; font-size: 16px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      label.tick { display: flex; gap: 10px; align-items: center; min-height: var(--tap); }
+      label.tick input { width: 24px; height: 24px; }
+      input, textarea, select { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; display: inline-flex; gap: 8px; align-items: center; }
+      button.quiet { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
+      button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .row-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+      .row-form > label { flex: 1 1 200px; }
+      .notice { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 6px; }
+      .draft { font-weight: 700; color: var(--on-warn-surface, var(--ink)); }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+      li.row { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 6px; border-left: 6px solid var(--idle); overflow-wrap: anywhere; }
+      li.row.tone-ok { border-left-color: var(--ok); } li.row.tone-degraded { border-left-color: var(--degraded); }
+      .tier-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; }
+      .tier-row > label { flex: 1 1 160px; }
+      .facts { font-size: 14px; color: var(--muted); display: grid; gap: 2px; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title"><span id="title-text">Order refunds</span> <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section aria-labelledby="page-h">
+        <h2 id="page-h">Order refunds</h2>
+        <p class="lead" id="lead"></p>
+        <p class="status" id="page-status" role="status" aria-live="polite"></p>
+      </section>
+      <section aria-labelledby="pending-h">
+        <h3 id="pending-h">Waiting on the bank</h3>
+        <div><button id="show-pending" type="button"><span id="show-pending-text">Show what is waiting</span></button></div>
+        <p class="status" id="pending-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="pending"></ul>
+      </section>
+      <section aria-labelledby="refund-h">
+        <h3 id="refund-h">Refund an order</h3>
+        <div class="row-form">
+          <label for="order-id"><span id="l-order-id">Order number</span><input id="order-id" autocomplete="off" /></label>
+          <button id="show-order" type="button"><span id="show-order-text">Show the order's money</span></button>
+        </div>
+        <p class="status" id="order-status" role="status" aria-live="polite"></p>
+        <ul class="rows" id="money"></ul>
+        <div class="row-form">
+          <label for="amount"><span id="l-amount">Amount to refund (₹)</span><input id="amount" inputmode="decimal" autocomplete="off" /></label>
+          <label for="basis"><span id="l-basis">Why the money goes back</span><select id="basis"></select></label>
+          <label for="reason"><span id="l-reason">In words</span><input id="reason" autocomplete="off" maxlength="300" /></label>
+        </div>
+        <p class="facts" id="to-token"></p>
+        <div class="row-form">
+          <button id="ask" type="button"><span id="ask-text">Ask a second person to approve</span></button>
+          <label for="approval-id"><span id="l-approval-id">Approval request</span><input id="approval-id" autocomplete="off" readonly /></label>
+          <button id="issue" type="button" class="quiet"><span id="issue-text">Issue the approved refund</span></button>
+        </div>
+        <p class="status" id="refund-status" role="status" aria-live="polite"></p>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./order-refunds.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

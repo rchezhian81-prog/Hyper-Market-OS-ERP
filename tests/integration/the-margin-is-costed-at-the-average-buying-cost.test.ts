@@ -12,6 +12,7 @@ import type { CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
 import { DEFAULT_RETAIL_POSTING_MAP } from '../../packages/finance/src/index';
 import { makeTradingDayRule, tradingDateOf } from '../../packages/calendar/src/trading-day';
 import { startRealCloud, type RealCloud } from '../support/real-store';
+import { ownerApprovedSettingOn } from '../support/owner-approved-setting';
 
 /**
  * **OB-39 "B" (owner, 11 Oct 2026) — the margin is costed at head office's AVERAGE BUYING COST per product and store, on the
@@ -39,9 +40,9 @@ const OWNER = 'u-owner';
 const BOX = 'u-box';
 const CASHIER = 'u-cash';
 const ACCT = 'u-acct';
-const RICE = { productId: 'p-rice', barcode: '8901234560011', sku: 'RICE-5KG', name: 'Ponni rice 5kg', uom: 'ea', price: 48_000, mrp: 50_000, listCost: 39_000 };
-const TOMATO = { productId: 'p-tomato', barcode: '2100001000007', sku: 'TOM-LOOSE', name: 'Tomato (loose)', uom: 'kg', price: 4_000, mrp: 5_000, listCost: 2_000 };
-const SALT = { productId: 'p-salt', barcode: '8901234560035', sku: 'SALT-1KG', name: 'Salt 1kg', uom: 'ea', price: 2_500, mrp: 2_800, listCost: 2_000 };
+const RICE = { productId: 'p-rice', barcode: '8901234560013', sku: 'RICE-5KG', name: 'Ponni rice 5kg', uom: 'ea', price: 48_000, mrp: 50_000, listCost: 39_000 };
+const TOMATO = { productId: 'p-tomato', barcode: '2100001000004', sku: 'TOM-LOOSE', name: 'Tomato (loose)', uom: 'kg', price: 4_000, mrp: 5_000, listCost: 2_000 };
+const SALT = { productId: 'p-salt', barcode: '8901234560037', sku: 'SALT-1KG', name: 'Salt 1kg', uom: 'ea', price: 2_500, mrp: 2_800, listCost: 2_000 };
 
 // The PRICE LIST carries its own cost (option A, not chosen) — deliberately different, so a margin costed from it is caught.
 // Two receipts each, at different costs (rice per bag; tomato per kg, counted in grams). Salt arrives with no cost at all.
@@ -82,7 +83,7 @@ describeOrSkip('OB-39 — the margin is costed at the average buying cost (real 
     await cloud.grant(BOX, 'store_computer', undefined, [STORE]); // OB-54: the box is granted for its ONE store
     await cloud.grant(CASHIER, 'cashier');
     await cloud.grant(ACCT, 'accountant');
-    await ok(call('PUT', '/v1/platform/setup/locale.time_zone', OWNER, { value: 'UTC' }, 'tz'), 'time zone');
+    await ok(ownerApprovedSettingOn(cloud, 'locale.time_zone', { value: 'UTC' }, OWNER), 'time zone');
     await ok(call('POST', `/v1/org/nodes/${COMPANY}`, OWNER, { kind: 'company', name: 'SRE Retail' }, 'org-c'), 'company');
     await ok(call('POST', `/v1/org/nodes/${STORE}`, OWNER, { kind: 'branch', name: 'SRE Hyper Market', parentId: COMPANY, companyId: COMPANY }, 'org-s'), 'store');
     await ok(call('POST', `/v1/org/nodes/${BACK}`, OWNER, { kind: 'warehouse', name: 'Back store', parentId: STORE, companyId: COMPANY }, 'org-b'), 'back store');

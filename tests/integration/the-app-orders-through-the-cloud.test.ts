@@ -108,8 +108,10 @@ describe('the customer app places its order through the real API (M20-FR-03, sli
     const orderId = out.ok ? out.orderId : '';
     expect(shop.statusLine()).toMatch(/confirmed and will be picked/);
 
-    // Exactly one authenticated, idempotent POST to the storefront route — nothing else left the app.
-    expect(log).toEqual([{ method: 'POST', path: `/v1/storefront/orders/${orderId}`, auth: true, key: `storefront-order-${orderId}` }]);
+    // WF-13 (OB-288 wave 3): the app asks the shop's price first, then makes exactly one authenticated, idempotent POST to
+    // the storefront route — nothing else left the app.
+    expect(log.map((l) => l.path)).toEqual(['/v1/storefront/cart/quote', `/v1/storefront/orders/${orderId}`]);
+    expect(log[1]).toEqual({ method: 'POST', path: `/v1/storefront/orders/${orderId}`, auth: true, key: `storefront-order-${orderId}` });
 
     // The customer's own view of it on the cloud.
     const mine = await h.request({ method: 'GET', path: '/v1/storefront/orders', userId: C1, tenantId: T });
@@ -181,7 +183,7 @@ describe('the customer app places its order through the real API (M20-FR-03, sli
     expect(third).toMatchObject({ ok: false, refusedBecause: 'already_sent' });
     const orders = (await h.request({ method: 'GET', path: '/v1/storefront/orders', userId: C1, tenantId: T })).body as { orders: { orderId: string }[] };
     expect(orders.orders).toHaveLength(1);
-    expect(log.filter((l) => l.method === 'POST')).toHaveLength(1);
+    expect(log.filter((l) => l.method === 'POST' && l.path.startsWith('/v1/storefront/orders/'))).toHaveLength(1); // the order itself, once (price quotes are reads)
   });
 
   it('the same request replayed by the transport (same order id, same key) is the same order — the kernel replays its first answer, never a second order', async () => {

@@ -14,7 +14,8 @@ const FUTURE_FROM = '2030-01-01'; // future so the price is not back-dated (refu
 const AS_OF = '2030-06-01';
 
 const GROCERY = { categoryId: 'grocery', name: 'Grocery', parentId: null };
-const LIQUOR = { categoryId: 'liquor', name: 'Liquor', parentId: null, regulated: ['age_restricted'] };
+// OB-288 P2 · B17: no liquor fixture (SRE sells none — TASMAC); a non-alcoholic energy drink in a synthetic age-restricted category.
+const RESTRICTED = { categoryId: 'restricted', name: 'Age-restricted drinks', parentId: null, regulated: ['age_restricted'] };
 
 const publishProduct = (h: ApiHarness, productId: string, product: unknown) =>
   h.request({ method: 'POST', path: `/v1/catalogue/products/${productId}/publish`, userId: 'u-owner', tenantId: A, idempotencyKey: `k-${productId}`, body: { product, categories: [GROCERY] } });
@@ -57,15 +58,15 @@ describe('catalogue pack assembly / preview (slice 2)', () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
     await setTaxRate(h, '25010020', 0);
-    await setTaxRate(h, '22030000', 1800);
+    await setTaxRate(h, '22029920', 1800);
     expect((await publishProduct(h, 'p-salt', salt())).status).toBe(201);
     await setPrice(h, 'p-salt', 2000, 2500);
-    // Beer sits in an age-restricted category, so the product engine made it declare safety.minimumAge to publish.
-    const beer = await h.request({ method: 'POST', path: '/v1/catalogue/products/p-beer/publish', userId: 'u-owner', tenantId: A, idempotencyKey: 'k-p-beer',
-      body: { product: { sku: 'SKU-BEER', name: 'Beer 650ml', baseUom: 'each', primaryCategoryId: 'liquor', taxClass: '22030000', lifecycle: 'draft', safety: { minimumAge: 21 } }, categories: [LIQUOR] } });
-    expect(beer.status).toBe(201);
-    await setPrice(h, 'p-beer', 18_000, 20_000);
-    expect((await assignBarcode(h, 'p-beer', '8901234567890')).status).toBe(201);
+    // The drink sits in an age-restricted category, so the product engine made it declare safety.minimumAge to publish.
+    const drink = await h.request({ method: 'POST', path: '/v1/catalogue/products/p-energy/publish', userId: 'u-owner', tenantId: A, idempotencyKey: 'k-p-energy',
+      body: { product: { sku: 'SKU-ENERGY', name: 'Energy drink 250ml', baseUom: 'each', primaryCategoryId: 'restricted', taxClass: '22029920', lifecycle: 'draft', safety: { minimumAge: 21 } }, categories: [RESTRICTED] } });
+    expect(drink.status).toBe(201);
+    await setPrice(h, 'p-energy', 18_000, 20_000);
+    expect((await assignBarcode(h, 'p-energy', '8901234567890')).status).toBe(201);
 
     const body = (await preview(h, 'u-owner', { storeId: STORE, asOf: AS_OF })).body as {
       includedCount: number;
@@ -73,7 +74,7 @@ describe('catalogue pack assembly / preview (slice 2)', () => {
     };
     expect(body.includedCount).toBe(2);
     const byId = Object.fromEntries(body.snapshot.products.map((p) => [p.productId, p]));
-    expect(byId['p-beer']?.regulatedFlags).toEqual({ minimumAge: 21 }); // what the till's age prompt keys on
+    expect(byId['p-energy']?.regulatedFlags).toEqual({ minimumAge: 21 }); // what the till's age prompt keys on
     expect(byId['p-salt']?.regulatedFlags).toBeUndefined(); // unrestricted: no flag at all (never an empty one)
   });
 

@@ -12,7 +12,7 @@ import { runMigrations } from '../../packages/persistence/src/migrations';
 import { DEFAULT_RETAIL_POSTING_MAP } from '../../packages/finance/src/index';
 import { planLoad, executeLoad, type ExtractBundle, type LoadRequest } from '../../packages/migration/src/index';
 import { STREAM, streamName } from '../../services/api/src/adapters';
-import { prepareCutoverEvidence, askTheGate } from '../support/cutover-go';
+import { prepareCutoverEvidence, askTheGate, agreeRollbackLimits } from '../support/cutover-go';
 import { makeEvent } from '../../packages/contracts/src/event';
 
 /**
@@ -376,6 +376,8 @@ describe.each(backings)('OB-44 an opening load is reversed only in the cutover w
     const b = backing();
     const h = apiHarness(b);
     const call = await loadedShop(h, t);
+    // OB-288 P5 · MG-11: the owner's rollback limits were agreed before that night (a GO freezes them).
+    await agreeRollbackLimits(h, t, SHOP_PEOPLE.ownerId);
     // A GO from before the per-tenant key, kept under the old per-cutover key (laid on the ledger as it was then).
     const legacyAt = new Date(Date.now() - 1 * hour).toISOString();
     await b.store.append(t, GO_STREAM, makeEvent({ id: 'legacy-go-c-old', type: 'CutoverGoRecorded', occurredAt: legacyAt, idempotencyKey: `cutover-go-${t}-C-OLD`, source: 'api/migration', payload: { cutoverId: 'C-OLD', goBy: OPERATOR, goAt: legacyAt } }));

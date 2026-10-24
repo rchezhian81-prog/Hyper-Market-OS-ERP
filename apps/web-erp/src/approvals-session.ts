@@ -107,7 +107,7 @@ export type CopyKey =
   | 'kindDisplayContract' | 'kindRebateScheme' | 'kindPurchaseContract'
   | 'kindEmergencyAccess' | 'kindAccessChange' | 'kindSubstitutionAboveCap' | 'kindBranchTransition' | 'kindPartnerWebhookSubscription'
   | 'kindStoreComputerReplaced' | 'kindPoshCommitteeChange' | 'kindScaleStampChange'
-  | 'kindApprovalRuleChange' | 'kindOrgStructureChange' | 'kindConfigChange' | 'kindFlagChange' | 'kindDepartmentScopeChange' | 'detailPrefix' | 'detailFromComputer' | 'detailToComputer'
+  | 'kindApprovalRuleChange' | 'kindOrgStructureChange' | 'kindConfigChange' | 'kindFlagChange' | 'kindDepartmentScopeChange' | 'kindTaxRateChange' | 'kindPromotionFunding' | 'detailPrefix' | 'detailFromComputer' | 'detailToComputer'
   | 'detailJobId' | 'detailContentFingerprint'
   | 'detailProductId' | 'detailPriceMinor' | 'detailMrpMinor' | 'detailCostMinor' | 'detailCurrency' | 'detailMarginFloorBps'
   | 'detailPromotionId' | 'detailDescription' | 'detailNormalPrice' | 'detailPromoPrice' | 'detailUnitCost'
@@ -161,6 +161,7 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     kindOrgStructureChange: 'Activate, change or close a company, branch, warehouse or department',
     kindConfigChange: 'Change a high-impact setting', kindFlagChange: 'Turn a high-impact switch on or off',
     kindDepartmentScopeChange: 'Limit a person\'s role to some departments',
+    kindTaxRateChange: 'Change the GST rate of an HSN class', kindPromotionFunding: 'Approve a supplier\'s funding of a promotion',
     detailPrefix: 'Till bill-number prefix', detailFromComputer: 'Old store computer (sign-in)', detailToComputer: 'New store computer (sign-in)',
     detailJobId: 'Load name', detailContentFingerprint: 'File check code',
     detailProductId: 'Item', detailPriceMinor: 'New price', detailMrpMinor: 'MRP', detailCostMinor: 'What it costs us', detailCurrency: 'Currency',
@@ -230,6 +231,7 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     kindOrgStructureChange: 'நிறுவனம், கிளை, கிடங்கு அல்லது துறையைச் செயல்படுத்துதல், மாற்றுதல் அல்லது மூடுதல்',
     kindConfigChange: 'அதிக தாக்கமுள்ள அமைப்பை மாற்றுதல்', kindFlagChange: 'அதிக தாக்கமுள்ள சுவிட்சை இயக்குதல் அல்லது நிறுத்துதல்',
     kindDepartmentScopeChange: 'ஒருவரின் பங்கைச் சில துறைகளுக்கு மட்டும் வரம்பிடுதல்',
+    kindTaxRateChange: 'ஒரு HSN வகையின் GST விகிதத்தை மாற்றுதல்', kindPromotionFunding: 'ஒரு சலுகைக்கான விநியோகஸ்தரின் நிதியுதவியை ஒப்புதல்',
     detailPrefix: 'கவுண்டர் பில் எண் முன்னொட்டு', detailFromComputer: 'பழைய கடை கணினி (உள்நுழைவு)', detailToComputer: 'புதிய கடை கணினி (உள்நுழைவு)',
     detailJobId: 'ஏற்றத்தின் பெயர்', detailContentFingerprint: 'கோப்புச் சரிபார்ப்புக் குறியீடு',
     detailProductId: 'பொருள்', detailPriceMinor: 'புதிய விலை', detailMrpMinor: 'அதிகபட்ச சில்லறை விலை (MRP)', detailCostMinor: 'நமக்கு ஆகும் அடக்க விலை', detailCurrency: 'நாணயம்',
@@ -309,6 +311,8 @@ const KIND_COPY: Readonly<Record<string, CopyKey>> = {
   // OB-288 lane 1 · P1.
   approval_rule_change: 'kindApprovalRuleChange', org_structure_change: 'kindOrgStructureChange', config_change: 'kindConfigChange',
   flag_change: 'kindFlagChange', department_scope_change: 'kindDepartmentScopeChange',
+  // OB-288 P2: a GST rate change (Finance approves) and a supplier's funding of an offer.
+  tax_rate_change: 'kindTaxRateChange', promotion_funding: 'kindPromotionFunding',
 };
 /** Detail keys this screen can name in both languages; any other key is spelt out from its own name. */
 const DETAIL_COPY: Readonly<Record<string, CopyKey>> = {

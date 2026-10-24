@@ -18,7 +18,8 @@ function sampleSession() {
       acceptHeading: 'Accept a risk', riskChoiceLabel: 'Which risk', rationaleLabel: 'Why you are accepting it (this is the record)',
       rationalePlaceholder: 'Why is the business knowingly carrying this risk?', acceptBtn: 'Accept the risk',
       acceptRecorded: 'Risk accepted.', acceptRefused: 'Could not accept — check the reason and your permission.', acceptLostLink: 'No connection — not saved. Try again.',
-      sampleData: 'Sample data — this is not your shop.', nobodyNamed: '' },
+      sampleData: 'Sample data — this is not your shop.', nobodyNamed: '',
+      reviewerHeading: 'Security reviewer', nameHeading: 'Name the security reviewer', reviewerIdLabel: 'Their sign-in (user id)', reviewerNameLabel: 'Their name', reviewerReasonLabel: 'Why this person', nameBtn: 'Name the reviewer' },
     ta: { title: 'இடர் ஏற்பு', langName: 'English',
       lead: 'மாதிரி தடுக்கப்பட்ட வாயில்கள். உங்கள் இணக்க வாயில்களைப் பார்க்க கடை கணினியை இணைக்கவும்.',
       openHeading: 'ஒரு வாயிலைத் தடுக்கிறது', blockedCount: 'வாயில்கள் தடுக்கப்பட்டன', gatesLabel: 'தடுக்கப்பட்ட வாயில்கள்', allClear: 'தடுக்கப்பட்ட வாயில்கள் இல்லை — எல்லா வாயில்களும் கடக்கலாம்.',
@@ -26,7 +27,8 @@ function sampleSession() {
       acceptHeading: 'ஒரு இடரை ஏற்று', riskChoiceLabel: 'எந்த இடர்', rationaleLabel: 'நீங்கள் ஏன் ஏற்கிறீர்கள் (இதுவே பதிவு)',
       rationalePlaceholder: 'இந்த இடரை வணிகம் ஏன் அறிந்தே சுமக்கிறது?', acceptBtn: 'இடரை ஏற்று',
       acceptRecorded: 'இடர் ஏற்கப்பட்டது.', acceptRefused: 'ஏற்க முடியவில்லை — காரணத்தையும் அனுமதியையும் சரிபார்க்கவும்.', acceptLostLink: 'இணைப்பு இல்லை — சேமிக்கப்படவில்லை. மீண்டும் முயற்சிக்கவும்.',
-      sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.', nobodyNamed: '' },
+      sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.', nobodyNamed: '',
+      reviewerHeading: 'பாதுகாப்புச் சரிபார்ப்பாளர்', nameHeading: 'பாதுகாப்புச் சரிபார்ப்பாளரைப் பெயரிடு', reviewerIdLabel: 'அவருடைய உள்நுழைவு', reviewerNameLabel: 'அவருடைய பெயர்', reviewerReasonLabel: 'ஏன் இவர்', nameBtn: 'சரிபார்ப்பாளரைப் பெயரிடு' },
   };
   const sampleRow = (l) => ({
     gate: 'QG-04', riskId: 'sample-risk-1', title: l === 'ta' ? 'குறியாக்கம் இல்லாத காப்புப்பிரதிகள்' : 'Unencrypted backups',
@@ -40,14 +42,23 @@ function sampleSession() {
       blocked: [sampleRow(l)], blockedCount: 1,
       risks: [{ riskId: 'sample-risk-1', label: (l === 'ta' ? 'குறியாக்கம் இல்லாத காப்புப்பிரதிகள்' : 'Unencrypted backups') + ' (sample-risk-1)' }],
       nobodyNamed: false, mayManage: true,
+      reviewer: { state: 'not_known', words: l === 'ta' ? 'மாதிரி — சரிபார்ப்பாளர் தெரியவில்லை.' : 'Sample — the security reviewer is not known here.', status: { tone: 'idle', icon: '?', label: '', announcement: '', needsAttention: true } },
+      actingAs: 'owner', acceptLabel: l === 'ta' ? 'உரிமையாளராகக் கையொப்பமிடு' : 'Sign as owner', mayNameReviewer: false,
     }),
     accept: async () => 'lost_link',
+    nameReviewer: async () => 'lost_link',
+    presentNameResult: () => ({ tone: 'degraded', icon: '⚠', label: '', announcement: '', needsAttention: true }),
     presentAcceptResult: (l, result) => ({ tone: result === 'accepted' ? 'ok' : result === 'lost_link' ? 'degraded' : 'error', icon: result === 'accepted' ? '✓' : result === 'lost_link' ? '⚠' : '✕', label: '', announcement: '', needsAttention: result !== 'accepted' }),
   };
 }
 
 let session = window.riskAcceptanceSession ?? sampleSession();
 const t = (key) => session.text(lang, key);
+/** Icons always beside words (P-07): the shared icon set when it has loaded, else the words alone. */
+function paintButton(button, icon, word) {
+  if (window.sreIcon && typeof window.sreIcon.withWord === 'function') button.replaceChildren(window.sreIcon.withWord(icon, word));
+  else button.textContent = word;
+}
 
 function rowNode(r) {
   const li = document.createElement('li');
@@ -70,6 +81,8 @@ function rowNode(r) {
   const owner = document.createElement('span'); owner.textContent = `${t('ownerLabel')}: ${r.ownerUserId}`;
   const reason = document.createElement('span'); reason.textContent = `${t('reasonLabel')}: ${r.reason}`;
   facts.append(owner, reason);
+  // OB-330: the two signatures on this risk's acceptance, as head office holds them.
+  if (r.signatures) { const sig = document.createElement('span'); sig.className = 'signatures'; sig.textContent = `✍ ${r.signatures}`; facts.append(sig); }
 
   li.append(head, status, facts);
   return li;
@@ -93,10 +106,27 @@ function paint() {
   el('open-heading').textContent = t('openHeading');
   el('rows').replaceChildren(...view.blocked.map((r) => rowNode(r)));
 
-  // The accept form — only for a compliance owner who holds compliance.risk.manage, and only when there is a
-  // risk to accept.
+  // OB-330: who the security reviewer is (or that nobody is named — then a critical/high risk must be fixed), and the
+  // owner's naming form.
+  el('reviewer-heading').textContent = t('reviewerHeading');
+  el('reviewer-state').className = `status tone-${view.reviewer.status.tone}`;
+  el('reviewer-icon').textContent = view.reviewer.status.icon;
+  el('reviewer-words').textContent = view.reviewer.words;
+  // Read aloud as one status, like every other status on the page: the colour never carries the meaning alone.
+  el('reviewer-state').setAttribute('aria-label', view.reviewer.status.announcement || view.reviewer.words);
+  el('namer').hidden = !view.mayNameReviewer;
+  if (view.mayNameReviewer) {
+    el('name-heading').textContent = t('nameHeading');
+    el('reviewer-id-label').textContent = t('reviewerIdLabel');
+    el('reviewer-name-label').textContent = t('reviewerNameLabel');
+    el('reviewer-reason-label').textContent = t('reviewerReasonLabel');
+    paintButton(el('name-reviewer'), 'user-round', t('nameBtn'));
+  }
+
+  // The signature form — the owner's signature for a compliance manager, the reviewer's for the named reviewer — and
+  // only when there is a risk to accept.
   const accepter = el('accepter');
-  const canAccept = view.mayManage && view.risks.length > 0 && !view.nobodyNamed;
+  const canAccept = view.actingAs !== 'none' && view.risks.length > 0 && !view.nobodyNamed;
   accepter.hidden = !canAccept;
   if (canAccept) {
     el('accept-heading').textContent = t('acceptHeading');
@@ -104,7 +134,7 @@ function paint() {
     el('accept-rationale-label').textContent = t('rationaleLabel');
     el('accept-rationale').setAttribute('aria-label', t('rationaleLabel'));
     el('accept-rationale').placeholder = t('rationalePlaceholder');
-    el('accept').textContent = t('acceptBtn');
+    paintButton(el('accept'), 'shield-check', view.acceptLabel);
     el('accept-risk').replaceChildren(...view.risks.map((rk) => {
       const o = document.createElement('option'); o.value = rk.riskId; o.textContent = rk.label; return o;
     }));
@@ -140,7 +170,15 @@ el('accept').addEventListener('click', () => {
     const rationale = el('accept-rationale').value;
     const result = await session.accept(riskId, rationale);
     paintResult(session.presentAcceptResult(lang, result));
-    if (result === 'accepted') { el('accept-rationale').value = ''; await refresh(); }
+    if (result === 'accepted' || result === 'awaiting_second_signature') { el('accept-rationale').value = ''; await refresh(); }
+  })();
+});
+// OB-330: the owner names the security reviewer — a HUMAN write, only on this click; head office checks who may be named.
+el('name-reviewer').addEventListener('click', () => {
+  void (async () => {
+    const result = await session.nameReviewer(el('reviewer-id').value, el('reviewer-name').value, el('reviewer-reason').value);
+    paintResult(session.presentNameResult(lang, result));
+    if (result === 'named') { el('reviewer-reason').value = ''; await refresh(); }
   })();
 });
 el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
@@ -154,8 +192,8 @@ paint();
 async function refresh() {
   const api = window.riskAcceptance;
   if (!api || typeof api.refresh !== 'function') return;
-  const data = await api.refresh();
-  if (data) { session = api.present(data); paint(); }
+  const [data, acceptances] = await Promise.all([api.refresh(), typeof api.acceptances === 'function' ? api.acceptances() : Promise.resolve(undefined)]);
+  if (data) { session = api.present(data, acceptances); paint(); }
 }
 refresh();
 

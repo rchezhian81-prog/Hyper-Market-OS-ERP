@@ -298,6 +298,66 @@ paintFoodSafety();
 void syncFoodSafety();
 setInterval(() => { void syncFoodSafety(); }, 15_000);
 
+// ── OB-333: batches on quality hold, released through the store computer (works with the line down) ──────────────────
+const qhq = window.qualityReleaseQueue ?? null;
+const qt = (key) => (qhq === null ? key : qhq.text(lang, key));
+function qhButton(word) {
+  const b = document.createElement('button'); b.type = 'submit'; b.className = 'qh-release';
+  if (window.sreIcon && typeof window.sreIcon.withWord === 'function') b.append(window.sreIcon.withWord('shield-check', word)); else b.textContent = word;
+  return b;
+}
+function qhForm(row) {
+  const form = document.createElement('form');
+  const notes = document.createElement('textarea'); notes.className = 'qh-notes';
+  form.append(fsField(qt('qhNotes'), notes), qhButton(qt('qhRelease')));
+  form.addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    const out = qhq.release(lang, { batchId: row.batchId, notes: notes.value });
+    const box = el('qh-result'); box.hidden = false;
+    el('qh-result-icon').textContent = out.ok ? '✓' : '✕';
+    el('qh-result-text').textContent = out.ok ? qt('qhSaved') : out.words;
+    paintQualityHolds();
+    void syncQualityHolds();
+  });
+  return form;
+}
+function paintQualityHolds() {
+  if (qhq === null) { el('qh').hidden = true; return; }
+  const v = qhq.view(lang);
+  el('qh').hidden = false;
+  el('qh-heading').textContent = qt('qhHeading'); el('qh-lead').textContent = qt('qhLead'); el('qh-asof').textContent = v.asAtWords;
+  el('qh-none').hidden = !v.known || v.rows.length > 0; el('qh-none').textContent = qt('qhNone');
+  el('qh-rows').replaceChildren(...v.rows.map((row) => {
+    const li = document.createElement('li');
+    li.className = `row tone-${row.state === 'held' ? 'degraded' : 'ok'}`;
+    li.dataset.batch = row.batchId; li.dataset.state = row.state;
+    const head = document.createElement('div'); head.className = 'head';
+    const name = document.createElement('span'); name.className = 'headline'; name.textContent = `${row.productId} — ${row.batchId}`;
+    const st = document.createElement('span'); st.className = 'status';
+    const icon = document.createElement('span'); icon.className = 'icon'; icon.setAttribute('aria-hidden', 'true'); icon.textContent = row.icon;
+    const word = document.createElement('span'); word.textContent = row.stateWord;
+    st.append(icon, word); st.setAttribute('aria-label', row.stateWord); head.append(name, st);
+    const why = document.createElement('div'); why.className = 'saved'; why.textContent = `${qt('qhWhy')}: ${row.reason}`;
+    li.append(head, why);
+    if (row.saved !== undefined) {
+      const s = document.createElement('div'); s.className = 'saved'; s.textContent = row.saved.stateWord; li.append(s);
+      if (row.saved.reason) { const ex = document.createElement('div'); ex.className = 'exc'; ex.textContent = row.saved.reason; li.append(ex); }
+    }
+    if (row.canRelease) li.append(qhForm(row));
+    return li;
+  }));
+}
+async function syncQualityHolds() {
+  const relay = window.qualityReleaseRelay;
+  if (!relay) return;
+  try { await relay.syncNow(); } catch { /* kept on this device; the next pass tries again */ }
+  paintQualityHolds();
+}
+el('lang').addEventListener('click', () => { paintQualityHolds(); });
+paintQualityHolds();
+void syncQualityHolds();
+setInterval(() => { void syncQualityHolds(); }, 15_000);
+
 // Read the live overdue board (a GET — read-only). Offline or refused, the screen keeps its current view and the
 // stale strip already says the page is what the box last told it.
 async function refresh() {

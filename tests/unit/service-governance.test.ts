@@ -273,8 +273,16 @@ describe('API-13 — nothing an agent produces can commit anything', () => {
       workforceWorklist: () => ({ open: [], dismissed: [], openCount: 0, dismissedCount: 0 }), recordWorkforceDisposition: () => {}, now: () => NOW,
     };
     const k = kernelFor(aiRoutes(deps));
-    const res = await handle(k, {
+    // AI-NFR-10 (OB-288 lane 4 · P1): pulling it needs a reason — refused by name without one, and the switch unchanged.
+    const bare = await handle(k, {
       method: 'PUT', path: '/v1/ai/kill-switch', body: { on: true },
+      headers: { authorization: 'Bearer good', 'idempotency-key': 'k-3' },
+    });
+    expect(bare.status).toBe(400);
+    expect((bare.body as { error: { code: string } }).error.code).toBe('kill_switch_needs_a_reason');
+    expect(on).toBe(false);
+    const res = await handle(k, {
+      method: 'PUT', path: '/v1/ai/kill-switch', body: { on: true, reason: 'the shopping assistant is wrong' },
       headers: { authorization: 'Bearer good', 'idempotency-key': 'k-4' },
     });
     expect(res.status).toBe(200);

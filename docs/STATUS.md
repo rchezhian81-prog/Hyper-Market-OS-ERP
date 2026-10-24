@@ -5,6 +5,98 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## OB-288 waves 2 and 3 (23–24 October 2026): AI governance, finance bridge, integration follow-ups, till bill and GST, catalogue and pricing, customer commerce, fulfilment and delivery
+
+**What changed**
+- **Integration follow-ups:**
+  - the PO limit comes from identity's server-held rule, and an over-limit PO goes to the owner;
+  - volume rebate on value received (OB-334);
+  - three more high-impact settings (OB-336);
+  - offline quality-hold release through the store computer (OB-333);
+  - the Recalls and trace page served by the box;
+  - two-signature risk acceptance (OB-330);
+  - CI findings push, with the key in GitHub secrets only (OB-331);
+  - rehearsal expiry (OB-332);
+  - expired batches in the till pack.
+- **AI governance (R7, all off per OB-296):**
+  - the real AI control screen;
+  - scoped kill switches with a reason, lifted by a different person;
+  - per-agent budgets inside ₹15,000;
+  - an approved-model register;
+  - personal data stripped before any model call;
+  - confidence on every suggestion;
+  - evaluations and a release gate;
+  - an incident register;
+  - new A01/A02/A03/A05/A09 legs;
+  - the AI-NFR-11 server side.
+- **Finance bridge (OB-293):**
+  - a daily Tally file for every journal, with a dead letter and requeue, and the Tally files page;
+  - trial balance and cost centres;
+  - supplier advances and rebate accruals;
+  - WF-18 close checks;
+  - MG-09 two-export comparison, MG-10 books comparison, MG-11 backup and rollback limits;
+  - do-not-contact list and frequency cap;
+  - CERT-In 6-hour clock and capacity report;
+  - generated OpenAPI and AsyncAPI;
+  - release signing (built, not yet enforced).
+- **Till bill and GST:**
+  - the FY bill series on a trusted clock;
+  - cess, IGST and place of supply;
+  - gift-card time of supply;
+  - BIS gate (OB-325) and expiry date tap (OB-298);
+  - FSSAI on the bill;
+  - scan timing;
+  - an expired batch refused on return;
+  - a sealed day evidence pack;
+  - the B2C dynamic QR, built off (OB-326).
+- **Catalogue and pricing:**
+  - variants, GS1 check digits, bundles (OB-306), nutrition (OB-307), substitutes;
+  - multibuy, bundle price and mix-match;
+  - bank offers off until R4 (OB-305/OB-349);
+  - supplier offer funding;
+  - clustering on price zones (OB-318);
+  - range gaps (OB-319);
+  - no tobacco promotion (B15);
+  - liquor refused (B17);
+  - the Floor heat map (OB-308).
+- **Customer commerce:**
+  - complaints on the customer record;
+  - loyalty tiers and expiry, off until set (OB-295);
+  - the Loyalty desk with an optional name (OB-329);
+  - Order refunds page;
+  - offers and coupons in the online cart;
+  - repeat orders (OB-303);
+  - order notices;
+  - journeys and the Campaigns page;
+  - camera barcode, voice (OB-322), substitution preferences;
+  - AI notice and opt-in (OB-314);
+  - help answers.
+- **Fulfilment and delivery:**
+  - waves from confirmed orders;
+  - 4-digit code, camera photo and signature proof (OB-294);
+  - the Dispatch page;
+  - last-stop ETA;
+  - single-branch routing;
+  - the contribution rule (OB-313) and fleet settlement;
+  - courier link off.
+- **Decisions:** OB-338 to OB-351 recorded.
+
+**Tested.** Each lane ran its own unit, integration (in memory and on real PostgreSQL, with cold restarts), browser, guardrail and fail-before checks. On the combined branch, tsc and all 1,681 guardrail and navigation tests pass. The full CI gate runs on the pull request. Nothing here was run on real Windows, a real printer, a real card machine or a real Tally, and there was no staff UAT. The till builder's last full-suite run was cut off by a container restart, so CI gives that proof.
+
+**Next (running):**
+- the till delivery sale (OB-299, not yet built); the till side of bundles, B15 and B17-by-state (OB-348), HSN class approval (OB-347), and the tier multiplier and online points at the till (OB-346);
+- customer and delivery follow-ups: code and ETA on My order, routing at placement, 250 m radius (OB-343), settlement posting, referrals (OB-351), scan-and-go to the lane (OB-350);
+- finance follow-ups: department sales (OB-340), advances at payment (OB-341), deploy jobs passing the signature (OB-342), money-route schemas;
+- loss prevention, workforce, facilities and adoption (OB-301, OB-317, OB-320, OB-323).
+
+**Owner inputs:**
+- the security reviewer's name;
+- the loyalty notice wording, with a Tamil check;
+- all "not set" numbers;
+- the GitHub secrets `FINDINGS_PUSH_TOKEN` and `RELEASE_SIGNING_KEY` (custodian).
+
+**Blocked:** nothing in software.
+
 ## OB-288 wave 1 (23 October 2026): five lanes combined (recall and trace, gates and scans, store-box offline queues, procure-to-pay, identity and authority)
 
 **What changed**

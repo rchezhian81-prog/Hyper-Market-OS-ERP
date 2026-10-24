@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
 import { recordedPayRun, switchPayReleaseOn } from '../support/pay-run';
+import { ownerApprovedSetting } from '../support/owner-approved-setting';
 
 /**
  * **API-tier step-up for payroll release and bulk product publish (Stage E slice 1 · SEC-03 · §28 · closes the
@@ -148,8 +149,11 @@ const packVersion = async (h: ApiHarness) => {
   const res = await h.request({ method: 'GET', path: '/v1/catalogue/pack', userId: OWNER, tenantId: A });
   return res.status === 200 ? (res.body as { snapshot: { version: number } }).snapshot.version : undefined;
 };
-const setThreshold = (h: ApiHarness, value: unknown, key: string) =>
-  h.request({ method: 'PUT', path: '/v1/platform/setup/catalogue.bulk_publish_threshold', userId: OWNER, tenantId: A, idempotencyKey: key, body: { value } });
+// OB-336: the bulk-publish threshold is high-impact — a valid answer is the administrator's, approved by the owner; an
+// invalid one is refused before any approval is spent.
+const setThreshold = (h: ApiHarness, value: unknown, key: string) => typeof value === 'number' && Number.isInteger(value) && value >= 1
+  ? ownerApprovedSetting(h, A, 'catalogue.bulk_publish_threshold', { value }, OWNER)
+  : h.request({ method: 'PUT', path: '/v1/platform/setup/catalogue.bulk_publish_threshold', userId: OWNER, tenantId: A, idempotencyKey: key, body: { value } });
 
 describe('a BULK catalogue publish needs a fresh MFA re-auth; the owner draws the line', () => {
   it('below the default threshold (50) a password-only publish is routine; once the owner sets the threshold to 2, a 2-line re-price is bulk and is refused with nothing published; fresh MFA publishes it; a 1-line change is routine again', async () => {
@@ -206,14 +210,15 @@ describe('a BULK catalogue publish needs a fresh MFA re-auth; the owner draws th
 });
 
 // ── the SENSITIVE leg on the REAL chain (E1b · M03-FR-03 → M12-FR-04) ──────────────────────────────────────────
-const LIQUOR = { categoryId: 'liquor', name: 'Liquor', parentId: null, regulated: ['age_restricted'] };
-const publishBeer = (h: ApiHarness, minimumAge: number, key: string) =>
-  h.request({ method: 'POST', path: '/v1/catalogue/products/p-beer/publish', userId: OWNER, tenantId: A, idempotencyKey: key,
-    body: { product: { sku: 'SKU-BEER', name: 'Beer 650ml', baseUom: 'each', primaryCategoryId: 'liquor', taxClass: '22030000', lifecycle: 'draft', safety: { minimumAge } }, categories: [LIQUOR] } });
+// OB-288 P2 · B17: SRE sells no liquor (TASMAC) — the age-restricted fixture is a non-alcoholic energy drink (HSN 2202).
+const RESTRICTED = { categoryId: 'restricted', name: 'Age-restricted drinks', parentId: null, regulated: ['age_restricted'] };
+const publishDrink = (h: ApiHarness, minimumAge: number, key: string) =>
+  h.request({ method: 'POST', path: '/v1/catalogue/products/p-energy/publish', userId: OWNER, tenantId: A, idempotencyKey: key,
+    body: { product: { sku: 'SKU-ENERGY', name: 'Energy drink 250ml', baseUom: 'each', primaryCategoryId: 'restricted', taxClass: '22029920', lifecycle: 'draft', safety: { minimumAge } }, categories: [RESTRICTED] } });
 const latestPack = async (h: ApiHarness) =>
   ((await h.request({ method: 'GET', path: '/v1/catalogue/pack', userId: OWNER, tenantId: A })).body as
     { snapshot: { version: number; products: { productId: string; regulatedFlags?: Record<string, unknown> }[] } }).snapshot;
-const beerFlags = async (h: ApiHarness) => (await latestPack(h)).products.find((p) => p.productId === 'p-beer')?.regulatedFlags;
+const drinkFlags = async (h: ApiHarness) => (await latestPack(h)).products.find((p) => p.productId === 'p-energy')?.regulatedFlags;
 
 describe('a SENSITIVE catalogue publish — an age-restricted product added or changed — needs a fresh MFA re-auth on the REAL master-data chain', () => {
   it('ONE age-restricted product (far below the bulk line): password-only is refused with the product named and nothing published; fresh MFA publishes a pack whose product carries { minimumAge }; changing its age is sensitive again; an unrelated re-price is routine', async () => {
@@ -221,7 +226,7 @@ describe('a SENSITIVE catalogue publish — an age-restricted product added or c
     await h.seedOwner(A, OWNER);
     await h.provisionOwner(A, CHECKER);
     await h.request({ method: 'POST', path: '/v1/catalogue/tax-classes/25010020/rates/2017-07-01', userId: OWNER, tenantId: A, idempotencyKey: 'k-tax', body: { rateBps: 500 } });
-    await h.request({ method: 'POST', path: '/v1/catalogue/tax-classes/22030000/rates/2017-07-01', userId: OWNER, tenantId: A, idempotencyKey: 'k-tax-beer', body: { rateBps: 1800 } });
+    await h.request({ method: 'POST', path: '/v1/catalogue/tax-classes/22029920/rates/2017-07-01', userId: OWNER, tenantId: A, idempotencyKey: 'k-tax-energy', body: { rateBps: 1800 } });
 
     // An unrestricted product first — a routine publish; password-only is fine and the shop holds v1.
     await publishProduct(h, 'p-1', 'SKU-1');
@@ -230,28 +235,28 @@ describe('a SENSITIVE catalogue publish — an age-restricted product added or c
     expect(await packVersion(h)).toBe(1);
 
     // The age-restricted product master arrives (the engine made it declare its minimum age) and is priced.
-    expect((await publishBeer(h, 21, 'k-beer')).status).toBe(201);
-    await setPrice(h, 'p-beer', 'e1', 9_000, '2030-01-01');
+    expect((await publishDrink(h, 21, 'k-energy')).status).toBe(201);
+    await setPrice(h, 'p-energy', 'e1', 9_000, '2030-01-01');
 
     // One product added — 1 ≪ 50, so not bulk — but it is REGULATED: refused, named, nothing published.
     const refused = await publishPack(h, 'pub-2', PWD_ONLY);
     expect(refused.status).toBe(403);
     expect(errorOf(refused)?.code).toBe('reauthentication_required');
     expect(errorOf(refused)?.whatHappened).toContain('regulated product');
-    expect(errorOf(refused)?.whatHappened).toContain('p-beer');
+    expect(errorOf(refused)?.whatHappened).toContain('p-energy');
     expect(await packVersion(h)).toBe(1);
 
     // Fresh MFA: published, and the pack carries the restriction the till's age gate keys on.
     expect((await publishPack(h, 'pub-3')).status).toBe(201);
     expect((await latestPack(h)).version).toBe(2);
-    expect(await beerFlags(h)).toEqual({ minimumAge: 21 });
+    expect(await drinkFlags(h)).toEqual({ minimumAge: 21 });
 
     // Changing the regulated product (its minimum age) is sensitive again; fresh MFA lands the new age.
-    expect((await publishBeer(h, 18, 'k-beer-2')).status).toBe(201);
+    expect((await publishDrink(h, 18, 'k-energy-2')).status).toBe(201);
     expect(errorOf(await publishPack(h, 'pub-4', PWD_ONLY))?.code).toBe('reauthentication_required');
     expect((await latestPack(h)).version).toBe(2);
     expect((await publishPack(h, 'pub-5')).status).toBe(201);
-    expect(await beerFlags(h)).toEqual({ minimumAge: 18 });
+    expect(await drinkFlags(h)).toEqual({ minimumAge: 18 });
 
     // An unrelated re-price (the salt line) touches no regulated product and is below the bulk line: routine.
     await setPrice(h, 'p-1', 'e2', 2_500, '2030-03-01');

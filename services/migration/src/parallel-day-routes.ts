@@ -28,6 +28,7 @@ import { deciderSealFlags } from '../../pos/src/store-seal';
 import type { RefusedDecision } from './decisions';
 import type { ParallelRunPolicy, RecordedParallelDay } from './parallel-run';
 import type { MigrationDeps } from './index';
+import { booksNotComparedFor } from './migration-controls'; // OB-288 P5 · MG-10
 
 // OB-263: the day totals, and the item and bill lines the evening check from the old ERP's files adds (each with a subject).
 const AREAS: readonly ComparisonArea[] = COMPARISON_AREAS;
@@ -116,6 +117,16 @@ export function parallelDayRoutes(deps: MigrationDeps): readonly Route[] {
         }
         const existing = await currentDaySignature(deps, ctx.tenantId, businessDate);
         if (existing !== undefined) return { status: 200, body: { signature: existing, alreadySigned: true } };
+        // OB-288 P5 · MG-10: a books figure head office could not work out for the day is not a difference that agreed.
+        const notCompared = await booksNotComparedFor(deps, ctx.tenantId, businessDate);
+        if (notCompared.length > 0) {
+          throw apiError(422, {
+            code: 'books_not_compared',
+            whatHappened: `The books side of ${businessDate} could not compare ${notCompared.length} figure(s): ${notCompared.map((n) => `${n.area}${n.subject === undefined ? '' : ` ${n.subject}`} — ${n.why}`).join('; ')}.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing was signed. Put right what is named (for example a buying cost head office lacks), record the books side again, then sign.',
+          });
+        }
         const { policy, result } = await judgeSignature(ctx.tenantId, businessDate, ctx.userId, b['statement'] as string, deps.now());
         if (policy === undefined || result === undefined) {
           throw apiError(409, {

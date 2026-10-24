@@ -51,6 +51,8 @@ export interface SuspendedLine {
   /** D-20 — the batch the barcode carried and its use-by date, so the recalled line is still traceable. */
   readonly batchId?: string;
   readonly batchExpiry?: string;
+  /** B8 (OB-298): who confirmed a perishable's printed pack date, and when — the recalled line keeps its check. */
+  readonly packDateCheck?: { readonly confirmedBy: string; readonly confirmedAt: string };
   readonly voided: boolean;
   readonly voidReason?: string;
 }

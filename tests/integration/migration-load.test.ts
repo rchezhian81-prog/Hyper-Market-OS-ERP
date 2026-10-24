@@ -32,7 +32,7 @@ const bundle: ExtractBundle = {
     },
     {
       productId: 'P-SOAP', sku: 'SOAP-1', name: 'Dish wash bar', baseUom: 'each', primaryCategoryId: 'home', taxClass: '3402',
-      lifecycle: 'active', barcodes: [{ code: '8901234567891', kind: 'ean' }, { code: 'INT-77', kind: 'internal' }],
+      lifecycle: 'active', barcodes: [{ code: '8901234567807', kind: 'ean' }, { code: 'INT-77', kind: 'internal' }],
       priceMinor: 2_500, mrpMinor: 2_500, costMinor: 1_800, marginFloorBps: 500,
     },
   ],

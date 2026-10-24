@@ -148,16 +148,23 @@ describe('a driver’s stops and cash reach the queue', () => {
     });
   });
 
-  it('queues the proof KIND and never the photograph itself', () => {
-    // A route's worth of doorstep photographs on a sync queue is a privacy problem being uploaded,
-    // not a delivery being proved.
+  it('a typed photo reference is not proof; a captured photo travels ONCE as its own record and the stop carries only its kind and fingerprint', () => {
+    // OB-294 (owner, 23 Oct 2026): the photo is a real capture kept as a document — never a reference somebody typed — and
+    // a route's worth of doorstep photographs is not copied into every stop step.
     const outbox = new SyncOutbox();
     const route = newRoute(outbox);
     route.depart('s1');
-    route.deliver('s1', { kind: 'photo', ref: 'blob:a-very-large-image' }, { codCollectedMinor: 250_00, codMethod: 'cash' });
+    expect(() => route.deliver('s1', { kind: 'photo', ref: 'blob:a-very-large-image' }, { codCollectedMinor: 250_00, codMethod: 'cash' })).toThrow(/captured/);
+    const tinyJpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 16, 0x4a, 0x46, 0x49, 0x46, 0, 1, 0xff, 0xd9]).toString('base64');
+    route.deliver('s1', { kind: 'photo', image: { mediaType: 'image/jpeg', contentBase64: tinyJpeg } }, { codCollectedMinor: 250_00, codMethod: 'cash' });
 
-    const payload = JSON.stringify(outbox.pending().at(-1)!.event.payload);
+    const [image, stop] = outbox.pending().slice(-2);
+    expect(image!.event.type).toBe('DeliveryProofCaptured');
+    expect(image!.event.payload).toMatchObject({ kind: 'photo', contentBase64: tinyJpeg, orderRef: 'ORD-1' });
+    const payload = JSON.stringify(stop!.event.payload);
     expect(payload).toContain('"proofKind":"photo"');
+    expect(payload).toMatch(/"proofSha256":"[0-9a-f]{64}"/);
+    expect(payload).not.toContain(tinyJpeg);
     expect(payload).not.toContain('blob:');
   });
 

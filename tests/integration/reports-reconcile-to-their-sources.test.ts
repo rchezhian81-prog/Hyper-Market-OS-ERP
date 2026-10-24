@@ -4,6 +4,7 @@ import { startRealCloud, type RealCloud } from '../support/real-store';
 import { loyaltyMemberKey, memberRefFor } from '../../packages/loyalty/src/index';
 import { TEST_IDP } from '../support/api-harness';
 import { approveSupplierWith, SUPPLIER_MAKER, SUPPLIER_CHECKER } from '../support/approved-supplier';
+import { ownerApprovedSettingOn } from '../support/owner-approved-setting';
 
 /**
  * **Every head-office report equals the sum of the source records behind it — on the REAL API over REAL PostgreSQL
@@ -87,7 +88,7 @@ describeOrSkip('head-office reports reconcile to their source records — real A
     await ok(call('POST', '/v1/identity/grants', 'u-hr', { grantId: gid, userId: S2_MANAGER, roleId: 'store_manager', branchScope: ['S2'], reason: 'S2 only' }, `${gid}-ask`), 202);
     await ok(call('POST', `/v1/identity/grants/${gid}/approve`, OWNER, {}, `${gid}-approve`), 201);
 
-    await ok(call('PUT', '/v1/platform/setup/locale.time_zone', OWNER, { value: 'UTC' }, 'tz'), 200);
+    await ok(ownerApprovedSettingOn(cloud, 'locale.time_zone', { value: 'UTC' }, OWNER), 200);
     await ok(call('PUT', '/v1/platform/setup/loyalty.points_per_100_inr', OWNER, { value: 1 }, 'loy-rate'), 200);
     await ok(call('PUT', '/v1/platform/setup/loyalty.point_value_paise', OWNER, { value: 50 }, 'loy-value'), 200);
 

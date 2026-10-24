@@ -20,8 +20,10 @@
 //     the body. A body that carries a basis, a baseline or a "received" is refused by name.
 //   • What has been RECEIVED is finance's: each rebate receipt is a journal (services/finance/src/rebate-receipts.ts), and
 //     the outstanding figure here is accrued − what the LEDGER holds.
-//   • A volume (units) scheme is not folded: the scheme states its rate in basis points, which does not say what one unit
-//     earns — that is an open owner question (reported), so such an accrual is refused by name rather than guessed.
+//   • A VOLUME scheme (OB-334, owner, 23 Oct 2026): its rate is a PERCENTAGE of the value RECEIVED at ORDER cost, from the
+//     supplier's matched bills in the period — the received quantity each matched bill accounts for, valued at the order's
+//     own unit price (before GST and landed charges). Folded by `volumeBasisFor`; a matched bill whose order cannot be
+//     read is named on the accrual as not valued, never counted as nought.
 
 import type { Route } from '../../kernel/src/index';
 import { actionDetails, approvalNamedIn, type ApprovalPort } from '../../identity/src/approval-requests';
@@ -51,6 +53,11 @@ export interface RebateDeps {
    * matched, payable invoices dated in it, and how many bills that is. Absent on a bare stub (then nothing can accrue).
    */
   readonly basisFor?: (tenantId: string, supplierId: string, from: string, to: string) => Promise<{ readonly amountMinor: number; readonly invoices: readonly string[] }>;
+  /**
+   * OB-334: a VOLUME scheme's basis FOLDED from the registers for a period — the value received at order cost on the
+   * supplier's matched, payable bills dated in it, the bills it came from, and any matched bill that could not be valued.
+   */
+  readonly volumeBasisFor?: (tenantId: string, supplierId: string, from: string, to: string) => Promise<{ readonly amountMinor: number; readonly invoices: readonly string[]; readonly notValued: readonly { readonly invoiceId: string; readonly why: string }[] }>;
   /** OB-288 P3: what finance has RECEIVED for the scheme — from the rebate-receipt journals on the ledger. */
   readonly receivedFor?: (tenantId: string, schemeId: string) => Promise<number>;
   readonly now: () => string;
@@ -61,7 +68,9 @@ export interface StoredRebateAccrual extends RebateAccrual {
   readonly accrualId?: string;
   readonly periodFrom?: string;
   readonly periodTo?: string;
-  readonly basisSources?: { readonly invoices: readonly string[]; readonly baselineInvoices?: readonly string[] };
+  readonly basisSources?: { readonly invoices: readonly string[]; readonly baselineInvoices?: readonly string[]; readonly notValued?: readonly { readonly invoiceId: string; readonly why: string }[] };
+  /** OB-334: what the basis measures — purchase value paid (taxable), or a volume scheme's value received at order cost. */
+  readonly basisMeasure?: 'taxable_value_of_matched_bills' | 'value_received_at_order_cost';
   readonly postedBy?: string;
 }
 
@@ -167,22 +176,18 @@ export function rebateRoutes(deps: RebateDeps): readonly Route[] {
             nextSafeAction: 'Measure a period inside the scheme\'s term. Nothing was saved.',
           });
         }
-        if (scheme.basis === 'volume_units') {
-          throw apiError(422, {
-            code: 'volume_rebate_basis_undecided',
-            whatHappened: `Scheme ${schemeId} is a volume scheme, and its rate is in basis points — which does not say what one unit received earns. That is the owner's decision; until it is made a volume rebate is not folded or guessed.`,
-            wasItSaved: 'not_saved',
-            nextSafeAction: 'Record the scheme on purchase value for now, or wait for the owner\'s decision on volume rebates. Nothing was saved.',
-          });
-        }
         if (scheme.basis === 'growth_over_baseline' && (!isDate(b['baselineFrom']) || !isDate(b['baselineTo']))) {
           throw apiError(422, { code: 'baseline_period_required', whatHappened: 'A growth scheme is measured against a baseline period — send { baselineFrom, baselineTo }.', wasItSaved: 'not_saved', nextSafeAction: 'Send the comparison period. Nothing was saved.' });
         }
-        if (deps.basisFor === undefined) {
+        const volume = scheme.basis === 'volume_units';
+        if ((volume ? deps.volumeBasisFor : deps.basisFor) === undefined) {
           throw apiError(503, { code: 'rebate_basis_unavailable', whatHappened: 'The matched-invoice register is not wired here, so the basis cannot be folded.', wasItSaved: 'not_saved', nextSafeAction: 'Try again later. Nothing was saved.' });
         }
-        const basis = await deps.basisFor(ctx.tenantId, scheme.supplierId, from, to);
-        const baseline = scheme.basis === 'growth_over_baseline' ? await deps.basisFor(ctx.tenantId, scheme.supplierId, b['baselineFrom'] as string, b['baselineTo'] as string) : undefined;
+        // OB-334: a volume scheme earns its percentage on the value RECEIVED at ORDER cost from the matched bills.
+        const basis: { amountMinor: number; invoices: readonly string[]; notValued?: readonly { invoiceId: string; why: string }[] } = volume
+          ? await deps.volumeBasisFor!(ctx.tenantId, scheme.supplierId, from, to)
+          : await deps.basisFor!(ctx.tenantId, scheme.supplierId, from, to);
+        const baseline = scheme.basis === 'growth_over_baseline' ? await deps.basisFor!(ctx.tenantId, scheme.supplierId, b['baselineFrom'] as string, b['baselineTo'] as string) : undefined;
         const accrual = accrueRebate({
           scheme,
           basisAmount: { minor: basis.amountMinor, currency: 'INR' },
@@ -190,7 +195,11 @@ export function rebateRoutes(deps: RebateDeps): readonly Route[] {
         });
         const stored: StoredRebateAccrual = {
           ...accrual, accrualId, periodFrom: from, periodTo: to, postedBy: ctx.userId,
-          basisSources: { invoices: basis.invoices, ...(baseline === undefined ? {} : { baselineInvoices: baseline.invoices }) },
+          basisMeasure: volume ? 'value_received_at_order_cost' : 'taxable_value_of_matched_bills',
+          basisSources: {
+            invoices: basis.invoices, ...(baseline === undefined ? {} : { baselineInvoices: baseline.invoices }),
+            ...(basis.notValued === undefined || basis.notValued.length === 0 ? {} : { notValued: basis.notValued }),
+          },
         };
         await deps.recordAccrual(ctx.tenantId, schemeId, accrualId, stored);
         return { status: 201, body: { accrual: stored } };

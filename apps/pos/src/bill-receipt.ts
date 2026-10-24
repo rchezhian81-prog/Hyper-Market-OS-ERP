@@ -15,6 +15,7 @@
 import {
   buildReceipt, renderReceipt, paperFormat, DEFAULT_PAPER_FORMAT, type PaperFormat,
   taxInvoiceRows, taxInvoiceText, invoiceRenderProblems, type InvoiceRow, type InvoiceLanguage,
+  b2cDynamicQrFor, type B2cDynamicQrSetting, type B2cQrDetail,
 } from '../../../packages/receipt/src/index';
 import type { CommittedBill } from './session';
 
@@ -25,12 +26,23 @@ import type { CommittedBill } from './session';
  * that is not a complete tax invoice is never printed. Pure; never throws; no network.
  */
 export type BillTaxInvoice =
-  | { readonly ok: true; readonly rows: readonly InvoiceRow[]; readonly lines: readonly string[]; readonly paper: string; readonly paperWidthMm: number; readonly number: string }
+  | {
+    readonly ok: true; readonly rows: readonly InvoiceRow[]; readonly lines: readonly string[]; readonly paper: string; readonly paperWidthMm: number; readonly number: string;
+    /** A22: the B2C dynamic QR is switched on but these details are not set — so no QR printed, and the screen says so. */
+    readonly qrNotSet?: readonly B2cQrDetail[];
+  }
   | { readonly ok: false; readonly why: string };
+
+/** A22: the words for a QR detail that is not set (the screen line under the bill — never on the customer's paper). */
+const QR_DETAIL_WORDS: Readonly<Record<B2cQrDetail, string>> = { upi_id: 'UPI ID', bank_account: 'bank account number', ifsc: 'IFSC' };
 
 export function billTaxInvoice(
   bill: CommittedBill | undefined,
-  options: { readonly template?: BillTemplate | null; readonly language?: InvoiceLanguage; readonly duplicate?: boolean } = {},
+  options: {
+    readonly template?: BillTemplate | null; readonly language?: InvoiceLanguage; readonly duplicate?: boolean; readonly fssaiLicenceNo?: string;
+    /** A22 (OB-326): the store's B2C dynamic QR switch and details, from the store pack. Absent or off → no QR. */
+    readonly b2cDynamicQr?: B2cDynamicQrSetting;
+  } = {},
 ): BillTaxInvoice {
   if (bill === undefined) return { ok: false, why: 'no sale has been committed on this till yet' };
   if (bill.taxInvoice === undefined) return { ok: false, why: 'this sale was not taken in real trading, so it has no tax invoice' };
@@ -39,14 +51,25 @@ export function billTaxInvoice(
   if (named !== undefined) {
     try { format = paperFormat(named); } catch { return { ok: false, why: `the receipt template names a paper format this till does not know (${named})` }; }
   }
+  // A22: the B2C dynamic QR from the committed invoice — off unless the shop switched it on (OB-326).
+  const qr = b2cDynamicQrFor(options.b2cDynamicQr, bill.taxInvoice);
   const rows = taxInvoiceRows(bill.taxInvoice, {
     ...(options.language === undefined ? {} : { language: options.language }),
     ...(options.duplicate === true ? { duplicate: true } : {}),
     ...(options.template?.footer === undefined ? {} : { footer: options.template.footer }),
+    ...(options.fssaiLicenceNo === undefined ? {} : { fssaiLicenceNo: options.fssaiLicenceNo }),
+    b2cQr: qr,
   });
   const missing = invoiceRenderProblems(rows, bill.taxInvoice);
   if (missing.length > 0) return { ok: false, why: `the printed invoice would be missing: ${missing.join('; ')}` };
-  return { ok: true, rows, lines: taxInvoiceText(rows, format.widthChars), paper: format.id, paperWidthMm: format.widthMm, number: bill.taxInvoice.number };
+  const lines = taxInvoiceText(rows, format.widthChars);
+  if (qr.state === 'not_set') {
+    return {
+      ok: true, rows, paper: format.id, paperWidthMm: format.widthMm, number: bill.taxInvoice.number, qrNotSet: qr.missing,
+      lines: [...lines, `UPI QR switched on but NOT SET: ${qr.missing.map((m) => QR_DETAIL_WORDS[m]).join(', ')} — no QR printed. Tell the manager.`],
+    };
+  }
+  return { ok: true, rows, lines, paper: format.id, paperWidthMm: format.widthMm, number: bill.taxInvoice.number };
 }
 
 /** The published receipt template's parts the bill needs (`PosReceiptTemplate`, as the box served it). */
@@ -62,7 +85,7 @@ export type BillReceipt =
   | { readonly ok: false; readonly why: string };
 
 /** The printed lines of a committed sale's bill, or why there are none. Pure; never throws. */
-export function billReceipt(bill: CommittedBill | undefined, template: BillTemplate | null = null): BillReceipt {
+export function billReceipt(bill: CommittedBill | undefined, template: BillTemplate | null = null, extras: { readonly fssaiLicenceNo?: string } = {}): BillReceipt {
   if (bill === undefined) return { ok: false, why: 'no sale has been committed on this till yet' };
   let format: PaperFormat = DEFAULT_PAPER_FORMAT;
   if (template?.paperFormat !== undefined) {
@@ -73,9 +96,11 @@ export function billReceipt(bill: CommittedBill | undefined, template: BillTempl
       number: bill.number, saleId: bill.saleId, tradingDay: bill.tradingDay, committedAt: bill.committedAt,
       laneId: bill.laneId, cashierId: bill.cashierId, currency: bill.currency,
       lines: bill.lines, taxBands: bill.taxBands,
-      netMinor: bill.netMinor, taxMinor: bill.taxMinor, totalMinor: bill.totalMinor,
+      netMinor: bill.netMinor, taxMinor: bill.taxMinor, ...(bill.cessMinor === undefined ? {} : { cessMinor: bill.cessMinor }), totalMinor: bill.totalMinor,
       tenders: bill.tenders, pricesIncludeTax: true,
       header: template?.header ?? [], footer: template?.footer ?? [],
+      // B10: the store's current FSSAI licence number, printed on every bill.
+      ...(extras.fssaiLicenceNo === undefined ? {} : { fssaiLicenceNo: extras.fssaiLicenceNo }),
       ...(template === null ? {} : { templateVersion: template.version }),
     });
     return { ok: true, lines: renderReceipt(doc, format), paper: format.id };

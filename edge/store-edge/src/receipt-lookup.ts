@@ -57,8 +57,15 @@ export function toOriginalSale(record: unknown): OriginalSale | undefined {
     // The line's charged total (the till writes it since A5/A9) — so an EXCHANGE credits the bill's own price for the
     // goods coming back (SP-9b-ii · M13-FR-03). Absent on an older record, and the exchange engine then pro-rates.
     const lineTotalMinor = int(line['lineTotalMinor']);
+    // M13-FR-02: the batch the line was sold from (a 2D code carried it), so a unit coming back is checked against the
+    // recall and expired-batch sets by ITS batch, and the batch is preserved through the return. Absent when not captured.
+    const batchId = str(line['batchId']);
+    const batchExpiry = str(line['batchExpiry']);
     return productId !== undefined && quantityMinor !== undefined
-      ? [{ productId, uom: str(line['uom']) ?? 'ea', quantityMinor, ...(lineTotalMinor === undefined ? {} : { lineTotalMinor }) }]
+      ? [{
+        productId, uom: str(line['uom']) ?? 'ea', quantityMinor, ...(lineTotalMinor === undefined ? {} : { lineTotalMinor }),
+        ...(batchId === undefined ? {} : { batchId }), ...(batchExpiry === undefined ? {} : { batchExpiry }),
+      }]
       : [];
   });
   if (lines.length === 0) return undefined;

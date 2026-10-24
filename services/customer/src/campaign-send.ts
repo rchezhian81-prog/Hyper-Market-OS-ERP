@@ -30,6 +30,7 @@ import type { NotificationQueue } from '../../../packages/notifications/src/inde
 import { mayWeSend, type ConsentRecord, type ConsentPurpose, type Channel as ConsentChannel } from './index';
 import { approvedTemplate, renderTemplate, type MessageTemplateVersion, type NotificationQueueEvent } from './notification-queue';
 import { verifyDeliveryReport } from './provider-reports';
+import { isSuppressed, type SuppressionFact } from './suppression-register';
 
 /** The owner's cap: at most `capPerWindow` marketing messages to one customer on one channel in `windowDays` days. */
 export interface CampaignFrequencyPolicy {
@@ -84,6 +85,8 @@ export interface CampaignSendDeps {
   readonly deliveryReportSecrets?: ReadonlyMap<string, string>;
   /** Round 6 (PF-10): is the caller the provider relay's machine identity (never a person's session)? */
   readonly isProviderRelay?: (tenantId: string, userId: string) => Promise<boolean> | boolean;
+  /** OB-288 P5 · M31-FR-04: the stored do-not-contact register — a suppressed recipient is excluded by name. */
+  readonly suppressions?: (tenantId: string) => Promise<readonly SuppressionFact[]> | readonly SuppressionFact[];
   readonly now: () => string;
 }
 
@@ -182,12 +185,15 @@ export function campaignSendRoutes(deps: CampaignSendDeps): readonly Route[] {
           });
         }
         const [events, queue] = await Promise.all([deps.queueEvents(ctx.tenantId), deps.queue(ctx.tenantId)]);
+        const register = deps.suppressions === undefined ? [] : await deps.suppressions(ctx.tenantId);
         const consents = await Promise.all(audience.map(async (customerRef) => {
           const d = mayWeSend({ customerId: customerRef, purpose: purpose as ConsentPurpose, channel: channel as ConsentChannel, records: await deps.consentRecords(ctx.tenantId, customerRef), now });
           const sent = purpose === 'marketing' ? sentInWindow({ events, queue, customerRef, channel, now, windowDays: policy!.windowDays, except: campaignMessageId(campaignId, customerRef) }) : 0;
-          if (d.verdict === 'may_send') return { customerRef, granted: [{ purpose, channel }], sentInWindow: sent };
-          if (d.verdict === 'must_not_send') return { customerRef, granted: [], withdrawnAt: d.basis?.recordedAt ?? d.decidedAt, sentInWindow: sent };
-          return { customerRef, granted: [], sentInWindow: sent };
+          // OB-288 P5 · M31-FR-04: the do-not-contact register, read for every recipient (absolute).
+          const dnc = isSuppressed(register, customerRef, channel).suppressed ? { doNotContact: true } : {};
+          if (d.verdict === 'may_send') return { customerRef, granted: [{ purpose, channel }], sentInWindow: sent, ...dnc };
+          if (d.verdict === 'must_not_send') return { customerRef, granted: [], withdrawnAt: d.basis?.recordedAt ?? d.decidedAt, sentInWindow: sent, ...dnc };
+          return { customerRef, granted: [], sentInWindow: sent, ...dnc };
         }));
         const campaign: Campaign = {
           campaignId, purpose, channel, templateId: (b['templateId'] as string).trim(), templateApproved: templateOk,

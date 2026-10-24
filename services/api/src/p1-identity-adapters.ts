@@ -58,7 +58,7 @@ type Base = { readonly store: EventStore; readonly now: () => string; readonly s
 
 const ESCALATIONS_STREAM = streamName(STREAM.identity, 'approval-escalations');
 const DEPARTMENT_SCOPES_STREAM = streamName(STREAM.identity, 'department-scopes');
-const DEPARTMENT_LINKS_STREAM = streamName(STREAM.org, 'department-categories');
+export const DEPARTMENT_LINKS_STREAM = streamName(STREAM.org, 'department-categories');
 /** The id of the owner alert an age escalation raises — one per request. */
 export const APPROVAL_AGE_ALERT_PREFIX = 'approval-age:';
 

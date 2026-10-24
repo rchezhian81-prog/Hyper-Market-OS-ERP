@@ -128,6 +128,12 @@ export interface SupplierMasterDeps extends SupplierAccountDeps {
   readonly withholding?: (tenantId: string, input: { readonly supplierId: string; readonly paymentId: string; readonly grossMinor: number; readonly paidOn: string }) => Promise<TdsAssessment> | TdsAssessment;
   /** OB-288 P3 (M06-FR-02 · §28): the orders a payment to this supplier pays, and who did each step of each. */
   readonly segregation?: Pick<SegregationPort, 'ordersPaidBy'>;
+  /**
+   * OB-341 (owner, 24 Oct 2026): what the supplier's ADVANCES have already settled of their bills — every application of an
+   * advance against a bill, net of reversals (finance's supplier-advance register). The payment route takes it off what is
+   * owed automatically, so only the balance is paid and a bill is never paid twice. Absent on a bare stub (then nothing).
+   */
+  readonly advancesApplied?: (tenantId: string, supplierId: string) => Promise<number> | number;
 }
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
@@ -396,12 +402,20 @@ export function supplierMasterRoutes(deps: SupplierMasterDeps): readonly Route[]
           });
         }
         const account = foldSupplierAccount({ ...regs, supplierId });
-        if (b['amountMinor'] > account.totals.owedMinor) {
+        // OB-341: what advances already settled comes off what is owed automatically — only the balance is paid, so a bill an
+        // advance has paid (in part or in full) can never be paid again in full.
+        const advancesAppliedMinor = Math.max(0, deps.advancesApplied === undefined ? 0 : await Promise.resolve(deps.advancesApplied(t, supplierId)));
+        const balanceToPayMinor = account.totals.owedMinor - advancesAppliedMinor;
+        if (b['amountMinor'] > balanceToPayMinor) {
           throw apiError(422, {
             code: 'payment_exceeds_balance',
-            whatHappened: `Supplier ${supplierId} is owed ${account.totals.owedMinor}; a payment of ${b['amountMinor']} would pay more than the matched, netted balance.`,
+            whatHappened: advancesAppliedMinor === 0
+              ? `Supplier ${supplierId} is owed ${account.totals.owedMinor}; a payment of ${b['amountMinor']} would pay more than the matched, netted balance.`
+              : `Supplier ${supplierId} is owed ${account.totals.owedMinor} on the purchase register, of which advances already paid ${advancesAppliedMinor}; the balance to pay is ${Math.max(0, balanceToPayMinor)}, so a payment of ${b['amountMinor']} would pay a bill twice.`,
             wasItSaved: 'not_saved',
-            nextSafeAction: 'Pay up to the balance owed, or match the invoice that justifies the rest first. Nothing was recorded.',
+            nextSafeAction: advancesAppliedMinor === 0
+              ? 'Pay up to the balance owed, or match the invoice that justifies the rest first. Nothing was recorded.'
+              : `Pay at most the balance of ${Math.max(0, balanceToPayMinor)} (what the advances have not covered). Nothing was recorded.`,
           });
         }
         // OB-288 P3 (M06-FR-02 · §28 "cannot receive, match and pay same transaction"): neither the person recording this
@@ -435,9 +449,10 @@ export function supplierMasterRoutes(deps: SupplierMasterDeps): readonly Route[]
         await audit(t, {
           actorId: ctx.userId, action: 'supplier.payment.record', objectType: 'supplier', objectId: supplierId,
           at: now, origin: { tenantId: t, branchId: ctx.branchId ?? null },
-          before: { owedMinor: String(account.totals.owedMinor) },
+          before: { owedMinor: String(account.totals.owedMinor), advancesAppliedMinor: String(advancesAppliedMinor), balanceToPayMinor: String(balanceToPayMinor) },
           after: {
             paymentId, amountMinor: String(payment.amountMinor), method, reference: payment.reference, approvedBy, owedMinor: String(account.totals.owedMinor - payment.amountMinor),
+            balanceToPayMinor: String(balanceToPayMinor - payment.amountMinor),
             ...(payment.tds === undefined ? {} : { tdsSection: payment.tds.section, tdsMinor: String(payment.tds.tdsMinor), netPaidMinor: String(payment.tds.netMinor) }),
           },
           correlationId: paymentId,
@@ -446,6 +461,8 @@ export function supplierMasterRoutes(deps: SupplierMasterDeps): readonly Route[]
           status: 201,
           body: {
             payment, alreadyRecorded: false, owedMinor: account.totals.owedMinor - payment.amountMinor,
+            // OB-341: what advances had already settled, and the balance still to pay after this payment.
+            advancesAppliedMinor, balanceToPayMinor: balanceToPayMinor - payment.amountMinor,
             // What actually leaves the shop's account, and why (P-08: TDS switched off is said, not silent).
             netPaidMinor: payment.tds?.netMinor ?? payment.amountMinor,
             ...(tds === undefined ? {} : { tds: { outcome: tds.outcome, detail: tds.detail, ...(payment.tds === undefined ? {} : payment.tds) } }),

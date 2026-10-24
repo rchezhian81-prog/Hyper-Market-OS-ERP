@@ -252,8 +252,12 @@ describe.skipIf(!HAVE_BROWSER)('a customer orders in a real browser and the clou
       expect(said).toMatch(/confirmed and will be picked/);
       expect(await page.locator('#send-now').getAttribute('hidden')).not.toBeNull(); // nothing waiting to go
 
-      // One authenticated POST to the storefront route — the whole of what left the phone.
-      expect(rec.apiCalls).toEqual([{ method: 'POST', path: expect.stringMatching(/^\/v1\/storefront\/orders\/ORD-/), auth: true }]);
+      // WF-13: the shop's own price asked first (a what-if — nothing reserved or spent), then ONE authenticated POST to the
+      // storefront route — the whole of what left the phone.
+      expect(rec.apiCalls).toEqual([
+        { method: 'POST', path: '/v1/storefront/cart/quote', auth: true },
+        { method: 'POST', path: expect.stringMatching(/^\/v1\/storefront\/orders\/ORD-/), auth: true },
+      ]);
       // The cloud holds it FOR this customer, with the checkout's payment: 1 × ₹60 + ₹40 delivery.
       const orders = await ordersOf(h);
       expect(orders).toHaveLength(1);
@@ -270,7 +274,7 @@ describe.skipIf(!HAVE_BROWSER)('a customer orders in a real browser and the clou
       await page.click('#tab-basket');
       await page.click('#pay');
       await page.locator('#banner').waitFor({ state: 'visible', timeout: 10_000 });
-      expect(rec.apiCalls.filter((c) => c.method === 'POST')).toHaveLength(1);
+      expect(rec.apiCalls.filter((c) => c.method === 'POST' && c.path !== '/v1/storefront/cart/quote')).toHaveLength(1); // one order — the price ask is a what-if
       expect(await ordersOf(h)).toHaveLength(1);
     } finally {
       await context.close();
@@ -325,7 +329,7 @@ describe.skipIf(!HAVE_BROWSER)('a customer orders in a real browser and the clou
       // The connection returns: the prepared basket goes by itself — once.
       await context.setOffline(false);
       await page.locator('#order-say', { hasText: 'confirmed and will be picked' }).waitFor({ timeout: 15_000 });
-      expect(rec.apiCalls.filter((c) => c.method === 'POST')).toHaveLength(1);
+      expect(rec.apiCalls.filter((c) => c.method === 'POST' && c.path !== '/v1/storefront/cart/quote')).toHaveLength(1); // the shop's price is a what-if
       const orders = await ordersOf(h);
       expect(orders).toHaveLength(1);
       expect(orders[0]).toMatchObject({ payment: { state: 'authorised', paidMinor: 60_00 + 40_00 } });

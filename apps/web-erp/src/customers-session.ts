@@ -17,6 +17,17 @@ export interface OverviewView {
   readonly notProfiled: number;
   readonly merges: { readonly waitingForSecondPerson: readonly MergeRow[]; readonly inForce: readonly MergeRow[]; readonly reversed: readonly MergeRow[] };
 }
+/** M16-FR-04: one service-desk case as the customer's record shows it. */
+export interface CaseLine { readonly caseId: string; readonly kind: string; readonly state: string; readonly summary: string; readonly openedAt: string; readonly orderRef?: string; readonly resolution?: string }
+/** M16-FR-04: the customer's record — what they bought, and their history with the service desk (complaints first). */
+export interface RecordView {
+  readonly customerRef: string;
+  readonly mergedInto?: string;
+  readonly purchases?: { readonly count: number; readonly grossMinor: number };
+  readonly netSpendMinor?: number;
+  readonly lastPurchaseAt?: string | null;
+  readonly serviceHistory?: { readonly read: true; readonly say: string; readonly complaints: { readonly count: number; readonly open: number; readonly recent: readonly CaseLine[] }; readonly otherCases: { readonly count: number; readonly open: number; readonly recent: readonly CaseLine[] } } | { readonly read: false; readonly say: string };
+}
 export interface DuplicateView { readonly matches: readonly { readonly customerIds: readonly [string, string]; readonly matchedOn: string; readonly confidence: string; readonly disposition: 'merge_candidate' | 'review' }[] }
 
 export const CUSTOMERS_COPY = {
@@ -32,6 +43,10 @@ export const CUSTOMERS_COPY = {
     none: 'None.', noDuplicates: 'No two of these records look like the same person.', notProfiled: 'not profiled', orders: 'bills', lastOrder: 'last bill', noOrder: 'no bill yet',
     merge_candidate: 'likely the same person (checked contact)', review: 'worth a look (unchecked contact or same name)',
     proposed: 'Proposed. It is not in force until a second person approves it.', approved: 'Approved — the records now count as one.', undone: 'Undone — the records are separate again; the merge is kept on record.',
+    recordH: 'A customer\'s record', recordRef: 'Customer code', open: 'Open the record', needRef: 'Give the customer code first. Nothing was read.', cannotRecord: 'Your role cannot open a customer\'s record.',
+    complaintsH: 'Complaints', otherCasesH: 'Other questions and requests', noComplaints: 'No complaint has been raised by this customer.', bought: 'Bought', netSpend: 'net spend', lastBill: 'last bill',
+    mergedInto: 'This record was merged into', state_open: 'open', state_waiting_on_customer: 'waiting for the customer', state_resolved: 'dealt with', state_closed: 'closed', order: 'order', answered: 'answer',
+    openComplaintsK: 'open complaints',
     by: 'by', into: 'into', segment_new: 'new', segment_regular: 'regular', segment_loyal: 'loyal', segment_lapsing: 'lapsing', segment_lapsed: 'lapsed', segment_insufficient_history: 'too little history', segment_not_profiled: 'not profiled',
   },
   ta: {
@@ -46,6 +61,10 @@ export const CUSTOMERS_COPY = {
     none: 'எதுவும் இல்லை.', noDuplicates: 'இந்தப் பதிவுகளில் எந்த இரண்டும் ஒரே நபராகத் தெரியவில்லை.', notProfiled: 'பகுப்பாய்வு செய்யப்படவில்லை', orders: 'பில்கள்', lastOrder: 'கடைசி பில்', noOrder: 'இன்னும் பில் இல்லை',
     merge_candidate: 'ஒரே நபராக இருக்கலாம் (சரிபார்த்த தொடர்பு)', review: 'பார்க்கத் தகுந்தது (சரிபார்க்காத தொடர்பு அல்லது ஒரே பெயர்)',
     proposed: 'முன்மொழியப்பட்டது. இரண்டாவது நபர் ஒப்புக்கொள்ளும் வரை இது நடைமுறைக்கு வராது.', approved: 'ஒப்புக்கொள்ளப்பட்டது — பதிவுகள் இப்போது ஒன்றாகக் கணக்கிடப்படும்.', undone: 'திரும்பப் பெறப்பட்டது — பதிவுகள் மீண்டும் தனித்தனி; இணைப்பு பதிவில் வைக்கப்பட்டுள்ளது.',
+    recordH: 'வாடிக்கையாளரின் பதிவு', recordRef: 'வாடிக்கையாளர் குறியீடு', open: 'பதிவைத் திற', needRef: 'முதலில் வாடிக்கையாளர் குறியீட்டைக் கொடுங்கள். எதுவும் படிக்கப்படவில்லை.', cannotRecord: 'உங்கள் பங்கு வாடிக்கையாளரின் பதிவைத் திறக்க முடியாது.',
+    complaintsH: 'புகார்கள்', otherCasesH: 'மற்ற கேள்விகளும் கோரிக்கைகளும்', noComplaints: 'இந்த வாடிக்கையாளர் எந்தப் புகாரும் எழுப்பவில்லை.', bought: 'வாங்கியது', netSpend: 'நிகரச் செலவு', lastBill: 'கடைசி பில்',
+    mergedInto: 'இந்தப் பதிவு இதில் இணைக்கப்பட்டது:', state_open: 'திறந்துள்ளது', state_waiting_on_customer: 'வாடிக்கையாளருக்காகக் காத்திருக்கிறது', state_resolved: 'கவனிக்கப்பட்டது', state_closed: 'மூடப்பட்டது', order: 'ஆர்டர்', answered: 'பதில்',
+    openComplaintsK: 'திறந்த புகார்கள்',
     by: 'செய்தவர்', into: 'இதில்', segment_new: 'புதியவர்', segment_regular: 'வழக்கமானவர்', segment_loyal: 'விசுவாசமானவர்', segment_lapsing: 'விலகிச் செல்பவர்', segment_lapsed: 'விலகியவர்', segment_insufficient_history: 'போதிய வரலாறு இல்லை', segment_not_profiled: 'பகுப்பாய்வு செய்யப்படவில்லை',
   },
 } as const;
@@ -66,18 +85,20 @@ export function readCandidates(text: string): { customerId: string; phone?: stri
 }
 
 export interface CustomersSession {
-  readonly may: { readonly named: boolean; readonly read: boolean; readonly propose: boolean; readonly approve: boolean };
+  readonly may: { readonly named: boolean; readonly read: boolean; readonly record: boolean; readonly propose: boolean; readonly approve: boolean };
   overview(): Promise<Outcome<OverviewView>>;
   duplicates(text: string): Promise<Outcome<DuplicateView>>;
   propose(survivorRef: string, mergedRef: string, reason: string): Promise<Outcome<MergeRow>>;
   approve(mergeId: string): Promise<Outcome<MergeRow>>;
   undo(mergeId: string, reason: string): Promise<Outcome<MergeRow>>;
+  /** M16-FR-04: one customer's record, with the desk's complaints — GET /v1/customers/:ref/profile (every look recorded). */
+  record(customerRef: string): Promise<Outcome<RecordView>>;
 }
 
 export function createCustomersSession(input: { readonly viewer: ViewerIdentity | undefined; readonly fetch?: typeof globalThis.fetch; readonly newKey?: () => string }): CustomersSession {
   const perms = new Set(input.viewer?.permissions ?? []);
   const named = input.viewer?.userId !== undefined;
-  const may = { named, read: named && perms.has('customer.segment.read'), propose: named && perms.has('customer.identity.manage'), approve: named && perms.has('customer.identity.approve') };
+  const may = { named, read: named && perms.has('customer.segment.read'), record: named && perms.has('customer.profile.read'), propose: named && perms.has('customer.identity.manage'), approve: named && perms.has('customer.identity.approve') };
   const call = makeCaller({ keyPrefix: 'customers', ...(input.fetch === undefined ? {} : { fetch: input.fetch }), ...(input.newKey === undefined ? {} : { newKey: input.newKey }) });
   const enc = encodeURIComponent;
   const guard = (need: boolean, why: CustomersCopyKey): Outcome<never, CustomersCopyKey> | undefined => (!named ? { result: 'invalid', why: 'nobody' } : !need ? { result: 'invalid', why } : undefined);
@@ -98,6 +119,10 @@ export function createCustomersSession(input: { readonly viewer: ViewerIdentity 
     undo: async (mergeId, reason) => {
       const g = guard(may.approve, 'cannotApprove'); if (g) return g;
       return reason.trim() === '' ? { result: 'invalid', why: 'needReason' } : call('POST', `/v1/customers/merges/${enc(mergeId)}/reverse`, { reason: reason.trim() });
+    },
+    record: async (customerRef) => {
+      const g = guard(may.record, 'cannotRecord'); if (g) return g;
+      return customerRef.trim() === '' ? { result: 'invalid', why: 'needRef' } : call('GET', `/v1/customers/${enc(customerRef.trim())}/profile`);
     },
   };
 }

@@ -16,3 +16,9 @@ export * from './dual-mrp';
 export * from './category-policy';
 export * from './category-presets';
 export * from './tobacco-warning';
+// OB-288 P2 (M03-FR-01/02/03/04 · D01-FR-04): nutrition (OB-307), variants and manufacturer, own-barcode bundles (OB-306)
+// and the approved substitute list.
+export * from './nutrition';
+export * from './variants';
+export * from './bundles';
+export * from './substitutes';

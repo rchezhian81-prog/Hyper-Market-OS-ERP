@@ -146,6 +146,7 @@ import {
   type DayBookSession, type DayBookPorts, type DayBookReadData, type DayBookPostPort, type DayBookPostBody,
   type PostResult as DayBookPostResult,
 } from './day-book-session';
+import { createDayEvidenceSession, openDayEvidencePorts, type DayEvidenceSession } from './day-evidence-session'; // M14-FR-04
 import {
   createDocumentTemplatesSession,
   type DocumentTemplatesSession, type DocumentTemplatePorts, type DocumentTemplateActPort, type TemplateRegisterData, type TemplateKindData,
@@ -176,6 +177,7 @@ import {
 import { createProductionQueue, openBoxLabelPort, type ProductionQueue } from './production-queue';
 import { boxClockView } from './box-clock-view';
 import { createFoodSafetyQueue, FOOD_SAFETY_COPY, type FoodSafetyQueue, type HeldFoodSafety } from './food-safety-queue';
+import { createQualityReleaseQueue, QUALITY_RELEASE_COPY, type QualityReleaseQueue, type HeldQualityHolds } from './quality-release-queue';
 import {
   createFacilitiesSession,
   type FacilitiesPorts, type FacilitiesSession, type FacilitiesData, type OverdueTask,
@@ -190,7 +192,7 @@ import {
 import {
   createRiskAcceptanceSession,
   type RiskAcceptancePorts, type RiskAcceptanceSession, type BlockedGatesData, type GateBlockView,
-  type RiskAcceptPort, type AcceptResult,
+  type RiskAcceptPort, type AcceptResult, type AcceptanceState, type ReviewerNamePort, type NameResult,
 } from './risk-acceptance-session';
 import {
   createDayReopenSession,
@@ -287,6 +289,7 @@ import type { Device, SupportAccessRequest, SupportAction, SupportSession, Versi
 import {
   createAiSession, type AiPorts, type AiSession, type PendingProposal,
 } from './ai-session';
+import { aiControlView, pullRequest, liftRequest, decisionRequest, withoutIt, type AiViewer } from './ai-control';
 import type { AgentBudget, KillSwitch, UsageEntry } from '../../../packages/ai/src/index';
 import {
   createMigrationSession, type MigrationPorts, type MigrationSession, type DaySignatureView, type WitnessView,
@@ -319,6 +322,17 @@ import { createGatesSession, gatesWords, gatesOutcomeWords, stateView as gateSta
 // OB-288 lane 1 · P1: the Approval rules page — the owner's money limits, escalation waits and price-check size.
 // OB-288 lane 1 · P1: the Access review page — who holds what, where, up to how much; the permission matrix as CSV.
 import { createAccessReviewSession, accessReviewWords, accessReviewOutcomeWords, whereWords as accessWhereWords, ordered as accessOrdered, type AccessReviewSession } from './access-review-session';
+// OB-288 P2 (M04-FR-04 · OB-308): the Floor heat map page.
+import { createHeatMapSession, heatMapWords, heatMapOutcomeWords, heatBand, areaName, figureWords, areaNotes, rupees as heatRupees, type HeatMapSession } from './floor-heat-map-session';
+// OB-288 P5 (OB-293): the Tally files page — the accountant's daily Tally import file, the dead letter and the trial balance.
+import { createTallyFilesSession, tallyFilesWords, tallyFilesOutcomeWords, rupees as tallyRupees, familyWords as tallyFamilyWords, type TallyFilesSession } from './tally-files-session';
+// OB-288 fulfilment & delivery: the Dispatch office page — waves from confirmed orders, routes, the doors' proofs and the cash.
+import { createDispatchSession, dispatchWords, dispatchOutcomeWords, rupees as dispatchRupees, type DispatchSession } from './dispatch-session';
+// OB-288 wave 3 (customer, loyalty, CRM and the online cart) — begin
+import { createCampaignsSession, campaignsWords, campaignsOutcomeWords, approvedTemplates, SEGMENTS as CAMPAIGN_SEGMENTS, CHANNELS as CAMPAIGN_CHANNELS, type CampaignsSession } from './campaigns-session';
+import { createLoyaltyDeskSession, loyaltyDeskWords, loyaltyDeskOutcomeWords, rupees as loyaltyRupees, multiplierWords as loyaltyMultiplierWords, type LoyaltyDeskSession } from './loyalty-desk-session';
+import { createOrderRefundsSession, orderRefundsWords, orderRefundsOutcomeWords, rupees as orderRefundsRupees, REFUND_BASES, type OrderRefundsSession } from './order-refunds-session';
+// OB-288 wave 3 — end
 import { createApprovalRulesSession, approvalRulesWords, approvalRulesOutcomeWords, limitWords as approvalLimitWords, waitWords as approvalWaitWords, limitsFromForm as approvalLimitsFromForm, paiseFromRupees as approvalPaiseFromRupees, KINDS as APPROVAL_LIMIT_KINDS, ROLES_SHOWN as APPROVAL_ROLES_SHOWN, type ApprovalRulesSession } from './approval-rules-session';
 // ── end R4 Lane 3 ──
 // ── R4 Lane 4 (supply, pricing and loss prevention) — begin
@@ -2014,6 +2028,8 @@ export interface FacilitiesScreenData {
   /** OB-288 lane 2: the store this box is, and head office's food-safety checks as the box last heard them (null: never told). */
   readonly storeId?: string;
   readonly foodSafety?: HeldFoodSafety | null;
+  /** OB-333: head office's held batches as the box last heard them (null: never told). */
+  readonly qualityHolds?: HeldQualityHolds | null;
 }
 
 /** OB-288 lane 2: open the facilities screen's durable device queue (food-safety checks), keyed per store. */
@@ -2025,6 +2041,21 @@ export function openFacilitiesOutbox(storeId: string, storage?: DeviceStorage): 
 
 /** OB-288 lane 2: the food-safety checks' leg of the shared device → box path. */
 export function openFoodSafetyRelay(laneWriteBase: string | undefined, queue: FoodSafetyQueue, outbox: SyncOutbox): ManagerRelay | undefined {
+  if (laneWriteBase === undefined) return undefined;
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return undefined;
+  return {
+    syncNow: async () => {
+      const result = await drainToBox({ outbox, boxBase: laneWriteBase, source: 'manager', fetch: fetchFn });
+      const statuses = await boxStatus({ boxBase: laneWriteBase, keys: queue.handedKeys(), fetch: fetchFn });
+      if (statuses !== undefined) queue.noteBoxStatus(statuses);
+      return { handed: result.handed, refused: result.refused, failed: result.failed, offline: result.offline };
+    },
+  };
+}
+
+/** OB-333: the quality-hold releases' leg of the shared device → box path (the same facilities queue on this device). */
+export function openQualityReleaseRelay(laneWriteBase: string | undefined, queue: QualityReleaseQueue, outbox: SyncOutbox): ManagerRelay | undefined {
   if (laneWriteBase === undefined) return undefined;
   const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
   if (fetchFn === undefined) return undefined;
@@ -3192,6 +3223,7 @@ export interface RiskAcceptanceData {
 
 const RISK_READ_PERMISSION = 'compliance.risk.read';
 const RISK_MANAGE_PERMISSION = 'compliance.risk.manage';
+const REVIEWER_NAME_PERMISSION = 'compliance.reviewer.name';
 const EMPTY_BLOCKED_GATES: BlockedGatesData = Object.freeze({ count: 0, blocked: [] });
 const NOOP_ACCEPT_PORT: RiskAcceptPort = { post: async () => 'lost_link' };
 
@@ -3199,6 +3231,10 @@ export function riskAcceptancePortsFromData(
   data: RiskAcceptanceData | undefined,
   worklist?: BlockedGatesData,
   acceptPort: RiskAcceptPort = NOOP_ACCEPT_PORT,
+  /** OB-330: where acceptance stands, as last read live (undefined: not known); and the reviewer's / naming ports. */
+  acceptances?: AcceptanceState,
+  reviewPort: RiskAcceptPort = NOOP_ACCEPT_PORT,
+  namePort: ReviewerNamePort = { put: async () => 'lost_link' },
 ): RiskAcceptancePorts {
   const held = new Set(data?.permissions ?? []);
   return {
@@ -3207,6 +3243,10 @@ export function riskAcceptancePortsFromData(
     mayRead: () => held.has(RISK_READ_PERMISSION),
     mayManage: () => held.has(RISK_MANAGE_PERMISSION),
     acceptPort: () => acceptPort,
+    acceptances: () => acceptances,
+    mayNameReviewer: () => held.has(REVIEWER_NAME_PERMISSION),
+    reviewPort: () => reviewPort,
+    namePort: () => namePort,
   };
 }
 
@@ -3227,25 +3267,66 @@ export function bootRiskAcceptance(
  *  (`credentials: 'same-origin'`), never a service token. A network/timeout is a retryable lost link, not a
  *  refusal. The riskId rides in the URL; the server records the acceptance in the caller's own name and enforces
  *  the name+rationale rule (§28). */
-function openRiskAcceptPort(): RiskAcceptPort {
+function openRiskAcceptPort(as: 'owner' | 'security_reviewer' = 'owner'): RiskAcceptPort {
   return {
     post: async ({ riskId, rationale }): Promise<AcceptResult> => {
       const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
       if (fetchFn === undefined) return 'lost_link';
       const key = globalThis.crypto?.randomUUID?.() ?? `risk-accept-${riskId}`;
       try {
-        const res = await fetchFn(`/v1/compliance/risks/${encodeURIComponent(riskId)}/acceptance`, {
+        const res = await fetchFn(`/v1/compliance/risks/${encodeURIComponent(riskId)}/acceptance${as === 'security_reviewer' ? '/review' : ''}`, {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'idempotency-key': key, accept: 'application/json' },
           credentials: 'same-origin',
           body: JSON.stringify({ rationale }),
         });
-        return res.status >= 200 && res.status < 300 ? 'accepted' : 'refused';
+        // OB-330: 202 is a first signature waiting for the second; a refusal naming "must be fixed" is said as such.
+        if (res.status === 202) return 'awaiting_second_signature';
+        if (res.status >= 200 && res.status < 300) return 'accepted';
+        const body = await res.json().catch(() => null) as { error?: { code?: string } } | null;
+        return body?.error?.code === 'must_be_fixed_no_security_reviewer' ? 'must_be_fixed' : 'refused';
       } catch {
         return 'lost_link';
       }
     },
   };
+}
+
+/** OB-330: the owner names the security reviewer — under his own session cookie; head office checks who may be named. */
+function openReviewerNamePort(): ReviewerNamePort {
+  return {
+    put: async (input): Promise<NameResult> => {
+      const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+      if (fetchFn === undefined) return 'lost_link';
+      try {
+        const res = await fetchFn('/v1/compliance/security-reviewer', {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json', 'idempotency-key': globalThis.crypto?.randomUUID?.() ?? `name-${input.userId}`, accept: 'application/json' },
+          credentials: 'same-origin', body: JSON.stringify(input),
+        });
+        return res.status >= 200 && res.status < 300 ? 'named' : 'refused';
+      } catch {
+        return 'lost_link';
+      }
+    },
+  };
+}
+
+/** OB-330: where acceptance stands (a GET — read-only). Undefined offline/refused: the screen says it is not known. */
+export async function fetchRiskAcceptances(): Promise<AcceptanceState | undefined> {
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return undefined;
+  try {
+    const res = await fetchFn('/v1/compliance/risk-acceptances', { method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin' });
+    if (res.status >= 400) return undefined;
+    const body = (await res.json()) as { reviewer?: { userId: string; displayName: string } | null; risks?: readonly { riskId: string; owner: { signedBy: string } | null; securityReviewer: { signedBy: string } | null }[] };
+    return {
+      reviewer: body.reviewer == null ? null : { userId: body.reviewer.userId, displayName: body.reviewer.displayName },
+      risks: (body.risks ?? []).map((r) => ({ riskId: r.riskId, owner: r.owner?.signedBy ?? null, securityReviewer: r.securityReviewer?.signedBy ?? null })),
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 /** Read the live blocked-gates worklist (a GET — read-only). Returns null offline/refused so the shell keeps
@@ -4667,6 +4748,15 @@ export function aiPortsFromData(data: AiData | undefined): AiPorts {
   };
 }
 
+/** Who is looking at the AI control screen — the user id and, when given, the permission words. Nothing else is kept. */
+export function aiViewerFrom(raw: unknown): AiViewer {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return { userId: null, permissions: null };
+  const r = raw as Record<string, unknown>;
+  const userId = typeof r['userId'] === 'string' && r['userId'].trim() !== '' ? r['userId'] : null;
+  const permissions = Array.isArray(r['permissions']) && r['permissions'].every((p) => typeof p === 'string') ? [...(r['permissions'] as string[])] : null;
+  return { userId, permissions };
+}
+
 /** Build the AI control screen, or `null` when the box was told nothing about the agents. */
 export function bootAi(data: AiData | undefined): AiSession | null {
   if (data === undefined) return null;
@@ -5006,8 +5096,28 @@ interface ManagerWindow {
   gates?: { readonly session: GatesSession; readonly words: typeof gatesWords; readonly outcomeWords: typeof gatesOutcomeWords; readonly stateView: typeof gateStateView; readonly names: typeof GATE_NAMES; readonly releases: typeof GATE_RELEASES };
   // OB-288 lane 1 · P1: the Approval rules page — who is looking; head office answers the rest.
   approvalRulesData?: ViewerIdentity;
+  // OB-288 P2: the Floor heat map page — who is looking; head office answers the rest.
+  floorHeatMapData?: ViewerIdentity;
+  floorHeatMap?: {
+    readonly session: HeatMapSession; readonly words: typeof heatMapWords; readonly outcomeWords: typeof heatMapOutcomeWords; readonly heatBand: typeof heatBand;
+    readonly areaName: typeof areaName; readonly figureWords: typeof figureWords; readonly areaNotes: typeof areaNotes; readonly rupees: typeof heatRupees;
+  };
   accessReviewData?: ViewerIdentity;
   accessReview?: { readonly session: AccessReviewSession; readonly words: typeof accessReviewWords; readonly outcomeWords: typeof accessReviewOutcomeWords; readonly whereWords: typeof accessWhereWords; readonly ordered: typeof accessOrdered };
+  // OB-288 wave 3 (OB-329 · OB-295): the Loyalty page.
+  // OB-288 wave 3 (M18-FR-04): the Order refunds page.
+  orderRefundsData?: ViewerIdentity;
+  orderRefunds?: { readonly session: OrderRefundsSession; readonly words: typeof orderRefundsWords; readonly outcomeWords: typeof orderRefundsOutcomeWords; readonly rupees: typeof orderRefundsRupees; readonly bases: typeof REFUND_BASES };
+  loyaltyDeskData?: ViewerIdentity;
+  campaignsData?: ViewerIdentity;
+  campaigns?: { readonly session: CampaignsSession; readonly words: typeof campaignsWords; readonly outcomeWords: typeof campaignsOutcomeWords; readonly approved: typeof approvedTemplates; readonly segments: typeof CAMPAIGN_SEGMENTS; readonly channels: typeof CAMPAIGN_CHANNELS };
+  loyaltyDesk?: { readonly session: LoyaltyDeskSession; readonly words: typeof loyaltyDeskWords; readonly outcomeWords: typeof loyaltyDeskOutcomeWords; readonly rupees: typeof loyaltyRupees; readonly multiplierWords: typeof loyaltyMultiplierWords };
+  // OB-288 P5 (OB-293): the Tally files page.
+  tallyFilesData?: ViewerIdentity;
+  tallyFiles?: { readonly session: TallyFilesSession; readonly words: typeof tallyFilesWords; readonly outcomeWords: typeof tallyFilesOutcomeWords; readonly rupees: typeof tallyRupees; readonly familyWords: typeof tallyFamilyWords };
+  // OB-288 fulfilment & delivery: the Dispatch office page.
+  dispatchData?: ViewerIdentity;
+  dispatch?: { readonly session: DispatchSession; readonly words: typeof dispatchWords; readonly outcomeWords: typeof dispatchOutcomeWords; readonly rupees: typeof dispatchRupees };
   approvalRules?: {
     readonly session: ApprovalRulesSession; readonly words: typeof approvalRulesWords; readonly outcomeWords: typeof approvalRulesOutcomeWords;
     readonly limitWords: typeof approvalLimitWords; readonly waitWords: typeof approvalWaitWords; readonly limitsFromForm: typeof approvalLimitsFromForm;
@@ -5049,6 +5159,8 @@ interface ManagerWindow {
     refresh(tradingDay: string): Promise<DayBookReadData | null>;
     present(data: DayBookReadData): DayBookSession;
   };
+  /** M14-FR-04: the closed-day evidence pack on the day-book screen — live GET reads, never a write. */
+  dayEvidenceSession?: DayEvidenceSession;
   rosteringData?: RosteringScreenData;
   rosteringSession?: RosteringSession;
   /** The shell reads the live roster worklist through this and re-presents it — GET reads, never a write. */
@@ -5081,6 +5193,9 @@ interface ManagerWindow {
   foodSafetyQueue?: FoodSafetyQueue;
   foodSafetyRelay?: ManagerRelay;
   foodSafetyWords?: typeof FOOD_SAFETY_COPY;
+  qualityReleaseQueue?: QualityReleaseQueue;
+  qualityReleaseRelay?: ManagerRelay;
+  qualityReleaseWords?: typeof QUALITY_RELEASE_COPY;
   /** The shell reads the live overdue board through this and re-presents it — a GET read, never a write. */
   facilities?: {
     refresh(): Promise<FacilitiesData | null>;
@@ -5094,11 +5209,16 @@ interface ManagerWindow {
     present(worklist: CashOverShortData): CashOfficeSession;
   };
   riskAcceptanceData?: RiskAcceptanceData;
+  /** OB-288 integration follow-up: the Recalls and trace page served from the store box — who is looking, their permissions,
+   *  and what this store's tills refuse now from the catalogue the box holds. recall-trace.js reads `recallTraceData`. */
+  recallTraceData?: { readonly userId?: string; readonly permissions?: readonly string[]; readonly storeId?: string | null; readonly tillBlocks?: unknown };
   riskAcceptanceSession?: RiskAcceptanceSession;
   /** The shell reads the live blocked-gates worklist through this and re-presents it — a GET read, never a write. */
   riskAcceptance?: {
     refresh(): Promise<BlockedGatesData | null>;
-    present(worklist: BlockedGatesData): RiskAcceptanceSession;
+    present(worklist: BlockedGatesData, acceptances?: AcceptanceState): RiskAcceptanceSession;
+    /** OB-330: where acceptance stands (reviewer, signatures) — a GET; undefined when not known. */
+    acceptances(): Promise<AcceptanceState | undefined>;
   };
   dayReopenData?: DayReopenScreenData;
   dayReopenSession?: DayReopenSession;
@@ -5205,6 +5325,9 @@ interface ManagerWindow {
   receiptPrefixSession?: ReceiptPrefixSession;
   aiData?: AiData;
   aiSession?: AiSession;
+  /** OB-288 lane 4 · P1: the AI control screen's view model over head office's live read, and who is looking. */
+  aiControl?: { readonly view: typeof aiControlView; readonly pull: typeof pullRequest; readonly lift: typeof liftRequest; readonly decide: typeof decisionRequest; readonly withoutIt: typeof withoutIt };
+  aiViewer?: AiViewer;
   migrationData?: MigrationData;
   migrationSession?: MigrationSession;
   /** Hands the migration screen's decisions to the store computer (2b-vi-c-4). Absent when no box is wired. */
@@ -6240,6 +6363,8 @@ if (browserWindow !== undefined) {
   const dayBookSession = bootDayBook(dayBookData, null, dayBookPostPort);
   if (dayBookSession !== null) {
     browserWindow.dayBookSession = dayBookSession;
+    // M14-FR-04: each close of the chosen day and its sealed evidence pack for the CA (reads only).
+    browserWindow.dayEvidenceSession = createDayEvidenceSession(openDayEvidencePorts(dayBookData?.permissions));
     browserWindow.dayBook = {
       refresh: fetchDayBook,
       present: (data) => createDayBookSession(
@@ -6350,12 +6475,19 @@ if (browserWindow !== undefined) {
   const facilitiesData = browserWindow.facilitiesData;
   // OB-288 lane 2 · M10-FR-02 offline: served by the store computer, today's food-safety checks are worked out here from
   // head office's checks in force and saved through the box, timed by when they were done.
-  if (browserWindow.laneWriteBase !== undefined && facilitiesData?.storeId !== undefined && facilitiesData.foodSafety !== undefined) {
-    const fsOutbox = openFacilitiesOutbox(facilitiesData.storeId);
-    const fsQueue = createFoodSafetyQueue({ userId: facilitiesData.userId ?? null, storeId: facilitiesData.storeId, now: () => new Date().toISOString() }, facilitiesData.foodSafety, fsOutbox);
+  const facilitiesOutbox = browserWindow.laneWriteBase !== undefined && facilitiesData?.storeId !== undefined ? openFacilitiesOutbox(facilitiesData.storeId) : undefined;
+  if (facilitiesOutbox !== undefined && facilitiesData?.storeId !== undefined && facilitiesData.foodSafety !== undefined) {
+    const fsQueue = createFoodSafetyQueue({ userId: facilitiesData.userId ?? null, storeId: facilitiesData.storeId, now: () => new Date().toISOString() }, facilitiesData.foodSafety, facilitiesOutbox);
     browserWindow.foodSafetyQueue = fsQueue;
-    browserWindow.foodSafetyRelay = openFoodSafetyRelay(browserWindow.laneWriteBase, fsQueue, fsOutbox);
+    browserWindow.foodSafetyRelay = openFoodSafetyRelay(browserWindow.laneWriteBase, fsQueue, facilitiesOutbox);
     browserWindow.foodSafetyWords = FOOD_SAFETY_COPY;
+  }
+  // OB-333: the batches on quality hold, released here by a person with the quality-release right — through the box.
+  if (facilitiesOutbox !== undefined && facilitiesData?.storeId !== undefined && facilitiesData.qualityHolds !== undefined) {
+    const qhQueue = createQualityReleaseQueue({ userId: facilitiesData.userId ?? null, storeId: facilitiesData.storeId, permissions: facilitiesData.permissions ?? [], now: () => new Date().toISOString() }, facilitiesData.qualityHolds, facilitiesOutbox);
+    browserWindow.qualityReleaseQueue = qhQueue;
+    browserWindow.qualityReleaseRelay = openQualityReleaseRelay(browserWindow.laneWriteBase, qhQueue, facilitiesOutbox);
+    browserWindow.qualityReleaseWords = QUALITY_RELEASE_COPY;
   }
   const completePort = openCompletePort();
   const facilitiesVerifyPort = openFacilitiesVerifyPort();
@@ -6414,11 +6546,14 @@ if (browserWindow !== undefined) {
   const riskAcceptance = bootRiskAcceptance(riskAcceptanceData, undefined, riskAcceptPort);
   if (riskAcceptance !== null) {
     browserWindow.riskAcceptanceSession = riskAcceptance;
+    const reviewPort = openRiskAcceptPort('security_reviewer');
+    const namePort = openReviewerNamePort();
     browserWindow.riskAcceptance = {
       refresh: fetchBlockedGates,
-      present: (worklist) => createRiskAcceptanceSession(
+      acceptances: fetchRiskAcceptances,
+      present: (worklist, acceptances) => createRiskAcceptanceSession(
         { userId: riskAcceptanceData?.userId === undefined ? null : riskAcceptanceData.userId },
-        riskAcceptancePortsFromData(riskAcceptanceData, worklist, riskAcceptPort),
+        riskAcceptancePortsFromData(riskAcceptanceData, worklist, riskAcceptPort, acceptances, reviewPort, namePort),
       ),
     };
   }
@@ -6684,6 +6819,11 @@ if (browserWindow !== undefined) {
   if (prefixes !== null) browserWindow.receiptPrefixSession = prefixes;
   const ai = bootAi(browserWindow.aiData);
   if (ai !== null) browserWindow.aiSession = ai;
+  // OB-288 lane 4 · P1: the AI control screen reads head office LIVE (GET /v1/ai/control) in the person's own session and
+  // sends every act there. From the injected payload it keeps ONLY who is looking (and the permission words when given —
+  // they decide what the page offers, never what the server allows).
+  browserWindow.aiControl = { view: aiControlView, pull: pullRequest, lift: liftRequest, decide: decisionRequest, withoutIt };
+  browserWindow.aiViewer = aiViewerFrom(browserWindow.aiData as unknown);
   // The migration screen's DURABLE device queue (2b-vi-c-4): its decisions are handed to the store computer, never left in
   // the tab — before, they lived in a queue nothing drained.
   const migrationOutbox = browserWindow.migrationData === undefined ? undefined : openMigrationOutbox(browserWindow.migrationData.storeId ?? 'store-1');
@@ -6800,8 +6940,26 @@ if (browserWindow !== undefined) {
   browserWindow.gatesData = viewerIdentity(browserWindow.gatesData);
   browserWindow.gates = { session: createGatesSession({ viewer: browserWindow.gatesData }), words: gatesWords, outcomeWords: gatesOutcomeWords, stateView: gateStateView, names: GATE_NAMES, releases: GATE_RELEASES };
   // OB-288 lane 1 · P1: the Approval rules page — reads on a click; asks and applies only on a person's explicit click.
+  // OB-288 P2 (OB-308): the Floor heat map page — reads on a click; changes nothing.
+  browserWindow.floorHeatMapData = viewerIdentity(browserWindow.floorHeatMapData);
+  browserWindow.floorHeatMap = { session: createHeatMapSession({ viewer: browserWindow.floorHeatMapData }), words: heatMapWords, outcomeWords: heatMapOutcomeWords, heatBand, areaName, figureWords, areaNotes, rupees: heatRupees };
   browserWindow.accessReviewData = viewerIdentity(browserWindow.accessReviewData);
   browserWindow.accessReview = { session: createAccessReviewSession({ viewer: browserWindow.accessReviewData }), words: accessReviewWords, outcomeWords: accessReviewOutcomeWords, whereWords: accessWhereWords, ordered: accessOrdered };
+  // OB-288 P5 (OB-293): the Tally files page — reads on a click; makes, requeues and downloads only on a person's explicit click.
+  // OB-288 wave 3 (OB-329 · OB-295): the Loyalty page — the notice and the programme are reads; every write is a person's click.
+  // OB-288 wave 3 (M18-FR-04): the Order refunds page — nothing read on open; asking, issuing and recording are a person's clicks.
+  browserWindow.orderRefundsData = viewerIdentity(browserWindow.orderRefundsData);
+  browserWindow.orderRefunds = { session: createOrderRefundsSession({ viewer: browserWindow.orderRefundsData }), words: orderRefundsWords, outcomeWords: orderRefundsOutcomeWords, rupees: orderRefundsRupees, bases: REFUND_BASES };
+  // OB-288 wave 3 (M21-FR-01 · M21-FR-02): the Campaigns page — nothing read on open; every read and write is a person's click.
+  browserWindow.campaignsData = viewerIdentity(browserWindow.campaignsData);
+  browserWindow.campaigns = { session: createCampaignsSession({ viewer: browserWindow.campaignsData }), words: campaignsWords, outcomeWords: campaignsOutcomeWords, approved: approvedTemplates, segments: CAMPAIGN_SEGMENTS, channels: CAMPAIGN_CHANNELS };
+  browserWindow.loyaltyDeskData = viewerIdentity(browserWindow.loyaltyDeskData);
+  browserWindow.loyaltyDesk = { session: createLoyaltyDeskSession({ viewer: browserWindow.loyaltyDeskData }), words: loyaltyDeskWords, outcomeWords: loyaltyDeskOutcomeWords, rupees: loyaltyRupees, multiplierWords: loyaltyMultiplierWords };
+  browserWindow.tallyFilesData = viewerIdentity(browserWindow.tallyFilesData);
+  browserWindow.tallyFiles = { session: createTallyFilesSession({ viewer: browserWindow.tallyFilesData }), words: tallyFilesWords, outcomeWords: tallyFilesOutcomeWords, rupees: tallyRupees, familyWords: tallyFamilyWords };
+  // OB-288 fulfilment & delivery: the Dispatch office page — reads on a click; every write is a person's explicit click.
+  browserWindow.dispatchData = viewerIdentity(browserWindow.dispatchData);
+  browserWindow.dispatch = { session: createDispatchSession({ viewer: browserWindow.dispatchData }), words: dispatchWords, outcomeWords: dispatchOutcomeWords, rupees: dispatchRupees };
   browserWindow.approvalRulesData = viewerIdentity(browserWindow.approvalRulesData);
   browserWindow.approvalRules = {
     session: createApprovalRulesSession({ viewer: browserWindow.approvalRulesData }), words: approvalRulesWords, outcomeWords: approvalRulesOutcomeWords,

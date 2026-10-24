@@ -187,6 +187,8 @@ export function gstReturnsRoutes(deps: GstReturnsDeps): readonly Route[] {
           // A line that carries its own tax facts (frozen at supply) is filed under those, not the table.
           ...(l.hsnCode !== undefined ? { hsnCode: l.hsnCode } : {}),
           ...(l.rateBps !== undefined ? { rateBps: l.rateBps } : {}),
+          // A7: the compensation cess the line was charged under, frozen at the till — filed in `csamt`.
+          ...(l.cess !== undefined ? { cess: l.cess } : {}),
         });
         const sales: SoldTaxLine[] = period.map(toSoldTaxLine);
 

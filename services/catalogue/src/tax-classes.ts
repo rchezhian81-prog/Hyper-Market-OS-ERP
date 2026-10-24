@@ -14,15 +14,28 @@
 // two DIFFERENT rates on the SAME effective date are refused as ambiguous (like the dual-MRP guard). Setting
 // a rate is gated `catalogue.pack.publish` — deciding the tax a product carries is catalogue authority;
 // reads are `catalogue.pack.read`.
+//
+// OB-288 P2 (M03.md "Permissions (§28): tax change with Finance approval"): the FIRST rate of a class is setting it up; a
+// CHANGE — a new period on a class that already has a rate — needs a Finance approver through the maker-checker engine
+// (ADR-0024, kind `tax_rate_change`, checker `catalogue.tax.approve`: the accountant and the owner). The person who asks
+// can never approve their own change, and a typed "approved by" is refused by name. Every change is sealed in the audit
+// trail with who asked and who approved.
 
 import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
 import { resolveGstRate, InvalidRateSchedule, type GstRatePeriod } from '../../../packages/finance/src/rate';
+import type { AuditEntry } from '../../../packages/audit/src/index';
+import { actionDetails, approvalNamedIn, type ApprovalPort } from '../../identity/src/approval-requests';
 
 export interface TaxClassRateDeps {
   /** Append a rate period for an HSN/tax class (idempotent on the caller's key). */
   readonly setRate: (tenantId: string, hsnCode: string, period: GstRatePeriod, key: string) => Promise<void> | void;
   readonly schedule: (tenantId: string, hsnCode: string) => Promise<readonly GstRatePeriod[]> | readonly GstRatePeriod[];
+  /** OB-288 P2: head office's maker-checker engine — a rate CHANGE needs a Finance approver. Absent: every approval is unknown. */
+  readonly approvals?: ApprovalPort;
+  /** Seal a rate change into the audit trail (M34-FR-01). Optional on a bare stub. */
+  readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
+  readonly now?: () => string;
 }
 
 const isDate = (s: unknown): s is string =>
@@ -64,8 +77,33 @@ export function taxClassRoutes(deps: TaxClassRateDeps): readonly Route[] {
           }
           return { status: 201, body: { rate: existing } }; // idempotent: already set to this exact rate
         }
+        // OB-288 P2 (M03-FR-03 §28): a class that already has a rate is CHANGED only with a Finance approver's approval.
+        const before = [...(await deps.schedule(ctx.tenantId, hsnCode))].sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom));
+        const now = deps.now?.() ?? new Date().toISOString();
+        const opened = await approvalNamedIn(deps.approvals, {
+          tenantId: ctx.tenantId, approvalId: b['approvalId'], typedField: 'approvedBy', typedValue: b['approvedBy'],
+          kind: 'tax_rate_change', subjectRef: hsnCode, details: actionDetails(ctx.body, { hsnCode, effectiveFrom }), valueMinor: null,
+          maker: ctx.userId, usedBy: `tax-rate:${hsnCode}:${effectiveFrom}`, now,
+        });
+        if (before.length > 0 && opened === undefined) {
+          const inForce = before.filter((p) => p.effectiveFrom <= effectiveFrom).at(-1) ?? before[0]!;
+          throw apiError(422, {
+            code: 'tax_change_needs_finance_approval',
+            whatHappened: `HSN "${hsnCode}" already carries ${inForce.rateBps} bps (from ${inForce.effectiveFrom}); changing it to ${period.rateBps} bps from ${effectiveFrom} is a tax change, which needs a Finance approver (the accountant or the owner) — never the person asking.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Ask for approval (POST /v1/approvals/requests, kind tax_rate_change, subjectRef the HSN, with exactly this change and the HSN and date); once a Finance approver approves it, send the approvalId. Nothing was changed.',
+          });
+        }
+        await opened?.spend();
         await deps.setRate(ctx.tenantId, hsnCode, period, ctx.idempotencyKey ?? `${hsnCode}:${effectiveFrom}`);
-        return { status: 201, body: { rate: period } };
+        await deps.recordAudit?.(ctx.tenantId, {
+          actorId: ctx.userId, action: before.length === 0 ? 'catalogue.tax_rate.set' : 'catalogue.tax_rate.change', objectType: 'tax_class', objectId: hsnCode,
+          at: now, origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
+          before: before.length === 0 ? null : { schedule: before.map((p) => `${p.effectiveFrom}:${p.rateBps}`).join(',') },
+          after: { effectiveFrom, rateBps: String(period.rateBps), approvedBy: opened?.decision.decidedBy ?? '' },
+          correlationId: `tax-rate:${hsnCode}:${effectiveFrom}`,
+        });
+        return { status: 201, body: { rate: period, ...(opened === undefined ? {} : { approvedBy: opened.decision.decidedBy }) } };
       },
     },
     {

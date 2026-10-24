@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { Pool } from 'pg';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { apiHarness, TEST_IDP, type ApiHarness } from '../support/api-harness';
+import { approveStandInModel } from '../support/ai-approval';
 import { SqlIdempotencyStore } from '../../services/kernel/src/index';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
@@ -119,6 +120,8 @@ describe.skipIf(!HAVE_BROWSER)('the service desk and the assistant\'s drafts, in
     await act('PUT', '/v1/ai/kill-switch', OWNER, { on: false, reason: 'e2e' });
     await act('PUT', '/v1/ai/budget', OWNER, { capMinor: 1_000_000, periodEnds: '2099-01-01T00:00:00.000Z' });
     await act('PUT', '/v1/ai/agents/enabled', OWNER, { agents: ['A05', 'A07', 'A09'] });
+    // AI-NFR-01 (OB-288 lane 4 · P1): only a model on the approved register may be called — evaluate and approve one.
+    await approveStandInModel(h, { tenantId: T, userId: OWNER, pricing: PRICING, agent: 'A05' });
     await act('POST', '/v1/orders/ORD-9/promise', OWNER, { lines: [{ productId: 'MILK', quantityMinor: 2 }], locationId: 'store-1' });
     expect((await act('POST', '/v1/service/cases/K-1', DESK, { kind: 'complaint', customerRef: 'c-1', priority: 'normal', summary: 'The milk was sour', assignedTo: DESK, orderRef: 'ORD-9' })).status).toBe(201);
     await act('POST', '/v1/customer/segments/policy', OWNER, { loyalAtOrders: 3 });

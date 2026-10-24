@@ -38,6 +38,8 @@ async function theSenderRechecks(h: ApiHarness, transport: ReturnType<typeof rec
     expect((await req('POST', `/v1/notifications/templates/${id}/approval`, 'u-checker', { version: 1 })).status).toBe(200);
   }
   expect((await req('POST', '/v1/notifications/budget', 'u-maker', { capMinor: 100_000, costMinorByChannel: { whatsapp: 50 } })).status).toBe(201);
+  // M31-FR-03 (OB-288 P5): marketing waits for the owner's frequency cap — set here, as the owner would.
+  expect((await h.request({ method: 'PUT', path: '/v1/service/campaigns/frequency-policy', userId: 'u-maker', tenantId: t, idempotencyKey: `fp-${randomUUID()}`, body: { capPerWindow: 10, windowDays: 7 } })).status).toBe(200);
   // B and D are real customer records here (loyalty members) — a merge joins two records head office holds.
   const enrol = async (mobile: string): Promise<string> => ((await req('POST', '/v1/loyalty/members', 'u-maker', { mobile, consent: true, verifiedHow: 'seen_on_phone' })).body as { memberRef: string }).memberRef;
   const B = await enrol('98400 11111');

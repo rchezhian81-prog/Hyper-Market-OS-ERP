@@ -30,7 +30,7 @@ const FILES: Record<string, string> = {
   'products.csv': [
     'item_code,description,uom,category,hsn,mrp,selling_price,cost_price,barcodes,allergens,country_of_origin,status',
     'P-RICE,Ponni raw rice 5 kg,each,staples,1006,450.00,420.00,360.00,8901234567890,none,IN,active',
-    'P-SOAP,Dish wash bar,each,home,3402,25.00,25.00,18.00,8901234567891|INT-77,,,active',
+    'P-SOAP,Dish wash bar,each,home,3402,25.00,25.00,18.00,8901234567807|INT-77,,,active',
   ].join('\n'),
   'suppliers.csv': ['supplier_code,supplier_name', 'SUP-1,Kaveri Traders'].join('\n'),
   'customers.csv': ['customer_code,loyalty_points', 'C-1,120', 'C-2,'].join('\n'),

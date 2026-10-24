@@ -9,6 +9,7 @@ import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { runMigrations } from '../../packages/persistence/src/migrations';
 import { recordingTransport } from '../../packages/notifications/src/index';
+import { ownerApprovedSetting } from '../support/owner-approved-setting';
 
 /**
  * **EA-07 (R4, signed OB-227 · OB-222): the owner's morning brief, sending switched off.** "The morning brief is still
@@ -45,7 +46,7 @@ describe.each(backings)('the morning brief is prepared and not sent — on $name
       h.request({ method, path, userId, tenantId: T, ...(method === 'GET' ? {} : { idempotencyKey: `k-${randomUUID()}` }), ...(body === undefined ? {} : { body }) });
     const ok = async (p: Promise<Res>, what: string): Promise<Res> => { const r = await p; expect(r.status, `${what}: ${JSON.stringify(r.body)}`).toBeLessThan(300); return r; };
 
-    await ok(req('PUT', '/v1/platform/setup/locale.time_zone', { value: 'UTC' }), 'tz');
+    await ok(ownerApprovedSetting(h, T, 'locale.time_zone', { value: 'UTC' }), 'tz');
     const today = new Date().toISOString().slice(0, 10);
     await ok(req('POST', '/v1/sales', {
       saleId: `S-${T.slice(0, 8)}`, receiptNumber: 'R-1', laneId: 'lane-1', locationId: 'S1', cashierId: 'u-owner', tradingDay: today,

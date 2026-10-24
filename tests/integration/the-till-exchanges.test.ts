@@ -10,6 +10,7 @@ import { bootPos } from '../../apps/pos/src/browser-entry';
 import type { CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
 import { DEFAULT_RETAIL_POSTING_MAP } from '../../packages/finance/src/index';
 import { startRealCloud, type RealCloud } from '../support/real-store';
+import { ownerApprovedSettingOn } from '../support/owner-approved-setting';
 
 /**
  * **An EXCHANGE at the till, from the lane to head office's books, on the REAL cloud over REAL PostgreSQL through the
@@ -42,7 +43,7 @@ const ACCT = 'u-acct';
 const BOX = 'u-box';
 const GHEE = { productId: 'p-ghee', barcode: '8901234567890', price: 64_000, name: 'Amul Ghee Gold 1L' };          // ₹640
 const PREMIUM = { productId: 'p-premium', barcode: '8901234500002', price: 70_000, name: 'Amul Ghee Gold 1L premium' }; // ₹700 — dearer
-const SMALL = { productId: 'p-small', barcode: '8901234500003', price: 60_000, name: 'Amul Ghee Gold 900ml' };     // ₹600 — cheaper
+const SMALL = { productId: 'p-small', barcode: '8901234500019', price: 60_000, name: 'Amul Ghee Gold 900ml' };     // ₹600 — cheaper
 const OPENING = 5;
 
 interface Reply { readonly status: number; readonly body: unknown }
@@ -59,7 +60,7 @@ describeOrSkip('the till exchanges goods — credit at the bill\'s own price, th
     await cloud.grant(CASHIER, 'cashier');
     await cloud.grant(BOX, 'store_computer', undefined, [STORE]); // OB-54: the box is granted for its ONE store // OB-36 "A": the store computer's own role
     await cloud.grant(ACCT, 'accountant');
-    expect((await call('PUT', '/v1/platform/setup/locale.time_zone', OWNER, { value: 'UTC' }, 'setup-tz-utc')).status).toBe(200);
+    expect((await ownerApprovedSettingOn(cloud, 'locale.time_zone', { value: 'UTC' }, OWNER)).status).toBe(200);
     await ok(call('POST', `/v1/org/nodes/${COMPANY}`, OWNER, { kind: 'company', name: 'SRE Retail' }, `org-${COMPANY}`), 201);
     await ok(call('POST', `/v1/org/nodes/${STORE}`, OWNER, { kind: 'branch', name: 'SRE Hyper Market', parentId: COMPANY, companyId: COMPANY }, `org-${STORE}`), 201);
     await publishCatalogue();

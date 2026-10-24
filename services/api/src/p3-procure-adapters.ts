@@ -15,13 +15,13 @@ import type { Route } from '../../kernel/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import { makeEvent } from '../../../packages/contracts/src/event';
 import {
-  STREAM, streamName, foldPurchaseOrders, purchaseOrdersAdapter, orgStructureAdapter, goodsReceiptAdapter, liveSupplierInvoices, effectiveGrants,
+  STREAM, streamName, foldPurchaseOrders, purchaseOrdersAdapter, orgStructureAdapter, goodsReceiptAdapter, liveSupplierInvoices,
   financeAdapter, rebatesAdapter, stockCostAdjustments, STOCK_COST_ADJUSTMENTS_STREAM, rfqAdapter, replenishmentFactsAdapter, assortmentAdapter,
 } from './adapters';
 import { masterLifecycleOf } from './r3-ops-adapters';
 import { branchOfLocationIn, type LocationBranches } from '../../inventory/src/location-scope';
 import {
-  judgeCallOff, ordersAPaymentPays, localLimitFromRoles, type BlanketAgreement, type BlanketRelease, type PurchaseActors,
+  judgeCallOff, ordersAPaymentPays, type BlanketAgreement, type BlanketRelease, type PurchaseActors,
 } from '../../../packages/purchasing/src/index';
 import type { SegregationPort } from '../../purchase/src/segregation-of-duties';
 import type { StoredRequisition } from '../../purchase/src/rfq';
@@ -30,7 +30,8 @@ import type { SupplierPayment } from '../../purchase/src/supplier-account';
 import type { SupplierOpeningBalance, SupplierOpeningReversal } from '../../purchase/src/supplier-openings';
 import type { Asn } from '../../../packages/receiving/src/asn';
 import { apportionLandedCharges, landedCostDeltas, type LandedCostTarget } from '../../../packages/stock/src/landed-cost';
-import { chargesTotal, type PurchaseDeps } from '../../purchase/src/index';
+import { chargesTotal, matchLinesFrom, type PurchaseDeps } from '../../purchase/src/index';
+import { lineValueMinor } from '../../../packages/purchasing/src/three-way-match';
 import type { StockCostAdjustment } from '../../inventory/src/landed-cost';
 import { replenishmentRoutes } from '../../inventory/src/replenishment';
 import { requisitionSourceRoutes, type RequisitionSourceDeps, type ProposedLine } from '../../purchase/src/requisition-sources';
@@ -239,15 +240,6 @@ export function segregationAdapter(input: Base): SegregationPort {
 
 // ── M06-FR-04 · OB-289 / OB-290 — buying scope, the local limit seam, the open-commitment report ─────────────────────
 
-/**
- * OB-290 (D-3) — the person's LOCAL purchase-order limit from the roles they hold NOW, read from the config default
- * (`LOCAL_PO_LIMIT_DEFAULTS`: store manager ₹25,000, owner unlimited). The seam package P1 replaces with server-held,
- * versioned per-role limits.
- */
-export function localPoLimitOf(input: Base): (tenantId: string, userId: string) => Promise<number | null | undefined> {
-  return async (tenantId, userId) => localLimitFromRoles((await effectiveGrants(input.store, tenantId)).filter((g) => g.userId === userId).map((g) => g.roleId));
-}
-
 export function commitmentReportAdapter(input: Base): CommitmentReportDeps {
   return {
     now: input.now,
@@ -288,10 +280,47 @@ export async function rebateBasisFor(store: EventStore, tenantId: string, suppli
   return { amountMinor, invoices };
 }
 
-/** The hooks the rebate routes take (spread into their deps in main.ts): the folded basis and the ledger's "received". */
-export function p3RebateHooks(input: { readonly store: EventStore; readonly now: () => string }): Pick<RebateDeps, 'basisFor' | 'receivedFor'> {
+/**
+ * OB-334 (owner, 23 Oct 2026): the basis of a VOLUME rebate — the value RECEIVED at ORDER cost, from the supplier's MATCHED
+ * bills dated in the period (the same bills, dates and "latest match lets it be paid" rule as the purchase-value basis).
+ * For each line of such a bill: the quantity received against its order that this bill accounts for (after what earlier
+ * bills on the same order claimed — the match's own SP-7c figure), never more than the bill charges or the order asked
+ * for, valued at the ORDER's unit price (before GST, before landed charges; OB-31 / OB-46 units and case prices exactly as
+ * the match values them). A matched bill whose order head office cannot read is listed as not valued — never a nought.
+ */
+export async function volumeRebateBasisFor(store: EventStore, tenantId: string, supplierId: string, from: string, to: string) {
+  const latest = new Map<string, StoredMatch>();
+  for (const m of await payloads<StoredMatch>(store, tenantId, STREAM.purchase, 'InvoiceMatched')) latest.set(m.invoiceId, m);
+  const orders = await foldPurchaseOrders(store, tenantId);
+  let amountMinor = 0;
+  const invoices: string[] = [];
+  const notValued: { invoiceId: string; why: string }[] = [];
+  for (const i of await liveSupplierInvoices(store, tenantId)) {
+    if (i.supplierId !== supplierId) continue;
+    const m = latest.get(i.invoiceId);
+    if (m === undefined || m.blocked) continue;
+    const day = i.supplierInvoiceDate ?? i.capturedAt.slice(0, 10);
+    if (day < from || day > to) continue;
+    const order = m.poId === null ? undefined : orders.get(m.poId);
+    if (order === undefined || order.status !== 'issued') {
+      notValued.push({ invoiceId: i.invoiceId, why: m.poId === null ? 'the bill names no purchase order, so there is no order cost' : `purchase order ${m.poId} is not an issued order head office holds` });
+      continue;
+    }
+    for (const l of matchLinesFrom(order, i, m.sources.invoicedBefore ?? {})) {
+      const qty = Math.min(l.receivedQty, l.invoicedQty, l.orderedQty);
+      if (qty <= 0) continue;
+      amountMinor += lineValueMinor(qty, l.orderedUnitMinor, l.minorPerUnit ?? 1, l.orderedPer ?? 1);
+    }
+    invoices.push(i.invoiceId);
+  }
+  return { amountMinor, invoices, notValued };
+}
+
+/** The hooks the rebate routes take (spread into their deps in main.ts): the folded bases and the ledger's "received". */
+export function p3RebateHooks(input: { readonly store: EventStore; readonly now: () => string }): Pick<RebateDeps, 'basisFor' | 'volumeBasisFor' | 'receivedFor'> {
   return {
     basisFor: (tenantId, supplierId, from, to) => rebateBasisFor(input.store, tenantId, supplierId, from, to),
+    volumeBasisFor: (tenantId, supplierId, from, to) => volumeRebateBasisFor(input.store, tenantId, supplierId, from, to),
     receivedFor: async (tenantId, schemeId) => (await rebateJournals(input.store, tenantId)).filter((j) => j.rebateReceipt.schemeId === schemeId).reduce((s, j) => s + j.rebateReceipt.amountMinor, 0),
   };
 }
@@ -345,10 +374,9 @@ export function p3ProcureRoutes(input: { readonly store: EventStore | undefined;
 }
 
 /** The hooks the existing purchase-order routes take (spread into their deps in main.ts). */
-export function p3PurchaseOrderHooks(input: { readonly store: EventStore; readonly now: () => string }): Pick<import('../../purchase/src/purchase-orders').PurchaseOrderDeps, 'blanket' | 'segregation' | 'requisitionExists' | 'localPoLimitOf' | 'asnOf'> {
+export function p3PurchaseOrderHooks(input: { readonly store: EventStore; readonly now: () => string }): Pick<import('../../purchase/src/purchase-orders').PurchaseOrderDeps, 'blanket' | 'segregation' | 'requisitionExists' | 'asnOf'> {
   return {
     asnOf: (tenantId, poId) => deliveryAsnOf(input.store, tenantId, poId),
-    localPoLimitOf: localPoLimitOf(input),
     blanket: blanketReleaseHooks(input),
     segregation: segregationAdapter(input),
     requisitionExists: async (tenantId, requisitionId) => (await payloads<StoredRequisition>(input.store, tenantId, REQUISITIONS, 'RequisitionRaised')).some((r) => r.requisitionId === requisitionId),

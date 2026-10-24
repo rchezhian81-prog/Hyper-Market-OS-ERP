@@ -28,6 +28,7 @@ import {
   type PurchaseOrderLineInput, type OpenCommitment,
 } from '../../../packages/purchasing/src/index';
 import { requestApproval, decide, type Approver } from '../../../packages/approvals/src/index';
+import { mayApproveValue, authorityWords, type Authority } from '../../../packages/approvals/src/authority-rules';
 import { money, isCurrencyCode, type CurrencyCode } from '../../../packages/contracts/src/money';
 import { unitCostFromPackCost, UnknownPackLevelError, type PackHierarchy } from '../../../packages/product/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
@@ -77,6 +78,12 @@ export interface StoredPurchaseOrder {
    */
   readonly buyingScope?: BuyingScope;
   readonly buyingScopeSource?: 'named' | 'derived';
+  /**
+   * OB-290 (integration follow-up, owner 23 Oct 2026 "an over-limit PO routes to the owner"): the order's value is above
+   * the purchase-order limit of the person who raised it (the owner's server-held rule) — so it is the OWNER's to decide,
+   * said on the order from the moment it is raised. Absent when the raiser's own limit covers it (or none is wired).
+   */
+  readonly routedToOwner?: { readonly raiserLimitMinor: number | null; readonly raiserLimitFrom: string | null; readonly valueMinor: number; readonly rulesVersion: number };
 }
 
 /**
@@ -100,11 +107,13 @@ export interface BlanketReleaseHooks {
 }
 
 /**
- * M02-FR-02 seam (OB-288: the per-role value limits are package P1's): the approver's money authority for a subject. When
- * the running system provides it, the PO approval uses that limit (and the approval engine escalates above it); until then
- * the limit is `null` — as before — and nothing here invents one.
+ * M02-FR-02 · OB-290: a person's money authority for a kind of decision, from the owner's limits held on head office's
+ * server (identity's `authorityOf`, services/api/src/p1-identity-adapters.ts) — never a figure in a request. The PO routes
+ * read it twice: the RAISER's limit (a local order within it is theirs; above it the order goes to the owner) and the
+ * APPROVER's (an order above it is refused for them by name — it goes to the owner). Absent on a bare stub: no limit is
+ * known there, as before, and nothing here invents one.
  */
-export type AuthorityOf = (tenantId: string, userId: string, subjectType: 'purchase_order' | 'blanket_agreement') => Promise<number | null> | number | null;
+export type AuthorityOf = (tenantId: string, userId: string, subjectType: string) => Promise<Authority> | Authority;
 
 export interface PurchaseOrderDeps {
   /** SF-11: the product's pack hierarchy (case → inner → base), so a line ordered by the case converts exactly. Optional on a stub. */
@@ -168,7 +177,7 @@ export interface PurchaseOrderDeps {
   readonly openToBuy?: OpenToBuyDeps;
   /** M06-FR-02 (OB-288 P3): blanket agreements — a release is judged and written under the agreement's guard. */
   readonly blanket?: BlanketReleaseHooks;
-  /** M02-FR-02 seam for package P1: the approver's value limit; absent ⇒ `null` (no limit known here, as before). */
+  /** M02-FR-02 · OB-290: the server-held money authority (identity's `authorityOf`); absent ⇒ no limit known here. */
   readonly authorityOf?: AuthorityOf;
   /** WF-03 (OB-288 P3): a requisition the buyer names, so the order carries it (its raiser is the requisition act, §28). */
   readonly requisitionExists?: (tenantId: string, requisitionId: string) => Promise<boolean> | boolean;
@@ -176,15 +185,11 @@ export interface PurchaseOrderDeps {
   readonly segregation?: Pick<SegregationPort, 'actorsOf'>;
   /** OB-288 P3 (M07-FR-01): the accepted advance ship notice for an order, offered with its open delivery. */
   readonly asnOf?: (tenantId: string, poId: string) => Promise<DeliveryAsn | undefined>;
-  /**
-   * OB-290 (D-3) seam for package P1: the person's LOCAL purchase-order limit in paise — `null` unlimited, `undefined` none
-   * held (a local order is then refused). Today the config default: store manager ₹25,000, owner unlimited.
-   */
-  readonly localPoLimitOf?: (tenantId: string, userId: string) => Promise<number | null | undefined> | number | null | undefined;
   readonly now: () => string;
 }
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
+const rupees = (m: number): string => `₹${(m / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
 const isPosInt = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v > 0;
 const isMinor = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v);
@@ -397,21 +402,25 @@ export async function requireDeliverTo(deps: Pick<PurchaseOrderDeps, 'orgLocatio
  * (company-wide = head office), where it goes (a warehouse that belongs to no store, or a store), and the raiser's local
  * limit through the seam. Refused by name.
  */
-async function buyingScopeFor(deps: PurchaseOrderDeps, ctx: Parameters<Route['handler']>[0], named: unknown, deliverTo: string, valueMinor: number): Promise<{ readonly scope: BuyingScope; readonly source: 'named' | 'derived' }> {
+/** OB-290: a person's PO limit as the buying-scope engine reads it — a number, `null` unlimited, `undefined` none held. */
+export const poLimitOf = (a: Authority): number | null | undefined =>
+  a.state === 'unlimited' || a.state === 'not_value_limited' ? null : a.state === 'limit' ? a.limitMinor ?? 0 : undefined;
+
+async function buyingScopeFor(deps: PurchaseOrderDeps, ctx: Parameters<Route['handler']>[0], named: unknown, deliverTo: string, valueMinor: number, raiser: Authority | undefined): Promise<{ readonly scope: BuyingScope; readonly source: 'named' | 'derived' }> {
   const node = deps.orgLocation === undefined ? undefined : await deps.orgLocation(ctx.tenantId, deliverTo);
   const branchOf = deps.locationBranches === undefined ? undefined : await deps.locationBranches(ctx.tenantId);
   const standaloneWarehouse = node?.kind === 'warehouse' && (branchOf === undefined || branchOf(deliverTo) === deliverTo);
   const companyWide = scopeOf(ctx) === 'all';
   const needsLimit = named === 'local' || ((named === undefined || named === null) && !companyWide);
-  const limit = !needsLimit || deps.localPoLimitOf === undefined ? undefined : await deps.localPoLimitOf(ctx.tenantId, ctx.userId);
+  const limit = !needsLimit || raiser === undefined ? undefined : poLimitOf(raiser);
   const judged = judgeBuyingScope({ named, raiserCompanyWide: companyWide, destination: standaloneWarehouse ? 'central_warehouse' : 'store', valueMinor, localLimitMinor: limit });
   if (!judged.ok) {
     throw apiError(judged.refusal === 'unknown_buying_scope' ? 400 : 422, {
       code: judged.refusal,
       whatHappened: `${judged.detail} (M06-FR-04 · OB-289/OB-290).`,
       wasItSaved: 'not_saved',
-      nextSafeAction: judged.refusal === 'local_limit_exceeded'
-        ? 'Keep the local order within the limit, or ask head office to raise a central order. Nothing was ordered.'
+      nextSafeAction: judged.refusal === 'local_limit_unknown'
+        ? 'The owner sets a purchase-order limit for your role on the Approval rules page, or head office raises a central order. Nothing was ordered.'
         : 'Choose the buying scope that fits who is buying and where the goods go. Nothing was ordered.',
     });
   }
@@ -575,8 +584,12 @@ export function purchaseOrderRoutes(deps: PurchaseOrderDeps): readonly Route[] {
           });
         }
         const totalMinor = poLines.reduce((s, l) => s + valueAtCost(l.orderedQty, l.uom ?? 'ea', l.unitCost), 0);
-        // M06-FR-04 · OB-289 / OB-290: the order's buying scope — central (head office only) or local (within the raiser's limit).
-        const scope = await buyingScopeFor(deps, ctx, b['buyingScope'], deliverToLocationId, totalMinor);
+        // OB-290: the RAISER's purchase-order limit, from the owner's rules on the server. Above it the order goes to the owner.
+        const raiser = deps.authorityOf === undefined ? undefined : await deps.authorityOf(ctx.tenantId, ctx.userId, 'purchase_order');
+        // M06-FR-04 · OB-289 / OB-290: the order's buying scope — central (head office only) or local.
+        const scope = await buyingScopeFor(deps, ctx, b['buyingScope'], deliverToLocationId, totalMinor, raiser);
+        const routedToOwner = raiser === undefined || mayApproveValue(raiser, totalMinor) ? undefined
+          : { raiserLimitMinor: raiser.state === 'limit' ? raiser.limitMinor : null, raiserLimitFrom: raiser.fromRole, valueMinor: totalMinor, rulesVersion: raiser.rulesVersion };
         const proposed: StoredPurchaseOrder = {
           poId,
           number: isStr(b['number']) ? b['number'] : poId,
@@ -596,6 +609,7 @@ export function purchaseOrderRoutes(deps: PurchaseOrderDeps): readonly Route[] {
           ...(release === undefined ? {} : { blanketAgreementId: release.agreementId }),
           ...(requisitionId === undefined ? {} : { requisitionId }),
           buyingScope: scope.scope, buyingScopeSource: scope.source,
+          ...(routedToOwner === undefined ? {} : { routedToOwner }),
         };
         // WF-03 (round 8): the open-to-buy check rides on the order — never a refusal here; the approval escalates if over.
         const po: StoredPurchaseOrder = deps.openToBuy === undefined ? proposed : { ...proposed, budgetCheck: await checkOrderAgainstBudget(deps.openToBuy, ctx.tenantId, proposed) };
@@ -620,10 +634,17 @@ export function purchaseOrderRoutes(deps: PurchaseOrderDeps): readonly Route[] {
             ...(po.blanketAgreementId === undefined ? {} : { blanketAgreementId: po.blanketAgreementId }),
             ...(po.requisitionId === undefined ? {} : { requisitionId: po.requisitionId }),
             buyingScope: scope.scope,
+            ...(routedToOwner === undefined ? {} : { routedTo: 'owner', raiserLimitMinor: String(routedToOwner.raiserLimitMinor ?? 'not_set') }),
           },
           correlationId: poId,
         });
-        return { status: 201, body: { order: po, openCommitment: null } };
+        return {
+          status: 201,
+          body: {
+            order: po, openCommitment: null,
+            ...(routedToOwner === undefined ? {} : { approval: { routedTo: 'owner', why: `This order is ${rupees(totalMinor)}; ${ctx.userId}'s purchase-order limit is ${authorityWords(raiser!)}. An order above the raiser's limit is the owner's to decide.` } }),
+          },
+        };
       },
     },
     {
@@ -655,9 +676,23 @@ export function purchaseOrderRoutes(deps: PurchaseOrderDeps): readonly Route[] {
           id: poId, subjectType: 'purchase_order', subjectRef: poId,
           requestedBy: po.requisitionedBy, value: money(po.totalMinor, po.currency),
         });
-        // M02-FR-02 seam (package P1 owns the limits): the approver's own value limit when the system holds one; else none.
-        const limit = deps.authorityOf === undefined ? null : await deps.authorityOf(ctx.tenantId, ctx.userId, 'purchase_order');
-        const approver: Approver = { userId: ctx.userId, branchScope: 'all', authorityLimit: limit === null ? null : money(limit, po.currency) };
+        // M02-FR-02 · OB-290: the APPROVER's own purchase-order limit, from the owner's rules on the server (never the body).
+        // An order above it is not theirs to issue — it goes to the owner (whose authority is unlimited).
+        const authority = deps.authorityOf === undefined ? undefined : await deps.authorityOf(ctx.tenantId, ctx.userId, 'purchase_order');
+        if (authority !== undefined && ctx.userId !== po.requisitionedBy && !mayApproveValue(authority, po.totalMinor)) {
+          await deps.recordAudit?.(ctx.tenantId, {
+            actorId: ctx.userId, action: 'purchase.order.routed_to_owner', objectType: 'purchase-order', objectId: poId,
+            at: deps.now(), origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null }, before: { status: po.status },
+            after: { status: po.status, totalMinor: String(po.totalMinor), approverLimit: authorityWords(authority), routedTo: 'owner' }, correlationId: poId,
+          });
+          throw apiError(422, {
+            code: 'above_your_limit_goes_to_owner',
+            whatHappened: `Purchase order ${poId} is ${rupees(po.totalMinor)}; ${ctx.userId}'s purchase-order limit is ${authorityWords(authority)}. An order above a person's limit goes to the owner (OB-290).`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'The owner decides it. Nothing was issued.',
+          });
+        }
+        const approver: Approver = { userId: ctx.userId, branchScope: 'all', authorityLimit: null };
         const outcome = decide(request, approver, 'approved', reason, deps.now());
         if (!outcome.ok) {
           if (outcome.refusal === 'self_approval_forbidden') {
@@ -798,19 +833,17 @@ export function purchaseOrderRoutes(deps: PurchaseOrderDeps): readonly Route[] {
           const uom = master === undefined ? undefined : normaliseUom(master) ?? master;
           lines.push({ productId: l.productId, orderedQty: l.orderedQty, ...(uom === undefined ? {} : { uom }), unitCost: money(l.unitCost.minor, po.currency) });
         }
-        if (po.buyingScope === 'local') {
-          const amendedMinor = lines.reduce((s, l) => s + valueAtCost(l.orderedQty, l.uom ?? 'ea', l.unitCost), 0);
-          const limit = deps.localPoLimitOf === undefined ? undefined : await deps.localPoLimitOf(ctx.tenantId, po.requisitionedBy);
-          if (limit === undefined || (limit !== null && amendedMinor > limit)) {
-            throw apiError(422, {
-              code: limit === undefined ? 'local_limit_unknown' : 'local_limit_exceeded',
-              whatHappened: limit === undefined
-                ? `No local purchase-order limit is held for ${po.requisitionedBy}, who raised local order ${poId}, so it cannot be raised by amendment (OB-290).`
-                : `Local order ${poId} would be ${amendedMinor} paise after this amendment; ${po.requisitionedBy}, who raised it, may buy locally up to ${limit} per order (OB-290).`,
-              wasItSaved: 'not_saved',
-              nextSafeAction: 'Keep the local order within the limit, or have head office raise a central order for the rest. Nothing was changed.',
-            });
-          }
+        // OB-290: an amendment that takes the order above the AMENDER's own purchase-order limit (the owner's server-held
+        // rule) is not theirs — it goes to the owner, whose authority is unlimited.
+        const amendedMinor = lines.reduce((s, l) => s + valueAtCost(l.orderedQty, l.uom ?? 'ea', l.unitCost), 0);
+        const amender = deps.authorityOf === undefined ? undefined : await deps.authorityOf(ctx.tenantId, ctx.userId, 'purchase_order');
+        if (amender !== undefined && amendedMinor > po.totalMinor && !mayApproveValue(amender, amendedMinor)) {
+          throw apiError(422, {
+            code: 'above_your_limit_goes_to_owner',
+            whatHappened: `Order ${poId} would be ${rupees(amendedMinor)} after this amendment; ${ctx.userId}'s purchase-order limit is ${authorityWords(amender)}. An order above a person's limit goes to the owner (OB-290).`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'The owner makes this amendment. Nothing was changed.',
+          });
         }
         // OB-63 · WF-03: an amendment that RAISES the order's value (in any category) is judged against open-to-buy exactly as
         // an approval is — over budget it escalates to a person allowed to exceed it (the owner) with a reason, recorded — and

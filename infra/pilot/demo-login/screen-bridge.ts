@@ -54,6 +54,9 @@ export const BRIDGED_PAGES: Readonly<Record<string, BridgedPage>> = Object.freez
   // summaries are read live from /v1, where every act is re-checked.
   '/erp/service-desk.html': { global: 'serviceDeskData' },
   '/erp/ai-drafts.html': { global: 'aiDraftsData' },
+  // OB-288 lane 4 · P1: AI control — identity only; the registry, switches, budgets, models, checks, incidents and drafts
+  // are read live from /v1/ai/control, and every stop, start, decision and check is sent there and re-checked.
+  '/erp/ai.html': { global: 'aiData' },
   // Supplier portal — built to be injected by the cloud session; reads its own statement/submissions live.
   '/supplier/index.html': { global: 'supplierData' },
 });

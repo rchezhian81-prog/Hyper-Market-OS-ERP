@@ -49,7 +49,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('Recalls an
         await ok(call('/v1/catalogue/tax-classes/04061000/rates/2017-07-01', { rateBps: 500 }, 'tax'), 'tax');
         await ok(call('/v1/catalogue/products/p-paneer/publish', { product: { sku: 'SKU-PANEER', name: 'Paneer 200g', baseUom: 'ea', primaryCategoryId: 'grocery', taxClass: '04061000', lifecycle: 'draft' }, categories: [{ categoryId: 'grocery', name: 'Grocery', parentId: null }] }, 'prod'), 'product');
         await ok(call('/v1/prices/list/p-paneer/entries/e1', { scope: 'store', scopeRef: STORE, priceMinor: 9_000, mrpMinor: 9_500, costMinor: 1, marginFloorBps: 0, currency: 'INR', effectiveFrom: TODAY }, 'price'), 'price');
-        await ok(call('/v1/catalogue/products/p-paneer/barcodes/8901000000011', { kind: 'ean' }, 'bc'), 'barcode');
+        await ok(call('/v1/catalogue/products/p-paneer/barcodes/8901000000019', { kind: 'ean' }, 'bc'), 'barcode');
         await ok(call('/v1/inventory/movements', { movementId: 'rx-B-77', productId: 'p-paneer', locationId: STORE, kind: 'received', quantityMinor: 20, uom: 'EA', occurredAt: '2026-10-01T09:00:00.000Z', enteredBy: OWNER, batchId: 'B-77' }, 'rx'), 'receive');
         await ok(call('/v1/catalogue/pack', { storeId: STORE }, 'pack-1'), 'pack v1');
         // OB-329: the member gives her name at the desk.
