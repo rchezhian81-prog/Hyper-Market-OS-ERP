@@ -272,6 +272,9 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // template and asking for a summary are re-checked by the cloud on their own permissions.
   { id: 'ai-drafts', label: 'Assistant drafts', labelTa: 'உதவியாளர் வரைவுகள்', path: '/ai-drafts', requires: 'ai.proposal.read', group: 'Operations' },
   { id: 'substitution-exceptions', label: 'Delivery exceptions', labelTa: 'டெலிவரி விதிவிலக்குகள்', path: '/substitution-exceptions', requires: 'order.read', group: 'Orders' },
+  // OB-288 fulfilment & delivery (M19-FR-01/03 · WF-14/15): the dispatch office — waves from confirmed orders, the day's
+  // routes handed to drivers, every door's captured proof and the cash. Head office's page; the box does not serve it yet.
+  { id: 'dispatch', label: 'Dispatch', labelTa: 'அனுப்புதல்', path: '/dispatch', requires: 'delivery.run.read', group: 'Orders', served: 'unserved' },
   // Refund exceptions — the M13/M17 governance surface: refunds that reconciled with a rule broken (store credit
   // over the owner's cap, a credit with no customer, a §28 approval breach, more sent back than the bill sold or
   // was paid). Gated on the SAME permission the exceptions route checks (`lp.case.read`), so the menu never offers

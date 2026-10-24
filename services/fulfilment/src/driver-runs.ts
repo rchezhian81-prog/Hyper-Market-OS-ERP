@@ -28,7 +28,7 @@
 
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
-import { canTransitionDelivery, transitionDelivery, type DeliveryEvent, type DeliveryState } from '../../../packages/fulfilment/src/index';
+import { canTransitionDelivery, transitionDelivery, isDeliveryCode, isFix, IMAGE_PROOF_KINDS, type DeliveryEvent, type DeliveryState, type CodeVerdict, type DeviceFix, type FenceVerdict } from '../../../packages/fulfilment/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import { checkAttempt, fulfilmentAfter, type AttemptOutcome, type DeliveryAttempt, type DeliveryStateRecord } from './index';
 
@@ -59,6 +59,13 @@ export const DRIVER_RUN_SYNC_FLAGS = Object.freeze([
   // OB-09: the run register's own check refused the attempt (cash against a door where nothing changed hands, a hand-over
   // with no proof) — the stop is kept here and said; the run does not count it.
   'run_outcome_refused',
+  // OB-294 · M19-FR-03: the 4-digit code the driver typed is not the order's; no code was issued for the order; a code proof
+  // arrived with no code at all. Each an exception for the dispatcher — the hand-over is kept, never a quiet delivery.
+  'delivery_code_wrong', 'delivery_code_not_issued', 'delivery_code_missing',
+  // D09-FR-05: the phone's location at the proof was outside the owner's radius of the stored address.
+  'outside_geofence',
+  // M19-FR-03: a photo / signature proof arrived without the fingerprint of the image the phone captured.
+  'proof_image_missing',
 ] as const);
 export type DriverRunSyncFlag = (typeof DRIVER_RUN_SYNC_FLAGS)[number];
 
@@ -115,6 +122,26 @@ export interface RouteStopUpdate {
   readonly governanceFlags: readonly DriverRunSyncFlag[];
   /** OB-09 — absent on records written before 2 Oct 2026. */
   readonly runAttempt?: RunAttemptOutcome;
+  /** OB-294 · D09-FR-05: how head office judged the proof the phone gave at the door. Absent on older records and on steps
+   *  where nothing was handed over. The phone's location is NOT kept — only the verdict and the distance. */
+  readonly proofCheck?: DoorProofCheck;
+}
+
+/** Head office's judgement of the proof given at a door (OB-294 · M19-FR-03 · D09-FR-05). */
+export interface DoorProofCheck {
+  readonly code: CodeVerdict;
+  readonly fence: FenceVerdict;
+  /** For a photo / signature: the fingerprint of the image the phone captured (the image arrives as its own record). */
+  readonly imageSha256: string | null;
+}
+
+/** What the phone sent with a hand-over, for head office to judge. */
+export interface DoorProofInput {
+  readonly orderRef: string;
+  readonly proofKind: string | null;
+  readonly proofCode: string | null;
+  readonly proofSha256: string | null;
+  readonly deviceFix: DeviceFix | undefined;
 }
 
 /** The route's end-of-shift settlement as head office keeps it: the phone's figures beside the figures ITS register supports. */
@@ -174,6 +201,9 @@ export interface SyncedDriverRunDeps {
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
   /** FUL-05: run the one fulfilment command for the order once a stop is recorded. Never fails the stop: a fault is said. */
   readonly afterOrderFact?: (tenantId: string, orderId: string, by: string) => Promise<unknown>;
+  /** OB-294 · D09-FR-05: judge the code and the proof location against head office's own records (the issued code, the
+   *  stored address, the owner's radius). Absent (a bare composition) → nothing is judged and the record says nothing. */
+  readonly judgeDoorProof?: (tenantId: string, input: DoorProofInput) => Promise<{ readonly code: CodeVerdict; readonly fence: FenceVerdict }>;
 }
 
 /** The latest outcome per stop, in first-seen order — the register folded to the route as it stands. */
@@ -219,6 +249,12 @@ interface RelayedStop {
   readonly codCollectedMinor: number; readonly codMethod: 'cash' | 'upi' | null; readonly proofKind: string | null;
   readonly geofenceMismatch: boolean; readonly failureReason: string | null; readonly contributionFlag: string | null;
   readonly currency: string; readonly at: string;
+  /** OB-294: the four digits the customer read out — present on a code proof. */
+  readonly proofCode?: string | null;
+  /** The fingerprint of the photo / signature the phone captured. */
+  readonly proofSha256?: string | null;
+  /** The phone's location at the proof — judged here and never kept. */
+  readonly deviceFix?: DeviceFix | undefined;
 }
 
 /** The stop as the phone queued it (`DeliveryStopUpdated`), read strictly; undefined when it cannot be read. */
@@ -233,7 +269,16 @@ function readRelayedStop(body: unknown, routeId: string, stopId: string, now: st
   const method = body['codMethod'];
   if (method !== undefined && method !== null && !(COD_METHODS as readonly string[]).includes(method as string)) return undefined;
   if (body['geofenceMismatch'] !== undefined && typeof body['geofenceMismatch'] !== 'boolean') return undefined;
+  const code = body['proofCode'];
+  if (code !== undefined && code !== null && !isDeliveryCode(code)) return undefined;
+  const sha = body['proofSha256'];
+  if (sha !== undefined && sha !== null && (typeof sha !== 'string' || !/^[0-9a-f]{64}$/.test(sha))) return undefined;
+  const fix = body['deviceFix'];
+  if (fix !== undefined && fix !== null && !isFix(fix)) return undefined;
   return {
+    proofCode: isDeliveryCode(code) ? code : null,
+    proofSha256: typeof sha === 'string' ? sha : null,
+    deviceFix: isFix(fix) ? { lat: fix.lat, lon: fix.lon, ...(fix.accuracyMetres === undefined ? {} : { accuracyMetres: fix.accuracyMetres }) } : undefined,
     driverId: body['driverId'], orderRef: body['orderRef'], state: state as DeliveryState,
     codExpectedMinor: body['codExpectedMinor'], codCollectedMinor: isNonNegInt(body['codCollectedMinor']) ? body['codCollectedMinor'] : 0,
     codMethod: method === 'cash' || method === 'upi' ? method : null,
@@ -345,6 +390,21 @@ export function syncedDriverRunRoutes(deps: SyncedDriverRunDeps): readonly Route
         if (r.geofenceMismatch) flags.push('geofence_mismatch');
         if (r.contributionFlag !== null) flags.push('contribution_flagged');
 
+        // OB-294 · D09-FR-05: the proof itself, judged against head office's own records — the code it issued, the address it
+        // holds, the owner's radius. Every finding is a flag on the record; the hand-over is still recorded (it happened).
+        let proofCheck: DoorProofCheck | undefined;
+        if ((r.state === 'delivered' || r.state === 'partially_delivered') && r.proofKind !== null && deps.judgeDoorProof !== undefined) {
+          const judged = await deps.judgeDoorProof(ctx.tenantId, { orderRef: r.orderRef, proofKind: r.proofKind, proofCode: r.proofCode ?? null, proofSha256: r.proofSha256 ?? null, deviceFix: r.deviceFix });
+          proofCheck = { code: judged.code, fence: judged.fence, imageSha256: r.proofSha256 ?? null };
+          if (r.proofKind === 'otp') {
+            if (judged.code === 'wrong') flags.push('delivery_code_wrong');
+            if (judged.code === 'not_issued') flags.push('delivery_code_not_issued');
+            if (judged.code === 'not_given') flags.push('delivery_code_missing');
+          }
+          if (IMAGE_PROOF_KINDS.has(r.proofKind) && (r.proofSha256 ?? null) === null) flags.push('proof_image_missing');
+          if (judged.fence.result === 'outside') flags.push('outside_geofence');
+        }
+
         // The ORDER's own lifecycle, through the same machine the direct route runs. Goods handed over need a proof kind.
         const handsOver = r.state === 'delivered' || r.state === 'partially_delivered';
         const orderHistory = await deps.deliveryState(ctx.tenantId, r.orderRef);
@@ -397,7 +457,7 @@ export function syncedDriverRunRoutes(deps: SyncedDriverRunDeps): readonly Route
           routeId, stopId, driverId: r.driverId, orderRef: r.orderRef, state: r.state, codExpectedMinor: r.codExpectedMinor,
           codCollectedMinor: r.codCollectedMinor, codMethod: r.codMethod, proofKind: r.proofKind, geofenceMismatch: r.geofenceMismatch,
           failureReason: r.failureReason, contributionFlag: r.contributionFlag, currency: r.currency, relayedBy: ctx.userId, at: r.at,
-          orderStep, governanceFlags: flags, runAttempt,
+          orderStep, governanceFlags: flags, runAttempt, ...(proofCheck === undefined ? {} : { proofCheck }),
         };
         await deps.recordStopUpdate(ctx.tenantId, update);
         await deps.recordAudit?.(ctx.tenantId, {
@@ -415,7 +475,7 @@ export function syncedDriverRunRoutes(deps: SyncedDriverRunDeps): readonly Route
         // FUL-05: the order's fulfilment runs on what the door said — in the driver's name.
         const fulfilment = await fulfilmentAfter(deps.afterOrderFact, ctx.tenantId, r.orderRef, r.driverId);
         // 202: it happened at the door; this records that head office now holds it.
-        return { status: 202, body: { routeId, stopId, state: r.state, recorded: true, flags, orderStep, runAttempt, ...(fulfilment === undefined ? {} : { fulfilment }) } };
+        return { status: 202, body: { routeId, stopId, state: r.state, recorded: true, flags, orderStep, runAttempt, ...(proofCheck === undefined ? {} : { proofCheck }), ...(fulfilment === undefined ? {} : { fulfilment }) } };
       },
     },
     {

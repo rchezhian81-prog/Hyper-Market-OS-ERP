@@ -17,9 +17,9 @@
 // ── PII and location, minimised ─────────────────────────────────────────────
 //
 // A stop carries an order reference and a coarse area label. No customer name, no phone number, no
-// full address record, and the proof photograph itself never joins the queue — only the KIND of
-// proof does. A route's worth of doorstep photographs syncing off a driver's phone is a privacy
-// problem being uploaded, not a delivery being proved.
+// full address record. The proof photograph (OB-294, owner, 23 Oct 2026: a real capture through the
+// camera, kept as a document) is one small image per hand-over, queued as its own record with its
+// fingerprint; the phone's location is read only at a hand-over and head office keeps only the verdict.
 
 import { openDeviceOutbox, guardedStore, type DeviceOutbox } from '../../../packages/sync/src/device-outbox';
 import { drainToBox, boxStatus } from '../../../packages/sync/src/device-drain';
@@ -90,7 +90,8 @@ export function openDriverRelay(
   if (fetchFn === undefined) return undefined;
   return {
     syncNow: async () => {
-      const result = await drainToBox({ outbox, boxBase: laneWriteBase, source: 'driver', fetch: fetchFn, ...(clock === undefined ? {} : { onBoxTime: (box, phone) => clock.learn(box, phone) }) });
+      // Three at a time: a proof photo is up to 60,000 characters, and the box takes a device batch up to 256 KB.
+      const result = await drainToBox({ outbox, boxBase: laneWriteBase, source: 'driver', fetch: fetchFn, limit: 3, ...(clock === undefined ? {} : { onBoxTime: (box, phone) => clock.learn(box, phone) }) });
       const statuses = await boxStatus({ boxBase: laneWriteBase, keys: session.handedKeys(), fetch: fetchFn });
       if (statuses !== undefined) session.noteBoxStatus(statuses);
       return { handed: result.handed, refused: result.refused, failed: result.failed, offline: result.offline };

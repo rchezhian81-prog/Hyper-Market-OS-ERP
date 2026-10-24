@@ -143,6 +143,11 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'fulfilment.pack.record', 'fulfilment.pack.read',
       // HA-1: hand a wave to a picker at head office, and read a store's open assignments (the box pulls them).
       'fulfilment.wave.assign', 'fulfilment.assignment.read',
+      // ── OB-288 fulfilment & delivery — begin
+      // OB-313 / D09-FR-05/06: the owner enters his delivery numbers (proof-location radius, contribution threshold, cost
+      // rates, own-fleet rate); a manager approves an order held below the threshold; a second person approves a fleet settlement.
+      'delivery.controls.set', 'delivery.contribution.approve', 'delivery.settlement.approve',
+      // ── OB-288 fulfilment & delivery — end
       // SP-3c-i hop: the box relays the picker handheld's line outcomes and packs to the wave register.
       'fulfilment.pick.sync',
       // SP-3c-ii hop: the box relays the driver handheld's stop outcomes, settlement and cash handover to the route register.
@@ -393,6 +398,11 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'fulfilment.pack.record', 'fulfilment.pack.read',
       // HA-1: hand a wave to a picker at head office, and read a store's open assignments (the box pulls them).
       'fulfilment.wave.assign', 'fulfilment.assignment.read',
+      // ── OB-288 fulfilment & delivery — begin
+      // OB-313: the manager approves (or declines) an order held below the owner's contribution threshold; D09-FR-06: a
+      // manager other than the proposer approves an own-fleet settlement. The owner alone enters the numbers.
+      'delivery.contribution.approve', 'delivery.settlement.approve',
+      // ── OB-288 fulfilment & delivery — end
       'finance.period.read', 'reporting.dashboard.read', 'reporting.report.read',
       'scrap.review.read', 'waste.view', 'count.view', 'shelf.count.record', 'shelf.count.read', 'planogram.compliance.read', 'planogram.publish', 'merchandising.space.read', 'merchandising.display.manage', 'merchandising.range.manage', 'merchandising.range.read', 'approvals.delegation.grant', 'approvals.delegation.read', 'workforce.roster.read', 'workforce.roster.manage', 'workforce.task.read', 'workforce.checklist.read', 'workforce.completion.sync', 'workforce.incentive.read', 'workforce.sop.read',
       // D-8 (R2): complete the store tasks assigned to me, in my own sign-in.

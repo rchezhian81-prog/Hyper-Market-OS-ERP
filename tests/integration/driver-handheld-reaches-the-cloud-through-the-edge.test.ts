@@ -1,4 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
+import { createHash } from 'node:crypto';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -63,6 +64,8 @@ afterEach(async () => {
   for (const c of cleanups.splice(0).reverse()) await c();
 });
 
+/** OB-294: a photo proof carries the fingerprint of the image the phone captured (the image itself is its own record). */
+const PHOTO_SHA = 'a'.repeat(64);
 /** A stop outcome as the phone queues it (`RouteSession.replace`). */
 const stopAt = (stopId: string, state: string, over: Record<string, unknown> = {}, routeId = 'R-1') => makeEvent({
   id: `${routeId}:${stopId}:${state}`, type: 'DeliveryStopUpdated', occurredAt: AT, idempotencyKey: `stop:${routeId}:${stopId}:${state}`, source: routeId,
@@ -241,7 +244,7 @@ describe('the driver\'s phone: enrol → device socket → box (durable) → hea
     const { cookie } = await enrol(edge);
     const events = [
       stopAt('s1', 'out_for_delivery'),
-      stopAt('s1', 'delivered', { codCollectedMinor: 250_00, codMethod: 'cash', proofKind: 'otp' }),
+      stopAt('s1', 'delivered', { codCollectedMinor: 250_00, codMethod: 'cash', proofKind: 'photo', proofSha256: PHOTO_SHA }),
       stopAt('s2', 'out_for_delivery'),
       stopAt('s2', 'failed', { failureReason: 'nobody_home' }),
       stopAt('s2', 'returned_to_origin', { failureReason: 'nobody_home' }),
@@ -262,7 +265,7 @@ describe('the driver\'s phone: enrol → device socket → box (durable) → hea
     const o1 = await orderAt(c.h, 'ORD-1');
     expect(o1.state).toBe('delivered');
     expect(o1.history.map((h) => h['event'])).toEqual(['depart', 'deliver']);
-    expect(o1.history[1]).toMatchObject({ by: 'u-driver', proofRef: 'otp@handheld:R-1/s1' });
+    expect(o1.history[1]).toMatchObject({ by: 'u-driver', proofRef: 'photo@handheld:R-1/s1' });
     const o2 = await orderAt(c.h, 'ORD-2');
     expect(o2.state).toBe('returned_to_origin');
     expect(o2.history.map((h) => h['event'])).toEqual(['depart', 'fail', 'rto']);
@@ -276,7 +279,7 @@ describe('the driver\'s phone: enrol → device socket → box (durable) → hea
     // Another route: the phone's settlement claims more than its stops support; the counted cash is materially short.
     const r2 = [
       stopAt('s1', 'out_for_delivery', { orderRef: 'ORD-3' }, 'R-2'),
-      stopAt('s1', 'delivered', { orderRef: 'ORD-3', codCollectedMinor: 200_00, codMethod: 'upi', proofKind: 'photo' }, 'R-2'),
+      stopAt('s1', 'delivered', { orderRef: 'ORD-3', codCollectedMinor: 200_00, codMethod: 'upi', proofKind: 'photo', proofSha256: PHOTO_SHA }, 'R-2'),
       settledRoute({ expectedMinor: 250_00, collectedMinor: 250_00, cashHeldMinor: 250_00 }, 'R-2'),
       handedOver({ countedMinor: 50_00, recordedMinor: 200_00, varianceMinor: -150_00, material: true }, 'R-2'),
     ];
@@ -297,7 +300,7 @@ describe('the driver\'s phone: enrol → device socket → box (durable) → hea
     const { cookie } = await enrol(edge);
     const events = [
       stopAt('s1', 'out_for_delivery', { orderRef: 'ORD-6', codExpectedMinor: 300_00 }, 'R-3'),
-      stopAt('s1', 'partially_delivered', { orderRef: 'ORD-6', codExpectedMinor: 300_00, codCollectedMinor: 120_00, codMethod: 'cash', proofKind: 'photo' }, 'R-3'),
+      stopAt('s1', 'partially_delivered', { orderRef: 'ORD-6', codExpectedMinor: 300_00, codCollectedMinor: 120_00, codMethod: 'cash', proofKind: 'photo', proofSha256: PHOTO_SHA }, 'R-3'),
       stopAt('s2', 'out_for_delivery', { orderRef: 'ORD-7', codExpectedMinor: 450_00 }, 'R-3'),
       stopAt('s2', 'failed', { orderRef: 'ORD-7', codExpectedMinor: 450_00, failureReason: 'customer_had_no_cash' }, 'R-3'),
       stopAt('s2', 'returned_to_origin', { orderRef: 'ORD-7', codExpectedMinor: 450_00, failureReason: 'customer_had_no_cash' }, 'R-3'),
@@ -334,7 +337,7 @@ describe('the driver\'s phone: enrol → device socket → box (durable) → hea
     const c = await cloud();
     const first = await c.start();
     const { cookie } = await enrol(first);
-    const skipped = stopAt('s1', 'delivered', { codCollectedMinor: 250_00, codMethod: 'cash', proofKind: 'otp' }); // delivered with no departure seen
+    const skipped = stopAt('s1', 'delivered', { codCollectedMinor: 250_00, codMethod: 'cash', proofKind: 'photo', proofSha256: PHOTO_SHA }); // delivered with no departure seen
     const stranger = stopAt('s2', 'out_for_delivery', { driverId: 'u-stranger' });
     const card = stopAt('s2', 'delivered', { codCollectedMinor: 0, codMethod: 'card', proofKind: 'otp' });
     const acks = (await postBatch(first, cookie, [skipped, stranger, card].map(item))).acks;
@@ -370,6 +373,28 @@ describe('the driver\'s phone: enrol → device socket → box (durable) → hea
     expect((await postBatch(edge, cookie, [item(pick)], 'driver')).acks[0]).toMatchObject({ status: 'refused', reason: 'PickLineResolved is not a record this box relays for driver' });
     expect((await postBatch(edge, cookie, [item(e)], 'manager')).status).toBe(403);
     expect(await recordsOn(edge)).toEqual([]);
+  });
+
+  it('OB-294 · M19-FR-03: a photo CAPTURED at the door rides the same leg — box (durable) → head office (once) — and is kept as a document whose hash is the bytes\' own; it cannot ride as the picker', async () => {
+    const c = await cloud();
+    const edge = await c.start();
+    const { cookie } = await enrol(edge);
+    const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00]), Buffer.alloc(120, 3), Buffer.from([0xff, 0xd9])]);
+    const sha256 = createHash('sha256').update(jpeg).digest('hex');
+    const key = `proof:R-1:s1:${sha256.slice(0, 24)}`;
+    const photo = makeEvent({
+      id: key, type: 'DeliveryProofCaptured', occurredAt: AT, idempotencyKey: key, source: 'R-1',
+      payload: { routeId: 'R-1', stopId: 's1', driverId: 'u-driver', orderRef: 'ORD-1', kind: 'photo', mediaType: 'image/jpeg', contentBase64: jpeg.toString('base64'), sha256, capturedAt: AT },
+    });
+    expect((await postBatch(edge, cookie, [item(photo)], 'picker')).acks).toEqual([expect.objectContaining({ key, status: 'refused' })]);
+    expect((await postBatch(edge, cookie, [item(photo)])).acks).toEqual([{ key, status: 'accepted' }]);
+    expect(await recordsOn(edge)).toEqual([{ idempotencyKey: key, type: 'DeliveryProofCaptured' }]);
+    expect((await edge.syncOnce!()).sent).toBe(1);
+    const proof = (await c.h.request({ method: 'GET', path: '/v1/delivery/orders/ORD-1/proof', userId: 'u-owner', tenantId: A })).body as { images: Record<string, unknown>[] };
+    expect(proof.images).toEqual([expect.objectContaining({ kind: 'photo', sha256, routeId: 'R-1', stopId: 's1', driverId: 'u-driver', relayedBy: 'u-box', governanceFlags: [] })]);
+    expect((await postBatch(edge, cookie, [item(photo)])).acks).toEqual([{ key, status: 'duplicate' }]);
+    await edge.syncOnce!();
+    expect(c.posts()).toBe(1);
   });
 
   it('a box with no cloud takes the outcomes, holds them durably across a restart, counts them, and will not close the day over them', async () => {

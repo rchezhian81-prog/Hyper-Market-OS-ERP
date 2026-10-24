@@ -88,6 +88,10 @@ export const RELAYABLE_DEVICE_EVENTS: Readonly<Record<string, { readonly surface
   // R4 gap lane "driver" (WF-16): an online return collected at the door, or not (with the reason). Head office re-verifies the
   // DRIVER's grant, the booking and the quantities, and records "collected" as its own button does. No money moves.
   ReturnCollectionRecorded: { surfaces: ['driver'] },
+  // OB-288 fulfilment & delivery (M19-FR-03 · OB-294): a photo or the customer's signature CAPTURED on the driver's phone at
+  // the door — the image and its SHA-256. Head office checks the bytes against the hash and the type from the file itself,
+  // keeps it as a document (never deleted, #6) and re-verifies the driver. Nothing in it moves money or stock.
+  DeliveryProofCaptured: { surfaces: ['driver'] },
   // 2b-vi-c-4: the migration screen's DECISIONS (an exception resolved, a control total signed), from the ERP surface the
   // box serves. The box seals each for the person it verified (ADR-0023 amended); head office refuses an unsealed one by
   // name and re-checks the decider's authority and the load operator from its own records.

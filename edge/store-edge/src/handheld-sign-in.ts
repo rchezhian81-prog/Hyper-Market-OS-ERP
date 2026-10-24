@@ -50,6 +50,8 @@ export const HANDHELD_PERSON_FIELD: Readonly<Record<string, string>> = Object.fr
   RouteSettled: 'driverId',
   DriverCashHandedOver: 'driverId',
   ReturnCollectionRecorded: 'driverId',
+  // OB-288 fulfilment & delivery: a proof image captured at the door names the driver who took it.
+  DeliveryProofCaptured: 'driverId',
   // OB-288 lane 2 · P2 (WF-07 offline): a transfer sent and a transfer counted in on the warehouse handheld.
   TransferDispatchRecorded: 'dispatchedBy',
   TransferReceiptRecorded: 'receivedBy',

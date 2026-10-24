@@ -13583,6 +13583,9 @@ export const PERSONAL_DATA_POLICY: PersonalDataPolicy = {
   DeliveryAttempted: [{ category: 'delivery_records', fields: ['notes'], subject: (h, _p, ctx) => orderCustomer(ctx, h['orderId']) }],
   DeliveryAttemptIndexed: [{ category: 'delivery_records', fields: ['notes'], subject: (h, _p, ctx) => orderCustomer(ctx, h['orderId']) }],
   DispatchPlanned: [{ category: 'delivery_records', at: ['routes', '*', 'stops', '*'], fields: ['area'], subject: (h, _p, ctx) => orderCustomer(ctx, h['orderId']) }],
+  // OB-288 fulfilment & delivery (D09-FR-05): the delivery location kept with a slot booking — the stop's stored coordinates
+  // the proof location is judged against. Sealed under the customer's key; erased with them.
+  DeliverySlotBooked: [{ category: 'delivery_records', fields: ['deliveryLocation'], subject: (h) => nonEmpty(h['customerRef']) }],
   // A loss-prevention case about a person: the summary, each evidence description, the closing note.
   LpCaseOpened: [
     { category: 'lp_records', fields: ['summary'], subject: (h) => nonEmpty(h['subjectRef']) },

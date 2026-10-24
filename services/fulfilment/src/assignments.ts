@@ -92,6 +92,12 @@ export interface RouteAssignment {
   readonly assignedBy: string;
   readonly at: string;
   readonly digest: string;
+  /**
+   * OB-288 (M19-FR-03 "partner unavailable → reassign"): the route was taken back from the driver before any stop on it was
+   * recorded — a NEW record that supersedes the assignment (the earlier one stays on the register). A withdrawn route is not
+   * served to the phone.
+   */
+  readonly withdrawn?: { readonly by: string; readonly at: string; readonly reason: string };
 }
 
 type Permissions = (tenantId: string, userId: string) => Promise<readonly string[] | undefined> | readonly string[] | undefined;
@@ -185,7 +191,7 @@ function readStops(v: unknown, allowEmpty = false): readonly AssignedRouteStop[]
 }
 
 /** Re-verify the person from THEIR grants: a 422 by name when head office is about to hand work to somebody who may not do it. */
-async function requireAuthority(deps: AssignmentsDeps, tenantId: string, userId: string, permission: string, role: 'picker' | 'driver'): Promise<void> {
+export async function requireAuthority(deps: Pick<AssignmentsDeps, 'permissionsOfUser'>, tenantId: string, userId: string, permission: string, role: 'picker' | 'driver'): Promise<void> {
   const permissions = await deps.permissionsOfUser(tenantId, userId);
   if (permissions === undefined) {
     throw apiError(422, {
@@ -218,6 +224,7 @@ export async function openAssignments(deps: AssignmentsDeps, tenantId: string, s
   const routes: (Omit<RouteAssignment, 'storeId' | 'digest' | 'at' | 'collections'> & { readonly assignedAt: string; readonly collections?: readonly OpenCollection[] })[] = [];
   for (const a of latestRoutes(await deps.routeAssignments(tenantId, storeId))) {
     if (await deps.routeSettled(tenantId, a.routeId)) continue; // done: the shift settled
+    if (a.withdrawn !== undefined) continue; // taken back from the driver before it started (a reassignment)
     // WF-16 (driver): only collections still BOOKED travel — one collected (by the phone or the desk) leaves the phone by itself.
     const collections: OpenCollection[] = [];
     for (const c of a.collections ?? []) {
@@ -339,7 +346,7 @@ export function assignmentRoutes(deps: AssignmentsDeps): readonly Route[] {
         // A route without collections keeps the digest it always had, so a re-sent assignment is still ONE record.
         const digest = assignmentDigest(collections.length === 0 ? { driverId, stops, contributionRule: contributionRule ?? null } : { driverId, stops, contributionRule: contributionRule ?? null, collections });
         const current = latestRoutes(await deps.routeAssignments(ctx.tenantId, storeId)).find((a) => a.routeId === routeId);
-        if (current !== undefined && current.digest === digest) {
+        if (current !== undefined && current.digest === digest && current.withdrawn === undefined) {
           return { status: 200, body: { routeId, storeId, driverId, stopCount: stops.length, ...(collections.length === 0 ? {} : { collectionCount: collections.length }), assigned: true, alreadyAssigned: true } };
         }
         const now = deps.now();

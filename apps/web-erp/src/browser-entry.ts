@@ -326,6 +326,8 @@ import { createAccessReviewSession, accessReviewWords, accessReviewOutcomeWords,
 import { createHeatMapSession, heatMapWords, heatMapOutcomeWords, heatBand, areaName, figureWords, areaNotes, rupees as heatRupees, type HeatMapSession } from './floor-heat-map-session';
 // OB-288 P5 (OB-293): the Tally files page — the accountant's daily Tally import file, the dead letter and the trial balance.
 import { createTallyFilesSession, tallyFilesWords, tallyFilesOutcomeWords, rupees as tallyRupees, familyWords as tallyFamilyWords, type TallyFilesSession } from './tally-files-session';
+// OB-288 fulfilment & delivery: the Dispatch office page — waves from confirmed orders, routes, the doors' proofs and the cash.
+import { createDispatchSession, dispatchWords, dispatchOutcomeWords, rupees as dispatchRupees, type DispatchSession } from './dispatch-session';
 import { createApprovalRulesSession, approvalRulesWords, approvalRulesOutcomeWords, limitWords as approvalLimitWords, waitWords as approvalWaitWords, limitsFromForm as approvalLimitsFromForm, paiseFromRupees as approvalPaiseFromRupees, KINDS as APPROVAL_LIMIT_KINDS, ROLES_SHOWN as APPROVAL_ROLES_SHOWN, type ApprovalRulesSession } from './approval-rules-session';
 // ── end R4 Lane 3 ──
 // ── R4 Lane 4 (supply, pricing and loss prevention) — begin
@@ -5100,6 +5102,9 @@ interface ManagerWindow {
   // OB-288 P5 (OB-293): the Tally files page.
   tallyFilesData?: ViewerIdentity;
   tallyFiles?: { readonly session: TallyFilesSession; readonly words: typeof tallyFilesWords; readonly outcomeWords: typeof tallyFilesOutcomeWords; readonly rupees: typeof tallyRupees; readonly familyWords: typeof tallyFamilyWords };
+  // OB-288 fulfilment & delivery: the Dispatch office page.
+  dispatchData?: ViewerIdentity;
+  dispatch?: { readonly session: DispatchSession; readonly words: typeof dispatchWords; readonly outcomeWords: typeof dispatchOutcomeWords; readonly rupees: typeof dispatchRupees };
   approvalRules?: {
     readonly session: ApprovalRulesSession; readonly words: typeof approvalRulesWords; readonly outcomeWords: typeof approvalRulesOutcomeWords;
     readonly limitWords: typeof approvalLimitWords; readonly waitWords: typeof approvalWaitWords; readonly limitsFromForm: typeof approvalLimitsFromForm;
@@ -6930,6 +6935,9 @@ if (browserWindow !== undefined) {
   // OB-288 P5 (OB-293): the Tally files page — reads on a click; makes, requeues and downloads only on a person's explicit click.
   browserWindow.tallyFilesData = viewerIdentity(browserWindow.tallyFilesData);
   browserWindow.tallyFiles = { session: createTallyFilesSession({ viewer: browserWindow.tallyFilesData }), words: tallyFilesWords, outcomeWords: tallyFilesOutcomeWords, rupees: tallyRupees, familyWords: tallyFamilyWords };
+  // OB-288 fulfilment & delivery: the Dispatch office page — reads on a click; every write is a person's explicit click.
+  browserWindow.dispatchData = viewerIdentity(browserWindow.dispatchData);
+  browserWindow.dispatch = { session: createDispatchSession({ viewer: browserWindow.dispatchData }), words: dispatchWords, outcomeWords: dispatchOutcomeWords, rupees: dispatchRupees };
   browserWindow.approvalRulesData = viewerIdentity(browserWindow.approvalRulesData);
   browserWindow.approvalRules = {
     session: createApprovalRulesSession({ viewer: browserWindow.approvalRulesData }), words: approvalRulesWords, outcomeWords: approvalRulesOutcomeWords,

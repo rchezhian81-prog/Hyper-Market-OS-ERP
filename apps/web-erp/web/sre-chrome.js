@@ -528,6 +528,7 @@
     'gates': 'badge-check', // OB-288 gates lane (QG-12) — an icon already in the set
     'access-review': 'users-round', // OB-288 lane 1 · P1 — an icon already in the set
     'tally-files': 'book-open', // OB-288 P5 (OB-293) — an icon already in the set
+    'dispatch': 'truck', // OB-288 fulfilment & delivery — an icon already in the set
     'approval-rules': 'sliders', // OB-288 lane 1 · P1 — an icon already in the set
     'day-reopen': 'lock',
     'data-io': 'arrow-up-down',
